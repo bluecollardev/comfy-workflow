@@ -8,20 +8,14 @@ terraform {
     }
   }
 
-  # Enable for team state locking + VCS integration
-  # Setup:
-  #   1. Create org at app.terraform.io
-  #   2. Create workspace: "comfy-moe-<env>"
-  #   3. Run: terraform login (paste API token)
-  #   4. Uncomment below, run: terraform init
-  #
-  # cloud {
-  #   organization = "your-org-name"
-  #
-  #   workspaces {
-  #     name = "comfy-moe-${var.environment}"
-  #   }
-  # }
+  # Team state locking + VCS integration (Terraform Cloud)
+  cloud {
+    organization = "bluecollardev-comfy"
+
+    workspaces {
+      name = "comfy-moe-${var.environment}"
+    }
+  }
 
   # Alternative: Local S3 backend (shared team storage, no TF Cloud)
   # backend "s3" {
