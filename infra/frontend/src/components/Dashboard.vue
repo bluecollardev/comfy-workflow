@@ -140,6 +140,9 @@ async function refreshPods() {
 }
 
 .pods-section {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 12px;
   margin-bottom: 40px;
 }
 
@@ -168,8 +171,8 @@ async function refreshPods() {
 
 .pods-section .section-header {
   cursor: default;
-  padding: 0;
-  margin-bottom: 12px;
+  padding: 12px 0;
+  margin-bottom: 16px;
   border-bottom: none;
 }
 
