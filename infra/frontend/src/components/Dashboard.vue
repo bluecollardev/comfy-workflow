@@ -180,8 +180,8 @@ async function refreshPods() {
 .toggle-icon {
   display: inline-block;
   margin-left: auto;
-  font-size: 1rem;
-  color: #4a9eff;
+  font-size: 1.8rem;
+  color: #e0e0f0;
   transition: all 0.2s;
 }
 
