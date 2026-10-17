@@ -76,14 +76,10 @@ function formatUptime(seconds) {
 }
 
 function deleteConfirm() {
-  if (confirm(`⚠️ Permanently delete pod ${props.pod.name}? This cannot be undone.`)) {
+  if (confirm(`⚠️ Permanently delete pod ${pod.name}? This cannot be undone.`)) {
     emit('delete')
   }
 }
-
-const props = defineProps({
-  pod: Object,
-})
 </script>
 
 <style scoped>
