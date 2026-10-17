@@ -152,7 +152,6 @@ async function refreshPods() {
   margin-bottom: 16px;
   background: none;
   border: none;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   color: inherit;
   cursor: pointer;
   transition: all 0.2s;
@@ -166,9 +165,6 @@ async function refreshPods() {
   margin-bottom: 0;
 }
 
-.create-section .section-header:hover {
-  background: rgba(255, 255, 255, 0.02);
-}
 
 .pods-section .section-header {
   cursor: default;
