@@ -151,8 +151,8 @@ async function refreshPods() {
   align-items: center;
   gap: 12px;
   width: 100%;
-  padding: 12px 0;
-  margin-bottom: 16px;
+  padding: 12px;
+  margin: -12px -12px 0 -12px;
   background: none;
   border: none;
   color: inherit;
@@ -164,14 +164,12 @@ async function refreshPods() {
 .create-section .section-header {
   cursor: pointer;
   border-bottom: none;
-  padding: 12px;
   margin-bottom: 0;
 }
 
 
 .pods-section .section-header {
   cursor: default;
-  padding: 12px 0;
   margin-bottom: 16px;
   border-bottom: none;
 }
