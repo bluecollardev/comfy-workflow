@@ -8,7 +8,7 @@
         class="section-header"
       >
         <h2>Create Pod</h2>
-        <span class="toggle-icon">{{ showCreateForm ? '‣' : '›' }}</span>
+        <span class="toggle-icon">{{ showCreateForm ? '⌄' : '›' }}</span>
       </button>
 
       <transition name="expand">
