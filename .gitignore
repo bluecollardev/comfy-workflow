@@ -51,3 +51,10 @@ blueprints/*.compiled.json
 # Docker build artifacts
 docker/build/
 docker/*.tar.gz
+infra/dist/
+infra/frontend/test-results/
+infra/frontend/playwright-report/
+infra/frontend/dist-electron/
+
+# Local creative project files (large media, never commit)
+projects/
