@@ -197,6 +197,74 @@ comfy assets push
 - [ ] Address review feedback
 - [ ] Merge to develop once approved
 
+## Project Conventions
+
+### RunPod Pod Management
+
+**Pod Naming Convention:**
+```
+ComfyUI-{Purpose}-{Date}
+ComfyUI-Dev          # Development pod (default)
+ComfyUI-Batch        # Batch rendering pod
+ComfyUI-Test         # Temporary testing pod
+ComfyUI-Prod-Oct17   # Production pod with date
+```
+
+**Pod ID Documentation:**
+- Always document active pod ID in `RUNPOD_POD_ID` env var
+- Store in `.env` file (not committed)
+- Update in project notes when pod changes
+- Never hardcode pod IDs in code/scripts
+
+**Pod Lifecycle:**
+1. **Create:** Use `create_pod.py create` with config from `pod-config.yaml`
+2. **Document:** Add pod ID to local notes
+3. **Stop:** Use `stop_pod.py` when not in use (pause billing)
+4. **Resume:** Use `resume_pod.py` when resuming work
+5. **Delete:** Use `delete_pod.py` with confirmation (irreversible)
+
+**Never:**
+- ❌ Leave pod running 24/7 (unless production)
+- ❌ Hardcode pod IDs in scripts
+- ❌ Share pod ID in commits/PRs
+- ❌ Use production GPU for testing
+- ❌ Forget to stop pod when done (costs money!)
+
+### Asset & Model Management
+
+**Asset Guidelines:**
+- Upload to `assets/` first, then `comfy assets push`
+- Never commit large files (models, datasets)
+- Reference via `$asset.<path>` in blueprints
+- Keep checksums in `.comfy/assets.lock.json` (auto-managed)
+
+**Model Organization:**
+```
+assets/
+├── images/              # Reference images
+├── keyframes/          # Keyframe sequences
+├── references/         # Style/inspiration references
+└── .gitkeep            # Keep directory in git
+```
+
+### Environment Variables
+
+**Always use:**
+```bash
+export RUNPOD_API_KEY="..."    # Never commit!
+export RUNPOD_POD_ID="..."     # Document current pod
+```
+
+**Store in `.env`:**
+```
+RUNPOD_API_KEY=...
+RUNPOD_POD_ID=...
+RUNPOD_GPU_TYPE=rtx4090
+RUNPOD_VOLUME_GB=50
+```
+
+**Never commit `.env`** — it's in `.gitignore` for a reason.
+
 ## Important Constraints & Gotchas
 
 ### ComfyUI Constraints

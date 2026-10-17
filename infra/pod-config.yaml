@@ -1,0 +1,97 @@
+# RunPod Pod Configuration
+# Define default pod specifications for different use cases
+
+pods:
+  # Development pod - interactive work
+  development:
+    name: ComfyUI-Dev
+    description: Development pod for interactive ComfyUI work
+    gpu:
+      type: rtx4090
+      count: 1
+      vram: 24
+    storage:
+      volume_gb: 50
+      container_disk_gb: 20
+    image: ashleykza/runpod-comfyui:latest
+    environment:
+      COMFYUI_PORT: "8188"
+      VRAM_OPTIMIZATION: "1"
+      PYTHONUNBUFFERED: "1"
+    networking:
+      expose_web_ui: true
+      expose_ssh: true
+    cost:
+      hourly: 1.10
+      daily: 8.80  # 8 hours/day
+      monthly: 264.00  # 30 days
+
+  # High-capacity pod - batch rendering
+  batch:
+    name: ComfyUI-Batch
+    description: Batch rendering pod with large VRAM
+    gpu:
+      type: l40s
+      count: 1
+      vram: 48
+    storage:
+      volume_gb: 100
+      container_disk_gb: 30
+    image: ashleykza/runpod-comfyui:latest
+    environment:
+      COMFYUI_PORT: "8188"
+      VRAM_OPTIMIZATION: "0"
+      PYTHONUNBUFFERED: "1"
+    networking:
+      expose_web_ui: true
+      expose_ssh: true
+    cost:
+      hourly: 1.80
+      daily: 14.40
+      monthly: 432.00
+
+  # Enterprise pod - production workloads
+  production:
+    name: ComfyUI-Prod
+    description: Production pod with H100 GPU
+    gpu:
+      type: h100
+      count: 1
+      vram: 80
+    storage:
+      volume_gb: 150
+      container_disk_gb: 50
+    image: ashleykza/runpod-comfyui:latest
+    environment:
+      COMFYUI_PORT: "8188"
+      VRAM_OPTIMIZATION: "0"
+      PYTHONUNBUFFERED: "1"
+    networking:
+      expose_web_ui: true
+      expose_ssh: true
+    cost:
+      hourly: 4.50
+      daily: 36.00
+      monthly: 1080.00
+
+# Default configuration (used if not specified)
+default: development
+
+# Storage recommendations
+models_storage:
+  checkpoints: 20-30GB
+  loras: 1-5GB
+  vae: 1-2GB
+  controlnet: 2-5GB
+  upscale: 1-3GB
+  embeddings: 500MB-2GB
+  total_minimum: 30GB
+  total_recommended: 50GB
+
+# Recommended custom nodes to pre-install
+custom_nodes:
+  - comfyui-impact-pack
+  - Comfy-Manager
+  - WAS Node Suite
+  - AnimateDiff
+  - ControlNet
