@@ -1,0 +1,53 @@
+# ComfyUI outputs (local only, not shared)
+outputs/*
+!outputs/.gitkeep
+
+# ComfyUI internal tracking (machine-specific)
+.comfy/runs.jsonl
+.comfy/assets.lock.json
+
+# Models and datasets (too large)
+assets/models/
+assets/datasets/
+*.ckpt
+*.safetensors
+*.pth
+*.pt
+*.bin
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment variables (keep local)
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.lock
+
+# Compiled blueprints (auto-generated)
+blueprints/*.compiled.json
+
+# Docker build artifacts
+docker/build/
+docker/*.tar.gz
