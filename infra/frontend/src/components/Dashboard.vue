@@ -1,7 +1,7 @@
 <template>
-  <div class="dashboard">
+  <div class="space-y-6">
     <!-- Create Pod Section -->
-    <div class="create-section">
+    <section class="card-dark p-3">
       <button
         type="button"
         @click="showCreateForm = !showCreateForm"
@@ -11,297 +11,242 @@
         <span class="toggle-icon" :class="{ rotated: showCreateForm }">›</span>
       </button>
 
+      <!-- Collapsible Form -->
       <transition name="expand">
-        <PodForm v-if="showCreateForm" @pod-created="handlePodCreated" />
+        <div v-if="showCreateForm" class="mt-4">
+          <PodForm @pod-created="handlePodCreated" />
+        </div>
       </transition>
-    </div>
+    </section>
 
     <!-- Pods List Section -->
-    <div class="pods-section">
-      <div class="section-header">
+    <section class="card-dark p-3">
+      <div class="section-header pointer-events-none">
         <h2>Pods</h2>
-        <span class="pod-count">{{ pods.length }}</span>
+        <span class="inline-block bg-primary/20 text-primary px-2 py-1 rounded-full text-xs font-semibold ms-auto">
+          {{ pods.length }}
+        </span>
       </div>
 
-      <div v-if="pods.length === 0" class="empty-state">
-        <p>📭 No pods running</p>
-      </div>
+      <div class="mt-4">
+        <!-- Empty State -->
+        <div v-if="pods.length === 0" class="text-center py-12">
+          <p class="text-dark-300 text-sm">📭 No pods running</p>
+        </div>
 
-      <div v-else class="pods-grid">
-        <PodCard
-          v-for="pod in pods"
-          :key="pod.id"
-          :pod="pod"
-          @stop="handleStop(pod.id)"
-          @resume="handleResume(pod.id)"
-          @delete="handleDelete(pod.id)"
-        />
+        <!-- Pods Grid -->
+        <div v-else class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <PodCard
+            v-for="pod in pods"
+            :key="pod.id"
+            :pod="pod"
+            @stop="handleStop(pod.id)"
+            @resume="handleResume(pod.id)"
+            @delete="handleDelete(pod.id)"
+          />
+        </div>
+      </div>
+    </section>
+
+    <!-- Loading Overlay -->
+    <div v-if="loading" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+      <div class="text-center">
+        <div class="spinner mb-4"></div>
+        <p class="text-dark-200">Loading...</p>
       </div>
     </div>
 
-    <div v-if="loading" class="loading-overlay">
-      <div class="spinner">Loading...</div>
-    </div>
-
-    <div v-if="error" class="alert alert-error">
-      {{ error }}
-      <button class="close-btn" @click="error = null">×</button>
-    </div>
+    <!-- Error Alert -->
+    <transition name="slide">
+      <div
+        v-if="error"
+        class="fixed bottom-5 right-5 max-w-md z-40 alert-error flex items-center justify-between"
+      >
+        <span>{{ error }}</span>
+        <button @click="error = null" class="text-lg opacity-70 hover:opacity-100 ms-4">
+          ×
+        </button>
+      </div>
+    </transition>
   </div>
 </template>
 
 <script setup>
+/**
+ * Dashboard.vue - Main dashboard container component
+ *
+ * Responsibilities:
+ * - Manage pod creation form visibility (collapsible)
+ * - Render pod list in responsive grid
+ * - Handle pod lifecycle actions (stop, resume, delete)
+ * - Display loading states and error messages
+ * - Emit 'pods-updated' event to parent after actions
+ *
+ * Props:
+ * - pods: Array of pod objects to display
+ *
+ * Events:
+ * - pods-updated: Emitted with updated pods array after any action
+ *
+ * Child Components:
+ * - PodForm: Form for creating new pods (shown when expanded)
+ * - PodCard: Individual pod display card (shown for each pod)
+ */
+
 import { ref } from 'vue'
 import PodCard from './PodCard.vue'
 import PodForm from './PodForm.vue'
 import { podsAPI } from '../api/pods'
 
+// ===== PROPS & EMITS =====
+
 const props = defineProps({
-  pods: { type: Array, required: true },
+  /**
+   * Array of pod objects to display
+   * @type {Array<Object>}
+   */
+  pods: {
+    type: Array,
+    required: true,
+  },
 })
 
-const emit = defineEmits(['pods-updated'])
+const emit = defineEmits({
+  /**
+   * Emitted when pods list changes (create, stop, resume, delete)
+   * @param {Array} pods - Updated pods array
+   */
+  'pods-updated': null,
+})
 
-const loading = ref(false)
-const error = ref(null)
+// ===== STATE =====
+
+/**
+ * Whether the create form is visible
+   * @type {Ref<boolean>}
+ */
 const showCreateForm = ref(false)
 
+/**
+ * Loading state during pod actions
+ * @type {Ref<boolean>}
+ */
+const loading = ref(false)
+
+/**
+ * Error message from last failed action
+ * @type {Ref<string|null>}
+ */
+const error = ref(null)
+
+// ===== METHODS =====
+
+/**
+ * Refresh pods list from API and emit update event
+ * @async
+ * @private
+ */
+async function refreshPods() {
+  const updatedPods = await podsAPI.listPods()
+  emit('pods-updated', updatedPods)
+}
+
+/**
+ * Handle new pod creation
+ * - Hides form
+ * - Refreshes pods list
+ * - Clears any previous errors
+ *
+ * @async
+ */
 async function handlePodCreated() {
   loading.value = true
   error.value = null
   showCreateForm.value = false
+
   try {
     await refreshPods()
   } catch (err) {
-    error.value = 'Failed to refresh pods'
+    error.value = 'Failed to load pods after creation'
+    console.error('Pod refresh error:', err)
   } finally {
     loading.value = false
   }
 }
 
+/**
+ * Stop a running pod
+ * - Calls API to stop pod by ID
+ * - Refreshes pods list
+ * - Displays error on failure
+ *
+ * @async
+ * @param {string} podId - Pod ID to stop
+ */
 async function handleStop(podId) {
   loading.value = true
   error.value = null
+
   try {
     await podsAPI.stopPod(podId)
     await refreshPods()
   } catch (err) {
     error.value = `Stop failed: ${err.response?.data?.detail || err.message}`
+    console.error('Stop pod error:', err)
   } finally {
     loading.value = false
   }
 }
 
+/**
+ * Resume a stopped pod
+ * - Calls API to resume pod by ID
+ * - Refreshes pods list
+ * - Displays error on failure
+ *
+ * @async
+ * @param {string} podId - Pod ID to resume
+ */
 async function handleResume(podId) {
   loading.value = true
   error.value = null
+
   try {
     await podsAPI.resumePod(podId)
     await refreshPods()
   } catch (err) {
     error.value = `Resume failed: ${err.response?.data?.detail || err.message}`
+    console.error('Resume pod error:', err)
   } finally {
     loading.value = false
   }
 }
 
+/**
+ * Delete a pod
+ * - Calls API to delete pod by ID
+ * - Refreshes pods list
+ * - Displays error on failure
+ *
+ * @async
+ * @param {string} podId - Pod ID to delete
+ */
 async function handleDelete(podId) {
   loading.value = true
   error.value = null
+
   try {
     await podsAPI.deletePod(podId)
     await refreshPods()
   } catch (err) {
     error.value = `Delete failed: ${err.response?.data?.detail || err.message}`
+    console.error('Delete pod error:', err)
   } finally {
     loading.value = false
   }
 }
-
-async function refreshPods() {
-  const updatedPods = await podsAPI.listPods()
-  emit('pods-updated', updatedPods)
-}
 </script>
 
 <style scoped>
-.dashboard {
-  position: relative;
-}
-
-.create-section {
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  padding: 0;
-  padding: 12px;
-  margin-bottom: 32px;
-}
-
-.pods-section {
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  padding: 12px;
-  margin-bottom: 40px;
-}
-
-.section-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 12px;
-  margin: -12px -12px 0 -12px;
-  background: none;
-  border: none;
-  color: inherit;
-  cursor: pointer;
-  transition: all 0.2s;
-  text-align: left;
-}
-
-.create-section .section-header {
-  cursor: pointer;
-  border-bottom: none;
-  margin-bottom: 0;
-}
-
-
-.pods-section .section-header {
-  cursor: default;
-  margin-bottom: 16px;
-  border-bottom: none;
-}
-
-.toggle-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-left: auto;
-  font-size: 1.8rem;
-  color: #e0e0f0;
-  transition: transform 0.2s;
-  height: 1em;
-  width: 1em;
-}
-
-.toggle-icon.rotated {
-  transform: rotate(90deg);
-}
-
-.section-header h2 {
-  color: #d0d0e0;
-  font-size: 0.95rem;
-  margin: 0;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  flex: 1;
-}
-
-.pod-count {
-  background: rgba(74, 158, 255, 0.15);
-  color: #4a9eff;
-  padding: 3px 8px;
-  border-radius: 12px;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-.expand-enter-active,
-.expand-leave-active {
-  transition: all 0.2s ease;
-}
-
-.expand-enter-from,
-.expand-leave-to {
-  opacity: 0;
-  transform: translateY(-10px);
-}
-
-.pods-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 12px;
-}
-
-.empty-state {
-  color: #8080a0;
-  font-size: 0.9rem;
-  padding: 20px 0;
-  text-align: center;
-}
-
-.empty-state p {
-  margin: 0;
-}
-
-.loading-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 50;
-}
-
-.spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid rgba(255, 255, 255, 0.2);
-  border-top-color: #4a9eff;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.alert {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  padding: 12px 14px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  max-width: 360px;
-  z-index: 40;
-  animation: slideIn 0.3s ease-out;
-  font-size: 0.8rem;
-}
-
-.alert-error {
-  background: rgba(255, 68, 68, 0.1);
-  color: #ff6b6b;
-  border: 1px solid rgba(255, 68, 68, 0.3);
-}
-
-@keyframes slideIn {
-  from { transform: translateX(100%); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  color: inherit;
-  font-size: 16px;
-  cursor: pointer;
-  padding: 0;
-  margin-left: auto;
-  opacity: 0.7;
-  transition: opacity 0.2s;
-}
-
-.close-btn:hover {
-  opacity: 1;
-}
+/* Tailwind handles all styling */
 </style>

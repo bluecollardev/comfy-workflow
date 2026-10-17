@@ -1,57 +1,80 @@
 <template>
-  <div class="pod-card">
-    <div class="pod-header">
-      <div class="pod-name">{{ pod.name }}</div>
-      <span :class="['status-badge', `status-${pod.status}`]">
+  <div class="card-dark p-6">
+    <!-- Pod Header: Name + Status Badge -->
+    <div class="flex justify-between items-start gap-3 mb-4">
+      <h3 class="text-lg font-bold text-white flex-1">{{ pod.name }}</h3>
+      <span :class="['px-2 py-1 rounded text-xs font-semibold whitespace-nowrap', statusClass(pod.status)]">
         {{ pod.status }}
       </span>
     </div>
 
-    <div class="pod-detail">
-      <strong>ID:</strong>
-      <code>{{ pod.id.substring(0, 8) }}...</code>
+    <!-- Pod Details -->
+    <div class="space-y-2 text-sm mb-6">
+      <!-- ID -->
+      <div class="flex items-center gap-2">
+        <span class="font-semibold text-dark-200 min-w-fit">ID:</span>
+        <code class="bg-black/20 px-2 py-1 rounded text-info text-xs font-mono">
+          {{ pod.id.substring(0, 8) }}...
+        </code>
+      </div>
+
+      <!-- GPU -->
+      <div class="flex items-center gap-2">
+        <span class="font-semibold text-dark-200 min-w-fit">GPU:</span>
+        <span class="text-dark-100">{{ pod.gpu }}</span>
+      </div>
+
+      <!-- VRAM -->
+      <div class="flex items-center gap-2">
+        <span class="font-semibold text-dark-200 min-w-fit">VRAM:</span>
+        <span class="text-dark-100">{{ pod.vram }}GB</span>
+      </div>
+
+      <!-- Uptime (if available) -->
+      <div v-if="pod.uptime_seconds" class="flex items-center gap-2">
+        <span class="font-semibold text-dark-200 min-w-fit">Uptime:</span>
+        <span class="text-dark-100">{{ formatUptime(pod.uptime_seconds) }}</span>
+      </div>
+
+      <!-- Web UI Link (if available) -->
+      <div v-if="pod.web_ui_url" class="flex items-center gap-2">
+        <span class="font-semibold text-dark-200 min-w-fit">UI:</span>
+        <a :href="pod.web_ui_url" target="_blank" class="text-primary hover:text-info underline">
+          🌐 ComfyUI
+        </a>
+      </div>
+
+      <!-- SSH Command -->
+      <div class="flex items-start gap-2 pt-2">
+        <span class="font-semibold text-dark-200 min-w-fit">SSH:</span>
+        <code class="bg-black/20 px-2 py-1 rounded text-info text-xs font-mono break-all">
+          {{ pod.ssh_command }}
+        </code>
+      </div>
     </div>
 
-    <div class="pod-detail">
-      <strong>GPU:</strong> {{ pod.gpu }}
-    </div>
-
-    <div class="pod-detail">
-      <strong>VRAM:</strong> {{ pod.vram }}GB
-    </div>
-
-    <div v-if="pod.uptime_seconds" class="pod-detail">
-      <strong>Uptime:</strong> {{ formatUptime(pod.uptime_seconds) }}
-    </div>
-
-    <div v-if="pod.web_ui_url" class="pod-detail">
-      <strong>UI:</strong>
-      <a :href="pod.web_ui_url" target="_blank">🌐 ComfyUI</a>
-    </div>
-
-    <div class="pod-detail">
-      <strong>SSH:</strong>
-      <code style="font-size: 11px;">{{ pod.ssh_command }}</code>
-    </div>
-
-    <div class="pod-actions">
+    <!-- Action Buttons -->
+    <div class="flex gap-2 pt-4 border-t border-light">
+      <!-- Stop/Resume Button -->
       <button
         v-if="pod.status === 'running'"
         @click="$emit('stop')"
-        class="btn btn-secondary"
+        class="btn-secondary flex-1 text-sm"
       >
         ⏸ Stop
       </button>
       <button
         v-else
         @click="$emit('resume')"
-        class="btn btn-primary"
+        class="btn-primary flex-1 text-sm"
       >
         ▶ Resume
       </button>
+
+      <!-- Delete Button -->
       <button
         @click="deleteConfirm"
-        class="btn btn-danger"
+        class="btn-danger flex-1 text-sm"
       >
         🗑 Delete
       </button>
@@ -60,176 +83,111 @@
 </template>
 
 <script setup>
+/**
+ * PodCard.vue - Individual pod display card
+ *
+ * Displays detailed information about a single pod and provides
+ * quick-action buttons for common operations.
+ *
+ * Props:
+ * - pod: Pod object with details
+ *
+ * Events:
+ * - stop: Emitted when user clicks stop button
+ * - resume: Emitted when user clicks resume button
+ * - delete: Emitted when user confirms deletion
+ *
+ * Features:
+ * - Responsive card layout
+ * - Status badge with color coding
+ * - Pod details: ID, GPU, VRAM, uptime, web UI link, SSH command
+ * - Conditional action buttons based on pod status
+ * - Deletion confirmation dialog
+ *
+ * @component
+ */
+
 const props = defineProps({
+  /**
+   * Pod object with all details
+   * @type {Object}
+   * @property {string} id - Pod ID
+   * @property {string} name - Pod name
+   * @property {string} status - Pod status (running, stopped, starting, etc.)
+   * @property {string} gpu - GPU type (e.g., "RTX4090")
+   * @property {number} vram - VRAM in GB
+   * @property {number} uptime_seconds - Uptime in seconds (optional)
+   * @property {string} web_ui_url - URL to web UI (optional)
+   * @property {string} ssh_command - SSH command to connect (optional)
+   */
   pod: {
     type: Object,
     required: true,
   },
 })
 
-const emit = defineEmits(['stop', 'resume', 'delete'])
+const emit = defineEmits({
+  /**
+   * Emitted when user clicks stop button
+   */
+  'stop': null,
 
+  /**
+   * Emitted when user clicks resume button
+   */
+  'resume': null,
+
+  /**
+   * Emitted when user confirms deletion
+   */
+  'delete': null,
+})
+
+// ===== METHODS =====
+
+/**
+ * Format seconds into human-readable uptime string
+ * e.g., 7263 seconds → "2h 1m"
+ *
+ * @param {number} seconds - Total uptime seconds
+ * @returns {string} Formatted uptime string
+ */
 function formatUptime(seconds) {
   const hours = Math.floor(seconds / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
   return `${hours}h ${minutes}m`
 }
 
+/**
+ * Get CSS classes for status badge
+ * - running: green
+ * - stopped: red
+ * - starting: yellow
+ * - default: gray
+ *
+ * @param {string} status - Pod status
+ * @returns {string} CSS class string
+ */
+function statusClass(status) {
+  const classes = {
+    'running': 'bg-success/20 text-success border border-success/30',
+    'stopped': 'bg-danger/20 text-danger border border-danger/30',
+    'starting': 'bg-warning/20 text-warning border border-warning/30',
+  }
+  return classes[status] || 'bg-dark-700/50 text-dark-300 border border-dark-400'
+}
+
+/**
+ * Show confirmation dialog before deletion
+ * Only emits delete event if user confirms
+ */
 function deleteConfirm() {
-  if (confirm(`⚠️ Permanently delete pod ${props.pod.name}? This cannot be undone.`)) {
+  if (confirm(`⚠️ Permanently delete pod "${props.pod.name}"? This cannot be undone.`)) {
     emit('delete')
   }
 }
 </script>
 
 <style scoped>
-.pod-card {
-  background: linear-gradient(135deg, #2a2a3e 0%, #1e1e2e 100%);
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-  transition: all 0.3s ease;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-left: 4px solid #4a9eff;
-}
-
-.pod-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 40px rgba(74, 158, 255, 0.2);
-  border-left-color: #00d9ff;
-}
-
-.pod-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: start;
-  margin-bottom: 16px;
-  gap: 12px;
-}
-
-.pod-name {
-  font-size: 18px;
-  font-weight: 700;
-  color: #ffffff;
-  flex: 1;
-}
-
-.status-badge {
-  display: inline-block;
-  padding: 6px 12px;
-  border-radius: 20px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  white-space: nowrap;
-}
-
-.status-running {
-  background: rgba(76, 175, 80, 0.2);
-  color: #4caf50;
-  border: 1px solid rgba(76, 175, 80, 0.3);
-}
-
-.status-stopped {
-  background: rgba(244, 67, 54, 0.2);
-  color: #f44336;
-  border: 1px solid rgba(244, 67, 54, 0.3);
-}
-
-.status-starting {
-  background: rgba(255, 193, 7, 0.2);
-  color: #ffc107;
-  border: 1px solid rgba(255, 193, 7, 0.3);
-}
-
-.pod-detail {
-  font-size: 13px;
-  color: #b0b0c0;
-  margin: 10px 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.pod-detail strong {
-  color: #e0e0f0;
-  min-width: 70px;
-  font-weight: 600;
-}
-
-.pod-detail a {
-  color: #4a9eff;
-  text-decoration: none;
-  font-weight: 500;
-  transition: all 0.2s;
-}
-
-.pod-detail a:hover {
-  color: #00d9ff;
-  text-decoration: underline;
-}
-
-.pod-detail code {
-  background: rgba(255, 255, 255, 0.05);
-  padding: 3px 8px;
-  border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  font-family: 'Monaco', 'Courier', monospace;
-  color: #00d9ff;
-  font-size: 11px;
-}
-
-.pod-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.btn {
-  flex: 1;
-  padding: 10px 12px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.btn-primary {
-  background: linear-gradient(135deg, #4a9eff 0%, #357abd 100%);
-  color: white;
-}
-
-.btn-primary:hover {
-  background: linear-gradient(135deg, #357abd 0%, #2a5a99 100%);
-  box-shadow: 0 4px 12px rgba(74, 158, 255, 0.3);
-}
-
-.btn-secondary {
-  background: rgba(255, 255, 255, 0.1);
-  color: #e0e0f0;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-}
-
-.btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.3);
-}
-
-.btn-danger {
-  background: rgba(244, 67, 54, 0.2);
-  color: #ff6b6b;
-  border: 1px solid rgba(244, 67, 54, 0.3);
-}
-
-.btn-danger:hover {
-  background: rgba(244, 67, 54, 0.4);
-  border-color: rgba(244, 67, 54, 0.5);
-}
+/* All styling handled by index.css and Tailwind */
 </style>

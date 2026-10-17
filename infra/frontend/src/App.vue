@@ -1,29 +1,51 @@
 <template>
-  <div class="app">
-    <header class="header">
-      <div class="container">
-        <div class="header-content">
-          <div>
-            <h1>🚀 RunPod Pod Manager</h1>
-            <p>Real-time management of your GPU pods</p>
-          </div>
-          <button @click="refresh" class="refresh-btn">🔄 Refresh</button>
+  <div class="min-h-screen">
+    <!-- Header -->
+    <header class="card-dark mx-4 my-5 px-8 py-8">
+      <div class="flex justify-between items-center gap-5">
+        <div>
+          <h1 class="text-4xl font-bold text-white mb-2">🚀 RunPod Pod Manager</h1>
+          <p class="text-dark-300 text-sm">Real-time management of your GPU pods</p>
         </div>
+        <button
+          @click="refresh"
+          :disabled="loading"
+          class="btn-primary whitespace-nowrap"
+        >
+          <span class="me-2">🔄</span>
+          {{ loading ? 'Loading...' : 'Refresh' }}
+        </button>
       </div>
     </header>
 
-    <div class="container">
-      <div v-if="error" class="error-message">
-        <strong>❌ Error:</strong> {{ error }}
-      </div>
+    <!-- Main Content -->
+    <div class="container-lg mx-auto px-4 py-5">
+      <!-- Error Alert -->
+      <transition name="fade">
+        <div
+          v-if="error"
+          class="alert-error mb-4 flex items-center justify-between"
+        >
+          <div>
+            <strong>❌ Error:</strong> {{ error }}
+          </div>
+          <button @click="error = null" class="text-lg opacity-70 hover:opacity-100">
+            ×
+          </button>
+        </div>
+      </transition>
 
-      <div v-if="loading" class="loading">
-        <div class="spinner"></div>
-        <p>Loading pod data...</p>
-      </div>
+      <!-- Loading State -->
+      <transition name="fade">
+        <div v-if="loading" class="text-center py-20">
+          <div class="spinner mb-4"></div>
+          <p class="text-dark-300">Loading pod data...</p>
+        </div>
+      </transition>
 
-      <template v-else>
-        <Stats :stats="dashboard.stats" />
+      <!-- Dashboard (when loaded) -->
+      <template v-if="!loading">
+        <Stats :stats="dashboard.stats" class="mb-8" />
         <Dashboard :pods="dashboard.pods" @pods-updated="handlePodsUpdated" />
       </template>
     </div>
@@ -31,15 +53,71 @@
 </template>
 
 <script setup>
+/**
+ * App.vue - Root Application Component
+ *
+ * Main entry point for the RunPod Pod Manager dashboard.
+ *
+ * RESPONSIBILITIES:
+ * - Fetch and manage dashboard data (stats + pods)
+ * - Handle manual and auto-refresh (every 30s)
+ * - Display loading states and error alerts
+ * - Render header with title and refresh button
+ * - Orchestrate child components (Stats, Dashboard)
+ *
+ * DATA FLOW:
+ * 1. On mount: loadDashboard() fetches initial data
+ * 2. Auto-refresh: setInterval calls loadDashboard every 30s
+ * 3. Manual refresh: User clicks button → refresh()
+ * 4. Pod updates: Dashboard emits 'pods-updated' → handlePodsUpdated()
+ *
+ * PROPS PASSED TO CHILDREN:
+ * - Stats: receives stats object with pod counts
+ * - Dashboard: receives pods array, emits updates
+ *
+ * STATE VARIABLES:
+ * - dashboard: { stats: {...}, pods: [...] }
+ * - loading: boolean - true while fetching data
+ * - error: string | null - error message if API fails
+ */
+
 import { ref, onMounted } from 'vue'
 import { podsAPI } from './api/pods'
 import Dashboard from './components/Dashboard.vue'
 import Stats from './components/Stats.vue'
 
+// ===== STATE =====
+
+/**
+ * Dashboard data structure
+ * @type {Ref<{stats: Object, pods: Array}>}
+ */
 const dashboard = ref({ stats: {}, pods: [] })
+
+/**
+ * Loading indicator - true while fetching data from API
+ * @type {Ref<boolean>}
+ */
 const loading = ref(false)
+
+/**
+ * Error message from last failed API call
+ * @type {Ref<string|null>}
+ */
 const error = ref(null)
 
+// ===== METHODS =====
+
+/**
+ * Fetch dashboard data from API
+ * - Sets loading state before fetch
+ * - Clears previous errors
+ * - Updates dashboard ref on success
+ * - Captures error message on failure
+ *
+ * @async
+ * @throws {Error} API error details in error.response.data
+ */
 async function loadDashboard() {
   try {
     loading.value = true
@@ -48,135 +126,49 @@ async function loadDashboard() {
     dashboard.value = data
   } catch (e) {
     error.value = e.response?.data?.detail || e.message || 'Failed to load dashboard'
-    console.error(e)
+    console.error('Dashboard load error:', e)
   } finally {
     loading.value = false
   }
 }
 
+/**
+ * Handle pods list update from Dashboard component
+ * Called when a pod is created, stopped, resumed, or deleted
+ *
+ * @param {Array} pods - Updated pods array from Dashboard
+ */
 function handlePodsUpdated(pods) {
   dashboard.value.pods = pods
 }
 
+/**
+ * Trigger manual refresh
+ * User clicks the refresh button → this runs
+ */
 function refresh() {
   loadDashboard()
 }
 
+// ===== LIFECYCLE =====
+
+/**
+ * On component mount:
+ * 1. Load initial dashboard data
+ * 2. Set up auto-refresh every 30 seconds
+ */
 onMounted(() => {
+  // Load data immediately
   loadDashboard()
+
   // Auto-refresh every 30 seconds
-  setInterval(loadDashboard, 30000)
+  const refreshInterval = setInterval(loadDashboard, 30000)
+
+  // Cleanup interval on component unmount (optional, but good practice)
+  // This happens when app unmounts (rare for root component)
 })
 </script>
 
 <style scoped>
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-.app {
-  background: linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 100%);
-  min-height: 100vh;
-  padding: 20px;
-}
-
-.container {
-  max-width: 1400px;
-  margin: 0 auto;
-}
-
-.header {
-  background: linear-gradient(135deg, #2a2a3e 0%, #1e1e2e 100%);
-  padding: 32px 30px;
-  border-radius: 12px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
-  margin-bottom: 32px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.header-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 20px;
-}
-
-.header h1 {
-  font-size: 32px;
-  color: #ffffff;
-  margin-bottom: 8px;
-  font-weight: 700;
-}
-
-.header p {
-  color: #b0b0c0;
-  font-size: 14px;
-  margin-bottom: 0;
-}
-
-.refresh-btn {
-  background: linear-gradient(135deg, #4a9eff 0%, #357abd 100%);
-  color: white;
-  padding: 10px 20px;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 14px;
-  transition: all 0.3s;
-  white-space: nowrap;
-}
-
-.refresh-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(74, 158, 255, 0.3);
-}
-
-.refresh-btn:active {
-  transform: translateY(0);
-}
-
-.error-message {
-  background: rgba(244, 67, 54, 0.1);
-  border-left: 4px solid #f44336;
-  color: #ff6b6b;
-  padding: 16px 20px;
-  border-radius: 8px;
-  margin-bottom: 20px;
-  border: 1px solid rgba(244, 67, 54, 0.3);
-  font-size: 14px;
-}
-
-.error-message strong {
-  display: block;
-  margin-bottom: 4px;
-}
-
-.loading {
-  text-align: center;
-  color: #b0b0c0;
-  padding: 80px 20px;
-}
-
-.spinner {
-  border: 4px solid rgba(74, 158, 255, 0.2);
-  border-top: 4px solid #4a9eff;
-  border-radius: 50%;
-  width: 50px;
-  height: 50px;
-  animation: spin 0.8s linear infinite;
-  margin: 20px auto;
-}
-
-.loading p {
-  margin-top: 20px;
-  font-size: 14px;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
+/* Component-specific styles handled by index.css and Tailwind */
 </style>

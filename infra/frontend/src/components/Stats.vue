@@ -1,22 +1,70 @@
 <template>
-  <div class="stats">
-    <div class="stat-card">
-      <div class="stat-label">Total Pods</div>
-      <div class="stat-value">{{ stats.total_pods ?? 0 }}</div>
+  <div class="grid grid-cols-1 gap-3 mb-8 sm:grid-cols-2 lg:grid-cols-3">
+    <!-- Total Pods Card -->
+    <div class="card-dark p-5 border-l-4 border-primary hover:shadow-xl transition-all">
+      <div class="text-xs font-semibold text-dark-400 uppercase tracking-wider mb-3">
+        Total Pods
+      </div>
+      <div class="text-5xl font-bold text-white">
+        {{ stats.total_pods ?? 0 }}
+      </div>
     </div>
-    <div class="stat-card running">
-      <div class="stat-label">Running</div>
-      <div class="stat-value">{{ stats.running_pods ?? 0 }}</div>
+
+    <!-- Running Pods Card -->
+    <div class="card-dark p-5 border-l-4 border-success hover:shadow-xl transition-all">
+      <div class="text-xs font-semibold text-dark-400 uppercase tracking-wider mb-3">
+        Running
+      </div>
+      <div class="text-5xl font-bold text-white">
+        {{ stats.running_pods ?? 0 }}
+      </div>
     </div>
-    <div class="stat-card stopped">
-      <div class="stat-label">Stopped</div>
-      <div class="stat-value">{{ stats.stopped_pods ?? 0 }}</div>
+
+    <!-- Stopped Pods Card -->
+    <div class="card-dark p-5 border-l-4 border-danger hover:shadow-xl transition-all">
+      <div class="text-xs font-semibold text-dark-400 uppercase tracking-wider mb-3">
+        Stopped
+      </div>
+      <div class="text-5xl font-bold text-white">
+        {{ stats.stopped_pods ?? 0 }}
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
+/**
+ * Stats.vue - Pod statistics display component
+ *
+ * Displays three key metrics in a responsive grid:
+ * - Total Pods: All pods in the account
+ * - Running Pods: Currently active pods (green indicator)
+ * - Stopped Pods: Inactive pods (red indicator)
+ *
+ * Props:
+ * - stats: Object containing statistics
+ *   - total_pods: number
+ *   - running_pods: number
+ *   - stopped_pods: number
+ *
+ * Each stat card features:
+ * - Card styling with dark gradient background
+ * - Colored left border (blue/green/red)
+ * - Large bold number display
+ * - Hover effect (shadow lift)
+ * - Responsive column layout (1 col mobile, 2 cols tablet, 3 cols desktop)
+ *
+ * @component
+ */
+
 defineProps({
+  /**
+   * Statistics object from dashboard
+   * @type {Object}
+   * @property {number} total_pods - Total pods in account
+   * @property {number} running_pods - Currently running pods
+   * @property {number} stopped_pods - Currently stopped pods
+   */
   stats: {
     type: Object,
     required: true,
@@ -25,56 +73,5 @@ defineProps({
 </script>
 
 <style scoped>
-.stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
-  margin-bottom: 32px;
-}
-
-.stat-card {
-  background: linear-gradient(135deg, #2a2a3e 0%, #1e1e2e 100%);
-  padding: 20px 24px;
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-left: 4px solid #4a9eff;
-  transition: all 0.3s ease;
-}
-
-.stat-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 40px rgba(74, 158, 255, 0.15);
-}
-
-.stat-card.running {
-  border-left-color: #4caf50;
-}
-
-.stat-card.running:hover {
-  box-shadow: 0 12px 40px rgba(76, 175, 80, 0.15);
-}
-
-.stat-card.stopped {
-  border-left-color: #f44336;
-}
-
-.stat-card.stopped:hover {
-  box-shadow: 0 12px 40px rgba(244, 67, 54, 0.15);
-}
-
-.stat-label {
-  font-size: 11px;
-  color: #8080a0;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 12px;
-  font-weight: 600;
-}
-
-.stat-value {
-  font-size: 42px;
-  font-weight: 700;
-  color: #ffffff;
-}
+/* All styling handled by index.css and Tailwind */
 </style>
