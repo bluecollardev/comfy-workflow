@@ -461,7 +461,8 @@ select.form-input {
   cursor: pointer;
 }
 
-.form-textarea {
+.form-section .form-group .form-textarea {
+  width: 100% !important;
   padding: 10px 12px;
   border: 2px solid rgba(255, 255, 255, 0.15);
   border-radius: 6px;
