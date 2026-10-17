@@ -1,16 +1,27 @@
 <template>
   <div class="dashboard">
-    <PodForm @pod-created="handlePodCreated" />
+    <!-- Create Pod Form Toggle -->
+    <button
+      type="button"
+      @click="showCreateForm = !showCreateForm"
+      class="toggle-form"
+    >
+      {{ showCreateForm ? '▼' : '▶' }} Create New Pod
+    </button>
 
+    <transition name="expand">
+      <PodForm v-if="showCreateForm" @pod-created="handlePodCreated" />
+    </transition>
+
+    <!-- Pods List -->
     <div class="pods-section">
       <div class="section-header">
-        <h2>Active Pods</h2>
-        <span class="pod-count">{{ pods.length }} pod{{ pods.length !== 1 ? 's' : '' }}</span>
+        <h2>Pods</h2>
+        <span class="pod-count">{{ pods.length }}</span>
       </div>
 
       <div v-if="pods.length === 0" class="empty-state">
         <p>📭 No pods running</p>
-        <p class="hint">Create your first pod using the form above</p>
       </div>
 
       <div v-else class="pods-grid">
@@ -37,31 +48,29 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 import PodCard from './PodCard.vue'
 import PodForm from './PodForm.vue'
 import { podsAPI } from '../api/pods'
 
 const props = defineProps({
-  pods: {
-    type: Array,
-    required: true,
-  },
+  pods: { type: Array, required: true },
 })
 
 const emit = defineEmits(['pods-updated'])
 
 const loading = ref(false)
 const error = ref(null)
+const showCreateForm = ref(false)
 
-async function handlePodCreated(pod) {
+async function handlePodCreated() {
   loading.value = true
   error.value = null
+  showCreateForm.value = false
   try {
-    // Refresh pod list after creation
     await refreshPods()
   } catch (err) {
-    error.value = 'Failed to refresh pods after creation'
+    error.value = 'Failed to refresh pods'
   } finally {
     loading.value = false
   }
@@ -74,7 +83,7 @@ async function handleStop(podId) {
     await podsAPI.stopPod(podId)
     await refreshPods()
   } catch (err) {
-    error.value = `Failed to stop pod: ${err.response?.data?.detail || err.message}`
+    error.value = `Stop failed: ${err.response?.data?.detail || err.message}`
   } finally {
     loading.value = false
   }
@@ -87,7 +96,7 @@ async function handleResume(podId) {
     await podsAPI.resumePod(podId)
     await refreshPods()
   } catch (err) {
-    error.value = `Failed to resume pod: ${err.response?.data?.detail || err.message}`
+    error.value = `Resume failed: ${err.response?.data?.detail || err.message}`
   } finally {
     loading.value = false
   }
@@ -100,7 +109,7 @@ async function handleDelete(podId) {
     await podsAPI.deletePod(podId)
     await refreshPods()
   } catch (err) {
-    error.value = `Failed to delete pod: ${err.response?.data?.detail || err.message}`
+    error.value = `Delete failed: ${err.response?.data?.detail || err.message}`
   } finally {
     loading.value = false
   }
@@ -117,6 +126,38 @@ async function refreshPods() {
   position: relative;
 }
 
+.toggle-form {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  background: rgba(74, 158, 255, 0.1);
+  border: 1px solid rgba(74, 158, 255, 0.2);
+  border-radius: 6px;
+  color: #4a9eff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+}
+
+.toggle-form:hover {
+  background: rgba(74, 158, 255, 0.15);
+  border-color: rgba(74, 158, 255, 0.3);
+}
+
+.expand-enter-active,
+.expand-leave-active {
+  transition: all 0.2s ease;
+}
+
+.expand-enter-from,
+.expand-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
 .pods-section {
   margin-bottom: 40px;
 }
@@ -125,51 +166,44 @@ async function refreshPods() {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
-  padding-bottom: 16px;
-  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .pods-section h2 {
-  color: #ffffff;
-  font-size: 24px;
+  color: #d0d0e0;
+  font-size: 0.95rem;
   margin: 0;
   font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .pod-count {
-  background: rgba(74, 158, 255, 0.2);
+  background: rgba(74, 158, 255, 0.15);
   color: #4a9eff;
-  padding: 4px 12px;
-  border-radius: 20px;
-  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
-  border: 1px solid rgba(74, 158, 255, 0.3);
 }
 
 .pods-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
 }
 
 .empty-state {
-  background: linear-gradient(135deg, #2a2a3e 0%, #1e1e2e 100%);
-  border: 1px dashed rgba(255, 255, 255, 0.2);
-  border-radius: 12px;
-  padding: 40px 30px;
+  color: #8080a0;
+  font-size: 0.9rem;
+  padding: 20px;
   text-align: center;
-  color: #b0b0c0;
 }
 
 .empty-state p {
-  margin: 0 0 8px 0;
-  font-size: 16px;
-}
-
-.empty-state .hint {
-  font-size: 13px;
-  color: #8080a0;
+  margin: 0;
 }
 
 .loading-overlay {
@@ -186,62 +220,49 @@ async function refreshPods() {
 }
 
 .spinner {
-  width: 50px;
-  height: 50px;
+  width: 40px;
+  height: 40px;
   border: 3px solid rgba(255, 255, 255, 0.2);
   border-top-color: #4a9eff;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
-  color: #4a9eff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 600;
 }
 
 @keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+  to { transform: rotate(360deg); }
 }
 
 .alert {
   position: fixed;
   bottom: 20px;
   right: 20px;
-  padding: 16px 20px;
-  border-radius: 8px;
+  padding: 12px 14px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  max-width: 400px;
+  gap: 10px;
+  max-width: 360px;
   z-index: 40;
   animation: slideIn 0.3s ease-out;
+  font-size: 0.8rem;
 }
 
 .alert-error {
-  background: rgba(244, 67, 54, 0.2);
+  background: rgba(255, 68, 68, 0.1);
   color: #ff6b6b;
-  border: 1px solid rgba(244, 67, 54, 0.3);
+  border: 1px solid rgba(255, 68, 68, 0.3);
 }
 
 @keyframes slideIn {
-  from {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
 }
 
 .close-btn {
   background: none;
   border: none;
   color: inherit;
-  font-size: 20px;
+  font-size: 16px;
   cursor: pointer;
   padding: 0;
   margin-left: auto;
