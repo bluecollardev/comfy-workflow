@@ -57,8 +57,8 @@ async def test_pool_manager_init(pool_manager, mock_api_key):
 @pytest.mark.asyncio
 async def test_create_pod_success(pool_manager, sample_pod_config):
     """Test successful pod creation"""
-    mock_response = AsyncMock()
-    mock_response.json = AsyncMock(return_value={
+    mock_response = MagicMock()
+    mock_response.json = MagicMock(return_value={
         "data": {
             "podFindAndDeployOnDemand": {
                 "id": "pod-123",
@@ -87,8 +87,8 @@ async def test_create_pod_success(pool_manager, sample_pod_config):
 @pytest.mark.asyncio
 async def test_create_pod_api_error(pool_manager, sample_pod_config):
     """Test pod creation with API error"""
-    mock_response = AsyncMock()
-    mock_response.json = AsyncMock(return_value={
+    mock_response = MagicMock()
+    mock_response.json = MagicMock(return_value={
         "errors": [{"message": "Insufficient GPU quota"}]
     })
 
@@ -101,8 +101,8 @@ async def test_create_pod_api_error(pool_manager, sample_pod_config):
 @pytest.mark.asyncio
 async def test_get_pod_status_running(pool_manager):
     """Test getting status of running pod"""
-    mock_response = AsyncMock()
-    mock_response.json = AsyncMock(return_value={
+    mock_response = MagicMock()
+    mock_response.json = MagicMock(return_value={
         "data": {
             "pod": {
                 "id": "pod-123",
@@ -136,8 +136,8 @@ async def test_get_pod_status_running(pool_manager):
 @pytest.mark.asyncio
 async def test_get_pod_status_error(pool_manager):
     """Test pod status query with error"""
-    mock_response = AsyncMock()
-    mock_response.json = AsyncMock(return_value={
+    mock_response = MagicMock()
+    mock_response.json = MagicMock(return_value={
         "errors": [{"message": "Pod not found"}]
     })
 
@@ -154,8 +154,8 @@ async def test_stop_pod_success(pool_manager, sample_agent):
     """Test stopping a pod"""
     pool_manager.agents[sample_agent.agent_id] = sample_agent
 
-    mock_response = AsyncMock()
-    mock_response.json = AsyncMock(return_value={
+    mock_response = MagicMock()
+    mock_response.json = MagicMock(return_value={
         "data": {"podStop": True}
     })
 
@@ -173,8 +173,8 @@ async def test_resume_pod_success(pool_manager, sample_agent):
     sample_agent.status = "stopped"
     pool_manager.agents[sample_agent.agent_id] = sample_agent
 
-    mock_response = AsyncMock()
-    mock_response.json = AsyncMock(return_value={
+    mock_response = MagicMock()
+    mock_response.json = MagicMock(return_value={
         "data": {"podResume": True}
     })
 
@@ -191,8 +191,8 @@ async def test_delete_pod_success(pool_manager, sample_agent):
     """Test deleting a pod"""
     pool_manager.agents[sample_agent.agent_id] = sample_agent
 
-    mock_response = AsyncMock()
-    mock_response.json = AsyncMock(return_value={
+    mock_response = MagicMock()
+    mock_response.json = MagicMock(return_value={
         "data": {"podTerminate": True}
     })
 
@@ -220,7 +220,7 @@ async def test_health_check_agent_healthy(pool_manager, sample_agent):
     """Test health check on healthy agent"""
     pool_manager.agents[sample_agent.agent_id] = sample_agent
 
-    mock_response = AsyncMock()
+    mock_response = MagicMock()
     mock_response.status_code = 200
 
     # Mock the async context manager for httpx.AsyncClient
