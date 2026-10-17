@@ -8,7 +8,7 @@
         class="section-header"
       >
         <h2>Create Pod</h2>
-        <span class="toggle-icon">{{ showCreateForm ? '⌄' : '›' }}</span>
+        <span class="toggle-icon" :class="{ rotated: showCreateForm }">›</span>
       </button>
 
       <transition name="expand">
@@ -174,11 +174,19 @@ async function refreshPods() {
 }
 
 .toggle-icon {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   margin-left: auto;
   font-size: 1.8rem;
   color: #e0e0f0;
-  transition: all 0.2s;
+  transition: transform 0.2s;
+  height: 1em;
+  width: 1em;
+}
+
+.toggle-icon.rotated {
+  transform: rotate(90deg);
 }
 
 .section-header h2 {
