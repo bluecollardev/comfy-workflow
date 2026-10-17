@@ -43,7 +43,7 @@ class RunPodManager:
     }
 
     IMAGE_OPTIONS = {
-        "prebuilt": "ashleykza/runpod-comfyui:latest",
+        "prebuilt": "ashleykza/comfyui:latest",
         "official": "comfy-org/comfyui:latest",
         "custom": None,  # User-supplied
     }

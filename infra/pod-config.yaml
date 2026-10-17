@@ -13,7 +13,7 @@ pods:
     storage:
       volume_gb: 50
       container_disk_gb: 20
-    image: ashleykza/runpod-comfyui:latest
+    image: ashleykza/comfyui:latest
     environment:
       COMFYUI_PORT: "8188"
       VRAM_OPTIMIZATION: "1"
@@ -37,7 +37,7 @@ pods:
     storage:
       volume_gb: 100
       container_disk_gb: 30
-    image: ashleykza/runpod-comfyui:latest
+    image: ashleykza/comfyui:latest
     environment:
       COMFYUI_PORT: "8188"
       VRAM_OPTIMIZATION: "0"
@@ -61,7 +61,7 @@ pods:
     storage:
       volume_gb: 150
       container_disk_gb: 50
-    image: ashleykza/runpod-comfyui:latest
+    image: ashleykza/comfyui:latest
     environment:
       COMFYUI_PORT: "8188"
       VRAM_OPTIMIZATION: "0"
