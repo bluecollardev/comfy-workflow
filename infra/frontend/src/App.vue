@@ -1,174 +1,127 @@
 <template>
-  <div class="min-h-screen">
-    <!-- Header -->
-    <header class="card-dark mx-4 my-5 px-8 py-8">
-      <div class="flex justify-between items-center gap-5">
-        <div>
-          <h1 class="text-4xl font-bold text-white mb-2">RunPod Pod Manager</h1>
-          <p class="text-dark-300 text-sm">Real-time management of your GPU pods</p>
-        </div>
-        <button
-          @click="refresh"
-          :disabled="loading"
-          class="btn-primary whitespace-nowrap flex items-center gap-2"
-        >
-          <i :class="['fas fa-sync', { 'animate-spin': loading }]"></i>
-          {{ loading ? 'Loading...' : 'Refresh' }}
-        </button>
+  <div class="min-vh-100 d-flex flex-column">
+    <BNavbar class="border-bottom px-3 py-2">
+      <BNavbarBrand tag="div" class="fw-semibold">
+        <i class="fa-solid fa-microchip text-primary me-2"></i>RunPod Manager
+      </BNavbarBrand>
+      <div class="d-flex gap-2">
+        <BButton variant="outline-light" size="sm" @click="ui.repositoriesOpen = true">
+          <i class="fa-solid fa-code-branch me-1"></i>Repositories
+        </BButton>
+        <BButton variant="outline-light" size="sm" @click="ui.accountsOpen = true">
+          <i class="fa-solid fa-user me-1"></i>Accounts
+        </BButton>
+        <BButton variant="primary" size="sm" :disabled="refreshing" @click="loadDashboard">
+          <i class="fa-solid fa-rotate me-1" :class="{ 'fa-spin': refreshing }"></i>
+          Refresh
+        </BButton>
       </div>
-    </header>
+    </BNavbar>
 
-    <!-- Main Content -->
-    <div class="container-lg mx-auto px-4 py-5">
-      <!-- Error Alert -->
-      <transition name="fade">
-        <div
-          v-if="error"
-          class="alert-error mb-4 flex items-center justify-between"
-        >
-          <div>
-            <strong>Error:</strong> {{ error }}
-          </div>
-          <button @click="error = null" class="text-lg opacity-70 hover:opacity-100">
-            ×
-          </button>
-        </div>
-      </transition>
+    <BContainer class="py-4 flex-grow-1" style="max-width: 1200px">
+      <BAlert
+        v-if="notice"
+        :model-value="true"
+        :variant="notice.variant"
+        dismissible
+        class="mb-4"
+        @update:model-value="notice = null"
+      >
+        {{ notice.text }}
+      </BAlert>
 
-      <!-- Loading State -->
-      <transition name="fade">
-        <div v-if="loading" class="text-center py-20">
-          <div class="spinner mb-4"></div>
-          <p class="text-dark-300">Loading pod data...</p>
-        </div>
-      </transition>
+      <BAlert
+        v-if="error"
+        :model-value="true"
+        variant="danger"
+        dismissible
+        class="mb-4"
+        @update:model-value="error = null"
+      >
+        {{ error }}
+      </BAlert>
 
-      <!-- Dashboard (when loaded) -->
-      <template v-if="!loading">
-        <Stats :stats="dashboard.stats" class="mb-8" />
-        <Dashboard :pods="dashboard.pods" @pods-updated="handlePodsUpdated" />
+      <div v-if="initialLoading" class="text-center text-body-secondary py-5">
+        <BSpinner class="mb-3" />
+        <div>Loading pods...</div>
+      </div>
+
+      <template v-else>
+        <Stats :stats="dashboard.stats" class="mb-4" />
+        <Dashboard :pods="dashboard.pods" @pods-updated="dashboard.pods = $event" />
       </template>
-    </div>
+    </BContainer>
+
+    <RepositoriesModal />
+    <GitAccountsModal />
   </div>
 </template>
 
 <script setup>
 /**
- * App.vue - Root Application Component
+ * App — root component.
  *
- * Main entry point for the RunPod Pod Manager dashboard.
+ * Owns the dashboard payload ({ stats, pods }) fetched from GET /api/dashboard.
+ * Loads it on mount, re-fetches every 30 s, and on the navbar Refresh button.
+ * Only the very first fetch replaces the page with a spinner; later refreshes
+ * just spin the button so the page doesn't flash.
  *
- * RESPONSIBILITIES:
- * - Fetch and manage dashboard data (stats + pods)
- * - Handle manual and auto-refresh (every 30s)
- * - Display loading states and error alerts
- * - Render header with title and refresh button
- * - Orchestrate child components (Stats, Dashboard)
+ * Navbar also opens the two global modals (Repositories, Accounts) through the
+ * shared `ui` store, and after an OAuth round-trip the API redirects back here with
+ * ?provider=&connected= (or &error=), which is shown as a notice.
  *
- * DATA FLOW:
- * 1. On mount: loadDashboard() fetches initial data
- * 2. Auto-refresh: setInterval calls loadDashboard every 30s
- * 3. Manual refresh: User clicks button → refresh()
- * 4. Pod updates: Dashboard emits 'pods-updated' → handlePodsUpdated()
- *
- * PROPS PASSED TO CHILDREN:
- * - Stats: receives stats object with pod counts
- * - Dashboard: receives pods array, emits updates
- *
- * STATE VARIABLES:
- * - dashboard: { stats: {...}, pods: [...] }
- * - loading: boolean - true while fetching data
- * - error: string | null - error message if API fails
+ * Children:
+ *   Stats      – read-only pod counts
+ *   Dashboard  – create form + pod list; emits `pods-updated` after any mutation
  */
-
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { podsAPI } from './api/pods'
+import { ui } from './stores/ui'
 import Dashboard from './components/Dashboard.vue'
 import Stats from './components/Stats.vue'
+import RepositoriesModal from './components/RepositoriesModal.vue'
+import GitAccountsModal from './components/GitAccountsModal.vue'
 
-// ===== STATE =====
+const REFRESH_MS = 30_000
 
-/**
- * Dashboard data structure
- * @type {Ref<{stats: Object, pods: Array}>}
- */
 const dashboard = ref({ stats: {}, pods: [] })
-
-/**
- * Loading indicator - true while fetching data from API
- * @type {Ref<boolean>}
- */
-const loading = ref(false)
-
-/**
- * Error message from last failed API call
- * @type {Ref<string|null>}
- */
+const initialLoading = ref(true)
+const refreshing = ref(false)
 const error = ref(null)
+const notice = ref(null)
 
-// ===== METHODS =====
-
-/**
- * Fetch dashboard data from API
- * - Sets loading state before fetch
- * - Clears previous errors
- * - Updates dashboard ref on success
- * - Captures error message on failure
- *
- * @async
- * @throws {Error} API error details in error.response.data
- */
 async function loadDashboard() {
+  refreshing.value = true
   try {
-    loading.value = true
+    dashboard.value = await podsAPI.getDashboard()
     error.value = null
-    const data = await podsAPI.getDashboard()
-    dashboard.value = data
   } catch (e) {
     error.value = e.response?.data?.detail || e.message || 'Failed to load dashboard'
-    console.error('Dashboard load error:', e)
   } finally {
-    loading.value = false
+    refreshing.value = false
+    initialLoading.value = false
   }
 }
 
-/**
- * Handle pods list update from Dashboard component
- * Called when a pod is created, stopped, resumed, or deleted
- *
- * @param {Array} pods - Updated pods array from Dashboard
- */
-function handlePodsUpdated(pods) {
-  dashboard.value.pods = pods
+function readOAuthResult() {
+  const params = new URLSearchParams(window.location.search)
+  const provider = params.get('provider')
+  if (!provider) return
+  const label = provider === 'github' ? 'GitHub' : provider === 'gitlab' ? 'GitLab' : provider
+  if (params.get('connected')) {
+    notice.value = { variant: 'success', text: `Connected ${label} account ${params.get('connected')}.` }
+    ui.accountsOpen = true
+  } else if (params.get('error')) {
+    notice.value = { variant: 'danger', text: `${label} connection failed: ${params.get('error')}` }
+  }
+  window.history.replaceState(null, '', window.location.pathname)
 }
 
-/**
- * Trigger manual refresh
- * User clicks the refresh button → this runs
- */
-function refresh() {
-  loadDashboard()
-}
-
-// ===== LIFECYCLE =====
-
-/**
- * On component mount:
- * 1. Load initial dashboard data
- * 2. Set up auto-refresh every 30 seconds
- */
+let timer
 onMounted(() => {
-  // Load data immediately
+  readOAuthResult()
   loadDashboard()
-
-  // Auto-refresh every 30 seconds
-  const refreshInterval = setInterval(loadDashboard, 30000)
-
-  // Cleanup interval on component unmount (optional, but good practice)
-  // This happens when app unmounts (rare for root component)
+  timer = setInterval(loadDashboard, REFRESH_MS)
 })
+onUnmounted(() => clearInterval(timer))
 </script>
-
-<style scoped>
-/* Component-specific styles handled by index.css and Tailwind */
-</style>

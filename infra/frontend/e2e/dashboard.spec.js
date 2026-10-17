@@ -1,0 +1,80 @@
+import { test, expect, podCard } from './fixtures'
+
+test.describe('dashboard', () => {
+  test('shows stats and a card per pod', async ({ page }) => {
+    await page.goto('/')
+
+    await expect(page.locator('.stat-card', { hasText: 'Total pods' })).toContainText('3')
+    await expect(page.locator('.stat-card', { hasText: 'Running' })).toContainText('1')
+    await expect(page.locator('.stat-card', { hasText: 'Stopped' })).toContainText('1')
+    await expect(page.locator('.card-header', { hasText: 'Pods' }).locator('.badge')).toHaveText('3')
+
+    const dev = podCard(page, 'ComfyUI-Dev')
+    await expect(dev.locator('.badge')).toHaveText('running')
+    await expect(dev).toContainText('RTX 4090')
+    await expect(dev).toContainText('24 GB')
+    await expect(dev).toContainText('2h 2m')
+    await expect(dev.getByRole('link', { name: /Open/ })).toHaveAttribute('href', 'https://pod-a.proxy.runpod.io:8188')
+    await expect(dev).toContainText('ssh root@pod-a.proxy.runpod.io')
+    await expect(dev.getByRole('button', { name: 'Stop' })).toBeVisible()
+
+    await expect(podCard(page, 'ComfyUI-Batch').getByRole('button', { name: 'Resume' })).toBeVisible()
+    await expect(podCard(page, 'ComfyUI-Test').locator('.badge')).toHaveText('starting')
+  })
+
+  test('stop, resume and delete hit the API and refresh the list', async ({ page, api }) => {
+    page.on('dialog', (d) => d.accept())
+    await page.goto('/')
+    const dev = podCard(page, 'ComfyUI-Dev')
+
+    await dev.getByRole('button', { name: 'Stop' }).click()
+    await expect(dev.getByRole('button', { name: 'Resume' })).toBeVisible()
+    expect(api.calls).toContainEqual(expect.objectContaining({ method: 'POST', path: '/pods/pod-aaaaaaaa/stop' }))
+
+    await dev.getByRole('button', { name: 'Resume' }).click()
+    await expect(dev.getByRole('button', { name: 'Stop' })).toBeVisible()
+    expect(api.calls).toContainEqual(expect.objectContaining({ method: 'POST', path: '/pods/pod-aaaaaaaa/resume' }))
+
+    await podCard(page, 'ComfyUI-Test').getByRole('button', { name: 'Delete' }).click()
+    await expect(page.locator('.card.h-100')).toHaveCount(2)
+    expect(api.calls).toContainEqual(expect.objectContaining({ method: 'DELETE', path: '/pods/pod-cccccccc' }))
+  })
+
+  test('delete does nothing when the confirm is dismissed', async ({ page, api }) => {
+    page.on('dialog', (d) => d.dismiss())
+    await page.goto('/')
+    await podCard(page, 'ComfyUI-Test').getByRole('button', { name: 'Delete' }).click()
+    await expect(page.locator('.card.h-100')).toHaveCount(3)
+    expect(api.calls.filter((c) => c.method === 'DELETE')).toHaveLength(0)
+  })
+
+  test('shows the API error when an action fails', async ({ page, api }) => {
+    api.state.failures['POST /pods/pod-aaaaaaaa/stop'] = 'RunPod says no'
+    await page.goto('/')
+    await podCard(page, 'ComfyUI-Dev').getByRole('button', { name: 'Stop' }).click()
+    await expect(page.getByRole('alert')).toContainText('Stop failed: RunPod says no')
+  })
+
+  test('empty account shows zeros and the empty state', async ({ page, api }) => {
+    api.state.pods = []
+    await page.goto('/')
+    await expect(page.locator('.stat-card', { hasText: 'Total pods' })).toContainText('0')
+    await expect(page.getByText('No pods')).toBeVisible()
+  })
+
+  test('dashboard load failure is reported', async ({ page, api }) => {
+    api.state.failures['GET /dashboard'] = 'RUNPOD_API_KEY not set'
+    await page.goto('/')
+    await expect(page.getByRole('alert')).toContainText('RUNPOD_API_KEY not set')
+  })
+
+  test('refresh button re-fetches the dashboard', async ({ page, api }) => {
+    await page.goto('/')
+    await expect(page.locator('.card.h-100')).toHaveCount(3)
+    const before = api.calls.filter((c) => c.path === '/dashboard').length
+    api.state.pods.pop()
+    await page.getByRole('button', { name: 'Refresh' }).click()
+    await expect(page.locator('.card.h-100')).toHaveCount(2)
+    expect(api.calls.filter((c) => c.path === '/dashboard').length).toBe(before + 1)
+  })
+})

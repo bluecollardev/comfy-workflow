@@ -1,196 +1,99 @@
 <template>
-  <div class="card-dark p-6">
-    <!-- Pod Header: Name + Status Badge -->
-    <div class="flex justify-between items-start gap-3 mb-4">
-      <h3 class="text-lg font-bold text-white flex-1">{{ pod.name }}</h3>
-      <span :class="['px-2 py-1 rounded text-xs font-semibold whitespace-nowrap', statusClass(pod.status)]">
+  <BCard class="h-100" body-class="d-flex flex-column">
+    <div class="d-flex align-items-start gap-2 mb-3">
+      <span class="fw-semibold fs-5 text-truncate" :title="pod.name">{{ pod.name }}</span>
+      <BBadge :variant="STATUS_VARIANT[pod.status] ?? 'secondary'" class="ms-auto text-uppercase">
         {{ pod.status }}
-      </span>
+      </BBadge>
     </div>
 
-    <!-- Pod Details -->
-    <div class="space-y-2 text-sm mb-6">
-      <!-- ID -->
-      <div class="flex items-center gap-2">
-        <span class="font-semibold text-dark-200 min-w-fit">ID:</span>
-        <code class="bg-black/20 px-2 py-1 rounded text-info text-xs font-mono">
-          {{ pod.id.substring(0, 8) }}...
-        </code>
-      </div>
+    <dl class="row g-1 small mb-3 flex-grow-1">
+      <dt class="col-4 text-body-secondary fw-normal">ID</dt>
+      <dd class="col-8 mb-0"><code>{{ pod.id }}</code></dd>
 
-      <!-- GPU -->
-      <div class="flex items-center gap-2">
-        <span class="font-semibold text-dark-200 min-w-fit">GPU:</span>
-        <span class="text-dark-100">{{ pod.gpu }}</span>
-      </div>
+      <dt class="col-4 text-body-secondary fw-normal">GPU</dt>
+      <dd class="col-8 mb-0">{{ pod.gpu }}<span v-if="pod.vram" class="text-body-secondary"> · {{ pod.vram }} GB</span></dd>
 
-      <!-- VRAM -->
-      <div class="flex items-center gap-2">
-        <span class="font-semibold text-dark-200 min-w-fit">VRAM:</span>
-        <span class="text-dark-100">{{ pod.vram }}GB</span>
-      </div>
+      <template v-if="pod.uptime_seconds">
+        <dt class="col-4 text-body-secondary fw-normal">Uptime</dt>
+        <dd class="col-8 mb-0">{{ formatUptime(pod.uptime_seconds) }}</dd>
+      </template>
 
-      <!-- Uptime (if available) -->
-      <div v-if="pod.uptime_seconds" class="flex items-center gap-2">
-        <span class="font-semibold text-dark-200 min-w-fit">Uptime:</span>
-        <span class="text-dark-100">{{ formatUptime(pod.uptime_seconds) }}</span>
-      </div>
+      <template v-if="pod.web_ui_url">
+        <dt class="col-4 text-body-secondary fw-normal">ComfyUI</dt>
+        <dd class="col-8 mb-0">
+          <a :href="pod.web_ui_url" target="_blank" rel="noopener">
+            Open <i class="fa-solid fa-arrow-up-right-from-square fa-xs"></i>
+          </a>
+        </dd>
+      </template>
 
-      <!-- Web UI Link (if available) -->
-      <div v-if="pod.web_ui_url" class="flex items-center gap-2">
-        <span class="font-semibold text-dark-200 min-w-fit">UI:</span>
-        <a :href="pod.web_ui_url" target="_blank" class="text-primary hover:text-info underline">
-          🌐 ComfyUI
-        </a>
-      </div>
+      <template v-if="pod.ssh_command">
+        <dt class="col-4 text-body-secondary fw-normal">SSH</dt>
+        <dd class="col-8 mb-0"><code class="text-break">{{ pod.ssh_command }}</code></dd>
+      </template>
+    </dl>
 
-      <!-- SSH Command -->
-      <div class="flex items-start gap-2 pt-2">
-        <span class="font-semibold text-dark-200 min-w-fit">SSH:</span>
-        <code class="bg-black/20 px-2 py-1 rounded text-info text-xs font-mono break-all">
-          {{ pod.ssh_command }}
-        </code>
-      </div>
-    </div>
-
-    <!-- Action Buttons -->
-    <div class="flex gap-2 pt-4 border-t border-light">
-      <!-- Stop/Resume Button -->
-      <button
+    <div class="d-flex gap-2 pt-3 border-top">
+      <BButton
         v-if="pod.status === 'running'"
+        variant="outline-light"
+        size="sm"
+        class="flex-fill"
+        :disabled="busy"
         @click="$emit('stop')"
-        class="btn-secondary flex-1 text-sm flex items-center justify-center gap-2"
       >
-        <i class="fas fa-pause"></i>
-        Stop
-      </button>
-      <button
+        <i class="fa-solid fa-stop me-1"></i>Stop
+      </BButton>
+      <BButton
         v-else
+        variant="primary"
+        size="sm"
+        class="flex-fill"
+        :disabled="busy"
         @click="$emit('resume')"
-        class="btn-primary flex-1 text-sm flex items-center justify-center gap-2"
       >
-        <i class="fas fa-play"></i>
-        Resume
-      </button>
-
-      <!-- Delete Button -->
-      <button
-        @click="deleteConfirm"
-        class="btn-danger flex-1 text-sm flex items-center justify-center gap-2"
-      >
-        <i class="fas fa-trash"></i>
-        Delete
-      </button>
+        <i class="fa-solid fa-play me-1"></i>Resume
+      </BButton>
+      <BButton variant="outline-danger" size="sm" class="flex-fill" :disabled="busy" @click="confirmDelete">
+        <i class="fa-solid fa-trash me-1"></i>Delete
+      </BButton>
     </div>
-  </div>
+  </BCard>
 </template>
 
 <script setup>
 /**
- * PodCard.vue - Individual pod display card
- *
- * Displays detailed information about a single pod and provides
- * quick-action buttons for common operations.
+ * PodCard — one pod: name, status badge, details, and Stop/Resume + Delete.
  *
  * Props:
- * - pod: Pod object with details
- *
- * Events:
- * - stop: Emitted when user clicks stop button
- * - resume: Emitted when user clicks resume button
- * - delete: Emitted when user confirms deletion
- *
- * Features:
- * - Responsive card layout
- * - Status badge with color coding
- * - Pod details: ID, GPU, VRAM, uptime, web UI link, SSH command
- * - Conditional action buttons based on pod status
- * - Deletion confirmation dialog
- *
- * @component
+ *   pod   { id, name, status, gpu, vram?, uptime_seconds?, web_ui_url?, ssh_command? }
+ *   busy  boolean — disables the buttons while the parent runs an action on this pod
+ * Emits:
+ *   stop, resume, delete  — delete only fires after the user confirms
  */
-
 const props = defineProps({
-  /**
-   * Pod object with all details
-   * @type {Object}
-   * @property {string} id - Pod ID
-   * @property {string} name - Pod name
-   * @property {string} status - Pod status (running, stopped, starting, etc.)
-   * @property {string} gpu - GPU type (e.g., "RTX4090")
-   * @property {number} vram - VRAM in GB
-   * @property {number} uptime_seconds - Uptime in seconds (optional)
-   * @property {string} web_ui_url - URL to web UI (optional)
-   * @property {string} ssh_command - SSH command to connect (optional)
-   */
-  pod: {
-    type: Object,
-    required: true,
-  },
+  pod: { type: Object, required: true },
+  busy: { type: Boolean, default: false },
 })
+const emit = defineEmits(['stop', 'resume', 'delete'])
 
-const emit = defineEmits({
-  /**
-   * Emitted when user clicks stop button
-   */
-  'stop': null,
+const STATUS_VARIANT = {
+  running: 'success',
+  stopped: 'danger',
+  starting: 'warning',
+  stopping: 'warning',
+}
 
-  /**
-   * Emitted when user clicks resume button
-   */
-  'resume': null,
-
-  /**
-   * Emitted when user confirms deletion
-   */
-  'delete': null,
-})
-
-// ===== METHODS =====
-
-/**
- * Format seconds into human-readable uptime string
- * e.g., 7263 seconds → "2h 1m"
- *
- * @param {number} seconds - Total uptime seconds
- * @returns {string} Formatted uptime string
- */
 function formatUptime(seconds) {
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  return `${hours}h ${minutes}m`
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  return h ? `${h}h ${m}m` : `${m}m`
 }
 
-/**
- * Get CSS classes for status badge
- * - running: green
- * - stopped: red
- * - starting: yellow
- * - default: gray
- *
- * @param {string} status - Pod status
- * @returns {string} CSS class string
- */
-function statusClass(status) {
-  const classes = {
-    'running': 'bg-success/20 text-success border border-success/30',
-    'stopped': 'bg-danger/20 text-danger border border-danger/30',
-    'starting': 'bg-warning/20 text-warning border border-warning/30',
-  }
-  return classes[status] || 'bg-dark-700/50 text-dark-300 border border-dark-400'
-}
-
-/**
- * Show confirmation dialog before deletion
- * Only emits delete event if user confirms
- */
-function deleteConfirm() {
-  if (confirm(`⚠️ Permanently delete pod "${props.pod.name}"? This cannot be undone.`)) {
+function confirmDelete() {
+  if (window.confirm(`Permanently delete pod "${props.pod.name}"? This cannot be undone.`)) {
     emit('delete')
   }
 }
 </script>
-
-<style scoped>
-/* All styling handled by index.css and Tailwind */
-</style>
