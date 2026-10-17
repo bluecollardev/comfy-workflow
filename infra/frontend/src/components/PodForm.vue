@@ -14,7 +14,7 @@
             type="text"
             placeholder="e.g., ComfyUI-Dev"
             required
-            class="w-full px-3 py-2 bg-black/20 text-white border border-dark-400 rounded text-sm focus:outline-none focus:border-primary"
+            class="w-full"
           />
         </div>
 
@@ -24,7 +24,7 @@
           <select
             id="gpu-type"
             v-model="form.gpu"
-            class="w-full px-3 py-2 bg-black/20 text-white border border-dark-400 rounded text-sm focus:outline-none focus:border-primary"
+            class="w-full"
           >
             <option value="rtx4090">RTX 4090</option>
             <option value="a100">A100</option>
@@ -39,7 +39,7 @@
           <select
             id="gpu-count"
             v-model.number="form.gpuCount"
-            class="w-full px-3 py-2 bg-black/20 text-white border border-dark-400 rounded text-sm focus:outline-none focus:border-primary"
+            class="w-full"
           >
             <option v-for="i in 8" :key="i" :value="i">{{ i }}</option>
           </select>
@@ -51,7 +51,7 @@
           <select
             id="instance-type"
             v-model="form.instanceType"
-            class="w-full px-3 py-2 bg-black/20 text-white border border-dark-400 rounded text-sm focus:outline-none focus:border-primary"
+            class="w-full"
           >
             <option value="on-demand">On-Demand</option>
             <option value="spot">Spot</option>
@@ -67,7 +67,7 @@
             type="number"
             min="10"
             max="500"
-            class="w-full px-3 py-2 bg-black/20 text-white border border-dark-400 rounded text-sm focus:outline-none focus:border-primary"
+            class="w-full"
           />
         </div>
 
@@ -80,7 +80,7 @@
             type="number"
             min="5"
             max="100"
-            class="w-full px-3 py-2 bg-black/20 text-white border border-dark-400 rounded text-sm focus:outline-none focus:border-primary"
+            class="w-full"
           />
         </div>
 
@@ -90,7 +90,7 @@
           <select
             id="image"
             v-model="form.image"
-            class="w-full px-3 py-2 bg-black/20 text-white border border-dark-400 rounded text-sm focus:outline-none focus:border-primary"
+            class="w-full"
           >
             <option value="prebuilt">ComfyUI (ashleykza)</option>
             <option value="custom">Custom Docker URI</option>
@@ -105,7 +105,7 @@
             v-model="form.customImageUri"
             type="text"
             placeholder="docker.io/repo/image:tag"
-            class="w-full px-3 py-2 bg-black/20 text-white border border-dark-400 rounded text-sm focus:outline-none focus:border-primary"
+            class="w-full"
           />
         </div>
       </div>
