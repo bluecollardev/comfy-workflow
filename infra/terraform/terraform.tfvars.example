@@ -1,0 +1,55 @@
+# ComfyUI MOE Agent Pool Configuration
+# Copy to terraform.tfvars and fill in with your values
+# NEVER commit terraform.tfvars (it may contain secrets)
+
+# RunPod API Key (set via env var: RUNPOD_API_KEY)
+# runpod_api_key = "rpa_..."
+
+# Environment
+environment = "dev"
+
+# FastAPI control plane URL (where agents register)
+control_plane_url = "http://localhost:8000"
+
+# Optional: API key for control plane auth
+# control_plane_api_key = "your-api-key"
+
+# MOE Agent Pool: Define specialized agents
+agents = [
+  {
+    name         = "image-gen"          # Agent type
+    gpu_type     = "rtx4090"            # GPU type
+    count        = 1                    # How many pods for this agent
+    storage_gb   = 50                   # Storage per pod
+    env_vars = {
+      COMFY_MODEL = "flux"
+      BATCH_SIZE  = "1"
+    }
+    max_idle_sec = 3600  # Auto-stop after 1 hour idle
+  },
+  {
+    name         = "video-gen"
+    gpu_type     = "a100"
+    count        = 1
+    storage_gb   = 100
+    env_vars = {
+      COMFY_MODEL = "kling"
+      BATCH_SIZE  = "1"
+    }
+    max_idle_sec = 7200  # Auto-stop after 2 hours idle
+  },
+]
+
+# Cost control
+cost_limits = {
+  max_concurrent_pods = 5     # Never spin up more than 5 pods
+  max_monthly_spend   = 2000  # Stop if approaching this
+}
+
+# Common tags
+tags = {
+  Project     = "comfy_workflow"
+  Owner       = "blue-collar-dev"
+  ManagedBy   = "terraform"
+  CreatedAt   = "2026-10-17"
+}
