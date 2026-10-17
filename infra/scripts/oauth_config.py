@@ -4,7 +4,7 @@ OAuth2 configuration for RunPod integration
 
 from typing import Optional
 import os
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings
 
 
 class OAuthSettings(BaseSettings):
