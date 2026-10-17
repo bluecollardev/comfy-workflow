@@ -78,9 +78,16 @@ class CreatePodRequest(BaseModel):
     """Request to create a new pod"""
     name: str = Field(..., description="Pod name")
     gpu: str = Field(default="rtx4090", description="GPU type")
+    gpu_count: int = Field(default=1, description="Number of GPUs")
+    instance_type: str = Field(default="on-demand", description="on-demand or spot")
     volume_gb: int = Field(default=50, description="Volume size in GB")
     disk_gb: int = Field(default=20, description="Container disk size in GB")
     image: str = Field(default="prebuilt", description="Docker image")
+    env_vars: Optional[dict] = Field(default_factory=dict, description="Environment variables")
+    pip_requirements: Optional[str] = Field(default="", description="Custom pip packages")
+    custom_nodes: Optional[list] = Field(default_factory=list, description="Custom node repos")
+    start_ssh: bool = Field(default=True, description="Start SSH server")
+    start_jupyter: bool = Field(default=False, description="Start Jupyter")
 
 
 # ============================================================================
@@ -95,7 +102,7 @@ async def health_check():
 
 @app.post("/api/pods", response_model=PodStatus, tags=["Pods"])
 async def create_pod(request: CreatePodRequest):
-    """Create a new pod"""
+    """Create a new pod with advanced configuration"""
     try:
         api_key = os.getenv('RUNPOD_API_KEY')
         if not api_key:
@@ -103,17 +110,32 @@ async def create_pod(request: CreatePodRequest):
 
         runpod.api_key = api_key
 
+        # Build environment variables
+        env_vars = request.env_vars or {}
+
+        # Add custom pip requirements if provided
+        if request.pip_requirements:
+            env_vars['CUSTOM_PIP_REQUIREMENTS'] = request.pip_requirements
+
+        # Add custom nodes if provided
+        if request.custom_nodes:
+            env_vars['CUSTOM_NODES'] = ','.join([
+                f"{n.get('name')}:{n.get('url')}:{n.get('branch', 'main')}"
+                for n in request.custom_nodes
+            ])
+
         pod_input = {
-            "cloudType": "on-demand",
-            "gpuCount": 1,
+            "cloudType": request.instance_type,
+            "gpuCount": request.gpu_count,
             "volumeInGb": request.volume_gb,
             "containerDiskInGb": request.disk_gb,
             "minVolumeInGb": request.volume_gb,
             "gpuTypeId": request.gpu,
             "name": request.name,
             "imageName": request.image if request.image != "prebuilt" else "ashleykza/runpod-comfyui:latest",
-            "startJupyter": False,
-            "startSsh": True,
+            "startJupyter": request.start_jupyter,
+            "startSsh": request.start_ssh,
+            "env": env_vars,
         }
 
         pod = runpod.create_pod(pod_input)
@@ -128,8 +150,8 @@ async def create_pod(request: CreatePodRequest):
             id=pod_id,
             name=request.name,
             status="starting",
-            gpu=request.gpu,
-            vram=24,
+            gpu=f"{request.gpu} x{request.gpu_count}",
+            vram=24 * request.gpu_count,
             uptime_seconds=0,
             web_ui_url=f"http://{pod_id}.proxy.runpod.io:8188",
             ssh_command=f"ssh root@{pod_id}.proxy.runpod.io"

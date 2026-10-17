@@ -20,9 +20,16 @@ export const podsAPI = {
     const { data } = await axios.post(`${API_BASE}/pods`, {
       name: podData.name,
       gpu: podData.gpu,
-      volume_gb: podData.volumeGb,
-      disk_gb: podData.diskGb,
-      image: podData.image,
+      gpu_count: podData.gpuCount || 1,
+      instance_type: podData.instanceType || 'on-demand',
+      volume_gb: podData.volumeGb || 50,
+      disk_gb: podData.diskGb || 20,
+      image: podData.image || 'prebuilt',
+      env_vars: podData.envVars || {},
+      pip_requirements: podData.pipRequirements || '',
+      custom_nodes: podData.customNodes || [],
+      start_ssh: podData.startSsh !== false,
+      start_jupyter: podData.startJupyter === true,
     });
     return data;
   },
