@@ -8,11 +8,13 @@ import json
 import logging
 import asyncio
 from typing import Any
-from contextlib import asynccontextmanager
 
-from mcp.server import Server, stdio_server
+from mcp.server import Server
+from mcp.server.stdio import stdio_server
+from mcp.server import ServerRequestContext
 from mcp.types import (
-    Tool, TextContent, ToolResult, CallToolRequest, CallToolResult,
+    Tool, TextContent, CallToolResult, CallToolRequestParams,
+    ListToolsResult, PaginatedRequestParams,
 )
 
 from pool_manager import PoolManager, PodConfig
@@ -25,13 +27,11 @@ logging.basicConfig(level=logging.INFO)
 RUNPOD_API_KEY = os.getenv("RUNPOD_API_KEY", "")
 pool_manager = PoolManager(RUNPOD_API_KEY)
 
-server = Server("comfy-moe-server")
-
-
-@server.list_tools()
-async def list_tools() -> list[Tool]:
+async def list_tools(
+    ctx: ServerRequestContext, params: PaginatedRequestParams | None
+) -> ListToolsResult:
     """List available tools for Claude"""
-    return [
+    return ListToolsResult(tools=[
         Tool(
             name="list_agents",
             description="List all agents in the MOE pool with their status",
@@ -182,17 +182,20 @@ async def list_tools() -> list[Tool]:
                 "required": ["agent_id", "job_id"],
             },
         ),
-    ]
+    ])
 
 
-@server.call_tool()
-async def call_tool(name: str, arguments: dict) -> ToolResult:
+async def call_tool(
+    ctx: ServerRequestContext, params: CallToolRequestParams
+) -> CallToolResult:
     """Execute tools called by Claude"""
+    name = params.name
+    arguments = params.arguments or {}
 
     try:
         if name == "list_agents":
             agents = list(pool_manager.agents.values())
-            return ToolResult(
+            return CallToolResult(
                 content=[TextContent(
                     type="text",
                     text=json.dumps([a.dict() for a in agents], indent=2, default=str)
@@ -201,7 +204,7 @@ async def call_tool(name: str, arguments: dict) -> ToolResult:
 
         elif name == "get_pool_status":
             status = await pool_manager.get_pool_status()
-            return ToolResult(
+            return CallToolResult(
                 content=[TextContent(
                     type="text",
                     text=json.dumps(status.dict(default=str), indent=2)
@@ -216,7 +219,7 @@ async def call_tool(name: str, arguments: dict) -> ToolResult:
             )
             pod_name = f"comfy-{config.agent_name}-{len(pool_manager.agents)}"
             agent = await pool_manager.create_pod(config, pod_name)
-            return ToolResult(
+            return CallToolResult(
                 content=[TextContent(
                     type="text",
                     text=f"✓ Agent created: {agent.agent_id}\n\n" +
@@ -229,11 +232,11 @@ async def call_tool(name: str, arguments: dict) -> ToolResult:
             agent_id = arguments["agent_id"]
             agent = pool_manager.agents.get(agent_id)
             if not agent:
-                return ToolResult(
+                return CallToolResult(
                     content=[TextContent(type="text", text=f"Agent not found: {agent_id}")]
                 )
             success = await pool_manager.stop_pod(agent.pod_id)
-            return ToolResult(
+            return CallToolResult(
                 content=[TextContent(
                     type="text",
                     text=f"✓ Agent stopped: {agent_id}" if success else f"✗ Failed to stop agent"
@@ -244,11 +247,11 @@ async def call_tool(name: str, arguments: dict) -> ToolResult:
             agent_id = arguments["agent_id"]
             agent = pool_manager.agents.get(agent_id)
             if not agent:
-                return ToolResult(
+                return CallToolResult(
                     content=[TextContent(type="text", text=f"Agent not found: {agent_id}")]
                 )
             success = await pool_manager.resume_pod(agent.pod_id)
-            return ToolResult(
+            return CallToolResult(
                 content=[TextContent(
                     type="text",
                     text=f"✓ Agent resumed: {agent_id}" if success else f"✗ Failed to resume agent"
@@ -259,11 +262,11 @@ async def call_tool(name: str, arguments: dict) -> ToolResult:
             agent_id = arguments["agent_id"]
             agent = pool_manager.agents.get(agent_id)
             if not agent:
-                return ToolResult(
+                return CallToolResult(
                     content=[TextContent(type="text", text=f"Agent not found: {agent_id}")]
                 )
             success = await pool_manager.delete_pod(agent.pod_id)
-            return ToolResult(
+            return CallToolResult(
                 content=[TextContent(
                     type="text",
                     text=f"✓ Agent deleted: {agent_id}" if success else f"✗ Failed to delete agent"
@@ -274,13 +277,13 @@ async def call_tool(name: str, arguments: dict) -> ToolResult:
             agent_id = arguments["agent_id"]
             agent = pool_manager.agents.get(agent_id)
             if not agent:
-                return ToolResult(
+                return CallToolResult(
                     content=[TextContent(type="text", text=f"Agent not found: {agent_id}")]
                 )
             healthy = await pool_manager.health_check_agent(agent)
             status = "✓ Healthy" if healthy else "✗ Unhealthy"
             health_info = json.dumps(agent.health, indent=2, default=str)
-            return ToolResult(
+            return CallToolResult(
                 content=[TextContent(
                     type="text",
                     text=f"{status}\n\n{health_info}"
@@ -291,13 +294,13 @@ async def call_tool(name: str, arguments: dict) -> ToolResult:
             agent_id = arguments["agent_id"]
             agent = pool_manager.agents.get(agent_id)
             if not agent:
-                return ToolResult(
+                return CallToolResult(
                     content=[TextContent(type="text", text=f"Agent not found: {agent_id}")]
                 )
             # Get live status
             pod_status = await pool_manager.get_pod_status(agent.pod_id)
             info = {**agent.dict(default=str), **pod_status}
-            return ToolResult(
+            return CallToolResult(
                 content=[TextContent(type="text", text=json.dumps(info, indent=2))]
             )
 
@@ -305,12 +308,12 @@ async def call_tool(name: str, arguments: dict) -> ToolResult:
             agent_id = arguments["agent_id"]
             agent = pool_manager.agents.get(agent_id)
             if not agent:
-                return ToolResult(
+                return CallToolResult(
                     content=[TextContent(type="text", text=f"Agent not found: {agent_id}")]
                 )
 
             # TODO: Implement job submission to agent API
-            return ToolResult(
+            return CallToolResult(
                 content=[TextContent(
                     type="text",
                     text=f"Job submission not yet implemented\n\n" +
@@ -321,7 +324,7 @@ async def call_tool(name: str, arguments: dict) -> ToolResult:
 
         elif name == "get_job_status":
             # TODO: Implement job status checking
-            return ToolResult(
+            return CallToolResult(
                 content=[TextContent(
                     type="text",
                     text="Job status checking not yet implemented"
@@ -329,13 +332,13 @@ async def call_tool(name: str, arguments: dict) -> ToolResult:
             )
 
         else:
-            return ToolResult(
+            return CallToolResult(
                 content=[TextContent(type="text", text=f"Unknown tool: {name}")]
             )
 
     except Exception as e:
         logger.exception(f"Tool error: {name}")
-        return ToolResult(
+        return CallToolResult(
             content=[TextContent(
                 type="text",
                 text=f"Error executing {name}: {str(e)}"
@@ -343,12 +346,22 @@ async def call_tool(name: str, arguments: dict) -> ToolResult:
         )
 
 
-@asynccontextmanager
-async def mcp_server():
-    """Run MCP server"""
-    async with stdio_server(server) as streams:
-        yield
+server = Server(
+    "comfy-moe-server",
+    on_list_tools=list_tools,
+    on_call_tool=call_tool,
+)
+
+
+async def main():
+    """Run MCP server over stdio"""
+    async with stdio_server() as (read_stream, write_stream):
+        await server.run(
+            read_stream,
+            write_stream,
+            server.create_initialization_options(),
+        )
 
 
 if __name__ == "__main__":
-    asyncio.run(mcp_server())
+    asyncio.run(main())
