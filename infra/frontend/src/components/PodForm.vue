@@ -54,8 +54,20 @@
         <label for="image">Image</label>
         <select id="image" v-model="form.image" class="form-input">
           <option value="prebuilt">ComfyUI (Prebuilt)</option>
-          <option value="custom">Custom</option>
+          <option value="custom">Custom Docker Image</option>
         </select>
+      </div>
+
+      <div v-if="form.image === 'custom'" class="form-group">
+        <label for="image-uri">Docker Image URI</label>
+        <input
+          id="image-uri"
+          v-model="form.customImageUri"
+          type="text"
+          placeholder="e.g., docker.io/myrepo/comfyui:latest"
+          class="form-input"
+        />
+        <p class="hint-text">Enter full Docker image URI (registry/namespace/image:tag)</p>
       </div>
 
       <div class="form-actions">
@@ -88,6 +100,7 @@ export default {
         volumeGb: 50,
         diskGb: 20,
         image: 'prebuilt',
+        customImageUri: '',
       },
       loading: false,
       error: null,
@@ -100,11 +113,23 @@ export default {
         return;
       }
 
+      if (this.form.image === 'custom' && !this.form.customImageUri.trim()) {
+        this.error = 'Docker image URI is required for custom images';
+        return;
+      }
+
       this.loading = true;
       this.error = null;
 
       try {
-        const pod = await podsAPI.createPod(this.form);
+        const podData = {
+          name: this.form.name,
+          gpu: this.form.gpu,
+          volumeGb: this.form.volumeGb,
+          diskGb: this.form.diskGb,
+          image: this.form.image === 'custom' ? this.form.customImageUri : 'prebuilt',
+        };
+        const pod = await podsAPI.createPod(podData);
         this.$emit('pod-created', pod);
         this.reset();
       } catch (err) {
@@ -120,6 +145,7 @@ export default {
         volumeGb: 50,
         diskGb: 20,
         image: 'prebuilt',
+        customImageUri: '',
       };
       this.error = null;
     },
@@ -257,5 +283,13 @@ select.form-input {
   background: rgba(255, 68, 68, 0.1);
   color: #ff6b6b;
   border: 1px solid rgba(255, 68, 68, 0.3);
+}
+
+.hint-text {
+  font-size: 0.85rem;
+  color: #8080a0;
+  margin-top: 6px;
+  margin-bottom: 0;
+  font-style: italic;
 }
 </style>
