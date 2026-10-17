@@ -7,8 +7,8 @@
         @click="showCreateForm = !showCreateForm"
         class="section-header"
       >
-        <span class="toggle-icon">{{ showCreateForm ? '▼' : '▶' }}</span>
         <h2>Create Pod</h2>
+        <span class="toggle-icon">{{ showCreateForm ? '‣' : '›' }}</span>
       </button>
 
       <transition name="expand">
@@ -179,9 +179,10 @@ async function refreshPods() {
 
 .toggle-icon {
   display: inline-block;
-  width: 14px;
-  font-size: 0.8rem;
+  margin-left: auto;
+  font-size: 1rem;
   color: #4a9eff;
+  transition: all 0.2s;
 }
 
 .section-header h2 {
