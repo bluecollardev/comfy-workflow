@@ -97,6 +97,14 @@ develop → master (only for releases)
 
 ### Merge Strategy
 
+**RULE: Never merge to develop or master if tests are failing**
+
+Before merging any branch:
+```bash
+pytest infra/scripts/tests/ -m "not integration"
+# All tests must pass before merge
+```
+
 **For feature branches → develop:**
 ```bash
 git checkout develop
