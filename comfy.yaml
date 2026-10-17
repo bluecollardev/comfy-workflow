@@ -1,0 +1,16 @@
+schema: project/1
+
+defaults:
+  where: cloud
+
+vars:
+  # Add your project variables here
+  # Example: project_name: my_project
+
+# Asset management
+assets:
+  # Source files referenced in blueprints
+  # Reference as $asset.<relative/path>
+
+# Workflows and runs
+# Auto-managed by comfy run and comfy assets push

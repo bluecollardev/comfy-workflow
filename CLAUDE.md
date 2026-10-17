@@ -1,0 +1,271 @@
+# ComfyUI Workflow Monorepo
+
+**Project:** ComfyUI Workflow automation on RunPod  
+**Owner:** Lucas (Blue Collar Dev)  
+**Status:** Initial setup phase  
+**Updated:** 2026-10-17
+
+## Project Overview
+
+A production-grade monorepo for managing ComfyUI workflows and infrastructure on RunPod. Combines workflow orchestration with infrastructure-as-code for reliable, scalable image/video generation.
+
+### Key Decision: Hybrid RunPod Strategy
+
+See `docs/ADR-001-runpod-strategy.md` for full context.
+
+**Phase 1 (Current):** On-demand GPU pods for interactive development
+- Direct web UI access
+- Real-time iteration
+- $8-15/day development costs
+
+**Phase 2 (Future):** Add serverless endpoints for production batch rendering
+- Auto-scaling
+- Pay-per-job
+- Cost optimization for bulk work
+
+## Repository Structure
+
+```
+comfy_workflow/                    # Root monorepo
+│
+├── README.md                      # Project overview
+├── CLAUDE.md                      # This file - collaboration guide
+├── comfy.yaml                     # ComfyUI project config
+│
+├── docs/                          # Documentation
+│   ├── ADR-001-runpod-strategy.md # Architecture decision
+│   ├── SETUP.md                   # Pod deployment guide
+│   └── WORKFLOWS.md               # Workflow patterns
+│
+├── infra/                         # Infrastructure automation
+│   ├── scripts/
+│   │   ├── create_pod.py         # Pod lifecycle CLI
+│   │   └── requirements.txt       # Python deps
+│   ├── docker/
+│   │   └── Dockerfile            # Custom image (optional)
+│   ├── terraform/                # IaC (placeholder)
+│   └── README.md                 # Infra guide
+│
+├── assets/                        # Source files
+│   ├── images/
+│   ├── keyframes/
+│   └── references/
+│
+├── fragments/                     # Reusable components
+│   ├── load_image.json
+│   ├── text_to_image.json
+│   └── ...
+│
+├── blueprints/                    # Workflow compositions
+│   ├── basic_t2i.yaml
+│   ├── basic_t2i.compiled.json
+│   └── ...
+│
+├── outputs/                       # Generated media
+│
+└── .comfy/                        # Internal tracking
+    ├── assets.lock.json          # Asset checksums
+    └── runs.jsonl                # Job journal
+```
+
+## Git Workflow
+
+### Branches
+
+Three main branches with clear purposes:
+
+| Branch | Purpose | Protection |
+|--------|---------|-----------|
+| `master` | Production-ready releases | Always stable |
+| `develop` | Integration branch for next release | Code review required |
+| `feature/*` | Feature development | Merged via PR to develop |
+
+### Commit Message Format
+
+```
+<type>(<scope>): <subject>
+
+<body>
+
+Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>
+```
+
+**Types:** `feat`, `fix`, `docs`, `infra`, `refactor`, `test`, `chore`
+
+**Examples:**
+```
+feat(workflows): add batch generation blueprint
+docs(setup): update pod configuration guide
+infra(scripts): add pod lifecycle management
+```
+
+### Workflow
+
+1. **Create feature branch**
+   ```bash
+   git checkout develop
+   git pull origin develop
+   git checkout -b feature/description-of-work
+   ```
+
+2. **Make commits**
+   ```bash
+   git add <files>
+   git commit -m "feat(scope): description"
+   ```
+
+3. **Push and create PR**
+   ```bash
+   git push origin feature/description-of-work
+   # Then create PR on GitHub/GitLab
+   ```
+
+4. **After review, merge to develop**
+   ```bash
+   # Squash or rebase if needed
+   # Then merge PR
+   ```
+
+5. **Release to master**
+   ```bash
+   git checkout master
+   git merge develop --no-ff
+   git tag v1.0.0
+   git push origin master --tags
+   ```
+
+## Key Files to Know
+
+### Configuration
+
+- **`comfy.yaml`** — ComfyUI project config (routing, vars, assets)
+- **`infra/scripts/requirements.txt`** — Python dependencies for automation
+
+### Documentation
+
+- **`docs/ADR-001-runpod-strategy.md`** — Why we chose hybrid approach
+- **`docs/SETUP.md`** — How to deploy on-demand pod
+- **`docs/WORKFLOWS.md`** — Workflow composition patterns
+
+### Automation
+
+- **`infra/scripts/create_pod.py`** — Pod management CLI
+- **`infra/docker/Dockerfile`** — Custom image (for future use)
+
+## Development Tasks
+
+### Common Tasks
+
+**Set up environment:**
+```bash
+cd ~/workspaces/comfy_workflow
+export RUNPOD_API_KEY="your-key"
+pip install -r infra/scripts/requirements.txt
+```
+
+**Create on-demand pod:**
+```bash
+python infra/scripts/create_pod.py create \
+  --name ComfyUI-Dev \
+  --gpu rtx4090
+```
+
+**Build and run workflow:**
+```bash
+comfy workflow compose blueprints/example.yaml
+comfy run --workflow blueprints/example.compiled.json --where cloud
+```
+
+**Push assets:**
+```bash
+comfy assets push
+```
+
+### Before Starting Work
+
+- [ ] Review `docs/` for context
+- [ ] Check `ADR-001` for architecture decisions
+- [ ] Verify RunPod pod is running (if working on workflows)
+- [ ] Pull latest from `develop` branch
+
+### When Done
+
+- [ ] All workflows tested locally or on pod
+- [ ] Documentation updated (if adding new patterns)
+- [ ] Commit with proper message format
+- [ ] Push to feature branch and create PR
+- [ ] Address review feedback
+- [ ] Merge to develop once approved
+
+## Important Constraints & Gotchas
+
+### ComfyUI Constraints
+
+1. **Never hand-edit compiled JSON**
+   - Edit `.yaml` blueprints instead
+   - Use `comfy workflow compose` to regenerate
+   - Rerun `comfy workflow decompose` if you need to change a fragment
+
+2. **Assets must be pushed before running**
+   ```bash
+   comfy assets push  # Required before compose/run
+   ```
+
+3. **Model availability varies by backend**
+   - Always discover at runtime: `comfy model search ...`
+   - Never hardcode checkpoint/LoRA names
+
+### RunPod Constraints
+
+1. **Pod ID is ephemeral**
+   - Document current pod ID in project notes
+   - Always check pod status before running workflows
+
+2. **Storage limits**
+   - Default: 50GB volume (models)
+   - Upgrade if adding large datasets
+
+3. **Network access**
+   - Web UI: `http://{pod-id}.proxy.runpod.io:8188`
+   - SSH: `ssh root@{pod-id}.proxy.runpod.io`
+   - Use RunPod dashboard for detailed management
+
+### Git Constraints
+
+1. **Don't commit compiled artifacts**
+   - `.compiled.json` files are auto-generated
+   - Only commit `.yaml` blueprints
+   - Same for `.comfy/` internals (except for documentation)
+
+2. **Keep branches clean**
+   - Rebase feature branches on `develop` before merging
+   - Use squash merge for small features
+   - Don't force-push to shared branches
+
+## References
+
+**RunPod:**
+- Docs: https://docs.runpod.io
+- Pod creation: https://www.runpod.io/console/pods
+- CLI: `python3 infra/scripts/create_pod.py --help`
+
+**ComfyUI:**
+- Official docs: https://docs.comfy.org
+- Workflow templates: https://github.com/Comfy-Org/workflow_templates
+- CLI: `comfy --help`
+
+**This Project:**
+- Architecture: `docs/ADR-001-runpod-strategy.md`
+- Setup: `docs/SETUP.md`
+- Workflows: `docs/WORKFLOWS.md`
+- Infrastructure: `infra/README.md`
+
+## Contact & Questions
+
+For questions about this project, check:
+1. Relevant doc file
+2. ADR or SETUP guide
+3. Inline script comments
+4. RunPod/ComfyUI official docs
+
+If something is missing or unclear, update the docs when you figure it out.
