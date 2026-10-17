@@ -1,60 +1,53 @@
-import axios from 'axios'
+import axios from 'axios';
 
-const api = axios.create({
-  baseURL: '/api',
-})
+const API_BASE = 'http://localhost:8000/api';
 
-export const podAPI = {
-  // Get dashboard data
-  async getDashboard() {
-    const response = await api.get('/dashboard')
-    return response.data
-  },
-
+export const podsAPI = {
   // List all pods
-  async getPods() {
-    const response = await api.get('/pods')
-    return response.data
+  async listPods() {
+    const { data } = await axios.get(`${API_BASE}/pods`);
+    return data;
   },
 
-  // Get specific pod
+  // Get single pod
   async getPod(podId) {
-    const response = await api.get(`/pods/${podId}`)
-    return response.data
+    const { data } = await axios.get(`${API_BASE}/pods/${podId}`);
+    return data;
   },
 
-  // Stop pod
+  // Create new pod
+  async createPod(podData) {
+    const { data } = await axios.post(`${API_BASE}/pods`, {
+      name: podData.name,
+      gpu: podData.gpu,
+      volume_gb: podData.volumeGb,
+      disk_gb: podData.diskGb,
+      image: podData.image,
+    });
+    return data;
+  },
+
+  // Stop a pod
   async stopPod(podId) {
-    const response = await api.post(`/pods/${podId}/stop`)
-    return response.data
+    const { data } = await axios.post(`${API_BASE}/pods/${podId}/stop`);
+    return data;
   },
 
-  // Resume pod
+  // Resume a pod
   async resumePod(podId) {
-    const response = await api.post(`/pods/${podId}/resume`)
-    return response.data
+    const { data } = await axios.post(`${API_BASE}/pods/${podId}/resume`);
+    return data;
   },
 
-  // Delete pod
+  // Delete a pod
   async deletePod(podId) {
-    const response = await api.delete(`/pods/${podId}`)
-    return response.data
+    const { data } = await axios.delete(`${API_BASE}/pods/${podId}`);
+    return data;
   },
 
-  // WebSocket for real-time updates
-  subscribeToUpdates(callback) {
-    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const ws = new WebSocket(`${protocol}://localhost:8000/ws/pods`)
-
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data)
-      callback(data)
-    }
-
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error)
-    }
-
-    return ws
+  // Get dashboard stats
+  async getDashboard() {
+    const { data } = await axios.get(`${API_BASE}/dashboard`);
+    return data;
   },
-}
+};

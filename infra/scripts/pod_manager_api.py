@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 import runpod
 import logging
 
@@ -25,6 +26,20 @@ app = FastAPI(
     title="RunPod Pod Manager API",
     description="API for managing RunPod GPU pods",
     version="1.0.0",
+)
+
+# Add CORS middleware for frontend communication
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",  # Vite dev server
+        "http://localhost:3000",  # Alternative
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # ============================================================================
@@ -76,6 +91,53 @@ class CreatePodRequest(BaseModel):
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+
+
+@app.post("/api/pods", response_model=PodStatus, tags=["Pods"])
+async def create_pod(request: CreatePodRequest):
+    """Create a new pod"""
+    try:
+        api_key = os.getenv('RUNPOD_API_KEY')
+        if not api_key:
+            raise HTTPException(status_code=401, detail="RUNPOD_API_KEY not set")
+
+        runpod.api_key = api_key
+
+        pod_input = {
+            "cloudType": "on-demand",
+            "gpuCount": 1,
+            "volumeInGb": request.volume_gb,
+            "containerDiskInGb": request.disk_gb,
+            "minVolumeInGb": request.volume_gb,
+            "gpuTypeId": request.gpu,
+            "name": request.name,
+            "imageName": request.image if request.image != "prebuilt" else "ashleykza/runpod-comfyui:latest",
+            "startJupyter": False,
+            "startSsh": True,
+        }
+
+        pod = runpod.create_pod(pod_input)
+
+        if not pod or not pod.get('id'):
+            raise HTTPException(status_code=500, detail="Failed to create pod")
+
+        pod_id = pod.get('id')
+        runtime = pod.get('runtime', {})
+
+        return PodStatus(
+            id=pod_id,
+            name=request.name,
+            status="starting",
+            gpu=request.gpu,
+            vram=24,
+            uptime_seconds=0,
+            web_ui_url=f"http://{pod_id}.proxy.runpod.io:8188",
+            ssh_command=f"ssh root@{pod_id}.proxy.runpod.io"
+        )
+
+    except Exception as e:
+        logger.error(f"Error creating pod: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/pods", response_model=List[PodStatus], tags=["Pods"])
