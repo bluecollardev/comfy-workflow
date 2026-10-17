@@ -161,10 +161,13 @@ async function refreshPods() {
 
 .create-section .section-header {
   cursor: pointer;
+  border-bottom: none;
+  padding: 12px;
+  margin-bottom: 0;
 }
 
 .create-section .section-header:hover {
-  border-bottom-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .pods-section .section-header {
