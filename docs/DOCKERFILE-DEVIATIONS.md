@@ -1,12 +1,12 @@
 # Dockerfile Deviations from Official RunPod/ComfyUI
 
-**Base Image:** `ashleykza/runpod-comfyui:latest` (Community-maintained)
+**Base Image:** `ashleykza/comfyui:latest` (Community-maintained)
 
 ## Deviations from Official
 
 ### 1. **Base Image Choice**
 **Official:** `runpod/base:0.4.0-cuda11.8.0` (RunPod official)  
-**This:** `ashleykza/runpod-comfyui:latest` (Community image)
+**This:** `ashleykza/comfyui:latest` (Community image)
 
 **Why it matters:**
 - ✅ Community image has ComfyUI pre-installed
@@ -183,7 +183,7 @@ comfy build release create . --target linux/nvidia
 ### With Serverless (Future)
 ```dockerfile
 # Modify to:
-FROM ashleykza/runpod-comfyui:latest
+FROM ashleykza/comfyui:latest
 RUN pip install runpod
 CMD ["python", "-m", "runpod.worker.handler"]
 ```
