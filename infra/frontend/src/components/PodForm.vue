@@ -169,20 +169,40 @@ export default {
 }
 
 .form-input {
-  padding: 10px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 12px 14px;
+  border: 2px solid rgba(255, 255, 255, 0.15);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.03);
   color: #fff;
   font-size: 0.95rem;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.form-input[type="text"],
+.form-input[type="number"] {
+  background: rgba(74, 158, 255, 0.05);
 }
 
 .form-input:focus {
   outline: none;
   border-color: #4a9eff;
   background: rgba(74, 158, 255, 0.1);
-  box-shadow: 0 0 12px rgba(74, 158, 255, 0.2);
+  box-shadow: 0 0 0 3px rgba(74, 158, 255, 0.15);
+}
+
+.form-input option {
+  background: #1e1e2e;
+  color: #fff;
+}
+
+select.form-input {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='%234a9eff' d='M5 8L0 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+  cursor: pointer;
 }
 
 .form-actions {
