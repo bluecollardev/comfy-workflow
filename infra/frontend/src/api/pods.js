@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const API_BASE = 'http://localhost:8000/api';
+// Dev server (Vite on :5173) talks to the API cross-origin; a production build is served by the
+// API itself (and by the Electron app), so it uses the same origin — no CORS, OAuth lands home.
+export const API_BASE = import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? 'http://localhost:8000/api' : '/api');
 
 export const podsAPI = {
   // List all pods
@@ -26,6 +28,7 @@ export const podsAPI = {
       disk_gb: podData.diskGb || 20,
       image: podData.image || 'prebuilt',
       env_vars: podData.envVars || {},
+      build_args: podData.buildArgs || {},
       pip_requirements: podData.pipRequirements || '',
       custom_nodes: podData.customNodes || [],
       start_ssh: podData.startSsh !== false,

@@ -1,77 +1,36 @@
 <template>
-  <div class="grid grid-cols-1 gap-3 mb-8 sm:grid-cols-2 lg:grid-cols-3">
-    <!-- Total Pods Card -->
-    <div class="card-dark p-5 border-l-4 border-primary hover:shadow-xl transition-all">
-      <div class="text-xs font-semibold text-dark-400 uppercase tracking-wider mb-3">
-        Total Pods
-      </div>
-      <div class="text-5xl font-bold text-white">
-        {{ stats.total_pods ?? 0 }}
-      </div>
-    </div>
-
-    <!-- Running Pods Card -->
-    <div class="card-dark p-5 border-l-4 border-success hover:shadow-xl transition-all">
-      <div class="text-xs font-semibold text-dark-400 uppercase tracking-wider mb-3">
-        Running
-      </div>
-      <div class="text-5xl font-bold text-white">
-        {{ stats.running_pods ?? 0 }}
-      </div>
-    </div>
-
-    <!-- Stopped Pods Card -->
-    <div class="card-dark p-5 border-l-4 border-danger hover:shadow-xl transition-all">
-      <div class="text-xs font-semibold text-dark-400 uppercase tracking-wider mb-3">
-        Stopped
-      </div>
-      <div class="text-5xl font-bold text-white">
-        {{ stats.stopped_pods ?? 0 }}
-      </div>
-    </div>
-  </div>
+  <BRow class="g-3">
+    <BCol v-for="stat in cards" :key="stat.label" md="4">
+      <BCard class="stat-card" :style="{ '--stat-color': `var(--bs-${stat.variant})` }" body-class="py-3">
+        <div class="text-body-secondary text-uppercase small fw-semibold mb-1">{{ stat.label }}</div>
+        <div class="fs-1 fw-bold lh-1">{{ stat.value }}</div>
+      </BCard>
+    </BCol>
+  </BRow>
 </template>
 
 <script setup>
 /**
- * Stats.vue - Pod statistics display component
- *
- * Displays three key metrics in a responsive grid:
- * - Total Pods: All pods in the account
- * - Running Pods: Currently active pods (green indicator)
- * - Stopped Pods: Inactive pods (red indicator)
+ * Stats — three summary cards: total / running / stopped.
  *
  * Props:
- * - stats: Object containing statistics
- *   - total_pods: number
- *   - running_pods: number
- *   - stopped_pods: number
- *
- * Each stat card features:
- * - Card styling with dark gradient background
- * - Colored left border (blue/green/red)
- * - Large bold number display
- * - Hover effect (shadow lift)
- * - Responsive column layout (1 col mobile, 2 cols tablet, 3 cols desktop)
- *
- * @component
+ *   stats  { total_pods, running_pods, stopped_pods }  — any missing count renders as 0
  */
+import { computed } from 'vue'
 
-defineProps({
-  /**
-   * Statistics object from dashboard
-   * @type {Object}
-   * @property {number} total_pods - Total pods in account
-   * @property {number} running_pods - Currently running pods
-   * @property {number} stopped_pods - Currently stopped pods
-   */
-  stats: {
-    type: Object,
-    required: true,
-  },
+const props = defineProps({
+  stats: { type: Object, required: true },
 })
+
+const cards = computed(() => [
+  { label: 'Total pods', value: props.stats.total_pods ?? 0, variant: 'primary' },
+  { label: 'Running', value: props.stats.running_pods ?? 0, variant: 'success' },
+  { label: 'Stopped', value: props.stats.stopped_pods ?? 0, variant: 'danger' },
+])
 </script>
 
 <style scoped>
-/* All styling handled by index.css and Tailwind */
+.stat-card {
+  border-left: 4px solid var(--stat-color);
+}
 </style>

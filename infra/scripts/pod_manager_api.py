@@ -7,6 +7,7 @@ Auto-generated API docs at /docs
 
 import os
 import asyncio
+import json
 from typing import List, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
@@ -16,6 +17,10 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import runpod
 import logging
+
+from git_accounts import router as git_accounts_router, credentials_for
+from images import router as images_router, PREBUILT_IMAGE
+from repositories import router as repositories_router
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -41,6 +46,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(git_accounts_router)
+app.include_router(repositories_router)
+app.include_router(images_router)
 
 # ============================================================================
 # Pydantic Models (Type-safe request/response schemas)
@@ -84,6 +93,7 @@ class CreatePodRequest(BaseModel):
     disk_gb: int = Field(default=20, description="Container disk size in GB")
     image: str = Field(default="prebuilt", description="Docker image")
     env_vars: Optional[dict] = Field(default_factory=dict, description="Environment variables")
+    build_args: Optional[dict] = Field(default_factory=dict, description="Image build ARG overrides (exposed to the pod as env, never over an explicit env var)")
     pip_requirements: Optional[str] = Field(default="", description="Custom pip packages")
     custom_nodes: Optional[list] = Field(default_factory=list, description="Custom node repos")
     start_ssh: bool = Field(default=True, description="Start SSH server")
@@ -110,19 +120,24 @@ async def create_pod(request: CreatePodRequest):
 
         runpod.api_key = api_key
 
-        # Build environment variables
-        env_vars = request.env_vars or {}
+        # Build environment variables. A pod can't rebuild its image, so ARG overrides reach it
+        # as env vars (the images' start scripts read several of them); explicit env wins.
+        env_vars = dict(request.env_vars or {})
+        for key, value in (request.build_args or {}).items():
+            env_vars.setdefault(key, value)
 
         # Add custom pip requirements if provided
         if request.pip_requirements:
             env_vars['CUSTOM_PIP_REQUIREMENTS'] = request.pip_requirements
 
-        # Add custom nodes if provided
+        # Add custom nodes if provided: [{name, url, branch, path}] — path is a subfolder
+        # of a monorepo (empty = the whole repo is the pack). JSON because URLs contain ':'.
         if request.custom_nodes:
-            env_vars['CUSTOM_NODES'] = ','.join([
-                f"{n.get('name')}:{n.get('url')}:{n.get('branch', 'main')}"
-                for n in request.custom_nodes
-            ])
+            env_vars['CUSTOM_NODES'] = json.dumps(request.custom_nodes)
+            # Only the hosts the pod has to clone from get a credential
+            creds = credentials_for([n.get('url', '') for n in request.custom_nodes])
+            if creds:
+                env_vars['GIT_CREDENTIALS'] = json.dumps(creds)
 
         pod_input = {
             "cloudType": request.instance_type,
@@ -132,7 +147,7 @@ async def create_pod(request: CreatePodRequest):
             "minVolumeInGb": request.volume_gb,
             "gpuTypeId": request.gpu,
             "name": request.name,
-            "imageName": request.image if request.image != "prebuilt" else "ashleykza/runpod-comfyui:latest",
+            "imageName": request.image if request.image != "prebuilt" else PREBUILT_IMAGE,
             "startJupyter": request.start_jupyter,
             "startSsh": request.start_ssh,
             "env": env_vars,
@@ -390,33 +405,32 @@ async def websocket_pods(websocket: WebSocket):
 
 
 # ============================================================================
-# Serve Static Files (Dashboard UI)
+# Serve the built UI (infra/dist, or UI_DIST_DIR) at /
 # ============================================================================
 
-@app.get("/", tags=["UI"])
+UI_DIST_DIR = os.path.abspath(os.getenv("UI_DIST_DIR", os.path.join(os.path.dirname(__file__), "..", "dist")))
+
+if os.path.isdir(os.path.join(UI_DIST_DIR, "assets")):
+    app.mount("/assets", StaticFiles(directory=os.path.join(UI_DIST_DIR, "assets")), name="ui-assets")
+
+
+@app.get("/", include_in_schema=False)
 async def root():
-    """Serve dashboard HTML"""
-    html_path = os.path.join(os.path.dirname(__file__), "pod_dashboard.html")
-    if os.path.exists(html_path):
-        return FileResponse(html_path)
-    else:
-        return {
-            "message": "RunPod Pod Manager API",
-            "docs_url": "/docs",
-            "api_endpoints": {
-                "dashboard": "/api/dashboard",
-                "list_pods": "/api/pods",
-                "get_pod": "/api/pods/{pod_id}",
-                "stop_pod": "POST /api/pods/{pod_id}/stop",
-                "resume_pod": "POST /api/pods/{pod_id}/resume",
-                "delete_pod": "DELETE /api/pods/{pod_id}",
-                "websocket": "WS /ws/pods"
-            }
-        }
+    index = os.path.join(UI_DIST_DIR, "index.html")
+    if os.path.exists(index):
+        return FileResponse(index)
+    return {
+        "message": "RunPod Pod Manager API — run `npm run build` in infra/frontend to serve the UI here",
+        "docs_url": "/docs",
+    }
 
 
 def main():
-    """Run the API server"""
+    """Run the API server.
+
+    API_HOST (default 0.0.0.0), API_PORT (8000) and API_RELOAD ("1"; "0" for a packaged app)
+    come from the environment so the Electron app can run it without a reloader.
+    """
     import uvicorn
 
     print("""
@@ -437,10 +451,10 @@ def main():
 
     uvicorn.run(
         "pod_manager_api:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-        log_level="info"
+        host=os.getenv("API_HOST", "0.0.0.0"),
+        port=int(os.getenv("API_PORT", "8000")),
+        reload=os.getenv("API_RELOAD", "1") != "0",
+        log_level="info",
     )
 
 

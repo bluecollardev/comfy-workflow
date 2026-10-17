@@ -82,7 +82,7 @@ python3 create_pod.py delete --pod-id <id> --force
 - `h100` - $4.50/hr, 80GB VRAM (enterprise tier)
 
 **Image Options:**
-- `prebuilt` - ashleykza/runpod-comfyui (ready-to-use)
+- `prebuilt` - ashleykza/comfyui (ready-to-use)
 - `official` - comfy-org/comfyui (official image)
 - Custom image name (provide full image name)
 

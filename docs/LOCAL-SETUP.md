@@ -54,13 +54,13 @@ python main.py
 
 ```bash
 # Pull image
-docker pull ashleykza/runpod-comfyui:latest
+docker pull ashleykza/comfyui:latest
 
 # Run locally
 docker run -it \
   -p 8188:8188 \
   -v ~/comfy_models:/workspace/ComfyUI/models \
-  ashleykza/runpod-comfyui:latest
+  ashleykza/comfyui:latest
 
 # Access: http://localhost:8188
 ```

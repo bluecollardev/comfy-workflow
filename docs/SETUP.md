@@ -56,7 +56,7 @@ runpod.api_key = os.getenv("RUNPOD_API_KEY")
 # Create pod
 pod = runpod.create_pod(
     name="ComfyUI-Dev",
-    image_name="ashleykza/runpod-comfyui:latest",  # Pre-built ComfyUI image
+    image_name="ashleykza/comfyui:latest",  # Pre-built ComfyUI image
     gpu_count=1,
     volume_in_gb=50,
     container_disk_in_gb=20,

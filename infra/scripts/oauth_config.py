@@ -4,7 +4,7 @@ OAuth2 configuration for RunPod integration
 
 from typing import Optional
 import os
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class OAuthSettings(BaseSettings):
@@ -30,8 +30,8 @@ class OAuthSettings(BaseSettings):
     # API Settings
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
 
-    class Config:
-        env_file = ".env"
+    # Ignore unrelated variables in .env (RUNPOD_API_KEY, TF_API_TOKEN, ...)
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
 settings = OAuthSettings()

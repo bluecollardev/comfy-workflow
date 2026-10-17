@@ -3,7 +3,7 @@ Tests for OAuth authentication handler
 """
 
 import pytest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime, timedelta
 
 from oauth_handler import OAuthHandler, TokenData, User
@@ -38,13 +38,13 @@ async def test_get_authorization_url(oauth_handler):
 @pytest.mark.asyncio
 async def test_exchange_code_for_token(oauth_handler):
     """Test exchanging auth code for token"""
-    mock_response = AsyncMock()
-    mock_response.json = AsyncMock(return_value={
+    mock_response = MagicMock()
+    mock_response.json = MagicMock(return_value={
         "access_token": "mock-access-token",
         "token_type": "Bearer",
         "expires_in": 3600
     })
-    mock_response.raise_for_status = AsyncMock()
+    mock_response.raise_for_status = MagicMock()
 
     oauth_handler.client.post = AsyncMock(return_value=mock_response)
 
@@ -57,7 +57,7 @@ async def test_exchange_code_for_token(oauth_handler):
 @pytest.mark.asyncio
 async def test_exchange_code_for_token_error(oauth_handler):
     """Test token exchange with error"""
-    mock_response = AsyncMock()
+    mock_response = MagicMock()
     mock_response.raise_for_status.side_effect = Exception("Unauthorized")
 
     oauth_handler.client.post = AsyncMock(return_value=mock_response)
@@ -70,9 +70,9 @@ async def test_exchange_code_for_token_error(oauth_handler):
 @pytest.mark.asyncio
 async def test_get_user_info(oauth_handler, sample_user_info):
     """Test fetching user info from RunPod"""
-    mock_response = AsyncMock()
-    mock_response.json = AsyncMock(return_value=sample_user_info)
-    mock_response.raise_for_status = AsyncMock()
+    mock_response = MagicMock()
+    mock_response.json = MagicMock(return_value=sample_user_info)
+    mock_response.raise_for_status = MagicMock()
 
     oauth_handler.client.get = AsyncMock(return_value=mock_response)
 

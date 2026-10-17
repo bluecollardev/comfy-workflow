@@ -1,0 +1,74 @@
+// Bootstrap theme — PocketPT palette.
+// Variables must be set before Bootstrap is imported; they compile into every component.
+
+// Theme colors
+$primary:   #00B8EC;
+$secondary: #444444;
+$success:   #55801F; // dark enough to carry white text (4.7:1); #9ECD3B is for icons/borders
+$info:      #6B57B5;
+$warning:   #E9A93C;
+$danger:    rgb(242, 22, 81);
+$light:     #BDC1C6;
+$dark:      #1D1D1D;
+
+// Dark-mode surfaces (the app is dark-only; index.html sets data-bs-theme="dark")
+$body-bg-dark:              #1E1E1E;
+$body-color-dark:           #ffffff;
+$body-secondary-color-dark: #BDC1C6;
+$body-tertiary-bg-dark:     #262626;
+$border-color-dark:         rgba(255, 255, 255, 0.29);
+
+$card-bg:        #262626;
+$card-cap-bg:    transparent;
+$card-cap-padding-y: 1rem;
+$card-spacer-y:  1.25rem;
+$card-spacer-x:  1.25rem;
+
+$font-family-sans-serif: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+$headings-font-weight: 600;
+$btn-font-weight: 500;
+$enable-shadows: false;
+
+@import 'bootstrap/scss/bootstrap';
+
+// Bootstrap picks black text on #00B8EC for contrast; we want white on primary buttons.
+.btn-primary {
+  --bs-btn-color: #fff;
+  --bs-btn-hover-color: #fff;
+  --bs-btn-active-color: #fff;
+  --bs-btn-disabled-color: #fff;
+}
+
+// Help popovers carry code snippets; Bootstrap's 276px default clips them.
+.popover {
+  --bs-popover-max-width: 480px;
+  --bs-popover-bg: #262626;
+  --bs-popover-border-color: rgba(255, 255, 255, 0.29);
+}
+
+.popover pre {
+  overflow-x: auto;
+}
+
+// Card header doubles as a collapse trigger; keep it looking like a header, not a button.
+.card-header-toggle {
+  background: transparent;
+  border: 0;
+  width: 100%;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.card-header-toggle .fa-chevron-right {
+  transition: transform 0.2s ease;
+}
+
+.card-header-toggle[aria-expanded='true'] .fa-chevron-right {
+  transform: rotate(90deg);
+}
+
+// When collapsed there is no body, so the header's bottom rule has nothing to separate.
+.card-header-toggle[aria-expanded='false'] {
+  border-bottom: 0;
+}
