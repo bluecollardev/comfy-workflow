@@ -1,224 +1,221 @@
 <template>
-  <div class="pod-form">
-    <h2 class="form-title">Create Pod</h2>
-    <form @submit.prevent="submit" class="form">
-      <!-- Basic Settings -->
-      <div class="form-section">
-        <div class="form-row">
-          <div class="form-group">
-            <label for="pod-name">Name</label>
-            <input
-              id="pod-name"
-              v-model="form.name"
-              type="text"
-              placeholder="e.g., ComfyUI-Dev"
-              required
-              class="form-input"
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="gpu-type">GPU</label>
-            <select id="gpu-type" v-model="form.gpu" class="form-input">
-              <option value="rtx4090">RTX 4090</option>
-              <option value="a100">A100</option>
-              <option value="h100">H100</option>
-              <option value="l40s">L40S</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label for="gpu-count">Count</label>
-            <select id="gpu-count" v-model.number="form.gpuCount" class="form-input">
-              <option v-for="i in 8" :key="i" :value="i">{{ i }}</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label for="instance-type">Type</label>
-            <select id="instance-type" v-model="form.instanceType" class="form-input">
-              <option value="on-demand">On-Demand</option>
-              <option value="spot">Spot</option>
-            </select>
-          </div>
+  <form @submit.prevent="submit" class="form">
+    <!-- Basic Settings -->
+    <div class="form-section">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="pod-name">Name</label>
+          <input
+            id="pod-name"
+            v-model="form.name"
+            type="text"
+            placeholder="e.g., ComfyUI-Dev"
+            required
+            class="form-input"
+          />
         </div>
 
-        <div class="form-row">
-          <div class="form-group">
-            <label for="volume-gb">Volume (GB)</label>
-            <input
-              id="volume-gb"
-              v-model.number="form.volumeGb"
-              type="number"
-              min="10"
-              max="500"
-              class="form-input"
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="disk-gb">Disk (GB)</label>
-            <input
-              id="disk-gb"
-              v-model.number="form.diskGb"
-              type="number"
-              min="5"
-              max="100"
-              class="form-input"
-            />
-          </div>
+        <div class="form-group">
+          <label for="gpu-type">GPU</label>
+          <select id="gpu-type" v-model="form.gpu" class="form-input">
+            <option value="rtx4090">RTX 4090</option>
+            <option value="a100">A100</option>
+            <option value="h100">H100</option>
+            <option value="l40s">L40S</option>
+          </select>
         </div>
 
-        <div class="form-row">
-          <div class="form-group">
-            <label for="image">Image</label>
-            <select id="image" v-model="form.image" class="form-input">
-              <option value="prebuilt">ComfyUI (ashleykza)</option>
-              <option value="custom">Custom URI</option>
-            </select>
-          </div>
+        <div class="form-group">
+          <label for="gpu-count">Count</label>
+          <select id="gpu-count" v-model.number="form.gpuCount" class="form-input">
+            <option v-for="i in 8" :key="i" :value="i">{{ i }}</option>
+          </select>
+        </div>
 
-          <div v-if="form.image === 'custom'" class="form-group">
-            <label for="image-uri">Docker URI</label>
-            <input
-              id="image-uri"
-              v-model="form.customImageUri"
-              type="text"
-              placeholder="docker.io/repo/image:tag"
-              class="form-input"
-            />
-          </div>
+        <div class="form-group">
+          <label for="instance-type">Type</label>
+          <select id="instance-type" v-model="form.instanceType" class="form-input">
+            <option value="on-demand">On-Demand</option>
+            <option value="spot">Spot</option>
+          </select>
         </div>
       </div>
 
-      <!-- Advanced Sections (Collapsible) -->
-      <div class="collapsible-section">
-        <button
-          type="button"
-          @click="expanded.envVars = !expanded.envVars"
-          class="section-toggle"
-        >
-          <span class="toggle-icon">{{ expanded.envVars ? '▼' : '▶' }}</span>
-          Environment Variables
-          <span v-if="form.envVars.length" class="badge">{{ form.envVars.length }}</span>
-        </button>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="volume-gb">Volume (GB)</label>
+          <input
+            id="volume-gb"
+            v-model.number="form.volumeGb"
+            type="number"
+            min="10"
+            max="500"
+            class="form-input"
+          />
+        </div>
 
-        <div v-if="expanded.envVars" class="section-content">
-          <div v-if="form.envVars.length === 0" class="empty-state">No variables added</div>
-          <div v-for="(env, i) in form.envVars" :key="i" class="list-item-compact">
-            <input
-              v-model="env.key"
-              type="text"
-              placeholder="Key"
-              class="form-input input-sm"
-            />
-            <input
-              v-model="env.value"
-              type="text"
-              placeholder="Value"
-              class="form-input input-sm"
-            />
-            <button type="button" @click="removeEnvVar(i)" class="btn-remove">✕</button>
-          </div>
-          <button type="button" @click="addEnvVar" class="btn-add-small">+ Add Variable</button>
+        <div class="form-group">
+          <label for="disk-gb">Disk (GB)</label>
+          <input
+            id="disk-gb"
+            v-model.number="form.diskGb"
+            type="number"
+            min="5"
+            max="100"
+            class="form-input"
+          />
         </div>
       </div>
 
-      <!-- Pip Requirements -->
-      <div class="collapsible-section">
-        <button
-          type="button"
-          @click="expanded.pip = !expanded.pip"
-          class="section-toggle"
-        >
-          <span class="toggle-icon">{{ expanded.pip ? '▼' : '▶' }}</span>
-          Custom Pip Packages
-        </button>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="image">Image</label>
+          <select id="image" v-model="form.image" class="form-input">
+            <option value="prebuilt">ComfyUI (ashleykza)</option>
+            <option value="custom">Custom URI</option>
+          </select>
+        </div>
 
-        <div v-if="expanded.pip" class="section-content">
-          <textarea
-            v-model="form.pipRequirements"
-            placeholder="One per line: torch==2.0.0"
-            class="form-textarea-compact"
-          ></textarea>
+        <div v-if="form.image === 'custom'" class="form-group">
+          <label for="image-uri">Docker URI</label>
+          <input
+            id="image-uri"
+            v-model="form.customImageUri"
+            type="text"
+            placeholder="docker.io/repo/image:tag"
+            class="form-input"
+          />
         </div>
       </div>
+    </div>
 
-      <!-- Custom Nodes -->
-      <div class="collapsible-section">
-        <button
-          type="button"
-          @click="expanded.nodes = !expanded.nodes"
-          class="section-toggle"
-        >
-          <span class="toggle-icon">{{ expanded.nodes ? '▼' : '▶' }}</span>
-          Custom Node Repos
-          <span v-if="form.customNodes.length" class="badge">{{ form.customNodes.length }}</span>
-        </button>
+    <!-- Advanced Sections (Collapsible) -->
+    <div class="collapsible-section">
+      <button
+        type="button"
+        @click="expanded.envVars = !expanded.envVars"
+        class="section-toggle"
+      >
+        <span class="toggle-icon">{{ expanded.envVars ? '▼' : '▶' }}</span>
+        Environment Variables
+        <span v-if="form.envVars.length" class="badge">{{ form.envVars.length }}</span>
+      </button>
 
-        <div v-if="expanded.nodes" class="section-content">
-          <div v-if="form.customNodes.length === 0" class="empty-state">No repos added</div>
-          <div v-for="(node, i) in form.customNodes" :key="i" class="list-item-compact">
-            <input
-              v-model="node.name"
-              type="text"
-              placeholder="Name"
-              class="form-input input-sm"
-            />
-            <input
-              v-model="node.url"
-              type="text"
-              placeholder="https://github.com/..."
-              class="form-input input-sm"
-            />
-            <button type="button" @click="removeCustomNode(i)" class="btn-remove">✕</button>
-          </div>
-          <button type="button" @click="addCustomNode" class="btn-add-small">+ Add Repo</button>
+      <div v-if="expanded.envVars" class="section-content">
+        <div v-if="form.envVars.length === 0" class="empty-state">No variables added</div>
+        <div v-for="(env, i) in form.envVars" :key="i" class="list-item-compact">
+          <input
+            v-model="env.key"
+            type="text"
+            placeholder="Key"
+            class="form-input input-sm"
+          />
+          <input
+            v-model="env.value"
+            type="text"
+            placeholder="Value"
+            class="form-input input-sm"
+          />
+          <button type="button" @click="removeEnvVar(i)" class="btn-remove">✕</button>
         </div>
+        <button type="button" @click="addEnvVar" class="btn-add-small">+ Add Variable</button>
       </div>
+    </div>
 
-      <!-- Advanced Options -->
-      <div class="collapsible-section">
-        <button
-          type="button"
-          @click="expanded.advanced = !expanded.advanced"
-          class="section-toggle"
-        >
-          <span class="toggle-icon">{{ expanded.advanced ? '▼' : '▶' }}</span>
-          Advanced
-        </button>
+    <!-- Pip Requirements -->
+    <div class="collapsible-section">
+      <button
+        type="button"
+        @click="expanded.pip = !expanded.pip"
+        class="section-toggle"
+      >
+        <span class="toggle-icon">{{ expanded.pip ? '▼' : '▶' }}</span>
+        Custom Pip Packages
+      </button>
 
-        <div v-if="expanded.advanced" class="section-content">
-          <label class="checkbox-label">
-            <input
-              v-model="form.startSsh"
-              type="checkbox"
-              class="form-checkbox"
-            />
-            SSH
-          </label>
-          <label class="checkbox-label">
-            <input
-              v-model="form.startJupyter"
-              type="checkbox"
-              class="form-checkbox"
-            />
-            Jupyter
-          </label>
+      <div v-if="expanded.pip" class="section-content">
+        <textarea
+          v-model="form.pipRequirements"
+          placeholder="One per line: torch==2.0.0"
+          class="form-textarea-compact"
+        ></textarea>
+      </div>
+    </div>
+
+    <!-- Custom Nodes -->
+    <div class="collapsible-section">
+      <button
+        type="button"
+        @click="expanded.nodes = !expanded.nodes"
+        class="section-toggle"
+      >
+        <span class="toggle-icon">{{ expanded.nodes ? '▼' : '▶' }}</span>
+        Custom Node Repos
+        <span v-if="form.customNodes.length" class="badge">{{ form.customNodes.length }}</span>
+      </button>
+
+      <div v-if="expanded.nodes" class="section-content">
+        <div v-if="form.customNodes.length === 0" class="empty-state">No repos added</div>
+        <div v-for="(node, i) in form.customNodes" :key="i" class="list-item-compact">
+          <input
+            v-model="node.name"
+            type="text"
+            placeholder="Name"
+            class="form-input input-sm"
+          />
+          <input
+            v-model="node.url"
+            type="text"
+            placeholder="https://github.com/..."
+            class="form-input input-sm"
+          />
+          <button type="button" @click="removeCustomNode(i)" class="btn-remove">✕</button>
         </div>
+        <button type="button" @click="addCustomNode" class="btn-add-small">+ Add Repo</button>
       </div>
+    </div>
 
-      <!-- Form Actions -->
-      <div class="form-actions">
-        <button type="submit" class="btn btn-primary" :disabled="loading">
-          {{ loading ? 'Creating...' : 'Create' }}
-        </button>
-        <button type="button" class="btn btn-secondary" @click="reset">Reset</button>
+    <!-- Advanced Options -->
+    <div class="collapsible-section">
+      <button
+        type="button"
+        @click="expanded.advanced = !expanded.advanced"
+        class="section-toggle"
+      >
+        <span class="toggle-icon">{{ expanded.advanced ? '▼' : '▶' }}</span>
+        Advanced
+      </button>
+
+      <div v-if="expanded.advanced" class="section-content">
+        <label class="checkbox-label">
+          <input
+            v-model="form.startSsh"
+            type="checkbox"
+            class="form-checkbox"
+          />
+          SSH
+        </label>
+        <label class="checkbox-label">
+          <input
+            v-model="form.startJupyter"
+            type="checkbox"
+            class="form-checkbox"
+          />
+          Jupyter
+        </label>
       </div>
+    </div>
 
-      <div v-if="error" class="alert alert-error">{{ error }}</div>
-    </form>
-  </div>
+    <!-- Form Actions -->
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary" :disabled="loading">
+        {{ loading ? 'Creating...' : 'Create' }}
+      </button>
+      <button type="button" class="btn btn-secondary" @click="reset">Reset</button>
+    </div>
+
+    <div v-if="error" class="alert alert-error">{{ error }}</div>
+  </form>
 </template>
 
 <script>
@@ -338,26 +335,11 @@ export default {
 </script>
 
 <style scoped>
-.pod-form {
-  background: linear-gradient(135deg, #1e1e2e 0%, #2a2a3e 100%);
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 32px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.form-title {
-  color: #fff;
-  font-size: 1.3rem;
-  margin: 0 0 12px 0;
-  font-weight: 600;
-}
-
 .form {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  padding: 12px 0;
 }
 
 .form-section {
