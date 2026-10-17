@@ -1,24 +1,20 @@
 <template>
   <div class="dashboard">
-    <!-- Create Pod Form Toggle -->
-    <button
-      type="button"
-      @click="showCreateForm = !showCreateForm"
-      class="toggle-form"
-    >
-      {{ showCreateForm ? '▼' : '▶' }} Create New Pod
-    </button>
-
-    <transition name="expand">
-      <PodForm v-if="showCreateForm" @pod-created="handlePodCreated" />
-    </transition>
-
-    <!-- Pods List -->
+    <!-- Pods Section with Collapsible Form -->
     <div class="pods-section">
-      <div class="section-header">
+      <button
+        type="button"
+        @click="showCreateForm = !showCreateForm"
+        class="section-header"
+      >
+        <span class="toggle-icon">{{ showCreateForm ? '▼' : '▶' }}</span>
         <h2>Pods</h2>
         <span class="pod-count">{{ pods.length }}</span>
-      </div>
+      </button>
+
+      <transition name="expand">
+        <PodForm v-if="showCreateForm" @pod-created="handlePodCreated" />
+      </transition>
 
       <div v-if="pods.length === 0" class="empty-state">
         <p>📭 No pods running</p>
@@ -126,25 +122,54 @@ async function refreshPods() {
   position: relative;
 }
 
-.toggle-form {
-  display: block;
+.pods-section {
+  margin-bottom: 40px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   width: 100%;
-  padding: 10px 14px;
-  margin-bottom: 16px;
-  background: rgba(74, 158, 255, 0.1);
-  border: 1px solid rgba(74, 158, 255, 0.2);
-  border-radius: 6px;
-  color: #4a9eff;
-  font-size: 0.9rem;
-  font-weight: 600;
+  padding: 12px 0;
+  margin-bottom: 12px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: inherit;
   cursor: pointer;
   transition: all 0.2s;
   text-align: left;
 }
 
-.toggle-form:hover {
+.section-header:hover {
+  border-bottom-color: rgba(255, 255, 255, 0.2);
+}
+
+.toggle-icon {
+  display: inline-block;
+  width: 14px;
+  font-size: 0.8rem;
+  color: #4a9eff;
+}
+
+.section-header h2 {
+  color: #d0d0e0;
+  font-size: 0.95rem;
+  margin: 0;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex: 1;
+}
+
+.pod-count {
   background: rgba(74, 158, 255, 0.15);
-  border-color: rgba(74, 158, 255, 0.3);
+  color: #4a9eff;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .expand-enter-active,
@@ -158,37 +183,6 @@ async function refreshPods() {
   transform: translateY(-10px);
 }
 
-.pods-section {
-  margin-bottom: 40px;
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.pods-section h2 {
-  color: #d0d0e0;
-  font-size: 0.95rem;
-  margin: 0;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.pod-count {
-  background: rgba(74, 158, 255, 0.15);
-  color: #4a9eff;
-  padding: 3px 8px;
-  border-radius: 12px;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
 .pods-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -198,7 +192,7 @@ async function refreshPods() {
 .empty-state {
   color: #8080a0;
   font-size: 0.9rem;
-  padding: 20px;
+  padding: 20px 0;
   text-align: center;
 }
 
