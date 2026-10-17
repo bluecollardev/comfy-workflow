@@ -1,20 +1,27 @@
 <template>
   <div class="dashboard">
-    <!-- Pods Section with Collapsible Form -->
-    <div class="pods-section">
+    <!-- Create Pod Section -->
+    <div class="create-section">
       <button
         type="button"
         @click="showCreateForm = !showCreateForm"
         class="section-header"
       >
         <span class="toggle-icon">{{ showCreateForm ? '▼' : '▶' }}</span>
-        <h2>Pods</h2>
-        <span class="pod-count">{{ pods.length }}</span>
+        <h2>Create Pod</h2>
       </button>
 
       <transition name="expand">
         <PodForm v-if="showCreateForm" @pod-created="handlePodCreated" />
       </transition>
+    </div>
+
+    <!-- Pods List Section -->
+    <div class="pods-section">
+      <div class="section-header">
+        <h2>Pods</h2>
+        <span class="pod-count">{{ pods.length }}</span>
+      </div>
 
       <div v-if="pods.length === 0" class="empty-state">
         <p>📭 No pods running</p>
@@ -122,6 +129,10 @@ async function refreshPods() {
   position: relative;
 }
 
+.create-section {
+  margin-bottom: 32px;
+}
+
 .pods-section {
   margin-bottom: 40px;
 }
@@ -132,7 +143,7 @@ async function refreshPods() {
   gap: 12px;
   width: 100%;
   padding: 12px 0;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
   background: none;
   border: none;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
@@ -142,8 +153,19 @@ async function refreshPods() {
   text-align: left;
 }
 
-.section-header:hover {
+.create-section .section-header {
+  cursor: pointer;
+}
+
+.create-section .section-header:hover {
   border-bottom-color: rgba(255, 255, 255, 0.2);
+}
+
+.pods-section .section-header {
+  cursor: default;
+  padding: 0;
+  margin-bottom: 12px;
+  border-bottom: none;
 }
 
 .toggle-icon {
