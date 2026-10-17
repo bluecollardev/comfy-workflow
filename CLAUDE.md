@@ -76,9 +76,40 @@ Three main branches with clear purposes:
 
 | Branch | Purpose | Protection |
 |--------|---------|-----------|
-| `master` | Production-ready releases | Always stable |
-| `develop` | Integration branch for next release | Code review required |
-| `feature/*` | Feature development | Merged via PR to develop |
+| `master` | Production releases (merge from develop) | Always stable |
+| `develop` | Integration branch (base for all features) | Code review required |
+| `feature/*` | Feature development (branch from develop) | Merged via PR to develop |
+
+**⚠️ IMPORTANT: All feature branches must be based on `develop`, NOT master.**
+
+Workflow:
+```
+develop (always up to date)
+  ↓
+feature/your-feature (created from develop)
+  ↓
+PR → code review
+  ↓
+merge to develop
+  ↓
+develop → master (only for releases)
+```
+
+### Merge Strategy
+
+**For feature branches → develop:**
+```bash
+git checkout develop
+git merge --no-ff feature/name  # Always create merge commit
+```
+
+**For develop → master (releases only):**
+```bash
+git checkout master
+git merge --ff-only develop     # Fast-forward only (no merge commit)
+```
+
+This keeps develop with explicit merge commits (clear history) while keeping master a linear series of releases.
 
 ### Commit Message Format
 
