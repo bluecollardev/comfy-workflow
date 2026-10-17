@@ -1,25 +1,25 @@
 <template>
-  <div class="min-h-screen">
-    <!-- Header -->
-    <header class="card-dark mx-4 my-5 px-8 py-8">
-      <div class="flex justify-between items-center gap-5">
+  <div class="min-h-screen flex flex-col">
+    <!-- Navbar -->
+    <nav class="bg-gradient-card border-b border-light sticky top-0 z-40">
+      <div class="mx-auto px-4 py-4 flex justify-between items-center gap-4">
         <div>
-          <h1 class="text-4xl font-bold text-white mb-2">🚀 RunPod Pod Manager</h1>
-          <p class="text-dark-300 text-sm">Real-time management of your GPU pods</p>
+          <h1 class="text-2xl font-bold text-white">RunPod Pod Manager</h1>
+          <p class="text-dark-300 text-xs">Real-time management of your GPU pods</p>
         </div>
         <button
           @click="refresh"
           :disabled="loading"
-          class="btn-primary whitespace-nowrap"
+          class="btn-primary whitespace-nowrap flex items-center gap-2"
         >
-          <span class="me-2">🔄</span>
+          <i :class="['fas fa-sync', { 'animate-spin': loading }]"></i>
           {{ loading ? 'Loading...' : 'Refresh' }}
         </button>
       </div>
-    </header>
+    </nav>
 
     <!-- Main Content -->
-    <div class="container-lg mx-auto px-4 py-5">
+    <div class="flex-1 container-lg mx-auto px-4 py-5">
       <!-- Error Alert -->
       <transition name="fade">
         <div
@@ -27,7 +27,7 @@
           class="alert-error mb-4 flex items-center justify-between"
         >
           <div>
-            <strong>❌ Error:</strong> {{ error }}
+            <strong>Error:</strong> {{ error }}
           </div>
           <button @click="error = null" class="text-lg opacity-70 hover:opacity-100">
             ×

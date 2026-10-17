@@ -175,6 +175,10 @@ button {
   }
 }
 
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
 /* ===== Error Alert ===== */
 
 .alert-error {

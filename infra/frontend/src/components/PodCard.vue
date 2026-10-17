@@ -59,24 +59,27 @@
       <button
         v-if="pod.status === 'running'"
         @click="$emit('stop')"
-        class="btn-secondary flex-1 text-sm"
+        class="btn-secondary flex-1 text-sm flex items-center justify-center gap-2"
       >
-        ⏸ Stop
+        <i class="fas fa-pause"></i>
+        Stop
       </button>
       <button
         v-else
         @click="$emit('resume')"
-        class="btn-primary flex-1 text-sm"
+        class="btn-primary flex-1 text-sm flex items-center justify-center gap-2"
       >
-        ▶ Resume
+        <i class="fas fa-play"></i>
+        Resume
       </button>
 
       <!-- Delete Button -->
       <button
         @click="deleteConfirm"
-        class="btn-danger flex-1 text-sm"
+        class="btn-danger flex-1 text-sm flex items-center justify-center gap-2"
       >
-        🗑 Delete
+        <i class="fas fa-trash"></i>
+        Delete
       </button>
     </div>
   </div>

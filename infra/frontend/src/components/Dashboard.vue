@@ -31,7 +31,7 @@
       <div class="mt-4">
         <!-- Empty State -->
         <div v-if="pods.length === 0" class="text-center py-12">
-          <p class="text-dark-300 text-sm">📭 No pods running</p>
+          <p class="text-dark-300 text-sm">No pods running</p>
         </div>
 
         <!-- Pods Grid -->

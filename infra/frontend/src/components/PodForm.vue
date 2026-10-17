@@ -117,7 +117,7 @@
       <button
         type="button"
         @click="expanded.envVars = !expanded.envVars"
-        class="w-full text-left px-3 py-2 text-primary hover:text-info font-semibold flex items-center gap-2"
+        class="w-full text-left px-3 py-2 text-dark-200 font-semibold flex items-center gap-2 hover:text-dark-100"
       >
         <span>{{ expanded.envVars ? '▼' : '▶' }}</span>
         Environment Variables
@@ -139,7 +139,7 @@
       <button
         type="button"
         @click="expanded.pipReqs = !expanded.pipReqs"
-        class="w-full text-left px-3 py-2 text-primary hover:text-info font-semibold flex items-center gap-2"
+        class="w-full text-left px-3 py-2 text-dark-200 font-semibold flex items-center gap-2 hover:text-dark-100"
       >
         <span>{{ expanded.pipReqs ? '▼' : '▶' }}</span>
         Custom Pip Requirements
@@ -161,7 +161,7 @@
       <button
         type="button"
         @click="expanded.customNodes = !expanded.customNodes"
-        class="w-full text-left px-3 py-2 text-primary hover:text-info font-semibold flex items-center gap-2"
+        class="w-full text-left px-3 py-2 text-dark-200 font-semibold flex items-center gap-2 hover:text-dark-100"
       >
         <span>{{ expanded.customNodes ? '▼' : '▶' }}</span>
         Custom ComfyUI Nodes
