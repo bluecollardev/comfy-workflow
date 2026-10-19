@@ -23,6 +23,8 @@ from images import router as images_router, PREBUILT_IMAGE
 from repositories import router as repositories_router
 import mounts
 import governance
+import gpus
+import idle
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -68,6 +70,7 @@ class PodStatus(BaseModel):
     uptime_seconds: Optional[int] = Field(None, description="Uptime in seconds")
     web_ui_url: Optional[str] = Field(None, description="ComfyUI web UI URL")
     ssh_command: str = Field(..., description="SSH connection command")
+    idle_stop_minutes: int = Field(default=0, description="Stopped after this many quiet minutes; 0 = not watched")
 
 
 class DashboardStats(BaseModel):
@@ -89,12 +92,13 @@ class DashboardData(BaseModel):
 class CreatePodRequest(BaseModel):
     """Request to create a new pod"""
     name: str = Field(..., description="Pod name")
-    gpu: str = Field(default="rtx4090", description="GPU type")
+    gpu: str = Field(default=gpus.DEFAULT, description="GPU key (a4000, a5000, rtx3090, rtx4090) or a RunPod gpu id")
     gpu_count: int = Field(default=1, description="Number of GPUs")
-    instance_type: str = Field(default="on-demand", description="on-demand or spot")
-    volume_gb: int = Field(default=50, description="Volume size in GB")
+    instance_type: str = Field(default="spot", description="spot = community cloud (cheaper), on-demand = secure cloud")
+    volume_gb: int = Field(default=0, description="Per-pod volume in GB; ignored (0) when the configured network volume is attached, which carries the data")
     disk_gb: int = Field(default=20, description="Container disk size in GB")
-    image: str = Field(default="prebuilt", description="Docker image")
+    image: str = Field(default="configured", description="configured = the image in the mount configuration (ours); prebuilt = ashleykza/comfyui; or an image reference")
+    idle_stop_minutes: Optional[int] = Field(default=None, description="Stop after this many minutes with nothing queued; None = the configuration's value; 0 = never")
     env_vars: Optional[dict] = Field(default_factory=dict, description="Environment variables")
     build_args: Optional[dict] = Field(default_factory=dict, description="Image build ARG overrides (exposed to the pod as env, never over an explicit env var)")
     pip_requirements: Optional[str] = Field(default="", description="Custom pip packages")
@@ -107,6 +111,47 @@ class CreatePodRequest(BaseModel):
 # ============================================================================
 # API Routes
 # ============================================================================
+
+def resolve_image(choice: str, mcfg: "mounts.MountsConfig") -> str:
+    """The image a pod boots. `configured` is ours from the mount configuration; it must be a reference a pod can
+    pull, i.e. carry a registry or namespace: a bare local name like comfy-app:contract-v26 means it has not been
+    pushed yet, and a pod created with it would start, bill, and fail to pull."""
+    image = {"configured": mcfg.image, "prebuilt": PREBUILT_IMAGE}.get(choice, choice).strip()
+    if not image:
+        raise HTTPException(status_code=400, detail="No image: set one in Configuration or pick one in the form")
+    if "/" not in image:
+        raise HTTPException(status_code=400, detail=f"{image} is a local image name; a pod cannot pull it. Push it to the registry Binc names (apps/comfy-app/build.sh, then docker push) and set that reference in Configuration.")
+    return image
+
+
+def _running_pod_ids() -> set:
+    runpod.api_key = os.getenv('RUNPOD_API_KEY', '')
+    return {p.get('id') for p in runpod.get_pods() if (p.get('runtime') or {}).get('uptimeInSeconds')}
+
+
+def _stop_pod(pod_id: str) -> None:
+    runpod.api_key = os.getenv('RUNPOD_API_KEY', '')
+    runpod.stop_pod(pod_id)
+
+
+@app.on_event("startup")
+async def start_idle_watch():
+    if os.getenv('RUNPOD_API_KEY') and os.getenv("IDLE_WATCH", "1") != "0":
+        asyncio.create_task(idle.loop(_running_pod_ids, _stop_pod))
+
+
+@app.get("/api/gpus", tags=["Pods"])
+async def list_gpus():
+    """The GPU menu: 16-24 GB cards, cheapest first; the job needs no more."""
+    return {"default": gpus.DEFAULT, "gpus": gpus.menu()}
+
+
+@app.put("/api/pods/{pod_id}/idle", tags=["Pods"])
+async def set_idle(pod_id: str, minutes: int):
+    """Watch a pod for idleness (minutes > 0) or stop watching it (0)."""
+    idle.register(pod_id, minutes)
+    return {"pod_id": pod_id, "idle_stop_minutes": max(minutes, 0)}
+
 
 @app.get("/api/governance", tags=["Governance"])
 async def get_governance():
@@ -149,11 +194,15 @@ async def create_pod(request: CreatePodRequest):
             if creds:
                 env_vars['GIT_CREDENTIALS'] = json.dumps(creds)
 
-        # Mounts: the configured network volume and the binc-PC paths the entrypoint links (docs/MOUNT-POINTS.md).
+        # Mounts: the configured network volume and the paths the entrypoint links (docs/MOUNT-POINTS.md).
         mcfg = mounts.load()
         apply = mcfg.apply_by_default if request.apply_mounts is None else request.apply_mounts
         volume_kwargs = {}
+        volume_gb = request.volume_gb
         if apply:
+            missing = mounts.missing_required(mcfg)
+            if missing:
+                raise HTTPException(status_code=400, detail=f"Not mapped on this PC: {', '.join(missing)}. Map them in Configuration (gear icon); in dev mode (COMFY_MODE=dev) plates are optional.")
             ov = mounts.pod_overrides(mcfg)
             for key, value in ov["env"].items():
                 env_vars.setdefault(key, value)          # explicit env wins
@@ -161,15 +210,23 @@ async def create_pod(request: CreatePodRequest):
                 volume_kwargs = {"network_volume_id": ov["network_volume_id"], "volume_mount_path": ov["volume_mount_path"]}
                 if ov.get("data_center_id"):
                     volume_kwargs["data_center_id"] = ov["data_center_id"]
+                volume_gb = 0   # the network volume carries the data; a per-pod volume beside it is billed for nothing
+
+        image = resolve_image(request.image, mcfg)
+        try:
+            gpu_id = gpus.runpod_id(request.gpu)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        idle_minutes = mcfg.idle_stop_minutes if request.idle_stop_minutes is None else request.idle_stop_minutes
 
         # runpod.create_pod takes keyword arguments; cloud_type is ALL / SECURE / COMMUNITY.
         pod = runpod.create_pod(
             name=request.name,
-            image_name=request.image if request.image != "prebuilt" else PREBUILT_IMAGE,
-            gpu_type_id=request.gpu,
+            image_name=image,
+            gpu_type_id=gpu_id,
             cloud_type={"on-demand": "SECURE", "spot": "COMMUNITY"}.get(request.instance_type, "ALL"),
             gpu_count=request.gpu_count,
-            volume_in_gb=request.volume_gb,
+            volume_in_gb=volume_gb,
             container_disk_in_gb=request.disk_gb,
             start_ssh=request.start_ssh,
             ports="8188/http,22/tcp",
@@ -182,18 +239,23 @@ async def create_pod(request: CreatePodRequest):
 
         pod_id = pod.get('id')
         runtime = pod.get('runtime', {})
+        if idle_minutes and idle_minutes > 0:
+            idle.register(pod_id, idle_minutes)
 
         return PodStatus(
             id=pod_id,
             name=request.name,
             status="starting",
             gpu=f"{request.gpu} x{request.gpu_count}",
-            vram=24 * request.gpu_count,
+            vram=gpus.vram(request.gpu) * request.gpu_count,
             uptime_seconds=0,
-            web_ui_url=f"http://{pod_id}.proxy.runpod.io:8188",
-            ssh_command=f"ssh root@{pod_id}.proxy.runpod.io"
+            web_ui_url=idle.proxy_url(pod_id),
+            ssh_command=f"ssh root@{pod_id}.proxy.runpod.io",
+            idle_stop_minutes=idle_minutes or 0,
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating pod: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -227,8 +289,9 @@ async def list_pods():
                 gpu=str(runtime.get('gpuCount', '?')),
                 vram=24,  # Default, would need to enhance to get actual VRAM
                 uptime_seconds=uptime,
-                web_ui_url=f"http://{pod_id}.proxy.runpod.io:8188" if is_running else None,
-                ssh_command=f"ssh root@{pod_id}.proxy.runpod.io"
+                web_ui_url=idle.proxy_url(pod_id) if is_running else None,
+                ssh_command=f"ssh root@{pod_id}.proxy.runpod.io",
+                idle_stop_minutes=(idle.entry(pod_id) or {}).get("minutes", 0),
             )
             pod_list.append(pod_data)
 

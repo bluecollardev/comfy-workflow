@@ -8,6 +8,7 @@
 #   ./start.sh dashboard      dashboard with hot reload, needs `pods` running   http://localhost:5173
 #   ./start.sh pod <args>     pod lifecycle CLI, e.g. ./start.sh pod list
 #   ./start.sh mcp            the MCP server over stdio (what Claude Code launches)
+#   ./start.sh sync --pod <id> copy the mapped folders to a pod's network volume (never deletes)
 #   ./start.sh test [args]    the merge gate: pytest without the integration tests
 #   ./start.sh stop           stop the pod manager API (even a stale one) and a backgrounded ComfyUI
 #
@@ -125,6 +126,9 @@ case "${1:-help}" in
   pod)
     shift; load_env; ensure_venv
     exec "$PY" infra/scripts/create_pod.py "$@" ;;
+  sync)
+    shift; load_env; need_key; ensure_venv
+    exec "$PY" infra/scripts/sync_volume.py "$@" ;;
   mcp)
     load_env; need_key; ensure_venv
     cd apps/runpod-api

@@ -203,6 +203,7 @@ infra(scripts): add pod lifecycle management
 - **`docs/ADR-001-runpod-strategy.md`** — Why we chose hybrid approach
 - **`docs/SETUP.md`** — How to deploy on-demand pod
 - **`docs/WORKFLOWS.md`** — Workflow composition patterns
+- **`NEXT-STEPS.md`** — Open work only; **`CHANGELOG.md`** — what is done, by day. Completed items move from the first to the second
 
 ### Automation
 
@@ -326,8 +327,9 @@ export RUNPOD_POD_ID="..."     # Document current pod
 ```
 RUNPOD_API_KEY=...
 RUNPOD_POD_ID=...
-RUNPOD_GPU_TYPE=rtx4090
-RUNPOD_VOLUME_GB=50
+COMFY_MODE=dev          # dev (default): folders optional unless the panel says; prod: all three required
+COMFY_REQUIRE=          # dev override: project,plates,comfy-shared | all | none
+COMFY_IMAGE=            # default image for new pods when the panel has none; must be a pushed registry reference
 ```
 
 **Never commit `.env`** — it's in `.gitignore` for a reason.

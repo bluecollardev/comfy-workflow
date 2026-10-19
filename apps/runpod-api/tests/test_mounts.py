@@ -128,7 +128,7 @@ def test_custom_folders(client, mounts, tree, tmp_path):
     r = client.put("/api/mounts", json=cfg); assert r.status_code == 200
     body = r.json(); rows = {f["key"]: f for f in body["folders"]}
     assert [f["key"] for f in body["folders"]] == ["project", "plates", "comfy-shared", "legacy", "scratch"]
-    assert rows["project"]["required"] and not rows["legacy"]["required"] and rows["legacy"]["custom"]
+    assert not rows["project"]["required"] and not rows["legacy"]["required"] and rows["legacy"]["custom"]   # dev: nothing required by default
     assert rows["legacy"]["container"] == "/workspace/legacy" and rows["legacy"]["exists"] and rows["legacy"]["declared"]["path"] == "/home/someone/Desktop/old"
     assert rows["scratch"]["container"] == "/data/scratch" and rows["scratch"]["declared"] is None and not rows["scratch"]["exists"]
     assert "/home/someone/Desktop/old=/workspace/legacy" in body["preview"]["env"]["COMFY_LINKS"].split(";")
@@ -137,6 +137,21 @@ def test_custom_folders(client, mounts, tree, tmp_path):
     for bad in [{"name": "", "local": ""}, {"name": "project"}, {"name": "a/b"}, {"name": "x", "container": "rel"}, {"name": "x", "local": "rel"}]:
         cfg["custom"] = [bad]
         assert client.put("/api/mounts", json=cfg).status_code == 400, bad
+
+
+def test_required_folders_by_mode(mounts, monkeypatch):
+    cfg = mounts.defaults()
+    monkeypatch.delenv("COMFY_MODE", raising=False); monkeypatch.delenv("COMFY_REQUIRE", raising=False)
+    assert mounts.mode() == "dev" and mounts.require_source() == "config" and mounts.required_keys(cfg) == set()
+    cfg.required["project"] = True
+    assert mounts.required_keys(cfg) == {"project"} and mounts.missing_required(cfg) == ["project"]
+    monkeypatch.setenv("COMFY_REQUIRE", "plates, comfy-shared")
+    assert mounts.require_source() == "env" and mounts.required_keys(cfg) == {"plates", "comfy-shared"}
+    monkeypatch.setenv("COMFY_REQUIRE", "none"); assert mounts.required_keys(cfg) == set()
+    monkeypatch.setenv("COMFY_REQUIRE", "all"); assert len(mounts.required_keys(cfg)) == 3
+    monkeypatch.setenv("COMFY_MODE", "prod"); monkeypatch.delenv("COMFY_REQUIRE")
+    assert mounts.require_source() == "prod" and len(mounts.required_keys(cfg)) == 3
+    assert sorted(mounts.missing_required(cfg)) == ["comfy-shared", "plates", "project"]
 
 
 def test_rejects_bad_input(client, mounts):

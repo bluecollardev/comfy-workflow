@@ -26,6 +26,42 @@ from pydantic import BaseModel, Field
 router = APIRouter(prefix="/api", tags=["Mounts"])
 
 STORE = Path(os.getenv("MOUNTS_FILE", Path.home() / ".config/runpod-pod-manager/mounts.json"))
+DEFAULT_IMAGE = os.getenv("COMFY_IMAGE", "comfy-app:contract-v26")   # our image; must be pushed to a registry before a pod can pull it
+
+
+def mode() -> str:
+    """COMFY_MODE: `dev` (default; a local run, plates optional) or `prod` (every required folder must be mapped)."""
+    return "prod" if os.getenv("COMFY_MODE", "dev").strip().lower() == "prod" else "dev"
+
+
+def require_source() -> str:
+    """Who decides which folders are required: `prod` (all, always), `env` (COMFY_REQUIRE is set), or
+    `config` (the panel's per-folder toggles, dev only)."""
+    if mode() == "prod":
+        return "prod"
+    return "env" if os.getenv("COMFY_REQUIRE", "").strip() else "config"
+
+
+def required_keys(cfg: Optional["MountsConfig"] = None) -> set:
+    """Which of the three folders must be mapped. In prod all of them. In dev, COMFY_REQUIRE when set
+    (`project,plates,comfy-shared`, `all`, `none`), else the toggles saved in the configuration, off by
+    default: we have no plates on a dev machine yet (Lucas, 2026-10-19) and a dev run is not blocked."""
+    keys = {m["name"] for m in folder_shapes_all()}
+    src = require_source()
+    if src == "prod":
+        return keys
+    if src == "env":
+        raw = os.getenv("COMFY_REQUIRE", "").strip().lower()
+        if raw == "all":
+            return keys
+        if raw == "none":
+            return set()
+        return {k.strip() for k in raw.split(",") if k.strip()} & keys
+    return {k for k in keys if (cfg.required.get(k) if cfg else False)}
+
+
+def folder_shapes_all() -> List[dict]:
+    return [m for m in shape().get("mounts", []) if m.get("container") and m.get("required")]
 _HERE = Path(__file__).resolve().parent
 SHAPE_CANDIDATES = [
     Path(p) for p in [
@@ -75,6 +111,9 @@ class MountsConfig(BaseModel):
     links: List[Link] = Field(default_factory=list, description="Extra links added by hand or by create_pod.py --link")
     env: dict = Field(default_factory=dict, description="Extra env for the pod")
     apply_by_default: bool = Field(default=True, description="New pods get these mounts unless the form says otherwise")
+    required: Dict[str, bool] = Field(default_factory=dict, description="Dev-mode toggles: which of the three folders a run and a pod refuse to go without; prod requires all, COMFY_REQUIRE overrides")
+    image: str = Field(default=DEFAULT_IMAGE, description="The image every new pod boots unless the form picks another; ours, pushed to a registry Binc names")
+    idle_stop_minutes: int = Field(default=30, description="Stop a pod after this many minutes with nothing queued in its ComfyUI; 0 = never")
 
 
 def shape() -> dict:
@@ -107,6 +146,7 @@ def load() -> MountsConfig:
             raise HTTPException(status_code=500, detail=f"{STORE} is not a valid mounts config: {e}")
         for m in folder_shapes():
             cfg.folders.setdefault(m["name"], "")
+            cfg.required.setdefault(m["name"], False)
     return cfg
 
 
@@ -190,7 +230,7 @@ def folder_rows(cfg: MountsConfig) -> List[dict]:
         local = cfg.folders.get(m["name"], "")
         env_keys = list(m.get("env") or {})   # first is the name shown; the rest are aliases some packs read
         rows.append({
-            "key": m["name"], "what": m.get("what", ""), "mode": m.get("mode") or "rw", "required": bool(m.get("required")),
+            "key": m["name"], "what": m.get("what", ""), "mode": m.get("mode") or "rw", "required": m["name"] in required_keys(cfg),
             "local": local, "exists": bool(local) and Path(local).is_dir(), "mirror": in_mirror(local),
             "container": m["container"], "env_key": env_keys[0] if env_keys else "", "env_keys": env_keys, "declared": dec.get(m["name"]),
         })
@@ -251,6 +291,9 @@ def _payload(cfg: MountsConfig) -> dict:
     sh = shape()
     return {
         "config": cfg.model_dump(),
+        "mode": mode(),
+        "require": sorted(required_keys(cfg)),
+        "require_source": require_source(),
         "stored": STORE.is_file(),
         "store": str(STORE),
         "folders": folder_rows(cfg),
@@ -280,8 +323,15 @@ def put_mounts(cfg: MountsConfig):
         if c.container and not c.container.startswith("/"):
             raise HTTPException(status_code=400, detail=f"{c.name}: the pod path is absolute, not {c.container!r}")
     links_env(all_links(cfg))  # validate
+    if cfg.idle_stop_minutes < 0:
+        raise HTTPException(status_code=400, detail="idle_stop_minutes is 0 (never) or a number of minutes")
     save(cfg)
     return _payload(cfg)
+
+
+def missing_required(cfg: MountsConfig) -> List[str]:
+    """Required folders (COMFY_REQUIRE, by mode) not mapped on this PC, by key."""
+    return [r["key"] for r in folder_rows(cfg) if r["required"] and not r["local"]]
 
 
 @router.delete("/mounts", status_code=200)

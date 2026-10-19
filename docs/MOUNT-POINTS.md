@@ -63,6 +63,13 @@ nothing about a machine is typed. Everything a runtime receives is derived:
 | a runtime on this PC (`launch.sh`, `compose.yml`) | `PROJECT_ROOT`, `PLATES_ROOT`, `COMFY_SHARED` set to the mapped folders (`GET /api/mounts/env`) | the mapping |
 | a pod | the same variables set to `/workspace/project`, `/workspace/plates`, `/workspace/comfy-shared`, plus one `COMFY_LINKS` entry per folder from the path the project's files name onto that place | the mapped project tree: the job files' `root:` line in `04_TRACKER/queue` (else the structure master's `Root:`), each shot's `02_SOURCE/SOURCES.csv` two levels above the eye folders, and `~/ComfyUI-Shared` beside the tree's home |
 
+Which folders are required is a mode question. `COMFY_MODE=prod` requires all
+three. In `dev`, the default, the panel's per-folder switches decide (none by
+default: a dev machine has no plates yet), `COMFY_REQUIRE` overrides them
+(`project,plates,comfy-shared`, `all`, `none`), and a ComfyUI-Shared mapped
+into the mirror is replaced by `~/ComfyUI-Shared` at launch instead of refused.
+Pod creation and `launch.sh` refuse to run without a required folder.
+
 The panel shows what the tree declares under each folder. A tree that declares
 nothing gets no link, and the panel says so. Below the three required folders
 the user adds custom ones (Add folder): a name, the local folder, its place on
@@ -81,7 +88,7 @@ eval "$(curl -s localhost:8000/api/mounts/env | jq -r .sh)"   # this PC's folder
 | binc-PC | they are real |
 | this Mac | map the three folders in the Configuration panel; `apps/comfy-app/mounts-env.sh` reads the saved mapping (or `PROJECT_ROOT`, `PLATES_ROOT`, `COMFY_SHARED` from the environment) for `launch.sh` and `fetch-models.sh`, and `launch.sh` writes the model paths file from it at every start. ComfyUI-Shared may not be the mirror, which is read-only by rule; the default is `~/ComfyUI-Shared`. The mirror has the tree without plates |
 | Docker on a Linux box, Compose or Swarm | [`apps/comfy-app/docker/compose.yml`](../apps/comfy-app/docker/compose.yml) binds the three folders from the same three variables at the paths the project declares, plates read-only |
-| RunPod pod | a network volume at `/workspace` carrying `CANALV2/`, `plates/` and `ComfyUI-Shared/`; the image's entrypoint makes the links from `COMFY_LINKS`. Configured once in the Configuration panel and applied to every new pod by the API and by `create_pod.py` (`--network-volume`, `--link`, `--no-mounts`) |
+| RunPod pod | a network volume at `/workspace` carrying `project/`, `plates/` and `comfy-shared/`, filled by `./start.sh sync --pod <id>` (rsync, never deletes, plates only with a named yes); the image's entrypoint makes the links from `COMFY_LINKS`. Configured once in the Configuration panel and applied to every new pod by the API and by `create_pod.py` (`--network-volume`, `--link`, `--no-mounts`); a pod with nothing queued for the configured minutes is stopped by the idle watch |
 
 Where the pack defaults come from, line by line:
 [`shared/nodes/bound/README.md`](../shared/nodes/bound/README.md). What the
