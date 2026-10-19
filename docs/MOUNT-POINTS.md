@@ -19,7 +19,11 @@ which the pod manager reads for its defaults.
 | **ComfyUI-Shared**: input, output, models, workflows for every install | `/home/binc/ComfyUI-Shared` | `~/ComfyUI-Shared` | 39 | mount at `/workspace/ComfyUI-Shared`; link `/home/binc/ComfyUI-Shared` and `/root/ComfyUI-Shared`; `COMFY_SHARED` env |
 
 `~` is `/home/binc` on binc-PC and `/root` in a container, which is why each
-home-relative spelling needs its own link. Binc's policy adds two facts: the
+home-relative spelling needs its own link. The node packs no longer need the
+links for their own defaults: since `packs-2026-10-19h` they read
+`CANALV2_ROOT`, `PLATES_ROOT` and `COMFY_SHARED`, which the mount
+configuration sets on a pod and `launch.sh` sets on the Mac. The links remain
+for the graphs, which carry the literal paths. Binc's policy adds two facts: the
 plates stay where they were delivered and are linked, never copied, and the
 disk they sit on is for parking and mirroring only, so run output goes
 elsewhere. Copying plates to a pod's volume is the one step that moves client

@@ -45,12 +45,14 @@ packs repo, decided by its contents, not by hand:
 
 | Folder | Rule | Today |
 |---|---|---|
-| `portable/` | no absolute binc-PC path or reference to the machine anywhere in the pack's Python; usable on another project as is | ShotPipe v11–v14, v16, v26; BincStereo |
-| `bound/` | binc-PC paths (`/home/binc/…`, `/mnt/storage/…`, `~/CANALV2…`) in the code as widget defaults or fallback lookups; fine for CANALV2, where every runtime mounts those paths, not elsewhere untouched. Every one, in its code: [`shared/nodes/bound/README.md`](../shared/nodes/bound/README.md); what each path is and where runtimes mount it: [`MOUNT-POINTS.md`](MOUNT-POINTS.md) | ShotPipe v6–v10, v15, v17, v20–v25 |
+| `portable/` | no machine path anywhere in the pack's Python outside `bh_paths.py`, which reads `CANALV2_ROOT`, `PLATES_ROOT` and `COMFY_SHARED` from the environment with binc-PC's values as fallback | every pack, since `packs-2026-10-19h` |
+| `bound/` | a machine path outside `bh_paths.py`; every one would be listed in its code in [`shared/nodes/bound/README.md`](../shared/nodes/bound/README.md). What each path is and where runtimes mount it: [`MOUNT-POINTS.md`](MOUNT-POINTS.md) | none |
 
 `setup.sh`, `build.sh` and `sync-nodes.sh` look in both, so the split changes
-nothing for an install. Portability is per pack; a set is only as portable as
-its base, and `contract-v26` includes v7, which is bound. A pack never moves between the folders and is never
+nothing for an install. `launch.sh` sets `CANALV2_ROOT` to the mirror and
+`COMFY_SHARED` to the shared folder on the Mac; the pod mount configuration
+sets all three on a pod; on binc-PC nothing is set and the fallbacks are the
+real paths. A pack never moves between the folders and is never
 edited to become portable: a clean rewrite is a new version with a new prefix,
 and it lands in `portable/`. The packs repo's `tools/manifest.py` regenerates
 `packs.json`, `docs/NODES.md` and `docs/PORTABILITY.md` (every baked path by

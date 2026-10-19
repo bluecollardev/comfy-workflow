@@ -8,7 +8,7 @@
     "CANALV2/LEGACY_MAP.csv",
     "shared/nodes/bound/README.md"
   ],
-  "principle": "Graphs, scripts and pack defaults name binc-PC's paths. Every other runtime mounts data under /workspace and links binc-PC's paths onto it, so nothing is edited per machine. `~` is /home/binc on binc-PC and /root in a container, so both spellings get a link.",
+  "principle": "Graphs, scripts and pack defaults name binc-PC's paths. Every other runtime mounts data under /workspace and links binc-PC's paths onto it, so nothing is edited per machine. `~` is /home/binc on binc-PC and /root in a container, so both spellings get a link. Since packs-2026-10-19h the ShotPipe packs also read CANALV2_ROOT, PLATES_ROOT and COMFY_SHARED, so a fresh node's defaults point at the volume directly.",
   "volume_root": "/workspace",
   "mounts": [
     {
@@ -28,7 +28,10 @@
       ],
       "mode": "rw",
       "required": true,
-      "note": "scripts hardcode ROOT; graphs reference it ~490 times per shot set; the policy's root is ~/CANALV2, the tree in use is CANALV2_r3"
+      "note": "scripts hardcode ROOT; graphs reference it ~490 times per shot set; the policy's root is ~/CANALV2, the tree in use is CANALV2_r3",
+      "env": {
+        "CANALV2_ROOT": "/workspace/CANALV2"
+      }
     },
     {
       "name": "plates",
@@ -42,7 +45,10 @@
       ],
       "mode": "ro",
       "required": true,
-      "note": "linked from every shot's 02_SOURCE/SOURCES.csv, never copied into the tree; the IronWolf disk is parking and mirror only; leaving binc-PC needs Binc's named yes"
+      "note": "linked from every shot's 02_SOURCE/SOURCES.csv, never copied into the tree; the IronWolf disk is parking and mirror only; leaving binc-PC needs Binc's named yes",
+      "env": {
+        "PLATES_ROOT": "/workspace/plates/Panama_Redux/source/PC_20260929_VFX_3D_DSM_plates"
+      }
     },
     {
       "name": "comfy-shared",
