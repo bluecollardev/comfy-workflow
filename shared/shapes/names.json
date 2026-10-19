@@ -1,0 +1,81 @@
+{
+  "shape": "names",
+  "version": 1,
+  "source": [
+    "shared/governance/policy/naming.md",
+    "shared/governance/policy/versioning.md",
+    "shared/governance/policy/served-names.md",
+    "shared/governance/policy/structure_v003.md §2"
+  ],
+  "patterns": {
+    "shot_folder": {
+      "regex": "^[a-z]+-[0-9]{3}[a-z]?$",
+      "example": "corrosion-051"
+    },
+    "folder": {
+      "regex": "^[a-z0-9][a-z0-9-]*$",
+      "example": "gen-paint-assets",
+      "note": "lowercase, hyphens, no spaces, no punctuation"
+    },
+    "working_file": {
+      "regex": "^(?P<shot>[a-z]+-[0-9]{3}[a-z]?)_(?P<what>[a-z0-9-]+)(_(?P<detail>[a-z0-9-]+))?_v(?P<ver>[0-9]{3})\\.(?P<ext>[a-z0-9]+)$",
+      "example": "corrosion-051_hull-matte_lead-a_v003.png"
+    },
+    "graph_ui": {
+      "regex": "^(?P<shot>[a-z]+-[0-9]{3}[a-z]?)_graph_v(?P<ver>[0-9]{3})\\.json$",
+      "example": "corrosion-058_graph_v015.json"
+    },
+    "graph_api": {
+      "regex": "^(?P<shot>[a-z]+-[0-9]{3}[a-z]?)_graph_v(?P<ver>[0-9]{3})_api\\.json$",
+      "example": "corrosion-058_graph_v015_api.json"
+    },
+    "review_job": {
+      "regex": "^(?P<shot>[a-z]+-[0-9]{3}[a-z]?)_job_(?P<ts>[0-9]{8}-[0-9]{4})_graph-v(?P<ver>[0-9]{3})$",
+      "example": "corrosion-110_job_20261014-2150_graph-v015"
+    },
+    "review_fork": {
+      "regex": "^(?P<shot>[a-z]+-[0-9]{3}[a-z]?)_(review|audit)-fork(_[a-z0-9-]+)?_v(?P<ver>[0-9]{3})$",
+      "example": "corrosion-110_review-fork_v001"
+    },
+    "solve": {
+      "regex": "^solve_S[A-Z0-9]*_v(?P<ver>[0-9]{3})\\.npz$",
+      "example": "solve_SA_v006.npz"
+    },
+    "dated_folder": {
+      "regex": "^[a-z]+_[a-z0-9-]+_[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "example": "corrosion_blender-solve_2026-10-15",
+      "where": [
+        "80_TEST-BUCKET",
+        "90_DELIVERIES"
+      ]
+    },
+    "request_folder": {
+      "regex": "^[0-9]{4}-[0-9]{2}-[0-9]{2}_[a-z0-9-]+$",
+      "example": "2026-10-09_stereo-throughput",
+      "where": [
+        "03_INBOX"
+      ]
+    },
+    "served_frame": {
+      "regex": "^(?P<shot>[a-z]+-[0-9]{3}[a-z]?)_3D\\.(LEFT|RIGHT)\\.(?P<frame>[0-9]{6})\\.dpx$",
+      "example": "corrosion-059_3D.LEFT.093999.dpx",
+      "rule": "kept exactly as served, in and out"
+    },
+    "version": {
+      "regex": "_v[0-9]{3}",
+      "rule": "only goes up; the current version is stated in 00_READ_ME.md, never implied by renaming"
+    }
+  },
+  "never_in_a_name": [
+    "uuid",
+    "hash",
+    "seed",
+    "prompt id",
+    "tracker number"
+  ],
+  "eyes": [
+    "left",
+    "right"
+  ],
+  "known_exceptions": "listed in shared/governance/policy/structure_v003.md §2 'Exceptions'; left as on disk, not renamed"
+}

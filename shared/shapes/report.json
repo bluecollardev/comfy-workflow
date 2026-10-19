@@ -1,0 +1,44 @@
+{
+  "shape": "report",
+  "version": 1,
+  "source": [
+    "shared/governance/operator-brief.md 'Report'"
+  ],
+  "applies_to": "REPORT.md in the job's output folder; the job file moves to done/ when it exists",
+  "fields": [
+    {
+      "field": "job",
+      "required": true
+    },
+    {
+      "field": "started / finished",
+      "required": true,
+      "format": "<time> / <time>"
+    },
+    {
+      "field": "files written",
+      "required": true,
+      "format": "list with frame ranges and counts, counted from disk"
+    },
+    {
+      "field": "stopped at frame",
+      "required": true,
+      "format": "number or 'completed'"
+    },
+    {
+      "field": "tool exit",
+      "required": true,
+      "format": "code / message verbatim"
+    }
+  ],
+  "forbidden": [
+    "scores",
+    "medians",
+    "pixel errors",
+    "works",
+    "passes",
+    "looks good",
+    "any judgement"
+  ],
+  "observations_go_in": "agent-note.txt in the output folder; nothing acts on it"
+}

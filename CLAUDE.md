@@ -1,5 +1,7 @@
 # ComfyUI Workflow Monorepo
 
+@AGENTS.md
+
 **Project:** ComfyUI Workflow automation on RunPod  
 **Owner:** Lucas (Blue Collar Dev)  
 **Status:** Initial setup phase  
@@ -11,7 +13,7 @@ A production-grade monorepo for managing ComfyUI workflows and infrastructure on
 
 ### Key Decision: Hybrid RunPod Strategy
 
-See `docs/ADR-001-runpod-strategy.md` for full context.
+See `docs/ADR-001-runpod-strategy.md` for full context, and `docs/ADR-004-where-the-workflows-run.md` for which machine runs which graphs (plates first, Linux containers under Compose/Swarm, RunPod as overflow, the Mac as client and MPS worker). The goal the repo serves is in `README.md`, "Goal".
 
 **Phase 1 (Current):** On-demand GPU pods for interactive development
 - Direct web UI access
@@ -43,6 +45,11 @@ comfy_workflow/                    # Root monorepo
 │   ├── runpod-api/               # FastAPI pod manager API, pool manager, MCP server, tests (Python)
 │   └── runpod-dashboard/         # Vue 3 + Electron dashboard for the pod manager API
 │
+├── shared/                        # Shared by every app and agent
+│   ├── governance/               # Binc's policies copied in (sync.sh), precedence, what Claude Code loads
+│   ├── shapes/                   # The project's fixed shapes as JSON + check.py
+│   └── nodes/                    # git submodule bluecollardev/comfy-node-packs: portable/ and bound/ packs, ShotPipe v6–v26 + BincStereo (docs/NODE-PACKS.md)
+├── queue/                         # Job files for agents, one folder per project (in/running/done)
 ├── projects/                      # Client/creative work; ignored except README.md
 │   ├── README.md                  # Inventory of what is in here
 │   └── desktop/                   # Trees synced from the desktop (CANALV2, ComfyUI-Shared)
@@ -357,6 +364,15 @@ RUNPOD_VOLUME_GB=50
    - Web UI: `http://{pod-id}.proxy.runpod.io:8188`
    - SSH: `ssh root@{pod-id}.proxy.runpod.io`
    - Use RunPod dashboard for detailed management
+
+### Binc's tree (`projects/desktop/`) is read-only
+
+Never write into, rename in, or commit anything under `projects/desktop/`.
+It is BH / Binc's mirror; we read it and copy or link out of it (Lucas,
+2026-10-19: their material may be used in this private repo). Rule in
+`.claude/rules/binc-tree.md`, enforced by a PreToolUse hook; the tree is
+explained in `docs/CANALV2-STRUCTURE.md`; their policies are copied under
+`shared/governance/`.
 
 ### Git Constraints
 

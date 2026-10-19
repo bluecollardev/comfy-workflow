@@ -29,6 +29,8 @@ npm run build
 
 ## Features
 
+- ⚙️ Configuration (gear icon): the network volume and the mount points a pod needs, edited here and stored by the API, not hardcoded. `docs/MOUNT-POINTS.md`.
+
 - 🚀 Real-time pod status updates
 - ⚡ Hot reloading during development
 - 📊 Beautiful dashboard UI

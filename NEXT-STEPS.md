@@ -2,7 +2,31 @@
 
 Status as of 2026-10-17; paths updated 2026-10-19 when the trees moved under `projects/desktop/` and the ComfyUI install became `apps/comfy-app/`. The inventory behind this is in
 [`projects/README.md`](./projects/README.md), section "Where the ComfyUI prompts
-and graphs are". Nothing below has been run yet.
+and graphs are".
+
+**2026-10-19, what was measured:** the BincStereo smoke test runs on this Mac
+on MPS (all 12 nodes, about a second), so the stereo workflows run here. The
+corrosion graphs do not: the plates are not on this machine (the packs were
+not linked either that morning; the `contract-v26` set is, from the `shared/nodes` submodule, since the afternoon), and the graphs hardcode binc-PC's path. Blender is the solve
+step before a graph, not a requirement to run one. Decision record:
+`docs/ADR-004-where-the-workflows-run.md`.
+
+## The main thing to solve next: run the graphs from any machine
+
+The GPU is the easy part. In order:
+
+- [ ] **Shared storage.** Get the project tree and plates visible at binc-PC's paths on the Mac (the full list: `docs/MOUNT-POINTS.md`) (SMB from binc-PC or the NAS; Binc's note has a Mac Studio on SMB already). Until then the Mac can open the corrosion graphs but not render them.
+- [x] **The packs are in the repo** (2026-10-19): `shared/nodes` is the `comfy-node-packs` submodule with ShotPipe v6–v26 and BincStereo; `docs/NODE-PACKS.md` has the versioning. Link what a graph needs: `COMFY_SHOTPIPE=v26 apps/comfy-app/setup.sh`.
+- [ ] **binc-PC as the first container node.** Build `comfy-app:v26` on a Linux box (`apps/comfy-app/build.sh`; the Mac would emulate amd64), then `apps/comfy-app/docker/swarm.sh up` for one box or `init` + `deploy` for a Swarm. The Mac's browser then uses `http://binc-pc:8188` like the local one.
+- [ ] **Drive it from the Mac.** `comfy` CLI and the queue scripts take `--comfy <url>`; the stereo work stays local on MPS.
+- [ ] **RunPod as overflow**, after Binc's four yeses (section below). Same image or RunPod's template, network volume at the project path.
+  - [x] The pod manager and `create_pod.py` apply a mount configuration (2026-10-19): network volume, mount path and the binc-PC path links the image's entrypoint makes from `COMFY_LINKS`; edited in the dashboard's Configuration panel, defaults from `shared/shapes/mount-points.json`.
+  - [ ] Create the network volume, put `CANALV2/`, `ComfyUI-Shared/` and `plates/` on it (plates need Binc's yes), enter its id in the panel, boot a pod. Not done: it spends.
+  - [x] The packs pass (2026-10-19, `packs-2026-10-19h`): every machine path that was a widget default or lookup fallback now comes from `bh_paths.py`, env with binc-PC fallback; all 20 packs are portable. The graphs still carry literal paths; the links handle those. Graphs are the later pass.
+- [ ] **Binc's goal, the skill crew.** Not started; a design, not code, is the next step. Separate from ADR-002's GPU pool. See `README.md`, "Goal".
+  - [ ] First piece: a dispatcher over `queue/<project>/`. Watch `in/`, claim a job by moving it to `running/`, start a Claude Code session with the brief as its first message, collect `REPORT.md`, move to `done/`. The folders stay the interface, so the manual and automated paths are the same.
+  - [ ] **Abstract shapes and concrete shapes** (Lucas, 2026-10-19). `shared/shapes/` today is CANALV2's shapes verbatim. Split them: abstract shapes any restoration project has (a project tree, a shot folder, a job, a report, a graph with ordered boxes, naming rules) and concrete bindings per project (CANALV2's `10_CORROSION`, `BH26_` nodes, `/home/binc/...` root, its state words). The dispatcher and the checker then run against the abstract shape plus a binding.
+  - [ ] What `check.py` found on 2026-10-19, to raise with Binc rather than fix: `corrosion-111` and `corrosion-159` have no `05_TEMPS/` or `07_DELIVER/`; the 17 real job files carry `job`, `shot`, `tool`, `machine`, `root` and STEP blocks but not the brief's `inputs`, `params`, `output` fields. Either the brief's template or the files should move.
 
 ## What there is to import
 
@@ -21,27 +45,29 @@ it has 393 shot graphs plus a few saved workflows.
 The highest `_v###` in each shot's `04_GRAPH/` is the current graph. Only the
 current graph per shot needs importing; older versions stay where they are.
 
-## Step 0: install the node pack (blocks everything else)
+## Step 0: install the node pack (done 2026-10-19 for v26)
 
 The graphs are built from the `BH_*` nodes in ComfyUI-BH-ShotPipe, and the v26
-graphs need `BH26_*` nodes. The Mac install only has ComfyUI-BincStereo, so
-every route below fails or opens with missing nodes until a pack is present.
+graphs need `BH26_*` nodes. All versions, v6–v26, plus BincStereo are in the
+`shared/nodes` submodule (`bluecollardev/comfy-node-packs`); nothing is read
+from Binc's mirror at install time any more. `docs/NODE-PACKS.md` has the
+versioning and release steps.
 
-- [ ] Decide which ShotPipe version to install. `v26` covers the newest graphs; older shot graphs need the matching older pack. Versions sit side by side in `projects/desktop/CANALV2/02_SCRIPTS/nodes/`.
-- [ ] Symlink it, do not copy, so the master copy stays the one in `02_SCRIPTS/nodes/`:
+- [x] Decide which ShotPipe versions to install. Not one: ShotPipe stacks, and the 14 current graphs use nodes from v7, v10, v11, v12, v13, v14 and v26 together. That is the `contract-v26` set in the packs repo's `sets.json` (`shared/nodes/docs/SHOTPIPE.md` explains the family). Never v6 beside v7 or v9 beside v10, same names.
+- [x] Link it from the submodule, do not copy:
   ```bash
-  COMFY_SHOTPIPE=v26 apps/comfy-app/setup.sh   # links it into ComfyUI/custom_nodes/
+  COMFY_SHOTPIPE=contract-v26 apps/comfy-app/setup.sh   # symlinks the seven packs from shared/nodes/{portable,bound}/ into ComfyUI/custom_nodes/
   ```
-- [ ] Restart the Mac ComfyUI and confirm the nodes load:
+  Verified 2026-10-19: the set links, every pack imports, and every `BH_*`/`BH26_*` node type the 14 graphs use resolves (24 types, 0 missing).
+- [ ] Restart the Mac ComfyUI and confirm the nodes show in the UI:
   ```bash
   export COMFY_LOCAL_URL=http://127.0.0.1:8188
-  comfy --json nodes search "BH_ReadSequence"
   comfy --json nodes search "BH26_ObjectSolve"
   ```
-- [ ] Check the pack's own requirements against the standalone env. `02_SCRIPTS/containers/runpod/requirements-bh.txt` lists what the pack needs on Linux.
+- [ ] Check the pack's own requirements against the venv. `shared/nodes/README.md` lists them; the project's `containers/runpod/requirements-bh.txt` is the full Linux list.
 
 The nine stereo workflows already saved in the install use BincStereo, which is
-installed. They need none of this and open today.
+always linked. They need none of this and open today.
 
 ## Route A: load graphs into the ComfyUI Workflows panel
 
@@ -137,7 +163,7 @@ job ends.
 
 ## Also pending in this repo
 
-- Ask Binc whether `ComfyUI-BincStereo` may stay tracked in this repo. Since 2026-10-19 it is in `apps/comfy-app/custom_nodes/` (the repo is private) because the app has to be runnable from a clone; its `pyproject.toml` marks it proprietary to Cinematic Immunity / Bincos. If Binc says no: move it back out of git, and have `setup.sh` unpack `apps/comfy-app/archive/ComfyUI-BincStereo.zip` instead.
+- ~~Ask Binc whether `ComfyUI-BincStereo` may stay tracked in this repo.~~ Lucas, 2026-10-19: Binc's material may be used and copied in this private repo; it stays. It now lives in the `shared/nodes` submodule (`comfy-node-packs`) with the ShotPipe versions; its `pyproject.toml` marks it proprietary to Cinematic Immunity / Bincos.
 - Push the RunPod image once Binc has agreed (registry name and account). Dockerfile and build are in `apps/comfy-app/`; see its README, "Targets and what is still open".
 - Rebuild the Electron app under `apps/runpod-dashboard/` so its bundled copy of `mcp_server.py` picks up the mcp 2.x port.
 - Run the review on `feature/desktop-app-and-mcp-fixes` against develop, then delete that branch.

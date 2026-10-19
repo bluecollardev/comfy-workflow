@@ -6,4 +6,6 @@ export const ui = reactive({
   accountsOpen: false,
   repositoriesOpen: false,
   repositoriesVersion: 0,
+  configOpen: false,
+  mountsVersion: 0,
 })

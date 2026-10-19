@@ -33,6 +33,10 @@ args=(main.py --listen 127.0.0.1 --port "$PORT"
 [ -d "$OUTPUT" ] && args+=(--output-directory "$OUTPUT")
 args+=("$@")
 
+# The ShotPipe packs read their default paths from these (bh_paths.py in each pack); on the
+# Mac the project tree is the mirror and there are no plates.
+export PROJECT_ROOT="${PROJECT_ROOT:-$REPO/projects/desktop/CANALV2}"
+export COMFY_SHARED="${COMFY_SHARED:-$SHARED}"
 cd "$APP"
 mkdir -p "$INSTALL/logs"
 if [ "$BACKGROUND" = 1 ]; then

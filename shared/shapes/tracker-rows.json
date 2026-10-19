@@ -1,0 +1,104 @@
+{
+  "shape": "tracker-rows",
+  "version": 1,
+  "source": [
+    "shared/governance/policy/structure_v003.md §4 'Tracker fields'"
+  ],
+  "applies_to": "04_TRACKER/*.csv and the per-shot CSVs",
+  "csv": {
+    "04_TRACKER/shots.csv": [
+      "shot",
+      "type",
+      "assigned_by",
+      "received",
+      "due",
+      "state",
+      "hero_eye",
+      "locked",
+      "next_action",
+      "folder"
+    ],
+    "04_TRACKER/deliverables.csv": [
+      "shot",
+      "deliverable",
+      "format",
+      "spec",
+      "due",
+      "state",
+      "version",
+      "delivered_on"
+    ],
+    "04_TRACKER/schedule.csv": [
+      "date",
+      "milestone",
+      "source",
+      "note"
+    ],
+    "04_TRACKER/attention-list.csv": [
+      "item",
+      "kind",
+      "from",
+      "received",
+      "due",
+      "status",
+      "inbox entry",
+      "next action"
+    ],
+    "04_TRACKER/corrosion-queue-run_<yyyymmdd-hhmmss>.csv": [
+      "shot",
+      "graph",
+      "prompt_id",
+      "result",
+      "track_state"
+    ],
+    "<shot>/02_SOURCE/SOURCES.csv": [
+      "role",
+      "eye",
+      "part",
+      "location",
+      "pattern",
+      "found",
+      "checked",
+      "proxy"
+    ]
+  },
+  "vocab": {
+    "state": [
+      "waiting",
+      "ready",
+      "live",
+      "hold",
+      "skip",
+      "open",
+      "in review",
+      "approved",
+      "delivered",
+      "closed"
+    ],
+    "status (attention list)": [
+      "needs me",
+      "waiting on them",
+      "in progress",
+      "done"
+    ],
+    "locked": [
+      "yes",
+      ""
+    ]
+  },
+  "six_stage_tracker": {
+    "where": "claude.ai artifact V36NdfcmgpeSxe1uYD1RdN, collection shots, one document per served folder",
+    "stages": {
+      "hull": "cleaned hull",
+      "matte": "comp matte",
+      "conv": "conversion",
+      "stereo": "stereo comp",
+      "test": "render test"
+    },
+    "status_values": [
+      "Run",
+      "Hold",
+      "Skip"
+    ]
+  }
+}

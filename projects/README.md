@@ -73,7 +73,7 @@ checks and places files by these rules.
 
 | Package | What it does | Entry points |
 |---|---|---|
-| `nodes/` | **ComfyUI-BH-ShotPipe**, the project's custom node pack, every version kept side by side from `v6` to `v26`. Provides the `BH_*` nodes the graphs are built from (`BH_ReadSequence`, `BH_ReadMatte`, `BH_LoadSolve`, `BH_CarryLayerExact`, `BH_WriteProxySeq`, `BH15_PlateSource`, `BH26_ObjectSolve`, …). | Symlink or copy one version into a ComfyUI `custom_nodes/`. Not installed in `apps/comfy-app` by default; `COMFY_SHOTPIPE=<ver> apps/comfy-app/setup.sh` links one in. |
+| `nodes/` | **ComfyUI-BH-ShotPipe**, the project's custom node pack, every version kept side by side from `v6` to `v26`. Provides the `BH_*` nodes the graphs are built from (`BH_ReadSequence`, `BH_ReadMatte`, `BH_LoadSolve`, `BH_CarryLayerExact`, `BH_WriteProxySeq`, `BH15_PlateSource`, `BH26_ObjectSolve`, …). | Mirrored into the `shared/nodes` submodule (`comfy-node-packs`) by `shared/sync-nodes.sh`; installs link from there, `COMFY_SHOTPIPE=<ver> apps/comfy-app/setup.sh`. Versioning: `docs/NODE-PACKS.md`. |
 | `graph-builder/`, `graph-builders/` | Python that generates the shot graphs programmatically for each pipeline version (`build_master_v15.py`, `build_v25_shot_graphs_v001.py`, `fork_v26_tracking_v003.py`, `graphlib.py`). | Run once per version; output lands in each shot's `04_GRAPH/`. |
 | `queue-graphs/` | Loads graphs into a running ComfyUI's Workflows panel (`corrosion_load-graphs_v002.py`) or queues their API twins for rendering (`corrosion_queue-graphs_v002.py`, `corrosion_queue-api_v005.py`). `.desktop` launchers for binc-PC. | `--list` and `--dry-run` send nothing. Default ComfyUI is `http://127.0.0.1:8189`, the CanalV2 install on binc-PC. |
 | `slug-builder/` | Reads an inbox entry and builds the shot folder plus the V1 "slug" graph (inputs only). `seed.py` wrote the first entries. | `python3 build_slug.py ~/CANALV2 corrosion-110` |
@@ -92,9 +92,11 @@ checks and places files by these rules.
 ComfyUI calls a submitted graph a "prompt". The corrosion and stereo graphs
 contain no text prompts (no `CLIPTextEncode`); they are image-processing
 pipelines built from `BH_*` nodes, `PreviewImage`, `ImageScaleBy`, masks and
-`MarkdownNote` boxes. The generated paint in `Gen_Paint_assets/` comes from a
-separate paint app, and the `.meta.json` sidecars record sources and transforms
-but no prompt text.
+`MarkdownNote` boxes. The generated paint in `Gen_Paint_assets/` comes from
+Gemini 3 Pro Image; each patch's `_Meta.json` and the delivered
+`paint-sidecar` files carry the text prompt, engine, seed and colour space.
+All three kinds of prompt, graphs, generative text and agent briefs, are
+mapped in [`docs/PROMPTS.md`](../docs/PROMPTS.md).
 
 | Where | Count | Format | Purpose |
 |---|---|---|---|

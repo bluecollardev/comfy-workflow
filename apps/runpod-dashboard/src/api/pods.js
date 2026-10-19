@@ -33,6 +33,7 @@ export const podsAPI = {
       custom_nodes: podData.customNodes || [],
       start_ssh: podData.startSsh !== false,
       start_jupyter: podData.startJupyter === true,
+      apply_mounts: podData.applyMounts !== false,
     });
     return data;
   },

@@ -106,6 +106,7 @@ ensure_dashboard() {
 case "${1:-help}" in
   comfy)
     shift
+    [ -f shared/nodes/README.md ] || git submodule update --init --depth 1 shared/nodes
     cd apps/comfy-app
     [ -x ComfyUI/.venv/bin/python ] || ./setup.sh
     ./fetch-models.sh

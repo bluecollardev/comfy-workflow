@@ -13,6 +13,7 @@ Moved here from `infra/scripts/` in October 2026; the pod lifecycle CLI
 | `pod_manager_api.py` | The FastAPI app and its `uvicorn` entry point. Pod endpoints under `/api/pods`, `/api/dashboard`, a `/ws/pods` WebSocket, `/health`, and the built dashboard served at `/`. |
 | `git_accounts.py` | Router: GitHub / GitLab OAuth connect, stored accounts, repo listing (`/api/git-accounts`, `/api/auth/{provider}/…`). |
 | `repositories.py` | Router: saved repositories and repo/branch/folder search (`/api/repositories`, `/api/repos/…`). |
+| `mounts.py` | Router: the mount configuration (`GET`/`PUT`/`DELETE /api/mounts`): network volume, mount path, the binc-PC path → volume path links the pod's entrypoint turns into symlinks (`COMFY_LINKS`), extra env. Defaults from `shared/shapes/mount-points.json`; pod creation applies it. `docs/MOUNT-POINTS.md`. |
 | `images.py` | Router: default env vars for a pod, read from the comfy-app Dockerfile's `ENV`/`ARG` lines (`/api/images/env`). |
 | `pool_manager.py` | `PoolManager`, `PoolAgent`, `PodConfig`: pod orchestration over the RunPod SDK, used by the MCP server. |
 | `mcp_server.py` | MCP server over stdio for Claude Code. Tools: `list_agents`, `get_pool_status`, `create_agent`, `stop_agent`, `resume_agent`, `delete_agent`, `health_check_agent`, `get_agent_info`, `submit_job`, `get_job_status`. See `docs/MCP-SERVER.md`. |
@@ -54,7 +55,8 @@ cd apps/runpod-api && python3 mcp_server.py     # stdio; register the path with 
 | `API_HOST`, `API_PORT`, `API_RELOAD` | `0.0.0.0`, `8000`, `0` | `pod_manager_api.py` entry point. `API_RELOAD=1` restarts on edits to this directory only. |
 | `UI_DIST_DIR` | `../runpod-dashboard/dist` | where the API looks for the built UI |
 | `DOCKERFILE_PATH` | `../comfy-app/Dockerfile` | `images.py` env defaults |
-| `GIT_ACCOUNTS_FILE`, `REPOSITORIES_FILE` | `~/.config/runpod-pod-manager/*.json` | stored accounts and repositories |
+| `GIT_ACCOUNTS_FILE`, `REPOSITORIES_FILE`, `MOUNTS_FILE` | `~/.config/runpod-pod-manager/*.json` | stored accounts, repositories and the mount configuration |
+| `MOUNT_POINTS_FILE` | `../../shared/shapes/mount-points.json` (or `mount-points.json` beside the API when packaged) | defaults for the mount configuration |
 | `GITHUB_CLIENT_ID/_SECRET`, `GITLAB_CLIENT_ID/_SECRET`, `GITLAB_URL`, `FRONTEND_URL`, `API_BASE_URL` | unset | Git provider OAuth in `git_accounts.py`; providers show as disabled until set |
 | `RUNPOD_CLIENT_ID/_SECRET`, `APP_URL`, `API_URL`, `REDIRECT_URI`, `SECRET_KEY`, `ENVIRONMENT` | see `oauth_config.py` | RunPod OAuth / JWT |
 

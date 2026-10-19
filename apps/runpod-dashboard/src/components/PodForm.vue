@@ -32,6 +32,14 @@
         </BFormGroup>
       </BCol>
       <BCol md="6" lg="4">
+        <BFormGroup label="Mounts" label-for="pod-mounts" :description="mountsSummary">
+          <BFormCheckbox id="pod-mounts" v-model="form.applyMounts" switch>
+            Attach the configured volume and links
+            <a href="#" class="ms-1 small" @click.prevent="ui.configOpen = true"><i class="fa-solid fa-gear"></i> configure</a>
+          </BFormCheckbox>
+        </BFormGroup>
+      </BCol>
+      <BCol md="6" lg="4">
         <BFormGroup label="Image" label-for="pod-image">
           <BFormSelect id="pod-image" v-model="form.image" :options="IMAGE_OPTIONS" />
         </BFormGroup>
@@ -308,8 +316,9 @@
  * choose repo → branch (autocomplete from `git ls-remote`) → tick the subfolders to add.
  * The snake_case mapping lives in api/pods.js; this component sends camelCase.
  */
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { podsAPI } from '../api/pods'
+import { mountsAPI } from '../api/mounts'
 import { gitAPI } from '../api/git'
 import { imagesAPI } from '../api/images'
 import { ui } from '../stores/ui'
@@ -378,6 +387,7 @@ const defaults = () => ({
   instanceType: 'on-demand',
   volumeGb: 50,
   diskGb: 20,
+  applyMounts: true,
   image: 'prebuilt',
   customImageUri: '',
   startSsh: true,
@@ -388,6 +398,20 @@ const defaults = () => ({
 })
 
 const form = reactive(defaults())
+
+// One line under the Mounts switch: what the current configuration would attach (GET /api/mounts).
+const mountsSummary = ref('')
+async function loadMountsSummary() {
+  try {
+    const m = await mountsAPI.get()
+    const c = m.config
+    const mapped = (m.folders || []).filter((f) => f.local).length
+    mountsSummary.value = (c.network_volume_id ? `volume ${c.network_volume_id} at ${c.mount_path}` : 'no network volume configured') + `, ${mapped}/${(m.folders || []).length} folder(s) mapped, ${(m.links || []).length} link(s)`
+    if (form.applyMounts === true && c.apply_by_default === false) form.applyMounts = false
+  } catch { mountsSummary.value = '' }
+}
+onMounted(loadMountsSummary)
+watch(() => ui.mountsVersion, loadMountsSummary)
 const open = reactive({ envVars: false, pipRequirements: false, customNodes: false })
 const submitting = ref(false)
 const error = ref(null)
@@ -573,6 +597,7 @@ async function loadEnv(source) {
     const { image, env, build_args: buildArgs = [], skipped = 0 } = await imagesAPI.env({
       source,
       image: form.image === 'custom' ? form.customImageUri : 'prebuilt',
+      applyMounts: form.applyMounts,
     })
     const { added, replaced } = mergeRows(
       [...env.map((e) => ({ type: 'env', ...e })), ...buildArgs.map((a) => ({ type: 'arg', ...a }))],

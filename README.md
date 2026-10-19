@@ -5,16 +5,51 @@ for the Mac, a Docker image for RunPod / Linux / Windows, a pod manager with
 an MCP server and desktop dashboard, and the project trees the work is done
 in. Owner: Lucas (Blue Collar Dev).
 
+## Goal
+
+From Binc, 2026-10-19, the brief this repo serves:
+
+The pipeline is restoration for IMAX: generative and post-VFX tools inside
+ComfyUI graphs that are mostly custom nodes. It runs across a Linux PC, a Mac
+Studio reached over SMB, a shared container on a NAS or in the cloud, and a
+RunPod stack for GPUs. The hard part is not compute. It is an orchestration
+layer of agents that handles the details of production: what has to be
+tracked, what can be ignored, and what must be kept from the client. The goal
+is a crew, a mixture of experts, each managing a specific skill, so that
+Claude Code and Cowork can build the core framework and do production
+directly with Binc.
+
+> As written: "I might need a bit of help with some localized agentic workflows
+> that live on a linux pc a direct smb to a mac studio and shared container on
+> a nas or cloud that parks on a runpod for gpu stack, the challenge i have is
+> getting my orchestration layer running agents to deal with all the details,
+> that need to be tracked ignored or obfuscated from a clients. The pipeline is
+> retoration for imax using gen and post vfx tools. In a comfui graph. Which is
+> mostly custom nodes. so the main goal is to build an moe or Crew. To manage
+> specific skills, so code and cowork can do the core framework and production
+> directly with me."
+
+What that means here: the skill crew does not exist yet and is the goal above
+everything in this repo. The "agent pool" in `docs/ADR-002` is GPU pods, a
+different thing. Where graphs run on which machine is `docs/ADR-004`; shared
+storage across those machines is the first gap to close (`NEXT-STEPS.md`).
+
 ## Layout
 
 ```
 ├── apps/
-│   ├── comfy-app/          # The ComfyUI server: setup/launch on the Mac, Dockerfile for CUDA, tracked node packs + workflows
+│   ├── comfy-app/          # The ComfyUI server: setup/launch on the Mac, Dockerfile for CUDA, tracked workflows; packs come from shared/nodes
 │   ├── runpod-api/         # FastAPI pod manager API, pool manager, MCP server for Claude Code, tests (Python)
 │   └── runpod-dashboard/   # Vue + Electron dashboard for the pod manager API
 ├── infra/                  # Pod lifecycle CLI (create_pod.py), pod-config.yaml, Terraform placeholder
 ├── projects/               # Client/creative work; ignored by git except projects/README.md
 ├── docs/                   # Architecture decisions, setup, testing (index below)
+├── shared/                 # Material shared by every app and agent here
+│   ├── governance/         #   rules for agents: Binc's policies copied in (sync.sh), precedence, what Claude Code loads
+│   ├── shapes/             #   the project's fixed shapes as JSON (shot folder, graph, job, report, names) + check.py
+│   └── nodes/              #   git submodule bluecollardev/comfy-node-packs: portable/ and bound/ packs (ShotPipe v6–v26, BincStereo); sync-nodes.sh refreshes it
+├── queue/                  # Job files for agents, one folder per project (queue/canalv2/{in,running,done}), seeded by sync.sh
+├── AGENTS.md               # Cross-tool entry point for agents; CLAUDE.md imports it
 ├── comfy.yaml              # comfy CLI project config (empty so far)
 ├── assets/ fragments/ blueprints/ outputs/   # comfy CLI project convention (empty so far)
 ├── CLAUDE.md               # Collaboration guide: branches, commits, conventions
@@ -97,6 +132,43 @@ Details: [`apps/runpod-dashboard/README.md`](apps/runpod-dashboard/README.md).
 Branches: `develop` is the integration branch and GitHub's default; feature
 branches come off it; `master` only moves on releases. Details in `CLAUDE.md`.
 
+## External requirements
+
+Everything the pipeline depends on that is not in this repo. Proprietary items
+belong to BH / Binc and need a named yes before they go anywhere new.
+
+| Requirement | Needed for | Where it comes from |
+|---|---|---|
+| ComfyUI at the pinned commit (0.39.2) | everything | `apps/comfy-app/setup.sh` clones it; the Dockerfile builds it in |
+| ComfyUI-BH-ShotPipe packs v6–v26 (proprietary) | the corrosion shot graphs (`BH_*`, `BH26_*` nodes); each shot needs the version it was built with | the `shared/nodes` submodule (`bluecollardev/comfy-node-packs`), imported from Binc's tree and all under `portable/` since every pack reads its machine paths from a `bh_paths.py` (`PROJECT_ROOT`, `PLATES_ROOT`, `COMFY_SHARED` from the environment, binc-PC's values as fallback); `bound/` is empty. Versions stack: the current graphs need the `contract-v26` set (v7, v10–v14, v26), `COMFY_SHOTPIPE=contract-v26 apps/comfy-app/setup.sh`. What a ShotPipe pack is: `shared/nodes/docs/SHOTPIPE.md`; versioning: `docs/NODE-PACKS.md` |
+| ComfyUI-BincStereo (proprietary) | the stereo workflows | `shared/nodes/portable/`; always linked by `setup.sh` |
+| Python: torch (MPS on the Mac, CUDA 12.6 on Linux), numpy, scipy, opencv-python-headless, av, Pillow, matplotlib; PyOpenColorIO for the v2/v3 ACEScg graphs only | the node packs | `apps/comfy-app/requirements-*.txt`; the project's `containers/runpod/requirements-bh.txt` |
+| Depth Anything V2 Large weights | BincStereo depth | Hugging Face via `fetch-models.sh` (`HF_TOKEN` for gated repos) |
+| Blender as `bpy` 5.0.1, COLMAP | camera track and solve, before a graph runs; CPU only | the project's `solve/`, `solve-blender/` scripts and `containers/runpod/solve/` image |
+| ffmpeg, ffprobe | proxies, review movies, mp4 in and out | system package |
+| Gemini 3 Pro Image ("Nano Banana") | generated paint patches in `10_CORROSION/Gen_Paint_assets`, composited by a Comfy fusion graph | Google API key; client frames go to a third party, so the project's named-yes rule applies |
+| rclone + Google Drive | syncing `90_DELIVERIES/` | `02_SCRIPTS/drive-sync/` |
+| Shared storage: the project tree at `/home/binc/CANALV2_r3/CANALV2`, the plates under `/mnt/storage/Panama_Redux/…`, `~/ComfyUI-Shared` | rendering anything | binc-PC's disks, over SMB, a NAS or a pod volume; not mounted on this Mac yet. Every path: `docs/MOUNT-POINTS.md` |
+| NVIDIA driver, CUDA 12.6, nvidia-container-toolkit | GPU rendering on Linux, in or out of Docker | per machine; `apps/comfy-app/docker/swarm.sh init` says what Swarm needs on top |
+| Docker, Docker Swarm | running the image on Linux boxes; no GPU under Docker on macOS | `apps/comfy-app/docker/` |
+| uv, Python 3.13 (ComfyUI venv), Python 3.12 (API and CLI) | the Mac install, the pod manager | `brew install uv`; `start.sh` makes `.venv` |
+| Node 22, npm | the dashboard and Electron app | nvm |
+| RunPod account and API key | overflow GPUs, once approved | `.env`; nothing deployed yet |
+
+## Mount points
+
+Everything names binc-PC's filesystem, so every other runtime mounts data
+under `/workspace` and links binc-PC's paths onto it. Three mounts are real;
+the rest is legacy or not a mount. Full list, per runtime:
+[`docs/MOUNT-POINTS.md`](docs/MOUNT-POINTS.md); as data:
+[`shared/shapes/mount-points.json`](shared/shapes/mount-points.json).
+
+| What | binc-PC | Container / pod |
+|---|---|---|
+| Project tree | `/home/binc/CANALV2_r3/CANALV2` (also `~/CANALV2_r3/CANALV2`) | `/workspace/project`, linked from the path the tree's job files declare |
+| Served plates, read-only | `/mnt/storage/Panama_Redux/source/PC_20260929_VFX_3D_DSM_plates/` | `/workspace/plates`, linked from the path the shots' `SOURCES.csv` declare |
+| ComfyUI-Shared | `/home/binc/ComfyUI-Shared` (also `~/ComfyUI-Shared`) | `/workspace/comfy-shared`, `COMFY_SHARED` |
+
 ## Documentation
 
 All of `docs/`: <https://github.com/bluecollardev/comfy-workflow/tree/develop/docs>
@@ -117,6 +189,7 @@ All of `docs/`: <https://github.com/bluecollardev/comfy-workflow/tree/develop/do
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | The full picture of the pod orchestration stack: the three-layer design (Claude Code → MCP server → pool manager → RunPod), components, data flows, auth, deployment scenarios, scaling. |
 | [`docs/ADR-001-runpod-strategy.md`](docs/ADR-001-runpod-strategy.md) | Why a hybrid of on-demand pods (development now) and serverless endpoints (batch rendering later), with trade-offs and migration path. |
 | [`docs/ADR-002-moe-agent-pool.md`](docs/ADR-002-moe-agent-pool.md) | The "mixture of experts" agent pool: a pool of RunPod pods shared by several users and agents, with implementation plan, costs, quotas, credentials and rollout. |
+| [`docs/ADR-004-where-the-workflows-run.md`](docs/ADR-004-where-the-workflows-run.md) | Which machine runs which graphs: plates and one path first, containers on Linux under Compose or Swarm, RunPod as overflow on its own tools, the Mac as client and MPS worker. What was measured on 2026-10-19 and the gaps. |
 | [`docs/ADR-003-python-mcp-vs-terraform.md`](docs/ADR-003-python-mcp-vs-terraform.md) | Why pod orchestration is Python plus an MCP server rather than Terraform, alternatives considered, and when to revisit. |
 | [`docs/DOCKERFILE-DEVIATIONS.md`](docs/DOCKERFILE-DEVIATIONS.md) | Review of the original placeholder image (community `ashleykza/comfyui` base) against RunPod's official one. That placeholder is retired; the current image is `apps/comfy-app/Dockerfile`, built on `pytorch/pytorch` with the same pins as the Mac. |
 
@@ -127,6 +200,10 @@ All of `docs/`: <https://github.com/bluecollardev/comfy-workflow/tree/develop/do
 | [`infra/README.md`](infra/README.md) | The infrastructure folder: the pod lifecycle CLI, pod config, where the Docker image and the API live, cost management, monitoring, troubleshooting. |
 | [`apps/runpod-api/README.md`](apps/runpod-api/README.md) | The pod manager service: the FastAPI API and its routers, the pool manager, the MCP server, environment variables, running it, tests, and what the Electron app packages from it. |
 | [`docs/MCP-SERVER.md`](docs/MCP-SERVER.md) | The MCP server that exposes agent pool management to Claude Code: quick start, every tool, typical sessions, configuration, errors, budgeting. |
+| [`shared/nodes/docs/DEPENDENCIES.md`](shared/nodes/docs/DEPENDENCIES.md) | One row per ShotPipe version: what it needs beside it, what it supersedes, bundled modules, Python imports, node and baked-path counts, and which named set it belongs to. Generated in the packs submodule. |
+| [`shared/nodes/docs/SHOTPIPE.md`](shared/nodes/docs/SHOTPIPE.md) | What a ShotPipe pack is: one layered family with v7 as the base, what each generation adds, why a graph needs a set and how the packs find each other. In the packs submodule. |
+| [`shared/nodes/docs/BINCSTEREO.md`](shared/nodes/docs/BINCSTEREO.md) | What BincStereo is: a self-contained stereo-conversion pack by Cinematic Immunity / Bincos, its six nodes in pipeline order, requirements, where the stereo workflows use it, and how it differs from ShotPipe. In the packs submodule. |
+| [`docs/NODE-PACKS.md`](docs/NODE-PACKS.md) | The node packs as a submodule at `shared/nodes`: the three layers of version (pack folder, packs-repo tag, submodule pin plus image label), the rules from Binc's versioning policy, the release steps, and how installs and images consume them. |
 | [`apps/comfy-app/README.md`](apps/comfy-app/README.md) | The ComfyUI server project: what is upstream and what is ours (`check.sh`), running from a fresh clone, the Docker image, pointing the `comfy` CLI at it, targets and open approvals. |
 | [`apps/runpod-dashboard/README.md`](apps/runpod-dashboard/README.md) | The Vue dashboard for the pod manager: features, architecture, API integration, dev and production builds, the Electron desktop app. |
 | [`apps/runpod-dashboard/COMPONENTS.md`](apps/runpod-dashboard/COMPONENTS.md) | Component-by-component reference for the dashboard UI, styling conventions and the Electron packaging. |
@@ -142,6 +219,12 @@ All of `docs/`: <https://github.com/bluecollardev/comfy-workflow/tree/develop/do
 
 | Doc | What it covers |
 |---|---|
+| [`queue/README.md`](queue/README.md) | The agent job queue: one folder per project in Binc's in/running/done shape, how a job file reads, how `queue/canalv2/` is seeded from Binc's queue without ever writing back, and what moving a file here means. |
+| [`shared/shapes/README.md`](shared/shapes/README.md) | The project's fixed shapes as JSON for software to read: project tree, shot folder, graph boxes, inbox entry, tracker columns, job file, report, sidecar, naming regexes. `check.py` validates real folders, jobs and names against them. |
+| [`shared/governance/README.md`](shared/governance/README.md) | Governance for agents: Binc's 33 policy pages, workflow rules and operator brief copied in by `sync.sh` with a manifest, precedence between their rules and ours, what Claude Code loads automatically, and the hook that blocks writes into the mirror. |
+| [`docs/MOUNT-POINTS.md`](docs/MOUNT-POINTS.md) | Every path the project assumes, from a scan of the whole tree: the three real mounts and how each runtime (binc-PC, Mac, Compose/Swarm, RunPod) makes them resolve; what is legacy, what is not a mount; the data version in `shared/shapes/mount-points.json`. |
+| [`docs/CANALV2-STRUCTURE.md`](docs/CANALV2-STRUCTURE.md) | Binc's CANALV2 tree explained: the numbered top level, the fixed shot-folder shape, how a shot moves from inbox to delivery, naming and versioning in short, what lives outside the root on binc-PC, and why the tree is read-only for us. |
+| [`docs/PROMPTS.md`](docs/PROMPTS.md) | Where every kind of prompt is: the ComfyUI graphs (what ComfyUI calls a prompt) by location, count and format; the Gemini 3 Pro Image text prompts beside each generated paint patch; and the agent briefs, policies and job queue in Binc's tree. |
 | [`projects/README.md`](projects/README.md) | Inventory of the ignored client trees under `projects/desktop/`: the CANALV2 VFX job (shots, scripts, node packs, tracker) and the ComfyUI-Shared input/output/models folders. |
 | [`NEXT-STEPS.md`](NEXT-STEPS.md) | Plan for importing the CANALV2 shot graphs into this repo, plus open items including what still needs Binc's approval. |
 | [`CLAUDE.md`](CLAUDE.md) | How to work in this repo: branch model, commit format, pod and asset conventions, gotchas. |

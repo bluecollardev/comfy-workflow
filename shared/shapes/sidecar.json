@@ -1,0 +1,42 @@
+{
+  "shape": "sidecar",
+  "version": 1,
+  "source": [
+    "shared/governance/policy/naming.md 'Sidecar'",
+    "observed: Gen_Paint_Output/*/_Meta.json and 07_DELIVER/*/assets/*paint-sidecar*.json"
+  ],
+  "applies_to": "<filename>.meta.json beside any generated or transformed file; machine identifiers live here, never in file names",
+  "policy_fields": [
+    "seed",
+    "model",
+    "prompt",
+    "checksum",
+    "source link",
+    "who",
+    "when"
+  ],
+  "fields_observed_in_paint_meta": [
+    "frame",
+    "lead_frame_role",
+    "frame_number",
+    "hero_eye",
+    "eye",
+    "engine",
+    "prompt",
+    "seed",
+    "steps",
+    "guidance_scale",
+    "color_space",
+    "ocio_config",
+    "alignment",
+    "matte_file",
+    "gen_file",
+    "resolution",
+    "linear_matte_depth",
+    "created_at"
+  ],
+  "engine_values_seen": [
+    "gemini-3-pro-image"
+  ],
+  "note": "the observed paint metadata predates the policy's field names; a conformed sidecar would carry both"
+}

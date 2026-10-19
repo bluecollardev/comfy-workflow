@@ -1,0 +1,95 @@
+{
+  "shape": "graph",
+  "version": 1,
+  "source": [
+    "shared/governance/policy/bh-symmetry_v002.md rule 2",
+    "shared/governance/policy/engineering-contract.md (pointer to the Drive contract v3)",
+    "shared/governance/workflow/hitl-signoff.md",
+    "observed: corrosion-058_graph_v021.json"
+  ],
+  "applies_to": "every ComfyUI graph in <shot>/04_GRAPH/",
+  "principle": "The graph is the readable, labelled, ordered, previewed process. Lettered boxes in a fixed order, a note at the top of each, a preview after each stage.",
+  "boxes_in_order": [
+    {
+      "letter": "00",
+      "name": "READ FIRST + CHANGE REPORT",
+      "purpose": "status note and the version's change report; read before anything else"
+    },
+    {
+      "letter": "A",
+      "name": "INPUT",
+      "purpose": "hero-eye plates, served names kept exactly, Cineon log->linear stated on the Read node"
+    },
+    {
+      "letter": "B0",
+      "name": "PAINT INPUTS",
+      "purpose": "generated paint and hand-painted matte where a lead Gen exists, aligned to the plate",
+      "optional": true
+    },
+    {
+      "letter": "B",
+      "name": "FILL + MASK / LEAD ASSETS",
+      "purpose": "fill and comp matte at proxy; geo matte as parent for tracker and solve"
+    },
+    {
+      "letter": "C",
+      "name": "TRACK + SOLVE",
+      "purpose": "tracker and object solve; superseded chains stay muted, not deleted"
+    },
+    {
+      "letter": "D",
+      "name": "CARRY + SOLVE HEALTH",
+      "purpose": "carry the fill by the solve; stick check against current and new solve"
+    },
+    {
+      "letter": "E",
+      "name": "COMP WRITE",
+      "purpose": "the comp: plate*(1-m) + fill*m, in scene-linear; OFF until told to go"
+    },
+    {
+      "letter": "F",
+      "name": "REVIEW OUTPUT",
+      "purpose": "mp4 and numbered proxy sequence into 06_REVIEW, new versions only"
+    },
+    {
+      "letter": "G",
+      "name": "STEREO CONVERSION",
+      "purpose": "second eye = hero-eye layers moved by measured disparity; grain per eye",
+      "optional": true
+    }
+  ],
+  "every_box": [
+    "a MarkdownNote at the top naming the box and what it does",
+    "a PreviewImage after every stage",
+    "stock nodes first, custom nodes only for what ComfyUI lacks",
+    "no silent behaviour: a graph never auto-corrects or guesses"
+  ],
+  "every_revision": [
+    "a CHANGE REPORT note (contract section 17)",
+    "a new _v### file; never overwrite a last known good",
+    "status term from the contract set"
+  ],
+  "status_terms": [
+    "CODE VALIDATED",
+    "GRAPH LOADABLE",
+    "EXECUTION TESTED",
+    "TECHNICALLY VERIFIED",
+    "HUMAN QC REQUIRED",
+    "HUMAN APPROVED"
+  ],
+  "formats": {
+    "ui": "<shot>_graph_v###.json (canvas, groups, positions)",
+    "api": "<shot>_graph_v###_api.json (flattened; what the queue posts to /prompt)"
+  },
+  "node_pack": "ComfyUI-BH-ShotPipe-v##; the graph's BH##_ prefix says which version it was built with. In this repo the packs are the shared/nodes submodule (comfy-node-packs); docs/NODE-PACKS.md",
+  "colour": {
+    "plates": "DPX 2.0 BE 4096x2160 RGB 10-bit printing density",
+    "log_to_linear": {
+      "ref_white": 685,
+      "ref_black": 95,
+      "gamma": 0.6
+    },
+    "cdl": "one global CDL per shot, same in both eyes",
+    "matte": "one comp matte, white = fill, black = plate"
+  }
+}

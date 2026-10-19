@@ -14,7 +14,7 @@ changed file modes) with exactly five things layered on top:
 
 | Layer | What | Now |
 |---|---|---|
-| `custom_nodes/ComfyUI-BincStereo` | The stereo / depth node pack (3.6 MB, pure torch, proprietary to Cinematic Immunity / Bincos) | **Tracked** in `custom_nodes/`, symlinked into the clone |
+| `ComfyUI-BincStereo` | The stereo / depth node pack (pure torch, proprietary to Cinematic Immunity / Bincos) | In the `shared/nodes` submodule (`comfy-node-packs`), symlinked into the clone by `setup.sh` |
 | `user/default/workflows/*.json` | Nine saved workflows (stereo QC, cgi-042) | **Tracked** in `workflows/`, symlinked, so saving in the UI writes to the repo |
 | `models/depth_anything/Depth-Anything-V2-Large-hf` | 1.2 GB of weights | Not in git; `models.txt` + `fetch-models.sh` |
 | `input/binc-stereo-test`, `input/cgi-042-render-mono` | 129 MB of local test frames | Not in git; left on disk |
@@ -32,7 +32,6 @@ apps/comfy-app/
 ├── check.sh                 # how ComfyUI/ differs from upstream, and what we layer on top
 ├── fetch-models.sh          # download the weights in models.txt
 ├── models.txt               # <models subfolder>  <Hugging Face repo id>
-├── custom_nodes/            # our node packs (tracked)
 │   └── ComfyUI-BincStereo/
 ├── workflows/               # saved workflows (tracked; the UI saves here through the symlink)
 ├── extra_model_paths.yaml   # adds projects/desktop/ComfyUI-Shared/models
@@ -44,7 +43,7 @@ apps/comfy-app/
 │
 ├── ComfyUI/                 # ignored: upstream clone at the pin, unmodified
 │   ├── .venv/               #   built by setup.sh
-│   ├── custom_nodes/<pack>  #   -> ../../custom_nodes/<pack>
+│   ├── custom_nodes/<pack>  #   -> shared/nodes/<pack> (the comfy-node-packs submodule)
 │   ├── user/default/workflows  # -> ../../../workflows
 │   └── models/              #   weights from fetch-models.sh
 ├── standalone-env/          # ignored: the bundle's Python 3.13; used if present, else uv fetches one
@@ -58,7 +57,7 @@ Needs `git` and [`uv`](https://docs.astral.sh/uv/) (`brew install uv`).
 
 ```bash
 cd apps/comfy-app
-./setup.sh            # clones ComfyUI at the pin, builds .venv, links custom_nodes/ and workflows/
+./setup.sh            # clones ComfyUI at the pin, builds .venv, links packs from shared/nodes and workflows/
 ./fetch-models.sh     # 1.2 GB Depth Anything V2 from Hugging Face
 ./launch.sh           # http://127.0.0.1:8188   (--background to detach; ./stop.sh ends it)
 ./check.sh            # confirm the core is at the pin with no edits
@@ -97,24 +96,38 @@ home directory, which is why `setup.sh` rebuilds it.
 
 ```bash
 cd apps/comfy-app
-./build.sh                         # comfy-app:v26: ComfyUI at the pin, torch 2.12.1 CUDA 12.6, custom_nodes/ + ShotPipe v26
+./build.sh                         # comfy-app:v26: ComfyUI at the pin, torch 2.12.1 CUDA 12.6, BincStereo + ShotPipe v26 from shared/nodes
 ./build.sh --shotpipe v26,v21      # more than one ShotPipe version side by side
 ./build.sh --no-shotpipe           # only the tracked packs
 ./build.sh --base pytorch/pytorch:2.12.1-cuda13.0-cudnn9-runtime   # Blackwell (RTX 5090 / B200)
 
 # Local GPU box (Linux, or Windows with Docker Desktop + WSL2 + NVIDIA driver):
 docker run --rm --gpus all -p 8188:8188 \
-  -v /path/to/ComfyUI-Shared:/workspace/ComfyUI-Shared \
-  -v /path/to/CANALV2:/workspace/CANALV2 \
+  -v /path/to/ComfyUI-Shared:/workspace/comfy-shared \
+  -v /path/to/CANALV2:/workspace/project \
   comfy-app:v26
 ```
 
+As a service on a Linux NVIDIA box, or several of them as a Docker Swarm,
+`docker/compose.yml` runs the same image with the project tree mounted at
+binc-PC's path and ComfyUI-Shared at `/workspace/comfy-shared`:
+
+```bash
+docker/swarm.sh up                 # one box: Compose, GPU via compose.gpu.yml
+docker/swarm.sh init               # first Swarm manager + GPU node; prints the daemon.json lines Swarm needs
+docker/swarm.sh deploy             # docker stack deploy comfy
+```
+
+Paths come from `PROJECT_ROOT`, `COMFY_SHARED`, `PLATES_ROOT` (the served plates, mounted read-only), `COMFY_IMAGE`, `COMFY_PORT`.
+Not for macOS: Docker there has no GPU, use `launch.sh`. Why this shape:
+`docs/ADR-004-where-the-workflows-run.md`.
+
 Base image is `pytorch/pytorch:2.12.1-cuda12.6-cudnn9-runtime`, so the torch
 version matches the Mac exactly. `build.sh` passes `pins.env` as build args,
-copies `custom_nodes/` and `workflows/` from the repo, and stages ShotPipe into
+stages the packs from `shared/nodes` (BincStereo always, ShotPipe as asked) and copies `workflows/` into
 `.build/` (ignored) because it is the client's. Inside the container ComfyUI is
-`/opt/ComfyUI`, the shared tree is `/workspace/ComfyUI-Shared/{input,output,models}`
-and `/home/binc/CANALV2_r3/CANALV2` links to `/workspace/CANALV2`, so graphs run
+`/opt/ComfyUI`, the shared tree is `/workspace/comfy-shared/{input,output,models}`
+and `/home/binc/CANALV2_r3/CANALV2` links to `/workspace/project`, so graphs run
 with their binc-PC paths unchanged. `COMFY_PORT`, `COMFY_SHARED` and
 `COMFY_ARGS` override the defaults; arguments after the image name go to
 `main.py`. The image never contains models or plates.

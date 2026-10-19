@@ -52,7 +52,8 @@
     ],
     "extraResources": [
       { "from": "dist", "to": "dist" },
-      { "from": "../runpod-api", "to": "backend", "filter": ["*.py", "requirements.txt"] }
+      { "from": "../runpod-api", "to": "backend", "filter": ["*.py", "requirements.txt"] },
+      { "from": "../../shared/shapes/mount-points.json", "to": "backend/mount-points.json" }
     ],
     "mac": {
       "category": "public.app-category.developer-tools",

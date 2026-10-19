@@ -1,0 +1,139 @@
+{
+  "shape": "mount-points",
+  "version": 1,
+  "generated": "2026-10-19",
+  "source": [
+    "scan of every text file in projects/desktop (10,473 path mentions)",
+    "governance/policy/storage-and-backup.md",
+    "CANALV2/LEGACY_MAP.csv",
+    "shared/nodes/bound/README.md"
+  ],
+  "principle": "The app runs on one PC, and on each PC the user maps three folders, anywhere on its disks: the project tree, the served plates and ComfyUI-Shared. A runtime on that PC uses them where they are (PROJECT_ROOT, PLATES_ROOT, COMFY_SHARED). A pod carries them on its volume at the `container` paths below and links the path the project's own files declare for each (job files' root line, SOURCES.csv, the structure master) onto it, so graphs and scripts run unchanged. The binc_pc values here are what the mirror declared on 2026-10-19, for reference; nothing reads them at run time.",
+  "volume_root": "/workspace",
+  "mounts": [
+    {
+      "name": "project",
+      "what": "the project tree: scripts, graphs, shot folders, tracker, policies",
+      "binc_pc": "/home/binc/CANALV2_r3/CANALV2",
+      "aliases": [
+        "~/CANALV2_r3/CANALV2",
+        "~/CANALV2"
+      ],
+      "mentions": 8541,
+      "container": "/workspace/project",
+      "links": [
+        "/home/binc/CANALV2_r3/CANALV2"
+      ],
+      "mode": "rw",
+      "required": true,
+      "note": "scripts hardcode ROOT; graphs reference it ~490 times per shot set; the policy's root is ~/CANALV2, the tree in use is CANALV2_r3. Declared by the job files' root: line.",
+      "env": {
+        "PROJECT_ROOT": "/workspace/project"
+      }
+    },
+    {
+      "name": "plates",
+      "what": "the served plates: one folder per shot, left and right eye",
+      "binc_pc": "/mnt/storage/Panama_Redux/source/PC_20260929_VFX_3D_DSM_plates",
+      "aliases": [],
+      "mentions": 1582,
+      "container": "/workspace/plates",
+      "links": [
+        "/mnt/storage/Panama_Redux/source/PC_20260929_VFX_3D_DSM_plates"
+      ],
+      "mode": "ro",
+      "required": true,
+      "note": "linked from every shot's 02_SOURCE/SOURCES.csv, never copied into the tree; the IronWolf disk is parking and mirror only; leaving binc-PC needs Binc's named yes; declared by each shot's 02_SOURCE/SOURCES.csv, two levels above the eye folders",
+      "env": {
+        "PLATES_ROOT": "/workspace/plates"
+      }
+    },
+    {
+      "name": "comfy-shared",
+      "what": "ComfyUI's input, output, models and workflows, shared by every install",
+      "binc_pc": "/home/binc/ComfyUI-Shared",
+      "aliases": [
+        "~/ComfyUI-Shared"
+      ],
+      "mentions": 39,
+      "container": "/workspace/comfy-shared",
+      "links": [
+        "/home/binc/ComfyUI-Shared"
+      ],
+      "mode": "rw",
+      "required": true,
+      "env": {
+        "COMFY_SHARED": "/workspace/comfy-shared"
+      },
+      "note": "v6/v7 pack defaults write under its output/; the Mac mirror of it has no weights; declared as ~/ComfyUI-Shared beside the tree's home"
+    },
+    {
+      "name": "comfy-install",
+      "what": "the ComfyUI install in use on binc-PC, port 8189",
+      "binc_pc": "/home/binc/ComfyUI-Installs/CanalV2/ComfyUI",
+      "aliases": [
+        "~/ComfyUI-Installs/ComfyUI"
+      ],
+      "mentions": 14,
+      "container": null,
+      "links": [],
+      "mode": null,
+      "required": false,
+      "note": "not mounted: the image has its own ComfyUI at /opt/ComfyUI; the queue scripts default to http://127.0.0.1:8189, so pass --comfy <url>"
+    },
+    {
+      "name": "legacy",
+      "what": "pre-CANALV2 material linked from shot folders (LEGACY_MAP.csv): v5 lock graphs and masks, earlier 051 work, the painted-hull training set",
+      "binc_pc": "/home/binc/Documents/CORROSION RIGHTEYE PAINTS",
+      "aliases": [
+        "~/Desktop/corrosion-051",
+        "~/Desktop/Hull_Painted_4Training",
+        "~/ComfyUI-Shared/workflows/corrosion-051-v6-stereo"
+      ],
+      "mentions": 44,
+      "container": "/workspace/legacy",
+      "links": [
+        "/home/binc/Documents/CORROSION RIGHTEYE PAINTS",
+        "/home/binc/Desktop/corrosion-051",
+        "/home/binc/Desktop/Hull_Painted_4Training"
+      ],
+      "mode": "ro",
+      "required": false,
+      "note": "needed only to open corrosion-051's v001 graph and its audit forks; current graphs do not reference it"
+    },
+    {
+      "name": "panama-console",
+      "what": "Kyle's repo: the production operating manual and the official deliverables record",
+      "binc_pc": "/home/binc/panama-console",
+      "aliases": [
+        "~/panama-console"
+      ],
+      "mentions": 62,
+      "container": null,
+      "links": [],
+      "mode": null,
+      "required": false,
+      "note": "referenced by policy pages only; read-only for us; not a render-time mount"
+    }
+  ],
+  "not_mounts": [
+    {
+      "pattern": "/home/claude/*, /mnt/user-data/uploads/*, /mnt/attach/outputs/*",
+      "mentions": 51,
+      "what": "paths from an agent sandbox, left in tool scripts under 80_TEST-BUCKET; they exist on no machine",
+      "action": "ignore; a tool that still uses them is rerun with explicit paths"
+    },
+    {
+      "pattern": "/workspace/runpod-slim/ComfyUI",
+      "mentions": 4,
+      "what": "RunPod's stock ComfyUI template install, used by Binc's comfy-pod/setup_on_volume.sh",
+      "action": "only when a pod runs the stock template instead of our image"
+    }
+  ],
+  "runtimes": {
+    "binc-pc": "everything is real; nothing to mount",
+    "mac": "map the three folders in the dashboard's Configuration panel; launch.sh reads PROJECT_ROOT, PLATES_ROOT and COMFY_SHARED (GET /api/mounts/env)",
+    "docker-compose-or-swarm": "apps/comfy-app/docker/compose.yml binds the three folders from PROJECT_ROOT, PLATES_ROOT and COMFY_SHARED at the paths the project declares, plates read-only",
+    "runpod-pod": "a network volume at /workspace carrying CANALV2/, plates/ and ComfyUI-Shared/; the entrypoint links the declared paths from COMFY_LINKS; configured in the dashboard's Configuration panel and create_pod.py --network-volume"
+  }
+}

@@ -1,0 +1,120 @@
+{
+  "shape": "project-tree",
+  "version": 1,
+  "source": [
+    "shared/governance/policy/structure_v003.md §1",
+    "shared/governance/CANALV2-README.md"
+  ],
+  "applies_to": "the root of a CANALV2-style project (/home/binc/CANALV2_r3/CANALV2 on binc-PC; projects/desktop/CANALV2 here)",
+  "principle": "One place for everything, one place to find everything. Numbered folders fix the reading order.",
+  "entries": [
+    {
+      "name": "00_POLICY",
+      "kind": "dir",
+      "required": true,
+      "holds": "one page per rule; 00_READ_ME.md is the index; structure_v###.md the master structure"
+    },
+    {
+      "name": "01_GOVERNANCE",
+      "kind": "dir",
+      "required": true,
+      "holds": "workflow-rules.md, hitl-signoff.md, decisions_v###.md, change-log*.csv, delivery-schedule.csv"
+    },
+    {
+      "name": "02_SCRIPTS",
+      "kind": "dir",
+      "required": true,
+      "holds": "tooling, one folder per tool; nodes/ComfyUI-BH-ShotPipe-v##/ is the node pack"
+    },
+    {
+      "name": "03_INBOX",
+      "kind": "dir",
+      "required": true,
+      "holds": "<shot>/ or <yyyy-mm-dd>_<topic>/, each with ENTRY.md (+ ASSETS.csv for shots)",
+      "rule": "nothing starts without an entry here"
+    },
+    {
+      "name": "04_TRACKER",
+      "kind": "dir",
+      "required": true,
+      "holds": "shots.csv, deliverables.csv, schedule.csv, attention-list.csv, queue/{in,running,done}/, run logs"
+    },
+    {
+      "name": "10_CORROSION",
+      "kind": "dir",
+      "required": true,
+      "holds": "_template/, Gen_Paint_assets/, <shot>/ (shot-folder shape)"
+    },
+    {
+      "name": "20_STEREO",
+      "kind": "dir",
+      "required": true,
+      "holds": "_template/, <shot>/"
+    },
+    {
+      "name": "30_CREATIVE",
+      "kind": "dir",
+      "required": false,
+      "holds": "<shot>/"
+    },
+    {
+      "name": "40_TITLES",
+      "kind": "dir",
+      "required": false,
+      "holds": "<shot>/"
+    },
+    {
+      "name": "50_RND",
+      "kind": "dir",
+      "required": false,
+      "holds": "<shot>/"
+    },
+    {
+      "name": "80_TEST-BUCKET",
+      "kind": "dir",
+      "required": true,
+      "holds": "<type>_<topic>_<yyyy-mm-dd>/, flat"
+    },
+    {
+      "name": "90_DELIVERIES",
+      "kind": "dir",
+      "required": true,
+      "holds": "<type>_<topic>_<yyyy-mm-dd>/, only what has gone out, versioned"
+    },
+    {
+      "name": "99_ARCHIVE",
+      "kind": "dir",
+      "required": true,
+      "holds": "superseded work, copied in; originals stay"
+    },
+    {
+      "name": "LEGACY_MAP.csv",
+      "kind": "file",
+      "required": false,
+      "holds": "where pre-project material lives and which shot links to it"
+    },
+    {
+      "name": "README.md",
+      "kind": "file",
+      "required": true,
+      "holds": "one-screen index"
+    },
+    {
+      "name": "CLAUDE.md",
+      "kind": "file",
+      "required": false,
+      "holds": "operator brief for agents"
+    }
+  ],
+  "shot_types": {
+    "10_CORROSION": "corrosion",
+    "20_STEREO": "stereo",
+    "30_CREATIVE": "creative",
+    "40_TITLES": "titles",
+    "50_RND": "rnd"
+  },
+  "rules": [
+    "nothing is ever deleted; superseded work goes to 99_ARCHIVE",
+    "the official record (BH console, Slack, panama-console) wins over the tracker"
+  ]
+}

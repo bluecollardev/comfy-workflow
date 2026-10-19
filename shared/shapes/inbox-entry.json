@@ -1,0 +1,71 @@
+{
+  "shape": "inbox-entry",
+  "version": 1,
+  "source": [
+    "shared/governance/policy/structure_v003.md §4",
+    "shared/governance/workflow/workflow-rules.md rules 1–3"
+  ],
+  "applies_to": "03_INBOX/<shot>/ (kind: shot) or 03_INBOX/<yyyy-mm-dd>_<topic>/ (kind: request, question)",
+  "files": {
+    "ENTRY.md": {
+      "required": true,
+      "header_fields": [
+        "shot",
+        "kind",
+        "type",
+        "state",
+        "owner",
+        "asked_by",
+        "received",
+        "source",
+        "due",
+        "eyes",
+        "hero_eye",
+        "first",
+        "last",
+        "frames",
+        "tc",
+        "their_folders",
+        "format",
+        "ref_frame",
+        "summary",
+        "build_slug"
+      ],
+      "sections": [
+        "## Deliverables",
+        "## Flags"
+      ],
+      "kind_values": [
+        "shot",
+        "request",
+        "question"
+      ]
+    },
+    "ASSETS.csv": {
+      "required_for_kind": [
+        "shot"
+      ],
+      "columns": [
+        "name",
+        "role",
+        "eye",
+        "part",
+        "location",
+        "pattern",
+        "required",
+        "found",
+        "checked",
+        "note"
+      ]
+    }
+  },
+  "lifecycle": [
+    "entry created -> row on attention-list",
+    "live only when every required asset is found; otherwise waiting with the missing list",
+    "live -> shot folder + V1 slug graph (inputs only)"
+  ],
+  "rules": [
+    "nothing is guessed or substituted",
+    "our shot name and their folder name may differ; both are written here, neither is changed"
+  ]
+}

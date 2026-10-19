@@ -1,7 +1,7 @@
 # Container twin of ../extra_model_paths.yaml: the shared models tree mounted at
-# /workspace/ComfyUI-Shared/models (RunPod network volume or a bind mount).
+# /workspace/comfy-shared/models (RunPod network volume or a bind mount).
 shared:
-  base_path: /workspace/ComfyUI-Shared/models
+  base_path: /workspace/comfy-shared/models
   checkpoints: checkpoints
   clip: clip
   clip_vision: clip_vision

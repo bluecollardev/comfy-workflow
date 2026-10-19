@@ -34,7 +34,7 @@ for d in custom_nodes/*/ custom_nodes/*; do
   [ -e "$d" ] || continue
   n="${d%/}"; n="${n#custom_nodes/}"
   case "$n" in example_node.py.example|websocket_image_save.py|__pycache__|.DS_Store) continue ;; esac
-  if [ -L "custom_nodes/$n" ]; then echo "  custom_nodes/$n -> $(readlink "custom_nodes/$n")"; else echo "  custom_nodes/$n (copy, not a link to the repo)"; fi
+  if [ -L "custom_nodes/$n" ]; then echo "  custom_nodes/$n -> $(readlink "custom_nodes/$n")"; else echo "  custom_nodes/$n (copy, not a link to shared/nodes)"; fi
 done | sort -u
 wf="user/default/workflows"
 if [ -L "$wf" ]; then echo "  $wf -> $(readlink "$wf")"; elif [ -d "$wf" ]; then echo "  $wf (plain folder, not linked to the repo)"; fi
