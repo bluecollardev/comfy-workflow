@@ -367,7 +367,7 @@ It is BH / Binc's mirror; we read it and copy or link out of it (Lucas,
 2026-10-19: their material may be used in this private repo). Rule in
 `.claude/rules/binc-tree.md`, enforced by a PreToolUse hook; the tree is
 explained in `docs/CANALV2-STRUCTURE.md`; their policies are copied under
-`governance/`.
+`shared/governance/`.
 
 ### Git Constraints
 

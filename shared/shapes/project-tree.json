@@ -2,8 +2,8 @@
   "shape": "project-tree",
   "version": 1,
   "source": [
-    "governance/policy/structure_v003.md §1",
-    "governance/CANALV2-README.md"
+    "shared/governance/policy/structure_v003.md §1",
+    "shared/governance/CANALV2-README.md"
   ],
   "applies_to": "the root of a CANALV2-style project (/home/binc/CANALV2_r3/CANALV2 on binc-PC; projects/desktop/CANALV2 here)",
   "principle": "One place for everything, one place to find everything. Numbered folders fix the reading order.",

@@ -2,9 +2,9 @@
   "shape": "graph",
   "version": 1,
   "source": [
-    "governance/policy/bh-symmetry_v002.md rule 2",
-    "governance/policy/engineering-contract.md (pointer to the Drive contract v3)",
-    "governance/workflow/hitl-signoff.md",
+    "shared/governance/policy/bh-symmetry_v002.md rule 2",
+    "shared/governance/policy/engineering-contract.md (pointer to the Drive contract v3)",
+    "shared/governance/workflow/hitl-signoff.md",
     "observed: corrosion-058_graph_v021.json"
   ],
   "applies_to": "every ComfyUI graph in <shot>/04_GRAPH/",

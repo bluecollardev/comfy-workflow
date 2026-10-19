@@ -2,10 +2,10 @@
   "shape": "names",
   "version": 1,
   "source": [
-    "governance/policy/naming.md",
-    "governance/policy/versioning.md",
-    "governance/policy/served-names.md",
-    "governance/policy/structure_v003.md §2"
+    "shared/governance/policy/naming.md",
+    "shared/governance/policy/versioning.md",
+    "shared/governance/policy/served-names.md",
+    "shared/governance/policy/structure_v003.md §2"
   ],
   "patterns": {
     "shot_folder": {
@@ -77,5 +77,5 @@
     "left",
     "right"
   ],
-  "known_exceptions": "listed in governance/policy/structure_v003.md §2 'Exceptions'; left as on disk, not renamed"
+  "known_exceptions": "listed in shared/governance/policy/structure_v003.md §2 'Exceptions'; left as on disk, not renamed"
 }

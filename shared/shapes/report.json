@@ -2,7 +2,7 @@
   "shape": "report",
   "version": 1,
   "source": [
-    "governance/operator-brief.md 'Report'"
+    "shared/governance/operator-brief.md 'Report'"
   ],
   "applies_to": "REPORT.md in the job's output folder; the job file moves to done/ when it exists",
   "fields": [

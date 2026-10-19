@@ -2,7 +2,7 @@
   "shape": "tracker-rows",
   "version": 1,
   "source": [
-    "governance/policy/structure_v003.md §4 'Tracker fields'"
+    "shared/governance/policy/structure_v003.md §4 'Tracker fields'"
   ],
   "applies_to": "04_TRACKER/*.csv and the per-shot CSVs",
   "csv": {

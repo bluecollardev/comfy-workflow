@@ -1,6 +1,6 @@
 # Manifest
 
-Copied by `governance/sync.sh` on 2026-10-19T06:21Z from `/Users/lucas/Workspaces/comfy_workflow/governance/../projects/desktop/CANALV2`
+Copied by `shared/governance/sync.sh` on 2026-10-19T06:26Z from `/Users/lucas/Workspaces/comfy_workflow/shared/governance/../../projects/desktop/CANALV2`
 (mirror of `/home/binc/CANALV2_r3/CANALV2` on binc-PC). The mirror is the
 source; edit nothing here, re-run the sync.
 

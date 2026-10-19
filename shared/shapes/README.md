@@ -4,7 +4,7 @@ The fixed shapes in Binc's CANALV2 project, as JSON, so software can read
 them: the dispatcher and crew that Binc's goal describes, linters, the
 queue. Each file names the policy page it was taken from; where a shape was
 confirmed against real files, it says "observed". The prose versions are
-`docs/CANALV2-STRUCTURE.md` and the pages under `governance/`.
+`docs/CANALV2-STRUCTURE.md` and the pages under `shared/governance/`.
 
 | File | Shape of |
 |---|---|
@@ -21,10 +21,10 @@ confirmed against real files, it says "observed". The prose versions are
 `check.py` validates real things against them, read-only:
 
 ```bash
-shapes/check.py project projects/desktop/CANALV2
-shapes/check.py shot    projects/desktop/CANALV2/10_CORROSION/corrosion-051
-shapes/check.py job     queue/canalv2/in/job_001_corrosion-058_blender-full-carry.md
-shapes/check.py name    corrosion-058_graph_v021.json solve_SA_v006.npz
+shared/shapes/check.py project projects/desktop/CANALV2
+shared/shapes/check.py shot    projects/desktop/CANALV2/10_CORROSION/corrosion-051
+shared/shapes/check.py job     queue/canalv2/in/job_001_corrosion-058_blender-full-carry.md
+shared/shapes/check.py name    corrosion-058_graph_v021.json solve_SA_v006.npz
 ```
 
 The JSON is a plain, self-describing format, not JSON Schema: `entries` with

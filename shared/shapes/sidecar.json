@@ -2,7 +2,7 @@
   "shape": "sidecar",
   "version": 1,
   "source": [
-    "governance/policy/naming.md 'Sidecar'",
+    "shared/governance/policy/naming.md 'Sidecar'",
     "observed: Gen_Paint_Output/*/_Meta.json and 07_DELIVER/*/assets/*paint-sidecar*.json"
   ],
   "applies_to": "<filename>.meta.json beside any generated or transformed file; machine identifiers live here, never in file names",

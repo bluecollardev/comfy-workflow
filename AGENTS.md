@@ -11,7 +11,7 @@ read-only mirror of the client project (`projects/desktop/`). The goal it
 serves is in `README.md`, "Goal".
 
 **Rules, in order.**
-1. `governance/policy/agent-permissions.md` for anything touching the
+1. `shared/governance/policy/agent-permissions.md` for anything touching the
    CANALV2 job: read-only on locked shots, named yes for installs, spend and
    anything leaving the machine, USD 100 cap, stop and report on ambiguity.
 2. `.claude/rules/binc-tree.md`: never write into `projects/desktop/`.
@@ -20,8 +20,8 @@ serves is in `README.md`, "Goal".
    `./start.sh test`.
 
 **Jobs.** `queue/<project>/in/` holds job files; run one per session the way
-`governance/operator-brief.md` says, moving it to `running/` then `done/`.
+`shared/governance/operator-brief.md` says, moving it to `running/` then `done/`.
 
-**Start here.** `governance/README.md` for precedence and what is where;
+**Start here.** `shared/governance/README.md` for precedence and what is where;
 `CLAUDE.md` for conventions and commands; `./start.sh` for running things;
 `docs/ADR-004-where-the-workflows-run.md` for which machine does what.

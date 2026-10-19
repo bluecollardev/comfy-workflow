@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Check real things against the JSON shapes. Read-only.
 
-  shapes/check.py project <root>      top level against project-tree.json
-  shapes/check.py shot <shot-folder>  against shot-folder.json
-  shapes/check.py job <job.md>        against job-file.json template fields
-  shapes/check.py name <string>...    which names.json pattern each matches
+  shared/shapes/check.py project <root>      top level against project-tree.json
+  shared/shapes/check.py shot <shot-folder>  against shot-folder.json
+  shared/shapes/check.py job <job.md>        against job-file.json template fields
+  shared/shapes/check.py name <string>...    which names.json pattern each matches
 Exit 1 when something required is missing.
 """
 import json, re, sys, pathlib

@@ -13,7 +13,7 @@ queue/
 
 A job file is a short brief: shot, tool, machine, root, exact commands, what
 must exist afterwards, when to stop. The format and the rules for running one
-are Binc's operator brief, `governance/operator-brief.md`: one job per
+are Binc's operator brief, `shared/governance/operator-brief.md`: one job per
 session, one tool, one run, one new output folder, a report, stop. No
 retries, no fixes, no judgement words in the report.
 
@@ -39,5 +39,5 @@ The sync keeps a job wherever we have moved it. If Binc's queue later shows
 the same job in `running/` or `done/`, the sync prints that and leaves ours
 alone, so the two can be reconciled by hand.
 
-Before an agent runs anything from `canalv2/`: `governance/policy/agent-permissions.md`,
-then the job file, then `governance/operator-brief.md`.
+Before an agent runs anything from `canalv2/`: `shared/governance/policy/agent-permissions.md`,
+then the job file, then `shared/governance/operator-brief.md`.

@@ -27,11 +27,12 @@ copied in this (private) repo; the mirror itself is still never written to.
 | `AGENTS.md` | The same in the cross-tool format other agents read; imported by `CLAUDE.md` | Yes, through the import; other agents read it directly |
 | `.claude/rules/*.md` | One enforced rule per file | Yes, every session (the directory, not a single `rules.md`) |
 | `.claude/hooks/protect-binc-tree.sh` | Blocks Edit/Write under `projects/desktop/` | Runs before every edit, via `.claude/settings.json` |
-| `governance/policy/` | Binc's 33 policy pages (their `00_POLICY/`) | On demand |
-| `governance/workflow/` | Workflow rules, sign-off, decisions (their `01_GOVERNANCE/`) | On demand |
-| `governance/CANALV2-README.md` | Their one-screen index of the tree | On demand |
-| `governance/operator-brief.md` | The one-job operator brief (their `CLAUDE.md`, renamed so it is not picked up as ours) | On demand |
-| `governance/MANIFEST.md` | What was copied, from where, when, with checksums | |
+| `shared/governance/policy/` | Binc's 33 policy pages (their `00_POLICY/`) | On demand |
+| `shared/governance/workflow/` | Workflow rules, sign-off, decisions (their `01_GOVERNANCE/`) | On demand |
+| `shared/governance/CANALV2-README.md` | Their one-screen index of the tree | On demand |
+| `shared/governance/operator-brief.md` | The one-job operator brief (their `CLAUDE.md`, renamed so it is not picked up as ours) | On demand |
+| `shared/governance/MANIFEST.md` | What was copied, from where, when, with checksums | |
+| `shared/shapes/*.json` | The project's fixed shapes as JSON, with `check.py` | On demand |
 | `queue/<project>/` | Job files for agents, seeded from the project's own queue | On demand |
 | `docs/ADR-*.md` | Decisions about this repo's own architecture | On demand |
 

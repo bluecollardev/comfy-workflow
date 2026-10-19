@@ -2,9 +2,9 @@
   "shape": "shot-folder",
   "version": 1,
   "source": [
-    "governance/policy/structure_v003.md §1 'Shot folder'",
-    "governance/policy/bh-symmetry_v002.md rule 1",
-    "governance/policy/naming.md"
+    "shared/governance/policy/structure_v003.md §1 'Shot folder'",
+    "shared/governance/policy/bh-symmetry_v002.md rule 1",
+    "shared/governance/policy/naming.md"
   ],
   "applies_to": "every <shot>/ under 10_CORROSION, 20_STEREO, 30_CREATIVE, 40_TITLES, 50_RND, and each _template/",
   "principle": "Same shape everywhere. Only the contents differ. One file plus seven folders.",

@@ -2,7 +2,7 @@
   "shape": "job-file",
   "version": 1,
   "source": [
-    "governance/operator-brief.md 'Job file'",
+    "shared/governance/operator-brief.md 'Job file'",
     "queue/canalv2/in/README_queue_2026-10-17.md"
   ],
   "applies_to": "04_TRACKER/queue/{in,running,done}/<job>.md in Binc's tree; queue/<project>/{in,running,done}/ here",

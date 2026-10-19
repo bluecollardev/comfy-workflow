@@ -21,6 +21,9 @@ The GPU is the easy part. In order:
 - [ ] **Drive it from the Mac.** `comfy` CLI and the queue scripts take `--comfy <url>`; the stereo work stays local on MPS.
 - [ ] **RunPod as overflow**, after Binc's four yeses (section below). Same image or RunPod's template, network volume at the project path.
 - [ ] **Binc's goal, the skill crew.** Not started; a design, not code, is the next step. Separate from ADR-002's GPU pool. See `README.md`, "Goal".
+  - [ ] First piece: a dispatcher over `queue/<project>/`. Watch `in/`, claim a job by moving it to `running/`, start a Claude Code session with the brief as its first message, collect `REPORT.md`, move to `done/`. The folders stay the interface, so the manual and automated paths are the same.
+  - [ ] **Abstract shapes and concrete shapes** (Lucas, 2026-10-19). `shared/shapes/` today is CANALV2's shapes verbatim. Split them: abstract shapes any restoration project has (a project tree, a shot folder, a job, a report, a graph with ordered boxes, naming rules) and concrete bindings per project (CANALV2's `10_CORROSION`, `BH26_` nodes, `/home/binc/...` root, its state words). The dispatcher and the checker then run against the abstract shape plus a binding.
+  - [ ] What `check.py` found on 2026-10-19, to raise with Binc rather than fix: `corrosion-111` and `corrosion-159` have no `05_TEMPS/` or `07_DELIVER/`; the 17 real job files carry `job`, `shot`, `tool`, `machine`, `root` and STEP blocks but not the brief's `inputs`, `params`, `output` fields. Either the brief's template or the files should move.
 
 ## What there is to import
 
