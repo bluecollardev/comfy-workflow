@@ -191,17 +191,17 @@ export { expect }
 
 // ----- shared UI helpers -----
 
-export const createPodToggle = (page) => page.locator('[aria-controls="create-pod-form"]')
+export const createPodToggle = (page) => page.getByTestId('create-pod-toggle')
 
 export async function openCreatePod(page) {
   await createPodToggle(page).click()
-  await expect(page.getByLabel('Name')).toBeVisible()
+  await expect(page.locator('#pod-name')).toBeVisible()
 }
 
 export async function expandSection(page, name) {
   await page.getByRole('button', { name, exact: true }).click()
 }
 
-export const podCard = (page, name) => page.locator('.card.h-100', { hasText: name })
+export const podCard = (page, name) => page.locator(`[data-testid="pod-card"][data-name="${name}"]`)
 
 export const modal = (page, text) => page.locator('.modal.show', { hasText: text })

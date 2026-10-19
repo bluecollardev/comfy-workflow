@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { podsAPI } from '../api/pods'
 import { errorText, useToastStore } from './toast'
+import { t } from '../i18n'
 
 /**
  * The pods and their stats, and every action on them. One source of truth for the dashboard:
@@ -58,16 +59,17 @@ export const usePodsStore = defineStore('pods', () => {
    *  The list refreshes on success. */
   async function create(payload) {
     let text = null
-    const r = await toast.run('Create pod', () => podsAPI.createPod(payload), { ok: `Pod ${payload.name} created`, onError: (t) => (text = t) })
+    const r = await toast.run(t('toast.createPod'), () => podsAPI.createPod(payload), { ok: t('toast.podCreated', { name: payload.name }), onError: (msg) => (text = msg) })
     if (r.ok) await load()   // the list and the stats
     return { ...r, text }
   }
 
-  const DONE = { Stop: 'Pod stopped', Resume: 'Pod resumed', Delete: 'Pod deleted' }
+  const LABEL = { Stop: 'toast.stopPod', Resume: 'toast.resumePod', Delete: 'toast.deletePod' }
+  const DONE = { Stop: 'toast.podStopped', Resume: 'toast.podResumed', Delete: 'toast.podDeleted' }
   async function act(podId, action, label) {
     busyPodId.value = podId
     actionError.value = null
-    const r = await toast.run(`${label} pod`, () => action(podId), { ok: DONE[label], onError: (t) => (actionError.value = t) })
+    const r = await toast.run(t(LABEL[label]), () => action(podId), { ok: t(DONE[label]), onError: (msg) => (actionError.value = msg) })
     if (r.ok) await load()   // the list and the stats
     busyPodId.value = null
     return r

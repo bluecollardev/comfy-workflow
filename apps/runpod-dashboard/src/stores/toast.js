@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { t } from '../i18n'
 
 /**
  * One place for every toast in the app. Components never render toasts themselves: they call
@@ -29,9 +30,9 @@ export const useToastStore = defineStore('toast', () => {
     return id
   }
 
-  const success = (body, title = 'Done') => show('success', body, title)
-  const error = (body, title = 'Failed') => show('danger', body, title)
-  const info = (body, title = 'Note') => show('info', body, title)
+  const success = (body, title = t('toast.done')) => show('success', body, title)
+  const error = (body, title = t('toast.failed')) => show('danger', body, title)
+  const info = (body, title = t('toast.note')) => show('info', body, title)
 
   /**
    * Run an action and toast its outcome. `label` names it for people ("Stop pod");
@@ -42,10 +43,10 @@ export const useToastStore = defineStore('toast', () => {
   async function run(label, action, { ok, onError } = {}) {
     try {
       const value = await action()
-      success(ok || `${label} done`)
+      success(ok || t('toast.doneDefault', { label }))
       return { ok: true, value }
     } catch (e) {
-      const text = `${label} failed: ${errorText(e)}`
+      const text = t('toast.failedWith', { label, error: errorText(e) })
       error(text)
       onError?.(text, e)
       return { ok: false, error: e }

@@ -42,9 +42,10 @@ export async function launchApp({ dry = true, live = false } = {}) {
   return { app, page, configDir }
 }
 
-export const toast = (page) => page.locator('.toast-container .toast')
-export const podCard = (page, name) => page.locator('.card.h-100', { hasText: name })
+export const toast = (page) => page.getByTestId('toast')
+export const podCard = (page, name) => page.locator(`[data-testid="pod-card"][data-name="${name}"]`)
+export const configModal = (page) => page.locator('.modal.show', { has: page.getByTestId('config-modal') })
 export async function openCreatePod(page) {
-  await page.locator('[aria-controls="create-pod-form"]').click()
-  await page.getByLabel('Name').waitFor()
+  await page.getByTestId('create-pod-toggle').click()
+  await page.locator('#pod-name').waitFor()
 }

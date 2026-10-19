@@ -1,9 +1,9 @@
 <template>
   <BRow class="g-3">
-    <BCol v-for="stat in cards" :key="stat.label" md="4">
+    <BCol v-for="stat in cards" :key="stat.label" md="4" :data-testid="stat.id">
       <BCard class="stat-card" :style="{ '--stat-color': `var(--bs-${stat.variant})` }" body-class="py-3">
         <div class="text-body-secondary text-uppercase small fw-semibold mb-1">{{ stat.label }}</div>
-        <div class="fs-1 fw-bold lh-1">{{ stat.value }}</div>
+        <div class="fs-1 fw-bold lh-1" data-testid="stat-value">{{ stat.value }}</div>
       </BCard>
     </BCol>
   </BRow>
@@ -15,13 +15,14 @@
  */
 import { computed } from 'vue'
 import { usePodsStore } from '../stores/pods'
+import { t } from '../i18n'
 
 const pods = usePodsStore()
 
 const cards = computed(() => [
-  { label: 'Total pods', value: pods.stats.total_pods ?? 0, variant: 'primary' },
-  { label: 'Running', value: pods.stats.running_pods ?? 0, variant: 'success' },
-  { label: 'Stopped', value: pods.stats.stopped_pods ?? 0, variant: 'danger' },
+  { id: 'stat-total', label: t('stats.total'), value: pods.stats.total_pods ?? 0, variant: 'primary' },
+  { id: 'stat-running', label: t('stats.running'), value: pods.stats.running_pods ?? 0, variant: 'success' },
+  { id: 'stat-stopped', label: t('stats.stopped'), value: pods.stats.stopped_pods ?? 0, variant: 'danger' },
 ])
 </script>
 

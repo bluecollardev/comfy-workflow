@@ -7,9 +7,10 @@
         class="card-header card-header-toggle d-flex align-items-center"
         :aria-expanded="showCreateForm"
         aria-controls="create-pod-form"
+        data-testid="create-pod-toggle"
         @click="showCreateForm = !showCreateForm"
       >
-        <span class="fw-semibold">Create pod</span>
+        <span class="fw-semibold">{{ $t('dashboard.createPod') }}</span>
         <i class="fa-solid fa-chevron-right ms-auto"></i>
       </button>
       <BCollapse id="create-pod-form" v-model="showCreateForm">
@@ -22,14 +23,14 @@
     <!-- Pod list -->
     <BCard no-body>
       <BCardHeader class="d-flex align-items-center">
-        <span class="fw-semibold">Pods</span>
+        <span class="fw-semibold">{{ $t('dashboard.pods') }}</span>
         <BBadge variant="secondary" pill class="ms-auto">{{ pods.pods.length }}</BBadge>
       </BCardHeader>
       <BCardBody>
-        <div v-if="pods.pods.length === 0" class="text-center text-body-secondary py-4">
-          No pods
+        <div v-if="pods.pods.length === 0" class="text-center text-body-secondary py-4" data-testid="pods-empty">
+          {{ $t('dashboard.noPods') }}
         </div>
-        <BRow v-else class="g-3">
+        <BRow v-else class="g-3" data-testid="pod-list">
           <BCol v-for="pod in pods.pods" :key="pod.id" md="6" xl="4">
             <PodCard
               :pod="pod"
@@ -48,6 +49,7 @@
       :model-value="true"
       variant="danger"
       dismissible
+      data-testid="action-error"
       @update:model-value="pods.actionError = null"
     >
       {{ pods.actionError }}

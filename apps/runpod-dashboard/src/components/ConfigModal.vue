@@ -1,111 +1,106 @@
 <template>
   <BModal
     :model-value="ui.configOpen"
-    title="Configuration"
+    :title="$t('config.title')"
     size="xl"
     scrollable
     @update:model-value="ui.configOpen = $event"
     @show="load"
   >
-    <p class="text-body-secondary small mb-3">
-      This app runs on one PC. Map the three folders every run needs, wherever they are on this
-      PC. A runtime here uses them where they are; a pod carries them on its volume and links the
-      paths the project's own files name onto them, so graphs and scripts run unchanged. The
-      full story: <code>docs/MOUNT-POINTS.md</code>.
-    </p>
+    <p class="text-body-secondary small mb-3" data-testid="config-modal">{{ $t('config.intro') }}</p>
 
     <div v-if="loading" class="text-center text-body-secondary py-3"><BSpinner small /></div>
 
     <template v-else-if="cfg">
-      <h6 class="mb-2">RunPod <span class="text-body-secondary fw-normal small">the account the app creates pods in</span></h6>
+      <h6 class="mb-2" data-testid="section-runpod">{{ $t('config.runpod') }} <span class="text-body-secondary fw-normal small">{{ $t('config.runpodHint') }}</span></h6>
       <BRow class="g-3 mb-3">
         <BCol md="8">
-          <BFormGroup label="API key" label-for="cfg-key" :description="keyInfo.runpod_api_key_set ? `Stored (${keyInfo.runpod_api_key_hint}); enter a new one to replace it. Kept in ${keyInfo.source}.` : 'Not set. From runpod.io, Settings, API Keys; stored on this PC only, never shown again.'">
-            <BFormInput id="cfg-key" v-model.trim="newKey" type="password" autocomplete="off" placeholder="rpa_…" class="font-monospace" />
+          <BFormGroup :label="$t('config.apiKey')" label-for="cfg-key" data-testid="cfg-key-group" :description="keyInfo.runpod_api_key_set ? $t('config.apiKeyStored', { hint: keyInfo.runpod_api_key_hint, source: keyInfo.source }) : $t('config.apiKeyUnset')">
+            <BFormInput id="cfg-key" v-model.trim="newKey" type="password" autocomplete="off" placeholder="rpa_…" class="font-monospace" data-testid="cfg-key" />
           </BFormGroup>
         </BCol>
       </BRow>
 
-      <h6 class="mb-2">Pod volume <span class="text-body-secondary fw-normal small">the network volume that carries the three folders when a pod runs them</span></h6>
+      <h6 class="mb-2" data-testid="section-volume">{{ $t('config.volume') }} <span class="text-body-secondary fw-normal small">{{ $t('config.volumeHint') }}</span></h6>
       <BRow class="g-3 mb-3">
         <BCol md="5">
-          <BFormGroup label="Network volume ID" label-for="cfg-volume" description="Empty: the pod gets only its own disk and nothing above resolves.">
-            <BFormInput id="cfg-volume" v-model.trim="cfg.network_volume_id" placeholder="e.g. 7h2k…" class="font-monospace" />
+          <BFormGroup :label="$t('config.volumeId')" label-for="cfg-volume" :description="$t('config.volumeIdHelp')">
+            <BFormInput id="cfg-volume" v-model.trim="cfg.network_volume_id" placeholder="e.g. 7h2k…" class="font-monospace" data-testid="cfg-volume" />
           </BFormGroup>
         </BCol>
         <BCol md="3">
-          <BFormGroup label="Mount path" label-for="cfg-mount" description="Where the volume appears in the pod.">
-            <BFormInput id="cfg-mount" v-model.trim="cfg.mount_path" class="font-monospace" />
+          <BFormGroup :label="$t('config.mountPath')" label-for="cfg-mount" :description="$t('config.mountPathHelp')">
+            <BFormInput id="cfg-mount" v-model.trim="cfg.mount_path" class="font-monospace" data-testid="cfg-mount" />
           </BFormGroup>
         </BCol>
         <BCol md="4">
-          <BFormGroup label="Datacenter" label-for="cfg-dc" description="Must match the volume's datacenter. Empty: RunPod chooses.">
-            <BFormInput id="cfg-dc" v-model.trim="cfg.data_center_id" placeholder="e.g. EU-RO-1" class="font-monospace" />
+          <BFormGroup :label="$t('config.datacenter')" label-for="cfg-dc" :description="$t('config.datacenterHelp')">
+            <BFormInput id="cfg-dc" v-model.trim="cfg.data_center_id" placeholder="e.g. EU-RO-1" class="font-monospace" data-testid="cfg-dc" />
           </BFormGroup>
         </BCol>
         <BCol md="8">
-          <BFormGroup label="Image" label-for="cfg-image" description="What every new pod boots: ours, with the packs and the entrypoint that makes the links. It must be pushed to a registry first; a bare local name is refused at pod creation.">
-            <BFormInput id="cfg-image" v-model.trim="cfg.image" placeholder="registry/name:tag" class="font-monospace" />
+          <BFormGroup :label="$t('config.image')" label-for="cfg-image" :description="$t('config.imageHelp')">
+            <BFormInput id="cfg-image" v-model.trim="cfg.image" placeholder="registry/name:tag" class="font-monospace" data-testid="cfg-image" />
           </BFormGroup>
         </BCol>
         <BCol md="4">
-          <BFormGroup label="Idle stop (minutes)" label-for="cfg-idle" description="Stop a pod after this long with nothing queued. 0 = never.">
-            <BFormInput id="cfg-idle" v-model.number="cfg.idle_stop_minutes" type="number" min="0" />
+          <BFormGroup :label="$t('config.idle')" label-for="cfg-idle" :description="$t('config.idleHelp')">
+            <BFormInput id="cfg-idle" v-model.number="cfg.idle_stop_minutes" type="number" min="0" data-testid="cfg-idle" />
           </BFormGroup>
         </BCol>
       </BRow>
 
       <div class="d-flex align-items-center justify-content-between mb-2">
-        <h6 class="mb-0">Folders on this PC <span class="text-body-secondary fw-normal small">the three every run uses, then any of your own; the exact links a pod makes are in the pod preview below. Mode <code>{{ mode }}</code> (<code>COMFY_MODE</code>); {{ requireSource === 'prod' ? 'every folder is required in prod' : requireSource === 'env' ? 'required folders set by COMFY_REQUIRE' : 'the switches say which are required in dev' }}</span></h6>
-        <BButton size="sm" variant="outline-light" @click="cfg.custom.push({ name: '', local: '', container: '', link: '', mode: 'rw' })"><i class="fa-solid fa-plus me-1"></i>Add folder</BButton>
+        <h6 class="mb-0" data-testid="section-folders">{{ $t('config.folders') }} <span class="text-body-secondary fw-normal small">{{ $t('config.foldersHint', { mode, rule: $t(requireSource === 'prod' ? 'config.ruleProd' : requireSource === 'env' ? 'config.ruleEnv' : 'config.ruleConfig') }) }}</span><code class="d-none" data-testid="config-mode">{{ mode }}</code></h6>
+        <BButton size="sm" variant="outline-light" data-testid="add-folder" @click="cfg.custom.push({ name: '', local: '', container: '', link: '', mode: 'rw' })"><i class="fa-solid fa-plus me-1"></i>{{ $t('config.addFolder') }}</BButton>
       </div>
       <table class="table table-sm align-middle mb-3">
         <thead class="small text-body-secondary">
-          <tr><th style="width: 22%">What</th><th style="width: 48%">Folder on this PC</th><th>On a pod</th><th></th></tr>
+          <tr><th style="width: 22%">{{ $t('config.colWhat') }}</th><th style="width: 48%">{{ $t('config.colLocal') }}</th><th>{{ $t('config.colPod') }}</th><th></th></tr>
         </thead>
         <tbody>
-          <tr v-for="f in required" :key="f.key">
+          <tr v-for="f in required" :key="f.key" :data-testid="'folder-row-' + f.key">
             <td>
               <div class="fw-semibold">{{ label(f) }}</div>
-              <BFormCheckbox v-model="cfg.required[f.key]" switch size="sm" :disabled="requireSource !== 'config'" :title="requireSource === 'prod' ? 'prod mode: every folder is required' : requireSource === 'env' ? 'set by COMFY_REQUIRE' : 'dev mode: your choice'">
-                <small>{{ (requireSource === 'config' ? cfg.required[f.key] : f.required) ? 'required' : 'optional' }}</small>
+              <BFormCheckbox v-model="cfg.required[f.key]" switch size="sm" :disabled="requireSource !== 'config'" data-testid="folder-required" :title="$t(requireSource === 'prod' ? 'config.requiredProd' : requireSource === 'env' ? 'config.requiredEnv' : 'config.requiredConfig')">
+                <small data-testid="folder-required-text">{{ $t((requireSource === 'config' ? cfg.required[f.key] : f.required) ? 'config.required' : 'config.optional') }}</small>
               </BFormCheckbox>
               <small class="text-body-secondary">{{ f.what }}</small>
             </td>
             <td>
               <div class="d-flex gap-2">
-                <BFormInput v-model.trim="cfg.folders[f.key]" size="sm" class="font-monospace" placeholder="not mapped" :state="folderState(f, cfg.folders[f.key])" />
-                <BButton size="sm" variant="outline-light" class="text-nowrap" @click="browse(f.key, label(f), cfg.folders[f.key])"><i class="fa-regular fa-folder-open me-1"></i>Browse</BButton>
+                <BFormInput v-model.trim="cfg.folders[f.key]" size="sm" class="font-monospace" :placeholder="$t('config.notMapped')" :state="folderState(f, cfg.folders[f.key])" data-testid="folder-local" />
+                <BButton size="sm" variant="outline-light" class="text-nowrap" data-testid="folder-browse" @click="browse(f.key, label(f), cfg.folders[f.key])"><i class="fa-regular fa-folder-open me-1"></i>{{ $t('config.browse') }}</BButton>
               </div>
-              <small v-if="cfg.folders[f.key] && f.local === cfg.folders[f.key] && !f.exists" class="text-danger">This folder does not exist on this PC.</small>
-              <small v-else-if="f.mirror && f.key !== 'plates' && f.local === cfg.folders[f.key]" class="text-warning">This is Binc's mirror, read-only by rule, and a run writes here. Map a folder of your own{{ f.key === 'comfy-shared' ? ', e.g. ~/ComfyUI-Shared' : ' or a copy of the tree' }}.</small>
-              <small v-else-if="f.declared" class="text-body-secondary">On a pod, linked from {{ f.declared.source }}.</small>
-              <small v-else-if="f.key === 'project' && cfg.folders.project && f.local === cfg.folders.project && f.exists" class="text-warning">The tree's job files and structure page name no root; a pod cannot link what its graphs name.</small>
-              <small v-else-if="f.key !== 'project' && cfg.folders.project" class="text-body-secondary">The tree names no path for it; nothing is linked on a pod.</small>
+              <small v-if="cfg.folders[f.key] && f.local === cfg.folders[f.key] && !f.exists" class="text-danger">{{ $t('config.missing') }}</small>
+              <small v-else-if="f.mirror && f.key !== 'plates' && f.local === cfg.folders[f.key]" class="text-warning">{{ $t('config.mirror', { hint: $t(f.key === 'comfy-shared' ? 'config.mirrorShared' : 'config.mirrorTree') }) }}</small>
+              <small v-else-if="f.declared" class="text-body-secondary" data-testid="folder-note">{{ $t('config.linkedFrom', { source: f.declared.source }) }}</small>
+              <small v-else-if="f.key === 'project' && cfg.folders.project && f.local === cfg.folders.project && f.exists" class="text-warning">{{ $t('config.noRoot') }}</small>
+              <small v-else-if="f.key !== 'project' && cfg.folders.project" class="text-body-secondary">{{ $t('config.noDeclared') }}</small>
             </td>
-            <td class="font-monospace small">{{ f.container }}<br /><span class="text-body-secondary">{{ f.env_key }}</span></td>
+            <td class="font-monospace small" data-testid="folder-container">{{ f.container }}<br /><span class="text-body-secondary" data-testid="folder-env">{{ f.env_key }}</span></td>
             <td></td>
           </tr>
-          <tr v-for="(c, i) in cfg.custom" :key="'custom-' + i">
+          <tr v-for="(c, i) in cfg.custom" :key="'custom-' + i" :data-testid="'custom-row-' + i">
             <td>
-              <BFormInput v-model.trim="c.name" size="sm" placeholder="name" :state="c.name ? (/^[^/\s]+$/.test(c.name) && !required.some((f) => f.key === c.name) ? null : false) : false" />
-              <small class="text-body-secondary">your own folder</small>
+              <BFormInput v-model.trim="c.name" size="sm" :placeholder="$t('config.customName')" data-testid="custom-name" :state="c.name ? (/^[^/\s]+$/.test(c.name) && !required.some((f) => f.key === c.name) ? null : false) : false" />
+              <small class="text-body-secondary">{{ $t('config.customOwn') }}</small>
             </td>
             <td>
               <div class="d-flex gap-2">
-                <BFormInput v-model.trim="c.local" size="sm" class="font-monospace" placeholder="not mapped" :state="folderState(customRow(c), c.local)" />
+                <BFormInput v-model.trim="c.local" size="sm" class="font-monospace" :placeholder="$t('config.notMapped')" :state="folderState(customRow(c), c.local)" data-testid="custom-local" />
                 <BButton size="sm" variant="outline-light" class="text-nowrap" @click="browse('custom:' + i, c.name || 'folder', c.local, 'custom.' + (c.name || i))"><i class="fa-regular fa-folder-open me-1"></i>Browse</BButton>
               </div>
               <div class="d-flex gap-2 align-items-center mt-1">
-                <small class="text-body-secondary text-nowrap">Path the code names</small>
-                <BFormInput v-model.trim="c.link" size="sm" class="font-monospace" placeholder="optional: a pod links it onto the pod path" />
+                <small class="text-body-secondary text-nowrap">{{ $t('config.customLink') }}</small>
+                <BFormInput v-model.trim="c.link" size="sm" class="font-monospace" :placeholder="$t('config.customLinkHelp')" data-testid="custom-link" />
               </div>
             </td>
             <td>
-              <BFormInput v-model.trim="c.container" size="sm" class="font-monospace" :placeholder="(cfg.mount_path || '/workspace') + '/' + (c.name || 'name')" />
+              <BFormInput v-model.trim="c.container" size="sm" class="font-monospace" :placeholder="(cfg.mount_path || '/workspace') + '/' + (c.name || 'name')" data-testid="custom-container" />
               <BFormSelect v-model="c.mode" size="sm" :options="['rw', 'ro']" class="mt-1" style="width: 5rem" />
             </td>
-            <td class="text-end"><BButton variant="outline-light" size="sm" aria-label="Remove folder" @click="cfg.custom.splice(i, 1)"><i class="fa-solid fa-xmark"></i></BButton></td>
+            <td class="text-end"><BButton variant="outline-light" size="sm" :aria-label="$t('config.removeFolder')" data-testid="custom-remove" @click="cfg.custom.splice(i, 1)"><i class="fa-solid fa-xmark"></i></BButton></td>
           </tr>
         </tbody>
       </table>
@@ -124,30 +119,30 @@
         </tbody>
       </table>
 
-      <BFormCheckbox v-model="cfg.apply_by_default" switch class="mb-2">
-        Apply to new pods by default <span class="text-body-secondary">(the pod form can switch it off per pod)</span>
+      <BFormCheckbox v-model="cfg.apply_by_default" switch class="mb-2" data-testid="cfg-apply-default">
+        {{ $t('config.applyDefault') }} <span class="text-body-secondary">{{ $t('config.applyDefaultHint') }}</span>
       </BFormCheckbox>
-      <BFormCheckbox v-model="cfg.dry_run" switch class="mb-3">
-        No-spend mode <span class="text-body-secondary">(pods are simulated: nothing reaches RunPod, nothing bills; for testing the app)</span>
+      <BFormCheckbox v-model="cfg.dry_run" switch class="mb-3" data-testid="cfg-dry-run">
+        {{ $t('config.dryRun') }} <span class="text-body-secondary">{{ $t('config.dryRunHint') }}</span>
       </BFormCheckbox>
 
       <details class="mb-2">
-        <summary class="small text-body-secondary">What a runtime on this PC receives (as saved)</summary>
+        <summary class="small text-body-secondary">{{ $t('config.previewLocal') }}</summary>
         <pre class="small bg-body-tertiary rounded p-2 mt-2 mb-0" style="white-space: pre-wrap">{{ localText }}</pre>
       </details>
       <details class="mb-3">
-        <summary class="small text-body-secondary">What a new pod receives (as saved)</summary>
-        <pre class="small bg-body-tertiary rounded p-2 mt-2 mb-0" style="white-space: pre-wrap">{{ previewText }}</pre>
+        <summary class="small text-body-secondary" data-testid="preview-pod-toggle">{{ $t('config.previewPod') }}</summary>
+        <pre class="small bg-body-tertiary rounded p-2 mt-2 mb-0" style="white-space: pre-wrap" data-testid="preview-pod">{{ previewText }}</pre>
       </details>
 
-      <BAlert :model-value="!!error" variant="danger" class="mt-2 mb-0">{{ error }}</BAlert>
+      <BAlert :model-value="!!error" variant="danger" class="mt-2 mb-0" data-testid="config-error">{{ error }}</BAlert>
     </template>
 
     <template #footer>
-      <small class="text-body-secondary me-auto">{{ stored ? 'Saved in ' + store : 'Nothing saved yet' }}</small>
-      <BButton variant="outline-danger" size="sm" :disabled="saving || !stored" @click="reset">Clear</BButton>
-      <BButton variant="outline-light" size="sm" @click="ui.configOpen = false">Close</BButton>
-      <BButton variant="primary" size="sm" :disabled="saving" @click="save"><BSpinner v-if="saving" small class="me-1" />Save</BButton>
+      <small class="text-body-secondary me-auto">{{ stored ? $t('config.savedIn', { store }) : $t('config.nothingSaved') }}</small>
+      <BButton variant="outline-danger" size="sm" :disabled="saving || !stored" data-testid="config-clear" @click="reset">{{ $t('config.clear') }}</BButton>
+      <BButton variant="outline-light" size="sm" data-testid="config-close" @click="ui.configOpen = false">{{ $t('config.close') }}</BButton>
+      <BButton variant="primary" size="sm" :disabled="saving" data-testid="config-save" @click="save"><BSpinner v-if="saving" small class="me-1" />{{ $t('config.save') }}</BButton>
     </template>
 
     <FolderPicker v-model="picker.open" :title="picker.title" :start="picker.start" :memory-key="picker.memory" @choose="picked" />
@@ -165,6 +160,7 @@ import { computed, reactive, ref } from 'vue'
 import { useUiStore } from '../stores/ui'
 import { useMountsStore } from '../stores/mounts'
 import { settingsAPI } from '../api/settings'
+import { t } from '../i18n'
 import FolderPicker from './FolderPicker.vue'
 
 const ui = useUiStore()
@@ -186,8 +182,7 @@ const picker = reactive({ open: false, key: '', title: '', start: '', memory: ''
 const keyInfo = ref({ runpod_api_key_set: false, runpod_api_key_hint: '', source: 'none' })
 const newKey = ref('')
 
-const LABELS = { project: 'Project tree', plates: 'Plates', 'comfy-shared': 'ComfyUI-Shared' }
-const label = (f) => LABELS[f.key] || f.key
+const label = (f) => (f.custom ? f.key : t(`config.folder.${f.key}`))
 const required = computed(() => folders.value.filter((f) => !f.custom))
 // The API's derived row for a custom folder (exists, declared), matched by name.
 const customRow = (c) => folders.value.find((f) => f.custom && f.key === c.name) || { local: '', exists: false }
@@ -223,7 +218,7 @@ function folderState(f, v) {
 }
 
 function browse(key, name, start, memory = key) {
-  picker.key = key; picker.title = `Choose the ${name.toLowerCase()} folder`; picker.start = start || ''
+  picker.key = key; picker.title = t('picker.title', { name: name.toLowerCase() }); picker.start = start || ''
   picker.memory = memory   // what the picker remembers the last folder under: the row's key, or a custom row's name
   picker.open = true
 }
@@ -241,14 +236,14 @@ function body() {
 
 const localText = computed(() => {
   const e = Object.entries(localEnv.value)
-  return e.length ? e.map(([k, v]) => `export ${k}=${JSON.stringify(v)}`).join('\n') : 'nothing mapped yet'
+  return e.length ? e.map(([k, v]) => `export ${k}=${JSON.stringify(v)}`).join('\n') : t('config.nothingMapped')
 })
 
 const previewText = computed(() => {
   const p = preview.value
   const lines = []
-  if (p.network_volume_id) lines.push(`network volume ${p.network_volume_id} mounted at ${p.volume_mount_path}${p.data_center_id ? ' in ' + p.data_center_id : ''}`)
-  else lines.push('no network volume: per-pod disk only')
+  if (p.network_volume_id) lines.push(t('config.volumeLine', { id: p.network_volume_id, path: p.volume_mount_path }) + (p.data_center_id ? t('config.inDatacenter', { dc: p.data_center_id }) : ''))
+  else lines.push(t('config.noVolume'))
   for (const [k, v] of Object.entries(p.env || {})) lines.push(`${k}=${v}`)
   return lines.join('\n')
 })
