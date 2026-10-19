@@ -5,6 +5,35 @@ for the Mac, a Docker image for RunPod / Linux / Windows, a pod manager with
 an MCP server and desktop dashboard, and the project trees the work is done
 in. Owner: Lucas (Blue Collar Dev).
 
+## Goal
+
+From Binc, 2026-10-19, the brief this repo serves:
+
+The pipeline is restoration for IMAX: generative and post-VFX tools inside
+ComfyUI graphs that are mostly custom nodes. It runs across a Linux PC, a Mac
+Studio reached over SMB, a shared container on a NAS or in the cloud, and a
+RunPod stack for GPUs. The hard part is not compute. It is an orchestration
+layer of agents that handles the details of production: what has to be
+tracked, what can be ignored, and what must be kept from the client. The goal
+is a crew, a mixture of experts, each managing a specific skill, so that
+Claude Code and Cowork can build the core framework and do production
+directly with Binc.
+
+> As written: "I might need a bit of help with some localized agentic workflows
+> that live on a linux pc a direct smb to a mac studio and shared container on
+> a nas or cloud that parks on a runpod for gpu stack, the challenge i have is
+> getting my orchestration layer running agents to deal with all the details,
+> that need to be tracked ignored or obfuscated from a clients. The pipeline is
+> retoration for imax using gen and post vfx tools. In a comfui graph. Which is
+> mostly custom nodes. so the main goal is to build an moe or Crew. To manage
+> specific skills, so code and cowork can do the core framework and production
+> directly with me."
+
+What that means here: the skill crew does not exist yet and is the goal above
+everything in this repo. The "agent pool" in `docs/ADR-002` is GPU pods, a
+different thing. Where graphs run on which machine is `docs/ADR-004`; shared
+storage across those machines is the first gap to close (`NEXT-STEPS.md`).
+
 ## Layout
 
 ```
@@ -97,6 +126,29 @@ Details: [`apps/runpod-dashboard/README.md`](apps/runpod-dashboard/README.md).
 Branches: `develop` is the integration branch and GitHub's default; feature
 branches come off it; `master` only moves on releases. Details in `CLAUDE.md`.
 
+## External requirements
+
+Everything the pipeline depends on that is not in this repo. Proprietary items
+belong to BH / Binc and need a named yes before they go anywhere new.
+
+| Requirement | Needed for | Where it comes from |
+|---|---|---|
+| ComfyUI at the pinned commit (0.39.2) | everything | `apps/comfy-app/setup.sh` clones it; the Dockerfile builds it in |
+| ComfyUI-BH-ShotPipe packs v10–v26 (proprietary) | the corrosion shot graphs (`BH_*`, `BH26_*` nodes); each shot needs the version it was built with | Binc's tree, `projects/desktop/CANALV2/02_SCRIPTS/nodes/`; link with `COMFY_SHOTPIPE=v26 apps/comfy-app/setup.sh` |
+| ComfyUI-BincStereo (proprietary) | the stereo workflows | tracked in `apps/comfy-app/custom_nodes/`, pending Binc's yes |
+| Python: torch (MPS on the Mac, CUDA 12.6 on Linux), numpy, scipy, opencv-python-headless, av, Pillow, matplotlib; PyOpenColorIO for the v2/v3 ACEScg graphs only | the node packs | `apps/comfy-app/requirements-*.txt`; the project's `containers/runpod/requirements-bh.txt` |
+| Depth Anything V2 Large weights | BincStereo depth | Hugging Face via `fetch-models.sh` (`HF_TOKEN` for gated repos) |
+| Blender as `bpy` 5.0.1, COLMAP | camera track and solve, before a graph runs; CPU only | the project's `solve/`, `solve-blender/` scripts and `containers/runpod/solve/` image |
+| ffmpeg, ffprobe | proxies, review movies, mp4 in and out | system package |
+| Gemini 3 Pro Image ("Nano Banana") | generated paint patches in `10_CORROSION/Gen_Paint_assets`, composited by a Comfy fusion graph | Google API key; client frames go to a third party, so the project's named-yes rule applies |
+| rclone + Google Drive | syncing `90_DELIVERIES/` | `02_SCRIPTS/drive-sync/` |
+| Shared storage: the plates at `/home/binc/CANALV2_r3/CANALV2` and `/mnt/storage/…` | rendering anything | binc-PC's disks, over SMB or a NAS; not mounted on this Mac yet |
+| NVIDIA driver, CUDA 12.6, nvidia-container-toolkit | GPU rendering on Linux, in or out of Docker | per machine; `apps/comfy-app/docker/swarm.sh init` says what Swarm needs on top |
+| Docker, Docker Swarm | running the image on Linux boxes; no GPU under Docker on macOS | `apps/comfy-app/docker/` |
+| uv, Python 3.13 (ComfyUI venv), Python 3.12 (API and CLI) | the Mac install, the pod manager | `brew install uv`; `start.sh` makes `.venv` |
+| Node 22, npm | the dashboard and Electron app | nvm |
+| RunPod account and API key | overflow GPUs, once approved | `.env`; nothing deployed yet |
+
 ## Documentation
 
 All of `docs/`: <https://github.com/bluecollardev/comfy-workflow/tree/develop/docs>
@@ -117,6 +169,7 @@ All of `docs/`: <https://github.com/bluecollardev/comfy-workflow/tree/develop/do
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | The full picture of the pod orchestration stack: the three-layer design (Claude Code → MCP server → pool manager → RunPod), components, data flows, auth, deployment scenarios, scaling. |
 | [`docs/ADR-001-runpod-strategy.md`](docs/ADR-001-runpod-strategy.md) | Why a hybrid of on-demand pods (development now) and serverless endpoints (batch rendering later), with trade-offs and migration path. |
 | [`docs/ADR-002-moe-agent-pool.md`](docs/ADR-002-moe-agent-pool.md) | The "mixture of experts" agent pool: a pool of RunPod pods shared by several users and agents, with implementation plan, costs, quotas, credentials and rollout. |
+| [`docs/ADR-004-where-the-workflows-run.md`](docs/ADR-004-where-the-workflows-run.md) | Which machine runs which graphs: plates and one path first, containers on Linux under Compose or Swarm, RunPod as overflow on its own tools, the Mac as client and MPS worker. What was measured on 2026-10-19 and the gaps. |
 | [`docs/ADR-003-python-mcp-vs-terraform.md`](docs/ADR-003-python-mcp-vs-terraform.md) | Why pod orchestration is Python plus an MCP server rather than Terraform, alternatives considered, and when to revisit. |
 | [`docs/DOCKERFILE-DEVIATIONS.md`](docs/DOCKERFILE-DEVIATIONS.md) | Review of the original placeholder image (community `ashleykza/comfyui` base) against RunPod's official one. That placeholder is retired; the current image is `apps/comfy-app/Dockerfile`, built on `pytorch/pytorch` with the same pins as the Mac. |
 

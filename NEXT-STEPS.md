@@ -2,7 +2,25 @@
 
 Status as of 2026-10-17; paths updated 2026-10-19 when the trees moved under `projects/desktop/` and the ComfyUI install became `apps/comfy-app/`. The inventory behind this is in
 [`projects/README.md`](./projects/README.md), section "Where the ComfyUI prompts
-and graphs are". Nothing below has been run yet.
+and graphs are".
+
+**2026-10-19, what was measured:** the BincStereo smoke test runs on this Mac
+on MPS (all 12 nodes, about a second), so the stereo workflows run here. The
+corrosion graphs do not: the ShotPipe packs are not linked, the plates are not
+on this machine, and the graphs hardcode binc-PC's path. Blender is the solve
+step before a graph, not a requirement to run one. Decision record:
+`docs/ADR-004-where-the-workflows-run.md`.
+
+## The main thing to solve next: run the graphs from any machine
+
+The GPU is the easy part. In order:
+
+- [ ] **Shared storage.** Get the plates visible at `/home/binc/CANALV2_r3/CANALV2` on the Mac (SMB from binc-PC or the NAS; Binc's note has a Mac Studio on SMB already). Until then the Mac can open the corrosion graphs but not render them.
+- [ ] **Link the packs.** `COMFY_SHOTPIPE=v26 apps/comfy-app/setup.sh`; older shots need their own version beside it. The tree has v10–v26.
+- [ ] **binc-PC as the first container node.** Build `comfy-app:v26` on a Linux box (`apps/comfy-app/build.sh`; the Mac would emulate amd64), then `apps/comfy-app/docker/swarm.sh up` for one box or `init` + `deploy` for a Swarm. The Mac's browser then uses `http://binc-pc:8188` like the local one.
+- [ ] **Drive it from the Mac.** `comfy` CLI and the queue scripts take `--comfy <url>`; the stereo work stays local on MPS.
+- [ ] **RunPod as overflow**, after Binc's four yeses (section below). Same image or RunPod's template, network volume at the project path.
+- [ ] **Binc's goal, the skill crew.** Not started; a design, not code, is the next step. Separate from ADR-002's GPU pool. See `README.md`, "Goal".
 
 ## What there is to import
 

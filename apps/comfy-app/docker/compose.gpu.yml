@@ -1,0 +1,11 @@
+# Added by swarm.sh up for single-box Compose: the GPU request in Compose's own
+# dialect. Swarm's `docker stack config` rejects this key, hence the separate file.
+services:
+  comfy:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

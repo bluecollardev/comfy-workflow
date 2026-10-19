@@ -109,6 +109,20 @@ docker run --rm --gpus all -p 8188:8188 \
   comfy-app:v26
 ```
 
+As a service on a Linux NVIDIA box, or several of them as a Docker Swarm,
+`docker/compose.yml` runs the same image with the project tree mounted at
+binc-PC's path and ComfyUI-Shared at `/workspace/ComfyUI-Shared`:
+
+```bash
+docker/swarm.sh up                 # one box: Compose, GPU via compose.gpu.yml
+docker/swarm.sh init               # first Swarm manager + GPU node; prints the daemon.json lines Swarm needs
+docker/swarm.sh deploy             # docker stack deploy comfy
+```
+
+Paths come from `CANALV2_ROOT`, `COMFY_SHARED`, `COMFY_IMAGE`, `COMFY_PORT`.
+Not for macOS: Docker there has no GPU, use `launch.sh`. Why this shape:
+`docs/ADR-004-where-the-workflows-run.md`.
+
 Base image is `pytorch/pytorch:2.12.1-cuda12.6-cudnn9-runtime`, so the torch
 version matches the Mac exactly. `build.sh` passes `pins.env` as build args,
 copies `custom_nodes/` and `workflows/` from the repo, and stages ShotPipe into

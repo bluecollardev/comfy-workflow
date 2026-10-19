@@ -11,7 +11,7 @@ A production-grade monorepo for managing ComfyUI workflows and infrastructure on
 
 ### Key Decision: Hybrid RunPod Strategy
 
-See `docs/ADR-001-runpod-strategy.md` for full context.
+See `docs/ADR-001-runpod-strategy.md` for full context, and `docs/ADR-004-where-the-workflows-run.md` for which machine runs which graphs (plates first, Linux containers under Compose/Swarm, RunPod as overflow, the Mac as client and MPS worker). The goal the repo serves is in `README.md`, "Goal".
 
 **Phase 1 (Current):** On-demand GPU pods for interactive development
 - Direct web UI access
