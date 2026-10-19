@@ -3,7 +3,8 @@
 #
 #   ./setup.sh                  # clone ComfyUI at the pinned commit, build the venv, link our packs
 #   COMFY_SHOTPIPE=contract-v26 ./setup.sh   # link the ShotPipe set the corrosion graphs need (a set from
-#                                         # shared/nodes/sets.json, or versions: v26,v14,v7)
+#                                         # shared/nodes/sets.json, or versions: v26 also brings what its
+#                                         # pyproject.toml [tool.packs] requires, here v14 and v7)
 #
 # What ends up where (ComfyUI/ is ignored by git; everything else is tracked):
 #   ComfyUI/                       upstream clone at pins.env COMFYUI_REF, unmodified
@@ -68,6 +69,25 @@ sets = json.load(open(sys.argv[1])); s = sets.get(sys.argv[2])
 print(" ".join(p.replace("ComfyUI-BH-ShotPipe-", "") for p in s["packs"] if "ShotPipe" in p) if isinstance(s, dict) else sys.argv[2])
 PY
 }
+# Each pack's pyproject.toml [tool.packs] requires = [...] names the packs it imports from; pull those in too.
+resolve_requires() { python3 - "$NODES" "$@" <<'PY'
+import sys, re, pathlib
+root = pathlib.Path(sys.argv[1]); want = list(sys.argv[2:]); seen = []
+def requires(v):
+    for f in ('portable', 'bound'):
+        pp = root / f / f"ComfyUI-BH-ShotPipe-{v}" / 'pyproject.toml'
+        if pp.exists():
+            m = re.search(r'\[tool\.packs\](.*?)(?:\n\[|\Z)', pp.read_text(), re.S)
+            r = re.search(r'requires\s*=\s*\[(.*?)\]', m.group(1) if m else '', re.S)
+            return [x.replace('ComfyUI-BH-ShotPipe-', '') for x in re.findall(r'"([^"]+)"', r.group(1))] if r else []
+    return []
+while want:
+    v = want.pop(0)
+    if v in seen: continue
+    seen.append(v); want += requires(v)
+print(" ".join(sorted(seen, key=lambda v: int(v[1:]))))
+PY
+}
 pack_dir() { for f in portable bound; do [ -d "$NODES/$f/$1" ] && { echo "$NODES/$f/$1"; return; }; done; return 1; }
 # Every pack that is not a ShotPipe version (BincStereo today) is always linked.
 for dir in "$NODES"/portable/*/ "$NODES"/bound/*/; do
@@ -84,6 +104,7 @@ for old in "$APP"/custom_nodes/ComfyUI-BH-ShotPipe-*; do [ -L "$old" ] && rm "$o
 if [ -n "${COMFY_SHOTPIPE:-}" ]; then
   IFS=, read -ra REQUESTED <<< "$COMFY_SHOTPIPE"
   VERSIONS=(); for r in "${REQUESTED[@]}"; do for v in $(expand_set "$r"); do VERSIONS+=("$v"); done; done
+  VERSIONS=($(resolve_requires "${VERSIONS[@]}"))   # v26 alone pulls in v14 and v7
   for v in "${VERSIONS[@]}"; do
     src="$(pack_dir "ComfyUI-BH-ShotPipe-$v")" || { echo "no ShotPipe $v in $NODES/portable or bound" >&2; exit 1; }
     ln -sfn "$src" "$APP/custom_nodes/ComfyUI-BH-ShotPipe-$v"

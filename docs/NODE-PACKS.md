@@ -19,6 +19,20 @@ BincStereo is a separate, self-contained pack. The full explanation, with
 what each generation adds and the ShotPipe/BincStereo comparison, is
 `shared/nodes/docs/SHOTPIPE.md`.
 
+## What each pack declares about itself
+
+Every pack carries two small files. `requirements.txt` lists the pip packages
+it imports, and ComfyUI, `setup.sh` and the Dockerfile install it.
+`pyproject.toml` has a `[tool.packs]` table: `requires`, the packs it imports
+from at load time and therefore needs beside it in `custom_nodes/`, and
+`supersedes`, a version with the same node names that must never be loaded
+with it. `setup.sh` and `build.sh` resolve `requires` transitively, so
+`COMFY_SHOTPIPE=v26` links v26, v14 and v7; the `contract-v26` set is still
+the right request for the corrosion graphs, since they also use v10–v13
+directly. The packs repo's `tools/manifest.py` reads these tables to build
+[`docs/DEPENDENCIES.md`](../shared/nodes/docs/DEPENDENCIES.md) and fails if a
+`requires` names a pack that is not there.
+
 ## Two folders: portable/ and bound/
 
 Since tag `packs-2026-10-19b` every pack sits in one of two folders of the

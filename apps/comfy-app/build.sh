@@ -49,6 +49,25 @@ sets = json.load(open(sys.argv[1])); s = sets.get(sys.argv[2])
 print(" ".join(p.replace("ComfyUI-BH-ShotPipe-", "") for p in s["packs"] if "ShotPipe" in p) if isinstance(s, dict) else sys.argv[2])
 PY
 }
+# Each pack's pyproject.toml [tool.packs] requires = [...] names the packs it imports from; pull those in too.
+resolve_requires() { python3 - "$NODES" "$@" <<'PY'
+import sys, re, pathlib
+root = pathlib.Path(sys.argv[1]); want = list(sys.argv[2:]); seen = []
+def requires(v):
+    for f in ('portable', 'bound'):
+        pp = root / f / f"ComfyUI-BH-ShotPipe-{v}" / 'pyproject.toml'
+        if pp.exists():
+            m = re.search(r'\[tool\.packs\](.*?)(?:\n\[|\Z)', pp.read_text(), re.S)
+            r = re.search(r'requires\s*=\s*\[(.*?)\]', m.group(1) if m else '', re.S)
+            return [x.replace('ComfyUI-BH-ShotPipe-', '') for x in re.findall(r'"([^"]+)"', r.group(1))] if r else []
+    return []
+while want:
+    v = want.pop(0)
+    if v in seen: continue
+    seen.append(v); want += requires(v)
+print(" ".join(sorted(seen, key=lambda v: int(v[1:]))))
+PY
+}
 pack_dir() { for f in portable bound; do [ -d "$NODES/$f/$1" ] && { echo "$NODES/$f/$1"; return; }; done; return 1; }
 for d in "$NODES"/portable/*/ "$NODES"/bound/*/; do
   [ -d "$d" ] || continue
@@ -58,6 +77,7 @@ done
 PACKS_REV="$(git -C "$NODES" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 IFS=, read -ra REQUESTED <<< "$SHOTPIPE"
 VERSIONS=(); for r in "${REQUESTED[@]}"; do for v in $(expand_set "$r"); do VERSIONS+=("$v"); done; done
+[ ${#VERSIONS[@]} -eq 0 ] || VERSIONS=($(resolve_requires "${VERSIONS[@]}"))   # v26 alone pulls in v14 and v7
 for v in "${VERSIONS[@]}"; do
   [ -n "$v" ] || continue
   src="$(pack_dir "ComfyUI-BH-ShotPipe-$v")" || { echo "no ShotPipe $v in $NODES/portable or bound" >&2; exit 1; }
