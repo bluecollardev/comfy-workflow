@@ -8,14 +8,16 @@
 #   ./build.sh --no-shotpipe         # BincStereo only
 #   ./build.sh --base pytorch/pytorch:2.12.1-cuda13.0-cudnn9-runtime   # e.g. for Blackwell GPUs
 #
-# Stages the node packs into .build/custom_nodes/ (ignored by git) because they
-# are not in the repo: BincStereo comes from the Mac install's custom_nodes/,
-# ShotPipe from projects/desktop/CANALV2/02_SCRIPTS/nodes/. Builds linux/amd64,
+# custom_nodes/ and workflows/ go in straight from the repo. ShotPipe is the
+# client's (projects/desktop/CANALV2/02_SCRIPTS/nodes/, not in git), so it is
+# staged into .build/custom_nodes/ (ignored) when asked for. Builds linux/amd64,
 # which is what RunPod and the Windows/Linux boxes run; on Apple Silicon that
 # goes through emulation and is slow but works.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
+# shellcheck disable=SC1091
+source "$HERE/pins.env"
 
 SHOTPIPE="v26"
 TAG=""
@@ -38,14 +40,6 @@ done
 STAGE="$HERE/.build/custom_nodes"
 rm -rf "$HERE/.build" && mkdir -p "$STAGE"
 
-BINC="${COMFY_BINCSTEREO:-$HERE/ComfyUI/custom_nodes/ComfyUI-BincStereo}"
-if [ -d "$BINC" ]; then
-  rsync -a --exclude __pycache__ --exclude test-input --exclude tests "$BINC/" "$STAGE/ComfyUI-BincStereo/"
-  echo "staged: ComfyUI-BincStereo (from $BINC)"
-else
-  echo "warning: no BincStereo at $BINC; image will not have the stereo nodes" >&2
-fi
-
 NODES="${COMFY_SHOTPIPE_DIR:-$REPO/projects/desktop/CANALV2/02_SCRIPTS/nodes}"
 IFS=, read -ra VERSIONS <<< "$SHOTPIPE"
 for v in "${VERSIONS[@]}"; do
@@ -56,7 +50,8 @@ for v in "${VERSIONS[@]}"; do
   echo "staged: ComfyUI-BH-ShotPipe-$v"
 done
 
-args=(build --platform "$PLATFORM" -t "$TAG" -f "$HERE/Dockerfile")
+args=(build --platform "$PLATFORM" -t "$TAG" -f "$HERE/Dockerfile"
+      --build-arg "COMFYUI_REPO=$COMFYUI_REPO" --build-arg "COMFYUI_REF=$COMFYUI_REF")
 [ -n "$BASE" ] && args+=(--build-arg "BASE_IMAGE=$BASE")
 args+=("${EXTRA[@]}" "$HERE")
 echo "docker ${args[*]}"

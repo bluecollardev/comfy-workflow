@@ -1,0 +1,608 @@
+{
+ "id": "binc-stereo-qc-quarter",
+ "revision": 0,
+ "last_node_id": 12,
+ "last_link_id": 11,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "MarkdownNote",
+   "pos": [
+    0,
+    -420
+   ],
+   "size": [
+    1100,
+    380
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "# Binc Stereo — QC at quarter proxy\n\nWhole take, one pass: `frames/` (241 × 16-bit PNG) → **LOAD proxy quarter** (960×540) → DA2 (`max_side 518`) → temporal filter → stereo → eye L / eye R PNG sequences in `output/binc-stereo-qc-quarter/L/` and `/R/`.\n\n- Memory: 241 × 960×540 ≈ 1.5 GB per tensor — fits comfortably; no windows needed, depth normalised once for the shot.\n- Progress: the top-bar % counts finished *nodes*; each Binc node shows its own bar on the node.\n- Every node's `info` / `report` prints seconds, s/frame and RSS / MPS memory — read those to size the full-res run.\n- Parallax is in % of width, so convergence / budgets / hull settings carry unchanged to `proxy full`.\n- Check `parallax_vis`: near = **dark**; else flip `depth_polarity`. `report.summary.ok` must be true."
+   ],
+   "title": "READ FIRST"
+  },
+  {
+   "id": 2,
+   "type": "BincLoadImageSequence",
+   "pos": [
+    0,
+    0
+   ],
+   "size": [
+    400,
+    160
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "links": [
+      1,
+      2
+     ]
+    },
+    {
+     "name": "mask",
+     "type": "MASK",
+     "links": []
+    },
+    {
+     "name": "count",
+     "type": "INT",
+     "links": []
+    },
+    {
+     "name": "info",
+     "type": "STRING",
+     "links": [
+      11
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "BincLoadImageSequence"
+   },
+   "widgets_values": [
+    "frames",
+    0,
+    0,
+    "quarter"
+   ],
+   "title": "LOAD · frames · ALL 241 · proxy QUARTER (960x540)",
+   "color": "#1f4e79",
+   "bgcolor": "#173b5c"
+  },
+  {
+   "id": 3,
+   "type": "BincDepthAnythingV2",
+   "pos": [
+    460,
+    0
+   ],
+   "size": [
+    400,
+    300
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 1
+    }
+   ],
+   "outputs": [
+    {
+     "name": "depth",
+     "type": "IMAGE",
+     "links": [
+      3
+     ]
+    },
+    {
+     "name": "depth_mask",
+     "type": "MASK",
+     "links": []
+    },
+    {
+     "name": "info",
+     "type": "STRING",
+     "links": []
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "BincDepthAnythingV2"
+   },
+   "widgets_values": [
+    "Depth-Anything-V2-Large-hf",
+    "",
+    "default",
+    518,
+    4,
+    "sequence_percentile",
+    0.5,
+    99.5
+   ],
+   "title": "Binc · Depth Anything V2 · max_side 518 · batch 4",
+   "color": "#1f4e79",
+   "bgcolor": "#173b5c"
+  },
+  {
+   "id": 4,
+   "type": "BincDepthTemporalFilter",
+   "pos": [
+    920,
+    0
+   ],
+   "size": [
+    360,
+    150
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "depth",
+     "type": "IMAGE",
+     "link": 3
+    }
+   ],
+   "outputs": [
+    {
+     "name": "depth",
+     "type": "IMAGE",
+     "links": [
+      4
+     ]
+    },
+    {
+     "name": "depth_mask",
+     "type": "MASK",
+     "links": []
+    },
+    {
+     "name": "jitter_report",
+     "type": "STRING",
+     "links": [
+      10
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "BincDepthTemporalFilter"
+   },
+   "widgets_values": [
+    5,
+    0.3,
+    0.08
+   ],
+   "title": "Binc · Depth Temporal Filter",
+   "color": "#1f4e79",
+   "bgcolor": "#173b5c"
+  },
+  {
+   "id": 5,
+   "type": "BincStereoFromDepth",
+   "pos": [
+    1340,
+    0
+   ],
+   "size": [
+    430,
+    520
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 2
+    },
+    {
+     "name": "depth",
+     "type": "IMAGE",
+     "link": 4
+    },
+    {
+     "name": "depth_mask",
+     "type": "MASK",
+     "link": null
+    },
+    {
+     "name": "left_fill",
+     "type": "IMAGE",
+     "link": null
+    },
+    {
+     "name": "right_fill",
+     "type": "IMAGE",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "left",
+     "type": "IMAGE",
+     "links": [
+      5
+     ]
+    },
+    {
+     "name": "right",
+     "type": "IMAGE",
+     "links": [
+      6
+     ]
+    },
+    {
+     "name": "sbs",
+     "type": "IMAGE",
+     "links": []
+    },
+    {
+     "name": "anaglyph",
+     "type": "IMAGE",
+     "links": [
+      7
+     ]
+    },
+    {
+     "name": "parallax_vis",
+     "type": "IMAGE",
+     "links": [
+      8
+     ]
+    },
+    {
+     "name": "holes",
+     "type": "MASK",
+     "links": []
+    },
+    {
+     "name": "depth_hull",
+     "type": "IMAGE",
+     "links": []
+    },
+    {
+     "name": "report",
+     "type": "STRING",
+     "links": [
+      9
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "BincStereoFromDepth"
+   },
+   "widgets_values": [
+    "near_is_bright",
+    0.35,
+    1.0,
+    0.25,
+    1.0,
+    "symmetric",
+    1,
+    2,
+    0.04,
+    "background_pushpull",
+    0.06,
+    1,
+    2,
+    "sbs_full"
+   ],
+   "title": "Binc · Stereo from Depth",
+   "color": "#1f4e79",
+   "bgcolor": "#173b5c"
+  },
+  {
+   "id": 6,
+   "type": "SaveImage",
+   "pos": [
+    1830,
+    -60
+   ],
+   "size": [
+    320,
+    120
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 5
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "SaveImage"
+   },
+   "widgets_values": [
+    "binc-stereo-qc-quarter/L/eyeL"
+   ],
+   "title": "WRITE · eye L · PNG sequence"
+  },
+  {
+   "id": 7,
+   "type": "SaveImage",
+   "pos": [
+    1830,
+    120
+   ],
+   "size": [
+    320,
+    120
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 6
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "SaveImage"
+   },
+   "widgets_values": [
+    "binc-stereo-qc-quarter/R/eyeR"
+   ],
+   "title": "WRITE · eye R · PNG sequence"
+  },
+  {
+   "id": 8,
+   "type": "PreviewImage",
+   "pos": [
+    1830,
+    300
+   ],
+   "size": [
+    320,
+    260
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 7
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "PreviewImage"
+   },
+   "widgets_values": [],
+   "title": "PREVIEW · anaglyph"
+  },
+  {
+   "id": 9,
+   "type": "PreviewImage",
+   "pos": [
+    1830,
+    600
+   ],
+   "size": [
+    320,
+    260
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 8
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "PreviewImage"
+   },
+   "widgets_values": [],
+   "title": "PREVIEW · parallax_vis (near = dark)"
+  },
+  {
+   "id": 10,
+   "type": "PreviewAny",
+   "pos": [
+    2200,
+    -60
+   ],
+   "size": [
+    420,
+    300
+   ],
+   "flags": {},
+   "order": 10,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "source",
+     "type": "*",
+     "link": 9
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "PreviewAny"
+   },
+   "widgets_values": [],
+   "title": "parallax report"
+  },
+  {
+   "id": 11,
+   "type": "PreviewAny",
+   "pos": [
+    2200,
+    280
+   ],
+   "size": [
+    420,
+    140
+   ],
+   "flags": {},
+   "order": 11,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "source",
+     "type": "*",
+     "link": 10
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "PreviewAny"
+   },
+   "widgets_values": [],
+   "title": "depth jitter report"
+  },
+  {
+   "id": 12,
+   "type": "PreviewAny",
+   "pos": [
+    2200,
+    460
+   ],
+   "size": [
+    420,
+    100
+   ],
+   "flags": {},
+   "order": 12,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "source",
+     "type": "*",
+     "link": 11
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "PreviewAny"
+   },
+   "widgets_values": [],
+   "title": "window info"
+  }
+ ],
+ "links": [
+  [
+   1,
+   2,
+   0,
+   3,
+   0,
+   "IMAGE"
+  ],
+  [
+   2,
+   2,
+   0,
+   5,
+   0,
+   "IMAGE"
+  ],
+  [
+   3,
+   3,
+   0,
+   4,
+   0,
+   "IMAGE"
+  ],
+  [
+   4,
+   4,
+   0,
+   5,
+   1,
+   "IMAGE"
+  ],
+  [
+   5,
+   5,
+   0,
+   6,
+   0,
+   "IMAGE"
+  ],
+  [
+   6,
+   5,
+   1,
+   7,
+   0,
+   "IMAGE"
+  ],
+  [
+   7,
+   5,
+   3,
+   8,
+   0,
+   "IMAGE"
+  ],
+  [
+   8,
+   5,
+   4,
+   9,
+   0,
+   "IMAGE"
+  ],
+  [
+   9,
+   5,
+   7,
+   10,
+   0,
+   "*"
+  ],
+  [
+   10,
+   4,
+   2,
+   11,
+   0,
+   "*"
+  ],
+  [
+   11,
+   2,
+   3,
+   12,
+   0,
+   "*"
+  ]
+ ],
+ "groups": [],
+ "config": {},
+ "extra": {},
+ "version": 0.4
+}

@@ -1,0 +1,4962 @@
+{
+ "id": "cgi-042-common-nodes-v11-BincV4b-stereoRD",
+ "revision": 0,
+ "last_node_id": 268,
+ "last_link_id": 37,
+ "nodes": [
+  {
+   "id": 160,
+   "type": "MarkdownNote",
+   "pos": [
+    20,
+    80
+   ],
+   "size": [
+    1350,
+    300
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "READ FIRST — cgi-042, the chain to the 4K final and its stereo",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "# cgi-042 — the chain that produced the 4K FINAL and its STEREO version\n\n**STATUS: BUILT - NOT RUN · the provider node is BYPASSED (purple).** Loaders show the landed files; Queue fires nothing that costs.\n**FINAL is HUMAN APPROVED**: the 4K mono take **v03** (Kyle, 2026-09-30: *\"that looks great. Lets call that approved\"*) and its stereo set rendered from it. v02 take + stereo kept as PRIOR/SUPERSEDED A-B evidence.\nGraph visual QA: **PASS** (Comfy Desktop + GPT-6 Astra, 2026-10-01 — v11 layout; note links/port order only, graph was not run).\n\n**Read left to right:** A v06 PLATES (Runway, placeholders) → B 4K CANVAS (ImageScale, as executed) → C v02 TAKE →\nD STEREO v02 set (PRIOR) → **E · v03 REPAIR + RE-FIRE + STEREO** (bottom band): repaired END plate → Runway seedance-2\n→ FINAL v03 take → EXR → fal depth x241 → median5 + atadenoise → Fusion mesh → eyes L/R → **spatial MV-HEVC**.\nHANDOFF (far right) now frames the **v03** FINAL.\n\n**Evidence:** Runway tasks 7db62388 / fa60561c (plates) + 968845c8-6749-4f45-a59d-2e06ddb2ca32 (v03 take);\nexecuted prompts embedded in the landed MP4s; sidecars `cgi-042-pullback-4k-v03.json` + `cgi-042-v03-spatial-4k.json`;\n241+4 depth rows in the ledger ($0.2410 + $0.004 gap retries); 0 px border fill check.\n\n**Not on this board:** the 1080p v06 approved take and its 720p sibling, and the failed/bypassed 4K plate re-fires (B, B2–B7, C) —\nall on `cgi-042-common-nodes-v01-20260927.json`, unchanged."
+   ],
+   "widgets_values_named": {
+    "text": "# cgi-042 — the chain that produced the 4K FINAL and its STEREO version\n\n**STATUS: BUILT - NOT RUN · the provider node is BYPASSED (purple).** Loaders show the landed files; Queue fires nothing that costs.\n**FINAL is HUMAN APPROVED**: the 4K mono take **v03** (Kyle, 2026-09-30: *\"that looks great. Lets call that approved\"*) and its stereo set rendered from it. v02 take + stereo kept as PRIOR/SUPERSEDED A-B evidence.\nGraph visual QA: **PASS** (Comfy Desktop + GPT-6 Astra, 2026-10-01 — v11 layout; note links/port order only, graph was not run).\n\n**Read left to right:** A v06 PLATES (Runway, placeholders) → B 4K CANVAS (ImageScale, as executed) → C v02 TAKE →\nD STEREO v02 set (PRIOR) → **E · v03 REPAIR + RE-FIRE + STEREO** (bottom band): repaired END plate → Runway seedance-2\n→ FINAL v03 take → EXR → fal depth x241 → median5 + atadenoise → Fusion mesh → eyes L/R → **spatial MV-HEVC**.\nHANDOFF (far right) now frames the **v03** FINAL.\n\n**Evidence:** Runway tasks 7db62388 / fa60561c (plates) + 968845c8-6749-4f45-a59d-2e06ddb2ca32 (v03 take);\nexecuted prompts embedded in the landed MP4s; sidecars `cgi-042-pullback-4k-v03.json` + `cgi-042-v03-spatial-4k.json`;\n241+4 depth rows in the ledger ($0.2410 + $0.004 gap retries); 0 px border fill check.\n\n**Not on this board:** the 1080p v06 approved take and its 720p sibling, and the failed/bypassed 4K plate re-fires (B, B2–B7, C) —\nall on `cgi-042-common-nodes-v01-20260927.json`, unchanged."
+   },
+   "color": "#444444",
+   "bgcolor": "#333333"
+  },
+  {
+   "id": 161,
+   "type": "MarkdownNote",
+   "pos": [
+    1430,
+    80
+   ],
+   "size": [
+    1350,
+    300
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "!! TWO RECORDS WERE WRONG — read before trusting the plate names",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "**Measured 2026-09-30, pixel for pixel:**\n\n1. `plate-START-4k-v01.png` **==** lanczos 3840x2160 of `plate-START-from-ENDv06-v07.png`. Its sidecar and v01 (\"REFIRE B7 · SUCCESS\")\n   say gpt-image-2 regenerated it. **No model touched it**: the gpt-image node was BYPASSED when queued, so Comfy passed the ImageScale\n   canvas straight through. The PNG's own embedded prompt shows exactly that.\n2. `plate-END-4k-v02-roughwater.png` **==** `plate-END-4k-v01-calm.png` **==** lanczos of `plate-END-wide-v06.png`. The\n   \"rough water\" edit (REFIRE C, \"SUCCESS\") was BYPASSED too. **The end frame v02 was bound to is the CALM v06 plate, upscaled.**\n\nSo v02's references are the v06 plates at 2720x1530 upscaled to 4K — not native 4K plates. The approved picture is what it is;\nthe sidecars and v01 titles describing new 4K plates and rough water are not."
+   ],
+   "widgets_values_named": {
+    "text": "**Measured 2026-09-30, pixel for pixel:**\n\n1. `plate-START-4k-v01.png` **==** lanczos 3840x2160 of `plate-START-from-ENDv06-v07.png`. Its sidecar and v01 (\"REFIRE B7 · SUCCESS\")\n   say gpt-image-2 regenerated it. **No model touched it**: the gpt-image node was BYPASSED when queued, so Comfy passed the ImageScale\n   canvas straight through. The PNG's own embedded prompt shows exactly that.\n2. `plate-END-4k-v02-roughwater.png` **==** `plate-END-4k-v01-calm.png` **==** lanczos of `plate-END-wide-v06.png`. The\n   \"rough water\" edit (REFIRE C, \"SUCCESS\") was BYPASSED too. **The end frame v02 was bound to is the CALM v06 plate, upscaled.**\n\nSo v02's references are the v06 plates at 2720x1530 upscaled to 4K — not native 4K plates. The approved picture is what it is;\nthe sidecars and v01 titles describing new 4K plates and rough water are not."
+   },
+   "color": "#7a1f1f",
+   "bgcolor": "#5c1717"
+  },
+  {
+   "id": 162,
+   "type": "LoadImage",
+   "pos": [
+    20,
+    1501.851851851852
+   ],
+   "size": [
+    464.425390625,
+    460
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": []
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": []
+    }
+   ],
+   "title": "@film · real film frame (V6 250.0 s, crop 1920x1012) · Fire A ref 1",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "films/panama-canal-v2/shots/cgi-042/01-look-dev/plates-v01/film-real-250.0.jpg",
+    "bh_sha256": "cc6c8f540d1df4bd49e1d4211b91bee127b70893ebf56565a5d14bf62934448f",
+    "bh_staged_from": "panama-approved-cc6c8f540d1df4bd-film-real-250.0.jpg",
+    "bh_loader_was": "cgi-042__01-look-dev__plates-v01__film-real-250.0.jpg"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/plates-v01/film-real-250.0.jpg",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/plates-v01/film-real-250.0.jpg",
+    "upload": "image"
+   },
+   "color": "#1f4e79",
+   "bgcolor": "#173b5c"
+  },
+  {
+   "id": 163,
+   "type": "LoadImage",
+   "pos": [
+    20,
+    2051.851851851852
+   ],
+   "size": [
+    420,
+    460
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": []
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": []
+    }
+   ],
+   "title": "@explorer · char-a sheet v04 · Fire A ref 2 · Fire B ref 2",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "films/panama-canal-v2/shots/cgi-042/01-look-dev/char-a-refsheet-v04.png",
+    "bh_sha256": "04385162ac481f40c46fa85cc3c4fd810bbe92d7f6c4174117f32762f1d505b4",
+    "bh_staged_from": "panama-approved-04385162ac481f40-char-a-refsheet-v04.png",
+    "bh_loader_was": "cgi-042__01-look-dev__char-a-refsheet-v04.png"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/char-a-refsheet-v04.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/char-a-refsheet-v04.png",
+    "upload": "image"
+   },
+   "color": "#1f4e79",
+   "bgcolor": "#173b5c"
+  },
+  {
+   "id": 164,
+   "type": "LoadImage",
+   "pos": [
+    20,
+    2991.851851851852
+   ],
+   "size": [
+    420,
+    460
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": []
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": []
+    }
+   ],
+   "title": "@guide · char-b sheet v04 · Fire A ref 3 · Fire B ref 3",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "films/panama-canal-v2/shots/cgi-042/01-look-dev/char-b-refsheet-v04.png",
+    "bh_sha256": "9f0f32fc101578d23a33e6c7befe82100ae8f036f5eec936afae7ee7b72a16e5",
+    "bh_staged_from": "panama-approved-9f0f32fc101578d2-char-b-refsheet-v04.png",
+    "bh_loader_was": "cgi-042__01-look-dev__char-b-refsheet-v04.png"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/char-b-refsheet-v04.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/char-b-refsheet-v04.png",
+    "upload": "image"
+   },
+   "color": "#1f4e79",
+   "bgcolor": "#173b5c"
+  },
+  {
+   "id": 165,
+   "type": "LoadImage",
+   "pos": [
+    20,
+    3541.851851851852
+   ],
+   "size": [
+    528.01328125,
+    460
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": []
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": []
+    }
+   ],
+   "title": "@soldier · char-c sheet v04 · Fire A ref 4 (absent from Fire B, on purpose)",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "films/panama-canal-v2/shots/cgi-042/01-look-dev/char-c-refsheet-v04.png",
+    "bh_sha256": "6d0ea6f300e616642d52b0ade3346466b5b189a475116c01a71dd9cf784fcfc3",
+    "bh_staged_from": "panama-approved-6d0ea6f300e61664-char-c-refsheet-v04.png",
+    "bh_loader_was": "cgi-042__01-look-dev__char-c-refsheet-v04.png"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/char-c-refsheet-v04.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/char-c-refsheet-v04.png",
+    "upload": "image"
+   },
+   "color": "#1f4e79",
+   "bgcolor": "#173b5c"
+  },
+  {
+   "id": 166,
+   "type": "PrimitiveStringMultiline",
+   "pos": [
+    544.425390625,
+    1501.851851851852
+   ],
+   "size": [
+    531.499609375,
+    380
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "STRING",
+     "type": "STRING",
+     "links": []
+    }
+   ],
+   "title": "PROMPT · Fire A END plate (1865 chars · verbatim from session transcript)",
+   "properties": {
+    "Node name for S&R": "PrimitiveStringMultiline"
+   },
+   "widgets_values": [
+    "@film is a real frame of the film this shot belongs to. Match its realism exactly: same camera, same lens, same daylight, same colour, same grain. Another frame shot the same day at the same river.\n\nA VERY WIDE LANDSCAPE SHOT OF A BIG RIVER. The camera is FAR OUT over the middle of a wide river, high above the water, looking across at the far bank in the distance. This is a distant landscape view, not a shot of people: the people are incidental specks in it.\n\nCOMPOSITION: the river fills the LOWER HALF of the frame — deep, opaque, dark brown-green water in huge volume, running left to right, standing waves and white rapids, spray, no rocks and nothing to stand on, no near bank. Across the MIDDLE of the frame, far away, a thin horizontal band: the far bank's grassy lip and a narrow strip of clearing. Above it a TALL WALL OF RAINFOREST filling the upper third — big trees towering over the bank — and a little pale sky.\n\nTHE THREE MEN ARE TINY, DISTANT FIGURES on that far bank, standing still and facing the camera across the water. Each man is only ONE SEVENTEENTH of the frame height: much shorter than the grass clumps beside them, dwarfed by the trees behind them, no larger than a fingertip held at arm's length. Their faces and hands are not resolvable at all — they read only as three small coloured shapes. THEY MUST BE TINY. Do not bring the camera closer to them and do not enlarge them.\n\nTheir order and heights: on the LEFT @explorer, the TALLEST, a maroon-red cap and dark doublet over maroon breeches. In the MIDDLE @guide, the SHORTEST, bare-chested with a pale cream wrap. BEHIND and slightly RIGHT of them, set further back, @soldier, height between the two, a tall dark hat and a rust-brown coat. Hands empty.\n\nNo haze, no mist, no god rays, no sun shafts. Plain hard tropical daylight like @film. No text, no border, no letterbox bars."
+   ],
+   "widgets_values_named": {
+    "value": "@film is a real frame of the film this shot belongs to. Match its realism exactly: same camera, same lens, same daylight, same colour, same grain. Another frame shot the same day at the same river.\n\nA VERY WIDE LANDSCAPE SHOT OF A BIG RIVER. The camera is FAR OUT over the middle of a wide river, high above the water, looking across at the far bank in the distance. This is a distant landscape view, not a shot of people: the people are incidental specks in it.\n\nCOMPOSITION: the river fills the LOWER HALF of the frame — deep, opaque, dark brown-green water in huge volume, running left to right, standing waves and white rapids, spray, no rocks and nothing to stand on, no near bank. Across the MIDDLE of the frame, far away, a thin horizontal band: the far bank's grassy lip and a narrow strip of clearing. Above it a TALL WALL OF RAINFOREST filling the upper third — big trees towering over the bank — and a little pale sky.\n\nTHE THREE MEN ARE TINY, DISTANT FIGURES on that far bank, standing still and facing the camera across the water. Each man is only ONE SEVENTEENTH of the frame height: much shorter than the grass clumps beside them, dwarfed by the trees behind them, no larger than a fingertip held at arm's length. Their faces and hands are not resolvable at all — they read only as three small coloured shapes. THEY MUST BE TINY. Do not bring the camera closer to them and do not enlarge them.\n\nTheir order and heights: on the LEFT @explorer, the TALLEST, a maroon-red cap and dark doublet over maroon breeches. In the MIDDLE @guide, the SHORTEST, bare-chested with a pale cream wrap. BEHIND and slightly RIGHT of them, set further back, @soldier, height between the two, a tall dark hat and a rust-brown coat. Hands empty.\n\nNo haze, no mist, no god rays, no sun shafts. Plain hard tropical daylight like @film. No text, no border, no letterbox bars."
+   },
+   "color": "#7a6a1a",
+   "bgcolor": "#5c5014"
+  },
+  {
+   "id": 167,
+   "type": "MarkdownNote",
+   "pos": [
+    500,
+    2051.851851851852
+   ],
+   "size": [
+    570.300390625,
+    380
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "PLACEHOLDER · Fire A · Runway MCP seedream-5-pro (no faithful Comfy node)",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "`mcp__runway__generate_image` · model **seedream-5-pro** ·\nimageSize 2K · ratio 16:9 · 4 referenceImages in order:\n@film, @explorer, @guide, @soldier.\n\ntask `7db62388-2738-4621-b8c9-80191c8c008f` · $0.09 (measured)\nKyle, option A: *\"same staging, camera far back so the men\nread tiny (target 1/17 of frame height).\"*\n\nThe fal seedream-v5-pro node is NOT this route; not substituted."
+   ],
+   "widgets_values_named": {
+    "text": "`mcp__runway__generate_image` · model **seedream-5-pro** ·\nimageSize 2K · ratio 16:9 · 4 referenceImages in order:\n@film, @explorer, @guide, @soldier.\n\ntask `7db62388-2738-4621-b8c9-80191c8c008f` · $0.09 (measured)\nKyle, option A: *\"same staging, camera far back so the men\nread tiny (target 1/17 of frame height).\"*\n\nThe fal seedream-v5-pro node is NOT this route; not substituted."
+   },
+   "color": "#8a4b12",
+   "bgcolor": "#6b3a0e"
+  },
+  {
+   "id": 7,
+   "type": "LoadImage",
+   "pos": [
+    1760.1017578125002,
+    2051.851851851852
+   ],
+   "size": [
+    496.2876953125,
+    460
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      2
+     ]
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": []
+    }
+   ],
+   "title": "LANDED · END-wide-v06 · 2720x1530 · Fire A output (sha 89f92eac)",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_from_v01_node": 7,
+    "bh_staged_from": "panama-approved-89f92eac5e244a88-cgi-042-plate-END-wide-v06.png",
+    "bh_repo_path": "films/panama-canal-v2/shots/cgi-042/01-look-dev/plates-v01/cgi-042-plate-END-wide-v06.png",
+    "bh_sha256": "89f92eac5e244a88f2b4c6419a66b0cbce33dc14b1e2206e1b5e2c356bb1b56b",
+    "bh_loader_was": "cgi-042__01-look-dev__plates-v01__cgi-042-plate-END-wide-v06.png"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/plates-v01/cgi-042-plate-END-wide-v06.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/plates-v01/cgi-042-plate-END-wide-v06.png",
+    "upload": "image"
+   },
+   "color": "#1f4e79",
+   "bgcolor": "#173b5c"
+  },
+  {
+   "id": 168,
+   "type": "PrimitiveStringMultiline",
+   "pos": [
+    1135.925,
+    1501.851851851852
+   ],
+   "size": [
+    546.6001953125,
+    380
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "STRING",
+     "type": "STRING",
+     "links": []
+    }
+   ],
+   "title": "PROMPT · Fire B START plate (1823 chars · verbatim from session transcript)",
+   "properties": {
+    "Node name for S&R": "PrimitiveStringMultiline"
+   },
+   "widgets_values": [
+    "@place is a wide photograph of this exact location, taken from out over the river. Make the CLOSE frame of the SAME place, shot by the SAME camera on the SAME day: this is the first frame of a shot whose last frame is @place. Every element must match it — the same bank, the same grass, the same trees, the same hard daylight, the same colour, the same contrast, the same grain, the same lens character. Do not change the weather, the time of day or the look in any way.\n\nThe camera has moved in close to the far bank and stands level with two men who are walking out of the tall grass toward it, on the same patch of bank where the three men stand in @place.\n\n@explorer on the LEFT: the TALLER of the two, a bearded European of 1537 in a soft maroon-red cloth cap with no brim, long dark wavy hair, a grey-mauve quilted doublet belted at the waist, maroon knee breeches, pale hose, tall brown boots, a blade sheathed on his belt, hands empty.\n@guide on the RIGHT: the SHORTER of the two, clearly shorter than the explorer, a lean young indigenous man, bare chest, dark bob-cut hair with a fringe, a cream cloth wrap at the waist, barefoot, hands empty.\n\nBoth are full figure, head to feet in frame, each about HALF the frame height, mid-stride, walking toward the camera, looking ahead past it. Behind them the same tall grass and the same wall of rainforest as @place, seen from much closer. The bottom edge of the frame is the grassy lip of the bank: NO WATER is visible, not a strip. There is no third man in this frame.\n\nPlain hard tropical daylight exactly as in @place — no haze, no mist, no god rays, no sun shafts, no glow, no bloom. Photographic: real skin, real cloth, real leaves, natural depth of field, fine film grain. Not a painting, not an illustration, not a render. No text, no border, no letterbox bars."
+   ],
+   "widgets_values_named": {
+    "value": "@place is a wide photograph of this exact location, taken from out over the river. Make the CLOSE frame of the SAME place, shot by the SAME camera on the SAME day: this is the first frame of a shot whose last frame is @place. Every element must match it — the same bank, the same grass, the same trees, the same hard daylight, the same colour, the same contrast, the same grain, the same lens character. Do not change the weather, the time of day or the look in any way.\n\nThe camera has moved in close to the far bank and stands level with two men who are walking out of the tall grass toward it, on the same patch of bank where the three men stand in @place.\n\n@explorer on the LEFT: the TALLER of the two, a bearded European of 1537 in a soft maroon-red cloth cap with no brim, long dark wavy hair, a grey-mauve quilted doublet belted at the waist, maroon knee breeches, pale hose, tall brown boots, a blade sheathed on his belt, hands empty.\n@guide on the RIGHT: the SHORTER of the two, clearly shorter than the explorer, a lean young indigenous man, bare chest, dark bob-cut hair with a fringe, a cream cloth wrap at the waist, barefoot, hands empty.\n\nBoth are full figure, head to feet in frame, each about HALF the frame height, mid-stride, walking toward the camera, looking ahead past it. Behind them the same tall grass and the same wall of rainforest as @place, seen from much closer. The bottom edge of the frame is the grassy lip of the bank: NO WATER is visible, not a strip. There is no third man in this frame.\n\nPlain hard tropical daylight exactly as in @place — no haze, no mist, no god rays, no sun shafts, no glow, no bloom. Photographic: real skin, real cloth, real leaves, natural depth of field, fine film grain. Not a painting, not an illustration, not a render. No text, no border, no letterbox bars."
+   },
+   "color": "#7a6a1a",
+   "bgcolor": "#5c5014"
+  },
+  {
+   "id": 169,
+   "type": "MarkdownNote",
+   "pos": [
+    1130.300390625,
+    2051.851851851852
+   ],
+   "size": [
+    569.8013671875,
+    330
+   ],
+   "flags": {},
+   "order": 10,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "PLACEHOLDER · Fire B · Runway MCP seedream-5-pro (no faithful Comfy node)",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "model **seedream-5-pro** · 2K · 16:9 · 3 referenceImages in order:\n**@place = Fire A's output, bound by task id** (same picture —\nthe fix for the v04/v05 cross-dissolve), @explorer, @guide.\nSoldier deliberately absent: \"no third man in this frame\".\n\ntask `fa60561c-2146-47d5-b219-50b457cbc936` · $0.09 (measured)"
+   ],
+   "widgets_values_named": {
+    "text": "model **seedream-5-pro** · 2K · 16:9 · 3 referenceImages in order:\n**@place = Fire A's output, bound by task id** (same picture —\nthe fix for the v04/v05 cross-dissolve), @explorer, @guide.\nSoldier deliberately absent: \"no third man in this frame\".\n\ntask `fa60561c-2146-47d5-b219-50b457cbc936` · $0.09 (measured)"
+   },
+   "color": "#8a4b12",
+   "bgcolor": "#6b3a0e"
+  },
+  {
+   "id": 8,
+   "type": "LoadImage",
+   "pos": [
+    1742.5251953124998,
+    1501.851851851852
+   ],
+   "size": [
+    569.1998046875,
+    460
+   ],
+   "flags": {},
+   "order": 11,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      1
+     ]
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": []
+    }
+   ],
+   "title": "LANDED · START-from-ENDv06-v07 · 2720x1530 · Fire B output (sha f320aceb)",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_from_v01_node": 8,
+    "bh_staged_from": "panama-approved-f320aceb9a37dfe9-cgi-042-plate-START-from-ENDv06-v07.png",
+    "bh_repo_path": "films/panama-canal-v2/shots/cgi-042/01-look-dev/plates-v01/cgi-042-plate-START-from-ENDv06-v07.png",
+    "bh_sha256": "f320aceb9a37dfe91f14aef346e13f299e6d8fbddb2f4f24753ea8759c34c821",
+    "bh_loader_was": "cgi-042__01-look-dev__plates-v01__cgi-042-plate-START-from-ENDv06-v07.png"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/plates-v01/cgi-042-plate-START-from-ENDv06-v07.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/plates-v01/cgi-042-plate-START-from-ENDv06-v07.png",
+    "upload": "image"
+   },
+   "color": "#1f4e79",
+   "bgcolor": "#173b5c"
+  },
+  {
+   "id": 170,
+   "type": "MarkdownNote",
+   "pos": [
+    20,
+    2601.851851851852
+   ],
+   "size": [
+    1420,
+    300
+   ],
+   "flags": {},
+   "order": 12,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "ordered references — how to read this row",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "No Comfy edge can express a Runway reference list, so the\norder is stated on every loader title and here:\n\nFire A:  @film · @explorer · @guide · @soldier\nFire B:  @place (= END-wide-v06) · @explorer · @guide\n\nThe 4K character sheets and the env-riverbank plate on v01 were\nNEW inputs for the (bypassed) re-fires; they never fed v02."
+   ],
+   "widgets_values_named": {
+    "text": "No Comfy edge can express a Runway reference list, so the\norder is stated on every loader title and here:\n\nFire A:  @film · @explorer · @guide · @soldier\nFire B:  @place (= END-wide-v06) · @explorer · @guide\n\nThe 4K character sheets and the env-riverbank plate on v01 were\nNEW inputs for the (bypassed) re-fires; they never fed v02."
+   },
+   "color": "#444444",
+   "bgcolor": "#333333"
+  },
+  {
+   "id": 54,
+   "type": "ImageScale",
+   "pos": [
+    3008.0126953125,
+    940
+   ],
+   "size": [
+    488.8912109375,
+    160
+   ],
+   "flags": {},
+   "order": 77,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 1
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "slot_index": 0,
+     "links": []
+    }
+   ],
+   "title": "ImageScale · lanczos 3840x2160 · START v07 → the v02 first frame",
+   "properties": {
+    "Node name for S&R": "ImageScale",
+    "bh_from_v01_node": 54
+   },
+   "widgets_values": [
+    "lanczos",
+    3840,
+    2160,
+    "disabled"
+   ],
+   "widgets_values_named": {
+    "upscale_method": "lanczos",
+    "width": 3840,
+    "height": 2160,
+    "crop": "disabled"
+   },
+   "color": "#8a4b12",
+   "bgcolor": "#6b3a0e"
+  },
+  {
+   "id": 38,
+   "type": "ImageScale",
+   "pos": [
+    3008.0126953125,
+    1910
+   ],
+   "size": [
+    471.93125,
+    160
+   ],
+   "flags": {},
+   "order": 76,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 2
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "slot_index": 0,
+     "links": []
+    }
+   ],
+   "title": "ImageScale · lanczos 3840x2160 · END v06 → the v02 last frame",
+   "properties": {
+    "Node name for S&R": "ImageScale",
+    "bh_from_v01_node": 38
+   },
+   "widgets_values": [
+    "lanczos",
+    3840,
+    2160,
+    "disabled"
+   ],
+   "widgets_values_named": {
+    "upscale_method": "lanczos",
+    "width": 3840,
+    "height": 2160,
+    "crop": "disabled"
+   },
+   "color": "#8a4b12",
+   "bgcolor": "#6b3a0e"
+  },
+  {
+   "id": 57,
+   "type": "LoadImage",
+   "pos": [
+    3556.90390625,
+    940
+   ],
+   "size": [
+    724.847265625,
+    460
+   ],
+   "flags": {},
+   "order": 13,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "slot_index": 0,
+     "links": [
+      4
+     ]
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": null
+    }
+   ],
+   "title": "LANDED · 'START-4k-v01' · 3840x2160 · == ImageScale(START v07) PIXEL-IDENTICAL · v02 first frame",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_from_v01_node": 57,
+    "bh_staged_from": "panama-approved-885520bd439a-cgi-042-plate-START-4k-v01.png",
+    "bh_repo_path": "films/panama-canal-v2/shots/cgi-042/01-look-dev/plates-v01/cgi-042-plate-START-4k-v01.png",
+    "bh_sha256": "bf141de515dcc0b000493a21097bf4e053107c3829b865d948055b859b16abb3",
+    "bh_loader_was": "cgi-042__01-look-dev__plates-v01__cgi-042-plate-START-4k-v01.png"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/plates-v01/cgi-042-plate-START-4k-v01.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/plates-v01/cgi-042-plate-START-4k-v01.png",
+    "upload": "image"
+   },
+   "color": "#7a1f1f",
+   "bgcolor": "#5c1717"
+  },
+  {
+   "id": 42,
+   "type": "LoadImage",
+   "pos": [
+    3539.9439453125,
+    1910
+   ],
+   "size": [
+    871.7857421875,
+    460
+   ],
+   "flags": {},
+   "order": 14,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "slot_index": 0,
+     "links": [
+      5
+     ]
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": null
+    }
+   ],
+   "title": "LANDED · 'END-4k-v02-roughwater' · 3840x2160 · == ImageScale(END v06) PIXEL-IDENTICAL · CALM water · v02 last frame",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_from_v01_node": 42,
+    "bh_staged_from": "panama-approved-3552360d7f6c-cgi-042-plate-END-4k-v02-roughwater.png",
+    "bh_repo_path": "films/panama-canal-v2/shots/cgi-042/01-look-dev/plates-v01/cgi-042-plate-END-4k-v02-roughwater.png",
+    "bh_sha256": "8dad57903a96c126bae89be5551fd1f2f930c5ef352228490b435e9346eae504",
+    "bh_loader_was": "cgi-042__01-look-dev__plates-v01__cgi-042-plate-END-4k-v02-roughwater.png"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/plates-v01/cgi-042-plate-END-4k-v02-roughwater.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/plates-v01/cgi-042-plate-END-4k-v02-roughwater.png",
+    "upload": "image"
+   },
+   "color": "#7a1f1f",
+   "bgcolor": "#5c1717"
+  },
+  {
+   "id": 171,
+   "type": "MarkdownNote",
+   "pos": [
+    3008.0126953125,
+    1490
+   ],
+   "size": [
+    820,
+    330
+   ],
+   "flags": {},
+   "order": 15,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "why ImageScale is the real historical step",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "Each landed PNG carries the prompt Comfy executed to save it:\n    START-4k-v01:  LoadImage(START v07) -> ImageScale lanczos -> Save\n    END-4k-v01:    LoadImage(END v06)   -> ImageScale lanczos -> Save\n    END-4k-v02:    = END-4k-v01 pixels (the rough-water node was bypassed)\nThe generative node between canvas and Save was BYPASSED at queue\ntime, so the canvas itself was saved. A PIL lanczos resize to\n3840x2160 reproduces both v02 inputs pixel-identically (measured;\nComfy's ImageScale lanczos is PIL's)."
+   ],
+   "widgets_values_named": {
+    "text": "Each landed PNG carries the prompt Comfy executed to save it:\n    START-4k-v01:  LoadImage(START v07) -> ImageScale lanczos -> Save\n    END-4k-v01:    LoadImage(END v06)   -> ImageScale lanczos -> Save\n    END-4k-v02:    = END-4k-v01 pixels (the rough-water node was bypassed)\nThe generative node between canvas and Save was BYPASSED at queue\ntime, so the canvas itself was saved. A PIL lanczos resize to\n3840x2160 reproduces both v02 inputs pixel-identically (measured;\nComfy's ImageScale lanczos is PIL's)."
+   },
+   "color": "#8a4b12",
+   "bgcolor": "#6b3a0e"
+  },
+  {
+   "id": 172,
+   "type": "PrimitiveStringMultiline",
+   "pos": [
+    4551.7296875,
+    1501.58291015625
+   ],
+   "size": [
+    602.8873046875,
+    380
+   ],
+   "flags": {},
+   "order": 16,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "STRING",
+     "type": "STRING",
+     "links": [
+      3
+     ]
+    }
+   ],
+   "title": "PROMPT · v02 (1203 chars · verbatim from the prompt embedded in the landed MP4)",
+   "properties": {
+    "Node name for S&R": "PrimitiveStringMultiline"
+   },
+   "widgets_values": [
+    "ONE UNBROKEN LIVE-ACTION TAKE. NO FADE, NO DISSOLVE, NO CROSS-FADE, NO BLENDING OF TWO PICTURES, NO GHOSTING, NO SOFTENING, NO CUT. Every frame is a sharp, fully detailed photograph of the same place.\n\nThe camera is on a crane pulling BACKWARDS over the river, already moving on the first frame and still moving on the last, at one steady speed. It travels in a straight line, back and gently up. The whole change of size comes from that physical travel: real parallax, near grass sliding past faster than the far trees. No zoom.\n\nAs the camera retreats: the two men keep walking toward it out of the tall grass and steadily become smaller in frame. A third man in a tall dark hat and rust-brown coat steps out of the grass behind them and follows, staying behind them. The grassy lip of the bank drops into the bottom of frame and dark fast river water appears below it, growing until it fills the lower half of the frame — deep water running left to right, standing waves, white rapids. The three men reach the edge of the bank and stop, standing still and facing the camera across the water.\n\nSame hard tropical daylight, same colour, same grain and same lens for all ten seconds. No text, no border."
+   ],
+   "widgets_values_named": {
+    "value": "ONE UNBROKEN LIVE-ACTION TAKE. NO FADE, NO DISSOLVE, NO CROSS-FADE, NO BLENDING OF TWO PICTURES, NO GHOSTING, NO SOFTENING, NO CUT. Every frame is a sharp, fully detailed photograph of the same place.\n\nThe camera is on a crane pulling BACKWARDS over the river, already moving on the first frame and still moving on the last, at one steady speed. It travels in a straight line, back and gently up. The whole change of size comes from that physical travel: real parallax, near grass sliding past faster than the far trees. No zoom.\n\nAs the camera retreats: the two men keep walking toward it out of the tall grass and steadily become smaller in frame. A third man in a tall dark hat and rust-brown coat steps out of the grass behind them and follows, staying behind them. The grassy lip of the bank drops into the bottom of frame and dark fast river water appears below it, growing until it fills the lower half of the frame — deep water running left to right, standing waves, white rapids. The three men reach the edge of the bank and stop, standing still and facing the camera across the water.\n\nSame hard tropical daylight, same colour, same grain and same lens for all ten seconds. No text, no border."
+   },
+   "color": "#7a6a1a",
+   "bgcolor": "#5c5014"
+  },
+  {
+   "id": 58,
+   "type": "FalAPI_bytedance-seedance-2.0-image-to-video",
+   "pos": [
+    4551.7296875,
+    940
+   ],
+   "size": [
+    400,
+    360
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 4,
+   "inputs": [
+    {
+     "name": "prompt",
+     "type": "STRING",
+     "link": 3
+    },
+    {
+     "name": "image_url",
+     "type": "IMAGE",
+     "link": 4
+    },
+    {
+     "name": "image_url_direct_url",
+     "type": "STRING",
+     "link": null
+    },
+    {
+     "name": "end_image_url",
+     "type": "IMAGE",
+     "link": 5
+    },
+    {
+     "name": "end_image_url_direct_url",
+     "type": "STRING",
+     "link": null
+    },
+    {
+     "name": "resolution",
+     "type": "COMBO",
+     "link": null
+    },
+    {
+     "name": "duration",
+     "type": "COMBO",
+     "link": null
+    },
+    {
+     "name": "aspect_ratio",
+     "type": "COMBO",
+     "link": null
+    },
+    {
+     "name": "generate_audio",
+     "type": "BOOLEAN",
+     "link": null
+    },
+    {
+     "name": "bitrate_mode",
+     "type": "COMBO",
+     "link": null
+    },
+    {
+     "name": "codec",
+     "type": "COMBO",
+     "link": null
+    },
+    {
+     "name": "end_user_id",
+     "type": "STRING",
+     "link": null
+    },
+    {
+     "name": "force_rerun",
+     "type": "BOOLEAN",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "links": [],
+     "slot_index": 0
+    },
+    {
+     "name": "video_url",
+     "type": "STRING",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "FalAPI_bytedance-seedance-2.0-image-to-video",
+    "bh_from_v01_node": 58
+   },
+   "widgets_values": [
+    "ONE UNBROKEN LIVE-ACTION TAKE. NO FADE, NO DISSOLVE, NO CROSS-FADE, NO BLENDING OF TWO PICTURES, NO GHOSTING, NO SOFTENING, NO CUT. Every frame is a sharp, fully detailed photograph of the same place.\n\nThe camera is on a crane pulling BACKWARDS over the river, already moving on the first frame and still moving on the last, at one steady speed. It travels in a straight line, back and gently up. The whole change of size comes from that physical travel: real parallax, near grass sliding past faster than the far trees. No zoom.\n\nAs the camera retreats: the two men keep walking toward it out of the tall grass and steadily become smaller in frame. A third man in a tall dark hat and rust-brown coat steps out of the grass behind them and follows, staying behind them. The grassy lip of the bank drops into the bottom of frame and dark fast river water appears below it, growing until it fills the lower half of the frame — deep water running left to right, standing waves, white rapids. The three men reach the edge of the bank and stop, standing still and facing the camera across the water.\n\nSame hard tropical daylight, same colour, same grain and same lens for all ten seconds. No text, no border.",
+    "",
+    "",
+    "4k",
+    "10",
+    "16:9",
+    false,
+    "standard",
+    "auto",
+    "",
+    true
+   ],
+   "title": "FIRE v02 · fal seedance-2.0 i2v · 4k · 10 · 16:9 · no audio · Comfy prompt e7f569e1 · BYPASSED",
+   "color": "#7a6a1a",
+   "bgcolor": "#5c5014"
+  },
+  {
+   "id": 173,
+   "type": "LoadVideo",
+   "pos": [
+    5276.803515625,
+    940
+   ],
+   "size": [
+    706.8140625,
+    471.58291015625
+   ],
+   "flags": {},
+   "order": 17,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": []
+    }
+   ],
+   "title": "PRIOR · SUPERSEDED · cgi-042 v02 · 3840x2160 HEVC 10-bit · 241 f @ 24 · tail face-munch → see E",
+   "properties": {
+    "Node name for S&R": "LoadVideo",
+    "bh_repo_path": "films/panama-canal-v2/shots/cgi-042/05-outputs/Approved/cgi-042-pullback-4k-v02.mp4",
+    "bh_sha256": "c5285c88625e465ccc83f7f25a53c1ec9adad18fba904e7cb3461ed172e0642e",
+    "bh_staged_from": "panama-approved-c5285c88625e465c-cgi-042-pullback-4k-v02.mp4",
+    "bh_loader_was": "cgi-042__05-outputs__Approved__cgi-042-pullback-4k-v02.mp4",
+    "bh_note": "SUPERSEDED 2026-09-30 by v03 (face-repaired END plate). Kept as prior-version evidence."
+   },
+   "widgets_values": [
+    "shots/cgi-042/05-outputs/Approved/cgi-042-pullback-4k-v02.mp4",
+    "image"
+   ],
+   "widgets_values_named": {
+    "file": "shots/cgi-042/05-outputs/Approved/cgi-042-pullback-4k-v02.mp4",
+    "upload": "image"
+   },
+   "color": "#7a1f1f",
+   "bgcolor": "#5c1717"
+  },
+  {
+   "id": 174,
+   "type": "MarkdownNote",
+   "pos": [
+    5214.6169921875,
+    1501.58291015625
+   ],
+   "size": [
+    1520,
+    240
+   ],
+   "flags": {},
+   "order": 18,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "PRIOR · SUPERSEDED (v02) — evidence + what it was",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "Comfy output `panama/cgi-042-cn/cgi-042-v02-seedance20-4k-fal.mp4` is\n**byte-identical** to the approved file. Its embedded prompt gives the\nexact text, the two staged plates in order and every setting\n(bitrate standard, codec auto). Fired on the second Comfy instance\n(:8189), 2026-09-29. Kyle, 2026-09-30: *\"Yes they are final.\"*"
+   ],
+   "widgets_values_named": {
+    "text": "Comfy output `panama/cgi-042-cn/cgi-042-v02-seedance20-4k-fal.mp4` is\n**byte-identical** to the approved file. Its embedded prompt gives the\nexact text, the two staged plates in order and every setting\n(bitrate standard, codec auto). Fired on the second Comfy instance\n(:8189), 2026-09-29. Kyle, 2026-09-30: *\"Yes they are final.\"*"
+   },
+   "color": "#7a1f1f",
+   "bgcolor": "#5c1717"
+  },
+  {
+   "id": 175,
+   "type": "MarkdownNote",
+   "pos": [
+    6874.6169921875,
+    780
+   ],
+   "size": [
+    420,
+    220
+   ],
+   "flags": {},
+   "order": 19,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "SCRIPT · frames → 16-bit EXR",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "v02 decoded to **241 × 16-bit half-float EXR**, 3840x2160\n→ `06-stereo/v02-exr/`. (EXR does not load in core Comfy;\nthe PNG frame beside it is the same frame for inspection.)"
+   ],
+   "widgets_values_named": {
+    "text": "v02 decoded to **241 × 16-bit half-float EXR**, 3840x2160\n→ `06-stereo/v02-exr/`. (EXR does not load in core Comfy;\nthe PNG frame beside it is the same frame for inspection.)"
+   },
+   "color": "#8a4b12",
+   "bgcolor": "#6b3a0e"
+  },
+  {
+   "id": 176,
+   "type": "LoadImage",
+   "pos": [
+    6874.6169921875,
+    1170
+   ],
+   "size": [
+    420,
+    460
+   ],
+   "flags": {},
+   "order": 20,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": []
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": []
+    }
+   ],
+   "title": "EVIDENCE · frame 120 (PNG of the EXR sequence)",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "films/panama-canal-v2/shots/cgi-042/06-stereo/v02-frames-png/f-00120.png",
+    "bh_sha256": "d291f7df10cf5dbc55ad3b44590ceab32e56cb2c9ce3106e76cb36e2b1a82db1",
+    "bh_staged_from": "panama-approved-d291f7df10cf5dbc-f-00120.png",
+    "bh_loader_was": "cgi-042__06-stereo__v02-frames-png__f-00120.png"
+   },
+   "widgets_values": [
+    "shots/cgi-042/06-stereo/v02-frames-png/f-00120.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/06-stereo/v02-frames-png/f-00120.png",
+    "upload": "image"
+   },
+   "color": "#444444",
+   "bgcolor": "#333333"
+  },
+  {
+   "id": 177,
+   "type": "MarkdownNote",
+   "pos": [
+    7354.6169921875,
+    780
+   ],
+   "size": [
+    420,
+    220
+   ],
+   "flags": {},
+   "order": 21,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "SCRIPT · depth · scripts/panama-gen/depth-seq.mjs",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "`fal-ai/image-preprocessors/depth-anything/v2`,\nper frame at native 4K, **241/241 ledgered** via fireAndLog,\n$0.001 each ($0.24). → `06-stereo/v02-depth/`"
+   ],
+   "widgets_values_named": {
+    "text": "`fal-ai/image-preprocessors/depth-anything/v2`,\nper frame at native 4K, **241/241 ledgered** via fireAndLog,\n$0.001 each ($0.24). → `06-stereo/v02-depth/`"
+   },
+   "color": "#8a4b12",
+   "bgcolor": "#6b3a0e"
+  },
+  {
+   "id": 178,
+   "type": "LoadImage",
+   "pos": [
+    7354.6169921875,
+    1170
+   ],
+   "size": [
+    420,
+    460
+   ],
+   "flags": {},
+   "order": 22,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": []
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": []
+    }
+   ],
+   "title": "EVIDENCE · depth, frame 120",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "films/panama-canal-v2/shots/cgi-042/06-stereo/v02-depth/f-00120-depth.png",
+    "bh_sha256": "8f992545e6372f2bc7a09f727ea4047392f38b4d160d8471710a5d01f1124143",
+    "bh_staged_from": "panama-approved-8f992545e6372f2b-f-00120-depth.png",
+    "bh_loader_was": "cgi-042__06-stereo__v02-depth__f-00120-depth.png"
+   },
+   "widgets_values": [
+    "shots/cgi-042/06-stereo/v02-depth/f-00120-depth.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/06-stereo/v02-depth/f-00120-depth.png",
+    "upload": "image"
+   },
+   "color": "#444444",
+   "bgcolor": "#333333"
+  },
+  {
+   "id": 179,
+   "type": "MarkdownNote",
+   "pos": [
+    7834.6169921875,
+    780
+   ],
+   "size": [
+    498.59140625,
+    220
+   ],
+   "flags": {},
+   "order": 23,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "SCRIPT · temporal smoothing · scripts/panama-gen/depth-smooth.py",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "atadenoise s=9 : 0a=0.06 : 0b=0.3\nmean jitter −13.2 %, p99 −2.1 %\n→ `06-stereo/v02-depth-smoothed/` (USED)\n`v02-depth-median5*` = review-only alternates"
+   ],
+   "widgets_values_named": {
+    "text": "atadenoise s=9 : 0a=0.06 : 0b=0.3\nmean jitter −13.2 %, p99 −2.1 %\n→ `06-stereo/v02-depth-smoothed/` (USED)\n`v02-depth-median5*` = review-only alternates"
+   },
+   "color": "#8a4b12",
+   "bgcolor": "#6b3a0e"
+  },
+  {
+   "id": 180,
+   "type": "LoadImage",
+   "pos": [
+    7834.6169921875,
+    1170
+   ],
+   "size": [
+    420,
+    460
+   ],
+   "flags": {},
+   "order": 24,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": []
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": []
+    }
+   ],
+   "title": "EVIDENCE · smoothed depth, frame 121 (1-based name)",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "films/panama-canal-v2/shots/cgi-042/06-stereo/v02-depth-smoothed/0121.png",
+    "bh_sha256": "e343bee089a5fc61771ad94c312cbecd1edbe1dbe9eaba781ea8aa6c774dd1a4",
+    "bh_staged_from": "panama-approved-e343bee089a5fc61-0121.png",
+    "bh_loader_was": "cgi-042__06-stereo__v02-depth-smoothed__0121.png"
+   },
+   "widgets_values": [
+    "shots/cgi-042/06-stereo/v02-depth-smoothed/0121.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/06-stereo/v02-depth-smoothed/0121.png",
+    "upload": "image"
+   },
+   "color": "#444444",
+   "bgcolor": "#333333"
+  },
+  {
+   "id": 181,
+   "type": "MarkdownNote",
+   "pos": [
+    8393.2083984375,
+    780
+   ],
+   "size": [
+    1520,
+    300
+   ],
+   "flags": {},
+   "order": 25,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "SCRIPT · stereo comp · scripts/panama-gen/stereo-render.py (Resolve/Fusion)",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "mesh engine: ImagePlane3D 1920x1080 subdiv + Displace3D 0.346 +\nCamera3D sep 0.064 · conv/z 4.82 · aov 19.264 · 2 Renderer3D L/R ·\nCombiner left-first → 241 SBS PNG, 0 px border fill\n→ `06-stereo/v02-stereo-out/` (USED; `-v2` = alternate)\nParallax within the **0.250 % child-eye ceiling** by construction.\nResolve's built-in 'Convert to Stereoscopic 3D' gave a NULL stereo\n(eyes pixel-identical) — not used."
+   ],
+   "widgets_values_named": {
+    "text": "mesh engine: ImagePlane3D 1920x1080 subdiv + Displace3D 0.346 +\nCamera3D sep 0.064 · conv/z 4.82 · aov 19.264 · 2 Renderer3D L/R ·\nCombiner left-first → 241 SBS PNG, 0 px border fill\n→ `06-stereo/v02-stereo-out/` (USED; `-v2` = alternate)\nParallax within the **0.250 % child-eye ceiling** by construction.\nResolve's built-in 'Convert to Stereoscopic 3D' gave a NULL stereo\n(eyes pixel-identical) — not used."
+   },
+   "color": "#8a4b12",
+   "bgcolor": "#6b3a0e"
+  },
+  {
+   "id": 182,
+   "type": "LoadVideo",
+   "pos": [
+    8314.6169921875,
+    1170
+   ],
+   "size": [
+    677.9322265625,
+    420
+   ],
+   "flags": {},
+   "order": 26,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": []
+    }
+   ],
+   "title": "PRIOR STEREO (v02) · SUPERSEDED · EYE L · ProRes 422 HQ 10-bit · 3840x2160 · BT.709 · 241 f",
+   "properties": {
+    "Node name for S&R": "LoadVideo",
+    "bh_repo_path": "films/panama-canal-v2/shots/cgi-042/05-outputs/Approved/stereoscopic/cgi-042-v02-eye-L-prores.mov",
+    "bh_sha256": "1f46d63a23172b5e3077326d19590fdd43a03976d9c417b0e96e81a86b2eae16",
+    "bh_staged_from": "panama-approved-1f46d63a23172b5e-cgi-042-v02-eye-L-prores.mov",
+    "bh_loader_was": "cgi-042__05-outputs__Approved__stereoscopic__cgi-042-v02-eye-L-prores.mov"
+   },
+   "widgets_values": [
+    "shots/cgi-042/05-outputs/Approved/stereoscopic/cgi-042-v02-eye-L-prores.mov",
+    "image"
+   ],
+   "widgets_values_named": {
+    "file": "shots/cgi-042/05-outputs/Approved/stereoscopic/cgi-042-v02-eye-L-prores.mov",
+    "upload": "image"
+   },
+   "color": "#7a1f1f",
+   "bgcolor": "#5c1717"
+  },
+  {
+   "id": 183,
+   "type": "LoadVideo",
+   "pos": [
+    9052.54921875,
+    1170
+   ],
+   "size": [
+    679.0259765625,
+    420
+   ],
+   "flags": {},
+   "order": 27,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": []
+    }
+   ],
+   "title": "PRIOR STEREO (v02) · SUPERSEDED · EYE R · ProRes 422 HQ 10-bit · 3840x2160 · BT.709 · 241 f",
+   "properties": {
+    "Node name for S&R": "LoadVideo",
+    "bh_repo_path": "films/panama-canal-v2/shots/cgi-042/05-outputs/Approved/stereoscopic/cgi-042-v02-eye-R-prores.mov",
+    "bh_sha256": "608b20690086a602f870d943f6263edf5f9918b9b3ecaa053b13c93a2ffcdc58",
+    "bh_staged_from": "panama-approved-608b20690086a602-cgi-042-v02-eye-R-prores.mov",
+    "bh_loader_was": "cgi-042__05-outputs__Approved__stereoscopic__cgi-042-v02-eye-R-prores.mov"
+   },
+   "widgets_values": [
+    "shots/cgi-042/05-outputs/Approved/stereoscopic/cgi-042-v02-eye-R-prores.mov",
+    "image"
+   ],
+   "widgets_values_named": {
+    "file": "shots/cgi-042/05-outputs/Approved/stereoscopic/cgi-042-v02-eye-R-prores.mov",
+    "upload": "image"
+   },
+   "color": "#7a1f1f",
+   "bgcolor": "#5c1717"
+  },
+  {
+   "id": 184,
+   "type": "LoadVideo",
+   "pos": [
+    6874.6169921875,
+    1720
+   ],
+   "size": [
+    816.175390625,
+    533.0986572265625
+   ],
+   "flags": {},
+   "order": 28,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": []
+    }
+   ],
+   "title": "v2 de-popped · PRIOR (v02) · SUPERSEDED · spatial MV-HEVC (Vision Pro review) · primary eye left · baseline 65 mm",
+   "properties": {
+    "Node name for S&R": "LoadVideo",
+    "bh_repo_path": "films/panama-canal-v2/shots/cgi-042/05-outputs/Approved/stereoscopic/cgi-042-v02-spatial-4k.mov",
+    "bh_sha256": "8b2d39cdd8863f881a357fe9acb8723734747adf2749ef9e9c85b631e0f0a7ba",
+    "bh_staged_from": "panama-approved-8b2d39cdd8863f88-cgi-042-v02-spatial-4k.mov",
+    "bh_loader_was": "cgi-042__05-outputs__Approved__stereoscopic__cgi-042-v02-spatial-4k.mov"
+   },
+   "widgets_values": [
+    "shots/cgi-042/05-outputs/Approved/stereoscopic/cgi-042-v02-spatial-4k.mov",
+    "image"
+   ],
+   "widgets_values_named": {
+    "file": "shots/cgi-042/05-outputs/Approved/stereoscopic/cgi-042-v02-spatial-4k.mov",
+    "upload": "image"
+   },
+   "color": "#1f4e79",
+   "bgcolor": "#173b5c"
+  },
+  {
+   "id": 185,
+   "type": "MarkdownNote",
+   "pos": [
+    7750.792382812499,
+    1720
+   ],
+   "size": [
+    520,
+    420
+   ],
+   "flags": {},
+   "order": 29,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "spatial package + review",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "`spatial make --cdist 65 --hfov 90 --hadjust 0 --projection rect\n--hero left --primary left --faststart` → MV-HEVC, packed views,\nrectilinear. **Review artifact, NOT an IMAX DCDM.**\nKyle, Vision Pro 2026-09-30: \"looks pretty good\".\nWatch: depth on water and foliage (river pumping).\nComfy decodes the primary (left) view of an MV-HEVC file only."
+   ],
+   "widgets_values_named": {
+    "text": "`spatial make --cdist 65 --hfov 90 --hadjust 0 --projection rect\n--hero left --primary left --faststart` → MV-HEVC, packed views,\nrectilinear. **Review artifact, NOT an IMAX DCDM.**\nKyle, Vision Pro 2026-09-30: \"looks pretty good\".\nWatch: depth on water and foliage (river pumping).\nComfy decodes the primary (left) view of an MV-HEVC file only."
+   },
+   "color": "#444444",
+   "bgcolor": "#333333"
+  },
+  {
+   "id": 186,
+   "type": "MarkdownNote",
+   "pos": [
+    9965.096289062498,
+    3110
+   ],
+   "size": [
+    1400,
+    780
+   ],
+   "flags": {},
+   "order": 30,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "HANDOFF · READ FIRST · for Brynley",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "# HANDOFF — cgi-042 — plug downstream work in HERE\n\nEverything left of this frame is the **historical chain** that produced the approved output(s): BUILT - NOT RUN,\nevery provider node **BYPASSED** (purple) so Queue cannot spend. Do not rewire it; branch from the handoff nodes.\n\n**Per approved video:** `LoadVideo (APPROVED)` → `GetVideoComponents` → `images` (float32 RGB, full frame range),\n`fps`, `bit_depth`, `color_space`. Three labelled slots follow for your passes, in order:\n**16-bit colour conversion → depth pass → stereo 3D conversion.**\n\n**COLOUR — read before converting.** The note beside each handoff states the file's MEASURED container tags.\nComfy decodes 10-bit sources to 32-bit float (no 8-bit truncation), but an **untagged** file is labelled\n`color_space = \"sRGB\"` by `GetVideoComponents` as a fallback, and its YUV→RGB matrix is the decoder default.\nFor untagged files the true matrix is **UNVERIFIED** — declare it explicitly in your conversion; do not trust\nthe reported \"sRGB\". Tagged files (bt709) are safe to take at their tag.\n\n**Frame rate.** Generated takes are 24.000 fps; the film is 23.976. Conform frame-for-frame (relabel), not by\nretiming, unless editorial says otherwise."
+   ],
+   "widgets_values_named": {
+    "text": "# HANDOFF — cgi-042 — plug downstream work in HERE\n\nEverything left of this frame is the **historical chain** that produced the approved output(s): BUILT - NOT RUN,\nevery provider node **BYPASSED** (purple) so Queue cannot spend. Do not rewire it; branch from the handoff nodes.\n\n**Per approved video:** `LoadVideo (APPROVED)` → `GetVideoComponents` → `images` (float32 RGB, full frame range),\n`fps`, `bit_depth`, `color_space`. Three labelled slots follow for your passes, in order:\n**16-bit colour conversion → depth pass → stereo 3D conversion.**\n\n**COLOUR — read before converting.** The note beside each handoff states the file's MEASURED container tags.\nComfy decodes 10-bit sources to 32-bit float (no 8-bit truncation), but an **untagged** file is labelled\n`color_space = \"sRGB\"` by `GetVideoComponents` as a fallback, and its YUV→RGB matrix is the decoder default.\nFor untagged files the true matrix is **UNVERIFIED** — declare it explicitly in your conversion; do not trust\nthe reported \"sRGB\". Tagged files (bt709) are safe to take at their tag.\n\n**Frame rate.** Generated takes are 24.000 fps; the film is 23.976. Conform frame-for-frame (relabel), not by\nretiming, unless editorial says otherwise."
+   },
+   "color": "#2d6a3e",
+   "bgcolor": "#1f4d2c"
+  },
+  {
+   "id": 187,
+   "type": "GetVideoComponents",
+   "pos": [
+    10008.885351562498,
+    2724.5703125
+   ],
+   "size": [
+    676.3326171875,
+    260
+   ],
+   "flags": {},
+   "order": 79,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "link": 6
+    }
+   ],
+   "outputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "links": [
+      8,
+      35
+     ]
+    },
+    {
+     "name": "audio",
+     "type": "AUDIO",
+     "links": []
+    },
+    {
+     "name": "fps",
+     "type": "FLOAT",
+     "links": []
+    },
+    {
+     "name": "bit_depth",
+     "type": "COMBO",
+     "links": []
+    },
+    {
+     "name": "color_space",
+     "type": "COMBO",
+     "links": []
+    }
+   ],
+   "title": "HANDOFF 1 · frames of: FINAL · APPROVED · cgi-042 v03 · 3840x2160 HEVC 10-bit · 241 f @ 24",
+   "properties": {
+    "Node name for S&R": "GetVideoComponents"
+   },
+   "color": "#2d6a3e",
+   "bgcolor": "#1f4d2c"
+  },
+  {
+   "id": 188,
+   "type": "MarkdownNote",
+   "pos": [
+    9965.096289062498,
+    4640.142857142857
+   ],
+   "size": [
+    400,
+    340
+   ],
+   "flags": {},
+   "order": 31,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "HANDOFF 1 · measured colour + raster",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "**shots/cgi-042/05-outputs/Approved/cgi-042-pullback-4k-v03.mp4**\n\n    codec     hevc\n    raster    3840x2160\n    pix_fmt   yuv420p10le\n    range     tv\n    fps       24/1   frames 241\n\nRunway seedance-2 render (task 968845c8-6749-4f45-a59d-2e06ddb2ca32). **NOTE: provider left generate_audio on** — the take carries an audio track; strip or ignore at conform. Container colour tags as reported by the renderer; verify matrix at conversion."
+   ],
+   "widgets_values_named": {
+    "text": "**shots/cgi-042/05-outputs/Approved/cgi-042-pullback-4k-v03.mp4**\n\n    codec     hevc\n    raster    3840x2160\n    pix_fmt   yuv420p10le\n    range     tv\n    fps       24/1   frames 241\n\nRunway seedance-2 render (task 968845c8-6749-4f45-a59d-2e06ddb2ca32). **NOTE: provider left generate_audio on** — the take carries an audio track; strip or ignore at conform. Container colour tags as reported by the renderer; verify matrix at conversion."
+   },
+   "color": "#444444",
+   "bgcolor": "#333333"
+  },
+  {
+   "id": 189,
+   "type": "MarkdownNote",
+   "pos": [
+    10701.428906249997,
+    2760
+   ],
+   "size": [
+    740,
+    260
+   ],
+   "flags": {},
+   "order": 32,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "SLOT · 16-bit colour space conversion (Brynley — not wired)",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "Wire `images` from the HANDOFF node here. Declare the INPUT matrix/range explicitly (see the measured note). Output 16-bit.\n\n**R&D chain:** colour is NOT converted in group G yet (Comfy decodes to float32). Declare the matrix before trusting colour."
+   ],
+   "widgets_values_named": {
+    "text": "Wire `images` from the HANDOFF node here. Declare the INPUT matrix/range explicitly (see the measured note). Output 16-bit.\n\n**R&D chain:** colour is NOT converted in group G yet (Comfy decodes to float32). Declare the matrix before trusting colour."
+   },
+   "color": "#1f4e79",
+   "bgcolor": "#173b5c"
+  },
+  {
+   "id": 190,
+   "type": "MarkdownNote",
+   "pos": [
+    11501.428906249997,
+    2760
+   ],
+   "size": [
+    740,
+    260
+   ],
+   "flags": {},
+   "order": 33,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "SLOT · depth map pass (Brynley — see group G)",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "After colour conversion. `comfyui-depthanythingv2` is installed on Kyle's machine; any depth node is your call.\n\n**R&D chain built:** see group G to the right (fal depth node, bypassed)."
+   ],
+   "widgets_values_named": {
+    "text": "After colour conversion. `comfyui-depthanythingv2` is installed on Kyle's machine; any depth node is your call.\n\n**R&D chain built:** see group G to the right (fal depth node, bypassed)."
+   },
+   "color": "#1f4e79",
+   "bgcolor": "#173b5c"
+  },
+  {
+   "id": 191,
+   "type": "MarkdownNote",
+   "pos": [
+    12301.428906249997,
+    2760
+   ],
+   "size": [
+    740,
+    260
+   ],
+   "flags": {},
+   "order": 34,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "SLOT · stereo 3D conversion (Brynley — see group G)",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "After depth. Locked-off large-format stereo: no handheld, constant convergence (CLAUDE.md).\n\n**R&D chain built:** see group G to the right (Y7 SBS → L/R → previews, muted)."
+   ],
+   "widgets_values_named": {
+    "text": "After depth. Locked-off large-format stereo: no handheld, constant convergence (CLAUDE.md).\n\n**R&D chain built:** see group G to the right (Y7 SBS → L/R → previews, muted)."
+   },
+   "color": "#1f4e79",
+   "bgcolor": "#173b5c"
+  },
+  {
+   "id": 192,
+   "type": "MarkdownNote",
+   "pos": [
+    3008.0126953125,
+    2760
+   ],
+   "size": [
+    520,
+    430
+   ],
+   "flags": {},
+   "order": 35,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "v03 — why this band exists",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "**v02's tail defect traced to the END plate.** At native res the plate's three faces were already\nsmeared — Seedance i2v converges to the last frame, so faces degraded as the take approached it.\nThe plant-outcrop drift is accepted (Kyle: \"we can live with it if the faces are fixed\").\n\n**Repair:** gpt-image-2.5-flare edit on a 360px head region upscaled to 1024, the three char-refsheet\nportraits as refs; pasted back through per-face feathered ellipses only — rest of plate byte-identical.\nScript `scripts/panama-gen/cgi-042-end-face-repair.mjs` · req `a2a59e04`. Ledgered.\n\n**fal blocked:** `bytedance/seedance-2.0/image-to-video` returned 422 content_policy\n(likenesses of real people) on the same START plate that fired 2026-09-29. Validator drift —\nnot retryable today. The v03 take went through Runway's hosted seedance-2 instead."
+   ],
+   "widgets_values_named": {
+    "text": "**v02's tail defect traced to the END plate.** At native res the plate's three faces were already\nsmeared — Seedance i2v converges to the last frame, so faces degraded as the take approached it.\nThe plant-outcrop drift is accepted (Kyle: \"we can live with it if the faces are fixed\").\n\n**Repair:** gpt-image-2.5-flare edit on a 360px head region upscaled to 1024, the three char-refsheet\nportraits as refs; pasted back through per-face feathered ellipses only — rest of plate byte-identical.\nScript `scripts/panama-gen/cgi-042-end-face-repair.mjs` · req `a2a59e04`. Ledgered.\n\n**fal blocked:** `bytedance/seedance-2.0/image-to-video` returned 422 content_policy\n(likenesses of real people) on the same START plate that fired 2026-09-29. Validator drift —\nnot retryable today. The v03 take went through Runway's hosted seedance-2 instead."
+   },
+   "color": "#432",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 193,
+   "type": "LoadImage",
+   "pos": [
+    3588.0126953125,
+    2760
+   ],
+   "size": [
+    684.3033203125,
+    314
+   ],
+   "flags": {},
+   "order": 36,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": []
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": []
+    }
+   ],
+   "title": "LANDED · 'END-4k-v03-facerepair' · 3840x2160 · faces rebuilt → char-a/b/c refs · v03 last frame",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "films/panama-canal-v2/shots/cgi-042/01-look-dev/plates-v01/cgi-042-plate-END-4k-v03-facerepair.png",
+    "bh_sha256": "682b8ec0b3ac9c10ae83e0e107cba93badd59ef5f32c366a5a9f53eda960feda"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/plates-v01/cgi-042-plate-END-4k-v03-facerepair.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/plates-v01/cgi-042-plate-END-4k-v03-facerepair.png",
+    "upload": "image"
+   }
+  },
+  {
+   "id": 194,
+   "type": "MarkdownNote",
+   "pos": [
+    4332.316015625,
+    2760
+   ],
+   "size": [
+    560.730078125,
+    340
+   ],
+   "flags": {},
+   "order": 37,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "PLACEHOLDER · v03 FIRE · Runway MCP seedance-2 (no faithful Comfy node)",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "`mcp__runway__generate_video` · model **seedance-2** · 4k · 10 s · 16:9\nfirst_frame = START-4k-v01 (unchanged) · last_frame = END-4k-v03-facerepair\nprompt = v02 verbatim (see PROMPT · v02 card above).\n\ntask `968845c8-6749-4f45-a59d-2e06ddb2ca32` · ~$8.50 (PUBLISHED 85 cr/s, not measured —\nreconcile against workspace credit delta). generateAudio left on (Runway default) —\nstrip track on conform. fal's ledgered route in `cgi-042-v03-refire.mjs` stays ready\nto re-run on the fal endpoint when the validator clears."
+   ],
+   "widgets_values_named": {
+    "text": "`mcp__runway__generate_video` · model **seedance-2** · 4k · 10 s · 16:9\nfirst_frame = START-4k-v01 (unchanged) · last_frame = END-4k-v03-facerepair\nprompt = v02 verbatim (see PROMPT · v02 card above).\n\ntask `968845c8-6749-4f45-a59d-2e06ddb2ca32` · ~$8.50 (PUBLISHED 85 cr/s, not measured —\nreconcile against workspace credit delta). generateAudio left on (Runway default) —\nstrip track on conform. fal's ledgered route in `cgi-042-v03-refire.mjs` stays ready\nto re-run on the fal endpoint when the validator clears."
+   },
+   "color": "#432",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 195,
+   "type": "LoadVideo",
+   "pos": [
+    4953.046093749999,
+    2760
+   ],
+   "size": [
+    669.6470703125,
+    450.6764770507813
+   ],
+   "flags": {},
+   "order": 38,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": [
+      6,
+      7
+     ]
+    }
+   ],
+   "title": "FINAL · APPROVED · cgi-042 v03 · 3840x2160 HEVC 10-bit · 241 f @ 24 · 05-outputs/Approved",
+   "properties": {
+    "Node name for S&R": "LoadVideo",
+    "bh_repo_path": "films/panama-canal-v2/shots/cgi-042/05-outputs/Approved/cgi-042-pullback-4k-v03.mp4",
+    "bh_sha256": "fe53cada90d469ef44e7777a123e82a220796de2610a58b2c0c0a26fbf164630"
+   },
+   "widgets_values": [
+    "shots/cgi-042/05-outputs/Approved/cgi-042-pullback-4k-v03.mp4",
+    "image"
+   ],
+   "widgets_values_named": {
+    "file": "shots/cgi-042/05-outputs/Approved/cgi-042-pullback-4k-v03.mp4",
+    "upload": "image"
+   }
+  },
+  {
+   "id": 196,
+   "type": "MarkdownNote",
+   "pos": [
+    3008.0126953125,
+    3300.676477050781
+   ],
+   "size": [
+    440,
+    300
+   ],
+   "flags": {},
+   "order": 39,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "FINAL v03 — evidence + what changed",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "Approved by Kyle 2026-09-30 (\"that looks great\"). Tail faces verified crisp at f240 — explorer/\nguide/soldier all resolve to the approved character identities. Bonus: rough water actually\nrendered this time (v02's END was the calm plate — see the correction note).\n\n**Downstream:** the stereo chain re-runs on v03 — new EXR seq, new 241-map depth pass\n(fal depth-anything/v2), median-5 + atadenoise, same mesh comp, new eye masters + spatial.\nThe v02 stereo set and Brynley's painted depth do NOT apply to this take (depth is\nframe-registered). v02 + its stereo kept as prior-version evidence."
+   ],
+   "widgets_values_named": {
+    "text": "Approved by Kyle 2026-09-30 (\"that looks great\"). Tail faces verified crisp at f240 — explorer/\nguide/soldier all resolve to the approved character identities. Bonus: rough water actually\nrendered this time (v02's END was the calm plate — see the correction note).\n\n**Downstream:** the stereo chain re-runs on v03 — new EXR seq, new 241-map depth pass\n(fal depth-anything/v2), median-5 + atadenoise, same mesh comp, new eye masters + spatial.\nThe v02 stereo set and Brynley's painted depth do NOT apply to this take (depth is\nframe-registered). v02 + its stereo kept as prior-version evidence."
+   },
+   "color": "#432",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 197,
+   "type": "MarkdownNote",
+   "pos": [
+    3008.0126953125,
+    3690.676477050781
+   ],
+   "size": [
+    712.4810546875,
+    430
+   ],
+   "flags": {},
+   "order": 40,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "v03 STEREO chain — EXR → fal depth x241 → median5 + atadenoise → mesh comp → eyes → spatial",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "Same chain as v02, same parameters — only the picture changed.\n\n`v03-frames-png`/`v03-exr` (241 half-float) → `fal-ai/image-preprocessors/depth-anything/v2` x241 via fireAndLog, $0.2410 (+4 gap retries, ledgered) → `v03-depth` → per-pixel **temporal median(5)** (`depth-median5.py`) → **atadenoise s=9:0a=0.06:0b=0.3** → `v03-depth-median5-smoothed` → `stereo-render.py` mesh comp (2.08M verts, displace 0.346, sep 0.064, conv/z 4.82, AoV 19.264, scale 3.80) in Resolve `cgi-042-stereo-pipe2` → 241 SBS @ 7680x2160, **0 px borders** → eye split ProRes HQ → `spatial make` (cdist 65, hfov 90, rect, primary L).\n\nAdjacent-frame jitter (8-bit levels): raw 4.13/15.63 → median5 1.33/6.50 → smoothed **0.90/4.82**. Rougher water than v02 (which was secretly the calm plate) makes v03 depth noisier; residual step at f72→73 (~11.9, water-region reassignment) is FLAGGED to Brynley for hand-painted stabilisation — see `_handoff/cgi-042-stereo-v03-2026-09-30/`.\n\nOutcrop drift in last ~2 s is generative (i2v invention), **accepted by Kyle — not a stereo defect**."
+   ],
+   "widgets_values_named": {
+    "text": "Same chain as v02, same parameters — only the picture changed.\n\n`v03-frames-png`/`v03-exr` (241 half-float) → `fal-ai/image-preprocessors/depth-anything/v2` x241 via fireAndLog, $0.2410 (+4 gap retries, ledgered) → `v03-depth` → per-pixel **temporal median(5)** (`depth-median5.py`) → **atadenoise s=9:0a=0.06:0b=0.3** → `v03-depth-median5-smoothed` → `stereo-render.py` mesh comp (2.08M verts, displace 0.346, sep 0.064, conv/z 4.82, AoV 19.264, scale 3.80) in Resolve `cgi-042-stereo-pipe2` → 241 SBS @ 7680x2160, **0 px borders** → eye split ProRes HQ → `spatial make` (cdist 65, hfov 90, rect, primary L).\n\nAdjacent-frame jitter (8-bit levels): raw 4.13/15.63 → median5 1.33/6.50 → smoothed **0.90/4.82**. Rougher water than v02 (which was secretly the calm plate) makes v03 depth noisier; residual step at f72→73 (~11.9, water-region reassignment) is FLAGGED to Brynley for hand-painted stabilisation — see `_handoff/cgi-042-stereo-v03-2026-09-30/`.\n\nOutcrop drift in last ~2 s is generative (i2v invention), **accepted by Kyle — not a stereo defect**."
+   },
+   "color": "#432",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 198,
+   "type": "LoadImage",
+   "pos": [
+    3780.49375,
+    3690.676477050781
+   ],
+   "size": [
+    490.019140625,
+    340
+   ],
+   "flags": {},
+   "order": 41,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": null
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": null
+    }
+   ],
+   "title": "EVIDENCE · v03 smoothed depth, frame 121 (median5 + atadenoise)",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "films/panama-canal-v2/shots/cgi-042/06-stereo/v03-depth-median5-smoothed/0121.png",
+    "bh_sha256": "0282c5aa15341b400a26b6beca4655caff9e7809003aaeb96c5bb4123aa52294"
+   },
+   "widgets_values": [
+    "shots/cgi-042/06-stereo/v03-depth-median5-smoothed/0121.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/06-stereo/v03-depth-median5-smoothed/0121.png",
+    "upload": "image"
+   },
+   "color": "blue"
+  },
+  {
+   "id": 199,
+   "type": "LoadVideo",
+   "pos": [
+    4330.512890625,
+    3690.676477050781
+   ],
+   "size": [
+    681.753515625,
+    300
+   ],
+   "flags": {},
+   "order": 42,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": null
+    }
+   ],
+   "title": "FINAL STEREO (v03) · EYE L · ProRes 422 HQ 10-bit · 3840x2160 · 241 f · Approved/stereoscopic",
+   "properties": {
+    "Node name for S&R": "LoadVideo",
+    "bh_repo_path": "films/panama-canal-v2/shots/cgi-042/05-outputs/Approved/stereoscopic/cgi-042-v03-eye-L-prores.mov",
+    "bh_sha256": "96ae0aa9e49346ddbe6c976c2118abf605b743001b4b338d93a409d1a892bd13"
+   },
+   "widgets_values": [
+    "shots/cgi-042/05-outputs/Approved/stereoscopic/cgi-042-v03-eye-L-prores.mov",
+    "image"
+   ],
+   "widgets_values_named": {
+    "file": "shots/cgi-042/05-outputs/Approved/stereoscopic/cgi-042-v03-eye-L-prores.mov",
+    "upload": "image"
+   },
+   "color": "#7a1f1f",
+   "bgcolor": "#5c1717"
+  },
+  {
+   "id": 200,
+   "type": "LoadVideo",
+   "pos": [
+    5072.26640625,
+    3690.676477050781
+   ],
+   "size": [
+    682.847265625,
+    300
+   ],
+   "flags": {},
+   "order": 43,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": null
+    }
+   ],
+   "title": "FINAL STEREO (v03) · EYE R · ProRes 422 HQ 10-bit · 3840x2160 · 241 f · Approved/stereoscopic",
+   "properties": {
+    "Node name for S&R": "LoadVideo",
+    "bh_repo_path": "films/panama-canal-v2/shots/cgi-042/05-outputs/Approved/stereoscopic/cgi-042-v03-eye-R-prores.mov",
+    "bh_sha256": "c6a483248ac10e4b2a00b40b3a1770f3db68bc5c3772edef452c3885ee13a9c5"
+   },
+   "widgets_values": [
+    "shots/cgi-042/05-outputs/Approved/stereoscopic/cgi-042-v03-eye-R-prores.mov",
+    "image"
+   ],
+   "widgets_values_named": {
+    "file": "shots/cgi-042/05-outputs/Approved/stereoscopic/cgi-042-v03-eye-R-prores.mov",
+    "upload": "image"
+   },
+   "color": "#7a1f1f",
+   "bgcolor": "#5c1717"
+  },
+  {
+   "id": 201,
+   "type": "LoadVideo",
+   "pos": [
+    5815.113671874999,
+    3690.676477050781
+   ],
+   "size": [
+    830.05234375,
+    540.904443359375
+   ],
+   "flags": {},
+   "order": 44,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": null
+    }
+   ],
+   "title": "FINAL STEREO (v03) · spatial MV-HEVC (Vision Pro review) · primary eye left · baseline 65 mm · Approved/stereoscopic",
+   "properties": {
+    "Node name for S&R": "LoadVideo",
+    "bh_repo_path": "films/panama-canal-v2/shots/cgi-042/05-outputs/Approved/stereoscopic/cgi-042-v03-spatial-4k.mov",
+    "bh_sha256": "28c933baf7d6d72dec4086bbccdca096e0c7a616094a9d2722ee037fa5e42718"
+   },
+   "widgets_values": [
+    "shots/cgi-042/05-outputs/Approved/stereoscopic/cgi-042-v03-spatial-4k.mov",
+    "image"
+   ],
+   "widgets_values_named": {
+    "file": "shots/cgi-042/05-outputs/Approved/stereoscopic/cgi-042-v03-spatial-4k.mov",
+    "upload": "image"
+   },
+   "color": "#7a1f1f",
+   "bgcolor": "#5c1717"
+  },
+  {
+   "id": 202,
+   "type": "MarkdownNote",
+   "pos": [
+    6705.166015624999,
+    3690.676477050781
+   ],
+   "size": [
+    560,
+    430
+   ],
+   "flags": {},
+   "order": 45,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "FINAL v03 STEREO — evidence + QC status",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "Verified: MV-HEVC packed views, hero+primary **left**, baseline 65.0 mm, hfov 90°, rectilinear; 3840x2160 HEVC, 241 f @ 24; fill check 0 px borders first/mid/last both eyes; sidecar `cgi-042-v03-spatial-4k.json` carries sha256 of all three deliverables.\n\nTail faces verified clean at f240 on BOTH eyes — the plate repair carried through the mesh.\n\n**NOT trimmed** — 10.04 s vs ~9.6 s spec; the ~11-frame trim is conform's, by Kyle's call.\n\n**QC pending:** headset review of v03 spatial; Brynley hand-painted depth return (f72→73 water step, f65-76 edge cluster) will drop into `05-depth-smoothed` and re-render — no picture regeneration needed."
+   ],
+   "widgets_values_named": {
+    "text": "Verified: MV-HEVC packed views, hero+primary **left**, baseline 65.0 mm, hfov 90°, rectilinear; 3840x2160 HEVC, 241 f @ 24; fill check 0 px borders first/mid/last both eyes; sidecar `cgi-042-v03-spatial-4k.json` carries sha256 of all three deliverables.\n\nTail faces verified clean at f240 on BOTH eyes — the plate repair carried through the mesh.\n\n**NOT trimmed** — 10.04 s vs ~9.6 s spec; the ~11-frame trim is conform's, by Kyle's call.\n\n**QC pending:** headset review of v03 spatial; Brynley hand-painted depth return (f72→73 water step, f65-76 edge cluster) will drop into `05-depth-smoothed` and re-render — no picture regeneration needed."
+   },
+   "color": "grey",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 203,
+   "type": "MarkdownNote",
+   "pos": [
+    3008.0126953125,
+    4321.580920410156
+   ],
+   "size": [
+    530.14609375,
+    420
+   ],
+   "flags": {},
+   "order": 46,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "REFS · the approved references that went INTO the v03 take + plate repair",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "**Take refs (first/last i2v):** first = `START-4k-v01` (node in B), last = `END-4k-v03-facerepair` (node above). No character refs went into the Runway seedance-2 fire — it is image-to-video only.\n\n**Repair refs (gpt-image-2.5 edit):** the three 4K character sheets to the right — the face-rebuild targets. These are `*-refsheet-4k-v01.png`, NOT the v04 sheets in group A (those fed the v06 plate fires).\n\n**Repair fire (no faithful Comfy node — documented placeholder):** v1/images/edits, req `a2a59e042aaa4470960d8319acb002e7` — 360px head region @1024 + three ref portraits -> one edit -> feathered-ellipse paste-back. Only face pixels differ from v02."
+   ],
+   "widgets_values_named": {
+    "text": "**Take refs (first/last i2v):** first = `START-4k-v01` (node in B), last = `END-4k-v03-facerepair` (node above). No character refs went into the Runway seedance-2 fire — it is image-to-video only.\n\n**Repair refs (gpt-image-2.5 edit):** the three 4K character sheets to the right — the face-rebuild targets. These are `*-refsheet-4k-v01.png`, NOT the v04 sheets in group A (those fed the v06 plate fires).\n\n**Repair fire (no faithful Comfy node — documented placeholder):** v1/images/edits, req `a2a59e042aaa4470960d8319acb002e7` — 360px head region @1024 + three ref portraits -> one edit -> feathered-ellipse paste-back. Only face pixels differ from v02."
+   },
+   "color": "#432",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 204,
+   "type": "LoadImage",
+   "pos": [
+    3598.1587890625,
+    4321.580920410156
+   ],
+   "size": [
+    485.097265625,
+    400
+   ],
+   "flags": {},
+   "order": 47,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": null
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": null
+    }
+   ],
+   "title": "REF · char-a sheet 4K v01 (explorer, red headwrap) · face-repair ref",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "films/panama-canal-v2/shots/cgi-042/01-look-dev/char-a-refsheet-4k-v01.png",
+    "bh_sha256": "b114894485897f8ec28dfb7b33cf63ab6426e0323b881f4c22a1ba168dfbc269"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/char-a-refsheet-4k-v01.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/char-a-refsheet-4k-v01.png",
+    "upload": "image"
+   },
+   "color": "blue"
+  },
+  {
+   "id": 205,
+   "type": "LoadImage",
+   "pos": [
+    4143.2560546875,
+    4321.580920410156
+   ],
+   "size": [
+    429.05625,
+    400
+   ],
+   "flags": {},
+   "order": 48,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": null
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": null
+    }
+   ],
+   "title": "REF · char-b sheet 4K v01 (shirtless guide) · face-repair ref",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "films/panama-canal-v2/shots/cgi-042/01-look-dev/char-b-refsheet-4k-v01.png",
+    "bh_sha256": "56a0f139f30157a06b08c389699f6f2c0cb215d0d0d12d9d1932bfabb5e45f18"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/char-b-refsheet-4k-v01.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/char-b-refsheet-4k-v01.png",
+    "upload": "image"
+   },
+   "color": "blue"
+  },
+  {
+   "id": 206,
+   "type": "LoadImage",
+   "pos": [
+    4632.3123046875,
+    4321.580920410156
+   ],
+   "size": [
+    442.194921875,
+    400
+   ],
+   "flags": {},
+   "order": 49,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": null
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": null
+    }
+   ],
+   "title": "REF · char-c sheet 4K v01 (helmeted soldier) · face-repair ref",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "films/panama-canal-v2/shots/cgi-042/01-look-dev/char-c-refsheet-4k-v01.png",
+    "bh_sha256": "7e6ef720e68bdab3e05a93d8c67409634b104827747d72e098e43d0db70626f2"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/char-c-refsheet-4k-v01.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/char-c-refsheet-4k-v01.png",
+    "upload": "image"
+   },
+   "color": "blue"
+  },
+  {
+   "id": 207,
+   "type": "MarkdownNote",
+   "pos": [
+    2780,
+    4981.580920410156
+   ],
+   "size": [
+    1400,
+    300
+   ],
+   "flags": {},
+   "order": 50,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "F · REFS PROVENANCE — how the character sheets were made",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "The approved character sheets that fed the plate fires (v04, group A refs) and the v03 face repair (4K-v01, REFS row above) were themselves GENERATED: gpt-image-2 edit fires on 2026-09-16, each consuming five ordered crops of the film's own frames under `01-look-dev/refs/crops/`. Columns below: fire metadata -> verbatim prompt -> ordered refs (send order left to right). Landed v04 sheets are the group-A loaders (@explorer/@guide/@soldier); landed 4K refires are the REFS row above (OpenAIGPTImageNodeV2 refire on the cgi-042b board, same prompt+refs, request id not captured by the Comfy proxy log)."
+   ],
+   "widgets_values_named": {
+    "text": "The approved character sheets that fed the plate fires (v04, group A refs) and the v03 face repair (4K-v01, REFS row above) were themselves GENERATED: gpt-image-2 edit fires on 2026-09-16, each consuming five ordered crops of the film's own frames under `01-look-dev/refs/crops/`. Columns below: fire metadata -> verbatim prompt -> ordered refs (send order left to right). Landed v04 sheets are the group-A loaders (@explorer/@guide/@soldier); landed 4K refires are the REFS row above (OpenAIGPTImageNodeV2 refire on the cgi-042b board, same prompt+refs, request id not captured by the Comfy proxy log)."
+   },
+   "color": "grey",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 208,
+   "type": "MarkdownNote",
+   "pos": [
+    2780,
+    5741.580920410156
+   ],
+   "size": [
+    1660,
+    170
+   ],
+   "flags": {},
+   "order": 51,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "FIRE · char-a sheet v04 · gpt-image-2 edit · 2026-09-16",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "`v1/images/edits` · model `gpt-image-2-2026-04-21` · 1536x1024 · quality high\nreq `req_e7ba0fd1161c47b782d9bbd82649b733` · 2026-09-16\n\nexplorer · red headwrap. Ordered refs below (send order). Source film seconds: 259.500, 258.400, 261.600.\nWHY (sidecar): cgi-042 character sheet v04 for \"red cap\" — the v01 sheet CORRECTED against the film's own frames (Kyle, 2026-09-04: \"make sure our generated refs match before we move to generation. Correct wardrobe to match the refs di"
+   ],
+   "widgets_values_named": {
+    "text": "`v1/images/edits` · model `gpt-image-2-2026-04-21` · 1536x1024 · quality high\nreq `req_e7ba0fd1161c47b782d9bbd82649b733` · 2026-09-16\n\nexplorer · red headwrap. Ordered refs below (send order). Source film seconds: 259.500, 258.400, 261.600.\nWHY (sidecar): cgi-042 character sheet v04 for \"red cap\" — the v01 sheet CORRECTED against the film's own frames (Kyle, 2026-09-04: \"make sure our generated refs match before we move to generation. Correct wardrobe to match the refs di"
+   },
+   "color": "grey",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 209,
+   "type": "PrimitiveStringMultiline",
+   "pos": [
+    2780,
+    6001.580920410156
+   ],
+   "size": [
+    1660,
+    500
+   ],
+   "flags": {},
+   "order": 52,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "STRING",
+     "type": "STRING",
+     "links": null
+    }
+   ],
+   "title": "PROMPT · char-a sheet v04 (2835 chars · verbatim from sidecar)",
+   "properties": {
+    "Node name for S&R": "PrimitiveStringMultiline"
+   },
+   "widgets_values": [
+    "The reference images are frames of one actor from a documentary re-enactment: a European explorer of about 1537 with a soft maroon-red cloth cap with a small soft brim, long dark wavy hair to the shoulders, a full dark beard, a grey-mauve quilted doublet belted at the waist, FULL MAROON BREECHES THAT REACH DOWN TO THE KNEE, pale cream mud-stained hose below them, tall brown leather boots with folded-over tops, WHITE SHIRT CUFFS showing at both wrists, and on the front of his belt a BROAD FLAT PALE-STEEL BLADE hung beside a large plain bright metal ring, with a BRIGHT RED POUCH next to it. Make ONE character reference sheet of this man. ONE THING CHANGES FROM THE PREVIOUS SHEET AND EVERYTHING ELSE STAYS. THE MAROON LOWER GARMENT IS A SMOOTH KNEE-LENGTH SKIRT, NOT BREECHES. It hangs straight and flat with a soft A-line and has NO SEPARATION BETWEEN THE LEGS — no inner-leg seam, no split, no gathered or paned or blousy breeches — and its HEM SITS ABOVE THE KNEE. Below the hem, pale cream mud-stained hose, wound and wrapped. This is read off frames 260.600 and 252.500, where no inner-leg line is visible at any magnification. KEEP EXACTLY AS THEY WERE: the soft maroon cap with the downturned brim, the long dark wavy shoulder-length hair, the full dark beard, the grey-mauve quilted doublet with its short flared skirt and white shirt cuffs at both wrists, the broad dark belt with its large plain metal ring, the broad flat pale-steel blade hanging bare over the front, the bright red pouch, and the tall brown boots with folded-over tops. The full-figure profile (259.500) is the identity and proportion anchor. The lower garment is the ONE thing being corrected — build it from 260.600 and 252.500, and do not invent a leg split that the film does not show. Every view must be the SAME man as in the reference images — same face, same age, same skin tone, same hair, same build, same garments, same colours. Do not idealise, do not restyle, do not modernise. Add NOTHING that is not visible in the references: no jewellery, no body paint, no headband, no weapons or props that are not in the frames. Lay it out as a character reference sheet on one neutral mid-grey seamless background under even soft studio light (no jungle, no sunlight, no shadows on the ground). Top row: three head-and-shoulders portraits at the same scale — facing camera, three-quarter, and true profile — eye-line level, neutral expression. Below: a full-body front view and a full-body back view standing straight, feet visible. Along one edge, small detail insets of the hands and of each garment and carried object, close enough to read fabric, stitching and wear. Photoreal, sharp, natural skin texture, no painterly or illustrated look. 3:2 frame. No text anywhere: no labels, no letters, no numbers, no arrows, no captions, no watermark."
+   ],
+   "widgets_values_named": {
+    "value": "The reference images are frames of one actor from a documentary re-enactment: a European explorer of about 1537 with a soft maroon-red cloth cap with a small soft brim, long dark wavy hair to the shoulders, a full dark beard, a grey-mauve quilted doublet belted at the waist, FULL MAROON BREECHES THAT REACH DOWN TO THE KNEE, pale cream mud-stained hose below them, tall brown leather boots with folded-over tops, WHITE SHIRT CUFFS showing at both wrists, and on the front of his belt a BROAD FLAT PALE-STEEL BLADE hung beside a large plain bright metal ring, with a BRIGHT RED POUCH next to it. Make ONE character reference sheet of this man. ONE THING CHANGES FROM THE PREVIOUS SHEET AND EVERYTHING ELSE STAYS. THE MAROON LOWER GARMENT IS A SMOOTH KNEE-LENGTH SKIRT, NOT BREECHES. It hangs straight and flat with a soft A-line and has NO SEPARATION BETWEEN THE LEGS — no inner-leg seam, no split, no gathered or paned or blousy breeches — and its HEM SITS ABOVE THE KNEE. Below the hem, pale cream mud-stained hose, wound and wrapped. This is read off frames 260.600 and 252.500, where no inner-leg line is visible at any magnification. KEEP EXACTLY AS THEY WERE: the soft maroon cap with the downturned brim, the long dark wavy shoulder-length hair, the full dark beard, the grey-mauve quilted doublet with its short flared skirt and white shirt cuffs at both wrists, the broad dark belt with its large plain metal ring, the broad flat pale-steel blade hanging bare over the front, the bright red pouch, and the tall brown boots with folded-over tops. The full-figure profile (259.500) is the identity and proportion anchor. The lower garment is the ONE thing being corrected — build it from 260.600 and 252.500, and do not invent a leg split that the film does not show. Every view must be the SAME man as in the reference images — same face, same age, same skin tone, same hair, same build, same garments, same colours. Do not idealise, do not restyle, do not modernise. Add NOTHING that is not visible in the references: no jewellery, no body paint, no headband, no weapons or props that are not in the frames. Lay it out as a character reference sheet on one neutral mid-grey seamless background under even soft studio light (no jungle, no sunlight, no shadows on the ground). Top row: three head-and-shoulders portraits at the same scale — facing camera, three-quarter, and true profile — eye-line level, neutral expression. Below: a full-body front view and a full-body back view standing straight, feet visible. Along one edge, small detail insets of the hands and of each garment and carried object, close enough to read fabric, stitching and wear. Photoreal, sharp, natural skin texture, no painterly or illustrated look. 3:2 frame. No text anywhere: no labels, no letters, no numbers, no arrows, no captions, no watermark."
+   },
+   "color": "yellow"
+  },
+  {
+   "id": 210,
+   "type": "LoadImage",
+   "pos": [
+    2780,
+    6591.580920410156
+   ],
+   "size": [
+    300,
+    314
+   ],
+   "flags": {},
+   "order": 53,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": null
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": null
+    }
+   ],
+   "title": "REF 1/5 · char-a · a2-profile-259.500",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "shots/cgi-042/01-look-dev/refs/crops/a2-profile-259.500.png",
+    "bh_sha256": "1138120d1f6bef2a5c77e386885cbfa2ace10c6f342b3adbad0d9c94c5068225"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/refs/crops/a2-profile-259.500.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/refs/crops/a2-profile-259.500.png",
+    "upload": "image"
+   },
+   "color": "blue"
+  },
+  {
+   "id": 211,
+   "type": "LoadImage",
+   "pos": [
+    3140,
+    6591.580920410156
+   ],
+   "size": [
+    300,
+    314
+   ],
+   "flags": {},
+   "order": 54,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": null
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": null
+    }
+   ],
+   "title": "REF 2/5 · char-a · a2-belt-259.500",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "shots/cgi-042/01-look-dev/refs/crops/a2-belt-259.500.png",
+    "bh_sha256": "808c3cfd6ad53fdf0c039c1720584e6407059ce86f000b14b4b1b90aed1f2e22"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/refs/crops/a2-belt-259.500.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/refs/crops/a2-belt-259.500.png",
+    "upload": "image"
+   },
+   "color": "blue"
+  },
+  {
+   "id": 212,
+   "type": "LoadImage",
+   "pos": [
+    3500,
+    6591.580920410156
+   ],
+   "size": [
+    300,
+    314
+   ],
+   "flags": {},
+   "order": 55,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": null
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": null
+    }
+   ],
+   "title": "REF 3/5 · char-a · a2-belt-258.400",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "shots/cgi-042/01-look-dev/refs/crops/a2-belt-258.400.png",
+    "bh_sha256": "dd5bca866493ed5d13090f7ae7f6f22c388ba684dc181dbca6b6f7f766efab47"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/refs/crops/a2-belt-258.400.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/refs/crops/a2-belt-258.400.png",
+    "upload": "image"
+   },
+   "color": "blue"
+  },
+  {
+   "id": 213,
+   "type": "LoadImage",
+   "pos": [
+    3860,
+    6591.580920410156
+   ],
+   "size": [
+    300,
+    314
+   ],
+   "flags": {},
+   "order": 56,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": null
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": null
+    }
+   ],
+   "title": "REF 4/5 · char-a · a2-head-259.500",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "shots/cgi-042/01-look-dev/refs/crops/a2-head-259.500.png",
+    "bh_sha256": "842f887bcfe891349035ead7b8dffe9ab8d22ad4827b8d832a72aa4e89072144"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/refs/crops/a2-head-259.500.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/refs/crops/a2-head-259.500.png",
+    "upload": "image"
+   },
+   "color": "blue"
+  },
+  {
+   "id": 214,
+   "type": "LoadImage",
+   "pos": [
+    4220,
+    6591.580920410156
+   ],
+   "size": [
+    300,
+    314
+   ],
+   "flags": {},
+   "order": 57,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": null
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": null
+    }
+   ],
+   "title": "REF 5/5 · char-a · a2-back-261.600",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "shots/cgi-042/01-look-dev/refs/crops/a2-back-261.600.png",
+    "bh_sha256": "328a51cd0240349dabb3c596ab3f4f6cef912e41092b877886badeae7d45b5fb"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/refs/crops/a2-back-261.600.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/refs/crops/a2-back-261.600.png",
+    "upload": "image"
+   },
+   "color": "blue"
+  },
+  {
+   "id": 215,
+   "type": "MarkdownNote",
+   "pos": [
+    2780,
+    6995.580920410156
+   ],
+   "size": [
+    1660,
+    140
+   ],
+   "flags": {},
+   "order": 58,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "char-a — landed outputs",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "LANDED sheet = `char-a-refsheet-v04.png` — the @explorer loader in group A (Fire A ref 2).\n\n4K refire = `char-a-refsheet-4k-v01.png` (gpt-image-2.5-flare via OpenAIGPTImageNodeV2, cgi-042b board) — the face-repair ref in the REFS row above."
+   ],
+   "widgets_values_named": {
+    "text": "LANDED sheet = `char-a-refsheet-v04.png` — the @explorer loader in group A (Fire A ref 2).\n\n4K refire = `char-a-refsheet-4k-v01.png` (gpt-image-2.5-flare via OpenAIGPTImageNodeV2, cgi-042b board) — the face-repair ref in the REFS row above."
+   },
+   "color": "grey",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 216,
+   "type": "MarkdownNote",
+   "pos": [
+    4500,
+    5741.580920410156
+   ],
+   "size": [
+    1660,
+    170
+   ],
+   "flags": {},
+   "order": 59,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "FIRE · char-b sheet v04 · gpt-image-2 edit · 2026-09-16",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "`v1/images/edits` · model `gpt-image-2-2026-04-21` · 1536x1024 · quality high\nreq `req_75f71d6be6de42c59e7983aea4ff3a61` · 2026-09-16\n\nshirtless guide. Ordered refs below (send order). Source film seconds: 255.500, 253.500, 258.100, 188.500.\nWHY (sidecar): cgi-042 character sheet v04 for \"bare-chested guide\" — the v01 sheet CORRECTED against the film's own frames (Kyle, 2026-09-04: \"make sure our generated refs match before we move to generation. Correct wardrobe to match "
+   ],
+   "widgets_values_named": {
+    "text": "`v1/images/edits` · model `gpt-image-2-2026-04-21` · 1536x1024 · quality high\nreq `req_75f71d6be6de42c59e7983aea4ff3a61` · 2026-09-16\n\nshirtless guide. Ordered refs below (send order). Source film seconds: 255.500, 253.500, 258.100, 188.500.\nWHY (sidecar): cgi-042 character sheet v04 for \"bare-chested guide\" — the v01 sheet CORRECTED against the film's own frames (Kyle, 2026-09-04: \"make sure our generated refs match before we move to generation. Correct wardrobe to match "
+   },
+   "color": "grey",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 217,
+   "type": "PrimitiveStringMultiline",
+   "pos": [
+    4500,
+    6001.580920410156
+   ],
+   "size": [
+    1660,
+    500
+   ],
+   "flags": {},
+   "order": 60,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "STRING",
+     "type": "STRING",
+     "links": null
+    }
+   ],
+   "title": "PROMPT · char-b sheet v04 (2894 chars · verbatim from sidecar)",
+   "properties": {
+    "Node name for S&R": "PrimitiveStringMultiline"
+   },
+   "widgets_values": [
+    "The reference images are frames of one actor from a documentary re-enactment: an indigenous Panamanian guide — a LEAN, WIRY, YOUNG man — natural rather than trained, with visible pectoral and shoulder shape but a SMOOTH STOMACH and no defined abdominal muscles: bare chest and arms, warm brown skin, dark straight BLUNT BOB-CUT hair with a fringe, the hair ending AT THE NAPE OF THE NECK and well above the shoulders, no beard, a DIRTY GREY-BROWN cloth, mud-stained from the hem upward and visibly worn, WRAPPED round the waist and hanging straight and flat to mid-thigh with a FOLDED-OVER TOP EDGE at the waist and a vertical overlap at the side, barefoot, carrying a plain steel machete with a wooden grip in one hand. Make ONE character reference sheet of this man. TWO THINGS CHANGE FROM THE PREVIOUS SHEET. (1) THE PHYSIQUE WAS OVER-CORRECTED INTO A GYM BODY. The previous sheet drew a defined six-pack and deep serratus. On frames 253.500 and 255.500 he is LEAN AND WIRY with visible pectoral and shoulder shape and a SMOOTH ABDOMEN — no six-pack, no visible abdominal separations, no serratus definition. Natural, not trained. (2) THE CLOTH IS NOT NEW. The previous sheet drew clean new cream linen. The film's wrap is DIRTY: grey-brown, MUD-STAINED FROM THE HEM UPWARD, worn and used. KEEP: the bare chest, the warm brown skin, the straight blunt bob ending at the nape well above the shoulders, the straight fringe, the flat wrapped construction with its folded-over top edge and side overlap, the bare feet, and the machete. The two in-shot frontals (253.500, 255.500) carry the build, and they are the reason this sheet is being redrawn. The back view (258.100) is the hair length and the wrap's construction. The face is small in every reference — keep it consistent and do not sharpen it into an older or idealised face. Every view must be the SAME man as in the reference images — same face, same age, same skin tone, same hair, same build, same garments, same colours. Do not idealise, do not restyle, do not modernise. Add NOTHING that is not visible in the references: no jewellery, no body paint, no headband, no weapons or props that are not in the frames. Lay it out as a character reference sheet on one neutral mid-grey seamless background under even soft studio light (no jungle, no sunlight, no shadows on the ground). Top row: three head-and-shoulders portraits at the same scale — facing camera, three-quarter, and true profile — eye-line level, neutral expression. Below: a full-body front view and a full-body back view standing straight, feet visible. Along one edge, small detail insets of the hands and of each garment and carried object, close enough to read fabric, stitching and wear. Photoreal, sharp, natural skin texture, no painterly or illustrated look. 3:2 frame. No text anywhere: no labels, no letters, no numbers, no arrows, no captions, no watermark."
+   ],
+   "widgets_values_named": {
+    "value": "The reference images are frames of one actor from a documentary re-enactment: an indigenous Panamanian guide — a LEAN, WIRY, YOUNG man — natural rather than trained, with visible pectoral and shoulder shape but a SMOOTH STOMACH and no defined abdominal muscles: bare chest and arms, warm brown skin, dark straight BLUNT BOB-CUT hair with a fringe, the hair ending AT THE NAPE OF THE NECK and well above the shoulders, no beard, a DIRTY GREY-BROWN cloth, mud-stained from the hem upward and visibly worn, WRAPPED round the waist and hanging straight and flat to mid-thigh with a FOLDED-OVER TOP EDGE at the waist and a vertical overlap at the side, barefoot, carrying a plain steel machete with a wooden grip in one hand. Make ONE character reference sheet of this man. TWO THINGS CHANGE FROM THE PREVIOUS SHEET. (1) THE PHYSIQUE WAS OVER-CORRECTED INTO A GYM BODY. The previous sheet drew a defined six-pack and deep serratus. On frames 253.500 and 255.500 he is LEAN AND WIRY with visible pectoral and shoulder shape and a SMOOTH ABDOMEN — no six-pack, no visible abdominal separations, no serratus definition. Natural, not trained. (2) THE CLOTH IS NOT NEW. The previous sheet drew clean new cream linen. The film's wrap is DIRTY: grey-brown, MUD-STAINED FROM THE HEM UPWARD, worn and used. KEEP: the bare chest, the warm brown skin, the straight blunt bob ending at the nape well above the shoulders, the straight fringe, the flat wrapped construction with its folded-over top edge and side overlap, the bare feet, and the machete. The two in-shot frontals (253.500, 255.500) carry the build, and they are the reason this sheet is being redrawn. The back view (258.100) is the hair length and the wrap's construction. The face is small in every reference — keep it consistent and do not sharpen it into an older or idealised face. Every view must be the SAME man as in the reference images — same face, same age, same skin tone, same hair, same build, same garments, same colours. Do not idealise, do not restyle, do not modernise. Add NOTHING that is not visible in the references: no jewellery, no body paint, no headband, no weapons or props that are not in the frames. Lay it out as a character reference sheet on one neutral mid-grey seamless background under even soft studio light (no jungle, no sunlight, no shadows on the ground). Top row: three head-and-shoulders portraits at the same scale — facing camera, three-quarter, and true profile — eye-line level, neutral expression. Below: a full-body front view and a full-body back view standing straight, feet visible. Along one edge, small detail insets of the hands and of each garment and carried object, close enough to read fabric, stitching and wear. Photoreal, sharp, natural skin texture, no painterly or illustrated look. 3:2 frame. No text anywhere: no labels, no letters, no numbers, no arrows, no captions, no watermark."
+   },
+   "color": "yellow"
+  },
+  {
+   "id": 218,
+   "type": "LoadImage",
+   "pos": [
+    4580,
+    6591.580920410156
+   ],
+   "size": [
+    300,
+    314
+   ],
+   "flags": {},
+   "order": 61,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": null
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": null
+    }
+   ],
+   "title": "REF 1/5 · char-b · b2-inshot-255.500",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "shots/cgi-042/01-look-dev/refs/crops/b2-inshot-255.500.png",
+    "bh_sha256": "736adcf57a55806b2aca99fe3d28c35e14d7a7a109aee03b3b71016356abc860"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/refs/crops/b2-inshot-255.500.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/refs/crops/b2-inshot-255.500.png",
+    "upload": "image"
+   },
+   "color": "blue"
+  },
+  {
+   "id": 219,
+   "type": "LoadImage",
+   "pos": [
+    4940,
+    6591.580920410156
+   ],
+   "size": [
+    300,
+    314
+   ],
+   "flags": {},
+   "order": 62,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": null
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": null
+    }
+   ],
+   "title": "REF 2/5 · char-b · b2-inshot-253.500",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "shots/cgi-042/01-look-dev/refs/crops/b2-inshot-253.500.png",
+    "bh_sha256": "34cc617fedfffbb09969e3d7ace0547299a66e1d9b99044d5af44ff3b12dcd8a"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/refs/crops/b2-inshot-253.500.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/refs/crops/b2-inshot-253.500.png",
+    "upload": "image"
+   },
+   "color": "blue"
+  },
+  {
+   "id": 220,
+   "type": "LoadImage",
+   "pos": [
+    5300,
+    6591.580920410156
+   ],
+   "size": [
+    300,
+    314
+   ],
+   "flags": {},
+   "order": 63,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": null
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": null
+    }
+   ],
+   "title": "REF 3/5 · char-b · b2-back-258.100",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "shots/cgi-042/01-look-dev/refs/crops/b2-back-258.100.png",
+    "bh_sha256": "cdfb3c98073aafe71f1eb4fc7a62546f805bced78e9ccfda82fc4dcf53b1195b"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/refs/crops/b2-back-258.100.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/refs/crops/b2-back-258.100.png",
+    "upload": "image"
+   },
+   "color": "blue"
+  },
+  {
+   "id": 221,
+   "type": "LoadImage",
+   "pos": [
+    5660,
+    6591.580920410156
+   ],
+   "size": [
+    300,
+    314
+   ],
+   "flags": {},
+   "order": 64,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": null
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": null
+    }
+   ],
+   "title": "REF 4/5 · char-b · b2-head-258.100",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "shots/cgi-042/01-look-dev/refs/crops/b2-head-258.100.png",
+    "bh_sha256": "234bd17e9caf75cedd7d0cefe45717f33460c692b2a6a3335cef78e034d332e1"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/refs/crops/b2-head-258.100.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/refs/crops/b2-head-258.100.png",
+    "upload": "image"
+   },
+   "color": "blue"
+  },
+  {
+   "id": 222,
+   "type": "LoadImage",
+   "pos": [
+    6020,
+    6591.580920410156
+   ],
+   "size": [
+    300,
+    314
+   ],
+   "flags": {},
+   "order": 65,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": null
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": null
+    }
+   ],
+   "title": "REF 5/5 · char-b · b3-machete-188.500",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "shots/cgi-042/01-look-dev/refs/crops/b3-machete-188.500.png",
+    "bh_sha256": "d10914648859cc0fe5363518451b26886b6c9a272830abe90e9489e00d804780"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/refs/crops/b3-machete-188.500.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/refs/crops/b3-machete-188.500.png",
+    "upload": "image"
+   },
+   "color": "blue"
+  },
+  {
+   "id": 223,
+   "type": "MarkdownNote",
+   "pos": [
+    4500,
+    6995.580920410156
+   ],
+   "size": [
+    1660,
+    140
+   ],
+   "flags": {},
+   "order": 66,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "char-b — landed outputs",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "LANDED sheet = `char-b-refsheet-v04.png` — the @guide loader in group A (Fire A ref 3).\n\n4K refire = `char-b-refsheet-4k-v01.png` (gpt-image-2.5-flare via OpenAIGPTImageNodeV2, cgi-042b board) — the face-repair ref in the REFS row above."
+   ],
+   "widgets_values_named": {
+    "text": "LANDED sheet = `char-b-refsheet-v04.png` — the @guide loader in group A (Fire A ref 3).\n\n4K refire = `char-b-refsheet-4k-v01.png` (gpt-image-2.5-flare via OpenAIGPTImageNodeV2, cgi-042b board) — the face-repair ref in the REFS row above."
+   },
+   "color": "grey",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 224,
+   "type": "MarkdownNote",
+   "pos": [
+    6220,
+    5741.580920410156
+   ],
+   "size": [
+    1660,
+    170
+   ],
+   "flags": {},
+   "order": 67,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "FIRE · char-c sheet v04 · gpt-image-2 edit · 2026-09-16",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "`v1/images/edits` · model `gpt-image-2-2026-04-21` · 1536x1024 · quality high\nreq `req_c7f82f414d1e479493716685a5567a02` · 2026-09-16\n\nhelmeted soldier. Ordered refs below (send order). Source film seconds: 259.500, 244.500, 259.700, 261.600.\nWHY (sidecar): cgi-042 character sheet v04 for \"helmeted soldier\" — the v01 sheet CORRECTED against the film's own frames (Kyle, 2026-09-04: \"make sure our generated refs match before we move to generation. Correct wardrobe to match th"
+   ],
+   "widgets_values_named": {
+    "text": "`v1/images/edits` · model `gpt-image-2-2026-04-21` · 1536x1024 · quality high\nreq `req_c7f82f414d1e479493716685a5567a02` · 2026-09-16\n\nhelmeted soldier. Ordered refs below (send order). Source film seconds: 259.500, 244.500, 259.700, 261.600.\nWHY (sidecar): cgi-042 character sheet v04 for \"helmeted soldier\" — the v01 sheet CORRECTED against the film's own frames (Kyle, 2026-09-04: \"make sure our generated refs match before we move to generation. Correct wardrobe to match th"
+   },
+   "color": "grey",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 225,
+   "type": "PrimitiveStringMultiline",
+   "pos": [
+    6220,
+    6001.580920410156
+   ],
+   "size": [
+    1660,
+    500
+   ],
+   "flags": {},
+   "order": 68,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "STRING",
+     "type": "STRING",
+     "links": null
+    }
+   ],
+   "title": "PROMPT · char-c sheet v04 (3248 chars · verbatim from sidecar)",
+   "properties": {
+    "Node name for S&R": "PrimitiveStringMultiline"
+   },
+   "widgets_values": [
+    "The reference images are frames of one actor from a documentary re-enactment: a European soldier of a Spanish survey party of about 1537: a DARK NEAR-BLACK SOFT HAT whose crown is built of thick vertical ribs and whose broad stiff brim is turned DOWN all round, and whose crown is a MODERATELY TALL RIBBED DRUM — about four fifths as tall as the crown itself is WIDE, standing well clear of the head; DARK HAIR IN LOOSE ROPEY MATTED LOCKS THAT END AT THE JAW, and a full dark beard and moustache; a plain SATURATED BURNT-ORANGE long-sleeved coat reaching to mid-thigh with a slightly flared skirt AND A COMPLETELY PLAIN FRONT WITH NO BUTTONS OF ANY KIND; a narrow pale grey-blue cloth sash tied round the waist with its end hanging; white shirt cuffs at the wrists; a large plain metal ring on the belt at the front and a pale bone-cream sheath hanging at the left hip; pale cream hose stained with mud, tucked into tall dark brown leather boots with folded-over tops. Make ONE character reference sheet of this man. ONE THING CHANGES FROM THE PREVIOUS SHEET AND EVERYTHING ELSE STAYS. THE COAT SKIRT CARRIES EVENLY SPACED PALE GOLD-CREAM VERTICAL STRIPS running the FULL DEPTH of the skirt, all the way round. Draw them as VERTICAL SLASHES IN THE ORANGE CLOTH SHOWING A PALE GOLD-CREAM LINING BEHIND — regular, evenly spaced, the full height of the skirt from the sash to the hem. KEEP EXACTLY AS IT WAS: the dark near-black soft hat with its thick vertical ribs, its moderately tall drum crown and its stiff downturned brim; the dark hair in loose ropey matted locks ENDING AT THE JAW; the full dark beard; the saturated burnt-orange coat to mid-thigh with a COMPLETELY PLAIN FRONT AND NO BUTTONS; the pale grey-blue sash; the white shirt cuffs; the metal ring at the belt front and the bone-cream sheath at the left hip; the mud-stained hose and the tall dark brown boots. AND STILL: no helmet, no morion, no steel cap, no crest, comb or feather, no breastplate, no armour, NO SWORD. The whole-figure crop (c3-alone-259.500) carries the coat skirt at its largest. The strips are the ONE thing being added; everything else on the previous sheet was signed as a match and must not move. Every view must be the SAME man as in the reference images — same face, same age, same skin tone, same hair, same build, same garments, same colours. Do not idealise, do not restyle, do not modernise. Add NOTHING that is not visible in the references: no jewellery, no body paint, no headband, no weapons or props that are not in the frames. Lay it out as a character reference sheet on one neutral mid-grey seamless background under even soft studio light (no jungle, no sunlight, no shadows on the ground). Top row: three head-and-shoulders portraits at the same scale — facing camera, three-quarter, and true profile — eye-line level, neutral expression. Below: a full-body front view and a full-body back view standing straight, feet visible. Along one edge, small detail insets of the hands and of each garment and carried object, close enough to read fabric, stitching and wear. Photoreal, sharp, natural skin texture, no painterly or illustrated look. 3:2 frame. No text anywhere: no labels, no letters, no numbers, no arrows, no captions, no watermark."
+   ],
+   "widgets_values_named": {
+    "value": "The reference images are frames of one actor from a documentary re-enactment: a European soldier of a Spanish survey party of about 1537: a DARK NEAR-BLACK SOFT HAT whose crown is built of thick vertical ribs and whose broad stiff brim is turned DOWN all round, and whose crown is a MODERATELY TALL RIBBED DRUM — about four fifths as tall as the crown itself is WIDE, standing well clear of the head; DARK HAIR IN LOOSE ROPEY MATTED LOCKS THAT END AT THE JAW, and a full dark beard and moustache; a plain SATURATED BURNT-ORANGE long-sleeved coat reaching to mid-thigh with a slightly flared skirt AND A COMPLETELY PLAIN FRONT WITH NO BUTTONS OF ANY KIND; a narrow pale grey-blue cloth sash tied round the waist with its end hanging; white shirt cuffs at the wrists; a large plain metal ring on the belt at the front and a pale bone-cream sheath hanging at the left hip; pale cream hose stained with mud, tucked into tall dark brown leather boots with folded-over tops. Make ONE character reference sheet of this man. ONE THING CHANGES FROM THE PREVIOUS SHEET AND EVERYTHING ELSE STAYS. THE COAT SKIRT CARRIES EVENLY SPACED PALE GOLD-CREAM VERTICAL STRIPS running the FULL DEPTH of the skirt, all the way round. Draw them as VERTICAL SLASHES IN THE ORANGE CLOTH SHOWING A PALE GOLD-CREAM LINING BEHIND — regular, evenly spaced, the full height of the skirt from the sash to the hem. KEEP EXACTLY AS IT WAS: the dark near-black soft hat with its thick vertical ribs, its moderately tall drum crown and its stiff downturned brim; the dark hair in loose ropey matted locks ENDING AT THE JAW; the full dark beard; the saturated burnt-orange coat to mid-thigh with a COMPLETELY PLAIN FRONT AND NO BUTTONS; the pale grey-blue sash; the white shirt cuffs; the metal ring at the belt front and the bone-cream sheath at the left hip; the mud-stained hose and the tall dark brown boots. AND STILL: no helmet, no morion, no steel cap, no crest, comb or feather, no breastplate, no armour, NO SWORD. The whole-figure crop (c3-alone-259.500) carries the coat skirt at its largest. The strips are the ONE thing being added; everything else on the previous sheet was signed as a match and must not move. Every view must be the SAME man as in the reference images — same face, same age, same skin tone, same hair, same build, same garments, same colours. Do not idealise, do not restyle, do not modernise. Add NOTHING that is not visible in the references: no jewellery, no body paint, no headband, no weapons or props that are not in the frames. Lay it out as a character reference sheet on one neutral mid-grey seamless background under even soft studio light (no jungle, no sunlight, no shadows on the ground). Top row: three head-and-shoulders portraits at the same scale — facing camera, three-quarter, and true profile — eye-line level, neutral expression. Below: a full-body front view and a full-body back view standing straight, feet visible. Along one edge, small detail insets of the hands and of each garment and carried object, close enough to read fabric, stitching and wear. Photoreal, sharp, natural skin texture, no painterly or illustrated look. 3:2 frame. No text anywhere: no labels, no letters, no numbers, no arrows, no captions, no watermark."
+   },
+   "color": "yellow"
+  },
+  {
+   "id": 226,
+   "type": "LoadImage",
+   "pos": [
+    6380,
+    6591.580920410156
+   ],
+   "size": [
+    300,
+    314
+   ],
+   "flags": {},
+   "order": 69,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": null
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": null
+    }
+   ],
+   "title": "REF 1/5 · char-c · c3-alone-259.500",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "shots/cgi-042/01-look-dev/refs/crops/c3-alone-259.500.png",
+    "bh_sha256": "e2502542f400e23820df192a1de6bc4b265126f260398f981466dd542819f716"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/refs/crops/c3-alone-259.500.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/refs/crops/c3-alone-259.500.png",
+    "upload": "image"
+   },
+   "color": "blue"
+  },
+  {
+   "id": 227,
+   "type": "LoadImage",
+   "pos": [
+    6740,
+    6591.580920410156
+   ],
+   "size": [
+    300,
+    314
+   ],
+   "flags": {},
+   "order": 70,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": null
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": null
+    }
+   ],
+   "title": "REF 2/5 · char-c · c2-hat-259.500",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "shots/cgi-042/01-look-dev/refs/crops/c2-hat-259.500.png",
+    "bh_sha256": "4a62f4e552c0015c7776399dbcfe531a83f1d4446f752f8c3d3c7dead6493097"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/refs/crops/c2-hat-259.500.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/refs/crops/c2-hat-259.500.png",
+    "upload": "image"
+   },
+   "color": "blue"
+  },
+  {
+   "id": 228,
+   "type": "LoadImage",
+   "pos": [
+    7100,
+    6591.580920410156
+   ],
+   "size": [
+    300,
+    314
+   ],
+   "flags": {},
+   "order": 71,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": null
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": null
+    }
+   ],
+   "title": "REF 3/5 · char-c · c2-godray-244.500",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "shots/cgi-042/01-look-dev/refs/crops/c2-godray-244.500.png",
+    "bh_sha256": "825f74f36bbe47fee8ad7c02783e66aaf7becf4f32e5e67d17e5b9f0824ffd70"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/refs/crops/c2-godray-244.500.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/refs/crops/c2-godray-244.500.png",
+    "upload": "image"
+   },
+   "color": "blue"
+  },
+  {
+   "id": 229,
+   "type": "LoadImage",
+   "pos": [
+    7460,
+    6591.580920410156
+   ],
+   "size": [
+    300,
+    314
+   ],
+   "flags": {},
+   "order": 72,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": null
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": null
+    }
+   ],
+   "title": "REF 4/5 · char-c · c2-hair-259.700",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "shots/cgi-042/01-look-dev/refs/crops/c2-hair-259.700.png",
+    "bh_sha256": "1e95f5faa8d4f7961f0828d3966bc3299c8f3a99587e2ec21879e9ca24d04a81"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/refs/crops/c2-hair-259.700.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/refs/crops/c2-hair-259.700.png",
+    "upload": "image"
+   },
+   "color": "blue"
+  },
+  {
+   "id": 230,
+   "type": "LoadImage",
+   "pos": [
+    7820,
+    6591.580920410156
+   ],
+   "size": [
+    300,
+    314
+   ],
+   "flags": {},
+   "order": 73,
+   "mode": 2,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": null
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": null
+    }
+   ],
+   "title": "REF 5/5 · char-c · c2-back-261.600",
+   "properties": {
+    "Node name for S&R": "LoadImage",
+    "bh_repo_path": "shots/cgi-042/01-look-dev/refs/crops/c2-back-261.600.png",
+    "bh_sha256": "70d79d324200561122d7d56d87994b136ec1e5541a268378a6227076ea4647bb"
+   },
+   "widgets_values": [
+    "shots/cgi-042/01-look-dev/refs/crops/c2-back-261.600.png",
+    "image"
+   ],
+   "widgets_values_named": {
+    "image": "shots/cgi-042/01-look-dev/refs/crops/c2-back-261.600.png",
+    "upload": "image"
+   },
+   "color": "blue"
+  },
+  {
+   "id": 231,
+   "type": "MarkdownNote",
+   "pos": [
+    6220,
+    6995.580920410156
+   ],
+   "size": [
+    1660,
+    140
+   ],
+   "flags": {},
+   "order": 74,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "char-c — landed outputs",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "LANDED sheet = `char-c-refsheet-v04.png` — the @soldier loader in group A (Fire A ref 4).\n\n4K refire = `char-c-refsheet-4k-v01.png` (gpt-image-2.5-flare via OpenAIGPTImageNodeV2, cgi-042b board) — the face-repair ref in the REFS row above."
+   ],
+   "widgets_values_named": {
+    "text": "LANDED sheet = `char-c-refsheet-v04.png` — the @soldier loader in group A (Fire A ref 4).\n\n4K refire = `char-c-refsheet-4k-v01.png` (gpt-image-2.5-flare via OpenAIGPTImageNodeV2, cgi-042b board) — the face-repair ref in the REFS row above."
+   },
+   "color": "grey",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 232,
+   "type": "SaveVideo",
+   "pos": [
+    10810.3330246375,
+    3981.1284615808013
+   ],
+   "size": [
+    270,
+    106
+   ],
+   "flags": {},
+   "order": 75,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "link": 7
+    }
+   ],
+   "outputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "links": null
+    }
+   ],
+   "properties": {},
+   "widgets_values": [
+    "video/ComfyUI",
+    "auto",
+    "auto",
+    "auto"
+   ],
+   "widgets_values_named": {
+    "filename_prefix": "video/ComfyUI",
+    "format": "auto",
+    "format.codec": "auto",
+    "codec": "auto"
+   },
+   "title": "OUTPUT · SaveVideo · FINAL v03 approved take (copy to output/video)"
+  },
+  {
+   "id": 233,
+   "type": "MarkdownNote",
+   "pos": [
+    13250,
+    2760
+   ],
+   "size": [
+    760,
+    900
+   ],
+   "flags": {},
+   "order": 80,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "G · R&D STEREO — READ FIRST (what this is, what is verified, what is NOT)",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "# G · R&D STEREO — rebuild Kyle's v03 stereo recipe in Comfy, then test it\n\n**Purpose.** cgi-042 is a stereo CONVERSION shot: generated content, so no camera or interocular data exists for it. Conversions are matched to the film's existing stereo pairs. Kyle's v03 recipe (made OUTSIDE Comfy: fal depth → median5 + atadenoise → Resolve/Fusion mesh comp → eyes → `spatial make`) is the starting point to match. Whether that recipe holds to filmout standard is the open R&D question — it is NOT assumed to be the standard.\nThis group re-runs the same *stages* inside Comfy on a short window so we can measure it. It branches from the HANDOFF `GetVideoComponents` — nothing left of the HANDOFF frame is rewired.\n\n**Status: BUILT - NOT RUN. (V3b — see CHANGE REPORT note to the right.)** New chain is MUTED (grey) so Queue cannot fail on the unwired depth input. fal node is BYPASSED (purple) so it cannot spend.\n\n## Flow (left to right)\n1. `TRIM` — 25-frame window, frames 109-133 (centre = evidence frame 121). Full take = 241 frames; a 4K float batch is ~24 GB RAM per copy.\n2. `DEPTH` — fal depth-anything v2, same endpoint v03 used (`fal-ai/image-preprocessors/depth-anything/v2`). 25 calls ≈ $0.025.\n3. `STEREO` — Y7 SBS (Video). Outputs ONE side-by-side batch 7680x2160.\n4. `SPLIT` — two ImageCrop → eye L / eye R, 3840x2160.\n5. `OUTPUT` — three preview SaveVideos (SBS, L, R).\n\n## BISECT RUN — raw frames + depth only (Y7 and the OUTPUT nodes stay muted)\nQuestion being tested: do the decoded frames or the fal depth maps move/pump between frames?\nSpend: fal depth on 25 frames ≈ $0.025 — approved by Brynley 2026-10-08.\n1. Drag `TRIM · image` → fal depth node `image` input. Drag fal `image` output → `EVIDENCE 2 · SaveImage`.\n2. Unmute (Ctrl+M): `TRIM`, `EVIDENCE 1`, `EVIDENCE 2`. Un-bypass (Ctrl+B): the fal node.\n3. Queue once. PNGs are written to output/cgi-042-RD-evidence/ (`tensor_*` = raw frames, `depth_*` = depth maps).\nLater, for the full stereo arm: also drag fal output → `STEREO · depth_maps`, then unmute STEREO + OUTPUT nodes.\n\n## Honest limits (read before trusting any result)\n- **Not a replica of Kyle's comp.** His comp is a 3D mesh displace (Displace3D 0.346, Camera3D sep 0.064, conv/z 4.82, AoV 19.264) in Resolve/Fusion. Y7 `mesh_warping` is a different algorithm and its `depth_scale` is a unitless INT. Its numbers do NOT map to his. Calibrate by rendering several depth_scale values and measuring disparity against his L/R masters.\n- **Temporal median5 + atadenoise are not in this graph.** No verified Comfy node for them. Y7 `temporal_smoothing` is a different filter. Kyle's jitter figures (raw 4.13 → smoothed 0.90 levels) are the target to compare.\n- **Filmout path is UNVERIFIED, not ruled out.** These outputs use core `SaveVideo` with codec/format left on `auto`; what it writes (codec, bit depth) has not been checked. ProRes (e.g. VideoHelperSuite Video Combine) and image-sequence/EXR writers exist, but their bit-depth path through Comfy has not been tested. Until a test frame is written and probed (ffprobe/exiftool), treat these outputs as comparison material, not delivery.\n- **Node packs:** needs `ComfyUI-Y7-SBS-2Dto3D` and `ComfyUI-fal-API` (README pins). Missing packs show red.\n- **fal node name is by convention** (`FalAPI_` + endpoint with slashes → dashes) and its socket names were NOT verified. If red, add the depth node by search instead."
+   ],
+   "widgets_values_named": {
+    "text": "# G · R&D STEREO — rebuild Kyle's v03 stereo recipe in Comfy, then test it\n\n**Purpose.** Kyle's v03 stereo was made OUTSIDE Comfy (fal depth → median5 + atadenoise → Resolve/Fusion mesh comp → eyes → `spatial make`).\nThis group re-runs the same *stages* inside Comfy on a short window so we can measure whether the recipe holds to filmout standard.\nIt branches from the HANDOFF `GetVideoComponents` — nothing left of the HANDOFF frame is rewired.\n\n**Status: BUILT - NOT RUN.** New chain is MUTED (grey) so Queue cannot fail on the unwired depth input. fal node is BYPASSED (purple) so it cannot spend.\n\n## Flow (left to right)\n1. `TRIM` — 25-frame window, frames 109-133 (centre = evidence frame 121). Full take = 241 frames; a 4K float batch is ~24 GB RAM per copy.\n2. `DEPTH` — fal depth-anything v2, same endpoint v03 used (`fal-ai/image-preprocessors/depth-anything/v2`). 25 calls ≈ $0.025.\n3. `STEREO` — Y7 SBS (Video). Outputs ONE side-by-side batch 7680x2160.\n4. `SPLIT` — two ImageCrop → eye L / eye R, 3840x2160.\n5. `OUTPUT` — three preview SaveVideos (SBS, L, R).\n\n## YOU DO TWO THINGS TO MAKE IT LIVE\n- Drag `TRIM · image` output → the fal depth node's image input, then drag the fal image output → `STEREO · depth_maps`.\n- Select the muted nodes and press Ctrl+M to unmute. Un-bypass the fal node (Ctrl+B) only when you accept the spend.\n\n## Honest limits (read before trusting any result)\n- **Not a replica of Kyle's comp.** His comp is a 3D mesh displace (Displace3D 0.346, Camera3D sep 0.064, conv/z 4.82, AoV 19.264) in Resolve/Fusion. Y7 `mesh_warping` is a different algorithm and its `depth_scale` is a unitless INT. Its numbers do NOT map to his. Calibrate by rendering several depth_scale values and measuring disparity against his L/R masters.\n- **Temporal median5 + atadenoise are not in this graph.** No verified Comfy node for them. Y7 `temporal_smoothing` is a different filter. Kyle's jitter figures (raw 4.13 → smoothed 0.90 levels) are the target to compare.\n- **Outputs here are previews, not filmout.** Core SaveVideo writes H.264 only. Filmout needs the ProRes / 16-bit path. Treat this arm as a comparison rig until a 16-bit/EXR writer is confirmed.\n- **Node packs:** needs `ComfyUI-Y7-SBS-2Dto3D` and `ComfyUI-fal-API` (README pins). Missing packs show red.\n- **fal node name is by convention** (`FalAPI_` + endpoint with slashes → dashes) and its socket names were NOT verified. If red, add the depth node by search instead."
+   },
+   "color": "#6b4a9e",
+   "bgcolor": "#4a3270"
+  },
+  {
+   "id": 234,
+   "type": "ImageFromBatch",
+   "pos": [
+    13250,
+    3720
+   ],
+   "size": [
+    400,
+    150
+   ],
+   "flags": {},
+   "order": 81,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 8
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      9,
+      18
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "ImageFromBatch"
+   },
+   "widgets_values": [
+    108,
+    25
+   ],
+   "title": "TRIM · 25-frame R&D window · frames 109-133 of 241 (centre f121 = evidence frame)",
+   "widgets_values_named": {
+    "batch_index": 108,
+    "length": 25
+   },
+   "color": "#6b4a9e",
+   "bgcolor": "#4a3270"
+  },
+  {
+   "id": 235,
+   "type": "FalAPI_fal-ai-image-preprocessors-depth-anything-v2",
+   "pos": [
+    13720,
+    3720
+   ],
+   "size": [
+    420,
+    260
+   ],
+   "flags": {},
+   "order": 82,
+   "mode": 4,
+   "inputs": [],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "FalAPI_fal-ai-image-preprocessors-depth-anything-v2"
+   },
+   "widgets_values": [],
+   "title": "DEPTH · fal depth-anything v2 · same endpoint as v03 · BYPASSED · wire image in/out by hand",
+   "color": "#6b4a9e",
+   "bgcolor": "#4a3270"
+  },
+  {
+   "id": 236,
+   "type": "MarkdownNote",
+   "pos": [
+    13720,
+    4040
+   ],
+   "size": [
+    520,
+    420
+   ],
+   "flags": {},
+   "order": 83,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "DEPTH — how to wire, what to check",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "**What it does here:** one depth map per frame (grey, brighter = nearer) so the stereo node can shift pixels.\n\n**Wire:** `TRIM · IMAGE` → this node's image input. This node's image output → `STEREO · depth_maps`.\n\n**Check before running:** (1) the node loaded (not red); (2) it accepts a whole image batch. If it only takes the first frame, it needs an iterate/batch wrapper. Unverified. (3) Output is 8-bit grey. Kyle's v03 depth was the same endpoint, then temporally filtered outside Comfy. Expect more frame-to-frame flicker until a smoothing step is added.\n\n**Local alternative** (free, no per-frame cost): `comfyui-depthanythingv2` is installed on Kyle's machine. Different model build, so results will not match v03 exactly."
+   ],
+   "widgets_values_named": {
+    "text": "**What it does here:** one depth map per frame (grey, brighter = nearer) so the stereo node can shift pixels.\n\n**Wire:** `TRIM · IMAGE` → this node's image input. This node's image output → `STEREO · depth_maps`.\n\n**Check before running:** (1) the node loaded (not red); (2) it accepts a whole image batch. If it only takes the first frame, it needs an iterate/batch wrapper. Unverified. (3) Output is 8-bit grey. Kyle's v03 depth was the same endpoint, then temporally filtered outside Comfy. Expect more frame-to-frame flicker until a smoothing step is added.\n\n**Local alternative** (free, no per-frame cost): `comfyui-depthanythingv2` is installed on Kyle's machine. Different model build, so results will not match v03 exactly."
+   },
+   "color": "#6b4a9e",
+   "bgcolor": "#4a3270"
+  },
+  {
+   "id": 237,
+   "type": "Y7_VideoSideBySide",
+   "pos": [
+    14210,
+    3720
+   ],
+   "size": [
+    430,
+    420
+   ],
+   "flags": {},
+   "order": 84,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "frames",
+     "type": "IMAGE",
+     "link": 9
+    },
+    {
+     "name": "depth_maps",
+     "type": "IMAGE",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      10,
+      12,
+      13
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "Y7_VideoSideBySide"
+   },
+   "widgets_values": [
+    "mesh_warping",
+    30,
+    "parallel",
+    "sbs",
+    7,
+    0.2,
+    8
+   ],
+   "title": "STEREO · Y7 SBS (Video) · mesh_warping · NOT calibrated to Kyle (comparison arm)",
+   "widgets_values_named": {
+    "method": "mesh_warping",
+    "depth_scale": 30,
+    "mode": "parallel",
+    "output_type": "sbs",
+    "depth_blur_strength": 7,
+    "temporal_smoothing": 0.2,
+    "batch_size": 8
+   },
+   "color": "#6b4a9e",
+   "bgcolor": "#4a3270"
+  },
+  {
+   "id": 246,
+   "type": "MarkdownNote",
+   "pos": [
+    14210,
+    4200
+   ],
+   "size": [
+    520,
+    360
+   ],
+   "flags": {},
+   "order": 85,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "STEREO — settings and what they mean here",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "**What it does:** shifts each pixel sideways by its depth to make a left and a right view, packed side by side (7680x2160 from a 3840x2160 source — same packing as Kyle's SBS).\n\n`depth_scale 30` is the node default, NOT a match for Kyle's displace 0.346. `mode parallel` = left view on the left (what you want for projection). `temporal_smoothing 0.2` and `depth_blur_strength 7` are defaults — both soften depth and may hide the f72→73 step Kyle flagged. `batch_size 8` keeps GPU memory down.\n\n**R&D loop:** render depth_scale 20 / 30 / 40, then compare disparity against `cgi-042-v03-eye-L/R-prores.mov`."
+   ],
+   "widgets_values_named": {
+    "text": "**What it does:** shifts each pixel sideways by its depth to make a left and a right view, packed side by side (7680x2160 from a 3840x2160 source — same packing as Kyle's SBS).\n\n`depth_scale 30` is the node default, NOT a match for Kyle's displace 0.346. `mode parallel` = left view on the left (what you want for projection). `temporal_smoothing 0.2` and `depth_blur_strength 7` are defaults — both soften depth and may hide the f72→73 step Kyle flagged. `batch_size 8` keeps GPU memory down.\n\n**R&D loop:** render depth_scale 20 / 30 / 40, then compare disparity against `cgi-042-v03-eye-L/R-prores.mov`."
+   },
+   "color": "#6b4a9e",
+   "bgcolor": "#4a3270"
+  },
+  {
+   "id": 238,
+   "type": "CreateVideo",
+   "pos": [
+    14700,
+    3720
+   ],
+   "size": [
+    300,
+    110
+   ],
+   "flags": {},
+   "order": 86,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 10
+    }
+   ],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": [
+      11
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CreateVideo"
+   },
+   "widgets_values": [
+    24
+   ],
+   "title": "OUTPUT 1 · CreateVideo · SBS 7680x2160 @ 24",
+   "widgets_values_named": {
+    "fps": 24
+   }
+  },
+  {
+   "id": 239,
+   "type": "SaveVideo",
+   "pos": [
+    14700,
+    3880
+   ],
+   "size": [
+    300,
+    130
+   ],
+   "flags": {},
+   "order": 87,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "link": 11
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "SaveVideo"
+   },
+   "widgets_values": [
+    "video/cgi-042-RD-stereo-SBS",
+    "auto",
+    "auto",
+    "auto"
+   ],
+   "title": "OUTPUT 1 · SaveVideo · SBS (codec auto — filmout path UNVERIFIED)",
+   "widgets_values_named": {
+    "filename_prefix": "video/cgi-042-RD-stereo-SBS",
+    "format": "auto",
+    "format.codec": "auto",
+    "codec": "auto"
+   }
+  },
+  {
+   "id": 240,
+   "type": "ImageCrop",
+   "pos": [
+    14700,
+    4100
+   ],
+   "size": [
+    300,
+    150
+   ],
+   "flags": {},
+   "order": 88,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 12
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      14
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "ImageCrop"
+   },
+   "widgets_values": [
+    3840,
+    2160,
+    0,
+    0
+   ],
+   "title": "SPLIT · eye L · crop x=0 · 3840x2160",
+   "widgets_values_named": {
+    "width": 3840,
+    "height": 2160,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "id": 241,
+   "type": "CreateVideo",
+   "pos": [
+    15070,
+    4100
+   ],
+   "size": [
+    300,
+    110
+   ],
+   "flags": {},
+   "order": 89,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 14
+    }
+   ],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": [
+      15
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CreateVideo"
+   },
+   "widgets_values": [
+    24
+   ],
+   "title": "OUTPUT 2 · CreateVideo · eye L @ 24",
+   "widgets_values_named": {
+    "fps": 24
+   }
+  },
+  {
+   "id": 242,
+   "type": "SaveVideo",
+   "pos": [
+    15410,
+    4100
+   ],
+   "size": [
+    300,
+    130
+   ],
+   "flags": {},
+   "order": 90,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "link": 15
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "SaveVideo"
+   },
+   "widgets_values": [
+    "video/cgi-042-RD-stereo-eyeL",
+    "auto",
+    "auto",
+    "auto"
+   ],
+   "title": "OUTPUT 2 · SaveVideo · eye L preview",
+   "widgets_values_named": {
+    "filename_prefix": "video/cgi-042-RD-stereo-eyeL",
+    "format": "auto",
+    "format.codec": "auto",
+    "codec": "auto"
+   }
+  },
+  {
+   "id": 243,
+   "type": "ImageCrop",
+   "pos": [
+    14700,
+    4330
+   ],
+   "size": [
+    300,
+    150
+   ],
+   "flags": {},
+   "order": 91,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 13
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      16
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "ImageCrop"
+   },
+   "widgets_values": [
+    3840,
+    2160,
+    3840,
+    0
+   ],
+   "title": "SPLIT · eye R · crop x=3840 · 3840x2160",
+   "widgets_values_named": {
+    "width": 3840,
+    "height": 2160,
+    "x": 3840,
+    "y": 0
+   }
+  },
+  {
+   "id": 244,
+   "type": "CreateVideo",
+   "pos": [
+    15070,
+    4330
+   ],
+   "size": [
+    300,
+    110
+   ],
+   "flags": {},
+   "order": 92,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 16
+    }
+   ],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": [
+      17
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CreateVideo"
+   },
+   "widgets_values": [
+    24
+   ],
+   "title": "OUTPUT 3 · CreateVideo · eye R @ 24",
+   "widgets_values_named": {
+    "fps": 24
+   }
+  },
+  {
+   "id": 245,
+   "type": "SaveVideo",
+   "pos": [
+    15410,
+    4330
+   ],
+   "size": [
+    300,
+    130
+   ],
+   "flags": {},
+   "order": 93,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "link": 17
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "SaveVideo"
+   },
+   "widgets_values": [
+    "video/cgi-042-RD-stereo-eyeR",
+    "auto",
+    "auto",
+    "auto"
+   ],
+   "title": "OUTPUT 3 · SaveVideo · eye R preview",
+   "widgets_values_named": {
+    "filename_prefix": "video/cgi-042-RD-stereo-eyeR",
+    "format": "auto",
+    "format.codec": "auto",
+    "codec": "auto"
+   }
+  },
+  {
+   "id": 247,
+   "type": "MarkdownNote",
+   "pos": [
+    14050,
+    2760
+   ],
+   "size": [
+    760,
+    900
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "G · CHANGE REPORT — V3b (contract §17)",
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "# G · CHANGE REPORT — V3c (contract §17)\n\n**VERSION:** V3c, from V3b. V3b, V3 and V2 files are untouched (§18).\n\n**CHANGED (V3c vs V3b):** + 2 EVIDENCE SaveImage nodes (248 raw decoded frames, 249 depth frames; both muted); + link 18 (TRIM → 248); READ FIRST note: 'two hand-wires' block replaced by a bisect-run block; this note updated.\n**CHANGED (V3b vs V3, carried):** READ FIRST wording (conversion framing; 'not filmout' → 'unverified'); group G title; OUTPUT 1 SaveVideo title.\n\n**UNCHANGED:** every V3 node, link and widget value; modes (new chain MUTED, fal BYPASSED); HANDOFF; groups A–F.\n\n**NEW ASSUMPTIONS (carried from V3, NOT yet approved):**\n- Stereo arm = Y7 `mesh_warping`. It is not Kyle's method and it is not ComfyStereo (named in the stereo conversion notes). Not evaluated against either.\n- Depth = fal depth-anything v2, same endpoint as v03.\n- R&D window = frames 109-133 of 241.\n- Packing = SBS 7680x2160, split to two 3840x2160 eyes.\n\n**NEW PARAMETERS:** Y7 depth_scale 30, mode parallel, temporal_smoothing 0.2, depth_blur_strength 7, batch_size 8 (node defaults, not matched to Kyle's).\n\n**REMOVED PARAMETERS:** none.\n**CUSTOM NODE CODE CHANGED:** none.\n**FILES WRITTEN:** none by building. Bisect run writes PNGs to output/cgi-042-RD-evidence/ (tensor_*, depth_*) — 25 raw 4K frames (~300 MB) + 25 depth maps. Full stereo run would also write video/cgi-042-RD-stereo-SBS / -eyeL / -eyeR.\n\n**EXECUTION STATUS:** BUILT - NOT RUN.\n**VALIDATION:** CODE VALIDATED (JSON valid, link table consistent) — structure only. GRAPH LOADABLE: not tested in ComfyUI. EXECUTION TESTED: no.\n**HUMAN QC STATUS:** none.\n\n**KNOWN ISSUES:**\n- fal input and output are unwired by design (hand-wires listed in READ FIRST); fal → STEREO `depth_maps` only needed for the full stereo run.\n- fal node stores no sockets; it may show red until the pack is installed. Socket names unverified.\n- No temporal median5 / atadenoise equivalent.\n- Filmout path (ProRes / 16-bit / EXR writer) unverified; SaveVideo codec options unverified.\n- §7 gate: this is an added R&D comparison arm, not a change to the agreed method. Choosing Y7 (or any stereo node) as THE method needs approval first.\n- Scope: cgi-042 is outside Brynley's assigned 17 shots. Built on request.\n- Open question under test: whether any perspective 'sliding' comes from the decoded frames, the depth maps, or is already in the v03 source (an executed run on 2026-10-07 passed v03 through with ZERO pixel difference, via LoadVideo→SaveVideo; the tensor and fal were not involved).\n"
+   ],
+   "color": "#6b4a9e",
+   "bgcolor": "#4a3270"
+  },
+  {
+   "id": 248,
+   "type": "SaveImage",
+   "pos": [
+    13250,
+    3900
+   ],
+   "size": [
+    400,
+    270
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 18
+    }
+   ],
+   "outputs": [],
+   "title": "EVIDENCE 1 · SaveImage · RAW decoded frames 109-133 (after TRIM, before depth) · PNG",
+   "properties": {
+    "Node name for S&R": "SaveImage"
+   },
+   "widgets_values": [
+    "cgi-042-RD-evidence/tensor"
+   ],
+   "color": "#6b4a9e",
+   "bgcolor": "#4a3270"
+  },
+  {
+   "id": 249,
+   "type": "SaveImage",
+   "pos": [
+    13250,
+    4200
+   ],
+   "size": [
+    400,
+    270
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": null
+    }
+   ],
+   "outputs": [],
+   "title": "EVIDENCE 2 · SaveImage · fal DEPTH frames 109-133 · PNG · hand-wire fal output here",
+   "properties": {
+    "Node name for S&R": "SaveImage"
+   },
+   "widgets_values": [
+    "cgi-042-RD-evidence/depth"
+   ],
+   "color": "#6b4a9e",
+   "bgcolor": "#4a3270"
+  },
+  {
+   "id": 250,
+   "type": "MarkdownNote",
+   "pos": [
+    16150,
+    2760
+   ],
+   "size": [
+    900,
+    520
+   ],
+   "flags": {},
+   "order": 250,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "# H · BINC STEREO ARM — same frames as G, our own nodes\n\n**Purpose.** Run the v03 *stages* (depth → temporal filter → stereo) with the in-house package `ComfyUI-BincStereo` v0.2.0\n(installed 2026-10-10 at `custom_nodes/ComfyUI-BincStereo/`, pure torch, no extra packs). Branches from the **PASSTHROUGH** (`LoadVideo APPROVED v03` → `GetVideoComponents`) through its own `TRIM-H` —\nnot from G. Same window (109-133) so G (Y7) and H (Binc) still get pixel-identical frames; H does not depend on any G node.\nNothing in G or the HANDOFF is rewired.\n\n**Status: BUILT - NOT RUN.** Whole arm MUTED (grey). No provider node — nothing can spend. DA2 runs locally.\n\n**Board rule (V4b, Brynley 2026-10-10):** everything upstream of the last approved output is MUTED. The only live spine is the\npassthrough `195 → 187 / 232`. Anything added from here on branches from the passthrough, never from the historical chain.\n\n## What H has that G's notes list as missing\n- **Temporal median-5 + no-lag EMA** in-graph (`Binc · Depth Temporal Filter`) — replaces Kyle's median5 + atadenoise step.\n  Emits raw-vs-filtered jitter (mean / p99, 8-bit levels) in the SAME units as his figures (raw 4.13 → 0.90).\n- **Depth locally, no per-frame cost** (`Binc · Depth Anything V2` via transformers; HF folder in `models/depth_anything/`).\n  Different build from fal's endpoint → will NOT match v03 pixel-for-pixel. To test against the fal maps instead,\n  hand-wire fal `image` (G) → `STEREO · depth` here; the stereo node accepts either.\n- **Parameters in physical units**: parallax budget as % of frame width (far 0.25 % = Kyle's 22 m child-eye ceiling,\n  near 1.0 %), constant convergence, silhouette hull px. Numbers in the `report` are directly comparable to disparity\n  measured off `cgi-042-v03-eye-L/R-prores.mov`.\n- Left-first SBS from the node (no ImageCrop split needed; `left`/`right` are separate outputs).\n\n## Run (after the DA2 weights are in place)\n1. Put `Depth-Anything-V2-Large-hf/` (config.json + model.safetensors) in `ComfyUI/models/depth_anything/`; pick it in DEPTH.\n2. Unmute (Ctrl+M) every node in H (incl. `TRIM-H`). Nothing in G needs touching. Queue once.\n3. Read `JITTER` first (target: filtered ≤ ~0.9 mean), then `PARALLAX REPORT` (`summary.ok` must be true), then the\n   anaglyph + `depth_hull` evidence PNGs. Near objects must read DARK in `parallax_vis`; if not, flip `depth_polarity`.\n\n## Honest limits\n- Package tests pass headless on synthetic plates; **not yet executed inside this ComfyUI build**. First real run is this one.\n- DA2 at 4K: `max_side` 1036 is a memory default, not a quality choice. Kyle's fal run was native-res. Push it and measure.\n- Filmout path still UNVERIFIED (same `SaveVideo` auto codec as G). Evidence PNGs are 8-bit `SaveImage`.\n- H is a comparison arm. Choosing it as THE method needs approval first (§7), same as Y7."
+   ],
+   "title": "H · BINC STEREO ARM — READ FIRST (in-house package, what it replaces, what is NOT verified)",
+   "color": "#1f4e79",
+   "bgcolor": "#173b5c"
+  },
+  {
+   "id": 251,
+   "type": "MarkdownNote",
+   "pos": [
+    17100,
+    2760
+   ],
+   "size": [
+    760,
+    520
+   ],
+   "flags": {},
+   "order": 251,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "# H · CHANGE REPORT — V4b (contract §17)\n\n**VERSION:** V4b, from V4. V4, V3c, V3b, V3, V2 files are untouched (§18).\n\n**CHANGED (V4b vs V4):**\n- **Muting rule applied:** every executable node upstream of the last approved output (groups 00, A–F) set MUTED (mode 2): 46 nodes\n  (7, 8, 38, 42, 54, 57, 162, 163, 164, 165, 166, 168, 172, 173, 176, 178, 180, 182, 183, 184, 193, 198, 199, 200, 201, 204, 205, 206, 209, 210, 211, 212, 213, 214, 217, 218, 219, 220, 221, 222, 225, 226, 227, 228, 229, 230). Provider nodes already BYPASSED stay BYPASSED. Notes untouched.\n- **Passthrough stays live:** 195 `LoadVideo APPROVED v03` → 187 `GetVideoComponents` → 232 `SaveVideo` unchanged (mode 0).\n- **H re-sourced:** links 19 and 22 (G `TRIM` 234 → H) REMOVED; G's TRIM output links back to V3c state [9, 18].\n  + node 268 `TRIM-H` (ImageFromBatch 108/25, muted) fed by link 35 from 187; links 36, 37 feed DEPTH and STEREO `image`.\n- READ FIRST note in H updated (passthrough rule, run steps); this note.\n\n**CHANGED (V4 vs V3c, carried):** + group H, nodes 250–267, links 20–21, 23–34 (links 19/22 now removed).\n\n**UNCHANGED:** every node position, widget value and link in groups A–G and HANDOFF other than the mode flags listed above. G itself untouched.\n\n**NEW ASSUMPTIONS:** as V4 (local DA2, Binc DIBR, 25-frame window). **NEW PARAMETERS:** as V4. **REMOVED PARAMETERS:** none.\n**CUSTOM NODE CODE CHANGED:** none.\n**FILES WRITTEN:** none by building.\n\n**EXECUTION STATUS:** BUILT - NOT RUN.\n**VALIDATION:** CODE VALIDATED (JSON valid, link table consistent both ways, H has no edge to any node outside the passthrough). GRAPH LOADABLE: not tested. EXECUTION TESTED: no.\n**HUMAN QC STATUS:** none.\n\n**KNOWN ISSUES:** as V4 (DA2 weights not yet in models/depth_anything/; polarity + convergence to be checked on first run; filmout path unverified)."
+   ],
+   "title": "H · CHANGE REPORT — V4b (contract §17)",
+   "color": "#1f4e79",
+   "bgcolor": "#173b5c"
+  },
+  {
+   "id": 252,
+   "type": "BincDepthAnythingV2",
+   "pos": [
+    16150,
+    3340
+   ],
+   "size": [
+    400,
+    300
+   ],
+   "flags": {},
+   "order": 252,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 36
+    }
+   ],
+   "outputs": [
+    {
+     "name": "depth",
+     "type": "IMAGE",
+     "links": [
+      20
+     ]
+    },
+    {
+     "name": "depth_mask",
+     "type": "MASK",
+     "links": []
+    },
+    {
+     "name": "info",
+     "type": "STRING",
+     "links": []
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "BincDepthAnythingV2"
+   },
+   "widgets_values": [
+    "Depth-Anything-V2-Large-hf",
+    "",
+    "default",
+    1036,
+    1,
+    "sequence_percentile",
+    0.5,
+    99.5
+   ],
+   "title": "DEPTH · Binc Depth Anything V2 · local · sequence-normalised",
+   "color": "#1f4e79",
+   "bgcolor": "#173b5c"
+  },
+  {
+   "id": 253,
+   "type": "BincDepthTemporalFilter",
+   "pos": [
+    16600,
+    3340
+   ],
+   "size": [
+    360,
+    150
+   ],
+   "flags": {},
+   "order": 253,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "depth",
+     "type": "IMAGE",
+     "link": 20
+    }
+   ],
+   "outputs": [
+    {
+     "name": "depth",
+     "type": "IMAGE",
+     "links": [
+      21,
+      25
+     ]
+    },
+    {
+     "name": "depth_mask",
+     "type": "MASK",
+     "links": []
+    },
+    {
+     "name": "jitter_report",
+     "type": "STRING",
+     "links": [
+      23
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "BincDepthTemporalFilter"
+   },
+   "widgets_values": [
+    5,
+    0.3,
+    0.08
+   ],
+   "title": "TEMPORAL · median-5 + no-lag EMA (= Kyle's median5 + atadenoise)",
+   "color": "#1f4e79",
+   "bgcolor": "#173b5c"
+  },
+  {
+   "id": 254,
+   "type": "BincStereoFromDepth",
+   "pos": [
+    17010,
+    3340
+   ],
+   "size": [
+    430,
+    520
+   ],
+   "flags": {},
+   "order": 254,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 37
+    },
+    {
+     "name": "depth",
+     "type": "IMAGE",
+     "link": 21
+    },
+    {
+     "name": "depth_mask",
+     "type": "MASK",
+     "link": null
+    },
+    {
+     "name": "left_fill",
+     "type": "IMAGE",
+     "link": null
+    },
+    {
+     "name": "right_fill",
+     "type": "IMAGE",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "left",
+     "type": "IMAGE",
+     "links": [
+      31
+     ]
+    },
+    {
+     "name": "right",
+     "type": "IMAGE",
+     "links": [
+      33
+     ]
+    },
+    {
+     "name": "sbs",
+     "type": "IMAGE",
+     "links": [
+      29
+     ]
+    },
+    {
+     "name": "anaglyph",
+     "type": "IMAGE",
+     "links": [
+      27
+     ]
+    },
+    {
+     "name": "parallax_vis",
+     "type": "IMAGE",
+     "links": [
+      28
+     ]
+    },
+    {
+     "name": "holes",
+     "type": "MASK",
+     "links": []
+    },
+    {
+     "name": "depth_hull",
+     "type": "IMAGE",
+     "links": [
+      26
+     ]
+    },
+    {
+     "name": "report",
+     "type": "STRING",
+     "links": [
+      24
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "BincStereoFromDepth"
+   },
+   "widgets_values": [
+    "near_is_bright",
+    0.35,
+    1.0,
+    0.25,
+    1.0,
+    "symmetric",
+    1,
+    2,
+    0.04,
+    "background_pushpull",
+    0.06,
+    1,
+    2,
+    "sbs_full"
+   ],
+   "title": "STEREO · Binc Stereo from Depth · far 0.25 % / near 1.0 % · conv 0.35 · hull 1 px",
+   "color": "#1f4e79",
+   "bgcolor": "#173b5c"
+  },
+  {
+   "id": 255,
+   "type": "PreviewAny",
+   "pos": [
+    16600,
+    3540
+   ],
+   "size": [
+    360,
+    160
+   ],
+   "flags": {},
+   "order": 255,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "source",
+     "type": "*",
+     "link": 23
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "PreviewAny"
+   },
+   "widgets_values": [],
+   "title": "JITTER · raw vs filtered (8-bit levels) — compare to Kyle 4.13 → 0.90"
+  },
+  {
+   "id": 256,
+   "type": "PreviewAny",
+   "pos": [
+    17490,
+    3340
+   ],
+   "size": [
+    420,
+    420
+   ],
+   "flags": {},
+   "order": 256,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "source",
+     "type": "*",
+     "link": 24
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "PreviewAny"
+   },
+   "widgets_values": [],
+   "title": "PARALLAX REPORT · per-frame % of width · budget flags · params (→ ledger)"
+  },
+  {
+   "id": 257,
+   "type": "SaveImage",
+   "pos": [
+    16150,
+    3700
+   ],
+   "size": [
+    300,
+    120
+   ],
+   "flags": {},
+   "order": 257,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 25
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "SaveImage"
+   },
+   "widgets_values": [
+    "cgi-042-RD-binc/depth"
+   ],
+   "title": "EVIDENCE 3 · filtered depth 109-133 · PNG"
+  },
+  {
+   "id": 258,
+   "type": "SaveImage",
+   "pos": [
+    16600,
+    3750
+   ],
+   "size": [
+    300,
+    120
+   ],
+   "flags": {},
+   "order": 258,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 26
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "SaveImage"
+   },
+   "widgets_values": [
+    "cgi-042-RD-binc/depth_hull"
+   ],
+   "title": "EVIDENCE 4 · depth_hull (what the warp used)"
+  },
+  {
+   "id": 259,
+   "type": "SaveImage",
+   "pos": [
+    17010,
+    3910
+   ],
+   "size": [
+    300,
+    120
+   ],
+   "flags": {},
+   "order": 259,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 27
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "SaveImage"
+   },
+   "widgets_values": [
+    "cgi-042-RD-binc/anaglyph"
+   ],
+   "title": "EVIDENCE 5 · anaglyph QC"
+  },
+  {
+   "id": 260,
+   "type": "SaveImage",
+   "pos": [
+    17350,
+    3910
+   ],
+   "size": [
+    300,
+    120
+   ],
+   "flags": {},
+   "order": 260,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 28
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "SaveImage"
+   },
+   "widgets_values": [
+    "cgi-042-RD-binc/parallax_vis"
+   ],
+   "title": "EVIDENCE 6 · parallax_vis (near = dark)"
+  },
+  {
+   "id": 261,
+   "type": "CreateVideo",
+   "pos": [
+    17950,
+    3340
+   ],
+   "size": [
+    260,
+    80
+   ],
+   "flags": {},
+   "order": 261,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 29
+    }
+   ],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": [
+      30
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CreateVideo"
+   },
+   "widgets_values": [
+    24
+   ],
+   "title": "OUTPUT 4 · CreateVideo · SBS 7680x2160 @ 24"
+  },
+  {
+   "id": 262,
+   "type": "SaveVideo",
+   "pos": [
+    18250,
+    3340
+   ],
+   "size": [
+    320,
+    150
+   ],
+   "flags": {},
+   "order": 262,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "link": 30
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "SaveVideo"
+   },
+   "widgets_values": [
+    "video/cgi-042-RD-binc-SBS",
+    "auto",
+    "auto",
+    "auto"
+   ],
+   "title": "OUTPUT 4 · SaveVideo · SBS left-first (codec auto — filmout UNVERIFIED)"
+  },
+  {
+   "id": 263,
+   "type": "CreateVideo",
+   "pos": [
+    17950,
+    3540
+   ],
+   "size": [
+    260,
+    80
+   ],
+   "flags": {},
+   "order": 263,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 31
+    }
+   ],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": [
+      32
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CreateVideo"
+   },
+   "widgets_values": [
+    24
+   ],
+   "title": "OUTPUT 5 · CreateVideo · eye L @ 24"
+  },
+  {
+   "id": 264,
+   "type": "SaveVideo",
+   "pos": [
+    18250,
+    3540
+   ],
+   "size": [
+    320,
+    150
+   ],
+   "flags": {},
+   "order": 264,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "link": 32
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "SaveVideo"
+   },
+   "widgets_values": [
+    "video/cgi-042-RD-binc-eyeL",
+    "auto",
+    "auto",
+    "auto"
+   ],
+   "title": "OUTPUT 5 · SaveVideo · eye L preview"
+  },
+  {
+   "id": 265,
+   "type": "CreateVideo",
+   "pos": [
+    17950,
+    3740
+   ],
+   "size": [
+    260,
+    80
+   ],
+   "flags": {},
+   "order": 265,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 33
+    }
+   ],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": [
+      34
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CreateVideo"
+   },
+   "widgets_values": [
+    24
+   ],
+   "title": "OUTPUT 6 · CreateVideo · eye R @ 24"
+  },
+  {
+   "id": 266,
+   "type": "SaveVideo",
+   "pos": [
+    18250,
+    3740
+   ],
+   "size": [
+    320,
+    150
+   ],
+   "flags": {},
+   "order": 266,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "link": 34
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "SaveVideo"
+   },
+   "widgets_values": [
+    "video/cgi-042-RD-binc-eyeR",
+    "auto",
+    "auto",
+    "auto"
+   ],
+   "title": "OUTPUT 6 · SaveVideo · eye R preview"
+  },
+  {
+   "id": 267,
+   "type": "MarkdownNote",
+   "pos": [
+    17490,
+    3800
+   ],
+   "size": [
+    420,
+    260
+   ],
+   "flags": {},
+   "order": 267,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "**Units are physical.** `far_parallax_pct 0.25` = max parallax BEHIND screen as % of frame width = 9.6 px at 3840 — Kyle's 22 m child-eye ceiling.\n`near_parallax_pct 1.0` = 38.4 px max in front. `convergence 0.35` = the depth value (0–1) on the screen plane; constant for the shot.\n`hull_px 1` = cyclopean silhouette hull: near depth dilated 1 px so fringe pixels ride with the foreground; `depth_hull` shows the result.\n`background_pushpull` = disocclusion paint-in seeded from background pixels only.\n\n**R&D loop:** read `report.summary.worst_pct`; measure disparity on Kyle's L/R masters at the same frames; adjust `convergence` / budgets until the ranges agree, then judge edges on the anaglyph at f121 and f72–76 (G's bisect window can be moved)."
+   ],
+   "title": "STEREO — settings and what they mean here"
+  },
+  {
+   "id": 268,
+   "type": "ImageFromBatch",
+   "pos": [
+    16100,
+    3220
+   ],
+   "size": [
+    400,
+    80
+   ],
+   "flags": {},
+   "order": 268,
+   "mode": 2,
+   "inputs": [
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 35
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      36,
+      37
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "ImageFromBatch"
+   },
+   "widgets_values": [
+    108,
+    25
+   ],
+   "title": "TRIM-H · from PASSTHROUGH · frames 109-133 (set 0 / 241 for the full take)",
+   "color": "#1f4e79",
+   "bgcolor": "#173b5c"
+  }
+ ],
+ "links": [
+  [
+   1,
+   8,
+   0,
+   54,
+   0,
+   "IMAGE"
+  ],
+  [
+   2,
+   7,
+   0,
+   38,
+   0,
+   "IMAGE"
+  ],
+  [
+   3,
+   172,
+   0,
+   58,
+   0,
+   "STRING"
+  ],
+  [
+   4,
+   57,
+   0,
+   58,
+   1,
+   "IMAGE"
+  ],
+  [
+   5,
+   42,
+   0,
+   58,
+   3,
+   "IMAGE"
+  ],
+  [
+   6,
+   195,
+   0,
+   187,
+   0,
+   "VIDEO"
+  ],
+  [
+   7,
+   195,
+   0,
+   232,
+   0,
+   "VIDEO"
+  ],
+  [
+   8,
+   187,
+   0,
+   234,
+   0,
+   "IMAGE"
+  ],
+  [
+   9,
+   234,
+   0,
+   237,
+   0,
+   "IMAGE"
+  ],
+  [
+   10,
+   237,
+   0,
+   238,
+   0,
+   "IMAGE"
+  ],
+  [
+   11,
+   238,
+   0,
+   239,
+   0,
+   "VIDEO"
+  ],
+  [
+   12,
+   237,
+   0,
+   240,
+   0,
+   "IMAGE"
+  ],
+  [
+   13,
+   237,
+   0,
+   243,
+   0,
+   "IMAGE"
+  ],
+  [
+   14,
+   240,
+   0,
+   241,
+   0,
+   "IMAGE"
+  ],
+  [
+   15,
+   241,
+   0,
+   242,
+   0,
+   "VIDEO"
+  ],
+  [
+   16,
+   243,
+   0,
+   244,
+   0,
+   "IMAGE"
+  ],
+  [
+   17,
+   244,
+   0,
+   245,
+   0,
+   "VIDEO"
+  ],
+  [
+   18,
+   234,
+   0,
+   248,
+   0,
+   "IMAGE"
+  ],
+  [
+   20,
+   252,
+   0,
+   253,
+   0,
+   "IMAGE"
+  ],
+  [
+   21,
+   253,
+   0,
+   254,
+   1,
+   "IMAGE"
+  ],
+  [
+   23,
+   253,
+   2,
+   255,
+   0,
+   "*"
+  ],
+  [
+   24,
+   254,
+   7,
+   256,
+   0,
+   "*"
+  ],
+  [
+   25,
+   253,
+   0,
+   257,
+   0,
+   "IMAGE"
+  ],
+  [
+   26,
+   254,
+   6,
+   258,
+   0,
+   "IMAGE"
+  ],
+  [
+   27,
+   254,
+   3,
+   259,
+   0,
+   "IMAGE"
+  ],
+  [
+   28,
+   254,
+   4,
+   260,
+   0,
+   "IMAGE"
+  ],
+  [
+   29,
+   254,
+   2,
+   261,
+   0,
+   "IMAGE"
+  ],
+  [
+   30,
+   261,
+   0,
+   262,
+   0,
+   "VIDEO"
+  ],
+  [
+   31,
+   254,
+   0,
+   263,
+   0,
+   "IMAGE"
+  ],
+  [
+   32,
+   263,
+   0,
+   264,
+   0,
+   "VIDEO"
+  ],
+  [
+   33,
+   254,
+   1,
+   265,
+   0,
+   "IMAGE"
+  ],
+  [
+   34,
+   265,
+   0,
+   266,
+   0,
+   "VIDEO"
+  ],
+  [
+   35,
+   187,
+   0,
+   268,
+   0,
+   "IMAGE"
+  ],
+  [
+   36,
+   268,
+   0,
+   252,
+   0,
+   "IMAGE"
+  ],
+  [
+   37,
+   268,
+   0,
+   254,
+   0,
+   "IMAGE"
+  ]
+ ],
+ "groups": [
+  {
+   "id": 1,
+   "title": "00 · READ FIRST — cgi-042 · 4K FINAL + STEREO · BUILT - NOT RUN",
+   "bounding": [
+    -20,
+    -60,
+    2840,
+    500
+   ],
+   "color": "#444444",
+   "flags": {}
+  },
+  {
+   "id": 2,
+   "title": "A · v06 PLATES — Runway seedream-5-pro · Fire A 7db62388 (END) · Fire B fa60561c (START)",
+   "bounding": [
+    -20,
+    1361.851851851852,
+    2371.725,
+    2680
+   ],
+   "color": "#3f789e",
+   "flags": {}
+  },
+  {
+   "id": 3,
+   "title": "B · 4K CANVAS — ImageScale lanczos 3840x2160 · AS EXECUTED (read from the landed PNGs)",
+   "bounding": [
+    2968.0126953125,
+    800,
+    1483.7169921875002,
+    1610
+   ],
+   "color": "#8a4b12",
+   "flags": {}
+  },
+  {
+   "id": 4,
+   "title": "C · v02 TAKE — fal seedance-2.0 i2v · 4k · 10s · 16:9 · PRIOR / SUPERSEDED by E (v03)",
+   "bounding": [
+    4511.7296875,
+    800,
+    2262.8873046874996,
+    1121.58291015625
+   ],
+   "color": "#7a1f1f",
+   "flags": {}
+  },
+  {
+   "id": 5,
+   "title": "D · STEREO — v02 set shown = PRIOR / SUPERSEDED (A-B evidence) — v03 re-run landed in group E",
+   "bounding": [
+    6834.6169921875,
+    640,
+    3118.5914062500005,
+    1653.0986572265624
+   ],
+   "color": "#7a1f1f",
+   "flags": {}
+  },
+  {
+   "id": 6,
+   "title": "HANDOFF · cgi-042 · approved output(s) → Brynley's colour / depth / stereo",
+   "bounding": [
+    9925.096289062498,
+    2620,
+    3156.3326171874996,
+    2400.142857142857
+   ],
+   "color": "#2d6a3e",
+   "flags": {}
+  },
+  {
+   "id": 7,
+   "title": "E · v03 REPAIR + RE-FIRE + STEREO — char-4K refs → END-plate repair → Runway seedance-2 → FINAL v03 → depth+mesh stereo → spatial",
+   "bounding": [
+    2968.0126953125,
+    2620,
+    4337.153320312499,
+    2161.580920410156
+   ],
+   "color": "#3f789e",
+   "flags": {}
+  },
+  {
+   "id": 8,
+   "title": "F · REFS PROVENANCE — char sheets: film-frame crops → gpt-image-2 edits → v04 → 4K refires",
+   "bounding": [
+    2740,
+    4841.580920410156,
+    5420,
+    2334
+   ],
+   "color": "#3b5a7a",
+   "flags": {}
+  },
+  {
+   "id": 9,
+   "title": "G · R&D STEREO — rebuild v03 recipe in Comfy · MUTED · fal BYPASSED · BUILT - NOT RUN · filmout path unverified",
+   "bounding": [
+    13200,
+    2620,
+    2840,
+    2000
+   ],
+   "color": "#6b4a9e",
+   "flags": {}
+  },
+  {
+   "id": 10,
+   "title": "H · BINC STEREO ARM — in-house ComfyUI-BincStereo v0.2.0 · from PASSTHROUGH via TRIM-H · DA2 local → median5+EMA → hull/DIBR → SBS + eyes · MUTED · BUILT - NOT RUN",
+   "bounding": [
+    16060,
+    2620,
+    2560,
+    1480
+   ],
+   "color": "#3f789e",
+   "font_size": 24,
+   "flags": {}
+  }
+ ],
+ "config": {},
+ "extra": {
+  "ds": {
+   "scale": 0.1,
+   "offset": [
+    -1248.8392338595904,
+    524.0516730414502
+   ]
+  },
+  "bh": {
+   "shot": "cgi-042",
+   "status": "BUILT - NOT RUN · every provider node BYPASSED · handover board (docs/COMFY_OUTPUTS_AND_PACKAGING.md)",
+   "revision_of": "cgi-042-common-nodes-v10-delivery-20261001.json (v10 kept; Astra REVISE -> v11 wire corridors + prose-note wrap)",
+   "final": {
+    "mono": "films/panama-canal-v2/shots/cgi-042/05-outputs/Approved/cgi-042-pullback-4k-v03.mp4",
+    "stereo": [
+     "films/panama-canal-v2/shots/cgi-042/05-outputs/Approved/stereoscopic/cgi-042-v03-eye-L-prores.mov",
+     "films/panama-canal-v2/shots/cgi-042/05-outputs/Approved/stereoscopic/cgi-042-v03-eye-R-prores.mov"
+    ]
+   },
+   "chain_fires": {
+    "fire_A_runway": "7db62388-2738-4621-b8c9-80191c8c008f",
+    "fire_B_runway": "fa60561c-2146-47d5-b219-50b457cbc936",
+    "v02_comfy_prompt": "e7f569e1-e465-4ded-b2d4-061bb61f54c3",
+    "depth": "241 x fal depth-anything/v2 (depth-seq/cgi-042/*)",
+    "plate_face_repair": "gpt-image-2.5-flare req_a2a59e042aaa4470960d8319acb002e7",
+    "v03_take_runway": "968845c8-6749-4f45-a59d-2e06ddb2ca32"
+   },
+   "record_corrections": [
+    "START-4k-v01 == lanczos(START v07): not a gpt-image generation (re-fire bypassed)",
+    "END-4k-v02-roughwater == END-4k-v01-calm == lanczos(END v06): rough-water edit never applied (bypassed)",
+    "END-4k-v03-facerepair: v02-roughwater plate + masked face repair — 3 smeared faces rebuilt to char-a/b/c refsheets (v02 tail defect)",
+    "v03 fired via Runway-hosted seedance-2: fal bytedance/seedance-2.0 422 content_policy on the same START plate that passed 2026-09-29 (validator drift)"
+   ],
+   "visual_qa": "PASS",
+   "delivery_revision_of": "cgi-042-v03-core.json",
+   "delivery_for": "Brynley",
+   "delivery_built": "2026-09-30",
+   "delivery_changes": {
+    "bypassed_provider_nodes": 0,
+    "dropped_groups": [],
+    "dropped_nodes": 0,
+    "save_prefix_remap": {},
+    "handoffs": [
+     {
+      "approved_loader": "FINAL · APPROVED · cgi-042 v02 · 3840x2160 HEVC 10-bit · 241 f @ 24 · 05-outputs/Approved",
+      "file": "panama-approved-c5285c88625e465c-cgi-042-pullback-4k-v02.mp4",
+      "probe": {
+       "codec_name": "hevc",
+       "width": 3840,
+       "height": 2160,
+       "pix_fmt": "yuv420p10le",
+       "color_range": "tv",
+       "color_space": "bt709",
+       "color_transfer": "bt709",
+       "color_primaries": "bt709",
+       "r_frame_rate": "24/1",
+       "nb_frames": "241"
+      }
+     }
+    ]
+   },
+   "inputs_manifest": "films/panama-canal-v2/shots/cgi-042/03-scripts/comfyui/cgi-042-common-nodes-v05-delivery-20260930-inputs-manifest.json",
+   "delivery_board": "cgi-042-common-nodes-v05-delivery-20260930.json",
+   "conformed_from": "cgi-042-common-nodes-v04-delivery-20260930.json",
+   "conformed": "20260930",
+   "visual_qa_note": "PASS — Desktop screenshots + GPT-6 Astra review 2026-10-01 (continuation eb1cc134/3d152f58); QA dir comfy-desktop-qa-v11-20261001",
+   "stereo_rd": "group G added 2026-10-07 by Claude for Brynley; V2 untouched; chain muted"
+  },
+  "frontendVersion": "1.53.10"
+ },
+ "version": 0.4
+}

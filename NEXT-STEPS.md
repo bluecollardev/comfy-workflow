@@ -16,7 +16,7 @@ it has 393 shot graphs plus a few saved workflows.
 | the `*_api.json` twins beside them | 127 | API |
 | `projects/desktop/CANALV2/80_TEST-BUCKET/*/` | 21 | API |
 | `projects/desktop/CANALV2/04_TRACKER/queue/in/v20_graphs_2026-10-17/*.zip` | 22 | API |
-| `apps/comfy-app/ComfyUI/user/default/workflows/` | 9 | UI canvas |
+| `apps/comfy-app/workflows/` | 9 | UI canvas |
 
 The highest `_v###` in each shot's `04_GRAPH/` is the current graph. Only the
 current graph per shot needs importing; older versions stay where they are.
@@ -30,8 +30,7 @@ every route below fails or opens with missing nodes until a pack is present.
 - [ ] Decide which ShotPipe version to install. `v26` covers the newest graphs; older shot graphs need the matching older pack. Versions sit side by side in `projects/desktop/CANALV2/02_SCRIPTS/nodes/`.
 - [ ] Symlink it, do not copy, so the master copy stays the one in `02_SCRIPTS/nodes/`:
   ```bash
-  ln -s "$PWD/projects/desktop/CANALV2/02_SCRIPTS/nodes/ComfyUI-BH-ShotPipe-v26" \
-        "$PWD/apps/comfy-app/ComfyUI/custom_nodes/ComfyUI-BH-ShotPipe-v26"
+  COMFY_SHOTPIPE=v26 apps/comfy-app/setup.sh   # links it into ComfyUI/custom_nodes/
   ```
 - [ ] Restart the Mac ComfyUI and confirm the nodes load:
   ```bash
@@ -57,7 +56,7 @@ anything.
   python3 projects/desktop/CANALV2/02_SCRIPTS/queue-graphs/corrosion_load-graphs_v002.py --list --comfy http://127.0.0.1:8188
   ```
 - [ ] Then the real load, optionally one shot at a time with `--shots 058,110`, and `--forks` to include review forks.
-- [ ] Manual fallback: copy the UI JSONs into `apps/comfy-app/ComfyUI/user/default/workflows/CANALV2_corrosion/`, or drag one onto the canvas.
+- [ ] Manual fallback: copy the UI JSONs into `apps/comfy-app/workflows/CANALV2_corrosion/` (served to the UI through the symlink), or drag one onto the canvas.
 
 ## Route B: queue graphs for rendering
 
@@ -105,7 +104,7 @@ server's node catalog, so Step 0 must be done first.
 ## Also pending in this repo
 
 - Commit `projects/README.md`, `apps/comfy-app/`, `CLAUDE.md`, this file and the `.gitignore` changes.
-- Ask Binc whether `ComfyUI-BincStereo` may be tracked in this repo. The pack sits inside the ignored `apps/comfy-app/ComfyUI/custom_nodes/`, so it is not reproducible from git, and its `pyproject.toml` marks it proprietary to Cinematic Immunity / Bincos. If yes (and the repo stays private): move it to `apps/comfy-app/custom_nodes/` and have `setup.sh` symlink it into the install. If no: it stays out, and a fresh machine copies it in by hand from `apps/comfy-app/archive/ComfyUI-BincStereo.zip`. Until Binc answers it stays out.
-- Build the RunPod image for the ComfyUI server. Plan and open decisions in `apps/comfy-app/README.md`, section "Plan: one server project, two targets".
+- Ask Binc whether `ComfyUI-BincStereo` may stay tracked in this repo. Since 2026-10-19 it is in `apps/comfy-app/custom_nodes/` (the repo is private) because the app has to be runnable from a clone; its `pyproject.toml` marks it proprietary to Cinematic Immunity / Bincos. If Binc says no: move it back out of git, and have `setup.sh` unpack `apps/comfy-app/archive/ComfyUI-BincStereo.zip` instead.
+- Push the RunPod image once Binc has agreed (registry name and account). Dockerfile and build are in `apps/comfy-app/`; see its README, "Targets and what is still open".
 - Rebuild the Electron app under `apps/runpod-dashboard/` so its bundled copy of `mcp_server.py` picks up the mcp 2.x port.
 - Run the review on `feature/desktop-app-and-mcp-fixes` against develop, then delete that branch.

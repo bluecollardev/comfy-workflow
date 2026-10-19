@@ -1,12 +1,13 @@
 # ComfyUI server image for RunPod pods, Linux boxes and Windows via Docker Desktop (WSL2).
 #
-# Same ComfyUI commit and torch version as the Mac install (see manifest.json /
-# snapshots/), on CUDA instead of MPS. Build with ./build.sh, which stages the
-# custom node packs into .build/ first; the packs are not in git.
+# Same ComfyUI commit and torch version as the Mac install (pins.env), on CUDA
+# instead of MPS. Build with ./build.sh: it passes the pins as build args and
+# stages any ShotPipe version (client tree, not in git) into .build/.
 #
 # Layout inside the container:
 #   /opt/ComfyUI                      the app, at COMFYUI_REF
-#   /opt/ComfyUI/custom_nodes/        BincStereo + the ShotPipe versions build.sh staged
+#   /opt/ComfyUI/custom_nodes/        custom_nodes/ from the repo + the ShotPipe versions build.sh staged
+#   /opt/ComfyUI/user/default/workflows   workflows/ from the repo
 #   /workspace/ComfyUI-Shared/{input,output,models}   mount: same layout as the Mac and binc-PC
 #   /workspace/CANALV2                mount: the project tree
 #   /home/binc/CANALV2_r3/CANALV2 -> /workspace/CANALV2   so graphs keep their binc-PC paths
@@ -16,13 +17,14 @@
 ARG BASE_IMAGE=pytorch/pytorch:2.12.1-cuda12.6-cudnn9-runtime
 FROM ${BASE_IMAGE}
 
-ARG COMFYUI_REPO=https://github.com/comfyanonymous/ComfyUI.git
-# v0.39.2, the commit the Mac install runs (snapshots/*.json: comfyui.commit)
+# Defaults mirror pins.env; build.sh passes the pins explicitly.
+ARG COMFYUI_REPO=https://github.com/Comfy-Org/ComfyUI.git
 ARG COMFYUI_REF=3c1b7a17fdf239d35ce98cc777756f572d089795
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
+    PIP_BREAK_SYSTEM_PACKAGES=1 \
     COMFY_SHARED=/workspace/ComfyUI-Shared \
     COMFY_PORT=8188
 
@@ -43,9 +45,11 @@ RUN pip install -r requirements.txt \
 COPY requirements-packs.txt /tmp/requirements-packs.txt
 RUN pip install -r /tmp/requirements-packs.txt
 
-# Node packs, staged by build.sh (BincStereo from the Mac install, ShotPipe from CANALV2).
-# Last layer that changes often, so everything above stays cached.
+# Node packs: ours from the repo, ShotPipe staged by build.sh from the CANALV2 tree.
+# Last layers that change often, so everything above stays cached.
+COPY custom_nodes/ /opt/ComfyUI/custom_nodes/
 COPY .build/custom_nodes/ /opt/ComfyUI/custom_nodes/
+COPY workflows/ /opt/ComfyUI/user/default/workflows/
 RUN for req in /opt/ComfyUI/custom_nodes/*/requirements.txt; do \
         [ -f "$req" ] && pip install -r "$req"; done; true
 

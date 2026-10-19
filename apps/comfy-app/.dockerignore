@@ -3,5 +3,9 @@
 !Dockerfile
 !requirements-packs.txt
 !docker/
+!custom_nodes/
+!workflows/
 !.build/
 **/__pycache__
+custom_nodes/*/test-input
+custom_nodes/*/tests
