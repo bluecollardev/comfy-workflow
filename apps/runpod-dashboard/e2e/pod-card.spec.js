@@ -65,4 +65,16 @@ test.describe('pod card', () => {
     await expect(podCard(page, 'ComfyUI-Batch').getByTestId('pod-id')).toHaveText('pod-re-bbbb')
     await expect(podCard(page, 'ComfyUI-Batch').getByTestId('pod-status')).toHaveText('starting')
   })
+
+  test('the idle stop can be changed on the card', async ({ page, api }) => {
+    api.state.pods[0].idle_stop_minutes = 30
+    await page.goto('/')
+    const card = podCard(page, 'ComfyUI-Dev')
+    await card.getByTestId('pod-idle-edit').click()
+    await card.getByTestId('pod-idle-input').fill('10')
+    await card.getByTestId('pod-idle-save').click()
+    await expect(page.getByTestId('toast').last()).toContainText(t('toast.idleSet', { n: 10 }))
+    await expect(card.getByTestId('pod-idle')).toContainText(t('pod.idleAfter', { n: 10 }))
+    expect(api.calls).toContainEqual(expect.objectContaining({ method: 'PUT', path: '/pods/pod-aaaaaaaa/idle', query: { minutes: '10' } }))
+  })
 })

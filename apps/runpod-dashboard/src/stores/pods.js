@@ -109,9 +109,16 @@ export const usePodsStore = defineStore('pods', () => {
     return r
   }
 
+  /** Change a pod's idle stop after creation; 0 stops watching it. */
+  async function setIdle(id, minutes) {
+    const r = await toast.run(t('toast.setIdle'), () => podsAPI.setIdle(id, minutes), { ok: minutes > 0 ? t('toast.idleSet', { n: minutes }) : t('toast.idleOff'), onError: (msg) => (actionError.value = msg) })
+    if (r.ok) { const p = pods.value.find((x) => x.id === id); if (p) p.idle_stop_minutes = Math.max(minutes, 0) }
+    return r
+  }
+
   /** The pod as RunPod describes it, for the card's details panel. */
   const details = (id) => podsAPI.details(id)
   const remove = (id) => act(id, podsAPI.deletePod, 'Delete')
 
-  return { stats, pods, dryRun, initialLoading, refreshing, loadError, actionError, busyPodId, load, refreshList, startAutoRefresh, stopAutoRefresh, create, stop, stopAll, resume, remove, details, recreate, hostFull }
+  return { stats, pods, dryRun, initialLoading, refreshing, loadError, actionError, busyPodId, load, refreshList, startAutoRefresh, stopAutoRefresh, create, stop, stopAll, resume, remove, details, recreate, hostFull, setIdle }
 })

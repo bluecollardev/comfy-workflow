@@ -45,7 +45,18 @@
 
       <template v-if="pod.status !== 'stopped'">
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.idleStop') }}</dt>
-        <dd class="col-8 mb-0" data-testid="pod-idle">{{ pod.idle_stop_minutes ? $t('pod.idleAfter', { n: pod.idle_stop_minutes }) : $t('pod.notWatched') }}</dd>
+        <dd class="col-8 mb-0" data-testid="pod-idle">
+          <template v-if="!editingIdle">
+            {{ pod.idle_stop_minutes ? $t('pod.idleAfter', { n: pod.idle_stop_minutes }) : $t('pod.notWatched') }}
+            <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" :title="$t('pod.idleEdit')" data-testid="pod-idle-edit" @click="startIdleEdit"><i class="fa-solid fa-pen fa-xs"></i></button>
+          </template>
+          <div v-else class="d-flex align-items-center gap-1">
+            <BFormInput v-model.number="idleDraft" type="number" min="0" size="sm" style="width: 5rem" data-testid="pod-idle-input" @keydown.enter.prevent="saveIdle" @keydown.esc.prevent="editingIdle = false" />
+            <span class="text-body-secondary">{{ $t('pod.idleMinutes') }}</span>
+            <BButton size="sm" variant="primary" data-testid="pod-idle-save" @click="saveIdle">{{ $t('pod.idleSave') }}</BButton>
+            <BButton size="sm" variant="outline-light" @click="editingIdle = false">{{ $t('picker.cancel') }}</BButton>
+          </div>
+        </dd>
       </template>
 
       <template v-if="pod.ssh_command">
@@ -171,6 +182,14 @@ async function toggleDetails() {
 
 async function copyId() {
   try { await navigator.clipboard.writeText(props.pod.id); toast.info(t('pod.copied')) } catch { /* clipboard blocked: the id is still on screen */ }
+}
+
+const editingIdle = ref(false)
+const idleDraft = ref(0)
+function startIdleEdit() { idleDraft.value = props.pod.idle_stop_minutes || 0; editingIdle.value = true }
+async function saveIdle() {
+  const r = await pods.setIdle(props.pod.id, Number(idleDraft.value) || 0)
+  if (r.ok) editingIdle.value = false
 }
 
 function confirmRecreate() {

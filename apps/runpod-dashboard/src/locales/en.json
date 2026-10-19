@@ -61,7 +61,10 @@
     "recreate": "Recreate",
     "recreateTitle": "A fresh pod with the same settings on another host; this one is deleted. Nothing is lost without a per-pod volume.",
     "confirmRecreate": "Recreate \"{name}\" on another host? This pod is deleted and a new one is created with the same name, image, card choice and idle stop.",
-    "hostFull": "RunPod keeps a stopped pod on the host it ran on, and that host has no free GPU right now. Wait and try Resume again, or Recreate on another host."
+    "hostFull": "RunPod keeps a stopped pod on the host it ran on, and that host has no free GPU right now. Wait and try Resume again, or Recreate on another host.",
+    "idleEdit": "Change the quiet minutes for this pod",
+    "idleMinutes": "min",
+    "idleSave": "Set"
   },
   "form": {
     "name": "Name",
@@ -205,6 +208,9 @@
     "nothingRunning": "No pod is running; nothing to pause",
     "hostFull": "The pod's host has no free GPU. Recreate makes the same pod on another host.",
     "recreatePod": "Recreate pod",
-    "podRecreated": "Pod recreated on another host"
+    "podRecreated": "Pod recreated on another host",
+    "setIdle": "Set idle stop",
+    "idleSet": "Idle stop set: after {n} quiet minutes",
+    "idleOff": "Idle stop off for this pod"
   }
 }
