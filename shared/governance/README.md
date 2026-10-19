@@ -32,6 +32,7 @@ copied in this (private) repo; the mirror itself is still never written to.
 | `shared/governance/CANALV2-README.md` | Their one-screen index of the tree | On demand |
 | `shared/governance/operator-brief.md` | The one-job operator brief (their `CLAUDE.md`, renamed so it is not picked up as ours) | On demand |
 | `shared/governance/MANIFEST.md` | What was copied, from where, when, with checksums | |
+| `shared/nodes/` | Submodule `comfy-node-packs`: ShotPipe v6–v26 and BincStereo; `docs/NODE-PACKS.md` | On demand |
 | `shared/shapes/*.json` | The project's fixed shapes as JSON, with `check.py` | On demand |
 | `queue/<project>/` | Job files for agents, seeded from the project's own queue | On demand |
 | `docs/ADR-*.md` | Decisions about this repo's own architecture | On demand |

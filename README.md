@@ -46,7 +46,8 @@ storage across those machines is the first gap to close (`NEXT-STEPS.md`).
 ├── docs/                   # Architecture decisions, setup, testing (index below)
 ├── shared/                 # Material shared by every app and agent here
 │   ├── governance/         #   rules for agents: Binc's policies copied in (sync.sh), precedence, what Claude Code loads
-│   └── shapes/             #   the project's fixed shapes as JSON (shot folder, graph, job, report, names) + check.py
+│   ├── shapes/             #   the project's fixed shapes as JSON (shot folder, graph, job, report, names) + check.py
+│   └── nodes/              #   git submodule: bluecollardev/comfy-node-packs (ShotPipe v6–v26, BincStereo); sync-nodes.sh refreshes it from the mirror
 ├── queue/                  # Job files for agents, one folder per project (queue/canalv2/{in,running,done}), seeded by sync.sh
 ├── AGENTS.md               # Cross-tool entry point for agents; CLAUDE.md imports it
 ├── comfy.yaml              # comfy CLI project config (empty so far)
@@ -139,8 +140,8 @@ belong to BH / Binc and need a named yes before they go anywhere new.
 | Requirement | Needed for | Where it comes from |
 |---|---|---|
 | ComfyUI at the pinned commit (0.39.2) | everything | `apps/comfy-app/setup.sh` clones it; the Dockerfile builds it in |
-| ComfyUI-BH-ShotPipe packs v10–v26 (proprietary) | the corrosion shot graphs (`BH_*`, `BH26_*` nodes); each shot needs the version it was built with | Binc's tree, `projects/desktop/CANALV2/02_SCRIPTS/nodes/`; link with `COMFY_SHOTPIPE=v26 apps/comfy-app/setup.sh` |
-| ComfyUI-BincStereo (proprietary) | the stereo workflows | tracked in `apps/comfy-app/custom_nodes/`, pending Binc's yes |
+| ComfyUI-BH-ShotPipe packs v6–v26 (proprietary) | the corrosion shot graphs (`BH_*`, `BH26_*` nodes); each shot needs the version it was built with | the `shared/nodes` submodule (`bluecollardev/comfy-node-packs`), imported from Binc's tree; link with `COMFY_SHOTPIPE=v26 apps/comfy-app/setup.sh`. Versioning: `docs/NODE-PACKS.md` |
+| ComfyUI-BincStereo (proprietary) | the stereo workflows | the `shared/nodes` submodule; always linked by `setup.sh` |
 | Python: torch (MPS on the Mac, CUDA 12.6 on Linux), numpy, scipy, opencv-python-headless, av, Pillow, matplotlib; PyOpenColorIO for the v2/v3 ACEScg graphs only | the node packs | `apps/comfy-app/requirements-*.txt`; the project's `containers/runpod/requirements-bh.txt` |
 | Depth Anything V2 Large weights | BincStereo depth | Hugging Face via `fetch-models.sh` (`HF_TOKEN` for gated repos) |
 | Blender as `bpy` 5.0.1, COLMAP | camera track and solve, before a graph runs; CPU only | the project's `solve/`, `solve-blender/` scripts and `containers/runpod/solve/` image |
@@ -185,6 +186,7 @@ All of `docs/`: <https://github.com/bluecollardev/comfy-workflow/tree/develop/do
 | [`infra/README.md`](infra/README.md) | The infrastructure folder: the pod lifecycle CLI, pod config, where the Docker image and the API live, cost management, monitoring, troubleshooting. |
 | [`apps/runpod-api/README.md`](apps/runpod-api/README.md) | The pod manager service: the FastAPI API and its routers, the pool manager, the MCP server, environment variables, running it, tests, and what the Electron app packages from it. |
 | [`docs/MCP-SERVER.md`](docs/MCP-SERVER.md) | The MCP server that exposes agent pool management to Claude Code: quick start, every tool, typical sessions, configuration, errors, budgeting. |
+| [`docs/NODE-PACKS.md`](docs/NODE-PACKS.md) | The node packs as a submodule at `shared/nodes`: the three layers of version (pack folder, packs-repo tag, submodule pin plus image label), the rules from Binc's versioning policy, the release steps, and how installs and images consume them. |
 | [`apps/comfy-app/README.md`](apps/comfy-app/README.md) | The ComfyUI server project: what is upstream and what is ours (`check.sh`), running from a fresh clone, the Docker image, pointing the `comfy` CLI at it, targets and open approvals. |
 | [`apps/runpod-dashboard/README.md`](apps/runpod-dashboard/README.md) | The Vue dashboard for the pod manager: features, architecture, API integration, dev and production builds, the Electron desktop app. |
 | [`apps/runpod-dashboard/COMPONENTS.md`](apps/runpod-dashboard/COMPONENTS.md) | Component-by-component reference for the dashboard UI, styling conventions and the Electron packaging. |

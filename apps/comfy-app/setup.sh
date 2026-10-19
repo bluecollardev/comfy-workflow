@@ -2,12 +2,12 @@
 # Make apps/comfy-app runnable on this machine. Idempotent; re-run after a pull.
 #
 #   ./setup.sh                  # clone ComfyUI at the pinned commit, build the venv, link our packs
-#   COMFY_SHOTPIPE=v26 ./setup.sh   # also link that ShotPipe version from projects/desktop/CANALV2
+#   COMFY_SHOTPIPE=v26 ./setup.sh   # also link that ShotPipe version (several: v26,v25)
 #
 # What ends up where (ComfyUI/ is ignored by git; everything else is tracked):
 #   ComfyUI/                       upstream clone at pins.env COMFYUI_REF, unmodified
 #   ComfyUI/.venv                  uv venv on Python 3.13 (uses standalone-env/ when present)
-#   ComfyUI/custom_nodes/<pack>    symlink -> custom_nodes/<pack>
+#   ComfyUI/custom_nodes/<pack>    symlink -> shared/nodes/<pack> (the comfy-node-packs submodule)
 #   ComfyUI/user/default/workflows symlink -> workflows/
 #   ComfyUI/models/                weights, see fetch-models.sh
 set -euo pipefail
@@ -53,19 +53,30 @@ uv pip install -q -r "$APP/requirements.txt"
 uv pip install -q -r "$HERE/requirements-packs.txt"
 
 # 4. Our node packs: symlinked, so edits in the repo are live in the server.
-for dir in "$HERE"/custom_nodes/*/; do
+NODES="${COMFY_NODES_DIR:-$REPO/shared/nodes}"
+if [ ! -f "$NODES/README.md" ]; then
+  echo "fetching the node packs submodule (shared/nodes)"
+  git -C "$REPO" submodule update --init --depth 1 shared/nodes
+fi
+# Every pack that is not a ShotPipe version (BincStereo today) is always linked.
+for dir in "$NODES"/*/; do
   name="$(basename "$dir")"
-  ln -sfn "../../custom_nodes/$name" "$APP/custom_nodes/$name"
+  case "$name" in ComfyUI-BH-ShotPipe-*) continue ;; esac
+  ln -sfn "$dir" "$APP/custom_nodes/$name"
   [ -f "$dir/requirements.txt" ] && uv pip install -q -r "$dir/requirements.txt"
   echo "linked custom_nodes/$name"
 done
-
-# 5. Optional: a ShotPipe version from the CANALV2 tree (client project, not in git).
+# ShotPipe only on request, and only the versions named: unprefixed BH_* node
+# names repeat across versions and ComfyUI keeps the last one loaded.
+for old in "$APP"/custom_nodes/ComfyUI-BH-ShotPipe-*; do [ -L "$old" ] && rm "$old"; done
 if [ -n "${COMFY_SHOTPIPE:-}" ]; then
-  src="${COMFY_SHOTPIPE_DIR:-$REPO/projects/desktop/CANALV2/02_SCRIPTS/nodes}/ComfyUI-BH-ShotPipe-$COMFY_SHOTPIPE"
-  [ -d "$src" ] || { echo "no ShotPipe at $src" >&2; exit 1; }
-  ln -sfn "$src" "$APP/custom_nodes/ComfyUI-BH-ShotPipe-$COMFY_SHOTPIPE"
-  echo "linked custom_nodes/ComfyUI-BH-ShotPipe-$COMFY_SHOTPIPE -> $src"
+  IFS=, read -ra VERSIONS <<< "$COMFY_SHOTPIPE"
+  for v in "${VERSIONS[@]}"; do
+    src="$NODES/ComfyUI-BH-ShotPipe-$v"
+    [ -d "$src" ] || { echo "no ShotPipe $v in $NODES" >&2; exit 1; }
+    ln -sfn "$src" "$APP/custom_nodes/ComfyUI-BH-ShotPipe-$v"
+    echo "linked custom_nodes/ComfyUI-BH-ShotPipe-$v"
+  done
 fi
 
 # 6. Workflows: the UI saves into the repo's workflows/ folder.

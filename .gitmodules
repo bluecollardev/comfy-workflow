@@ -1,0 +1,3 @@
+[submodule "shared/nodes"]
+	path = shared/nodes
+	url = git@github.com:bluecollardev/comfy-node-packs.git

@@ -8,7 +8,7 @@
 #   ./build.sh --no-shotpipe         # BincStereo only
 #   ./build.sh --base pytorch/pytorch:2.12.1-cuda13.0-cudnn9-runtime   # e.g. for Blackwell GPUs
 #
-# custom_nodes/ and workflows/ go in straight from the repo. ShotPipe is the
+# Node packs come from shared/nodes (the comfy-node-packs submodule); ShotPipe is
 # client's (projects/desktop/CANALV2/02_SCRIPTS/nodes/, not in git), so it is
 # staged into .build/custom_nodes/ (ignored) when asked for. Builds linux/amd64,
 # which is what RunPod and the Windows/Linux boxes run; on Apple Silicon that
@@ -40,17 +40,24 @@ done
 STAGE="$HERE/.build/custom_nodes"
 rm -rf "$HERE/.build" && mkdir -p "$STAGE"
 
-NODES="${COMFY_SHOTPIPE_DIR:-$REPO/projects/desktop/CANALV2/02_SCRIPTS/nodes}"
+NODES="${COMFY_NODES_DIR:-$REPO/shared/nodes}"
+[ -f "$NODES/README.md" ] || git -C "$REPO" submodule update --init --depth 1 shared/nodes
+for d in "$NODES"/*/; do
+  n="$(basename "$d")"; case "$n" in ComfyUI-BH-ShotPipe-*) continue ;; esac
+  rsync -a --exclude __pycache__ --exclude tests --exclude test-input "$d" "$STAGE/$n/"; echo "staged: $n"
+done
+PACKS_REV="$(git -C "$NODES" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 IFS=, read -ra VERSIONS <<< "$SHOTPIPE"
 for v in "${VERSIONS[@]}"; do
   [ -n "$v" ] || continue
   src="$NODES/ComfyUI-BH-ShotPipe-$v"
   [ -d "$src" ] || { echo "no ShotPipe $v at $src" >&2; exit 1; }
-  rsync -a --exclude __pycache__ --exclude superseded "$src/" "$STAGE/ComfyUI-BH-ShotPipe-$v/"
+  rsync -a --exclude __pycache__ "$src/" "$STAGE/ComfyUI-BH-ShotPipe-$v/"
   echo "staged: ComfyUI-BH-ShotPipe-$v"
 done
 
 args=(build --platform "$PLATFORM" -t "$TAG" -f "$HERE/Dockerfile"
+      --label "dev.bluecollar.comfy-node-packs=$PACKS_REV" --label "dev.bluecollar.shotpipe=${SHOTPIPE:-none}"
       --build-arg "COMFYUI_REPO=$COMFYUI_REPO" --build-arg "COMFYUI_REF=$COMFYUI_REF")
 [ -n "$BASE" ] && args+=(--build-arg "BASE_IMAGE=$BASE")
 args+=("${EXTRA[@]}" "$HERE")

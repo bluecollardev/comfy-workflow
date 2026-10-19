@@ -6,7 +6,7 @@
 #
 # Layout inside the container:
 #   /opt/ComfyUI                      the app, at COMFYUI_REF
-#   /opt/ComfyUI/custom_nodes/        custom_nodes/ from the repo + the ShotPipe versions build.sh staged
+#   /opt/ComfyUI/custom_nodes/        what build.sh staged from shared/nodes: BincStereo + the ShotPipe versions asked for
 #   /opt/ComfyUI/user/default/workflows   workflows/ from the repo
 #   /workspace/ComfyUI-Shared/{input,output,models}   mount: same layout as the Mac and binc-PC
 #   /workspace/CANALV2                mount: the project tree
@@ -47,7 +47,6 @@ RUN pip install -r /tmp/requirements-packs.txt
 
 # Node packs: ours from the repo, ShotPipe staged by build.sh from the CANALV2 tree.
 # Last layers that change often, so everything above stays cached.
-COPY custom_nodes/ /opt/ComfyUI/custom_nodes/
 COPY .build/custom_nodes/ /opt/ComfyUI/custom_nodes/
 COPY workflows/ /opt/ComfyUI/user/default/workflows/
 RUN for req in /opt/ComfyUI/custom_nodes/*/requirements.txt; do \

@@ -6,8 +6,9 @@ belongs to BH / Binc. It is ignored by git on purpose.
 **We can read whatever and do whatever with it** (Lucas, 2026-10-19): read it,
 copy it, link it, track copies in this private repo, build on it. Examples:
 `COMFY_SHOTPIPE=v26 apps/comfy-app/setup.sh` symlinks a node pack,
-`shared/governance/sync.sh` copies the policy pages, BincStereo is tracked under
-`apps/comfy-app/custom_nodes/`, the queue scripts take `--comfy <url>`.
+`shared/governance/sync.sh` copies the policy pages, `shared/sync-nodes.sh`
+copies the node packs into the `shared/nodes` submodule, the queue scripts
+take `--comfy <url>`.
 
 **We just cannot modify the source in that folder.** Never write, edit,
 rename, move or delete anything under `projects/desktop/`, and never `git add`
