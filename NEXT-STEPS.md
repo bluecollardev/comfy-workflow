@@ -1,4 +1,22 @@
-# Next steps: importing the CANALV2 graphs
+# Next steps and goals
+
+## Goals, in order
+
+1. **Run Binc's graphs where the compute is**, the same way everywhere: binc-PC
+   first, the Mac for stereo, a Linux box under Docker, RunPod as overflow
+   (`README.md`, "What this repo is for"; `docs/ADR-004`). Measure: a corrosion
+   graph renders unchanged on each of those.
+2. **RunPod as a disposable worker, never a bill nobody planned**: one app per
+   PC, our image, a network volume with the three folders, the cheapest card
+   in stock, idle stop, recreate instead of wait. Proven on 2026-10-19 with the
+   stock image; the remaining steps are below.
+3. **The crew of skills**, Binc's goal: a dispatcher over `queue/<project>/`
+   that runs one job per session as the operator brief says, reports, and
+   stops. Not started.
+4. **One codebase, no second runtime**: the Python API retired, the core in
+   TypeScript, the merge gate green (`docs/ADR-005`).
+
+## Next steps: importing the CANALV2 graphs
 
 Open work only, as of the evening of 2026-10-19. Done items are in
 [`CHANGELOG.md`](./CHANGELOG.md). The inventory behind this is in
@@ -142,6 +160,8 @@ In order:
 ## Also pending in this repo
 
 - Finish the port (ADR-005): git accounts, repositories, image env and OAuth into `libs/core`; the MCP server and the CLI importing it; then Electron stops spawning the Python backend, the Python tree is retired, and the merge gate and the branching rule stop naming pytest. Until then the Electron app still starts the backend for those parts.
+- Merge `feature/no-spend-mode` and `feature/comfy-app-image-push` (both pushed, 2026-10-19 evening); then the deprecated Python API is behind the app on every feature.
+- ComfyUI's own log on the stock image goes to `/workspace/logs/comfyui.log`, not the container's stdout, so the app's Logs modal shows the host's lines but not ComfyUI's there. Our image logs to stdout. A tail of that file over SSH would close the gap for the stock image.
 - Rebuild the Electron app under `apps/runpod-dashboard/` once the port is complete.
 - The Bash-side governance hooks listed as open in `shared/governance/README.md`: installs, `create_pod.py create`, pushes to other remotes.
 - Abstract versus concrete shapes, and the two findings from `check.py` to raise with Binc (above).
