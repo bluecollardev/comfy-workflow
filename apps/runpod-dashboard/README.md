@@ -89,3 +89,23 @@ To serve it from FastAPI:
 - **Axios** - HTTP client
 - **FastAPI** - Backend API
 - **WebSocket** - Real-time updates
+
+
+## Packaging (2026-10-19)
+
+The app is self-contained: the core (`libs/core`, TypeScript) runs in the main process and the
+page loads from the app's own files. Build installers from the repo root:
+
+```bash
+./start.sh package mac                              # dmg + zip        -> dist-electron/contract-v26/
+./start.sh package linux                            # AppImage + deb
+./start.sh package win                              # nsis + portable; a stub here, run it on the Windows machine
+./start.sh package all --comfy contract-v26 --image ghcr.io/<org>/comfy-app:contract-v26
+```
+
+`--comfy` names the comfy-app variant (a ShotPipe set from `shared/nodes/sets.json`, default
+`contract-v26`) and `--image` the pushed reference of that build; both are baked into the app as
+`build-info.json` and become the image a new pod boots by default. Without `--image` the local tag
+is baked in and pod creation refuses it until it is pushed. The deprecated Python API in
+`apps/runpod-api` is started only when a Python is found, for git accounts, repositories, image env
+and OAuth, until those are ported (`docs/ADR-005-typescript-core-no-server.md`).

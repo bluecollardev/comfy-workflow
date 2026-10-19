@@ -25,6 +25,7 @@ export default defineConfig({
       },
     },
   },
+  base: './',   // the built page loads from the API's root and from Electron's own files alike
   build: {
     outDir: 'dist',
     emptyOutDir: true,

@@ -1,5 +1,12 @@
 # RunPod pod manager API (`apps/runpod-api`)
 
+> **Deprecated, 2026-10-19.** The pod manager is moving into the Electron app as a
+> TypeScript core (`apps/runpod-dashboard/libs/core`, `docs/ADR-005-typescript-core-no-server.md`).
+> Mounts, pods, GPUs, governance and the idle watch already run there, in-process, over IPC.
+> This Python service is kept only for what is not ported yet: git accounts, repositories,
+> the image env loader, OAuth and the MCP server. Add nothing new here; port it instead.
+> It is deleted when the port is complete.
+
 The Python service behind the RunPod dashboard: a FastAPI app that lists,
 creates, stops, resumes and deletes RunPod GPU pods, plus the pool manager
 it is built on and an MCP server that exposes the same pool to Claude Code.

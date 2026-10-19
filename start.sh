@@ -9,6 +9,8 @@
 #   ./start.sh pod <args>     pod lifecycle CLI, e.g. ./start.sh pod list
 #   ./start.sh mcp            the MCP server over stdio (what Claude Code launches)
 #   ./start.sh sync --pod <id> copy the mapped folders to a pod's network volume (never deletes)
+#   ./start.sh e2e | core-test | smoke   the browser suite, the core's suite, a headless boot of the app
+#   ./start.sh package [mac|win|linux|all] [--comfy <variant>] [--image <ref>]  build the app installers for a comfy-app variant
 #   ./start.sh test [args]    the merge gate: pytest without the integration tests
 #   ./start.sh stop           stop the pod manager API (even a stale one) and a backgrounded ComfyUI
 #
@@ -129,6 +131,49 @@ case "${1:-help}" in
   sync)
     shift; load_env; need_key; ensure_venv
     exec "$PY" infra/scripts/sync_volume.py "$@" ;;
+  e2e)
+    # the browser suite against hot reload (Playwright starts the dev server itself)
+    shift; cd apps/runpod-dashboard; [ -d node_modules ] || npm install
+    exec npx playwright test "$@" ;;
+  core-test)
+    shift; cd apps/runpod-dashboard; [ -d node_modules ] || npm install
+    exec npm run --silent core:test -- "$@" ;;
+  smoke)
+    # boot the Electron app headless, call the core from the page, print what loaded, quit
+    shift; load_env; ensure_dashboard; cd apps/runpod-dashboard
+    RUNPOD_MANAGER_SMOKE=1 exec npx electron . ;;
+  comfy-image)
+    # build the ComfyUI server image for a ShotPipe set (apps/comfy-app/build.sh; amd64 box or emulation)
+    shift; cd apps/comfy-app; exec ./build.sh "$@" ;;
+  package)
+    # ./start.sh package [mac|win|linux|all] [--comfy <set-or-tag>] [--image <registry ref>]
+    #   -> apps/runpod-dashboard/dist-electron/<variant>/
+    # The variant is a comfy-app build (apps/comfy-app/build.sh, a ShotPipe set from
+    # shared/nodes/sets.json, default contract-v26). It is baked into the app as
+    # build/build-info.json: the image a new pod boots by default (--image, the pushed
+    # reference of that build; else the local tag, refused at pod creation until pushed).
+    shift; target="${1:-mac}"; [ $# -gt 0 ] && shift
+    variant="contract-v26"; image=""
+    while [ $# -gt 0 ]; do case "$1" in
+      --comfy) variant="$2"; shift 2 ;;
+      --image) image="$2"; shift 2 ;;
+      *) echo "usage: ./start.sh package [mac|win|linux|all] [--comfy <set-or-tag>] [--image <registry ref>]" >&2; exit 2 ;;
+    esac; done
+    case "$target" in mac|win|linux|all) ;; *) echo "usage: ./start.sh package [mac|win|linux|all] [--comfy <set-or-tag>] [--image <registry ref>]" >&2; exit 2 ;; esac
+    cd apps/runpod-dashboard
+    [ -d node_modules ] || npm install
+    mkdir -p build
+    printf '{\n  "comfy_variant": "%s",\n  "comfy_image": "%s",\n  "shotpipe_sets": "shared/nodes/sets.json",\n  "built_at": "%s"\n}\n' \
+      "$variant" "${image:-comfy-app:$variant}" "$(date -u +%Y-%m-%dT%H:%MZ)" > build/build-info.json
+    echo "building the app for comfy-app:$variant (default pod image ${image:-comfy-app:$variant}) -> dist-electron/$variant"
+    out="--config.directories.output=dist-electron/$variant"
+    case "$target" in
+      mac)   npm run build && exec npx electron-builder --mac "$out" ;;
+      win)   npm run build && exec npx electron-builder --win "$out" ;;
+      linux) npm run build && exec npx electron-builder --linux "$out" ;;
+      all)   npm run build && exec npx electron-builder --mac --win --linux "$out" ;;
+      *) echo "usage: ./start.sh package [mac|win|linux|all] [--comfy <set-or-tag>] [--image <registry ref>]" >&2; exit 2 ;;
+    esac ;;
   mcp)
     load_env; need_key; ensure_venv
     cd apps/runpod-api

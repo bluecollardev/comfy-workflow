@@ -42,8 +42,8 @@ comfy_workflow/                    # Root monorepo
 ├── apps/                          # Runnable apps (tracked scripts, ignored data)
 │   ├── comfy-app/                # The ComfyUI server: Mac scripts + Dockerfile for RunPod
 │   │   └── ComfyUI/              #   ignored: the ~5 GB standalone install itself
-│   ├── runpod-api/               # FastAPI pod manager API, pool manager, MCP server, tests (Python)
-│   └── runpod-dashboard/         # Vue 3 + Electron dashboard for the pod manager API
+│   ├── runpod-api/               # DEPRECATED (ADR-005): Python API kept for git accounts, repositories, image env, OAuth, MCP until ported
+│   └── runpod-dashboard/         # The app: Vue 3 + Pinia UI, Electron shell, and libs/core (TypeScript: mounts, pods, GPUs, governance, idle) over IPC
 │
 ├── shared/                        # Shared by every app and agent
 │   ├── governance/               # Binc's policies copied in (sync.sh), precedence, what Claude Code loads
@@ -207,7 +207,7 @@ infra(scripts): add pod lifecycle management
 
 ### Automation
 
-- **`start.sh`** — One-command starts: `comfy`, `pods`, `desktop`, `dashboard`, `pod <args>`, `mcp`, `test`, `stop`; clears a stale API from its port and waits for `/health`; IDE run configs in `.run/` and `.vscode/` call it
+- **`start.sh`** — One-command starts: `comfy`, `pods`, `desktop`, `dashboard`, `pod <args>`, `sync`, `mcp`, `test` (python + core), `core-test`, `e2e`, `smoke`, `comfy-image`, `package [mac|win|linux|all] [--comfy <variant>]`, `stop`; IDE run configs in `.run/` (IntelliJ, one per command) and `.vscode/` call it
 - **`apps/comfy-app/launch.sh`** — Start the local ComfyUI server (run `setup.sh` first on a new machine; see `apps/comfy-app/README.md`)
 - **`infra/scripts/create_pod.py`** — Pod management CLI
 - **`apps/runpod-api/pod_manager_api.py`** — FastAPI pod manager (serves the dashboard at :8000); `mcp_server.py` beside it is the MCP server for Claude Code
