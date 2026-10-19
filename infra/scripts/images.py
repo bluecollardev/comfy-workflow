@@ -6,7 +6,7 @@
       (located through the org.opencontainers.image.source label or KNOWN_SOURCES), with
       the values docker-bake.hcl gives them for its default target.
   GET /api/images/env?source=dockerfile
-      ENV and ARG instructions from DOCKERFILE_PATH (default <repo>/infra/docker/Dockerfile).
+      ENV and ARG instructions from DOCKERFILE_PATH (default <repo>/apps/comfy-app/Dockerfile).
 
 Response: {source, image, env: [{key, value}], build_args: [{key, value}], skipped, build_source}
 
@@ -26,7 +26,7 @@ from fastapi import APIRouter, HTTPException
 router = APIRouter(prefix="/api", tags=["Images"])
 
 PREBUILT_IMAGE = "ashleykza/comfyui:latest"
-DOCKERFILE_PATH = Path(os.getenv("DOCKERFILE_PATH", Path(__file__).resolve().parents[1] / "docker" / "Dockerfile"))
+DOCKERFILE_PATH = Path(os.getenv("DOCKERFILE_PATH", Path(__file__).resolve().parents[2] / "apps" / "comfy-app" / "Dockerfile"))
 
 # Images whose config carries no org.opencontainers.image.source label.
 KNOWN_SOURCES = {

@@ -1,4 +1,4 @@
-# RunPod Pod Manager Frontend
+# RunPod dashboard (`apps/runpod-dashboard`)
 
 Vue 3 + Vite dashboard for managing RunPod pods
 
@@ -6,7 +6,7 @@ Vue 3 + Vite dashboard for managing RunPod pods
 
 ### Install Dependencies
 ```bash
-cd infra/frontend
+cd apps/runpod-dashboard
 npm install
 ```
 
@@ -24,7 +24,7 @@ Then open: **http://localhost:5173**
 ### Build for Production
 ```bash
 npm run build
-# Output in infra/dist/
+# Output in apps/runpod-dashboard/dist/ (the API serves it at / when present)
 ```
 
 ## Features
@@ -73,7 +73,7 @@ The dashboard subscribes to `/ws/pods` for real-time updates (every 5 seconds fr
 
 ## Production Build
 
-The build output goes to `infra/dist/`.
+The build output goes to `apps/runpod-dashboard/dist/`.
 
 To serve it from FastAPI:
 1. Build: `npm run build`

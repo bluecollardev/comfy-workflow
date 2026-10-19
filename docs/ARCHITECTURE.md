@@ -115,7 +115,7 @@ Authentication layer for team coordination.
 - `get_current_user()` → FastAPI dependency
 
 #### Frontend Dashboard
-**Files:** `infra/frontend/src/`
+**Files:** `apps/runpod-dashboard/src/`
 
 Vue 3 SPA showing:
 - Pod grid (status, controls)
@@ -307,7 +307,7 @@ Your Machine:
 python3 infra/scripts/pod_manager_api.py --reload
 
 # Start frontend (new terminal)
-cd infra/frontend && npm run dev
+cd apps/runpod-dashboard && npm run dev
 
 # MCP server (in Claude Code)
 @mcp attach comfy-moe

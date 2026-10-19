@@ -51,10 +51,13 @@ blueprints/*.compiled.json
 # Docker build artifacts
 docker/build/
 docker/*.tar.gz
-infra/dist/
-infra/frontend/test-results/
-infra/frontend/playwright-report/
-infra/frontend/dist-electron/
+apps/runpod-dashboard/dist/
+apps/runpod-dashboard/test-results/
+apps/runpod-dashboard/playwright-report/
+apps/runpod-dashboard/dist-electron/
 
-# Local creative project files (large media, never commit)
-projects/
+# Local creative project files (large media, never commit). Only the README is tracked.
+# Desktop-synced trees (CANALV2, ComfyUI-Shared) live in projects/desktop/.
+# The ComfyUI install is apps/comfy-app/ (ignored by apps/comfy-app/.gitignore).
+projects/*
+!projects/README.md

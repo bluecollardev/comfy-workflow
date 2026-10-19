@@ -405,10 +405,10 @@ async def websocket_pods(websocket: WebSocket):
 
 
 # ============================================================================
-# Serve the built UI (infra/dist, or UI_DIST_DIR) at /
+# Serve the built UI (apps/runpod-dashboard/dist, or UI_DIST_DIR) at /
 # ============================================================================
 
-UI_DIST_DIR = os.path.abspath(os.getenv("UI_DIST_DIR", os.path.join(os.path.dirname(__file__), "..", "dist")))
+UI_DIST_DIR = os.path.abspath(os.getenv("UI_DIST_DIR", os.path.join(os.path.dirname(__file__), "..", "..", "apps", "runpod-dashboard", "dist")))
 
 if os.path.isdir(os.path.join(UI_DIST_DIR, "assets")):
     app.mount("/assets", StaticFiles(directory=os.path.join(UI_DIST_DIR, "assets")), name="ui-assets")
@@ -420,7 +420,7 @@ async def root():
     if os.path.exists(index):
         return FileResponse(index)
     return {
-        "message": "RunPod Pod Manager API — run `npm run build` in infra/frontend to serve the UI here",
+        "message": "RunPod Pod Manager API — run `npm run build` in apps/runpod-dashboard to serve the UI here",
         "docs_url": "/docs",
     }
 

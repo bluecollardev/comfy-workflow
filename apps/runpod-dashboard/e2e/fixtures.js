@@ -122,7 +122,7 @@ export async function mockApi(page, state) {
     if (method === 'GET' && path === '/repos/folders') return json({ url: query.url, branch: query.branch, folders: state.folders })
     // images
     if (method === 'GET' && path === '/images/env') {
-      const image = query.source === 'dockerfile' ? '/repo/infra/docker/Dockerfile'
+      const image = query.source === 'dockerfile' ? '/repo/apps/comfy-app/Dockerfile'
         : query.image === 'prebuilt' ? 'ashleykza/comfyui:latest' : query.image
       return json({ source: query.source, image, env: state.imageEnv, build_args: state.imageBuildArgs,
         skipped: state.imageEnvSkipped, build_source: null })

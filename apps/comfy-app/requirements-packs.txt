@@ -1,0 +1,10 @@
+# Python packages the custom node packs import beyond what ComfyUI installs.
+# Same list as projects/desktop/CANALV2/02_SCRIPTS/containers/runpod/requirements-bh.txt
+# (ShotPipe: cv2, scipy, av, Pillow, matplotlib) plus what BincStereo needs
+# (transformers for Depth Anything, already pulled in by ComfyUI).
+opencv-python-headless
+scipy
+av
+Pillow
+matplotlib
+# PyOpenColorIO is only used by the v2/v3 (ACEScg) graphs; v4+ does not need it.
