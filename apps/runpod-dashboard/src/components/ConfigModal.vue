@@ -150,11 +150,12 @@
  * what the project tree declares about itself; nothing about a machine is typed here.
  */
 import { computed, reactive, ref } from 'vue'
-import { ui } from '../stores/ui'
-import { mountsAPI } from '../api/mounts'
-import { toast } from '../stores/toast'
+import { useUiStore } from '../stores/ui'
+import { useMountsStore } from '../stores/mounts'
 import FolderPicker from './FolderPicker.vue'
 
+const ui = useUiStore()
+const mounts = useMountsStore()
 const loading = ref(false)
 const saving = ref(false)
 const error = ref(null)
@@ -193,7 +194,9 @@ function take(payload) {
 
 async function load() {
   loading.value = true; error.value = null
-  try { take(await mountsAPI.get()) } catch (e) { error.value = e.response?.data?.detail || e.message } finally { loading.value = false }
+  const payload = await mounts.load()
+  if (payload) take(payload); else error.value = mounts.error
+  loading.value = false
 }
 
 function folderState(f, v) {
@@ -235,17 +238,17 @@ const previewText = computed(() => {
 
 async function save() {
   saving.value = true; error.value = null
-  const r = await toast.run('Save configuration', () => mountsAPI.save(body()), { ok: 'Configuration saved', onError: (t) => (error.value = t) })
+  const r = await mounts.save(body())
   saving.value = false
-  if (!r.ok) return
-  take(r.value); ui.mountsVersion++
+  if (!r.ok) { error.value = mounts.error; return }
+  take(r.value)
   ui.configOpen = false
 }
 
 async function reset() {
   saving.value = true; error.value = null
-  const r = await toast.run('Clear configuration', () => mountsAPI.reset(), { ok: 'Configuration cleared', onError: (t) => (error.value = t) })
+  const r = await mounts.reset()
   saving.value = false
-  if (r.ok) { take(r.value); ui.mountsVersion++ }
+  if (r.ok) take(r.value); else error.value = mounts.error
 }
 </script>

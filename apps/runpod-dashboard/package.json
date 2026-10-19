@@ -24,6 +24,7 @@
     "axios": "^1.20.0",
     "bootstrap": "^5.3.8",
     "bootstrap-vue-next": "^1.2.2",
+    "pinia": "^4.1.0",
     "vue": "^3.5.44"
   },
   "devDependencies": {
@@ -51,25 +52,51 @@
       "!node_modules/**"
     ],
     "extraResources": [
-      { "from": "dist", "to": "dist" },
-      { "from": "../runpod-api", "to": "backend", "filter": ["*.py", "requirements.txt"] },
-      { "from": "../../shared/shapes/mount-points.json", "to": "backend/mount-points.json" },
-      { "from": "../../shared/governance", "to": "backend/governance", "filter": ["**/*.md"] }
+      {
+        "from": "dist",
+        "to": "dist"
+      },
+      {
+        "from": "../runpod-api",
+        "to": "backend",
+        "filter": [
+          "*.py",
+          "requirements.txt"
+        ]
+      },
+      {
+        "from": "../../shared/shapes/mount-points.json",
+        "to": "backend/mount-points.json"
+      },
+      {
+        "from": "../../shared/governance",
+        "to": "backend/governance",
+        "filter": [
+          "**/*.md"
+        ]
+      }
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "icon": "build/icon.png"
     },
     "dmg": {
       "icon": "build/icon.png"
     },
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "icon": "build/icon.png"
     },
     "linux": {
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "category": "Development",
       "icon": "build/icon.png"
     }

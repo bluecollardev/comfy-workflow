@@ -11,21 +11,17 @@
 
 <script setup>
 /**
- * Stats — three summary cards: total / running / stopped.
- *
- * Props:
- *   stats  { total_pods, running_pods, stopped_pods }  — any missing count renders as 0
+ * Stats — three summary cards: total / running / stopped, from the pods store; a missing count renders as 0.
  */
 import { computed } from 'vue'
+import { usePodsStore } from '../stores/pods'
 
-const props = defineProps({
-  stats: { type: Object, required: true },
-})
+const pods = usePodsStore()
 
 const cards = computed(() => [
-  { label: 'Total pods', value: props.stats.total_pods ?? 0, variant: 'primary' },
-  { label: 'Running', value: props.stats.running_pods ?? 0, variant: 'success' },
-  { label: 'Stopped', value: props.stats.stopped_pods ?? 0, variant: 'danger' },
+  { label: 'Total pods', value: pods.stats.total_pods ?? 0, variant: 'primary' },
+  { label: 'Running', value: pods.stats.running_pods ?? 0, variant: 'success' },
+  { label: 'Stopped', value: pods.stats.stopped_pods ?? 0, variant: 'danger' },
 ])
 </script>
 

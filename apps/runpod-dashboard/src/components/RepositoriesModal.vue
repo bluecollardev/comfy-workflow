@@ -101,8 +101,11 @@
  */
 import { reactive, ref } from 'vue'
 import { gitAPI } from '../api/git'
-import { toast } from '../stores/toast'
-import { ui } from '../stores/ui'
+import { useToastStore } from '../stores/toast'
+import { useUiStore } from '../stores/ui'
+
+const ui = useUiStore()
+const toast = useToastStore()
 
 const repositories = ref([])
 const suggestions = ref([])
