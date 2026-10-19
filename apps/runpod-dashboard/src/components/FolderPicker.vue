@@ -1,24 +1,24 @@
 <template>
   <BModal :model-value="modelValue" :title="title" size="lg" scrollable @update:model-value="$emit('update:modelValue', $event)" @show="open">
     <div class="d-flex gap-2 mb-2">
-      <BButton size="sm" variant="outline-light" :disabled="!listing?.parent || loading" title="Up one folder" @click="go(listing.parent)"><i class="fa-solid fa-arrow-up"></i></BButton>
-      <BButton size="sm" variant="outline-light" :disabled="loading" title="Home folder" @click="go('')"><i class="fa-solid fa-house"></i></BButton>
-      <BFormInput v-model.trim="typed" size="sm" class="font-monospace" placeholder="/path/to/folder" @keydown.enter.prevent="go(typed)" />
-      <BButton size="sm" variant="outline-light" :disabled="loading" @click="go(typed)">Go</BButton>
+      <BButton size="sm" variant="outline-light" :disabled="!listing?.parent || loading" :title="$t('picker.up')" data-testid="picker-up" @click="go(listing.parent)"><i class="fa-solid fa-arrow-up"></i></BButton>
+      <BButton size="sm" variant="outline-light" :disabled="loading" :title="$t('picker.home')" data-testid="picker-home" @click="go('')"><i class="fa-solid fa-house"></i></BButton>
+      <BFormInput v-model.trim="typed" size="sm" class="font-monospace" :placeholder="$t('picker.path')" data-testid="picker-path" @keydown.enter.prevent="go(typed)" />
+      <BButton size="sm" variant="outline-light" :disabled="loading" @click="go(typed)">{{ $t('picker.go') }}</BButton>
     </div>
     <div v-if="loading" class="text-center text-body-secondary py-3"><BSpinner small /></div>
     <BAlert v-else-if="error" :model-value="true" variant="danger" class="mb-2">{{ error }}</BAlert>
-    <div v-else-if="listing" class="list-group list-group-flush border rounded folder-list">
-      <button v-for="d in listing.dirs" :key="d.path" type="button" class="list-group-item list-group-item-action py-1 font-monospace small" @dblclick="go(d.path)" @click="selected = d.path" :class="{ active: selected === d.path }">
+    <div v-else-if="listing" class="list-group list-group-flush border rounded folder-list" data-testid="folder-picker">
+      <button v-for="d in listing.dirs" :key="d.path" type="button" class="list-group-item list-group-item-action py-1 font-monospace small" data-testid="picker-item" :data-name="d.name" @dblclick="go(d.path)" @click="selected = d.path" :class="{ active: selected === d.path }">
         <i class="fa-regular fa-folder me-2"></i>{{ d.name }}
       </button>
-      <div v-if="!listing.dirs.length" class="list-group-item text-body-secondary small">No subfolders</div>
+      <div v-if="!listing.dirs.length" class="list-group-item text-body-secondary small">{{ $t('picker.noSubfolders') }}</div>
     </div>
-    <BFormCheckbox v-model="hidden" switch size="sm" class="mt-2" @update:model-value="go(listing?.path || '')">Show hidden folders</BFormCheckbox>
+    <BFormCheckbox v-model="hidden" switch size="sm" class="mt-2" @update:model-value="go(listing?.path || '')">{{ $t('picker.showHidden') }}</BFormCheckbox>
     <template #footer>
       <small class="text-body-secondary me-auto font-monospace text-truncate" style="max-width: 60%">{{ selected || listing?.path }}</small>
-      <BButton variant="outline-light" size="sm" @click="$emit('update:modelValue', false)">Cancel</BButton>
-      <BButton variant="primary" size="sm" :disabled="!(selected || listing?.path)" @click="choose">Use this folder</BButton>
+      <BButton variant="outline-light" size="sm" @click="$emit('update:modelValue', false)">{{ $t('picker.cancel') }}</BButton>
+      <BButton variant="primary" size="sm" :disabled="!(selected || listing?.path)" data-testid="picker-use" @click="choose">{{ $t('picker.use') }}</BButton>
     </template>
   </BModal>
 </template>

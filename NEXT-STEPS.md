@@ -1,4 +1,22 @@
-# Next steps: importing the CANALV2 graphs
+# Next steps and goals
+
+## Goals, in order
+
+1. **Run Binc's graphs where the compute is**, the same way everywhere: binc-PC
+   first, the Mac for stereo, a Linux box under Docker, RunPod as overflow
+   (`README.md`, "What this repo is for"; `docs/ADR-004`). Measure: a corrosion
+   graph renders unchanged on each of those.
+2. **RunPod as a disposable worker, never a bill nobody planned**: one app per
+   PC, our image, a network volume with the three folders, the cheapest card
+   in stock, idle stop, recreate instead of wait. Proven on 2026-10-19 with the
+   stock image; the remaining steps are below.
+3. **The crew of skills**, Binc's goal: a dispatcher over `queue/<project>/`
+   that runs one job per session as the operator brief says, reports, and
+   stops. Not started.
+4. **One codebase, no second runtime**: the Python API retired, the core in
+   TypeScript, the merge gate green (`docs/ADR-005`).
+
+## Next steps: importing the CANALV2 graphs
 
 Open work only, as of the evening of 2026-10-19. Done items are in
 [`CHANGELOG.md`](./CHANGELOG.md). The inventory behind this is in
@@ -125,12 +143,13 @@ solves, serverless ruled out for frame sequences, pods stopped when a job ends.
 
 In order:
 
-1. [ ] **Binc's yeses**, named, before anything below runs (`shared/governance/policy/agent-permissions.md`; `~/Workspaces/TODO.md` item 5): plates copied to a network volume; an image with the packs pushed to a registry (name and account); the spend, inside the USD 100 cap. The MCP server already refuses `create_agent` without `approved_by`.
-2. [ ] **Push the image.** The amd64 build runs on this Mac through emulation (started 2026-10-19 evening, branch `feature/comfy-app-image-push`). Then, with Binc's yes on the registry: `docker login`, `./start.sh comfy-image --push <registry>/comfy-app:contract-v26`, and enter the printed reference as the image in the Configuration panel. Until then pod creation refuses the bare local name on purpose.
-3. [ ] **Create the network volume** in one datacenter, sized for the tree (81 GB on the mirror), `comfy-shared/` with the weights, and only the plates of the first batch (DPX, two eyes per shot; the 24 inbox entries total about 3,100 frames, so never all of them). Enter the volume id and datacenter in the Configuration panel.
-4. [ ] **Put the data on the volume**: `./start.sh sync --pod <id>` into a small pod with the volume attached; `--plates --approved-by <name>` for the plates. Set `COMFY_MODE=prod` on the machine that drives real pods so every folder is required.
-5. [ ] **Boot one pod** with mounts applied, read the entrypoint's `linked …` lines, open a corrosion graph in its UI, queue one open shot at proxy with the queue script and `--comfy <pod url>`, then stop the pod or let the idle stop do it. Locked shots are never run; proxy first.
-6. [ ] **CPU solve pod**, after the GPU pod works: `solve/` image from Binc's plan, same volume.
+1. [x] **RunPod proven** (2026-10-19 evening, USD 35 of credit): `./start.sh e2e-live` created a stock-image pod on the cheapest card in stock, saw it running, stopped and deleted it in 3.6 minutes. Rerun it any time; it leaves nothing behind.
+2. [ ] **Binc's yeses**, named, before anything below runs (`shared/governance/policy/agent-permissions.md`; `~/Workspaces/TODO.md` item 5): plates copied to a network volume; an image with the packs pushed to a registry (name and account); the spend, inside the USD 100 cap. The MCP server already refuses `create_agent` without `approved_by`.
+3. [ ] **Push the image.** Built for amd64 on this Mac (`comfy-app:contract-v26`, 4.94 GB, 2026-10-19 evening, through emulation). Then, with Binc's yes on the registry: `docker login`, `./start.sh comfy-image --push <registry>/comfy-app:contract-v26`, and enter the printed reference as the image in the Configuration panel. Until then pod creation refuses the bare local name on purpose.
+4. [ ] **Create the network volume** in one datacenter, sized for the tree (81 GB on the mirror), `comfy-shared/` with the weights, and only the plates of the first batch (DPX, two eyes per shot; the 24 inbox entries total about 3,100 frames, so never all of them). Enter the volume id and datacenter in the Configuration panel.
+5. [ ] **Put the data on the volume**: `./start.sh sync --pod <id>` into a small pod with the volume attached; `--plates --approved-by <name>` for the plates. Set `COMFY_MODE=prod` on the machine that drives real pods so every folder is required.
+6. [ ] **Boot one pod** with mounts applied, read the entrypoint's `linked …` lines, open a corrosion graph in its UI, queue one open shot at proxy with the queue script and `--comfy <pod url>`, then stop the pod or let the idle stop do it. Locked shots are never run; proxy first.
+7. [ ] **CPU solve pod**, after the GPU pod works: `solve/` image from Binc's plan, same volume.
 
 ## Open decisions
 
@@ -141,6 +160,8 @@ In order:
 ## Also pending in this repo
 
 - Finish the port (ADR-005): git accounts, repositories, image env and OAuth into `libs/core`; the MCP server and the CLI importing it; then Electron stops spawning the Python backend, the Python tree is retired, and the merge gate and the branching rule stop naming pytest. Until then the Electron app still starts the backend for those parts.
+- Merge `feature/no-spend-mode` and `feature/comfy-app-image-push` (both pushed, 2026-10-19 evening); then the deprecated Python API is behind the app on every feature.
+- ComfyUI's own log on the stock image goes to `/workspace/logs/comfyui.log`, not the container's stdout, so the app's Logs modal shows the host's lines but not ComfyUI's there. Our image logs to stdout. A tail of that file over SSH would close the gap for the stock image.
 - Rebuild the Electron app under `apps/runpod-dashboard/` once the port is complete.
 - The Bash-side governance hooks listed as open in `shared/governance/README.md`: installs, `create_pod.py create`, pushes to other remotes.
 - Abstract versus concrete shapes, and the two findings from `check.py` to raise with Binc (above).

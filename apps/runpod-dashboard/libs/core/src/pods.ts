@@ -9,8 +9,20 @@ import * as gpus from './gpus.js'
 import * as idle from './idle.js'
 import * as mounts from './mounts.js'
 import * as rp from './runpod.js'
+import * as dry from './dry.js'
 
 export const PREBUILT_IMAGE = 'ashleykza/comfyui:latest'   // the stock image: no packs, ignores COMFY_LINKS
+
+/** The ports a pod exposes and which one is ComfyUI's web UI. Our image serves ComfyUI on 8188; the stock
+ *  image puts it behind nginx on 3001 (and Jupyter on 8888). The web port is read back from the pod's own
+ *  port list, so the link is right whatever the image. */
+export const OUR_PORTS = '8188/http,22/tcp'
+export const PREBUILT_PORTS = '3001/http,8888/http,22/tcp'
+export const portsFor = (imageName: string) => (imageName === PREBUILT_IMAGE ? PREBUILT_PORTS : OUR_PORTS)
+export const webPortOf = (ports: string | null | undefined, fallback = 8188): number => {
+  const m = /(\d+)\/http/.exec(ports || '')
+  return m ? Number(m[1]) : fallback
+}
 
 export interface CreatePodRequest {
   name: string; gpu?: string; gpu_count?: number; instance_type?: 'on-demand' | 'spot'; volume_gb?: number; disk_gb?: number
@@ -21,6 +33,8 @@ export interface CreatePodRequest {
 export interface PodStatus {
   id: string; name: string; status: 'running' | 'stopped' | 'starting'; gpu: string; vram: number
   uptime_seconds: number | null; web_ui_url: string | null; ssh_command: string; idle_stop_minutes: number
+  console_url?: string; status_text?: string; comfy_ready?: boolean | null   // null = not probed
+  port_mismatch?: boolean   // the pod does not expose the port its image serves ComfyUI on; only Recreate fixes it
 }
 
 /** The image a pod boots. `configured` is ours from the mount configuration; it must be a reference a pod can
@@ -57,15 +71,17 @@ export function plan(req: CreatePodRequest, cfg: mounts.MountsConfig, credential
     }
   }
   const imageName = resolveImage(req.image, cfg)
+  const gpuKey = req.gpu || gpus.DEFAULT_GPU
   let gpuTypeId: string
-  try { gpuTypeId = gpus.runpodId(req.gpu || gpus.DEFAULT_GPU) } catch (e) { throw bad((e as Error).message) }
+  if (gpuKey === gpus.AUTO) gpuTypeId = gpus.AUTO   // resolved against stock at creation
+  else { try { gpuTypeId = gpus.runpodId(gpuKey) } catch (e) { throw bad((e as Error).message) } }
   const idleMinutes = req.idle_stop_minutes == null ? cfg.idle_stop_minutes : req.idle_stop_minutes
   return {
     input: {
       name: req.name, imageName, gpuTypeId,
       cloudType: ({ 'on-demand': 'SECURE', spot: 'COMMUNITY' } as const)[req.instance_type || 'spot'] || 'ALL',
       gpuCount: req.gpu_count ?? 1, volumeInGb: volumeGb, containerDiskInGb: req.disk_gb ?? 20,
-      startSsh: req.start_ssh !== false, ports: '8188/http,22/tcp', env, ...volume,
+      startSsh: req.start_ssh !== false, ports: portsFor(imageName), env, ...volume,
     },
     idleMinutes,
   }
@@ -76,30 +92,82 @@ export async function create(req: CreatePodRequest, client?: rp.RunPodClient, cr
   if (!req.name?.trim()) throw bad('A pod needs a name')
   const cfg = mounts.load()
   const { input, idleMinutes } = plan(req, cfg, credentialsEnv)
-  const pod = await rp.createPod(input, client)
+  if (mounts.dryRun(cfg)) return dry.create({ name: req.name, gpu: req.gpu, gpu_count: input.gpuCount, image: input.imageName, idle_stop_minutes: idleMinutes > 0 ? idleMinutes : 0 })
+  const { pod, gpuId } = await deployWithFallback(input, client)
   if (idleMinutes > 0) idle.register(pod.id, idleMinutes)
+  const key = gpuKey(gpuId)
   return {
-    id: pod.id, name: req.name, status: 'starting', gpu: `${req.gpu || gpus.DEFAULT_GPU} x${input.gpuCount}`,
-    vram: gpus.vram(req.gpu || gpus.DEFAULT_GPU) * (input.gpuCount || 1), uptime_seconds: 0,
-    web_ui_url: idle.proxyUrl(pod.id), ssh_command: `ssh root@${pod.id}.proxy.runpod.io`, idle_stop_minutes: idleMinutes > 0 ? idleMinutes : 0,
+    id: pod.id, name: req.name, status: 'starting', gpu: `${key} x${input.gpuCount}`,
+    vram: gpus.vram(key) * (input.gpuCount || 1), uptime_seconds: 0,
+    web_ui_url: idle.proxyUrl(pod.id, webPortOf(input.ports)), ssh_command: `ssh root@${pod.id}.proxy.runpod.io`, idle_stop_minutes: idleMinutes > 0 ? idleMinutes : 0, comfy_ready: false,
   }
+}
+
+const gpuKey = (id: string) => Object.entries(gpus.GPUS).find(([, g]) => g.id === id)?.[0] || id
+const NO_STOCK = /no longer any instances available|not enough|no instances/i
+
+/** The cards to try, cheapest in stock first, for `auto`; the one asked for otherwise. */
+export async function candidates(gpuTypeId: string, client?: rp.RunPodClient): Promise<string[]> {
+  if (gpuTypeId !== gpus.AUTO) return [gpuTypeId]
+  const ids = Object.values(gpus.GPUS).map((g) => g.id)
+  let stock: rp.GpuStock[] = []
+  try { stock = await rp.gpuStock(ids, client) } catch { /* no stock answer: try them all in table order */ }
+  const inStock = stock.filter((g) => g.stock && g.price != null).sort((a, b) => (a.price as number) - (b.price as number)).map((g) => g.id)
+  return [...inStock, ...ids.filter((id) => !inStock.includes(id))]
+}
+
+/** Deploy on the first card RunPod will give; a "no instances" answer moves to the next card, then to the other cloud. */
+async function deployWithFallback(input: rp.CreatePodInput, client?: rp.RunPodClient): Promise<{ pod: { id: string }; gpuId: string }> {
+  const cards = await candidates(input.gpuTypeId, client)
+  const clouds: rp.CreatePodInput['cloudType'][] = input.gpuTypeId === gpus.AUTO ? [input.cloudType, input.cloudType === 'SECURE' ? 'COMMUNITY' : 'SECURE'] : [input.cloudType]
+  let last: Error | null = null
+  for (const cloudType of clouds) {
+    for (const gpuTypeId of cards) {
+      try {
+        const pod = await rp.createPod({ ...input, gpuTypeId, cloudType }, client)
+        return { pod, gpuId: gpuTypeId }
+      } catch (e) {
+        last = e as Error
+        if (!NO_STOCK.test(last.message)) throw last   // anything but stock is a real error
+      }
+    }
+  }
+  throw new CoreError(502, `No card available right now: tried ${cards.map(gpuKey).join(', ')} on ${clouds.join(' and ')}. RunPod: ${last?.message}`)
 }
 
 /** A RunPod pod as the dashboard shows it. */
 export function toStatus(p: rp.RawPod): PodStatus {
   const uptime = p.runtime?.uptimeInSeconds ?? p.uptimeSeconds ?? null
   const running = uptime != null && uptime > 0
+  const wanted = (p.desiredStatus || '').toUpperCase() === 'RUNNING'
   return {
-    id: p.id, name: p.name || 'Unknown', status: running ? 'running' : 'stopped',
+    id: p.id, name: p.name || 'Unknown', status: running ? 'running' : wanted ? 'starting' : 'stopped',
     gpu: p.machine?.gpuDisplayName || String(p.gpuCount ?? '?'), vram: gpus.vram(p.machine?.gpuDisplayName || '') || 24,
-    uptime_seconds: uptime, web_ui_url: running ? idle.proxyUrl(p.id) : null,
-    ssh_command: `ssh root@${p.id}.proxy.runpod.io`, idle_stop_minutes: idle.entry(p.id)?.minutes ?? 0,
+    uptime_seconds: uptime, web_ui_url: running ? idle.proxyUrl(p.id, webPortOf(p.ports)) : null,
+    ssh_command: `ssh root@${p.id}.proxy.runpod.io`, idle_stop_minutes: idle.entry(p.id)?.minutes ?? 0, comfy_ready: null,
+    port_mismatch: (p.imageName || '') === PREBUILT_IMAGE && !/3001\/http/.test(p.ports || ''),
+    console_url: consoleUrl(p.id), status_text: p.lastStatusChange || p.desiredStatus || '',
   }
 }
 
-export const list = async (client?: rp.RunPodClient): Promise<PodStatus[]> => (await rp.listPods(client)).map(toStatus)
+const isDry = () => mounts.dryRun(mounts.load())
+/** Does ComfyUI answer on the pod's web port yet? RunPod's proxy answers 502 with a waiting page until the service is up. */
+export async function comfyReady(url: string, fetchFn: typeof fetch = fetch): Promise<boolean> {
+  try {
+    const r = await fetchFn(`${url.replace(/\/$/, '')}/system_stats`, { method: 'GET', signal: AbortSignal.timeout(4000) })
+    return r.status === 200
+  } catch { return false }
+}
+
+export const list = async (client?: rp.RunPodClient): Promise<PodStatus[]> => {
+  if (isDry()) return dry.list()
+  const pods = (await rp.listPods(client)).map(toStatus)
+  await Promise.all(pods.map(async (p) => { if (p.status === 'running' && p.web_ui_url) p.comfy_ready = await comfyReady(p.web_ui_url, client?.fetchFn || fetch) }))
+  return pods
+}
 
 export async function get(podId: string, client?: rp.RunPodClient): Promise<PodStatus> {
+  if (isDry()) { const p = dry.list().find((x) => x.id === podId); if (!p) throw new CoreError(404, `Pod ${podId} not found`); return p }
   const p = await rp.getPod(podId, client)
   if (!p) throw new CoreError(404, `Pod ${podId} not found`)
   return toStatus(p)
@@ -114,13 +182,101 @@ export function stats(pods: PodStatus[]) {
 
 export async function dashboard(client?: rp.RunPodClient) {
   const pods = await list(client)
-  return { stats: stats(pods), pods }
+  return { stats: stats(pods), pods, dry_run: isDry() }
 }
 
-export async function stop(podId: string, client?: rp.RunPodClient) { await rp.stopPod(podId, client); return { message: `Pod ${podId} stopped`, pod_id: podId } }
-export async function resume(podId: string, client?: rp.RunPodClient) { await rp.resumePod(podId, 1, client); return { message: `Pod ${podId} resumed`, pod_id: podId } }
-export async function remove(podId: string, client?: rp.RunPodClient) { await rp.terminatePod(podId, client); idle.forget(podId); return { message: `Pod ${podId} deleted`, pod_id: podId } }
+export async function stop(podId: string, client?: rp.RunPodClient) { if (isDry()) return dry.stop(podId); await rp.stopPod(podId, client); return { message: `Pod ${podId} stopped`, pod_id: podId } }
+export async function resume(podId: string, client?: rp.RunPodClient) { if (isDry()) return dry.resume(podId); await rp.resumePod(podId, 1, client); return { message: `Pod ${podId} resumed`, pod_id: podId } }
+export async function remove(podId: string, client?: rp.RunPodClient) { if (isDry()) { idle.forget(podId); return dry.remove(podId) } await rp.terminatePod(podId, client); idle.forget(podId); return { message: `Pod ${podId} deleted`, pod_id: podId } }
 
 /** The two callbacks the idle loop needs, over RunPod. */
-export const runningIds = (client?: rp.RunPodClient) => async () => new Set((await rp.listPods(client)).filter((p) => (p.runtime?.uptimeInSeconds ?? p.uptimeSeconds ?? 0) > 0).map((p) => p.id))
-export const stopper = (client?: rp.RunPodClient) => async (id: string) => { await rp.stopPod(id, client) }
+/** The pods RunPod wants running, with their uptime (0 while still starting), for the idle watch. */
+export const runningIds = (client?: rp.RunPodClient) => async (): Promise<idle.Running> => {
+  if (isDry()) return dry.runningIds()
+  const out = new Map<string, number | null>()
+  for (const p of await rp.listPods(client)) {
+    const uptime = p.runtime?.uptimeInSeconds ?? p.uptimeSeconds ?? 0
+    if (uptime > 0 || (p.desiredStatus || '').toUpperCase() === 'RUNNING') out.set(p.id, uptime)
+  }
+  return out
+}
+export const stopper = (client?: rp.RunPodClient) => async (id: string) => { if (isDry()) { dry.stop(id); return } await rp.stopPod(id, client) }
+
+export interface PodDetails {
+  id: string; name: string; status: string; status_text: string; cost_per_hr: number | null; cloud: string; datacenter: string
+  gpu: string; gpu_count: number; image: string; disk_gb: number; volume_gb: number; created_at: string; actions: string[]
+  console_url: string; web_ui_url: string | null; ssh_command: string
+}
+
+/** The pod in RunPod's console: the pods page with the id as a query (Lucas, 2026-10-19). */
+export const consoleUrl = (id: string) => `https://console.runpod.io/pods?id=${encodeURIComponent(id)}`
+
+/** The pod as RunPod describes it: the status text people see in the console, the price, the place, the card. */
+export async function details(podId: string, client?: rp.RunPodClient): Promise<PodDetails> {
+  if (isDry()) {
+    const p = dry.list().find((x) => x.id === podId)
+    if (!p) throw new CoreError(404, `Pod ${podId} not found`)
+    return { id: p.id, name: p.name, status: p.status === 'stopped' ? 'EXITED' : 'RUNNING', status_text: `Simulated (no-spend mode); ${p.status}`, cost_per_hr: 0, cloud: 'NONE', datacenter: 'local', gpu: p.gpu, gpu_count: 1, image: 'simulated', disk_gb: 0, volume_gb: 0, created_at: '', actions: [], console_url: consoleUrl(p.id), web_ui_url: p.web_ui_url, ssh_command: p.ssh_command }
+  }
+  const r = await rp.podDetails(podId, client)
+  const running = (r.desiredStatus || '').toUpperCase() === 'RUNNING'
+  return {
+    id: r.id, name: r.name || '', status: r.desiredStatus || '', status_text: r.lastStatusChange || '', cost_per_hr: r.cost ?? r.costPerHr ?? null,
+    cloud: r.cloud || '', datacenter: r.dataCenterId || '', gpu: r.gpu?.id || '', gpu_count: r.gpu?.count ?? 1, image: r.image || r.imageName || '',
+    disk_gb: r.disk ?? 0, volume_gb: r.volume ?? 0, created_at: r.createdAt || '', actions: r.actions || [],
+    console_url: consoleUrl(r.id), web_ui_url: running ? idle.proxyUrl(r.id) : null, ssh_command: `ssh root@${r.id}.proxy.runpod.io`,
+  }
+}
+
+/** The log stream, or a few simulated lines in no-spend mode. */
+export async function logs(podId: string, opts: { tail?: number; since?: string; source?: string }, onEvent: (e: rp.LogEvent) => void, signal?: AbortSignal, client?: rp.RunPodClient): Promise<void> {
+  if (isDry()) {
+    const now = new Date().toISOString()
+    for (const line of ['no-spend mode: this pod is simulated', 'create container (simulated)', 'start container: begin (simulated)', 'ComfyUI listening on 0.0.0.0:8188 (simulated)']) onEvent({ source: 'system', line, ts: now })
+    return
+  }
+  return rp.streamLogs(podId, opts, onEvent, signal, client)
+}
+
+/** RunPod pins a stopped pod to its host; when that host has no free GPU, Resume fails. Recreate makes a
+ *  fresh pod with the same name, image, card choice, disk and idle stop on whatever host is free, and
+ *  terminates the old one. With no per-pod volume nothing is lost; a network volume follows the new pod. */
+export async function recreate(podId: string, client?: rp.RunPodClient): Promise<PodStatus> {
+  if (isDry()) {
+    const old = dry.list().find((x) => x.id === podId)
+    if (!old) throw new CoreError(404, `Pod ${podId} not found`)
+    dry.remove(podId)
+    return dry.create({ name: old.name, gpu: gpuKey(old.gpu.split(' x')[0]) || gpus.DEFAULT_GPU, gpu_count: 1, image: 'simulated', idle_stop_minutes: old.idle_stop_minutes })
+  }
+  const d = await details(podId, client)
+  const key = gpuKey(d.gpu)
+  const req: CreatePodRequest = {
+    name: d.name || 'pod', gpu: key in gpus.GPUS ? key : gpus.AUTO, gpu_count: d.gpu_count || 1,
+    instance_type: d.cloud === 'COMMUNITY' ? 'spot' : 'on-demand', image: d.image || 'configured', disk_gb: d.disk_gb || 20,
+    idle_stop_minutes: idle.entry(podId)?.minutes ?? null, apply_mounts: null,
+  }
+  const fresh = await create(req, client)
+  await rp.terminatePod(podId, client)
+  idle.forget(podId)
+  return fresh
+}
+
+export interface GpuMenuEntry { value: string; text: string; price: number | null; stock: string | null; in_stock: boolean }
+
+/** The GPU menu with what RunPod has in stock right now and the on-demand price; `auto` first. Without a key or on an error the plain menu. */
+export async function gpuMenu(client?: rp.RunPodClient): Promise<{ default: string; gpus: GpuMenuEntry[]; live: boolean }> {
+  const plain = gpus.menu().map((m) => ({ ...m, price: null, stock: null, in_stock: m.value === gpus.AUTO }))
+  if (isDry()) return { default: gpus.DEFAULT_GPU, gpus: plain.map((m) => ({ ...m, in_stock: true, stock: 'simulated' })), live: false }
+  let stock: rp.GpuStock[]
+  try { stock = await rp.gpuStock(Object.values(gpus.GPUS).map((g) => g.id), client) } catch { return { default: gpus.DEFAULT_GPU, gpus: plain, live: false } }
+  const byId = new Map(stock.map((s) => [s.id, s]))
+  return {
+    default: gpus.DEFAULT_GPU, live: true,
+    gpus: plain.map((m) => {
+      if (m.value === gpus.AUTO) return m
+      const s = byId.get(gpus.GPUS[m.value].id)
+      const inStock = !!(s?.stock && s.price != null)
+      return { ...m, price: s?.price ?? null, stock: s?.stock ?? null, in_stock: inStock, text: inStock ? `${m.text} · $${s!.price}/h · ${s!.stock} stock` : `${m.text} · none in stock` }
+    }),
+  }
+}

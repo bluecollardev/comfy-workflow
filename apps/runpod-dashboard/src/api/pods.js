@@ -34,6 +34,8 @@ const ipc = core && {
   resumePod: (id) => core.invoke('pods', 'resume', [id]),
   deletePod: (id) => core.invoke('pods', 'remove', [id]),
   getDashboard: () => core.invoke('pods', 'dashboard'),
+  details: (id) => core.invoke('pods', 'details', [id]),
+  recreate: (id) => core.invoke('pods', 'recreate', [id]),
 };
 
 const http = {
@@ -88,6 +90,18 @@ const http = {
   // Get dashboard stats
   async getDashboard() {
     const { data } = await axios.get(`${API_BASE}/dashboard`);
+    return data;
+  },
+
+  // Same pod, new host: for a stopped pod whose host has no free GPU
+  async recreate(id) {
+    const { data } = await axios.post(`${API_BASE}/pods/${id}/recreate`);
+    return data;
+  },
+
+  // The pod as RunPod describes it: status text, price, place, card, console link
+  async details(id) {
+    const { data } = await axios.get(`${API_BASE}/pods/${id}/details`);
     return data;
   },
 };

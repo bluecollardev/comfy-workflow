@@ -78,4 +78,12 @@ test.describe('dashboard', () => {
     await expect(page.locator('.card.h-100')).toHaveCount(2)
     expect(api.calls.filter((c) => c.path === '/dashboard').length).toBe(before + 1)
   })
+
+  test('pause all stops every running pod and says so', async ({ page, api }) => {
+    await page.goto('/')
+    await page.getByTestId('pause-all').click()
+    await expect(page.getByTestId('toast').first()).toContainText('2 pod(s) stopped')
+    expect(api.calls.filter((c) => /\/pods\/[^/]+\/stop$/.test(c.path)).map((c) => c.path).sort()).toEqual(['/pods/pod-aaaaaaaa/stop', '/pods/pod-cccccccc/stop'])
+    await expect(page.getByTestId('pause-all')).toBeDisabled()
+  })
 })

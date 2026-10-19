@@ -34,6 +34,40 @@ everything in this repo. The "agent pool" in `docs/ADR-002` is GPU pods, a
 different thing. Where graphs run on which machine is `docs/ADR-004`; shared
 storage across those machines is the first gap to close (`NEXT-STEPS.md`).
 
+## What this repo is for, and what RunPod is
+
+Binc's job is the point: ComfyUI graphs that restore film, corrosion clean-up
+and stereo conversion, over client plates, run the same way on whatever machine
+has the compute. The order is set in
+[`docs/ADR-004-where-the-workflows-run.md`](docs/ADR-004-where-the-workflows-run.md)
+and in Binc's own systems page: binc-PC first, because the tree and the plates
+live there; the Mac for the stereo work on its own GPU; a Linux box under
+Docker when there is one; RunPod only when a batch outgrows binc-PC. Binc's
+words: two machines, a NAS, and RunPod containers "when we need the compute".
+
+RunPod is therefore the overflow, not the destination. It is the one place
+that needed tooling, because it is rented by the hour and holds nothing of
+ours by default. That tooling is the desktop app in `apps/runpod-dashboard`
+(`docs/ADR-005-typescript-core-no-server.md`): on each PC it maps the three
+folders every run needs, carries our image with Binc's packs, creates a pod on
+the cheapest card in stock, mounts the data from a network volume, shows
+RunPod's status and logs, stops anything idle, and leaves nothing billing. On
+2026-10-19 that chain ran end to end for the first time: a pod created from
+the app, watched through its pull, recreated when its host filled up, reached
+at its ComfyUI URL, then stopped and deleted.
+
+What this is not: a plan to move ComfyUI to RunPod and work there. The plates
+are client material and leave binc-PC only with Binc's named yes
+(`shared/governance/policy/agent-permissions.md`), every render hour there
+costs money, and the tree on binc-PC is the record. The Mac launcher, the
+Compose file and the folder mapping exist so the same graphs run at home for
+free. The first real batch is still more likely to run on binc-PC than in the
+cloud.
+
+Beyond that sits Binc's larger goal above, the crew of skills: a dispatcher
+over `queue/<project>/` that runs one job per session the way the operator
+brief says. Not started; the next steps page says where it begins.
+
 ## Layout
 
 ```

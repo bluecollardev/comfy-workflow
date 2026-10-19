@@ -36,15 +36,40 @@ const TABLE = {
     stop: (c, id) => c.pods.stop(id),
     resume: (c, id) => c.pods.resume(id),
     remove: (c, id) => c.pods.remove(id),
-    gpus: (c) => ({ default: c.gpus.DEFAULT_GPU, gpus: c.gpus.menu() }),
+    gpus: (c) => c.pods.gpuMenu(),
     setIdle: (c, id, minutes) => { c.idle.register(id, Number(minutes)); return { pod_id: id, idle_stop_minutes: Math.max(Number(minutes), 0) } },
+    details: (c, id) => c.pods.details(id),
+    recreate: (c, id) => c.pods.recreate(id),
   },
   governance: {
     summary: (c) => c.governance.summary(),
   },
+  settings: {
+    get: (c) => c.settings.get(),
+    set: (c, values) => { const r = c.settings.set(values); if (process.env.RUNPOD_API_KEY && !stopIdle) startIdleWatch().catch(() => {}); return r },
+  },
 }
 
+// Log streams: one per pod per window, pushed to the page as 'core:logs' events until stopped.
+const streams = new Map()
+function streamKey(sender, id) { return `${sender.id}:${id}` }
+
 function register() {
+  ipcMain.handle('core:logs:start', async (event, id, opts = {}) => {
+    const key = streamKey(event.sender, id)
+    streams.get(key)?.abort()
+    const ac = new AbortController()
+    streams.set(key, ac)
+    const c = await loadCore()
+    const send = (payload) => { if (!event.sender.isDestroyed()) event.sender.send('core:logs', { id, ...payload }) }
+    c.pods.logs(id, opts, (ev) => send({ event: ev }), ac.signal)
+      .then(() => send({ end: true }))
+      .catch((e) => send({ error: e.message || String(e) }))
+      .finally(() => { if (streams.get(key) === ac) streams.delete(key) })
+    return { ok: true }
+  })
+  ipcMain.handle('core:logs:stop', (event, id) => { const key = streamKey(event.sender, id); streams.get(key)?.abort(); streams.delete(key); return { ok: true } })
+
   ipcMain.handle('core', async (_event, ns, fn, args = []) => {
     try {
       const f = TABLE[ns]?.[fn]

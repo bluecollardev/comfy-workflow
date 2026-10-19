@@ -1,63 +1,63 @@
 <template>
-  <BForm @submit.prevent="submit" @reset.prevent="reset">
+  <BForm data-testid="pod-form" @submit.prevent="submit" @reset.prevent="reset">
     <BRow class="g-3">
       <BCol md="6" lg="4">
-        <BFormGroup label="Name" label-for="pod-name">
+        <BFormGroup :label="$t('form.name')" label-for="pod-name">
           <BFormInput id="pod-name" v-model.trim="form.name" placeholder="ComfyUI-Dev" required />
         </BFormGroup>
       </BCol>
       <BCol md="6" lg="4">
-        <BFormGroup label="GPU" label-for="pod-gpu">
+        <BFormGroup :label="$t('form.gpu')" label-for="pod-gpu" :description="gpuLive ? $t('form.gpuStock') : $t('form.gpuNoStock')" data-testid="pod-gpu-group">
           <BFormSelect id="pod-gpu" v-model="form.gpu" :options="gpuOptions" />
         </BFormGroup>
       </BCol>
       <BCol md="6" lg="4">
-        <BFormGroup label="GPU count" label-for="pod-gpu-count">
+        <BFormGroup :label="$t('form.gpuCount')" label-for="pod-gpu-count">
           <BFormSelect id="pod-gpu-count" v-model="form.gpuCount" :options="GPU_COUNT_OPTIONS" />
         </BFormGroup>
       </BCol>
       <BCol md="6" lg="4">
-        <BFormGroup label="Instance type" label-for="pod-instance-type">
+        <BFormGroup :label="$t('form.instanceType')" label-for="pod-instance-type">
           <BFormSelect id="pod-instance-type" v-model="form.instanceType" :options="INSTANCE_TYPE_OPTIONS" />
         </BFormGroup>
       </BCol>
       <BCol md="6" lg="4">
-        <BFormGroup label="Per-pod volume (GB)" label-for="pod-volume" description="0 when the configured network volume carries the data; a per-pod volume beside it is billed for nothing.">
+        <BFormGroup :label="$t('form.volume')" label-for="pod-volume" :description="$t('form.volumeHelp')">
           <BFormInput id="pod-volume" v-model.number="form.volumeGb" type="number" min="0" max="500" />
         </BFormGroup>
       </BCol>
       <BCol md="6" lg="4">
-        <BFormGroup label="Container disk (GB)" label-for="pod-disk">
+        <BFormGroup :label="$t('form.disk')" label-for="pod-disk">
           <BFormInput id="pod-disk" v-model.number="form.diskGb" type="number" min="5" max="100" />
         </BFormGroup>
       </BCol>
       <BCol md="6" lg="4">
-        <BFormGroup label="Mounts" label-for="pod-mounts" :description="mountsSummary">
+        <BFormGroup :label="$t('form.mounts')" label-for="pod-mounts" :description="mountsSummary" data-testid="pod-mounts-group">
           <BFormCheckbox id="pod-mounts" v-model="form.applyMounts" switch>
-            Attach the configured volume and links
-            <a href="#" class="ms-1 small" @click.prevent="ui.configOpen = true"><i class="fa-solid fa-gear"></i> configure</a>
+            {{ $t('form.mountsAttach') }}
+            <a href="#" class="ms-1 small" @click.prevent="ui.configOpen = true"><i class="fa-solid fa-gear"></i> {{ $t('form.configure') }}</a>
           </BFormCheckbox>
         </BFormGroup>
       </BCol>
       <BCol md="6" lg="4">
-        <BFormGroup label="Image" label-for="pod-image" :description="form.image === 'configured' ? configuredImage : ''">
+        <BFormGroup :label="$t('form.image')" label-for="pod-image" :description="form.image === 'configured' ? configuredImage : ''" data-testid="pod-image-group">
           <BFormSelect id="pod-image" v-model="form.image" :options="IMAGE_OPTIONS" />
         </BFormGroup>
       </BCol>
       <BCol v-if="form.image === 'custom'" md="6" lg="8">
-        <BFormGroup label="Image URI" label-for="pod-image-uri">
+        <BFormGroup :label="$t('form.imageUri')" label-for="pod-image-uri">
           <BFormInput id="pod-image-uri" v-model.trim="form.customImageUri" placeholder="docker.io/org/image:tag" required />
         </BFormGroup>
       </BCol>
       <BCol md="6" lg="4">
-        <BFormGroup label="Idle stop (minutes)" label-for="pod-idle" description="Stopped after this long with nothing queued in its ComfyUI. 0 = never; blank = the configured value.">
+        <BFormGroup :label="$t('form.idle')" label-for="pod-idle" :description="$t('form.idleHelp')">
           <BFormInput id="pod-idle" v-model.number="form.idleStopMinutes" type="number" min="0" :placeholder="String(configuredIdle)" />
         </BFormGroup>
       </BCol>
       <BCol md="12" class="d-flex gap-4">
         <!-- unchecked-value: bootstrap-vue-next emits undefined when unchecked, which the API client reads as "on" -->
-        <BFormCheckbox v-model="form.startSsh" :unchecked-value="false" switch>Start SSH</BFormCheckbox>
-        <BFormCheckbox v-model="form.startJupyter" :unchecked-value="false" switch>Start Jupyter</BFormCheckbox>
+        <BFormCheckbox v-model="form.startSsh" :unchecked-value="false" switch>{{ $t('form.startSsh') }}</BFormCheckbox>
+        <BFormCheckbox v-model="form.startJupyter" :unchecked-value="false" switch>{{ $t('form.startJupyter') }}</BFormCheckbox>
       </BCol>
     </BRow>
 
@@ -281,12 +281,12 @@
     </BAlert>
 
     <div class="d-flex gap-2 mt-4">
-      <BButton type="submit" variant="primary" :disabled="submitting">
+      <BButton type="submit" variant="primary" :disabled="submitting" data-testid="pod-submit">
         <BSpinner v-if="submitting" small class="me-1" />
         <i v-else class="fa-solid fa-plus me-1"></i>
-        Create pod
+        {{ $t('form.submit') }}
       </BButton>
-      <BButton type="reset" variant="outline-light" :disabled="submitting">Reset</BButton>
+      <BButton type="reset" variant="outline-light" :disabled="submitting" data-testid="pod-reset">{{ $t('form.reset') }}</BButton>
     </div>
   </BForm>
 </template>
@@ -328,22 +328,28 @@ import { imagesAPI } from '../api/images'
 import { useUiStore } from '../stores/ui'
 import { usePodsStore } from '../stores/pods'
 import { useMountsStore } from '../stores/mounts'
+import { t } from '../i18n'
 
 const MAX_VISIBLE_FOLDERS = 500
 
 // The GPU menu comes from the API (GET /api/gpus): 16-24 GB cards, cheapest first. The job runs on a
 // 16 GB A4000 today and nothing asks for more than 24 GB, so no A100/H100/L40S rows to overspend on.
-const gpuOptions = ref([{ value: 'rtx4090', text: 'RTX 4090 (24 GB)' }])
-podsAPI.gpus().then((g) => { gpuOptions.value = g.gpus }).catch(() => {})
+const gpuOptions = ref([{ value: 'auto', text: 'Cheapest card in stock (16-24 GB)' }, { value: 'rtx4090', text: 'RTX 4090 (24 GB)' }])
+const gpuLive = ref(false)
+async function loadGpus() {
+  try { const g = await podsAPI.gpus(); gpuOptions.value = g.gpus; gpuLive.value = !!g.live } catch { /* the plain menu stays */ }
+}
+loadGpus()
+defineExpose({ loadGpus })
 const GPU_COUNT_OPTIONS = Array.from({ length: 8 }, (_, i) => ({ value: i + 1, text: String(i + 1) }))
 const INSTANCE_TYPE_OPTIONS = [
-  { value: 'spot', text: 'Community cloud (cheaper)' },
-  { value: 'on-demand', text: 'Secure cloud' },
+  { value: 'spot', text: t('form.community') },
+  { value: 'on-demand', text: t('form.secure') },
 ]
 const IMAGE_OPTIONS = [
-  { value: 'configured', text: 'Configured image (ours, with the packs)' },
-  { value: 'prebuilt', text: 'ComfyUI (ashleykza): no packs, no links' },
-  { value: 'custom', text: 'Custom image' },
+  { value: 'configured', text: t('form.imageConfigured') },
+  { value: 'prebuilt', text: t('form.imagePrebuilt') },
+  { value: 'custom', text: t('form.imageCustom') },
 ]
 const ROW_TYPES = [
   { value: 'env', text: 'env' },
@@ -387,7 +393,7 @@ const emit = defineEmits(['pod-created'])
 
 const defaults = () => ({
   name: '',
-  gpu: 'rtx4090',
+  gpu: 'auto',
   gpuCount: 1,
   instanceType: 'spot',
   volumeGb: 0,
@@ -410,7 +416,7 @@ const ui = useUiStore()
 const pods = usePodsStore()
 const mounts = useMountsStore()
 const mountsSummary = computed(() => mounts.summary)
-const configuredImage = computed(() => mounts.configuredImage || 'no image configured')
+const configuredImage = computed(() => mounts.configuredImage || t('form.noImage'))
 const configuredIdle = computed(() => mounts.configuredIdle)
 onMounted(() => { if (!mounts.payload) mounts.load() })
 watch(() => mounts.applyByDefault, (v) => { if (form.applyMounts === true && v === false) form.applyMounts = false }, { immediate: true })

@@ -11,7 +11,8 @@ beforeEach(() => { dir = scratch(); process.env.RUNPOD_API_KEY = 'test' })
 /** A fetch that records the GraphQL queries and answers from a script. */
 function fakeFetch(answers: (query: string) => unknown) {
   const queries: string[] = []
-  const fetchFn = (async (_url: string, init: { body: string }) => {
+  const fetchFn = (async (url: string, init?: { body?: string }) => {
+    if (!init?.body) return { status: String(url).includes('ready-') ? 200 : 502, ok: false, json: async () => ({}) }   // a proxy probe: pods named ready-* answer
     const q = JSON.parse(init.body).query as string
     queries.push(q)
     const data = answers(q)
@@ -38,10 +39,12 @@ describe('the plan sent to RunPod', () => {
     const cfg = mounts.defaults(); cfg.image = 'ghcr.io/example/comfy-app:v26'; cfg.network_volume_id = 'vol1'; cfg.data_center_id = 'EU-RO-1'
     cfg.folders.project = fakeTree(dir)
     const { input, idleMinutes } = pods.plan({ name: 't' }, cfg)
-    expect(input.imageName).toBe('ghcr.io/example/comfy-app:v26'); expect(input.gpuTypeId).toBe('NVIDIA GeForce RTX 4090')
+    expect(input.imageName).toBe('ghcr.io/example/comfy-app:v26'); expect(input.gpuTypeId).toBe('auto')
     expect(input.cloudType).toBe('COMMUNITY'); expect(input.volumeInGb).toBe(0); expect(input.networkVolumeId).toBe('vol1'); expect(input.dataCenterId).toBe('EU-RO-1')
     expect(input.env.PROJECT_ROOT).toBe('/workspace/project'); expect(input.env.COMFY_LINKS).toContain('/home/someone/HARBOUR_r1/HARBOUR=/workspace/project')
     expect(input.ports).toBe('8188/http,22/tcp'); expect(idleMinutes).toBe(30)
+    expect(pods.plan({ name: 't', image: 'prebuilt' }, cfg).input.ports).toBe('3001/http,8888/http,22/tcp')   // the stock image serves its UI on 3001
+    expect(pods.webPortOf('3001/http,8888/http,22/tcp')).toBe(3001); expect(pods.webPortOf('22/tcp')).toBe(8188)
     // a per-pod volume asked for beside the network volume is still 0; without the volume it is kept
     expect(pods.plan({ name: 't', volume_gb: 40 }, cfg).input.volumeInGb).toBe(0)
     cfg.network_volume_id = ''
@@ -65,26 +68,92 @@ describe('against RunPod', () => {
     const cfg = mounts.defaults(); cfg.image = 'ghcr.io/example/comfy-app:v26'; mounts.save(cfg)
     const { fetchFn, queries } = fakeFetch((q) => {
       if (q.includes('podFindAndDeployOnDemand')) return { podFindAndDeployOnDemand: { id: 'pod123' } }
-      if (q.includes('myPods')) return { myself: { pods: [{ id: 'pod123', name: 't', runtime: { uptimeInSeconds: 60, ports: [] }, machine: { gpuDisplayName: 'RTX 4090' } }, { id: 'p2', name: 'off', runtime: null }] } }
+      if (q.includes('myPods')) return { myself: { pods: [{ id: 'pod123', name: 't', imageName: 'ashleykza/comfyui:latest', ports: '3001/http,22/tcp', runtime: { uptimeInSeconds: 60, ports: [] }, machine: { gpuDisplayName: 'RTX 4090' } }, { id: 'old-ports', name: 'old', imageName: 'ashleykza/comfyui:latest', ports: '8188/http,22/tcp', runtime: { uptimeInSeconds: 60, ports: [] } }, { id: 'p2', name: 'off', runtime: null }, { id: 'ready-1', name: 'up', ports: '8188/http', runtime: { uptimeInSeconds: 600, ports: [] }, desiredStatus: 'RUNNING' }] } }
       if (q.includes('podStop')) return { podStop: { id: 'pod123', desiredStatus: 'EXITED' } }
       if (q.includes('podTerminate')) return { podTerminate: null }
       return {}
     })
     const client = { fetchFn }
-    const created = await pods.create({ name: 't', env_vars: { QUOTE: 'say "hi"' } }, client)
+    const created = await pods.create({ name: 't', gpu: 'rtx4090', env_vars: { QUOTE: 'say "hi"' } }, client)
+    expect(created.gpu).toBe('rtx4090 x1')
     expect(created.id).toBe('pod123'); expect(created.web_ui_url).toBe('https://pod123-8188.proxy.runpod.net'); expect(created.idle_stop_minutes).toBe(30)
     expect(idle.entry('pod123')?.minutes).toBe(30)
     const m = queries[0]
     expect(m).toContain('imageName: "ghcr.io/example/comfy-app:v26"'); expect(m).toContain('gpuTypeId: "NVIDIA GeForce RTX 4090"'); expect(m).toContain('cloudType: COMMUNITY')
     expect(m).toContain('volumeInGb: 0'); expect(m).toContain('dataCenterId: null'); expect(m).toContain('ports: "8188/http,22/tcp"'); expect(m).toContain('{ key: "QUOTE", value: "say \\"hi\\"" }')
     const d = await pods.dashboard(client)
-    expect(d.stats).toEqual({ total_pods: 2, running_pods: 1, stopped_pods: 1, total_vram: 48 })
-    expect(d.pods[0]).toMatchObject({ status: 'running', web_ui_url: 'https://pod123-8188.proxy.runpod.net', idle_stop_minutes: 30 })
-    expect(d.pods[1]).toMatchObject({ status: 'stopped', web_ui_url: null })
+    expect(d.stats).toEqual({ total_pods: 4, running_pods: 3, stopped_pods: 1, total_vram: 96 })
+    expect(d.pods.find((p) => p.id === 'old-ports')).toMatchObject({ port_mismatch: true })
+    expect(d.pods[0].port_mismatch).toBe(false)
+    expect(d.pods[0]).toMatchObject({ status: 'running', web_ui_url: 'https://pod123-3001.proxy.runpod.net', idle_stop_minutes: 30, comfy_ready: false })   // the stock image's port, not up yet
+    expect(d.pods[2]).toMatchObject({ status: 'stopped', web_ui_url: null, comfy_ready: null })
+    expect(d.pods[3]).toMatchObject({ status: 'running', web_ui_url: 'https://ready-1-8188.proxy.runpod.net', comfy_ready: true })
     expect(await pods.stop('pod123', client)).toEqual({ message: 'Pod pod123 stopped', pod_id: 'pod123' })
     await pods.remove('pod123', client)
     expect(idle.entry('pod123')).toBeUndefined()
-    expect(await pods.runningIds(client)()).toEqual(new Set(['pod123']))
+    expect(await pods.runningIds(client)()).toEqual(new Map([['pod123', 60], ['old-ports', 60], ['ready-1', 600]]))
+  })
+
+  it('auto picks the cheapest card in stock and moves on when RunPod has none', async () => {
+    const cfg = mounts.defaults(); cfg.image = 'ghcr.io/example/comfy-app:v26'; mounts.save(cfg)
+    const tried: string[] = []
+    const { fetchFn } = fakeFetch((q) => {
+      if (q.includes('gpuTypes')) return { gpuTypes: [
+        { id: 'NVIDIA GeForce RTX 4090', secureCloud: true, communityCloud: true, lowestPrice: { uninterruptablePrice: 0.34, stockStatus: 'Low' } },
+        { id: 'NVIDIA RTX A5000', secureCloud: true, communityCloud: true, lowestPrice: { uninterruptablePrice: 0.16, stockStatus: 'Low' } },
+        { id: 'NVIDIA RTX A4000', secureCloud: true, communityCloud: true, lowestPrice: { uninterruptablePrice: null, stockStatus: null } },
+      ] }
+      if (q.includes('podFindAndDeployOnDemand')) {
+        const id = /gpuTypeId: "([^"]+)"/.exec(q)![1]; tried.push(id)
+        if (id === 'NVIDIA RTX A5000') return { errors: [{ message: 'There are no longer any instances available with the requested specifications. Please refresh and try again.' }] }
+        return { podFindAndDeployOnDemand: { id: 'pod-auto' } }
+      }
+      return {}
+    })
+    expect(await pods.candidates('auto', { fetchFn })).toEqual(['NVIDIA RTX A5000', 'NVIDIA GeForce RTX 4090', 'NVIDIA RTX A4000', 'NVIDIA RTX 4000 Ada Generation', 'NVIDIA GeForce RTX 3090'])
+    const created = await pods.create({ name: 't', gpu: 'auto' }, { fetchFn })
+    expect(tried).toEqual(['NVIDIA RTX A5000', 'NVIDIA GeForce RTX 4090'])   // cheapest first, then the next when none
+    expect(created.gpu).toBe('rtx4090 x1'); expect(created.vram).toBe(24)
+    // a real error is not retried
+    const { fetchFn: f2 } = fakeFetch((q) => q.includes('gpuTypes') ? { gpuTypes: [] } : { errors: [{ message: 'Your account balance is too low to rent a pod.' }] })
+    await expect(pods.create({ name: 't', gpu: 'auto' }, { fetchFn: f2 })).rejects.toThrow(/balance is too low/)
+    // all out of stock on both clouds: one clear message
+    const { fetchFn: f3 } = fakeFetch((q) => q.includes('gpuTypes') ? { gpuTypes: [] } : { errors: [{ message: 'There are no longer any instances available with the requested specifications.' }] })
+    await expect(pods.create({ name: 't', gpu: 'auto' }, { fetchFn: f3 })).rejects.toThrow(/No card available right now: tried .* on COMMUNITY and SECURE/)
+  })
+
+  it('recreate makes the same pod on another host and drops the old one', async () => {
+    const cfg = mounts.defaults(); cfg.image = 'ghcr.io/example/comfy-app:v26'; mounts.save(cfg)
+    idle.register('old1', 15)
+    const { fetchFn, queries } = fakeFetch((q) => {
+      if (q.includes('podFindAndDeployOnDemand')) return { podFindAndDeployOnDemand: { id: 'new1' } }
+      if (q.includes('podTerminate')) return { podTerminate: null }
+      return {}
+    })
+    const restFetch = (async (url: string, init: { body?: string; headers?: Record<string, string> }) => {
+      if (String(url).includes('/v2/pods/old1')) return { ok: true, status: 200, json: async () => ({ id: 'old1', name: 'Live-Proof', desiredStatus: 'EXITED', lastStatusChange: 'Exited by user', cost: 0.28, cloud: 'SECURE', dataCenterId: 'EUR-IS-1', gpu: { id: 'NVIDIA RTX 4000 Ada Generation', count: 1 }, image: 'ashleykza/comfyui:latest', disk: 20, volume: 0, actions: ['start', 'terminate'] }) }
+      return (fetchFn as unknown as (u: string, i: unknown) => Promise<unknown>)(url, init)
+    }) as unknown as typeof fetch
+    const fresh = await pods.recreate('old1', { fetchFn: restFetch })
+    expect(fresh.id).toBe('new1'); expect(fresh.name).toBe('Live-Proof'); expect(fresh.idle_stop_minutes).toBe(15)
+    const deploy = queries.find((q) => q.includes('podFindAndDeployOnDemand'))!
+    expect(deploy).toContain('name: "Live-Proof"'); expect(deploy).toContain('imageName: "ashleykza/comfyui:latest"'); expect(deploy).toContain('gpuTypeId: "NVIDIA RTX 4000 Ada Generation"'); expect(deploy).toContain('cloudType: SECURE'); expect(deploy).toContain('containerDiskInGb: 20')
+    expect(queries.some((q) => q.includes('podTerminate') && q.includes('old1'))).toBe(true)
+    expect(idle.entry('old1')).toBeUndefined(); expect(idle.entry('new1')?.minutes).toBe(15)
+  })
+
+  it('the GPU menu says what is in stock and at what price', async () => {
+    const { fetchFn } = fakeFetch((q) => q.includes('gpuTypes') ? { gpuTypes: [
+      { id: 'NVIDIA RTX A5000', secureCloud: true, communityCloud: true, lowestPrice: { uninterruptablePrice: 0.16, stockStatus: 'Low' } },
+      { id: 'NVIDIA RTX A4000', secureCloud: true, communityCloud: true, lowestPrice: { uninterruptablePrice: null, stockStatus: null } },
+    ] } : {})
+    const m = await pods.gpuMenu({ fetchFn })
+    expect(m.live).toBe(true); expect(m.gpus[0].value).toBe('auto')
+    const a5000 = m.gpus.find((g) => g.value === 'a5000')!, a4000 = m.gpus.find((g) => g.value === 'a4000')!
+    expect(a5000).toMatchObject({ in_stock: true, price: 0.16, stock: 'Low', text: 'RTX A5000 (24 GB) · $0.16/h · Low stock' })
+    expect(a4000).toMatchObject({ in_stock: false, text: 'RTX A4000 (16 GB) · none in stock' })
+    delete process.env.RUNPOD_API_KEY
+    expect((await pods.gpuMenu()).live).toBe(false)
   })
 
   it('surfaces RunPod errors and a missing key', async () => {

@@ -41,10 +41,12 @@ export function defaultState() {
     imageBuildArgs: [],
     imageEnvSkipped: 0,
     // The mount configuration (GET /mounts): the image every pod boots and the idle default.
-    mounts: { config: { image: 'ghcr.io/example/comfy-app:v26', idle_stop_minutes: 30, network_volume_id: '', mount_path: '/workspace', apply_by_default: true, folders: { project: '', plates: '', 'comfy-shared': '' }, custom: [], env: {}, links: [], required: {} }, folders: [], links: [], mode: 'dev', require: [], require_source: 'config', stored: false, store: '', local_env: {}, preview: { env: {} }, catalog: {} },
-    gpus: { default: 'rtx4090', gpus: [{ value: 'a4000', text: 'RTX A4000 (16 GB)' }, { value: 'rtx4090', text: 'RTX 4090 (24 GB)' }] },
+    mounts: { config: { image: 'ghcr.io/example/comfy-app:v26', idle_stop_minutes: 30, network_volume_id: '', mount_path: '/workspace', apply_by_default: true, dry_run: false, folders: { project: '', plates: '', 'comfy-shared': '' }, custom: [], env: {}, links: [], required: {} }, folders: [], links: [], mode: 'dev', require: [], require_source: 'config', stored: false, store: '', local_env: {}, preview: { env: {} }, catalog: {} },
+    gpus: { default: 'auto', live: true, gpus: [{ value: 'auto', text: 'Cheapest card in stock (16-24 GB)', in_stock: true }, { value: 'a4000', text: 'RTX A4000 (16 GB) · none in stock', in_stock: false }, { value: 'rtx4090', text: 'RTX 4090 (24 GB) · $0.34/h · Low stock', in_stock: true, price: 0.34, stock: 'Low' }] },
     // The folder browser (GET /fs/dirs): a tiny disk.
     fs: { '/Users/lucas': ['ComfyUI-Shared', 'Projects'], '/Users/lucas/Projects': ['CANALV2', 'plates'], '/Users/lucas/Projects/CANALV2': ['00_POLICY', '04_TRACKER'] },
+    settings: { runpod_api_key_set: false, runpod_api_key_hint: '', source: 'none' },
+    logs: {},   // pod id -> lines for GET /pods/:id/logs
     failures: {},
   }
 }
@@ -107,6 +109,8 @@ export async function mockApi(page, state) {
 
     let m
     // pods
+    if (method === 'GET' && path === '/settings') return json(state.settings)
+    if (method === 'PUT' && path === '/settings') { if (body.runpod_api_key) state.settings = { runpod_api_key_set: true, runpod_api_key_hint: '••••' + body.runpod_api_key.slice(-4), source: '/home/me/.config/runpod-pod-manager/.env' }; return json(state.settings) }
     if (method === 'GET' && path === '/mounts') return json(mountsPayload(state))
     if (method === 'PUT' && path === '/mounts') { state.mounts.config = body; state.mounts.stored = true; return json(mountsPayload(state)) }
     if (method === 'DELETE' && path === '/mounts') { state.mounts.config = defaultState().mounts.config; state.mounts.stored = false; return json(mountsPayload(state)) }
@@ -118,13 +122,38 @@ export async function mockApi(page, state) {
       return json({ path: p, parent, home: '/Users/lucas', dirs: names.map((n) => ({ name: n, path: `${p}/${n}` })) })
     }
     if (method === 'GET' && path === '/gpus') return json(state.gpus)
-    if (method === 'GET' && path === '/dashboard') return json({ stats: stats(state.pods), pods: state.pods })
+    if (method === 'GET' && path === '/dashboard') return json({ stats: stats(state.pods), pods: state.pods, dry_run: !!state.mounts.config.dry_run })
     if (method === 'GET' && path === '/pods') return json(state.pods)
     if (method === 'POST' && path === '/pods') {
       const pod = { id: `pod-new-${state.pods.length + 1}`, name: body.name, status: 'starting', gpu: body.gpu, vram: 24,
         ssh_command: 'ssh root@new.proxy.runpod.io' }
       state.pods.push(pod)
       return json(pod, 201)
+    }
+    if ((m = path.match(/^\/pods\/([^/]+)\/details$/)) && method === 'GET') {
+      const pod = state.pods.find((p) => p.id === m[1])
+      if (!pod) return json({ detail: `RunPod has no such pod (${m[1]})` }, 404)
+      return json({ id: pod.id, name: pod.name, status: pod.status === 'stopped' ? 'EXITED' : 'RUNNING', status_text: pod.status === 'stopped' ? 'Exited by user: Mon Oct 19 2026' : 'Rented by user: Mon Oct 19 2026',
+        cost_per_hr: 0.28, cloud: 'SECURE', datacenter: 'EUR-IS-1', gpu: 'NVIDIA RTX 4000 Ada Generation', gpu_count: 1, image: 'ashleykza/comfyui:latest', disk_gb: 20, volume_gb: 0,
+        created_at: '2026-10-19T11:00:19Z', actions: ['start', 'terminate'], console_url: `https://console.runpod.io/pods?id=${pod.id}`, web_ui_url: pod.web_ui_url || null, ssh_command: pod.ssh_command })
+    }
+    if ((m = path.match(/^\/pods\/([^/]+)\/logs$/)) && method === 'GET') {
+      const lines = state.logs[m[1]] || ['create container ashleykza/comfyui:latest', 'start container for ashleykza/comfyui:latest: begin']
+      const body = lines.map((line, i) => `id: 2026-10-19T11:02:2${i}Z\ndata: ${JSON.stringify({ source: 'system', line, ts: `2026-10-19T11:02:2${i}Z` })}\n\n`).join('')
+      return route.fulfill({ status: 200, contentType: 'text/event-stream', body })
+    }
+    if ((m = path.match(/^\/pods\/([^/]+)\/idle$/)) && method === 'PUT') {
+      const pod = state.pods.find((p) => p.id === m[1])
+      if (pod) pod.idle_stop_minutes = Number(query.minutes)
+      return json({ pod_id: m[1], idle_stop_minutes: Number(query.minutes) })
+    }
+    if ((m = path.match(/^\/pods\/([^/]+)\/recreate$/)) && method === 'POST') {
+      const i = state.pods.findIndex((p) => p.id === m[1])
+      if (i < 0) return json({ detail: 'not found' }, 404)
+      const old = state.pods.splice(i, 1)[0]
+      const pod = { ...old, id: `pod-re-${old.id.slice(-4)}`, status: 'starting' }
+      state.pods.push(pod)
+      return json(pod)
     }
     if ((m = path.match(/^\/pods\/([^/]+)\/(stop|resume)$/)) && method === 'POST') {
       const pod = state.pods.find((p) => p.id === m[1])
@@ -188,17 +217,17 @@ export { expect }
 
 // ----- shared UI helpers -----
 
-export const createPodToggle = (page) => page.locator('[aria-controls="create-pod-form"]')
+export const createPodToggle = (page) => page.getByTestId('create-pod-toggle')
 
 export async function openCreatePod(page) {
   await createPodToggle(page).click()
-  await expect(page.getByLabel('Name')).toBeVisible()
+  await expect(page.locator('#pod-name')).toBeVisible()
 }
 
 export async function expandSection(page, name) {
   await page.getByRole('button', { name, exact: true }).click()
 }
 
-export const podCard = (page, name) => page.locator('.card.h-100', { hasText: name })
+export const podCard = (page, name) => page.locator(`[data-testid="pod-card"][data-name="${name}"]`)
 
 export const modal = (page, text) => page.locator('.modal.show', { hasText: text })

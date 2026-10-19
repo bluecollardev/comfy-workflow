@@ -9,7 +9,7 @@
 #   ./start.sh pod <args>     pod lifecycle CLI, e.g. ./start.sh pod list
 #   ./start.sh mcp            the MCP server over stdio (what Claude Code launches)
 #   ./start.sh sync --pod <id> copy the mapped folders to a pod's network volume (never deletes)
-#   ./start.sh e2e | core-test | smoke   the browser suite, the core's suite, a headless boot of the app
+#   ./start.sh e2e | e2e-app | e2e-live | core-test | smoke   browser suite; the app in no-spend mode; the live RunPod proof (spends); core suite; headless boot
 #   ./start.sh package [mac|win|linux|all] [--comfy <variant>] [--image <ref>]  build the app installers for a comfy-app variant
 #   ./start.sh test [args]    the merge gate: pytest without the integration tests
 #   ./start.sh stop           stop the pod manager API (even a stale one) and a backgrounded ComfyUI
@@ -135,6 +135,15 @@ case "${1:-help}" in
     # the browser suite against hot reload (Playwright starts the dev server itself)
     shift; cd apps/runpod-dashboard; [ -d node_modules ] || npm install
     exec npx playwright test "$@" ;;
+  e2e-app)
+    # the real app through Electron in no-spend mode: pods simulated, nothing bills
+    shift; ensure_dashboard; cd apps/runpod-dashboard
+    exec npx playwright test --config playwright.electron.config.js no-spend.spec.js "$@" ;;
+  e2e-live)
+    # the proof against RunPod: one real pod with the stock image, stopped and deleted by the test. Spends.
+    # RUNPOD_LIVE_KEEP=1 leaves it stopped (bills nothing with no per-pod volume) so the app can show it.
+    shift; load_env; need_key; ensure_dashboard; cd apps/runpod-dashboard
+    RUNPOD_LIVE=1 exec npx playwright test --config playwright.electron.config.js live.spec.js "$@" ;;
   core-test)
     shift; cd apps/runpod-dashboard; [ -d node_modules ] || npm install
     exec npm run --silent core:test -- "$@" ;;

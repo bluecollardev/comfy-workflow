@@ -54,6 +54,15 @@ describe('what the tree declares', () => {
     expect(rows.project.mirror).toBe(true); expect(rows.plates.mirror).toBe(false)
   })
 
+  it('skips folders it cannot read instead of failing', () => {
+    mkdirSync(join(dir, 'tree', 'type', 'shot', '02_SOURCE'), { recursive: true })
+    writeFileSync(join(dir, 'tree', 'type', 'shot', '02_SOURCE', 'SOURCES.csv'), 'role,location\nplate,/p/PC/shot/eye\n')
+    mkdirSync(join(dir, 'tree', 'locked'), { mode: 0o000 })
+    try {
+      expect(m.declaredPlates(join(dir, 'tree'))?.path).toBe('/p/PC')
+    } finally { rmSync(join(dir, 'tree', 'locked'), { recursive: true, force: true }) }
+  })
+
   it('parses quoted CSV cells', () => {
     expect(m.parseCsv('a,b\n"x, y",2\n')).toEqual([{ a: 'x, y', b: '2' }])
   })

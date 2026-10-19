@@ -33,6 +33,7 @@ export interface MountsConfig {
   required: Record<string, boolean>
   image: string
   idle_stop_minutes: number
+  dry_run: boolean
 }
 export interface Declared { path: string; source: string; count: number }
 export interface FolderRow {
@@ -42,6 +43,9 @@ export interface FolderRow {
 }
 
 // ----- mode and what is required -----
+
+/** No-spend mode: pods are simulated, nothing reaches RunPod. The configuration's switch, or RUNPOD_DRY_RUN=1. */
+export const dryRun = (cfg?: MountsConfig): boolean => process.env.RUNPOD_DRY_RUN === '1' || !!cfg?.dry_run
 
 /** COMFY_MODE: `dev` (default; a local run) or `prod` (every required folder must be mapped). */
 export const mode = (): 'dev' | 'prod' => ((process.env.COMFY_MODE || 'dev').trim().toLowerCase() === 'prod' ? 'prod' : 'dev')
@@ -83,6 +87,7 @@ export function defaults(): MountsConfig {
     required: Object.fromEntries(names.map((n) => [n, false])),
     image: DEFAULT_IMAGE(),
     idle_stop_minutes: 30,
+    dry_run: false,
   }
 }
 
@@ -102,6 +107,7 @@ export function normalize(data: Partial<MountsConfig>): MountsConfig {
     required: { ...d.required, ...(data.required || {}) },
     image: data.image ?? d.image,
     idle_stop_minutes: data.idle_stop_minutes ?? d.idle_stop_minutes,
+    dry_run: data.dry_run === true,
   }
 }
 
@@ -148,8 +154,10 @@ function mostCommon(values: string[]): string | null {
   return best
 }
 
+const entries = (dir: string) => { try { return readdirSync(dir, { withFileTypes: true }) } catch { return [] } }   // unreadable: skipped, never fatal
+
 function walk(dir: string, out: string[] = []): string[] {
-  for (const e of readdirSync(dir, { withFileTypes: true })) {
+  for (const e of entries(dir)) {
     const p = join(dir, e.name)
     if (e.isDirectory()) walk(p, out); else out.push(p)
   }
@@ -180,7 +188,7 @@ export function declaredRoot(tree: string): Declared | null {
   if (roots.length) return { path: mostCommon(roots) as string, source: "the tree's job files", count: roots.length }
   const policy = join(tree, '00_POLICY')
   if (isDir(policy)) {
-    const masters = readdirSync(policy).filter((n) => /^structure_v.*\.md$/.test(n)).sort().reverse()
+    const masters = entries(policy).map((e) => e.name).filter((n) => /^structure_v.*\.md$/.test(n)).sort().reverse()
     for (const n of masters) {
       const m = /Root:\s*`([^`]+)`/.exec(readText(join(policy, n)))
       if (m) return { path: m[1].replace(/\/+$/, ''), source: "the tree's structure page", count: 1 }
@@ -214,9 +222,9 @@ export function parseCsv(text: string): Record<string, string>[] {
 export function declaredPlates(tree: string): Declared | null {
   const found: string[] = []
   if (!isDir(tree)) return null
-  for (const type of readdirSync(tree, { withFileTypes: true }).filter((e) => e.isDirectory())) {
+  for (const type of entries(tree).filter((e) => e.isDirectory())) {
     const typeDir = join(tree, type.name)
-    for (const shot of readdirSync(typeDir, { withFileTypes: true }).filter((e) => e.isDirectory())) {
+    for (const shot of entries(typeDir).filter((e) => e.isDirectory())) {
       const f = join(typeDir, shot.name, '02_SOURCE', 'SOURCES.csv')
       if (!existsSync(f)) continue
       for (const row of parseCsv(readText(f))) {
@@ -327,6 +335,7 @@ export function payload(cfg: MountsConfig) {
   return {
     config: cfg,
     mode: mode(),
+    dry_run: dryRun(cfg),
     require: [...requiredKeys(cfg)].sort(),
     require_source: requireSource(),
     stored: stored(),

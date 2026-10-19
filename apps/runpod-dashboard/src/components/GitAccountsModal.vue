@@ -70,6 +70,7 @@
 import { ref } from 'vue'
 import { gitAPI } from '../api/git'
 import { useToastStore } from '../stores/toast'
+import { t } from '../i18n'
 import { useUiStore } from '../stores/ui'
 
 const ui = useUiStore()
@@ -96,7 +97,7 @@ async function load() {
 
 async function disconnect(account) {
   if (!window.confirm(`Disconnect ${account.username} (${account.host})?`)) return
-  const r = await toast.run('Disconnect account', () => gitAPI.disconnect(account.id), { ok: `Disconnected ${account.username}`, onError: (t) => (error.value = t) })
+  const r = await toast.run(t('toast.disconnect'), () => gitAPI.disconnect(account.id), { ok: t('toast.disconnected', { name: account.username }), onError: (msg) => (error.value = msg) })
   if (r.ok) await load()
 }
 </script>

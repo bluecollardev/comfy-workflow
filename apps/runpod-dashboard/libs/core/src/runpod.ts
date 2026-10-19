@@ -48,12 +48,12 @@ export function deployMutation(i: CreatePodInput): string {
 }
 
 export interface RawPod {
-  id: string; name: string; desiredStatus?: string; imageName?: string; gpuCount?: number; costPerHr?: number
-  uptimeSeconds?: number; volumeInGb?: number; volumeMountPath?: string; machine?: { gpuDisplayName?: string } | null
+  id: string; name: string; desiredStatus?: string; lastStatusChange?: string; imageName?: string; gpuCount?: number; costPerHr?: number
+  uptimeSeconds?: number; volumeInGb?: number; volumeMountPath?: string; ports?: string | null; machine?: { gpuDisplayName?: string } | null
   runtime?: { ports?: { ip: string; isIpPublic: boolean; privatePort: number; publicPort: number; type: string }[]; uptimeInSeconds?: number } | null
 }
 
-const POD_FIELDS = 'id name desiredStatus imageName gpuCount costPerHr uptimeSeconds volumeInGb volumeMountPath machine { gpuDisplayName } runtime { uptimeInSeconds ports { ip isIpPublic privatePort publicPort type } }'
+const POD_FIELDS = 'id name desiredStatus lastStatusChange imageName gpuCount costPerHr uptimeSeconds volumeInGb volumeMountPath ports machine { gpuDisplayName } runtime { uptimeInSeconds ports { ip isIpPublic privatePort publicPort type } }'
 
 export async function createPod(input: CreatePodInput, client?: RunPodClient): Promise<{ id: string }> {
   const d = await graphql<{ podFindAndDeployOnDemand: { id: string } | null }>(deployMutation(input), client)
@@ -79,3 +79,67 @@ export const resumePod = (podId: string, gpuCount = 1, client?: RunPodClient) =>
 
 export const terminatePod = (podId: string, client?: RunPodClient) =>
   graphql(`mutation { podTerminate(input: { podId: ${str(podId)} }) }`, client)
+
+export interface GpuStock { id: string; price: number | null; stock: string | null; secure: boolean; community: boolean }
+
+/** What RunPod has in stock for a set of gpu ids, with the on-demand price. */
+export async function gpuStock(ids: string[], client?: RunPodClient): Promise<GpuStock[]> {
+  const d = await graphql<{ gpuTypes: { id: string; secureCloud: boolean; communityCloud: boolean; lowestPrice: { uninterruptablePrice: number | null; stockStatus: string | null } | null }[] }>(
+    'query { gpuTypes { id secureCloud communityCloud lowestPrice(input:{gpuCount:1}) { uninterruptablePrice stockStatus } } }', client)
+  const want = new Set(ids)
+  return (d?.gpuTypes || []).filter((g) => want.has(g.id)).map((g) => ({ id: g.id, price: g.lowestPrice?.uninterruptablePrice ?? null, stock: g.lowestPrice?.stockStatus ?? null, secure: g.secureCloud, community: g.communityCloud }))
+}
+
+/** RunPod's v2 REST API (api.runpod.io/v2): the pod record with its status text, and the log stream. */
+export async function rest<T = unknown>(path: string, client: RunPodClient = {}, init: RequestInit = {}): Promise<T> {
+  const apiKey = client.apiKey || process.env.RUNPOD_API_KEY
+  if (!apiKey) throw new CoreError(401, 'RUNPOD_API_KEY not set')
+  const base = client.baseUrl || process.env.RUNPOD_API_BASE_URL || 'https://api.runpod.io'
+  const res = await (client.fetchFn || fetch)(`${base}/v2${path}`, { ...init, headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json', ...(init.headers || {}) }, signal: init.signal ?? AbortSignal.timeout(30_000) })
+  if (res.status === 401 || res.status === 403) throw new CoreError(res.status, 'RunPod refused the API key for this request')
+  if (res.status === 404) throw new CoreError(404, `RunPod has no such pod (${path})`)
+  if (!res.ok) throw new CoreError(502, `RunPod answered ${res.status} for ${path}`)
+  return (await res.json()) as T
+}
+
+export interface PodRecord {
+  id: string; name?: string; desiredStatus?: string; lastStatusChange?: string; image?: string; imageName?: string
+  cost?: number; costPerHr?: number; cloud?: string; dataCenterId?: string; createdAt?: string; actions?: string[]
+  gpu?: { id?: string; count?: number; memory?: number } | null; disk?: number; volume?: number; uptimeSeconds?: number
+  ports?: unknown; publicIp?: string; portMappings?: Record<string, number>; env?: Record<string, string>
+}
+export const podDetails = (id: string, client?: RunPodClient) => rest<PodRecord>(`/pods/${encodeURIComponent(id)}`, client)
+
+export interface LogEvent { source: 'container' | 'system' | string; line: string; ts: string }
+
+/** Stream a pod's logs (Server-Sent Events): `tail` lines of backfill, then live, until the signal aborts. */
+export async function streamLogs(id: string, opts: { tail?: number; since?: string; source?: string } = {}, onEvent: (e: LogEvent) => void, signal?: AbortSignal, client: RunPodClient = {}): Promise<void> {
+  const apiKey = client.apiKey || process.env.RUNPOD_API_KEY
+  if (!apiKey) throw new CoreError(401, 'RUNPOD_API_KEY not set')
+  const base = client.baseUrl || process.env.RUNPOD_API_BASE_URL || 'https://api.runpod.io'
+  const q = new URLSearchParams()
+  if (opts.tail != null) q.set('tail', String(opts.tail))
+  if (opts.since) q.set('since', opts.since)
+  if (opts.source) q.set('source', opts.source)
+  const res = await (client.fetchFn || fetch)(`${base}/v2/pods/${encodeURIComponent(id)}/logs?${q}`, { headers: { Authorization: `Bearer ${apiKey}`, Accept: 'text/event-stream' }, signal })
+  if (!res.ok || !res.body) throw new CoreError(res.status === 404 ? 404 : 502, `RunPod answered ${res.status} for the log stream`)
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  try {
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
+      let i
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const chunk = buf.slice(0, i); buf = buf.slice(i + 2)
+        const data = chunk.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).join('\n')
+        if (!data) continue
+        try { onEvent(JSON.parse(data) as LogEvent) } catch { onEvent({ source: 'system', line: data, ts: '' }) }
+      }
+    }
+  } catch (e) {
+    if (!(signal?.aborted)) throw e
+  }
+}

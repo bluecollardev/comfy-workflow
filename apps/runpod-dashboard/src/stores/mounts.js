@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { mountsAPI } from '../api/mounts'
 import { useToastStore } from './toast'
+import { t } from '../i18n'
 
 /**
  * The mount configuration as the API reports it (GET /api/mounts): the config itself, the
@@ -27,7 +28,7 @@ export const useMountsStore = defineStore('mounts', () => {
     const c = config.value
     if (!c) return ''
     const mapped = folders.value.filter((f) => f.local).length
-    return (c.network_volume_id ? `volume ${c.network_volume_id} at ${c.mount_path}` : 'no network volume configured') + `, ${mapped}/${folders.value.length} folder(s) mapped, ${links.value.length} link(s)`
+    return (c.network_volume_id ? t('form.summaryVolume', { id: c.network_volume_id, path: c.mount_path }) : t('form.summaryNoVolume')) + ', ' + t('form.summaryMapped', { mapped, total: folders.value.length, links: links.value.length })
   })
 
   async function load() {
@@ -38,13 +39,13 @@ export const useMountsStore = defineStore('mounts', () => {
   }
 
   async function save(body) {
-    const r = await toast.run('Save configuration', () => mountsAPI.save(body), { ok: 'Configuration saved', onError: (t) => (error.value = t) })
+    const r = await toast.run(t('toast.saveConfig'), () => mountsAPI.save(body), { ok: t('toast.configSaved'), onError: (msg) => (error.value = msg) })
     if (r.ok) payload.value = r.value
     return r
   }
 
   async function reset() {
-    const r = await toast.run('Clear configuration', () => mountsAPI.reset(), { ok: 'Configuration cleared', onError: (t) => (error.value = t) })
+    const r = await toast.run(t('toast.clearConfig'), () => mountsAPI.reset(), { ok: t('toast.configCleared'), onError: (msg) => (error.value = msg) })
     if (r.ok) payload.value = r.value
     return r
   }

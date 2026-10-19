@@ -102,6 +102,7 @@
 import { reactive, ref } from 'vue'
 import { gitAPI } from '../api/git'
 import { useToastStore } from '../stores/toast'
+import { t } from '../i18n'
 import { useUiStore } from '../stores/ui'
 
 const ui = useUiStore()
@@ -175,7 +176,7 @@ async function attach() {
   saving.value = true
   error.value = null
   const url = draft.url
-  const r = await toast.run('Attach repository', () => gitAPI.attachRepository(url, draft.branch || branches.default || null), { ok: `Attached ${url}`, onError: (t) => (error.value = t) })
+  const r = await toast.run(t('toast.attachRepo'), () => gitAPI.attachRepository(url, draft.branch || branches.default || null), { ok: t('toast.attached', { url }), onError: (msg) => (error.value = msg) })
   saving.value = false
   if (!r.ok) return
   draft.url = ''
@@ -187,7 +188,7 @@ async function attach() {
 
 async function detach(repo) {
   if (!window.confirm(`Remove ${repo.name} (${repo.branch})?`)) return
-  const r = await toast.run('Remove repository', () => gitAPI.detachRepository(repo.id), { ok: `Removed ${repo.name}`, onError: (t) => (error.value = t) })
+  const r = await toast.run(t('toast.removeRepo'), () => gitAPI.detachRepository(repo.id), { ok: t('toast.removed', { name: repo.name }), onError: (msg) => (error.value = msg) })
   if (!r.ok) return
   ui.repositoriesVersion++
   await load()
