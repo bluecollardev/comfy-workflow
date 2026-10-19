@@ -68,7 +68,7 @@ describe('against RunPod', () => {
     const cfg = mounts.defaults(); cfg.image = 'ghcr.io/example/comfy-app:v26'; mounts.save(cfg)
     const { fetchFn, queries } = fakeFetch((q) => {
       if (q.includes('podFindAndDeployOnDemand')) return { podFindAndDeployOnDemand: { id: 'pod123' } }
-      if (q.includes('myPods')) return { myself: { pods: [{ id: 'pod123', name: 't', ports: '3001/http,22/tcp', runtime: { uptimeInSeconds: 60, ports: [] }, machine: { gpuDisplayName: 'RTX 4090' } }, { id: 'p2', name: 'off', runtime: null }, { id: 'ready-1', name: 'up', ports: '8188/http', runtime: { uptimeInSeconds: 600, ports: [] }, desiredStatus: 'RUNNING' }] } }
+      if (q.includes('myPods')) return { myself: { pods: [{ id: 'pod123', name: 't', imageName: 'ashleykza/comfyui:latest', ports: '3001/http,22/tcp', runtime: { uptimeInSeconds: 60, ports: [] }, machine: { gpuDisplayName: 'RTX 4090' } }, { id: 'old-ports', name: 'old', imageName: 'ashleykza/comfyui:latest', ports: '8188/http,22/tcp', runtime: { uptimeInSeconds: 60, ports: [] } }, { id: 'p2', name: 'off', runtime: null }, { id: 'ready-1', name: 'up', ports: '8188/http', runtime: { uptimeInSeconds: 600, ports: [] }, desiredStatus: 'RUNNING' }] } }
       if (q.includes('podStop')) return { podStop: { id: 'pod123', desiredStatus: 'EXITED' } }
       if (q.includes('podTerminate')) return { podTerminate: null }
       return {}
@@ -82,14 +82,16 @@ describe('against RunPod', () => {
     expect(m).toContain('imageName: "ghcr.io/example/comfy-app:v26"'); expect(m).toContain('gpuTypeId: "NVIDIA GeForce RTX 4090"'); expect(m).toContain('cloudType: COMMUNITY')
     expect(m).toContain('volumeInGb: 0'); expect(m).toContain('dataCenterId: null'); expect(m).toContain('ports: "8188/http,22/tcp"'); expect(m).toContain('{ key: "QUOTE", value: "say \\"hi\\"" }')
     const d = await pods.dashboard(client)
-    expect(d.stats).toEqual({ total_pods: 3, running_pods: 2, stopped_pods: 1, total_vram: 72 })
+    expect(d.stats).toEqual({ total_pods: 4, running_pods: 3, stopped_pods: 1, total_vram: 96 })
+    expect(d.pods.find((p) => p.id === 'old-ports')).toMatchObject({ port_mismatch: true })
+    expect(d.pods[0].port_mismatch).toBe(false)
     expect(d.pods[0]).toMatchObject({ status: 'running', web_ui_url: 'https://pod123-3001.proxy.runpod.net', idle_stop_minutes: 30, comfy_ready: false })   // the stock image's port, not up yet
-    expect(d.pods[1]).toMatchObject({ status: 'stopped', web_ui_url: null, comfy_ready: null })
-    expect(d.pods[2]).toMatchObject({ status: 'running', web_ui_url: 'https://ready-1-8188.proxy.runpod.net', comfy_ready: true })
+    expect(d.pods[2]).toMatchObject({ status: 'stopped', web_ui_url: null, comfy_ready: null })
+    expect(d.pods[3]).toMatchObject({ status: 'running', web_ui_url: 'https://ready-1-8188.proxy.runpod.net', comfy_ready: true })
     expect(await pods.stop('pod123', client)).toEqual({ message: 'Pod pod123 stopped', pod_id: 'pod123' })
     await pods.remove('pod123', client)
     expect(idle.entry('pod123')).toBeUndefined()
-    expect(await pods.runningIds(client)()).toEqual(new Map([['pod123', 60], ['ready-1', 600]]))
+    expect(await pods.runningIds(client)()).toEqual(new Map([['pod123', 60], ['old-ports', 60], ['ready-1', 600]]))
   })
 
   it('auto picks the cheapest card in stock and moves on when RunPod has none', async () => {

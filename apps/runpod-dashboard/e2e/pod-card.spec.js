@@ -88,4 +88,12 @@ test.describe('pod card', () => {
     await page.getByTestId('refresh').click()
     await expect(card.getByTestId('pod-open')).toBeVisible()
   })
+
+  test('a pod created without its image\'s UI port says so instead of waiting forever', async ({ page, api }) => {
+    api.state.pods[0].comfy_ready = false; api.state.pods[0].port_mismatch = true
+    await page.goto('/')
+    const card = podCard(page, 'ComfyUI-Dev')
+    await expect(card.getByTestId('pod-port-mismatch')).toHaveText(t('pod.portMismatch'))
+    await expect(card.getByTestId('pod-comfy-starting')).toHaveCount(0)
+  })
 })

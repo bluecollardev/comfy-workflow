@@ -32,6 +32,7 @@
           <a v-if="pod.comfy_ready !== false" :href="pod.web_ui_url" target="_blank" rel="noopener" data-testid="pod-open">
             {{ $t('pod.open') }} <i class="fa-solid fa-arrow-up-right-from-square fa-xs"></i>
           </a>
+          <span v-else-if="pod.port_mismatch" class="text-danger" data-testid="pod-port-mismatch">{{ $t('pod.portMismatch') }}</span>
           <span v-else class="text-warning" data-testid="pod-comfy-starting"><BSpinner small class="me-1" />{{ $t('pod.comfyStarting') }}</span>
         </dd>
       </template>

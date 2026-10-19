@@ -65,7 +65,8 @@
     "idleEdit": "Change the quiet minutes for this pod",
     "idleMinutes": "min",
     "idleSave": "Set",
-    "comfyStarting": "ComfyUI is still starting inside the pod; watch Logs. The link appears when it answers."
+    "comfyStarting": "ComfyUI is still starting inside the pod; watch Logs. The link appears when it answers.",
+    "portMismatch": "This pod was created without the port its image serves ComfyUI on, so the link can never answer. Recreate it; the new pod gets the right ports."
   },
   "form": {
     "name": "Name",
