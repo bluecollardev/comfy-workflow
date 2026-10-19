@@ -45,6 +45,7 @@ export function defaultState() {
     gpus: { default: 'rtx4090', gpus: [{ value: 'a4000', text: 'RTX A4000 (16 GB)' }, { value: 'rtx4090', text: 'RTX 4090 (24 GB)' }] },
     // The folder browser (GET /fs/dirs): a tiny disk.
     fs: { '/Users/lucas': ['ComfyUI-Shared', 'Projects'], '/Users/lucas/Projects': ['CANALV2', 'plates'], '/Users/lucas/Projects/CANALV2': ['00_POLICY', '04_TRACKER'] },
+    settings: { runpod_api_key_set: false, runpod_api_key_hint: '', source: 'none' },
     failures: {},
   }
 }
@@ -107,6 +108,8 @@ export async function mockApi(page, state) {
 
     let m
     // pods
+    if (method === 'GET' && path === '/settings') return json(state.settings)
+    if (method === 'PUT' && path === '/settings') { if (body.runpod_api_key) state.settings = { runpod_api_key_set: true, runpod_api_key_hint: '••••' + body.runpod_api_key.slice(-4), source: '/home/me/.config/runpod-pod-manager/.env' }; return json(state.settings) }
     if (method === 'GET' && path === '/mounts') return json(mountsPayload(state))
     if (method === 'PUT' && path === '/mounts') { state.mounts.config = body; state.mounts.stored = true; return json(mountsPayload(state)) }
     if (method === 'DELETE' && path === '/mounts') { state.mounts.config = defaultState().mounts.config; state.mounts.stored = false; return json(mountsPayload(state)) }

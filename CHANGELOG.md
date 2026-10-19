@@ -5,6 +5,14 @@ completed items move here. Commit hashes are on `develop`.
 
 ## 2026-10-19
 
+### No-spend mode, the RunPod key in the panel, the app driven through Electron, the live proof (branch `feature/no-spend-mode`)
+- **No-spend mode**: a switch in Configuration (or `RUNPOD_DRY_RUN=1`) makes the core simulate pods with the shape the dashboard shows for real ones, so every screen, action and test runs the same way and nothing reaches RunPod or bills. The navbar says so while it is on.
+- **The RunPod API key** is entered in the Configuration panel, first section. The core stores it in `~/.config/runpod-pod-manager/.env`, the file the Electron shell and the Python backend already read, puts it in the running process so the next call uses it, and shows only its last four characters afterwards. The deprecated Python API got the same two endpoints for browser mode.
+- **The app driven by Playwright through Electron** (`./start.sh e2e-app`): the real app with its own config folder, no Python, the page talking to the core over IPC; the whole pod lifecycle in no-spend mode and a configuration save. **The live proof** (`./start.sh e2e-live`, `RUNPOD_LIVE=1`): one real pod with the stock image, seen running with its ComfyUI URL, stopped and deleted by the test itself.
+- Found by those tests and fixed: a Vue reactive proxy cannot cross the context bridge (arguments are copied to plain data on the page side), the stats did not refresh after a pod action, a starting pod had no Stop button and no idle line, the app used a healthy backend even when told not to, the tree scan failed on an unreadable folder.
+- The comfy-app image `comfy-app:contract-v26` was built for linux/amd64 on this Mac (4.94 GB, through emulation). The push waits on `docker login` and Binc's yes; `build.sh --push` does the rest (branch `feature/comfy-app-image-push`).
+- RunPod itself: tried with the stock image on 2026-10-19 evening. Community cloud had no instance for any of the four cards; secure cloud refused for a zero account balance. Nothing was created, nothing spent. Funds are the blocker for the live proof.
+
 ### The app boots on its own; the Python API deprecated; feature tests; packaging for three platforms (branch `feature/deprecate-python-api-and-feature-tests`)
 - The Electron app loads the page from its own files (Vite base `./`) and runs the core in-process, so it starts without Python: proven by a smoke boot with the backend stopped and `RUNPOD_MANAGER_NO_BACKEND=1` (`url=file://…`, `backend=none`, the core answered over IPC). When a Python is found, the deprecated backend is still started for git accounts, repositories, image env and OAuth and the page is served from it so the OAuth round-trip lands home.
 - `apps/runpod-api` is marked deprecated in its README and the project guide: nothing new goes there; it is deleted when those four parts are ported.

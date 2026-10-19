@@ -17,6 +17,15 @@
     <div v-if="loading" class="text-center text-body-secondary py-3"><BSpinner small /></div>
 
     <template v-else-if="cfg">
+      <h6 class="mb-2">RunPod <span class="text-body-secondary fw-normal small">the account the app creates pods in</span></h6>
+      <BRow class="g-3 mb-3">
+        <BCol md="8">
+          <BFormGroup label="API key" label-for="cfg-key" :description="keyInfo.runpod_api_key_set ? `Stored (${keyInfo.runpod_api_key_hint}); enter a new one to replace it. Kept in ${keyInfo.source}.` : 'Not set. From runpod.io, Settings, API Keys; stored on this PC only, never shown again.'">
+            <BFormInput id="cfg-key" v-model.trim="newKey" type="password" autocomplete="off" placeholder="rpa_…" class="font-monospace" />
+          </BFormGroup>
+        </BCol>
+      </BRow>
+
       <h6 class="mb-2">Pod volume <span class="text-body-secondary fw-normal small">the network volume that carries the three folders when a pod runs them</span></h6>
       <BRow class="g-3 mb-3">
         <BCol md="5">
@@ -155,6 +164,7 @@
 import { computed, reactive, ref } from 'vue'
 import { useUiStore } from '../stores/ui'
 import { useMountsStore } from '../stores/mounts'
+import { settingsAPI } from '../api/settings'
 import FolderPicker from './FolderPicker.vue'
 
 const ui = useUiStore()
@@ -173,6 +183,8 @@ const mode = ref('dev')
 const require = ref([])
 const requireSource = ref('config')
 const picker = reactive({ open: false, key: '', title: '', start: '', memory: '' })
+const keyInfo = ref({ runpod_api_key_set: false, runpod_api_key_hint: '', source: 'none' })
+const newKey = ref('')
 
 const LABELS = { project: 'Project tree', plates: 'Plates', 'comfy-shared': 'ComfyUI-Shared' }
 const label = (f) => LABELS[f.key] || f.key
@@ -199,6 +211,8 @@ async function load() {
   loading.value = true; error.value = null
   const payload = await mounts.load()
   if (payload) take(payload); else error.value = mounts.error
+  try { keyInfo.value = await settingsAPI.get() } catch { /* a backend without settings: the key comes from the environment */ }
+  newKey.value = ''
   loading.value = false
 }
 
@@ -241,6 +255,10 @@ const previewText = computed(() => {
 
 async function save() {
   saving.value = true; error.value = null
+  if (newKey.value) {
+    try { keyInfo.value = await settingsAPI.set({ runpod_api_key: newKey.value }); newKey.value = '' }
+    catch (e) { error.value = e.response?.data?.detail || e.message; saving.value = false; return }
+  }
   const r = await mounts.save(body())
   saving.value = false
   if (!r.ok) { error.value = mounts.error; return }

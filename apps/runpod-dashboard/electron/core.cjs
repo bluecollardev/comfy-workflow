@@ -42,6 +42,10 @@ const TABLE = {
   governance: {
     summary: (c) => c.governance.summary(),
   },
+  settings: {
+    get: (c) => c.settings.get(),
+    set: (c, values) => { const r = c.settings.set(values); if (process.env.RUNPOD_API_KEY && !stopIdle) startIdleWatch().catch(() => {}); return r },
+  },
 }
 
 function register() {

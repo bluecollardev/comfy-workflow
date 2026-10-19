@@ -125,12 +125,13 @@ solves, serverless ruled out for frame sequences, pods stopped when a job ends.
 
 In order:
 
-1. [ ] **Binc's yeses**, named, before anything below runs (`shared/governance/policy/agent-permissions.md`; `~/Workspaces/TODO.md` item 5): plates copied to a network volume; an image with the packs pushed to a registry (name and account); the spend, inside the USD 100 cap. The MCP server already refuses `create_agent` without `approved_by`.
+1. [ ] **Funds on the RunPod account.** Secure cloud refused for a zero balance on 2026-10-19 and community had no instance. Then `./start.sh e2e-live` is the proof: one stock-image pod, running, stopped, deleted, by the test.
+2. [ ] **Binc's yeses**, named, before anything below runs (`shared/governance/policy/agent-permissions.md`; `~/Workspaces/TODO.md` item 5): plates copied to a network volume; an image with the packs pushed to a registry (name and account); the spend, inside the USD 100 cap. The MCP server already refuses `create_agent` without `approved_by`.
 2. [ ] **Build and push the image** on amd64 (binc-PC or any Linux box; the Mac would emulate): `apps/comfy-app/build.sh` with the `contract-v26` set, then push to the registry Binc names, then enter that reference as the image in the Configuration panel. Until then pod creation refuses the bare local name on purpose.
-3. [ ] **Create the network volume** in one datacenter, sized for the tree (81 GB on the mirror), `comfy-shared/` with the weights, and only the plates of the first batch (DPX, two eyes per shot; the 24 inbox entries total about 3,100 frames, so never all of them). Enter the volume id and datacenter in the Configuration panel.
-4. [ ] **Put the data on the volume**: `./start.sh sync --pod <id>` into a small pod with the volume attached; `--plates --approved-by <name>` for the plates. Set `COMFY_MODE=prod` on the machine that drives real pods so every folder is required.
-5. [ ] **Boot one pod** with mounts applied, read the entrypoint's `linked …` lines, open a corrosion graph in its UI, queue one open shot at proxy with the queue script and `--comfy <pod url>`, then stop the pod or let the idle stop do it. Locked shots are never run; proxy first.
-6. [ ] **CPU solve pod**, after the GPU pod works: `solve/` image from Binc's plan, same volume.
+4. [ ] **Create the network volume** in one datacenter, sized for the tree (81 GB on the mirror), `comfy-shared/` with the weights, and only the plates of the first batch (DPX, two eyes per shot; the 24 inbox entries total about 3,100 frames, so never all of them). Enter the volume id and datacenter in the Configuration panel.
+5. [ ] **Put the data on the volume**: `./start.sh sync --pod <id>` into a small pod with the volume attached; `--plates --approved-by <name>` for the plates. Set `COMFY_MODE=prod` on the machine that drives real pods so every folder is required.
+6. [ ] **Boot one pod** with mounts applied, read the entrypoint's `linked …` lines, open a corrosion graph in its UI, queue one open shot at proxy with the queue script and `--comfy <pod url>`, then stop the pod or let the idle stop do it. Locked shots are never run; proxy first.
+7. [ ] **CPU solve pod**, after the GPU pod works: `solve/` image from Binc's plan, same volume.
 
 ## Open decisions
 

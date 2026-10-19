@@ -7,6 +7,7 @@ Auto-generated API docs at /docs
 
 import os
 import asyncio
+from pathlib import Path
 import json
 from typing import List, Optional
 from datetime import datetime
@@ -151,6 +152,50 @@ async def set_idle(pod_id: str, minutes: int):
     """Watch a pod for idleness (minutes > 0) or stop watching it (0)."""
     idle.register(pod_id, minutes)
     return {"pod_id": pod_id, "idle_stop_minutes": max(minutes, 0)}
+
+
+class SettingsUpdate(BaseModel):
+    runpod_api_key: Optional[str] = None
+
+
+_SETTINGS_ENV = Path(os.getenv("SETTINGS_ENV_FILE", Path.home() / ".config/runpod-pod-manager/.env"))
+
+
+def _settings_view() -> dict:
+    stored = {}
+    if _SETTINGS_ENV.is_file():
+        for raw in _SETTINGS_ENV.read_text().splitlines():
+            line = raw.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, _, v = line.partition("="); stored[k.strip()] = v.strip().strip("'\"")
+    key = os.getenv("RUNPOD_API_KEY") or stored.get("RUNPOD_API_KEY", "")
+    return {"runpod_api_key_set": bool(key), "runpod_api_key_hint": f"••••{key[-4:]}" if key else "",
+            "source": "environment" if os.getenv("RUNPOD_API_KEY") and not stored.get("RUNPOD_API_KEY") else (str(_SETTINGS_ENV) if stored.get("RUNPOD_API_KEY") else "none")}
+
+
+@app.get("/api/settings", tags=["Settings"])
+async def get_settings():
+    """Whether the RunPod key is set and its last four characters; never the value. Same file the core and the shell read."""
+    return _settings_view()
+
+
+@app.put("/api/settings", tags=["Settings"])
+async def put_settings(update: SettingsUpdate):
+    if update.runpod_api_key:
+        v = update.runpod_api_key.strip()
+        if " " in v or len(v) < 16:
+            raise HTTPException(status_code=400, detail="That does not look like a RunPod API key (no spaces, at least 16 characters)")
+        _SETTINGS_ENV.parent.mkdir(parents=True, exist_ok=True)
+        lines = _SETTINGS_ENV.read_text().splitlines() if _SETTINGS_ENV.is_file() else []
+        done = False
+        for i, raw in enumerate(lines):
+            if raw.split("=", 1)[0].strip() == "RUNPOD_API_KEY":
+                lines[i] = f"RUNPOD_API_KEY={v}"; done = True
+        if not done:
+            lines.append(f"RUNPOD_API_KEY={v}")
+        _SETTINGS_ENV.write_text("\n".join(lines) + "\n"); os.chmod(_SETTINGS_ENV, 0o600)
+        os.environ["RUNPOD_API_KEY"] = v
+    return _settings_view()
 
 
 @app.get("/api/governance", tags=["Governance"])
