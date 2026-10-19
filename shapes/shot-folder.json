@@ -1,0 +1,79 @@
+{
+  "shape": "shot-folder",
+  "version": 1,
+  "source": [
+    "governance/policy/structure_v003.md §1 'Shot folder'",
+    "governance/policy/bh-symmetry_v002.md rule 1",
+    "governance/policy/naming.md"
+  ],
+  "applies_to": "every <shot>/ under 10_CORROSION, 20_STEREO, 30_CREATIVE, 40_TITLES, 50_RND, and each _template/",
+  "principle": "Same shape everywhere. Only the contents differ. One file plus seven folders.",
+  "name_pattern": "^[a-z]+-[0-9]{3}[a-z]?$",
+  "name_examples": [
+    "corrosion-051",
+    "enhance-141",
+    "archival-080a"
+  ],
+  "entries": [
+    {
+      "name": "00_READ_ME.md",
+      "kind": "file",
+      "required": true,
+      "holds": "what the shot is, status, owner, frame range, hero eye, which graph is current (stated here, never by renaming)"
+    },
+    {
+      "name": "01_ASK",
+      "kind": "dir",
+      "required": true,
+      "files": [
+        "ENTRY.md",
+        "ASSETS.csv"
+      ],
+      "holds": "copies of the inbox entry"
+    },
+    {
+      "name": "02_SOURCE",
+      "kind": "dir",
+      "required": true,
+      "files": [
+        "SOURCES.csv"
+      ],
+      "holds": "links to the served plates only; plates are never copied or moved in"
+    },
+    {
+      "name": "03_WORK",
+      "kind": "dir",
+      "required": true,
+      "holds": "masks, fills, aligned generated paint, solves (solve_S_v###.npz), notes"
+    },
+    {
+      "name": "04_GRAPH",
+      "kind": "dir",
+      "required": true,
+      "holds": "<shot>_graph_v###.json and <shot>_graph_v###_api.json; highest version is current"
+    },
+    {
+      "name": "05_TEMPS",
+      "kind": "dir",
+      "required": true,
+      "holds": "intermediate caches"
+    },
+    {
+      "name": "06_REVIEW",
+      "kind": "dir",
+      "required": true,
+      "holds": "one subfolder per render job: <shot>_job_<yyyymmdd-hhmm>_graph-v###/"
+    },
+    {
+      "name": "07_DELIVER",
+      "kind": "dir",
+      "required": true,
+      "holds": "review forks and packages: <shot>_review-fork_v###/, <shot>_audit-fork_<topic>_v###/"
+    }
+  ],
+  "rules": [
+    "a new shot type copies the corrosion template and changes only what the picture needs",
+    "versions only go up; nothing overwritten",
+    "locked (client-approved) shots are read-only for everyone"
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "shape": "job-file",
+  "version": 1,
+  "source": [
+    "governance/operator-brief.md 'Job file'",
+    "queue/canalv2/in/README_queue_2026-10-17.md"
+  ],
+  "applies_to": "04_TRACKER/queue/{in,running,done}/<job>.md in Binc's tree; queue/<project>/{in,running,done}/ here",
+  "name_pattern": "^job_[0-9]{3}_.+\\.md$",
+  "template_fields": [
+    {
+      "field": "job",
+      "required": true,
+      "format": "<shot>_<tool>_<yyyymmdd-hhmm>"
+    },
+    {
+      "field": "shot",
+      "required": true,
+      "format": "corrosion-NNN"
+    },
+    {
+      "field": "tool",
+      "required": true,
+      "values_seen": [
+        "carry-v17",
+        "blender-track",
+        "v14-solve",
+        "anchor-from-blender",
+        "queue-graphs v003"
+      ]
+    },
+    {
+      "field": "machine",
+      "required": true,
+      "values_seen": [
+        "binc-PC"
+      ]
+    },
+    {
+      "field": "root",
+      "required": false,
+      "format": "project root path; appears in the real files, not in the template"
+    },
+    {
+      "field": "inputs",
+      "required": true,
+      "subfields": [
+        "plate",
+        "solve",
+        "paint",
+        "matte"
+      ],
+      "note": "path or none"
+    },
+    {
+      "field": "params",
+      "required": true,
+      "format": "exactly as given, or 'default'"
+    },
+    {
+      "field": "output",
+      "required": true,
+      "format": "folder, must not exist yet"
+    }
+  ],
+  "body": "the real files add numbered STEP blocks with exact commands, 'Must create:' lines and STOP conditions",
+  "lifecycle": [
+    "in/: waiting; nothing runs without an instruction",
+    "running/: the one job a session is on",
+    "done/: finished, REPORT.md written in the output folder"
+  ],
+  "run_rules": [
+    "one job per session, one tool, one run, one new output folder",
+    "no retries, no parameter changes, no fixes",
+    "ambiguity or a missing path: report which line, stop"
+  ]
+}
