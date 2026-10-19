@@ -115,6 +115,13 @@ class CreatePodRequest(BaseModel):
 # API Routes
 # ============================================================================
 
+def _web_port(ports, fallback: int = 8188) -> int:
+    """The first /http port a pod exposes: 8188 on our image, 3001 on the stock one."""
+    import re
+    m = re.search(r"(\d+)/http", ports or "")
+    return int(m.group(1)) if m else fallback
+
+
 def resolve_image(choice: str, mcfg: "mounts.MountsConfig") -> str:
     """The image a pod boots. `configured` is ours from the mount configuration; it must be a reference a pod can
     pull, i.e. carry a registry or namespace: a bare local name like comfy-app:contract-v26 means it has not been
@@ -244,7 +251,7 @@ async def pod_details(pod_id: str):
             "cost_per_hr": d.get("cost", d.get("costPerHr")), "cloud": d.get("cloud", ""), "datacenter": d.get("dataCenterId", ""),
             "gpu": (d.get("gpu") or {}).get("id", ""), "gpu_count": (d.get("gpu") or {}).get("count", 1), "image": d.get("image") or d.get("imageName", ""),
             "disk_gb": d.get("disk", 0), "volume_gb": d.get("volume", 0), "created_at": d.get("createdAt", ""), "actions": d.get("actions", []),
-            "console_url": f"https://www.runpod.io/console/pods/{pod_id}", "web_ui_url": idle.proxy_url(pod_id) if running else None, "ssh_command": f"ssh root@{pod_id}.proxy.runpod.io"}
+            "console_url": "https://console.runpod.io/pods", "web_ui_url": idle.proxy_url(pod_id) if running else None, "ssh_command": f"ssh root@{pod_id}.proxy.runpod.io"}
 
 
 @app.get("/api/pods/{pod_id}/logs", tags=["Pods"])
@@ -343,7 +350,7 @@ async def create_pod(request: CreatePodRequest):
             volume_in_gb=volume_gb,
             container_disk_in_gb=request.disk_gb,
             start_ssh=request.start_ssh,
-            ports="8188/http,22/tcp",
+            ports="3001/http,8888/http,22/tcp" if image == PREBUILT_IMAGE else "8188/http,22/tcp",   # the stock image serves its UI on 3001
             env=env_vars,
             **volume_kwargs,
         )
@@ -403,11 +410,11 @@ async def list_pods():
                 gpu=str(runtime.get('gpuCount', '?')),
                 vram=24,  # Default, would need to enhance to get actual VRAM
                 uptime_seconds=uptime,
-                web_ui_url=idle.proxy_url(pod_id) if is_running else None,
+                web_ui_url=idle.proxy_url(pod_id, _web_port(pod.get('ports'))) if is_running else None,
                 ssh_command=f"ssh root@{pod_id}.proxy.runpod.io",
                 idle_stop_minutes=(idle.entry(pod_id) or {}).get("minutes", 0),
                 status_text=pod.get('lastStatusChange') or '',
-                console_url=f"https://www.runpod.io/console/pods/{pod_id}",
+                console_url="https://console.runpod.io/pods",
             )
             pod_list.append(pod_data)
 

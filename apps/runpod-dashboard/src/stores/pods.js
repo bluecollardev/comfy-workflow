@@ -50,7 +50,7 @@ export const usePodsStore = defineStore('pods', () => {
     stopAutoRefresh()
     const tick = async () => {
       await load()
-      timer = setTimeout(tick, pods.value.some((p) => p.status === 'starting') ? STARTING_REFRESH_MS : REFRESH_MS)
+      timer = setTimeout(tick, pods.value.some((p) => p.status === 'starting' || (p.status === 'running' && p.comfy_ready === false)) ? STARTING_REFRESH_MS : REFRESH_MS)
     }
     timer = setTimeout(tick, REFRESH_MS)
   }

@@ -9,7 +9,7 @@ test.describe('pod card', () => {
     await page.goto('/')
     const card = podCard(page, 'ComfyUI-Dev')
     await expect(card.getByTestId('pod-id')).toHaveText('pod-aaaaaaaa')
-    await expect(card.getByTestId('pod-console')).toHaveAttribute('href', 'https://www.runpod.io/console/pods/pod-aaaaaaaa')
+    await expect(card.getByTestId('pod-console')).toHaveAttribute('href', 'https://console.runpod.io/pods')
     await card.getByTestId('pod-copy-id').click()
     await expect(page.getByTestId('toast').first()).toContainText(t('pod.copied'))
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('pod-aaaaaaaa')
@@ -76,5 +76,16 @@ test.describe('pod card', () => {
     await expect(page.getByTestId('toast').last()).toContainText(t('toast.idleSet', { n: 10 }))
     await expect(card.getByTestId('pod-idle')).toContainText(t('pod.idleAfter', { n: 10 }))
     expect(api.calls).toContainEqual(expect.objectContaining({ method: 'PUT', path: '/pods/pod-aaaaaaaa/idle', query: { minutes: '10' } }))
+  })
+
+  test('a running pod whose ComfyUI is not up yet shows that instead of a dead link', async ({ page, api }) => {
+    api.state.pods[0].comfy_ready = false
+    await page.goto('/')
+    const card = podCard(page, 'ComfyUI-Dev')
+    await expect(card.getByTestId('pod-comfy-starting')).toContainText(t('pod.comfyStarting'))
+    await expect(card.getByTestId('pod-open')).toHaveCount(0)
+    api.state.pods[0].comfy_ready = true
+    await page.getByTestId('refresh').click()
+    await expect(card.getByTestId('pod-open')).toBeVisible()
   })
 })

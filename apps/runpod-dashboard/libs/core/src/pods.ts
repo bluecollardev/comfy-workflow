@@ -13,6 +13,17 @@ import * as dry from './dry.js'
 
 export const PREBUILT_IMAGE = 'ashleykza/comfyui:latest'   // the stock image: no packs, ignores COMFY_LINKS
 
+/** The ports a pod exposes and which one is ComfyUI's web UI. Our image serves ComfyUI on 8188; the stock
+ *  image puts it behind nginx on 3001 (and Jupyter on 8888). The web port is read back from the pod's own
+ *  port list, so the link is right whatever the image. */
+export const OUR_PORTS = '8188/http,22/tcp'
+export const PREBUILT_PORTS = '3001/http,8888/http,22/tcp'
+export const portsFor = (imageName: string) => (imageName === PREBUILT_IMAGE ? PREBUILT_PORTS : OUR_PORTS)
+export const webPortOf = (ports: string | null | undefined, fallback = 8188): number => {
+  const m = /(\d+)\/http/.exec(ports || '')
+  return m ? Number(m[1]) : fallback
+}
+
 export interface CreatePodRequest {
   name: string; gpu?: string; gpu_count?: number; instance_type?: 'on-demand' | 'spot'; volume_gb?: number; disk_gb?: number
   image?: string; env_vars?: Record<string, string>; build_args?: Record<string, string>; pip_requirements?: string
@@ -22,7 +33,7 @@ export interface CreatePodRequest {
 export interface PodStatus {
   id: string; name: string; status: 'running' | 'stopped' | 'starting'; gpu: string; vram: number
   uptime_seconds: number | null; web_ui_url: string | null; ssh_command: string; idle_stop_minutes: number
-  console_url?: string; status_text?: string
+  console_url?: string; status_text?: string; comfy_ready?: boolean | null   // null = not probed
 }
 
 /** The image a pod boots. `configured` is ours from the mount configuration; it must be a reference a pod can
@@ -69,7 +80,7 @@ export function plan(req: CreatePodRequest, cfg: mounts.MountsConfig, credential
       name: req.name, imageName, gpuTypeId,
       cloudType: ({ 'on-demand': 'SECURE', spot: 'COMMUNITY' } as const)[req.instance_type || 'spot'] || 'ALL',
       gpuCount: req.gpu_count ?? 1, volumeInGb: volumeGb, containerDiskInGb: req.disk_gb ?? 20,
-      startSsh: req.start_ssh !== false, ports: '8188/http,22/tcp', env, ...volume,
+      startSsh: req.start_ssh !== false, ports: portsFor(imageName), env, ...volume,
     },
     idleMinutes,
   }
@@ -87,7 +98,7 @@ export async function create(req: CreatePodRequest, client?: rp.RunPodClient, cr
   return {
     id: pod.id, name: req.name, status: 'starting', gpu: `${key} x${input.gpuCount}`,
     vram: gpus.vram(key) * (input.gpuCount || 1), uptime_seconds: 0,
-    web_ui_url: idle.proxyUrl(pod.id), ssh_command: `ssh root@${pod.id}.proxy.runpod.io`, idle_stop_minutes: idleMinutes > 0 ? idleMinutes : 0,
+    web_ui_url: idle.proxyUrl(pod.id, webPortOf(input.ports)), ssh_command: `ssh root@${pod.id}.proxy.runpod.io`, idle_stop_minutes: idleMinutes > 0 ? idleMinutes : 0, comfy_ready: false,
   }
 }
 
@@ -131,14 +142,27 @@ export function toStatus(p: rp.RawPod): PodStatus {
   return {
     id: p.id, name: p.name || 'Unknown', status: running ? 'running' : wanted ? 'starting' : 'stopped',
     gpu: p.machine?.gpuDisplayName || String(p.gpuCount ?? '?'), vram: gpus.vram(p.machine?.gpuDisplayName || '') || 24,
-    uptime_seconds: uptime, web_ui_url: running ? idle.proxyUrl(p.id) : null,
-    ssh_command: `ssh root@${p.id}.proxy.runpod.io`, idle_stop_minutes: idle.entry(p.id)?.minutes ?? 0,
+    uptime_seconds: uptime, web_ui_url: running ? idle.proxyUrl(p.id, webPortOf(p.ports)) : null,
+    ssh_command: `ssh root@${p.id}.proxy.runpod.io`, idle_stop_minutes: idle.entry(p.id)?.minutes ?? 0, comfy_ready: null,
     console_url: consoleUrl(p.id), status_text: p.lastStatusChange || p.desiredStatus || '',
   }
 }
 
 const isDry = () => mounts.dryRun(mounts.load())
-export const list = async (client?: rp.RunPodClient): Promise<PodStatus[]> => (isDry() ? dry.list() : (await rp.listPods(client)).map(toStatus))
+/** Does ComfyUI answer on the pod's web port yet? RunPod's proxy answers 502 with a waiting page until the service is up. */
+export async function comfyReady(url: string, fetchFn: typeof fetch = fetch): Promise<boolean> {
+  try {
+    const r = await fetchFn(`${url.replace(/\/$/, '')}/system_stats`, { method: 'GET', signal: AbortSignal.timeout(4000) })
+    return r.status === 200
+  } catch { return false }
+}
+
+export const list = async (client?: rp.RunPodClient): Promise<PodStatus[]> => {
+  if (isDry()) return dry.list()
+  const pods = (await rp.listPods(client)).map(toStatus)
+  await Promise.all(pods.map(async (p) => { if (p.status === 'running' && p.web_ui_url) p.comfy_ready = await comfyReady(p.web_ui_url, client?.fetchFn || fetch) }))
+  return pods
+}
 
 export async function get(podId: string, client?: rp.RunPodClient): Promise<PodStatus> {
   if (isDry()) { const p = dry.list().find((x) => x.id === podId); if (!p) throw new CoreError(404, `Pod ${podId} not found`); return p }
@@ -182,7 +206,8 @@ export interface PodDetails {
   console_url: string; web_ui_url: string | null; ssh_command: string
 }
 
-export const consoleUrl = (id: string) => `https://www.runpod.io/console/pods/${id}`
+/** RunPod's console lists pods at one page; it has no documented per-pod link (the old one 404s), so the id on the card is the key. */
+export const consoleUrl = (_id: string) => 'https://console.runpod.io/pods'
 
 /** The pod as RunPod describes it: the status text people see in the console, the price, the place, the card. */
 export async function details(podId: string, client?: rp.RunPodClient): Promise<PodDetails> {

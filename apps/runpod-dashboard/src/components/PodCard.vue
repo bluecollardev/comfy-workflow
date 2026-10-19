@@ -11,7 +11,7 @@
       <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.id') }}</dt>
       <dd class="col-8 mb-0">
         <code data-testid="pod-id">{{ pod.id }}</code>
-        <a :href="pod.console_url || `https://www.runpod.io/console/pods/${pod.id}`" target="_blank" rel="noopener" class="ms-2 small" :title="$t('pod.console')" data-testid="pod-console">
+        <a :href="pod.console_url || 'https://console.runpod.io/pods'" target="_blank" rel="noopener" class="ms-2 small" :title="$t('pod.console')" data-testid="pod-console">
           <i class="fa-solid fa-arrow-up-right-from-square fa-xs"></i> RunPod
         </a>
         <button type="button" class="btn btn-link btn-sm p-0 ms-2 align-baseline" :title="$t('pod.copyId')" data-testid="pod-copy-id" @click="copyId"><i class="fa-regular fa-copy fa-xs"></i></button>
@@ -29,9 +29,10 @@
       <template v-if="pod.web_ui_url">
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.comfyui') }}</dt>
         <dd class="col-8 mb-0">
-          <a :href="pod.web_ui_url" target="_blank" rel="noopener" data-testid="pod-open">
+          <a v-if="pod.comfy_ready !== false" :href="pod.web_ui_url" target="_blank" rel="noopener" data-testid="pod-open">
             {{ $t('pod.open') }} <i class="fa-solid fa-arrow-up-right-from-square fa-xs"></i>
           </a>
+          <span v-else class="text-warning" data-testid="pod-comfy-starting"><BSpinner small class="me-1" />{{ $t('pod.comfyStarting') }}</span>
         </dd>
       </template>
 

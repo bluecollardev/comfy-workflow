@@ -64,7 +64,8 @@
     "hostFull": "RunPod keeps a stopped pod on the host it ran on, and that host has no free GPU right now. Wait and try Resume again, or Recreate on another host.",
     "idleEdit": "Change the quiet minutes for this pod",
     "idleMinutes": "min",
-    "idleSave": "Set"
+    "idleSave": "Set",
+    "comfyStarting": "ComfyUI is still starting inside the pod; watch Logs. The link appears when it answers."
   },
   "form": {
     "name": "Name",
