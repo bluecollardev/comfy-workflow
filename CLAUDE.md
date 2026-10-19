@@ -37,12 +37,19 @@ comfy_workflow/                    # Root monorepo
 │   ├── SETUP.md                   # Pod deployment guide
 │   └── WORKFLOWS.md               # Workflow patterns
 │
+├── apps/                          # Runnable apps (tracked scripts, ignored data)
+│   ├── comfy-app/                # The ComfyUI server: Mac scripts + Dockerfile for RunPod
+│   └── runpod-dashboard/         # Vue 3 + Electron dashboard for the pod manager API (infra/scripts)
+│       └── ComfyUI/              #   ignored: the ~5 GB standalone install itself
+│
+├── projects/                      # Client/creative work; ignored except README.md
+│   ├── README.md                  # Inventory of what is in here
+│   └── desktop/                   # Trees synced from the desktop (CANALV2, ComfyUI-Shared)
+│
 ├── infra/                         # Infrastructure automation
 │   ├── scripts/
 │   │   ├── create_pod.py         # Pod lifecycle CLI
 │   │   └── requirements.txt       # Python deps
-│   ├── docker/
-│   │   └── Dockerfile            # Custom image (optional)
 │   ├── terraform/                # IaC (placeholder)
 │   └── README.md                 # Infra guide
 │
@@ -188,8 +195,9 @@ infra(scripts): add pod lifecycle management
 
 ### Automation
 
+- **`apps/comfy-app/launch.sh`** — Start the local ComfyUI server (run `setup.sh` first on a new machine; see `apps/comfy-app/README.md`)
 - **`infra/scripts/create_pod.py`** — Pod management CLI
-- **`infra/docker/Dockerfile`** — Custom image (for future use)
+- **`apps/comfy-app/Dockerfile`** — The ComfyUI server image for RunPod / Linux / Windows-WSL2 (`build.sh` builds it)
 
 ## Development Tasks
 
