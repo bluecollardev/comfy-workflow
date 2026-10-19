@@ -92,9 +92,11 @@ checks and places files by these rules.
 ComfyUI calls a submitted graph a "prompt". The corrosion and stereo graphs
 contain no text prompts (no `CLIPTextEncode`); they are image-processing
 pipelines built from `BH_*` nodes, `PreviewImage`, `ImageScaleBy`, masks and
-`MarkdownNote` boxes. The generated paint in `Gen_Paint_assets/` comes from a
-separate paint app, and the `.meta.json` sidecars record sources and transforms
-but no prompt text.
+`MarkdownNote` boxes. The generated paint in `Gen_Paint_assets/` comes from
+Gemini 3 Pro Image; each patch's `_Meta.json` and the delivered
+`paint-sidecar` files carry the text prompt, engine, seed and colour space.
+All three kinds of prompt, graphs, generative text and agent briefs, are
+mapped in [`docs/PROMPTS.md`](../docs/PROMPTS.md).
 
 | Where | Count | Format | Purpose |
 |---|---|---|---|
