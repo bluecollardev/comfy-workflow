@@ -46,14 +46,14 @@ test.describe('accounts', () => {
 
   test('OAuth success redirect shows a notice, opens Accounts and cleans the URL', async ({ page }) => {
     await page.goto('/?provider=github&connected=lucas')
-    await expect(page.getByRole('alert').first()).toContainText('Connected GitHub account lucas')
+    await expect(page.locator('.toast-container .toast').first()).toContainText('Connected GitHub account lucas')
     await expect(modal(page, 'Connect GitHub or GitLab')).toBeVisible()
     await expect(page).toHaveURL('http://localhost:5173/')
   })
 
   test('OAuth failure redirect shows the provider error', async ({ page }) => {
     await page.goto('/?provider=gitlab&error=access_denied')
-    await expect(page.getByRole('alert').first()).toContainText('GitLab connection failed: access_denied')
+    await expect(page.locator('.toast-container .toast').first()).toContainText('GitLab connection failed: access_denied')
     await expect(page.locator('.modal.show')).toHaveCount(0)
   })
 })

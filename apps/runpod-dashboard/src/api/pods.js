@@ -1,10 +1,42 @@
 import axios from 'axios';
+import { core } from './bridge';
 
 // Dev server (Vite on :5173) talks to the API cross-origin; a production build is served by the
 // API itself (and by the Electron app), so it uses the same origin — no CORS, OAuth lands home.
 export const API_BASE = import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? 'http://localhost:8000/api' : '/api');
 
-export const podsAPI = {
+const toRequest = (podData) => ({
+  name: podData.name,
+  gpu: podData.gpu,
+  gpu_count: podData.gpuCount || 1,
+  instance_type: podData.instanceType || 'spot',
+  volume_gb: podData.volumeGb ?? 0,
+  disk_gb: podData.diskGb || 20,
+  image: podData.image || 'configured',
+  idle_stop_minutes: podData.idleStopMinutes ?? null,
+  env_vars: podData.envVars || {},
+  build_args: podData.buildArgs || {},
+  pip_requirements: podData.pipRequirements || '',
+  custom_nodes: podData.customNodes || [],
+  start_ssh: podData.startSsh !== false,
+  start_jupyter: podData.startJupyter === true,
+  apply_mounts: podData.applyMounts !== false,
+});
+
+// Inside Electron every call goes to the core over IPC; in a browser, to the API over HTTP.
+const ipc = core && {
+  listPods: () => core.invoke('pods', 'list'),
+  getPod: (id) => core.invoke('pods', 'get', [id]),
+  createPod: (podData) => core.invoke('pods', 'create', [toRequest(podData)]),
+  gpus: () => core.invoke('pods', 'gpus'),
+  setIdle: (id, minutes) => core.invoke('pods', 'setIdle', [id, minutes]),
+  stopPod: (id) => core.invoke('pods', 'stop', [id]),
+  resumePod: (id) => core.invoke('pods', 'resume', [id]),
+  deletePod: (id) => core.invoke('pods', 'remove', [id]),
+  getDashboard: () => core.invoke('pods', 'dashboard'),
+};
+
+const http = {
   // List all pods
   async listPods() {
     const { data } = await axios.get(`${API_BASE}/pods`);
@@ -19,23 +51,7 @@ export const podsAPI = {
 
   // Create new pod
   async createPod(podData) {
-    const { data } = await axios.post(`${API_BASE}/pods`, {
-      name: podData.name,
-      gpu: podData.gpu,
-      gpu_count: podData.gpuCount || 1,
-      instance_type: podData.instanceType || 'spot',
-      volume_gb: podData.volumeGb ?? 0,
-      disk_gb: podData.diskGb || 20,
-      image: podData.image || 'configured',
-      idle_stop_minutes: podData.idleStopMinutes ?? null,
-      env_vars: podData.envVars || {},
-      build_args: podData.buildArgs || {},
-      pip_requirements: podData.pipRequirements || '',
-      custom_nodes: podData.customNodes || [],
-      start_ssh: podData.startSsh !== false,
-      start_jupyter: podData.startJupyter === true,
-      apply_mounts: podData.applyMounts !== false,
-    });
+    const { data } = await axios.post(`${API_BASE}/pods`, toRequest(podData));
     return data;
   },
 
@@ -75,3 +91,5 @@ export const podsAPI = {
     return data;
   },
 };
+
+export const podsAPI = ipc || http;

@@ -20,10 +20,10 @@ test.describe('create pod', () => {
     await openCreatePod(page)
 
     await page.getByLabel('Name').fill('ComfyUI-Dev')
-    await page.getByLabel('GPU', { exact: true }).selectOption('h100')
+    await page.getByLabel('GPU', { exact: true }).selectOption('a4000')
     await page.getByLabel('GPU count').selectOption('2')
-    await page.getByLabel('Instance type').selectOption('spot')
-    await page.getByLabel('Volume (GB)').fill('100')
+    await page.getByLabel('Instance type').selectOption('on-demand')
+    await page.getByLabel('Per-pod volume (GB)').fill('100')
     await page.getByLabel('Container disk (GB)').fill('30')
     await page.getByLabel('Image', { exact: true }).selectOption('custom')
     await page.getByLabel('Image URI').fill('docker.io/me/comfy:1')
@@ -62,12 +62,14 @@ test.describe('create pod', () => {
     const post = api.calls.find((c) => c.method === 'POST' && c.path === '/pods')
     expect(post.body).toEqual({
       name: 'ComfyUI-Dev',
-      gpu: 'h100',
+      gpu: 'a4000',
       gpu_count: 2,
-      instance_type: 'spot',
+      instance_type: 'on-demand',
       volume_gb: 100,
       disk_gb: 30,
       image: 'docker.io/me/comfy:1',
+      idle_stop_minutes: null,
+      apply_mounts: true,
       env_vars: { HF_TOKEN: 'abc', EMPTY: '', PASTED: 'from clipboard' },
       build_args: { CUDA_SHORT: 'cu128' },
       pip_requirements: 'torch==2.1\n\nxformers',
@@ -85,14 +87,26 @@ test.describe('create pod', () => {
     await expect(page.locator('.card.h-100', { hasText: 'ComfyUI-Dev' }).first()).toBeVisible()
   })
 
-  test('prebuilt image sends "prebuilt" and hides the URI field', async ({ page, api }) => {
+  test('the defaults send the configured image, the cheap cloud and no per-pod volume', async ({ page, api }) => {
     await page.goto('/')
     await openCreatePod(page)
     await expect(page.getByLabel('Image URI')).toBeHidden()
+    await expect(page.locator('form')).toContainText('ghcr.io/example/comfy-app:v26')   // what "configured" means, from GET /mounts
     await page.getByLabel('Name').fill('quick')
     await page.locator('form button[type=submit]').click()
     const post = api.calls.find((c) => c.method === 'POST' && c.path === '/pods')
-    expect(post.body).toMatchObject({ name: 'quick', image: 'prebuilt', gpu: 'rtx4090', gpu_count: 1, start_ssh: true, start_jupyter: false })
+    expect(post.body).toMatchObject({ name: 'quick', image: 'configured', gpu: 'rtx4090', gpu_count: 1, instance_type: 'spot', volume_gb: 0, idle_stop_minutes: null, start_ssh: true, start_jupyter: false })
+  })
+
+  test('the stock image can still be chosen and sends "prebuilt"', async ({ page, api }) => {
+    await page.goto('/')
+    await openCreatePod(page)
+    await page.getByLabel('Image', { exact: true }).selectOption('prebuilt')
+    await page.getByLabel('Name').fill('quick')
+    await page.getByLabel('Idle stop (minutes)').fill('0')
+    await page.locator('form button[type=submit]').click()
+    const post = api.calls.find((c) => c.method === 'POST' && c.path === '/pods')
+    expect(post.body).toMatchObject({ name: 'quick', image: 'prebuilt', idle_stop_minutes: 0 })
   })
 
   test('name is required', async ({ page, api }) => {
@@ -153,14 +167,14 @@ test.describe('create pod', () => {
     await expect(envRows.nth(3).getByLabel('Key')).toHaveValue('CUDA_VERSION')
     await expect(page.locator('#adv-envVars tr.env-group')).toHaveText([/Environment \(2\)/, /Build args \(2\)/])
     await expect(page.locator('#adv-envVars')).toContainText(
-      '2 env + 2 build args from ashleykza/comfyui:latest: 3 added, 0 replaced (41 system vars skipped)',
+      '2 env + 2 build args from ghcr.io/example/comfy-app:v26: 3 added, 0 replaced (41 system vars skipped)',
     )
     // an override typed into a build arg survives a plain reload
     await envRows.nth(2).getByLabel('Value').fill('2.8.0')
     await page.getByRole('button', { name: 'Load defaults' }).click()
     await page.locator('.dropdown-item', { hasText: 'From the image' }).click()
     await expect(envRows.nth(2).getByLabel('Value')).toHaveValue('2.8.0')
-    expect(api.calls).toContainEqual(expect.objectContaining({ path: '/images/env', query: { source: 'image', image: 'prebuilt' } }))
+    expect(api.calls).toContainEqual(expect.objectContaining({ path: '/images/env', query: { source: 'image', image: 'ghcr.io/example/comfy-app:v26' } }))
 
     await page.getByLabel('Replace existing values').check()
     await page.getByRole('button', { name: 'Load defaults' }).click()
@@ -218,9 +232,9 @@ test.describe('create pod', () => {
     await page.goto('/')
     await openCreatePod(page)
     await page.getByLabel('Name').fill('scratch')
-    await page.getByLabel('Volume (GB)').fill('200')
+    await page.getByLabel('Per-pod volume (GB)').fill('200')
     await page.getByRole('button', { name: 'Reset' }).click()
     await expect(page.getByLabel('Name')).toHaveValue('')
-    await expect(page.getByLabel('Volume (GB)')).toHaveValue('50')
+    await expect(page.getByLabel('Per-pod volume (GB)')).toHaveValue('0')
   })
 })

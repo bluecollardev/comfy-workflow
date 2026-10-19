@@ -69,8 +69,11 @@
  */
 import { ref } from 'vue'
 import { gitAPI } from '../api/git'
-import { toast } from '../stores/toast'
-import { ui } from '../stores/ui'
+import { useToastStore } from '../stores/toast'
+import { useUiStore } from '../stores/ui'
+
+const ui = useUiStore()
+const toast = useToastStore()
 
 const PROVIDER_ICON = { github: 'fa-brands fa-github', gitlab: 'fa-brands fa-gitlab' }
 
@@ -93,7 +96,7 @@ async function load() {
 
 async function disconnect(account) {
   if (!window.confirm(`Disconnect ${account.username} (${account.host})?`)) return
-  const ok = await toast.run('Disconnect account', () => gitAPI.disconnect(account.id), { ok: `Disconnected ${account.username}`, onError: (t) => (error.value = t) })
-  if (ok !== undefined) await load()
+  const r = await toast.run('Disconnect account', () => gitAPI.disconnect(account.id), { ok: `Disconnected ${account.username}`, onError: (t) => (error.value = t) })
+  if (r.ok) await load()
 }
 </script>

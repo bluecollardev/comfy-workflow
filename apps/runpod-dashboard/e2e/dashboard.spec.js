@@ -52,7 +52,8 @@ test.describe('dashboard', () => {
     api.state.failures['POST /pods/pod-aaaaaaaa/stop'] = 'RunPod says no'
     await page.goto('/')
     await podCard(page, 'ComfyUI-Dev').getByRole('button', { name: 'Stop' }).click()
-    await expect(page.getByRole('alert')).toContainText('Stop failed: RunPod says no')
+    await expect(page.getByRole('alert')).toContainText('Stop pod failed: RunPod says no')
+    await expect(page.locator('.toast-container .toast').first()).toContainText('Stop pod failed: RunPod says no')
   })
 
   test('empty account shows zeros and the empty state', async ({ page, api }) => {

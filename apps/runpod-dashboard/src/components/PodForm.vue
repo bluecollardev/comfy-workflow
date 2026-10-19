@@ -323,11 +323,11 @@
  */
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { podsAPI } from '../api/pods'
-import { mountsAPI } from '../api/mounts'
-import { toast } from '../stores/toast'
 import { gitAPI } from '../api/git'
 import { imagesAPI } from '../api/images'
-import { ui } from '../stores/ui'
+import { useUiStore } from '../stores/ui'
+import { usePodsStore } from '../stores/pods'
+import { useMountsStore } from '../stores/mounts'
 
 const MAX_VISIBLE_FOLDERS = 500
 
@@ -405,23 +405,15 @@ const defaults = () => ({
 
 const form = reactive(defaults())
 
-// One line under the Mounts switch: what the current configuration would attach (GET /api/mounts).
-const mountsSummary = ref('')
-const configuredImage = ref('')
-const configuredIdle = ref(30)
-async function loadMountsSummary() {
-  try {
-    const m = await mountsAPI.get()
-    const c = m.config
-    configuredImage.value = c.image ? `${c.image}` : 'no image configured'
-    configuredIdle.value = c.idle_stop_minutes ?? 30
-    const mapped = (m.folders || []).filter((f) => f.local).length
-    mountsSummary.value = (c.network_volume_id ? `volume ${c.network_volume_id} at ${c.mount_path}` : 'no network volume configured') + `, ${mapped}/${(m.folders || []).length} folder(s) mapped, ${(m.links || []).length} link(s)`
-    if (form.applyMounts === true && c.apply_by_default === false) form.applyMounts = false
-  } catch { mountsSummary.value = '' }
-}
-onMounted(loadMountsSummary)
-watch(() => ui.mountsVersion, loadMountsSummary)
+// The Mounts switch's one-line summary, the configured image and the idle default come from the mounts store.
+const ui = useUiStore()
+const pods = usePodsStore()
+const mounts = useMountsStore()
+const mountsSummary = computed(() => mounts.summary)
+const configuredImage = computed(() => mounts.configuredImage || 'no image configured')
+const configuredIdle = computed(() => mounts.configuredIdle)
+onMounted(() => { if (!mounts.payload) mounts.load() })
+watch(() => mounts.applyByDefault, (v) => { if (form.applyMounts === true && v === false) form.applyMounts = false }, { immediate: true })
 const open = reactive({ envVars: false, pipRequirements: false, customNodes: false })
 const submitting = ref(false)
 const error = ref(null)
@@ -668,8 +660,7 @@ function reset() {
 async function submit() {
   submitting.value = true
   error.value = null
-  const name = form.name
-  const created = await toast.run('Create pod', () => podsAPI.createPod({
+  const created = await pods.create({
     ...form,
     image: form.image === 'custom' ? form.customImageUri : form.image,
     idleStopMinutes: form.idleStopMinutes === '' ? null : form.idleStopMinutes,
@@ -677,9 +668,9 @@ async function submit() {
     buildArgs: rowsObject('arg'),
     pipRequirements: form.pipRequirements.trim(),
     customNodes: parseCustomNodes(form.customNodes),
-  }), { ok: `Pod ${name} created`, onError: (t) => (error.value = t) })
+  })
   submitting.value = false
-  if (created === undefined) return
+  if (!created.ok) { error.value = created.text; return }
   reset()
   emit('pod-created')
 }

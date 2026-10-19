@@ -20,7 +20,12 @@
  * ToastHost — renders the global toast list (stores/toast.js) top right, above everything,
  * teleported to <body> so no layout or modal can hide it. Mounted once in App.vue.
  */
-import { toasts, dismiss } from '../stores/toast'
+import { storeToRefs } from 'pinia'
+import { useToastStore } from '../stores/toast'
+
+const toast = useToastStore()
+const { toasts } = storeToRefs(toast)
+const dismiss = toast.dismiss
 </script>
 
 <style scoped>

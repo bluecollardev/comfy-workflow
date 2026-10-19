@@ -14,8 +14,8 @@
         <BButton variant="outline-light" size="sm" title="Configuration: volume and mount points" aria-label="Configuration" @click="ui.configOpen = true">
           <i class="fa-solid fa-gear"></i>
         </BButton>
-        <BButton variant="primary" size="sm" :disabled="refreshing" @click="loadDashboard">
-          <i class="fa-solid fa-rotate me-1" :class="{ 'fa-spin': refreshing }"></i>
+        <BButton variant="primary" size="sm" :disabled="pods.refreshing" @click="pods.load">
+          <i class="fa-solid fa-rotate me-1" :class="{ 'fa-spin': pods.refreshing }"></i>
           Refresh
         </BButton>
       </div>
@@ -23,35 +23,24 @@
 
     <BContainer class="py-4 flex-grow-1" style="max-width: 1200px">
       <BAlert
-        v-if="notice"
-        :model-value="true"
-        :variant="notice.variant"
-        dismissible
-        class="mb-4"
-        @update:model-value="notice = null"
-      >
-        {{ notice.text }}
-      </BAlert>
-
-      <BAlert
-        v-if="error"
+        v-if="pods.loadError"
         :model-value="true"
         variant="danger"
         dismissible
         class="mb-4"
-        @update:model-value="error = null"
+        @update:model-value="pods.loadError = null"
       >
-        {{ error }}
+        {{ pods.loadError }}
       </BAlert>
 
-      <div v-if="initialLoading" class="text-center text-body-secondary py-5">
+      <div v-if="pods.initialLoading" class="text-center text-body-secondary py-5">
         <BSpinner class="mb-3" />
         <div>Loading pods...</div>
       </div>
 
       <template v-else>
-        <Stats :stats="dashboard.stats" class="mb-4" />
-        <Dashboard :pods="dashboard.pods" @pods-updated="dashboard.pods = $event" />
+        <Stats class="mb-4" />
+        <Dashboard />
       </template>
     </BContainer>
 
@@ -66,23 +55,19 @@
 /**
  * App — root component.
  *
- * Owns the dashboard payload ({ stats, pods }) fetched from GET /api/dashboard.
- * Loads it on mount, re-fetches every 30 s, and on the navbar Refresh button.
- * Only the very first fetch replaces the page with a spinner; later refreshes
- * just spin the button so the page doesn't flash.
- *
- * Navbar also opens the three global modals (Repositories, Accounts, Configuration) through the
- * shared `ui` store, and after an OAuth round-trip the API redirects back here with
- * ?provider=&connected= (or &error=), which is shown as a notice.
+ * State lives in the Pinia stores: `pods` (the list, the stats, every action; App loads it on
+ * mount, every 30 s and on Refresh; only the first load shows the page spinner), `ui` (which
+ * global modal is open), `toast`, `mounts`. After an OAuth round-trip the API redirects back
+ * here with ?provider=&connected= (or &error=), which becomes a toast.
  *
  * Children:
- *   Stats      – read-only pod counts
- *   Dashboard  – create form + pod list; emits `pods-updated` after any mutation
+ *   Stats      – read-only pod counts from the pods store
+ *   Dashboard  – create form + pod list, acting through the pods store
  */
-import { ref, onMounted, onUnmounted } from 'vue'
-import { podsAPI } from './api/pods'
-import { ui } from './stores/ui'
-import { toast } from './stores/toast'
+import { onMounted, onUnmounted } from 'vue'
+import { useUiStore } from './stores/ui'
+import { useToastStore } from './stores/toast'
+import { usePodsStore } from './stores/pods'
 import ToastHost from './components/ToastHost.vue'
 import Dashboard from './components/Dashboard.vue'
 import Stats from './components/Stats.vue'
@@ -90,26 +75,9 @@ import RepositoriesModal from './components/RepositoriesModal.vue'
 import GitAccountsModal from './components/GitAccountsModal.vue'
 import ConfigModal from './components/ConfigModal.vue'
 
-const REFRESH_MS = 30_000
-
-const dashboard = ref({ stats: {}, pods: [] })
-const initialLoading = ref(true)
-const refreshing = ref(false)
-const error = ref(null)
-const notice = ref(null)
-
-async function loadDashboard() {
-  refreshing.value = true
-  try {
-    dashboard.value = await podsAPI.getDashboard()
-    error.value = null
-  } catch (e) {
-    error.value = e.response?.data?.detail || e.message || 'Failed to load dashboard'
-  } finally {
-    refreshing.value = false
-    initialLoading.value = false
-  }
-}
+const ui = useUiStore()
+const toast = useToastStore()
+const pods = usePodsStore()
 
 function readOAuthResult() {
   const params = new URLSearchParams(window.location.search)
@@ -125,11 +93,10 @@ function readOAuthResult() {
   window.history.replaceState(null, '', window.location.pathname)
 }
 
-let timer
 onMounted(() => {
   readOAuthResult()
-  loadDashboard()
-  timer = setInterval(loadDashboard, REFRESH_MS)
+  pods.load()
+  pods.startAutoRefresh()
 })
-onUnmounted(() => clearInterval(timer))
+onUnmounted(() => pods.stopAutoRefresh())
 </script>

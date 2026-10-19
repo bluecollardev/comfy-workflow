@@ -1,4 +1,7 @@
-// Electron main process: starts the FastAPI backend, waits for it, and loads the UI from it.
+// Electron main process. The core (libs/core: mounts, pods, GPUs, governance, idle) runs in
+// this process and the page reaches it over IPC (core.cjs, preload.cjs): no server for those.
+// The FastAPI backend is still started for what is not ported yet (git accounts, repositories,
+// image env, OAuth) and serves the built UI; it goes when the port is complete (docs/ADR-005).
 //
 // The backend serves the built UI at http://localhost:8000 (same origin as /api, so no CORS,
 // and the OAuth round-trip lands back in this window). In development, set
@@ -10,6 +13,7 @@
 // ~/.config/runpod-pod-manager/.env (and <repo>/.env in development).
 
 const { app, BrowserWindow, dialog, shell, nativeImage } = require('electron')
+const coreBridge = require('./core.cjs')
 const { spawn } = require('node:child_process')
 const fs = require('node:fs')
 const http = require('node:http')
@@ -117,7 +121,7 @@ function createWindow() {
     title: 'RunPod Manager',
     backgroundColor: '#1E1E1E',
     icon: process.platform === 'darwin' ? undefined : ICON,
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, 'preload.cjs') },
   })
   // target=_blank links (the pod's ComfyUI URL, provider profiles) open in the system browser
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -130,8 +134,21 @@ function createWindow() {
   return win
 }
 
+function coreEnv() {
+  // The core reads its config, the shape and the governance copy from these; packaged, they travel as resources.
+  const fromEnv = { ...(app.isPackaged ? {} : readEnvFile(path.join(REPO_ROOT, '.env'))), ...readEnvFile(path.join(CONFIG_DIR, '.env')) }
+  for (const [k, v] of Object.entries(fromEnv)) if (!(k in process.env)) process.env[k] = v
+  if (app.isPackaged) {
+    process.env.MOUNT_POINTS_FILE ||= path.join(process.resourcesPath, 'backend', 'mount-points.json')
+    process.env.GOVERNANCE_DIR ||= path.join(process.resourcesPath, 'backend', 'governance')
+  }
+}
+
 async function boot() {
   if (process.platform === 'darwin' && !app.isPackaged && exists(ICON)) app.dock.setIcon(nativeImage.createFromPath(ICON))
+  coreEnv()
+  coreBridge.register()
+  coreBridge.startIdleWatch().catch((e) => console.error(`idle watch: ${e.message}`))
   createWindow()
   await win.loadFile(path.join(__dirname, 'loading.html'))
 
@@ -162,7 +179,11 @@ async function boot() {
   if (process.env.RUNPOD_MANAGER_SMOKE) {
     const title = await win.webContents.executeJavaScript('document.title')
     const brand = await win.webContents.executeJavaScript('document.querySelector(".navbar-brand")?.textContent.trim() ?? ""')
-    console.log(`SMOKE url=${win.webContents.getURL()} title="${title}" brand="${brand}" backend=${backend ? 'spawned' : 'external'}`)
+    // The core over IPC, from the page: the GPU menu and the mount configuration's mode.
+    const bridge = await win.webContents.executeJavaScript(
+      "window.core ? Promise.all([window.core.invoke('pods','gpus'), window.core.invoke('mounts','get')]).then(([g, m]) => `gpus=${g.gpus.map((x) => x.value).join(',')} mode=${m.mode} folders=${m.folders.length}`).catch((e) => 'bridge error: ' + e.message) : 'no bridge'",
+    )
+    console.log(`SMOKE url=${win.webContents.getURL()} title="${title}" brand="${brand}" backend=${backend ? 'spawned' : 'external'} core: ${bridge}`)
     app.quit()
   }
 }
@@ -178,5 +199,6 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  coreBridge.stopIdleWatch()
   if (backend && backend.exitCode === null) backend.kill()
 })
