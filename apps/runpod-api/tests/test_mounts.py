@@ -59,7 +59,7 @@ def test_declared_paths_come_from_the_tree(mounts, tree, tmp_path):
     assert all(l.folder for l in mounts.all_links(cfg))
     # No job file: the structure master's Root line.
     for f in (tree / "04_TRACKER" / "queue" / "done").iterdir(): f.unlink()
-    assert mounts.declared(cfg)["project"] == {"path": "/home/old/HARBOUR", "source": "00_POLICY/structure_v001.md", "count": 1}
+    assert mounts.declared(cfg)["project"] == {"path": "/home/old/HARBOUR", "source": "the tree's structure page", "count": 1}
     # A folder that is not a project tree declares nothing, and nothing is linked.
     cfg.folders["project"] = str(tmp_path)
     assert mounts.declared(cfg)["project"] is None and mounts.all_links(cfg) == []

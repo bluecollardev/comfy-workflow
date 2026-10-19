@@ -22,6 +22,7 @@ from git_accounts import router as git_accounts_router, credentials_for
 from images import router as images_router, PREBUILT_IMAGE
 from repositories import router as repositories_router
 import mounts
+import governance
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -106,6 +107,12 @@ class CreatePodRequest(BaseModel):
 # ============================================================================
 # API Routes
 # ============================================================================
+
+@app.get("/api/governance", tags=["Governance"])
+async def get_governance():
+    """The rules applied to connecting agents: shared/governance, with the instructions the MCP server hands out."""
+    return governance.summary()
+
 
 @app.get("/health", tags=["Health"])
 async def health_check():

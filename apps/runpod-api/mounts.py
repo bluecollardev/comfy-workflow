@@ -122,12 +122,12 @@ def declared_root(tree: Path) -> Optional[dict]:
         except OSError:
             continue
     if roots:
-        return {"path": _most_common(roots), "source": "04_TRACKER/queue, the job files' root line", "count": len(roots)}
+        return {"path": _most_common(roots), "source": "the tree's job files", "count": len(roots)}
     masters = sorted((tree / "00_POLICY").glob("structure_v*.md")) if (tree / "00_POLICY").is_dir() else []
     for f in reversed(masters):
         m = re.search(r"Root:\s*`([^`]+)`", f.read_text(errors="replace"))
         if m:
-            return {"path": m.group(1).rstrip("/"), "source": f"00_POLICY/{f.name}", "count": 1}
+            return {"path": m.group(1).rstrip("/"), "source": "the tree's structure page", "count": 1}
     return None
 
 
@@ -145,14 +145,14 @@ def declared_plates(tree: Path) -> Optional[dict]:
             continue
     if not found:
         return None
-    return {"path": _most_common(found), "source": "the shots' 02_SOURCE/SOURCES.csv", "count": len(found)}
+    return {"path": _most_common(found), "source": "the shots' source lists", "count": len(found)}
 
 
 def declared_shared(root: Optional[str]) -> Optional[dict]:
     """ComfyUI-Shared is `~/ComfyUI-Shared` on the tree's machine (structure master, systems page)."""
     parts = (root or "").split("/")
     if len(parts) > 3 and parts[1] == "home":
-        return {"path": f"/home/{parts[2]}/ComfyUI-Shared", "source": "00_POLICY/structure_v003.md, `~/ComfyUI-Shared` beside the tree's home", "count": 1}
+        return {"path": f"/home/{parts[2]}/ComfyUI-Shared", "source": "the tree's structure page", "count": 1}
     return None
 
 
@@ -189,7 +189,7 @@ def folder_rows(cfg: MountsConfig) -> List[dict]:
             "key": c.name, "what": "", "mode": c.mode or "rw", "required": False, "custom": True,
             "local": c.local, "exists": bool(c.local) and Path(c.local).is_dir(),
             "container": c.container or f"{base}/{c.name}", "env_key": "", "env_keys": [],
-            "declared": {"path": c.link, "source": "typed here", "count": 1} if c.link else None,
+            "declared": {"path": c.link, "source": "the path typed here", "count": 1} if c.link else None,
         })
     return rows
 

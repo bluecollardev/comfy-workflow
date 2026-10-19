@@ -28,12 +28,15 @@
  * FolderPicker — choose a folder on this PC. Lists folders through the pod manager API
  * (GET /api/fs/dirs), which runs on the same machine as the dashboard, so it works the same in
  * the browser and in the Electron app. Single click selects, double click enters, Enter in the
- * path box jumps there. Emits `choose` with the absolute path.
+ * path box jumps there. Emits `choose` with the absolute path. Remembers the last folder
+ * browsed per `memoryKey` (one per row of the configuration) in localStorage, and opens there
+ * when the field being filled is still empty; a row never browsed starts at the last folder
+ * browsed anywhere.
  */
 import { ref } from 'vue'
 import { mountsAPI } from '../api/mounts'
 
-const props = defineProps({ modelValue: Boolean, title: { type: String, default: 'Choose a folder' }, start: { type: String, default: '' } })
+const props = defineProps({ modelValue: Boolean, title: { type: String, default: 'Choose a folder' }, start: { type: String, default: '' }, memoryKey: { type: String, default: '' } })
 const emit = defineEmits(['update:modelValue', 'choose'])
 
 const listing = ref(null)
@@ -43,20 +46,38 @@ const typed = ref('')
 const selected = ref('')
 const hidden = ref(false)
 
+const LAST_DIR = 'folderPicker.lastDir'
+const keyed = () => (props.memoryKey ? `${LAST_DIR}.${props.memoryKey}` : '')
+function remember(path) {
+  try { localStorage.setItem(LAST_DIR, path); if (keyed()) localStorage.setItem(keyed(), path) } catch { /* private window or blocked storage */ }
+}
+function lastDir() {
+  try { return (keyed() && localStorage.getItem(keyed())) || localStorage.getItem(LAST_DIR) || '' } catch { return '' }
+}
+
 async function go(path) {
   loading.value = true; error.value = null; selected.value = ''
   try {
     listing.value = await mountsAPI.dirs(path, hidden.value)
     typed.value = listing.value.path
+    remember(listing.value.path)
   } catch (e) {
     error.value = e.response?.data?.detail || e.message
   } finally { loading.value = false }
 }
 
-function open() { go(props.start || '') }
+async function open() {
+  if (props.start) return go(props.start)
+  const last = lastDir()
+  if (!last) return go('')
+  try { await go(last) } catch { /* unreachable */ }
+  if (error.value) { error.value = null; await go('') }   // the remembered folder is gone: fall back to home
+}
 
 function choose() {
-  emit('choose', selected.value || listing.value?.path)
+  const path = selected.value || listing.value?.path
+  remember(path)
+  emit('choose', path)
   emit('update:modelValue', false)
 }
 </script>

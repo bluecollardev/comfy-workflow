@@ -57,6 +57,7 @@
 
     <RepositoriesModal />
     <GitAccountsModal />
+    <BOrchestrator />
     <ConfigModal />
   </div>
 </template>
@@ -81,6 +82,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { podsAPI } from './api/pods'
 import { ui } from './stores/ui'
+import { installToasts, toast } from './stores/toast'
 import Dashboard from './components/Dashboard.vue'
 import Stats from './components/Stats.vue'
 import RepositoriesModal from './components/RepositoriesModal.vue'
@@ -94,6 +96,7 @@ const initialLoading = ref(true)
 const refreshing = ref(false)
 const error = ref(null)
 const notice = ref(null)
+installToasts()
 
 async function loadDashboard() {
   refreshing.value = true
@@ -114,10 +117,10 @@ function readOAuthResult() {
   if (!provider) return
   const label = provider === 'github' ? 'GitHub' : provider === 'gitlab' ? 'GitLab' : provider
   if (params.get('connected')) {
-    notice.value = { variant: 'success', text: `Connected ${label} account ${params.get('connected')}.` }
+    toast.success(`Connected ${label} account ${params.get('connected')}.`)
     ui.accountsOpen = true
   } else if (params.get('error')) {
-    notice.value = { variant: 'danger', text: `${label} connection failed: ${params.get('error')}` }
+    toast.error(`${label} connection failed: ${params.get('error')}`)
   }
   window.history.replaceState(null, '', window.location.pathname)
 }

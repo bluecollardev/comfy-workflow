@@ -47,7 +47,7 @@ only mechanical enforcement available. Against `policy/agent-permissions.md`:
 |---|---|---|
 | Nothing renamed, moved, overwritten or deleted; locked shots read-only | `.claude/hooks/protect-binc-tree.sh` blocks Edit/Write under `projects/desktop/` | Hooked (file tools only; shell commands rely on the rule) |
 | Named yes for any download or install | nothing yet | Could hook Bash on `pip install`, `brew install`, `docker pull`, `hf download` |
-| Named yes for any spend, USD 100 cap | nothing yet | Could hook Bash on `create_pod.py create`, `start.sh pod create`, `docker/swarm.sh deploy` |
+| Named yes for any spend, USD 100 cap | the MCP server refuses `create_agent` without `approved_by` (`apps/runpod-api/governance.py`) | Enforced for MCP clients; a Bash hook on `create_pod.py create`, `start.sh pod create`, `docker/swarm.sh deploy` is still open |
 | Named yes before a push to a shared repo | nothing yet | Could hook Bash on `git push` to non-origin remotes |
 | No Slack, no client contact, no account or security changes | out of this repo's reach | Rule only |
 | Stop and report on ambiguity | behaviour, not a tool call | Rule only |
@@ -55,6 +55,17 @@ only mechanical enforcement available. Against `policy/agent-permissions.md`:
 The hooks that do not exist yet are listed so the gap is visible, not hidden.
 Adding them is a small change to `.claude/settings.json`; whether to is a
 decision for when an agent first runs against the job from this repo.
+
+## Applied to every connecting agent
+
+Every launch of the MCP server (`./start.sh mcp`, what Claude Code runs) reads
+this folder and applies it to each client: the precedence above plus
+`policy/agent-permissions.md` and `operator-brief.md` go out in full as the
+server's instructions at initialize, every page is a `governance://` resource
+and readable with the `governance` tool, and the tools that spend refuse to run
+without `approved_by`. The API serves the same at `GET /api/governance`. The
+packaged Electron app carries a copy of the folder beside its backend. A
+re-sync is applied on the next launch; nothing is cached.
 
 ## Keeping it current
 

@@ -1,6 +1,10 @@
 """
 MCP Server - Expose ComfyUI Agent Pool tools to Claude Code
-Provides tools for pod management, job submission, and agent orchestration
+Provides tools for pod management, job submission, and agent orchestration.
+
+Governance (shared/governance, Binc's policies) is applied to every connecting client: handed
+over at initialize as the server instructions, served as governance:// resources and through
+the `governance` tool, and enforced on the tools that spend (approved_by). See governance.py.
 """
 
 import os
@@ -15,8 +19,10 @@ from mcp.server import ServerRequestContext
 from mcp.types import (
     Tool, TextContent, CallToolResult, CallToolRequestParams,
     ListToolsResult, PaginatedRequestParams,
+    Resource, ListResourcesResult, ReadResourceRequestParams, ReadResourceResult, TextResourceContents,
 )
 
+import governance
 from pool_manager import PoolManager, PodConfig
 from oauth_handler import oauth_handler
 
@@ -49,11 +55,25 @@ async def list_tools(
             },
         ),
         Tool(
-            name="create_agent",
-            description="Create a new GPU pod agent for the pool",
+            name="governance",
+            description="The rules this session runs under (shared/governance, Binc's policies): list the pages, or read one by name, e.g. policy/agent-permissions.md",
             inputSchema={
                 "type": "object",
                 "properties": {
+                    "page": {"type": "string", "description": "Page name to read; omit to list every page"},
+                },
+            },
+        ),
+        Tool(
+            name="create_agent",
+            description=f"Create a new GPU pod agent for the pool. Spends money: needs approved_by, the person behind the named yes (policy/agent-permissions.md, cap USD {governance.SPEND_CAP_USD})",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "approved_by": {
+                        "type": "string",
+                        "description": "Who said yes to this spend. Required; never guessed.",
+                    },
                     "agent_name": {
                         "type": "string",
                         "description": "Agent type (e.g., 'image-gen', 'video-gen', 'upscale')",
@@ -193,7 +213,16 @@ async def call_tool(
     arguments = params.arguments or {}
 
     try:
-        if name == "list_agents":
+        if name == "governance":
+            page = arguments.get("page")
+            if page:
+                text = governance.read(page)
+                if text is None:
+                    return CallToolResult(content=[TextContent(type="text", text=f"No such page: {page}. Pages: " + ", ".join(p["name"] for p in governance.listing()))], is_error=True)
+                return CallToolResult(content=[TextContent(type="text", text=text)])
+            return CallToolResult(content=[TextContent(type="text", text=json.dumps(governance.listing(), indent=2))])
+
+        elif name == "list_agents":
             agents = list(pool_manager.agents.values())
             return CallToolResult(
                 content=[TextContent(
@@ -212,6 +241,9 @@ async def call_tool(
             )
 
         elif name == "create_agent":
+            refusal = governance.named_yes(arguments, "create_agent")
+            if refusal:
+                return CallToolResult(content=[TextContent(type="text", text=refusal)], is_error=True)
             config = PodConfig(
                 agent_name=arguments["agent_name"],
                 gpu_type=arguments["gpu_type"],
@@ -346,10 +378,29 @@ async def call_tool(
         )
 
 
+async def list_resources(ctx: ServerRequestContext, params: PaginatedRequestParams | None) -> ListResourcesResult:
+    """Every governance page, as governance://<page>."""
+    return ListResourcesResult(resources=[
+        Resource(uri=p["uri"], name=p["name"], mimeType="text/markdown", description="shared/governance: Binc's policies, copied from the CANALV2 tree")
+        for p in governance.listing()
+    ])
+
+
+async def read_resource(ctx: ServerRequestContext, params: ReadResourceRequestParams) -> ReadResourceResult:
+    name = governance.uri_to_name(str(params.uri))
+    text = governance.read(name)
+    if text is None:
+        raise ValueError(f"No such governance page: {name}")
+    return ReadResourceResult(contents=[TextResourceContents(uri=params.uri, mimeType="text/markdown", text=text)])
+
+
 server = Server(
     "comfy-moe-server",
+    instructions=governance.instructions(),   # applied to every client at initialize
     on_list_tools=list_tools,
     on_call_tool=call_tool,
+    on_list_resources=list_resources,
+    on_read_resource=read_resource,
 )
 
 

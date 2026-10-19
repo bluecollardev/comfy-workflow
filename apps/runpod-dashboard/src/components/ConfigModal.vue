@@ -37,7 +37,7 @@
       </BRow>
 
       <div class="d-flex align-items-center justify-content-between mb-2">
-        <h6 class="mb-0">Folders on this PC <span class="text-body-secondary fw-normal small">the three every run needs, then any of your own</span></h6>
+        <h6 class="mb-0">Folders on this PC <span class="text-body-secondary fw-normal small">the three every run needs, then any of your own; the exact links a pod makes are in the pod preview below</span></h6>
         <BButton size="sm" variant="outline-light" @click="cfg.custom.push({ name: '', local: '', container: '', link: '', mode: 'rw' })"><i class="fa-solid fa-plus me-1"></i>Add folder</BButton>
       </div>
       <table class="table table-sm align-middle mb-3">
@@ -56,9 +56,9 @@
                 <BButton size="sm" variant="outline-light" class="text-nowrap" @click="browse(f.key, label(f), cfg.folders[f.key])"><i class="fa-regular fa-folder-open me-1"></i>Browse</BButton>
               </div>
               <small v-if="cfg.folders[f.key] && f.local === cfg.folders[f.key] && !f.exists" class="text-danger">This folder does not exist on this PC.</small>
-              <small v-else-if="f.declared" class="text-body-secondary">The project names it <code>{{ f.declared.path }}</code> ({{ f.declared.source }}); a pod links that onto <code>{{ f.container }}</code>.</small>
-              <small v-else-if="f.key === 'project' && cfg.folders.project && f.local === cfg.folders.project && f.exists" class="text-warning">No root line in the tree's job files or structure page; a pod cannot link what the graphs name.</small>
-              <small v-else-if="f.key !== 'project' && cfg.folders.project" class="text-body-secondary">Not declared by the project tree; nothing is linked for it on a pod.</small>
+              <small v-else-if="f.declared" class="text-body-secondary">On a pod, linked from {{ f.declared.source }}.</small>
+              <small v-else-if="f.key === 'project' && cfg.folders.project && f.local === cfg.folders.project && f.exists" class="text-warning">The tree's job files and structure page name no root; a pod cannot link what its graphs name.</small>
+              <small v-else-if="f.key !== 'project' && cfg.folders.project" class="text-body-secondary">The tree names no path for it; nothing is linked on a pod.</small>
             </td>
             <td class="font-monospace small">{{ f.container }}<br /><span class="text-body-secondary">{{ f.env_key }}</span></td>
             <td></td>
@@ -71,7 +71,7 @@
             <td>
               <div class="d-flex gap-2">
                 <BFormInput v-model.trim="c.local" size="sm" class="font-monospace" placeholder="not mapped" :state="folderState(customRow(c), c.local)" />
-                <BButton size="sm" variant="outline-light" class="text-nowrap" @click="browse('custom:' + i, c.name || 'folder', c.local)"><i class="fa-regular fa-folder-open me-1"></i>Browse</BButton>
+                <BButton size="sm" variant="outline-light" class="text-nowrap" @click="browse('custom:' + i, c.name || 'folder', c.local, 'custom.' + (c.name || i))"><i class="fa-regular fa-folder-open me-1"></i>Browse</BButton>
               </div>
               <div class="d-flex gap-2 align-items-center mt-1">
                 <small class="text-body-secondary text-nowrap">Path the code names</small>
@@ -124,7 +124,7 @@
       <BButton variant="primary" size="sm" :disabled="saving" @click="save"><BSpinner v-if="saving" small class="me-1" />Save</BButton>
     </template>
 
-    <FolderPicker v-model="picker.open" :title="picker.title" :start="picker.start" @choose="picked" />
+    <FolderPicker v-model="picker.open" :title="picker.title" :start="picker.start" :memory-key="picker.memory" @choose="picked" />
   </BModal>
 </template>
 
@@ -138,6 +138,7 @@
 import { computed, reactive, ref } from 'vue'
 import { ui } from '../stores/ui'
 import { mountsAPI } from '../api/mounts'
+import { toast } from '../stores/toast'
 import FolderPicker from './FolderPicker.vue'
 
 const loading = ref(false)
@@ -150,7 +151,7 @@ const localEnv = ref({})
 const preview = ref({})
 const stored = ref(false)
 const store = ref('')
-const picker = reactive({ open: false, key: '', title: '', start: '' })
+const picker = reactive({ open: false, key: '', title: '', start: '', memory: '' })
 
 const LABELS = { project: 'Project tree', plates: 'Plates', 'comfy-shared': 'ComfyUI-Shared' }
 const label = (f) => LABELS[f.key] || f.key
@@ -180,8 +181,9 @@ function folderState(f, v) {
   return f.local === v ? f.exists : null   // the API checked this exact path; anything else is unknown until saved
 }
 
-function browse(key, name, start) {
+function browse(key, name, start, memory = key) {
   picker.key = key; picker.title = `Choose the ${name.toLowerCase()} folder`; picker.start = start || ''
+  picker.memory = memory   // what the picker remembers the last folder under: the row's key, or a custom row's name
   picker.open = true
 }
 
@@ -212,11 +214,17 @@ const previewText = computed(() => {
 
 async function save() {
   saving.value = true; error.value = null
-  try { take(await mountsAPI.save(body())); ui.mountsVersion++ } catch (e) { error.value = e.response?.data?.detail || e.message } finally { saving.value = false }
+  const saved = await toast.run('Save configuration', () => mountsAPI.save(body()), { ok: 'Configuration saved', onError: (t) => (error.value = t) })
+  saving.value = false
+  if (!saved) return
+  take(saved); ui.mountsVersion++
+  ui.configOpen = false
 }
 
 async function reset() {
   saving.value = true; error.value = null
-  try { take(await mountsAPI.reset()); ui.mountsVersion++ } catch (e) { error.value = e.response?.data?.detail || e.message } finally { saving.value = false }
+  const cleared = await toast.run('Clear configuration', () => mountsAPI.reset(), { ok: 'Configuration cleared', onError: (t) => (error.value = t) })
+  saving.value = false
+  if (cleared) { take(cleared); ui.mountsVersion++ }
 }
 </script>
