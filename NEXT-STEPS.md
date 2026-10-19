@@ -95,15 +95,48 @@ server's node catalog, so Step 0 must be done first.
 - [ ] Start with one shot. The fourteen corrosion graphs share a pipeline from the same builder, so one good recipe with shot fields as params should cover them. Check that against `projects/desktop/CANALV2/02_SCRIPTS/graph-builder/build_v25_shot_graphs_v001.py` before capturing all fourteen.
 - [ ] Do not hand-edit the captured JSON. Edit source and recapture.
 
+## RunPod: the plan, and that none of it has run
+
+Status 2026-10-19: **not started.** The RunPod account has no pods
+(`./start.sh pod list`), no image has been pushed, no plate has left binc-PC.
+Everything under `docs/SETUP.md`, `docs/ADR-001` and `apps/runpod-*` is
+tooling for a step that has not been taken.
+
+The plan is Binc's, not ours, and lives in the ignored tree at
+`projects/desktop/CANALV2/02_SCRIPTS/containers/runpod/README.md`. In short:
+
+- **GPU pod for batch rendering.** A pod from RunPod's ComfyUI template with a
+  network volume mounted so `/home/binc/CANALV2_r3/CANALV2` resolves inside the
+  container. Node packs copied on once (`comfy-pod/setup_on_volume.sh`), then
+  the existing queue script pointed at the pod URL. Graphs read DPX plates and
+  write review folders exactly as on binc-PC.
+- **CPU pod for camera solves.** Blender's libmv solver needs no GPU; the
+  `solve/` image runs on a cheap CPU pod with the same volume.
+- **Serverless ruled out for now.** It returns images per request, which suits
+  single graphs, not 500-frame sequences.
+- **Pod management through RunPod's hosted MCP** (`claude mcp add … https://mcp.getrunpod.io/`),
+  not through anything in this repo.
+
+Where this repo differs: `apps/comfy-app/Dockerfile` is a custom image with
+the same pins as the Mac, where the plan uses RunPod's stock image plus a
+setup script on the volume. Either works; the custom image is the one that
+reproduces the Mac. Our pool manager, MCP server and pod-manager API are
+redundant with the hosted MCP for this job.
+
+Gates, each needing Binc's named yes (also in `~/Workspaces/TODO.md`, item 5):
+installing the RunPod MCP, uploading client plates to a network volume, pushing
+an image with the packs to a registry (name and account), and any spend, inside
+the USD 100 cap from the 2026-10-09 decisions, with the pod stopped when its
+job ends.
+
 ## Open decisions
 
 - Which ShotPipe version, or several side by side, in the Mac install.
-- Whether rendering happens here at all, given the plates live on binc-PC. The RunPod route in `projects/desktop/CANALV2/02_SCRIPTS/containers/runpod/README.md` is the project's planned answer for compute beyond that machine, and it ties into `infra/` in this repo.
+- Whether rendering happens here at all, given the plates live on binc-PC. RunPod is the planned overflow; see the section above.
 - Whether the captured recipes belong in this repo or in `CANALV2/02_SCRIPTS/` beside the graph builders. The project's policy says the tree is "one place for everything".
 
 ## Also pending in this repo
 
-- Commit `projects/README.md`, `apps/comfy-app/`, `CLAUDE.md`, this file and the `.gitignore` changes.
 - Ask Binc whether `ComfyUI-BincStereo` may stay tracked in this repo. Since 2026-10-19 it is in `apps/comfy-app/custom_nodes/` (the repo is private) because the app has to be runnable from a clone; its `pyproject.toml` marks it proprietary to Cinematic Immunity / Bincos. If Binc says no: move it back out of git, and have `setup.sh` unpack `apps/comfy-app/archive/ComfyUI-BincStereo.zip` instead.
 - Push the RunPod image once Binc has agreed (registry name and account). Dockerfile and build are in `apps/comfy-app/`; see its README, "Targets and what is still open".
 - Rebuild the Electron app under `apps/runpod-dashboard/` so its bundled copy of `mcp_server.py` picks up the mcp 2.x port.

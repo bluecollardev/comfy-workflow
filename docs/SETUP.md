@@ -1,5 +1,10 @@
 # Setup Guide - On-Demand Pod
 
+> **Status 2026-10-19: not done.** No pod has been created on the account and
+> nothing has been rendered on RunPod. This guide is the how-to for when that
+> starts; the plan for the CANALV2 job and what it waits on are in
+> `NEXT-STEPS.md`, "RunPod: the plan, and that none of it has run".
+
 Instructions for deploying and accessing ComfyUI on RunPod's on-demand infrastructure.
 
 ## Prerequisites
