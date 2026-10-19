@@ -10,8 +10,9 @@ in. Owner: Lucas (Blue Collar Dev).
 ```
 ├── apps/
 │   ├── comfy-app/          # The ComfyUI server: setup/launch on the Mac, Dockerfile for CUDA, tracked node packs + workflows
-│   └── runpod-dashboard/   # Vue + Electron dashboard for the pod manager
-├── infra/                  # Pod manager API, pool manager, MCP server, pod lifecycle scripts (Python)
+│   ├── runpod-api/         # FastAPI pod manager API, pool manager, MCP server for Claude Code, tests (Python)
+│   └── runpod-dashboard/   # Vue + Electron dashboard for the pod manager API
+├── infra/                  # Pod lifecycle CLI (create_pod.py), pod-config.yaml, Terraform placeholder
 ├── projects/               # Client/creative work; ignored by git except projects/README.md
 ├── docs/                   # Architecture decisions, setup, testing (index below)
 ├── comfy.yaml              # comfy CLI project config (empty so far)
@@ -29,10 +30,14 @@ cd apps/comfy-app && ./setup.sh && ./fetch-models.sh && ./launch.sh   # http://1
 # The same server as a CUDA image (RunPod, Linux, Windows via WSL2)
 cd apps/comfy-app && ./build.sh                                       # comfy-app:v26
 
-# RunPod pods, dashboard and MCP server
+# Pod lifecycle CLI
 pip install -r infra/scripts/requirements.txt
 export RUNPOD_API_KEY=...
 python infra/scripts/create_pod.py create --name ComfyUI-Dev --gpu rtx4090
+
+# Pod manager API (serves the built dashboard at http://localhost:8000) and MCP server
+pip install -r apps/runpod-api/requirements.txt
+python apps/runpod-api/pod_manager_api.py
 ```
 
 Branches: `develop` is the integration branch and GitHub's default; feature
@@ -65,7 +70,8 @@ All of `docs/`: <https://github.com/bluecollardev/comfy-workflow/tree/develop/do
 
 | Doc | What it covers |
 |---|---|
-| [`infra/README.md`](infra/README.md) | The infrastructure folder: scripts, pod manager API, Docker image location, cost management, monitoring, troubleshooting. |
+| [`infra/README.md`](infra/README.md) | The infrastructure folder: the pod lifecycle CLI, pod config, where the Docker image and the API live, cost management, monitoring, troubleshooting. |
+| [`apps/runpod-api/README.md`](apps/runpod-api/README.md) | The pod manager service: the FastAPI API and its routers, the pool manager, the MCP server, environment variables, running it, tests, and what the Electron app packages from it. |
 | [`docs/MCP-SERVER.md`](docs/MCP-SERVER.md) | The MCP server that exposes agent pool management to Claude Code: quick start, every tool, typical sessions, configuration, errors, budgeting. |
 | [`apps/comfy-app/README.md`](apps/comfy-app/README.md) | The ComfyUI server project: what is upstream and what is ours (`check.sh`), running from a fresh clone, the Docker image, pointing the `comfy` CLI at it, targets and open approvals. |
 | [`apps/runpod-dashboard/README.md`](apps/runpod-dashboard/README.md) | The Vue dashboard for the pod manager: features, architecture, API integration, dev and production builds, the Electron desktop app. |
@@ -75,7 +81,7 @@ All of `docs/`: <https://github.com/bluecollardev/comfy-workflow/tree/develop/do
 
 | Doc | What it covers |
 |---|---|
-| [`docs/TESTING.md`](docs/TESTING.md) | The Python test suite for the pod manager: structure, categories, mocking, coverage, async tests, fixtures, CI, debugging. Run `pytest infra/scripts/tests/ -m "not integration"` before any merge. |
+| [`docs/TESTING.md`](docs/TESTING.md) | The Python test suite for the pod manager: structure, categories, mocking, coverage, async tests, fixtures, CI, debugging. Run `pytest apps/runpod-api/tests/ -m "not integration"` before any merge. |
 | [`docs/TEST-RESULTS.md`](docs/TEST-RESULTS.md) | Record of the 2026-10-17 verification of the RunPod setup: what was tested, coverage, known limitations. |
 
 ### Projects and planning

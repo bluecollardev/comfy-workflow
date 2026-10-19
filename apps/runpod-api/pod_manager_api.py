@@ -408,7 +408,7 @@ async def websocket_pods(websocket: WebSocket):
 # Serve the built UI (apps/runpod-dashboard/dist, or UI_DIST_DIR) at /
 # ============================================================================
 
-UI_DIST_DIR = os.path.abspath(os.getenv("UI_DIST_DIR", os.path.join(os.path.dirname(__file__), "..", "..", "apps", "runpod-dashboard", "dist")))
+UI_DIST_DIR = os.path.abspath(os.getenv("UI_DIST_DIR", os.path.join(os.path.dirname(__file__), "..", "runpod-dashboard", "dist")))
 
 if os.path.isdir(os.path.join(UI_DIST_DIR, "assets")):
     app.mount("/assets", StaticFiles(directory=os.path.join(UI_DIST_DIR, "assets")), name="ui-assets")

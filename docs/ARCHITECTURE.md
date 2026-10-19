@@ -37,7 +37,7 @@ Claude Code is the primary user interface. Users ask Claude to:
 - "Submit this workflow to video-gen-1"
 
 ### Layer 2: MCP Server
-**File:** `infra/scripts/mcp_server.py`
+**File:** `apps/runpod-api/mcp_server.py`
 
 Model Context Protocol server that exposes 9 tools to Claude:
 
@@ -60,7 +60,7 @@ Model Context Protocol server that exposes 9 tools to Claude:
 ### Layer 3: Backend Services
 
 #### Pool Manager
-**File:** `infra/scripts/pool_manager.py`
+**File:** `apps/runpod-api/pool_manager.py`
 
 Orchestrates pod lifecycle via RunPod GraphQL API.
 
@@ -89,7 +89,7 @@ PodConfig           # Config for creating pods
 ```
 
 #### FastAPI Backend
-**File:** `infra/scripts/pod_manager_api.py`
+**File:** `apps/runpod-api/pod_manager_api.py`
 
 REST API for pod management + WebSocket live updates.
 
@@ -104,7 +104,7 @@ WS     /ws/pods            → Real-time updates
 ```
 
 #### OAuth Handler
-**File:** `infra/scripts/oauth_handler.py`
+**File:** `apps/runpod-api/oauth_handler.py`
 
 Authentication layer for team coordination.
 
@@ -304,7 +304,7 @@ Your Machine:
 ```bash
 ./infra/setup-team.sh
 # Start backend
-python3 infra/scripts/pod_manager_api.py --reload
+python3 apps/runpod-api/pod_manager_api.py --reload
 
 # Start frontend (new terminal)
 cd apps/runpod-dashboard && npm run dev

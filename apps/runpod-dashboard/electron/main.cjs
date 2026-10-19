@@ -21,9 +21,9 @@ const API = `http://localhost:${PORT}`
 const DEV_URL = process.env.VITE_DEV_SERVER_URL
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'runpod-pod-manager')
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..')
-// Packaged: electron-builder copies infra/scripts → resources/backend and dist/ → resources/dist.
-// Dev: the API is in infra/scripts and the built UI in apps/runpod-dashboard/dist.
-const BACKEND_DIR = app.isPackaged ? path.join(process.resourcesPath, 'backend') : path.join(REPO_ROOT, 'infra', 'scripts')
+// Packaged: electron-builder copies apps/runpod-api → resources/backend and dist/ → resources/dist.
+// Dev: the API is in apps/runpod-api and the built UI in apps/runpod-dashboard/dist.
+const BACKEND_DIR = app.isPackaged ? path.join(process.resourcesPath, 'backend') : path.join(REPO_ROOT, 'apps', 'runpod-api')
 const UI_DIST_DIR = app.isPackaged ? path.join(process.resourcesPath, 'dist') : path.resolve(__dirname, '..', 'dist')
 const ICON = path.join(__dirname, '..', 'build', 'icon.png')
 

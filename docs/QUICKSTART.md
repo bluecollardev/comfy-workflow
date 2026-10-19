@@ -10,26 +10,21 @@ Three ways to see ComfyUI in action, from simplest to most powerful.
 cd ~/workspaces/comfy_workflow
 
 # Install dependencies (one-time)
-pip install -r infra/scripts/requirements.txt
+pip install -r apps/runpod-api/requirements.txt
+(cd apps/runpod-dashboard && npm install && npm run build)   # the UI; skip for API docs only
 
 # Set API key (replace with real key)
 export RUNPOD_API_KEY="your-real-api-key"
 
-# Start dashboard
-python3 infra/scripts/pod_dashboard.py
+# Start the pod manager API; it serves the built dashboard at /
+python3 apps/runpod-api/pod_manager_api.py
 ```
 
-**You'll see:**
-```
-╔════════════════════════════════════════════════════════════╗
-║            RunPod Pod Manager Dashboard                     ║
-╠════════════════════════════════════════════════════════════╣
-║                                                              ║
-║  🌐 Open your browser:  http://localhost:5000               ║
-...
-```
+**Then open:** http://localhost:8000 (interactive API docs at http://localhost:8000/docs)
 
-**Then open:** http://localhost:5000
+The desktop version is the Electron app in `apps/runpod-dashboard`
+(`npm run electron:dev`); it starts the API itself. The older single-file
+Flask dashboard is kept in `apps/runpod-api/legacy/`.
 
 ✨ You'll see:
 - All your RunPod pods
