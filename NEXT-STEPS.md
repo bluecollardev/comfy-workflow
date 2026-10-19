@@ -125,7 +125,7 @@ solves, serverless ruled out for frame sequences, pods stopped when a job ends.
 
 In order:
 
-1. [ ] **Funds on the RunPod account.** Secure cloud refused for a zero balance on 2026-10-19 and community had no instance. Then `./start.sh e2e-live` is the proof: one stock-image pod, running, stopped, deleted, by the test.
+1. [x] **RunPod proven** (2026-10-19 evening, USD 35 of credit): `./start.sh e2e-live` created a stock-image pod on the cheapest card in stock, saw it running, stopped and deleted it in 3.6 minutes. Rerun it any time; it leaves nothing behind.
 2. [ ] **Binc's yeses**, named, before anything below runs (`shared/governance/policy/agent-permissions.md`; `~/Workspaces/TODO.md` item 5): plates copied to a network volume; an image with the packs pushed to a registry (name and account); the spend, inside the USD 100 cap. The MCP server already refuses `create_agent` without `approved_by`.
 2. [ ] **Build and push the image** on amd64 (binc-PC or any Linux box; the Mac would emulate): `apps/comfy-app/build.sh` with the `contract-v26` set, then push to the registry Binc names, then enter that reference as the image in the Configuration panel. Until then pod creation refuses the bare local name on purpose.
 4. [ ] **Create the network volume** in one datacenter, sized for the tree (81 GB on the mirror), `comfy-shared/` with the weights, and only the plates of the first batch (DPX, two eyes per shot; the 24 inbox entries total about 3,100 frames, so never all of them). Enter the volume id and datacenter in the Configuration panel.

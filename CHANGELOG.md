@@ -5,6 +5,12 @@ completed items move here. Commit hashes are on `develop`.
 
 ## 2026-10-19
 
+### RunPod proven live; stock-aware card choice; Pause all; test ids and one language file (branch `feature/no-spend-mode`)
+- **The live proof passed** on 2026-10-19 evening after Lucas added USD 35 of credit: `./start.sh e2e-live` drove the real app through Electron, created one pod with the stock image on the cheapest 16-24 GB card RunPod had in stock, saw it running with its ComfyUI URL, stopped it and deleted it, in 3.6 minutes. The account was empty before and after; the spend was minutes of one card.
+- **Stock-aware GPU choice**: `auto`, now the default, asks RunPod what it has in stock with prices, tries the cheapest card first, moves to the next on a "no instances" answer, then to the other cloud; a real error is never retried. The two earlier refusals were exactly this: a 4090 on one cloud with low stock. The RTX 4000 Ada (20 GB) joins the table.
+- **Pause all** in the navbar stops every running pod at once. Stop is RunPod's pause: the pod keeps its disk and bills storage only; Delete terminates it and nothing bills.
+- **Test ids** on every element the specs use, and **one language file** (`src/locales/en.json`, vue-i18n) that the UI, the stores and the Playwright specs all read from.
+
 ### No-spend mode, the RunPod key in the panel, the app driven through Electron, the live proof (branch `feature/no-spend-mode`)
 - **No-spend mode**: a switch in Configuration (or `RUNPOD_DRY_RUN=1`) makes the core simulate pods with the shape the dashboard shows for real ones, so every screen, action and test runs the same way and nothing reaches RunPod or bills. The navbar says so while it is on.
 - **The RunPod API key** is entered in the Configuration panel, first section. The core stores it in `~/.config/runpod-pod-manager/.env`, the file the Electron shell and the Python backend already read, puts it in the running process so the next call uses it, and shows only its last four characters afterwards. The deprecated Python API got the same two endpoints for browser mode.

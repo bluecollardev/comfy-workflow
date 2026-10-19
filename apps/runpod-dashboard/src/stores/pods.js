@@ -75,8 +75,18 @@ export const usePodsStore = defineStore('pods', () => {
     return r
   }
   const stop = (id) => act(id, podsAPI.stopPod, 'Stop')
+
+  /** Stop every running pod at once: the pause button. Nothing bills GPU time afterwards. */
+  async function stopAll() {
+    const running = pods.value.filter((p) => p.status === 'running' || p.status === 'starting')
+    if (!running.length) { toast.info(t('toast.nothingRunning')); return { ok: true, value: 0 } }
+    actionError.value = null
+    const r = await toast.run(t('toast.pauseAll'), async () => { for (const p of running) await podsAPI.stopPod(p.id); return running.length }, { ok: t('toast.pausedAll', { n: running.length }), onError: (msg) => (actionError.value = msg) })
+    await load()
+    return r
+  }
   const resume = (id) => act(id, podsAPI.resumePod, 'Resume')
   const remove = (id) => act(id, podsAPI.deletePod, 'Delete')
 
-  return { stats, pods, dryRun, initialLoading, refreshing, loadError, actionError, busyPodId, load, refreshList, startAutoRefresh, stopAutoRefresh, create, stop, resume, remove }
+  return { stats, pods, dryRun, initialLoading, refreshing, loadError, actionError, busyPodId, load, refreshList, startAutoRefresh, stopAutoRefresh, create, stop, stopAll, resume, remove }
 })

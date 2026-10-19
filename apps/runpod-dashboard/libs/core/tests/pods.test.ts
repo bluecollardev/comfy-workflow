@@ -38,7 +38,7 @@ describe('the plan sent to RunPod', () => {
     const cfg = mounts.defaults(); cfg.image = 'ghcr.io/example/comfy-app:v26'; cfg.network_volume_id = 'vol1'; cfg.data_center_id = 'EU-RO-1'
     cfg.folders.project = fakeTree(dir)
     const { input, idleMinutes } = pods.plan({ name: 't' }, cfg)
-    expect(input.imageName).toBe('ghcr.io/example/comfy-app:v26'); expect(input.gpuTypeId).toBe('NVIDIA GeForce RTX 4090')
+    expect(input.imageName).toBe('ghcr.io/example/comfy-app:v26'); expect(input.gpuTypeId).toBe('auto')
     expect(input.cloudType).toBe('COMMUNITY'); expect(input.volumeInGb).toBe(0); expect(input.networkVolumeId).toBe('vol1'); expect(input.dataCenterId).toBe('EU-RO-1')
     expect(input.env.PROJECT_ROOT).toBe('/workspace/project'); expect(input.env.COMFY_LINKS).toContain('/home/someone/HARBOUR_r1/HARBOUR=/workspace/project')
     expect(input.ports).toBe('8188/http,22/tcp'); expect(idleMinutes).toBe(30)
@@ -71,7 +71,8 @@ describe('against RunPod', () => {
       return {}
     })
     const client = { fetchFn }
-    const created = await pods.create({ name: 't', env_vars: { QUOTE: 'say "hi"' } }, client)
+    const created = await pods.create({ name: 't', gpu: 'rtx4090', env_vars: { QUOTE: 'say "hi"' } }, client)
+    expect(created.gpu).toBe('rtx4090 x1')
     expect(created.id).toBe('pod123'); expect(created.web_ui_url).toBe('https://pod123-8188.proxy.runpod.net'); expect(created.idle_stop_minutes).toBe(30)
     expect(idle.entry('pod123')?.minutes).toBe(30)
     const m = queries[0]
@@ -85,6 +86,34 @@ describe('against RunPod', () => {
     await pods.remove('pod123', client)
     expect(idle.entry('pod123')).toBeUndefined()
     expect(await pods.runningIds(client)()).toEqual(new Set(['pod123']))
+  })
+
+  it('auto picks the cheapest card in stock and moves on when RunPod has none', async () => {
+    const cfg = mounts.defaults(); cfg.image = 'ghcr.io/example/comfy-app:v26'; mounts.save(cfg)
+    const tried: string[] = []
+    const { fetchFn } = fakeFetch((q) => {
+      if (q.includes('gpuTypes')) return { gpuTypes: [
+        { id: 'NVIDIA GeForce RTX 4090', secureCloud: true, communityCloud: true, lowestPrice: { uninterruptablePrice: 0.34, stockStatus: 'Low' } },
+        { id: 'NVIDIA RTX A5000', secureCloud: true, communityCloud: true, lowestPrice: { uninterruptablePrice: 0.16, stockStatus: 'Low' } },
+        { id: 'NVIDIA RTX A4000', secureCloud: true, communityCloud: true, lowestPrice: { uninterruptablePrice: null, stockStatus: null } },
+      ] }
+      if (q.includes('podFindAndDeployOnDemand')) {
+        const id = /gpuTypeId: "([^"]+)"/.exec(q)![1]; tried.push(id)
+        if (id === 'NVIDIA RTX A5000') return { errors: [{ message: 'There are no longer any instances available with the requested specifications. Please refresh and try again.' }] }
+        return { podFindAndDeployOnDemand: { id: 'pod-auto' } }
+      }
+      return {}
+    })
+    expect(await pods.candidates('auto', { fetchFn })).toEqual(['NVIDIA RTX A5000', 'NVIDIA GeForce RTX 4090', 'NVIDIA RTX A4000', 'NVIDIA RTX 4000 Ada Generation', 'NVIDIA GeForce RTX 3090'])
+    const created = await pods.create({ name: 't', gpu: 'auto' }, { fetchFn })
+    expect(tried).toEqual(['NVIDIA RTX A5000', 'NVIDIA GeForce RTX 4090'])   // cheapest first, then the next when none
+    expect(created.gpu).toBe('rtx4090 x1'); expect(created.vram).toBe(24)
+    // a real error is not retried
+    const { fetchFn: f2 } = fakeFetch((q) => q.includes('gpuTypes') ? { gpuTypes: [] } : { errors: [{ message: 'Your account balance is too low to rent a pod.' }] })
+    await expect(pods.create({ name: 't', gpu: 'auto' }, { fetchFn: f2 })).rejects.toThrow(/balance is too low/)
+    // all out of stock on both clouds: one clear message
+    const { fetchFn: f3 } = fakeFetch((q) => q.includes('gpuTypes') ? { gpuTypes: [] } : { errors: [{ message: 'There are no longer any instances available with the requested specifications.' }] })
+    await expect(pods.create({ name: 't', gpu: 'auto' }, { fetchFn: f3 })).rejects.toThrow(/No card available right now: tried .* on COMMUNITY and SECURE/)
   })
 
   it('surfaces RunPod errors and a missing key', async () => {

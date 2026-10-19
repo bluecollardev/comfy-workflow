@@ -95,7 +95,7 @@ test.describe('create pod', () => {
     await page.getByLabel('Name').fill('quick')
     await page.locator('form button[type=submit]').click()
     const post = api.calls.find((c) => c.method === 'POST' && c.path === '/pods')
-    expect(post.body).toMatchObject({ name: 'quick', image: 'configured', gpu: 'rtx4090', gpu_count: 1, instance_type: 'spot', volume_gb: 0, idle_stop_minutes: null, start_ssh: true, start_jupyter: false })
+    expect(post.body).toMatchObject({ name: 'quick', image: 'configured', gpu: 'auto', gpu_count: 1, instance_type: 'spot', volume_gb: 0, idle_stop_minutes: null, start_ssh: true, start_jupyter: false })
   })
 
   test('the stock image can still be chosen and sends "prebuilt"', async ({ page, api }) => {

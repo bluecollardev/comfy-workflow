@@ -15,6 +15,9 @@
         <BButton variant="outline-light" size="sm" :title="$t('app.configurationTitle')" :aria-label="$t('app.configuration')" data-testid="open-config" @click="ui.configOpen = true">
           <i class="fa-solid fa-gear"></i>
         </BButton>
+        <BButton variant="outline-warning" size="sm" :disabled="pods.refreshing || !pods.pods.some((p) => p.status !== 'stopped')" :title="$t('app.pauseAllTitle')" data-testid="pause-all" @click="pods.stopAll">
+          <i class="fa-solid fa-pause me-1"></i>{{ $t('app.pauseAll') }}
+        </BButton>
         <BButton variant="primary" size="sm" :disabled="pods.refreshing" data-testid="refresh" @click="pods.load">
           <i class="fa-solid fa-rotate me-1" :class="{ 'fa-spin': pods.refreshing }"></i>
           {{ $t('app.refresh') }}

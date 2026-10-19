@@ -334,7 +334,7 @@ const MAX_VISIBLE_FOLDERS = 500
 
 // The GPU menu comes from the API (GET /api/gpus): 16-24 GB cards, cheapest first. The job runs on a
 // 16 GB A4000 today and nothing asks for more than 24 GB, so no A100/H100/L40S rows to overspend on.
-const gpuOptions = ref([{ value: 'rtx4090', text: 'RTX 4090 (24 GB)' }])
+const gpuOptions = ref([{ value: 'auto', text: 'Cheapest card in stock (16-24 GB)' }, { value: 'rtx4090', text: 'RTX 4090 (24 GB)' }])
 podsAPI.gpus().then((g) => { gpuOptions.value = g.gpus }).catch(() => {})
 const GPU_COUNT_OPTIONS = Array.from({ length: 8 }, (_, i) => ({ value: i + 1, text: String(i + 1) }))
 const INSTANCE_TYPE_OPTIONS = [
@@ -388,7 +388,7 @@ const emit = defineEmits(['pod-created'])
 
 const defaults = () => ({
   name: '',
-  gpu: 'rtx4090',
+  gpu: 'auto',
   gpuCount: 1,
   instanceType: 'spot',
   volumeGb: 0,

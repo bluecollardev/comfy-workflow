@@ -46,6 +46,7 @@
         size="sm"
         class="flex-fill"
         :disabled="busy"
+        :title="$t('pod.stopTitle')"
         data-testid="pod-stop"
         @click="$emit('stop')"
       >

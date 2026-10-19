@@ -79,3 +79,13 @@ export const resumePod = (podId: string, gpuCount = 1, client?: RunPodClient) =>
 
 export const terminatePod = (podId: string, client?: RunPodClient) =>
   graphql(`mutation { podTerminate(input: { podId: ${str(podId)} }) }`, client)
+
+export interface GpuStock { id: string; price: number | null; stock: string | null; secure: boolean; community: boolean }
+
+/** What RunPod has in stock for a set of gpu ids, with the on-demand price. */
+export async function gpuStock(ids: string[], client?: RunPodClient): Promise<GpuStock[]> {
+  const d = await graphql<{ gpuTypes: { id: string; secureCloud: boolean; communityCloud: boolean; lowestPrice: { uninterruptablePrice: number | null; stockStatus: string | null } | null }[] }>(
+    'query { gpuTypes { id secureCloud communityCloud lowestPrice(input:{gpuCount:1}) { uninterruptablePrice stockStatus } } }', client)
+  const want = new Set(ids)
+  return (d?.gpuTypes || []).filter((g) => want.has(g.id)).map((g) => ({ id: g.id, price: g.lowestPrice?.uninterruptablePrice ?? null, stock: g.lowestPrice?.stockStatus ?? null, secure: g.secureCloud, community: g.communityCloud }))
+}

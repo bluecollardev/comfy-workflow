@@ -28,8 +28,8 @@ test.describe('RunPod, live', () => {
     await expect(page.getByTestId('no-spend-badge')).toHaveCount(0)
     await openCreatePod(page)
     await page.locator('#pod-name').fill('Live-Proof')
-    await page.locator('#pod-gpu').selectOption('rtx4090')
-    await page.locator('#pod-instance-type').selectOption('on-demand')   // secure cloud: community had no instance on 2026-10-19
+    await page.locator('#pod-gpu').selectOption('auto')   // the cheapest 16-24 GB card RunPod has in stock, the next on a stock refusal, then the other cloud
+    await page.locator('#pod-instance-type').selectOption('on-demand')
     await page.locator('#pod-image').selectOption('prebuilt')
     await page.locator('#pod-idle').fill('5')
     await page.getByTestId('pod-submit').click()

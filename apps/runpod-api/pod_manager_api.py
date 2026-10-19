@@ -259,7 +259,7 @@ async def create_pod(request: CreatePodRequest):
 
         image = resolve_image(request.image, mcfg)
         try:
-            gpu_id = gpus.runpod_id(request.gpu)
+            gpu_id = gpus.runpod_id(gpus.DEFAULT if request.gpu == 'auto' else request.gpu)   # browser mode has no stock-aware auto; the core does
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         idle_minutes = mcfg.idle_stop_minutes if request.idle_stop_minutes is None else request.idle_stop_minutes

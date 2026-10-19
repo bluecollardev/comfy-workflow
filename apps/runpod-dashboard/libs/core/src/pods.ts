@@ -58,8 +58,10 @@ export function plan(req: CreatePodRequest, cfg: mounts.MountsConfig, credential
     }
   }
   const imageName = resolveImage(req.image, cfg)
+  const gpuKey = req.gpu || gpus.DEFAULT_GPU
   let gpuTypeId: string
-  try { gpuTypeId = gpus.runpodId(req.gpu || gpus.DEFAULT_GPU) } catch (e) { throw bad((e as Error).message) }
+  if (gpuKey === gpus.AUTO) gpuTypeId = gpus.AUTO   // resolved against stock at creation
+  else { try { gpuTypeId = gpus.runpodId(gpuKey) } catch (e) { throw bad((e as Error).message) } }
   const idleMinutes = req.idle_stop_minutes == null ? cfg.idle_stop_minutes : req.idle_stop_minutes
   return {
     input: {
@@ -78,13 +80,46 @@ export async function create(req: CreatePodRequest, client?: rp.RunPodClient, cr
   const cfg = mounts.load()
   const { input, idleMinutes } = plan(req, cfg, credentialsEnv)
   if (mounts.dryRun(cfg)) return dry.create({ name: req.name, gpu: req.gpu, gpu_count: input.gpuCount, image: input.imageName, idle_stop_minutes: idleMinutes > 0 ? idleMinutes : 0 })
-  const pod = await rp.createPod(input, client)
+  const { pod, gpuId } = await deployWithFallback(input, client)
   if (idleMinutes > 0) idle.register(pod.id, idleMinutes)
+  const key = gpuKey(gpuId)
   return {
-    id: pod.id, name: req.name, status: 'starting', gpu: `${req.gpu || gpus.DEFAULT_GPU} x${input.gpuCount}`,
-    vram: gpus.vram(req.gpu || gpus.DEFAULT_GPU) * (input.gpuCount || 1), uptime_seconds: 0,
+    id: pod.id, name: req.name, status: 'starting', gpu: `${key} x${input.gpuCount}`,
+    vram: gpus.vram(key) * (input.gpuCount || 1), uptime_seconds: 0,
     web_ui_url: idle.proxyUrl(pod.id), ssh_command: `ssh root@${pod.id}.proxy.runpod.io`, idle_stop_minutes: idleMinutes > 0 ? idleMinutes : 0,
   }
+}
+
+const gpuKey = (id: string) => Object.entries(gpus.GPUS).find(([, g]) => g.id === id)?.[0] || id
+const NO_STOCK = /no longer any instances available|not enough|no instances/i
+
+/** The cards to try, cheapest in stock first, for `auto`; the one asked for otherwise. */
+export async function candidates(gpuTypeId: string, client?: rp.RunPodClient): Promise<string[]> {
+  if (gpuTypeId !== gpus.AUTO) return [gpuTypeId]
+  const ids = Object.values(gpus.GPUS).map((g) => g.id)
+  let stock: rp.GpuStock[] = []
+  try { stock = await rp.gpuStock(ids, client) } catch { /* no stock answer: try them all in table order */ }
+  const inStock = stock.filter((g) => g.stock && g.price != null).sort((a, b) => (a.price as number) - (b.price as number)).map((g) => g.id)
+  return [...inStock, ...ids.filter((id) => !inStock.includes(id))]
+}
+
+/** Deploy on the first card RunPod will give; a "no instances" answer moves to the next card, then to the other cloud. */
+async function deployWithFallback(input: rp.CreatePodInput, client?: rp.RunPodClient): Promise<{ pod: { id: string }; gpuId: string }> {
+  const cards = await candidates(input.gpuTypeId, client)
+  const clouds: rp.CreatePodInput['cloudType'][] = input.gpuTypeId === gpus.AUTO ? [input.cloudType, input.cloudType === 'SECURE' ? 'COMMUNITY' : 'SECURE'] : [input.cloudType]
+  let last: Error | null = null
+  for (const cloudType of clouds) {
+    for (const gpuTypeId of cards) {
+      try {
+        const pod = await rp.createPod({ ...input, gpuTypeId, cloudType }, client)
+        return { pod, gpuId: gpuTypeId }
+      } catch (e) {
+        last = e as Error
+        if (!NO_STOCK.test(last.message)) throw last   // anything but stock is a real error
+      }
+    }
+  }
+  throw new CoreError(502, `No card available right now: tried ${cards.map(gpuKey).join(', ')} on ${clouds.join(' and ')}. RunPod: ${last?.message}`)
 }
 
 /** A RunPod pod as the dashboard shows it. */
