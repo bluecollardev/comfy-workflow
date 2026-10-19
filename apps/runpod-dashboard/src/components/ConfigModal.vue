@@ -8,18 +8,19 @@
     @show="load"
   >
     <p class="text-body-secondary small mb-3">
-      Graphs, scripts and the older node packs name binc-PC's paths. A pod carries the data on a
-      volume and makes those paths resolve with symlinks at start. This is where that mapping lives:
-      saved by the API, not hardcoded in the app. Defaults come from the scan in
-      <code>shared/shapes/mount-points.json</code>; the full story is <code>docs/MOUNT-POINTS.md</code>.
+      This app runs on one PC. Map the three folders every run needs, wherever they are on this
+      PC. A runtime here uses them where they are; a pod carries them on its volume and links the
+      paths the project's own files name onto them, so graphs and scripts run unchanged. The
+      full story: <code>docs/MOUNT-POINTS.md</code>.
     </p>
 
     <div v-if="loading" class="text-center text-body-secondary py-3"><BSpinner small /></div>
 
     <template v-else-if="cfg">
+      <h6 class="mb-2">Pod volume <span class="text-body-secondary fw-normal small">the network volume that carries the three folders when a pod runs them</span></h6>
       <BRow class="g-3 mb-3">
         <BCol md="5">
-          <BFormGroup label="Network volume ID" label-for="cfg-volume" description="A persistent RunPod volume carrying CANALV2/, ComfyUI-Shared/ and plates/. Empty: the pod gets only its own disk and nothing below resolves.">
+          <BFormGroup label="Network volume ID" label-for="cfg-volume" description="Empty: the pod gets only its own disk and nothing above resolves.">
             <BFormInput id="cfg-volume" v-model.trim="cfg.network_volume_id" placeholder="e.g. 7h2k…" class="font-monospace" />
           </BFormGroup>
         </BCol>
@@ -36,31 +37,58 @@
       </BRow>
 
       <div class="d-flex align-items-center justify-content-between mb-2">
-        <h6 class="mb-0">Links <span class="text-body-secondary fw-normal">path in the pod → where it lives on the volume</span></h6>
-        <BButton size="sm" variant="outline-light" @click="cfg.links.push({ path: '', target: cfg.mount_path + '/', required: false, mode: 'rw', what: '' })">
-          <i class="fa-solid fa-plus me-1"></i>Add link
-        </BButton>
+        <h6 class="mb-0">Folders on this PC <span class="text-body-secondary fw-normal small">the three every run needs, then any of your own</span></h6>
+        <BButton size="sm" variant="outline-light" @click="cfg.custom.push({ name: '', local: '', container: '', link: '', mode: 'rw' })"><i class="fa-solid fa-plus me-1"></i>Add folder</BButton>
       </div>
       <table class="table table-sm align-middle mb-3">
         <thead class="small text-body-secondary">
-          <tr><th style="width: 38%">Path the code names</th><th style="width: 38%">Target on the volume</th><th>Required</th><th>Mode</th><th></th></tr>
+          <tr><th style="width: 22%">What</th><th style="width: 48%">Folder on this PC</th><th>On a pod</th><th></th></tr>
         </thead>
         <tbody>
-          <tr v-for="(l, i) in cfg.links" :key="i">
+          <tr v-for="f in required" :key="f.key">
             <td>
-              <BFormInput v-model.trim="l.path" size="sm" class="font-monospace" placeholder="/home/binc/…" />
-              <small v-if="l.what" class="text-body-secondary">{{ l.what }}</small>
+              <div class="fw-semibold">{{ label(f) }} <BBadge variant="secondary" class="fw-normal">required</BBadge></div>
+              <small class="text-body-secondary">{{ f.what }}</small>
             </td>
-            <td><BFormInput v-model.trim="l.target" size="sm" class="font-monospace" :placeholder="cfg.mount_path + '/…'" /></td>
-            <td><BFormCheckbox v-model="l.required" switch size="sm" /></td>
-            <td><BFormSelect v-model="l.mode" size="sm" :options="['rw', 'ro']" style="width: 5rem" /></td>
-            <td class="text-end"><BButton variant="outline-light" size="sm" aria-label="Remove link" @click="cfg.links.splice(i, 1)"><i class="fa-solid fa-xmark"></i></BButton></td>
+            <td>
+              <div class="d-flex gap-2">
+                <BFormInput v-model.trim="cfg.folders[f.key]" size="sm" class="font-monospace" placeholder="not mapped" :state="folderState(f, cfg.folders[f.key])" />
+                <BButton size="sm" variant="outline-light" class="text-nowrap" @click="browse(f.key, label(f), cfg.folders[f.key])"><i class="fa-regular fa-folder-open me-1"></i>Browse</BButton>
+              </div>
+              <small v-if="cfg.folders[f.key] && f.local === cfg.folders[f.key] && !f.exists" class="text-danger">This folder does not exist on this PC.</small>
+              <small v-else-if="f.declared" class="text-body-secondary">The project names it <code>{{ f.declared.path }}</code> ({{ f.declared.source }}); a pod links that onto <code>{{ f.container }}</code>.</small>
+              <small v-else-if="f.key === 'project' && cfg.folders.project && f.local === cfg.folders.project && f.exists" class="text-warning">No root line in the tree's job files or structure page; a pod cannot link what the graphs name.</small>
+              <small v-else-if="f.key !== 'project' && cfg.folders.project" class="text-body-secondary">Not declared by the project tree; nothing is linked for it on a pod.</small>
+            </td>
+            <td class="font-monospace small">{{ f.container }}<br /><span class="text-body-secondary">{{ f.env_key }}</span></td>
+            <td></td>
+          </tr>
+          <tr v-for="(c, i) in cfg.custom" :key="'custom-' + i">
+            <td>
+              <BFormInput v-model.trim="c.name" size="sm" placeholder="name" :state="c.name ? (/^[^/\s]+$/.test(c.name) && !required.some((f) => f.key === c.name) ? null : false) : false" />
+              <small class="text-body-secondary">your own folder</small>
+            </td>
+            <td>
+              <div class="d-flex gap-2">
+                <BFormInput v-model.trim="c.local" size="sm" class="font-monospace" placeholder="not mapped" :state="folderState(customRow(c), c.local)" />
+                <BButton size="sm" variant="outline-light" class="text-nowrap" @click="browse('custom:' + i, c.name || 'folder', c.local)"><i class="fa-regular fa-folder-open me-1"></i>Browse</BButton>
+              </div>
+              <div class="d-flex gap-2 align-items-center mt-1">
+                <small class="text-body-secondary text-nowrap">Path the code names</small>
+                <BFormInput v-model.trim="c.link" size="sm" class="font-monospace" placeholder="optional: a pod links it onto the pod path" />
+              </div>
+            </td>
+            <td>
+              <BFormInput v-model.trim="c.container" size="sm" class="font-monospace" :placeholder="(cfg.mount_path || '/workspace') + '/' + (c.name || 'name')" />
+              <BFormSelect v-model="c.mode" size="sm" :options="['rw', 'ro']" class="mt-1" style="width: 5rem" />
+            </td>
+            <td class="text-end"><BButton variant="outline-light" size="sm" aria-label="Remove folder" @click="cfg.custom.splice(i, 1)"><i class="fa-solid fa-xmark"></i></BButton></td>
           </tr>
         </tbody>
       </table>
 
       <div class="d-flex align-items-center justify-content-between mb-2">
-        <h6 class="mb-0">Environment <span class="text-body-secondary fw-normal">added to every pod that applies these mounts</span></h6>
+        <h6 class="mb-0">Environment <span class="text-body-secondary fw-normal">extra variables for every pod that applies these mounts</span></h6>
         <BButton size="sm" variant="outline-light" @click="envRows.push({ key: '', value: '' })"><i class="fa-solid fa-plus me-1"></i>Add variable</BButton>
       </div>
       <table class="table table-sm align-middle mb-3" v-if="envRows.length">
@@ -77,62 +105,66 @@
         Apply to new pods by default <span class="text-body-secondary">(the pod form can switch it off per pod)</span>
       </BFormCheckbox>
 
-      <details class="mb-3">
-        <summary class="small text-body-secondary">What a new pod receives</summary>
-        <pre class="small bg-body-tertiary rounded p-2 mt-2 mb-0" style="white-space: pre-wrap">{{ previewText }}</pre>
+      <details class="mb-2">
+        <summary class="small text-body-secondary">What a runtime on this PC receives (as saved)</summary>
+        <pre class="small bg-body-tertiary rounded p-2 mt-2 mb-0" style="white-space: pre-wrap">{{ localText }}</pre>
       </details>
-
-      <details v-if="catalog.mounts?.length" class="mb-2">
-        <summary class="small text-body-secondary">Where these defaults come from: the scan of the project tree</summary>
-        <table class="table table-sm small mt-2 mb-0">
-          <thead><tr><th>What</th><th>On binc-PC</th><th>Mentions</th><th>In the pod</th></tr></thead>
-          <tbody>
-            <tr v-for="m in catalog.mounts" :key="m.name">
-              <td>{{ m.what }}</td>
-              <td class="font-monospace">{{ m.binc_pc }}</td>
-              <td>{{ m.mentions }}</td>
-              <td class="font-monospace">{{ m.container || 'not mounted' }}</td>
-            </tr>
-          </tbody>
-        </table>
+      <details class="mb-3">
+        <summary class="small text-body-secondary">What a new pod receives (as saved)</summary>
+        <pre class="small bg-body-tertiary rounded p-2 mt-2 mb-0" style="white-space: pre-wrap">{{ previewText }}</pre>
       </details>
 
       <BAlert :model-value="!!error" variant="danger" class="mt-2 mb-0">{{ error }}</BAlert>
     </template>
 
     <template #footer>
-      <small class="text-body-secondary me-auto">{{ stored ? 'Saved in ' + store : 'Defaults (nothing saved yet)' }}</small>
-      <BButton variant="outline-danger" size="sm" :disabled="saving || !stored" @click="reset">Reset to defaults</BButton>
+      <small class="text-body-secondary me-auto">{{ stored ? 'Saved in ' + store : 'Nothing saved yet' }}</small>
+      <BButton variant="outline-danger" size="sm" :disabled="saving || !stored" @click="reset">Clear</BButton>
       <BButton variant="outline-light" size="sm" @click="ui.configOpen = false">Close</BButton>
       <BButton variant="primary" size="sm" :disabled="saving" @click="save"><BSpinner v-if="saving" small class="me-1" />Save</BButton>
     </template>
+
+    <FolderPicker v-model="picker.open" :title="picker.title" :start="picker.start" @choose="picked" />
   </BModal>
 </template>
 
 <script setup>
 /**
- * ConfigModal — the gear icon in the navbar. Edits the mount configuration the API keeps
- * (GET/PUT/DELETE /api/mounts): network volume, mount path, the binc-PC path → volume path
- * links the pod's entrypoint turns into symlinks (COMFY_LINKS), and extra env.
- * Nothing here is hardcoded in the app: defaults come from shared/shapes/mount-points.json.
+ * ConfigModal — the gear icon in the navbar. Maps the three folders on this PC (project tree,
+ * plates, ComfyUI-Shared) that the API keeps (GET/PUT/DELETE /api/mounts), plus the pod volume
+ * and extra env. Everything a runtime receives is derived by the API from the mapping and from
+ * what the project tree declares about itself; nothing about a machine is typed here.
  */
-import { computed, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { ui } from '../stores/ui'
 import { mountsAPI } from '../api/mounts'
+import FolderPicker from './FolderPicker.vue'
 
 const loading = ref(false)
 const saving = ref(false)
 const error = ref(null)
 const cfg = ref(null)
+const folders = ref([])
 const envRows = ref([])
-const catalog = ref({})
+const localEnv = ref({})
+const preview = ref({})
 const stored = ref(false)
 const store = ref('')
+const picker = reactive({ open: false, key: '', title: '', start: '' })
+
+const LABELS = { project: 'Project tree', plates: 'Plates', 'comfy-shared': 'ComfyUI-Shared' }
+const label = (f) => LABELS[f.key] || f.key
+const required = computed(() => folders.value.filter((f) => !f.custom))
+// The API's derived row for a custom folder (exists, declared), matched by name.
+const customRow = (c) => folders.value.find((f) => f.custom && f.key === c.name) || { local: '', exists: false }
 
 function take(payload) {
   cfg.value = payload.config
+  cfg.value.custom ||= []
+  folders.value = payload.folders || []
   envRows.value = Object.entries(payload.config.env || {}).map(([key, value]) => ({ key, value }))
-  catalog.value = payload.catalog || {}
+  localEnv.value = payload.local_env || {}
+  preview.value = payload.preview || {}
   stored.value = payload.stored
   store.value = payload.store
 }
@@ -142,20 +174,39 @@ async function load() {
   try { take(await mountsAPI.get()) } catch (e) { error.value = e.response?.data?.detail || e.message } finally { loading.value = false }
 }
 
+function folderState(f, v) {
+  if (!v) return null
+  if (!v.startsWith('/')) return false
+  return f.local === v ? f.exists : null   // the API checked this exact path; anything else is unknown until saved
+}
+
+function browse(key, name, start) {
+  picker.key = key; picker.title = `Choose the ${name.toLowerCase()} folder`; picker.start = start || ''
+  picker.open = true
+}
+
+function picked(path) {
+  if (picker.key.startsWith('custom:')) cfg.value.custom[Number(picker.key.slice(7))].local = path
+  else cfg.value.folders[picker.key] = path
+}
+
 function body() {
   const env = {}
   for (const r of envRows.value) if (r.key) env[r.key] = r.value
-  return { ...cfg.value, links: cfg.value.links.filter((l) => l.path && l.target), env }
+  return { ...cfg.value, env }
 }
 
+const localText = computed(() => {
+  const e = Object.entries(localEnv.value)
+  return e.length ? e.map(([k, v]) => `export ${k}=${JSON.stringify(v)}`).join('\n') : 'nothing mapped yet'
+})
+
 const previewText = computed(() => {
-  if (!cfg.value) return ''
-  const b = body()
+  const p = preview.value
   const lines = []
-  if (b.network_volume_id) lines.push(`network volume ${b.network_volume_id} mounted at ${b.mount_path}${b.data_center_id ? ' in ' + b.data_center_id : ''}`)
+  if (p.network_volume_id) lines.push(`network volume ${p.network_volume_id} mounted at ${p.volume_mount_path}${p.data_center_id ? ' in ' + p.data_center_id : ''}`)
   else lines.push('no network volume: per-pod disk only')
-  for (const [k, v] of Object.entries(b.env)) lines.push(`${k}=${v}`)
-  if (b.links.length) lines.push('COMFY_LINKS=' + b.links.map((l) => `${l.path}=${l.target}`).join(';'))
+  for (const [k, v] of Object.entries(p.env || {})) lines.push(`${k}=${v}`)
   return lines.join('\n')
 })
 

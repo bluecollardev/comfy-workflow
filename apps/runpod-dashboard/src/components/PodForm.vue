@@ -405,7 +405,8 @@ async function loadMountsSummary() {
   try {
     const m = await mountsAPI.get()
     const c = m.config
-    mountsSummary.value = (c.network_volume_id ? `volume ${c.network_volume_id} at ${c.mount_path}` : 'no network volume configured') + `, ${c.links.length} link(s)`
+    const mapped = (m.folders || []).filter((f) => f.local).length
+    mountsSummary.value = (c.network_volume_id ? `volume ${c.network_volume_id} at ${c.mount_path}` : 'no network volume configured') + `, ${mapped}/${(m.folders || []).length} folder(s) mapped, ${(m.links || []).length} link(s)`
     if (form.applyMounts === true && c.apply_by_default === false) form.applyMounts = false
   } catch { mountsSummary.value = '' }
 }

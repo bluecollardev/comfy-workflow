@@ -8,9 +8,9 @@
 #   /opt/ComfyUI                      the app, at COMFYUI_REF
 #   /opt/ComfyUI/custom_nodes/        what build.sh staged from shared/nodes: BincStereo + the ShotPipe versions asked for
 #   /opt/ComfyUI/user/default/workflows   workflows/ from the repo
-#   /workspace/ComfyUI-Shared/{input,output,models}   mount: same layout as the Mac and binc-PC
-#   /workspace/CANALV2                mount: the project tree
-#   /home/binc/CANALV2_r3/CANALV2 -> /workspace/CANALV2   so graphs keep their binc-PC paths
+#   /workspace/comfy-shared/{input,output,models}   mount: same layout as the Mac and binc-PC
+#   /workspace/project                mount: the project tree
+#   /home/binc/CANALV2_r3/CANALV2 -> /workspace/project   so graphs keep their binc-PC paths
 #
 # Models and plates are never baked in; mount them (RunPod network volume at /workspace).
 
@@ -25,7 +25,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_BREAK_SYSTEM_PACKAGES=1 \
-    COMFY_SHARED=/workspace/ComfyUI-Shared \
+    COMFY_SHARED=/workspace/comfy-shared \
     COMFY_PORT=8188
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -56,7 +56,7 @@ COPY docker/extra_model_paths.yaml /opt/comfy-app/extra_model_paths.yaml
 COPY docker/entrypoint.sh /opt/comfy-app/entrypoint.sh
 RUN chmod +x /opt/comfy-app/entrypoint.sh \
     && mkdir -p /home/binc/CANALV2_r3 \
-    && ln -s /workspace/CANALV2 /home/binc/CANALV2_r3/CANALV2
+    && ln -s /workspace/project /home/binc/CANALV2_r3/CANALV2
 
 EXPOSE 8188
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \

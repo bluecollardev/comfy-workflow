@@ -140,7 +140,7 @@ belong to BH / Binc and need a named yes before they go anywhere new.
 | Requirement | Needed for | Where it comes from |
 |---|---|---|
 | ComfyUI at the pinned commit (0.39.2) | everything | `apps/comfy-app/setup.sh` clones it; the Dockerfile builds it in |
-| ComfyUI-BH-ShotPipe packs v6–v26 (proprietary) | the corrosion shot graphs (`BH_*`, `BH26_*` nodes); each shot needs the version it was built with | the `shared/nodes` submodule (`bluecollardev/comfy-node-packs`), imported from Binc's tree and all under `portable/` since every pack reads its machine paths from a `bh_paths.py` (`CANALV2_ROOT`, `PLATES_ROOT`, `COMFY_SHARED` from the environment, binc-PC's values as fallback); `bound/` is empty. Versions stack: the current graphs need the `contract-v26` set (v7, v10–v14, v26), `COMFY_SHOTPIPE=contract-v26 apps/comfy-app/setup.sh`. What a ShotPipe pack is: `shared/nodes/docs/SHOTPIPE.md`; versioning: `docs/NODE-PACKS.md` |
+| ComfyUI-BH-ShotPipe packs v6–v26 (proprietary) | the corrosion shot graphs (`BH_*`, `BH26_*` nodes); each shot needs the version it was built with | the `shared/nodes` submodule (`bluecollardev/comfy-node-packs`), imported from Binc's tree and all under `portable/` since every pack reads its machine paths from a `bh_paths.py` (`PROJECT_ROOT`, `PLATES_ROOT`, `COMFY_SHARED` from the environment, binc-PC's values as fallback); `bound/` is empty. Versions stack: the current graphs need the `contract-v26` set (v7, v10–v14, v26), `COMFY_SHOTPIPE=contract-v26 apps/comfy-app/setup.sh`. What a ShotPipe pack is: `shared/nodes/docs/SHOTPIPE.md`; versioning: `docs/NODE-PACKS.md` |
 | ComfyUI-BincStereo (proprietary) | the stereo workflows | `shared/nodes/portable/`; always linked by `setup.sh` |
 | Python: torch (MPS on the Mac, CUDA 12.6 on Linux), numpy, scipy, opencv-python-headless, av, Pillow, matplotlib; PyOpenColorIO for the v2/v3 ACEScg graphs only | the node packs | `apps/comfy-app/requirements-*.txt`; the project's `containers/runpod/requirements-bh.txt` |
 | Depth Anything V2 Large weights | BincStereo depth | Hugging Face via `fetch-models.sh` (`HF_TOKEN` for gated repos) |
@@ -165,9 +165,9 @@ the rest is legacy or not a mount. Full list, per runtime:
 
 | What | binc-PC | Container / pod |
 |---|---|---|
-| Project tree | `/home/binc/CANALV2_r3/CANALV2` (also `~/CANALV2_r3/CANALV2`) | `/workspace/CANALV2`, linked from both spellings and `/root/…` |
-| Served plates, read-only | `/mnt/storage/Panama_Redux/source/PC_20260929_VFX_3D_DSM_plates/` | `/workspace/plates/Panama_Redux/…`, linked from `/mnt/storage/Panama_Redux` |
-| ComfyUI-Shared | `/home/binc/ComfyUI-Shared` (also `~/ComfyUI-Shared`) | `/workspace/ComfyUI-Shared`, `COMFY_SHARED` |
+| Project tree | `/home/binc/CANALV2_r3/CANALV2` (also `~/CANALV2_r3/CANALV2`) | `/workspace/project`, linked from the path the tree's job files declare |
+| Served plates, read-only | `/mnt/storage/Panama_Redux/source/PC_20260929_VFX_3D_DSM_plates/` | `/workspace/plates`, linked from the path the shots' `SOURCES.csv` declare |
+| ComfyUI-Shared | `/home/binc/ComfyUI-Shared` (also `~/ComfyUI-Shared`) | `/workspace/comfy-shared`, `COMFY_SHARED` |
 
 ## Documentation
 

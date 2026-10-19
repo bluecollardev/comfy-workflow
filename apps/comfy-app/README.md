@@ -103,14 +103,14 @@ cd apps/comfy-app
 
 # Local GPU box (Linux, or Windows with Docker Desktop + WSL2 + NVIDIA driver):
 docker run --rm --gpus all -p 8188:8188 \
-  -v /path/to/ComfyUI-Shared:/workspace/ComfyUI-Shared \
-  -v /path/to/CANALV2:/workspace/CANALV2 \
+  -v /path/to/ComfyUI-Shared:/workspace/comfy-shared \
+  -v /path/to/CANALV2:/workspace/project \
   comfy-app:v26
 ```
 
 As a service on a Linux NVIDIA box, or several of them as a Docker Swarm,
 `docker/compose.yml` runs the same image with the project tree mounted at
-binc-PC's path and ComfyUI-Shared at `/workspace/ComfyUI-Shared`:
+binc-PC's path and ComfyUI-Shared at `/workspace/comfy-shared`:
 
 ```bash
 docker/swarm.sh up                 # one box: Compose, GPU via compose.gpu.yml
@@ -118,7 +118,7 @@ docker/swarm.sh init               # first Swarm manager + GPU node; prints the 
 docker/swarm.sh deploy             # docker stack deploy comfy
 ```
 
-Paths come from `CANALV2_ROOT`, `COMFY_SHARED`, `PLATES_ROOT` (the served plates, mounted read-only), `COMFY_IMAGE`, `COMFY_PORT`.
+Paths come from `PROJECT_ROOT`, `COMFY_SHARED`, `PLATES_ROOT` (the served plates, mounted read-only), `COMFY_IMAGE`, `COMFY_PORT`.
 Not for macOS: Docker there has no GPU, use `launch.sh`. Why this shape:
 `docs/ADR-004-where-the-workflows-run.md`.
 
@@ -126,8 +126,8 @@ Base image is `pytorch/pytorch:2.12.1-cuda12.6-cudnn9-runtime`, so the torch
 version matches the Mac exactly. `build.sh` passes `pins.env` as build args,
 stages the packs from `shared/nodes` (BincStereo always, ShotPipe as asked) and copies `workflows/` into
 `.build/` (ignored) because it is the client's. Inside the container ComfyUI is
-`/opt/ComfyUI`, the shared tree is `/workspace/ComfyUI-Shared/{input,output,models}`
-and `/home/binc/CANALV2_r3/CANALV2` links to `/workspace/CANALV2`, so graphs run
+`/opt/ComfyUI`, the shared tree is `/workspace/comfy-shared/{input,output,models}`
+and `/home/binc/CANALV2_r3/CANALV2` links to `/workspace/project`, so graphs run
 with their binc-PC paths unchanged. `COMFY_PORT`, `COMFY_SHARED` and
 `COMFY_ARGS` override the defaults; arguments after the image name go to
 `main.py`. The image never contains models or plates.

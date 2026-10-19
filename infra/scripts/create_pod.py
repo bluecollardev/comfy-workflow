@@ -123,7 +123,7 @@ class RunPodManager:
                 if ov.get("network_volume_id"):
                     mount_kwargs.update(network_volume_id=ov["network_volume_id"], volume_mount_path=ov["volume_mount_path"])
                     if ov.get("data_center_id"): mount_kwargs["data_center_id"] = ov["data_center_id"]
-                print(f"  Mounts: {len(cfg.links)} link(s)" + (f", network volume {ov['network_volume_id']} at {ov['volume_mount_path']}" if ov.get("network_volume_id") else ", no network volume (per-pod disk only)"))
+                print(f"  Mounts: {len(_mounts.all_links(cfg))} link(s)" + (f", network volume {ov['network_volume_id']} at {ov['volume_mount_path']}" if ov.get("network_volume_id") else ", no network volume (per-pod disk only)"))
             elif network_volume:
                 mount_kwargs = {"network_volume_id": network_volume, "volume_mount_path": mount_path or "/workspace"}
             pod = runpod.create_pod(
@@ -243,7 +243,7 @@ def main():
     )
     create_parser.add_argument("--network-volume", default="", help="RunPod network volume id to attach (persistent; the mounts config's value if omitted)")
     create_parser.add_argument("--mount-path", default="", help="Where the network volume is mounted in the pod (default /workspace)")
-    create_parser.add_argument("--link", action="append", default=[], metavar="PATH=TARGET", help="Extra binc-PC path to make resolve on the pod, e.g. /mnt/storage/Panama_Redux=/workspace/plates/Panama_Redux (repeatable)")
+    create_parser.add_argument("--link", action="append", default=[], metavar="PATH=TARGET", help="Extra path to make resolve on the pod, PATH=TARGET on the volume (repeatable); the three folders come from the dashboard's configuration")
     create_parser.add_argument("--no-mounts", action="store_true", help="Do not apply the mounts config (GET /api/mounts, ~/.config/runpod-pod-manager/mounts.json)")
     create_parser.add_argument(
         "--disk", type=int, default=20, help="Container disk size in GB"

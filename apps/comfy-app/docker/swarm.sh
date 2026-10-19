@@ -8,7 +8,7 @@
 #   ./swarm.sh status | logs | down
 #
 # Needs: Docker, the NVIDIA container toolkit, and the image (../build.sh, or pull it).
-# Paths: CANALV2_ROOT, COMFY_SHARED, PLATES_ROOT, COMFY_IMAGE, COMFY_PORT; see compose.yml.
+# Paths: PROJECT_ROOT, COMFY_SHARED, PLATES_ROOT, COMFY_IMAGE, COMFY_PORT; see compose.yml.
 # Not for macOS: Docker there has no GPU. On a Mac run ../launch.sh (MPS) instead.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

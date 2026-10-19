@@ -45,11 +45,11 @@ packs repo, decided by its contents, not by hand:
 
 | Folder | Rule | Today |
 |---|---|---|
-| `portable/` | no machine path anywhere in the pack's Python outside `bh_paths.py`, which reads `CANALV2_ROOT`, `PLATES_ROOT` and `COMFY_SHARED` from the environment with binc-PC's values as fallback | every pack, since `packs-2026-10-19h` |
+| `portable/` | no machine path anywhere in the pack's Python outside `bh_paths.py`, which reads `PROJECT_ROOT`, `PLATES_ROOT` and `COMFY_SHARED` from the environment with binc-PC's values as fallback | every pack, since `packs-2026-10-19h` |
 | `bound/` | a machine path outside `bh_paths.py`; every one would be listed in its code in [`shared/nodes/bound/README.md`](../shared/nodes/bound/README.md). What each path is and where runtimes mount it: [`MOUNT-POINTS.md`](MOUNT-POINTS.md) | none |
 
 `setup.sh`, `build.sh` and `sync-nodes.sh` look in both, so the split changes
-nothing for an install. `launch.sh` sets `CANALV2_ROOT` to the mirror and
+nothing for an install. `launch.sh` sets `PROJECT_ROOT` to the mirror and
 `COMFY_SHARED` to the shared folder on the Mac; the pod mount configuration
 sets all three on a pod; on binc-PC nothing is set and the fallbacks are the
 real paths. A pack never moves between the folders and is never

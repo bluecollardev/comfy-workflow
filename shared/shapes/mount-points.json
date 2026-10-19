@@ -8,67 +8,64 @@
     "CANALV2/LEGACY_MAP.csv",
     "shared/nodes/bound/README.md"
   ],
-  "principle": "Graphs, scripts and pack defaults name binc-PC's paths. Every other runtime mounts data under /workspace and links binc-PC's paths onto it, so nothing is edited per machine. `~` is /home/binc on binc-PC and /root in a container, so both spellings get a link. Since packs-2026-10-19h the ShotPipe packs also read CANALV2_ROOT, PLATES_ROOT and COMFY_SHARED, so a fresh node's defaults point at the volume directly.",
+  "principle": "The app runs on one PC, and on each PC the user maps three folders, anywhere on its disks: the project tree, the served plates and ComfyUI-Shared. A runtime on that PC uses them where they are (PROJECT_ROOT, PLATES_ROOT, COMFY_SHARED). A pod carries them on its volume at the `container` paths below and links the path the project's own files declare for each (job files' root line, SOURCES.csv, the structure master) onto it, so graphs and scripts run unchanged. The binc_pc values here are what the mirror declared on 2026-10-19, for reference; nothing reads them at run time.",
   "volume_root": "/workspace",
   "mounts": [
     {
       "name": "project",
-      "what": "the CANALV2 project tree: scripts, graphs, shot folders, tracker, policies",
+      "what": "the project tree: scripts, graphs, shot folders, tracker, policies",
       "binc_pc": "/home/binc/CANALV2_r3/CANALV2",
       "aliases": [
         "~/CANALV2_r3/CANALV2",
         "~/CANALV2"
       ],
       "mentions": 8541,
-      "container": "/workspace/CANALV2",
+      "container": "/workspace/project",
       "links": [
-        "/home/binc/CANALV2_r3/CANALV2",
-        "/root/CANALV2_r3/CANALV2",
-        "/root/CANALV2"
+        "/home/binc/CANALV2_r3/CANALV2"
       ],
       "mode": "rw",
       "required": true,
-      "note": "scripts hardcode ROOT; graphs reference it ~490 times per shot set; the policy's root is ~/CANALV2, the tree in use is CANALV2_r3",
+      "note": "scripts hardcode ROOT; graphs reference it ~490 times per shot set; the policy's root is ~/CANALV2, the tree in use is CANALV2_r3. Declared by the job files' root: line.",
       "env": {
-        "CANALV2_ROOT": "/workspace/CANALV2"
+        "PROJECT_ROOT": "/workspace/project"
       }
     },
     {
       "name": "plates",
-      "what": "the served DPX plates from Tunnel, one folder per served shot, .LEFT and .RIGHT",
+      "what": "the served plates: one folder per shot, left and right eye",
       "binc_pc": "/mnt/storage/Panama_Redux/source/PC_20260929_VFX_3D_DSM_plates",
       "aliases": [],
       "mentions": 1582,
-      "container": "/workspace/plates/Panama_Redux/source/PC_20260929_VFX_3D_DSM_plates",
+      "container": "/workspace/plates",
       "links": [
-        "/mnt/storage/Panama_Redux"
+        "/mnt/storage/Panama_Redux/source/PC_20260929_VFX_3D_DSM_plates"
       ],
       "mode": "ro",
       "required": true,
-      "note": "linked from every shot's 02_SOURCE/SOURCES.csv, never copied into the tree; the IronWolf disk is parking and mirror only; leaving binc-PC needs Binc's named yes",
+      "note": "linked from every shot's 02_SOURCE/SOURCES.csv, never copied into the tree; the IronWolf disk is parking and mirror only; leaving binc-PC needs Binc's named yes; declared by each shot's 02_SOURCE/SOURCES.csv, two levels above the eye folders",
       "env": {
-        "PLATES_ROOT": "/workspace/plates/Panama_Redux/source/PC_20260929_VFX_3D_DSM_plates"
+        "PLATES_ROOT": "/workspace/plates"
       }
     },
     {
       "name": "comfy-shared",
-      "what": "ComfyUI's input, output, models and workflows folders shared by every install",
+      "what": "ComfyUI's input, output, models and workflows, shared by every install",
       "binc_pc": "/home/binc/ComfyUI-Shared",
       "aliases": [
         "~/ComfyUI-Shared"
       ],
       "mentions": 39,
-      "container": "/workspace/ComfyUI-Shared",
+      "container": "/workspace/comfy-shared",
       "links": [
-        "/home/binc/ComfyUI-Shared",
-        "/root/ComfyUI-Shared"
+        "/home/binc/ComfyUI-Shared"
       ],
       "mode": "rw",
       "required": true,
       "env": {
-        "COMFY_SHARED": "/workspace/ComfyUI-Shared"
+        "COMFY_SHARED": "/workspace/comfy-shared"
       },
-      "note": "v6/v7 pack defaults write under its output/; the Mac mirror of it has no weights"
+      "note": "v6/v7 pack defaults write under its output/; the Mac mirror of it has no weights; declared as ~/ComfyUI-Shared beside the tree's home"
     },
     {
       "name": "comfy-install",
@@ -135,8 +132,8 @@
   ],
   "runtimes": {
     "binc-pc": "everything is real; nothing to mount",
-    "mac": "the mirror has the project tree without plates; nothing resolves at binc-PC's paths until the tree is mounted over SMB or the links above are made; NEXT-STEPS 'shared storage'",
-    "docker-compose-or-swarm": "apps/comfy-app/docker/compose.yml binds project, comfy-shared and plates (read-only) from the host at binc-PC's paths",
-    "runpod-pod": "a network volume at /workspace carrying CANALV2/, ComfyUI-Shared/ and plates/; the entrypoint makes the links from COMFY_LINKS; configured in the dashboard's Configuration panel and create_pod.py --network-volume"
+    "mac": "map the three folders in the dashboard's Configuration panel; launch.sh reads PROJECT_ROOT, PLATES_ROOT and COMFY_SHARED (GET /api/mounts/env)",
+    "docker-compose-or-swarm": "apps/comfy-app/docker/compose.yml binds the three folders from PROJECT_ROOT, PLATES_ROOT and COMFY_SHARED at the paths the project declares, plates read-only",
+    "runpod-pod": "a network volume at /workspace carrying CANALV2/, plates/ and ComfyUI-Shared/; the entrypoint links the declared paths from COMFY_LINKS; configured in the dashboard's Configuration panel and create_pod.py --network-volume"
   }
 }
