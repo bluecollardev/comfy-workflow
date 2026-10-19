@@ -60,8 +60,9 @@ needed to run a graph; it is the camera track and solve step before it.
   gives the Mac (and later a pod) the plates at the project path. Until then
   the Mac can run the stereo workflows and open, but not render, the corrosion
   graphs.
-- `apps/comfy-app` needs the ShotPipe packs linked (`COMFY_SHOTPIPE=v26`, older
-  shots beside it); the project tree has v10–v26.
+- The packs live in the `shared/nodes` submodule (`comfy-node-packs`, v6–v26 and
+  BincStereo); `COMFY_SHOTPIPE=v26 apps/comfy-app/setup.sh` links the version a
+  graph needs. Done on this Mac 2026-10-19. Versioning: `docs/NODE-PACKS.md`.
 - Swarm's GPU scheduling needs each GPU node to advertise the card
   (`node-generic-resources` in `daemon.json`); `docker/swarm.sh init` prints
   the exact lines for the node it runs on.

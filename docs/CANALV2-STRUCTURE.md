@@ -80,7 +80,7 @@ one new output folder, a report, stop.
 
 ## What it means for this repo
 
-- We read the tree and link out of it (the node pack via `COMFY_SHOTPIPE`, graphs via the queue scripts). We do not write into it, rename in it, or commit it. If something of Binc's has to change, it is a request to Binc, recorded in their inbox or change log, not an edit by us.
+- We read the tree and copy or link out of it: the node packs into the `shared/nodes` submodule (`shared/sync-nodes.sh`), the policies into `shared/governance/` (`sync.sh`), graphs via the queue scripts. We do not write into it, rename in it, or commit it. If something of Binc's has to change, it is a request to Binc, recorded in their inbox or change log, not an edit by us.
 - Every machine that runs a graph mounts the tree at binc-PC's path, because the scripts and graphs hardcode it (`docs/ADR-004-where-the-workflows-run.md`).
 - `agent-permissions.md` binds any agent we run against this tree: read-only on locked shots, named yes for installs, spend and anything leaving the machine, USD 100 cap, stop and report on ambiguity.
 

@@ -81,7 +81,7 @@
     "ui": "<shot>_graph_v###.json (canvas, groups, positions)",
     "api": "<shot>_graph_v###_api.json (flattened; what the queue posts to /prompt)"
   },
-  "node_pack": "ComfyUI-BH-ShotPipe-v##; the graph's BH##_ prefix says which version it was built with",
+  "node_pack": "ComfyUI-BH-ShotPipe-v##; the graph's BH##_ prefix says which version it was built with. In this repo the packs are the shared/nodes submodule (comfy-node-packs); docs/NODE-PACKS.md",
   "colour": {
     "plates": "DPX 2.0 BE 4096x2160 RGB 10-bit printing density",
     "log_to_linear": {

@@ -38,7 +38,7 @@ storage across those machines is the first gap to close (`NEXT-STEPS.md`).
 
 ```
 ├── apps/
-│   ├── comfy-app/          # The ComfyUI server: setup/launch on the Mac, Dockerfile for CUDA, tracked node packs + workflows
+│   ├── comfy-app/          # The ComfyUI server: setup/launch on the Mac, Dockerfile for CUDA, tracked workflows; packs come from shared/nodes
 │   ├── runpod-api/         # FastAPI pod manager API, pool manager, MCP server for Claude Code, tests (Python)
 │   └── runpod-dashboard/   # Vue + Electron dashboard for the pod manager API
 ├── infra/                  # Pod lifecycle CLI (create_pod.py), pod-config.yaml, Terraform placeholder

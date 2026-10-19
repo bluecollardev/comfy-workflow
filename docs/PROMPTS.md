@@ -28,7 +28,8 @@ the queue scripts post for rendering. `comfy run` converts UI to API itself.
 
 Everything in the first six rows is Binc's and ignored by git. Opening a
 graph needs the pack it was built with: `COMFY_SHOTPIPE=v26
-apps/comfy-app/setup.sh` links the current one into the Mac install. The
+apps/comfy-app/setup.sh` links it from the `shared/nodes` submodule into the
+Mac install (`docs/NODE-PACKS.md`). The
 generators that write these graphs are `02_SCRIPTS/graph-builder*/`; graphs
 are not hand-edited, the builder is changed and rerun.
 

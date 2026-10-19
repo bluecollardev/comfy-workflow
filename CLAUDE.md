@@ -45,6 +45,11 @@ comfy_workflow/                    # Root monorepo
 │   ├── runpod-api/               # FastAPI pod manager API, pool manager, MCP server, tests (Python)
 │   └── runpod-dashboard/         # Vue 3 + Electron dashboard for the pod manager API
 │
+├── shared/                        # Shared by every app and agent
+│   ├── governance/               # Binc's policies copied in (sync.sh), precedence, what Claude Code loads
+│   ├── shapes/                   # The project's fixed shapes as JSON + check.py
+│   └── nodes/                    # git submodule bluecollardev/comfy-node-packs: ShotPipe v6–v26, BincStereo (docs/NODE-PACKS.md)
+├── queue/                         # Job files for agents, one folder per project (in/running/done)
 ├── projects/                      # Client/creative work; ignored except README.md
 │   ├── README.md                  # Inventory of what is in here
 │   └── desktop/                   # Trees synced from the desktop (CANALV2, ComfyUI-Shared)

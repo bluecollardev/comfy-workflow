@@ -6,8 +6,8 @@ and graphs are".
 
 **2026-10-19, what was measured:** the BincStereo smoke test runs on this Mac
 on MPS (all 12 nodes, about a second), so the stereo workflows run here. The
-corrosion graphs do not: the ShotPipe packs are not linked, the plates are not
-on this machine, and the graphs hardcode binc-PC's path. Blender is the solve
+corrosion graphs do not: the plates are not on this machine (the packs were
+not linked either that morning; v26 is, from the `shared/nodes` submodule, since the afternoon), and the graphs hardcode binc-PC's path. Blender is the solve
 step before a graph, not a requirement to run one. Decision record:
 `docs/ADR-004-where-the-workflows-run.md`.
 
@@ -42,27 +42,29 @@ it has 393 shot graphs plus a few saved workflows.
 The highest `_v###` in each shot's `04_GRAPH/` is the current graph. Only the
 current graph per shot needs importing; older versions stay where they are.
 
-## Step 0: install the node pack (blocks everything else)
+## Step 0: install the node pack (done 2026-10-19 for v26)
 
 The graphs are built from the `BH_*` nodes in ComfyUI-BH-ShotPipe, and the v26
-graphs need `BH26_*` nodes. The Mac install only has ComfyUI-BincStereo, so
-every route below fails or opens with missing nodes until a pack is present.
+graphs need `BH26_*` nodes. All versions, v6–v26, plus BincStereo are in the
+`shared/nodes` submodule (`bluecollardev/comfy-node-packs`); nothing is read
+from Binc's mirror at install time any more. `docs/NODE-PACKS.md` has the
+versioning and release steps.
 
-- [ ] Decide which ShotPipe version to install. `v26` covers the newest graphs; older shot graphs need the matching older pack. Versions sit side by side in `projects/desktop/CANALV2/02_SCRIPTS/nodes/`.
-- [ ] Symlink it, do not copy, so the master copy stays the one in `02_SCRIPTS/nodes/`:
+- [x] Decide which ShotPipe version to install: `v26`, which all 14 current corrosion graphs use. Older shot graphs need their matching version linked beside it (`COMFY_SHOTPIPE=v26,v24`); never all versions at once, since unprefixed `BH_*` names repeat across versions.
+- [x] Link it from the submodule, do not copy:
   ```bash
-  COMFY_SHOTPIPE=v26 apps/comfy-app/setup.sh   # links it into ComfyUI/custom_nodes/
+  COMFY_SHOTPIPE=v26 apps/comfy-app/setup.sh   # symlinks shared/nodes/ComfyUI-BH-ShotPipe-v26 into ComfyUI/custom_nodes/
   ```
-- [ ] Restart the Mac ComfyUI and confirm the nodes load:
+  Verified 2026-10-19: both packs link and import (ShotPipe v26: 3 nodes, BincStereo: 6).
+- [ ] Restart the Mac ComfyUI and confirm the nodes show in the UI:
   ```bash
   export COMFY_LOCAL_URL=http://127.0.0.1:8188
-  comfy --json nodes search "BH_ReadSequence"
   comfy --json nodes search "BH26_ObjectSolve"
   ```
-- [ ] Check the pack's own requirements against the standalone env. `02_SCRIPTS/containers/runpod/requirements-bh.txt` lists what the pack needs on Linux.
+- [ ] Check the pack's own requirements against the venv. `shared/nodes/README.md` lists them; the project's `containers/runpod/requirements-bh.txt` is the full Linux list.
 
 The nine stereo workflows already saved in the install use BincStereo, which is
-installed. They need none of this and open today.
+always linked. They need none of this and open today.
 
 ## Route A: load graphs into the ComfyUI Workflows panel
 
@@ -158,7 +160,7 @@ job ends.
 
 ## Also pending in this repo
 
-- ~~Ask Binc whether `ComfyUI-BincStereo` may stay tracked in this repo.~~ Lucas, 2026-10-19: Binc's material may be used and copied in this private repo; it stays. Original note: Ask Binc whether `ComfyUI-BincStereo` may stay tracked in this repo. Since 2026-10-19 it is in `apps/comfy-app/custom_nodes/` (the repo is private) because the app has to be runnable from a clone; its `pyproject.toml` marks it proprietary to Cinematic Immunity / Bincos. If Binc says no: move it back out of git, and have `setup.sh` unpack `apps/comfy-app/archive/ComfyUI-BincStereo.zip` instead.
+- ~~Ask Binc whether `ComfyUI-BincStereo` may stay tracked in this repo.~~ Lucas, 2026-10-19: Binc's material may be used and copied in this private repo; it stays. It now lives in the `shared/nodes` submodule (`comfy-node-packs`) with the ShotPipe versions; its `pyproject.toml` marks it proprietary to Cinematic Immunity / Bincos.
 - Push the RunPod image once Binc has agreed (registry name and account). Dockerfile and build are in `apps/comfy-app/`; see its README, "Targets and what is still open".
 - Rebuild the Electron app under `apps/runpod-dashboard/` so its bundled copy of `mcp_server.py` picks up the mcp 2.x port.
 - Run the review on `feature/desktop-app-and-mcp-fixes` against develop, then delete that branch.
