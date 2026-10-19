@@ -9,6 +9,7 @@ import * as gpus from './gpus.js'
 import * as idle from './idle.js'
 import * as mounts from './mounts.js'
 import * as rp from './runpod.js'
+import * as dry from './dry.js'
 
 export const PREBUILT_IMAGE = 'ashleykza/comfyui:latest'   // the stock image: no packs, ignores COMFY_LINKS
 
@@ -76,6 +77,7 @@ export async function create(req: CreatePodRequest, client?: rp.RunPodClient, cr
   if (!req.name?.trim()) throw bad('A pod needs a name')
   const cfg = mounts.load()
   const { input, idleMinutes } = plan(req, cfg, credentialsEnv)
+  if (mounts.dryRun(cfg)) return dry.create({ name: req.name, gpu: req.gpu, gpu_count: input.gpuCount, image: input.imageName, idle_stop_minutes: idleMinutes > 0 ? idleMinutes : 0 })
   const pod = await rp.createPod(input, client)
   if (idleMinutes > 0) idle.register(pod.id, idleMinutes)
   return {
@@ -97,9 +99,11 @@ export function toStatus(p: rp.RawPod): PodStatus {
   }
 }
 
-export const list = async (client?: rp.RunPodClient): Promise<PodStatus[]> => (await rp.listPods(client)).map(toStatus)
+const isDry = () => mounts.dryRun(mounts.load())
+export const list = async (client?: rp.RunPodClient): Promise<PodStatus[]> => (isDry() ? dry.list() : (await rp.listPods(client)).map(toStatus))
 
 export async function get(podId: string, client?: rp.RunPodClient): Promise<PodStatus> {
+  if (isDry()) { const p = dry.list().find((x) => x.id === podId); if (!p) throw new CoreError(404, `Pod ${podId} not found`); return p }
   const p = await rp.getPod(podId, client)
   if (!p) throw new CoreError(404, `Pod ${podId} not found`)
   return toStatus(p)
@@ -114,13 +118,13 @@ export function stats(pods: PodStatus[]) {
 
 export async function dashboard(client?: rp.RunPodClient) {
   const pods = await list(client)
-  return { stats: stats(pods), pods }
+  return { stats: stats(pods), pods, dry_run: isDry() }
 }
 
-export async function stop(podId: string, client?: rp.RunPodClient) { await rp.stopPod(podId, client); return { message: `Pod ${podId} stopped`, pod_id: podId } }
-export async function resume(podId: string, client?: rp.RunPodClient) { await rp.resumePod(podId, 1, client); return { message: `Pod ${podId} resumed`, pod_id: podId } }
-export async function remove(podId: string, client?: rp.RunPodClient) { await rp.terminatePod(podId, client); idle.forget(podId); return { message: `Pod ${podId} deleted`, pod_id: podId } }
+export async function stop(podId: string, client?: rp.RunPodClient) { if (isDry()) return dry.stop(podId); await rp.stopPod(podId, client); return { message: `Pod ${podId} stopped`, pod_id: podId } }
+export async function resume(podId: string, client?: rp.RunPodClient) { if (isDry()) return dry.resume(podId); await rp.resumePod(podId, 1, client); return { message: `Pod ${podId} resumed`, pod_id: podId } }
+export async function remove(podId: string, client?: rp.RunPodClient) { if (isDry()) { idle.forget(podId); return dry.remove(podId) } await rp.terminatePod(podId, client); idle.forget(podId); return { message: `Pod ${podId} deleted`, pod_id: podId } }
 
 /** The two callbacks the idle loop needs, over RunPod. */
-export const runningIds = (client?: rp.RunPodClient) => async () => new Set((await rp.listPods(client)).filter((p) => (p.runtime?.uptimeInSeconds ?? p.uptimeSeconds ?? 0) > 0).map((p) => p.id))
-export const stopper = (client?: rp.RunPodClient) => async (id: string) => { await rp.stopPod(id, client) }
+export const runningIds = (client?: rp.RunPodClient) => async () => (isDry() ? dry.runningIds() : new Set((await rp.listPods(client)).filter((p) => (p.runtime?.uptimeInSeconds ?? p.uptimeSeconds ?? 0) > 0).map((p) => p.id)))
+export const stopper = (client?: rp.RunPodClient) => async (id: string) => { if (isDry()) { dry.stop(id); return } await rp.stopPod(id, client) }

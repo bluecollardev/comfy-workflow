@@ -166,8 +166,9 @@ async function boot() {
   // OAuth round-trip lands home. Without it the app still runs; those four parts report
   // "not available" when used.
   // RUNPOD_MANAGER_NO_BACKEND=1 skips the Python backend on purpose (the self-contained boot, as a packaged app without Python behaves).
-  let backendUp = await healthy()
-  if (!backendUp && !process.env.RUNPOD_MANAGER_NO_BACKEND && exists(findPython())) {
+  const noBackend = !!process.env.RUNPOD_MANAGER_NO_BACKEND
+  let backendUp = !noBackend && (await healthy())
+  if (!backendUp && !noBackend && exists(findPython())) {
     startBackend()
     backendUp = await waitForBackend(15_000)
     if (!backendUp) console.warn('Python backend did not start; git accounts, repositories, image env and OAuth are unavailable this session')

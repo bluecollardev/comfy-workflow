@@ -115,8 +115,11 @@
         </tbody>
       </table>
 
-      <BFormCheckbox v-model="cfg.apply_by_default" switch class="mb-3">
+      <BFormCheckbox v-model="cfg.apply_by_default" switch class="mb-2">
         Apply to new pods by default <span class="text-body-secondary">(the pod form can switch it off per pod)</span>
+      </BFormCheckbox>
+      <BFormCheckbox v-model="cfg.dry_run" switch class="mb-3">
+        No-spend mode <span class="text-body-secondary">(pods are simulated: nothing reaches RunPod, nothing bills; for testing the app)</span>
       </BFormCheckbox>
 
       <details class="mb-2">

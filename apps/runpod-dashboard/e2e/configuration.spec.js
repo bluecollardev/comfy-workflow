@@ -122,6 +122,20 @@ test.describe('configuration', () => {
   })
 })
 
+test.describe('no-spend mode', () => {
+  test('the switch is saved and the navbar says so', async ({ page, api }) => {
+    await page.goto('/')
+    await expect(page.locator('.navbar')).not.toContainText('no-spend mode')
+    const dialog = await openConfig(page)
+    await dialog.getByLabel(/No-spend mode/).check()
+    await dialog.getByRole('button', { name: 'Save' }).click()
+    const put = api.calls.find((c) => c.method === 'PUT' && c.path === '/mounts')
+    expect(put.body.dry_run).toBe(true)
+    await page.getByRole('button', { name: 'Refresh' }).click()
+    await expect(page.locator('.navbar')).toContainText('no-spend mode')
+  })
+})
+
 test.describe('features that read the configuration', () => {
   test('the GPU menu comes from the API and the stock image is a choice', async ({ page }) => {
     await page.goto('/')

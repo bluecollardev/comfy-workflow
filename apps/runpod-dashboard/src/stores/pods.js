@@ -20,6 +20,7 @@ export const usePodsStore = defineStore('pods', () => {
   const loadError = ref(null)
   const actionError = ref(null)
   const busyPodId = ref(null)
+  const dryRun = ref(false)
   let timer = null
 
   /** GET /api/dashboard: stats and the list. The first load shows the page spinner; later ones only spin the button. */
@@ -29,6 +30,7 @@ export const usePodsStore = defineStore('pods', () => {
       const d = await podsAPI.getDashboard()
       stats.value = d.stats || {}
       pods.value = d.pods || []
+      dryRun.value = d.dry_run === true
       loadError.value = null
     } catch (e) {
       loadError.value = errorText(e) || 'Failed to load dashboard'
@@ -57,9 +59,7 @@ export const usePodsStore = defineStore('pods', () => {
   async function create(payload) {
     let text = null
     const r = await toast.run('Create pod', () => podsAPI.createPod(payload), { ok: `Pod ${payload.name} created`, onError: (t) => (text = t) })
-    if (r.ok) {
-      try { await refreshList() } catch (e) { actionError.value = `Pod created, but the list failed to refresh: ${errorText(e)}` }
-    }
+    if (r.ok) await load()   // the list and the stats
     return { ...r, text }
   }
 
@@ -68,9 +68,7 @@ export const usePodsStore = defineStore('pods', () => {
     busyPodId.value = podId
     actionError.value = null
     const r = await toast.run(`${label} pod`, () => action(podId), { ok: DONE[label], onError: (t) => (actionError.value = t) })
-    if (r.ok) {
-      try { await refreshList() } catch (e) { actionError.value = `The list failed to refresh: ${errorText(e)}` }
-    }
+    if (r.ok) await load()   // the list and the stats
     busyPodId.value = null
     return r
   }
@@ -78,5 +76,5 @@ export const usePodsStore = defineStore('pods', () => {
   const resume = (id) => act(id, podsAPI.resumePod, 'Resume')
   const remove = (id) => act(id, podsAPI.deletePod, 'Delete')
 
-  return { stats, pods, initialLoading, refreshing, loadError, actionError, busyPodId, load, refreshList, startAutoRefresh, stopAutoRefresh, create, stop, resume, remove }
+  return { stats, pods, dryRun, initialLoading, refreshing, loadError, actionError, busyPodId, load, refreshList, startAutoRefresh, stopAutoRefresh, create, stop, resume, remove }
 })

@@ -3,6 +3,7 @@
     <BNavbar class="border-bottom px-3 py-2">
       <BNavbarBrand tag="div" class="fw-semibold">
         <i class="fa-solid fa-microchip text-primary me-2"></i>RunPod Manager
+        <BBadge v-if="pods.dryRun" variant="warning" text-indicator class="ms-2 fw-normal" title="Pods are simulated: nothing reaches RunPod, nothing bills. Switch it off in Configuration.">no-spend mode</BBadge>
       </BNavbarBrand>
       <div class="d-flex gap-2">
         <BButton variant="outline-light" size="sm" @click="ui.repositoriesOpen = true">

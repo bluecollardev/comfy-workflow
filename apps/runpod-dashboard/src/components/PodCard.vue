@@ -28,7 +28,7 @@
         </dd>
       </template>
 
-      <template v-if="pod.status === 'running'">
+      <template v-if="pod.status !== 'stopped'">
         <dt class="col-4 text-body-secondary fw-normal">Idle stop</dt>
         <dd class="col-8 mb-0">{{ pod.idle_stop_minutes ? `after ${pod.idle_stop_minutes} quiet min` : 'not watched' }}</dd>
       </template>
@@ -41,7 +41,7 @@
 
     <div class="d-flex gap-2 pt-3 border-top">
       <BButton
-        v-if="pod.status === 'running'"
+        v-if="pod.status !== 'stopped'"
         variant="outline-light"
         size="sm"
         class="flex-fill"
