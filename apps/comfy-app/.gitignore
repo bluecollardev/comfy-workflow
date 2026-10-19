@@ -1,0 +1,8 @@
+# The ComfyUI install itself: ~5 GB, ~70k files. Never commit.
+ComfyUI/
+standalone-env/
+logs/
+snapshots/
+archive/
+.env
+.build/
