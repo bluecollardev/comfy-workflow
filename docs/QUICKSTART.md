@@ -8,17 +8,13 @@ Three ways to see ComfyUI in action, from simplest to most powerful.
 
 ```bash
 cd ~/workspaces/comfy_workflow
-
-# Install dependencies (one-time)
-pip install -r apps/runpod-api/requirements.txt
-(cd apps/runpod-dashboard && npm install && npm run build)   # the UI; skip for API docs only
-
-# Set API key (replace with real key)
-export RUNPOD_API_KEY="your-real-api-key"
-
-# Start the pod manager API; it serves the built dashboard at /
-python3 apps/runpod-api/pod_manager_api.py
+echo 'RUNPOD_API_KEY=your-real-api-key' >> .env   # or export it
+./start.sh pods
 ```
+
+That creates `.venv/`, installs the API's requirements, builds the dashboard
+(`npm install` + `npm run build` in `apps/runpod-dashboard`) and starts the
+API, which serves the dashboard at `/`. By hand: README.md "Manual start".
 
 **Then open:** http://localhost:8000 (interactive API docs at http://localhost:8000/docs)
 

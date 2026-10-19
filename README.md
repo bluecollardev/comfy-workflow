@@ -23,22 +23,76 @@ in. Owner: Lucas (Blue Collar Dev).
 
 ## Quick start
 
+`./start.sh <target>` is the one-command way in; the manual steps under each
+section are what it does. Targets install what they need on the first run
+(`.venv/` for Python, `npm install` and a UI build for the dashboard) and
+reuse it after. `RUNPOD_API_KEY` goes in `.env` at the repo root or in the
+environment. `./start.sh` with no argument lists every target.
+
+The same targets are run configurations for IntelliJ/PyCharm (`.run/`) and
+VS Code (`.vscode/`: Terminal > Run Task, plus debug launchers for the API,
+the MCP server, the tests and the Electron main process).
+
+### ComfyUI
+
 ```bash
-# ComfyUI on this Mac
-cd apps/comfy-app && ./setup.sh && ./fetch-models.sh && ./launch.sh   # http://127.0.0.1:8188
+./start.sh comfy                    # ComfyUI on this Mac, http://127.0.0.1:8188
+```
 
-# The same server as a CUDA image (RunPod, Linux, Windows via WSL2)
-cd apps/comfy-app && ./build.sh                                       # comfy-app:v26
+By hand, and the CUDA image for RunPod / Linux / Windows via WSL2:
 
-# Pod lifecycle CLI
-pip install -r infra/scripts/requirements.txt
+```bash
+cd apps/comfy-app
+./setup.sh && ./fetch-models.sh && ./launch.sh   # first run; later just ./launch.sh
+./build.sh                                       # comfy-app:v26 Docker image
+```
+
+Details: [`apps/comfy-app/README.md`](apps/comfy-app/README.md).
+
+### RunPod pod manager API
+
+```bash
+./start.sh pods                     # FastAPI on http://localhost:8000, dashboard at /, docs at /docs
+./start.sh pod list                 # pod lifecycle CLI: create, list, status, stop, resume, delete
+./start.sh mcp                      # the MCP server for Claude Code, over stdio
+./start.sh test                     # the merge gate: pytest without the integration tests
+```
+
+By hand:
+
+```bash
 export RUNPOD_API_KEY=...
-python infra/scripts/create_pod.py create --name ComfyUI-Dev --gpu rtx4090
-
-# Pod manager API (serves the built dashboard at http://localhost:8000) and MCP server
 pip install -r apps/runpod-api/requirements.txt
 python apps/runpod-api/pod_manager_api.py
+
+pip install -r infra/scripts/requirements.txt    # the CLI alone needs only these
+python infra/scripts/create_pod.py create --name ComfyUI-Dev --gpu rtx4090
+
+pytest apps/runpod-api/tests/ -m "not integration"
 ```
+
+Details: [`apps/runpod-api/README.md`](apps/runpod-api/README.md),
+[`docs/MCP-SERVER.md`](docs/MCP-SERVER.md).
+
+### RunPod dashboard app
+
+```bash
+./start.sh desktop                  # the Electron app; starts the API itself
+./start.sh dashboard                # Vite with hot reload on http://localhost:5173, needs `pods` running
+```
+
+By hand:
+
+```bash
+cd apps/runpod-dashboard
+npm install
+npm run build                       # dist/, which the API serves at /
+npm run dev                         # hot reload against the API on :8000
+npx electron .                      # desktop app against the built dist/
+npm run electron:build              # installable .dmg / .exe / AppImage
+```
+
+Details: [`apps/runpod-dashboard/README.md`](apps/runpod-dashboard/README.md).
 
 Branches: `develop` is the integration branch and GitHub's default; feature
 branches come off it; `master` only moves on releases. Details in `CLAUDE.md`.

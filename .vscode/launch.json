@@ -1,0 +1,47 @@
+{
+  // Debuggers. Needs the Python extension and ./start.sh test (or pods) run once so .venv exists.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Pod manager API (debug)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/apps/runpod-api/pod_manager_api.py",
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "envFile": "${workspaceFolder}/.env",
+      "env": { "API_RELOAD": "0" },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "MCP server (debug, stdio)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/apps/runpod-api/mcp_server.py",
+      "cwd": "${workspaceFolder}/apps/runpod-api",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "pytest: runpod-api (no integration)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["apps/runpod-api/tests/", "-m", "not integration"],
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Electron app (debug main process)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/apps/runpod-dashboard",
+      "runtimeExecutable": "${workspaceFolder}/apps/runpod-dashboard/node_modules/.bin/electron",
+      "runtimeArgs": ["."],
+      "console": "integratedTerminal"
+    }
+  ]
+}

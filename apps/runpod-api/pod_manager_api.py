@@ -428,8 +428,10 @@ async def root():
 def main():
     """Run the API server.
 
-    API_HOST (default 0.0.0.0), API_PORT (8000) and API_RELOAD ("1"; "0" for a packaged app)
-    come from the environment so the Electron app can run it without a reloader.
+    API_HOST (default 0.0.0.0), API_PORT (8000) and API_RELOAD (default "0") come from
+    the environment. API_RELOAD=1 restarts on edits to this directory only: watching the
+    repo root would include the ComfyUI install, and a reload that fails to import leaves
+    the socket bound with nothing answering, which is how a stale server stalls clients.
     """
     import uvicorn
 
@@ -453,7 +455,8 @@ def main():
         "pod_manager_api:app",
         host=os.getenv("API_HOST", "0.0.0.0"),
         port=int(os.getenv("API_PORT", "8000")),
-        reload=os.getenv("API_RELOAD", "1") != "0",
+        reload=os.getenv("API_RELOAD", "0") == "1",
+        reload_dirs=[os.path.dirname(os.path.abspath(__file__))],
         log_level="info",
     )
 

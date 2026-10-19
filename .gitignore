@@ -26,8 +26,11 @@ venv/
 ENV/
 .venv
 
-# IDE
-.vscode/
+# IDE (shared run configs stay: .vscode/{tasks,launch,settings}.json and .run/)
+.vscode/*
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/settings.json
 .idea/
 *.swp
 *.swo

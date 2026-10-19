@@ -51,7 +51,7 @@ cd apps/runpod-api && python3 mcp_server.py     # stdio; register the path with 
 | Variable | Default | Used by |
 |---|---|---|
 | `RUNPOD_API_KEY` | required | API, pool manager, MCP server |
-| `API_HOST`, `API_PORT`, `API_RELOAD` | `0.0.0.0`, `8000`, `1` | `pod_manager_api.py` entry point |
+| `API_HOST`, `API_PORT`, `API_RELOAD` | `0.0.0.0`, `8000`, `0` | `pod_manager_api.py` entry point. `API_RELOAD=1` restarts on edits to this directory only. |
 | `UI_DIST_DIR` | `../runpod-dashboard/dist` | where the API looks for the built UI |
 | `DOCKERFILE_PATH` | `../comfy-app/Dockerfile` | `images.py` env defaults |
 | `GIT_ACCOUNTS_FILE`, `REPOSITORIES_FILE` | `~/.config/runpod-pod-manager/*.json` | stored accounts and repositories |
