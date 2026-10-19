@@ -9,7 +9,7 @@ test.describe('pod card', () => {
     await page.goto('/')
     const card = podCard(page, 'ComfyUI-Dev')
     await expect(card.getByTestId('pod-id')).toHaveText('pod-aaaaaaaa')
-    await expect(card.getByTestId('pod-console')).toHaveAttribute('href', 'https://console.runpod.io/pods')
+    await expect(card.getByTestId('pod-console')).toHaveAttribute('href', 'https://console.runpod.io/pods?id=pod-aaaaaaaa')
     await card.getByTestId('pod-copy-id').click()
     await expect(page.getByTestId('toast').first()).toContainText(t('pod.copied'))
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('pod-aaaaaaaa')

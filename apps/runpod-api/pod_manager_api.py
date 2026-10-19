@@ -251,7 +251,7 @@ async def pod_details(pod_id: str):
             "cost_per_hr": d.get("cost", d.get("costPerHr")), "cloud": d.get("cloud", ""), "datacenter": d.get("dataCenterId", ""),
             "gpu": (d.get("gpu") or {}).get("id", ""), "gpu_count": (d.get("gpu") or {}).get("count", 1), "image": d.get("image") or d.get("imageName", ""),
             "disk_gb": d.get("disk", 0), "volume_gb": d.get("volume", 0), "created_at": d.get("createdAt", ""), "actions": d.get("actions", []),
-            "console_url": "https://console.runpod.io/pods", "web_ui_url": idle.proxy_url(pod_id) if running else None, "ssh_command": f"ssh root@{pod_id}.proxy.runpod.io"}
+            "console_url": f"https://console.runpod.io/pods?id={pod_id}", "web_ui_url": idle.proxy_url(pod_id) if running else None, "ssh_command": f"ssh root@{pod_id}.proxy.runpod.io"}
 
 
 @app.get("/api/pods/{pod_id}/logs", tags=["Pods"])
@@ -414,7 +414,7 @@ async def list_pods():
                 ssh_command=f"ssh root@{pod_id}.proxy.runpod.io",
                 idle_stop_minutes=(idle.entry(pod_id) or {}).get("minutes", 0),
                 status_text=pod.get('lastStatusChange') or '',
-                console_url="https://console.runpod.io/pods",
+                console_url=f"https://console.runpod.io/pods?id={pod_id}",
             )
             pod_list.append(pod_data)
 
