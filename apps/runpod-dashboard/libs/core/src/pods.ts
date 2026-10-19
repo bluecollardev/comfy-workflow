@@ -208,8 +208,8 @@ export interface PodDetails {
   console_url: string; web_ui_url: string | null; ssh_command: string
 }
 
-/** RunPod's console lists pods at one page; it has no documented per-pod link (the old one 404s), so the id on the card is the key. */
-export const consoleUrl = (_id: string) => 'https://console.runpod.io/pods'
+/** The pod in RunPod's console: the pods page with the id as a query (Lucas, 2026-10-19). */
+export const consoleUrl = (id: string) => `https://console.runpod.io/pods?id=${encodeURIComponent(id)}`
 
 /** The pod as RunPod describes it: the status text people see in the console, the price, the place, the card. */
 export async function details(podId: string, client?: rp.RunPodClient): Promise<PodDetails> {
