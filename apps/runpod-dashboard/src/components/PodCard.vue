@@ -53,7 +53,7 @@
       </template>
     </dl>
 
-    <div class="d-flex gap-2 mb-2">
+    <div class="d-flex gap-2 mb-2 justify-content-end">
       <BButton variant="outline-light" size="sm" :pressed="showDetails" data-testid="pod-details-toggle" @click="toggleDetails">
         <i class="fa-solid fa-circle-info me-1"></i>{{ $t('pod.details') }}
       </BButton>
