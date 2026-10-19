@@ -21,6 +21,7 @@ import httpx
 logger = logging.getLogger(__name__)
 STORE = Path(os.getenv("IDLE_FILE", Path.home() / ".config/runpod-pod-manager/idle.json"))
 PROBE_EVERY_S = 60
+STARTUP_GRACE_S = 15 * 60   # a pod pulling its image answers nothing; it is not idle until it has been up this long
 
 
 def proxy_url(pod_id: str, port: int = 8188) -> str:
@@ -86,13 +87,14 @@ async def probe(pod_id: str, client: Optional[httpx.AsyncClient] = None) -> dict
             await client.aclose()
 
 
-def decide(e: dict, probe_result: dict, now: datetime) -> tuple[dict, bool]:
-    """Update one registry entry from a probe; returns (entry, stop_now)."""
+def decide(e: dict, probe_result: dict, now: datetime, uptime_s: Optional[int] = None) -> tuple[dict, bool]:
+    """Update one registry entry from a probe; returns (entry, stop_now). A pod younger than the start-up
+    grace that answers nothing is still pulling its image, not idle."""
     e = dict(e)
     active = probe_result["busy"] or (probe_result["last_prompt"] and probe_result["last_prompt"] != e.get("last_prompt"))
     if probe_result["last_prompt"]:
         e["last_prompt"] = probe_result["last_prompt"]
-    if active:
+    if active or (uptime_s is not None and uptime_s < STARTUP_GRACE_S and not probe_result["reachable"]):
         e["last_activity"] = now.isoformat()
         return e, False
     quiet_s = (now - datetime.fromisoformat(e["last_activity"])).total_seconds()
@@ -109,7 +111,8 @@ async def sweep(running: Callable[[], set], stop: Callable[[str], None], client:
     for pod_id in list(reg):
         if pod_id not in live:
             continue   # stopped or gone: nothing to do, keep the entry in case it is resumed
-        e, stop_now = decide(reg[pod_id], await probe(pod_id, client), now)
+        uptime = live.get(pod_id) if isinstance(live, dict) else None
+        e, stop_now = decide(reg[pod_id], await probe(pod_id, client), now, uptime)
         reg[pod_id] = e
         if stop_now:
             logger.warning("idle stop: %s had nothing queued for %s minutes", pod_id, e["minutes"])

@@ -127,9 +127,15 @@ def resolve_image(choice: str, mcfg: "mounts.MountsConfig") -> str:
     return image
 
 
-def _running_pod_ids() -> set:
+def _running_pod_ids() -> dict:
+    """Pods RunPod wants running, with their uptime (0 while still starting), for the idle watch."""
     runpod.api_key = os.getenv('RUNPOD_API_KEY', '')
-    return {p.get('id') for p in runpod.get_pods() if (p.get('runtime') or {}).get('uptimeInSeconds')}
+    out = {}
+    for p in runpod.get_pods():
+        uptime = (p.get('runtime') or {}).get('uptimeInSeconds') or p.get('uptimeSeconds') or 0
+        if uptime > 0 or (p.get('desiredStatus') or '').upper() == 'RUNNING':
+            out[p.get('id')] = uptime
+    return out
 
 
 def _stop_pod(pod_id: str) -> None:
@@ -145,8 +151,27 @@ async def start_idle_watch():
 
 @app.get("/api/gpus", tags=["Pods"])
 async def list_gpus():
-    """The GPU menu: 16-24 GB cards, cheapest first; the job needs no more."""
-    return {"default": gpus.DEFAULT, "gpus": gpus.menu()}
+    """The GPU menu with RunPod's stock and price per card when a key is set; `auto` first."""
+    menu = [{"value": "auto", "text": "Cheapest card in stock (16-24 GB)", "price": None, "stock": None, "in_stock": True}]
+    menu += [{"value": k, "text": f"{g['name']} ({g['vram']} GB)", "price": None, "stock": None, "in_stock": False} for k, g in gpus.GPUS.items()]
+    api_key = os.getenv('RUNPOD_API_KEY')
+    live = False
+    if api_key:
+        try:
+            from runpod.api.graphql import run_graphql_query
+            runpod.api_key = api_key
+            types = run_graphql_query("query { gpuTypes { id lowestPrice(input:{gpuCount:1}) { uninterruptablePrice stockStatus } } }")["data"]["gpuTypes"]
+            by_id = {t["id"]: (t.get("lowestPrice") or {}) for t in types}
+            for m in menu[1:]:
+                lp = by_id.get(gpus.GPUS[m["value"]]["id"], {})
+                if lp.get("stockStatus") and lp.get("uninterruptablePrice") is not None:
+                    m.update(price=lp["uninterruptablePrice"], stock=lp["stockStatus"], in_stock=True, text=f"{m['text']} · ${lp['uninterruptablePrice']}/h · {lp['stockStatus']} stock")
+                else:
+                    m["text"] += " · none in stock"
+            live = True
+        except Exception as e:
+            logger.info(f"gpu stock unavailable: {e}")
+    return {"default": "auto", "gpus": menu, "live": live}
 
 
 @app.put("/api/pods/{pod_id}/idle", tags=["Pods"])
@@ -367,9 +392,9 @@ async def list_pods():
             runtime = pod.get('runtime') or {}   # None for a stopped pod
             uptime = runtime.get('uptimeInSeconds')
 
-            # Determine if running
+            # Determine if running; RunPod wants it running but it has no uptime yet while it pulls its image
             is_running = uptime is not None and uptime > 0
-            status = 'running' if is_running else 'stopped'
+            status = 'running' if is_running else ('starting' if (pod.get('desiredStatus') or '').upper() == 'RUNNING' else 'stopped')
 
             pod_data = PodStatus(
                 id=pod_id,

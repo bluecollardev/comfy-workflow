@@ -8,14 +8,14 @@
         :aria-expanded="showCreateForm"
         aria-controls="create-pod-form"
         data-testid="create-pod-toggle"
-        @click="showCreateForm = !showCreateForm"
+        @click="toggleCreateForm"
       >
         <span class="fw-semibold">{{ $t('dashboard.createPod') }}</span>
         <i class="fa-solid fa-chevron-right ms-auto"></i>
       </button>
       <BCollapse id="create-pod-form" v-model="showCreateForm">
         <BCardBody>
-          <PodForm @pod-created="handlePodCreated" />
+          <PodForm ref="podForm" @pod-created="handlePodCreated" />
         </BCardBody>
       </BCollapse>
     </BCard>
@@ -70,6 +70,13 @@ import { usePodsStore } from '../stores/pods'
 
 const pods = usePodsStore()
 const showCreateForm = ref(false)
+const podForm = ref(null)
+
+// Opening the form re-reads RunPod's stock so the card menu is current.
+function toggleCreateForm() {
+  showCreateForm.value = !showCreateForm.value
+  if (showCreateForm.value) podForm.value?.loadGpus()
+}
 
 function handlePodCreated() {
   showCreateForm.value = false

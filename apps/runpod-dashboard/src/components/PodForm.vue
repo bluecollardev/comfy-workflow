@@ -7,7 +7,7 @@
         </BFormGroup>
       </BCol>
       <BCol md="6" lg="4">
-        <BFormGroup :label="$t('form.gpu')" label-for="pod-gpu">
+        <BFormGroup :label="$t('form.gpu')" label-for="pod-gpu" :description="gpuLive ? $t('form.gpuStock') : $t('form.gpuNoStock')" data-testid="pod-gpu-group">
           <BFormSelect id="pod-gpu" v-model="form.gpu" :options="gpuOptions" />
         </BFormGroup>
       </BCol>
@@ -335,7 +335,12 @@ const MAX_VISIBLE_FOLDERS = 500
 // The GPU menu comes from the API (GET /api/gpus): 16-24 GB cards, cheapest first. The job runs on a
 // 16 GB A4000 today and nothing asks for more than 24 GB, so no A100/H100/L40S rows to overspend on.
 const gpuOptions = ref([{ value: 'auto', text: 'Cheapest card in stock (16-24 GB)' }, { value: 'rtx4090', text: 'RTX 4090 (24 GB)' }])
-podsAPI.gpus().then((g) => { gpuOptions.value = g.gpus }).catch(() => {})
+const gpuLive = ref(false)
+async function loadGpus() {
+  try { const g = await podsAPI.gpus(); gpuOptions.value = g.gpus; gpuLive.value = !!g.live } catch { /* the plain menu stays */ }
+}
+loadGpus()
+defineExpose({ loadGpus })
 const GPU_COUNT_OPTIONS = Array.from({ length: 8 }, (_, i) => ({ value: i + 1, text: String(i + 1) }))
 const INSTANCE_TYPE_OPTIONS = [
   { value: 'spot', text: t('form.community') },

@@ -161,7 +161,8 @@ test.describe('features that read the configuration', () => {
   test('the GPU menu comes from the API and the stock image is a choice', async ({ page }) => {
     await page.goto('/')
     await openCreatePod(page)
-    await expect(page.locator('#pod-gpu option')).toHaveText(['Cheapest card in stock (16-24 GB)', 'RTX A4000 (16 GB)', 'RTX 4090 (24 GB)'])
+    await expect(page.locator('#pod-gpu option')).toHaveText(['Cheapest card in stock (16-24 GB)', 'RTX A4000 (16 GB) · none in stock', 'RTX 4090 (24 GB) · $0.34/h · Low stock'])
+    await expect(page.getByTestId('pod-gpu-group')).toContainText(t('form.gpuStock'))
     await expect(page.locator('#pod-image option')).toHaveText([t('form.imageConfigured'), t('form.imagePrebuilt'), t('form.imageCustom')])
   })
 

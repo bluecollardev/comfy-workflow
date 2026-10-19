@@ -164,7 +164,16 @@ export async function resume(podId: string, client?: rp.RunPodClient) { if (isDr
 export async function remove(podId: string, client?: rp.RunPodClient) { if (isDry()) { idle.forget(podId); return dry.remove(podId) } await rp.terminatePod(podId, client); idle.forget(podId); return { message: `Pod ${podId} deleted`, pod_id: podId } }
 
 /** The two callbacks the idle loop needs, over RunPod. */
-export const runningIds = (client?: rp.RunPodClient) => async () => (isDry() ? dry.runningIds() : new Set((await rp.listPods(client)).filter((p) => (p.runtime?.uptimeInSeconds ?? p.uptimeSeconds ?? 0) > 0).map((p) => p.id)))
+/** The pods RunPod wants running, with their uptime (0 while still starting), for the idle watch. */
+export const runningIds = (client?: rp.RunPodClient) => async (): Promise<idle.Running> => {
+  if (isDry()) return dry.runningIds()
+  const out = new Map<string, number | null>()
+  for (const p of await rp.listPods(client)) {
+    const uptime = p.runtime?.uptimeInSeconds ?? p.uptimeSeconds ?? 0
+    if (uptime > 0 || (p.desiredStatus || '').toUpperCase() === 'RUNNING') out.set(p.id, uptime)
+  }
+  return out
+}
 export const stopper = (client?: rp.RunPodClient) => async (id: string) => { if (isDry()) { dry.stop(id); return } await rp.stopPod(id, client) }
 
 export interface PodDetails {
@@ -223,4 +232,24 @@ export async function recreate(podId: string, client?: rp.RunPodClient): Promise
   await rp.terminatePod(podId, client)
   idle.forget(podId)
   return fresh
+}
+
+export interface GpuMenuEntry { value: string; text: string; price: number | null; stock: string | null; in_stock: boolean }
+
+/** The GPU menu with what RunPod has in stock right now and the on-demand price; `auto` first. Without a key or on an error the plain menu. */
+export async function gpuMenu(client?: rp.RunPodClient): Promise<{ default: string; gpus: GpuMenuEntry[]; live: boolean }> {
+  const plain = gpus.menu().map((m) => ({ ...m, price: null, stock: null, in_stock: m.value === gpus.AUTO }))
+  if (isDry()) return { default: gpus.DEFAULT_GPU, gpus: plain.map((m) => ({ ...m, in_stock: true, stock: 'simulated' })), live: false }
+  let stock: rp.GpuStock[]
+  try { stock = await rp.gpuStock(Object.values(gpus.GPUS).map((g) => g.id), client) } catch { return { default: gpus.DEFAULT_GPU, gpus: plain, live: false } }
+  const byId = new Map(stock.map((s) => [s.id, s]))
+  return {
+    default: gpus.DEFAULT_GPU, live: true,
+    gpus: plain.map((m) => {
+      if (m.value === gpus.AUTO) return m
+      const s = byId.get(gpus.GPUS[m.value].id)
+      const inStock = !!(s?.stock && s.price != null)
+      return { ...m, price: s?.price ?? null, stock: s?.stock ?? null, in_stock: inStock, text: inStock ? `${m.text} · $${s!.price}/h · ${s!.stock} stock` : `${m.text} · none in stock` }
+    }),
+  }
 }

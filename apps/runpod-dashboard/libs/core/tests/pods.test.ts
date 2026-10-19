@@ -85,7 +85,7 @@ describe('against RunPod', () => {
     expect(await pods.stop('pod123', client)).toEqual({ message: 'Pod pod123 stopped', pod_id: 'pod123' })
     await pods.remove('pod123', client)
     expect(idle.entry('pod123')).toBeUndefined()
-    expect(await pods.runningIds(client)()).toEqual(new Set(['pod123']))
+    expect(await pods.runningIds(client)()).toEqual(new Map([['pod123', 60]]))
   })
 
   it('auto picks the cheapest card in stock and moves on when RunPod has none', async () => {
@@ -134,6 +134,20 @@ describe('against RunPod', () => {
     expect(deploy).toContain('name: "Live-Proof"'); expect(deploy).toContain('imageName: "ashleykza/comfyui:latest"'); expect(deploy).toContain('gpuTypeId: "NVIDIA RTX 4000 Ada Generation"'); expect(deploy).toContain('cloudType: SECURE'); expect(deploy).toContain('containerDiskInGb: 20')
     expect(queries.some((q) => q.includes('podTerminate') && q.includes('old1'))).toBe(true)
     expect(idle.entry('old1')).toBeUndefined(); expect(idle.entry('new1')?.minutes).toBe(15)
+  })
+
+  it('the GPU menu says what is in stock and at what price', async () => {
+    const { fetchFn } = fakeFetch((q) => q.includes('gpuTypes') ? { gpuTypes: [
+      { id: 'NVIDIA RTX A5000', secureCloud: true, communityCloud: true, lowestPrice: { uninterruptablePrice: 0.16, stockStatus: 'Low' } },
+      { id: 'NVIDIA RTX A4000', secureCloud: true, communityCloud: true, lowestPrice: { uninterruptablePrice: null, stockStatus: null } },
+    ] } : {})
+    const m = await pods.gpuMenu({ fetchFn })
+    expect(m.live).toBe(true); expect(m.gpus[0].value).toBe('auto')
+    const a5000 = m.gpus.find((g) => g.value === 'a5000')!, a4000 = m.gpus.find((g) => g.value === 'a4000')!
+    expect(a5000).toMatchObject({ in_stock: true, price: 0.16, stock: 'Low', text: 'RTX A5000 (24 GB) · $0.16/h · Low stock' })
+    expect(a4000).toMatchObject({ in_stock: false, text: 'RTX A4000 (16 GB) · none in stock' })
+    delete process.env.RUNPOD_API_KEY
+    expect((await pods.gpuMenu()).live).toBe(false)
   })
 
   it('surfaces RunPod errors and a missing key', async () => {

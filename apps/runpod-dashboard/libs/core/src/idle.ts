@@ -15,6 +15,7 @@ import { idleFile } from './paths.js'
 export interface IdleEntry { minutes: number; last_activity: string; last_prompt: string | null }
 export interface ProbeResult { busy: boolean; last_prompt: string | null; reachable: boolean }
 export const PROBE_EVERY_MS = 60_000
+export const STARTUP_GRACE_S = 15 * 60   // a pod pulling its image answers nothing; it is not idle until it has been up this long
 
 /** RunPod's HTTP proxy for a pod port. */
 export const proxyUrl = (podId: string, port = 8188) => `https://${podId}-${port}.proxy.runpod.net`
@@ -60,18 +61,23 @@ export async function probe(podId: string, fetchFn: typeof fetch = fetch): Promi
   }
 }
 
-/** Update one registry entry from a probe; returns the entry and whether to stop now. */
-export function decide(e: IdleEntry, p: ProbeResult, now: Date): [IdleEntry, boolean] {
+/** Update one registry entry from a probe; returns the entry and whether to stop now. `uptimeS` is RunPod's
+ *  uptime for the pod: while it is younger than the start-up grace it is never stopped, since a pod that is
+ *  still pulling its image answers nothing and would otherwise count as idle. */
+export function decide(e: IdleEntry, p: ProbeResult, now: Date, uptimeS: number | null = null): [IdleEntry, boolean] {
   const out = { ...e }
   const active = p.busy || (!!p.last_prompt && p.last_prompt !== e.last_prompt)
   if (p.last_prompt) out.last_prompt = p.last_prompt
   if (active) { out.last_activity = now.toISOString(); return [out, false] }
+  if (uptimeS != null && uptimeS < STARTUP_GRACE_S && !p.reachable) { out.last_activity = now.toISOString(); return [out, false] }
   const quietS = (now.getTime() - new Date(e.last_activity).getTime()) / 1000
   return [out, quietS >= e.minutes * 60]
 }
 
-/** One pass over the registry. `running` lists the pod ids RunPod says are running; `stop` stops one. */
-export async function sweep(running: () => Promise<Set<string>> | Set<string>, stop: (id: string) => Promise<void> | void,
+export type Running = Set<string> | Map<string, number | null>   // ids, or ids with RunPod's uptime in seconds
+
+/** One pass over the registry. `running` lists the pods RunPod says are running (with uptime when known); `stop` stops one. */
+export async function sweep(running: () => Promise<Running> | Running, stop: (id: string) => Promise<void> | void,
   probeFn: (id: string) => Promise<ProbeResult> = probe, now = new Date()): Promise<string[]> {
   const reg = load()
   if (!Object.keys(reg).length) return []
@@ -79,7 +85,8 @@ export async function sweep(running: () => Promise<Set<string>> | Set<string>, s
   const stopped: string[] = []
   for (const podId of Object.keys(reg)) {
     if (!live.has(podId)) continue   // stopped or gone: keep the entry in case it is resumed
-    const [e, stopNow] = decide(reg[podId], await probeFn(podId), now)
+    const uptime = live instanceof Map ? live.get(podId) ?? null : null
+    const [e, stopNow] = decide(reg[podId], await probeFn(podId), now, uptime)
     reg[podId] = e
     if (stopNow) {
       try { await stop(podId); stopped.push(podId); delete reg[podId] } catch (err) { console.error(`idle stop of ${podId} failed: ${(err as Error).message}`) }
@@ -90,7 +97,7 @@ export async function sweep(running: () => Promise<Set<string>> | Set<string>, s
 }
 
 /** The loop an adapter starts: sweep every minute, forever, never throwing. Returns a stop function. */
-export function loop(running: () => Promise<Set<string>> | Set<string>, stop: (id: string) => Promise<void> | void): () => void {
+export function loop(running: () => Promise<Running> | Running, stop: (id: string) => Promise<void> | void): () => void {
   const timer = setInterval(() => { sweep(running, stop).catch((e) => console.error(`idle sweep failed: ${(e as Error).message}`)) }, PROBE_EVERY_MS)
   return () => clearInterval(timer)
 }

@@ -96,6 +96,8 @@ def test_idle_decision_and_sweep(env):
     assert idle.decide(e, {"busy": False, "last_prompt": None, "reachable": False}, now)[1] is True     # unreachable still bills
     fresh = {"minutes": 30, "last_activity": (now - timedelta(minutes=10)).isoformat(), "last_prompt": None}
     assert idle.decide(fresh, {"busy": False, "last_prompt": None, "reachable": True}, now)[1] is False
+    assert idle.decide(e, {"busy": False, "last_prompt": None, "reachable": False}, now, 120)[1] is False   # a minute old and silent: still pulling its image
+    assert idle.decide(e, {"busy": False, "last_prompt": None, "reachable": False}, now, 20 * 60)[1] is True
     idle.register("p1", 30); idle.register("p2", 30); idle.register("p3", 0)
     assert set(idle.load()) == {"p1", "p2"}
     for pid in ("p1", "p2"):
@@ -105,7 +107,7 @@ def test_idle_decision_and_sweep(env):
     async def fake_probe(pod_id, client=None):
         return {"busy": pod_id == "p2", "last_prompt": None, "reachable": True}
     idle.probe = fake_probe
-    out = asyncio.run(idle.sweep(lambda: {"p1", "p2"}, stopped.append))
+    out = asyncio.run(idle.sweep(lambda: {"p1": 3600, "p2": 3600}, stopped.append))
     assert out == ["p1"] and stopped == ["p1"] and set(idle.load()) == {"p2"}        # p2 is rendering, kept
 
 

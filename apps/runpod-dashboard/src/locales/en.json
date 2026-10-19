@@ -90,7 +90,9 @@
     "reset": "Reset",
     "summaryVolume": "volume {id} at {path}",
     "summaryNoVolume": "no network volume configured",
-    "summaryMapped": "{mapped}/{total} folder(s) mapped, {links} link(s)"
+    "summaryMapped": "{mapped}/{total} folder(s) mapped, {links} link(s)",
+    "gpuStock": "Stock and price are RunPod's, read when the form opened. \"Cheapest card in stock\" tries them in that order at creation.",
+    "gpuNoStock": "No stock information: set the RunPod key in Configuration, or no-spend mode is on."
   },
   "config": {
     "title": "Configuration",
