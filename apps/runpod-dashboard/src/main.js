@@ -25,7 +25,6 @@ import {
   BPopover,
   BRow,
   BSpinner,
-  BOrchestrator,
 } from 'bootstrap-vue-next'
 
 import './assets/styles/app.scss'
@@ -40,7 +39,6 @@ const app = createApp(App)
 app.use(createBootstrap())
 
 app.component('BAlert', BAlert)
-app.component('BOrchestrator', BOrchestrator)
 app.component('BBadge', BBadge)
 app.component('BButton', BButton)
 app.component('BCard', BCard)

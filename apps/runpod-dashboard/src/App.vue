@@ -57,7 +57,7 @@
 
     <RepositoriesModal />
     <GitAccountsModal />
-    <BOrchestrator />
+    <ToastHost />
     <ConfigModal />
   </div>
 </template>
@@ -82,7 +82,8 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { podsAPI } from './api/pods'
 import { ui } from './stores/ui'
-import { installToasts, toast } from './stores/toast'
+import { toast } from './stores/toast'
+import ToastHost from './components/ToastHost.vue'
 import Dashboard from './components/Dashboard.vue'
 import Stats from './components/Stats.vue'
 import RepositoriesModal from './components/RepositoriesModal.vue'
@@ -96,7 +97,6 @@ const initialLoading = ref(true)
 const refreshing = ref(false)
 const error = ref(null)
 const notice = ref(null)
-installToasts()
 
 async function loadDashboard() {
   refreshing.value = true

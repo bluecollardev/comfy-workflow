@@ -606,8 +606,7 @@ async function loadEnv(source) {
   try {
     const { image, env, build_args: buildArgs = [], skipped = 0 } = await imagesAPI.env({
       source,
-      image: form.image === 'custom' ? form.customImageUri : form.image,
-      idleStopMinutes: form.idleStopMinutes === '' ? null : form.idleStopMinutes,
+      image: form.image === 'custom' ? form.customImageUri : form.image === 'configured' ? configuredImage.value : 'prebuilt',
       applyMounts: form.applyMounts,
     })
     const { added, replaced } = mergeRows(
@@ -672,7 +671,8 @@ async function submit() {
   const name = form.name
   const created = await toast.run('Create pod', () => podsAPI.createPod({
     ...form,
-    image: form.image === 'custom' ? form.customImageUri : 'prebuilt',
+    image: form.image === 'custom' ? form.customImageUri : form.image,
+    idleStopMinutes: form.idleStopMinutes === '' ? null : form.idleStopMinutes,
     envVars: rowsObject('env'),
     buildArgs: rowsObject('arg'),
     pipRequirements: form.pipRequirements.trim(),

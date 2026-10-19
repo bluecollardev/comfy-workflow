@@ -1,22 +1,27 @@
-import { useToast } from 'bootstrap-vue-next'
+import { reactive } from 'vue'
 
 /**
- * One place for every toast in the app. Components never call bootstrap-vue-next's toast
- * directly: they call `toast.success(...)`, `toast.error(...)`, `toast.info(...)`, or wrap an
- * action in `toast.run(...)`, which reports the outcome either way.
- *
- * bootstrap-vue-next's composable needs a component context and a mounted
- * <BOrchestrator>, so App.vue calls `installToasts()` once in its setup; until then calls
- * are dropped silently (a toast is never worth an exception).
+ * One place for every toast in the app. Components never render toasts themselves: they call
+ * `toast.success(...)`, `toast.error(...)`, `toast.info(...)`, or wrap an action in `toast.run(...)`,
+ * which reports the outcome either way. ToastHost.vue, mounted once in App.vue, renders the
+ * list top right and removes each toast when its time is up. No library orchestrator: plain
+ * Bootstrap toast markup, so what is in this list is what is on screen.
  */
-let api = null
-export function installToasts() { api = useToast() }
+export const HIDE_AFTER_MS = 4000
+let nextId = 1
 
-const POSITION = 'top-end'      // top right, under the navbar; never the bottom of the screen
-const HIDE_AFTER_MS = 4000
+export const toasts = reactive([])
 
 function show(variant, body, title) {
-  api?.create({ position: POSITION, modelValue: HIDE_AFTER_MS, variant, title, body })
+  const id = nextId++
+  toasts.push({ id, variant, title, body, at: Date.now() })
+  setTimeout(() => dismiss(id), HIDE_AFTER_MS)
+  return id
+}
+
+export function dismiss(id) {
+  const i = toasts.findIndex((t) => t.id === id)
+  if (i >= 0) toasts.splice(i, 1)
 }
 
 /** The one line an API error has for people: FastAPI's detail, else the HTTP/axios message. */
