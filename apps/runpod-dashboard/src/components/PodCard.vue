@@ -8,8 +8,15 @@
     </div>
 
     <dl class="row g-1 small mb-3 flex-grow-1">
-      <dt class="col-4 text-body-secondary fw-normal">ID</dt>
-      <dd class="col-8 mb-0"><code>{{ pod.id }}</code></dd>
+      <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.id') }}</dt>
+      <dd class="col-8 mb-0">
+        <code data-testid="pod-id">{{ pod.id }}</code>
+        <a :href="pod.console_url || `https://www.runpod.io/console/pods/${pod.id}`" target="_blank" rel="noopener" class="ms-2 small" :title="$t('pod.console')" data-testid="pod-console">
+          <i class="fa-solid fa-arrow-up-right-from-square fa-xs"></i> RunPod
+        </a>
+        <button type="button" class="btn btn-link btn-sm p-0 ms-2 align-baseline" :title="$t('pod.copyId')" data-testid="pod-copy-id" @click="copyId"><i class="fa-regular fa-copy fa-xs"></i></button>
+      </dd>
+
 
       <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.gpu') }}</dt>
       <dd class="col-8 mb-0">{{ pod.gpu }}<span v-if="pod.vram" class="text-body-secondary"> · {{ pod.vram }} GB</span></dd>
@@ -28,14 +35,6 @@
         </dd>
       </template>
 
-      <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.id') }}</dt>
-      <dd class="col-8 mb-0">
-        <code data-testid="pod-id">{{ pod.id }}</code>
-        <a :href="pod.console_url || `https://www.runpod.io/console/pods/${pod.id}`" target="_blank" rel="noopener" class="ms-2 small" :title="$t('pod.console')" data-testid="pod-console">
-          <i class="fa-solid fa-arrow-up-right-from-square fa-xs"></i> RunPod
-        </a>
-        <button type="button" class="btn btn-link btn-sm p-0 ms-2 align-baseline" :title="$t('pod.copyId')" data-testid="pod-copy-id" @click="copyId"><i class="fa-regular fa-copy fa-xs"></i></button>
-      </dd>
 
       <div v-if="pods.hostFull === pod.id" class="col-12 small text-warning" data-testid="pod-host-full">{{ $t('pod.hostFull') }}</div>
 

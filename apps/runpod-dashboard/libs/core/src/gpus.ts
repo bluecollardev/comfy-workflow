@@ -24,7 +24,7 @@ export function runpodId(key: string): string {
 }
 
 export function vram(key: string): number {
-  for (const [k, g] of Object.entries(GPUS)) if (key === k || key === g.id) return g.vram
+  for (const [k, g] of Object.entries(GPUS)) if (key === k || key === g.id || key === g.name) return g.vram   // RunPod's gpuDisplayName is the short name
   return 0
 }
 
