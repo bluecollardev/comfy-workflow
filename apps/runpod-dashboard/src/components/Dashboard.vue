@@ -71,6 +71,7 @@ import { ref } from 'vue'
 import PodCard from './PodCard.vue'
 import PodForm from './PodForm.vue'
 import { podsAPI } from '../api/pods'
+import { toast } from '../stores/toast'
 
 defineProps({
   pods: { type: Array, required: true },
@@ -94,16 +95,15 @@ async function handlePodCreated() {
   }
 }
 
+const DONE = { Stop: 'Pod stopped', Resume: 'Pod resumed', Delete: 'Pod deleted' }
+
 async function runAction(podId, action, label) {
   busyPodId.value = podId
   error.value = null
-  try {
-    await action(podId)
-    await refreshPods()
-  } catch (e) {
-    error.value = `${label} failed: ${e.response?.data?.detail || e.message}`
-  } finally {
-    busyPodId.value = null
+  const ok = await toast.run(`${label} pod`, () => action(podId), { ok: DONE[label], onError: (t) => (error.value = t) })
+  if (ok !== undefined) {
+    try { await refreshPods() } catch (e) { error.value = `The list failed to refresh: ${e.message}` }
   }
+  busyPodId.value = null
 }
 </script>

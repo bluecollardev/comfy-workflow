@@ -101,6 +101,7 @@
  */
 import { reactive, ref } from 'vue'
 import { gitAPI } from '../api/git'
+import { toast } from '../stores/toast'
 import { ui } from '../stores/ui'
 
 const repositories = ref([])
@@ -170,29 +171,23 @@ function onUrlInput(value) {
 async function attach() {
   saving.value = true
   error.value = null
-  try {
-    await gitAPI.attachRepository(draft.url, draft.branch || branches.default || null)
-    draft.url = ''
-    draft.branch = ''
-    branches.list = []
-    ui.repositoriesVersion++
-    await load()
-  } catch (e) {
-    error.value = e.response?.data?.detail || e.message
-  } finally {
-    saving.value = false
-  }
+  const url = draft.url
+  const ok = await toast.run('Attach repository', () => gitAPI.attachRepository(url, draft.branch || branches.default || null), { ok: `Attached ${url}`, onError: (t) => (error.value = t) })
+  saving.value = false
+  if (ok === undefined) return
+  draft.url = ''
+  draft.branch = ''
+  branches.list = []
+  ui.repositoriesVersion++
+  await load()
 }
 
 async function detach(repo) {
   if (!window.confirm(`Remove ${repo.name} (${repo.branch})?`)) return
-  try {
-    await gitAPI.detachRepository(repo.id)
-    ui.repositoriesVersion++
-    await load()
-  } catch (e) {
-    error.value = e.response?.data?.detail || e.message
-  }
+  const ok = await toast.run('Remove repository', () => gitAPI.detachRepository(repo.id), { ok: `Removed ${repo.name}`, onError: (t) => (error.value = t) })
+  if (ok === undefined) return
+  ui.repositoriesVersion++
+  await load()
 }
 
 function openAccounts() {

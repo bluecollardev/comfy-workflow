@@ -319,6 +319,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { podsAPI } from '../api/pods'
 import { mountsAPI } from '../api/mounts'
+import { toast } from '../stores/toast'
 import { gitAPI } from '../api/git'
 import { imagesAPI } from '../api/images'
 import { ui } from '../stores/ui'
@@ -658,22 +659,19 @@ function reset() {
 async function submit() {
   submitting.value = true
   error.value = null
-  try {
-    await podsAPI.createPod({
-      ...form,
-      image: form.image === 'custom' ? form.customImageUri : 'prebuilt',
-      envVars: rowsObject('env'),
-      buildArgs: rowsObject('arg'),
-      pipRequirements: form.pipRequirements.trim(),
-      customNodes: parseCustomNodes(form.customNodes),
-    })
-    reset()
-    emit('pod-created')
-  } catch (e) {
-    error.value = e.response?.data?.detail || e.message || 'Failed to create pod'
-  } finally {
-    submitting.value = false
-  }
+  const name = form.name
+  const created = await toast.run('Create pod', () => podsAPI.createPod({
+    ...form,
+    image: form.image === 'custom' ? form.customImageUri : 'prebuilt',
+    envVars: rowsObject('env'),
+    buildArgs: rowsObject('arg'),
+    pipRequirements: form.pipRequirements.trim(),
+    customNodes: parseCustomNodes(form.customNodes),
+  }), { ok: `Pod ${name} created`, onError: (t) => (error.value = t) })
+  submitting.value = false
+  if (created === undefined) return
+  reset()
+  emit('pod-created')
 }
 </script>
 
