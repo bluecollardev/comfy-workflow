@@ -73,7 +73,7 @@ checks and places files by these rules.
 
 | Package | What it does | Entry points |
 |---|---|---|
-| `nodes/` | **ComfyUI-BH-ShotPipe**, the project's custom node pack, every version kept side by side from `v6` to `v26`. Provides the `BH_*` nodes the graphs are built from (`BH_ReadSequence`, `BH_ReadMatte`, `BH_LoadSolve`, `BH_CarryLayerExact`, `BH_WriteProxySeq`, `BH15_PlateSource`, `BH26_ObjectSolve`, …). | Symlink or copy one version into a ComfyUI `custom_nodes/`. Not installed in `apps/comfy-app/ComfyUI`. |
+| `nodes/` | **ComfyUI-BH-ShotPipe**, the project's custom node pack, every version kept side by side from `v6` to `v26`. Provides the `BH_*` nodes the graphs are built from (`BH_ReadSequence`, `BH_ReadMatte`, `BH_LoadSolve`, `BH_CarryLayerExact`, `BH_WriteProxySeq`, `BH15_PlateSource`, `BH26_ObjectSolve`, …). | Symlink or copy one version into a ComfyUI `custom_nodes/`. Not installed in `apps/comfy-app` by default; `COMFY_SHOTPIPE=<ver> apps/comfy-app/setup.sh` links one in. |
 | `graph-builder/`, `graph-builders/` | Python that generates the shot graphs programmatically for each pipeline version (`build_master_v15.py`, `build_v25_shot_graphs_v001.py`, `fork_v26_tracking_v003.py`, `graphlib.py`). | Run once per version; output lands in each shot's `04_GRAPH/`. |
 | `queue-graphs/` | Loads graphs into a running ComfyUI's Workflows panel (`corrosion_load-graphs_v002.py`) or queues their API twins for rendering (`corrosion_queue-graphs_v002.py`, `corrosion_queue-api_v005.py`). `.desktop` launchers for binc-PC. | `--list` and `--dry-run` send nothing. Default ComfyUI is `http://127.0.0.1:8189`, the CanalV2 install on binc-PC. |
 | `slug-builder/` | Reads an inbox entry and builds the shot folder plus the V1 "slug" graph (inputs only). `seed.py` wrote the first entries. | `python3 build_slug.py ~/CANALV2 corrosion-110` |
@@ -104,7 +104,7 @@ but no prompt text.
 | `<shot>/07_DELIVER/<shot>_review-fork_v###/*_graph_v###.json` | few | UI | Review and audit forks. |
 | `80_TEST-BUCKET/*/…_api.json` | 21 | API | Proof-of-concept graphs. |
 | `04_TRACKER/queue/in/v20_graphs_2026-10-17/graphs_v20_all_2026-10-17.zip` | 22 | API | The v20 solve-carry graphs bundled for the agent queue. |
-| `apps/comfy-app/ComfyUI/user/default/workflows/*.json` | 9 | UI | Stereo QC and `cgi-042` workflows already saved in the Mac install (repo path). |
+| `apps/comfy-app/workflows/*.json` | 9 | UI | Stereo QC and `cgi-042` workflows, tracked in the repo and served to the Mac install through a symlink. |
 
 Graphs built with ShotPipe `v26` need the `BH26_*` nodes; older graphs need the
 matching older pack. A ComfyUI without the right pack opens them with missing

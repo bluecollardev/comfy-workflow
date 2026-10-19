@@ -1,8 +1,12 @@
-# The ComfyUI install itself: ~5 GB, ~70k files. Never commit.
+# The ComfyUI core clone, its venv and weights: rebuilt by setup.sh / fetch-models.sh.
 ComfyUI/
 standalone-env/
 logs/
 snapshots/
 archive/
-.env
 .build/
+.env
+# Pack fixtures and caches
+custom_nodes/*/test-input/
+__pycache__/
+.DS_Store

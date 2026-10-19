@@ -1,0 +1,6 @@
+# Linux / Windows with an NVIDIA GPU: same torch versions as the Mac, CUDA 12.6 build.
+# The Docker image gets these from its pytorch/pytorch base instead.
+--extra-index-url https://download.pytorch.org/whl/cu126
+torch==2.12.1
+torchvision==0.27.1
+torchaudio==2.11.0

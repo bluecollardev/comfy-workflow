@@ -1,0 +1,1123 @@
+{
+ "id": "cgi-042-binc-stereo-v01",
+ "revision": 0,
+ "last_node_id": 22,
+ "last_link_id": 23,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "MarkdownNote",
+   "pos": [
+    0,
+    -520
+   ],
+   "size": [
+    1500,
+    480
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "# cgi-042 · Binc stereo — fresh graph v01\n\n**One spine, nothing historical.** `LoadVideo` reads the APPROVED v03 take from `ComfyUI-Shared/input/shots/cgi-042/05-outputs/Approved/`. Everything to the right branches from `GetVideoComponents.images`.\n\n**Source (measured):** `cgi-042-pullback-4k-v03.mp4` — 3840x2160 HEVC `yuv420p10le`, range **tv**, matrix **bt709 (tagged)**,\n24/1, 241 f, AAC audio track present (ignore). Tagged → Comfy's decode to float32 is trustworthy; no colour declaration needed on this file.\n\n**Flow:** PASSTHROUGH (proof copy) · TRIM (window) → DEPTH (Binc DA2, local, sequence-normalised) → TEMPORAL (median-5 + no-lag EMA)\n→ STEREO (Binc: hull → DIBR → push-pull paint-in) → SBS + eye L + eye R videos, evidence PNGs, two text readouts.\n\n**Before first Queue**\n1. DEPTH node: `hf_repo_id` is pre-filled (`depth-anything/Depth-Anything-V2-Large-hf`) — transformers downloads ~1.3 GB into the HF cache on first run.\n   Prefer offline? put the HF folder in `models/depth_anything/` and pick it in `model`, clear `hf_repo_id`.\n2. TRIM is `108 / 25` (frames 109-133, centre f121). Set `0 / 241` for the full take **after** a 25-frame run looks right (241 × 4K float ≈ 24 GB per copy).\n3. `fps` is wired from the source into all three CreateVideo nodes — no hand-typed frame rate.\n\n**Read after Queue, in this order**\n1. `JITTER` — filtered mean should land ≤ ~0.9 levels (Kyle's v03 figure); raw will be ~4.\n2. `PARALLAX REPORT` — `summary.ok` must be true; `worst_pct` is what you compare to disparity measured on the v03 L/R masters.\n3. `parallax_vis` — near objects must be **DARK**. If bright → set `depth_polarity = near_is_dark` on STEREO.\n4. anaglyph at f121 (and move TRIM to 60/20 to see the f65–76 edge cluster + f72→73 step).\n\n**Status:** BUILT - NOT RUN. Package `ComfyUI-BincStereo` v0.2.0 headless-tested; first execution inside this build is this graph.\nFilmout path (SaveVideo codec auto) UNVERIFIED — outputs are review material."
+   ],
+   "title": "READ FIRST — cgi-042 · Binc stereo · fresh graph v01 (2026-10-10)"
+  },
+  {
+   "id": 2,
+   "type": "LoadVideo",
+   "pos": [
+    0,
+    0
+   ],
+   "size": [
+    380,
+    120
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": [
+      14,
+      15
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LoadVideo"
+   },
+   "widgets_values": [
+    "shots/cgi-042/05-outputs/Approved/cgi-042-pullback-4k-v03.mp4",
+    "image"
+   ],
+   "title": "SOURCE · APPROVED cgi-042-pullback-4k-v03.mp4 · 4K HEVC 10-bit bt709 · 241 f @ 24",
+   "color": "#2d5a27",
+   "bgcolor": "#1e3d1a"
+  },
+  {
+   "id": 3,
+   "type": "GetVideoComponents",
+   "pos": [
+    430,
+    0
+   ],
+   "size": [
+    300,
+    130
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "link": 14
+    }
+   ],
+   "outputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "links": [
+      16
+     ]
+    },
+    {
+     "name": "audio",
+     "type": "AUDIO",
+     "links": []
+    },
+    {
+     "name": "fps",
+     "type": "FLOAT",
+     "links": [
+      6,
+      9,
+      12
+     ]
+    },
+    {
+     "name": "bit_depth",
+     "type": "INT",
+     "links": []
+    },
+    {
+     "name": "color_space",
+     "type": "STRING",
+     "links": []
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "GetVideoComponents"
+   },
+   "widgets_values": [],
+   "title": "PASSTHROUGH · frames (float32) + fps",
+   "color": "#2d5a27",
+   "bgcolor": "#1e3d1a"
+  },
+  {
+   "id": 4,
+   "type": "SaveVideo",
+   "pos": [
+    430,
+    200
+   ],
+   "size": [
+    300,
+    150
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "link": 15
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "SaveVideo"
+   },
+   "widgets_values": [
+    "video/cgi-042-binc/passthrough-copy",
+    "auto",
+    "auto",
+    "auto"
+   ],
+   "title": "PROOF · SaveVideo · passthrough copy (zero-diff check)",
+   "color": "#2d5a27",
+   "bgcolor": "#1e3d1a"
+  },
+  {
+   "id": 5,
+   "type": "ImageFromBatch",
+   "pos": [
+    780,
+    0
+   ],
+   "size": [
+    380,
+    80
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 16
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      17,
+      18
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "ImageFromBatch"
+   },
+   "widgets_values": [
+    108,
+    25
+   ],
+   "title": "TRIM · 108 / 25 = frames 109-133 · set 0 / 241 for full take",
+   "color": "#1f4e79",
+   "bgcolor": "#173b5c"
+  },
+  {
+   "id": 6,
+   "type": "BincDepthAnythingV2",
+   "pos": [
+    1220,
+    0
+   ],
+   "size": [
+    400,
+    300
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 17
+    }
+   ],
+   "outputs": [
+    {
+     "name": "depth",
+     "type": "IMAGE",
+     "links": [
+      19
+     ]
+    },
+    {
+     "name": "depth_mask",
+     "type": "MASK",
+     "links": []
+    },
+    {
+     "name": "info",
+     "type": "STRING",
+     "links": [
+      22
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "BincDepthAnythingV2"
+   },
+   "widgets_values": [
+    "(put HF-format folders in models/depth_anything/)",
+    "depth-anything/Depth-Anything-V2-Large-hf",
+    "default",
+    1036,
+    1,
+    "sequence_percentile",
+    0.5,
+    99.5
+   ],
+   "title": "DEPTH · Binc Depth Anything V2 · local · hf_repo_id pre-filled · sequence-normalised",
+   "color": "#1f4e79",
+   "bgcolor": "#173b5c"
+  },
+  {
+   "id": 7,
+   "type": "BincDepthTemporalFilter",
+   "pos": [
+    1680,
+    0
+   ],
+   "size": [
+    360,
+    150
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "depth",
+     "type": "IMAGE",
+     "link": 19
+    }
+   ],
+   "outputs": [
+    {
+     "name": "depth",
+     "type": "IMAGE",
+     "links": [
+      1,
+      20
+     ]
+    },
+    {
+     "name": "depth_mask",
+     "type": "MASK",
+     "links": []
+    },
+    {
+     "name": "jitter_report",
+     "type": "STRING",
+     "links": [
+      21
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "BincDepthTemporalFilter"
+   },
+   "widgets_values": [
+    5,
+    0.3,
+    0.08
+   ],
+   "title": "TEMPORAL · median-5 + no-lag EMA · edge-preserve 0.08",
+   "color": "#1f4e79",
+   "bgcolor": "#173b5c"
+  },
+  {
+   "id": 8,
+   "type": "BincStereoFromDepth",
+   "pos": [
+    2100,
+    0
+   ],
+   "size": [
+    430,
+    520
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 18
+    },
+    {
+     "name": "depth",
+     "type": "IMAGE",
+     "link": 20
+    },
+    {
+     "name": "depth_mask",
+     "type": "MASK",
+     "link": null
+    },
+    {
+     "name": "left_fill",
+     "type": "IMAGE",
+     "link": null
+    },
+    {
+     "name": "right_fill",
+     "type": "IMAGE",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "left",
+     "type": "IMAGE",
+     "links": [
+      8
+     ]
+    },
+    {
+     "name": "right",
+     "type": "IMAGE",
+     "links": [
+      11
+     ]
+    },
+    {
+     "name": "sbs",
+     "type": "IMAGE",
+     "links": [
+      5
+     ]
+    },
+    {
+     "name": "anaglyph",
+     "type": "IMAGE",
+     "links": [
+      3
+     ]
+    },
+    {
+     "name": "parallax_vis",
+     "type": "IMAGE",
+     "links": [
+      4
+     ]
+    },
+    {
+     "name": "holes",
+     "type": "MASK",
+     "links": []
+    },
+    {
+     "name": "depth_hull",
+     "type": "IMAGE",
+     "links": [
+      2
+     ]
+    },
+    {
+     "name": "report",
+     "type": "STRING",
+     "links": [
+      23
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "BincStereoFromDepth"
+   },
+   "widgets_values": [
+    "near_is_bright",
+    0.35,
+    1.0,
+    0.25,
+    1.0,
+    "symmetric",
+    1,
+    2,
+    0.04,
+    "background_pushpull",
+    0.06,
+    1,
+    2,
+    "sbs_full"
+   ],
+   "title": "STEREO · Binc Stereo from Depth · far 0.25 % / near 1.0 % · conv 0.35 · hull 1 px · push-pull fill",
+   "color": "#1f4e79",
+   "bgcolor": "#173b5c"
+  },
+  {
+   "id": 9,
+   "type": "PreviewAny",
+   "pos": [
+    1680,
+    220
+   ],
+   "size": [
+    360,
+    160
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "source",
+     "type": "*",
+     "link": 21
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "PreviewAny"
+   },
+   "widgets_values": [],
+   "title": "JITTER · raw vs filtered (8-bit levels) · target ≤ 0.9"
+  },
+  {
+   "id": 10,
+   "type": "PreviewAny",
+   "pos": [
+    1220,
+    340
+   ],
+   "size": [
+    400,
+    100
+   ],
+   "flags": {},
+   "order": 10,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "source",
+     "type": "*",
+     "link": 22
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "PreviewAny"
+   },
+   "widgets_values": [],
+   "title": "DEPTH info · model · raw range"
+  },
+  {
+   "id": 11,
+   "type": "PreviewAny",
+   "pos": [
+    2580,
+    0
+   ],
+   "size": [
+    420,
+    420
+   ],
+   "flags": {},
+   "order": 11,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "source",
+     "type": "*",
+     "link": 23
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "PreviewAny"
+   },
+   "widgets_values": [],
+   "title": "PARALLAX REPORT · per-frame % of width · budget flags · params"
+  },
+  {
+   "id": 12,
+   "type": "SaveImage",
+   "pos": [
+    1680,
+    420
+   ],
+   "size": [
+    300,
+    120
+   ],
+   "flags": {},
+   "order": 12,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 1
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "SaveImage"
+   },
+   "widgets_values": [
+    "cgi-042-binc/depth"
+   ],
+   "title": "EVIDENCE · depth · PNG"
+  },
+  {
+   "id": 13,
+   "type": "SaveImage",
+   "pos": [
+    2100,
+    580
+   ],
+   "size": [
+    300,
+    120
+   ],
+   "flags": {},
+   "order": 13,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 2
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "SaveImage"
+   },
+   "widgets_values": [
+    "cgi-042-binc/depth_hull"
+   ],
+   "title": "EVIDENCE · depth_hull · PNG"
+  },
+  {
+   "id": 14,
+   "type": "SaveImage",
+   "pos": [
+    2420,
+    580
+   ],
+   "size": [
+    300,
+    120
+   ],
+   "flags": {},
+   "order": 14,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 3
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "SaveImage"
+   },
+   "widgets_values": [
+    "cgi-042-binc/anaglyph"
+   ],
+   "title": "EVIDENCE · anaglyph · PNG"
+  },
+  {
+   "id": 15,
+   "type": "SaveImage",
+   "pos": [
+    2740,
+    580
+   ],
+   "size": [
+    300,
+    120
+   ],
+   "flags": {},
+   "order": 15,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 4
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "SaveImage"
+   },
+   "widgets_values": [
+    "cgi-042-binc/parallax_vis"
+   ],
+   "title": "EVIDENCE · parallax_vis · PNG"
+  },
+  {
+   "id": 16,
+   "type": "CreateVideo",
+   "pos": [
+    3060,
+    460
+   ],
+   "size": [
+    260,
+    100
+   ],
+   "flags": {},
+   "order": 16,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 5
+    },
+    {
+     "name": "fps",
+     "type": "FLOAT",
+     "link": 6,
+     "widget": {
+      "name": "fps"
+     }
+    }
+   ],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": [
+      7
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CreateVideo"
+   },
+   "widgets_values": [
+    24
+   ],
+   "title": "OUTPUT · CreateVideo · SBS · fps from source"
+  },
+  {
+   "id": 17,
+   "type": "SaveVideo",
+   "pos": [
+    3360,
+    460
+   ],
+   "size": [
+    320,
+    150
+   ],
+   "flags": {},
+   "order": 17,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "link": 7
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "SaveVideo"
+   },
+   "widgets_values": [
+    "video/cgi-042-binc/SBS",
+    "auto",
+    "auto",
+    "auto"
+   ],
+   "title": "OUTPUT · SaveVideo · SBS (codec auto — filmout UNVERIFIED)"
+  },
+  {
+   "id": 18,
+   "type": "CreateVideo",
+   "pos": [
+    3060,
+    630
+   ],
+   "size": [
+    260,
+    100
+   ],
+   "flags": {},
+   "order": 18,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 8
+    },
+    {
+     "name": "fps",
+     "type": "FLOAT",
+     "link": 9,
+     "widget": {
+      "name": "fps"
+     }
+    }
+   ],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": [
+      10
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CreateVideo"
+   },
+   "widgets_values": [
+    24
+   ],
+   "title": "OUTPUT · CreateVideo · eyeL · fps from source"
+  },
+  {
+   "id": 19,
+   "type": "SaveVideo",
+   "pos": [
+    3360,
+    630
+   ],
+   "size": [
+    320,
+    150
+   ],
+   "flags": {},
+   "order": 19,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "link": 10
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "SaveVideo"
+   },
+   "widgets_values": [
+    "video/cgi-042-binc/eyeL",
+    "auto",
+    "auto",
+    "auto"
+   ],
+   "title": "OUTPUT · SaveVideo · eyeL (codec auto — filmout UNVERIFIED)"
+  },
+  {
+   "id": 20,
+   "type": "CreateVideo",
+   "pos": [
+    3060,
+    800
+   ],
+   "size": [
+    260,
+    100
+   ],
+   "flags": {},
+   "order": 20,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 11
+    },
+    {
+     "name": "fps",
+     "type": "FLOAT",
+     "link": 12,
+     "widget": {
+      "name": "fps"
+     }
+    }
+   ],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": [
+      13
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CreateVideo"
+   },
+   "widgets_values": [
+    24
+   ],
+   "title": "OUTPUT · CreateVideo · eyeR · fps from source"
+  },
+  {
+   "id": 21,
+   "type": "SaveVideo",
+   "pos": [
+    3360,
+    800
+   ],
+   "size": [
+    320,
+    150
+   ],
+   "flags": {},
+   "order": 21,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "link": 13
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "SaveVideo"
+   },
+   "widgets_values": [
+    "video/cgi-042-binc/eyeR",
+    "auto",
+    "auto",
+    "auto"
+   ],
+   "title": "OUTPUT · SaveVideo · eyeR (codec auto — filmout UNVERIFIED)"
+  },
+  {
+   "id": 22,
+   "type": "MarkdownNote",
+   "pos": [
+    2100,
+    740
+   ],
+   "size": [
+    430,
+    260
+   ],
+   "flags": {},
+   "order": 22,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "Units are physical. `far_parallax_pct 0.25` = 9.6 px max behind screen at 3840 (22 m child-eye ceiling). `near_parallax_pct 1.0` = 38.4 px max in front.\n`convergence 0.35` = depth value on the screen plane — constant for the shot. `hull_px 1` = silhouette hull (see `depth_hull`).\n`background_pushpull` = paint-in seeded from background only. `symmetric` = both eyes ±½ parallax. SBS is **left-first**.\n\nTune order: polarity → convergence (so the bank/figures sit where you want relative to screen) → budgets (report.ok) → hull/fill on the anaglyph."
+   ],
+   "title": "STEREO — settings"
+  }
+ ],
+ "links": [
+  [
+   1,
+   7,
+   0,
+   12,
+   0,
+   "IMAGE"
+  ],
+  [
+   2,
+   8,
+   6,
+   13,
+   0,
+   "IMAGE"
+  ],
+  [
+   3,
+   8,
+   3,
+   14,
+   0,
+   "IMAGE"
+  ],
+  [
+   4,
+   8,
+   4,
+   15,
+   0,
+   "IMAGE"
+  ],
+  [
+   5,
+   8,
+   2,
+   16,
+   0,
+   "IMAGE"
+  ],
+  [
+   6,
+   3,
+   2,
+   16,
+   1,
+   "FLOAT"
+  ],
+  [
+   7,
+   16,
+   0,
+   17,
+   0,
+   "VIDEO"
+  ],
+  [
+   8,
+   8,
+   0,
+   18,
+   0,
+   "IMAGE"
+  ],
+  [
+   9,
+   3,
+   2,
+   18,
+   1,
+   "FLOAT"
+  ],
+  [
+   10,
+   18,
+   0,
+   19,
+   0,
+   "VIDEO"
+  ],
+  [
+   11,
+   8,
+   1,
+   20,
+   0,
+   "IMAGE"
+  ],
+  [
+   12,
+   3,
+   2,
+   20,
+   1,
+   "FLOAT"
+  ],
+  [
+   13,
+   20,
+   0,
+   21,
+   0,
+   "VIDEO"
+  ],
+  [
+   14,
+   2,
+   0,
+   3,
+   0,
+   "VIDEO"
+  ],
+  [
+   15,
+   2,
+   0,
+   4,
+   0,
+   "VIDEO"
+  ],
+  [
+   16,
+   3,
+   0,
+   5,
+   0,
+   "IMAGE"
+  ],
+  [
+   17,
+   5,
+   0,
+   6,
+   0,
+   "IMAGE"
+  ],
+  [
+   18,
+   5,
+   0,
+   8,
+   0,
+   "IMAGE"
+  ],
+  [
+   19,
+   6,
+   0,
+   7,
+   0,
+   "IMAGE"
+  ],
+  [
+   20,
+   7,
+   0,
+   8,
+   1,
+   "IMAGE"
+  ],
+  [
+   21,
+   7,
+   2,
+   9,
+   0,
+   "*"
+  ],
+  [
+   22,
+   6,
+   2,
+   10,
+   0,
+   "*"
+  ],
+  [
+   23,
+   8,
+   7,
+   11,
+   0,
+   "*"
+  ]
+ ],
+ "groups": [
+  {
+   "id": 1,
+   "title": "SOURCE · processed passthrough (live)",
+   "bounding": [
+    -20,
+    -80,
+    780,
+    440
+   ],
+   "color": "#3f8e5a",
+   "font_size": 24,
+   "flags": {}
+  },
+  {
+   "id": 2,
+   "title": "BINC STEREO · DA2 → temporal → hull/DIBR → SBS + eyes · ComfyUI-BincStereo v0.2.0",
+   "bounding": [
+    760,
+    -80,
+    2960,
+    1100
+   ],
+   "color": "#3f789e",
+   "font_size": 24,
+   "flags": {}
+  }
+ ],
+ "config": {},
+ "extra": {},
+ "version": 0.4
+}

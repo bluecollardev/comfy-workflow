@@ -1,0 +1,3 @@
+# Model weights the tracked workflows need. Not in git; fetch-models.sh downloads them.
+# <ComfyUI models subfolder>  <Hugging Face repo id>
+depth_anything  depth-anything/Depth-Anything-V2-Large-hf

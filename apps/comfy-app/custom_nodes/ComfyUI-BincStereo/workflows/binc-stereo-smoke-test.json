@@ -1,0 +1,613 @@
+{
+ "id": "binc-stereo-smoke-test",
+ "revision": 0,
+ "last_node_id": 13,
+ "last_link_id": 12,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "MarkdownNote",
+   "pos": [
+    0,
+    -260
+   ],
+   "size": [
+    1200,
+    220
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "MarkdownNote"
+   },
+   "widgets_values": [
+    "# Binc Stereo — verification graph\n\nAny frame + any depth map (brighter = nearer). No model weights needed. Previews only — nothing is written.\n\n**Pass =** all Binc nodes load (not red), Queue completes, anaglyph shows red/cyan separation that grows toward the camera, `parallax_vis` reads near = dark, `report.summary.ok` is true.\n\nTest pair: copy `<package>/test-input/` to `ComfyUI/input/binc-stereo-test/`. Any image + depth works; a mismatched depth size is resized automatically."
+   ],
+   "title": "READ FIRST"
+  },
+  {
+   "id": 2,
+   "type": "LoadImage",
+   "pos": [
+    0,
+    0
+   ],
+   "size": [
+    320,
+    320
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      8
+     ]
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": []
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LoadImage"
+   },
+   "widgets_values": [
+    "binc-stereo-test/frame-f00120.png",
+    "image"
+   ],
+   "title": "frame"
+  },
+  {
+   "id": 3,
+   "type": "LoadImage",
+   "pos": [
+    0,
+    380
+   ],
+   "size": [
+    320,
+    320
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      9,
+      12
+     ]
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": []
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LoadImage"
+   },
+   "widgets_values": [
+    "binc-stereo-test/depth-f00120-smoothed.png",
+    "image"
+   ],
+   "title": "depth (brighter = nearer)"
+  },
+  {
+   "id": 4,
+   "type": "BincStereoFromDepth",
+   "pos": [
+    380,
+    0
+   ],
+   "size": [
+    430,
+    520
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 8
+    },
+    {
+     "name": "depth",
+     "type": "IMAGE",
+     "link": 9
+    },
+    {
+     "name": "depth_mask",
+     "type": "MASK",
+     "link": null
+    },
+    {
+     "name": "left_fill",
+     "type": "IMAGE",
+     "link": null
+    },
+    {
+     "name": "right_fill",
+     "type": "IMAGE",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "left",
+     "type": "IMAGE",
+     "links": [
+      10
+     ]
+    },
+    {
+     "name": "right",
+     "type": "IMAGE",
+     "links": [
+      11
+     ]
+    },
+    {
+     "name": "sbs",
+     "type": "IMAGE",
+     "links": [
+      2
+     ]
+    },
+    {
+     "name": "anaglyph",
+     "type": "IMAGE",
+     "links": [
+      1
+     ]
+    },
+    {
+     "name": "parallax_vis",
+     "type": "IMAGE",
+     "links": [
+      3
+     ]
+    },
+    {
+     "name": "holes",
+     "type": "MASK",
+     "links": []
+    },
+    {
+     "name": "depth_hull",
+     "type": "IMAGE",
+     "links": [
+      4
+     ]
+    },
+    {
+     "name": "report",
+     "type": "STRING",
+     "links": [
+      6
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "BincStereoFromDepth"
+   },
+   "widgets_values": [
+    "near_is_bright",
+    0.35,
+    1.0,
+    0.25,
+    1.0,
+    "symmetric",
+    1,
+    2,
+    0.04,
+    "background_pushpull",
+    0.06,
+    1,
+    2,
+    "sbs_full"
+   ],
+   "title": "Binc · Stereo from Depth"
+  },
+  {
+   "id": 5,
+   "type": "BincStereoPack",
+   "pos": [
+    380,
+    580
+   ],
+   "size": [
+    430,
+    150
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "left",
+     "type": "IMAGE",
+     "link": 10
+    },
+    {
+     "name": "right",
+     "type": "IMAGE",
+     "link": 11
+    }
+   ],
+   "outputs": [
+    {
+     "name": "packed",
+     "type": "IMAGE",
+     "links": [
+      5
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "BincStereoPack"
+   },
+   "widgets_values": [
+    "over_under_half",
+    true,
+    false
+   ],
+   "title": "Binc · Stereo Pack (over-under half)"
+  },
+  {
+   "id": 6,
+   "type": "BincStereoReport",
+   "pos": [
+    380,
+    780
+   ],
+   "size": [
+    430,
+    220
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "depth",
+     "type": "IMAGE",
+     "link": 12
+    }
+   ],
+   "outputs": [
+    {
+     "name": "report",
+     "type": "STRING",
+     "links": [
+      7
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "BincStereoReport"
+   },
+   "widgets_values": [
+    3840,
+    "near_is_bright",
+    0.35,
+    1.0,
+    0.25,
+    1.0
+   ],
+   "title": "Binc · Parallax Report (depth-only audit)"
+  },
+  {
+   "id": 7,
+   "type": "PreviewImage",
+   "pos": [
+    880,
+    0
+   ],
+   "size": [
+    300,
+    300
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 1
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "PreviewImage"
+   },
+   "widgets_values": [],
+   "title": "anaglyph"
+  },
+  {
+   "id": 8,
+   "type": "PreviewImage",
+   "pos": [
+    1210,
+    0
+   ],
+   "size": [
+    300,
+    300
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 2
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "PreviewImage"
+   },
+   "widgets_values": [],
+   "title": "sbs (left-first)"
+  },
+  {
+   "id": 9,
+   "type": "PreviewImage",
+   "pos": [
+    1540,
+    0
+   ],
+   "size": [
+    300,
+    300
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 3
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "PreviewImage"
+   },
+   "widgets_values": [],
+   "title": "parallax_vis (near = dark)"
+  },
+  {
+   "id": 10,
+   "type": "PreviewImage",
+   "pos": [
+    880,
+    330
+   ],
+   "size": [
+    300,
+    300
+   ],
+   "flags": {},
+   "order": 10,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 4
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "PreviewImage"
+   },
+   "widgets_values": [],
+   "title": "depth_hull"
+  },
+  {
+   "id": 11,
+   "type": "PreviewImage",
+   "pos": [
+    1210,
+    330
+   ],
+   "size": [
+    300,
+    300
+   ],
+   "flags": {},
+   "order": 11,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 5
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "PreviewImage"
+   },
+   "widgets_values": [],
+   "title": "over-under pack"
+  },
+  {
+   "id": 12,
+   "type": "PreviewAny",
+   "pos": [
+    880,
+    680
+   ],
+   "size": [
+    460,
+    300
+   ],
+   "flags": {},
+   "order": 12,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "source",
+     "type": "*",
+     "link": 6
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "PreviewAny"
+   },
+   "widgets_values": [],
+   "title": "report (JSON)"
+  },
+  {
+   "id": 13,
+   "type": "PreviewAny",
+   "pos": [
+    1380,
+    680
+   ],
+   "size": [
+    460,
+    300
+   ],
+   "flags": {},
+   "order": 13,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "source",
+     "type": "*",
+     "link": 7
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "PreviewAny"
+   },
+   "widgets_values": [],
+   "title": "depth-only audit"
+  }
+ ],
+ "links": [
+  [
+   1,
+   4,
+   3,
+   7,
+   0,
+   "IMAGE"
+  ],
+  [
+   2,
+   4,
+   2,
+   8,
+   0,
+   "IMAGE"
+  ],
+  [
+   3,
+   4,
+   4,
+   9,
+   0,
+   "IMAGE"
+  ],
+  [
+   4,
+   4,
+   6,
+   10,
+   0,
+   "IMAGE"
+  ],
+  [
+   5,
+   5,
+   0,
+   11,
+   0,
+   "IMAGE"
+  ],
+  [
+   6,
+   4,
+   7,
+   12,
+   0,
+   "*"
+  ],
+  [
+   7,
+   6,
+   0,
+   13,
+   0,
+   "*"
+  ],
+  [
+   8,
+   2,
+   0,
+   4,
+   0,
+   "IMAGE"
+  ],
+  [
+   9,
+   3,
+   0,
+   4,
+   1,
+   "IMAGE"
+  ],
+  [
+   10,
+   4,
+   0,
+   5,
+   0,
+   "IMAGE"
+  ],
+  [
+   11,
+   4,
+   1,
+   5,
+   1,
+   "IMAGE"
+  ],
+  [
+   12,
+   3,
+   0,
+   6,
+   0,
+   "IMAGE"
+  ]
+ ],
+ "groups": [],
+ "config": {},
+ "extra": {},
+ "version": 0.4
+}
