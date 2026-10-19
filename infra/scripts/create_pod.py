@@ -15,6 +15,15 @@ import json
 import argparse
 from typing import Optional, Dict, Any
 import runpod
+import sys
+from pathlib import Path
+
+# The mounts config lives with the pod manager API (apps/runpod-api/mounts.py); the CLI reuses it when present.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "apps" / "runpod-api"))
+try:
+    import mounts as _mounts
+except Exception:  # API not checked out beside this script: mounts are then given on the command line only
+    _mounts = None
 
 
 class RunPodManager:
@@ -63,6 +72,10 @@ class RunPodManager:
         volume_gb: int = 50,
         container_disk_gb: int = 20,
         image: str = "prebuilt",
+        network_volume: str = "",
+        mount_path: str = "",
+        extra_links: list = None,
+        mounts_apply: bool = True,
         **kwargs,
     ) -> Dict[str, Any]:
         """Create a new on-demand pod.
@@ -95,6 +108,24 @@ class RunPodManager:
         print(f"  Image: {image_name}")
 
         try:
+            # Mounts (docs/MOUNT-POINTS.md): the configured network volume and the COMFY_LINKS the image turns into symlinks.
+            mount_kwargs = {}
+            if _mounts is not None and mounts_apply:
+                cfg = _mounts.load()
+                if network_volume: cfg.network_volume_id = network_volume
+                if mount_path: cfg.mount_path = mount_path
+                for pair in extra_links or []:
+                    path, _, target = pair.partition("=")
+                    cfg.links.append(_mounts.Link(path=path, target=target))
+                ov = _mounts.pod_overrides(cfg)
+                env = dict(ov["env"]); env.update(kwargs.pop("env", {}) or {})
+                mount_kwargs = {"env": env}
+                if ov.get("network_volume_id"):
+                    mount_kwargs.update(network_volume_id=ov["network_volume_id"], volume_mount_path=ov["volume_mount_path"])
+                    if ov.get("data_center_id"): mount_kwargs["data_center_id"] = ov["data_center_id"]
+                print(f"  Mounts: {len(cfg.links)} link(s)" + (f", network volume {ov['network_volume_id']} at {ov['volume_mount_path']}" if ov.get("network_volume_id") else ", no network volume (per-pod disk only)"))
+            elif network_volume:
+                mount_kwargs = {"network_volume_id": network_volume, "volume_mount_path": mount_path or "/workspace"}
             pod = runpod.create_pod(
                 name=name,
                 image_name=image_name,
@@ -102,6 +133,7 @@ class RunPodManager:
                 volume_in_gb=volume_gb,
                 container_disk_in_gb=container_disk_gb,
                 min_bid=gpu_config["bid"],
+                **mount_kwargs,
                 **kwargs,
             )
 
@@ -209,6 +241,10 @@ def main():
     create_parser.add_argument(
         "--volume", type=int, default=50, help="Volume size in GB"
     )
+    create_parser.add_argument("--network-volume", default="", help="RunPod network volume id to attach (persistent; the mounts config's value if omitted)")
+    create_parser.add_argument("--mount-path", default="", help="Where the network volume is mounted in the pod (default /workspace)")
+    create_parser.add_argument("--link", action="append", default=[], metavar="PATH=TARGET", help="Extra binc-PC path to make resolve on the pod, e.g. /mnt/storage/Panama_Redux=/workspace/plates/Panama_Redux (repeatable)")
+    create_parser.add_argument("--no-mounts", action="store_true", help="Do not apply the mounts config (GET /api/mounts, ~/.config/runpod-pod-manager/mounts.json)")
     create_parser.add_argument(
         "--disk", type=int, default=20, help="Container disk size in GB"
     )
@@ -247,6 +283,10 @@ def main():
             name=args.name,
             gpu_type=args.gpu,
             volume_gb=args.volume,
+            network_volume=args.network_volume,
+            mount_path=args.mount_path,
+            extra_links=args.link,
+            mounts_apply=not args.no_mounts,
             container_disk_gb=args.disk,
             image=args.image,
         )

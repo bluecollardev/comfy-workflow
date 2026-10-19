@@ -21,6 +21,7 @@ import logging
 from git_accounts import router as git_accounts_router, credentials_for
 from images import router as images_router, PREBUILT_IMAGE
 from repositories import router as repositories_router
+import mounts
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -50,6 +51,7 @@ app.add_middleware(
 app.include_router(git_accounts_router)
 app.include_router(repositories_router)
 app.include_router(images_router)
+app.include_router(mounts.router)
 
 # ============================================================================
 # Pydantic Models (Type-safe request/response schemas)
@@ -98,6 +100,7 @@ class CreatePodRequest(BaseModel):
     custom_nodes: Optional[list] = Field(default_factory=list, description="Custom node repos")
     start_ssh: bool = Field(default=True, description="Start SSH server")
     start_jupyter: bool = Field(default=False, description="Start Jupyter")
+    apply_mounts: Optional[bool] = Field(default=None, description="Attach the configured network volume and COMFY_LINKS (GET /api/mounts); None = the config's apply_by_default")
 
 
 # ============================================================================
@@ -139,21 +142,33 @@ async def create_pod(request: CreatePodRequest):
             if creds:
                 env_vars['GIT_CREDENTIALS'] = json.dumps(creds)
 
-        pod_input = {
-            "cloudType": request.instance_type,
-            "gpuCount": request.gpu_count,
-            "volumeInGb": request.volume_gb,
-            "containerDiskInGb": request.disk_gb,
-            "minVolumeInGb": request.volume_gb,
-            "gpuTypeId": request.gpu,
-            "name": request.name,
-            "imageName": request.image if request.image != "prebuilt" else PREBUILT_IMAGE,
-            "startJupyter": request.start_jupyter,
-            "startSsh": request.start_ssh,
-            "env": env_vars,
-        }
+        # Mounts: the configured network volume and the binc-PC paths the entrypoint links (docs/MOUNT-POINTS.md).
+        mcfg = mounts.load()
+        apply = mcfg.apply_by_default if request.apply_mounts is None else request.apply_mounts
+        volume_kwargs = {}
+        if apply:
+            ov = mounts.pod_overrides(mcfg)
+            for key, value in ov["env"].items():
+                env_vars.setdefault(key, value)          # explicit env wins
+            if ov.get("network_volume_id"):
+                volume_kwargs = {"network_volume_id": ov["network_volume_id"], "volume_mount_path": ov["volume_mount_path"]}
+                if ov.get("data_center_id"):
+                    volume_kwargs["data_center_id"] = ov["data_center_id"]
 
-        pod = runpod.create_pod(pod_input)
+        # runpod.create_pod takes keyword arguments; cloud_type is ALL / SECURE / COMMUNITY.
+        pod = runpod.create_pod(
+            name=request.name,
+            image_name=request.image if request.image != "prebuilt" else PREBUILT_IMAGE,
+            gpu_type_id=request.gpu,
+            cloud_type={"on-demand": "SECURE", "spot": "COMMUNITY"}.get(request.instance_type, "ALL"),
+            gpu_count=request.gpu_count,
+            volume_in_gb=request.volume_gb,
+            container_disk_in_gb=request.disk_gb,
+            start_ssh=request.start_ssh,
+            ports="8188/http,22/tcp",
+            env=env_vars,
+            **volume_kwargs,
+        )
 
         if not pod or not pod.get('id'):
             raise HTTPException(status_code=500, detail="Failed to create pod")

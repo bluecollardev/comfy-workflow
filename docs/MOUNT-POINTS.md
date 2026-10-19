@@ -50,7 +50,7 @@ instead of our image.
 | binc-PC | they are real |
 | this Mac | the mirror has the tree without plates; nothing resolves at binc-PC's paths until the tree is mounted over SMB or linked. First item in `NEXT-STEPS.md` |
 | Docker on a Linux box, Compose or Swarm | [`apps/comfy-app/docker/compose.yml`](../apps/comfy-app/docker/compose.yml) binds the three mounts from the host at binc-PC's paths, plates read-only |
-| RunPod pod | a network volume at `/workspace` carrying `CANALV2/`, `ComfyUI-Shared/` and `plates/`; the image's entrypoint makes the links from `COMFY_LINKS`; the dashboard's Configuration panel and `create_pod.py --network-volume` set it up |
+| RunPod pod | a network volume at `/workspace` carrying `CANALV2/`, `ComfyUI-Shared/` and `plates/`; the image's entrypoint makes the links from `COMFY_LINKS`. Configured once in the dashboard's Configuration panel (gear icon; `GET`/`PUT /api/mounts`, stored in `~/.config/runpod-pod-manager/mounts.json`, defaults from the JSON above) and applied to every new pod by the API and by `create_pod.py` (`--network-volume`, `--link`, `--no-mounts`) |
 
 Where the pack defaults come from, line by line:
 [`shared/nodes/bound/README.md`](../shared/nodes/bound/README.md). What the

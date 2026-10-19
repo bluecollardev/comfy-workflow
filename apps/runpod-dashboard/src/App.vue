@@ -11,6 +11,9 @@
         <BButton variant="outline-light" size="sm" @click="ui.accountsOpen = true">
           <i class="fa-solid fa-user me-1"></i>Accounts
         </BButton>
+        <BButton variant="outline-light" size="sm" title="Configuration: volume and mount points" aria-label="Configuration" @click="ui.configOpen = true">
+          <i class="fa-solid fa-gear"></i>
+        </BButton>
         <BButton variant="primary" size="sm" :disabled="refreshing" @click="loadDashboard">
           <i class="fa-solid fa-rotate me-1" :class="{ 'fa-spin': refreshing }"></i>
           Refresh
@@ -54,6 +57,7 @@
 
     <RepositoriesModal />
     <GitAccountsModal />
+    <ConfigModal />
   </div>
 </template>
 
@@ -66,7 +70,7 @@
  * Only the very first fetch replaces the page with a spinner; later refreshes
  * just spin the button so the page doesn't flash.
  *
- * Navbar also opens the two global modals (Repositories, Accounts) through the
+ * Navbar also opens the three global modals (Repositories, Accounts, Configuration) through the
  * shared `ui` store, and after an OAuth round-trip the API redirects back here with
  * ?provider=&connected= (or &error=), which is shown as a notice.
  *
@@ -81,6 +85,7 @@ import Dashboard from './components/Dashboard.vue'
 import Stats from './components/Stats.vue'
 import RepositoriesModal from './components/RepositoriesModal.vue'
 import GitAccountsModal from './components/GitAccountsModal.vue'
+import ConfigModal from './components/ConfigModal.vue'
 
 const REFRESH_MS = 30_000
 
