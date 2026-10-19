@@ -106,7 +106,7 @@ All of `docs/`: <https://github.com/bluecollardev/comfy-workflow/tree/develop/do
 | Doc | What it covers |
 |---|---|
 | [`docs/QUICKSTART.md`](docs/QUICKSTART.md) | Three ways to see ComfyUI working in minutes: the RunPod dashboard, a local install, or a real RunPod pod. Comparison and recommended path. |
-| [`docs/SETUP.md`](docs/SETUP.md) | Deploying an on-demand RunPod pod: prerequisites, GPU choice, deployment steps, wiring the `comfy` CLI to it, cost tracking, pod management. |
+| [`docs/SETUP.md`](docs/SETUP.md) | Deploying an on-demand RunPod pod: prerequisites, GPU choice, deployment steps, wiring the `comfy` CLI to it, cost tracking, pod management. Not done yet; status and the CANALV2 plan are in `NEXT-STEPS.md`. |
 | [`docs/LOCAL-SETUP.md`](docs/LOCAL-SETUP.md) | Running ComfyUI on your own machine instead of RunPod: options, hardware, speed comparison, model handling, switching between local and cloud. The current local install is `apps/comfy-app`. |
 | [`docs/WORKFLOWS.md`](docs/WORKFLOWS.md) | How workflows are organised in the `comfy` CLI project format: fragments, blueprints, composing, versioning, testing, best practices. |
 

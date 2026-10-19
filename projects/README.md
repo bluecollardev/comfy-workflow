@@ -83,7 +83,7 @@ checks and places files by these rules.
 | `gen-paint-assets/` | Collects geo mattes and generated paint into `10_CORROSION/Gen_Paint_assets/` and writes `INDEX.csv`. | |
 | `delivery/` | Shell scripts that make the 1080p letterbox review movies, side-by-sides and test-bucket collections for `90_DELIVERIES/`. | |
 | `drive-sync/` | rclone copy of a deliveries folder to the client's Google Drive review folder. Copies only, never deletes. | `./corrosion_drive-copy_v002.sh --dry-run` |
-| `containers/runpod/` | Dockerfiles and setup for running the same graphs on RunPod: `comfy-pod/` (ComfyUI pod on a network volume), `comfy-serverless/`, `solve/` (Blender CPU pod). This is the bridge to the `infra/` tooling in this repo. | Spend needs a named yes; USD 100 cap. |
+| `containers/runpod/` | Dockerfiles and setup for running the same graphs on RunPod: `comfy-pod/` (ComfyUI pod on a network volume), `comfy-serverless/`, `solve/` (Blender CPU pod). This is the bridge to the `infra/` tooling in this repo. | Not started: no pod exists (checked 2026-10-19). Spend needs a named yes; USD 100 cap. Summary in `NEXT-STEPS.md`. |
 | `sysmon/` | Logs machine load to `04_TRACKER/sysmon_*.csv` during queue runs. | |
 | `collector/` | Spec only (`collector.md`). Not built. | |
 
