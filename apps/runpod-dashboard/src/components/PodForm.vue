@@ -150,7 +150,7 @@
                 </BDropdownItem>
                 <BDropdownItem @click="loadEnv('dockerfile')">
                   From the Dockerfile
-                  <small class="d-block text-body-secondary">infra/docker/Dockerfile</small>
+                  <small class="d-block text-body-secondary">apps/comfy-app/Dockerfile</small>
                 </BDropdownItem>
               </BDropdown>
               <BFormCheckbox v-model="envLoad.replace" :unchecked-value="false" switch>Replace existing values</BFormCheckbox>

@@ -2,7 +2,7 @@
   "name": "runpod-pod-manager",
   "productName": "RunPod Manager",
   "version": "1.0.0",
-  "description": "Desktop dashboard for RunPod GPU pods running ComfyUI",
+  "description": "Desktop dashboard for RunPod GPU pods running ComfyUI (apps/runpod-dashboard)",
   "author": "Blue Collar Dev <info@bluecollardev.com>",
   "license": "UNLICENSED",
   "private": true,
@@ -51,8 +51,8 @@
       "!node_modules/**"
     ],
     "extraResources": [
-      { "from": "../dist", "to": "dist" },
-      { "from": "../scripts", "to": "backend", "filter": ["*.py", "requirements.txt"] }
+      { "from": "dist", "to": "dist" },
+      { "from": "../../infra/scripts", "to": "backend", "filter": ["*.py", "requirements.txt"] }
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
