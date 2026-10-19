@@ -48,7 +48,7 @@ comfy_workflow/                    # Root monorepo
 ├── shared/                        # Shared by every app and agent
 │   ├── governance/               # Binc's policies copied in (sync.sh), precedence, what Claude Code loads
 │   ├── shapes/                   # The project's fixed shapes as JSON + check.py
-│   └── nodes/                    # git submodule bluecollardev/comfy-node-packs: ShotPipe v6–v26, BincStereo (docs/NODE-PACKS.md)
+│   └── nodes/                    # git submodule bluecollardev/comfy-node-packs: portable/ and bound/ packs, ShotPipe v6–v26 + BincStereo (docs/NODE-PACKS.md)
 ├── queue/                         # Job files for agents, one folder per project (in/running/done)
 ├── projects/                      # Client/creative work; ignored except README.md
 │   ├── README.md                  # Inventory of what is in here

@@ -47,7 +47,7 @@ storage across those machines is the first gap to close (`NEXT-STEPS.md`).
 ├── shared/                 # Material shared by every app and agent here
 │   ├── governance/         #   rules for agents: Binc's policies copied in (sync.sh), precedence, what Claude Code loads
 │   ├── shapes/             #   the project's fixed shapes as JSON (shot folder, graph, job, report, names) + check.py
-│   └── nodes/              #   git submodule: bluecollardev/comfy-node-packs (ShotPipe v6–v26, BincStereo); sync-nodes.sh refreshes it from the mirror
+│   └── nodes/              #   git submodule bluecollardev/comfy-node-packs: portable/ and bound/ packs (ShotPipe v6–v26, BincStereo); sync-nodes.sh refreshes it
 ├── queue/                  # Job files for agents, one folder per project (queue/canalv2/{in,running,done}), seeded by sync.sh
 ├── AGENTS.md               # Cross-tool entry point for agents; CLAUDE.md imports it
 ├── comfy.yaml              # comfy CLI project config (empty so far)
@@ -140,8 +140,8 @@ belong to BH / Binc and need a named yes before they go anywhere new.
 | Requirement | Needed for | Where it comes from |
 |---|---|---|
 | ComfyUI at the pinned commit (0.39.2) | everything | `apps/comfy-app/setup.sh` clones it; the Dockerfile builds it in |
-| ComfyUI-BH-ShotPipe packs v6–v26 (proprietary) | the corrosion shot graphs (`BH_*`, `BH26_*` nodes); each shot needs the version it was built with | the `shared/nodes` submodule (`bluecollardev/comfy-node-packs`), imported from Binc's tree; link with `COMFY_SHOTPIPE=v26 apps/comfy-app/setup.sh`. Versioning: `docs/NODE-PACKS.md` |
-| ComfyUI-BincStereo (proprietary) | the stereo workflows | the `shared/nodes` submodule; always linked by `setup.sh` |
+| ComfyUI-BH-ShotPipe packs v6–v26 (proprietary) | the corrosion shot graphs (`BH_*`, `BH26_*` nodes); each shot needs the version it was built with | the `shared/nodes` submodule (`bluecollardev/comfy-node-packs`), imported from Binc's tree and split into `portable/` (v8–v14, v16, v26) and `bound/` (CANALV2 paths baked in: v6, v7, v15, v17, v20–v25); link with `COMFY_SHOTPIPE=v26 apps/comfy-app/setup.sh`. Versioning and the split: `docs/NODE-PACKS.md` |
+| ComfyUI-BincStereo (proprietary) | the stereo workflows | `shared/nodes/portable/`; always linked by `setup.sh` |
 | Python: torch (MPS on the Mac, CUDA 12.6 on Linux), numpy, scipy, opencv-python-headless, av, Pillow, matplotlib; PyOpenColorIO for the v2/v3 ACEScg graphs only | the node packs | `apps/comfy-app/requirements-*.txt`; the project's `containers/runpod/requirements-bh.txt` |
 | Depth Anything V2 Large weights | BincStereo depth | Hugging Face via `fetch-models.sh` (`HF_TOKEN` for gated repos) |
 | Blender as `bpy` 5.0.1, COLMAP | camera track and solve, before a graph runs; CPU only | the project's `solve/`, `solve-blender/` scripts and `containers/runpod/solve/` image |

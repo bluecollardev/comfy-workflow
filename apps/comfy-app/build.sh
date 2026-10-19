@@ -42,7 +42,9 @@ rm -rf "$HERE/.build" && mkdir -p "$STAGE"
 
 NODES="${COMFY_NODES_DIR:-$REPO/shared/nodes}"
 [ -f "$NODES/README.md" ] || git -C "$REPO" submodule update --init --depth 1 shared/nodes
-for d in "$NODES"/*/; do
+pack_dir() { for f in portable bound; do [ -d "$NODES/$f/$1" ] && { echo "$NODES/$f/$1"; return; }; done; return 1; }
+for d in "$NODES"/portable/*/ "$NODES"/bound/*/; do
+  [ -d "$d" ] || continue
   n="$(basename "$d")"; case "$n" in ComfyUI-BH-ShotPipe-*) continue ;; esac
   rsync -a --exclude __pycache__ --exclude tests --exclude test-input "$d" "$STAGE/$n/"; echo "staged: $n"
 done
@@ -50,8 +52,7 @@ PACKS_REV="$(git -C "$NODES" rev-parse --short HEAD 2>/dev/null || echo unknown)
 IFS=, read -ra VERSIONS <<< "$SHOTPIPE"
 for v in "${VERSIONS[@]}"; do
   [ -n "$v" ] || continue
-  src="$NODES/ComfyUI-BH-ShotPipe-$v"
-  [ -d "$src" ] || { echo "no ShotPipe $v at $src" >&2; exit 1; }
+  src="$(pack_dir "ComfyUI-BH-ShotPipe-$v")" || { echo "no ShotPipe $v in $NODES/portable or bound" >&2; exit 1; }
   rsync -a --exclude __pycache__ "$src/" "$STAGE/ComfyUI-BH-ShotPipe-$v/"
   echo "staged: ComfyUI-BH-ShotPipe-$v"
 done

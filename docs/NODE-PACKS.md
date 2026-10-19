@@ -8,6 +8,25 @@ there: `apps/comfy-app/setup.sh` symlinks them into the Mac install,
 packs from Binc's mirror any more; `shared/sync-nodes.sh` is the one path
 from the mirror into the submodule.
 
+## Two folders: portable/ and bound/
+
+Since tag `packs-2026-10-19b` every pack sits in one of two folders of the
+packs repo, decided by its contents, not by hand:
+
+| Folder | Rule | Today |
+|---|---|---|
+| `portable/` | no absolute binc-PC path anywhere in the pack's Python; usable on another project as is | ShotPipe v8–v14, v16, v26; BincStereo |
+| `bound/` | CANALV2 paths (`/home/binc/…`, `/mnt/storage/…`) baked in as widget defaults; fine for CANALV2, where every runtime mounts those paths, not elsewhere untouched | ShotPipe v6, v7, v15, v17, v20–v25 |
+
+`setup.sh`, `build.sh` and `sync-nodes.sh` look in both, so the split changes
+nothing for an install. A pack never moves between the folders and is never
+edited to become portable: a clean rewrite is a new version with a new prefix,
+and it lands in `portable/`. The packs repo's `tools/manifest.py` regenerates
+`packs.json`, `docs/NODES.md` and `docs/PORTABILITY.md` (every baked path by
+file and line) and fails if a pack's contents disagree with its folder;
+`sync-nodes.sh` runs it after an import. All 14 current corrosion graphs use
+v26, which is portable.
+
 ## Three layers of version
 
 | Layer | Versioned by | Moves when |

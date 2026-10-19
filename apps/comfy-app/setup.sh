@@ -7,7 +7,7 @@
 # What ends up where (ComfyUI/ is ignored by git; everything else is tracked):
 #   ComfyUI/                       upstream clone at pins.env COMFYUI_REF, unmodified
 #   ComfyUI/.venv                  uv venv on Python 3.13 (uses standalone-env/ when present)
-#   ComfyUI/custom_nodes/<pack>    symlink -> shared/nodes/<pack> (the comfy-node-packs submodule)
+#   ComfyUI/custom_nodes/<pack>    symlink -> shared/nodes/{portable,bound}/<pack> (the comfy-node-packs submodule)
 #   ComfyUI/user/default/workflows symlink -> workflows/
 #   ComfyUI/models/                weights, see fetch-models.sh
 set -euo pipefail
@@ -58,8 +58,12 @@ if [ ! -f "$NODES/README.md" ]; then
   echo "fetching the node packs submodule (shared/nodes)"
   git -C "$REPO" submodule update --init --depth 1 shared/nodes
 fi
+# Packs sit in portable/ (no binc-PC paths in them) or bound/ (CANALV2 paths as
+# defaults); see shared/nodes/docs/PORTABILITY.md. A pack is found in either.
+pack_dir() { for f in portable bound; do [ -d "$NODES/$f/$1" ] && { echo "$NODES/$f/$1"; return; }; done; return 1; }
 # Every pack that is not a ShotPipe version (BincStereo today) is always linked.
-for dir in "$NODES"/*/; do
+for dir in "$NODES"/portable/*/ "$NODES"/bound/*/; do
+  [ -d "$dir" ] || continue
   name="$(basename "$dir")"
   case "$name" in ComfyUI-BH-ShotPipe-*) continue ;; esac
   ln -sfn "$dir" "$APP/custom_nodes/$name"
@@ -72,8 +76,7 @@ for old in "$APP"/custom_nodes/ComfyUI-BH-ShotPipe-*; do [ -L "$old" ] && rm "$o
 if [ -n "${COMFY_SHOTPIPE:-}" ]; then
   IFS=, read -ra VERSIONS <<< "$COMFY_SHOTPIPE"
   for v in "${VERSIONS[@]}"; do
-    src="$NODES/ComfyUI-BH-ShotPipe-$v"
-    [ -d "$src" ] || { echo "no ShotPipe $v in $NODES" >&2; exit 1; }
+    src="$(pack_dir "ComfyUI-BH-ShotPipe-$v")" || { echo "no ShotPipe $v in $NODES/portable or bound" >&2; exit 1; }
     ln -sfn "$src" "$APP/custom_nodes/ComfyUI-BH-ShotPipe-$v"
     echo "linked custom_nodes/ComfyUI-BH-ShotPipe-$v"
   done
