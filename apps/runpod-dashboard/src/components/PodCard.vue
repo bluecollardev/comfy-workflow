@@ -37,6 +37,8 @@
         <button type="button" class="btn btn-link btn-sm p-0 ms-2 align-baseline" :title="$t('pod.copyId')" data-testid="pod-copy-id" @click="copyId"><i class="fa-regular fa-copy fa-xs"></i></button>
       </dd>
 
+      <div v-if="pods.hostFull === pod.id" class="col-12 small text-warning" data-testid="pod-host-full">{{ $t('pod.hostFull') }}</div>
+
       <template v-if="pod.status_text">
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.statusText') }}</dt>
         <dd class="col-8 mb-0 small" data-testid="pod-status-text">{{ pod.status_text }}</dd>
@@ -101,6 +103,18 @@
       >
         <i class="fa-solid fa-play me-1"></i>{{ $t('pod.resume') }}
       </BButton>
+      <BButton
+        v-if="pod.status === 'stopped'"
+        :variant="pods.hostFull === pod.id ? 'warning' : 'outline-light'"
+        size="sm"
+        class="flex-fill"
+        :disabled="busy"
+        :title="$t('pod.recreateTitle')"
+        data-testid="pod-recreate"
+        @click="confirmRecreate"
+      >
+        <i class="fa-solid fa-rotate me-1"></i>{{ $t('pod.recreate') }}
+      </BButton>
       <BButton variant="outline-danger" size="sm" class="flex-fill" :disabled="busy" data-testid="pod-delete" @click="confirmDelete">
         <i class="fa-solid fa-trash me-1"></i>{{ $t('pod.delete') }}
       </BButton>
@@ -158,6 +172,10 @@ async function toggleDetails() {
 
 async function copyId() {
   try { await navigator.clipboard.writeText(props.pod.id); toast.info(t('pod.copied')) } catch { /* clipboard blocked: the id is still on screen */ }
+}
+
+function confirmRecreate() {
+  if (window.confirm(t('pod.confirmRecreate', { name: props.pod.name }))) pods.recreate(props.pod.id)
 }
 
 function confirmDelete() {

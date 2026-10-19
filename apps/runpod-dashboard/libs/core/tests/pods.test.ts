@@ -116,6 +116,26 @@ describe('against RunPod', () => {
     await expect(pods.create({ name: 't', gpu: 'auto' }, { fetchFn: f3 })).rejects.toThrow(/No card available right now: tried .* on COMMUNITY and SECURE/)
   })
 
+  it('recreate makes the same pod on another host and drops the old one', async () => {
+    const cfg = mounts.defaults(); cfg.image = 'ghcr.io/example/comfy-app:v26'; mounts.save(cfg)
+    idle.register('old1', 15)
+    const { fetchFn, queries } = fakeFetch((q) => {
+      if (q.includes('podFindAndDeployOnDemand')) return { podFindAndDeployOnDemand: { id: 'new1' } }
+      if (q.includes('podTerminate')) return { podTerminate: null }
+      return {}
+    })
+    const restFetch = (async (url: string, init: { body?: string; headers?: Record<string, string> }) => {
+      if (String(url).includes('/v2/pods/old1')) return { ok: true, status: 200, json: async () => ({ id: 'old1', name: 'Live-Proof', desiredStatus: 'EXITED', lastStatusChange: 'Exited by user', cost: 0.28, cloud: 'SECURE', dataCenterId: 'EUR-IS-1', gpu: { id: 'NVIDIA RTX 4000 Ada Generation', count: 1 }, image: 'ashleykza/comfyui:latest', disk: 20, volume: 0, actions: ['start', 'terminate'] }) }
+      return (fetchFn as unknown as (u: string, i: unknown) => Promise<unknown>)(url, init)
+    }) as unknown as typeof fetch
+    const fresh = await pods.recreate('old1', { fetchFn: restFetch })
+    expect(fresh.id).toBe('new1'); expect(fresh.name).toBe('Live-Proof'); expect(fresh.idle_stop_minutes).toBe(15)
+    const deploy = queries.find((q) => q.includes('podFindAndDeployOnDemand'))!
+    expect(deploy).toContain('name: "Live-Proof"'); expect(deploy).toContain('imageName: "ashleykza/comfyui:latest"'); expect(deploy).toContain('gpuTypeId: "NVIDIA RTX 4000 Ada Generation"'); expect(deploy).toContain('cloudType: SECURE'); expect(deploy).toContain('containerDiskInGb: 20')
+    expect(queries.some((q) => q.includes('podTerminate') && q.includes('old1'))).toBe(true)
+    expect(idle.entry('old1')).toBeUndefined(); expect(idle.entry('new1')?.minutes).toBe(15)
+  })
+
   it('surfaces RunPod errors and a missing key', async () => {
     const { fetchFn } = fakeFetch(() => ({ errors: [{ message: 'There are no longer any instances available with the requested specifications.' }] }))
     await expect(rp.stopPod('x', { fetchFn })).rejects.toThrow(/no longer any instances/)

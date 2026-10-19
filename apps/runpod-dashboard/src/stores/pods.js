@@ -90,11 +90,28 @@ export const usePodsStore = defineStore('pods', () => {
     await load()
     return r
   }
-  const resume = async (id) => { const r = await act(id, podsAPI.resumePod, 'Resume'); if (r.ok) startAutoRefresh(); return r }
+  const HOST_FULL = /not enough free GPUs on the host/i
+  const resume = async (id) => {
+    const r = await act(id, podsAPI.resumePod, 'Resume')
+    if (r.ok) startAutoRefresh()
+    else if (HOST_FULL.test(errorText(r.error))) { hostFull.value = id; toast.info(t('toast.hostFull')) }
+    return r
+  }
+  const hostFull = ref(null)   // the stopped pod whose host has no free GPU: its card offers Recreate
+
+  /** A fresh pod with the same settings on another host; the old one is terminated. */
+  async function recreate(id) {
+    busyPodId.value = id
+    actionError.value = null
+    const r = await toast.run(t('toast.recreatePod'), () => podsAPI.recreate(id), { ok: t('toast.podRecreated'), onError: (msg) => (actionError.value = msg) })
+    if (r.ok) { hostFull.value = null; await load(); startAutoRefresh() }
+    busyPodId.value = null
+    return r
+  }
 
   /** The pod as RunPod describes it, for the card's details panel. */
   const details = (id) => podsAPI.details(id)
   const remove = (id) => act(id, podsAPI.deletePod, 'Delete')
 
-  return { stats, pods, dryRun, initialLoading, refreshing, loadError, actionError, busyPodId, load, refreshList, startAutoRefresh, stopAutoRefresh, create, stop, stopAll, resume, remove, details }
+  return { stats, pods, dryRun, initialLoading, refreshing, loadError, actionError, busyPodId, load, refreshList, startAutoRefresh, stopAutoRefresh, create, stop, stopAll, resume, remove, details, recreate, hostFull }
 })

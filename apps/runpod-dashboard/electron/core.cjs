@@ -39,6 +39,7 @@ const TABLE = {
     gpus: (c) => ({ default: c.gpus.DEFAULT_GPU, gpus: c.gpus.menu() }),
     setIdle: (c, id, minutes) => { c.idle.register(id, Number(minutes)); return { pod_id: id, idle_stop_minutes: Math.max(Number(minutes), 0) } },
     details: (c, id) => c.pods.details(id),
+    recreate: (c, id) => c.pods.recreate(id),
   },
   governance: {
     summary: (c) => c.governance.summary(),

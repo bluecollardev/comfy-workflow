@@ -29,7 +29,9 @@ describe('no-spend mode', () => {
     expect((await pods.list())[0].status).toBe('stopped')
     await pods.resume(created.id)
     expect(await pods.runningIds()()).toEqual(new Set([created.id]))
-    await pods.remove(created.id)
+    const again = await pods.recreate(created.id)
+    expect(again.id).not.toBe(created.id); expect(again.name).toBe('sim'); expect((await pods.list()).length).toBe(1)
+    await pods.remove(again.id)
     expect((await pods.list()).length).toBe(0); expect(idle.entry(created.id)).toBeUndefined()
     await expect(pods.stop('nope')).rejects.toThrow(/not found/)
     // the image rule still applies: a bare local name is refused even when nothing would be pulled

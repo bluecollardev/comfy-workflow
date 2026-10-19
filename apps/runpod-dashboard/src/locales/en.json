@@ -57,7 +57,11 @@
     "logsError": "log stream: {error}",
     "loadingDetails": "Asking RunPod…",
     "logsTitle": "Logs: {name}",
-    "logsHint": "RunPod's container and system lines, the last 100 then live"
+    "logsHint": "RunPod's container and system lines, the last 100 then live",
+    "recreate": "Recreate",
+    "recreateTitle": "A fresh pod with the same settings on another host; this one is deleted. Nothing is lost without a per-pod volume.",
+    "confirmRecreate": "Recreate \"{name}\" on another host? This pod is deleted and a new one is created with the same name, image, card choice and idle stop.",
+    "hostFull": "RunPod keeps a stopped pod on the host it ran on, and that host has no free GPU right now. Wait and try Resume again, or Recreate on another host."
   },
   "form": {
     "name": "Name",
@@ -196,6 +200,9 @@
     "disconnected": "Disconnected {name}",
     "pauseAll": "Pause all",
     "pausedAll": "{n} pod(s) stopped; nothing is billing GPU time",
-    "nothingRunning": "No pod is running; nothing to pause"
+    "nothingRunning": "No pod is running; nothing to pause",
+    "hostFull": "The pod's host has no free GPU. Recreate makes the same pod on another host.",
+    "recreatePod": "Recreate pod",
+    "podRecreated": "Pod recreated on another host"
   }
 }

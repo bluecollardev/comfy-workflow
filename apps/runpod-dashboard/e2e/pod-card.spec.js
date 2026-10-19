@@ -50,4 +50,19 @@ test.describe('pod card', () => {
     await modal.getByLabel('Close').click()
     await expect(page.getByTestId('pod-logs')).toHaveCount(0)
   })
+
+  test('when the host has no free GPU, the card says so and Recreate makes the pod on another host', async ({ page, api }) => {
+    api.state.failures['POST /pods/pod-bbbbbbbb/resume'] = 'There are not enough free GPUs on the host machine to start this pod.'
+    page.on('dialog', (d) => d.accept())
+    await page.goto('/')
+    const card = podCard(page, 'ComfyUI-Batch')
+    await card.getByTestId('pod-resume').click()
+    await expect(card.getByTestId('pod-host-full')).toHaveText(t('pod.hostFull'))
+    await expect(page.getByTestId('toast').last()).toContainText(t('toast.hostFull'))
+    await card.getByTestId('pod-recreate').click()
+    await expect(page.getByTestId('toast').last()).toContainText(t('toast.podRecreated'))
+    expect(api.calls).toContainEqual(expect.objectContaining({ method: 'POST', path: '/pods/pod-bbbbbbbb/recreate' }))
+    await expect(podCard(page, 'ComfyUI-Batch').getByTestId('pod-id')).toHaveText('pod-re-bbbb')
+    await expect(podCard(page, 'ComfyUI-Batch').getByTestId('pod-status')).toHaveText('starting')
+  })
 })

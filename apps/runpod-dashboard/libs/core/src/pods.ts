@@ -201,3 +201,26 @@ export async function logs(podId: string, opts: { tail?: number; since?: string;
   }
   return rp.streamLogs(podId, opts, onEvent, signal, client)
 }
+
+/** RunPod pins a stopped pod to its host; when that host has no free GPU, Resume fails. Recreate makes a
+ *  fresh pod with the same name, image, card choice, disk and idle stop on whatever host is free, and
+ *  terminates the old one. With no per-pod volume nothing is lost; a network volume follows the new pod. */
+export async function recreate(podId: string, client?: rp.RunPodClient): Promise<PodStatus> {
+  if (isDry()) {
+    const old = dry.list().find((x) => x.id === podId)
+    if (!old) throw new CoreError(404, `Pod ${podId} not found`)
+    dry.remove(podId)
+    return dry.create({ name: old.name, gpu: gpuKey(old.gpu.split(' x')[0]) || gpus.DEFAULT_GPU, gpu_count: 1, image: 'simulated', idle_stop_minutes: old.idle_stop_minutes })
+  }
+  const d = await details(podId, client)
+  const key = gpuKey(d.gpu)
+  const req: CreatePodRequest = {
+    name: d.name || 'pod', gpu: key in gpus.GPUS ? key : gpus.AUTO, gpu_count: d.gpu_count || 1,
+    instance_type: d.cloud === 'COMMUNITY' ? 'spot' : 'on-demand', image: d.image || 'configured', disk_gb: d.disk_gb || 20,
+    idle_stop_minutes: idle.entry(podId)?.minutes ?? null, apply_mounts: null,
+  }
+  const fresh = await create(req, client)
+  await rp.terminatePod(podId, client)
+  idle.forget(podId)
+  return fresh
+}

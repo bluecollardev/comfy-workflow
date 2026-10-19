@@ -142,6 +142,14 @@ export async function mockApi(page, state) {
       const body = lines.map((line, i) => `id: 2026-10-19T11:02:2${i}Z\ndata: ${JSON.stringify({ source: 'system', line, ts: `2026-10-19T11:02:2${i}Z` })}\n\n`).join('')
       return route.fulfill({ status: 200, contentType: 'text/event-stream', body })
     }
+    if ((m = path.match(/^\/pods\/([^/]+)\/recreate$/)) && method === 'POST') {
+      const i = state.pods.findIndex((p) => p.id === m[1])
+      if (i < 0) return json({ detail: 'not found' }, 404)
+      const old = state.pods.splice(i, 1)[0]
+      const pod = { ...old, id: `pod-re-${old.id.slice(-4)}`, status: 'starting' }
+      state.pods.push(pod)
+      return json(pod)
+    }
     if ((m = path.match(/^\/pods\/([^/]+)\/(stop|resume)$/)) && method === 'POST') {
       const pod = state.pods.find((p) => p.id === m[1])
       pod.status = m[2] === 'stop' ? 'stopped' : 'running'
