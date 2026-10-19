@@ -11,7 +11,7 @@ read-only mirror of the client project (`projects/desktop/`). The goal it
 serves is in `README.md`, "Goal".
 
 **Rules, in order.**
-1. `governance/binc/policy/agent-permissions.md` for anything touching the
+1. `governance/policy/agent-permissions.md` for anything touching the
    CANALV2 job: read-only on locked shots, named yes for installs, spend and
    anything leaving the machine, USD 100 cap, stop and report on ambiguity.
 2. `.claude/rules/binc-tree.md`: never write into `projects/desktop/`.

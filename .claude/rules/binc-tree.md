@@ -18,4 +18,4 @@ Enforcement: `.claude/hooks/protect-binc-tree.sh` (PreToolUse) blocks Edit,
 Write and NotebookEdit under `projects/desktop/`. Shell commands are not
 intercepted; this rule covers them. When an agent runs *inside* the CANALV2
 job (on binc-PC, against its queue), Binc's own
-`governance/binc/policy/agent-permissions.md` applies on top.
+`governance/policy/agent-permissions.md` applies on top.

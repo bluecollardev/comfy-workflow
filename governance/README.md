@@ -4,12 +4,12 @@ The rules agents and people follow in this repo, in one place.
 
 ## Precedence
 
-1. **Binc's policies** (`binc/`) govern anything that touches the CANALV2 job:
-   its tree, its shots, its plates, its client. `binc/policy/agent-permissions.md`
+1. **Binc's policies** (`policy/`, `workflow/`, `operator-brief.md`) govern anything that touches the CANALV2 job:
+   its tree, its shots, its plates, its client. `policy/agent-permissions.md`
    is the page that says what an agent may do, needs a named yes for, and must
-   never do. `binc/operator-brief.md` is how an agent runs one job from the
+   never do. `operator-brief.md` is how an agent runs one job from the
    queue. These are copies; the master is Binc's tree on binc-PC, mirrored at
-   `projects/desktop/CANALV2/`. Edit nothing in `binc/`; run `./sync.sh`.
+   `projects/desktop/CANALV2/`. Edit none of those copies; run `./sync.sh`.
 2. **This repo's rules** (`.claude/rules/`) govern how work is done here:
    branches and merges, and that the mirror is read-only.
 3. **`CLAUDE.md`** and **`AGENTS.md`** at the root are the working guide and
@@ -27,17 +27,18 @@ copied in this (private) repo; the mirror itself is still never written to.
 | `AGENTS.md` | The same in the cross-tool format other agents read; imported by `CLAUDE.md` | Yes, through the import; other agents read it directly |
 | `.claude/rules/*.md` | One enforced rule per file | Yes, every session (the directory, not a single `rules.md`) |
 | `.claude/hooks/protect-binc-tree.sh` | Blocks Edit/Write under `projects/desktop/` | Runs before every edit, via `.claude/settings.json` |
-| `governance/binc/policy/` | Binc's 33 policy pages | On demand |
-| `governance/binc/governance/` | Workflow rules, sign-off, decisions | On demand |
-| `governance/binc/operator-brief.md` | The one-job operator brief (their `CLAUDE.md`, renamed so it is not picked up as ours) | On demand |
-| `governance/binc/MANIFEST.md` | What was copied, from where, when, with checksums | |
+| `governance/policy/` | Binc's 33 policy pages (their `00_POLICY/`) | On demand |
+| `governance/workflow/` | Workflow rules, sign-off, decisions (their `01_GOVERNANCE/`) | On demand |
+| `governance/CANALV2-README.md` | Their one-screen index of the tree | On demand |
+| `governance/operator-brief.md` | The one-job operator brief (their `CLAUDE.md`, renamed so it is not picked up as ours) | On demand |
+| `governance/MANIFEST.md` | What was copied, from where, when, with checksums | |
 | `docs/ADR-*.md` | Decisions about this repo's own architecture | On demand |
 
 ## Enforcement, and how it maps to Binc's agent permissions
 
 Instruction files are context, not enforcement; Claude Code's docs say so.
 A PreToolUse hook runs before a tool call and can block it, which is the
-only mechanical enforcement available. Against `binc/policy/agent-permissions.md`:
+only mechanical enforcement available. Against `policy/agent-permissions.md`:
 
 | Binc's rule | Enforced here by | Status |
 |---|---|---|
@@ -60,4 +61,4 @@ decision for when an agent first runs against the job from this repo.
 
 The manifest's checksums show what changed. If Binc's policy and ours ever
 conflict, the fix is a conversation with Binc and a dated note in
-`docs/`, not an edit to `binc/`.
+`docs/`, not an edit to the copies.

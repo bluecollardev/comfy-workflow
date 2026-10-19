@@ -1,15 +1,12 @@
 # Manifest
 
-Copied by `governance/sync.sh` on 2026-10-19T06:19Z from `/Users/lucas/Workspaces/comfy_workflow/governance/../projects/desktop/CANALV2`
+Copied by `governance/sync.sh` on 2026-10-19T06:21Z from `/Users/lucas/Workspaces/comfy_workflow/governance/../projects/desktop/CANALV2`
 (mirror of `/home/binc/CANALV2_r3/CANALV2` on binc-PC). The mirror is the
 source; edit nothing here, re-run the sync.
 
 | Here | From | sha256 (first 12) |
 |---|---|---|
-| `README.md` | `README.md` | `2fa44fc5ba60` |
-| `governance/decisions_v001.md` | `01_GOVERNANCE/decisions_v001.md` | `2c08a666d395` |
-| `governance/hitl-signoff.md` | `01_GOVERNANCE/hitl-signoff.md` | `8afb11c1f9b6` |
-| `governance/workflow-rules.md` | `01_GOVERNANCE/workflow-rules.md` | `17211616bf18` |
+| `CANALV2-README.md` | `README.md` | `2fa44fc5ba60` |
 | `operator-brief.md` | `CLAUDE.md` | `34f3d764167d` |
 | `policy/00_READ_ME.md` | `00_POLICY/00_READ_ME.md` | `08f83d65dc5c` |
 | `policy/agent-permissions.md` | `00_POLICY/agent-permissions.md` | `fd97f4d7ce87` |
@@ -44,3 +41,6 @@ source; edit nothing here, re-run the sync.
 | `policy/systems_v001.md` | `00_POLICY/systems_v001.md` | `54cc3ec0732f` |
 | `policy/systems_v002.md` | `00_POLICY/systems_v002.md` | `98b3c5a9181b` |
 | `policy/versioning.md` | `00_POLICY/versioning.md` | `9495536988ec` |
+| `workflow/decisions_v001.md` | `01_GOVERNANCE/decisions_v001.md` | `2c08a666d395` |
+| `workflow/hitl-signoff.md` | `01_GOVERNANCE/hitl-signoff.md` | `8afb11c1f9b6` |
+| `workflow/workflow-rules.md` | `01_GOVERNANCE/workflow-rules.md` | `17211616bf18` |
