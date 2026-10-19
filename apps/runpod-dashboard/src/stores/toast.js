@@ -34,20 +34,20 @@ export const toast = {
 
   /**
    * Run an action and toast its outcome. `label` names it for people ("Stop pod");
-   * `ok` is the success line (default "<label> done"). Returns the action's value, or
-   * `undefined` when it failed; the failure is toasted and passed to `onError` if given,
-   * so a modal can also show it inline.
+   * `ok` is the success line (default "<label> done"). Returns `{ ok: true, value }` or
+   * `{ ok: false, error }`: a void action is still a success. The failure is toasted and
+   * passed to `onError` if given, so a modal can also show it inline.
    */
   async run(label, action, { ok, onError } = {}) {
     try {
       const value = await action()
       toast.success(ok || `${label} done`)
-      return value
+      return { ok: true, value }
     } catch (e) {
       const text = `${label} failed: ${errorText(e)}`
       toast.error(text)
       onError?.(text, e)
-      return undefined
+      return { ok: false, error: e }
     }
   },
 }

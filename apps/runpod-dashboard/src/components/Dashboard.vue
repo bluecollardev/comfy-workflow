@@ -100,8 +100,8 @@ const DONE = { Stop: 'Pod stopped', Resume: 'Pod resumed', Delete: 'Pod deleted'
 async function runAction(podId, action, label) {
   busyPodId.value = podId
   error.value = null
-  const ok = await toast.run(`${label} pod`, () => action(podId), { ok: DONE[label], onError: (t) => (error.value = t) })
-  if (ok !== undefined) {
+  const r = await toast.run(`${label} pod`, () => action(podId), { ok: DONE[label], onError: (t) => (error.value = t) })
+  if (r.ok) {
     try { await refreshPods() } catch (e) { error.value = `The list failed to refresh: ${e.message}` }
   }
   busyPodId.value = null

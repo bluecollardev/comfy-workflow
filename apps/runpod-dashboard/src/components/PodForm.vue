@@ -679,7 +679,7 @@ async function submit() {
     customNodes: parseCustomNodes(form.customNodes),
   }), { ok: `Pod ${name} created`, onError: (t) => (error.value = t) })
   submitting.value = false
-  if (created === undefined) return
+  if (!created.ok) return
   reset()
   emit('pod-created')
 }

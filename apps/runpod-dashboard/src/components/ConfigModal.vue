@@ -235,17 +235,17 @@ const previewText = computed(() => {
 
 async function save() {
   saving.value = true; error.value = null
-  const saved = await toast.run('Save configuration', () => mountsAPI.save(body()), { ok: 'Configuration saved', onError: (t) => (error.value = t) })
+  const r = await toast.run('Save configuration', () => mountsAPI.save(body()), { ok: 'Configuration saved', onError: (t) => (error.value = t) })
   saving.value = false
-  if (!saved) return
-  take(saved); ui.mountsVersion++
+  if (!r.ok) return
+  take(r.value); ui.mountsVersion++
   ui.configOpen = false
 }
 
 async function reset() {
   saving.value = true; error.value = null
-  const cleared = await toast.run('Clear configuration', () => mountsAPI.reset(), { ok: 'Configuration cleared', onError: (t) => (error.value = t) })
+  const r = await toast.run('Clear configuration', () => mountsAPI.reset(), { ok: 'Configuration cleared', onError: (t) => (error.value = t) })
   saving.value = false
-  if (cleared) { take(cleared); ui.mountsVersion++ }
+  if (r.ok) { take(r.value); ui.mountsVersion++ }
 }
 </script>

@@ -40,6 +40,9 @@ export function defaultState() {
     imageEnv: [{ key: 'COMFYUI_PORT', value: '8188' }, { key: 'HF_TOKEN', value: '' }],
     imageBuildArgs: [],
     imageEnvSkipped: 0,
+    // The mount configuration (GET /mounts): the image every pod boots and the idle default.
+    mounts: { config: { image: 'ghcr.io/example/comfy-app:v26', idle_stop_minutes: 30, network_volume_id: '', mount_path: '/workspace', apply_by_default: true, folders: { project: '', plates: '', 'comfy-shared': '' }, custom: [], env: {}, links: [], required: {} }, folders: [], links: [], mode: 'dev', require: [], require_source: 'config', stored: false, store: '', local_env: {}, preview: { env: {} }, catalog: {} },
+    gpus: { default: 'rtx4090', gpus: [{ value: 'a4000', text: 'RTX A4000 (16 GB)' }, { value: 'rtx4090', text: 'RTX 4090 (24 GB)' }] },
     failures: {},
   }
 }
@@ -79,6 +82,8 @@ export async function mockApi(page, state) {
 
     let m
     // pods
+    if (method === 'GET' && path === '/mounts') return json(state.mounts)
+    if (method === 'GET' && path === '/gpus') return json(state.gpus)
     if (method === 'GET' && path === '/dashboard') return json({ stats: stats(state.pods), pods: state.pods })
     if (method === 'GET' && path === '/pods') return json(state.pods)
     if (method === 'POST' && path === '/pods') {
