@@ -17,6 +17,8 @@ confirmed against real files, it says "observed". The prose versions are
 | `report.json` | The report a job must produce, and the words it must not contain |
 | `sidecar.json` | `.meta.json` beside a generated file: policy fields and the fields observed in the paint metadata |
 | `names.json` | Every naming pattern as a regex, with examples and the exceptions pointer |
+| [`../nodes/shapes/node-pack.json`](../nodes/shapes/node-pack.json) | The shape of a custom node pack folder: required files, the `[tool.packs]` table, naming, portable/bound placement, versioning. Published in the packs repo (`comfy-node-packs`), where `tools/manifest.py` enforces it; `check.py pack <dir>` reads it from the submodule. |
+| [`../nodes/shapes/packs-repo.json`](../nodes/shapes/packs-repo.json) | The layout of the packs repo itself. |
 
 `check.py` validates real things against them, read-only:
 
@@ -24,7 +26,8 @@ confirmed against real files, it says "observed". The prose versions are
 shared/shapes/check.py project projects/desktop/CANALV2
 shared/shapes/check.py shot    projects/desktop/CANALV2/10_CORROSION/corrosion-051
 shared/shapes/check.py job     queue/canalv2/in/job_001_corrosion-058_blender-full-carry.md
-shared/shapes/check.py name    corrosion-058_graph_v021.json solve_SA_v006.npz
+shared/shared/shapes/check.py name    corrosion-058_graph_v021.json solve_SA_v006.npz
+shared/shared/shapes/check.py pack    shared/nodes/portable/ComfyUI-BH-ShotPipe-v26
 ```
 
 The JSON is a plain, self-describing format, not JSON Schema: `entries` with

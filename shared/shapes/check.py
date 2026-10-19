@@ -5,6 +5,7 @@
   shared/shapes/check.py shot <shot-folder>  against shot-folder.json
   shared/shapes/check.py job <job.md>        against job-file.json template fields
   shared/shapes/check.py name <string>...    which names.json pattern each matches
+  shared/shapes/check.py pack <pack-folder>  against the node-pack shape the packs submodule publishes (shared/nodes/shapes/node-pack.json)
 Exit 1 when something required is missing.
 """
 import json, re, sys, pathlib
@@ -38,6 +39,20 @@ def check_job(path, shape):
         else: print(f"absent   {f['field']} (optional)")
     return bad
 
+def check_pack(path, shape):
+    root = pathlib.Path(path); bad = 0
+    for e in shape["entries"]:
+        n = e["name"].rstrip('/')
+        if "<" in n or n == "__pycache__": continue
+        exists = (root / n).exists()
+        if e.get("forbidden_here") and exists: print(f"FORBIDDEN {n}"); bad += 1
+        elif e.get("required") and not exists: print(f"MISSING  {n}"); bad += 1
+        elif exists: print(f"ok       {n}")
+    print(("ok       name " if any(re.match(v["regex"], root.name) for v in shape["name_patterns"].values()) else "BAD NAME ") + root.name)
+    t = (root / "pyproject.toml").read_text() if (root / "pyproject.toml").exists() else ""
+    print("ok       [tool.packs]" if "[tool.packs]" in t else "MISSING  [tool.packs] in pyproject.toml"); bad += "[tool.packs]" not in t
+    return bad
+
 def check_names(names, shape):
     for n in names:
         hits = [k for k, v in shape["patterns"].items() if k != "version" and re.match(v["regex"], n)]
@@ -50,5 +65,6 @@ if __name__ == "__main__":
     bad = {"project": lambda: check_entries(args[0], load("project-tree.json")),
            "shot":    lambda: check_entries(args[0], load("shot-folder.json")),
            "job":     lambda: check_job(args[0], load("job-file.json")),
-           "name":    lambda: check_names(args, load("names.json"))}.get(cmd, lambda: (print(__doc__), 2)[1])()
+           "name":    lambda: check_names(args, load("names.json")),
+           "pack":    lambda: check_pack(args[0], json.loads((HERE.parent / "nodes" / "shapes" / "node-pack.json").read_text()))}.get(cmd, lambda: (print(__doc__), 2)[1])()
     sys.exit(1 if bad else 0)

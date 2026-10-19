@@ -33,6 +33,11 @@ directly. The packs repo's `tools/manifest.py` reads these tables to build
 [`docs/DEPENDENCIES.md`](../shared/nodes/docs/DEPENDENCIES.md) and fails if a
 `requires` names a pack that is not there.
 
+The shape of a pack is published in the packs repo as
+[`shapes/node-pack.json`](../shared/nodes/shapes/node-pack.json), beside this
+repo's other shapes in `shared/shapes/`; `shared/shapes/check.py pack <dir>`
+checks a folder against it.
+
 ## Two folders: portable/ and bound/
 
 Since tag `packs-2026-10-19b` every pack sits in one of two folders of the
