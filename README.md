@@ -148,12 +148,26 @@ belong to BH / Binc and need a named yes before they go anywhere new.
 | ffmpeg, ffprobe | proxies, review movies, mp4 in and out | system package |
 | Gemini 3 Pro Image ("Nano Banana") | generated paint patches in `10_CORROSION/Gen_Paint_assets`, composited by a Comfy fusion graph | Google API key; client frames go to a third party, so the project's named-yes rule applies |
 | rclone + Google Drive | syncing `90_DELIVERIES/` | `02_SCRIPTS/drive-sync/` |
-| Shared storage: the plates at `/home/binc/CANALV2_r3/CANALV2` and `/mnt/storage/…` | rendering anything | binc-PC's disks, over SMB or a NAS; not mounted on this Mac yet |
+| Shared storage: the project tree at `/home/binc/CANALV2_r3/CANALV2`, the plates under `/mnt/storage/Panama_Redux/…`, `~/ComfyUI-Shared` | rendering anything | binc-PC's disks, over SMB, a NAS or a pod volume; not mounted on this Mac yet. Every path: `docs/MOUNT-POINTS.md` |
 | NVIDIA driver, CUDA 12.6, nvidia-container-toolkit | GPU rendering on Linux, in or out of Docker | per machine; `apps/comfy-app/docker/swarm.sh init` says what Swarm needs on top |
 | Docker, Docker Swarm | running the image on Linux boxes; no GPU under Docker on macOS | `apps/comfy-app/docker/` |
 | uv, Python 3.13 (ComfyUI venv), Python 3.12 (API and CLI) | the Mac install, the pod manager | `brew install uv`; `start.sh` makes `.venv` |
 | Node 22, npm | the dashboard and Electron app | nvm |
 | RunPod account and API key | overflow GPUs, once approved | `.env`; nothing deployed yet |
+
+## Mount points
+
+Everything names binc-PC's filesystem, so every other runtime mounts data
+under `/workspace` and links binc-PC's paths onto it. Three mounts are real;
+the rest is legacy or not a mount. Full list, per runtime:
+[`docs/MOUNT-POINTS.md`](docs/MOUNT-POINTS.md); as data:
+[`shared/shapes/mount-points.json`](shared/shapes/mount-points.json).
+
+| What | binc-PC | Container / pod |
+|---|---|---|
+| Project tree | `/home/binc/CANALV2_r3/CANALV2` (also `~/CANALV2_r3/CANALV2`) | `/workspace/CANALV2`, linked from both spellings and `/root/…` |
+| Served plates, read-only | `/mnt/storage/Panama_Redux/source/PC_20260929_VFX_3D_DSM_plates/` | `/workspace/plates/Panama_Redux/…`, linked from `/mnt/storage/Panama_Redux` |
+| ComfyUI-Shared | `/home/binc/ComfyUI-Shared` (also `~/ComfyUI-Shared`) | `/workspace/ComfyUI-Shared`, `COMFY_SHARED` |
 
 ## Documentation
 
@@ -208,6 +222,7 @@ All of `docs/`: <https://github.com/bluecollardev/comfy-workflow/tree/develop/do
 | [`queue/README.md`](queue/README.md) | The agent job queue: one folder per project in Binc's in/running/done shape, how a job file reads, how `queue/canalv2/` is seeded from Binc's queue without ever writing back, and what moving a file here means. |
 | [`shared/shapes/README.md`](shared/shapes/README.md) | The project's fixed shapes as JSON for software to read: project tree, shot folder, graph boxes, inbox entry, tracker columns, job file, report, sidecar, naming regexes. `check.py` validates real folders, jobs and names against them. |
 | [`shared/governance/README.md`](shared/governance/README.md) | Governance for agents: Binc's 33 policy pages, workflow rules and operator brief copied in by `sync.sh` with a manifest, precedence between their rules and ours, what Claude Code loads automatically, and the hook that blocks writes into the mirror. |
+| [`docs/MOUNT-POINTS.md`](docs/MOUNT-POINTS.md) | Every path the project assumes, from a scan of the whole tree: the three real mounts and how each runtime (binc-PC, Mac, Compose/Swarm, RunPod) makes them resolve; what is legacy, what is not a mount; the data version in `shared/shapes/mount-points.json`. |
 | [`docs/CANALV2-STRUCTURE.md`](docs/CANALV2-STRUCTURE.md) | Binc's CANALV2 tree explained: the numbered top level, the fixed shot-folder shape, how a shot moves from inbox to delivery, naming and versioning in short, what lives outside the root on binc-PC, and why the tree is read-only for us. |
 | [`docs/PROMPTS.md`](docs/PROMPTS.md) | Where every kind of prompt is: the ComfyUI graphs (what ComfyUI calls a prompt) by location, count and format; the Gemini 3 Pro Image text prompts beside each generated paint patch; and the agent briefs, policies and job queue in Binc's tree. |
 | [`projects/README.md`](projects/README.md) | Inventory of the ignored client trees under `projects/desktop/`: the CANALV2 VFX job (shots, scripts, node packs, tracker) and the ComfyUI-Shared input/output/models folders. |

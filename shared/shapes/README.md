@@ -17,6 +17,7 @@ confirmed against real files, it says "observed". The prose versions are
 | `report.json` | The report a job must produce, and the words it must not contain |
 | `sidecar.json` | `.meta.json` beside a generated file: policy fields and the fields observed in the paint metadata |
 | `names.json` | Every naming pattern as a regex, with examples and the exceptions pointer |
+| `mount-points.json` | Every path the project assumes and where each runtime puts it: the three real mounts with their container paths and links, the legacy locations, the sandbox paths that are not mounts. The pod manager reads it for its defaults. Prose: `docs/MOUNT-POINTS.md`. |
 | [`../nodes/shapes/node-pack.json`](../nodes/shapes/node-pack.json) | The shape of a custom node pack folder: required files, the `[tool.packs]` table, naming, portable/bound placement, versioning. Published in the packs repo (`comfy-node-packs`), where `tools/manifest.py` enforces it; `check.py pack <dir>` reads it from the submodule. |
 | [`../nodes/shapes/packs-repo.json`](../nodes/shapes/packs-repo.json) | The layout of the packs repo itself. |
 

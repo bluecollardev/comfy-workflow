@@ -72,6 +72,8 @@ one new output folder, a report, stop.
 
 ## Outside the root, on binc-PC
 
+How each of these is mounted or linked on other machines: [`MOUNT-POINTS.md`](MOUNT-POINTS.md).
+
 | What | Where |
 |---|---|
 | Served plates | `/mnt/storage/Panama_Redux/source/…/<served-folder>.LEFT` and `.RIGHT` |

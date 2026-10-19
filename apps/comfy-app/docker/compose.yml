@@ -10,6 +10,7 @@
 #   COMFY_IMAGE    image to run                     default comfy-app:v26
 #   COMFY_PORT     published port                   default 8188
 # Inside the container the project keeps binc-PC's path, so graphs run unchanged.
+# Why these three and what else the project names: docs/MOUNT-POINTS.md.
 # GPU: Swarm uses `generic_resources` below (the node must advertise NVIDIA-GPU,
 # see swarm.sh init). Plain Compose rejects nothing here but also grants no GPU,
 # so swarm.sh up adds compose.gpu.yml, which carries the `devices` request.

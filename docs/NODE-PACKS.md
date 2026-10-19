@@ -46,7 +46,7 @@ packs repo, decided by its contents, not by hand:
 | Folder | Rule | Today |
 |---|---|---|
 | `portable/` | no absolute binc-PC path or reference to the machine anywhere in the pack's Python; usable on another project as is | ShotPipe v11–v14, v16, v26; BincStereo |
-| `bound/` | binc-PC paths (`/home/binc/…`, `/mnt/storage/…`, `~/CANALV2…`) in the code as widget defaults or fallback lookups; fine for CANALV2, where every runtime mounts those paths, not elsewhere untouched. Every one, in its code: [`shared/nodes/bound/README.md`](../shared/nodes/bound/README.md) | ShotPipe v6–v10, v15, v17, v20–v25 |
+| `bound/` | binc-PC paths (`/home/binc/…`, `/mnt/storage/…`, `~/CANALV2…`) in the code as widget defaults or fallback lookups; fine for CANALV2, where every runtime mounts those paths, not elsewhere untouched. Every one, in its code: [`shared/nodes/bound/README.md`](../shared/nodes/bound/README.md); what each path is and where runtimes mount it: [`MOUNT-POINTS.md`](MOUNT-POINTS.md) | ShotPipe v6–v10, v15, v17, v20–v25 |
 
 `setup.sh`, `build.sh` and `sync-nodes.sh` look in both, so the split changes
 nothing for an install. Portability is per pack; a set is only as portable as
