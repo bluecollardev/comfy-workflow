@@ -23,10 +23,11 @@ export const podsAPI = {
       name: podData.name,
       gpu: podData.gpu,
       gpu_count: podData.gpuCount || 1,
-      instance_type: podData.instanceType || 'on-demand',
-      volume_gb: podData.volumeGb || 50,
+      instance_type: podData.instanceType || 'spot',
+      volume_gb: podData.volumeGb ?? 0,
       disk_gb: podData.diskGb || 20,
-      image: podData.image || 'prebuilt',
+      image: podData.image || 'configured',
+      idle_stop_minutes: podData.idleStopMinutes ?? null,
       env_vars: podData.envVars || {},
       build_args: podData.buildArgs || {},
       pip_requirements: podData.pipRequirements || '',
@@ -35,6 +36,18 @@ export const podsAPI = {
       start_jupyter: podData.startJupyter === true,
       apply_mounts: podData.applyMounts !== false,
     });
+    return data;
+  },
+
+  // The GPU menu the API allows (16-24 GB cards, cheapest first)
+  async gpus() {
+    const { data } = await axios.get(`${API_BASE}/gpus`);
+    return data;
+  },
+
+  // Watch a pod for idleness (minutes > 0) or stop watching it (0)
+  async setIdle(podId, minutes) {
+    const { data } = await axios.put(`${API_BASE}/pods/${podId}/idle`, null, { params: { minutes } });
     return data;
   },
 

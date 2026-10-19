@@ -22,39 +22,25 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "apps" / "runpod-api"))
 try:
     import mounts as _mounts
+    import gpus as _gpus
+    import idle as _idle
 except Exception:  # API not checked out beside this script: mounts are then given on the command line only
-    _mounts = None
+    _mounts = _gpus = _idle = None
+
+GPU_FALLBACK = {"rtx4090": {"id": "NVIDIA GeForce RTX 4090", "name": "RTX 4090", "vram": 24}}
 
 
 class RunPodManager:
     """Manage RunPod pods for ComfyUI."""
 
-    # GPU pricing and specs (approximate)
-    GPU_CONFIGS = {
-        "rtx4090": {
-            "name": "RTX 4090",
-            "vram": 24,
-            "price": 1.10,
-            "bid": 1.10,
-        },
-        "l40s": {
-            "name": "L40S",
-            "vram": 48,
-            "price": 1.80,
-            "bid": 1.80,
-        },
-        "h100": {
-            "name": "H100",
-            "vram": 80,
-            "price": 4.50,
-            "bid": 4.50,
-        },
-    }
+    # The GPU menu is apps/runpod-api/gpus.py: 16-24 GB cards, the job needs no more.
+    GPU_CONFIGS = _gpus.GPUS if _gpus else GPU_FALLBACK
 
     IMAGE_OPTIONS = {
-        "prebuilt": "ashleykza/comfyui:latest",
+        "configured": None,                      # the image in the mounts config (ours, pushed to a registry)
+        "prebuilt": "ashleykza/comfyui:latest",  # no packs, ignores COMFY_LINKS
         "official": "comfy-org/comfyui:latest",
-        "custom": None,  # User-supplied
+        "custom": None,                          # User-supplied
     }
 
     def __init__(self, api_key: Optional[str] = None):
@@ -69,13 +55,14 @@ class RunPodManager:
         self,
         name: str,
         gpu_type: str = "rtx4090",
-        volume_gb: int = 50,
+        volume_gb: int = 0,
         container_disk_gb: int = 20,
-        image: str = "prebuilt",
+        image: str = "configured",
         network_volume: str = "",
         mount_path: str = "",
         extra_links: list = None,
         mounts_apply: bool = True,
+        idle_stop_minutes: int = None,
         **kwargs,
     ) -> Dict[str, Any]:
         """Create a new on-demand pod.
@@ -95,15 +82,20 @@ class RunPodManager:
             raise ValueError(f"Unknown GPU type: {gpu_type}. Options: {list(self.GPU_CONFIGS.keys())}")
 
         gpu_config = self.GPU_CONFIGS[gpu_type]
+        cfg = _mounts.load() if _mounts is not None else None
         image_name = self.IMAGE_OPTIONS.get(image, image)
-
+        if image == "configured":
+            image_name = cfg.image if cfg else ""
         if not image_name:
-            raise ValueError(f"Unknown image: {image}")
+            raise ValueError(f"No image: {image}. Set one in the dashboard's Configuration or pass --image")
+        if "/" not in image_name:
+            raise ValueError(f"{image_name} is a local image name; a pod cannot pull it. Push it to the registry Binc names and set that reference in Configuration.")
+        if idle_stop_minutes is None:
+            idle_stop_minutes = cfg.idle_stop_minutes if cfg else 0
 
         print(f"Creating pod: {name}")
         print(f"  GPU: {gpu_config['name']} ({gpu_config['vram']}GB VRAM)")
-        print(f"  Price: ~${gpu_config['price']}/hr")
-        print(f"  Volume: {volume_gb}GB")
+        print(f"  Volume: {volume_gb}GB per pod")
         print(f"  Container Disk: {container_disk_gb}GB")
         print(f"  Image: {image_name}")
 
@@ -111,7 +103,9 @@ class RunPodManager:
             # Mounts (docs/MOUNT-POINTS.md): the configured network volume and the COMFY_LINKS the image turns into symlinks.
             mount_kwargs = {}
             if _mounts is not None and mounts_apply:
-                cfg = _mounts.load()
+                missing = _mounts.missing_required(cfg)
+                if missing:
+                    raise ValueError(f"Not mapped on this PC: {', '.join(missing)}. Map them in the dashboard's Configuration; COMFY_MODE=dev makes them optional.")
                 if network_volume: cfg.network_volume_id = network_volume
                 if mount_path: cfg.mount_path = mount_path
                 for pair in extra_links or []:
@@ -123,24 +117,30 @@ class RunPodManager:
                 if ov.get("network_volume_id"):
                     mount_kwargs.update(network_volume_id=ov["network_volume_id"], volume_mount_path=ov["volume_mount_path"])
                     if ov.get("data_center_id"): mount_kwargs["data_center_id"] = ov["data_center_id"]
+                    volume_gb = 0   # the network volume carries the data; a per-pod volume beside it is billed for nothing
                 print(f"  Mounts: {len(_mounts.all_links(cfg))} link(s)" + (f", network volume {ov['network_volume_id']} at {ov['volume_mount_path']}" if ov.get("network_volume_id") else ", no network volume (per-pod disk only)"))
             elif network_volume:
                 mount_kwargs = {"network_volume_id": network_volume, "volume_mount_path": mount_path or "/workspace"}
             pod = runpod.create_pod(
                 name=name,
                 image_name=image_name,
+                gpu_type_id=gpu_config["id"],
+                cloud_type=kwargs.pop("cloud_type", "COMMUNITY"),
                 gpu_count=1,
                 volume_in_gb=volume_gb,
                 container_disk_in_gb=container_disk_gb,
-                min_bid=gpu_config["bid"],
+                ports="8188/http,22/tcp",
                 **mount_kwargs,
                 **kwargs,
             )
+            if _idle is not None and idle_stop_minutes and idle_stop_minutes > 0:
+                _idle.register(pod["id"], idle_stop_minutes)
+                print(f"  Idle stop: after {idle_stop_minutes} quiet minutes (while the pod manager API runs)")
 
             print(f"\n✓ Pod created successfully!")
             print(f"  Pod ID: {pod['id']}")
             print(f"  Status: {pod['runtime'].get('uptimeInSeconds', 'starting')}")
-            print(f"\n  Web UI: http://{pod['id']}.proxy.runpod.io:8188")
+            print(f"\n  Web UI: https://{pod['id']}-8188.proxy.runpod.net")
             print(f"  SSH: ssh root@{pod['id']}.proxy.runpod.io")
 
             return pod
@@ -235,12 +235,14 @@ def main():
     create_parser.add_argument(
         "--gpu",
         default="rtx4090",
-        choices=["rtx4090", "l40s", "h100"],
-        help="GPU type",
+        choices=list(RunPodManager.GPU_CONFIGS),
+        help="GPU (16-24 GB cards; the job needs no more)",
     )
     create_parser.add_argument(
-        "--volume", type=int, default=50, help="Volume size in GB"
+        "--volume", type=int, default=0, help="Per-pod volume in GB; 0 when the network volume carries the data (default)"
     )
+    create_parser.add_argument("--secure", action="store_true", help="Secure cloud instead of the cheaper community cloud")
+    create_parser.add_argument("--idle-stop", type=int, default=None, metavar="MINUTES", help="Stop after this many quiet minutes (default: the configuration's value; 0 = never)")
     create_parser.add_argument("--network-volume", default="", help="RunPod network volume id to attach (persistent; the mounts config's value if omitted)")
     create_parser.add_argument("--mount-path", default="", help="Where the network volume is mounted in the pod (default /workspace)")
     create_parser.add_argument("--link", action="append", default=[], metavar="PATH=TARGET", help="Extra path to make resolve on the pod, PATH=TARGET on the volume (repeatable); the three folders come from the dashboard's configuration")
@@ -250,8 +252,8 @@ def main():
     )
     create_parser.add_argument(
         "--image",
-        default="prebuilt",
-        help="Image (prebuilt, official, or custom image name)",
+        default="configured",
+        help="configured (the image in the dashboard's Configuration, ours), prebuilt (ashleykza, no packs), official, or an image reference",
     )
 
     # List command
@@ -289,6 +291,8 @@ def main():
             mounts_apply=not args.no_mounts,
             container_disk_gb=args.disk,
             image=args.image,
+            idle_stop_minutes=args.idle_stop,
+            cloud_type="SECURE" if args.secure else "COMMUNITY",
         )
 
     elif args.command == "list":

@@ -8,7 +8,7 @@
       </BCol>
       <BCol md="6" lg="4">
         <BFormGroup label="GPU" label-for="pod-gpu">
-          <BFormSelect id="pod-gpu" v-model="form.gpu" :options="GPU_OPTIONS" />
+          <BFormSelect id="pod-gpu" v-model="form.gpu" :options="gpuOptions" />
         </BFormGroup>
       </BCol>
       <BCol md="6" lg="4">
@@ -22,8 +22,8 @@
         </BFormGroup>
       </BCol>
       <BCol md="6" lg="4">
-        <BFormGroup label="Volume (GB)" label-for="pod-volume">
-          <BFormInput id="pod-volume" v-model.number="form.volumeGb" type="number" min="10" max="500" />
+        <BFormGroup label="Per-pod volume (GB)" label-for="pod-volume" description="0 when the configured network volume carries the data; a per-pod volume beside it is billed for nothing.">
+          <BFormInput id="pod-volume" v-model.number="form.volumeGb" type="number" min="0" max="500" />
         </BFormGroup>
       </BCol>
       <BCol md="6" lg="4">
@@ -40,13 +40,18 @@
         </BFormGroup>
       </BCol>
       <BCol md="6" lg="4">
-        <BFormGroup label="Image" label-for="pod-image">
+        <BFormGroup label="Image" label-for="pod-image" :description="form.image === 'configured' ? configuredImage : ''">
           <BFormSelect id="pod-image" v-model="form.image" :options="IMAGE_OPTIONS" />
         </BFormGroup>
       </BCol>
       <BCol v-if="form.image === 'custom'" md="6" lg="8">
         <BFormGroup label="Image URI" label-for="pod-image-uri">
           <BFormInput id="pod-image-uri" v-model.trim="form.customImageUri" placeholder="docker.io/org/image:tag" required />
+        </BFormGroup>
+      </BCol>
+      <BCol md="6" lg="4">
+        <BFormGroup label="Idle stop (minutes)" label-for="pod-idle" description="Stopped after this long with nothing queued in its ComfyUI. 0 = never; blank = the configured value.">
+          <BFormInput id="pod-idle" v-model.number="form.idleStopMinutes" type="number" min="0" :placeholder="String(configuredIdle)" />
         </BFormGroup>
       </BCol>
       <BCol md="12" class="d-flex gap-4">
@@ -326,19 +331,18 @@ import { ui } from '../stores/ui'
 
 const MAX_VISIBLE_FOLDERS = 500
 
-const GPU_OPTIONS = [
-  { value: 'rtx4090', text: 'RTX 4090' },
-  { value: 'a100', text: 'A100' },
-  { value: 'h100', text: 'H100' },
-  { value: 'l40s', text: 'L40S' },
-]
+// The GPU menu comes from the API (GET /api/gpus): 16-24 GB cards, cheapest first. The job runs on a
+// 16 GB A4000 today and nothing asks for more than 24 GB, so no A100/H100/L40S rows to overspend on.
+const gpuOptions = ref([{ value: 'rtx4090', text: 'RTX 4090 (24 GB)' }])
+podsAPI.gpus().then((g) => { gpuOptions.value = g.gpus }).catch(() => {})
 const GPU_COUNT_OPTIONS = Array.from({ length: 8 }, (_, i) => ({ value: i + 1, text: String(i + 1) }))
 const INSTANCE_TYPE_OPTIONS = [
-  { value: 'on-demand', text: 'On-demand' },
-  { value: 'spot', text: 'Spot' },
+  { value: 'spot', text: 'Community cloud (cheaper)' },
+  { value: 'on-demand', text: 'Secure cloud' },
 ]
 const IMAGE_OPTIONS = [
-  { value: 'prebuilt', text: 'ComfyUI (ashleykza)' },
+  { value: 'configured', text: 'Configured image (ours, with the packs)' },
+  { value: 'prebuilt', text: 'ComfyUI (ashleykza): no packs, no links' },
   { value: 'custom', text: 'Custom image' },
 ]
 const ROW_TYPES = [
@@ -385,11 +389,12 @@ const defaults = () => ({
   name: '',
   gpu: 'rtx4090',
   gpuCount: 1,
-  instanceType: 'on-demand',
-  volumeGb: 50,
+  instanceType: 'spot',
+  volumeGb: 0,
   diskGb: 20,
   applyMounts: true,
-  image: 'prebuilt',
+  image: 'configured',
+  idleStopMinutes: null,
   customImageUri: '',
   startSsh: true,
   startJupyter: false,
@@ -402,10 +407,14 @@ const form = reactive(defaults())
 
 // One line under the Mounts switch: what the current configuration would attach (GET /api/mounts).
 const mountsSummary = ref('')
+const configuredImage = ref('')
+const configuredIdle = ref(30)
 async function loadMountsSummary() {
   try {
     const m = await mountsAPI.get()
     const c = m.config
+    configuredImage.value = c.image ? `${c.image}` : 'no image configured'
+    configuredIdle.value = c.idle_stop_minutes ?? 30
     const mapped = (m.folders || []).filter((f) => f.local).length
     mountsSummary.value = (c.network_volume_id ? `volume ${c.network_volume_id} at ${c.mount_path}` : 'no network volume configured') + `, ${mapped}/${(m.folders || []).length} folder(s) mapped, ${(m.links || []).length} link(s)`
     if (form.applyMounts === true && c.apply_by_default === false) form.applyMounts = false
@@ -597,7 +606,8 @@ async function loadEnv(source) {
   try {
     const { image, env, build_args: buildArgs = [], skipped = 0 } = await imagesAPI.env({
       source,
-      image: form.image === 'custom' ? form.customImageUri : 'prebuilt',
+      image: form.image === 'custom' ? form.customImageUri : form.image,
+      idleStopMinutes: form.idleStopMinutes === '' ? null : form.idleStopMinutes,
       applyMounts: form.applyMounts,
     })
     const { added, replaced } = mergeRows(

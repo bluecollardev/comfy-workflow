@@ -28,6 +28,11 @@
         </dd>
       </template>
 
+      <template v-if="pod.status === 'running'">
+        <dt class="col-4 text-body-secondary fw-normal">Idle stop</dt>
+        <dd class="col-8 mb-0">{{ pod.idle_stop_minutes ? `after ${pod.idle_stop_minutes} quiet min` : 'not watched' }}</dd>
+      </template>
+
       <template v-if="pod.ssh_command">
         <dt class="col-4 text-body-secondary fw-normal">SSH</dt>
         <dd class="col-8 mb-0"><code class="text-break">{{ pod.ssh_command }}</code></dd>

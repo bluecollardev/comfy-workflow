@@ -1,28 +1,25 @@
 # Next steps: importing the CANALV2 graphs
 
-Status as of 2026-10-17; paths updated 2026-10-19 when the trees moved under `projects/desktop/` and the ComfyUI install became `apps/comfy-app/`. The inventory behind this is in
+Open work only, as of the evening of 2026-10-19. Done items are in
+[`CHANGELOG.md`](./CHANGELOG.md). The inventory behind this is in
 [`projects/README.md`](./projects/README.md), section "Where the ComfyUI prompts
 and graphs are".
 
-**2026-10-19, what was measured:** the BincStereo smoke test runs on this Mac
-on MPS (all 12 nodes, about a second), so the stereo workflows run here. The
-corrosion graphs do not: the plates are not on this machine (the packs were
-not linked either that morning; the `contract-v26` set is, from the `shared/nodes` submodule, since the afternoon), and the graphs hardcode binc-PC's path. Blender is the solve
-step before a graph, not a requirement to run one. Decision record:
+**Where things stand:** the stereo workflows run on this Mac on MPS. The
+corrosion graphs do not, because the plates are not on this machine; the packs
+are linked and the paths are mapped. Blender is the solve step before a graph,
+not a requirement to run one. Decision record:
 `docs/ADR-004-where-the-workflows-run.md`.
 
 ## The main thing to solve next: run the graphs from any machine
 
 The GPU is the easy part. In order:
 
-- [ ] **Shared storage.** Get the project tree and plates visible at binc-PC's paths on the Mac (the full list: `docs/MOUNT-POINTS.md`) (SMB from binc-PC or the NAS; Binc's note has a Mac Studio on SMB already). Until then the Mac can open the corrosion graphs but not render them.
-- [x] **The packs are in the repo** (2026-10-19): `shared/nodes` is the `comfy-node-packs` submodule with ShotPipe v6–v26 and BincStereo; `docs/NODE-PACKS.md` has the versioning. Link what a graph needs: `COMFY_SHOTPIPE=v26 apps/comfy-app/setup.sh`.
+- [ ] **Plates on this Mac.** The three folders are mapped in the dashboard's Configuration panel and every runtime follows the mapping (`docs/MOUNT-POINTS.md`); what is missing is the plates folder itself, over SMB from binc-PC or the NAS (Binc's note has a Mac Studio on SMB already). Until then the Mac can open the corrosion graphs but not render them.
+- [ ] **A ComfyUI-Shared of our own on this Mac.** The saved mapping still points ComfyUI-Shared at the mirror; in dev mode the launcher substitutes `~/ComfyUI-Shared` (it did on 2026-10-19 and ComfyUI ran). Map that folder in the panel so the substitution is not needed.
 - [ ] **binc-PC as the first container node.** Build `comfy-app:v26` on a Linux box (`apps/comfy-app/build.sh`; the Mac would emulate amd64), then `apps/comfy-app/docker/swarm.sh up` for one box or `init` + `deploy` for a Swarm. The Mac's browser then uses `http://binc-pc:8188` like the local one.
 - [ ] **Drive it from the Mac.** `comfy` CLI and the queue scripts take `--comfy <url>`; the stereo work stays local on MPS.
-- [ ] **RunPod as overflow**, after Binc's four yeses (section below). Same image or RunPod's template, network volume at the project path.
-  - [x] The pod manager and `create_pod.py` apply a mount configuration (2026-10-19): network volume, mount path and the binc-PC path links the image's entrypoint makes from `COMFY_LINKS`; edited in the dashboard's Configuration panel, defaults from `shared/shapes/mount-points.json`.
-  - [ ] Create the network volume, put `CANALV2/`, `ComfyUI-Shared/` and `plates/` on it (plates need Binc's yes), enter its id in the panel, boot a pod. Not done: it spends.
-  - [x] The packs pass (2026-10-19, `packs-2026-10-19h`): every machine path that was a widget default or lookup fallback now comes from `bh_paths.py`, env with binc-PC fallback; all 20 packs are portable. The graphs still carry literal paths; the links handle those. Graphs are the later pass.
+- [ ] **RunPod as overflow.** The tooling is ready; the steps left are in "RunPod: what is left" below.
 - [ ] **Binc's goal, the skill crew.** Not started; a design, not code, is the next step. Separate from ADR-002's GPU pool. See `README.md`, "Goal".
   - [ ] First piece: a dispatcher over `queue/<project>/`. Watch `in/`, claim a job by moving it to `running/`, start a Claude Code session with the brief as its first message, collect `REPORT.md`, move to `done/`. The folders stay the interface, so the manual and automated paths are the same.
   - [ ] **Abstract shapes and concrete shapes** (Lucas, 2026-10-19). `shared/shapes/` today is CANALV2's shapes verbatim. Split them: abstract shapes any restoration project has (a project tree, a shot folder, a job, a report, a graph with ordered boxes, naming rules) and concrete bindings per project (CANALV2's `10_CORROSION`, `BH26_` nodes, `/home/binc/...` root, its state words). The dispatcher and the checker then run against the abstract shape plus a binding.
@@ -45,7 +42,7 @@ it has 393 shot graphs plus a few saved workflows.
 The highest `_v###` in each shot's `04_GRAPH/` is the current graph. Only the
 current graph per shot needs importing; older versions stay where they are.
 
-## Step 0: install the node pack (done 2026-10-19 for v26)
+## Step 0: the node pack, what is still open
 
 The graphs are built from the `BH_*` nodes in ComfyUI-BH-ShotPipe, and the v26
 graphs need `BH26_*` nodes. All versions, v6–v26, plus BincStereo are in the
@@ -53,12 +50,6 @@ graphs need `BH26_*` nodes. All versions, v6–v26, plus BincStereo are in the
 from Binc's mirror at install time any more. `docs/NODE-PACKS.md` has the
 versioning and release steps.
 
-- [x] Decide which ShotPipe versions to install. Not one: ShotPipe stacks, and the 14 current graphs use nodes from v7, v10, v11, v12, v13, v14 and v26 together. That is the `contract-v26` set in the packs repo's `sets.json` (`shared/nodes/docs/SHOTPIPE.md` explains the family). Never v6 beside v7 or v9 beside v10, same names.
-- [x] Link it from the submodule, do not copy:
-  ```bash
-  COMFY_SHOTPIPE=contract-v26 apps/comfy-app/setup.sh   # symlinks the seven packs from shared/nodes/{portable,bound}/ into ComfyUI/custom_nodes/
-  ```
-  Verified 2026-10-19: the set links, every pack imports, and every `BH_*`/`BH26_*` node type the 14 graphs use resolves (24 types, 0 missing).
 - [ ] Restart the Mac ComfyUI and confirm the nodes show in the UI:
   ```bash
   export COMFY_LOCAL_URL=http://127.0.0.1:8188
@@ -121,39 +112,25 @@ server's node catalog, so Step 0 must be done first.
 - [ ] Start with one shot. The fourteen corrosion graphs share a pipeline from the same builder, so one good recipe with shot fields as params should cover them. Check that against `projects/desktop/CANALV2/02_SCRIPTS/graph-builder/build_v25_shot_graphs_v001.py` before capturing all fourteen.
 - [ ] Do not hand-edit the captured JSON. Edit source and recapture.
 
-## RunPod: the plan, and that none of it has run
+## RunPod: what is left
 
-Status 2026-10-19: **not started.** The RunPod account has no pods
-(`./start.sh pod list`), no image has been pushed, no plate has left binc-PC.
-Everything under `docs/SETUP.md`, `docs/ADR-001` and `apps/runpod-*` is
-tooling for a step that has not been taken.
+Status 2026-10-19 evening: the RunPod account has no pods and no volume, no
+image has been pushed, no plate has left binc-PC. The tooling for all of it is
+in the repo and tested; what remains is a sequence of real steps, each of
+which spends or moves client material and so waits on a named yes.
 
-The plan is Binc's, not ours, and lives in the ignored tree at
-`projects/desktop/CANALV2/02_SCRIPTS/containers/runpod/README.md`. In short:
+Binc's plan is the reference (`projects/desktop/CANALV2/02_SCRIPTS/containers/runpod/README.md`):
+a GPU pod with a network volume for batch rendering, a CPU pod for Blender
+solves, serverless ruled out for frame sequences, pods stopped when a job ends.
 
-- **GPU pod for batch rendering.** A pod from RunPod's ComfyUI template with a
-  network volume mounted so `/home/binc/CANALV2_r3/CANALV2` resolves inside the
-  container. Node packs copied on once (`comfy-pod/setup_on_volume.sh`), then
-  the existing queue script pointed at the pod URL. Graphs read DPX plates and
-  write review folders exactly as on binc-PC.
-- **CPU pod for camera solves.** Blender's libmv solver needs no GPU; the
-  `solve/` image runs on a cheap CPU pod with the same volume.
-- **Serverless ruled out for now.** It returns images per request, which suits
-  single graphs, not 500-frame sequences.
-- **Pod management through RunPod's hosted MCP** (`claude mcp add … https://mcp.getrunpod.io/`),
-  not through anything in this repo.
+In order:
 
-Where this repo differs: `apps/comfy-app/Dockerfile` is a custom image with
-the same pins as the Mac, where the plan uses RunPod's stock image plus a
-setup script on the volume. Either works; the custom image is the one that
-reproduces the Mac. Our pool manager, MCP server and pod-manager API are
-redundant with the hosted MCP for this job.
-
-Gates, each needing Binc's named yes (also in `~/Workspaces/TODO.md`, item 5):
-installing the RunPod MCP, uploading client plates to a network volume, pushing
-an image with the packs to a registry (name and account), and any spend, inside
-the USD 100 cap from the 2026-10-09 decisions, with the pod stopped when its
-job ends.
+1. [ ] **Binc's yeses**, named, before anything below runs (`shared/governance/policy/agent-permissions.md`; `~/Workspaces/TODO.md` item 5): plates copied to a network volume; an image with the packs pushed to a registry (name and account); the spend, inside the USD 100 cap. The MCP server already refuses `create_agent` without `approved_by`.
+2. [ ] **Build and push the image** on amd64 (binc-PC or any Linux box; the Mac would emulate): `apps/comfy-app/build.sh` with the `contract-v26` set, then push to the registry Binc names, then enter that reference as the image in the Configuration panel. Until then pod creation refuses the bare local name on purpose.
+3. [ ] **Create the network volume** in one datacenter, sized for the tree (81 GB on the mirror), `comfy-shared/` with the weights, and only the plates of the first batch (DPX, two eyes per shot; the 24 inbox entries total about 3,100 frames, so never all of them). Enter the volume id and datacenter in the Configuration panel.
+4. [ ] **Put the data on the volume**: `./start.sh sync --pod <id>` into a small pod with the volume attached; `--plates --approved-by <name>` for the plates. Set `COMFY_MODE=prod` on the machine that drives real pods so every folder is required.
+5. [ ] **Boot one pod** with mounts applied, read the entrypoint's `linked …` lines, open a corrosion graph in its UI, queue one open shot at proxy with the queue script and `--comfy <pod url>`, then stop the pod or let the idle stop do it. Locked shots are never run; proxy first.
+6. [ ] **CPU solve pod**, after the GPU pod works: `solve/` image from Binc's plan, same volume.
 
 ## Open decisions
 
@@ -163,7 +140,7 @@ job ends.
 
 ## Also pending in this repo
 
-- ~~Ask Binc whether `ComfyUI-BincStereo` may stay tracked in this repo.~~ Lucas, 2026-10-19: Binc's material may be used and copied in this private repo; it stays. It now lives in the `shared/nodes` submodule (`comfy-node-packs`) with the ShotPipe versions; its `pyproject.toml` marks it proprietary to Cinematic Immunity / Bincos.
-- Push the RunPod image once Binc has agreed (registry name and account). Dockerfile and build are in `apps/comfy-app/`; see its README, "Targets and what is still open".
-- Rebuild the Electron app under `apps/runpod-dashboard/` so its bundled copy of `mcp_server.py` picks up the mcp 2.x port.
+- Rebuild the Electron app under `apps/runpod-dashboard/` so its bundle picks up the mcp 2.x port, the governance folder and the folder mapping.
+- The Bash-side governance hooks listed as open in `shared/governance/README.md`: installs, `create_pod.py create`, pushes to other remotes.
+- Abstract versus concrete shapes, and the two findings from `check.py` to raise with Binc (above).
 - Run the review on `feature/desktop-app-and-mcp-fixes` against develop, then delete that branch.

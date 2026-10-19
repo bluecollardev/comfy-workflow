@@ -34,10 +34,20 @@
             <BFormInput id="cfg-dc" v-model.trim="cfg.data_center_id" placeholder="e.g. EU-RO-1" class="font-monospace" />
           </BFormGroup>
         </BCol>
+        <BCol md="8">
+          <BFormGroup label="Image" label-for="cfg-image" description="What every new pod boots: ours, with the packs and the entrypoint that makes the links. It must be pushed to a registry first; a bare local name is refused at pod creation.">
+            <BFormInput id="cfg-image" v-model.trim="cfg.image" placeholder="registry/name:tag" class="font-monospace" />
+          </BFormGroup>
+        </BCol>
+        <BCol md="4">
+          <BFormGroup label="Idle stop (minutes)" label-for="cfg-idle" description="Stop a pod after this long with nothing queued. 0 = never.">
+            <BFormInput id="cfg-idle" v-model.number="cfg.idle_stop_minutes" type="number" min="0" />
+          </BFormGroup>
+        </BCol>
       </BRow>
 
       <div class="d-flex align-items-center justify-content-between mb-2">
-        <h6 class="mb-0">Folders on this PC <span class="text-body-secondary fw-normal small">the three every run needs, then any of your own; the exact links a pod makes are in the pod preview below</span></h6>
+        <h6 class="mb-0">Folders on this PC <span class="text-body-secondary fw-normal small">the three every run uses, then any of your own; the exact links a pod makes are in the pod preview below. Mode <code>{{ mode }}</code> (<code>COMFY_MODE</code>); {{ requireSource === 'prod' ? 'every folder is required in prod' : requireSource === 'env' ? 'required folders set by COMFY_REQUIRE' : 'the switches say which are required in dev' }}</span></h6>
         <BButton size="sm" variant="outline-light" @click="cfg.custom.push({ name: '', local: '', container: '', link: '', mode: 'rw' })"><i class="fa-solid fa-plus me-1"></i>Add folder</BButton>
       </div>
       <table class="table table-sm align-middle mb-3">
@@ -47,7 +57,10 @@
         <tbody>
           <tr v-for="f in required" :key="f.key">
             <td>
-              <div class="fw-semibold">{{ label(f) }} <BBadge variant="secondary" class="fw-normal">required</BBadge></div>
+              <div class="fw-semibold">{{ label(f) }}</div>
+              <BFormCheckbox v-model="cfg.required[f.key]" switch size="sm" :disabled="requireSource !== 'config'" :title="requireSource === 'prod' ? 'prod mode: every folder is required' : requireSource === 'env' ? 'set by COMFY_REQUIRE' : 'dev mode: your choice'">
+                <small>{{ (requireSource === 'config' ? cfg.required[f.key] : f.required) ? 'required' : 'optional' }}</small>
+              </BFormCheckbox>
               <small class="text-body-secondary">{{ f.what }}</small>
             </td>
             <td>
@@ -152,6 +165,9 @@ const localEnv = ref({})
 const preview = ref({})
 const stored = ref(false)
 const store = ref('')
+const mode = ref('dev')
+const require = ref([])
+const requireSource = ref('config')
 const picker = reactive({ open: false, key: '', title: '', start: '', memory: '' })
 
 const LABELS = { project: 'Project tree', plates: 'Plates', 'comfy-shared': 'ComfyUI-Shared' }
@@ -169,6 +185,10 @@ function take(payload) {
   preview.value = payload.preview || {}
   stored.value = payload.stored
   store.value = payload.store
+  mode.value = payload.mode || 'dev'
+  require.value = payload.require || []
+  requireSource.value = payload.require_source || 'config'
+  cfg.value.required ||= {}
 }
 
 async function load() {
