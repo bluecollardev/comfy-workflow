@@ -1,10 +1,18 @@
 import axios from 'axios'
 import { API_BASE } from './pods'
+import { core } from './bridge'
 
 // Mount configuration: the three folders mapped on this PC (project tree, plates, ComfyUI-Shared)
 // and how a pod gets them. The API stores the mapping in ~/.config/runpod-pod-manager/mounts.json
 // and derives everything else. See docs/MOUNT-POINTS.md.
-export const mountsAPI = {
+const ipc = core && {
+  get: () => core.invoke('mounts', 'get'),
+  save: (config) => core.invoke('mounts', 'put', [config]),
+  reset: () => core.invoke('mounts', 'reset'),
+  dirs: (path = '', hidden = false) => core.invoke('mounts', 'dirs', [path, hidden]),
+}
+
+const http = {
   async get() {
     const { data } = await axios.get(`${API_BASE}/mounts`)
     return data
@@ -23,3 +31,5 @@ export const mountsAPI = {
     return data
   },
 }
+
+export const mountsAPI = ipc || http

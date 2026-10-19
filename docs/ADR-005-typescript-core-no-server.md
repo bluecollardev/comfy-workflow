@@ -34,7 +34,7 @@ manager.
 
 ## Decision
 
-1. **One core library in TypeScript, with no HTTP in it:** `apps/runpod-core`.
+1. **One core library in TypeScript, with no HTTP in it:** `apps/runpod-dashboard/libs/core`, inside the app (Lucas, 2026-10-19: one app, run locally, in Electron).
    Mounts, GPUs, governance, idle, pods against RunPod, images, git accounts.
    Pure functions over the same JSON files in the same formats
    (`~/.config/runpod-pod-manager/mounts.json`, `idle.json`), so nothing

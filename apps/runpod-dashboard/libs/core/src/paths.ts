@@ -5,9 +5,10 @@ import { fileURLToPath } from 'node:url'
 
 /** Where the core's files live: config under ~/.config/runpod-pod-manager, the shape and the governance
  *  copy in the repo checkout or beside the packaged app. Every path can be overridden by env for tests. */
-const HERE = dirname(fileURLToPath(import.meta.url))          // src/ or dist/
-export const PACKAGE_DIR = resolve(HERE, '..')
-export const REPO_ROOT = resolve(PACKAGE_DIR, '..', '..')
+const HERE = dirname(fileURLToPath(import.meta.url))          // libs/core/src or libs/core/dist
+export const PACKAGE_DIR = resolve(HERE, '..')                  // apps/runpod-dashboard/libs/core
+export const APP_DIR = resolve(PACKAGE_DIR, '..', '..')          // apps/runpod-dashboard
+export const REPO_ROOT = resolve(APP_DIR, '..', '..')
 
 export const configDir = () => process.env.POD_MANAGER_CONFIG_DIR || join(homedir(), '.config', 'runpod-pod-manager')
 export const mountsFile = () => process.env.MOUNTS_FILE || join(configDir(), 'mounts.json')

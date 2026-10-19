@@ -140,7 +140,8 @@ In order:
 
 ## Also pending in this repo
 
-- Rebuild the Electron app under `apps/runpod-dashboard/` so its bundle picks up the mcp 2.x port, the governance folder and the folder mapping.
+- Finish the port (ADR-005): git accounts, repositories, image env and OAuth into `libs/core`; the MCP server and the CLI importing it; then Electron stops spawning the Python backend, the Python tree is retired, and the merge gate and the branching rule stop naming pytest. Until then the Electron app still starts the backend for those parts.
+- Rebuild the Electron app under `apps/runpod-dashboard/` once the port is complete.
 - The Bash-side governance hooks listed as open in `shared/governance/README.md`: installs, `create_pod.py create`, pushes to other remotes.
 - Abstract versus concrete shapes, and the two findings from `check.py` to raise with Binc (above).
 - Run the review on `feature/desktop-app-and-mcp-fixes` against develop, then delete that branch.
