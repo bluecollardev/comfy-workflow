@@ -32,6 +32,7 @@ copied in this (private) repo; the mirror itself is still never written to.
 | `governance/CANALV2-README.md` | Their one-screen index of the tree | On demand |
 | `governance/operator-brief.md` | The one-job operator brief (their `CLAUDE.md`, renamed so it is not picked up as ours) | On demand |
 | `governance/MANIFEST.md` | What was copied, from where, when, with checksums | |
+| `queue/<project>/` | Job files for agents, seeded from the project's own queue | On demand |
 | `docs/ADR-*.md` | Decisions about this repo's own architecture | On demand |
 
 ## Enforcement, and how it maps to Binc's agent permissions

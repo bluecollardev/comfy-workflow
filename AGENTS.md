@@ -19,6 +19,9 @@ serves is in `README.md`, "Goal".
    into `develop`, `--ff-only` into `master`, tests green first:
    `./start.sh test`.
 
+**Jobs.** `queue/<project>/in/` holds job files; run one per session the way
+`governance/operator-brief.md` says, moving it to `running/` then `done/`.
+
 **Start here.** `governance/README.md` for precedence and what is where;
 `CLAUDE.md` for conventions and commands; `./start.sh` for running things;
 `docs/ADR-004-where-the-workflows-run.md` for which machine does what.

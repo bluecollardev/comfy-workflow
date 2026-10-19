@@ -45,6 +45,7 @@ storage across those machines is the first gap to close (`NEXT-STEPS.md`).
 ├── projects/               # Client/creative work; ignored by git except projects/README.md
 ├── docs/                   # Architecture decisions, setup, testing (index below)
 ├── governance/             # Rules for agents: Binc's policies copied in (sync.sh), precedence, what Claude Code loads
+├── queue/                  # Job files for agents, one folder per project (queue/canalv2/{in,running,done}), seeded by sync.sh
 ├── AGENTS.md               # Cross-tool entry point for agents; CLAUDE.md imports it
 ├── comfy.yaml              # comfy CLI project config (empty so far)
 ├── assets/ fragments/ blueprints/ outputs/   # comfy CLI project convention (empty so far)
@@ -197,6 +198,7 @@ All of `docs/`: <https://github.com/bluecollardev/comfy-workflow/tree/develop/do
 
 | Doc | What it covers |
 |---|---|
+| [`queue/README.md`](queue/README.md) | The agent job queue: one folder per project in Binc's in/running/done shape, how a job file reads, how `queue/canalv2/` is seeded from Binc's queue without ever writing back, and what moving a file here means. |
 | [`governance/README.md`](governance/README.md) | Governance for agents: Binc's 33 policy pages, workflow rules and operator brief copied in by `sync.sh` with a manifest, precedence between their rules and ours, what Claude Code loads automatically, and the hook that blocks writes into the mirror. |
 | [`docs/CANALV2-STRUCTURE.md`](docs/CANALV2-STRUCTURE.md) | Binc's CANALV2 tree explained: the numbered top level, the fixed shot-folder shape, how a shot moves from inbox to delivery, naming and versioning in short, what lives outside the root on binc-PC, and why the tree is read-only for us. |
 | [`docs/PROMPTS.md`](docs/PROMPTS.md) | Where every kind of prompt is: the ComfyUI graphs (what ComfyUI calls a prompt) by location, count and format; the Gemini 3 Pro Image text prompts beside each generated paint patch; and the agent briefs, policies and job queue in Binc's tree. |
