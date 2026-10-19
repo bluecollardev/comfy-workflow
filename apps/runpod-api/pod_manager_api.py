@@ -72,6 +72,8 @@ class PodStatus(BaseModel):
     web_ui_url: Optional[str] = Field(None, description="ComfyUI web UI URL")
     ssh_command: str = Field(..., description="SSH connection command")
     idle_stop_minutes: int = Field(default=0, description="Stopped after this many quiet minutes; 0 = not watched")
+    status_text: str = Field(default="", description="RunPod's own status line (lastStatusChange)")
+    console_url: str = Field(default="", description="The pod in the RunPod console")
 
 
 class DashboardStats(BaseModel):
@@ -198,6 +200,48 @@ async def put_settings(update: SettingsUpdate):
     return _settings_view()
 
 
+@app.get("/api/pods/{pod_id}/details", tags=["Pods"])
+async def pod_details(pod_id: str):
+    """The pod as RunPod describes it (v2 REST): status text, price, place, card, image, console link."""
+    import httpx
+    api_key = os.getenv('RUNPOD_API_KEY')
+    if not api_key:
+        raise HTTPException(status_code=401, detail="RUNPOD_API_KEY not set")
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.get(f"https://api.runpod.io/v2/pods/{pod_id}", headers={"Authorization": f"Bearer {api_key}", "Accept": "application/json"})
+    if r.status_code == 404:
+        raise HTTPException(status_code=404, detail=f"RunPod has no such pod ({pod_id})")
+    if r.status_code >= 400:
+        raise HTTPException(status_code=502, detail=f"RunPod answered {r.status_code}")
+    d = r.json()
+    running = (d.get("desiredStatus") or "").upper() == "RUNNING"
+    return {"id": d.get("id"), "name": d.get("name", ""), "status": d.get("desiredStatus", ""), "status_text": d.get("lastStatusChange", ""),
+            "cost_per_hr": d.get("cost", d.get("costPerHr")), "cloud": d.get("cloud", ""), "datacenter": d.get("dataCenterId", ""),
+            "gpu": (d.get("gpu") or {}).get("id", ""), "gpu_count": (d.get("gpu") or {}).get("count", 1), "image": d.get("image") or d.get("imageName", ""),
+            "disk_gb": d.get("disk", 0), "volume_gb": d.get("volume", 0), "created_at": d.get("createdAt", ""), "actions": d.get("actions", []),
+            "console_url": f"https://www.runpod.io/console/pods/{pod_id}", "web_ui_url": idle.proxy_url(pod_id) if running else None, "ssh_command": f"ssh root@{pod_id}.proxy.runpod.io"}
+
+
+@app.get("/api/pods/{pod_id}/logs", tags=["Pods"])
+async def pod_logs(pod_id: str, tail: int = 100, source: Optional[str] = None):
+    """The pod's log stream from RunPod, passed through as Server-Sent Events."""
+    import httpx
+    from fastapi.responses import StreamingResponse
+    api_key = os.getenv('RUNPOD_API_KEY')
+    if not api_key:
+        raise HTTPException(status_code=401, detail="RUNPOD_API_KEY not set")
+    params = {"tail": tail}
+    if source:
+        params["source"] = source
+
+    async def relay():
+        async with httpx.AsyncClient(timeout=None) as client:
+            async with client.stream("GET", f"https://api.runpod.io/v2/pods/{pod_id}/logs", params=params, headers={"Authorization": f"Bearer {api_key}", "Accept": "text/event-stream"}) as r:
+                async for chunk in r.aiter_bytes():
+                    yield chunk
+    return StreamingResponse(relay(), media_type="text/event-stream")
+
+
 @app.get("/api/governance", tags=["Governance"])
 async def get_governance():
     """The rules applied to connecting agents: shared/governance, with the instructions the MCP server hands out."""
@@ -283,7 +327,7 @@ async def create_pod(request: CreatePodRequest):
             raise HTTPException(status_code=500, detail="Failed to create pod")
 
         pod_id = pod.get('id')
-        runtime = pod.get('runtime', {})
+        runtime = pod.get('runtime') or {}   # None for a stopped pod
         if idle_minutes and idle_minutes > 0:
             idle.register(pod_id, idle_minutes)
 
@@ -320,7 +364,7 @@ async def list_pods():
         pod_list = []
         for pod in pods:
             pod_id = pod.get('id', 'unknown')
-            runtime = pod.get('runtime', {})
+            runtime = pod.get('runtime') or {}   # None for a stopped pod
             uptime = runtime.get('uptimeInSeconds')
 
             # Determine if running
@@ -337,6 +381,8 @@ async def list_pods():
                 web_ui_url=idle.proxy_url(pod_id) if is_running else None,
                 ssh_command=f"ssh root@{pod_id}.proxy.runpod.io",
                 idle_stop_minutes=(idle.entry(pod_id) or {}).get("minutes", 0),
+                status_text=pod.get('lastStatusChange') or '',
+                console_url=f"https://www.runpod.io/console/pods/{pod_id}",
             )
             pod_list.append(pod_data)
 
@@ -364,7 +410,7 @@ async def dashboard():
 
         for pod in pods:
             pod_id = pod.get('id', 'unknown')
-            runtime = pod.get('runtime', {})
+            runtime = pod.get('runtime') or {}   # None for a stopped pod
             uptime = runtime.get('uptimeInSeconds')
             is_running = uptime is not None and uptime > 0
 
@@ -414,7 +460,7 @@ async def get_pod(pod_id: str):
         if not pod:
             raise HTTPException(status_code=404, detail="Pod not found")
 
-        runtime = pod.get('runtime', {})
+        runtime = pod.get('runtime') or {}   # None for a stopped pod
         uptime = runtime.get('uptimeInSeconds')
         is_running = uptime is not None and uptime > 0
 
@@ -510,7 +556,7 @@ async def websocket_pods(websocket: WebSocket):
                 pod_list = []
                 for pod in pods:
                     pod_id = pod.get('id', 'unknown')
-                    runtime = pod.get('runtime', {})
+                    runtime = pod.get('runtime') or {}   # None for a stopped pod
                     uptime = runtime.get('uptimeInSeconds')
                     is_running = uptime is not None and uptime > 0
 

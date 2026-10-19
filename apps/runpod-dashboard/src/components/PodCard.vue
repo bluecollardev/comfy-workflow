@@ -28,6 +28,20 @@
         </dd>
       </template>
 
+      <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.id') }}</dt>
+      <dd class="col-8 mb-0">
+        <code data-testid="pod-id">{{ pod.id }}</code>
+        <a :href="pod.console_url || `https://www.runpod.io/console/pods/${pod.id}`" target="_blank" rel="noopener" class="ms-2 small" :title="$t('pod.console')" data-testid="pod-console">
+          <i class="fa-solid fa-arrow-up-right-from-square fa-xs"></i> RunPod
+        </a>
+        <button type="button" class="btn btn-link btn-sm p-0 ms-2 align-baseline" :title="$t('pod.copyId')" data-testid="pod-copy-id" @click="copyId"><i class="fa-regular fa-copy fa-xs"></i></button>
+      </dd>
+
+      <template v-if="pod.status_text">
+        <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.statusText') }}</dt>
+        <dd class="col-8 mb-0 small" data-testid="pod-status-text">{{ pod.status_text }}</dd>
+      </template>
+
       <template v-if="pod.status !== 'stopped'">
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.idleStop') }}</dt>
         <dd class="col-8 mb-0" data-testid="pod-idle">{{ pod.idle_stop_minutes ? $t('pod.idleAfter', { n: pod.idle_stop_minutes }) : $t('pod.notWatched') }}</dd>
@@ -38,6 +52,30 @@
         <dd class="col-8 mb-0"><code class="text-break">{{ pod.ssh_command }}</code></dd>
       </template>
     </dl>
+
+    <div class="d-flex gap-2 mb-2">
+      <BButton variant="outline-light" size="sm" :pressed="showDetails" data-testid="pod-details-toggle" @click="toggleDetails">
+        <i class="fa-solid fa-circle-info me-1"></i>{{ $t('pod.details') }}
+      </BButton>
+      <BButton variant="outline-light" size="sm" data-testid="pod-logs-toggle" @click="showLogs = true">
+        <i class="fa-solid fa-scroll me-1"></i>{{ $t('pod.logs') }}
+      </BButton>
+    </div>
+    <div v-if="showDetails" class="small mb-2" data-testid="pod-details">
+      <div v-if="detailsError" class="text-danger">{{ detailsError }}</div>
+      <div v-else-if="!details" class="text-body-secondary">{{ $t('pod.loadingDetails') }}</div>
+      <dl v-else class="row g-1 mb-0">
+        <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.statusText') }}</dt><dd class="col-8 mb-0" data-testid="pod-details-status">{{ details.status }}<span v-if="details.status_text" class="text-body-secondary"> · {{ details.status_text }}</span></dd>
+        <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.cost') }}</dt><dd class="col-8 mb-0" data-testid="pod-details-cost">{{ details.cost_per_hr != null ? '$' + details.cost_per_hr + $t('pod.perHour') : '—' }}</dd>
+        <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.place') }}</dt><dd class="col-8 mb-0">{{ details.cloud }}<span v-if="details.datacenter"> · {{ details.datacenter }}</span></dd>
+        <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.gpu') }}</dt><dd class="col-8 mb-0">{{ details.gpu }} ×{{ details.gpu_count }}</dd>
+        <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.image') }}</dt><dd class="col-8 mb-0 text-break"><code>{{ details.image }}</code></dd>
+        <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.disk') }}</dt><dd class="col-8 mb-0">{{ $t('pod.diskValue', { disk: details.disk_gb, volume: details.volume_gb }) }}</dd>
+      </dl>
+    </div>
+    <BModal v-model="showLogs" :title="$t('pod.logsTitle', { name: pod.name })" size="xl" scrollable hide-footer body-class="p-0" @hidden="showLogs = false">
+      <PodLogs v-if="showLogs" :pod-id="pod.id" modal />
+    </BModal>
 
     <div class="d-flex gap-2 pt-3 border-top">
       <BButton
@@ -81,6 +119,10 @@
  *   stop, resume, delete  — delete only fires after the user confirms
  */
 import { t } from '../i18n'
+import { ref } from 'vue'
+import PodLogs from './PodLogs.vue'
+import { usePodsStore } from '../stores/pods'
+import { useToastStore } from '../stores/toast'
 const props = defineProps({
   pod: { type: Object, required: true },
   busy: { type: Boolean, default: false },
@@ -98,6 +140,24 @@ function formatUptime(seconds) {
   const h = Math.floor(seconds / 3600)
   const m = Math.floor((seconds % 3600) / 60)
   return h ? `${h}h ${m}m` : `${m}m`
+}
+
+const pods = usePodsStore()
+const toast = useToastStore()
+const showDetails = ref(false)
+const showLogs = ref(false)
+const details = ref(null)
+const detailsError = ref(null)
+
+async function toggleDetails() {
+  showDetails.value = !showDetails.value
+  if (!showDetails.value) return
+  details.value = null; detailsError.value = null
+  try { details.value = await pods.details(props.pod.id) } catch (e) { detailsError.value = e.response?.data?.detail || e.message }
+}
+
+async function copyId() {
+  try { await navigator.clipboard.writeText(props.pod.id); toast.info(t('pod.copied')) } catch { /* clipboard blocked: the id is still on screen */ }
 }
 
 function confirmDelete() {

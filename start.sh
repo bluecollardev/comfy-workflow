@@ -141,6 +141,7 @@ case "${1:-help}" in
     exec npx playwright test --config playwright.electron.config.js no-spend.spec.js "$@" ;;
   e2e-live)
     # the proof against RunPod: one real pod with the stock image, stopped and deleted by the test. Spends.
+    # RUNPOD_LIVE_KEEP=1 leaves it stopped (bills nothing with no per-pod volume) so the app can show it.
     shift; load_env; need_key; ensure_dashboard; cd apps/runpod-dashboard
     RUNPOD_LIVE=1 exec npx playwright test --config playwright.electron.config.js live.spec.js "$@" ;;
   core-test)

@@ -46,6 +46,7 @@ export function defaultState() {
     // The folder browser (GET /fs/dirs): a tiny disk.
     fs: { '/Users/lucas': ['ComfyUI-Shared', 'Projects'], '/Users/lucas/Projects': ['CANALV2', 'plates'], '/Users/lucas/Projects/CANALV2': ['00_POLICY', '04_TRACKER'] },
     settings: { runpod_api_key_set: false, runpod_api_key_hint: '', source: 'none' },
+    logs: {},   // pod id -> lines for GET /pods/:id/logs
     failures: {},
   }
 }
@@ -128,6 +129,18 @@ export async function mockApi(page, state) {
         ssh_command: 'ssh root@new.proxy.runpod.io' }
       state.pods.push(pod)
       return json(pod, 201)
+    }
+    if ((m = path.match(/^\/pods\/([^/]+)\/details$/)) && method === 'GET') {
+      const pod = state.pods.find((p) => p.id === m[1])
+      if (!pod) return json({ detail: `RunPod has no such pod (${m[1]})` }, 404)
+      return json({ id: pod.id, name: pod.name, status: pod.status === 'stopped' ? 'EXITED' : 'RUNNING', status_text: pod.status === 'stopped' ? 'Exited by user: Mon Oct 19 2026' : 'Rented by user: Mon Oct 19 2026',
+        cost_per_hr: 0.28, cloud: 'SECURE', datacenter: 'EUR-IS-1', gpu: 'NVIDIA RTX 4000 Ada Generation', gpu_count: 1, image: 'ashleykza/comfyui:latest', disk_gb: 20, volume_gb: 0,
+        created_at: '2026-10-19T11:00:19Z', actions: ['start', 'terminate'], console_url: `https://www.runpod.io/console/pods/${pod.id}`, web_ui_url: pod.web_ui_url || null, ssh_command: pod.ssh_command })
+    }
+    if ((m = path.match(/^\/pods\/([^/]+)\/logs$/)) && method === 'GET') {
+      const lines = state.logs[m[1]] || ['create container ashleykza/comfyui:latest', 'start container for ashleykza/comfyui:latest: begin']
+      const body = lines.map((line, i) => `id: 2026-10-19T11:02:2${i}Z\ndata: ${JSON.stringify({ source: 'system', line, ts: `2026-10-19T11:02:2${i}Z` })}\n\n`).join('')
+      return route.fulfill({ status: 200, contentType: 'text/event-stream', body })
     }
     if ((m = path.match(/^\/pods\/([^/]+)\/(stop|resume)$/)) && method === 'POST') {
       const pod = state.pods.find((p) => p.id === m[1])

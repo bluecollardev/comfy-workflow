@@ -13,7 +13,7 @@ test.describe('RunPod, live', () => {
     // never leave the proof pod running: whatever happened, stop and delete anything named Live-Proof
     const { page, app } = ctx
     try {
-      for (const action of ['pod-stop', 'pod-delete']) {
+      for (const action of process.env.RUNPOD_LIVE_KEEP ? ['pod-stop'] : ['pod-stop', 'pod-delete']) {
         const card = podCard(page, 'Live-Proof')
         if (await card.count()) {
           const btn = card.getByTestId(action)
@@ -53,6 +53,8 @@ test.describe('RunPod, live', () => {
       await page.getByTestId('refresh').click()
       await expect(card.getByTestId('pod-status')).toHaveText('stopped')
     }).toPass({ timeout: 2 * 60 * 1000, intervals: [5_000] })
+
+    if (process.env.RUNPOD_LIVE_KEEP) return   // left stopped, for the app to show
 
     page.once('dialog', (d) => d.accept())
     await card.getByTestId('pod-delete').click()

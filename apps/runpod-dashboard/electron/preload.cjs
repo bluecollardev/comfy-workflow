@@ -4,6 +4,12 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('core', {
+  logs: {
+    start: (id, opts = {}) => ipcRenderer.invoke('core:logs:start', id, JSON.parse(JSON.stringify(opts))),
+    stop: (id) => ipcRenderer.invoke('core:logs:stop', id),
+    // Subscribe to pushed log events; returns the unsubscribe function.
+    onEvent(cb) { const h = (_e, payload) => cb(payload); ipcRenderer.on('core:logs', h); return () => ipcRenderer.removeListener('core:logs', h) },
+  },
   async invoke(ns, fn, args = []) {
     // Plain data only crosses the bridge: Vue's reactive proxies cannot be structured-cloned.
     let plain

@@ -22,6 +22,7 @@ export interface CreatePodRequest {
 export interface PodStatus {
   id: string; name: string; status: 'running' | 'stopped' | 'starting'; gpu: string; vram: number
   uptime_seconds: number | null; web_ui_url: string | null; ssh_command: string; idle_stop_minutes: number
+  console_url?: string; status_text?: string
 }
 
 /** The image a pod boots. `configured` is ours from the mount configuration; it must be a reference a pod can
@@ -126,11 +127,13 @@ async function deployWithFallback(input: rp.CreatePodInput, client?: rp.RunPodCl
 export function toStatus(p: rp.RawPod): PodStatus {
   const uptime = p.runtime?.uptimeInSeconds ?? p.uptimeSeconds ?? null
   const running = uptime != null && uptime > 0
+  const wanted = (p.desiredStatus || '').toUpperCase() === 'RUNNING'
   return {
-    id: p.id, name: p.name || 'Unknown', status: running ? 'running' : 'stopped',
+    id: p.id, name: p.name || 'Unknown', status: running ? 'running' : wanted ? 'starting' : 'stopped',
     gpu: p.machine?.gpuDisplayName || String(p.gpuCount ?? '?'), vram: gpus.vram(p.machine?.gpuDisplayName || '') || 24,
     uptime_seconds: uptime, web_ui_url: running ? idle.proxyUrl(p.id) : null,
     ssh_command: `ssh root@${p.id}.proxy.runpod.io`, idle_stop_minutes: idle.entry(p.id)?.minutes ?? 0,
+    console_url: consoleUrl(p.id), status_text: p.lastStatusChange || p.desiredStatus || '',
   }
 }
 
@@ -163,3 +166,38 @@ export async function remove(podId: string, client?: rp.RunPodClient) { if (isDr
 /** The two callbacks the idle loop needs, over RunPod. */
 export const runningIds = (client?: rp.RunPodClient) => async () => (isDry() ? dry.runningIds() : new Set((await rp.listPods(client)).filter((p) => (p.runtime?.uptimeInSeconds ?? p.uptimeSeconds ?? 0) > 0).map((p) => p.id)))
 export const stopper = (client?: rp.RunPodClient) => async (id: string) => { if (isDry()) { dry.stop(id); return } await rp.stopPod(id, client) }
+
+export interface PodDetails {
+  id: string; name: string; status: string; status_text: string; cost_per_hr: number | null; cloud: string; datacenter: string
+  gpu: string; gpu_count: number; image: string; disk_gb: number; volume_gb: number; created_at: string; actions: string[]
+  console_url: string; web_ui_url: string | null; ssh_command: string
+}
+
+export const consoleUrl = (id: string) => `https://www.runpod.io/console/pods/${id}`
+
+/** The pod as RunPod describes it: the status text people see in the console, the price, the place, the card. */
+export async function details(podId: string, client?: rp.RunPodClient): Promise<PodDetails> {
+  if (isDry()) {
+    const p = dry.list().find((x) => x.id === podId)
+    if (!p) throw new CoreError(404, `Pod ${podId} not found`)
+    return { id: p.id, name: p.name, status: p.status === 'stopped' ? 'EXITED' : 'RUNNING', status_text: `Simulated (no-spend mode); ${p.status}`, cost_per_hr: 0, cloud: 'NONE', datacenter: 'local', gpu: p.gpu, gpu_count: 1, image: 'simulated', disk_gb: 0, volume_gb: 0, created_at: '', actions: [], console_url: consoleUrl(p.id), web_ui_url: p.web_ui_url, ssh_command: p.ssh_command }
+  }
+  const r = await rp.podDetails(podId, client)
+  const running = (r.desiredStatus || '').toUpperCase() === 'RUNNING'
+  return {
+    id: r.id, name: r.name || '', status: r.desiredStatus || '', status_text: r.lastStatusChange || '', cost_per_hr: r.cost ?? r.costPerHr ?? null,
+    cloud: r.cloud || '', datacenter: r.dataCenterId || '', gpu: r.gpu?.id || '', gpu_count: r.gpu?.count ?? 1, image: r.image || r.imageName || '',
+    disk_gb: r.disk ?? 0, volume_gb: r.volume ?? 0, created_at: r.createdAt || '', actions: r.actions || [],
+    console_url: consoleUrl(r.id), web_ui_url: running ? idle.proxyUrl(r.id) : null, ssh_command: `ssh root@${r.id}.proxy.runpod.io`,
+  }
+}
+
+/** The log stream, or a few simulated lines in no-spend mode. */
+export async function logs(podId: string, opts: { tail?: number; since?: string; source?: string }, onEvent: (e: rp.LogEvent) => void, signal?: AbortSignal, client?: rp.RunPodClient): Promise<void> {
+  if (isDry()) {
+    const now = new Date().toISOString()
+    for (const line of ['no-spend mode: this pod is simulated', 'create container (simulated)', 'start container: begin (simulated)', 'ComfyUI listening on 0.0.0.0:8188 (simulated)']) onEvent({ source: 'system', line, ts: now })
+    return
+  }
+  return rp.streamLogs(podId, opts, onEvent, signal, client)
+}

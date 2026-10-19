@@ -37,6 +37,7 @@ export function toStatus(p: DryPod, now = Date.now()): PodStatus {
     gpu: `${gpus.GPUS[p.gpu]?.name || p.gpu} x${p.gpu_count}`, vram: gpus.vram(p.gpu) * p.gpu_count,
     uptime_seconds: uptime, web_ui_url: p.status === 'running' && !starting ? `https://${p.id}-8188.proxy.runpod.net` : null,
     ssh_command: `ssh root@${p.id}.proxy.runpod.io`, idle_stop_minutes: p.idle_stop_minutes,
+    console_url: `https://www.runpod.io/console/pods/${p.id}`, status_text: p.status === 'running' ? (starting ? 'Starting (simulated)' : 'Running (simulated)') : 'Stopped (simulated)',
   }
 }
 

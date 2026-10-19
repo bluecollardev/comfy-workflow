@@ -11,6 +11,7 @@ import { t } from '../i18n'
  * success; `actionError` holds the last failure for an inline alert.
  */
 export const REFRESH_MS = 30_000
+export const STARTING_REFRESH_MS = 5_000   // while a pod is coming up, poll fast so the card follows it
 
 export const usePodsStore = defineStore('pods', () => {
   const toast = useToastStore()
@@ -47,10 +48,14 @@ export const usePodsStore = defineStore('pods', () => {
 
   function startAutoRefresh() {
     stopAutoRefresh()
-    timer = setInterval(load, REFRESH_MS)
+    const tick = async () => {
+      await load()
+      timer = setTimeout(tick, pods.value.some((p) => p.status === 'starting') ? STARTING_REFRESH_MS : REFRESH_MS)
+    }
+    timer = setTimeout(tick, REFRESH_MS)
   }
   function stopAutoRefresh() {
-    if (timer) clearInterval(timer)
+    if (timer) clearTimeout(timer)
     timer = null
   }
 
@@ -85,8 +90,11 @@ export const usePodsStore = defineStore('pods', () => {
     await load()
     return r
   }
-  const resume = (id) => act(id, podsAPI.resumePod, 'Resume')
+  const resume = async (id) => { const r = await act(id, podsAPI.resumePod, 'Resume'); if (r.ok) startAutoRefresh(); return r }
+
+  /** The pod as RunPod describes it, for the card's details panel. */
+  const details = (id) => podsAPI.details(id)
   const remove = (id) => act(id, podsAPI.deletePod, 'Delete')
 
-  return { stats, pods, dryRun, initialLoading, refreshing, loadError, actionError, busyPodId, load, refreshList, startAutoRefresh, stopAutoRefresh, create, stop, stopAll, resume, remove }
+  return { stats, pods, dryRun, initialLoading, refreshing, loadError, actionError, busyPodId, load, refreshList, startAutoRefresh, stopAutoRefresh, create, stop, stopAll, resume, remove, details }
 })
