@@ -39,8 +39,9 @@ comfy_workflow/                    # Root monorepo
 │
 ├── apps/                          # Runnable apps (tracked scripts, ignored data)
 │   ├── comfy-app/                # The ComfyUI server: Mac scripts + Dockerfile for RunPod
-│   └── runpod-dashboard/         # Vue 3 + Electron dashboard for the pod manager API (infra/scripts)
-│       └── ComfyUI/              #   ignored: the ~5 GB standalone install itself
+│   │   └── ComfyUI/              #   ignored: the ~5 GB standalone install itself
+│   ├── runpod-api/               # FastAPI pod manager API, pool manager, MCP server, tests (Python)
+│   └── runpod-dashboard/         # Vue 3 + Electron dashboard for the pod manager API
 │
 ├── projects/                      # Client/creative work; ignored except README.md
 │   ├── README.md                  # Inventory of what is in here
@@ -48,8 +49,10 @@ comfy_workflow/                    # Root monorepo
 │
 ├── infra/                         # Infrastructure automation
 │   ├── scripts/
-│   │   ├── create_pod.py         # Pod lifecycle CLI
-│   │   └── requirements.txt       # Python deps
+│   │   ├── create_pod.py         # Pod lifecycle CLI (create, list, status, stop, resume, delete)
+│   │   ├── setup.sh              # Installs the CLI deps and creates a first pod
+│   │   └── requirements.txt       # Python deps for the CLI
+│   ├── pod-config.yaml           # Pod specifications
 │   ├── terraform/                # IaC (placeholder)
 │   └── README.md                 # Infra guide
 │
@@ -108,7 +111,7 @@ develop → master (only for releases)
 
 Before merging any branch:
 ```bash
-pytest infra/scripts/tests/ -m "not integration"
+pytest apps/runpod-api/tests/ -m "not integration"
 # All tests must pass before merge
 ```
 
@@ -185,7 +188,8 @@ infra(scripts): add pod lifecycle management
 ### Configuration
 
 - **`comfy.yaml`** — ComfyUI project config (routing, vars, assets)
-- **`infra/scripts/requirements.txt`** — Python dependencies for automation
+- **`infra/scripts/requirements.txt`** — Python dependencies for the pod CLI
+- **`apps/runpod-api/requirements.txt`** — Python dependencies for the pod manager API, MCP server and tests
 
 ### Documentation
 
@@ -197,6 +201,7 @@ infra(scripts): add pod lifecycle management
 
 - **`apps/comfy-app/launch.sh`** — Start the local ComfyUI server (run `setup.sh` first on a new machine; see `apps/comfy-app/README.md`)
 - **`infra/scripts/create_pod.py`** — Pod management CLI
+- **`apps/runpod-api/pod_manager_api.py`** — FastAPI pod manager (serves the dashboard at :8000); `mcp_server.py` beside it is the MCP server for Claude Code
 - **`apps/comfy-app/Dockerfile`** — The ComfyUI server image for RunPod / Linux / Windows-WSL2 (`build.sh` builds it)
 
 ## Development Tasks
@@ -266,9 +271,9 @@ ComfyUI-Prod-Oct17   # Production pod with date
 **Pod Lifecycle:**
 1. **Create:** Use `create_pod.py create` with config from `pod-config.yaml`
 2. **Document:** Add pod ID to local notes
-3. **Stop:** Use `stop_pod.py` when not in use (pause billing)
-4. **Resume:** Use `resume_pod.py` when resuming work
-5. **Delete:** Use `delete_pod.py` with confirmation (irreversible)
+3. **Stop:** Use `create_pod.py stop --pod-id <id>` when not in use (pause billing)
+4. **Resume:** Use `create_pod.py resume --pod-id <id>` when resuming work
+5. **Delete:** Use `create_pod.py delete --pod-id <id>` with confirmation (irreversible)
 
 **Never:**
 - ❌ Leave pod running 24/7 (unless production)

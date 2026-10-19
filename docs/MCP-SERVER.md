@@ -10,7 +10,7 @@ Claude Code ↔ MCP Server ↔ Pool Manager ↔ RunPod API
 
 ```bash
 cd ~/workspaces/comfy_workflow
-pip install -r infra/scripts/requirements.txt
+pip install -r apps/runpod-api/requirements.txt
 ```
 
 ### 2. Set Environment
@@ -22,7 +22,7 @@ export RUNPOD_API_KEY="rpa_..."
 ### 3. Start MCP Server
 
 ```bash
-cd infra/scripts
+cd apps/runpod-api
 python3 mcp_server.py
 ```
 
@@ -38,7 +38,7 @@ In `~/.claude/codes/claude-code-config.json` (or via Claude Code settings):
     "comfy-moe": {
       "command": "python3",
       "args": [
-        "/Users/lucas/workspaces/comfy_workflow/infra/scripts/mcp_server.py"
+        "/Users/lucas/workspaces/comfy_workflow/apps/runpod-api/mcp_server.py"
       ],
       "env": {
         "RUNPOD_API_KEY": "rpa_..."
@@ -423,7 +423,7 @@ Claude submits it and returns the job URL to check progress.
 
 ```bash
 # Terminal 1: Start MCP server
-cd infra/scripts
+cd apps/runpod-api
 export RUNPOD_API_KEY="rpa_..."
 python3 mcp_server.py
 
@@ -435,7 +435,7 @@ python3 mcp_server.py
 ### Automated Tests (future)
 
 ```bash
-pytest infra/scripts/tests/test_mcp_server.py
+pytest apps/runpod-api/tests/test_mcp_server.py
 ```
 
 ---
@@ -450,7 +450,7 @@ ModuleNotFoundError: No module named 'mcp'
 
 Install dependencies:
 ```bash
-pip install -r infra/scripts/requirements.txt
+pip install -r apps/runpod-api/requirements.txt
 ```
 
 ### Claude Code Can't Connect
@@ -458,7 +458,7 @@ pip install -r infra/scripts/requirements.txt
 Check `~/.claude/codes/claude-code-config.json`:
 - Path to script is correct
 - `RUNPOD_API_KEY` is set
-- Script is executable: `chmod +x infra/scripts/mcp_server.py`
+- Script is executable: `chmod +x apps/runpod-api/mcp_server.py`
 
 ### API Key Invalid
 

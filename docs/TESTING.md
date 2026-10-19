@@ -5,7 +5,7 @@ Complete testing setup for ComfyUI MOE infrastructure.
 ## Quick Start
 
 ```bash
-cd ~/workspaces/comfy_workflow/infra/scripts
+cd ~/workspaces/comfy_workflow/apps/runpod-api
 
 # Install test dependencies
 pip install -r requirements.txt
@@ -21,12 +21,12 @@ pytest tests/ --cov=. --cov-report=html
 ## Test Structure
 
 ```
-infra/scripts/tests/
+apps/runpod-api/tests/
 ├── __init__.py
 ├── test_pool_manager.py      # Pod orchestration tests
+├── test_pool_integration.py   # Real RunPod API (marker: integration)
 ├── test_oauth_handler.py      # OAuth & authentication tests
-├── test_mcp_server.py         # MCP tool endpoint tests
-└── conftest.py                # Shared fixtures (future)
+└── test_models.py             # PodConfig / PoolAgent / User models
 ```
 
 ## Test Categories
@@ -165,9 +165,9 @@ jobs:
       - uses: actions/checkout@v2
       - uses: actions/setup-python@v2
         with: { python-version: 3.11 }
-      - run: pip install -r infra/scripts/requirements.txt
-      - run: pytest infra/scripts/tests/ -v
-      - run: pytest infra/scripts/tests/ --cov --cov-report=xml
+      - run: pip install -r apps/runpod-api/requirements.txt
+      - run: pytest apps/runpod-api/tests/ -v
+      - run: pytest apps/runpod-api/tests/ --cov --cov-report=xml
       - uses: codecov/codecov-action@v2
 ```
 

@@ -6,14 +6,18 @@ Automation scripts and configurations for managing ComfyUI infrastructure on Run
 
 ```
 infra/
-├── scripts/              # Python management scripts
-│   ├── create_pod.py    # Pod lifecycle management (create, stop, resume, delete)
-│   └── requirements.txt  # Python dependencies
-├── docker/              # Docker image definitions
-│   └── Dockerfile       # Custom ComfyUI image (extends prebuilt)
-├── terraform/           # IaC (future: Terraform configs for complex setups)
-└── README.md           # This file
+├── scripts/
+│   ├── create_pod.py    # Pod lifecycle CLI (create, list, status, stop, resume, delete)
+│   ├── setup.sh         # Installs the CLI deps and creates a first pod
+│   └── requirements.txt # Python dependencies for the CLI
+├── pod-config.yaml      # Pod specifications
+├── setup-team.sh        # Team machine setup (Homebrew, Python, Node, Terraform)
+├── terraform/           # IaC (future)
+└── README.md            # This file
 ```
+
+Not here any more: the pod manager API, pool manager and MCP server are the
+`apps/runpod-api/` app, and the ComfyUI Docker image is `apps/comfy-app/`.
 
 ## Quick Start
 

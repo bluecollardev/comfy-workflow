@@ -13,7 +13,7 @@ npm install
 ### Development (Hot Reload)
 ```bash
 # Make sure FastAPI backend is running first:
-# python3 infra/scripts/pod_manager_api.py
+# python3 apps/runpod-api/pod_manager_api.py
 
 # Then in another terminal:
 npm run dev

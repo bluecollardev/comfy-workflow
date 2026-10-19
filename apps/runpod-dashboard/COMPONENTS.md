@@ -45,7 +45,7 @@ App
 
 ### Sources: accounts → repositories → nodes
 
-1. **Accounts** (navbar) — OAuth connect to GitHub / GitLab. "Connect" is a plain link to `/api/auth/<provider>/start`; the provider redirects back to the UI with `?provider=&connected=` or `&error=`, which `App` shows as a notice. Providers show as disabled until the API server has `<PROVIDER>_CLIENT_ID/_SECRET` (see `infra/scripts/git_accounts.py` for the full setup).
+1. **Accounts** (navbar) — OAuth connect to GitHub / GitLab. "Connect" is a plain link to `/api/auth/<provider>/start`; the provider redirects back to the UI with `?provider=&connected=` or `&error=`, which `App` shows as a notice. Providers show as disabled until the API server has `<PROVIDER>_CLIENT_ID/_SECRET` (see `apps/runpod-api/git_accounts.py` for the full setup).
 2. **Repositories** (navbar) — attach repositories to the project. The Repository field is a `datalist` autocomplete over `/api/repos/search` (every connected account's repos, private included; debounced) and also accepts a pasted URL. The Branch field autocompletes from `/api/repos/branches` (`git ls-remote`, no clone) and defaults to the repo's HEAD when left blank.
 3. **Attach node** (Create pod → Custom nodes) — picks from the attached repositories (auto-selects the first), branch autocompletes from real branches, then `/api/repos/folders` lists the top-level folders (blob-less no-checkout clone, fast on big monorepos) with a filter and *Select shown*. *Add selected* writes one `repo#folder` line per pick (or `repo/tree/<branch>/<folder>` off `main`) into the Custom nodes textarea; *Add the whole repository* writes the bare URL. Lines can still be edited by hand.
 
