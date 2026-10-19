@@ -56,6 +56,7 @@
                 <BButton size="sm" variant="outline-light" class="text-nowrap" @click="browse(f.key, label(f), cfg.folders[f.key])"><i class="fa-regular fa-folder-open me-1"></i>Browse</BButton>
               </div>
               <small v-if="cfg.folders[f.key] && f.local === cfg.folders[f.key] && !f.exists" class="text-danger">This folder does not exist on this PC.</small>
+              <small v-else-if="f.mirror && f.key !== 'plates' && f.local === cfg.folders[f.key]" class="text-warning">This is Binc's mirror, read-only by rule, and a run writes here. Map a folder of your own{{ f.key === 'comfy-shared' ? ', e.g. ~/ComfyUI-Shared' : ' or a copy of the tree' }}.</small>
               <small v-else-if="f.declared" class="text-body-secondary">On a pod, linked from {{ f.declared.source }}.</small>
               <small v-else-if="f.key === 'project' && cfg.folders.project && f.local === cfg.folders.project && f.exists" class="text-warning">The tree's job files and structure page name no root; a pod cannot link what its graphs name.</small>
               <small v-else-if="f.key !== 'project' && cfg.folders.project" class="text-body-secondary">The tree names no path for it; nothing is linked on a pod.</small>

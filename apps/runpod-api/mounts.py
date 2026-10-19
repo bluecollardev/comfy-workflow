@@ -36,6 +36,17 @@ SHAPE_CANDIDATES = [
 ]
 
 
+MIRROR = _HERE.parents[1] / "projects" / "desktop"   # Binc's mirror, read-only by rule (.claude/rules/binc-tree.md)
+
+
+def in_mirror(local: str) -> bool:
+    """True when a mapped folder points into the mirror, where a run must not write."""
+    try:
+        return bool(local) and Path(local).resolve().is_relative_to(MIRROR.resolve())
+    except (OSError, ValueError):
+        return False
+
+
 class Link(BaseModel):
     """A path the project's files name, and where it lives on the pod."""
     path: str = Field(..., description="Path the graphs, scripts or job files name")
@@ -180,14 +191,14 @@ def folder_rows(cfg: MountsConfig) -> List[dict]:
         env_keys = list(m.get("env") or {})   # first is the name shown; the rest are aliases some packs read
         rows.append({
             "key": m["name"], "what": m.get("what", ""), "mode": m.get("mode") or "rw", "required": bool(m.get("required")),
-            "local": local, "exists": bool(local) and Path(local).is_dir(),
+            "local": local, "exists": bool(local) and Path(local).is_dir(), "mirror": in_mirror(local),
             "container": m["container"], "env_key": env_keys[0] if env_keys else "", "env_keys": env_keys, "declared": dec.get(m["name"]),
         })
     base = (cfg.mount_path or "/workspace").rstrip("/")
     for c in cfg.custom:
         rows.append({
             "key": c.name, "what": "", "mode": c.mode or "rw", "required": False, "custom": True,
-            "local": c.local, "exists": bool(c.local) and Path(c.local).is_dir(),
+            "local": c.local, "exists": bool(c.local) and Path(c.local).is_dir(), "mirror": in_mirror(c.local),
             "container": c.container or f"{base}/{c.name}", "env_key": "", "env_keys": [],
             "declared": {"path": c.link, "source": "the path typed here", "count": 1} if c.link else None,
         })

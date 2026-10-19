@@ -79,7 +79,7 @@ eval "$(curl -s localhost:8000/api/mounts/env | jq -r .sh)"   # this PC's folder
 | Runtime | How the paths resolve |
 |---|---|
 | binc-PC | they are real |
-| this Mac | map the three folders in the Configuration panel; `launch.sh` reads `PROJECT_ROOT`, `PLATES_ROOT` and `COMFY_SHARED` (`GET /api/mounts/env`). The mirror has the tree without plates |
+| this Mac | map the three folders in the Configuration panel; `apps/comfy-app/mounts-env.sh` reads the saved mapping (or `PROJECT_ROOT`, `PLATES_ROOT`, `COMFY_SHARED` from the environment) for `launch.sh` and `fetch-models.sh`, and `launch.sh` writes the model paths file from it at every start. ComfyUI-Shared may not be the mirror, which is read-only by rule; the default is `~/ComfyUI-Shared`. The mirror has the tree without plates |
 | Docker on a Linux box, Compose or Swarm | [`apps/comfy-app/docker/compose.yml`](../apps/comfy-app/docker/compose.yml) binds the three folders from the same three variables at the paths the project declares, plates read-only |
 | RunPod pod | a network volume at `/workspace` carrying `CANALV2/`, `plates/` and `ComfyUI-Shared/`; the image's entrypoint makes the links from `COMFY_LINKS`. Configured once in the Configuration panel and applied to every new pod by the API and by `create_pod.py` (`--network-volume`, `--link`, `--no-mounts`) |
 

@@ -72,6 +72,8 @@ def test_the_mirror_declares_binc_pcs_paths(mounts):
     assert dec["project"]["path"] == "/home/binc/CANALV2_r3/CANALV2"
     assert dec["plates"]["path"] == PLATES
     assert dec["comfy-shared"]["path"] == "/home/binc/ComfyUI-Shared"
+    rows = {r["key"]: r for r in mounts.folder_rows(cfg)}
+    assert rows["project"]["mirror"] and not rows["plates"]["mirror"]       # the mirror is flagged, read-only by rule
 
 
 def test_local_env_and_pod_overrides(mounts, tree, tmp_path):
