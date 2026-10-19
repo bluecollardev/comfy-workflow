@@ -2,7 +2,8 @@
 # Make apps/comfy-app runnable on this machine. Idempotent; re-run after a pull.
 #
 #   ./setup.sh                  # clone ComfyUI at the pinned commit, build the venv, link our packs
-#   COMFY_SHOTPIPE=v26 ./setup.sh   # also link that ShotPipe version (several: v26,v25)
+#   COMFY_SHOTPIPE=contract-v26 ./setup.sh   # link the ShotPipe set the corrosion graphs need (a set from
+#                                         # shared/nodes/sets.json, or versions: v26,v14,v7)
 #
 # What ends up where (ComfyUI/ is ignored by git; everything else is tracked):
 #   ComfyUI/                       upstream clone at pins.env COMFYUI_REF, unmodified
@@ -60,6 +61,13 @@ if [ ! -f "$NODES/README.md" ]; then
 fi
 # Packs sit in portable/ (no binc-PC paths in them) or bound/ (CANALV2 paths as
 # defaults); see shared/nodes/docs/PORTABILITY.md. A pack is found in either.
+# A name in sets.json (e.g. contract-v26) expands to its packs; anything else is a version like v26.
+expand_set() { python3 - "$NODES/sets.json" "$1" <<'PY'
+import json, sys
+sets = json.load(open(sys.argv[1])); s = sets.get(sys.argv[2])
+print(" ".join(p.replace("ComfyUI-BH-ShotPipe-", "") for p in s["packs"] if "ShotPipe" in p) if isinstance(s, dict) else sys.argv[2])
+PY
+}
 pack_dir() { for f in portable bound; do [ -d "$NODES/$f/$1" ] && { echo "$NODES/$f/$1"; return; }; done; return 1; }
 # Every pack that is not a ShotPipe version (BincStereo today) is always linked.
 for dir in "$NODES"/portable/*/ "$NODES"/bound/*/; do
@@ -74,7 +82,8 @@ done
 # names repeat across versions and ComfyUI keeps the last one loaded.
 for old in "$APP"/custom_nodes/ComfyUI-BH-ShotPipe-*; do [ -L "$old" ] && rm "$old"; done
 if [ -n "${COMFY_SHOTPIPE:-}" ]; then
-  IFS=, read -ra VERSIONS <<< "$COMFY_SHOTPIPE"
+  IFS=, read -ra REQUESTED <<< "$COMFY_SHOTPIPE"
+  VERSIONS=(); for r in "${REQUESTED[@]}"; do for v in $(expand_set "$r"); do VERSIONS+=("$v"); done; done
   for v in "${VERSIONS[@]}"; do
     src="$(pack_dir "ComfyUI-BH-ShotPipe-$v")" || { echo "no ShotPipe $v in $NODES/portable or bound" >&2; exit 1; }
     ln -sfn "$src" "$APP/custom_nodes/ComfyUI-BH-ShotPipe-$v"

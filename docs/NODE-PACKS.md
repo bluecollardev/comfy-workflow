@@ -8,6 +8,17 @@ there: `apps/comfy-app/setup.sh` symlinks them into the Mac install,
 packs from Binc's mirror any more; `shared/sync-nodes.sh` is the one path
 from the mirror into the submodule.
 
+## What the packs are
+
+ShotPipe is one layered family, not nineteen alternatives: v7 is the base
+(25 nodes), later versions add nodes beside it and import its code, and a
+graph needs a **set**. The 14 current corrosion graphs use nodes from v7, v10,
+v11, v12, v13, v14 and v26 at once; that set is `contract-v26` in the packs
+repo's `sets.json`, and `COMFY_SHOTPIPE=contract-v26` links all seven.
+BincStereo is a separate, self-contained pack. The full explanation, with
+what each generation adds and the ShotPipe/BincStereo comparison, is
+`shared/nodes/docs/SHOTPIPE.md`.
+
 ## Two folders: portable/ and bound/
 
 Since tag `packs-2026-10-19b` every pack sits in one of two folders of the
@@ -19,13 +30,13 @@ packs repo, decided by its contents, not by hand:
 | `bound/` | CANALV2 paths (`/home/binc/…`, `/mnt/storage/…`) baked in as widget defaults; fine for CANALV2, where every runtime mounts those paths, not elsewhere untouched | ShotPipe v6, v7, v15, v17, v20–v25 |
 
 `setup.sh`, `build.sh` and `sync-nodes.sh` look in both, so the split changes
-nothing for an install. A pack never moves between the folders and is never
+nothing for an install. Portability is per pack; a set is only as portable as
+its base, and `contract-v26` includes v7, which is bound. A pack never moves between the folders and is never
 edited to become portable: a clean rewrite is a new version with a new prefix,
 and it lands in `portable/`. The packs repo's `tools/manifest.py` regenerates
 `packs.json`, `docs/NODES.md` and `docs/PORTABILITY.md` (every baked path by
 file and line) and fails if a pack's contents disagree with its folder;
-`sync-nodes.sh` runs it after an import. All 14 current corrosion graphs use
-v26, which is portable.
+`sync-nodes.sh` runs it after an import.
 
 ## Three layers of version
 
@@ -68,7 +79,7 @@ git commit -m "nodes: pin comfy-node-packs packs-2026-10-26 (ShotPipe v27)"
 Then, when an image is wanted:
 
 ```bash
-apps/comfy-app/build.sh --shotpipe v27      # comfy-app:v27, labelled with the packs commit
+apps/comfy-app/build.sh --shotpipe contract-v27   # after adding the set to sets.json; labelled with the packs commit
 docker image inspect comfy-app:v27 --format '{{index .Config.Labels "dev.bluecollar.comfy-node-packs"}}'
 ```
 
@@ -82,9 +93,9 @@ packs commit, so the two together say precisely what code is inside.
 ```bash
 git clone --recurse-submodules git@github.com:bluecollardev/comfy-workflow.git
 git submodule update --init shared/nodes    # in an existing clone; start.sh and setup.sh do this too
-COMFY_SHOTPIPE=v26 apps/comfy-app/setup.sh  # link BincStereo (always) plus ShotPipe v26
-apps/comfy-app/build.sh --shotpipe v26,v25  # image with two ShotPipe versions side by side
+COMFY_SHOTPIPE=contract-v26 apps/comfy-app/setup.sh  # BincStereo (always) plus the seven-pack ShotPipe set
+apps/comfy-app/build.sh --shotpipe contract-v26      # the image for the corrosion graphs; or explicit versions v26,v14,v7
 ```
 
-A graph opens only in a ComfyUI that has the ShotPipe version it was built
-with. All 14 current corrosion graphs are v26.
+A graph opens only in a ComfyUI that has every ShotPipe version it uses. The
+14 current corrosion graphs need the `contract-v26` set.

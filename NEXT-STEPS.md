@@ -7,7 +7,7 @@ and graphs are".
 **2026-10-19, what was measured:** the BincStereo smoke test runs on this Mac
 on MPS (all 12 nodes, about a second), so the stereo workflows run here. The
 corrosion graphs do not: the plates are not on this machine (the packs were
-not linked either that morning; v26 is, from the `shared/nodes` submodule, since the afternoon), and the graphs hardcode binc-PC's path. Blender is the solve
+not linked either that morning; the `contract-v26` set is, from the `shared/nodes` submodule, since the afternoon), and the graphs hardcode binc-PC's path. Blender is the solve
 step before a graph, not a requirement to run one. Decision record:
 `docs/ADR-004-where-the-workflows-run.md`.
 
@@ -50,12 +50,12 @@ graphs need `BH26_*` nodes. All versions, v6–v26, plus BincStereo are in the
 from Binc's mirror at install time any more. `docs/NODE-PACKS.md` has the
 versioning and release steps.
 
-- [x] Decide which ShotPipe version to install: `v26`, which all 14 current corrosion graphs use. Older shot graphs need their matching version linked beside it (`COMFY_SHOTPIPE=v26,v24`); never all versions at once, since unprefixed `BH_*` names repeat across versions.
+- [x] Decide which ShotPipe versions to install. Not one: ShotPipe stacks, and the 14 current graphs use nodes from v7, v10, v11, v12, v13, v14 and v26 together. That is the `contract-v26` set in the packs repo's `sets.json` (`shared/nodes/docs/SHOTPIPE.md` explains the family). Never v6 beside v7 or v9 beside v10, same names.
 - [x] Link it from the submodule, do not copy:
   ```bash
-  COMFY_SHOTPIPE=v26 apps/comfy-app/setup.sh   # symlinks shared/nodes/ComfyUI-BH-ShotPipe-v26 into ComfyUI/custom_nodes/
+  COMFY_SHOTPIPE=contract-v26 apps/comfy-app/setup.sh   # symlinks the seven packs from shared/nodes/{portable,bound}/ into ComfyUI/custom_nodes/
   ```
-  Verified 2026-10-19: both packs link and import (ShotPipe v26: 3 nodes, BincStereo: 6).
+  Verified 2026-10-19: the set links, every pack imports, and every `BH_*`/`BH26_*` node type the 14 graphs use resolves (36 types, 0 missing).
 - [ ] Restart the Mac ComfyUI and confirm the nodes show in the UI:
   ```bash
   export COMFY_LOCAL_URL=http://127.0.0.1:8188
