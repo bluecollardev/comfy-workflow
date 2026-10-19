@@ -90,14 +90,17 @@ python3 create_pod.py delete --pod-id <id> --force
 
 ### Building Custom Image
 
-```bash
-cd infra/docker
-docker build -t comfyui-custom:latest .
+The image lives in `apps/comfy-app/` (Dockerfile, `build.sh`, `docker/`), the
+same project that runs ComfyUI on the Mac. See `apps/comfy-app/README.md`.
 
-# Push to registry (if needed)
-docker tag comfyui-custom:latest <registry>/comfyui-custom:latest
-docker push <registry>/comfyui-custom:latest
+```bash
+cd apps/comfy-app
+./build.sh                       # comfy-app:v26, linux/amd64
+# Push to registry: separate step, needs Binc's yes on the registry name and account.
 ```
+
+The pod manager's "Load defaults" for env vars reads that Dockerfile's `ENV`
+and `ARG` lines (`DOCKERFILE_PATH` overrides the location).
 
 Then deploy to RunPod with:
 ```bash
