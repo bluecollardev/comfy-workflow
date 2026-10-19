@@ -1,0 +1,12 @@
+# BH internal policy (our standing rules)
+- Comp logic, not software logic. Framework first, then comp finesse. Small single-purpose nodes with previews. A graph never auto-corrects or guesses.
+- Brynley's method decides. A disagreement is raised once, with a reason. Then it is built his way.
+- Read-only, never touched: v4, the frozen ComfyUI instance, Brynley's graphs, the paint-app repo, and the panama-console repo (Kyle's).
+- Nothing is overwritten, moved or deleted. New work goes in new files, forks or new folders.
+- One global CDL per shot, the same in both eyes. One comp matte (white = fill, black = plate).
+- Hero eye: LEFT for the mono 2D prime in a conversion pipeline (decided 2026-10-09). Corrosion is a comp element, so it makes no difference there.
+- Every shot gets a V1 slug as soon as it has an inbox entry, even when its plates are not local yet: the Read nodes are muted placeholders, swapped later (decided 2026-10-09).
+- Generate on the hero eye. The second eye is the same layers offset by disparity. Only grain is per eye. Stereo QC reports only and never gates.
+- Locked or client-approved shots (for example cgi-042) are never edited or run by us.
+- Downloads, installs, spending, sending and publishing need an explicit yes (name, source, size for downloads).
+- Match effort to stakes. Keep answers short.

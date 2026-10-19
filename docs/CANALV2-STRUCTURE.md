@@ -5,7 +5,7 @@ corrosion clean-up and stereo conversion of IMAX plates, done in ComfyUI
 graphs built from their own node pack. The master lives on binc-PC at
 `/home/binc/CANALV2_r3/CANALV2`. This repo holds a mirror at
 `projects/desktop/CANALV2/`, ignored by git and **read-only for us** (see
-`.claude/rules.md`). This page explains the shape in our words; the
+`.claude/rules/`). This page explains the shape in our words; the
 authoritative version is Binc's own `00_POLICY/structure_v003.md`, and the
 per-folder inventory with sizes is `projects/README.md`.
 

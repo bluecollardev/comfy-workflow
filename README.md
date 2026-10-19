@@ -44,6 +44,8 @@ storage across those machines is the first gap to close (`NEXT-STEPS.md`).
 ├── infra/                  # Pod lifecycle CLI (create_pod.py), pod-config.yaml, Terraform placeholder
 ├── projects/               # Client/creative work; ignored by git except projects/README.md
 ├── docs/                   # Architecture decisions, setup, testing (index below)
+├── governance/             # Rules for agents: Binc's policies copied in (sync.sh), precedence, what Claude Code loads
+├── AGENTS.md               # Cross-tool entry point for agents; CLAUDE.md imports it
 ├── comfy.yaml              # comfy CLI project config (empty so far)
 ├── assets/ fragments/ blueprints/ outputs/   # comfy CLI project convention (empty so far)
 ├── CLAUDE.md               # Collaboration guide: branches, commits, conventions
@@ -195,6 +197,7 @@ All of `docs/`: <https://github.com/bluecollardev/comfy-workflow/tree/develop/do
 
 | Doc | What it covers |
 |---|---|
+| [`governance/README.md`](governance/README.md) | Governance for agents: Binc's 33 policy pages, workflow rules and operator brief copied in by `sync.sh` with a manifest, precedence between their rules and ours, what Claude Code loads automatically, and the hook that blocks writes into the mirror. |
 | [`docs/CANALV2-STRUCTURE.md`](docs/CANALV2-STRUCTURE.md) | Binc's CANALV2 tree explained: the numbered top level, the fixed shot-folder shape, how a shot moves from inbox to delivery, naming and versioning in short, what lives outside the root on binc-PC, and why the tree is read-only for us. |
 | [`docs/PROMPTS.md`](docs/PROMPTS.md) | Where every kind of prompt is: the ComfyUI graphs (what ComfyUI calls a prompt) by location, count and format; the Gemini 3 Pro Image text prompts beside each generated paint patch; and the agent briefs, policies and job queue in Binc's tree. |
 | [`projects/README.md`](projects/README.md) | Inventory of the ignored client trees under `projects/desktop/`: the CANALV2 VFX job (shots, scripts, node packs, tracker) and the ComfyUI-Shared input/output/models folders. |

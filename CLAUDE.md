@@ -1,5 +1,7 @@
 # ComfyUI Workflow Monorepo
 
+@AGENTS.md
+
 **Project:** ComfyUI Workflow automation on RunPod  
 **Owner:** Lucas (Blue Collar Dev)  
 **Status:** Initial setup phase  
@@ -361,8 +363,11 @@ RUNPOD_VOLUME_GB=50
 ### Binc's tree (`projects/desktop/`) is read-only
 
 Never write into, rename in, or commit anything under `projects/desktop/`.
-It is BH / Binc's mirror; we read it and link out of it. Full rule in
-`.claude/rules.md`; the tree is explained in `docs/CANALV2-STRUCTURE.md`.
+It is BH / Binc's mirror; we read it and copy or link out of it (Lucas,
+2026-10-19: their material may be used in this private repo). Rule in
+`.claude/rules/binc-tree.md`, enforced by a PreToolUse hook; the tree is
+explained in `docs/CANALV2-STRUCTURE.md`; their policies are copied under
+`governance/binc/`.
 
 ### Git Constraints
 

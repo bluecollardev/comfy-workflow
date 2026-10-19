@@ -1,0 +1,24 @@
+# AGENTS.md
+
+Entry point for any coding agent in this repo. Claude Code loads it through
+`CLAUDE.md`; other tools read it directly.
+
+**What this is.** ComfyUI workflows for IMAX restoration (stereo conversion,
+corrosion clean-up) and the infrastructure to run them: a ComfyUI server for
+the Mac and a CUDA image (`apps/comfy-app`), a RunPod pod manager API and MCP
+server (`apps/runpod-api`), a dashboard (`apps/runpod-dashboard`), and a
+read-only mirror of the client project (`projects/desktop/`). The goal it
+serves is in `README.md`, "Goal".
+
+**Rules, in order.**
+1. `governance/binc/policy/agent-permissions.md` for anything touching the
+   CANALV2 job: read-only on locked shots, named yes for installs, spend and
+   anything leaving the machine, USD 100 cap, stop and report on ambiguity.
+2. `.claude/rules/binc-tree.md`: never write into `projects/desktop/`.
+3. `.claude/rules/branching.md`: feature branches off `develop`, `--no-ff`
+   into `develop`, `--ff-only` into `master`, tests green first:
+   `./start.sh test`.
+
+**Start here.** `governance/README.md` for precedence and what is where;
+`CLAUDE.md` for conventions and commands; `./start.sh` for running things;
+`docs/ADR-004-where-the-workflows-run.md` for which machine does what.
