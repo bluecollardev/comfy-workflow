@@ -8,7 +8,8 @@ completed items move here. Commit hashes are on `develop`.
 ### Pinia state management, e2e green, ADR-005 (branch `feature/ts-core`)
 - The dashboard's state is in Pinia stores: `pods` (the list, the stats, every action, the auto-refresh), `mounts` (the configuration as the API reports it, the summary, the configured image and idle default), `ui` (which modal is open) and `toast`. Components stopped passing the list down as props and refetching it themselves; Stats, Dashboard, PodForm and ConfigModal read and act through the stores. One place for the IPC bridge of ADR-005 to plug into.
 - The Playwright suite was run before the port: it caught that `toast.run` read void actions as failures, so lists never refreshed after a delete, remove or create. Fixed; the specs follow the new pod defaults and the toasts; the fake API serves the mount configuration and the GPU menu. 35 pass.
-- `docs/ADR-005-typescript-core-no-server.md` and `docs/reports/2026-10-19.md`; `apps/runpod-core` scaffolded.
+- `docs/ADR-005-typescript-core-no-server.md` and `docs/reports/2026-10-19.md`.
+- `apps/runpod-core`, step 1 of the port: mounts, gpus, governance, idle and the folder browser in TypeScript, same file formats and derivations as the Python, 17 Vitest tests mirroring the pytest ones (including reading the CANALV2 mirror). `./start.sh test` runs both suites.
 
 ### Pod defaults, idle stop, volume sync, dev mode (branch `feature/runpod-defaults-idle-stop-sync`)
 - Pod defaults fixed: the image every pod boots is the one set in Configuration (ours, with the packs; a bare local name is refused until it is pushed), the GPU menu is the 16-24 GB cards from `apps/runpod-api/gpus.py` with RunPod's real ids (the old code passed `rtx4090`, which RunPod does not know), community cloud by default, per-pod volume 0 beside the network volume, no fixed bid. `infra/pod-config.yaml` is one profile.

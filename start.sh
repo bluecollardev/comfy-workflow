@@ -141,7 +141,9 @@ case "${1:-help}" in
     true ;;
   test)
     shift; ensure_venv
-    exec "$PY" -m pytest apps/runpod-api/tests/ -m "not integration" "$@" ;;
+    "$PY" -m pytest apps/runpod-api/tests/ -m "not integration" "$@" || exit 1
+    # The TypeScript core (docs/ADR-005): same gate, same rule, nothing merges red.
+    ( cd apps/runpod-core && { [ -d node_modules ] || npm install --no-fund --no-audit; } && npx vitest run ) ;;
   help|-h|--help) usage ;;
   *) echo "unknown target: $1" >&2; usage >&2; exit 2 ;;
 esac
