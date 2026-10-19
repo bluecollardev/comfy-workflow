@@ -34,7 +34,7 @@ apps/comfy-app/
 ├── models.txt               # <models subfolder>  <Hugging Face repo id>
 │   └── ComfyUI-BincStereo/
 ├── workflows/               # saved workflows (tracked; the UI saves here through the symlink)
-├── extra_model_paths.yaml   # adds projects/desktop/ComfyUI-Shared/models
+├── mounts-env.sh            # the three folders: env, else the dashboard's mapping, else defaults
 ├── requirements-mac.txt     # torch pins, MPS build (Apple Silicon)
 ├── requirements-cuda.txt    # torch pins, CUDA 12.6 build (Linux / Windows NVIDIA)
 ├── requirements-packs.txt   # Python deps of the node packs
@@ -45,7 +45,7 @@ apps/comfy-app/
 │   ├── .venv/               #   built by setup.sh
 │   ├── custom_nodes/<pack>  #   -> shared/nodes/<pack> (the comfy-node-packs submodule)
 │   ├── user/default/workflows  # -> ../../../workflows
-│   └── models/              #   weights from fetch-models.sh
+│   └── extra_model_paths.local.yaml  # written by launch.sh: COMFY_SHARED/models
 ├── standalone-env/          # ignored: the bundle's Python 3.13; used if present, else uv fetches one
 ├── logs/, snapshots/, archive/   # ignored
 └── .build/                  # ignored: build.sh staging
@@ -67,10 +67,15 @@ cd apps/comfy-app
 elsewhere. With `COMFY_SHOTPIPE=v26` it also links that ShotPipe version from
 `projects/desktop/CANALV2/02_SCRIPTS/nodes/` (client tree, not in git).
 
-`launch.sh` points `input/` and `output/` at `projects/desktop/ComfyUI-Shared`,
-the folders shared with binc-PC, and adds `ComfyUI-Shared/models` through
-`extra_model_paths.yaml`. Override with `COMFY_INPUT`, `COMFY_OUTPUT`,
-`COMFY_PORT`, `COMFY_INSTALL`. Anything after `--` goes to `main.py`.
+`launch.sh` takes the three folders from `mounts-env.sh`: the environment,
+else the mapping saved by the dashboard's Configuration panel, else
+`~/ComfyUI-Shared` for the shared folder and the mirror for the tree. ComfyUI
+gets `COMFY_SHARED/input` and `output` as its input and output directories and
+`COMFY_SHARED/models` through a model paths file written at every start, so
+weights live with input and output, the same layout as binc-PC and the pod.
+The mirror under `projects/desktop` is read-only by rule, so ComfyUI-Shared may
+not point into it. Override with `COMFY_INPUT`, `COMFY_OUTPUT`, `COMFY_PORT`,
+`COMFY_INSTALL`. Anything after `--` goes to `main.py`.
 
 To move the pin: edit `pins.env`, run `setup.sh`, then `check.sh`.
 
@@ -89,7 +94,7 @@ home directory, which is why `setup.sh` rebuilds it.
 | ComfyUI `v0.39.2` at `3c1b7a17`, Manager `4.2.2` | From `pins.env`; `setup.sh` installs `ComfyUI/requirements.txt` on the torch pins. |
 | `ComfyUI-BincStereo` | Tracked and linked. Nodes: `BincDepthAnythingV2`, `BincDepthTemporalFilter`, `BincLoadImageSequence`, `BincStereoFromDepth`, `BincStereoPack`, `BincStereoReport`. |
 | `ComfyUI-BH-ShotPipe` | Not tracked. Versions live in `projects/desktop/CANALV2/02_SCRIPTS/nodes/`; link one with `COMFY_SHOTPIPE=<ver> ./setup.sh`. |
-| Models | `models.txt` lists Depth Anything V2 Large. `ComfyUI-Shared/models` has the folder layout and no weights; the rest are on binc-PC. |
+| Models | `models.txt` lists Depth Anything V2 Large; `fetch-models.sh` downloads into `COMFY_SHARED/models` and moves weights an earlier run left inside the install. The mirror's `ComfyUI-Shared/models` has the layout and no weights; the rest are on binc-PC. |
 | Workflows | Nine in `workflows/`, served to the UI through the symlink. |
 
 ## Run it in Docker (RunPod, Linux, Windows)
