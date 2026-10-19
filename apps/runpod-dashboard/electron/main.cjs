@@ -134,8 +134,16 @@ function createWindow() {
   return win
 }
 
+function buildInfo() {
+  // What this app was built for (start.sh package --comfy): the comfy-app variant and the image a new pod boots by default.
+  const file = app.isPackaged ? path.join(process.resourcesPath, 'build-info.json') : path.join(__dirname, '..', 'build', 'build-info.json')
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')) } catch { return {} }
+}
+
 function coreEnv() {
   // The core reads its config, the shape and the governance copy from these; packaged, they travel as resources.
+  const info = buildInfo()
+  if (info.comfy_image && !process.env.COMFY_IMAGE) process.env.COMFY_IMAGE = info.comfy_image
   const fromEnv = { ...(app.isPackaged ? {} : readEnvFile(path.join(REPO_ROOT, '.env'))), ...readEnvFile(path.join(CONFIG_DIR, '.env')) }
   for (const [k, v] of Object.entries(fromEnv)) if (!(k in process.env)) process.env[k] = v
   if (app.isPackaged) {
@@ -152,28 +160,21 @@ async function boot() {
   createWindow()
   await win.loadFile(path.join(__dirname, 'loading.html'))
 
-  let python = null
-  if (!(await healthy())) {
-    python = startBackend()
-    if (!(await waitForBackend(30_000))) {
-      const envFile = path.join(CONFIG_DIR, '.env')
-      dialog.showErrorBox(
-        'Backend did not start',
-        [
-          `Tried to run the API with: ${python}`,
-          backendError ? `Error: ${backendError.message}` : 'It exited or never answered on port 8000.',
-          '',
-          'Set up a Python 3.12 environment for it once:',
-          `  python3 -m venv ${path.join(CONFIG_DIR, 'venv')}`,
-          `  ${path.join(CONFIG_DIR, 'venv', 'bin', 'pip')} install -r "${path.join(BACKEND_DIR, 'requirements.txt')}"`,
-          '',
-          `Then put RUNPOD_API_KEY (and optional GITHUB_/GITLAB_ OAuth settings) in ${envFile} and relaunch.`,
-        ].join('\n'),
-      )
-      return
-    }
+  // The core runs in this process; the page loads from the app's own files. The deprecated
+  // Python backend is optional: when a Python is found it is started for the parts not ported
+  // yet (git accounts, repositories, image env, OAuth) and the page is served from it so the
+  // OAuth round-trip lands home. Without it the app still runs; those four parts report
+  // "not available" when used.
+  // RUNPOD_MANAGER_NO_BACKEND=1 skips the Python backend on purpose (the self-contained boot, as a packaged app without Python behaves).
+  let backendUp = await healthy()
+  if (!backendUp && !process.env.RUNPOD_MANAGER_NO_BACKEND && exists(findPython())) {
+    startBackend()
+    backendUp = await waitForBackend(15_000)
+    if (!backendUp) console.warn('Python backend did not start; git accounts, repositories, image env and OAuth are unavailable this session')
   }
-  await win.loadURL(DEV_URL || API)
+  if (DEV_URL) await win.loadURL(DEV_URL)
+  else if (backendUp) await win.loadURL(API)
+  else await win.loadFile(path.join(UI_DIST_DIR, 'index.html'))
 
   // RUNPOD_MANAGER_SMOKE=1: report what loaded and exit — a headless check for CI / packaging.
   if (process.env.RUNPOD_MANAGER_SMOKE) {
@@ -183,7 +184,7 @@ async function boot() {
     const bridge = await win.webContents.executeJavaScript(
       "window.core ? Promise.all([window.core.invoke('pods','gpus'), window.core.invoke('mounts','get')]).then(([g, m]) => `gpus=${g.gpus.map((x) => x.value).join(',')} mode=${m.mode} folders=${m.folders.length}`).catch((e) => 'bridge error: ' + e.message) : 'no bridge'",
     )
-    console.log(`SMOKE url=${win.webContents.getURL()} title="${title}" brand="${brand}" backend=${backend ? 'spawned' : 'external'} core: ${bridge}`)
+    console.log(`SMOKE url=${win.webContents.getURL()} title="${title}" brand="${brand}" backend=${backend ? 'spawned' : backendUp ? 'external' : 'none'} core: ${bridge}`)
     app.quit()
   }
 }

@@ -43,6 +43,8 @@ export function defaultState() {
     // The mount configuration (GET /mounts): the image every pod boots and the idle default.
     mounts: { config: { image: 'ghcr.io/example/comfy-app:v26', idle_stop_minutes: 30, network_volume_id: '', mount_path: '/workspace', apply_by_default: true, folders: { project: '', plates: '', 'comfy-shared': '' }, custom: [], env: {}, links: [], required: {} }, folders: [], links: [], mode: 'dev', require: [], require_source: 'config', stored: false, store: '', local_env: {}, preview: { env: {} }, catalog: {} },
     gpus: { default: 'rtx4090', gpus: [{ value: 'a4000', text: 'RTX A4000 (16 GB)' }, { value: 'rtx4090', text: 'RTX 4090 (24 GB)' }] },
+    // The folder browser (GET /fs/dirs): a tiny disk.
+    fs: { '/Users/lucas': ['ComfyUI-Shared', 'Projects'], '/Users/lucas/Projects': ['CANALV2', 'plates'], '/Users/lucas/Projects/CANALV2': ['00_POLICY', '04_TRACKER'] },
     failures: {},
   }
 }
@@ -53,6 +55,29 @@ const stats = (pods) => ({
   stopped_pods: pods.filter((p) => p.status === 'stopped').length,
   total_vram: pods.reduce((sum, p) => sum + (p.vram || 0), 0),
 })
+
+const FOLDER_WHAT = { project: 'the project tree: scripts, graphs, shot folders, tracker, policies', plates: 'the served plates: one folder per shot, left and right eye', 'comfy-shared': "ComfyUI's input, output, models and workflows, shared by every install" }
+const CONTAINERS = { project: '/workspace/project', plates: '/workspace/plates', 'comfy-shared': '/workspace/comfy-shared' }
+const ENV_KEYS = { project: 'PROJECT_ROOT', plates: 'PLATES_ROOT', 'comfy-shared': 'COMFY_SHARED' }
+
+// What the API derives from a saved configuration, enough for the panel: rows, required flags, links.
+function mountsPayload(state) {
+  const c = state.mounts.config
+  const required = state.mounts.mode === 'prod' ? { project: true, plates: true, 'comfy-shared': true } : c.required || {}
+  const folders = Object.keys(CONTAINERS).map((key) => ({
+    key, what: FOLDER_WHAT[key], mode: 'rw', required: !!required[key], local: c.folders?.[key] || '', exists: !!c.folders?.[key],
+    mirror: false, container: CONTAINERS[key], env_key: ENV_KEYS[key], env_keys: [ENV_KEYS[key]],
+    declared: key === 'project' && c.folders?.project ? { path: '/home/binc/CANALV2_r3/CANALV2', source: "the tree's job files", count: 17 } : null,
+  }))
+  for (const cf of c.custom || []) folders.push({ key: cf.name, what: '', mode: cf.mode, required: false, custom: true, local: cf.local, exists: !!cf.local, mirror: false,
+    container: cf.container || `${c.mount_path}/${cf.name}`, env_key: '', env_keys: [], declared: cf.link ? { path: cf.link, source: 'the path typed here', count: 1 } : null })
+  const links = folders.filter((f) => f.declared).map((f) => ({ path: f.declared.path, target: f.container, required: f.required, mode: f.mode, what: f.what, folder: f.key }))
+  const env = Object.fromEntries(folders.filter((f) => f.env_key).map((f) => [f.env_key, f.container]))
+  if (links.length) env.COMFY_LINKS = links.map((l) => `${l.path}=${l.target}`).join(';')
+  return { ...state.mounts, config: c, folders, links, require: Object.keys(required).filter((k) => required[k]),
+    local_env: Object.fromEntries(folders.filter((f) => f.env_key && f.local).map((f) => [f.env_key, f.local])),
+    preview: { env, ...(c.network_volume_id ? { network_volume_id: c.network_volume_id, volume_mount_path: c.mount_path } : {}) } }
+}
 
 const filterRepos = (repos, q) => (q ? repos.filter((r) => r.name.toLowerCase().includes(q.toLowerCase())) : repos)
 
@@ -82,7 +107,16 @@ export async function mockApi(page, state) {
 
     let m
     // pods
-    if (method === 'GET' && path === '/mounts') return json(state.mounts)
+    if (method === 'GET' && path === '/mounts') return json(mountsPayload(state))
+    if (method === 'PUT' && path === '/mounts') { state.mounts.config = body; state.mounts.stored = true; return json(mountsPayload(state)) }
+    if (method === 'DELETE' && path === '/mounts') { state.mounts.config = defaultState().mounts.config; state.mounts.stored = false; return json(mountsPayload(state)) }
+    if (method === 'GET' && path === '/fs/dirs') {
+      const p = query.path || '/Users/lucas'
+      const names = state.fs[p]
+      if (!names) return json({ detail: `not a folder: ${p}` }, 404)
+      const parent = p === '/' ? null : p.replace(/\/[^/]+$/, '') || '/'
+      return json({ path: p, parent, home: '/Users/lucas', dirs: names.map((n) => ({ name: n, path: `${p}/${n}` })) })
+    }
     if (method === 'GET' && path === '/gpus') return json(state.gpus)
     if (method === 'GET' && path === '/dashboard') return json({ stats: stats(state.pods), pods: state.pods })
     if (method === 'GET' && path === '/pods') return json(state.pods)
