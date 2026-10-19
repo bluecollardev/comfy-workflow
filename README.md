@@ -195,6 +195,7 @@ All of `docs/`: <https://github.com/bluecollardev/comfy-workflow/tree/develop/do
 
 | Doc | What it covers |
 |---|---|
+| [`docs/CANALV2-STRUCTURE.md`](docs/CANALV2-STRUCTURE.md) | Binc's CANALV2 tree explained: the numbered top level, the fixed shot-folder shape, how a shot moves from inbox to delivery, naming and versioning in short, what lives outside the root on binc-PC, and why the tree is read-only for us. |
 | [`docs/PROMPTS.md`](docs/PROMPTS.md) | Where every kind of prompt is: the ComfyUI graphs (what ComfyUI calls a prompt) by location, count and format; the Gemini 3 Pro Image text prompts beside each generated paint patch; and the agent briefs, policies and job queue in Binc's tree. |
 | [`projects/README.md`](projects/README.md) | Inventory of the ignored client trees under `projects/desktop/`: the CANALV2 VFX job (shots, scripts, node packs, tracker) and the ComfyUI-Shared input/output/models folders. |
 | [`NEXT-STEPS.md`](NEXT-STEPS.md) | Plan for importing the CANALV2 shot graphs into this repo, plus open items including what still needs Binc's approval. |

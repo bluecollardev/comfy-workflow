@@ -51,6 +51,26 @@ git merge --no-ff feature/oauth  # Always creates merge commit
 
 This preserves feature branch history on develop.
 
+## Binc's tree is read-only
+
+`projects/desktop/` (CANALV2, ComfyUI-Shared) is a mirror of binc-PC and
+belongs to BH / Binc. It is ignored by git on purpose.
+
+❌ **NEVER:**
+- write, edit, rename, move or delete anything under `projects/desktop/`
+- `git add` anything under it, or copy its proprietary contents (node packs,
+  graphs, plates, policies) into tracked paths without Binc's named yes
+- run a script from inside it that writes back into it, except as a job file
+  in `04_TRACKER/queue/` instructs and `CANALV2/CLAUDE.md` permits
+
+✅ **INSTEAD:**
+- read it, and link out of it: `COMFY_SHOTPIPE=v26 apps/comfy-app/setup.sh`
+  symlinks a pack; the queue scripts take `--comfy <url>`
+- keep our notes about it in this repo: `docs/CANALV2-STRUCTURE.md`,
+  `projects/README.md`, `docs/PROMPTS.md`
+- if something in the tree needs to change, it is a request to Binc, not an
+  edit. `00_POLICY/agent-permissions.md` applies to any agent we run there.
+
 ## Summary
 
 ```

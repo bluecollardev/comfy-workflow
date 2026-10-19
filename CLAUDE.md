@@ -358,6 +358,12 @@ RUNPOD_VOLUME_GB=50
    - SSH: `ssh root@{pod-id}.proxy.runpod.io`
    - Use RunPod dashboard for detailed management
 
+### Binc's tree (`projects/desktop/`) is read-only
+
+Never write into, rename in, or commit anything under `projects/desktop/`.
+It is BH / Binc's mirror; we read it and link out of it. Full rule in
+`.claude/rules.md`; the tree is explained in `docs/CANALV2-STRUCTURE.md`.
+
 ### Git Constraints
 
 1. **Don't commit compiled artifacts**
