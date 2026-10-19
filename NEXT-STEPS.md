@@ -55,7 +55,7 @@ versioning and release steps.
   ```bash
   COMFY_SHOTPIPE=contract-v26 apps/comfy-app/setup.sh   # symlinks the seven packs from shared/nodes/{portable,bound}/ into ComfyUI/custom_nodes/
   ```
-  Verified 2026-10-19: the set links, every pack imports, and every `BH_*`/`BH26_*` node type the 14 graphs use resolves (36 types, 0 missing).
+  Verified 2026-10-19: the set links, every pack imports, and every `BH_*`/`BH26_*` node type the 14 graphs use resolves (24 types, 0 missing).
 - [ ] Restart the Mac ComfyUI and confirm the nodes show in the UI:
   ```bash
   export COMFY_LOCAL_URL=http://127.0.0.1:8188
