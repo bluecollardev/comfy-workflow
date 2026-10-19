@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
-# Build the ComfyUI server image. Local build only; pushing to a registry is a
-# separate step that needs Binc's yes (registry name, account).
+# Build the ComfyUI server image. Local by default; --push tags it with a registry
+# reference and pushes it. The image carries Binc's ShotPipe packs, so the push needs
+# Binc's named yes (registry name, account; policy/agent-permissions.md) and a prior
+# `docker login <registry>`. The pushed reference is what the dashboard's
+# Configuration (Image) and `./start.sh package --image` take.
 #
 #   ./build.sh                       # comfy-app:contract-v26 with the ShotPipe set the corrosion graphs need
+#   ./build.sh --push ghcr.io/<org>/comfy-app:contract-v26   # build, tag, push; prints the reference to configure
 #   ./build.sh --shotpipe v26,v14,v7 # explicit versions instead of a set from shared/nodes/sets.json
 #   ./build.sh --tag comfy-app:test
 #   ./build.sh --no-shotpipe         # BincStereo only
@@ -23,6 +27,7 @@ SHOTPIPE="contract-v26"
 TAG=""
 BASE=""
 PLATFORM="linux/amd64"
+PUSH=""
 EXTRA=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -31,11 +36,16 @@ while [ $# -gt 0 ]; do
     --tag) TAG="$2"; shift 2 ;;
     --base) BASE="$2"; shift 2 ;;
     --platform) PLATFORM="$2"; shift 2 ;;
+    --push) PUSH="$2"; shift 2 ;;
     --) shift; EXTRA=("$@"); break ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
 [ -n "$TAG" ] || TAG="comfy-app:${SHOTPIPE:-base}"
+if [ -n "$PUSH" ]; then
+  case "$PUSH" in */*) ;; *) echo "--push needs a registry reference with a namespace, e.g. ghcr.io/<org>/comfy-app:$SHOTPIPE (a pod cannot pull a bare name)" >&2; exit 2 ;; esac
+  case "$PUSH" in *:*) ;; *) PUSH="$PUSH:${SHOTPIPE:-base}" ;; esac
+fi
 
 STAGE="$HERE/.build/custom_nodes"
 rm -rf "$HERE/.build" && mkdir -p "$STAGE"
@@ -93,3 +103,9 @@ args+=("${EXTRA[@]}" "$HERE")
 echo "docker ${args[*]}"
 docker "${args[@]}"
 echo "built $TAG"
+if [ -n "$PUSH" ]; then
+  docker tag "$TAG" "$PUSH"
+  docker push "$PUSH" || { echo "push failed: run 'docker login ${PUSH%%/*}' first (a token with write:packages for ghcr.io), then re-run with --push" >&2; exit 1; }
+  echo "pushed $PUSH"
+  echo "next: enter $PUSH as the image in the dashboard's Configuration (gear icon), or ./start.sh package mac --comfy ${SHOTPIPE:-base} --image $PUSH"
+fi

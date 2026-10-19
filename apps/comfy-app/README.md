@@ -178,3 +178,19 @@ Serverless (`CANALV2/02_SCRIPTS/containers/runpod/comfy-serverless/`) stays as
 the project's own route for single graphs; this image is the pod route for
 plate-sized batches. Comfy Cloud (`comfy cloud login`) runs stock templates and
 partner models but cannot load these packs.
+
+
+## Pushing the image (2026-10-19)
+
+A pod cannot pull a bare local tag like `comfy-app:contract-v26`; pod creation refuses it on
+purpose. The image carries Binc's ShotPipe packs, so pushing it to a registry needs Binc's named
+yes (registry name and account). With that in hand:
+
+```bash
+docker login ghcr.io                                         # a token with write:packages
+./start.sh comfy-image --push ghcr.io/<org>/comfy-app:contract-v26
+```
+
+The script builds for linux/amd64 (emulated on Apple Silicon: slow, but it works), tags, pushes,
+and prints the reference to enter as the image in the dashboard's Configuration, or to bake into
+a packaged app with `./start.sh package mac --comfy contract-v26 --image <reference>`.
