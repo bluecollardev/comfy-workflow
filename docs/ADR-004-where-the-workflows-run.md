@@ -26,7 +26,9 @@ needed to run a graph; it is the camera track and solve step before it.
 ## Decision
 
 1. **The graphs run where the plates are, over one path.** Every runtime
-   mounts the project so `/home/binc/CANALV2_r3/CANALV2` resolves: natively on
+   mounts the project so `/home/binc/CANALV2_r3/CANALV2` resolves, and the
+   served plates so `/mnt/storage/Panama_Redux/…` resolves (the shot folders
+   only link to them; the current graphs reference that root 68 times): natively on
    binc-PC, as a bind mount in a container, as a network volume on RunPod, and
    on the Mac only once the tree is mounted over SMB or synced. Graphs are not
    edited per machine.

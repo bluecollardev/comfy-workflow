@@ -118,7 +118,7 @@ docker/swarm.sh init               # first Swarm manager + GPU node; prints the 
 docker/swarm.sh deploy             # docker stack deploy comfy
 ```
 
-Paths come from `CANALV2_ROOT`, `COMFY_SHARED`, `COMFY_IMAGE`, `COMFY_PORT`.
+Paths come from `CANALV2_ROOT`, `COMFY_SHARED`, `PLATES_ROOT` (the served plates, mounted read-only), `COMFY_IMAGE`, `COMFY_PORT`.
 Not for macOS: Docker there has no GPU, use `launch.sh`. Why this shape:
 `docs/ADR-004-where-the-workflows-run.md`.
 

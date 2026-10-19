@@ -6,6 +6,7 @@
 # Paths come from the environment (or a .env beside this file):
 #   CANALV2_ROOT   host path of the project tree   default /home/binc/CANALV2_r3/CANALV2
 #   COMFY_SHARED   host path of ComfyUI-Shared     default /home/binc/ComfyUI-Shared
+#   PLATES_ROOT    host path of the served plates   default /mnt/storage/Panama_Redux (read-only in the container)
 #   COMFY_IMAGE    image to run                     default comfy-app:v26
 #   COMFY_PORT     published port                   default 8188
 # Inside the container the project keeps binc-PC's path, so graphs run unchanged.
@@ -24,6 +25,7 @@ services:
     volumes:
       - ${CANALV2_ROOT:-/home/binc/CANALV2_r3/CANALV2}:/home/binc/CANALV2_r3/CANALV2
       - ${COMFY_SHARED:-/home/binc/ComfyUI-Shared}:/workspace/ComfyUI-Shared
+      - ${PLATES_ROOT:-/mnt/storage/Panama_Redux}:/mnt/storage/Panama_Redux:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:8188/system_stats',timeout=3)\""]
       interval: 30s
