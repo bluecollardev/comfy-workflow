@@ -15,7 +15,7 @@ changed file modes) with exactly five things layered on top:
 | Layer | What | Now |
 |---|---|---|
 | `ComfyUI-BincStereo` | The stereo / depth node pack (pure torch, proprietary to Cinematic Immunity / Bincos) | In the `shared/nodes` submodule (`comfy-node-packs`), symlinked into the clone by `setup.sh` |
-| `user/default/workflows/*.json` | Nine saved workflows (stereo QC, cgi-042) | **Tracked** in `workflows/`, symlinked, so saving in the UI writes to the repo |
+| `user/default/workflows/*.json` | Nine saved workflows (stereo QC, cgi-042) | **Tracked** in `workflows/`, symlinked, so saving in the UI writes to the repo. In the image the same link points at the mount, `/workspace/comfy-shared/workflows`, seeded from `workflows/` only while empty, so a pod's workflows change without a rebuild |
 | `models/depth_anything/Depth-Anything-V2-Large-hf` | 1.2 GB of weights | Not in git; `models.txt` + `fetch-models.sh` |
 | `input/binc-stereo-test`, `input/cgi-042-render-mono` | 129 MB of local test frames | Not in git; left on disk |
 | `.venv`, `user/` settings and db | Machine-specific | Rebuilt by `setup.sh`; settings ignored |
@@ -137,9 +137,12 @@ with their binc-PC paths unchanged. `COMFY_PORT`, `COMFY_SHARED` and
 `COMFY_ARGS` override the defaults; arguments after the image name go to
 `main.py`. The image never contains models or plates.
 
-On RunPod: push the image to a registry (needs Binc's yes), attach a network
-volume at `/workspace` holding `ComfyUI-Shared/` and `CANALV2/`, and start the
-pod with `infra/scripts/create_pod.py create --image <registry>/comfy-app:v26`.
+On RunPod: the image is pushed to `registry.gitlab.com/bcdevlucas/comfy-workflow/comfy-app:contract-v26`
+(private; `./build.sh --push <that reference>` after `docker login registry.gitlab.com`; the
+pod pulls with the credential saved on RunPod, whose id is in the Configuration panel). The
+network volume at `/workspace` holds `project/`, `plates/` and `comfy-shared/`; the app's
+Configuration panel carries the volume, datacenter, image and credential, so a pod created
+there boots our image on the volume.
 The pod manager's "Load defaults" reads the `ENV`/`ARG` lines from this
 Dockerfile. Builds on Apple Silicon run under amd64 emulation and take a while.
 

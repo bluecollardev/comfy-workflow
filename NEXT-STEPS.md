@@ -132,8 +132,8 @@ server's node catalog, so Step 0 must be done first.
 
 ## RunPod: what is left
 
-Status 2026-10-19 evening: the RunPod account has no pods and no volume, no
-image has been pushed, no plate has left binc-PC. The tooling for all of it is
+Status 2026-10-20 morning: the image is pushed, the volume exists, the
+Configuration panel points at both; no plate has left binc-PC. The tooling for all of it is
 in the repo and tested; what remains is a sequence of real steps, each of
 which spends or moves client material and so waits on a named yes.
 
@@ -145,9 +145,9 @@ In order:
 
 1. [x] **RunPod proven** (2026-10-19 evening, USD 35 of credit): `./start.sh e2e-live` created a stock-image pod on the cheapest card in stock, saw it running, stopped and deleted it in 3.6 minutes. Rerun it any time; it leaves nothing behind.
 2. [ ] **Binc's yeses**, named, before anything below runs (`shared/governance/policy/agent-permissions.md`; `~/Workspaces/TODO.md` item 5): plates copied to a network volume; an image with the packs pushed to a registry (name and account); the spend, inside the USD 100 cap. The MCP server already refuses `create_agent` without `approved_by`.
-3. [ ] **Push the image.** Built for amd64 on this Mac (`comfy-app:contract-v26`, 4.94 GB, 2026-10-19 evening, through emulation). Then, with Binc's yes on the registry: `docker login`, `./start.sh comfy-image --push <registry>/comfy-app:contract-v26`, and enter the printed reference as the image in the Configuration panel. Until then pod creation refuses the bare local name on purpose.
-4. [ ] **Create the network volume** in one datacenter, sized for the tree (81 GB on the mirror), `comfy-shared/` with the weights, and only the plates of the first batch (DPX, two eyes per shot; the 24 inbox entries total about 3,100 frames, so never all of them). Enter the volume id and datacenter in the Configuration panel.
-5. [ ] **Put the data on the volume**: `./start.sh sync --pod <id>` into a small pod with the volume attached; `--plates --approved-by <name>` for the plates. Set `COMFY_MODE=prod` on the machine that drives real pods so every folder is required.
+3. [x] **Push the image** (2026-10-20 morning). `registry.gitlab.com/bcdevlucas/comfy-workflow/comfy-app:contract-v26`, a private GitLab project of Lucas's holding only the registry; RunPod pulls with a read-only deploy token saved on the account as credential `gitlab-comfy-workflow`, whose id is in the Configuration panel under the image. Rebuild and push: `./start.sh comfy-image --push registry.gitlab.com/bcdevlucas/comfy-workflow/comfy-app:contract-v26`.
+4. [x] **The network volume** `comfy-workspace` (`q8lf6riygr`), 120 GB in `CA-MTL-1` (the datacenter with the cheapest 24 GB card, the A5000 at USD 0.16/h, and the A40 in high stock behind it), about USD 8.40 a month. Entered in the Configuration panel; a volume can grow later, never shrink.
+5. [ ] **Put the data on the volume**: `./start.sh sync --pod <id>` into a pod with the volume attached (the project tree is 81 GB, 66 of it corrosion shot renders; ComfyUI-Shared 17 GB); `--plates --approved-by <name>` for the plates, which are still unmapped on this Mac. Set `COMFY_MODE=prod` on the machine that drives real pods so every folder is required.
 6. [ ] **Boot one pod** with mounts applied, read the entrypoint's `linked …` lines, open a corrosion graph in its UI, queue one open shot at proxy with the queue script and `--comfy <pod url>`, then stop the pod or let the idle stop do it. Locked shots are never run; proxy first.
 7. [ ] **CPU solve pod**, after the GPU pod works: `solve/` image from Binc's plan, same volume.
 

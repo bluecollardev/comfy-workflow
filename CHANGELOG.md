@@ -3,6 +3,16 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## 2026-10-20
+
+### The image on a registry, a network volume, pods pull with a credential (branch `feature/registry-and-volume`)
+- **Why**: the pod Lucas opened had no workflows. It ran the stock image with no volume, so nothing of ours could be on it: our nine graphs are baked into our image, the models and plates come from the volume, and Binc's tree holds no ComfyUI workflow files at all (`20_STEREO`/`10_CORROSION` are shot folders, `ComfyUI-Shared` is input, models and output).
+- **The image is pushed**: `registry.gitlab.com/bcdevlucas/comfy-workflow/comfy-app:contract-v26`, a private GitLab project of Lucas's that holds only the registry. The packs are Binc's material, so the registry stays private; RunPod pulls with a read-only deploy token saved on the account (`saveRegistryAuth`, credential `gitlab-comfy-workflow`).
+- **Pods carry that credential**: `registry_auth_id` in the mount configuration, sent as `containerRegistryAuthId` at creation, a field under the image in the Configuration panel, kept by the deprecated Python model too. Tested in the core suite.
+- **The network volume** `comfy-workspace`, 120 GB in `CA-MTL-1`, chosen for the cheapest 24 GB card in stock (A5000, USD 0.16/h) with the A40 in high stock behind it. Volume id, datacenter, image and credential are in the saved configuration, so the next pod from the app boots our image on the volume.
+- The empty stock-image pod (`Live-Proof`) was stopped; it bills nothing stopped.
+- **Workflows are mounted, not baked** (Lucas: "ideally they're mounted"). The image links ComfyUI's Workflows panel to `/workspace/comfy-shared/workflows` on the volume and copies the repo's nine graphs in only while that folder is empty, so a pod's workflows change without a rebuild and survive the pod; `./start.sh sync` copies `apps/comfy-app/workflows/` there (key `workflows`). On the Mac the panel keeps reading the repo folder through the link `setup.sh` makes.
+
 ## 2026-10-19
 
 ### RunPod proven live; stock-aware card choice; Pause all; test ids and one language file (branch `feature/no-spend-mode`)

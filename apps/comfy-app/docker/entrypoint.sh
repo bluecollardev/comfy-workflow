@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Start ComfyUI inside the container. Mirrors ../launch.sh for the Mac.
 #
-#   COMFY_SHARED  root of the shared input/output/models tree (default /workspace/comfy-shared)
+#   COMFY_SHARED  root of the shared input/output/models/workflows tree (default /workspace/comfy-shared)
 #   COMFY_PORT    default 8188
 #   COMFY_ARGS    extra arguments for main.py, e.g. "--highvram"
 #   COMFY_LINKS   "path=target;..." symlinks to make binc-PC paths resolve on the volume (see below)
@@ -15,6 +15,16 @@ mkdir -p "$SHARED/input" "$SHARED/output" "$SHARED/models"
 for d in checkpoints clip clip_vision controlnet diffusion_models embeddings loras upscale_models vae; do
   mkdir -p "$SHARED/models/$d"
 done
+# Workflows live on the mount, so they change without a rebuild and survive the pod. The
+# image carries the repo's workflows/ as a seed and copies it in only while the mount is empty;
+# ComfyUI's Workflows panel reads the mount through the link.
+mkdir -p "$SHARED/workflows" /opt/ComfyUI/user/default
+if [ -z "$(ls -A "$SHARED/workflows" 2>/dev/null)" ] && [ -d /opt/comfy-app/workflows ]; then
+  cp -R /opt/comfy-app/workflows/. "$SHARED/workflows/" && echo "seeded $SHARED/workflows from the image"
+fi
+rm -rf /opt/ComfyUI/user/default/workflows
+ln -sfn "$SHARED/workflows" /opt/ComfyUI/user/default/workflows
+echo "workflows $SHARED/workflows ($(find "$SHARED/workflows" -name '*.json' | wc -l | tr -d ' ') graphs)"
 # COMFY_LINKS: "path=target;path=target". The graphs, scripts and older packs name binc-PC's
 # paths; the data sits on the volume. Each pair becomes a symlink so those paths resolve
 # (docs/MOUNT-POINTS.md; the pod manager builds the list from its mount configuration).

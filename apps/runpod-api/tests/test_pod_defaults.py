@@ -116,8 +116,9 @@ def test_sync_plan_and_command(env, tmp_path):
     spec = importlib.util.spec_from_file_location("sync_volume", REPO / "infra" / "scripts" / "sync_volume.py")
     sv = importlib.util.module_from_spec(spec); spec.loader.exec_module(sv)
     cfg = mounts.defaults(); cfg.folders.update(project=str(tmp_path), plates=str(tmp_path), **{"comfy-shared": str(tmp_path)})
-    assert [k for k, _, _ in sv.plan(cfg, set(), plates=False)] == ["project", "comfy-shared"]       # plates only when asked
-    assert [k for k, _, _ in sv.plan(cfg, set(), plates=True)] == ["project", "plates", "comfy-shared"]
+    assert [k for k, _, _ in sv.plan(cfg, set(), plates=False)] == ["project", "comfy-shared", "workflows"]       # plates only when asked; the repo's workflows ride with comfy-shared
+    assert [r for k, _, r in sv.plan(cfg, set(), plates=False) if k == "workflows"] == ["/workspace/comfy-shared/workflows/"]
+    assert [k for k, _, _ in sv.plan(cfg, set(), plates=True)] == ["project", "plates", "comfy-shared", "workflows"]
     assert [r for _, _, r in sv.plan(cfg, {"project"}, plates=False)] == ["/workspace/project/"]
     cmd = sv.rsync_cmd(str(tmp_path) + "/", "root@1.2.3.4", 2222, "/workspace/project/")
     assert cmd[0] == "rsync" and "--delete" not in cmd and cmd[-1] == "root@1.2.3.4:/workspace/project/" and "-p 2222" in cmd[cmd.index("-e") + 1]

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Copy the three mapped folders to a pod's network volume. Never deletes anything there.
 
-    sync_volume.py --pod <id> [--dry-run] [--plates --approved-by <name>] [--only project,comfy-shared]
+    sync_volume.py --pod <id> [--dry-run] [--plates --approved-by <name>] [--only project,comfy-shared,workflows]
 
 The pod must have the network volume attached (the dashboard's Configuration, applied at
 creation) and SSH on port 22/tcp exposed, which the pod manager and create_pod.py do. The
@@ -10,6 +10,8 @@ RunPod, and runs one rsync per folder into /workspace/{project,plates,comfy-shar
 places the pod's env and links expect. Plates are client material: copying them off the PC
 needs Binc's named yes (shared/governance/policy/agent-permissions.md), so they are skipped
 unless --plates and --approved-by are both given. rsync is additive: --delete is never passed.
+The repo's apps/comfy-app/workflows/ (ours, tracked in git) goes to comfy-shared/workflows on the
+volume, the folder the image links ComfyUI's Workflows panel to; key `workflows`.
 """
 import argparse
 import os
@@ -21,6 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "apps" / "runpod-api"))
 import mounts  # noqa: E402
 
+WORKFLOWS = Path(__file__).resolve().parents[2] / "apps" / "comfy-app" / "workflows"
 EXCLUDE = [".DS_Store", "._*", ".git", "__pycache__", "*.pyc", "logs/", ".venv/"]
 
 
@@ -47,6 +50,8 @@ def plan(cfg: mounts.MountsConfig, only: set, plates: bool) -> list[tuple[str, s
             print(f"skip {r['key']}: not mapped on this PC", file=sys.stderr)
             continue
         out.append((r["key"], r["local"].rstrip("/") + "/", r["container"].rstrip("/") + "/"))
+        if r["key"] == "comfy-shared" and (not only or "workflows" in only):
+            out.append(("workflows", str(WORKFLOWS) + "/", r["container"].rstrip("/") + "/workflows/"))
     return out
 
 
@@ -60,7 +65,7 @@ def rsync_cmd(local: str, host: str, port: int, remote: str) -> list[str]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--pod", required=True, help="pod id with the network volume attached")
-    ap.add_argument("--only", default="", help="comma list of folder keys: project, plates, comfy-shared")
+    ap.add_argument("--only", default="", help="comma list of folder keys: project, plates, comfy-shared, workflows")
     ap.add_argument("--plates", action="store_true", help="include the plates (client material)")
     ap.add_argument("--approved-by", default="", help="who said yes to copying plates off this PC; required with --plates")
     ap.add_argument("--dry-run", action="store_true", help="print the rsync commands and run them with -n")
