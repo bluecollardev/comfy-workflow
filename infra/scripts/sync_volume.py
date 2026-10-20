@@ -65,7 +65,8 @@ def _progress_flag() -> str:
 
 
 def rsync_cmd(local: str, host: str, port: int, remote: str) -> list[str]:
-    cmd = ["rsync", "-a", _progress_flag(), "--partial", "-e", f"ssh -p {port} -o StrictHostKeyChecking=accept-new"]
+    # -rlt, not -a: the network volume refuses chown, so no owner, group or perms; times and links are kept.
+    cmd = ["rsync", "-rlt", _progress_flag(), "--partial", "-e", f"ssh -p {port} -o StrictHostKeyChecking=accept-new"]
     for e in EXCLUDE:
         cmd += ["--exclude", e]
     return cmd + [local, f"{host}:{remote}"]
