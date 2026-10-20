@@ -138,7 +138,9 @@ with their binc-PC paths unchanged. `COMFY_PORT`, `COMFY_SHARED` and
 `main.py`. The image never contains models or plates.
 
 On RunPod: the image is pushed to `registry.gitlab.com/bcdevlucas/comfy-workflow/comfy-app:contract-v26`
-(private; `./build.sh --push <that reference>` after `docker login registry.gitlab.com`; the
+(private; `./build.sh --remote --wait` builds and pushes it on GitLab CI next to the registry, so
+the 3 GB torch layer never leaves this Mac; `--push <reference>` after `docker login` is the slow
+local way; the
 pod pulls with the credential saved on RunPod, whose id is in the Configuration panel). The
 network volume at `/workspace` holds `project/`, `plates/` and `comfy-shared/`; the app's
 Configuration panel carries the volume, datacenter, image and credential, so a pod created
