@@ -238,6 +238,12 @@ What follows from that:
   and plates are never in the image.
 - **Cost.** The volume bills about USD 0.07 per GB a month whether or not a pod
   runs (120 GB is about USD 8.40). A stopped pod on a network volume bills nothing.
+- **Keeping the Mac and the volume in line is an open decision.** Today the copy
+  goes one way, Mac to volume, by `./start.sh sync`, pressed by a person; nothing
+  pulls a pod's renders back down yet. The per-folder contract, the options and a
+  recommendation are in [`docs/ADR-007`](docs/ADR-007-volume-as-hub-and-sync.md).
+  The image side, registry and CI build, is decided in
+  [`docs/ADR-006`](docs/ADR-006-image-registry-and-ci-build.md).
 
 ## Documentation
 
@@ -261,6 +267,8 @@ All of `docs/`: <https://github.com/bluecollardev/comfy-workflow/tree/develop/do
 | [`docs/ADR-002-moe-agent-pool.md`](docs/ADR-002-moe-agent-pool.md) | The "mixture of experts" agent pool: a pool of RunPod pods shared by several users and agents, with implementation plan, costs, quotas, credentials and rollout. |
 | [`docs/ADR-004-where-the-workflows-run.md`](docs/ADR-004-where-the-workflows-run.md) | Which machine runs which graphs: plates and one path first, containers on Linux under Compose or Swarm, RunPod as overflow on its own tools, the Mac as client and MPS worker. What was measured on 2026-10-19 and the gaps. |
 | [`docs/ADR-003-python-mcp-vs-terraform.md`](docs/ADR-003-python-mcp-vs-terraform.md) | Why pod orchestration is Python plus an MCP server rather than Terraform, alternatives considered, and when to revisit. |
+| [`docs/ADR-006-image-registry-and-ci-build.md`](docs/ADR-006-image-registry-and-ci-build.md) | The ComfyUI image lives in a private GitLab registry and is built and pushed on GitLab CI next to it (the 3 GB torch layer never leaves the Mac); pods pull with a saved credential; workflows ride on the volume, seeded from the image only while empty; sshd in the image for the sync. Accepted 2026-10-20. |
+| [`docs/ADR-007-volume-as-hub-and-sync.md`](docs/ADR-007-volume-as-hub-and-sync.md) | How local state and the pod's volume stay in line: the per-folder contract (who writes where), the options from "add Pull to the script" through "Push and Pull in the app" to "a bucket as the hub", a recommendation, and the decision left open. Proposed 2026-10-20, no decision yet. |
 | [`docs/DOCKERFILE-DEVIATIONS.md`](docs/DOCKERFILE-DEVIATIONS.md) | Review of the original placeholder image (community `ashleykza/comfyui` base) against RunPod's official one. That placeholder is retired; the current image is `apps/comfy-app/Dockerfile`, built on `pytorch/pytorch` with the same pins as the Mac. |
 
 ### Running and operating

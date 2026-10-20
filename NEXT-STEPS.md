@@ -153,6 +153,7 @@ In order:
 
 ## Open decisions
 
+- How local state and the pod's volume stay in line: Pull, the sync in the app, pushing less, a CPU sync pod, a bucket as the hub. Options and a recommendation in `docs/ADR-007`; no decision yet (2026-10-20).
 - Which ShotPipe version, or several side by side, in the Mac install.
 - Whether rendering happens here at all, given the plates live on binc-PC. RunPod is the planned overflow; see the section above.
 - Whether the captured recipes belong in this repo or in `CANALV2/02_SCRIPTS/` beside the graph builders. The project's policy says the tree is "one place for everything".
