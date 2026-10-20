@@ -140,9 +140,10 @@ build:
     - docker push "\$IMAGE"
     - echo "pushed \$IMAGE"
 YML
-  BRANCH="build/$IMAGE_TAG"
+  # One branch per run: the first one became the project's default branch, which refuses force pushes.
+  BRANCH="build-$IMAGE_TAG-$(date -u +%Y%m%d-%H%M%S)"
   ( cd "$CTX" && git init -q -b "$BRANCH" && git add -A && git -c user.name=comfy-app -c user.email=build@comfy-app commit -q -m "build context for comfy-app:$IMAGE_TAG (packs $PACKS_REV, ComfyUI $COMFYUI_REF)" \
-    && git push -q --force "https://oauth2:$GITLAB_TOKEN@gitlab.com/$CI_PROJECT.git" "HEAD:refs/heads/$BRANCH" )
+    && git push -q "https://oauth2:$GITLAB_TOKEN@gitlab.com/$CI_PROJECT.git" "HEAD:refs/heads/$BRANCH" )
   rm -rf "$CTX"
   ENC="$(python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$CI_PROJECT")"
   REF="registry.gitlab.com/$CI_PROJECT/comfy-app:$IMAGE_TAG"
@@ -160,7 +161,13 @@ YML
   while :; do
     ST="$(curl -fsS --max-time 20 -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "https://gitlab.com/api/v4/projects/$ENC/pipelines/$PIPE" | python3 -c 'import sys,json; print(json.load(sys.stdin)["status"])')"
     case "$ST" in
-      success) echo "pushed $REF"; echo "next: enter $REF as the image in the dashboard's Default Configuration, or ./start.sh package mac --comfy ${SHOTPIPE:-base} --image $REF"; exit 0 ;;
+      success)
+        # prune earlier build branches for this tag (the default branch cannot be deleted; ignored)
+        curl -fsS --max-time 20 -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "https://gitlab.com/api/v4/projects/$ENC/repository/branches?search=build-$IMAGE_TAG-&per_page=100" \
+          | python3 -c 'import sys,json; [print(b["name"]) for b in json.load(sys.stdin)]' | grep -vx "$BRANCH" | while read -r old; do
+            curl -fsS --max-time 20 -o /dev/null -X DELETE -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "https://gitlab.com/api/v4/projects/$ENC/repository/branches/$(python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$old")" 2>/dev/null || true
+          done
+        echo "pushed $REF"; echo "next: enter $REF as the image in the dashboard's Default Configuration, or ./start.sh package mac --comfy ${SHOTPIPE:-base} --image $REF"; exit 0 ;;
       failed|canceled|skipped) echo "pipeline $ST: https://gitlab.com/$CI_PROJECT/-/pipelines/$PIPE" >&2; exit 1 ;;
       *) printf '  %s %s\n' "$(date +%H:%M:%S)" "$ST"; sleep 30 ;;
     esac
