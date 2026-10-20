@@ -87,7 +87,7 @@ const filterRepos = (repos, q) => (q ? repos.filter((r) => r.name.toLowerCase().
 export async function mockApi(page, state) {
   const calls = []
   // Origin-scoped: a bare "**/api/**" would also swallow Vite's /src/api/*.js module requests.
-  await page.route('http://localhost:8000/api/**', (route) => {
+  await page.route('http://localhost:8000/api/**', async (route) => {
     const req = route.request()
     const url = new URL(req.url())
     const path = url.pathname.replace(/^\/api/, '')
@@ -165,6 +165,7 @@ export async function mockApi(page, state) {
       return json(pod)
     }
     if ((m = path.match(/^\/pods\/([^/]+)\/(stop|resume)$/)) && method === 'POST') {
+      if (state.slow?.[m[2]]) await new Promise((r) => setTimeout(r, state.slow[m[2]]))   // `api.state.slow = { stop: 800 }`: answer late, to see the card's bar
       const pod = state.pods.find((p) => p.id === m[1])
       pod.status = m[2] === 'stop' ? 'stopped' : 'running'
       return json(pod)

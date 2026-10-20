@@ -103,6 +103,16 @@ test.describe('pod card', () => {
     await expect(booting.getByTestId('pod-progress')).toHaveCount(0)
   })
 
+  test('Stop shows a bar on the card while RunPod shuts the pod down', async ({ page, api }) => {
+    api.state.slow = { stop: 800 }   // the fake API answers Stop late enough to see the bar
+    await page.goto('/')
+    const card = podCard(page, 'ComfyUI-Dev')
+    await card.getByTestId('pod-stop').click()
+    await expect(card.getByTestId('pod-progress-label')).toContainText(t('pod.action_stop'))
+    await expect(card.getByTestId('pod-status')).toHaveText('stopped')
+    await expect(card.getByTestId('pod-progress')).toHaveCount(0)
+  })
+
   test('a pod created without its image\'s UI port says so instead of waiting forever', async ({ page, api }) => {
     api.state.pods[0].comfy_ready = false; api.state.pods[0].port_mismatch = true
     await page.goto('/')

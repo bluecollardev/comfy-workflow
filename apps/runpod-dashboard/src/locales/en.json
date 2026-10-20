@@ -73,7 +73,11 @@
     "ownConfigTitle": "Created with its own configuration, not the default",
     "stepOf": "Step {n} of {of}",
     "stepRequested": "Pod requested: RunPod finds a host and pulls the image (a few minutes for ours)",
-    "stepBooting": "Container up: ComfyUI loading its nodes"
+    "stepBooting": "Container up: ComfyUI loading its nodes",
+    "action_stop": "Stopping: RunPod shuts the container down; the volume keeps everything, nothing bills afterwards",
+    "action_resume": "Resuming: RunPod looks for a free GPU on the pod's host",
+    "action_delete": "Deleting: the pod is terminated; the volume stays",
+    "action_recreate": "Recreating: the pod is terminated and a new one made with the same settings"
   },
   "form": {
     "name": "Name",

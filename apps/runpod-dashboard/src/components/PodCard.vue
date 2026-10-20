@@ -183,6 +183,8 @@ const pods = usePodsStore()
 /** Where a pod is on its way to a usable ComfyUI: requested, container up, ready. The image pull itself has no
  *  progress RunPod exposes, so the bar moves by step; the Logs modal shows the pull lines. */
 const loading = computed(() => {
+  const action = pods.pending[props.pod.id]
+  if (action) return { step: 1, value: 50, label: t(`pod.action_${action}`) }
   if (props.pod.status === 'starting') return { step: 1, value: 15, label: t('pod.stepRequested') }
   if (props.pod.status === 'running' && props.pod.comfy_ready === false && !props.pod.port_mismatch) return { step: 2, value: 60, label: t('pod.stepBooting') }
   return null

@@ -166,7 +166,7 @@ YML
         curl -fsS --max-time 20 -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "https://gitlab.com/api/v4/projects/$ENC/repository/branches?search=build-$IMAGE_TAG-&per_page=100" \
           | python3 -c 'import sys,json; [print(b["name"]) for b in json.load(sys.stdin)]' | grep -vx "$BRANCH" | while read -r old; do
             curl -fsS --max-time 20 -o /dev/null -X DELETE -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "https://gitlab.com/api/v4/projects/$ENC/repository/branches/$(python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$old")" 2>/dev/null || true
-          done
+          done || true
         echo "pushed $REF"; echo "next: enter $REF as the image in the dashboard's Default Configuration, or ./start.sh package mac --comfy ${SHOTPIPE:-base} --image $REF"; exit 0 ;;
       failed|canceled|skipped) echo "pipeline $ST: https://gitlab.com/$CI_PROJECT/-/pipelines/$PIPE" >&2; exit 1 ;;
       *) printf '  %s %s\n' "$(date +%H:%M:%S)" "$ST"; sleep 30 ;;
