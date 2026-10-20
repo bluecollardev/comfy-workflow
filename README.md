@@ -203,6 +203,42 @@ the rest is legacy or not a mount. Full list, per runtime:
 | Served plates, read-only | `/mnt/storage/Panama_Redux/source/PC_20260929_VFX_3D_DSM_plates/` | `/workspace/plates`, linked from the path the shots' `SOURCES.csv` declare |
 | ComfyUI-Shared | `/home/binc/ComfyUI-Shared` (also `~/ComfyUI-Shared`) | `/workspace/comfy-shared`, `COMFY_SHARED` |
 
+### How the data reaches a pod: the network volume
+
+A RunPod network volume is a disk in RunPod's datacenter, not a mount of this
+Mac. The Mac's folders never reach a pod live; the volume holds a copy, and the
+pod reads that copy. Three places, one direction:
+
+| Place | What is there | How it gets there |
+|---|---|---|
+| This Mac | the three folders mapped in the Configuration panel, wherever they live on disk | you |
+| The volume (`comfy-workspace`, 120 GB, `CA-MTL-1`) | a copy at `/workspace/project`, `/workspace/plates`, `/workspace/comfy-shared` | `./start.sh sync --pod <id>`: rsync over SSH into a pod with the volume attached. Additive, never deletes. The first run sends everything (the tree is 81 GB, ComfyUI-Shared 17 GB); later runs send changes |
+| A pod | the volume mounted at `/workspace`; ComfyUI's input, output, models and workflows under `comfy-shared/` | attached at creation from the volume id and datacenter in the Configuration panel |
+
+What follows from that:
+
+- **Every pod uses the same volume.** The volume id and datacenter are set once in
+  the panel and applied to each new pod, so there is one copy of the data and any
+  number of pods over time. Deleting a pod loses nothing; outputs are on the
+  volume in `comfy-shared/output` and come back to the Mac by rsync.
+- **Pods live in one datacenter.** A volume belongs to its datacenter, so every pod
+  is created there, and the automatic card choice picks the cheapest card in stock
+  there, not across RunPod. A pod in another region needs a second volume with its
+  own copy; the app handles one volume today.
+- **Several pods at once are possible.** RunPod allows more than one running pod on a
+  volume, so two ComfyUI instances can read the same plates and models. They share
+  the output folder too: fine for different shots, a collision for the same file name.
+- **Workflows are on the volume, not in the image.** The image links ComfyUI's
+  Workflows panel to `comfy-shared/workflows` and seeds it from
+  `apps/comfy-app/workflows/` only while it is empty. A workflow saved in one pod's
+  UI shows in the next pod; changing them needs no rebuild.
+- **The image is the only thing pulled, not copied.** Pods pull
+  `registry.gitlab.com/bcdevlucas/comfy-workflow/comfy-app:contract-v26`, a private
+  registry, with the credential saved on RunPod whose id is in the panel. Models
+  and plates are never in the image.
+- **Cost.** The volume bills about USD 0.07 per GB a month whether or not a pod
+  runs (120 GB is about USD 8.40). A stopped pod on a network volume bills nothing.
+
 ## Documentation
 
 All of `docs/`: <https://github.com/bluecollardev/comfy-workflow/tree/develop/docs>
