@@ -40,7 +40,7 @@ describe('the plan sent to RunPod', () => {
     cfg.folders.project = fakeTree(dir)
     const { input, idleMinutes } = pods.plan({ name: 't' }, cfg)
     expect(input.imageName).toBe('ghcr.io/example/comfy-app:v26'); expect(input.gpuTypeId).toBe('auto')
-    expect(input.cloudType).toBe('COMMUNITY'); expect(input.volumeInGb).toBe(0); expect(input.networkVolumeId).toBe('vol1'); expect(input.dataCenterId).toBe('EU-RO-1')
+    expect(input.cloudType).toBe('SECURE'); expect(input.volumeInGb).toBe(0); expect(input.networkVolumeId).toBe('vol1'); expect(input.dataCenterId).toBe('EU-RO-1')   // a network volume means the secure cloud
     expect(input.env.PROJECT_ROOT).toBe('/workspace/project'); expect(input.env.COMFY_LINKS).toContain('/home/someone/HARBOUR_r1/HARBOUR=/workspace/project')
     expect(input.ports).toBe('8188/http,22/tcp'); expect(idleMinutes).toBe(30)
     expect(input.containerRegistryAuthId).toBeUndefined()   // a public image needs no credential
@@ -114,7 +114,7 @@ describe('against RunPod', () => {
       }
       return {}
     })
-    expect(await pods.candidates('auto', { fetchFn })).toEqual(['NVIDIA RTX A5000', 'NVIDIA GeForce RTX 4090', 'NVIDIA RTX A4000', 'NVIDIA RTX 4000 Ada Generation', 'NVIDIA GeForce RTX 3090'])
+    expect(await pods.candidates('auto', { fetchFn })).toEqual(['NVIDIA RTX A5000', 'NVIDIA GeForce RTX 4090', 'NVIDIA RTX A4000', 'NVIDIA RTX 4000 Ada Generation', 'NVIDIA GeForce RTX 3090', 'NVIDIA RTX A6000', 'NVIDIA A40'])
     const created = await pods.create({ name: 't', gpu: 'auto' }, { fetchFn })
     expect(tried).toEqual(['NVIDIA RTX A5000', 'NVIDIA GeForce RTX 4090'])   // cheapest first, then the next when none
     expect(created.gpu).toBe('rtx4090 x1'); expect(created.vram).toBe(24)

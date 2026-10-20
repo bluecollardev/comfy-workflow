@@ -71,6 +71,7 @@ export function plan(req: CreatePodRequest, cfg: mounts.MountsConfig, credential
     if (ov.network_volume_id) {
       volume.networkVolumeId = ov.network_volume_id; volume.volumeMountPath = ov.volume_mount_path
       if (ov.data_center_id) volume.dataCenterId = ov.data_center_id
+      volume.cloudType = 'SECURE'   // network volumes live in the secure cloud only
       volumeGb = 0   // the network volume carries the data; a per-pod volume beside it is billed for nothing
     }
   }
@@ -124,20 +125,23 @@ export async function create(req: CreatePodRequest, client?: rp.RunPodClient, cr
 const gpuKey = (id: string) => Object.entries(gpus.GPUS).find(([, g]) => g.id === id)?.[0] || id
 const NO_STOCK = /no longer any instances available|not enough|no instances/i
 
-/** The cards to try, cheapest in stock first, for `auto`; the one asked for otherwise. */
-export async function candidates(gpuTypeId: string, client?: rp.RunPodClient): Promise<string[]> {
+/** The cards to try, cheapest in stock first, for `auto`; the one asked for otherwise. With a datacenter
+ *  (a network volume pins the pod there) only the cards that datacenter has right now count as in stock. */
+export async function candidates(gpuTypeId: string, client?: rp.RunPodClient, dataCenterId?: string): Promise<string[]> {
   if (gpuTypeId !== gpus.AUTO) return [gpuTypeId]
   const ids = Object.values(gpus.GPUS).map((g) => g.id)
   let stock: rp.GpuStock[] = []
   try { stock = await rp.gpuStock(ids, client) } catch { /* no stock answer: try them all in table order */ }
-  const inStock = stock.filter((g) => g.stock && g.price != null).sort((a, b) => (a.price as number) - (b.price as number)).map((g) => g.id)
+  let here: Set<string> | null = null
+  if (dataCenterId) { try { here = new Set(await rp.datacenterStock(dataCenterId, client)) } catch { /* no answer: fall back to global stock */ } }
+  const inStock = stock.filter((g) => g.stock && g.price != null && (!here || here.has(g.id))).sort((a, b) => (a.price as number) - (b.price as number)).map((g) => g.id)
   return [...inStock, ...ids.filter((id) => !inStock.includes(id))]
 }
 
 /** Deploy on the first card RunPod will give; a "no instances" answer moves to the next card, then to the other cloud. */
 async function deployWithFallback(input: rp.CreatePodInput, client?: rp.RunPodClient): Promise<{ pod: { id: string }; gpuId: string }> {
-  const cards = await candidates(input.gpuTypeId, client)
-  const clouds: rp.CreatePodInput['cloudType'][] = input.gpuTypeId === gpus.AUTO ? [input.cloudType, input.cloudType === 'SECURE' ? 'COMMUNITY' : 'SECURE'] : [input.cloudType]
+  const cards = await candidates(input.gpuTypeId, client, input.dataCenterId)
+  const clouds: rp.CreatePodInput['cloudType'][] = input.gpuTypeId === gpus.AUTO && !input.networkVolumeId ? [input.cloudType, input.cloudType === 'SECURE' ? 'COMMUNITY' : 'SECURE'] : [input.cloudType]
   let last: Error | null = null
   for (const cloudType of clouds) {
     for (const gpuTypeId of cards) {

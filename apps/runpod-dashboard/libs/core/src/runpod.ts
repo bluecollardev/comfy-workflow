@@ -92,6 +92,14 @@ export async function gpuStock(ids: string[], client?: RunPodClient): Promise<Gp
   return (d?.gpuTypes || []).filter((g) => want.has(g.id)).map((g) => ({ id: g.id, price: g.lowestPrice?.uninterruptablePrice ?? null, stock: g.lowestPrice?.stockStatus ?? null, secure: g.secureCloud, community: g.communityCloud }))
 }
 
+/** The cards one datacenter has available right now (a network volume pins pods to its datacenter). */
+export async function datacenterStock(dataCenterId: string, client?: RunPodClient): Promise<string[]> {
+  const d = await graphql<{ dataCenters: { id: string; gpuAvailability: { available: boolean; gpuTypeId: string }[] | null }[] }>(
+    'query { dataCenters { id gpuAvailability { available gpuTypeId } } }', client)
+  const dc = (d?.dataCenters || []).find((x) => x.id === dataCenterId)
+  return (dc?.gpuAvailability || []).filter((g) => g.available).map((g) => g.gpuTypeId)
+}
+
 /** RunPod's v2 REST API (api.runpod.io/v2): the pod record with its status text, and the log stream. */
 export async function rest<T = unknown>(path: string, client: RunPodClient = {}, init: RequestInit = {}): Promise<T> {
   const apiKey = client.apiKey || process.env.RUNPOD_API_KEY
