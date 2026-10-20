@@ -55,8 +55,17 @@ def plan(cfg: mounts.MountsConfig, only: set, plates: bool) -> list[tuple[str, s
     return out
 
 
+def _progress_flag() -> str:
+    """macOS ships openrsync, which has --progress but not --info=progress2."""
+    try:
+        v = subprocess.run(["rsync", "--version"], capture_output=True, text=True, timeout=10).stdout
+    except Exception:
+        v = ""
+    return "--progress" if "openrsync" in v else "--info=progress2"
+
+
 def rsync_cmd(local: str, host: str, port: int, remote: str) -> list[str]:
-    cmd = ["rsync", "-a", "--info=progress2", "--partial", "-e", f"ssh -p {port} -o StrictHostKeyChecking=accept-new"]
+    cmd = ["rsync", "-a", _progress_flag(), "--partial", "-e", f"ssh -p {port} -o StrictHostKeyChecking=accept-new"]
     for e in EXCLUDE:
         cmd += ["--exclude", e]
     return cmd + [local, f"{host}:{remote}"]
