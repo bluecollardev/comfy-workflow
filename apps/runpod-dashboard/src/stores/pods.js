@@ -116,9 +116,18 @@ export const usePodsStore = defineStore('pods', () => {
     return r
   }
 
+  /** A pod's own configuration (null = the Default Configuration). */
+  const config = (id) => podsAPI.config(id)
+  /** Give a pod its own configuration, applied when it is recreated; null puts it back on the default. */
+  async function setConfig(id, cfg) {
+    const r = await toast.run(t('toast.setPodConfig'), () => podsAPI.setConfig(id, cfg), { ok: cfg ? t('toast.podConfigSet') : t('toast.podConfigDefault'), onError: (msg) => (actionError.value = msg) })
+    if (r.ok) { const p = pods.value.find((x) => x.id === id); if (p) p.custom_config = !!cfg }
+    return r
+  }
+
   /** The pod as RunPod describes it, for the card's details panel. */
   const details = (id) => podsAPI.details(id)
   const remove = (id) => act(id, podsAPI.deletePod, 'Delete')
 
-  return { stats, pods, dryRun, initialLoading, refreshing, loadError, actionError, busyPodId, load, refreshList, startAutoRefresh, stopAutoRefresh, create, stop, stopAll, resume, remove, details, recreate, hostFull, setIdle }
+  return { stats, pods, dryRun, initialLoading, refreshing, loadError, actionError, busyPodId, load, refreshList, startAutoRefresh, stopAutoRefresh, create, stop, stopAll, resume, remove, details, recreate, hostFull, setIdle, config, setConfig }
 })

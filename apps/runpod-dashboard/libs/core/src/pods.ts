@@ -8,6 +8,7 @@ import { CoreError, bad } from './errors.js'
 import * as gpus from './gpus.js'
 import * as idle from './idle.js'
 import * as mounts from './mounts.js'
+import * as podconfigs from './podconfigs.js'
 import * as rp from './runpod.js'
 import * as dry from './dry.js'
 
@@ -29,11 +30,13 @@ export interface CreatePodRequest {
   image?: string; env_vars?: Record<string, string>; build_args?: Record<string, string>; pip_requirements?: string
   custom_nodes?: { name: string; url: string; branch: string; path: string }[]; start_ssh?: boolean; start_jupyter?: boolean
   apply_mounts?: boolean | null; idle_stop_minutes?: number | null
+  config?: Partial<mounts.MountsConfig> | null   // this pod's own configuration (the Default Configuration's shape); null = the default
 }
 export interface PodStatus {
   id: string; name: string; status: 'running' | 'stopped' | 'starting'; gpu: string; vram: number
   uptime_seconds: number | null; web_ui_url: string | null; ssh_command: string; idle_stop_minutes: number
   console_url?: string; status_text?: string; comfy_ready?: boolean | null   // null = not probed
+  custom_config?: boolean   // created with its own configuration, kept for Recreate
   port_mismatch?: boolean   // the pod does not expose the port its image serves ComfyUI on; only Recreate fixes it
 }
 
@@ -89,13 +92,27 @@ export function plan(req: CreatePodRequest, cfg: mounts.MountsConfig, credential
 }
 
 /** Create a pod from the dashboard's request. */
+/** The configuration a request runs under: its own, validated, or the Default Configuration. No-spend mode is
+ *  app-wide, so it always comes from the default. */
+export function effectiveConfig(req: CreatePodRequest): { cfg: mounts.MountsConfig; own: boolean } {
+  const base = mounts.load()
+  if (!req.config) return { cfg: base, own: false }
+  const cfg = mounts.validate(mounts.normalize({ ...req.config, dry_run: base.dry_run }))
+  return { cfg, own: true }
+}
+
 export async function create(req: CreatePodRequest, client?: rp.RunPodClient, credentialsEnv: Record<string, string> = {}): Promise<PodStatus> {
   if (!req.name?.trim()) throw bad('A pod needs a name')
-  const cfg = mounts.load()
+  const { cfg, own } = effectiveConfig(req)
   const { input, idleMinutes } = plan(req, cfg, credentialsEnv)
-  if (mounts.dryRun(cfg)) return dry.create({ name: req.name, gpu: req.gpu, gpu_count: input.gpuCount, image: input.imageName, idle_stop_minutes: idleMinutes > 0 ? idleMinutes : 0 })
+  if (mounts.dryRun(cfg)) {
+    const p = dry.create({ name: req.name, gpu: req.gpu, gpu_count: input.gpuCount, image: input.imageName, idle_stop_minutes: idleMinutes > 0 ? idleMinutes : 0 })
+    if (own) podconfigs.set(p.id, cfg)
+    return { ...p, custom_config: own }
+  }
   const { pod, gpuId } = await deployWithFallback(input, client)
   if (idleMinutes > 0) idle.register(pod.id, idleMinutes)
+  if (own) podconfigs.set(pod.id, cfg)
   const key = gpuKey(gpuId)
   return {
     id: pod.id, name: req.name, status: 'starting', gpu: `${key} x${input.gpuCount}`,
@@ -146,6 +163,7 @@ export function toStatus(p: rp.RawPod): PodStatus {
     gpu: p.machine?.gpuDisplayName || String(p.gpuCount ?? '?'), vram: gpus.vram(p.machine?.gpuDisplayName || '') || 24,
     uptime_seconds: uptime, web_ui_url: running ? idle.proxyUrl(p.id, webPortOf(p.ports)) : null,
     ssh_command: `ssh root@${p.id}.proxy.runpod.io`, idle_stop_minutes: idle.entry(p.id)?.minutes ?? 0, comfy_ready: null,
+    custom_config: podconfigs.has(p.id),
     port_mismatch: (p.imageName || '') === PREBUILT_IMAGE && !/3001\/http/.test(p.ports || ''),
     console_url: consoleUrl(p.id), status_text: p.lastStatusChange || p.desiredStatus || '',
   }
@@ -161,7 +179,7 @@ export async function comfyReady(url: string, fetchFn: typeof fetch = fetch): Pr
 }
 
 export const list = async (client?: rp.RunPodClient): Promise<PodStatus[]> => {
-  if (isDry()) return dry.list()
+  if (isDry()) return dry.list().map((p) => ({ ...p, custom_config: podconfigs.has(p.id) }))
   const pods = (await rp.listPods(client)).map(toStatus)
   await Promise.all(pods.map(async (p) => { if (p.status === 'running' && p.web_ui_url) p.comfy_ready = await comfyReady(p.web_ui_url, client?.fetchFn || fetch) }))
   return pods
@@ -188,7 +206,18 @@ export async function dashboard(client?: rp.RunPodClient) {
 
 export async function stop(podId: string, client?: rp.RunPodClient) { if (isDry()) return dry.stop(podId); await rp.stopPod(podId, client); return { message: `Pod ${podId} stopped`, pod_id: podId } }
 export async function resume(podId: string, client?: rp.RunPodClient) { if (isDry()) return dry.resume(podId); await rp.resumePod(podId, 1, client); return { message: `Pod ${podId} resumed`, pod_id: podId } }
-export async function remove(podId: string, client?: rp.RunPodClient) { if (isDry()) { idle.forget(podId); return dry.remove(podId) } await rp.terminatePod(podId, client); idle.forget(podId); return { message: `Pod ${podId} deleted`, pod_id: podId } }
+export async function remove(podId: string, client?: rp.RunPodClient) { podconfigs.forget(podId); if (isDry()) { idle.forget(podId); return dry.remove(podId) } await rp.terminatePod(podId, client); idle.forget(podId); return { message: `Pod ${podId} deleted`, pod_id: podId } }
+
+/** A pod's own configuration, or null when it uses the Default Configuration. */
+export const config = (podId: string) => podconfigs.get(podId)
+/** Give a pod its own configuration (applied when it is recreated), or null to put it back on the default. */
+export function setConfig(podId: string, cfg: Partial<mounts.MountsConfig> | null) {
+  if (!cfg) { podconfigs.forget(podId); return { pod_id: podId, custom_config: false, config: null } }
+  const base = mounts.load()
+  const full = mounts.validate(mounts.normalize({ ...cfg, dry_run: base.dry_run }))
+  podconfigs.set(podId, full)
+  return { pod_id: podId, custom_config: true, config: full }
+}
 
 /** The two callbacks the idle loop needs, over RunPod. */
 /** The pods RunPod wants running, with their uptime (0 while still starting), for the idle watch. */
@@ -246,19 +275,22 @@ export async function recreate(podId: string, client?: rp.RunPodClient): Promise
   if (isDry()) {
     const old = dry.list().find((x) => x.id === podId)
     if (!old) throw new CoreError(404, `Pod ${podId} not found`)
-    dry.remove(podId)
-    return dry.create({ name: old.name, gpu: gpuKey(old.gpu.split(' x')[0]) || gpus.DEFAULT_GPU, gpu_count: 1, image: 'simulated', idle_stop_minutes: old.idle_stop_minutes })
+    const own = podconfigs.get(podId)
+    dry.remove(podId); podconfigs.forget(podId)
+    const fresh = dry.create({ name: old.name, gpu: gpuKey(old.gpu.split(' x')[0]) || gpus.DEFAULT_GPU, gpu_count: 1, image: 'simulated', idle_stop_minutes: old.idle_stop_minutes })
+    if (own) podconfigs.set(fresh.id, own)
+    return { ...fresh, custom_config: !!own }
   }
   const d = await details(podId, client)
   const key = gpuKey(d.gpu)
   const req: CreatePodRequest = {
     name: d.name || 'pod', gpu: key in gpus.GPUS ? key : gpus.AUTO, gpu_count: d.gpu_count || 1,
     instance_type: d.cloud === 'COMMUNITY' ? 'spot' : 'on-demand', image: d.image || 'configured', disk_gb: d.disk_gb || 20,
-    idle_stop_minutes: idle.entry(podId)?.minutes ?? null, apply_mounts: null,
+    idle_stop_minutes: idle.entry(podId)?.minutes ?? null, apply_mounts: null, config: podconfigs.get(podId),
   }
   const fresh = await create(req, client)
   await rp.terminatePod(podId, client)
-  idle.forget(podId)
+  idle.forget(podId); podconfigs.forget(podId)
   return fresh
 }
 

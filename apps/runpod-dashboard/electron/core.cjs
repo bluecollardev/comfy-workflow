@@ -24,6 +24,7 @@ const TABLE = {
   mounts: {
     get: (c) => c.mounts.payload(c.mounts.load()),
     put: (c, cfg) => c.mounts.put(cfg),
+    preview: (c, cfg) => c.mounts.preview(cfg),
     reset: (c) => c.mounts.payload(c.mounts.reset()),
     env: (c) => c.mounts.envLines(c.mounts.load()),
     dirs: (c, p, hidden) => c.listDirs(p || '', !!hidden),
@@ -40,6 +41,8 @@ const TABLE = {
     setIdle: (c, id, minutes) => { c.idle.register(id, Number(minutes)); return { pod_id: id, idle_stop_minutes: Math.max(Number(minutes), 0) } },
     details: (c, id) => c.pods.details(id),
     recreate: (c, id) => c.pods.recreate(id),
+    config: (c, id) => c.pods.config(id),
+    setConfig: (c, id, cfg) => c.pods.setConfig(id, cfg),
   },
   governance: {
     summary: (c) => c.governance.summary(),

@@ -27,6 +27,7 @@ export const sampleRepository = () => ({
 
 export function defaultState() {
   return {
+    podConfigs: {},   // per-pod configurations (GET/PUT /pods/:id/config)
     pods: samplePods(),
     accounts: [],
     providers: [
@@ -113,6 +114,7 @@ export async function mockApi(page, state) {
     if (method === 'PUT' && path === '/settings') { if (body.runpod_api_key) state.settings = { runpod_api_key_set: true, runpod_api_key_hint: '••••' + body.runpod_api_key.slice(-4), source: '/home/me/.config/runpod-pod-manager/.env' }; return json(state.settings) }
     if (method === 'GET' && path === '/mounts') return json(mountsPayload(state))
     if (method === 'PUT' && path === '/mounts') { state.mounts.config = body; state.mounts.stored = true; return json(mountsPayload(state)) }
+    if (method === 'POST' && path === '/mounts/preview') return json(mountsPayload({ ...state, mounts: { ...state.mounts, config: { ...state.mounts.config, ...body } } }))
     if (method === 'DELETE' && path === '/mounts') { state.mounts.config = defaultState().mounts.config; state.mounts.stored = false; return json(mountsPayload(state)) }
     if (method === 'GET' && path === '/fs/dirs') {
       const p = query.path || '/Users/lucas'
@@ -126,7 +128,8 @@ export async function mockApi(page, state) {
     if (method === 'GET' && path === '/pods') return json(state.pods)
     if (method === 'POST' && path === '/pods') {
       const pod = { id: `pod-new-${state.pods.length + 1}`, name: body.name, status: 'starting', gpu: body.gpu, vram: 24,
-        ssh_command: 'ssh root@new.proxy.runpod.io' }
+        ssh_command: 'ssh root@new.proxy.runpod.io', custom_config: !!body.config }
+      if (body.config) state.podConfigs[pod.id] = body.config
       state.pods.push(pod)
       return json(pod, 201)
     }
@@ -146,6 +149,12 @@ export async function mockApi(page, state) {
       const pod = state.pods.find((p) => p.id === m[1])
       if (pod) pod.idle_stop_minutes = Number(query.minutes)
       return json({ pod_id: m[1], idle_stop_minutes: Number(query.minutes) })
+    }
+    if ((m = path.match(/^\/pods\/([^/]+)\/config$/)) && method === 'GET') return json(state.podConfigs[m[1]] || null)
+    if ((m = path.match(/^\/pods\/([^/]+)\/config$/)) && method === 'PUT') {
+      if (body) state.podConfigs[m[1]] = body; else delete state.podConfigs[m[1]]
+      const pod = state.pods.find((p) => p.id === m[1]); if (pod) pod.custom_config = !!body
+      return json({ pod_id: m[1], custom_config: !!body, config: body || null })
     }
     if ((m = path.match(/^\/pods\/([^/]+)\/recreate$/)) && method === 'POST') {
       const i = state.pods.findIndex((p) => p.id === m[1])

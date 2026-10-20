@@ -9,6 +9,8 @@ const ipc = core && {
   get: () => core.invoke('mounts', 'get'),
   save: (config) => core.invoke('mounts', 'put', [config]),
   reset: () => core.invoke('mounts', 'reset'),
+  // The derived rows for a configuration that is not saved: a pod's own configuration being edited
+  preview: (config) => core.invoke('mounts', 'preview', [config]),
   dirs: (path = '', hidden = false) => core.invoke('mounts', 'dirs', [path, hidden]),
 }
 
@@ -23,6 +25,10 @@ const http = {
   },
   async reset() {
     const { data } = await axios.delete(`${API_BASE}/mounts`)
+    return data
+  },
+  async preview(config) {
+    const { data } = await axios.post(`${API_BASE}/mounts/preview`, config)
     return data
   },
   // Folder picker: subfolders of a folder on this PC; empty path = home.

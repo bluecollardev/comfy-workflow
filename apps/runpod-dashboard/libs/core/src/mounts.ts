@@ -368,6 +368,11 @@ export function validate(cfg: MountsConfig): MountsConfig {
   return cfg
 }
 
+/** The payload for a configuration that is not saved: a pod's own configuration being edited. Validates it. */
+export function preview(data: Partial<MountsConfig>) {
+  return payload(validate(normalize(data)))
+}
+
 /** Save after validating; returns the payload the panel shows. */
 export function put(data: Partial<MountsConfig>) {
   const cfg = validate(normalize(data))

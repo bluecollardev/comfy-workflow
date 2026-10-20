@@ -2,7 +2,8 @@
   <BCard class="h-100" body-class="d-flex flex-column" data-testid="pod-card" :data-name="pod.name">
     <div class="d-flex align-items-start gap-2 mb-3">
       <span class="fw-semibold fs-5 text-truncate" :title="pod.name">{{ pod.name }}</span>
-      <BBadge :variant="STATUS_VARIANT[pod.status] ?? 'secondary'" class="ms-auto text-uppercase" data-testid="pod-status">
+      <BBadge v-if="pod.custom_config" variant="warning" text-indicator class="ms-auto" :title="$t('pod.ownConfigTitle')" data-testid="pod-config-badge">{{ $t('pod.ownConfig') }}</BBadge>
+      <BBadge :variant="STATUS_VARIANT[pod.status] ?? 'secondary'" :class="pod.custom_config ? '' : 'ms-auto'" class="text-uppercase" data-testid="pod-status">
         {{ pod.status }}
       </BBadge>
     </div>
@@ -68,6 +69,9 @@
     </dl>
 
     <div class="d-flex gap-2 mb-2 justify-content-end">
+      <BButton variant="outline-light" size="sm" :title="$t('pod.configTitle')" data-testid="pod-config" @click="openConfig">
+        <i class="fa-solid fa-sliders me-1"></i>{{ $t('pod.config') }}
+      </BButton>
       <BButton variant="outline-light" size="sm" :pressed="showDetails" data-testid="pod-details-toggle" @click="toggleDetails">
         <i class="fa-solid fa-circle-info me-1"></i>{{ $t('pod.details') }}
       </BButton>
@@ -87,6 +91,7 @@
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.disk') }}</dt><dd class="col-8 mb-0">{{ $t('pod.diskValue', { disk: details.disk_gb, volume: details.volume_gb }) }}</dd>
       </dl>
     </div>
+    <ConfigModal v-if="configOpen" mode="pod" v-model="configOpen" :initial="ownConfig" :pod-name="pod.name" @apply="applyConfig" />
     <BModal v-model="showLogs" :title="$t('pod.logsTitle', { name: pod.name })" size="xl" scrollable hide-footer body-class="p-0" @hidden="showLogs = false">
       <PodLogs v-if="showLogs" :pod-id="pod.id" modal />
     </BModal>
@@ -147,6 +152,7 @@
 import { t } from '../i18n'
 import { ref } from 'vue'
 import PodLogs from './PodLogs.vue'
+import ConfigModal from './ConfigModal.vue'
 import { usePodsStore } from '../stores/pods'
 import { useToastStore } from '../stores/toast'
 const props = defineProps({
@@ -192,6 +198,18 @@ function startIdleEdit() { idleDraft.value = props.pod.idle_stop_minutes || 0; e
 async function saveIdle() {
   const r = await pods.setIdle(props.pod.id, Number(idleDraft.value) || 0)
   if (r.ok) editingIdle.value = false
+}
+
+// This pod's own configuration: shown from the registry, saved there; it applies when the pod is recreated.
+const configOpen = ref(false)
+const ownConfig = ref(null)
+async function openConfig() {
+  try { ownConfig.value = await pods.config(props.pod.id) } catch { ownConfig.value = null }
+  configOpen.value = true
+}
+async function applyConfig(cfg) {
+  const r = await pods.setConfig(props.pod.id, cfg)
+  if (r.ok) ownConfig.value = cfg
 }
 
 function confirmRecreate() {

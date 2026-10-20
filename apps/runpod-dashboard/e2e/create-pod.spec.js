@@ -70,6 +70,7 @@ test.describe('create pod', () => {
       image: 'docker.io/me/comfy:1',
       idle_stop_minutes: null,
       apply_mounts: true,
+      config: null,
       env_vars: { HF_TOKEN: 'abc', EMPTY: '', PASTED: 'from clipboard' },
       build_args: { CUDA_SHORT: 'cu128' },
       pip_requirements: 'torch==2.1\n\nxformers',

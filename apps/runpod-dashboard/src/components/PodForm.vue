@@ -40,7 +40,18 @@
         </BFormGroup>
       </BCol>
       <BCol md="6" lg="4">
-        <BFormGroup :label="$t('form.image')" label-for="pod-image" :description="form.image === 'configured' ? configuredImage : ''" data-testid="pod-image-group">
+        <BFormGroup :label="$t('form.podConfig')" :description="form.config ? $t('form.podConfigOwnHelp') : $t('form.podConfigDefaultHelp')" data-testid="pod-config-group">
+          <div class="d-flex align-items-center gap-2">
+            <BButton size="sm" :variant="form.config ? 'warning' : 'outline-light'" data-testid="pod-config-override" @click="overrideOpen = true">
+              <i class="fa-solid fa-sliders me-1"></i>{{ form.config ? $t('form.podConfigEdit') : $t('form.podConfigOverride') }}
+            </BButton>
+            <BBadge v-if="form.config" variant="warning" text-indicator data-testid="pod-config-custom">{{ $t('form.podConfigOwn') }}</BBadge>
+            <BButton v-if="form.config" size="sm" variant="link" class="p-0 small" data-testid="pod-config-reset" @click="form.config = null">{{ $t('form.podConfigUseDefault') }}</BButton>
+          </div>
+        </BFormGroup>
+      </BCol>
+      <BCol md="6" lg="4">
+        <BFormGroup :label="$t('form.image')" label-for="pod-image" :description="form.image === 'configured' ? (form.config?.image || configuredImage) : ''" data-testid="pod-image-group">
           <BFormSelect id="pod-image" v-model="form.image" :options="IMAGE_OPTIONS" />
         </BFormGroup>
       </BCol>
@@ -269,6 +280,9 @@
       </div>
     </BModal>
 
+    <!-- This pod's own configuration: the Default Configuration's panel, started from it, sent with the request -->
+    <ConfigModal mode="pod" v-model="overrideOpen" :initial="form.config" :pod-name="form.name || $t('form.thisPod')" @apply="form.config = $event" />
+
     <BAlert
       v-if="error"
       :model-value="true"
@@ -306,6 +320,8 @@
  *   volumeGb        → volume_gb       10–500
  *   diskGb          → disk_gb         5–100
  *   image           → image           "prebuilt", or the custom URI when "custom" is chosen
+ *   config          → config          this pod's own configuration (the Default Configuration's shape) from the
+ *                                     Override configuration button, or null for the default
  *   startSsh        → start_ssh
  *   startJupyter    → start_jupyter
  *   envVars         → env_vars +      one list of rows [{ type: 'env' | 'arg', key, value }]; env rows → env_vars,
@@ -329,6 +345,7 @@ import { useUiStore } from '../stores/ui'
 import { usePodsStore } from '../stores/pods'
 import { useMountsStore } from '../stores/mounts'
 import { t } from '../i18n'
+import ConfigModal from './ConfigModal.vue'
 
 const MAX_VISIBLE_FOLDERS = 500
 
@@ -399,6 +416,7 @@ const defaults = () => ({
   volumeGb: 0,
   diskGb: 20,
   applyMounts: true,
+  config: null,
   image: 'configured',
   idleStopMinutes: null,
   customImageUri: '',
@@ -421,6 +439,7 @@ const configuredIdle = computed(() => mounts.configuredIdle)
 onMounted(() => { if (!mounts.payload) mounts.load() })
 watch(() => mounts.applyByDefault, (v) => { if (form.applyMounts === true && v === false) form.applyMounts = false }, { immediate: true })
 const open = reactive({ envVars: false, pipRequirements: false, customNodes: false })
+const overrideOpen = ref(false)
 const submitting = ref(false)
 const error = ref(null)
 
