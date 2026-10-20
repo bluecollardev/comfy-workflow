@@ -39,6 +39,10 @@
       </template>
 
 
+      <div v-if="loading" class="col-12 mt-1" data-testid="pod-progress" :data-step="loading.step">
+        <BProgress :value="loading.value" :max="100" height="6px" variant="info" striped animated />
+        <div class="small text-body-secondary mt-1" data-testid="pod-progress-label">{{ $t('pod.stepOf', { n: loading.step, of: 3 }) }} · {{ loading.label }}</div>
+      </div>
       <div v-if="pods.hostFull === pod.id" class="col-12 small text-warning" data-testid="pod-host-full">{{ $t('pod.hostFull') }}</div>
 
       <template v-if="pod.status_text">
@@ -150,7 +154,7 @@
  *   stop, resume, delete  — delete only fires after the user confirms
  */
 import { t } from '../i18n'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import PodLogs from './PodLogs.vue'
 import ConfigModal from './ConfigModal.vue'
 import { usePodsStore } from '../stores/pods'
@@ -175,6 +179,14 @@ function formatUptime(seconds) {
 }
 
 const pods = usePodsStore()
+
+/** Where a pod is on its way to a usable ComfyUI: requested, container up, ready. The image pull itself has no
+ *  progress RunPod exposes, so the bar moves by step; the Logs modal shows the pull lines. */
+const loading = computed(() => {
+  if (props.pod.status === 'starting') return { step: 1, value: 15, label: t('pod.stepRequested') }
+  if (props.pod.status === 'running' && props.pod.comfy_ready === false && !props.pod.port_mismatch) return { step: 2, value: 60, label: t('pod.stepBooting') }
+  return null
+})
 const toast = useToastStore()
 const showDetails = ref(false)
 const showLogs = ref(false)

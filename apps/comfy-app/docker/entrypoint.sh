@@ -38,6 +38,13 @@ if [ -n "${COMFY_LINKS:-}" ]; then
     mkdir -p "$(dirname "$from")" && ln -sfn "$to" "$from" && echo "linked $from -> $to"
   done
 fi
+# SSH for the sync (and a shell): RunPod passes the account's key as PUBLIC_KEY and maps 22/tcp.
+if [ -n "${PUBLIC_KEY:-}" ] && command -v sshd >/dev/null; then
+  mkdir -p /root/.ssh /run/sshd && chmod 700 /root/.ssh
+  printf '%s\n' "$PUBLIC_KEY" > /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys
+  ssh-keygen -A >/dev/null 2>&1 || true
+  /usr/sbin/sshd -o PermitRootLogin=yes -o PasswordAuthentication=no && echo "sshd on 22 (for ./start.sh sync)"
+fi
 TREE="${PROJECT_ROOT:-/workspace/project}"
 [ -e "$TREE" ] || echo "note: $TREE is not present; corrosion graphs will not find the project tree" >&2
 cd /opt/ComfyUI

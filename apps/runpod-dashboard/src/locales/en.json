@@ -70,7 +70,10 @@
     "config": "Configuration",
     "configTitle": "This pod’s own configuration: shown now, applied when the pod is recreated",
     "ownConfig": "own config",
-    "ownConfigTitle": "Created with its own configuration, not the default"
+    "ownConfigTitle": "Created with its own configuration, not the default",
+    "stepOf": "Step {n} of {of}",
+    "stepRequested": "Pod requested: RunPod finds a host and pulls the image (a few minutes for ours)",
+    "stepBooting": "Container up: ComfyUI loading its nodes"
   },
   "form": {
     "name": "Name",

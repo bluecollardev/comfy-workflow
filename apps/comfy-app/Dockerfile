@@ -11,6 +11,7 @@
 #   /opt/ComfyUI/user/default/workflows -> /workspace/comfy-shared/workflows   the UI's Workflows panel reads the mount
 #   /opt/comfy-app/workflows          workflows/ from the repo: copied onto the mount only while it is empty
 #   /workspace/project                mount: the project tree
+#   sshd on 22 when RunPod passes PUBLIC_KEY, so `./start.sh sync --pod <id>` can rsync onto the volume
 #   /home/binc/CANALV2_r3/CANALV2 -> /workspace/project   so graphs keep their binc-PC paths
 #
 # Models and plates are never baked in; mount them (RunPod network volume at /workspace).
@@ -52,6 +53,9 @@ COPY .build/custom_nodes/ /opt/ComfyUI/custom_nodes/
 RUN for req in /opt/ComfyUI/custom_nodes/*/requirements.txt; do \
         [ -f "$req" ] && pip install -r "$req"; done; true
 
+# sshd (RunPod injects PUBLIC_KEY; the entrypoint starts it) and rsync, for ./start.sh sync onto the volume.
+RUN apt-get update && apt-get install -y --no-install-recommends openssh-server rsync \
+    && rm -rf /var/lib/apt/lists/*
 COPY docker/extra_model_paths.yaml /opt/comfy-app/extra_model_paths.yaml
 COPY workflows/ /opt/comfy-app/workflows/
 COPY docker/entrypoint.sh /opt/comfy-app/entrypoint.sh
