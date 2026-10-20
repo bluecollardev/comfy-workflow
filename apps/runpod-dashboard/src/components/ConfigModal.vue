@@ -42,6 +42,9 @@
           <BFormGroup :label="$t('config.image')" label-for="cfg-image" :description="$t('config.imageHelp')">
             <BFormInput id="cfg-image" v-model.trim="cfg.image" placeholder="registry/name:tag" class="font-monospace" data-testid="cfg-image" />
           </BFormGroup>
+          <BFormGroup :label="$t('config.registryAuth')" label-for="cfg-registry-auth" :description="$t('config.registryAuthHelp')">
+            <BFormInput id="cfg-registry-auth" v-model.trim="cfg.registry_auth_id" class="font-monospace" data-testid="cfg-registry-auth" />
+          </BFormGroup>
         </BCol>
         <BCol md="4">
           <BFormGroup :label="$t('config.idle')" label-for="cfg-idle" :description="$t('config.idleHelp')">

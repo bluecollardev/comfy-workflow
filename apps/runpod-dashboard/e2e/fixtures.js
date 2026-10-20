@@ -41,7 +41,7 @@ export function defaultState() {
     imageBuildArgs: [],
     imageEnvSkipped: 0,
     // The mount configuration (GET /mounts): the image every pod boots and the idle default.
-    mounts: { config: { image: 'ghcr.io/example/comfy-app:v26', idle_stop_minutes: 30, network_volume_id: '', mount_path: '/workspace', apply_by_default: true, dry_run: false, folders: { project: '', plates: '', 'comfy-shared': '' }, custom: [], env: {}, links: [], required: {} }, folders: [], links: [], mode: 'dev', require: [], require_source: 'config', stored: false, store: '', local_env: {}, preview: { env: {} }, catalog: {} },
+    mounts: { config: { image: 'ghcr.io/example/comfy-app:v26', registry_auth_id: '', idle_stop_minutes: 30, network_volume_id: '', mount_path: '/workspace', apply_by_default: true, dry_run: false, folders: { project: '', plates: '', 'comfy-shared': '' }, custom: [], env: {}, links: [], required: {} }, folders: [], links: [], mode: 'dev', require: [], require_source: 'config', stored: false, store: '', local_env: {}, preview: { env: {} }, catalog: {} },
     gpus: { default: 'auto', live: true, gpus: [{ value: 'auto', text: 'Cheapest card in stock (16-24 GB)', in_stock: true }, { value: 'a4000', text: 'RTX A4000 (16 GB) · none in stock', in_stock: false }, { value: 'rtx4090', text: 'RTX 4090 (24 GB) · $0.34/h · Low stock', in_stock: true, price: 0.34, stock: 'Low' }] },
     // The folder browser (GET /fs/dirs): a tiny disk.
     fs: { '/Users/lucas': ['ComfyUI-Shared', 'Projects'], '/Users/lucas/Projects': ['CANALV2', 'plates'], '/Users/lucas/Projects/CANALV2': ['00_POLICY', '04_TRACKER'] },

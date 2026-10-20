@@ -166,7 +166,9 @@
     "nothingSaved": "Nothing saved yet",
     "save": "Save",
     "clear": "Clear",
-    "close": "Close"
+    "close": "Close",
+    "registryAuth": "Registry credential",
+    "registryAuthHelp": "For a private registry: the id of the credential saved on RunPod (Settings, Container registry auth). Leave empty for a public image."
   },
   "picker": {
     "title": "Choose the {name} folder",

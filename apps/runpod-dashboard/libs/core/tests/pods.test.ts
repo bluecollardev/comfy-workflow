@@ -43,6 +43,10 @@ describe('the plan sent to RunPod', () => {
     expect(input.cloudType).toBe('COMMUNITY'); expect(input.volumeInGb).toBe(0); expect(input.networkVolumeId).toBe('vol1'); expect(input.dataCenterId).toBe('EU-RO-1')
     expect(input.env.PROJECT_ROOT).toBe('/workspace/project'); expect(input.env.COMFY_LINKS).toContain('/home/someone/HARBOUR_r1/HARBOUR=/workspace/project')
     expect(input.ports).toBe('8188/http,22/tcp'); expect(idleMinutes).toBe(30)
+    expect(input.containerRegistryAuthId).toBeUndefined()   // a public image needs no credential
+    cfg.registry_auth_id = 'cred1'
+    expect(pods.plan({ name: 't' }, cfg).input.containerRegistryAuthId).toBe('cred1'); expect(rp.deployMutation(pods.plan({ name: 't' }, cfg).input)).toContain('containerRegistryAuthId: "cred1"')
+    cfg.registry_auth_id = ''
     expect(pods.plan({ name: 't', image: 'prebuilt' }, cfg).input.ports).toBe('3001/http,8888/http,22/tcp')   // the stock image serves its UI on 3001
     expect(pods.webPortOf('3001/http,8888/http,22/tcp')).toBe(3001); expect(pods.webPortOf('22/tcp')).toBe(8188)
     // a per-pod volume asked for beside the network volume is still 0; without the volume it is kept

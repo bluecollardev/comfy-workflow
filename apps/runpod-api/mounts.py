@@ -113,6 +113,7 @@ class MountsConfig(BaseModel):
     apply_by_default: bool = Field(default=True, description="New pods get these mounts unless the form says otherwise")
     required: Dict[str, bool] = Field(default_factory=dict, description="Dev-mode toggles: which of the three folders a run and a pod refuse to go without; prod requires all, COMFY_REQUIRE overrides")
     image: str = Field(default=DEFAULT_IMAGE, description="The image every new pod boots unless the form picks another; ours, pushed to a registry Binc names")
+    registry_auth_id: str = Field(default="", description="RunPod's saved credential id for a private registry (saveRegistryAuth); empty for a public image")
     idle_stop_minutes: int = Field(default=30, description="Stop a pod after this many minutes with nothing queued in its ComfyUI; 0 = never")
 
 

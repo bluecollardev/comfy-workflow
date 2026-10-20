@@ -64,6 +64,7 @@ export function plan(req: CreatePodRequest, cfg: mounts.MountsConfig, credential
     if (missing.length) throw bad(`Not mapped on this PC: ${missing.join(', ')}. Map them in Configuration (gear icon); in dev mode (COMFY_MODE=dev) plates are optional.`)
     const ov = mounts.podOverrides(cfg)
     for (const [k, v] of Object.entries(ov.env)) if (!(k in env)) env[k] = v
+    if (ov.registry_auth_id) volume.containerRegistryAuthId = ov.registry_auth_id   // a private registry: RunPod pulls with its saved credential
     if (ov.network_volume_id) {
       volume.networkVolumeId = ov.network_volume_id; volume.volumeMountPath = ov.volume_mount_path
       if (ov.data_center_id) volume.dataCenterId = ov.data_center_id

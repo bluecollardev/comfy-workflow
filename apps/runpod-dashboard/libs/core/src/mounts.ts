@@ -32,6 +32,7 @@ export interface MountsConfig {
   apply_by_default: boolean
   required: Record<string, boolean>
   image: string
+  registry_auth_id: string   // RunPod's saved credential for a private registry (saveRegistryAuth); '' for a public image
   idle_stop_minutes: number
   dry_run: boolean
 }
@@ -86,6 +87,7 @@ export function defaults(): MountsConfig {
     apply_by_default: true,
     required: Object.fromEntries(names.map((n) => [n, false])),
     image: DEFAULT_IMAGE(),
+    registry_auth_id: '',
     idle_stop_minutes: 30,
     dry_run: false,
   }
@@ -106,6 +108,7 @@ export function normalize(data: Partial<MountsConfig>): MountsConfig {
     env: { ...(data.env || {}) },
     required: { ...d.required, ...(data.required || {}) },
     image: data.image ?? d.image,
+    registry_auth_id: (data.registry_auth_id ?? '').trim(),
     idle_stop_minutes: data.idle_stop_minutes ?? d.idle_stop_minutes,
     dry_run: data.dry_run === true,
   }
@@ -313,7 +316,7 @@ export function linksEnv(links: Link[]): string {
   return links.map((l) => `${l.path}=${l.target}`).join(';')
 }
 
-export interface PodOverrides { env: Record<string, string>; network_volume_id?: string; volume_mount_path?: string; data_center_id?: string }
+export interface PodOverrides { env: Record<string, string>; network_volume_id?: string; volume_mount_path?: string; data_center_id?: string; registry_auth_id?: string }
 
 /** What pod creation adds: RunPod volume fields and the env the image reads. */
 export function podOverrides(cfg: MountsConfig): PodOverrides {
@@ -323,6 +326,7 @@ export function podOverrides(cfg: MountsConfig): PodOverrides {
   const out: PodOverrides = { env }
   if (cfg.network_volume_id) { out.network_volume_id = cfg.network_volume_id; out.volume_mount_path = cfg.mount_path || '/workspace' }
   if (cfg.data_center_id) out.data_center_id = cfg.data_center_id
+  if (cfg.registry_auth_id) out.registry_auth_id = cfg.registry_auth_id
   return out
 }
 
