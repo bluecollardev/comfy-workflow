@@ -16,18 +16,21 @@
       <BAlert v-if="gated" :model-value="true" variant="warning" class="mb-3" data-testid="cfg-key-gate">
         <i class="fa-solid fa-key me-2"></i>{{ $t('config.keyGate') }}
       </BAlert>
-      <h6 v-if="!forPod" class="mb-2" data-testid="section-runpod">{{ $t('config.runpod') }} <span class="text-body-secondary fw-normal small">{{ $t('config.runpodHint') }}</span></h6>
-      <BRow v-if="!forPod" class="g-3 mb-3">
+      <fieldset v-if="!forPod" class="cfg-section">
+      <legend data-testid="section-runpod">{{ $t('config.runpod') }} <span class="text-body-secondary fw-normal small">{{ $t('config.runpodHint') }}</span></legend>
+      <BRow class="g-3">
         <BCol md="8">
           <BFormGroup :label="$t('config.apiKey')" label-for="cfg-key" data-testid="cfg-key-group" :description="keyInfo.runpod_api_key_set ? $t('config.apiKeyStored', { hint: keyInfo.runpod_api_key_hint, source: keyInfo.source }) : $t('config.apiKeyUnset')">
             <BFormInput id="cfg-key" v-model.trim="newKey" type="password" autocomplete="off" placeholder="rpa_…" class="font-monospace" data-testid="cfg-key" />
           </BFormGroup>
         </BCol>
       </BRow>
+      </fieldset>
 
       <template v-if="!gated">
-      <h6 class="mb-2" data-testid="section-volume">{{ $t('config.volume') }} <span class="text-body-secondary fw-normal small">{{ $t('config.volumeHint') }}</span></h6>
-      <BRow class="g-3 mb-3">
+      <fieldset class="cfg-section">
+      <legend data-testid="section-volume">{{ $t('config.volume') }} <span class="text-body-secondary fw-normal small">{{ $t('config.volumeHint') }}</span></legend>
+      <BRow class="g-3">
         <BCol cols="12">
           <BFormGroup :label="$t('config.datacenter')" label-for="cfg-dc" :description="$t('config.datacenterHelp')">
             <BFormSelect id="cfg-dc" v-model="cfg.data_center_id" :options="dcOptions" class="font-monospace" data-testid="cfg-dc" />
@@ -74,12 +77,14 @@
           </BFormGroup>
         </BCol>
       </BRow>
+      </fieldset>
 
+      <fieldset class="cfg-section">
       <div class="d-flex align-items-center justify-content-between mb-2">
-        <h6 class="mb-0" data-testid="section-folders">{{ $t('config.folders') }} <span class="text-body-secondary fw-normal small">{{ $t('config.foldersHint', { mode, rule: $t(requireSource === 'prod' ? 'config.ruleProd' : requireSource === 'env' ? 'config.ruleEnv' : 'config.ruleConfig') }) }}</span><code class="d-none" data-testid="config-mode">{{ mode }}</code></h6>
+        <legend class="mb-0" data-testid="section-folders">{{ $t('config.folders') }} <span class="text-body-secondary fw-normal small">{{ $t('config.foldersHint', { mode, rule: $t(requireSource === 'prod' ? 'config.ruleProd' : requireSource === 'env' ? 'config.ruleEnv' : 'config.ruleConfig') }) }}</span><code class="d-none" data-testid="config-mode">{{ mode }}</code></legend>
         <BButton size="sm" variant="outline-light" class="flex-shrink-0 text-nowrap ms-3" data-testid="add-folder" @click="cfg.custom.push({ name: '', local: '', container: '', link: '', mode: 'rw' })"><i class="fa-solid fa-plus me-1"></i>{{ $t('config.addFolder') }}</BButton>
       </div>
-      <table class="table table-sm align-middle mb-3">
+      <table class="table table-sm align-middle mb-0">
         <thead class="small text-body-secondary">
           <tr><th style="width: 22%">{{ $t('config.colWhat') }}</th><th style="width: 48%">{{ $t('config.colLocal') }}</th><th>{{ $t('config.colPod') }}</th><th></th></tr>
         </thead>
@@ -129,9 +134,11 @@
           </tr>
         </tbody>
       </table>
+      </fieldset>
 
+      <fieldset class="cfg-section">
       <div class="d-flex align-items-center justify-content-between mb-2">
-        <h6 class="mb-0">Environment <span class="text-body-secondary fw-normal">extra variables for every pod that applies these mounts</span></h6>
+        <legend class="mb-0">Environment <span class="text-body-secondary fw-normal">extra variables for every pod that applies these mounts</span></legend>
         <BButton size="sm" variant="outline-light" @click="envRows.push({ key: '', value: '' })"><i class="fa-solid fa-plus me-1"></i>Add variable</BButton>
       </div>
       <table class="table table-sm align-middle mb-3" v-if="envRows.length">
@@ -143,7 +150,10 @@
           </tr>
         </tbody>
       </table>
+      </fieldset>
 
+      <fieldset class="cfg-section">
+        <legend>{{ $t('config.options') }}</legend>
       <BFormCheckbox v-if="!forPod" v-model="cfg.apply_by_default" switch class="mb-2" data-testid="cfg-apply-default">
         {{ $t('config.applyDefault') }} <span class="text-body-secondary">{{ $t('config.applyDefaultHint') }}</span>
       </BFormCheckbox>
@@ -159,6 +169,7 @@
         <summary class="small text-body-secondary" data-testid="preview-pod-toggle">{{ $t('config.previewPod') }}</summary>
         <pre class="small bg-body-tertiary rounded p-2 mt-2 mb-0" style="white-space: pre-wrap" data-testid="preview-pod">{{ previewText }}</pre>
       </details>
+      </fieldset>
 
       <BAlert :model-value="!!error" variant="danger" class="mt-2 mb-0" data-testid="config-error">{{ error }}</BAlert>
       </template>
@@ -393,3 +404,26 @@ async function reset() {
   if (r.ok) take(r.value); else error.value = mounts.error
 }
 </script>
+
+<style scoped>
+/* Each section of the panel in a bordered group with its heading on the border. */
+.cfg-section {
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem 1rem;
+  margin-bottom: 1rem;
+  min-width: 0;
+}
+.cfg-section > legend,
+.cfg-section > div > legend {
+  float: none;
+  width: auto;
+  padding: 0 0.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.cfg-section > div > legend {
+  margin-bottom: 0;
+}
+</style>

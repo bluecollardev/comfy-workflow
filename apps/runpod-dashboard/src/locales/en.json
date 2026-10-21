@@ -221,7 +221,8 @@
     "saveKey": "Save key and continue",
     "volumesNone": "No network volume on this account yet.",
     "volumesNoneIn": "No network volume in {dc} yet.",
-    "volumeAdd": "Create a volume"
+    "volumeAdd": "Create a volume",
+    "options": "Options"
   },
   "picker": {
     "title": "Choose the {name} folder",
