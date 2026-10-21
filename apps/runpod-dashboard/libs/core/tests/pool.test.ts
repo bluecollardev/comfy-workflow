@@ -5,6 +5,7 @@ import * as dry from '../src/dry.js'
 import * as mounts from '../src/mounts.js'
 import * as pods from '../src/pods.js'
 import * as pool from '../src/pool.js'
+import * as gpus from '../src/gpus.js'
 import { scratch } from './helpers.js'
 
 let dir: string
@@ -70,7 +71,7 @@ describe('the agent pool', () => {
   })
 
   it('refuses what the core refuses: a card outside the table, a bad storage size, no name', async () => {
-    expect(pool.GPU_TYPES).toEqual(['auto', 'a4000', 'rtx4000ada', 'a5000', 'rtx3090', 'rtx4090'])
+    expect(pool.GPU_TYPES).toEqual(['auto', ...Object.keys(gpus.GPUS)])   // the enum follows the core's card table
     await expect(pool.create({ agent_name: 'x', gpu_type: 'h100' })).rejects.toThrow(/unknown GPU/)
     await expect(pool.create({ agent_name: 'x', storage_gb: 10 })).rejects.toThrow(/storage_gb/)
     await expect(pool.create({ agent_name: ' ' })).rejects.toThrow(/needs a name/)

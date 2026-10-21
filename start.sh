@@ -73,7 +73,8 @@ case "${1:-help}" in
     shift; load_env; ensure_app
     cd "$APP"; exec node cli/index.mjs pull "$@" ;;
   mcp)
-    load_env; ensure_app
+    # stdout is the MCP transport: everything the setup prints goes to stderr
+    load_env; ensure_app >&2
     cd "$APP"; exec node mcp/server.mjs ;;
   e2e)
     # the browser suite against hot reload (Playwright starts the dev server itself; the API is faked)
