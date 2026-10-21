@@ -27,13 +27,13 @@
       </div>
     </template>
     <template v-else>
+      <BAlert v-if="running" :model-value="true" variant="info" class="small py-2"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('sync.background') }}</BAlert>
       <div class="d-flex align-items-center gap-2 mb-2">
         <BSpinner v-if="running" small />
         <span data-testid="sync-status">{{ status }}</span>
         <BButton v-if="running" size="sm" variant="outline-danger" class="ms-auto" data-testid="sync-cancel" @click="cancel">{{ $t('sync.cancelRun') }}</BButton>
         <BButton v-else size="sm" variant="outline-light" class="ms-auto" data-testid="sync-again" @click="events = []">{{ $t('sync.again') }}</BButton>
       </div>
-      <BAlert v-if="running" :model-value="true" variant="info" class="small py-2"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('sync.background') }}</BAlert>
       <BProgress :value="progress.value" :max="100" height="8px" variant="warning" :striped="running" :animated="running" class="mb-2" data-testid="sync-bar" />
       <div class="d-flex gap-3 small mb-2" data-testid="sync-counts">
         <span><i class="fa-solid fa-folder me-1"></i>{{ $t('sync.countSteps', { step: progress.step, steps: progress.steps }) }}</span>
