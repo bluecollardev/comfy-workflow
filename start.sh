@@ -12,7 +12,7 @@
 #   ./start.sh e2e | e2e-app | e2e-live | core-test | smoke   browser suite; the app in no-spend mode; the live RunPod proof (spends); core suite; headless boot
 #   ./start.sh comfy-image [--remote --wait] [--push <ref>]   build the ComfyUI server image (on GitLab CI with --remote)
 #   ./start.sh package [mac|win|linux|all] [--comfy <variant>] [--image <ref>]  build the app installers for a comfy-app variant
-#   ./start.sh test           the merge gate: the core suite and the browser suite
+#   ./start.sh test           the merge gate: core, IPC table, browser suite, the app in no-spend mode
 #   ./start.sh stop           stop a backgrounded ComfyUI
 #
 # RUNPOD_API_KEY comes from the environment, from .env at the repo root, or from the app's
@@ -83,7 +83,7 @@ case "${1:-help}" in
   e2e-app)
     # the real app through Electron in no-spend mode: pods simulated, nothing bills
     shift; ensure_app; ensure_ui; cd "$APP"
-    exec npx playwright test --config playwright.electron.config.js no-spend.spec.js "$@" ;;
+    exec npx playwright test --config playwright.electron.config.js "$@" ;;
   e2e-live)
     # the proof against RunPod: one real pod with the stock image, stopped and deleted by the test. Spends.
     # RUNPOD_LIVE_KEEP=1 leaves it stopped (bills nothing with no per-pod volume) so the app can show it.
@@ -130,9 +130,9 @@ case "${1:-help}" in
     [ -f apps/comfy-app/logs/comfyui.pid ] && apps/comfy-app/stop.sh || echo "no backgrounded ComfyUI"
     true ;;
   test)
-    # The merge gate (docs/ADR-005): the core suite and the browser suite, nothing merges red.
-    shift; ensure_app; cd "$APP"
-    npm run --silent core:test && npx playwright test ;;
+    # The merge gate (docs/ADR-005): the core suite, the IPC table, the browser suite and the app itself in no-spend mode; nothing merges red.
+    shift; ensure_app; ensure_ui; cd "$APP"
+    npm run --silent core:test && npm run --silent ipc:test && npx playwright test && npx playwright test --config playwright.electron.config.js ;;
   help|-h|--help) usage ;;
   *) echo "unknown target: $1" >&2; usage >&2; exit 2 ;;
 esac
