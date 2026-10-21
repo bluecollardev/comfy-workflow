@@ -1,7 +1,11 @@
 <template>
   <div class="d-flex flex-column gap-4">
+    <BAlert v-if="!settings.ready" :model-value="true" variant="warning" class="mb-0" data-testid="key-required">
+      <i class="fa-solid fa-key me-2"></i>{{ $t('dashboard.keyRequired') }}
+      <BButton size="sm" variant="warning" class="ms-2" data-testid="key-required-open" @click="ui.configOpen = true">{{ $t('dashboard.keyRequiredOpen') }}</BButton>
+    </BAlert>
     <!-- Create pod: the card header is the collapse trigger -->
-    <BCard no-body>
+    <BCard v-if="settings.ready" no-body>
       <button
         type="button"
         class="card-header card-header-toggle d-flex align-items-center"
@@ -66,9 +70,13 @@
 import { ref } from 'vue'
 import PodCard from './PodCard.vue'
 import PodForm from './PodForm.vue'
+import { useSettingsStore } from '../stores/settings'
+import { useUiStore } from '../stores/ui'
 import { usePodsStore } from '../stores/pods'
 
 const pods = usePodsStore()
+const settings = useSettingsStore()
+const ui = useUiStore()
 const showCreateForm = ref(false)
 const podForm = ref(null)
 

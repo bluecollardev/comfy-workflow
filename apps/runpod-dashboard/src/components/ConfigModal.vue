@@ -1,6 +1,7 @@
 <template>
   <BModal
     :model-value="forPod ? modelValue : ui.configOpen"
+    :no-close-on-backdrop="gated" :no-close-on-esc="gated" :hide-header-close="gated"
     :title="forPod ? $t('config.podTitle', { name: podName }) : $t('config.title')"
     size="xl"
     scrollable
@@ -12,6 +13,9 @@
     <div v-if="loading" class="text-center text-body-secondary py-3"><BSpinner small /></div>
 
     <template v-else-if="cfg">
+      <BAlert v-if="gated" :model-value="true" variant="warning" class="mb-3" data-testid="cfg-key-gate">
+        <i class="fa-solid fa-key me-2"></i>{{ $t('config.keyGate') }}
+      </BAlert>
       <h6 v-if="!forPod" class="mb-2" data-testid="section-runpod">{{ $t('config.runpod') }} <span class="text-body-secondary fw-normal small">{{ $t('config.runpodHint') }}</span></h6>
       <BRow v-if="!forPod" class="g-3 mb-3">
         <BCol md="8">
@@ -21,6 +25,7 @@
         </BCol>
       </BRow>
 
+      <template v-if="!gated">
       <h6 class="mb-2" data-testid="section-volume">{{ $t('config.volume') }} <span class="text-body-secondary fw-normal small">{{ $t('config.volumeHint') }}</span></h6>
       <BRow class="g-3 mb-3">
         <BCol cols="12">
@@ -39,6 +44,10 @@
         <BCol md="8">
           <BFormGroup :label="$t('config.volumeId')" label-for="cfg-volume" :description="$t('config.volumeIdHelp')">
             <BFormSelect id="cfg-volume" v-model="cfg.network_volume_id" :options="volumeOptions" class="font-monospace" data-testid="cfg-volume" @change="onVolumePick" />
+            <div v-if="!volumesHere.length" class="mt-2" data-testid="cfg-volume-none">
+              <span class="text-body-secondary small me-2">{{ cfg.data_center_id ? $t('config.volumesNoneIn', { dc: cfg.data_center_id }) : $t('config.volumesNone') }}</span>
+              <BButton size="sm" variant="outline-light" data-testid="cfg-volume-add" @click="ui.volumesOpen = true"><i class="fa-solid fa-plus me-1"></i>{{ $t('config.volumeAdd') }}</BButton>
+            </div>
             <div v-if="cfg.network_volume_id" class="form-text" data-testid="cfg-volume-info">
               <span v-if="volume === undefined">{{ $t('config.volumeLooking') }}</span>
               <span v-else-if="volume === null" class="text-warning">{{ $t('config.volumeMissing') }}</span>
@@ -152,6 +161,7 @@
       </details>
 
       <BAlert :model-value="!!error" variant="danger" class="mt-2 mb-0" data-testid="config-error">{{ error }}</BAlert>
+      </template>
     </template>
 
     <template #footer>
@@ -163,9 +173,9 @@
       </template>
       <template v-else>
         <small class="text-body-secondary me-auto">{{ stored ? $t('config.savedIn', { store }) : $t('config.nothingSaved') }}</small>
-        <BButton variant="outline-danger" size="sm" :disabled="saving || !stored" data-testid="config-clear" @click="reset">{{ $t('config.clear') }}</BButton>
-        <BButton variant="outline-light" size="sm" data-testid="config-close" @click="ui.configOpen = false">{{ $t('config.close') }}</BButton>
-        <BButton variant="primary" size="sm" :disabled="saving" data-testid="config-save" @click="save"><BSpinner v-if="saving" small class="me-1" />{{ $t('config.save') }}</BButton>
+        <BButton v-if="!gated" variant="outline-danger" size="sm" :disabled="saving || !stored" data-testid="config-clear" @click="reset">{{ $t('config.clear') }}</BButton>
+        <BButton v-if="!gated" variant="outline-light" size="sm" data-testid="config-close" @click="ui.configOpen = false">{{ $t('config.close') }}</BButton>
+        <BButton variant="primary" size="sm" :disabled="saving || (gated && !newKey)" data-testid="config-save" @click="save"><BSpinner v-if="saving" small class="me-1" />{{ gated ? $t('config.saveKey') : $t('config.save') }}</BButton>
       </template>
     </template>
 
@@ -191,11 +201,12 @@ import { volumesAPI } from '../api/volumes'
  * request; the card stores it for Recreate. The RunPod key, "apply by default" and no-spend mode
  * are app-wide and stay out of it.
  */
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useUiStore } from '../stores/ui'
 import { useMountsStore } from '../stores/mounts'
 import { mountsAPI } from '../api/mounts'
 import { settingsAPI } from '../api/settings'
+import { useSettingsStore } from '../stores/settings'
 import { t } from '../i18n'
 import FolderPicker from './FolderPicker.vue'
 
@@ -225,6 +236,9 @@ const require = ref([])
 const requireSource = ref('config')
 const picker = reactive({ open: false, key: '', title: '', start: '', memory: '' })
 const keyInfo = ref({ runpod_api_key_set: false, runpod_api_key_hint: '', source: 'none' })
+const settingsStore = useSettingsStore()
+/** No key stored (and not no-spend mode): only the key field shows, and the panel cannot be dismissed. */
+const gated = computed(() => !forPod.value && !keyInfo.value.runpod_api_key_set && !settingsStore.ready)
 const newKey = ref('')
 
 const label = (f) => (f.custom ? f.key : t(`config.folder.${f.key}`))
@@ -259,7 +273,6 @@ const volumesHere = computed(() => allVolumes.value.filter((v) => !cfg.value?.da
 const volumeOptions = computed(() => {
   const dc = cfg.value?.data_center_id
   const opts = [{ value: '', text: t('config.volumeNone') }, ...volumesHere.value.map((v) => ({ value: v.id, text: `${v.name} · ${v.size_gb} GB · ${v.id}${dc ? '' : ` · ${v.datacenter}`}` }))]
-  if (dc && !volumesHere.value.length) opts.push({ value: '__none__', text: t('config.volumeNoneHere', { dc }), disabled: true })
   const saved = cfg.value?.network_volume_id
   if (saved && !allVolumes.value.some((v) => v.id === saved)) opts.push({ value: saved, text: t('config.volumeUnknown', { id: saved }) })
   return opts
@@ -270,6 +283,7 @@ function onVolumePick() {
   loadVolume()
 }
 async function loadVolumes() { try { allVolumes.value = (await volumesAPI.list()) || [] } catch { /* the id can still be typed */ } }
+watch(() => ui.volumesOpen, (open) => { if (!open) loadVolumes() })   // back from the Volumes modal: a new volume shows in the menu
 
 /** The configured volume as RunPod has it, with its monthly cost; undefined while asking, null when RunPod has none. */
 const volume = ref(undefined)
@@ -359,10 +373,12 @@ const previewText = computed(() => {
 
 async function save() {
   saving.value = true; error.value = null
+  const wasGated = gated.value
   if (newKey.value) {
-    try { keyInfo.value = await settingsAPI.set({ runpod_api_key: newKey.value }); newKey.value = '' }
+    try { keyInfo.value = await settingsAPI.set({ runpod_api_key: newKey.value }); newKey.value = ''; await settingsStore.load() }
     catch (e) { error.value = e.response?.data?.detail || e.message; saving.value = false; return }
   }
+  if (wasGated) { saving.value = false; return }   // the key is in: the rest of the panel appears, nothing else to save yet
   const r = await mounts.save(body())
   saving.value = false
   if (!r.ok) { error.value = mounts.error; return }

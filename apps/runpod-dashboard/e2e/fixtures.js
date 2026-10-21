@@ -51,7 +51,7 @@ export function defaultState() {
     gpus: { default: 'auto', live: true, gpus: [{ value: 'auto', text: 'Cheapest card in stock (16-24 GB)', in_stock: true }, { value: 'a4000', text: 'RTX A4000 (16 GB) · none in stock', in_stock: false }, { value: 'rtx4090', text: 'RTX 4090 (24 GB) · $0.34/h · Low stock', in_stock: true, price: 0.34, stock: 'Low' }] },
     // The folder browser (GET /fs/dirs): a tiny disk.
     fs: { '/Users/lucas': ['ComfyUI-Shared', 'Projects'], '/Users/lucas/Projects': ['CANALV2', 'plates'], '/Users/lucas/Projects/CANALV2': ['00_POLICY', '04_TRACKER'] },
-    settings: { runpod_api_key_set: false, runpod_api_key_hint: '', source: 'none' },
+    settings: { runpod_api_key_set: true, runpod_api_key_hint: '••••AAAA', source: '/home/me/.config/runpod-pod-manager/.env' },   // most specs start with a key; the gate spec clears it
     logs: {},   // pod id -> lines for GET /pods/:id/logs
     failures: {},
   }
