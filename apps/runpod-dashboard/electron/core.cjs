@@ -41,6 +41,13 @@ const TABLE = {
     gpus: (c, dc) => c.pods.gpuMenu(undefined, dc || undefined),
     volume: (c, id) => c.pods.volumeInfo(id || undefined),
     datacenters: (c) => c.pods.datacenters(),
+  },
+  volumes: {
+    list: (c) => c.volumes.list(),
+    create: (c, input) => c.volumes.create(input),
+    resize: (c, id, size) => c.volumes.resize(id, Number(size)),
+    remove: (c, id) => c.volumes.remove(id),
+    useAsDefault: (c, id) => c.volumes.useAsDefault(id),
     setIdle: (c, id, minutes) => { c.idle.register(id, Number(minutes)); return { pod_id: id, idle_stop_minutes: Math.max(Number(minutes), 0) } },
     details: (c, id) => c.pods.details(id),
     recreate: (c, id) => c.pods.recreate(id),
