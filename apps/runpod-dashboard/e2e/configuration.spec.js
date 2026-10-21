@@ -1,4 +1,4 @@
-import { test, expect, openCreatePod, podCard } from './fixtures'
+import { test, expect, openCreatePod, podCard, modal } from './fixtures'
 import { t } from './i18n'
 
 // The Configuration panel (gear icon): the RunPod key, the pod volume, the three folders mapped on
@@ -149,6 +149,24 @@ test.describe('configuration', () => {
     await expect(page.getByTestId('stat-storage')).toContainText('$8.40')   // an unsaved edit in the panel does not touch the stats bar
   })
 
+  test('with no volume yet the panel offers to create one in the Volumes modal, then lists it', async ({ page, api }) => {
+    api.state.volumes = {}
+    await page.goto('/')
+    const dialog = await openConfig(page)
+    await expect(dialog.getByTestId('cfg-volume-none')).toContainText(t('config.volumesNone'))
+    await dialog.getByTestId('cfg-volume-add').click()
+    const volumes = modal(page, t('volumes.title'))
+    await expect(volumes).toBeVisible()
+    await volumes.getByTestId('volume-new-name').fill('fresh')
+    await volumes.getByTestId('volume-new-dc').selectOption('EU-RO-1')
+    await volumes.getByTestId('volume-create').click()
+    await expect(volumes.locator('[data-testid="volume"]', { hasText: 'fresh' })).toBeVisible()
+    await volumes.getByRole('button', { name: t('volumes.done') }).click()
+    await expect(volumes).toBeHidden()
+    await expect(dialog.getByTestId('cfg-volume-none')).toHaveCount(0)
+    await expect(dialog.getByTestId('cfg-volume').locator('option')).toContainText([t('config.volumeNone'), 'fresh · 100 GB'])
+  })
+
   test('clear resets to nothing mapped', async ({ page, api }) => {
     api.state.mounts.config.folders.project = '/Users/lucas/Projects/CANALV2'; api.state.mounts.stored = true
     await page.goto('/')
@@ -162,12 +180,25 @@ test.describe('configuration', () => {
 
 test.describe('the RunPod key', () => {
   test('is entered in the panel, stored through the API, and only its hint is shown', async ({ page, api }) => {
+    api.state.settings = { runpod_api_key_set: false, runpod_api_key_hint: '', source: 'none' }
     await page.goto('/')
-    const dialog = await openConfig(page)
+    const dialog = modal(page, t('config.title'))   // with no key the panel opens on its own, gated to the key field
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByTestId('cfg-key-gate')).toContainText(t('config.keyGate'))
+    await expect(dialog.getByTestId('section-volume')).toHaveCount(0)     // the other settings are out of reach
+    await expect(dialog.getByTestId('config-close')).toHaveCount(0)       // and the panel cannot be dismissed
+    await expect(page.getByTestId('key-required')).toContainText(t('dashboard.keyRequired'))
+    await expect(page.getByTestId('open-volumes')).toBeDisabled()
     await expect(dialog.getByTestId('cfg-key-group')).toContainText(t('config.apiKeyUnset'))
+    await expect(dialog.getByTestId('config-save')).toBeDisabled()        // nothing to save until a key is typed
     await dialog.getByTestId('cfg-key').fill('rpa_0123456789ABCDEFXYZ9')
     await dialog.getByTestId('config-save').click()
+    await expect(dialog.getByTestId('section-volume')).toBeVisible()      // the key is in: the rest appears, the panel stays open
+    await expect(dialog.getByTestId('cfg-key-gate')).toHaveCount(0)
+    await expect(page.getByTestId('open-volumes')).toBeEnabled()
+    await dialog.getByTestId('config-close').click()
     await expect(dialog).toBeHidden()
+    await expect(page.getByTestId('key-required')).toHaveCount(0)
     const put = api.calls.find((c) => c.method === 'PUT' && c.path === '/settings')
     expect(put.body).toEqual({ runpod_api_key: 'rpa_0123456789ABCDEFXYZ9' })
     const again = await openConfig(page)

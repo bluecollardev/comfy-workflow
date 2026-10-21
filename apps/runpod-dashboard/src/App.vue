@@ -6,16 +6,16 @@
         <BBadge v-if="pods.dryRun" variant="warning" text-indicator class="ms-2 fw-normal" data-testid="no-spend-badge" :title="$t('app.noSpendTitle')">{{ $t('app.noSpend') }}</BBadge>
       </BNavbarBrand>
       <div class="d-flex gap-2">
-        <BButton variant="outline-light" size="sm" :title="$t('app.connectTitle')" data-testid="open-connect" @click="ui.connectOpen = true">
+        <BButton variant="outline-light" size="sm" :title="$t('app.connectTitle')" :disabled="!settings.ready" data-testid="open-connect" @click="ui.connectOpen = true">
           <i class="fa-solid fa-plug me-1"></i>{{ $t('app.connect') }}
         </BButton>
-        <BButton variant="outline-light" size="sm" :title="$t('app.volumesTitle')" data-testid="open-volumes" @click="ui.volumesOpen = true">
+        <BButton variant="outline-light" size="sm" :title="$t('app.volumesTitle')" :disabled="!settings.ready" data-testid="open-volumes" @click="ui.volumesOpen = true">
           <i class="fa-solid fa-hard-drive me-1"></i>{{ $t('app.volumes') }}
         </BButton>
         <BButton variant="outline-light" size="sm" :title="$t('app.configurationTitle')" :aria-label="$t('app.configuration')" data-testid="open-config" @click="ui.configOpen = true">
           <i class="fa-solid fa-gear"></i>
         </BButton>
-        <BButton variant="outline-warning" size="sm" :disabled="pods.refreshing || !pods.pods.some((p) => p.status !== 'stopped')" :title="$t('app.pauseAllTitle')" data-testid="pause-all" @click="pods.stopAll">
+        <BButton variant="outline-warning" size="sm" :disabled="!settings.ready || pods.refreshing || !pods.pods.some((p) => p.status !== 'stopped')" :title="$t('app.pauseAllTitle')" data-testid="pause-all" @click="pods.stopAll">
           <i class="fa-solid fa-pause me-1"></i>{{ $t('app.pauseAll') }}
         </BButton>
         <BButton variant="primary" size="sm" :disabled="pods.refreshing" data-testid="refresh" @click="pods.load">
@@ -71,6 +71,7 @@
  */
 import { onMounted, onUnmounted } from 'vue'
 import { useUiStore } from './stores/ui'
+import { useSettingsStore } from './stores/settings'
 import VolumesModal from './components/VolumesModal.vue'
 import { useToastStore } from './stores/toast'
 import { t } from './i18n'
@@ -84,6 +85,7 @@ import ConfigModal from './components/ConfigModal.vue'
 const ui = useUiStore()
 const toast = useToastStore()
 const pods = usePodsStore()
+const settings = useSettingsStore()
 
 function readOAuthResult() {
   const params = new URLSearchParams(window.location.search)
@@ -99,10 +101,12 @@ function readOAuthResult() {
   window.history.replaceState(null, '', window.location.pathname)
 }
 
-onMounted(() => {
+onMounted(async () => {
   readOAuthResult()
   pods.load()
   pods.startAutoRefresh()
+  await settings.load()
+  if (!settings.ready) ui.configOpen = true   // nothing works without a RunPod key: the panel opens on the key field
 })
 onUnmounted(() => pods.stopAutoRefresh())
 </script>
