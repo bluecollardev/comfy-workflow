@@ -99,3 +99,5 @@ $enable-shadows: false;
 /* The four action buttons on a pod card: one row, labels that never wrap. */
 .card-actions .btn { font-size: 0.78rem; line-height: 1.2; }
 .card-actions .btn i { font-size: 0.8rem; }
+
+.min-w-0 { min-width: 0; }

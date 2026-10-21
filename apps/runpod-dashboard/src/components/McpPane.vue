@@ -15,7 +15,7 @@
             <small class="text-body-secondary d-block" data-testid="mcp-purpose">{{ ep.purpose }}</small>
             <small v-if="!ep.exists" class="text-warning d-block" data-testid="mcp-not-built">{{ $t('mcp.notBuilt') }}</small>
           </div>
-          <BButton size="sm" variant="outline-light" :disabled="!!store.probing[ep.id]" :title="$t('mcp.checkTitle')" data-testid="mcp-check" @click="store.check(ep.id)">
+          <BButton size="sm" variant="outline-light" class="flex-shrink-0 text-nowrap ms-2" :disabled="!!store.probing[ep.id]" :title="$t('mcp.checkTitle')" data-testid="mcp-check" @click="store.check(ep.id)">
             <BSpinner v-if="store.probing[ep.id]" small class="me-1" /><i v-else class="fa-solid fa-stethoscope me-1"></i>{{ store.probing[ep.id] ? $t('mcp.checking') : $t('mcp.check') }}
           </BButton>
         </div>
@@ -39,7 +39,7 @@
         <div class="mt-3">
           <div class="d-flex align-items-center justify-content-between mb-1">
             <small class="text-body-secondary">{{ $t('mcp.command') }}</small>
-            <BButton size="sm" variant="outline-light" data-testid="mcp-copy-command" @click="store.copy(ep.command_line, $t('mcp.whatCommand', { name: ep.title }))"><i class="fa-regular fa-copy me-1"></i>{{ $t('mcp.copy') }}</BButton>
+            <BButton size="sm" variant="outline-light" class="flex-shrink-0 text-nowrap ms-2" data-testid="mcp-copy-command" @click="store.copy(ep.command_line, $t('mcp.whatCommand', { name: ep.title }))"><i class="fa-regular fa-copy me-1"></i>{{ $t('mcp.copy') }}</BButton>
           </div>
           <code class="d-block small p-2 rounded border bg-body text-break" data-testid="mcp-command">{{ ep.command_line }}</code>
         </div>
@@ -54,12 +54,12 @@
 
         <h6 class="mt-3 mb-2 small text-uppercase text-body-secondary">{{ $t('mcp.clients') }}</h6>
         <div v-for="c in CLIENTS" :key="c.key" class="mb-2" data-testid="mcp-client" :data-client="c.key">
-          <div class="d-flex align-items-center justify-content-between mb-1">
-            <div class="lh-sm">
+          <div class="d-flex align-items-start justify-content-between gap-3 mb-1">
+            <div class="lh-sm flex-grow-1 min-w-0">
               <span class="fw-semibold small" data-testid="mcp-client-name">{{ $t(c.label) }}</span>
               <small class="text-body-secondary d-block">{{ $t(c.hint) }}</small>
             </div>
-            <BButton size="sm" variant="outline-light" data-testid="mcp-copy" @click="store.copy(ep.clients[c.key], $t('mcp.whatSnippet', { name: ep.title, client: $t(c.label) }))"><i class="fa-regular fa-copy me-1"></i>{{ $t('mcp.copy') }}</BButton>
+            <BButton size="sm" variant="outline-light" class="flex-shrink-0 text-nowrap" data-testid="mcp-copy" @click="store.copy(ep.clients[c.key], $t('mcp.whatSnippet', { name: ep.title, client: $t(c.label) }))"><i class="fa-regular fa-copy me-1"></i>{{ $t('mcp.copy') }}</BButton>
           </div>
           <pre class="small p-2 rounded border bg-body mb-0 text-wrap" data-testid="mcp-snippet">{{ ep.clients[c.key] }}</pre>
         </div>
