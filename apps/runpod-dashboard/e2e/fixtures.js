@@ -53,8 +53,39 @@ export function defaultState() {
     fs: { '/Users/lucas': ['ComfyUI-Shared', 'Projects'], '/Users/lucas/Projects': ['CANALV2', 'plates'], '/Users/lucas/Projects/CANALV2': ['00_POLICY', '04_TRACKER'] },
     settings: { runpod_api_key_set: true, runpod_api_key_hint: '••••AAAA', source: '/home/me/.config/runpod-pod-manager/.env', s3_keys_set: false, s3_access_key_hint: '' },   // most specs start with a key; the gate spec clears it
     logs: {},   // pod id -> lines for GET /pods/:id/logs
+    // The Connect › MCP tab: where the two programs live, what the bridge can point at, and what Check answers per endpoint.
+    mcp: {
+      dir: '/Users/lucas/Workspaces/comfy_workflow/apps/runpod-dashboard/mcp',
+      targets: [{ pod_id: 'pod-aaaaaaaa', name: 'ComfyUI-Dev', url: 'https://pod-aaaaaaaa-8188.proxy.runpod.net' }, { pod_id: null, name: 'This Mac', url: 'http://127.0.0.1:8188' }],
+      probe: {
+        'pod-manager': { ok: true, tools: ['list_agents', 'get_pool_status', 'governance', 'list_pods'], error: null, ms: 120 },
+        'comfy-bridge': { ok: false, tools: [], error: 'The server exited (code 2) before answering\nNo ComfyUI answers at https://pod-aaaaaaaa-8188.proxy.runpod.net', ms: 340 },
+      },
+    },
     failures: {},
   }
+}
+
+// The two MCP endpoints as the core describes them (libs/core/src/mcp.ts), with the bridge's target in every snippet.
+export function mcpEndpoints(state, comfy) {
+  const make = (id, name, title, purpose, file, port, args) => {
+    const program = `${state.mcp.dir}/${file}`
+    const stdio = [program, ...args]
+    return {
+      id, name, title, purpose, program, exists: id === 'pod-manager', args, command: ['node', ...stdio], command_line: ['node', ...stdio].join(' '),
+      target: args[1] || null, http_port: port, http_url: `http://127.0.0.1:${port}/mcp`,
+      clients: {
+        claude_code: `claude mcp add ${name} -- node ${stdio.join(' ')}`,
+        claude_desktop: JSON.stringify({ mcpServers: { [name]: { command: 'node', args: stdio } } }, null, 2),
+        codex: `[mcp_servers.${name}]\ncommand = "node"\nargs = [${stdio.map((s) => JSON.stringify(s)).join(', ')}]`,
+        chatgpt: `# 1. Start the server over HTTP on this Mac:\nnode ${[...stdio, '--http', String(port)].join(' ')}\n# 2. The MCP URL (ChatGPT needs it public: tunnel this port from this Mac first):\nhttp://127.0.0.1:${port}/mcp`,
+      },
+    }
+  }
+  return [
+    make('pod-manager', 'pod-manager', 'Pod manager', 'An agent orchestrates RunPod the way the app does.', 'server.mjs', 8765, []),
+    make('comfy-bridge', 'comfy-bridge', 'ComfyUI bridge', 'An agent works inside one ComfyUI.', 'comfy-bridge.mjs', 8766, comfy ? ['--comfy', comfy] : []),
+  ]
 }
 
 const stats = (pods) => ({
@@ -217,6 +248,10 @@ export async function mockApi(page, state) {
     if (method === 'GET' && path === '/repos/search') return json({ repos: filterRepos(state.accountRepos, query.q) })
     if (method === 'GET' && path === '/repos/branches') return json(state.branches)
     if (method === 'GET' && path === '/repos/folders') return json({ url: query.url, branch: query.branch, folders: state.folders })
+    // MCP (the Connect › MCP tab)
+    if (method === 'GET' && path === '/mcp/endpoints') return json(mcpEndpoints(state, query.comfy || ''))
+    if (method === 'GET' && path === '/mcp/targets') return json(state.mcp.targets)
+    if (method === 'POST' && path === '/mcp/probe') { const r = state.mcp.probe[body.id]; return r ? json(r) : json({ detail: `No MCP endpoint ${body.id}` }, 400) }
     // images
     if (method === 'GET' && path === '/images/env') {
       const image = query.source === 'dockerfile' ? '/repo/apps/comfy-app/Dockerfile'

@@ -7,7 +7,7 @@ import { computed, ref, watch } from 'vue'
 // `accountsOpen` / `repositoriesOpen` open it on that tab, so callers read as before.
 export const useUiStore = defineStore('ui', () => {
   const connectOpen = ref(false)
-  const connectTab = ref('accounts')   // 'accounts' | 'repositories'
+  const connectTab = ref('accounts')   // 'accounts' | 'repositories' | 'mcp'
   const repositoriesVersion = ref(0)
   const configOpen = ref(false)
   const volumesOpen = ref(false)

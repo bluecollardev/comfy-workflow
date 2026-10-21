@@ -49,7 +49,7 @@ test.describe('accounts', () => {
     await page.goto('/?provider=github&connected=lucas')
     await expect(page.locator('.toast-container .toast').first()).toContainText('Connected GitHub account lucas')
     await expect(modal(page, 'Connect GitHub or GitLab')).toBeVisible()
-    await expect(page).toHaveURL('http://localhost:5173/')
+    await expect(page).toHaveURL(/^http:\/\/localhost:\d+\/$/)   // the query is gone, whatever port the suite runs on
   })
 
   test('OAuth failure redirect shows the provider error', async ({ page }) => {
