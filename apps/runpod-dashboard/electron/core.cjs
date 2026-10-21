@@ -5,7 +5,7 @@
 // otherwise (browser, hot reload, the Playwright suite). Errors come back as {ok:false, error}
 // so the page gets the core's message, not Electron's wrapping.
 const path = require('node:path')
-const { ipcMain, app } = require('electron')
+const { ipcMain, app, shell } = require('electron')
 
 let core = null
 let stopIdle = null
@@ -32,7 +32,8 @@ const TABLE = {
     dashboard: (c) => c.pods.dashboard(),
     list: (c) => c.pods.list(),
     get: (c, id) => c.pods.get(id),
-    create: (c, req) => c.pods.create(req),
+    // Only the hosts the pod has to clone from get a credential (GIT_CREDENTIALS), as the Python API did.
+    create: async (c, req) => c.pods.create(req, undefined, req.custom_nodes?.length ? await c.git.credentialsEnv(req.custom_nodes.map((n) => n.url || '')) : {}),
     stop: (c, id) => c.pods.stop(id),
     resume: (c, id) => c.pods.resume(id),
     remove: (c, id) => c.pods.remove(id),
@@ -47,6 +48,25 @@ const TABLE = {
   settings: {
     get: (c) => c.settings.get(),
     set: (c, values) => { const r = c.settings.set(values); if (process.env.RUNPOD_API_KEY && !stopIdle) startIdleWatch().catch(() => {}); return r },
+  },
+  git: {
+    accounts: (c) => c.git.listAccounts(),
+    disconnect: (c, id) => c.git.disconnect(id),
+    repos: (c, id, q) => c.git.listRepos(id, q || ''),
+    // The OAuth round-trip: the core binds the loopback callback and builds the authorize URL, the system
+    // browser opens it, and the call resolves with the account once the provider sends the browser back.
+    connect: async (c, provider) => { const s = await c.git.startConnect(provider); await shell.openExternal(s.url); return s.done },
+  },
+  repositories: {
+    list: (c) => c.repositories.list(),
+    add: (c, url, branch) => c.repositories.add(url, branch || null),
+    remove: (c, id) => c.repositories.remove(id),
+    search: (c, q) => c.repositories.search(q || ''),
+    branches: (c, url) => c.repositories.branches(url),
+    folders: (c, url, branch) => c.repositories.folders(url, branch || 'main'),
+  },
+  images: {
+    env: (c, params) => c.images.env(params || {}),
   },
 }
 
