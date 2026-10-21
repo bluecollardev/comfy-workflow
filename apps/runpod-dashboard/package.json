@@ -22,13 +22,14 @@
     "core:test": "vitest run --config libs/core/vitest.config.ts",
     "mcp": "node mcp/server.mjs",
     "mcp:test": "npm run core:build && node --test mcp/server.test.mjs",
-    "test": "npm run core:test && npm run mcp:test",
+    "test": "npm run core:test && npm run mcp:test && npm run ipc:test",
     "electron:build:mac": "npm run build && electron-builder --mac",
     "electron:build:win": "npm run build && electron-builder --win",
     "electron:build:linux": "npm run build && electron-builder --linux",
     "test:electron": "playwright test --config playwright.electron.config.js",
     "test:live": "RUNPOD_LIVE=1 playwright test --config playwright.electron.config.js live.spec.js",
-    "cli": "node cli/index.mjs"
+    "cli": "node cli/index.mjs",
+    "ipc:test": "node --test electron/core.test.mjs"
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^7.3.1",

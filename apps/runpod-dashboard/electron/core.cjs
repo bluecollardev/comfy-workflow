@@ -41,6 +41,11 @@ const TABLE = {
     gpus: (c, dc) => c.pods.gpuMenu(undefined, dc || undefined),
     volume: (c, id) => c.pods.volumeInfo(id || undefined),
     datacenters: (c) => c.pods.datacenters(),
+    setIdle: (c, id, minutes) => { c.idle.register(id, Number(minutes)); return { pod_id: id, idle_stop_minutes: Math.max(Number(minutes), 0) } },
+    details: (c, id) => c.pods.details(id),
+    recreate: (c, id) => c.pods.recreate(id),
+    config: (c, id) => c.pods.config(id),
+    setConfig: (c, id, cfg) => c.pods.setConfig(id, cfg),
   },
   volumes: {
     list: (c) => c.volumes.list(),
@@ -48,11 +53,6 @@ const TABLE = {
     resize: (c, id, size) => c.volumes.resize(id, Number(size)),
     remove: (c, id) => c.volumes.remove(id),
     useAsDefault: (c, id) => c.volumes.useAsDefault(id),
-    setIdle: (c, id, minutes) => { c.idle.register(id, Number(minutes)); return { pod_id: id, idle_stop_minutes: Math.max(Number(minutes), 0) } },
-    details: (c, id) => c.pods.details(id),
-    recreate: (c, id) => c.pods.recreate(id),
-    config: (c, id) => c.pods.config(id),
-    setConfig: (c, id, cfg) => c.pods.setConfig(id, cfg),
   },
   governance: {
     summary: (c) => c.governance.summary(),
@@ -122,4 +122,4 @@ async function startIdleWatch() {
 }
 function stopIdleWatch() { if (stopIdle) stopIdle(); stopIdle = null }
 
-module.exports = { register, loadCore, startIdleWatch, stopIdleWatch }
+module.exports = { register, loadCore, startIdleWatch, stopIdleWatch, TABLE }

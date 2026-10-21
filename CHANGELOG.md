@@ -23,6 +23,10 @@ completed items move here. Commit hashes are on `develop`.
 
 ## 2026-10-21
 
+### "Recreate pod failed: no core call pods.recreate" (branch `fix/ipc-table`)
+- The Volumes namespace had been inserted inside the pods block of the Electron dispatch table, taking `setIdle`, `details`, `recreate`, `config` and `setConfig` with it, so those card actions failed over IPC while the browser suite (fake HTTP API) stayed green. Moved back. Lucas: "test create pod via playwrite... have tests for this... make sure in e2e we can launch a pod".
+- Two guards: `npm run ipc:test` pins every call the page makes to its namespace in the table; `e2e-electron/card-actions.spec.js` drives the real app over IPC in no-spend mode through launching a pod, details, the idle stop, the logs modal, a pod's own configuration and Recreate carrying it, volumes and datacenters, and the Connect modal. `./start.sh e2e-app` runs every Electron spec; the merge gate now includes the IPC table and the Electron suite.
+
 ### The panel and the create form in bordered groups (branches `feature/config-fieldsets`, `fix/section-hints-alerts`, `fix/hint-alerts-info`, `fix/hint-icons`, `feature/form-fieldsets`)
 - Lucas: "group the sections of the form with bordered outlines"; "these heading subtext descriptions should be in alerts"; "capitalize the hints and not black background use an info color"; "have an info icon to start each hint"; "try to create similar groupings for the Create pod form"; "heading should be Create Pod"; "datacenter needs to come before gpu selection"; "group gpu settings as an outlined form section". Default Configuration's sections (RunPod, Default Pod Configuration, Folders on this PC, Environment, Options) and the create form's (Pod, GPU, Storage and mounts, Image and lifecycle, Advanced) sit in bordered groups with the heading on the border and an info alert with an icon under it; one shared style in `app.scss`. In the form the datacenter comes before the card, and the card header reads Create Pod.
 
