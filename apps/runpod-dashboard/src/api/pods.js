@@ -29,7 +29,9 @@ const ipc = core && {
   listPods: () => core.invoke('pods', 'list'),
   getPod: (id) => core.invoke('pods', 'get', [id]),
   createPod: (podData) => core.invoke('pods', 'create', [toRequest(podData)]),
-  gpus: () => core.invoke('pods', 'gpus'),
+  gpus: (dc) => core.invoke('pods', 'gpus', [dc || '']),
+  volume: (id) => core.invoke('pods', 'volume', [id || '']),
+  datacenters: () => core.invoke('pods', 'datacenters'),
   setIdle: (id, minutes) => core.invoke('pods', 'setIdle', [id, minutes]),
   stopPod: (id) => core.invoke('pods', 'stop', [id]),
   resumePod: (id) => core.invoke('pods', 'resume', [id]),
@@ -61,8 +63,16 @@ const http = {
   },
 
   // The GPU menu the API allows (16-24 GB cards, cheapest first)
-  async gpus() {
-    const { data } = await axios.get(`${API_BASE}/gpus`);
+  async gpus(dc) {
+    const { data } = await axios.get(`${API_BASE}/gpus`, { params: dc ? { dc } : {} });
+    return data;
+  },
+  async volume(id) {
+    const { data } = await axios.get(`${API_BASE}/volumes/${encodeURIComponent(id)}`);
+    return data;
+  },
+  async datacenters() {
+    const { data } = await axios.get(`${API_BASE}/datacenters`);
     return data;
   },
 

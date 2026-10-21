@@ -100,6 +100,37 @@ export async function datacenterStock(dataCenterId: string, client?: RunPodClien
   return (dc?.gpuAvailability || []).filter((g) => g.available).map((g) => g.gpuTypeId)
 }
 
+/** Every listed datacenter with, for the given cards, the secure-cloud price and stock there. One request:
+ *  the lowestPrice query takes a dataCenterId, aliased once per datacenter. Secure cloud, because a network
+ *  volume pins its pods there and that is the price they pay. */
+export interface DatacenterPrices { id: string; cards: { id: string; price: number | null; stock: string | null }[] }
+export async function datacenterPrices(want: string[], client?: RunPodClient, only?: string[]): Promise<DatacenterPrices[]> {
+  const dcs = await graphql<{ dataCenters: { id: string; listed: boolean }[] }>('query { dataCenters { id listed } }', client)
+  const ids = (dcs?.dataCenters || []).filter((d) => d.listed && (!only || only.includes(d.id))).map((d) => d.id)
+  if (!ids.length) return []
+  const alias = (id: string) => 'dc_' + id.replace(/[^A-Za-z0-9]/g, '_')
+  const q = `query { ${ids.map((id) => `${alias(id)}: gpuTypes { id lowestPrice(input:{gpuCount:1, dataCenterId:${str(id)}, secureCloud:true}) { uninterruptablePrice stockStatus } }`).join(' ')} }`
+  const d = await graphql<Record<string, { id: string; lowestPrice: { uninterruptablePrice: number | null; stockStatus: string | null } | null }[]>>(q, client)
+  const w = new Set(want)
+  return ids.map((id) => ({
+    id,
+    cards: (d?.[alias(id)] || []).filter((g) => w.has(g.id) && g.lowestPrice?.uninterruptablePrice != null && g.lowestPrice?.stockStatus)
+      .map((g) => ({ id: g.id, price: g.lowestPrice!.uninterruptablePrice, stock: g.lowestPrice!.stockStatus })),
+  }))
+}
+
+/** RunPod's v1 REST API (rest.runpod.io/v1): network volumes. */
+export interface NetworkVolume { id: string; name: string; size: number; dataCenterId: string }
+export async function networkVolume(id: string, client: RunPodClient = {}): Promise<NetworkVolume | null> {
+  const apiKey = client.apiKey || process.env.RUNPOD_API_KEY
+  if (!apiKey) throw new CoreError(401, 'RUNPOD_API_KEY not set')
+  const base = client.baseUrl || process.env.RUNPOD_REST_BASE_URL || 'https://rest.runpod.io'
+  const res = await (client.fetchFn || fetch)(`${base}/v1/networkvolumes/${encodeURIComponent(id)}`, { headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' }, signal: AbortSignal.timeout(20_000) })
+  if (res.status === 404) return null
+  if (!res.ok) throw new CoreError(502, `RunPod answered ${res.status} for volume ${id}`)
+  return (await res.json()) as NetworkVolume
+}
+
 /** RunPod's v2 REST API (api.runpod.io/v2): the pod record with its status text, and the log stream. */
 export async function rest<T = unknown>(path: string, client: RunPodClient = {}, init: RequestInit = {}): Promise<T> {
   const apiKey = client.apiKey || process.env.RUNPOD_API_KEY

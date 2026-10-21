@@ -25,7 +25,12 @@
       <BRow class="g-3 mb-3">
         <BCol md="5">
           <BFormGroup :label="$t('config.volumeId')" label-for="cfg-volume" :description="$t('config.volumeIdHelp')">
-            <BFormInput id="cfg-volume" v-model.trim="cfg.network_volume_id" placeholder="e.g. 7h2k…" class="font-monospace" data-testid="cfg-volume" />
+            <BFormInput id="cfg-volume" v-model.trim="cfg.network_volume_id" placeholder="e.g. 7h2k…" class="font-monospace" data-testid="cfg-volume" @change="loadVolume" />
+            <div v-if="cfg.network_volume_id" class="form-text" data-testid="cfg-volume-info">
+              <span v-if="volume === undefined">{{ $t('config.volumeLooking') }}</span>
+              <span v-else-if="volume === null" class="text-warning">{{ $t('config.volumeMissing') }}</span>
+              <span v-else>{{ $t('config.volumeInfo', { name: volume.name, size: volume.size_gb, dc: volume.datacenter, cost: volume.cost_per_month }) }}<span v-if="volume.s3"> · {{ $t('config.volumeS3') }}</span></span>
+            </div>
           </BFormGroup>
         </BCol>
         <BCol md="3">
@@ -35,7 +40,7 @@
         </BCol>
         <BCol md="4">
           <BFormGroup :label="$t('config.datacenter')" label-for="cfg-dc" :description="$t('config.datacenterHelp')">
-            <BFormInput id="cfg-dc" v-model.trim="cfg.data_center_id" placeholder="e.g. EU-RO-1" class="font-monospace" data-testid="cfg-dc" />
+            <BFormSelect id="cfg-dc" v-model="cfg.data_center_id" :options="dcOptions" class="font-monospace" data-testid="cfg-dc" />
           </BFormGroup>
         </BCol>
         <BCol md="8">
@@ -161,6 +166,7 @@
 </template>
 
 <script setup>
+import { podsAPI } from '../api/pods'
 /**
  * ConfigModal — two uses of one panel.
  *
@@ -217,7 +223,7 @@ const required = computed(() => folders.value.filter((f) => !f.custom))
 const customRow = (c) => folders.value.find((f) => f.custom && f.key === c.name) || { local: '', exists: false }
 
 function take(payload) {
-  cfg.value = payload.config
+  cfg.value = JSON.parse(JSON.stringify(payload.config))   // a copy: unsaved edits must not leak into the store (the stats bar reads it)
   cfg.value.custom ||= []
   folders.value = payload.folders || []
   envRows.value = Object.entries(payload.config.env || {}).map(([key, value]) => ({ key, value }))
@@ -231,7 +237,29 @@ function take(payload) {
   cfg.value.required ||= {}
 }
 
+/** The datacenter menu: RunPod's list with S3 support and our cards at the secure-cloud price; the saved id is kept even when the list lacks it. */
+const dcList = ref([])
+const dcOptions = computed(() => {
+  const opts = [{ value: '', text: t('config.datacenterAny') }, ...dcList.value.map((d) => ({ value: d.value, text: d.text }))]
+  const saved = cfg.value?.data_center_id
+  if (saved && !dcList.value.some((d) => d.value === saved)) opts.push({ value: saved, text: saved })
+  return opts
+})
+/** The configured volume as RunPod has it, with its monthly cost; undefined while asking, null when RunPod has none. */
+const volume = ref(undefined)
+async function loadVolume() {
+  const id = (cfg.value?.network_volume_id || '').trim()
+  if (!id) { volume.value = undefined; return }
+  volume.value = undefined
+  try { volume.value = await podsAPI.volume(id) } catch (e) { volume.value = e.response?.status === 404 ? null : undefined }
+}
+
+async function loadDatacenters() {
+  try { dcList.value = (await podsAPI.datacenters()).datacenters || [] } catch { /* the saved id stays selectable */ }
+}
+
 async function load() {
+  loadDatacenters()
   loading.value = true; error.value = null
   if (forPod.value) {
     // the pod's own configuration through the API's preview (its derived rows), else the default as saved
@@ -245,6 +273,7 @@ async function load() {
   if (payload) take(payload); else error.value = mounts.error
   try { keyInfo.value = await settingsAPI.get() } catch { /* a backend without settings: the key comes from the environment */ }
   newKey.value = ''
+  loadVolume()   // after the config is in, so the line names the configured volume
   loading.value = false
 }
 

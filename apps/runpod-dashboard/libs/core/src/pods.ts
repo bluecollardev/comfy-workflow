@@ -203,6 +203,19 @@ export function stats(pods: PodStatus[]) {
   }
 }
 
+/** RunPod's network volume price: USD 0.07 per GB a month for the first TB, 0.05 beyond (docs.runpod.io/storage/s3-api, 2026-10-21). */
+export const volumeCostPerMonth = (sizeGb: number) => Math.round((Math.min(sizeGb, 1000) * 0.07 + Math.max(sizeGb - 1000, 0) * 0.05) * 100) / 100
+
+export interface VolumeInfo { id: string; name: string; size_gb: number; datacenter: string; cost_per_month: number; s3: boolean }
+/** The configured network volume (or the one asked for) with what it costs a month; null when RunPod has no such volume. */
+export async function volumeInfo(id?: string, client?: rp.RunPodClient): Promise<VolumeInfo | null> {
+  const vid = (id ?? (mounts.load().network_volume_id || '')).trim()
+  if (!vid) return null
+  if (isDry()) return { id: vid, name: 'simulated', size_gb: 100, datacenter: 'CA-MTL-1', cost_per_month: volumeCostPerMonth(100), s3: false }
+  const v = await rp.networkVolume(vid, client)
+  return v && { id: v.id, name: v.name, size_gb: v.size, datacenter: v.dataCenterId, cost_per_month: volumeCostPerMonth(v.size), s3: S3_DATACENTERS.has(v.dataCenterId) }
+}
+
 export async function dashboard(client?: rp.RunPodClient) {
   const pods = await list(client)
   return { stats: stats(pods), pods, dry_run: isDry() }
@@ -301,14 +314,43 @@ export async function recreate(podId: string, client?: rp.RunPodClient): Promise
 export interface GpuMenuEntry { value: string; text: string; price: number | null; stock: string | null; in_stock: boolean }
 
 /** The GPU menu with what RunPod has in stock right now and the on-demand price; `auto` first. Without a key or on an error the plain menu. */
-export async function gpuMenu(client?: rp.RunPodClient): Promise<{ default: string; gpus: GpuMenuEntry[]; live: boolean }> {
+/** Datacenters that serve a network volume over RunPod's S3 API (docs.runpod.io/storage/s3-api, 2026-10-21). */
+export const S3_DATACENTERS = new Set(['EU-CZ-1', 'EU-RO-1', 'EUR-IS-1', 'EUR-NO-1', 'US-CA-2', 'US-GA-2', 'US-IL-1', 'US-KS-2', 'US-MD-1', 'US-MO-1', 'US-MO-2', 'US-NC-1', 'US-NC-2', 'US-NE-1', 'US-WA-1'])
+
+export interface DatacenterEntry { value: string; text: string; s3: boolean; cards: { key: string; name: string; price: number; stock: string }[] }
+/** The datacenter menu for the Configuration panel: every listed datacenter, S3 support, and our cards in stock there
+ *  with the secure-cloud price per hour, cheapest first. Datacenters with a card in stock come first. */
+export async function datacenters(client?: rp.RunPodClient): Promise<{ datacenters: DatacenterEntry[]; live: boolean }> {
+  if (isDry()) return { datacenters: [{ value: 'CA-MTL-1', text: 'CA-MTL-1 · simulated', s3: false, cards: [] }, { value: 'EU-RO-1', text: 'EU-RO-1 · S3 · simulated', s3: true, cards: [] }], live: false }
+  let stock: rp.DatacenterPrices[]
+  try { stock = await rp.datacenterPrices(Object.values(gpus.GPUS).map((g) => g.id), client) } catch { return { datacenters: [], live: false } }
+  const entries = stock.map((dc) => {
+    const cards = dc.cards.map((c) => ({ key: gpuKey(c.id), name: gpus.GPUS[gpuKey(c.id)]?.name || c.id, price: c.price as number, stock: c.stock as string })).sort((a, b) => a.price - b.price)
+    const s3 = S3_DATACENTERS.has(dc.id)
+    const text = [dc.id, s3 ? 'S3' : null, cards.length ? cards.slice(0, 3).map((c) => `${c.name} $${c.price}/h ${c.stock}`).join(', ') : 'none of our cards in stock'].filter(Boolean).join(' · ')
+    return { value: dc.id, text, s3, cards }
+  })
+  entries.sort((a, b) => (b.cards.length ? 1 : 0) - (a.cards.length ? 1 : 0) || (a.cards[0]?.price ?? 9) - (b.cards[0]?.price ?? 9) || a.value.localeCompare(b.value))
+  return { datacenters: entries, live: true }
+}
+
+/** With a network volume configured the prices are the secure-cloud prices in its datacenter, what such a pod pays;
+ *  else RunPod's lowest price anywhere. `dataCenterId` overrides the configured one. */
+export async function gpuMenu(client?: rp.RunPodClient, dataCenterId?: string): Promise<{ default: string; gpus: GpuMenuEntry[]; live: boolean; datacenter: string | null }> {
   const plain = gpus.menu().map((m) => ({ ...m, price: null, stock: null, in_stock: m.value === gpus.AUTO }))
-  if (isDry()) return { default: gpus.DEFAULT_GPU, gpus: plain.map((m) => ({ ...m, in_stock: true, stock: 'simulated' })), live: false }
+  if (isDry()) return { default: gpus.DEFAULT_GPU, gpus: plain.map((m) => ({ ...m, in_stock: true, stock: 'simulated' })), live: false, datacenter: null }
+  const cfg = mounts.load()
+  const dc = dataCenterId ?? (cfg.network_volume_id ? cfg.data_center_id : '')
   let stock: rp.GpuStock[]
-  try { stock = await rp.gpuStock(Object.values(gpus.GPUS).map((g) => g.id), client) } catch { return { default: gpus.DEFAULT_GPU, gpus: plain, live: false } }
+  try {
+    if (dc) {
+      const [here] = await rp.datacenterPrices(Object.values(gpus.GPUS).map((g) => g.id), client, [dc])
+      stock = (here?.cards || []).map((c) => ({ id: c.id, price: c.price, stock: c.stock, secure: true, community: false }))
+    } else stock = await rp.gpuStock(Object.values(gpus.GPUS).map((g) => g.id), client)
+  } catch { return { default: gpus.DEFAULT_GPU, gpus: plain, live: false, datacenter: dc || null } }
   const byId = new Map(stock.map((s) => [s.id, s]))
   return {
-    default: gpus.DEFAULT_GPU, live: true,
+    default: gpus.DEFAULT_GPU, live: true, datacenter: dc || null,
     gpus: plain.map((m) => {
       if (m.value === gpus.AUTO) return m
       const s = byId.get(gpus.GPUS[m.value].id)

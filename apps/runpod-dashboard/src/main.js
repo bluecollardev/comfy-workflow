@@ -25,6 +25,7 @@ import {
   BNavbar,
   BNavbarBrand,
   BPopover,
+  BProgress,
   BRow,
   BSpinner,
 } from 'bootstrap-vue-next'
@@ -64,6 +65,7 @@ app.component('BModal', BModal)
 app.component('BNavbar', BNavbar)
 app.component('BNavbarBrand', BNavbarBrand)
 app.component('BPopover', BPopover)
+app.component('BProgress', BProgress)
 app.component('BRow', BRow)
 app.component('BSpinner', BSpinner)
 

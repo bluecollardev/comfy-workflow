@@ -116,6 +116,31 @@ test.describe('configuration', () => {
     await expect(toast(page).first()).toContainText(t('toast.failedWith', { label: t('toast.saveConfig'), error: 'plates: a folder is an absolute path on this PC' }))
   })
 
+  test('the datacenter is a menu from RunPod: S3 support and our cards at the secure-cloud price', async ({ page, api }) => {
+    api.state.mounts.config.data_center_id = 'EU-RO-1'
+    await page.goto('/')
+    await page.getByTestId('open-config').click()
+    const dc = page.getByTestId('cfg-dc')
+    await expect(dc).toHaveValue('EU-RO-1')
+    await expect(dc.locator('option')).toHaveText([t('config.datacenterAny'), 'EU-RO-1 · S3 · RTX 4000 Ada $0.28/h Low, RTX 4090 $0.89/h High', 'CA-MTL-1 · A40 $0.35/h High'])
+    await dc.selectOption('CA-MTL-1')
+    await page.getByTestId('config-save').click()
+    const put = api.calls.find((c) => c.method === 'PUT' && c.path === '/mounts')
+    expect(put.body.data_center_id).toBe('CA-MTL-1')
+  })
+
+  test('the volume line says what the volume is and costs a month, or that RunPod has none by that id', async ({ page, api }) => {
+    api.state.mounts.config.network_volume_id = 'vol1'
+    await page.goto('/')
+    await page.getByTestId('open-config').click()
+    await expect(page.getByTestId('cfg-volume-info')).toContainText(t('config.volumeInfo', { name: 'comfy-workspace', size: 120, dc: 'EU-RO-1', cost: 8.4 }))
+    await expect(page.getByTestId('cfg-volume-info')).toContainText(t('config.volumeS3'))
+    await expect(page.getByTestId('stat-storage')).toContainText('$8.40')   // the stats bar carries the monthly cost too
+    await page.getByTestId('cfg-volume').fill('nope'); await page.getByTestId('cfg-volume').blur()
+    await expect(page.getByTestId('cfg-volume-info')).toContainText(t('config.volumeMissing'))
+    await expect(page.getByTestId('stat-storage')).toContainText('$8.40')   // an unsaved edit in the panel does not touch the stats bar
+  })
+
   test('clear resets to nothing mapped', async ({ page, api }) => {
     api.state.mounts.config.folders.project = '/Users/lucas/Projects/CANALV2'; api.state.mounts.stored = true
     await page.goto('/')

@@ -34,6 +34,36 @@ describe('the image a pod boots', () => {
   })
 })
 
+describe('the datacenter menu', () => {
+  it('lists every listed datacenter with S3 support and our cards at the secure-cloud price, cheapest in stock first', async () => {
+    const fetchFn = (async (_url: string, init: RequestInit) => {
+      const q = JSON.parse(String(init.body)).query as string
+      if (q.includes('dataCenters { id listed }')) return new Response(JSON.stringify({ data: { dataCenters: [{ id: 'CA-MTL-1', listed: true }, { id: 'EU-RO-1', listed: true }, { id: 'XX-OLD-1', listed: false }] } }))
+      expect(q).toContain('dataCenterId:"EU-RO-1", secureCloud:true')
+      return new Response(JSON.stringify({ data: {
+        dc_CA_MTL_1: [{ id: 'NVIDIA A40', lowestPrice: { uninterruptablePrice: 0.35, stockStatus: 'High' } }, { id: 'NVIDIA H100 PCIe', lowestPrice: { uninterruptablePrice: 2.5, stockStatus: 'High' } }],
+        dc_EU_RO_1: [{ id: 'NVIDIA GeForce RTX 4090', lowestPrice: { uninterruptablePrice: 0.89, stockStatus: 'High' } }, { id: 'NVIDIA RTX 4000 Ada Generation', lowestPrice: { uninterruptablePrice: 0.28, stockStatus: 'Low' } }, { id: 'NVIDIA RTX A4000', lowestPrice: { uninterruptablePrice: null, stockStatus: null } }],
+      } }))
+    }) as unknown as typeof fetch
+    const m = await pods.datacenters({ fetchFn, apiKey: 'k' })
+    expect(m.live).toBe(true); expect(m.datacenters.map((d) => d.value)).toEqual(['EU-RO-1', 'CA-MTL-1'])   // cheapest card first; the unlisted one is gone
+    expect(m.datacenters[0].s3).toBe(true); expect(m.datacenters[0].text).toBe('EU-RO-1 · S3 · RTX 4000 Ada $0.28/h Low, RTX 4090 $0.89/h High')
+    expect(m.datacenters[1].s3).toBe(false); expect(m.datacenters[1].cards).toEqual([{ key: 'a40', name: 'A40', price: 0.35, stock: 'High' }])   // the H100 is not in our table
+  })
+})
+
+describe('the volume and its cost', () => {
+  it('prices a volume per month and reads the configured one from RunPod', async () => {
+    expect(pods.volumeCostPerMonth(120)).toBe(8.4); expect(pods.volumeCostPerMonth(1500)).toBe(95)
+    const fetchFn = (async (url: string) => url.endsWith('/v1/networkvolumes/vol1')
+      ? new Response(JSON.stringify({ id: 'vol1', name: 'comfy-workspace', size: 120, dataCenterId: 'EU-RO-1' }))
+      : new Response('', { status: 404 })) as unknown as typeof fetch
+    expect(await pods.volumeInfo('vol1', { fetchFn, apiKey: 'k' })).toEqual({ id: 'vol1', name: 'comfy-workspace', size_gb: 120, datacenter: 'EU-RO-1', cost_per_month: 8.4, s3: true })
+    expect(await pods.volumeInfo('nope', { fetchFn, apiKey: 'k' })).toBeNull()
+    expect(await pods.volumeInfo('', { fetchFn, apiKey: 'k' })).toBeNull()   // nothing configured
+  })
+})
+
 describe('the plan sent to RunPod', () => {
   it('applies the cheap defaults and the mount configuration', () => {
     const cfg = mounts.defaults(); cfg.image = 'ghcr.io/example/comfy-app:v26'; cfg.network_volume_id = 'vol1'; cfg.data_center_id = 'EU-RO-1'

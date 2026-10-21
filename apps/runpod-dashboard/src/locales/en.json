@@ -17,7 +17,8 @@
   "stats": {
     "total": "Total pods",
     "running": "Running",
-    "stopped": "Stopped"
+    "stopped": "Stopped",
+    "storage": "Storage / month ({size} GB)"
   },
   "dashboard": {
     "createPod": "Create pod",
@@ -133,7 +134,7 @@
     "mountPath": "Mount path",
     "mountPathHelp": "Where the volume appears in the pod.",
     "datacenter": "Datacenter",
-    "datacenterHelp": "Must match the volume's datacenter. Empty: RunPod chooses.",
+    "datacenterHelp": "Must match the volume's datacenter. S3 marks the ones whose volumes take uploads with no pod running; the cards and prices are what a volume pod pays there (secure cloud).",
     "image": "Image",
     "imageHelp": "What every new pod boots: ours, with the packs and the entrypoint that makes the links. It must be pushed to a registry first; a bare local name is refused at pod creation.",
     "idle": "Idle stop (minutes)",
@@ -193,7 +194,12 @@
     "podOwn": "This pod has its own configuration",
     "podFromDefault": "Started from the Default Configuration",
     "useDefaults": "Use defaults",
-    "apply": "Apply to this pod"
+    "apply": "Apply to this pod",
+    "datacenterAny": "Any: RunPod chooses (no network volume)",
+    "volumeLooking": "Asking RunPod about this volume…",
+    "volumeMissing": "RunPod has no network volume with this id.",
+    "volumeInfo": "{name} · {size} GB in {dc} · about ${cost} a month, whether or not a pod runs",
+    "volumeS3": "takes uploads over the S3 API with no pod running"
   },
   "picker": {
     "title": "Choose the {name} folder",

@@ -156,9 +156,48 @@ async def start_idle_watch():
         asyncio.create_task(idle.loop(_running_pod_ids, _stop_pod))
 
 
+S3_DATACENTERS = {"EU-CZ-1", "EU-RO-1", "EUR-IS-1", "EUR-NO-1", "US-CA-2", "US-GA-2", "US-IL-1", "US-KS-2", "US-MD-1", "US-MO-1", "US-MO-2", "US-NC-1", "US-NC-2", "US-NE-1", "US-WA-1"}
+
+
+@app.get("/api/datacenters", tags=["Pods"])
+async def list_datacenters():
+    """Every listed datacenter, S3 support, and our cards in stock there at the secure-cloud price (what a volume pod pays)."""
+    api_key = os.getenv('RUNPOD_API_KEY')
+    if not api_key:
+        return {"datacenters": [], "live": False}
+    try:
+        from runpod.api.graphql import run_graphql_query
+        runpod.api_key = api_key
+        ids = [d["id"] for d in run_graphql_query("query { dataCenters { id listed } }")["data"]["dataCenters"] if d.get("listed")]
+        alias = lambda i: "dc_" + "".join(ch if ch.isalnum() else "_" for ch in i)
+        q = "query { " + " ".join(f'{alias(i)}: gpuTypes {{ id lowestPrice(input:{{gpuCount:1, dataCenterId:"{i}", secureCloud:true}}) {{ uninterruptablePrice stockStatus }} }}' for i in ids) + " }"
+        data = run_graphql_query(q)["data"]
+    except Exception:
+        return {"datacenters": [], "live": False}
+    by_id = {g["id"]: (k, g) for k, g in gpus.GPUS.items()}
+    out = []
+    for i in ids:
+        cards = []
+        for g in data.get(alias(i)) or []:
+            lp = g.get("lowestPrice") or {}
+            if g["id"] in by_id and lp.get("uninterruptablePrice") is not None and lp.get("stockStatus"):
+                k, meta = by_id[g["id"]]
+                cards.append({"key": k, "name": meta["name"], "price": lp["uninterruptablePrice"], "stock": lp["stockStatus"]})
+        cards.sort(key=lambda c: c["price"])
+        s3 = i in S3_DATACENTERS
+        text = " · ".join(x for x in [i, "S3" if s3 else None, ", ".join(f'{c["name"]} ${c["price"]}/h {c["stock"]}' for c in cards[:3]) or "none of our cards in stock"] if x)
+        out.append({"value": i, "text": text, "s3": s3, "cards": cards})
+    out.sort(key=lambda e: (0 if e["cards"] else 1, e["cards"][0]["price"] if e["cards"] else 9, e["value"]))
+    return {"datacenters": out, "live": True}
+
+
 @app.get("/api/gpus", tags=["Pods"])
-async def list_gpus():
-    """The GPU menu with RunPod's stock and price per card when a key is set; `auto` first."""
+async def list_gpus(dc: str = ""):
+    """The GPU menu with RunPod's stock and price per card when a key is set; `auto` first. With a network volume
+    configured (or ?dc=) the prices are the secure-cloud prices in that datacenter, what such a pod pays."""
+    if not dc:
+        cfg = mounts.load()
+        dc = cfg.data_center_id if cfg.network_volume_id else ""
     menu = [{"value": "auto", "text": "Cheapest card in stock (16-24 GB)", "price": None, "stock": None, "in_stock": True}]
     menu += [{"value": k, "text": f"{g['name']} ({g['vram']} GB)", "price": None, "stock": None, "in_stock": False} for k, g in gpus.GPUS.items()]
     api_key = os.getenv('RUNPOD_API_KEY')
@@ -167,7 +206,8 @@ async def list_gpus():
         try:
             from runpod.api.graphql import run_graphql_query
             runpod.api_key = api_key
-            types = run_graphql_query("query { gpuTypes { id lowestPrice(input:{gpuCount:1}) { uninterruptablePrice stockStatus } } }")["data"]["gpuTypes"]
+            price_q = f'lowestPrice(input:{{gpuCount:1, dataCenterId:"{dc}", secureCloud:true}})' if dc else "lowestPrice(input:{gpuCount:1})"
+            types = run_graphql_query("query { gpuTypes { id " + price_q + " { uninterruptablePrice stockStatus } } }")["data"]["gpuTypes"]
             by_id = {t["id"]: (t.get("lowestPrice") or {}) for t in types}
             for m in menu[1:]:
                 lp = by_id.get(gpus.GPUS[m["value"]]["id"], {})
@@ -178,7 +218,28 @@ async def list_gpus():
             live = True
         except Exception as e:
             logger.info(f"gpu stock unavailable: {e}")
-    return {"default": "auto", "gpus": menu, "live": live}
+    return {"default": "auto", "gpus": menu, "live": live, "datacenter": dc or None}
+
+
+def volume_cost_per_month(size_gb: int) -> float:
+    """USD 0.07 per GB a month for the first TB, 0.05 beyond."""
+    return round(min(size_gb, 1000) * 0.07 + max(size_gb - 1000, 0) * 0.05, 2)
+
+
+@app.get("/api/volumes/{volume_id}", tags=["Pods"])
+async def get_volume(volume_id: str):
+    """A network volume with what it costs a month; 404 when RunPod has none by that id."""
+    api_key = os.getenv('RUNPOD_API_KEY')
+    if not api_key:
+        raise HTTPException(status_code=401, detail="RUNPOD_API_KEY not set")
+    import requests as _requests
+    r = _requests.get(f"https://rest.runpod.io/v1/networkvolumes/{volume_id}", headers={"Authorization": f"Bearer {api_key}"}, timeout=20)
+    if r.status_code == 404:
+        raise HTTPException(status_code=404, detail=f"no network volume {volume_id}")
+    r.raise_for_status()
+    v = r.json()
+    return {"id": v["id"], "name": v.get("name", ""), "size_gb": v.get("size", 0), "datacenter": v.get("dataCenterId", ""),
+            "cost_per_month": volume_cost_per_month(v.get("size", 0)), "s3": v.get("dataCenterId") in S3_DATACENTERS}
 
 
 @app.put("/api/pods/{pod_id}/idle", tags=["Pods"])
