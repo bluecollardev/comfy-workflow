@@ -52,13 +52,13 @@
           <BBadge v-else variant="danger" class="fw-normal text-wrap text-start" data-testid="mcp-result-error"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ store.results[ep.id].error || $t('mcp.noAnswer') }}</BBadge>
         </div>
 
-        <h6 class="mt-3 mb-2 small text-uppercase text-body-secondary">{{ $t('mcp.clients') }}</h6>
-        <div v-for="c in CLIENTS" :key="c.key" class="mb-2" data-testid="mcp-client" :data-client="c.key">
+        <div class="d-flex align-items-center gap-2 mt-3 mb-2">
+          <h6 class="mb-0 small text-uppercase text-body-secondary">{{ $t('mcp.clients') }}</h6>
+          <BFormSelect v-model="client" :options="CLIENTS.map((c) => ({ value: c.key, text: $t(c.label) }))" size="sm" style="max-width: 16rem" data-testid="mcp-client-select" />
+        </div>
+        <div v-for="c in CLIENTS.filter((x) => x.key === client)" :key="c.key" class="mb-2" data-testid="mcp-client" :data-client="c.key">
           <div class="d-flex align-items-start justify-content-between gap-3 mb-1">
-            <div class="lh-sm flex-grow-1 min-w-0">
-              <span class="fw-semibold small" data-testid="mcp-client-name">{{ $t(c.label) }}</span>
-              <small class="text-body-secondary d-block">{{ $t(c.hint) }}</small>
-            </div>
+            <small class="text-body-secondary lh-sm flex-grow-1 min-w-0" data-testid="mcp-client-hint">{{ $t(c.hint) }}</small>
             <BButton size="sm" variant="outline-light" class="flex-shrink-0 text-nowrap" data-testid="mcp-copy" @click="store.copy(ep.clients[c.key], $t('mcp.whatSnippet', { name: ep.title, client: $t(c.label) }))"><i class="fa-regular fa-copy me-1"></i>{{ $t('mcp.copy') }}</BButton>
           </div>
           <pre class="small p-2 rounded border bg-body mb-0 text-wrap" data-testid="mcp-snippet">{{ ep.clients[c.key] }}</pre>
@@ -81,6 +81,11 @@ import { t } from '../i18n'
 
 const props = defineProps({ active: { type: Boolean, default: false } })
 const store = useMcpStore()
+
+/** The client whose setup shows, one at a time; remembered in this browser. */
+const client = ref('claude_code')
+try { const saved = localStorage.getItem('runpod-manager.mcp-client'); if (saved) client.value = saved } catch { /* storage blocked */ }
+watch(client, (v) => { try { localStorage.setItem('runpod-manager.mcp-client', v) } catch { /* storage blocked */ } })
 
 const CLIENTS = [
   { key: 'claude_code', label: 'mcp.claudeCode', hint: 'mcp.claudeCodeHint' },
