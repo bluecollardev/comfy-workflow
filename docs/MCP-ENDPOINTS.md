@@ -1,8 +1,8 @@
 ors# The two MCP endpoints
 
-**Status:** spec, 2026-10-21, for the Connect › MCP tab. The pod manager server exists
-(`apps/runpod-dashboard/mcp/server.mjs`); the pod tools marked *new* and the whole
-ComfyUI bridge are to build. Both are Node programs over the app's core, launched over
+**Status:** built 2026-10-21 as specified (the pod tools, the ComfyUI bridge, the HTTP
+transport, the Connect › MCP tab with the client connectors). Both servers are in
+`apps/runpod-dashboard/mcp/`; the tab is Connect › MCP in the app. Both are Node programs over the app's core, launched over
 stdio by Claude Code or any MCP client; neither opens a port.
 
 Conventions for every tool: arguments are a JSON object; the answer is text (JSON where

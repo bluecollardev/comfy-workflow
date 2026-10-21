@@ -1,5 +1,7 @@
 # MCP Server: ComfyUI Agent Pool Control
 
+> **2026-10-21.** Two servers now: this pod manager (the pool tools below plus 18 pod, volume, configuration, sync and cost tools) and the ComfyUI bridge (`mcp/comfy-bridge.mjs`), which lets a local agent work inside the ComfyUI running in a pod. Tool by tool: [`docs/MCP-ENDPOINTS.md`](MCP-ENDPOINTS.md). Client setup for Claude Code, Claude Desktop, Codex CLI and ChatGPT: the app's Connect › MCP tab. Both take `--http <port>` to serve over HTTP instead of stdio.
+
 **Model Context Protocol (MCP) server** that exposes ComfyUI agent pool management as tools to Claude Code.
 
 Claude Code ↔ MCP Server ↔ Pool Manager ↔ RunPod API
