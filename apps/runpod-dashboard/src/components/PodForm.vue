@@ -1,8 +1,11 @@
 <template>
   <BForm data-testid="pod-form" @submit.prevent="submit" @reset.prevent="reset">
+    <div class="d-flex justify-content-end mb-2">
+      <BFormCheckbox v-model="ui.hints" switch class="small" data-testid="pod-hints">{{ $t('form.hints') }}</BFormCheckbox>
+    </div>
     <fieldset class="cfg-section" data-testid="form-group-pod">
       <legend>{{ $t('form.groupPod') }}</legend>
-      <BAlert :model-value="true" variant="info" class="small py-2 mb-3"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('form.groupPodHint') }}</BAlert>
+      <BAlert v-if="ui.hints" :model-value="true" variant="info" class="small py-2 mb-3" data-testid="form-hint"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('form.groupPodHint') }}</BAlert>
       <BRow class="g-3">
       <BCol md="6" lg="4">
         <BFormGroup :label="$t('form.name')" label-for="pod-name">
@@ -18,7 +21,7 @@
     </fieldset>
     <fieldset class="cfg-section" data-testid="form-group-gpu">
       <legend>{{ $t('form.groupGpu') }}</legend>
-      <BAlert :model-value="true" variant="info" class="small py-2 mb-3"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('form.groupGpuHint') }}</BAlert>
+      <BAlert v-if="ui.hints" :model-value="true" variant="info" class="small py-2 mb-3" data-testid="form-hint"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('form.groupGpuHint') }}</BAlert>
       <BRow class="g-3">
       <BCol md="6" lg="4">
         <BFormGroup :label="$t('form.datacenter')" label-for="pod-datacenter" :description="volumeDc !== null ? $t('form.datacenterLocked', { dc: volumeDc || $t('form.datacenterUnset') }) : $t('form.datacenterHelp')" data-testid="pod-datacenter-group">
@@ -39,7 +42,7 @@
     </fieldset>
     <fieldset class="cfg-section" data-testid="form-group-storage">
       <legend>{{ $t('form.groupStorage') }}</legend>
-      <BAlert :model-value="true" variant="info" class="small py-2 mb-3"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('form.groupStorageHint') }}</BAlert>
+      <BAlert v-if="ui.hints" :model-value="true" variant="info" class="small py-2 mb-3" data-testid="form-hint"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('form.groupStorageHint') }}</BAlert>
       <BRow class="g-3">
       <BCol md="6" lg="4">
         <BFormGroup :label="$t('form.volume')" label-for="pod-volume" :description="$t('form.volumeHelp')">
@@ -59,22 +62,11 @@
           </BFormCheckbox>
         </BFormGroup>
       </BCol>
-      <BCol md="6" lg="4">
-        <BFormGroup :label="$t('form.podConfig')" :description="form.config ? $t('form.podConfigOwnHelp') : $t('form.podConfigDefaultHelp')" data-testid="pod-config-group">
-          <div class="d-flex align-items-center gap-2">
-            <BButton size="sm" :variant="form.config ? 'warning' : 'outline-light'" data-testid="pod-config-override" @click="overrideOpen = true">
-              <i class="fa-solid fa-sliders me-1"></i>{{ form.config ? $t('form.podConfigEdit') : $t('form.podConfigOverride') }}
-            </BButton>
-            <BBadge v-if="form.config" variant="warning" text-indicator data-testid="pod-config-custom">{{ $t('form.podConfigOwn') }}</BBadge>
-            <BButton v-if="form.config" size="sm" variant="link" class="p-0 small" data-testid="pod-config-reset" @click="form.config = null">{{ $t('form.podConfigUseDefault') }}</BButton>
-          </div>
-        </BFormGroup>
-      </BCol>
       </BRow>
     </fieldset>
     <fieldset class="cfg-section" data-testid="form-group-image">
       <legend>{{ $t('form.groupImage') }}</legend>
-      <BAlert :model-value="true" variant="info" class="small py-2 mb-3"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('form.groupImageHint') }}</BAlert>
+      <BAlert v-if="ui.hints" :model-value="true" variant="info" class="small py-2 mb-3" data-testid="form-hint"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('form.groupImageHint') }}</BAlert>
       <BRow class="g-3">
       <BCol md="6" lg="4">
         <BFormGroup :label="$t('form.image')" label-for="pod-image" :description="form.image === 'configured' ? (form.config?.image || configuredImage) : ''" data-testid="pod-image-group">
@@ -102,7 +94,20 @@
     <!-- Advanced sections, each collapsed by default -->
     <fieldset class="cfg-section" data-testid="form-group-advanced">
       <legend>{{ $t('form.groupAdvanced') }}</legend>
-      <BAlert :model-value="true" variant="info" class="small py-2 mb-3"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('form.groupAdvancedHint') }}</BAlert>
+      <BAlert v-if="ui.hints" :model-value="true" variant="info" class="small py-2 mb-3" data-testid="form-hint"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('form.groupAdvancedHint') }}</BAlert>
+      <BRow class="g-3 mb-3">
+      <BCol cols="12">
+        <BFormGroup :label="$t('form.podConfig')" :description="form.config ? $t('form.podConfigOwnHelp') : $t('form.podConfigDefaultHelp')" data-testid="pod-config-group">
+          <div class="d-flex align-items-center gap-2">
+            <BButton size="sm" :variant="form.config ? 'warning' : 'outline-light'" data-testid="pod-config-override" @click="overrideOpen = true">
+              <i class="fa-solid fa-sliders me-1"></i>{{ form.config ? $t('form.podConfigEdit') : $t('form.podConfigOverride') }}
+            </BButton>
+            <BBadge v-if="form.config" variant="warning" text-indicator data-testid="pod-config-custom">{{ $t('form.podConfigOwn') }}</BBadge>
+            <BButton v-if="form.config" size="sm" variant="link" class="p-0 small" data-testid="pod-config-reset" @click="form.config = null">{{ $t('form.podConfigUseDefault') }}</BButton>
+          </div>
+        </BFormGroup>
+      </BCol>
+      </BRow>
     <div class="border-top">
       <div v-for="section in ADVANCED" :key="section.key" class="border-bottom">
         <div class="d-flex align-items-center">
