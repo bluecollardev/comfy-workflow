@@ -409,25 +409,3 @@ async function reset() {
 }
 </script>
 
-<style scoped>
-/* Each section of the panel in a bordered group with its heading on the border. */
-.cfg-section {
-  border: 1px solid var(--bs-border-color);
-  border-radius: 0.5rem;
-  padding: 0.75rem 1rem 1rem;
-  margin-bottom: 1rem;
-  min-width: 0;
-}
-.cfg-section > legend,
-.cfg-section > div > legend {
-  float: none;
-  width: auto;
-  padding: 0 0.5rem;
-  margin-bottom: 0.5rem;
-  font-size: 1rem;
-  font-weight: 600;
-}
-.cfg-section > div > legend {
-  margin-bottom: 0;
-}
-</style>
