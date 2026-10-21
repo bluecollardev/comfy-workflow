@@ -59,6 +59,7 @@ function change(id: string, fn: (p: DryPod) => void) {
   return p
 }
 export const stop = (id: string) => { change(id, (p) => { p.status = 'stopped'; p.started_at = null }); return { message: `Pod ${id} stopped (simulated)`, pod_id: id } }
+export const setIdle = (id: string, minutes: number) => { change(id, (p) => { p.idle_stop_minutes = Math.max(Math.floor(minutes), 0) }) }
 export const resume = (id: string) => { change(id, (p) => { p.status = 'running'; p.started_at = new Date().toISOString() }); return { message: `Pod ${id} resumed (simulated)`, pod_id: id } }
 export const remove = (id: string) => { const pods = load(); if (!pods.some((p) => p.id === id)) throw new CoreError(404, `Pod ${id} not found (no-spend mode)`); save(pods.filter((p) => p.id !== id)); return { message: `Pod ${id} deleted (simulated)`, pod_id: id } }
 export const runningIds = () => new Set(load().filter((p) => p.status === 'running').map((p) => p.id))

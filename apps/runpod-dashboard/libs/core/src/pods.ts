@@ -125,7 +125,8 @@ export async function create(req: CreatePodRequest, client?: rp.RunPodClient, cr
 }
 
 const gpuKey = (id: string) => Object.entries(gpus.GPUS).find(([, g]) => g.id === id)?.[0] || id
-const NO_STOCK = /no longer any instances available|not enough|no instances/i
+/** RunPod's words for "no card on that host / in that cloud": a create moves to the next card, a resume needs recreate. */
+export const NO_STOCK = /no longer any instances available|not enough|no instances/i
 
 /** The cards to try, cheapest in stock first, for `auto`; the one asked for otherwise. With a datacenter
  *  (a network volume pins the pod there) only the cards that datacenter has right now count as in stock. */
@@ -226,6 +227,16 @@ export async function dashboard(client?: rp.RunPodClient) {
 export async function stop(podId: string, client?: rp.RunPodClient) { if (isDry()) return dry.stop(podId); await rp.stopPod(podId, client); return { message: `Pod ${podId} stopped`, pod_id: podId } }
 export async function resume(podId: string, client?: rp.RunPodClient) { if (isDry()) return dry.resume(podId); await rp.resumePod(podId, 1, client); return { message: `Pod ${podId} resumed`, pod_id: podId } }
 export async function remove(podId: string, client?: rp.RunPodClient) { podconfigs.forget(podId); if (isDry()) { idle.forget(podId); return dry.remove(podId) } await rp.terminatePod(podId, client); idle.forget(podId); return { message: `Pod ${podId} deleted`, pod_id: podId } }
+
+/** Change a pod's idle stop: registered for the watch (0 = never, dropped from it); a simulated pod's record follows,
+ *  so what `get` shows is what was set in no-spend mode too. */
+export async function setIdleStop(podId: string, minutes: number, client?: rp.RunPodClient): Promise<{ pod_id: string; idle_stop_minutes: number }> {
+  if (!Number.isInteger(minutes) || minutes < 0) throw bad('idle_stop_minutes is 0 (never) or a whole number of minutes')
+  await get(podId, client)   // a clear 404 rather than a registry entry for a pod that is not there
+  idle.register(podId, minutes)
+  if (isDry()) dry.setIdle(podId, minutes)
+  return { pod_id: podId, idle_stop_minutes: minutes }
+}
 
 /** A pod's own configuration, or null when it uses the Default Configuration. */
 export const config = (podId: string) => podconfigs.get(podId)
