@@ -82,6 +82,7 @@ import { computed, reactive, ref } from 'vue'
 import { useUiStore } from '../stores/ui'
 import { useVolumesStore } from '../stores/volumes'
 import { podsAPI } from '../api/pods'
+import { datacenterOptions } from '../utils/datacenters'
 import { t } from '../i18n'
 
 const ui = useUiStore()
@@ -90,7 +91,7 @@ const draft = reactive({ name: '', size_gb: 100, datacenter: '' })
 const resizing = ref(null)
 const resizeTo = ref(0)
 const dcList = ref([])
-const dcOptions = computed(() => [{ value: '', text: t('volumes.pickDatacenter') }, ...dcList.value.map((d) => ({ value: d.value, text: d.text }))])
+const dcOptions = computed(() => datacenterOptions(dcList.value, { value: '', text: t('volumes.pickDatacenter') }))
 
 async function open() {
   store.load()
