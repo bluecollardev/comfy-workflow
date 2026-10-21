@@ -20,7 +20,9 @@
     "electron:pack": "npm run build && electron-builder --dir",
     "core:build": "tsc -p libs/core/tsconfig.json",
     "core:test": "vitest run --config libs/core/vitest.config.ts",
-    "test": "npm run core:test",
+    "mcp": "node mcp/server.mjs",
+    "mcp:test": "npm run core:build && node --test mcp/server.test.mjs",
+    "test": "npm run core:test && npm run mcp:test",
     "electron:build:mac": "npm run build && electron-builder --mac",
     "electron:build:win": "npm run build && electron-builder --win",
     "electron:build:linux": "npm run build && electron-builder --linux",
@@ -29,6 +31,7 @@
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^7.3.1",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "axios": "^1.20.0",
     "bootstrap": "^5.3.8",
     "bootstrap-vue-next": "^1.2.2",
