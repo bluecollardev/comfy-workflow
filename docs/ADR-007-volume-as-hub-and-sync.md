@@ -74,6 +74,35 @@ volume in another datacenter (Montreal ran out of cards twice in one day) is
 filled bucket to volume, not from a Mac. Costs an account, a key and a second
 sync tool. Only pays off once a second machine holds data.
 
+### G. RunPod's S3 API onto the volume: no pod at all (found 2026-10-21)
+RunPod serves network volumes over an S3-compatible API
+(`https://s3api-<datacenter>.runpod.io/`, docs.runpod.io/storage/s3-api): the
+Mac pushes with the AWS CLI or boto3 straight onto the volume, no pod running,
+no sshd, no idle stop to cut it, resumable, files over 500 MB as multipart,
+nothing added to the price. Pull is the same call the other way, so renders
+come back without a pod too. The volume is then the bucket of option E
+without a third party, and the pod side needs no SSH.
+
+The catch: only fifteen datacenters support it (EU-CZ-1, EU-RO-1, EUR-IS-1,
+EUR-NO-1, US-CA-2, US-GA-2, US-IL-1, US-KS-2, US-MD-1, US-MO-1, US-MO-2,
+US-NC-1, US-NC-2, US-NE-1, US-WA-1), and Montreal, where our volume is, is not
+one. So this option means a new volume in a supported datacenter, chosen for
+card stock. On 2026-10-21 morning: EU-RO-1 had the 4090 in high stock at
+USD 0.34; EUR-IS-1 the A4000, 4000 Ada and 4090 in low stock at 0.17 to 0.34;
+EU-CZ-1 the 3090 low at 0.22; US-IL-1 and US-NC-1 the 4090 low; US-KS-2 the
+A6000 low. Romania is the safe pick (the only high-stock entry, no host-full
+lottery); Iceland is cheaper when it has stock.
+
+The move: create the volume there, enter it and the datacenter in Default
+Configuration, delete the Montreal volume (22 files on it, nothing to keep),
+make an S3 key in the RunPod console (Credentials, S3 API keys; the secret
+shows once, so a person does it), then push from the Mac. The sync script and
+the Sync button of option B drive the AWS CLI instead of rsync. Limits from
+the docs: no bucket create or delete over the API (the console does that), no
+presigned URLs, a first listing of a folder over 10,000 files can be slow,
+`aws s3 sync` struggles past 10,000 files, so the push goes folder by folder
+with `cp --recursive`, and clocks more than an hour off are rejected.
+
 ### F. Automatic sync
 A folder watch or a schedule pushing changes as they happen. Rejected in the
 recommendation: hours of upload can start by surprise, a pod may be down, and
@@ -81,8 +110,12 @@ client material should not leave the PC without someone pressing something.
 
 ## Recommendation (Claude, not decided)
 
-C now, since the sync is running anyway; A today because renders are otherwise
-stranded; B next; E when the second PC arrives; D opportunistically; not F.
+Revised 2026-10-21 after finding G: **G first**, a volume in Romania pushed over
+the S3 API, which removes the pod from the copy and makes Pull free of a pod
+too; **C** with it, since the Mac's uplink is still the limit; **B** on top of
+G (the Sync button drives the AWS CLI, no SSH); E is then not needed, the
+volume is the bucket; D is moot; not F. Three attempts over rsync into a pod
+all died with the pod, which is the case for G.
 
 ## Decision
 

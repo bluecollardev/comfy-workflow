@@ -240,7 +240,9 @@ What follows from that:
   runs (120 GB is about USD 8.40). A stopped pod on a network volume bills nothing.
 - **Keeping the Mac and the volume in line is an open decision.** Today the copy
   goes one way, Mac to volume, by `./start.sh sync`, pressed by a person; nothing
-  pulls a pod's renders back down yet. The per-folder contract, the options and a
+  pulls a pod's renders back down yet. RunPod's S3 API can fill a volume with no
+  pod running, but only in fifteen datacenters and Montreal is not one, so the
+  likely move is a volume in Romania pushed over S3 (ADR-007, option G). The per-folder contract, the options and a
   recommendation are in [`docs/ADR-007`](docs/ADR-007-volume-as-hub-and-sync.md).
   The image side, registry and CI build, is decided in
   [`docs/ADR-006`](docs/ADR-006-image-registry-and-ci-build.md).

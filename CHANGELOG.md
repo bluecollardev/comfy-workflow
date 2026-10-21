@@ -21,6 +21,14 @@ completed items move here. Commit hashes are on `develop`.
 - **The image is built and pushed on GitLab CI** (`./start.sh comfy-image --remote --wait`), after two pushes from this Mac of the 3 GB torch layer took an hour each and the first died on a dropped connection. `build.sh --remote` stages the packs as before, pushes the build context (under 2 MB) as a branch of the registry project with a generated `.gitlab-ci.yml`, and a shared runner builds natively on amd64 and pushes into that project's registry; `--wait` follows the pipeline and prints the reference. The token comes from `GITLAB_TOKEN` or the stored `docker login`.
 - **Workflows are mounted, not baked** (Lucas: "ideally they're mounted"). The image links ComfyUI's Workflows panel to `/workspace/comfy-shared/workflows` on the volume and copies the repo's nine graphs in only while that folder is empty, so a pod's workflows change without a rebuild and survive the pod; `./start.sh sync` copies `apps/comfy-app/workflows/` there (key `workflows`). On the Mac the panel keeps reading the repo folder through the link `setup.sh` makes.
 
+## 2026-10-21
+
+### Three rsync attempts died with the pod; RunPod's S3 API found; the ComfyUI API documented
+- The sync over rsync into a running pod was cut three times on 2026-10-20: once by a stop while the idle stop had been edited in the registry file (the running backend writes its own copy back), once by the volume refusing `chown` (fixed: `-rlt`, no ownership), once by the pod stopping at 18:23 UTC with the idle stop held at 0 through the backend, cause not established. 22 files reached the Montreal volume.
+- **RunPod serves network volumes over an S3-compatible API**, so a volume can be filled from the Mac with no pod running, resumable, no sshd, no idle stop; Pull the same way. Only in fifteen datacenters, Montreal not among them; Romania has the 4090 in high stock. Written up as option G in `docs/ADR-007` with a revised recommendation; the decision stays Lucas's.
+- `docs/COMFY-API.md`: the ComfyUI HTTP API as this repo uses it; two examples in the architecture and MCP docs that carried the pod manager's port corrected.
+- `docs/ADR-006` (image in a private registry, built on CI, workflows on the volume, sshd for the sync) accepted; `docs/ADR-007` proposed.
+
 ## 2026-10-19
 
 ### RunPod proven live; stock-aware card choice; Pause all; test ids and one language file (branch `feature/no-spend-mode`)
