@@ -42,8 +42,7 @@ comfy_workflow/                    # Root monorepo
 ├── apps/                          # Runnable apps (tracked scripts, ignored data)
 │   ├── comfy-app/                # The ComfyUI server: Mac scripts + Dockerfile for RunPod
 │   │   └── ComfyUI/              #   ignored: the ~5 GB standalone install itself
-│   ├── runpod-api/               # DEPRECATED (ADR-005): Python API kept for git accounts, repositories, image env, OAuth, MCP until ported
-│   └── runpod-dashboard/         # The app: Vue 3 + Pinia UI, Electron shell, and libs/core (TypeScript: mounts, pods, GPUs, governance, idle) over IPC
+│   └── runpod-dashboard/         # The app: Vue 3 + Pinia UI, Electron shell, libs/core (TypeScript: mounts, pods, GPUs, datacenters, governance, idle, git, repositories, images, sync) over IPC; mcp/ (MCP server), cli/ (pod, sync, pull)
 │
 ├── shared/                        # Shared by every app and agent
 │   ├── governance/               # Binc's policies copied in (sync.sh), precedence, what Claude Code loads
@@ -55,11 +54,7 @@ comfy_workflow/                    # Root monorepo
 │   └── desktop/                   # Trees synced from the desktop (CANALV2, ComfyUI-Shared)
 │
 ├── infra/                         # Infrastructure automation
-│   ├── scripts/
-│   │   ├── create_pod.py         # Pod lifecycle CLI (create, list, status, stop, resume, delete)
-│   │   ├── setup.sh              # Installs the CLI deps and creates a first pod
-│   │   └── requirements.txt       # Python deps for the CLI
-│   ├── pod-config.yaml           # Pod specifications
+│   ├── pod-config.yaml           # Pod specifications (read by ./start.sh pod)
 │   ├── terraform/                # IaC (placeholder)
 │   └── README.md                 # Infra guide
 │
@@ -118,8 +113,8 @@ develop → master (only for releases)
 
 Before merging any branch:
 ```bash
-pytest apps/runpod-api/tests/ -m "not integration"
-# All tests must pass before merge
+./start.sh test
+# the core suite (Vitest) and the browser suite (Playwright); all must pass before merge
 ```
 
 **For feature branches → develop:**
@@ -195,8 +190,7 @@ infra(scripts): add pod lifecycle management
 ### Configuration
 
 - **`comfy.yaml`** — ComfyUI project config (routing, vars, assets)
-- **`infra/scripts/requirements.txt`** — Python dependencies for the pod CLI
-- **`apps/runpod-api/requirements.txt`** — Python dependencies for the pod manager API, MCP server and tests
+- **`apps/runpod-dashboard/package.json`** — the app's dependencies and scripts (core, UI, Electron, MCP server, CLI, tests)
 
 ### Documentation
 
@@ -207,10 +201,10 @@ infra(scripts): add pod lifecycle management
 
 ### Automation
 
-- **`start.sh`** — One-command starts: `comfy`, `pods`, `desktop`, `dashboard`, `pod <args>`, `sync`, `mcp`, `test` (python + core), `core-test`, `e2e`, `smoke`, `comfy-image`, `package [mac|win|linux|all] [--comfy <variant>]`, `stop`; IDE run configs in `.run/` (IntelliJ, one per command) and `.vscode/` call it
+- **`start.sh`** — One-command starts: `comfy`, `desktop`, `dashboard`, `pod <args>`, `sync`, `pull`, `mcp`, `test` (core + browser), `core-test`, `e2e`, `e2e-app`, `e2e-live`, `smoke`, `comfy-image`, `package [mac|win|linux|all] [--comfy <variant>]`, `stop`; IDE run configs in `.run/` (IntelliJ, one per command) and `.vscode/` call it
 - **`apps/comfy-app/launch.sh`** — Start the local ComfyUI server (run `setup.sh` first on a new machine; see `apps/comfy-app/README.md`)
-- **`infra/scripts/create_pod.py`** — Pod management CLI
-- **`apps/runpod-api/pod_manager_api.py`** — FastAPI pod manager (serves the dashboard at :8000); `mcp_server.py` beside it is the MCP server for Claude Code
+- **`apps/runpod-dashboard/cli/index.mjs`** — the CLI over the core: `pod`, `sync`, `pull` (`./start.sh pod|sync|pull`)
+- **`apps/runpod-dashboard/mcp/server.mjs`** — the MCP server for Claude Code over the core (`./start.sh mcp`)
 - **`apps/comfy-app/Dockerfile`** — The ComfyUI server image for RunPod / Linux / Windows-WSL2 (`build.sh` builds it)
 
 ## Development Tasks
@@ -220,22 +214,20 @@ infra(scripts): add pod lifecycle management
 **One command (installs on first run):**
 ```bash
 ./start.sh comfy     # ComfyUI on this Mac
-./start.sh pods      # pod manager API + dashboard on :8000
+./start.sh desktop   # the pod manager app (one app: Electron + its TypeScript core, no server, no Python)
+./start.sh dashboard # the same with hot reload
 ./start.sh test      # the merge gate
 ```
 
 **Set up environment:**
 ```bash
 cd ~/workspaces/comfy_workflow
-export RUNPOD_API_KEY="your-key"
-pip install -r infra/scripts/requirements.txt
+export RUNPOD_API_KEY="your-key"   # or enter it in the app's Default Configuration
 ```
 
 **Create on-demand pod:**
 ```bash
-python infra/scripts/create_pod.py create \
-  --name ComfyUI-Dev \
-  --gpu rtx4090
+./start.sh pod create --name ComfyUI-Dev --gpu auto
 ```
 
 **Build and run workflow:**
@@ -285,11 +277,11 @@ ComfyUI-Prod-Oct17   # Production pod with date
 - Never hardcode pod IDs in code/scripts
 
 **Pod Lifecycle:**
-1. **Create:** Use `create_pod.py create` with config from `pod-config.yaml`
+1. **Create:** the app's form, or `./start.sh pod create` with config from `pod-config.yaml`
 2. **Document:** Add pod ID to local notes
-3. **Stop:** Use `create_pod.py stop --pod-id <id>` when not in use (pause billing)
-4. **Resume:** Use `create_pod.py resume --pod-id <id>` when resuming work
-5. **Delete:** Use `create_pod.py delete --pod-id <id>` with confirmation (irreversible)
+3. **Stop:** the card's Stop, or `./start.sh pod stop --pod-id <id>` when not in use (pause billing); the idle watch does it after the configured quiet minutes
+4. **Resume:** the card's Resume, or `./start.sh pod resume --pod-id <id>`; Recreate when the host has no free GPU
+5. **Delete:** the card's Delete, or `./start.sh pod delete --pod-id <id>` with confirmation (irreversible; the volume stays)
 
 **Never:**
 - ❌ Leave pod running 24/7 (unless production)
@@ -393,7 +385,7 @@ explained in `docs/CANALV2-STRUCTURE.md`; their policies are copied under
 **RunPod:**
 - Docs: https://docs.runpod.io
 - Pod creation: https://www.runpod.io/console/pods
-- CLI: `python3 infra/scripts/create_pod.py --help`
+- CLI: `./start.sh pod --help`
 
 **ComfyUI:**
 - Official docs: https://docs.comfy.org

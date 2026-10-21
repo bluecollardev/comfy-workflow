@@ -2,6 +2,16 @@
 
 **Complete system architecture for distributed ComfyUI agent pool orchestration.**
 
+> **Status 2026-10-21.** The FastAPI backend, the Python MCP server and the Python
+> pool manager this document describes are gone: the pod manager is one Electron app
+> with a TypeScript core, and the MCP server and the CLI are Node programs over that
+> core (`docs/ADR-005`). The layers and flows below still describe what the system
+> does; where a file is named, the module now lives under
+> `apps/runpod-dashboard/libs/core/src/` (pool: `pool.ts`; pods: `pods.ts`) or
+> `apps/runpod-dashboard/mcp/server.mjs`. The OAuth login for a shared, deployed
+> backend was dropped: the app runs on one PC per user. The "multi-user" sections are
+> the ADR-002 plan, not what runs.
+
 ---
 
 ## Three-Layer Stack

@@ -7,9 +7,7 @@ Automation scripts and configurations for managing ComfyUI infrastructure on Run
 ```
 infra/
 ├── scripts/
-│   ├── create_pod.py    # Pod lifecycle CLI (create, list, status, stop, resume, delete)
 │   ├── setup.sh         # Installs the CLI deps and creates a first pod
-│   └── requirements.txt # Python dependencies for the CLI
 ├── pod-config.yaml      # Pod specifications
 ├── setup-team.sh        # Team machine setup (Homebrew, Python, Node, Terraform)
 ├── terraform/           # IaC (future)
@@ -17,7 +15,7 @@ infra/
 ```
 
 Not here any more: the pod manager API, pool manager and MCP server are the
-`apps/runpod-api/` app, and the ComfyUI Docker image is `apps/comfy-app/`.
+`apps/runpod-dashboard/` app (its core, MCP server and CLI), and the ComfyUI Docker image is `apps/comfy-app/`.
 
 ## Quick Start
 
@@ -25,7 +23,7 @@ Not here any more: the pod manager API, pool manager and MCP server are the
 
 ```bash
 cd ~/workspaces/comfy_workflow/infra/scripts
-pip install -r requirements.txt
+# nothing to install: the CLI is part of the app (./start.sh installs it on the first run)
 ```
 
 ### 2. Set RunPod API Key
@@ -37,7 +35,7 @@ export RUNPOD_API_KEY="your-api-key-from-runpod"
 ### 3. Create On-Demand Pod
 
 ```bash
-python3 create_pod.py create \
+./start.sh pod create \
   --name ComfyUI-Dev \
   --gpu rtx4090 \
   --volume 50 \
@@ -48,13 +46,13 @@ python3 create_pod.py create \
 ### 4. Check Pod Status
 
 ```bash
-python3 create_pod.py list
-python3 create_pod.py status --pod-id <pod-id>
+./start.sh pod list
+./start.sh pod status --pod-id <pod-id>
 ```
 
 ## Scripts
 
-### `create_pod.py`
+### `./start.sh pod` (apps/runpod-dashboard/cli/index.mjs)
 
 Comprehensive pod management CLI.
 
@@ -62,7 +60,7 @@ Comprehensive pod management CLI.
 
 ```bash
 # Create new pod
-python3 create_pod.py create --name MyPod --gpu rtx4090
+./start.sh pod create --name MyPod --gpu auto
 
 # List all pods
 python3 create_pod.py list

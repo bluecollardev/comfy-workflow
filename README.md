@@ -73,9 +73,8 @@ brief says. Not started; the next steps page says where it begins.
 ```
 ├── apps/
 │   ├── comfy-app/          # The ComfyUI server: setup/launch on the Mac, Dockerfile for CUDA, tracked workflows; packs come from shared/nodes
-│   ├── runpod-api/         # FastAPI pod manager API, pool manager, MCP server for Claude Code, tests (Python)
 │   └── runpod-dashboard/   # Vue + Electron dashboard for the pod manager API
-├── infra/                  # Pod lifecycle CLI (create_pod.py), pod-config.yaml, Terraform placeholder
+├── infra/                  # pod-config.yaml (read by ./start.sh pod), Terraform placeholder
 ├── projects/               # Client/creative work; ignored by git except projects/README.md
 ├── docs/                   # Architecture decisions, setup, testing (index below)
 ├── shared/                 # Material shared by every app and agent here
@@ -118,30 +117,23 @@ cd apps/comfy-app
 
 Details: [`apps/comfy-app/README.md`](apps/comfy-app/README.md).
 
-### RunPod pod manager API
+### The pod manager: one app
+
+Electron with a TypeScript core (`apps/runpod-dashboard/libs/core`): mounts,
+pods, GPUs and datacenters with prices, the network volume, governance, the
+idle watch, git accounts, repositories, image env, the sync. The page talks to
+the core over IPC; there is no server and no Python (`docs/ADR-005`). The MCP
+server for Claude Code and the CLI are Node programs over the same core.
 
 ```bash
-./start.sh pods                     # FastAPI on http://localhost:8000, dashboard at /, docs at /docs
-./start.sh pod list                 # pod lifecycle CLI: create, list, status, stop, resume, delete
-./start.sh mcp                      # the MCP server for Claude Code, over stdio
-./start.sh test                     # the merge gate: pytest without the integration tests
+./start.sh desktop                  # the app (built page)
+./start.sh dashboard                # the app with hot reload (Vite inside the window)
+./start.sh pod list                 # the CLI: pod create|list|status|stop|resume|delete
+./start.sh sync --pod <id>          # the mapped folders onto the volume; --s3 needs no pod (ADR-007)
+./start.sh pull --pod <id>          # renders back down
+./start.sh mcp                      # the MCP server over stdio
+./start.sh test                     # the merge gate: core suite + browser suite
 ```
-
-By hand:
-
-```bash
-export RUNPOD_API_KEY=...
-pip install -r apps/runpod-api/requirements.txt
-python apps/runpod-api/pod_manager_api.py
-
-pip install -r infra/scripts/requirements.txt    # the CLI alone needs only these
-python infra/scripts/create_pod.py create --name ComfyUI-Dev --gpu rtx4090
-
-pytest apps/runpod-api/tests/ -m "not integration"
-```
-
-Details: [`apps/runpod-api/README.md`](apps/runpod-api/README.md),
-[`docs/MCP-SERVER.md`](docs/MCP-SERVER.md).
 
 ### RunPod dashboard app
 
@@ -156,7 +148,7 @@ By hand:
 cd apps/runpod-dashboard
 npm install
 npm run build                       # dist/, which the API serves at /
-npm run dev                         # hot reload against the API on :8000
+./start.sh dashboard                # hot reload inside the app, the core over IPC
 npx electron .                      # desktop app against the built dist/
 npm run electron:build              # installable .dmg / .exe / AppImage
 ```
@@ -279,7 +271,6 @@ All of `docs/`: <https://github.com/bluecollardev/comfy-workflow/tree/develop/do
 |---|---|
 | [`docs/COMFY-API.md`](docs/COMFY-API.md) | The ComfyUI HTTP API as this repo uses it: health and readiness, the Workflows panel's userdata calls, queueing a graph, queue and history, the two graph formats, and which of our files call what. |
 | [`infra/README.md`](infra/README.md) | The infrastructure folder: the pod lifecycle CLI, pod config, where the Docker image and the API live, cost management, monitoring, troubleshooting. |
-| [`apps/runpod-api/README.md`](apps/runpod-api/README.md) | The pod manager service: the FastAPI API and its routers, the pool manager, the MCP server, environment variables, running it, tests, and what the Electron app packages from it. |
 | [`docs/MCP-SERVER.md`](docs/MCP-SERVER.md) | The MCP server that exposes agent pool management to Claude Code: quick start, every tool, typical sessions, configuration, errors, budgeting. |
 | [`shared/nodes/docs/DEPENDENCIES.md`](shared/nodes/docs/DEPENDENCIES.md) | One row per ShotPipe version: what it needs beside it, what it supersedes, bundled modules, Python imports, node and baked-path counts, and which named set it belongs to. Generated in the packs submodule. |
 | [`shared/nodes/docs/SHOTPIPE.md`](shared/nodes/docs/SHOTPIPE.md) | What a ShotPipe pack is: one layered family with v7 as the base, what each generation adds, why a graph needs a set and how the packs find each other. In the packs submodule. |
@@ -293,7 +284,7 @@ All of `docs/`: <https://github.com/bluecollardev/comfy-workflow/tree/develop/do
 
 | Doc | What it covers |
 |---|---|
-| [`docs/TESTING.md`](docs/TESTING.md) | The Python test suite for the pod manager: structure, categories, mocking, coverage, async tests, fixtures, CI, debugging. Run `pytest apps/runpod-api/tests/ -m "not integration"` before any merge. |
+| [`docs/TESTING.md`](docs/TESTING.md) | The app's tests: the core suite (Vitest), the browser suite against a fake API (Playwright), the Electron suite in no-spend mode, the live RunPod proof, the MCP and CLI tests; what each covers and how to run them. |
 | [`docs/TEST-RESULTS.md`](docs/TEST-RESULTS.md) | Record of the 2026-10-17 verification of the RunPod setup: what was tested, coverage, known limitations. |
 
 ### Projects and planning

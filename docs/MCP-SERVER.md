@@ -6,11 +6,11 @@ Claude Code ↔ MCP Server ↔ Pool Manager ↔ RunPod API
 
 ## Quick Start
 
-### 1. Install Dependencies
+### 1. Install
 
 ```bash
 cd ~/workspaces/comfy_workflow
-pip install -r apps/runpod-api/requirements.txt
+./start.sh mcp   # installs the app's dependencies on the first run; the server is Node, over the app's TypeScript core
 ```
 
 ### 2. Set Environment
@@ -22,8 +22,7 @@ export RUNPOD_API_KEY="rpa_..."
 ### 3. Start MCP Server
 
 ```bash
-cd apps/runpod-api
-python3 mcp_server.py
+./start.sh mcp          # node apps/runpod-dashboard/mcp/server.mjs
 ```
 
 Server listens on stdio (Claude Code connects directly).
@@ -36,9 +35,9 @@ In `~/.claude/codes/claude-code-config.json` (or via Claude Code settings):
 {
   "mcp_servers": {
     "comfy-moe": {
-      "command": "python3",
+      "command": "node",
       "args": [
-        "/Users/lucas/workspaces/comfy_workflow/apps/runpod-api/mcp_server.py"
+        "/Users/lucas/workspaces/comfy_workflow/apps/runpod-dashboard/mcp/server.mjs"
       ],
       "env": {
         "RUNPOD_API_KEY": "rpa_..."
@@ -314,7 +313,7 @@ Claude calls `get_job_status` → shows progress, outputs, errors.
 ```
 Claude Code
     ↓
-    └─→ MCP Server (mcp_server.py)
+    └─→ MCP Server (apps/runpod-dashboard/mcp/server.mjs, over libs/core)
         ├─ Tool definitions (9 tools)
         └─ Tool handlers
             ↓
@@ -423,19 +422,18 @@ Claude submits it and returns the job URL to check progress.
 
 ```bash
 # Terminal 1: Start MCP server
-cd apps/runpod-api
-export RUNPOD_API_KEY="rpa_..."
-python3 mcp_server.py
+export RUNPOD_API_KEY="rpa_..."   # or the key entered in the app's Default Configuration
+./start.sh mcp
 
 # Terminal 2: Test in Claude Code
 # Attach MCP server and ask:
 # "List all agents in the pool"
 ```
 
-### Automated Tests (future)
+### Automated Tests
 
 ```bash
-pytest apps/runpod-api/tests/test_mcp_server.py
+cd apps/runpod-dashboard && npm run mcp:test   # spawns the server in no-spend mode: initialize, tools/list, one call
 ```
 
 ---
@@ -445,20 +443,20 @@ pytest apps/runpod-api/tests/test_mcp_server.py
 ### MCP Server Won't Start
 
 ```
-ModuleNotFoundError: No module named 'mcp'
+Cannot find module '@modelcontextprotocol/sdk'
 ```
 
-Install dependencies:
+Install the app's dependencies:
 ```bash
-pip install -r apps/runpod-api/requirements.txt
+cd apps/runpod-dashboard && npm install && npm run core:build
 ```
 
 ### Claude Code Can't Connect
 
 Check `~/.claude/codes/claude-code-config.json`:
-- Path to script is correct
-- `RUNPOD_API_KEY` is set
-- Script is executable: `chmod +x apps/runpod-api/mcp_server.py`
+- Path to `mcp/server.mjs` is correct and `node` is Node 22
+- `RUNPOD_API_KEY` is set, or entered in the app's Default Configuration
+- The core is built (`npm run core:build` in `apps/runpod-dashboard`)
 
 ### API Key Invalid
 

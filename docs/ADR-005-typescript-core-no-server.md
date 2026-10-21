@@ -1,7 +1,7 @@
 # ADR-005: The pod manager is a TypeScript core inside Electron, not a server
 
 **Date:** 2026-10-19
-**Status:** Accepted
+**Status:** Accepted; implemented 2026-10-21 (branch `feature/registry-and-volume`): the Python tree is deleted, the Electron shell starts no backend, the MCP server and the CLI are Node over the core, the gate is the core suite plus the browser suite.
 **Owner:** Lucas (Blue Collar Dev)
 **Supersedes:** the "Python SDK + MCP server" half of ADR-003 for the pod manager. ADR-003's case against Terraform stands.
 
