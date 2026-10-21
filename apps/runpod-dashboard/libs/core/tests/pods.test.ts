@@ -47,8 +47,8 @@ describe('the datacenter menu', () => {
     }) as unknown as typeof fetch
     const m = await pods.datacenters({ fetchFn, apiKey: 'k' })
     expect(m.live).toBe(true); expect(m.datacenters.map((d) => d.value)).toEqual(['EU-RO-1', 'CA-MTL-1'])   // cheapest card first; the unlisted one is gone
-    expect(m.datacenters[0].s3).toBe(true); expect(m.datacenters[0].text).toBe('EU-RO-1 · S3 · RTX 4000 Ada $0.28/h Low, RTX 4090 $0.89/h High')
-    expect(m.datacenters[1].s3).toBe(false); expect(m.datacenters[1].cards).toEqual([{ key: 'a40', name: 'A40', price: 0.35, stock: 'High' }])   // the H100 is not in our table
+    expect(m.datacenters[0].s3).toBe(true); expect(m.datacenters[0].text).toBe('EU-RO-1 · RTX 4000 Ada $0.28/h Low, RTX 4090 $0.89/h High · S3')
+    expect(m.datacenters[1].s3).toBe(false); expect(m.datacenters[1].cards).toEqual([{ key: 'a40', name: 'A40', vram: 48, price: 0.35, stock: 'High' }])   // the H100 is not in our table
   })
 })
 

@@ -26,12 +26,19 @@
         <BCol cols="12">
           <BFormGroup :label="$t('config.datacenter')" label-for="cfg-dc" :description="$t('config.datacenterHelp')">
             <BFormSelect id="cfg-dc" v-model="cfg.data_center_id" :options="dcOptions" class="font-monospace" data-testid="cfg-dc" />
+            <div v-if="cfg.data_center_id" class="mt-2" data-testid="cfg-dc-cards">
+              <table v-if="dcCards.length" class="table table-sm table-borderless small mb-1 w-auto">
+                <thead class="text-body-secondary"><tr><th>{{ $t('config.cardsCard') }}</th><th class="text-end">{{ $t('config.cardsVram') }}</th><th class="text-end">{{ $t('config.cardsPrice') }}</th><th>{{ $t('config.cardsStock') }}</th></tr></thead>
+                <tbody><tr v-for="c in dcCards" :key="c.key" data-testid="cfg-dc-card"><td>{{ c.name }}</td><td class="text-end">{{ c.vram }} GB</td><td class="text-end">${{ c.price }}/h</td><td>{{ c.stock }}</td></tr></tbody>
+              </table>
+              <div v-else class="form-text mt-0">{{ $t('config.cardsNone', { dc: cfg.data_center_id }) }}</div>
+              <div v-if="dcEntry?.s3" class="form-text mt-0">{{ $t('config.cardsS3') }}</div>
+            </div>
           </BFormGroup>
         </BCol>
         <BCol md="8">
           <BFormGroup :label="$t('config.volumeId')" label-for="cfg-volume" :description="$t('config.volumeIdHelp')">
-            <BFormInput id="cfg-volume" v-model.trim="cfg.network_volume_id" list="cfg-volume-suggestions" :placeholder="cfg.data_center_id ? $t('config.volumePick', { dc: cfg.data_center_id }) : $t('config.volumePickFirst')" class="font-monospace" autocomplete="off" data-testid="cfg-volume" @change="loadVolume" />
-            <datalist id="cfg-volume-suggestions"><option v-for="v in volumesHere" :key="v.id" :value="v.id">{{ v.name }} · {{ v.size_gb }} GB</option></datalist>
+            <BFormSelect id="cfg-volume" v-model="cfg.network_volume_id" :options="volumeOptions" class="font-monospace" data-testid="cfg-volume" @change="onVolumePick" />
             <div v-if="cfg.network_volume_id" class="form-text" data-testid="cfg-volume-info">
               <span v-if="volume === undefined">{{ $t('config.volumeLooking') }}</span>
               <span v-else-if="volume === null" class="text-warning">{{ $t('config.volumeMissing') }}</span>
@@ -242,10 +249,26 @@ function take(payload) {
 
 /** The datacenter menu: RunPod's list with S3 support and our cards at the secure-cloud price; the saved id is kept even when the list lacks it. */
 const dcList = ref([])
+const dcEntry = computed(() => dcList.value.find((d) => d.value === cfg.value?.data_center_id) || null)
+const dcCards = computed(() => dcEntry.value?.cards || [])   // read-only: what a volume pod can get there, at the secure-cloud price
 const dcOptions = computed(() => datacenterOptions(dcList.value, { value: '', text: t('config.datacenterAny') }, cfg.value?.data_center_id))
-/** The account's volumes, offered for the chosen datacenter (a volume never leaves its datacenter). */
+/** The account's volumes as a menu: those in the chosen datacenter, or all of them while no datacenter is chosen
+ *  (picking one then sets the datacenter, since a volume never leaves it). A saved id the list lacks stays selectable. */
 const allVolumes = ref([])
 const volumesHere = computed(() => allVolumes.value.filter((v) => !cfg.value?.data_center_id || v.datacenter === cfg.value.data_center_id))
+const volumeOptions = computed(() => {
+  const dc = cfg.value?.data_center_id
+  const opts = [{ value: '', text: t('config.volumeNone') }, ...volumesHere.value.map((v) => ({ value: v.id, text: `${v.name} · ${v.size_gb} GB · ${v.id}${dc ? '' : ` · ${v.datacenter}`}` }))]
+  if (dc && !volumesHere.value.length) opts.push({ value: '__none__', text: t('config.volumeNoneHere', { dc }), disabled: true })
+  const saved = cfg.value?.network_volume_id
+  if (saved && !allVolumes.value.some((v) => v.id === saved)) opts.push({ value: saved, text: t('config.volumeUnknown', { id: saved }) })
+  return opts
+})
+function onVolumePick() {
+  const v = allVolumes.value.find((x) => x.id === cfg.value?.network_volume_id)
+  if (v && cfg.value.data_center_id !== v.datacenter) cfg.value.data_center_id = v.datacenter
+  loadVolume()
+}
 async function loadVolumes() { try { allVolumes.value = (await volumesAPI.list()) || [] } catch { /* the id can still be typed */ } }
 
 /** The configured volume as RunPod has it, with its monthly cost; undefined while asking, null when RunPod has none. */

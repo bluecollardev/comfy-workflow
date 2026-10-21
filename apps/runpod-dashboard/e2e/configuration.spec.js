@@ -68,15 +68,16 @@ test.describe('configuration', () => {
     await page.goto('/')
     const dialog = await openConfig(page)
     await folderRow(dialog, 'project').getByTestId('folder-local').fill('/Users/lucas/Projects/CANALV2')
-    await dialog.getByTestId('cfg-volume').fill('vol-9')
+    await dialog.getByTestId('cfg-volume').selectOption('vol2')   // a volume of the account; picking it sets its datacenter
+    await expect(dialog.getByTestId('cfg-dc')).toHaveValue('CA-MTL-1')
     await dialog.getByTestId('cfg-idle').fill('45')
     await dialog.getByTestId('config-save').click()
     await expect(toast(page).first()).toContainText(t('toast.configSaved'))
     await expect(dialog).toBeHidden()
     const put = api.calls.find((c) => c.method === 'PUT' && c.path === '/mounts')
-    expect(put.body).toMatchObject({ folders: { project: '/Users/lucas/Projects/CANALV2' }, network_volume_id: 'vol-9', idle_stop_minutes: 45 })
+    expect(put.body).toMatchObject({ folders: { project: '/Users/lucas/Projects/CANALV2' }, network_volume_id: 'vol2', data_center_id: 'CA-MTL-1', idle_stop_minutes: 45 })
     await openCreatePod(page)
-    await expect(page.getByTestId('pod-mounts-group')).toContainText(t('form.summaryVolume', { id: 'vol-9', path: '/workspace' }) + ', ' + t('form.summaryMapped', { mapped: 1, total: 3, links: 1 }))
+    await expect(page.getByTestId('pod-mounts-group')).toContainText(t('form.summaryVolume', { id: 'vol2', path: '/workspace' }) + ', ' + t('form.summaryMapped', { mapped: 1, total: 3, links: 1 }))
     await expect(page.locator('#pod-idle')).toHaveAttribute('placeholder', '45')
   })
 
@@ -122,9 +123,13 @@ test.describe('configuration', () => {
     await page.getByTestId('open-config').click()
     const dc = page.getByTestId('cfg-dc')
     await expect(dc).toHaveValue('EU-RO-1')
-    await expect(dc.locator('option')).toHaveText([t('config.datacenterAny'), 'EU-RO-1 · S3 · RTX 4000 Ada $0.28/h Low, RTX 4090 $0.89/h High', 'CA-MTL-1 · A40 $0.35/h High', 'US-KS-2 · S3'])
-    expect(await dc.locator('optgroup').evaluateAll((els) => els.map((e) => e.label))).toEqual([t('dc.groupS3'), t('dc.groupOther'), t('dc.groupNone')])   // S3 with stock, others with stock, nothing in stock
+    await expect(dc.locator('option')).toHaveText([t('config.datacenterAny'), 'CA-MTL-1 · A40 $0.35/h High', 'EU-RO-1 · RTX 4000 Ada $0.28/h Low, RTX 4090 $0.89/h High · S3', 'US-KS-2 · S3'])   // in-stock group first, then the S3 group, then none in stock
+    expect(await dc.locator('optgroup').evaluateAll((els) => els.map((e) => e.label))).toEqual([t('dc.groupOther'), t('dc.groupS3'), t('dc.groupNone')])   // S3 with stock, others with stock, nothing in stock
+    await dc.selectOption('EU-RO-1')
+    await expect(page.getByTestId('cfg-dc-card')).toHaveText(['RTX 4000 Ada20 GB$0.28/hLow', 'RTX 409024 GB$0.89/hHigh'])   // the read-only card table under the menu
+    await expect(page.getByTestId('cfg-dc-cards')).toContainText(t('config.cardsS3'))
     await dc.selectOption('CA-MTL-1')
+    await expect(page.getByTestId('cfg-dc-card')).toHaveText(['A4048 GB$0.35/hHigh'])
     await page.getByTestId('config-save').click()
     const put = api.calls.find((c) => c.method === 'PUT' && c.path === '/mounts')
     expect(put.body.data_center_id).toBe('CA-MTL-1')
@@ -137,8 +142,10 @@ test.describe('configuration', () => {
     await expect(page.getByTestId('cfg-volume-info')).toContainText(t('config.volumeInfo', { name: 'comfy-workspace', size: 120, dc: 'EU-RO-1', cost: 8.4 }))
     await expect(page.getByTestId('cfg-volume-info')).toContainText(t('config.volumeS3'))
     await expect(page.getByTestId('stat-storage')).toContainText('$8.40')   // the stats bar carries the monthly cost too
-    await page.getByTestId('cfg-volume').fill('nope'); await page.getByTestId('cfg-volume').blur()
-    await expect(page.getByTestId('cfg-volume-info')).toContainText(t('config.volumeMissing'))
+    await page.getByTestId('cfg-dc').selectOption('CA-MTL-1')   // the menu follows the datacenter
+    await expect(page.getByTestId('cfg-volume').locator('option')).toHaveText([t('config.volumeNone'), 'scratch · 50 GB · vol2'])
+    await page.getByTestId('cfg-volume').selectOption('vol2')
+    await expect(page.getByTestId('cfg-volume-info')).toContainText(t('config.volumeInfo', { name: 'scratch', size: 50, dc: 'CA-MTL-1', cost: 3.5 }))
     await expect(page.getByTestId('stat-storage')).toContainText('$8.40')   // an unsaved edit in the panel does not touch the stats bar
   })
 
