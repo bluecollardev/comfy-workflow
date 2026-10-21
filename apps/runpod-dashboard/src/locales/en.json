@@ -137,7 +137,7 @@
     "volume": "Pod volume",
     "volumeHint": "the network volume that carries the three folders when a pod runs them",
     "volumeId": "Network volume ID",
-    "volumeIdHelp": "Empty: the pod gets only its own disk and nothing above resolves.",
+    "volumeIdHelp": "Empty: the pod gets only its own disk and nothing above resolves. The suggestions are this account's volumes in the chosen datacenter (Volumes in the navbar makes new ones).",
     "mountPath": "Mount path",
     "mountPathHelp": "Where the volume appears in the pod.",
     "datacenter": "Datacenter",
@@ -206,7 +206,9 @@
     "volumeLooking": "Asking RunPod about this volume…",
     "volumeMissing": "RunPod has no network volume with this id.",
     "volumeInfo": "{name} · {size} GB in {dc} · about ${cost} a month, whether or not a pod runs",
-    "volumeS3": "takes uploads over the S3 API with no pod running"
+    "volumeS3": "takes uploads over the S3 API with no pod running",
+    "volumePick": "A volume in {dc}, or its id",
+    "volumePickFirst": "Choose the datacenter first"
   },
   "picker": {
     "title": "Choose the {name} folder",
