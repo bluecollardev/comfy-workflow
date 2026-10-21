@@ -23,6 +23,10 @@ completed items move here. Commit hashes are on `develop`.
 
 ## 2026-10-21
 
+### Datacenter menus in groups; three more cards (branch `feature/datacenter-groups`)
+- Lucas: "why do we see so many data centers that say none of our cards in stock. make the dropdown have groups". RunPod lists 34 datacenters and the menu checks the secure-cloud stock of our cards in each; most have none at a given moment. The three menus (Default Configuration, the create form, the volume form) are now grouped: S3 datacenters with cards in stock, other datacenters with cards in stock, and at the bottom every datacenter with none right now.
+- "are there other cards in the list we're missing": yes, three within the table's rule (16 to 48 GB, no dearer than a 4090 in the secure cloud): the RTX 2000 Ada (16 GB, USD 0.24), the L4 (24 GB, 0.59) and the L40 (48 GB, 0.82). Added. Left out on purpose, and the reasons in `gpus.ts`: the RTX 6000 Ada (dearer than a 4090), the Blackwell cards (need CUDA 12.8+, the image is on 12.6), and A100/H100/L40S. The A5000 and 3090 are rarely in the secure cloud at all, so with a volume they seldom come up.
+
 ### One Connect menu for the third-party things (branch `feature/connect-menu`)
 - Lucas: "i want repositories and accounts merged into a connect menu that allows connecting this third party stuff". The navbar's Accounts and Repositories buttons are one **Connect** button opening a modal with two tabs: Accounts (GitHub and GitLab OAuth) and Repositories (attached for custom nodes). The two modals became panes inside it; everything that opened them before (the Attach node dialog's "Manage repositories", the OAuth return, the repositories pane's "Accounts" link) opens the Connect modal on the right tab through the same two flags.
 - Found on the way: the create form asked for the card menu before the datacenter logic existed (an early call left over from the datacenter change); the first load now comes from the datacenter watcher.

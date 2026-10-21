@@ -122,7 +122,8 @@ test.describe('configuration', () => {
     await page.getByTestId('open-config').click()
     const dc = page.getByTestId('cfg-dc')
     await expect(dc).toHaveValue('EU-RO-1')
-    await expect(dc.locator('option')).toHaveText([t('config.datacenterAny'), 'EU-RO-1 · S3 · RTX 4000 Ada $0.28/h Low, RTX 4090 $0.89/h High', 'CA-MTL-1 · A40 $0.35/h High'])
+    await expect(dc.locator('option')).toHaveText([t('config.datacenterAny'), 'EU-RO-1 · S3 · RTX 4000 Ada $0.28/h Low, RTX 4090 $0.89/h High', 'CA-MTL-1 · A40 $0.35/h High', 'US-KS-2 · S3'])
+    expect(await dc.locator('optgroup').evaluateAll((els) => els.map((e) => e.label))).toEqual([t('dc.groupS3'), t('dc.groupOther'), t('dc.groupNone')])   // S3 with stock, others with stock, nothing in stock
     await dc.selectOption('CA-MTL-1')
     await page.getByTestId('config-save').click()
     const put = api.calls.find((c) => c.method === 'PUT' && c.path === '/mounts')

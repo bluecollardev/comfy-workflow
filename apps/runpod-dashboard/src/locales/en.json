@@ -301,5 +301,10 @@
     "intro": "Accounts give the app access to private repositories; repositories attached here are what Attach node offers when creating a pod.",
     "accounts": "Accounts",
     "repositories": "Repositories"
+  },
+  "dc": {
+    "groupS3": "S3: uploads need no pod · cards in stock",
+    "groupOther": "Cards in stock",
+    "groupNone": "None of our cards in stock right now"
   }
 }

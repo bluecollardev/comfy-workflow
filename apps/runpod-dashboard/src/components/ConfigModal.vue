@@ -167,6 +167,7 @@
 
 <script setup>
 import { podsAPI } from '../api/pods'
+import { datacenterOptions } from '../utils/datacenters'
 /**
  * ConfigModal — two uses of one panel.
  *
@@ -239,12 +240,7 @@ function take(payload) {
 
 /** The datacenter menu: RunPod's list with S3 support and our cards at the secure-cloud price; the saved id is kept even when the list lacks it. */
 const dcList = ref([])
-const dcOptions = computed(() => {
-  const opts = [{ value: '', text: t('config.datacenterAny') }, ...dcList.value.map((d) => ({ value: d.value, text: d.text }))]
-  const saved = cfg.value?.data_center_id
-  if (saved && !dcList.value.some((d) => d.value === saved)) opts.push({ value: saved, text: saved })
-  return opts
-})
+const dcOptions = computed(() => datacenterOptions(dcList.value, { value: '', text: t('config.datacenterAny') }, cfg.value?.data_center_id))
 /** The configured volume as RunPod has it, with its monthly cost; undefined while asking, null when RunPod has none. */
 const volume = ref(undefined)
 async function loadVolume() {

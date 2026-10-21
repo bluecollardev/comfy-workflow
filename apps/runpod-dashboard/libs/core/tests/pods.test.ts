@@ -146,7 +146,7 @@ describe('against RunPod', () => {
       }
       return {}
     })
-    expect(await pods.candidates('auto', { fetchFn })).toEqual(['NVIDIA RTX A5000', 'NVIDIA GeForce RTX 4090', 'NVIDIA RTX A4000', 'NVIDIA RTX 4000 Ada Generation', 'NVIDIA GeForce RTX 3090', 'NVIDIA RTX A6000', 'NVIDIA A40'])
+    expect(await pods.candidates('auto', { fetchFn })).toEqual(['NVIDIA RTX A5000', 'NVIDIA GeForce RTX 4090', 'NVIDIA RTX 2000 Ada Generation', 'NVIDIA RTX A4000', 'NVIDIA RTX 4000 Ada Generation', 'NVIDIA GeForce RTX 3090', 'NVIDIA L4', 'NVIDIA RTX A6000', 'NVIDIA A40', 'NVIDIA L40'])
     const created = await pods.create({ name: 't', gpu: 'auto' }, { fetchFn })
     expect(tried).toEqual(['NVIDIA RTX A5000', 'NVIDIA GeForce RTX 4090'])   // cheapest first, then the next when none
     expect(created.gpu).toBe('rtx4090 x1'); expect(created.vram).toBe(24)

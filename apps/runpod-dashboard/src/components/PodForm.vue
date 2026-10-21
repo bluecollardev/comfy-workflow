@@ -349,6 +349,7 @@ import { imagesAPI } from '../api/images'
 import { useUiStore } from '../stores/ui'
 import { usePodsStore } from '../stores/pods'
 import { useMountsStore } from '../stores/mounts'
+import { datacenterOptions } from '../utils/datacenters'
 import { t } from '../i18n'
 import ConfigModal from './ConfigModal.vue'
 
@@ -447,12 +448,7 @@ async function loadDatacenters() { try { dcList.value = (await podsAPI.datacente
 loadDatacenters()
 const effectiveConfig = computed(() => form.config || mounts.config)
 const volumeDc = computed(() => (effectiveConfig.value?.network_volume_id ? (effectiveConfig.value.data_center_id || '') : null))
-const dcOptions = computed(() => {
-  const opts = [{ value: '', text: t('form.datacenterAny') }, ...dcList.value.map((d) => ({ value: d.value, text: d.text }))]
-  const v = volumeDc.value !== null ? volumeDc.value : form.dataCenterId
-  if (v && !dcList.value.some((d) => d.value === v)) opts.push({ value: v, text: v })
-  return opts
-})
+const dcOptions = computed(() => datacenterOptions(dcList.value, { value: '', text: t('form.datacenterAny') }, volumeDc.value !== null ? volumeDc.value : form.dataCenterId))
 watch(volumeDc, (v) => { if (v !== null) form.dataCenterId = v; loadGpus() }, { immediate: true })
 watch(() => form.dataCenterId, () => { if (volumeDc.value === null) loadGpus() })
 const mountsSummary = computed(() => mounts.summary)
