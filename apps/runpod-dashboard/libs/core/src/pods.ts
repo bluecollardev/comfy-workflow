@@ -319,7 +319,7 @@ export interface GpuMenuEntry { value: string; text: string; price: number | nul
 /** Datacenters that serve a network volume over RunPod's S3 API (docs.runpod.io/storage/s3-api, 2026-10-21). */
 export const S3_DATACENTERS = new Set(['EU-CZ-1', 'EU-RO-1', 'EUR-IS-1', 'EUR-NO-1', 'US-CA-2', 'US-GA-2', 'US-IL-1', 'US-KS-2', 'US-MD-1', 'US-MO-1', 'US-MO-2', 'US-NC-1', 'US-NC-2', 'US-NE-1', 'US-WA-1'])
 
-export interface DatacenterEntry { value: string; text: string; s3: boolean; cards: { key: string; name: string; price: number; stock: string }[] }
+export interface DatacenterEntry { value: string; text: string; s3: boolean; cards: { key: string; name: string; vram: number; price: number; stock: string }[] }
 /** The datacenter menu for the Configuration panel: every listed datacenter, S3 support, and our cards in stock there
  *  with the secure-cloud price per hour, cheapest first. Datacenters with a card in stock come first. */
 let dcCache: { at: number; value: { datacenters: DatacenterEntry[]; live: boolean } } | null = null   // a few seconds to build; five minutes is fresh enough for stock
@@ -329,9 +329,9 @@ export async function datacenters(client?: rp.RunPodClient): Promise<{ datacente
   let stock: rp.DatacenterPrices[]
   try { stock = await rp.datacenterPrices(Object.values(gpus.GPUS).map((g) => g.id), client) } catch { return { datacenters: [], live: false } }
   const entries = stock.map((dc) => {
-    const cards = dc.cards.map((c) => ({ key: gpuKey(c.id), name: gpus.GPUS[gpuKey(c.id)]?.name || c.id, price: c.price as number, stock: c.stock as string })).sort((a, b) => a.price - b.price)
+    const cards = dc.cards.map((c) => ({ key: gpuKey(c.id), name: gpus.GPUS[gpuKey(c.id)]?.name || c.id, vram: gpus.vram(gpuKey(c.id)), price: c.price as number, stock: c.stock as string })).sort((a, b) => a.price - b.price)
     const s3 = S3_DATACENTERS.has(dc.id)
-    const text = [dc.id, s3 ? 'S3' : null, cards.length ? cards.slice(0, 3).map((c) => `${c.name} $${c.price}/h ${c.stock}`).join(', ') : 'none of our cards in stock'].filter(Boolean).join(' · ')
+    const text = [dc.id, cards.length ? cards.slice(0, 3).map((c) => `${c.name} $${c.price}/h ${c.stock}`).join(', ') : 'none of our cards in stock', s3 ? 'S3' : null].filter(Boolean).join(' · ')
     return { value: dc.id, text, s3, cards }
   })
   entries.sort((a, b) => (b.cards.length ? 1 : 0) - (a.cards.length ? 1 : 0) || (a.cards[0]?.price ?? 9) - (b.cards[0]?.price ?? 9) || a.value.localeCompare(b.value))

@@ -136,8 +136,8 @@
     "apiKeyUnset": "Not set. From runpod.io, Settings, API Keys; stored on this PC only, never shown again.",
     "volume": "Pod volume",
     "volumeHint": "the network volume that carries the three folders when a pod runs them",
-    "volumeId": "Network volume ID",
-    "volumeIdHelp": "Empty: the pod gets only its own disk and nothing above resolves. The suggestions are this account's volumes in the chosen datacenter (Volumes in the navbar makes new ones).",
+    "volumeId": "Network volume",
+    "volumeIdHelp": "This account's volumes in the chosen datacenter; picking one with no datacenter chosen sets the datacenter. Volumes in the navbar makes new ones.",
     "mountPath": "Mount path",
     "mountPathHelp": "Where the volume appears in the pod.",
     "datacenter": "Datacenter",
@@ -207,8 +207,15 @@
     "volumeMissing": "RunPod has no network volume with this id.",
     "volumeInfo": "{name} · {size} GB in {dc} · about ${cost} a month, whether or not a pod runs",
     "volumeS3": "takes uploads over the S3 API with no pod running",
-    "volumePick": "A volume in {dc}, or its id",
-    "volumePickFirst": "Choose the datacenter first"
+    "volumeNone": "None: the pod gets only its own disk",
+    "volumeNoneHere": "No volume in {dc} yet: create one under Volumes in the navbar",
+    "volumeUnknown": "{id} (not on this account)",
+    "cardsCard": "Card",
+    "cardsVram": "VRAM",
+    "cardsPrice": "Secure cloud",
+    "cardsStock": "Stock",
+    "cardsNone": "None of our cards in {dc} right now; the automatic choice would find nothing there.",
+    "cardsS3": "S3: a volume here takes uploads with no pod running."
   },
   "picker": {
     "title": "Choose the {name} folder",

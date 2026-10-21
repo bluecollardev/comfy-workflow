@@ -25,7 +25,7 @@ test.describe('a pod with its own configuration', () => {
     await expect(panel.getByTestId('cfg-dry-run')).toBeHidden()            // so is no-spend mode
     await expect(panel.getByTestId('cfg-image')).toHaveValue('ghcr.io/example/comfy-app:v26')   // started from the default
     await panel.getByTestId('cfg-image').fill('ghcr.io/example/comfy-app:experiment')
-    await panel.getByTestId('cfg-volume').fill('vol-other')
+    await panel.getByTestId('cfg-volume').selectOption('vol2')
     await panel.getByTestId('cfg-idle').fill('5')
     await panel.getByTestId('config-apply').click()
     await expect(panel).toBeHidden()
@@ -35,7 +35,7 @@ test.describe('a pod with its own configuration', () => {
     await page.getByTestId('pod-submit').click()
     await expect(page.getByTestId('toast').filter({ hasText: t('toast.podCreated', { name: 'Own-Config' }) })).toBeVisible()
     const post = api.calls.find((c) => c.method === 'POST' && c.path === '/pods')
-    expect(post.body.config).toMatchObject({ image: 'ghcr.io/example/comfy-app:experiment', network_volume_id: 'vol-other', idle_stop_minutes: 5 })
+    expect(post.body.config).toMatchObject({ image: 'ghcr.io/example/comfy-app:experiment', network_volume_id: 'vol2', idle_stop_minutes: 5 })
     await expect(podCard(page, 'Own-Config').getByTestId('pod-config-badge')).toBeVisible()
     // the default is untouched
     expect(api.calls.some((c) => c.method === 'PUT' && c.path === '/mounts')).toBe(false)
