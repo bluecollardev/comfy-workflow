@@ -63,3 +63,10 @@ export function set(values: { runpod_api_key?: string | null }) {
   }
   return get()
 }
+
+/** Put the stored secrets into this process's environment where it carries none: what the MCP server and the
+ *  CLI do at start, so the key the panel saved serves them too, without a shell exporting it. */
+export function applyToEnv(): void {
+  const stored = readEnvFile()
+  for (const k of KEYS) if (!process.env[k] && stored[k]) process.env[k] = stored[k]
+}
