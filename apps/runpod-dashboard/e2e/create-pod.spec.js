@@ -126,7 +126,7 @@ test.describe('create pod', () => {
     await openCreatePod(page)
     await page.getByLabel('Name').fill('ComfyUI-Dev')
     await page.locator('form button[type=submit]').click()
-    await expect(page.getByRole('alert')).toContainText('No RTX 4090 available')
+    await expect(page.getByTestId('pod-form-error')).toContainText('No RTX 4090 available')
     await expect(page.getByLabel('Name')).toHaveValue('ComfyUI-Dev')
   })
 
@@ -198,7 +198,7 @@ test.describe('create pod', () => {
     await expandSection(page, 'Environment & build args')
     await page.getByRole('button', { name: 'Load defaults' }).click()
     await page.locator('.dropdown-item', { hasText: 'From the image' }).click()
-    await expect(page.getByRole('alert')).toContainText('registry refused anonymous access')
+    await expect(page.getByTestId('pod-form-error')).toContainText('registry refused anonymous access')
   })
 
   test('rows stay grouped by type and sort within the groups', async ({ page }) => {

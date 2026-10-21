@@ -23,7 +23,7 @@
     "storage": "Storage / month ({size} GB)"
   },
   "dashboard": {
-    "createPod": "Create pod",
+    "createPod": "Create Pod",
     "pods": "Pods",
     "noPods": "No pods",
     "keyRequired": "Enter your RunPod API key in Default Configuration to start. Nothing works without it.",
@@ -107,7 +107,7 @@
     "idleHelp": "Stopped after this long with nothing queued in its ComfyUI. 0 = never; blank = the configured value.",
     "startSsh": "Start SSH",
     "startJupyter": "Start Jupyter",
-    "submit": "Create pod",
+    "submit": "Create Pod",
     "reset": "Reset",
     "summaryVolume": "volume {id} at {path}",
     "summaryNoVolume": "no network volume configured",
@@ -126,7 +126,17 @@
     "datacenterAny": "Any: RunPod chooses",
     "datacenterHelp": "Where the pod is created. S3 marks datacenters whose volumes take uploads with no pod; the cards and prices are the secure-cloud ones there.",
     "datacenterLocked": "Set by the network volume in this pod's configuration: {dc}. A volume never leaves its datacenter.",
-    "datacenterUnset": "none set, RunPod chooses"
+    "datacenterUnset": "none set, RunPod chooses",
+    "groupPod": "Pod",
+    "groupPodHint": "The name, and which cloud: the community cloud is cheaper, the secure cloud is where a network volume lives.",
+    "groupStorage": "Storage and mounts",
+    "groupStorageHint": "A network volume from the configuration replaces the per-pod volume; the mounts switch attaches it with the three folders and their links.",
+    "groupImage": "Image and lifecycle",
+    "groupImageHint": "The image the pod boots, when the idle watch stops it, and what else starts in it.",
+    "groupAdvanced": "Advanced",
+    "groupAdvancedHint": "Environment variables, extra pip packages and custom nodes, each collapsed until needed.",
+    "groupGpu": "GPU",
+    "groupGpuHint": "The datacenter first: the card menu then prices what is in stock there, in the secure cloud when a volume pins the pod. \"Cheapest card in stock\" tries the cards in price order at creation."
   },
   "config": {
     "title": "Default Configuration",
@@ -242,7 +252,7 @@
     "close": "Close",
     "failedWith": "{label} failed: {error}",
     "doneDefault": "{label} done",
-    "createPod": "Create pod",
+    "createPod": "Create Pod",
     "podCreated": "Pod {name} created",
     "stopPod": "Stop pod",
     "resumePod": "Resume pod",

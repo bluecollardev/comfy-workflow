@@ -1,9 +1,28 @@
 <template>
   <BForm data-testid="pod-form" @submit.prevent="submit" @reset.prevent="reset">
-    <BRow class="g-3">
+    <fieldset class="cfg-section" data-testid="form-group-pod">
+      <legend>{{ $t('form.groupPod') }}</legend>
+      <BAlert :model-value="true" variant="info" class="small py-2 mb-3"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('form.groupPodHint') }}</BAlert>
+      <BRow class="g-3">
       <BCol md="6" lg="4">
         <BFormGroup :label="$t('form.name')" label-for="pod-name">
           <BFormInput id="pod-name" v-model.trim="form.name" placeholder="ComfyUI-Dev" required />
+        </BFormGroup>
+      </BCol>
+      <BCol md="6" lg="4">
+        <BFormGroup :label="$t('form.instanceType')" label-for="pod-instance-type">
+          <BFormSelect id="pod-instance-type" v-model="form.instanceType" :options="INSTANCE_TYPE_OPTIONS" />
+        </BFormGroup>
+      </BCol>
+      </BRow>
+    </fieldset>
+    <fieldset class="cfg-section" data-testid="form-group-gpu">
+      <legend>{{ $t('form.groupGpu') }}</legend>
+      <BAlert :model-value="true" variant="info" class="small py-2 mb-3"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('form.groupGpuHint') }}</BAlert>
+      <BRow class="g-3">
+      <BCol md="6" lg="4">
+        <BFormGroup :label="$t('form.datacenter')" label-for="pod-datacenter" :description="volumeDc !== null ? $t('form.datacenterLocked', { dc: volumeDc || $t('form.datacenterUnset') }) : $t('form.datacenterHelp')" data-testid="pod-datacenter-group">
+          <BFormSelect id="pod-datacenter" v-model="form.dataCenterId" :options="dcOptions" :disabled="volumeDc !== null" data-testid="pod-datacenter" />
         </BFormGroup>
       </BCol>
       <BCol md="6" lg="4">
@@ -12,20 +31,16 @@
         </BFormGroup>
       </BCol>
       <BCol md="6" lg="4">
-        <BFormGroup :label="$t('form.datacenter')" label-for="pod-datacenter" :description="volumeDc !== null ? $t('form.datacenterLocked', { dc: volumeDc || $t('form.datacenterUnset') }) : $t('form.datacenterHelp')" data-testid="pod-datacenter-group">
-          <BFormSelect id="pod-datacenter" v-model="form.dataCenterId" :options="dcOptions" :disabled="volumeDc !== null" data-testid="pod-datacenter" />
-        </BFormGroup>
-      </BCol>
-      <BCol md="6" lg="4">
         <BFormGroup :label="$t('form.gpuCount')" label-for="pod-gpu-count">
           <BFormSelect id="pod-gpu-count" v-model="form.gpuCount" :options="GPU_COUNT_OPTIONS" />
         </BFormGroup>
       </BCol>
-      <BCol md="6" lg="4">
-        <BFormGroup :label="$t('form.instanceType')" label-for="pod-instance-type">
-          <BFormSelect id="pod-instance-type" v-model="form.instanceType" :options="INSTANCE_TYPE_OPTIONS" />
-        </BFormGroup>
-      </BCol>
+      </BRow>
+    </fieldset>
+    <fieldset class="cfg-section" data-testid="form-group-storage">
+      <legend>{{ $t('form.groupStorage') }}</legend>
+      <BAlert :model-value="true" variant="info" class="small py-2 mb-3"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('form.groupStorageHint') }}</BAlert>
+      <BRow class="g-3">
       <BCol md="6" lg="4">
         <BFormGroup :label="$t('form.volume')" label-for="pod-volume" :description="$t('form.volumeHelp')">
           <BFormInput id="pod-volume" v-model.number="form.volumeGb" type="number" min="0" max="500" />
@@ -55,6 +70,12 @@
           </div>
         </BFormGroup>
       </BCol>
+      </BRow>
+    </fieldset>
+    <fieldset class="cfg-section" data-testid="form-group-image">
+      <legend>{{ $t('form.groupImage') }}</legend>
+      <BAlert :model-value="true" variant="info" class="small py-2 mb-3"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('form.groupImageHint') }}</BAlert>
+      <BRow class="g-3">
       <BCol md="6" lg="4">
         <BFormGroup :label="$t('form.image')" label-for="pod-image" :description="form.image === 'configured' ? (form.config?.image || configuredImage) : ''" data-testid="pod-image-group">
           <BFormSelect id="pod-image" v-model="form.image" :options="IMAGE_OPTIONS" />
@@ -75,10 +96,14 @@
         <BFormCheckbox v-model="form.startSsh" :unchecked-value="false" switch>{{ $t('form.startSsh') }}</BFormCheckbox>
         <BFormCheckbox v-model="form.startJupyter" :unchecked-value="false" switch>{{ $t('form.startJupyter') }}</BFormCheckbox>
       </BCol>
-    </BRow>
+      </BRow>
+    </fieldset>
 
     <!-- Advanced sections, each collapsed by default -->
-    <div class="mt-4 border-top">
+    <fieldset class="cfg-section" data-testid="form-group-advanced">
+      <legend>{{ $t('form.groupAdvanced') }}</legend>
+      <BAlert :model-value="true" variant="info" class="small py-2 mb-3"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('form.groupAdvancedHint') }}</BAlert>
+    <div class="border-top">
       <div v-for="section in ADVANCED" :key="section.key" class="border-bottom">
         <div class="d-flex align-items-center">
           <button
@@ -288,12 +313,15 @@
     <!-- This pod's own configuration: the Default Configuration's panel, started from it, sent with the request -->
     <ConfigModal mode="pod" v-model="overrideOpen" :initial="form.config" :pod-name="form.name || $t('form.thisPod')" @apply="form.config = $event" />
 
+    </fieldset>
+
     <BAlert
       v-if="error"
       :model-value="true"
       variant="danger"
       dismissible
       class="mt-3 mb-0"
+      data-testid="pod-form-error"
       @update:model-value="error = null"
     >
       {{ error }}
