@@ -80,6 +80,13 @@ const TABLE = {
   images: {
     env: (c, params) => c.images.env(params || {}),
   },
+  // The Connect › MCP tab: the two endpoints with their client snippets (the bridge's target URL flows in),
+  // what the bridge can point at, and Check (the core spawns the server over stdio and lists its tools).
+  mcp: {
+    endpoints: (c, comfy) => c.mcp.endpoints({ comfy: comfy || null }),
+    targets: (c) => c.mcp.targets(),
+    probe: (c, id, comfy) => c.mcp.probe(id, { comfy: comfy || null }),
+  },
 }
 
 // Log streams: one per pod per window, pushed to the page as 'core:logs' events until stopped.
