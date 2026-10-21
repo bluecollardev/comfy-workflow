@@ -1,13 +1,5 @@
 <template>
-  <BModal
-    :model-value="ui.accountsOpen"
-    title="Accounts"
-    ok-only
-    ok-title="Done"
-    ok-variant="outline-light"
-    @update:model-value="ui.accountsOpen = $event"
-    @show="load"
-  >
+  <div data-testid="connect-accounts">
     <p class="text-body-secondary small">
       Connect GitHub or GitLab to search and clone private repositories. A pod only receives
       a credential for hosts it has to clone from.
@@ -59,25 +51,24 @@
     >
       {{ error }}
     </BAlert>
-  </BModal>
+  </div>
 </template>
 
 <script setup>
 /**
- * GitAccountsModal — connect / disconnect GitHub and GitLab accounts (OAuth).
+ * GitAccountsPane — connect / disconnect GitHub and GitLab accounts (OAuth); the Accounts tab of the Connect modal.
  *
- * Opened via `ui.accountsOpen`. In a browser "Connect" is a plain link to the API's OAuth start
+ * Loads when its tab is shown (`active`). In a browser "Connect" is a plain link to the API's OAuth start
  * route; the provider redirects back to the app, which shows the result (see App.vue). In
  * Electron `gitAPI.connect` runs the round-trip itself (system browser, loopback callback) and
  * the button waits for it.
  */
-import { ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { gitAPI } from '../api/git'
 import { errorText, useToastStore } from '../stores/toast'
 import { t } from '../i18n'
-import { useUiStore } from '../stores/ui'
 
-const ui = useUiStore()
+const props = defineProps({ active: { type: Boolean, default: false } })
 const toast = useToastStore()
 
 const PROVIDER_ICON = { github: 'fa-brands fa-github', gitlab: 'fa-brands fa-gitlab' }
@@ -120,4 +111,8 @@ async function disconnect(account) {
   const r = await toast.run(t('toast.disconnect'), () => gitAPI.disconnect(account.id), { ok: t('toast.disconnected', { name: account.username }), onError: (msg) => (error.value = msg) })
   if (r.ok) await load()
 }
+
+// Lazy tab: the pane mounts when its tab is shown, so load on mount; the `active` watch covers a re-show without a remount.
+onMounted(load)
+watch(() => props.active, (a) => { if (a) load() })
 </script>

@@ -1,8 +1,6 @@
 {
   "app": {
     "title": "RunPod Manager",
-    "repositories": "Repositories",
-    "accounts": "Accounts",
     "configuration": "Default Configuration",
     "configurationTitle": "Default Configuration: RunPod key, volume, image, mount points. Each pod can override it.",
     "refresh": "Refresh",
@@ -14,7 +12,9 @@
     "pauseAll": "Pause all",
     "pauseAllTitle": "Stop every running pod now. A stopped pod keeps its disk and bills only storage, not GPU time; Resume brings it back.",
     "volumes": "Volumes",
-    "volumesTitle": "The account's network volumes: what each costs, where it lives, which pods use it."
+    "volumesTitle": "The account's network volumes: what each costs, where it lives, which pods use it.",
+    "connect": "Connect",
+    "connectTitle": "Third-party things to connect: GitHub and GitLab accounts, repositories for custom nodes."
   },
   "stats": {
     "total": "Total pods",
@@ -294,5 +294,12 @@
     "create": "Create",
     "createHelp": "About ${cost} a month at 0.07 per GB. A volume only grows afterwards, never shrinks, and never leaves its datacenter. S3-marked datacenters take uploads with no pod running.",
     "listTitle": "Volumes on this account"
+  },
+  "connect": {
+    "title": "Connect",
+    "done": "Done",
+    "intro": "Accounts give the app access to private repositories; repositories attached here are what Attach node offers when creating a pod.",
+    "accounts": "Accounts",
+    "repositories": "Repositories"
   }
 }

@@ -1,7 +1,8 @@
 import { test, expect, sampleRepository, modal } from './fixtures'
 
 const openRepositories = async (page) => {
-  await page.getByRole('button', { name: 'Repositories' }).click()
+  await page.getByTestId('open-connect').click()
+  await modal(page, 'Connect').getByRole('tab', { name: 'Repositories' }).click()
   const dialog = modal(page, 'Repositories attached here')
   await expect(dialog).toBeVisible()
   return dialog

@@ -363,8 +363,7 @@ async function loadGpus() {
   const dc = volumeDc.value !== null ? volumeDc.value : form.dataCenterId
   try { const g = await podsAPI.gpus(dc || undefined); gpuOptions.value = g.gpus; gpuLive.value = !!g.live } catch { /* the plain menu stays */ }
 }
-loadGpus()
-defineExpose({ loadGpus })
+defineExpose({ loadGpus })   // the first load comes from the datacenter watcher below (immediate), after volumeDc exists
 const GPU_COUNT_OPTIONS = Array.from({ length: 8 }, (_, i) => ({ value: i + 1, text: String(i + 1) }))
 const INSTANCE_TYPE_OPTIONS = [
   { value: 'spot', text: t('form.community') },
