@@ -97,13 +97,14 @@
       <BAlert v-if="ui.hints" :model-value="true" variant="info" class="small py-2 mb-3" data-testid="form-hint"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('form.groupAdvancedHint') }}</BAlert>
       <BRow class="g-3 mb-3">
       <BCol cols="12">
-        <BFormGroup :label="$t('form.podConfig')" :description="form.config ? $t('form.podConfigOwnHelp') : $t('form.podConfigDefaultHelp')" data-testid="pod-config-group">
-          <div class="d-flex align-items-center gap-2">
-            <BButton size="sm" :variant="form.config ? 'warning' : 'outline-light'" data-testid="pod-config-override" @click="overrideOpen = true">
+        <BFormGroup :label="$t('form.podConfig')" data-testid="pod-config-group">
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <BButton size="sm" :variant="form.config ? 'warning' : 'outline-light'" class="flex-shrink-0" data-testid="pod-config-override" @click="overrideOpen = true">
               <i class="fa-solid fa-sliders me-1"></i>{{ form.config ? $t('form.podConfigEdit') : $t('form.podConfigOverride') }}
             </BButton>
             <BBadge v-if="form.config" variant="warning" text-indicator data-testid="pod-config-custom">{{ $t('form.podConfigOwn') }}</BBadge>
             <BButton v-if="form.config" size="sm" variant="link" class="p-0 small" data-testid="pod-config-reset" @click="form.config = null">{{ $t('form.podConfigUseDefault') }}</BButton>
+            <span class="form-text mt-0">{{ form.config ? $t('form.podConfigOwnHelp') : $t('form.podConfigDefaultHelp') }}</span>
           </div>
         </BFormGroup>
       </BCol>
