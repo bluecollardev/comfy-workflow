@@ -1,7 +1,29 @@
 import axios from 'axios';
 import { API_BASE } from './pods';
+import { core } from './bridge';
 
-export const gitAPI = {
+// Git accounts (OAuth) and the repositories attached to the project. Inside Electron the core
+// answers over IPC (git.ts, repositories.ts); in a browser the API over HTTP. Same names and
+// shapes either way, except connecting: over HTTP the page follows a link and the provider
+// redirects back to it; in Electron `connect` runs the whole round-trip (system browser,
+// loopback callback) and resolves with the account.
+const ipc = core && {
+  // ----- OAuth accounts -----
+  listAccounts: () => core.invoke('git', 'accounts'),
+  disconnect: (accountId) => core.invoke('git', 'disconnect', [accountId]),
+  connectUrl: () => undefined,   // no link to follow in Electron: `connect` opens the browser itself
+  connect: (provider) => core.invoke('git', 'connect', [provider]),   // → the connected account {id, provider, host, username, ...}
+  // ----- repositories attached to the project -----
+  listRepositories: () => core.invoke('repositories', 'list'),
+  attachRepository: (url, branch) => core.invoke('repositories', 'add', [url, branch || null]),
+  detachRepository: (repoId) => core.invoke('repositories', 'remove', [repoId]),
+  // ----- live lookups (autocomplete) -----
+  searchRepos: (q = '') => core.invoke('repositories', 'search', [q]),
+  listBranches: (url) => core.invoke('repositories', 'branches', [url]),
+  listRepoFolders: (url, branch) => core.invoke('repositories', 'folders', [url, branch]),
+};
+
+const http = {
   // ----- OAuth accounts -----
 
   // → { accounts: [{id, provider, host, username, name, avatar_url, ...}], providers: [{id, label, host, configured}] }
@@ -56,3 +78,5 @@ export const gitAPI = {
     return data;
   },
 };
+
+export const gitAPI = ipc || http;

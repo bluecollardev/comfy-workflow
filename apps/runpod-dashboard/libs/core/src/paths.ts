@@ -14,6 +14,9 @@ export const configDir = () => process.env.POD_MANAGER_CONFIG_DIR || join(homedi
 export const mountsFile = () => process.env.MOUNTS_FILE || join(configDir(), 'mounts.json')
 export const idleFile = () => process.env.IDLE_FILE || join(configDir(), 'idle.json')
 export const podConfigsFile = () => process.env.POD_CONFIGS_FILE || join(configDir(), 'pod-configs.json')
+export const gitAccountsFile = () => process.env.GIT_ACCOUNTS_FILE || join(configDir(), 'git_accounts.json')
+export const repositoriesFile = () => process.env.REPOSITORIES_FILE || join(configDir(), 'repositories.json')
+export const dockerfilePath = () => process.env.DOCKERFILE_PATH || join(REPO_ROOT, 'apps', 'comfy-app', 'Dockerfile')
 export const mirrorDir = () => resolve(REPO_ROOT, 'projects', 'desktop')   // Binc's mirror, read-only by rule
 
 export function shapeFile(): string | null {

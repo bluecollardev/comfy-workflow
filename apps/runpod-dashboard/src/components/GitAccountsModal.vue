@@ -33,17 +33,19 @@
         <BButton
           v-for="p in providers"
           :key="p.id"
-          :href="p.configured ? gitAPI.connectUrl(p.id) : undefined"
-          :disabled="!p.configured"
+          :href="p.configured && !gitAPI.connect ? gitAPI.connectUrl(p.id) : undefined"
+          :disabled="!p.configured || connecting === p.id"
           variant="outline-light"
+          @click="gitAPI.connect && connect(p)"
         >
-          <i :class="PROVIDER_ICON[p.id]" class="me-2"></i>Connect {{ p.label }}
+          <BSpinner v-if="connecting === p.id" small class="me-2" /><i v-else :class="PROVIDER_ICON[p.id]" class="me-2"></i>Connect {{ p.label }}
         </BButton>
       </div>
       <div v-if="providers.some((p) => !p.configured)" class="form-text mt-2">
         To enable a provider, register an OAuth app with callback
-        <code>http://localhost:8000/api/auth/&lt;provider&gt;/callback</code> and set
-        <code>&lt;PROVIDER&gt;_CLIENT_ID</code> / <code>&lt;PROVIDER&gt;_CLIENT_SECRET</code> on the API server.
+        <code>{{ providers[0]?.redirect_uri || 'http://localhost:8000/api/auth/<provider>/callback' }}</code> and set
+        <code>&lt;PROVIDER&gt;_CLIENT_ID</code> / <code>&lt;PROVIDER&gt;_CLIENT_SECRET</code>
+        {{ gitAPI.connect ? 'in ~/.config/runpod-pod-manager/.env' : 'on the API server' }}.
       </div>
     </template>
 
@@ -64,12 +66,14 @@
 /**
  * GitAccountsModal — connect / disconnect GitHub and GitLab accounts (OAuth).
  *
- * Opened via `ui.accountsOpen`. "Connect" is a plain link to the API's OAuth start
- * route; the provider redirects back to the app, which shows the result (see App.vue).
+ * Opened via `ui.accountsOpen`. In a browser "Connect" is a plain link to the API's OAuth start
+ * route; the provider redirects back to the app, which shows the result (see App.vue). In
+ * Electron `gitAPI.connect` runs the round-trip itself (system browser, loopback callback) and
+ * the button waits for it.
  */
 import { ref } from 'vue'
 import { gitAPI } from '../api/git'
-import { useToastStore } from '../stores/toast'
+import { errorText, useToastStore } from '../stores/toast'
 import { t } from '../i18n'
 import { useUiStore } from '../stores/ui'
 
@@ -82,6 +86,7 @@ const accounts = ref([])
 const providers = ref([])
 const loading = ref(false)
 const error = ref(null)
+const connecting = ref(null)   // the provider id whose login is open in the browser (Electron only)
 
 async function load() {
   loading.value = true
@@ -92,6 +97,21 @@ async function load() {
     error.value = e.response?.data?.detail || e.message
   } finally {
     loading.value = false
+  }
+}
+
+async function connect(p) {
+  connecting.value = p.id
+  error.value = null
+  try {
+    const account = await gitAPI.connect(p.id)
+    toast.success(t('app.oauthConnected', { provider: p.label, account: account.username }))
+    await load()
+  } catch (e) {
+    error.value = t('app.oauthFailed', { provider: p.label, error: errorText(e) })
+    toast.error(error.value)
+  } finally {
+    connecting.value = null
   }
 }
 
