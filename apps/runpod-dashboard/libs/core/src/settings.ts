@@ -39,6 +39,9 @@ function writeEnvFile(values: Record<string, string>) {
   writeFileSync(f, out.join('\n').replace(/\n*$/, '\n'), { mode: 0o600 })
 }
 
+/** One value by name, the environment first, then the file: how the CLI finds the RunPod key and the sync finds the S3 keys. */
+export const lookup = (name: string): string => process.env[name] || readEnvFile()[name] || ''
+
 const hint = (v: string) => (v ? `••••${v.slice(-4)}` : '')
 
 /** What the panel shows: whether each secret is set and its last four characters, never the value. */
