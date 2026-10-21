@@ -7,9 +7,11 @@
 # Layout inside the container:
 #   /opt/ComfyUI                      the app, at COMFYUI_REF
 #   /opt/ComfyUI/custom_nodes/        what build.sh staged from shared/nodes: BincStereo + the ShotPipe versions asked for
-#   /opt/ComfyUI/user/default/workflows   workflows/ from the repo
-#   /workspace/comfy-shared/{input,output,models}   mount: same layout as the Mac and binc-PC
+#   /workspace/comfy-shared/{input,output,models,workflows}   mount: same layout as the Mac and binc-PC
+#   /opt/ComfyUI/user/default/workflows -> /workspace/comfy-shared/workflows   the UI's Workflows panel reads the mount
+#   /opt/comfy-app/workflows          workflows/ from the repo: copied onto the mount only while it is empty
 #   /workspace/project                mount: the project tree
+#   sshd on 22 when RunPod passes PUBLIC_KEY, so `./start.sh sync --pod <id>` can rsync onto the volume
 #   /home/binc/CANALV2_r3/CANALV2 -> /workspace/project   so graphs keep their binc-PC paths
 #
 # Models and plates are never baked in; mount them (RunPod network volume at /workspace).
@@ -48,11 +50,14 @@ RUN pip install -r /tmp/requirements-packs.txt
 # Node packs: ours from the repo, ShotPipe staged by build.sh from the CANALV2 tree.
 # Last layers that change often, so everything above stays cached.
 COPY .build/custom_nodes/ /opt/ComfyUI/custom_nodes/
-COPY workflows/ /opt/ComfyUI/user/default/workflows/
 RUN for req in /opt/ComfyUI/custom_nodes/*/requirements.txt; do \
         [ -f "$req" ] && pip install -r "$req"; done; true
 
+# sshd (RunPod injects PUBLIC_KEY; the entrypoint starts it) and rsync, for ./start.sh sync onto the volume.
+RUN apt-get update && apt-get install -y --no-install-recommends openssh-server rsync \
+    && rm -rf /var/lib/apt/lists/*
 COPY docker/extra_model_paths.yaml /opt/comfy-app/extra_model_paths.yaml
+COPY workflows/ /opt/comfy-app/workflows/
 COPY docker/entrypoint.sh /opt/comfy-app/entrypoint.sh
 RUN chmod +x /opt/comfy-app/entrypoint.sh \
     && mkdir -p /home/binc/CANALV2_r3 \

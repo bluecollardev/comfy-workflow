@@ -12,6 +12,11 @@
         </BFormGroup>
       </BCol>
       <BCol md="6" lg="4">
+        <BFormGroup :label="$t('form.datacenter')" label-for="pod-datacenter" :description="volumeDc !== null ? $t('form.datacenterLocked', { dc: volumeDc || $t('form.datacenterUnset') }) : $t('form.datacenterHelp')" data-testid="pod-datacenter-group">
+          <BFormSelect id="pod-datacenter" v-model="form.dataCenterId" :options="dcOptions" :disabled="volumeDc !== null" data-testid="pod-datacenter" />
+        </BFormGroup>
+      </BCol>
+      <BCol md="6" lg="4">
         <BFormGroup :label="$t('form.gpuCount')" label-for="pod-gpu-count">
           <BFormSelect id="pod-gpu-count" v-model="form.gpuCount" :options="GPU_COUNT_OPTIONS" />
         </BFormGroup>
@@ -40,7 +45,18 @@
         </BFormGroup>
       </BCol>
       <BCol md="6" lg="4">
-        <BFormGroup :label="$t('form.image')" label-for="pod-image" :description="form.image === 'configured' ? configuredImage : ''" data-testid="pod-image-group">
+        <BFormGroup :label="$t('form.podConfig')" :description="form.config ? $t('form.podConfigOwnHelp') : $t('form.podConfigDefaultHelp')" data-testid="pod-config-group">
+          <div class="d-flex align-items-center gap-2">
+            <BButton size="sm" :variant="form.config ? 'warning' : 'outline-light'" data-testid="pod-config-override" @click="overrideOpen = true">
+              <i class="fa-solid fa-sliders me-1"></i>{{ form.config ? $t('form.podConfigEdit') : $t('form.podConfigOverride') }}
+            </BButton>
+            <BBadge v-if="form.config" variant="warning" text-indicator data-testid="pod-config-custom">{{ $t('form.podConfigOwn') }}</BBadge>
+            <BButton v-if="form.config" size="sm" variant="link" class="p-0 small" data-testid="pod-config-reset" @click="form.config = null">{{ $t('form.podConfigUseDefault') }}</BButton>
+          </div>
+        </BFormGroup>
+      </BCol>
+      <BCol md="6" lg="4">
+        <BFormGroup :label="$t('form.image')" label-for="pod-image" :description="form.image === 'configured' ? (form.config?.image || configuredImage) : ''" data-testid="pod-image-group">
           <BFormSelect id="pod-image" v-model="form.image" :options="IMAGE_OPTIONS" />
         </BFormGroup>
       </BCol>
@@ -269,6 +285,9 @@
       </div>
     </BModal>
 
+    <!-- This pod's own configuration: the Default Configuration's panel, started from it, sent with the request -->
+    <ConfigModal mode="pod" v-model="overrideOpen" :initial="form.config" :pod-name="form.name || $t('form.thisPod')" @apply="form.config = $event" />
+
     <BAlert
       v-if="error"
       :model-value="true"
@@ -306,6 +325,8 @@
  *   volumeGb        → volume_gb       10–500
  *   diskGb          → disk_gb         5–100
  *   image           → image           "prebuilt", or the custom URI when "custom" is chosen
+ *   config          → config          this pod's own configuration (the Default Configuration's shape) from the
+ *                                     Override configuration button, or null for the default
  *   startSsh        → start_ssh
  *   startJupyter    → start_jupyter
  *   envVars         → env_vars +      one list of rows [{ type: 'env' | 'arg', key, value }]; env rows → env_vars,
@@ -329,6 +350,7 @@ import { useUiStore } from '../stores/ui'
 import { usePodsStore } from '../stores/pods'
 import { useMountsStore } from '../stores/mounts'
 import { t } from '../i18n'
+import ConfigModal from './ConfigModal.vue'
 
 const MAX_VISIBLE_FOLDERS = 500
 
@@ -337,7 +359,9 @@ const MAX_VISIBLE_FOLDERS = 500
 const gpuOptions = ref([{ value: 'auto', text: 'Cheapest card in stock (16-24 GB)' }, { value: 'rtx4090', text: 'RTX 4090 (24 GB)' }])
 const gpuLive = ref(false)
 async function loadGpus() {
-  try { const g = await podsAPI.gpus(); gpuOptions.value = g.gpus; gpuLive.value = !!g.live } catch { /* the plain menu stays */ }
+  // prices at the datacenter the pod will land in: the volume's, else the form's choice, else RunPod's lowest anywhere
+  const dc = volumeDc.value !== null ? volumeDc.value : form.dataCenterId
+  try { const g = await podsAPI.gpus(dc || undefined); gpuOptions.value = g.gpus; gpuLive.value = !!g.live } catch { /* the plain menu stays */ }
 }
 loadGpus()
 defineExpose({ loadGpus })
@@ -394,11 +418,13 @@ const emit = defineEmits(['pod-created'])
 const defaults = () => ({
   name: '',
   gpu: 'auto',
+  dataCenterId: '',
   gpuCount: 1,
   instanceType: 'spot',
   volumeGb: 0,
   diskGb: 20,
   applyMounts: true,
+  config: null,
   image: 'configured',
   idleStopMinutes: null,
   customImageUri: '',
@@ -415,12 +441,28 @@ const form = reactive(defaults())
 const ui = useUiStore()
 const pods = usePodsStore()
 const mounts = useMountsStore()
+
+/** The datacenter: pinned by the network volume of the configuration this pod uses (its own or the default), free otherwise. */
+const dcList = ref([])
+async function loadDatacenters() { try { dcList.value = (await podsAPI.datacenters()).datacenters || [] } catch { /* the plain menu stays */ } }
+loadDatacenters()
+const effectiveConfig = computed(() => form.config || mounts.config)
+const volumeDc = computed(() => (effectiveConfig.value?.network_volume_id ? (effectiveConfig.value.data_center_id || '') : null))
+const dcOptions = computed(() => {
+  const opts = [{ value: '', text: t('form.datacenterAny') }, ...dcList.value.map((d) => ({ value: d.value, text: d.text }))]
+  const v = volumeDc.value !== null ? volumeDc.value : form.dataCenterId
+  if (v && !dcList.value.some((d) => d.value === v)) opts.push({ value: v, text: v })
+  return opts
+})
+watch(volumeDc, (v) => { if (v !== null) form.dataCenterId = v; loadGpus() }, { immediate: true })
+watch(() => form.dataCenterId, () => { if (volumeDc.value === null) loadGpus() })
 const mountsSummary = computed(() => mounts.summary)
 const configuredImage = computed(() => mounts.configuredImage || t('form.noImage'))
 const configuredIdle = computed(() => mounts.configuredIdle)
 onMounted(() => { if (!mounts.payload) mounts.load() })
 watch(() => mounts.applyByDefault, (v) => { if (form.applyMounts === true && v === false) form.applyMounts = false }, { immediate: true })
 const open = reactive({ envVars: false, pipRequirements: false, customNodes: false })
+const overrideOpen = ref(false)
 const submitting = ref(false)
 const error = ref(null)
 

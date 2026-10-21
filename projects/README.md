@@ -139,6 +139,6 @@ install is `/home/binc/ComfyUI-Installs/CanalV2/ComfyUI`, served on port
 
 ## How this relates to the rest of the repo
 
-- `apps/runpod-api/` (pod manager API, MCP server) and `infra/` (pod CLI) are the generic tooling; `desktop/CANALV2/02_SCRIPTS/containers/runpod/` is the project-specific way the same graphs run on RunPod.
+- `apps/runpod-dashboard/` (the pod manager app, its core, MCP server and CLI) is the generic tooling; `desktop/CANALV2/02_SCRIPTS/containers/runpod/` is the project-specific way the same graphs run on RunPod.
 - The monorepo's `comfy.yaml`, `fragments/` and `blueprints/` are empty. Nothing in `projects/` has been imported into the `comfy` CLI's project format yet.
 - The ComfyUI used by the `comfy` CLI defaults to `127.0.0.1:8188`. Point it elsewhere with `COMFY_LOCAL_URL`.

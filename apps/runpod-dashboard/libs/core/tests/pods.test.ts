@@ -34,21 +34,57 @@ describe('the image a pod boots', () => {
   })
 })
 
+describe('the datacenter menu', () => {
+  it('lists every listed datacenter with S3 support and our cards at the secure-cloud price, cheapest in stock first', async () => {
+    const fetchFn = (async (_url: string, init: RequestInit) => {
+      const q = JSON.parse(String(init.body)).query as string
+      if (q.includes('dataCenters { id listed }')) return new Response(JSON.stringify({ data: { dataCenters: [{ id: 'CA-MTL-1', listed: true }, { id: 'EU-RO-1', listed: true }, { id: 'XX-OLD-1', listed: false }] } }))
+      expect(q).toContain('dataCenterId:"EU-RO-1", secureCloud:true')
+      return new Response(JSON.stringify({ data: {
+        dc_CA_MTL_1: [{ id: 'NVIDIA A40', lowestPrice: { uninterruptablePrice: 0.35, stockStatus: 'High' } }, { id: 'NVIDIA H100 PCIe', lowestPrice: { uninterruptablePrice: 2.5, stockStatus: 'High' } }],
+        dc_EU_RO_1: [{ id: 'NVIDIA GeForce RTX 4090', lowestPrice: { uninterruptablePrice: 0.89, stockStatus: 'High' } }, { id: 'NVIDIA RTX 4000 Ada Generation', lowestPrice: { uninterruptablePrice: 0.28, stockStatus: 'Low' } }, { id: 'NVIDIA RTX A4000', lowestPrice: { uninterruptablePrice: null, stockStatus: null } }],
+      } }))
+    }) as unknown as typeof fetch
+    const m = await pods.datacenters({ fetchFn, apiKey: 'k' })
+    expect(m.live).toBe(true); expect(m.datacenters.map((d) => d.value)).toEqual(['EU-RO-1', 'CA-MTL-1'])   // cheapest card first; the unlisted one is gone
+    expect(m.datacenters[0].s3).toBe(true); expect(m.datacenters[0].text).toBe('EU-RO-1 · S3 · RTX 4000 Ada $0.28/h Low, RTX 4090 $0.89/h High')
+    expect(m.datacenters[1].s3).toBe(false); expect(m.datacenters[1].cards).toEqual([{ key: 'a40', name: 'A40', price: 0.35, stock: 'High' }])   // the H100 is not in our table
+  })
+})
+
+describe('the volume and its cost', () => {
+  it('prices a volume per month and reads the configured one from RunPod', async () => {
+    expect(pods.volumeCostPerMonth(120)).toBe(8.4); expect(pods.volumeCostPerMonth(1500)).toBe(95)
+    const fetchFn = (async (url: string) => url.endsWith('/v1/networkvolumes/vol1')
+      ? new Response(JSON.stringify({ id: 'vol1', name: 'comfy-workspace', size: 120, dataCenterId: 'EU-RO-1' }))
+      : new Response('', { status: 404 })) as unknown as typeof fetch
+    expect(await pods.volumeInfo('vol1', { fetchFn, apiKey: 'k' })).toEqual({ id: 'vol1', name: 'comfy-workspace', size_gb: 120, datacenter: 'EU-RO-1', cost_per_month: 8.4, s3: true })
+    expect(await pods.volumeInfo('nope', { fetchFn, apiKey: 'k' })).toBeNull()
+    expect(await pods.volumeInfo('', { fetchFn, apiKey: 'k' })).toBeNull()   // nothing configured
+  })
+})
+
 describe('the plan sent to RunPod', () => {
   it('applies the cheap defaults and the mount configuration', () => {
     const cfg = mounts.defaults(); cfg.image = 'ghcr.io/example/comfy-app:v26'; cfg.network_volume_id = 'vol1'; cfg.data_center_id = 'EU-RO-1'
     cfg.folders.project = fakeTree(dir)
     const { input, idleMinutes } = pods.plan({ name: 't' }, cfg)
     expect(input.imageName).toBe('ghcr.io/example/comfy-app:v26'); expect(input.gpuTypeId).toBe('auto')
-    expect(input.cloudType).toBe('COMMUNITY'); expect(input.volumeInGb).toBe(0); expect(input.networkVolumeId).toBe('vol1'); expect(input.dataCenterId).toBe('EU-RO-1')
+    expect(input.cloudType).toBe('SECURE'); expect(input.volumeInGb).toBe(0); expect(input.networkVolumeId).toBe('vol1'); expect(input.dataCenterId).toBe('EU-RO-1')   // a network volume means the secure cloud
     expect(input.env.PROJECT_ROOT).toBe('/workspace/project'); expect(input.env.COMFY_LINKS).toContain('/home/someone/HARBOUR_r1/HARBOUR=/workspace/project')
     expect(input.ports).toBe('8188/http,22/tcp'); expect(idleMinutes).toBe(30)
+    expect(pods.plan({ name: 't', data_center_id: 'US-NC-1' }, cfg).input.dataCenterId).toBe('EU-RO-1')   // the volume's datacenter wins over the form
+    expect(input.containerRegistryAuthId).toBeUndefined()   // a public image needs no credential
+    cfg.registry_auth_id = 'cred1'
+    expect(pods.plan({ name: 't' }, cfg).input.containerRegistryAuthId).toBe('cred1'); expect(rp.deployMutation(pods.plan({ name: 't' }, cfg).input)).toContain('containerRegistryAuthId: "cred1"')
+    cfg.registry_auth_id = ''
     expect(pods.plan({ name: 't', image: 'prebuilt' }, cfg).input.ports).toBe('3001/http,8888/http,22/tcp')   // the stock image serves its UI on 3001
     expect(pods.webPortOf('3001/http,8888/http,22/tcp')).toBe(3001); expect(pods.webPortOf('22/tcp')).toBe(8188)
     // a per-pod volume asked for beside the network volume is still 0; without the volume it is kept
     expect(pods.plan({ name: 't', volume_gb: 40 }, cfg).input.volumeInGb).toBe(0)
     cfg.network_volume_id = ''
     const p2 = pods.plan({ name: 't', volume_gb: 40, gpu: 'a4000', instance_type: 'on-demand', idle_stop_minutes: 0, env_vars: { X: '1' }, build_args: { X: 'arg', Y: 'y' } }, cfg)
+    expect(pods.plan({ name: 't', data_center_id: 'US-NC-1' }, cfg).input.dataCenterId).toBe('US-NC-1')   // no volume: the form's choice
     expect(p2.input.volumeInGb).toBe(40); expect(p2.input.gpuTypeId).toBe('NVIDIA RTX A4000'); expect(p2.input.cloudType).toBe('SECURE'); expect(p2.idleMinutes).toBe(0)
     expect(p2.input.env.X).toBe('1'); expect(p2.input.env.Y).toBe('y')   // explicit env wins over a build arg
     expect(() => pods.plan({ name: 't', gpu: 'h100' }, cfg)).toThrow(/unknown GPU/)
@@ -110,7 +146,7 @@ describe('against RunPod', () => {
       }
       return {}
     })
-    expect(await pods.candidates('auto', { fetchFn })).toEqual(['NVIDIA RTX A5000', 'NVIDIA GeForce RTX 4090', 'NVIDIA RTX A4000', 'NVIDIA RTX 4000 Ada Generation', 'NVIDIA GeForce RTX 3090'])
+    expect(await pods.candidates('auto', { fetchFn })).toEqual(['NVIDIA RTX A5000', 'NVIDIA GeForce RTX 4090', 'NVIDIA RTX A4000', 'NVIDIA RTX 4000 Ada Generation', 'NVIDIA GeForce RTX 3090', 'NVIDIA RTX A6000', 'NVIDIA A40'])
     const created = await pods.create({ name: 't', gpu: 'auto' }, { fetchFn })
     expect(tried).toEqual(['NVIDIA RTX A5000', 'NVIDIA GeForce RTX 4090'])   // cheapest first, then the next when none
     expect(created.gpu).toBe('rtx4090 x1'); expect(created.vram).toBe(24)

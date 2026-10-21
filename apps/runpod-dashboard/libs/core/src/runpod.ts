@@ -29,6 +29,7 @@ export interface CreatePodInput {
   name: string; imageName: string; gpuTypeId: string; cloudType?: 'ALL' | 'SECURE' | 'COMMUNITY'
   gpuCount?: number; volumeInGb?: number; containerDiskInGb?: number; ports?: string; volumeMountPath?: string
   env?: Record<string, string>; networkVolumeId?: string; dataCenterId?: string; startSsh?: boolean; supportPublicIp?: boolean
+  containerRegistryAuthId?: string
 }
 
 /** The podFindAndDeployOnDemand mutation, field for field as the Python SDK builds it. */
@@ -44,6 +45,7 @@ export function deployMutation(i: CreatePodInput): string {
   if (i.volumeMountPath) f.push(`volumeMountPath: ${str(i.volumeMountPath)}`)
   if (i.env) f.push(`env: [${Object.entries(i.env).map(([k, v]) => `{ key: ${str(k)}, value: ${str(String(v))} }`).join(', ')}]`)
   if (i.networkVolumeId) f.push(`networkVolumeId: ${str(i.networkVolumeId)}`)
+  if (i.containerRegistryAuthId) f.push(`containerRegistryAuthId: ${str(i.containerRegistryAuthId)}`)
   return `mutation { podFindAndDeployOnDemand(input: { ${f.join(', ')} }) { id imageName env machineId machine { podHostId } } }`
 }
 
@@ -88,6 +90,52 @@ export async function gpuStock(ids: string[], client?: RunPodClient): Promise<Gp
     'query { gpuTypes { id secureCloud communityCloud lowestPrice(input:{gpuCount:1}) { uninterruptablePrice stockStatus } } }', client)
   const want = new Set(ids)
   return (d?.gpuTypes || []).filter((g) => want.has(g.id)).map((g) => ({ id: g.id, price: g.lowestPrice?.uninterruptablePrice ?? null, stock: g.lowestPrice?.stockStatus ?? null, secure: g.secureCloud, community: g.communityCloud }))
+}
+
+/** The cards one datacenter has available right now (a network volume pins pods to its datacenter). */
+export async function datacenterStock(dataCenterId: string, client?: RunPodClient): Promise<string[]> {
+  const d = await graphql<{ dataCenters: { id: string; gpuAvailability: { available: boolean; gpuTypeId: string }[] | null }[] }>(
+    'query { dataCenters { id gpuAvailability { available gpuTypeId } } }', client)
+  const dc = (d?.dataCenters || []).find((x) => x.id === dataCenterId)
+  return (dc?.gpuAvailability || []).filter((g) => g.available).map((g) => g.gpuTypeId)
+}
+
+/** Every listed datacenter with, for the given cards, the secure-cloud price and stock there. One request:
+ *  the lowestPrice query takes a dataCenterId, aliased once per datacenter. Secure cloud, because a network
+ *  volume pins its pods there and that is the price they pay. */
+export interface DatacenterPrices { id: string; cards: { id: string; price: number | null; stock: string | null }[] }
+export async function datacenterPrices(want: string[], client?: RunPodClient, only?: string[]): Promise<DatacenterPrices[]> {
+  const dcs = await graphql<{ dataCenters: { id: string; listed: boolean }[] }>('query { dataCenters { id listed } }', client)
+  const ids = (dcs?.dataCenters || []).filter((d) => d.listed && (!only || only.includes(d.id))).map((d) => d.id)
+  if (!ids.length) return []
+  const alias = (id: string) => 'dc_' + id.replace(/[^A-Za-z0-9]/g, '_')
+  // RunPod answers 500 now and then to one query over all 34 datacenters: eight per request, a failed chunk is skipped.
+  type Priced = { id: string; lowestPrice: { uninterruptablePrice: number | null; stockStatus: string | null } | null }[]
+  const d: Record<string, Priced> = {}
+  const chunks: string[][] = []
+  for (let n = 0; n < ids.length; n += 8) chunks.push(ids.slice(n, n + 8))
+  await Promise.all(chunks.map(async (chunk) => {
+    const q = `query { ${chunk.map((id) => `${alias(id)}: gpuTypes { id lowestPrice(input:{gpuCount:1, dataCenterId:${str(id)}, secureCloud:true}) { uninterruptablePrice stockStatus } }`).join(' ')} }`
+    try { Object.assign(d, await graphql<Record<string, Priced>>(q, client)) } catch { /* that chunk's datacenters show no cards */ }
+  }))
+  const w = new Set(want)
+  return ids.map((id) => ({
+    id,
+    cards: (d?.[alias(id)] || []).filter((g) => w.has(g.id) && g.lowestPrice?.uninterruptablePrice != null && g.lowestPrice?.stockStatus)
+      .map((g) => ({ id: g.id, price: g.lowestPrice!.uninterruptablePrice, stock: g.lowestPrice!.stockStatus })),
+  }))
+}
+
+/** RunPod's v1 REST API (rest.runpod.io/v1): network volumes. */
+export interface NetworkVolume { id: string; name: string; size: number; dataCenterId: string }
+export async function networkVolume(id: string, client: RunPodClient = {}): Promise<NetworkVolume | null> {
+  const apiKey = client.apiKey || process.env.RUNPOD_API_KEY
+  if (!apiKey) throw new CoreError(401, 'RUNPOD_API_KEY not set')
+  const base = client.baseUrl || process.env.RUNPOD_REST_BASE_URL || 'https://rest.runpod.io'
+  const res = await (client.fetchFn || fetch)(`${base}/v1/networkvolumes/${encodeURIComponent(id)}`, { headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' }, signal: AbortSignal.timeout(20_000) })
+  if (res.status === 404) return null
+  if (!res.ok) throw new CoreError(502, `RunPod answered ${res.status} for volume ${id}`)
+  return (await res.json()) as NetworkVolume
 }
 
 /** RunPod's v2 REST API (api.runpod.io/v2): the pod record with its status text, and the log stream. */

@@ -1,4 +1,5 @@
 import { test, expect, createPodToggle, openCreatePod, expandSection } from './fixtures'
+import { t } from './i18n'
 
 test.describe('create pod', () => {
   test('form is collapsed by default and the card header toggles it', async ({ page }) => {
@@ -64,12 +65,14 @@ test.describe('create pod', () => {
       name: 'ComfyUI-Dev',
       gpu: 'a4000',
       gpu_count: 2,
+      data_center_id: null,
       instance_type: 'on-demand',
       volume_gb: 100,
       disk_gb: 30,
       image: 'docker.io/me/comfy:1',
       idle_stop_minutes: null,
       apply_mounts: true,
+      config: null,
       env_vars: { HF_TOKEN: 'abc', EMPTY: '', PASTED: 'from clipboard' },
       build_args: { CUDA_SHORT: 'cu128' },
       pip_requirements: 'torch==2.1\n\nxformers',
@@ -236,5 +239,24 @@ test.describe('create pod', () => {
     await page.getByRole('button', { name: 'Reset' }).click()
     await expect(page.getByLabel('Name')).toHaveValue('')
     await expect(page.getByLabel('Per-pod volume (GB)')).toHaveValue('0')
+  })
+
+  test('the datacenter is chosen on the form, or locked to the configuration\'s volume', async ({ page, api }) => {
+    await page.goto('/')
+    await openCreatePod(page)
+    const dc = page.getByTestId('pod-datacenter')
+    await expect(dc).toBeEnabled()
+    await dc.selectOption('CA-MTL-1')
+    await expect.poll(() => api.calls.some((c) => c.path === '/gpus' && c.query.dc === 'CA-MTL-1')).toBe(true)   // the card prices follow the choice
+    await page.locator('#pod-name').fill('Free')
+    await page.locator('form button[type=submit]').click()
+    expect(api.calls.find((c) => c.method === 'POST' && c.path === '/pods').body.data_center_id).toBe('CA-MTL-1')
+
+    api.state.mounts.config.network_volume_id = 'vol1'; api.state.mounts.config.data_center_id = 'EU-RO-1'
+    await page.reload()
+    await openCreatePod(page)
+    await expect(dc).toBeDisabled()
+    await expect(dc).toHaveValue('EU-RO-1')
+    await expect(page.getByTestId('pod-datacenter-group')).toContainText(t('form.datacenterLocked', { dc: 'EU-RO-1' }))
   })
 })

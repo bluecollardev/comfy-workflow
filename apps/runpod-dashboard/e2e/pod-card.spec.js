@@ -89,6 +89,30 @@ test.describe('pod card', () => {
     await expect(card.getByTestId('pod-open')).toBeVisible()
   })
 
+  test('a pod on its way shows a step bar: requested, container up, then nothing once ComfyUI answers', async ({ page, api }) => {
+    api.state.pods[0].comfy_ready = false
+    await page.goto('/')
+    const starting = podCard(page, 'ComfyUI-Test')   // the fixture's starting pod
+    await expect(starting.getByTestId('pod-progress')).toHaveAttribute('data-step', '1')
+    await expect(starting.getByTestId('pod-progress-label')).toContainText(t('pod.stepRequested'))
+    const booting = podCard(page, 'ComfyUI-Dev')     // running, ComfyUI not answering yet
+    await expect(booting.getByTestId('pod-progress')).toHaveAttribute('data-step', '2')
+    await expect(booting.getByTestId('pod-progress-label')).toContainText(t('pod.stepBooting'))
+    api.state.pods[0].comfy_ready = true
+    await page.getByTestId('refresh').click()
+    await expect(booting.getByTestId('pod-progress')).toHaveCount(0)
+  })
+
+  test('Stop shows a bar on the card while RunPod shuts the pod down', async ({ page, api }) => {
+    api.state.slow = { stop: 800 }   // the fake API answers Stop late enough to see the bar
+    await page.goto('/')
+    const card = podCard(page, 'ComfyUI-Dev')
+    await card.getByTestId('pod-stop').click()
+    await expect(card.getByTestId('pod-progress-label')).toContainText(t('pod.action_stop'))
+    await expect(card.getByTestId('pod-status')).toHaveText('stopped')
+    await expect(card.getByTestId('pod-progress')).toHaveCount(0)
+  })
+
   test('a pod created without its image\'s UI port says so instead of waiting forever', async ({ page, api }) => {
     api.state.pods[0].comfy_ready = false; api.state.pods[0].port_mismatch = true
     await page.goto('/')

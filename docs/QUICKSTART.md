@@ -12,7 +12,7 @@ echo 'RUNPOD_API_KEY=your-real-api-key' >> .env   # or export it
 ./start.sh pods
 ```
 
-That creates `.venv/`, installs the API's requirements, builds the dashboard
+That installs the app's dependencies, builds the core and the page
 (`npm install` + `npm run build` in `apps/runpod-dashboard`) and starts the
 API, which serves the dashboard at `/`. By hand: README.md "Manual start".
 
@@ -102,7 +102,7 @@ export RUNPOD_API_KEY="your-actual-api-key"
 ```bash
 cd ~/workspaces/comfy_workflow
 
-python3 infra/scripts/create_pod.py create \
+./start.sh pod create \
   --name ComfyUI-Dev \
   --gpu rtx4090 \
   --volume 50 \
@@ -122,7 +122,7 @@ python3 infra/scripts/create_pod.py create \
 ### Step 4: Wait for startup (1-2 mins)
 ```bash
 # Check status
-python3 infra/scripts/create_pod.py status --pod-id a1b2c3d4e5f6
+./start.sh pod status --pod-id a1b2c3d4e5f6
 ```
 
 ### Step 5: Access ComfyUI
@@ -218,7 +218,7 @@ nvidia-smi
 ```bash
 # Check API key is valid
 export RUNPOD_API_KEY="..."
-python3 infra/scripts/create_pod.py list
+./start.sh pod list
 
 # If "Unauthorized" error: API key is wrong
 # If "Unavailable" error: GPU stock is low, try different GPU

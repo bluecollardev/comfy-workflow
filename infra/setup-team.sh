@@ -69,9 +69,7 @@ echo ""
 echo -e "${BLUE}Step 3: Installing Python dependencies${NC}"
 echo ""
 
-if [ -f "infra/scripts/requirements.txt" ]; then
-    pip3 install -r infra/scripts/requirements.txt
-    pip3 install -r apps/runpod-api/requirements.txt
+if false; then   # the pod manager is one Node app now (./start.sh desktop); nothing to pip install
     echo -e "${GREEN}✓ Python packages installed${NC}"
 fi
 
@@ -169,8 +167,7 @@ echo "4. Plan the MOE agent pool:"
 echo "   terraform plan -var-file=environments/dev.tfvars"
 echo ""
 echo "5. Start the FastAPI backend:"
-echo "   cd $PROJECT_ROOT/apps/runpod-api"
-echo "   python3 -m uvicorn pod_manager_api:app --reload --host 0.0.0.0 --port 8000"
+echo "   cd $PROJECT_ROOT && ./start.sh desktop"
 echo ""
 echo "6. Start the RunPod dashboard (in another terminal):"
 echo "   cd $PROJECT_ROOT/apps/runpod-dashboard"

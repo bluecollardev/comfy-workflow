@@ -73,9 +73,8 @@ brief says. Not started; the next steps page says where it begins.
 ```
 ├── apps/
 │   ├── comfy-app/          # The ComfyUI server: setup/launch on the Mac, Dockerfile for CUDA, tracked workflows; packs come from shared/nodes
-│   ├── runpod-api/         # FastAPI pod manager API, pool manager, MCP server for Claude Code, tests (Python)
 │   └── runpod-dashboard/   # Vue + Electron dashboard for the pod manager API
-├── infra/                  # Pod lifecycle CLI (create_pod.py), pod-config.yaml, Terraform placeholder
+├── infra/                  # pod-config.yaml (read by ./start.sh pod), Terraform placeholder
 ├── projects/               # Client/creative work; ignored by git except projects/README.md
 ├── docs/                   # Architecture decisions, setup, testing (index below)
 ├── shared/                 # Material shared by every app and agent here
@@ -94,7 +93,7 @@ brief says. Not started; the next steps page says where it begins.
 
 `./start.sh <target>` is the one-command way in; the manual steps under each
 section are what it does. Targets install what they need on the first run
-(`.venv/` for Python, `npm install` and a UI build for the dashboard) and
+(`npm install`, the core build and a UI build for the app) and
 reuse it after. `RUNPOD_API_KEY` goes in `.env` at the repo root or in the
 environment. `./start.sh` with no argument lists every target.
 
@@ -118,30 +117,23 @@ cd apps/comfy-app
 
 Details: [`apps/comfy-app/README.md`](apps/comfy-app/README.md).
 
-### RunPod pod manager API
+### The pod manager: one app
+
+Electron with a TypeScript core (`apps/runpod-dashboard/libs/core`): mounts,
+pods, GPUs and datacenters with prices, the network volume, governance, the
+idle watch, git accounts, repositories, image env, the sync. The page talks to
+the core over IPC; there is no server and no Python (`docs/ADR-005`). The MCP
+server for Claude Code and the CLI are Node programs over the same core.
 
 ```bash
-./start.sh pods                     # FastAPI on http://localhost:8000, dashboard at /, docs at /docs
-./start.sh pod list                 # pod lifecycle CLI: create, list, status, stop, resume, delete
-./start.sh mcp                      # the MCP server for Claude Code, over stdio
-./start.sh test                     # the merge gate: pytest without the integration tests
+./start.sh desktop                  # the app (built page)
+./start.sh dashboard                # the app with hot reload (Vite inside the window)
+./start.sh pod list                 # the CLI: pod create|list|status|stop|resume|delete
+./start.sh sync --pod <id>          # the mapped folders onto the volume; --s3 needs no pod (ADR-007)
+./start.sh pull --pod <id>          # renders back down
+./start.sh mcp                      # the MCP server over stdio
+./start.sh test                     # the merge gate: core suite + browser suite
 ```
-
-By hand:
-
-```bash
-export RUNPOD_API_KEY=...
-pip install -r apps/runpod-api/requirements.txt
-python apps/runpod-api/pod_manager_api.py
-
-pip install -r infra/scripts/requirements.txt    # the CLI alone needs only these
-python infra/scripts/create_pod.py create --name ComfyUI-Dev --gpu rtx4090
-
-pytest apps/runpod-api/tests/ -m "not integration"
-```
-
-Details: [`apps/runpod-api/README.md`](apps/runpod-api/README.md),
-[`docs/MCP-SERVER.md`](docs/MCP-SERVER.md).
 
 ### RunPod dashboard app
 
@@ -156,7 +148,7 @@ By hand:
 cd apps/runpod-dashboard
 npm install
 npm run build                       # dist/, which the API serves at /
-npm run dev                         # hot reload against the API on :8000
+./start.sh dashboard                # hot reload inside the app, the core over IPC
 npx electron .                      # desktop app against the built dist/
 npm run electron:build              # installable .dmg / .exe / AppImage
 ```
@@ -185,7 +177,7 @@ belong to BH / Binc and need a named yes before they go anywhere new.
 | Shared storage: the project tree at `/home/binc/CANALV2_r3/CANALV2`, the plates under `/mnt/storage/Panama_Redux/…`, `~/ComfyUI-Shared` | rendering anything | binc-PC's disks, over SMB, a NAS or a pod volume; not mounted on this Mac yet. Every path: `docs/MOUNT-POINTS.md` |
 | NVIDIA driver, CUDA 12.6, nvidia-container-toolkit | GPU rendering on Linux, in or out of Docker | per machine; `apps/comfy-app/docker/swarm.sh init` says what Swarm needs on top |
 | Docker, Docker Swarm | running the image on Linux boxes; no GPU under Docker on macOS | `apps/comfy-app/docker/` |
-| uv, Python 3.13 (ComfyUI venv), Python 3.12 (API and CLI) | the Mac install, the pod manager | `brew install uv`; `start.sh` makes `.venv` |
+| uv, Python 3.13 (ComfyUI venv) | the Mac install only; the pod manager needs Node 22, no Python | `brew install uv`; `start.sh` makes `.venv` |
 | Node 22, npm | the dashboard and Electron app | nvm |
 | RunPod account and API key | overflow GPUs, once approved | `.env`; nothing deployed yet |
 
@@ -202,6 +194,50 @@ the rest is legacy or not a mount. Full list, per runtime:
 | Project tree | `/home/binc/CANALV2_r3/CANALV2` (also `~/CANALV2_r3/CANALV2`) | `/workspace/project`, linked from the path the tree's job files declare |
 | Served plates, read-only | `/mnt/storage/Panama_Redux/source/PC_20260929_VFX_3D_DSM_plates/` | `/workspace/plates`, linked from the path the shots' `SOURCES.csv` declare |
 | ComfyUI-Shared | `/home/binc/ComfyUI-Shared` (also `~/ComfyUI-Shared`) | `/workspace/comfy-shared`, `COMFY_SHARED` |
+
+### How the data reaches a pod: the network volume
+
+A RunPod network volume is a disk in RunPod's datacenter, not a mount of this
+Mac. The Mac's folders never reach a pod live; the volume holds a copy, and the
+pod reads that copy. Three places, one direction:
+
+| Place | What is there | How it gets there |
+|---|---|---|
+| This Mac | the three folders mapped in the Configuration panel, wherever they live on disk | you |
+| The volume (`comfy-workspace`, 120 GB, `CA-MTL-1`) | a copy at `/workspace/project`, `/workspace/plates`, `/workspace/comfy-shared` | `./start.sh sync --pod <id>`: rsync over SSH into a pod with the volume attached. Additive, never deletes. The first run sends everything (the tree is 81 GB, ComfyUI-Shared 17 GB); later runs send changes |
+| A pod | the volume mounted at `/workspace`; ComfyUI's input, output, models and workflows under `comfy-shared/` | attached at creation from the volume id and datacenter in the Configuration panel |
+
+What follows from that:
+
+- **Every pod uses the same volume.** The volume id and datacenter are set once in
+  the panel and applied to each new pod, so there is one copy of the data and any
+  number of pods over time. Deleting a pod loses nothing; outputs are on the
+  volume in `comfy-shared/output` and come back to the Mac by rsync.
+- **Pods live in one datacenter.** A volume belongs to its datacenter, so every pod
+  is created there, and the automatic card choice picks the cheapest card in stock
+  there, not across RunPod. A pod in another region needs a second volume with its
+  own copy; the app handles one volume today.
+- **Several pods at once are possible.** RunPod allows more than one running pod on a
+  volume, so two ComfyUI instances can read the same plates and models. They share
+  the output folder too: fine for different shots, a collision for the same file name.
+- **Workflows are on the volume, not in the image.** The image links ComfyUI's
+  Workflows panel to `comfy-shared/workflows` and seeds it from
+  `apps/comfy-app/workflows/` only while it is empty. A workflow saved in one pod's
+  UI shows in the next pod; changing them needs no rebuild.
+- **The image is the only thing pulled, not copied.** Pods pull
+  `registry.gitlab.com/bcdevlucas/comfy-workflow/comfy-app:contract-v26`, a private
+  registry, with the credential saved on RunPod whose id is in the panel. Models
+  and plates are never in the image.
+- **Cost.** The volume bills about USD 0.07 per GB a month whether or not a pod
+  runs (120 GB is about USD 8.40). A stopped pod on a network volume bills nothing.
+- **Keeping the Mac and the volume in line is an open decision.** Today the copy
+  goes one way, Mac to volume, by `./start.sh sync`, pressed by a person; nothing
+  pulls a pod's renders back down yet. RunPod's S3 API can fill a volume with no
+  pod running, but only in fifteen datacenters and Montreal is not one, so the
+  likely move is a volume in Romania pushed over S3 (ADR-007, option G). The per-folder contract, the options and a
+  recommendation are in [`docs/ADR-007`](docs/ADR-007-volume-as-hub-and-sync.md).
+  The image side, registry and CI build, is decided in
+  [`docs/ADR-006`](docs/ADR-006-image-registry-and-ci-build.md).
 
 ## Documentation
 
@@ -225,14 +261,16 @@ All of `docs/`: <https://github.com/bluecollardev/comfy-workflow/tree/develop/do
 | [`docs/ADR-002-moe-agent-pool.md`](docs/ADR-002-moe-agent-pool.md) | The "mixture of experts" agent pool: a pool of RunPod pods shared by several users and agents, with implementation plan, costs, quotas, credentials and rollout. |
 | [`docs/ADR-004-where-the-workflows-run.md`](docs/ADR-004-where-the-workflows-run.md) | Which machine runs which graphs: plates and one path first, containers on Linux under Compose or Swarm, RunPod as overflow on its own tools, the Mac as client and MPS worker. What was measured on 2026-10-19 and the gaps. |
 | [`docs/ADR-003-python-mcp-vs-terraform.md`](docs/ADR-003-python-mcp-vs-terraform.md) | Why pod orchestration is Python plus an MCP server rather than Terraform, alternatives considered, and when to revisit. |
+| [`docs/ADR-006-image-registry-and-ci-build.md`](docs/ADR-006-image-registry-and-ci-build.md) | The ComfyUI image lives in a private GitLab registry and is built and pushed on GitLab CI next to it (the 3 GB torch layer never leaves the Mac); pods pull with a saved credential; workflows ride on the volume, seeded from the image only while empty; sshd in the image for the sync. Accepted 2026-10-20. |
+| [`docs/ADR-007-volume-as-hub-and-sync.md`](docs/ADR-007-volume-as-hub-and-sync.md) | How local state and the pod's volume stay in line: the per-folder contract (who writes where), the options from "add Pull to the script" through "Push and Pull in the app" to "a bucket as the hub", a recommendation, and the decision left open. Proposed 2026-10-20, no decision yet. |
 | [`docs/DOCKERFILE-DEVIATIONS.md`](docs/DOCKERFILE-DEVIATIONS.md) | Review of the original placeholder image (community `ashleykza/comfyui` base) against RunPod's official one. That placeholder is retired; the current image is `apps/comfy-app/Dockerfile`, built on `pytorch/pytorch` with the same pins as the Mac. |
 
 ### Running and operating
 
 | Doc | What it covers |
 |---|---|
+| [`docs/COMFY-API.md`](docs/COMFY-API.md) | The ComfyUI HTTP API as this repo uses it: health and readiness, the Workflows panel's userdata calls, queueing a graph, queue and history, the two graph formats, and which of our files call what. |
 | [`infra/README.md`](infra/README.md) | The infrastructure folder: the pod lifecycle CLI, pod config, where the Docker image and the API live, cost management, monitoring, troubleshooting. |
-| [`apps/runpod-api/README.md`](apps/runpod-api/README.md) | The pod manager service: the FastAPI API and its routers, the pool manager, the MCP server, environment variables, running it, tests, and what the Electron app packages from it. |
 | [`docs/MCP-SERVER.md`](docs/MCP-SERVER.md) | The MCP server that exposes agent pool management to Claude Code: quick start, every tool, typical sessions, configuration, errors, budgeting. |
 | [`shared/nodes/docs/DEPENDENCIES.md`](shared/nodes/docs/DEPENDENCIES.md) | One row per ShotPipe version: what it needs beside it, what it supersedes, bundled modules, Python imports, node and baked-path counts, and which named set it belongs to. Generated in the packs submodule. |
 | [`shared/nodes/docs/SHOTPIPE.md`](shared/nodes/docs/SHOTPIPE.md) | What a ShotPipe pack is: one layered family with v7 as the base, what each generation adds, why a graph needs a set and how the packs find each other. In the packs submodule. |
@@ -246,7 +284,7 @@ All of `docs/`: <https://github.com/bluecollardev/comfy-workflow/tree/develop/do
 
 | Doc | What it covers |
 |---|---|
-| [`docs/TESTING.md`](docs/TESTING.md) | The Python test suite for the pod manager: structure, categories, mocking, coverage, async tests, fixtures, CI, debugging. Run `pytest apps/runpod-api/tests/ -m "not integration"` before any merge. |
+| [`docs/TESTING.md`](docs/TESTING.md) | The app's tests: the core suite (Vitest), the browser suite against a fake API (Playwright), the Electron suite in no-spend mode, the live RunPod proof, the MCP and CLI tests; what each covers and how to run them. |
 | [`docs/TEST-RESULTS.md`](docs/TEST-RESULTS.md) | Record of the 2026-10-17 verification of the RunPod setup: what was tested, coverage, known limitations. |
 
 ### Projects and planning

@@ -1,6 +1,0 @@
-# Pod lifecycle CLI (create_pod.py). The pod manager API, MCP server and
-# their tests have their own list in apps/runpod-api/requirements.txt.
-runpod>=1.12.0
-python-dotenv>=1.0.0
-requests>=2.34.0
-pyyaml>=6.0

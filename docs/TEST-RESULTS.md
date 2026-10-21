@@ -1,5 +1,7 @@
 # Test Results - RunPod Setup
 
+> **Historical (2026-10-21).** These results are for the Python CLI and API that were retired by ADR-005; the app's current tests are in `docs/TESTING.md`.
+
 **Date:** 2026-10-17  
 **Branch:** feature/runpod-setup  
 **Status:** ✅ PASSED

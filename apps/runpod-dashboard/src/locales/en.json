@@ -3,8 +3,8 @@
     "title": "RunPod Manager",
     "repositories": "Repositories",
     "accounts": "Accounts",
-    "configuration": "Configuration",
-    "configurationTitle": "Configuration: volume and mount points",
+    "configuration": "Default Configuration",
+    "configurationTitle": "Default Configuration: RunPod key, volume, image, mount points. Each pod can override it.",
     "refresh": "Refresh",
     "noSpend": "no-spend mode",
     "noSpendTitle": "Pods are simulated: nothing reaches RunPod, nothing bills. Switch it off in Configuration.",
@@ -17,7 +17,8 @@
   "stats": {
     "total": "Total pods",
     "running": "Running",
-    "stopped": "Stopped"
+    "stopped": "Stopped",
+    "storage": "Storage / month ({size} GB)"
   },
   "dashboard": {
     "createPod": "Create pod",
@@ -66,7 +67,18 @@
     "idleMinutes": "min",
     "idleSave": "Set",
     "comfyStarting": "ComfyUI is still starting inside the pod; watch Logs. The link appears when it answers.",
-    "portMismatch": "This pod was created without the port its image serves ComfyUI on, so the link can never answer. Recreate it; the new pod gets the right ports."
+    "portMismatch": "This pod was created without the port its image serves ComfyUI on, so the link can never answer. Recreate it; the new pod gets the right ports.",
+    "config": "Configuration",
+    "configTitle": "This pod’s own configuration: shown now, applied when the pod is recreated",
+    "ownConfig": "own config",
+    "ownConfigTitle": "Created with its own configuration, not the default",
+    "stepOf": "Step {n} of {of}",
+    "stepRequested": "Pod requested: RunPod finds a host and pulls the image (a few minutes for ours)",
+    "stepBooting": "Container up: ComfyUI loading its nodes",
+    "action_stop": "Stopping: RunPod shuts the container down; the volume keeps everything, nothing bills afterwards",
+    "action_resume": "Resuming: RunPod looks for a free GPU on the pod's host",
+    "action_delete": "Deleting: the pod is terminated; the volume stays",
+    "action_recreate": "Recreating: the pod is terminated and a new one made with the same settings"
   },
   "form": {
     "name": "Name",
@@ -97,10 +109,23 @@
     "summaryNoVolume": "no network volume configured",
     "summaryMapped": "{mapped}/{total} folder(s) mapped, {links} link(s)",
     "gpuStock": "Stock and price are RunPod's, read when the form opened. \"Cheapest card in stock\" tries them in that order at creation.",
-    "gpuNoStock": "No stock information: set the RunPod key in Configuration, or no-spend mode is on."
+    "gpuNoStock": "No stock information: set the RunPod key in Configuration, or no-spend mode is on.",
+    "podConfig": "Configuration",
+    "podConfigOverride": "Override configuration",
+    "podConfigEdit": "Edit this pod’s configuration",
+    "podConfigOwn": "own configuration",
+    "podConfigUseDefault": "use defaults",
+    "podConfigDefaultHelp": "The Default Configuration (gear icon) unless you override it for this pod.",
+    "podConfigOwnHelp": "This pod gets its own volume, image, idle stop, folders and links; kept for Recreate.",
+    "thisPod": "this pod",
+    "datacenter": "Datacenter",
+    "datacenterAny": "Any: RunPod chooses",
+    "datacenterHelp": "Where the pod is created. S3 marks datacenters whose volumes take uploads with no pod; the cards and prices are the secure-cloud ones there.",
+    "datacenterLocked": "Set by the network volume in this pod's configuration: {dc}. A volume never leaves its datacenter.",
+    "datacenterUnset": "none set, RunPod chooses"
   },
   "config": {
-    "title": "Configuration",
+    "title": "Default Configuration",
     "intro": "This app runs on one PC. Map the three folders every run needs, wherever they are on this PC. A runtime here uses them where they are; a pod carries them on its volume and links the paths the project's own files name onto them, so graphs and scripts run unchanged. The full story: docs/MOUNT-POINTS.md.",
     "runpod": "RunPod",
     "runpodHint": "the account the app creates pods in",
@@ -114,7 +139,7 @@
     "mountPath": "Mount path",
     "mountPathHelp": "Where the volume appears in the pod.",
     "datacenter": "Datacenter",
-    "datacenterHelp": "Must match the volume's datacenter. Empty: RunPod chooses.",
+    "datacenterHelp": "Must match the volume's datacenter. S3 marks the ones whose volumes take uploads with no pod running; the cards and prices are what a volume pod pays there (secure cloud).",
     "image": "Image",
     "imageHelp": "What every new pod boots: ours, with the packs and the entrypoint that makes the links. It must be pushed to a registry first; a bare local name is refused at pod creation.",
     "idle": "Idle stop (minutes)",
@@ -166,7 +191,20 @@
     "nothingSaved": "Nothing saved yet",
     "save": "Save",
     "clear": "Clear",
-    "close": "Close"
+    "close": "Close",
+    "registryAuth": "Registry credential",
+    "registryAuthHelp": "For a private registry: the id of the credential saved on RunPod (Settings, Container registry auth). Leave empty for a public image.",
+    "podTitle": "Configuration for {name}",
+    "podIntro": "This pod’s own configuration, started from the Default Configuration. Everything here applies to this pod only: the volume, datacenter, image, idle stop, folders and links. The Default Configuration is not changed.",
+    "podOwn": "This pod has its own configuration",
+    "podFromDefault": "Started from the Default Configuration",
+    "useDefaults": "Use defaults",
+    "apply": "Apply to this pod",
+    "datacenterAny": "Any: RunPod chooses (no network volume)",
+    "volumeLooking": "Asking RunPod about this volume…",
+    "volumeMissing": "RunPod has no network volume with this id.",
+    "volumeInfo": "{name} · {size} GB in {dc} · about ${cost} a month, whether or not a pod runs",
+    "volumeS3": "takes uploads over the S3 API with no pod running"
   },
   "picker": {
     "title": "Choose the {name} folder",
@@ -213,6 +251,9 @@
     "podRecreated": "Pod recreated on another host",
     "setIdle": "Set idle stop",
     "idleSet": "Idle stop set: after {n} quiet minutes",
-    "idleOff": "Idle stop off for this pod"
+    "idleOff": "Idle stop off for this pod",
+    "setPodConfig": "Set pod configuration",
+    "podConfigSet": "Pod configuration saved; it applies when the pod is recreated",
+    "podConfigDefault": "Pod back on the Default Configuration"
   }
 }

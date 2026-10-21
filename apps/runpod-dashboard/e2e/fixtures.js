@@ -27,6 +27,7 @@ export const sampleRepository = () => ({
 
 export function defaultState() {
   return {
+    podConfigs: {},   // per-pod configurations (GET/PUT /pods/:id/config)
     pods: samplePods(),
     accounts: [],
     providers: [
@@ -41,7 +42,9 @@ export function defaultState() {
     imageBuildArgs: [],
     imageEnvSkipped: 0,
     // The mount configuration (GET /mounts): the image every pod boots and the idle default.
-    mounts: { config: { image: 'ghcr.io/example/comfy-app:v26', idle_stop_minutes: 30, network_volume_id: '', mount_path: '/workspace', apply_by_default: true, dry_run: false, folders: { project: '', plates: '', 'comfy-shared': '' }, custom: [], env: {}, links: [], required: {} }, folders: [], links: [], mode: 'dev', require: [], require_source: 'config', stored: false, store: '', local_env: {}, preview: { env: {} }, catalog: {} },
+    mounts: { config: { image: 'ghcr.io/example/comfy-app:v26', registry_auth_id: '', idle_stop_minutes: 30, network_volume_id: '', mount_path: '/workspace', apply_by_default: true, dry_run: false, folders: { project: '', plates: '', 'comfy-shared': '' }, custom: [], env: {}, links: [], required: {} }, folders: [], links: [], mode: 'dev', require: [], require_source: 'config', stored: false, store: '', local_env: {}, preview: { env: {} }, catalog: {} },
+    volumes: { vol1: { id: 'vol1', name: 'comfy-workspace', size_gb: 120, datacenter: 'EU-RO-1', cost_per_month: 8.4, s3: true } },
+    datacenters: { live: true, datacenters: [{ value: 'EU-RO-1', text: 'EU-RO-1 · S3 · RTX 4000 Ada $0.28/h Low, RTX 4090 $0.89/h High', s3: true, cards: [{ key: 'rtx4000ada', name: 'RTX 4000 Ada', price: 0.28, stock: 'Low' }, { key: 'rtx4090', name: 'RTX 4090', price: 0.89, stock: 'High' }] }, { value: 'CA-MTL-1', text: 'CA-MTL-1 · A40 $0.35/h High', s3: false, cards: [{ key: 'a40', name: 'A40', price: 0.35, stock: 'High' }] }] },
     gpus: { default: 'auto', live: true, gpus: [{ value: 'auto', text: 'Cheapest card in stock (16-24 GB)', in_stock: true }, { value: 'a4000', text: 'RTX A4000 (16 GB) · none in stock', in_stock: false }, { value: 'rtx4090', text: 'RTX 4090 (24 GB) · $0.34/h · Low stock', in_stock: true, price: 0.34, stock: 'Low' }] },
     // The folder browser (GET /fs/dirs): a tiny disk.
     fs: { '/Users/lucas': ['ComfyUI-Shared', 'Projects'], '/Users/lucas/Projects': ['CANALV2', 'plates'], '/Users/lucas/Projects/CANALV2': ['00_POLICY', '04_TRACKER'] },
@@ -86,7 +89,7 @@ const filterRepos = (repos, q) => (q ? repos.filter((r) => r.name.toLowerCase().
 export async function mockApi(page, state) {
   const calls = []
   // Origin-scoped: a bare "**/api/**" would also swallow Vite's /src/api/*.js module requests.
-  await page.route('http://localhost:8000/api/**', (route) => {
+  await page.route('http://localhost:8000/api/**', async (route) => {
     const req = route.request()
     const url = new URL(req.url())
     const path = url.pathname.replace(/^\/api/, '')
@@ -113,6 +116,7 @@ export async function mockApi(page, state) {
     if (method === 'PUT' && path === '/settings') { if (body.runpod_api_key) state.settings = { runpod_api_key_set: true, runpod_api_key_hint: '••••' + body.runpod_api_key.slice(-4), source: '/home/me/.config/runpod-pod-manager/.env' }; return json(state.settings) }
     if (method === 'GET' && path === '/mounts') return json(mountsPayload(state))
     if (method === 'PUT' && path === '/mounts') { state.mounts.config = body; state.mounts.stored = true; return json(mountsPayload(state)) }
+    if (method === 'POST' && path === '/mounts/preview') return json(mountsPayload({ ...state, mounts: { ...state.mounts, config: { ...state.mounts.config, ...body } } }))
     if (method === 'DELETE' && path === '/mounts') { state.mounts.config = defaultState().mounts.config; state.mounts.stored = false; return json(mountsPayload(state)) }
     if (method === 'GET' && path === '/fs/dirs') {
       const p = query.path || '/Users/lucas'
@@ -122,11 +126,14 @@ export async function mockApi(page, state) {
       return json({ path: p, parent, home: '/Users/lucas', dirs: names.map((n) => ({ name: n, path: `${p}/${n}` })) })
     }
     if (method === 'GET' && path === '/gpus') return json(state.gpus)
+    if (method === 'GET' && path === '/datacenters') return json(state.datacenters)
+    if ((m = path.match(/^\/volumes\/([^/]+)$/)) && method === 'GET') { const v = state.volumes[m[1]]; return v ? json(v) : json({ detail: `no network volume ${m[1]}` }, 404) }
     if (method === 'GET' && path === '/dashboard') return json({ stats: stats(state.pods), pods: state.pods, dry_run: !!state.mounts.config.dry_run })
     if (method === 'GET' && path === '/pods') return json(state.pods)
     if (method === 'POST' && path === '/pods') {
       const pod = { id: `pod-new-${state.pods.length + 1}`, name: body.name, status: 'starting', gpu: body.gpu, vram: 24,
-        ssh_command: 'ssh root@new.proxy.runpod.io' }
+        ssh_command: 'ssh root@new.proxy.runpod.io', custom_config: !!body.config }
+      if (body.config) state.podConfigs[pod.id] = body.config
       state.pods.push(pod)
       return json(pod, 201)
     }
@@ -147,6 +154,12 @@ export async function mockApi(page, state) {
       if (pod) pod.idle_stop_minutes = Number(query.minutes)
       return json({ pod_id: m[1], idle_stop_minutes: Number(query.minutes) })
     }
+    if ((m = path.match(/^\/pods\/([^/]+)\/config$/)) && method === 'GET') return json(state.podConfigs[m[1]] || null)
+    if ((m = path.match(/^\/pods\/([^/]+)\/config$/)) && method === 'PUT') {
+      if (body) state.podConfigs[m[1]] = body; else delete state.podConfigs[m[1]]
+      const pod = state.pods.find((p) => p.id === m[1]); if (pod) pod.custom_config = !!body
+      return json({ pod_id: m[1], custom_config: !!body, config: body || null })
+    }
     if ((m = path.match(/^\/pods\/([^/]+)\/recreate$/)) && method === 'POST') {
       const i = state.pods.findIndex((p) => p.id === m[1])
       if (i < 0) return json({ detail: 'not found' }, 404)
@@ -156,6 +169,7 @@ export async function mockApi(page, state) {
       return json(pod)
     }
     if ((m = path.match(/^\/pods\/([^/]+)\/(stop|resume)$/)) && method === 'POST') {
+      if (state.slow?.[m[2]]) await new Promise((r) => setTimeout(r, state.slow[m[2]]))   // `api.state.slow = { stop: 800 }`: answer late, to see the card's bar
       const pod = state.pods.find((p) => p.id === m[1])
       pod.status = m[2] === 'stop' ? 'stopped' : 'running'
       return json(pod)

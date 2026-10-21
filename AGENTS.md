@@ -5,9 +5,10 @@ Entry point for any coding agent in this repo. Claude Code loads it through
 
 **What this is.** ComfyUI workflows for IMAX restoration (stereo conversion,
 corrosion clean-up) and the infrastructure to run them: a ComfyUI server for
-the Mac and a CUDA image (`apps/comfy-app`), a RunPod pod manager API and MCP
-server (`apps/runpod-api`), a dashboard (`apps/runpod-dashboard`), and a
-read-only mirror of the client project (`projects/desktop/`). The goal it
+the Mac and a CUDA image (`apps/comfy-app`), one app for RunPod pods
+(`apps/runpod-dashboard`: Electron, a TypeScript core, the MCP server and the
+CLI over it; no server, no Python), and a read-only mirror of the client
+project (`projects/desktop/`). The goal it
 serves is in `README.md`, "Goal".
 
 **Rules, in order.**

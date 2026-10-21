@@ -8,6 +8,7 @@ import { CoreError, bad } from './errors.js'
 import * as gpus from './gpus.js'
 import * as idle from './idle.js'
 import * as mounts from './mounts.js'
+import * as podconfigs from './podconfigs.js'
 import * as rp from './runpod.js'
 import * as dry from './dry.js'
 
@@ -29,11 +30,14 @@ export interface CreatePodRequest {
   image?: string; env_vars?: Record<string, string>; build_args?: Record<string, string>; pip_requirements?: string
   custom_nodes?: { name: string; url: string; branch: string; path: string }[]; start_ssh?: boolean; start_jupyter?: boolean
   apply_mounts?: boolean | null; idle_stop_minutes?: number | null
+  data_center_id?: string | null   // where to create the pod when no network volume pins it; the volume's datacenter wins otherwise
+  config?: Partial<mounts.MountsConfig> | null   // this pod's own configuration (the Default Configuration's shape); null = the default
 }
 export interface PodStatus {
   id: string; name: string; status: 'running' | 'stopped' | 'starting'; gpu: string; vram: number
   uptime_seconds: number | null; web_ui_url: string | null; ssh_command: string; idle_stop_minutes: number
   console_url?: string; status_text?: string; comfy_ready?: boolean | null   // null = not probed
+  custom_config?: boolean   // created with its own configuration, kept for Recreate
   port_mismatch?: boolean   // the pod does not expose the port its image serves ComfyUI on; only Recreate fixes it
 }
 
@@ -64,12 +68,15 @@ export function plan(req: CreatePodRequest, cfg: mounts.MountsConfig, credential
     if (missing.length) throw bad(`Not mapped on this PC: ${missing.join(', ')}. Map them in Configuration (gear icon); in dev mode (COMFY_MODE=dev) plates are optional.`)
     const ov = mounts.podOverrides(cfg)
     for (const [k, v] of Object.entries(ov.env)) if (!(k in env)) env[k] = v
+    if (ov.registry_auth_id) volume.containerRegistryAuthId = ov.registry_auth_id   // a private registry: RunPod pulls with its saved credential
     if (ov.network_volume_id) {
       volume.networkVolumeId = ov.network_volume_id; volume.volumeMountPath = ov.volume_mount_path
       if (ov.data_center_id) volume.dataCenterId = ov.data_center_id
+      volume.cloudType = 'SECURE'   // network volumes live in the secure cloud only
       volumeGb = 0   // the network volume carries the data; a per-pod volume beside it is billed for nothing
     }
   }
+  if (!volume.networkVolumeId && req.data_center_id) volume.dataCenterId = req.data_center_id
   const imageName = resolveImage(req.image, cfg)
   const gpuKey = req.gpu || gpus.DEFAULT_GPU
   let gpuTypeId: string
@@ -88,13 +95,27 @@ export function plan(req: CreatePodRequest, cfg: mounts.MountsConfig, credential
 }
 
 /** Create a pod from the dashboard's request. */
+/** The configuration a request runs under: its own, validated, or the Default Configuration. No-spend mode is
+ *  app-wide, so it always comes from the default. */
+export function effectiveConfig(req: CreatePodRequest): { cfg: mounts.MountsConfig; own: boolean } {
+  const base = mounts.load()
+  if (!req.config) return { cfg: base, own: false }
+  const cfg = mounts.validate(mounts.normalize({ ...req.config, dry_run: base.dry_run }))
+  return { cfg, own: true }
+}
+
 export async function create(req: CreatePodRequest, client?: rp.RunPodClient, credentialsEnv: Record<string, string> = {}): Promise<PodStatus> {
   if (!req.name?.trim()) throw bad('A pod needs a name')
-  const cfg = mounts.load()
+  const { cfg, own } = effectiveConfig(req)
   const { input, idleMinutes } = plan(req, cfg, credentialsEnv)
-  if (mounts.dryRun(cfg)) return dry.create({ name: req.name, gpu: req.gpu, gpu_count: input.gpuCount, image: input.imageName, idle_stop_minutes: idleMinutes > 0 ? idleMinutes : 0 })
+  if (mounts.dryRun(cfg)) {
+    const p = dry.create({ name: req.name, gpu: req.gpu, gpu_count: input.gpuCount, image: input.imageName, idle_stop_minutes: idleMinutes > 0 ? idleMinutes : 0 })
+    if (own) podconfigs.set(p.id, cfg)
+    return { ...p, custom_config: own }
+  }
   const { pod, gpuId } = await deployWithFallback(input, client)
   if (idleMinutes > 0) idle.register(pod.id, idleMinutes)
+  if (own) podconfigs.set(pod.id, cfg)
   const key = gpuKey(gpuId)
   return {
     id: pod.id, name: req.name, status: 'starting', gpu: `${key} x${input.gpuCount}`,
@@ -106,20 +127,23 @@ export async function create(req: CreatePodRequest, client?: rp.RunPodClient, cr
 const gpuKey = (id: string) => Object.entries(gpus.GPUS).find(([, g]) => g.id === id)?.[0] || id
 const NO_STOCK = /no longer any instances available|not enough|no instances/i
 
-/** The cards to try, cheapest in stock first, for `auto`; the one asked for otherwise. */
-export async function candidates(gpuTypeId: string, client?: rp.RunPodClient): Promise<string[]> {
+/** The cards to try, cheapest in stock first, for `auto`; the one asked for otherwise. With a datacenter
+ *  (a network volume pins the pod there) only the cards that datacenter has right now count as in stock. */
+export async function candidates(gpuTypeId: string, client?: rp.RunPodClient, dataCenterId?: string): Promise<string[]> {
   if (gpuTypeId !== gpus.AUTO) return [gpuTypeId]
   const ids = Object.values(gpus.GPUS).map((g) => g.id)
   let stock: rp.GpuStock[] = []
   try { stock = await rp.gpuStock(ids, client) } catch { /* no stock answer: try them all in table order */ }
-  const inStock = stock.filter((g) => g.stock && g.price != null).sort((a, b) => (a.price as number) - (b.price as number)).map((g) => g.id)
+  let here: Set<string> | null = null
+  if (dataCenterId) { try { here = new Set(await rp.datacenterStock(dataCenterId, client)) } catch { /* no answer: fall back to global stock */ } }
+  const inStock = stock.filter((g) => g.stock && g.price != null && (!here || here.has(g.id))).sort((a, b) => (a.price as number) - (b.price as number)).map((g) => g.id)
   return [...inStock, ...ids.filter((id) => !inStock.includes(id))]
 }
 
 /** Deploy on the first card RunPod will give; a "no instances" answer moves to the next card, then to the other cloud. */
 async function deployWithFallback(input: rp.CreatePodInput, client?: rp.RunPodClient): Promise<{ pod: { id: string }; gpuId: string }> {
-  const cards = await candidates(input.gpuTypeId, client)
-  const clouds: rp.CreatePodInput['cloudType'][] = input.gpuTypeId === gpus.AUTO ? [input.cloudType, input.cloudType === 'SECURE' ? 'COMMUNITY' : 'SECURE'] : [input.cloudType]
+  const cards = await candidates(input.gpuTypeId, client, input.dataCenterId)
+  const clouds: rp.CreatePodInput['cloudType'][] = input.gpuTypeId === gpus.AUTO && !input.networkVolumeId ? [input.cloudType, input.cloudType === 'SECURE' ? 'COMMUNITY' : 'SECURE'] : [input.cloudType]
   let last: Error | null = null
   for (const cloudType of clouds) {
     for (const gpuTypeId of cards) {
@@ -145,6 +169,7 @@ export function toStatus(p: rp.RawPod): PodStatus {
     gpu: p.machine?.gpuDisplayName || String(p.gpuCount ?? '?'), vram: gpus.vram(p.machine?.gpuDisplayName || '') || 24,
     uptime_seconds: uptime, web_ui_url: running ? idle.proxyUrl(p.id, webPortOf(p.ports)) : null,
     ssh_command: `ssh root@${p.id}.proxy.runpod.io`, idle_stop_minutes: idle.entry(p.id)?.minutes ?? 0, comfy_ready: null,
+    custom_config: podconfigs.has(p.id),
     port_mismatch: (p.imageName || '') === PREBUILT_IMAGE && !/3001\/http/.test(p.ports || ''),
     console_url: consoleUrl(p.id), status_text: p.lastStatusChange || p.desiredStatus || '',
   }
@@ -160,7 +185,7 @@ export async function comfyReady(url: string, fetchFn: typeof fetch = fetch): Pr
 }
 
 export const list = async (client?: rp.RunPodClient): Promise<PodStatus[]> => {
-  if (isDry()) return dry.list()
+  if (isDry()) return dry.list().map((p) => ({ ...p, custom_config: podconfigs.has(p.id) }))
   const pods = (await rp.listPods(client)).map(toStatus)
   await Promise.all(pods.map(async (p) => { if (p.status === 'running' && p.web_ui_url) p.comfy_ready = await comfyReady(p.web_ui_url, client?.fetchFn || fetch) }))
   return pods
@@ -180,6 +205,19 @@ export function stats(pods: PodStatus[]) {
   }
 }
 
+/** RunPod's network volume price: USD 0.07 per GB a month for the first TB, 0.05 beyond (docs.runpod.io/storage/s3-api, 2026-10-21). */
+export const volumeCostPerMonth = (sizeGb: number) => Math.round((Math.min(sizeGb, 1000) * 0.07 + Math.max(sizeGb - 1000, 0) * 0.05) * 100) / 100
+
+export interface VolumeInfo { id: string; name: string; size_gb: number; datacenter: string; cost_per_month: number; s3: boolean }
+/** The configured network volume (or the one asked for) with what it costs a month; null when RunPod has no such volume. */
+export async function volumeInfo(id?: string, client?: rp.RunPodClient): Promise<VolumeInfo | null> {
+  const vid = (id ?? (mounts.load().network_volume_id || '')).trim()
+  if (!vid) return null
+  if (isDry()) return { id: vid, name: 'simulated', size_gb: 100, datacenter: 'CA-MTL-1', cost_per_month: volumeCostPerMonth(100), s3: false }
+  const v = await rp.networkVolume(vid, client)
+  return v && { id: v.id, name: v.name, size_gb: v.size, datacenter: v.dataCenterId, cost_per_month: volumeCostPerMonth(v.size), s3: S3_DATACENTERS.has(v.dataCenterId) }
+}
+
 export async function dashboard(client?: rp.RunPodClient) {
   const pods = await list(client)
   return { stats: stats(pods), pods, dry_run: isDry() }
@@ -187,7 +225,18 @@ export async function dashboard(client?: rp.RunPodClient) {
 
 export async function stop(podId: string, client?: rp.RunPodClient) { if (isDry()) return dry.stop(podId); await rp.stopPod(podId, client); return { message: `Pod ${podId} stopped`, pod_id: podId } }
 export async function resume(podId: string, client?: rp.RunPodClient) { if (isDry()) return dry.resume(podId); await rp.resumePod(podId, 1, client); return { message: `Pod ${podId} resumed`, pod_id: podId } }
-export async function remove(podId: string, client?: rp.RunPodClient) { if (isDry()) { idle.forget(podId); return dry.remove(podId) } await rp.terminatePod(podId, client); idle.forget(podId); return { message: `Pod ${podId} deleted`, pod_id: podId } }
+export async function remove(podId: string, client?: rp.RunPodClient) { podconfigs.forget(podId); if (isDry()) { idle.forget(podId); return dry.remove(podId) } await rp.terminatePod(podId, client); idle.forget(podId); return { message: `Pod ${podId} deleted`, pod_id: podId } }
+
+/** A pod's own configuration, or null when it uses the Default Configuration. */
+export const config = (podId: string) => podconfigs.get(podId)
+/** Give a pod its own configuration (applied when it is recreated), or null to put it back on the default. */
+export function setConfig(podId: string, cfg: Partial<mounts.MountsConfig> | null) {
+  if (!cfg) { podconfigs.forget(podId); return { pod_id: podId, custom_config: false, config: null } }
+  const base = mounts.load()
+  const full = mounts.validate(mounts.normalize({ ...cfg, dry_run: base.dry_run }))
+  podconfigs.set(podId, full)
+  return { pod_id: podId, custom_config: true, config: full }
+}
 
 /** The two callbacks the idle loop needs, over RunPod. */
 /** The pods RunPod wants running, with their uptime (0 while still starting), for the idle watch. */
@@ -245,33 +294,69 @@ export async function recreate(podId: string, client?: rp.RunPodClient): Promise
   if (isDry()) {
     const old = dry.list().find((x) => x.id === podId)
     if (!old) throw new CoreError(404, `Pod ${podId} not found`)
-    dry.remove(podId)
-    return dry.create({ name: old.name, gpu: gpuKey(old.gpu.split(' x')[0]) || gpus.DEFAULT_GPU, gpu_count: 1, image: 'simulated', idle_stop_minutes: old.idle_stop_minutes })
+    const own = podconfigs.get(podId)
+    dry.remove(podId); podconfigs.forget(podId)
+    const fresh = dry.create({ name: old.name, gpu: gpuKey(old.gpu.split(' x')[0]) || gpus.DEFAULT_GPU, gpu_count: 1, image: 'simulated', idle_stop_minutes: old.idle_stop_minutes })
+    if (own) podconfigs.set(fresh.id, own)
+    return { ...fresh, custom_config: !!own }
   }
   const d = await details(podId, client)
   const key = gpuKey(d.gpu)
   const req: CreatePodRequest = {
     name: d.name || 'pod', gpu: key in gpus.GPUS ? key : gpus.AUTO, gpu_count: d.gpu_count || 1,
     instance_type: d.cloud === 'COMMUNITY' ? 'spot' : 'on-demand', image: d.image || 'configured', disk_gb: d.disk_gb || 20,
-    idle_stop_minutes: idle.entry(podId)?.minutes ?? null, apply_mounts: null,
+    idle_stop_minutes: idle.entry(podId)?.minutes ?? null, apply_mounts: null, config: podconfigs.get(podId),
   }
   const fresh = await create(req, client)
   await rp.terminatePod(podId, client)
-  idle.forget(podId)
+  idle.forget(podId); podconfigs.forget(podId)
   return fresh
 }
 
 export interface GpuMenuEntry { value: string; text: string; price: number | null; stock: string | null; in_stock: boolean }
 
 /** The GPU menu with what RunPod has in stock right now and the on-demand price; `auto` first. Without a key or on an error the plain menu. */
-export async function gpuMenu(client?: rp.RunPodClient): Promise<{ default: string; gpus: GpuMenuEntry[]; live: boolean }> {
+/** Datacenters that serve a network volume over RunPod's S3 API (docs.runpod.io/storage/s3-api, 2026-10-21). */
+export const S3_DATACENTERS = new Set(['EU-CZ-1', 'EU-RO-1', 'EUR-IS-1', 'EUR-NO-1', 'US-CA-2', 'US-GA-2', 'US-IL-1', 'US-KS-2', 'US-MD-1', 'US-MO-1', 'US-MO-2', 'US-NC-1', 'US-NC-2', 'US-NE-1', 'US-WA-1'])
+
+export interface DatacenterEntry { value: string; text: string; s3: boolean; cards: { key: string; name: string; price: number; stock: string }[] }
+/** The datacenter menu for the Configuration panel: every listed datacenter, S3 support, and our cards in stock there
+ *  with the secure-cloud price per hour, cheapest first. Datacenters with a card in stock come first. */
+let dcCache: { at: number; value: { datacenters: DatacenterEntry[]; live: boolean } } | null = null   // a few seconds to build; five minutes is fresh enough for stock
+export async function datacenters(client?: rp.RunPodClient): Promise<{ datacenters: DatacenterEntry[]; live: boolean }> {
+  if (!client && dcCache && Date.now() - dcCache.at < 300_000) return dcCache.value
+  if (isDry()) return { datacenters: [{ value: 'CA-MTL-1', text: 'CA-MTL-1 · simulated', s3: false, cards: [] }, { value: 'EU-RO-1', text: 'EU-RO-1 · S3 · simulated', s3: true, cards: [] }], live: false }
+  let stock: rp.DatacenterPrices[]
+  try { stock = await rp.datacenterPrices(Object.values(gpus.GPUS).map((g) => g.id), client) } catch { return { datacenters: [], live: false } }
+  const entries = stock.map((dc) => {
+    const cards = dc.cards.map((c) => ({ key: gpuKey(c.id), name: gpus.GPUS[gpuKey(c.id)]?.name || c.id, price: c.price as number, stock: c.stock as string })).sort((a, b) => a.price - b.price)
+    const s3 = S3_DATACENTERS.has(dc.id)
+    const text = [dc.id, s3 ? 'S3' : null, cards.length ? cards.slice(0, 3).map((c) => `${c.name} $${c.price}/h ${c.stock}`).join(', ') : 'none of our cards in stock'].filter(Boolean).join(' · ')
+    return { value: dc.id, text, s3, cards }
+  })
+  entries.sort((a, b) => (b.cards.length ? 1 : 0) - (a.cards.length ? 1 : 0) || (a.cards[0]?.price ?? 9) - (b.cards[0]?.price ?? 9) || a.value.localeCompare(b.value))
+  const value = { datacenters: entries, live: true }
+  if (!client) dcCache = { at: Date.now(), value }
+  return value
+}
+
+/** With a network volume configured the prices are the secure-cloud prices in its datacenter, what such a pod pays;
+ *  else RunPod's lowest price anywhere. `dataCenterId` overrides the configured one. */
+export async function gpuMenu(client?: rp.RunPodClient, dataCenterId?: string): Promise<{ default: string; gpus: GpuMenuEntry[]; live: boolean; datacenter: string | null }> {
   const plain = gpus.menu().map((m) => ({ ...m, price: null, stock: null, in_stock: m.value === gpus.AUTO }))
-  if (isDry()) return { default: gpus.DEFAULT_GPU, gpus: plain.map((m) => ({ ...m, in_stock: true, stock: 'simulated' })), live: false }
+  if (isDry()) return { default: gpus.DEFAULT_GPU, gpus: plain.map((m) => ({ ...m, in_stock: true, stock: 'simulated' })), live: false, datacenter: null }
+  const cfg = mounts.load()
+  const dc = dataCenterId ?? (cfg.network_volume_id ? cfg.data_center_id : '')
   let stock: rp.GpuStock[]
-  try { stock = await rp.gpuStock(Object.values(gpus.GPUS).map((g) => g.id), client) } catch { return { default: gpus.DEFAULT_GPU, gpus: plain, live: false } }
+  try {
+    if (dc) {
+      const [here] = await rp.datacenterPrices(Object.values(gpus.GPUS).map((g) => g.id), client, [dc])
+      stock = (here?.cards || []).map((c) => ({ id: c.id, price: c.price, stock: c.stock, secure: true, community: false }))
+    } else stock = await rp.gpuStock(Object.values(gpus.GPUS).map((g) => g.id), client)
+  } catch { return { default: gpus.DEFAULT_GPU, gpus: plain, live: false, datacenter: dc || null } }
   const byId = new Map(stock.map((s) => [s.id, s]))
   return {
-    default: gpus.DEFAULT_GPU, live: true,
+    default: gpus.DEFAULT_GPU, live: true, datacenter: dc || null,
     gpus: plain.map((m) => {
       if (m.value === gpus.AUTO) return m
       const s = byId.get(gpus.GPUS[m.value].id)

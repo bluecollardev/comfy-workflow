@@ -7,9 +7,7 @@ Automation scripts and configurations for managing ComfyUI infrastructure on Run
 ```
 infra/
 ├── scripts/
-│   ├── create_pod.py    # Pod lifecycle CLI (create, list, status, stop, resume, delete)
 │   ├── setup.sh         # Installs the CLI deps and creates a first pod
-│   └── requirements.txt # Python dependencies for the CLI
 ├── pod-config.yaml      # Pod specifications
 ├── setup-team.sh        # Team machine setup (Homebrew, Python, Node, Terraform)
 ├── terraform/           # IaC (future)
@@ -17,15 +15,15 @@ infra/
 ```
 
 Not here any more: the pod manager API, pool manager and MCP server are the
-`apps/runpod-api/` app, and the ComfyUI Docker image is `apps/comfy-app/`.
+`apps/runpod-dashboard/` app (its core, MCP server and CLI), and the ComfyUI Docker image is `apps/comfy-app/`.
 
 ## Quick Start
 
 ### 1. Install Dependencies
 
 ```bash
-cd ~/workspaces/comfy_workflow/infra/scripts
-pip install -r requirements.txt
+cd ~/workspaces/comfy_workflow
+# nothing to install: the CLI is part of the app (./start.sh installs it on the first run)
 ```
 
 ### 2. Set RunPod API Key
@@ -37,7 +35,7 @@ export RUNPOD_API_KEY="your-api-key-from-runpod"
 ### 3. Create On-Demand Pod
 
 ```bash
-python3 create_pod.py create \
+./start.sh pod create \
   --name ComfyUI-Dev \
   --gpu rtx4090 \
   --volume 50 \
@@ -48,13 +46,13 @@ python3 create_pod.py create \
 ### 4. Check Pod Status
 
 ```bash
-python3 create_pod.py list
-python3 create_pod.py status --pod-id <pod-id>
+./start.sh pod list
+./start.sh pod status --pod-id <pod-id>
 ```
 
 ## Scripts
 
-### `create_pod.py`
+### `./start.sh pod` (apps/runpod-dashboard/cli/index.mjs)
 
 Comprehensive pod management CLI.
 
@@ -62,22 +60,22 @@ Comprehensive pod management CLI.
 
 ```bash
 # Create new pod
-python3 create_pod.py create --name MyPod --gpu rtx4090
+./start.sh pod create --name MyPod --gpu auto
 
 # List all pods
-python3 create_pod.py list
+./start.sh pod list
 
 # Get pod status
-python3 create_pod.py status --pod-id <id>
+./start.sh pod status --pod-id <id>
 
 # Stop pod (pause billing)
-python3 create_pod.py stop --pod-id <id>
+./start.sh pod stop --pod-id <id>
 
 # Resume stopped pod
-python3 create_pod.py resume --pod-id <id>
+./start.sh pod resume --pod-id <id>
 
 # Delete pod
-python3 create_pod.py delete --pod-id <id> --force
+./start.sh pod delete --pod-id <id> --force
 ```
 
 **GPU Options:**
@@ -108,7 +106,7 @@ and `ARG` lines (`DOCKERFILE_PATH` overrides the location).
 
 Then deploy to RunPod with:
 ```bash
-python3 create_pod.py create --name CustomPod --image <registry>/comfyui-custom:latest
+./start.sh pod create --name CustomPod --image <registry>/comfyui-custom:latest
 ```
 
 ## Terraform (Future)
@@ -121,19 +119,10 @@ Placeholder for Infrastructure-as-Code approach (TBD):
 
 ## Cost Management
 
-```bash
-# Quick cost estimate for 8 hrs/day:
-python3 << 'EOF'
-gpus = {"rtx4090": 1.10, "l40s": 1.80, "h100": 4.50}
-hours_per_day = 8
-days_per_month = 30
-
-for gpu, price in gpus.items():
-    daily = price * hours_per_day
-    monthly = daily * days_per_month
-    print(f"{gpu}: ${daily:.2f}/day = ${monthly:.2f}/month")
-EOF
-```
+The app shows what a pod pays: the datacenter and card menus carry the secure-cloud
+price per hour where the volume lives (Romania's 4090 is USD 0.89, the A40 in Montreal
+0.35), and the stats bar carries the network volume's monthly cost (0.07 per GB). Eight
+hours a day on a 0.35 card is about USD 84 a month; the idle watch stops what is forgotten.
 
 Output:
 ```
@@ -147,7 +136,7 @@ h100: $36.00/day = $1080.00/month
 ### Check GPU Availability
 
 ```bash
-python3 create_pod.py list
+./start.sh pod list
 ```
 
 ### SSH Into Running Pod

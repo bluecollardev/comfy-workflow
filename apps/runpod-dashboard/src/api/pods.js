@@ -9,6 +9,7 @@ const toRequest = (podData) => ({
   name: podData.name,
   gpu: podData.gpu,
   gpu_count: podData.gpuCount || 1,
+  data_center_id: podData.dataCenterId || null,   // a choice without a network volume; with one, the volume's datacenter wins
   instance_type: podData.instanceType || 'spot',
   volume_gb: podData.volumeGb ?? 0,
   disk_gb: podData.diskGb || 20,
@@ -21,6 +22,7 @@ const toRequest = (podData) => ({
   start_ssh: podData.startSsh !== false,
   start_jupyter: podData.startJupyter === true,
   apply_mounts: podData.applyMounts !== false,
+  config: podData.config || null,   // this pod's own configuration (the Default Configuration's shape), or the default
 });
 
 // Inside Electron every call goes to the core over IPC; in a browser, to the API over HTTP.
@@ -28,7 +30,9 @@ const ipc = core && {
   listPods: () => core.invoke('pods', 'list'),
   getPod: (id) => core.invoke('pods', 'get', [id]),
   createPod: (podData) => core.invoke('pods', 'create', [toRequest(podData)]),
-  gpus: () => core.invoke('pods', 'gpus'),
+  gpus: (dc) => core.invoke('pods', 'gpus', [dc || '']),
+  volume: (id) => core.invoke('pods', 'volume', [id || '']),
+  datacenters: () => core.invoke('pods', 'datacenters'),
   setIdle: (id, minutes) => core.invoke('pods', 'setIdle', [id, minutes]),
   stopPod: (id) => core.invoke('pods', 'stop', [id]),
   resumePod: (id) => core.invoke('pods', 'resume', [id]),
@@ -36,6 +40,8 @@ const ipc = core && {
   getDashboard: () => core.invoke('pods', 'dashboard'),
   details: (id) => core.invoke('pods', 'details', [id]),
   recreate: (id) => core.invoke('pods', 'recreate', [id]),
+  config: (id) => core.invoke('pods', 'config', [id]),
+  setConfig: (id, config) => core.invoke('pods', 'setConfig', [id, config]),
 };
 
 const http = {
@@ -58,8 +64,16 @@ const http = {
   },
 
   // The GPU menu the API allows (16-24 GB cards, cheapest first)
-  async gpus() {
-    const { data } = await axios.get(`${API_BASE}/gpus`);
+  async gpus(dc) {
+    const { data } = await axios.get(`${API_BASE}/gpus`, { params: dc ? { dc } : {} });
+    return data;
+  },
+  async volume(id) {
+    const { data } = await axios.get(`${API_BASE}/volumes/${encodeURIComponent(id)}`);
+    return data;
+  },
+  async datacenters() {
+    const { data } = await axios.get(`${API_BASE}/datacenters`);
     return data;
   },
 
@@ -96,6 +110,16 @@ const http = {
   // Same pod, new host: for a stopped pod whose host has no free GPU
   async recreate(id) {
     const { data } = await axios.post(`${API_BASE}/pods/${id}/recreate`);
+    return data;
+  },
+
+  // A pod's own configuration (null = the Default Configuration), and setting or clearing it
+  async config(id) {
+    const { data } = await axios.get(`${API_BASE}/pods/${id}/config`);
+    return data;
+  },
+  async setConfig(id, config) {
+    const { data } = await axios.put(`${API_BASE}/pods/${id}/config`, config);
     return data;
   },
 

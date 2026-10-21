@@ -22,6 +22,7 @@ export const usePodsStore = defineStore('pods', () => {
   const loadError = ref(null)
   const actionError = ref(null)
   const busyPodId = ref(null)
+  const pending = ref({})   // pod id -> 'stop' | 'resume' | 'delete' | 'recreate' while that action runs: the card shows a bar for it
   const dryRun = ref(false)
   let timer = null
 
@@ -73,10 +74,12 @@ export const usePodsStore = defineStore('pods', () => {
   const DONE = { Stop: 'toast.podStopped', Resume: 'toast.podResumed', Delete: 'toast.podDeleted' }
   async function act(podId, action, label) {
     busyPodId.value = podId
+    pending.value = { ...pending.value, [podId]: label.toLowerCase() }
     actionError.value = null
     const r = await toast.run(t(LABEL[label]), () => action(podId), { ok: t(DONE[label]), onError: (msg) => (actionError.value = msg) })
     if (r.ok) await load()   // the list and the stats
     busyPodId.value = null
+    const { [podId]: _done, ...rest } = pending.value; pending.value = rest
     return r
   }
   const stop = (id) => act(id, podsAPI.stopPod, 'Stop')
@@ -86,8 +89,10 @@ export const usePodsStore = defineStore('pods', () => {
     const running = pods.value.filter((p) => p.status === 'running' || p.status === 'starting')
     if (!running.length) { toast.info(t('toast.nothingRunning')); return { ok: true, value: 0 } }
     actionError.value = null
+    pending.value = { ...pending.value, ...Object.fromEntries(running.map((p) => [p.id, 'stop'])) }
     const r = await toast.run(t('toast.pauseAll'), async () => { for (const p of running) await podsAPI.stopPod(p.id); return running.length }, { ok: t('toast.pausedAll', { n: running.length }), onError: (msg) => (actionError.value = msg) })
     await load()
+    pending.value = Object.fromEntries(Object.entries(pending.value).filter(([id]) => !running.some((p) => p.id === id)))
     return r
   }
   const HOST_FULL = /not enough free GPUs on the host/i
@@ -102,10 +107,12 @@ export const usePodsStore = defineStore('pods', () => {
   /** A fresh pod with the same settings on another host; the old one is terminated. */
   async function recreate(id) {
     busyPodId.value = id
+    pending.value = { ...pending.value, [id]: 'recreate' }
     actionError.value = null
     const r = await toast.run(t('toast.recreatePod'), () => podsAPI.recreate(id), { ok: t('toast.podRecreated'), onError: (msg) => (actionError.value = msg) })
     if (r.ok) { hostFull.value = null; await load(); startAutoRefresh() }
     busyPodId.value = null
+    const { [id]: _done, ...rest } = pending.value; pending.value = rest
     return r
   }
 
@@ -116,9 +123,18 @@ export const usePodsStore = defineStore('pods', () => {
     return r
   }
 
+  /** A pod's own configuration (null = the Default Configuration). */
+  const config = (id) => podsAPI.config(id)
+  /** Give a pod its own configuration, applied when it is recreated; null puts it back on the default. */
+  async function setConfig(id, cfg) {
+    const r = await toast.run(t('toast.setPodConfig'), () => podsAPI.setConfig(id, cfg), { ok: cfg ? t('toast.podConfigSet') : t('toast.podConfigDefault'), onError: (msg) => (actionError.value = msg) })
+    if (r.ok) { const p = pods.value.find((x) => x.id === id); if (p) p.custom_config = !!cfg }
+    return r
+  }
+
   /** The pod as RunPod describes it, for the card's details panel. */
   const details = (id) => podsAPI.details(id)
   const remove = (id) => act(id, podsAPI.deletePod, 'Delete')
 
-  return { stats, pods, dryRun, initialLoading, refreshing, loadError, actionError, busyPodId, load, refreshList, startAutoRefresh, stopAutoRefresh, create, stop, stopAll, resume, remove, details, recreate, hostFull, setIdle }
+  return { stats, pods, dryRun, initialLoading, refreshing, loadError, actionError, busyPodId, pending, load, refreshList, startAutoRefresh, stopAutoRefresh, create, stop, stopAll, resume, remove, details, recreate, hostFull, setIdle, config, setConfig }
 })

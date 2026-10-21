@@ -1,9 +1,9 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="start pods" type="ShConfigurationType">
-    <option name="SCRIPT_TEXT" value="" />
+  <configuration default="false" name="test: gate (core + browser)" type="ShConfigurationType">
+    <option name="SCRIPT_TEXT" value="./start.sh test" />
     <option name="INDEPENDENT_SCRIPT_PATH" value="true" />
     <option name="SCRIPT_PATH" value="$PROJECT_DIR$/start.sh" />
-    <option name="SCRIPT_OPTIONS" value="pods" />
+    <option name="SCRIPT_OPTIONS" value="test" />
     <option name="INDEPENDENT_SCRIPT_WORKING_DIRECTORY" value="true" />
     <option name="SCRIPT_WORKING_DIRECTORY" value="$PROJECT_DIR$" />
     <option name="INDEPENDENT_INTERPRETER_PATH" value="true" />

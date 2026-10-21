@@ -39,6 +39,9 @@ function writeEnvFile(values: Record<string, string>) {
   writeFileSync(f, out.join('\n').replace(/\n*$/, '\n'), { mode: 0o600 })
 }
 
+/** One value by name, the environment first, then the file: how the CLI finds the RunPod key and the sync finds the S3 keys. */
+export const lookup = (name: string): string => process.env[name] || readEnvFile()[name] || ''
+
 const hint = (v: string) => (v ? `••••${v.slice(-4)}` : '')
 
 /** What the panel shows: whether each secret is set and its last four characters, never the value. */
@@ -62,4 +65,11 @@ export function set(values: { runpod_api_key?: string | null }) {
     for (const k of KEYS) if (k in updates) { if (updates[k]) process.env[k] = updates[k]; else delete process.env[k] }
   }
   return get()
+}
+
+/** Put the stored secrets into this process's environment where it carries none: what the MCP server and the
+ *  CLI do at start, so the key the panel saved serves them too, without a shell exporting it. */
+export function applyToEnv(): void {
+  const stored = readEnvFile()
+  for (const k of KEYS) if (!process.env[k] && stored[k]) process.env[k] = stored[k]
 }

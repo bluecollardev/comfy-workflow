@@ -6,11 +6,11 @@ Claude Code ↔ MCP Server ↔ Pool Manager ↔ RunPod API
 
 ## Quick Start
 
-### 1. Install Dependencies
+### 1. Install
 
 ```bash
 cd ~/workspaces/comfy_workflow
-pip install -r apps/runpod-api/requirements.txt
+./start.sh mcp   # installs the app's dependencies on the first run; the server is Node, over the app's TypeScript core
 ```
 
 ### 2. Set Environment
@@ -22,8 +22,7 @@ export RUNPOD_API_KEY="rpa_..."
 ### 3. Start MCP Server
 
 ```bash
-cd apps/runpod-api
-python3 mcp_server.py
+./start.sh mcp          # node apps/runpod-dashboard/mcp/server.mjs
 ```
 
 Server listens on stdio (Claude Code connects directly).
@@ -36,9 +35,9 @@ In `~/.claude/codes/claude-code-config.json` (or via Claude Code settings):
 {
   "mcp_servers": {
     "comfy-moe": {
-      "command": "python3",
+      "command": "node",
       "args": [
-        "/Users/lucas/workspaces/comfy_workflow/apps/runpod-api/mcp_server.py"
+        "/Users/lucas/workspaces/comfy_workflow/apps/runpod-dashboard/mcp/server.mjs"
       ],
       "env": {
         "RUNPOD_API_KEY": "rpa_..."
@@ -151,7 +150,7 @@ Spin up a new GPU pod for an agent type.
 
 **Arguments:**
 - `agent_name` (string, required) - Type of agent (e.g., "image-gen", "video-gen")
-- `gpu_type` (string, required) - GPU type: `rtx4090`, `a100`, `h100`, `l40s`, `rtx6000`
+- `gpu_type` (string, required) - a card from the core's table or `auto` (cheapest in stock where the volume lives): `auto`, `a4000`, `rtx4000ada`, `a5000`, `rtx3090`, `rtx4090`, `a6000`, `a40`. Bigger cards are left out on purpose (`libs/core/src/gpus.ts`).
 - `storage_gb` (integer, optional) - Storage size. Default: 100. Range: 50-500
 
 **Example:**
@@ -226,8 +225,8 @@ Submit text-to-image workflow to image-gen-abc123
 ✓ Job submitted: job-uuid-123
 
 Agent: image-gen-abc123
-API: http://abc123.proxy.runpod.io:8000/api/prompt
-Status: http://abc123.proxy.runpod.io:8000/history/job-uuid-123
+API: https://abc123-8188.proxy.runpod.net/prompt
+Status: https://abc123-8188.proxy.runpod.net/history/job-uuid-123
 ```
 
 #### `get_job_status`
@@ -262,13 +261,13 @@ Check status of a running/completed job.
 ```
 Claude, create a development agent pool:
 - 1 image generation pod (RTX 4090)
-- 1 video generation pod (A100)
+- 1 video generation pod (A40, 48 GB)
 - Both 100GB storage
 ```
 
 Claude will:
 1. Call `create_agent` for image-gen (RTX 4090)
-2. Call `create_agent` for video-gen (A100)
+2. Call `create_agent` for video-gen (A40)
 3. Return pool status with URLs
 
 ### Monitor Cost
@@ -314,7 +313,7 @@ Claude calls `get_job_status` → shows progress, outputs, errors.
 ```
 Claude Code
     ↓
-    └─→ MCP Server (mcp_server.py)
+    └─→ MCP Server (apps/runpod-dashboard/mcp/server.mjs, over libs/core)
         ├─ Tool definitions (9 tools)
         └─ Tool handlers
             ↓
@@ -403,12 +402,10 @@ Claude submits it and returns the job URL to check progress.
 
 ## Costs & Budgeting
 
-**GPU costs (hourly):**
-- RTX 4090: ~$0.42/hr
-- A100: ~$1.00/hr
-- H100: ~$1.50/hr
-- L40S: ~$0.60/hr
-- RTX 6000: ~$0.50/hr
+**GPU costs (hourly):** what the app's card menu shows, read from RunPod when it opens: the
+secure-cloud price where the network volume lives (2026-10-21: A40 USD 0.35 in Montreal,
+4090 USD 0.89 in Romania, RTX 4000 Ada USD 0.28 there). `get_pool_status` sums the running
+agents' `cost_per_hr` from RunPod.
 
 **Storage:**
 - $0.10 per GB-month
@@ -423,19 +420,18 @@ Claude submits it and returns the job URL to check progress.
 
 ```bash
 # Terminal 1: Start MCP server
-cd apps/runpod-api
-export RUNPOD_API_KEY="rpa_..."
-python3 mcp_server.py
+export RUNPOD_API_KEY="rpa_..."   # or the key entered in the app's Default Configuration
+./start.sh mcp
 
 # Terminal 2: Test in Claude Code
 # Attach MCP server and ask:
 # "List all agents in the pool"
 ```
 
-### Automated Tests (future)
+### Automated Tests
 
 ```bash
-pytest apps/runpod-api/tests/test_mcp_server.py
+cd apps/runpod-dashboard && npm run mcp:test   # spawns the server in no-spend mode: initialize, tools/list, one call
 ```
 
 ---
@@ -445,20 +441,20 @@ pytest apps/runpod-api/tests/test_mcp_server.py
 ### MCP Server Won't Start
 
 ```
-ModuleNotFoundError: No module named 'mcp'
+Cannot find module '@modelcontextprotocol/sdk'
 ```
 
-Install dependencies:
+Install the app's dependencies:
 ```bash
-pip install -r apps/runpod-api/requirements.txt
+cd apps/runpod-dashboard && npm install && npm run core:build
 ```
 
 ### Claude Code Can't Connect
 
 Check `~/.claude/codes/claude-code-config.json`:
-- Path to script is correct
-- `RUNPOD_API_KEY` is set
-- Script is executable: `chmod +x apps/runpod-api/mcp_server.py`
+- Path to `mcp/server.mjs` is correct and `node` is Node 22
+- `RUNPOD_API_KEY` is set, or entered in the app's Default Configuration
+- The core is built (`npm run core:build` in `apps/runpod-dashboard`)
 
 ### API Key Invalid
 
