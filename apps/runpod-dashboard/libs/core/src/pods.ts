@@ -322,7 +322,9 @@ export const S3_DATACENTERS = new Set(['EU-CZ-1', 'EU-RO-1', 'EUR-IS-1', 'EUR-NO
 export interface DatacenterEntry { value: string; text: string; s3: boolean; cards: { key: string; name: string; price: number; stock: string }[] }
 /** The datacenter menu for the Configuration panel: every listed datacenter, S3 support, and our cards in stock there
  *  with the secure-cloud price per hour, cheapest first. Datacenters with a card in stock come first. */
+let dcCache: { at: number; value: { datacenters: DatacenterEntry[]; live: boolean } } | null = null   // a few seconds to build; five minutes is fresh enough for stock
 export async function datacenters(client?: rp.RunPodClient): Promise<{ datacenters: DatacenterEntry[]; live: boolean }> {
+  if (!client && dcCache && Date.now() - dcCache.at < 300_000) return dcCache.value
   if (isDry()) return { datacenters: [{ value: 'CA-MTL-1', text: 'CA-MTL-1 · simulated', s3: false, cards: [] }, { value: 'EU-RO-1', text: 'EU-RO-1 · S3 · simulated', s3: true, cards: [] }], live: false }
   let stock: rp.DatacenterPrices[]
   try { stock = await rp.datacenterPrices(Object.values(gpus.GPUS).map((g) => g.id), client) } catch { return { datacenters: [], live: false } }
@@ -333,7 +335,9 @@ export async function datacenters(client?: rp.RunPodClient): Promise<{ datacente
     return { value: dc.id, text, s3, cards }
   })
   entries.sort((a, b) => (b.cards.length ? 1 : 0) - (a.cards.length ? 1 : 0) || (a.cards[0]?.price ?? 9) - (b.cards[0]?.price ?? 9) || a.value.localeCompare(b.value))
-  return { datacenters: entries, live: true }
+  const value = { datacenters: entries, live: true }
+  if (!client) dcCache = { at: Date.now(), value }
+  return value
 }
 
 /** With a network volume configured the prices are the secure-cloud prices in its datacenter, what such a pod pays;

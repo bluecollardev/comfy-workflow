@@ -109,8 +109,15 @@ export async function datacenterPrices(want: string[], client?: RunPodClient, on
   const ids = (dcs?.dataCenters || []).filter((d) => d.listed && (!only || only.includes(d.id))).map((d) => d.id)
   if (!ids.length) return []
   const alias = (id: string) => 'dc_' + id.replace(/[^A-Za-z0-9]/g, '_')
-  const q = `query { ${ids.map((id) => `${alias(id)}: gpuTypes { id lowestPrice(input:{gpuCount:1, dataCenterId:${str(id)}, secureCloud:true}) { uninterruptablePrice stockStatus } }`).join(' ')} }`
-  const d = await graphql<Record<string, { id: string; lowestPrice: { uninterruptablePrice: number | null; stockStatus: string | null } | null }[]>>(q, client)
+  // RunPod answers 500 now and then to one query over all 34 datacenters: eight per request, a failed chunk is skipped.
+  type Priced = { id: string; lowestPrice: { uninterruptablePrice: number | null; stockStatus: string | null } | null }[]
+  const d: Record<string, Priced> = {}
+  const chunks: string[][] = []
+  for (let n = 0; n < ids.length; n += 8) chunks.push(ids.slice(n, n + 8))
+  await Promise.all(chunks.map(async (chunk) => {
+    const q = `query { ${chunk.map((id) => `${alias(id)}: gpuTypes { id lowestPrice(input:{gpuCount:1, dataCenterId:${str(id)}, secureCloud:true}) { uninterruptablePrice stockStatus } }`).join(' ')} }`
+    try { Object.assign(d, await graphql<Record<string, Priced>>(q, client)) } catch { /* that chunk's datacenters show no cards */ }
+  }))
   const w = new Set(want)
   return ids.map((id) => ({
     id,

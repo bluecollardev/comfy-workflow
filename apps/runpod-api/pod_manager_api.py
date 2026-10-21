@@ -6,6 +6,7 @@ Auto-generated API docs at /docs
 """
 
 import os
+import time
 import asyncio
 from pathlib import Path
 import json
@@ -160,9 +161,14 @@ async def start_idle_watch():
 S3_DATACENTERS = {"EU-CZ-1", "EU-RO-1", "EUR-IS-1", "EUR-NO-1", "US-CA-2", "US-GA-2", "US-IL-1", "US-KS-2", "US-MD-1", "US-MO-1", "US-MO-2", "US-NC-1", "US-NC-2", "US-NE-1", "US-WA-1"}
 
 
+_DC_CACHE: dict = {"at": 0.0, "value": None}   # the menu takes a few seconds to build; five minutes is fresh enough for stock
+
+
 @app.get("/api/datacenters", tags=["Pods"])
 async def list_datacenters():
     """Every listed datacenter, S3 support, and our cards in stock there at the secure-cloud price (what a volume pod pays)."""
+    if _DC_CACHE["value"] and time.time() - _DC_CACHE["at"] < 300:
+        return _DC_CACHE["value"]
     api_key = os.getenv('RUNPOD_API_KEY')
     if not api_key:
         return {"datacenters": [], "live": False}
@@ -171,10 +177,18 @@ async def list_datacenters():
         runpod.api_key = api_key
         ids = [d["id"] for d in run_graphql_query("query { dataCenters { id listed } }")["data"]["dataCenters"] if d.get("listed")]
         alias = lambda i: "dc_" + "".join(ch if ch.isalnum() else "_" for ch in i)
-        q = "query { " + " ".join(f'{alias(i)}: gpuTypes {{ id lowestPrice(input:{{gpuCount:1, dataCenterId:"{i}", secureCloud:true}}) {{ uninterruptablePrice stockStatus }} }}' for i in ids) + " }"
-        data = run_graphql_query(q)["data"]
-    except Exception:
+    except Exception as e:
+        logger.info(f"datacenters unavailable: {e}")
         return {"datacenters": [], "live": False}
+    # RunPod answers 500 now and then to one query over all 34 datacenters: eight per request, a failed chunk is skipped.
+    data = {}
+    for n in range(0, len(ids), 8):
+        chunk = ids[n:n + 8]
+        q = "query { " + " ".join(f'{alias(i)}: gpuTypes {{ id lowestPrice(input:{{gpuCount:1, dataCenterId:"{i}", secureCloud:true}}) {{ uninterruptablePrice stockStatus }} }}' for i in chunk) + " }"
+        try:
+            data.update(run_graphql_query(q).get("data") or {})
+        except Exception as e:
+            logger.info(f"datacenter prices unavailable for {chunk}: {e}")
     by_id = {g["id"]: (k, g) for k, g in gpus.GPUS.items()}
     out = []
     for i in ids:
@@ -189,7 +203,8 @@ async def list_datacenters():
         text = " · ".join(x for x in [i, "S3" if s3 else None, ", ".join(f'{c["name"]} ${c["price"]}/h {c["stock"]}' for c in cards[:3]) or "none of our cards in stock"] if x)
         out.append({"value": i, "text": text, "s3": s3, "cards": cards})
     out.sort(key=lambda e: (0 if e["cards"] else 1, e["cards"][0]["price"] if e["cards"] else 9, e["value"]))
-    return {"datacenters": out, "live": True}
+    _DC_CACHE.update(at=time.time(), value={"datacenters": out, "live": True})
+    return _DC_CACHE["value"]
 
 
 @app.get("/api/gpus", tags=["Pods"])
