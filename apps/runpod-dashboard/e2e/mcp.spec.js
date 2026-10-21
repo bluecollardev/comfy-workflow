@@ -14,7 +14,7 @@ const openMcp = async (page) => {
   return dialog
 }
 const endpoint = (dialog, id) => dialog.locator(`[data-testid="mcp-endpoint"][data-id="${id}"]`)
-const snippet = (card, client) => card.locator(`[data-testid="mcp-client"][data-client="${client}"]`).getByTestId('mcp-snippet')
+const snippet = async (card, client) => { await card.getByTestId('mcp-client-select').selectOption(client); return card.locator(`[data-testid="mcp-client"][data-client="${client}"]`).getByTestId('mcp-snippet') }
 
 test.describe('Connect › MCP', () => {
   test.use({ permissions: ['clipboard-read', 'clipboard-write'] })
@@ -28,13 +28,14 @@ test.describe('Connect › MCP', () => {
     await expect(pm.getByTestId('mcp-purpose')).toContainText('orchestrates RunPod')
     await expect(pm.getByTestId('mcp-command')).toHaveText(`node ${DIR}/server.mjs`)
     await expect(pm.getByTestId('mcp-not-built')).toHaveCount(0)
-    for (const c of ['claude_code', 'claude_desktop', 'codex', 'chatgpt']) await expect(snippet(pm, c)).toContainText(`${DIR}/server.mjs`)
-    await expect(snippet(pm, 'claude_code')).toHaveText(`claude mcp add pod-manager -- node ${DIR}/server.mjs`)
-    await expect(snippet(pm, 'claude_desktop')).toContainText('"mcpServers"')
-    await expect(snippet(pm, 'codex')).toContainText('[mcp_servers.pod-manager]')
-    await expect(snippet(pm, 'chatgpt')).toContainText('http://127.0.0.1:8765/mcp')
+    for (const c of ['claude_code', 'claude_desktop', 'codex', 'chatgpt']) await expect(await snippet(pm, c)).toContainText(`${DIR}/server.mjs`)
+    await expect(await snippet(pm, 'claude_code')).toHaveText(`claude mcp add pod-manager -- node ${DIR}/server.mjs`)
+    await expect(await snippet(pm, 'claude_desktop')).toContainText('"mcpServers"')
+    await expect(await snippet(pm, 'codex')).toContainText('[mcp_servers.pod-manager]')
+    await expect(await snippet(pm, 'chatgpt')).toContainText('http://127.0.0.1:8765/mcp')
+    await pm.getByTestId('mcp-client-select').selectOption('chatgpt')
     await expect(pm.locator('[data-testid="mcp-client"][data-client="chatgpt"]')).toContainText(t('mcp.chatgptNote'))
-    await expect(pm.getByTestId('mcp-client-name')).toHaveText([t('mcp.claudeCode'), t('mcp.claudeDesktop'), t('mcp.codex'), t('mcp.chatgpt')])
+    await expect(pm.getByTestId('mcp-client-select').locator('option')).toHaveText([t('mcp.claudeCode'), t('mcp.claudeDesktop'), t('mcp.codex'), t('mcp.chatgpt')])   // one client at a time, from a menu
     const br = endpoint(dialog, 'comfy-bridge')
     await expect(br.getByTestId('mcp-title')).toContainText('ComfyUI bridge')
     await expect(br.getByTestId('mcp-not-built')).toHaveText(t('mcp.notBuilt'))
@@ -49,30 +50,31 @@ test.describe('Connect › MCP', () => {
     await expect(select).toHaveValue(POD_URL)   // the first running pod with ComfyUI is the default
     await expect(select.locator('option')).toHaveText([t('mcp.targetAuto'), `ComfyUI-Dev · ${POD_URL}`, 'This Mac · http://127.0.0.1:8188', t('mcp.targetCustom')])
     await expect(br.getByTestId('mcp-command')).toHaveText(`node ${DIR}/comfy-bridge.mjs --comfy ${POD_URL}`)
-    for (const c of ['claude_code', 'claude_desktop', 'codex', 'chatgpt']) await expect(snippet(br, c)).toContainText(POD_URL)
-    await expect(snippet(br, 'claude_code')).toHaveText(`claude mcp add comfy-bridge -- node ${DIR}/comfy-bridge.mjs --comfy ${POD_URL}`)
-    await expect(snippet(br, 'codex')).toContainText(`args = ["${DIR}/comfy-bridge.mjs", "--comfy", "${POD_URL}"]`)
+    for (const c of ['claude_code', 'claude_desktop', 'codex', 'chatgpt']) await expect(await snippet(br, c)).toContainText(POD_URL)
+    await expect(await snippet(br, 'claude_code')).toHaveText(`claude mcp add comfy-bridge -- node ${DIR}/comfy-bridge.mjs --comfy ${POD_URL}`)
+    await expect(await snippet(br, 'codex')).toContainText(`args = ["${DIR}/comfy-bridge.mjs", "--comfy", "${POD_URL}"]`)
 
     await select.selectOption('http://127.0.0.1:8188')
     await expect(br.getByTestId('mcp-command')).toHaveText(`node ${DIR}/comfy-bridge.mjs --comfy http://127.0.0.1:8188`)
-    await expect(snippet(br, 'claude_desktop')).toContainText('"http://127.0.0.1:8188"')
+    await expect(await snippet(br, 'claude_desktop')).toContainText('"http://127.0.0.1:8188"')
     expect(api.calls.some((c) => c.path === '/mcp/endpoints' && c.query.comfy === 'http://127.0.0.1:8188')).toBe(true)
 
     await select.selectOption('__custom__')
     await br.getByTestId('mcp-target-url').fill('http://10.0.0.5:8188')
     await br.getByTestId('mcp-target-apply').click()
     await expect(br.getByTestId('mcp-command')).toHaveText(`node ${DIR}/comfy-bridge.mjs --comfy http://10.0.0.5:8188`)
-    await expect(snippet(br, 'chatgpt')).toContainText('--comfy http://10.0.0.5:8188 --http 8766')
+    await expect(await snippet(br, 'chatgpt')).toContainText('--comfy http://10.0.0.5:8188 --http 8766')
 
     await select.selectOption('')   // let the bridge pick
     await expect(br.getByTestId('mcp-command')).toHaveText(`node ${DIR}/comfy-bridge.mjs`)
-    await expect(snippet(br, 'claude_code')).toHaveText(`claude mcp add comfy-bridge -- node ${DIR}/comfy-bridge.mjs`)
+    await expect(await snippet(br, 'claude_code')).toHaveText(`claude mcp add comfy-bridge -- node ${DIR}/comfy-bridge.mjs`)
   })
 
   test('Copy puts the snippet or the command on the clipboard and says so', async ({ page }) => {
     await page.goto('/')
     const dialog = await openMcp(page)
     const pm = endpoint(dialog, 'pod-manager')
+    await pm.getByTestId('mcp-client-select').selectOption('codex')
     await pm.locator('[data-testid="mcp-client"][data-client="codex"]').getByTestId('mcp-copy').click()
     await expect(page.getByTestId('toast').last()).toContainText(t('mcp.copied', { what: t('mcp.whatSnippet', { name: 'Pod manager', client: t('mcp.codex') }) }))
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`[mcp_servers.pod-manager]\ncommand = "node"\nargs = ["${DIR}/server.mjs"]`)
