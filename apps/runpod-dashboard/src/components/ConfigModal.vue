@@ -60,7 +60,7 @@
 
       <div class="d-flex align-items-center justify-content-between mb-2">
         <h6 class="mb-0" data-testid="section-folders">{{ $t('config.folders') }} <span class="text-body-secondary fw-normal small">{{ $t('config.foldersHint', { mode, rule: $t(requireSource === 'prod' ? 'config.ruleProd' : requireSource === 'env' ? 'config.ruleEnv' : 'config.ruleConfig') }) }}</span><code class="d-none" data-testid="config-mode">{{ mode }}</code></h6>
-        <BButton size="sm" variant="outline-light" data-testid="add-folder" @click="cfg.custom.push({ name: '', local: '', container: '', link: '', mode: 'rw' })"><i class="fa-solid fa-plus me-1"></i>{{ $t('config.addFolder') }}</BButton>
+        <BButton size="sm" variant="outline-light" class="flex-shrink-0 text-nowrap ms-3" data-testid="add-folder" @click="cfg.custom.push({ name: '', local: '', container: '', link: '', mode: 'rw' })"><i class="fa-solid fa-plus me-1"></i>{{ $t('config.addFolder') }}</BButton>
       </div>
       <table class="table table-sm align-middle mb-3">
         <thead class="small text-body-secondary">
