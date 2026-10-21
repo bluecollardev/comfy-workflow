@@ -90,6 +90,18 @@ export async function gpuStock(ids: string[], client?: RunPodClient): Promise<Gp
   return (d?.gpuTypes || []).filter((g) => want.has(g.id)).map((g) => ({ id: g.id, price: g.lowestPrice?.uninterruptablePrice ?? null, stock: g.lowestPrice?.stockStatus ?? null, secure: g.secureCloud, community: g.communityCloud }))
 }
 
+/** RunPod's v1 REST API (rest.runpod.io/v1): network volumes. */
+export interface NetworkVolume { id: string; name: string; size: number; dataCenterId: string }
+export async function networkVolume(id: string, client: RunPodClient = {}): Promise<NetworkVolume | null> {
+  const apiKey = client.apiKey || process.env.RUNPOD_API_KEY
+  if (!apiKey) throw new CoreError(401, 'RUNPOD_API_KEY not set')
+  const base = client.baseUrl || process.env.RUNPOD_REST_BASE_URL || 'https://rest.runpod.io'
+  const res = await (client.fetchFn || fetch)(`${base}/v1/networkvolumes/${encodeURIComponent(id)}`, { headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' }, signal: AbortSignal.timeout(20_000) })
+  if (res.status === 404) return null
+  if (!res.ok) throw new CoreError(502, `RunPod answered ${res.status} for volume ${id}`)
+  return (await res.json()) as NetworkVolume
+}
+
 /** RunPod's v2 REST API (api.runpod.io/v2): the pod record with its status text, and the log stream. */
 export async function rest<T = unknown>(path: string, client: RunPodClient = {}, init: RequestInit = {}): Promise<T> {
   const apiKey = client.apiKey || process.env.RUNPOD_API_KEY

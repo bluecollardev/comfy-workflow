@@ -29,6 +29,7 @@ export interface CreatePodRequest {
   image?: string; env_vars?: Record<string, string>; build_args?: Record<string, string>; pip_requirements?: string
   custom_nodes?: { name: string; url: string; branch: string; path: string }[]; start_ssh?: boolean; start_jupyter?: boolean
   apply_mounts?: boolean | null; idle_stop_minutes?: number | null
+  config?: Partial<mounts.MountsConfig> | null   // this pod's own configuration (the Default Configuration's shape); null = the default
 }
 export interface PodStatus {
   id: string; name: string; status: 'running' | 'stopped' | 'starting'; gpu: string; vram: number
@@ -87,10 +88,19 @@ export function plan(req: CreatePodRequest, cfg: mounts.MountsConfig, credential
   }
 }
 
+/** The configuration a request runs under: its own, validated, or the Default Configuration. No-spend mode is
+ *  app-wide, so it always comes from the default. */
+export function effectiveConfig(req: CreatePodRequest): { cfg: mounts.MountsConfig; own: boolean } {
+  const base = mounts.load()
+  if (!req.config) return { cfg: base, own: false }
+  const cfg = mounts.validate(mounts.normalize({ ...req.config, dry_run: base.dry_run }))
+  return { cfg, own: true }
+}
+
 /** Create a pod from the dashboard's request. */
 export async function create(req: CreatePodRequest, client?: rp.RunPodClient, credentialsEnv: Record<string, string> = {}): Promise<PodStatus> {
   if (!req.name?.trim()) throw bad('A pod needs a name')
-  const cfg = mounts.load()
+  const { cfg } = effectiveConfig(req)
   const { input, idleMinutes } = plan(req, cfg, credentialsEnv)
   if (mounts.dryRun(cfg)) return dry.create({ name: req.name, gpu: req.gpu, gpu_count: input.gpuCount, image: input.imageName, idle_stop_minutes: idleMinutes > 0 ? idleMinutes : 0 })
   const { pod, gpuId } = await deployWithFallback(input, client)
@@ -180,6 +190,19 @@ export function stats(pods: PodStatus[]) {
   }
 }
 
+/** RunPod's network volume price: USD 0.07 per GB a month for the first TB, 0.05 beyond (docs.runpod.io/storage/s3-api, 2026-10-21). */
+export const volumeCostPerMonth = (sizeGb: number) => Math.round((Math.min(sizeGb, 1000) * 0.07 + Math.max(sizeGb - 1000, 0) * 0.05) * 100) / 100
+
+export interface VolumeInfo { id: string; name: string; size_gb: number; datacenter: string; cost_per_month: number; s3: boolean }
+/** The configured network volume (or the one asked for) with what it costs a month; null when RunPod has no such volume. */
+export async function volumeInfo(id?: string, client?: rp.RunPodClient): Promise<VolumeInfo | null> {
+  const vid = (id ?? (mounts.load().network_volume_id || '')).trim()
+  if (!vid) return null
+  if (isDry()) return { id: vid, name: 'simulated', size_gb: 100, datacenter: 'CA-MTL-1', cost_per_month: volumeCostPerMonth(100), s3: false }
+  const v = await rp.networkVolume(vid, client)
+  return v && { id: v.id, name: v.name, size_gb: v.size, datacenter: v.dataCenterId, cost_per_month: volumeCostPerMonth(v.size), s3: S3_DATACENTERS.has(v.dataCenterId) }
+}
+
 export async function dashboard(client?: rp.RunPodClient) {
   const pods = await list(client)
   return { stats: stats(pods), pods, dry_run: isDry() }
@@ -260,6 +283,9 @@ export async function recreate(podId: string, client?: rp.RunPodClient): Promise
   idle.forget(podId)
   return fresh
 }
+
+/** Datacenters that serve a network volume over RunPod's S3 API (docs.runpod.io/storage/s3-api, 2026-10-21). */
+export const S3_DATACENTERS = new Set(['EU-CZ-1', 'EU-RO-1', 'EUR-IS-1', 'EUR-NO-1', 'US-CA-2', 'US-GA-2', 'US-IL-1', 'US-KS-2', 'US-MD-1', 'US-MO-1', 'US-MO-2', 'US-NC-1', 'US-NC-2', 'US-NE-1', 'US-WA-1'])
 
 export interface GpuMenuEntry { value: string; text: string; price: number | null; stock: string | null; in_stock: boolean }
 

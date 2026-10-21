@@ -20,6 +20,7 @@
     "electron:pack": "npm run build && electron-builder --dir",
     "core:build": "tsc -p libs/core/tsconfig.json",
     "core:test": "vitest run --config libs/core/vitest.config.ts",
+    "cli": "node cli/index.mjs",
     "test": "npm run core:test",
     "electron:build:mac": "npm run build && electron-builder --mac",
     "electron:build:win": "npm run build && electron-builder --win",
