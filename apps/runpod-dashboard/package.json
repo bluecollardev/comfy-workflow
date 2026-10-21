@@ -67,7 +67,8 @@
       "electron/**/*",
       "libs/core/dist/**/*",
       "package.json",
-      "!node_modules/**"
+      "!node_modules/**",
+      "mcp/**"
     ],
     "extraResources": [
       {
@@ -92,6 +93,14 @@
       {
         "from": "build/build-info.json",
         "to": "build-info.json"
+      },
+      {
+        "from": "mcp",
+        "to": "mcp",
+        "filter": [
+          "*.mjs",
+          "!*.test.mjs"
+        ]
       }
     ],
     "mac": {
