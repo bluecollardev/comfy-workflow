@@ -209,6 +209,7 @@ pod reads that copy. Three places, one direction:
 
 What follows from that:
 
+- **The Volumes button in the navbar** lists the account's volumes with their cost, datacenter, S3 support and the pods on each; create, grow, delete (refused while a pod is attached) and "use as default" live there.
 - **Every pod uses the same volume.** The volume id and datacenter are set once in
   the panel and applied to each new pod, so there is one copy of the data and any
   number of pods over time. Deleting a pod loses nothing; outputs are on the

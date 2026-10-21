@@ -9,6 +9,9 @@
         <BButton variant="outline-light" size="sm" data-testid="open-repositories" @click="ui.repositoriesOpen = true">
           <i class="fa-solid fa-code-branch me-1"></i>{{ $t('app.repositories') }}
         </BButton>
+        <BButton variant="outline-light" size="sm" :title="$t('app.volumesTitle')" data-testid="open-volumes" @click="ui.volumesOpen = true">
+          <i class="fa-solid fa-hard-drive me-1"></i>{{ $t('app.volumes') }}
+        </BButton>
         <BButton variant="outline-light" size="sm" data-testid="open-accounts" @click="ui.accountsOpen = true">
           <i class="fa-solid fa-user me-1"></i>{{ $t('app.accounts') }}
         </BButton>
@@ -51,6 +54,7 @@
 
     <RepositoriesModal />
     <GitAccountsModal />
+    <VolumesModal />
     <ToastHost />
     <ConfigModal />
   </div>
@@ -71,6 +75,7 @@
  */
 import { onMounted, onUnmounted } from 'vue'
 import { useUiStore } from './stores/ui'
+import VolumesModal from './components/VolumesModal.vue'
 import { useToastStore } from './stores/toast'
 import { t } from './i18n'
 import { usePodsStore } from './stores/pods'

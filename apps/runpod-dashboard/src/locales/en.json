@@ -12,7 +12,9 @@
     "oauthConnected": "Connected {provider} account {account}.",
     "oauthFailed": "{provider} connection failed: {error}",
     "pauseAll": "Pause all",
-    "pauseAllTitle": "Stop every running pod now. A stopped pod keeps its disk and bills only storage, not GPU time; Resume brings it back."
+    "pauseAllTitle": "Stop every running pod now. A stopped pod keeps its disk and bills only storage, not GPU time; Resume brings it back.",
+    "volumes": "Volumes",
+    "volumesTitle": "The account's network volumes: what each costs, where it lives, which pods use it."
   },
   "stats": {
     "total": "Total pods",
@@ -254,6 +256,42 @@
     "idleOff": "Idle stop off for this pod",
     "setPodConfig": "Set pod configuration",
     "podConfigSet": "Pod configuration saved; it applies when the pod is recreated",
-    "podConfigDefault": "Pod back on the Default Configuration"
+    "podConfigDefault": "Pod back on the Default Configuration",
+    "createVolume": "Creating the volume…",
+    "volumeCreated": "Volume {name} created.",
+    "resizeVolume": "Growing the volume…",
+    "volumeResized": "Volume {name} is now {size} GB.",
+    "deleteVolume": "Deleting the volume…",
+    "volumeDeleted": "Volume {name} deleted.",
+    "defaultVolume": "Setting the default volume…",
+    "volumeDefault": "{name} is the default volume; new pods go to {dc}."
+  },
+  "volumes": {
+    "title": "Network volumes",
+    "done": "Done",
+    "intro": "A network volume is a disk in one RunPod datacenter that pods mount at /workspace. It bills whether or not a pod runs; a pod stopped on it bills nothing. Every pod the app creates attaches the Default Configuration's volume unless its own configuration names another.",
+    "loading": "Asking RunPod…",
+    "none": "No network volumes on this account.",
+    "isDefault": "default",
+    "s3Title": "Takes uploads over RunPod's S3 API with no pod running (ADR-007).",
+    "facts": "{size} GB in {dc} · about ${cost} a month",
+    "attachedTo": "Attached to:",
+    "noPods": "No pod attached.",
+    "viaRunpod": "Attached on RunPod ({status})",
+    "viaConfig": "Named by this pod's own configuration; a recreate attaches it",
+    "configOnly": "on recreate",
+    "useAsDefault": "Use as default",
+    "resize": "Grow",
+    "grow": "Grow to",
+    "delete": "Delete",
+    "deleteBlocked": "A pod is attached: delete or recreate that pod first.",
+    "confirmDelete": "Delete the volume \"{name}\" ({size} GB) and everything on it? This cannot be undone.",
+    "createTitle": "Create a volume",
+    "name": "Volume name",
+    "size": "Size (GB)",
+    "datacenter": "Volume datacenter",
+    "pickDatacenter": "Choose a datacenter",
+    "create": "Create",
+    "createHelp": "About ${cost} a month at 0.07 per GB. A volume only grows afterwards, never shrinks, and never leaves its datacenter. S3-marked datacenters take uploads with no pod running."
   }
 }

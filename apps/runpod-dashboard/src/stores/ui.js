@@ -8,5 +8,6 @@ export const useUiStore = defineStore('ui', () => {
   const repositoriesOpen = ref(false)
   const repositoriesVersion = ref(0)
   const configOpen = ref(false)
-  return { accountsOpen, repositoriesOpen, repositoriesVersion, configOpen }
+  const volumesOpen = ref(false)
+  return { accountsOpen, repositoriesOpen, repositoriesVersion, configOpen, volumesOpen }
 })
