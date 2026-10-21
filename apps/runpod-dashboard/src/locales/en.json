@@ -136,7 +136,8 @@
     "groupAdvanced": "Advanced",
     "groupAdvancedHint": "Environment variables, extra pip packages and custom nodes, each collapsed until needed.",
     "groupGpu": "GPU",
-    "groupGpuHint": "The datacenter first: the card menu then prices what is in stock there, in the secure cloud when a volume pins the pod. \"Cheapest card in stock\" tries the cards in price order at creation."
+    "groupGpuHint": "The datacenter first: the card menu then prices what is in stock there, in the secure cloud when a volume pins the pod. \"Cheapest card in stock\" tries the cards in price order at creation.",
+    "hints": "Help"
   },
   "config": {
     "title": "Default Configuration",

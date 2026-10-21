@@ -259,4 +259,17 @@ test.describe('create pod', () => {
     await expect(dc).toHaveValue('EU-RO-1')
     await expect(page.getByTestId('pod-datacenter-group')).toContainText(t('form.datacenterLocked', { dc: 'EU-RO-1' }))
   })
+
+  test('a Help switch at the top shows the hints under the group headings', async ({ page }) => {
+    await page.goto('/')
+    await openCreatePod(page)
+    await expect(page.getByTestId('form-hint')).toHaveCount(0)   // off by default
+    await page.getByTestId('pod-hints').check()
+    await expect(page.getByTestId('form-hint')).toHaveCount(5)
+    await page.reload()
+    await openCreatePod(page)
+    await expect(page.getByTestId('form-hint')).toHaveCount(5)   // remembered in this browser
+    await page.getByTestId('pod-hints').uncheck()
+    await expect(page.getByTestId('form-hint')).toHaveCount(0)
+  })
 })
