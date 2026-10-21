@@ -23,6 +23,10 @@ completed items move here. Commit hashes are on `develop`.
 
 ## 2026-10-21
 
+### One Connect menu for the third-party things (branch `feature/connect-menu`)
+- Lucas: "i want repositories and accounts merged into a connect menu that allows connecting this third party stuff". The navbar's Accounts and Repositories buttons are one **Connect** button opening a modal with two tabs: Accounts (GitHub and GitLab OAuth) and Repositories (attached for custom nodes). The two modals became panes inside it; everything that opened them before (the Attach node dialog's "Manage repositories", the OAuth return, the repositories pane's "Accounts" link) opens the Connect modal on the right tab through the same two flags.
+- Found on the way: the create form asked for the card menu before the datacenter logic existed (an early call left over from the datacenter change); the first load now comes from the datacenter watcher.
+
 ### Volumes in the app (branch `feature/volumes`)
 - Lucas: "add a new button to top menu and a new modal that allows you to manage attached volumes. if volumes are attached or linked to a pod indicate which pod(s)". A **Volumes** button in the navbar opens the account's network volumes from RunPod: name, id, size, datacenter with S3 marked, monthly cost, the Default Configuration's volume marked, and per volume the pods attached on RunPod (`networkVolumeId`, now read with every pod) and the pods whose own configuration names it (shown as "on recreate"), each with its status.
 - Actions: **Use as default** (the volume and its datacenter go into the Default Configuration together, since a volume pins both), **Grow** (never shrink), **Delete** (refused while a pod is attached, with the pod names; clears the default when that volume goes), **Create** (name, size, datacenter from the same menu as the panel, with the monthly cost shown as you type). RunPod's v1 REST calls for list, create, update and delete are in the core; no-spend mode simulates volumes beside the simulated pods.

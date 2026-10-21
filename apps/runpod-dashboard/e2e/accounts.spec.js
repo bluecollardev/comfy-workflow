@@ -1,7 +1,8 @@
 import { test, expect, modal } from './fixtures'
 
 const openAccounts = async (page) => {
-  await page.getByRole('button', { name: 'Accounts' }).click()
+  await page.getByTestId('open-connect').click()
+  await modal(page, 'Connect').getByRole('tab', { name: 'Accounts' }).click()
   const dialog = modal(page, 'Connect GitHub or GitLab')
   await expect(dialog).toBeVisible()
   return dialog

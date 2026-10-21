@@ -6,14 +6,11 @@
         <BBadge v-if="pods.dryRun" variant="warning" text-indicator class="ms-2 fw-normal" data-testid="no-spend-badge" :title="$t('app.noSpendTitle')">{{ $t('app.noSpend') }}</BBadge>
       </BNavbarBrand>
       <div class="d-flex gap-2">
-        <BButton variant="outline-light" size="sm" data-testid="open-repositories" @click="ui.repositoriesOpen = true">
-          <i class="fa-solid fa-code-branch me-1"></i>{{ $t('app.repositories') }}
+        <BButton variant="outline-light" size="sm" :title="$t('app.connectTitle')" data-testid="open-connect" @click="ui.connectOpen = true">
+          <i class="fa-solid fa-plug me-1"></i>{{ $t('app.connect') }}
         </BButton>
         <BButton variant="outline-light" size="sm" :title="$t('app.volumesTitle')" data-testid="open-volumes" @click="ui.volumesOpen = true">
           <i class="fa-solid fa-hard-drive me-1"></i>{{ $t('app.volumes') }}
-        </BButton>
-        <BButton variant="outline-light" size="sm" data-testid="open-accounts" @click="ui.accountsOpen = true">
-          <i class="fa-solid fa-user me-1"></i>{{ $t('app.accounts') }}
         </BButton>
         <BButton variant="outline-light" size="sm" :title="$t('app.configurationTitle')" :aria-label="$t('app.configuration')" data-testid="open-config" @click="ui.configOpen = true">
           <i class="fa-solid fa-gear"></i>
@@ -52,8 +49,7 @@
       </template>
     </BContainer>
 
-    <RepositoriesModal />
-    <GitAccountsModal />
+    <ConnectModal />
     <VolumesModal />
     <ToastHost />
     <ConfigModal />
@@ -82,8 +78,7 @@ import { usePodsStore } from './stores/pods'
 import ToastHost from './components/ToastHost.vue'
 import Dashboard from './components/Dashboard.vue'
 import Stats from './components/Stats.vue'
-import RepositoriesModal from './components/RepositoriesModal.vue'
-import GitAccountsModal from './components/GitAccountsModal.vue'
+import ConnectModal from './components/ConnectModal.vue'
 import ConfigModal from './components/ConfigModal.vue'
 
 const ui = useUiStore()

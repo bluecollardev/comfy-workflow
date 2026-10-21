@@ -28,6 +28,8 @@ import {
   BProgress,
   BRow,
   BSpinner,
+  BTab,
+  BTabs,
 } from 'bootstrap-vue-next'
 
 import './assets/styles/app.scss'
@@ -68,5 +70,7 @@ app.component('BPopover', BPopover)
 app.component('BProgress', BProgress)
 app.component('BRow', BRow)
 app.component('BSpinner', BSpinner)
+app.component('BTab', BTab)
+app.component('BTabs', BTabs)
 
 app.mount('#app')

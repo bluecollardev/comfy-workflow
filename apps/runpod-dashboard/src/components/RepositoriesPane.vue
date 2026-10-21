@@ -1,14 +1,5 @@
 <template>
-  <BModal
-    :model-value="ui.repositoriesOpen"
-    title="Repositories"
-    size="lg"
-    ok-only
-    ok-title="Done"
-    ok-variant="outline-light"
-    @update:model-value="ui.repositoriesOpen = $event"
-    @show="load"
-  >
+  <div data-testid="connect-repositories">
     <p class="text-body-secondary small">
       Repositories attached here are what <em>Attach node</em> offers when creating a pod.
       Start typing to search the repositories your connected accounts can see, or paste a URL.
@@ -87,24 +78,26 @@
         No repositories attached yet.
       </div>
     </div>
-  </BModal>
+  </div>
 </template>
 
 <script setup>
 /**
- * RepositoriesModal — manage the repositories attached to the project.
+ * RepositoriesPane — manage the repositories attached to the project; the Repositories tab of the Connect modal.
+ * Loads when its tab is shown (`active`).
  *
  * Repository autocomplete: `/api/repos/search` across connected accounts (debounced).
  * Branch autocomplete: `/api/repos/branches` for the typed/picked URL; the default branch
  * is used when the field is left empty. Attaching bumps `ui.repositoriesVersion` so the
  * Attach-node dialog re-fetches.
  */
-import { reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { gitAPI } from '../api/git'
 import { useToastStore } from '../stores/toast'
 import { t } from '../i18n'
 import { useUiStore } from '../stores/ui'
 
+const props = defineProps({ active: { type: Boolean, default: false } })
 const ui = useUiStore()
 const toast = useToastStore()
 
@@ -195,7 +188,10 @@ async function detach(repo) {
 }
 
 function openAccounts() {
-  ui.repositoriesOpen = false
-  ui.accountsOpen = true
+  ui.connectTab = 'accounts'   // same modal, other tab
 }
+
+// Lazy tab: the pane mounts when its tab is shown, so load on mount; the `active` watch covers a re-show without a remount.
+onMounted(load)
+watch(() => props.active, (a) => { if (a) load() })
 </script>
