@@ -1,4 +1,4 @@
-# The two MCP endpoints
+ors# The two MCP endpoints
 
 **Status:** spec, 2026-10-21, for the Connect › MCP tab. The pod manager server exists
 (`apps/runpod-dashboard/mcp/server.mjs`); the pod tools marked *new* and the whole
@@ -84,6 +84,21 @@ other clients, Copy buttons, and **Check** (the app spawns the server, performs
 initialize and tools/list, shows the tool names, green or red). The bridge card has a
 target menu: the running pods whose ComfyUI answers, or a typed URL; the chosen target
 goes into the generated command.
+
+## Connectors: the clients
+
+Lucas: "i want connectors for gpt, claude, codex". Each endpoint card carries a ready
+setup per client, with Copy buttons:
+
+| Client | What the card gives | Transport |
+|---|---|---|
+| Claude Code | the `claude mcp add <name> -- node <path> [--comfy <url>]` line | stdio |
+| Claude Desktop | the JSON block for `claude_desktop_config.json` | stdio |
+| Codex CLI (OpenAI's agent; it runs GPT models) | the TOML block for `~/.codex/config.toml` (`[mcp_servers.<name>]`, `command`, `args`) | stdio |
+| ChatGPT | the URL `http://127.0.0.1:<port>/mcp` and the command to start the server with `--http <port>`; ChatGPT only takes remote MCP servers, so a public URL needs a tunnel from this Mac | Streamable HTTP |
+
+Both servers take `--http <port>` (or `MCP_HTTP_PORT`) to serve over HTTP on
+127.0.0.1 instead of stdio; the same tools either way.
 
 ## Tests
 
