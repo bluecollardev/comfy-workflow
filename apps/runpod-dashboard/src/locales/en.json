@@ -292,6 +292,7 @@
     "datacenter": "Volume datacenter",
     "pickDatacenter": "Choose a datacenter",
     "create": "Create",
-    "createHelp": "About ${cost} a month at 0.07 per GB. A volume only grows afterwards, never shrinks, and never leaves its datacenter. S3-marked datacenters take uploads with no pod running."
+    "createHelp": "About ${cost} a month at 0.07 per GB. A volume only grows afterwards, never shrinks, and never leaves its datacenter. S3-marked datacenters take uploads with no pod running.",
+    "listTitle": "Volumes on this account"
   }
 }

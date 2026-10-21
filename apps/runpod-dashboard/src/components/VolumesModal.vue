@@ -4,7 +4,30 @@
 
     <BAlert v-if="store.error" :model-value="true" variant="danger" dismissible class="mb-3" data-testid="volumes-error" @update:model-value="store.error = null">{{ store.error }}</BAlert>
 
-    <div class="list-group mb-3" data-testid="volumes-list">
+    <h6 class="mb-2">{{ $t('volumes.createTitle') }}</h6>
+    <BRow class="g-2 align-items-end">
+      <BCol md="4">
+        <BFormGroup :label="$t('volumes.name')" label-for="vol-name" class="mb-0">
+          <BFormInput id="vol-name" v-model.trim="draft.name" data-testid="volume-new-name" />
+        </BFormGroup>
+      </BCol>
+      <BCol md="2">
+        <BFormGroup :label="$t('volumes.size')" label-for="vol-size" class="mb-0">
+          <BFormInput id="vol-size" v-model.number="draft.size_gb" type="number" min="10" max="4000" data-testid="volume-new-size" />
+        </BFormGroup>
+      </BCol>
+      <BCol md="4">
+        <BFormGroup :label="$t('volumes.datacenter')" label-for="vol-dc" class="mb-0">
+          <BFormSelect id="vol-dc" v-model="draft.datacenter" :options="dcOptions" data-testid="volume-new-dc" />
+        </BFormGroup>
+      </BCol>
+      <BCol md="2">
+        <BButton variant="primary" class="w-100" :disabled="!draft.name || !draft.datacenter || store.busyId !== null" data-testid="volume-create" @click="create">{{ $t('volumes.create') }}</BButton>
+      </BCol>
+    </BRow>
+    <div class="form-text mb-3">{{ $t('volumes.createHelp', { cost: (draft.size_gb * 0.07).toFixed(2) }) }}</div>
+    <h6 class="mb-2">{{ $t('volumes.listTitle') }}</h6>
+    <div class="list-group" data-testid="volumes-list">
       <div v-if="store.loading && !store.volumes.length" class="list-group-item text-body-secondary"><BSpinner small class="me-2" />{{ $t('volumes.loading') }}</div>
       <div v-for="v in store.volumes" :key="v.id" class="list-group-item" data-testid="volume" :data-id="v.id">
         <div class="d-flex align-items-start gap-3">
@@ -46,28 +69,6 @@
       <div v-if="!store.loading && !store.volumes.length" class="list-group-item text-body-secondary" data-testid="volumes-empty">{{ $t('volumes.none') }}</div>
     </div>
 
-    <h6 class="mb-2">{{ $t('volumes.createTitle') }}</h6>
-    <BRow class="g-2 align-items-end">
-      <BCol md="4">
-        <BFormGroup :label="$t('volumes.name')" label-for="vol-name" class="mb-0">
-          <BFormInput id="vol-name" v-model.trim="draft.name" data-testid="volume-new-name" />
-        </BFormGroup>
-      </BCol>
-      <BCol md="2">
-        <BFormGroup :label="$t('volumes.size')" label-for="vol-size" class="mb-0">
-          <BFormInput id="vol-size" v-model.number="draft.size_gb" type="number" min="10" max="4000" data-testid="volume-new-size" />
-        </BFormGroup>
-      </BCol>
-      <BCol md="4">
-        <BFormGroup :label="$t('volumes.datacenter')" label-for="vol-dc" class="mb-0">
-          <BFormSelect id="vol-dc" v-model="draft.datacenter" :options="dcOptions" data-testid="volume-new-dc" />
-        </BFormGroup>
-      </BCol>
-      <BCol md="2">
-        <BButton variant="primary" class="w-100" :disabled="!draft.name || !draft.datacenter || store.busyId !== null" data-testid="volume-create" @click="create">{{ $t('volumes.create') }}</BButton>
-      </BCol>
-    </BRow>
-    <div class="form-text">{{ $t('volumes.createHelp', { cost: (draft.size_gb * 0.07).toFixed(2) }) }}</div>
   </BModal>
 </template>
 
