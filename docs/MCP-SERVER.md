@@ -226,8 +226,8 @@ Submit text-to-image workflow to image-gen-abc123
 ✓ Job submitted: job-uuid-123
 
 Agent: image-gen-abc123
-API: http://abc123.proxy.runpod.io:8000/api/prompt
-Status: http://abc123.proxy.runpod.io:8000/history/job-uuid-123
+API: https://abc123-8188.proxy.runpod.net/prompt
+Status: https://abc123-8188.proxy.runpod.net/history/job-uuid-123
 ```
 
 #### `get_job_status`

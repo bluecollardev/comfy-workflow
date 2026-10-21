@@ -275,6 +275,7 @@ All of `docs/`: <https://github.com/bluecollardev/comfy-workflow/tree/develop/do
 
 | Doc | What it covers |
 |---|---|
+| [`docs/COMFY-API.md`](docs/COMFY-API.md) | The ComfyUI HTTP API as this repo uses it: health and readiness, the Workflows panel's userdata calls, queueing a graph, queue and history, the two graph formats, and which of our files call what. |
 | [`infra/README.md`](infra/README.md) | The infrastructure folder: the pod lifecycle CLI, pod config, where the Docker image and the API live, cost management, monitoring, troubleshooting. |
 | [`apps/runpod-api/README.md`](apps/runpod-api/README.md) | The pod manager service: the FastAPI API and its routers, the pool manager, the MCP server, environment variables, running it, tests, and what the Electron app packages from it. |
 | [`docs/MCP-SERVER.md`](docs/MCP-SERVER.md) | The MCP server that exposes agent pool management to Claude Code: quick start, every tool, typical sessions, configuration, errors, budgeting. |

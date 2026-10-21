@@ -202,7 +202,7 @@ MCP Server
   │
   ├─→ Find agent in Pool Manager
   ├─→ HTTP POST to agent's API:
-      POST http://abc123.proxy.runpod.io:8000/api/prompt
+      POST https://abc123-8188.proxy.runpod.net/prompt
       Body: {workflow JSON}
   │
 Agent (ComfyUI on pod)
@@ -218,7 +218,7 @@ MCP Server
 Claude
   │
   ├─→ "Job submitted! Check status at:
-       http://abc123.proxy.runpod.io:8000/history/uuid-123"
+       https://abc123-8188.proxy.runpod.net/history/uuid-123"
 ```
 
 ### Example 3: Monitor Cost
