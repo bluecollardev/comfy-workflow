@@ -30,6 +30,7 @@ export interface CreatePodRequest {
   image?: string; env_vars?: Record<string, string>; build_args?: Record<string, string>; pip_requirements?: string
   custom_nodes?: { name: string; url: string; branch: string; path: string }[]; start_ssh?: boolean; start_jupyter?: boolean
   apply_mounts?: boolean | null; idle_stop_minutes?: number | null
+  data_center_id?: string | null   // where to create the pod when no network volume pins it; the volume's datacenter wins otherwise
   config?: Partial<mounts.MountsConfig> | null   // this pod's own configuration (the Default Configuration's shape); null = the default
 }
 export interface PodStatus {
@@ -75,6 +76,7 @@ export function plan(req: CreatePodRequest, cfg: mounts.MountsConfig, credential
       volumeGb = 0   // the network volume carries the data; a per-pod volume beside it is billed for nothing
     }
   }
+  if (!volume.networkVolumeId && req.data_center_id) volume.dataCenterId = req.data_center_id
   const imageName = resolveImage(req.image, cfg)
   const gpuKey = req.gpu || gpus.DEFAULT_GPU
   let gpuTypeId: string

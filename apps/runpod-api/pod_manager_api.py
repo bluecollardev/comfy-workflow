@@ -108,6 +108,7 @@ class CreatePodRequest(BaseModel):
     custom_nodes: Optional[list] = Field(default_factory=list, description="Custom node repos")
     start_ssh: bool = Field(default=True, description="Start SSH server")
     start_jupyter: bool = Field(default=False, description="Start Jupyter")
+    data_center_id: Optional[str] = Field(default=None, description="Datacenter to create the pod in when no network volume pins it; the volume's datacenter wins otherwise")
     apply_mounts: Optional[bool] = Field(default=None, description="Attach the configured network volume and COMFY_LINKS (GET /api/mounts); None = the config's apply_by_default")
 
 
@@ -394,6 +395,8 @@ async def create_pod(request: CreatePodRequest):
                     volume_kwargs["data_center_id"] = ov["data_center_id"]
                 volume_gb = 0   # the network volume carries the data; a per-pod volume beside it is billed for nothing
 
+        if request.data_center_id and not volume_kwargs.get("data_center_id"):
+            volume_kwargs["data_center_id"] = request.data_center_id   # no volume: the form's choice
         image = resolve_image(request.image, mcfg)
         try:
             gpu_id = gpus.runpod_id(gpus.DEFAULT if request.gpu == 'auto' else request.gpu)   # browser mode has no stock-aware auto; the core does

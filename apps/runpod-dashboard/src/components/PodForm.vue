@@ -12,6 +12,11 @@
         </BFormGroup>
       </BCol>
       <BCol md="6" lg="4">
+        <BFormGroup :label="$t('form.datacenter')" label-for="pod-datacenter" :description="volumeDc !== null ? $t('form.datacenterLocked', { dc: volumeDc || $t('form.datacenterUnset') }) : $t('form.datacenterHelp')" data-testid="pod-datacenter-group">
+          <BFormSelect id="pod-datacenter" v-model="form.dataCenterId" :options="dcOptions" :disabled="volumeDc !== null" data-testid="pod-datacenter" />
+        </BFormGroup>
+      </BCol>
+      <BCol md="6" lg="4">
         <BFormGroup :label="$t('form.gpuCount')" label-for="pod-gpu-count">
           <BFormSelect id="pod-gpu-count" v-model="form.gpuCount" :options="GPU_COUNT_OPTIONS" />
         </BFormGroup>
@@ -354,7 +359,9 @@ const MAX_VISIBLE_FOLDERS = 500
 const gpuOptions = ref([{ value: 'auto', text: 'Cheapest card in stock (16-24 GB)' }, { value: 'rtx4090', text: 'RTX 4090 (24 GB)' }])
 const gpuLive = ref(false)
 async function loadGpus() {
-  try { const g = await podsAPI.gpus(); gpuOptions.value = g.gpus; gpuLive.value = !!g.live } catch { /* the plain menu stays */ }
+  // prices at the datacenter the pod will land in: the volume's, else the form's choice, else RunPod's lowest anywhere
+  const dc = volumeDc.value !== null ? volumeDc.value : form.dataCenterId
+  try { const g = await podsAPI.gpus(dc || undefined); gpuOptions.value = g.gpus; gpuLive.value = !!g.live } catch { /* the plain menu stays */ }
 }
 loadGpus()
 defineExpose({ loadGpus })
@@ -411,6 +418,7 @@ const emit = defineEmits(['pod-created'])
 const defaults = () => ({
   name: '',
   gpu: 'auto',
+  dataCenterId: '',
   gpuCount: 1,
   instanceType: 'spot',
   volumeGb: 0,
@@ -433,6 +441,21 @@ const form = reactive(defaults())
 const ui = useUiStore()
 const pods = usePodsStore()
 const mounts = useMountsStore()
+
+/** The datacenter: pinned by the network volume of the configuration this pod uses (its own or the default), free otherwise. */
+const dcList = ref([])
+async function loadDatacenters() { try { dcList.value = (await podsAPI.datacenters()).datacenters || [] } catch { /* the plain menu stays */ } }
+loadDatacenters()
+const effectiveConfig = computed(() => form.config || mounts.config)
+const volumeDc = computed(() => (effectiveConfig.value?.network_volume_id ? (effectiveConfig.value.data_center_id || '') : null))
+const dcOptions = computed(() => {
+  const opts = [{ value: '', text: t('form.datacenterAny') }, ...dcList.value.map((d) => ({ value: d.value, text: d.text }))]
+  const v = volumeDc.value !== null ? volumeDc.value : form.dataCenterId
+  if (v && !dcList.value.some((d) => d.value === v)) opts.push({ value: v, text: v })
+  return opts
+})
+watch(volumeDc, (v) => { if (v !== null) form.dataCenterId = v; loadGpus() }, { immediate: true })
+watch(() => form.dataCenterId, () => { if (volumeDc.value === null) loadGpus() })
 const mountsSummary = computed(() => mounts.summary)
 const configuredImage = computed(() => mounts.configuredImage || t('form.noImage'))
 const configuredIdle = computed(() => mounts.configuredIdle)

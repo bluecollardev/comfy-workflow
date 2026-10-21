@@ -9,6 +9,7 @@ const toRequest = (podData) => ({
   name: podData.name,
   gpu: podData.gpu,
   gpu_count: podData.gpuCount || 1,
+  data_center_id: podData.dataCenterId || null,   // a choice without a network volume; with one, the volume's datacenter wins
   instance_type: podData.instanceType || 'spot',
   volume_gb: podData.volumeGb ?? 0,
   disk_gb: podData.diskGb || 20,

@@ -23,6 +23,12 @@ completed items move here. Commit hashes are on `develop`.
 
 ## 2026-10-21
 
+### Datacenters and prices in the UI; the volume's cost; the datacenter on the create form (branch `feature/registry-and-volume`)
+- **Default Configuration's datacenter is a menu from RunPod** (Lucas: "in UI be able to select datacenters from dropdown"): every listed datacenter, S3 marked for the ones whose volumes take uploads with no pod, and our cards in stock there with the price per hour. The price is the **secure-cloud** one, what a pod on a network volume pays: Romania's 4090 is USD 0.89 there, not the 0.34 community figure the card menu showed before. The card menu now prices at the configured volume's datacenter too.
+- **The volume's cost is shown** (Lucas: "volume / storage on run pod, also show cost in ui"): the panel's volume line names the volume, its size, datacenter and monthly cost at 0.07 per GB, or says RunPod has none by that id; the stats bar carries the cost as a fourth card.
+- **The create form chooses the datacenter**, locked to the volume's when the configuration this pod uses has one (its own or the default), free otherwise; the card prices follow the choice. The request carries it; without a volume the core and the Python API create the pod there.
+- Found on the way: `BProgress` was never registered, so the card's step bar had not been rendering; the panel edited the store's config object, so unsaved edits leaked into the stats bar.
+
 ### Three rsync attempts died with the pod; RunPod's S3 API found; the ComfyUI API documented
 - The sync over rsync into a running pod was cut three times on 2026-10-20: once by a stop while the idle stop had been edited in the registry file (the running backend writes its own copy back), once by the volume refusing `chown` (fixed: `-rlt`, no ownership), once by the pod stopping at 18:23 UTC with the idle stop held at 0 through the backend, cause not established. 22 files reached the Montreal volume.
 - **RunPod serves network volumes over an S3-compatible API**, so a volume can be filled from the Mac with no pod running, resumable, no sshd, no idle stop; Pull the same way. Only in fifteen datacenters, Montreal not among them; Romania has the 4090 in high stock. Written up as option G in `docs/ADR-007` with a revised recommendation; the decision stays Lucas's.

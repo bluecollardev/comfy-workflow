@@ -73,6 +73,7 @@ describe('the plan sent to RunPod', () => {
     expect(input.cloudType).toBe('SECURE'); expect(input.volumeInGb).toBe(0); expect(input.networkVolumeId).toBe('vol1'); expect(input.dataCenterId).toBe('EU-RO-1')   // a network volume means the secure cloud
     expect(input.env.PROJECT_ROOT).toBe('/workspace/project'); expect(input.env.COMFY_LINKS).toContain('/home/someone/HARBOUR_r1/HARBOUR=/workspace/project')
     expect(input.ports).toBe('8188/http,22/tcp'); expect(idleMinutes).toBe(30)
+    expect(pods.plan({ name: 't', data_center_id: 'US-NC-1' }, cfg).input.dataCenterId).toBe('EU-RO-1')   // the volume's datacenter wins over the form
     expect(input.containerRegistryAuthId).toBeUndefined()   // a public image needs no credential
     cfg.registry_auth_id = 'cred1'
     expect(pods.plan({ name: 't' }, cfg).input.containerRegistryAuthId).toBe('cred1'); expect(rp.deployMutation(pods.plan({ name: 't' }, cfg).input)).toContain('containerRegistryAuthId: "cred1"')
@@ -83,6 +84,7 @@ describe('the plan sent to RunPod', () => {
     expect(pods.plan({ name: 't', volume_gb: 40 }, cfg).input.volumeInGb).toBe(0)
     cfg.network_volume_id = ''
     const p2 = pods.plan({ name: 't', volume_gb: 40, gpu: 'a4000', instance_type: 'on-demand', idle_stop_minutes: 0, env_vars: { X: '1' }, build_args: { X: 'arg', Y: 'y' } }, cfg)
+    expect(pods.plan({ name: 't', data_center_id: 'US-NC-1' }, cfg).input.dataCenterId).toBe('US-NC-1')   // no volume: the form's choice
     expect(p2.input.volumeInGb).toBe(40); expect(p2.input.gpuTypeId).toBe('NVIDIA RTX A4000'); expect(p2.input.cloudType).toBe('SECURE'); expect(p2.idleMinutes).toBe(0)
     expect(p2.input.env.X).toBe('1'); expect(p2.input.env.Y).toBe('y')   // explicit env wins over a build arg
     expect(() => pods.plan({ name: 't', gpu: 'h100' }, cfg)).toThrow(/unknown GPU/)

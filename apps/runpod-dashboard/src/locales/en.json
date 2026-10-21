@@ -117,7 +117,12 @@
     "podConfigUseDefault": "use defaults",
     "podConfigDefaultHelp": "The Default Configuration (gear icon) unless you override it for this pod.",
     "podConfigOwnHelp": "This pod gets its own volume, image, idle stop, folders and links; kept for Recreate.",
-    "thisPod": "this pod"
+    "thisPod": "this pod",
+    "datacenter": "Datacenter",
+    "datacenterAny": "Any: RunPod chooses",
+    "datacenterHelp": "Where the pod is created. S3 marks datacenters whose volumes take uploads with no pod; the cards and prices are the secure-cloud ones there.",
+    "datacenterLocked": "Set by the network volume in this pod's configuration: {dc}. A volume never leaves its datacenter.",
+    "datacenterUnset": "none set, RunPod chooses"
   },
   "config": {
     "title": "Default Configuration",
