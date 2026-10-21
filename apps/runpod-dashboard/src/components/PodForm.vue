@@ -55,7 +55,7 @@
         <BFormGroup :label="$t('form.mounts')" label-for="pod-mounts" :description="mountsSummary" data-testid="pod-mounts-group">
           <BFormCheckbox id="pod-mounts" v-model="form.applyMounts" switch>
             {{ $t('form.mountsAttach') }}
-            <a href="#" class="ms-1 small" @click.prevent="ui.configOpen = true"><i class="fa-solid fa-gear"></i> {{ $t('form.configure') }}</a>
+            <a href="#" class="ms-1 small" :title="$t('form.configure')" :aria-label="$t('form.configure')" data-testid="pod-mounts-configure" @click.prevent="ui.configOpen = true"><i class="fa-solid fa-gear"></i></a>
           </BFormCheckbox>
         </BFormGroup>
       </BCol>
