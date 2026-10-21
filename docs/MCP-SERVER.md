@@ -150,7 +150,7 @@ Spin up a new GPU pod for an agent type.
 
 **Arguments:**
 - `agent_name` (string, required) - Type of agent (e.g., "image-gen", "video-gen")
-- `gpu_type` (string, required) - GPU type: `rtx4090`, `a100`, `h100`, `l40s`, `rtx6000`
+- `gpu_type` (string, required) - a card from the core's table or `auto` (cheapest in stock where the volume lives): `auto`, `a4000`, `rtx4000ada`, `a5000`, `rtx3090`, `rtx4090`, `a6000`, `a40`. Bigger cards are left out on purpose (`libs/core/src/gpus.ts`).
 - `storage_gb` (integer, optional) - Storage size. Default: 100. Range: 50-500
 
 **Example:**
@@ -261,13 +261,13 @@ Check status of a running/completed job.
 ```
 Claude, create a development agent pool:
 - 1 image generation pod (RTX 4090)
-- 1 video generation pod (A100)
+- 1 video generation pod (A40, 48 GB)
 - Both 100GB storage
 ```
 
 Claude will:
 1. Call `create_agent` for image-gen (RTX 4090)
-2. Call `create_agent` for video-gen (A100)
+2. Call `create_agent` for video-gen (A40)
 3. Return pool status with URLs
 
 ### Monitor Cost
