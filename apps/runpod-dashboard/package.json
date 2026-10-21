@@ -21,7 +21,8 @@
     "core:build": "tsc -p libs/core/tsconfig.json",
     "core:test": "vitest run --config libs/core/vitest.config.ts",
     "mcp": "node mcp/server.mjs",
-    "mcp:test": "npm run core:build && node --test mcp/server.test.mjs",
+    "mcp:bridge": "node mcp/comfy-bridge.mjs",
+    "mcp:test": "npm run core:build && node --test mcp/server.test.mjs mcp/comfy-bridge.test.mjs",
     "test": "npm run core:test && npm run mcp:test && npm run ipc:test",
     "electron:build:mac": "npm run build && electron-builder --mac",
     "electron:build:win": "npm run build && electron-builder --win",
@@ -67,7 +68,8 @@
       "electron/**/*",
       "libs/core/dist/**/*",
       "package.json",
-      "!node_modules/**"
+      "!node_modules/**",
+      "mcp/**"
     ],
     "extraResources": [
       {
@@ -92,6 +94,14 @@
       {
         "from": "build/build-info.json",
         "to": "build-info.json"
+      },
+      {
+        "from": "mcp",
+        "to": "mcp",
+        "filter": [
+          "*.mjs",
+          "!*.test.mjs"
+        ]
       }
     ],
     "mac": {

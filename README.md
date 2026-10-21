@@ -277,6 +277,7 @@ All of `docs/`: <https://github.com/bluecollardev/comfy-workflow/tree/develop/do
 
 | Doc | What it covers |
 |---|---|
+| [`docs/MCP-ENDPOINTS.md`](docs/MCP-ENDPOINTS.md) | The two MCP endpoints tool by tool: the pod manager (pool, pods, volumes, configuration, sync, cost; named yes where it spends) and the ComfyUI bridge (a local agent inside the ComfyUI of a pod: workflows, nodes, queue, history, outputs; refuses locked shots), the client connectors (Claude Code, Claude Desktop, Codex CLI, ChatGPT over HTTP) and the Connect › MCP tab. |
 | [`docs/COMFY-API.md`](docs/COMFY-API.md) | The ComfyUI HTTP API as this repo uses it: health and readiness, the Workflows panel's userdata calls, queueing a graph, queue and history, the two graph formats, and which of our files call what. |
 | [`infra/README.md`](infra/README.md) | The infrastructure folder: the pod lifecycle CLI, pod config, where the Docker image and the API live, cost management, monitoring, troubleshooting. |
 | [`docs/MCP-SERVER.md`](docs/MCP-SERVER.md) | The MCP server that exposes agent pool management to Claude Code: quick start, every tool, typical sessions, configuration, errors, budgeting. |

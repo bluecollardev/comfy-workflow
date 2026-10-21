@@ -14,7 +14,7 @@
     "volumes": "Volumes",
     "volumesTitle": "The account's network volumes: what each costs, where it lives, which pods use it.",
     "connect": "Connect",
-    "connectTitle": "Third-party things to connect: GitHub and GitLab accounts, repositories for custom nodes."
+    "connectTitle": "Third-party things to connect: GitHub and GitLab accounts, repositories for custom nodes, MCP clients (Claude, Codex, ChatGPT)."
   },
   "stats": {
     "total": "Total pods",
@@ -302,7 +302,9 @@
     "deleteVolume": "Deleting the volume…",
     "volumeDeleted": "Volume {name} deleted.",
     "defaultVolume": "Setting the default volume…",
-    "volumeDefault": "{name} is the default volume; new pods go to {dc}."
+    "volumeDefault": "{name} is the default volume; new pods go to {dc}.",
+    "mcpCheck": "Check {name}",
+    "mcpChecked": "{name} answers; its tools are listed."
   },
   "volumes": {
     "title": "Network volumes",
@@ -336,9 +338,10 @@
   "connect": {
     "title": "Connect",
     "done": "Done",
-    "intro": "Accounts give the app access to private repositories; repositories attached here are what Attach node offers when creating a pod.",
+    "intro": "Accounts give the app access to private repositories; repositories attached here are what Attach node offers when creating a pod; MCP hands Claude, Codex or ChatGPT the pods and a ComfyUI.",
     "accounts": "Accounts",
-    "repositories": "Repositories"
+    "repositories": "Repositories",
+    "mcp": "MCP"
   },
   "dc": {
     "groupS3": "S3: uploads need no pod · cards in stock",
@@ -376,5 +379,38 @@
     "noFilesYet": "No file yet.",
     "rawOutput": "Raw rsync output",
     "transport": "Copying {how}."
+  },
+  "mcp": {
+    "intro": "Two MCP servers run from this app's folder, over stdio, launched by the client: the pod manager (what the dashboard does) and the ComfyUI bridge (inside one ComfyUI). Pick a client below, copy its setup, and press Check to see the server answer from here.",
+    "loading": "Asking the core…",
+    "none": "No MCP endpoints.",
+    "notBuilt": "Not built yet: this program is still to come.",
+    "command": "Command",
+    "copy": "Copy",
+    "copied": "{what} copied to the clipboard.",
+    "copyFailed": "Could not copy: {error}",
+    "whatCommand": "{name} command",
+    "whatSnippet": "{name} setup for {client}",
+    "check": "Check",
+    "checking": "Checking…",
+    "checkTitle": "Spawn the server from this app over stdio, initialize, and list its tools.",
+    "noAnswer": "The server did not answer.",
+    "tools": "{n} tools · {ms} ms",
+    "noTools": "The server answers but lists no tools.",
+    "clients": "Clients",
+    "claudeCode": "Claude Code",
+    "claudeDesktop": "Claude Desktop",
+    "codex": "Codex CLI",
+    "chatgpt": "ChatGPT",
+    "claudeCodeHint": "Run in a terminal; the server is then on for every Claude Code session.",
+    "claudeDesktopHint": "Merge into claude_desktop_config.json (Settings › Developer › Edit Config), then restart Claude Desktop.",
+    "codexHint": "Append to ~/.codex/config.toml.",
+    "chatgptNote": "ChatGPT only takes remote MCP servers: start the server over HTTP as shown, tunnel that port from this Mac (ngrok, cloudflared), and give ChatGPT the public URL ending in /mcp under Settings › Connectors.",
+    "target": "Target",
+    "targetHelp": "The ComfyUI the bridge works in; it goes into the command and every snippet.",
+    "targetAuto": "First running pod with ComfyUI (chosen when the client launches it)",
+    "targetCustom": "Typed URL…",
+    "targetPlaceholder": "http://host:8188",
+    "targetApply": "Use"
   }
 }

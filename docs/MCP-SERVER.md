@@ -1,5 +1,7 @@
 # MCP Server: ComfyUI Agent Pool Control
 
+> **2026-10-21.** Two servers now: this pod manager (the pool tools below plus 18 pod, volume, configuration, sync and cost tools) and the ComfyUI bridge (`mcp/comfy-bridge.mjs`), which lets a local agent work inside the ComfyUI running in a pod. Tool by tool: [`docs/MCP-ENDPOINTS.md`](MCP-ENDPOINTS.md). Client setup for Claude Code, Claude Desktop, Codex CLI and ChatGPT: the app's Connect › MCP tab. Both take `--http <port>` to serve over HTTP instead of stdio.
+
 **Model Context Protocol (MCP) server** that exposes ComfyUI agent pool management as tools to Claude Code.
 
 Claude Code ↔ MCP Server ↔ Pool Manager ↔ RunPod API
@@ -413,6 +415,25 @@ agents' `cost_per_hr` from RunPod.
 **Tip:** Use `stop_agent` between work sessions to pause billing.
 
 ---
+
+## Connect › MCP: setting up a client from the app
+
+The app's Connect modal has an **MCP** tab (`apps/runpod-dashboard/src/components/McpPane.vue`) that
+does the registration above for you. Per endpoint (this pod manager, and the ComfyUI bridge of
+`docs/MCP-ENDPOINTS.md`) it shows the absolute command and a ready setup per client, each with Copy:
+
+| Client | What you copy |
+|---|---|
+| Claude Code | `claude mcp add pod-manager -- node <repo>/apps/runpod-dashboard/mcp/server.mjs` |
+| Claude Desktop | the `mcpServers` JSON block for `claude_desktop_config.json` |
+| Codex CLI | the `[mcp_servers.pod-manager]` TOML block for `~/.codex/config.toml` |
+| ChatGPT | the command to start the server with `--http 8765` and `http://127.0.0.1:8765/mcp`; ChatGPT only takes a public URL, so tunnel the port from this Mac |
+
+The bridge card's Target menu (a running pod with ComfyUI, the Mac's own, or a typed URL) puts
+`--comfy <url>` into every snippet. **Check** spawns the server from the app over stdio, performs
+initialize and tools/list, and shows the tool names green, or the error red; in no-spend mode it needs
+no key. The key the panel saved serves the server either way (`settings.applyToEnv()`), so the `env`
+block in the JSON above is only needed when the app has no key stored.
 
 ## Testing
 

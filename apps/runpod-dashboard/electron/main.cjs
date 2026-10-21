@@ -81,6 +81,7 @@ function coreEnv() {
   if (app.isPackaged) {
     process.env.MOUNT_POINTS_FILE ||= path.join(process.resourcesPath, 'backend', 'mount-points.json')
     process.env.GOVERNANCE_DIR ||= path.join(process.resourcesPath, 'backend', 'governance')
+    process.env.MCP_DIR ||= path.join(process.resourcesPath, 'mcp')   // the MCP servers travel as resources; the Connect tab spawns them from here
   }
 }
 

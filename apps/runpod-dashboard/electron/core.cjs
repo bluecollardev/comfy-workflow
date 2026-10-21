@@ -41,7 +41,7 @@ const TABLE = {
     gpus: (c, dc) => c.pods.gpuMenu(undefined, dc || undefined),
     volume: (c, id) => c.pods.volumeInfo(id || undefined),
     datacenters: (c) => c.pods.datacenters(),
-    setIdle: (c, id, minutes) => { c.idle.register(id, Number(minutes)); return { pod_id: id, idle_stop_minutes: Math.max(Number(minutes), 0) } },
+    setIdle: (c, id, minutes) => c.pods.setIdleStop(id, Number(minutes)),
     details: (c, id) => c.pods.details(id),
     recreate: (c, id) => c.pods.recreate(id),
     config: (c, id) => c.pods.config(id),
@@ -79,6 +79,13 @@ const TABLE = {
   },
   images: {
     env: (c, params) => c.images.env(params || {}),
+  },
+  // The Connect › MCP tab: the two endpoints with their client snippets (the bridge's target URL flows in),
+  // what the bridge can point at, and Check (the core spawns the server over stdio and lists its tools).
+  mcp: {
+    endpoints: (c, comfy) => c.mcp.endpoints({ comfy: comfy || null }),
+    targets: (c) => c.mcp.targets(),
+    probe: (c, id, comfy) => c.mcp.probe(id, { comfy: comfy || null }),
   },
 }
 

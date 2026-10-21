@@ -16,6 +16,7 @@ const EXPECTED = {
   git: ['accounts', 'disconnect', 'repos', 'connect'],
   repositories: ['list', 'add', 'remove', 'search', 'branches', 'folders'],
   images: ['env'],
+  mcp: ['endpoints', 'targets', 'probe'],
 }
 for (const [ns, fns] of Object.entries(EXPECTED)) {
   test(`core.${ns} answers ${fns.join(', ')}`, () => {

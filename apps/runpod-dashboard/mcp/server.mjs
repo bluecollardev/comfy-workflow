@@ -1,23 +1,27 @@
 #!/usr/bin/env node
 // The MCP server Claude Code launches over stdio (`./start.sh mcp`, `npm run mcp`): the agent pool
-// (docs/ADR-002) and the governance pages, over the core (libs/core, docs/ADR-005) and nothing else:
-// no Python, no HTTP server, no port. The port of apps/runpod-api/mcp_server.py, tool for tool, so
+// (docs/ADR-002), the pods, volumes, configuration and sync the dashboard's cards and panel act on
+// (docs/MCP-ENDPOINTS.md), and the governance pages, over the core (libs/core, docs/ADR-005) and nothing
+// else: no Python, no port unless asked (`--http <port>` or MCP_HTTP_PORT serves the same tools over the
+// SDK's Streamable HTTP transport on 127.0.0.1 at /mcp, for clients that only take remote MCP; see
+// transport.mjs). The pool tools are the port of apps/runpod-api/mcp_server.py, tool for tool, so
 // docs/MCP-SERVER.md stays true.
 //
 // Governance (shared/governance, Binc's policies) is applied to every connecting client: handed over
 // at initialize as the server's instructions, served as governance:// resources and through the
-// `governance` tool, and enforced on the tools that spend: create_agent without approved_by makes no
-// pod. Nothing is cached; a re-sync of the pages is applied on the next launch.
+// `governance` tool, and enforced on the tools that spend: create_agent, create_pod and create_volume
+// without approved_by make nothing, and a sync that takes plates off this PC needs the same named yes.
+// Nothing is cached; a re-sync of the pages is applied on the next launch.
 //
-// No-spend mode (the configuration's dry_run, or RUNPOD_DRY_RUN=1) acts on simulated pods, as the app
-// does, and every answer says so. stdout is the protocol: anything we have to say goes to stderr.
+// No-spend mode (the configuration's dry_run, or RUNPOD_DRY_RUN=1) acts on simulated pods and volumes, as
+// the app does, and every answer says so. stdout is the protocol: anything we have to say goes to stderr.
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListResourcesRequestSchema, ListToolsRequestSchema, ReadResourceRequestSchema } from '@modelcontextprotocol/sdk/types.js'
+import { serve } from './transport.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CORE = resolve(HERE, '..', 'libs', 'core', 'dist', 'index.js')
@@ -25,14 +29,18 @@ if (!existsSync(CORE)) {
   console.error(`The core is not built (${CORE}). Run: cd apps/runpod-dashboard && npm run core:build`)
   process.exit(2)
 }
-const { governance, pool, settings } = await import(pathToFileURL(CORE).href)
+const { governance, gpus, mounts, pods, pool, settings, syncrun, volumes } = await import(pathToFileURL(CORE).href)
 const { version } = createRequire(import.meta.url)('../package.json')
 
 settings.applyToEnv()   // the key the panel saved, when the shell exported none; no key is fine in no-spend mode
 
+const LOG_WAIT_MS = Number(process.env.MCP_LOG_WAIT_MS) || 3000   // RunPod's log stream stays open after the backfill; this is how long get_logs listens
+
 const agentId = { type: 'string', description: 'Agent ID' }
+const podId = { type: 'string', description: 'Pod ID (list_pods)' }
+const approvedBy = { type: 'string', description: 'Who said yes to this spend. Required; never guessed.' }
 /** The Python's tool list, verbatim where the core allows; the GPU menu is the core's card table, not a guess. */
-const TOOLS = [
+const POOL_TOOLS = [
   { name: 'list_agents', description: 'List all agents in the MOE pool with their status', inputSchema: { type: 'object', properties: {} } },
   { name: 'get_pool_status', description: 'Get detailed status of the entire agent pool (running pods, cost, health)', inputSchema: { type: 'object', properties: {} } },
   {
@@ -46,7 +54,7 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        approved_by: { type: 'string', description: 'Who said yes to this spend. Required; never guessed.' },
+        approved_by: approvedBy,
         agent_name: { type: 'string', description: "Agent type (e.g., 'image-gen', 'video-gen', 'upscale')" },
         gpu_type: { type: 'string', enum: pool.GPU_TYPES, description: 'GPU type for this agent: a card from the pod manager\'s table, or auto for the cheapest one in stock' },
         storage_gb: { type: 'integer', description: 'Storage size in GB (50-500); 0 beside a network volume', default: 100 },
@@ -83,9 +91,97 @@ const TOOLS = [
   },
 ]
 
+/** The same calls the dashboard's cards and the Configuration panel make (docs/MCP-ENDPOINTS.md, "Pods and the rest of the app"). */
+const POD_TOOLS = [
+  { name: 'list_pods', description: 'Every pod as the dashboard shows it: id, name, status, card, ComfyUI URL (and whether it answers), idle stop, and its own configuration when it has one', inputSchema: { type: 'object', properties: {} } },
+  { name: 'get_pod', description: "One pod with RunPod's details: price per hour, cloud, datacenter, image, disks, status text, and its own configuration", inputSchema: { type: 'object', properties: { pod_id: podId }, required: ['pod_id'] } },
+  {
+    name: 'create_pod',
+    description: `Create a pod the way the dashboard's form does, with the Default Configuration (or a per-pod one) applied. Spends money: needs approved_by, the person behind the named yes (policy/agent-permissions.md, cap USD ${governance.SPEND_CAP_USD}). "No card available" lists what was tried.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        approved_by: approvedBy,
+        name: { type: 'string', description: 'Pod name' },
+        gpu: { type: 'string', enum: pool.GPU_TYPES, description: 'A card from the table, or auto: the cheapest one in stock where the volume lives', default: gpus.DEFAULT_GPU },
+        datacenter: { type: 'string', description: 'Datacenter id (list_datacenters); the network volume\'s datacenter wins when one is configured' },
+        image: { type: 'string', description: "'configured' (the configuration's image), 'prebuilt' (RunPod's stock ComfyUI image), or a registry reference. Omitted: ours when it has been pushed, else prebuilt" },
+        idle_stop_minutes: { type: 'integer', description: 'Stop the pod after this many quiet minutes; 0 = never. Omitted: the configuration\'s value' },
+        apply_mounts: { type: 'boolean', description: 'Apply the mount configuration (volume, env, links). Omitted: the configuration\'s apply_by_default' },
+        config: { type: 'object', description: "This pod's own configuration (the Default Configuration's shape, as get_configuration shows it), kept for recreate_pod" },
+      },
+      required: ['name'],
+    },
+  },
+  { name: 'stop_pod', description: 'Stop a pod (pauses the hourly bill; the disk and the volume stay)', inputSchema: { type: 'object', properties: { pod_id: podId }, required: ['pod_id'] } },
+  { name: 'resume_pod', description: 'Resume a stopped pod on its host; when that host is full the answer says so and suggests recreate_pod', inputSchema: { type: 'object', properties: { pod_id: podId }, required: ['pod_id'] } },
+  { name: 'delete_pod', description: 'Terminate a pod (irreversible; asks nothing, as the card does after its confirm). A network volume is not touched', inputSchema: { type: 'object', properties: { pod_id: podId }, required: ['pod_id'] } },
+  { name: 'recreate_pod', description: 'A fresh pod with the same name, image, card choice, disk, idle stop and own configuration on whatever host is free; the old one is terminated. The network volume follows', inputSchema: { type: 'object', properties: { pod_id: podId }, required: ['pod_id'] } },
+  { name: 'set_idle_stop', description: 'Set a pod\'s idle stop: stopped after this many minutes with nothing queued in its ComfyUI; 0 = never', inputSchema: { type: 'object', properties: { pod_id: podId, minutes: { type: 'integer', minimum: 0 } }, required: ['pod_id', 'minutes'] } },
+  { name: 'get_logs', description: 'The last lines of a pod\'s logs from RunPod (container and system)', inputSchema: { type: 'object', properties: { pod_id: podId, lines: { type: 'integer', description: 'How many lines, 1-1000', default: 100 } }, required: ['pod_id'] } },
+  { name: 'list_datacenters', description: 'Every datacenter with S3 support and our cards in stock there at the secure-cloud price per hour', inputSchema: { type: 'object', properties: {} } },
+  { name: 'list_volumes', description: 'The network volumes with size, datacenter, cost per month, S3 support, the pods on each, and which is the default', inputSchema: { type: 'object', properties: {} } },
+  {
+    name: 'create_volume',
+    description: `Create a network volume (billed monthly: USD 0.07 per GB). Spends money: needs approved_by, the person behind the named yes (policy/agent-permissions.md, cap USD ${governance.SPEND_CAP_USD})`,
+    inputSchema: {
+      type: 'object',
+      properties: { approved_by: approvedBy, name: { type: 'string' }, size_gb: { type: 'integer', description: '10 to 4000' }, datacenter: { type: 'string', description: 'Datacenter id (list_datacenters); the volume and its pods live there' } },
+      required: ['name', 'size_gb', 'datacenter'],
+    },
+  },
+  { name: 'delete_volume', description: 'Delete a network volume; refused while a pod is attached to it', inputSchema: { type: 'object', properties: { volume_id: { type: 'string', description: 'Volume ID (list_volumes)' } }, required: ['volume_id'] } },
+  { name: 'set_default_volume', description: 'Make a volume the Default Configuration\'s: its id and its datacenter together, since a volume pins both', inputSchema: { type: 'object', properties: { volume_id: { type: 'string', description: 'Volume ID (list_volumes)' } }, required: ['volume_id'] } },
+  { name: 'get_configuration', description: 'The Default Configuration: the folders mapped on this PC and where a pod has them, the volume, datacenter, image, idle stop, mode and what is required', inputSchema: { type: 'object', properties: {} } },
+  {
+    name: 'sync',
+    description: "Start a copy between this PC's mapped folders and the pod's volume, in the app's job runner: push (project, comfy-shared, the repo workflows; plates only with a named yes) or pull (ComfyUI's output, each shot's renders and packages). Returns the plan and the transport (SSH into the running pod, or RunPod's S3 API onto the volume); sync_status follows it",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pod_id: podId,
+        direction: { type: 'string', enum: ['push', 'pull'], default: 'push' },
+        only: { type: 'array', items: { type: 'string' }, description: 'Narrow to these folders: push project, plates, comfy-shared, workflows; pull output, review, deliver' },
+        plates: { type: 'boolean', description: 'Push the served plates too (client material leaving this PC: needs approved_by)', default: false },
+        approved_by: { type: 'string', description: 'The named yes for plates leaving this PC' },
+      },
+      required: ['pod_id'],
+    },
+  },
+  { name: 'sync_status', description: 'Where a sync started by this server is: folder N of M, percent, files landed, errors, done', inputSchema: { type: 'object', properties: { pod_id: podId }, required: ['pod_id'] } },
+  { name: 'cost_now', description: 'What is billing right now: the running pods\' price per hour summed, and the volumes\' cost per month', inputSchema: { type: 'object', properties: {} } },
+]
+const TOOLS = [...POOL_TOOLS, ...POD_TOOLS]
+
 const NO_SPEND = '(no-spend mode: simulated pod; nothing reached RunPod, nothing is billed)'
 const text = (t, isError = false) => ({ content: [{ type: 'text', text: pool.dryRun() ? `${t}\n\n${NO_SPEND}` : t }], isError })
 const json = (v) => text(JSON.stringify(pool.dryRun() && v && !Array.isArray(v) && typeof v === 'object' ? { ...v, dry_run: true } : v, null, 2))
+const round2 = (n) => Math.round(n * 100) / 100
+
+// Sync jobs, one per pod, kept in this process as the Electron main process keeps them: the plan, the
+// events syncrun.run sends, and the result. A job outlives the call that started it; sync_status reads it.
+const syncJobs = new Map()
+function syncSummary(job) {
+  const total = job.steps.length
+  const started = job.events.filter((e) => e.kind === 'step').length
+  const finished = job.events.filter((e) => e.kind === 'step-done').length
+  const current = [...job.events].reverse().find((e) => e.kind === 'step') || null
+  const inStep = started > finished
+  const lastProgress = inStep ? [...job.events].reverse().find((e) => e.kind === 'progress' && e.key === current.key) : null
+  const percent = job.done && job.result ? 100 : total ? Math.round(((finished + (inStep ? (lastProgress?.percent ?? 0) / 100 : 0)) / total) * 100) : 0
+  const files = job.events.filter((e) => e.kind === 'file').map((e) => e.path)
+  const errors = job.events.filter((e) => e.kind === 'problem' || e.kind === 'error').map((e) => e.text)
+  if (job.error) errors.push(job.error)
+  return {
+    pod_id: job.req.pod_id, direction: job.req.direction, transport: job.transport.kind, started: job.started,
+    running: !job.done, done: job.done, folder: Math.min(started, total), of: total, current: inStep ? current.key : null, percent,
+    files_count: files.length, files: files.slice(-50), errors, failed_folders: job.events.filter((e) => e.kind === 'step-done' && e.code !== 0).map((e) => e.key),
+    cancelled: !!job.result?.cancelled, result: job.result, summary: [...job.events].reverse().find((e) => e.kind === 'done')?.text ?? null,
+  }
+}
+
+/** Does RunPod's answer say the host or cloud has no card for this pod? */
+const hostFull = (message) => pods.NO_STOCK.test(message) || /host|unavailable|resources/i.test(message)
 
 /** tool name -> what it answers. Each returns a CallToolResult; the dispatcher below turns throws into one. */
 const HANDLERS = {
@@ -116,38 +212,159 @@ const HANDLERS = {
     return text(`✓ Job submitted: ${job.job_id}\n\nAgent: ${job.agent_id}\nAPI: ${job.api_url}\nStatus: ${job.status_url}`)
   },
   get_job_status: async ({ agent_id, job_id }) => json(await pool.jobStatus(agent_id, job_id)),
+
+  // ----- pods and the rest of the app -----
+  list_pods: async () => json((await pods.list()).map((p) => ({ ...p, config: pods.config(p.id) }))),
+  get_pod: async ({ pod_id }) => {
+    const [p, d] = await Promise.all([pods.get(pod_id), pods.details(pod_id)])
+    return json({
+      ...p, runpod_status: d.status, status_text: d.status_text, cost_per_hr: d.cost_per_hr, cloud: d.cloud, datacenter: d.datacenter, image: d.image,
+      disk_gb: d.disk_gb, volume_gb: d.volume_gb, created_at: d.created_at, actions: d.actions, console_url: d.console_url, config: pods.config(pod_id),
+    })
+  },
+  create_pod: async (args) => {
+    const refusal = governance.namedYes(args, 'create_pod')
+    if (refusal) return text(refusal, true)
+    const req = {
+      name: args.name, gpu: args.gpu || gpus.DEFAULT_GPU, image: args.image || pool.imageChoice(mounts.load()), data_center_id: args.datacenter || null,
+      idle_stop_minutes: args.idle_stop_minutes ?? null, apply_mounts: args.apply_mounts ?? null, config: args.config || null,
+    }
+    const p = await pods.create(req)
+    console.error(`create_pod ${p.id} (${p.name}, ${p.gpu}) approved by ${String(args.approved_by).trim()}`)
+    return json({ ...p, config: pods.config(p.id), approved_by: String(args.approved_by).trim() })
+  },
+  stop_pod: async ({ pod_id }) => { const r = await pods.stop(pod_id); return text(`✓ Pod stopped: ${pod_id}\n${r.message}`) },
+  resume_pod: async ({ pod_id }) => {
+    try { const r = await pods.resume(pod_id); return text(`✓ Pod resumed: ${pod_id}\n${r.message}`) }
+    catch (e) {
+      const m = e?.message || String(e)
+      if (e?.status !== 404 && hostFull(m)) return text(`✗ Pod ${pod_id} could not resume: RunPod pins a stopped pod to its host, and that host has no free card right now (RunPod: ${m}). Use recreate_pod: a fresh pod with the same settings on a free host; the network volume follows it.`, true)
+      throw e
+    }
+  },
+  delete_pod: async ({ pod_id }) => { const r = await pods.remove(pod_id); return text(`✓ Pod deleted: ${pod_id}\n${r.message}`) },
+  recreate_pod: async ({ pod_id }) => {
+    const fresh = await pods.recreate(pod_id)
+    return json({ ...fresh, replaced: pod_id, config: pods.config(fresh.id) })
+  },
+  set_idle_stop: async ({ pod_id, minutes }) => {
+    const r = await pods.setIdleStop(pod_id, Number(minutes))
+    return json({ ...r, note: r.idle_stop_minutes ? `stopped after ${r.idle_stop_minutes} quiet minutes with nothing queued, while the app's idle watch runs` : 'never stopped for being idle' })
+  },
+  get_logs: async ({ pod_id, lines }) => {
+    const n = Math.max(1, Math.min(Number(lines) || 100, 1000))
+    await pods.get(pod_id)
+    const out = []
+    const ac = new AbortController()
+    const timer = setTimeout(() => ac.abort(), LOG_WAIT_MS)
+    try { await pods.logs(pod_id, { tail: n }, (e) => { out.push(e); if (out.length > n) out.shift() }, ac.signal) }
+    finally { clearTimeout(timer); ac.abort() }
+    if (!out.length) return text(`No log lines for ${pod_id} in ${LOG_WAIT_MS} ms`)
+    return text(`Last ${out.length} line${out.length === 1 ? '' : 's'} of ${pod_id}:\n` + out.map((e) => `${e.ts ? e.ts + ' ' : ''}[${e.source}] ${e.line}`).join('\n'))
+  },
+  list_datacenters: async () => json(await pods.datacenters()),
+  list_volumes: async () => json(await volumes.list()),
+  create_volume: async (args) => {
+    const refusal = governance.namedYes(args, 'create_volume')
+    if (refusal) return text(refusal, true)
+    const v = await volumes.create({ name: args.name, size_gb: Number(args.size_gb), datacenter: args.datacenter })
+    console.error(`create_volume ${v.id} (${v.name}, ${v.size_gb} GB in ${v.datacenter}, USD ${v.cost_per_month}/month) approved by ${String(args.approved_by).trim()}`)
+    return json({ ...v, approved_by: String(args.approved_by).trim() })
+  },
+  delete_volume: async ({ volume_id }) => { const r = await volumes.remove(volume_id); return text(`✓ Volume deleted: ${r.removed}${r.was_default ? '\nIt was the Default Configuration\'s volume: the configuration now has none (set_default_volume picks another).' : ''}`) },
+  set_default_volume: async ({ volume_id }) => {
+    const v = await volumes.useAsDefault(volume_id)
+    const cfg = mounts.load()
+    return json({ volume: v, configuration: { network_volume_id: cfg.network_volume_id, data_center_id: cfg.data_center_id } })
+  },
+  get_configuration: async () => {
+    const cfg = mounts.load()
+    const p = mounts.payload(cfg)
+    return json({
+      mode: p.mode, dry_run: p.dry_run, required: p.require, required_from: p.require_source, stored: p.stored, file: p.store,
+      folders: p.folders.map((r) => ({ key: r.key, what: r.what, local: r.local || null, exists: r.exists, required: r.required, on_pod: r.container, mode: r.mode, custom: !!r.custom, in_mirror: r.mirror, declared: r.declared?.path ?? null })),
+      volume: cfg.network_volume_id || null, datacenter: cfg.data_center_id || null, mount_path: cfg.mount_path, image: cfg.image, registry_auth: !!cfg.registry_auth_id,
+      idle_stop_minutes: cfg.idle_stop_minutes, apply_by_default: cfg.apply_by_default,
+      links: p.links.map((l) => `${l.path} -> ${l.target}`), env: cfg.env, pod_env: p.preview.env,
+    })
+  },
+  sync: async (args) => {
+    const pod_id = String(args.pod_id || '').trim()
+    if (!pod_id) return text('sync needs pod_id', true)
+    const running = syncJobs.get(pod_id)
+    if (running && !running.done) return text(`A sync is already running for ${pod_id} (${running.req.direction}, started ${running.started}): sync_status follows it`, true)
+    const req = { pod_id, direction: args.direction === 'pull' ? 'pull' : 'push', only: Array.isArray(args.only) && args.only.length ? args.only.map(String) : undefined, plates: !!args.plates, approved_by: args.approved_by }
+    await pods.get(pod_id)   // a clear 404; in no-spend mode the simulated copy would otherwise run for any id
+    const steps = syncrun.planFor(req)   // refuses plates without the named yes, in the policy's words
+    const transport = await syncrun.transportFor(pod_id)
+    console.error(`sync ${req.direction} ${pod_id}: ${steps.map((s) => s.key).join(', ') || 'nothing to copy'} over ${transport.kind} (${transport.reason})`)
+    if (!steps.length) return text(`Nothing to copy${req.only ? ` for ${req.only.join(', ')}` : ''}: map the folders in the Default Configuration first (get_configuration shows them)`, true)
+    if (transport.kind === 'none') return text(transport.reason, true)
+    const job = { req, steps, transport, ac: new AbortController(), events: [], done: false, result: null, error: null, started: new Date().toISOString() }
+    syncJobs.set(pod_id, job)
+    syncrun.run(req, (e) => job.events.push(e), job.ac.signal)
+      .then((r) => { job.result = r })
+      .catch((e) => { job.error = e?.message || String(e) })
+      .finally(() => { job.done = true })
+    if (req.plates) console.error(`sync push with plates for ${pod_id} approved by ${String(args.approved_by).trim()}`)
+    return json({ pod_id, direction: req.direction, transport, steps, started: job.started, follow: 'sync_status' })
+  },
+  sync_status: async ({ pod_id }) => {
+    const job = syncJobs.get(String(pod_id || '').trim())
+    if (!job) return json({ pod_id, running: false, done: false, message: `No sync started for ${pod_id} by this server (a sync from the app is followed in the app)` })
+    return json(syncSummary(job))
+  },
+  cost_now: async () => {
+    const [all, vols] = await Promise.all([pods.list(), volumes.list()])
+    const billing = all.filter((p) => p.status === 'running' || p.status === 'starting')   // a starting pod is already billed
+    const priced = await Promise.all(billing.map(async (p) => {
+      let cost = null
+      try { cost = (await pods.details(p.id)).cost_per_hr } catch { /* no details: the sum says what it could price */ }
+      return { id: p.id, name: p.name, status: p.status, gpu: p.gpu, cost_per_hr: cost }
+    }))
+    return json({
+      currency: 'USD', pods_per_hour: round2(priced.reduce((s, p) => s + (p.cost_per_hr ?? 0), 0)), running_pods: priced,
+      unpriced_pods: priced.filter((p) => p.cost_per_hr == null).map((p) => p.id),
+      volumes_per_month: round2(vols.reduce((s, v) => s + (v.cost_per_month || 0), 0)), volumes: vols.map((v) => ({ id: v.id, name: v.name, size_gb: v.size_gb, datacenter: v.datacenter, cost_per_month: v.cost_per_month })),
+      spend_cap_usd: governance.SPEND_CAP_USD,
+    })
+  },
 }
 
-const server = new Server({ name: 'comfy-moe-server', version }, {
-  capabilities: { tools: {}, resources: {} },
-  instructions: governance.instructions(),   // applied to every client at initialize
-})
+/** A fresh SDK server with every handler; one per connection (stdio: one; HTTP: one per request, transport.mjs). */
+function makeServer() {
+  const server = new Server({ name: 'comfy-moe-server', version }, {
+    capabilities: { tools: {}, resources: {} },
+    instructions: governance.instructions(),   // applied to every client at initialize
+  })
 
-server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }))
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }))
 
-server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
-  const handler = HANDLERS[params.name]
-  if (!handler) return text(`Unknown tool: ${params.name}`, true)
-  try {
-    return await handler(params.arguments || {})
-  } catch (e) {
-    const message = e?.message || String(e)
-    if (e?.status === 404) return text(message, true)   // "Agent not found: x", as the Python answered
-    console.error(`Tool error: ${params.name}: ${message}`)
-    return text(`Error executing ${params.name}: ${message}`, true)
-  }
-})
+  server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
+    const handler = HANDLERS[params.name]
+    if (!handler) return text(`Unknown tool: ${params.name}`, true)
+    try {
+      return await handler(params.arguments || {})
+    } catch (e) {
+      const message = e?.message || String(e)
+      if (typeof e?.status === 'number') return text(message, true)   // the core's own refusal: "Agent not found: x", "No card available right now: tried ..."
+      console.error(`Tool error: ${params.name}: ${message}`)
+      return text(`Error executing ${params.name}: ${message}`, true)
+    }
+  })
 
-// Every governance page, as governance://<page>.
-server.setRequestHandler(ListResourcesRequestSchema, async () => ({
-  resources: governance.listing().map((p) => ({ uri: p.uri, name: p.name, mimeType: 'text/markdown', description: "shared/governance: Binc's policies, copied from the CANALV2 tree" })),
-}))
-server.setRequestHandler(ReadResourceRequestSchema, async ({ params }) => {
-  const name = governance.uriToName(String(params.uri))
-  const t = governance.read(name)
-  if (t == null) throw new Error(`No such governance page: ${name}`)
-  return { contents: [{ uri: params.uri, mimeType: 'text/markdown', text: t }] }
-})
+  // Every governance page, as governance://<page>.
+  server.setRequestHandler(ListResourcesRequestSchema, async () => ({
+    resources: governance.listing().map((p) => ({ uri: p.uri, name: p.name, mimeType: 'text/markdown', description: "shared/governance: Binc's policies, copied from the CANALV2 tree" })),
+  }))
+  server.setRequestHandler(ReadResourceRequestSchema, async ({ params }) => {
+    const name = governance.uriToName(String(params.uri))
+    const t = governance.read(name)
+    if (t == null) throw new Error(`No such governance page: ${name}`)
+    return { contents: [{ uri: params.uri, mimeType: 'text/markdown', text: t }] }
+  })
+  return server
+}
 
-await server.connect(new StdioServerTransport())
-console.error(`comfy-moe-server ${version} on stdio; governance from ${governance.folder() || 'nowhere'}; ${pool.dryRun() ? 'no-spend mode' : process.env.RUNPOD_API_KEY ? 'live' : 'no RUNPOD_API_KEY: pod tools will refuse until one is set'}`)
+const served = await serve(makeServer)
+console.error(`comfy-moe-server ${version} on ${served.text}; governance from ${governance.folder() || 'nowhere'}; ${pool.dryRun() ? 'no-spend mode' : process.env.RUNPOD_API_KEY ? 'live' : 'no RUNPOD_API_KEY: pod tools will refuse until one is set'}`)
