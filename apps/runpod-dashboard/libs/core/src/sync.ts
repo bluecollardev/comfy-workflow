@@ -65,11 +65,11 @@ export function sshTarget(pod: RawPod): { host: string; port: number } {
 /** macOS ships openrsync, which has --progress but not --info=progress2. Takes `rsync --version`'s output. */
 export const progressFlag = (version: string) => (/openrsync/.test(version) ? '--progress' : '--info=progress2')
 
-export interface RsyncOptions { dryRun?: boolean; progress?: string }
+export interface RsyncOptions { dryRun?: boolean; progress?: string; verbose?: boolean }   // verbose: every file named as it lands (the app's progress view)
 
 // -rlt, not -a: the network volume refuses chown, so no owner, group or perms; times and links are kept.
 function rsyncBase(port: number, o: RsyncOptions): string[] {
-  return ['rsync', ...(o.dryRun ? ['-n'] : []), '-rlt', o.progress || '--info=progress2', '--partial',
+  return ['rsync', ...(o.dryRun ? ['-n'] : []), ...(o.verbose ? ['-v'] : []), '-rlt', o.progress || '--info=progress2', '--partial',
     '-e', `ssh -p ${port} -o StrictHostKeyChecking=accept-new`, ...EXCLUDE.flatMap((e) => ['--exclude', e])]
 }
 /** Push one folder into the pod. */

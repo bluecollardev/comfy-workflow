@@ -72,6 +72,7 @@
 import { onMounted, onUnmounted } from 'vue'
 import { useUiStore } from './stores/ui'
 import { useSettingsStore } from './stores/settings'
+import { syncAPI } from './api/sync'
 import VolumesModal from './components/VolumesModal.vue'
 import { useToastStore } from './stores/toast'
 import { t } from './i18n'
@@ -101,12 +102,15 @@ function readOAuthResult() {
   window.history.replaceState(null, '', window.location.pathname)
 }
 
+let offSync = () => {}
 onMounted(async () => {
   readOAuthResult()
-  pods.load()
+  await pods.load()
   pods.startAutoRefresh()
+  offSync = syncAPI.onEvent((ev) => pods.syncEvent(ev))   // sync jobs run in the main process; every card follows them from here
+  pods.syncRecover(syncAPI)
   await settings.load()
   if (!settings.ready) ui.configOpen = true   // nothing works without a RunPod key: the panel opens on the key field
 })
-onUnmounted(() => pods.stopAutoRefresh())
+onUnmounted(() => { pods.stopAutoRefresh(); offSync() })
 </script>

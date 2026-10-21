@@ -10,6 +10,13 @@ contextBridge.exposeInMainWorld('core', {
     // Subscribe to pushed log events; returns the unsubscribe function.
     onEvent(cb) { const h = (_e, payload) => cb(payload); ipcRenderer.on('core:logs', h); return () => ipcRenderer.removeListener('core:logs', h) },
   },
+  sync: {
+    start: (req) => ipcRenderer.invoke('core:sync:start', JSON.parse(JSON.stringify(req))),
+    cancel: (id) => ipcRenderer.invoke('core:sync:cancel', id),
+    state: (id) => ipcRenderer.invoke('core:sync:state', id),
+    plan: (req) => ipcRenderer.invoke('core:sync:plan', JSON.parse(JSON.stringify(req))),
+    onEvent(cb) { const h = (_e, payload) => cb(payload); ipcRenderer.on('core:sync', h); return () => ipcRenderer.removeListener('core:sync', h) },
+  },
   async invoke(ns, fn, args = []) {
     // Plain data only crosses the bridge: Vue's reactive proxies cannot be structured-cloned.
     let plain

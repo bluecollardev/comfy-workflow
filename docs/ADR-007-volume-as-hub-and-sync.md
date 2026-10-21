@@ -117,9 +117,26 @@ G (the Sync button drives the AWS CLI, no SSH); E is then not needed, the
 volume is the bucket; D is moot; not F. Three attempts over rsync into a pod
 all died with the pod, which is the case for G.
 
+## What is built (2026-10-21, while the hub decision stays open)
+
+Option B is in the app, with G's transport for the case the pod is off: a Sync button on
+every card opens a confirmation naming the folders and the transport, then runs the copy in
+the main process (it outlives the window), streams rsync's or the AWS CLI's lines, counts
+files and errors, fills the card's bar, holds the pod's idle stop and restores it after.
+The transport rule, in `libs/core/src/syncrun.ts`:
+
+| The pod is | The volume | Transport |
+|---|---|---|
+| running | any | SSH into the pod (rsync, additive, `-rlt`, no ownership) |
+| off | in an S3 datacenter, S3 keys entered in Default Configuration | RunPod's S3 API onto the volume (`aws s3 cp --recursive`), no pod needed |
+| off | elsewhere, or no keys | refused, with the reason in the confirmation |
+
+Push: project, comfy-shared, workflows, and plates only with a named yes. Pull: comfy-shared
+output and each shot's `06_REVIEW` and `07_DELIVER`. Pressed, never automatic.
+
 ## Decision
 
-Open. To be filled in when Lucas decides; until then the script and the
+Open on the hub (C, E, G as the home of the data). To be filled in when Lucas decides; until then the script and the
 one-way push are what exists.
 
 ## Consequences to weigh

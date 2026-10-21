@@ -19,6 +19,8 @@ import {
   BFormCheckboxGroup,
   BFormGroup,
   BFormInput,
+  BFormRadio,
+  BFormRadioGroup,
   BFormSelect,
   BFormTextarea,
   BModal,
@@ -61,6 +63,8 @@ app.component('BFormCheckbox', BFormCheckbox)
 app.component('BFormCheckboxGroup', BFormCheckboxGroup)
 app.component('BFormGroup', BFormGroup)
 app.component('BFormInput', BFormInput)
+app.component('BFormRadio', BFormRadio)
+app.component('BFormRadioGroup', BFormRadioGroup)
 app.component('BFormSelect', BFormSelect)
 app.component('BFormTextarea', BFormTextarea)
 app.component('BModal', BModal)
