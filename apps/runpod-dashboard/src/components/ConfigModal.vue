@@ -18,7 +18,7 @@
       </BAlert>
       <fieldset v-if="!forPod" class="cfg-section">
       <legend data-testid="section-runpod">{{ $t('config.runpod') }}</legend>
-      <BAlert :model-value="true" variant="secondary" class="small py-2 mb-3">{{ $t('config.runpodHint') }}</BAlert>
+      <BAlert :model-value="true" variant="info" class="small py-2 mb-3">{{ $t('config.runpodHint') }}</BAlert>
       <BRow class="g-3">
         <BCol md="8">
           <BFormGroup :label="$t('config.apiKey')" label-for="cfg-key" data-testid="cfg-key-group" :description="keyInfo.runpod_api_key_set ? $t('config.apiKeyStored', { hint: keyInfo.runpod_api_key_hint, source: keyInfo.source }) : $t('config.apiKeyUnset')">
@@ -31,7 +31,7 @@
       <template v-if="!gated">
       <fieldset class="cfg-section">
       <legend data-testid="section-volume">{{ $t('config.volume') }}</legend>
-      <BAlert :model-value="true" variant="secondary" class="small py-2 mb-3">{{ $t('config.volumeHint') }}</BAlert>
+      <BAlert :model-value="true" variant="info" class="small py-2 mb-3">{{ $t('config.volumeHint') }}</BAlert>
       <BRow class="g-3">
         <BCol cols="12">
           <BFormGroup :label="$t('config.datacenter')" label-for="cfg-dc" :description="$t('config.datacenterHelp')">
@@ -86,7 +86,7 @@
         <legend class="mb-0" data-testid="section-folders">{{ $t('config.folders') }}</legend>
         <BButton size="sm" variant="outline-light" class="flex-shrink-0 text-nowrap ms-3" data-testid="add-folder" @click="cfg.custom.push({ name: '', local: '', container: '', link: '', mode: 'rw' })"><i class="fa-solid fa-plus me-1"></i>{{ $t('config.addFolder') }}</BButton>
       </div>
-      <BAlert :model-value="true" variant="secondary" class="small py-2 mb-3">{{ $t('config.foldersHint', { mode, rule: $t(requireSource === 'prod' ? 'config.ruleProd' : requireSource === 'env' ? 'config.ruleEnv' : 'config.ruleConfig') }) }}<code class="d-none" data-testid="config-mode">{{ mode }}</code></BAlert>
+      <BAlert :model-value="true" variant="info" class="small py-2 mb-3">{{ $t('config.foldersHint', { mode, rule: $t(requireSource === 'prod' ? 'config.ruleProd' : requireSource === 'env' ? 'config.ruleEnv' : 'config.ruleConfig') }) }}<code class="d-none" data-testid="config-mode">{{ mode }}</code></BAlert>
       <table class="table table-sm align-middle mb-0">
         <thead class="small text-body-secondary">
           <tr><th style="width: 22%">{{ $t('config.colWhat') }}</th><th style="width: 48%">{{ $t('config.colLocal') }}</th><th>{{ $t('config.colPod') }}</th><th></th></tr>
@@ -144,7 +144,7 @@
         <legend class="mb-0">Environment</legend>
         <BButton size="sm" variant="outline-light" @click="envRows.push({ key: '', value: '' })"><i class="fa-solid fa-plus me-1"></i>Add variable</BButton>
       </div>
-      <BAlert :model-value="true" variant="secondary" class="small py-2 mb-3">extra variables for every pod that applies these mounts</BAlert>
+      <BAlert :model-value="true" variant="info" class="small py-2 mb-3">Extra variables for every pod that applies these mounts.</BAlert>
       <table class="table table-sm align-middle mb-3" v-if="envRows.length">
         <tbody>
           <tr v-for="(row, i) in envRows" :key="i">
