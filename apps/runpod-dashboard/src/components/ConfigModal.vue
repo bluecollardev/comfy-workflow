@@ -23,9 +23,15 @@
 
       <h6 class="mb-2" data-testid="section-volume">{{ $t('config.volume') }} <span class="text-body-secondary fw-normal small">{{ $t('config.volumeHint') }}</span></h6>
       <BRow class="g-3 mb-3">
-        <BCol md="5">
+        <BCol cols="12">
+          <BFormGroup :label="$t('config.datacenter')" label-for="cfg-dc" :description="$t('config.datacenterHelp')">
+            <BFormSelect id="cfg-dc" v-model="cfg.data_center_id" :options="dcOptions" class="font-monospace" data-testid="cfg-dc" />
+          </BFormGroup>
+        </BCol>
+        <BCol md="8">
           <BFormGroup :label="$t('config.volumeId')" label-for="cfg-volume" :description="$t('config.volumeIdHelp')">
-            <BFormInput id="cfg-volume" v-model.trim="cfg.network_volume_id" placeholder="e.g. 7h2k…" class="font-monospace" data-testid="cfg-volume" @change="loadVolume" />
+            <BFormInput id="cfg-volume" v-model.trim="cfg.network_volume_id" list="cfg-volume-suggestions" :placeholder="cfg.data_center_id ? $t('config.volumePick', { dc: cfg.data_center_id }) : $t('config.volumePickFirst')" class="font-monospace" autocomplete="off" data-testid="cfg-volume" @change="loadVolume" />
+            <datalist id="cfg-volume-suggestions"><option v-for="v in volumesHere" :key="v.id" :value="v.id">{{ v.name }} · {{ v.size_gb }} GB</option></datalist>
             <div v-if="cfg.network_volume_id" class="form-text" data-testid="cfg-volume-info">
               <span v-if="volume === undefined">{{ $t('config.volumeLooking') }}</span>
               <span v-else-if="volume === null" class="text-warning">{{ $t('config.volumeMissing') }}</span>
@@ -33,14 +39,9 @@
             </div>
           </BFormGroup>
         </BCol>
-        <BCol md="3">
+        <BCol md="4">
           <BFormGroup :label="$t('config.mountPath')" label-for="cfg-mount" :description="$t('config.mountPathHelp')">
             <BFormInput id="cfg-mount" v-model.trim="cfg.mount_path" class="font-monospace" data-testid="cfg-mount" />
-          </BFormGroup>
-        </BCol>
-        <BCol md="4">
-          <BFormGroup :label="$t('config.datacenter')" label-for="cfg-dc" :description="$t('config.datacenterHelp')">
-            <BFormSelect id="cfg-dc" v-model="cfg.data_center_id" :options="dcOptions" class="font-monospace" data-testid="cfg-dc" />
           </BFormGroup>
         </BCol>
         <BCol md="8">
@@ -168,6 +169,7 @@
 <script setup>
 import { podsAPI } from '../api/pods'
 import { datacenterOptions } from '../utils/datacenters'
+import { volumesAPI } from '../api/volumes'
 /**
  * ConfigModal — two uses of one panel.
  *
@@ -241,6 +243,11 @@ function take(payload) {
 /** The datacenter menu: RunPod's list with S3 support and our cards at the secure-cloud price; the saved id is kept even when the list lacks it. */
 const dcList = ref([])
 const dcOptions = computed(() => datacenterOptions(dcList.value, { value: '', text: t('config.datacenterAny') }, cfg.value?.data_center_id))
+/** The account's volumes, offered for the chosen datacenter (a volume never leaves its datacenter). */
+const allVolumes = ref([])
+const volumesHere = computed(() => allVolumes.value.filter((v) => !cfg.value?.data_center_id || v.datacenter === cfg.value.data_center_id))
+async function loadVolumes() { try { allVolumes.value = (await volumesAPI.list()) || [] } catch { /* the id can still be typed */ } }
+
 /** The configured volume as RunPod has it, with its monthly cost; undefined while asking, null when RunPod has none. */
 const volume = ref(undefined)
 async function loadVolume() {
@@ -256,6 +263,7 @@ async function loadDatacenters() {
 
 async function load() {
   loadDatacenters()
+  loadVolumes()
   loading.value = true; error.value = null
   if (forPod.value) {
     // the pod's own configuration through the API's preview (its derived rows), else the default as saved
