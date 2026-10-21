@@ -10,7 +10,7 @@ import { bad } from './errors.js'
 import { configDir } from './paths.js'
 
 export const file = () => process.env.SETTINGS_ENV_FILE || join(configDir(), '.env')
-const KEYS = ['RUNPOD_API_KEY'] as const
+const KEYS = ['RUNPOD_API_KEY', 'RUNPOD_S3_ACCESS_KEY', 'RUNPOD_S3_SECRET_KEY'] as const   // the S3 pair: uploads onto a volume with no pod (ADR-007 G)
 
 function readEnvFile(): Record<string, string> {
   const f = file()
@@ -48,12 +48,18 @@ const hint = (v: string) => (v ? `••••${v.slice(-4)}` : '')
 export function get() {
   const stored = readEnvFile()
   const key = process.env.RUNPOD_API_KEY || stored.RUNPOD_API_KEY || ''
-  return { runpod_api_key_set: !!key, runpod_api_key_hint: hint(key), source: process.env.RUNPOD_API_KEY && !stored.RUNPOD_API_KEY ? 'environment' : stored.RUNPOD_API_KEY ? file() : 'none' }
+  const s3 = (process.env.RUNPOD_S3_ACCESS_KEY || stored.RUNPOD_S3_ACCESS_KEY || '') && (process.env.RUNPOD_S3_SECRET_KEY || stored.RUNPOD_S3_SECRET_KEY || '')
+  return { s3_keys_set: !!s3, s3_access_key_hint: hint(process.env.RUNPOD_S3_ACCESS_KEY || stored.RUNPOD_S3_ACCESS_KEY || ''), runpod_api_key_set: !!key, runpod_api_key_hint: hint(key), source: process.env.RUNPOD_API_KEY && !stored.RUNPOD_API_KEY ? 'environment' : stored.RUNPOD_API_KEY ? file() : 'none' }
 }
 
 /** Store a secret. An empty value leaves the stored one alone; `null` removes it. */
-export function set(values: { runpod_api_key?: string | null }) {
+export function set(values: { runpod_api_key?: string | null; runpod_s3_access_key?: string | null; runpod_s3_secret_key?: string | null }) {
   const updates: Record<string, string> = {}
+  for (const [field, name] of [['runpod_s3_access_key', 'RUNPOD_S3_ACCESS_KEY'], ['runpod_s3_secret_key', 'RUNPOD_S3_SECRET_KEY']] as const) {
+    const v = values[field]
+    if (v === null) updates[name] = ''
+    else if (v && v.trim()) { if (/\s/.test(v.trim())) throw bad(`${name}: no spaces`); updates[name] = v.trim() }
+  }
   if (values.runpod_api_key === null) updates.RUNPOD_API_KEY = ''
   else if (values.runpod_api_key) {
     const v = values.runpod_api_key.trim()

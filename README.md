@@ -231,6 +231,13 @@ What follows from that:
   and plates are never in the image.
 - **Cost.** The volume bills about USD 0.07 per GB a month whether or not a pod
   runs (120 GB is about USD 8.40). A stopped pod on a network volume bills nothing.
+- **Sync, from a pod's card.** A confirmation names what will be copied, then the copy runs
+  in the app with a progress bar on the card and a live list of files and errors behind it.
+  Push sends the folders mapped on this PC to the volume; Pull brings renders back. The
+  transport is chosen for you: **over SSH into the pod while it runs; over RunPod's S3 API
+  straight onto the volume when the pod is off**, if the volume's datacenter serves S3 and the
+  S3 keys from the RunPod console are entered in Default Configuration; otherwise the
+  confirmation says why neither works. Additive, never deletes, the idle stop held meanwhile.
 - **Keeping the Mac and the volume in line is an open decision.** Today the copy
   goes one way, Mac to volume, by `./start.sh sync`, pressed by a person; nothing
   pulls a pod's renders back down yet. RunPod's S3 API can fill a volume with no

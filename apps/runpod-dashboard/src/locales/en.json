@@ -72,7 +72,7 @@
     "idleSave": "Set",
     "comfyStarting": "ComfyUI is still starting inside the pod; watch Logs. The link appears when it answers.",
     "portMismatch": "This pod was created without the port its image serves ComfyUI on, so the link can never answer. Recreate it; the new pod gets the right ports.",
-    "config": "Configuration",
+    "config": "Config",
     "configTitle": "This pod’s own configuration: shown now, applied when the pod is recreated",
     "ownConfig": "own config",
     "ownConfigTitle": "Created with its own configuration, not the default",
@@ -82,7 +82,14 @@
     "action_stop": "Stopping: RunPod shuts the container down; the volume keeps everything, nothing bills afterwards",
     "action_resume": "Resuming: RunPod looks for a free GPU on the pod's host",
     "action_delete": "Deleting: the pod is terminated; the volume stays",
-    "action_recreate": "Recreating: the pod is terminated and a new one made with the same settings"
+    "action_recreate": "Recreating: the pod is terminated and a new one made with the same settings",
+    "sync": "Sync",
+    "syncTitle": "Copy the folders mapped on this PC onto this pod's volume, or bring renders back: over SSH while the pod runs, over RunPod's S3 API when it is off and the volume's datacenter serves it",
+    "action_sync": "Syncing: copying over SSH; the idle stop is held until it ends. Open Sync on the card for the output.",
+    "syncOpen": "Open the sync: files copied, errors, output",
+    "syncProgress": "Syncing {folder} ({step} of {steps}) · {percent}% · {files} files · {errors} errors · click for details",
+    "detailsTitle": "What RunPod says about this pod: price per hour, cloud and datacenter, card, image, disks",
+    "logsTitle2": "The pod's container and system lines, streamed from RunPod"
   },
   "form": {
     "name": "Name",
@@ -233,7 +240,11 @@
     "volumesNone": "No network volume on this account yet.",
     "volumesNoneIn": "No network volume in {dc} yet.",
     "volumeAdd": "Create a volume",
-    "options": "Options"
+    "options": "Options",
+    "s3Access": "S3 access key (optional)",
+    "s3Secret": "S3 secret",
+    "s3Unset": "For syncing onto a volume with no pod running, in S3 datacenters: RunPod console, Settings, S3 API keys. The access key is your RunPod user id.",
+    "s3Stored": "S3 keys stored ({hint}). Enter new ones to replace them."
   },
   "picker": {
     "title": "Choose the {name} folder",
@@ -333,5 +344,37 @@
     "groupS3": "S3: uploads need no pod · cards in stock",
     "groupOther": "Cards in stock",
     "groupNone": "None of our cards in stock right now"
+  },
+  "sync": {
+    "title": "Sync {name}",
+    "unavailable": "Sync runs in the app: the core copies over SSH from this PC. A plain browser build cannot.",
+    "confirm": "This copies between the folders mapped on this PC and the pod's network volume over SSH. Additive: nothing is deleted on either side. A first push of the whole tree can take hours at this PC's uplink; later ones send only what changed. The pod stays up and its idle stop is held until the copy ends; you can close this window and come back.",
+    "push": "Push: this PC to the volume",
+    "pull": "Pull: renders back to this PC",
+    "plates": "Include the plates (client material; needs a named yes)",
+    "approvedBy": "Approved by",
+    "folder": "Folder",
+    "from": "From",
+    "to": "To",
+    "nothing": "Nothing to copy: map the folders in Default Configuration first.",
+    "startPush": "Start the push",
+    "startPull": "Start the pull",
+    "starting": "Starting…",
+    "copying": "Copying {folder}…",
+    "finished": "Done: {steps} folders in step.",
+    "failedSteps": "{failed} of {steps} folders failed; the output says why.",
+    "cancelled": "Cancelled; what was copied stays, the next run resumes.",
+    "failed": "Failed: {error}",
+    "background": "Running in the app, not in this window: close it and come back any time. Cancel stops the copy; what landed stays.",
+    "cancelRun": "Cancel",
+    "again": "Run again",
+    "countSteps": "folder {step} of {steps}",
+    "countFiles": "{n} files copied",
+    "countErrors": "{n} errors",
+    "errors": "Errors",
+    "files": "Files",
+    "noFilesYet": "No file yet.",
+    "rawOutput": "Raw rsync output",
+    "transport": "Copying {how}."
   }
 }

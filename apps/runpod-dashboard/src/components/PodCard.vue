@@ -39,9 +39,9 @@
       </template>
 
 
-      <div v-if="loading" class="col-12 mt-1" data-testid="pod-progress" :data-step="loading.step">
-        <BProgress :value="loading.value" :max="100" height="6px" variant="info" striped animated />
-        <div class="small text-body-secondary mt-1" data-testid="pod-progress-label">{{ $t('pod.stepOf', { n: loading.step, of: 3 }) }} · {{ loading.label }}</div>
+      <div v-if="loading" class="col-12 mt-1" :class="{ 'cursor-pointer': loading.sync }" :role="loading.sync ? 'button' : undefined" :title="loading.sync ? $t('pod.syncOpen') : undefined" data-testid="pod-progress" :data-step="loading.step" @click="loading.sync && (showSync = true)">
+        <BProgress :value="loading.value" :max="100" height="6px" :variant="loading.sync ? 'warning' : 'info'" :striped="!loading.sync || loading.value < 100" :animated="!loading.sync || loading.value < 100" />
+        <div class="small text-body-secondary mt-1" data-testid="pod-progress-label">{{ loading.sync ? '' : $t('pod.stepOf', { n: loading.step, of: 3 }) + ' · ' }}{{ loading.label }}</div>
       </div>
       <div v-if="pods.hostFull === pod.id" class="col-12 small text-warning" data-testid="pod-host-full">{{ $t('pod.hostFull') }}</div>
 
@@ -72,14 +72,17 @@
       </template>
     </dl>
 
-    <div class="d-flex gap-2 mb-2 justify-content-end">
-      <BButton variant="outline-light" size="sm" :title="$t('pod.configTitle')" data-testid="pod-config" @click="openConfig">
+    <div class="d-flex mb-2 justify-content-evenly flex-nowrap card-actions">
+      <BButton variant="outline-light" size="sm" class="text-nowrap px-2" :title="$t('pod.config') + ': ' + $t('pod.configTitle')" :aria-label="$t('pod.config')" data-testid="pod-config" @click="openConfig">
         <i class="fa-solid fa-sliders me-1"></i>{{ $t('pod.config') }}
       </BButton>
-      <BButton variant="outline-light" size="sm" :pressed="showDetails" data-testid="pod-details-toggle" @click="toggleDetails">
+      <BButton variant="outline-light" size="sm" class="text-nowrap px-2" :title="$t('pod.sync') + ': ' + $t('pod.syncTitle')" :aria-label="$t('pod.sync')" data-testid="pod-sync" @click="showSync = true">
+        <i class="fa-solid fa-arrows-rotate me-1"></i>{{ $t('pod.sync') }}
+      </BButton>
+      <BButton variant="outline-light" size="sm" class="text-nowrap px-2" :pressed="showDetails" :title="$t('pod.details') + ': ' + $t('pod.detailsTitle')" :aria-label="$t('pod.details')" data-testid="pod-details-toggle" @click="toggleDetails">
         <i class="fa-solid fa-circle-info me-1"></i>{{ $t('pod.details') }}
       </BButton>
-      <BButton variant="outline-light" size="sm" data-testid="pod-logs-toggle" @click="showLogs = true">
+      <BButton variant="outline-light" size="sm" class="text-nowrap px-2" :title="$t('pod.logs') + ': ' + $t('pod.logsTitle2')" :aria-label="$t('pod.logs')" data-testid="pod-logs-toggle" @click="showLogs = true">
         <i class="fa-solid fa-scroll me-1"></i>{{ $t('pod.logs') }}
       </BButton>
     </div>
@@ -96,6 +99,7 @@
       </dl>
     </div>
     <ConfigModal v-if="configOpen" mode="pod" v-model="configOpen" :initial="ownConfig" :pod-name="pod.name" @apply="applyConfig" />
+    <SyncModal v-model="showSync" :pod="pod" />
     <BModal v-model="showLogs" :title="$t('pod.logsTitle', { name: pod.name })" size="xl" scrollable hide-footer body-class="p-0" @hidden="showLogs = false">
       <PodLogs v-if="showLogs" :pod-id="pod.id" modal />
     </BModal>
@@ -156,6 +160,7 @@
 import { t } from '../i18n'
 import { computed, ref } from 'vue'
 import PodLogs from './PodLogs.vue'
+import SyncModal from './SyncModal.vue'
 import ConfigModal from './ConfigModal.vue'
 import { usePodsStore } from '../stores/pods'
 import { useToastStore } from '../stores/toast'
@@ -184,6 +189,11 @@ const pods = usePodsStore()
  *  progress RunPod exposes, so the bar moves by step; the Logs modal shows the pull lines. */
 const loading = computed(() => {
   const action = pods.pending[props.pod.id]
+  if (action === 'sync') {
+    const p = pods.sync[props.pod.id] || { steps: 0, step: 0, percent: 0, files: 0, errors: 0 }
+    const value = p.steps ? Math.round((((p.step - 1) + p.percent / 100) / p.steps) * 100) : 5
+    return { sync: true, step: p.step, value: Math.max(2, Math.min(100, value)), label: t('pod.syncProgress', { folder: p.key || '…', step: p.step, steps: p.steps, percent: p.percent, files: p.files, errors: p.errors }) }
+  }
   if (action) return { step: 1, value: 50, label: t(`pod.action_${action}`) }
   if (props.pod.status === 'starting') return { step: 1, value: 15, label: t('pod.stepRequested') }
   if (props.pod.status === 'running' && props.pod.comfy_ready === false && !props.pod.port_mismatch) return { step: 2, value: 60, label: t('pod.stepBooting') }
@@ -192,6 +202,7 @@ const loading = computed(() => {
 const toast = useToastStore()
 const showDetails = ref(false)
 const showLogs = ref(false)
+const showSync = ref(false)
 const details = ref(null)
 const detailsError = ref(null)
 

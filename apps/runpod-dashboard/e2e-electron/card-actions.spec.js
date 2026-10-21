@@ -85,4 +85,28 @@ test.describe('card actions over IPC', () => {
     await expect(connect.getByTestId('connect-repositories')).toContainText('No repositories attached yet')   // repositories.list
     await connect.getByRole('button', { name: t('connect.done') }).click()
   })
+
+  test('Sync: a confirmation with the plan and the transport, then the run with files, progress and the bar on the card', async () => {
+    const { page, configDir } = ctx
+    await page.getByTestId('open-config').click()
+    const dialog = page.locator('.modal.show', { has: page.getByTestId('config-modal') })
+    await dialog.getByTestId('folder-row-project').getByTestId('folder-local').fill(configDir)   // something to copy
+    await dialog.getByTestId('config-save').click()
+    await expect(dialog).toBeHidden()
+    const card = podCard(page, 'Sim-Card')
+    await card.getByTestId('pod-sync').click()
+    const sync = page.locator('.modal.show', { hasText: t('sync.title', { name: 'Sim-Card' }) })
+    await expect(sync.getByTestId('sync-confirm')).toContainText(t('sync.confirm'))
+    await expect(sync.getByTestId('sync-step')).toHaveCount(1)                       // this pod has its own configuration (no project mapped there): the repo's workflows only
+    await expect(sync.getByTestId('sync-transport')).toContainText('no-spend mode')
+    await sync.getByTestId('sync-start').click()
+    await expect(sync.getByTestId('sync-status')).toContainText(t('sync.finished', { steps: 1 }))
+    await expect(sync.getByTestId('sync-file')).toHaveCount(3)
+    await expect(sync.getByTestId('sync-counts')).toContainText(t('sync.countFiles', { n: 3 }))
+    await expect(sync.getByTestId('sync-counts')).toContainText(t('sync.countErrors', { n: 0 }))
+    await sync.locator('.btn-close').click()
+    await expect(sync).toBeHidden()
+    await expect(card.getByTestId('pod-progress-label')).not.toContainText(t('sync.countFiles', { n: 3 }).split(' ')[1])   // the run ended: no sync bar (a boot bar may show, the pod was just recreated)
+    await expect(card.getByTestId('pod-sync')).toBeEnabled()
+  })
 })

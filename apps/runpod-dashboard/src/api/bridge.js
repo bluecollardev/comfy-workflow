@@ -5,5 +5,5 @@
 // throws "An object could not be cloned" at the bridge, before any of our code runs. So every
 // argument is copied to plain JSON here, on the page side.
 const raw = typeof window !== 'undefined' && window.core ? window.core : null
-export const core = raw && { invoke: (ns, fn, args = []) => raw.invoke(ns, fn, JSON.parse(JSON.stringify(args))), logs: raw.logs }
+export const core = raw && { invoke: (ns, fn, args = []) => raw.invoke(ns, fn, JSON.parse(JSON.stringify(args))), logs: raw.logs, sync: raw.sync }
 export const inElectron = () => !!core

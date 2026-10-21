@@ -25,6 +25,16 @@
             <BFormInput id="cfg-key" v-model.trim="newKey" type="password" autocomplete="off" placeholder="rpa_…" class="font-monospace" data-testid="cfg-key" />
           </BFormGroup>
         </BCol>
+        <BCol v-if="!gated" md="6">
+          <BFormGroup :label="$t('config.s3Access')" label-for="cfg-s3-access" :description="keyInfo.s3_keys_set ? $t('config.s3Stored', { hint: keyInfo.s3_access_key_hint }) : $t('config.s3Unset')" data-testid="cfg-s3-group">
+            <BFormInput id="cfg-s3-access" v-model.trim="newS3.access" autocomplete="off" placeholder="user_…" class="font-monospace" data-testid="cfg-s3-access" />
+          </BFormGroup>
+        </BCol>
+        <BCol v-if="!gated" md="6">
+          <BFormGroup :label="$t('config.s3Secret')" label-for="cfg-s3-secret">
+            <BFormInput id="cfg-s3-secret" v-model.trim="newS3.secret" type="password" autocomplete="off" placeholder="rps_…" class="font-monospace" data-testid="cfg-s3-secret" />
+          </BFormGroup>
+        </BCol>
       </BRow>
       </fieldset>
 
@@ -255,6 +265,7 @@ const settingsStore = useSettingsStore()
 /** No key stored (and not no-spend mode): only the key field shows, and the panel cannot be dismissed. */
 const gated = computed(() => !forPod.value && !keyInfo.value.runpod_api_key_set && !settingsStore.ready)
 const newKey = ref('')
+const newS3 = reactive({ access: '', secret: '' })
 
 const label = (f) => (f.custom ? f.key : t(`config.folder.${f.key}`))
 const required = computed(() => folders.value.filter((f) => !f.custom))
@@ -394,6 +405,10 @@ async function save() {
     catch (e) { error.value = e.response?.data?.detail || e.message; saving.value = false; return }
   }
   if (wasGated) { saving.value = false; return }   // the key is in: the rest of the panel appears, nothing else to save yet
+  if (newS3.access || newS3.secret) {
+    try { keyInfo.value = await settingsAPI.set({ runpod_s3_access_key: newS3.access || undefined, runpod_s3_secret_key: newS3.secret || undefined }); newS3.access = ''; newS3.secret = '' }
+    catch (e) { error.value = e.response?.data?.detail || e.message; saving.value = false; return }
+  }
   const r = await mounts.save(body())
   saving.value = false
   if (!r.ok) { error.value = mounts.error; return }

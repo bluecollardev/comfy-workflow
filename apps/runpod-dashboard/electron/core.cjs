@@ -5,7 +5,7 @@
 // otherwise (browser, hot reload, the Playwright suite). Errors come back as {ok:false, error}
 // so the page gets the core's message, not Electron's wrapping.
 const path = require('node:path')
-const { ipcMain, app, shell } = require('electron')
+const { ipcMain, app, shell, BrowserWindow } = require('electron')
 
 let core = null
 let stopIdle = null
@@ -84,6 +84,7 @@ const TABLE = {
 
 // Log streams: one per pod per window, pushed to the page as 'core:logs' events until stopped.
 const streams = new Map()
+const syncJobs = new Map()   // pod id -> { ac, events, done }
 function streamKey(sender, id) { return `${sender.id}:${id}` }
 
 function register() {
@@ -101,6 +102,25 @@ function register() {
     return { ok: true }
   })
   ipcMain.handle('core:logs:stop', (event, id) => { const key = streamKey(event.sender, id); streams.get(key)?.abort(); streams.delete(key); return { ok: true } })
+
+  // Sync jobs: one per pod, pushed to every window as 'core:sync' events; they outlive the window that started them.
+  ipcMain.handle('core:sync:start', async (event, req) => {
+    const id = req.pod_id
+    if (syncJobs.has(id)) return { ok: false, running: true }
+    const ac = new AbortController()
+    const job = { ac, events: [], done: false }
+    syncJobs.set(id, job)
+    const c = await loadCore()
+    const send = (payload) => { job.events.push(payload); for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('core:sync', { id, ...payload }) }
+    c.syncrun.run(req, send, ac.signal)
+      .then((r) => send({ kind: 'result', result: r }))
+      .catch((e) => send({ kind: 'error', text: e.message || String(e) }))
+      .finally(() => { job.done = true; setTimeout(() => { if (syncJobs.get(id) === job) syncJobs.delete(id) }, 60_000) })
+    return { ok: true }
+  })
+  ipcMain.handle('core:sync:cancel', (_event, id) => { syncJobs.get(id)?.ac.abort(); return { ok: true } })
+  ipcMain.handle('core:sync:state', (_event, id) => { const j = syncJobs.get(id); return j ? { running: !j.done, events: j.events } : { running: false, events: [] } })
+  ipcMain.handle('core:sync:plan', async (_event, req) => { const c = await loadCore(); const [steps, transport] = await Promise.all([Promise.resolve().then(() => c.syncrun.planFor(req)), c.syncrun.transportFor(req.pod_id)]); return { steps, transport } })
 
   ipcMain.handle('core', async (_event, ns, fn, args = []) => {
     try {

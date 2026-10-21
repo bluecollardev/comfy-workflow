@@ -113,6 +113,16 @@ test.describe('pod card', () => {
     await expect(card.getByTestId('pod-progress')).toHaveCount(0)
   })
 
+  test('the Config button is short, and Sync in a plain browser says it runs in the app', async ({ page }) => {
+    await page.goto('/')
+    const card = podCard(page, 'ComfyUI-Dev')
+    await expect(card.getByTestId('pod-config')).toHaveText(t('pod.config'))
+    await expect(card.getByTestId('pod-config')).toHaveAttribute('title', /^Config: /)   // the tooltip explains it
+    await card.getByTestId('pod-sync').click()
+    const dialog = page.locator('.modal.show', { hasText: t('sync.title', { name: 'ComfyUI-Dev' }) })
+    await expect(dialog.getByTestId('sync-unavailable')).toContainText(t('sync.unavailable'))
+  })
+
   test('a pod created without its image\'s UI port says so instead of waiting forever', async ({ page, api }) => {
     api.state.pods[0].comfy_ready = false; api.state.pods[0].port_mismatch = true
     await page.goto('/')
