@@ -47,7 +47,7 @@ only mechanical enforcement available. Against `policy/agent-permissions.md`:
 |---|---|---|
 | Nothing renamed, moved, overwritten or deleted; locked shots read-only | `.claude/hooks/protect-binc-tree.sh` blocks Edit/Write under `projects/desktop/` | Hooked (file tools only; shell commands rely on the rule) |
 | Named yes for any download or install | nothing yet | Could hook Bash on `pip install`, `brew install`, `docker pull`, `hf download` |
-| Named yes for any spend, USD 100 cap | the MCP server refuses `create_agent` without `approved_by` (`apps/runpod-api/governance.py`) | Enforced for MCP clients; a Bash hook on `create_pod.py create`, `start.sh pod create`, `docker/swarm.sh deploy` is still open |
+| Named yes for any spend, USD 100 cap | the MCP server refuses `create_agent` without `approved_by` (`apps/runpod-dashboard/mcp/server.mjs`, formerly `apps/runpod-api/governance.py`) | Enforced for MCP clients; a Bash hook on `start.sh pod create`, `docker/swarm.sh deploy` is still open |
 | Named yes before a push to a shared repo | nothing yet | Could hook Bash on `git push` to non-origin remotes |
 | No Slack, no client contact, no account or security changes | out of this repo's reach | Rule only |
 | Stop and report on ambiguity | behaviour, not a tool call | Rule only |

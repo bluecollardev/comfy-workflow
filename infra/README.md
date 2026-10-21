@@ -22,7 +22,7 @@ Not here any more: the pod manager API, pool manager and MCP server are the
 ### 1. Install Dependencies
 
 ```bash
-cd ~/workspaces/comfy_workflow/infra/scripts
+cd ~/workspaces/comfy_workflow
 # nothing to install: the CLI is part of the app (./start.sh installs it on the first run)
 ```
 

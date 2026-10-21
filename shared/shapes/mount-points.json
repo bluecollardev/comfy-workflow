@@ -134,6 +134,6 @@
     "binc-pc": "everything is real; nothing to mount",
     "mac": "map the three folders in the dashboard's Configuration panel; launch.sh reads PROJECT_ROOT, PLATES_ROOT and COMFY_SHARED (GET /api/mounts/env)",
     "docker-compose-or-swarm": "apps/comfy-app/docker/compose.yml binds the three folders from PROJECT_ROOT, PLATES_ROOT and COMFY_SHARED at the paths the project declares, plates read-only",
-    "runpod-pod": "a network volume at /workspace carrying CANALV2/, plates/ and ComfyUI-Shared/; the entrypoint links the declared paths from COMFY_LINKS; configured in the dashboard's Configuration panel and create_pod.py --network-volume"
+    "runpod-pod": "a network volume at /workspace carrying CANALV2/, plates/ and ComfyUI-Shared/; the entrypoint links the declared paths from COMFY_LINKS; configured in the dashboard's Configuration panel and ./start.sh pod create --network-volume"
   }
 }

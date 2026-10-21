@@ -73,7 +73,8 @@ async function confirm(question) {
 function loadKey(core, apiKey) {
   if (apiKey) process.env.RUNPOD_API_KEY = apiKey
   else if (!process.env.RUNPOD_API_KEY) { const k = core.settings.lookup('RUNPOD_API_KEY'); if (k) process.env.RUNPOD_API_KEY = k }
-  if (!process.env.RUNPOD_API_KEY) fail('RUNPOD_API_KEY not set: export it, pass --api-key, or save it in the app\'s Settings')
+  // no-spend mode (dry_run in the configuration or RUNPOD_DRY_RUN=1) simulates pods: nothing reaches RunPod, so no key is needed
+  if (!process.env.RUNPOD_API_KEY && !core.mounts.dryRun(core.mounts.load())) fail('RUNPOD_API_KEY not set: export it, pass --api-key, or save it in the app\'s Settings')
 }
 
 // ----- pod -----

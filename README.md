@@ -93,7 +93,7 @@ brief says. Not started; the next steps page says where it begins.
 
 `./start.sh <target>` is the one-command way in; the manual steps under each
 section are what it does. Targets install what they need on the first run
-(`.venv/` for Python, `npm install` and a UI build for the dashboard) and
+(`npm install`, the core build and a UI build for the app) and
 reuse it after. `RUNPOD_API_KEY` goes in `.env` at the repo root or in the
 environment. `./start.sh` with no argument lists every target.
 
@@ -177,7 +177,7 @@ belong to BH / Binc and need a named yes before they go anywhere new.
 | Shared storage: the project tree at `/home/binc/CANALV2_r3/CANALV2`, the plates under `/mnt/storage/Panama_Redux/…`, `~/ComfyUI-Shared` | rendering anything | binc-PC's disks, over SMB, a NAS or a pod volume; not mounted on this Mac yet. Every path: `docs/MOUNT-POINTS.md` |
 | NVIDIA driver, CUDA 12.6, nvidia-container-toolkit | GPU rendering on Linux, in or out of Docker | per machine; `apps/comfy-app/docker/swarm.sh init` says what Swarm needs on top |
 | Docker, Docker Swarm | running the image on Linux boxes; no GPU under Docker on macOS | `apps/comfy-app/docker/` |
-| uv, Python 3.13 (ComfyUI venv), Python 3.12 (API and CLI) | the Mac install, the pod manager | `brew install uv`; `start.sh` makes `.venv` |
+| uv, Python 3.13 (ComfyUI venv) | the Mac install only; the pod manager needs Node 22, no Python | `brew install uv`; `start.sh` makes `.venv` |
 | Node 22, npm | the dashboard and Electron app | nvm |
 | RunPod account and API key | overflow GPUs, once approved | `.env`; nothing deployed yet |
 

@@ -147,7 +147,7 @@ In order:
 2. [ ] **Binc's yeses**, named, before anything below runs (`shared/governance/policy/agent-permissions.md`; `~/Workspaces/TODO.md` item 5): plates copied to a network volume; an image with the packs pushed to a registry (name and account); the spend, inside the USD 100 cap. The MCP server already refuses `create_agent` without `approved_by`.
 3. [x] **Push the image** (2026-10-20 morning). `registry.gitlab.com/bcdevlucas/comfy-workflow/comfy-app:contract-v26`, a private GitLab project of Lucas's holding only the registry; RunPod pulls with a read-only deploy token saved on the account as credential `gitlab-comfy-workflow`, whose id is in the Configuration panel under the image. Rebuild and push: `./start.sh comfy-image --push registry.gitlab.com/bcdevlucas/comfy-workflow/comfy-app:contract-v26`.
 4. [x] **The network volume** `comfy-workspace` (`q8lf6riygr`), 120 GB in `CA-MTL-1` (the datacenter with the cheapest 24 GB card, the A5000 at USD 0.16/h, and the A40 in high stock behind it), about USD 8.40 a month. Entered in the Configuration panel; a volume can grow later, never shrink.
-5. [~] **Put the data on the volume** (running 2026-10-20 afternoon into `ComfyUI-Dev-Oct20`; plates still unmapped on this Mac): `./start.sh sync --pod <id>` into a pod with the volume attached (needs the image with sshd, built 2026-10-20 afternoon; recreate the pod from it first) (the project tree is 81 GB, 66 of it corrosion shot renders; ComfyUI-Shared 17 GB); `--plates --approved-by <name>` for the plates, which are still unmapped on this Mac. Set `COMFY_MODE=prod` on the machine that drives real pods so every folder is required.
+5. [ ] **Put the data on the volume**: three rsync attempts into a running pod died with the pod on 2026-10-20 (22 files landed); the decision in `docs/ADR-007` (likely a volume in Romania pushed over RunPod's S3 API, `./start.sh sync --s3`, no pod needed) comes first: `./start.sh sync --pod <id>` into a pod with the volume attached (needs the image with sshd, built 2026-10-20 afternoon; recreate the pod from it first) (the project tree is 81 GB, 66 of it corrosion shot renders; ComfyUI-Shared 17 GB); `--plates --approved-by <name>` for the plates, which are still unmapped on this Mac. Set `COMFY_MODE=prod` on the machine that drives real pods so every folder is required.
 6. [~] **Boot one pod** with mounts applied: done 2026-10-20 (`ComfyUI-Dev`, A40, Montreal; nine workflows listed from the volume). Still to do on it: read the entrypoint's `linked …` lines after the sync, open a corrosion graph in its UI, queue one open shot at proxy with the queue script and `--comfy <pod url>`. Locked shots are never run; proxy first.
 7. [ ] **CPU solve pod**, after the GPU pod works: `solve/` image from Binc's plan, same volume.
 
@@ -160,10 +160,8 @@ In order:
 
 ## Also pending in this repo
 
-- Finish the port (ADR-005): git accounts, repositories, image env and OAuth into `libs/core`; the MCP server and the CLI importing it; then Electron stops spawning the Python backend, the Python tree is retired, and the merge gate and the branching rule stop naming pytest. Until then the Electron app still starts the backend for those parts.
-- Merge `feature/no-spend-mode` and `feature/comfy-app-image-push` (both pushed, 2026-10-19 evening); then the deprecated Python API is behind the app on every feature.
 - ComfyUI's own log on the stock image goes to `/workspace/logs/comfyui.log`, not the container's stdout, so the app's Logs modal shows the host's lines but not ComfyUI's there. Our image logs to stdout. A tail of that file over SSH would close the gap for the stock image.
-- Rebuild the Electron app under `apps/runpod-dashboard/` once the port is complete.
-- The Bash-side governance hooks listed as open in `shared/governance/README.md`: installs, `create_pod.py create`, pushes to other remotes.
+- Rebuild the installers (`./start.sh package`) now that the port is complete; the Windows build on the Windows machine.
+- The Bash-side governance hooks listed as open in `shared/governance/README.md`: installs, `./start.sh pod create`, pushes to other remotes.
 - Abstract versus concrete shapes, and the two findings from `check.py` to raise with Binc (above).
 - Run the review on `feature/desktop-app-and-mcp-fixes` against develop, then delete that branch.

@@ -207,8 +207,7 @@ comfy run --workflow blueprints/example.compiled.json
 ### For Cloud Setup:
 ```bash
 # Follow docs/SETUP.md
-bash infra/scripts/setup.sh
-python3 infra/scripts/create_pod.py create --name ComfyUI-Dev --gpu rtx4090
+./start.sh pod create --name ComfyUI-Dev --gpu auto   # or the app's form: ./start.sh desktop
 ```
 
 ## Troubleshooting Local Setup

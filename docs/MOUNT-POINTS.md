@@ -75,7 +75,7 @@ nothing gets no link, and the panel says so. Below the three required folders
 the user adds custom ones (Add folder): a name, the local folder, its place on
 the pod (`<mount path>/<name>` unless set) and, optionally, a path the code
 names, which a pod links onto that place. The legacy material is one such
-folder; `create_pod.py --link` is the same thing from the command line.
+folder; `./start.sh pod create --link` is the same thing from the command line.
 
 ```bash
 eval "$(curl -s localhost:8000/api/mounts/env | jq -r .sh)"   # this PC's folders into the shell
@@ -88,7 +88,7 @@ eval "$(curl -s localhost:8000/api/mounts/env | jq -r .sh)"   # this PC's folder
 | binc-PC | they are real |
 | this Mac | map the three folders in the Configuration panel; `apps/comfy-app/mounts-env.sh` reads the saved mapping (or `PROJECT_ROOT`, `PLATES_ROOT`, `COMFY_SHARED` from the environment) for `launch.sh` and `fetch-models.sh`, and `launch.sh` writes the model paths file from it at every start. ComfyUI-Shared may not be the mirror, which is read-only by rule; the default is `~/ComfyUI-Shared`. The mirror has the tree without plates |
 | Docker on a Linux box, Compose or Swarm | [`apps/comfy-app/docker/compose.yml`](../apps/comfy-app/docker/compose.yml) binds the three folders from the same three variables at the paths the project declares, plates read-only |
-| RunPod pod | a network volume at `/workspace` carrying `project/`, `plates/` and `comfy-shared/` (input, output, models, and `workflows/`, which the image links ComfyUI's Workflows panel to and seeds from the repo's `apps/comfy-app/workflows/` only while empty), filled by `./start.sh sync --pod <id>` (rsync, never deletes, plates only with a named yes; the repo's workflows go to `comfy-shared/workflows/`); the image's entrypoint makes the links from `COMFY_LINKS`. Configured once in the Configuration panel and applied to every new pod by the API and by `create_pod.py` (`--network-volume`, `--link`, `--no-mounts`); a pod with nothing queued for the configured minutes is stopped by the idle watch |
+| RunPod pod | a network volume at `/workspace` carrying `project/`, `plates/` and `comfy-shared/` (input, output, models, and `workflows/`, which the image links ComfyUI's Workflows panel to and seeds from the repo's `apps/comfy-app/workflows/` only while empty), filled by `./start.sh sync --pod <id>` (rsync, never deletes, plates only with a named yes; the repo's workflows go to `comfy-shared/workflows/`); the image's entrypoint makes the links from `COMFY_LINKS`. Configured once in the Configuration panel and applied to every new pod by the API and by `./start.sh pod create` (`--network-volume`, `--link`, `--no-mounts`); a pod with nothing queued for the configured minutes is stopped by the idle watch |
 
 Where the pack defaults come from, line by line:
 [`shared/nodes/bound/README.md`](../shared/nodes/bound/README.md). What the

@@ -225,7 +225,7 @@ FastAPI reads this to:
 - Provide dashboard with pod URLs
 - Route jobs to available agents
 
-See: `apps/runpod-api/pod_manager_api.py`
+See: `apps/runpod-dashboard/libs/core/src/pods.ts`
 
 ## Troubleshooting
 

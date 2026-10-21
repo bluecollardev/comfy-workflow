@@ -12,10 +12,9 @@ npm install
 
 ### Development (Hot Reload)
 ```bash
-# Make sure FastAPI backend is running first:
-# python3 apps/runpod-api/pod_manager_api.py
-
-# Then in another terminal:
+# One app: no backend. Hot reload runs inside the app window, the core over IPC:
+# ./start.sh dashboard   (from the repo root)
+# Or by hand:
 npm run dev
 ```
 
@@ -106,6 +105,6 @@ page loads from the app's own files. Build installers from the repo root:
 `--comfy` names the comfy-app variant (a ShotPipe set from `shared/nodes/sets.json`, default
 `contract-v26`) and `--image` the pushed reference of that build; both are baked into the app as
 `build-info.json` and become the image a new pod boots by default. Without `--image` the local tag
-is baked in and pod creation refuses it until it is pushed. The deprecated Python API in
-`apps/runpod-api` is started only when a Python is found, for git accounts, repositories, image env
-and OAuth, until those are ported (`docs/ADR-005-typescript-core-no-server.md`).
+is baked in and pod creation refuses it until it is pushed. There is no backend: the core
+(`libs/core`) runs in the main process and the page reaches it over IPC; the MCP server (`mcp/`)
+and the CLI (`cli/`) are Node programs over the same core (`docs/ADR-005-typescript-core-no-server.md`).
