@@ -1,6 +1,6 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="test: gate (python + core)" type="ShConfigurationType">
-    <option name="SCRIPT_TEXT" value="" />
+  <configuration default="false" name="test: gate (core + browser)" type="ShConfigurationType">
+    <option name="SCRIPT_TEXT" value="./start.sh test" />
     <option name="INDEPENDENT_SCRIPT_PATH" value="true" />
     <option name="SCRIPT_PATH" value="$PROJECT_DIR$/start.sh" />
     <option name="SCRIPT_OPTIONS" value="test" />

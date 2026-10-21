@@ -1,38 +1,26 @@
-// Electron main process. The core (libs/core: mounts, pods, GPUs, governance, idle) runs in
-// this process and the page reaches it over IPC (core.cjs, preload.cjs): no server for those.
-// The FastAPI backend is still started for what is not ported yet (git accounts, repositories,
-// image env, OAuth) and serves the built UI; it goes when the port is complete (docs/ADR-005).
+// Electron main process. The core (libs/core: mounts, pods, GPUs, datacenters, governance, idle,
+// git accounts, repositories, image env) runs in this process and the page reaches it over IPC
+// (core.cjs, preload.cjs). There is no server and no Python: one app (docs/ADR-005).
 //
-// The backend serves the built UI at http://localhost:8000 (same origin as /api, so no CORS,
-// and the OAuth round-trip lands back in this window). In development, set
-// VITE_DEV_SERVER_URL=http://localhost:5173 to load Vite's dev server instead.
+// The page loads from the app's own files (dist/). In development, VITE_DEV_SERVER_URL=http://localhost:5173
+// loads Vite's dev server instead, with hot reload, still over IPC to this process.
 //
-// Python resolution (first that exists): $RUNPOD_MANAGER_PYTHON →
-// ~/.config/runpod-pod-manager/venv → <repo>/.venv (dev only) → python3 on PATH.
-// Backend settings (RUNPOD_API_KEY, GITHUB_CLIENT_ID, …) are read from
-// ~/.config/runpod-pod-manager/.env (and <repo>/.env in development).
+// Settings (RUNPOD_API_KEY, GITHUB_CLIENT_ID, …) come from ~/.config/runpod-pod-manager/.env
+// (and <repo>/.env in development).
 
 const { app, BrowserWindow, dialog, shell, nativeImage } = require('electron')
 const coreBridge = require('./core.cjs')
-const { spawn } = require('node:child_process')
 const fs = require('node:fs')
-const http = require('node:http')
 const os = require('node:os')
 const path = require('node:path')
 
-const PORT = 8000
-const API = `http://localhost:${PORT}`
 const DEV_URL = process.env.VITE_DEV_SERVER_URL
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'runpod-pod-manager')
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..')
-// Packaged: electron-builder copies apps/runpod-api → resources/backend and dist/ → resources/dist.
-// Dev: the API is in apps/runpod-api and the built UI in apps/runpod-dashboard/dist.
-const BACKEND_DIR = app.isPackaged ? path.join(process.resourcesPath, 'backend') : path.join(REPO_ROOT, 'apps', 'runpod-api')
+// Packaged: electron-builder copies dist/ → resources/dist and the shape and governance → resources/backend (the name stays).
 const UI_DIST_DIR = app.isPackaged ? path.join(process.resourcesPath, 'dist') : path.resolve(__dirname, '..', 'dist')
 const ICON = path.join(__dirname, '..', 'build', 'icon.png')
 
-let backend = null
-let backendError = null
 let win = null
 
 const exists = (p) => {
@@ -54,62 +42,6 @@ function readEnvFile(file) {
     env[line.slice(0, i).trim()] = line.slice(i + 1).trim().replace(/^(['"])(.*)\1$/, '$2')
   }
   return env
-}
-
-function findPython() {
-  const candidates = [
-    process.env.RUNPOD_MANAGER_PYTHON,
-    path.join(CONFIG_DIR, 'venv', 'bin', 'python'),
-    path.join(CONFIG_DIR, 'venv', 'Scripts', 'python.exe'),
-    !app.isPackaged && path.join(REPO_ROOT, '.venv', 'bin', 'python'),
-  ].filter(Boolean)
-  return candidates.find(exists) || (process.platform === 'win32' ? 'python' : 'python3')
-}
-
-function healthy() {
-  return new Promise((resolve) => {
-    const req = http.get(`${API}/health`, (res) => {
-      res.resume()
-      resolve(res.statusCode === 200)
-    })
-    req.on('error', () => resolve(false))
-    req.setTimeout(1500, () => {
-      req.destroy()
-      resolve(false)
-    })
-  })
-}
-
-async function waitForBackend(ms) {
-  const deadline = Date.now() + ms
-  while (Date.now() < deadline) {
-    if (await healthy()) return true
-    if (backendError || (backend && backend.exitCode !== null)) return false
-    await new Promise((r) => setTimeout(r, 300))
-  }
-  return false
-}
-
-function startBackend() {
-  fs.mkdirSync(CONFIG_DIR, { recursive: true })
-  const python = findPython()
-  const env = {
-    ...process.env,
-    ...(app.isPackaged ? {} : readEnvFile(path.join(REPO_ROOT, '.env'))),
-    ...readEnvFile(path.join(CONFIG_DIR, '.env')),
-    API_HOST: '127.0.0.1',
-    API_PORT: String(PORT),
-    API_RELOAD: '0',
-    UI_DIST_DIR,
-    API_BASE_URL: API,
-    FRONTEND_URL: DEV_URL || API,
-    PYTHONUNBUFFERED: '1',
-  }
-  backend = spawn(python, [path.join(BACKEND_DIR, 'pod_manager_api.py')], { cwd: CONFIG_DIR, env, stdio: 'inherit' })
-  backend.on('error', (e) => {
-    backendError = e
-  })
-  return python
 }
 
 function createWindow() {
@@ -160,21 +92,8 @@ async function boot() {
   createWindow()
   await win.loadFile(path.join(__dirname, 'loading.html'))
 
-  // The core runs in this process; the page loads from the app's own files. The deprecated
-  // Python backend is optional: when a Python is found it is started for the parts not ported
-  // yet (git accounts, repositories, image env, OAuth) and the page is served from it so the
-  // OAuth round-trip lands home. Without it the app still runs; those four parts report
-  // "not available" when used.
-  // RUNPOD_MANAGER_NO_BACKEND=1 skips the Python backend on purpose (the self-contained boot, as a packaged app without Python behaves).
-  const noBackend = !!process.env.RUNPOD_MANAGER_NO_BACKEND
-  let backendUp = !noBackend && (await healthy())
-  if (!backendUp && !noBackend && exists(findPython())) {
-    startBackend()
-    backendUp = await waitForBackend(15_000)
-    if (!backendUp) console.warn('Python backend did not start; git accounts, repositories, image env and OAuth are unavailable this session')
-  }
+  // The page: Vite's dev server in development (hot reload, still IPC to this process), else the app's own files.
   if (DEV_URL) await win.loadURL(DEV_URL)
-  else if (backendUp) await win.loadURL(API)
   else await win.loadFile(path.join(UI_DIST_DIR, 'index.html'))
 
   // RUNPOD_MANAGER_SMOKE=1: report what loaded and exit — a headless check for CI / packaging.
@@ -185,7 +104,7 @@ async function boot() {
     const bridge = await win.webContents.executeJavaScript(
       "window.core ? Promise.all([window.core.invoke('pods','gpus'), window.core.invoke('mounts','get')]).then(([g, m]) => `gpus=${g.gpus.map((x) => x.value).join(',')} mode=${m.mode} folders=${m.folders.length}`).catch((e) => 'bridge error: ' + e.message) : 'no bridge'",
     )
-    console.log(`SMOKE url=${win.webContents.getURL()} title="${title}" brand="${brand}" backend=${backend ? 'spawned' : backendUp ? 'external' : 'none'} core: ${bridge}`)
+    console.log(`SMOKE url=${win.webContents.getURL()} title="${title}" brand="${brand}" backend=none core: ${bridge}`)
     app.quit()
   }
 }
@@ -202,5 +121,4 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   coreBridge.stopIdleWatch()
-  if (backend && backend.exitCode === null) backend.kill()
 })

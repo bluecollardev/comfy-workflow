@@ -70,14 +70,6 @@
         "to": "dist"
       },
       {
-        "from": "../runpod-api",
-        "to": "backend",
-        "filter": [
-          "*.py",
-          "requirements.txt"
-        ]
-      },
-      {
         "from": "../../shared/shapes/mount-points.json",
         "to": "backend/mount-points.json"
       },
