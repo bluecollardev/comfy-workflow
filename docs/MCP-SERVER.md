@@ -402,12 +402,10 @@ Claude submits it and returns the job URL to check progress.
 
 ## Costs & Budgeting
 
-**GPU costs (hourly):**
-- RTX 4090: ~$0.42/hr
-- A100: ~$1.00/hr
-- H100: ~$1.50/hr
-- L40S: ~$0.60/hr
-- RTX 6000: ~$0.50/hr
+**GPU costs (hourly):** what the app's card menu shows, read from RunPod when it opens: the
+secure-cloud price where the network volume lives (2026-10-21: A40 USD 0.35 in Montreal,
+4090 USD 0.89 in Romania, RTX 4000 Ada USD 0.28 there). `get_pool_status` sums the running
+agents' `cost_per_hr` from RunPod.
 
 **Storage:**
 - $0.10 per GB-month
