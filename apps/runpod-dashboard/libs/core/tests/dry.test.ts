@@ -39,6 +39,18 @@ describe('no-spend mode', () => {
     await expect(pods.create({ name: 'x' })).rejects.toThrow(/local image name/)
   })
 
+  it('an idle stop set later is what the simulated pod shows, and 0 drops it from the watch', async () => {
+    const cfg = mounts.defaults(); cfg.dry_run = true; cfg.image = 'ghcr.io/example/comfy-app:v26'; mounts.save(cfg)
+    const p = await pods.create({ name: 'sim', gpu: 'a4000', idle_stop_minutes: 15 })
+    expect(await pods.setIdleStop(p.id, 45)).toEqual({ pod_id: p.id, idle_stop_minutes: 45 })
+    expect((await pods.get(p.id)).idle_stop_minutes).toBe(45); expect(idle.entry(p.id)?.minutes).toBe(45)
+    expect(await pods.setIdleStop(p.id, 0)).toEqual({ pod_id: p.id, idle_stop_minutes: 0 })
+    expect((await pods.get(p.id)).idle_stop_minutes).toBe(0); expect(idle.entry(p.id)).toBeUndefined()
+    await expect(pods.setIdleStop(p.id, -1)).rejects.toThrow(/0 \(never\) or a whole number/)
+    await expect(pods.setIdleStop('dry-nope', 5)).rejects.toThrow(/not found/)
+    expect(idle.entry('dry-nope')).toBeUndefined()
+  })
+
   it('a simulated pod becomes running after its boot time', () => {
     const now = Date.now()
     const p = { id: 'dry-1', name: 'x', gpu: 'rtx4090', gpu_count: 1, image: 'i', status: 'running' as const, started_at: new Date(now - 60_000).toISOString(), idle_stop_minutes: 0 }
