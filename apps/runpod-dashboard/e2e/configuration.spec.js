@@ -75,7 +75,7 @@ test.describe('configuration', () => {
     await expect(toast(page).first()).toContainText(t('toast.configSaved'))
     await expect(dialog).toBeHidden()
     const put = api.calls.find((c) => c.method === 'PUT' && c.path === '/mounts')
-    expect(put.body).toMatchObject({ folders: { project: '/Users/lucas/Projects/CANALV2' }, network_volume_id: 'vol2', data_center_id: 'CA-MTL-1', idle_stop_minutes: 45 })
+    expect(put.body).toMatchObject({ folders: { project: '/Users/lucas/Projects/CANALV2' }, network_volume_id: 'vol2', data_center_id: 'CA-MTL-1', idle_stop_minutes: 45, sync_parallel: 4 })
     await openCreatePod(page)
     await expect(page.getByTestId('pod-mounts-group')).toContainText(t('form.summaryVolume', { id: 'vol2', path: '/workspace' }) + ', ' + t('form.summaryMapped', { mapped: 1, total: 3, links: 1 }))
     await expect(page.locator('#pod-idle')).toHaveAttribute('placeholder', '45')

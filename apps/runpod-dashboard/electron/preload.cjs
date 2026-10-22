@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('core', {
     cancel: (id) => ipcRenderer.invoke('core:sync:cancel', id),
     state: (id) => ipcRenderer.invoke('core:sync:state', id),
     plan: (req) => ipcRenderer.invoke('core:sync:plan', JSON.parse(JSON.stringify(req))),
+    count: (req) => ipcRenderer.invoke('core:sync:count', JSON.parse(JSON.stringify(req))),
     onEvent(cb) { const h = (_e, payload) => cb(payload); ipcRenderer.on('core:sync', h); return () => ipcRenderer.removeListener('core:sync', h) },
   },
   async invoke(ns, fn, args = []) {

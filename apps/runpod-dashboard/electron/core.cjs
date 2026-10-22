@@ -120,6 +120,7 @@ function register() {
   })
   ipcMain.handle('core:sync:cancel', (_event, id) => { syncJobs.get(id)?.ac.abort(); return { ok: true } })
   ipcMain.handle('core:sync:state', (_event, id) => { const j = syncJobs.get(id); return j ? { running: !j.done, events: j.events } : { running: false, events: [] } })
+  ipcMain.handle('core:sync:count', async (_event, req) => { const c = await loadCore(); return c.syncrun.countFor(req) })   // the listing passes: what the push would send, with and without the renders
   ipcMain.handle('core:sync:plan', async (_event, req) => { const c = await loadCore(); const [steps, transport] = await Promise.all([Promise.resolve().then(() => c.syncrun.planFor(req)), c.syncrun.transportFor(req.pod_id)]); return { steps, transport } })
 
   ipcMain.handle('core', async (_event, ns, fn, args = []) => {

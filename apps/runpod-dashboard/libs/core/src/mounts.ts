@@ -34,6 +34,7 @@ export interface MountsConfig {
   image: string
   registry_auth_id: string   // RunPod's saved credential for a private registry (saveRegistryAuth); '' for a public image
   idle_stop_minutes: number
+  sync_parallel: number      // rsync streams at a time on a push (1..16); the uplink is the limit, streams keep it full across small files
   dry_run: boolean
 }
 export interface Declared { path: string; source: string; count: number }
@@ -89,6 +90,7 @@ export function defaults(): MountsConfig {
     image: DEFAULT_IMAGE(),
     registry_auth_id: '',
     idle_stop_minutes: 30,
+    sync_parallel: 4,
     dry_run: false,
   }
 }
@@ -110,6 +112,7 @@ export function normalize(data: Partial<MountsConfig>): MountsConfig {
     image: data.image ?? d.image,
     registry_auth_id: (data.registry_auth_id ?? '').trim(),
     idle_stop_minutes: data.idle_stop_minutes ?? d.idle_stop_minutes,
+    sync_parallel: data.sync_parallel ?? d.sync_parallel,
     dry_run: data.dry_run === true,
   }
 }
@@ -365,6 +368,7 @@ export function validate(cfg: MountsConfig): MountsConfig {
   }
   linksEnv(allLinks(cfg))
   if (cfg.idle_stop_minutes < 0) throw bad('idle_stop_minutes is 0 (never) or a number of minutes')
+  if (!Number.isInteger(cfg.sync_parallel) || cfg.sync_parallel < 1 || cfg.sync_parallel > 16) throw bad('sync_parallel is a whole number of parallel uploads, 1 to 16')
   return cfg
 }
 

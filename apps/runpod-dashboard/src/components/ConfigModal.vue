@@ -88,6 +88,11 @@
             <BFormInput id="cfg-idle" v-model.number="cfg.idle_stop_minutes" type="number" min="0" data-testid="cfg-idle" />
           </BFormGroup>
         </BCol>
+        <BCol md="4">
+          <BFormGroup :label="$t('config.syncParallel')" label-for="cfg-sync-parallel" :description="$t('config.syncParallelHelp')">
+            <BFormInput id="cfg-sync-parallel" v-model.number="cfg.sync_parallel" type="number" min="1" max="16" data-testid="cfg-sync-parallel" />
+          </BFormGroup>
+        </BCol>
       </BRow>
       </fieldset>
 

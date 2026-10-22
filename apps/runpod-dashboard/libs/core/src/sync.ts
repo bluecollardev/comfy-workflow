@@ -65,12 +65,17 @@ export function sshTarget(pod: RawPod): { host: string; port: number } {
 /** macOS ships openrsync, which has --progress but not --info=progress2. Takes `rsync --version`'s output. */
 export const progressFlag = (version: string) => (/openrsync/.test(version) ? '--progress' : '--info=progress2')
 
-export interface RsyncOptions { dryRun?: boolean; progress?: string; verbose?: boolean }   // verbose: every file named as it lands (the app's progress view)
+/** verbose: every file named as it lands (the app's progress view); stats: the counts at the end (the listing pass);
+ *  exclude: patterns beyond EXCLUDE (the renders); shallow: the folder's own files and its directory entries, no recursion (the root stream). */
+export interface RsyncOptions { dryRun?: boolean; progress?: string; verbose?: boolean; stats?: boolean; exclude?: string[]; shallow?: boolean }
 
 // -rlt, not -a: the network volume refuses chown, so no owner, group or perms; times and links are kept.
+// With progress2 the whole list is scanned first (--no-inc-recursive): the percentage is of the real total and only
+// climbs; scanned incrementally it falls back every time more files turn up. openrsync has neither option.
 function rsyncBase(port: number, o: RsyncOptions): string[] {
-  return ['rsync', ...(o.dryRun ? ['-n'] : []), ...(o.verbose ? ['-v'] : []), '-rlt', o.progress || '--info=progress2', '--partial',
-    '-e', `ssh -p ${port} -o StrictHostKeyChecking=accept-new`, ...EXCLUDE.flatMap((e) => ['--exclude', e])]
+  const progress = o.progress || '--info=progress2'
+  return ['rsync', ...(o.dryRun ? ['-n'] : []), ...(o.verbose ? ['-v'] : []), ...(o.stats ? ['--stats'] : []), ...(o.shallow ? ['-lt', '-d'] : ['-rlt']), progress, ...(progress === '--info=progress2' ? ['--no-inc-recursive'] : []), '--partial',
+    '-e', `ssh -p ${port} -o StrictHostKeyChecking=accept-new`, ...[...EXCLUDE, ...(o.exclude || [])].flatMap((e) => ['--exclude', e])]
 }
 /** Push one folder into the pod. */
 export const rsyncCmd = (local: string, host: string, port: number, remote: string, o: RsyncOptions = {}): string[] =>

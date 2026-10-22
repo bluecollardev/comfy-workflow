@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { podsAPI } from '../api/pods'
 import { errorText, useToastStore } from './toast'
 import { t } from '../i18n'
+import { fold, fresh } from '../sync-progress'
 
 /**
  * The pods and their stats, and every action on them. One source of truth for the dashboard:
@@ -102,21 +103,18 @@ export const usePodsStore = defineStore('pods', () => {
     else if (HOST_FULL.test(errorText(r.error))) { hostFull.value = id; toast.info(t('toast.hostFull')) }
     return r
   }
-  /** A sync running for a pod (started from its card): the bar shows it like the other actions, filled by its progress. */
-  const sync = ref({})   // pod id -> { steps, step, key, percent, files, errors, done }
-  const syncStarted = (id, steps = 0) => { pending.value = { ...pending.value, [id]: 'sync' }; sync.value = { ...sync.value, [id]: { steps, step: 0, key: '', percent: 0, files: 0, errors: 0, done: false } } }
+  /** A sync running for a pod (started from its card): the bar shows it like the other actions, filled by its progress
+   *  (the state and its reading are in src/sync-progress.js). */
+  const sync = ref({})   // pod id -> fresh()
+  const syncStarted = (id, steps = 0) => { pending.value = { ...pending.value, [id]: 'sync' }; sync.value = { ...sync.value, [id]: fresh(steps) } }
   const syncEnded = (id) => { const { [id]: _done, ...rest } = pending.value; pending.value = rest; if (sync.value[id]) sync.value[id].done = true }
   /** One event from the app's sync job, as the main process pushes them. */
   function syncEvent(ev) {
     const id = ev.id
-    if (ev.kind === 'plan') { if (!sync.value[id] || sync.value[id].done) syncStarted(id, ev.steps.length); else sync.value[id].steps = ev.steps.length; return }
+    if (ev.kind === 'plan' && (!sync.value[id] || sync.value[id].done)) syncStarted(id, ev.steps.length)
     const s = sync.value[id]; if (!s) return
-    if (ev.kind === 'step') { s.step += 1; s.key = ev.key; s.percent = 0 }
-    else if (ev.kind === 'progress') s.percent = ev.percent
-    else if (ev.kind === 'file') s.files += 1
-    else if (ev.kind === 'problem' || ev.kind === 'error') s.errors += 1
-    else if (ev.kind === 'result' || ev.kind === 'error') syncEnded(id)
-    if (ev.kind === 'result') syncEnded(id)
+    fold(s, ev)
+    if (ev.kind === 'result' || ev.kind === 'error') syncEnded(id)   // error: the run itself died (no transport, nothing to copy); the card's bar goes
   }
   /** After a reload: a job already running for a pod shows as in flight again. */
   async function syncRecover(syncAPI) {

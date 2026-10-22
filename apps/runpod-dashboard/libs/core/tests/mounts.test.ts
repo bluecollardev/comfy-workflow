@@ -16,7 +16,7 @@ describe('defaults', () => {
     expect(Object.keys(cfg.folders)).toEqual(['project', 'plates', 'comfy-shared'])
     expect(Object.values(cfg.folders).some(Boolean)).toBe(false)
     expect(cfg.network_volume_id).toBe(''); expect(cfg.mount_path).toBe('/workspace')
-    expect(cfg.image).toBe('comfy-app:contract-v26'); expect(cfg.idle_stop_minutes).toBe(30)
+    expect(cfg.image).toBe('comfy-app:contract-v26'); expect(cfg.idle_stop_minutes).toBe(30); expect(cfg.sync_parallel).toBe(4)
     expect(m.allLinks(cfg)).toEqual([]); expect(m.localEnv(cfg)).toEqual({})
     expect(m.podEnv(cfg)).toEqual({ PROJECT_ROOT: '/workspace/project', PLATES_ROOT: '/workspace/plates', COMFY_SHARED: '/workspace/comfy-shared' })
     expect(m.podOverrides(cfg).env.COMFY_LINKS).toBeUndefined()
@@ -139,6 +139,8 @@ describe('the store', () => {
     expect(() => m.put({ ...cfg, folders: { ...cfg.folders, plates: 'relative/plates' } })).toThrow(/absolute/)
     expect(() => m.put({ ...cfg, links: [{ path: '/a;b', target: '/workspace/x' } as m.Link] })).toThrow(/cannot appear/)
     expect(() => m.put({ ...cfg, idle_stop_minutes: -1 })).toThrow(/idle_stop_minutes/)
+    expect(() => m.put({ ...cfg, sync_parallel: 0 })).toThrow(/sync_parallel/); expect(() => m.put({ ...cfg, sync_parallel: 2.5 })).toThrow(/sync_parallel/); expect(() => m.put({ ...cfg, sync_parallel: 17 })).toThrow(/sync_parallel/)
+    expect(() => m.put({ ...cfg, sync_parallel: 8 })).not.toThrow(); expect(m.load().sync_parallel).toBe(8)
   })
 })
 

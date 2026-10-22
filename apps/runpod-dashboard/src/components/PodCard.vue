@@ -39,8 +39,8 @@
       </template>
 
 
-      <div v-if="loading" class="col-12 mt-1" :class="{ 'cursor-pointer': loading.sync }" :role="loading.sync ? 'button' : undefined" :title="loading.sync ? $t('pod.syncOpen') : undefined" data-testid="pod-progress" :data-step="loading.step" @click="loading.sync && (showSync = true)">
-        <BProgress :value="loading.value" :max="100" height="6px" :variant="loading.sync ? 'warning' : 'info'" :striped="!loading.sync || loading.value < 100" :animated="!loading.sync || loading.value < 100" />
+      <div v-if="loading" class="col-12 mt-1" :class="{ 'cursor-pointer': loading.sync }" :role="loading.sync ? 'button' : undefined" :title="loading.sync ? $t('pod.syncOpen') : undefined" data-testid="pod-progress" :data-step="loading.step" :data-indeterminate="loading.indeterminate ? 'true' : undefined" @click="loading.sync && (showSync = true)">
+        <BProgress :value="loading.value" :max="100" height="6px" :variant="loading.sync ? 'warning' : 'info'" :striped="loading.indeterminate || !loading.sync || loading.value < 100" :animated="loading.indeterminate || !loading.sync || loading.value < 100" />
         <div class="small text-body-secondary mt-1" data-testid="pod-progress-label">{{ loading.sync ? '' : $t('pod.stepOf', { n: loading.step, of: 3 }) + ' · ' }}{{ loading.label }}</div>
       </div>
       <div v-if="pods.hostFull === pod.id" class="col-12 small text-warning" data-testid="pod-host-full">{{ $t('pod.hostFull') }}</div>
@@ -100,7 +100,7 @@
     </div>
     <ConfigModal v-if="configOpen" mode="pod" v-model="configOpen" :initial="ownConfig" :pod-name="pod.name" @apply="applyConfig" />
     <SyncModal v-model="showSync" :pod="pod" />
-    <BModal v-model="showLogs" :title="$t('pod.logsTitle', { name: pod.name })" size="xl" scrollable hide-footer body-class="p-0" @hidden="showLogs = false">
+    <BModal v-model="showLogs" :title="$t('pod.logsTitle', { name: pod.name })" size="xl" scrollable ok-only :ok-title="$t('pod.close')" ok-variant="outline-light" body-class="p-0" @hidden="showLogs = false">
       <PodLogs v-if="showLogs" :pod-id="pod.id" modal />
     </BModal>
 
@@ -164,6 +164,7 @@ import SyncModal from './SyncModal.vue'
 import ConfigModal from './ConfigModal.vue'
 import { usePodsStore } from '../stores/pods'
 import { useToastStore } from '../stores/toast'
+import { barValue, detailParts, fresh } from '../sync-progress'
 const props = defineProps({
   pod: { type: Object, required: true },
   busy: { type: Boolean, default: false },
@@ -190,9 +191,10 @@ const pods = usePodsStore()
 const loading = computed(() => {
   const action = pods.pending[props.pod.id]
   if (action === 'sync') {
-    const p = pods.sync[props.pod.id] || { steps: 0, step: 0, percent: 0, files: 0, errors: 0 }
-    const value = p.steps ? Math.round((((p.step - 1) + p.percent / 100) / p.steps) * 100) : 5
-    return { sync: true, step: p.step, value: Math.max(2, Math.min(100, value)), label: t('pod.syncProgress', { folder: p.key || '…', step: p.step, steps: p.steps, percent: p.percent, files: p.files, errors: p.errors }) }
+    const p = pods.sync[props.pod.id] || fresh()
+    const value = barValue(p)   // null: nothing known yet (listing, or a folder with no total): the bar runs striped, full
+    const label = p.listing || !p.step ? t('pod.syncListing', { folder: p.key || '…' }) : t('pod.syncProgress', { folder: p.key, step: p.step, steps: p.steps, detail: detailParts(p, t).join(' · ') })
+    return { sync: true, step: p.step, value: value ?? 100, indeterminate: value == null, label }
   }
   if (action) return { step: 1, value: 50, label: t(`pod.action_${action}`) }
   if (props.pod.status === 'starting') return { step: 1, value: 15, label: t('pod.stepRequested') }
