@@ -43,13 +43,15 @@ describe('rsync over ssh', () => {
     expect(cmd[0]).toBe('rsync'); expect(cmd).not.toContain('--delete'); expect(cmd[cmd.length - 1]).toBe('root@1.2.3.4:/workspace/project/')
     expect(cmd[cmd.indexOf('-e') + 1]).toContain('-p 2222')
     expect(cmd).toContain('-rlt'); expect(cmd).not.toContain('-a')   // the volume refuses chown
-    expect(cmd).toContain('--info=progress2')
+    expect(cmd).toContain('--info=progress2'); expect(cmd).toContain('--no-inc-recursive')   // the whole list first: a percentage of the real total
     expect(cmd.filter((c) => c === '--exclude')).toHaveLength(sync.EXCLUDE.length)
   })
 
   it('takes -n for a dry run and openrsync\'s progress flag', () => {
     const cmd = sync.rsyncCmd(dir + '/', 'root@1.2.3.4', 2222, '/workspace/project/', { dryRun: true, progress: sync.progressFlag('openrsync: protocol version 29') })
     expect(cmd[1]).toBe('-n'); expect(cmd).toContain('--progress'); expect(cmd).not.toContain('--info=progress2')
+    expect(cmd).not.toContain('--no-inc-recursive')   // openrsync does not know it
+    expect(sync.rsyncCmd(dir + '/', 'root@1.2.3.4', 2222, '/workspace/project/', { dryRun: true, stats: true })).toContain('--stats')   // the listing pass
     expect(sync.progressFlag('rsync  version 3.2.7  protocol version 31')).toBe('--info=progress2')
   })
 

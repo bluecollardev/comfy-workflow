@@ -32,6 +32,7 @@ export async function launchApp({ dry = true, live = false } = {}) {
     RUNPOD_MANAGER_NO_BACKEND: '1',
     IDLE_WATCH: '0',
     COMFY_MODE: 'dev',
+    SYNC_SIM_MS: '60',   // a simulated Sync paces its events, so a spec sees the run as a person would
   }
   if (dry) env.RUNPOD_DRY_RUN = '1'; else delete env.RUNPOD_DRY_RUN
   if (!live) delete env.RUNPOD_API_KEY

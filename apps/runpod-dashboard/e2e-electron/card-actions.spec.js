@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test'
 import { launchApp, openCreatePod, podCard, toast } from './app.js'
 import { t } from '../e2e/i18n.js'
+import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 
 // Every call a card and the form make over IPC, in the real app, pods simulated (no-spend mode).
 // A dispatch table that loses a call shows up here as the page's "no core call …" error.
@@ -99,8 +101,12 @@ test.describe('card actions over IPC', () => {
     await expect(sync.getByTestId('sync-confirm')).toContainText(t('sync.confirm'))
     await expect(sync.getByTestId('sync-step')).toHaveCount(1)                       // this pod has its own configuration (no project mapped there): the repo's workflows only
     await expect(sync.getByTestId('sync-transport')).toContainText('no-spend mode')
-    await sync.getByTestId('sync-start').click()
+    await expect(sync.getByTestId('sync-plan-counts')).toHaveText(t('sync.planCounts', { files: 3, bytes: '4.5 GB' }))   // the listing pass; no project in this plan, so no second figure
+    await expect(sync.getByTestId('sync-skip-renders')).toHaveCount(0)
+    await expect(sync.locator('.modal-footer .btn')).toHaveText([t('picker.cancel'), t('sync.startPush')])   // the modal's own buttons, nothing else
+    await sync.getByRole('button', { name: t('sync.startPush') }).click()
     await expect(sync.getByTestId('sync-status')).toContainText(t('sync.finished', { steps: 1 }))
+    await expect(sync.locator('.modal-footer .btn')).toHaveText([t('sync.close'), t('sync.again')])
     await expect(sync.getByTestId('sync-file')).toHaveCount(3)
     await expect(sync.getByTestId('sync-counts')).toContainText(t('sync.countFiles', { n: 3 }))
     await expect(sync.getByTestId('sync-counts')).toContainText(t('sync.countErrors', { n: 0 }))
@@ -108,5 +114,82 @@ test.describe('card actions over IPC', () => {
     await expect(sync).toBeHidden()
     await expect(card.getByTestId('pod-progress-label')).not.toContainText(t('sync.countFiles', { n: 3 }).split(' ')[1])   // the run ended: no sync bar (a boot bar may show, the pod was just recreated)
     await expect(card.getByTestId('pod-sync')).toBeEnabled()
+  })
+
+  // Lucas, 2026-10-21, a real push of three folders: "after the first folder (1/3) the whole thing seems to restart".
+  // Three folders in the plan, paced; a recorder in the page keeps every state the card's bar, its label and the
+  // modal's counters go through, and the list refreshes mid-run. Nothing may go backwards across a step boundary.
+  test('Sync of three folders: the bars and the counters only move forward across the step boundaries, through a list refresh', async () => {
+    const { page, configDir } = ctx
+    const shared = join(configDir, 'comfy-shared'); mkdirSync(shared, { recursive: true })
+    await page.getByTestId('open-config').click()
+    const dialog = page.locator('.modal.show', { has: page.getByTestId('config-modal') })
+    await dialog.getByTestId('folder-row-project').getByTestId('folder-local').fill(configDir)
+    await dialog.getByTestId('folder-row-comfy-shared').getByTestId('folder-local').fill(shared)   // the plan: project, comfy-shared, workflows
+    await dialog.getByTestId('config-save').click()
+    await expect(dialog).toBeHidden()
+    await openCreatePod(page)
+    await page.locator('#pod-name').fill('Sim-Sync')                                   // a pod on the default configuration
+    await page.locator('#pod-image').selectOption('prebuilt')
+    await page.getByTestId('pod-submit').click()
+    await expect(toast(page).filter({ hasText: t('toast.podCreated', { name: 'Sim-Sync' }) })).toBeVisible()
+    const card = podCard(page, 'Sim-Sync')
+    await card.getByTestId('pod-sync').click()
+    const sync = page.locator('.modal.show', { hasText: t('sync.title', { name: 'Sim-Sync' }) })
+    await expect(sync.getByTestId('sync-step')).toHaveCount(3)
+    await expect(sync.getByTestId('sync-skip-renders')).toBeChecked()                                     // the shots' renders stay home unless asked
+    await expect(sync.getByTestId('sync-plan-counts')).toHaveText(t('sync.planCounts', { files: 9, bytes: '13.5 GB' }) + '; ' + t('sync.planCountsWithout', { files: 8, bytes: '12.0 GB' }))
+    await page.evaluate(() => {
+      // every distinct state of the card bar + label and the modal bar + counters, in order
+      const card = document.querySelector('[data-testid="pod-card"][data-name="Sim-Sync"]')
+      const modal = [...document.querySelectorAll('[data-testid="sync-modal"]')].find((el) => el.classList.contains('show'))   // this pod's, not an earlier pod's closed one
+      const bar = (root) => { const el = root && (root.matches('[aria-valuenow]') ? root : root.querySelector('[aria-valuenow]')); return el ? Number(el.getAttribute('aria-valuenow')) : -1 }
+      const read = () => JSON.stringify({
+        bar: bar(card.querySelector('[data-testid="pod-progress"]')),
+        label: card.querySelector('[data-testid="pod-progress-label"]')?.textContent?.trim() ?? '',
+        mbar: bar(modal.querySelector('[data-testid="sync-bar"]')),
+        counts: modal.querySelector('[data-testid="sync-counts"]')?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+        detail: modal.querySelector('[data-testid="sync-detail"]')?.textContent?.trim() ?? '',
+        status: modal.querySelector('[data-testid="sync-status"]')?.textContent?.trim() ?? '',
+      })
+      window.__syncTrace = [read()]
+      new MutationObserver(() => { const s = read(); if (s !== window.__syncTrace.at(-1)) window.__syncTrace.push(s) })
+        .observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true })
+    })
+    await sync.getByRole('button', { name: t('sync.startPush') }).click()
+    await expect(sync.getByRole('button', { name: t('sync.cancelRun') })).toBeVisible()
+    await expect(sync.getByTestId('sync-counts')).toContainText(t('sync.countSteps', { step: 2, steps: 3 }))   // the second folder, seen while it runs
+    await expect(card.getByTestId('pod-progress-label')).toContainText('(2 of 3)')
+    await page.evaluate(() => document.querySelector('[data-testid="refresh"]').click())                     // the list reloads under the run (the modal covers the button)
+    await expect(sync.getByTestId('sync-status')).toContainText(t('sync.finished', { steps: 3 }))
+    await expect(sync.getByTestId('sync-counts')).toContainText(t('sync.countSteps', { step: 3, steps: 3 }))
+    await expect(sync.getByTestId('sync-counts')).toContainText(t('sync.countFiles', { n: 8 }))              // the review frame stayed home
+    const trace = (await page.evaluate(() => window.__syncTrace)).map((s) => JSON.parse(s))
+    await test.info().attach('sync-trace', { body: JSON.stringify(trace, null, 1), contentType: 'application/json' })
+    const during = trace.filter((s) => s.bar >= 0 && /\([123] of 3\)/.test(s.label))                       // while the card showed a folder of the sync
+    expect(during.length).toBeGreaterThan(6)
+    const steps = during.map((s) => Number(s.label.match(/\((\d) of 3\)/)[1]))
+    const files = during.map((s) => Number(s.counts.match(/(\d+) files copied/)[1]))   // the run's count; the label's "ok" is per folder
+    const folderOf = during.map((s) => Number((s.counts.match(/folder (\d) of 3/) || [0, 0])[1]))
+    const bars = during.map((s) => s.bar), mbars = during.map((s) => s.mbar)
+    for (const [name, seq] of Object.entries({ bar: bars, mbar: mbars, steps, files, folderOf })) {
+      for (let i = 1; i < seq.length; i++) expect(seq[i], `${name} went backwards at state ${i}: ${JSON.stringify(during[i - 1])} -> ${JSON.stringify(during[i])}`).toBeGreaterThanOrEqual(seq[i - 1])
+    }
+    expect(new Set(steps)).toEqual(new Set([1, 2, 3]))                                                       // every folder was seen on the card
+    const indexOf = (n) => [...new Set(during.filter((_, i) => steps[i] === n).map((s) => Number(s.label.match(/file (\d+) of/)[1])))]
+    expect(indexOf(1)).toEqual([0, 1, 2])                                                                    // "file n of N": the files as rsync starts them, over the listing's count
+    expect(indexOf(2)).toEqual([0, 1, 2, 3, 4])
+    expect(indexOf(3)).toEqual([0, 1, 2])
+    expect(during.at(-1).label).toContain('file 2 of 2 · 2 ok · 0 errors · 12.0 GB of 12.0 GB')              // eight files of 1.5 GB in the simulation
+    expect(during.some((s) => /\(1 of 3\) · file 2 of 2 · 2 ok · 0 errors · 3\.0 GB of 12\.0 GB/.test(s.label))).toBe(true)
+    expect(during.some((s) => /file \d of 4 · .*output\/render_000\d\.exr \(\d+%\)/.test(s.detail))).toBe(true)   // the modal names the file under way
+    expect(trace.some((s) => s.counts.includes(t('sync.countFiles', { n: 8 })))).toBe(true)
+    expect(trace.some((s) => s.label.startsWith(t('pod.syncListing', { folder: 'project' })))).toBe(true)   // the listing pass showed first
+    expect(bars.at(-1)).toBe(100); expect(mbars.at(-1)).toBe(100)
+    expect(during.some((s) => s.bar > 0 && s.bar < 33)).toBe(true)                                          // the bar moved within the first folder, not only at its end
+    expect(trace.at(-1).counts).toContain(t('sync.countFiles', { n: 8 }))
+    await sync.locator('.btn-close').click()
+    await expect(sync).toBeHidden()
+    await expect(card.getByTestId('pod-progress-label')).not.toContainText('files')
   })
 })

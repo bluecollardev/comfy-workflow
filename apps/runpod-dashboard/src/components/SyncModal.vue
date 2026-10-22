@@ -1,9 +1,9 @@
 <template>
-  <BModal :model-value="modelValue" :title="$t('sync.title', { name: pod.name })" size="lg" lazy scrollable hide-footer data-testid="sync-modal" @update:model-value="emit('update:modelValue', $event)" @show="open">
+  <BModal :model-value="modelValue" :title="$t('sync.title', { name: pod.name })" size="lg" lazy scrollable data-testid="sync-modal" :ok-title="okTitle" :ok-variant="okVariant" :ok-disabled="okDisabled" :cancel-title="started ? $t('sync.close') : $t('picker.cancel')" cancel-variant="outline-light" @ok="onOk" @update:model-value="emit('update:modelValue', $event)" @show="open">
     <template v-if="!syncAPI.available">
       <BAlert :model-value="true" variant="info" class="mb-0" data-testid="sync-unavailable"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('sync.unavailable') }}</BAlert>
     </template>
-    <template v-else-if="!running && !events.length">
+    <template v-else-if="!started">
       <BAlert :model-value="true" variant="warning" data-testid="sync-confirm"><i class="fa-solid fa-triangle-exclamation me-2"></i>{{ $t('sync.confirm') }}</BAlert>
       <div class="mb-3">
         <BFormRadioGroup v-model="direction" :options="[{ value: 'push', text: $t('sync.push') }, { value: 'pull', text: $t('sync.pull') }]" button-variant="outline-light" size="sm" buttons data-testid="sync-direction" />
@@ -11,6 +11,15 @@
       <div v-if="direction === 'push'" class="d-flex align-items-center gap-3 mb-2">
         <BFormCheckbox v-model="plates" switch data-testid="sync-plates">{{ $t('sync.plates') }}</BFormCheckbox>
         <BFormInput v-if="plates" v-model.trim="approvedBy" size="sm" style="max-width: 16rem" :placeholder="$t('sync.approvedBy')" data-testid="sync-approved-by" />
+      </div>
+      <div v-if="direction === 'push' && plan.some((s) => s.key === 'project')" class="mb-2">
+        <BFormCheckbox v-model="skipRenders" switch data-testid="sync-skip-renders">{{ $t('sync.skipRenders') }}</BFormCheckbox>
+        <div class="form-text">{{ $t('sync.skipRendersHelp') }}</div>
+      </div>
+      <div v-if="!planError && plan.length" class="small mb-2" data-testid="sync-plan-counts">
+        <template v-if="counts.pending"><BSpinner small class="me-1" />{{ $t('sync.counting') }}</template>
+        <template v-else-if="counts.all.total_files != null">{{ $t('sync.planCounts', { files: fmtN(counts.all.total_files), bytes: formatBytes(counts.all.total_bytes) }) }}<template v-if="counts.without_renders?.total_files != null">; {{ $t('sync.planCountsWithout', { files: fmtN(counts.without_renders.total_files), bytes: formatBytes(counts.without_renders.total_bytes) }) }}</template></template>
+        <template v-else>{{ $t('sync.noCount') }}</template>
       </div>
       <div v-if="planError" class="text-danger small mb-2" data-testid="sync-plan-error">{{ planError }}</div>
       <BAlert :model-value="true" :variant="transport.kind === 'none' ? 'danger' : 'info'" class="small py-2" data-testid="sync-transport"><i :class="transport.kind === 'none' ? 'fa-solid fa-ban' : 'fa-solid fa-route'" class="me-2"></i>{{ transport.kind === 'none' ? transport.reason : $t('sync.transport', { how: transport.reason }) }}</BAlert>
@@ -21,23 +30,18 @@
           <tr v-if="!plan.length"><td colspan="3" class="text-body-secondary">{{ $t('sync.nothing') }}</td></tr>
         </tbody>
       </table>
-      <div class="d-flex gap-2 justify-content-end">
-        <BButton variant="outline-light" size="sm" @click="emit('update:modelValue', false)">{{ $t('picker.cancel') }}</BButton>
-        <BButton variant="warning" size="sm" :disabled="!plan.length || transport.kind === 'none' || (plates && !approvedBy)" data-testid="sync-start" @click="start">{{ direction === 'push' ? $t('sync.startPush') : $t('sync.startPull') }}</BButton>
-      </div>
     </template>
     <template v-else>
       <BAlert v-if="running" :model-value="true" variant="info" class="small py-2"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('sync.background') }}</BAlert>
       <div class="d-flex align-items-center gap-2 mb-2">
         <BSpinner v-if="running" small />
         <span data-testid="sync-status">{{ status }}</span>
-        <BButton v-if="running" size="sm" variant="outline-danger" class="ms-auto" data-testid="sync-cancel" @click="cancel">{{ $t('sync.cancelRun') }}</BButton>
-        <BButton v-else size="sm" variant="outline-light" class="ms-auto" data-testid="sync-again" @click="events = []">{{ $t('sync.again') }}</BButton>
       </div>
-      <BProgress :value="progress.value" :max="100" height="8px" variant="warning" :striped="running" :animated="running" class="mb-2" data-testid="sync-bar" />
+      <BProgress :value="progress.value" :max="100" height="8px" variant="warning" :striped="running || progress.indeterminate" :animated="running || progress.indeterminate" class="mb-2" data-testid="sync-bar" :data-indeterminate="progress.indeterminate ? 'true' : undefined" />
+      <div v-if="detail" class="small text-body-secondary mb-2 text-break" data-testid="sync-detail">{{ detail }}</div>
       <div class="d-flex gap-3 small mb-2" data-testid="sync-counts">
         <span><i class="fa-solid fa-folder me-1"></i>{{ $t('sync.countSteps', { step: progress.step, steps: progress.steps }) }}</span>
-        <span class="text-success"><i class="fa-solid fa-check me-1"></i>{{ $t('sync.countFiles', { n: files.length }) }}</span>
+        <span class="text-success"><i class="fa-solid fa-check me-1"></i>{{ $t('sync.countFiles', { n: fileCount }) }}</span>
         <span :class="problems.length ? 'text-danger' : 'text-body-secondary'"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ $t('sync.countErrors', { n: problems.length }) }}</span>
       </div>
       <div v-if="problems.length" class="mb-2" data-testid="sync-errors">
@@ -46,12 +50,12 @@
       </div>
       <div class="small fw-semibold mb-1">{{ $t('sync.files') }}</div>
       <div ref="fileList" class="small font-monospace bg-body-tertiary rounded p-2 mb-2" style="max-height: 30vh; overflow: auto" data-testid="sync-files">
-        <div v-for="(f, i) in files.slice(-500)" :key="i" class="text-break" data-testid="sync-file"><i class="fa-solid fa-check text-success me-1"></i>{{ f.key }}/{{ f.path }}</div>
-        <div v-if="!files.length" class="text-body-secondary">{{ $t('sync.noFilesYet') }}</div>
+        <div v-for="f in files" :key="f.n" class="text-break" data-testid="sync-file"><i class="fa-solid fa-check text-success me-1"></i>{{ f.key }}/{{ f.path }}</div>
+        <div v-if="!fileCount" class="text-body-secondary">{{ $t('sync.noFilesYet') }}</div>
       </div>
       <details>
         <summary class="small text-body-secondary">{{ $t('sync.rawOutput') }}</summary>
-        <pre ref="out" class="small bg-body-tertiary rounded p-2 mt-2 mb-0" style="max-height: 40vh; overflow: auto; white-space: pre-wrap" data-testid="sync-output">{{ outputText }}</pre>
+        <pre ref="out" class="small bg-body-tertiary rounded p-2 mt-2 mb-0" style="max-height: 40vh; overflow: auto; white-space: pre-wrap" data-testid="sync-output"><div v-for="l in lines" :key="l.n">{{ l.text }}</div></pre>
       </details>
     </template>
   </BModal>
@@ -67,6 +71,7 @@
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { syncAPI } from '../api/sync'
 import { usePodsStore } from '../stores/pods'
+import { barValue, detailParts, fold, formatBytes, fresh } from '../sync-progress'
 import { t } from '../i18n'
 
 const props = defineProps({ modelValue: Boolean, pod: { type: Object, required: true } })
@@ -76,60 +81,105 @@ const pods = usePodsStore()
 const direction = ref('push')
 const plates = ref(false)
 const approvedBy = ref('')
+const skipRenders = ref(true)   // the shots' existing renders stay behind on a push; Pull brings renders back
 const plan = ref([])
 const transport = ref({ kind: 'none', reason: '' })
 const planError = ref(null)
-const events = ref([])
+const counts = ref({ pending: false, all: {}, without_renders: undefined })   // from the listing passes: what the push would send, both ways
+const fmtN = (x) => Number(x).toLocaleString('en-US')
+let countRun = 0
+async function loadCounts() {
+  const mine = ++countRun
+  counts.value = { pending: true, all: {}, without_renders: undefined }
+  try { const r = await syncAPI.count(request()); if (mine === countRun) counts.value = { pending: false, ...r } }
+  catch { if (mine === countRun) counts.value = { pending: false, all: {}, without_renders: undefined } }
+}
+const started = ref(false)   // a run is showing (in flight or finished): the confirmation gives way to it
 const running = ref(false)
 const out = ref(null)
 
-const request = () => ({ pod_id: props.pod.id, direction: direction.value, plates: plates.value, approved_by: approvedBy.value })
+// The run's events, folded as they arrive rather than kept and re-scanned: a push of the project tree is tens of
+// thousands of lines, and filtering, reversing and joining them all again on every one froze the window.
+const KEEP_FILES = 500, KEEP_LINES = 2000
+const files = ref([])          // the last KEEP_FILES that landed, { n, key, path }
+const fileCount = ref(0)
+const problems = ref([])       // every rsync complaint, { key, text }
+const lines = ref([])          // the raw output's last KEEP_LINES, { n, text }
+const last = ref(null)         // the latest step, result or error: what the status says
+const local = ref(fresh())     // the progress state, when the store has none for this pod (a run started elsewhere)
+let n = 0
+function reset() { files.value = []; fileCount.value = 0; problems.value = []; lines.value = []; last.value = null; local.value = fresh(); n = 0 }
+let scrollQueued = false
+function ingest(ev) {
+  if (ev.kind === 'result') { last.value = ev; running.value = false; pods.syncEnded(props.pod.id); return }
+  fold(local.value, ev)
+  if (ev.kind === 'step' || ev.kind === 'listing' || ev.kind === 'error') last.value = ev
+  if (ev.kind === 'error') { running.value = false; pods.syncEnded(props.pod.id) }
+  if (ev.kind === 'file') { fileCount.value += 1; files.value.push({ n: ++n, key: ev.key, path: ev.path }); if (files.value.length > KEEP_FILES) files.value.shift() }
+  if (ev.kind === 'problem' || ev.kind === 'error') problems.value.push({ key: ev.key, text: ev.text })
+  const text = ev.kind === 'listing' ? `== listing ${ev.key}` : ev.kind === 'step' ? `== ${ev.key}: ${ev.local} -> ${ev.remote}` : ev.kind === 'step-done' ? `== ${ev.key}: ${ev.code === 0 ? 'done' : 'exit ' + ev.code}` : ev.text
+  if (text != null) { lines.value.push({ n: ++n, text }); if (lines.value.length > KEEP_LINES) lines.value.shift() }
+  if (!scrollQueued) { scrollQueued = true; nextTick(() => { scrollQueued = false; for (const el of [out.value, fileList.value]) if (el) el.scrollTop = el.scrollHeight }) }
+}
+
+const request = () => ({ pod_id: props.pod.id, direction: direction.value, plates: plates.value, approved_by: approvedBy.value, skip_renders: skipRenders.value })
 async function loadPlan() {
   planError.value = null
   try { const r = await syncAPI.plan(request()); plan.value = r.steps; transport.value = r.transport } catch (e) { plan.value = []; planError.value = e.message }
+  if (plan.value.length && transport.value.kind !== 'none') loadCounts()
 }
 watch([direction, plates, approvedBy], loadPlan)
 
 let off = () => {}
 async function open() {
   await loadPlan()
+  off()   // a second opening must not listen twice
+  // Listen first, then ask for the job's state: everything the main process sent before it answered is in that
+  // answer (one ordered channel), so the live events count only once the answer has been folded in.
+  let primed = false
+  off = syncAPI.onEvent((ev) => { if (ev.id === props.pod.id && primed) ingest(ev) })
   const state = await syncAPI.state(props.pod.id)
-  events.value = state.events; running.value = state.running
-  off = syncAPI.onEvent((ev) => {
-    if (ev.id !== props.pod.id) return
-    events.value.push(ev)
-    if (ev.kind === 'result' || ev.kind === 'error') { running.value = false; pods.syncEnded(props.pod.id) }
-    nextTick(() => { for (const el of [out.value, fileList.value]) if (el) el.scrollTop = el.scrollHeight })
-  })
+  reset(); for (const ev of state.events) ingest(ev)
+  running.value = state.running; started.value = state.running || state.events.length > 0
+  primed = true
 }
 onUnmounted(() => off())
 
 async function start() {
   // clear and mark running before the call: a short (simulated) run sends every event before start() returns
-  events.value = []; running.value = true
+  reset(); running.value = true; started.value = true
   pods.syncStarted(props.pod.id)
   const r = await syncAPI.start(request())
-  if (!r.ok) { running.value = false; pods.syncEnded(props.pod.id) }
+  if (!r.ok) { running.value = false; started.value = false; pods.syncEnded(props.pod.id) }
 }
 const cancel = () => syncAPI.cancel(props.pod.id)
+function again() { reset(); started.value = false }
+// The modal's own footer (Lucas, 2026-10-21: the built-in buttons): OK starts the copy, then stops it, then offers another run; Cancel closes, the run goes on in the app.
+const okTitle = computed(() => (!started.value ? (direction.value === 'push' ? t('sync.startPush') : t('sync.startPull')) : running.value ? t('sync.cancelRun') : t('sync.again')))
+const okVariant = computed(() => (!started.value ? 'warning' : running.value ? 'outline-danger' : 'outline-light'))
+const okDisabled = computed(() => !started.value && (!plan.value.length || transport.value.kind === 'none' || (plates.value && !approvedBy.value)))
+function onOk(e) { e.preventDefault(); if (!started.value) start(); else if (running.value) cancel(); else again() }
 
-const files = computed(() => events.value.filter((e) => e.kind === 'file'))
-const problems = computed(() => events.value.filter((e) => e.kind === 'problem' || e.kind === 'error'))
-const progress = computed(() => {
-  const p = pods.sync[props.pod.id]
-  if (p) return { step: p.step, steps: p.steps, value: p.steps ? Math.round((((p.step - 1) + p.percent / 100) / p.steps) * 100) : 0 }
-  const steps = events.value.find((e) => e.kind === 'plan')?.steps?.length || 0
-  const step = events.value.filter((e) => e.kind === 'step').length
-  const last = [...events.value].reverse().find((e) => e.kind === 'progress')
-  return { step, steps, value: steps ? Math.round((((step - 1) + (last?.percent || 0) / 100) / steps) * 100) : 0 }
+const state = computed(() => pods.sync[props.pod.id] || local.value)
+const progress = computed(() => { const p = state.value; const v = barValue(p); return { step: p.step, steps: p.steps, value: v ?? 100, indeterminate: v == null } })
+/** The line under the bar: the file index, ok and errors, bytes, rate, time left, and the file under way. */
+const detail = computed(() => {
+  const p = state.value
+  if (p.listing || !p.step) return ''
+  const parts = detailParts(p, t)
+  if (running.value && p.currentFile) parts.push(t('sync.currentFile', { path: p.currentFile, percent: p.filePercent ?? 0 }))
+  return parts.join(' · ')
 })
 const fileList = ref(null)
 const status = computed(() => {
-  const last = [...events.value].reverse().find((e) => e.kind === 'result' || e.kind === 'error' || e.kind === 'step')
-  if (!last) return t('sync.starting')
-  if (last.kind === 'error') return t('sync.failed', { error: last.text })
-  if (last.kind === 'result') return last.result.cancelled ? t('sync.cancelled') : last.result.failed ? t('sync.failedSteps', { failed: last.result.failed, steps: last.result.steps }) : t('sync.finished', { steps: last.result.steps })
-  return t('sync.copying', { folder: last.key })
+  const l = last.value
+  if (!l) return t('sync.starting')
+  if (l.kind === 'listing') return t('sync.listing', { folder: l.key })
+  if (l.kind === 'error') return t('sync.failed', { error: l.text })
+  if (l.kind === 'result') {
+    const r = l.result
+    return r.cancelled ? t('sync.cancelled') : r.failed ? t('sync.failedSteps', { failed: r.failed, steps: r.steps }) : r.warned ? t('sync.finishedWarnings', { steps: r.steps, warned: r.warned }) : t('sync.finished', { steps: r.steps })
+  }
+  return t('sync.copying', { folder: l.key })
 })
-const outputText = computed(() => events.value.filter((e) => e.kind !== 'plan' && e.kind !== 'result').map((e) => e.kind === 'step' ? `== ${e.key}: ${e.local} -> ${e.remote}` : e.kind === 'step-done' ? `== ${e.key}: ${e.code === 0 ? 'done' : 'exit ' + e.code}` : e.text).join('\n'))
 </script>

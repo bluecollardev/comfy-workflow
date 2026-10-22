@@ -58,7 +58,12 @@ and a pod comes and goes. A day's work.
 ### C. Push less
 Skip what the pod never reads: the shots' `05_TEMPS`, `06_REVIEW`, `07_DELIVER`
 (66 GB of Binc's existing renders in the mirror). The first push drops from
-hours to under one. Combines with A or B.
+hours to under one. Combines with A or B. Built 2026-10-21 as a switch on the
+app's push confirmation ("Skip the shots' existing renders", on by default,
+`skip_renders` in the request): the three folders are excluded by name, the
+confirmation shows the count and size with and without them (24,220 files,
+86.7 GB against 4,564 files, 17.5 GB that day), and Pull is what brings renders
+back.
 
 ### D. A CPU pod for the sync
 The sync needs no GPU: a CPU pod on the volume at about USD 0.04 an hour
