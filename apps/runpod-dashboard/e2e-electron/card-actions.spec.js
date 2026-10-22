@@ -192,4 +192,16 @@ test.describe('card actions over IPC', () => {
     await expect(sync).toBeHidden()
     await expect(card.getByTestId('pod-progress-label')).not.toContainText('files')
   })
+
+  test('the Dockerfile modal answers over IPC: the repo source and the config, with the menu', async () => {
+    const { page } = ctx
+    await openCreatePod(page)
+    await page.locator('#pod-image').selectOption('prebuilt')
+    await page.getByTestId('pod-image-dockerfile').click()
+    const dialog = page.locator('.modal.show', { hasText: t('dockerfile.title') })
+    await expect(dialog.getByTestId('dockerfile-image')).toHaveValue('ashleykza/comfyui:latest')   // images.dockerfile
+    await dialog.getByRole('tab', { name: t('dockerfile.source') }).click()
+    await expect(dialog.getByTestId('dockerfile-source')).toContainText('FROM')                   // the repo's Dockerfile, real
+    await dialog.getByRole('button', { name: t('dockerfile.close'), exact: true }).last().click()
+  })
 })

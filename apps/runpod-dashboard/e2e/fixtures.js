@@ -36,7 +36,7 @@ export const BRIDGE_DEFS = [
 
 export const samplePods = () => [
   {
-    id: 'pod-aaaaaaaa', name: 'ComfyUI-Dev', status: 'running', gpu: 'RTX 4090', vram: 24,
+    id: 'pod-aaaaaaaa', name: 'ComfyUI-Dev', status: 'running', gpu: 'RTX 4090', vram: 24, image: 'ghcr.io/example/comfy-app:v26',
     uptime_seconds: 7320, web_ui_url: 'https://pod-a.proxy.runpod.io:8188',
     ssh_command: 'ssh root@pod-a.proxy.runpod.io',
   },
@@ -185,6 +185,13 @@ export async function mockApi(page, state) {
     }
     if (method === 'GET' && path === '/gpus') return json(state.gpus)
     if (method === 'GET' && path === '/datacenters') return json(state.datacenters)
+    if (method === 'GET' && path === '/images/dockerfile') {
+      const image = query.image
+      const base = { image, created: '2026-10-20T08:39:42Z', labels: { 'dev.bluecollar.shotpipe': 'contract-v26' }, env: ['COMFY_PORT=8188'], ports: ['8188/tcp'], entrypoint: ['/opt/comfy-app/entrypoint.sh'], cmd: [], workdir: '/opt/ComfyUI', source: 'FROM pytorch/pytorch\n# the repo Dockerfile', source_path: '/repo/apps/comfy-app/Dockerfile', source_kind: 'repo', source_url: null, source_note: null, error: null }
+      if (image === 'ashleykza/comfyui:latest') return json({ ...base, built: '# Reconstructed from the stock image\nRUN stock-install', env: ['WEB_PORT=3001'], ports: ['3001/tcp'], labels: {}, source: 'FROM nvidia/cuda\n# upstream comfyui-docker', source_kind: 'github', source_path: 'https://github.com/ashleykleynhans/comfyui-docker/blob/HEAD/Dockerfile', source_url: 'https://github.com/ashleykleynhans/comfyui-docker' })
+      if (image.includes('missing')) return json({ ...base, built: null, error: 'manifest unknown', env: [], ports: [], entrypoint: [], labels: {}, created: null, source: null, source_path: null, source_kind: null, source_note: 'No source repository is known for this image: it has no org.opencontainers.image.source label and is not in the known list.' })
+      return json({ ...base, built: '# Reconstructed from ' + image + '\nRUN git clone comfy\nCOPY packs /opt/ComfyUI/custom_nodes/' })
+    }
     if ((m = path.match(/^\/volumes\/([^/]+)$/)) && method === 'GET') { const v = state.volumes[m[1]]; return v ? json(v) : json({ detail: `no network volume ${m[1]}` }, 404) }
     if (method === 'GET' && path === '/volumes') return json(Object.values(state.volumes).map((v) => ({ ...v, is_default: v.id === state.mounts.config.network_volume_id })))
     if (method === 'POST' && path === '/volumes') {

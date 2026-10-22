@@ -77,7 +77,11 @@
         </BCol>
         <BCol md="8">
           <BFormGroup :label="$t('config.image')" label-for="cfg-image" :description="$t('config.imageHelp')">
-            <BFormInput id="cfg-image" v-model.trim="cfg.image" placeholder="registry/name:tag" class="font-monospace" data-testid="cfg-image" />
+            <div class="d-flex gap-2">
+              <BFormInput id="cfg-image" v-model.trim="cfg.image" placeholder="registry/name:tag" class="font-monospace" data-testid="cfg-image" />
+              <BButton variant="outline-light" size="sm" class="flex-shrink-0 text-nowrap" :title="$t('dockerfile.buttonTitle')" data-testid="cfg-image-dockerfile" @click="showDockerfile = true"><i class="fa-solid fa-file-code me-1"></i>{{ $t('dockerfile.button') }}</BButton>
+            </div>
+            <DockerfileModal v-model="showDockerfile" :image="cfg.image" />
           </BFormGroup>
           <BFormGroup :label="$t('config.registryAuth')" label-for="cfg-registry-auth" :description="$t('config.registryAuthHelp')">
             <BFormInput id="cfg-registry-auth" v-model.trim="cfg.registry_auth_id" class="font-monospace" data-testid="cfg-registry-auth" />
@@ -216,6 +220,7 @@
 <script setup>
 import { podsAPI } from '../api/pods'
 import { datacenterOptions } from '../utils/datacenters'
+import DockerfileModal from './DockerfileModal.vue'
 import { volumesAPI } from '../api/volumes'
 /**
  * ConfigModal — two uses of one panel.
@@ -270,6 +275,7 @@ const settingsStore = useSettingsStore()
 /** No key stored (and not no-spend mode): only the key field shows, and the panel cannot be dismissed. */
 const gated = computed(() => !forPod.value && !keyInfo.value.runpod_api_key_set && !settingsStore.ready)
 const newKey = ref('')
+const showDockerfile = ref(false)
 const newS3 = reactive({ access: '', secret: '' })
 
 const label = (f) => (f.custom ? f.key : t(`config.folder.${f.key}`))

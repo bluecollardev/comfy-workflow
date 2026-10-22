@@ -70,6 +70,15 @@
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.ssh') }}</dt>
         <dd class="col-8 mb-0"><code class="text-break">{{ pod.ssh_command }}</code></dd>
       </template>
+
+      <template v-if="pod.image">
+        <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.image') }}</dt>
+        <dd class="col-8 mb-0">
+          <a href="#" class="text-break" :title="pod.image" data-testid="pod-dockerfile" @click.prevent="showDockerfile = true"><i class="fa-solid fa-file-code me-1"></i>{{ $t('dockerfile.button') }}</a>
+          <code class="small text-body-secondary ms-2 text-break" data-testid="pod-image-ref">{{ shortImage(pod.image) }}</code>
+          <DockerfileModal v-model="showDockerfile" :image="pod.image" this-pod />
+        </dd>
+      </template>
     </dl>
 
     <div class="d-flex mb-2 justify-content-evenly flex-nowrap card-actions">
@@ -161,6 +170,7 @@ import { t } from '../i18n'
 import { computed, ref } from 'vue'
 import PodLogs from './PodLogs.vue'
 import SyncModal from './SyncModal.vue'
+import DockerfileModal from './DockerfileModal.vue'
 import ConfigModal from './ConfigModal.vue'
 import { usePodsStore } from '../stores/pods'
 import { useToastStore } from '../stores/toast'
@@ -205,6 +215,8 @@ const toast = useToastStore()
 const showDetails = ref(false)
 const showLogs = ref(false)
 const showSync = ref(false)
+const showDockerfile = ref(false)
+const shortImage = (ref) => ref.replace(/^registry\.gitlab\.com\/[^/]+\/[^/]+\//, '')
 const details = ref(null)
 const detailsError = ref(null)
 

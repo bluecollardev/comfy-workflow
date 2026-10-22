@@ -70,7 +70,11 @@
       <BRow class="g-3">
       <BCol md="6" lg="4">
         <BFormGroup :label="$t('form.image')" label-for="pod-image" :description="form.image === 'configured' ? (form.config?.image || configuredImage) : ''" data-testid="pod-image-group">
-          <BFormSelect id="pod-image" v-model="form.image" :options="IMAGE_OPTIONS" />
+          <div class="d-flex gap-2">
+            <BFormSelect id="pod-image" v-model="form.image" :options="IMAGE_OPTIONS" />
+            <BButton variant="outline-light" size="sm" class="flex-shrink-0 text-nowrap" :title="$t('dockerfile.buttonTitle')" data-testid="pod-image-dockerfile" @click="showDockerfile = true"><i class="fa-solid fa-file-code me-1"></i>{{ $t('dockerfile.button') }}</BButton>
+          </div>
+          <DockerfileModal v-model="showDockerfile" :image="form.config?.image || configuredImage" :custom="form.image === 'custom' ? form.customImageUri : (form.image === 'prebuilt' ? 'ashleykza/comfyui:latest' : '')" />
         </BFormGroup>
       </BCol>
       <BCol v-if="form.image === 'custom'" md="6" lg="8">
@@ -384,6 +388,7 @@ import { useUiStore } from '../stores/ui'
 import { usePodsStore } from '../stores/pods'
 import { useMountsStore } from '../stores/mounts'
 import { datacenterOptions } from '../utils/datacenters'
+import DockerfileModal from './DockerfileModal.vue'
 import { t } from '../i18n'
 import ConfigModal from './ConfigModal.vue'
 
@@ -475,6 +480,7 @@ const form = reactive(defaults())
 const ui = useUiStore()
 const pods = usePodsStore()
 const mounts = useMountsStore()
+const showDockerfile = ref(false)
 
 /** The datacenter: pinned by the network volume of the configuration this pod uses (its own or the default), free otherwise. */
 const dcList = ref([])

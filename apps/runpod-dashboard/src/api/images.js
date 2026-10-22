@@ -8,6 +8,7 @@ import { core } from './bridge';
 // Inside Electron the core answers over IPC (images.ts); in a browser the API over HTTP.
 const ipc = core && {
   env: ({ source = 'image', image = 'prebuilt' } = {}) => core.invoke('images', 'env', [{ source, image }]),
+  dockerfile: (image) => core.invoke('images', 'dockerfile', [{ image }]),
 };
 
 const http = {
@@ -16,5 +17,7 @@ const http = {
     return data;
   },
 };
+
+http.dockerfile = async (image) => { const { data } = await axios.get(`${API_BASE}/images/dockerfile`, { params: { image } }); return data };
 
 export const imagesAPI = ipc || http;

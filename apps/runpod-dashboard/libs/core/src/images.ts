@@ -118,3 +118,92 @@ export async function env(params: { source?: string; image?: string } = {}, insp
   if (source !== 'image') throw bad("source must be 'image' or 'dockerfile'")
   return envFromImage(params.image || 'prebuilt', inspect)
 }
+
+// ----- the Dockerfile of an image, for the "Dockerfile" modal -----
+export interface ImageConfig {
+  created?: string | null
+  config?: { Env?: string[] | null; ExposedPorts?: Record<string, unknown> | null; Entrypoint?: string[] | null; Cmd?: string[] | null; Labels?: Record<string, string> | null; WorkingDir?: string; User?: string }
+  history?: { created_by?: string; empty_layer?: boolean }[] | null
+}
+export type Registry = (image: string) => Promise<ImageConfig>
+export interface DockerfileView {
+  image: string; created: string | null; labels: Record<string, string>
+  env: string[]; ports: string[]; entrypoint: string[]; cmd: string[]; workdir: string
+  built: string | null        // reconstructed from the image's build history: what ran, not the source file
+  source: string | null; source_path: string | null   // the Dockerfile's text and where it came from (a path here, or a URL)
+  source_kind: 'repo' | 'github' | null; source_url: string | null   // ours (this repo), or fetched from the image's source repository
+  source_note: string | null   // why there is no source
+  error: string | null
+}
+
+const run = (cmd: string, args: string[]) => new Promise<string>((resolve, reject) =>
+  execFile(cmd, args, { timeout: 30_000, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => (err ? reject(new Error((stderr || err.message).toString().trim().split('\n').pop() || 'failed')) : resolve(stdout.toString()))))
+
+/** The image's config and history straight from the registry (no pull): `docker buildx imagetools inspect`, then the local daemon. */
+export const registryConfig: Registry = async (image) => {
+  try {
+    const d = JSON.parse(await run('docker', ['buildx', 'imagetools', 'inspect', image, '--format', '{{json .Image}}']))
+    return (d.config ? d : d['linux/amd64'] || Object.values(d)[0]) as ImageConfig
+  } catch (remote) {
+    try {
+      const d = JSON.parse(await run('docker', ['image', 'inspect', '--format', '{{json .}}', '--', image]))
+      const hist = (await run('docker', ['history', '--no-trunc', '--format', '{{.CreatedBy}}', '--', image])).split('\n').filter(Boolean).reverse().map((created_by) => ({ created_by }))
+      return { created: d.Created, config: d.Config, history: hist }
+    } catch { throw remote }
+  }
+}
+
+/** One build-history line back into a Dockerfile instruction. */
+export function instructionOf(createdBy: string): string | null {
+  let c = (createdBy || '').replace(/\s+# buildkit\s*$/, '').trim()
+  if (!c) return null
+  c = c.replace(/^\/bin\/sh -c #\(nop\)\s*/, '')
+  const arg = c.match(/^(RUN|CMD) \|(\d+) ((?:[A-Za-z_][A-Za-z0-9_]*=\S* ?)*)\/bin\/sh -c (.*)$/s)
+  if (arg) return `${arg[3].trim() ? '# build args: ' + arg[3].trim() + '\n' : ''}RUN ${arg[4].trim()}`
+  if (c.startsWith('/bin/sh -c ')) return `RUN ${c.slice('/bin/sh -c '.length).trim()}`
+  return c
+}
+
+/** Where an image's source repository is: its own label, else a known one. Only GitHub is read. */
+export function sourceRepoOf(image: string, labels: Record<string, string>): string | null {
+  const url = labels['org.opencontainers.image.source'] || KNOWN_SOURCES[repoOf(image)] || ''
+  const m = url.match(/github\.com[/:]([^/]+)\/([^/.#]+)/)
+  return m ? `https://github.com/${m[1]}/${m[2]}` : null
+}
+const OURS = (image: string, labels: Record<string, string>) => !!labels['dev.bluecollar.comfy-node-packs'] || /(^|\/)comfy-app(:|$)/.test(image)
+export type Fetcher = (url: string) => Promise<string | null>
+const fetchText: Fetcher = async (url) => { try { const r = await fetch(url, { signal: AbortSignal.timeout(15_000) }); return r.ok ? await r.text() : null } catch { return null } }
+const DOCKERFILE_PATHS = ['Dockerfile', 'docker/Dockerfile', 'build/Dockerfile', 'Dockerfile.cuda']
+
+export async function dockerfile(params: { image?: string } = {}, registry: Registry = registryConfig, get: Fetcher = fetchText): Promise<DockerfileView> {
+  const image = (params.image || '').trim()
+  const out: DockerfileView = { image, created: null, labels: {}, env: [], ports: [], entrypoint: [], cmd: [], workdir: '', built: null, source: null, source_path: null, source_kind: null, source_url: null, source_note: null, error: null }
+  if (!image) { out.error = 'No image'; return out }
+  try {
+    const d = await registry(image)
+    const c = d.config || {}
+    out.created = d.created || null; out.labels = c.Labels || {}; out.env = c.Env || []; out.ports = Object.keys(c.ExposedPorts || {})
+    out.entrypoint = c.Entrypoint || []; out.cmd = c.Cmd || []; out.workdir = c.WorkingDir || ''
+    const steps = (d.history || []).map((h) => instructionOf(h.created_by || '')).filter(Boolean) as string[]
+    out.built = steps.length ? `# Reconstructed from ${image}'s build history: what ran, in order. Not the source file.\n` + steps.join('\n') + '\n' : null
+  } catch (e) { out.error = (e as Error).message }
+  // The source: ours is this repo's Dockerfile; any other image's is read from its source repository.
+  if (OURS(image, out.labels)) {
+    const file = dockerfilePath()
+    if (existsSync(file)) { out.source = readFileSync(file, 'utf8'); out.source_path = file; out.source_kind = 'repo' }
+    else out.source_note = 'This repo\'s Dockerfile is not on this machine.'
+  } else {
+    const repo = sourceRepoOf(image, out.labels)
+    if (!repo) out.source_note = 'No source repository is known for this image: it has no org.opencontainers.image.source label and is not in the known list.'
+    else {
+      const [owner, name] = repo.replace('https://github.com/', '').split('/')
+      for (const path of DOCKERFILE_PATHS) {
+        const url = `https://raw.githubusercontent.com/${owner}/${name}/HEAD/${path}`
+        const text = await get(url)
+        if (text) { out.source = text; out.source_path = `${repo}/blob/HEAD/${path}`; out.source_kind = 'github'; out.source_url = repo; break }
+      }
+      if (!out.source) { out.source_url = repo; out.source_note = `No Dockerfile found at the root of ${repo}; open the repository to look.` }
+    }
+  }
+  return out
+}

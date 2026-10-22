@@ -38,6 +38,7 @@ export interface PodStatus {
   uptime_seconds: number | null; web_ui_url: string | null; ssh_command: string; idle_stop_minutes: number
   console_url?: string; status_text?: string; comfy_ready?: boolean | null   // null = not probed
   custom_config?: boolean   // created with its own configuration, kept for Recreate
+  image?: string            // the image the pod boots (the card's Dockerfile link)
   port_mismatch?: boolean   // the pod does not expose the port its image serves ComfyUI on; only Recreate fixes it
 }
 
@@ -170,7 +171,7 @@ export function toStatus(p: rp.RawPod): PodStatus {
     gpu: p.machine?.gpuDisplayName || String(p.gpuCount ?? '?'), vram: gpus.vram(p.machine?.gpuDisplayName || '') || 24,
     uptime_seconds: uptime, web_ui_url: running ? idle.proxyUrl(p.id, webPortOf(p.ports)) : null,
     ssh_command: `ssh root@${p.id}.proxy.runpod.io`, idle_stop_minutes: idle.entry(p.id)?.minutes ?? 0, comfy_ready: null,
-    custom_config: podconfigs.has(p.id),
+    custom_config: podconfigs.has(p.id), image: p.imageName || undefined,
     port_mismatch: (p.imageName || '') === PREBUILT_IMAGE && !/3001\/http/.test(p.ports || ''),
     console_url: consoleUrl(p.id), status_text: p.lastStatusChange || p.desiredStatus || '',
   }
