@@ -473,7 +473,10 @@
     "connectedHint": "The server started and answered tools/list.",
     "disconnected": "Not connected",
     "noTarget": "No target",
-    "noTargetHint": "No running pod with ComfyUI and no URL: pick a target below.",
-    "docsHint": "Open the docs of this server: its tools, parameters and options."
+    "noTargetHint": "Nothing to point at: no running pod whose ComfyUI answers, no ComfyUI on this Mac, no URL typed. The server is connected; it waits for a target.",
+    "docsHint": "Open the docs of this server: its tools, parameters and options.",
+    "targetPod": "Pod {name}",
+    "targetLocal": "Local",
+    "targetCustomBadge": "Custom URL"
   }
 }

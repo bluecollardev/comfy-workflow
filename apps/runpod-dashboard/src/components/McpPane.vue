@@ -11,7 +11,7 @@
         <div class="d-flex align-items-start gap-3">
           <i class="fa-solid fa-plug fs-5 text-body-secondary mt-1"></i>
           <div class="flex-grow-1 lh-sm">
-            <div class="fw-semibold" data-testid="mcp-title">{{ ep.title }} <code class="small text-body-secondary" data-testid="mcp-name">{{ ep.name }}</code> <McpStatus :ep="ep" class="ms-1 align-middle" /></div>
+            <div class="fw-semibold" data-testid="mcp-title">{{ ep.title }} <code class="small text-body-secondary" data-testid="mcp-name">{{ ep.name }}</code> <McpStatus :ep="ep" class="ms-1 align-middle" /> <McpTarget :ep="ep" class="ms-1 align-middle" /></div>
             <small class="text-body-secondary d-block" data-testid="mcp-purpose">{{ ep.purpose }}</small>
             <small v-if="!ep.exists" class="text-warning d-block" data-testid="mcp-not-built">{{ $t('mcp.notBuilt') }}</small>
           </div>
@@ -83,6 +83,7 @@ import { useMcpStore } from '../stores/mcp'
 import { t } from '../i18n'
 import McpDocsModal from './McpDocsModal.vue'
 import McpStatus from './McpStatus.vue'
+import McpTarget from './McpTarget.vue'
 
 const props = defineProps({ active: { type: Boolean, default: false } })
 const store = useMcpStore()

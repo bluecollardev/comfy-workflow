@@ -98,22 +98,38 @@ test.describe('Connect › MCP', () => {
     expect(api.calls.filter((c) => c.path === '/mcp/probe').map((c) => c.body.id).sort()).toEqual(['comfy-bridge', 'pod-manager'])
   })
 
-  test('the bridge without a target shows No target instead of a failure; picking one probes it again', async ({ page, api }) => {
+  test('Connected shows whenever the server answers; the target has its own badge: Pod, Local, Custom URL, or No target', async ({ page, api }) => {
+    const ok = { ok: true, tools: BRIDGE_DEFS.map((d) => d.name), definitions: BRIDGE_DEFS, error: null, ms: 80 }
+    api.state.mcp.probe['comfy-bridge'] = ok
     await page.goto('/')
     const dialog = await openMcp(page)
     const br = endpoint(dialog, 'comfy-bridge')
-    await expect(br.getByTestId('mcp-disconnected')).toBeVisible()
+    await expect(br.getByTestId('mcp-connected')).toBeVisible()                              // answering: connected, whatever it points at
+    await expect(br.getByTestId('mcp-target-pod')).toHaveText(t('mcp.targetPod', { name: 'ComfyUI-Dev' }))   // the first target is a pod
+    await expect(br.getByTestId('mcp-target-pod')).toHaveAttribute('data-pod', 'pod-aaaaaaaa')
+    await br.getByTestId('mcp-target-select').selectOption('http://127.0.0.1:8188')          // this Mac's own
+    await expect(br.getByTestId('mcp-target-local')).toHaveText(t('mcp.targetLocal'))
+    await expect(br.getByTestId('mcp-connected')).toBeVisible()
+    const before = api.calls.filter((c) => c.path === '/mcp/probe').length
+    await expect.poll(() => api.calls.filter((c) => c.path === '/mcp/probe').length).toBeGreaterThan(before - 1)
+    expect(api.calls.filter((c) => c.path === '/mcp/probe').at(-1).body).toEqual({ id: 'comfy-bridge', comfy: 'http://127.0.0.1:8188' })
+    await br.getByTestId('mcp-target-select').selectOption({ label: t('mcp.targetCustom') })
+    await br.getByTestId('mcp-target-url').fill('http://10.0.0.5:8188')
+    await br.getByTestId('mcp-target-apply').click()
+    await expect(br.getByTestId('mcp-target-url-badge')).toHaveText(t('mcp.targetCustomBadge'))
+  })
+
+  test('No target when there is nothing locally or remote, and the server still shows Connected', async ({ page, api }) => {
+    api.state.mcp.targets = []
     api.state.mcp.probe['comfy-bridge'] = { ok: true, tools: BRIDGE_DEFS.map((d) => d.name), definitions: BRIDGE_DEFS, error: null, ms: 80 }
-    await br.getByTestId('mcp-target-select').selectOption('')
+    await page.goto('/')
+    const dialog = await openMcp(page)
+    const br = endpoint(dialog, 'comfy-bridge')
     await expect(br.getByTestId('mcp-no-target')).toHaveText(t('mcp.noTarget'))
     await expect(br.getByTestId('mcp-no-target')).toHaveClass(/bg-warning/)
     await expect(br.getByTestId('mcp-no-target')).toHaveAttribute('title', t('mcp.noTargetHint'))
-    await expect(br.getByTestId('mcp-disconnected')).toHaveCount(0)
-    const before = api.calls.filter((c) => c.path === '/mcp/probe').length
-    await br.getByTestId('mcp-target-select').selectOption('http://127.0.0.1:8188')   // a target again: probed again, now connected
-    await expect(br.getByTestId('mcp-connected')).toBeVisible()
-    expect(api.calls.filter((c) => c.path === '/mcp/probe').length).toBe(before + 1)
-    expect(api.calls.filter((c) => c.path === '/mcp/probe').at(-1).body).toEqual({ id: 'comfy-bridge', comfy: 'http://127.0.0.1:8188' })
+    await expect(br.getByTestId('mcp-connected')).toBeVisible()                              // connected all the same
+    await expect(endpoint(dialog, 'pod-manager').getByTestId('mcp-no-target')).toHaveCount(0)   // only the bridge has a target
   })
 
   test('Check re-runs the probe: the facts line, no chips, a toast; a failure shows the error in red', async ({ page, api }) => {
@@ -255,19 +271,16 @@ test.describe('Connect › MCP › Docs', () => {
     expect(api.calls.filter((c) => c.path === '/mcp/probe' && c.body.id === 'pod-manager').length).toBe(1)
   })
 
-  test('Docs runs the probe itself when none ran yet (the bridge without a target)', async ({ page, api }) => {
+  test('Docs opened while the automatic probe is still running waits for it instead of probing twice', async ({ page, api }) => {
     api.state.mcp.probe['comfy-bridge'] = { ok: true, tools: BRIDGE_DEFS.map((d) => d.name), definitions: BRIDGE_DEFS, error: null, ms: 80 }
     api.state.mcp.delay = 500
     await page.goto('/')
     const dialog = await openMcp(page)
     const br = endpoint(dialog, 'comfy-bridge')
-    await br.getByTestId('mcp-target-select').selectOption('')   // no target: no automatic probe
-    await expect(br.getByTestId('mcp-no-target')).toBeVisible()
-    const before = api.calls.filter((c) => c.path === '/mcp/probe' && c.body.id === 'comfy-bridge').length
-    await br.getByTestId('mcp-docs').click()
+    await br.getByTestId('mcp-docs').click()                       // the tab's own probe is still in flight
     const docs = page.getByTestId('mcp-docs-modal')
     await expect(docs.getByTestId('mcp-docs-probing')).toBeVisible()
     await expect(docs.getByTestId('mcp-docs-group')).toHaveCount(2)
-    expect(api.calls.filter((c) => c.path === '/mcp/probe' && c.body.id === 'comfy-bridge').length).toBe(before + 1)
+    expect(api.calls.filter((c) => c.path === '/mcp/probe' && c.body.id === 'comfy-bridge').length).toBe(1)   // shared, not repeated
   })
 })
