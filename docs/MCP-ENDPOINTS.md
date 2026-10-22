@@ -51,7 +51,7 @@ settings, or no-spend mode.
 | `sync_status` | `pod_id` | folder N of M, percent, files, errors, done | |
 | `cost_now` | none | running pods' price per hour summed, volumes' cost per month | |
 
-## 2. ComfyUI bridge — `mcp/comfy-bridge.mjs` (*new*)
+## 2. ComfyUI bridge — `mcp/comfy-bridge.mjs`
 
 A local agent works inside the ComfyUI running in a pod, through the pod's proxy URL
 (`https://<pod id>-8188.proxy.runpod.net`), or any ComfyUI URL (`--comfy <url>` or
@@ -60,19 +60,74 @@ target it asks the core for the first running pod whose ComfyUI answers. It neve
 creates, stops or bills a pod: that stays with the pod manager. Calls are the ones in
 `docs/COMFY-API.md`.
 
+Tools are grouped by the tag that leads each description (`[server]`, `[nodes]`, `[queue]`, `[files]`, `[workflows]`, `[manager]`). The last line of every description is `ComfyUI: <METHOD> <path>`, the upstream call(s), and every argument carries a description, type and where applicable default, enum and range: the app's Docs modal parses both. Destructive tools (`clear_queue`, `delete_queue_items`, `clear_history`, `delete_history_items`, `free_memory`, `delete_workflow`) refuse without `confirm: true` and say what they would do. ComfyUI-Manager tools are read-only: the bridge never installs, updates or removes a pack.
+
+**server**
+
 | Tool | Arguments | Answer | Gate |
 |---|---|---|---|
-| `comfy_status` | none | the target URL, versions, devices and VRAM from `/system_stats`; whether `/object_info` answers (nodes loaded) | |
-| `list_workflows` | `folder` (optional) | the Workflows panel's files (`/api/userdata?dir=workflows&recurse=true`) | |
-| `get_workflow` | `path` | the workflow JSON (UI graph) | |
-| `save_workflow` | `path`, `workflow` (JSON), `overwrite` (default false) | saved, or refused because it exists | |
-| `search_nodes` | `query`, `limit` (default 20) | node classes whose name or category matches, with their inputs, from `/object_info` | |
+| `comfy_status` | none | the target URL, versions, devices and VRAM from `/system_stats`; whether `/object_info` answers (nodes loaded); which tracker decides locked shots |  |
+| `get_features` | none | the server's feature flags |  |
+| `get_settings` | none | all user settings |  |
+| `get_setting` | `id` | one setting's value |  |
+| `get_logs` | `lines` (default 200) | the last N lines of the server log |  |
+| `get_users` | none | storage mode and user ids |  |
+
+**nodes**
+
+| Tool | Arguments | Answer | Gate |
+|---|---|---|---|
+| `search_nodes` | `query`, `limit` (default 20) | node classes whose name, display name or category matches, with their inputs, from `/object_info` |  |
+| `get_node_info` | `class_type` | one node class in full (`/object_info/{class}`) |  |
+| `list_model_folders` | none | the model folder types |  |
+| `list_models` | `folder` | the model files in a folder type |  |
+| `get_model_metadata` | `folder`, `filename` | a safetensors file's embedded metadata |  |
+| `list_embeddings` | none | textual-inversion embeddings |  |
+| `list_extensions` | none | the frontend extension scripts custom nodes register |  |
+| `get_folder_paths` | none | where ComfyUI looks for each file type |  |
+
+**queue**
+
+| Tool | Arguments | Answer | Gate |
+|---|---|---|---|
 | `queue_prompt` | `prompt` (API-format graph), `client_id` (optional) | the prompt id and queue number; 400 with the invalid node when ComfyUI refuses | refused when the graph names a locked shot (`shared/governance`, the project's shot states) |
-| `get_queue` | none | running and pending prompts | |
-| `get_history` | `prompt_id` (optional), `max_items` (default 10) | finished runs with their outputs (filenames, subfolders, types) | |
-| `interrupt` | none | the running prompt stopped | |
-| `get_output` | `filename`, `subfolder`, `type` (default `output`) | small text files inline; otherwise the `/view` URL and size | |
-| `wait_for_prompt` | `prompt_id`, `timeout_s` (default 600) | polls history until the prompt finishes; the outputs, or a timeout | |
+| `run_workflow` | `prompt`, `client_id`, `timeout_s` (default 600) | queue + wait + the outputs in one call | the same locked-shot refusal as `queue_prompt` |
+| `get_queue` | none | running and pending prompts |  |
+| `get_prompt_info` | none | prompts remaining in the queue |  |
+| `get_history` | `prompt_id` (optional), `max_items` (default 10) | finished runs with their outputs (filenames, subfolders, types) |  |
+| `wait_for_prompt` | `prompt_id`, `timeout_s` (default 600) | polls history until the prompt finishes; the outputs, or a timeout |  |
+| `interrupt` | none | the running prompt stopped |  |
+| `clear_queue` | `confirm` | every pending prompt removed | `confirm: true` required |
+| `delete_queue_items` | `prompt_ids`, `confirm` | those pending prompts removed | `confirm: true` required |
+| `clear_history` | `confirm` | the run history erased (files stay) | `confirm: true` required |
+| `delete_history_items` | `prompt_ids`, `confirm` | those runs erased from the history | `confirm: true` required |
+| `free_memory` | `unload_models`, `free_memory` (both default true), `confirm` | models unloaded and/or caches freed | `confirm: true` required |
+
+**files**
+
+| Tool | Arguments | Answer | Gate |
+|---|---|---|---|
+| `get_output` | `filename`, `subfolder`, `type` (default `output`), `preview`, `channel`, `format` | small text inline; an image up to 1 MB also as an MCP `image` content block; otherwise the `/view` URL and size |  |
+| `upload_image` | `file_path` or `data_base64` (+ `filename`), `subfolder`, `type` (default `input`), `overwrite` | the stored name, subfolder and type, ready for a LoadImage node |  |
+| `upload_mask` | as `upload_image`, plus `original_filename`, `original_subfolder`, `original_type` | the mask applied to an already uploaded image |  |
+
+**workflows**
+
+| Tool | Arguments | Answer | Gate |
+|---|---|---|---|
+| `list_workflows` | `folder` (optional) | the Workflows panel's files |  |
+| `get_workflow` | `path` | the workflow JSON (UI graph) |  |
+| `save_workflow` | `path`, `workflow` (JSON), `overwrite` (default false) | saved, or refused because it exists |  |
+| `list_userdata` | `dir`, `recurse` (default true), `full_info` | files in any user-data folder |  |
+| `delete_workflow` | `path`, `confirm` | the workflow deleted | `confirm: true` required |
+| `move_workflow` | `path`, `destination` | moved or renamed; refused when the destination exists |  |
+
+**manager**
+
+| Tool | Arguments | Answer | Gate |
+|---|---|---|---|
+| `manager_status` | none | whether ComfyUI-Manager answers, its version and task queue (read-only) |  |
+| `list_installed_nodes` | none | the installed custom node packs with version and state (read-only) |  |
 
 Instructions sent at initialize: the governance pages as on the pod manager, plus one
 line naming the target ComfyUI and that the bridge cannot spend.

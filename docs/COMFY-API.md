@@ -4,7 +4,7 @@ ComfyUI serves one HTTP API from the same port as its UI: 8188 for our image
 and the Mac install, 3001 for RunPod's stock image. On a pod the base URL is
 `https://<pod id>-<port>.proxy.runpod.net`, the `web_ui_url` the card shows; on
 the Mac it is `http://127.0.0.1:8188`. There is no auth. Everything below is
-what our code and the project's scripts call; ComfyUI has more
+what our code, the project's scripts and the MCP bridge (`apps/runpod-dashboard/mcp/comfy-bridge.mjs`) call; ComfyUI has more
 (https://docs.comfy.org/development/comfyui-server/comms_routes).
 
 ## Health and readiness
@@ -40,14 +40,70 @@ folder separators).
 | `POST /prompt` with `{"prompt": <API-format graph>, "client_id": "<any id>"}` | queues a run; answers `{"prompt_id": "...", "number": n}` or 400 with the invalid node | `corrosion_queue-api_v005.py`; `comfy run` |
 | `GET /queue` | `{"queue_running": [...], "queue_pending": [...]}` | the idle watch's probe (`libs/core/src/idle.ts`): anything in either list means the pod is busy |
 | `GET /history` and `GET /history/<prompt_id>`, `?max_items=1` | finished runs with their outputs | the queue script polls it every 15 s; the idle watch reads the newest entry and counts a new one as activity |
-| `POST /interrupt` | stops the running prompt | nobody yet |
-| `GET /view?filename=...&subfolder=...&type=output` | fetches a produced file | the UI; a Pull would use the volume instead |
+| `POST /interrupt` | stops the running prompt | the bridge's `interrupt` |
+| `GET /view?filename=...&subfolder=...&type=output` (+ `preview=`, `channel=`, `format=`) | fetches a produced file | the UI; the bridge's `get_output` (text inline, images up to 1 MB as an image block); a Pull would use the volume instead |
 
 Two graph formats exist. The panel holds **UI graphs** (nodes with positions,
 what the canvas saves). `/prompt` takes **API graphs** (node id to class and
 inputs, what "Export (API)" writes). The project keeps both beside each other
 (`<shot>_graph_v###.json` and its `_api.json` twin); `comfy workflow capture`
 converts a UI graph into a recipe.
+
+Also through the bridge (every route exists bare and under `/api`):
+
+| Call | Does | Bridge tool |
+|---|---|---|
+| `GET /prompt` | `{"exec_info": {"queue_remaining": n}}` | `get_prompt_info` |
+| `POST /queue` with `{"clear": true}` or `{"delete": [ids]}` | empties the pending queue / removes those entries | `clear_queue`, `delete_queue_items` (confirm) |
+| `POST /history` with `{"clear": true}` or `{"delete": [ids]}` | erases the history / those runs | `clear_history`, `delete_history_items` (confirm) |
+| `POST /free` with `{"unload_models": bool, "free_memory": bool}` | unloads models / frees caches before the next prompt | `free_memory` (confirm) |
+| `POST /prompt` then `GET /history/<id>` until it appears | queue and wait | `run_workflow` (same locked-shot gate as `queue_prompt`) |
+
+## Nodes and models
+
+| Call | Answers | Bridge tool |
+|---|---|---|
+| `GET /object_info/<class>` | one node class (`{}` when unknown) | `get_node_info` |
+| `GET /models` | the model folder types | `list_model_folders` |
+| `GET /models/<folder>` | files in a folder type (404 for an unknown type) | `list_models` |
+| `GET /view_metadata/<folder>?filename=` | a safetensors file's embedded metadata (404 when none) | `get_model_metadata` |
+| `GET /embeddings` | embedding names | `list_embeddings` |
+| `GET /extensions` | frontend extension script paths | `list_extensions` |
+| `GET /internal/folder_paths` | `{type: [paths, extensions]}` | `get_folder_paths` |
+
+## Files in and out
+
+| Call | Does | Bridge tool |
+|---|---|---|
+| `POST /upload/image`, multipart: `image` (file), `type` (`input`/`temp`/`output`), `subfolder`, `overwrite` | stores an image; answers `{name, subfolder, type}` (renamed when it exists and `overwrite` is false) | `upload_image` (local path or base64) |
+| `POST /upload/mask`, the same plus `original_ref` (JSON `{filename, subfolder, type}`) | stores a mask as the alpha of that image | `upload_mask` |
+
+## Workflows and user data, more
+
+| Call | Does | Bridge tool |
+|---|---|---|
+| `GET /api/userdata?dir=<d>&recurse=&full_info=` | lists any user-data folder | `list_userdata` |
+| `DELETE /api/userdata/workflows%2F<path>` | deletes a file (204; 404 when missing) | `delete_workflow` (confirm) |
+| `POST /api/userdata/workflows%2F<path>/move/workflows%2F<dest>` | moves or renames (409 when the destination exists) | `move_workflow` |
+
+## Server
+
+| Call | Answers | Bridge tool |
+|---|---|---|
+| `GET /features` | feature flags | `get_features` |
+| `GET /settings`, `GET /settings/<id>` | all settings / one value | `get_settings`, `get_setting` |
+| `GET /internal/logs/raw` | `{entries: [{t, m}], size}`; the bridge returns the last N lines | `get_logs` |
+| `GET /users` | storage mode and users | `get_users` |
+
+## ComfyUI-Manager (read-only, only if installed)
+
+| Call | Answers | Bridge tool |
+|---|---|---|
+| `GET /manager/version` (falls back to `/v2/manager/version`), `GET /manager/queue/status` | the Manager's version string and its task queue; 404 means no Manager | `manager_status` |
+| `GET /customnode/installed` (falls back to `/v2/customnode/installed`) | installed packs: version, `cnr_id`, active/enabled | `list_installed_nodes` |
+
+The bridge calls nothing else of the Manager: no install, update, uninstall,
+fix, reboot or snapshot routes.
 
 ## Live updates
 
