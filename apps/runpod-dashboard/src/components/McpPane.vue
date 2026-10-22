@@ -11,13 +11,16 @@
         <div class="d-flex align-items-start gap-3">
           <i class="fa-solid fa-plug fs-5 text-body-secondary mt-1"></i>
           <div class="flex-grow-1 lh-sm">
-            <div class="fw-semibold" data-testid="mcp-title">{{ ep.title }} <code class="small text-body-secondary" data-testid="mcp-name">{{ ep.name }}</code></div>
+            <div class="fw-semibold" data-testid="mcp-title">{{ ep.title }} <code class="small text-body-secondary" data-testid="mcp-name">{{ ep.name }}</code> <McpStatus :ep="ep" class="ms-1 align-middle" /></div>
             <small class="text-body-secondary d-block" data-testid="mcp-purpose">{{ ep.purpose }}</small>
             <small v-if="!ep.exists" class="text-warning d-block" data-testid="mcp-not-built">{{ $t('mcp.notBuilt') }}</small>
           </div>
-          <BButton size="sm" variant="outline-light" class="flex-shrink-0 text-nowrap ms-2" :disabled="!!store.probing[ep.id]" :title="$t('mcp.checkTitle')" data-testid="mcp-check" @click="store.check(ep.id)">
-            <BSpinner v-if="store.probing[ep.id]" small class="me-1" /><i v-else class="fa-solid fa-stethoscope me-1"></i>{{ store.probing[ep.id] ? $t('mcp.checking') : $t('mcp.check') }}
-          </BButton>
+          <div class="d-flex gap-1 flex-shrink-0 ms-2">
+            <BButton size="sm" variant="outline-light" class="text-nowrap" :title="$t('mcp.docsHint')" data-testid="mcp-docs" @click="docsFor = ep.id"><i class="fa-solid fa-book me-1"></i>{{ $t('mcp.docs') }}</BButton>
+            <BButton size="sm" variant="outline-light" class="text-nowrap" :disabled="!!store.probing[ep.id]" :title="$t('mcp.checkTitle')" data-testid="mcp-check" @click="store.check(ep.id)">
+              <BSpinner v-if="store.probing[ep.id]" small class="me-1" /><i v-else class="fa-solid fa-stethoscope me-1"></i>{{ store.probing[ep.id] ? $t('mcp.checking') : $t('mcp.check') }}
+            </BButton>
+          </div>
         </div>
 
         <!-- The bridge's target: a running pod with ComfyUI, the Mac's own, or a typed URL; it flows into the command and every snippet. -->
@@ -46,7 +49,6 @@
 
         <div v-if="store.results[ep.id]" class="mt-2" data-testid="mcp-result" :data-ok="store.results[ep.id].ok ? 'true' : 'false'">
           <template v-if="store.results[ep.id].ok">
-            <BBadge v-for="tool in store.results[ep.id].tools" :key="tool" variant="success" class="me-1 mb-1 fw-normal" data-testid="mcp-tool">{{ tool }}</BBadge>
             <small class="text-body-secondary d-block" data-testid="mcp-result-facts">{{ store.results[ep.id].tools.length ? $t('mcp.tools', { n: store.results[ep.id].tools.length, ms: store.results[ep.id].ms }) : $t('mcp.noTools') }}</small>
           </template>
           <BBadge v-else variant="danger" class="fw-normal text-wrap text-start" data-testid="mcp-result-error"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ store.results[ep.id].error || $t('mcp.noAnswer') }}</BBadge>
@@ -65,22 +67,27 @@
         </div>
       </div>
     </div>
+    <McpDocsModal v-if="docsEp" :model-value="true" :ep="docsEp" @update:model-value="docsFor = ''" />
   </div>
 </template>
 
 <script setup>
 /**
  * McpPane — the MCP tab of the Connect modal: one card per endpoint (docs/MCP-ENDPOINTS.md) with its
- * purpose, the stdio command, Check (the core spawns the server and lists its tools: green badges, or
- * the error in red) and a setup snippet per client with a Copy button. The bridge card has the target
+ * purpose, the stdio command, a connection badge (the core spawns every server when the tab is shown and lists its tools), Check
+ * (the same probe again, with a toast), Docs (a modal with the tools and their parameters) and a setup snippet per client with a Copy button. The bridge card has the target
  * menu; the store re-asks the core for the snippets whenever it changes. Loads when its tab is shown.
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { useMcpStore } from '../stores/mcp'
 import { t } from '../i18n'
+import McpDocsModal from './McpDocsModal.vue'
+import McpStatus from './McpStatus.vue'
 
 const props = defineProps({ active: { type: Boolean, default: false } })
 const store = useMcpStore()
+const docsFor = ref('')   // the endpoint whose Docs modal is open
+const docsEp = computed(() => store.endpoints.find((e) => e.id === docsFor.value))
 
 /** The client whose setup shows, one at a time; remembered in this browser. */
 const client = ref('claude_code')
@@ -117,6 +124,6 @@ function applyTyped() { if (typed.value) store.setTarget(typed.value) }
 watch(() => [store.target, store.targets], syncChoice, { deep: true })
 
 // Lazy tab: the pane mounts when its tab is shown, so load on mount; the `active` watch covers a re-show without a remount.
-onMounted(async () => { await store.load(); syncChoice() })
-watch(() => props.active, (a) => { if (a) store.load() })
+onMounted(async () => { await store.load(); syncChoice(); store.checkAll() })
+watch(() => props.active, async (a) => { if (a) { await store.load(); store.checkAll() } })
 </script>
