@@ -1,9 +1,78 @@
-ors# The two MCP endpoints
+# The two MCP endpoints
 
 **Status:** built 2026-10-21 as specified (the pod tools, the ComfyUI bridge, the HTTP
-transport, the Connect › MCP tab with the client connectors). Both servers are in
-`apps/runpod-dashboard/mcp/`; the tab is Connect › MCP in the app. Both are Node programs over the app's core, launched over
-stdio by Claude Code or any MCP client; neither opens a port.
+transport, the Connect › MCP tab with the client connectors); 2026-10-22: each server is
+bundled into one file that the app's own executable runs (no Node install on the client's
+side), and either can be served from inside the running app over HTTP. The sources are in
+`apps/runpod-dashboard/mcp/`; the tab is Connect › MCP in the app. By default neither opens a port.
+
+## Running
+
+Three ways to run the same tools. The first two are a client launching a process over
+stdio; the third is the app itself listening.
+
+**1. Stdio, through the app's own executable (what the tab gives you).** The servers are
+bundled, SDK included, into `mcp/dist/server.cjs` and `mcp/dist/comfy-bridge.cjs`
+(`npm run mcp:bundle`; `npm run build` and `./start.sh package` do it first, and
+electron-builder ships the folder as `resources/mcp`). The app's executable runs them as Node
+with `ELECTRON_RUN_AS_NODE=1`, so nothing else has to be installed. Packaged, the snippets read:
+
+```bash
+claude mcp add pod-manager -e ELECTRON_RUN_AS_NODE=1 -- "/Applications/RunPod Manager.app/Contents/MacOS/RunPod Manager" "/Applications/RunPod Manager.app/Contents/Resources/mcp/server.cjs"
+```
+
+```json
+{ "mcpServers": { "pod-manager": {
+  "command": "/Applications/RunPod Manager.app/Contents/MacOS/RunPod Manager",
+  "args": ["/Applications/RunPod Manager.app/Contents/Resources/mcp/server.cjs"],
+  "env": { "ELECTRON_RUN_AS_NODE": "1" } } } }
+```
+
+```toml
+[mcp_servers.pod-manager]
+command = "/Applications/RunPod Manager.app/Contents/MacOS/RunPod Manager"
+args = ["/Applications/RunPod Manager.app/Contents/Resources/mcp/server.cjs"]
+
+[mcp_servers.pod-manager.env]
+ELECTRON_RUN_AS_NODE = "1"
+```
+
+From a checkout the tab shows the Electron binary in `node_modules/electron/dist/` and
+`mcp/dist/server.cjs` instead; if the bundle is missing the card says "Not built yet" with
+the command (`npm run mcp:bundle`). The bundle finds the core beside itself (`../core`
+packaged, `libs/core/dist` in a checkout; `CORE_DIR` overrides) and the shape and
+governance copy under `resources/backend`. Check in the tab runs exactly the command the
+snippets show.
+
+**2. HTTP, hosted in the running app.** Each card has a **Serve from the app** switch
+(`mcp-serve-<id>`) and a port field. On, the app's main process listens on
+`127.0.0.1:<port>/mcp` (pod manager 8765, ComfyUI bridge 8766) with the SDK's Streamable HTTP
+transport, stateless per request, with DNS-rebinding protection (the Host header must be
+`127.0.0.1:<port>` or `localhost:<port>`). The state is the Default Configuration's
+`mcp_http: { "pod-manager": { "enabled": false, "port": 8765 }, "comfy-bridge": { ... } }`
+(off by default, ports 1024 to 65535 and distinct, validated in `libs/core/src/mounts.ts`),
+applied at launch and when the switch changes; a port that is taken is refused with the
+reason and the switch goes back. The card shows a **Serving :8765** badge, the **Remote
+(HTTP)** client entry and ChatGPT's entry show the URL (ChatGPT still needs a public URL: tunnel
+the port from this Mac), and Check asks the in-app endpoint with HTTP `initialize` and `tools/list`.
+Hosted in the app the servers use the app's own state, not private copies: pods and no-spend
+mode are the window's, the idle watch is the app's, and `sync` / `sync_status` drive **the
+same job runner as the cards** (`electron/sync-jobs.cjs`, one job per pod), so a sync started
+over MCP fills the card's bar and the Sync modal follows it, and a sync started on a card is
+what `sync_status` reports. The hosted bridge discovers its target (the first running pod
+with ComfyUI) unless `COMFY_URL` is set in the app's environment.
+
+**3. Stdio from a checkout, for development.** `node apps/runpod-dashboard/mcp/server.mjs`
+(`./start.sh mcp`, `npm run mcp`, `npm run mcp:bridge`) runs the sources directly and
+keeps a private sync job map; `--http <port>` or `MCP_HTTP_PORT` serves them over HTTP from
+that process. This is a developer path; end users use 1 or 2.
+
+How it is built: `mcp/server.mjs` exports `createPodManagerServer({ core, syncHost })` and
+`mcp/comfy-bridge.mjs` exports `createComfyBridgeServer({ core, target, project })`; each
+returns an SDK server, and its `main()` (stdio / `--http`) runs only when the file is the
+program being executed. `electron/mcp-host.cjs` serves the factories over HTTP with the
+app's core and `electron/sync-jobs.cjs`; tested in a plain node process with a fake core
+(`mcp/host.test.mjs`).
 
 Conventions for every tool: arguments are a JSON object; the answer is text (JSON where
 the result is structured); an error sets `isError` and says what to do; governance
@@ -147,18 +216,26 @@ setup per client, with Copy buttons:
 
 | Client | What the card gives | Transport |
 |---|---|---|
-| Claude Code | the `claude mcp add <name> -- node <path> [--comfy <url>]` line | stdio |
-| Claude Desktop | the JSON block for `claude_desktop_config.json` | stdio |
-| Codex CLI (OpenAI's agent; it runs GPT models) | the TOML block for `~/.codex/config.toml` (`[mcp_servers.<name>]`, `command`, `args`) | stdio |
-| ChatGPT | the URL `http://127.0.0.1:<port>/mcp` and the command to start the server with `--http <port>`; ChatGPT only takes remote MCP servers, so a public URL needs a tunnel from this Mac | Streamable HTTP |
+| Claude Code | the `claude mcp add <name> -e ELECTRON_RUN_AS_NODE=1 -- <app executable> <bundle> [--comfy <url>]` line | stdio |
+| Claude Desktop | the JSON block for `claude_desktop_config.json` (`command` = the app executable, `args`, `env`) | stdio |
+| Codex CLI (OpenAI's agent; it runs GPT models) | the TOML block for `~/.codex/config.toml` (`[mcp_servers.<name>]`, `command`, `args`, and its `env` table) | stdio |
+| ChatGPT | the in-app endpoint's URL `http://127.0.0.1:<port>/mcp` once Serve from the app is on; ChatGPT only takes remote MCP servers, so a public URL needs a tunnel from this Mac | Streamable HTTP |
+| Remote (HTTP) | the same URL, for any client that takes a remote MCP URL | Streamable HTTP |
 
-Both servers take `--http <port>` (or `MCP_HTTP_PORT`) to serve over HTTP on
-127.0.0.1 instead of stdio; the same tools either way.
+See "Running" above for the executable and bundle paths, packaged and from a checkout.
 
 ## Tests
 
 The bridge over stdio against a fake ComfyUI HTTP server (every tool, the locked-shot
-refusal); the pod manager's new tools over stdio in no-spend mode; a core test for the
-endpoint list and the Check probe; a browser test for the tab against the fake API; an
-Electron test pressing Check on the pod manager and reading its tools; the IPC table
-test gains the `mcp` namespace.
+refusal); the pod manager's new tools over stdio in no-spend mode; the esbuild bundles run
+alone, copied into a scratch folder laid out like `resources/` with no `node_modules`
+(`mcp/bundle.test.mjs`); the factories served over HTTP by `electron/mcp-host.cjs` in a
+plain node process with a fake core, from the sources and from the bundles: the shared
+sync runner, Host-header protection, switching off, a port in use (`mcp/host.test.mjs`);
+core tests for the endpoint list, the snippets, `mcp_http` validation and both probes
+(stdio and HTTP); a browser test for the tab against the fake API (snippets, the switch, the
+port, the Remote entry, a refused port); Electron tests pressing Check, then turning the switch on
+in no-spend mode, POSTing `initialize` and `tools/call list_pods` to the port from the test
+process, creating a simulated pod in the UI and seeing it in `list_pods`, starting a `sync`
+over MCP and seeing the card's bar and the Sync modal follow the same job; the IPC table test
+gains `mcp.serve`. `npm run mcp:test` bundles first.

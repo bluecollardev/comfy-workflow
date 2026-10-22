@@ -55,6 +55,7 @@ blueprints/*.compiled.json
 docker/build/
 docker/*.tar.gz
 apps/runpod-dashboard/dist/
+apps/runpod-dashboard/mcp/dist/
 apps/runpod-dashboard/test-results/
 apps/runpod-dashboard/playwright-report/
 apps/runpod-dashboard/dist-electron/

@@ -3,7 +3,9 @@ import { t } from './i18n'
 
 // The Connect › MCP tab against the fake API: the two endpoints, the client snippets with the bridge's
 // target in them, Copy, and Check (green badges or the red error).
-const DIR = '/Users/lucas/Workspaces/comfy_workflow/apps/runpod-dashboard/mcp'
+const DIR = '/Users/lucas/Workspaces/comfy_workflow/apps/runpod-dashboard/mcp/dist'
+const EXE = '/Applications/RunPod Manager.app/Contents/MacOS/RunPod Manager'   // the app's own executable, run as Node: no Node install
+const RUN = `ELECTRON_RUN_AS_NODE=1 '${EXE}'`
 const POD_URL = 'https://pod-aaaaaaaa-8188.proxy.runpod.net'
 
 const openMcp = async (page) => {
@@ -19,26 +21,28 @@ const snippet = async (card, client) => { await card.getByTestId('mcp-client-sel
 test.describe('Connect › MCP', () => {
   test.use({ permissions: ['clipboard-read', 'clipboard-write'] })
 
-  test('lists both endpoints with their purpose, command and the four client snippets', async ({ page }) => {
+  test('lists both endpoints with their purpose, command and the client snippets (the app\'s executable as Node)', async ({ page }) => {
     await page.goto('/')
     const dialog = await openMcp(page)
     await expect(dialog.getByTestId('mcp-endpoint')).toHaveCount(2)
     const pm = endpoint(dialog, 'pod-manager')
     await expect(pm.getByTestId('mcp-title')).toContainText('Pod manager')
     await expect(pm.getByTestId('mcp-purpose')).toContainText('orchestrates RunPod')
-    await expect(pm.getByTestId('mcp-command')).toHaveText(`node ${DIR}/server.mjs`)
+    await expect(pm.getByTestId('mcp-command')).toHaveText(`${RUN} ${DIR}/server.cjs`)
     await expect(pm.getByTestId('mcp-not-built')).toHaveCount(0)
-    for (const c of ['claude_code', 'claude_desktop', 'codex', 'chatgpt']) await expect(await snippet(pm, c)).toContainText(`${DIR}/server.mjs`)
-    await expect(await snippet(pm, 'claude_code')).toHaveText(`claude mcp add pod-manager -- node ${DIR}/server.mjs`)
+    for (const c of ['claude_code', 'claude_desktop', 'codex']) await expect(await snippet(pm, c)).toContainText(`${DIR}/server.cjs`)
+    await expect(await snippet(pm, 'claude_code')).toHaveText(`claude mcp add pod-manager -e ELECTRON_RUN_AS_NODE=1 -- '${EXE}' ${DIR}/server.cjs`)
     await expect(await snippet(pm, 'claude_desktop')).toContainText('"mcpServers"')
-    await expect(await snippet(pm, 'codex')).toContainText('[mcp_servers.pod-manager]')
-    await expect(await snippet(pm, 'chatgpt')).toContainText('http://127.0.0.1:8765/mcp')
-    await pm.getByTestId('mcp-client-select').selectOption('chatgpt')
+    expect(JSON.parse(await (await snippet(pm, 'claude_desktop')).innerText()).mcpServers['pod-manager']).toEqual({ command: EXE, args: [`${DIR}/server.cjs`], env: { ELECTRON_RUN_AS_NODE: '1' } })
+    await expect(await snippet(pm, 'codex')).toContainText('[mcp_servers.pod-manager.env]\nELECTRON_RUN_AS_NODE = "1"')
+    for (const c of ['claude_code', 'claude_desktop', 'codex']) expect(await (await snippet(pm, c)).innerText()).not.toMatch(/\bnode\b/i)   // nothing to install
+    await pm.getByTestId('mcp-client-select').selectOption('chatgpt')   // the in-app endpoint is off: the snippet says to switch it on
     await expect(pm.locator('[data-testid="mcp-client"][data-client="chatgpt"]')).toContainText(t('mcp.chatgptNote'))
-    await expect(pm.getByTestId('mcp-client-select').locator('option')).toHaveText([t('mcp.claudeCode'), t('mcp.claudeDesktop'), t('mcp.codex'), t('mcp.chatgpt')])   // one client at a time, from a menu
+    await expect(pm.locator('[data-testid="mcp-client"][data-client="chatgpt"]').getByTestId('mcp-snippet-off')).toHaveText(t('mcp.chatgptOff'))
+    await expect(pm.getByTestId('mcp-client-select').locator('option')).toHaveText([t('mcp.claudeCode'), t('mcp.claudeDesktop'), t('mcp.codex'), t('mcp.chatgpt'), t('mcp.remote')])   // one client at a time, from a menu
     const br = endpoint(dialog, 'comfy-bridge')
     await expect(br.getByTestId('mcp-title')).toContainText('ComfyUI bridge')
-    await expect(br.getByTestId('mcp-not-built')).toHaveText(t('mcp.notBuilt'))
+    await expect(br.getByTestId('mcp-not-built')).toHaveText(t('mcp.notBuilt', { command: 'npm run mcp:bundle' }))
     await expect(pm.getByTestId('mcp-target')).toHaveCount(0)   // only the bridge has a target
   })
 
@@ -49,25 +53,24 @@ test.describe('Connect › MCP', () => {
     const select = br.getByTestId('mcp-target-select')
     await expect(select).toHaveValue(POD_URL)   // the first running pod with ComfyUI is the default
     await expect(select.locator('option')).toHaveText([t('mcp.targetAuto'), `ComfyUI-Dev · ${POD_URL}`, 'This Mac · http://127.0.0.1:8188', t('mcp.targetCustom')])
-    await expect(br.getByTestId('mcp-command')).toHaveText(`node ${DIR}/comfy-bridge.mjs --comfy ${POD_URL}`)
-    for (const c of ['claude_code', 'claude_desktop', 'codex', 'chatgpt']) await expect(await snippet(br, c)).toContainText(POD_URL)
-    await expect(await snippet(br, 'claude_code')).toHaveText(`claude mcp add comfy-bridge -- node ${DIR}/comfy-bridge.mjs --comfy ${POD_URL}`)
-    await expect(await snippet(br, 'codex')).toContainText(`args = ["${DIR}/comfy-bridge.mjs", "--comfy", "${POD_URL}"]`)
+    await expect(br.getByTestId('mcp-command')).toHaveText(`${RUN} ${DIR}/comfy-bridge.cjs --comfy ${POD_URL}`)
+    for (const c of ['claude_code', 'claude_desktop', 'codex']) await expect(await snippet(br, c)).toContainText(POD_URL)
+    await expect(await snippet(br, 'claude_code')).toHaveText(`claude mcp add comfy-bridge -e ELECTRON_RUN_AS_NODE=1 -- '${EXE}' ${DIR}/comfy-bridge.cjs --comfy ${POD_URL}`)
+    await expect(await snippet(br, 'codex')).toContainText(`args = ["${DIR}/comfy-bridge.cjs", "--comfy", "${POD_URL}"]`)
 
     await select.selectOption('http://127.0.0.1:8188')
-    await expect(br.getByTestId('mcp-command')).toHaveText(`node ${DIR}/comfy-bridge.mjs --comfy http://127.0.0.1:8188`)
+    await expect(br.getByTestId('mcp-command')).toHaveText(`${RUN} ${DIR}/comfy-bridge.cjs --comfy http://127.0.0.1:8188`)
     await expect(await snippet(br, 'claude_desktop')).toContainText('"http://127.0.0.1:8188"')
     expect(api.calls.some((c) => c.path === '/mcp/endpoints' && c.query.comfy === 'http://127.0.0.1:8188')).toBe(true)
 
     await select.selectOption('__custom__')
     await br.getByTestId('mcp-target-url').fill('http://10.0.0.5:8188')
     await br.getByTestId('mcp-target-apply').click()
-    await expect(br.getByTestId('mcp-command')).toHaveText(`node ${DIR}/comfy-bridge.mjs --comfy http://10.0.0.5:8188`)
-    await expect(await snippet(br, 'chatgpt')).toContainText('--comfy http://10.0.0.5:8188 --http 8766')
+    await expect(br.getByTestId('mcp-command')).toHaveText(`${RUN} ${DIR}/comfy-bridge.cjs --comfy http://10.0.0.5:8188`)
 
     await select.selectOption('')   // let the bridge pick
-    await expect(br.getByTestId('mcp-command')).toHaveText(`node ${DIR}/comfy-bridge.mjs`)
-    await expect(await snippet(br, 'claude_code')).toHaveText(`claude mcp add comfy-bridge -- node ${DIR}/comfy-bridge.mjs`)
+    await expect(br.getByTestId('mcp-command')).toHaveText(`${RUN} ${DIR}/comfy-bridge.cjs`)
+    await expect(await snippet(br, 'claude_code')).toHaveText(`claude mcp add comfy-bridge -e ELECTRON_RUN_AS_NODE=1 -- '${EXE}' ${DIR}/comfy-bridge.cjs`)
   })
 
   test('Copy puts the snippet or the command on the clipboard and says so', async ({ page }) => {
@@ -77,10 +80,10 @@ test.describe('Connect › MCP', () => {
     await pm.getByTestId('mcp-client-select').selectOption('codex')
     await pm.locator('[data-testid="mcp-client"][data-client="codex"]').getByTestId('mcp-copy').click()
     await expect(page.getByTestId('toast').last()).toContainText(t('mcp.copied', { what: t('mcp.whatSnippet', { name: 'Pod manager', client: t('mcp.codex') }) }))
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`[mcp_servers.pod-manager]\ncommand = "node"\nargs = ["${DIR}/server.mjs"]`)
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`[mcp_servers.pod-manager]\ncommand = ${JSON.stringify(EXE)}\nargs = ["${DIR}/server.cjs"]\n\n[mcp_servers.pod-manager.env]\nELECTRON_RUN_AS_NODE = "1"`)
     await pm.getByTestId('mcp-copy-command').click()
     await expect(page.getByTestId('toast').last()).toContainText(t('mcp.copied', { what: t('mcp.whatCommand', { name: 'Pod manager' }) }))
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`node ${DIR}/server.mjs`)
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`${RUN} ${DIR}/server.cjs`)
   })
 
   test('the header badge: probing -> connected for the pod manager, not connected for a failed probe', async ({ page, api }) => {
@@ -151,6 +154,61 @@ test.describe('Connect › MCP', () => {
     await expect(br.getByTestId('mcp-result-error')).toContainText('No ComfyUI answers at')
     await expect(br.getByTestId('mcp-result-error')).toHaveClass(/bg-danger/)
     expect(api.calls.filter((c) => c.path === '/mcp/probe').at(-1).body).toEqual({ id: 'comfy-bridge', comfy: POD_URL })
+  })
+})
+
+test.describe('Connect › MCP › Serve from the app', () => {
+  test.use({ permissions: ['clipboard-read', 'clipboard-write'] })
+
+  test('the switch serves the endpoint: a Serving :port badge, the Remote and ChatGPT URL, the port is editable', async ({ page, api }) => {
+    await page.goto('/')
+    const dialog = await openMcp(page)
+    const pm = endpoint(dialog, 'pod-manager')
+    const sw = pm.getByTestId('mcp-serve-pod-manager')
+    await expect(sw).toBeVisible()
+    await expect(pm.getByTestId('mcp-serve').getByText(t('mcp.serve'))).toBeVisible()
+    await expect(pm.getByTestId('mcp-serving')).toHaveCount(0)                       // off by default
+    await expect(pm.getByTestId('mcp-port-pod-manager')).toHaveValue('8765')
+    await pm.getByTestId('mcp-client-select').selectOption('remote')
+    const remote = pm.locator('[data-testid="mcp-client"][data-client="remote"]')
+    await expect(remote.getByTestId('mcp-snippet-off')).toHaveText(t('mcp.remoteOff'))
+    await expect(remote.getByTestId('mcp-copy')).toBeDisabled()
+
+    await sw.check()
+    await expect(page.getByTestId('toast').last()).toContainText(t('toast.mcpServing', { name: 'Pod manager', url: 'http://127.0.0.1:8765/mcp' }))
+    await expect(pm.getByTestId('mcp-serving')).toHaveText(t('mcp.serving', { port: 8765 }))
+    expect(api.calls.filter((c) => c.method === 'PUT' && c.path === '/mcp/serve').at(-1).body).toEqual({ id: 'pod-manager', enabled: true, port: 8765 })
+    await expect(remote.getByTestId('mcp-snippet')).toHaveText('http://127.0.0.1:8765/mcp')
+    await pm.getByTestId('mcp-client-select').selectOption('chatgpt')
+    await expect(pm.locator('[data-testid="mcp-client"][data-client="chatgpt"]').getByTestId('mcp-snippet')).toHaveText('http://127.0.0.1:8765/mcp')
+    await expect(endpoint(dialog, 'comfy-bridge').getByTestId('mcp-serving')).toHaveCount(0)   // per endpoint
+
+    await pm.getByTestId('mcp-port-pod-manager').fill('9100')
+    await pm.getByTestId('mcp-port-pod-manager').press('Enter')
+    await expect(pm.getByTestId('mcp-serving')).toHaveText(t('mcp.serving', { port: 9100 }))
+    expect(api.calls.filter((c) => c.method === 'PUT' && c.path === '/mcp/serve').at(-1).body).toEqual({ id: 'pod-manager', enabled: true, port: 9100 })
+    await pm.getByTestId('mcp-client-select').selectOption('remote')
+    await expect(remote.getByTestId('mcp-snippet')).toHaveText('http://127.0.0.1:9100/mcp')
+    await remote.getByTestId('mcp-copy').click()
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('http://127.0.0.1:9100/mcp')
+
+    await sw.uncheck()
+    await expect(pm.getByTestId('mcp-serving')).toHaveCount(0)
+    await expect(page.getByTestId('toast').last()).toContainText(t('toast.mcpServingOff', { name: 'Pod manager' }))
+    await expect(remote.getByTestId('mcp-snippet-off')).toBeVisible()
+    await expect(pm.getByTestId('mcp-port-pod-manager')).toHaveValue('9100')          // the port is kept
+  })
+
+  test('a port in use is refused with the app\'s message and the switch stays off', async ({ page, api }) => {
+    api.state.mcp.failServe = 'Port 8766 is in use'
+    await page.goto('/')
+    const dialog = await openMcp(page)
+    const br = endpoint(dialog, 'comfy-bridge')
+    await br.getByTestId('mcp-serve-comfy-bridge').click()   // refused: the switch goes back off
+    await expect(page.getByTestId('toast').last()).toContainText(t('toast.failedWith', { label: t('toast.mcpServe', { name: 'ComfyUI bridge' }), error: 'Port 8766 is in use' }))
+    await expect(br.getByTestId('mcp-serving')).toHaveCount(0)
+    await expect(br.getByTestId('mcp-serve-comfy-bridge')).not.toBeChecked()
+    await expect(page.getByTestId('toast')).toHaveCount(1)   // one refusal, not a stack
   })
 })
 

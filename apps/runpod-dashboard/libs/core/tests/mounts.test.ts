@@ -170,3 +170,27 @@ describe('the folder browser', () => {
     expect(() => listDirs(join(dir, 'file.txt'))).toThrow(/not a folder/)
   })
 })
+
+describe('mcp_http: the MCP servers the app serves over HTTP', () => {
+  it('is off by default, on 8765 and 8766', () => {
+    expect(m.defaults().mcp_http).toEqual({ 'pod-manager': { enabled: false, port: 8765 }, 'comfy-bridge': { enabled: false, port: 8766 } })
+    expect(m.load().mcp_http['pod-manager'].enabled).toBe(false)
+  })
+
+  it('persists the switch and the port, and an old file without it loads with the defaults', () => {
+    const cfg = m.load()
+    m.put({ ...cfg, mcp_http: { ...cfg.mcp_http, 'comfy-bridge': { enabled: true, port: 9100 } } })
+    expect(m.load().mcp_http).toEqual({ 'pod-manager': { enabled: false, port: 8765 }, 'comfy-bridge': { enabled: true, port: 9100 } })
+    expect(JSON.parse(readFileSync(mountsFile(), 'utf8')).mcp_http['comfy-bridge']).toEqual({ enabled: true, port: 9100 })
+    writeFileSync(mountsFile(), JSON.stringify({ idle_stop_minutes: 5 }))
+    expect(m.load().mcp_http).toEqual(m.defaults().mcp_http)
+  })
+
+  it('rejects a port that is not a whole number from 1024 to 65535, or one shared by both', () => {
+    const cfg = m.load()
+    const with_ = (id: 'pod-manager' | 'comfy-bridge', port: number) => ({ ...cfg, mcp_http: { ...cfg.mcp_http, [id]: { enabled: true, port } } })
+    for (const port of [80, 70000, 8765.5, Number.NaN]) expect(() => m.put(with_('pod-manager', port))).toThrow(/port/)
+    expect(() => m.put(with_('comfy-bridge', 8765))).toThrow(/share/)
+    expect(() => m.put(with_('pod-manager', 9000))).not.toThrow()
+  })
+})

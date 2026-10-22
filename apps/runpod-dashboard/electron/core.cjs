@@ -6,6 +6,8 @@
 // so the page gets the core's message, not Electron's wrapping.
 const path = require('node:path')
 const { ipcMain, app, shell, BrowserWindow } = require('electron')
+const { createSyncJobs } = require('./sync-jobs.cjs')
+const { createMcpHost } = require('./mcp-host.cjs')
 
 let core = null
 let stopIdle = null
@@ -18,6 +20,20 @@ async function loadCore() {
   core = await import(require('node:url').pathToFileURL(file).href)
   return core
 }
+
+// The app's sync jobs: the cards (IPC below) and the MCP servers the app hosts (mcp-host.cjs) run and read the same ones.
+const syncJobs = createSyncJobs({
+  loadCore: () => loadCore(),
+  broadcast: (payload) => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('core:sync', payload) },
+})
+
+// The MCP servers served from this process (Connect › MCP, "Serve from the app"); built on first use, after main.cjs has set MCP_DIR.
+let mcpHost = null
+function host() {
+  if (!mcpHost) mcpHost = createMcpHost({ loadCore: () => loadCore(), syncJobs, mcpDir: process.env.MCP_DIR || path.resolve(__dirname, '..', 'mcp', 'dist'), preferBundle: !!app?.isPackaged })
+  return mcpHost
+}
+const served = () => (mcpHost ? mcpHost.status() : {})
 
 /** namespace -> fn -> (core, ...args) => value */
 const TABLE = {
@@ -82,17 +98,29 @@ const TABLE = {
     dockerfile: (c, params) => c.images.dockerfile(params || {}),
   },
   // The Connect › MCP tab: the two endpoints with their client snippets (the bridge's target URL flows in),
-  // what the bridge can point at, and Check (the core spawns the server over stdio and lists its tools).
+  // what the bridge can point at, Check (the core spawns the server over stdio and lists its tools; an endpoint
+  // the app serves itself is asked over HTTP), and the "Serve from the app" switch with its port.
   mcp: {
-    endpoints: (c, comfy) => c.mcp.endpoints({ comfy: comfy || null }),
+    endpoints: (c, comfy) => c.mcp.endpoints({ comfy: comfy || null, served: served() }),
     targets: (c) => c.mcp.targets(),
-    probe: (c, id, comfy) => c.mcp.probe(id, { comfy: comfy || null }),
+    probe: (c, id, comfy) => { const st = served()[id]; return c.mcp.probe(id, { comfy: comfy || null, http: st?.running ? st.url : null }) },
+    // Saves the switch and port in the Default Configuration, then makes the host match. A port that cannot be bound is refused and the switch goes back off.
+    serve: async (c, id, enabled, port) => {
+      const before = c.mounts.load().mcp_http[id]
+      c.mcp.setServe(id, !!enabled, port ?? undefined)
+      const st = (await host().apply())[id]
+      if (enabled && !st.running) {
+        c.mcp.setServe(id, !!before?.enabled, before?.port)   // back to what was saved (and what was serving)
+        await host().apply()
+        throw Object.assign(new Error(st.error || `${id} could not be served`), { status: 409 })
+      }
+      return c.mcp.endpoints({ comfy: null, served: served() }).find((e) => e.id === id)
+    },
   },
 }
 
 // Log streams: one per pod per window, pushed to the page as 'core:logs' events until stopped.
 const streams = new Map()
-const syncJobs = new Map()   // pod id -> { ac, events, done }
 function streamKey(sender, id) { return `${sender.id}:${id}` }
 
 function register() {
@@ -112,22 +140,10 @@ function register() {
   ipcMain.handle('core:logs:stop', (event, id) => { const key = streamKey(event.sender, id); streams.get(key)?.abort(); streams.delete(key); return { ok: true } })
 
   // Sync jobs: one per pod, pushed to every window as 'core:sync' events; they outlive the window that started them.
-  ipcMain.handle('core:sync:start', async (event, req) => {
-    const id = req.pod_id
-    if (syncJobs.has(id)) return { ok: false, running: true }
-    const ac = new AbortController()
-    const job = { ac, events: [], done: false }
-    syncJobs.set(id, job)
-    const c = await loadCore()
-    const send = (payload) => { job.events.push(payload); for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('core:sync', { id, ...payload }) }
-    c.syncrun.run(req, send, ac.signal)
-      .then((r) => send({ kind: 'result', result: r }))
-      .catch((e) => send({ kind: 'error', text: e.message || String(e) }))
-      .finally(() => { job.done = true; setTimeout(() => { if (syncJobs.get(id) === job) syncJobs.delete(id) }, 60_000) })
-    return { ok: true }
-  })
-  ipcMain.handle('core:sync:cancel', (_event, id) => { syncJobs.get(id)?.ac.abort(); return { ok: true } })
-  ipcMain.handle('core:sync:state', (_event, id) => { const j = syncJobs.get(id); return j ? { running: !j.done, events: j.events } : { running: false, events: [] } })
+  // (sync-jobs.cjs: the same runner the MCP servers hosted by the app use.)
+  ipcMain.handle('core:sync:start', async (_event, req) => { const r = await syncJobs.start(req); return r.ok ? { ok: true } : { ok: false, running: true } })
+  ipcMain.handle('core:sync:cancel', (_event, id) => { syncJobs.cancel(id); return { ok: true } })
+  ipcMain.handle('core:sync:state', (_event, id) => syncJobs.state(id))
   ipcMain.handle('core:sync:count', async (_event, req) => { const c = await loadCore(); return c.syncrun.countFor(req) })   // the listing passes: what the push would send, with and without the renders
   ipcMain.handle('core:sync:plan', async (_event, req) => { const c = await loadCore(); const [steps, transport] = await Promise.all([Promise.resolve().then(() => c.syncrun.planFor(req)), c.syncrun.transportFor(req.pod_id)]); return { steps, transport } })
 
@@ -151,4 +167,8 @@ async function startIdleWatch() {
 }
 function stopIdleWatch() { if (stopIdle) stopIdle(); stopIdle = null }
 
-module.exports = { register, loadCore, startIdleWatch, stopIdleWatch, TABLE }
+/** Start the MCP servers the configuration switches on (at launch), and stop them (at quit). */
+async function startMcpHost() { await host().apply() }
+async function stopMcpHost() { if (mcpHost) await mcpHost.stop() }
+
+module.exports = { register, loadCore, startIdleWatch, stopIdleWatch, startMcpHost, stopMcpHost, syncJobs, TABLE }

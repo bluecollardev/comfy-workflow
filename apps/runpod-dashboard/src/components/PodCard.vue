@@ -74,8 +74,8 @@
       <template v-if="pod.image">
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.image') }}</dt>
         <dd class="col-8 mb-0">
-          <a href="#" class="text-break" :title="pod.image" data-testid="pod-dockerfile" @click.prevent="showDockerfile = true"><i class="fa-solid fa-file-code me-1"></i>{{ $t('dockerfile.button') }}</a>
-          <code class="small text-body-secondary ms-2 text-break" data-testid="pod-image-ref">{{ shortImage(pod.image) }}</code>
+          <a href="#" class="d-block text-break" :title="pod.image" data-testid="pod-dockerfile" @click.prevent="showDockerfile = true"><i class="fa-solid fa-file-code me-1"></i>{{ $t('dockerfile.button') }}</a>
+          <code class="d-block small text-body-secondary text-break" data-testid="pod-image-ref">{{ shortImage(pod.image) }}</code>
           <DockerfileModal v-model="showDockerfile" :image="pod.image" this-pod />
         </dd>
       </template>

@@ -11,9 +11,9 @@
         <div class="d-flex align-items-start gap-3">
           <i class="fa-solid fa-plug fs-5 text-body-secondary mt-1"></i>
           <div class="flex-grow-1 lh-sm">
-            <div class="fw-semibold" data-testid="mcp-title">{{ ep.title }} <code class="small text-body-secondary" data-testid="mcp-name">{{ ep.name }}</code> <McpStatus :ep="ep" class="ms-1 align-middle" /> <McpTarget :ep="ep" class="ms-1 align-middle" /></div>
+            <div class="fw-semibold" data-testid="mcp-title">{{ ep.title }} <code class="small text-body-secondary" data-testid="mcp-name">{{ ep.name }}</code> <McpStatus :ep="ep" class="ms-1 align-middle" /> <McpTarget :ep="ep" class="ms-1 align-middle" /> <BBadge v-if="ep.http && ep.http.running" variant="success" class="fw-normal ms-1 align-middle" :title="$t('mcp.servingHint', { url: ep.http.url })" data-testid="mcp-serving"><i class="fa-solid fa-tower-broadcast me-1"></i>{{ $t('mcp.serving', { port: ep.http.port }) }}</BBadge></div>
             <small class="text-body-secondary d-block" data-testid="mcp-purpose">{{ ep.purpose }}</small>
-            <small v-if="!ep.exists" class="text-warning d-block" data-testid="mcp-not-built">{{ $t('mcp.notBuilt') }}</small>
+            <small v-if="!ep.exists" class="text-warning d-block" data-testid="mcp-not-built">{{ $t('mcp.notBuilt', { command: ep.bundle_command }) }}</small>
           </div>
           <div class="d-flex gap-1 flex-shrink-0 ms-2">
             <BButton size="sm" variant="outline-light" class="text-nowrap" :title="$t('mcp.docsHint')" data-testid="mcp-docs" @click="docsFor = ep.id"><i class="fa-solid fa-book me-1"></i>{{ $t('mcp.docs') }}</BButton>
@@ -39,6 +39,16 @@
           <BCol cols="12"><div class="form-text mt-0">{{ $t('mcp.targetHelp') }}</div></BCol>
         </BRow>
 
+        <!-- Serve from the app: the endpoint over HTTP on 127.0.0.1, inside this running app (its pods, its sync jobs, its idle watch). -->
+        <div class="d-flex align-items-center flex-wrap gap-3 mt-3" data-testid="mcp-serve">
+          <BFormCheckbox :key="`serve-${ep.id}-${store.serveTicks[ep.id] || 0}`" :model-value="ep.http.enabled" switch :disabled="!!store.serving[ep.id]" :title="$t('mcp.serveHint')" :data-testid="`mcp-serve-${ep.id}`" @update:model-value="(v) => store.serve(ep.id, v, portOf(ep))">{{ $t('mcp.serve') }}</BFormCheckbox>
+          <div class="d-flex align-items-center gap-2">
+            <label class="small text-body-secondary mb-0" :for="`mcp-port-${ep.id}`">{{ $t('mcp.servePort') }}</label>
+            <BFormInput :id="`mcp-port-${ep.id}`" :model-value="ports[ep.id] ?? ep.http.port" type="number" min="1024" max="65535" size="sm" style="width: 6.5rem" :title="$t('mcp.servePortHint')" :data-testid="`mcp-port-${ep.id}`" @update:model-value="(v) => (ports[ep.id] = v)" @change="applyPort(ep)" />
+          </div>
+          <small v-if="ep.http.enabled && !ep.http.running && ep.http.error" class="text-danger" data-testid="mcp-serve-error">{{ $t('mcp.serveFailed', { error: ep.http.error }) }}</small>
+        </div>
+
         <div class="mt-3">
           <div class="d-flex align-items-center justify-content-between mb-1">
             <small class="text-body-secondary">{{ $t('mcp.command') }}</small>
@@ -61,9 +71,10 @@
         <div v-for="c in CLIENTS.filter((x) => x.key === client)" :key="c.key" class="mb-2" data-testid="mcp-client" :data-client="c.key">
           <div class="d-flex align-items-start justify-content-between gap-3 mb-1">
             <small class="text-body-secondary lh-sm flex-grow-1 min-w-0" data-testid="mcp-client-hint">{{ $t(c.hint) }}</small>
-            <BButton size="sm" variant="outline-light" class="flex-shrink-0 text-nowrap" data-testid="mcp-copy" @click="store.copy(ep.clients[c.key], $t('mcp.whatSnippet', { name: ep.title, client: $t(c.label) }))"><i class="fa-regular fa-copy me-1"></i>{{ $t('mcp.copy') }}</BButton>
+            <BButton size="sm" variant="outline-light" class="flex-shrink-0 text-nowrap" :disabled="!ep.clients[c.key]" data-testid="mcp-copy" @click="store.copy(ep.clients[c.key], $t('mcp.whatSnippet', { name: ep.title, client: $t(c.label) }))"><i class="fa-regular fa-copy me-1"></i>{{ $t('mcp.copy') }}</BButton>
           </div>
-          <pre class="small p-2 rounded border bg-body mb-0 text-wrap" data-testid="mcp-snippet">{{ ep.clients[c.key] }}</pre>
+          <pre v-if="ep.clients[c.key]" class="small p-2 rounded border bg-body mb-0 text-wrap" data-testid="mcp-snippet">{{ ep.clients[c.key] }}</pre>
+          <small v-else class="text-warning d-block" data-testid="mcp-snippet-off">{{ $t(c.off) }}</small>
         </div>
       </div>
     </div>
@@ -74,11 +85,11 @@
 <script setup>
 /**
  * McpPane — the MCP tab of the Connect modal: one card per endpoint (docs/MCP-ENDPOINTS.md) with its
- * purpose, the stdio command, a connection badge (the core spawns every server when the tab is shown and lists its tools), Check
+ * purpose, the command (the app's own executable run as Node), a Serving :port badge and the Serve from the app switch with its port, a connection badge (the core spawns every server when the tab is shown and lists its tools), Check
  * (the same probe again, with a toast), Docs (a modal with the tools and their parameters) and a setup snippet per client with a Copy button. The bridge card has the target
  * menu; the store re-asks the core for the snippets whenever it changes. Loads when its tab is shown.
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useMcpStore } from '../stores/mcp'
 import { t } from '../i18n'
 import McpDocsModal from './McpDocsModal.vue'
@@ -99,8 +110,18 @@ const CLIENTS = [
   { key: 'claude_code', label: 'mcp.claudeCode', hint: 'mcp.claudeCodeHint' },
   { key: 'claude_desktop', label: 'mcp.claudeDesktop', hint: 'mcp.claudeDesktopHint' },
   { key: 'codex', label: 'mcp.codex', hint: 'mcp.codexHint' },
-  { key: 'chatgpt', label: 'mcp.chatgpt', hint: 'mcp.chatgptNote' },
+  { key: 'chatgpt', label: 'mcp.chatgpt', hint: 'mcp.chatgptNote', off: 'mcp.chatgptOff' },
+  { key: 'remote', label: 'mcp.remote', hint: 'mcp.remoteHint', off: 'mcp.remoteOff' },
 ]
+
+/** The port field's pending value per endpoint; the switch and Enter / leaving the field apply it. */
+const ports = reactive({})
+const portOf = (ep) => Number(ports[ep.id] ?? ep.http.port)
+function applyPort(ep) {
+  const port = portOf(ep)
+  delete ports[ep.id]
+  if (port !== ep.http.port) store.serve(ep.id, ep.http.enabled, port)
+}
 
 const CUSTOM = '__custom__'
 const typed = ref('')

@@ -36,7 +36,12 @@ export interface MountsConfig {
   idle_stop_minutes: number
   sync_parallel: number      // rsync streams at a time on a push (1..16); the uplink is the limit, streams keep it full across small files
   dry_run: boolean
+  mcp_http: McpHttp          // the MCP servers the app itself serves over HTTP on 127.0.0.1 (Connect › MCP); off by default
 }
+export interface McpHttpEntry { enabled: boolean; port: number }
+export type McpHttp = Record<'pod-manager' | 'comfy-bridge', McpHttpEntry>
+export const MCP_HTTP_PORTS = { 'pod-manager': 8765, 'comfy-bridge': 8766 } as const
+export const mcpHttpDefaults = (): McpHttp => ({ 'pod-manager': { enabled: false, port: MCP_HTTP_PORTS['pod-manager'] }, 'comfy-bridge': { enabled: false, port: MCP_HTTP_PORTS['comfy-bridge'] } })
 export interface Declared { path: string; source: string; count: number }
 export interface FolderRow {
   key: string; what: string; mode: string; required: boolean; custom?: boolean
@@ -92,11 +97,23 @@ export function defaults(): MountsConfig {
     idle_stop_minutes: 30,
     sync_parallel: 4,
     dry_run: false,
+    mcp_http: mcpHttpDefaults(),
   }
 }
 
 const normalizeLink = (l: Partial<Link>): Link => ({ path: l.path ?? '', target: l.target ?? '', required: l.required ?? true, mode: l.mode || 'rw', what: l.what ?? '', folder: l.folder ?? '' })
 const normalizeCustom = (c: Partial<CustomFolder>): CustomFolder => ({ name: c.name ?? '', local: c.local ?? '', container: c.container ?? '', link: c.link ?? '', mode: c.mode || 'rw' })
+
+/** mcp_http from any JSON: both endpoints present; a port that is not a whole number falls back to the default (validate() refuses it on a save). */
+function normalizeMcpHttp(raw: unknown): McpHttp {
+  const d = mcpHttpDefaults()
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, Partial<McpHttpEntry> | undefined>
+  for (const id of Object.keys(d) as (keyof McpHttp)[]) {
+    const e = r[id]
+    if (e && typeof e === 'object') d[id] = { enabled: e.enabled === true, port: e.port === undefined ? d[id].port : (e.port as number) }
+  }
+  return d
+}
 
 /** A config from any JSON, with every field present (the Python model's defaults). */
 export function normalize(data: Partial<MountsConfig>): MountsConfig {
@@ -114,6 +131,7 @@ export function normalize(data: Partial<MountsConfig>): MountsConfig {
     idle_stop_minutes: data.idle_stop_minutes ?? d.idle_stop_minutes,
     sync_parallel: data.sync_parallel ?? d.sync_parallel,
     dry_run: data.dry_run === true,
+    mcp_http: normalizeMcpHttp(data.mcp_http),
   }
 }
 
@@ -369,6 +387,12 @@ export function validate(cfg: MountsConfig): MountsConfig {
   linksEnv(allLinks(cfg))
   if (cfg.idle_stop_minutes < 0) throw bad('idle_stop_minutes is 0 (never) or a number of minutes')
   if (!Number.isInteger(cfg.sync_parallel) || cfg.sync_parallel < 1 || cfg.sync_parallel > 16) throw bad('sync_parallel is a whole number of parallel uploads, 1 to 16')
+  const ports = new Set<number>()
+  for (const [id, e] of Object.entries(cfg.mcp_http)) {
+    if (!Number.isInteger(e.port) || e.port < 1024 || e.port > 65535) throw bad(`mcp_http.${id}.port is a whole number from 1024 to 65535, not ${JSON.stringify(e.port)}`)
+    if (ports.has(e.port)) throw bad(`mcp_http: the two endpoints cannot share port ${e.port}`)
+    ports.add(e.port)
+  }
   return cfg
 }
 
