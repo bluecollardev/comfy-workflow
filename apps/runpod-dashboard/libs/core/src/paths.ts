@@ -23,7 +23,8 @@ export function shapeFile(): string | null {
   const candidates = [
     process.env.MOUNT_POINTS_FILE,
     join(REPO_ROOT, 'shared', 'shapes', 'mount-points.json'),   // repo checkout
-    join(PACKAGE_DIR, 'mount-points.json'),                     // packaged app
+    join(PACKAGE_DIR, 'mount-points.json'),
+    join(PACKAGE_DIR, 'backend', 'mount-points.json'),          // packaged app: resources/backend, found from resources/core
   ].filter(Boolean) as string[]
   return candidates.find((p) => existsSync(p)) || null
 }
@@ -33,6 +34,7 @@ export function governanceDir(): string | null {
     process.env.GOVERNANCE_DIR,
     join(REPO_ROOT, 'shared', 'governance'),
     join(PACKAGE_DIR, 'governance'),
+    join(PACKAGE_DIR, 'backend', 'governance'),                 // packaged app
   ].filter(Boolean) as string[]
   return candidates.find((p) => existsSync(p)) || null
 }

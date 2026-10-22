@@ -81,8 +81,10 @@ function coreEnv() {
   if (app.isPackaged) {
     process.env.MOUNT_POINTS_FILE ||= path.join(process.resourcesPath, 'backend', 'mount-points.json')
     process.env.GOVERNANCE_DIR ||= path.join(process.resourcesPath, 'backend', 'governance')
-    process.env.MCP_DIR ||= path.join(process.resourcesPath, 'mcp')   // the MCP servers travel as resources; the Connect tab spawns them from here
+    process.env.MCP_DIR ||= path.join(process.resourcesPath, 'mcp')   // the bundled MCP servers travel as resources (mcp/dist in a checkout); the Connect tab shows and spawns them from here
   }
+  // Clients launch the MCP servers with this very executable as Node (ELECTRON_RUN_AS_NODE=1): no Node install. Packaged: the app; in development: the Electron binary.
+  process.env.MCP_EXEC ||= process.execPath
 }
 
 async function boot() {
@@ -90,6 +92,7 @@ async function boot() {
   coreEnv()
   coreBridge.register()
   coreBridge.startIdleWatch().catch((e) => console.error(`idle watch: ${e.message}`))
+  coreBridge.startMcpHost().catch((e) => console.error(`mcp host: ${e.message}`))   // the endpoints the configuration serves from the app
   createWindow()
   await win.loadFile(path.join(__dirname, 'loading.html'))
 
@@ -122,4 +125,5 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   coreBridge.stopIdleWatch()
+  coreBridge.stopMcpHost().catch(() => {})
 })

@@ -20,7 +20,7 @@ function dotenv(file) {
   return out
 }
 
-export async function launchApp({ dry = true, live = false } = {}) {
+export async function launchApp({ dry = true, live = false, env: extra = {} } = {}) {
   const configDir = mkdtempSync(join(tmpdir(), 'runpod-manager-e2e-'))
   const env = {
     ...process.env,
@@ -33,6 +33,7 @@ export async function launchApp({ dry = true, live = false } = {}) {
     IDLE_WATCH: '0',
     COMFY_MODE: 'dev',
     SYNC_SIM_MS: '60',   // a simulated Sync paces its events, so a spec sees the run as a person would
+    ...extra,
   }
   if (dry) env.RUNPOD_DRY_RUN = '1'; else delete env.RUNPOD_DRY_RUN
   if (!live) delete env.RUNPOD_API_KEY

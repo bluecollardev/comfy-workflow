@@ -24,10 +24,12 @@ export RUNPOD_API_KEY="rpa_..."
 ### 3. Start MCP Server
 
 ```bash
-./start.sh mcp          # node apps/runpod-dashboard/mcp/server.mjs
+./start.sh mcp          # developer path from a checkout: apps/runpod-dashboard/mcp/server.mjs
 ```
 
-Server listens on stdio (Claude Code connects directly).
+Server listens on stdio (Claude Code connects directly). End users do not run this by hand:
+the app's Connect › MCP tab gives each client a setup that launches the app's own executable
+as the server (`docs/MCP-ENDPOINTS.md`, "Running"). `node mcp/server.mjs` still works from a checkout.
 
 ### 4. Register with Claude Code
 
@@ -37,11 +39,12 @@ In `~/.claude/codes/claude-code-config.json` (or via Claude Code settings):
 {
   "mcp_servers": {
     "comfy-moe": {
-      "command": "node",
+      "command": "/Applications/RunPod Manager.app/Contents/MacOS/RunPod Manager",
       "args": [
-        "/Users/lucas/workspaces/comfy_workflow/apps/runpod-dashboard/mcp/server.mjs"
+        "/Applications/RunPod Manager.app/Contents/Resources/mcp/server.cjs"
       ],
       "env": {
+        "ELECTRON_RUN_AS_NODE": "1",
         "RUNPOD_API_KEY": "rpa_..."
       }
     }
@@ -424,10 +427,11 @@ does the registration above for you. Per endpoint (this pod manager, and the Com
 
 | Client | What you copy |
 |---|---|
-| Claude Code | `claude mcp add pod-manager -- node <repo>/apps/runpod-dashboard/mcp/server.mjs` |
+| Claude Code | `claude mcp add pod-manager -e ELECTRON_RUN_AS_NODE=1 -- <app executable> <app>/mcp/server.cjs` |
 | Claude Desktop | the `mcpServers` JSON block for `claude_desktop_config.json` |
 | Codex CLI | the `[mcp_servers.pod-manager]` TOML block for `~/.codex/config.toml` |
-| ChatGPT | the command to start the server with `--http 8765` and `http://127.0.0.1:8765/mcp`; ChatGPT only takes a public URL, so tunnel the port from this Mac |
+| ChatGPT | `http://127.0.0.1:8765/mcp`, served by the app once **Serve from the app** is on; ChatGPT only takes a public URL, so tunnel the port from this Mac |
+| Remote (HTTP) | the same URL, for any client that takes a remote MCP URL |
 
 The bridge card's Target menu (a running pod with ComfyUI, the Mac's own, or a typed URL) puts
 `--comfy <url>` into every snippet. Each card has a connection badge (Connected, Not connected, Not checked; the bridge shows No target
@@ -476,7 +480,7 @@ cd apps/runpod-dashboard && npm install && npm run core:build
 ### Claude Code Can't Connect
 
 Check `~/.claude/codes/claude-code-config.json`:
-- Path to `mcp/server.mjs` is correct and `node` is Node 22
+- Path to `mcp/server.cjs` (the bundle in the app's resources) is correct and the command is the app's own executable with `ELECTRON_RUN_AS_NODE=1`
 - `RUNPOD_API_KEY` is set, or entered in the app's Default Configuration
 - The core is built (`npm run core:build` in `apps/runpod-dashboard`)
 

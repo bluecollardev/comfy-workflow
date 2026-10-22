@@ -18,6 +18,8 @@ export const useMcpStore = defineStore('mcp', () => {
   const loading = ref(false)
   const error = ref(null)
   const probing = ref({})   // endpoint id -> true while Check runs
+  const serveTicks = ref({})   // endpoint id -> times the switch was applied
+  const serving = ref({})   // endpoint id -> true while the switch is being applied
   const results = ref({})   // endpoint id -> { ok, tools, definitions, error, ms }
 
   async function load() {
@@ -71,6 +73,29 @@ export const useMcpStore = defineStore('mcp', () => {
     return r
   }
 
+  /** The "Serve from the app" switch and the port: saved in the Default Configuration and applied by the app's host.
+   *  Whatever happens, the endpoints are asked again (the snippets and the badge follow), and the card is probed again. */
+  async function serve(id, enabled, port) {
+    if (serving.value[id]) return   // one switch / port change at a time: a failing one must not stack toasts
+    const ep = endpoints.value.find((e) => e.id === id)
+    const name = ep?.title || id
+    const was = !!ep?.http?.enabled
+    serving.value = { ...serving.value, [id]: true }
+    try {
+      const r = await mcpAPI.serve(id, enabled, port)
+      if (enabled) toast.success(t('toast.mcpServing', { name, url: r?.http?.url || ep?.http_url || '' }))
+      else if (was) toast.info(t('toast.mcpServingOff', { name }))
+    } catch (e) {
+      toast.error(t('toast.failedWith', { label: t('toast.mcpServe', { name }), error: errorText(e) }))
+    } finally {
+      serving.value = { ...serving.value, [id]: false }
+      serveTicks.value = { ...serveTicks.value, [id]: (serveTicks.value[id] || 0) + 1 }   // re-renders the switch from the saved state, also when the app refused it
+    }
+    try { endpoints.value = (await mcpAPI.endpoints(target.value)) || endpoints.value } catch (e) { error.value = errorText(e) }
+    delete results.value[id]
+    probe(id)
+  }
+
   /** What Docs needs: the last result, or a probe of its own. */
   const ensure = (id) => results.value[id] || probe(id)
 
@@ -87,5 +112,5 @@ export const useMcpStore = defineStore('mcp', () => {
     try { await navigator.clipboard.writeText(text); toast.info(t('mcp.copied', { what })) } catch (e) { toast.error(t('mcp.copyFailed', { error: errorText(e) })) }
   }
 
-  return { endpoints, targets, target, loading, error, probing, results, load, setTarget, check, ensure, checkAll, copy }
+  return { endpoints, targets, target, loading, error, probing, serving, serveTicks, results, load, setTarget, serve, check, ensure, checkAll, copy }
 })
