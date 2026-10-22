@@ -94,7 +94,7 @@ rl.on('line', (line) => {
   if (m.id == null) return
   if (mode === 'hang') return
   if (m.method === 'initialize') process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'fake', version: '0' } } }) + '\\n')
-  else if (m.method === 'tools/list') process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: m.id, result: { tools: [{ name: 'alpha' }, { name: 'beta' }] } }) + '\\n')
+  else if (m.method === 'tools/list') process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: m.id, result: { tools: [{ name: 'alpha', description: '[g] Alpha.', inputSchema: { type: 'object', properties: { n: { type: 'integer', default: 3 } }, required: ['n'] } }, { name: 'beta' }] } }) + '\\n')
   else process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: m.id, error: { code: -32601, message: 'no ' + m.method } }) + '\\n')
 })
 console.error('fake server up; RUNPOD_DRY_RUN=' + (process.env.RUNPOD_DRY_RUN || ''))
@@ -112,13 +112,17 @@ console.error('fake server up; RUNPOD_DRY_RUN=' + (process.env.RUNPOD_DRY_RUN ||
     const r = await mcp.probe('pod-manager')
     expect(r).toMatchObject({ ok: true, tools: ['alpha', 'beta'], error: null })
     expect(r.ms).toBeGreaterThanOrEqual(0)
+    expect(r.definitions).toEqual([
+      { name: 'alpha', description: '[g] Alpha.', inputSchema: { type: 'object', properties: { n: { type: 'integer', default: 3 } }, required: ['n'] } },
+      { name: 'beta', description: '', inputSchema: {} },
+    ])
   })
 
   it('passes the bridge its target, and reports a server that dies with its last words', async () => {
     mounts.save(mounts.defaults())
     expect(await mcp.probe('comfy-bridge', { comfy: 'ok' })).toMatchObject({ ok: true, tools: ['alpha', 'beta'] })
     const r = await mcp.probe('comfy-bridge', { comfy: 'crash' })
-    expect(r.ok).toBe(false); expect(r.tools).toEqual([])
+    expect(r.ok).toBe(false); expect(r.tools).toEqual([]); expect(r.definitions).toEqual([])
     expect(r.error).toMatch(/exited \(code 2\)/); expect(r.error).toMatch(/boom: no ComfyUI/)
   })
 

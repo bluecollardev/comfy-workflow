@@ -11,6 +11,29 @@
 
 import { test as base, expect } from '@playwright/test'
 
+// What the pod manager's tools/list answers in the fake: untagged tools grouped by name, an enum, a default,
+// a required field, a nested property and a destructive tool (confirm is required).
+export const POD_MANAGER_DEFS = [
+  { name: 'list_agents', description: 'List all agents in the MOE pool with their status', inputSchema: { type: 'object', properties: {} } },
+  { name: 'get_pool_status', description: 'Get detailed status of the entire agent pool', inputSchema: { type: 'object', properties: {} } },
+  { name: 'create_agent', description: 'Create a new GPU pod agent for the pool', inputSchema: { type: 'object', properties: {
+    agent_name: { type: 'string', description: 'Agent type' },
+    gpu_type: { type: 'string', enum: ['auto', 'rtx4090', 'a40'], description: 'GPU type for this agent' },
+    storage_gb: { type: 'integer', minimum: 0, maximum: 500, default: 100, description: 'Storage size in GB' },
+    approved_by: { type: 'string', description: 'Who said yes to this spend' },
+    env: { type: 'object', description: 'Environment', properties: { key: { type: 'string', description: 'Variable name' } } },
+    tags: { type: 'array', items: { type: 'string' }, description: 'Labels' },
+  }, required: ['agent_name', 'approved_by'] } },
+  { name: 'list_pods', description: 'List the pods', inputSchema: { type: 'object', properties: {} } },
+  { name: 'delete_pod', description: 'Delete a pod for good', inputSchema: { type: 'object', properties: { pod_id: { type: 'string', description: 'Pod ID' }, confirm: { type: 'boolean', description: 'Must be true' } }, required: ['pod_id', 'confirm'] } },
+  { name: 'cost_now', description: 'What the running pods cost per hour', inputSchema: { type: 'object', properties: {} } },
+]
+export const BRIDGE_DEFS = [
+  { name: 'get_queue', description: '[queue] What is running and pending.\nComfyUI: GET /queue', inputSchema: { type: 'object', properties: {} } },
+  { name: 'clear_queue', description: '[queue] Clear queue or interrupt.\nComfyUI: POST /queue, POST /interrupt', inputSchema: { type: 'object', properties: { confirm: { type: 'boolean' } }, required: ['confirm'] } },
+  { name: 'node_info', description: '[nodes] One node class.\nComfyUI: GET /object_info/{class}', inputSchema: { type: 'object', properties: { class: { type: 'string' } }, required: ['class'] } },
+]
+
 export const samplePods = () => [
   {
     id: 'pod-aaaaaaaa', name: 'ComfyUI-Dev', status: 'running', gpu: 'RTX 4090', vram: 24,
@@ -57,9 +80,10 @@ export function defaultState() {
     mcp: {
       dir: '/Users/lucas/Workspaces/comfy_workflow/apps/runpod-dashboard/mcp',
       targets: [{ pod_id: 'pod-aaaaaaaa', name: 'ComfyUI-Dev', url: 'https://pod-aaaaaaaa-8188.proxy.runpod.net' }, { pod_id: null, name: 'This Mac', url: 'http://127.0.0.1:8188' }],
+      delay: 0,   // ms the fake probe waits before it answers (to see the probing state)
       probe: {
-        'pod-manager': { ok: true, tools: ['list_agents', 'get_pool_status', 'governance', 'list_pods'], error: null, ms: 120 },
-        'comfy-bridge': { ok: false, tools: [], error: 'The server exited (code 2) before answering\nNo ComfyUI answers at https://pod-aaaaaaaa-8188.proxy.runpod.net', ms: 340 },
+        'pod-manager': { ok: true, tools: POD_MANAGER_DEFS.map((d) => d.name), definitions: POD_MANAGER_DEFS, error: null, ms: 120 },
+        'comfy-bridge': { ok: false, tools: [], definitions: [], error: 'The server exited (code 2) before answering\nNo ComfyUI answers at https://pod-aaaaaaaa-8188.proxy.runpod.net', ms: 340 },
       },
     },
     failures: {},
@@ -251,7 +275,7 @@ export async function mockApi(page, state) {
     // MCP (the Connect › MCP tab)
     if (method === 'GET' && path === '/mcp/endpoints') return json(mcpEndpoints(state, query.comfy || ''))
     if (method === 'GET' && path === '/mcp/targets') return json(state.mcp.targets)
-    if (method === 'POST' && path === '/mcp/probe') { const r = state.mcp.probe[body.id]; return r ? json(r) : json({ detail: `No MCP endpoint ${body.id}` }, 400) }
+    if (method === 'POST' && path === '/mcp/probe') { if (state.mcp.delay) await new Promise((r) => setTimeout(r, state.mcp.delay)); const r = state.mcp.probe[body.id]; return r ? json(r) : json({ detail: `No MCP endpoint ${body.id}` }, 400) }
     // images
     if (method === 'GET' && path === '/images/env') {
       const image = query.source === 'dockerfile' ? '/repo/apps/comfy-app/Dockerfile'

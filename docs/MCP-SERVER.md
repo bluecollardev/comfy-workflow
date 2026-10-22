@@ -430,9 +430,12 @@ does the registration above for you. Per endpoint (this pod manager, and the Com
 | ChatGPT | the command to start the server with `--http 8765` and `http://127.0.0.1:8765/mcp`; ChatGPT only takes a public URL, so tunnel the port from this Mac |
 
 The bridge card's Target menu (a running pod with ComfyUI, the Mac's own, or a typed URL) puts
-`--comfy <url>` into every snippet. **Check** spawns the server from the app over stdio, performs
-initialize and tools/list, and shows the tool names green, or the error red; in no-spend mode it needs
-no key. The key the panel saved serves the server either way (`settings.applyToEnv()`), so the `env`
+`--comfy <url>` into every snippet. Each card has a connection badge (Connected, Not connected, Not checked; the bridge shows No target
+until it has one): the app spawns each server over stdio, performs initialize and tools/list when the tab
+is first shown, and **Check** repeats it, showing the tool count and time or the error; in no-spend mode it
+needs no key. **Docs** opens a modal with every tool of the server, grouped (the `[group]` tag of the
+description, or by name for the pod manager), searchable, each with its description, its ComfyUI call
+(bridge) and a table of its parameters: type, required, default, options and description. The key the panel saved serves the server either way (`settings.applyToEnv()`), so the `env`
 block in the JSON above is only needed when the app has no key stored.
 
 ## Testing

@@ -21,7 +21,7 @@ before(() => {
   for (const f of ['project', 'shared']) mkdirSync(join(dir, f), { recursive: true })
   writeFileSync(join(dir, 'mounts.json'), JSON.stringify({ folders: { project: join(dir, 'project'), 'comfy-shared': join(dir, 'shared') } }))
   child = spawn(process.execPath, [SERVER], {
-    env: { ...process.env, RUNPOD_DRY_RUN: '1', POD_MANAGER_CONFIG_DIR: dir, RUNPOD_API_KEY: '' },
+    env: { ...process.env, SYNC_SIM_MS: '1', RUNPOD_DRY_RUN: '1', POD_MANAGER_CONFIG_DIR: dir, RUNPOD_API_KEY: '' },
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   createInterface({ input: child.stdout }).on('line', (line) => {
@@ -231,7 +231,7 @@ test('sync starts the (simulated) copy in this process and sync_status follows i
   let st
   for (let i = 0; i < 100; i++) { st = jsonOf(ok(await call('sync_status', { pod_id: p.id }))); if (st.done) break; await sleep(20) }
   assert.equal(st.done, true); assert.equal(st.running, false); assert.equal(st.percent, 100); assert.equal(st.folder, 3); assert.equal(st.of, 3); assert.equal(st.current, null); assert.equal(st.transport, 'ssh')
-  assert.deepEqual(st.result, { steps: 3, failed: 0, cancelled: false }); assert.deepEqual(st.errors, []); assert.deepEqual(st.failed_folders, []); assert.equal(st.files_count, 9); assert.ok(st.files.includes('input/frame_0001.png'))
+  assert.deepEqual(st.result, { steps: 3, failed: 0, warned: 0, cancelled: false }); assert.deepEqual(st.errors, []); assert.deepEqual(st.failed_folders, []); assert.equal(st.files_count, 9); assert.ok(st.files.some((f) => f.endsWith('input/frame_0003.png')))
   assert.equal(st.summary, '3 folders in step')
 
   const pull = jsonOf(ok(await call('sync', { pod_id: p.id, direction: 'pull', only: ['output'] })))
@@ -248,7 +248,7 @@ test('nothing but JSON-RPC went to stdout; the banner went to stderr', () => {
 })
 
 test('over HTTP (--http 0): initialize and tools/list answer the same server at /mcp', async () => {
-  const http = spawn(process.execPath, [SERVER, '--http', '0'], { env: { ...process.env, RUNPOD_DRY_RUN: '1', POD_MANAGER_CONFIG_DIR: dir, RUNPOD_API_KEY: '' }, stdio: ['ignore', 'pipe', 'pipe'] })
+  const http = spawn(process.execPath, [SERVER, '--http', '0'], { env: { ...process.env, SYNC_SIM_MS: '1', RUNPOD_DRY_RUN: '1', POD_MANAGER_CONFIG_DIR: dir, RUNPOD_API_KEY: '' }, stdio: ['ignore', 'pipe', 'pipe'] })
   try {
     const url = await new Promise((resolve, reject) => {
       createInterface({ input: http.stderr }).on('line', (l) => { const m = /on (http:\/\/127\.0\.0\.1:\d+\/mcp)/.exec(l); if (m) resolve(m[1]) })

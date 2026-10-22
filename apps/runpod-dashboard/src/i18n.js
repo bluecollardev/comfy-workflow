@@ -6,3 +6,4 @@ import en from './locales/en.json'
 // keys through e2e/i18n.js, so a wording change is one edit and a translation is one more file.
 export const i18n = createI18n({ legacy: false, locale: 'en', fallbackLocale: 'en', messages: { en } })
 export const t = (key, params) => i18n.global.t(key, params)
+export const te = (key) => i18n.global.te(key)
