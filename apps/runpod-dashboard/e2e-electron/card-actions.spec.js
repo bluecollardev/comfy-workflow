@@ -50,11 +50,11 @@ test.describe('card actions over IPC', () => {
     await expect(toast(page).last()).toContainText(t('toast.podConfigSet'))
     await expect(card.getByTestId('pod-config-badge')).toBeVisible()
     await card.getByTestId('pod-stop').click()
-    await expect(card.getByTestId('pod-status')).toHaveText('stopped')
+    await expect(card.getByTestId('pod-status')).toHaveText(t('pod.statuses.stopped'))
     page.once('dialog', (d) => d.accept())
     await card.getByTestId('pod-recreate').click()                                     // pods.recreate
     await expect(toast(page).last()).toContainText(t('toast.podRecreated'))
-    await expect(card.getByTestId('pod-status')).toHaveText(/starting|running/)
+    await expect(card.getByTestId('pod-status')).toHaveText(/Starting|Running/)
     await expect(card.getByTestId('pod-config-badge')).toBeVisible()                  // the own configuration moved to the new pod
   })
 
