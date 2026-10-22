@@ -13,7 +13,7 @@
 #   ./start.sh comfy-image [--remote --wait] [--push <ref>]   build the ComfyUI server image (on GitLab CI with --remote)
 #   ./start.sh package [mac|win|linux|all] [--comfy <variant>] [--image <ref>]  build the app installers for a comfy-app variant
 #   ./start.sh test           the merge gate: core, IPC table, browser suite, the app in no-spend mode
-#   ./start.sh stop           stop a backgrounded ComfyUI
+#   ./start.sh stop           stop ComfyUI, wherever it was started (background, terminal or IDE)
 #
 # RUNPOD_API_KEY comes from the environment, from .env at the repo root, or from the app's
 # settings (~/.config/runpod-pod-manager/.env, entered in Default Configuration).
@@ -47,6 +47,12 @@ ensure_ui() {  # the built page the desktop target loads
 case "${1:-help}" in
   comfy)
     shift
+    # Already serving? Say so instead of dying with "Port 8188 is already in use".
+    COMFY_PORT_NOW="${COMFY_PORT:-8188}"
+    if curl -fsS --max-time 2 "http://127.0.0.1:$COMFY_PORT_NOW/system_stats" >/dev/null 2>&1; then
+      echo "ComfyUI is already running on http://127.0.0.1:$COMFY_PORT_NOW (pid $(lsof -nP -iTCP:$COMFY_PORT_NOW -sTCP:LISTEN -t 2>/dev/null | head -1)). Open it, or stop it first: ./start.sh stop"
+      exit 0
+    fi
     [ -f shared/nodes/README.md ] || git submodule update --init --depth 1 shared/nodes
     cd apps/comfy-app
     [ -x ComfyUI/.venv/bin/python ] || ./setup.sh
@@ -127,7 +133,12 @@ case "${1:-help}" in
       all)   npm run build && exec npx electron-builder --mac --win --linux "$out" ;;
     esac ;;
   stop)
-    [ -f apps/comfy-app/logs/comfyui.pid ] && apps/comfy-app/stop.sh || echo "no backgrounded ComfyUI"
+    # ComfyUI started in the background has a pid file; one started in a terminal or the IDE does not:
+    # stop whatever ComfyUI is listening on its port too.
+    [ -f apps/comfy-app/logs/comfyui.pid ] && apps/comfy-app/stop.sh
+    for pid in $(lsof -nP -iTCP:"${COMFY_PORT:-8188}" -sTCP:LISTEN -t 2>/dev/null); do
+      case "$(ps -o command= -p "$pid")" in *ComfyUI*main.py*) echo "stopping ComfyUI pid $pid"; kill "$pid" ;; esac
+    done
     true ;;
   test)
     # The merge gate (docs/ADR-005): the core suite, the IPC table, the browser suite and the app itself in no-spend mode; nothing merges red.
