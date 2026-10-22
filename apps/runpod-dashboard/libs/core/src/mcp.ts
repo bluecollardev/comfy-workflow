@@ -34,7 +34,8 @@ export interface Endpoint {
   clients: ClientConfigs
 }
 export interface Target { pod_id: string | null; name: string; url: string }
-export interface ProbeResult { ok: boolean; tools: string[]; error: string | null; ms: number }
+export interface ToolDefinition { name: string; description: string; inputSchema: Record<string, unknown> }
+export interface ProbeResult { ok: boolean; tools: string[]; definitions: ToolDefinition[]; error: string | null; ms: number }
 
 export const LOCAL_COMFY = 'http://127.0.0.1:8188'   // the Mac's own install (apps/comfy-app)
 export const HTTP_PORTS: Record<EndpointId, number> = { 'pod-manager': 8765, 'comfy-bridge': 8766 }
@@ -96,13 +97,13 @@ export async function targets(client?: RunPodClient, local = LOCAL_COMFY): Promi
 
 /**
  * Check: spawn the endpoint over stdio as a client would (this process's node, so the packaged app needs no
- * node on the PATH), initialize, tools/list, and report the tool names. No key is needed in no-spend mode:
+ * node on the PATH), initialize, tools/list, and report the tool names and their full definitions (description, input schema). No key is needed in no-spend mode:
  * the configuration's dry_run is passed down as RUNPOD_DRY_RUN=1.
  */
 export async function probe(id: EndpointId, opts: { comfy?: string | null; timeoutMs?: number } = {}): Promise<ProbeResult> {
   if (!DEFINITIONS[id]) throw bad(`No MCP endpoint ${id}`)
   const ep = endpoint(id, opts.comfy)
-  if (!ep.exists) return { ok: false, tools: [], error: `Not built yet: ${ep.program}`, ms: 0 }
+  if (!ep.exists) return { ok: false, tools: [], definitions: [], error: `Not built yet: ${ep.program}`, ms: 0 }
   const env: NodeJS.ProcessEnv = { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
   if (mounts.dryRun(mounts.load())) env.RUNPOD_DRY_RUN = '1'
   return probeCommand([ep.program, ...ep.args], env, opts.timeoutMs ?? PROBE_TIMEOUT_MS)
@@ -123,7 +124,7 @@ export function probeCommand(args: string[], env: NodeJS.ProcessEnv = process.en
       try { child?.kill() } catch { /* already gone */ }
       resolve({ ...r, ms: Date.now() - started })
     }
-    const fail = (error: string) => finish({ ok: false, tools: [], error: stderr.length ? `${error}\n${stderr.slice(-5).join('\n')}` : error })
+    const fail = (error: string) => finish({ ok: false, tools: [], definitions: [], error: stderr.length ? `${error}\n${stderr.slice(-5).join('\n')}` : error })
     const timer = setTimeout(() => fail(`No answer in ${Math.round(timeoutMs / 1000)} s`), timeoutMs)
     try {
       child = spawn(process.execPath, args, { env, stdio: ['pipe', 'pipe', 'pipe'] })
@@ -149,8 +150,9 @@ export function probeCommand(args: string[], env: NodeJS.ProcessEnv = process.en
       notify('notifications/initialized')
       const list = await rpc('tools/list', {})
       if (list.error) return fail(`tools/list: ${list.error.message || 'refused'}`)
-      const tools = ((list.result as { tools?: { name: string }[] })?.tools || []).map((t) => t.name)
-      finish({ ok: true, tools, error: null })
+      const raw = (list.result as { tools?: { name: string; description?: string; inputSchema?: Record<string, unknown> }[] })?.tools || []
+      const definitions = raw.map((t) => ({ name: t.name, description: t.description || '', inputSchema: t.inputSchema || {} }))
+      finish({ ok: true, tools: definitions.map((t) => t.name), definitions, error: null })
     })().catch((e) => fail((e as Error).message))
   })
 }
