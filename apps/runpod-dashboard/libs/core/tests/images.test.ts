@@ -80,3 +80,42 @@ describe('source=image', () => {
     expect(images.repoOf('ubuntu')).toBe('library/ubuntu')
   })
 })
+
+describe('the Dockerfile of an image', () => {
+  const registry = async (image: string) => ({
+    created: '2026-10-20T08:39:42Z',
+    config: { Env: ['COMFY_PORT=8188'], ExposedPorts: { '8188/tcp': {} }, Entrypoint: ['/opt/comfy-app/entrypoint.sh'], Labels: { 'dev.bluecollar.shotpipe': 'contract-v26' }, WorkingDir: '/opt/ComfyUI' },
+    history: [
+      { created_by: 'RUN |2 COMFYUI_REPO=https://x.git COMFYUI_REF=abc /bin/sh -c git clone x /opt/ComfyUI # buildkit' },
+      { created_by: 'COPY .build/custom_nodes/ /opt/ComfyUI/custom_nodes/ # buildkit' },
+      { created_by: '/bin/sh -c #(nop)  ENV COMFY_PORT=8188' },
+    ],
+    image,
+  })
+  it('rebuilds the instructions from the build history and carries the config and the repo source', async () => {
+    const v = await images.dockerfile({ image: 'reg/comfy-app:1' }, registry)
+    expect(v.built).toContain('RUN git clone x /opt/ComfyUI'); expect(v.built).toContain('COPY .build/custom_nodes/ /opt/ComfyUI/custom_nodes/'); expect(v.built).toContain('ENV COMFY_PORT=8188')
+    expect(v.built).toContain('# build args: COMFYUI_REPO=https://x.git COMFYUI_REF=abc')
+    expect(v).toMatchObject({ env: ['COMFY_PORT=8188'], ports: ['8188/tcp'], entrypoint: ['/opt/comfy-app/entrypoint.sh'], workdir: '/opt/ComfyUI', labels: { 'dev.bluecollar.shotpipe': 'contract-v26' }, error: null })
+    expect(v.source).toContain('FROM'); expect(v.source_kind).toBe('repo')   // ours: the repo's apps/comfy-app/Dockerfile
+  })
+  it('says why when the registry cannot be read, and still gives the source', async () => {
+    const v = await images.dockerfile({ image: 'reg/comfy-app:none' }, async () => { throw new Error('manifest unknown') })
+    expect(v.error).toBe('manifest unknown'); expect(v.built).toBeNull(); expect(v.source).toContain('FROM')
+  })
+
+  it('reads another image\'s Dockerfile from its source repository: a known one, a labelled one, and says why when it cannot', async () => {
+    const reg = (labels: Record<string, string>) => async () => ({ config: { Labels: labels }, history: [{ created_by: 'RUN x' }] })
+    const seen: string[] = []
+    const get = async (url: string) => { seen.push(url); return url.endsWith('/HEAD/Dockerfile') ? 'FROM nvidia/cuda\n# upstream' : null }
+    const stock = await images.dockerfile({ image: 'ashleykza/comfyui:latest' }, reg({}), get)
+    expect(stock.source_kind).toBe('github'); expect(stock.source).toContain('# upstream'); expect(stock.source_url).toBe('https://github.com/ashleykleynhans/comfyui-docker')
+    expect(stock.source_path).toBe('https://github.com/ashleykleynhans/comfyui-docker/blob/HEAD/Dockerfile')
+    const labelled = await images.dockerfile({ image: 'docker.io/me/thing:1' }, reg({ 'org.opencontainers.image.source': 'https://github.com/me/thing' }), get)
+    expect(labelled.source_url).toBe('https://github.com/me/thing'); expect(seen).toContain('https://raw.githubusercontent.com/me/thing/HEAD/Dockerfile')
+    const none = await images.dockerfile({ image: 'docker.io/anon/x:1' }, reg({}), get)
+    expect(none.source).toBeNull(); expect(none.source_note).toMatch(/No source repository is known/)
+    const nofile = await images.dockerfile({ image: 'docker.io/me/thing:1' }, reg({ 'org.opencontainers.image.source': 'https://github.com/me/thing' }), async () => null)
+    expect(nofile.source).toBeNull(); expect(nofile.source_note).toMatch(/No Dockerfile found/); expect(nofile.source_url).toBe('https://github.com/me/thing')
+  })
+})

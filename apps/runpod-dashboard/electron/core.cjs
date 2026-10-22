@@ -79,6 +79,7 @@ const TABLE = {
   },
   images: {
     env: (c, params) => c.images.env(params || {}),
+    dockerfile: (c, params) => c.images.dockerfile(params || {}),
   },
   // The Connect › MCP tab: the two endpoints with their client snippets (the bridge's target URL flows in),
   // what the bridge can point at, and Check (the core spawns the server over stdio and lists its tools).

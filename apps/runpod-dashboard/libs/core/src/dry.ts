@@ -33,7 +33,7 @@ export function toStatus(p: DryPod, now = Date.now()): PodStatus {
   const uptime = p.status === 'running' && p.started_at ? Math.floor((now - new Date(p.started_at).getTime()) / 1000) : null
   const starting = uptime != null && uptime < BOOT_SECONDS
   return {
-    id: p.id, name: p.name, status: p.status === 'running' ? (starting ? 'starting' : 'running') : 'stopped',
+    id: p.id, name: p.name, image: p.image, status: p.status === 'running' ? (starting ? 'starting' : 'running') : 'stopped',
     gpu: `${gpus.GPUS[p.gpu]?.name || p.gpu} x${p.gpu_count}`, vram: gpus.vram(p.gpu) * p.gpu_count,
     uptime_seconds: uptime, web_ui_url: p.status === 'running' && !starting ? `https://${p.id}-8188.proxy.runpod.net` : null,
     ssh_command: `ssh root@${p.id}.proxy.runpod.io`, idle_stop_minutes: p.idle_stop_minutes,
