@@ -1,4 +1,5 @@
 import { test, expect, podCard } from './fixtures'
+import { t } from './i18n'
 
 test.describe('dashboard', () => {
   test('shows stats and a card per pod', async ({ page }) => {
@@ -10,7 +11,7 @@ test.describe('dashboard', () => {
     await expect(page.locator('.card-header', { hasText: 'Pods' }).locator('.badge')).toHaveText('3')
 
     const dev = podCard(page, 'ComfyUI-Dev')
-    await expect(dev.locator('.badge')).toHaveText('running')
+    await expect(dev.locator('.badge')).toHaveText(t('pod.statuses.running'))
     await expect(dev).toContainText('RTX 4090')
     await expect(dev).toContainText('24 GB')
     await expect(dev).toContainText('2h 2m')
@@ -19,7 +20,7 @@ test.describe('dashboard', () => {
     await expect(dev.getByRole('button', { name: 'Stop' })).toBeVisible()
 
     await expect(podCard(page, 'ComfyUI-Batch').getByRole('button', { name: 'Resume' })).toBeVisible()
-    await expect(podCard(page, 'ComfyUI-Test').locator('.badge')).toHaveText('starting')
+    await expect(podCard(page, 'ComfyUI-Test').locator('.badge')).toHaveText(t('pod.statuses.starting'))
   })
 
   test('stop, resume and delete hit the API and refresh the list', async ({ page, api }) => {

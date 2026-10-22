@@ -63,7 +63,7 @@ test.describe('pod card', () => {
     await expect(page.getByTestId('toast').last()).toContainText(t('toast.podRecreated'))
     expect(api.calls).toContainEqual(expect.objectContaining({ method: 'POST', path: '/pods/pod-bbbbbbbb/recreate' }))
     await expect(podCard(page, 'ComfyUI-Batch').getByTestId('pod-id')).toHaveText('pod-re-bbbb')
-    await expect(podCard(page, 'ComfyUI-Batch').getByTestId('pod-status')).toHaveText('starting')
+    await expect(podCard(page, 'ComfyUI-Batch').getByTestId('pod-status')).toHaveText(t('pod.statuses.starting'))
   })
 
   test('the idle stop can be changed on the card', async ({ page, api }) => {
@@ -109,7 +109,7 @@ test.describe('pod card', () => {
     const card = podCard(page, 'ComfyUI-Dev')
     await card.getByTestId('pod-stop').click()
     await expect(card.getByTestId('pod-progress-label')).toContainText(t('pod.action_stop'))
-    await expect(card.getByTestId('pod-status')).toHaveText('stopped')
+    await expect(card.getByTestId('pod-status')).toHaveText(t('pod.statuses.stopped'))
     await expect(card.getByTestId('pod-progress')).toHaveCount(0)
   })
 

@@ -43,7 +43,7 @@ test.describe('RunPod, live', () => {
     // a real pod takes a while to pull the image and come up; refresh until it is running with a URL
     await expect(async () => {
       await page.getByTestId('refresh').click()
-      await expect(card.getByTestId('pod-status')).toHaveText('running')
+      await expect(card.getByTestId('pod-status')).toHaveText(t('pod.statuses.running'))
       await expect(card.getByTestId('pod-open')).toBeVisible()
     }).toPass({ timeout: 6 * 60 * 1000, intervals: [10_000] })
 
@@ -51,7 +51,7 @@ test.describe('RunPod, live', () => {
     await expect(toast(page).last()).toContainText(t('toast.podStopped'))
     await expect(async () => {
       await page.getByTestId('refresh').click()
-      await expect(card.getByTestId('pod-status')).toHaveText('stopped')
+      await expect(card.getByTestId('pod-status')).toHaveText(t('pod.statuses.stopped'))
     }).toPass({ timeout: 2 * 60 * 1000, intervals: [5_000] })
 
     if (process.env.RUNPOD_LIVE_KEEP) return   // left stopped, for the app to show

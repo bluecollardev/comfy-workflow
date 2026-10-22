@@ -3,8 +3,8 @@
     <div class="d-flex align-items-start gap-2 mb-3">
       <span class="fw-semibold fs-5 text-truncate" :title="pod.name">{{ pod.name }}</span>
       <BBadge v-if="pod.custom_config" variant="warning" text-indicator class="ms-auto" :title="$t('pod.ownConfigTitle')" data-testid="pod-config-badge">{{ $t('pod.ownConfig') }}</BBadge>
-      <BBadge :variant="STATUS_VARIANT[pod.status] ?? 'secondary'" :class="pod.custom_config ? '' : 'ms-auto'" class="text-uppercase" data-testid="pod-status">
-        {{ pod.status }}
+      <BBadge :variant="STATUS_VARIANT[pod.status] ?? 'secondary'" :class="pod.custom_config ? '' : 'ms-auto'" data-testid="pod-status" :data-status="pod.status">
+        {{ $t(`pod.statuses.${pod.status}`) }}
       </BBadge>
     </div>
 
