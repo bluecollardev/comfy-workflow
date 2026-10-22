@@ -36,7 +36,7 @@ export const useMcpStore = defineStore('mcp', () => {
     delete inflight['comfy-bridge']; probing.value = { ...probing.value, 'comfy-bridge': false }
     error.value = null
     try { endpoints.value = (await mcpAPI.endpoints(target.value)) || [] } catch (e) { error.value = errorText(e) }
-    if (target.value) probe('comfy-bridge')
+    probe('comfy-bridge')
   }
 
   const inflight = {}   // endpoint id -> the running probe, shared by Check, Docs and the automatic probe
@@ -78,7 +78,6 @@ export const useMcpStore = defineStore('mcp', () => {
   function checkAll() {
     for (const ep of endpoints.value) {
       if (results.value[ep.id] || inflight[ep.id]) continue
-      if (ep.id === 'comfy-bridge' && !ep.target) continue
       probe(ep.id)
     }
   }

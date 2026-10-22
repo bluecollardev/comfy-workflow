@@ -2,7 +2,7 @@
   <BModal :model-value="modelValue" size="xl" lazy scrollable ok-only :ok-title="$t('mcp.docsClose')" ok-variant="outline-light" data-testid="mcp-docs-modal" @update:model-value="emit('update:modelValue', $event)" @show="onShow">
     <template #title>
       <span data-testid="mcp-docs-title">{{ $t('mcp.docsTitle', { name: ep.title }) }}</span>
-      <McpStatus :ep="ep" class="ms-2 fs-6 align-middle" />
+      <McpStatus :ep="ep" class="ms-2 fs-6 align-middle" /> <McpTarget :ep="ep" class="ms-1 fs-6 align-middle" />
     </template>
 
     <div v-if="probing" class="text-body-secondary py-3" data-testid="mcp-docs-probing"><BSpinner small class="me-2" />{{ $t('mcp.docsProbing') }}</div>
@@ -51,6 +51,7 @@ import { groupTools } from '../mcpDocs'
 import { t, te } from '../i18n'
 import McpParams from './McpParams.vue'
 import McpStatus from './McpStatus.vue'
+import McpTarget from './McpTarget.vue'
 
 const props = defineProps({ modelValue: { type: Boolean, default: false }, ep: { type: Object, required: true } })
 const emit = defineEmits(['update:modelValue'])
