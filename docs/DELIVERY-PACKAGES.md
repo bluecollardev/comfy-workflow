@@ -111,6 +111,41 @@ Workflows panel = `/workspace/comfy-shared/workflows` (ADR-006). So the package'
   yes. No GPU is involved: these graphs make API calls, so a small pod or the Mac's
   ComfyUI is enough to open and inspect them.
 
+## What Binc does with them (inferred)
+
+Not stated outright anywhere in the package; read from its READMEs and gate tables
+(2026-10-24). It is a first-test handover: Kyle's side generates, Binc finishes.
+
+- **Receives finished generation, not raw plates.** Each shot's graph is `MODE: HISTORY`,
+  "BUILT - NOT RUN", every provider node bypassed: it records how the picture was made.
+- **Adds the stereo work.** Kyle's gate decisions (notes/167) say "Let Brynley add the
+  Stereo work." The §4.2 checks (depth source, temporal, limits, cut continuity, review
+  format, human QC) are EXCEPTION rows whose replacement step is "Brynley's stereo pass,
+  then the §4.2 measures on his eyes."
+- **Registers the stereo graph.** §4.3 notes no PRODUCTION (stereo) graph yet:
+  "Brynley's stereo graph, registered on return."
+- **Conforms.** "Let him conform frame rate as well" (24 fps conform record);
+  archival-071 needs 8-bit to 16-bit; camera-path concerns are "flagged to Brynley";
+  untagged colour is tagged at conform.
+- **Was already building his own test and delivery pipeline** (cgi-042 stereo-source
+  audit, 2026-10-10; a Ruby HDR test package was staged for it).
+
+Flow: Kyle generates, Binc stereo-converts, conforms, finishes, returns the graph.
+
+**Not established:** whether Binc re-runs these graphs or only takes the media from
+`final/` and `approved/`. The provider keys are bypassed, which suggests reference, not
+re-run. If so, the job to run on RunPod is the stereo work with these packages as its
+inputs, not the packages' own graphs.
+
+### Format against CANALV2
+
+Binc's CANALV2 (`projects/desktop/CANALV2`) is a working tree: per-shot stage folders
+(`03_WORK`, `04_GRAPH`, ...) with numbered graph versions and `_api.json` exports, plus
+`20_STEREO/<shot>/04_GRAPH/` and `80_TEST-BUCKET/` proofs of concept. A package is a
+bundle (`comfy/`, `final/`, `approved/`, `provenance/`, hashed `MANIFEST.json`) whose
+graphs use `comfy/input/shots/<shot>/...` paths. Whether a CANALV2 graph and a package
+graph for the same shot share node types and ShotPipe version is unchecked.
+
 ## Doing it today, by hand
 
 No import feature exists. Loading a package onto the Mac or a pod without changing
