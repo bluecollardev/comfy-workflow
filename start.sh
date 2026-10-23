@@ -121,6 +121,11 @@ case "${1:-help}" in
     esac; done
     case "$target" in mac|win|linux|all) ;; *) echo "usage: ./start.sh package [mac|win|linux|all] [--comfy <set-or-tag>] [--image <registry ref>]" >&2; exit 2 ;; esac
     ensure_app; cd "$APP"
+    # Unsigned unless asked: electron-builder otherwise signs with whatever certificate the keychain holds
+    # (here an "Apple Distribution" one, which is for the Mac App Store and stalls on a keychain prompt).
+    # For a build other Macs open without a warning, sign with a Developer ID Application certificate:
+    #   CSC_IDENTITY_AUTO_DISCOVERY=true ./start.sh package mac   (or CSC_NAME="Developer ID Application: ...")
+    export CSC_IDENTITY_AUTO_DISCOVERY="${CSC_IDENTITY_AUTO_DISCOVERY:-false}"
     mkdir -p build
     printf '{\n  "comfy_variant": "%s",\n  "comfy_image": "%s",\n  "shotpipe_sets": "shared/nodes/sets.json",\n  "built_at": "%s"\n}\n' \
       "$variant" "${image:-comfy-app:$variant}" "$(date -u +%Y-%m-%dT%H:%MZ)" > build/build-info.json
