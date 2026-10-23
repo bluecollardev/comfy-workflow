@@ -97,8 +97,10 @@ Workflows panel = `/workspace/comfy-shared/workflows` (ADR-006). So the package'
 
 ## What it needs that we do not have
 
-- **The node packs.** The READMEs say each shot's `nodes/` folder carries them; none
-  came through in the extract. The graphs use core nodes (`LoadImage`, `LoadVideo`,
+- **The node packs.** The READMEs say each shot's `nodes/<pack>-vN/` folder carries them
+  (setup: copy into `custom_nodes/<pack>/`, dropping `-vN`); none came through in the
+  2026-10-20 extract. The 2026-10-23 round's manifest lists packs `bh_stereo_dibr-v0.4.0`
+  and `ComfyUI-BincStereo`. The graphs use core nodes (`LoadImage`, `LoadVideo`,
   `GetVideoComponents`, `Reroute`, `MarkdownNote`, …), the `OpenAIGPTImageNodeV2`
   partner-API node, and 13 `FalAPI_*` nodes (Seedance 2.5 image-to-video, Seedream
   4.5 edit, nano-banana pro edit) from a fal pack our image does not carry (it has
@@ -111,10 +113,11 @@ Workflows panel = `/workspace/comfy-shared/workflows` (ADR-006). So the package'
   yes. No GPU is involved: these graphs make API calls, so a small pod or the Mac's
   ComfyUI is enough to open and inspect them.
 
-## What Binc does with them (inferred)
+## What Binc does with them
 
-Not stated outright anywhere in the package; read from its READMEs and gate tables
-(2026-10-24). It is a first-test handover: Kyle's side generates, Binc finishes.
+First read from the READMEs and gate tables, then confirmed by the delivery contract
+itself (`projects/contract/`, §5.2 and the guide §15, notes/172, 2026-10-22). It is a
+first-test handover: Kyle's side generates, Binc finishes.
 
 - **Receives finished generation, not raw plates.** Each shot's graph is `MODE: HISTORY`,
   "BUILT - NOT RUN", every provider node bypassed: it records how the picture was made.
@@ -132,10 +135,24 @@ Not stated outright anywhere in the package; read from its READMEs and gate tabl
 
 Flow: Kyle generates, Binc stereo-converts, conforms, finishes, returns the graph.
 
-**Not established:** whether Binc re-runs these graphs or only takes the media from
-`final/` and `approved/`. The provider keys are bypassed, which suggests reference, not
-re-run. If so, the job to run on RunPod is the stereo work with these packages as its
-inputs, not the packages' own graphs.
+**The lock and the send-back** (contract §5.2, Binc's wording): the HISTORY graph is
+locked, baked, never rewired on his side. Stereo, conform and 16-bit work branch from the
+HANDOFF frame into his own PRODUCTION graph. When stereo does not work from a final he
+sends the shot back with his measures; the fix is made in generation on Kyle's side and
+re-delivered as a new round (`-rN`; a sent round is never edited). He returns his graphs
+with the inputs manifest and run script filled from the package's templates
+(`GRAPH-STEM-inputs-manifest.example.json`, `run_GRAPH-STEM.template.py`).
+
+So the packages are inputs to Binc's stereo/conform work, not jobs to re-run: provider
+nodes are bypassed and replaying a fire needs Kyle's go and the provider key. What would
+run on RunPod is the PRODUCTION (stereo) graph, not the HISTORY graph.
+
+Who is who in these documents: **Kyle** approves (only he moves a take into `Approved/`),
+drives Comfy Desktop through Claude, and every send or copy to Drive is his call.
+**Brynley (Binc)** receives the rounds, finishes them, and is the source of the BH-ShotPipe
+packs (v7 to v13), the lettered-group layout, the stereo-generation risk notes (notes/137,
+2026-10-12) and his own `01_PATHS_FOR_SETUP.md` method. **Jon** supplies the EDL
+placements. **Astra** (GPT-6) does the layout QA on the delivered graph bytes.
 
 ### Format against CANALV2
 
@@ -172,3 +189,18 @@ he does not want the package's structure changed.
 Open decisions (Lucas, to answer): **what "run" means** (open and inspect on a pod,
 or real generation with spend, keys and Kyle's go-ahead), and **scope** (one package
 or a stream of them in this shape, which decides layout files versus a one-off).
+
+## The 2026-10-23 round and the contract documents
+
+`projects/contract/` (added 2026-10-24; `.md` files saved as `.docx`) holds the contract
+(`DELIVERY-CONTRACT`), the graph guide (`COMFY_DELIVERY_GUIDE`), the install notes
+(`README`, `01_PATHS_FOR_SETUP`) and the `MANIFEST.json` of a newer round, built
+2026-10-23 on ComfyUI 0.42.1 (commit `63be2f9b`, repo commit `ea299592`). Its shots:
+archival-085, 102, 103, 104 and 123 (about 5,700 files; archival-123 alone is 4,907 files,
+14.8 GB, with three element graphs and three stereo graphs). The round's shot folders are
+not in the repo. Its floor is 0.42.1, above the 0.39.2 pin noted above.
+
+Setup per the guide: loader values are paths relative to ComfyUI's input folder
+(`shots/<shot>/...`); Kyle's own Comfy uses the film folder as its input and output
+folder, so a package's `comfy/input/` stands in for it. The contract is explicit that a
+received package is kept byte-identical and never edited.
