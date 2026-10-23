@@ -153,6 +153,7 @@ In order:
 
 ## Open decisions
 
+- Importing delivery packages (the Brynley round in `projects/test`) onto a pod without changing their layout: what "run" means (open and inspect, or real provider calls with spend and Kyle's go-ahead), and whether it is one package or many (layouts versus a one-off). Read, layout and design in `docs/DELIVERY-PACKAGES.md`; the fal node pack the graphs need is missing from the package and from our image.
 - How local state and the pod's volume stay in line: Pull, the sync in the app, pushing less, a CPU sync pod, a bucket as the hub, or RunPod's S3 API onto a volume in a supported datacenter (no pod needed; Montreal is not supported, Romania is the safe pick). Options and a recommendation in `docs/ADR-007`; no decision yet (2026-10-21).
 - Which ShotPipe version, or several side by side, in the Mac install.
 - Whether rendering happens here at all, given the plates live on binc-PC. RunPod is the planned overflow; see the section above.
