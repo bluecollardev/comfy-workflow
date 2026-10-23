@@ -8,10 +8,11 @@ as fact was read from the package's own files; what is inference is marked.
 
 A **delivery package** is a self-contained ComfyUI handover of finished shots, built
 by the Panama Canal v2 film project (`panama-imax-redux`, its script
-`scripts/panama-gen/build-brynley-comfy-delivery.py`) for **Brynley**. They are not
-Binc's: CANALV2, the IMAX restoration job, is a different project with a different
-tree. The first one we have is `brynley-comfy-2026-10-20` (round 2026-10-20, earlier
-READMEs dated 2026-09-30), three shots:
+`scripts/panama-gen/build-brynley-comfy-delivery.py`, Kyle's side) for **Brynley, who
+is Binc** (BH). The recipient is the same person as CANALV2's owner, but the content
+is a different job from CANALV2, the IMAX restoration: a different film, a different
+tree. The first package we have is `brynley-comfy-2026-10-20` (round 2026-10-20,
+earlier READMEs dated 2026-09-30), three shots:
 
 | Shot | Graph | Delivered finals | Size |
 |---|---|---|---|
@@ -32,8 +33,8 @@ spec gate) is the spec for handing a shot to an outside artist. A package carrie
 - a **gate** result per shot (all three failed, with exceptions Kyle accepted, e.g.
   "Let Brynley add the Stereo work", "Let him conform frame rate as well").
 
-Brynley's part (stated in those exceptions): the stereo work and the frame-rate
-conform. There is no stereo PRODUCTION graph in this round. *Inference:* the larger
+Binc's part (stated in those exceptions, which name Brynley): the stereo work and the
+frame-rate conform. There is no stereo PRODUCTION graph in this round. *Inference:* the larger
 aim is stereo conversion of the Panama film; the package does not say so outright.
 
 README rule: **do not queue anything without Kyle's go-ahead.** Nothing in the round
@@ -105,7 +106,7 @@ Workflows panel = `/workspace/comfy-shared/workflows` (ADR-006). So the package'
   with missing-node warnings on those nodes.
 - **ComfyUI 0.39.2 or later.** The manifest records 0.39.2 at commit `3c1b7a17`,
   which is exactly our pin (`apps/comfy-app/pins.env`).
-- **For a real run**: Brynley's provider keys and a go-ahead. Those nodes call paid
+- **For a real run**: provider API keys (the package does not say whose) and a go-ahead. Those nodes call paid
   APIs; under `shared/governance/policy/agent-permissions.md` spend needs a named
   yes. No GPU is involved: these graphs make API calls, so a small pod or the Mac's
   ComfyUI is enough to open and inspect them.
