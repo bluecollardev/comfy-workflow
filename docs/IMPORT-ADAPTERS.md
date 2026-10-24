@@ -198,6 +198,12 @@ With it, Import Shot Pack does two things with Claude:
   rewritten. Repeat until it reads Valid, then Use this
   adapter. Nothing repeats on its own; every round is yours.
 
+**The rule.** The app's Claude writes adapters and nothing else: its reply becomes at most one
+file, `<adapters folder>/<id>.mjs`, with an id the app chose; other blocks, file names and
+commands in the reply are dropped and counted; a description is never stored. This is the code
+path, not a request to the model. It applies to the app's Claude and the MCP tools, not to a
+local coding agent working in its own session.
+
 ## Not in scope
 
 Merging a package's five Drive parts (do that first; the adapter takes the merged tree),

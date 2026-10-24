@@ -43,6 +43,7 @@
           <BBadge v-if="store.draftValid" variant="success" data-testid="import-draft-valid">{{ $t('import.draftValid') }}</BBadge>
         </div>
         <div v-for="(e, i) in [...store.draft.errors, ...(store.draft.tested && !store.draft.tested.ok ? store.draft.tested.errors : [])]" :key="i" class="text-danger" data-testid="import-draft-error"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ e }}</div>
+        <div v-if="store.draft.ignored" class="text-body-secondary" data-testid="import-draft-ignored"><i class="fa-solid fa-ban me-1"></i>{{ $t('import.draftIgnored', { n: store.draft.ignored }) }}</div>
         <div v-if="store.draft.tested?.ok" class="text-body-secondary mb-1" data-testid="import-draft-plan">{{ $t('import.draftPlan', { n: store.draft.tested.summary.copies, size: size(store.draft.tested.summary.bytes) }) }}</div>
         <div class="d-flex flex-wrap gap-2 my-2">
           <BButton size="sm" variant="outline-light" class="text-nowrap" data-testid="import-draft-read" @click="store.read(store.draft.id)"><i class="fa-solid fa-code me-1"></i>{{ $t('import.inspect') }}</BButton>
@@ -153,6 +154,7 @@
     <BModal :model-value="!!store.preview" :title="$t('import.claudeTitle')" size="lg" scrollable lazy data-testid="import-claude-modal" @update:model-value="(v) => { if (!v) store.preview = null }">
       <template v-if="store.preview">
         <BAlert :model-value="true" variant="warning" class="small"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ $t('import.claudeLeaves') }}</BAlert>
+        <div class="small text-body-secondary mb-2" data-testid="import-claude-rule"><i class="fa-solid fa-lock me-1"></i>{{ $t('import.claudeRule') }}</div>
         <div class="small mb-2" data-testid="import-claude-counts">{{ $t('import.claudeSends', { files: store.preview.total_files, dirs: store.preview.dirs.length, texts: store.preview.texts.length }) }}</div>
         <div v-for="x in store.preview.texts" :key="x.path" class="small font-monospace" data-testid="import-claude-text">{{ x.path }} <span class="text-body-secondary">({{ $t('import.claudeBytes', { sent: x.sent_bytes, bytes: x.bytes }) }})</span></div>
         <BFormGroup :label="$t('import.draftPrompt')" label-for="import-claude-instruction" class="mt-2 mb-0">

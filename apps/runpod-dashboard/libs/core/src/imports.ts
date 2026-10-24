@@ -240,7 +240,7 @@ export function draftPreview(sourceDir: string): DraftPreview & { _texts: { path
   }
 }
 
-const DRAFT_SYSTEM = 'You write import adapters for an app that maps a package folder onto a ComfyUI-Shared structure. Reply with ONE complete ES module (.mjs) in a single ```javascript code block and nothing else. Follow the spec exactly: default-export { id, name, version, detect(root, ctx), plan(root, ctx) }; use only ctx for reading; return ops as data; never import fs or the network; keep source-relative paths; leave everything else in place and report what you could not place.'
+const DRAFT_SYSTEM = 'You write import adapters for an app that maps a package folder onto a ComfyUI-Shared structure, and NOTHING else: no other files, no config, no scripts, no shell commands, no edits to anything that exists. Reply with ONE complete ES module (.mjs) in a single ```javascript code block and nothing else. Follow the spec exactly: default-export { id, name, version, detect(root, ctx), plan(root, ctx) }; use only ctx for reading; return ops as data; never import fs or the network; keep source-relative paths; leave everything else in place and report what you could not place.'
 
 interface AskOptions { model?: string; fetchImpl?: typeof fetch }
 /** One call to the Messages API with the Anthropic key from Settings. The text of the reply; an error with the API's own message. */
@@ -293,7 +293,7 @@ export interface DraftOptions extends AskOptions {
 }
 
 /** Ask Claude for an adapter for this folder and save it (it is listed in Default Configuration with its code open to read). Called again with `instruction` and the last `errors`, it rewrites the draft it saved last time under the same id: the loop is the person's prompting until the structure validates. Needs the Anthropic key from Settings. */
-export async function draft(sourceDir: string, opts: DraftOptions = {}): Promise<{ adapter: AdapterInfo; model: string; valid: boolean; errors: string[] }> {
+export async function draft(sourceDir: string, opts: DraftOptions = {}): Promise<{ adapter: AdapterInfo; model: string; valid: boolean; errors: string[]; ignored: number }> {
   if (!settings.lookup('ANTHROPIC_API_KEY')) throw bad('No Anthropic API key: set it in Default Configuration, or write the adapter with your own coding agent (adapter_spec)')
   const pv = draftPreview(sourceDir)
   const id = opts.id || `draft-${basename(pv.source).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'folder'}`
@@ -306,14 +306,17 @@ export async function draft(sourceDir: string, opts: DraftOptions = {}): Promise
   if (opts.instruction?.trim()) parts.push('# What the person asks of you', opts.instruction.trim().slice(0, 4000))
   parts.push(`Write the complete adapter with id "${id}". Map this format onto the ComfyUI-Shared structure.`)
   const { text, model } = await askClaude(DRAFT_SYSTEM, parts.join('\n\n'), 8000, opts)
-  const code = /```(?:javascript|js|mjs)?\s*\n([\s\S]*?)```/.exec(text)?.[1] ?? text
+  // The rule (docs/ADR-008, .claude/rules/claude-writes-adapters-only.md): Claude's reply can become ONE file, <adapters>/<id>.mjs, the id
+  // chosen here and never read from the reply. Any other code block, file name or instruction in the reply is dropped and counted.
+  const blocks = [...text.matchAll(/```[a-z]*\s*\n([\s\S]*?)```/g)].map((m) => m[1])
+  const code = blocks[0] ?? text
   if (!/export\s+default/.test(code)) throw bad('The reply did not contain an adapter module (no export default)')
   const errors = validateSource(code, id)
-  return { adapter: await save(id, code), model, valid: errors.length === 0, errors }
+  return { adapter: await save(id, code), model, valid: errors.length === 0, errors, ignored: Math.max(0, blocks.length - 1) }
 }
 
 /** The prompt that writes a shot pack's description when a folder is attached (docs/ADR-008, decision 11). */
-export const DESCRIBE_SYSTEM = 'You describe delivery packages ("shot packs") of ComfyUI work for a VFX pipeline operator who is about to import one. Write 3 to 6 plain sentences, no headings, no lists, no markdown. Say what the pack is (which film or job, who it is for, when it was built), which shots it holds and what each shot is, what kinds of files it carries (inputs the graphs load, workflows, node packs, finals, provenance), what the graphs need to run (ComfyUI version, node packs, provider keys), and anything the READMEs flag as open, failing or pending. Use only what the material below says; if something is not in it, do not guess. Do not invent file names or numbers.'
+export const DESCRIBE_SYSTEM = 'You write text only, never files or code. You describe delivery packages ("shot packs") of ComfyUI work for a VFX pipeline operator who is about to import one. Write 3 to 6 plain sentences, no headings, no lists, no markdown. Say what the pack is (which film or job, who it is for, when it was built), which shots it holds and what each shot is, what kinds of files it carries (inputs the graphs load, workflows, node packs, finals, provenance), what the graphs need to run (ComfyUI version, node packs, provider keys), and anything the READMEs flag as open, failing or pending. Use only what the material below says; if something is not in it, do not guess. Do not invent file names or numbers.'
 
 /** A short description of the shot pack in this folder, written by Claude from the folder\'s names and its small READMEs and manifests (the same material draftPreview shows; no media). */
 export async function describe(sourceDir: string, opts: AskOptions = {}): Promise<{ description: string; model: string; sent: { files: number; dirs: number; texts: string[] } }> {

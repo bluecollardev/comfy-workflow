@@ -336,7 +336,7 @@ export async function mockApi(page, state) {
       state.imports.drafts = [...(state.imports.drafts || []), body]
       state.imports.draftPlanError = null
       const step = (state.imports.draftScript || [{ valid: true, errors: [] }])[Math.min(state.imports.drafts.length, (state.imports.draftScript || [1]).length) - 1]
-      return json({ adapter: a, model: 'claude-sonnet-5-5', valid: step.valid, errors: step.errors })
+      return json({ adapter: a, model: 'claude-sonnet-5-5', valid: step.valid, errors: step.errors, ignored: step.ignored || 0 })
     }
     if (method === 'POST' && path === '/imports/sync-after') {
       state.imports.syncAfterCalls = [...(state.imports.syncAfterCalls || []), body.pod_id]

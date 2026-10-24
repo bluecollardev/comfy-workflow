@@ -141,6 +141,7 @@ test.describe('Import Shot Pack › Write an adapter with Claude', () => {
     await dialog.getByTestId('import-folder').fill(PKG)
     await dialog.getByTestId('import-claude').click()
     const ask = modal(page, t('import.claudeTitle'))
+    await expect(ask.getByTestId('import-claude-rule')).toContainText(t('import.claudeRule'))
     await expect(ask.getByTestId('import-claude-counts')).toContainText('120')
     await expect(ask.getByTestId('import-claude-text')).toHaveCount(2)
     await expect(ask.getByTestId('import-claude-text').nth(1)).toContainText(t('import.claudeBytes', { sent: 12288, bytes: 40000 }))
@@ -152,6 +153,7 @@ test.describe('Import Shot Pack › Write an adapter with Claude', () => {
     expect(api.state.imports.drafts[0]).toMatchObject({ source: PKG, instruction: 'the graphs are under comfy/workflows' })
     await expect(dialog.getByTestId('import-draft-id')).toHaveText('draft-package')
     await expect(dialog.getByTestId('import-draft-structure')).toHaveText(t('import.draftStructureOk'))
+    await expect(dialog.getByTestId('import-draft-ignored')).toHaveCount(0)
     await expect(dialog.getByTestId('import-draft-tested')).toHaveText(t('import.draftNotTested'))
     await expect(dialog.getByTestId('import-draft-test')).toBeEnabled()   // no approval step: it can be tested on the folder straight away
   })
@@ -348,5 +350,17 @@ test.describe('Import Shot Pack › sync after the import', () => {
     await dialog.getByTestId('import-dry').click()
     await expect(dialog.getByTestId('import-result')).toHaveAttribute('data-dry', 'true')
     expect(api.state.imports.syncAfterCalls || []).toEqual([])
+  })
+})
+
+test.describe('Import Shot Pack › Claude writes adapters only', () => {
+  test('extra blocks in Claude\'s reply are dropped and the draft says so', async ({ page, api }) => {
+    api.state.settings = { ...api.state.settings, anthropic_key_set: true, anthropic_key_hint: '••••WXYZ' }
+    api.state.imports.draftScript = [{ valid: true, errors: [], ignored: 2 }]
+    const dialog = await openImport(page, api)
+    await dialog.getByTestId('import-folder').fill(PKG)
+    await dialog.getByTestId('import-claude').click()
+    await modal(page, t('import.claudeTitle')).getByTestId('import-claude-send').click()
+    await expect(dialog.getByTestId('import-draft-ignored')).toHaveText(t('import.draftIgnored', { n: 2 }))
   })
 })
