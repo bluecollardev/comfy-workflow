@@ -3,6 +3,16 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## 2026-10-24 (import adapters)
+
+### A package folder goes into ComfyUI-Shared through an adapter (branch `feature/import-adapters`; `docs/ADR-008-import-adapters.md`, `docs/IMPORT-ADAPTERS.md`, `docs/PLAN-IMPORT-ADAPTERS.md`)
+- Lucas: "i want to have a package uploader tailored to that spec. imports should have adapters ... AI to write adapters (mjs) that can be hot loaded". **An adapter is an `.mjs` that plans; the app applies.** `detect()` and `plan()` run in a child of the app's own executable under Node's `--permission` (read access to the source folder only; no writes, no child processes; the network is not blocked). Its ops are data, checked (no `..`, no absolute paths, only `input/ workflows/ models/ node-packs/`, source links cannot lead out) and applied by `libs/core/src/imports.ts`: copy (cloned where the disk can, sha256 checked first), link, verify, note, placeholder; never deletes; a differing existing file is a conflict unless Replace is on; dry run first; a record of each import.
+- **Built-in adapters:** `comfy-shared` and `panama-imax-redux` (Kyle's delivery packages: `comfy/input` to `input/` unchanged, workflows to `workflows/panama-imax-redux/<round>/`, packs to `node-packs/panama-imax-redux/<pack>/`, everything else left in place; each copy carries its manifest hash). **Yours** are `*.mjs` in `~/.config/runpod-pod-manager/adapters/`, shown with their source and sha256 and run only after you approve them; a changed file asks again.
+- **Four ways in:** `./start.sh import <folder> [--adapter] [--dry-run] [--overwrite] [--list|--show|--approve]`; Connect > Import (folder, plan by kind, findings, Fenced badge, Dry run, Import, adapters with Read and approve); five MCP tools for a coding agent (`adapter_spec`, `adapters_list`, `adapter_save`, `import_plan`, `import_apply`; no tool approves); the `imports` IPC namespace.
+- **Write an adapter with Claude:** an optional Anthropic key in Default Configuration; the action shows what would be sent (spec, folder names with counts, a name sample, up to four small READMEs/manifests, no media), sends only on confirm, saves the reply unapproved and opens it for reading.
+- Decisions: import locally then Sync (no import onto a running pod); workflows and packs namespaced by project, inputs not (the graphs' own `shots/<shot>/` paths).
+- Verified: core suite 134 (the fence refuses reads outside, writes and spawns; hash mismatch refuses that file; tampered plans rejected), MCP tests, IPC table, 10 browser specs for the tab, 3 specs in the real app (fenced plan, import onto disk, approve your own adapter), `./start.sh test` green. **On the real packages:** the five Drive parts merged (comfy, nodes and manifests only, in a scratch folder) import 84 files / 1.0 GB with every hash checked, none missing from or unlisted in the manifests; parts alone import too but cgi-042 and creature-266 have no manifest in the first part, so their files copy without a hash check. Nothing was written to `~/ComfyUI-Shared` or the mirror.
+
 ## 2026-10-22 (MCP in the app)
 
 ### The MCP servers run on the app's own executable and can be served from inside the app (branch `worktree-agent-a9d7e1a47b1bbb175`)

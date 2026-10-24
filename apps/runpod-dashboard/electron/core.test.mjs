@@ -16,7 +16,7 @@ const EXPECTED = {
   git: ['accounts', 'disconnect', 'repos', 'connect'],
   repositories: ['list', 'add', 'remove', 'search', 'branches', 'folders'],
   images: ['env', 'dockerfile'],
-  imports: ['list', 'detect', 'plan', 'apply', 'approve', 'source', 'save', 'spec'],
+  imports: ['list', 'detect', 'plan', 'apply', 'approve', 'source', 'save', 'spec', 'draftPreview', 'draft'],
   mcp: ['endpoints', 'targets', 'probe', 'serve'],
 }
 for (const [ns, fns] of Object.entries(EXPECTED)) {

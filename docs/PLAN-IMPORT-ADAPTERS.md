@@ -1,6 +1,6 @@
 # Plan: building import adapters
 
-**Status:** plan, 2026-10-24. Nothing below is built yet. Decisions are in
+**Status:** COMPLETE, 2026-10-24: all six phases built and tested on `feature/import-adapters` (not merged or pushed). Results are at the end. Decisions are in
 `docs/ADR-008-import-adapters.md`; the adapter contract is `docs/IMPORT-ADAPTERS.md`.
 Branch: `feature/import-adapters` (cut from `fix/session-fixes`, which is `develop` plus
 the delivery docs commits; merges to `develop` with `--no-ff` once `./start.sh test` is green).
@@ -19,7 +19,7 @@ the delivery docs commits; merges to `develop` with `--no-ff` once `./start.sh t
   executor hashes the source before writing and refuses a mismatch. That replaces the
   separate whole-manifest verify (hashing 14 GB of finals that are not being copied would
   be wasted). `verify` stays as an op for a file left in place.
-- **Node packs are staged, not installed:** `node-packs/<pack>/` under ComfyUI-Shared (the
+- **Node packs are staged, not installed:** `node-packs/<project>/<pack>/` under ComfyUI-Shared (the
   `-vN` dropped). The image links packs from its own sources (ADR-006), so a staged pack
   is a finding ("this graph needs pack X; staged at …"), not a live install.
 - **The permission fence runs on the dev machine's Node 22.22 and the app's Node 24.22**
@@ -31,7 +31,7 @@ the delivery docs commits; merges to `develop` with `--no-ff` once `./start.sh t
 
 Each phase ends green (`./start.sh test`) and is its own commit.
 
-### 1. The core: types, executor, runner (no UI)
+### 1. The core: types, executor, runner (no UI)  [x] done
 
 - `libs/core/src/adapter-types.ts`: `Op`, `Finding`, `Plan`, `AdapterInfo`, the `ctx` shape.
 - `libs/core/src/adapter-runner.ts`: the child-process entry. Imports one adapter file,
@@ -64,7 +64,7 @@ Each phase ends green (`./start.sh test`) and is its own commit.
   a hostile adapter (reads outside, writes, spawns) is refused by the fence, and the test
   skips the fence assertions where the Node lacks `--permission`.
 
-### 2. CLI and IPC
+### 2. CLI and IPC  [x] done
 
 - `./start.sh import <folder> [--adapter <id>] [--dry-run] [--overwrite] [--to <dir>]`
   (default target: the mapped ComfyUI-Shared; refuses when it is unmapped). Prints the
@@ -73,7 +73,7 @@ Each phase ends green (`./start.sh test`) and is its own commit.
 - IPC namespace `imports` in `electron/core.cjs` (`list`, `detect`, `plan`, `apply`,
   `approve`); `core.test.mjs` pins it.
 
-### 3. MCP tools (so a coding agent can write adapters)
+### 3. MCP tools (so a coding agent can write adapters)  [x] done
 
 On the pod-manager server (`mcp/server.mjs`, then re-bundled): `adapter_spec` (returns
 `docs/IMPORT-ADAPTERS.md` and the target structure), `adapter_save` (validates the module
@@ -82,7 +82,7 @@ folder), `adapters_list`, `import_plan`, `import_apply` (apply needs the approva
 been given in the app or CLI, not by the agent). Tests alongside the existing MCP node
 tests.
 
-### 4. The UI
+### 4. The UI  [x] done
 
 - Connect ▸ Import (or a button on the ComfyUI-Shared mount row): pick a folder, see the
   detected adapter, the plan by kind with counts and sizes, the findings, `fenced` badge,
@@ -91,7 +91,7 @@ tests.
 - Strings in `src/locales/en.json`, `data-testid` locators, Playwright specs against the
   fake API in `e2e/fixtures.js`, and the Electron no-spend spec.
 
-### 5. The Claude key setting and "write an adapter with Claude"
+### 5. The Claude key setting and "write an adapter with Claude"  [x] done
 
 - Settings: an optional Anthropic key beside the RunPod keys (`settings.ts` `KEYS`,
   stored in the same `.env`, shown as set plus last four). Reads of this setting are the
@@ -101,7 +101,7 @@ tests.
   the reply as an unapproved draft adapter, and runs the dry run. Tested against a faked
   model reply; no live call in the suite.
 
-### 6. Real folders, docs, merge
+### 6. Real folders, docs, merge  [x] done
 
 - Run the `panama-imax-redux` adapter dry-run on the real first package and on the 5 parts
   (`projects/test/`), read-only, into a scratch target, and compare counts with the
@@ -118,6 +118,35 @@ volume; running any graph; merging the five Drive parts into one folder (the ada
 a merged folder or a single part); a CANALV2 adapter (Binc's tree is read in place; add
 when the mapping is settled); an OS sandbox for the network gap (ADR-008, open point 2);
 signing or packaging changes.
+
+## Result (2026-10-24)
+
+| Phase | Done as | Where |
+|---|---|---|
+| 1 core | runner and the two built-ins are plain `.mjs` in `libs/core/runtime/` (copied into `dist/runtime` by `core:build`, so they run from source and from the packaged app); `imports.ts` lists, detects, plans (fenced), validates and applies | `libs/core/src/imports.ts`, `libs/core/runtime/`, `libs/core/tests/imports.test.ts` (20 tests) |
+| 2 CLI, IPC | `./start.sh import`; `imports` namespace (list, detect, plan, apply, approve, source, save, spec, draftPreview, draft) | `cli/index.mjs`, `electron/core.cjs`, `core.test.mjs` |
+| 3 MCP | `adapter_spec`, `adapters_list`, `adapter_save`, `import_plan`, `import_apply`; no approve tool | `mcp/server.mjs`, `docs/MCP-ENDPOINTS.md` |
+| 4 UI | Connect > Import tab | `ImportPane.vue`, `stores/imports.js`, `e2e/import.spec.js` (10), `e2e-electron/import.spec.js` (3) |
+| 5 Claude | Anthropic key in Default Configuration; preview then send; draft saved unapproved | `settings.ts`, `ConfigModal.vue`, `imports.ts` |
+| 6 real folders, docs | see below | CHANGELOG, ADR-008, `IMPORT-ADAPTERS.md` |
+
+Decisions taken on the three open questions: the Claude key is the in-app adapter-writing key
+(the `placeholder` op also exists for a pack's own `config.ini`); the entry is Connect > Import;
+packs are staged under `node-packs/<project>/<pack>/`, and workflows under
+`workflows/<project>/<round>/` (Lucas asked for a project namespace; inputs cannot take one).
+
+What the real packages showed, and what changed because of it:
+- Two of the five Drive parts were not recognised (no manifest in them): detection now also
+  accepts a shot folder with `comfy/input`, `comfy/workflows` or `nodes/`.
+- Parts of one round landed under different workflow folders (`... 2`, `... 4`): the round name
+  now drops the " N" Drive adds.
+- Merged, the five parts import 84 files (1.0 GB) with every hash checked and nothing missing
+  or unlisted. Part by part, cgi-042 and creature-266 have no manifest in the first part, so
+  those files copy unchecked (reported as warnings).
+- Same shot id in two projects would collide in `input/`; the app reports a conflict and
+  never overwrites.
+
+Not done, by design: anything in "Out of scope", merging or pushing the branch.
 
 ## Order and size
 

@@ -23,4 +23,18 @@ describe('settings', () => {
     expect(settings.set({ runpod_api_key: null }).runpod_api_key_set).toBe(false)
     expect(process.env.RUNPOD_API_KEY).toBeUndefined()
   })
+
+  it('stores the optional Anthropic key like the others: hint only, in the .env, in the environment, removable', () => {
+    delete process.env.ANTHROPIC_API_KEY
+    expect(settings.get()).toMatchObject({ anthropic_key_set: false, anthropic_key_hint: '' })
+    expect(() => settings.set({ anthropic_api_key: 'short' })).toThrow(/does not look like an Anthropic/)
+    const r = settings.set({ anthropic_api_key: 'sk-ant-api03-0123456789ABCDWXYZ' })
+    expect(r).toMatchObject({ anthropic_key_set: true, anthropic_key_hint: '••••WXYZ' })
+    expect(JSON.stringify(r)).not.toContain('0123456789')
+    expect(process.env.ANTHROPIC_API_KEY).toBe('sk-ant-api03-0123456789ABCDWXYZ')
+    expect(readFileSync(join(dir, '.env'), 'utf8')).toContain('ANTHROPIC_API_KEY=sk-ant-api03-0123456789ABCDWXYZ')
+    expect(settings.set({ anthropic_api_key: '' }).anthropic_key_set).toBe(true)   // empty leaves it alone
+    expect(settings.set({ anthropic_api_key: null }).anthropic_key_set).toBe(false)
+    expect(process.env.ANTHROPIC_API_KEY).toBeUndefined()
+  })
 })

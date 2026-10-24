@@ -102,6 +102,8 @@ const TABLE = {
     source: (c, id) => c.imports.source(id),
     save: (c, id, text) => c.imports.save(id, text),
     spec: (c) => c.imports.spec(),
+    draftPreview: (c, dir) => { const { _texts, ...rest } = c.imports.draftPreview(dir); return rest },
+    draft: (c, dir, id) => c.imports.draft(dir, { id: id || undefined }),
   },
   images: {
     env: (c, params) => c.images.env(params || {}),

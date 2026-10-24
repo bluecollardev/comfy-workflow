@@ -118,6 +118,11 @@ settings, or no-spend mode.
 | `get_configuration` | none | the Default Configuration: folders mapped, volume, datacenter, image, idle stop, mode | |
 | `sync` | `pod_id`, `direction` (`push`/`pull`), `only` (folders), `plates`, `approved_by` | starts the copy in the app's job runner and returns the plan and transport; `sync_status` follows it | plates: named yes |
 | `sync_status` | `pod_id` | folder N of M, percent, files, errors, done | |
+| `adapter_spec` | none | the spec for writing an import adapter (`docs/IMPORT-ADAPTERS.md`) | |
+| `adapters_list` | none | the import adapters, built-in and the user's own, with whether each is approved | |
+| `adapter_save` | `id`, `source` | saves the module unapproved after a syntax check; never runs it | a person approves it (`./start.sh import --approve <id>` or the app); there is no tool for that |
+| `import_plan` | `source`, `adapter` (optional) | which adapter recognises the folder, what it would copy where in ComfyUI-Shared by kind, findings; writes nothing | the adapter must be approved |
+| `import_apply` | `source`, `adapter`, `dry_run` (default true), `overwrite` | imports into this PC's ComfyUI-Shared; never deletes; a differing file is a conflict unless `overwrite` | the adapter must be approved |
 | `cost_now` | none | running pods' price per hour summed, volumes' cost per month | |
 
 ## 2. ComfyUI bridge — `mcp/comfy-bridge.mjs`

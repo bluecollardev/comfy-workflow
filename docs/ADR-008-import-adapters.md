@@ -1,7 +1,7 @@
 # ADR-008: Packages come in through adapters; adapters are modules the app hot-loads
 
 **Date:** 2026-10-24
-**Status:** Proposed (Lucas asked for it, 2026-10-24; import-locally-then-sync decided the same day). Nothing here is built. Open points are at the end.
+**Status:** Accepted for the build (Lucas asked for it, 2026-10-24; import-locally-then-sync decided the same day). Built on `feature/import-adapters` per `docs/PLAN-IMPORT-ADAPTERS.md`. Open points are at the end.
 **Owner:** Lucas (Blue Collar Dev)
 **Extends:** ADR-005 (the app on one PC, TypeScript core), ADR-007 (the volume and sync), `docs/MOUNT-POINTS.md`.
 **Spec for writers of adapters:** `docs/IMPORT-ADAPTERS.md`.
@@ -43,7 +43,7 @@ is never edited (contract §5.2; `.claude/rules/binc-tree.md` for Binc's tree).
    wrote.
 3. **Built-in adapters ship with the app:** `comfy-shared` (a folder already in the
    structure), and `panama-imax-redux` (Kyle's delivery packages: `comfy/input` to
-   `input/` with `shots/<shot>/` kept; `comfy/workflows` to `workflows/<round>/`;
+   `input/` with `shots/<shot>/` kept; `comfy/workflows` to `workflows/<project>/<round>/`;
    `nodes/<pack>-vN` to the pack folders without `-vN`; every file checked against the
    `MANIFEST.json` sha256 first; `final/`, `approved/`, `provenance/` left where they are
    and recorded as references, not copied). A CANALV2 adapter follows when its mapping is
@@ -76,7 +76,13 @@ is never edited (contract §5.2; `.claude/rules/binc-tree.md` for Binc's tree).
    it would put the adapter's work on a billing machine, duplicate the sync's progress,
    resume and idle-hold logic, and leave no local copy to check or redo. The same dry run
    and record serve both steps.
-9. **Leaving the machine is not an import step.** An import fills the local ComfyUI-Shared
+9. **Namespaces (Lucas, 2026-10-24: "under its own project namespace?").** Workflows
+   and staged node packs go under the adapter's own project folder
+   (`workflows/<project>/<round>/`, `node-packs/<project>/<pack>/`). Inputs stay at
+   `input/shots/<shot>/...` because the graphs load them by those relative paths and the
+   package is not to be edited; the shot id is their only namespace, and a differing
+   file already there is a conflict, never overwritten.
+10. **Leaving the machine is not an import step.** An import fills the local ComfyUI-Shared
    (or, with `--s3`, goes through the existing sync). Pushing to a volume stays the
    sync's job, with its existing rules: plates and other client material only with Binc's
    named yes, USD 100 cap, nothing sent without a person's go.

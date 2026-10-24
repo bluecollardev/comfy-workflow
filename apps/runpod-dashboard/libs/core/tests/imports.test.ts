@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import * as im from '../src/imports.js'
@@ -13,8 +13,8 @@ const sha = (s: string) => createHash('sha256').update(s).digest('hex')
 const put = (root: string, rel: string, text: string) => { mkdirSync(dirname(join(root, rel)), { recursive: true }); writeFileSync(join(root, rel), text) }
 
 /** A delivery package in the real shape: <shot>/comfy/{input,workflows}, <shot>/nodes/<pack>-vN, final/approved left alone, a manifest with real hashes. */
-function pkg(base: string, opts: { manifest?: boolean; skip?: string[]; extra?: boolean } = {}) {
-  const root = join(base, 'brynley-comfy-2026-10-20')
+function pkg(base: string, opts: { manifest?: boolean; skip?: string[]; extra?: boolean; folder?: string } = {}) {
+  const root = join(base, opts.folder || 'brynley-comfy-2026-10-20')
   const files: Record<string, string> = {
     'shotA/comfy/input/shots/shotA/01-look-dev/Approved/ref.png': 'PNG-ref',
     'shotA/comfy/input/shots/shotA/05-outputs/Approved/master/a.mov': 'MOV-final',
@@ -74,8 +74,8 @@ describe('the delivery package adapter', () => {
     const p = await im.plan(pkg(dir))
     const to = (k: string) => p.ops.filter((o) => o.kind === k && o.op === 'copy').map((o) => o.to).sort()
     expect(to('input')).toEqual(['input/shots/shotA/01-look-dev/Approved/ref.png', 'input/shots/shotA/05-outputs/Approved/master/a.mov'])
-    expect(to('workflow')).toEqual(['workflows/brynley-comfy-2026-10-20/shotA-graph-v01.json', 'workflows/brynley-comfy-2026-10-20/shotA-graph-v01_api.json'])
-    expect(to('node-pack')).toEqual(['node-packs/ComfyUI-Pack/__init__.py'])
+    expect(to('workflow')).toEqual(['workflows/panama-imax-redux/brynley-comfy-2026-10-20/shotA-graph-v01.json', 'workflows/panama-imax-redux/brynley-comfy-2026-10-20/shotA-graph-v01_api.json'])
+    expect(to('node-pack')).toEqual(['node-packs/panama-imax-redux/ComfyUI-Pack/__init__.py'])
     expect(p.ops.filter((o) => o.op === 'note').map((o) => o.note)).toEqual(expect.arrayContaining(['shotA/final: 1 files left in place', 'shotA/approved: 1 files left in place']))
     expect(p.ops.every((o) => o.op !== 'copy' || /^[0-9a-f]{64}$/.test(o.sha256 || ''))).toBe(true)
     expect(p.summary.copies).toBe(5)
@@ -92,6 +92,16 @@ describe('the delivery package adapter', () => {
     expect(p.ops.some((o) => o.to?.endsWith('stray.txt'))).toBe(false)
   }, 30000)
 
+  it('recognises a Drive part that came without any manifest, and files its workflows under the round, not under the part\'s " 2"', async () => {
+    const part = pkg(dir, { manifest: false, folder: 'brynley-comfy-2026-10-20 2' })
+    rmSync(join(part, 'MANIFEST.json'))
+    expect((await im.detect(part))[0]).toMatchObject({ id: 'panama-imax-redux', match: 1 })
+    const p = await im.plan(part)
+    expect(p.ops.filter((o) => o.kind === 'workflow').every((o) => o.to!.startsWith('workflows/panama-imax-redux/brynley-comfy-2026-10-20/'))).toBe(true)
+    expect(p.ops.filter((o) => o.op === 'copy').every((o) => o.sha256 === undefined)).toBe(true)   // no manifest here, so nothing to check against
+    expect(p.findings.map((f) => f.text).join('\n')).toMatch(/no MANIFEST.json, so no hashes/)
+  }, 30000)
+
   it('copies into ComfyUI-Shared with paths kept, changes nothing in the source, and a second apply finds everything the same', async () => {
     const root = pkg(dir); const target = join(dir, 'ComfyUI-Shared')
     const before = readdirSync(root, { recursive: true }).sort()
@@ -99,8 +109,8 @@ describe('the delivery package adapter', () => {
     const first = await im.apply(p, { target })
     expect(first.ok).toBe(true); expect(first.counts.copied).toBe(5)
     expect(readFileSync(join(target, 'input/shots/shotA/05-outputs/Approved/master/a.mov'), 'utf8')).toBe('MOV-final')
-    expect(existsSync(join(target, 'workflows/brynley-comfy-2026-10-20/shotA-graph-v01.json'))).toBe(true)
-    expect(existsSync(join(target, 'node-packs/ComfyUI-Pack/__init__.py'))).toBe(true)
+    expect(existsSync(join(target, 'workflows/panama-imax-redux/brynley-comfy-2026-10-20/shotA-graph-v01.json'))).toBe(true)
+    expect(existsSync(join(target, 'node-packs/panama-imax-redux/ComfyUI-Pack/__init__.py'))).toBe(true)
     expect(readdirSync(target).sort()).toEqual(['input', 'node-packs', 'workflows'])   // not final/, approved/ or the manifest
     expect(readdirSync(root, { recursive: true }).sort()).toEqual(before)
     expect(first.record && existsSync(first.record)).toBe(true)
@@ -129,7 +139,7 @@ describe('the delivery package adapter', () => {
     writeFileSync(join(root, 'shotA/comfy/workflows/shotA-graph-v01.json'), '{"nodes":["tampered"]}')
     const r = await im.apply(p, { target })
     expect(r.ok).toBe(false); expect(r.counts['hash-mismatch']).toBe(1); expect(r.counts.copied).toBe(4)
-    expect(existsSync(join(target, 'workflows/brynley-comfy-2026-10-20/shotA-graph-v01.json'))).toBe(false)
+    expect(existsSync(join(target, 'workflows/panama-imax-redux/brynley-comfy-2026-10-20/shotA-graph-v01.json'))).toBe(false)
   }, 30000)
 })
 
@@ -184,5 +194,46 @@ describe('what the app enforces whatever an adapter says', () => {
     const row = (await im.list()).find((r) => r.id === 'mine')!
     expect(row.approved).toBe(true)
     await expect(im.plan(join(dir), 'mine')).rejects.toThrow(/detect|plan/)
+  }, 30000)
+})
+
+describe('writing an adapter with Claude', () => {
+  const reply = (code: string) => ({ ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'Here you go:\n```javascript\n' + code + '\n```' }] }) }) as unknown as Response
+  beforeEach(() => { process.env.SETTINGS_ENV_FILE = join(dir, '.env'); delete process.env.ANTHROPIC_API_KEY })
+
+  it('needs the Anthropic key from Settings, and says where to set it', async () => {
+    await expect(im.draft(pkg(dir))).rejects.toThrow(/No Anthropic API key/)
+  }, 20000)
+
+  it('previews exactly what would be sent: folder counts, a name sample and small text files, never file contents', () => {
+    const p = im.draftPreview(pkg(dir))
+    expect(p.total_files).toBeGreaterThan(5)
+    expect(p.dirs.map((d) => d.path)).toEqual(expect.arrayContaining(['shotA', 'shotA/comfy', 'shotA/comfy/input']))
+    expect(p.texts.map((t) => t.path)).toContain('MANIFEST.json')
+    expect(JSON.stringify(p)).not.toContain('MOV-final')   // the media files' bytes are not in it
+  })
+
+  it('sends the key, the spec, the listing and the manifest to the API, saves the reply unapproved', async () => {
+    process.env.ANTHROPIC_API_KEY = 'sk-ant-api03-TESTTESTTESTTESTTEST'
+    let seen: { url: string; headers: Record<string, string>; body: { model: string; messages: { content: string }[] } } | null = null
+    const fetchImpl = (async (url: string, init: { headers: Record<string, string>; body: string }) => { seen = { url, headers: init.headers, body: JSON.parse(init.body) }; return reply(OK_ADAPTER()) }) as unknown as typeof fetch
+    const r = await im.draft(pkg(dir), { fetchImpl })
+    expect(seen!.url).toBe('https://api.anthropic.com/v1/messages')
+    expect(seen!.headers['x-api-key']).toBe('sk-ant-api03-TESTTESTTESTTESTTEST')
+    const sent = seen!.body.messages[0].content
+    expect(sent).toContain('# Import adapters'); expect(sent).toContain('shotA/comfy/input'); expect(sent).toContain('"for":"Brynley"')
+    expect(sent).not.toContain('MOV-final'); expect(sent).not.toContain('BIG-FINAL')
+    expect(r.adapter).toMatchObject({ id: 'draft-brynley-comfy-2026-10-20', approved: false, builtin: false })
+    expect(existsSync(join(adaptersDir(), 'draft-brynley-comfy-2026-10-20.mjs'))).toBe(true)
+    await expect(im.plan(pkg(join(dir, 'x')), 'draft-brynley-comfy-2026-10-20')).rejects.toThrow(/not been approved/)   // never runs before a person approves
+  }, 30000)
+
+  it('reports an API error and a reply with no module', async () => {
+    process.env.ANTHROPIC_API_KEY = 'sk-ant-api03-TESTTESTTESTTESTTEST'
+    const root = pkg(dir)
+    const fail = (async () => ({ ok: false, status: 401, json: async () => ({ error: { message: 'invalid x-api-key' } }) })) as unknown as typeof fetch
+    await expect(im.draft(root, { fetchImpl: fail })).rejects.toThrow(/Anthropic answered 401: invalid x-api-key/)
+    const prose = (async () => ({ ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'I cannot do that.' }] }) })) as unknown as typeof fetch
+    await expect(im.draft(root, { fetchImpl: prose })).rejects.toThrow(/did not contain an adapter module/)
   }, 30000)
 })

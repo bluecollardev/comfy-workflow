@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url'
 import { bad } from './errors.js'
 import { REPO_ROOT, adaptersDir, approvalsFile, importsDir } from './paths.js'
 import * as mounts from './mounts.js'
+import * as settings from './settings.js'
 
 export type OpName = 'copy' | 'link' | 'verify' | 'note' | 'placeholder'
 export type OpKind = 'input' | 'workflow' | 'model' | 'node-pack' | 'reference' | 'manifest'
@@ -171,6 +172,73 @@ function existingDir(p: string): string {
   if (!p || !isAbsolute(p)) throw bad('the source folder must be an absolute path')
   if (!existsSync(p) || !statSync(p).isDirectory()) throw bad(`not a folder: ${p}`)
   return realpathSync(p)
+}
+
+// ----- writing an adapter with Claude (docs/ADR-008, decision 7) -----
+
+export interface DraftPreview { source: string; total_files: number; dirs: { path: string; files: number }[]; sample: string[]; texts: { path: string; bytes: number; sent_bytes: number }[]; spec_bytes: number }
+const TEXT_NAME = /(^|\/)(README[^/]*|MANIFEST\.json|00_READ_ME[^/]*|01_PATHS[^/]*|[^/]*SETUP[^/]*\.md|[^/]*GUIDE[^/]*\.md|[^/]*CONTRACT[^/]*\.md)$/i
+const MAX_TEXT = 12 * 1024, MAX_TEXTS = 4, MAX_SCAN = 200000
+
+function scanFolder(root: string) {
+  const files: { path: string; bytes: number }[] = []
+  const walk = (d: string) => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      if (files.length >= MAX_SCAN) return
+      const full = join(d, e.name)
+      if (e.isDirectory()) walk(full)
+      else if (e.isFile()) files.push({ path: full.slice(root.length + 1).split(sep).join('/'), bytes: statSync(full).size })
+    }
+  }
+  walk(root)
+  return files
+}
+
+/** What would be sent to the model: folder names with file counts (three levels), a sample of file names, and a few small text files (README, manifest) cut to 12 KB. Never media, never anything else. */
+export function draftPreview(sourceDir: string): DraftPreview & { _texts: { path: string; text: string }[] } {
+  const root = existingDir(sourceDir)
+  const files = scanFolder(root)
+  const dirs = new Map<string, number>()
+  for (const f of files) { const parts = f.path.split('/').slice(0, -1); for (let n = 1; n <= Math.min(3, parts.length); n++) { const k = parts.slice(0, n).join('/'); dirs.set(k, (dirs.get(k) || 0) + 1) } }
+  const texts = files.filter((f) => TEXT_NAME.test(f.path) && f.path.split('/').length <= 2 && f.bytes > 0 && f.bytes <= 4 * 1024 * 1024).slice(0, MAX_TEXTS)
+  const _texts = texts.map((f) => ({ path: f.path, text: readFileSync(join(root, f.path), 'utf8').slice(0, MAX_TEXT) }))
+  const step = Math.max(1, Math.floor(files.length / 60))
+  return {
+    source: root, total_files: files.length,
+    dirs: [...dirs.entries()].sort().slice(0, 200).map(([path, n]) => ({ path, files: n })),
+    sample: files.filter((_, i) => i % step === 0).slice(0, 60).map((f) => f.path),
+    texts: texts.map((f, i) => ({ path: f.path, bytes: f.bytes, sent_bytes: _texts[i].text.length })),
+    spec_bytes: spec().length, _texts,
+  }
+}
+
+const DRAFT_SYSTEM = 'You write import adapters for an app that maps a package folder onto a ComfyUI-Shared structure. Reply with ONE complete ES module (.mjs) in a single ```javascript code block and nothing else. Follow the spec exactly: default-export { id, name, version, detect(root, ctx), plan(root, ctx) }; use only ctx for reading; return ops as data; never import fs or the network; keep source-relative paths; leave everything else in place and report what you could not place.'
+
+/** Ask Claude for an adapter for this folder and save it, unapproved (a person reads it and approves it before it runs). Needs the Anthropic key from Settings. `fetchImpl` is for tests. */
+export async function draft(sourceDir: string, opts: { id?: string; model?: string; fetchImpl?: typeof fetch } = {}): Promise<{ adapter: AdapterInfo; model: string }> {
+  const key = settings.lookup('ANTHROPIC_API_KEY')
+  if (!key) throw bad('No Anthropic API key: set it in Default Configuration, or write the adapter with your own coding agent (adapter_spec)')
+  const pv = draftPreview(sourceDir)
+  const id = opts.id || `draft-${basename(pv.source).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'folder'}`
+  const model = opts.model || process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5'
+  const user = [
+    '# The adapter spec', spec(),
+    `# The folder to write an adapter for (${pv.total_files} files)`, '## Folders (with file counts)', pv.dirs.map((d) => `${d.path}/  ${d.files} files`).join('\n'),
+    '## A sample of file names', pv.sample.join('\n'),
+    ...pv._texts.flatMap((t) => [`## ${t.path}`, t.text]),
+    `Write the adapter with id "${id}". Map this format onto the ComfyUI-Shared structure.`,
+  ].join('\n\n')
+  const res = await (opts.fetchImpl || fetch)('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model, max_tokens: 8000, system: DRAFT_SYSTEM, messages: [{ role: 'user', content: user }] }),
+  })
+  const body = (await res.json().catch(() => ({}))) as { content?: { type: string; text?: string }[]; error?: { message?: string } }
+  if (!res.ok) throw bad(`Anthropic answered ${res.status}: ${body.error?.message || 'no detail'}`)
+  const text = (body.content || []).filter((c) => c.type === 'text').map((c) => c.text || '').join('\n')
+  const code = /```(?:javascript|js|mjs)?\s*\n([\s\S]*?)```/.exec(text)?.[1] ?? text
+  if (!/export\s+default/.test(code)) throw bad('The reply did not contain an adapter module (no export default)')
+  return { adapter: await save(id, code), model }
 }
 
 // ----- checking a plan -----

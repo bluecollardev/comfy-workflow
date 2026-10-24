@@ -89,6 +89,25 @@ export function defaultState() {
         'comfy-bridge': { ok: false, tools: [], definitions: [], error: 'The server exited (code 2) before answering\nNo ComfyUI answers at https://pod-aaaaaaaa-8188.proxy.runpod.net', ms: 340 },
       },
     },
+    // The Connect › Import tab (docs/ADR-008): the adapters, the plan each known folder gets, and what applying says.
+    imports: {
+      adapters: [
+        { id: 'comfy-shared', name: 'A ComfyUI-Shared folder', version: 1, builtin: true, approved: true, sha256: 'a'.repeat(64), file: '' },
+        { id: 'panama-imax-redux', name: 'Panama Canal v2 delivery package', version: 1, builtin: true, approved: true, sha256: 'b'.repeat(64), file: '' },
+        { id: 'agent-made', name: 'Agent made', version: 1, builtin: false, approved: false, sha256: 'c'.repeat(64), file: '' },
+      ],
+      sources: { 'agent-made': 'export default { id: "agent-made", name: "Agent made" /* ... */ }' },
+      plans: {
+        '/Users/lucas/Projects/package': {
+          adapter: { id: 'panama-imax-redux', name: 'Panama Canal v2 delivery package', version: 1, builtin: true }, source: '/Users/lucas/Projects/package', fenced: true,
+          ops: [{ op: 'copy', kind: 'input', from: 'a', to: 'input/a', bytes: 1000 }],
+          findings: [{ level: 'info', text: 'built on ComfyUI 0.39.2' }, { level: 'warn', text: '3 FalAPI_* node types are used and no fal pack came with this folder' }],
+          summary: { copies: 32, links: 0, notes: 3, bytes: 267700000, by_kind: { input: { files: 30, bytes: 267600000 }, workflow: { files: 2, bytes: 123000 } } },
+        },
+      },
+      conflicts: 0,   // how many files the next real apply reports as conflicts
+      lastApply: null,
+    },
     failures: {},
   }
 }
@@ -181,7 +200,11 @@ export async function mockApi(page, state) {
     let m
     // pods
     if (method === 'GET' && path === '/settings') return json(state.settings)
-    if (method === 'PUT' && path === '/settings') { if (body.runpod_api_key) state.settings = { runpod_api_key_set: true, runpod_api_key_hint: '••••' + body.runpod_api_key.slice(-4), source: '/home/me/.config/runpod-pod-manager/.env' }; return json(state.settings) }
+    if (method === 'PUT' && path === '/settings') {
+      if (body.runpod_api_key) state.settings = { ...state.settings, runpod_api_key_set: true, runpod_api_key_hint: '••••' + body.runpod_api_key.slice(-4), source: '/home/me/.config/runpod-pod-manager/.env' }
+      if (body.anthropic_api_key) state.settings = { ...state.settings, anthropic_key_set: true, anthropic_key_hint: '••••' + body.anthropic_api_key.slice(-4) }
+      return json(state.settings)
+    }
     if (method === 'GET' && path === '/mounts') return json(mountsPayload(state))
     if (method === 'PUT' && path === '/mounts') { state.mounts.config = body; state.mounts.stored = true; return json(mountsPayload(state)) }
     if (method === 'POST' && path === '/mounts/preview') return json(mountsPayload({ ...state, mounts: { ...state.mounts, config: { ...state.mounts.config, ...body } } }))
@@ -289,6 +312,29 @@ export async function mockApi(page, state) {
     if (method === 'GET' && path === '/repos/search') return json({ repos: filterRepos(state.accountRepos, query.q) })
     if (method === 'GET' && path === '/repos/branches') return json(state.branches)
     if (method === 'GET' && path === '/repos/folders') return json({ url: query.url, branch: query.branch, folders: state.folders })
+    // Import (the Connect › Import tab)
+    if (method === 'GET' && path === '/imports/adapters') return json(state.imports.adapters)
+    if (method === 'GET' && path === '/imports/source') { const a = state.imports.adapters.find((x) => x.id === query.id); return a ? json({ id: a.id, sha256: a.sha256, text: state.imports.sources[a.id] || '' }) : json({ detail: `no adapter ${query.id}` }, 400) }
+    if (method === 'GET' && path === '/imports/draft-preview') return json({ source: query.source, total_files: 120, dirs: [{ path: 'shotA', files: 100 }, { path: 'shotA/comfy', files: 40 }], sample: ['shotA/comfy/input/a.png'], texts: [{ path: 'MANIFEST.json', bytes: 2048, sent_bytes: 2048 }, { path: '00_READ_ME.md', bytes: 40000, sent_bytes: 12288 }], spec_bytes: 9000 })
+    if (method === 'POST' && path === '/imports/draft') {
+      if (!state.settings.anthropic_key_set) return json({ detail: 'No Anthropic API key: set it in Default Configuration' }, 400)
+      const a = { id: 'draft-package', name: 'draft-package', version: 1, builtin: false, approved: false, sha256: 'd'.repeat(64), file: '' }
+      state.imports.adapters.push(a); state.imports.sources[a.id] = 'export default { id: "draft-package" }'; state.imports.drafted = body.source
+      return json({ adapter: a, model: 'claude-sonnet-5-5' })
+    }
+    if (method === 'POST' && path === '/imports/approve') { const a = state.imports.adapters.find((x) => x.id === body.id); if (!a) return json({ detail: `no adapter ${body.id}` }, 400); a.approved = true; return json(a) }
+    if (method === 'POST' && path === '/imports/plan') {
+      const a = body.adapter && state.imports.adapters.find((x) => x.id === body.adapter)
+      if (a && !a.approved) return json({ detail: `${a.id} has not been approved (or has changed since): read its source and approve it first` }, 400)
+      const plan = state.imports.plans[body.source]
+      return plan ? json(plan) : json({ detail: `no adapter recognises ${body.source}; write one (docs/IMPORT-ADAPTERS.md) or pick one with --adapter` }, 400)
+    }
+    if (method === 'POST' && path === '/imports/apply') {
+      state.imports.lastApply = body
+      const sm = body.plan.summary, dry = !!body.dryRun, conflict = dry ? 0 : state.imports.conflicts
+      const counts = dry ? { 'would-copy': sm.copies, noted: sm.notes } : { copied: sm.copies - conflict, ...(conflict ? { conflict } : {}), noted: sm.notes }
+      return json({ dry_run: dry, ok: !conflict, counts, results: conflict ? [{ i: 0, status: 'conflict', detail: 'input/a exists and differs' }] : [], record: dry ? null : '/home/me/.config/runpod-pod-manager/imports/2026-10-24-panama-imax-redux.json' })
+    }
     // MCP (the Connect › MCP tab)
     if (method === 'GET' && path === '/mcp/endpoints') return json(mcpEndpoints(state, query.comfy || ''))
     if (method === 'GET' && path === '/mcp/targets') return json(state.mcp.targets)

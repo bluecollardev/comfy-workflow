@@ -1,8 +1,8 @@
 # Import adapters
 
-**Status:** design (ADR-008, 2026-10-24). Nothing here is built. This page is the spec an
-adapter writer works from, human or coding agent; the app will serve the same text to
-agents as a tool result.
+**Status:** built (ADR-008, 2026-10-24; plan in `docs/PLAN-IMPORT-ADAPTERS.md`). This page is the spec an
+adapter writer works from, human or coding agent; the app serves the same text to
+agents (`adapter_spec`). Run it: `./start.sh import <folder> --dry-run`, or Connect > Import.
 
 An **adapter** maps one kind of source folder (a delivery package, a project tree, a
 colleague's zip) onto the **ComfyUI-Shared structure**. It is a single ES module that
@@ -16,10 +16,18 @@ What every adapter lands things in, under the mapped ComfyUI-Shared folder
 | Destination | Holds | Rule |
 |---|---|---|
 | `input/` | files graphs load, by path relative to ComfyUI's input folder | keep source-relative paths; never rename or flatten |
-| `workflows/` | graphs (`.json`, their `_api.json` and inputs manifests beside them) | one subfolder per source/round so rounds do not mix |
+| `workflows/` | graphs (`.json`, their `_api.json` and inputs manifests beside them) | under your project's own folder, then one subfolder per round: `workflows/<project>/<round>/` |
 | `models/` | checkpoints, LoRAs, weights, by ComfyUI's model folders | only when the source carries them |
 | `output/` | what pods write | adapters do not write here |
-| node packs | custom nodes a graph needs | staged as `<pack>/` (drop `-vN`); linked by the image's setup, not into the volume |
+| `node-packs/` | custom nodes a graph needs, staged | `node-packs/<project>/<pack>/` (the `-vN` dropped); staging does not install them, the image links packs from its own sources (ADR-006) |
+
+**Namespaces.** `workflows/` and `node-packs/` are namespaced by project. `input/` is not and
+cannot be: graphs load files by paths relative to ComfyUI's input folder (`shots/<shot>/...`),
+and those paths must not change, so the shot id is the only namespace there. Two projects
+with the same shot id in the same ComfyUI-Shared would write the same paths; the app never
+replaces a differing file (a conflict is reported), so the second import stops at the first
+difference and says so. Binc's ComfyUI-Shared already has `input/shots/cgi-042`, and Kyle's
+packages carry a `cgi-042` too: import into an empty ComfyUI-Shared (or a copy) first.
 
 Anything an adapter finds that does not belong in those (finals, approved renders,
 provenance notes, docs) is **left where it is** and recorded as a `note` or `reference`,
@@ -50,7 +58,7 @@ export default {
         ops.push({ op: 'copy', kind: 'input', from: f.path, to: `input/${f.path.replace(`${shot}/comfy/input/`, '')}`, bytes: f.bytes })
       }
       for (const f of await ctx.list(`${shot}/comfy/workflows`)) {
-        ops.push({ op: 'copy', kind: 'workflow', from: f.path, to: `workflows/${ctx.roundName}/${f.name}`, bytes: f.bytes })
+        ops.push({ op: 'copy', kind: 'workflow', from: f.path, to: `workflows/panama-imax-redux/${ctx.roundName}/${f.name}`, bytes: f.bytes })
       }
     }
     ops.push({ op: 'verify', kind: 'manifest', from: 'MANIFEST.json', note: 'sha256 of every file' })
@@ -74,7 +82,7 @@ to write through it.
 
 ```
 { ops: Op[], findings: Finding[] }
-Op      = { op: 'copy' | 'link' | 'merge' | 'verify' | 'note' | 'placeholder',
+Op      = { op: 'copy' | 'link' | 'verify' | 'note' | 'placeholder',
             kind: 'input' | 'workflow' | 'model' | 'node-pack' | 'reference' | 'manifest',
             from?: string,   // relative to the source
             to?: string,     // relative to the ComfyUI-Shared root
@@ -82,11 +90,13 @@ Op      = { op: 'copy' | 'link' | 'merge' | 'verify' | 'note' | 'placeholder',
 Finding = { level: 'info' | 'warn' | 'problem', text: string, path?: string }
 ```
 
-- `copy`: source file to destination. `link`: the same as a symbolic link, for big files
-  that need not be duplicated on this machine. `merge`: a folder into an existing one,
-  adding files, never replacing.
-- `verify`: check hashes against a manifest before anything is written; a mismatch stops
-  the import.
+- `copy`: source file to destination, cloned on disks that can. With `sha256`, the app
+  hashes the source first and refuses a file whose bytes differ (that file is not
+  written; the others go on and the result is not ok). `link`: the same as a symbolic
+  link, for big files that need not be duplicated on this machine. There is no `merge`:
+  copying each file into an existing folder is the same thing, and an existing different
+  file is a conflict.
+- `verify`: hash a file left in place against a given `sha256`.
 - `note`: something left in place (finals, provenance) that the user should know about.
 - `placeholder`: a file the pack needs that the source cannot ship (a pack's `config.ini`
   provider key): written with a marked placeholder for the user to fill; never a real key.
@@ -137,10 +147,10 @@ first package; see `docs/DELIVERY-PACKAGES.md`):
 | In the package | Goes to |
 |---|---|
 | `<shot>/comfy/input/shots/<shot>/...` | `input/shots/<shot>/...` (unchanged) |
-| `<shot>/comfy/workflows/*.json` (+ `_api`, inputs manifest) | `workflows/<round>/` |
-| `<shot>/nodes/<pack>-vN/` | staged as `<pack>/`; packs the image lacks are findings |
+| `<shot>/comfy/workflows/*.json` (+ `_api`, inputs manifest) | `workflows/panama-imax-redux/<round>/` |
+| `<shot>/nodes/<pack>-vN/` | `node-packs/panama-imax-redux/<pack>/`; packs the image lacks are findings |
 | `final/`, `approved/`, `provenance/`, docs, templates | left in place, noted |
-| `MANIFEST.json` (top level and per shot) | verified first: sha256 of every file |
+| `MANIFEST.json` (per shot; paths are relative to the package root and start with the shot id) | every file copied carries its sha256; a mismatch refuses that file |
 
 Known from the package's own text: workflows may also be dragged onto the canvas; a pack's
 `config.ini` provider key is not shipped (hence `placeholder`); the ComfyUI floor is
@@ -148,6 +158,14 @@ recorded in the manifest (0.39.2 for the 2026-10-20 round, 0.42.1 for 2026-10-23
 
 **`comfy-shared`**: the folder already has `input/`, `models/`, `output/`; the plan is
 `merge`.
+
+## Writing one with Claude from the app
+
+Default Configuration takes an optional Anthropic API key (stored like the RunPod keys).
+With it, Connect > Import has "Write an adapter with Claude": it first shows what would be
+sent (the spec, folder names with file counts, a sample of file names, up to four small
+README/manifest text files cut to 12 KB; never media), and only on Send does it call the
+API. The reply is saved as an unapproved draft and opened for you to read and approve.
 
 ## Not in scope
 

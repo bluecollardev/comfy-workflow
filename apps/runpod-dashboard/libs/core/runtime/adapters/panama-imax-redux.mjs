@@ -1,13 +1,18 @@
 // Built-in adapter: Kyle's delivery packages from panama-imax-redux (scripts/panama-gen/build-brynley-comfy-delivery.py),
 // the format the package's own 01_PATHS_FOR_SETUP.md describes (docs/DELIVERY-PACKAGES.md, docs/IMPORT-ADAPTERS.md):
 //   <shot>/comfy/input/...      -> input/...                 (shots/<shot>/... kept; never renamed or flattened)
-//   <shot>/comfy/workflows/...  -> workflows/<round>/...     (the _api and inputs-manifest files stay beside the graph)
-//   <shot>/nodes/<pack>-vN/...  -> node-packs/<pack>/...     (staged, -vN dropped)
+//   <shot>/comfy/workflows/...  -> workflows/panama-imax-redux/<round>/...   (the _api and inputs-manifest files stay beside the graph)
+//   <shot>/nodes/<pack>-vN/...  -> node-packs/panama-imax-redux/<pack>/...   (staged, -vN dropped)
+// Workflows and packs live under this project's own folder. Inputs cannot: the graphs load them by the path
+// shots/<shot>/... relative to ComfyUI's input folder, which must not change (the shot id is their namespace).
 //   final/, approved/, provenance/, docs, templates          left where they are, counted
 // A copy carries the sha256 from the shot's MANIFEST.json; the app refuses a file whose bytes differ.
 // Works on a merged package or on one of the Drive parts (a part holds only some of each shot's files).
 
 const PACK_VERSION = /-v\d+(\.\d+)*$/
+// The round's name is the package folder's, without the " 2" Google Drive adds to a duplicate: parts of one round share a folder.
+const roundOf = (ctx) => ctx.roundName.replace(/ \d+$/, '')
+const PROJECT = 'panama-imax-redux'   // the folder this project's workflows and staged packs go under
 
 export default {
   id: 'panama-imax-redux',
@@ -20,7 +25,9 @@ export default {
       try { const m = await ctx.json('MANIFEST.json'); if (m && m.shots && m.for) evidence.push('MANIFEST.json (shots, for)') } catch { /* not ours */ }
     }
     for (const d of (await ctx.list('.')).filter((e) => e.isDir)) {
+      // a shot folder: its manifest and comfy/, or (a Drive part that came without the manifest) comfy/input, comfy/workflows or nodes/
       if (await ctx.exists(`${d.name}/MANIFEST.json`) && (await ctx.stat(`${d.name}/comfy`))?.isDir) evidence.push(`${d.name}/MANIFEST.json + comfy/`)
+      else if ((await ctx.stat(`${d.name}/comfy/input`))?.isDir || (await ctx.stat(`${d.name}/comfy/workflows`))?.isDir || (await ctx.stat(`${d.name}/nodes`))?.isDir) evidence.push(`${d.name}/comfy or nodes (no manifest in this folder)`)
     }
     return { match: evidence.length ? 1 : (await ctx.exists('00_READ_ME.md')) ? 0.3 : 0, evidence: evidence.slice(0, 6) }
   },
@@ -58,8 +65,8 @@ export default {
       const place = (path) => {
         let m
         if ((m = path.match(new RegExp(`^${shot}/comfy/input/(.+)$`)))) return { kind: 'input', to: `input/${m[1]}` }
-        if ((m = path.match(new RegExp(`^${shot}/comfy/workflows/(.+)$`)))) return { kind: 'workflow', to: `workflows/${ctx.roundName}/${m[1]}` }
-        if ((m = path.match(new RegExp(`^${shot}/nodes/([^/]+)/(.+)$`)))) { const pack = m[1].replace(PACK_VERSION, ''); packsStaged.add(pack); return { kind: 'node-pack', to: `node-packs/${pack}/${m[2]}` } }
+        if ((m = path.match(new RegExp(`^${shot}/comfy/workflows/(.+)$`)))) return { kind: 'workflow', to: `workflows/${PROJECT}/${roundOf(ctx)}/${m[1]}` }
+        if ((m = path.match(new RegExp(`^${shot}/nodes/([^/]+)/(.+)$`)))) { const pack = m[1].replace(PACK_VERSION, ''); packsStaged.add(pack); return { kind: 'node-pack', to: `node-packs/${PROJECT}/${pack}/${m[2]}` } }
         return null
       }
       for (const e of entries || []) {
@@ -89,7 +96,7 @@ export default {
       const lacking = need.filter((n) => ![...packsStaged].some((p) => n.toLowerCase().startsWith(p.toLowerCase().replace(/-?v?\d.*$/, '')) || p.toLowerCase().includes(n.toLowerCase().replace(/-v\d.*$/, ''))))
       if (need.length) findings.push({ level: lacking.length ? 'warn' : 'info', text: `non-core node packs the graphs use: ${need.join(', ')}${lacking.length ? `; not staged by this folder: ${lacking.join(', ')}` : ''}` })
     }
-    if (packsStaged.size) findings.push({ level: 'info', text: `node packs staged under node-packs/: ${[...packsStaged].join(', ')} (the image links packs from its own sources; staging does not install them)` })
+    if (packsStaged.size) findings.push({ level: 'info', text: `node packs staged under node-packs/${PROJECT}/: ${[...packsStaged].join(', ')} (the image links packs from its own sources; staging does not install them)` })
     return { ops, findings }
   },
 }
