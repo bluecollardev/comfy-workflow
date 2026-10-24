@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { beforeEach, describe, expect, it } from 'vitest'
 import * as im from '../src/imports.js'
 import { adaptersDir } from '../src/paths.js'
@@ -33,7 +34,12 @@ function pkg(base: string, opts: { manifest?: boolean; skip?: string[]; extra?: 
 }
 
 const userAdapter = (id: string, body: string) => { mkdirSync(adaptersDir(), { recursive: true }); writeFileSync(join(adaptersDir(), `${id}.mjs`), body) }
-const OK_ADAPTER = (ops = '[]') => `export default { id: 'mine', name: 'Mine', version: 1, async detect() { return { match: 1, evidence: ['x'] } }, async plan() { return { ops: ${ops}, findings: [] } } }`
+const HEADER = `/**
+ * Mine: a test adapter. What it does: maps a test folder. Detects: any folder. Maps: nothing, or the ops it is given.
+ * Leaves in place: everything else. Needs / assumes: nothing. Limits: it exists to be tested.
+ */
+`
+const OK_ADAPTER = (ops = '[]') => `${HEADER}export default { id: 'mine', name: 'Mine', version: 1, async detect() { return { match: 1, evidence: ['x'] } }, async plan() { return { ops: ${ops}, findings: [] } } }`
 
 describe('adapters', () => {
   it('lists the two built-ins, with their code hash, and none of yours until you add them', async () => {
@@ -51,12 +57,13 @@ describe('adapters', () => {
     expect((await im.plan(src, 'mine')).ops[0].note).toBe('edited')   // hot-loaded: the file on disk is what runs
   }, 30000)
 
-  it('saves an adapter that parses, and refuses one that does not or one named like a built-in', async () => {
+  it('saves an adapter that parses, and refuses one that does not or an id that is not a slug', async () => {
     const row = await im.save('mine', OK_ADAPTER())
     expect(row).toMatchObject({ id: 'mine', builtin: false })
     await expect(im.save('broken', 'export default {')).rejects.toThrow(/does not parse/)
-    await expect(im.save('comfy-shared', OK_ADAPTER())).rejects.toThrow(/built-in/)
     await expect(im.save('Bad Id', OK_ADAPTER())).rejects.toThrow(/lowercase/)
+    expect(existsSync(join(adaptersDir(), 'broken.mjs'))).toBe(false)   // a file that does not parse is never left behind
+    expect(readdirSync(adaptersDir()).filter((f) => f.startsWith('.check'))).toEqual([])
   }, 20000)
 })
 
@@ -395,5 +402,69 @@ describe('the rule: the app\'s Claude writes adapters and nothing else', () => {
 
   it('the prompts tell the model the same rule', () => {
     expect(im.DESCRIBE_SYSTEM).toMatch(/text only, never files or code/)
+  })
+})
+
+describe('the Studio\'s files: built-in overrides, prompts, history, names, the documentation rule', () => {
+  it('editing a built-in writes an override that is used instead; the shipped file is untouched; Reset removes it', async () => {
+    const shipped = join(dirname(fileURLToPath(import.meta.url)), '..', 'runtime', 'adapters', 'comfy-shared.mjs')
+    const before = readFileSync(shipped, 'utf8')
+    const text = before.replace("name: 'A ComfyUI-Shared folder'", "name: 'Mine, edited'")
+    const row = await im.save('comfy-shared', text)
+    expect(row).toMatchObject({ id: 'comfy-shared', builtin: true, modified: true, name: 'Mine, edited' })
+    expect(row.original).toBe(shipped); expect(row.file).toBe(join(adaptersDir(), 'comfy-shared.mjs'))
+    expect((await im.list()).map((a) => a.id)).toEqual(['comfy-shared', 'panama-imax-redux'])   // one row, not two
+    const src = im.source('comfy-shared')
+    expect(src).toMatchObject({ builtin: true, modified: true, text }); expect(src.original).toBe(before)
+    expect(readFileSync(shipped, 'utf8')).toBe(before)
+    expect(im.remove('comfy-shared')).toEqual({ id: 'comfy-shared', reset: true })
+    expect((await im.list())[0]).toMatchObject({ builtin: true, name: 'A ComfyUI-Shared folder' }); expect((await im.list())[0].modified).toBeUndefined()
+    expect(() => im.remove('comfy-shared')).toThrow(/has not been modified/)
+  }, 30000)
+
+  it('keeps the previous code and prompt in a history, twenty deep, and brings one back', async () => {
+    await im.save('mine', OK_ADAPTER("[{ op: 'note', kind: 'reference', from: 'a.txt', note: 'one' }]"))
+    expect(im.history('mine')).toEqual([])   // nothing was overwritten yet
+    await im.save('mine', OK_ADAPTER("[{ op: 'note', kind: 'reference', from: 'a.txt', note: 'two' }]"))
+    const [v] = im.history('mine')
+    expect(v.kind).toBe('code'); expect(im.version('mine', v.stamp, 'code')).toContain("note: 'one'")
+    im.savePrompt('mine', 'v1 of the prompt'); im.savePrompt('mine', 'v2 of the prompt')
+    expect(im.getPrompt('mine')).toBe('v2 of the prompt')
+    const p = im.history('mine').find((h) => h.kind === 'prompt')!
+    expect(im.version('mine', p.stamp, 'prompt')).toBe('v1 of the prompt')
+    for (let i = 0; i < 25; i++) await im.save('mine', OK_ADAPTER(`[{ op: 'note', kind: 'reference', from: 'a.txt', note: 'n${i}' }]`))
+    expect(im.history('mine').filter((h) => h.kind === 'code').length).toBe(20)
+    expect(() => im.version('mine', '../../etc', 'code')).toThrow(/no such version/)
+  }, 60000)
+
+  it('renames: a new display name in the code, or a new id that moves the module, the prompt and the history', async () => {
+    await im.save('mine', OK_ADAPTER()); im.savePrompt('mine', 'the prompt'); await im.save('mine', OK_ADAPTER() + '\n// edit')
+    const named = await im.rename('mine', { name: 'Shots v2 (Kyle)' })
+    expect(named).toMatchObject({ id: 'mine', name: 'Shots v2 (Kyle)' })
+    const moved = await im.rename('mine', { id: 'shots-v2', name: 'Shots v2' })
+    expect(moved).toMatchObject({ id: 'shots-v2', name: 'Shots v2' })
+    expect(existsSync(join(adaptersDir(), 'mine.mjs'))).toBe(false)
+    expect(readFileSync(join(adaptersDir(), 'shots-v2.mjs'), 'utf8')).toContain("id: 'shots-v2'")
+    expect(im.getPrompt('shots-v2')).toBe('the prompt'); expect(im.getPrompt('mine')).toBe('')
+    expect(im.history('shots-v2').length).toBeGreaterThan(0)
+    await im.save('other', OK_ADAPTER().replace("id: 'mine'", "id: 'other'"))
+    await expect(im.rename('shots-v2', { id: 'other' })).rejects.toThrow(/already an adapter other/)
+    await expect(im.rename('shots-v2', { id: 'comfy-shared' })).rejects.toThrow(/already an adapter/)
+    await expect(im.rename('comfy-shared', { name: 'x' })).rejects.toThrow(/built-in/)
+    expect(() => im.setName(OK_ADAPTER(), 'a\nb')).toThrow(/one line/)
+  }, 60000)
+
+  it('the documentation rule: a header is required, built-ins have one, and a Document pass replaces only the header', async () => {
+    const bare = "export default { id: 'bare', name: 'Bare', async detect() {}, async plan() {} }"
+    expect(im.validateSource(bare, 'bare')).toEqual([expect.stringContaining('no documentation header')])
+    expect(im.validateSource('// short\n' + bare, 'bare')).toEqual([expect.stringContaining('no documentation header')])   // a comment is not documentation until it says something
+    expect(im.validateSource(OK_ADAPTER(), 'mine')).toEqual([])
+    for (const id of ['comfy-shared', 'panama-imax-redux']) expect(im.validateSource(im.source(id).text, id), id).toEqual([])
+    expect(im.validateSource(im.template('new-one'), 'new-one')).toEqual([])
+    const doc = '/**\n * Rewritten header. What it does: it maps nothing, on purpose. Detects: nothing. Maps: nothing. Leaves in place: everything. Needs: nothing. Limits: none.\n */'
+    const out = im.withDocHeader(OK_ADAPTER(), doc)
+    expect(im.docHeader(out)).toBe(doc)
+    expect(out.slice(out.indexOf('export default'))).toBe(OK_ADAPTER().slice(OK_ADAPTER().indexOf('export default')))   // the code is byte-identical
+    expect(() => im.withDocHeader(OK_ADAPTER(), 'not a comment')).toThrow(/comment block/)
   })
 })

@@ -16,7 +16,8 @@ const EXPECTED = {
   git: ['accounts', 'disconnect', 'repos', 'connect'],
   repositories: ['list', 'add', 'remove', 'search', 'branches', 'folders'],
   images: ['env', 'dockerfile'],
-  imports: ['list', 'detect', 'plan', 'apply', 'source', 'save', 'spec', 'draftPreview', 'draft', 'validateSource', 'describe', 'syncAfter', 'remove', 'template', 'duplicate'],
+  imports: ['list', 'detect', 'plan', 'apply', 'source', 'save', 'spec', 'draftPreview', 'draft', 'validateSource', 'describe', 'syncAfter', 'remove', 'template', 'duplicate', 'getPrompt', 'savePrompt', 'rename', 'history'],
+  studio: ['step', 'saveChecked', 'document', 'tree', 'file', 'problems', 'context'],
   mcp: ['endpoints', 'targets', 'probe', 'serve'],
 }
 for (const [ns, fns] of Object.entries(EXPECTED)) {
