@@ -54,7 +54,8 @@ is never edited (contract §5.2; `.claude/rules/binc-tree.md` for Binc's tree).
    it, not thrown at the app. A user-written adapter must be approved once (its source and
    hash shown) before it runs; a changed file needs approval again.
 5. **Adapters run outside the UI process.** In a child process (the app's own executable
-   with `ELECTRON_RUN_AS_NODE=1`, as the MCP servers already do), handed a read-only
+   with `ELECTRON_RUN_AS_NODE=1`, as the MCP servers already do) under Node's
+   `--permission` with read access to the source folder only (checked, open point 2), handed a read-only
    helper (`ctx`: list, stat, hash, read text/JSON of the source folder), and returning
    only the plan as JSON. The executor validates every path in the plan before acting.
 6. **A user's coding agent writes adapters through the app.** The pod-manager MCP server
@@ -110,10 +111,21 @@ is never edited (contract §5.2; `.claude/rules/binc-tree.md` for Binc's tree).
    a placeholder written into an imported pack's own `config.ini` (the packages say "a
    pack's local `config.ini` (provider key) is not shipped"), that is a plan operation
    (`placeholder`) and a provider-keys section in Settings, and the two do not conflict.
-2. **How strong the isolation is.** A child process with a read-only helper stops honest
-   mistakes, not a hostile module that imports `fs` itself. Node's permission flags
-   (`--permission`, `--allow-fs-read`) would close that if the Node inside our Electron
-   version supports them; not checked. Until then, the approval screen is the control.
+2. **How strong the isolation is.** Checked 2026-10-24 on the app's own executable
+   (Electron 44.9.0, Node v24.22.0, `ELECTRON_RUN_AS_NODE=1`). Node's permission model
+   works there: `--permission` (the old `--experimental-permission` is rejected). With
+   `--allow-fs-read=<source folder>` and the adapter file, a test module that imports
+   `fs` itself could read the source, was refused on another folder
+   (`ERR_ACCESS_DENIED`), refused every write, and refused to spawn a process. Without
+   the flag the same module read the other folder, wrote, and spawned. Two things it does
+   **not** stop: **network** (a `fetch` to an outside host succeeded under the flag, so a
+   hostile adapter could send out what it can read), and anything given back by
+   `--allow-child-process` or `--allow-worker`, which must stay off. Two practical notes:
+   macOS paths must be real paths (`/tmp` is `/private/tmp`), and the entry file needs
+   its own read grant. So: the adapter process runs under `--permission` with only the
+   source folder and its own file readable; the network gap is closed by the approval
+   screen for now, and by an OS sandbox later if wanted (macOS `sandbox-exec`, a
+   container on Linux; not tried). Not yet checked in a packaged build, only in dev.
 3. **Where an import runs when a pod is up.** Local ComfyUI-Shared then Sync is the
    default; importing straight onto a running pod over SSH is possible and not designed.
 4. **Whether Binc wants his own format as an adapter** (CANALV2 trees and `ComfyUI-Shared`

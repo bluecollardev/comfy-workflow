@@ -109,7 +109,10 @@ Finding = { level: 'info' | 'warn' | 'problem', text: string, path?: string }
   file reloads it with no restart. A new or changed file shows its source and hash and
   runs only after you approve it. A broken one is listed with its error, nothing else is
   affected.
-- They run in a separate Node process, not in the UI, and return the plan as JSON.
+- They run in a separate Node process, not in the UI, under `--permission` with read
+  access to the source folder and the adapter file only (no writes, no child processes),
+  and return the plan as JSON. The permission model does not block the network; an
+  adapter must not be trusted just because it is fenced (ADR-008, open point 2).
 
 ## Writing one with a coding agent
 
