@@ -57,22 +57,21 @@ test('initialize hands every client the governance instructions', async () => {
 const POOL = ['list_agents', 'get_pool_status', 'governance', 'create_agent', 'stop_agent', 'resume_agent', 'delete_agent', 'health_check_agent', 'get_agent_info', 'submit_job', 'get_job_status']
 const PODS = ['list_pods', 'get_pod', 'create_pod', 'stop_pod', 'resume_pod', 'delete_pod', 'recreate_pod', 'set_idle_stop', 'get_logs', 'list_datacenters', 'list_volumes', 'create_volume', 'delete_volume', 'set_default_volume', 'get_configuration', 'sync', 'sync_status', 'adapter_spec', 'adapters_list', 'adapter_save', 'import_plan', 'import_apply', 'cost_now']
 
-test('an agent writes an adapter, a person approves it, and the dry run reads a real folder', async () => {
+test('an agent writes an adapter and tests it on a real folder; the code stays open to read', async () => {
   const spec = textOf(ok(await call('adapter_spec')))
   assert.match(spec, /^# Import adapters/); assert.match(spec, /ComfyUI-Shared structure/)
   assert.match(textOf(ok(await call('adapters_list'))), /panama-imax-redux/)
   const src = join(dir, 'pkg'); mkdirSync(join(src, 'input'), { recursive: true }); writeFileSync(join(src, 'input', 'a.png'), 'png')
   const mod = "export default { id: 'agent-made', name: 'Agent made', version: 1, async detect(root, ctx) { return { match: (await ctx.exists('input')) ? 1 : 0, evidence: ['input/'] } }, async plan(root, ctx) { const fs = await ctx.list('input', { recursive: true }); return { ops: fs.map((f) => ({ op: 'copy', kind: 'input', from: f.path, to: f.path, bytes: f.bytes })), findings: [] } } }"
-  assert.match(textOf(ok(await call('adapter_save', { id: 'agent-made', source: mod }))), /UNAPPROVED/)
-  const refused = await call('import_plan', { source: src, adapter: 'agent-made' })
-  assert.equal(refused.result.isError, true); assert.match(textOf(refused), /not been approved/)
+  const saved = textOf(ok(await call('adapter_save', { id: 'agent-made', source: mod })))
+  assert.match(saved, /Structure ok/); assert.match(saved, /Nothing was run/); assert.match(saved, /Default Configuration/)
+  const bad = textOf(ok(await call('adapter_save', { id: 'half-made', source: "export default { id: 'half-made' }" })))
+  assert.match(bad, /Structure problems/); assert.match(bad, /no detect\(root, ctx\) function/)
   const broken = await call('adapter_save', { id: 'broken', source: 'export default {' })
   assert.equal(broken.result.isError, true); assert.match(textOf(broken), /does not parse/)
-  // the person approves (the app or `import --approve`), not the agent: there is no tool for it
-  assert.ok(!(await rpc('tools/list')).result.tools.some((t) => /approve/.test(t.name)))
-  writeFileSync(join(dir, 'adapter-approvals.json'), JSON.stringify({ 'agent-made': (await import('node:crypto')).createHash('sha256').update(mod).digest('hex') }))
+  assert.ok(!(await rpc('tools/list')).result.tools.some((t) => /approve/.test(t.name)))   // there is no approval step
   const plan = JSON.parse(textOf(ok(await call('import_plan', { source: src, adapter: 'agent-made' }))).split('\n\n(no-spend')[0])
-  assert.equal(plan.adapter.id, 'agent-made'); assert.equal(plan.summary.copies, 1)
+  assert.equal(plan.adapter.id, 'agent-made'); assert.equal(plan.summary.copies, 1); assert.equal(plan.fenced, true)
   const applied = JSON.parse(textOf(ok(await call('import_apply', { source: src, adapter: 'agent-made' }))).split('\n\n(no-spend')[0])
   assert.equal(applied.dry_run, true); assert.equal(applied.counts['would-copy'], 1)
 })

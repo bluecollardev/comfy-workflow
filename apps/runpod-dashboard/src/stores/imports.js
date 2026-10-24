@@ -17,7 +17,7 @@ export const useImportsStore = defineStore('imports', () => {
   const pods = usePodsStore()
   const adapters = ref([])
   const folder = ref('')
-  const adapter = ref('')        // '' = the best approved match
+  const adapter = ref('')        // '' = the best match
   const plan = ref(null)
   const result = ref(null)       // the last apply (dry or real)
   const overwrite = ref(false)
@@ -31,9 +31,8 @@ export const useImportsStore = defineStore('imports', () => {
   try { describeOn.value = localStorage.getItem('runpod-manager.import-describe') !== 'off' } catch { /* storage blocked: on */ }
   const preview = ref(null)      // what "Write an adapter with Claude" would send, shown before anything is sent
   const drafting = ref(false)
-  const reading = ref(null)      // { id, sha256, text } while an adapter's source is open for approval
+  const reading = ref(null)      // { id, sha256, text, builtin, file } while an adapter's source is open to read (Inspect)
 
-  const needsApproval = computed(() => adapters.value.filter((a) => !a.builtin && !a.approved))
 
   async function loadAdapters() {
     try { adapters.value = (await importsAPI.adapters()) || [] } catch (e) { error.value = errorText(e) }
@@ -98,23 +97,20 @@ export const useImportsStore = defineStore('imports', () => {
   async function read(id) {
     try { reading.value = await importsAPI.source(id) } catch (e) { error.value = errorText(e) }
   }
-  async function approve(id) {
-    try { await importsAPI.approve(id); reading.value = null; toast.success(t('import.toastApproved', { id })); await loadAdapters() } catch (e) { error.value = errorText(e) }
-  }
 
   async function previewDraft() {
     if (!folder.value) return
     error.value = null
     try { preview.value = await importsAPI.draftPreview(folder.value) } catch (e) { error.value = errorText(e) }
   }
-  // The draft loop: the person prompts, Claude writes, the app checks the module's structure; they read and approve it, test it on the
+  // The draft loop: the person prompts, Claude writes, the app checks the module's structure; they can read it, test it on the
   // folder (the plan it returns is checked too), and prompt again with what was wrong, until both pass.
   const draft = ref(null)   // { id, valid, errors, tested: null | { ok, errors, summary }, model, round }
   const instruction = ref('')
 
   const draftProblems = () => [...(draft.value?.errors || []), ...(draft.value?.tested && !draft.value.tested.ok ? draft.value.tested.errors : [])]
 
-  /** Send the previewed material and the person's prompt to Claude; the reply is saved as an unapproved adapter and checked. */
+  /** Send the previewed material and the person's prompt to Claude; the reply is saved as an adapter and its structure checked. */
   async function sendDraft() {
     drafting.value = true; error.value = null
     const again = !!draft.value
@@ -128,7 +124,7 @@ export const useImportsStore = defineStore('imports', () => {
     } catch (e) { error.value = errorText(e); preview.value = null } finally { drafting.value = false }
   }
 
-  /** Run the draft on the attached folder (it must be approved first): its plan is checked against the required structure. */
+  /** Run the draft on the attached folder (fenced, read-only): the plan it returns is checked against the required structure. */
   async function testDraft() {
     if (!draft.value) return
     testing.value = true; error.value = null
@@ -142,5 +138,5 @@ export const useImportsStore = defineStore('imports', () => {
   const draftValid = computed(() => !!draft.value?.valid && !!draft.value?.tested?.ok)
   function dropDraft() { draft.value = null; instruction.value = '' }
 
-  return { draft, instruction, testing, draftValid, testDraft, dropDraft, description, describing, describeError, describeOn, setDescribeOn, describeFolder, preview, drafting, previewDraft, sendDraft, adapters, folder, adapter, plan, result, overwrite, planning, applying, error, reading, needsApproval, loadAdapters, makePlan, run, read, approve }
+  return { draft, instruction, testing, draftValid, testDraft, dropDraft, description, describing, describeError, describeOn, setDescribeOn, describeFolder, preview, drafting, previewDraft, sendDraft, adapters, folder, adapter, plan, result, overwrite, planning, applying, error, reading, loadAdapters, makePlan, run, read, }
 })

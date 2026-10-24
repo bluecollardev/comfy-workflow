@@ -36,26 +36,24 @@ const userAdapter = (id: string, body: string) => { mkdirSync(adaptersDir(), { r
 const OK_ADAPTER = (ops = '[]') => `export default { id: 'mine', name: 'Mine', version: 1, async detect() { return { match: 1, evidence: ['x'] } }, async plan() { return { ops: ${ops}, findings: [] } } }`
 
 describe('adapters', () => {
-  it('lists the two built-ins, approved, and none of yours until you add them', async () => {
+  it('lists the two built-ins, with their code hash, and none of yours until you add them', async () => {
     const rows = await im.list()
     expect(rows.map((r) => r.id)).toEqual(['comfy-shared', 'panama-imax-redux'])
-    expect(rows.every((r) => r.builtin && r.approved && !r.error)).toBe(true)
+    expect(rows.every((r) => r.builtin && !r.error && /^[0-9a-f]{64}$/.test(r.sha256))).toBe(true)
   }, 20000)
 
-  it('does not run yours until approved, runs it once approved, and wants approval again when it changes', async () => {
+  it('runs yours as soon as it is saved (no approval step), always fenced, and picks up an edit on the next call', async () => {
     const src = join(dir, 'src'); put(src, 'a.txt', 'a')
     userAdapter('mine', OK_ADAPTER())
-    expect((await im.list()).find((r) => r.id === 'mine')).toMatchObject({ approved: false, builtin: false })
-    await expect(im.plan(src, 'mine')).rejects.toThrow(/not been approved/)
-    await im.approve('mine')
-    expect((await im.plan(src, 'mine')).adapter.id).toBe('mine')
-    userAdapter('mine', OK_ADAPTER() + '\n// edited')
-    await expect(im.plan(src, 'mine')).rejects.toThrow(/not been approved/)
+    expect((await im.list()).find((r) => r.id === 'mine')).toMatchObject({ builtin: false, name: 'Mine' })
+    expect((await im.plan(src, 'mine')).fenced).toBe(im.fenceSupported())
+    userAdapter('mine', OK_ADAPTER("[{ op: 'note', kind: 'reference', from: 'a.txt', note: 'edited' }]"))
+    expect((await im.plan(src, 'mine')).ops[0].note).toBe('edited')   // hot-loaded: the file on disk is what runs
   }, 30000)
 
-  it('saves an adapter that parses, unapproved, and refuses one that does not or one named like a built-in', async () => {
+  it('saves an adapter that parses, and refuses one that does not or one named like a built-in', async () => {
     const row = await im.save('mine', OK_ADAPTER())
-    expect(row).toMatchObject({ id: 'mine', approved: false })
+    expect(row).toMatchObject({ id: 'mine', builtin: false })
     await expect(im.save('broken', 'export default {')).rejects.toThrow(/does not parse/)
     await expect(im.save('comfy-shared', OK_ADAPTER())).rejects.toThrow(/built-in/)
     await expect(im.save('Bad Id', OK_ADAPTER())).rejects.toThrow(/lowercase/)
@@ -144,7 +142,7 @@ describe('the delivery package adapter', () => {
 })
 
 describe('what the app enforces whatever an adapter says', () => {
-  const adapterWith = async (ops: string) => { userAdapter('mine', OK_ADAPTER(ops)); await im.approve('mine'); const src = join(dir, 'src'); put(src, 'a.txt', 'a'); return src }
+  const adapterWith = async (ops: string) => { userAdapter('mine', OK_ADAPTER(ops)); const src = join(dir, 'src'); put(src, 'a.txt', 'a'); return src }
 
   it.each([
     ["{ op: 'copy', kind: 'input', from: 'a.txt', to: '../escape.txt' }", /leaves its folder/],
@@ -168,7 +166,7 @@ describe('what the app enforces whatever an adapter says', () => {
   it('will not follow a symlink in the source out of it', async () => {
     const src = join(dir, 'src'); put(src, 'ok.txt', 'ok'); put(dir, 'secret/s.txt', 'SECRET')
     symlinkSync(join(dir, 'secret'), join(src, 'link'))
-    userAdapter('mine', OK_ADAPTER("[{ op: 'copy', kind: 'input', from: 'link/s.txt', to: 'input/s.txt' }]")); await im.approve('mine')
+    userAdapter('mine', OK_ADAPTER("[{ op: 'copy', kind: 'input', from: 'link/s.txt', to: 'input/s.txt' }]"))
     const p = await im.plan(src, 'mine')
     const r = await im.apply(p, { target: join(dir, 'T') })
     expect(r.counts.error).toBe(1); expect(existsSync(join(dir, 'T/input/s.txt'))).toBe(false)
@@ -183,16 +181,15 @@ describe('what the app enforces whatever an adapter says', () => {
       [`const fs = await import('node:fs'); fs.writeFileSync('${join(src, 'w.txt')}', 'x')`, 'write'],
       [`const cp = await import('node:child_process'); cp.execSync('echo hi')`, 'spawn'],
     ]) {
-      userAdapter('mine', evil(body)); await im.approve('mine')
+      userAdapter('mine', evil(body))
       await expect(im.plan(src, 'mine'), pre).rejects.toThrow(/denied|ERR_ACCESS|restricted|Access/i)
     }
     expect(existsSync(join(src, 'w.txt'))).toBe(false)
   }, 60000)
 
   it('says when an adapter is broken instead of throwing at the app', async () => {
-    userAdapter('mine', `export default { id: 'mine', name: 'x' }`); await im.approve('mine')
+    userAdapter('mine', `export default { id: 'mine', name: 'x' }`)
     const row = (await im.list()).find((r) => r.id === 'mine')!
-    expect(row.approved).toBe(true)
     await expect(im.plan(join(dir), 'mine')).rejects.toThrow(/detect|plan/)
   }, 30000)
 })
@@ -213,7 +210,7 @@ describe('writing an adapter with Claude', () => {
     expect(JSON.stringify(p)).not.toContain('MOV-final')   // the media files' bytes are not in it
   })
 
-  it('sends the key, the spec, the listing and the manifest to the API, saves the reply unapproved', async () => {
+  it('sends the key, the spec, the listing and the manifest to the API, saves the reply', async () => {
     process.env.ANTHROPIC_API_KEY = 'sk-ant-api03-TESTTESTTESTTESTTEST'
     let seen: { url: string; headers: Record<string, string>; body: { model: string; messages: { content: string }[] } } | null = null
     const fetchImpl = (async (url: string, init: { headers: Record<string, string>; body: string }) => { seen = { url, headers: init.headers, body: JSON.parse(init.body) }; return reply(OK_ADAPTER()) }) as unknown as typeof fetch
@@ -223,9 +220,8 @@ describe('writing an adapter with Claude', () => {
     const sent = seen!.body.messages[0].content
     expect(sent).toContain('# Import adapters'); expect(sent).toContain('shotA/comfy/input'); expect(sent).toContain('"for":"Brynley"')
     expect(sent).not.toContain('MOV-final'); expect(sent).not.toContain('BIG-FINAL')
-    expect(r.adapter).toMatchObject({ id: 'draft-brynley-comfy-2026-10-20', approved: false, builtin: false })
-    expect(existsSync(join(adaptersDir(), 'draft-brynley-comfy-2026-10-20.mjs'))).toBe(true)
-    await expect(im.plan(pkg(join(dir, 'x')), 'draft-brynley-comfy-2026-10-20')).rejects.toThrow(/not been approved/)   // never runs before a person approves
+    expect(r.adapter).toMatchObject({ id: 'draft-brynley-comfy-2026-10-20', builtin: false })
+    expect(existsSync(join(adaptersDir(), 'draft-brynley-comfy-2026-10-20.mjs'))).toBe(true)   // listed, its code open to read
   }, 30000)
 
   it('reports an API error and a reply with no module', async () => {
@@ -278,13 +274,12 @@ describe('writing an adapter with Claude', () => {
     const fetchImpl = (async (_u: string, init: { body: string }) => { bodies.push(JSON.parse(init.body).messages[0].content); return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: '```javascript\n' + replies.shift() + '\n```' }] }) } }) as unknown as typeof fetch
     const first = await im.draft(root, { id: 'draft-x', instruction: 'the graphs are under comfy/workflows', fetchImpl })
     expect(first.valid).toBe(false); expect(first.errors).toEqual([expect.stringContaining('must be "draft-x"')])
-    expect(first.adapter).toMatchObject({ id: 'draft-x', approved: false })
+    expect(first.adapter).toMatchObject({ id: 'draft-x', builtin: false })
     expect(bodies[0]).toContain('the graphs are under comfy/workflows'); expect(bodies[0]).not.toContain('The draft you wrote last time')
     const second = await im.draft(root, { id: 'draft-x', instruction: 'use the id I gave', errors: first.errors, fetchImpl })
     expect(second.valid).toBe(true); expect(second.errors).toEqual([])
     expect(bodies[1]).toContain('The draft you wrote last time'); expect(bodies[1]).toContain("id: 'wrong-id'"); expect(bodies[1]).toContain('must be "draft-x"'); expect(bodies[1]).toContain('use the id I gave')
     expect(readFileSync(join(adaptersDir(), 'draft-x.mjs'), 'utf8')).toContain("id: 'draft-x'")   // the same file, rewritten
-    await expect(im.plan(root, 'draft-x')).rejects.toThrow(/not been approved/)   // and a rewrite takes the approval away
   }, 30000)
 })
 
@@ -310,4 +305,44 @@ describe('syncing after an import', () => {
     withVolume('vol1')
     expect(im.syncAfter(null)).toEqual({ action: 'skip', why: 'no-pod', configure: false })
   })
+})
+
+describe('managing your adapters', () => {
+  it('a new adapter from the template passes the structure check, saves, and a built-in shows its source', async () => {
+    const text = im.template('my-pack')
+    expect(im.validateSource(text, 'my-pack')).toEqual([])
+    expect(await im.save('my-pack', text)).toMatchObject({ id: 'my-pack', builtin: false })
+    expect(im.source('my-pack')).toMatchObject({ builtin: false, text })
+    expect(im.source('panama-imax-redux')).toMatchObject({ builtin: true })
+    expect(im.source('panama-imax-redux').text).toContain("id: 'panama-imax-redux'")
+    expect(() => im.template('Bad Id')).toThrow(/lowercase/)
+  }, 20000)
+
+  it('editing a saved adapter changes its code, and the new text is what runs', async () => {
+    const src = join(dir, 'src'); put(src, 'a.txt', 'a')
+    await im.save('mine', OK_ADAPTER("[{ op: 'copy', kind: 'input', from: 'a.txt', to: 'input/one.txt' }]"))
+    expect((await im.plan(src, 'mine')).ops[0].to).toBe('input/one.txt')
+    const before = (await im.list()).find((a) => a.id === 'mine')!.sha256
+    await im.save('mine', OK_ADAPTER("[{ op: 'copy', kind: 'input', from: 'a.txt', to: 'input/two.txt' }]"))
+    expect((await im.list()).find((a) => a.id === 'mine')!.sha256).not.toBe(before)   // the hash follows the code
+    expect((await im.plan(src, 'mine')).ops[0].to).toBe('input/two.txt')
+  }, 30000)
+
+  it('deletes yours, refuses a built-in, and says when there is none', async () => {
+    await im.save('mine', OK_ADAPTER())
+    expect(im.remove('mine')).toEqual({ id: 'mine' })
+    expect((await im.list()).map((a) => a.id)).toEqual(['comfy-shared', 'panama-imax-redux'])
+    expect(existsSync(join(adaptersDir(), 'mine.mjs'))).toBe(false)
+    expect(() => im.remove('comfy-shared')).toThrow(/built-in/)
+    expect(() => im.remove('mine')).toThrow(/no adapter mine/)
+  }, 20000)
+
+  it('duplicates a built-in under a new id, which then saves, validates and runs', async () => {
+    const text = im.duplicate('panama-imax-redux', 'panama-mine')
+    expect(text).toContain("id: 'panama-mine'"); expect(text).not.toContain("id: 'panama-imax-redux'")
+    expect(im.validateSource(text, 'panama-mine')).toEqual([])
+    await im.save('panama-mine', text)
+    expect((await im.plan(pkg(dir), 'panama-mine')).adapter.id).toBe('panama-mine')
+    expect(() => im.duplicate('nope', 'x-y')).toThrow(/no adapter nope/)
+  }, 30000)
 })

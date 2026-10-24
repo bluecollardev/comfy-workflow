@@ -1,6 +1,6 @@
 # Plan: building import adapters
 
-**Status:** COMPLETE, 2026-10-24: all six phases built and tested on `feature/import-adapters` (not merged or pushed). Results are at the end. Decisions are in
+**Status:** COMPLETE, 2026-10-24 (the approval step in this plan was later removed and replaced by an adapter manager with Inspect, ADR-008 decision 12; where the plan says approve, read Inspect): all six phases built and tested on `feature/import-adapters` (not merged or pushed). Results are at the end. Decisions are in
 `docs/ADR-008-import-adapters.md`; the adapter contract is `docs/IMPORT-ADAPTERS.md`.
 Branch: `feature/import-adapters` (cut from `fix/session-fixes`, which is `develop` plus
 the delivery docs commits; merges to `develop` with `--no-ff` once `./start.sh test` is green).

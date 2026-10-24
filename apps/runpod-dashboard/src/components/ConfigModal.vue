@@ -7,6 +7,7 @@
     scrollable
     @update:model-value="forPod ? emit('update:modelValue', $event) : (ui.configOpen = $event)"
     @show="load"
+    @shown="focusSection"
   >
     <p class="text-body-secondary small mb-3" :data-testid="forPod ? 'config-modal-pod' : 'config-modal'">{{ forPod ? $t('config.podIntro') : $t('config.intro') }}</p>
 
@@ -37,7 +38,15 @@
         </BCol>
         <BCol v-if="!gated" md="8">
           <BFormGroup :label="$t('config.claudeKey')" label-for="cfg-claude-key" data-testid="cfg-claude-group" :description="keyInfo.anthropic_key_set ? $t('config.claudeStored', { hint: keyInfo.anthropic_key_hint }) : $t('config.claudeUnset')">
-            <BFormInput id="cfg-claude-key" v-model.trim="newClaude" type="password" autocomplete="off" placeholder="sk-ant-…" class="font-monospace" data-testid="cfg-claude-key" />
+            <div class="d-flex gap-1">
+              <BFormInput id="cfg-claude-key" v-model.trim="newClaude" type="password" autocomplete="off" placeholder="sk-ant-…" class="font-monospace" data-testid="cfg-claude-key" />
+              <BButton size="sm" variant="outline-light" class="text-nowrap" :disabled="claudeChecking || (!keyInfo.anthropic_key_set && !newClaude)" :title="$t('config.claudeTestHint')" data-testid="cfg-claude-test" @click="testClaude">
+                <BSpinner v-if="claudeChecking" small class="me-1" /><i v-else class="fa-solid fa-plug me-1"></i>{{ $t('config.claudeTest') }}
+              </BButton>
+            </div>
+            <div v-if="claudeResult" class="small mt-1" :class="claudeResult.ok ? 'text-success' : 'text-danger'" data-testid="cfg-claude-result" :data-ok="claudeResult.ok ? 'true' : 'false'">
+              <i class="fa-solid me-1" :class="claudeResult.ok ? 'fa-circle-check' : 'fa-triangle-exclamation'"></i>{{ claudeResult.ok ? $t('config.claudeWorks') : claudeResult.error }}
+            </div>
           </BFormGroup>
         </BCol>
       </BRow>
@@ -180,6 +189,10 @@
       </table>
       </fieldset>
 
+      <fieldset v-if="!forPod && !gated" class="cfg-section">
+        <legend data-testid="section-adapters">{{ $t('adapters.section') }}</legend>
+        <AdapterManager />
+      </fieldset>
       <fieldset class="cfg-section">
         <legend>{{ $t('config.options') }}</legend>
       <BFormCheckbox v-if="!forPod" v-model="cfg.apply_by_default" switch class="mb-2" data-testid="cfg-apply-default">
@@ -249,6 +262,7 @@ import { settingsAPI } from '../api/settings'
 import { useSettingsStore } from '../stores/settings'
 import { t } from '../i18n'
 import FolderPicker from './FolderPicker.vue'
+import AdapterManager from './AdapterManager.vue'
 
 const props = defineProps({
   mode: { type: String, default: 'default' },      // 'default' | 'pod'
@@ -277,6 +291,16 @@ const requireSource = ref('config')
 const picker = reactive({ open: false, key: '', title: '', start: '', memory: '' })
 const keyInfo = ref({ runpod_api_key_set: false, runpod_api_key_hint: '', source: 'none', anthropic_key_set: false, anthropic_key_hint: '' })
 const newClaude = ref('')
+const claudeChecking = ref(false)
+const claudeResult = ref(null)
+/** Test key: a typed key is saved first (that is the key the app would use), then one cheap call asks Anthropic. */
+async function testClaude() {
+  claudeChecking.value = true; claudeResult.value = null
+  try {
+    if (newClaude.value) { keyInfo.value = await settingsAPI.set({ anthropic_api_key: newClaude.value }); newClaude.value = ''; await settingsStore.load() }
+    claudeResult.value = await settingsAPI.checkAnthropic()
+  } catch (e) { claudeResult.value = { ok: false, error: e.response?.data?.detail || e.message } } finally { claudeChecking.value = false }
+}
 const settingsStore = useSettingsStore()
 /** No key stored (and not no-spend mode): only the key field shows, and the panel cannot be dismissed. */
 const gated = computed(() => !forPod.value && !keyInfo.value.runpod_api_key_set && !settingsStore.ready)
@@ -413,6 +437,12 @@ const previewText = computed(() => {
   for (const [k, v] of Object.entries(p.env || {})) lines.push(`${k}=${v}`)
   return lines.join('\n')
 })
+
+/** Opened from Import Shot Pack's "Manage adapters": scroll to the Import adapters section. */
+function focusSection() {
+  if (ui.configFocus === 'adapters') document.querySelector('[data-testid="section-adapters"]')?.scrollIntoView({ block: 'start' })
+  ui.configFocus = ''
+}
 
 async function save() {
   saving.value = true; error.value = null

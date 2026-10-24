@@ -120,12 +120,22 @@ no pod each show a toast instead of syncing; a missing volume or transport reads
 configured. Click here to configure." and the click opens Default Configuration (ADR-008,
 decision 8). Adapters do none of this: they plan, nothing more.
 
+## Managing adapters: nothing is a black box
+
+Default Configuration has an **Import adapters** section (Import Shot Pack links to it with
+Manage adapters). Every adapter is listed with its sha256: **Inspect** shows the code as it
+is on disk and where the file is (built-ins are read-only); **New adapter** starts from a
+template that passes the structure check; **Edit** changes yours, checking the structure as
+you type; **Duplicate** copies any adapter (the way to change a built-in) under a new id;
+**Delete** removes yours. There is no approval step: the code is open to read, and an
+adapter only ever runs fenced. The file name is the adapter's id.
+
 ## Where adapters live and how they load
 
 - Built in: `comfy-shared`, `panama-imax-redux`.
 - Yours: `~/.config/runpod-pod-manager/adapters/*.mjs`. The folder is watched; saving a
-  file reloads it with no restart. A new or changed file shows its source and hash and
-  runs only after you approve it. A broken one is listed with its error, nothing else is
+  file reloads it with no restart. A new or changed file is listed with its hash and
+  runs as saved, fenced. A broken one is listed with its error, nothing else is
   affected.
 - They run in a separate Node process, not in the UI, under `--permission` with read
   access to the source folder and the adapter file only (no writes, no child processes),
@@ -141,7 +151,7 @@ On any machine with the app's pod-manager MCP server connected (or the CLI):
    (for packages: the READMEs and `MANIFEST.json`).
 3. It writes the `.mjs`, saves it to the adapters folder, and dry-runs it against the
    folder: `./start.sh import <folder> --adapter <id> --dry-run`.
-4. You read the plan, approve the adapter, and apply.
+4. You read the plan and apply. (The adapter's code is open to read in Default Configuration.)
 
 A good adapter is boring: detects by a few telltale files, maps by globs and manifest
 entries, keeps source-relative paths, leaves everything else in place, and reports what it
@@ -169,7 +179,7 @@ recorded in the manifest (0.39.2 for the 2026-10-20 round, 0.42.1 for 2026-10-23
 
 ## Writing one with Claude from the app
 
-Default Configuration takes an optional Anthropic API key (stored like the RunPod keys).
+Default Configuration takes an optional Anthropic API key (stored like the RunPod keys; `ANTHROPIC_API_KEY` in the environment or the repo `.env` works too; **Test key** checks it with one small call).
 With it, Import Shot Pack does two things with Claude:
 
 - **Describes the shot pack** when you attach a folder: a few sentences from the folder
@@ -178,14 +188,14 @@ With it, Import Shot Pack does two things with Claude:
 - **Writes an adapter, in a loop.** Press "Write an adapter with Claude": it shows what
   would be sent (the spec, folder names with file counts, a sample of file names, up to
   four small README/manifest text files cut to 12 KB; never media) and a box for your
-  prompt, and only on Send calls the API. The reply is saved as an unapproved draft and
+  prompt, and only on Send calls the API. The reply is saved as an adapter and
   checked: **structure** (without running it: a default export, a string `id` and `name`,
-  `detect` and `plan`, no Node imports, no `fetch`, no `process`). You read it and approve
-  it, then **Test on this folder** runs it fenced and checks the plan it returns (relative
+  `detect` and `plan`, no Node imports, no `fetch`, no `process`). You can read it (Inspect),
+  then **Test on this folder** runs it fenced and checks the plan it returns (relative
   paths inside the source, destinations only under `input/ workflows/ models/ node-packs/`,
   well-formed hashes). Whatever failed is shown; type what to change and **Rewrite with
   Claude**: the prompt, the errors and the previous source go back, the same file is
-  rewritten, and the approval is taken away. Repeat until it reads Valid, then Use this
+  rewritten. Repeat until it reads Valid, then Use this
   adapter. Nothing repeats on its own; every round is yours.
 
 ## Not in scope

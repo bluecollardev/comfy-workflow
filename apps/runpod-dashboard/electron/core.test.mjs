@@ -12,11 +12,11 @@ const EXPECTED = {
   pods: ['dashboard', 'list', 'get', 'create', 'stop', 'resume', 'remove', 'gpus', 'volume', 'datacenters', 'setIdle', 'details', 'recreate', 'config', 'setConfig'],
   volumes: ['list', 'create', 'resize', 'remove', 'useAsDefault'],
   governance: ['summary'],
-  settings: ['get', 'set'],
+  settings: ['get', 'set', 'checkAnthropic'],
   git: ['accounts', 'disconnect', 'repos', 'connect'],
   repositories: ['list', 'add', 'remove', 'search', 'branches', 'folders'],
   images: ['env', 'dockerfile'],
-  imports: ['list', 'detect', 'plan', 'apply', 'approve', 'source', 'save', 'spec', 'draftPreview', 'draft', 'validateSource', 'describe', 'syncAfter'],
+  imports: ['list', 'detect', 'plan', 'apply', 'source', 'save', 'spec', 'draftPreview', 'draft', 'validateSource', 'describe', 'syncAfter', 'remove', 'template', 'duplicate'],
   mcp: ['endpoints', 'targets', 'probe', 'serve'],
 }
 for (const [ns, fns] of Object.entries(EXPECTED)) {

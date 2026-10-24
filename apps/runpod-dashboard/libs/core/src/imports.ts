@@ -7,12 +7,12 @@
  * never replacing a different file unless told. The source is never changed.
  */
 import { spawn } from 'node:child_process'
-import { copyFileSync, constants, createReadStream, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, constants, createReadStream, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { basename, dirname, isAbsolute, join, normalize, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { bad } from './errors.js'
-import { REPO_ROOT, adaptersDir, approvalsFile, importsDir } from './paths.js'
+import { REPO_ROOT, adaptersDir, importsDir } from './paths.js'
 import * as mounts from './mounts.js'
 import * as settings from './settings.js'
 
@@ -20,7 +20,7 @@ export type OpName = 'copy' | 'link' | 'verify' | 'note' | 'placeholder'
 export type OpKind = 'input' | 'workflow' | 'model' | 'node-pack' | 'reference' | 'manifest'
 export interface Op { op: OpName; kind: OpKind; from?: string; to?: string; bytes?: number; sha256?: string; note?: string }
 export interface Finding { level: 'info' | 'warn' | 'problem'; text: string; path?: string }
-export interface AdapterInfo { id: string; name: string; version: number; builtin: boolean; file: string; sha256: string; approved: boolean; error?: string }
+export interface AdapterInfo { id: string; name: string; version: number; builtin: boolean; file: string; sha256: string; error?: string }
 export interface PlanSummary { copies: number; links: number; notes: number; bytes: number; by_kind: Record<string, { files: number; bytes: number }> }
 export interface Plan { adapter: { id: string; name: string; version: number; builtin: boolean }; source: string; ops: Op[]; findings: Finding[]; summary: PlanSummary; fenced: boolean }
 export type OpStatus = 'copied' | 'replaced' | 'same' | 'conflict' | 'hash-mismatch' | 'linked' | 'verified' | 'noted' | 'placeholder' | 'would-copy' | 'would-replace' | 'would-link' | 'error' | 'skipped'
@@ -57,9 +57,7 @@ export function spec(): string {
   return readFileSync(file, 'utf8')
 }
 
-// ----- adapters: built-in and yours, with approval -----
-
-function readApprovals(): Record<string, string> { try { return JSON.parse(readFileSync(approvalsFile(), 'utf8')) } catch { return {} } }
+// ----- adapters: built-in and yours (no approval step: every adapter's code is open to read in Default Configuration, ADR-008) -----
 
 /** Whether this Node can fence a child with --permission (22.13+ and Electron's Node). */
 export const fenceSupported = (): boolean => process.allowedNodeEnvironmentFlags.has('--permission')
@@ -101,42 +99,74 @@ function userFiles(): string[] {
   return existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.mjs') && !f.startsWith('.')).sort().map((f) => join(dir, f)) : []
 }
 
-/** Built-in adapters, then yours. Yours are not imported until approved; an approved one is read again on every call (hot-loaded: a changed file needs approval again). */
+/** Built-in adapters, then yours. Yours are read again on every call (hot-loaded: a file saved meanwhile is there); each runs fenced, read-only on the folder it is given, whoever wrote it. */
 export async function list(): Promise<AdapterInfo[]> {
-  const approvals = readApprovals()
   const rows: AdapterInfo[] = []
   for (const file of builtinFiles()) {
     const { out } = await runAdapter(file, 'info', null)
-    rows.push({ id: out.id || basename(file, '.mjs'), name: out.name || basename(file, '.mjs'), version: out.version ?? 1, builtin: true, file, sha256: await sha256File(file), approved: true, ...(out.ok ? {} : { error: out.error }) })
+    rows.push({ id: out.id || basename(file, '.mjs'), name: out.name || basename(file, '.mjs'), version: out.version ?? 1, builtin: true, file, sha256: await sha256File(file), ...(out.ok ? {} : { error: out.error }) })
   }
   for (const file of userFiles()) {
     const id = basename(file, '.mjs'), sha = await sha256File(file)
-    const approved = approvals[id] === sha
-    let info: Ran = { ok: true, name: id }
-    if (approved) info = (await runAdapter(file, 'info', null)).out
-    rows.push({ id: (approved && info.id) || id, name: info.name || id, version: info.version ?? 1, builtin: false, file, sha256: sha, approved, ...(info.ok ? {} : { error: info.error }) })
+    const { out } = await runAdapter(file, 'info', null)
+    rows.push({ id, name: out.name || id, version: out.version ?? 1, builtin: false, file, sha256: sha, ...(out.ok ? {} : { error: out.error }) })
   }
   return rows
 }
 
-/** Approve one of your adapters as it is now (its hash). Shown the source first; any change needs approval again. */
-export async function approve(id: string): Promise<AdapterInfo> {
-  const row = userFiles().find((f) => basename(f, '.mjs') === id)
-  if (!row) throw bad(`no adapter ${id} in ${adaptersDir()}`)
-  const approvals = readApprovals(); approvals[id] = await sha256File(row)
-  mkdirSync(dirname(approvalsFile()), { recursive: true }); writeFileSync(approvalsFile(), JSON.stringify(approvals, null, 2) + '\n')
-  return (await list()).find((a) => a.file === row)!
-}
-
-/** The source of one of your adapters, for the approval screen. */
-export function source(id: string): { id: string; sha256: string; text: string } {
-  const file = userFiles().find((f) => basename(f, '.mjs') === id) || builtinFiles().find((f) => basename(f, '.mjs') === id)
+/** The source of an adapter, built-in or yours, as it is on disk: what Inspect shows. */
+export function source(id: string): { id: string; sha256: string; text: string; builtin: boolean; file: string } {
+  const user = userFiles().find((f) => basename(f, '.mjs') === id)
+  const file = user || builtinFiles().find((f) => basename(f, '.mjs') === id)
   if (!file) throw bad(`no adapter ${id}`)
   const text = readFileSync(file, 'utf8')
-  return { id, sha256: sha256Text(text), text }
+  return { id, sha256: sha256Text(text), text, builtin: !user, file }
 }
 
-/** Save an adapter module of yours (what an agent calls); a syntax check only, never run. It is unapproved until a person approves it. */
+/** Delete one of your adapters (its file). The built-ins cannot be deleted; duplicate one to change it. */
+export function remove(id: string): { id: string } {
+  if (builtinFiles().some((f) => basename(f, '.mjs') === id)) throw bad(`${id} is a built-in adapter; it cannot be deleted`)
+  const file = userFiles().find((f) => basename(f, '.mjs') === id)
+  if (!file) throw bad(`no adapter ${id} in ${adaptersDir()}`)
+  unlinkSync(file)
+  return { id }
+}
+
+/** A starting point for a new adapter that passes the structure check as it stands: detect says no, plan returns nothing. */
+export function template(id: string): string {
+  if (!ID.test(id)) throw bad('the adapter id is lowercase letters, digits and dashes (at most 63)')
+  return `// ${id}: an import adapter (docs/IMPORT-ADAPTERS.md). It only plans; the app applies the plan.
+// detect() says whether it recognises a folder; plan() lists what goes where in ComfyUI-Shared.
+// Read the source folder only through ctx: exists, stat, list, text, json, sha256.
+export default {
+  id: '${id}',
+  name: '${id}',
+  version: 1,
+
+  async detect(root, ctx) {
+    // e.g. return { match: (await ctx.exists('MANIFEST.json')) ? 1 : 0, evidence: ['MANIFEST.json'] }
+    return { match: 0, evidence: [] }
+  },
+
+  async plan(root, ctx) {
+    const ops = []
+    // e.g. for (const f of await ctx.list('input', { recursive: true })) ops.push({ op: 'copy', kind: 'input', from: f.path, to: f.path, bytes: f.bytes })
+    return { ops, findings: [] }
+  },
+}
+`
+}
+
+/** Copy a built-in (or your own) adapter's source under a new id: the way to change a built-in. */
+export function duplicate(fromId: string, newId: string): string {
+  if (!ID.test(newId)) throw bad('the adapter id is lowercase letters, digits and dashes (at most 63)')
+  const text = source(fromId).text
+  const re = /\bid\s*:\s*['"`][^'"`]+['"`]/
+  if (!re.test(text)) throw bad(`${fromId} has no id: '...' to rename`)
+  return text.replace(re, `id: '${newId}'`)
+}
+
+/** Save an adapter module of yours (what an agent calls, and the editor): a syntax check only, nothing is run. */
 export async function save(id: string, text: string): Promise<AdapterInfo> {
   if (!ID.test(id)) throw bad('the adapter id is lowercase letters, digits and dashes (at most 63)')
   if (text.length > 512 * 1024) throw bad('the adapter is too large (512 KB at most)')
@@ -149,18 +179,16 @@ export async function save(id: string, text: string): Promise<AdapterInfo> {
     let e = ''; c.stderr.on('data', (d) => { e += d }); c.on('close', (code) => ok(code === 0 ? '' : e.trim().split('\n').slice(0, 6).join('\n'))); c.on('error', (x) => ok(x.message))
   })
   if (check) { throw bad(`the adapter does not parse:\n${check}`) }
-  const approvals = readApprovals(); delete approvals[id]
-  mkdirSync(dirname(approvalsFile()), { recursive: true }); writeFileSync(approvalsFile(), JSON.stringify(approvals, null, 2) + '\n')
   return (await list()).find((a) => a.file === file)!
 }
 
 export interface Detected { id: string; name: string; match: number; evidence: string[]; builtin: boolean; error?: string }
-/** Ask every approved adapter whether it knows this folder. Best match first. */
+/** Ask every adapter whether it knows this folder. Best match first. */
 export async function detect(sourceDir: string): Promise<Detected[]> {
   const dir = existingDir(sourceDir)
   const found: Detected[] = []
   for (const a of await list()) {
-    if (!a.approved || a.error) continue
+    if (a.error) continue
     const { out } = await runAdapter(a.file, 'detect', dir)
     const r = (out.result || {}) as { match?: number; evidence?: string[] }
     found.push({ id: a.id, name: a.name, builtin: a.builtin, match: out.ok ? Number(r.match) || 0 : 0, evidence: out.ok ? r.evidence || [] : [], ...(out.ok ? {} : { error: out.error }) })
@@ -220,7 +248,7 @@ async function askClaude(system: string, user: string, maxTokens: number, opts: 
   const key = settings.lookup('ANTHROPIC_API_KEY')
   if (!key) throw bad('No Anthropic API key: set it in Default Configuration, or use your own coding agent (adapter_spec)')
   const model = opts.model || process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5'
-  const res = await (opts.fetchImpl || fetch)('https://api.anthropic.com/v1/messages', {
+  const res = await (opts.fetchImpl || fetch)(`${settings.anthropicBase()}/v1/messages`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({ model, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] }),
@@ -236,7 +264,7 @@ const folderMaterial = (pv: ReturnType<typeof draftPreview>) => [
   ...pv._texts.flatMap((t) => [`## ${t.path}`, t.text]),
 ].join('\n\n')
 
-/** The structure an adapter module must have, checked without running it (an unapproved module never runs): a default export with a string id and name and detect/plan functions, reading only through `ctx`. Returns what is wrong; empty means the module is well formed. The plan it returns is checked when it is tested on a folder (validateOps). */
+/** The structure an adapter module must have, checked without running it (nothing is run): a default export with a string id and name and detect/plan functions, reading only through `ctx`. Returns what is wrong; empty means the module is well formed. The plan it returns is checked when it is tested on a folder (validateOps). */
 export function validateSource(text: string, id?: string): string[] {
   const errs: string[] = []
   if (!/export\s+default/.test(text)) errs.push('there is no `export default { ... }`')
@@ -264,7 +292,7 @@ export interface DraftOptions extends AskOptions {
   errors?: string[]
 }
 
-/** Ask Claude for an adapter for this folder and save it, unapproved (a person reads it and approves it before it runs). Called again with `instruction` and the last `errors`, it rewrites the draft it saved last time under the same id: the loop is the person's prompting until the structure validates. Needs the Anthropic key from Settings. */
+/** Ask Claude for an adapter for this folder and save it (it is listed in Default Configuration with its code open to read). Called again with `instruction` and the last `errors`, it rewrites the draft it saved last time under the same id: the loop is the person's prompting until the structure validates. Needs the Anthropic key from Settings. */
 export async function draft(sourceDir: string, opts: DraftOptions = {}): Promise<{ adapter: AdapterInfo; model: string; valid: boolean; errors: string[] }> {
   if (!settings.lookup('ANTHROPIC_API_KEY')) throw bad('No Anthropic API key: set it in Default Configuration, or write the adapter with your own coding agent (adapter_spec)')
   const pv = draftPreview(sourceDir)
@@ -347,7 +375,7 @@ function summarise(ops: Op[]): PlanSummary {
   return s
 }
 
-/** Plan an import: the adapter named, or the best approved match, run fenced; its ops checked. Writes nothing. */
+/** Plan an import: the adapter named, or the best match, run fenced; its ops checked. Writes nothing. */
 export async function plan(sourceDir: string, adapterId?: string, options: Record<string, unknown> = {}): Promise<Plan> {
   const dir = existingDir(sourceDir)
   const all = await list()
@@ -355,7 +383,6 @@ export async function plan(sourceDir: string, adapterId?: string, options: Recor
   if (adapterId) {
     chosen = all.find((a) => a.id === adapterId)
     if (!chosen) throw bad(`no adapter ${adapterId}; one of ${all.map((a) => a.id).join(', ')}`)
-    if (!chosen.approved) throw bad(`${adapterId} has not been approved (or has changed since): read its source and approve it first`)
   } else {
     const best = (await detect(dir))[0]
     if (!best || best.match < 0.5) throw bad(`no adapter recognises ${dir}; write one (docs/IMPORT-ADAPTERS.md) or pick one with --adapter`)

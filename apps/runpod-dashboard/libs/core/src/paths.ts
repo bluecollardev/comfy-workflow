@@ -18,7 +18,6 @@ export const gitAccountsFile = () => process.env.GIT_ACCOUNTS_FILE || join(confi
 export const repositoriesFile = () => process.env.REPOSITORIES_FILE || join(configDir(), 'repositories.json')
 export const adaptersDir = () => process.env.POD_MANAGER_ADAPTERS_DIR || join(configDir(), 'adapters')      // yours: *.mjs, hot-loaded (docs/ADR-008)
 export const importsDir = () => process.env.POD_MANAGER_IMPORTS_DIR || join(configDir(), 'imports')         // one record per applied import
-export const approvalsFile = () => join(configDir(), 'adapter-approvals.json')
 export const dockerfilePath = () => process.env.DOCKERFILE_PATH || join(REPO_ROOT, 'apps', 'comfy-app', 'Dockerfile')
 export const mirrorDir = () => resolve(REPO_ROOT, 'projects', 'desktop')   // Binc's mirror, read-only by rule
 

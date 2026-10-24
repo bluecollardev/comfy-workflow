@@ -92,11 +92,15 @@ export function defaultState() {
     // The Import Shot Pack modal (docs/ADR-008): the adapters, the plan each known folder gets, and what applying says.
     imports: {
       adapters: [
-        { id: 'comfy-shared', name: 'A ComfyUI-Shared folder', version: 1, builtin: true, approved: true, sha256: 'a'.repeat(64), file: '' },
-        { id: 'panama-imax-redux', name: 'Panama Canal v2 delivery package', version: 1, builtin: true, approved: true, sha256: 'b'.repeat(64), file: '' },
-        { id: 'agent-made', name: 'Agent made', version: 1, builtin: false, approved: false, sha256: 'c'.repeat(64), file: '' },
+        { id: 'comfy-shared', name: 'A ComfyUI-Shared folder', version: 1, builtin: true, sha256: 'a'.repeat(64), file: '' },
+        { id: 'panama-imax-redux', name: 'Panama Canal v2 delivery package', version: 1, builtin: true, sha256: 'b'.repeat(64), file: '' },
+        { id: 'agent-made', name: 'Agent made', version: 1, builtin: false, sha256: 'c'.repeat(64), file: '/home/me/.config/runpod-pod-manager/adapters/agent-made.mjs' },
       ],
-      sources: { 'agent-made': 'export default { id: "agent-made", name: "Agent made" /* ... */ }' },
+      sources: {
+        'comfy-shared': "export default { id: 'comfy-shared', name: 'A ComfyUI-Shared folder', async detect() {}, async plan() {} }",
+        'panama-imax-redux': "export default { id: 'panama-imax-redux', name: 'Panama Canal v2 delivery package', async detect() {}, async plan() {} }",
+        'agent-made': "export default { id: 'agent-made', name: 'Agent made', async detect() {}, async plan() {} }",
+      },
       plans: {
         '/Users/lucas/Projects/package': {
           adapter: { id: 'panama-imax-redux', name: 'Panama Canal v2 delivery package', version: 1, builtin: true }, source: '/Users/lucas/Projects/package', fenced: true,
@@ -312,9 +316,10 @@ export async function mockApi(page, state) {
     if (method === 'GET' && path === '/repos/search') return json({ repos: filterRepos(state.accountRepos, query.q) })
     if (method === 'GET' && path === '/repos/branches') return json(state.branches)
     if (method === 'GET' && path === '/repos/folders') return json({ url: query.url, branch: query.branch, folders: state.folders })
+    if (method === 'POST' && path === '/settings/anthropic/check') { state.settings.anthropicChecks = (state.settings.anthropicChecks || 0) + 1; return json(state.settings.anthropic_key_set ? (state.settings.anthropicRejects ? { ok: false, error: 'Anthropic answered 401: invalid x-api-key' } : { ok: true }) : { ok: false, error: 'No Anthropic API key is set' }) }
     // Import (the Import Shot Pack modal)
     if (method === 'GET' && path === '/imports/adapters') return json(state.imports.adapters)
-    if (method === 'GET' && path === '/imports/source') { const a = state.imports.adapters.find((x) => x.id === query.id); return a ? json({ id: a.id, sha256: a.sha256, text: state.imports.sources[a.id] || '' }) : json({ detail: `no adapter ${query.id}` }, 400) }
+    if (method === 'GET' && path === '/imports/source') { const a = state.imports.adapters.find((x) => x.id === query.id); return a ? json({ id: a.id, sha256: a.sha256, text: state.imports.sources[a.id] || '', builtin: a.builtin, file: a.file || `/builtin/${a.id}.mjs` }) : json({ detail: `no adapter ${query.id}` }, 400) }
     if (method === 'GET' && path === '/imports/draft-preview') return json({ source: query.source, total_files: 120, dirs: [{ path: 'shotA', files: 100 }, { path: 'shotA/comfy', files: 40 }], sample: ['shotA/comfy/input/a.png'], texts: [{ path: 'MANIFEST.json', bytes: 2048, sent_bytes: 2048 }, { path: '00_READ_ME.md', bytes: 40000, sent_bytes: 12288 }], spec_bytes: 9000 })
     if (method === 'POST' && path === '/imports/describe') {
       state.imports.described = (state.imports.described || 0) + 1
@@ -326,8 +331,7 @@ export async function mockApi(page, state) {
       if (!state.settings.anthropic_key_set) return json({ detail: 'No Anthropic API key: set it in Default Configuration' }, 400)
       const id = body.id || 'draft-package'
       let a = state.imports.adapters.find((x) => x.id === id)
-      if (!a) { a = { id, name: id, version: 1, builtin: false, approved: false, sha256: 'd'.repeat(64), file: '' }; state.imports.adapters.push(a) }
-      a.approved = false   // a rewrite takes the approval away
+      if (!a) { a = { id, name: id, version: 1, builtin: false, sha256: 'd'.repeat(64), file: `/home/me/.config/runpod-pod-manager/adapters/${id}.mjs` }; state.imports.adapters.push(a) }
       state.imports.sources[id] = `export default { id: "${id}" } // version ${(state.imports.drafts?.length || 0) + 1}`
       state.imports.drafts = [...(state.imports.drafts || []), body]
       state.imports.draftPlanError = null
@@ -341,10 +345,32 @@ export async function mockApi(page, state) {
       if (body.pod_id.startsWith('dry-')) return json({ action: 'skip', why: 'simulated', configure: false })
       return json({ action: 'sync', request: { pod_id: body.pod_id, direction: 'push', only: ['comfy-shared'], skip_renders: true } })
     }
-    if (method === 'POST' && path === '/imports/approve') { const a = state.imports.adapters.find((x) => x.id === body.id); if (!a) return json({ detail: `no adapter ${body.id}` }, 400); a.approved = true; return json(a) }
+    if (method === 'POST' && path === '/imports/save') {
+      if (!/export\s+default/.test(body.text)) return json({ detail: 'the adapter does not parse:\nUnexpected end of input' }, 400)
+      let a = state.imports.adapters.find((x) => x.id === body.id)
+      if (a && a.builtin) return json({ detail: `${body.id} is a built-in adapter` }, 400)
+      if (!a) { a = { id: body.id, name: body.id, version: 1, builtin: false, sha256: 'e'.repeat(64), file: `/home/me/.config/runpod-pod-manager/adapters/${body.id}.mjs` }; state.imports.adapters.push(a) }
+      state.imports.sources[body.id] = body.text; a.sha256 = String((state.imports.saves = (state.imports.saves || 0) + 1)).padStart(64, '0')
+      return json(a)
+    }
+    if (method === 'DELETE' && (m = path.match(/^\/imports\/adapters\/([^/]+)$/))) {
+      const a = state.imports.adapters.find((x) => x.id === decodeURIComponent(m[1]))
+      if (!a) return json({ detail: `no adapter ${m[1]}` }, 400)
+      if (a.builtin) return json({ detail: `${a.id} is a built-in adapter; it cannot be deleted` }, 400)
+      state.imports.adapters = state.imports.adapters.filter((x) => x !== a); delete state.imports.sources[a.id]
+      return json({ id: a.id })
+    }
+    if (method === 'GET' && path === '/imports/template') return json(`// ${query.id}: an import adapter\nexport default {\n  id: '${query.id}',\n  name: '${query.id}',\n  async detect(root, ctx) { return { match: 0, evidence: [] } },\n  async plan(root, ctx) { return { ops: [], findings: [] } },\n}\n`)
+    if (method === 'GET' && path === '/imports/duplicate') return json((state.imports.sources[query.from] || '').replace(/id:\s*'[^']+'/, `id: '${query.id}'`))
+    if (method === 'POST' && path === '/imports/validate') {
+      const errs = []
+      if (!/export\s+default/.test(body.text)) errs.push('there is no `export default { ... }`')
+      if (!/detect\s*[(:]/.test(body.text)) errs.push('there is no detect(root, ctx) function')
+      if (!/plan\s*[(:]/.test(body.text)) errs.push('there is no plan(root, ctx) function')
+      return json(errs)
+    }
     if (method === 'POST' && path === '/imports/plan') {
       const a = body.adapter && state.imports.adapters.find((x) => x.id === body.adapter)
-      if (a && !a.approved) return json({ detail: `${a.id} has not been approved (or has changed since): read its source and approve it first` }, 400)
       if (a && a.id.startsWith('draft-') && state.imports.draftPlanError) return json({ detail: state.imports.draftPlanError }, 400)
       const plan = a && a.id.startsWith('draft-') && state.imports.plans[body.source] ? { ...state.imports.plans[body.source], adapter: { id: a.id, name: a.name, version: 1, builtin: false } } : state.imports.plans[body.source]
       return plan ? json(plan) : json({ detail: `no adapter recognises ${body.source}; write one (docs/IMPORT-ADAPTERS.md) or pick one with --adapter` }, 400)

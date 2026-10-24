@@ -86,3 +86,18 @@ export function applyToEnv(): void {
   const stored = readEnvFile()
   for (const k of KEYS) if (!process.env[k] && stored[k]) process.env[k] = stored[k]
 }
+
+/** Where the Anthropic API is: the real one, or ANTHROPIC_API_URL (a stand-in for tests). */
+export const anthropicBase = () => (process.env.ANTHROPIC_API_URL || 'https://api.anthropic.com').replace(/\/+$/, '')
+
+/** Does the stored Anthropic key work? One cheap call (GET /v1/models, one row). Never throws: { ok, error? }. `fetchImpl` is for tests. */
+export async function checkAnthropic(fetchImpl: typeof fetch = fetch): Promise<{ ok: boolean; error?: string }> {
+  const key = lookup('ANTHROPIC_API_KEY')
+  if (!key) return { ok: false, error: 'No Anthropic API key is set' }
+  try {
+    const res = await fetchImpl(`${anthropicBase()}/v1/models?limit=1`, { headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' } })
+    if (res.ok) return { ok: true }
+    const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } }
+    return { ok: false, error: `Anthropic answered ${res.status}: ${body.error?.message || 'no detail'}` }
+  } catch (e) { return { ok: false, error: `Could not reach Anthropic: ${(e as Error).message}` } }
+}

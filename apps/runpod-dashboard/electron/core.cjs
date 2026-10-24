@@ -75,6 +75,7 @@ const TABLE = {
   },
   settings: {
     get: (c) => c.settings.get(),
+    checkAnthropic: (c) => c.settings.checkAnthropic(),
     set: (c, values) => { const r = c.settings.set(values); if (process.env.RUNPOD_API_KEY && !stopIdle) startIdleWatch().catch(() => {}); return r },
   },
   git: {
@@ -98,7 +99,6 @@ const TABLE = {
     detect: (c, dir) => c.imports.detect(dir),
     plan: (c, dir, adapter, options) => c.imports.plan(dir, adapter || undefined, options || {}),
     apply: (c, plan, opts) => c.imports.apply(plan, opts || {}),
-    approve: (c, id) => c.imports.approve(id),
     source: (c, id) => c.imports.source(id),
     save: (c, id, text) => c.imports.save(id, text),
     spec: (c) => c.imports.spec(),
@@ -107,6 +107,9 @@ const TABLE = {
     validateSource: (c, text, id) => c.imports.validateSource(text, id || undefined),
     describe: (c, dir) => c.imports.describe(dir),
     syncAfter: (c, podId) => c.imports.syncAfter(podId || null),
+    remove: (c, id) => c.imports.remove(id),
+    template: (c, id) => c.imports.template(id),
+    duplicate: (c, from, id) => c.imports.duplicate(from, id),
   },
   images: {
     env: (c, params) => c.images.env(params || {}),

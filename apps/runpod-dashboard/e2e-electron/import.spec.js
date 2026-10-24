@@ -68,24 +68,53 @@ test.describe('Import Shot Pack over IPC', () => {
     await expect(dialog.getByTestId('import-result')).toHaveAttribute('data-ok', 'true')
   })
 
-  test('your own adapter is read and approved in the app, then plans the folder', async () => {
+  test('Default Configuration lists every adapter with its code; yours is created, edited, used and deleted, on disk', async () => {
     const { page } = ctx
-    mkdirSync(adapters, { recursive: true })
-    writeFileSync(join(adapters, 'mine.mjs'), "export default { id: 'mine', name: 'Mine', version: 1, async detect(root, ctx) { return { match: 0.2, evidence: [] } }, async plan(root, ctx) { return { ops: [{ op: 'copy', kind: 'input', from: 'shotA/comfy/input/shots/shotA/ref.png', to: 'input/mine/ref.png' }], findings: [{ level: 'info', text: 'hello from mine' }] } } }")
     await page.locator('.modal.show', { hasText: t('import.title') }).getByRole('button', { name: t('connect.done') }).click()
     await expect(page.locator('.modal.show')).toHaveCount(0)
+    await page.getByTestId('open-config').click()
+    const cfg = page.locator('.modal.show', { has: page.getByTestId('config-modal') })
+    const mgr = cfg.getByTestId('adapter-manager')
+    await expect(mgr.locator('[data-testid="adapter-row"][data-id="panama-imax-redux"]').getByTestId('adapter-builtin')).toBeVisible()   // imports.list
+    // a built-in's code is open to read (imports.source)
+    await mgr.locator('[data-testid="adapter-row"][data-id="panama-imax-redux"]').getByTestId('adapter-inspect').click()
+    const view = page.locator('.modal.show', { hasText: t('adapters.inspectTitle', { id: 'panama-imax-redux' }) })
+    await expect(view.getByTestId('adapter-view-code')).toContainText("id: 'panama-imax-redux'")
+    await expect(view.getByTestId('adapter-view-builtin')).toBeVisible()
+    await view.getByTestId('adapter-view-close').click()
+    // New adapter: the template (imports.template), checked as typed (imports.validateSource), saved (imports.save)
+    await mgr.getByTestId('adapter-new').click()
+    const ed = page.locator('.modal.show', { hasText: t('adapters.newTitle') })
+    await expect(ed.getByTestId('adapter-structure')).toHaveAttribute('data-ok', 'true')
+    await ed.getByTestId('adapter-id').fill('mine')
+    await ed.getByTestId('adapter-code').fill("export default { id: 'mine', name: 'Mine', version: 1, async detect(root, ctx) { return { match: 0.2, evidence: [] } }, async plan(root, ctx) { return { ops: [{ op: 'copy', kind: 'input', from: 'shotA/comfy/input/shots/shotA/ref.png', to: 'input/mine/ref.png' }], findings: [{ level: 'info', text: 'hello from mine' }] } } }")
+    await ed.getByTestId('adapter-save').click()
+    const mine = mgr.locator('[data-testid="adapter-row"][data-id="mine"]')
+    await expect(mine.getByTestId('adapter-yours')).toBeVisible()
+    expect(readFileSync(join(adapters, 'mine.mjs'), 'utf8')).toContain('hello from mine')   // the file the app reads
+    // edit it: structure errors show as you type
+    await mine.getByTestId('adapter-edit').click()
+    const ed2 = page.locator('.modal.show', { hasText: t('adapters.editTitle', { id: 'mine' }) })
+    await ed2.getByTestId('adapter-code').fill("export default { id: 'mine', name: 'Mine' }")
+    await expect(ed2.getByTestId('adapter-problem').first()).toBeVisible()
+    await ed2.getByRole('button', { name: t('import.cancel') }).click()
+    // used straight away: no approval step
+    await cfg.getByTestId('config-close').click()
+    await expect(page.locator('.modal.show')).toHaveCount(0)
     const dialog = await open(page)
-    const row = dialog.locator('[data-testid="import-adapter-row"][data-id="mine"]')
-    await expect(row.getByTestId('import-adapter-state')).toHaveText(t('import.notApproved'))
-    await row.getByTestId('import-adapter-read').click()                                   // imports.source
-    const reading = page.locator('.modal.show', { hasText: 'mine' }).last()
-    await expect(reading.getByTestId('import-source')).toContainText("id: 'mine'")
-    await reading.getByTestId('import-approve').click()                                    // imports.approve
-    await expect(row.getByTestId('import-adapter-state')).toHaveText(t('import.approved'))
     await dialog.getByTestId('import-folder').fill(pkg)
     await dialog.getByTestId('import-adapter').selectOption('mine')
     await dialog.getByTestId('import-plan').click()
     await expect(dialog.getByTestId('import-plan-adapter')).toHaveText('mine')
     await expect(dialog.locator('[data-testid="import-finding"]')).toContainText('hello from mine')
+    // Manage adapters: the link goes to the section
+    await dialog.getByTestId('import-manage-adapters').click()
+    const cfg2 = page.locator('.modal.show', { has: page.getByTestId('config-modal') })
+    await expect(cfg2.getByTestId('adapter-manager')).toBeVisible()
+    // delete it: the file is gone
+    page.once('dialog', (d) => d.accept())
+    await cfg2.locator('[data-testid="adapter-row"][data-id="mine"]').getByTestId('adapter-delete').click()
+    await expect(cfg2.locator('[data-testid="adapter-row"][data-id="mine"]')).toHaveCount(0)
+    expect(existsSync(join(adapters, 'mine.mjs'))).toBe(false)
   })
 })

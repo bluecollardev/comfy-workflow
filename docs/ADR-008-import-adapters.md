@@ -50,9 +50,11 @@ is never edited (contract §5.2; `.claude/rules/binc-tree.md` for Binc's tree).
    settled.
 4. **More adapters are loaded at runtime, from a folder.** `~/.config/runpod-pod-manager/adapters/*.mjs`
    is watched. A new or changed file is imported again without a restart (cache-busting
-   import), listed in Connect/Import with its source hash, and its errors shown against
-   it, not thrown at the app. A user-written adapter must be approved once (its source and
-   hash shown) before it runs; a changed file needs approval again.
+   import), listed in Default Configuration with its source hash, and its errors shown against
+   it, not thrown at the app. **There is no approval step** (Lucas, 2026-10-24: "we don't need
+   an approve"; the first draft of this ADR had one). What replaces it is that nothing is a
+   black box: every adapter, built-in or yours, has its code open to read in Default
+   Configuration (decision 12), and an adapter only ever runs fenced.
 5. **Adapters run outside the UI process.** In a child process (the app's own executable
    with `ELECTRON_RUN_AS_NODE=1`, as the MCP servers already do) under Node's
    `--permission` with read access to the source folder only (checked, open point 2), handed a read-only
@@ -63,13 +65,25 @@ is never edited (contract §5.2; `.claude/rules/binc-tree.md` for Binc's tree).
    dry-run it against a folder, and run an import; the CLI gets `./start.sh import
    <folder> [--adapter <id>] [--dry-run]`. An agent on any machine reads
    `docs/IMPORT-ADAPTERS.md` (the same text the tool returns), writes the `.mjs`, and
-   tests it on a real folder before the user approves it.
+   tests it on a real folder with `import_plan`; the code it saved is listed in Default
+   Configuration for the person to read.
 7. **A setting for the Claude key.** Settings gets an optional Anthropic API key beside the
    RunPod keys, stored the same way (`~/.config/runpod-pod-manager/.env`, shown as set
    plus last four characters, never the value). Its one use is an in-app "Write an adapter
    with Claude" action that sends the folder's file listing and manifests (not the media)
-   to the model and saves the result as a draft adapter for approval. Agents that bring
+   to the model and saves the result as an adapter (listed in Default Configuration, code open). Agents that bring
    their own key (Claude Code, Codex) do not need it. See open point 1.
+   **Hooked up end to end (2026-10-24: "hook up the keys"):** the key is read from the
+   environment first (so `ANTHROPIC_API_KEY` in the shell or the repo `.env` that
+   `./start.sh desktop` sources works), then from `~/.config/runpod-pod-manager/.env`, where
+   the Default Configuration field writes it (mode 600, shown as set plus last four
+   characters). **Test key** in Default Configuration saves a typed key and makes one small
+   call (`GET /v1/models?limit=1`) so the answer is Anthropic's own. Write an adapter with
+   Claude is never silent: no key sends you to the key field; no folder says so and puts the
+   cursor in the folder box; with both it shows the key hint and opens the preview.
+   `ANTHROPIC_API_URL` points the core at a stand-in server, which is how the real-app spec
+   proves the whole chain (save, test, describe on attach, the prompt loop) without calling
+   Anthropic.
 8. **Import locally, then sync (Lucas, 2026-10-24).** An import always fills this PC's
    ComfyUI-Shared; getting it onto a pod or volume is the existing Sync (ADR-007), by SSH
    to a running pod or by S3 with no pod. There is no import straight onto a running pod:
@@ -113,12 +127,23 @@ is never edited (contract §5.2; `.claude/rules/binc-tree.md` for Binc's tree).
     adapter with Claude is a loop, not one shot:** the person's prompt goes to Claude with the
     folder material; the app checks the draft's structure without running it
     (`validateSource`: default export, string id and name, `detect` and `plan`, no Node
-    imports, no fetch, no process); the person reads and approves it, **Test on this
+    imports, no fetch, no process); the person can read it (Inspect), **Test on this
     folder** runs it fenced and checks the plan it returns (`validateOps`); any errors go back
-    to Claude with the person's next prompt and the previous source, under the same id. A
-    rewrite takes the approval away. The draft is valid when both checks pass, and only then
+    to Claude with the person's next prompt and the previous source, under the same id. The draft is valid when both checks pass, and only then
     is it offered as the adapter to use. The person drives every round; nothing retries by
     itself.
+12. **Adapters are managed and inspectable in Default Configuration (Lucas, 2026-10-24:
+    "have an interface, under default configuration, that saves and allows crud for these
+    adapters. user can inspect adapter code ... that way it's not a black box").** An
+    **Import adapters** section lists every adapter with its sha256 and: **Inspect** (the code
+    as it is on disk, its file path and hash; built-ins are read-only), **New adapter** (from a
+    template that already passes the structure check), **Edit** (yours; the structure is
+    checked as you type, a save the app refuses stays open and says why), **Duplicate** (the
+    way to change a built-in: its code under a new id), **Delete** (yours; asks first).
+    Import Shot Pack carries a **Manage adapters** link that opens this section, and an
+    Inspect button on each adapter. The file name is the adapter's identity, whatever `id` the
+    module declares. This supersedes the approval step of the first draft: where the
+    approval screen was the control, reading the code is.
 11. **Leaving the machine is not an import step.** An import fills the local ComfyUI-Shared
    (or, with `--s3`, goes through the existing sync). Pushing to a volume stays the
    sync's job, with its existing rules: plates and other client material only with Binc's
@@ -131,7 +156,8 @@ is never edited (contract §5.2; `.claude/rules/binc-tree.md` for Binc's tree).
 - The plan is data, so the same dry-run screen serves every adapter, and a plan can be kept
   as the record of what an import did (and what it left in place).
 - AI-written code gets a narrow door: read-only access to one folder, output validated as
-  data. It is still code a person approved; the approval screen is part of the feature.
+  data. It is still code, so it is always open to read (decision 12), and the fence's one gap, the
+  network, is stated rather than hidden (open point 2).
 - The Dockerfile and image are untouched; node packs an adapter stages go where the image
   already looks (`shared/nodes` packs, `COMFY_SHOTPIPE` sets, ADR-006), and a package's
   packs that the image lacks are reported, not silently installed.
@@ -146,7 +172,7 @@ is never edited (contract §5.2; `.claude/rules/binc-tree.md` for Binc's tree).
   and enough for flat copies, but not for hash checks, per-round subfolders, reading a
   manifest to decide, or reporting missing nodes. Kept as a possible first tier: an adapter
   may be written as rules, and the built-ins can be.
-- **Let adapters write files directly.** Less code, but then approving an adapter means
+- **Let adapters write files directly.** Less code, but then trusting an adapter means
   trusting everything it does. Rejected for plan-then-apply.
 - **Python or shell adapters.** The app has no Python (ADR-005) and users should not need
   one. Rejected.
@@ -172,12 +198,13 @@ is never edited (contract §5.2; `.claude/rules/binc-tree.md` for Binc's tree).
    `--allow-child-process` or `--allow-worker`, which must stay off. Two practical notes:
    macOS paths must be real paths (`/tmp` is `/private/tmp`), and the entry file needs
    its own read grant. So: the adapter process runs under `--permission` with only the
-   source folder and its own file readable; the network gap is closed by the approval
-   screen for now, and by an OS sandbox later if wanted (macOS `sandbox-exec`, a
+   source folder and its own file readable; the network gap is stated, not closed: with no approval step, an adapter
+   (including one an agent or Claude wrote) can read the folder it is given and could send
+   it out. Reading the code is the control for now, and an OS sandbox later if wanted (macOS `sandbox-exec`, a
    container on Linux; not tried). Not yet checked in a packaged build, only in dev.
 3. **Whether Binc wants his own format as an adapter** (CANALV2 trees and `ComfyUI-Shared`
    are read in place today, not imported).
 
 ## Where it lives in the UI
 
-A primary **Import Shot Pack** button on its own row of each pod card opens an Import Shot Pack modal (Lucas, 2026-10-24: "move the import to its own modal", "connect it to the primary button"). It is not a Connect tab. The import itself is not pod-specific (it fills this PC's ComfyUI-Shared); the button sits on the card because Sync to that pod is the next step.
+A primary **Import Shot Pack** button on its own row of each pod card opens an Import Shot Pack modal (with a Manage adapters link to Default Configuration > Import adapters) (Lucas, 2026-10-24: "move the import to its own modal", "connect it to the primary button"). It is not a Connect tab. The import itself is not pod-specific (it fills this PC's ComfyUI-Shared); the button sits on the card because Sync to that pod is the next step.

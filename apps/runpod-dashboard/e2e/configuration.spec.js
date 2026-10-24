@@ -250,4 +250,22 @@ test.describe('features that read the configuration', () => {
     await toast(page).first().getByTestId('toast-close').click()
     await expect(toast(page)).toHaveCount(2)
   })
+
+  test('the Anthropic key: saved from the panel, tested with one call, and the result says what Anthropic said', async ({ page, api }) => {
+    await page.goto('/')
+    await page.getByTestId('open-config').click()
+    const cfg = page.locator('.modal.show', { has: page.getByTestId('config-modal') })
+    await expect(cfg.getByTestId('cfg-claude-group')).toContainText(t('config.claudeUnset'))
+    await expect(cfg.getByTestId('cfg-claude-test')).toBeDisabled()   // nothing to test yet
+    await cfg.getByTestId('cfg-claude-key').fill('sk-ant-api03-0123456789ABCDWXYZ')
+    await cfg.getByTestId('cfg-claude-test').click()   // a typed key is saved first, then asked about
+    await expect(cfg.getByTestId('cfg-claude-result')).toHaveAttribute('data-ok', 'true')
+    await expect(cfg.getByTestId('cfg-claude-result')).toContainText(t('config.claudeWorks'))
+    await expect(cfg.getByTestId('cfg-claude-group')).toContainText(t('config.claudeStored', { hint: '••••WXYZ' }))
+    expect(api.state.settings.anthropic_key_set).toBe(true)
+    api.state.settings.anthropicRejects = true
+    await cfg.getByTestId('cfg-claude-test').click()
+    await expect(cfg.getByTestId('cfg-claude-result')).toHaveAttribute('data-ok', 'false')
+    await expect(cfg.getByTestId('cfg-claude-result')).toContainText('invalid x-api-key')
+  })
 })

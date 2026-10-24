@@ -260,22 +260,20 @@ const fmtBytes = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `$
 async function importCmd(core, argv) {
   const folder = argv[0] && !argv[0].startsWith('--') ? argv.shift() : null
   const o = parse(argv, {
-    adapter: { kind: 'str', meta: 'ID', help: 'the adapter to use (default: the best approved match)' },
+    adapter: { kind: 'str', meta: 'ID', help: 'the adapter to use (default: the best match)' },
     to: { kind: 'str', meta: 'DIR', help: 'the ComfyUI-Shared folder to fill (default: the mapped one)' },
     'dry-run': { kind: 'bool', help: 'show the plan and what would happen; write nothing' },
     overwrite: { kind: 'bool', help: 'replace files that exist and differ (default: leave them, report a conflict)' },
     'link-models': { kind: 'bool', help: 'comfy-shared adapter: link models instead of copying' },
     list: { kind: 'bool', help: 'list the adapters (built-in and yours) and exit' },
-    approve: { kind: 'str', meta: 'ID', help: 'approve one of your adapters as it is now (read it first: --show)' },
     show: { kind: 'str', meta: 'ID', help: 'print an adapter\'s source' },
     json: { kind: 'bool', help: 'print the plan/result as JSON' },
   }, 'import <folder>')
   if (o.list) {
-    for (const a of await core.imports.list()) console.log(`${a.id.padEnd(22)} ${a.builtin ? 'built-in' : a.approved ? 'approved ' : 'NOT APPROVED'}  ${a.name}${a.error ? `  [${a.error}]` : ''}`)
+    for (const a of await core.imports.list()) console.log(`${a.id.padEnd(22)} ${a.builtin ? 'built-in' : 'yours    '}  ${a.name}${a.error ? `  [${a.error}]` : ''}`)
     return 0
   }
   if (o.show) { const s = core.imports.source(o.show); console.log(`// ${o.show}  sha256 ${s.sha256}\n${s.text}`); return 0 }
-  if (o.approve) { const a = await core.imports.approve(o.approve); console.log(`approved ${a.id} (${a.sha256.slice(0, 12)}…)`); return 0 }
   if (!folder) fail('import: give the folder to import\n' + usage({}, 'import <folder>'))
   const plan = await core.imports.plan(resolve(folder), o.adapter || undefined, o['link-models'] ? { link: true } : {})
   const s = plan.summary
@@ -303,7 +301,7 @@ const HELP = `usage: npm run cli -- <command> [options]   (./start.sh pod|sync|p
   pod status|stop|resume|delete --pod-id ID [--force]
   sync --pod ID | --s3 [--volume ID]  [--only project,plates,comfy-shared,workflows] [--plates --approved-by NAME] [--dry-run]
   pull --pod ID | --s3 [--volume ID]  [--only output,review,deliver] [--shot NAME]... [--dry-run]
-  import <folder> [--adapter ID] [--to DIR] [--dry-run] [--overwrite]   a package folder into ComfyUI-Shared; --list | --show ID | --approve ID
+  import <folder> [--adapter ID] [--to DIR] [--dry-run] [--overwrite]   a package folder into ComfyUI-Shared; --list | --show ID
 
 Each command takes --help. The RunPod key comes from --api-key, RUNPOD_API_KEY or the app's settings file.`
 
