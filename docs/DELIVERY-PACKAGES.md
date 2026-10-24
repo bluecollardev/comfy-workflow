@@ -175,6 +175,8 @@ he does not want the package's structure changed.
 
 ## The design for importing, and what is open
 
+**Update 2026-10-24:** the import is now designed as adapters (`docs/ADR-008-import-adapters.md`, spec `docs/IMPORT-ADAPTERS.md`): this package format is the built-in `panama-imax-redux` adapter, other formats are hot-loaded modules. The three points below are the earlier sketch.
+
 1. **A layout per project type.** The next-steps item "abstract shapes and concrete
    shapes" fits: CANALV2 is one layout (project tree, plates, ComfyUI-Shared), the
    delivery package another, each a small file listing where its parts go on the pod.
