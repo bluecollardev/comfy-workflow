@@ -58,6 +58,8 @@ test.describe('The Anthropic key, over IPC', () => {
     await dialog.getByTestId('import-claude').click()
     const cfg = page.locator('.modal.show', { has: page.getByTestId('config-modal') })
     await expect(cfg.getByTestId('cfg-claude-key')).toBeVisible()
+    await expect(cfg.getByTestId('cfg-claude-key')).toBeInViewport()   // the panel scrolled to the key field
+    await expect(cfg.getByTestId('cfg-claude-key')).toBeFocused()
   })
 
   test('a wrong key is refused by Test key; the right one is saved, tested and shown as stored', async () => {

@@ -197,7 +197,7 @@ const useDraft = () => { store.adapter = store.draft.id; store.dropDraft(); stor
 /** No key: the button takes you to the field for it (Default Configuration) instead of sitting there dead. */
 /** Manage adapters: Default Configuration, scrolled to Import adapters. */
 const manageAdapters = () => { ui.importOpen = false; ui.configFocus = 'adapters'; ui.configOpen = true }
-const openKey = () => { ui.importOpen = false; ui.configOpen = true }
+const openKey = () => { ui.importOpen = false; ui.configFocus = 'claude'; ui.configOpen = true }
 const folderInput = ref(null)
 /** Never silent: no key goes to the key field; no folder says so and puts the cursor in the folder box. */
 const claudeClick = () => {

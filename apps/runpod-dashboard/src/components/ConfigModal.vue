@@ -438,10 +438,16 @@ const previewText = computed(() => {
   return lines.join('\n')
 })
 
-/** Opened from Import Shot Pack's "Manage adapters": scroll to the Import adapters section. */
+/** Opened from Import Shot Pack with a place to go: "adapters" scrolls to Import adapters, "claude" to the Anthropic key field (and puts the cursor in it). */
 function focusSection() {
-  if (ui.configFocus === 'adapters') document.querySelector('[data-testid="section-adapters"]')?.scrollIntoView({ block: 'start' })
+  const where = ui.configFocus
   ui.configFocus = ''
+  if (where === 'adapters') document.querySelector('[data-testid="section-adapters"]')?.scrollIntoView({ block: 'start' })
+  if (where === 'claude') {
+    const input = document.getElementById('cfg-claude-key')
+    input?.scrollIntoView({ block: 'center' })
+    input?.focus({ preventScroll: true })
+  }
 }
 
 async function save() {

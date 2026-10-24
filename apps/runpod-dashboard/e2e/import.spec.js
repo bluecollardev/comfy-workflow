@@ -116,6 +116,9 @@ test.describe('Import Shot Pack › Write an adapter with Claude', () => {
     const cfg = page.locator('.modal.show', { has: page.getByTestId('config-modal') })
     await expect(cfg).toBeVisible()
     await expect(cfg.getByTestId('cfg-claude-key')).toBeVisible()
+    await expect(cfg.getByTestId('cfg-claude-key')).toBeInViewport()   // scrolled to the key field, not left at the top of the panel
+    await expect(cfg.getByTestId('cfg-claude-key')).toBeFocused()
+    expect(await cfg.locator('.modal-body').evaluate((el) => el.scrollTop)).toBeGreaterThan(0)   // it really scrolled
     await expect(page.getByTestId('import-modal')).toBeHidden()
   })
 
