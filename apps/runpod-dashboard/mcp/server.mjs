@@ -72,7 +72,7 @@ export function privateSyncHost(core) {
 /** The pod manager's MCP server over `core` (libs/core's exports). `syncHost` runs the syncs: omitted, a private
  *  one (stdio). Returns a fresh SDK Server; call it again for another connection. */
 export function createPodManagerServer({ core, syncHost = privateSyncHost(core) }) {
-  const { governance, gpus, mounts, pods, pool, syncrun, volumes } = core
+  const { governance, gpus, imports, mounts, pods, pool, syncrun, volumes } = core
   const LOG_WAIT_MS = Number(process.env.MCP_LOG_WAIT_MS) || LOG_WAIT_MS_DEFAULT   // RunPod's log stream stays open after the backfill; this is how long get_logs listens
 
   const agentId = { type: 'string', description: 'Agent ID' }
@@ -188,6 +188,11 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
       },
     },
     { name: 'sync_status', description: 'Where a sync started by this server is: folder N of M, percent, files landed, errors, done', inputSchema: { type: 'object', properties: { pod_id: podId }, required: ['pod_id'] } },
+    { name: 'adapter_spec', description: 'The spec for writing an import adapter (a .mjs module that maps a package folder onto the ComfyUI-Shared structure): the target, the module shape, the plan, what the app enforces. Read this before adapter_save.', inputSchema: { type: 'object', properties: {} } },
+    { name: 'adapters_list', description: 'The import adapters: built-in and the user\'s own, with whether each is approved (an unapproved or changed one never runs)', inputSchema: { type: 'object', properties: {} } },
+    { name: 'adapter_save', description: 'Save an adapter module (ES module source) as ~/.config/runpod-pod-manager/adapters/<id>.mjs. Syntax-checked, never run, saved UNAPPROVED: a person reads it and approves it (./start.sh import --show <id>, then --approve <id>, or in the app) before it can run', inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'lowercase letters, digits and dashes' }, source: { type: 'string', description: 'the module source' } }, required: ['id', 'source'] } },
+    { name: 'import_plan', description: 'Dry-run an import: which adapter recognises the folder (or the one named), what it would copy where in ComfyUI-Shared, by kind with counts and bytes, and its findings. Writes nothing. Use it to test an adapter on a real folder', inputSchema: { type: 'object', properties: { source: { type: 'string', description: 'absolute path of the package folder' }, adapter: { type: 'string', description: 'adapter id (default: the best approved match)' } }, required: ['source'] } },
+    { name: 'import_apply', description: 'Import a folder through an adapter into this PC\'s ComfyUI-Shared (copies; never deletes; a differing existing file is a conflict unless overwrite). dry_run defaults to true. Getting it onto a pod is the sync, not this', inputSchema: { type: 'object', properties: { source: { type: 'string' }, adapter: { type: 'string' }, dry_run: { type: 'boolean', description: 'default true' }, overwrite: { type: 'boolean' } }, required: ['source'] } },
     { name: 'cost_now', description: 'What is billing right now: the running pods\' price per hour summed, and the volumes\' cost per month', inputSchema: { type: 'object', properties: {} } },
   ]
   const TOOLS = [...POOL_TOOLS, ...POD_TOOLS]
@@ -327,6 +332,21 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
       const job = syncHost.get(String(pod_id || '').trim())
       if (!job) return json({ pod_id, running: false, done: false, message: `No sync started for ${pod_id} (nothing is running for it)` })
       return json(syncSummary(job))
+    },
+    adapter_spec: async () => text(imports.spec()),
+    adapters_list: async () => json(await imports.list()),
+    adapter_save: async ({ id, source }) => {
+      const a = await imports.save(id, source)
+      return text(`Saved ${a.id} (sha256 ${a.sha256.slice(0, 12)}…) UNAPPROVED. It has not been run. Ask the person to read it (./start.sh import --show ${a.id}) and approve it (./start.sh import --approve ${a.id}, or the app), then test it with import_plan.`)
+    },
+    import_plan: async ({ source, adapter }) => {
+      const p = await imports.plan(source, adapter || undefined)
+      return json({ adapter: p.adapter, source: p.source, fenced: p.fenced, summary: p.summary, findings: p.findings, first_ops: p.ops.slice(0, 40), ops_total: p.ops.length })
+    },
+    import_apply: async ({ source, adapter, dry_run = true, overwrite = false }) => {
+      const p = await imports.plan(source, adapter || undefined)
+      const r = await imports.apply(p, { dryRun: dry_run !== false, overwrite: !!overwrite })
+      return json({ adapter: p.adapter, dry_run: r.dry_run, ok: r.ok, counts: r.counts, record: r.record, findings: p.findings, problems: r.results.filter((x) => ['conflict', 'hash-mismatch', 'error'].includes(x.status)).slice(0, 30) })
     },
     cost_now: async () => {
       const [all, vols] = await Promise.all([pods.list(), volumes.list()])

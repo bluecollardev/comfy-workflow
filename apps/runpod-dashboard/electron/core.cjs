@@ -93,6 +93,16 @@ const TABLE = {
     branches: (c, url) => c.repositories.branches(url),
     folders: (c, url, branch) => c.repositories.folders(url, branch || 'main'),
   },
+  imports: {   // docs/ADR-008: a folder through an adapter into ComfyUI-Shared
+    list: (c) => c.imports.list(),
+    detect: (c, dir) => c.imports.detect(dir),
+    plan: (c, dir, adapter, options) => c.imports.plan(dir, adapter || undefined, options || {}),
+    apply: (c, plan, opts) => c.imports.apply(plan, opts || {}),
+    approve: (c, id) => c.imports.approve(id),
+    source: (c, id) => c.imports.source(id),
+    save: (c, id, text) => c.imports.save(id, text),
+    spec: (c) => c.imports.spec(),
+  },
   images: {
     env: (c, params) => c.images.env(params || {}),
     dockerfile: (c, params) => c.images.dockerfile(params || {}),

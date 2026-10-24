@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto'
 import { basename, dirname, isAbsolute, join, normalize, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { bad } from './errors.js'
-import { adaptersDir, approvalsFile, importsDir } from './paths.js'
+import { REPO_ROOT, adaptersDir, approvalsFile, importsDir } from './paths.js'
 import * as mounts from './mounts.js'
 
 export type OpName = 'copy' | 'link' | 'verify' | 'note' | 'placeholder'
@@ -48,6 +48,13 @@ const sha256File = (file: string) => new Promise<string>((ok, no) => {
   s.on('data', (c) => h.update(c)); s.on('end', () => ok(h.digest('hex'))); s.on('error', no)
 })
 const sha256Text = (text: string) => createHash('sha256').update(text).digest('hex')
+
+/** The adapter writer's spec (docs/IMPORT-ADAPTERS.md): what an agent reads before it writes one. Travels with the core. */
+export function spec(): string {
+  const file = [join(runtimeDir(), 'IMPORT-ADAPTERS.md'), join(REPO_ROOT, 'docs', 'IMPORT-ADAPTERS.md')].find((f) => existsSync(f))
+  if (!file) throw bad('the adapter spec is missing (docs/IMPORT-ADAPTERS.md)')
+  return readFileSync(file, 'utf8')
+}
 
 // ----- adapters: built-in and yours, with approval -----
 

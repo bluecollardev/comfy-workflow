@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// The pod manager's command line over the core (docs/ADR-005, step 5): `pod`, `sync`, `pull`.
+// The pod manager's command line over the core (docs/ADR-005, step 5): `pod`, `sync`, `pull`, `import`.
 //
 // Replaces infra/scripts/create_pod.py and sync_volume.py with the same flags. Only wiring: argv
 // in, the core's functions, child processes for rsync, the AWS CLI and nothing else. Nothing here
@@ -253,6 +253,47 @@ async function pull(core, argv) {
   return runSteps(steps, await transport(core, o, cfg, 'pull'), 'pull')
 }
 
+// ----- import (docs/ADR-008): a folder through an adapter into this PC's ComfyUI-Shared -----
+
+const fmtBytes = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : n >= 1e3 ? `${Math.round(n / 1e3)} KB` : `${n} B`)
+
+async function importCmd(core, argv) {
+  const folder = argv[0] && !argv[0].startsWith('--') ? argv.shift() : null
+  const o = parse(argv, {
+    adapter: { kind: 'str', meta: 'ID', help: 'the adapter to use (default: the best approved match)' },
+    to: { kind: 'str', meta: 'DIR', help: 'the ComfyUI-Shared folder to fill (default: the mapped one)' },
+    'dry-run': { kind: 'bool', help: 'show the plan and what would happen; write nothing' },
+    overwrite: { kind: 'bool', help: 'replace files that exist and differ (default: leave them, report a conflict)' },
+    'link-models': { kind: 'bool', help: 'comfy-shared adapter: link models instead of copying' },
+    list: { kind: 'bool', help: 'list the adapters (built-in and yours) and exit' },
+    approve: { kind: 'str', meta: 'ID', help: 'approve one of your adapters as it is now (read it first: --show)' },
+    show: { kind: 'str', meta: 'ID', help: 'print an adapter\'s source' },
+    json: { kind: 'bool', help: 'print the plan/result as JSON' },
+  }, 'import <folder>')
+  if (o.list) {
+    for (const a of await core.imports.list()) console.log(`${a.id.padEnd(22)} ${a.builtin ? 'built-in' : a.approved ? 'approved ' : 'NOT APPROVED'}  ${a.name}${a.error ? `  [${a.error}]` : ''}`)
+    return 0
+  }
+  if (o.show) { const s = core.imports.source(o.show); console.log(`// ${o.show}  sha256 ${s.sha256}\n${s.text}`); return 0 }
+  if (o.approve) { const a = await core.imports.approve(o.approve); console.log(`approved ${a.id} (${a.sha256.slice(0, 12)}…)`); return 0 }
+  if (!folder) fail('import: give the folder to import\n' + usage({}, 'import <folder>'))
+  const plan = await core.imports.plan(resolve(folder), o.adapter || undefined, o['link-models'] ? { link: true } : {})
+  const s = plan.summary
+  if (!o.json) {
+    console.log(`${plan.adapter.name} (${plan.adapter.id}) read ${plan.source}${plan.fenced ? '' : '   [NOT fenced: this Node has no --permission]'}`)
+    for (const [k, v] of Object.entries(s.by_kind)) console.log(`  ${k.padEnd(10)} ${String(v.files).padStart(6)} files  ${fmtBytes(v.bytes)}`)
+    console.log(`  ${s.notes} left in place; ${s.copies} to copy (${fmtBytes(s.bytes)}), ${s.links} to link`)
+    for (const f of plan.findings) console.log(`  ${f.level.padEnd(7)} ${f.text}`)
+  }
+  const r = await core.imports.apply(plan, { dryRun: o['dry-run'], overwrite: o.overwrite, target: o.to || undefined })
+  if (o.json) console.log(JSON.stringify({ plan: { ...plan, ops: undefined }, result: { ...r, results: undefined } }, null, 1))
+  else {
+    console.log(`${r.dry_run ? 'dry run' : 'imported'}: ${Object.entries(r.counts).map(([k, v]) => `${v} ${k}`).join(', ') || 'nothing'}${r.record ? `\n  record ${r.record}` : ''}`)
+    for (const x of r.results.filter((x) => ['conflict', 'hash-mismatch', 'error'].includes(x.status)).slice(0, 20)) console.log(`  ${x.status}: ${x.detail || plan.ops[x.i].to}`)
+  }
+  return r.ok ? 0 : 1
+}
+
 // ----- main -----
 
 const HELP = `usage: npm run cli -- <command> [options]   (./start.sh pod|sync|pull)
@@ -262,6 +303,7 @@ const HELP = `usage: npm run cli -- <command> [options]   (./start.sh pod|sync|p
   pod status|stop|resume|delete --pod-id ID [--force]
   sync --pod ID | --s3 [--volume ID]  [--only project,plates,comfy-shared,workflows] [--plates --approved-by NAME] [--dry-run]
   pull --pod ID | --s3 [--volume ID]  [--only output,review,deliver] [--shot NAME]... [--dry-run]
+  import <folder> [--adapter ID] [--to DIR] [--dry-run] [--overwrite]   a package folder into ComfyUI-Shared; --list | --show ID | --approve ID
 
 Each command takes --help. The RunPod key comes from --api-key, RUNPOD_API_KEY or the app's settings file.`
 
@@ -278,6 +320,7 @@ async function main(argv) {
   }
   if (cmd === 'sync') return sync(core, rest)
   if (cmd === 'pull') return pull(core, rest)
+  if (cmd === 'import') return importCmd(core, rest)
   fail(`unknown command ${cmd}\n${HELP}`)
 }
 
