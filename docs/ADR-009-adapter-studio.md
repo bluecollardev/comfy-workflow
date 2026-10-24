@@ -102,7 +102,14 @@ buttons but obviously I need to change this too", "I don't see no chat interface
    plan by kind with counts and bytes, the destination tree it would make under ComfyUI-Shared
    (folders expand), the findings, and any structure or plan errors; it refreshes when the
    file is saved. With no folder attached it says to attach one. The chat is a separate pane
-   on the right in every mode.
+   on the right in every mode. **The package as a list of files and folders** (Lucas: "I like the
+   concept of a package list of files and dirs"): Preview and the explorer show the attached
+   folder as a tree, every folder and file marked with what the adapter does with it: an arrow to
+   its destination under ComfyUI-Shared, "left in place" (a note op), or "not matched" (the
+   adapter does not mention it, which is how a gap in a mapping is seen). Folders roll up their
+   children's counts and can be collapsed; a file shows its size. The destination tree sits
+   beside it. The tree is built from the folder's names only (at most 3,000 entries, then it
+   says so) and the plan's ops, so it needs no extra read of file contents.
 10. **Every adapter is editable, the built-ins too.** Editing a built-in writes an **override**:
     a file `adapters/<id>.mjs` with the built-in's id, which the app then uses instead of the
     shipped one. The shipped file is never touched. The list marks it "Built-in, modified",
