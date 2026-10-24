@@ -1,7 +1,7 @@
 # ADR-008: Packages come in through adapters; adapters are modules the app hot-loads
 
 **Date:** 2026-10-24
-**Status:** Proposed (Lucas asked for it, 2026-10-24). Nothing here is built. Open points are at the end.
+**Status:** Proposed (Lucas asked for it, 2026-10-24; import-locally-then-sync decided the same day). Nothing here is built. Open points are at the end.
 **Owner:** Lucas (Blue Collar Dev)
 **Extends:** ADR-005 (the app on one PC, TypeScript core), ADR-007 (the volume and sync), `docs/MOUNT-POINTS.md`.
 **Spec for writers of adapters:** `docs/IMPORT-ADAPTERS.md`.
@@ -70,7 +70,13 @@ is never edited (contract §5.2; `.claude/rules/binc-tree.md` for Binc's tree).
    with Claude" action that sends the folder's file listing and manifests (not the media)
    to the model and saves the result as a draft adapter for approval. Agents that bring
    their own key (Claude Code, Codex) do not need it. See open point 1.
-8. **Leaving the machine is not an import step.** An import fills the local ComfyUI-Shared
+8. **Import locally, then sync (Lucas, 2026-10-24).** An import always fills this PC's
+   ComfyUI-Shared; getting it onto a pod or volume is the existing Sync (ADR-007), by SSH
+   to a running pod or by S3 with no pod. There is no import straight onto a running pod:
+   it would put the adapter's work on a billing machine, duplicate the sync's progress,
+   resume and idle-hold logic, and leave no local copy to check or redo. The same dry run
+   and record serve both steps.
+9. **Leaving the machine is not an import step.** An import fills the local ComfyUI-Shared
    (or, with `--s3`, goes through the existing sync). Pushing to a volume stays the
    sync's job, with its existing rules: plates and other client material only with Binc's
    named yes, USD 100 cap, nothing sent without a person's go.
@@ -126,7 +132,5 @@ is never edited (contract §5.2; `.claude/rules/binc-tree.md` for Binc's tree).
    source folder and its own file readable; the network gap is closed by the approval
    screen for now, and by an OS sandbox later if wanted (macOS `sandbox-exec`, a
    container on Linux; not tried). Not yet checked in a packaged build, only in dev.
-3. **Where an import runs when a pod is up.** Local ComfyUI-Shared then Sync is the
-   default; importing straight onto a running pod over SSH is possible and not designed.
-4. **Whether Binc wants his own format as an adapter** (CANALV2 trees and `ComfyUI-Shared`
+3. **Whether Binc wants his own format as an adapter** (CANALV2 trees and `ComfyUI-Shared`
    are read in place today, not imported).
