@@ -13,6 +13,7 @@ const ipc = core && {
   draftPreview: (dir) => core.invoke('imports', 'draftPreview', [dir]),
   draft: (dir, opts) => core.invoke('imports', 'draft', [dir, opts || {}]),
   describe: (dir) => core.invoke('imports', 'describe', [dir]),
+  syncAfter: (podId) => core.invoke('imports', 'syncAfter', [podId || null]),
 }
 const http = {
   async adapters() { const { data } = await axios.get(`${API_BASE}/imports/adapters`); return data },
@@ -22,6 +23,7 @@ const http = {
   async source(id) { const { data } = await axios.get(`${API_BASE}/imports/source`, { params: { id } }); return data },
   async draftPreview(dir) { const { data } = await axios.get(`${API_BASE}/imports/draft-preview`, { params: { source: dir } }); return data },
   async describe(dir) { const { data } = await axios.post(`${API_BASE}/imports/describe`, { source: dir }); return data },
+  async syncAfter(podId) { const { data } = await axios.post(`${API_BASE}/imports/sync-after`, { pod_id: podId || null }); return data },
   async draft(dir, opts) { const { data } = await axios.post(`${API_BASE}/imports/draft`, { source: dir, ...(opts || {}) }); return data },
 }
 export const importsAPI = ipc || http

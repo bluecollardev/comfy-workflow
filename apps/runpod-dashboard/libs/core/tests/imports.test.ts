@@ -287,3 +287,27 @@ describe('writing an adapter with Claude', () => {
     await expect(im.plan(root, 'draft-x')).rejects.toThrow(/not been approved/)   // and a rewrite takes the approval away
   }, 30000)
 })
+
+describe('syncing after an import', () => {
+  const withVolume = (id: string) => writeFileSync(join(dir, 'mounts.json'), JSON.stringify({ network_volume_id: id, folders: { 'comfy-shared': join(dir, 'shared') } }))
+  beforeEach(() => { process.env.MOUNTS_FILE = join(dir, 'mounts.json'); delete process.env.RUNPOD_DRY_RUN })
+
+  it('syncs the shared folder to a real pod when the volume is set', () => {
+    withVolume('vol1')
+    expect(im.syncAfter('pod-abc')).toEqual({ action: 'sync', request: { pod_id: 'pod-abc', direction: 'push', only: ['comfy-shared'], skip_renders: true } })
+  })
+  it('says to configure when there is no network volume', () => {
+    withVolume('')
+    expect(im.syncAfter('pod-abc')).toEqual({ action: 'skip', why: 'no-volume', configure: true })
+  })
+  it('skips a simulated pod, and the no-spend mode, without asking for configuration', () => {
+    withVolume('vol1')
+    expect(im.syncAfter('dry-000140s1')).toEqual({ action: 'skip', why: 'simulated', configure: false })
+    process.env.RUNPOD_DRY_RUN = '1'
+    expect(im.syncAfter('pod-abc')).toEqual({ action: 'skip', why: 'simulated', configure: false })
+  })
+  it('skips when there is no pod', () => {
+    withVolume('vol1')
+    expect(im.syncAfter(null)).toEqual({ action: 'skip', why: 'no-pod', configure: false })
+  })
+})

@@ -1,7 +1,10 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { importsAPI } from '../api/imports'
+import { syncAPI } from '../api/sync'
 import { errorText, useToastStore } from './toast'
+import { usePodsStore } from './pods'
+import { useUiStore } from './ui'
 import { t } from '../i18n'
 
 /**
@@ -10,6 +13,8 @@ import { t } from '../i18n'
  */
 export const useImportsStore = defineStore('imports', () => {
   const toast = useToastStore()
+  const ui = useUiStore()
+  const pods = usePodsStore()
   const adapters = ref([])
   const folder = ref('')
   const adapter = ref('')        // '' = the best approved match
@@ -61,10 +66,33 @@ export const useImportsStore = defineStore('imports', () => {
     try {
       result.value = await importsAPI.apply(plan.value, { dryRun, overwrite: overwrite.value })
       if (!dryRun) {
-        if (result.value.ok) toast.success(t('import.toastDone', { n: (result.value.counts.copied || 0) + (result.value.counts.replaced || 0) + (result.value.counts.linked || 0) }))
-        else toast.info(t('import.toastProblems'))
+        if (result.value.ok) {
+          toast.success(t('import.toastDone', { n: (result.value.counts.copied || 0) + (result.value.counts.replaced || 0) + (result.value.counts.linked || 0) }))
+          await syncToPod()
+        } else toast.info(t('import.toastProblems'))
       }
     } catch (e) { error.value = errorText(e) } finally { applying.value = false }
+  }
+
+  /** The configuration toast: "Sync not configured. ... Click here to configure" opens Default Configuration. */
+  const configureToast = (body) => toast.warn(body, t('import.syncNotConfigured'), { label: t('import.syncConfigure'), run: () => { ui.importOpen = false; ui.configOpen = true } })
+
+  /** After a good import: sync ComfyUI-Shared to the pod whose card opened this, or say why not (a missing volume is a click away from fixed). */
+  async function syncToPod() {
+    const pod = ui.importPod
+    const d = await importsAPI.syncAfter(pod?.id || null)
+    if (d.action === 'skip') {
+      if (d.why === 'no-volume') return configureToast(t('import.syncNoVolume'))
+      if (d.why === 'simulated') return toast.info(t('import.syncSimulated', { name: pod.name }))
+      return toast.info(t('import.syncNoPod'))
+    }
+    if (!syncAPI.available) return toast.info(t('import.syncInApp'))
+    const plan = await syncAPI.plan(d.request)
+    if (plan.transport.kind === 'none') return configureToast(t('import.syncNoTransport', { reason: plan.transport.reason || '' }))
+    pods.syncStarted(pod.id, plan.steps.length)
+    const r = await syncAPI.start(d.request)
+    if (!r.ok) { pods.syncEnded(pod.id); return toast.info(t('import.syncBusy', { name: pod.name })) }
+    toast.success(t('import.syncStarted', { name: pod.name }))
   }
 
   async function read(id) {

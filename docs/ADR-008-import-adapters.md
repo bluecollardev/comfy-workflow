@@ -76,6 +76,26 @@ is never edited (contract §5.2; `.claude/rules/binc-tree.md` for Binc's tree).
    it would put the adapter's work on a billing machine, duplicate the sync's progress,
    resume and idle-hold logic, and leave no local copy to check or redo. The same dry run
    and record serve both steps.
+   **The import starts the sync (Lucas, 2026-10-24: "import should kick off sync, or if no
+   volumes, or real pod, show a toast").** When an import from a pod's card finishes with no
+   conflicts and no errors, the app starts the existing Sync of ComfyUI-Shared to that pod
+   (`only: comfy-shared`, renders skipped), so the card's bar shows it and the idle watch
+   holds as for any sync. The decision is `imports.syncAfter(podId)` in the core:
+
+   | Situation | What happens |
+   |---|---|
+   | real pod, network volume set, a transport (SSH, or S3 with keys) | sync starts; a success toast names the pod |
+   | no network volume | toast **"Sync not configured. ... Click here to configure."**; the toast is clickable and opens Default Configuration (Lucas: "sync not configured click here to configure") |
+   | the pod cannot be reached for a sync (stopped without S3 keys) | the same clickable "Sync not configured" toast, with the reason |
+   | a simulated pod or no-spend mode | plain toast: imported, not synced, nothing reaches RunPod (nothing to configure) |
+   | opened with no pod | plain toast: open Import Shot Pack from a pod's card to sync |
+   | a sync is already running for the pod | plain toast; the import stands |
+   | the import had conflicts or errors | nothing is synced; the toast says so |
+   | a dry run | nothing is synced |
+
+   The sync is never part of the adapter: an adapter only plans, the import fills this PC,
+   and the sync is the app's existing path with its own rules (plates only with a named
+   yes, and the idle stop held while it runs).
 9. **Namespaces (Lucas, 2026-10-24: "under its own project namespace?").** Workflows
    and staged node packs go under the adapter's own project folder
    (`workflows/<project>/<round>/`, `node-packs/<project>/<pack>/`). Inputs stay at

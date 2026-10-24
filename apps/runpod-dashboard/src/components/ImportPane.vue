@@ -29,7 +29,9 @@
       <BSpinner v-if="store.planning" small class="me-1" /><i v-else class="fa-solid fa-list-check me-1"></i>{{ store.planning ? $t('import.planning') : $t('import.plan') }}
     </BButton>
 
-    <BButton size="sm" variant="outline-light" class="ms-2" :disabled="!store.folder || !claudeSet" :title="claudeSet ? $t('import.claudeHint') : $t('import.claudeNoKey')" data-testid="import-claude" @click="store.previewDraft()"><i class="fa-solid fa-wand-magic-sparkles me-1"></i>{{ $t('import.claude') }}</BButton>
+    <BButton size="sm" variant="outline-light" class="ms-2" :disabled="!!store.folder === false && claudeSet" :title="claudeSet ? $t('import.claudeHint') : $t('import.claudeNoKey')" data-testid="import-claude" @click="claudeClick"><i class="fa-solid fa-wand-magic-sparkles me-1"></i>{{ $t('import.claude') }}</BButton>
+    <div v-if="!claudeSet" class="small mt-2" data-testid="import-claude-nokey"><i class="fa-solid fa-key me-1 text-warning"></i>{{ $t('import.claudeNoKeyLine') }} <a href="#" class="fw-semibold" data-testid="import-claude-setkey" @click.prevent="openKey">{{ $t('import.claudeSetKey') }}</a></div>
+    <div v-else-if="!store.folder" class="small text-body-secondary mt-2" data-testid="import-claude-needfolder">{{ $t('import.claudeNeedFolder') }}</div>
 
     <div v-if="store.draft" class="card mt-3" data-testid="import-draft" :data-valid="store.draftValid ? 'true' : 'false'">
       <div class="card-body small">
@@ -190,6 +192,9 @@ const claudeSet = computed(() => !!settingsStore.keyInfo.anthropic_key_set)
 const draftApproved = computed(() => !!store.adapters.find((a) => a.id === store.draft?.id)?.approved)
 /** The draft passes: pick it for the folder and put the loop away. */
 const useDraft = () => { store.adapter = store.draft.id; store.dropDraft(); store.makePlan(claudeSet.value) }
+/** No key: the button takes you to the field for it (Default Configuration) instead of sitting there dead. */
+const openKey = () => { ui.importOpen = false; ui.configOpen = true }
+const claudeClick = () => { if (!claudeSet.value) openKey(); else if (store.folder) store.previewDraft() }
 const attach = () => store.makePlan(claudeSet.value)   // plan the attached folder; Claude describes it when a key is set
 const picker = ref(false)
 const bad = ['conflict', 'hash-mismatch', 'error']

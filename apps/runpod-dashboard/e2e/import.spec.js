@@ -58,7 +58,7 @@ test.describe('Import Shot Pack', () => {
     await expect(dialog.getByTestId('import-result')).toHaveAttribute('data-dry', 'false')
     await expect(dialog.getByTestId('import-count-copied')).toContainText('32')
     await expect(dialog.getByTestId('import-record')).toContainText('imports/2026-10-24-panama-imax-redux.json')
-    await expect(page.getByTestId('toast').last()).toContainText(t('import.toastDone', { n: 32 }))
+    await expect(page.getByTestId('toast').filter({ hasText: t('import.toastDone', { n: 32 }) })).toBeVisible()
     expect(api.state.imports.lastApply).toMatchObject({ dryRun: false, overwrite: false })
   })
 
@@ -98,11 +98,27 @@ test.describe('Import Shot Pack', () => {
 })
 
 test.describe('Import Shot Pack › Write an adapter with Claude', () => {
-  test('is off until an Anthropic key is set, and says why', async ({ page, api }) => {
+  test('without a key the button is there, says why, and takes you to the key field', async ({ page, api }) => {
     const dialog = await openImport(page, api)
+    await expect(dialog.getByTestId('import-claude')).toBeVisible()
+    await expect(dialog.getByTestId('import-claude')).toBeEnabled()
+    await expect(dialog.getByTestId('import-claude-nokey')).toContainText(t('import.claudeNoKeyLine'))
+    await dialog.getByTestId('import-claude').click()
+    const cfg = page.locator('.modal.show', { has: page.getByTestId('config-modal') })
+    await expect(cfg).toBeVisible()
+    await expect(cfg.getByTestId('cfg-claude-key')).toBeVisible()
+    await expect(page.getByTestId('import-modal')).toBeHidden()
+  })
+
+  test('with a key it asks for a folder first, then opens the preview', async ({ page, api }) => {
+    api.state.settings = { ...api.state.settings, anthropic_key_set: true, anthropic_key_hint: '••••WXYZ' }
+    const dialog = await openImport(page, api)
+    await expect(dialog.getByTestId('import-claude-needfolder')).toBeVisible()
+    await expect(dialog.getByTestId('import-claude-nokey')).toHaveCount(0)
     await dialog.getByTestId('import-folder').fill(PKG)
-    await expect(dialog.getByTestId('import-claude')).toBeDisabled()
-    await expect(dialog.getByTestId('import-claude')).toHaveAttribute('title', t('import.claudeNoKey'))
+    await expect(dialog.getByTestId('import-claude-needfolder')).toHaveCount(0)
+    await dialog.getByTestId('import-claude').click()
+    await expect(modal(page, t('import.claudeTitle'))).toBeVisible()
   })
 
   test('shows exactly what would be sent, sends nothing until confirmed, then shows the draft to read', async ({ page, api }) => {
@@ -255,5 +271,70 @@ test.describe('Import Shot Pack › the description', () => {
     await expect(dialog.getByTestId('import-run')).toBeEnabled()
     await dialog.getByTestId('import-run').click()
     await expect(dialog.getByTestId('import-result')).toHaveAttribute('data-ok', 'true')
+  })
+})
+
+test.describe('Import Shot Pack › sync after the import', () => {
+  const runImport = async (dialog) => {
+    await dialog.getByTestId('import-folder').fill(PKG)
+    await dialog.getByTestId('import-plan').click()
+    await expect(dialog.getByTestId('import-plan-card')).toBeVisible()
+    await dialog.getByTestId('import-run').click()
+    await expect(dialog.getByTestId('import-result')).toHaveAttribute('data-dry', 'false')
+  }
+
+  test('says which pod it will sync to', async ({ page, api }) => {
+    const dialog = await openImport(page, api)
+    await expect(dialog.getByTestId('import-sync-note')).toContainText(t('import.syncNote', { name: 'ComfyUI-Dev' }))
+  })
+
+  test('no network volume: "Sync not configured", and clicking the toast opens Default Configuration', async ({ page, api }) => {
+    api.state.mounts.config.network_volume_id = ''
+    const dialog = await openImport(page, api)
+    await runImport(dialog)
+    const toast = page.getByTestId('toast').filter({ hasText: t('import.syncNotConfigured') })
+    await expect(toast).toContainText(t('import.syncNoVolume'))
+    await expect(toast.getByTestId('toast-action')).toHaveText(t('import.syncConfigure'))
+    expect(api.state.imports.syncAfterCalls).toEqual(['pod-aaaaaaaa'])
+    await toast.getByTestId('toast-action').click()
+    await expect(page.locator('.modal.show', { has: page.getByTestId('config-modal') })).toBeVisible()
+    await expect(page.getByTestId('import-modal')).toBeHidden()
+    await expect(toast).toHaveCount(0)   // clicking it dismisses it
+  })
+
+  test('a simulated pod is imported to and not synced, with a plain toast (nothing to configure)', async ({ page, api }) => {
+    api.state.mounts.config.network_volume_id = 'vol1'
+    api.state.pods[0].id = 'dry-000140s1'
+    const dialog = await openImport(page, api)
+    await runImport(dialog)
+    const toast = page.getByTestId('toast').filter({ hasText: t('import.syncSimulated', { name: 'ComfyUI-Dev' }) })
+    await expect(toast).toBeVisible()
+    await expect(toast.getByTestId('toast-action')).toHaveCount(0)
+  })
+
+  test('a real pod with a volume: the sync is asked for (in a plain browser it says sync runs in the app)', async ({ page, api }) => {
+    api.state.mounts.config.network_volume_id = 'vol1'
+    const dialog = await openImport(page, api)
+    await runImport(dialog)
+    await expect(page.getByTestId('toast').filter({ hasText: t('import.syncInApp') })).toBeVisible()
+    expect(api.state.imports.syncAfterCalls).toEqual(['pod-aaaaaaaa'])
+  })
+
+  test('an import with conflicts syncs nothing', async ({ page, api }) => {
+    api.state.mounts.config.network_volume_id = 'vol1'; api.state.imports.conflicts = 1
+    const dialog = await openImport(page, api)
+    await runImport(dialog)
+    await expect(page.getByTestId('toast').filter({ hasText: t('import.toastProblems') })).toBeVisible()
+    expect(api.state.imports.syncAfterCalls || []).toEqual([])
+  })
+
+  test('a dry run syncs nothing', async ({ page, api }) => {
+    api.state.mounts.config.network_volume_id = 'vol1'
+    const dialog = await openImport(page, api)
+    await dialog.getByTestId('import-folder').fill(PKG)
+    await dialog.getByTestId('import-plan').click()
+    await dialog.getByTestId('import-dry').click()
+    await expect(dialog.getByTestId('import-result')).toHaveAttribute('data-dry', 'true')
+    expect(api.state.imports.syncAfterCalls || []).toEqual([])
   })
 })

@@ -223,7 +223,7 @@ const showLogs = ref(false)
 const showSync = ref(false)
 const ui = useUiStore()
 /** Import Shot Pack: its own modal (a package folder into ComfyUI-Shared through an adapter; Sync then puts it on this pod, ADR-008). */
-const openImport = () => { ui.importOpen = true }
+const openImport = () => { ui.importPod = { id: props.pod.id, name: props.pod.name }; ui.importOpen = true }
 const showDockerfile = ref(false)
 const shortImage = (ref) => ref.replace(/^registry\.gitlab\.com\/[^/]+\/[^/]+\//, '')
 const details = ref(null)

@@ -106,6 +106,7 @@ const TABLE = {
     draft: (c, dir, opts) => c.imports.draft(dir, opts || {}),
     validateSource: (c, text, id) => c.imports.validateSource(text, id || undefined),
     describe: (c, dir) => c.imports.describe(dir),
+    syncAfter: (c, podId) => c.imports.syncAfter(podId || null),
   },
   images: {
     env: (c, params) => c.images.env(params || {}),

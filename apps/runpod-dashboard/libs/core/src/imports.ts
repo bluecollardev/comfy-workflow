@@ -387,6 +387,19 @@ function realAncestor(p: string): string {
   return realpathSync(cur)
 }
 
+export type SyncAfter =
+  | { action: 'sync'; request: { pod_id: string; direction: 'push'; only: string[]; skip_renders: boolean } }
+  | { action: 'skip'; why: 'no-pod' | 'no-volume' | 'simulated'; configure: boolean }
+
+/** After an import: should ComfyUI-Shared be synced to this pod, and if not, why not (docs/ADR-008). Sync needs a real pod and a network volume; no volume is a configuration to fix (`configure`), a simulated pod or no pod is not. */
+export function syncAfter(podId?: string | null): SyncAfter {
+  if (!podId) return { action: 'skip', why: 'no-pod', configure: false }
+  const cfg = mounts.load()
+  if (!cfg.network_volume_id) return { action: 'skip', why: 'no-volume', configure: true }
+  if (mounts.dryRun(cfg) || podId.startsWith('dry-')) return { action: 'skip', why: 'simulated', configure: false }
+  return { action: 'sync', request: { pod_id: podId, direction: 'push', only: ['comfy-shared'], skip_renders: true } }
+}
+
 export interface ApplyOptions { target?: string; dryRun?: boolean; overwrite?: boolean; onProgress?: (done: number, total: number, op: Op) => void }
 
 /** Apply a plan from `plan()`. Dry run: nothing is read in full or written; it says what would happen. */

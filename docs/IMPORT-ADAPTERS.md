@@ -112,6 +112,14 @@ Finding = { level: 'info' | 'warn' | 'problem', text: string, path?: string }
 - The plan, with the source hashes, is kept as the record of the import.
 - Nothing is uploaded. Pushing to a volume is the sync (ADR-007), with its own rules.
 
+## After the import: the sync
+
+An import from a pod's card ends by starting the Sync of ComfyUI-Shared to that pod, when the
+import had no conflicts or errors. No network volume, an unreachable pod, a simulated pod or
+no pod each show a toast instead of syncing; a missing volume or transport reads "Sync not
+configured. Click here to configure." and the click opens Default Configuration (ADR-008,
+decision 8). Adapters do none of this: they plan, nothing more.
+
 ## Where adapters live and how they load
 
 - Built in: `comfy-shared`, `panama-imax-redux`.

@@ -12,6 +12,7 @@ const sha = (s) => createHash('sha256').update(s).digest('hex')
 const put = (root, rel, text) => { mkdirSync(dirname(join(root, rel)), { recursive: true }); writeFileSync(join(root, rel), text) }
 
 test.describe('Import Shot Pack over IPC', () => {
+  test.describe.configure({ mode: 'serial' })
   let ctx, base, shared, pkg, adapters
   test.beforeAll(async () => {
     base = mkdtempSync(join(tmpdir(), 'runpod-import-'))
@@ -22,7 +23,7 @@ test.describe('Import Shot Pack over IPC', () => {
     for (const [p, tx] of Object.entries(files)) put(pkg, p, tx)
     put(pkg, 'shotA/MANIFEST.json', JSON.stringify({ shot: 'shotA', graph: 'g', node_types: ['LoadImage'], files: Object.entries(files).map(([path, tx]) => ({ path, sha256: sha(tx), bytes: tx.length })) }))
     put(pkg, 'MANIFEST.json', JSON.stringify({ built: '2026-10-24', for: 'Brynley', shots: { shotA: {} } }))
-    writeFileSync(join(base, 'mounts.json'), JSON.stringify({ folders: { 'comfy-shared': shared } }))
+    writeFileSync(join(base, 'mounts.json'), JSON.stringify({ network_volume_id: 'vol-test', folders: { 'comfy-shared': shared } }))
     // the pod card carries the button: one simulated pod, in place before the app starts
     writeFileSync(join(base, 'dry-pods.json'), JSON.stringify([{ id: 'dry-import01', name: 'ComfyUI-Import', gpu: 'auto', gpu_count: 1, image: 'comfy-app:contract-v26', status: 'running', started_at: new Date().toISOString(), idle_stop_minutes: 30 }]))
     ctx = await launchApp({ dry: true, env: { DRY_PODS_FILE: join(base, 'dry-pods.json'), MOUNTS_FILE: join(base, 'mounts.json'), POD_MANAGER_ADAPTERS_DIR: adapters, POD_MANAGER_IMPORTS_DIR: join(base, 'imports') } })
@@ -51,11 +52,13 @@ test.describe('Import Shot Pack over IPC', () => {
     expect(existsSync(join(shared, 'input'))).toBe(false)
     await dialog.getByTestId('import-run').click()                                         // imports.apply
     await expect(dialog.getByTestId('import-count-copied')).toContainText('2')
-    await expect(page.getByTestId('toast').last()).toContainText(t('import.toastDone', { n: 2 }))
+    await expect(page.getByTestId('toast').filter({ hasText: t('import.toastDone', { n: 2 }) })).toBeVisible()
     expect(readFileSync(join(shared, 'input/shots/shotA/ref.png'), 'utf8')).toBe('PNG')
     expect(existsSync(join(shared, 'workflows/panama-imax-redux/brynley-comfy-test/shotA-v01.json'))).toBe(true)
     expect(existsSync(join(shared, 'final'))).toBe(false)                                   // left where it was
     expect(readFileSync(join(pkg, 'shotA/final/shotA.mov'), 'utf8')).toBe('FINAL')
+    // a simulated pod is not synced to: the app says so (imports.syncAfter), without asking for configuration
+    await expect(page.getByTestId('toast').filter({ hasText: t('import.syncSimulated', { name: 'ComfyUI-Import' }) })).toBeVisible()
   })
 
   test('a second import finds everything already there', async () => {

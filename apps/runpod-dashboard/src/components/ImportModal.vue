@@ -1,5 +1,6 @@
 <template>
   <BModal :model-value="ui.importOpen" :title="$t('import.title')" size="lg" lazy scrollable ok-only :ok-title="$t('connect.done')" ok-variant="outline-light" data-testid="import-modal" @show="ui.importShown++" @update:model-value="ui.importOpen = $event">
+    <div v-if="ui.importPod" class="small text-body-secondary mb-2" data-testid="import-sync-note">{{ $t('import.syncNote', { name: ui.importPod.name }) }}</div>
     <ImportPane :active="ui.importOpen" />
   </BModal>
 </template>

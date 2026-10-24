@@ -9,6 +9,7 @@ export const useUiStore = defineStore('ui', () => {
   const connectOpen = ref(false)
   const connectTab = ref('accounts')   // 'accounts' | 'repositories' | 'mcp'
   const importOpen = ref(false)   // the Import Shot Pack modal (docs/ADR-008), opened by the pod card's primary button
+  const importPod = ref(null)     // { id, name } of the pod whose card opened it: where the import is synced afterwards
   const importShown = ref(0)      // times it was shown: the pane stays mounted while hidden and reloads on it
   const repositoriesVersion = ref(0)
   const configOpen = ref(false)
@@ -19,5 +20,5 @@ export const useUiStore = defineStore('ui', () => {
   watch(hints, (v) => { try { localStorage.setItem('runpod-manager.hints', v ? 'on' : 'off') } catch { /* storage blocked */ } })
   const accountsOpen = computed({ get: () => connectOpen.value && connectTab.value === 'accounts', set: (v) => { if (v) connectTab.value = 'accounts'; connectOpen.value = v } })
   const repositoriesOpen = computed({ get: () => connectOpen.value && connectTab.value === 'repositories', set: (v) => { if (v) connectTab.value = 'repositories'; connectOpen.value = v } })
-  return { connectOpen, importOpen, importShown, connectTab, accountsOpen, repositoriesOpen, repositoriesVersion, configOpen, volumesOpen, hints }
+  return { connectOpen, importOpen, importPod, importShown, connectTab, accountsOpen, repositoriesOpen, repositoriesVersion, configOpen, volumesOpen, hints }
 })

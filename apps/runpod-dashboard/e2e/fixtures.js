@@ -334,6 +334,13 @@ export async function mockApi(page, state) {
       const step = (state.imports.draftScript || [{ valid: true, errors: [] }])[Math.min(state.imports.drafts.length, (state.imports.draftScript || [1]).length) - 1]
       return json({ adapter: a, model: 'claude-sonnet-5-5', valid: step.valid, errors: step.errors })
     }
+    if (method === 'POST' && path === '/imports/sync-after') {
+      state.imports.syncAfterCalls = [...(state.imports.syncAfterCalls || []), body.pod_id]
+      if (!body.pod_id) return json({ action: 'skip', why: 'no-pod', configure: false })
+      if (!state.mounts.config.network_volume_id) return json({ action: 'skip', why: 'no-volume', configure: true })
+      if (body.pod_id.startsWith('dry-')) return json({ action: 'skip', why: 'simulated', configure: false })
+      return json({ action: 'sync', request: { pod_id: body.pod_id, direction: 'push', only: ['comfy-shared'], skip_renders: true } })
+    }
     if (method === 'POST' && path === '/imports/approve') { const a = state.imports.adapters.find((x) => x.id === body.id); if (!a) return json({ detail: `no adapter ${body.id}` }, 400); a.approved = true; return json(a) }
     if (method === 'POST' && path === '/imports/plan') {
       const a = body.adapter && state.imports.adapters.find((x) => x.id === body.adapter)
