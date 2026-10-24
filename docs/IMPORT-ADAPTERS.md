@@ -8,6 +8,35 @@ An **adapter** maps one kind of source folder (a delivery package, a project tre
 colleague's zip) onto the **ComfyUI-Shared structure**. It is a single ES module that
 plans; the app applies the plan. The source folder is never changed.
 
+## What an adapter is
+
+An adapter is **one `.mjs` file**: a plain JavaScript (ES) module, `adapters/<id>.mjs`, that the
+app **loads at runtime**. It is not compiled into the app and it is not a plugin that needs a
+build or a restart: put the file in the adapters folder, or save it from the Adapter Studio, and
+the next import uses it. Edit the file and the next import uses the edit. Delete it and it is
+gone. (Two ship with the app, under `libs/core/runtime/adapters/`, and are read-only.)
+
+What it does is small and fixed. It `export default`s an object with an `id`, a `name`, and two
+functions, `detect(root, ctx)` and `plan(root, ctx)`. `detect` looks at a folder and says
+whether it knows that format; `plan` reads the folder and **returns a list of operations as data**
+(copy this file there, note that one) plus findings. It never writes anything itself: the app
+checks the list and carries it out, inside ComfyUI-Shared only. So an adapter is a *mapping*
+from one source format onto the ComfyUI-Shared structure, written as code because real
+formats need conditions (read a manifest, skip what is not listed, name a round) that a table
+cannot say.
+
+How it runs, every time: the app starts a **separate Node process** (its own executable run
+as Node, so nothing needs installing), under Node's permission model with read access to
+the folder being imported and to the adapter file, and no write access and no child
+processes. The adapter reads the folder only through the `ctx` helpers it is handed, hands
+back JSON, and the process ends. The network is not blocked by that fence, which is why every
+adapter's code is open to read in Default Configuration and nothing is hidden.
+
+Who writes them: you, in the editor; the Adapter Studio, where you chat with Claude and a prompt
+builds the module (ADR-009); or any coding agent through the MCP tools (`adapter_spec`,
+`adapter_save`). All three produce the same thing, a file in the adapters folder, and the app
+treats them alike. Claude can write nothing else (ADR-008, decision 13).
+
 ## The target: the ComfyUI-Shared structure
 
 What every adapter lands things in, under the mapped ComfyUI-Shared folder

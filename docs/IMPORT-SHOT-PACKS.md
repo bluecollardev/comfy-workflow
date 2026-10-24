@@ -43,6 +43,11 @@ on `develop`, not in a packaged build.
 
 ## Adapters
 
+An adapter is one `.mjs` file in `~/.config/runpod-pod-manager/adapters/` that the app loads at runtime:
+a small JavaScript module that reads a folder and returns a list of what should be copied where. It
+runs in its own fenced Node process, never writes by itself, and is picked up the next time an import
+runs. What it is, how it runs and who writes them: `docs/IMPORT-ADAPTERS.md`, "What an adapter is".
+
 Default Configuration > **Import adapters** (Import Shot Pack links to it with Manage adapters)
 lists every adapter with its code hash: **Inspect** the code, **New adapter** from a template,
 **Edit**, **Duplicate** (the way to change a built-in), **Delete**. There is no approval step;
