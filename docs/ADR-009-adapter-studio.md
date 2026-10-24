@@ -110,6 +110,13 @@ buttons but obviously I need to change this too", "I don't see no chat interface
    children's counts and can be collapsed; a file shows its size. The destination tree sits
    beside it. The tree is built from the folder's names only (at most 3,000 entries, then it
    says so) and the plan's ops, so it needs no extra read of file contents.
+   **A viewer for those files** (Lucas: "there should be a viewer for these files and structure"):
+   clicking a file in the package tree opens it read-only in a tab beside the adapter's code. Text
+   and JSON show with highlighting (JSON pretty-printed; up to 256 KB, then the start and a note);
+   small images show as images (up to 2 MB); anything else (video, EXR, archives) shows its
+   name, size and path, with a hash on request. It is how the person (and Claude, through
+   `read_folder_file`) sees what a README or manifest actually says while deciding a mapping.
+   Reads are confined to the attached folder like every other read, and nothing here writes.
 10. **Every adapter is editable, the built-ins too.** Editing a built-in writes an **override**:
     a file `adapters/<id>.mjs` with the built-in's id, which the app then uses instead of the
     shipped one. The shipped file is never touched. The list marks it "Built-in, modified",
