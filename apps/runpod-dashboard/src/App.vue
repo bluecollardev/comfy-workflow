@@ -50,6 +50,7 @@
     </BContainer>
 
     <ConnectModal />
+    <ImportModal />
     <VolumesModal />
     <ToastHost />
     <ConfigModal />
@@ -81,6 +82,7 @@ import ToastHost from './components/ToastHost.vue'
 import Dashboard from './components/Dashboard.vue'
 import Stats from './components/Stats.vue'
 import ConnectModal from './components/ConnectModal.vue'
+import ImportModal from './components/ImportModal.vue'
 import ConfigModal from './components/ConfigModal.vue'
 
 const ui = useUiStore()

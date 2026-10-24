@@ -2,7 +2,7 @@
 
 **Status:** built (ADR-008, 2026-10-24; plan in `docs/PLAN-IMPORT-ADAPTERS.md`). This page is the spec an
 adapter writer works from, human or coding agent; the app serves the same text to
-agents (`adapter_spec`). Run it: `./start.sh import <folder> --dry-run`, or Connect > Import.
+agents (`adapter_spec`). Run it: `./start.sh import <folder> --dry-run`, or Import Shot Pack.
 
 An **adapter** maps one kind of source folder (a delivery package, a project tree, a
 colleague's zip) onto the **ComfyUI-Shared structure**. It is a single ES module that
@@ -162,10 +162,23 @@ recorded in the manifest (0.39.2 for the 2026-10-20 round, 0.42.1 for 2026-10-23
 ## Writing one with Claude from the app
 
 Default Configuration takes an optional Anthropic API key (stored like the RunPod keys).
-With it, Connect > Import has "Write an adapter with Claude": it first shows what would be
-sent (the spec, folder names with file counts, a sample of file names, up to four small
-README/manifest text files cut to 12 KB; never media), and only on Send does it call the
-API. The reply is saved as an unapproved draft and opened for you to read and approve.
+With it, Import Shot Pack does two things with Claude:
+
+- **Describes the shot pack** when you attach a folder: a few sentences from the folder
+  names, READMEs and manifests, labelled as written by Claude, with Describe again and a
+  switch to turn it off. A failure never blocks the import.
+- **Writes an adapter, in a loop.** Press "Write an adapter with Claude": it shows what
+  would be sent (the spec, folder names with file counts, a sample of file names, up to
+  four small README/manifest text files cut to 12 KB; never media) and a box for your
+  prompt, and only on Send calls the API. The reply is saved as an unapproved draft and
+  checked: **structure** (without running it: a default export, a string `id` and `name`,
+  `detect` and `plan`, no Node imports, no `fetch`, no `process`). You read it and approve
+  it, then **Test on this folder** runs it fenced and checks the plan it returns (relative
+  paths inside the source, destinations only under `input/ workflows/ models/ node-packs/`,
+  well-formed hashes). Whatever failed is shown; type what to change and **Rewrite with
+  Claude**: the prompt, the errors and the previous source go back, the same file is
+  rewritten, and the approval is taken away. Repeat until it reads Valid, then Use this
+  adapter. Nothing repeats on its own; every round is yours.
 
 ## Not in scope
 

@@ -236,4 +236,54 @@ describe('writing an adapter with Claude', () => {
     const prose = (async () => ({ ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'I cannot do that.' }] }) })) as unknown as typeof fetch
     await expect(im.draft(root, { fetchImpl: prose })).rejects.toThrow(/did not contain an adapter module/)
   }, 30000)
+
+  it('describes the shot pack: the prompt, the folder material and the key go to the API; the reply is the description', async () => {
+    process.env.ANTHROPIC_API_KEY = 'sk-ant-api03-TESTTESTTESTTESTTEST'
+    let seen: { headers: Record<string, string>; body: { system: string; max_tokens: number; messages: { content: string }[] } } | null = null
+    const fetchImpl = (async (_url: string, init: { headers: Record<string, string>; body: string }) => { seen = { headers: init.headers, body: JSON.parse(init.body) }; return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: '  A first test round of one shot for Brynley.  ' }] }) } }) as unknown as typeof fetch
+    const r = await im.describe(pkg(dir), { fetchImpl })
+    expect(r.description).toBe('A first test round of one shot for Brynley.')
+    expect(r.sent.texts.sort()).toEqual(['MANIFEST.json', 'shotA/MANIFEST.json']); expect(r.sent.files).toBeGreaterThan(5)
+    expect(seen!.body.system).toBe(im.DESCRIBE_SYSTEM); expect(seen!.body.system).toMatch(/shot packs/); expect(seen!.body.system).toMatch(/do not guess/)
+    expect(seen!.body.max_tokens).toBeLessThan(1000)
+    expect(seen!.body.messages[0].content).toContain('shotA/comfy/input'); expect(seen!.body.messages[0].content).toContain('"for":"Brynley"')
+    expect(seen!.body.messages[0].content).not.toContain('MOV-final'); expect(seen!.body.messages[0].content).not.toContain('# The adapter spec')   // not the adapter prompt
+    expect(seen!.headers['x-api-key']).toBe('sk-ant-api03-TESTTESTTESTTESTTEST')
+  }, 30000)
+
+  it('describe needs the key, passes the API\'s error through, and refuses an empty reply', async () => {
+    const root = pkg(dir)
+    await expect(im.describe(root)).rejects.toThrow(/No Anthropic API key/)
+    process.env.ANTHROPIC_API_KEY = 'sk-ant-api03-TESTTESTTESTTESTTEST'
+    const down = (async () => ({ ok: false, status: 529, json: async () => ({ error: { message: 'Overloaded' } }) })) as unknown as typeof fetch
+    await expect(im.describe(root, { fetchImpl: down })).rejects.toThrow(/Anthropic answered 529: Overloaded/)
+    const empty = (async () => ({ ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: '  ' }] }) })) as unknown as typeof fetch
+    await expect(im.describe(root, { fetchImpl: empty })).rejects.toThrow(/no description/)
+  }, 30000)
+
+  it('validateSource names what is wrong with an adapter without running it', () => {
+    expect(im.validateSource(OK_ADAPTER(), 'mine')).toEqual([])
+    expect(im.validateSource('export default { id: "x" }')).toEqual(expect.arrayContaining([expect.stringContaining('name'), expect.stringContaining('detect'), expect.stringContaining('plan')]))
+    expect(im.validateSource(OK_ADAPTER(), 'other')).toEqual([expect.stringContaining('must be "other"')])
+    expect(im.validateSource('const a = 1')).toEqual(expect.arrayContaining([expect.stringContaining('export default')]))
+    const evil = OK_ADAPTER().replace('export default', "import fs from 'node:fs'\nexport default") + '\nfetch("http://x"); process.env'
+    expect(im.validateSource(evil, 'mine')).toEqual(expect.arrayContaining([expect.stringContaining('imports a Node module'), expect.stringContaining('fetch()'), expect.stringContaining('process')]))
+  })
+
+  it('drafts again from the person\'s prompt and the last errors: the first draft, the previous source and the errors go back to Claude, same id', async () => {
+    process.env.ANTHROPIC_API_KEY = 'sk-ant-api03-TESTTESTTESTTESTTEST'
+    const root = pkg(dir)
+    const bodies: string[] = []
+    const replies = [OK_ADAPTER().replace("id: 'mine'", "id: 'wrong-id'"), OK_ADAPTER().replace("id: 'mine'", "id: 'draft-x'")]
+    const fetchImpl = (async (_u: string, init: { body: string }) => { bodies.push(JSON.parse(init.body).messages[0].content); return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: '```javascript\n' + replies.shift() + '\n```' }] }) } }) as unknown as typeof fetch
+    const first = await im.draft(root, { id: 'draft-x', instruction: 'the graphs are under comfy/workflows', fetchImpl })
+    expect(first.valid).toBe(false); expect(first.errors).toEqual([expect.stringContaining('must be "draft-x"')])
+    expect(first.adapter).toMatchObject({ id: 'draft-x', approved: false })
+    expect(bodies[0]).toContain('the graphs are under comfy/workflows'); expect(bodies[0]).not.toContain('The draft you wrote last time')
+    const second = await im.draft(root, { id: 'draft-x', instruction: 'use the id I gave', errors: first.errors, fetchImpl })
+    expect(second.valid).toBe(true); expect(second.errors).toEqual([])
+    expect(bodies[1]).toContain('The draft you wrote last time'); expect(bodies[1]).toContain("id: 'wrong-id'"); expect(bodies[1]).toContain('must be "draft-x"'); expect(bodies[1]).toContain('use the id I gave')
+    expect(readFileSync(join(adaptersDir(), 'draft-x.mjs'), 'utf8')).toContain("id: 'draft-x'")   // the same file, rewritten
+    await expect(im.plan(root, 'draft-x')).rejects.toThrow(/not been approved/)   // and a rewrite takes the approval away
+  }, 30000)
 })

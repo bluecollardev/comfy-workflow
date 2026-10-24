@@ -175,7 +175,7 @@ he does not want the package's structure changed.
 
 ## The design for importing, and what is open
 
-**Update 2026-10-24:** the import is built as adapters (`docs/ADR-008-import-adapters.md`, spec `docs/IMPORT-ADAPTERS.md`): this package format is the built-in `panama-imax-redux` adapter (`./start.sh import <folder> --dry-run`, or Connect > Import); other formats are hot-loaded modules. Inputs land in ComfyUI-Shared's `input/` with `shots/<shot>/` unchanged, workflows under `workflows/panama-imax-redux/<round>/`, packs under `node-packs/panama-imax-redux/`. Merge the Drive parts first so every shot's manifest is present and every copied file is hash-checked. The three points below are the earlier sketch.
+**Update 2026-10-24:** the import is built as adapters (`docs/ADR-008-import-adapters.md`, spec `docs/IMPORT-ADAPTERS.md`): this package format is the built-in `panama-imax-redux` adapter (`./start.sh import <folder> --dry-run`, or Import Shot Pack); other formats are hot-loaded modules. Inputs land in ComfyUI-Shared's `input/` with `shots/<shot>/` unchanged, workflows under `workflows/panama-imax-redux/<round>/`, packs under `node-packs/panama-imax-redux/`. Merge the Drive parts first so every shot's manifest is present and every copied file is hash-checked. The three points below are the earlier sketch.
 
 1. **A layout per project type.** The next-steps item "abstract shapes and concrete
    shapes" fits: CANALV2 is one layout (project tree, plates, ComfyUI-Shared), the

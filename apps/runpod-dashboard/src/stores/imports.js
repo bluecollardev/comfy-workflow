@@ -5,7 +5,7 @@ import { errorText, useToastStore } from './toast'
 import { t } from '../i18n'
 
 /**
- * The Connect › Import tab (docs/ADR-008): the adapters, a folder, the plan an adapter made for it, and what
+ * The Import Shot Pack modal (docs/ADR-008): the adapters, a folder, the plan an adapter made for it, and what
  * applying it did. Nothing is written until Import; Dry run shows what would happen first.
  */
 export const useImportsStore = defineStore('imports', () => {
@@ -19,6 +19,11 @@ export const useImportsStore = defineStore('imports', () => {
   const planning = ref(false)
   const applying = ref(false)
   const error = ref(null)
+  const description = ref(null)   // { description, model, sent } Claude wrote for the attached folder
+  const describing = ref(false)
+  const describeError = ref(null)
+  const describeOn = ref(true)     // describe each newly attached folder when an Anthropic key is set; a per-viewer choice kept in this browser
+  try { describeOn.value = localStorage.getItem('runpod-manager.import-describe') !== 'off' } catch { /* storage blocked: on */ }
   const preview = ref(null)      // what "Write an adapter with Claude" would send, shown before anything is sent
   const drafting = ref(false)
   const reading = ref(null)      // { id, sha256, text } while an adapter's source is open for approval
@@ -29,10 +34,25 @@ export const useImportsStore = defineStore('imports', () => {
     try { adapters.value = (await importsAPI.adapters()) || [] } catch (e) { error.value = errorText(e) }
   }
 
-  async function makePlan() {
+  function setDescribeOn(v) {
+    describeOn.value = !!v
+    try { localStorage.setItem('runpod-manager.import-describe', v ? 'on' : 'off') } catch { /* storage blocked */ }
+  }
+
+  /** Claude's description of the shot pack in the attached folder (its names, READMEs and manifests; docs/ADR-008). Never blocks the import. */
+  async function describeFolder() {
     if (!folder.value) return
-    planning.value = true; error.value = null; plan.value = null; result.value = null
+    describing.value = true; describeError.value = null; description.value = null
+    const asked = folder.value
+    try { const r = await importsAPI.describe(asked); if (asked === folder.value) description.value = r } catch (e) { if (asked === folder.value) describeError.value = errorText(e) } finally { describing.value = false }
+  }
+
+  /** Attach a folder: plan it, and when a key is set and the switch is on, have Claude describe it. */
+  async function makePlan(claudeKeySet = false) {
+    if (!folder.value) return
+    planning.value = true; error.value = null; plan.value = null; result.value = null; description.value = null; describeError.value = null
     try { plan.value = await importsAPI.plan(folder.value, adapter.value) } catch (e) { error.value = errorText(e) } finally { planning.value = false }
+    if (plan.value && claudeKeySet && describeOn.value) describeFolder()
   }
 
   async function run(dryRun) {
@@ -59,17 +79,40 @@ export const useImportsStore = defineStore('imports', () => {
     error.value = null
     try { preview.value = await importsAPI.draftPreview(folder.value) } catch (e) { error.value = errorText(e) }
   }
-  /** Send the previewed material to Claude; the reply is saved as an unapproved adapter and opened for reading. */
+  // The draft loop: the person prompts, Claude writes, the app checks the module's structure; they read and approve it, test it on the
+  // folder (the plan it returns is checked too), and prompt again with what was wrong, until both pass.
+  const draft = ref(null)   // { id, valid, errors, tested: null | { ok, errors, summary }, model, round }
+  const instruction = ref('')
+
+  const draftProblems = () => [...(draft.value?.errors || []), ...(draft.value?.tested && !draft.value.tested.ok ? draft.value.tested.errors : [])]
+
+  /** Send the previewed material and the person's prompt to Claude; the reply is saved as an unapproved adapter and checked. */
   async function sendDraft() {
     drafting.value = true; error.value = null
+    const again = !!draft.value
     try {
-      const r = await importsAPI.draft(folder.value)
+      const r = await importsAPI.draft(folder.value, { instruction: instruction.value, ...(again ? { id: draft.value.id, errors: draftProblems() } : {}) })
       preview.value = null
+      draft.value = { id: r.adapter.id, valid: r.valid, errors: r.errors, tested: null, model: r.model, round: (draft.value?.round || 0) + 1 }
+      instruction.value = ''
       toast.success(t('import.toastDrafted', { id: r.adapter.id }))
       await loadAdapters()
-      await read(r.adapter.id)
     } catch (e) { error.value = errorText(e); preview.value = null } finally { drafting.value = false }
   }
 
-  return { preview, drafting, previewDraft, sendDraft, adapters, folder, adapter, plan, result, overwrite, planning, applying, error, reading, needsApproval, loadAdapters, makePlan, run, read, approve }
+  /** Run the draft on the attached folder (it must be approved first): its plan is checked against the required structure. */
+  async function testDraft() {
+    if (!draft.value) return
+    testing.value = true; error.value = null
+    try {
+      const p = await importsAPI.plan(folder.value, draft.value.id)
+      draft.value = { ...draft.value, tested: { ok: true, errors: [], summary: p.summary } }
+      plan.value = p; result.value = null
+    } catch (e) { draft.value = { ...draft.value, tested: { ok: false, errors: [errorText(e)], summary: null } } } finally { testing.value = false }
+  }
+  const testing = ref(false)
+  const draftValid = computed(() => !!draft.value?.valid && !!draft.value?.tested?.ok)
+  function dropDraft() { draft.value = null; instruction.value = '' }
+
+  return { draft, instruction, testing, draftValid, testDraft, dropDraft, description, describing, describeError, describeOn, setDescribeOn, describeFolder, preview, drafting, previewDraft, sendDraft, adapters, folder, adapter, plan, result, overwrite, planning, applying, error, reading, needsApproval, loadAdapters, makePlan, run, read, approve }
 })

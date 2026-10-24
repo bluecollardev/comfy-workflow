@@ -89,7 +89,7 @@ export function defaultState() {
         'comfy-bridge': { ok: false, tools: [], definitions: [], error: 'The server exited (code 2) before answering\nNo ComfyUI answers at https://pod-aaaaaaaa-8188.proxy.runpod.net', ms: 340 },
       },
     },
-    // The Connect › Import tab (docs/ADR-008): the adapters, the plan each known folder gets, and what applying says.
+    // The Import Shot Pack modal (docs/ADR-008): the adapters, the plan each known folder gets, and what applying says.
     imports: {
       adapters: [
         { id: 'comfy-shared', name: 'A ComfyUI-Shared folder', version: 1, builtin: true, approved: true, sha256: 'a'.repeat(64), file: '' },
@@ -312,21 +312,34 @@ export async function mockApi(page, state) {
     if (method === 'GET' && path === '/repos/search') return json({ repos: filterRepos(state.accountRepos, query.q) })
     if (method === 'GET' && path === '/repos/branches') return json(state.branches)
     if (method === 'GET' && path === '/repos/folders') return json({ url: query.url, branch: query.branch, folders: state.folders })
-    // Import (the Connect › Import tab)
+    // Import (the Import Shot Pack modal)
     if (method === 'GET' && path === '/imports/adapters') return json(state.imports.adapters)
     if (method === 'GET' && path === '/imports/source') { const a = state.imports.adapters.find((x) => x.id === query.id); return a ? json({ id: a.id, sha256: a.sha256, text: state.imports.sources[a.id] || '' }) : json({ detail: `no adapter ${query.id}` }, 400) }
     if (method === 'GET' && path === '/imports/draft-preview') return json({ source: query.source, total_files: 120, dirs: [{ path: 'shotA', files: 100 }, { path: 'shotA/comfy', files: 40 }], sample: ['shotA/comfy/input/a.png'], texts: [{ path: 'MANIFEST.json', bytes: 2048, sent_bytes: 2048 }, { path: '00_READ_ME.md', bytes: 40000, sent_bytes: 12288 }], spec_bytes: 9000 })
+    if (method === 'POST' && path === '/imports/describe') {
+      state.imports.described = (state.imports.described || 0) + 1
+      if (state.imports.describeFails) return json({ detail: state.imports.describeFails }, 400)
+      if (!state.settings.anthropic_key_set) return json({ detail: 'No Anthropic API key: set it in Default Configuration' }, 400)
+      return json({ description: 'A first test round for the finishing artist: three shots (a CGI plate, an archival shot and a creature shot) with their graphs, the files the graphs load, and the approved renders. Built on ComfyUI 0.39.2; the graphs need the fal node pack, which is not in the folder.', model: 'claude-sonnet-5-5', sent: { files: 120, dirs: 8, texts: ['MANIFEST.json', '00_READ_ME.md'] } })
+    }
     if (method === 'POST' && path === '/imports/draft') {
       if (!state.settings.anthropic_key_set) return json({ detail: 'No Anthropic API key: set it in Default Configuration' }, 400)
-      const a = { id: 'draft-package', name: 'draft-package', version: 1, builtin: false, approved: false, sha256: 'd'.repeat(64), file: '' }
-      state.imports.adapters.push(a); state.imports.sources[a.id] = 'export default { id: "draft-package" }'; state.imports.drafted = body.source
-      return json({ adapter: a, model: 'claude-sonnet-5-5' })
+      const id = body.id || 'draft-package'
+      let a = state.imports.adapters.find((x) => x.id === id)
+      if (!a) { a = { id, name: id, version: 1, builtin: false, approved: false, sha256: 'd'.repeat(64), file: '' }; state.imports.adapters.push(a) }
+      a.approved = false   // a rewrite takes the approval away
+      state.imports.sources[id] = `export default { id: "${id}" } // version ${(state.imports.drafts?.length || 0) + 1}`
+      state.imports.drafts = [...(state.imports.drafts || []), body]
+      state.imports.draftPlanError = null
+      const step = (state.imports.draftScript || [{ valid: true, errors: [] }])[Math.min(state.imports.drafts.length, (state.imports.draftScript || [1]).length) - 1]
+      return json({ adapter: a, model: 'claude-sonnet-5-5', valid: step.valid, errors: step.errors })
     }
     if (method === 'POST' && path === '/imports/approve') { const a = state.imports.adapters.find((x) => x.id === body.id); if (!a) return json({ detail: `no adapter ${body.id}` }, 400); a.approved = true; return json(a) }
     if (method === 'POST' && path === '/imports/plan') {
       const a = body.adapter && state.imports.adapters.find((x) => x.id === body.adapter)
       if (a && !a.approved) return json({ detail: `${a.id} has not been approved (or has changed since): read its source and approve it first` }, 400)
-      const plan = state.imports.plans[body.source]
+      if (a && a.id.startsWith('draft-') && state.imports.draftPlanError) return json({ detail: state.imports.draftPlanError }, 400)
+      const plan = a && a.id.startsWith('draft-') && state.imports.plans[body.source] ? { ...state.imports.plans[body.source], adapter: { id: a.id, name: a.name, version: 1, builtin: false } } : state.imports.plans[body.source]
       return plan ? json(plan) : json({ detail: `no adapter recognises ${body.source}; write one (docs/IMPORT-ADAPTERS.md) or pick one with --adapter` }, 400)
     }
     if (method === 'POST' && path === '/imports/apply') {

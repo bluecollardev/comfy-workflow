@@ -95,6 +95,11 @@
         <i class="fa-solid fa-scroll me-1"></i>{{ $t('pod.logs') }}
       </BButton>
     </div>
+    <div class="mb-2">
+      <BButton variant="primary" size="sm" class="w-100 text-nowrap" :title="$t('pod.importShotPackTitle')" data-testid="pod-import" @click="openImport">
+        <i class="fa-solid fa-file-import me-1"></i>{{ $t('pod.importShotPack') }}
+      </BButton>
+    </div>
     <div v-if="showDetails" class="small mb-2" data-testid="pod-details">
       <div v-if="detailsError" class="text-danger">{{ detailsError }}</div>
       <div v-else-if="!details" class="text-body-secondary">{{ $t('pod.loadingDetails') }}</div>
@@ -174,6 +179,7 @@ import DockerfileModal from './DockerfileModal.vue'
 import ConfigModal from './ConfigModal.vue'
 import { usePodsStore } from '../stores/pods'
 import { useToastStore } from '../stores/toast'
+import { useUiStore } from '../stores/ui'
 import { barValue, detailParts, fresh } from '../sync-progress'
 const props = defineProps({
   pod: { type: Object, required: true },
@@ -215,6 +221,9 @@ const toast = useToastStore()
 const showDetails = ref(false)
 const showLogs = ref(false)
 const showSync = ref(false)
+const ui = useUiStore()
+/** Import Shot Pack: its own modal (a package folder into ComfyUI-Shared through an adapter; Sync then puts it on this pod, ADR-008). */
+const openImport = () => { ui.importOpen = true }
 const showDockerfile = ref(false)
 const shortImage = (ref) => ref.replace(/^registry\.gitlab\.com\/[^/]+\/[^/]+\//, '')
 const details = ref(null)

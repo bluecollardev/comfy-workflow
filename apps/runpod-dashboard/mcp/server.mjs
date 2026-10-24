@@ -337,7 +337,8 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
     adapters_list: async () => json(await imports.list()),
     adapter_save: async ({ id, source }) => {
       const a = await imports.save(id, source)
-      return text(`Saved ${a.id} (sha256 ${a.sha256.slice(0, 12)}…) UNAPPROVED. It has not been run. Ask the person to read it (./start.sh import --show ${a.id}) and approve it (./start.sh import --approve ${a.id}, or the app), then test it with import_plan.`)
+      const problems = imports.validateSource(source, id)
+      return text(`${problems.length ? `Structure problems (fix these and save again):\n${problems.map((p) => `- ${p}`).join('\n')}\n\n` : 'Structure ok. '}Saved ${a.id} (sha256 ${a.sha256.slice(0, 12)}…) UNAPPROVED. It has not been run. Ask the person to read it (./start.sh import --show ${a.id}) and approve it (./start.sh import --approve ${a.id}, or the app), then test it with import_plan.`)
     },
     import_plan: async ({ source, adapter }) => {
       const p = await imports.plan(source, adapter || undefined)

@@ -82,7 +82,24 @@ is never edited (contract §5.2; `.claude/rules/binc-tree.md` for Binc's tree).
    `input/shots/<shot>/...` because the graphs load them by those relative paths and the
    package is not to be edited; the shot id is their only namespace, and a differing
    file already there is a conflict, never overwritten.
-10. **Leaving the machine is not an import step.** An import fills the local ComfyUI-Shared
+10. **Claude describes a shot pack when a folder is attached, and the person prompts
+    until a drafted adapter validates (Lucas, 2026-10-24).** With an Anthropic key set,
+    attaching a folder (Plan, or choosing it with Browse) also asks Claude for a 3 to 6
+    sentence description of the pack from the same material the draft preview lists (folder
+    names with counts, a name sample, up to four small READMEs and manifests; no media). The
+    prompt is `DESCRIBE_SYSTEM` in `imports.ts`: say only what the material says. It is
+    shown labelled as written by Claude, with what was sent, a Describe again button and a
+    switch to turn it off (kept per viewer); a failure never blocks the import. **Write an
+    adapter with Claude is a loop, not one shot:** the person's prompt goes to Claude with the
+    folder material; the app checks the draft's structure without running it
+    (`validateSource`: default export, string id and name, `detect` and `plan`, no Node
+    imports, no fetch, no process); the person reads and approves it, **Test on this
+    folder** runs it fenced and checks the plan it returns (`validateOps`); any errors go back
+    to Claude with the person's next prompt and the previous source, under the same id. A
+    rewrite takes the approval away. The draft is valid when both checks pass, and only then
+    is it offered as the adapter to use. The person drives every round; nothing retries by
+    itself.
+11. **Leaving the machine is not an import step.** An import fills the local ComfyUI-Shared
    (or, with `--s3`, goes through the existing sync). Pushing to a volume stays the
    sync's job, with its existing rules: plates and other client material only with Binc's
    named yes, USD 100 cap, nothing sent without a person's go.
@@ -140,3 +157,7 @@ is never edited (contract §5.2; `.claude/rules/binc-tree.md` for Binc's tree).
    container on Linux; not tried). Not yet checked in a packaged build, only in dev.
 3. **Whether Binc wants his own format as an adapter** (CANALV2 trees and `ComfyUI-Shared`
    are read in place today, not imported).
+
+## Where it lives in the UI
+
+A primary **Import Shot Pack** button on its own row of each pod card opens an Import Shot Pack modal (Lucas, 2026-10-24: "move the import to its own modal", "connect it to the primary button"). It is not a Connect tab. The import itself is not pod-specific (it fills this PC's ComfyUI-Shared); the button sits on the card because Sync to that pod is the next step.

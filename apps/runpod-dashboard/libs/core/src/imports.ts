@@ -214,31 +214,86 @@ export function draftPreview(sourceDir: string): DraftPreview & { _texts: { path
 
 const DRAFT_SYSTEM = 'You write import adapters for an app that maps a package folder onto a ComfyUI-Shared structure. Reply with ONE complete ES module (.mjs) in a single ```javascript code block and nothing else. Follow the spec exactly: default-export { id, name, version, detect(root, ctx), plan(root, ctx) }; use only ctx for reading; return ops as data; never import fs or the network; keep source-relative paths; leave everything else in place and report what you could not place.'
 
-/** Ask Claude for an adapter for this folder and save it, unapproved (a person reads it and approves it before it runs). Needs the Anthropic key from Settings. `fetchImpl` is for tests. */
-export async function draft(sourceDir: string, opts: { id?: string; model?: string; fetchImpl?: typeof fetch } = {}): Promise<{ adapter: AdapterInfo; model: string }> {
+interface AskOptions { model?: string; fetchImpl?: typeof fetch }
+/** One call to the Messages API with the Anthropic key from Settings. The text of the reply; an error with the API's own message. */
+async function askClaude(system: string, user: string, maxTokens: number, opts: AskOptions): Promise<{ text: string; model: string }> {
   const key = settings.lookup('ANTHROPIC_API_KEY')
-  if (!key) throw bad('No Anthropic API key: set it in Default Configuration, or write the adapter with your own coding agent (adapter_spec)')
-  const pv = draftPreview(sourceDir)
-  const id = opts.id || `draft-${basename(pv.source).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'folder'}`
+  if (!key) throw bad('No Anthropic API key: set it in Default Configuration, or use your own coding agent (adapter_spec)')
   const model = opts.model || process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5'
-  const user = [
-    '# The adapter spec', spec(),
-    `# The folder to write an adapter for (${pv.total_files} files)`, '## Folders (with file counts)', pv.dirs.map((d) => `${d.path}/  ${d.files} files`).join('\n'),
-    '## A sample of file names', pv.sample.join('\n'),
-    ...pv._texts.flatMap((t) => [`## ${t.path}`, t.text]),
-    `Write the adapter with id "${id}". Map this format onto the ComfyUI-Shared structure.`,
-  ].join('\n\n')
   const res = await (opts.fetchImpl || fetch)('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model, max_tokens: 8000, system: DRAFT_SYSTEM, messages: [{ role: 'user', content: user }] }),
+    body: JSON.stringify({ model, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] }),
   })
   const body = (await res.json().catch(() => ({}))) as { content?: { type: string; text?: string }[]; error?: { message?: string } }
   if (!res.ok) throw bad(`Anthropic answered ${res.status}: ${body.error?.message || 'no detail'}`)
-  const text = (body.content || []).filter((c) => c.type === 'text').map((c) => c.text || '').join('\n')
+  return { text: (body.content || []).filter((c) => c.type === 'text').map((c) => c.text || '').join('\n'), model }
+}
+
+const folderMaterial = (pv: ReturnType<typeof draftPreview>) => [
+  `# The folder (${pv.total_files} files)`, '## Folders (with file counts)', pv.dirs.map((d) => `${d.path}/  ${d.files} files`).join('\n'),
+  '## A sample of file names', pv.sample.join('\n'),
+  ...pv._texts.flatMap((t) => [`## ${t.path}`, t.text]),
+].join('\n\n')
+
+/** The structure an adapter module must have, checked without running it (an unapproved module never runs): a default export with a string id and name and detect/plan functions, reading only through `ctx`. Returns what is wrong; empty means the module is well formed. The plan it returns is checked when it is tested on a folder (validateOps). */
+export function validateSource(text: string, id?: string): string[] {
+  const errs: string[] = []
+  if (!/export\s+default/.test(text)) errs.push('there is no `export default { ... }`')
+  const m = /\bid\s*:\s*['"`]([^'"`]+)['"`]/.exec(text)
+  if (!m) errs.push("there is no `id: '...'` (a string)")
+  else {
+    if (!ID.test(m[1])) errs.push(`the id "${m[1]}" must be lowercase letters, digits and dashes (at most 63)`)
+    if (id && m[1] !== id) errs.push(`the id is "${m[1]}" but it must be "${id}"`)
+  }
+  if (!/\bname\s*:\s*['"`]/.test(text)) errs.push("there is no `name: '...'` (a string)")
+  for (const fn of ['detect', 'plan']) if (!new RegExp(`\\b${fn}\\s*[(:]`).test(text)) errs.push(`there is no ${fn}(root, ctx) function`)
+  const banned: [RegExp, string][] = [
+    [/from\s+['"](node:)?(fs|fs\/promises|child_process|net|http|https|dns|worker_threads|cluster|vm|os|process)['"]/, 'imports a Node module (read only through ctx)'],
+    [/\bimport\s*\(/, 'uses a dynamic import()'], [/\brequire\s*\(/, 'uses require()'], [/\bfetch\s*\(/, 'calls fetch() (adapters have no network)'], [/\bprocess\./, 'touches process'],
+  ]
+  for (const [re, why] of banned) if (re.test(text)) errs.push(why)
+  return errs
+}
+
+export interface DraftOptions extends AskOptions {
+  id?: string
+  /** What the person tells Claude about this folder or what to change (their prompt). */
+  instruction?: string
+  /** What was wrong with the last draft: validateSource's errors, then what testing it on the folder reported. */
+  errors?: string[]
+}
+
+/** Ask Claude for an adapter for this folder and save it, unapproved (a person reads it and approves it before it runs). Called again with `instruction` and the last `errors`, it rewrites the draft it saved last time under the same id: the loop is the person's prompting until the structure validates. Needs the Anthropic key from Settings. */
+export async function draft(sourceDir: string, opts: DraftOptions = {}): Promise<{ adapter: AdapterInfo; model: string; valid: boolean; errors: string[] }> {
+  if (!settings.lookup('ANTHROPIC_API_KEY')) throw bad('No Anthropic API key: set it in Default Configuration, or write the adapter with your own coding agent (adapter_spec)')
+  const pv = draftPreview(sourceDir)
+  const id = opts.id || `draft-${basename(pv.source).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'folder'}`
+  if (!ID.test(id)) throw bad('the adapter id is lowercase letters, digits and dashes (at most 63)')
+  const file = join(adaptersDir(), `${id}.mjs`)
+  const previous = opts.errors?.length || opts.instruction ? (existsSync(file) ? readFileSync(file, 'utf8') : '') : ''
+  const parts = ['# The adapter spec', spec(), folderMaterial(pv)]
+  if (previous) parts.push('# The draft you wrote last time', '```javascript\n' + previous + '\n```')
+  if (opts.errors?.length) parts.push('# What is wrong with it (fix these)', opts.errors.map((e) => `- ${e}`).join('\n'))
+  if (opts.instruction?.trim()) parts.push('# What the person asks of you', opts.instruction.trim().slice(0, 4000))
+  parts.push(`Write the complete adapter with id "${id}". Map this format onto the ComfyUI-Shared structure.`)
+  const { text, model } = await askClaude(DRAFT_SYSTEM, parts.join('\n\n'), 8000, opts)
   const code = /```(?:javascript|js|mjs)?\s*\n([\s\S]*?)```/.exec(text)?.[1] ?? text
   if (!/export\s+default/.test(code)) throw bad('The reply did not contain an adapter module (no export default)')
-  return { adapter: await save(id, code), model }
+  const errors = validateSource(code, id)
+  return { adapter: await save(id, code), model, valid: errors.length === 0, errors }
+}
+
+/** The prompt that writes a shot pack's description when a folder is attached (docs/ADR-008, decision 11). */
+export const DESCRIBE_SYSTEM = 'You describe delivery packages ("shot packs") of ComfyUI work for a VFX pipeline operator who is about to import one. Write 3 to 6 plain sentences, no headings, no lists, no markdown. Say what the pack is (which film or job, who it is for, when it was built), which shots it holds and what each shot is, what kinds of files it carries (inputs the graphs load, workflows, node packs, finals, provenance), what the graphs need to run (ComfyUI version, node packs, provider keys), and anything the READMEs flag as open, failing or pending. Use only what the material below says; if something is not in it, do not guess. Do not invent file names or numbers.'
+
+/** A short description of the shot pack in this folder, written by Claude from the folder\'s names and its small READMEs and manifests (the same material draftPreview shows; no media). */
+export async function describe(sourceDir: string, opts: AskOptions = {}): Promise<{ description: string; model: string; sent: { files: number; dirs: number; texts: string[] } }> {
+  const pv = draftPreview(sourceDir)
+  const { text, model } = await askClaude(DESCRIBE_SYSTEM, folderMaterial(pv), 700, opts)
+  const description = text.trim()
+  if (!description) throw bad('Claude returned no description')
+  return { description, model, sent: { files: pv.total_files, dirs: pv.dirs.length, texts: pv.texts.map((t) => t.path) } }
 }
 
 // ----- checking a plan -----

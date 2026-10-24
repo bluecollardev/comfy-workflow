@@ -126,12 +126,12 @@ signing or packaging changes.
 | 1 core | runner and the two built-ins are plain `.mjs` in `libs/core/runtime/` (copied into `dist/runtime` by `core:build`, so they run from source and from the packaged app); `imports.ts` lists, detects, plans (fenced), validates and applies | `libs/core/src/imports.ts`, `libs/core/runtime/`, `libs/core/tests/imports.test.ts` (20 tests) |
 | 2 CLI, IPC | `./start.sh import`; `imports` namespace (list, detect, plan, apply, approve, source, save, spec, draftPreview, draft) | `cli/index.mjs`, `electron/core.cjs`, `core.test.mjs` |
 | 3 MCP | `adapter_spec`, `adapters_list`, `adapter_save`, `import_plan`, `import_apply`; no approve tool | `mcp/server.mjs`, `docs/MCP-ENDPOINTS.md` |
-| 4 UI | Connect > Import tab | `ImportPane.vue`, `stores/imports.js`, `e2e/import.spec.js` (10), `e2e-electron/import.spec.js` (3) |
+| 4 UI | Import Shot Pack modal | `ImportPane.vue`, `stores/imports.js`, `e2e/import.spec.js` (10), `e2e-electron/import.spec.js` (3) |
 | 5 Claude | Anthropic key in Default Configuration; preview then send; draft saved unapproved | `settings.ts`, `ConfigModal.vue`, `imports.ts` |
 | 6 real folders, docs | see below | CHANGELOG, ADR-008, `IMPORT-ADAPTERS.md` |
 
 Decisions taken on the three open questions: the Claude key is the in-app adapter-writing key
-(the `placeholder` op also exists for a pack's own `config.ini`); the entry is Connect > Import;
+(the `placeholder` op also exists for a pack's own `config.ini`); the entry is Import Shot Pack;
 packs are staged under `node-packs/<project>/<pack>/`, and workflows under
 `workflows/<project>/<round>/` (Lucas asked for a project namespace; inputs cannot take one).
 

@@ -1,21 +1,20 @@
-import { test, expect, modal } from './fixtures'
+import { test, expect, modal, podCard } from './fixtures'
 import { t } from './i18n'
 
-// The Connect › Import tab against the fake API: pick a folder, read the plan an adapter made, Dry run, Import,
+// The Import Shot Pack modal (opened by the pod card's primary button) against the fake API: pick a folder, read the plan an adapter made, Dry run, Import,
 // conflicts, and approving one of your own adapters (docs/ADR-008).
 const PKG = '/Users/lucas/Projects/package'
 
 const openImport = async (page, api, { mapped = true } = {}) => {
   if (mapped) api.state.mounts.config.folders['comfy-shared'] = '/Users/lucas/ComfyUI-Shared'
   await page.goto('/')
-  await page.getByTestId('open-connect').click()
-  const dialog = modal(page, t('connect.title'))
-  await dialog.getByRole('tab', { name: t('connect.import') }).click()
-  await expect(dialog.getByTestId('connect-import')).toBeVisible()
+  await podCard(page, 'ComfyUI-Dev').getByTestId('pod-import').click()
+  const dialog = modal(page, t('import.title'))
+  await expect(dialog.getByTestId('import-pane')).toBeVisible()
   return dialog
 }
 
-test.describe('Connect › Import', () => {
+test.describe('Import Shot Pack', () => {
   test('shows where imports land, and says so when ComfyUI-Shared is not mapped', async ({ page, api }) => {
     const dialog = await openImport(page, api)
     await expect(dialog.getByTestId('import-target-path')).toHaveText('/Users/lucas/ComfyUI-Shared')
@@ -98,7 +97,7 @@ test.describe('Connect › Import', () => {
   })
 })
 
-test.describe('Connect › Import › Write an adapter with Claude', () => {
+test.describe('Import Shot Pack › Write an adapter with Claude', () => {
   test('is off until an Anthropic key is set, and says why', async ({ page, api }) => {
     const dialog = await openImport(page, api)
     await dialog.getByTestId('import-folder').fill(PKG)
@@ -106,7 +105,7 @@ test.describe('Connect › Import › Write an adapter with Claude', () => {
     await expect(dialog.getByTestId('import-claude')).toHaveAttribute('title', t('import.claudeNoKey'))
   })
 
-  test('shows exactly what would be sent, sends nothing until confirmed, then opens the draft for reading', async ({ page, api }) => {
+  test('shows exactly what would be sent, sends nothing until confirmed, then shows the draft to read', async ({ page, api }) => {
     api.state.settings = { ...api.state.settings, anthropic_key_set: true, anthropic_key_hint: '••••WXYZ' }
     const dialog = await openImport(page, api)
     await dialog.getByTestId('import-folder').fill(PKG)
@@ -117,13 +116,59 @@ test.describe('Connect › Import › Write an adapter with Claude', () => {
     await expect(ask.getByTestId('import-claude-text').nth(1)).toContainText(t('import.claudeBytes', { sent: 12288, bytes: 40000 }))
     await expect(ask.getByTestId('import-claude-dirs')).toContainText('shotA/comfy/  40')
     expect(api.calls.some((c) => c.path === '/imports/draft')).toBe(false)   // nothing sent yet
+    await ask.getByTestId('import-claude-instruction').fill('the graphs are under comfy/workflows')
     await ask.getByTestId('import-claude-send').click()
     await expect(page.getByTestId('toast').last()).toContainText(t('import.toastDrafted', { id: 'draft-package' }))
-    const reading = modal(page, 'draft-package')
-    await expect(reading.getByTestId('import-source')).toContainText('draft-package')   // opens for reading, unapproved
-    expect(api.state.imports.drafted).toBe(PKG)
-    await reading.getByTestId('import-approve').click()
-    await expect(dialog.locator('[data-testid="import-adapter-row"][data-id="draft-package"]').getByTestId('import-adapter-state')).toHaveText(t('import.approved'))
+    expect(api.state.imports.drafts[0]).toMatchObject({ source: PKG, instruction: 'the graphs are under comfy/workflows' })
+    await expect(dialog.getByTestId('import-draft-id')).toHaveText('draft-package')
+    await expect(dialog.getByTestId('import-draft-structure')).toHaveText(t('import.draftStructureOk'))
+    await expect(dialog.getByTestId('import-draft-tested')).toHaveText(t('import.draftNotTested'))
+    await expect(dialog.getByTestId('import-draft-test')).toBeDisabled()   // it only runs once you have read and approved it
+  })
+
+  test('the loop: prompt, fails the structure, prompt again with the errors, approve, test fails the plan, prompt again, valid, use it', async ({ page, api }) => {
+    api.state.settings = { ...api.state.settings, anthropic_key_set: true, anthropic_key_hint: '••••WXYZ' }
+    api.state.imports.draftScript = [
+      { valid: false, errors: ['the id is "wrong" but it must be "draft-package"', 'there is no detect(root, ctx) function'] },
+      { valid: true, errors: [] },
+      { valid: true, errors: [] },
+    ]
+    const dialog = await openImport(page, api)
+    await dialog.getByTestId('import-folder').fill(PKG)
+    await dialog.getByTestId('import-claude').click()
+    await modal(page, t('import.claudeTitle')).getByTestId('import-claude-send').click()
+    // 1. the structure fails: the errors are shown and the person prompts again
+    await expect(dialog.getByTestId('import-draft-structure')).toHaveText(t('import.draftStructureBad'))
+    await expect(dialog.getByTestId('import-draft-error')).toHaveCount(2)
+    await expect(dialog.getByTestId('import-draft-valid')).toHaveCount(0)
+    await dialog.getByTestId('import-draft-instruction').fill('name it draft-package and add detect')
+    await dialog.getByTestId('import-draft-rewrite').click()
+    await expect(dialog.getByTestId('import-draft-structure')).toHaveText(t('import.draftStructureOk'))
+    await expect(dialog.getByTestId('import-draft')).toContainText(t('import.draftRound', { n: 2 }))
+    const second = api.state.imports.drafts[1]
+    expect(second).toMatchObject({ id: 'draft-package', instruction: 'name it draft-package and add detect' })
+    expect(second.errors).toEqual(['the id is "wrong" but it must be "draft-package"', 'there is no detect(root, ctx) function'])   // the errors went back with the prompt
+    // 2. read and approve, then test on the folder: the plan fails the required structure
+    await dialog.getByTestId('import-draft-read').click()
+    await modal(page, 'draft-package').getByTestId('import-approve').click()
+    api.state.imports.draftPlanError = 'op 0: ../escape leaves its folder'
+    await dialog.getByTestId('import-draft-test').click()
+    await expect(dialog.getByTestId('import-draft-tested')).toHaveText(t('import.draftTestedBad'))
+    await expect(dialog.getByTestId('import-draft-error')).toContainText('leaves its folder')
+    // 3. prompt again with the plan error; the rewrite takes the approval away, so approve and test again
+    await dialog.getByTestId('import-draft-instruction').fill('keep every destination inside input/')
+    await dialog.getByTestId('import-draft-rewrite').click()
+    expect(api.state.imports.drafts[2].errors).toEqual(['op 0: ../escape leaves its folder'])
+    await expect(dialog.getByTestId('import-draft-test')).toBeDisabled()
+    await dialog.getByTestId('import-draft-read').click()
+    await modal(page, 'draft-package').getByTestId('import-approve').click()
+    await dialog.getByTestId('import-draft-test').click()
+    await expect(dialog.getByTestId('import-draft-tested')).toHaveText(t('import.draftTestedOk'))
+    await expect(dialog.getByTestId('import-draft-valid')).toBeVisible()
+    await expect(dialog.getByTestId('import-draft')).toHaveAttribute('data-valid', 'true')
+    await dialog.getByTestId('import-draft-use').click()
+    await expect(dialog.getByTestId('import-draft')).toHaveCount(0)
+    await expect(dialog.getByTestId('import-adapter')).toHaveValue('draft-package')
   })
 
   test('an API error shows in the tab and nothing is saved', async ({ page, api }) => {
@@ -137,5 +182,78 @@ test.describe('Connect › Import › Write an adapter with Claude', () => {
     await modal(page, t('import.claudeTitle')).getByTestId('import-claude-send').click()
     await expect(d2.getByTestId('import-error')).toContainText('No Anthropic API key')
     await expect(d2.locator('[data-testid="import-adapter-row"][data-id="draft-package"]')).toHaveCount(0)
+  })
+})
+
+test.describe('Import Shot Pack › the description', () => {
+  const withKey = (api) => { api.state.settings = { ...api.state.settings, anthropic_key_set: true, anthropic_key_hint: '••••WXYZ' } }
+
+  test('attaching a folder has Claude describe the shot pack, says what was sent, and the plan still shows', async ({ page, api }) => {
+    withKey(api)
+    const dialog = await openImport(page, api)
+    await dialog.getByTestId('import-folder').fill(PKG)
+    await dialog.getByTestId('import-plan').click()
+    await expect(dialog.getByTestId('import-about-text')).toContainText('three shots')
+    await expect(dialog.getByTestId('import-about-sent')).toContainText(t('import.describeSent', { files: 120, dirs: 8, texts: 2, model: 'claude-sonnet-5-5' }))
+    await expect(dialog.getByTestId('import-about')).toContainText(t('import.aboutBadge'))
+    await expect(dialog.getByTestId('import-plan-card')).toBeVisible()
+    expect(api.state.imports.described).toBe(1)
+  })
+
+  test('choosing the folder with Browse attaches it: plan and description without pressing Plan', async ({ page, api }) => {
+    withKey(api)
+    api.state.fs['/Users/lucas/Projects'] = ['package']; api.state.imports.plans['/Users/lucas/Projects/package'] = api.state.imports.plans[PKG]
+    const dialog = await openImport(page, api)
+    await dialog.getByTestId('import-browse').click()
+    const picker = modal(page, t('import.pickTitle'))
+    await picker.locator('[data-testid="picker-item"][data-name="Projects"]').dblclick()   // into the folder
+    await picker.locator('[data-testid="picker-item"][data-name="package"]').click()      // select it
+    await picker.getByTestId('picker-use').click()
+    await expect(dialog.getByTestId('import-folder')).toHaveValue('/Users/lucas/Projects/package')
+    await expect(dialog.getByTestId('import-plan-card')).toBeVisible()
+    await expect(dialog.getByTestId('import-about-text')).toBeVisible()
+  })
+
+  test('no key: no description and no call; the switch says why', async ({ page, api }) => {
+    const dialog = await openImport(page, api)
+    await dialog.getByTestId('import-folder').fill(PKG)
+    await dialog.getByTestId('import-plan').click()
+    await expect(dialog.getByTestId('import-plan-card')).toBeVisible()
+    await expect(dialog.getByTestId('import-about')).toHaveCount(0)
+    await expect(dialog.getByTestId('import-describe-on')).toBeDisabled()
+    expect(api.state.imports.described || 0).toBe(0)
+  })
+
+  test('the switch turns it off for new folders (remembered); Describe again asks on demand', async ({ page, api }) => {
+    withKey(api)
+    const dialog = await openImport(page, api)
+    await dialog.getByTestId('import-describe-on').uncheck()
+    await dialog.getByTestId('import-folder').fill(PKG)
+    await dialog.getByTestId('import-plan').click()
+    await expect(dialog.getByTestId('import-plan-card')).toBeVisible()
+    await expect(dialog.getByTestId('import-about')).toHaveCount(0)
+    expect(api.state.imports.described || 0).toBe(0)
+    await page.reload()
+    const d2 = await openImport(page, api)
+    await expect(d2.getByTestId('import-describe-on')).not.toBeChecked()   // remembered in this browser
+    await d2.getByTestId('import-folder').fill(PKG)
+    await d2.getByTestId('import-plan').click()
+    await expect(d2.getByTestId('import-plan-card')).toBeVisible()
+    await d2.getByTestId('import-describe-on').check()
+    await d2.getByTestId('import-plan').click()
+    await expect(d2.getByTestId('import-about-text')).toBeVisible()
+    await d2.getByTestId('import-describe-again').click()
+    await expect.poll(() => api.state.imports.described).toBe(2)
+  })
+
+  test('a failed description says so and never blocks the import', async ({ page, api }) => {
+    withKey(api); api.state.imports.describeFails = 'Anthropic answered 529: Overloaded'
+    const dialog = await openImport(page, api)
+    await dialog.getByTestId('import-folder').fill(PKG)
+    await dialog.getByTestId('import-plan').click()
+    await expect(dialog.getByTestId('import-about-error')).toContainText('Overloaded')
+    await expect(dialog.getByTestId('import-run')).toBeEnabled()
+    await dialog.getByTestId('import-run').click()
+    await expect(dialog.getByTestId('import-result')).toHaveAttribute('data-ok', 'true')
   })
 })
