@@ -1,4 +1,4 @@
-import { test, expect, modal } from './fixtures'
+import { test, expect, modal, cfgTab } from './fixtures'
 import { t } from './i18n'
 
 // Default Configuration › Import adapters (docs/ADR-008): every adapter listed with its code open to read; yours
@@ -7,6 +7,7 @@ const openManager = async (page) => {
   await page.goto('/')
   await page.getByTestId('open-config').click()
   const cfg = page.locator('.modal.show', { has: page.getByTestId('config-modal') })
+  await cfgTab(cfg, 'adapters')
   await expect(cfg.getByTestId('adapter-manager')).toBeVisible()
   return cfg
 }

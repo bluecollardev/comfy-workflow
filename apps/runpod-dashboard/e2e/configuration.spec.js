@@ -1,4 +1,4 @@
-import { test, expect, openCreatePod, podCard, modal } from './fixtures'
+import { test, expect, openCreatePod, podCard, modal, cfgTab } from './fixtures'
 import { t } from './i18n'
 
 // The Configuration panel (gear icon): the RunPod key, the pod volume, the three folders mapped on
@@ -40,6 +40,7 @@ test.describe('configuration', () => {
   test('in dev mode every folder is optional until its switch is on', async ({ page }) => {
     await page.goto('/')
     const dialog = await openConfig(page)
+    await cfgTab(dialog, 'folders')
     const row = folderRow(dialog, 'plates')
     await expect(row.getByTestId('folder-required-text')).toHaveText(t('config.optional'))
     await row.getByTestId('folder-required').check()   // the switch's input carries the test id
@@ -49,6 +50,7 @@ test.describe('configuration', () => {
   test('the folder picker browses this PC and fills the row', async ({ page, api }) => {
     await page.goto('/')
     const dialog = await openConfig(page)
+    await cfgTab(dialog, 'folders')
     await folderRow(dialog, 'project').getByTestId('folder-browse').click()
     const picker = page.locator('.modal.show', { has: page.getByTestId('folder-picker') })
     await expect(picker).toBeVisible()
@@ -67,9 +69,12 @@ test.describe('configuration', () => {
   test('saving sends the mapping, shows a toast, closes, and the pod form reflects it', async ({ page, api }) => {
     await page.goto('/')
     const dialog = await openConfig(page)
+    await cfgTab(dialog, 'folders')
     await folderRow(dialog, 'project').getByTestId('folder-local').fill('/Users/lucas/Projects/CANALV2')
+    await cfgTab(dialog, 'volume')
     await dialog.getByTestId('cfg-volume').selectOption('vol2')   // a volume of the account; picking it sets its datacenter
     await expect(dialog.getByTestId('cfg-dc')).toHaveValue('CA-MTL-1')
+    await cfgTab(dialog, 'volume')   // the idle default sits with the volume and the image
     await dialog.getByTestId('cfg-idle').fill('45')
     await dialog.getByTestId('config-save').click()
     await expect(toast(page).first()).toContainText(t('toast.configSaved'))
@@ -85,9 +90,11 @@ test.describe('configuration', () => {
     api.state.mounts.config.folders.project = '/Users/lucas/Projects/CANALV2'
     await page.goto('/')
     const dialog = await openConfig(page)
+    await cfgTab(dialog, 'folders')
     const note = folderRow(dialog, 'project').getByTestId('folder-note')
     await expect(note).toHaveText(t('config.linkedFrom', { source: "the tree's job files" }))
     await expect(note).not.toContainText('/home/binc')
+    await cfgTab(dialog, 'options')
     await dialog.getByTestId('preview-pod-toggle').click()
     await expect(dialog.getByTestId('preview-pod')).toContainText('COMFY_LINKS=/home/binc/CANALV2_r3/CANALV2=/workspace/project')
   })
@@ -95,6 +102,7 @@ test.describe('configuration', () => {
   test('custom folders are added below the three and saved', async ({ page, api }) => {
     await page.goto('/')
     const dialog = await openConfig(page)
+    await cfgTab(dialog, 'folders')
     await dialog.getByTestId('add-folder').click()
     const custom = dialog.getByTestId('custom-row-0')
     await expect(custom).toBeVisible()
@@ -121,6 +129,7 @@ test.describe('configuration', () => {
     api.state.mounts.config.data_center_id = 'EU-RO-1'
     await page.goto('/')
     await page.getByTestId('open-config').click()
+    await cfgTab(configModal(page), 'volume')
     const dc = page.getByTestId('cfg-dc')
     await expect(dc).toHaveValue('EU-RO-1')
     await expect(dc.locator('option')).toHaveText([t('config.datacenterAny'), 'CA-MTL-1 · A40 $0.35/h High', 'EU-RO-1 · RTX 4000 Ada $0.28/h Low, RTX 4090 $0.89/h High · S3', 'US-KS-2 · S3'])   // in-stock group first, then the S3 group, then none in stock
@@ -139,6 +148,7 @@ test.describe('configuration', () => {
     api.state.mounts.config.network_volume_id = 'vol1'
     await page.goto('/')
     await page.getByTestId('open-config').click()
+    await cfgTab(configModal(page), 'volume')
     await expect(page.getByTestId('cfg-volume-info')).toContainText(t('config.volumeInfo', { name: 'comfy-workspace', size: 120, dc: 'EU-RO-1', cost: 8.4 }))
     await expect(page.getByTestId('cfg-volume-info')).toContainText(t('config.volumeS3'))
     await expect(page.getByTestId('stat-storage')).toContainText('$8.40')   // the stats bar carries the monthly cost too
@@ -153,6 +163,7 @@ test.describe('configuration', () => {
     api.state.volumes = {}
     await page.goto('/')
     const dialog = await openConfig(page)
+    await cfgTab(dialog, 'volume')
     await expect(dialog.getByTestId('cfg-volume-none')).toContainText(t('config.volumesNone'))
     await dialog.getByTestId('cfg-volume-add').click()
     const volumes = modal(page, t('volumes.title'))
@@ -193,6 +204,7 @@ test.describe('the RunPod key', () => {
     await expect(dialog.getByTestId('config-save')).toBeDisabled()        // nothing to save until a key is typed
     await dialog.getByTestId('cfg-key').fill('rpa_0123456789ABCDEFXYZ9')
     await dialog.getByTestId('config-save').click()
+    await cfgTab(dialog, 'volume')
     await expect(dialog.getByTestId('section-volume')).toBeVisible()      // the key is in: the rest appears, the panel stays open
     await expect(dialog.getByTestId('cfg-key-gate')).toHaveCount(0)
     await expect(page.getByTestId('open-volumes')).toBeEnabled()
@@ -212,6 +224,7 @@ test.describe('no-spend mode', () => {
     await page.goto('/')
     await expect(page.getByTestId('no-spend-badge')).toHaveCount(0)
     const dialog = await openConfig(page)
+    await cfgTab(dialog, 'options')
     await dialog.getByTestId('cfg-dry-run').check()
     await dialog.getByTestId('config-save').click()
     const put = api.calls.find((c) => c.method === 'PUT' && c.path === '/mounts')
@@ -251,21 +264,83 @@ test.describe('features that read the configuration', () => {
     await expect(toast(page)).toHaveCount(2)
   })
 
-  test('the Anthropic key: saved from the panel, tested with one call, and the result says what Anthropic said', async ({ page, api }) => {
+  test('the Anthropic key tests itself: no button; a typed key a moment after typing stops (not stored), the stored key when the panel opens', async ({ page, api }) => {
     await page.goto('/')
     await page.getByTestId('open-config').click()
     const cfg = page.locator('.modal.show', { has: page.getByTestId('config-modal') })
     await expect(cfg.getByTestId('cfg-claude-group')).toContainText(t('config.claudeUnset'))
-    await expect(cfg.getByTestId('cfg-claude-test')).toBeDisabled()   // nothing to test yet
+    await expect(cfg.getByTestId('cfg-claude-test')).toHaveCount(0)   // there is no Test key button
+    await expect(cfg.getByTestId('cfg-claude-result')).toHaveCount(0) // and nothing is asked with no key
+    await cfg.getByTestId('cfg-claude-key').fill('sk-ant-short')
+    await page.waitForTimeout(900)
+    await expect(cfg.getByTestId('cfg-claude-result')).toHaveCount(0) // not a key yet: nothing is sent
+    expect(api.state.settings.anthropicChecks || []).toEqual([])
     await cfg.getByTestId('cfg-claude-key').fill('sk-ant-api03-0123456789ABCDWXYZ')
-    await cfg.getByTestId('cfg-claude-test').click()   // a typed key is saved first, then asked about
-    await expect(cfg.getByTestId('cfg-claude-result')).toHaveAttribute('data-ok', 'true')
-    await expect(cfg.getByTestId('cfg-claude-result')).toContainText(t('config.claudeWorks'))
-    await expect(cfg.getByTestId('cfg-claude-group')).toContainText(t('config.claudeStored', { hint: '••••WXYZ' }))
-    expect(api.state.settings.anthropic_key_set).toBe(true)
-    api.state.settings.anthropicRejects = true
-    await cfg.getByTestId('cfg-claude-test').click()
+    await expect(cfg.getByTestId('cfg-claude-result')).toHaveAttribute('data-ok', 'true')   // asked on its own
+    await expect(cfg.getByTestId('cfg-claude-result')).toContainText(t('config.claudeWorksTyped'))
+    expect(api.state.settings.anthropicChecks).toEqual(['sk-ant-api03-0123456789ABCDWXYZ'])   // the typed key was what was asked about
+    expect(api.state.settings.anthropic_key_set).toBeFalsy()   // and it is not stored until Save
+    await cfg.getByTestId('cfg-claude-key').fill('sk-ant-api03-BADBADBADBADBADBADBAD')
     await expect(cfg.getByTestId('cfg-claude-result')).toHaveAttribute('data-ok', 'false')
     await expect(cfg.getByTestId('cfg-claude-result')).toContainText('invalid x-api-key')
+    await cfg.getByTestId('cfg-claude-key').fill('sk-ant-api03-0123456789ABCDWXYZ')
+    await expect(cfg.getByTestId('cfg-claude-result')).toHaveAttribute('data-ok', 'true')
+    await cfg.getByTestId('config-save').click()
+    await expect(page.locator('.modal.show', { has: page.getByTestId('config-modal') })).toHaveCount(0)
+    expect(api.state.settings.anthropic_key_set).toBe(true)
+    // reopened: the stored key is checked as the panel opens, with nothing typed
+    api.state.settings.anthropicChecks = []
+    await page.getByTestId('open-config').click()
+    const again = page.locator('.modal.show', { has: page.getByTestId('config-modal') })
+    await expect(again.getByTestId('cfg-claude-result')).toHaveAttribute('data-ok', 'true')
+    await expect(again.getByTestId('cfg-claude-result')).toContainText(t('config.claudeWorks'))
+    expect(api.state.settings.anthropicChecks).toEqual([null])   // no key in the request: the stored one
+    api.state.settings.anthropicRejects = true   // revoked meanwhile
+    await again.getByTestId('config-close').click()
+    await page.getByTestId('open-config').click()
+    await expect(page.locator('.modal.show', { has: page.getByTestId('config-modal') }).getByTestId('cfg-claude-result')).toContainText('invalid x-api-key')
+  })
+})
+
+test.describe('configuration layout', () => {
+  test('desktop: sections are tabs, one at a time, and the tab bar names them', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.goto('/')
+    const dialog = await openConfig(page)
+    await expect(dialog.getByTestId('cfg-tabs')).toBeVisible()
+    await expect(dialog.locator('[data-testid^="cfg-tab-"]')).toHaveText([t('config.runpod'), t('config.volume'), t('config.folders'), t('config.environment'), t('adapters.section'), t('config.options')])
+    await expect(dialog.getByTestId('section-runpod')).toBeVisible()
+    await expect(dialog.getByTestId('section-volume')).toBeHidden()
+    await dialog.getByTestId('cfg-tab-folders').click()
+    await expect(dialog.getByTestId('section-folders')).toBeVisible()
+    await expect(dialog.getByTestId('section-runpod')).toBeHidden()
+  })
+
+  test('landscape tablet (1024 wide): tabs too', async ({ page }) => {
+    await page.setViewportSize({ width: 1024, height: 768 })
+    await page.goto('/')
+    const dialog = await openConfig(page)
+    await expect(dialog.getByTestId('cfg-tabs')).toBeVisible()
+  })
+
+  test('phone and portrait tablet: no tabs, every section flows down the page', async ({ page }) => {
+    for (const width of [390, 820]) {
+      await page.setViewportSize({ width, height: 900 })
+      await page.goto('/')
+      const dialog = await openConfig(page)
+      await expect(dialog.getByTestId('cfg-tabs')).toHaveCount(0)
+      for (const id of ['section-runpod', 'section-volume', 'section-folders']) await expect(dialog.getByTestId(id)).toBeVisible()
+      await dialog.getByTestId('config-close').click()
+    }
+  })
+
+  test('resizing across the breakpoint switches between tabs and the flow', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.goto('/')
+    const dialog = await openConfig(page)
+    await expect(dialog.getByTestId('cfg-tabs')).toBeVisible()
+    await page.setViewportSize({ width: 600, height: 800 })
+    await expect(dialog.getByTestId('cfg-tabs')).toHaveCount(0)
+    await expect(dialog.getByTestId('section-volume')).toBeVisible()
   })
 })

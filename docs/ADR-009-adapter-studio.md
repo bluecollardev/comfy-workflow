@@ -38,6 +38,7 @@ buttons but obviously I need to change this too", "I don't see no chat interface
 | Chat that builds an editable prompt, which builds the adapter | None | decisions 2 to 4 |
 | Validation on save, agent-driven | A syntax check on the editor's Save only | decision 7 |
 | Claude writes and manages the adapters | One-shot draft | decision 6 |
+| Auto-documentation of what the code does, as a rule on generation | The code with no explanation | decision 12 |
 | Inspect leads somewhere you can change things | A dead end | decision 11 |
 
 ## Decision
@@ -105,7 +106,24 @@ buttons but obviously I need to change this too", "I don't see no chat interface
 11. **Inspect opens the Studio.** There is no separate read-only viewer: Inspect (in Import Shot
     Pack and in Default Configuration) opens the adapter in the Studio, in Code view, with the
     chat on the right and the same Save, Revert and Reset.
-12. **Nothing is a black box** (ADR-008 decision 12 stays): the code, the prompt, every tool
+12. **Adapters document themselves, and that is a rule on generation (Lucas, 2026-10-24: "auto
+    doc this code so we know what this code does, that's a rule that governs the AI
+    generation yeah?").** Every adapter starts with a **documentation header**, a comment block
+    before `export default` with these parts: *What it does* (one or two sentences), *Detects*
+    (the telltale files), *Maps* (source path to destination, by kind), *Leaves in place*,
+    *Needs and assumes*, and *Limits*. Three things enforce it, not one request to the model:
+    (a) the generation prompts require the header and name its parts; (b) the structure check
+    (`validateSource`) fails an adapter that has none ("no documentation header: say what it
+    detects, what it maps where, what it leaves in place"), so the draft is not Valid and the
+    agentic save check fixes it; (c) a **Document** action in the Studio (and the chat tool
+    `document_adapter`) has Claude read the code as it stands and write or refresh the header
+    to match what the code does, showing the before and after. For a hand-written or shipped
+    adapter without one, Document is how it gets one (the two built-ins carry theirs). The
+    header is shown above the code in Preview as "What this adapter does", so the explanation
+    and the code are always side by side. Claude writes the comment only; it does not change
+    behaviour in a Document pass, and the Studio checks that the code outside the header is
+    byte-identical before it saves.
+13. **Nothing is a black box** (ADR-008 decision 12 stays): the code, the prompt, every tool
    call and result, the version history and the sha256 are all on screen. The Studio shows,
    before the first message of a session, exactly what will be sent (names, counts, the small
    READMEs and manifests) and sends nothing until the person confirms.

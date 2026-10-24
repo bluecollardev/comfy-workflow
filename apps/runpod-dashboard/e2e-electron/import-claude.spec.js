@@ -45,7 +45,8 @@ test.describe('The Anthropic key, over IPC', () => {
       })
     })
     await new Promise((ok) => server.listen(0, '127.0.0.1', ok)); port = server.address().port
-    ctx = await launchApp({ dry: true, env: { ANTHROPIC_API_URL: `http://127.0.0.1:${port}`, DRY_PODS_FILE: join(base, 'dry-pods.json'), MOUNTS_FILE: join(base, 'mounts.json'), POD_MANAGER_ADAPTERS_DIR: adapters, POD_MANAGER_IMPORTS_DIR: join(base, 'imports') } })
+    // the real key (in the environment or ~/.config/runpod-pod-manager/.env) stays available to every other spec and to the live one; this spec simulates "no key" and brings its own, so it starts with an empty one
+    ctx = await launchApp({ dry: true, env: { ANTHROPIC_API_KEY: '', ANTHROPIC_API_URL: `http://127.0.0.1:${port}`, DRY_PODS_FILE: join(base, 'dry-pods.json'), MOUNTS_FILE: join(base, 'mounts.json'), POD_MANAGER_ADAPTERS_DIR: adapters, POD_MANAGER_IMPORTS_DIR: join(base, 'imports') } })
   })
   test.afterAll(async () => { await ctx.app.close(); server.close() })
   test.describe.configure({ mode: 'serial' })
@@ -62,20 +63,26 @@ test.describe('The Anthropic key, over IPC', () => {
     await expect(cfg.getByTestId('cfg-claude-key')).toBeFocused()
   })
 
-  test('a wrong key is refused by Test key; the right one is saved, tested and shown as stored', async () => {
+  test('the key tests itself: a wrong one is refused, the right one accepted before it is saved, then saved and checked on reopening', async () => {
     const { page } = ctx
     const cfg = page.locator('.modal.show', { has: page.getByTestId('config-modal') })
+    await expect(cfg.getByTestId('cfg-claude-test')).toHaveCount(0)                        // no button
     await cfg.getByTestId('cfg-claude-key').fill('sk-ant-api03-WRONGWRONGWRONGWRONG')
-    await cfg.getByTestId('cfg-claude-test').click()                                       // settings.set, settings.checkAnthropic
-    await expect(cfg.getByTestId('cfg-claude-result')).toHaveAttribute('data-ok', 'false')
+    await expect(cfg.getByTestId('cfg-claude-result')).toHaveAttribute('data-ok', 'false')  // settings.checkAnthropic, on its own
     await expect(cfg.getByTestId('cfg-claude-result')).toContainText('invalid x-api-key')
     await cfg.getByTestId('cfg-claude-key').fill(KEY)
-    await cfg.getByTestId('cfg-claude-test').click()
     await expect(cfg.getByTestId('cfg-claude-result')).toHaveAttribute('data-ok', 'true')
-    await expect(cfg.getByTestId('cfg-claude-group')).toContainText('••••' + KEY.slice(-4))
+    expect(existsSync(join(ctx.configDir, '.env')) ? readFileSync(join(ctx.configDir, '.env'), 'utf8') : '').not.toContain('ANTHROPIC_API_KEY')   // tested, not stored
+    await cfg.getByTestId('config-save').click()                                           // settings.set
+    await expect.poll(() => (existsSync(join(ctx.configDir, '.env')) ? readFileSync(join(ctx.configDir, '.env'), 'utf8') : '')).toContain(`ANTHROPIC_API_KEY=${KEY}`)
     expect(seen.filter((s) => s.path.startsWith('/v1/models')).map((s) => s.key)).toEqual(['sk-ant-api03-WRONGWRONGWRONGWRONG', KEY])
-    expect(readFileSync(join(ctx.configDir, '.env'), 'utf8')).toContain(`ANTHROPIC_API_KEY=${KEY}`)   // stored where every runtime reads it
-    await cfg.getByTestId('config-close').click()
+    await expect(page.locator('.modal.show', { has: page.getByTestId('config-modal') })).toHaveCount(0)
+    await page.getByTestId('open-config').click()                                          // reopened: the stored key checks itself
+    const again = page.locator('.modal.show', { has: page.getByTestId('config-modal') })
+    await expect(again.getByTestId('cfg-claude-group')).toContainText('••••' + KEY.slice(-4))
+    await expect(again.getByTestId('cfg-claude-result')).toHaveAttribute('data-ok', 'true')
+    expect(seen.filter((s) => s.path.startsWith('/v1/models')).map((s) => s.key)).toEqual(['sk-ant-api03-WRONGWRONGWRONGWRONG', KEY, KEY])
+    await again.getByTestId('config-close').click()
     await expect(page.locator('.modal.show')).toHaveCount(0)
   })
 

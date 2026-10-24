@@ -316,7 +316,7 @@ export async function mockApi(page, state) {
     if (method === 'GET' && path === '/repos/search') return json({ repos: filterRepos(state.accountRepos, query.q) })
     if (method === 'GET' && path === '/repos/branches') return json(state.branches)
     if (method === 'GET' && path === '/repos/folders') return json({ url: query.url, branch: query.branch, folders: state.folders })
-    if (method === 'POST' && path === '/settings/anthropic/check') { state.settings.anthropicChecks = (state.settings.anthropicChecks || 0) + 1; return json(state.settings.anthropic_key_set ? (state.settings.anthropicRejects ? { ok: false, error: 'Anthropic answered 401: invalid x-api-key' } : { ok: true }) : { ok: false, error: 'No Anthropic API key is set' }) }
+    if (method === 'POST' && path === '/settings/anthropic/check') { state.settings.anthropicChecks = [...(state.settings.anthropicChecks || []), body.key || null]; return json((body.key || state.settings.anthropic_key_set) ? ((state.settings.anthropicRejects || (body.key && body.key.includes('BAD'))) ? { ok: false, error: 'Anthropic answered 401: invalid x-api-key' } : { ok: true }) : { ok: false, error: 'No Anthropic API key is set' }) }
     // Import (the Import Shot Pack modal)
     if (method === 'GET' && path === '/imports/adapters') return json(state.imports.adapters)
     if (method === 'GET' && path === '/imports/source') { const a = state.imports.adapters.find((x) => x.id === query.id); return a ? json({ id: a.id, sha256: a.sha256, text: state.imports.sources[a.id] || '', builtin: a.builtin, file: a.file || `/builtin/${a.id}.mjs` }) : json({ detail: `no adapter ${query.id}` }, 400) }
@@ -433,4 +433,10 @@ export async function expandSection(page, name) {
 
 export const podCard = (page, name) => page.locator(`[data-testid="pod-card"][data-name="${name}"]`)
 
+/** Default Configuration shows its sections as tabs on a wide screen and flows them on a narrow one: open the tab when there are tabs. */
+export const cfgTab = async (root, key) => {
+  await root.getByTestId('cfg-tabs').waitFor({ timeout: 4000 }).catch(() => {})   // the bar appears once the panel has loaded; on a narrow screen there is none
+  const tab = root.getByTestId(`cfg-tab-${key}`)
+  if (await tab.count()) await tab.click()
+}
 export const modal = (page, text) => page.locator('.modal.show', { hasText: text })

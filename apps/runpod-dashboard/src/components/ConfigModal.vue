@@ -17,7 +17,14 @@
       <BAlert v-if="gated" :model-value="true" variant="warning" class="mb-3" data-testid="cfg-key-gate">
         <i class="fa-solid fa-key me-2"></i>{{ $t('config.keyGate') }}
       </BAlert>
-      <fieldset v-if="!forPod" class="cfg-section">
+
+      <!-- Tabs on a wide screen (desktop, landscape tablet); on a phone or a portrait tablet the sections flow down the page. -->
+      <ul v-if="wide && !gated" class="nav nav-tabs mb-3" role="tablist" data-testid="cfg-tabs">
+        <li v-for="t in tabList" :key="t.key" class="nav-item" role="presentation">
+          <button type="button" class="nav-link" :class="{ active: tab === t.key }" role="tab" :aria-selected="tab === t.key" :data-testid="`cfg-tab-${t.key}`" @click="tab = t.key">{{ t.label }}</button>
+        </li>
+      </ul>
+      <fieldset v-if="!forPod" v-show="show('runpod')" class="cfg-section" data-section="runpod">
       <legend data-testid="section-runpod">{{ $t('config.runpod') }}</legend>
       <BAlert :model-value="true" variant="info" class="small py-2 mb-3"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('config.runpodHint') }}</BAlert>
       <BRow class="g-3">
@@ -38,14 +45,10 @@
         </BCol>
         <BCol v-if="!gated" md="8">
           <BFormGroup :label="$t('config.claudeKey')" label-for="cfg-claude-key" data-testid="cfg-claude-group" :description="keyInfo.anthropic_key_set ? $t('config.claudeStored', { hint: keyInfo.anthropic_key_hint }) : $t('config.claudeUnset')">
-            <div class="d-flex gap-1">
-              <BFormInput id="cfg-claude-key" v-model.trim="newClaude" type="password" autocomplete="off" placeholder="sk-ant-…" class="font-monospace" data-testid="cfg-claude-key" />
-              <BButton size="sm" variant="outline-light" class="text-nowrap" :disabled="claudeChecking || (!keyInfo.anthropic_key_set && !newClaude)" :title="$t('config.claudeTestHint')" data-testid="cfg-claude-test" @click="testClaude">
-                <BSpinner v-if="claudeChecking" small class="me-1" /><i v-else class="fa-solid fa-plug me-1"></i>{{ $t('config.claudeTest') }}
-              </BButton>
-            </div>
-            <div v-if="claudeResult" class="small mt-1" :class="claudeResult.ok ? 'text-success' : 'text-danger'" data-testid="cfg-claude-result" :data-ok="claudeResult.ok ? 'true' : 'false'">
-              <i class="fa-solid me-1" :class="claudeResult.ok ? 'fa-circle-check' : 'fa-triangle-exclamation'"></i>{{ claudeResult.ok ? $t('config.claudeWorks') : claudeResult.error }}
+            <BFormInput id="cfg-claude-key" v-model.trim="newClaude" type="password" autocomplete="off" placeholder="sk-ant-…" class="font-monospace" data-testid="cfg-claude-key" />
+            <div v-if="claudeChecking || claudeResult" class="small mt-1" :class="claudeChecking ? 'text-body-secondary' : claudeResult.ok ? 'text-success' : 'text-danger'" data-testid="cfg-claude-result" :data-ok="claudeChecking ? 'checking' : claudeResult.ok ? 'true' : 'false'">
+              <template v-if="claudeChecking"><BSpinner small class="me-1" />{{ $t('config.claudeChecking') }}</template>
+              <template v-else><i class="fa-solid me-1" :class="claudeResult.ok ? 'fa-circle-check' : 'fa-triangle-exclamation'"></i>{{ claudeResult.ok ? (newClaude ? $t('config.claudeWorksTyped') : $t('config.claudeWorks')) : claudeResult.error }}</template>
             </div>
           </BFormGroup>
         </BCol>
@@ -53,7 +56,7 @@
       </fieldset>
 
       <template v-if="!gated">
-      <fieldset class="cfg-section">
+      <fieldset v-show="show('volume')" class="cfg-section" data-section="volume">
       <legend data-testid="section-volume">{{ $t('config.volume') }}</legend>
       <BAlert :model-value="true" variant="info" class="small py-2 mb-3"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('config.volumeHint') }}</BAlert>
       <BRow class="g-3">
@@ -114,7 +117,7 @@
       </BRow>
       </fieldset>
 
-      <fieldset class="cfg-section">
+      <fieldset v-show="show('folders')" class="cfg-section" data-section="folders">
       <div class="d-flex align-items-center justify-content-between mb-2">
         <legend class="mb-0" data-testid="section-folders">{{ $t('config.folders') }}</legend>
         <BButton size="sm" variant="outline-light" class="flex-shrink-0 text-nowrap ms-3" data-testid="add-folder" @click="cfg.custom.push({ name: '', local: '', container: '', link: '', mode: 'rw' })"><i class="fa-solid fa-plus me-1"></i>{{ $t('config.addFolder') }}</BButton>
@@ -172,9 +175,9 @@
       </table>
       </fieldset>
 
-      <fieldset class="cfg-section">
+      <fieldset v-show="show('environment')" class="cfg-section" data-section="environment">
       <div class="d-flex align-items-center justify-content-between mb-2">
-        <legend class="mb-0">Environment</legend>
+        <legend class="mb-0">{{ $t('config.environment') }}</legend>
         <BButton size="sm" variant="outline-light" @click="envRows.push({ key: '', value: '' })"><i class="fa-solid fa-plus me-1"></i>Add variable</BButton>
       </div>
       <BAlert :model-value="true" variant="info" class="small py-2 mb-3"><i class="fa-solid fa-circle-info me-2"></i>Extra variables for every pod that applies these mounts.</BAlert>
@@ -189,11 +192,11 @@
       </table>
       </fieldset>
 
-      <fieldset v-if="!forPod && !gated" class="cfg-section">
+      <fieldset v-if="!forPod && !gated" v-show="show('adapters')" class="cfg-section" data-section="adapters">
         <legend data-testid="section-adapters">{{ $t('adapters.section') }}</legend>
         <AdapterManager />
       </fieldset>
-      <fieldset class="cfg-section">
+      <fieldset v-show="show('options')" class="cfg-section" data-section="options">
         <legend>{{ $t('config.options') }}</legend>
       <BFormCheckbox v-if="!forPod" v-model="cfg.apply_by_default" switch class="mb-2" data-testid="cfg-apply-default">
         {{ $t('config.applyDefault') }} <span class="text-body-secondary">{{ $t('config.applyDefaultHint') }}</span>
@@ -254,7 +257,7 @@ import { volumesAPI } from '../api/volumes'
  * request; the card stores it for Recreate. The RunPod key, "apply by default" and no-spend mode
  * are app-wide and stay out of it.
  */
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick } from 'vue'
 import { useUiStore } from '../stores/ui'
 import { useMountsStore } from '../stores/mounts'
 import { mountsAPI } from '../api/mounts'
@@ -293,16 +296,48 @@ const keyInfo = ref({ runpod_api_key_set: false, runpod_api_key_hint: '', source
 const newClaude = ref('')
 const claudeChecking = ref(false)
 const claudeResult = ref(null)
-/** Test key: a typed key is saved first (that is the key the app would use), then one cheap call asks Anthropic. */
-async function testClaude() {
-  claudeChecking.value = true; claudeResult.value = null
-  try {
-    if (newClaude.value) { keyInfo.value = await settingsAPI.set({ anthropic_api_key: newClaude.value }); newClaude.value = ''; await settingsStore.load() }
-    claudeResult.value = await settingsAPI.checkAnthropic()
-  } catch (e) { claudeResult.value = { ok: false, error: e.response?.data?.detail || e.message } } finally { claudeChecking.value = false }
+/** The Anthropic key tests itself, no button: the stored one when the panel opens, a typed one a moment after the typing stops (it is tested
+ *  without being saved; Save stores it). One cheap call; the answer is Anthropic's own. */
+let claudeRun = 0, claudeTimer = null, claudeSaved = false   // claudeSaved: Save just stored the typed key, which was already checked
+async function checkClaude() {
+  const mine = ++claudeRun
+  const typed = newClaude.value
+  if (!typed && !keyInfo.value.anthropic_key_set) { claudeResult.value = null; claudeChecking.value = false; return }
+  claudeChecking.value = true
+  let r
+  try { r = await settingsAPI.checkAnthropic(typed) } catch (e) { r = { ok: false, error: e.response?.data?.detail || e.message } }
+  if (mine !== claudeRun) return   // the key changed while Anthropic was answering
+  claudeResult.value = r; claudeChecking.value = false
 }
+watch(newClaude, (v) => {
+  if (!v && claudeSaved) { claudeSaved = false; return }   // cleared by Save: no second check of a key that was just checked
+  clearTimeout(claudeTimer)
+  claudeRun++   // whatever was in flight is stale
+  if (!v) { claudeChecking.value = false; claudeResult.value = null; claudeTimer = setTimeout(checkClaude, 0); return }   // cleared: the stored key again
+  if (v.length < 20) { claudeChecking.value = false; claudeResult.value = null; return }   // not a key yet
+  claudeChecking.value = true
+  claudeTimer = setTimeout(checkClaude, 600)
+})
 const settingsStore = useSettingsStore()
 /** No key stored (and not no-spend mode): only the key field shows, and the panel cannot be dismissed. */
+// Tabs on a wide screen (desktop, landscape tablet: 992px and up); the sections flow down the page below that.
+const wideQuery = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(min-width: 992px)') : null
+const wide = ref(wideQuery ? wideQuery.matches : true)
+const onWide = (e) => { wide.value = e.matches }
+onMounted(() => wideQuery?.addEventListener('change', onWide))
+onBeforeUnmount(() => wideQuery?.removeEventListener('change', onWide))
+const tab = ref(props.mode === 'pod' ? 'volume' : 'runpod')
+const tabList = computed(() => [
+  ...(forPod.value ? [] : [{ key: 'runpod', label: t('config.runpod') }]),
+  { key: 'volume', label: t('config.volume') },
+  { key: 'folders', label: t('config.folders') },
+  { key: 'environment', label: t('config.environment') },
+  ...(forPod.value ? [] : [{ key: 'adapters', label: t('adapters.section') }]),
+  { key: 'options', label: t('config.options') },
+])
+/** A section shows when the sections flow (narrow), when only the key is asked for (gated), or when its tab is the open one. */
+const show = (key) => !wide.value || gated.value || tab.value === key
+
 const gated = computed(() => !forPod.value && !keyInfo.value.runpod_api_key_set && !settingsStore.ready)
 const newKey = ref('')
 const showDockerfile = ref(false)
@@ -380,6 +415,7 @@ async function load() {
   const payload = await mounts.load()
   if (payload) take(payload); else error.value = mounts.error
   try { keyInfo.value = await settingsAPI.get() } catch { /* a backend without settings: the key comes from the environment */ }
+  checkClaude()   // the stored Anthropic key tests itself when the panel opens
   newKey.value = ''
   loadVolume()   // after the config is in, so the line names the configured volume
   loading.value = false
@@ -439,11 +475,12 @@ const previewText = computed(() => {
 })
 
 /** Opened from Import Shot Pack with a place to go: "adapters" scrolls to Import adapters, "claude" to the Anthropic key field (and puts the cursor in it). */
-function focusSection() {
+async function focusSection() {
   const where = ui.configFocus
   ui.configFocus = ''
-  if (where === 'adapters') document.querySelector('[data-testid="section-adapters"]')?.scrollIntoView({ block: 'start' })
+  if (where === 'adapters') { tab.value = 'adapters'; await nextTick(); document.querySelector('[data-testid="section-adapters"]')?.scrollIntoView({ block: 'start' }) }
   if (where === 'claude') {
+    tab.value = 'runpod'; await nextTick()
     const input = document.getElementById('cfg-claude-key')
     input?.scrollIntoView({ block: 'center' })
     input?.focus({ preventScroll: true })
@@ -463,7 +500,7 @@ async function save() {
     catch (e) { error.value = e.response?.data?.detail || e.message; saving.value = false; return }
   }
   if (newClaude.value) {
-    try { keyInfo.value = await settingsAPI.set({ anthropic_api_key: newClaude.value }); newClaude.value = ''; await settingsStore.load() }
+    try { keyInfo.value = await settingsAPI.set({ anthropic_api_key: newClaude.value }); claudeSaved = true; newClaude.value = ''; await settingsStore.load() }
     catch (e) { error.value = e.response?.data?.detail || e.message; saving.value = false; return }
   }
   const r = await mounts.save(body())

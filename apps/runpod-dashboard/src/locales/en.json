@@ -256,13 +256,14 @@
     "s3Access": "S3 access key (optional)",
     "s3Secret": "S3 secret",
     "claudeKey": "Anthropic API key (optional)",
-    "claudeStored": "Stored ({hint}). Used only by Write an adapter with Claude in Import Shot Pack.",
+    "claudeStored": "Stored ({hint}). Used only by Write an adapter with Claude and the shot pack description in Import Shot Pack.",
     "claudeUnset": "Not set. Only needed for Write an adapter with Claude in Import Shot Pack; a coding agent that brings its own key does not need it.",
     "s3Unset": "For syncing onto a volume with no pod running, in S3 datacenters: RunPod console, Settings, S3 API keys. The access key is your RunPod user id.",
     "s3Stored": "S3 keys stored ({hint}). Enter new ones to replace them.",
-    "claudeTest": "Test key",
-    "claudeTestHint": "Saves a key you have typed, then asks Anthropic whether it works (one small request).",
-    "claudeWorks": "Anthropic accepts this key."
+    "claudeWorks": "Anthropic accepts this key.",
+    "claudeChecking": "Asking Anthropic…",
+    "claudeWorksTyped": "Anthropic accepts this key. Save to store it.",
+    "environment": "Environment"
   },
   "picker": {
     "title": "Choose the {name} folder",

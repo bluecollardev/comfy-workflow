@@ -44,14 +44,19 @@ describe('settings', () => {
     settings.set({ anthropic_api_key: 'sk-ant-api03-0123456789ABCDWXYZ' })
     let seen: { url: string; key: string } | null = null
     const good = (async (url: string, init: { headers: Record<string, string> }) => { seen = { url, key: init.headers['x-api-key'] }; return { ok: true, status: 200, json: async () => ({}) } }) as unknown as typeof fetch
-    expect(await settings.checkAnthropic(good)).toEqual({ ok: true })
+    expect(await settings.checkAnthropic(null, good)).toEqual({ ok: true })
     expect(seen).toEqual({ url: 'https://api.anthropic.com/v1/models?limit=1', key: 'sk-ant-api03-0123456789ABCDWXYZ' })
     const bad = (async () => ({ ok: false, status: 401, json: async () => ({ error: { message: 'invalid x-api-key' } }) })) as unknown as typeof fetch
-    expect(await settings.checkAnthropic(bad)).toEqual({ ok: false, error: 'Anthropic answered 401: invalid x-api-key' })
+    expect(await settings.checkAnthropic(null, bad)).toEqual({ ok: false, error: 'Anthropic answered 401: invalid x-api-key' })
     const down = (async () => { throw new Error('ECONNREFUSED') }) as unknown as typeof fetch
-    expect((await settings.checkAnthropic(down)).error).toMatch(/Could not reach Anthropic: ECONNREFUSED/)
+    expect((await settings.checkAnthropic(null, down)).error).toMatch(/Could not reach Anthropic: ECONNREFUSED/)
+    // a typed key is tested without being stored
+    expect(await settings.checkAnthropic('sk-ant-api03-TYPEDTYPEDTYPEDTYPED', good)).toEqual({ ok: true })
+    expect(seen!.key).toBe('sk-ant-api03-TYPEDTYPEDTYPEDTYPED')
+    expect(settings.get().anthropic_key_hint).toBe('••••WXYZ')   // the stored one is untouched
+    expect((await settings.checkAnthropic('sk-ant-…', good)).error).toMatch(/does not look like/)   // the placeholder from earlier never reaches Anthropic
     process.env.ANTHROPIC_API_URL = 'http://127.0.0.1:9/'
-    await settings.checkAnthropic(good)
+    await settings.checkAnthropic(null, good)
     expect(seen!.url).toBe('http://127.0.0.1:9/v1/models?limit=1')   // the stand-in URL, for tests
     delete process.env.ANTHROPIC_API_URL
     settings.set({ anthropic_api_key: null })

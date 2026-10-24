@@ -75,7 +75,7 @@ const TABLE = {
   },
   settings: {
     get: (c) => c.settings.get(),
-    checkAnthropic: (c) => c.settings.checkAnthropic(),
+    checkAnthropic: (c, typed) => c.settings.checkAnthropic(typed || null),
     set: (c, values) => { const r = c.settings.set(values); if (process.env.RUNPOD_API_KEY && !stopIdle) startIdleWatch().catch(() => {}); return r },
   },
   git: {

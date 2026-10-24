@@ -1,4 +1,4 @@
-import { test, expect, openCreatePod, modal } from './fixtures'
+import { test, expect, openCreatePod, modal , cfgTab } from './fixtures'
 import { t } from './i18n'
 
 const CONFIGURED = 'ghcr.io/example/comfy-app:v26'
@@ -45,6 +45,7 @@ test.describe('the Dockerfile modal', () => {
   test('the Default Configuration image field has the button too', async ({ page }) => {
     await page.goto('/')
     await page.getByTestId('open-config').click()
+    await cfgTab(page.locator('.modal.show'), 'volume')   // the image field sits with the volume
     await page.getByTestId('cfg-image-dockerfile').click()
     await expect(modal(page, t('dockerfile.title')).getByTestId('dockerfile-image')).toHaveValue(CONFIGURED)
   })

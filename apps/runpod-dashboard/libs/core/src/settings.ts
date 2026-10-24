@@ -90,10 +90,11 @@ export function applyToEnv(): void {
 /** Where the Anthropic API is: the real one, or ANTHROPIC_API_URL (a stand-in for tests). */
 export const anthropicBase = () => (process.env.ANTHROPIC_API_URL || 'https://api.anthropic.com').replace(/\/+$/, '')
 
-/** Does the stored Anthropic key work? One cheap call (GET /v1/models, one row). Never throws: { ok, error? }. `fetchImpl` is for tests. */
-export async function checkAnthropic(fetchImpl: typeof fetch = fetch): Promise<{ ok: boolean; error?: string }> {
-  const key = lookup('ANTHROPIC_API_KEY')
+/** Does an Anthropic key work? The one given (a key typed in the panel, not stored), else the stored one. One cheap call (GET /v1/models, one row). Never throws: { ok, error? }. `fetchImpl` is for tests. */
+export async function checkAnthropic(typed: string | null = null, fetchImpl: typeof fetch = fetch): Promise<{ ok: boolean; error?: string }> {
+  const key = (typed || '').trim() || lookup('ANTHROPIC_API_KEY')
   if (!key) return { ok: false, error: 'No Anthropic API key is set' }
+  if (/\s/.test(key) || /[^\x20-\x7e]/.test(key)) return { ok: false, error: 'That does not look like an Anthropic API key (no spaces or odd characters)' }
   try {
     const res = await fetchImpl(`${anthropicBase()}/v1/models?limit=1`, { headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' } })
     if (res.ok) return { ok: true }
