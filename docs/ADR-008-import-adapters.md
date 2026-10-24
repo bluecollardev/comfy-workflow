@@ -139,7 +139,7 @@ is never edited (contract §5.2; `.claude/rules/binc-tree.md` for Binc's tree).
     as it is on disk, its file path and hash; built-ins are read-only), **New adapter** (from a
     template that already passes the structure check), **Edit** (yours; the structure is
     checked as you type, a save the app refuses stays open and says why), **Duplicate** (the
-    way to change a built-in: its code under a new id), **Delete** (yours; asks first).
+    way to change a built-in: its code under a new id), **Delete** (yours; asks first). *Superseded in part by ADR-009: built-ins are editable through an override, and Inspect opens the Adapter Studio.*
     Import Shot Pack carries a **Manage adapters** link that opens this section, and an
     Inspect button on each adapter. The file name is the adapter's identity, whatever `id` the
     module declares. This supersedes the approval step of the first draft: where the

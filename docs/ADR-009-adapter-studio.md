@@ -1,7 +1,7 @@
 # ADR-009: The Adapter Studio: chat builds a prompt, the prompt builds the adapter
 
 **Date:** 2026-10-24
-**Status:** Proposed (Lucas, 2026-10-24, over several messages). Not yet built; the plan is at the end.
+**Status:** Accepted for the build (Lucas, 2026-10-24, over several messages and a screenshot). Not yet built; the plan is at the end. Until it is built, the screens that exist are the ones in "What exists against what was asked".
 **Owner:** Lucas (Blue Collar Dev)
 **Extends:** ADR-008 (import adapters). Supersedes ADR-008's "Write an adapter with Claude" preview-and-textarea flow (decisions 7, 10, 12 keep their rules; their screens change).
 
@@ -20,6 +20,25 @@ creating these adapters."
 The problems with what exists: the code is not visible while Claude works; a one-shot prompt box
 loses what was decided; nothing records *why* an adapter maps what it maps; and validation is a
 button the person has to remember.
+
+## What exists against what was asked
+
+Lucas, 2026-10-24, with a screenshot of the current **Inspect** modal ("Adapter comfy-shared": a
+read-only block of code, a Close button, its top lines scrolled out of sight): "we have inspect
+buttons but obviously I need to change this too", "I don't see no chat interface to edit this",
+"what happened to preview, code, or split options?".
+
+| Asked | What exists (screenshot) | This ADR |
+|---|---|---|
+| A source pane and a chat side by side | Code only, no chat | decision 1 |
+| An IDE look: line numbers, tabs, explorer, problems, status bar | A plain scrolling block | decision 1 |
+| Edit any adapter, built-ins included | Read-only, Close only | decisions 10, 11 |
+| View as code only, preview only, or both, as icon buttons | None | decision 9 |
+| Name and rename adapters for easy reference | The title is the id | decision 5 |
+| Chat that builds an editable prompt, which builds the adapter | None | decisions 2 to 4 |
+| Validation on save, agent-driven | A syntax check on the editor's Save only | decision 7 |
+| Claude writes and manages the adapters | One-shot draft | decision 6 |
+| Inspect leads somewhere you can change things | A dead end | decision 11 |
 
 ## Decision
 
@@ -71,12 +90,30 @@ button the person has to remember.
    the tool calls it returns, and answers with the new messages and what each tool did; the
    screen repeats until Claude ends its turn (at most ten steps). The screen shows each step
    as it lands, so nothing is hidden and a stop button works between steps.
-9. **Nothing is a black box** (ADR-008 decision 12 stays): the code, the prompt, every tool
+9. **View modes, as icon buttons.** The editor's toolbar has three: **Code** (the source only),
+   **Preview** (what the adapter does) and **Split** (both, side by side). The choice is
+   remembered per viewer. *Preview* is the adapter run, fenced, on the attached folder: the
+   plan by kind with counts and bytes, the destination tree it would make under ComfyUI-Shared
+   (folders expand), the findings, and any structure or plan errors; it refreshes when the
+   file is saved. With no folder attached it says to attach one. The chat is a separate pane
+   on the right in every mode.
+10. **Every adapter is editable, the built-ins too.** Editing a built-in writes an **override**:
+    a file `adapters/<id>.mjs` with the built-in's id, which the app then uses instead of the
+    shipped one. The shipped file is never touched. The list marks it "Built-in, modified",
+    shows the diff against the original, and **Reset to built-in** deletes the override. The
+    chat, the prompt and agentic validation work on a built-in exactly as on yours.
+11. **Inspect opens the Studio.** There is no separate read-only viewer: Inspect (in Import Shot
+    Pack and in Default Configuration) opens the adapter in the Studio, in Code view, with the
+    chat on the right and the same Save, Revert and Reset.
+12. **Nothing is a black box** (ADR-008 decision 12 stays): the code, the prompt, every tool
    call and result, the version history and the sha256 are all on screen. The Studio shows,
    before the first message of a session, exactly what will be sent (names, counts, the small
    READMEs and manifests) and sends nothing until the person confirms.
 
 ## Consequences
+
+- Built-in adapters are no longer pristine in use: an override can change what an import does.
+  The list says so, the original is always one click away, and Reset is one click.
 
 - The prompt becomes the durable description of an adapter: a person or an agent can read why
   it does what it does, edit the intent, and rebuild.
