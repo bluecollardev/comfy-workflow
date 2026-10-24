@@ -89,8 +89,8 @@ buttons but obviously I need to change this too", "I don't see no chat interface
    save is checked again, up to three rounds, every round visible in the chat and the editor.
    If it still fails, the adapter stays saved but marked **Not valid** with the errors in the
    Problems panel, and the Import screen offers only valid adapters by default. Without a key,
-   the checks still run; only the fixing is manual. Each overwrite keeps the previous version in
-   `adapters/.history/<id>/`, twenty deep, with Revert in the Studio.
+   the checks still run; only the fixing is manual. See decision 14 for what Save does and does
+   not keep.
 8. **How the chat runs.** One request per step, driven by the screen: the screen sends the
    conversation and the app's core makes one Messages API call with the tools above, executes
    the tool calls it returns, and answers with the new messages and what each tool did; the
@@ -142,7 +142,21 @@ buttons but obviously I need to change this too", "I don't see no chat interface
     and the code are always side by side. Claude writes the comment only; it does not change
     behaviour in a Document pass, and the Studio checks that the code outside the header is
     byte-identical before it saves.
-13. **Nothing is a black box** (ADR-008 decision 12 stays): the code, the prompt, every tool
+13. **No autosave. Save is explicit, and if it goes wrong you re-vibe (Lucas, 2026-10-24: "don't
+    have an auto save when editing these packages ... if you guck up you gotta revibe ... for now").**
+    Typing in the editor or the prompt changes nothing on disk; **Save** writes, and a modified
+    file shows a dot on its tab and "Modified" in the status bar. Closing with unsaved changes
+    asks. Claude's tools write only when the person asked in the chat, and the screen says what
+    was written. When Claude's build or fix is wrong there is no Revert button for now: the
+    prompt is the source (decisions 2 to 4), so the fix is to correct the prompt and **build
+    again**, which is what "re-vibe" means here. Two things soften it without being a version
+    feature: the editor's own undo history still holds what was typed before an agentic fix
+    replaced it, and the core keeps the file it is about to overwrite in `adapters/.history/`
+    as a safety net that has no screen. **Autosave and versions are not built; they are a
+    todo** (below, and `NEXT-STEPS.md`): a version list, Revert, a diff between versions, and
+    autosave on top of them, because autosave without versions would overwrite work with no way
+    back.
+14. **Nothing is a black box** (ADR-008 decision 12 stays): the code, the prompt, every tool
    call and result, the version history and the sha256 are all on screen. The Studio shows,
    before the first message of a session, exactly what will be sent (names, counts, the small
    READMEs and manifests) and sends nothing until the person confirms.
@@ -175,6 +189,15 @@ buttons but obviously I need to change this too", "I don't see no chat interface
   then hand back to the person.
 - **Monaco instead of CodeMirror.** Heavier, workers and a bundler config for Electron; CodeMirror
   6 is enough for one file at a time.
+
+## Todo (decided later, not part of this build)
+
+- **Autosave with versions**: autosave only makes sense once there are versions, so they come
+  together: a version list per adapter (code and prompt), Revert, a diff, a named version
+  ("works for round 3"), and autosave of the editor draft between saves. The history files
+  already written on each Save are the start of it.
+- Streaming the model's text as it arrives (open point 2).
+- A diff view for the agent's fixes (open point 4).
 
 ## Open points
 
