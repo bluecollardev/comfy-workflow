@@ -2,7 +2,7 @@
 
 **Status:** built (ADR-008, 2026-10-24; plan in `docs/PLAN-IMPORT-ADAPTERS.md`). This page is the spec an
 adapter writer works from, human or coding agent; the app serves the same text to
-agents (`adapter_spec`). Run it: `./start.sh import <folder> --dry-run`, or Import Shot Pack.
+agents (`adapter_spec`). Setup and use: `docs/IMPORT-SHOT-PACKS.md`. Run it: `./start.sh import <folder> --dry-run`, or Import Shot Pack.
 
 An **adapter** maps one kind of source folder (a delivery package, a project tree, a
 colleague's zip) onto the **ComfyUI-Shared structure**. It is a single ES module that

@@ -136,6 +136,12 @@ Open in browser: `http://a1b2c3d4e5f6.proxy.runpod.io:8188`
 
 ---
 
+## 🟣 Import a shot pack (5 mins)
+
+A delivery package (Kyle's rounds) into ComfyUI-Shared and onto a pod: map ComfyUI-Shared in
+Default Configuration, then on a pod's card press **Import Shot Pack**, pick the folder, Dry run,
+Import. Setup, the optional Claude key, adapters and limits: [`IMPORT-SHOT-PACKS.md`](IMPORT-SHOT-PACKS.md).
+
 ## 📊 Comparison
 
 | Feature | Dashboard | Local ComfyUI | RunPod Pod |
