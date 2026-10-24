@@ -43,9 +43,14 @@ buttons but obviously I need to change this too", "I don't see no chat interface
 
 ## Decision
 
-1. **One screen, the Adapter Studio, laid out like an IDE.** It opens from "Write an adapter
-   with Claude" (Import Shot Pack) and from New adapter / Edit / Duplicate in Default
-   Configuration, replacing the textarea editor. Left: an explorer (the built-in adapters
+1. **One screen, the Adapter Studio, laid out like an IDE, and it is literally the same modal
+   from every door** (Lucas: "Write an adapter with Claude: this should literally be the same modal
+   too"). **Edit** on an adapter (Import Shot Pack, Default Configuration), **New adapter**, and
+   **Write an adapter with Claude** all open the one Studio component: Edit opens it on that
+   adapter; New adapter on an empty one from the template; Write an adapter with Claude on a new
+   one with the chat focused and the folder from Import Shot Pack attached. There is no second
+   editor, no preview-and-confirm modal, and no side panel: the textarea editor, the draft panel
+   and the Inspect viewer are removed. Left: an explorer (the built-in adapters
    read-only with a lock, yours, New). Centre: tabs and a real code editor (line numbers,
    JavaScript highlighting, the file path and sha256 above it) with a Problems panel and a
    status bar below (line and column, saved or modified, Valid or not). Right, **side by side
@@ -103,8 +108,8 @@ buttons but obviously I need to change this too", "I don't see no chat interface
     shipped one. The shipped file is never touched. The list marks it "Built-in, modified",
     shows the diff against the original, and **Reset to built-in** deletes the override. The
     chat, the prompt and agentic validation work on a built-in exactly as on yours.
-11. **Inspect opens the Studio.** There is no separate read-only viewer: Inspect (in Import Shot
-    Pack and in Default Configuration) opens the adapter in the Studio, in Code view, with the
+11. **The button is called Edit, and it opens the Studio** (Lucas: "don't call the button inspect, call it Edit"). There is no separate read-only viewer: Edit (in Import Shot
+    Pack and in Default Configuration, on every adapter including the built-ins) opens it in the Studio, in Code view, with the
     chat on the right and the same Save, Revert and Reset.
 12. **Adapters document themselves, and that is a rule on generation (Lucas, 2026-10-24: "auto
     doc this code so we know what this code does, that's a rule that governs the AI
