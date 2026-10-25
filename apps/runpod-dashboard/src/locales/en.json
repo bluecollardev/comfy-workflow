@@ -402,7 +402,7 @@
     "adapterAuto": "Best match",
     "plan": "Plan",
     "planning": "Planning...",
-    "planTitle": "{name} read the folder",
+    "planTitle": "Import plan",
     "fenced": "Fenced",
     "fencedHint": "The adapter ran in a process that can read only this folder: no writes, no other folders, no child processes. It can still reach the network.",
     "notFenced": "Not fenced",
@@ -507,7 +507,8 @@
     "claudeKeyOk": "Claude key {hint}",
     "claudeNeedFolderError": "Attach a folder first: type its path or press Browse, then write the adapter.",
     "draftIgnored": "Claude also sent {n} other block(s). They were dropped: only the adapter is ever saved.",
-    "claudeRule": "Claude writes adapters only: its reply can become one file in the adapters folder and nothing else."
+    "claudeRule": "Claude writes adapters only: its reply can become one file in the adapters folder and nothing else.",
+    "planUsing": "by the adapter {name}"
   },
   "dc": {
     "groupS3": "S3: uploads need no pod · cards in stock",

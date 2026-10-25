@@ -53,7 +53,8 @@
     <div v-if="store.plan" class="card mt-3" data-testid="import-plan-card">
       <div class="card-body">
         <div class="d-flex align-items-center gap-2 mb-2">
-          <strong data-testid="import-plan-title">{{ $t('import.planTitle', { name: store.plan.adapter.name }) }}</strong>
+          <strong data-testid="import-plan-title">{{ $t('import.planTitle') }}</strong>
+          <span class="text-body-secondary" data-testid="import-plan-using">{{ $t('import.planUsing', { name: store.plan.adapter.name }) }}</span>
           <code class="small text-body-secondary" data-testid="import-plan-adapter">{{ store.plan.adapter.id }}</code>
           <BBadge :variant="store.plan.fenced ? 'success' : 'warning'" class="fw-normal" :title="store.plan.fenced ? $t('import.fencedHint') : $t('import.notFencedHint')" data-testid="import-fenced">{{ store.plan.fenced ? $t('import.fenced') : $t('import.notFenced') }}</BBadge>
         </div>
