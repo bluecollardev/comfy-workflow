@@ -219,9 +219,11 @@
       <BFormCheckbox v-if="!forPod" v-model="cfg.apply_by_default" switch class="mb-2" data-testid="cfg-apply-default">
         {{ $t('config.applyDefault') }} <span class="text-body-secondary">{{ $t('config.applyDefaultHint') }}</span>
       </BFormCheckbox>
-      <BFormCheckbox v-if="!forPod" v-model="cfg.dry_run" switch class="mb-3" data-testid="cfg-dry-run">
+      <BFormCheckbox v-if="!forPod" v-model="cfg.dry_run" switch class="mb-1" :disabled="dryForced" data-testid="cfg-dry-run">
         {{ $t('config.dryRun') }} <span class="text-body-secondary">{{ $t('config.dryRunHint') }}</span>
       </BFormCheckbox>
+      <div v-if="!forPod && dryForced" class="small text-warning mb-3" data-testid="cfg-dry-forced"><i class="fa-solid fa-lock me-1"></i>{{ $t('config.dryForced') }}</div>
+      <div v-else-if="!forPod" class="mb-2"></div>
 
       <details class="mb-2">
         <summary class="small text-body-secondary">{{ $t('config.previewLocal') }}</summary>
@@ -278,6 +280,7 @@ import { volumesAPI } from '../api/volumes'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick } from 'vue'
 import { useUiStore } from '../stores/ui'
 import { useStudioStore } from '../stores/studio'
+import { usePodsStore } from '../stores/pods'
 import { useMountsStore } from '../stores/mounts'
 import { mountsAPI } from '../api/mounts'
 import { imagesAPI } from '../api/images'
@@ -298,6 +301,7 @@ const forPod = computed(() => props.mode === 'pod')
 
 const ui = useUiStore()
 const studioStore = useStudioStore()
+const podsStore = usePodsStore()
 const overStudio = ref(false)
 const mounts = useMountsStore()
 const loading = ref(false)
@@ -305,6 +309,7 @@ const saving = ref(false)
 const error = ref(null)
 const cfg = ref(null)
 const folders = ref([])
+const dryForced = computed(() => !forPod.value && !!mounts.payload?.dry_run_forced)   // RUNPOD_DRY_RUN=1 in the app's environment: the switch is not the one in charge
 const envRows = ref([])
 const envLoad = reactive({ loading: false, replace: false, summary: '', error: '' })
 /** Load defaults, as in the Create Pod form: the image's ENV and ARGs (or the repo Dockerfile's) become rows. A build ARG reaches the pod as an
@@ -551,6 +556,7 @@ async function save() {
   saving.value = false
   if (!r.ok) { error.value = mounts.error; return }
   take(r.value)
+  followNoSpend(r.value)
   ui.configOpen = false
 }
 
@@ -558,7 +564,15 @@ async function reset() {
   saving.value = true; error.value = null
   const r = await mounts.reset()
   saving.value = false
-  if (r.ok) take(r.value); else error.value = mounts.error
+  if (r.ok) { take(r.value); followNoSpend(r.value) } else error.value = mounts.error
+}
+
+/** No-spend mode is read from the pod list's answer; after a save the header must not wait for the next refresh: set it from what the core just said,
+ *  then reload the list (simulated pods replace real ones, or the other way round). */
+function followNoSpend(payload) {
+  if (forPod.value) return
+  podsStore.dryRun = !!payload?.dry_run
+  podsStore.load()
 }
 </script>
 

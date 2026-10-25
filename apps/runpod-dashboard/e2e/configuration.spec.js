@@ -220,17 +220,54 @@ test.describe('the RunPod key', () => {
 })
 
 test.describe('no-spend mode', () => {
-  test('the switch is saved and the navbar says so', async ({ page, api }) => {
+  test('the switch is saved and the header follows at once, no refresh: on shows the badge, off takes it away', async ({ page, api }) => {
     await page.goto('/')
     await expect(page.getByTestId('no-spend-badge')).toHaveCount(0)
-    const dialog = await openConfig(page)
+    let dialog = await openConfig(page)
     await cfgTab(dialog, 'options')
     await dialog.getByTestId('cfg-dry-run').check()
     await dialog.getByTestId('config-save').click()
     const put = api.calls.find((c) => c.method === 'PUT' && c.path === '/mounts')
     expect(put.body.dry_run).toBe(true)
-    await page.getByTestId('refresh').click()
-    await expect(page.getByTestId('no-spend-badge')).toHaveText(t('app.noSpend'))
+    await expect(page.getByTestId('no-spend-badge')).toHaveText(t('app.noSpend'))   // without pressing Refresh
+    // the pod list was asked for again: with the mode changed, the pods shown are another set
+    const dashboards = api.calls.filter((c) => c.path === '/dashboard').length
+    expect(dashboards).toBeGreaterThanOrEqual(2)
+    dialog = await openConfig(page)
+    await cfgTab(dialog, 'options')
+    await expect(dialog.getByTestId('cfg-dry-run')).toBeChecked()
+    await dialog.getByTestId('cfg-dry-run').uncheck()
+    await dialog.getByTestId('config-save').click()
+    await expect(page.getByTestId('no-spend-badge')).toHaveCount(0)
+  })
+
+  test('Clear resets the mode too, and the header follows', async ({ page, api }) => {
+    api.state.mounts.config.dry_run = true; api.state.mounts.stored = true
+    await page.goto('/')
+    await expect(page.getByTestId('no-spend-badge')).toBeVisible()
+    const dialog = await openConfig(page)
+    await dialog.getByTestId('config-clear').click()
+    await expect(page.getByTestId('no-spend-badge')).toHaveCount(0)
+  })
+
+  test('when the environment forces it (RUNPOD_DRY_RUN=1) the switch says so and cannot be turned off; the header stays on', async ({ page, api }) => {
+    api.state.mounts.dryForced = true
+    await page.goto('/')
+    await expect(page.getByTestId('no-spend-badge')).toBeVisible()
+    const dialog = await openConfig(page)
+    await cfgTab(dialog, 'options')
+    await expect(dialog.getByTestId('cfg-dry-run')).toBeDisabled()
+    await expect(dialog.getByTestId('cfg-dry-forced')).toContainText('RUNPOD_DRY_RUN=1')
+    await dialog.getByTestId('config-save').click()
+    await expect(page.getByTestId('no-spend-badge')).toBeVisible()
+  })
+
+  test('a pod\'s own configuration has no no-spend switch: it is app-wide', async ({ page }) => {
+    await page.goto('/')
+    await podCard(page, 'ComfyUI-Dev').getByTestId('pod-config').click()
+    const panel = modal(page, t('config.podTitle', { name: 'ComfyUI-Dev' }))
+    await expect(panel.getByTestId('cfg-dry-run')).toHaveCount(0)
+    await expect(panel.getByTestId('cfg-dry-forced')).toHaveCount(0)
   })
 })
 

@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { configModal, launchApp, openCreatePod, podCard, toast } from './app.js'
 import { t } from '../e2e/i18n.js'
 
@@ -56,3 +59,54 @@ test.describe('the app in no-spend mode', () => {
     await expect(page.getByTestId('pod-mounts-group')).toContainText(t('form.summaryMapped', { mapped: 1, total: 3, links: 0 }))
   })
 })
+
+// RUNPOD_DRY_RUN=1 in the environment forces no-spend mode: the switch says so and cannot turn it off.
+test.describe('no-spend mode forced by the environment', () => {
+  let ctx
+  test.beforeAll(async () => { ctx = await launchApp({ dry: true }) })
+  test.afterAll(async () => { await ctx.app.close() })
+
+  test('the header says no-spend, and the Configuration switch is locked with the reason', async () => {
+    const { page } = ctx
+    await expect(page.getByTestId('no-spend-badge')).toHaveText(t('app.noSpend'))
+    await page.getByTestId('open-config').click()
+    const dialog = page.locator('.modal.show', { has: page.getByTestId('config-modal') })
+    await dialog.getByTestId('cfg-tab-options').click()
+    await expect(dialog.getByTestId('cfg-dry-run')).toBeDisabled()                   // mounts.payload dry_run_forced, over IPC
+    await expect(dialog.getByTestId('cfg-dry-forced')).toContainText('RUNPOD_DRY_RUN=1')
+    await dialog.getByTestId('config-close').click()
+  })
+})
+
+// Without the variable the switch is in charge, and the header follows a Save at once (the pod list is asked again, simulated pods replace real ones).
+test.describe('no-spend mode from the switch', () => {
+  let ctx
+  test.beforeAll(async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'runpod-key-'))
+    writeFileSync(join(dir, '.env'), 'RUNPOD_API_KEY=rpa_0123456789ABCDEFXYZ1\n')   // a key, so the panel opens; no call is made with it once the mode is on
+    ctx = await launchApp({ dry: false, env: { SETTINGS_ENV_FILE: join(dir, '.env') } })
+  })
+  test.afterAll(async () => { await ctx.app.close() })
+
+  test('turning it on shows the badge without a refresh, and turning it off takes it away', async () => {
+    const { page } = ctx
+    await expect(page.getByTestId('no-spend-badge')).toHaveCount(0)
+    await page.getByTestId('open-config').click()
+    let dialog = page.locator('.modal.show', { has: page.getByTestId('config-modal') })
+    await dialog.getByTestId('cfg-tab-options').click()
+    await expect(dialog.getByTestId('cfg-dry-run')).toBeEnabled()
+    await expect(dialog.getByTestId('cfg-dry-forced')).toHaveCount(0)
+    await dialog.getByTestId('cfg-dry-run').check()
+    await dialog.getByTestId('config-save').click()
+    await expect(page.getByTestId('no-spend-badge')).toHaveText(t('app.noSpend'))      // pods.dryRun followed the save
+    await page.getByTestId('toast-close').first().click().catch(() => {})
+    await page.getByTestId('open-config').click()
+    dialog = page.locator('.modal.show', { has: page.getByTestId('config-modal') })
+    await dialog.getByTestId('cfg-tab-options').click()
+    await expect(dialog.getByTestId('cfg-dry-run')).toBeChecked()
+    await dialog.getByTestId('cfg-dry-run').uncheck()
+    await dialog.getByTestId('config-save').click()
+    await expect(page.getByTestId('no-spend-badge')).toHaveCount(0)
+  })
+})
+

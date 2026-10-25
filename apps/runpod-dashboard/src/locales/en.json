@@ -272,7 +272,8 @@
     "envArgHint": "A build ARG from the Dockerfile. It reaches the pod as an environment variable; an explicit one wins.",
     "envLoaded": "{env} env and {args} build args from {image}: {added} added, {replaced} replaced",
     "envSkipped": " ({n} system vars skipped)",
-    "envLoadFailed": "Could not load environment defaults"
+    "envLoadFailed": "Could not load environment defaults",
+    "dryForced": "No-spend mode is on because RUNPOD_DRY_RUN=1 is set in the environment this app was started with. This switch cannot turn it off: unset the variable and restart."
   },
   "picker": {
     "title": "Choose the {name} folder",
@@ -375,7 +376,7 @@
     "mcp": "MCP"
   },
   "adapters": {
-    "section": "Import adapters",
+    "section": "Import Adapters",
     "hint": "An adapter is a small JavaScript file that maps a package folder onto ComfyUI-Shared. Edit opens it in the Adapter Studio, built-ins included (editing a built-in makes an override; Reset undoes it). Duplicate copies one under a new id. There is no approval step; an adapter only ever runs fenced, with read access to the folder it is given and no write access.",
     "count": "{n} adapters",
     "new": "New adapter",

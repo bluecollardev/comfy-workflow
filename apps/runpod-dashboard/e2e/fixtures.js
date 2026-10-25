@@ -186,7 +186,7 @@ function mountsPayload(state) {
   const links = folders.filter((f) => f.declared).map((f) => ({ path: f.declared.path, target: f.container, required: f.required, mode: f.mode, what: f.what, folder: f.key }))
   const env = Object.fromEntries(folders.filter((f) => f.env_key).map((f) => [f.env_key, f.container]))
   if (links.length) env.COMFY_LINKS = links.map((l) => `${l.path}=${l.target}`).join(';')
-  return { ...state.mounts, config: c, folders, links, require: Object.keys(required).filter((k) => required[k]),
+  return { ...state.mounts, config: c, dry_run: !!c.dry_run || !!state.mounts.dryForced, dry_run_forced: !!state.mounts.dryForced, folders, links, require: Object.keys(required).filter((k) => required[k]),
     local_env: Object.fromEntries(folders.filter((f) => f.env_key && f.local).map((f) => [f.env_key, f.local])),
     preview: { env, ...(c.network_volume_id ? { network_volume_id: c.network_volume_id, volume_mount_path: c.mount_path } : {}) } }
 }
@@ -258,7 +258,7 @@ export async function mockApi(page, state) {
       delete state.volumes[m[1]]; return json({ removed: m[1], was_default: false })
     }
     if ((m = path.match(/^\/volumes\/([^/]+)\/default$/)) && method === 'POST') { const v = state.volumes[m[1]]; state.mounts.config.network_volume_id = v.id; state.mounts.config.data_center_id = v.datacenter; return json({ ...v, is_default: true }) }
-    if (method === 'GET' && path === '/dashboard') return json({ stats: stats(state.pods), pods: state.pods, dry_run: !!state.mounts.config.dry_run })
+    if (method === 'GET' && path === '/dashboard') return json({ stats: stats(state.pods), pods: state.pods, dry_run: !!state.mounts.config.dry_run || !!state.mounts.dryForced })
     if (method === 'GET' && path === '/pods') return json(state.pods)
     if (method === 'POST' && path === '/pods') {
       const pod = { id: `pod-new-${state.pods.length + 1}`, name: body.name, status: 'starting', gpu: body.gpu, vram: 24,
