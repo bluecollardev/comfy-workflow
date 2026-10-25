@@ -177,7 +177,7 @@
       <div class="mt-3" data-testid="cfg-sync-shared">
         <div class="fw-semibold small mb-1">{{ $t('config.syncShared') }}</div>
         <div class="form-text mt-0 mb-2">{{ forPod ? $t('config.syncSharedPodHint') : $t('config.syncSharedHint') }}</div>
-        <div v-for="row in SHARED_ROWS" :key="row.field" class="d-flex flex-wrap align-items-center gap-3 mb-1" :data-testid="`cfg-${row.field}-row`">
+        <div v-for="row in SHARED_ROWS" :key="row.field" class="d-flex flex-wrap align-items-center gap-3 py-1 cfg-shared-row" :data-testid="`cfg-${row.field}-row`">
           <span class="fw-semibold small" style="min-width:3.5rem">{{ $t(`config.${row.label}`) }}</span>
           <div v-for="d in SHARED_DIRS" :key="d" class="form-check mb-0">
             <input :id="`cfg-${row.id}-${d}`" type="checkbox" class="form-check-input" :checked="(cfg[row.field] || []).includes(d)" :data-testid="`cfg-${row.id}-${d}`" @change="toggleShared(row.field, d, $event.target.checked)" />
@@ -596,3 +596,6 @@ function toggleShared(field, d, on) {
 }
 </script>
 
+<style scoped>
+.cfg-shared-row + .cfg-shared-row { border-top: 1px dotted var(--bs-border-color); margin-top: .25rem; padding-top: .35rem !important; }
+</style>
