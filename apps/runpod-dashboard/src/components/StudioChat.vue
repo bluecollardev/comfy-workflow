@@ -39,8 +39,8 @@
       <BAlert v-if="!claudeSet" :model-value="true" variant="warning" class="small py-1 mb-1" data-testid="studio-context-nokey"><i class="fa-solid fa-key me-1"></i>{{ $t('studio.noKey') }} <a href="#" class="fw-semibold" data-testid="studio-setkey" @click.prevent="openKey">{{ $t('import.claudeSetKey') }}</a></BAlert>
       <BFormTextarea v-model="studio.chatInput" rows="3" no-resize :placeholder="$t('studio.chatPlaceholder')" data-testid="studio-input" @keydown.enter.exact.prevent="send" />
       <div class="d-flex gap-2 mt-1">
-        <BButton v-if="studio.running" size="sm" variant="outline-danger" type="button" data-testid="studio-stop" @click="studio.stop()"><i class="fa-solid fa-stop me-1"></i>{{ $t('studio.stop') }}</BButton>
-        <BButton v-else size="sm" variant="primary" type="submit" :disabled="!claudeSet || !studio.chatInput.trim()" :title="claudeSet ? '' : $t('studio.noKey')" data-testid="studio-send"><i class="fa-solid fa-paper-plane me-1"></i>{{ $t('studio.send') }}</BButton>
+        <BButton v-if="studio.running" size="sm" variant="outline-danger" type="button" :aria-label="$t('studio.stop')" :title="$t('studio.stop')" data-testid="studio-stop" @click="studio.stop()"><i class="fa-solid fa-stop"></i><span class="btn-label ms-1">{{ $t('studio.stop') }}</span></BButton>
+        <BButton v-else size="sm" variant="primary" type="submit" :disabled="!claudeSet || !studio.chatInput.trim()" :title="claudeSet ? $t('studio.send') : $t('studio.noKey')" :aria-label="$t('studio.send')" data-testid="studio-send"><i class="fa-solid fa-paper-plane"></i><span class="btn-label ms-1">{{ $t('studio.send') }}</span></BButton>
         <small class="text-body-secondary ms-auto align-self-center">{{ $t('studio.chatHint') }}</small>
       </div>
     </form>

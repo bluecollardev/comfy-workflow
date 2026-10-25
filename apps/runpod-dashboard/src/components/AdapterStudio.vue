@@ -5,7 +5,7 @@
         <AppBrand class="me-3" />
         <span class="text-body-secondary me-3">|</span>
         <i class="fa-solid fa-code me-2"></i>
-        <strong class="me-3">{{ $t('studio.title') }}</strong>
+        <strong class="me-3 title-text">{{ $t('studio.title') }}</strong>
         <template v-if="studio.id">
           <BFormInput :model-value="studio.name" size="sm" class="name" :disabled="studio.builtin" :placeholder="$t('studio.name')" :title="studio.builtin ? $t('studio.builtinName') : $t('studio.nameHint')" data-testid="studio-name" @update:model-value="studio.setName" />
           <span class="mx-1 text-body-secondary">/</span>
@@ -17,9 +17,9 @@
             <button v-for="v in VIEWS" :key="v.key" type="button" class="btn btn-outline-light" :class="{ active: studio.view === v.key }" :title="$t(`studio.view_${v.key}`)" :aria-label="$t(`studio.view_${v.key}`)" :aria-pressed="studio.view === v.key" :data-testid="`studio-view-${v.key}`" @click="studio.view = v.key"><i class="fa-solid" :class="v.icon"></i></button>
           </div>
           <button type="button" class="btn btn-sm btn-outline-light me-1" :class="{ active: studio.wrap }" :title="studio.wrap ? $t('studio.wrapOff') : $t('studio.wrapOn')" :aria-label="$t('studio.wrap')" :aria-pressed="studio.wrap" data-testid="studio-wrap" @click="studio.wrap = !studio.wrap"><i class="fa-solid fa-text-width"></i></button>
-          <BButton size="sm" variant="outline-light" :disabled="studio.isNew" :title="$t('studio.documentHint')" data-testid="studio-document" @click="studio.documentIt()"><i class="fa-solid fa-book me-1"></i>{{ $t('studio.document') }}</BButton>
-          <BButton v-if="studio.modified" size="sm" variant="outline-warning" :title="$t('studio.resetHint')" data-testid="studio-reset" @click="studio.resetBuiltin()"><i class="fa-solid fa-rotate-left me-1"></i>{{ $t('studio.reset') }}</BButton>
-          <BButton size="sm" variant="primary" :disabled="studio.saving || (!studio.dirty && !studio.isNew)" data-testid="studio-save" @click="studio.save()"><BSpinner v-if="studio.saving" small class="me-1" /><i v-else class="fa-solid fa-floppy-disk me-1"></i>{{ $t('studio.save') }}</BButton>
+          <BButton size="sm" variant="outline-light" :disabled="studio.isNew" :title="$t('studio.documentHint')" :aria-label="$t('studio.document')" data-testid="studio-document" @click="studio.documentIt()"><i class="fa-solid fa-book"></i><span class="btn-label ms-1">{{ $t('studio.document') }}</span></BButton>
+          <BButton v-if="studio.modified" size="sm" variant="outline-warning" :title="$t('studio.resetHint')" :aria-label="$t('studio.reset')" data-testid="studio-reset" @click="studio.resetBuiltin()"><i class="fa-solid fa-rotate-left"></i><span class="btn-label ms-1">{{ $t('studio.reset') }}</span></BButton>
+          <BButton size="sm" variant="primary" :disabled="studio.saving || (!studio.dirty && !studio.isNew)" :aria-label="$t('studio.save')" :title="$t('studio.save')" data-testid="studio-save" @click="studio.save()"><BSpinner v-if="studio.saving" small /><i v-else class="fa-solid fa-floppy-disk"></i><span class="btn-label ms-1">{{ $t('studio.save') }}</span></BButton>
           <BButton size="sm" variant="outline-light" class="ms-1" :aria-label="$t('import.close')" data-testid="studio-close" @click="requestClose"><i class="fa-solid fa-xmark"></i></BButton>
         </div>
       </header>
@@ -110,7 +110,7 @@ const $tConfirm = () => t('studio.confirmClose')
 </style>
 <style scoped>
 .studio { display: flex; flex-direction: column; width: 100%; height: calc(100vh - 0px); color: #d6dbe3; background: #1b1d22; }
-.bar { display: flex; align-items: center; padding: 6px 12px; background: #15171b; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; padding: 6px 12px; background: #15171b; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
 .bar .name { width: 14rem; } .bar .slug { width: 11rem; }
 .grid { flex: 1; min-height: 0; display: grid; grid-template-columns: 250px minmax(0, 1fr) 380px; }
 .col-explorer, .col-chat { min-height: 0; overflow: hidden; border-right: 1px solid rgba(255, 255, 255, 0.08); }
@@ -135,5 +135,13 @@ const $tConfirm = () => t('studio.confirmClose')
 .problems .pi { padding: 1px 14px; }
 .status { display: flex; gap: 16px; padding: 2px 12px; background: #2d5fd0; color: #fff; font-size: 11px; }
 .status .text-success, .status .text-warning { color: #fff !important; }
-@media (max-width: 991px) { .grid { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr) 40vh; overflow: auto; } .col-explorer { max-height: 30vh; } }
+/* On a phone the buttons are icons: the words are in aria-label and title. */
+@media (max-width: 575px) {
+  .studio :deep(.btn-label), .studio .bar .title-text { display: none; }
+  .bar .name, .bar .slug { width: 6.5rem; }
+  .bar { padding: 6px 8px; }
+  .work.mode-split { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+  .pane.preview-pane { border-left: 0; border-top: 1px solid rgba(255, 255, 255, 0.08); }
+}
+@media (max-width: 991px) { .grid { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr) 38vh; overflow: auto; } .col-explorer { max-height: 22vh; } }
 </style>

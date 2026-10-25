@@ -100,6 +100,34 @@ test.describe('Adapter Studio: it always says which app it is in (ADR-010)', () 
   })
 })
 
+test.describe('Adapter Studio: on a phone', () => {
+  test('the buttons are icons only: the words are hidden, the names stay for screen readers and tooltips', async ({ page, api }) => {
+    withKey(api)
+    await page.setViewportSize({ width: 390, height: 844 })
+    await editFromManager(page, 'comfy-shared')
+    await typeInto(page, 'studio-code', MODULE('comfy-shared', 'A ComfyUI-Shared folder'))
+    await tid(page, 'studio-save').click()
+    for (const id of ['studio-save', 'studio-document', 'studio-reset']) {
+      const b = tid(page, id)
+      await expect(b).toBeVisible()
+      await expect(b.locator('.btn-label')).toBeHidden()                       // the text label is gone
+      await expect(b.locator('i')).toBeVisible()                                // the icon stays
+      expect(await b.getAttribute('aria-label')).toBeTruthy()                   // and the button still has its name
+    }
+    await expect(tid(page, 'studio-save')).toHaveAttribute('aria-label', t('studio.save'))
+    await expect(tid(page, 'studio-document')).toHaveAttribute('aria-label', t('studio.document'))
+    await expect(tid(page, 'studio-send')).toHaveAttribute('aria-label', t('studio.send'))
+    await expect(tid(page, 'studio-send').locator('.btn-label')).toBeHidden()
+    // nothing runs off the screen sideways, and every header button can be reached
+    expect(await studio(page).evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+    for (const id of ['studio-save', 'studio-close', 'studio-wrap', 'studio-view-split']) await expect(tid(page, id)).toBeInViewport()
+    await expect(tid(page, 'studio-send')).toBeInViewport()
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await expect(tid(page, 'studio-save').locator('.btn-label')).toBeVisible()   // wide again: the words are back
+    await expect(tid(page, 'studio-send').locator('.btn-label')).toBeVisible()
+  })
+})
+
 test.describe('Adapter Studio: the editor', () => {
   test('looks like an IDE: explorer, tabs with the file name, path, line numbers, problems and a status bar', async ({ page }) => {
     await editFromManager(page, 'agent-made')
