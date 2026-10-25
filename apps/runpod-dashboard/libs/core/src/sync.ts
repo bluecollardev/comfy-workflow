@@ -65,16 +65,24 @@ export function sshTarget(pod: RawPod): { host: string; port: number } {
 /** macOS ships openrsync, which has --progress but not --info=progress2. Takes `rsync --version`'s output. */
 export const progressFlag = (version: string) => (/openrsync/.test(version) ? '--progress' : '--info=progress2')
 
+/** What a copy does with a file that is already at the other end. `update` (rsync's own check: size and time) is the default and replaces what
+ *  changed; `size` skips a file with the same name and size whatever its time says; `checksum` skips only files whose content is identical (reads
+ *  every file at both ends: slow, exact); `replace` sends everything again. */
+export const EXISTING = ['update', 'size', 'checksum', 'replace'] as const
+export type Existing = (typeof EXISTING)[number]
+const EXISTING_FLAG: Record<Exclude<Existing, 'update'>, string> = { size: '--size-only', checksum: '--checksum', replace: '--ignore-times' }
+
 /** verbose: every file named as it lands (the app's progress view); stats: the counts at the end (the listing pass);
+ *  existing: what to do with a file already there (docs/ADR-011): by default rsync sends what differs in size or time;
  *  exclude: patterns beyond EXCLUDE (the renders); shallow: the folder's own files and its directory entries, no recursion (the root stream). */
-export interface RsyncOptions { dryRun?: boolean; progress?: string; verbose?: boolean; stats?: boolean; exclude?: string[]; shallow?: boolean }
+export interface RsyncOptions { dryRun?: boolean; progress?: string; verbose?: boolean; stats?: boolean; exclude?: string[]; shallow?: boolean; existing?: Existing }
 
 // -rlt, not -a: the network volume refuses chown, so no owner, group or perms; times and links are kept.
 // With progress2 the whole list is scanned first (--no-inc-recursive): the percentage is of the real total and only
 // climbs; scanned incrementally it falls back every time more files turn up. openrsync has neither option.
 function rsyncBase(port: number, o: RsyncOptions): string[] {
   const progress = o.progress || '--info=progress2'
-  return ['rsync', ...(o.dryRun ? ['-n'] : []), ...(o.verbose ? ['-v'] : []), ...(o.stats ? ['--stats'] : []), ...(o.shallow ? ['-lt', '-d'] : ['-rlt']), progress, ...(progress === '--info=progress2' ? ['--no-inc-recursive'] : []), '--partial',
+  return ['rsync', ...(o.dryRun ? ['-n'] : []), ...(o.verbose ? ['-v'] : []), ...(o.stats ? ['--stats'] : []), ...(o.existing && o.existing !== 'update' ? [EXISTING_FLAG[o.existing]] : []), ...(o.shallow ? ['-lt', '-d'] : ['-rlt']), progress, ...(progress === '--info=progress2' ? ['--no-inc-recursive'] : []), '--partial',
     '-e', `ssh -p ${port} -o StrictHostKeyChecking=accept-new`, ...[...EXCLUDE, ...(o.exclude || [])].flatMap((e) => ['--exclude', e])]
 }
 /** Push one folder into the pod. */
@@ -110,6 +118,12 @@ export function s3Key(remote: string, mountPath = '/workspace'): string {
 /** The AWS CLI's exclude globs for EXCLUDE: `*` crosses '/', so each name is matched at the root and below, as a file and as a folder. */
 export const s3Excludes = (): string[] => EXCLUDE.map((e) => e.replace(/\/$/, '')).flatMap((n) => [n, `*/${n}`, `${n}/*`, `*/${n}/*`]).flatMap((p) => ['--exclude', p])
 
+/** The AWS CLI's globs for the run's own excludes: `/NAME/` is the top level of the folder pushed, `NAME/` that folder anywhere below it. */
+export const s3ExcludesFor = (exclude: string[] = []): string[] => exclude.flatMap((e) => {
+  const name = e.replace(/^\//, '').replace(/\/$/, '')
+  return (e.startsWith('/') ? [`${name}/*`] : [`${name}/*`, `*/${name}/*`]).flatMap((g) => ['--exclude', g])
+})
+
 export const S3_KEYS = ['RUNPOD_S3_ACCESS_KEY', 'RUNPOD_S3_SECRET_KEY'] as const
 
 /** The env the AWS CLI reads, from RUNPOD_S3_ACCESS_KEY / RUNPOD_S3_SECRET_KEY in the environment or the settings file. */
@@ -119,12 +133,12 @@ export function s3Env(lookup: (name: string) => string = settings.lookup): Recor
   return { AWS_ACCESS_KEY_ID: access, AWS_SECRET_ACCESS_KEY: secret }
 }
 
-export interface S3Options { mountPath?: string; dryRun?: boolean }
+export interface S3Options { mountPath?: string; dryRun?: boolean; exclude?: string[] }
 
 // cp --recursive, not sync: sync struggles past 10,000 files (ADR-007 G), so the push goes folder by folder; a rerun
 // carries on over what is there, files over the part size go up as multipart, and nothing is ever removed.
 function s3Base(volume: VolumeRef, o: S3Options): string[] {
-  return ['aws', 's3', 'cp', '--recursive', '--endpoint-url', s3Endpoint(volume.datacenter), '--region', volume.datacenter, ...(o.dryRun ? ['--dryrun'] : []), ...s3Excludes()]
+  return ['aws', 's3', 'cp', '--recursive', '--endpoint-url', s3Endpoint(volume.datacenter), '--region', volume.datacenter, ...(o.dryRun ? ['--dryrun'] : []), ...s3Excludes(), ...s3ExcludesFor(o.exclude)]
 }
 const bucketUrl = (volume: VolumeRef, remote: string, o: S3Options) => `s3://${volume.id}/${s3Key(remote, o.mountPath)}`
 /** Push one folder onto the volume. */
@@ -139,7 +153,7 @@ export const SHOT_AREAS = ['10_CORROSION', '20_STEREO', '30_CREATIVE', '40_TITLE
 export const SHOT_NAME = /^[a-z]+-[0-9]{3}[a-z]?$/
 /** The folders a pod writes in a shot (ADR-007's table). */
 export const SHOT_OUTPUTS = { review: '06_REVIEW', deliver: '07_DELIVER' } as const
-export const PULL_KEYS = ['output', ...Object.keys(SHOT_OUTPUTS)]
+export const PULL_KEYS = ['output', 'shared/input', 'shared/models', 'shared/workflows', ...Object.keys(SHOT_OUTPUTS)]
 
 const isDir = (p: string) => { try { return statSync(p).isDirectory() } catch { return false } }
 
@@ -162,9 +176,11 @@ export function pullPlan(cfg: mounts.MountsConfig, shots: string[], only: Set<st
   const rows = mounts.folderRows(cfg)
   const out: Step[] = []
   const shared = rows.find((r) => r.key === 'comfy-shared')
-  if (shared && want('output')) {
+  const keyOf = (d: string) => (d === 'output' ? 'output' : `shared/${d}`)
+  const dirs = (cfg.pull_shared ?? [...mounts.PULL_SHARED_DEFAULT]).filter((d) => want(keyOf(d)))
+  if (shared && dirs.length) {
     if (!shared.local) warn('skip output: comfy-shared is not mapped on this PC')
-    else out.push({ key: 'output', local: slash(shared.local) + 'output/', remote: slash(shared.container) + 'output/' })
+    else for (const d of dirs) out.push({ key: keyOf(d), local: slash(shared.local) + d + '/', remote: slash(shared.container) + d + '/' })
   }
   const project = rows.find((r) => r.key === 'project')
   const shotKeys = Object.entries(SHOT_OUTPUTS).filter(([k]) => want(k))

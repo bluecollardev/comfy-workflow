@@ -250,7 +250,8 @@ test('sync starts the (simulated) copy in this process and sync_status follows i
   let st
   for (let i = 0; i < 100; i++) { st = jsonOf(ok(await call('sync_status', { pod_id: p.id }))); if (st.done) break; await sleep(20) }
   assert.equal(st.done, true); assert.equal(st.running, false); assert.equal(st.percent, 100); assert.equal(st.folder, 3); assert.equal(st.of, 3); assert.equal(st.current, null); assert.equal(st.transport, 'ssh')
-  assert.deepEqual(st.result, { steps: 3, failed: 0, warned: 0, cancelled: false }); assert.deepEqual(st.errors, []); assert.deepEqual(st.failed_folders, []); assert.equal(st.files_count, 9); assert.ok(st.files.some((f) => f.endsWith('input/frame_0003.png')))
+  assert.deepEqual(st.result, { steps: 3, failed: 0, warned: 0, cancelled: false }); assert.deepEqual(st.errors, []); assert.deepEqual(st.failed_folders, []); assert.equal(st.files_count, 6); assert.ok(st.files.some((f) => f.endsWith('input/frame_0003.png')))
+  assert.ok(!st.files.some((f) => /(^|\/)output\//.test(f)))   // the default push leaves ComfyUI-Shared/output behind (docs/ADR-011)
   assert.equal(st.summary, '3 folders in step')
 
   const pull = jsonOf(ok(await call('sync', { pod_id: p.id, direction: 'pull', only: ['output'] })))

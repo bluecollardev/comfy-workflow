@@ -119,6 +119,7 @@ test.describe('card actions over IPC', () => {
     await expect(sync.getByTestId('sync-file')).toHaveCount(3)
     await expect(sync.getByTestId('sync-counts')).toContainText(t('sync.countFiles', { n: 3 }))
     await expect(sync.getByTestId('sync-counts')).toContainText(t('sync.countErrors', { n: 0 }))
+    await expect(sync.getByTestId('sync-counts')).toContainText(t('sync.countSkipped', { n: 0 }))             // beside copied and errors; the simulated copy finds nothing already there
     await sync.locator('.btn-close').click()
     await expect(sync).toBeHidden()
     await expect(card.getByTestId('pod-progress-label')).not.toContainText(t('sync.countFiles', { n: 3 }).split(' ')[1])   // the run ended: no sync bar (a boot bar may show, the pod was just recreated)
@@ -147,7 +148,22 @@ test.describe('card actions over IPC', () => {
     const sync = page.locator('.modal.show', { hasText: t('sync.title', { name: 'Sim-Sync' }) })
     await expect(sync.getByTestId('sync-step')).toHaveCount(3)
     await expect(sync.getByTestId('sync-skip-renders')).toBeChecked()                                     // the shots' renders stay home unless asked
-    await expect(sync.getByTestId('sync-plan-counts')).toHaveText(t('sync.planCounts', { files: 9, bytes: '13.5 GB' }) + '; ' + t('sync.planCountsWithout', { files: 8, bytes: '12.0 GB' }))
+    // which ComfyUI-Shared folders this run carries: the configuration's choice (input, models, workflows; not output) until changed here
+    for (const d of ['input', 'models', 'workflows']) await expect(sync.getByTestId(`sync-shared-${d}`)).toBeChecked()
+    await expect(sync.getByTestId('sync-shared-output')).not.toBeChecked()
+    await expect(sync.getByTestId('sync-plan-counts')).toHaveText(t('sync.planCountsWithout', { files: 5, bytes: '7.5 GB' }))   // no output files in the count
+    await expect(sync.getByTestId('sync-existing-update')).toBeChecked()                                    // what is already on the pod: send what changed, unless asked otherwise
+    for (const m of ['size', 'checksum', 'replace', 'update']) { await sync.getByTestId(`sync-existing-${m}`).check(); await expect(sync.getByTestId(`sync-existing-${m}`)).toBeChecked() }
+    await sync.getByTestId('sync-skip-renders').uncheck(); await sync.getByTestId('sync-skip-tests').uncheck()   // the figure follows the switches: all of it again
+    await expect(sync.getByTestId('sync-plan-counts')).toHaveText(t('sync.planCounts', { files: 6, bytes: '9.0 GB' }))
+    await sync.getByTestId('sync-skip-renders').check(); await sync.getByTestId('sync-skip-tests').check()
+    await expect(sync.getByTestId('sync-plan-counts')).toHaveText(t('sync.planCountsWithout', { files: 5, bytes: '7.5 GB' }))
+    await sync.getByTestId('sync-shared-workflows').uncheck()                                              // the repo's workflows step goes with it
+    await expect(sync.getByTestId('sync-step')).toHaveCount(2)
+    await sync.getByTestId('sync-shared-workflows').check()
+    await expect(sync.getByTestId('sync-step')).toHaveCount(3)
+    await sync.getByTestId('sync-shared-output').check()                                                    // this run only: the configuration is not changed
+    await expect(sync.getByTestId('sync-plan-counts')).toHaveText(t('sync.planCountsWithout', { files: 8, bytes: '12.0 GB' }))
     await page.evaluate(() => {
       // every distinct state of the card bar + label and the modal bar + counters, in order
       const card = document.querySelector('[data-testid="pod-card"][data-name="Sim-Sync"]')

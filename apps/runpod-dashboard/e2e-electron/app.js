@@ -37,7 +37,7 @@ export async function launchApp({ dry = true, live = false, env: extra = {} } = 
   }
   if (dry) env.RUNPOD_DRY_RUN = '1'; else delete env.RUNPOD_DRY_RUN
   if (!live) delete env.RUNPOD_API_KEY
-  const app = await electron.launch({ args: ['.'], cwd: APP, env })
+  const app = await electron.launch({ args: ['.', `--user-data-dir=${join(configDir, 'profile')}`], cwd: APP, env })   // its own profile: what the real app remembers (the Studio's view, wrap) must not reach a spec
   const page = await app.firstWindow()
   await page.waitForLoadState('domcontentloaded')
   await page.locator('.navbar-brand').waitFor()

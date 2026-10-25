@@ -51,6 +51,11 @@ describe('rsync over ssh', () => {
     const cmd = sync.rsyncCmd(dir + '/', 'root@1.2.3.4', 2222, '/workspace/project/', { dryRun: true, progress: sync.progressFlag('openrsync: protocol version 29') })
     expect(cmd[1]).toBe('-n'); expect(cmd).toContain('--progress'); expect(cmd).not.toContain('--info=progress2')
     expect(cmd).not.toContain('--no-inc-recursive')   // openrsync does not know it
+    expect(sync.rsyncCmd(dir + '/', 'root@1.2.3.4', 2222, '/workspace/project/', { existing: 'size' })).toContain('--size-only')   // same name and size: skipped
+    expect(sync.rsyncCmd(dir + '/', 'root@1.2.3.4', 2222, '/workspace/project/', { existing: 'checksum' })).toContain('--checksum')   // identical content: skipped
+    expect(sync.rsyncCmd(dir + '/', 'root@1.2.3.4', 2222, '/workspace/project/', { existing: 'replace' })).toContain('--ignore-times')   // everything again
+    expect(sync.rsyncCmd(dir + '/', 'root@1.2.3.4', 2222, '/workspace/project/', { existing: 'update' }).filter((a) => /size-only|checksum|ignore-times/.test(a))).toEqual([])
+    expect(sync.rsyncCmd(dir + '/', 'root@1.2.3.4', 2222, '/workspace/project/')).not.toContain('--size-only')
     expect(sync.rsyncCmd(dir + '/', 'root@1.2.3.4', 2222, '/workspace/project/', { dryRun: true, stats: true })).toContain('--stats')   // the listing pass
     expect(sync.progressFlag('rsync  version 3.2.7  protocol version 31')).toBe('--info=progress2')
   })
@@ -119,6 +124,9 @@ describe('the pull plan', () => {
     expect(steps[1]).toEqual({ key: '10_CORROSION/corrosion-001/06_REVIEW', local: tree + '/10_CORROSION/corrosion-001/06_REVIEW/', remote: '/workspace/project/10_CORROSION/corrosion-001/06_REVIEW/' })
     expect(sync.pullPlan(cfg, sync.listShots(tree), new Set(['deliver'])).map((s) => s.key)).toEqual(['10_CORROSION/corrosion-001/07_DELIVER', '20_STEREO/enhance-141/07_DELIVER'])
     expect(sync.pullPlan(cfg, [], new Set(['output'])).map((s) => s.key)).toEqual(['output'])
+    // Pull has its own choice of ComfyUI-Shared folders (pull_shared, default output)
+    expect(sync.pullPlan({ ...cfg, pull_shared: ['output', 'workflows'] }, [], new Set()).map((s) => s.key)).toEqual(['output', 'shared/workflows'])
+    expect(sync.pullPlan({ ...cfg, pull_shared: [] }, [], new Set()).map((s) => s.key)).toEqual([])
   })
 
   it('skips what is not mapped here with a word', () => {

@@ -3,6 +3,15 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## 2026-10-25 (what a sync carries)
+
+### Choose which ComfyUI-Shared folders a sync sends and pulls (branch `feature/sync-exclude-output`; `docs/ADR-011-what-a-sync-carries.md`)
+- Lucas: "When syncing, have an option to EXCLUDE sync of output folder", "allow chosing input models output and workflows", "configurable per pod and in default config", "separate checkbox rows for Push and Pull". **Two rows of four checkboxes** (input, models, output, workflows) in Default Configuration > Folders on this PC and in a pod's own Configuration: **Push** (`sync_shared`, default input, models, workflows: this PC's old renders stay home) and **Pull** (`pull_shared`, default output). The Sync window starts from the pod's choice and can change it for one run. Unchosen folders are excluded at the top level of ComfyUI-Shared only (`/output/`), so an `output` folder deeper down still goes. CLI `--shared`, MCP `sync.shared`. **Parallel uploads defaults to 8** (a saved configuration keeps its own value).
+- **Sync window: two skip switches, both on by default** (Lucas: "default to skip for renders and test bucket"): the shots' existing renders (`05_TEMPS`, `06_REVIEW`, `07_DELIVER`) and Binc's `80_TEST-BUCKET` (quick-test renders for his timeline; no graph reads them). On the real CANALV2: 23,547 files / 86.7 GB all; 4,564 / 17.5 GB without renders (checked with a real `rsync -n`); the count shown follows the switches.
+- **What to do with a file that is already on the pod** (Lucas: "skip if filesize is same and same filename", "if we want to replace files we should be able to but also skip IDENTICAL files"): four choices in the Sync window, `existing` on the request. **Send what changed** (default: rsync's size and time check), **Skip the same name and size** (`--size-only`), **Skip identical files only** (`--checksum`, exact, reads every file at both ends) and **Replace everything** (`--ignore-times`). SSH only: the S3 copy has no such choice. Flags checked against a real rsync.
+- **A skipped counter beside copied and errors** in the Sync window (Lucas: "folder 0 of 3 / 0 files copied / 0 errors, show skipped too"): the files in scope that are already on the pod, from a second listing pass that counts everything in scope (as if all were replaced) less what the chosen rule would send (checked: 6 in scope, 1 to send, 5 skipped with a real rsync). It follows the existing-file choice. SSH only; the simulated copy shows 0.
+- The folder choice is plain checkboxes with an explicit toggle; the first version (a bound array on BFormCheckbox) let only one be ticked at a time.
+
 ## 2026-10-24 (import adapters)
 
 ### A package folder goes into ComfyUI-Shared through an adapter (branch `feature/import-adapters`; `docs/ADR-008-import-adapters.md`, `docs/IMPORT-ADAPTERS.md`, `docs/PLAN-IMPORT-ADAPTERS.md`)
