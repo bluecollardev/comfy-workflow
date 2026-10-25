@@ -62,11 +62,11 @@ test('an agent writes an adapter and tests it on a real folder; the code stays o
   assert.match(spec, /^# Import adapters/); assert.match(spec, /ComfyUI-Shared structure/)
   assert.match(textOf(ok(await call('adapters_list'))), /panama-imax-redux/)
   const src = join(dir, 'pkg'); mkdirSync(join(src, 'input'), { recursive: true }); writeFileSync(join(src, 'input', 'a.png'), 'png')
-  const mod = "export default { id: 'agent-made', name: 'Agent made', version: 1, async detect(root, ctx) { return { match: (await ctx.exists('input')) ? 1 : 0, evidence: ['input/'] } }, async plan(root, ctx) { const fs = await ctx.list('input', { recursive: true }); return { ops: fs.map((f) => ({ op: 'copy', kind: 'input', from: f.path, to: f.path, bytes: f.bytes })), findings: [] } } }"
+  const mod = "/**\n * Agent made: a test adapter. What it does: copies everything under input/. Detects: an input folder. Maps: input/* to input/*.\n * Leaves in place: the rest. Needs / assumes: nothing. Limits: a test.\n */\nexport default { id: 'agent-made', name: 'Agent made', version: 1, async detect(root, ctx) { return { match: (await ctx.exists('input')) ? 1 : 0, evidence: ['input/'] } }, async plan(root, ctx) { const fs = await ctx.list('input', { recursive: true }); return { ops: fs.map((f) => ({ op: 'copy', kind: 'input', from: f.path, to: f.path, bytes: f.bytes })), findings: [] } } }"
   const saved = textOf(ok(await call('adapter_save', { id: 'agent-made', source: mod })))
   assert.match(saved, /Structure ok/); assert.match(saved, /Nothing was run/); assert.match(saved, /Default Configuration/)
   const bad = textOf(ok(await call('adapter_save', { id: 'half-made', source: "export default { id: 'half-made' }" })))
-  assert.match(bad, /Structure problems/); assert.match(bad, /no detect\(root, ctx\) function/)
+  assert.match(bad, /Structure problems/); assert.match(bad, /no detect\(root, ctx\) function/); assert.match(bad, /no documentation header/)
   const broken = await call('adapter_save', { id: 'broken', source: 'export default {' })
   assert.equal(broken.result.isError, true); assert.match(textOf(broken), /does not parse/)
   assert.ok(!(await rpc('tools/list')).result.tools.some((t) => /approve/.test(t.name)))   // there is no approval step

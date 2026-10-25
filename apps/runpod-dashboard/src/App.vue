@@ -2,8 +2,7 @@
   <div class="min-vh-100 d-flex flex-column">
     <BNavbar class="border-bottom px-3 py-2" data-testid="navbar">
       <BNavbarBrand tag="div" class="fw-semibold">
-        <i class="fa-solid fa-microchip text-primary me-2"></i>{{ $t('app.title') }}
-        <BBadge v-if="pods.dryRun" variant="warning" text-indicator class="ms-2 fw-normal" data-testid="no-spend-badge" :title="$t('app.noSpendTitle')">{{ $t('app.noSpend') }}</BBadge>
+        <AppBrand />
       </BNavbarBrand>
       <div class="d-flex gap-2">
         <BButton variant="outline-light" size="sm" :title="$t('app.connectTitle')" :disabled="!settings.ready" data-testid="open-connect" @click="ui.connectOpen = true">
@@ -51,6 +50,7 @@
 
     <ConnectModal />
     <ImportModal />
+    <AdapterStudio />
     <VolumesModal />
     <ToastHost />
     <ConfigModal />
@@ -81,8 +81,10 @@ import { usePodsStore } from './stores/pods'
 import ToastHost from './components/ToastHost.vue'
 import Dashboard from './components/Dashboard.vue'
 import Stats from './components/Stats.vue'
+import AppBrand from './components/AppBrand.vue'
 import ConnectModal from './components/ConnectModal.vue'
 import ImportModal from './components/ImportModal.vue'
+import AdapterStudio from './components/AdapterStudio.vue'
 import ConfigModal from './components/ConfigModal.vue'
 
 const ui = useUiStore()

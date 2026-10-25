@@ -260,7 +260,7 @@ export function setName(text: string, name: string): string {
   if (!n || n.length > 80 || /[\r\n]/.test(n)) throw bad('the name is one line of at most 80 characters')
   const re = /(\bname\s*:\s*)(['"`])[^'"`\n]*\2/
   if (!re.test(text)) throw bad("the adapter has no `name: '...'` to rename")
-  return text.replace(re, (_m, pre) => `${pre}${JSON.stringify(n)}`)
+  return text.replace(re, (_m, pre) => `${pre}${/^[^'\\\n\r]*$/.test(n) ? `'${n}'` : JSON.stringify(n)}`)
 }
 
 /** Name an adapter for easy reference: a new display name, and/or a new id (the file name, with the prompt and the history moving along). Not for a built-in. */

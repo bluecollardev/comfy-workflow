@@ -47,6 +47,7 @@ test.describe('the app in no-spend mode', () => {
     await page.getByTestId('open-config').click()
     const dialog = configModal(page)
     await expect(dialog.getByTestId('config-mode')).toHaveText('dev')
+    await dialog.getByTestId('cfg-tab-folders').click()   // Default Configuration is tabs on a wide screen
     await dialog.getByTestId('folder-row-project').getByTestId('folder-local').fill(configDir)
     await dialog.getByTestId('config-save').click()
     await expect(toast(page).last()).toContainText(t('toast.configSaved'))

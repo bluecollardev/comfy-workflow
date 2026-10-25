@@ -6,6 +6,7 @@
     size="xl"
     scrollable
     @update:model-value="forPod ? emit('update:modelValue', $event) : (ui.configOpen = $event)"
+    :modal-class="overStudio ? 'over-studio' : ''"
     @show="load"
     @shown="focusSection"
   >
@@ -259,6 +260,7 @@ import { volumesAPI } from '../api/volumes'
  */
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick } from 'vue'
 import { useUiStore } from '../stores/ui'
+import { useStudioStore } from '../stores/studio'
 import { useMountsStore } from '../stores/mounts'
 import { mountsAPI } from '../api/mounts'
 import { settingsAPI } from '../api/settings'
@@ -277,6 +279,8 @@ const emit = defineEmits(['update:modelValue', 'apply'])
 const forPod = computed(() => props.mode === 'pod')
 
 const ui = useUiStore()
+const studioStore = useStudioStore()
+const overStudio = ref(false)
 const mounts = useMountsStore()
 const loading = ref(false)
 const saving = ref(false)
@@ -401,6 +405,7 @@ async function loadDatacenters() {
 }
 
 async function load() {
+  overStudio.value = studioStore.open   // opened from inside the Adapter Studio (the Claude key): it must sit above it
   loadDatacenters()
   loadVolumes()
   loading.value = true; error.value = null
@@ -473,6 +478,9 @@ const previewText = computed(() => {
   for (const [k, v] of Object.entries(p.env || {})) lines.push(`${k}=${v}`)
   return lines.join('\n')
 })
+
+// Already open underneath (the Adapter Studio opened over it, then asked for the key): go there, and sit above the Studio.
+watch(() => ui.configFocus, (v) => { if (v && ui.configOpen) { overStudio.value = studioStore.open; focusSection() } })
 
 /** Opened from Import Shot Pack with a place to go: "adapters" scrolls to Import adapters, "claude" to the Anthropic key field (and puts the cursor in it). */
 async function focusSection() {

@@ -29,39 +29,10 @@
       <BSpinner v-if="store.planning" small class="me-1" /><i v-else class="fa-solid fa-list-check me-1"></i>{{ store.planning ? $t('import.planning') : $t('import.plan') }}
     </BButton>
 
-    <BButton size="sm" variant="outline-light" class="ms-2" :title="claudeSet ? $t('import.claudeHint') : $t('import.claudeNoKey')" data-testid="import-claude" @click="claudeClick"><i class="fa-solid fa-wand-magic-sparkles me-1"></i>{{ $t('import.claude') }}</BButton>
+    <BButton size="sm" variant="outline-light" class="ms-2" :title="$t('import.claudeHint')" data-testid="import-claude" @click="claudeClick"><i class="fa-solid fa-wand-magic-sparkles me-1"></i>{{ $t('import.claude') }}</BButton>
     <div v-if="!claudeSet" class="small mt-2" data-testid="import-claude-nokey"><i class="fa-solid fa-key me-1 text-warning"></i>{{ $t('import.claudeNoKeyLine') }} <a href="#" class="fw-semibold" data-testid="import-claude-setkey" @click.prevent="openKey">{{ $t('import.claudeSetKey') }}</a></div>
     <div v-else class="small text-body-secondary mt-2" data-testid="import-claude-ready"><i class="fa-solid fa-key me-1 text-success"></i>{{ $t('import.claudeKeyOk', { hint: settingsStore.keyInfo.anthropic_key_hint }) }}<span v-if="!store.folder"> · {{ $t('import.claudeNeedFolder') }}</span></div>
 
-    <div v-if="store.draft" class="card mt-3" data-testid="import-draft" :data-valid="store.draftValid ? 'true' : 'false'">
-      <div class="card-body small">
-        <div class="d-flex align-items-center flex-wrap gap-2 mb-2">
-          <strong>{{ $t('import.draftTitle') }}</strong> <code data-testid="import-draft-id">{{ store.draft.id }}</code>
-          <span class="text-body-secondary">{{ $t('import.draftRound', { n: store.draft.round }) }}</span>
-          <BBadge :variant="store.draft.valid ? 'success' : 'danger'" class="fw-normal" data-testid="import-draft-structure">{{ store.draft.valid ? $t('import.draftStructureOk') : $t('import.draftStructureBad') }}</BBadge>
-          <BBadge :variant="store.draft.tested ? (store.draft.tested.ok ? 'success' : 'danger') : 'secondary'" class="fw-normal" data-testid="import-draft-tested">{{ store.draft.tested ? (store.draft.tested.ok ? $t('import.draftTestedOk') : $t('import.draftTestedBad')) : $t('import.draftNotTested') }}</BBadge>
-          <BBadge v-if="store.draftValid" variant="success" data-testid="import-draft-valid">{{ $t('import.draftValid') }}</BBadge>
-        </div>
-        <div v-for="(e, i) in [...store.draft.errors, ...(store.draft.tested && !store.draft.tested.ok ? store.draft.tested.errors : [])]" :key="i" class="text-danger" data-testid="import-draft-error"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ e }}</div>
-        <div v-if="store.draft.ignored" class="text-body-secondary" data-testid="import-draft-ignored"><i class="fa-solid fa-ban me-1"></i>{{ $t('import.draftIgnored', { n: store.draft.ignored }) }}</div>
-        <div v-if="store.draft.tested?.ok" class="text-body-secondary mb-1" data-testid="import-draft-plan">{{ $t('import.draftPlan', { n: store.draft.tested.summary.copies, size: size(store.draft.tested.summary.bytes) }) }}</div>
-        <div class="d-flex flex-wrap gap-2 my-2">
-          <BButton size="sm" variant="outline-light" class="text-nowrap" data-testid="import-draft-read" @click="store.read(store.draft.id)"><i class="fa-solid fa-code me-1"></i>{{ $t('import.inspect') }}</BButton>
-          <BButton size="sm" variant="outline-light" class="text-nowrap" :disabled="store.testing || !store.folder" :title="$t('import.draftTestHint')" data-testid="import-draft-test" @click="store.testDraft()">
-            <BSpinner v-if="store.testing" small class="me-1" /><i v-else class="fa-solid fa-flask me-1"></i>{{ $t('import.draftTest') }}
-          </BButton>
-          <BButton v-if="store.draftValid" size="sm" variant="primary" class="text-nowrap" data-testid="import-draft-use" @click="useDraft"><i class="fa-solid fa-check me-1"></i>{{ $t('import.draftUse') }}</BButton>
-          <BButton size="sm" variant="link" class="text-nowrap ms-auto" data-testid="import-draft-drop" @click="store.dropDraft()">{{ $t('import.draftDrop') }}</BButton>
-        </div>
-        <BFormGroup :label="$t('import.draftPrompt')" label-for="import-draft-instruction" class="mb-1">
-          <BFormTextarea id="import-draft-instruction" v-model="store.instruction" rows="2" :placeholder="$t('import.draftPromptPlaceholder')" data-testid="import-draft-instruction" />
-        </BFormGroup>
-        <BButton size="sm" variant="primary" :disabled="store.drafting || !claudeSet" data-testid="import-draft-rewrite" @click="store.sendDraft()">
-          <BSpinner v-if="store.drafting" small class="me-1" /><i v-else class="fa-solid fa-wand-magic-sparkles me-1"></i>{{ store.drafting ? $t('import.claudeWriting') : $t('import.draftRewrite') }}
-        </BButton>
-        <span class="text-body-secondary ms-2">{{ $t('import.draftLoopHint') }}</span>
-      </div>
-    </div>
 
     <BFormCheckbox :model-value="store.describeOn" switch class="mt-3 small" :title="claudeSet ? $t('import.describeHint') : $t('import.claudeNoKey')" :disabled="!claudeSet" data-testid="import-describe-on" @update:model-value="store.setDescribeOn">{{ $t('import.describeOn') }}</BFormCheckbox>
 
@@ -135,38 +106,10 @@
     <div v-for="a in store.adapters" :key="a.id" class="d-flex align-items-center gap-2 py-1 border-bottom" data-testid="import-adapter-row" :data-id="a.id">
       <div class="flex-grow-1 lh-sm"><span class="fw-semibold">{{ a.name }}</span> <code class="small text-body-secondary">{{ a.id }}</code>
         <small v-if="a.error" class="text-danger d-block">{{ a.error }}</small></div>
-      <BBadge :variant="a.builtin ? 'secondary' : 'info'" class="fw-normal" data-testid="import-adapter-kind">{{ a.builtin ? $t('import.builtIn') : $t('import.yours') }}</BBadge>
-      <BButton size="sm" variant="outline-light" class="text-nowrap" data-testid="import-adapter-read" @click="store.read(a.id)"><i class="fa-solid fa-code me-1"></i>{{ $t('import.inspect') }}</BButton>
+      <BBadge :variant="a.builtin ? 'secondary' : 'info'" class="fw-normal" data-testid="import-adapter-kind">{{ a.builtin ? (a.modified ? $t('studio.builtinModified') : $t('import.builtIn')) : $t('import.yours') }}</BBadge>
+      <BButton size="sm" variant="outline-light" class="text-nowrap" data-testid="import-adapter-edit" @click="studio.openAdapter(a.id, { folder: store.folder })"><i class="fa-solid fa-pen me-1"></i>{{ $t('adapters.edit') }}</BButton>
     </div>
     <div v-if="!store.adapters.some((a) => !a.builtin)" class="small text-body-secondary mt-2" data-testid="import-none">{{ $t('import.none') }}</div>
-
-    <BModal :model-value="!!store.reading" :title="store.reading?.id" size="lg" scrollable lazy data-testid="import-source-modal" @update:model-value="(v) => { if (!v) store.reading = null }">
-      <template v-if="store.reading">
-        <div class="small text-body-secondary mb-2"><span v-if="store.reading.builtin">{{ $t('adapters.builtinNote') }}</span><code class="d-block text-break">{{ store.reading.file }}</code></div>
-        <pre class="small p-2 rounded border bg-body" style="max-height: 50vh; overflow: auto" data-testid="import-source">{{ store.reading.text }}</pre>
-        <div class="small text-body-secondary font-monospace">{{ $t('import.sha', { sha: store.reading.sha256 }) }}</div>
-      </template>
-      <template #footer>
-        <BButton variant="outline-light" size="sm" data-testid="import-source-close" @click="store.reading = null">{{ $t('import.close') }}</BButton>
-      </template>
-    </BModal>
-
-    <BModal :model-value="!!store.preview" :title="$t('import.claudeTitle')" size="lg" scrollable lazy data-testid="import-claude-modal" @update:model-value="(v) => { if (!v) store.preview = null }">
-      <template v-if="store.preview">
-        <BAlert :model-value="true" variant="warning" class="small"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ $t('import.claudeLeaves') }}</BAlert>
-        <div class="small text-body-secondary mb-2" data-testid="import-claude-rule"><i class="fa-solid fa-lock me-1"></i>{{ $t('import.claudeRule') }}</div>
-        <div class="small mb-2" data-testid="import-claude-counts">{{ $t('import.claudeSends', { files: store.preview.total_files, dirs: store.preview.dirs.length, texts: store.preview.texts.length }) }}</div>
-        <div v-for="x in store.preview.texts" :key="x.path" class="small font-monospace" data-testid="import-claude-text">{{ x.path }} <span class="text-body-secondary">({{ $t('import.claudeBytes', { sent: x.sent_bytes, bytes: x.bytes }) }})</span></div>
-        <BFormGroup :label="$t('import.draftPrompt')" label-for="import-claude-instruction" class="mt-2 mb-0">
-          <BFormTextarea id="import-claude-instruction" v-model="store.instruction" rows="2" :placeholder="$t('import.draftPromptPlaceholder')" data-testid="import-claude-instruction" />
-        </BFormGroup>
-        <pre class="small p-2 mt-2 rounded border bg-body" style="max-height: 30vh; overflow: auto" data-testid="import-claude-dirs">{{ store.preview.dirs.map((d) => `${d.path}/  ${d.files}`).join('\n') }}</pre>
-      </template>
-      <template #footer>
-        <BButton variant="outline-light" size="sm" @click="store.preview = null">{{ $t('import.cancel') }}</BButton>
-        <BButton variant="primary" size="sm" :disabled="store.drafting" data-testid="import-claude-send" @click="store.sendDraft()"><BSpinner v-if="store.drafting" small class="me-1" />{{ store.drafting ? $t('import.claudeWriting') : $t('import.claudeSend') }}</BButton>
-      </template>
-    </BModal>
 
     <FolderPicker v-model="picker" :title="$t('import.pickTitle')" :start="store.folder" memory-key="import" @choose="(p) => { store.folder = p; attach() }" />
   </div>
@@ -180,6 +123,7 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { useImportsStore } from '../stores/imports'
+import { useStudioStore } from '../stores/studio'
 import { useMountsStore } from '../stores/mounts'
 import { useUiStore } from '../stores/ui'
 import { useSettingsStore } from '../stores/settings'
@@ -188,23 +132,16 @@ import FolderPicker from './FolderPicker.vue'
 
 const props = defineProps({ active: Boolean })
 const store = useImportsStore()
+const studio = useStudioStore()
 const mounts = useMountsStore()
 const ui = useUiStore()
 const settingsStore = useSettingsStore()
 const claudeSet = computed(() => !!settingsStore.keyInfo.anthropic_key_set)
-/** The draft passes: pick it for the folder and put the loop away. */
-const useDraft = () => { store.adapter = store.draft.id; store.dropDraft(); store.makePlan(claudeSet.value) }
 /** No key: the button takes you to the field for it (Default Configuration) instead of sitting there dead. */
-/** Manage adapters: Default Configuration, scrolled to Import adapters. */
 const manageAdapters = () => { ui.importOpen = false; ui.configFocus = 'adapters'; ui.configOpen = true }
 const openKey = () => { ui.importOpen = false; ui.configFocus = 'claude'; ui.configOpen = true }
-const folderInput = ref(null)
-/** Never silent: no key goes to the key field; no folder says so and puts the cursor in the folder box. */
-const claudeClick = () => {
-  if (!claudeSet.value) return openKey()
-  if (!store.folder) { store.error = t('import.claudeNeedFolderError'); document.getElementById('import-folder')?.focus(); return }
-  store.previewDraft()
-}
+/** Write an adapter with Claude is the Studio, the same modal as Edit and New adapter: a new adapter with the chat ready and this folder attached. */
+const claudeClick = () => studio.openNew({ folder: store.folder })
 const attach = () => store.makePlan(claudeSet.value)   // plan the attached folder; Claude describes it when a key is set
 const picker = ref(false)
 const bad = ['conflict', 'hash-mismatch', 'error']

@@ -92,6 +92,7 @@ test.describe('card actions over IPC', () => {
     const { page, configDir } = ctx
     await page.getByTestId('open-config').click()
     const dialog = page.locator('.modal.show', { has: page.getByTestId('config-modal') })
+    await dialog.getByTestId('cfg-tab-folders').click()   // Default Configuration is tabs on a wide screen
     await dialog.getByTestId('folder-row-project').getByTestId('folder-local').fill(configDir)   // something to copy
     await dialog.getByTestId('config-save').click()
     await expect(dialog).toBeHidden()

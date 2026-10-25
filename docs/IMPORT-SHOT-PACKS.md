@@ -54,17 +54,19 @@ lists every adapter with its code hash: **Inspect** the code, **New adapter** fr
 adapters run fenced (read access to the folder they are given, no writes, no child processes;
 the network is not blocked, so read what you did not write).
 
-**Write an adapter with Claude** (Import Shot Pack, next to Plan): it shows what would be sent,
-takes your prompt, saves the reply as an adapter and checks its structure. **Test on this folder**
-runs it fenced and checks its plan. Prompt again with the errors until it reads Valid, then **Use
-this adapter**. Claude writes adapters and nothing else: a reply becomes at most one file in the
-adapters folder.
+**Edit** (any adapter, built-ins too), **New adapter** and **Write an adapter with Claude** (Import Shot Pack,
+next to Plan) all open the **Adapter Studio**: your adapters and the package as a tree on the left, the code, the
+prompt and the package's files in tabs (Code, Preview or Split as icon buttons) in the middle, and the chat with
+Claude on the right. Chat with Claude about the package; it keeps the prompt up to date and builds the adapter from
+it; the prompt is text you can edit yourself. Save is explicit (no autosave); Save checks the adapter and Claude
+fixes what fails. Claude writes adapters and their prompts and nothing else. Details: `docs/IMPORT-ADAPTERS.md`,
+"The Adapter Studio".
 
 ## Where things are
 
 | What | Where |
 |---|---|
-| Your adapters | `~/.config/runpod-pod-manager/adapters/<id>.mjs` |
+| Your adapters, and their prompts | `~/.config/runpod-pod-manager/adapters/<id>.mjs` and `<id>.prompt.md` (a built-in you edit gets an override file of the same name) |
 | A record of each import | `~/.config/runpod-pod-manager/imports/` |
 | The Anthropic key | `~/.config/runpod-pod-manager/.env` (mode 600) or the environment |
 | Built-in adapters and the runner | `apps/runpod-dashboard/libs/core/runtime/` |
@@ -74,6 +76,7 @@ adapters folder.
 
 - The fence does not block the network; reading the code is the control (ADR-008, open point 2).
 - Checked in dev only, not in a packaged build.
+- No autosave and no version list yet: Save is explicit and there is no Revert (todo in `NEXT-STEPS.md`).
 - The same shot id in two projects shares `input/shots/<shot>/`: the second import reports a
   conflict and never overwrites.
 - A Drive part imported alone cannot hash-check shots whose manifest is in another part.

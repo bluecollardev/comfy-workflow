@@ -1,7 +1,7 @@
 # ADR-009: The Adapter Studio: chat builds a prompt, the prompt builds the adapter
 
 **Date:** 2026-10-24
-**Status:** Accepted for the build (Lucas, 2026-10-24, over several messages and a screenshot). Not yet built; the plan is at the end. Until it is built, the screens that exist are the ones in "What exists against what was asked".
+**Status:** Built 2026-10-24 on `feature/import-adapters` (everything in the decisions below except what is under "Todo"). "What exists against what was asked" records the screens it replaced.
 **Owner:** Lucas (Blue Collar Dev)
 **Extends:** ADR-008 (import adapters). Supersedes ADR-008's "Write an adapter with Claude" preview-and-textarea flow (decisions 7, 10, 12 keep their rules; their screens change).
 
@@ -208,7 +208,18 @@ buttons but obviously I need to change this too", "I don't see no chat interface
 3. Whether the prompt travels with a shared adapter (copying the `.mjs` alone would lose it).
 4. A diff view for auto-fixes; the plan is the history plus a plain before and after in the chat.
 
-## Plan
+## What was built
+
+`libs/core/src/studio.ts` (the chat step and its eleven tools, the agentic save check, `documentAdapter`,
+`packageTree`, `readPackageFile`), `imports.ts` (built-in overrides, prompt files, history, renaming, the
+documentation rule), and in the screen: `AdapterStudio.vue` (the modal), `StudioExplorer.vue`,
+`StudioPreview.vue`, `StudioChat.vue`, `StudioTreeRows.vue`, `CodeEditor.vue` (CodeMirror 6),
+`AppBrand.vue` (ADR-010), the store `stores/studio.js`. Tests: `libs/core/tests/studio.test.ts` and
+the Studio parts of `imports.test.ts`; `e2e/studio.spec.js`, `e2e/adapters.spec.js`; in the real app
+`e2e-electron/import.spec.js` and `import-claude.spec.js`, where a stand-in Anthropic server scripts
+`tool_use` turns and the spec checks that a hostile one writes nothing but the adapter and its prompt.
+
+## Plan (as it was)
 
 1. **Core** (`libs/core/src/imports.ts` and a new `studio.ts`): the prompt files and history,
    rename and display name, `build`, the tool set and the one-step chat function, the agentic

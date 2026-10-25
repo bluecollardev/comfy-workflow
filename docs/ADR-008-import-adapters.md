@@ -1,7 +1,7 @@
 # ADR-008: Packages come in through adapters; adapters are modules the app hot-loads
 
 **Date:** 2026-10-24
-**Status:** Accepted for the build (Lucas asked for it, 2026-10-24; import-locally-then-sync decided the same day). Built on `feature/import-adapters` per `docs/PLAN-IMPORT-ADAPTERS.md`. Open points are at the end.
+**Status:** Accepted for the build; its Claude screens (decisions 7, 10, 12: the preview-and-send modal, the draft panel, the textarea editor, Inspect) are replaced by the Adapter Studio of ADR-009, whose rules they keep (Lucas asked for it, 2026-10-24; import-locally-then-sync decided the same day). Built on `feature/import-adapters` per `docs/PLAN-IMPORT-ADAPTERS.md`. Open points are at the end.
 **Owner:** Lucas (Blue Collar Dev)
 **Extends:** ADR-005 (the app on one PC, TypeScript core), ADR-007 (the volume and sync), `docs/MOUNT-POINTS.md`.
 **Spec for writers of adapters:** `docs/IMPORT-ADAPTERS.md`.

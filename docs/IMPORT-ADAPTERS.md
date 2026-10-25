@@ -62,6 +62,16 @@ Anything an adapter finds that does not belong in those (finals, approved render
 provenance notes, docs) is **left where it is** and recorded as a `note` or `reference`,
 not copied.
 
+## The documentation header (a rule)
+
+Every adapter starts with a comment block before `export default` that says what it does: **What it does**,
+**Detects**, **Maps** (source path to destination), **Leaves in place**, **Needs / assumes**, **Limits**. It is
+a rule on generation, enforced three ways (ADR-009, decision 12): the prompts that make Claude write adapters
+require it; the structure check fails an adapter with none (about 100 characters of comment), so it is not
+Valid; and **Document** in the Studio (or the chat's `document_adapter`) has Claude rewrite the header from the
+code as it stands, changing only the header. The header is shown in the Studio's Preview as "What this adapter
+does". A new adapter's template already carries one.
+
 ## The module
 
 ```js
@@ -149,15 +159,38 @@ no pod each show a toast instead of syncing; a missing volume or transport reads
 configured. Click here to configure." and the click opens Default Configuration (ADR-008,
 decision 8). Adapters do none of this: they plan, nothing more.
 
-## Managing adapters: nothing is a black box
+## The Adapter Studio
 
-Default Configuration has an **Import adapters** section (Import Shot Pack links to it with
-Manage adapters). Every adapter is listed with its sha256: **Inspect** shows the code as it
-is on disk and where the file is (built-ins are read-only); **New adapter** starts from a
-template that passes the structure check; **Edit** changes yours, checking the structure as
-you type; **Duplicate** copies any adapter (the way to change a built-in) under a new id;
-**Delete** removes yours. There is no approval step: the code is open to read, and an
-adapter only ever runs fenced. The file name is the adapter's id.
+Edit, New adapter, Duplicate and Write an adapter with Claude all open the **Adapter Studio**
+(`docs/ADR-009-adapter-studio.md`), one full-screen modal laid out like an IDE with the app's mark and name
+in its header:
+
+- **Explorer (left):** the adapters (built-ins locked, a dot on a modified one; **+** starts a new one) and the
+  attached package folder as a tree. Each file is marked with what the adapter does with it: an arrow to its
+  destination, "left in place", or "not matched" (a gap in a mapping); folders roll up the counts. Clicking a
+  file opens it in a read-only viewer tab (text, JSON pretty-printed, small images, or its size).
+- **Editor (centre):** tabs for `<id>.mjs`, the **Prompt** (plain text, yours to edit) and a viewed file; the file
+  path; a CodeMirror editor with line numbers and highlighting; a Problems panel (the structure check as you
+  type); a status bar (line and column, saved or modified, Valid or not). **Code, Preview and Split** are icon
+  buttons (remembered): Preview is the adapter's own documentation, what it does to the attached folder
+  (fenced run, by kind, findings), the package tree and the destination tree.
+- **Chat (right):** Claude. The first message shows what it carries (folder names with counts, a name sample,
+  small READMEs and manifests) and nothing is sent until you press Send; you can type, edit and save without a
+  key. The chat keeps the **prompt** up to date, **builds the adapter from the prompt**, validates and tests it,
+  and can name it (`rename_adapter`). Every tool call shows as a line. Claude can write `adapters/<id>.mjs`
+  and `adapters/<id>.prompt.md` and nothing else.
+- **Header:** the display **name** and the **id** (the file name), **Document**, **Reset to built-in**, **Save**.
+
+**Save is explicit; there is no autosave and no Revert button for now** (autosave with versions is a todo). Save
+runs the structure check and, with a folder attached, a fenced test of the plan; if either fails and a key is set,
+Claude fixes it from the errors and the prompt, up to three rounds shown in the chat. If it still fails the
+adapter stays saved and marked Not valid. If Claude's build is wrong, fix the prompt and build again.
+
+**Built-ins are editable**: saving one writes an override (`adapters/<id>.mjs` with the built-in's id) that is
+used instead; the shipped file is never touched; **Reset** deletes the override.
+
+Default Configuration > Import adapters lists every adapter with its code hash: **Edit** (the Studio),
+**Duplicate**, **Delete** (yours) or **Reset** (a modified built-in), and **New adapter**.
 
 ## Where adapters live and how they load
 
@@ -206,26 +239,12 @@ recorded in the manifest (0.39.2 for the 2026-10-20 round, 0.42.1 for 2026-10-23
 **`comfy-shared`**: the folder already has `input/`, `models/`, `output/`; the plan is
 `merge`.
 
-## Writing one with Claude from the app
+## Claude, in the app
 
-Default Configuration takes an optional Anthropic API key (stored like the RunPod keys; `ANTHROPIC_API_KEY` in the environment or the repo `.env` works too; **Test key** checks it with one small call).
-With it, Import Shot Pack does two things with Claude:
-
-- **Describes the shot pack** when you attach a folder: a few sentences from the folder
-  names, READMEs and manifests, labelled as written by Claude, with Describe again and a
-  switch to turn it off. A failure never blocks the import.
-- **Writes an adapter, in a loop.** Press "Write an adapter with Claude": it shows what
-  would be sent (the spec, folder names with file counts, a sample of file names, up to
-  four small README/manifest text files cut to 12 KB; never media) and a box for your
-  prompt, and only on Send calls the API. The reply is saved as an adapter and
-  checked: **structure** (without running it: a default export, a string `id` and `name`,
-  `detect` and `plan`, no Node imports, no `fetch`, no `process`). You can read it (Inspect),
-  then **Test on this folder** runs it fenced and checks the plan it returns (relative
-  paths inside the source, destinations only under `input/ workflows/ models/ node-packs/`,
-  well-formed hashes). Whatever failed is shown; type what to change and **Rewrite with
-  Claude**: the prompt, the errors and the previous source go back, the same file is
-  rewritten. Repeat until it reads Valid, then Use this
-  adapter. Nothing repeats on its own; every round is yours.
+Default Configuration takes an optional Anthropic API key (stored like the RunPod keys; `ANTHROPIC_API_KEY` in
+the environment or the repo `.env` works too; the key tests itself when you type it and when the panel opens).
+With it Claude **describes a shot pack** when you attach a folder (a few sentences, labelled as written by
+Claude, with Describe again and a switch) and **chats in the Adapter Studio** as above.
 
 **The rule.** The app's Claude writes adapters and nothing else: its reply becomes at most one
 file, `<adapters folder>/<id>.mjs`, with an id the app chose; other blocks, file names and

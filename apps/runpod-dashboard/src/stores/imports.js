@@ -29,9 +29,6 @@ export const useImportsStore = defineStore('imports', () => {
   const describeError = ref(null)
   const describeOn = ref(true)     // describe each newly attached folder when an Anthropic key is set; a per-viewer choice kept in this browser
   try { describeOn.value = localStorage.getItem('runpod-manager.import-describe') !== 'off' } catch { /* storage blocked: on */ }
-  const preview = ref(null)      // what "Write an adapter with Claude" would send, shown before anything is sent
-  const drafting = ref(false)
-  const reading = ref(null)      // { id, sha256, text, builtin, file } while an adapter's source is open to read (Inspect)
 
 
   async function loadAdapters() {
@@ -94,49 +91,6 @@ export const useImportsStore = defineStore('imports', () => {
     toast.success(t('import.syncStarted', { name: pod.name }))
   }
 
-  async function read(id) {
-    try { reading.value = await importsAPI.source(id) } catch (e) { error.value = errorText(e) }
-  }
 
-  async function previewDraft() {
-    if (!folder.value) return
-    error.value = null
-    try { preview.value = await importsAPI.draftPreview(folder.value) } catch (e) { error.value = errorText(e) }
-  }
-  // The draft loop: the person prompts, Claude writes, the app checks the module's structure; they can read it, test it on the
-  // folder (the plan it returns is checked too), and prompt again with what was wrong, until both pass.
-  const draft = ref(null)   // { id, valid, errors, tested: null | { ok, errors, summary }, model, round }
-  const instruction = ref('')
-
-  const draftProblems = () => [...(draft.value?.errors || []), ...(draft.value?.tested && !draft.value.tested.ok ? draft.value.tested.errors : [])]
-
-  /** Send the previewed material and the person's prompt to Claude; the reply is saved as an adapter and its structure checked. */
-  async function sendDraft() {
-    drafting.value = true; error.value = null
-    const again = !!draft.value
-    try {
-      const r = await importsAPI.draft(folder.value, { instruction: instruction.value, ...(again ? { id: draft.value.id, errors: draftProblems() } : {}) })
-      preview.value = null
-      draft.value = { id: r.adapter.id, valid: r.valid, errors: r.errors, ignored: r.ignored || 0, tested: null, model: r.model, round: (draft.value?.round || 0) + 1 }
-      instruction.value = ''
-      toast.success(t('import.toastDrafted', { id: r.adapter.id }))
-      await loadAdapters()
-    } catch (e) { error.value = errorText(e); preview.value = null } finally { drafting.value = false }
-  }
-
-  /** Run the draft on the attached folder (fenced, read-only): the plan it returns is checked against the required structure. */
-  async function testDraft() {
-    if (!draft.value) return
-    testing.value = true; error.value = null
-    try {
-      const p = await importsAPI.plan(folder.value, draft.value.id)
-      draft.value = { ...draft.value, tested: { ok: true, errors: [], summary: p.summary } }
-      plan.value = p; result.value = null
-    } catch (e) { draft.value = { ...draft.value, tested: { ok: false, errors: [errorText(e)], summary: null } } } finally { testing.value = false }
-  }
-  const testing = ref(false)
-  const draftValid = computed(() => !!draft.value?.valid && !!draft.value?.tested?.ok)
-  function dropDraft() { draft.value = null; instruction.value = '' }
-
-  return { draft, instruction, testing, draftValid, testDraft, dropDraft, description, describing, describeError, describeOn, setDescribeOn, describeFolder, preview, drafting, previewDraft, sendDraft, adapters, folder, adapter, plan, result, overwrite, planning, applying, error, reading, loadAdapters, makePlan, run, read, }
+  return { description, describing, describeError, describeOn, setDescribeOn, describeFolder, adapters, folder, adapter, plan, result, overwrite, planning, applying, error, loadAdapters, makePlan, run }
 })
