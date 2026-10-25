@@ -344,3 +344,76 @@ test.describe('configuration layout', () => {
     await expect(dialog.getByTestId('section-volume')).toBeVisible()
   })
 })
+
+test.describe('configuration › environment: load defaults from the image or the Dockerfile', () => {
+  const dockerState = (api) => {
+    api.state.imageEnv = [{ key: 'COMFYUI_PORT', value: '8188' }, { key: 'HF_TOKEN', value: 'from-dockerfile' }]
+    api.state.imageBuildArgs = [{ key: 'TORCH_VERSION', value: '2.6.0' }, { key: 'CUDA_VERSION', value: '12.4.1' }]
+    api.state.imageEnvSkipped = 0
+  }
+
+  test('Default Configuration loads the env and the build args from the Dockerfile as rows; ARGs are marked and saved with the env', async ({ page, api }) => {
+    dockerState(api)
+    await page.goto('/')
+    const dialog = await openConfig(page)
+    await cfgTab(dialog, 'environment')
+    await expect(dialog.getByTestId('cfg-env-load-menu')).toBeVisible()
+    await dialog.getByTestId('cfg-env-load-menu').click()
+    await expect(dialog.getByTestId('cfg-env-load-image')).toContainText('ghcr.io/example/comfy-app:v26')   // names the image it would read
+    await dialog.getByTestId('cfg-env-load-dockerfile').click()
+    const keys = dialog.getByTestId('cfg-env-key')
+    await expect(keys).toHaveCount(4)
+    expect(await keys.evaluateAll((els) => els.map((e) => e.value))).toEqual(['COMFYUI_PORT', 'HF_TOKEN', 'TORCH_VERSION', 'CUDA_VERSION'])
+    await expect(dialog.getByTestId('cfg-env-arg')).toHaveCount(2)        // the two build ARGs say so
+    await expect(dialog.getByTestId('cfg-env-summary')).toHaveText(t('config.envLoaded', { env: 2, args: 2, image: '/repo/apps/comfy-app/Dockerfile', added: 4, replaced: 0 }))
+    expect(api.calls).toContainEqual(expect.objectContaining({ path: '/images/env', query: { source: 'dockerfile', image: 'ghcr.io/example/comfy-app:v26' } }))
+    await dialog.getByTestId('config-save').click()
+    const put = api.calls.find((c) => c.method === 'PUT' && c.path === '/mounts')
+    expect(put.body.env).toEqual({ COMFYUI_PORT: '8188', HF_TOKEN: 'from-dockerfile', TORCH_VERSION: '2.6.0', CUDA_VERSION: '12.4.1' })
+  })
+
+  test('your values are kept unless Replace existing values is on, and loading twice adds nothing', async ({ page, api }) => {
+    dockerState(api)
+    await page.goto('/')
+    const dialog = await openConfig(page)
+    await cfgTab(dialog, 'environment')
+    await dialog.getByRole('button', { name: 'Add variable' }).click()
+    await dialog.getByTestId('cfg-env-key').first().fill('HF_TOKEN')
+    await dialog.getByTestId('cfg-env-value').first().fill('mine')
+    const load = async () => { await dialog.getByTestId('cfg-env-load-menu').click(); await dialog.getByTestId('cfg-env-load-dockerfile').click() }
+    await load()
+    await expect(dialog.getByTestId('cfg-env-key')).toHaveCount(4)
+    await expect(dialog.getByTestId('cfg-env-value').first()).toHaveValue('mine')   // kept
+    await expect(dialog.getByTestId('cfg-env-summary')).toContainText('3 added, 0 replaced')
+    await load()
+    await expect(dialog.getByTestId('cfg-env-key')).toHaveCount(4)                  // nothing doubled
+    await expect(dialog.getByTestId('cfg-env-summary')).toContainText('0 added, 0 replaced')
+    await dialog.getByTestId('cfg-env-replace').check()
+    await load()
+    await expect(dialog.getByTestId('cfg-env-value').first()).toHaveValue('from-dockerfile')
+    await expect(dialog.getByTestId('cfg-env-summary')).toContainText('0 added, 1 replaced')
+  })
+
+  test('from the image reads the configured image, and the system vars it skipped are counted', async ({ page, api }) => {
+    dockerState(api); api.state.imageEnvSkipped = 41
+    await page.goto('/')
+    const dialog = await openConfig(page)
+    await cfgTab(dialog, 'environment')
+    await dialog.getByTestId('cfg-env-load-menu').click()
+    await dialog.getByTestId('cfg-env-load-image').click()
+    await expect(dialog.getByTestId('cfg-env-summary')).toContainText('ghcr.io/example/comfy-app:v26')
+    await expect(dialog.getByTestId('cfg-env-summary')).toContainText(t('config.envSkipped', { n: 41 }))
+    expect(api.calls).toContainEqual(expect.objectContaining({ path: '/images/env', query: { source: 'image', image: 'ghcr.io/example/comfy-app:v26' } }))
+  })
+
+  test('a failure says why and changes nothing', async ({ page, api }) => {
+    api.state.failures['GET /images/env'] = 'Could not read the image'
+    await page.goto('/')
+    const dialog = await openConfig(page)
+    await cfgTab(dialog, 'environment')
+    await dialog.getByTestId('cfg-env-load-menu').click()
+    await dialog.getByTestId('cfg-env-load-dockerfile').click()
+    await expect(dialog.getByTestId('cfg-env-error')).toContainText('Could not read the image')
+    await expect(dialog.getByTestId('cfg-env-key')).toHaveCount(0)
+  })
+})

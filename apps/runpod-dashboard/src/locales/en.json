@@ -263,7 +263,16 @@
     "claudeWorks": "Anthropic accepts this key.",
     "claudeChecking": "Asking Anthropic…",
     "claudeWorksTyped": "Anthropic accepts this key. Save to store it.",
-    "environment": "Environment"
+    "environment": "Environment",
+    "envLoad": "Load defaults",
+    "envFromImage": "From the image",
+    "envFromDockerfile": "From the Dockerfile",
+    "envStockImage": "the stock image",
+    "envReplace": "Replace existing values",
+    "envArgHint": "A build ARG from the Dockerfile. It reaches the pod as an environment variable; an explicit one wins.",
+    "envLoaded": "{env} env and {args} build args from {image}: {added} added, {replaced} replaced",
+    "envSkipped": " ({n} system vars skipped)",
+    "envLoadFailed": "Could not load environment defaults"
   },
   "picker": {
     "title": "Choose the {name} folder",

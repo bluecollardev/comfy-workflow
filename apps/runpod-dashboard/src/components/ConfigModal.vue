@@ -185,12 +185,29 @@
       <table class="table table-sm align-middle mb-3" v-if="envRows.length">
         <tbody>
           <tr v-for="(row, i) in envRows" :key="i">
-            <td style="width: 35%"><BFormInput v-model.trim="row.key" size="sm" class="font-monospace" placeholder="NAME" /></td>
-            <td><BFormInput v-model="row.value" size="sm" class="font-monospace" placeholder="value" /></td>
+            <td style="width: 35%"><BFormInput v-model.trim="row.key" size="sm" class="font-monospace" placeholder="NAME" data-testid="cfg-env-key" /></td>
+            <td>
+              <div class="d-flex align-items-center gap-2">
+                <BFormInput v-model="row.value" size="sm" class="font-monospace" placeholder="value" data-testid="cfg-env-value" />
+                <BBadge v-if="row.arg" variant="secondary" class="fw-normal" :title="$t('config.envArgHint')" data-testid="cfg-env-arg">ARG</BBadge>
+              </div>
+            </td>
             <td class="text-end"><BButton variant="outline-light" size="sm" aria-label="Remove variable" @click="envRows.splice(i, 1)"><i class="fa-solid fa-xmark"></i></BButton></td>
           </tr>
         </tbody>
       </table>
+      <div class="d-flex flex-wrap align-items-center gap-2" data-testid="cfg-env-load">
+        <BDropdown size="sm" variant="outline-light" :disabled="envLoad.loading" data-testid="cfg-env-load-menu">
+          <template #button-content>
+            <BSpinner v-if="envLoad.loading" small class="me-1" /><i v-else class="fa-solid fa-download me-1"></i>{{ $t('config.envLoad') }}
+          </template>
+          <BDropdownItem data-testid="cfg-env-load-image" @click="loadEnv('image')">{{ $t('config.envFromImage') }}<small class="d-block text-body-secondary">{{ cfg.image || $t('config.envStockImage') }}</small></BDropdownItem>
+          <BDropdownItem data-testid="cfg-env-load-dockerfile" @click="loadEnv('dockerfile')">{{ $t('config.envFromDockerfile') }}<small class="d-block text-body-secondary">apps/comfy-app/Dockerfile</small></BDropdownItem>
+        </BDropdown>
+        <BFormCheckbox v-model="envLoad.replace" switch data-testid="cfg-env-replace">{{ $t('config.envReplace') }}</BFormCheckbox>
+        <span v-if="envLoad.summary" class="small text-body-secondary ms-auto" data-testid="cfg-env-summary">{{ envLoad.summary }}</span>
+      </div>
+      <BAlert v-if="envLoad.error" :model-value="true" variant="danger" class="small py-1 mt-2" data-testid="cfg-env-error" @update:model-value="envLoad.error = ''">{{ envLoad.error }}</BAlert>
       </fieldset>
 
       <fieldset v-if="!forPod && !gated" v-show="show('adapters')" class="cfg-section" data-section="adapters">
@@ -263,6 +280,7 @@ import { useUiStore } from '../stores/ui'
 import { useStudioStore } from '../stores/studio'
 import { useMountsStore } from '../stores/mounts'
 import { mountsAPI } from '../api/mounts'
+import { imagesAPI } from '../api/images'
 import { settingsAPI } from '../api/settings'
 import { useSettingsStore } from '../stores/settings'
 import { t } from '../i18n'
@@ -288,6 +306,24 @@ const error = ref(null)
 const cfg = ref(null)
 const folders = ref([])
 const envRows = ref([])
+const envLoad = reactive({ loading: false, replace: false, summary: '', error: '' })
+/** Load defaults, as in the Create Pod form: the image's ENV and ARGs (or the repo Dockerfile's) become rows. A build ARG reaches the pod as an
+ *  env var anyway (an explicit env var wins), so ARG rows are stored with the env and marked ARG. Existing keys keep their value unless Replace is on. */
+async function loadEnv(source) {
+  envLoad.loading = true; envLoad.summary = ''; envLoad.error = ''
+  try {
+    const { image, env, build_args: args = [], skipped = 0 } = await imagesAPI.env({ source, image: cfg.value?.image || 'prebuilt' })
+    let added = 0, replaced = 0
+    for (const [kind, rows] of [['env', env], ['arg', args]]) {
+      for (const r of rows) {
+        const have = envRows.value.find((x) => x.key === r.key)
+        if (!have) { envRows.value.push({ key: r.key, value: r.value, ...(kind === 'arg' ? { arg: true } : {}) }); added++ }
+        else if (envLoad.replace && have.value !== r.value) { have.value = r.value; replaced++ }
+      }
+    }
+    envLoad.summary = t('config.envLoaded', { env: env.length, args: args.length, image, added, replaced }) + (skipped ? t('config.envSkipped', { n: skipped }) : '')
+  } catch (e) { envLoad.error = e.response?.data?.detail || e.message || t('config.envLoadFailed') } finally { envLoad.loading = false }
+}
 const localEnv = ref({})
 const preview = ref({})
 const stored = ref(false)
