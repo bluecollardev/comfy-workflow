@@ -42,7 +42,13 @@ import * as sync from './sync.js'
 import * as settings from './settings.js'
 import { volumeInfo } from './pods.js'
 
-export interface SyncRequest { pod_id: string; direction: 'push' | 'pull'; only?: string[]; plates?: boolean; approved_by?: string; skip_renders?: boolean }
+/** The subfolders of ComfyUI-Shared a push can carry: ComfyUI's input, its models, what pods write (output) and the graphs. */
+export const SHARED_DIRS = mounts.SYNC_SHARED
+export interface SyncRequest {
+  pod_id: string; direction: 'push' | 'pull'; only?: string[]; plates?: boolean; approved_by?: string; skip_renders?: boolean
+  /** A push of ComfyUI-Shared: which of SHARED_DIRS go up. Left out, the pod's own configuration decides (else the Default Configuration's `sync_shared`); the app's confirmation sends the choice shown. Anything else in the folder always goes. */
+  shared?: string[]
+}
 export interface SyncEvent {
   kind: 'plan' | 'listing' | 'totals' | 'step' | 'line' | 'file' | 'progress' | 'problem' | 'step-done' | 'done' | 'error'
   key?: string; local?: string; remote?: string; text?: string; code?: number; steps?: sync.Step[]; path?: string
@@ -67,16 +73,31 @@ export const RENDER_DIRS = ['05_TEMPS', '06_REVIEW', '07_DELIVER']
 /** The effective configuration for a pod: its own, else the default. */
 const configFor = (podId: string) => podconfigs.get(podId) ?? mounts.load()
 
+/** The ComfyUI-Shared subfolders this pod's pushes carry: the request's choice, else the pod's own configuration, else the default. */
+export const effectiveShared = (req: Pick<SyncRequest, 'pod_id' | 'shared'>): string[] => req.shared ?? configFor(req.pod_id).sync_shared ?? [...mounts.SYNC_SHARED_DEFAULT]
+/** The request with that choice filled in, so the plan, the counts and the run agree. */
+const resolved = (req: SyncRequest): SyncRequest => (req.direction === 'push' ? { ...req, shared: effectiveShared(req) } : req)
+
 /** What a run would copy, without running it (the confirmation shows this). */
-export function planFor(req: SyncRequest): sync.Step[] {
+export function planFor(request: SyncRequest): sync.Step[] {
+  const req = resolved(request)
   const cfg = configFor(req.pod_id)
   const only = new Set(req.only || [])
   if (req.direction === 'pull') return sync.pullPlan(cfg, sync.listShots(cfg.folders.project || ''), only)
   if (req.plates && !req.approved_by?.trim()) throw bad('Plates leaving this PC need a named yes: give approved_by (shared/governance/policy/agent-permissions.md)')
-  return sync.plan(cfg, only, !!req.plates)
+  const steps = sync.plan(cfg, only, !!req.plates)
+  // the graphs step puts the repo's workflows into ComfyUI-Shared/workflows: unchecked, it goes too
+  return req.shared && !req.shared.includes('workflows') ? steps.filter((s) => s.key !== 'workflows') : steps
 }
-/** The excludes a step takes beyond sync.EXCLUDE: the renders, on a push of the project with skip_renders. */
-export const excludesFor = (req: SyncRequest, step: sync.Step): string[] => (req.direction === 'push' && req.skip_renders && step.key === 'project' ? RENDER_DIRS.map((d) => `${d}/`) : [])
+/** The excludes a step takes beyond sync.EXCLUDE, on a push: the shots' renders (project, with skip_renders: `NAME/`, at any depth) and the
+ *  ComfyUI-Shared subfolders that were not chosen (`/NAME/`, a leading slash: the top level of that folder only, so an `output` folder deeper down is not touched). */
+export const excludesFor = (req: SyncRequest, step: sync.Step): string[] => {
+  if (req.direction !== 'push') return []
+  const out: string[] = []
+  if (req.skip_renders && step.key === 'project') out.push(...RENDER_DIRS.map((d) => `${d}/`))
+  if (step.key === 'comfy-shared' && req.shared) out.push(...SHARED_DIRS.filter((d) => !req.shared!.includes(d)).map((d) => `/${d}/`))
+  return out
+}
 
 const num = (s: string) => Number(s.replace(/,/g, ''))
 
@@ -205,7 +226,7 @@ const excluded = (name: string) => sync.EXCLUDE.some((p) => new RegExp('^' + p.r
 export function streamsOf(local: string, remote: string, exclude: string[] = []): Stream[] {
   const root: Stream = { name: '.', local, remote, shallow: true }
   try {
-    const dirs = readdirSync(local, { withFileTypes: true }).filter((d) => d.isDirectory() && !excluded(d.name) && !exclude.includes(d.name + '/')).map((d) => d.name).sort()
+    const dirs = readdirSync(local, { withFileTypes: true }).filter((d) => d.isDirectory() && !excluded(d.name) && !exclude.some((e) => e.replace(/^\//, '') === d.name + '/')).map((d) => d.name).sort()
     return [root, ...dirs.map((name) => ({ name, local: join(local, name) + '/', remote: remote + name + '/', shallow: false }))]
   } catch { return [{ ...root, shallow: false }] }
 }
@@ -226,8 +247,10 @@ const SIM_FILES = [
   ['graphs/stereo_v26.json', 'graphs/corrosion_v26.json'],
 ]
 export const SIM_FILE_BYTES = 1.5 * 1024 ** 3
-const simNames = (n: number, skip: boolean) => SIM_FILES[n % SIM_FILES.length].filter((f) => !skip || !RENDER_DIRS.some((d) => f.includes(`/${d}/`)))
-const simStats = (n: number, skip: boolean) => [`Number of files transferred: ${simNames(n, skip).length}`, `Total transferred file size: ${simNames(n, skip).length * SIM_FILE_BYTES} B`]
+/** Whether an exclude drops a simulated file: `/NAME/` is the top level, `NAME/` is that folder at any depth below the top. */
+const simDrops = (excludes: string[], f: string) => excludes.some((e) => (e.startsWith('/') ? f.startsWith(e.slice(1)) : f.includes(`/${e}`)))
+const simNames = (n: number, excludes: string[]) => SIM_FILES[n % SIM_FILES.length].filter((f) => !simDrops(excludes, f))
+const simStats = (n: number, excludes: string[]) => [`Number of files transferred: ${simNames(n, excludes).length}`, `Total transferred file size: ${simNames(n, excludes).length * SIM_FILE_BYTES} B`]
 function* simLines(names: string[]): Generator<string> {
   yield `Transfer starting: ${names.length} files`
   for (const [i, name] of names.entries()) {
@@ -277,17 +300,18 @@ export async function listStep(cmd: string[], signal: AbortSignal, env: NodeJS.P
 
 /** The commands for a step on a transport, given the run's progress flag. */
 function commandFor(req: SyncRequest, transport: Transport, step: sync.Step, mountPath: string, o: sync.RsyncOptions, local = step.local, remote = step.remote): string[] {
-  if (transport.kind === 's3') return req.direction === 'push' ? sync.s3Cmd(step.local, transport.volume!, step.remote, { mountPath }) : sync.s3PullCmd(transport.volume!, step.remote, step.local, { mountPath })
+  if (transport.kind === 's3') return req.direction === 'push' ? sync.s3Cmd(step.local, transport.volume!, step.remote, { mountPath, exclude: o.exclude }) : sync.s3PullCmd(transport.volume!, step.remote, step.local, { mountPath })
   return req.direction === 'push' ? sync.rsyncCmd(local, transport.host!, transport.port!, remote, o) : sync.rsyncPullCmd(transport.host!, transport.port!, remote, local, o)
 }
 
 /** What a run would send, from the listing passes: all of it, and without the renders when the plan has the project. The confirmation shows both. */
-export async function countFor(req: SyncRequest, client?: rp.RunPodClient, exec: Exec = runCommand): Promise<{ all: Counts; without_renders?: Counts }> {
+export async function countFor(request: SyncRequest, client?: rp.RunPodClient, exec: Exec = runCommand): Promise<{ all: Counts; without_renders?: Counts }> {
+  const req = resolved(request)
   const steps = planFor(req)
   const project = req.direction === 'push' && steps.some((s) => s.key === 'project')
   if (mounts.dryRun(mounts.load())) {
-    const all = sumCounts(steps.map((_, n) => parseStats(simStats(n, false))), steps.length)
-    return { all, without_renders: project ? sumCounts(steps.map((s, n) => parseStats(simStats(n, s.key === 'project'))), steps.length) : undefined }
+    const all = sumCounts(steps.map((s, n) => parseStats(simStats(n, excludesFor({ ...req, skip_renders: false }, s)))), steps.length)
+    return { all, without_renders: project ? sumCounts(steps.map((s, n) => parseStats(simStats(n, excludesFor({ ...req, skip_renders: true }, s)))), steps.length) : undefined }
   }
   const transport = await transportFor(req.pod_id, client)
   if (transport.kind !== 'ssh') return { all: {} }
@@ -296,14 +320,15 @@ export async function countFor(req: SyncRequest, client?: rp.RunPodClient, exec:
   const signal = new AbortController().signal
   const list = (step: sync.Step, exclude: string[]) => listStep(commandFor(req, transport, step, mountPath, { progress, verbose: true, dryRun: true, stats: true, exclude }), signal, process.env, exec)
   const counts: Counts[] = []
-  for (const step of steps) counts.push(await list(step, []))
+  for (const step of steps) counts.push(await list(step, excludesFor({ ...req, skip_renders: false }, step)))
   const all = sumCounts(counts, steps.length)
   if (!project) return { all }
-  const without = await Promise.all(steps.map((step, i) => (step.key === 'project' ? list(step, RENDER_DIRS.map((d) => `${d}/`)) : Promise.resolve(counts[i]))))
+  const without = await Promise.all(steps.map((step, i) => (step.key === 'project' ? list(step, excludesFor({ ...req, skip_renders: true }, step)) : Promise.resolve(counts[i]))))
   return { all, without_renders: sumCounts(without, steps.length) }
 }
 
-export async function run(req: SyncRequest, send: (e: SyncEvent) => void, signal: AbortSignal, client?: rp.RunPodClient, exec: Exec = runCommand): Promise<SyncResult> {
+export async function run(request: SyncRequest, send: (e: SyncEvent) => void, signal: AbortSignal, client?: rp.RunPodClient, exec: Exec = runCommand): Promise<SyncResult> {
+  const req = resolved(request)
   const steps = planFor(req)
   send({ kind: 'plan', steps })
   if (!steps.length) throw bad('Nothing to copy: map the folders in Default Configuration first')
@@ -326,7 +351,7 @@ export async function run(req: SyncRequest, send: (e: SyncEvent) => void, signal
       if (signal.aborted) break
       send({ kind: 'listing', key: step.key })
       const exclude = excludesFor(req, step)
-      if (dry) totals.push(parseStats(simStats(n, exclude.length > 0)))
+      if (dry) totals.push(parseStats(simStats(n, exclude)))
       else if (transport.kind === 'ssh') totals.push(await listStep(commandFor(req, transport, step, mountPath, { progress, verbose: true, dryRun: true, stats: true, exclude }), signal, env, exec))
       else totals.push({})   // aws s3 sync has no cheap count
     }
@@ -341,7 +366,7 @@ export async function run(req: SyncRequest, send: (e: SyncEvent) => void, signal
       if (dry) {
         send({ kind: 'line', key: step.key, text: `simulated: ${step.local} -> ${step.remote} (no-spend mode: nothing is copied)` })
         const byDir = new Map<string, string[]>()
-        for (const f of simNames(n, exclude.length > 0)) { const d = f.split('/')[0]; byDir.set(d, [...(byDir.get(d) || []), f]) }
+        for (const f of simNames(n, exclude)) { const d = f.split('/')[0]; byDir.set(d, [...(byDir.get(d) || []), f]) }
         await pool([...byDir.entries()], parallel, async ([dir, names]) => {
           const s = tally.stream(dir)
           for (const line of simLines(names)) { await simPause(); if (signal.aborted) break; s.line(line) }
@@ -351,7 +376,7 @@ export async function run(req: SyncRequest, send: (e: SyncEvent) => void, signal
         const streams = req.direction === 'push' && transport.kind === 'ssh' ? streamsOf(step.local, step.remote, exclude) : [{ name: '.', local: step.local, remote: step.remote, shallow: false } as Stream]
         const one = async (u: Stream) => {
           if (signal.aborted) return
-          const cmd = commandFor(req, transport, step, mountPath, { progress, verbose: true, exclude, shallow: u.shallow }, u.local, u.remote)
+          const cmd = commandFor(req, transport, step, mountPath, { progress, verbose: true, exclude: u.name === '.' ? exclude : exclude.filter((e) => !e.startsWith('/')), shallow: u.shallow }, u.local, u.remote)
           send({ kind: 'line', key: step.key, stream: u.name === '.' ? undefined : u.name, text: '$ ' + cmd.map((c) => (/\s/.test(c) ? JSON.stringify(c) : c)).join(' ') })
           const s = tally.stream(u.name)
           codes.push(await exec(cmd, (text) => s.line(text), signal, env))

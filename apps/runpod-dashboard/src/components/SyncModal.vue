@@ -12,6 +12,16 @@
         <BFormCheckbox v-model="plates" switch data-testid="sync-plates">{{ $t('sync.plates') }}</BFormCheckbox>
         <BFormInput v-if="plates" v-model.trim="approvedBy" size="sm" style="max-width: 16rem" :placeholder="$t('sync.approvedBy')" data-testid="sync-approved-by" />
       </div>
+      <div v-if="direction === 'push' && shared && plan.some((s) => s.key === 'comfy-shared')" class="mb-2" data-testid="sync-shared">
+        <div class="small fw-semibold mb-1">{{ $t('sync.sharedTitle') }}</div>
+        <div class="d-flex flex-wrap gap-3">
+          <div v-for="d in SHARED" :key="d" class="form-check form-check-inline">
+            <input :id="`sync-shared-${d}`" type="checkbox" class="form-check-input" :checked="(shared || []).includes(d)" :data-testid="`sync-shared-${d}`" @change="toggleShared(d, $event.target.checked)" />
+            <label class="form-check-label" :for="`sync-shared-${d}`">{{ $t(`config.syncShared_${d}`) }}</label>
+          </div>
+        </div>
+        <div class="form-text">{{ $t('sync.sharedHelp') }}</div>
+      </div>
       <div v-if="direction === 'push' && plan.some((s) => s.key === 'project')" class="mb-2">
         <BFormCheckbox v-model="skipRenders" switch data-testid="sync-skip-renders">{{ $t('sync.skipRenders') }}</BFormCheckbox>
         <div class="form-text">{{ $t('sync.skipRendersHelp') }}</div>
@@ -81,6 +91,8 @@ const pods = usePodsStore()
 const direction = ref('push')
 const plates = ref(false)
 const approvedBy = ref('')
+const SHARED = ['input', 'models', 'output', 'workflows']
+const shared = ref(null)   // the ComfyUI-Shared subfolders this run carries: this pod's own configuration, else the default's, until changed here
 const skipRenders = ref(true)   // the shots' existing renders stay behind on a push; Pull brings renders back
 const plan = ref([])
 const transport = ref({ kind: 'none', reason: '' })
@@ -122,16 +134,18 @@ function ingest(ev) {
   if (!scrollQueued) { scrollQueued = true; nextTick(() => { scrollQueued = false; for (const el of [out.value, fileList.value]) if (el) el.scrollTop = el.scrollHeight }) }
 }
 
-const request = () => ({ pod_id: props.pod.id, direction: direction.value, plates: plates.value, approved_by: approvedBy.value, skip_renders: skipRenders.value })
+const request = () => ({ pod_id: props.pod.id, direction: direction.value, plates: plates.value, approved_by: approvedBy.value, skip_renders: skipRenders.value, ...(shared.value ? { shared: [...shared.value] } : {}) })
 async function loadPlan() {
   planError.value = null
-  try { const r = await syncAPI.plan(request()); plan.value = r.steps; transport.value = r.transport } catch (e) { plan.value = []; planError.value = e.message }
+  try { const r = await syncAPI.plan(request()); plan.value = r.steps; transport.value = r.transport; if (shared.value === null && r.shared) shared.value = [...r.shared] } catch (e) { plan.value = []; planError.value = e.message }
   if (plan.value.length && transport.value.kind !== 'none') loadCounts()
 }
 watch([direction, plates, approvedBy], loadPlan)
+watch(shared, (v, old) => { if (old) { loadPlan() } }, { deep: true })   // another set of folders is another plan and another count
 
 let off = () => {}
 async function open() {
+  shared.value = null
   await loadPlan()
   off()   // a second opening must not listen twice
   // Listen first, then ask for the job's state: everything the main process sent before it answered is in that
@@ -182,4 +196,10 @@ const status = computed(() => {
   }
   return t('sync.copying', { folder: l.key })
 })
+
+function toggleShared(d, on) {
+  const have = new Set(shared.value || [])
+  if (on) have.add(d); else have.delete(d)
+  shared.value = SHARED.filter((x) => have.has(x))
+}
 </script>

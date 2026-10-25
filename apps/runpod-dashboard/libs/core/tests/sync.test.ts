@@ -119,6 +119,9 @@ describe('the pull plan', () => {
     expect(steps[1]).toEqual({ key: '10_CORROSION/corrosion-001/06_REVIEW', local: tree + '/10_CORROSION/corrosion-001/06_REVIEW/', remote: '/workspace/project/10_CORROSION/corrosion-001/06_REVIEW/' })
     expect(sync.pullPlan(cfg, sync.listShots(tree), new Set(['deliver'])).map((s) => s.key)).toEqual(['10_CORROSION/corrosion-001/07_DELIVER', '20_STEREO/enhance-141/07_DELIVER'])
     expect(sync.pullPlan(cfg, [], new Set(['output'])).map((s) => s.key)).toEqual(['output'])
+    // Pull has its own choice of ComfyUI-Shared folders (pull_shared, default output)
+    expect(sync.pullPlan({ ...cfg, pull_shared: ['output', 'workflows'] }, [], new Set()).map((s) => s.key)).toEqual(['output', 'shared/workflows'])
+    expect(sync.pullPlan({ ...cfg, pull_shared: [] }, [], new Set()).map((s) => s.key)).toEqual([])
   })
 
   it('skips what is not mapped here with a word', () => {

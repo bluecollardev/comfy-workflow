@@ -174,6 +174,17 @@
           </tr>
         </tbody>
       </table>
+      <div class="mt-3" data-testid="cfg-sync-shared">
+        <div class="fw-semibold small mb-1">{{ $t('config.syncShared') }}</div>
+        <div class="form-text mt-0 mb-2">{{ forPod ? $t('config.syncSharedPodHint') : $t('config.syncSharedHint') }}</div>
+        <div v-for="row in SHARED_ROWS" :key="row.field" class="d-flex flex-wrap align-items-center gap-3 mb-1" :data-testid="`cfg-${row.field}-row`">
+          <span class="fw-semibold small" style="min-width:3.5rem">{{ $t(`config.${row.label}`) }}</span>
+          <div v-for="d in SHARED_DIRS" :key="d" class="form-check mb-0">
+            <input :id="`cfg-${row.id}-${d}`" type="checkbox" class="form-check-input" :checked="(cfg[row.field] || []).includes(d)" :data-testid="`cfg-${row.id}-${d}`" @change="toggleShared(row.field, d, $event.target.checked)" />
+            <label class="form-check-label" :for="`cfg-${row.id}-${d}`">{{ $t(`config.syncShared_${d}`) }} <span class="text-body-secondary small font-monospace">{{ d }}/</span></label>
+          </div>
+        </div>
+      </div>
       </fieldset>
 
       <fieldset v-show="show('environment')" class="cfg-section" data-section="environment">
@@ -310,6 +321,8 @@ const error = ref(null)
 const cfg = ref(null)
 const folders = ref([])
 const dryForced = computed(() => !forPod.value && !!mounts.payload?.dry_run_forced)   // RUNPOD_DRY_RUN=1 in the app's environment: the switch is not the one in charge
+/** The ComfyUI-Shared subfolders a sync can carry (the order they are shown in). */
+const SHARED_DIRS = ['input', 'models', 'output', 'workflows']
 const envRows = ref([])
 const envLoad = reactive({ loading: false, replace: false, summary: '', error: '' })
 /** Load defaults, as in the Create Pod form: the image's ENV and ARGs (or the repo Dockerfile's) become rows. A build ARG reaches the pod as an
@@ -573,6 +586,13 @@ function followNoSpend(payload) {
   if (forPod.value) return
   podsStore.dryRun = !!payload?.dry_run
   podsStore.load()
+}
+
+const SHARED_ROWS = [{ field: 'sync_shared', id: 'sync-shared', label: 'sharedPush' }, { field: 'pull_shared', id: 'pull-shared', label: 'sharedPull' }]
+function toggleShared(field, d, on) {
+  const have = new Set(cfg.value[field])
+  if (on) have.add(d); else have.delete(d)
+  cfg.value[field] = SHARED_DIRS.filter((x) => have.has(x))
 }
 </script>
 

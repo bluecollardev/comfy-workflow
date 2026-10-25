@@ -110,6 +110,12 @@ export function s3Key(remote: string, mountPath = '/workspace'): string {
 /** The AWS CLI's exclude globs for EXCLUDE: `*` crosses '/', so each name is matched at the root and below, as a file and as a folder. */
 export const s3Excludes = (): string[] => EXCLUDE.map((e) => e.replace(/\/$/, '')).flatMap((n) => [n, `*/${n}`, `${n}/*`, `*/${n}/*`]).flatMap((p) => ['--exclude', p])
 
+/** The AWS CLI's globs for the run's own excludes: `/NAME/` is the top level of the folder pushed, `NAME/` that folder anywhere below it. */
+export const s3ExcludesFor = (exclude: string[] = []): string[] => exclude.flatMap((e) => {
+  const name = e.replace(/^\//, '').replace(/\/$/, '')
+  return (e.startsWith('/') ? [`${name}/*`] : [`${name}/*`, `*/${name}/*`]).flatMap((g) => ['--exclude', g])
+})
+
 export const S3_KEYS = ['RUNPOD_S3_ACCESS_KEY', 'RUNPOD_S3_SECRET_KEY'] as const
 
 /** The env the AWS CLI reads, from RUNPOD_S3_ACCESS_KEY / RUNPOD_S3_SECRET_KEY in the environment or the settings file. */
@@ -119,12 +125,12 @@ export function s3Env(lookup: (name: string) => string = settings.lookup): Recor
   return { AWS_ACCESS_KEY_ID: access, AWS_SECRET_ACCESS_KEY: secret }
 }
 
-export interface S3Options { mountPath?: string; dryRun?: boolean }
+export interface S3Options { mountPath?: string; dryRun?: boolean; exclude?: string[] }
 
 // cp --recursive, not sync: sync struggles past 10,000 files (ADR-007 G), so the push goes folder by folder; a rerun
 // carries on over what is there, files over the part size go up as multipart, and nothing is ever removed.
 function s3Base(volume: VolumeRef, o: S3Options): string[] {
-  return ['aws', 's3', 'cp', '--recursive', '--endpoint-url', s3Endpoint(volume.datacenter), '--region', volume.datacenter, ...(o.dryRun ? ['--dryrun'] : []), ...s3Excludes()]
+  return ['aws', 's3', 'cp', '--recursive', '--endpoint-url', s3Endpoint(volume.datacenter), '--region', volume.datacenter, ...(o.dryRun ? ['--dryrun'] : []), ...s3Excludes(), ...s3ExcludesFor(o.exclude)]
 }
 const bucketUrl = (volume: VolumeRef, remote: string, o: S3Options) => `s3://${volume.id}/${s3Key(remote, o.mountPath)}`
 /** Push one folder onto the volume. */
@@ -139,7 +145,7 @@ export const SHOT_AREAS = ['10_CORROSION', '20_STEREO', '30_CREATIVE', '40_TITLE
 export const SHOT_NAME = /^[a-z]+-[0-9]{3}[a-z]?$/
 /** The folders a pod writes in a shot (ADR-007's table). */
 export const SHOT_OUTPUTS = { review: '06_REVIEW', deliver: '07_DELIVER' } as const
-export const PULL_KEYS = ['output', ...Object.keys(SHOT_OUTPUTS)]
+export const PULL_KEYS = ['output', 'shared/input', 'shared/models', 'shared/workflows', ...Object.keys(SHOT_OUTPUTS)]
 
 const isDir = (p: string) => { try { return statSync(p).isDirectory() } catch { return false } }
 
@@ -162,9 +168,11 @@ export function pullPlan(cfg: mounts.MountsConfig, shots: string[], only: Set<st
   const rows = mounts.folderRows(cfg)
   const out: Step[] = []
   const shared = rows.find((r) => r.key === 'comfy-shared')
-  if (shared && want('output')) {
+  const keyOf = (d: string) => (d === 'output' ? 'output' : `shared/${d}`)
+  const dirs = (cfg.pull_shared ?? [...mounts.PULL_SHARED_DEFAULT]).filter((d) => want(keyOf(d)))
+  if (shared && dirs.length) {
     if (!shared.local) warn('skip output: comfy-shared is not mapped on this PC')
-    else out.push({ key: 'output', local: slash(shared.local) + 'output/', remote: slash(shared.container) + 'output/' })
+    else for (const d of dirs) out.push({ key: keyOf(d), local: slash(shared.local) + d + '/', remote: slash(shared.container) + d + '/' })
   }
   const project = rows.find((r) => r.key === 'project')
   const shotKeys = Object.entries(SHOT_OUTPUTS).filter(([k]) => want(k))

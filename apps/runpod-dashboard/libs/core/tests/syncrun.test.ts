@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as mounts from '../src/mounts.js'
+import * as podconfigs from '../src/podconfigs.js'
+import * as sync from '../src/sync.js'
 import * as syncrun from '../src/syncrun.js'
 import { fakeTree, scratch } from './helpers.js'
 
@@ -87,7 +89,7 @@ describe('sync from the app', () => {
 
   it('simulates the run in no-spend mode: every folder listed, then each in streams with its files, bytes and progress; the transport says so', async () => {
     const cfg = mounts.defaults(); cfg.dry_run = true; cfg.folders.project = fakeTree(dir); mounts.save(cfg)
-    expect((await syncrun.transportFor('p1')).reason).toMatch(/no-spend mode.*4 streams/)
+    expect((await syncrun.transportFor('p1')).reason).toMatch(/no-spend mode.*8 streams/)
     const events: syncrun.SyncEvent[] = []
     const r = await syncrun.run({ pod_id: 'p1', direction: 'push' }, (e) => events.push(e), new AbortController().signal)
     expect(r).toEqual({ steps: 2, failed: 0, warned: 0, cancelled: false })   // project and the workflows
@@ -160,5 +162,78 @@ describe('sync from the app', () => {
     const cfg = mounts.defaults(); cfg.dry_run = true; mounts.save(cfg)
     expect(syncrun.planFor({ pod_id: 'p1', direction: 'push' }).map((s) => s.key)).toEqual(['workflows'])
     await expect(syncrun.run({ pod_id: 'p1', direction: 'pull' }, () => {}, new AbortController().signal)).rejects.toThrow(/Nothing to copy/)
+  })
+
+  // ----- which ComfyUI-Shared folders a push carries (docs/ADR-011) -----
+  const sharedTree = () => {
+    const root = join(dir, 'shared')
+    for (const d of ['input', 'models', 'output', 'workflows', 'custom']) { mkdirSync(join(root, d), { recursive: true }); writeFileSync(join(root, d, 'a.txt'), d) }
+    mkdirSync(join(root, 'input', 'output'), { recursive: true }); writeFileSync(join(root, 'input', 'output', 'keep.txt'), 'a folder named output deeper down is not the top-level one')
+    return root
+  }
+  const shared = (steps: ReturnType<typeof syncrun.planFor>) => steps.find((s) => s.key === 'comfy-shared')!
+
+  it('excludes the unchosen subfolders of ComfyUI-Shared at the top level only, on a push; the rest of the folder always goes', () => {
+    const step = { key: 'comfy-shared', local: '/x/', remote: '/workspace/comfy-shared/' }
+    const push = (s?: string[]) => syncrun.excludesFor({ pod_id: 'p1', direction: 'push', shared: s }, step)
+    expect(push(['input', 'models', 'workflows'])).toEqual(['/output/'])
+    expect(push(['input', 'models', 'output', 'workflows'])).toEqual([])
+    expect(push([])).toEqual(['/input/', '/models/', '/output/', '/workflows/'])
+    expect(push(undefined)).toEqual([])   // the request says nothing: the run decides from the configuration (effectiveShared)
+    expect(syncrun.excludesFor({ pod_id: 'p1', direction: 'pull', shared: [] }, step)).toEqual([])
+    expect(syncrun.excludesFor({ pod_id: 'p1', direction: 'push', shared: [] }, { ...step, key: 'project' })).toEqual([])   // only ComfyUI-Shared has these subfolders
+  })
+
+  it('the default carries input, models and workflows and leaves output; a pod\'s own configuration and the request each override it', () => {
+    expect(mounts.defaults().sync_shared).toEqual(['input', 'models', 'workflows'])
+    expect(syncrun.effectiveShared({ pod_id: 'p1' })).toEqual(['input', 'models', 'workflows'])
+    const own = mounts.defaults(); own.sync_shared = ['output']
+    podconfigs.set('p1', own)
+    expect(syncrun.effectiveShared({ pod_id: 'p1' })).toEqual(['output'])   // this pod's
+    expect(syncrun.effectiveShared({ pod_id: 'p2' })).toEqual(['input', 'models', 'workflows'])   // another pod: the default
+    expect(syncrun.effectiveShared({ pod_id: 'p1', shared: ['models'] })).toEqual(['models'])   // what the Sync window sends wins
+  })
+
+  it('without Workflows ticked the repo\'s workflows step goes too', () => {
+    const cfg = mounts.defaults(); cfg.folders['comfy-shared'] = sharedTree(); mounts.save(cfg)
+    expect(syncrun.planFor({ pod_id: 'p1', direction: 'push' }).map((s) => s.key)).toEqual(['comfy-shared', 'workflows'])
+    expect(syncrun.planFor({ pod_id: 'p1', direction: 'push', shared: ['input', 'models'] }).map((s) => s.key)).toEqual(['comfy-shared'])
+    expect(syncrun.planFor({ pod_id: 'p1', direction: 'pull' }).map((s) => s.key)).not.toContain('workflows')
+  })
+
+  it('splits the folder into streams without the unchosen subfolders, and an output folder deeper down still goes', () => {
+    const root = sharedTree()
+    expect(syncrun.streamsOf(root + '/', '/workspace/comfy-shared/', ['/output/']).map((u) => u.name)).toEqual(['.', 'custom', 'input', 'models', 'workflows'])
+    expect(syncrun.streamsOf(root + '/', '/workspace/comfy-shared/', []).map((u) => u.name)).toEqual(['.', 'custom', 'input', 'models', 'output', 'workflows'])
+  })
+
+  it('the AWS CLI gets the same: the top level of the folder pushed, and an unanchored name anywhere below', () => {
+    expect(sync.s3ExcludesFor(['/output/'])).toEqual(['--exclude', 'output/*'])
+    expect(sync.s3ExcludesFor(['06_REVIEW/'])).toEqual(['--exclude', '06_REVIEW/*', '--exclude', '*/06_REVIEW/*'])
+    const cmd = sync.s3Cmd('/x/', { id: 'vol1', datacenter: 'EU-RO-1', name: 'v' }, '/workspace/comfy-shared/', { exclude: ['/output/'] })
+    expect(cmd.join(' ')).toContain('--exclude output/*')
+  })
+
+  it('simulated: output stays home unless ticked, and the counts follow the choice', async () => {
+    const cfg = mounts.defaults(); cfg.dry_run = true; cfg.folders.project = fakeTree(dir); cfg.folders['comfy-shared'] = sharedTree(); mounts.save(cfg)   // the shared folder is the plan's second step: the simulated files with an output/ in them
+    const filesOf = async (req: Partial<syncrun.SyncRequest>) => { const ev: syncrun.SyncEvent[] = []; await syncrun.run({ pod_id: 'p1', direction: 'push', ...req }, (e) => ev.push(e), new AbortController().signal); return ev.filter((e) => e.kind === 'file' && e.key === 'comfy-shared').map((e) => e.path!) }
+    const standard = await filesOf({})   // the default: output stays home
+    expect(standard.some((f) => f.startsWith('output/'))).toBe(false); expect(standard.length).toBeGreaterThan(0)
+    expect((await filesOf({ shared: ['input', 'models', 'output', 'workflows'] })).filter((f) => f.startsWith('output/'))).toHaveLength(3)
+    const withOutput = (await syncrun.countFor({ pod_id: 'p1', direction: 'push', shared: ['input', 'models', 'output', 'workflows'] })).all.total_files!
+    const without = (await syncrun.countFor({ pod_id: 'p1', direction: 'push' })).all.total_files!
+    expect(withOutput - without).toBe(3)   // the confirmation's count follows the choice
+  })
+
+  it('over SSH: the root stream keeps the top-level exclude, no stream is made for the unchosen folder, and the other streams do not carry an exclude that would hit a folder of the same name deeper down', async () => {
+    const cfg = mounts.defaults(); cfg.folders['comfy-shared'] = sharedTree(); mounts.save(cfg)
+    const copies: string[][] = []
+    const exec: syncrun.Exec = async (cmd, onLine) => { if (!cmd.includes('-n')) copies.push(cmd); for (const l of ['Transfer starting: 1 files', 'a.txt', 'Number of files transferred: 1', 'Total transferred file size: 5 B']) onLine(l); return 0 }
+    await syncrun.run({ pod_id: 'p1', direction: 'push', only: ['comfy-shared'] }, () => {}, new AbortController().signal, client, exec)
+    const dests = copies.map((c) => c[c.length - 1])
+    expect(dests).toEqual(['root@5.6.7.8:/workspace/comfy-shared/', ...['custom', 'input', 'models', 'workflows'].map((n) => `root@5.6.7.8:/workspace/comfy-shared/${n}/`)].sort((a, b) => (a.endsWith('comfy-shared/') ? -1 : b.endsWith('comfy-shared/') ? 1 : a < b ? -1 : 1)).sort((a, b) => dests.indexOf(a) - dests.indexOf(b)) as string[])
+    expect(copies[0]).toContain('/output/')                                       // the root stream: its directory entries, without output
+    expect(copies.slice(1).every((c) => !c.includes('/output/'))).toBe(true)      // the others: nothing anchored (input/output/keep.txt goes)
+    expect(dests.some((d) => d.endsWith('/output/'))).toBe(false)
   })
 })

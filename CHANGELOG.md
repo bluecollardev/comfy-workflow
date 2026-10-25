@@ -3,6 +3,12 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## 2026-10-25 (what a sync carries)
+
+### Choose which ComfyUI-Shared folders a sync sends and pulls (branch `feature/sync-exclude-output`; `docs/ADR-011-what-a-sync-carries.md`)
+- Lucas: "When syncing, have an option to EXCLUDE sync of output folder", "allow chosing input models output and workflows", "configurable per pod and in default config", "separate checkbox rows for Push and Pull". **Two rows of four checkboxes** (input, models, output, workflows) in Default Configuration > Folders on this PC and in a pod's own Configuration: **Push** (`sync_shared`, default input, models, workflows: this PC's old renders stay home) and **Pull** (`pull_shared`, default output). The Sync window starts from the pod's choice and can change it for one run. Unchosen folders are excluded at the top level of ComfyUI-Shared only (`/output/`), so an `output` folder deeper down still goes. CLI `--shared`, MCP `sync.shared`. **Parallel uploads defaults to 8** (a saved configuration keeps its own value).
+- The folder choice is plain checkboxes with an explicit toggle; the first version (a bound array on BFormCheckbox) let only one be ticked at a time.
+
 ## 2026-10-24 (import adapters)
 
 ### A package folder goes into ComfyUI-Shared through an adapter (branch `feature/import-adapters`; `docs/ADR-008-import-adapters.md`, `docs/IMPORT-ADAPTERS.md`, `docs/PLAN-IMPORT-ADAPTERS.md`)

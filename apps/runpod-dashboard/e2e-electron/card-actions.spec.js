@@ -147,6 +147,15 @@ test.describe('card actions over IPC', () => {
     const sync = page.locator('.modal.show', { hasText: t('sync.title', { name: 'Sim-Sync' }) })
     await expect(sync.getByTestId('sync-step')).toHaveCount(3)
     await expect(sync.getByTestId('sync-skip-renders')).toBeChecked()                                     // the shots' renders stay home unless asked
+    // which ComfyUI-Shared folders this run carries: the configuration's choice (input, models, workflows; not output) until changed here
+    for (const d of ['input', 'models', 'workflows']) await expect(sync.getByTestId(`sync-shared-${d}`)).toBeChecked()
+    await expect(sync.getByTestId('sync-shared-output')).not.toBeChecked()
+    await expect(sync.getByTestId('sync-plan-counts')).toHaveText(t('sync.planCounts', { files: 6, bytes: '9.0 GB' }) + '; ' + t('sync.planCountsWithout', { files: 5, bytes: '7.5 GB' }))   // no output files in the count
+    await sync.getByTestId('sync-shared-workflows').uncheck()                                              // the repo's workflows step goes with it
+    await expect(sync.getByTestId('sync-step')).toHaveCount(2)
+    await sync.getByTestId('sync-shared-workflows').check()
+    await expect(sync.getByTestId('sync-step')).toHaveCount(3)
+    await sync.getByTestId('sync-shared-output').check()                                                    // this run only: the configuration is not changed
     await expect(sync.getByTestId('sync-plan-counts')).toHaveText(t('sync.planCounts', { files: 9, bytes: '13.5 GB' }) + '; ' + t('sync.planCountsWithout', { files: 8, bytes: '12.0 GB' }))
     await page.evaluate(() => {
       // every distinct state of the card bar + label and the modal bar + counters, in order

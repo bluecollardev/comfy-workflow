@@ -80,7 +80,7 @@ test.describe('configuration', () => {
     await expect(toast(page).first()).toContainText(t('toast.configSaved'))
     await expect(dialog).toBeHidden()
     const put = api.calls.find((c) => c.method === 'PUT' && c.path === '/mounts')
-    expect(put.body).toMatchObject({ folders: { project: '/Users/lucas/Projects/CANALV2' }, network_volume_id: 'vol2', data_center_id: 'CA-MTL-1', idle_stop_minutes: 45, sync_parallel: 4 })
+    expect(put.body).toMatchObject({ folders: { project: '/Users/lucas/Projects/CANALV2' }, network_volume_id: 'vol2', data_center_id: 'CA-MTL-1', idle_stop_minutes: 45, sync_parallel: 8 })
     await openCreatePod(page)
     await expect(page.getByTestId('pod-mounts-group')).toContainText(t('form.summaryVolume', { id: 'vol2', path: '/workspace' }) + ', ' + t('form.summaryMapped', { mapped: 1, total: 3, links: 1 }))
     await expect(page.locator('#pod-idle')).toHaveAttribute('placeholder', '45')
@@ -452,5 +452,35 @@ test.describe('configuration › environment: load defaults from the image or th
     await dialog.getByTestId('cfg-env-load-dockerfile').click()
     await expect(dialog.getByTestId('cfg-env-error')).toContainText('Could not read the image')
     await expect(dialog.getByTestId('cfg-env-key')).toHaveCount(0)
+  })
+})
+
+test.describe('configuration › folders on this PC: what a sync sends from ComfyUI-Shared', () => {
+  test('four checkboxes, input, models and workflows ticked and output not, saved with the configuration', async ({ page, api }) => {
+    await page.goto('/')
+    const dialog = await openConfig(page)
+    await cfgTab(dialog, 'folders')
+    const box = (d) => dialog.getByTestId(`cfg-sync-shared-${d}`)
+    await expect(dialog.getByTestId('cfg-sync-shared')).toContainText(t('config.syncShared'))
+    await expect(dialog.getByTestId('cfg-sync-shared')).toContainText(t('config.syncSharedHint'))
+    for (const d of ['input', 'models', 'output', 'workflows']) await expect(box(d)).toBeVisible()
+    for (const d of ['input', 'models', 'workflows']) await expect(box(d)).toBeChecked()
+    await expect(box('output')).not.toBeChecked()                      // what pods write stays home by default
+    const pull = (d) => dialog.getByTestId(`cfg-pull-shared-${d}`)
+    await expect(pull('output')).toBeChecked(); await expect(pull('models')).not.toBeChecked()   // a separate row for Pull
+    await box('models').uncheck(); await box('output').check()
+    await dialog.getByTestId('config-save').click()
+    const put = api.calls.find((c) => c.method === 'PUT' && c.path === '/mounts')
+    expect(put.body.sync_shared).toEqual(['input', 'output', 'workflows'])   // in the panel's order
+    expect(put.body.pull_shared).toEqual(['output'])
+    await openConfig(page)
+    await cfgTab(dialog, 'folders')
+    await expect(box('output')).toBeChecked(); await expect(box('models')).not.toBeChecked()   // kept
+  })
+
+  test('Parallel uploads defaults to 8', async ({ page }) => {
+    await page.goto('/')
+    const dialog = await openConfig(page)
+    await expect(dialog.getByTestId('cfg-sync-parallel')).toHaveValue('8')
   })
 })

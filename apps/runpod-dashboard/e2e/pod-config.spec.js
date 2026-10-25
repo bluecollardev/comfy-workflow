@@ -1,4 +1,4 @@
-import { test, expect, openCreatePod, podCard, modal } from './fixtures'
+import { test, expect, openCreatePod, podCard, modal, cfgTab } from './fixtures'
 import { t } from './i18n'
 
 // Each pod can carry its own configuration: the Default Configuration's panel, started from the
@@ -98,5 +98,25 @@ test.describe('a pod\'s own Configuration › environment', () => {
     await expect(page.getByTestId('toast').filter({ hasText: t('toast.podConfigSet') })).toBeVisible()
     const put = api.calls.filter((c) => c.method === 'PUT' && c.path.endsWith('/config')).at(-1)
     expect(put.body.env).toEqual({ COMFYUI_PORT: '8188', TORCH_VERSION: '2.6.0' })
+  })
+})
+
+test.describe('a pod\'s own Configuration › folders on this PC', () => {
+  test('starts from the default\'s choice of ComfyUI-Shared folders to sync and keeps its own', async ({ page, api }) => {
+    api.state.mounts.config.sync_shared = ['input', 'workflows']
+    await page.goto('/')
+    await podCard(page, 'ComfyUI-Dev').getByTestId('pod-config').click()
+    const panel = modal(page, t('config.podTitle', { name: 'ComfyUI-Dev' }))
+    await cfgTab(panel, 'folders')
+    await expect(panel.getByTestId('cfg-sync-shared')).toContainText(t('config.syncSharedPodHint'))   // says it is for this pod only
+    await expect(panel.getByTestId('cfg-sync-shared-input')).toBeChecked()
+    await expect(panel.getByTestId('cfg-sync-shared-models')).not.toBeChecked()
+    await panel.getByTestId('cfg-sync-shared-models').check()
+    await panel.getByTestId('cfg-sync-shared-input').uncheck()
+    await panel.getByTestId('config-apply').click()
+    await expect(page.getByTestId('toast').filter({ hasText: t('toast.podConfigSet') })).toBeVisible()
+    const put = api.calls.filter((c) => c.method === 'PUT' && c.path.endsWith('/config')).at(-1)
+    expect(put.body.sync_shared).toEqual(['models', 'workflows'])
+    expect(api.state.mounts.config.sync_shared).toEqual(['input', 'workflows'])   // the default is not changed
   })
 })

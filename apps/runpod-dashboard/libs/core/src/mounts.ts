@@ -17,6 +17,10 @@ import { bad, CoreError } from './errors.js'
 import { mirrorDir, mountsFile } from './paths.js'
 import { folderShapes, shape } from './shape.js'
 
+/** The ComfyUI-Shared subfolders a push can carry, in the order the panel shows them; and what carries by default: not `output`, which pods write and a push of it only sends the PC's own old renders up. */
+export const SYNC_SHARED = ['input', 'models', 'output', 'workflows'] as const
+export const SYNC_SHARED_DEFAULT = ['input', 'models', 'workflows'] as const
+export const PULL_SHARED_DEFAULT = ['output'] as const
 export const DEFAULT_IMAGE = () => process.env.COMFY_IMAGE || 'comfy-app:contract-v26'   // ours; pushed to a registry before a pod can pull it
 
 export interface Link { path: string; target: string; required: boolean; mode: string; what: string; folder: string }
@@ -34,6 +38,8 @@ export interface MountsConfig {
   image: string
   registry_auth_id: string   // RunPod's saved credential for a private registry (saveRegistryAuth); '' for a public image
   idle_stop_minutes: number
+  pull_shared: string[]      // which ComfyUI-Shared subfolders a pull brings back down (default: output)
+  sync_shared: string[]      // which ComfyUI-Shared subfolders a push carries: input, models, output, workflows (a pod's own configuration can differ from the default)
   sync_parallel: number      // rsync streams at a time on a push (1..16); the uplink is the limit, streams keep it full across small files
   dry_run: boolean
   mcp_http: McpHttp          // the MCP servers the app itself serves over HTTP on 127.0.0.1 (Connect › MCP); off by default
@@ -95,7 +101,9 @@ export function defaults(): MountsConfig {
     image: DEFAULT_IMAGE(),
     registry_auth_id: '',
     idle_stop_minutes: 30,
-    sync_parallel: 4,
+    sync_parallel: 8,   // streams at a time: the uplink is the limit and more streams keep it full across many small files (was 4)
+    sync_shared: [...SYNC_SHARED_DEFAULT],
+    pull_shared: [...PULL_SHARED_DEFAULT],
     dry_run: false,
     mcp_http: mcpHttpDefaults(),
   }
@@ -130,6 +138,8 @@ export function normalize(data: Partial<MountsConfig>): MountsConfig {
     registry_auth_id: (data.registry_auth_id ?? '').trim(),
     idle_stop_minutes: data.idle_stop_minutes ?? d.idle_stop_minutes,
     sync_parallel: data.sync_parallel ?? d.sync_parallel,
+    pull_shared: Array.isArray(data.pull_shared) ? SYNC_SHARED.filter((x) => data.pull_shared!.includes(x)) : d.pull_shared,
+    sync_shared: Array.isArray(data.sync_shared) ? SYNC_SHARED.filter((x) => data.sync_shared!.includes(x)) : d.sync_shared,
     dry_run: data.dry_run === true,
     mcp_http: normalizeMcpHttp(data.mcp_http),
   }

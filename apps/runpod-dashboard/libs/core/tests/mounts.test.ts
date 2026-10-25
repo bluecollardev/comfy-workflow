@@ -16,7 +16,7 @@ describe('defaults', () => {
     expect(Object.keys(cfg.folders)).toEqual(['project', 'plates', 'comfy-shared'])
     expect(Object.values(cfg.folders).some(Boolean)).toBe(false)
     expect(cfg.network_volume_id).toBe(''); expect(cfg.mount_path).toBe('/workspace')
-    expect(cfg.image).toBe('comfy-app:contract-v26'); expect(cfg.idle_stop_minutes).toBe(30); expect(cfg.sync_parallel).toBe(4)
+    expect(cfg.image).toBe('comfy-app:contract-v26'); expect(cfg.idle_stop_minutes).toBe(30); expect(cfg.sync_parallel).toBe(8)
     expect(m.allLinks(cfg)).toEqual([]); expect(m.localEnv(cfg)).toEqual({})
     expect(m.podEnv(cfg)).toEqual({ PROJECT_ROOT: '/workspace/project', PLATES_ROOT: '/workspace/plates', COMFY_SHARED: '/workspace/comfy-shared' })
     expect(m.podOverrides(cfg).env.COMFY_LINKS).toBeUndefined()
@@ -140,7 +140,7 @@ describe('the store', () => {
     expect(() => m.put({ ...cfg, links: [{ path: '/a;b', target: '/workspace/x' } as m.Link] })).toThrow(/cannot appear/)
     expect(() => m.put({ ...cfg, idle_stop_minutes: -1 })).toThrow(/idle_stop_minutes/)
     expect(() => m.put({ ...cfg, sync_parallel: 0 })).toThrow(/sync_parallel/); expect(() => m.put({ ...cfg, sync_parallel: 2.5 })).toThrow(/sync_parallel/); expect(() => m.put({ ...cfg, sync_parallel: 17 })).toThrow(/sync_parallel/)
-    expect(() => m.put({ ...cfg, sync_parallel: 8 })).not.toThrow(); expect(m.load().sync_parallel).toBe(8)
+    expect(() => m.put({ ...cfg, sync_parallel: 12 })).not.toThrow(); expect(m.load().sync_parallel).toBe(12)
   })
 })
 
@@ -192,5 +192,15 @@ describe('mcp_http: the MCP servers the app serves over HTTP', () => {
     for (const port of [80, 70000, 8765.5, Number.NaN]) expect(() => m.put(with_('pod-manager', port))).toThrow(/port/)
     expect(() => m.put(with_('comfy-bridge', 8765))).toThrow(/share/)
     expect(() => m.put(with_('pod-manager', 9000))).not.toThrow()
+  })
+
+  it('sync_shared: the ComfyUI-Shared folders a push carries; default input, models, workflows; unknown names and an old file without it are handled', () => {
+    expect(m.defaults().sync_shared).toEqual(['input', 'models', 'workflows'])
+    expect(m.normalize({}).sync_shared).toEqual(['input', 'models', 'workflows'])             // a config saved before the field existed
+    expect(m.normalize({ sync_shared: ['workflows', 'output', 'nonsense', 'input'] }).sync_shared).toEqual(['input', 'output', 'workflows'])   // known names, in the panel's order
+    expect(m.normalize({ sync_shared: [] }).sync_shared).toEqual([])                          // none is a choice: only what else is in the folder goes
+    const cfg = m.defaults(); cfg.sync_shared = ['output']
+    m.put(cfg)
+    expect(m.load().sync_shared).toEqual(['output'])
   })
 })
