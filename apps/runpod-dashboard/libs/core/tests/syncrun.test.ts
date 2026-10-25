@@ -113,7 +113,7 @@ describe('sync from the app', () => {
     await syncrun.run({ pod_id: 'p1', direction: 'push', skip_renders: true }, (e) => skipped.push(e), new AbortController().signal)
     expect(skipped.filter((e) => e.kind === 'file')).toHaveLength(6)
     expect(skipped.find((e) => e.kind === 'step')).toMatchObject({ key: 'project', total_files: 2 })
-    expect(await syncrun.countFor({ pod_id: 'p1', direction: 'push', skip_renders: true })).toEqual({ all: { total_files: 7, total_bytes: 7 * 1.5 * GiB }, without_renders: { total_files: 6, total_bytes: 6 * 1.5 * GiB } })
+    expect(await syncrun.countFor({ pod_id: 'p1', direction: 'push', skip_renders: true })).toEqual({ all: { total_files: 7, total_bytes: 7 * 1.5 * GiB, scanned_files: 7 }, without_renders: { total_files: 6, total_bytes: 6 * 1.5 * GiB, scanned_files: 6 } })
     expect((await syncrun.countFor({ pod_id: 'p1', direction: 'pull' })).without_renders).toBeUndefined()   // a pull brings the renders back: one figure
   })
 
@@ -147,7 +147,12 @@ describe('sync from the app', () => {
     expect(events.find((e) => e.kind === 'line' && /^rsync exit 23/.test(e.text || ''))?.key).toBe('project')
     expect(events.filter((e) => e.kind === 'file' && e.key === 'project').map((e) => e.stream).sort()).toEqual(['00_POLICY', '04_TRACKER', '10_CORROSION', undefined].sort())
     expect(events.at(-1)).toMatchObject({ kind: 'done', text: '1 of 3 folders failed' })
-    expect(await syncrun.countFor({ pod_id: 'p1', direction: 'push', plates: true, approved_by: 'Binc' }, client, exec)).toEqual({ all: { total_files: 6, total_bytes: 900 }, without_renders: { total_files: 6, total_bytes: 900 } })
+    expect(await syncrun.countFor({ pod_id: 'p1', direction: 'push', plates: true, approved_by: 'Binc' }, client, exec)).toEqual({ all: { total_files: 6, total_bytes: 900, scanned_files: 6 }, without_renders: { total_files: 6, total_bytes: 900, scanned_files: 6 } })
+    // skipped = every file in scope less what would be sent: a second listing, as if everything were replaced
+    const scoped: syncrun.Exec = async (cmd, onLine) => { for (const l of cmd.includes('--ignore-times') ? ['Number of files transferred: 10', 'Total transferred file size: 1000 B'] : ['Number of files transferred: 2', 'Total transferred file size: 300 B']) onLine(l); return 0 }
+    const sk = await syncrun.countFor({ pod_id: 'p1', direction: 'push', plates: true, approved_by: 'Binc', existing: 'size' }, client, scoped)
+    expect(sk.all).toEqual({ total_files: 6, total_bytes: 900, scanned_files: 30 })
+    expect((await syncrun.countFor({ pod_id: 'p1', direction: 'push', plates: true, approved_by: 'Binc', existing: 'replace' }, client, scoped)).all).toEqual({ total_files: 30, total_bytes: 3000, scanned_files: 30 })   // replace sends it all: nothing skipped
   })
 
   it('a real process: its lines, then its exit code once it closes (23 included); a listing that runs out knows nothing', async () => {

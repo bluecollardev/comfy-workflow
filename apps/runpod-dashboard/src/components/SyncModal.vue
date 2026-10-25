@@ -61,6 +61,7 @@
       <div class="d-flex gap-3 small mb-2" data-testid="sync-counts">
         <span><i class="fa-solid fa-folder me-1"></i>{{ $t('sync.countSteps', { step: progress.step, steps: progress.steps }) }}</span>
         <span class="text-success"><i class="fa-solid fa-check me-1"></i>{{ $t('sync.countFiles', { n: fileCount }) }}</span>
+        <span v-if="skippedCount != null" class="text-body-secondary" data-testid="sync-skipped"><i class="fa-solid fa-forward me-1"></i>{{ $t('sync.countSkipped', { n: fmtN(skippedCount) }) }}</span>
         <span :class="problems.length ? 'text-danger' : 'text-body-secondary'"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ $t('sync.countErrors', { n: problems.length }) }}</span>
       </div>
       <div v-if="problems.length" class="mb-2" data-testid="sync-errors">
@@ -113,6 +114,8 @@ const counts = ref({ pending: false, all: {}, without_renders: undefined })   //
 // the figure follows the switch: with the renders skipped, what the push sends without them (a pull, or no project step, has one figure)
 const skipping = computed(() => (skipRenders.value || skipTests.value) && counts.value.without_renders?.total_files != null)
 const shownCounts = computed(() => (skipping.value ? counts.value.without_renders : counts.value.all))
+// files in scope that are already on the pod (or left out by the same rule): the listing's scope less what it would send
+const skippedCount = computed(() => { const c = shownCounts.value; return c?.scanned_files != null && c.total_files != null ? Math.max(0, c.scanned_files - c.total_files) : null })
 const fmtN = (x) => Number(x).toLocaleString('en-US')
 let countRun = 0
 async function loadCounts() {

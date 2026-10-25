@@ -57,7 +57,7 @@ export interface SyncEvent {
   file_percent?: number; bytes_done?: number; run_bytes_done?: number; rate_bps?: number; eta_s?: number   // progress
 }
 export interface SyncResult { steps: number; failed: number; warned: number; cancelled: boolean }
-export interface Counts { total_files?: number; total_bytes?: number }
+export interface Counts { total_files?: number; total_bytes?: number; scanned_files?: number /* every file in scope, sent or not: the difference is what was skipped */ }
 /** rsync exit codes that still copied everything they could: a warning on the folder, not a failed one.
  *  23: some files or attributes were not transferred (the volume refuses a chown or a time; the lines above name them).
  *  24: a file vanished on this PC while rsync read it. The run goes on either way; the result counts them as warned. */
@@ -138,7 +138,7 @@ export function parseStats(lines: string[]): Counts {
 }
 const sumCounts = (list: Counts[], expected: number): Counts => {
   const sum = (k: keyof Counts) => (list.length === expected && list.every((c) => c[k] !== undefined) ? list.reduce((a, c) => a + c[k]!, 0) : undefined)
-  return { total_files: sum('total_files'), total_bytes: sum('total_bytes') }
+  return { total_files: sum('total_files'), total_bytes: sum('total_bytes'), scanned_files: sum('scanned_files') }
 }
 
 /** The run's pace: bytes over the time since the first byte, and what is left at that rate when the total is known. */
@@ -254,6 +254,7 @@ export const SIM_FILE_BYTES = 1.5 * 1024 ** 3
 const simDrops = (excludes: string[], f: string) => excludes.some((e) => (e.startsWith('/') ? f.startsWith(e.slice(1)) : f.includes(`/${e}`)))
 const simNames = (n: number, excludes: string[]) => SIM_FILES[n % SIM_FILES.length].filter((f) => !simDrops(excludes, f))
 const simStats = (n: number, excludes: string[]) => [`Number of files transferred: ${simNames(n, excludes).length}`, `Total transferred file size: ${simNames(n, excludes).length * SIM_FILE_BYTES} B`]
+const withScanned = (c: Counts): Counts => ({ ...c, scanned_files: c.total_files })   // the simulated copy finds nothing already there
 function* simLines(names: string[]): Generator<string> {
   yield `Transfer starting: ${names.length} files`
   for (const [i, name] of names.entries()) {
@@ -314,15 +315,22 @@ export async function countFor(request: SyncRequest, client?: rp.RunPodClient, e
   const steps = planFor(req)
   const project = req.direction === 'push' && steps.some((s) => s.key === 'project')
   if (mounts.dryRun(mounts.load())) {
-    const all = sumCounts(steps.map((s, n) => parseStats(simStats(n, excludesFor({ ...req, skip_renders: false, skip_tests: false }, s)))), steps.length)
-    return { all, without_renders: project ? sumCounts(steps.map((s, n) => parseStats(simStats(n, excludesFor(req, s)))), steps.length) : undefined }
+    const all = sumCounts(steps.map((s, n) => withScanned(parseStats(simStats(n, excludesFor({ ...req, skip_renders: false, skip_tests: false }, s))))), steps.length)
+    return { all, without_renders: project ? sumCounts(steps.map((s, n) => withScanned(parseStats(simStats(n, excludesFor(req, s))))), steps.length) : undefined }
   }
   const transport = await transportFor(req.pod_id, client)
   if (transport.kind !== 'ssh') return { all: {} }
   const mountPath = configFor(req.pod_id).mount_path || '/workspace'
   const progress = sync.progressFlag(await rsyncVersion())   // openrsync refuses --info=progress2 even on a dry run
   const signal = new AbortController().signal
-  const list = (step: sync.Step, exclude: string[]) => listStep(commandFor(req, transport, step, mountPath, { progress, verbose: true, dryRun: true, stats: true, exclude }), signal, process.env, exec)
+  // what would be sent, and (a second pass that counts every file in scope, as if all were to be replaced) what is already there
+  const list = async (step: sync.Step, exclude: string[]) => {
+    const o = { progress, verbose: true, dryRun: true, stats: true, exclude }
+    const sent = await listStep(commandFor(req, transport, step, mountPath, o), signal, process.env, exec)
+    if (req.existing === 'replace' || transport.kind !== 'ssh') return { ...sent, scanned_files: sent.total_files }
+    const scope = await listStep(commandFor({ ...req, existing: 'replace' }, transport, step, mountPath, o), signal, process.env, exec).catch(() => ({} as Counts))
+    return { ...sent, scanned_files: scope.total_files }
+  }
   const counts: Counts[] = []
   for (const step of steps) counts.push(await list(step, excludesFor({ ...req, skip_renders: false, skip_tests: false }, step)))
   const all = sumCounts(counts, steps.length)

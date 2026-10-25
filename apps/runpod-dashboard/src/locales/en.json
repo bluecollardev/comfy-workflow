@@ -594,7 +594,8 @@
     "existing_checksum": "Skip identical files only",
     "existingHelp_checksum": "Compares the content of every file at both ends, so it is exact and slow: 16 GB is read twice.",
     "existing_replace": "Replace everything",
-    "existingHelp_replace": "Sends every file again and overwrites what is there."
+    "existingHelp_replace": "Sends every file again and overwrites what is there.",
+    "countSkipped": "{n} skipped"
   },
   "mcp": {
     "intro": "Two MCP servers come with this app: the pod manager (what the dashboard does) and the ComfyUI bridge (inside one ComfyUI). A client launches them with this app as its program, nothing else to install, or reaches them over HTTP while the app serves them. Pick a client below, copy its setup, and press Check to see the server answer from here.",

@@ -29,6 +29,8 @@ On the real tree: 23,547 files / 86.7 GB all; 4,564 / 17.5 GB without renders; 1
 | `replace` | `--ignore-times` | everything again | nothing |
 The S3 transport uses `aws s3 cp`, which has no such choice. Nothing is ever deleted, in any mode.
 
+**Skipped** is shown beside copied and errors: the files in scope less the files the chosen rule would send. Scope comes from a second dry-run listing with `--ignore-times` (every file counts as to-send), so it is exact and costs one more listing per folder; the confirmation and the running view use the same figure.
+
 ## Consequences
 - A first push is about 16 GB instead of 87 GB; later pushes send only what changed.
 - Existing saved configurations pick up the defaults for the new keys (`pull_shared`); `sync_parallel` stays as saved.

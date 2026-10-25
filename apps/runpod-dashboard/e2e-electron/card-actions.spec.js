@@ -119,6 +119,7 @@ test.describe('card actions over IPC', () => {
     await expect(sync.getByTestId('sync-file')).toHaveCount(3)
     await expect(sync.getByTestId('sync-counts')).toContainText(t('sync.countFiles', { n: 3 }))
     await expect(sync.getByTestId('sync-counts')).toContainText(t('sync.countErrors', { n: 0 }))
+    await expect(sync.getByTestId('sync-counts')).toContainText(t('sync.countSkipped', { n: 0 }))             // beside copied and errors; the simulated copy finds nothing already there
     await sync.locator('.btn-close').click()
     await expect(sync).toBeHidden()
     await expect(card.getByTestId('pod-progress-label')).not.toContainText(t('sync.countFiles', { n: 3 }).split(' ')[1])   // the run ended: no sync bar (a boot bar may show, the pod was just recreated)
