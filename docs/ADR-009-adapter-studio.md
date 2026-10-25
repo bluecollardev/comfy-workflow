@@ -55,7 +55,7 @@ buttons but obviously I need to change this too", "I don't see no chat interface
    JavaScript highlighting, the file path and sha256 above it) with a Problems panel and a
    status bar below (line and column, saved or modified, Valid or not). A **line wrap** toggle (an icon button in the header, on by
    default, remembered per viewer, one setting for the code, the prompt and the file viewer) turns
-   wrapping of long lines on and off without losing the text, the cursor or the undo history. **On a phone** (under 576 px) every button in the
+   wrapping of long lines on and off without losing the text, the cursor or the undo history. **Below 992 px (a phone, a portrait tablet, a narrow window)** every button in the
    Studio is an icon: the words are hidden and live on in `aria-label` and the tooltip; the header
    wraps onto a second row so every button is reachable, the Code/Preview split stacks, and nothing
    scrolls sideways. Right, **side by side

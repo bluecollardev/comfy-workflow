@@ -6,13 +6,13 @@
         <span class="text-body-secondary me-3">|</span>
         <i class="fa-solid fa-code me-2"></i>
         <strong class="me-3 title-text">{{ $t('studio.title') }}</strong>
-        <template v-if="studio.id">
+        <div v-if="studio.id" class="namepair" data-testid="studio-namepair">
           <BFormInput :model-value="studio.name" size="sm" class="name" :disabled="studio.builtin" :placeholder="$t('studio.name')" :title="studio.builtin ? $t('studio.builtinName') : $t('studio.nameHint')" data-testid="studio-name" @update:model-value="studio.setName" />
           <span class="mx-1 text-body-secondary">/</span>
           <BFormInput :model-value="studio.id" size="sm" class="slug font-monospace" :disabled="studio.builtin" :title="studio.builtin ? $t('studio.builtinName') : $t('studio.idHint')" data-testid="studio-id" @update:model-value="studio.setId" />
-        </template>
+        </div>
         <BBadge v-if="studio.builtin" variant="secondary" class="fw-normal ms-2" data-testid="studio-builtin-badge">{{ studio.modified ? $t('studio.builtinModified') : $t('studio.builtIn') }}</BBadge>
-        <div class="ms-auto d-flex align-items-center gap-1">
+        <div class="actions ms-auto d-flex align-items-center gap-1">
           <div class="btn-group btn-group-sm me-2" role="group" :aria-label="$t('studio.view')" data-testid="studio-views">
             <button v-for="v in VIEWS" :key="v.key" type="button" class="btn btn-outline-light" :class="{ active: studio.view === v.key }" :title="$t(`studio.view_${v.key}`)" :aria-label="$t(`studio.view_${v.key}`)" :aria-pressed="studio.view === v.key" :data-testid="`studio-view-${v.key}`" @click="studio.view = v.key"><i class="fa-solid" :class="v.icon"></i></button>
           </div>
@@ -111,7 +111,9 @@ const $tConfirm = () => t('studio.confirmClose')
 <style scoped>
 .studio { display: flex; flex-direction: column; width: 100%; height: calc(100vh - 0px); color: #d6dbe3; background: #1b1d22; }
 .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; padding: 6px 12px; background: #15171b; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
-.bar .name { width: 14rem; } .bar .slug { width: 11rem; }
+.bar .namepair { display: flex; align-items: center; flex: 1 1 15rem; min-width: 0; max-width: 28rem; }
+.bar .namepair .name { flex: 1 1 0; min-width: 4rem; } .bar .namepair .slug { flex: 1 1 0; min-width: 4rem; }
+.bar .actions { flex-shrink: 0; }
 .grid { flex: 1; min-height: 0; display: grid; grid-template-columns: 250px minmax(0, 1fr) 380px; }
 .col-explorer, .col-chat { min-height: 0; overflow: hidden; border-right: 1px solid rgba(255, 255, 255, 0.08); }
 .col-chat { border-right: 0; border-left: 1px solid rgba(255, 255, 255, 0.08); }
@@ -136,9 +138,9 @@ const $tConfirm = () => t('studio.confirmClose')
 .status { display: flex; gap: 16px; padding: 2px 12px; background: #2d5fd0; color: #fff; font-size: 11px; }
 .status .text-success, .status .text-warning { color: #fff !important; }
 /* On a phone the buttons are icons: the words are in aria-label and title. */
+@media (max-width: 991px) { .studio :deep(.btn-label) { display: none; } }   /* tablet portrait and phone: icons; the words live on in aria-label and the tooltip */
 @media (max-width: 575px) {
-  .studio :deep(.btn-label), .studio .bar .title-text { display: none; }
-  .bar .name, .bar .slug { width: 6.5rem; }
+  .studio .bar .title-text { display: none; }
   .bar { padding: 6px 8px; }
   .work.mode-split { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
   .pane.preview-pane { border-left: 0; border-top: 1px solid rgba(255, 255, 255, 0.08); }

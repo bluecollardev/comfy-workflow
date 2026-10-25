@@ -101,9 +101,9 @@ test.describe('Adapter Studio: it always says which app it is in (ADR-010)', () 
 })
 
 test.describe('Adapter Studio: on a phone', () => {
-  test('the buttons are icons only: the words are hidden, the names stay for screen readers and tooltips', async ({ page, api }) => {
+  for (const width of [390, 700, 900]) test(`the buttons are icons only at ${width}px: the words are hidden, the names stay for screen readers and tooltips`, async ({ page, api }) => {
     withKey(api)
-    await page.setViewportSize({ width: 390, height: 844 })
+    await page.setViewportSize({ width, height: 844 })
     await editFromManager(page, 'comfy-shared')
     await typeInto(page, 'studio-code', MODULE('comfy-shared', 'A ComfyUI-Shared folder'))
     await tid(page, 'studio-save').click()
@@ -122,6 +122,9 @@ test.describe('Adapter Studio: on a phone', () => {
     expect(await studio(page).evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
     for (const id of ['studio-save', 'studio-close', 'studio-wrap', 'studio-view-split']) await expect(tid(page, id)).toBeInViewport()
     await expect(tid(page, 'studio-send')).toBeInViewport()
+    // the name and the id stay together on one line, side by side
+    const [n, i] = await Promise.all([tid(page, 'studio-name').boundingBox(), tid(page, 'studio-id').boundingBox()])
+    expect(Math.abs(n.y - i.y)).toBeLessThan(4)
     await page.setViewportSize({ width: 1280, height: 800 })
     await expect(tid(page, 'studio-save').locator('.btn-label')).toBeVisible()   // wide again: the words are back
     await expect(tid(page, 'studio-send').locator('.btn-label')).toBeVisible()
