@@ -762,6 +762,11 @@
     "promptKept": "Claude changed the prompt on disk, but you have unsaved edits in it, so your text is kept. Save it, or close and reopen to see Claude's.",
     "codeKept": "Claude changed the adapter on disk, but you have unsaved edits in it, so your text is kept.",
     "attach": "Attach this folder",
-    "contextSendStarts": "Nothing is sent until you press Send. Your first message starts the chat and sends this with it."
+    "contextSendStarts": "Nothing is sent until you press Send. Your first message starts the chat and sends this with it.",
+    "wrap": "Line wrap",
+    "wrapOn": "Turn line wrap on",
+    "wrapOff": "Turn line wrap off",
+    "wrapState": "Wrap",
+    "noWrapState": "No wrap"
   }
 }

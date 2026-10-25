@@ -179,7 +179,7 @@ in its header:
   key. The chat keeps the **prompt** up to date, **builds the adapter from the prompt**, validates and tests it,
   and can name it (`rename_adapter`). Every tool call shows as a line. Claude can write `adapters/<id>.mjs`
   and `adapters/<id>.prompt.md` and nothing else.
-- **Header:** the display **name** and the **id** (the file name), **Document**, **Reset to built-in**, **Save**.
+- **Header:** the display **name** and the **id** (the file name), the **Code / Preview / Split** icons, a **line wrap** toggle (one setting for every editor, remembered), **Document**, **Reset to built-in**, **Save**.
 
 **Save is explicit; there is no autosave and no Revert button for now** (autosave with versions is a todo). Save
 runs the structure check and, with a folder attached, a fenced test of the plan; if either fails and a key is set,

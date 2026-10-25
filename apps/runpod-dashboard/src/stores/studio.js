@@ -60,6 +60,10 @@ export const useStudioStore = defineStore('studio', () => {
   try { storedView = localStorage.getItem('runpod-manager.studio-view') || 'split' } catch { /* storage blocked */ }
   const view = ref(['code', 'preview', 'split'].includes(storedView) ? storedView : 'split')
   watch(view, (v) => { try { localStorage.setItem('runpod-manager.studio-view', v) } catch { /* storage blocked */ } })
+  let storedWrap = 'on'
+  try { storedWrap = localStorage.getItem('runpod-manager.studio-wrap') || 'on' } catch { /* storage blocked */ }
+  const wrap = ref(storedWrap !== 'off')   // line wrap in the editors; a per-viewer choice kept in this browser
+  watch(wrap, (v) => { try { localStorage.setItem('runpod-manager.studio-wrap', v ? 'on' : 'off') } catch { /* storage blocked */ } })
   // the attached package
   const folder = ref('')
   const tree = ref(null)
@@ -290,7 +294,7 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   return {
-    open, error, isNew, row, id, name, code, savedCode, prompt, savedPrompt, original, filePath, saving, problems, tab, view,
+    open, error, isNew, row, id, name, code, savedCode, prompt, savedPrompt, original, filePath, saving, problems, tab, view, wrap,
     folder, tree, treeError, viewing, plan, planError, planning, messages, log, calls, created, running, consented, context, chatInput,
     builtin, modified, dirtyCode, dirtyPrompt, dirty, header, valid,
     openAdapter, openNew, attach, loadPlan, setName, setId, save, savePromptOnly, documentIt, resetBuiltin, openFile, send, stop, consent, close, check, note,

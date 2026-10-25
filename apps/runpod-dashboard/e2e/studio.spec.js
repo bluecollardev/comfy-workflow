@@ -128,6 +128,30 @@ test.describe('Adapter Studio: the editor', () => {
     await expect(tid(page, 'studio-view-preview')).toHaveAttribute('aria-pressed', 'true')   // remembered in this browser
   })
 
+  test('line wrap is a toggle in the header: long lines wrap or scroll, in the code, the prompt and the viewer, and the choice is remembered', async ({ page }) => {
+    await editFromManager(page, 'agent-made')
+    const long = `/**\n * ${'a long documentation line '.repeat(12)}\n * What it does: x. Detects: x. Maps: x. Leaves in place: x. Needs: x. Limits: x.\n */\nexport default { id: 'agent-made', name: 'Agent made', async detect() { return { match: 0 } }, async plan() { return { ops: [] } } }`
+    await typeInto(page, 'studio-code', long)
+    await expect(tid(page, 'studio-wrap')).toHaveAttribute('aria-pressed', 'true')   // on by default
+    await expect(tid(page, 'studio-code')).toHaveAttribute('data-wrap', 'true')
+    await expect(tid(page, 'studio-code').locator('.cm-lineWrapping')).toHaveCount(1)
+    await expect(tid(page, 'studio-wrap-state')).toHaveText(t('studio.wrapState'))
+    await tid(page, 'studio-wrap').click()
+    await expect(tid(page, 'studio-wrap')).toHaveAttribute('aria-pressed', 'false')
+    await expect(tid(page, 'studio-code')).toHaveAttribute('data-wrap', 'false')
+    await expect(tid(page, 'studio-code').locator('.cm-lineWrapping')).toHaveCount(0)
+    await expect(tid(page, 'studio-wrap-state')).toHaveText(t('studio.noWrapState'))
+    await expect(tid(page, 'studio-code-content')).toContainText('a long documentation line')   // the text is untouched, and so is what you typed
+    await expect(tid(page, 'studio-dirty-code')).toBeVisible()
+    await tid(page, 'studio-tab-prompt').click()
+    await expect(tid(page, 'studio-prompt')).toHaveAttribute('data-wrap', 'false')   // one toggle for every editor
+    await page.reload()
+    await editFromManager(page, 'agent-made')
+    await expect(tid(page, 'studio-wrap')).toHaveAttribute('aria-pressed', 'false')   // remembered in this browser
+    await tid(page, 'studio-wrap').click()
+    await expect(tid(page, 'studio-code').locator('.cm-lineWrapping')).toHaveCount(1)
+  })
+
   test('typing writes nothing: there is no autosave; Save is explicit and the tab shows it is modified', async ({ page, api }) => {
     await editFromManager(page, 'agent-made')
     await expect(tid(page, 'studio-save')).toBeDisabled()

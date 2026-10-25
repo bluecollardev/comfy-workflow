@@ -16,6 +16,7 @@
           <div class="btn-group btn-group-sm me-2" role="group" :aria-label="$t('studio.view')" data-testid="studio-views">
             <button v-for="v in VIEWS" :key="v.key" type="button" class="btn btn-outline-light" :class="{ active: studio.view === v.key }" :title="$t(`studio.view_${v.key}`)" :aria-label="$t(`studio.view_${v.key}`)" :aria-pressed="studio.view === v.key" :data-testid="`studio-view-${v.key}`" @click="studio.view = v.key"><i class="fa-solid" :class="v.icon"></i></button>
           </div>
+          <button type="button" class="btn btn-sm btn-outline-light me-1" :class="{ active: studio.wrap }" :title="studio.wrap ? $t('studio.wrapOff') : $t('studio.wrapOn')" :aria-label="$t('studio.wrap')" :aria-pressed="studio.wrap" data-testid="studio-wrap" @click="studio.wrap = !studio.wrap"><i class="fa-solid fa-text-width"></i></button>
           <BButton size="sm" variant="outline-light" :disabled="studio.isNew" :title="$t('studio.documentHint')" data-testid="studio-document" @click="studio.documentIt()"><i class="fa-solid fa-book me-1"></i>{{ $t('studio.document') }}</BButton>
           <BButton v-if="studio.modified" size="sm" variant="outline-warning" :title="$t('studio.resetHint')" data-testid="studio-reset" @click="studio.resetBuiltin()"><i class="fa-solid fa-rotate-left me-1"></i>{{ $t('studio.reset') }}</BButton>
           <BButton size="sm" variant="primary" :disabled="studio.saving || (!studio.dirty && !studio.isNew)" data-testid="studio-save" @click="studio.save()"><BSpinner v-if="studio.saving" small class="me-1" /><i v-else class="fa-solid fa-floppy-disk me-1"></i>{{ $t('studio.save') }}</BButton>
@@ -38,14 +39,14 @@
 
           <div class="work" :class="`mode-${studio.tab === 'code' ? studio.view : 'code'}`">
             <section v-show="studio.tab !== 'code' || studio.view !== 'preview'" class="pane code-pane">
-              <CodeEditor v-if="studio.tab === 'code'" v-model="studio.code" :read-only="false" testid="studio-code" @cursor="cursor = $event" />
+              <CodeEditor v-if="studio.tab === 'code'" v-model="studio.code" :read-only="false" :wrap="studio.wrap" testid="studio-code" @cursor="cursor = $event" />
               <div v-else-if="studio.tab === 'prompt'" class="prompt-wrap">
                 <div class="small text-body-secondary px-3 pt-2" data-testid="studio-prompt-hint">{{ $t('studio.promptHint') }}</div>
-                <CodeEditor v-model="studio.prompt" language="md" testid="studio-prompt" @cursor="cursor = $event" />
+                <CodeEditor v-model="studio.prompt" language="md" :wrap="studio.wrap" testid="studio-prompt" @cursor="cursor = $event" />
               </div>
               <div v-else-if="studio.viewing" class="viewer" data-testid="studio-viewer">
                 <div class="small text-body-secondary px-3 py-1">{{ fmt(studio.viewing.bytes) }} · {{ $t(`studio.kind_${studio.viewing.kind}`) }}<span v-if="studio.viewing.truncated"> · {{ $t('studio.fileCut') }}</span></div>
-                <CodeEditor v-if="studio.viewing.kind === 'text' || studio.viewing.kind === 'json'" :model-value="studio.viewing.text" :language="studio.viewing.kind === 'json' ? 'js' : 'md'" read-only testid="studio-viewer-code" />
+                <CodeEditor v-if="studio.viewing.kind === 'text' || studio.viewing.kind === 'json'" :model-value="studio.viewing.text" :language="studio.viewing.kind === 'json' ? 'js' : 'md'" read-only :wrap="studio.wrap" testid="studio-viewer-code" />
                 <div v-else-if="studio.viewing.kind === 'image'" class="p-3 text-center"><img :src="studio.viewing.data_url" class="img-fluid" :alt="studio.viewing.path" data-testid="studio-viewer-image" /></div>
                 <div v-else class="p-3 text-body-secondary" data-testid="studio-viewer-binary">{{ $t('studio.binary', { path: studio.viewing.path }) }}</div>
               </div>
@@ -61,6 +62,7 @@
           <footer class="status" data-testid="studio-status">
             <span>{{ $t('studio.lineCol', { line: cursor.line, col: cursor.col }) }}</span>
             <span>{{ studio.tab === 'prompt' ? 'Markdown' : 'JavaScript' }}</span>
+            <span data-testid="studio-wrap-state">{{ studio.wrap ? $t('studio.wrapState') : $t('studio.noWrapState') }}</span>
             <span v-if="studio.row" class="font-monospace" data-testid="studio-sha">{{ studio.row.sha256.slice(0, 10) }}</span>
             <span class="ms-auto" :class="studio.dirty ? 'text-warning' : 'text-success'" data-testid="studio-saved-state">{{ studio.dirty ? $t('studio.modified') : $t('studio.savedState') }}</span>
             <span :class="studio.valid ? 'text-success' : 'text-warning'" data-testid="studio-valid">{{ studio.valid ? $t('studio.valid') : $t('studio.notValid') }}</span>

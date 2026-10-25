@@ -53,7 +53,9 @@ buttons but obviously I need to change this too", "I don't see no chat interface
    and the Inspect viewer are removed. Left: an explorer (the built-in adapters
    read-only with a lock, yours, New). Centre: tabs and a real code editor (line numbers,
    JavaScript highlighting, the file path and sha256 above it) with a Problems panel and a
-   status bar below (line and column, saved or modified, Valid or not). Right, **side by side
+   status bar below (line and column, saved or modified, Valid or not). A **line wrap** toggle (an icon button in the header, on by
+   default, remembered per viewer, one setting for the code, the prompt and the file viewer) turns
+   wrapping of long lines on and off without losing the text, the cursor or the undo history. Right, **side by side
    with the code**: the chat with Claude. The file being edited is always on screen.
 2. **The chat builds a prompt.** Talking to Claude about a shot pack (what the folders are,
    which graphs matter, what must stay where) is not the product; it is how the **adapter
