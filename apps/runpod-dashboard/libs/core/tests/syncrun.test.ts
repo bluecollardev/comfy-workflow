@@ -72,6 +72,8 @@ describe('sync from the app', () => {
     const [project, workflows] = syncrun.planFor({ pod_id: 'p1', direction: 'push' })
     expect(syncrun.excludesFor({ pod_id: 'p1', direction: 'push', skip_renders: true }, project)).toEqual(['05_TEMPS/', '06_REVIEW/', '07_DELIVER/'])
     expect(syncrun.excludesFor({ pod_id: 'p1', direction: 'push', skip_renders: true }, workflows)).toEqual([])
+    expect(syncrun.excludesFor({ pod_id: 'p1', direction: 'push', skip_tests: true }, project)).toEqual(['/80_TEST-BUCKET/'])   // top level of the project only
+    expect(syncrun.excludesFor({ pod_id: 'p1', direction: 'push', skip_tests: true }, workflows)).toEqual([])
     expect(syncrun.excludesFor({ pod_id: 'p1', direction: 'pull', skip_renders: true }, project)).toEqual([])   // Pull is what brings renders back
     expect(syncrun.excludesFor({ pod_id: 'p1', direction: 'push' }, project)).toEqual([])
   })

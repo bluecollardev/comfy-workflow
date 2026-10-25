@@ -14,3 +14,6 @@ A push sent all of ComfyUI-Shared, including `output/` (what pods write; large, 
 
 ## Consequences
 Existing saved configurations pick up the defaults for the new keys; `sync_parallel` default is 8 for new configurations only.
+
+## Skips on a push (project folder)
+Two switches in the Sync window, both on by default: `skip_renders` (`05_TEMPS/ 06_REVIEW/ 07_DELIVER/`, any depth) and `skip_tests` (`/80_TEST-BUCKET/`, top level, Binc's scratch folder for quick tests, `00_POLICY/project_v002.md`). The confirmation's file and byte count is for the switches as set. Pull is what brings renders back.

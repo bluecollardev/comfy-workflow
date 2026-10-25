@@ -45,7 +45,7 @@ import { volumeInfo } from './pods.js'
 /** The subfolders of ComfyUI-Shared a push can carry: ComfyUI's input, its models, what pods write (output) and the graphs. */
 export const SHARED_DIRS = mounts.SYNC_SHARED
 export interface SyncRequest {
-  pod_id: string; direction: 'push' | 'pull'; only?: string[]; plates?: boolean; approved_by?: string; skip_renders?: boolean
+  pod_id: string; direction: 'push' | 'pull'; only?: string[]; plates?: boolean; approved_by?: string; skip_renders?: boolean; skip_tests?: boolean
   /** A push of ComfyUI-Shared: which of SHARED_DIRS go up. Left out, the pod's own configuration decides (else the Default Configuration's `sync_shared`); the app's confirmation sends the choice shown. Anything else in the folder always goes. */
   shared?: string[]
 }
@@ -69,6 +69,8 @@ export const LIST_TIMEOUT_MS = 3 * 60_000
 export const PROGRESS_EVERY_MS = 250
 /** A shot's render folders (CANALV2's structure): what a push leaves behind with skip_renders. Matched by name at any depth; no top-level folder is named so. */
 export const RENDER_DIRS = ['05_TEMPS', '06_REVIEW', '07_DELIVER']
+/** Binc's scratch folder for quick tests (00_POLICY/project_v002.md): no shot's graph reads it. Top level of the project only (`/80_TEST-BUCKET/`). */
+export const TEST_DIR = '80_TEST-BUCKET'
 
 /** The effective configuration for a pod: its own, else the default. */
 const configFor = (podId: string) => podconfigs.get(podId) ?? mounts.load()
@@ -95,6 +97,7 @@ export const excludesFor = (req: SyncRequest, step: sync.Step): string[] => {
   if (req.direction !== 'push') return []
   const out: string[] = []
   if (req.skip_renders && step.key === 'project') out.push(...RENDER_DIRS.map((d) => `${d}/`))
+  if (req.skip_tests && step.key === 'project') out.push(`/${TEST_DIR}/`)
   if (step.key === 'comfy-shared' && req.shared) out.push(...SHARED_DIRS.filter((d) => !req.shared!.includes(d)).map((d) => `/${d}/`))
   return out
 }
@@ -304,14 +307,14 @@ function commandFor(req: SyncRequest, transport: Transport, step: sync.Step, mou
   return req.direction === 'push' ? sync.rsyncCmd(local, transport.host!, transport.port!, remote, o) : sync.rsyncPullCmd(transport.host!, transport.port!, remote, local, o)
 }
 
-/** What a run would send, from the listing passes: all of it, and without the renders when the plan has the project. The confirmation shows both. */
+/** What a run would send, from the listing passes: all of it, and with the request's own skips (the renders, the test bucket) when the plan has the project. The confirmation shows the one the switches describe. */
 export async function countFor(request: SyncRequest, client?: rp.RunPodClient, exec: Exec = runCommand): Promise<{ all: Counts; without_renders?: Counts }> {
   const req = resolved(request)
   const steps = planFor(req)
   const project = req.direction === 'push' && steps.some((s) => s.key === 'project')
   if (mounts.dryRun(mounts.load())) {
-    const all = sumCounts(steps.map((s, n) => parseStats(simStats(n, excludesFor({ ...req, skip_renders: false }, s)))), steps.length)
-    return { all, without_renders: project ? sumCounts(steps.map((s, n) => parseStats(simStats(n, excludesFor({ ...req, skip_renders: true }, s)))), steps.length) : undefined }
+    const all = sumCounts(steps.map((s, n) => parseStats(simStats(n, excludesFor({ ...req, skip_renders: false, skip_tests: false }, s)))), steps.length)
+    return { all, without_renders: project ? sumCounts(steps.map((s, n) => parseStats(simStats(n, excludesFor(req, s)))), steps.length) : undefined }
   }
   const transport = await transportFor(req.pod_id, client)
   if (transport.kind !== 'ssh') return { all: {} }
@@ -320,10 +323,10 @@ export async function countFor(request: SyncRequest, client?: rp.RunPodClient, e
   const signal = new AbortController().signal
   const list = (step: sync.Step, exclude: string[]) => listStep(commandFor(req, transport, step, mountPath, { progress, verbose: true, dryRun: true, stats: true, exclude }), signal, process.env, exec)
   const counts: Counts[] = []
-  for (const step of steps) counts.push(await list(step, excludesFor({ ...req, skip_renders: false }, step)))
+  for (const step of steps) counts.push(await list(step, excludesFor({ ...req, skip_renders: false, skip_tests: false }, step)))
   const all = sumCounts(counts, steps.length)
   if (!project) return { all }
-  const without = await Promise.all(steps.map((step, i) => (step.key === 'project' ? list(step, excludesFor({ ...req, skip_renders: true }, step)) : Promise.resolve(counts[i]))))
+  const without = await Promise.all(steps.map((step, i) => (step.key === 'project' ? list(step, excludesFor(req, step)) : Promise.resolve(counts[i]))))
   return { all, without_renders: sumCounts(without, steps.length) }
 }
 

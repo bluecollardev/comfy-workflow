@@ -572,7 +572,7 @@
     "skipRendersHelp": "The renders already made stay on this PC; the pod makes new ones. Pull is what brings renders back.",
     "counting": "Counting the files to send…",
     "planCounts": "{files} files, {bytes}",
-    "planCountsWithout": "{files} files, {bytes} without the renders",
+    "planCountsWithout": "{files} files, {bytes} with the skipped folders left out",
     "noCount": "The count is not known in advance on this transport.",
     "listing": "Listing {folder}: counting the files to copy…",
     "countFiles": "{n} files copied",
@@ -583,7 +583,9 @@
     "rawOutput": "Raw rsync output",
     "transport": "Copying {how}.",
     "sharedTitle": "ComfyUI-Shared folders to send",
-    "sharedHelp": "Starts from this pod's Configuration (else the Default Configuration). Output is what pods write, so it is usually left behind. Anything else in the folder always goes."
+    "sharedHelp": "Starts from this pod's Configuration (else the Default Configuration). Output is what pods write, so it is usually left behind. Anything else in the folder always goes.",
+    "skipTests": "Skip Binc's test bucket (80_TEST-BUCKET)",
+    "skipTestsHelp": "Quick-test renders for his timeline; no shot's graph reads them. They stay on this PC."
   },
   "mcp": {
     "intro": "Two MCP servers come with this app: the pod manager (what the dashboard does) and the ComfyUI bridge (inside one ComfyUI). A client launches them with this app as its program, nothing else to install, or reaches them over HTTP while the app serves them. Pick a client below, copy its setup, and press Check to see the server answer from here.",

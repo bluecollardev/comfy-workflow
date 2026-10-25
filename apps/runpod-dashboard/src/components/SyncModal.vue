@@ -25,10 +25,12 @@
       <div v-if="direction === 'push' && plan.some((s) => s.key === 'project')" class="mb-2">
         <BFormCheckbox v-model="skipRenders" switch data-testid="sync-skip-renders">{{ $t('sync.skipRenders') }}</BFormCheckbox>
         <div class="form-text">{{ $t('sync.skipRendersHelp') }}</div>
+        <BFormCheckbox v-model="skipTests" switch class="mt-2" data-testid="sync-skip-tests">{{ $t('sync.skipTests') }}</BFormCheckbox>
+        <div class="form-text">{{ $t('sync.skipTestsHelp') }}</div>
       </div>
       <div v-if="!planError && plan.length" class="small mb-2" data-testid="sync-plan-counts">
         <template v-if="counts.pending"><BSpinner small class="me-1" />{{ $t('sync.counting') }}</template>
-        <template v-else-if="counts.all.total_files != null">{{ $t('sync.planCounts', { files: fmtN(counts.all.total_files), bytes: formatBytes(counts.all.total_bytes) }) }}<template v-if="counts.without_renders?.total_files != null">; {{ $t('sync.planCountsWithout', { files: fmtN(counts.without_renders.total_files), bytes: formatBytes(counts.without_renders.total_bytes) }) }}</template></template>
+        <template v-else-if="counts.all.total_files != null">{{ $t(skipping ? 'sync.planCountsWithout' : 'sync.planCounts', { files: fmtN(shownCounts.total_files), bytes: formatBytes(shownCounts.total_bytes) }) }}</template>
         <template v-else>{{ $t('sync.noCount') }}</template>
       </div>
       <div v-if="planError" class="text-danger small mb-2" data-testid="sync-plan-error">{{ planError }}</div>
@@ -93,11 +95,15 @@ const plates = ref(false)
 const approvedBy = ref('')
 const SHARED = ['input', 'models', 'output', 'workflows']
 const shared = ref(null)   // the ComfyUI-Shared subfolders this run carries: this pod's own configuration, else the default's, until changed here
+const skipTests = ref(true)   // Binc's 80_TEST-BUCKET stays home too
 const skipRenders = ref(true)   // the shots' existing renders stay behind on a push; Pull brings renders back
 const plan = ref([])
 const transport = ref({ kind: 'none', reason: '' })
 const planError = ref(null)
 const counts = ref({ pending: false, all: {}, without_renders: undefined })   // from the listing passes: what the push would send, both ways
+// the figure follows the switch: with the renders skipped, what the push sends without them (a pull, or no project step, has one figure)
+const skipping = computed(() => (skipRenders.value || skipTests.value) && counts.value.without_renders?.total_files != null)
+const shownCounts = computed(() => (skipping.value ? counts.value.without_renders : counts.value.all))
 const fmtN = (x) => Number(x).toLocaleString('en-US')
 let countRun = 0
 async function loadCounts() {
@@ -134,13 +140,14 @@ function ingest(ev) {
   if (!scrollQueued) { scrollQueued = true; nextTick(() => { scrollQueued = false; for (const el of [out.value, fileList.value]) if (el) el.scrollTop = el.scrollHeight }) }
 }
 
-const request = () => ({ pod_id: props.pod.id, direction: direction.value, plates: plates.value, approved_by: approvedBy.value, skip_renders: skipRenders.value, ...(shared.value ? { shared: [...shared.value] } : {}) })
+const request = () => ({ pod_id: props.pod.id, direction: direction.value, plates: plates.value, approved_by: approvedBy.value, skip_renders: skipRenders.value, skip_tests: skipTests.value, ...(shared.value ? { shared: [...shared.value] } : {}) })
 async function loadPlan() {
   planError.value = null
   try { const r = await syncAPI.plan(request()); plan.value = r.steps; transport.value = r.transport; if (shared.value === null && r.shared) shared.value = [...r.shared] } catch (e) { plan.value = []; planError.value = e.message }
   if (plan.value.length && transport.value.kind !== 'none') loadCounts()
 }
 watch([direction, plates, approvedBy], loadPlan)
+watch([skipRenders, skipTests], () => { if (plan.value.length && transport.value.kind !== 'none') loadCounts() })   // the figure is for the switches as set
 watch(shared, (v, old) => { if (old) { loadPlan() } }, { deep: true })   // another set of folders is another plan and another count
 
 let off = () => {}
