@@ -34,11 +34,18 @@
     "mcp:bundle": "esbuild mcp/server.mjs mcp/comfy-bridge.mjs --bundle --platform=node --format=cjs --target=node22 --define:__MCP_BUNDLE__=true --define:import.meta.url=undefined --log-level=warning --outdir=mcp/dist --out-extension:.js=.cjs"
   },
   "dependencies": {
+    "@codemirror/commands": "^6.11.1",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/theme-one-dark": "^6.1.3",
+    "@codemirror/view": "^6.43.15",
     "@fortawesome/fontawesome-free": "^7.3.1",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "axios": "^1.20.0",
     "bootstrap": "^5.3.8",
     "bootstrap-vue-next": "^1.2.2",
+    "codemirror": "^6.0.2",
     "pinia": "^4.1.0",
     "vue": "^3.5.44",
     "vue-i18n": "^11.4.16"

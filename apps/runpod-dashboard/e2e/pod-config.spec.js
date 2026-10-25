@@ -78,3 +78,25 @@ test.describe('a pod with its own configuration', () => {
     await expect(card.getByTestId('pod-config-badge')).toBeHidden()
   })
 })
+
+test.describe('a pod\'s own Configuration › environment', () => {
+  test('loads the env and the build args from the Dockerfile, as the Create Pod form does', async ({ page, api }) => {
+    api.state.imageEnv = [{ key: 'COMFYUI_PORT', value: '8188' }]
+    api.state.imageBuildArgs = [{ key: 'TORCH_VERSION', value: '2.6.0' }]
+    await page.goto('/')
+    await podCard(page, 'ComfyUI-Dev').getByTestId('pod-config').click()
+    const panel = modal(page, t('config.podTitle', { name: 'ComfyUI-Dev' }))
+    await expect(panel.getByTestId('config-modal-pod')).toBeVisible()
+    const tab = panel.getByTestId('cfg-tab-environment')
+    if (await tab.count()) await tab.click()
+    await panel.getByTestId('cfg-env-load-menu').click()
+    await panel.getByTestId('cfg-env-load-dockerfile').click()
+    await expect(panel.getByTestId('cfg-env-key')).toHaveCount(2)
+    await expect(panel.getByTestId('cfg-env-arg')).toHaveCount(1)
+    await expect(panel.getByTestId('cfg-env-summary')).toContainText('1 env and 1 build args')
+    await panel.getByTestId('config-apply').click()
+    await expect(page.getByTestId('toast').filter({ hasText: t('toast.podConfigSet') })).toBeVisible()
+    const put = api.calls.filter((c) => c.method === 'PUT' && c.path.endsWith('/config')).at(-1)
+    expect(put.body.env).toEqual({ COMFYUI_PORT: '8188', TORCH_VERSION: '2.6.0' })
+  })
+})

@@ -101,3 +101,10 @@ $enable-shadows: false;
 .card-actions .btn i { font-size: 0.8rem; }
 
 .min-w-0 { min-width: 0; }
+
+// A dismissible alert with tighter padding (py-1, py-2) keeps its close icon centred on the right: Bootstrap positions .btn-close for the
+// default 1rem padding, which left it hanging off the bottom edge of the Studio's error alert (screenshot, 2026-10-24).
+.alert-dismissible.py-1, .alert-dismissible.py-2 {
+  padding-right: 2.75rem;
+  .btn-close { top: 50%; transform: translateY(-50%); padding: 0.5rem 0.75rem; }
+}

@@ -1,5 +1,5 @@
 /**
- * Settings that are secrets or machine-wide: the RunPod API key. Stored in
+ * Settings that are secrets or machine-wide: the RunPod API key (and the optional Anthropic key for writing adapters). Stored in
  * ~/.config/runpod-pod-manager/.env, the file the Electron shell and the deprecated Python
  * backend already read at start, so one place serves every runtime. Setting a key also puts it
  * in this process's environment, so the next RunPod call uses it without a restart.
@@ -10,7 +10,7 @@ import { bad } from './errors.js'
 import { configDir } from './paths.js'
 
 export const file = () => process.env.SETTINGS_ENV_FILE || join(configDir(), '.env')
-const KEYS = ['RUNPOD_API_KEY', 'RUNPOD_S3_ACCESS_KEY', 'RUNPOD_S3_SECRET_KEY'] as const   // the S3 pair: uploads onto a volume with no pod (ADR-007 G)
+const KEYS = ['RUNPOD_API_KEY', 'RUNPOD_S3_ACCESS_KEY', 'RUNPOD_S3_SECRET_KEY', 'ANTHROPIC_API_KEY'] as const   // ANTHROPIC_API_KEY: only for "Write an adapter with Claude" (ADR-008); optional   // the S3 pair: uploads onto a volume with no pod (ADR-007 G)
 
 function readEnvFile(): Record<string, string> {
   const f = file()
@@ -49,16 +49,23 @@ export function get() {
   const stored = readEnvFile()
   const key = process.env.RUNPOD_API_KEY || stored.RUNPOD_API_KEY || ''
   const s3 = (process.env.RUNPOD_S3_ACCESS_KEY || stored.RUNPOD_S3_ACCESS_KEY || '') && (process.env.RUNPOD_S3_SECRET_KEY || stored.RUNPOD_S3_SECRET_KEY || '')
-  return { s3_keys_set: !!s3, s3_access_key_hint: hint(process.env.RUNPOD_S3_ACCESS_KEY || stored.RUNPOD_S3_ACCESS_KEY || ''), runpod_api_key_set: !!key, runpod_api_key_hint: hint(key), source: process.env.RUNPOD_API_KEY && !stored.RUNPOD_API_KEY ? 'environment' : stored.RUNPOD_API_KEY ? file() : 'none' }
+  const claude = process.env.ANTHROPIC_API_KEY || stored.ANTHROPIC_API_KEY || ''
+  return { anthropic_key_set: !!claude, anthropic_key_hint: hint(claude), s3_keys_set: !!s3, s3_access_key_hint: hint(process.env.RUNPOD_S3_ACCESS_KEY || stored.RUNPOD_S3_ACCESS_KEY || ''), runpod_api_key_set: !!key, runpod_api_key_hint: hint(key), source: process.env.RUNPOD_API_KEY && !stored.RUNPOD_API_KEY ? 'environment' : stored.RUNPOD_API_KEY ? file() : 'none' }
 }
 
 /** Store a secret. An empty value leaves the stored one alone; `null` removes it. */
-export function set(values: { runpod_api_key?: string | null; runpod_s3_access_key?: string | null; runpod_s3_secret_key?: string | null }) {
+export function set(values: { anthropic_api_key?: string | null; runpod_api_key?: string | null; runpod_s3_access_key?: string | null; runpod_s3_secret_key?: string | null }) {
   const updates: Record<string, string> = {}
   for (const [field, name] of [['runpod_s3_access_key', 'RUNPOD_S3_ACCESS_KEY'], ['runpod_s3_secret_key', 'RUNPOD_S3_SECRET_KEY']] as const) {
     const v = values[field]
     if (v === null) updates[name] = ''
     else if (v && v.trim()) { if (/\s/.test(v.trim())) throw bad(`${name}: no spaces`); updates[name] = v.trim() }
+  }
+  if (values.anthropic_api_key === null) updates.ANTHROPIC_API_KEY = ''
+  else if (values.anthropic_api_key && values.anthropic_api_key.trim()) {
+    const v = values.anthropic_api_key.trim()
+    if (/\s/.test(v) || v.length < 20) throw bad('That does not look like an Anthropic API key (no spaces, at least 20 characters)')
+    updates.ANTHROPIC_API_KEY = v
   }
   if (values.runpod_api_key === null) updates.RUNPOD_API_KEY = ''
   else if (values.runpod_api_key) {
@@ -78,4 +85,20 @@ export function set(values: { runpod_api_key?: string | null; runpod_s3_access_k
 export function applyToEnv(): void {
   const stored = readEnvFile()
   for (const k of KEYS) if (!process.env[k] && stored[k]) process.env[k] = stored[k]
+}
+
+/** Where the Anthropic API is: the real one, or ANTHROPIC_API_URL (a stand-in for tests). */
+export const anthropicBase = () => (process.env.ANTHROPIC_API_URL || 'https://api.anthropic.com').replace(/\/+$/, '')
+
+/** Does an Anthropic key work? The one given (a key typed in the panel, not stored), else the stored one. One cheap call (GET /v1/models, one row). Never throws: { ok, error? }. `fetchImpl` is for tests. */
+export async function checkAnthropic(typed: string | null = null, fetchImpl: typeof fetch = fetch): Promise<{ ok: boolean; error?: string }> {
+  const key = (typed || '').trim() || lookup('ANTHROPIC_API_KEY')
+  if (!key) return { ok: false, error: 'No Anthropic API key is set' }
+  if (/\s/.test(key) || /[^\x20-\x7e]/.test(key)) return { ok: false, error: 'That does not look like an Anthropic API key (no spaces or odd characters)' }
+  try {
+    const res = await fetchImpl(`${anthropicBase()}/v1/models?limit=1`, { headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' } })
+    if (res.ok) return { ok: true }
+    const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } }
+    return { ok: false, error: `Anthropic answered ${res.status}: ${body.error?.message || 'no detail'}` }
+  } catch (e) { return { ok: false, error: `Could not reach Anthropic: ${(e as Error).message}` } }
 }

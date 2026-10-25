@@ -113,6 +113,19 @@ test.describe('pod card', () => {
     await expect(card.getByTestId('pod-progress')).toHaveCount(0)
   })
 
+  test('Import Shot Pack is a primary button on its own row and opens the Import Shot Pack modal', async ({ page }) => {
+    await page.goto('/')
+    const card = podCard(page, 'ComfyUI-Dev')
+    const btn = card.getByTestId('pod-import')
+    await expect(btn).toHaveText(t('pod.importShotPack'))
+    await expect(btn).toHaveClass(/btn-primary/)
+    const [row, actions] = await Promise.all([btn.boundingBox(), card.getByTestId('pod-config').boundingBox()])
+    expect(row.y).toBeGreaterThan(actions.y + actions.height - 1)   // below the Config / Sync / Details / Logs row, not in it
+    await btn.click()
+    const dialog = page.locator('.modal.show', { hasText: t('import.title') })
+    await expect(dialog.getByTestId('import-pane')).toBeVisible()
+  })
+
   test('the Config button is short, and Sync in a plain browser says it runs in the app', async ({ page }) => {
     await page.goto('/')
     const card = podCard(page, 'ComfyUI-Dev')

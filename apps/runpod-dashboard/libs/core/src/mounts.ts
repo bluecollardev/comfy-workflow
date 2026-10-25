@@ -361,6 +361,7 @@ export function payload(cfg: MountsConfig) {
     config: cfg,
     mode: mode(),
     dry_run: dryRun(cfg),
+    dry_run_forced: process.env.RUNPOD_DRY_RUN === '1',   // no-spend mode is on because of the environment: the switch cannot turn it off
     require: [...requiredKeys(cfg)].sort(),
     require_source: requireSource(),
     stored: stored(),

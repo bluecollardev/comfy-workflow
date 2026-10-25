@@ -89,6 +89,45 @@ export function defaultState() {
         'comfy-bridge': { ok: false, tools: [], definitions: [], error: 'The server exited (code 2) before answering\nNo ComfyUI answers at https://pod-aaaaaaaa-8188.proxy.runpod.net', ms: 340 },
       },
     },
+    // The Import Shot Pack modal (docs/ADR-008): the adapters, the plan each known folder gets, and what applying says.
+    imports: {
+      adapters: [
+        { id: 'comfy-shared', name: 'A ComfyUI-Shared folder', version: 1, builtin: true, sha256: 'a'.repeat(64), file: '' },
+        { id: 'panama-imax-redux', name: 'Panama Canal v2 delivery package', version: 1, builtin: true, sha256: 'b'.repeat(64), file: '' },
+        { id: 'agent-made', name: 'Agent made', version: 1, builtin: false, sha256: 'c'.repeat(64), file: '/home/me/.config/runpod-pod-manager/adapters/agent-made.mjs' },
+      ],
+      sources: {
+        'comfy-shared': "/**\n * What it does: maps a package folder onto ComfyUI-Shared. Detects: its telltale files. Maps: input to input, workflows to workflows.\n * Leaves in place: everything else. Needs / assumes: nothing special. Limits: a test double.\n */\nexport default { id: 'comfy-shared', name: 'A ComfyUI-Shared folder', async detect() {}, async plan() {} }",
+        'panama-imax-redux': "/**\n * What it does: maps a package folder onto ComfyUI-Shared. Detects: its telltale files. Maps: input to input, workflows to workflows.\n * Leaves in place: everything else. Needs / assumes: nothing special. Limits: a test double.\n */\nexport default { id: 'panama-imax-redux', name: 'Panama Canal v2 delivery package', async detect() {}, async plan() {} }",
+        'agent-made': "/**\n * What it does: maps a package folder onto ComfyUI-Shared. Detects: its telltale files. Maps: input to input, workflows to workflows.\n * Leaves in place: everything else. Needs / assumes: nothing special. Limits: a test double.\n */\nexport default { id: 'agent-made', name: 'Agent made', async detect() {}, async plan() {} }",
+      },
+      plans: {
+        '/Users/lucas/Projects/package': {
+          adapter: { id: 'panama-imax-redux', name: 'Panama Canal v2 delivery package', version: 1, builtin: true }, source: '/Users/lucas/Projects/package', fenced: true,
+          ops: [{ op: 'copy', kind: 'input', from: 'shotA/comfy/input/ref.png', to: 'input/shots/shotA/ref.png', bytes: 715929 }, { op: 'copy', kind: 'workflow', from: 'shotA/comfy/workflows/shotA-v01.json', to: 'workflows/panama-imax-redux/round/shotA-v01.json', bytes: 170502 }, { op: 'note', kind: 'reference', from: 'shotA/final', note: 'shotA/final: 1 files left in place' }],
+          findings: [{ level: 'info', text: 'built on ComfyUI 0.39.2' }, { level: 'warn', text: '3 FalAPI_* node types are used and no fal pack came with this folder' }],
+          summary: { copies: 32, links: 0, notes: 3, bytes: 267700000, by_kind: { input: { files: 30, bytes: 267600000 }, workflow: { files: 2, bytes: 123000 } } },
+        },
+      },
+      prompts: {},   // adapter id -> its prompt text
+      conflicts: 0,   // how many files the next real apply reports as conflicts
+      lastApply: null,
+    },
+    // The Adapter Studio (docs/ADR-009): the package's tree and files, the chat's scripted turns, what a Save answers.
+    studio: {
+      tree: {
+        entries: [
+          { path: 'shotA', dir: true, bytes: 0, files: 4 }, { path: 'shotA/comfy', dir: true, bytes: 0, files: 2 }, { path: 'shotA/comfy/input', dir: true, bytes: 0, files: 1 },
+          { path: 'shotA/comfy/input/ref.png', dir: false, bytes: 715929 }, { path: 'shotA/comfy/workflows', dir: true, bytes: 0, files: 1 }, { path: 'shotA/comfy/workflows/shotA-v01.json', dir: false, bytes: 170502 },
+          { path: 'shotA/final', dir: true, bytes: 0, files: 1 }, { path: 'shotA/final/shotA.mov', dir: false, bytes: 6300000000 }, { path: 'shotA/notes.txt', dir: false, bytes: 120 },
+          { path: 'MANIFEST.json', dir: false, bytes: 2048 }, { path: 'README.md', dir: false, bytes: 900 },
+        ], truncated: false, total: 11,
+      },
+      files: { 'README.md': { kind: 'text', text: '# Delivery\nThe graphs are in shotA/comfy/workflows.', bytes: 900 }, 'MANIFEST.json': { kind: 'json', text: '{\n  "for": "Brynley"\n}', bytes: 2048 } },
+      turns: [],        // functions (chatState, fixtureState) => { events, done?, created? } the next /studio/step calls take, in order
+      nextSave: null,   // what the next /studio/save-checked answers instead of the default (valid, no rounds)
+      steps: 0, saves: [], documented: [], sent: [],
+    },
     failures: {},
   }
 }
@@ -147,7 +186,7 @@ function mountsPayload(state) {
   const links = folders.filter((f) => f.declared).map((f) => ({ path: f.declared.path, target: f.container, required: f.required, mode: f.mode, what: f.what, folder: f.key }))
   const env = Object.fromEntries(folders.filter((f) => f.env_key).map((f) => [f.env_key, f.container]))
   if (links.length) env.COMFY_LINKS = links.map((l) => `${l.path}=${l.target}`).join(';')
-  return { ...state.mounts, config: c, folders, links, require: Object.keys(required).filter((k) => required[k]),
+  return { ...state.mounts, config: c, dry_run: !!c.dry_run || !!state.mounts.dryForced, dry_run_forced: !!state.mounts.dryForced, folders, links, require: Object.keys(required).filter((k) => required[k]),
     local_env: Object.fromEntries(folders.filter((f) => f.env_key && f.local).map((f) => [f.env_key, f.local])),
     preview: { env, ...(c.network_volume_id ? { network_volume_id: c.network_volume_id, volume_mount_path: c.mount_path } : {}) } }
 }
@@ -181,7 +220,11 @@ export async function mockApi(page, state) {
     let m
     // pods
     if (method === 'GET' && path === '/settings') return json(state.settings)
-    if (method === 'PUT' && path === '/settings') { if (body.runpod_api_key) state.settings = { runpod_api_key_set: true, runpod_api_key_hint: '••••' + body.runpod_api_key.slice(-4), source: '/home/me/.config/runpod-pod-manager/.env' }; return json(state.settings) }
+    if (method === 'PUT' && path === '/settings') {
+      if (body.runpod_api_key) state.settings = { ...state.settings, runpod_api_key_set: true, runpod_api_key_hint: '••••' + body.runpod_api_key.slice(-4), source: '/home/me/.config/runpod-pod-manager/.env' }
+      if (body.anthropic_api_key) state.settings = { ...state.settings, anthropic_key_set: true, anthropic_key_hint: '••••' + body.anthropic_api_key.slice(-4) }
+      return json(state.settings)
+    }
     if (method === 'GET' && path === '/mounts') return json(mountsPayload(state))
     if (method === 'PUT' && path === '/mounts') { state.mounts.config = body; state.mounts.stored = true; return json(mountsPayload(state)) }
     if (method === 'POST' && path === '/mounts/preview') return json(mountsPayload({ ...state, mounts: { ...state.mounts, config: { ...state.mounts.config, ...body } } }))
@@ -215,7 +258,7 @@ export async function mockApi(page, state) {
       delete state.volumes[m[1]]; return json({ removed: m[1], was_default: false })
     }
     if ((m = path.match(/^\/volumes\/([^/]+)\/default$/)) && method === 'POST') { const v = state.volumes[m[1]]; state.mounts.config.network_volume_id = v.id; state.mounts.config.data_center_id = v.datacenter; return json({ ...v, is_default: true }) }
-    if (method === 'GET' && path === '/dashboard') return json({ stats: stats(state.pods), pods: state.pods, dry_run: !!state.mounts.config.dry_run })
+    if (method === 'GET' && path === '/dashboard') return json({ stats: stats(state.pods), pods: state.pods, dry_run: !!state.mounts.config.dry_run || !!state.mounts.dryForced })
     if (method === 'GET' && path === '/pods') return json(state.pods)
     if (method === 'POST' && path === '/pods') {
       const pod = { id: `pod-new-${state.pods.length + 1}`, name: body.name, status: 'starting', gpu: body.gpu, vram: 24,
@@ -289,6 +332,126 @@ export async function mockApi(page, state) {
     if (method === 'GET' && path === '/repos/search') return json({ repos: filterRepos(state.accountRepos, query.q) })
     if (method === 'GET' && path === '/repos/branches') return json(state.branches)
     if (method === 'GET' && path === '/repos/folders') return json({ url: query.url, branch: query.branch, folders: state.folders })
+    if (method === 'POST' && path === '/settings/anthropic/check') { state.settings.anthropicChecks = [...(state.settings.anthropicChecks || []), body.key || null]; return json((body.key || state.settings.anthropic_key_set) ? ((state.settings.anthropicRejects || (body.key && body.key.includes('BAD'))) ? { ok: false, error: 'Anthropic answered 401: invalid x-api-key' } : { ok: true }) : { ok: false, error: 'No Anthropic API key is set' }) }
+    // The Adapter Studio
+    if (method === 'GET' && path === '/studio/tree') return json(state.studio.tree)
+    if (method === 'GET' && path === '/studio/file') { const f = state.studio.files[query.path]; return f ? json({ path: query.path, ...f }) : json({ path: query.path, kind: 'text', text: `contents of ${query.path}`, bytes: 40 }) }
+    if (method === 'GET' && path === '/studio/context') return json({ source: query.folder, total_files: 11, dirs: [{ path: 'shotA', files: 4 }], sample: ['README.md'], texts: [{ path: 'MANIFEST.json', bytes: 2048, sent_bytes: 2048 }, { path: 'README.md', bytes: 900, sent_bytes: 900 }], spec_bytes: 9000 })
+    if (method === 'POST' && path === '/studio/step') {
+      const st = body.state
+      state.studio.steps++; state.studio.sent.push(st)
+      if (state.studio.delay) await new Promise((r) => setTimeout(r, state.studio.delay))
+      const turn = state.studio.turns.shift() || (() => ({ events: [{ kind: 'text', text: 'Noted.' }], done: true }))
+      const out = turn(st, state)
+      const next = { ...st, calls: st.calls + 1, created: out.created || st.created, adapter: out.adapter || st.adapter, messages: [...st.messages, { role: 'assistant', content: out.events.filter((e) => e.kind === 'text').map((e) => ({ type: 'text', text: e.text })) }] }
+      return json({ state: next, events: out.events, done: out.done !== false })
+    }
+    if (method === 'POST' && path === '/studio/save-checked') {
+      if (state.studio.saveFails) return json({ detail: state.studio.saveFails }, 400)
+      const scripted = state.studio.nextSave; state.studio.nextSave = null
+      let a = state.imports.adapters.find((x) => x.id === body.id)
+      if (!a) { a = { id: body.id, name: body.id, version: 1, builtin: false, sha256: 'e'.repeat(64), file: `/home/me/.config/runpod-pod-manager/adapters/${body.id}.mjs` }; state.imports.adapters.push(a) }
+      else if (a.builtin) { (state.imports.originals ||= {})[body.id] ??= state.imports.sources[body.id]; a.modified = true; a.file = `/home/me/.config/runpod-pod-manager/adapters/${body.id}.mjs` }
+      const text = scripted?.text ?? body.text
+      state.imports.sources[body.id] = text
+      const nm = /name:\s*"([^"]*)"|name:\s*'([^']*)'/.exec(text); if (nm) a.name = nm[1] ?? nm[2]
+      a.sha256 = String((state.imports.saves = (state.imports.saves || 0) + 1)).padStart(64, '0')
+      state.studio.saves.push({ id: body.id, text: body.text, folder: body.folder })
+      return json({ adapter: a, valid: scripted ? scripted.valid : true, errors: scripted?.errors || [], rounds: scripted?.rounds || [], text, tested: !!body.folder })
+    }
+    if (method === 'POST' && path === '/studio/document') {
+      const code = state.imports.sources[body.id] || ''
+      state.imports.sources[body.id] = `/**\n * Documented by Claude. What it does: maps a package onto ComfyUI-Shared. Detects: its manifest. Maps: inputs to input/, workflows to workflows/.\n * Leaves in place: finals and provenance. Needs / assumes: a MANIFEST.json. Limits: none known.\n */\n${code.slice(code.search(/export default/))}`
+      state.studio.documented.push(body.id)
+      return json({ header: '/** ... */', before: '' })
+    }
+    if (method === 'GET' && path === '/imports/prompt') return json(state.imports.prompts[query.id] || '')
+    if (method === 'PUT' && path === '/imports/prompt') { state.imports.prompts[body.id] = body.text; return json({ id: body.id, bytes: body.text.length }) }
+    if (method === 'POST' && path === '/imports/rename') {
+      const a = state.imports.adapters.find((x) => x.id === body.id)
+      if (!a) return json({ detail: `no adapter ${body.id}` }, 400)
+      if (a.builtin) return json({ detail: `${a.id} is a built-in adapter` }, 400)
+      if (body.name) a.name = body.name
+      if (body.id !== undefined && body.new_id) { /* not used */ }
+      return json(a)
+    }
+    // Import (the Import Shot Pack modal)
+    if (method === 'GET' && path === '/imports/adapters') return json(state.imports.adapters)
+    if (method === 'GET' && path === '/imports/source') { const a = state.imports.adapters.find((x) => x.id === query.id); return a ? json({ id: a.id, sha256: a.sha256, text: state.imports.sources[a.id] || '', builtin: a.builtin, file: a.file || `/builtin/${a.id}.mjs` }) : json({ detail: `no adapter ${query.id}` }, 400) }
+    if (method === 'GET' && path === '/imports/draft-preview') return json({ source: query.source, total_files: 120, dirs: [{ path: 'shotA', files: 100 }, { path: 'shotA/comfy', files: 40 }], sample: ['shotA/comfy/input/a.png'], texts: [{ path: 'MANIFEST.json', bytes: 2048, sent_bytes: 2048 }, { path: '00_READ_ME.md', bytes: 40000, sent_bytes: 12288 }], spec_bytes: 9000 })
+    if (method === 'POST' && path === '/imports/describe') {
+      state.imports.described = (state.imports.described || 0) + 1
+      if (state.imports.describeFails) return json({ detail: state.imports.describeFails }, 400)
+      if (!state.settings.anthropic_key_set) return json({ detail: 'No Anthropic API key: set it in Default Configuration' }, 400)
+      return json({ description: 'A first test round for the finishing artist: three shots (a CGI plate, an archival shot and a creature shot) with their graphs, the files the graphs load, and the approved renders. Built on ComfyUI 0.39.2; the graphs need the fal node pack, which is not in the folder.', model: 'claude-sonnet-5-5', sent: { files: 120, dirs: 8, texts: ['MANIFEST.json', '00_READ_ME.md'] } })
+    }
+    if (method === 'POST' && path === '/imports/draft') {
+      if (!state.settings.anthropic_key_set) return json({ detail: 'No Anthropic API key: set it in Default Configuration' }, 400)
+      const id = body.id || 'draft-package'
+      let a = state.imports.adapters.find((x) => x.id === id)
+      if (!a) { a = { id, name: id, version: 1, builtin: false, sha256: 'd'.repeat(64), file: `/home/me/.config/runpod-pod-manager/adapters/${id}.mjs` }; state.imports.adapters.push(a) }
+      state.imports.sources[id] = `export default { id: "${id}" } // version ${(state.imports.drafts?.length || 0) + 1}`
+      state.imports.drafts = [...(state.imports.drafts || []), body]
+      state.imports.draftPlanError = null
+      const step = (state.imports.draftScript || [{ valid: true, errors: [] }])[Math.min(state.imports.drafts.length, (state.imports.draftScript || [1]).length) - 1]
+      return json({ adapter: a, model: 'claude-sonnet-5-5', valid: step.valid, errors: step.errors, ignored: step.ignored || 0 })
+    }
+    if (method === 'POST' && path === '/imports/sync-after') {
+      state.imports.syncAfterCalls = [...(state.imports.syncAfterCalls || []), body.pod_id]
+      if (!body.pod_id) return json({ action: 'skip', why: 'no-pod', configure: false })
+      if (!state.mounts.config.network_volume_id) return json({ action: 'skip', why: 'no-volume', configure: true })
+      if (body.pod_id.startsWith('dry-')) return json({ action: 'skip', why: 'simulated', configure: false })
+      return json({ action: 'sync', request: { pod_id: body.pod_id, direction: 'push', only: ['comfy-shared'], skip_renders: true } })
+    }
+    if (method === 'POST' && path === '/imports/save') {
+      if (!/export\s+default/.test(body.text)) return json({ detail: 'the adapter does not parse:\nUnexpected end of input' }, 400)
+      let a = state.imports.adapters.find((x) => x.id === body.id)
+      if (a && a.builtin) return json({ detail: `${body.id} is a built-in adapter` }, 400)
+      if (!a) { a = { id: body.id, name: body.id, version: 1, builtin: false, sha256: 'e'.repeat(64), file: `/home/me/.config/runpod-pod-manager/adapters/${body.id}.mjs` }; state.imports.adapters.push(a) }
+      state.imports.sources[body.id] = body.text; a.sha256 = String((state.imports.saves = (state.imports.saves || 0) + 1)).padStart(64, '0')
+      return json(a)
+    }
+    if (method === 'DELETE' && (m = path.match(/^\/imports\/adapters\/([^/]+)$/))) {
+      const a = state.imports.adapters.find((x) => x.id === decodeURIComponent(m[1]))
+      if (!a) return json({ detail: `no adapter ${m[1]}` }, 400)
+      if (a.builtin && !a.modified) return json({ detail: `${a.id} is a built-in adapter and has not been modified; there is nothing to delete or reset` }, 400)
+      if (a.builtin) { a.modified = false; state.imports.sources[a.id] = state.imports.originals[a.id]; a.file = ''; return json({ id: a.id, reset: true }) }
+      state.imports.adapters = state.imports.adapters.filter((x) => x !== a); delete state.imports.sources[a.id]
+      return json({ id: a.id })
+    }
+    if (method === 'GET' && path === '/imports/template') return json(`/**
+ * ${query.name || query.id}: an import adapter. What it does: (say). Detects: (say). Maps: (say). Leaves in place: (say).
+ * Needs / assumes: (say). Limits: (say).
+ */
+export default {
+  id: '${query.id}',
+  name: '${query.name || query.id}',
+  async detect(root, ctx) { return { match: 0, evidence: [] } },
+  async plan(root, ctx) { return { ops: [], findings: [] } },
+}
+`)
+    if (method === 'GET' && path === '/imports/duplicate') return json((state.imports.sources[query.from] || '').replace(/id:\s*'[^']+'/, `id: '${query.id}'`))
+    if (method === 'POST' && path === '/imports/validate') {
+      const errs = []
+      if (!/export\s+default/.test(body.text)) errs.push('there is no `export default { ... }`')
+      if (!/detect\s*[(:]/.test(body.text)) errs.push('there is no detect(root, ctx) function')
+      if (!/plan\s*[(:]/.test(body.text)) errs.push('there is no plan(root, ctx) function')
+      const head = (/^(?:\s*(?:\/\/[^\n]*\n|\/\*[\s\S]*?\*\/))+/.exec(body.text) || [''])[0]
+      if (head.replace(/[\/*\s]+/g, ' ').trim().length < 100) errs.push('there is no documentation header: a comment block before `export default` saying what it does, what it detects, what it maps where, what it leaves in place, what it assumes and its limits')
+      return json(errs)
+    }
+    if (method === 'POST' && path === '/imports/plan') {
+      const a = body.adapter && state.imports.adapters.find((x) => x.id === body.adapter)
+      if (a && a.id.startsWith('draft-') && state.imports.draftPlanError) return json({ detail: state.imports.draftPlanError }, 400)
+      const plan = a && a.id.startsWith('draft-') && state.imports.plans[body.source] ? { ...state.imports.plans[body.source], adapter: { id: a.id, name: a.name, version: 1, builtin: false } } : state.imports.plans[body.source]
+      return plan ? json(plan) : json({ detail: `no adapter recognises ${body.source}; write one (docs/IMPORT-ADAPTERS.md) or pick one with --adapter` }, 400)
+    }
+    if (method === 'POST' && path === '/imports/apply') {
+      state.imports.lastApply = body
+      const sm = body.plan.summary, dry = !!body.dryRun, conflict = dry ? 0 : state.imports.conflicts
+      const counts = dry ? { 'would-copy': sm.copies, noted: sm.notes } : { copied: sm.copies - conflict, ...(conflict ? { conflict } : {}), noted: sm.notes }
+      return json({ dry_run: dry, ok: !conflict, counts, results: conflict ? [{ i: 0, status: 'conflict', detail: 'input/a exists and differs' }] : [], record: dry ? null : '/home/me/.config/runpod-pod-manager/imports/2026-10-24-panama-imax-redux.json' })
+    }
     // MCP (the Connect › MCP tab)
     if (method === 'GET' && path === '/mcp/endpoints') return json(mcpEndpoints(state, query.comfy || ''))
     if (method === 'GET' && path === '/mcp/targets') return json(state.mcp.targets)
@@ -341,4 +504,10 @@ export async function expandSection(page, name) {
 
 export const podCard = (page, name) => page.locator(`[data-testid="pod-card"][data-name="${name}"]`)
 
+/** Default Configuration shows its sections as tabs on a wide screen and flows them on a narrow one: open the tab when there are tabs. */
+export const cfgTab = async (root, key) => {
+  await root.getByTestId('cfg-tabs').waitFor({ timeout: 4000 }).catch(() => {})   // the bar appears once the panel has loaded; on a narrow screen there is none
+  const tab = root.getByTestId(`cfg-tab-${key}`)
+  if (await tab.count()) await tab.click()
+}
 export const modal = (page, text) => page.locator('.modal.show', { hasText: text })

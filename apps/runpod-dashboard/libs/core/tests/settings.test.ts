@@ -23,4 +23,42 @@ describe('settings', () => {
     expect(settings.set({ runpod_api_key: null }).runpod_api_key_set).toBe(false)
     expect(process.env.RUNPOD_API_KEY).toBeUndefined()
   })
+
+  it('stores the optional Anthropic key like the others: hint only, in the .env, in the environment, removable', () => {
+    delete process.env.ANTHROPIC_API_KEY
+    expect(settings.get()).toMatchObject({ anthropic_key_set: false, anthropic_key_hint: '' })
+    expect(() => settings.set({ anthropic_api_key: 'short' })).toThrow(/does not look like an Anthropic/)
+    const r = settings.set({ anthropic_api_key: 'sk-ant-api03-0123456789ABCDWXYZ' })
+    expect(r).toMatchObject({ anthropic_key_set: true, anthropic_key_hint: '••••WXYZ' })
+    expect(JSON.stringify(r)).not.toContain('0123456789')
+    expect(process.env.ANTHROPIC_API_KEY).toBe('sk-ant-api03-0123456789ABCDWXYZ')
+    expect(readFileSync(join(dir, '.env'), 'utf8')).toContain('ANTHROPIC_API_KEY=sk-ant-api03-0123456789ABCDWXYZ')
+    expect(settings.set({ anthropic_api_key: '' }).anthropic_key_set).toBe(true)   // empty leaves it alone
+    expect(settings.set({ anthropic_api_key: null }).anthropic_key_set).toBe(false)
+    expect(process.env.ANTHROPIC_API_KEY).toBeUndefined()
+  })
+
+  it('checks the Anthropic key with one cheap call, and reports what Anthropic said', async () => {
+    delete process.env.ANTHROPIC_API_KEY
+    expect(await settings.checkAnthropic()).toEqual({ ok: false, error: 'No Anthropic API key is set' })
+    settings.set({ anthropic_api_key: 'sk-ant-api03-0123456789ABCDWXYZ' })
+    let seen: { url: string; key: string } | null = null
+    const good = (async (url: string, init: { headers: Record<string, string> }) => { seen = { url, key: init.headers['x-api-key'] }; return { ok: true, status: 200, json: async () => ({}) } }) as unknown as typeof fetch
+    expect(await settings.checkAnthropic(null, good)).toEqual({ ok: true })
+    expect(seen).toEqual({ url: 'https://api.anthropic.com/v1/models?limit=1', key: 'sk-ant-api03-0123456789ABCDWXYZ' })
+    const bad = (async () => ({ ok: false, status: 401, json: async () => ({ error: { message: 'invalid x-api-key' } }) })) as unknown as typeof fetch
+    expect(await settings.checkAnthropic(null, bad)).toEqual({ ok: false, error: 'Anthropic answered 401: invalid x-api-key' })
+    const down = (async () => { throw new Error('ECONNREFUSED') }) as unknown as typeof fetch
+    expect((await settings.checkAnthropic(null, down)).error).toMatch(/Could not reach Anthropic: ECONNREFUSED/)
+    // a typed key is tested without being stored
+    expect(await settings.checkAnthropic('sk-ant-api03-TYPEDTYPEDTYPEDTYPED', good)).toEqual({ ok: true })
+    expect(seen!.key).toBe('sk-ant-api03-TYPEDTYPEDTYPEDTYPED')
+    expect(settings.get().anthropic_key_hint).toBe('••••WXYZ')   // the stored one is untouched
+    expect((await settings.checkAnthropic('sk-ant-…', good)).error).toMatch(/does not look like/)   // the placeholder from earlier never reaches Anthropic
+    process.env.ANTHROPIC_API_URL = 'http://127.0.0.1:9/'
+    await settings.checkAnthropic(null, good)
+    expect(seen!.url).toBe('http://127.0.0.1:9/v1/models?limit=1')   // the stand-in URL, for tests
+    delete process.env.ANTHROPIC_API_URL
+    settings.set({ anthropic_api_key: null })
+  })
 })

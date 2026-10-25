@@ -46,6 +46,14 @@ test.describe('card actions over IPC', () => {
     const panel = page.locator('.modal.show', { has: page.getByTestId('config-modal-pod') })
     await expect(panel).toBeVisible()
     await panel.getByTestId('cfg-idle').fill('7')
+    // Environment: load the env and the build args from the repo's Dockerfile, as the Create Pod form does (images.env, the real parser)
+    await panel.getByTestId('cfg-tab-environment').click()
+    await panel.getByTestId('cfg-env-load-menu').click()
+    await panel.getByTestId('cfg-env-load-dockerfile').click()
+    await expect(panel.getByTestId('cfg-env-summary')).toContainText('apps/comfy-app/Dockerfile')
+    expect(await panel.getByTestId('cfg-env-key').count()).toBeGreaterThan(3)
+    expect(await panel.getByTestId('cfg-env-arg').count()).toBeGreaterThan(0)         // the Dockerfile's ARGs are marked
+    await panel.getByTestId('cfg-tab-volume').click()
     await panel.getByTestId('config-apply').click()                                    // pods.setConfig
     await expect(toast(page).last()).toContainText(t('toast.podConfigSet'))
     await expect(card.getByTestId('pod-config-badge')).toBeVisible()
@@ -92,6 +100,7 @@ test.describe('card actions over IPC', () => {
     const { page, configDir } = ctx
     await page.getByTestId('open-config').click()
     const dialog = page.locator('.modal.show', { has: page.getByTestId('config-modal') })
+    await dialog.getByTestId('cfg-tab-folders').click()   // Default Configuration is tabs on a wide screen
     await dialog.getByTestId('folder-row-project').getByTestId('folder-local').fill(configDir)   // something to copy
     await dialog.getByTestId('config-save').click()
     await expect(dialog).toBeHidden()

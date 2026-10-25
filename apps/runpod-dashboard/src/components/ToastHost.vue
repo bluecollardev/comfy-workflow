@@ -6,6 +6,7 @@
           <div class="d-flex">
             <div class="toast-body">
               <strong v-if="t.title" class="me-1">{{ t.title }}.</strong>{{ t.body }}
+              <a v-if="t.action" href="#" class="ms-1 text-reset fw-semibold" data-testid="toast-action" @click.prevent="t.action.run(); dismiss(t.id)">{{ t.action.label }}</a>
             </div>
             <button type="button" class="btn-close btn-close-white me-2 m-auto" :aria-label="$t('toast.close')" data-testid="toast-close" @click="dismiss(t.id)"></button>
           </div>

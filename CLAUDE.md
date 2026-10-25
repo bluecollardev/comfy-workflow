@@ -201,7 +201,7 @@ infra(scripts): add pod lifecycle management
 
 ### Automation
 
-- **`start.sh`** — One-command starts: `comfy`, `desktop`, `dashboard`, `pod <args>`, `sync`, `pull`, `mcp`, `test` (core + browser), `core-test`, `e2e`, `e2e-app`, `e2e-live`, `smoke`, `comfy-image`, `package [mac|win|linux|all] [--comfy <variant>]`, `stop`; IDE run configs in `.run/` (IntelliJ, one per command) and `.vscode/` call it
+- **`start.sh`** — One-command starts: `comfy`, `desktop`, `dashboard`, `pod <args>`, `sync`, `pull`, `import <folder> [--dry-run]` (a package folder into ComfyUI-Shared through an adapter, `docs/IMPORT-SHOT-PACKS.md`), `mcp`, `test` (core + browser), `core-test`, `e2e`, `e2e-app`, `e2e-live`, `smoke`, `comfy-image`, `package [mac|win|linux|all] [--comfy <variant>]`, `stop`; IDE run configs in `.run/` (IntelliJ, one per command) and `.vscode/` call it
 - **`apps/comfy-app/launch.sh`** — Start the local ComfyUI server (run `setup.sh` first on a new machine; see `apps/comfy-app/README.md`)
 - **`apps/runpod-dashboard/cli/index.mjs`** — the CLI over the core: `pod`, `sync`, `pull` (`./start.sh pod|sync|pull`)
 - **`apps/runpod-dashboard/mcp/server.mjs`** — the MCP server for Claude Code over the core (`./start.sh mcp`)

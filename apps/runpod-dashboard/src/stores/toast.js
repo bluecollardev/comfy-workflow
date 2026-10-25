@@ -10,6 +10,7 @@ import { t } from '../i18n'
  * Bootstrap toast markup, so what is in this list is what is on screen.
  */
 export const HIDE_AFTER_MS = 4000
+export const ACTION_HIDE_AFTER_MS = 12000
 
 /** The one line an API error has for people: FastAPI's detail, else the HTTP/axios message. */
 export const errorText = (e) => e?.response?.data?.detail || e?.message || String(e)
@@ -23,16 +24,18 @@ export const useToastStore = defineStore('toast', () => {
     if (i >= 0) toasts.value.splice(i, 1)
   }
 
-  function show(variant, body, title) {
+  /** `action` ({ label, run }) makes the toast clickable ("click here to configure"): it stays up longer, and running it dismisses it. */
+  function show(variant, body, title, action = null) {
     const id = nextId++
-    toasts.value.push({ id, variant, title, body, at: Date.now() })
-    setTimeout(() => dismiss(id), HIDE_AFTER_MS)
+    toasts.value.push({ id, variant, title, body, action, at: Date.now() })
+    setTimeout(() => dismiss(id), action ? ACTION_HIDE_AFTER_MS : HIDE_AFTER_MS)
     return id
   }
 
   const success = (body, title = t('toast.done')) => show('success', body, title)
   const error = (body, title = t('toast.failed')) => show('danger', body, title)
-  const info = (body, title = t('toast.note')) => show('info', body, title)
+  const info = (body, title = t('toast.note'), action = null) => show('info', body, title, action)
+  const warn = (body, title = t('toast.note'), action = null) => show('warning', body, title, action)
 
   /**
    * Run an action and toast its outcome. `label` names it for people ("Stop pod");
@@ -53,5 +56,5 @@ export const useToastStore = defineStore('toast', () => {
     }
   }
 
-  return { toasts, show, dismiss, success, error, info, run }
+  return { toasts, show, dismiss, success, error, info, warn, run }
 })

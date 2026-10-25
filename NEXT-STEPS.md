@@ -153,6 +153,8 @@ In order:
 
 ## Open decisions
 
+- **Adapter Studio, later (ADR-009 todo):** autosave with versions. Save is explicit for now and there is no Revert button (re-vibe: fix the prompt and build again); a version list per adapter (code and prompt), Revert, a diff and named versions come first, then autosave of the editor draft on top. Also streaming the model's text and a diff view for the agent's fixes.
+- Import adapters are built (CHANGELOG 2026-10-24). Open: what "run" means for Kyle's graphs on a pod (ADR-008 and the delivery notes say the PRODUCTION stereo graph is what runs, not the HISTORY ones); a CANALV2 adapter if Binc wants his own format imported; closing the adapter network gap with an OS sandbox (ADR-008, open point 2) and checking the fence in a packaged build; where the per-shot manifests of a Drive part live (cgi-042 and creature-266 manifests are not in part 1, so hashes are checked only on a merged folder); same shot id in two projects collides in `input/` (reported, never overwritten).
 - How local state and the pod's volume stay in line: Pull, the sync in the app, pushing less, a CPU sync pod, a bucket as the hub, or RunPod's S3 API onto a volume in a supported datacenter (no pod needed; Montreal is not supported, Romania is the safe pick). Options and a recommendation in `docs/ADR-007`; no decision yet (2026-10-21).
 - Which ShotPipe version, or several side by side, in the Mac install.
 - Whether rendering happens here at all, given the plates live on binc-PC. RunPod is the planned overflow; see the section above.
