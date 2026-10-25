@@ -151,6 +151,8 @@ test.describe('card actions over IPC', () => {
     for (const d of ['input', 'models', 'workflows']) await expect(sync.getByTestId(`sync-shared-${d}`)).toBeChecked()
     await expect(sync.getByTestId('sync-shared-output')).not.toBeChecked()
     await expect(sync.getByTestId('sync-plan-counts')).toHaveText(t('sync.planCountsWithout', { files: 5, bytes: '7.5 GB' }))   // no output files in the count
+    await expect(sync.getByTestId('sync-existing-update')).toBeChecked()                                    // what is already on the pod: send what changed, unless asked otherwise
+    for (const m of ['size', 'checksum', 'replace', 'update']) { await sync.getByTestId(`sync-existing-${m}`).check(); await expect(sync.getByTestId(`sync-existing-${m}`)).toBeChecked() }
     await sync.getByTestId('sync-skip-renders').uncheck(); await sync.getByTestId('sync-skip-tests').uncheck()   // the figure follows the switches: all of it again
     await expect(sync.getByTestId('sync-plan-counts')).toHaveText(t('sync.planCounts', { files: 6, bytes: '9.0 GB' }))
     await sync.getByTestId('sync-skip-renders').check(); await sync.getByTestId('sync-skip-tests').check()

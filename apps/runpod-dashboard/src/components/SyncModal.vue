@@ -28,6 +28,13 @@
         <BFormCheckbox v-model="skipTests" switch class="mt-2" data-testid="sync-skip-tests">{{ $t('sync.skipTests') }}</BFormCheckbox>
         <div class="form-text">{{ $t('sync.skipTestsHelp') }}</div>
       </div>
+      <div v-if="transport.kind === 'ssh'" class="mb-2" data-testid="sync-existing">
+        <div class="fw-semibold small mb-1">{{ $t('sync.existingTitle') }}</div>
+        <div v-for="m in EXISTING" :key="m" class="form-check">
+          <input :id="`sync-existing-${m}`" v-model="existing" type="radio" name="sync-existing" class="form-check-input" :value="m" :data-testid="`sync-existing-${m}`" />
+          <label class="form-check-label" :for="`sync-existing-${m}`">{{ $t(`sync.existing_${m}`) }} <span class="form-text d-block mt-0">{{ $t(`sync.existingHelp_${m}`) }}</span></label>
+        </div>
+      </div>
       <div v-if="!planError && plan.length" class="small mb-2" data-testid="sync-plan-counts">
         <template v-if="counts.pending"><BSpinner small class="me-1" />{{ $t('sync.counting') }}</template>
         <template v-else-if="counts.all.total_files != null">{{ $t(skipping ? 'sync.planCountsWithout' : 'sync.planCounts', { files: fmtN(shownCounts.total_files), bytes: formatBytes(shownCounts.total_bytes) }) }}</template>
@@ -95,6 +102,8 @@ const plates = ref(false)
 const approvedBy = ref('')
 const SHARED = ['input', 'models', 'output', 'workflows']
 const shared = ref(null)   // the ComfyUI-Shared subfolders this run carries: this pod's own configuration, else the default's, until changed here
+const EXISTING = ['update', 'size', 'checksum', 'replace']
+const existing = ref('update')   // what to do with a file already on the pod; the default sends what differs in size or time (rsync's own check)
 const skipTests = ref(true)   // Binc's 80_TEST-BUCKET stays home too
 const skipRenders = ref(true)   // the shots' existing renders stay behind on a push; Pull brings renders back
 const plan = ref([])
@@ -140,14 +149,14 @@ function ingest(ev) {
   if (!scrollQueued) { scrollQueued = true; nextTick(() => { scrollQueued = false; for (const el of [out.value, fileList.value]) if (el) el.scrollTop = el.scrollHeight }) }
 }
 
-const request = () => ({ pod_id: props.pod.id, direction: direction.value, plates: plates.value, approved_by: approvedBy.value, skip_renders: skipRenders.value, skip_tests: skipTests.value, ...(shared.value ? { shared: [...shared.value] } : {}) })
+const request = () => ({ pod_id: props.pod.id, direction: direction.value, plates: plates.value, approved_by: approvedBy.value, skip_renders: skipRenders.value, skip_tests: skipTests.value, existing: existing.value, ...(shared.value ? { shared: [...shared.value] } : {}) })
 async function loadPlan() {
   planError.value = null
   try { const r = await syncAPI.plan(request()); plan.value = r.steps; transport.value = r.transport; if (shared.value === null && r.shared) shared.value = [...r.shared] } catch (e) { plan.value = []; planError.value = e.message }
   if (plan.value.length && transport.value.kind !== 'none') loadCounts()
 }
 watch([direction, plates, approvedBy], loadPlan)
-watch([skipRenders, skipTests], () => { if (plan.value.length && transport.value.kind !== 'none') loadCounts() })   // the figure is for the switches as set
+watch([skipRenders, skipTests, existing], () => { if (plan.value.length && transport.value.kind !== 'none') loadCounts() })   // the figure is for the switches as set
 watch(shared, (v, old) => { if (old) { loadPlan() } }, { deep: true })   // another set of folders is another plan and another count
 
 let off = () => {}

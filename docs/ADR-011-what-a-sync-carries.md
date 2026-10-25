@@ -17,3 +17,6 @@ Existing saved configurations pick up the defaults for the new keys; `sync_paral
 
 ## Skips on a push (project folder)
 Two switches in the Sync window, both on by default: `skip_renders` (`05_TEMPS/ 06_REVIEW/ 07_DELIVER/`, any depth) and `skip_tests` (`/80_TEST-BUCKET/`, top level, Binc's scratch folder for quick tests, `00_POLICY/project_v002.md`). The confirmation's file and byte count is for the switches as set. Pull is what brings renders back.
+
+## A file that is already on the pod
+`existing` on the request, a choice in the Sync window (SSH only; the S3 transport uses `aws s3 cp`, which has no such choice): `update` (default, rsync's size and time check: sends what changed), `size` (`--size-only`: same name and size is skipped, a same-size edit is missed), `checksum` (`--checksum`: skips only identical content, reads every file at both ends), `replace` (`--ignore-times`: sends everything again). Nothing is ever deleted.

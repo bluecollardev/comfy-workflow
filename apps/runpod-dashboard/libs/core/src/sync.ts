@@ -65,16 +65,24 @@ export function sshTarget(pod: RawPod): { host: string; port: number } {
 /** macOS ships openrsync, which has --progress but not --info=progress2. Takes `rsync --version`'s output. */
 export const progressFlag = (version: string) => (/openrsync/.test(version) ? '--progress' : '--info=progress2')
 
+/** What a copy does with a file that is already at the other end. `update` (rsync's own check: size and time) is the default and replaces what
+ *  changed; `size` skips a file with the same name and size whatever its time says; `checksum` skips only files whose content is identical (reads
+ *  every file at both ends: slow, exact); `replace` sends everything again. */
+export const EXISTING = ['update', 'size', 'checksum', 'replace'] as const
+export type Existing = (typeof EXISTING)[number]
+const EXISTING_FLAG: Record<Exclude<Existing, 'update'>, string> = { size: '--size-only', checksum: '--checksum', replace: '--ignore-times' }
+
 /** verbose: every file named as it lands (the app's progress view); stats: the counts at the end (the listing pass);
+ *  existing: what to do with a file already there (docs/ADR-011): by default rsync sends what differs in size or time;
  *  exclude: patterns beyond EXCLUDE (the renders); shallow: the folder's own files and its directory entries, no recursion (the root stream). */
-export interface RsyncOptions { dryRun?: boolean; progress?: string; verbose?: boolean; stats?: boolean; exclude?: string[]; shallow?: boolean }
+export interface RsyncOptions { dryRun?: boolean; progress?: string; verbose?: boolean; stats?: boolean; exclude?: string[]; shallow?: boolean; existing?: Existing }
 
 // -rlt, not -a: the network volume refuses chown, so no owner, group or perms; times and links are kept.
 // With progress2 the whole list is scanned first (--no-inc-recursive): the percentage is of the real total and only
 // climbs; scanned incrementally it falls back every time more files turn up. openrsync has neither option.
 function rsyncBase(port: number, o: RsyncOptions): string[] {
   const progress = o.progress || '--info=progress2'
-  return ['rsync', ...(o.dryRun ? ['-n'] : []), ...(o.verbose ? ['-v'] : []), ...(o.stats ? ['--stats'] : []), ...(o.shallow ? ['-lt', '-d'] : ['-rlt']), progress, ...(progress === '--info=progress2' ? ['--no-inc-recursive'] : []), '--partial',
+  return ['rsync', ...(o.dryRun ? ['-n'] : []), ...(o.verbose ? ['-v'] : []), ...(o.stats ? ['--stats'] : []), ...(o.existing && o.existing !== 'update' ? [EXISTING_FLAG[o.existing]] : []), ...(o.shallow ? ['-lt', '-d'] : ['-rlt']), progress, ...(progress === '--info=progress2' ? ['--no-inc-recursive'] : []), '--partial',
     '-e', `ssh -p ${port} -o StrictHostKeyChecking=accept-new`, ...[...EXCLUDE, ...(o.exclude || [])].flatMap((e) => ['--exclude', e])]
 }
 /** Push one folder into the pod. */

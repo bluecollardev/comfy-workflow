@@ -51,6 +51,11 @@ describe('rsync over ssh', () => {
     const cmd = sync.rsyncCmd(dir + '/', 'root@1.2.3.4', 2222, '/workspace/project/', { dryRun: true, progress: sync.progressFlag('openrsync: protocol version 29') })
     expect(cmd[1]).toBe('-n'); expect(cmd).toContain('--progress'); expect(cmd).not.toContain('--info=progress2')
     expect(cmd).not.toContain('--no-inc-recursive')   // openrsync does not know it
+    expect(sync.rsyncCmd(dir + '/', 'root@1.2.3.4', 2222, '/workspace/project/', { existing: 'size' })).toContain('--size-only')   // same name and size: skipped
+    expect(sync.rsyncCmd(dir + '/', 'root@1.2.3.4', 2222, '/workspace/project/', { existing: 'checksum' })).toContain('--checksum')   // identical content: skipped
+    expect(sync.rsyncCmd(dir + '/', 'root@1.2.3.4', 2222, '/workspace/project/', { existing: 'replace' })).toContain('--ignore-times')   // everything again
+    expect(sync.rsyncCmd(dir + '/', 'root@1.2.3.4', 2222, '/workspace/project/', { existing: 'update' }).filter((a) => /size-only|checksum|ignore-times/.test(a))).toEqual([])
+    expect(sync.rsyncCmd(dir + '/', 'root@1.2.3.4', 2222, '/workspace/project/')).not.toContain('--size-only')
     expect(sync.rsyncCmd(dir + '/', 'root@1.2.3.4', 2222, '/workspace/project/', { dryRun: true, stats: true })).toContain('--stats')   // the listing pass
     expect(sync.progressFlag('rsync  version 3.2.7  protocol version 31')).toBe('--info=progress2')
   })

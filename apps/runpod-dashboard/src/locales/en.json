@@ -585,7 +585,16 @@
     "sharedTitle": "ComfyUI-Shared folders to send",
     "sharedHelp": "Starts from this pod's Configuration (else the Default Configuration). Output is what pods write, so it is usually left behind. Anything else in the folder always goes.",
     "skipTests": "Skip Binc's test bucket (80_TEST-BUCKET)",
-    "skipTestsHelp": "Quick-test renders for his timeline; no shot's graph reads them. They stay on this PC."
+    "skipTestsHelp": "Quick-test renders for his timeline; no shot's graph reads them. They stay on this PC.",
+    "existingTitle": "A file that is already on the pod",
+    "existing_update": "Send what changed",
+    "existingHelp_update": "Sends a file when its size or modified time differs; identical-looking files are skipped. The usual choice.",
+    "existing_size": "Skip the same name and size",
+    "existingHelp_size": "Fast. A file edited to the same size is not sent, whatever its time says.",
+    "existing_checksum": "Skip identical files only",
+    "existingHelp_checksum": "Compares the content of every file at both ends, so it is exact and slow: 16 GB is read twice.",
+    "existing_replace": "Replace everything",
+    "existingHelp_replace": "Sends every file again and overwrites what is there."
   },
   "mcp": {
     "intro": "Two MCP servers come with this app: the pod manager (what the dashboard does) and the ComfyUI bridge (inside one ComfyUI). A client launches them with this app as its program, nothing else to install, or reaches them over HTTP while the app serves them. Pick a client below, copy its setup, and press Check to see the server answer from here.",

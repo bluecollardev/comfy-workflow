@@ -45,7 +45,7 @@ import { volumeInfo } from './pods.js'
 /** The subfolders of ComfyUI-Shared a push can carry: ComfyUI's input, its models, what pods write (output) and the graphs. */
 export const SHARED_DIRS = mounts.SYNC_SHARED
 export interface SyncRequest {
-  pod_id: string; direction: 'push' | 'pull'; only?: string[]; plates?: boolean; approved_by?: string; skip_renders?: boolean; skip_tests?: boolean
+  pod_id: string; direction: 'push' | 'pull'; only?: string[]; plates?: boolean; approved_by?: string; skip_renders?: boolean; skip_tests?: boolean; existing?: sync.Existing
   /** A push of ComfyUI-Shared: which of SHARED_DIRS go up. Left out, the pod's own configuration decides (else the Default Configuration's `sync_shared`); the app's confirmation sends the choice shown. Anything else in the folder always goes. */
   shared?: string[]
 }
@@ -304,7 +304,8 @@ export async function listStep(cmd: string[], signal: AbortSignal, env: NodeJS.P
 /** The commands for a step on a transport, given the run's progress flag. */
 function commandFor(req: SyncRequest, transport: Transport, step: sync.Step, mountPath: string, o: sync.RsyncOptions, local = step.local, remote = step.remote): string[] {
   if (transport.kind === 's3') return req.direction === 'push' ? sync.s3Cmd(step.local, transport.volume!, step.remote, { mountPath, exclude: o.exclude }) : sync.s3PullCmd(transport.volume!, step.remote, step.local, { mountPath })
-  return req.direction === 'push' ? sync.rsyncCmd(local, transport.host!, transport.port!, remote, o) : sync.rsyncPullCmd(transport.host!, transport.port!, remote, local, o)
+  const ro = req.existing && req.existing !== 'update' ? { ...o, existing: req.existing } : o   // SSH only: the S3 copy (aws s3 cp) has no such choice
+  return req.direction === 'push' ? sync.rsyncCmd(local, transport.host!, transport.port!, remote, ro) : sync.rsyncPullCmd(transport.host!, transport.port!, remote, local, ro)
 }
 
 /** What a run would send, from the listing passes: all of it, and with the request's own skips (the renders, the test bucket) when the plan has the project. The confirmation shows the one the switches describe. */
