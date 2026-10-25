@@ -97,20 +97,36 @@ export function defaultState() {
         { id: 'agent-made', name: 'Agent made', version: 1, builtin: false, sha256: 'c'.repeat(64), file: '/home/me/.config/runpod-pod-manager/adapters/agent-made.mjs' },
       ],
       sources: {
-        'comfy-shared': "export default { id: 'comfy-shared', name: 'A ComfyUI-Shared folder', async detect() {}, async plan() {} }",
-        'panama-imax-redux': "export default { id: 'panama-imax-redux', name: 'Panama Canal v2 delivery package', async detect() {}, async plan() {} }",
-        'agent-made': "export default { id: 'agent-made', name: 'Agent made', async detect() {}, async plan() {} }",
+        'comfy-shared': "/**\n * What it does: maps a package folder onto ComfyUI-Shared. Detects: its telltale files. Maps: input to input, workflows to workflows.\n * Leaves in place: everything else. Needs / assumes: nothing special. Limits: a test double.\n */\nexport default { id: 'comfy-shared', name: 'A ComfyUI-Shared folder', async detect() {}, async plan() {} }",
+        'panama-imax-redux': "/**\n * What it does: maps a package folder onto ComfyUI-Shared. Detects: its telltale files. Maps: input to input, workflows to workflows.\n * Leaves in place: everything else. Needs / assumes: nothing special. Limits: a test double.\n */\nexport default { id: 'panama-imax-redux', name: 'Panama Canal v2 delivery package', async detect() {}, async plan() {} }",
+        'agent-made': "/**\n * What it does: maps a package folder onto ComfyUI-Shared. Detects: its telltale files. Maps: input to input, workflows to workflows.\n * Leaves in place: everything else. Needs / assumes: nothing special. Limits: a test double.\n */\nexport default { id: 'agent-made', name: 'Agent made', async detect() {}, async plan() {} }",
       },
       plans: {
         '/Users/lucas/Projects/package': {
           adapter: { id: 'panama-imax-redux', name: 'Panama Canal v2 delivery package', version: 1, builtin: true }, source: '/Users/lucas/Projects/package', fenced: true,
-          ops: [{ op: 'copy', kind: 'input', from: 'a', to: 'input/a', bytes: 1000 }],
+          ops: [{ op: 'copy', kind: 'input', from: 'shotA/comfy/input/ref.png', to: 'input/shots/shotA/ref.png', bytes: 715929 }, { op: 'copy', kind: 'workflow', from: 'shotA/comfy/workflows/shotA-v01.json', to: 'workflows/panama-imax-redux/round/shotA-v01.json', bytes: 170502 }, { op: 'note', kind: 'reference', from: 'shotA/final', note: 'shotA/final: 1 files left in place' }],
           findings: [{ level: 'info', text: 'built on ComfyUI 0.39.2' }, { level: 'warn', text: '3 FalAPI_* node types are used and no fal pack came with this folder' }],
           summary: { copies: 32, links: 0, notes: 3, bytes: 267700000, by_kind: { input: { files: 30, bytes: 267600000 }, workflow: { files: 2, bytes: 123000 } } },
         },
       },
+      prompts: {},   // adapter id -> its prompt text
       conflicts: 0,   // how many files the next real apply reports as conflicts
       lastApply: null,
+    },
+    // The Adapter Studio (docs/ADR-009): the package's tree and files, the chat's scripted turns, what a Save answers.
+    studio: {
+      tree: {
+        entries: [
+          { path: 'shotA', dir: true, bytes: 0, files: 4 }, { path: 'shotA/comfy', dir: true, bytes: 0, files: 2 }, { path: 'shotA/comfy/input', dir: true, bytes: 0, files: 1 },
+          { path: 'shotA/comfy/input/ref.png', dir: false, bytes: 715929 }, { path: 'shotA/comfy/workflows', dir: true, bytes: 0, files: 1 }, { path: 'shotA/comfy/workflows/shotA-v01.json', dir: false, bytes: 170502 },
+          { path: 'shotA/final', dir: true, bytes: 0, files: 1 }, { path: 'shotA/final/shotA.mov', dir: false, bytes: 6300000000 }, { path: 'shotA/notes.txt', dir: false, bytes: 120 },
+          { path: 'MANIFEST.json', dir: false, bytes: 2048 }, { path: 'README.md', dir: false, bytes: 900 },
+        ], truncated: false, total: 11,
+      },
+      files: { 'README.md': { kind: 'text', text: '# Delivery\nThe graphs are in shotA/comfy/workflows.', bytes: 900 }, 'MANIFEST.json': { kind: 'json', text: '{\n  "for": "Brynley"\n}', bytes: 2048 } },
+      turns: [],        // functions (chatState, fixtureState) => { events, done?, created? } the next /studio/step calls take, in order
+      nextSave: null,   // what the next /studio/save-checked answers instead of the default (valid, no rounds)
+      steps: 0, saves: [], documented: [], sent: [],
     },
     failures: {},
   }
@@ -317,6 +333,48 @@ export async function mockApi(page, state) {
     if (method === 'GET' && path === '/repos/branches') return json(state.branches)
     if (method === 'GET' && path === '/repos/folders') return json({ url: query.url, branch: query.branch, folders: state.folders })
     if (method === 'POST' && path === '/settings/anthropic/check') { state.settings.anthropicChecks = [...(state.settings.anthropicChecks || []), body.key || null]; return json((body.key || state.settings.anthropic_key_set) ? ((state.settings.anthropicRejects || (body.key && body.key.includes('BAD'))) ? { ok: false, error: 'Anthropic answered 401: invalid x-api-key' } : { ok: true }) : { ok: false, error: 'No Anthropic API key is set' }) }
+    // The Adapter Studio
+    if (method === 'GET' && path === '/studio/tree') return json(state.studio.tree)
+    if (method === 'GET' && path === '/studio/file') { const f = state.studio.files[query.path]; return f ? json({ path: query.path, ...f }) : json({ path: query.path, kind: 'text', text: `contents of ${query.path}`, bytes: 40 }) }
+    if (method === 'GET' && path === '/studio/context') return json({ source: query.folder, total_files: 11, dirs: [{ path: 'shotA', files: 4 }], sample: ['README.md'], texts: [{ path: 'MANIFEST.json', bytes: 2048, sent_bytes: 2048 }, { path: 'README.md', bytes: 900, sent_bytes: 900 }], spec_bytes: 9000 })
+    if (method === 'POST' && path === '/studio/step') {
+      const st = body.state
+      state.studio.steps++; state.studio.sent.push(st)
+      if (state.studio.delay) await new Promise((r) => setTimeout(r, state.studio.delay))
+      const turn = state.studio.turns.shift() || (() => ({ events: [{ kind: 'text', text: 'Noted.' }], done: true }))
+      const out = turn(st, state)
+      const next = { ...st, calls: st.calls + 1, created: out.created || st.created, adapter: out.adapter || st.adapter, messages: [...st.messages, { role: 'assistant', content: out.events.filter((e) => e.kind === 'text').map((e) => ({ type: 'text', text: e.text })) }] }
+      return json({ state: next, events: out.events, done: out.done !== false })
+    }
+    if (method === 'POST' && path === '/studio/save-checked') {
+      if (state.studio.saveFails) return json({ detail: state.studio.saveFails }, 400)
+      const scripted = state.studio.nextSave; state.studio.nextSave = null
+      let a = state.imports.adapters.find((x) => x.id === body.id)
+      if (!a) { a = { id: body.id, name: body.id, version: 1, builtin: false, sha256: 'e'.repeat(64), file: `/home/me/.config/runpod-pod-manager/adapters/${body.id}.mjs` }; state.imports.adapters.push(a) }
+      else if (a.builtin) { (state.imports.originals ||= {})[body.id] ??= state.imports.sources[body.id]; a.modified = true; a.file = `/home/me/.config/runpod-pod-manager/adapters/${body.id}.mjs` }
+      const text = scripted?.text ?? body.text
+      state.imports.sources[body.id] = text
+      const nm = /name:\s*"([^"]*)"|name:\s*'([^']*)'/.exec(text); if (nm) a.name = nm[1] ?? nm[2]
+      a.sha256 = String((state.imports.saves = (state.imports.saves || 0) + 1)).padStart(64, '0')
+      state.studio.saves.push({ id: body.id, text: body.text, folder: body.folder })
+      return json({ adapter: a, valid: scripted ? scripted.valid : true, errors: scripted?.errors || [], rounds: scripted?.rounds || [], text, tested: !!body.folder })
+    }
+    if (method === 'POST' && path === '/studio/document') {
+      const code = state.imports.sources[body.id] || ''
+      state.imports.sources[body.id] = `/**\n * Documented by Claude. What it does: maps a package onto ComfyUI-Shared. Detects: its manifest. Maps: inputs to input/, workflows to workflows/.\n * Leaves in place: finals and provenance. Needs / assumes: a MANIFEST.json. Limits: none known.\n */\n${code.slice(code.search(/export default/))}`
+      state.studio.documented.push(body.id)
+      return json({ header: '/** ... */', before: '' })
+    }
+    if (method === 'GET' && path === '/imports/prompt') return json(state.imports.prompts[query.id] || '')
+    if (method === 'PUT' && path === '/imports/prompt') { state.imports.prompts[body.id] = body.text; return json({ id: body.id, bytes: body.text.length }) }
+    if (method === 'POST' && path === '/imports/rename') {
+      const a = state.imports.adapters.find((x) => x.id === body.id)
+      if (!a) return json({ detail: `no adapter ${body.id}` }, 400)
+      if (a.builtin) return json({ detail: `${a.id} is a built-in adapter` }, 400)
+      if (body.name) a.name = body.name
+      if (body.id !== undefined && body.new_id) { /* not used */ }
+      return json(a)
+    }
     // Import (the Import Shot Pack modal)
     if (method === 'GET' && path === '/imports/adapters') return json(state.imports.adapters)
     if (method === 'GET' && path === '/imports/source') { const a = state.imports.adapters.find((x) => x.id === query.id); return a ? json({ id: a.id, sha256: a.sha256, text: state.imports.sources[a.id] || '', builtin: a.builtin, file: a.file || `/builtin/${a.id}.mjs` }) : json({ detail: `no adapter ${query.id}` }, 400) }
@@ -356,17 +414,30 @@ export async function mockApi(page, state) {
     if (method === 'DELETE' && (m = path.match(/^\/imports\/adapters\/([^/]+)$/))) {
       const a = state.imports.adapters.find((x) => x.id === decodeURIComponent(m[1]))
       if (!a) return json({ detail: `no adapter ${m[1]}` }, 400)
-      if (a.builtin) return json({ detail: `${a.id} is a built-in adapter; it cannot be deleted` }, 400)
+      if (a.builtin && !a.modified) return json({ detail: `${a.id} is a built-in adapter and has not been modified; there is nothing to delete or reset` }, 400)
+      if (a.builtin) { a.modified = false; state.imports.sources[a.id] = state.imports.originals[a.id]; a.file = ''; return json({ id: a.id, reset: true }) }
       state.imports.adapters = state.imports.adapters.filter((x) => x !== a); delete state.imports.sources[a.id]
       return json({ id: a.id })
     }
-    if (method === 'GET' && path === '/imports/template') return json(`// ${query.id}: an import adapter\nexport default {\n  id: '${query.id}',\n  name: '${query.id}',\n  async detect(root, ctx) { return { match: 0, evidence: [] } },\n  async plan(root, ctx) { return { ops: [], findings: [] } },\n}\n`)
+    if (method === 'GET' && path === '/imports/template') return json(`/**
+ * ${query.name || query.id}: an import adapter. What it does: (say). Detects: (say). Maps: (say). Leaves in place: (say).
+ * Needs / assumes: (say). Limits: (say).
+ */
+export default {
+  id: '${query.id}',
+  name: '${query.name || query.id}',
+  async detect(root, ctx) { return { match: 0, evidence: [] } },
+  async plan(root, ctx) { return { ops: [], findings: [] } },
+}
+`)
     if (method === 'GET' && path === '/imports/duplicate') return json((state.imports.sources[query.from] || '').replace(/id:\s*'[^']+'/, `id: '${query.id}'`))
     if (method === 'POST' && path === '/imports/validate') {
       const errs = []
       if (!/export\s+default/.test(body.text)) errs.push('there is no `export default { ... }`')
       if (!/detect\s*[(:]/.test(body.text)) errs.push('there is no detect(root, ctx) function')
       if (!/plan\s*[(:]/.test(body.text)) errs.push('there is no plan(root, ctx) function')
+      const head = (/^(?:\s*(?:\/\/[^\n]*\n|\/\*[\s\S]*?\*\/))+/.exec(body.text) || [''])[0]
+      if (head.replace(/[\/*\s]+/g, ' ').trim().length < 100) errs.push('there is no documentation header: a comment block before `export default` saying what it does, what it detects, what it maps where, what it leaves in place, what it assumes and its limits')
       return json(errs)
     }
     if (method === 'POST' && path === '/imports/plan') {
