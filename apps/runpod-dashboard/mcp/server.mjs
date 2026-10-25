@@ -181,6 +181,9 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
           pod_id: podId,
           direction: { type: 'string', enum: ['push', 'pull'], default: 'push' },
           only: { type: 'array', items: { type: 'string' }, description: 'Narrow to these folders: push project, plates, comfy-shared, workflows; pull output, review, deliver' },
+          skip_renders: { type: 'boolean', description: "Push: leave the shots' 05_TEMPS, 06_REVIEW and 07_DELIVER behind" },
+          skip_tests: { type: 'boolean', description: "Push: leave Binc's 80_TEST-BUCKET behind" },
+          existing: { type: 'string', enum: ['update', 'size', 'checksum', 'replace'], description: 'A file already on the pod (SSH only): update = send what changed (default), size = skip the same name and size, checksum = skip identical content, replace = send everything again' },
           shared: { type: 'array', items: { type: 'string', enum: ['input', 'models', 'output', 'workflows'] }, description: 'Push: which ComfyUI-Shared folders to send. Default: the pod\'s own configuration, else the Default Configuration (input, models, workflows: output is what pods write and stays home)' },
           plates: { type: 'boolean', description: 'Push the served plates too (client material leaving this PC: needs approved_by)', default: false },
           approved_by: { type: 'string', description: 'The named yes for plates leaving this PC' },
@@ -316,7 +319,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
       if (!pod_id) return text('sync needs pod_id', true)
       const running = syncHost.get(pod_id)
       if (running && !running.done) return text(`A sync is already running for ${pod_id} (${running.req.direction}, started ${running.started}): sync_status follows it`, true)
-      const req = { pod_id, direction: args.direction === 'pull' ? 'pull' : 'push', only: Array.isArray(args.only) && args.only.length ? args.only.map(String) : undefined, plates: !!args.plates, approved_by: args.approved_by, ...(Array.isArray(args.shared) ? { shared: args.shared.map(String) } : {}) }
+      const req = { pod_id, direction: args.direction === 'pull' ? 'pull' : 'push', only: Array.isArray(args.only) && args.only.length ? args.only.map(String) : undefined, plates: !!args.plates, approved_by: args.approved_by, ...(Array.isArray(args.shared) ? { shared: args.shared.map(String) } : {}), ...(args.skip_renders !== undefined ? { skip_renders: !!args.skip_renders } : {}), ...(args.skip_tests !== undefined ? { skip_tests: !!args.skip_tests } : {}), ...(['update', 'size', 'checksum', 'replace'].includes(args.existing) ? { existing: args.existing } : {}) }
       await pods.get(pod_id)   // a clear 404; in no-spend mode the simulated copy would otherwise run for any id
       const steps = syncrun.planFor(req)   // refuses plates without the named yes, in the policy's words
       const transport = await syncrun.transportFor(pod_id)

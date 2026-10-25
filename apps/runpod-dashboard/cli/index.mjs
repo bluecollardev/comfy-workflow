@@ -198,7 +198,7 @@ async function transport(core, o, cfg, direction) {
   const { host, port } = core.sync.sshTarget(pod)
   const version = spawnSync('rsync', ['--version'], { encoding: 'utf8' }).stdout || ''
   const opts = { dryRun: o['dry-run'], progress: core.sync.progressFlag(version) }
-  return { where: host, env: {}, cmd: (s) => (direction === 'push' ? core.sync.rsyncCmd(s.local, host, port, s.remote, { ...opts, exclude: s.exclude }) : core.sync.rsyncPullCmd(host, port, s.remote, s.local, opts)) }
+  return { where: host, env: {}, cmd: (s) => (direction === 'push' ? core.sync.rsyncCmd(s.local, host, port, s.remote, { ...opts, exclude: s.exclude, existing: o.existing }) : core.sync.rsyncPullCmd(host, port, s.remote, s.local, opts)) }
 }
 
 async function runSteps(steps, t, direction) {
@@ -217,6 +217,9 @@ const SYNC = {
   plates: { kind: 'bool', help: 'include the plates (client material)' },
   shared: { kind: 'str', default: '', meta: 'DIRS', help: 'which ComfyUI-Shared folders to send: a comma list of input, models, output, workflows (default: the configuration\'s; output is not in it)' },
   'approved-by': { kind: 'str', default: '', meta: 'NAME', help: 'who said yes to copying plates off this PC; required with --plates' },
+  'skip-renders': { kind: 'bool', help: "leave the shots' 05_TEMPS, 06_REVIEW and 07_DELIVER behind" },
+  'skip-tests': { kind: 'bool', help: "leave Binc's 80_TEST-BUCKET behind" },
+  existing: { kind: 'str', default: 'update', meta: 'MODE', help: 'a file already on the pod: update (send what changed; default), size (skip the same name and size), checksum (skip identical content), replace (send everything again)' },
 }
 
 /** Copy the mapped folders up. Never deletes anything on the volume. */
@@ -229,9 +232,11 @@ async function sync(core, argv) {
   const chosen = o.shared ? [...csv(o.shared)] : (cfg.sync_shared || ['input', 'models', 'workflows'])
   const bad = chosen.filter((d) => !['input', 'models', 'output', 'workflows'].includes(d))
   if (bad.length) fail(`--shared: unknown folder ${bad.join(', ')} (input, models, output, workflows)`)
+  if (!['update', 'size', 'checksum', 'replace'].includes(o.existing)) fail(`--existing: ${o.existing} is not one of update, size, checksum, replace`)
   const steps = core.sync.plan(cfg, csv(o.only), o.plates, (m) => console.error(m))
     .filter((s) => s.key !== 'workflows' || chosen.includes('workflows'))
-    .map((s) => (s.key === 'comfy-shared' ? { ...s, exclude: ['input', 'models', 'output', 'workflows'].filter((d) => !chosen.includes(d)).map((d) => `/${d}/`) } : s))
+    .map((s) => (s.key === 'comfy-shared' ? { ...s, exclude: ['input', 'models', 'output', 'workflows'].filter((d) => !chosen.includes(d)).map((d) => `/${d}/`) }
+      : s.key === 'project' ? { ...s, exclude: [...(o['skip-renders'] ? ['05_TEMPS/', '06_REVIEW/', '07_DELIVER/'] : []), ...(o['skip-tests'] ? ['/80_TEST-BUCKET/'] : [])] } : s))
   if (!steps.length) { console.error('nothing to copy'); return 1 }
   if (o.plates) console.log(`plates approved by ${o['approved-by'].trim()}`)
   return runSteps(steps, await transport(core, o, cfg, 'push'), 'push')
@@ -306,7 +311,8 @@ const HELP = `usage: npm run cli -- <command> [options]   (./start.sh pod|sync|p
   pod create --name NAME [--gpu KEY] [--image REF] [--network-volume ID] [--link PATH=TARGET]... [--no-mounts] ...
   pod list
   pod status|stop|resume|delete --pod-id ID [--force]
-  sync --pod ID | --s3 [--volume ID]  [--only project,plates,comfy-shared,workflows] [--plates --approved-by NAME] [--dry-run]
+  sync --pod ID | --s3 [--volume ID]  [--only project,plates,comfy-shared,workflows] [--shared input,models,output,workflows]
+       [--skip-renders] [--skip-tests] [--existing update|size|checksum|replace] [--plates --approved-by NAME] [--dry-run]
   pull --pod ID | --s3 [--volume ID]  [--only output,review,deliver] [--shot NAME]... [--dry-run]
   import <folder> [--adapter ID] [--to DIR] [--dry-run] [--overwrite]   a package folder into ComfyUI-Shared; --list | --show ID
 

@@ -57,7 +57,7 @@ reason and the switch goes back. The card shows a **Serving :8765** badge, the *
 the port from this Mac), and Check asks the in-app endpoint with HTTP `initialize` and `tools/list`.
 Hosted in the app the servers use the app's own state, not private copies: pods and no-spend
 mode are the window's, the idle watch is the app's, and `sync` / `sync_status` drive **the
-same job runner as the cards** (`sync` takes an optional `shared` array of `input`, `models`, `output`, `workflows`: what a push carries, else the pod's or the default's `sync_shared`) (`electron/sync-jobs.cjs`, one job per pod), so a sync started
+same job runner as the cards** (`sync` takes optional `shared` (an array of `input`, `models`, `output`, `workflows`: what a push carries, else the pod's or the default's `sync_shared`), `skip_renders`, `skip_tests` and `existing` (`update`, `size`, `checksum`, `replace`; SSH only); see ADR-011) (`electron/sync-jobs.cjs`, one job per pod), so a sync started
 over MCP fills the card's bar and the Sync modal follows it, and a sync started on a card is
 what `sync_status` reports. The hosted bridge discovers its target (the first running pod
 with ComfyUI) unless `COMFY_URL` is set in the app's environment.
