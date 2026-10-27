@@ -15,7 +15,7 @@ const os = require('node:os')
 const path = require('node:path')
 
 const DEV_URL = process.env.VITE_DEV_SERVER_URL
-const CONFIG_DIR = path.join(os.homedir(), '.config', 'runpod-pod-manager')
+const CONFIG_DIR = process.env.POD_MANAGER_CONFIG_DIR || path.join(os.homedir(), '.config', 'runpod-pod-manager')   // a test points this at its own folder: it must not read the user's keys
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..')
 // Packaged: electron-builder copies dist/ → resources/dist and the shape and governance → resources/backend (the name stays).
 const UI_DIST_DIR = app.isPackaged ? path.join(process.resourcesPath, 'dist') : path.resolve(__dirname, '..', 'dist')
@@ -76,7 +76,7 @@ function coreEnv() {
   // The core reads its config, the shape and the governance copy from these; packaged, they travel as resources.
   const info = buildInfo()
   if (info.comfy_image && !process.env.COMFY_IMAGE) process.env.COMFY_IMAGE = info.comfy_image
-  const fromEnv = { ...(app.isPackaged ? {} : readEnvFile(path.join(REPO_ROOT, '.env'))), ...readEnvFile(path.join(CONFIG_DIR, '.env')) }
+  const fromEnv = { ...(app.isPackaged || process.env.POD_MANAGER_CONFIG_DIR ? {} : readEnvFile(path.join(REPO_ROOT, '.env'))), ...readEnvFile(path.join(CONFIG_DIR, '.env')) }
   for (const [k, v] of Object.entries(fromEnv)) if (!(k in process.env)) process.env[k] = v
   if (app.isPackaged) {
     process.env.MOUNT_POINTS_FILE ||= path.join(process.resourcesPath, 'backend', 'mount-points.json')
