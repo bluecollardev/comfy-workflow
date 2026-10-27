@@ -97,6 +97,29 @@ Installers for the pod manager, built from this repo and published by version:
 - **Downloads repo and all versions:** https://github.com/bluecollardev/downloads · [releases](https://github.com/bluecollardev/downloads/releases) · latest Mac build: [`RunPod-Manager-mac-arm64.dmg`](https://github.com/bluecollardev/downloads/releases/latest/download/RunPod-Manager-mac-arm64.dmg)
 - **The pod image** (private, ComfyUI with Binc's node packs): [`ghcr.io/bluecollardev/comfy-app`](https://github.com/orgs/bluecollardev/packages/container/package/comfy-app). Pulling it needs a `ghcr.io` login saved in the RunPod account and its registry-auth ID in Default Configuration (`docs/ADR-012`, `docs/RELEASING.md`).
 
+### First time on a RunPod account (every new user does this once)
+
+A new RunPod account has three things the app cannot create for itself. Without them a pod starts but
+cannot pull the image, cannot be reached by Sync, or has nowhere to keep its files.
+
+1. **Your API key.** RunPod → Settings → API Keys → create one (read/write). Enter it in the app's
+   Default Configuration.
+2. **An SSH public key** (Sync needs it). RunPod → Settings → SSH Public Keys → paste the contents of
+   your public key, for example `cat ~/.ssh/id_ed25519.pub` (make one with `ssh-keygen -t ed25519` if you
+   have none). RunPod passes it to every pod as `PUBLIC_KEY` and the image starts sshd from it. With no key
+   on the account the pod boots and ComfyUI works, but Sync fails with `ssh: connect ... Connection refused`.
+   The key is read when the container starts: add it first, then create the pod (or Stop and Start an
+   existing one). The Sync uses the key your `ssh` picks by default (`~/.ssh/config`).
+3. **A login for the private image** (`ghcr.io/bluecollardev/comfy-app`). Ask Lucas for access to the
+   package, make a GitHub token with `read:packages`, then RunPod → Settings → Container Registry Auth →
+   add `ghcr.io` with your GitHub username and that token. Copy the ID it gives you into Default
+   Configuration → registry auth. Without it a pod exits within seconds with `denied: access forbidden`
+   (the pod's Logs show it).
+4. **A network volume** (optional but recommended) in the datacenter you want, then pick it in Default
+   Configuration. A volume id from another account gives `Network volume "..." not found`.
+
+Details: [`docs/RELEASING.md`](docs/RELEASING.md), [`ADR-006`](docs/ADR-006-image-registry-and-ci-build.md), [`ADR-012`](docs/ADR-012-versioned-releases.md).
+
 Cutting a release: `./start.sh release patch` ([`docs/RELEASING.md`](docs/RELEASING.md), [`ADR-012`](docs/ADR-012-versioned-releases.md), [`ADR-013`](docs/ADR-013-delivery.md)).
 
 ## Quick start
