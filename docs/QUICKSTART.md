@@ -32,55 +32,33 @@ Flask dashboard is kept in `apps/runpod-api/legacy/`.
 
 ## 🟡 Option 2: ComfyUI Locally (30 mins)
 
-**Run ComfyUI on your own GPU**
+**Run this project's ComfyUI on your own machine** (`apps/comfy-app`): ComfyUI at a pinned version, the project's node packs
+(BincStereo, ShotPipe), the saved workflows, and the model downloads, all set up by one command. Use it rather than a
+fresh clone of upstream ComfyUI: the project's graphs need those packs and that version.
 
-### Step 1: Clone ComfyUI
+### What you need
+- macOS (Apple Silicon) or Linux with an NVIDIA GPU. On Windows, use WSL2, or the Docker image in `docs/LOCAL-SETUP.md`.
+- `git` and [`uv`](https://docs.astral.sh/uv/) (`brew install uv`), Node 22 only if you also want the app.
+- About 50 GB free for models, 16 GB RAM.
+
+### Start it
 ```bash
-git clone https://github.com/comfyanonymous/ComfyUI.git ~/ComfyUI
-cd ~/ComfyUI
+git clone git@github.com:bluecollardev/comfy-workflow.git comfy_workflow   # needs access to the repo
+cd comfy_workflow
+./start.sh comfy
 ```
+The first run installs everything (ComfyUI at the pin in `apps/comfy-app/pins.env`, a Python environment, the node packs from
+`shared/nodes`, the workflows) and downloads the models listed in `apps/comfy-app/models.txt`. Later runs just start the server.
+Pick the ShotPipe set the graphs need with `COMFY_SHOTPIPE=contract-v26 apps/comfy-app/setup.sh` (`shared/nodes/sets.json`).
 
-### Step 2: Set up Python
-```bash
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### Step 3: Install PyTorch
-```bash
-# For Mac (auto-detects Metal acceleration):
-# Just works! No extra step needed
-
-# For Linux/Windows with NVIDIA GPU:
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-
-# For AMD GPU:
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm5.7
-```
-
-### Step 4: Start ComfyUI
-```bash
-python main.py
-```
-
-**You'll see:**
-```
-Starting server...
-Listening on 0.0.0.0:8188
-Browse to http://127.0.0.1:8188
-```
-
-**Then open:** http://localhost:8188
+**You'll see:** `To see the GUI go to: http://127.0.0.1:8188`, then open http://localhost:8188
 
 ✨ You'll see:
-- ComfyUI web interface
-- Node editor for building workflows
-- Ability to generate images immediately
-- Default models pre-loaded
+- ComfyUI web interface with the project's workflows already in the sidebar
+- The BincStereo and ShotPipe nodes in the node list
+- Weights for the depth node in `ComfyUI/models/`
+
+Stop it with `./start.sh stop`. Details and what is ours versus upstream: [`apps/comfy-app/README.md`](../apps/comfy-app/README.md).
 
 ---
 
