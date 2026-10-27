@@ -13,6 +13,7 @@
 #   ./start.sh e2e | e2e-app | e2e-live | core-test | smoke   browser suite; the app in no-spend mode; the live RunPod proof (spends); core suite; headless boot
 #   ./start.sh comfy-image [--remote --wait] [--push <ref>]   build the ComfyUI server image (on GitLab CI with --remote)
 #   ./start.sh package [mac|win|linux|all] [--comfy <variant>] [--image <ref>]  build the app installers for a comfy-app variant
+#   ./start.sh release patch|minor|major|X.Y.Z [--dry-run] [--no-publish]   version, build the DMG, tag, publish to the downloads repo (docs/ADR-012)
 #   ./start.sh test           the merge gate: core, IPC table, browser suite, the app in no-spend mode
 #   ./start.sh stop           stop ComfyUI, wherever it was started (background, terminal or IDE)
 #
@@ -23,7 +24,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$HERE"
 APP="$HERE/apps/runpod-dashboard"
 
-usage() { sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; }
 
 load_env() {
   if [ -f "$HERE/.env" ]; then set -a; # shellcheck disable=SC1091
@@ -141,6 +142,8 @@ case "${1:-help}" in
       linux) npm run build && exec npx electron-builder --linux "$out" ;;
       all)   npm run build && exec npx electron-builder --mac --win --linux "$out" ;;
     esac ;;
+  release)
+    shift; exec scripts/release.sh "$@" ;;
   stop)
     # ComfyUI started in the background has a pid file; one started in a terminal or the IDE does not:
     # stop whatever ComfyUI is listening on its port too.

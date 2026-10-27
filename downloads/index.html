@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RunPod Manager</title>
+<style>
+:root{--bg:#fff;--fg:#1c1f26;--mut:#5b6472;--ac:#2f6df6;--card:#f4f6fa}
+@media (prefers-color-scheme:dark){:root{--bg:#14161b;--fg:#e8eaf0;--mut:#9aa3b2;--ac:#6c97ff;--card:#1d2027}}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif}
+main{max-width:34rem;margin:0 auto;padding:3rem 16px}
+.card{background:var(--card);border-radius:12px;padding:1.5rem;margin:1.5rem 0}
+a.btn{display:inline-block;background:var(--ac);color:#fff;padding:.7rem 1.2rem;border-radius:8px;text-decoration:none;font-weight:600}
+small,li{color:var(--mut)}
+</style></head><body><main>
+<h1>RunPod Manager</h1>
+<p>Start, stop and sync ComfyUI pods on RunPod.</p>
+<div class="card">
+  <p><strong id="ver">Latest version</strong></p>
+  <p><a class="btn" id="dl" href="https://github.com/bluecollardev/downloads/releases/latest">Download for Mac (Apple Silicon)</a></p>
+  <small>Intel Macs, Windows and Linux builds are not published yet.</small>
+</div>
+<h2>First time</h2>
+<ol>
+  <li>Open the DMG and drag RunPod Manager to Applications.</li>
+  <li>The app is not signed yet: right-click it, choose Open, then Open again.</li>
+  <li>In Default Configuration, enter your RunPod API key.</li>
+</ol>
+<p><small><a href="https://github.com/bluecollardev/downloads/releases">All versions</a></small></p>
+</main>
+<script>
+fetch('https://api.github.com/repos/bluecollardev/downloads/releases/latest').then(r=>r.ok?r.json():null).then(r=>{
+  if(!r) return
+  document.getElementById('ver').textContent='Version '+r.tag_name.replace(/^v/,'')
+  const a=(r.assets||[]).find(x=>/mac-arm64\.dmg$/.test(x.name)&&/\d+\.\d+\.\d+/.test(x.name))
+  if(a) document.getElementById('dl').href=a.browser_download_url
+}).catch(()=>{})
+</script></body></html>
