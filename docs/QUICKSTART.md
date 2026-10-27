@@ -37,7 +37,7 @@ Flask dashboard is kept in `apps/runpod-api/legacy/`.
 fresh clone of upstream ComfyUI: the project's graphs need those packs and that version.
 
 ### What you need
-- macOS (Apple Silicon) or Linux with an NVIDIA GPU. On Windows, use WSL2 or the Docker image (Option 3, or `docs/LOCAL-SETUP.md`).
+- macOS (Apple Silicon) or Linux with an NVIDIA GPU. On Windows, use WSL2, or the Docker image in `docs/LOCAL-SETUP.md`.
 - `git` and [`uv`](https://docs.astral.sh/uv/) (`brew install uv`), Node 22 only if you also want the app.
 - About 50 GB free for models, 16 GB RAM.
 
