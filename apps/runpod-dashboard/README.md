@@ -1,5 +1,7 @@
 # RunPod dashboard (`apps/runpod-dashboard`)
 
+Installers: https://bluecollardev.github.io/downloads/ ([releases](https://github.com/bluecollardev/downloads/releases)); the pod image is [`ghcr.io/bluecollardev/comfy-app`](https://github.com/orgs/bluecollardev/packages/container/package/comfy-app). See the repo root README.
+
 Vue 3 + Vite dashboard for managing RunPod pods
 
 ## Quick Start
