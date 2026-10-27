@@ -16,41 +16,42 @@ Yes! You can run ComfyUI locally on your machine instead of using RunPod cloud.
 
 ## Local Installation Options
 
-### Option 1: ComfyUI Standalone (Easiest)
+### Option 1: This project's ComfyUI (recommended)
+
+`apps/comfy-app` is ComfyUI at a pinned version with the project's node packs (BincStereo, ShotPipe), the saved workflows and the
+model downloads. One command installs and starts it; it is what the project's graphs are built and tested against.
 
 **Requirements:**
-- macOS, Linux, or Windows
-- GPU: NVIDIA (RTX 3060 Ti or better) or Apple Silicon Mac
-- 8GB+ VRAM, 16GB+ RAM recommended
-- 50GB+ disk space for models
-
-**Installation:**
+- macOS on Apple Silicon, or Linux with an NVIDIA GPU (Windows: WSL2, or Option 2's Docker image)
+- `git` and `uv` (`brew install uv`)
+- 8GB+ VRAM or an Apple Silicon Mac with 16GB+ RAM; 50GB+ disk space for models
 
 ```bash
-# Clone ComfyUI
-git clone https://github.com/comfyanonymous/ComfyUI.git
-cd ComfyUI
+cd comfy_workflow
+./start.sh comfy        # first run: clone at the pin, build the venv, link the packs and workflows, download models, start
+./start.sh stop         # stop it
+```
+Choose the ShotPipe set a graph needs: `COMFY_SHOTPIPE=contract-v26 apps/comfy-app/setup.sh` (sets in `shared/nodes/sets.json`).
+Torch is the Metal build on a Mac (`requirements-mac.txt`) and the CUDA build elsewhere (`requirements-cuda.txt`); the scripts pick it.
 
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+**Access:** http://localhost:8188 · More: [`apps/comfy-app/README.md`](../apps/comfy-app/README.md)
 
-# Install dependencies
+### Stock ComfyUI from upstream (not the project's)
+
+Only for trying ComfyUI itself. It has none of the project's packs or workflows, so the project's graphs will not load.
+
+```bash
+git clone https://github.com/comfyanonymous/ComfyUI.git && cd ComfyUI
+python -m venv venv && source venv/bin/activate     # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-
-# For NVIDIA GPU (CUDA)
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-
-# For Mac (Metal acceleration)
-# ComfyUI auto-detects and uses Metal
-
-# Run ComfyUI
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121   # NVIDIA; a Mac needs nothing extra
 python main.py
 ```
 
-**Access:** http://localhost:8188
-
 ### Option 2: ComfyUI via Docker (Reproducible)
+
+The project's own image is `ghcr.io/bluecollardev/comfy-app:contract-v26` (private; log in with `docker login ghcr.io`). The `ashleykza/comfyui` image below is the stock community one.
+
 
 ```bash
 # Pull image
