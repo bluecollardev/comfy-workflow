@@ -25,6 +25,7 @@ Add the release to `CHANGELOG.md` with its tag.
    falls back to the local tag, which pods refuse.
 
 ## What a release contains
+Delivery: [ADR-013](./ADR-013-delivery.md). `RELEASE_PLATFORMS="mac win linux" ./start.sh release patch` builds more than macOS (default `mac`); every installer built is uploaded as `RunPod-Manager-X.Y.Z-<platform>-<arch>.<ext>` plus the alias without the version. `./start.sh release page` re-publishes only the page.
 - `RunPod-Manager-X.Y.Z-mac-arm64.dmg` and the alias `RunPod-Manager-mac-arm64.dmg`.
 - The app is unsigned: users right-click, Open. For a signed build,
   `CSC_IDENTITY_AUTO_DISCOVERY=true ./start.sh package mac` needs a Developer ID certificate.

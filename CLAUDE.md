@@ -197,7 +197,7 @@ infra(scripts): add pod lifecycle management
 - **`docs/ADR-001-runpod-strategy.md`** — Why we chose hybrid approach
 - **`docs/SETUP.md`** — How to deploy on-demand pod
 - **`docs/WORKFLOWS.md`** — Workflow composition patterns
-- **`docs/ADR-012-versioned-releases.md`** and **`docs/RELEASING.md`** — the app is released by semantic version, patch increments unless Lucas specifies: tag `vX.Y.Z`, DMG on the public `bluecollardev/downloads` repo's Releases, page in `downloads/`
+- **`docs/ADR-012-versioned-releases.md`**, **`docs/ADR-013-delivery.md`** (the downloads page: dmg, exe, Linux) and **`docs/RELEASING.md`** — the app is released by semantic version, patch increments unless Lucas specifies: tag `vX.Y.Z`, DMG on the public `bluecollardev/downloads` repo's Releases, page in `downloads/`
 - **`NEXT-STEPS.md`** — Open work only; **`CHANGELOG.md`** — what is done, by day. Completed items move from the first to the second
 
 ### Automation
