@@ -197,12 +197,12 @@ infra(scripts): add pod lifecycle management
 - **`docs/ADR-001-runpod-strategy.md`** — Why we chose hybrid approach
 - **`docs/SETUP.md`** — How to deploy on-demand pod
 - **`docs/WORKFLOWS.md`** — Workflow composition patterns
-- **`docs/ADR-012-versioned-releases.md`**, **`docs/ADR-013-delivery.md`** (the downloads page: dmg, exe, Linux) and **`docs/RELEASING.md`** — the app is released by semantic version, patch increments unless Lucas specifies: tag `vX.Y.Z`, DMG on the public `bluecollardev/downloads` repo's Releases, page in `downloads/`
+- **`docs/ADR-012-versioned-releases.md`**, **`docs/ADR-013-delivery.md`** (the downloads page: dmg, exe, Linux) **`docs/ADR-014-documentation-site.md`** (the public docs site built from the README's Documentation section; client-job docs are excluded by a list in `scripts/docs-site.mjs`: add new ones there) and **`docs/RELEASING.md`** — the app is released by semantic version, patch increments unless Lucas specifies: tag `vX.Y.Z`, DMG on the public `bluecollardev/downloads` repo's Releases, page in `downloads/`
 - **`NEXT-STEPS.md`** — Open work only; **`CHANGELOG.md`** — what is done, by day. Completed items move from the first to the second
 
 ### Automation
 
-- **`start.sh`** — One-command starts: `comfy`, `desktop`, `dashboard`, `pod <args>`, `sync`, `pull`, `import <folder> [--dry-run]` (a package folder into ComfyUI-Shared through an adapter, `docs/IMPORT-SHOT-PACKS.md`), `mcp`, `test` (core + browser), `core-test`, `e2e`, `e2e-app`, `e2e-live`, `smoke`, `comfy-image`, `package [mac|win|linux|all] [--comfy <variant>]`, `release patch|minor|major|X.Y.Z [--dry-run] [--no-publish]` (version, build the DMG, tag, publish to the downloads repo; **always `patch` unless Lucas specifies a version**; `docs/RELEASING.md`), `stop`; IDE run configs in `.run/` (IntelliJ, one per command) and `.vscode/` call it
+- **`start.sh`** — One-command starts: `comfy`, `desktop`, `dashboard`, `pod <args>`, `sync`, `pull`, `import <folder> [--dry-run]` (a package folder into ComfyUI-Shared through an adapter, `docs/IMPORT-SHOT-PACKS.md`), `mcp`, `test` (core + browser), `core-test`, `e2e`, `e2e-app`, `e2e-live`, `smoke`, `comfy-image`, `package [mac|win|linux|all] [--comfy <variant>]`, `release patch|minor|major|X.Y.Z|page|docs [--dry-run] [--no-publish]` (version, build the DMG, tag, publish to the downloads repo; **always `patch` unless Lucas specifies a version**; `docs/RELEASING.md`), `stop`; IDE run configs in `.run/` (IntelliJ, one per command) and `.vscode/` call it
 - **`apps/comfy-app/launch.sh`** — Start the local ComfyUI server (run `setup.sh` first on a new machine; see `apps/comfy-app/README.md`)
 - **`apps/runpod-dashboard/cli/index.mjs`** — the CLI over the core: `pod`, `sync`, `pull` (`./start.sh pod|sync|pull`)
 - **`apps/runpod-dashboard/mcp/server.mjs`** — the MCP server for Claude Code over the core (`./start.sh mcp`)

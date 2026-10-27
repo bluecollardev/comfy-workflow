@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RunPod Manager docs</title>
+<style>
+:root{--bg:#fff;--fg:#1c1f26;--mut:#5b6472;--ac:#2f6df6;--card:#f4f6fa;--line:#e1e5ec}
+@media (prefers-color-scheme:dark){:root{--bg:#14161b;--fg:#e8eaf0;--mut:#9aa3b2;--ac:#6c97ff;--card:#1d2027;--line:#2b2f38}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,sans-serif}
+a{color:var(--ac)}header{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;gap:16px;align-items:center}
+header a{text-decoration:none;color:var(--fg);font-weight:600}header span{color:var(--mut);font-size:14px}
+.wrap{display:flex;max-width:75rem;margin:0 auto}
+nav{width:19rem;flex:none;padding:16px;border-right:1px solid var(--line);height:calc(100vh - 50px);overflow:auto;position:sticky;top:0}
+nav h4{margin:1rem 0 .3rem;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut)}
+nav a{display:block;padding:3px 0;font-size:14px;text-decoration:none}nav a.on{font-weight:700}
+article{padding:24px 32px 64px;min-width:0;flex:1;max-width:52rem}
+article pre{background:var(--card);padding:12px;border-radius:8px;overflow:auto}
+article code{background:var(--card);padding:1px 5px;border-radius:4px;font-size:.9em}article pre code{padding:0;background:none}
+article table{border-collapse:collapse;display:block;overflow:auto}article td,article th{border:1px solid var(--line);padding:6px 10px;vertical-align:top}
+article img{max-width:100%}.desc{color:var(--mut);font-size:13px;display:block}
+@media (max-width:760px){.wrap{display:block}nav{width:auto;height:auto;position:static;border-right:0;border-bottom:1px solid var(--line)}article{padding:16px}}
+</style></head><body>
+<header><a href="#/">RunPod Manager docs</a><span><a href="../">Downloads</a></span></header>
+<div class="wrap"><nav id="nav"></nav><article id="doc">Loading…</article></div>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script>
+let M
+const nav = document.getElementById('nav'), doc = document.getElementById('doc')
+const norm = (base, rel) => { const out = base.split('/').slice(0, -1); for (const s of rel.split('/')) { if (s === '..') out.pop(); else if (s && s !== '.') out.push(s) } return out.join('/') }
+async function show() {
+  const path = decodeURIComponent(location.hash.replace(/^#\//, '')) || M.start
+  nav.querySelectorAll('a').forEach(a => a.classList.toggle('on', a.dataset.p === path))
+  const known = new Set(M.sections.flatMap(s => s.docs.map(d => d.path)))
+  if (!known.has(path)) { doc.innerHTML = '<p>Not in the published documentation.</p>'; return }
+  const r = await fetch('files/' + path); if (!r.ok) { doc.textContent = 'Could not load ' + path; return }
+  doc.innerHTML = marked.parse(await r.text())
+  doc.querySelectorAll('a[href]').forEach(a => {   // links between docs stay in the viewer; others open as they are
+    const h = a.getAttribute('href'); if (/^(https?:|mailto:|#)/.test(h)) { if (/^https?:/.test(h)) a.target = '_blank'; return }
+    const t = norm(path, h.split('#')[0]); if (known.has(t)) a.href = '#/' + t; else { a.replaceWith(Object.assign(document.createElement('span'), { textContent: a.textContent })) }
+  })
+  doc.querySelectorAll('img[src]').forEach(i => { const u = i.getAttribute('src'); if (!/^https?:/.test(u)) i.src = 'files/' + norm(path, u) })
+  window.scrollTo(0, 0)
+}
+fetch('docs.json').then(r => r.json()).then(m => {
+  M = m
+  nav.innerHTML = m.sections.map(s => '<h4>' + s.title + '</h4>' + s.docs.map(d => `<a href="#/${d.path}" data-p="${d.path}">${d.title}</a>`).join('')).join('')
+  addEventListener('hashchange', show); show()
+})
+</script></body></html>

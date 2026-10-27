@@ -12,9 +12,18 @@ APP="apps/runpod-dashboard"
 DL_REPO="${DOWNLOADS_REPO:-bluecollardev/downloads}"
 BUMP="${1:-}"; shift || true
 PAGE_ONLY=0; [ "$BUMP" = page ] && PAGE_ONLY=1
+if [ "$BUMP" = docs ]; then   # ./start.sh release docs : the documentation site under /docs of the downloads repo (ADR-014)
+  [ -z "${GITHUB_TOKEN:-}" ] && command -v gh >/dev/null && GITHUB_TOKEN="$(gh auth token 2>/dev/null || true)"
+  [ -n "${GITHUB_TOKEN:-}" ] || { echo "needs a token with repo scope (gh auth login)" >&2; exit 2; }
+  TMP="$(mktemp -d)"; node scripts/docs-site.mjs "$TMP/site" || exit 1
+  git clone -q --depth 1 "https://x-access-token:$GITHUB_TOKEN@github.com/$DL_REPO.git" "$TMP/repo"
+  rm -rf "$TMP/repo/docs"; cp -R "$TMP/site" "$TMP/repo/docs"
+  ( cd "$TMP/repo" && git add -A docs && { git diff --cached --quiet && echo "docs unchanged" || { git -c user.name="${GIT_AUTHOR_NAME:-Lucas}" -c user.email="${GIT_AUTHOR_EMAIL:-info@bluecollardev.com}" commit -q -m "update the documentation" && git push -q origin HEAD && echo "docs published"; }; } )
+  rm -rf "$TMP"; echo "https://${DL_REPO%%/*}.github.io/${DL_REPO##*/}/docs/"; exit 0
+fi
 DRY=0; PUBLISH=1
 for a in "$@"; do case "$a" in --dry-run) DRY=1 ;; --no-publish) PUBLISH=0 ;; *) echo "unknown option $a" >&2; exit 2 ;; esac; done
-[ -n "$BUMP" ] || { echo "usage: ./start.sh release patch|minor|major|X.Y.Z|page [--dry-run] [--no-publish]" >&2; exit 2; }
+[ -n "$BUMP" ] || { echo "usage: ./start.sh release patch|minor|major|X.Y.Z|page|docs [--dry-run] [--no-publish]" >&2; exit 2; }
 [ -z "${GITHUB_TOKEN:-}" ] && [ -f .env ] && GITHUB_TOKEN="$(grep -E '^GITHUB_TOKEN=' .env | cut -d= -f2- || true)"
 [ -z "${GITHUB_TOKEN:-}" ] && command -v gh >/dev/null && GITHUB_TOKEN="$(gh auth token 2>/dev/null || true)"
 
