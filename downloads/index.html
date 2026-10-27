@@ -5,31 +5,44 @@
 :root{--bg:#fff;--fg:#1c1f26;--mut:#5b6472;--ac:#2f6df6;--card:#f4f6fa}
 @media (prefers-color-scheme:dark){:root{--bg:#14161b;--fg:#e8eaf0;--mut:#9aa3b2;--ac:#6c97ff;--card:#1d2027}}
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif}
-main{max-width:34rem;margin:0 auto;padding:3rem 16px}
+main{max-width:36rem;margin:0 auto;padding:3rem 16px}
 .card{background:var(--card);border-radius:12px;padding:1.5rem;margin:1.5rem 0}
-a.btn{display:inline-block;background:var(--ac);color:#fff;padding:.7rem 1.2rem;border-radius:8px;text-decoration:none;font-weight:600}
+a.btn{display:inline-block;background:var(--ac);color:#fff;padding:.7rem 1.2rem;border-radius:8px;text-decoration:none;font-weight:600;margin:.25rem .25rem .25rem 0}
+a.btn.off{background:var(--mut);opacity:.5;pointer-events:none}
 small,li{color:var(--mut)}
 </style></head><body><main>
 <h1>RunPod Manager</h1>
 <p>Start, stop and sync ComfyUI pods on RunPod.</p>
 <div class="card">
   <p><strong id="ver">Latest version</strong></p>
-  <p><a class="btn" id="dl" href="https://github.com/bluecollardev/downloads/releases/latest">Download for Mac (Apple Silicon)</a></p>
-  <small>Intel Macs, Windows and Linux builds are not published yet.</small>
+  <p id="buttons">
+    <a class="btn" id="mac" href="https://github.com/bluecollardev/downloads/releases/latest">macOS</a>
+    <a class="btn off" id="win" href="#">Windows</a>
+    <a class="btn off" id="linux" href="#">Linux</a>
+  </p>
+  <small id="note">Your system is highlighted when it is detected. A greyed button means there is no build for it yet.</small>
 </div>
 <h2>First time</h2>
-<ol>
-  <li>Open the DMG and drag RunPod Manager to Applications.</li>
-  <li>The app is not signed yet: right-click it, choose Open, then Open again.</li>
+<ul>
+  <li><strong>macOS:</strong> open the DMG, drag the app to Applications, then right-click it, choose Open, then Open again (not signed yet).</li>
+  <li><strong>Windows:</strong> run the installer; if SmartScreen warns, choose More info, then Run anyway (not signed yet).</li>
+  <li><strong>Linux:</strong> make the AppImage executable (<code>chmod +x</code>) and run it, or install the .deb.</li>
   <li>In Default Configuration, enter your RunPod API key.</li>
-</ol>
+</ul>
 <p><small><a href="https://github.com/bluecollardev/downloads/releases">All versions</a></small></p>
 </main>
 <script>
-fetch('https://api.github.com/repos/bluecollardev/downloads/releases/latest').then(r=>r.ok?r.json():null).then(r=>{
-  if(!r) return
-  document.getElementById('ver').textContent='Version '+r.tag_name.replace(/^v/,'')
-  const a=(r.assets||[]).find(x=>/mac-arm64\.dmg$/.test(x.name)&&/\d+\.\d+\.\d+/.test(x.name))
-  if(a) document.getElementById('dl').href=a.browser_download_url
-}).catch(()=>{})
+const os = /Win/.test(navigator.platform) ? 'win' : /Linux|X11/.test(navigator.userAgent) && !/Android/.test(navigator.userAgent) ? 'linux' : 'mac'
+const find = (assets, re) => assets.find(a => re.test(a.name) && !/\d+\.\d+\.\d+/.test(a.name))   // the stable alias
+fetch('https://api.github.com/repos/bluecollardev/downloads/releases/latest').then(r => r.ok ? r.json() : null).then(r => {
+  if (!r) return
+  document.getElementById('ver').textContent = 'Version ' + r.tag_name.replace(/^v/, '')
+  const a = r.assets || []
+  const pick = { mac: find(a, /mac.*\.dmg$/), win: find(a, /win.*\.exe$/), linux: find(a, /linux.*\.AppImage$/) }
+  for (const k of ['mac', 'win', 'linux']) {
+    const el = document.getElementById(k)
+    if (pick[k]) { el.href = pick[k].browser_download_url; el.classList.remove('off') } else el.classList.add('off')
+  }
+  const mine = document.getElementById(os); if (mine) mine.style.outline = '3px solid var(--fg)'
+}).catch(() => {})
 </script></body></html>
