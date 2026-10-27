@@ -6,7 +6,7 @@ completed items move here. Commit hashes are on `develop`.
 ## 2026-10-27 (versioned releases)
 
 ### The app is released by version (branch `feature/release-versioning`; `docs/ADR-012-versioned-releases.md`, `docs/RELEASING.md`)
-- Lucas: "if we're not versioning, start versioning and add the code", a download page on GitHub with the DMG in a downloads repo. **Semantic versioning** from the app's `package.json` (first tagged release 1.1.0, over the untagged 1.0.0), `./start.sh release patch|minor|major|X.Y.Z [--dry-run] [--no-publish]` (`scripts/release.sh`): bump, build the Mac DMG, commit, tag `vX.Y.Z`, and publish a GitHub Release on the public `bluecollardev/downloads` repo with a stable alias file name; the page is `downloads/index.html` (Pages), reading the latest release. Not run against GitHub yet.
+- Lucas: "if we're not versioning, start versioning and add the code", a download page on GitHub with the DMG in a downloads repo. **Semantic versioning** from the app's `package.json` (patch increments unless Lucas names a version; first tagged release 1.0.1, over the untagged 1.0.0), `./start.sh release patch|minor|major|X.Y.Z [--dry-run] [--no-publish]` (`scripts/release.sh`): bump, build the Mac DMG, commit, tag `vX.Y.Z`, and publish a GitHub Release on the public `bluecollardev/downloads` repo with a stable alias file name; the page is `downloads/index.html` (Pages), reading the latest release. Not run against GitHub yet.
 - The pod image moved to `ghcr.io/bluecollardev/comfy-app:contract-v26` (private); the registry login is a RunPod container registry auth, entered as the registry-auth ID in Default Configuration.
 
 ## 2026-10-25 (what a sync carries)

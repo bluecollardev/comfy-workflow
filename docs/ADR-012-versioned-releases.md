@@ -9,10 +9,12 @@ and a DMG (about 130 MB) cannot live in git (100 MB file limit).
 
 ## Decision
 1. **Semantic versioning**, one number: the app's `version` in
-   `apps/runpod-dashboard/package.json`. `patch` for fixes, `minor` for features
-   (a new sync option, a new tab), `major` for a change that breaks saved
-   configuration or the CLI/MCP. The first tagged release is **1.1.0**: the sync
-   options (ADR-011) are features on top of the untagged 1.0.0.
+   `apps/runpod-dashboard/package.json`. **Every release is a patch increment
+   (1.0.1, 1.0.2, ...) unless Lucas names the version.** `minor` and `major` are
+   never chosen by an agent: `minor` is for a release Lucas calls a feature
+   release, `major` for one that breaks saved configuration or the CLI/MCP. The
+   first tagged release is **1.0.1**, a patch on the untagged 1.0.0 (it carries
+   the sync options of ADR-011; Lucas chose a patch).
 2. **A release is cut from `develop` or `master`** with a clean tree, by
    `./start.sh release patch|minor|major|X.Y.Z` (`scripts/release.sh`): bump the
    version, build the Mac DMG, commit `chore(release): vX.Y.Z`, tag `vX.Y.Z`.

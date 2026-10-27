@@ -6,12 +6,12 @@ Decision and reasons: [ADR-012](./ADR-012-versioned-releases.md).
 ```bash
 git checkout develop && git pull
 ./start.sh test                              # the gate; nothing releases red
-./start.sh release minor --dry-run           # prints the versions and what it would do
-./start.sh release minor                     # bump, build the DMG, commit, tag, publish
+./start.sh release patch --dry-run          # prints the versions and what it would do
+./start.sh release patch                     # bump, build the DMG, commit, tag, publish
 git push origin develop --tags
 git checkout master && git merge --ff-only develop && git push origin master
 ```
-`patch|minor|major` bump from the current version in `apps/runpod-dashboard/package.json`; an
+**Use `patch` unless Lucas names a version** (ADR-012). `patch|minor|major` bump from the current version in `apps/runpod-dashboard/package.json`; an
 exact `X.Y.Z` also works. `--no-publish` builds and tags only and prints the DMG path.
 Add the release to `CHANGELOG.md` with its tag.
 
