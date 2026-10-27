@@ -17,7 +17,7 @@ test.describe('setup walkthrough: a new user, a new app', () => {
   test.beforeAll(async () => {
     if (SHOTS) mkdirSync(SHOTS, { recursive: true })
     ctx = await launchApp({ dry: false, env: { RUNPOD_API_BASE_URL: 'http://127.0.0.1:9', RUNPOD_REST_BASE_URL: 'http://127.0.0.1:9', COMFY_IMAGE: 'ghcr.io/bluecollardev/comfy-app:contract-v26' } })
-    await ctx.page.setViewportSize({ width: 1100, height: 820 }).catch(() => {})
+    await ctx.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1100, 1500))   // tall enough for the Create Pod form
   })
   test.afterAll(async () => { await ctx.app.close() })
   const shot = async (name) => { if (SHOTS) await ctx.page.screenshot({ path: join(SHOTS, `${name}.png`) }) }
@@ -76,7 +76,8 @@ test.describe('setup walkthrough: a new user, a new app', () => {
     await page.getByTestId('open-connect').click()
     await expect(page.getByTestId('connect-accounts')).toBeVisible()
     await shot('07-git-accounts')
-    await page.keyboard.press('Escape')
+    await page.locator('.modal.show').getByLabel('Close').first().click()
+    await expect(page.locator('.modal.show')).toHaveCount(0)
   })
 
   // From here the account is simulated (no-spend mode): the screens are the real ones, nothing is created on RunPod.
@@ -102,7 +103,8 @@ test.describe('setup walkthrough: a new user, a new app', () => {
     await dialog.getByTestId('volume-create').click()
     await expect(dialog.getByTestId('volume-name').first()).toHaveText('comfy-volume')
     await shot('10-volume-created')
-    await page.keyboard.press('Escape')
+    await page.locator('.modal.show').getByLabel('Close').first().click()
+    await expect(page.locator('.modal.show')).toHaveCount(0)
   })
 
   test('9 pick the volume and the image login in Default Configuration', async () => {
@@ -120,9 +122,10 @@ test.describe('setup walkthrough: a new user, a new app', () => {
     const { page } = ctx
     await openCreatePod(page)
     await page.locator('#pod-name').fill('ComfyUI-Dev')
+    await page.waitForTimeout(800)   // the form's open animation
     await shot('12-create-pod')
     await page.getByTestId('pod-submit').click()
-    await expect(toast(page).first()).toContainText(t('toast.podCreated', { name: 'ComfyUI-Dev' }))
+    await expect(toast(page).filter({ hasText: t('toast.podCreated', { name: 'ComfyUI-Dev' }) })).toBeVisible()
     await expect(podCard(page, 'ComfyUI-Dev')).toBeVisible()
     await page.waitForTimeout(500)
     await shot('13-pod-created')

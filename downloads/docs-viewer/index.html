@@ -36,7 +36,7 @@ async function show() {
     const h = a.getAttribute('href'); if (/^(https?:|mailto:|#)/.test(h)) { if (/^https?:/.test(h)) a.target = '_blank'; return }
     const t = norm(path, h.split('#')[0]); if (known.has(t)) a.href = '#/' + t; else { a.replaceWith(Object.assign(document.createElement('span'), { textContent: a.textContent })) }
   })
-  doc.querySelectorAll('img[src]').forEach(i => { if (!/^https?:/.test(i.getAttribute('src'))) i.remove() })
+  doc.querySelectorAll('img[src]').forEach(i => { const u = i.getAttribute('src'); if (!/^https?:/.test(u)) i.src = 'files/' + norm(path, u) })
   window.scrollTo(0, 0)
 }
 fetch('docs.json').then(r => r.json()).then(m => {

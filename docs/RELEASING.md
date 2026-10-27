@@ -32,5 +32,8 @@ Delivery: [ADR-013](./ADR-013-delivery.md). `RELEASE_PLATFORMS="mac win linux" .
 - No keys: users enter their RunPod key, and the registry-auth ID of their `ghcr.io` login,
   in Default Configuration.
 
+## The documentation site
+`./start.sh release docs` rebuilds https://bluecollardev.github.io/downloads/docs/ from the README's Documentation section (ADR-014). No version, no release. `node scripts/docs-site.mjs <dir>` builds it locally to look at first. Setup screenshots: `WALKTHROUGH=1 ./start.sh e2e-app walkthrough.spec.js`.
+
 ## Change the download page
 Edit `downloads/index.html` and cut a patch release; the script re-uploads the page each time.

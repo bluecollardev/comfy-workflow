@@ -120,6 +120,8 @@ cannot pull the image, cannot be reached by Sync, or has nowhere to keep its fil
 
 Details: [`docs/RELEASING.md`](docs/RELEASING.md), [`ADR-006`](docs/ADR-006-image-registry-and-ci-build.md), [`ADR-012`](docs/ADR-012-versioned-releases.md).
 
+Documentation site: https://bluecollardev.github.io/downloads/docs/ (`./start.sh release docs`, [`ADR-014`](docs/ADR-014-documentation-site.md)); start with [`docs/SETUP-WALKTHROUGH.md`](docs/SETUP-WALKTHROUGH.md).
+
 Cutting a release: `./start.sh release patch` ([`docs/RELEASING.md`](docs/RELEASING.md), [`ADR-012`](docs/ADR-012-versioned-releases.md), [`ADR-013`](docs/ADR-013-delivery.md)).
 
 ## Quick start
@@ -288,6 +290,7 @@ All of `docs/`: <https://github.com/bluecollardev/comfy-workflow/tree/develop/do
 
 | Doc | What it covers |
 |---|---|
+| [`docs/SETUP-WALKTHROUGH.md`](docs/SETUP-WALKTHROUGH.md) | Setting up from scratch with screenshots from the app's own test: the RunPod keys (API, SSH, registry login, S3), Default Configuration, a network volume, a pod, and what each failure means. |
 | [`docs/QUICKSTART.md`](docs/QUICKSTART.md) | Three ways to see ComfyUI working in minutes: the RunPod dashboard, a local install, or a real RunPod pod. Comparison and recommended path. |
 | [`docs/SETUP.md`](docs/SETUP.md) | Deploying an on-demand RunPod pod: prerequisites, GPU choice, deployment steps, wiring the `comfy` CLI to it, cost tracking, pod management. Not done yet; status and the CANALV2 plan are in `NEXT-STEPS.md`. |
 | [`docs/LOCAL-SETUP.md`](docs/LOCAL-SETUP.md) | Running ComfyUI on your own machine instead of RunPod: options, hardware, speed comparison, model handling, switching between local and cloud. The current local install is `apps/comfy-app`. |
@@ -309,6 +312,7 @@ All of `docs/`: <https://github.com/bluecollardev/comfy-workflow/tree/develop/do
 | [`docs/ADR-010-the-app-is-always-named.md`](docs/ADR-010-the-app-is-always-named.md) | A full-screen screen always carries the app's mark and name (and the no-spend badge) in its header. Accepted 2026-10-24. |
 | [`docs/ADR-011-what-a-sync-carries.md`](docs/ADR-011-what-a-sync-carries.md) | What a sync carries: which ComfyUI-Shared folders go and come back, skipping renders and the test bucket, what to do with files already on the pod, the skipped counter. |
 | [`docs/ADR-012-versioned-releases.md`](docs/ADR-012-versioned-releases.md) | The app is released by semantic version (patch unless Lucas names one), tagged `vX.Y.Z`, installers on the public downloads repo's Releases. Accepted 2026-10-27. |
+| [`docs/ADR-014-documentation-site.md`](docs/ADR-014-documentation-site.md) | The documentation is a public Pages site built from this section: the README is the navigation, client-job docs are left out by a list, the setup walkthrough's screenshots come from a test. Accepted 2026-10-27. |
 | [`docs/ADR-013-delivery.md`](docs/ADR-013-delivery.md) | How the app is delivered: one Pages site, a button per platform (dmg, exe, Linux), versioned files with stable aliases, unsigned for now. Accepted 2026-10-27. |
 | [`docs/IMPORT-SHOT-PACKS.md`](docs/IMPORT-SHOT-PACKS.md) | Importing a shot pack: setup once (ComfyUI-Shared, merged Drive parts, volume, the optional Anthropic key), use in the app, the terminal and by an agent, managing adapters, where things are, known limits. Spec: [`docs/IMPORT-ADAPTERS.md`](docs/IMPORT-ADAPTERS.md); plan and results: [`docs/PLAN-IMPORT-ADAPTERS.md`](docs/PLAN-IMPORT-ADAPTERS.md). |
 | [`docs/DOCKERFILE-DEVIATIONS.md`](docs/DOCKERFILE-DEVIATIONS.md) | Review of the original placeholder image (community `ashleykza/comfyui` base) against RunPod's official one. That placeholder is retired; the current image is `apps/comfy-app/Dockerfile`, built on `pytorch/pytorch` with the same pins as the Mac. |

@@ -40,9 +40,15 @@ for (const s of kept) for (const d of s.docs) {
   const src = join(ROOT, d.path), text = readFileSync(src, 'utf8')
   if (secretLike.test(text)) { console.error(`refused: ${d.path} looks like it holds a secret`); process.exit(1) }
   mkdirSync(dirname(join(out, 'files', d.path)), { recursive: true }); copyFileSync(src, join(out, 'files', d.path)); n++
+  for (const im of text.matchAll(/!\[[^\]]*\]\(([^)#\s]+)\)/g)) {   // screenshots: copied beside the doc that shows them
+    if (/^https?:/.test(im[1])) continue
+    const rel = join(dirname(d.path), im[1]), from = join(ROOT, rel)
+    if (!existsSync(from)) { console.error(`missing image ${rel} in ${d.path}`); process.exit(1) }
+    mkdirSync(dirname(join(out, 'files', rel)), { recursive: true }); copyFileSync(from, join(out, 'files', rel))
+  }
 }
 const first = kept[0]?.docs[0]?.path || ''
 writeFileSync(join(out, 'docs.json'), JSON.stringify({ start: first, sections: kept }, null, 1))
 copyFileSync(join(ROOT, 'downloads/docs-viewer/index.html'), join(out, 'index.html'))
 console.log(`docs site: ${n} documents in ${kept.length} sections -> ${out}`)
-console.log(`left out: ${sections.flatMap(s => s.docs).length === 0 ? '' : ''}${EXCLUDE.length} exclusion rules (client job, planning, agent notes)`)
+console.log(`left out: the client job, planning and agent notes (${EXCLUDE.length} rules)`)
