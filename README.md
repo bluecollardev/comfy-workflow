@@ -89,6 +89,16 @@ brief says. Not started; the next steps page says where it begins.
 └── NEXT-STEPS.md           # The CANALV2 graph-import plan and open items
 ```
 
+## Download the app
+
+Installers for the pod manager, built from this repo and published by version:
+
+- **Download page:** https://bluecollardev.github.io/downloads/ (macOS, Windows, Linux; a platform with no build yet is greyed out)
+- **Downloads repo and all versions:** https://github.com/bluecollardev/downloads · [releases](https://github.com/bluecollardev/downloads/releases) · latest Mac build: [`RunPod-Manager-mac-arm64.dmg`](https://github.com/bluecollardev/downloads/releases/latest/download/RunPod-Manager-mac-arm64.dmg)
+- **The pod image** (private, ComfyUI with Binc's node packs): [`ghcr.io/bluecollardev/comfy-app`](https://github.com/orgs/bluecollardev/packages/container/package/comfy-app). Pulling it needs a `ghcr.io` login saved in the RunPod account and its registry-auth ID in Default Configuration (`docs/ADR-012`, `docs/RELEASING.md`).
+
+Cutting a release: `./start.sh release patch` ([`docs/RELEASING.md`](docs/RELEASING.md), [`ADR-012`](docs/ADR-012-versioned-releases.md), [`ADR-013`](docs/ADR-013-delivery.md)).
+
 ## Quick start
 
 `./start.sh <target>` is the one-command way in; the manual steps under each
@@ -274,6 +284,9 @@ All of `docs/`: <https://github.com/bluecollardev/comfy-workflow/tree/develop/do
 | [`docs/ADR-008-import-adapters.md`](docs/ADR-008-import-adapters.md) | Packages come in through adapters: a module per source format maps it onto the ComfyUI-Shared structure; the app applies the plan; user and AI-written adapters hot-load from a folder. Built on `feature/import-adapters` 2026-10-24. Spec: [`docs/IMPORT-ADAPTERS.md`](docs/IMPORT-ADAPTERS.md). |
 | [`docs/ADR-009-adapter-studio.md`](docs/ADR-009-adapter-studio.md) | The Adapter Studio: one IDE-style modal for Edit, New adapter and Write an adapter with Claude: code and prompt tabs, Code / Preview / Split icon buttons, the package as a tree with a file viewer, Claude's chat that builds an editable prompt which builds the adapter, built-ins editable by override, naming, documentation as a rule on generation, agentic validation on save, no autosave. Built 2026-10-24. |
 | [`docs/ADR-010-the-app-is-always-named.md`](docs/ADR-010-the-app-is-always-named.md) | A full-screen screen always carries the app's mark and name (and the no-spend badge) in its header. Accepted 2026-10-24. |
+| [`docs/ADR-011-what-a-sync-carries.md`](docs/ADR-011-what-a-sync-carries.md) | What a sync carries: which ComfyUI-Shared folders go and come back, skipping renders and the test bucket, what to do with files already on the pod, the skipped counter. |
+| [`docs/ADR-012-versioned-releases.md`](docs/ADR-012-versioned-releases.md) | The app is released by semantic version (patch unless Lucas names one), tagged `vX.Y.Z`, installers on the public downloads repo's Releases. Accepted 2026-10-27. |
+| [`docs/ADR-013-delivery.md`](docs/ADR-013-delivery.md) | How the app is delivered: one Pages site, a button per platform (dmg, exe, Linux), versioned files with stable aliases, unsigned for now. Accepted 2026-10-27. |
 | [`docs/IMPORT-SHOT-PACKS.md`](docs/IMPORT-SHOT-PACKS.md) | Importing a shot pack: setup once (ComfyUI-Shared, merged Drive parts, volume, the optional Anthropic key), use in the app, the terminal and by an agent, managing adapters, where things are, known limits. Spec: [`docs/IMPORT-ADAPTERS.md`](docs/IMPORT-ADAPTERS.md); plan and results: [`docs/PLAN-IMPORT-ADAPTERS.md`](docs/PLAN-IMPORT-ADAPTERS.md). |
 | [`docs/DOCKERFILE-DEVIATIONS.md`](docs/DOCKERFILE-DEVIATIONS.md) | Review of the original placeholder image (community `ashleykza/comfyui` base) against RunPod's official one. That placeholder is retired; the current image is `apps/comfy-app/Dockerfile`, built on `pytorch/pytorch` with the same pins as the Mac. |
 
