@@ -20,6 +20,13 @@ installed from the Comfy registry, no `.git` of its own), which registers the fa
 4. **The image installs its requirements safely.** The pack asks for `opencv-python`; the image already carries `opencv-python-headless`, and both together can break `import cv2` in a container without libGL. The Dockerfile now rewrites a pack's `opencv-python` to the headless build when it installs pack requirements,
    and a new build step fails the image if the fal pack is present and `fal_client` cannot be imported (the install loop has always ignored a failed install, so this would otherwise be silent).
 
+## Verified (2026-11-03)
+
+- The image built on GitHub Actions (its `fal_client` check passed, so the client library is in) and is labelled with the packs commit `17b4d11`.
+- On a real pod from that image (a short-lived one, deleted after, about USD 0.06): `ComfyUI-fal-API` imported in 0.2 s and logged `Registered 1498 dynamic fal nodes (skipped 0, featured 22, 499 flagged as superseded within their family)` and `registered 10 /fal_api routes`, with `FAL_KEY is not configured` as a warning only. The ShotPipe packs and BincStereo still load beside it.
+- **A side finding for ADR-024:** that pod ran on an NVIDIA RTX PRO 6000 Blackwell MIG 1g.24gb, the card the any-card setting picked because it was the only free one. PyTorch in the image (cu126) logged `CUDA capability sm_120 is not compatible with the current PyTorch installation`, so ComfyUI would not run GPU work on it. This is exactly why ADR-024 keeps the widening to jobs that never use the GPU.
+- Not tested: a `FalAPI_*` node actually running (no key by design), and the Mac install with the pack linked.
+
 ## Why now, and why it is not final
 
 It unblocks BH's fal graphs on a pod (note 176, item 6) and costs a few MB. It is a first pass: it puts a large third-party pack in front of every user of the image to solve one shot's graph, and the questions below were not settled.
