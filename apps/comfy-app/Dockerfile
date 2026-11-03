@@ -60,7 +60,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssh-server 
 COPY docker/extra_model_paths.yaml /opt/comfy-app/extra_model_paths.yaml
 COPY workflows/ /opt/comfy-app/workflows/
 COPY docker/entrypoint.sh /opt/comfy-app/entrypoint.sh
-RUN chmod +x /opt/comfy-app/entrypoint.sh \
+COPY docker/verify_round.py /opt/comfy-app/verify_round.py
+RUN chmod +x /opt/comfy-app/entrypoint.sh /opt/comfy-app/verify_round.py \
     && mkdir -p /home/binc/CANALV2_r3 \
     && ln -s /workspace/project /home/binc/CANALV2_r3/CANALV2
 

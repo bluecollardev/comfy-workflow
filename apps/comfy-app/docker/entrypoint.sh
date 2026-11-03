@@ -72,7 +72,21 @@ if [ -n "${S3_PULL:-}" ]; then
         mountpoint -q /workspace 2>/dev/null || echo "note: /workspace is not a mount here; the pull goes to the container disk, not a volume" >&2
         mkdir -p "$dst" && echo "s3 pull: $src -> $dst"
         if rclone copy "PODS3:$src" "$dst" --transfers 8 --checksum --stats 30s --stats-one-line -v; then
-          touch "$dst/.s3-pull.done" && echo "s3 pull done: $dst"
+          # A delivery round carries MANIFEST.json files: check every listed file (size and sha256) before saying it is done (ADR-022). Markers, in <dst>:
+          #   .s3-pull.done        copied, and the manifest check passed
+          #   .s3-pull.failed      copied, but the manifest check found a mismatch (the list is in the file and the log)
+          #   .s3-pull.unverified  copied, but there is no MANIFEST.json to check against
+          rm -f "$dst/.s3-pull.done" "$dst/.s3-pull.failed" "$dst/.s3-pull.unverified"
+          if [ -f "$dst/MANIFEST.json" ]; then
+            PY="$(command -v python3 || command -v python)"
+            if "$PY" /opt/comfy-app/verify_round.py "$dst" > "$dst/.s3-pull.check" 2>&1; then
+              mv "$dst/.s3-pull.check" "$dst/.s3-pull.done" && echo "s3 pull done (manifest verified): $dst"
+            else
+              mv "$dst/.s3-pull.check" "$dst/.s3-pull.failed"; echo "s3 pull FAILED the manifest check: $dst" >&2; tail -n 5 "$dst/.s3-pull.failed" >&2
+            fi
+          else
+            echo "no MANIFEST.json" > "$dst/.s3-pull.unverified"; echo "s3 pull done, NOT verified (no MANIFEST.json): $dst"
+          fi
         else
           echo "s3 pull FAILED: $src (exit $?); rerun the container or run rclone by hand" >&2
         fi

@@ -27,9 +27,17 @@ AWS_ACCESS_KEY_ID={{ RUNPOD_SECRET_panama_pod_id }}
 AWS_SECRET_ACCESS_KEY={{ RUNPOD_SECRET_panama_pod_secret }}
 ```
 
-The container log shows `s3 pull: ...`, a progress line every 30 s, and
-`s3 pull done: <dir>`; a clean pair leaves `<dir>/.s3-pull.done`. Verify before
-anything reads it: `verify_round.py <dir>` from the Panama console repo.
+The container log shows `s3 pull: ...` and a progress line every 30 s. When a pair has copied, the pod **checks it against the round's manifests** before saying it is done
+(`/opt/comfy-app/verify_round.py`, the same size-and-sha256 check as the app's own and BH's `verify_round.py`; it reads the root `MANIFEST.json` and each shot's), and leaves one marker in the pulled folder:
+
+| Marker | Meaning | Log line |
+|---|---|---|
+| `.s3-pull.done` | copied, and every file listed in the manifests is present with the right size and sha256 | `s3 pull done (manifest verified): <dir>` |
+| `.s3-pull.failed` | copied, but a file is missing, short or differs; the file holds the list (`MISSING`, `SIZE`, `SHA256` per file) and the totals | `s3 pull FAILED the manifest check: <dir>` (the last lines follow) |
+| `.s3-pull.unverified` | copied, but there is no usable `MANIFEST.json` to check against (a prefix that is not a delivery round) | `s3 pull done, NOT verified (no MANIFEST.json): <dir>` |
+
+Only `.s3-pull.done` means the round is safe to use. A rerun removes the old markers first, so a stale `.done` never survives a failed second pull; the copy itself is additive and transfers only what differs. The check
+reads every byte of the round once, so a 39 GB round adds its hashing time to the pull.
 
 By hand in a running pod: `rclone copy PODS3:<bucket>/<prefix> /workspace/<dir>`
 after exporting the same `RCLONE_CONFIG_PODS3_*` variables the entrypoint
