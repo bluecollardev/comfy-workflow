@@ -66,7 +66,10 @@ Through the core's own functions (the same ones the UI calls), image `contract-v
 - **Temporary route, Delete: ran to `done` in 28 seconds** (pod created, SSH reached with the address the app uses, the remove script run over SSH, pod deleted, none left behind). This also shows SSH to a pod works from this Mac with the host and port the Sync uses; the
   earlier `*.proxy.runpod.io` name was the thing that did not resolve. Not yet shown: that the files were really gone (that needs a later pull to copy all 379 again).
 - **No stock is a real failure mode.** At about 07:35 UTC RunPod refused every card (`No card available right now ... no longer any instances available`), and a stopped pod could not resume (`not enough free GPUs on the host machine`). A temporary pull pod therefore cannot start at such a time; the job must say that plainly and leave nothing behind (a create that fails has no pod to delete).
-- **Not yet tested:** the active-pod route (needs any pod running on the volume, so it waits for stock), and the delete confirmed by a pull that copies the files back.
+- **Active-pod route: works** (later the same day, once RunPod had an L4 free; a pod of the user's own, `ComfyUI-S3Test3`, running on the volume). The plan chose `active` and no new pod was started. Four steps, 96 seconds in all:
+  pull copied **379 files** (which also proves the earlier temporary-route Delete had removed them) and the pod's own manifest check passed (379 listed, 0 bad); a second pull transferred **0 files**; a remove over SSH finished in 6 seconds;
+  a pull after it copied **379 again** (so the active-route Delete works too); a last remove left the volume clean. No temporary pod was left behind, the user's pod was never tagged, stopped or deleted by the job, and its idle timer read 20 minutes before and after (the ceiling was held during the jobs and restored). Cost about USD 0.06.
+- **Progress granularity:** the pod's byte counter only moved at the end of these 4-second pulls, because `s3pull.sh` asks rclone for stats every 30 seconds (`--stats 30s`). The file list and count update live (90, 201, 312, 379 files in the log). For a large round the bar would step every 30 seconds; `--stats 5s` in `s3pull.sh` would smooth it (an image rebuild). Not done.
 
 ## What is not known
 
