@@ -53,8 +53,9 @@ COPY .build/custom_nodes/ /opt/ComfyUI/custom_nodes/
 RUN for req in /opt/ComfyUI/custom_nodes/*/requirements.txt; do \
         [ -f "$req" ] && pip install -r "$req"; done; true
 
-# sshd (RunPod injects PUBLIC_KEY; the entrypoint starts it) and rsync, for ./start.sh sync onto the volume.
-RUN apt-get update && apt-get install -y --no-install-recommends openssh-server rsync \
+# sshd (RunPod injects PUBLIC_KEY; the entrypoint starts it) and rsync, for ./start.sh sync onto the volume;
+# rclone, for the pod to pull from an S3 bucket itself (S3_PULL in entrypoint.sh).
+RUN apt-get update && apt-get install -y --no-install-recommends openssh-server rsync rclone \
     && rm -rf /var/lib/apt/lists/*
 COPY docker/extra_model_paths.yaml /opt/comfy-app/extra_model_paths.yaml
 COPY workflows/ /opt/comfy-app/workflows/

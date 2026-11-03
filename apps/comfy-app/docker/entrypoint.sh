@@ -5,6 +5,8 @@
 #   COMFY_PORT    default 8188
 #   COMFY_ARGS    extra arguments for main.py, e.g. "--highvram"
 #   COMFY_LINKS   "path=target;..." symlinks to make binc-PC paths resolve on the volume (see below)
+#   S3_PULL       "bucket/prefix=/local/dir;..." pulled from S3 at start, in the background (see below)
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, S3_ENDPOINT   credentials for S3_PULL (endpoint only for non-AWS)
 # Anything passed to the container after the image name is appended too.
 set -euo pipefail
 SHARED="${COMFY_SHARED:-/workspace/comfy-shared}"
@@ -44,6 +46,39 @@ if [ -n "${PUBLIC_KEY:-}" ] && command -v sshd >/dev/null; then
   printf '%s\n' "$PUBLIC_KEY" > /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys
   ssh-keygen -A >/dev/null 2>&1 || true
   /usr/sbin/sshd -o PermitRootLogin=yes -o PasswordAuthentication=no && echo "sshd on 22 (for ./start.sh sync)"
+fi
+# S3_PULL: "bucket/prefix=/workspace/dir;...". Destinations must be under /workspace, the network volume,
+# so the bytes stay after the pod is deleted. Each pair is copied down with rclone, additive (copy never
+# deletes), in the background so ComfyUI is up while the bytes arrive. Credentials come from the pod's
+# environment, a read-only key (RunPod secrets: {{ RUNPOD_SECRET_name }}); nothing is written to the image.
+# Progress and errors go to the container log, and each pair leaves <dir>/.s3-pull.done when it finishes clean.
+if [ -n "${S3_PULL:-}" ]; then
+  if ! command -v rclone >/dev/null; then echo "S3_PULL set but rclone is not in this image" >&2
+  elif [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then echo "S3_PULL set but AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY are not" >&2
+  else
+    export RCLONE_CONFIG_PODS3_TYPE=s3 RCLONE_CONFIG_PODS3_PROVIDER="${S3_PROVIDER:-AWS}" \
+      RCLONE_CONFIG_PODS3_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" RCLONE_CONFIG_PODS3_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
+      RCLONE_CONFIG_PODS3_REGION="${AWS_REGION:-us-west-2}"
+    [ -n "${S3_ENDPOINT:-}" ] && export RCLONE_CONFIG_PODS3_ENDPOINT="$S3_ENDPOINT"
+    (
+      IFS=';' read -ra PULLS <<< "$S3_PULL"
+      for pair in "${PULLS[@]}"; do
+        [ -n "$pair" ] || continue
+        src="${pair%%=*}"; dst="${pair#*=}"
+        case "$dst" in
+          /workspace/*) ;;
+          *) echo "s3 pull refused: $dst is not under /workspace (the network volume); it would fill the container disk" >&2; continue ;;
+        esac
+        mountpoint -q /workspace 2>/dev/null || echo "note: /workspace is not a mount here; the pull goes to the container disk, not a volume" >&2
+        mkdir -p "$dst" && echo "s3 pull: $src -> $dst"
+        if rclone copy "PODS3:$src" "$dst" --transfers 8 --checksum --stats 30s --stats-one-line -v; then
+          touch "$dst/.s3-pull.done" && echo "s3 pull done: $dst"
+        else
+          echo "s3 pull FAILED: $src (exit $?); rerun the container or run rclone by hand" >&2
+        fi
+      done
+    ) &
+  fi
 fi
 TREE="${PROJECT_ROOT:-/workspace/project}"
 [ -e "$TREE" ] || echo "note: $TREE is not present; corrosion graphs will not find the project tree" >&2
