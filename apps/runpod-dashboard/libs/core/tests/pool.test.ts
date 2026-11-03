@@ -63,7 +63,9 @@ describe('the agent pool', () => {
 
   it('boots our image when it is pushed, the stock one otherwise', async () => {
     const cfg = mounts.defaults()
-    expect(pool.imageChoice(cfg)).toBe('prebuilt')   // 'comfy-app:contract-v26' is a local name
+    expect(pool.imageChoice(cfg)).toBe('configured')   // the default is the ghcr.io image (ADR-024)
+    cfg.image = 'comfy-app:contract-v26'
+    expect(pool.imageChoice(cfg)).toBe('prebuilt')   // a bare local name is not pullable
     cfg.image = 'ghcr.io/example/comfy-app:v26'
     expect(pool.imageChoice(cfg)).toBe('configured')
     await pool.create({ agent_name: 'upscale' })   // with the default configuration: must not need a pushed image

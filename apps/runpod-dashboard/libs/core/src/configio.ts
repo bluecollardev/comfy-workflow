@@ -28,14 +28,14 @@ export const SECTIONS: Record<SectionKey, SectionDef> = {
   volume: { label: 'Volume and datacenter', fields: ['network_volume_id', 'mount_path', 'data_center_id'], account: true },
   image: { label: 'Image and registry login', fields: ['image', 'registry_auth_id'], account: true },
   env: { label: 'Environment', fields: ['env'] },
-  pod_defaults: { label: 'Pod defaults', fields: ['idle_stop_minutes', 'sync_parallel', 'sync_shared', 'pull_shared', 'apply_by_default', 'required', 'links'] },
+  pod_defaults: { label: 'Pod defaults', fields: ['idle_stop_minutes', 'sync_parallel', 'sync_shared', 'pull_shared', 'apply_by_default', 'pull_any_card', 'required', 'links'] },
   mcp: { label: 'MCP servers', fields: ['mcp_http'] },
   folders: { label: 'Folders', fields: ['folders', 'custom'], machine: true },
   panama: { label: 'Panama bucket, region and profile', fields: [] },
   secrets: { label: 'Keys and tokens', fields: [] },
 }
 export const SECTION_KEYS = Object.keys(SECTIONS) as SectionKey[]
-const CONFIG_KEYS = new Set<string>(['folders', 'custom', 'network_volume_id', 'mount_path', 'data_center_id', 'links', 'env', 'apply_by_default', 'required', 'image', 'registry_auth_id', 'idle_stop_minutes', 'pull_shared', 'sync_shared', 'sync_parallel', 'dry_run', 'mcp_http'])
+const CONFIG_KEYS = new Set<string>(['folders', 'custom', 'network_volume_id', 'mount_path', 'data_center_id', 'links', 'env', 'apply_by_default', 'pull_any_card', 'required', 'image', 'registry_auth_id', 'idle_stop_minutes', 'pull_shared', 'sync_shared', 'sync_parallel', 'dry_run', 'mcp_http'])
 const TOP_KEYS = new Set(['format', 'version', 'exported_at', 'app_version', 'config', 'panama', 'secrets_included', 'secrets', 'secrets_set', 'env_omitted', 'not_exported'])
 /** Listed in every export, so a reader knows what to set up again by hand. */
 export const NOT_EXPORTED = ['the no-spend switch (dry_run)', 'per-pod configurations', 'adapters you wrote', 'the repositories attached to pods']
@@ -87,7 +87,8 @@ const checkType = (key: string, v: unknown): string | null => {
   switch (key) {
     case 'network_volume_id': case 'mount_path': case 'data_center_id': case 'image': case 'registry_auth_id': return str(v) ? null : `${key} must be text`
     case 'idle_stop_minutes': case 'sync_parallel': return typeof v === 'number' && Number.isFinite(v) ? null : `${key} must be a number`
-    case 'apply_by_default': return typeof v === 'boolean' ? null : `${key} must be true or false`
+    case 'apply_by_default':
+    case 'pull_any_card': return typeof v === 'boolean' ? null : `${key} must be true or false`
     case 'sync_shared': case 'pull_shared': return strArr(v) ? null : `${key} must be a list of folder names`
     case 'folders': return isObj(v) && Object.values(v).every(str) ? null : 'folders must map names to paths (text)'
     case 'required': return isObj(v) && Object.values(v).every((x) => typeof x === 'boolean') ? null : 'required must map folder names to true or false'

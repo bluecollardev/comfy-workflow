@@ -100,6 +100,18 @@ export async function datacenterStock(dataCenterId: string, client?: RunPodClien
   return (dc?.gpuAvailability || []).filter((g) => g.available).map((g) => g.gpuTypeId)
 }
 
+/** Every NVIDIA GPU type RunPod has free in ONE datacenter on the secure cloud, cheapest first: not only our table's ten cards. A pull, a hash or a delete never touches the GPU
+ *  (ADR-022), so a pull pod may take whatever is free. */
+export interface FreeCard { id: string; name: string; vram: number | null; price: number; stock: string }
+export async function freeCardsIn(dataCenterId: string, client?: RunPodClient): Promise<FreeCard[]> {
+  const d = await graphql<{ gpuTypes: { id: string; displayName: string | null; memoryInGb: number | null; lowestPrice: { uninterruptablePrice: number | null; stockStatus: string | null } | null }[] }>(
+    `query { gpuTypes { id displayName memoryInGb lowestPrice(input:{gpuCount:1, dataCenterId:${str(dataCenterId)}, secureCloud:true}) { uninterruptablePrice stockStatus } } }`, client)
+  return (d?.gpuTypes || [])
+    .filter((g) => /^NVIDIA /.test(g.id) && g.lowestPrice?.uninterruptablePrice != null && !!g.lowestPrice.stockStatus && g.lowestPrice.stockStatus !== 'None')
+    .map((g) => ({ id: g.id, name: g.displayName || g.id, vram: g.memoryInGb ?? null, price: g.lowestPrice!.uninterruptablePrice as number, stock: g.lowestPrice!.stockStatus as string }))
+    .sort((a, b) => a.price - b.price)
+}
+
 /** Every listed datacenter with, for the given cards, the secure-cloud price and stock there. One request:
  *  the lowestPrice query takes a dataCenterId, aliased once per datacenter. Secure cloud, because a network
  *  volume pins its pods there and that is the price they pay. */

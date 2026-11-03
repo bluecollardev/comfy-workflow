@@ -22,7 +22,10 @@ import { folderShapes, shape } from './shape.js'
 export const SYNC_SHARED = ['input', 'models', 'output', 'workflows'] as const
 export const SYNC_SHARED_DEFAULT = ['input', 'models', 'workflows'] as const
 export const PULL_SHARED_DEFAULT = ['output'] as const
-export const DEFAULT_IMAGE = () => process.env.COMFY_IMAGE || 'comfy-app:contract-v26'   // ours; pushed to a registry before a pod can pull it
+/** The pod image selected by default (ADR-020, ADR-024): ours, on GitHub's registry, built by Actions. A pod cannot pull a bare local name, so the default is the registry reference;
+ *  COMFY_IMAGE overrides it, and an image saved in the Default Configuration wins over both. */
+export const DEFAULT_IMAGE_REF = 'ghcr.io/bluecollardev/comfy-app:contract-v26'
+export const DEFAULT_IMAGE = () => process.env.COMFY_IMAGE || DEFAULT_IMAGE_REF
 
 export interface Link { path: string; target: string; required: boolean; mode: string; what: string; folder: string }
 export interface CustomFolder { name: string; local: string; container: string; link: string; mode: string }
@@ -35,6 +38,8 @@ export interface MountsConfig {
   links: Link[]
   env: Record<string, string>
   apply_by_default: boolean
+  /** Pull pods (the Pod download of a round, ADR-022/024) may take any NVIDIA card RunPod has free in the volume's datacenter, not only the table's ten; a pull needs no GPU. Default on. */
+  pull_any_card: boolean
   required: Record<string, boolean>
   image: string
   registry_auth_id: string   // RunPod's saved credential for a private registry (saveRegistryAuth); '' for a public image
@@ -98,6 +103,7 @@ export function defaults(): MountsConfig {
     links: [],
     env: {},
     apply_by_default: true,
+    pull_any_card: true,
     required: Object.fromEntries(names.map((n) => [n, false])),
     image: DEFAULT_IMAGE(),
     registry_auth_id: '',
@@ -141,6 +147,7 @@ export function normalize(data: Partial<MountsConfig>): MountsConfig {
     sync_parallel: data.sync_parallel ?? d.sync_parallel,
     pull_shared: Array.isArray(data.pull_shared) ? SYNC_SHARED.filter((x) => data.pull_shared!.includes(x)) : d.pull_shared,
     sync_shared: Array.isArray(data.sync_shared) ? SYNC_SHARED.filter((x) => data.sync_shared!.includes(x)) : d.sync_shared,
+    pull_any_card: data.pull_any_card !== false,   // absent means on
     dry_run: data.dry_run === true,
     mcp_http: normalizeMcpHttp(data.mcp_http),
   }

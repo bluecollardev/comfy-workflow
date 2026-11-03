@@ -119,6 +119,8 @@ export interface PodPlan {
   gpu: string; price_per_hour: number | null; bytes: number; idle_stop_minutes: number
   /** Beyond the contract: how long the idle timer is held for this job (decision 2d), and how many files the bucket has under the round. */
   ceiling_minutes: number; files: number; volume: Volume | null
+  /** Set when the card is outside the app's table (none of the table's cards was free): the RunPod id the pod is created with. */
+  gpu_type_id?: string
 }
 
 const gpuName = (id: string) => Object.entries(gpus.GPUS).find(([, g]) => g.id === id)?.[0] || id
@@ -152,12 +154,21 @@ export async function plan(round: string, opts: Opts = {}): Promise<PodPlan> {
   const active = await findActivePod(cfg, opts)
   if (active) return { ...base, route: 'active', pod: { id: active.id, name: active.name, price_per_hour: active.price }, gpu: active.gpu, price_per_hour: active.price }
   if (mounts.dryRun(cfg)) return { ...base, route: 'temporary', pod: null, gpu: 'simulated', price_per_hour: 0 }
-  let gpu = 'auto', price: number | null = null
+  // A pull needs no GPU: take the cheapest card RunPod has free in the volume's datacenter, whatever its type. Our table's cards are named by their short key;
+  // a card outside the table is created by its RunPod id (and is often dearer, which is why the price is part of the plan the user confirms).
+  let gpu = 'auto', price: number | null = null, gpuTypeId: string | undefined
   try {
-    const first = (await pods.candidates(gpus.AUTO, opts.client, volume?.datacenter))[0]
-    if (first) { gpu = gpuName(first); price = (await rp.gpuStock([first], opts.client)).find((g) => g.id === first)?.price ?? null }
+    const table = new Set(Object.values(gpus.GPUS).map((g) => g.id))
+    const anyCard = cfg.pull_any_card !== false   // the root setting (Default Configuration): off = only the table's cards, as before ADR-024
+    const free = (volume?.datacenter ? await rp.freeCardsIn(volume.datacenter, opts.client) : []).filter((c) => anyCard || table.has(c.id))
+    const pick = free[0]
+    if (pick) { gpu = table.has(pick.id) ? gpuName(pick.id) : pick.name; price = pick.price; if (!table.has(pick.id)) gpuTypeId = pick.id }
+    else {
+      const first = (await pods.candidates(gpus.AUTO, opts.client, volume?.datacenter))[0]   // no answer about free cards: what the app would pick, as before
+      if (first) { gpu = gpuName(first); price = (await rp.gpuStock([first], opts.client)).find((g) => g.id === first)?.price ?? null }
+    }
   } catch { /* the card is chosen again at creation */ }
-  return { ...base, route: 'temporary', pod: null, gpu, price_per_hour: price }
+  return { ...base, route: 'temporary', pod: null, gpu, price_per_hour: price, ...(gpuTypeId ? { gpu_type_id: gpuTypeId } : {}) }
 }
 
 // ----- the job -----
@@ -351,7 +362,7 @@ async function runTemporary(i: Internal, opts: Opts) {
   try {
     const env: Record<string, string> = { ...cfg.env }
     if (j.kind === 'pull') env.S3_PULL = s3PullFor(j.round); else delete env.S3_PULL   // a delete never carries a pull (or the keys podOverrides adds for one)
-    const created = await pods.create({ name, gpu: 'auto', image: 'configured', idle_stop_minutes: p.ceiling_minutes, config: { ...cfg, env } }, opts.client)
+    const created = await pods.create({ name, ...(p.gpu_type_id ? { gpu_type_id: p.gpu_type_id } : { gpu: 'auto' }), image: 'configured', idle_stop_minutes: p.ceiling_minutes, config: { ...cfg, env } }, opts.client)
     podId = created.id; j.pod_id = podId; tempSetId(name, podId)
     if (i.cancelled) return
     j.state = 'starting'
@@ -387,7 +398,7 @@ async function simulate(i: Internal, opts: Opts) {
   let podId: string | null = null
   try {
     if (temp) {
-      const created = await pods.create({ name: j.pod_name!, gpu: 'auto', image: 'configured', idle_stop_minutes: i.plan.ceiling_minutes })
+      const created = await pods.create({ name: j.pod_name!, ...(i.plan.gpu_type_id ? { gpu_type_id: i.plan.gpu_type_id } : { gpu: 'auto' }), image: 'configured', idle_stop_minutes: i.plan.ceiling_minutes })
       podId = created.id; j.pod_id = podId; j.pod_name = created.name
     }
     const steps: [JobState, string[]][] = j.kind === 'pull'

@@ -7,6 +7,7 @@ import * as gpus from '../src/gpus.js'
 import * as idle from '../src/idle.js'
 import * as mounts from '../src/mounts.js'
 import * as panama from '../src/panama.js'
+import * as pods from '../src/pods.js'
 import * as podpull from '../src/podpull.js'
 import { scratch } from './helpers.js'
 
@@ -21,7 +22,7 @@ interface RawPodFake { id: string; name: string; networkVolumeId?: string; costP
 const upPod = (id: string, name: string, vol = 'vol1', cost = 0.59): RawPodFake => ({ id, name, networkVolumeId: vol, costPerHr: cost, machine: { gpuDisplayName: 'L4' }, runtime: { uptimeInSeconds: 120, ports: [{ ip: '1.2.3.4', isIpPublic: true, privatePort: 22, publicPort: 2222, type: 'tcp' }] } })
 
 /** A RunPod that answers what the pull code asks, and remembers it. */
-function fakeRunPod(initial: RawPodFake[] = [], hooks: { onCreate?: (query: string) => void; terminateFails?: boolean } = {}) {
+function fakeRunPod(initial: RawPodFake[] = [], hooks: { onCreate?: (query: string) => void; terminateFails?: boolean; gpuTypes?: { id: string; displayName?: string; memoryInGb?: number; price: number | null; stock: string | null }[] } = {}) {
   const pods = [...initial]
   const calls = { created: [] as string[], terminated: [] as string[], stopped: [] as string[], total: 0 }
   const fetchFn = (async (url: string, init?: { body?: string }) => {
@@ -31,6 +32,7 @@ function fakeRunPod(initial: RawPodFake[] = [], hooks: { onCreate?: (query: stri
     const q = JSON.parse(init?.body || '{}').query as string
     if (q.includes('myPods')) return ok({ data: { myself: { pods } } })
     if (q.includes('query pod {')) { const id = /podId: "([^"]+)"/.exec(q)![1]; return ok({ data: { pod: pods.find((p) => p.id === id) ?? null } }) }
+    if (q.includes('gpuTypes') && hooks.gpuTypes) return ok({ data: { gpuTypes: hooks.gpuTypes.map((g) => ({ id: g.id, displayName: g.displayName ?? g.id, memoryInGb: g.memoryInGb ?? 24, secureCloud: true, communityCloud: false, lowestPrice: { uninterruptablePrice: g.price, stockStatus: g.stock } })) } })
     if (q.includes('gpuTypes')) return ok({ data: { gpuTypes: [{ id: G1, secureCloud: true, communityCloud: false, lowestPrice: { uninterruptablePrice: 0.59, stockStatus: 'Low' } }, { id: G2, secureCloud: true, communityCloud: false, lowestPrice: { uninterruptablePrice: 0.22, stockStatus: 'High' } }] } })
     if (q.includes('dataCenters { id gpuAvailability')) return ok({ data: { dataCenters: [{ id: 'EUR-IS-2', gpuAvailability: [{ available: true, gpuTypeId: G1 }, { available: true, gpuTypeId: G2 }] }] } })
     if (q.includes('podFindAndDeployOnDemand')) {
@@ -127,6 +129,48 @@ describe('availability', () => {
   })
   it('is what panama.status() reports under `pod`', () => {
     expect(panama.status().pod).toEqual(podpull.capability())
+  })
+})
+
+describe('plan: a pull needs no GPU, so any free card will do (ADR-022)', () => {
+  const BLACKWELL = 'NVIDIA RTX PRO 6000 Blackwell Server Edition'
+  it('uses the cheapest card that is free in the volume\'s datacenter, from the table or not', async () => {
+    const rp = fakeRunPod([], { gpuTypes: [{ id: G1, price: 0.44, stock: 'Low' }, { id: BLACKWELL, displayName: 'RTX PRO 6000', memoryInGb: 96, price: 2.49, stock: 'Low' }, { id: 'NVIDIA A100 80GB PCIe', price: 1.64, stock: 'None' }] })
+    const p = await podpull.plan(ROUND, base({ client: rp.client }))
+    expect(p).toMatchObject({ route: 'temporary', gpu: 'l4', price_per_hour: 0.44 })
+    expect(p.gpu_type_id).toBeUndefined()   // one of the table's cards: created by its key, as always
+  })
+  it('takes a card outside the table when it is the only one free, and says so: its name, its price, and the RunPod id the pod is created with', async () => {
+    const rp = fakeRunPod([], { gpuTypes: [{ id: G1, price: 0.44, stock: null }, { id: BLACKWELL, displayName: 'RTX PRO 6000', memoryInGb: 96, price: 2.49, stock: 'Low' }] })
+    const p = await podpull.plan(ROUND, base({ client: rp.client }))
+    expect(p).toMatchObject({ route: 'temporary', gpu: 'RTX PRO 6000', price_per_hour: 2.49, gpu_type_id: BLACKWELL })
+  })
+  it('creates the pod with that card and nothing else changes: the volume, the name, S3_PULL, the idle ceiling', async () => {
+    const rp = fakeRunPod([], { gpuTypes: [{ id: BLACKWELL, displayName: 'RTX PRO 6000', price: 2.49, stock: 'Low' }] })
+    const lines = logsOf(...GOOD)
+    const j0 = await podpull.pull(ROUND, base({ client: rp.client, logs: async () => lines() }))
+    const j = await done(j0.id)
+    expect(j).toMatchObject({ state: 'done', route: 'temporary' })
+    const q = rp.calls.created[0]
+    expect(q).toContain(`gpuTypeId: "${BLACKWELL}"`); expect(q).toContain('networkVolumeId: "vol1"'); expect(q).toContain(`{ key: "S3_PULL", value: "${podpull.s3PullFor(ROUND)}" }`)
+    expect(rp.calls.terminated).toEqual(['newpod1'])   // and the pod is deleted when the job ends, as for any card
+  })
+  it('the root setting pull_any_card off keeps to the table\'s cards: an unlisted card that is free is ignored', async () => {
+    const rp = fakeRunPod([], { gpuTypes: [{ id: BLACKWELL, displayName: 'RTX PRO 6000', price: 2.49, stock: 'Low' }] })
+    configure({ pull_any_card: false })
+    const p = await podpull.plan(ROUND, base({ client: rp.client }))
+    expect(p.gpu_type_id).toBeUndefined()
+    expect(p.gpu).not.toBe('RTX PRO 6000')
+  })
+  it('only a real RunPod GPU type id is accepted, never free text, and never AMD or an empty one', async () => {
+    for (const bad of ['', 'rm -rf', 'NVIDIA ', 'nvidia l4', 'AMD Instinct MI300X', 'NVIDIA "; drop']) {
+      await expect(pods.create({ name: 'x', gpu_type_id: bad } as never, fakeRunPod().client)).rejects.toThrow(/Not a RunPod GPU type id|A pod needs a name/)
+    }
+  })
+  it('falls back to what the app would pick when RunPod gives no answer about free cards', async () => {
+    const rp = fakeRunPod([], { gpuTypes: [] })
+    const p = await podpull.plan(ROUND, base({ client: rp.client }))
+    expect(p.route).toBe('temporary'); expect(p.gpu_type_id).toBeUndefined()
   })
 })
 

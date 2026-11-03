@@ -116,3 +116,5 @@ The same rows, badges, Download / Resume / Re-Download and Delete apply, acting 
 **Where things are.** Staged rounds are in `temp/rounds/` inside the mapped ComfyUI-Shared. A Sync never carries `temp/`. `PANAMA_ROUNDS_DIR` in the settings file moves
 the staging folder. Not every entry in the bucket is an import package (the inbox round holds text entries only).
 
+**Which card a Pod download uses.** A pull needs no GPU, so by default (Default Configuration > Options > "Pull pods may use any free card", on) the short-lived pod takes the cheapest NVIDIA card RunPod has free in the volume's datacenter, even one outside the app's usual list; the confirmation shows the card and its hourly price before anything starts. Switch it off to keep to the usual cards. The setting is part of the configuration export and import (ADR-024).
+
