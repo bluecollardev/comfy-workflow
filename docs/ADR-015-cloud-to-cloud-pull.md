@@ -73,3 +73,14 @@ Run on the app's volume `kceera10qh` (EUR-IS-2, Iceland), image `ghcr.io/bluecol
 - **Not covered.** A large round (the 20 Oct round is 9 GB, the 29 Oct one 39 GB), the datacenter-to-datacenter speed, a bad key (the first attempt covered a *missing* key only), the
   `.s3-pull.done` marker's content, and the manifest check on the pod (the app checks on this PC; the pod does not). The inbox round is text only, so it did not exercise multipart or large files.
 - The keys sat in the pod's environment on RunPod in plain text, as the open question in ADR-021 says; `panama-lucas` was used.
+
+## Second pod test: the app end to end (2026-11-03, approved by Lucas)
+
+Local app, real pod, real bucket. Pod 2 (RTX 4090, created through the running app's MCP, ComfyUI up after about 5 minutes on a slow image pull) had the same `S3_PULL`.
+
+- **The volume keeps the data and the pull is idempotent.** The pod logged `There was nothing to transfer` and `s3 pull done`: the 379 files pulled by the first, deleted pod were still on the network volume, and
+  `rclone --checksum` found them identical to the bucket's. That is also the on-pod check of the files against the bucket (by size and checksum); a check against the round's `MANIFEST.json` on the pod is still not done.
+- **Local half**, driven through the app's own core against the real bucket and the real `~/ComfyUI-Shared`: five real rounds listed with their state on this PC; the inbox round downloaded in 16.5 s and its manifest check passed
+  (378 listed, 0 bad); the staged state read "complete"; the import plan refused it (no adapter recognises an inbox round, as expected); Delete freed 623,873 B; the 20 and 22 Oct rounds (9 and 14 GB on disk) were untouched.
+- **SSH to a pod** with the host RunPod's API returns (`<id>.proxy.runpod.io`) did not resolve from this Mac, so nothing could be run on the pod. A manifest check on the pod would need the SSH route fixed.
+- Cost about USD 0.05 more; no pod left running. `S3_PULL` removed from the default configuration again.
