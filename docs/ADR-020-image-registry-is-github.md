@@ -57,3 +57,12 @@ starts, `--remote` fails at "no run" and the image can only reach `ghcr.io` by `
 
 Also still true: the existing `ghcr.io/bluecollardev/comfy-app` package was pushed from the Mac with a token, so it may not grant the
 repository's Actions write access; if the first run is refused, add the repository under the package's "Manage Actions access".
+
+## Update 2026-11-03 (later): Actions runs; the push is refused until the package allows this repo
+
+Actions started on the second attempt (cause not identified; no change was made on our side). The run built the whole image on the runner
+(checkout, deploy-key submodule, build all passed) and then failed at the push: `denied: permission_denied: write_package`. The existing
+`ghcr.io/bluecollardev/comfy-app` package was pushed from the Mac with a personal token (2026-10-27), so the repository's `GITHUB_TOKEN`
+has no access to it. Fix, in the browser (no API at our token's scope): the package's settings, "Manage Actions access", add
+`bluecollardev/comfy-workflow` with the Write role (https://github.com/orgs/bluecollardev/packages/container/comfy-app/settings), then rerun
+`./start.sh comfy-image --remote --wait`. The pushed image was not stored, so the rerun rebuilds it.
