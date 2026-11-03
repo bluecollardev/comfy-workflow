@@ -16,7 +16,8 @@ describe('defaults', () => {
     expect(Object.keys(cfg.folders)).toEqual(['project', 'plates', 'comfy-shared'])
     expect(Object.values(cfg.folders).some(Boolean)).toBe(false)
     expect(cfg.network_volume_id).toBe(''); expect(cfg.mount_path).toBe('/workspace')
-    expect(cfg.image).toBe('comfy-app:contract-v26'); expect(cfg.idle_stop_minutes).toBe(30); expect(cfg.sync_parallel).toBe(8)
+    expect(cfg.image).toBe('ghcr.io/bluecollardev/comfy-app:contract-v26');   // selected by default (ADR-024): a registry reference, which a pod can pull
+     expect(cfg.idle_stop_minutes).toBe(30); expect(cfg.sync_parallel).toBe(8)
     expect(m.allLinks(cfg)).toEqual([]); expect(m.localEnv(cfg)).toEqual({})
     expect(m.podEnv(cfg)).toEqual({ PROJECT_ROOT: '/workspace/project', PLATES_ROOT: '/workspace/plates', COMFY_SHARED: '/workspace/comfy-shared' })
     expect(m.podOverrides(cfg).env.COMFY_LINKS).toBeUndefined()

@@ -262,8 +262,11 @@
       </fieldset>
       <fieldset v-show="show('options')" class="cfg-section" data-section="options">
         <legend>{{ $t('config.options') }}</legend>
-      <BFormCheckbox v-if="!forPod" v-model="cfg.apply_by_default" switch class="mb-2" data-testid="cfg-apply-default">
+      <BFormCheckbox v-if="!forPod" v-model="cfg.apply_by_default" :value="true" :unchecked-value="false" switch class="mb-2" data-testid="cfg-apply-default">
         {{ $t('config.applyDefault') }} <span class="text-body-secondary">{{ $t('config.applyDefaultHint') }}</span>
+      </BFormCheckbox>
+      <BFormCheckbox v-if="!forPod" v-model="cfg.pull_any_card" :value="true" :unchecked-value="false" switch class="mb-2" data-testid="cfg-pull-any-card">
+        {{ $t('config.pullAnyCard') }} <span class="text-body-secondary">{{ $t('config.pullAnyCardHint') }}</span>
       </BFormCheckbox>
       <BFormCheckbox v-if="!forPod" v-model="cfg.dry_run" switch class="mb-1" :disabled="dryForced" data-testid="cfg-dry-run">
         {{ $t('config.dryRun') }} <span class="text-body-secondary">{{ $t('config.dryRunHint') }}</span>

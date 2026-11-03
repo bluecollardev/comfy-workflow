@@ -26,6 +26,8 @@ export const webPortOf = (ports: string | null | undefined, fallback = 8188): nu
 }
 
 export interface CreatePodRequest {
+  /** A full RunPod GPU type id (`NVIDIA ...`) outside the app's table, used by pull pods when none of the table's cards is free (ADR-022). */
+  gpu_type_id?: string
   name: string; gpu?: string; gpu_count?: number; instance_type?: 'on-demand' | 'spot'; volume_gb?: number; disk_gb?: number
   image?: string; env_vars?: Record<string, string>; build_args?: Record<string, string>; pip_requirements?: string
   custom_nodes?: { name: string; url: string; branch: string; path: string }[]; start_ssh?: boolean; start_jupyter?: boolean
@@ -81,7 +83,10 @@ export function plan(req: CreatePodRequest, cfg: mounts.MountsConfig, credential
   const imageName = resolveImage(req.image, cfg)
   const gpuKey = req.gpu || gpus.DEFAULT_GPU
   let gpuTypeId: string
-  if (gpuKey === gpus.AUTO) gpuTypeId = gpus.AUTO   // resolved against stock at creation
+  if (req.gpu_type_id !== undefined) {
+    if (!/^NVIDIA [A-Za-z0-9 ._()-]{2,80}$/.test(req.gpu_type_id)) throw bad(`Not a RunPod GPU type id: ${req.gpu_type_id}`)
+    gpuTypeId = req.gpu_type_id
+  } else if (gpuKey === gpus.AUTO) gpuTypeId = gpus.AUTO   // resolved against stock at creation
   else { try { gpuTypeId = gpus.runpodId(gpuKey) } catch (e) { throw bad((e as Error).message) } }
   const idleMinutes = req.idle_stop_minutes == null ? cfg.idle_stop_minutes : req.idle_stop_minutes
   return {

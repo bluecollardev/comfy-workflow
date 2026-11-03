@@ -296,7 +296,9 @@
     "panamaRegion": "Region",
     "panamaProfile": "AWS profile (fallback)",
     "panamaProfileHelp": "Used only when no keys are stored above.",
-    "panamaReset": "Back to the built-in default"
+    "panamaReset": "Back to the built-in default",
+    "pullAnyCard": "Pull pods may use any free card",
+    "pullAnyCardHint": "(a Pod download needs no GPU, so it takes the cheapest card RunPod has free in the volume's datacenter, even one outside the usual list; the card and its price are shown before it starts. Off: only the usual cards)"
   },
   "picker": {
     "title": "Choose the {name} folder",

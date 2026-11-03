@@ -66,6 +66,38 @@ describe('exportConfig', () => {
   it('suggests a dated file name', () => { expect(configio.suggestedName(new Date(2026, 10, 3))).toBe('pod-manager-config-2026-11-03.json') })
 })
 
+describe('the pull_any_card root setting travels with the configuration (docs/ADR-024)', () => {
+  it('is in the export, under Pod defaults, whichever way it is set', () => {
+    for (const v of [true, false]) {
+      mounts.save({ ...mounts.load(), pull_any_card: v })
+      expect(configio.exportConfig().config.pull_any_card).toBe(v)
+    }
+  })
+  it('is a section field the preview shows as a change, applies only with that section ticked, and is restored by Undo', () => {
+    mounts.save({ ...mounts.load(), pull_any_card: true })
+    const file = base({ pull_any_card: false, image: 'ghcr.io/x/y:2' })   // a second section, so ticking the others has something to apply
+    const plan = configio.planImport(file)
+    expect(plan.ok).toBe(true)
+    const sec = plan.sections.find((x) => x.key === 'pod_defaults')!
+    expect(sec.changed).toBe(true)
+    expect(JSON.stringify(sec.incoming)).toContain('pull_any_card')
+    configio.applyImport(file, { sections: allSections().filter((k) => k !== 'pod_defaults') })   // that section not ticked: nothing changes
+    expect(mounts.load().pull_any_card).toBe(true); expect(mounts.load().image).toBe('ghcr.io/x/y:2')
+    configio.applyImport(file, { sections: ['pod_defaults'] })
+    expect(mounts.load().pull_any_card).toBe(false)
+    configio.undoImport()
+    expect(mounts.load().pull_any_card).toBe(true)
+  })
+  it('a file from before the setting existed leaves it alone, and a non-boolean value is reported, never imported', () => {
+    mounts.save({ ...mounts.load(), pull_any_card: false })
+    configio.applyImport(base({ idle_stop_minutes: 45 }), { sections: ['pod_defaults'] })
+    expect(mounts.load().pull_any_card).toBe(false)   // not in the file: the machine's own value stays
+    const bad = configio.planImport(base({ pull_any_card: 'yes' }))
+    expect(bad.ok).toBe(false)
+    expect(bad.errors.join('\n')).toMatch(/pull_any_card must be true or false/)
+  })
+})
+
 describe('planImport: refuses what it cannot trust, flags what it must', () => {
   it('refuses a file that is not ours, is newer than this app, is not an object, or has no config', () => {
     expect(configio.planImport({ format: 'something-else', version: 1, config: {} })).toMatchObject({ ok: false })
