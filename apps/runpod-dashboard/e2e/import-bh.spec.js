@@ -54,6 +54,7 @@ test.describe('Import from BH', () => {
     const dialog = dialogOf(page)
     await dialog.locator('[data-testid="panama-round"][data-round="brynley-comfy-2026-10-23"]').getByTestId('panama-pull').click()
     await expect(dialog.getByTestId('panama-job-state')).toHaveText(t('panama.state.running'))
+    await expect(dialog.getByTestId('panama-job-header').getByTestId('panama-cancel')).toBeVisible()   // in the card's header, not inline under it
     await dialog.getByTestId('panama-cancel').click()
     await expect(dialog.getByTestId('panama-job-state')).toHaveText(t('panama.state.cancelled'))
     await expect(dialog.getByTestId('panama-job-cancelled')).toBeVisible()

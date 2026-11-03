@@ -17,12 +17,14 @@
 
     <div v-if="store.job" class="card mt-3" data-testid="panama-job">
       <div class="card-body small">
-        <strong>{{ store.job.round }}</strong>
-        <BBadge :variant="{ failed: 'danger', done: 'success', cancelled: 'warning' }[store.job.state] || 'info'" class="ms-2 fw-normal" data-testid="panama-job-state">{{ $t(`panama.state.${store.job.state}`) }}</BBadge>
-        <span class="ms-2 text-body-secondary" data-testid="panama-job-files">{{ $t('panama.files', { n: store.job.files }) }}</span>
+        <div class="d-flex align-items-center gap-2" data-testid="panama-job-header">
+          <strong>{{ store.job.round }}</strong>
+          <BBadge :variant="{ failed: 'danger', done: 'success', cancelled: 'warning' }[store.job.state] || 'info'" class="fw-normal" data-testid="panama-job-state">{{ $t(`panama.state.${store.job.state}`) }}</BBadge>
+          <span class="text-body-secondary" data-testid="panama-job-files">{{ $t('panama.files', { n: store.job.files }) }}</span>
+          <BButton v-if="store.job.state === 'running'" size="sm" variant="outline-danger" class="ms-auto text-nowrap" data-testid="panama-cancel" @click="store.cancel()"><i class="fa-solid fa-xmark me-1"></i>{{ $t('panama.cancel') }}</BButton>
+        </div>
         <div v-if="store.job.error" class="text-danger mt-1" data-testid="panama-job-error">{{ store.job.error }}</div>
         <pre v-if="store.job.lines?.length" class="mb-0 mt-2 small text-body-secondary">{{ store.job.lines.slice(-4).join('\n') }}</pre>
-        <BButton v-if="store.job.state === 'running'" size="sm" variant="outline-danger" class="ms-2 py-0" data-testid="panama-cancel" @click="store.cancel()"><i class="fa-solid fa-xmark me-1"></i>{{ $t('panama.cancel') }}</BButton>
         <div v-if="store.job.state === 'cancelled'" class="text-body-secondary mt-1" data-testid="panama-job-cancelled">{{ $t('panama.cancelledNote') }}</div>
         <BButton v-if="store.job.state === 'done'" size="sm" variant="primary" class="mt-2" data-testid="panama-continue" @click="use(store.job.round)">{{ $t('panama.use') }}</BButton>
       </div>
