@@ -22,12 +22,15 @@ folder (`~/panama-rounds`).
    complete. Cancel kills the process, marks the job `cancelled` and leaves what was fetched. After a clean download the app verifies every file
    against the round's manifest (ADR-016) before offering **Import Package**. The Cancel button is in the download card's header, floated right;
    the downloaded badge comes before the row's buttons; the Import Package buttons are green.
-5. **The app holds the bucket keys.** Default Configuration has a "Panama bucket (BH)" section (access key ID and secret, shown as the last four
+5. **Staged rounds can be deleted from this computer** (Lucas: "ability to delete from temp too to clear up space ... on my hard drive"). Each row shows its size on disk; Delete
+   confirms with that size and removes only `temp/rounds/<round>` (`panama.remove`): the name must be one folder name, the resolved path must sit directly inside the staging
+   folder (a link pointing elsewhere is refused), and a round that is downloading must be cancelled first. The bucket, pods and anything already imported are untouched.
+6. **The app holds the bucket keys.** Default Configuration has a "Panama bucket (BH)" section (access key ID and secret, shown as the last four
    characters; stored in `~/.config/runpod-pod-manager/.env`, mode 0600; never in the mounts file). They win over the `panama` AWS profile, which is
    the fallback. The app runs `aws` with the keys in the environment and with `AWS_PROFILE` and `AWS_DEFAULT_PROFILE` **unset**; an empty
    `AWS_PROFILE` makes the CLI look for a profile named "" (`The config profile () could not be found`), the bug this fixed. For now the stored pair is
    `panama-lucas` (read-only, Lucas's own).
-6. **The image is built by GitHub Actions** (ADR-020), `ghcr.io/bluecollardev/comfy-app:contract-v26`, with `rclone` and `S3_PULL`; verified from the
+7. **The image is built by GitHub Actions** (ADR-020), `ghcr.io/bluecollardev/comfy-app:contract-v26`, with `rclone` and `S3_PULL`; verified from the
    registry's image history, not run.
 
 ## Open

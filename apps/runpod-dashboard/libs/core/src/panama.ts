@@ -7,9 +7,9 @@
  */
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, normalize, relative } from 'node:path'
+import { dirname, join, normalize, relative } from 'node:path'
 import { bad } from './errors.js'
 import * as mounts from './mounts.js'
 import { STAGED_ROUNDS } from './paths.js'
@@ -63,7 +63,9 @@ export function status() {
 
 /** What is on this PC for a round: nothing, some of it, all of it but never checked, or all of it and verified (the done marker). */
 export interface Staged { state: 'none' | 'partial' | 'unverified' | 'complete'; present: number; expected: number | null; missing: number | null }
-export interface Round { name: string; staged: boolean; state: Staged['state']; present: number; expected: number | null; missing: number | null }
+export interface Round { name: string; staged: boolean; state: Staged['state']; present: number; expected: number | null; missing: number | null; bytes: number }
+/** Bytes under a folder (what Delete would free). */
+const dirBytes = (d: string): number => { let n = 0; try { for (const e of readdirSync(d, { withFileTypes: true })) { const f = join(d, e.name); n += e.isDirectory() ? dirBytes(f) : e.isFile() ? statSync(f).size : 0 } } catch { /* not there */ } return n }
 const countFiles = (d: string): number => { let n = 0; try { for (const e of readdirSync(d, { withFileTypes: true })) { if (e.isDirectory()) n += countFiles(join(d, e.name)); else if (!e.name.startsWith('.panama-pull')) n++ } } catch { /* not there */ } return n }
 /** Cheap (existence and size, no hashing) so the list can show it for every round: a folder with some files is `partial`, with every listed file present and the right size but no marker `unverified`. */
 export function stagedState(round: string): Staged {
@@ -81,7 +83,7 @@ export function rounds(): Round[] {
   const r = run(listCmd())
   if (r.status !== 0) throw bad(`Could not list the bucket: ${(r.stderr || r.stdout).trim().split('\n').pop()}`)
   return r.stdout.split('\n').map((l) => /^\s*PRE (.+)\/\s*$/.exec(l)?.[1]).filter((n): n is string => !!n && ROUND.test(n))
-    .map((name) => { const st = stagedState(name); return { name, staged: st.state === 'complete', ...st } })
+    .map((name) => { const st = stagedState(name); return { name, staged: st.state === 'complete', ...st, bytes: st.state === 'none' ? 0 : dirBytes(join(stagingDir(), name)) } })
 }
 
 /** Files and bytes under one round (a listing, so a big round takes a few seconds). */
@@ -179,6 +181,20 @@ export async function verify(root: string): Promise<Verify> {
   } }
   walk(root)
   return { listed: files.size, bad, extra, kind: m.kind, ok: files.size > 0 && bad.length === 0 }
+}
+
+/** Delete a round's staged copy on THIS PC (ComfyUI-Shared/temp/rounds/<round>) to free disk. Never touches the bucket, a pod, or anything outside the staging folder:
+ *  the name must be one folder name, the resolved path must sit directly inside the staging folder, and a running download of it blocks the delete. */
+export function remove(round: string): { round: string; freed: number } {
+  if (!ROUND.test(round)) throw bad(`Not a round name: ${round}`)
+  if ([...jobs.values()].some((j) => j.round === round && ['running', 'verifying'].includes(j.state))) throw bad(`${round} is downloading: cancel it first.`)
+  const root = stagingDir(), dir = join(root, round)
+  if (!existsSync(dir)) return { round, freed: 0 }
+  const real = realpathSync(dir), realRoot = realpathSync(root)
+  if (dirname(real) !== realRoot) throw bad(`Refusing to delete ${dir}: it is not directly inside the staging folder ${root}.`)
+  const freed = dirBytes(real)
+  rmSync(real, { recursive: true, force: true })
+  return { round, freed }
 }
 
 /** Stop a running download. The files already fetched stay; Download again carries on from them (sync skips what is complete). */

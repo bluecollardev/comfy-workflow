@@ -31,6 +31,12 @@ export const usePanamaStore = defineStore('panama', () => {
     error.value = null
     try { job.value = await panamaAPI.pull(round); poll() } catch (e) { error.value = errorText(e) }
   }
+  const removing = ref(null)   // the round whose Delete is awaiting its confirmation
+  async function remove(round) {
+    error.value = null
+    try { await panamaAPI.remove(round); if (job.value?.round === round) job.value = null; removing.value = null } catch (e) { error.value = errorText(e) }
+    await loadRounds()
+  }
   async function cancel() {
     if (!job.value) return
     try { job.value = await panamaAPI.cancel(job.value.id) } catch (e) { error.value = errorText(e) }
@@ -45,5 +51,5 @@ export const usePanamaStore = defineStore('panama', () => {
       else loadRounds()
     }, 1000)
   }
-  return { status, rounds, sizes, job, loading, error, loadStatus, loadRounds, loadSize, pull, cancel }
+  return { status, rounds, sizes, job, loading, error, loadStatus, loadRounds, loadSize, pull, cancel, remove, removing }
 })

@@ -11,10 +11,18 @@
       <BBadge v-if="r.state === 'complete'" variant="success" class="fw-normal" data-testid="panama-staged">{{ $t('panama.staged') }}</BBadge>
       <BBadge v-else-if="r.state === 'partial'" variant="warning" class="fw-normal" :title="r.missing != null ? $t('panama.missingHint', { n: r.missing }) : ''" data-testid="panama-partial">{{ r.expected != null ? $t('panama.stagedPartial', { present: r.present, expected: r.expected }) : $t('panama.stagedPartialUnknown', { present: r.present }) }}</BBadge>
       <BBadge v-else-if="r.state === 'unverified'" variant="info" class="fw-normal" data-testid="panama-unverified">{{ $t('panama.stagedUnverified') }}</BBadge>
+      <span v-if="r.bytes" class="small text-body-secondary" :title="$t('panama.onDiskHint')" data-testid="panama-on-disk">{{ $t('panama.onDisk', { size: size(r.bytes) }) }}</span>
       <span v-if="store.sizes[r.name]" class="small text-body-secondary" data-testid="panama-size">{{ $t('panama.sizeLine', { files: store.sizes[r.name].files, size: size(store.sizes[r.name].bytes) }) }}</span>
       <BButton v-else size="sm" variant="outline-light" class="text-nowrap" data-testid="panama-size-btn" @click="store.loadSize(r.name)">{{ $t('panama.size') }}</BButton>
       <BButton size="sm" variant="primary" class="text-nowrap" :disabled="busy" data-testid="panama-pull" @click="store.pull(r.name)"><i class="fa-solid fa-cloud-arrow-down me-1"></i>{{ r.state === 'partial' ? $t('panama.resume') : r.state === 'none' || !r.state ? $t('panama.download') : $t('panama.again') }}</BButton>
       <BButton v-if="r.staged" size="sm" variant="success" class="text-nowrap" data-testid="panama-use" @click="use(r.name)">{{ $t('panama.use') }}</BButton>
+      <BButton v-if="r.state !== 'none' && store.removing !== r.name" size="sm" variant="outline-danger" class="text-nowrap" :disabled="busy && store.job?.round === r.name" :title="$t('panama.deleteHint')" data-testid="panama-delete" @click="store.removing = r.name"><i class="fa-regular fa-trash-can me-1"></i>{{ $t('panama.delete') }}</BButton>
+    </div>
+    <div v-if="store.removing" class="alert alert-danger d-flex align-items-center gap-2 mt-2 mb-0 py-2 small" data-testid="panama-delete-confirm">
+      <i class="fa-solid fa-triangle-exclamation"></i>
+      <span class="flex-grow-1">{{ $t('panama.deleteConfirm', { round: store.removing, size: size(store.rounds.find((x) => x.name === store.removing)?.bytes || 0) }) }}</span>
+      <BButton size="sm" variant="danger" data-testid="panama-delete-yes" @click="store.remove(store.removing)">{{ $t('panama.deleteYes') }}</BButton>
+      <BButton size="sm" variant="outline-light" data-testid="panama-delete-no" @click="store.removing = null">{{ $t('panama.deleteNo') }}</BButton>
     </div>
 
     <div v-if="store.job" class="card mt-3" data-testid="panama-job">

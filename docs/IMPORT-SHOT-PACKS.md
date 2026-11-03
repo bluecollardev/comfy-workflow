@@ -102,6 +102,10 @@ and Import Shot Pack is the folder import as before.
 4. **Import Package** hands the staged folder to the ordinary import: pick the adapter, read the plan, Dry run, Import. Only the files the adapter maps are copied
    into `input/` and `workflows/`; the rest stays in `temp/rounds`.
 
+5. **Delete** (on any round with something on disk, including a partial one) removes its copy from this computer to free space. Each row shows what the round takes on
+   disk; Delete asks first and names the size. It touches only `temp/rounds/<round>` on this PC: never the bucket, a pod, or ComfyUI-Shared's `input/` and `workflows/`, where
+   an import already copied files. It is refused while that round is downloading (Cancel first), and for any name that is not a single folder inside the staging folder.
+
 **Where things are.** Staged rounds are in `temp/rounds/` inside the mapped ComfyUI-Shared. A Sync never carries `temp/`. `PANAMA_ROUNDS_DIR` in the settings file moves
 the staging folder. Not every entry in the bucket is an import package (the inbox round holds text entries only).
 

@@ -13,6 +13,7 @@ completed items move here. Commit hashes are on `develop`.
 - **Bucket keys in Default Configuration** ("Panama bucket (BH)"); `AWS_PROFILE` is unset, not empty, when they are used (an empty one broke every call). "Pull on pod start" adds `S3_PULL` and the keys to new pods (plain environment values: open question in ADR-021).
 - **Rounds stage in `ComfyUI-Shared/temp/rounds`; a Sync never carries `temp/`.** ComfyUI-Shared was remapped from Binc's mirror to `~/ComfyUI-Shared` and the mirror's tree (2,008 files, 17 GB) copied in additively; the guard against writing under `projects/desktop/` is not built.
 - **Pod pull proven on a real pod** (L4, Iceland volume, about USD 0.04): the inbox round copied from the bucket to `/workspace/comfy-shared/temp/rounds/...` at start (`s3 pull done`). The first attempt, made through a stale bundled MCP server, had no keys and said so; the bundle was rebuilt. Details in ADR-015.
+- **Delete a staged round from this computer** to free disk: each row shows its size on disk, Delete confirms with it and removes only `temp/rounds/<round>` (never the bucket or a pod).
 - **ADRs:** 015 pod pull, 016 how BH's export works and the library, 017 source/round adapters (proposed), 018 an API option on BH's export (proposed, needs BH), 019 remote MCP connector, 020 image on GitHub, 021 staging, Sync and keys. The new docs are left out of the public docs site (`scripts/docs-site.mjs`).
 
 ## 2026-10-27 (versioned releases)

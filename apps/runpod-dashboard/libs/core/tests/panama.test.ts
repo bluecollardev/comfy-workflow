@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as panama from '../src/panama.js'
@@ -111,6 +111,30 @@ describe('panama.stagedState (what is on this PC for a round)', () => {
     expect(panama.stagedState('r')).toMatchObject({ state: 'complete', missing: 0 })
     writeFileSync(join(dir, 'MANIFEST.json'), '{"files": [')   // a manifest cut short
     expect(() => panama.stagedState('r')).not.toThrow()
+    delete process.env.PANAMA_ROUNDS_DIR
+  })
+})
+
+describe('panama.remove (Delete from this computer)', () => {
+  it('deletes one staged round, reports what it freed, and touches nothing else', () => {
+    const base = mkdtempSync(join(tmpdir(), 'rm-')); process.env.PANAMA_ROUNDS_DIR = base
+    for (const r of ['keep-me', 'drop-me']) { mkdirSync(join(base, r, 'shot'), { recursive: true }); writeFileSync(join(base, r, 'shot', 'a.bin'), 'x'.repeat(1000)) }
+    writeFileSync(join(base, 'loose.txt'), 'not a round')
+    expect(panama.remove('drop-me')).toEqual({ round: 'drop-me', freed: 1000 })
+    expect(existsSync(join(base, 'drop-me'))).toBe(false)
+    expect(existsSync(join(base, 'keep-me', 'shot', 'a.bin'))).toBe(true)
+    expect(existsSync(join(base, 'loose.txt'))).toBe(true)
+    expect(panama.remove('drop-me')).toEqual({ round: 'drop-me', freed: 0 })   // already gone: nothing to do, not an error
+    delete process.env.PANAMA_ROUNDS_DIR
+  })
+  it('refuses a path, and a folder that is a link pointing outside the staging folder', () => {
+    const base = mkdtempSync(join(tmpdir(), 'rm-')); const outside = mkdtempSync(join(tmpdir(), 'outside-')); process.env.PANAMA_ROUNDS_DIR = base
+    writeFileSync(join(outside, 'precious.txt'), 'keep')
+    symlinkSync(outside, join(base, 'sneaky'))
+    expect(() => panama.remove('../x')).toThrow(/Not a round name/)
+    expect(() => panama.remove('a/b')).toThrow(/Not a round name/)
+    expect(() => panama.remove('sneaky')).toThrow(/Refusing/)
+    expect(existsSync(join(outside, 'precious.txt'))).toBe(true)
     delete process.env.PANAMA_ROUNDS_DIR
   })
 })

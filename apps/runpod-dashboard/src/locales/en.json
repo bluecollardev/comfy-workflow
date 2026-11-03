@@ -844,7 +844,14 @@
     "stagedPartial": "partial: {present} of {expected} files",
     "stagedPartialUnknown": "partial: {present} files so far",
     "stagedUnverified": "downloaded, not verified",
-    "missingHint": "{n} files missing. Resume carries on from what is here."
+    "missingHint": "{n} files missing. Resume carries on from what is here.",
+    "delete": "Delete",
+    "deleteHint": "Delete the downloaded copy from this computer to free disk space. The bucket is not touched.",
+    "deleteConfirm": "Delete {round} from this computer? This frees {size} of disk. The copy in the bucket is not touched, and you can download it again.",
+    "deleteYes": "Delete from this computer",
+    "deleteNo": "Keep",
+    "onDisk": "{size} on disk",
+    "onDiskHint": "What this round takes in temp/rounds on this computer"
   },
   "remoteMcp": {
     "title": "Remote servers",

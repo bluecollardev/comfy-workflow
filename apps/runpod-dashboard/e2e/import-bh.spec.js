@@ -81,4 +81,27 @@ test.describe('Import from BH', () => {
     await expect(row('brynley-inbox-2026-10-28-v001').getByTestId('panama-staged')).toBeVisible()
     await expect(row('brynley-inbox-2026-10-28-v001').getByTestId('panama-pull')).toHaveText(t('panama.again'))
   })
+
+  test('Delete frees the downloaded copy from this computer, after a confirmation that names the size; Keep leaves it', async ({ page, api }) => {
+    api.state.panama = { configured: true }
+    await page.goto('/')
+    await podCard(page, 'ComfyUI-Dev').getByTestId('pod-import-bh').click()
+    const dialog = dialogOf(page)
+    const row = (name) => dialog.locator(`[data-testid="panama-round"][data-round="${name}"]`)
+    await expect(row('brynley-comfy-2026-10-23').getByTestId('panama-delete')).toHaveCount(0)   // nothing on disk, nothing to delete
+    await expect(row('brynley-comfy-2026-10-20').getByTestId('panama-on-disk')).toContainText('8.1 GB')
+    await row('brynley-comfy-2026-10-20').getByTestId('panama-delete').click()   // a partial copy can be deleted too
+    await expect(dialog.getByTestId('panama-delete-confirm')).toContainText('brynley-comfy-2026-10-20')
+    await expect(dialog.getByTestId('panama-delete-confirm')).toContainText('8.1 GB')
+    await dialog.getByTestId('panama-delete-no').click()
+    await expect(dialog.getByTestId('panama-delete-confirm')).toHaveCount(0)
+    expect(api.state.panama.deleted || []).toEqual([])
+    await row('brynley-comfy-2026-10-20').getByTestId('panama-delete').click()
+    await dialog.getByTestId('panama-delete-yes').click()
+    await expect(dialog.getByTestId('panama-delete-confirm')).toHaveCount(0)
+    expect(api.state.panama.deleted).toEqual(['brynley-comfy-2026-10-20'])
+    await expect(row('brynley-comfy-2026-10-20').getByTestId('panama-partial')).toHaveCount(0)   // back to nothing on disk
+    await expect(row('brynley-comfy-2026-10-20').getByTestId('panama-pull')).toHaveText(t('panama.download'))
+    await expect(row('brynley-comfy-2026-10-20').getByTestId('panama-delete')).toHaveCount(0)
+  })
 })
