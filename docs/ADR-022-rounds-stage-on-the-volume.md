@@ -50,6 +50,13 @@ mirror of the other. Sync deliberately never carries `temp/` (ADR-021), so nothi
 (documented in `docs/POD-PULLS-FROM-S3.md`). The pull itself moved from the entrypoint into `apps/comfy-app/docker/s3pull.sh` so the active-pod route (decision 2) can run the same code over SSH; the entrypoint just starts it in the background. Re-tested in a container as a standalone script. Tested: 3 unit tests (`libs/core/tests/verifyround.test.ts`, run against temp rounds) and the real entrypoint block in a container against a local S3 with a good round, a round with one wrong checksum and a round
 with no manifest, giving the three markers, and a rerun that rewrites the marker. Not yet on a pod: the image must be rebuilt (`./start.sh comfy-image --remote --wait`). The app does not read these markers yet (steps 2 and 3).
 
+## What is built (2026-11-03): steps 2 and 4, the core
+
+`libs/core/src/podpull.ts` and six IPC calls in the `panama` namespace (`podRounds`, `podPlan`, `podPull`, `podJob`, `podCancel`, `podRemove`), and `panama.status().pod` (`available`, a plain-sentence `reason`, the volume). The behaviour is decisions 2, 2b, 2c, 2d and 4 as written above; how it works and what it writes is in `docs/POD-PULLS-FROM-S3.md`.
+24 tests (`libs/core/tests/podpull.test.ts`, a fake RunPod and injected log and SSH readers, no real pod): the route choice, the pod name and `S3_PULL`, the key only ever in the pod's own environment or on stdin, the idle ceiling set and restored, all four endings of `s3pull.sh`, the pod deleted when done, failed or cancelled, the tag written before creation and removed after, confinement of the delete, one job per round, and the simulated job.
+Differences from what this ADR said: the delete on a temporary pod runs its script over SSH on the pod once it is up (the image has no way to run a one-off command at start), so it needs the same SSH key the Sync needs; a round with no manifest ends `failed` on the job and `unverified` on the volume; a Pod download is not driven from the MCP server (no new tool).
+**Not yet tried on a real pod:** the active route's SSH (the 2026-11-03 tests used the start-up route and the proxy hostname did not resolve), a temporary pod followed through its real log stream, and the delete script.
+
 ## What is not known
 
 - **Seeing the volume without a pod.** RunPod's S3 API can list a volume with no pod, but the app has no RunPod S3 keys stored and `EUR-IS-2` was not on the supported list in ADR-007 (it may have changed since). If it is not available, a row's state in Pod mode comes from what the last

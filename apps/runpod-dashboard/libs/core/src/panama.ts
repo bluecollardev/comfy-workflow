@@ -53,12 +53,19 @@ function run(cmd: string[], timeoutMs = 60_000) {
 }
 
 /** Is Panama configured: the AWS CLI is there and the profile exists. The only thing the picker looks at. */
+/** Whether a round can be pulled onto the network volume by a pod (ADR-022). podpull.ts registers the real check when it loads (it needs the pod and volume modules, which
+ *  import this one), so until then the answer is "no". */
+export interface PodCapability { available: boolean; reason: string; volume: { id: string; name: string; datacenter: string } | null }
+let podCapabilityFn: () => PodCapability = () => ({ available: false, reason: 'The pod download is not loaded.', volume: null })
+export const setPodCapability = (fn: () => PodCapability) => { podCapabilityFn = fn }
+
 export function status() {
-  if (appKeys()) return { configured: true, via: 'app keys', profile: profile(), bucket: bucket(), region: region(), staging: stagingDir(), reason: '' }
+  const withPod = <T extends object>(o: T) => ({ ...o, pod: podCapabilityFn() })
+  if (appKeys()) return withPod({ configured: true, via: 'app keys', profile: profile(), bucket: bucket(), region: region(), staging: stagingDir(), reason: '' })
   const r = spawnSync('aws', ['configure', 'list-profiles'], { encoding: 'utf8', timeout: 15_000 })
-  if (r.error || r.status !== 0) return { configured: false, via: 'none', profile: profile(), bucket: bucket(), region: region(), staging: stagingDir(), reason: r.error ? 'The AWS CLI (aws) is not installed.' : 'The AWS CLI could not list its profiles.' }
+  if (r.error || r.status !== 0) return withPod({ configured: false, via: 'none', profile: profile(), bucket: bucket(), region: region(), staging: stagingDir(), reason: r.error ? 'The AWS CLI (aws) is not installed.' : 'The AWS CLI could not list its profiles.' })
   const has = r.stdout.split('\n').map((s) => s.trim()).includes(profile())
-  return { configured: has, via: has ? 'aws profile' : 'none', profile: profile(), bucket: bucket(), region: region(), staging: stagingDir(), reason: has ? '' : `No Panama keys: enter them in Default Configuration (or add an AWS profile named "${profile()}").` }
+  return withPod({ configured: has, via: has ? 'aws profile' : 'none', profile: profile(), bucket: bucket(), region: region(), staging: stagingDir(), reason: has ? '' : `No Panama keys: enter them in Default Configuration (or add an AWS profile named "${profile()}").` })
 }
 
 /** What is on this PC for a round: nothing, some of it, all of it but never checked, or all of it and verified (the done marker). */

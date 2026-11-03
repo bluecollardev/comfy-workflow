@@ -107,6 +107,13 @@ const TABLE = {
     job: (c, id) => c.panama.job(id),
     cancel: (c, id) => c.panama.cancel(id),
     remove: (c, round) => c.panama.remove(round),
+    // ADR-022: rounds on the network volume, pulled by a pod (libs/core/src/podpull.ts)
+    podRounds: (c) => c.podpull.rounds(),
+    podPlan: (c, round) => c.podpull.plan(round),
+    podPull: (c, round) => c.podpull.pull(round),
+    podJob: (c, id) => c.podpull.job(id),
+    podCancel: (c, id) => c.podpull.cancel(id),
+    podRemove: (c, round) => c.podpull.remove(round),
   },
   imports: {   // docs/ADR-008: a folder through an adapter into ComfyUI-Shared
     list: (c) => c.imports.list(),
