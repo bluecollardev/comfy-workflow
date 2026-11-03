@@ -50,8 +50,13 @@ RUN pip install -r /tmp/requirements-packs.txt
 # Node packs: ours from the repo, ShotPipe staged by build.sh from the CANALV2 tree.
 # Last layers that change often, so everything above stays cached.
 COPY .build/custom_nodes/ /opt/ComfyUI/custom_nodes/
+# A pack that asks for plain opencv-python gets the headless build the image already has: both together can break `import cv2` in a container with no libGL (ComfyUI-fal-API asks for it).
 RUN for req in /opt/ComfyUI/custom_nodes/*/requirements.txt; do \
-        [ -f "$req" ] && pip install -r "$req"; done; true
+        [ -f "$req" ] || continue; \
+        sed -E 's/^opencv-python([<>=!~].*)?$/opencv-python-headless\1/' "$req" > /tmp/pack-req.txt; \
+        pip install -r /tmp/pack-req.txt; done; rm -f /tmp/pack-req.txt; true
+# The loop above ignores a failed install (as it always has); the fal pack must not be silently without its client library: fail the build instead (ADR-025).
+RUN [ ! -d /opt/ComfyUI/custom_nodes/ComfyUI-fal-API ] || python -c "import fal_client"
 
 # sshd (RunPod injects PUBLIC_KEY; the entrypoint starts it) and rsync, for ./start.sh sync onto the volume;
 # rclone, for the pod to pull from an S3 bucket itself (S3_PULL in entrypoint.sh).
