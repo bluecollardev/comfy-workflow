@@ -56,3 +56,20 @@ that exists only on the Mac.
   never `plates/` without Binc's named yes.
 - **Tested locally first** (Ubuntu container, `rclone` 1.53, an S3 server in the container): files land under `/workspace`, sha256
   matches, a rerun transfers nothing, a destination outside `/workspace` is refused. Auth failure is not covered by that test.
+
+## Result of the pod test (2026-11-03, with spend, approved by Lucas)
+
+Run on the app's volume `kceera10qh` (EUR-IS-2, Iceland), image `ghcr.io/bluecollardev/comfy-app:contract-v26`, an L4 at USD 0.59/h, 15-minute idle stop.
+`S3_PULL=bh-panama-exchange-610140802195/rounds/brynley-inbox-2026-10-28-v001=/workspace/comfy-shared/temp/rounds/brynley-inbox-2026-10-28-v001`.
+
+- **Pull works.** The pod's log shows `rclone` copying the round's files from the bucket (`609.227 KiB / 609.227 KiB, 100%`) and
+  `s3 pull done: /workspace/comfy-shared/temp/rounds/brynley-inbox-2026-10-28-v001`, in the background while ComfyUI started (up about 70 s after the image was pulled; the pull
+  itself took about 3 s). The pod pulled the image from `ghcr.io` with the saved registry login.
+- **First attempt failed, usefully.** It was created through the MCP server in the session, a bundled copy older than the commit that adds the Panama keys to a pod's
+  environment, so the pod had `S3_PULL` and no keys. The entrypoint said exactly that (`S3_PULL set but AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY are not`) and pulled nothing.
+  Pods made by the running app (or through its MCP, served on 127.0.0.1:8765) get the keys. The bundle was rebuilt (`npm run mcp:bundle`); a session that loaded the old one needs a restart.
+- **Cost.** About USD 0.04 for both pods together (about 2 and 3 minutes). Both deleted; the volume (USD 7/month) is the only thing billing. `S3_PULL` was removed from the
+  default configuration afterwards, so new pods do not pull.
+- **Not covered.** A large round (the 20 Oct round is 9 GB, the 29 Oct one 39 GB), the datacenter-to-datacenter speed, a bad key (the first attempt covered a *missing* key only), the
+  `.s3-pull.done` marker's content, and the manifest check on the pod (the app checks on this PC; the pod does not). The inbox round is text only, so it did not exercise multipart or large files.
+- The keys sat in the pod's environment on RunPod in plain text, as the open question in ADR-021 says; `panama-lucas` was used.
