@@ -101,7 +101,7 @@ const TABLE = {
     setKey: (c, key) => c.remote.setKey(key || null),
   },
   configio: {   // docs/ADR-023: the Default Configuration as a JSON file; plan changes nothing, apply backs up first
-    export: (c) => c.configio.exportConfig({ appVersion: app.getVersion() }),
+    export: (c, opts) => c.configio.exportConfig({ appVersion: app.getVersion(), includeSecrets: !(opts && opts.includeSecrets === false) }),   // keys and tokens are in by default; the panel's box turns them off
     suggestedName: (c) => c.configio.suggestedName(),
     plan: (c, file) => c.configio.planImport(file),
     apply: (c, file, sections) => c.configio.applyImport(file, { sections: Array.isArray(sections) ? sections : [] }),
@@ -194,7 +194,8 @@ function register() {
     const win = BrowserWindow.fromWebContents(event.sender)
     const r = await dialog.showSaveDialog(win, { defaultPath: path.join(app.getPath('documents'), path.basename(String(suggested || 'pod-manager-config.json'))), filters: JSON_FILTER })
     if (r.canceled || !r.filePath) return { ok: true, canceled: true }
-    try { await fs.promises.writeFile(r.filePath, text, 'utf8') } catch (e) { return { ok: false, error: { message: `Could not write ${path.basename(r.filePath)}: ${e.message}` } } }
+    // 0600: the file may hold keys and tokens, and the mode option only applies to a file this call creates, so chmod too
+    try { await fs.promises.writeFile(r.filePath, text, { encoding: 'utf8', mode: 0o600 }); await fs.promises.chmod(r.filePath, 0o600) } catch (e) { return { ok: false, error: { message: `Could not write ${path.basename(r.filePath)}: ${e.message}` } } }
     return { ok: true, path: r.filePath }
   })
   ipcMain.handle('core:file:open', async (event) => {

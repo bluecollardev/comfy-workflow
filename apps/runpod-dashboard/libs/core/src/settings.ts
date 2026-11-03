@@ -17,6 +17,56 @@ const PANAMA_PATTERNS = {
   region: [/^[a-z]{2}(-[a-z]+)+-\d$/, 'a region like us-west-2'],
   profile: [/^[A-Za-z0-9._-]{1,64}$/, 'an AWS profile name: letters, digits, dots, hyphens and underscores'],
 } as const
+/** The secrets this file holds, by the name they are stored under, and the field `set` takes them by (a configuration export carries these, docs/ADR-023). */
+export const SECRET_FIELDS = {
+  RUNPOD_API_KEY: 'runpod_api_key', RUNPOD_S3_ACCESS_KEY: 'runpod_s3_access_key', RUNPOD_S3_SECRET_KEY: 'runpod_s3_secret_key',
+  PANAMA_AWS_ACCESS_KEY_ID: 'panama_aws_access_key', PANAMA_AWS_SECRET_ACCESS_KEY: 'panama_aws_secret_key', PANAMA_CONSOLE_KEY: 'panama_console_key', ANTHROPIC_API_KEY: 'anthropic_api_key',
+} as const
+export type SecretName = keyof typeof SECRET_FIELDS
+export const SECRET_NAMES_LIST = Object.keys(SECRET_FIELDS) as SecretName[]
+const MIN_LENGTH: Partial<Record<SecretName, number>> = { RUNPOD_API_KEY: 16, ANTHROPIC_API_KEY: 20, PANAMA_CONSOLE_KEY: 8 }
+
+/** Whether `set` would accept this secret (null), or why not. The reason names the key and never contains the value. */
+export function checkSecret(name: string, v: unknown): string | null {
+  if (!(name in SECRET_FIELDS)) return `${name} is not a key this app stores`
+  if (typeof v !== 'string') return `${name} must be text`
+  const t = v.trim()
+  if (!t) return `${name} is empty`
+  if (/\s/.test(t)) return `${name} must not contain spaces`
+  const min = MIN_LENGTH[name as SecretName]
+  if (min && t.length < min) return `${name} is too short (at least ${min} characters)`
+  return null
+}
+
+/** The stored secrets, by name: only those set (the environment first, then the file, as `lookup`). */
+export function secretValues(): Partial<Record<SecretName, string>> {
+  const out: Partial<Record<SecretName, string>> = {}
+  for (const n of SECRET_NAMES_LIST) { const v = lookup(n); if (v) out[n] = v }
+  return out
+}
+
+/** The secrets in the settings FILE only (not the environment): what an Undo puts back. */
+export function storedSecretValues(): Partial<Record<SecretName, string>> {
+  const stored = readEnvFile(), out: Partial<Record<SecretName, string>> = {}
+  for (const n of SECRET_NAMES_LIST) if (stored[n]) out[n] = stored[n]
+  return out
+}
+
+/** Put the secrets back EXACTLY as they were (those absent are removed), with no length check: they were already stored. Only Undo uses this. */
+export function restoreSecrets(values: Partial<Record<SecretName, string>>): void {
+  const updates: Record<string, string> = {}
+  for (const n of SECRET_NAMES_LIST) updates[n] = values[n] ?? ''
+  writeEnvFile(updates)
+  for (const n of SECRET_NAMES_LIST) { if (updates[n]) process.env[n] = updates[n]; else delete process.env[n] }
+}
+
+/** Set (a string) or remove (null) several secrets at once, through `set`'s own checks. */
+export function setSecrets(values: Partial<Record<SecretName, string | null>>) {
+  const args: Record<string, string | null> = {}
+  for (const [n, v] of Object.entries(values)) if (n in SECRET_FIELDS && v !== undefined) args[SECRET_FIELDS[n as SecretName]] = v
+  return set(args)
+}
+
 /** Whether a Panama bucket, region or profile value would be accepted by `set` (null) or why not; changes nothing. Used to preview a configuration import. */
 export function checkPanama(key: 'bucket' | 'region' | 'profile', v: unknown): string | null {
   if (typeof v !== 'string') return `Panama ${key} must be text`
