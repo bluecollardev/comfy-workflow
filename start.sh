@@ -108,7 +108,7 @@ case "${1:-help}" in
     shift; load_env; ensure_app; ensure_ui; cd "$APP"
     RUNPOD_MANAGER_SMOKE=1 exec npx electron . ;;
   comfy-image)
-    # build the ComfyUI server image (apps/comfy-app/build.sh): --remote --wait on GitLab CI, --push <ref> from here
+    # build the ComfyUI server image (apps/comfy-app/build.sh): --remote --wait on GitHub Actions, --push <ref> from here
     shift; cd apps/comfy-app; exec ./build.sh "$@" ;;
   package)
     # ./start.sh package [mac|win|linux|all] [--comfy <set-or-tag>] [--image <registry ref>]
