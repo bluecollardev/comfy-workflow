@@ -106,6 +106,10 @@ shown only as their last four characters. With no keys the app falls back to an 
    disk; Delete asks first and names the size. It touches only `temp/rounds/<round>` on this PC: never the bucket, a pod, or ComfyUI-Shared's `input/` and `workflows/`, where
    an import already copied files. It is refused while that round is downloading (Cancel first), and for any name that is not a single folder inside the staging folder.
 
+**Pod mode (built in the UI, gated).** The pane has a **Local | Pod** switch (docs/ADR-022). Local is everything above. Pod stages the round **on the network volume** at `/workspace/comfy-shared/temp/rounds/<round>`, pulled by a pod straight from the bucket, so nothing comes through this PC.
+The same rows, badges, Download / Resume / Re-Download and Delete apply, acting on the volume; because the state of the volume can only be read by a pod, the rows show what was **last seen** and say when ("as of ..."). Starting a Pod download or a Pod delete first shows what it would do and what it costs: on a pod of yours that is already running (no new pod), or a short-lived pod on the volume
+(its card in the pod list is tagged temporary, it is deleted when the job ends, and the idle timer stops it if the job dies). Cancel sits in the job card's header. There is no Import Package in Pod mode yet; import runs from Local. **Pod is switched off until the core reports that it is available** (`status().pod.available`; the core side is built separately), and its tooltip then gives the reason, so nothing in the real app starts a pod yet.
+
 **Where things are.** Staged rounds are in `temp/rounds/` inside the mapped ComfyUI-Shared. A Sync never carries `temp/`. `PANAMA_ROUNDS_DIR` in the settings file moves
 the staging folder. Not every entry in the bucket is an import package (the inbox round holds text entries only).
 

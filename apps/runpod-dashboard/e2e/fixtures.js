@@ -10,6 +10,7 @@
 // `api.state.failures['POST /pods']` = 'message' makes that call answer 500 {detail}.
 
 import { test as base, expect } from '@playwright/test'
+const POD_VOLUME = { id: 'kceera10qh', name: 'comfy-workspace', datacenter: 'EUR-IS-2' }
 
 // What the pod manager's tools/list answers in the fake: untagged tools grouped by name, an enum, a default,
 // a required field, a nested property and a destructive tool (confirm is required).
@@ -457,13 +458,29 @@ export default {
       return json({ dry_run: dry, ok: !conflict, counts, results: conflict ? [{ i: 0, status: 'conflict', detail: 'input/a exists and differs' }] : [], record: dry ? null : '/home/me/.config/runpod-pod-manager/imports/2026-10-24-panama-imax-redux.json' })
     }
     // MCP (the Connect › MCP tab)
-    if (method === 'GET' && path === '/panama/status') { const pn = (state.panama ||= { configured: false }); return json({ configured: pn.configured, profile: 'panama', bucket: 'bh-panama-exchange-610140802195', region: 'us-west-2', staging: '/Users/lucas/panama-rounds', reason: pn.configured ? '' : 'No AWS profile named "panama"' }) }
+    if (method === 'GET' && path === '/panama/status') { const pn = (state.panama ||= { configured: false }); return json({ configured: pn.configured, profile: 'panama', bucket: 'bh-panama-exchange-610140802195', region: 'us-west-2', staging: '/Users/lucas/panama-rounds', reason: pn.configured ? '' : 'No AWS profile named "panama"', pod: { available: !!pn.pod?.available, reason: pn.pod?.reason || 'Pod mode is not available in this build yet.', volume: pn.pod?.volume || POD_VOLUME } }) }
     if (method === 'GET' && path === '/panama/rounds') { const pn = state.panama || {}; const base = pn.rounds || [{ name: 'brynley-comfy-2026-10-23', staged: false, state: 'none', present: 0, expected: null, missing: null, bytes: 0 }, { name: 'brynley-comfy-2026-10-20', staged: false, state: 'partial', present: 391, expected: 1283, missing: 892, bytes: 8100000000 }, { name: 'brynley-inbox-2026-10-28-v001', staged: true, state: 'complete', present: 378, expected: 378, missing: 0, bytes: 623848 }]; return json(base.map((r) => (pn.deleted || []).includes(r.name) ? { ...r, staged: false, state: 'none', present: 0, expected: null, missing: null, bytes: 0 } : r)) }
     if (method === 'GET' && path === '/panama/size') return json({ round: query.round, files: 5701, bytes: 29117613170 })
     if (method === 'DELETE' && path === '/panama/staged') { const pn = (state.panama ||= {}); (pn.deleted ||= []).push(query.round); return json({ round: query.round, freed: 1234567890 }) }
     if (method === 'POST' && path === '/panama/cancel') { (state.panama ||= {}).cancelled = body.id; return json({ id: body.id, round: String(body.id).replace(/-1$/, ''), dest: '/x', state: 'cancelled', files: 258, lines: [] }) }
     if (method === 'POST' && path === '/panama/pull') { (state.panama ||= {}).pulled = body.round; return json({ id: `${body.round}-1`, round: body.round, dest: `/Users/lucas/panama-rounds/${body.round}`, state: state.panama.slow ? 'running' : 'done', files: 7, lines: ['download: a'], verify: { listed: 7, bad: [], extra: 0, ok: true } }) }
     if (method === 'GET' && path === '/panama/job') return json({ id: query.id, round: String(query.id).replace(/-1$/, ''), dest: '/x', state: state.panama?.cancelled ? 'cancelled' : state.panama?.slow ? 'running' : 'done', files: 7, lines: [], verify: { listed: 7, bad: [], extra: 0, ok: true } })
+    // Pod mode (docs/ADR-022): the contract the core fork implements, in the shape the pane reads
+    if (path.startsWith('/panama/pod/')) {
+      const pod = ((state.panama ||= {}).pod ||= {})
+      const route = pod.route || 'temporary'
+      const podJob = (round, st, extra = {}) => ({ id: `${round}-pod-1`, round, kind: 'pull', route, pod_id: route === 'active' ? 'activepod1' : 'temppod1', pod_name: route === 'active' ? 'ComfyUI-Dev' : `ComfyUI-Pull-${round}-1103`, state: st, files: 7, lines: ['s3 pull: …'], error: null, verify: null, ...extra })
+      if (method === 'GET' && path === '/panama/pod/rounds') {
+        const gone = pod.removed || []
+        const base = pod.rounds || [{ name: 'brynley-comfy-2026-10-23', staged: false, state: 'none', present: 0, expected: null, missing: null, bytes: 0 }, { name: 'brynley-comfy-2026-10-22', staged: true, state: 'complete', present: 1402, expected: 1402, missing: 0, bytes: 15170551969 }, { name: 'brynley-inbox-2026-10-28-v001', staged: false, state: 'partial', present: 100, expected: 378, missing: 278, bytes: 200000 }]
+        return json({ as_of: 'as_of' in pod ? pod.as_of : '2026-11-03T05:54:10Z', volume: pod.volume || POD_VOLUME, rounds: base.map((r) => (gone.includes(r.name) ? { ...r, staged: false, state: 'none', present: 0, expected: null, missing: null, bytes: 0 } : r)) })
+      }
+      if (method === 'GET' && path === '/panama/pod/plan') return json({ round: query.round, route, pod: route === 'active' ? { id: 'activepod1', name: 'ComfyUI-Dev', price_per_hour: 0.59 } : null, gpu: route === 'active' ? null : 'L4', price_per_hour: route === 'active' ? null : 0.59, bytes: 15170551969, idle_stop_minutes: 30, volume: pod.volume || POD_VOLUME })
+      if (method === 'POST' && path === '/panama/pod/pull') { (pod.pulled ||= []).push(body.round); return json(podJob(body.round, pod.slow ? 'creating' : 'done')) }
+      if (method === 'GET' && path === '/panama/pod/job') { const r = String(query.id).replace(/-pod-1$/, ''); return json(podJob(r, pod.cancelled ? 'cancelled' : pod.slow ? 'pulling' : 'done', pod.removeKind ? { kind: 'remove' } : {})) }
+      if (method === 'POST' && path === '/panama/pod/cancel') { pod.cancelled = body.id; return json(podJob(String(body.id).replace(/-pod-1$/, ''), 'cancelled')) }
+      if (method === 'DELETE' && path === '/panama/pod/staged') { (pod.removed ||= []).push(query.round); pod.removeKind = true; return json(podJob(query.round, 'deleting', { kind: 'remove' })) }
+    }
     if (method === 'GET' && path === '/remote/status') { const r = (state.remote ||= { key: '' }); return json({ name: 'Panama console', url: 'https://panama-console.beinghuman.studio/api/mcp', key_set: !!r.key, key_hint: r.key ? `••••${r.key.slice(-4)}` : '' }) }
     if (method === 'PUT' && path === '/remote/key') { const r = (state.remote ||= { key: '' }); r.key = body.key || ''; return json({ name: 'Panama console', url: 'https://panama-console.beinghuman.studio/api/mcp', key_set: !!r.key, key_hint: r.key ? `••••${r.key.slice(-4)}` : '' }) }
     if (method === 'POST' && path === '/remote/check') {
