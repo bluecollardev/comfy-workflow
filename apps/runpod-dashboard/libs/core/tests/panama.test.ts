@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest'
 import * as panama from '../src/panama.js'
 
 describe('panama (the exchange bucket as an import source)', () => {
+  it('uses the keys the app holds, in the environment and not on the command line; the profile is only the fallback', () => {
+    process.env.PANAMA_AWS_ACCESS_KEY_ID = 'AKIATEST'; process.env.PANAMA_AWS_SECRET_ACCESS_KEY = 'secretvalue'
+    const cmd = panama.listCmd()
+    expect(cmd).not.toContain('--profile'); expect(cmd.join(' ')).not.toMatch(/AKIATEST|secretvalue/)
+    expect(panama.awsEnv()).toMatchObject({ AWS_ACCESS_KEY_ID: 'AKIATEST', AWS_SECRET_ACCESS_KEY: 'secretvalue', AWS_REGION: 'us-west-2' })
+    expect(panama.status()).toMatchObject({ configured: true, via: 'app keys' })
+    delete process.env.PANAMA_AWS_ACCESS_KEY_ID; delete process.env.PANAMA_AWS_SECRET_ACCESS_KEY
+  })
   it('lists, sizes and pulls with the named profile and region, read-only', () => {
     process.env.PANAMA_S3_PROFILE = 'panama'
     expect(panama.listCmd()).toEqual(['aws', 's3', 'ls', 's3://bh-panama-exchange-610140802195/rounds/', '--profile', 'panama', '--region', 'us-west-2'])
@@ -48,5 +56,18 @@ describe('panama.verify (verify_round.py: the manifest is the truth)', () => {
   it('does not call a round without a manifest verified', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'round-')); writeFileSync(join(dir, 'a.txt'), 'x')
     expect(await panama.verify(dir)).toMatchObject({ ok: false, listed: 0 })
+  })
+})
+
+import * as mounts from '../src/mounts.js'
+describe('pod environment (S3_PULL gets the keys the app holds)', () => {
+  it('adds the keys only when a pull is set and the app has keys', () => {
+    process.env.PANAMA_AWS_ACCESS_KEY_ID = 'AKIATEST'; process.env.PANAMA_AWS_SECRET_ACCESS_KEY = 'secretvalue'
+    const base = mounts.load()
+    const none = mounts.podOverrides({ ...base, env: {} })
+    expect(none.env.AWS_ACCESS_KEY_ID).toBeUndefined()
+    const pull = mounts.podOverrides({ ...base, env: { S3_PULL: 'b/p=/workspace/x' } })
+    expect(pull.env).toMatchObject({ S3_PULL: 'b/p=/workspace/x', AWS_ACCESS_KEY_ID: 'AKIATEST', AWS_SECRET_ACCESS_KEY: 'secretvalue', AWS_REGION: 'us-west-2' })
+    delete process.env.PANAMA_AWS_ACCESS_KEY_ID; delete process.env.PANAMA_AWS_SECRET_ACCESS_KEY
   })
 })

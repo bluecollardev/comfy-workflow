@@ -22,7 +22,14 @@ export const stagingDir = () => val('PANAMA_ROUNDS_DIR', join(homedir(), 'panama
 const touch = (p: string) => writeFileSync(p, new Date().toISOString() + '\n')
 const ROUND = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/   // one folder name under rounds/: no slashes, no dots-only
 
-const aws = (args: string[]) => ['--profile', profile(), '--region', region(), ...args]
+/** The keys the app holds (Default Configuration) win; with none, the AWS profile named `panama` on this PC is the fallback. */
+export const appKeys = () => { const id = settings.lookup('PANAMA_AWS_ACCESS_KEY_ID'), secret = settings.lookup('PANAMA_AWS_SECRET_ACCESS_KEY'); return id && secret ? { id, secret } : null }
+const aws = (args: string[]) => [...(appKeys() ? [] : ['--profile', profile()]), '--region', region(), ...args]
+/** The environment an aws call runs in: the app's keys in the standard variables, never on the command line. */
+export const awsEnv = (): NodeJS.ProcessEnv => {
+  const k = appKeys()
+  return k ? { ...process.env, AWS_ACCESS_KEY_ID: k.id, AWS_SECRET_ACCESS_KEY: k.secret, AWS_REGION: region(), AWS_PROFILE: '' } : process.env
+}
 
 /** The command for listing the rounds, as data so it can be tested without a bucket. */
 export const listCmd = () => ['aws', 's3', 'ls', `s3://${bucket()}/rounds/`, ...aws([])]
@@ -30,17 +37,18 @@ export const sizeCmd = (round: string) => ['aws', 's3', 'ls', `s3://${bucket()}/
 export const pullCmd = (round: string, dest: string) => ['aws', 's3', 'cp', '--recursive', `s3://${bucket()}/rounds/${round}/`, dest, ...aws([])]
 
 function run(cmd: string[], timeoutMs = 60_000) {
-  const r = spawnSync(cmd[0], cmd.slice(1), { encoding: 'utf8', timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 })
+  const r = spawnSync(cmd[0], cmd.slice(1), { encoding: 'utf8', timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, env: awsEnv() })
   if (r.error) throw bad(r.error.message.includes('ENOENT') ? 'The AWS CLI (aws) is not installed on this PC: brew install awscli.' : r.error.message)
   return r
 }
 
 /** Is Panama configured: the AWS CLI is there and the profile exists. The only thing the picker looks at. */
 export function status() {
+  if (appKeys()) return { configured: true, via: 'app keys', profile: profile(), bucket: bucket(), region: region(), staging: stagingDir(), reason: '' }
   const r = spawnSync('aws', ['configure', 'list-profiles'], { encoding: 'utf8', timeout: 15_000 })
-  if (r.error || r.status !== 0) return { configured: false, profile: profile(), bucket: bucket(), reason: r.error ? 'The AWS CLI (aws) is not installed.' : 'The AWS CLI could not list its profiles.' }
+  if (r.error || r.status !== 0) return { configured: false, via: 'none', profile: profile(), bucket: bucket(), region: region(), staging: stagingDir(), reason: r.error ? 'The AWS CLI (aws) is not installed.' : 'The AWS CLI could not list its profiles.' }
   const has = r.stdout.split('\n').map((s) => s.trim()).includes(profile())
-  return { configured: has, profile: profile(), bucket: bucket(), region: region(), staging: stagingDir(), reason: has ? '' : `No AWS profile named "${profile()}": add the section Kyle sends to ~/.aws/credentials.` }
+  return { configured: has, via: has ? 'aws profile' : 'none', profile: profile(), bucket: bucket(), region: region(), staging: stagingDir(), reason: has ? '' : `No Panama keys: enter them in Default Configuration (or add an AWS profile named "${profile()}").` }
 }
 
 export interface Round { name: string; staged: boolean }
@@ -75,7 +83,7 @@ export function pull(round: string): PullJob {
   const cmd = pullCmd(round, dest)
   const job: PullJob = { id: `${round}-${Date.now()}`, round, dest, state: 'running', files: 0, lines: [] }
   jobs.set(job.id, job)
-  const child = spawn(cmd[0], cmd.slice(1), { stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn(cmd[0], cmd.slice(1), { stdio: ['ignore', 'pipe', 'pipe'], env: awsEnv() })
   const onData = (buf: Buffer) => {
     for (const l of buf.toString().split(/\r|\n/).filter(Boolean)) {
       if (/^download:/.test(l)) job.files++

@@ -284,7 +284,15 @@
     "syncShared_output": "Output",
     "syncShared_workflows": "Workflows",
     "sharedPush": "Push",
-    "sharedPull": "Pull"
+    "sharedPull": "Pull",
+    "panamaTitle": "Panama bucket (BH)",
+    "panamaHelp": "Read-only keys for BH's exchange bucket, entered here once. The app uses them to list and download rounds (Import from BH), and gives them to a pod that has a pull set. No AWS profile on this PC is needed.",
+    "panamaAccess": "Access key ID",
+    "panamaSecret": "Secret access key",
+    "panamaStored": "Stored ({hint}). Enter new ones to replace them.",
+    "panamaUnset": "Not set. Use the read-only key Kyle sends (panama-pod for pods).",
+    "panamaPull": "Pull on pod start (optional)",
+    "panamaPullHelp": "bucket/prefix=/workspace/folder, several separated by ; . A new pod downloads these onto the volume while ComfyUI starts. The pod gets the keys above in its environment."
   },
   "picker": {
     "title": "Choose the {name} folder",

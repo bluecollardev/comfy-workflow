@@ -53,6 +53,22 @@
             </div>
           </BFormGroup>
         </BCol>
+        <BCol v-if="!gated" md="12"><hr class="my-1" /><div class="small fw-semibold" data-testid="cfg-panama-title">{{ $t('config.panamaTitle') }}</div><div class="form-text mt-0">{{ $t('config.panamaHelp') }}</div></BCol>
+        <BCol v-if="!gated" md="6">
+          <BFormGroup :label="$t('config.panamaAccess')" label-for="cfg-panama-access" data-testid="cfg-panama-group" :description="keyInfo.panama_aws_keys_set ? $t('config.panamaStored', { hint: keyInfo.panama_aws_access_key_hint }) : $t('config.panamaUnset')">
+            <BFormInput id="cfg-panama-access" v-model.trim="newPanama.access" autocomplete="off" placeholder="AKIA…" class="font-monospace" data-testid="cfg-panama-access" />
+          </BFormGroup>
+        </BCol>
+        <BCol v-if="!gated" md="6">
+          <BFormGroup :label="$t('config.panamaSecret')" label-for="cfg-panama-secret">
+            <BFormInput id="cfg-panama-secret" v-model.trim="newPanama.secret" type="password" autocomplete="off" class="font-monospace" data-testid="cfg-panama-secret" />
+          </BFormGroup>
+        </BCol>
+        <BCol v-if="!gated" md="12">
+          <BFormGroup :label="$t('config.panamaPull')" label-for="cfg-panama-pull" :description="$t('config.panamaPullHelp')">
+            <BFormInput id="cfg-panama-pull" v-model.trim="pullSetting" autocomplete="off" placeholder="bh-panama-exchange-610140802195/rounds/<round>=/workspace/comfy-shared/input/<round>" class="font-monospace" data-testid="cfg-panama-pull" />
+          </BFormGroup>
+        </BCol>
       </BRow>
       </fieldset>
 
@@ -297,6 +313,7 @@ import { mountsAPI } from '../api/mounts'
 import { imagesAPI } from '../api/images'
 import { settingsAPI } from '../api/settings'
 import { useSettingsStore } from '../stores/settings'
+import { usePanamaStore } from '../stores/panama'
 import { t } from '../i18n'
 import FolderPicker from './FolderPicker.vue'
 import AdapterManager from './AdapterManager.vue'
@@ -377,6 +394,7 @@ watch(newClaude, (v) => {
   claudeTimer = setTimeout(checkClaude, 600)
 })
 const settingsStore = useSettingsStore()
+const panamaStore = usePanamaStore()
 /** No key stored (and not no-spend mode): only the key field shows, and the panel cannot be dismissed. */
 // Tabs on a wide screen (desktop, landscape tablet: 992px and up); the sections flow down the page below that.
 const wideQuery = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(min-width: 992px)') : null
@@ -400,6 +418,15 @@ const gated = computed(() => !forPod.value && !keyInfo.value.runpod_api_key_set 
 const newKey = ref('')
 const showDockerfile = ref(false)
 const newS3 = reactive({ access: '', secret: '' })
+const newPanama = reactive({ access: '', secret: '' })   // the Panama bucket keys (BH): saved as app secrets, handed to a pod that has a pull set (docs/ADR-015)
+/** S3_PULL is one row of the environment table; this field edits that row, adding or removing it. */
+const pullSetting = computed({
+  get: () => envRows.value.find((r) => r.key === 'S3_PULL')?.value || '',
+  set: (v) => {
+    const i = envRows.value.findIndex((r) => r.key === 'S3_PULL')
+    if (!v) { if (i >= 0) envRows.value.splice(i, 1) } else if (i >= 0) envRows.value[i].value = v; else envRows.value.push({ key: 'S3_PULL', value: v })
+  },
+})
 
 const label = (f) => (f.custom ? f.key : t(`config.folder.${f.key}`))
 const required = computed(() => folders.value.filter((f) => !f.custom))
@@ -559,6 +586,10 @@ async function save() {
   if (wasGated) { saving.value = false; return }   // the key is in: the rest of the panel appears, nothing else to save yet
   if (newS3.access || newS3.secret) {
     try { keyInfo.value = await settingsAPI.set({ runpod_s3_access_key: newS3.access || undefined, runpod_s3_secret_key: newS3.secret || undefined }); newS3.access = ''; newS3.secret = '' }
+    catch (e) { error.value = e.response?.data?.detail || e.message; saving.value = false; return }
+  }
+  if (newPanama.access || newPanama.secret) {
+    try { keyInfo.value = await settingsAPI.set({ panama_aws_access_key: newPanama.access || undefined, panama_aws_secret_key: newPanama.secret || undefined }); newPanama.access = ''; newPanama.secret = ''; await panamaStore.loadStatus() }
     catch (e) { error.value = e.response?.data?.detail || e.message; saving.value = false; return }
   }
   if (newClaude.value) {

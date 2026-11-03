@@ -222,6 +222,7 @@ export async function mockApi(page, state) {
     if (method === 'GET' && path === '/settings') return json(state.settings)
     if (method === 'PUT' && path === '/settings') {
       if (body.runpod_api_key) state.settings = { ...state.settings, runpod_api_key_set: true, runpod_api_key_hint: '••••' + body.runpod_api_key.slice(-4), source: '/home/me/.config/runpod-pod-manager/.env' }
+      if (body.panama_aws_access_key || body.panama_aws_secret_key) { state.settings = { ...state.settings, panama_aws_keys_set: true, panama_aws_access_key_hint: '••••' + String(body.panama_aws_access_key || 'xxxx').slice(-4) }; (state.panama ||= {}).configured = true }
       if (body.anthropic_api_key) state.settings = { ...state.settings, anthropic_key_set: true, anthropic_key_hint: '••••' + body.anthropic_api_key.slice(-4) }
       return json(state.settings)
     }
