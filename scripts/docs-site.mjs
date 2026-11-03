@@ -14,7 +14,7 @@ const EXCLUDE = [
   /^CLAUDE\.md$/, /^NEXT-STEPS\.md$/, /^projects\//, /^queue\//, /^shared\//,
   /CANALV2/i, /DELIVERY-PACKAGES/, /MOUNT-POINTS/, /PROMPTS/, /TEST-RESULTS/, /IMPORT-SHOT-PACKS/,
   /ADR-004/, /ADR-008/, /NODE-PACKS/,
-  /ADR-01[5-79]/, /ADR-021/, /POD-PULLS-FROM-S3/,   // the BH bucket, its keys and the Panama export (names a client project)
+  /ADR-01[5-79]/, /ADR-02[12]/, /POD-PULLS-FROM-S3/,   // the BH bucket, its keys and the Panama export (names a client project)
 ]
 
 const readme = readFileSync(join(ROOT, 'README.md'), 'utf8')
