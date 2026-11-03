@@ -3,6 +3,14 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## Unreleased
+
+### Export and import the Default Configuration (branch `feature/config-import-export`; `docs/ADR-023-config-import-export.md`)
+- Lucas: "add a feature to allow the full configuration import and export for the default configuration"; "export to json and import json, user can pick from filesystem". **Export / Import** buttons at the top of Default Configuration use the native Save and Open dialogs; the file carries **no keys or tokens** (and drops environment variables named like secrets), lists only the names of the secrets that were set, and leaves out `dry_run`, per-pod settings, adapters and git accounts.
+- **Import previews first**: a section per group (volume, image and registry login, environment, pod defaults, MCP servers, folders, exchange-bucket settings) with what changes; Folders ("paths from another machine") starts unticked; only ticked sections are written, through the panel's own `mounts.put`, after a backup (`<config dir>/backups`, newest ten) and with an **Undo**.
+- **First-launch question** (Lucas: "if the app is in an uninstalled state, have a popup that lets the user choose whether or not they want to do this json import and if so forward them to the correct screen and scroll to the import form"): on a new installation (no key, no saved configuration) a Welcome popup asks once; *Import a configuration file* opens Default Configuration scrolled to the import form (available before a key exists).
+- `./start.sh config export|import|undo`; `POD_MANAGER_CORE` lets the CLI use a core built elsewhere. Core: 17 new tests (`configio.test.ts`); browser: 12 new specs (`config-io.spec.js`). The Electron walkthrough step 1 now answers the popup (edited, not run).
+
 ## v1.0.2 (2026-11-03)
 
 Released: https://github.com/bluecollardev/downloads/releases/tag/v1.0.2 (tag `v1.0.2`, unsigned Mac DMG). Carries everything under 2026-11-03 below: the BH library in Import Shot Pack (source picker, progress bar and file list, Delete, partial/unverified states), the Panama bucket fields and keys in Default Configuration, Connect > MCP > Remote servers, and the Pod / Local switch with the pod download (the Pod option enables only when a volume, the RunPod key and the Panama keys are set; the active-pod route is not yet tested on a real pod). The public installer carries the BH exchange bucket name as a default.

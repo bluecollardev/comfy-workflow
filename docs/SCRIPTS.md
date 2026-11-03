@@ -19,6 +19,7 @@ Each script also carries its own header comment; this page is the map. Add a row
 | `sync --pod <id>` / `--s3` | the CLI's sync: the mapped folders onto the volume, never deleting; `--s3` through RunPod's S3 API with no pod | Mac to RunPod | **leaves the PC**; `--plates` needs a named yes |
 | `pull --pod <id>` / `--s3` | renders back down (`comfy-shared/output`, the shots' review and deliver folders) | RunPod to Mac | no |
 | `import <folder> [--adapter ID] [--dry-run]` | a package folder into ComfyUI-Shared through an adapter (ADR-008) | Mac | no; writes only into ComfyUI-Shared |
+| `config export [file]` / `import <file> [--sections a,b] [--dry-run]` / `undo` | `cli/index.mjs config ...`: the Default Configuration as a JSON file with no keys in it; import previews every section and writes the ticked ones after a backup (ADR-023) | Mac | no; writes `mounts.json`, and the exchange-bucket fields in the settings file |
 | `mcp` | `mcp/server.mjs` over stdio, the pod manager for Claude Code | Mac | tools that spend need `approved_by` |
 | `test` | the merge gate: core suite, IPC table, browser suite, the app in no-spend mode | Mac | no |
 | `core-test`, `e2e`, `e2e-app`, `smoke` | the parts of the gate on their own; `smoke` boots the app headless | Mac | no |
@@ -54,7 +55,7 @@ Each script also carries its own header comment; this page is the map. Add a row
 
 | Program | What it is |
 |---|---|
-| `cli/index.mjs` | The command line over the core: `pod`, `sync`, `pull`, `import`. Only wiring; the plans and the rsync / AWS CLI commands it runs are built and tested in `libs/core/src/sync.ts`. `npm run cli -- <args>`. |
+| `cli/index.mjs` | The command line over the core: `pod`, `sync`, `pull`, `import`, `config`. `POD_MANAGER_CORE` points it at a core built elsewhere (tests). Only wiring; the plans and the rsync / AWS CLI commands it runs are built and tested in `libs/core/src/sync.ts`. `npm run cli -- <args>`. |
 | `mcp/server.mjs` | The pod manager MCP server (stdio; `--http <port>` serves it on 127.0.0.1). Pods, volumes, configuration, sync, cost, governance. Bundled to `mcp/dist/server.cjs` by `npm run mcp:bundle`: **rebuild the bundle after changing the core, and restart any client that loaded the old one**. |
 | `mcp/comfy-bridge.mjs` | The ComfyUI bridge MCP: works inside the ComfyUI of a pod (workflows, nodes, queue, history). Never creates, stops or bills a pod. `--comfy <url>` or `COMFY_URL`. |
 | `mcp/transport.mjs` | The Streamable HTTP transport both MCP servers share. |

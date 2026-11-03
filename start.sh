@@ -9,6 +9,7 @@
 #   ./start.sh sync --pod <id> | --s3   copy the mapped folders onto the network volume (never deletes)
 #   ./start.sh pull --pod <id> | --s3   bring renders back down (comfy-shared/output, the shots' review and deliver)
 #   ./start.sh import <folder> [--adapter ID] [--dry-run]   a package folder into ComfyUI-Shared through an adapter (docs/ADR-008)
+#   ./start.sh config export [file] | import <file> [--sections a,b] [--dry-run] | undo   the Default Configuration as a JSON file (no keys in it, docs/ADR-023)
 #   ./start.sh mcp            the MCP server over stdio (what Claude Code launches)
 #   ./start.sh e2e | e2e-app | e2e-live | core-test | smoke   browser suite; the app in no-spend mode; the live RunPod proof (spends); core suite; headless boot
 #   ./start.sh comfy-image [--remote --wait] [--push <ref>]   build the ComfyUI server image (on GitHub Actions with --remote)
@@ -83,6 +84,10 @@ case "${1:-help}" in
   import)
     shift; load_env; ensure_app
     cd "$APP"; exec node cli/index.mjs import "$@" ;;
+  config)
+    # export / import / undo of the Default Configuration as a JSON file, no keys in it (docs/ADR-023)
+    shift; load_env; ensure_app
+    cd "$APP"; exec node cli/index.mjs config "$@" ;;
   mcp)
     # stdout is the MCP transport: everything the setup prints goes to stderr
     load_env; ensure_app >&2
