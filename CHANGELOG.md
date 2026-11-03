@@ -3,6 +3,10 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## v1.0.2 (2026-11-03)
+
+Released: https://github.com/bluecollardev/downloads/releases/tag/v1.0.2 (tag `v1.0.2`, unsigned Mac DMG). Carries everything under 2026-11-03 below: the BH library in Import Shot Pack (source picker, progress bar and file list, Delete, partial/unverified states), the Panama bucket fields and keys in Default Configuration, Connect > MCP > Remote servers, and the Pod / Local switch with the pod download (the Pod option enables only when a volume, the RunPod key and the Panama keys are set; the active-pod route is not yet tested on a real pod). The public installer carries the BH exchange bucket name as a default.
+
 ## 2026-11-03 (pod pulls from S3; the BH library)
 
 ### A pod pulls from an S3 bucket; Import Shot Pack reads the BH library (branch `feature/pod-pulls-from-s3`; ADR-015 to ADR-021, `docs/POD-PULLS-FROM-S3.md`)
