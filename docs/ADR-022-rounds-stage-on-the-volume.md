@@ -57,6 +57,17 @@ with no manifest, giving the three markers, and a rerun that rewrites the marker
 Differences from what this ADR said: the delete on a temporary pod runs its script over SSH on the pod once it is up (the image has no way to run a one-off command at start), so it needs the same SSH key the Sync needs; a round with no manifest ends `failed` on the job and `unverified` on the volume; a Pod download is not driven from the MCP server (no new tool).
 **Not yet tried on a real pod:** the active route's SSH (the 2026-11-03 tests used the start-up route and the proxy hostname did not resolve), a temporary pod followed through its real log stream, and the delete script.
 
+## Tested on real pods (2026-11-03, approved by Lucas)
+
+Through the core's own functions (the same ones the UI calls), image `contract-v26` rebuilt with `s3pull.sh` and `verify_round.py`:
+
+- **Temporary route, pull: works.** Plan chose the temporary route (L4, USD 0.44/h, ceiling 30 min). The pod `ComfyUI-Pull-brynley-inbox-2026-10-28-v001-1103` was created, took about 5 minutes to start (the new image's layers), pulled the round
+  and **verified it on the pod against the manifests** (379 listed, 0 bad), the job reached `done`, the pod was deleted by the job, no pod was left behind, and the volume record read `complete 379/379`. The pod's stored configuration holds `S3_PULL` and no keys.
+- **Temporary route, Delete: ran to `done` in 28 seconds** (pod created, SSH reached with the address the app uses, the remove script run over SSH, pod deleted, none left behind). This also shows SSH to a pod works from this Mac with the host and port the Sync uses; the
+  earlier `*.proxy.runpod.io` name was the thing that did not resolve. Not yet shown: that the files were really gone (that needs a later pull to copy all 379 again).
+- **No stock is a real failure mode.** At about 07:35 UTC RunPod refused every card (`No card available right now ... no longer any instances available`), and a stopped pod could not resume (`not enough free GPUs on the host machine`). A temporary pull pod therefore cannot start at such a time; the job must say that plainly and leave nothing behind (a create that fails has no pod to delete).
+- **Not yet tested:** the active-pod route (needs any pod running on the volume, so it waits for stock), and the delete confirmed by a pull that copies the files back.
+
 ## What is not known
 
 - **Seeing the volume without a pod.** RunPod's S3 API can list a volume with no pod, but the app has no RunPod S3 keys stored and `EUR-IS-2` was not on the supported list in ADR-007 (it may have changed since). If it is not available, a row's state in Pod mode comes from what the last
