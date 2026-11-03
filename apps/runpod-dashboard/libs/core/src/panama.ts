@@ -61,12 +61,27 @@ export function status() {
   return { configured: has, via: has ? 'aws profile' : 'none', profile: profile(), bucket: bucket(), region: region(), staging: stagingDir(), reason: has ? '' : `No Panama keys: enter them in Default Configuration (or add an AWS profile named "${profile()}").` }
 }
 
-export interface Round { name: string; staged: boolean }
+/** What is on this PC for a round: nothing, some of it, all of it but never checked, or all of it and verified (the done marker). */
+export interface Staged { state: 'none' | 'partial' | 'unverified' | 'complete'; present: number; expected: number | null; missing: number | null }
+export interface Round { name: string; staged: boolean; state: Staged['state']; present: number; expected: number | null; missing: number | null }
+const countFiles = (d: string): number => { let n = 0; try { for (const e of readdirSync(d, { withFileTypes: true })) { if (e.isDirectory()) n += countFiles(join(d, e.name)); else if (!e.name.startsWith('.panama-pull')) n++ } } catch { /* not there */ } return n }
+/** Cheap (existence and size, no hashing) so the list can show it for every round: a folder with some files is `partial`, with every listed file present and the right size but no marker `unverified`. */
+export function stagedState(round: string): Staged {
+  const dir = join(stagingDir(), round)
+  if (!existsSync(dir)) return { state: 'none', present: 0, expected: null, missing: null }
+  const l = listedFiles(dir)
+  if (existsSync(join(dir, '.panama-pull.done'))) { const n = l ? l.files.size : countFiles(dir); return { state: 'complete', present: n, expected: n, missing: 0 } }
+  if (!l || l.files.size === 0) { const n = countFiles(dir); return { state: n ? 'partial' : 'none', present: n, expected: null, missing: null } }
+  let present = 0
+  for (const f of l.files.values()) { try { if (statSync(join(dir, f.path)).size === f.bytes) present++ } catch { /* missing */ } }
+  const expected = l.files.size
+  return { state: present === expected ? 'unverified' : 'partial', present, expected, missing: expected - present }
+}
 export function rounds(): Round[] {
   const r = run(listCmd())
   if (r.status !== 0) throw bad(`Could not list the bucket: ${(r.stderr || r.stdout).trim().split('\n').pop()}`)
   return r.stdout.split('\n').map((l) => /^\s*PRE (.+)\/\s*$/.exec(l)?.[1]).filter((n): n is string => !!n && ROUND.test(n))
-    .map((name) => ({ name, staged: existsSync(join(stagingDir(), name, '.panama-pull.done')) }))
+    .map((name) => { const st = stagedState(name); return { name, staged: st.state === 'complete', ...st } })
 }
 
 /** Files and bytes under one round (a listing, so a big round takes a few seconds). */
@@ -128,17 +143,27 @@ interface Listed { path: string; bytes: number; sha256: string }
 /** verify_round.py in TypeScript (the Panama console's scripts/panama-gen/migration): every file the round's MANIFEST.json lists is
  *  present, the same size and the same sha256. The root manifest may list all files; older rounds list them per shot too. Files
  *  on disk that no manifest lists are counted, never touched. */
-export async function verify(root: string): Promise<Verify> {
+/** The files a staged round's manifests list (root file list plus per-shot ones), or null when the root manifest is not there yet. */
+function listedFiles(root: string): { files: Map<string, Listed>; kind?: string } | null {
   const read = (p: string) => JSON.parse(readFileSync(p, 'utf8'))
   const rootManifest = join(root, 'MANIFEST.json')
-  if (!existsSync(rootManifest)) return { listed: 0, bad: [], extra: 0, ok: false }
-  const m = read(rootManifest)
+  if (!existsSync(rootManifest)) return null
+  let m: { files?: Listed[]; shots?: Record<string, unknown>; kind?: string }
+  try { m = read(rootManifest) } catch { return null }   // a manifest cut short by an interrupted download
   const files = new Map<string, Listed>()
   for (const f of (m.files || []) as Listed[]) files.set(normalize(f.path), f)
   for (const shot of Object.keys(m.shots || {})) {
     const sm = join(root, shot, 'MANIFEST.json')
-    if (existsSync(sm)) for (const f of (read(sm).files || []) as Listed[]) if (!files.has(normalize(f.path))) files.set(normalize(f.path), f)
+    if (existsSync(sm)) { try { for (const f of (read(sm).files || []) as Listed[]) if (!files.has(normalize(f.path))) files.set(normalize(f.path), f) } catch { /* that shot's manifest is not whole yet */ } }
   }
+  return { files, kind: m.kind }
+}
+
+export async function verify(root: string): Promise<Verify> {
+  const l = listedFiles(root)
+  if (!l) return { listed: 0, bad: [], extra: 0, ok: false }
+  const { files } = l
+  const m = { kind: l.kind }
   const bad: string[] = []
   for (const f of files.values()) {
     const p = join(root, f.path)

@@ -91,3 +91,26 @@ describe('pod environment (S3_PULL gets the keys the app holds)', () => {
     delete process.env.PANAMA_AWS_ACCESS_KEY_ID; delete process.env.PANAMA_AWS_SECRET_ACCESS_KEY
   })
 })
+
+describe('panama.stagedState (what is on this PC for a round)', () => {
+  it('none, partial with counts, unverified, complete', () => {
+    const base = mkdtempSync(join(tmpdir(), 'stage-')); process.env.PANAMA_ROUNDS_DIR = base
+    const sha = (s: string) => createHash('sha256').update(s).digest('hex')
+    expect(panama.stagedState('r').state).toBe('none')
+    const dir = join(base, 'r'); mkdirSync(join(dir, 'shot'), { recursive: true })
+    writeFileSync(join(dir, 'shot', 'a.txt'), 'hello')   // files on disk, no manifest yet
+    expect(panama.stagedState('r')).toMatchObject({ state: 'partial', present: 1, expected: null })
+    const files = [{ path: 'shot/a.txt', bytes: 5, sha256: sha('hello') }, { path: 'shot/b.txt', bytes: 5, sha256: sha('world') }]
+    writeFileSync(join(dir, 'MANIFEST.json'), JSON.stringify({ files }))
+    expect(panama.stagedState('r')).toMatchObject({ state: 'partial', present: 1, expected: 2, missing: 1 })
+    writeFileSync(join(dir, 'shot', 'b.txt'), 'wor')   // short file: not present
+    expect(panama.stagedState('r')).toMatchObject({ state: 'partial', present: 1, missing: 1 })
+    writeFileSync(join(dir, 'shot', 'b.txt'), 'world')
+    expect(panama.stagedState('r')).toMatchObject({ state: 'unverified', present: 2, missing: 0 })
+    writeFileSync(join(dir, '.panama-pull.done'), 'x')
+    expect(panama.stagedState('r')).toMatchObject({ state: 'complete', missing: 0 })
+    writeFileSync(join(dir, 'MANIFEST.json'), '{"files": [')   // a manifest cut short
+    expect(() => panama.stagedState('r')).not.toThrow()
+    delete process.env.PANAMA_ROUNDS_DIR
+  })
+})

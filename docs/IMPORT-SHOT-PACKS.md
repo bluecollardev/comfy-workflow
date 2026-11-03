@@ -82,3 +82,26 @@ fixes what fails. Claude writes adapters and their prompts and nothing else. Det
 - A Drive part imported alone cannot hash-check shots whose manifest is in another part.
 - Only the `panama-imax-redux` format has a hand-written adapter; Binc's CANALV2 is read in
   place, not imported.
+
+## Import from the BH library (the Panama S3 bucket)
+
+Added 2026-11-03 (`docs/ADR-016`, `ADR-021`). When the Panama bucket is configured, Import Shot Pack first asks where the package comes from:
+**Zip or folder on this PC** (everything above) or **Panama S3 bucket**. The pod card also has an **Import from BH** button that opens the modal on the bucket.
+
+**Set up once.** Default Configuration > Panama bucket (BH): the read-only access key ID and secret BH issued. They are kept in the app's settings file,
+shown only as their last four characters. With no keys the app falls back to an AWS profile named `panama`. Without either, the source picker does not appear
+and Import Shot Pack is the folder import as before.
+
+**Use.**
+1. The list shows each round in the bucket and what is on this PC: nothing (**Download**), part of it (**partial: 391 of 1,283 files**, button **Resume**),
+   all of it but not yet checked (**downloaded, not verified**), or all of it verified (green **downloaded**, button **Re-Download**).
+2. **Download** copies the round to `<ComfyUI-Shared>/temp/rounds/<round>` with `aws s3 sync`: read-only against the bucket, no deleting, and a stopped or
+   cancelled download carries on from the files already there. **Cancel** is in the download card's header. A round is 9 to 39 GB; **Size** shows it first.
+3. When the files are down, the app checks every one against the round's `MANIFEST.json` (size and sha256, the same check as BH's `verify_round.py`). A round that
+   does not match, or has no file list, is not offered for import.
+4. **Import Package** hands the staged folder to the ordinary import: pick the adapter, read the plan, Dry run, Import. Only the files the adapter maps are copied
+   into `input/` and `workflows/`; the rest stays in `temp/rounds`.
+
+**Where things are.** Staged rounds are in `temp/rounds/` inside the mapped ComfyUI-Shared. A Sync never carries `temp/`. `PANAMA_ROUNDS_DIR` in the settings file moves
+the staging folder. Not every entry in the bucket is an import package (the inbox round holds text entries only).
+

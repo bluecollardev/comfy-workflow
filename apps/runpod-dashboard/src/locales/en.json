@@ -828,8 +828,8 @@
     "sizeLine": "{files} files, {size}",
     "staged": "downloaded",
     "download": "Download",
-    "again": "Download again",
-    "use": "Use for import",
+    "again": "Re-Download",
+    "use": "Import Package",
     "files": "{n} files",
     "state": {
       "running": "downloading",
@@ -839,7 +839,12 @@
       "verifying": "checking files"
     },
     "cancel": "Cancel",
-    "cancelledNote": "Stopped. What was already downloaded stays; Download again carries on from it."
+    "cancelledNote": "Stopped. What was already downloaded stays; Download again carries on from it.",
+    "resume": "Resume",
+    "stagedPartial": "partial: {present} of {expected} files",
+    "stagedPartialUnknown": "partial: {present} files so far",
+    "stagedUnverified": "downloaded, not verified",
+    "missingHint": "{n} files missing. Resume carries on from what is here."
   },
   "remoteMcp": {
     "title": "Remote servers",

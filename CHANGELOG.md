@@ -3,6 +3,17 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## 2026-11-03 (pod pulls from S3; the BH library)
+
+### A pod pulls from an S3 bucket; Import Shot Pack reads the BH library (branch `feature/pod-pulls-from-s3`; ADR-015 to ADR-021, `docs/POD-PULLS-FROM-S3.md`)
+- **Pod pull.** The image carries `rclone`; `S3_PULL="bucket/prefix=/workspace/dir;..."` copies bucket prefixes onto the volume at start, in the background, additive, destinations only under `/workspace`. Tested in a container against a local S3 (sha256 match, rerun transfers nothing, outside-`/workspace` refused); not yet run on a pod. The S3 key help text in Default Configuration was reworded (it runs from this computer; no pod needed in S3 datacenters).
+- **The image is built on GitHub Actions** and pushed to `ghcr.io/bluecollardev/comfy-app:contract-v26` (`.github/workflows/comfy-image.yml`, `./start.sh comfy-image --remote --wait`); a read-only deploy key reads the private node packs. GitLab is retired as the registry (ADR-020). The first runs failed (`startup_failure`, then `write_package` denied until the package allowed this repo).
+- **Import Shot Pack has a source picker** (Zip or folder, Panama S3 bucket) and a pod-card **Import from BH** button. Rounds list with their state on this PC (none, partial with counts, downloaded not verified, downloaded), download with `aws s3 sync`, **Cancel** in the card header, manifest check before **Import Package** (ADR-016, ADR-021).
+- **Connect > MCP > Remote servers.** The app connects to BH's Panama console MCP endpoint with a console key; Check lists the tools the role may call (ADR-019).
+- **Bucket keys in Default Configuration** ("Panama bucket (BH)"); `AWS_PROFILE` is unset, not empty, when they are used (an empty one broke every call). "Pull on pod start" adds `S3_PULL` and the keys to new pods (plain environment values: open question in ADR-021).
+- **Rounds stage in `ComfyUI-Shared/temp/rounds`; a Sync never carries `temp/`.** ComfyUI-Shared was remapped from Binc's mirror to `~/ComfyUI-Shared` and the mirror's tree (2,008 files, 17 GB) copied in additively; the guard against writing under `projects/desktop/` is not built.
+- **ADRs:** 015 pod pull, 016 how BH's export works and the library, 017 source/round adapters (proposed), 018 an API option on BH's export (proposed, needs BH), 019 remote MCP connector, 020 image on GitHub, 021 staging, Sync and keys. The new docs are left out of the public docs site (`scripts/docs-site.mjs`).
+
 ## 2026-10-27 (versioned releases)
 
 ### The app is released by version (branch `feature/release-versioning`; `docs/ADR-012-versioned-releases.md`, `docs/RELEASING.md`)

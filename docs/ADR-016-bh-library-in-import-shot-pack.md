@@ -62,8 +62,7 @@ What follows for the app:
    `verify_round.py` (every listed file present, same size, same sha256). Built in `libs/core/src/panama.ts` (`verify`); a round
    without a file list is refused, not trusted.
 3. **Import Shot Pack gets a source picker, shown only when Panama is configured** (an AWS profile exists): *Zip or folder on this
-   PC* (today's flow) or *Panama S3 bucket*. A round is downloaded to a staging folder (`~/panama-rounds/<round>`, as the guide
-   does), verified, then handed to the ordinary folder import (adapter, plan, Import). No second import path.
+   PC* (today's flow) or *Panama S3 bucket*. A round is downloaded to a staging folder (`<ComfyUI-Shared>/temp/rounds/<round>`; ADR-021 moved it from `~/panama-rounds`), verified, then handed to the ordinary folder import (adapter, plan, Import). No second import path.
 4. **The library lists two levels, because that is how BH ships:**
    - **Rounds**: name, `kind` (delivery, inbox entries...), `written_at`, file count and size, and whether it is already staged and verified.
    - **Shot packs**: the per-shot folders inside a round (from the manifest's file paths). A round is 9 to 39 GB; a shot pack is the

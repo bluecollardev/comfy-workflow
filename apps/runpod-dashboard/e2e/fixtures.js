@@ -455,7 +455,7 @@ export default {
     }
     // MCP (the Connect › MCP tab)
     if (method === 'GET' && path === '/panama/status') { const pn = (state.panama ||= { configured: false }); return json({ configured: pn.configured, profile: 'panama', bucket: 'bh-panama-exchange-610140802195', region: 'us-west-2', staging: '/Users/lucas/panama-rounds', reason: pn.configured ? '' : 'No AWS profile named "panama"' }) }
-    if (method === 'GET' && path === '/panama/rounds') return json((state.panama?.rounds || [{ name: 'brynley-comfy-2026-10-23', staged: false }, { name: 'brynley-inbox-2026-10-28-v001', staged: true }]))
+    if (method === 'GET' && path === '/panama/rounds') return json((state.panama?.rounds || [{ name: 'brynley-comfy-2026-10-23', staged: false, state: 'none', present: 0, expected: null, missing: null }, { name: 'brynley-comfy-2026-10-20', staged: false, state: 'partial', present: 391, expected: 1283, missing: 892 }, { name: 'brynley-inbox-2026-10-28-v001', staged: true, state: 'complete', present: 378, expected: 378, missing: 0 }]))
     if (method === 'GET' && path === '/panama/size') return json({ round: query.round, files: 5701, bytes: 29117613170 })
     if (method === 'POST' && path === '/panama/cancel') { (state.panama ||= {}).cancelled = body.id; return json({ id: body.id, round: String(body.id).replace(/-1$/, ''), dest: '/x', state: 'cancelled', files: 258, lines: [] }) }
     if (method === 'POST' && path === '/panama/pull') { (state.panama ||= {}).pulled = body.round; return json({ id: `${body.round}-1`, round: body.round, dest: `/Users/lucas/panama-rounds/${body.round}`, state: state.panama.slow ? 'running' : 'done', files: 7, lines: ['download: a'], verify: { listed: 7, bad: [], extra: 0, ok: true } }) }

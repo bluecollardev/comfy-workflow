@@ -8,11 +8,13 @@
     <div v-else-if="!store.rounds.length" class="small text-body-secondary" data-testid="panama-none">{{ $t('panama.none') }}</div>
     <div v-for="r in store.rounds" :key="r.name" class="d-flex align-items-center gap-2 py-1 border-bottom" data-testid="panama-round" :data-round="r.name">
       <code class="flex-grow-1">{{ r.name }}</code>
+      <BBadge v-if="r.state === 'complete'" variant="success" class="fw-normal" data-testid="panama-staged">{{ $t('panama.staged') }}</BBadge>
+      <BBadge v-else-if="r.state === 'partial'" variant="warning" class="fw-normal" :title="r.missing != null ? $t('panama.missingHint', { n: r.missing }) : ''" data-testid="panama-partial">{{ r.expected != null ? $t('panama.stagedPartial', { present: r.present, expected: r.expected }) : $t('panama.stagedPartialUnknown', { present: r.present }) }}</BBadge>
+      <BBadge v-else-if="r.state === 'unverified'" variant="info" class="fw-normal" data-testid="panama-unverified">{{ $t('panama.stagedUnverified') }}</BBadge>
       <span v-if="store.sizes[r.name]" class="small text-body-secondary" data-testid="panama-size">{{ $t('panama.sizeLine', { files: store.sizes[r.name].files, size: size(store.sizes[r.name].bytes) }) }}</span>
       <BButton v-else size="sm" variant="outline-light" class="text-nowrap" data-testid="panama-size-btn" @click="store.loadSize(r.name)">{{ $t('panama.size') }}</BButton>
-      <BBadge v-if="r.staged" variant="success" class="fw-normal" data-testid="panama-staged">{{ $t('panama.staged') }}</BBadge>
-      <BButton size="sm" variant="primary" class="text-nowrap" :disabled="busy" data-testid="panama-pull" @click="store.pull(r.name)"><i class="fa-solid fa-cloud-arrow-down me-1"></i>{{ r.staged ? $t('panama.again') : $t('panama.download') }}</BButton>
-      <BButton v-if="r.staged" size="sm" variant="outline-light" class="text-nowrap" data-testid="panama-use" @click="use(r.name)">{{ $t('panama.use') }}</BButton>
+      <BButton size="sm" variant="primary" class="text-nowrap" :disabled="busy" data-testid="panama-pull" @click="store.pull(r.name)"><i class="fa-solid fa-cloud-arrow-down me-1"></i>{{ r.state === 'partial' ? $t('panama.resume') : r.state === 'none' || !r.state ? $t('panama.download') : $t('panama.again') }}</BButton>
+      <BButton v-if="r.staged" size="sm" variant="success" class="text-nowrap" data-testid="panama-use" @click="use(r.name)">{{ $t('panama.use') }}</BButton>
     </div>
 
     <div v-if="store.job" class="card mt-3" data-testid="panama-job">
@@ -26,7 +28,7 @@
         <div v-if="store.job.error" class="text-danger mt-1" data-testid="panama-job-error">{{ store.job.error }}</div>
         <pre v-if="store.job.lines?.length" class="mb-0 mt-2 small text-body-secondary">{{ store.job.lines.slice(-4).join('\n') }}</pre>
         <div v-if="store.job.state === 'cancelled'" class="text-body-secondary mt-1" data-testid="panama-job-cancelled">{{ $t('panama.cancelledNote') }}</div>
-        <BButton v-if="store.job.state === 'done'" size="sm" variant="primary" class="mt-2" data-testid="panama-continue" @click="use(store.job.round)">{{ $t('panama.use') }}</BButton>
+        <BButton v-if="store.job.state === 'done'" size="sm" variant="success" class="mt-2" data-testid="panama-continue" @click="use(store.job.round)">{{ $t('panama.use') }}</BButton>
       </div>
     </div>
   </div>

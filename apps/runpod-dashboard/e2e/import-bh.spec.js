@@ -30,11 +30,11 @@ test.describe('Import from BH', () => {
     await expect(dialog.getByTestId('import-pane')).toBeVisible()
     await dialog.getByTestId('import-source-change').click()
     await dialog.getByTestId('import-source-panama').click()
-    await expect(dialog.getByTestId('panama-round')).toHaveCount(2)
+    await expect(dialog.getByTestId('panama-round')).toHaveCount(3)
     await expect(dialog.locator('[data-testid="panama-round"][data-round="brynley-inbox-2026-10-28-v001"]').getByTestId('panama-staged')).toBeVisible()
   })
 
-  test('the pod card\'s Import from BH opens the modal already on the Panama source, and Use for import hands the folder to the import', async ({ page, api }) => {
+  test('the pod card\'s Import from BH opens the modal already on the Panama source, and Import Package hands the folder to the import', async ({ page, api }) => {
     api.state.mounts.config.folders['comfy-shared'] = '/Users/lucas/ComfyUI-Shared'
     api.state.panama = { configured: true }
     await page.goto('/')
@@ -42,7 +42,10 @@ test.describe('Import from BH', () => {
     const dialog = dialogOf(page)
     await expect(dialog.getByTestId('panama-pane')).toBeVisible()
     await expect(dialog.getByTestId('import-source-picker')).toHaveCount(0)
-    await dialog.locator('[data-testid="panama-round"][data-round="brynley-inbox-2026-10-28-v001"]').getByTestId('panama-use').click()
+    const staged = dialog.locator('[data-testid="panama-round"][data-round="brynley-inbox-2026-10-28-v001"]')
+    const at = async (id) => (await staged.getByTestId(id).boundingBox()).x
+    expect(await at('panama-staged')).toBeLessThan(await at('panama-pull'))   // the downloaded badge comes before the buttons
+    await staged.getByTestId('panama-use').click()
     await expect(dialog.getByTestId('import-pane')).toBeVisible()
     await expect(dialog.getByTestId('import-folder')).toHaveValue('/Users/lucas/panama-rounds/brynley-inbox-2026-10-28-v001')
   })
@@ -61,5 +64,21 @@ test.describe('Import from BH', () => {
     await expect(dialog.getByTestId('panama-cancel')).toHaveCount(0)
     expect(api.state.panama.cancelled).toBe('brynley-comfy-2026-10-23-1')
     await expect(dialog.locator('[data-testid="panama-round"][data-round="brynley-comfy-2026-10-23"]').getByTestId('panama-pull')).toBeEnabled()
+  })
+
+  test('the list says what is on this PC: none, partial with the counts, or downloaded; the buttons follow (Download, Resume, Re-Download)', async ({ page, api }) => {
+    api.state.panama = { configured: true }
+    await page.goto('/')
+    await podCard(page, 'ComfyUI-Dev').getByTestId('pod-import-bh').click()
+    const dialog = dialogOf(page)
+    const row = (name) => dialog.locator(`[data-testid="panama-round"][data-round="${name}"]`)
+    await expect(row('brynley-comfy-2026-10-23').getByTestId('panama-pull')).toHaveText(t('panama.download'))
+    await expect(row('brynley-comfy-2026-10-23').getByTestId('panama-use')).toHaveCount(0)
+    await expect(row('brynley-comfy-2026-10-20').getByTestId('panama-partial')).toContainText('391')
+    await expect(row('brynley-comfy-2026-10-20').getByTestId('panama-partial')).toContainText('1283')
+    await expect(row('brynley-comfy-2026-10-20').getByTestId('panama-pull')).toHaveText(t('panama.resume'))
+    await expect(row('brynley-comfy-2026-10-20').getByTestId('panama-use')).toHaveCount(0)   // a partial round cannot be imported
+    await expect(row('brynley-inbox-2026-10-28-v001').getByTestId('panama-staged')).toBeVisible()
+    await expect(row('brynley-inbox-2026-10-28-v001').getByTestId('panama-pull')).toHaveText(t('panama.again'))
   })
 })
