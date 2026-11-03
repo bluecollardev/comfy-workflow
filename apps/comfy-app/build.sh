@@ -67,7 +67,7 @@ if [ -n "$REMOTE" ]; then
   echo "runs: https://github.com/$SLUG/actions/workflows/comfy-image.yml"
   [ -n "$WAIT" ] || exit 0
   sleep 15; RUN=""
-  for _ in 1 2 3 4 5 6; do RUN="$(gh run list -R "$SLUG" --workflow comfy-image.yml --branch "$BRANCH" --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null)"; [ -n "$RUN" ] && break; sleep 10; done
+  for _ in 1 2 3 4 5 6; do RUN="$(gh run list -R "$SLUG" --branch "$BRANCH" --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null)"; [ -n "$RUN" ] && break; sleep 10; done
   [ -n "$RUN" ] || { echo "no run appeared for $BRANCH" >&2; exit 1; }
   echo "run $RUN: https://github.com/$SLUG/actions/runs/$RUN"
   gh run watch "$RUN" -R "$SLUG" --exit-status --interval 30 >/dev/null && {
