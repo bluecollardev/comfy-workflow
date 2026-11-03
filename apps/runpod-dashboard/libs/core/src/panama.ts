@@ -34,7 +34,7 @@ export const awsEnv = (): NodeJS.ProcessEnv => {
 /** The command for listing the rounds, as data so it can be tested without a bucket. */
 export const listCmd = () => ['aws', 's3', 'ls', `s3://${bucket()}/rounds/`, ...aws([])]
 export const sizeCmd = (round: string) => ['aws', 's3', 'ls', `s3://${bucket()}/rounds/${round}/`, '--recursive', '--summarize', ...aws([])]
-export const pullCmd = (round: string, dest: string) => ['aws', 's3', 'cp', '--recursive', `s3://${bucket()}/rounds/${round}/`, dest, ...aws([])]
+export const pullCmd = (round: string, dest: string) => ['aws', 's3', 'sync', `s3://${bucket()}/rounds/${round}/`, dest, ...aws([])]   // sync, not cp: a stopped or cancelled download carries on over what is already there; no --delete, ever
 
 function run(cmd: string[], timeoutMs = 60_000) {
   const r = spawnSync(cmd[0], cmd.slice(1), { encoding: 'utf8', timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, env: awsEnv() })
@@ -71,8 +71,9 @@ export function size(round: string) {
 
 // ----- pulling: one job per round, in this process, polled -----
 export interface Verify { listed: number; bad: string[]; extra: number; kind?: string; ok: boolean }
-export interface PullJob { id: string; round: string; dest: string; state: 'running' | 'verifying' | 'done' | 'failed'; files: number; lines: string[]; error?: string; verify?: Verify }
+export interface PullJob { id: string; round: string; dest: string; state: 'running' | 'verifying' | 'done' | 'failed' | 'cancelled'; files: number; lines: string[]; error?: string; verify?: Verify }
 const jobs = new Map<string, PullJob>()
+const children = new Map<string, ReturnType<typeof spawn>>()
 
 export function pull(round: string): PullJob {
   if (!ROUND.test(round)) throw bad(`Not a round name: ${round}`)
@@ -84,6 +85,7 @@ export function pull(round: string): PullJob {
   const job: PullJob = { id: `${round}-${Date.now()}`, round, dest, state: 'running', files: 0, lines: [] }
   jobs.set(job.id, job)
   const child = spawn(cmd[0], cmd.slice(1), { stdio: ['ignore', 'pipe', 'pipe'], env: awsEnv() })
+  children.set(job.id, child)
   const onData = (buf: Buffer) => {
     for (const l of buf.toString().split(/\r|\n/).filter(Boolean)) {
       if (/^download:/.test(l)) job.files++
@@ -93,6 +95,8 @@ export function pull(round: string): PullJob {
   child.stdout.on('data', onData); child.stderr.on('data', onData)
   child.on('error', (e) => { job.state = 'failed'; job.error = e.message })
   child.on('close', (code) => {
+    children.delete(job.id)
+    if (job.state === 'cancelled') return   // stopped on request: what was fetched stays, a new Download carries on from it
     if (code !== 0) { if (job.state === 'running') { job.state = 'failed'; job.error = `aws exited ${code}: ${job.lines.slice(-1)[0] ?? ''}` } return }
     // Downloaded; now what the guide says to do before anything reads a round: check every file against its MANIFEST.json.
     job.state = 'verifying'
@@ -140,6 +144,17 @@ export async function verify(root: string): Promise<Verify> {
   } }
   walk(root)
   return { listed: files.size, bad, extra, kind: m.kind, ok: files.size > 0 && bad.length === 0 }
+}
+
+/** Stop a running download. The files already fetched stay; Download again carries on from them (sync skips what is complete). */
+export function cancel(id: string): PullJob {
+  const j = jobs.get(id)
+  if (!j) throw bad(`No download ${id}`)
+  if (j.state !== 'running') return j   // done, failed, verifying (hashing cannot be cut short) or already cancelled
+  j.state = 'cancelled'
+  j.error = undefined
+  children.get(id)?.kill('SIGTERM')
+  return j
 }
 
 export const job = (id: string) => jobs.get(id) ?? null

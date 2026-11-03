@@ -31,14 +31,19 @@ export const usePanamaStore = defineStore('panama', () => {
     error.value = null
     try { job.value = await panamaAPI.pull(round); poll() } catch (e) { error.value = errorText(e) }
   }
+  async function cancel() {
+    if (!job.value) return
+    try { job.value = await panamaAPI.cancel(job.value.id) } catch (e) { error.value = errorText(e) }
+    loadRounds()
+  }
   function poll() {
     clearTimeout(timer)
     timer = setTimeout(async () => {
       if (!job.value) return
       try { job.value = await panamaAPI.job(job.value.id) } catch (e) { error.value = errorText(e); return }
-      if (job.value?.state === 'running') poll()
+      if (['running', 'verifying'].includes(job.value?.state)) poll()
       else loadRounds()
     }, 1000)
   }
-  return { status, rounds, sizes, job, loading, error, loadStatus, loadRounds, loadSize, pull }
+  return { status, rounds, sizes, job, loading, error, loadStatus, loadRounds, loadSize, pull, cancel }
 })

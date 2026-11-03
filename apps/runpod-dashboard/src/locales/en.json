@@ -834,8 +834,12 @@
     "state": {
       "running": "downloading",
       "done": "downloaded",
-      "failed": "failed"
-    }
+      "failed": "failed",
+      "cancelled": "cancelled",
+      "verifying": "checking files"
+    },
+    "cancel": "Cancel",
+    "cancelledNote": "Stopped. What was already downloaded stays; Download again carries on from it."
   },
   "remoteMcp": {
     "title": "Remote servers",

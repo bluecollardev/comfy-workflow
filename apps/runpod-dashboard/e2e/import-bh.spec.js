@@ -46,4 +46,19 @@ test.describe('Import from BH', () => {
     await expect(dialog.getByTestId('import-pane')).toBeVisible()
     await expect(dialog.getByTestId('import-folder')).toHaveValue('/Users/lucas/panama-rounds/brynley-inbox-2026-10-28-v001')
   })
+
+  test('a running download has a Cancel; it stops, says what stays, and the round can be downloaded again', async ({ page, api }) => {
+    api.state.panama = { configured: true, slow: true }
+    await page.goto('/')
+    await podCard(page, 'ComfyUI-Dev').getByTestId('pod-import-bh').click()
+    const dialog = dialogOf(page)
+    await dialog.locator('[data-testid="panama-round"][data-round="brynley-comfy-2026-10-23"]').getByTestId('panama-pull').click()
+    await expect(dialog.getByTestId('panama-job-state')).toHaveText(t('panama.state.running'))
+    await dialog.getByTestId('panama-cancel').click()
+    await expect(dialog.getByTestId('panama-job-state')).toHaveText(t('panama.state.cancelled'))
+    await expect(dialog.getByTestId('panama-job-cancelled')).toBeVisible()
+    await expect(dialog.getByTestId('panama-cancel')).toHaveCount(0)
+    expect(api.state.panama.cancelled).toBe('brynley-comfy-2026-10-23-1')
+    await expect(dialog.locator('[data-testid="panama-round"][data-round="brynley-comfy-2026-10-23"]').getByTestId('panama-pull')).toBeEnabled()
+  })
 })

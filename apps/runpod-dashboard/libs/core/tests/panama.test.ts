@@ -1,7 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { createHash } from 'node:crypto'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import * as panama from '../src/panama.js'
 
 describe('panama (the exchange bucket as an import source)', () => {
+  // the developer's own settings file (stored Panama keys) must not change which command is built
+  beforeEach(() => { process.env.SETTINGS_ENV_FILE = join(tmpdir(), `no-settings-${process.pid}.env`); for (const k of ['PANAMA_AWS_ACCESS_KEY_ID', 'PANAMA_AWS_SECRET_ACCESS_KEY']) delete process.env[k] })
+  afterEach(() => { delete process.env.SETTINGS_ENV_FILE })
   it('uses the keys the app holds, in the environment and not on the command line; the profile is only the fallback', () => {
     process.env.PANAMA_AWS_ACCESS_KEY_ID = 'AKIATEST'; process.env.PANAMA_AWS_SECRET_ACCESS_KEY = 'secretvalue'
     const cmd = panama.listCmd()
@@ -14,14 +21,17 @@ describe('panama (the exchange bucket as an import source)', () => {
     process.env.PANAMA_S3_PROFILE = 'panama'
     expect(panama.listCmd()).toEqual(['aws', 's3', 'ls', 's3://bh-panama-exchange-610140802195/rounds/', '--profile', 'panama', '--region', 'us-west-2'])
     const pull = panama.pullCmd('brynley-comfy-2026-10-23', '/tmp/x')
-    expect(pull.slice(0, 4)).toEqual(['aws', 's3', 'cp', '--recursive'])
+    expect(pull.slice(0, 3)).toEqual(['aws', 's3', 'sync'])
     expect(pull).toContain('s3://bh-panama-exchange-610140802195/rounds/brynley-comfy-2026-10-23/')
-    expect(pull.some((a) => ['rm', 'sync', 'mv'].includes(a))).toBe(false)
+    expect(pull.some((a) => ['rm', 'mv', '--delete'].includes(a))).toBe(false)
   })
   it('refuses a round name that is a path, so a pull cannot leave the staging folder', () => {
     expect(() => panama.pull('../etc')).toThrow(/Not a round name/)
     expect(() => panama.pull('a/b')).toThrow(/Not a round name/)
     expect(() => panama.size('..')).toThrow(/Not a round name/)
+  })
+  it('cancel stops nothing that is not running and refuses an unknown download', () => {
+    expect(() => panama.cancel('nope')).toThrow(/No download/)
   })
   it('stages under ~/panama-rounds unless told otherwise', () => {
     delete process.env.PANAMA_ROUNDS_DIR
@@ -29,10 +39,6 @@ describe('panama (the exchange bucket as an import source)', () => {
   })
 })
 
-import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 
 describe('panama.verify (verify_round.py: the manifest is the truth)', () => {
   const sha = (s: string) => createHash('sha256').update(s).digest('hex')

@@ -105,6 +105,7 @@ const TABLE = {
     size: (c, round) => c.panama.size(round),
     pull: (c, round) => c.panama.pull(round),
     job: (c, id) => c.panama.job(id),
+    cancel: (c, id) => c.panama.cancel(id),
   },
   imports: {   // docs/ADR-008: a folder through an adapter into ComfyUI-Shared
     list: (c) => c.imports.list(),
