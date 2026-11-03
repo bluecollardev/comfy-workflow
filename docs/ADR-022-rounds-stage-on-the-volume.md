@@ -1,7 +1,7 @@
 # ADR-022: Rounds can stage on the volume too: a Pod / Local switch on the Panama source
 
 **Date:** 2026-11-03
-**Status:** Proposed. Lucas: "Rounds are downloaded to /Users/lucas/ComfyUI-Shared/temp/rounds (Local) why not just have a corresponding entry on the volume for these"; and
+**Status:** The kind of short-lived pod is **decided and final** (decision 2b, Lucas, 2026-11-03); the rest is Proposed. Lucas: "Rounds are downloaded to /Users/lucas/ComfyUI-Shared/temp/rounds (Local) why not just have a corresponding entry on the volume for these"; and
 "a switch / toggle ... (Pod / Local)".
 **Extends:** ADR-015 (the pod pulls from the bucket), ADR-021 (staging in `temp/rounds`, Sync skips `temp/`).
 
@@ -22,8 +22,10 @@ mirror of the other. Sync deliberately never carries `temp/` (ADR-021), so nothi
      `/workspace/comfy-shared/temp/rounds/<round>` with the bucket keys passed in the environment of the command, not its arguments. No new pod, no new bill beyond the one already running. The Sync's requirement stands: an SSH key on the RunPod account, added before the pod starts.
    - **No pod is running:** the app creates a short-lived one on the configured volume with `S3_PULL` (ADR-015), waits for the pull to end, then stops and deletes it. A pod of any kind is the only way to reach the volume: `EUR-IS-2` has no RunPod S3 API (`s3: false` in the live list), so the app cannot list or fill it pod-less.
    - The pod's progress comes from its log, the idle stop is the safety net, and only one Pod download of a round runs at a time.
-2b. **The short-lived pod should be a CPU pod if RunPod has one for the volume's datacenter.** The pull, the sha256 check and a delete are network- and disk-bound; a GPU does nothing for them. The image is a CUDA image but runs without a GPU (rclone and Python need none). ADR-007 priced a CPU pod
-   at about USD 0.04/h against USD 0.2 to 0.6/h for the cheapest GPU in stock, and found no CPU flavour in Montreal on 2026-10-20. **Not known:** whether a CPU pod can attach this volume in `EUR-IS-2` today, and the app has no CPU pod path at all (`pods.ts` and `runpod.ts` create GPU pods only; the card table and `list_datacenters` are GPU-only). Building it means RunPod's CPU compute type with a flavour and vCPU count, and a probe of what the datacenter offers. Until then the fallback is the cheapest GPU pod, as in the 2026-11-03 tests (USD 0.04 for 2 minutes).
+2b. **FINAL DECISION: the short-lived pod is the cheapest GPU pod in stock on the volume's datacenter. There is no CPU pod path.** (Lucas, 2026-11-03: "Fallback: until then, the cheapest GPU pod, as in the tests ... adr this as the final decision".)
+   The create call is the one the app already has (`gpu: auto` picks the cheapest card in stock where the volume lives); nothing new is built for it. Measured on 2026-11-03: a pull-and-start pod cost about USD 0.04 for 2 minutes, and a second about USD 0.05
+   (L4 at USD 0.59/h, then an RTX 4090). A GPU does no work in a pull, a hash or a delete; the extra cost over a CPU pod (priced about USD 0.04/h in ADR-007, availability in `EUR-IS-2` never confirmed) is cents per use and is accepted in return for building and maintaining no second pod path.
+   Not pursued, and why: the app creates GPU pods only (`pods.ts`, `runpod.ts`), the card table and `list_datacenters` are GPU-only, and a CPU path would also need a flavour probe and stock handling for a saving that does not matter at this size. Revisit only if short-lived pods become frequent or long (for example pulls of many 30 GB rounds), or if the cheapest GPU is not in stock where the volume lives.
 3. **The pod verifies, not only copies.** The image gets a small script that checks every file against the round's manifests (size and sha256, as `panama.verify` does) after the pull and writes `.s3-pull.done` only when it passes. This also
    closes the gap from the 2026-11-03 pod tests, where the files were compared with the bucket by checksum but never with the manifest. Needs an image rebuild (ADR-020).
 4. **Delete on the volume is a pod action too** (`rm -r` of that one round, in a short pod), confined to `temp/rounds/<round>` like the local one (ADR-021). The volume bills about USD 0.07 per GB-month, so a staged 15 GB round is about USD 1 a month until deleted; the row shows that.
@@ -44,9 +46,8 @@ mirror of the other. Sync deliberately never carries `temp/` (ADR-021), so nothi
 
 ## Order of work
 
-0. Probe: does RunPod offer a CPU pod with this volume in `EUR-IS-2` (a read-only query for CPU flavours and their stock)? That decides 2b.
 1. Image: the pod-side verify script and marker; rebuild and push (`./start.sh comfy-image --remote --wait`).
-2. Core: a Pod download (use an active pod over SSH, else create a short-lived one with `S3_PULL`, follow the log, stop and delete), a CPU pod path if the probe says yes, the per-volume state record.
+2. Core: a Pod download (use an active pod over SSH, else create a short-lived one with `S3_PULL`, follow the log, stop and delete), the per-volume state record.
 3. UI: the Pod / Local switch on the Panama pane, applying to the row states and buttons.
 4. Pod-side Delete.
 5. Phase 2: Import Package on the volume.
