@@ -22,8 +22,15 @@ test.describe('setup walkthrough: a new user, a new app', () => {
   test.afterAll(async () => { await ctx.app.close() })
   const shot = async (name) => { if (SHOTS) await ctx.page.screenshot({ path: join(SHOTS, `${name}.png`) }) }
 
-  test('1 first launch: Default Configuration opens by itself, because nothing works without a RunPod API key', async () => {
+  test('1 first launch: the app asks once whether to import a configuration file; from scratch, Default Configuration opens by itself, because nothing works without a RunPod API key', async () => {
     const { page } = ctx
+    // A new installation (no key, no saved configuration) asks first (docs/ADR-023). Written to cope with a profile that already answered it, which this run cannot tell from outside.
+    const asked = await page.getByTestId('welcome-modal').waitFor({ state: 'visible', timeout: 8000 }).then(() => true, () => false)
+    if (asked) {
+      await page.waitForTimeout(600)   // the modal's fade-in
+      await shot('00-welcome')
+      await page.getByTestId('welcome-scratch').click()
+    }
     await expect(page.getByTestId('key-required')).toContainText(t('dashboard.keyRequired'))
     await expect(configModal(page).getByTestId('cfg-key-gate')).toBeVisible()
     await page.waitForTimeout(600)   // the modal's fade-in

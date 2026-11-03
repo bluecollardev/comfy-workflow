@@ -15,6 +15,7 @@
     <div v-if="loading" class="text-center text-body-secondary py-3"><BSpinner small /></div>
 
     <template v-else-if="cfg">
+      <ConfigIoPanel v-if="!forPod" :flash="ioFlash" @applied="afterImport" />
       <BAlert v-if="gated" :model-value="true" variant="warning" class="mb-3" data-testid="cfg-key-gate">
         <i class="fa-solid fa-key me-2"></i>{{ $t('config.keyGate') }}
       </BAlert>
@@ -307,6 +308,7 @@
 import { podsAPI } from '../api/pods'
 import { datacenterOptions } from '../utils/datacenters'
 import DockerfileModal from './DockerfileModal.vue'
+import ConfigIoPanel from './ConfigIoPanel.vue'
 import { volumesAPI } from '../api/volumes'
 /**
  * ConfigModal — two uses of one panel.
@@ -587,9 +589,24 @@ const previewText = computed(() => {
 watch(() => ui.configFocus, (v) => { if (v && ui.configOpen) { overStudio.value = studioStore.open; focusSection() } })
 
 /** Opened from Import Shot Pack with a place to go: "adapters" scrolls to Import adapters, "claude" to the Anthropic key field (and puts the cursor in it). */
+const ioFlash = ref(false)
+/** After an import wrote the configuration: show what is in force now, in place (not through load(), which would swap the panel for a spinner and lose its message). */
+async function afterImport() {
+  const payload = await mounts.load()
+  if (payload) take(payload)
+  try { keyInfo.value = await settingsAPI.get() } catch { /* unchanged */ }
+  loadVolume(); loadDatacenters(); loadVolumes()
+  settingsStore.load(); panamaStore.loadStatus()
+}
 async function focusSection() {
   const where = ui.configFocus
   ui.configFocus = ''
+  if (where === 'import') {   // from the welcome question: the import form, in view and briefly outlined
+    let el = null
+    for (let i = 0; i < 30 && !el; i++) { await nextTick(); el = document.querySelector('[data-testid="cfg-io-panel"]'); if (!el) await new Promise((r) => setTimeout(r, 100)) }   // the body loads first
+    el?.scrollIntoView({ block: 'center' })
+    ioFlash.value = true; setTimeout(() => { ioFlash.value = false }, 2000)
+  }
   if (where === 'adapters') { tab.value = 'adapters'; await nextTick(); document.querySelector('[data-testid="section-adapters"]')?.scrollIntoView({ block: 'start' }) }
   if (where === 'claude') {
     tab.value = 'runpod'; await nextTick()
