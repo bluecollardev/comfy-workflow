@@ -258,7 +258,7 @@
     "claudeKey": "Anthropic API key (optional)",
     "claudeStored": "Stored ({hint}). Used only by Write an adapter with Claude and the shot pack description in Import Shot Pack.",
     "claudeUnset": "Not set. Only needed for Write an adapter with Claude in Import Shot Pack; a coding agent that brings its own key does not need it.",
-    "s3Unset": "For syncing onto a volume with no pod running, in S3 datacenters: RunPod console, Settings, S3 API keys. The access key is your RunPod user id.",
+    "s3Unset": "RunPod's S3 API reaches a volume directly, with no pod running, but only for volumes in supported datacenters (not Montreal). Make the key in the RunPod console under Settings, S3 API keys: the access key is your user id (user_…) and the secret is shown once. The copy runs from this computer.",
     "s3Stored": "S3 keys stored ({hint}). Enter new ones to replace them.",
     "claudeWorks": "Anthropic accepts this key.",
     "claudeChecking": "Asking Anthropic…",
