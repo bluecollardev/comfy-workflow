@@ -94,6 +94,13 @@ const TABLE = {
     branches: (c, url) => c.repositories.branches(url),
     folders: (c, url, branch) => c.repositories.folders(url, branch || 'main'),
   },
+  panama: {   // docs/ADR-015: the exchange bucket as an import source
+    status: (c) => c.panama.status(),
+    rounds: (c) => c.panama.rounds(),
+    size: (c, round) => c.panama.size(round),
+    pull: (c, round) => c.panama.pull(round),
+    job: (c, id) => c.panama.job(id),
+  },
   imports: {   // docs/ADR-008: a folder through an adapter into ComfyUI-Shared
     list: (c) => c.imports.list(),
     detect: (c, dir) => c.imports.detect(dir),

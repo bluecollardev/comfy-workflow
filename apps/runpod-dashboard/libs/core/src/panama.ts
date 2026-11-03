@@ -1,0 +1,137 @@
+/**
+ * The Panama exchange bucket as an import source (docs/ADR-015, the Panama connection guide): delivery rounds sit under
+ * rounds/<round>/ in one S3 bucket. This reads them with the AWS CLI and a named profile (default `panama`, the one the
+ * guide has you put in ~/.aws/credentials), so the app stores no secret. A round is downloaded to a staging folder on
+ * this PC, never into ComfyUI-Shared directly: the Import Shot Pack adapters take it from there like any package folder.
+ * Read-only against the bucket: ls and cp from it, nothing written to it.
+ */
+import { spawn, spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join, normalize, relative } from 'node:path'
+import { bad } from './errors.js'
+import * as settings from './settings.js'
+
+const val = (name: string, fallback: string) => settings.lookup(name) || fallback
+export const profile = () => val('PANAMA_S3_PROFILE', 'panama')
+export const bucket = () => val('PANAMA_S3_BUCKET', 'bh-panama-exchange-610140802195')
+export const region = () => val('PANAMA_S3_REGION', 'us-west-2')
+/** Where rounds are staged on this PC. */
+export const stagingDir = () => val('PANAMA_ROUNDS_DIR', join(homedir(), 'panama-rounds'))
+const touch = (p: string) => writeFileSync(p, new Date().toISOString() + '\n')
+const ROUND = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/   // one folder name under rounds/: no slashes, no dots-only
+
+const aws = (args: string[]) => ['--profile', profile(), '--region', region(), ...args]
+
+/** The command for listing the rounds, as data so it can be tested without a bucket. */
+export const listCmd = () => ['aws', 's3', 'ls', `s3://${bucket()}/rounds/`, ...aws([])]
+export const sizeCmd = (round: string) => ['aws', 's3', 'ls', `s3://${bucket()}/rounds/${round}/`, '--recursive', '--summarize', ...aws([])]
+export const pullCmd = (round: string, dest: string) => ['aws', 's3', 'cp', '--recursive', `s3://${bucket()}/rounds/${round}/`, dest, ...aws([])]
+
+function run(cmd: string[], timeoutMs = 60_000) {
+  const r = spawnSync(cmd[0], cmd.slice(1), { encoding: 'utf8', timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 })
+  if (r.error) throw bad(r.error.message.includes('ENOENT') ? 'The AWS CLI (aws) is not installed on this PC: brew install awscli.' : r.error.message)
+  return r
+}
+
+/** Is Panama configured: the AWS CLI is there and the profile exists. The only thing the picker looks at. */
+export function status() {
+  const r = spawnSync('aws', ['configure', 'list-profiles'], { encoding: 'utf8', timeout: 15_000 })
+  if (r.error || r.status !== 0) return { configured: false, profile: profile(), bucket: bucket(), reason: r.error ? 'The AWS CLI (aws) is not installed.' : 'The AWS CLI could not list its profiles.' }
+  const has = r.stdout.split('\n').map((s) => s.trim()).includes(profile())
+  return { configured: has, profile: profile(), bucket: bucket(), region: region(), staging: stagingDir(), reason: has ? '' : `No AWS profile named "${profile()}": add the section Kyle sends to ~/.aws/credentials.` }
+}
+
+export interface Round { name: string; staged: boolean }
+export function rounds(): Round[] {
+  const r = run(listCmd())
+  if (r.status !== 0) throw bad(`Could not list the bucket: ${(r.stderr || r.stdout).trim().split('\n').pop()}`)
+  return r.stdout.split('\n').map((l) => /^\s*PRE (.+)\/\s*$/.exec(l)?.[1]).filter((n): n is string => !!n && ROUND.test(n))
+    .map((name) => ({ name, staged: existsSync(join(stagingDir(), name, '.panama-pull.done')) }))
+}
+
+/** Files and bytes under one round (a listing, so a big round takes a few seconds). */
+export function size(round: string) {
+  if (!ROUND.test(round)) throw bad(`Not a round name: ${round}`)
+  const r = run(sizeCmd(round), 120_000)
+  if (r.status !== 0) throw bad(`Could not size ${round}: ${(r.stderr || r.stdout).trim().split('\n').pop()}`)
+  const files = Number(/Total Objects:\s*(\d+)/.exec(r.stdout)?.[1] ?? 0)
+  const bytes = Number(/Total Size:\s*(\d+)/.exec(r.stdout)?.[1] ?? 0)
+  return { round, files, bytes }
+}
+
+// ----- pulling: one job per round, in this process, polled -----
+export interface Verify { listed: number; bad: string[]; extra: number; kind?: string; ok: boolean }
+export interface PullJob { id: string; round: string; dest: string; state: 'running' | 'verifying' | 'done' | 'failed'; files: number; lines: string[]; error?: string; verify?: Verify }
+const jobs = new Map<string, PullJob>()
+
+export function pull(round: string): PullJob {
+  if (!ROUND.test(round)) throw bad(`Not a round name: ${round}`)
+  const running = [...jobs.values()].find((j) => j.round === round && j.state === 'running')
+  if (running) return running
+  const dest = join(stagingDir(), round)
+  mkdirSync(dest, { recursive: true })
+  const cmd = pullCmd(round, dest)
+  const job: PullJob = { id: `${round}-${Date.now()}`, round, dest, state: 'running', files: 0, lines: [] }
+  jobs.set(job.id, job)
+  const child = spawn(cmd[0], cmd.slice(1), { stdio: ['ignore', 'pipe', 'pipe'] })
+  const onData = (buf: Buffer) => {
+    for (const l of buf.toString().split(/\r|\n/).filter(Boolean)) {
+      if (/^download:/.test(l)) job.files++
+      job.lines.push(l); if (job.lines.length > 200) job.lines.shift()
+    }
+  }
+  child.stdout.on('data', onData); child.stderr.on('data', onData)
+  child.on('error', (e) => { job.state = 'failed'; job.error = e.message })
+  child.on('close', (code) => {
+    if (code !== 0) { if (job.state === 'running') { job.state = 'failed'; job.error = `aws exited ${code}: ${job.lines.slice(-1)[0] ?? ''}` } return }
+    // Downloaded; now what the guide says to do before anything reads a round: check every file against its MANIFEST.json.
+    job.state = 'verifying'
+    verify(dest).then((v) => {
+      job.verify = v
+      if (v.ok) { job.state = 'done'; try { touch(join(dest, '.panama-pull.done')) } catch { /* the folder is there either way */ } }
+      else { job.state = 'failed'; job.error = v.listed === 0 ? 'No MANIFEST.json file list in this round, so it cannot be verified.' : `${v.bad.length} file(s) do not match the manifest: ${v.bad.slice(0, 3).join('; ')}` }
+    }).catch((e) => { job.state = 'failed'; job.error = String(e?.message || e) })
+  })
+  return job
+}
+
+const sha256 = (path: string) => new Promise<string>((res, rej) => {
+  const h = createHash('sha256'); const s = createReadStream(path)
+  s.on('data', (b) => h.update(b)); s.on('error', rej); s.on('end', () => res(h.digest('hex')))
+})
+interface Listed { path: string; bytes: number; sha256: string }
+
+/** verify_round.py in TypeScript (the Panama console's scripts/panama-gen/migration): every file the round's MANIFEST.json lists is
+ *  present, the same size and the same sha256. The root manifest may list all files; older rounds list them per shot too. Files
+ *  on disk that no manifest lists are counted, never touched. */
+export async function verify(root: string): Promise<Verify> {
+  const read = (p: string) => JSON.parse(readFileSync(p, 'utf8'))
+  const rootManifest = join(root, 'MANIFEST.json')
+  if (!existsSync(rootManifest)) return { listed: 0, bad: [], extra: 0, ok: false }
+  const m = read(rootManifest)
+  const files = new Map<string, Listed>()
+  for (const f of (m.files || []) as Listed[]) files.set(normalize(f.path), f)
+  for (const shot of Object.keys(m.shots || {})) {
+    const sm = join(root, shot, 'MANIFEST.json')
+    if (existsSync(sm)) for (const f of (read(sm).files || []) as Listed[]) if (!files.has(normalize(f.path))) files.set(normalize(f.path), f)
+  }
+  const bad: string[] = []
+  for (const f of files.values()) {
+    const p = join(root, f.path)
+    if (!existsSync(p)) bad.push(`MISSING ${f.path}`)
+    else if (statSync(p).size !== f.bytes) bad.push(`SIZE ${f.path}`)
+    else if ((await sha256(p)) !== f.sha256) bad.push(`SHA256 ${f.path}`)
+  }
+  let extra = 0
+  const walk = (d: string) => { for (const e of readdirSync(d, { withFileTypes: true })) {
+    const full = join(d, e.name)
+    if (e.isDirectory()) walk(full)
+    else { const rel = normalize(relative(root, full)); if (!files.has(rel) && e.name !== 'MANIFEST.json' && !e.name.startsWith('.panama-pull')) extra++ }
+  } }
+  walk(root)
+  return { listed: files.size, bad, extra, kind: m.kind, ok: files.size > 0 && bad.length === 0 }
+}
+
+export const job = (id: string) => jobs.get(id) ?? null

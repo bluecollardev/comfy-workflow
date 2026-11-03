@@ -802,5 +802,29 @@
     "wrapOff": "Turn line wrap off",
     "wrapState": "Wrap",
     "noWrapState": "No wrap"
+  },
+  "panama": {
+    "pick": "Where does the shot pack come from?",
+    "sourceFolder": "Zip or folder on this PC",
+    "sourceFolderHint": "A package folder you have already downloaded or unzipped (the merged Drive parts). It goes through an adapter into ComfyUI-Shared.",
+    "sourcePanama": "Panama S3 bucket",
+    "sourcePanamaHint": "A delivery round from {bucket}. It is downloaded to a staging folder here, then imported like a folder.",
+    "change": "Change source",
+    "intro": "Delivery rounds in {bucket}, read with the AWS profile \"{profile}\". Read-only: nothing is written to the bucket.",
+    "staging": "Rounds are downloaded to",
+    "loading": "Listing the bucket...",
+    "none": "No rounds in the bucket.",
+    "size": "Size",
+    "sizeLine": "{files} files, {size}",
+    "staged": "downloaded",
+    "download": "Download",
+    "again": "Download again",
+    "use": "Use for import",
+    "files": "{n} files",
+    "state": {
+      "running": "downloading",
+      "done": "downloaded",
+      "failed": "failed"
+    }
   }
 }
