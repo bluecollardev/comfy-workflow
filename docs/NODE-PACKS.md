@@ -19,6 +19,10 @@ BincStereo is a separate, self-contained pack. The full explanation, with
 what each generation adds and the ShotPipe/BincStereo comparison, is
 `shared/nodes/docs/SHOTPIPE.md`.
 
+## A third-party pack: ComfyUI-fal-API
+
+`portable/ComfyUI-fal-API` is not Binc's: it is the fal.ai pack (2.5.0, Apache-2.0, by `gokayfem`) that BH's `archival-071` graphs use, added on 2026-11-03 from the copy BH ships in its rounds (ADR-025, **to be revisited**). It is staged into every image and linked on the Mac like BincStereo, carries no key (`config.ini` is never in the repo), and registers 1,498 `FalAPI_*` nodes that fail at run time without a `FAL_KEY`. Regenerating `packs.json` and the docs for a pack needs ComfyUI's own Python and `COMFY_DIR` (see `shared/nodes/tools/manifest.py`): without them the tool erases the node lists.
+
 ## What each pack declares about itself
 
 Every pack carries two small files. `requirements.txt` lists the pip packages
