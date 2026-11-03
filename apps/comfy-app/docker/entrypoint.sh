@@ -47,52 +47,10 @@ if [ -n "${PUBLIC_KEY:-}" ] && command -v sshd >/dev/null; then
   ssh-keygen -A >/dev/null 2>&1 || true
   /usr/sbin/sshd -o PermitRootLogin=yes -o PasswordAuthentication=no && echo "sshd on 22 (for ./start.sh sync)"
 fi
-# S3_PULL: "bucket/prefix=/workspace/dir;...". Destinations must be under /workspace, the network volume,
-# so the bytes stay after the pod is deleted. Each pair is copied down with rclone, additive (copy never
-# deletes), in the background so ComfyUI is up while the bytes arrive. Credentials come from the pod's
-# environment, a read-only key (RunPod secrets: {{ RUNPOD_SECRET_name }}); nothing is written to the image.
-# Progress and errors go to the container log, and each pair leaves <dir>/.s3-pull.done when it finishes clean.
+# S3_PULL: pull bucket prefixes onto the volume at start, in the background so ComfyUI is up while the bytes arrive. The work is docker/s3pull.sh
+# (/opt/comfy-app/s3pull.sh): what the variables are, the markers it leaves, and that it is also run over SSH on a pod that is already up (ADR-022).
 if [ -n "${S3_PULL:-}" ]; then
-  if ! command -v rclone >/dev/null; then echo "S3_PULL set but rclone is not in this image" >&2
-  elif [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then echo "S3_PULL set but AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY are not" >&2
-  else
-    export RCLONE_CONFIG_PODS3_TYPE=s3 RCLONE_CONFIG_PODS3_PROVIDER="${S3_PROVIDER:-AWS}" \
-      RCLONE_CONFIG_PODS3_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" RCLONE_CONFIG_PODS3_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
-      RCLONE_CONFIG_PODS3_REGION="${AWS_REGION:-us-west-2}"
-    [ -n "${S3_ENDPOINT:-}" ] && export RCLONE_CONFIG_PODS3_ENDPOINT="$S3_ENDPOINT"
-    (
-      IFS=';' read -ra PULLS <<< "$S3_PULL"
-      for pair in "${PULLS[@]}"; do
-        [ -n "$pair" ] || continue
-        src="${pair%%=*}"; dst="${pair#*=}"
-        case "$dst" in
-          /workspace/*) ;;
-          *) echo "s3 pull refused: $dst is not under /workspace (the network volume); it would fill the container disk" >&2; continue ;;
-        esac
-        mountpoint -q /workspace 2>/dev/null || echo "note: /workspace is not a mount here; the pull goes to the container disk, not a volume" >&2
-        mkdir -p "$dst" && echo "s3 pull: $src -> $dst"
-        if rclone copy "PODS3:$src" "$dst" --transfers 8 --checksum --stats 30s --stats-one-line -v; then
-          # A delivery round carries MANIFEST.json files: check every listed file (size and sha256) before saying it is done (ADR-022). Markers, in <dst>:
-          #   .s3-pull.done        copied, and the manifest check passed
-          #   .s3-pull.failed      copied, but the manifest check found a mismatch (the list is in the file and the log)
-          #   .s3-pull.unverified  copied, but there is no MANIFEST.json to check against
-          rm -f "$dst/.s3-pull.done" "$dst/.s3-pull.failed" "$dst/.s3-pull.unverified"
-          if [ -f "$dst/MANIFEST.json" ]; then
-            PY="$(command -v python3 || command -v python)"
-            if "$PY" /opt/comfy-app/verify_round.py "$dst" > "$dst/.s3-pull.check" 2>&1; then
-              mv "$dst/.s3-pull.check" "$dst/.s3-pull.done" && echo "s3 pull done (manifest verified): $dst"
-            else
-              mv "$dst/.s3-pull.check" "$dst/.s3-pull.failed"; echo "s3 pull FAILED the manifest check: $dst" >&2; tail -n 5 "$dst/.s3-pull.failed" >&2
-            fi
-          else
-            echo "no MANIFEST.json" > "$dst/.s3-pull.unverified"; echo "s3 pull done, NOT verified (no MANIFEST.json): $dst"
-          fi
-        else
-          echo "s3 pull FAILED: $src (exit $?); rerun the container or run rclone by hand" >&2
-        fi
-      done
-    ) &
-  fi
+  /opt/comfy-app/s3pull.sh &
 fi
 TREE="${PROJECT_ROOT:-/workspace/project}"
 [ -e "$TREE" ] || echo "note: $TREE is not present; corrosion graphs will not find the project tree" >&2

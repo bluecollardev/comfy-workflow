@@ -36,7 +36,7 @@ The container log shows `s3 pull: ...` and a progress line every 30 s. When a pa
 | `.s3-pull.failed` | copied, but a file is missing, short or differs; the file holds the list (`MISSING`, `SIZE`, `SHA256` per file) and the totals | `s3 pull FAILED the manifest check: <dir>` (the last lines follow) |
 | `.s3-pull.unverified` | copied, but there is no usable `MANIFEST.json` to check against (a prefix that is not a delivery round) | `s3 pull done, NOT verified (no MANIFEST.json): <dir>` |
 
-Only `.s3-pull.done` means the round is safe to use. A rerun removes the old markers first, so a stale `.done` never survives a failed second pull; the copy itself is additive and transfers only what differs. The check
+The work is the script `/opt/comfy-app/s3pull.sh` (the entrypoint starts it in the background; the app can also run it over SSH on a pod that is already up). It exits 0 when every pair copied, **even if a manifest check failed**, because a failed check is a result, not a crash: read the marker, not the exit code. It exits 1 when a copy itself failed. Only `.s3-pull.done` means the round is safe to use. A rerun removes the old markers first, so a stale `.done` never survives a failed second pull; the copy itself is additive and transfers only what differs. The check
 reads every byte of the round once, so a 39 GB round adds its hashing time to the pull.
 
 By hand in a running pod: `rclone copy PODS3:<bucket>/<prefix> /workspace/<dir>`

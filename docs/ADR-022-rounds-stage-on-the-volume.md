@@ -47,7 +47,7 @@ mirror of the other. Sync deliberately never carries `temp/` (ADR-021), so nothi
 ## What is built (2026-11-03): step 1, the image
 
 `apps/comfy-app/docker/verify_round.py` (stdlib Python; both manifest shapes; exit 0 / 1 / 2 for match / mismatch / no file list) and the entrypoint's `S3_PULL` block now run it after each pair and write `.s3-pull.done`, `.s3-pull.failed` or `.s3-pull.unverified`
-(documented in `docs/POD-PULLS-FROM-S3.md`). Tested: 3 unit tests (`libs/core/tests/verifyround.test.ts`, run against temp rounds) and the real entrypoint block in a container against a local S3 with a good round, a round with one wrong checksum and a round
+(documented in `docs/POD-PULLS-FROM-S3.md`). The pull itself moved from the entrypoint into `apps/comfy-app/docker/s3pull.sh` so the active-pod route (decision 2) can run the same code over SSH; the entrypoint just starts it in the background. Re-tested in a container as a standalone script. Tested: 3 unit tests (`libs/core/tests/verifyround.test.ts`, run against temp rounds) and the real entrypoint block in a container against a local S3 with a good round, a round with one wrong checksum and a round
 with no manifest, giving the three markers, and a rerun that rewrites the marker. Not yet on a pod: the image must be rebuilt (`./start.sh comfy-image --remote --wait`). The app does not read these markers yet (steps 2 and 3).
 
 ## What is not known
