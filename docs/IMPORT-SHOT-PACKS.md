@@ -89,7 +89,7 @@ Added 2026-11-03 (`docs/ADR-016`, `ADR-021`). The pod card has one **Import Shot
 **Zip or folder on this PC** (everything above) or **Panama S3 bucket**. Until the bucket is set up the Panama card is disabled, with a link to Default Configuration.
 Every screen after the picker has a **Change source** link back to it.
 
-**Set up once.** Default Configuration > Panama bucket (BH): the read-only access key ID and secret BH issued. They are kept in the app's settings file,
+**Set up once.** The bucket, region and AWS-profile fields in Default Configuration > Panama bucket (BH) come prefilled with the built-in defaults (`bh-panama-exchange-610140802195`, `us-west-2`, `panama`); each has a reset button, and a value equal to its default is not stored. Default Configuration > Panama bucket (BH): the read-only access key ID and secret BH issued. They are kept in the app's settings file,
 shown only as their last four characters. With no keys the app falls back to an AWS profile named `panama`. Without either, the Panama card stays disabled and the folder or zip import works as before.
 
 **Use.**

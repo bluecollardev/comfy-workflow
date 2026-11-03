@@ -290,7 +290,13 @@
     "panamaStored": "Stored ({hint}). Enter new ones to replace them.",
     "panamaUnset": "Not set. Use the read-only key Kyle sends (panama-pod for pods).",
     "panamaPull": "Pull on pod start (optional)",
-    "panamaPullHelp": "bucket/prefix=/workspace/folder, several separated by ; . A new pod downloads these onto the volume while ComfyUI starts. The pod gets the keys above in its environment."
+    "panamaPullHelp": "bucket/prefix=/workspace/folder, several separated by ; . A new pod downloads these onto the volume while ComfyUI starts. The pod gets the keys above in its environment.",
+    "panamaBucket": "Bucket",
+    "panamaBucketHelp": "The BH exchange bucket this app is built to read. Change it only if BH moves it.",
+    "panamaRegion": "Region",
+    "panamaProfile": "AWS profile (fallback)",
+    "panamaProfileHelp": "Used only when no keys are stored above.",
+    "panamaReset": "Back to the built-in default"
   },
   "picker": {
     "title": "Choose the {name} folder",
@@ -818,7 +824,7 @@
     "sourcePanama": "Panama S3 bucket",
     "sourcePanamaHint": "A delivery round from {bucket}. It is downloaded to a staging folder here, then imported like a folder.",
     "change": "Change source",
-    "intro": "Delivery rounds in {bucket}, read with the AWS profile \"{profile}\". Read-only: nothing is written to the bucket.",
+    "intro": "Delivery rounds in {bucket}, read with {via}. Read-only: nothing is written to the bucket.",
     "staging": "Rounds are downloaded to",
     "loading": "Listing the bucket...",
     "none": "No rounds in the bucket.",
@@ -851,7 +857,9 @@
     "onDisk": "{size} on disk",
     "onDiskHint": "What this round takes in temp/rounds on this computer",
     "notConfigured": "Not set up yet. Add the bucket keys in Default Configuration.",
-    "setUp": "Set up the Panama bucket"
+    "setUp": "Set up the Panama bucket",
+    "viaKeys": "the keys stored in Default Configuration",
+    "viaProfile": "the AWS profile \"{profile}\""
   },
   "remoteMcp": {
     "title": "Remote servers",

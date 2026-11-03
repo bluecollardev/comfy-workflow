@@ -37,3 +37,25 @@ test('keys entered in Default Configuration are stored (last four only), save S3
   await expect(configModal(page).getByTestId('cfg-panama-group')).not.toContainText('AKIAEXAMPLE')
   await expect(configModal(page).getByTestId('cfg-panama-pull')).toHaveValue(/brynley-inbox/)
 })
+
+test('the bucket, region and profile come prefilled with the built-in defaults; a change is saved, Reset puts the default back, and a value equal to the default is what gets stored', async ({ page, api }) => {
+  await page.goto('/')
+  await page.getByTestId('open-config').click()
+  const dialog = configModal(page)
+  await expect(dialog.getByTestId('cfg-panama-bucket')).toHaveValue('bh-panama-exchange-610140802195')
+  await expect(dialog.getByTestId('cfg-panama-region')).toHaveValue('us-west-2')
+  await expect(dialog.getByTestId('cfg-panama-profile')).toHaveValue('panama')
+  await expect(dialog.getByTestId('cfg-panama-bucket-reset')).toBeDisabled()   // already the default
+  await dialog.getByTestId('cfg-panama-bucket').fill('bh-panama-exchange-test')
+  await expect(dialog.getByTestId('cfg-panama-bucket-reset')).toBeEnabled()
+  await dialog.getByTestId('cfg-panama-bucket-reset').click()
+  await expect(dialog.getByTestId('cfg-panama-bucket')).toHaveValue('bh-panama-exchange-610140802195')
+  await dialog.getByTestId('cfg-panama-region').fill('eu-west-1')
+  await dialog.getByTestId('config-save').click()
+  await expect(dialog).toBeHidden()
+  const put = api.calls.find((c) => c.method === 'PUT' && c.path === '/settings' && c.body?.panama_region)
+  expect(put.body).toMatchObject({ panama_bucket: 'bh-panama-exchange-610140802195', panama_region: 'eu-west-1', panama_profile: 'panama' })
+  await page.getByTestId('open-config').click()
+  await expect(configModal(page).getByTestId('cfg-panama-region')).toHaveValue('eu-west-1')   // kept
+})
+

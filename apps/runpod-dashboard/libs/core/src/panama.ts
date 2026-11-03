@@ -16,9 +16,9 @@ import { STAGED_ROUNDS } from './paths.js'
 import * as settings from './settings.js'
 
 const val = (name: string, fallback: string) => settings.lookup(name) || fallback
-export const profile = () => val('PANAMA_S3_PROFILE', 'panama')
-export const bucket = () => val('PANAMA_S3_BUCKET', 'bh-panama-exchange-610140802195')
-export const region = () => val('PANAMA_S3_REGION', 'us-west-2')
+export const profile = () => val('PANAMA_S3_PROFILE', settings.PANAMA_DEFAULTS.profile)
+export const bucket = () => val('PANAMA_S3_BUCKET', settings.PANAMA_DEFAULTS.bucket)
+export const region = () => val('PANAMA_S3_REGION', settings.PANAMA_DEFAULTS.region)
 /** Where rounds are staged on this PC. */
 export const stagingDir = () => {
   const set = settings.lookup('PANAMA_ROUNDS_DIR')

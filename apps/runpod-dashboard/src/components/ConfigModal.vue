@@ -64,6 +64,24 @@
             <BFormInput id="cfg-panama-secret" v-model.trim="newPanama.secret" type="password" autocomplete="off" class="font-monospace" data-testid="cfg-panama-secret" />
           </BFormGroup>
         </BCol>
+        <BCol v-if="!gated" md="5">
+          <BFormGroup :label="$t('config.panamaBucket')" label-for="cfg-panama-bucket" :description="$t('config.panamaBucketHelp')">
+            <div class="d-flex gap-1"><BFormInput id="cfg-panama-bucket" v-model.trim="panamaCfg.bucket" autocomplete="off" class="font-monospace" data-testid="cfg-panama-bucket" />
+              <BButton size="sm" variant="outline-light" class="text-nowrap" :disabled="panamaCfg.bucket === panamaDefaults.bucket" :title="$t('config.panamaReset')" data-testid="cfg-panama-bucket-reset" @click="panamaCfg.bucket = panamaDefaults.bucket"><i class="fa-solid fa-rotate-left"></i></BButton></div>
+          </BFormGroup>
+        </BCol>
+        <BCol v-if="!gated" md="3">
+          <BFormGroup :label="$t('config.panamaRegion')" label-for="cfg-panama-region">
+            <div class="d-flex gap-1"><BFormInput id="cfg-panama-region" v-model.trim="panamaCfg.region" autocomplete="off" class="font-monospace" data-testid="cfg-panama-region" />
+              <BButton size="sm" variant="outline-light" :disabled="panamaCfg.region === panamaDefaults.region" :title="$t('config.panamaReset')" data-testid="cfg-panama-region-reset" @click="panamaCfg.region = panamaDefaults.region"><i class="fa-solid fa-rotate-left"></i></BButton></div>
+          </BFormGroup>
+        </BCol>
+        <BCol v-if="!gated" md="4">
+          <BFormGroup :label="$t('config.panamaProfile')" label-for="cfg-panama-profile" :description="$t('config.panamaProfileHelp')">
+            <div class="d-flex gap-1"><BFormInput id="cfg-panama-profile" v-model.trim="panamaCfg.profile" autocomplete="off" class="font-monospace" data-testid="cfg-panama-profile" />
+              <BButton size="sm" variant="outline-light" :disabled="panamaCfg.profile === panamaDefaults.profile" :title="$t('config.panamaReset')" data-testid="cfg-panama-profile-reset" @click="panamaCfg.profile = panamaDefaults.profile"><i class="fa-solid fa-rotate-left"></i></BButton></div>
+          </BFormGroup>
+        </BCol>
         <BCol v-if="!gated" md="12">
           <BFormGroup :label="$t('config.panamaPull')" label-for="cfg-panama-pull" :description="$t('config.panamaPullHelp')">
             <BFormInput id="cfg-panama-pull" v-model.trim="pullSetting" autocomplete="off" placeholder="bh-panama-exchange-610140802195/rounds/<round>=/workspace/comfy-shared/input/<round>" class="font-monospace" data-testid="cfg-panama-pull" />
@@ -418,6 +436,11 @@ const gated = computed(() => !forPod.value && !keyInfo.value.runpod_api_key_set 
 const newKey = ref('')
 const showDockerfile = ref(false)
 const newS3 = reactive({ access: '', secret: '' })
+/** The bucket, region and profile, prefilled with what is in force (the built-in defaults unless overridden); a value equal to its default is not stored. */
+const panamaDefaults = computed(() => keyInfo.value.panama_defaults || { bucket: 'bh-panama-exchange-610140802195', region: 'us-west-2', profile: 'panama' })
+const panamaCfg = reactive({ bucket: '', region: '', profile: '' })
+watch(keyInfo, (k) => { panamaCfg.bucket = k.panama_bucket || panamaDefaults.value.bucket; panamaCfg.region = k.panama_region || panamaDefaults.value.region; panamaCfg.profile = k.panama_profile || panamaDefaults.value.profile }, { immediate: true })
+const panamaCfgChanged = () => { const k = keyInfo.value; return panamaCfg.bucket !== (k.panama_bucket || panamaDefaults.value.bucket) || panamaCfg.region !== (k.panama_region || panamaDefaults.value.region) || panamaCfg.profile !== (k.panama_profile || panamaDefaults.value.profile) }
 const newPanama = reactive({ access: '', secret: '' })   // the Panama bucket keys (BH): saved as app secrets, handed to a pod that has a pull set (docs/ADR-015)
 /** S3_PULL is one row of the environment table; this field edits that row, adding or removing it. */
 const pullSetting = computed({
@@ -586,6 +609,10 @@ async function save() {
   if (wasGated) { saving.value = false; return }   // the key is in: the rest of the panel appears, nothing else to save yet
   if (newS3.access || newS3.secret) {
     try { keyInfo.value = await settingsAPI.set({ runpod_s3_access_key: newS3.access || undefined, runpod_s3_secret_key: newS3.secret || undefined }); newS3.access = ''; newS3.secret = '' }
+    catch (e) { error.value = e.response?.data?.detail || e.message; saving.value = false; return }
+  }
+  if (panamaCfgChanged()) {
+    try { keyInfo.value = await settingsAPI.set({ panama_bucket: panamaCfg.bucket, panama_region: panamaCfg.region, panama_profile: panamaCfg.profile }); await panamaStore.loadStatus() }
     catch (e) { error.value = e.response?.data?.detail || e.message; saving.value = false; return }
   }
   if (newPanama.access || newPanama.secret) {

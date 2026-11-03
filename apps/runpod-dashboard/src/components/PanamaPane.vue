@@ -1,6 +1,6 @@
 <template>
   <div data-testid="panama-pane">
-    <p class="text-body-secondary small">{{ $t('panama.intro', { bucket: store.status?.bucket, profile: store.status?.profile }) }}</p>
+    <p class="text-body-secondary small">{{ $t('panama.intro', { bucket: store.status?.bucket, via: store.status?.via === 'aws profile' ? $t('panama.viaProfile', { profile: store.status?.profile }) : $t('panama.viaKeys') }) }}</p>
     <BAlert v-if="store.error" :model-value="true" variant="danger" dismissible class="mb-3" data-testid="panama-error" @update:model-value="store.error = null">{{ store.error }}</BAlert>
     <div class="small mb-2" data-testid="panama-staging"><span class="text-body-secondary">{{ $t('panama.staging') }}</span> <code class="ms-1">{{ store.status?.staging }}</code></div>
 

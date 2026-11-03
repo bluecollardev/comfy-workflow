@@ -10,7 +10,14 @@ import { bad } from './errors.js'
 import { configDir } from './paths.js'
 
 export const file = () => process.env.SETTINGS_ENV_FILE || join(configDir(), '.env')
-const KEYS = ['RUNPOD_API_KEY', 'RUNPOD_S3_ACCESS_KEY', 'RUNPOD_S3_SECRET_KEY', 'ANTHROPIC_API_KEY', 'PANAMA_CONSOLE_KEY', 'PANAMA_AWS_ACCESS_KEY_ID', 'PANAMA_AWS_SECRET_ACCESS_KEY'] as const   // ANTHROPIC_API_KEY: only for "Write an adapter with Claude" (ADR-008); optional   // the S3 pair: uploads onto a volume with no pod (ADR-007 G)
+/** The Panama exchange bucket the app is built to read (docs/ADR-016, ADR-021). Shown prefilled in Default Configuration; a value equal to its default is not stored. */
+export const PANAMA_DEFAULTS = { bucket: 'bh-panama-exchange-610140802195', region: 'us-west-2', profile: 'panama' } as const
+const PANAMA_PATTERNS = {
+  bucket: [/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/, 'a bucket name: lower case letters, digits, dots and hyphens, 3 to 63 characters'],
+  region: [/^[a-z]{2}(-[a-z]+)+-\d$/, 'a region like us-west-2'],
+  profile: [/^[A-Za-z0-9._-]{1,64}$/, 'an AWS profile name: letters, digits, dots, hyphens and underscores'],
+} as const
+const KEYS = ['PANAMA_S3_BUCKET', 'PANAMA_S3_REGION', 'PANAMA_S3_PROFILE', 'RUNPOD_API_KEY', 'RUNPOD_S3_ACCESS_KEY', 'RUNPOD_S3_SECRET_KEY', 'ANTHROPIC_API_KEY', 'PANAMA_CONSOLE_KEY', 'PANAMA_AWS_ACCESS_KEY_ID', 'PANAMA_AWS_SECRET_ACCESS_KEY'] as const   // ANTHROPIC_API_KEY: only for "Write an adapter with Claude" (ADR-008); optional   // the S3 pair: uploads onto a volume with no pod (ADR-007 G)
 
 function readEnvFile(): Record<string, string> {
   const f = file()
@@ -53,12 +60,24 @@ export function get() {
   const panama = process.env.PANAMA_CONSOLE_KEY || stored.PANAMA_CONSOLE_KEY || ''
   const awsId = process.env.PANAMA_AWS_ACCESS_KEY_ID || stored.PANAMA_AWS_ACCESS_KEY_ID || ''
   const awsSecret = process.env.PANAMA_AWS_SECRET_ACCESS_KEY || stored.PANAMA_AWS_SECRET_ACCESS_KEY || ''
-  return { panama_aws_keys_set: !!(awsId && awsSecret), panama_aws_access_key_hint: hint(awsId), panama_console_key_set: !!panama, panama_console_key_hint: hint(panama), anthropic_key_set: !!claude, anthropic_key_hint: hint(claude), s3_keys_set: !!s3, s3_access_key_hint: hint(process.env.RUNPOD_S3_ACCESS_KEY || stored.RUNPOD_S3_ACCESS_KEY || ''), runpod_api_key_set: !!key, runpod_api_key_hint: hint(key), source: process.env.RUNPOD_API_KEY && !stored.RUNPOD_API_KEY ? 'environment' : stored.RUNPOD_API_KEY ? file() : 'none' }
+  const eff = (name: string, d: string) => process.env[name] || stored[name] || d
+  const panamaCfg = { panama_bucket: eff('PANAMA_S3_BUCKET', PANAMA_DEFAULTS.bucket), panama_region: eff('PANAMA_S3_REGION', PANAMA_DEFAULTS.region), panama_profile: eff('PANAMA_S3_PROFILE', PANAMA_DEFAULTS.profile), panama_defaults: { ...PANAMA_DEFAULTS } }
+  return { ...panamaCfg, panama_aws_keys_set: !!(awsId && awsSecret), panama_aws_access_key_hint: hint(awsId), panama_console_key_set: !!panama, panama_console_key_hint: hint(panama), anthropic_key_set: !!claude, anthropic_key_hint: hint(claude), s3_keys_set: !!s3, s3_access_key_hint: hint(process.env.RUNPOD_S3_ACCESS_KEY || stored.RUNPOD_S3_ACCESS_KEY || ''), runpod_api_key_set: !!key, runpod_api_key_hint: hint(key), source: process.env.RUNPOD_API_KEY && !stored.RUNPOD_API_KEY ? 'environment' : stored.RUNPOD_API_KEY ? file() : 'none' }
 }
 
 /** Store a secret. An empty value leaves the stored one alone; `null` removes it. */
-export function set(values: { anthropic_api_key?: string | null; runpod_api_key?: string | null; runpod_s3_access_key?: string | null; runpod_s3_secret_key?: string | null; panama_console_key?: string | null; panama_aws_access_key?: string | null; panama_aws_secret_key?: string | null }) {
+export function set(values: { panama_bucket?: string | null; panama_region?: string | null; panama_profile?: string | null; anthropic_api_key?: string | null; runpod_api_key?: string | null; runpod_s3_access_key?: string | null; runpod_s3_secret_key?: string | null; panama_console_key?: string | null; panama_aws_access_key?: string | null; panama_aws_secret_key?: string | null }) {
   const updates: Record<string, string> = {}
+  // The bucket, region and profile: ordinary settings, not secrets. A value equal to the built-in default (or empty, or null) removes the override.
+  for (const [field, key, name] of [['panama_bucket', 'bucket', 'PANAMA_S3_BUCKET'], ['panama_region', 'region', 'PANAMA_S3_REGION'], ['panama_profile', 'profile', 'PANAMA_S3_PROFILE']] as const) {
+    const v = (values as Record<string, string | null | undefined>)[field]
+    if (v === undefined) continue
+    const t = (v ?? '').trim()
+    if (!t || t === PANAMA_DEFAULTS[key]) { updates[name] = ''; continue }
+    const [re, what] = PANAMA_PATTERNS[key]
+    if (!re.test(t)) throw bad(`${name}: ${t} is not ${what}`)
+    updates[name] = t
+  }
   for (const [field, name] of [['runpod_s3_access_key', 'RUNPOD_S3_ACCESS_KEY'], ['runpod_s3_secret_key', 'RUNPOD_S3_SECRET_KEY']] as const) {
     const v = values[field]
     if (v === null) updates[name] = ''
