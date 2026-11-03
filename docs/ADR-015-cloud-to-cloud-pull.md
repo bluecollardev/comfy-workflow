@@ -49,10 +49,9 @@ that exists only on the Mac.
   it is on this machine. The cost of the interim choice: revoking the pod's access also revokes Lucas's.
 - **The secret never passes through a chat or a tool call.** The two values go into RunPod Secrets by Lucas and the pod environment
   refers to them (`{{ RUNPOD_SECRET_name }}`); the app and its agents only see the reference.
-- **The image is built on GitLab CI** (`./start.sh comfy-image --remote --wait`, ADR-006), not on the Mac. Built and pushed
-  2026-11-03: `registry.gitlab.com/bcdevlucas/comfy-workflow/comfy-app:contract-v26`, with `rclone`. The app's configured image is still
-  the `ghcr.io` reference; a pod for the test is created with the GitLab reference explicitly, which needs the GitLab registry login
-  on the RunPod account.
+- **The image is `ghcr.io/bluecollardev/comfy-app:contract-v26`** (ADR-020; Lucas: "we are using github"). A GitLab CI build made on
+  2026-11-03 with `rclone` and `S3_PULL` is pushed to `registry.gitlab.com/...` but is not what pods use. The test needs that build on
+  `ghcr.io`: through the GitHub Actions workflow ADR-020 proposes, or by pulling from GitLab and pushing to `ghcr.io` from here.
 - **First pull is the smallest round**, `brynley-inbox-2026-10-28-v001` (624 KB, 379 files), not a delivery round (9 to 39 GB), and
   never `plates/` without Binc's named yes.
 - **Tested locally first** (Ubuntu container, `rclone` 1.53, an S3 server in the container): files land under `/workspace`, sha256

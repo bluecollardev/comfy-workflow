@@ -1,7 +1,7 @@
 # ADR-006: The ComfyUI image is built on CI next to a private registry; workflows ride on the volume
 
 **Date:** 2026-10-20
-**Status:** Accepted
+**Status:** (registry and CI parts superseded by ADR-020: the image is on ghcr.io)  Accepted
 **Owner:** Lucas (Blue Collar Dev)
 **Extends:** ADR-004 (where the workflows run) and ADR-005 (the app on one PC).
 
