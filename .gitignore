@@ -68,3 +68,6 @@ projects/*
 
 # Panama exchange bucket credentials: never commit
 docs/panama-*-aws.txt
+
+# Guides sent to people outside the repo (not ours to publish)
+docs/Panama - getting connected*.pdf
