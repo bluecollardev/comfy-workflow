@@ -26,6 +26,12 @@ mirror of the other. Sync deliberately never carries `temp/` (ADR-021), so nothi
    The create call is the one the app already has (`gpu: auto` picks the cheapest card in stock where the volume lives); nothing new is built for it. Measured on 2026-11-03: a pull-and-start pod cost about USD 0.04 for 2 minutes, and a second about USD 0.05
    (L4 at USD 0.59/h, then an RTX 4090). A GPU does no work in a pull, a hash or a delete; the extra cost over a CPU pod (priced about USD 0.04/h in ADR-007, availability in `EUR-IS-2` never confirmed) is cents per use and is accepted in return for building and maintaining no second pod path.
    Not pursued, and why: the app creates GPU pods only (`pods.ts`, `runpod.ts`), the card table and `list_datacenters` are GPU-only, and a CPU path would also need a flavour probe and stock handling for a saving that does not matter at this size. Revisit only if short-lived pods become frequent or long (for example pulls of many 30 GB rounds), or if the cheapest GPU is not in stock where the volume lives.
+2c. **The short-lived pods show up in the manager like any other pod.** (Lucas, 2026-11-03: "these pods should show up in our manager too".) They are ordinary pods created through the app's own create path, so they appear in the pod list with a card, its status, price per hour and
+   Stop and Delete, and the idle stop applies. What the app adds:
+   - **A name that says why:** `ComfyUI-Pull-<round>-<date>` (the repo's `ComfyUI-{Purpose}-{Date}` convention, `CLAUDE.md`), so it is never mistaken for a working pod.
+   - **A "temporary" tag and the job on the card:** the round, what it is doing (pulling, checking, deleting) and the same progress and log tail the Panama pane shows. Cancel on the pane stops the pull and deletes the pod.
+   - **No orphans:** the pod is recorded as the app's before it is created, and ends by itself (delete when the job ends). If the app closes mid-job the pod is still on the list with its tag and its idle stop, so it can be deleted by hand; on the next start the app offers to finish or delete any temporary pod it finds.
+   - **The active-pod route (decision 2) uses the user's own pod and never tags it, stops it or deletes it.**
 3. **The pod verifies, not only copies.** The image gets a small script that checks every file against the round's manifests (size and sha256, as `panama.verify` does) after the pull and writes `.s3-pull.done` only when it passes. This also
    closes the gap from the 2026-11-03 pod tests, where the files were compared with the bucket by checksum but never with the manifest. Needs an image rebuild (ADR-020).
 4. **Delete on the volume is a pod action too** (`rm -r` of that one round, in a short pod), confined to `temp/rounds/<round>` like the local one (ADR-021). The volume bills about USD 0.07 per GB-month, so a staged 15 GB round is about USD 1 a month until deleted; the row shows that.
@@ -47,7 +53,7 @@ mirror of the other. Sync deliberately never carries `temp/` (ADR-021), so nothi
 ## Order of work
 
 1. Image: the pod-side verify script and marker; rebuild and push (`./start.sh comfy-image --remote --wait`).
-2. Core: a Pod download (use an active pod over SSH, else create a short-lived one with `S3_PULL`, follow the log, stop and delete), the per-volume state record.
+2. Core: a Pod download (named and tagged as in 2c) (use an active pod over SSH, else create a short-lived one with `S3_PULL`, follow the log, stop and delete), the per-volume state record.
 3. UI: the Pod / Local switch on the Panama pane, applying to the row states and buttons.
 4. Pod-side Delete.
 5. Phase 2: Import Package on the volume.
