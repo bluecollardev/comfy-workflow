@@ -17,6 +17,7 @@ const EXPECTED = {
   repositories: ['list', 'add', 'remove', 'search', 'branches', 'folders'],
   images: ['env', 'dockerfile'],
   remote: ['status', 'check', 'setKey'],
+  configio: ['export', 'suggestedName', 'plan', 'apply', 'undo', 'backups'],
   panama: ['status', 'rounds', 'size', 'pull', 'job', 'cancel', 'remove', 'podRounds', 'podPlan', 'podPull', 'podJob', 'podCancel', 'podRemove'],
   imports: ['list', 'detect', 'plan', 'apply', 'source', 'save', 'spec', 'draftPreview', 'draft', 'validateSource', 'describe', 'syncAfter', 'remove', 'template', 'duplicate', 'getPrompt', 'savePrompt', 'rename', 'history'],
   studio: ['step', 'saveChecked', 'document', 'tree', 'file', 'problems', 'context'],

@@ -908,5 +908,36 @@
       "role": "This key's role may not use the console's MCP (403).",
       "unreachable": "Could not reach the console."
     }
+  },
+  "configio": {
+    "title": "Configuration file",
+    "hint": "Save this configuration as a JSON file, or load one from another computer.",
+    "export": "Export",
+    "import": "Import",
+    "undo": "Undo last import",
+    "undoHint": "Put the configuration back as it was before the last import.",
+    "excluded": "The file never contains keys or tokens, the no-spend switch, per-pod settings, your adapters, or git accounts. Enter your keys again on the new computer.",
+    "saved": "Configuration saved to {where}.",
+    "notJson": "{name} is not valid JSON: {error}",
+    "from": "From {name} · app {version} · exported {when}",
+    "secrets": "Keys are never in the file. These were set on the computer that exported it, so enter them here yourself: {names}.",
+    "changed": "changes",
+    "same": "no change",
+    "machine": "paths from another machine",
+    "account": "ids from another RunPod account",
+    "diff": "What changes",
+    "now": "Now",
+    "file": "In the file",
+    "apply": "Apply {n} section(s)",
+    "cancel": "Cancel",
+    "close": "Close",
+    "backupNote": "The current configuration is saved first; Undo puts it back.",
+    "applied": "Imported {n} section(s): {sections}.",
+    "undone": "Put back the configuration from before ({name}).",
+    "welcomeTitle": "Welcome",
+    "welcomeBody": "This looks like a new installation: nothing is set up yet. If you saved a configuration file from another computer, you can load it now instead of filling everything in by hand.",
+    "welcomeImport": "Import a configuration file",
+    "welcomeScratch": "Set up from scratch",
+    "welcomeNote": "You can import a file later from Default Configuration at any time."
   }
 }

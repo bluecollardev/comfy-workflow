@@ -17,6 +17,14 @@ const PANAMA_PATTERNS = {
   region: [/^[a-z]{2}(-[a-z]+)+-\d$/, 'a region like us-west-2'],
   profile: [/^[A-Za-z0-9._-]{1,64}$/, 'an AWS profile name: letters, digits, dots, hyphens and underscores'],
 } as const
+/** Whether a Panama bucket, region or profile value would be accepted by `set` (null) or why not; changes nothing. Used to preview a configuration import. */
+export function checkPanama(key: 'bucket' | 'region' | 'profile', v: unknown): string | null {
+  if (typeof v !== 'string') return `Panama ${key} must be text`
+  const t = v.trim()
+  if (!t || t === PANAMA_DEFAULTS[key]) return null
+  const [re, what] = PANAMA_PATTERNS[key]
+  return re.test(t) ? null : `Panama ${key}: ${t.slice(0, 80)} is not ${what}`
+}
 const KEYS = ['PANAMA_S3_BUCKET', 'PANAMA_S3_REGION', 'PANAMA_S3_PROFILE', 'RUNPOD_API_KEY', 'RUNPOD_S3_ACCESS_KEY', 'RUNPOD_S3_SECRET_KEY', 'ANTHROPIC_API_KEY', 'PANAMA_CONSOLE_KEY', 'PANAMA_AWS_ACCESS_KEY_ID', 'PANAMA_AWS_SECRET_ACCESS_KEY'] as const   // ANTHROPIC_API_KEY: only for "Write an adapter with Claude" (ADR-008); optional   // the S3 pair: uploads onto a volume with no pod (ADR-007 G)
 
 function readEnvFile(): Record<string, string> {

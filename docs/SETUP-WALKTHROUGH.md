@@ -33,6 +33,9 @@ only its last four characters.
 Install the app from the download page (https://bluecollardev.github.io/downloads/). It is not signed yet: on macOS
 right-click it and choose Open the first time.
 
+On a new installation the app first asks, once, whether you have a **configuration file** from another computer: *Import a configuration file* takes you to Default Configuration at the import form (see
+[Moving your setup to another computer](#moving-your-setup-to-another-computer)); *Set up from scratch* carries on below.
+
 The app opens **Default Configuration** by itself, because nothing works without a RunPod API key.
 
 ![First launch](walkthrough/01-first-launch.png)
@@ -110,6 +113,19 @@ When it is running:
 - The **Logs** should include `sshd on 22 (for ./start.sh sync)`. If not, see below.
 - **Sync** copies your folders onto the volume (ADR-011); **Pull** brings renders back.
 - **Stop** pauses billing; the volume stays.
+
+## Moving your setup to another computer
+
+Default Configuration starts with a **Configuration file** bar: **Export** saves everything in this panel as one `.json` file (the Save dialog asks where); **Import** opens a file from anywhere on the disk.
+
+- **Never in the file:** your keys and tokens (RunPod, S3, Anthropic, Git), the no-spend switch, per-pod settings, your adapters, and any environment variable whose name looks like a secret. The import tells you which keys were set on the other computer so you can enter them again.
+- **Import previews first.** It lists each part the file carries (volume and datacenter, image and registry login, environment, pod defaults, MCP servers, folders, the exchange-bucket settings) with what would change, and a checkbox for each. **Folders is unticked** because those are paths on the other computer.
+  Nothing is written until **Apply**, and only the ticked parts are.
+- **Undo last import** puts the configuration back as it was; the app keeps the last ten.
+- On a **new installation** the first-launch question (above) takes you straight to the import form, before you have entered a key.
+- From a terminal: `./start.sh config export [file]`, `config import <file> [--sections a,b] [--dry-run]`, `config undo`.
+
+Decision and reasons: ADR-023 in the repository (`docs/ADR-023-config-import-export.md`).
 
 ## If something fails
 

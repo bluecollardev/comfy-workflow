@@ -193,6 +193,7 @@ test.describe('the RunPod key', () => {
   test('is entered in the panel, stored through the API, and only its hint is shown', async ({ page, api }) => {
     api.state.settings = { runpod_api_key_set: false, runpod_api_key_hint: '', source: 'none' }
     await page.goto('/')
+    await page.getByTestId('welcome-scratch').click()   // a new installation asks once whether to import a configuration file (docs/ADR-023); "from scratch" is the old way in
     const dialog = modal(page, t('config.title'))   // with no key the panel opens on its own, gated to the key field
     await expect(dialog).toBeVisible()
     await expect(dialog.getByTestId('cfg-key-gate')).toContainText(t('config.keyGate'))

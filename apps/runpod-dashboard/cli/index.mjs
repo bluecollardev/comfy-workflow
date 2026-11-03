@@ -1,18 +1,18 @@
 #!/usr/bin/env node
-// The pod manager's command line over the core (docs/ADR-005, step 5): `pod`, `sync`, `pull`, `import`.
+// The pod manager's command line over the core (docs/ADR-005, step 5): `pod`, `sync`, `pull`, `import`, `config`.
 //
 // Replaces infra/scripts/create_pod.py and sync_volume.py with the same flags. Only wiring: argv
 // in, the core's functions, child processes for rsync, the AWS CLI and nothing else. Nothing here
 // decides anything the core does not; the plans and the commands it runs are built and tested in
 // libs/core/src/sync.ts. Build the core first (`npm run core:build`); `npm run cli -- <args>`.
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const CORE = resolve(HERE, '..', 'libs', 'core', 'dist', 'index.js')
+const CORE = process.env.POD_MANAGER_CORE || resolve(HERE, '..', 'libs', 'core', 'dist', 'index.js')   // the override is for tests against a core built elsewhere
 
 class Usage extends Error {}   // a mistake on the command line: the message, exit 2
 class Help extends Usage {}    // --help: the usage text on stdout, exit 0
@@ -316,7 +316,47 @@ const HELP = `usage: npm run cli -- <command> [options]   (./start.sh pod|sync|p
   pull --pod ID | --s3 [--volume ID]  [--only output,review,deliver] [--shot NAME]... [--dry-run]
   import <folder> [--adapter ID] [--to DIR] [--dry-run] [--overwrite]   a package folder into ComfyUI-Shared; --list | --show ID
 
+  config export [FILE]                         the Default Configuration as a JSON file (stdout with no FILE or -); never contains keys or tokens
+  config import FILE [--sections a,b] [--dry-run]   preview a file's sections and write the ticked ones (all that change, except Folders, by default)
+  config undo                                  put the configuration back as it was before the last import
+
 Each command takes --help. The RunPod key comes from --api-key, RUNPOD_API_KEY or the app's settings file.`
+
+/** `config`: export, import and undo of the Default Configuration (docs/ADR-023). Only wiring; the checks, the backup and the writing are the core's. */
+async function configCmd(core, argv) {
+  const [sub, ...rest] = argv
+  const io = core.configio
+  if (sub === 'export') {
+    const f = rest[0]
+    if (f?.startsWith('--')) fail('config export: give a file name, or nothing for stdout')
+    const text = JSON.stringify(io.exportConfig(), null, 2) + '\n'
+    if (!f || f === '-') { process.stdout.write(text); return 0 }
+    writeFileSync(f, text)
+    console.error(`wrote ${f} (no keys or tokens in it)`)
+    return 0
+  }
+  if (sub === 'import') {
+    const path = rest[0]
+    if (!path || path.startsWith('--')) fail('config import: give the file to import\n' + usage({}, 'config import FILE'))
+    const o = parse(rest.slice(1), { sections: { kind: 'str', meta: 'a,b', help: `only these (${io.SECTION_KEYS.join(', ')}); default: every section that changes, except folders` }, 'dry-run': { kind: 'bool', help: 'show the preview and write nothing' } }, 'config import')
+    if (statSync(path).size > io.MAX_BYTES) fail(`${path} is far too large to be a configuration`)
+    let obj
+    try { obj = JSON.parse(readFileSync(path, 'utf8')) } catch (e) { fail(`${path} is not valid JSON: ${e.message}`) }
+    const plan = io.planImport(obj)
+    for (const e of plan.errors) console.error(`error: ${e}`)
+    if (!plan.ok) return 1
+    for (const w of plan.warnings) console.log(`warning: ${w}`)
+    if (plan.source.secrets_set.length) console.log(`note: keys are never in the file; these were set where it was exported, enter them again: ${plan.source.secrets_set.join(', ')}`)
+    const wanted = o.sections ? [...csv(o.sections)] : plan.sections.filter((s) => s.default_checked).map((s) => s.key)
+    for (const s of plan.sections) console.log(`  [${wanted.includes(s.key) ? 'x' : ' '}] ${s.key.padEnd(13)} ${s.changed ? 'changes' : 'same   '}  ${s.label}${s.machine_specific ? '  (paths from another machine)' : ''}${s.account_specific ? '  (ids from another RunPod account)' : ''}${s.error ? `  ERROR: ${s.error}` : ''}`)
+    if (o['dry-run']) { console.log('dry run: nothing written'); return 0 }
+    const r = io.applyImport(obj, { sections: wanted })
+    console.log(`imported ${r.applied.join(', ')}; the configuration before is saved in ${r.backup} (config undo puts it back)`)
+    return 0
+  }
+  if (sub === 'undo') { const r = io.undoImport(); console.log(`restored ${r.restored}`); return 0 }
+  fail('config: one of export, import, undo\n' + HELP)
+}
 
 async function main(argv) {
   const [cmd, ...rest] = argv
@@ -332,6 +372,7 @@ async function main(argv) {
   if (cmd === 'sync') return sync(core, rest)
   if (cmd === 'pull') return pull(core, rest)
   if (cmd === 'import') return importCmd(core, rest)
+  if (cmd === 'config') return configCmd(core, rest)
   fail(`unknown command ${cmd}\n${HELP}`)
 }
 

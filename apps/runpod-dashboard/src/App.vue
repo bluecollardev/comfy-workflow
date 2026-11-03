@@ -53,6 +53,7 @@
     <AdapterStudio />
     <VolumesModal />
     <ToastHost />
+    <WelcomeModal />
     <ConfigModal />
   </div>
 </template>
@@ -86,6 +87,8 @@ import ConnectModal from './components/ConnectModal.vue'
 import ImportModal from './components/ImportModal.vue'
 import AdapterStudio from './components/AdapterStudio.vue'
 import ConfigModal from './components/ConfigModal.vue'
+import WelcomeModal from './components/WelcomeModal.vue'
+import { mountsAPI } from './api/mounts'
 
 const ui = useUiStore()
 const toast = useToastStore()
@@ -106,6 +109,14 @@ function readOAuthResult() {
   window.history.replaceState(null, '', window.location.pathname)
 }
 
+/** A new installation: no RunPod key (checked by the caller), no saved configuration, and the question not answered before in this browser. */
+async function newInstallation() {
+  try {
+    if (localStorage.getItem('runpod-manager.welcome') === 'seen') return false
+    return !(await mountsAPI.get()).stored
+  } catch { return false }
+}
+
 let offSync = () => {}
 onMounted(async () => {
   readOAuthResult()
@@ -114,7 +125,10 @@ onMounted(async () => {
   offSync = syncAPI.onEvent((ev) => pods.syncEvent(ev))   // sync jobs run in the main process; every card follows them from here
   pods.syncRecover(syncAPI)
   await settings.load()
-  if (!settings.ready) ui.configOpen = true   // nothing works without a RunPod key: the panel opens on the key field
+  if (!settings.ready) {   // nothing works without a RunPod key: the panel opens on the key field, after asking once, on a new installation, whether to load a configuration file instead
+    if (await newInstallation()) ui.welcomeOpen = true
+    else ui.configOpen = true
+  }
 })
 onUnmounted(() => { pods.stopAutoRefresh(); offSync() })
 </script>

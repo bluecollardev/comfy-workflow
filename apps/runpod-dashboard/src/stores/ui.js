@@ -14,7 +14,8 @@ export const useUiStore = defineStore('ui', () => {
   const importShown = ref(0)      // times it was shown: the pane stays mounted while hidden and reloads on it
   const repositoriesVersion = ref(0)
   const configOpen = ref(false)
-  const configFocus = ref('')     // a section of Default Configuration to scroll to when it opens ('adapters')
+  const welcomeOpen = ref(false)  // the one-time 'import a configuration file or start from scratch' question on a new installation (docs/ADR-023)
+  const configFocus = ref('')     // a section of Default Configuration to scroll to when it opens ('adapters', 'claude', 'import')
   const volumesOpen = ref(false)
   // Help: the hints under the form's group headings, off by default; a per-viewer choice remembered in this browser.
   const hints = ref(false)
@@ -22,5 +23,5 @@ export const useUiStore = defineStore('ui', () => {
   watch(hints, (v) => { try { localStorage.setItem('runpod-manager.hints', v ? 'on' : 'off') } catch { /* storage blocked */ } })
   const accountsOpen = computed({ get: () => connectOpen.value && connectTab.value === 'accounts', set: (v) => { if (v) connectTab.value = 'accounts'; connectOpen.value = v } })
   const repositoriesOpen = computed({ get: () => connectOpen.value && connectTab.value === 'repositories', set: (v) => { if (v) connectTab.value = 'repositories'; connectOpen.value = v } })
-  return { connectOpen, importOpen, importPod, importSource, importShown, connectTab, accountsOpen, repositoriesOpen, repositoriesVersion, configOpen, configFocus, volumesOpen, hints }
+  return { connectOpen, importOpen, importPod, importSource, importShown, connectTab, accountsOpen, repositoriesOpen, repositoriesVersion, configOpen, welcomeOpen, configFocus, volumesOpen, hints }
 })

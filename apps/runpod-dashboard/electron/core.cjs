@@ -5,7 +5,8 @@
 // otherwise (browser, hot reload, the Playwright suite). Errors come back as {ok:false, error}
 // so the page gets the core's message, not Electron's wrapping.
 const path = require('node:path')
-const { ipcMain, app, shell, BrowserWindow } = require('electron')
+const fs = require('node:fs')
+const { ipcMain, app, shell, BrowserWindow, dialog } = require('electron')
 const { createSyncJobs } = require('./sync-jobs.cjs')
 const { createMcpHost } = require('./mcp-host.cjs')
 
@@ -99,6 +100,14 @@ const TABLE = {
     check: (c) => c.remote.check(),
     setKey: (c, key) => c.remote.setKey(key || null),
   },
+  configio: {   // docs/ADR-023: the Default Configuration as a JSON file; plan changes nothing, apply backs up first
+    export: (c) => c.configio.exportConfig({ appVersion: app.getVersion() }),
+    suggestedName: (c) => c.configio.suggestedName(),
+    plan: (c, file) => c.configio.planImport(file),
+    apply: (c, file, sections) => c.configio.applyImport(file, { sections: Array.isArray(sections) ? sections : [] }),
+    undo: (c) => c.configio.undoImport(),
+    backups: (c) => c.configio.listBackups(),
+  },
   panama: {   // docs/ADR-015: the exchange bucket as an import source
     status: (c) => c.panama.status(),
     rounds: (c) => c.panama.rounds(),
@@ -175,7 +184,31 @@ const TABLE = {
 const streams = new Map()
 function streamKey(sender, id) { return `${sender.id}:${id}` }
 
+const MAX_FILE_BYTES = 2 * 1024 * 1024   // a configuration is a few KB
+const JSON_FILTER = [{ name: 'JSON', extensions: ['json'] }]
+
 function register() {
+  // The two native file dialogs the configuration export and import use (docs/ADR-023). They only pick one path and move one UTF-8 text file; the page gets the text, never a path to read.
+  ipcMain.handle('core:file:save', async (event, suggested, text) => {
+    if (typeof text !== 'string' || text.length > MAX_FILE_BYTES) return { ok: false, error: { message: 'There is nothing to save, or it is too large.' } }
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const r = await dialog.showSaveDialog(win, { defaultPath: path.join(app.getPath('documents'), path.basename(String(suggested || 'pod-manager-config.json'))), filters: JSON_FILTER })
+    if (r.canceled || !r.filePath) return { ok: true, canceled: true }
+    try { await fs.promises.writeFile(r.filePath, text, 'utf8') } catch (e) { return { ok: false, error: { message: `Could not write ${path.basename(r.filePath)}: ${e.message}` } } }
+    return { ok: true, path: r.filePath }
+  })
+  ipcMain.handle('core:file:open', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const r = await dialog.showOpenDialog(win, { properties: ['openFile'], filters: JSON_FILTER })
+    if (r.canceled || !r.filePaths[0]) return { ok: true, canceled: true }
+    const p = r.filePaths[0]
+    try {
+      const st = await fs.promises.stat(p)
+      if (st.size > MAX_FILE_BYTES) return { ok: false, error: { message: `${path.basename(p)} is ${Math.round(st.size / 1024)} KB: far too large to be a configuration, so it was not read.` } }
+      return { ok: true, path: p, name: path.basename(p), text: await fs.promises.readFile(p, 'utf8') }
+    } catch (e) { return { ok: false, error: { message: `Could not read ${path.basename(p)}: ${e.message}` } } }
+  })
+
   ipcMain.handle('core:logs:start', async (event, id, opts = {}) => {
     const key = streamKey(event.sender, id)
     streams.get(key)?.abort()
