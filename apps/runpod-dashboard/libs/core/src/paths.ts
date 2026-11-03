@@ -16,6 +16,7 @@ export const idleFile = () => process.env.IDLE_FILE || join(configDir(), 'idle.j
 export const podConfigsFile = () => process.env.POD_CONFIGS_FILE || join(configDir(), 'pod-configs.json')
 export const gitAccountsFile = () => process.env.GIT_ACCOUNTS_FILE || join(configDir(), 'git_accounts.json')
 export const repositoriesFile = () => process.env.REPOSITORIES_FILE || join(configDir(), 'repositories.json')
+export const backupsDir = () => process.env.POD_MANAGER_BACKUPS_DIR || join(configDir(), 'backups')   // the configuration as it was before each import (docs/ADR-023)
 export const adaptersDir = () => process.env.POD_MANAGER_ADAPTERS_DIR || join(configDir(), 'adapters')      // yours: *.mjs, hot-loaded (docs/ADR-008)
 export const importsDir = () => process.env.POD_MANAGER_IMPORTS_DIR || join(configDir(), 'imports')         // one record per applied import
 export const dockerfilePath = () => process.env.DOCKERFILE_PATH || join(REPO_ROOT, 'apps', 'comfy-app', 'Dockerfile')
