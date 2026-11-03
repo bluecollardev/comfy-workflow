@@ -180,13 +180,21 @@ describe('sync from the app', () => {
   }
   const shared = (steps: ReturnType<typeof syncrun.planFor>) => steps.find((s) => s.key === 'comfy-shared')!
 
+  it('a push of ComfyUI-Shared never makes a stream of temp/ (scratch and staged rounds stay on this PC)', async () => {
+    const { mkdtempSync, mkdirSync } = await import('node:fs'); const { tmpdir } = await import('node:os'); const { join } = await import('node:path')
+    const root = mkdtempSync(join(tmpdir(), 'shared-'))
+    for (const d of ['input', 'models', 'temp/rounds/brynley-comfy-2026-10-20']) mkdirSync(join(root, d), { recursive: true })
+    const step = { key: 'comfy-shared', local: root + '/', remote: '/workspace/comfy-shared/' }
+    const names = syncrun.streamsOf(step.local, step.remote, syncrun.excludesFor({ pod_id: 'p1', direction: 'push' }, step)).map((x) => x.name)
+    expect(names).toEqual(['.', 'input', 'models'])
+  })
   it('excludes the unchosen subfolders of ComfyUI-Shared at the top level only, on a push; the rest of the folder always goes', () => {
     const step = { key: 'comfy-shared', local: '/x/', remote: '/workspace/comfy-shared/' }
     const push = (s?: string[]) => syncrun.excludesFor({ pod_id: 'p1', direction: 'push', shared: s }, step)
-    expect(push(['input', 'models', 'workflows'])).toEqual(['/output/'])
-    expect(push(['input', 'models', 'output', 'workflows'])).toEqual([])
-    expect(push([])).toEqual(['/input/', '/models/', '/output/', '/workflows/'])
-    expect(push(undefined)).toEqual([])   // the request says nothing: the run decides from the configuration (effectiveShared)
+    expect(push(['input', 'models', 'workflows'])).toEqual(['/temp/', '/output/'])   // temp/ always: scratch and staged rounds stay on this PC
+    expect(push(['input', 'models', 'output', 'workflows'])).toEqual(['/temp/'])
+    expect(push([])).toEqual(['/temp/', '/input/', '/models/', '/output/', '/workflows/'])
+    expect(push(undefined)).toEqual(['/temp/'])   // the request says nothing: the run decides from the configuration (effectiveShared)
     expect(syncrun.excludesFor({ pod_id: 'p1', direction: 'pull', shared: [] }, step)).toEqual([])
     expect(syncrun.excludesFor({ pod_id: 'p1', direction: 'push', shared: [] }, { ...step, key: 'project' })).toEqual([])   // only ComfyUI-Shared has these subfolders
   })

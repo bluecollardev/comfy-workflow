@@ -43,9 +43,13 @@ describe('panama (the exchange bucket as an import source)', () => {
   it('cancel stops nothing that is not running and refuses an unknown download', () => {
     expect(() => panama.cancel('nope')).toThrow(/No download/)
   })
-  it('stages under ~/panama-rounds unless told otherwise', () => {
+  it('stages in temp/rounds inside the mapped ComfyUI-Shared, unless told otherwise', () => {
     delete process.env.PANAMA_ROUNDS_DIR
-    expect(panama.stagingDir()).toMatch(/panama-rounds$/)
+    const dir = mkdtempSync(join(tmpdir(), 'mounts-')); const f = join(dir, 'mounts.json')
+    writeFileSync(f, JSON.stringify({ folders: { 'comfy-shared': '/x/ComfyUI-Shared' } })); process.env.MOUNTS_FILE = f
+    expect(panama.stagingDir()).toBe('/x/ComfyUI-Shared/temp/rounds')
+    process.env.PANAMA_ROUNDS_DIR = '/elsewhere'; expect(panama.stagingDir()).toBe('/elsewhere'); delete process.env.PANAMA_ROUNDS_DIR
+    delete process.env.MOUNTS_FILE
   })
 })
 

@@ -11,6 +11,8 @@ import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, sta
 import { homedir } from 'node:os'
 import { join, normalize, relative } from 'node:path'
 import { bad } from './errors.js'
+import * as mounts from './mounts.js'
+import { STAGED_ROUNDS } from './paths.js'
 import * as settings from './settings.js'
 
 const val = (name: string, fallback: string) => settings.lookup(name) || fallback
@@ -18,7 +20,12 @@ export const profile = () => val('PANAMA_S3_PROFILE', 'panama')
 export const bucket = () => val('PANAMA_S3_BUCKET', 'bh-panama-exchange-610140802195')
 export const region = () => val('PANAMA_S3_REGION', 'us-west-2')
 /** Where rounds are staged on this PC. */
-export const stagingDir = () => val('PANAMA_ROUNDS_DIR', join(homedir(), 'panama-rounds'))
+export const stagingDir = () => {
+  const set = settings.lookup('PANAMA_ROUNDS_DIR')
+  if (set) return set
+  const shared = mounts.load().folders['comfy-shared']   // inside the mapped ComfyUI-Shared, so everything is in one place
+  return shared ? join(shared, STAGED_ROUNDS) : join(homedir(), STAGED_ROUNDS)   // ComfyUI-Shared/temp/rounds, or ~/temp/rounds with no mapping
+}
 const touch = (p: string) => writeFileSync(p, new Date().toISOString() + '\n')
 const ROUND = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/   // one folder name under rounds/: no slashes, no dots-only
 

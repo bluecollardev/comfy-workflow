@@ -41,6 +41,7 @@ import * as rp from './runpod.js'
 import * as sync from './sync.js'
 import * as settings from './settings.js'
 import { volumeInfo } from './pods.js'
+import { SHARED_TEMP } from './paths.js'
 
 /** The subfolders of ComfyUI-Shared a push can carry: ComfyUI's input, its models, what pods write (output) and the graphs. */
 export const SHARED_DIRS = mounts.SYNC_SHARED
@@ -98,6 +99,7 @@ export const excludesFor = (req: SyncRequest, step: sync.Step): string[] => {
   const out: string[] = []
   if (req.skip_renders && step.key === 'project') out.push(...RENDER_DIRS.map((d) => `${d}/`))
   if (req.skip_tests && step.key === 'project') out.push(`/${TEST_DIR}/`)
+  if (step.key === 'comfy-shared') out.push(`/${SHARED_TEMP}/`)   // temp/ (staged Panama rounds, scratch) stays on this PC
   if (step.key === 'comfy-shared' && req.shared) out.push(...SHARED_DIRS.filter((d) => !req.shared!.includes(d)).map((d) => `/${d}/`))
   return out
 }
