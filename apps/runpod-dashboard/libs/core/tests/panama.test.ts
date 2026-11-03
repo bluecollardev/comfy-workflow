@@ -30,6 +30,16 @@ describe('panama (the exchange bucket as an import source)', () => {
     expect(() => panama.pull('a/b')).toThrow(/Not a round name/)
     expect(() => panama.size('..')).toThrow(/Not a round name/)
   })
+  it('with the app\'s keys the env has them and NO profile variable, not an empty one', () => {
+    process.env.PANAMA_AWS_ACCESS_KEY_ID = 'AKIATEST'; process.env.PANAMA_AWS_SECRET_ACCESS_KEY = 'secret'
+    process.env.AWS_PROFILE = 'something'; process.env.AWS_DEFAULT_PROFILE = 'else'
+    const env = panama.awsEnv()
+    expect(env.AWS_ACCESS_KEY_ID).toBe('AKIATEST')
+    expect('AWS_PROFILE' in env).toBe(false)
+    expect('AWS_DEFAULT_PROFILE' in env).toBe(false)
+    expect(panama.listCmd()).not.toContain('--profile')
+    delete process.env.AWS_PROFILE; delete process.env.AWS_DEFAULT_PROFILE
+  })
   it('cancel stops nothing that is not running and refuses an unknown download', () => {
     expect(() => panama.cancel('nope')).toThrow(/No download/)
   })

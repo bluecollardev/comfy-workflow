@@ -28,7 +28,10 @@ const aws = (args: string[]) => [...(appKeys() ? [] : ['--profile', profile()]),
 /** The environment an aws call runs in: the app's keys in the standard variables, never on the command line. */
 export const awsEnv = (): NodeJS.ProcessEnv => {
   const k = appKeys()
-  return k ? { ...process.env, AWS_ACCESS_KEY_ID: k.id, AWS_SECRET_ACCESS_KEY: k.secret, AWS_REGION: region(), AWS_PROFILE: '' } : process.env
+  if (!k) return process.env
+  // The app's keys win over any profile the shell has set: UNSET the profile variables. An empty AWS_PROFILE is not "none", the CLI looks for a profile named "".
+  const { AWS_PROFILE: _p, AWS_DEFAULT_PROFILE: _d, AWS_SESSION_TOKEN: _t, ...rest } = process.env
+  return { ...rest, AWS_ACCESS_KEY_ID: k.id, AWS_SECRET_ACCESS_KEY: k.secret, AWS_REGION: region() }
 }
 
 /** The command for listing the rounds, as data so it can be tested without a bucket. */
