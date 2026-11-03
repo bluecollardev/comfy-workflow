@@ -123,6 +123,8 @@ test.describe('pod card', () => {
     expect(row.y).toBeGreaterThan(actions.y + actions.height - 1)   // below the Config / Sync / Details / Logs row, not in it
     await btn.click()
     const dialog = page.locator('.modal.show', { hasText: t('import.title') })
+    await expect(dialog.getByTestId('import-source-picker')).toBeVisible()   // one button, then where the package comes from
+    await dialog.getByTestId('import-source-folder').click()
     await expect(dialog.getByTestId('import-pane')).toBeVisible()
   })
 

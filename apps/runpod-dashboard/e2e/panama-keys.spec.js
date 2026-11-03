@@ -5,10 +5,13 @@ import { podCard } from './fixtures'
 // pod's S3_PULL, and the BH source turning on without any AWS profile on this PC.
 const configModal = (page) => page.locator('.modal.show', { has: page.getByTestId('config-modal') })
 
-test('keys entered in Default Configuration are stored (last four only), save S3_PULL as a pod variable, and turn Import from BH on', async ({ page, api }) => {
+test('keys entered in Default Configuration are stored (last four only), save S3_PULL as a pod variable, and turn the Panama source on in Import Shot Pack', async ({ page, api }) => {
   api.state.mounts.config.folders['comfy-shared'] = '/Users/lucas/ComfyUI-Shared'
   await page.goto('/')
-  await expect(podCard(page, 'ComfyUI-Dev').getByTestId('pod-import-bh')).toHaveCount(0)   // no keys, no profile: not offered
+  await podCard(page, 'ComfyUI-Dev').getByTestId('pod-import').click()   // no keys, no profile: the Panama card is there but disabled, with the way to set it up
+  await expect(page.getByTestId('import-source-panama')).toBeDisabled()
+  await expect(page.getByTestId('import-source-panama-setup')).toBeVisible()
+  await page.locator('.modal.show').getByRole('button', { name: 'Done' }).click()
 
   await page.getByTestId('open-config').click()
   const dialog = configModal(page)
@@ -25,7 +28,9 @@ test('keys entered in Default Configuration are stored (last four only), save S3
   expect(mountsPut.body.env.S3_PULL).toContain('brynley-inbox-2026-10-28-v001')
   expect(JSON.stringify(mountsPut.body)).not.toMatch(/AKIAEXAMPLE|example-secret/)         // the keys never ride in the mounts file
 
-  await expect(podCard(page, 'ComfyUI-Dev').getByTestId('pod-import-bh')).toBeVisible()   // BH is on now, with no AWS profile involved
+  await podCard(page, 'ComfyUI-Dev').getByTestId('pod-import').click()
+  await expect(page.getByTestId('import-source-panama')).toBeEnabled()   // BH is on now, with no AWS profile involved
+  await page.locator('.modal.show').getByRole('button', { name: 'Done' }).click()
 
   await page.getByTestId('open-config').click()
   await expect(configModal(page).getByTestId('cfg-panama-group')).toContainText('••••1234')

@@ -32,6 +32,7 @@ test.describe('Import Shot Pack over IPC', () => {
 
   const open = async (page) => {
     await podCard(page, 'ComfyUI-Import').getByTestId('pod-import').click()
+    await page.getByTestId('import-source-folder').click()   // the source picker is always first
     const dialog = page.locator('.modal.show', { hasText: t('import.title') })
     await expect(dialog.getByTestId('import-pane')).toBeVisible()
     return dialog

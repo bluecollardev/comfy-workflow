@@ -85,7 +85,7 @@
     "action_recreate": "Recreating: the pod is terminated and a new one made with the same settings",
     "sync": "Sync",
     "importShotPack": "Import Shot Pack",
-    "importShotPackTitle": "Bring a shot pack (a delivery package folder) into ComfyUI-Shared through an adapter. Sync then puts it on this pod.",
+    "importShotPackTitle": "Bring a shot pack into ComfyUI-Shared: from a folder or zip on this PC, or a delivery round from the Panama bucket (BH). Sync then puts it on this pod.",
     "syncTitle": "Copy the folders mapped on this PC onto this pod's volume, or bring renders back: over SSH while the pod runs, over RunPod's S3 API when it is off and the volume's datacenter serves it",
     "action_sync": "Syncing: copying over SSH; the idle stop is held until it ends. Open Sync on the card for the output.",
     "syncOpen": "Open the sync: files copied, errors, output",
@@ -99,9 +99,7 @@
       "stopped": "Stopped",
       "starting": "Starting",
       "stopping": "Stopping"
-    },
-    "importBh": "Import from BH",
-    "importBhTitle": "Pick a delivery round from the Panama bucket (BH), download and verify it, then import it. Sync then puts it on this pod."
+    }
   },
   "form": {
     "name": "Name",
@@ -851,7 +849,9 @@
     "deleteYes": "Delete from this computer",
     "deleteNo": "Keep",
     "onDisk": "{size} on disk",
-    "onDiskHint": "What this round takes in temp/rounds on this computer"
+    "onDiskHint": "What this round takes in temp/rounds on this computer",
+    "notConfigured": "Not set up yet. Add the bucket keys in Default Configuration.",
+    "setUp": "Set up the Panama bucket"
   },
   "remoteMcp": {
     "title": "Remote servers",

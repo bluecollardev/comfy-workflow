@@ -10,8 +10,7 @@ export const useUiStore = defineStore('ui', () => {
   const connectTab = ref('accounts')   // 'accounts' | 'repositories' | 'mcp'
   const importOpen = ref(false)   // the Import Shot Pack modal (docs/ADR-008), opened by the pod card's primary button
   const importPod = ref(null)     // { id, name } of the pod whose card opened it: where the import is synced afterwards
-  const importSource = ref('')    // '' = ask (only when Panama is configured), 'folder' or 'panama': the source of Import Shot Pack (docs/ADR-015)
-  const importPreset = ref('')    // a source the next open starts on ('panama' from the pod card's Import from BH); consumed by the modal
+  const importSource = ref('')    // '' = ask (always), 'folder' or 'panama': the source of Import Shot Pack (docs/ADR-015)
   const importShown = ref(0)      // times it was shown: the pane stays mounted while hidden and reloads on it
   const repositoriesVersion = ref(0)
   const configOpen = ref(false)
@@ -23,5 +22,5 @@ export const useUiStore = defineStore('ui', () => {
   watch(hints, (v) => { try { localStorage.setItem('runpod-manager.hints', v ? 'on' : 'off') } catch { /* storage blocked */ } })
   const accountsOpen = computed({ get: () => connectOpen.value && connectTab.value === 'accounts', set: (v) => { if (v) connectTab.value = 'accounts'; connectOpen.value = v } })
   const repositoriesOpen = computed({ get: () => connectOpen.value && connectTab.value === 'repositories', set: (v) => { if (v) connectTab.value = 'repositories'; connectOpen.value = v } })
-  return { connectOpen, importOpen, importPod, importSource, importPreset, importShown, connectTab, accountsOpen, repositoriesOpen, repositoriesVersion, configOpen, configFocus, volumesOpen, hints }
+  return { connectOpen, importOpen, importPod, importSource, importShown, connectTab, accountsOpen, repositoriesOpen, repositoriesVersion, configOpen, configFocus, volumesOpen, hints }
 })

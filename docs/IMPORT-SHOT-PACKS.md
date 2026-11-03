@@ -85,12 +85,12 @@ fixes what fails. Claude writes adapters and their prompts and nothing else. Det
 
 ## Import from the BH library (the Panama S3 bucket)
 
-Added 2026-11-03 (`docs/ADR-016`, `ADR-021`). When the Panama bucket is configured, Import Shot Pack first asks where the package comes from:
-**Zip or folder on this PC** (everything above) or **Panama S3 bucket**. The pod card also has an **Import from BH** button that opens the modal on the bucket.
+Added 2026-11-03 (`docs/ADR-016`, `ADR-021`). The pod card has one **Import Shot Pack** button. It always opens on a source picker first:
+**Zip or folder on this PC** (everything above) or **Panama S3 bucket**. Until the bucket is set up the Panama card is disabled, with a link to Default Configuration.
+Every screen after the picker has a **Change source** link back to it.
 
 **Set up once.** Default Configuration > Panama bucket (BH): the read-only access key ID and secret BH issued. They are kept in the app's settings file,
-shown only as their last four characters. With no keys the app falls back to an AWS profile named `panama`. Without either, the source picker does not appear
-and Import Shot Pack is the folder import as before.
+shown only as their last four characters. With no keys the app falls back to an AWS profile named `panama`. Without either, the Panama card stays disabled and the folder or zip import works as before.
 
 **Use.**
 1. The list shows each round in the bucket and what is on this PC: nothing (**Download**), part of it (**partial: 391 of 1,283 files**, button **Resume**),
