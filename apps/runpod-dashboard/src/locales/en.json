@@ -911,16 +911,15 @@
   },
   "configio": {
     "title": "Configuration file",
-    "hint": "Save this configuration as a JSON file, or load one from another computer.",
+    "hint": "Save this configuration, keys and tokens included, as a JSON file, or load one from another computer.",
     "export": "Export",
     "import": "Import",
     "undo": "Undo last import",
     "undoHint": "Put the configuration back as it was before the last import.",
-    "excluded": "The file never contains keys or tokens, the no-spend switch, per-pod settings, your adapters, or git accounts. Enter your keys again on the new computer.",
+    "excluded": "Not in the file: the no-spend switch, per-pod settings, your adapters and the repository list.",
     "saved": "Configuration saved to {where}.",
     "notJson": "{name} is not valid JSON: {error}",
     "from": "From {name} · app {version} · exported {when}",
-    "secrets": "Keys are never in the file. These were set on the computer that exported it, so enter them here yourself: {names}.",
     "changed": "changes",
     "same": "no change",
     "machine": "paths from another machine",
@@ -935,9 +934,15 @@
     "applied": "Imported {n} section(s): {sections}.",
     "undone": "Put back the configuration from before ({name}).",
     "welcomeTitle": "Welcome",
-    "welcomeBody": "This looks like a new installation: nothing is set up yet. If you saved a configuration file from another computer, you can load it now instead of filling everything in by hand.",
+    "welcomeBody": "This looks like a new installation: nothing is set up yet. If you saved a configuration file from another computer, you can load it now instead of filling everything in by hand. A file exported with its keys and tokens brings those across too.",
     "welcomeImport": "Import a configuration file",
     "welcomeScratch": "Set up from scratch",
-    "welcomeNote": "You can import a file later from Default Configuration at any time."
+    "welcomeNote": "You can import a file later from Default Configuration at any time.",
+    "includeSecrets": "Include keys and tokens",
+    "secretsWarning": "The file will contain your keys and tokens in plain text. Keep it private; anyone with it can use your RunPod account and buckets.",
+    "secretsOff": "Keys and tokens are left out of the file; it lists only the names of the ones that were set.",
+    "savedWithKeys": "Configuration saved to {where}, with your keys and tokens in it. Keep it private.",
+    "secretsNone": "This file has no keys or tokens. These were set where it was exported, so enter them here yourself: {names}.",
+    "skipped": "Not imported (malformed): {names}."
   }
 }

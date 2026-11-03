@@ -5,7 +5,7 @@ import { API_BASE } from './pods'
 // Export and import of the Default Configuration as a JSON file (docs/ADR-023). The core over IPC in the app, where the file dialogs are the native ones
 // (window.core.files, picked in the main process); the same calls over HTTP against the fake API in a browser, where the file is a download and an <input type=file>.
 const ipc = core && {
-  export: () => core.invoke('configio', 'export'),
+  export: (includeSecrets) => core.invoke('configio', 'export', [{ includeSecrets: includeSecrets === true }]),   // only an explicit true carries the keys
   suggestedName: () => core.invoke('configio', 'suggestedName'),
   plan: (file) => core.invoke('configio', 'plan', [file]),
   apply: (file, sections) => core.invoke('configio', 'apply', [file, sections]),
@@ -13,7 +13,7 @@ const ipc = core && {
   backups: () => core.invoke('configio', 'backups'),
 }
 const http = {
-  async export() { const { data } = await axios.get(`${API_BASE}/configio/export`); return data },
+  async export(includeSecrets) { const { data } = await axios.get(`${API_BASE}/configio/export`, { params: { secrets: includeSecrets === true ? 1 : 0 } }); return data },
   async suggestedName() { const d = new Date(); return `pod-manager-config-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}.json` },
   async plan(file) { const { data } = await axios.post(`${API_BASE}/configio/plan`, { file }); return data },
   async apply(file, sections) { const { data } = await axios.post(`${API_BASE}/configio/apply`, { file, sections }); return data },
