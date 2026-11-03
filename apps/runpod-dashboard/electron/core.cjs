@@ -94,6 +94,11 @@ const TABLE = {
     branches: (c, url) => c.repositories.branches(url),
     folders: (c, url, branch) => c.repositories.folders(url, branch || 'main'),
   },
+  remote: {   // docs/ADR-019: MCP servers this app uses (BH's console)
+    status: (c) => c.remote.status(),
+    check: (c) => c.remote.check(),
+    setKey: (c, key) => c.remote.setKey(key || null),
+  },
   panama: {   // docs/ADR-015: the exchange bucket as an import source
     status: (c) => c.panama.status(),
     rounds: (c) => c.panama.rounds(),

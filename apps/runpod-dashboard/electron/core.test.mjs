@@ -16,6 +16,7 @@ const EXPECTED = {
   git: ['accounts', 'disconnect', 'repos', 'connect'],
   repositories: ['list', 'add', 'remove', 'search', 'branches', 'folders'],
   images: ['env', 'dockerfile'],
+  remote: ['status', 'check', 'setKey'],
   panama: ['status', 'rounds', 'size', 'pull', 'job'],
   imports: ['list', 'detect', 'plan', 'apply', 'source', 'save', 'spec', 'draftPreview', 'draft', 'validateSource', 'describe', 'syncAfter', 'remove', 'template', 'duplicate', 'getPrompt', 'savePrompt', 'rename', 'history'],
   studio: ['step', 'saveChecked', 'document', 'tree', 'file', 'problems', 'context'],

@@ -99,7 +99,9 @@
       "stopped": "Stopped",
       "starting": "Starting",
       "stopping": "Stopping"
-    }
+    },
+    "importBh": "Import from BH",
+    "importBhTitle": "Pick a delivery round from the Panama bucket (BH), download and verify it, then import it. Sync then puts it on this pod."
   },
   "form": {
     "name": "Name",
@@ -825,6 +827,27 @@
       "running": "downloading",
       "done": "downloaded",
       "failed": "failed"
+    }
+  },
+  "remoteMcp": {
+    "title": "Remote servers",
+    "intro": "MCP servers this app connects to, as a client. The servers above are the ones it provides.",
+    "keyStored": "Console key stored ({hint}).",
+    "keyUnset": "No console key yet. Make one on the console's Connect page (shown once) and paste it here.",
+    "keyPlaceholder": "Console key",
+    "keyHelp": "The key acts as your console login: it is kept in this PC's settings file and sent only to the address above, over https.",
+    "save": "Save key",
+    "remove": "Remove",
+    "saved": "Console key saved.",
+    "removed": "Console key removed.",
+    "connected": "Connected: {n} tools, {ms} ms",
+    "who": "signed in as {who} ({role})",
+    "noExports": "This key's role sees no export tools yet; they arrive with the console's export API (ADR-018).",
+    "hint": {
+      "no-key": "No key.",
+      "bad-key": "The console refused the key (401): make a new one.",
+      "role": "This key's role may not use the console's MCP (403).",
+      "unreachable": "Could not reach the console."
     }
   }
 }

@@ -45,5 +45,10 @@ const panama = usePanamaStore()
 const configured = computed(() => !!panama.status?.configured)
 /** Not configured: straight to the folder import. Configured: ask until a source is chosen. */
 const source = computed(() => (configured.value ? ui.importSource : 'folder'))
-const onShow = async () => { ui.importShown++; ui.importSource = ''; await panama.loadStatus() }
+const onShow = async () => {
+  ui.importShown++
+  ui.importSource = ui.importPreset   // the pod card's Import from BH starts on the Panama source
+  ui.importPreset = ''
+  await panama.loadStatus()
+}
 </script>

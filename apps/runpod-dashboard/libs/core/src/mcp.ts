@@ -190,12 +190,13 @@ export function probeCommand(args: string[], env: NodeJS.ProcessEnv = process.en
 }
 
 /** Check against an endpoint the app serves itself: initialize + tools/list over Streamable HTTP, as a remote client would. */
-export async function probeHttp(url: string, timeoutMs = PROBE_TIMEOUT_MS): Promise<ProbeResult> {
+export async function probeHttp(url: string, timeoutMs = PROBE_TIMEOUT_MS, extraHeaders: Record<string, string> = {}): Promise<ProbeResult> {
   const started = Date.now()
-  const headers = { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' }
+  const headers = { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', ...extraHeaders }
   const rpc = async (id: number, method: string, params: unknown) => {
-    const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method, params }), signal: AbortSignal.timeout(timeoutMs) })
+    const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method, params }), signal: AbortSignal.timeout(timeoutMs), redirect: 'manual' })   // manual: a header (the key) never follows a redirect to another host
     const body = await r.text()
+    if (r.status >= 300 && r.status < 400) throw new Error(`Redirected to ${r.headers.get('location') || 'another address'}; not followed`)
     if (!r.ok) throw new Error(`HTTP ${r.status}: ${body.slice(0, 200)}`)
     // enableJsonResponse answers JSON; a server that streams answers one SSE `data:` line
     const json = body.trimStart().startsWith('{') ? body : (body.split('\n').find((l) => l.startsWith('data:')) || '').slice(5)

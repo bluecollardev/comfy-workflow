@@ -453,6 +453,19 @@ export default {
       return json({ dry_run: dry, ok: !conflict, counts, results: conflict ? [{ i: 0, status: 'conflict', detail: 'input/a exists and differs' }] : [], record: dry ? null : '/home/me/.config/runpod-pod-manager/imports/2026-10-24-panama-imax-redux.json' })
     }
     // MCP (the Connect › MCP tab)
+    if (method === 'GET' && path === '/panama/status') { const pn = (state.panama ||= { configured: false }); return json({ configured: pn.configured, profile: 'panama', bucket: 'bh-panama-exchange-610140802195', region: 'us-west-2', staging: '/Users/lucas/panama-rounds', reason: pn.configured ? '' : 'No AWS profile named "panama"' }) }
+    if (method === 'GET' && path === '/panama/rounds') return json((state.panama?.rounds || [{ name: 'brynley-comfy-2026-10-23', staged: false }, { name: 'brynley-inbox-2026-10-28-v001', staged: true }]))
+    if (method === 'GET' && path === '/panama/size') return json({ round: query.round, files: 5701, bytes: 29117613170 })
+    if (method === 'POST' && path === '/panama/pull') { (state.panama ||= {}).pulled = body.round; return json({ id: `${body.round}-1`, round: body.round, dest: `/Users/lucas/panama-rounds/${body.round}`, state: 'done', files: 7, lines: ['download: a'], verify: { listed: 7, bad: [], extra: 0, ok: true } }) }
+    if (method === 'GET' && path === '/panama/job') return json({ id: query.id, round: String(query.id).replace(/-1$/, ''), dest: '/x', state: 'done', files: 7, lines: [], verify: { listed: 7, bad: [], extra: 0, ok: true } })
+    if (method === 'GET' && path === '/remote/status') { const r = (state.remote ||= { key: '' }); return json({ name: 'Panama console', url: 'https://panama-console.beinghuman.studio/api/mcp', key_set: !!r.key, key_hint: r.key ? `••••${r.key.slice(-4)}` : '' }) }
+    if (method === 'PUT' && path === '/remote/key') { const r = (state.remote ||= { key: '' }); r.key = body.key || ''; return json({ name: 'Panama console', url: 'https://panama-console.beinghuman.studio/api/mcp', key_set: !!r.key, key_hint: r.key ? `••••${r.key.slice(-4)}` : '' }) }
+    if (method === 'POST' && path === '/remote/check') {
+      const r = (state.remote ||= { key: '' })
+      if (!r.key) return json({ ok: false, tools: [], definitions: [], error: 'No console key yet', ms: 0, who: null, role: null, hint: 'no-key' })
+      if (r.key.startsWith('bad')) return json({ ok: false, tools: [], definitions: [], error: 'HTTP 401: missing bearer key', ms: 5, who: null, role: null, hint: 'bad-key' })
+      return json({ ok: true, tools: ['whoami', 'list_shots', 'get_shot'], definitions: [], error: null, ms: 42, who: 'Lucas', role: 'partner', hint: null })
+    }
     if (method === 'GET' && path === '/mcp/endpoints') return json(mcpEndpoints(state, query.comfy || ''))
     if (method === 'GET' && path === '/mcp/targets') return json(state.mcp.targets)
     if (method === 'PUT' && path === '/mcp/serve') {

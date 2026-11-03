@@ -95,9 +95,13 @@
         <i class="fa-solid fa-scroll me-1"></i>{{ $t('pod.logs') }}
       </BButton>
     </div>
-    <div class="mb-2">
-      <BButton variant="primary" size="sm" class="w-100 text-nowrap" :title="$t('pod.importShotPackTitle')" data-testid="pod-import" @click="openImport">
+    <div class="mb-2 d-flex gap-1">
+      <BButton variant="primary" size="sm" class="flex-grow-1 text-nowrap" :title="$t('pod.importShotPackTitle')" data-testid="pod-import" @click="openImport">
         <i class="fa-solid fa-file-import me-1"></i>{{ $t('pod.importShotPack') }}
+      </BButton>
+      <!-- Only when BH is reachable for import (docs/ADR-016): opens Import Shot Pack already on the Panama source. -->
+      <BButton v-if="panama.status?.configured" variant="outline-light" size="sm" class="flex-grow-1 text-nowrap" :title="$t('pod.importBhTitle')" data-testid="pod-import-bh" @click="openImport('panama')">
+        <i class="fa-solid fa-cloud-arrow-down me-1"></i>{{ $t('pod.importBh') }}
       </BButton>
     </div>
     <div v-if="showDetails" class="small mb-2" data-testid="pod-details">
@@ -172,7 +176,7 @@
  *   stop, resume, delete  — delete only fires after the user confirms
  */
 import { t } from '../i18n'
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import PodLogs from './PodLogs.vue'
 import SyncModal from './SyncModal.vue'
 import DockerfileModal from './DockerfileModal.vue'
@@ -180,6 +184,7 @@ import ConfigModal from './ConfigModal.vue'
 import { usePodsStore } from '../stores/pods'
 import { useToastStore } from '../stores/toast'
 import { useUiStore } from '../stores/ui'
+import { usePanamaStore } from '../stores/panama'
 import { barValue, detailParts, fresh } from '../sync-progress'
 const props = defineProps({
   pod: { type: Object, required: true },
@@ -223,7 +228,10 @@ const showLogs = ref(false)
 const showSync = ref(false)
 const ui = useUiStore()
 /** Import Shot Pack: its own modal (a package folder into ComfyUI-Shared through an adapter; Sync then puts it on this pod, ADR-008). */
-const openImport = () => { ui.importPod = { id: props.pod.id, name: props.pod.name }; ui.importOpen = true }
+const panama = usePanamaStore()
+onMounted(() => { if (!panama.status) panama.loadStatus() })
+/** `source` 'panama' opens the modal on the BH source; anything else (the click event too) asks or opens the folder import as before. */
+const openImport = (source) => { ui.importPod = { id: props.pod.id, name: props.pod.name }; ui.importPreset = source === 'panama' ? 'panama' : ''; ui.importOpen = true }
 const showDockerfile = ref(false)
 const shortImage = (ref) => ref.replace(/^registry\.gitlab\.com\/[^/]+\/[^/]+\//, '')
 const details = ref(null)
