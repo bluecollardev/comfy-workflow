@@ -116,14 +116,16 @@ When it is running:
 
 ## Moving your setup to another computer
 
-Default Configuration starts with a **Configuration file** bar: **Export** saves everything in this panel as one `.json` file (the Save dialog asks where); **Import** opens a file from anywhere on the disk.
+Default Configuration starts with a **Configuration file** bar: **Export** saves everything in this panel as one `.json` file (the Save dialog asks where); **Import** opens a file from anywhere on the disk. One file sets up a whole new computer, keys included.
 
-- **Never in the file:** your keys and tokens (RunPod, S3, Anthropic, Git), the no-spend switch, per-pod settings, your adapters, and any environment variable whose name looks like a secret. The import tells you which keys were set on the other computer so you can enter them again.
-- **Import previews first.** It lists each part the file carries (volume and datacenter, image and registry login, environment, pod defaults, MCP servers, folders, the exchange-bucket settings) with what would change, and a checkbox for each. **Folders is unticked** because those are paths on the other computer.
-  Nothing is written until **Apply**, and only the ticked parts are.
-- **Undo last import** puts the configuration back as it was; the app keeps the last ten.
-- On a **new installation** the first-launch question (above) takes you straight to the import form, before you have entered a key.
-- From a terminal: `./start.sh config export [file]`, `config import <file> [--sections a,b] [--dry-run]`, `config undo`.
+- **Keys and tokens are in the file, by default.** Your RunPod, S3, Anthropic, exchange-bucket and console keys, your Git logins' tokens, and any environment variable you named like a secret (`HF_TOKEN`) are written in plain text. Treat the file like a password: the app saves it readable by you only, and the box next to **Export** says so in red. Untick **Include keys and tokens** to leave them out;
+  the file then lists only the names of the ones that were set, and you enter them again on the new computer.
+- **Not in the file:** the no-spend switch, per-pod settings, your adapters and the repository list.
+- **Import previews first.** It lists each part the file carries (volume and datacenter, image and registry login, environment, pod defaults, MCP servers, folders, the exchange-bucket settings, **keys and tokens**) with what would change, and a checkbox for each. **Folders is unticked** because those are paths on the other computer. Keys and tokens are ticked, and are shown only as a name and the last four characters.
+  Nothing is written until **Apply**, and only the ticked parts are. A key that is malformed is named and skipped; the rest import.
+- **Undo last import** puts the configuration and your previous keys back; the app keeps the last ten (readable by you only).
+- On a **new installation** the first-launch question (above) takes you straight to the import form, before you have entered a key: a file with the RunPod key in it sets the app up in one step.
+- From a terminal: `./start.sh config export [file] [--no-secrets]` (it warns, and writes the file readable by you only), `config import <file> [--sections a,b] [--dry-run]`, `config undo`.
 
 Decision and reasons: ADR-023 in the repository (`docs/ADR-023-config-import-export.md`).
 
