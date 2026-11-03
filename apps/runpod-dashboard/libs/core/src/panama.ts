@@ -105,7 +105,34 @@ export function size(round: string) {
 
 // ----- pulling: one job per round, in this process, polled -----
 export interface Verify { listed: number; bad: string[]; extra: number; kind?: string; ok: boolean }
-export interface PullJob { id: string; round: string; dest: string; state: 'running' | 'verifying' | 'done' | 'failed' | 'cancelled'; files: number; lines: string[]; error?: string; verify?: Verify }
+// ----- progress read from the tools' own output (the same bar and file list as the Sync window) -----
+const UNIT: Record<string, number> = { B: 1, KiB: 1024, MiB: 1024 ** 2, GiB: 1024 ** 3, TiB: 1024 ** 4, KB: 1e3, MB: 1e6, GB: 1e9, TB: 1e12 }
+const toBytes = (n: string, u: string) => Math.round(parseFloat(n) * (UNIT[u] ?? 1))
+export interface Progress { bytes_done: number; bytes_total: number | null; rate: number | null; remaining: number | null }
+/** `aws s3` progress: `Completed 1.2 GiB/9.5 GiB (45.2 MiB/s) with 12 file(s) remaining`; the total has a `~` while the listing is still running. */
+export function parseAwsProgress(line: string): Progress | null {
+  const m = /^Completed ([\d.]+) (\S+?)\/(~?)([\d.]+) (\S+?) \(([\d.]+) (\S+?)\/s\)(?: with ~?(\d+) file\(s\) remaining)?/.exec(line.trim())
+  if (!m) return null
+  return { bytes_done: toBytes(m[1], m[2]), bytes_total: toBytes(m[4], m[5]), rate: toBytes(m[6], m[7]), remaining: m[8] != null ? Number(m[8]) : null }
+}
+/** `rclone --stats-one-line`: `609.227 KiB / 609.227 KiB, 100%, 53.696 KiB/s, ETA 0s`. */
+export function parseRcloneStats(line: string): Progress | null {
+  const m = /([\d.]+) (\S+?) \/ ([\d.]+) (\S+?), \d+%, ([\d.]+) (\S+?)\/s/.exec(line)
+  return m ? { bytes_done: toBytes(m[1], m[2]), bytes_total: toBytes(m[3], m[4]), rate: toBytes(m[5], m[6]), remaining: null } : null
+}
+/** The file an `aws s3` line says it downloaded, relative to the round: `download: s3://bucket/rounds/<round>/a/b.txt to ../x/a/b.txt`. */
+export const awsDownloadedPath = (line: string): string | null => /^download: s3:\/\/[^/]+\/rounds\/[^/]+\/(.+?) to /.exec(line.trim())?.[1] ?? null
+/** The file an rclone line says it copied: `INFO  : 03_INBOX/a/ENTRY.md: Copied (new)`. */
+export const rcloneCopiedPath = (line: string): string | null => /(?:INFO\s*:\s*)?(.+?): Copied \((?:new|replaced)\)\s*$/.exec(line.replace(/^\s*\d{4}\/\d\d\/\d\d \d\d:\d\d:\d\d\s+/, '').trim())?.[1]?.replace(/^INFO\s*:\s*/, '') ?? null
+export const RECENT_FILES = 300
+
+export interface PullJob {
+  id: string; round: string; dest: string; state: 'running' | 'verifying' | 'done' | 'failed' | 'cancelled'; files: number; lines: string[]; error?: string; verify?: Verify
+  /** Read from aws's progress line: bytes so far, the total it knows (grows while it is still listing), the rate, and the files left. */
+  bytes_done: number; bytes_total: number | null; rate: number | null; remaining: number | null
+  /** The files downloaded so far, newest last (the last 300), for the live list. */
+  recent: string[]
+}
 const jobs = new Map<string, PullJob>()
 const children = new Map<string, ReturnType<typeof spawn>>()
 
@@ -116,14 +143,17 @@ export function pull(round: string): PullJob {
   const dest = join(stagingDir(), round)
   mkdirSync(dest, { recursive: true })
   const cmd = pullCmd(round, dest)
-  const job: PullJob = { id: `${round}-${Date.now()}`, round, dest, state: 'running', files: 0, lines: [] }
+  const job: PullJob = { id: `${round}-${Date.now()}`, round, dest, state: 'running', files: 0, lines: [], bytes_done: 0, bytes_total: null, rate: null, remaining: null, recent: [] }
   jobs.set(job.id, job)
   const child = spawn(cmd[0], cmd.slice(1), { stdio: ['ignore', 'pipe', 'pipe'], env: awsEnv() })
   children.set(job.id, child)
   const onData = (buf: Buffer) => {
     for (const l of buf.toString().split(/\r|\n/).filter(Boolean)) {
-      if (/^download:/.test(l)) job.files++
-      job.lines.push(l); if (job.lines.length > 200) job.lines.shift()
+      const pr = parseAwsProgress(l)
+      if (pr) { job.bytes_done = pr.bytes_done; job.bytes_total = pr.bytes_total; job.rate = pr.rate; job.remaining = pr.remaining; continue }   // a progress line, not a log line
+      const f = awsDownloadedPath(l)
+      if (f) { job.files++; job.recent.push(f); if (job.recent.length > RECENT_FILES) job.recent.shift(); continue }
+      job.lines.push(l); if (job.lines.length > 200) job.lines.shift()   // what is left is worth reading: errors, warnings
     }
   }
   child.stdout.on('data', onData); child.stderr.on('data', onData)

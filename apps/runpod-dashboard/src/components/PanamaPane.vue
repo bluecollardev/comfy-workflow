@@ -64,6 +64,13 @@
           <span v-if="store.job.kind !== 'remove'" class="text-body-secondary" data-testid="panama-job-files">{{ $t('panama.files', { n: store.job.files }) }}</span>
           <BButton v-if="store.jobActive && (isPodJob || store.job.state === 'running')" size="sm" variant="outline-danger" class="ms-auto text-nowrap" data-testid="panama-cancel" @click="store.cancel()"><i class="fa-solid fa-xmark me-1"></i>{{ $t('panama.cancel') }}</BButton>
         </div>
+        <div v-if="showBar" data-testid="panama-progress">
+          <BProgress :value="barPct" :max="100" height="8px" :variant="barVariant" :striped="barMoving" :animated="barMoving" class="mt-2 mb-1" data-testid="panama-bar" :data-indeterminate="indeterminate ? 'true' : 'false'" />
+          <div class="text-body-secondary" data-testid="panama-progress-detail">{{ detail }}</div>
+        </div>
+        <div v-if="store.job.recent?.length" ref="fileList" class="small font-monospace bg-body-tertiary rounded p-2 mt-2" style="max-height: 30vh; overflow: auto" data-testid="panama-files">
+          <div v-for="(f, n) in store.job.recent" :key="n" class="text-break" data-testid="panama-file"><i class="fa-solid fa-check text-success me-1"></i>{{ f }}</div>
+        </div>
         <div v-if="store.job.error" class="text-danger mt-1" data-testid="panama-job-error">{{ store.job.error }}</div>
         <pre v-if="store.job.lines?.length" class="mb-0 mt-2 small text-body-secondary">{{ store.job.lines.slice(-4).join('\n') }}</pre>
         <div v-if="store.job.state === 'cancelled'" class="text-body-secondary mt-1" data-testid="panama-job-cancelled">{{ $t(isPodJob ? 'panama.cancelledNotePod' : 'panama.cancelledNote') }}</div>
@@ -79,7 +86,8 @@
  * and then hand the staged folder to the ordinary folder import (adapter, plan, Import). A Local | Pod switch says where a round is staged: in
  * ComfyUI-Shared/temp/rounds on this PC, or on the network volume by a pod (the pod is planned and confirmed first, and shows in the pod list).
  */
-import { computed, onMounted, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { formatBytes } from '../sync-progress'
 import { usePanamaStore } from '../stores/panama'
 import { useImportsStore } from '../stores/imports'
 import { useUiStore } from '../stores/ui'
@@ -107,6 +115,31 @@ const use = (round) => {
   ui.importSource = 'folder'
   imports.makePlan(false)
 }
+
+// The download's bar and live file list, read from aws's and rclone's own output in the core, the same look as the Sync window.
+const fileList = ref(null)
+const TERMINAL = ['done', 'failed', 'cancelled']
+const showBar = computed(() => !!store.job && store.job.kind !== 'remove')
+const total = computed(() => store.job?.bytes_total || 0)
+const indeterminate = computed(() => !!store.job && !TERMINAL.includes(store.job.state) && (!total.value || ['creating', 'starting'].includes(store.job.state)))
+const barPct = computed(() => {
+  const j = store.job
+  if (!j) return 0
+  if (j.state === 'done' || indeterminate.value) return 100
+  return Math.min(100, Math.round((j.bytes_done / total.value) * 100))
+})
+const barMoving = computed(() => !!store.job && !TERMINAL.includes(store.job.state))
+const barVariant = computed(() => ({ failed: 'danger', done: 'success', cancelled: 'secondary' }[store.job?.state] || 'warning'))
+const detail = computed(() => {
+  const j = store.job
+  if (!j) return ''
+  const parts = [t('panama.files', { n: j.files })]
+  if (j.remaining != null) parts.push(t('panama.filesLeft', { n: j.remaining }))
+  if (j.bytes_done) parts.push(total.value ? t('panama.bytesOf', { done: formatBytes(j.bytes_done), total: formatBytes(total.value) }) : formatBytes(j.bytes_done))
+  if (j.rate && !TERMINAL.includes(j.state)) parts.push(`${formatBytes(j.rate)}/s`)
+  return parts.join(' · ')
+})
+watch(() => store.job?.recent?.length, async () => { await nextTick(); if (fileList.value) fileList.value.scrollTop = fileList.value.scrollHeight })   // the newest file in view, like the Sync window
 onMounted(async () => { await store.loadStatus(); store.reload() })
 watch(() => store.podAvailable, () => store.reload())
 </script>

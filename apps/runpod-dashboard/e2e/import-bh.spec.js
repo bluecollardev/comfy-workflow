@@ -113,4 +113,22 @@ test.describe('Import from BH', () => {
     await expect(row('brynley-comfy-2026-10-20').getByTestId('panama-pull')).toHaveText(t('panama.download'))
     await expect(row('brynley-comfy-2026-10-20').getByTestId('panama-delete')).toHaveCount(0)
   })
+
+  test('a download shows a progress bar and the files as they arrive, like the Sync window', async ({ page, api }) => {
+    api.state.panama = { configured: true, slow: true }
+    await page.goto('/')
+    await podCard(page, 'ComfyUI-Dev').getByTestId('pod-import').click()
+    const dialog = dialogOf(page)
+    await dialog.getByTestId('import-source-panama').click()
+    await dialog.locator('[data-testid="panama-round"][data-round="brynley-comfy-2026-10-23"]').getByTestId('panama-pull').click()
+    await expect(dialog.getByTestId('panama-bar')).toBeVisible()
+    await expect(dialog.getByTestId('panama-bar')).toHaveAttribute('data-indeterminate', 'false')   // aws told us the total, so it is a real fraction
+    await expect(dialog.getByTestId('panama-bar').locator('.progress-bar')).toHaveAttribute('style', /width:\s*33%/)
+    await expect(dialog.getByTestId('panama-progress-detail')).toContainText('2.9 GB of 8.8 GB')
+    await expect(dialog.getByTestId('panama-progress-detail')).toContainText('12 left')
+    await expect(dialog.getByTestId('panama-progress-detail')).toContainText('/s')
+    await expect(dialog.getByTestId('panama-file')).toHaveCount(3)
+    await expect(dialog.getByTestId('panama-files')).toContainText('cgi-042/final/cgi-042_main_final_v01.mp4')
+  })
 })
+

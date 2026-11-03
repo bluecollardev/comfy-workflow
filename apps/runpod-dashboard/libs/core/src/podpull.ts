@@ -166,13 +166,15 @@ export type JobState = 'creating' | 'starting' | 'pulling' | 'verifying' | 'dele
 export interface PodJob {
   id: string; round: string; kind: 'pull' | 'remove'; route: 'active' | 'temporary'; pod_id: string | null; pod_name: string | null
   state: JobState; files: number; lines: string[]; error?: string; verify?: panama.Verify; started_at: string
+  /** From rclone's stats line and its Copied lines, for the same bar and file list as a local download. */
+  bytes_done: number; bytes_total: number | null; rate: number | null; recent: string[]
 }
 interface Internal { job: PodJob; cancelled: boolean; abort: AbortController; wake: (() => void) | null; seen: Set<string>; bad: string[]; totals: { listed: number; bad: number; extra: number } | null; outcome: Outcome | null; plan: PodPlan }
 type Outcome = 'done' | 'check-failed' | 'unverified' | 'copy-failed' | 'removed' | 'refused'
 const jobs = new Map<string, Internal>()
 const busy = new Set<string>()   // rounds with a job in flight: one at a time
 const TERMINAL: JobState[] = ['done', 'failed', 'cancelled']
-const view = (i: Internal): PodJob => ({ ...i.job, lines: [...i.job.lines] })
+const view = (i: Internal): PodJob => ({ ...i.job, lines: [...i.job.lines], recent: [...i.job.recent] })
 
 // eslint-disable-next-line no-control-regex
 const stripAnsi = (s: string) => s.replace(/\u001b\[[0-9;]*m/g, '')
@@ -184,7 +186,11 @@ function feed(i: Internal, raw: string, secrets: string[]) {
   if (!line) return
   const j = i.job
   j.lines.push(line); if (j.lines.length > 200) j.lines.shift()
-  if (/: Copied \((new|replaced)\)/.test(line)) j.files++
+  const copied = panama.rcloneCopiedPath(line)
+  if (copied) { j.files++; j.recent.push(copied); if (j.recent.length > panama.RECENT_FILES) j.recent.shift() }
+  const st = panama.parseRcloneStats(line)
+  if (st) { j.bytes_done = st.bytes_done; j.bytes_total = st.bytes_total; j.rate = st.rate }
+  if (copied) { /* counted above */ }
   else if (/^s3 pull: .+ -> /.test(line) && !TERMINAL.includes(j.state)) j.state = 'pulling'
   else if (/\b100%,/.test(line) && j.state === 'pulling') j.state = 'verifying'
   const t = /(\d+) listed, (\d+) bad, (\d+) on disk but not listed/.exec(line)
@@ -249,7 +255,7 @@ export const runSsh: SshRunner = ({ host, port, script, onLine, signal }) => new
 const newJob = (round: string, kind: PodJob['kind'], p: PodPlan, now: Date): Internal => {
   // A pod job always has a route and a pod name from the start (the UI tells it from a local job by `route`, and shows the name at once): the user's pod on the active route,
   // the name the temporary pod will be created with on the other.
-  const job: PodJob = { id: `${kind}-${round}-${now.getTime()}`, round, kind, route: p.route, pod_id: p.route === 'active' ? p.pod!.id : null, pod_name: p.route === 'active' ? p.pod!.name : podName(round, now), state: 'creating', files: 0, lines: [], started_at: now.toISOString() }
+  const job: PodJob = { id: `${kind}-${round}-${now.getTime()}`, round, kind, route: p.route, pod_id: p.route === 'active' ? p.pod!.id : null, pod_name: p.route === 'active' ? p.pod!.name : podName(round, now), state: 'creating', files: 0, lines: [], started_at: now.toISOString(), bytes_done: 0, bytes_total: null, rate: null, recent: [] }
   const i: Internal = { job, cancelled: false, abort: new AbortController(), wake: null, seen: new Set(), bad: [], totals: null, outcome: null, plan: p }
   jobs.set(job.id, i)
   return i

@@ -97,6 +97,9 @@ shown only as their last four characters. With no keys the app falls back to an 
    all of it but not yet checked (**downloaded, not verified**), or all of it verified (green **downloaded**, button **Re-Download**).
 2. **Download** copies the round to `<ComfyUI-Shared>/temp/rounds/<round>` with `aws s3 sync`: read-only against the bucket, no deleting, and a stopped or
    cancelled download carries on from the files already there. **Cancel** is in the download card's header. A round is 9 to 39 GB; **Size** shows it first.
+   While it runs the card shows the same thing the Sync window does: a striped progress bar (a real fraction once `aws` has told us the total, otherwise it just moves), a line with
+   the files done and left, the bytes so far of the total, and the rate, and a live list of the files as they arrive with the newest in view. These are read from `aws s3 sync`'s own output;
+   a Pod download reads them from `rclone`'s stats and `Copied` lines in the pod's log.
 3. When the files are down, the app checks every one against the round's `MANIFEST.json` (size and sha256, the same check as BH's `verify_round.py`). A round that
    does not match, or has no file list, is not offered for import.
 4. **Import Package** hands the staged folder to the ordinary import: pick the adapter, read the plan, Dry run, Import. Only the files the adapter maps are copied

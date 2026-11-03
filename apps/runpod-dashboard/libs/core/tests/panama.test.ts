@@ -138,3 +138,20 @@ describe('panama.remove (Delete from this computer)', () => {
     delete process.env.PANAMA_ROUNDS_DIR
   })
 })
+
+describe('progress read from the tools\' own output', () => {
+  it('reads aws s3\'s progress line, with and without the listing still running', () => {
+    expect(panama.parseAwsProgress('Completed 1.2 GiB/9.5 GiB (45.2 MiB/s) with 12 file(s) remaining')).toEqual({ bytes_done: Math.round(1.2 * 1024 ** 3), bytes_total: Math.round(9.5 * 1024 ** 3), rate: Math.round(45.2 * 1024 ** 2), remaining: 12 })
+    expect(panama.parseAwsProgress('Completed 256.0 KiB/~2.0 MiB (1.2 MiB/s) with ~3 file(s) remaining (calculating...)')).toMatchObject({ bytes_done: 262144, bytes_total: 2 * 1024 ** 2, remaining: 3 })
+    expect(panama.parseAwsProgress('download: s3://b/rounds/r/a.txt to x/a.txt')).toBeNull()
+  })
+  it('reads rclone\'s one-line stats and the files it copied, and aws\'s downloaded files, as paths inside the round', () => {
+    expect(panama.parseRcloneStats('2026/11/03 05:54:10 INFO  :   609.227 KiB / 609.227 KiB, 100%, 53.696 KiB/s, ETA 0s')).toMatchObject({ bytes_done: Math.round(609.227 * 1024), bytes_total: Math.round(609.227 * 1024), rate: Math.round(53.696 * 1024) })
+    expect(panama.rcloneCopiedPath('2026/11/03 05:54:07 INFO  : 03_INBOX/nf-51/ASSETS.csv: Copied (new)')).toBe('03_INBOX/nf-51/ASSETS.csv')
+    expect(panama.rcloneCopiedPath('INFO  : a b/c.txt: Copied (replaced)')).toBe('a b/c.txt')
+    expect(panama.rcloneCopiedPath('s3 pull done (manifest verified): /workspace/x')).toBeNull()
+    expect(panama.awsDownloadedPath('download: s3://bh-panama-exchange-610140802195/rounds/brynley-comfy-2026-10-20/cgi-042/final/x.mp4 to ../r/cgi-042/final/x.mp4')).toBe('cgi-042/final/x.mp4')
+    expect(panama.awsDownloadedPath('Completed 1.0 MiB/2.0 MiB (1.0 MiB/s)')).toBeNull()
+  })
+})
+

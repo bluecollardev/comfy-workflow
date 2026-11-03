@@ -884,7 +884,9 @@
     "planTemporaryRemove": "Starts a pod ({gpu}, about ${price}/h) on {volume} named ComfyUI-Pull-…, deletes the folder, then is deleted. It shows in the pod list as temporary and stops by itself after {minutes} idle minutes.",
     "temporary": "temporary",
     "podOnYours": "on your pod {name}",
-    "cancelledNotePod": "Stopped. What was already pulled stays on the volume; Resume carries on from it. A temporary pod is deleted."
+    "cancelledNotePod": "Stopped. What was already pulled stays on the volume; Resume carries on from it. A temporary pod is deleted.",
+    "filesLeft": "{n} left",
+    "bytesOf": "{done} of {total}"
   },
   "remoteMcp": {
     "title": "Remote servers",
