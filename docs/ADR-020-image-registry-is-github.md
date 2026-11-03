@@ -42,3 +42,18 @@ RunPod account"), and the repo's origin is GitHub. On 2026-11-03 the S3 pull wor
 1. Decide how the workflow reaches the node packs (token for the submodule, and the ShotPipe staging).
 2. Add `.github/workflows/comfy-image.yml`; make `build.sh --remote` drive it.
 3. Build `contract-v26` there; point nothing else at GitLab; delete the GitLab project's registry tags when convenient.
+
+## Built, and what stopped it (2026-11-03)
+
+Built: `.github/workflows/comfy-image.yml` (push to `image/**`, or dispatch once it is on `develop`); `build.sh --remote [--wait]` now pushes
+an `image/<variant>-<time>` branch and follows the run by branch; a read-only deploy key on `bluecollardev/comfy-node-packs` and the repo
+secret `NODES_DEPLOY_KEY` give the runner the private node packs; the Dockerfile carries the `org.opencontainers.image.source` label.
+
+Stopped: **GitHub Actions does not start on `bluecollardev/comfy-workflow`.** Both the build and a one-line `echo hello` probe workflow end as
+`startup_failure` with no job and no annotation, so it is an account or repository setting, not the workflow. The organization is on the
+Free plan; the cause (spending limit or billing, an organization Actions policy, or Actions disabled for private repositories) needs an
+organization admin: Settings > Billing and Settings > Actions > General. `gh` here lacks the `admin:org` scope to read either. Until it
+starts, `--remote` fails at "no run" and the image can only reach `ghcr.io` by `--push` from a machine.
+
+Also still true: the existing `ghcr.io/bluecollardev/comfy-app` package was pushed from the Mac with a token, so it may not grant the
+repository's Actions write access; if the first run is refused, add the repository under the package's "Manage Actions access".
