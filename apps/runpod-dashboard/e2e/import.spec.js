@@ -9,6 +9,7 @@ const openImport = async (page, api, { mapped = true } = {}) => {
   if (mapped) api.state.mounts.config.folders['comfy-shared'] = '/Users/lucas/ComfyUI-Shared'
   await page.goto('/')
   await podCard(page, 'ComfyUI-Dev').getByTestId('pod-import').click()
+  await page.getByTestId('import-source-folder').click()   // the source picker is always first
   const dialog = modal(page, t('import.title'))
   await expect(dialog.getByTestId('import-pane')).toBeVisible()
   return dialog

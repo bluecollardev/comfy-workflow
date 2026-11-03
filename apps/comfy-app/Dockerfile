@@ -53,16 +53,20 @@ COPY .build/custom_nodes/ /opt/ComfyUI/custom_nodes/
 RUN for req in /opt/ComfyUI/custom_nodes/*/requirements.txt; do \
         [ -f "$req" ] && pip install -r "$req"; done; true
 
-# sshd (RunPod injects PUBLIC_KEY; the entrypoint starts it) and rsync, for ./start.sh sync onto the volume.
-RUN apt-get update && apt-get install -y --no-install-recommends openssh-server rsync \
+# sshd (RunPod injects PUBLIC_KEY; the entrypoint starts it) and rsync, for ./start.sh sync onto the volume;
+# rclone, for the pod to pull from an S3 bucket itself (S3_PULL in entrypoint.sh).
+RUN apt-get update && apt-get install -y --no-install-recommends openssh-server rsync rclone \
     && rm -rf /var/lib/apt/lists/*
 COPY docker/extra_model_paths.yaml /opt/comfy-app/extra_model_paths.yaml
 COPY workflows/ /opt/comfy-app/workflows/
 COPY docker/entrypoint.sh /opt/comfy-app/entrypoint.sh
-RUN chmod +x /opt/comfy-app/entrypoint.sh \
+COPY docker/verify_round.py /opt/comfy-app/verify_round.py
+COPY docker/s3pull.sh /opt/comfy-app/s3pull.sh
+RUN chmod +x /opt/comfy-app/entrypoint.sh /opt/comfy-app/verify_round.py /opt/comfy-app/s3pull.sh \
     && mkdir -p /home/binc/CANALV2_r3 \
     && ln -s /workspace/project /home/binc/CANALV2_r3/CANALV2
 
+LABEL org.opencontainers.image.source="https://github.com/bluecollardev/comfy-workflow"
 EXPOSE 8188
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
     CMD curl -fs "http://127.0.0.1:${COMFY_PORT}/system_stats" || exit 1

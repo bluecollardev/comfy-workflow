@@ -5,6 +5,8 @@
 #   COMFY_PORT    default 8188
 #   COMFY_ARGS    extra arguments for main.py, e.g. "--highvram"
 #   COMFY_LINKS   "path=target;..." symlinks to make binc-PC paths resolve on the volume (see below)
+#   S3_PULL       "bucket/prefix=/local/dir;..." pulled from S3 at start, in the background (see below)
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, S3_ENDPOINT   credentials for S3_PULL (endpoint only for non-AWS)
 # Anything passed to the container after the image name is appended too.
 set -euo pipefail
 SHARED="${COMFY_SHARED:-/workspace/comfy-shared}"
@@ -44,6 +46,11 @@ if [ -n "${PUBLIC_KEY:-}" ] && command -v sshd >/dev/null; then
   printf '%s\n' "$PUBLIC_KEY" > /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys
   ssh-keygen -A >/dev/null 2>&1 || true
   /usr/sbin/sshd -o PermitRootLogin=yes -o PasswordAuthentication=no && echo "sshd on 22 (for ./start.sh sync)"
+fi
+# S3_PULL: pull bucket prefixes onto the volume at start, in the background so ComfyUI is up while the bytes arrive. The work is docker/s3pull.sh
+# (/opt/comfy-app/s3pull.sh): what the variables are, the markers it leaves, and that it is also run over SSH on a pod that is already up (ADR-022).
+if [ -n "${S3_PULL:-}" ]; then
+  /opt/comfy-app/s3pull.sh &
 fi
 TREE="${PROJECT_ROOT:-/workspace/project}"
 [ -e "$TREE" ] || echo "note: $TREE is not present; corrosion graphs will not find the project tree" >&2

@@ -36,3 +36,7 @@ The S3 transport uses `aws s3 cp`, which has no such choice. Nothing is ever del
 - Existing saved configurations pick up the defaults for the new keys (`pull_shared`); `sync_parallel` stays as saved.
 - The CLI has `--shared`, `--skip-renders`, `--skip-tests` and `--existing`; the MCP `sync` tool has `shared`, `skip_renders`, `skip_tests` and `existing`. Defaults there are off (the app's switches default on), so a script says what it means.
 - Not run against a live pod: the flags and excludes were checked with real local rsync runs and the app in no-spend mode.
+
+## Update 2026-11-03: `temp/` is never carried
+
+A push of ComfyUI-Shared always excludes its top-level `/temp/` (scratch, and the staged Panama rounds in `temp/rounds/`), whatever folders are chosen. It is not one of the choosable folders. See ADR-021.

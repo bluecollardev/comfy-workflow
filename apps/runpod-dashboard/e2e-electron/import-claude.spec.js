@@ -66,6 +66,7 @@ test.describe('The Anthropic key, over IPC', () => {
   test('with no key the Studio still opens and lets you type; Send says why it is off and the way to the key is one click', async () => {
     const { page } = ctx
     await podCard(page, 'ComfyUI-Claude').getByTestId('pod-import').click()
+    await page.getByTestId('import-source-folder').click()   // the source picker is always first
     const dialog = page.locator('.modal.show', { hasText: t('import.title') })
     await dialog.getByTestId('import-claude').click()                                       // the same modal as Edit and New adapter
     const studio = page.getByTestId('studio')
@@ -114,6 +115,7 @@ test.describe('The Anthropic key, over IPC', () => {
   test('attaching a folder has Claude describe it, with the key; the media is not sent', async () => {
     const { page } = ctx
     await podCard(page, 'ComfyUI-Claude').getByTestId('pod-import').click()
+    await page.getByTestId('import-source-folder').click()   // the source picker is always first
     const dialog = page.locator('.modal.show', { hasText: t('import.title') })
     await expect(dialog.getByTestId('import-claude-ready')).toContainText('••••' + KEY.slice(-4))
     await dialog.getByTestId('import-folder').fill(pkg)

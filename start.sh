@@ -11,7 +11,7 @@
 #   ./start.sh import <folder> [--adapter ID] [--dry-run]   a package folder into ComfyUI-Shared through an adapter (docs/ADR-008)
 #   ./start.sh mcp            the MCP server over stdio (what Claude Code launches)
 #   ./start.sh e2e | e2e-app | e2e-live | core-test | smoke   browser suite; the app in no-spend mode; the live RunPod proof (spends); core suite; headless boot
-#   ./start.sh comfy-image [--remote --wait] [--push <ref>]   build the ComfyUI server image (on GitLab CI with --remote)
+#   ./start.sh comfy-image [--remote --wait] [--push <ref>]   build the ComfyUI server image (on GitHub Actions with --remote)
 #   ./start.sh package [mac|win|linux|all] [--comfy <variant>] [--image <ref>]  build the app installers for a comfy-app variant
 #   ./start.sh release patch|minor|major|X.Y.Z [--dry-run] [--no-publish]   version, build the DMG, tag, publish to the downloads repo (docs/ADR-012)
 #   ./start.sh test           the merge gate: core, IPC table, browser suite, the app in no-spend mode
@@ -108,7 +108,7 @@ case "${1:-help}" in
     shift; load_env; ensure_app; ensure_ui; cd "$APP"
     RUNPOD_MANAGER_SMOKE=1 exec npx electron . ;;
   comfy-image)
-    # build the ComfyUI server image (apps/comfy-app/build.sh): --remote --wait on GitLab CI, --push <ref> from here
+    # build the ComfyUI server image (apps/comfy-app/build.sh): --remote --wait on GitHub Actions, --push <ref> from here
     shift; cd apps/comfy-app; exec ./build.sh "$@" ;;
   package)
     # ./start.sh package [mac|win|linux|all] [--comfy <set-or-tag>] [--image <registry ref>]

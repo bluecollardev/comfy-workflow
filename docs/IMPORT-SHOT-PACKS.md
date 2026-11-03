@@ -82,3 +82,37 @@ fixes what fails. Claude writes adapters and their prompts and nothing else. Det
 - A Drive part imported alone cannot hash-check shots whose manifest is in another part.
 - Only the `panama-imax-redux` format has a hand-written adapter; Binc's CANALV2 is read in
   place, not imported.
+
+## Import from the BH library (the Panama S3 bucket)
+
+Added 2026-11-03 (`docs/ADR-016`, `ADR-021`). The pod card has one **Import Shot Pack** button. It always opens on a source picker first:
+**Zip or folder on this PC** (everything above) or **Panama S3 bucket**. Until the bucket is set up the Panama card is disabled, with a link to Default Configuration.
+Every screen after the picker has a **Change source** link back to it.
+
+**Set up once.** The bucket, region and AWS-profile fields in Default Configuration > Panama bucket (BH) come prefilled with the built-in defaults (`bh-panama-exchange-610140802195`, `us-west-2`, `panama`); each has a reset button, and a value equal to its default is not stored. Default Configuration > Panama bucket (BH): the read-only access key ID and secret BH issued. They are kept in the app's settings file,
+shown only as their last four characters. With no keys the app falls back to an AWS profile named `panama`. Without either, the Panama card stays disabled and the folder or zip import works as before.
+
+**Use.**
+1. The list shows each round in the bucket and what is on this PC: nothing (**Download**), part of it (**partial: 391 of 1,283 files**, button **Resume**),
+   all of it but not yet checked (**downloaded, not verified**), or all of it verified (green **downloaded**, button **Re-Download**).
+2. **Download** copies the round to `<ComfyUI-Shared>/temp/rounds/<round>` with `aws s3 sync`: read-only against the bucket, no deleting, and a stopped or
+   cancelled download carries on from the files already there. **Cancel** is in the download card's header. A round is 9 to 39 GB; **Size** shows it first.
+   While it runs the card shows the same thing the Sync window does: a striped progress bar (a real fraction once `aws` has told us the total, otherwise it just moves), a line with
+   the files done and left, the bytes so far of the total, and the rate, and a live list of the files as they arrive with the newest in view. These are read from `aws s3 sync`'s own output;
+   a Pod download reads them from `rclone`'s stats and `Copied` lines in the pod's log.
+3. When the files are down, the app checks every one against the round's `MANIFEST.json` (size and sha256, the same check as BH's `verify_round.py`). A round that
+   does not match, or has no file list, is not offered for import.
+4. **Import Package** hands the staged folder to the ordinary import: pick the adapter, read the plan, Dry run, Import. Only the files the adapter maps are copied
+   into `input/` and `workflows/`; the rest stays in `temp/rounds`.
+
+5. **Delete** (on any round with something on disk, including a partial one) removes its copy from this computer to free space. Each row shows what the round takes on
+   disk; Delete asks first and names the size. It touches only `temp/rounds/<round>` on this PC: never the bucket, a pod, or ComfyUI-Shared's `input/` and `workflows/`, where
+   an import already copied files. It is refused while that round is downloading (Cancel first), and for any name that is not a single folder inside the staging folder.
+
+**Pod mode (built in the UI, gated).** The pane has a **Local | Pod** switch (docs/ADR-022). Local is everything above. Pod stages the round **on the network volume** at `/workspace/comfy-shared/temp/rounds/<round>`, pulled by a pod straight from the bucket, so nothing comes through this PC.
+The same rows, badges, Download / Resume / Re-Download and Delete apply, acting on the volume; because the state of the volume can only be read by a pod, the rows show what was **last seen** and say when ("as of ..."). Starting a Pod download or a Pod delete first shows what it would do and what it costs: on a pod of yours that is already running (no new pod), or a short-lived pod on the volume
+(its card in the pod list is tagged temporary, it is deleted when the job ends, and the idle timer stops it if the job dies). Cancel sits in the job card's header. There is no Import Package in Pod mode yet; import runs from Local. **Pod is switched off until the core reports that it is available** (`status().pod.available`; the core side is built separately), and its tooltip then gives the reason, so nothing in the real app starts a pod yet.
+
+**Where things are.** Staged rounds are in `temp/rounds/` inside the mapped ComfyUI-Shared. A Sync never carries `temp/`. `PANAMA_ROUNDS_DIR` in the settings file moves
+the staging folder. Not every entry in the bucket is an import package (the inbox round holds text entries only).
+

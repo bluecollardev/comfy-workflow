@@ -65,3 +65,6 @@ apps/runpod-dashboard/dist-electron/
 # The ComfyUI install is apps/comfy-app/ (ignored by apps/comfy-app/.gitignore).
 projects/*
 !projects/README.md
+
+# Panama exchange bucket credentials: never commit
+docs/panama-*-aws.txt

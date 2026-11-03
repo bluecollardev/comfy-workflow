@@ -60,6 +60,7 @@ test.describe('Adapter Studio: the same modal from every door', () => {
     withKey(api)
     await page.goto('/')
     await podCard(page, 'ComfyUI-Dev').getByTestId('pod-import').click()
+    await page.getByTestId('import-source-folder').click()   // the source picker is always first
     const dialog = modal(page, t('import.title'))
     await dialog.getByTestId('import-folder').fill(PKG)
     await dialog.getByTestId('import-claude').click()
@@ -75,6 +76,7 @@ test.describe('Adapter Studio: the same modal from every door', () => {
   test('so is Edit on an adapter in Import Shot Pack, with the folder attached', async ({ page }) => {
     await page.goto('/')
     await podCard(page, 'ComfyUI-Dev').getByTestId('pod-import').click()
+    await page.getByTestId('import-source-folder').click()   // the source picker is always first
     const dialog = modal(page, t('import.title'))
     await dialog.getByTestId('import-folder').fill(PKG)
     await dialog.locator('[data-testid="import-adapter-row"][data-id="panama-imax-redux"]').getByTestId('import-adapter-edit').click()

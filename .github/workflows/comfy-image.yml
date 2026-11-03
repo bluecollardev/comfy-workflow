@@ -1,0 +1,46 @@
+# Builds the ComfyUI server image (apps/comfy-app) on a GitHub runner and pushes it to ghcr.io (ADR-020).
+# Triggered by apps/comfy-app/build.sh --remote, which pushes a branch named image/<variant>-<YYYYMMDD-HHMMSS>
+# (a push trigger works from any branch; workflow_dispatch only from the default one), or by hand with a variant.
+# The node packs are Binc's and private: the shared/nodes submodule is read with a read-only deploy key (secret NODES_DEPLOY_KEY).
+name: comfy-image
+on:
+  push:
+    branches: ['image/**']
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: ShotPipe set or versions (see shared/nodes/sets.json)
+        default: contract-v26
+permissions:
+  contents: read
+  packages: write
+concurrency:
+  group: comfy-image-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Variant
+        id: v
+        run: |
+          if [ -n "${{ github.event.inputs.variant }}" ]; then V="${{ github.event.inputs.variant }}"
+          else V="$(echo "$GITHUB_REF_NAME" | sed -E 's#^image/(.*)-[0-9]{8}-[0-9]{6}$#\1#')"; fi
+          echo "variant=$V" >> "$GITHUB_OUTPUT"; echo "variant: $V"
+      - name: Node packs (private submodule, read-only deploy key)
+        env:
+          KEY: ${{ secrets.NODES_DEPLOY_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_nodes && chmod 600 ~/.ssh/id_nodes
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          GIT_SSH_COMMAND='ssh -i ~/.ssh/id_nodes -o IdentitiesOnly=yes' git submodule update --init --depth 1 shared/nodes
+          rm -f ~/.ssh/id_nodes
+      - name: Free disk (the torch layers are large)
+        run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL && df -h / | tail -1
+      - name: Log in to ghcr.io
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Build and push
+        run: apps/comfy-app/build.sh --shotpipe "${{ steps.v.outputs.variant }}" --push "ghcr.io/bluecollardev/comfy-app:${{ steps.v.outputs.variant }}"

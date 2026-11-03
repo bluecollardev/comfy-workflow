@@ -15,6 +15,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync,
 import { basename, dirname, join, resolve } from 'node:path'
 import { bad, CoreError } from './errors.js'
 import { mirrorDir, mountsFile } from './paths.js'
+import * as settings from './settings.js'
 import { folderShapes, shape } from './shape.js'
 
 /** The ComfyUI-Shared subfolders a push can carry, in the order the panel shows them; and what carries by default: not `output`, which pods write and a push of it only sends the PC's own old renders up. */
@@ -354,6 +355,12 @@ export function podOverrides(cfg: MountsConfig): PodOverrides {
   const env = { ...podEnv(cfg), ...cfg.env }
   const links = allLinks(cfg)
   if (links.length) env.COMFY_LINKS = linksEnv(links)
+  // S3_PULL (the image pulls from a bucket at start, ADR-015): give the pod the Panama keys the app holds, so nothing is typed twice.
+  // They sit in the pod's environment on RunPod; a read-only key (the panama-pod one) is the point.
+  if (env.S3_PULL?.trim() && !env.AWS_ACCESS_KEY_ID) {
+    const id = settings.lookup('PANAMA_AWS_ACCESS_KEY_ID'), secret = settings.lookup('PANAMA_AWS_SECRET_ACCESS_KEY')
+    if (id && secret) { env.AWS_ACCESS_KEY_ID = id; env.AWS_SECRET_ACCESS_KEY = secret; env.AWS_REGION ||= settings.lookup('PANAMA_S3_REGION') || 'us-west-2' }
+  }
   const out: PodOverrides = { env }
   if (cfg.network_volume_id) { out.network_volume_id = cfg.network_volume_id; out.volume_mount_path = cfg.mount_path || '/workspace' }
   if (cfg.data_center_id) out.data_center_id = cfg.data_center_id

@@ -139,6 +139,13 @@ The transport rule, in `libs/core/src/syncrun.ts`:
 Push: project, comfy-shared, workflows, and plates only with a named yes. Pull: comfy-shared
 output and each shot's `06_REVIEW` and `07_DELIVER`. Pressed, never automatic.
 
+## Verified so far (2026-11-03)
+
+RunPod's S3 page states the API manages a volume "without launching a Pod". Not yet
+run here: our volume is in Montreal, which is not an S3 datacenter, so the no-pod
+path is documented, not proven. The copy runs on the Mac (its uplink is the
+limit); for data already in a bucket the pod pulls instead (ADR-015).
+
 ## Decision
 
 Open on the hub (C, E, G as the home of the data). To be filled in when Lucas decides; until then the script and the

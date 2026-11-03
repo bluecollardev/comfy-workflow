@@ -19,6 +19,9 @@ export const repositoriesFile = () => process.env.REPOSITORIES_FILE || join(conf
 export const adaptersDir = () => process.env.POD_MANAGER_ADAPTERS_DIR || join(configDir(), 'adapters')      // yours: *.mjs, hot-loaded (docs/ADR-008)
 export const importsDir = () => process.env.POD_MANAGER_IMPORTS_DIR || join(configDir(), 'imports')         // one record per applied import
 export const dockerfilePath = () => process.env.DOCKERFILE_PATH || join(REPO_ROOT, 'apps', 'comfy-app', 'Dockerfile')
+/** Scratch space inside ComfyUI-Shared (`temp/`); downloaded delivery rounds are staged in `temp/rounds/<round>` (docs/ADR-016). Never pushed to a pod: a round is 9 to 39 GB. */
+export const SHARED_TEMP = 'temp'
+export const STAGED_ROUNDS = 'temp/rounds'
 export const mirrorDir = () => resolve(REPO_ROOT, 'projects', 'desktop')   // Binc's mirror, read-only by rule
 
 export function shapeFile(): string | null {

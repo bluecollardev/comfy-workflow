@@ -37,6 +37,7 @@ export async function launchApp({ dry = true, live = false, env: extra = {} } = 
   }
   if (dry) env.RUNPOD_DRY_RUN = '1'; else delete env.RUNPOD_DRY_RUN
   if (!live) delete env.RUNPOD_API_KEY
+  env.PANAMA_S3_PROFILE ||= 'no-such-profile-for-tests'   // this PC's real AWS profile 'panama' must not turn the BH source on in a spec (docs/ADR-016)
   const app = await electron.launch({ args: ['.', `--user-data-dir=${join(configDir, 'profile')}`], cwd: APP, env })   // its own profile: what the real app remembers (the Studio's view, wrap) must not reach a spec
   const page = await app.firstWindow()
   await page.waitForLoadState('domcontentloaded')

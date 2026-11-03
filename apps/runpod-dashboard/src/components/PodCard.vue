@@ -95,8 +95,8 @@
         <i class="fa-solid fa-scroll me-1"></i>{{ $t('pod.logs') }}
       </BButton>
     </div>
-    <div class="mb-2">
-      <BButton variant="primary" size="sm" class="w-100 text-nowrap" :title="$t('pod.importShotPackTitle')" data-testid="pod-import" @click="openImport">
+    <div class="mb-2 d-flex gap-1">
+      <BButton variant="primary" size="sm" class="flex-grow-1 text-nowrap" :title="$t('pod.importShotPackTitle')" data-testid="pod-import" @click="openImport">
         <i class="fa-solid fa-file-import me-1"></i>{{ $t('pod.importShotPack') }}
       </BButton>
     </div>
@@ -172,7 +172,7 @@
  *   stop, resume, delete  — delete only fires after the user confirms
  */
 import { t } from '../i18n'
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import PodLogs from './PodLogs.vue'
 import SyncModal from './SyncModal.vue'
 import DockerfileModal from './DockerfileModal.vue'
@@ -223,6 +223,7 @@ const showLogs = ref(false)
 const showSync = ref(false)
 const ui = useUiStore()
 /** Import Shot Pack: its own modal (a package folder into ComfyUI-Shared through an adapter; Sync then puts it on this pod, ADR-008). */
+/** One button: the modal opens on the source picker (a folder or zip on this PC, or the Panama bucket). */
 const openImport = () => { ui.importPod = { id: props.pod.id, name: props.pod.name }; ui.importOpen = true }
 const showDockerfile = ref(false)
 const shortImage = (ref) => ref.replace(/^registry\.gitlab\.com\/[^/]+\/[^/]+\//, '')
