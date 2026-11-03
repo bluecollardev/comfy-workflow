@@ -6,7 +6,7 @@
 // decides anything the core does not; the plans and the commands it runs are built and tested in
 // libs/core/src/sync.ts. Build the core first (`npm run core:build`); `npm run cli -- <args>`.
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -316,7 +316,7 @@ const HELP = `usage: npm run cli -- <command> [options]   (./start.sh pod|sync|p
   pull --pod ID | --s3 [--volume ID]  [--only output,review,deliver] [--shot NAME]... [--dry-run]
   import <folder> [--adapter ID] [--to DIR] [--dry-run] [--overwrite]   a package folder into ComfyUI-Shared; --list | --show ID
 
-  config export [FILE]                         the Default Configuration as a JSON file (stdout with no FILE or -); never contains keys or tokens
+  config export [FILE] [--no-secrets]          the Default Configuration as a JSON file (stdout with no FILE or -), keys and tokens included unless --no-secrets
   config import FILE [--sections a,b] [--dry-run]   preview a file's sections and write the ticked ones (all that change, except Folders, by default)
   config undo                                  put the configuration back as it was before the last import
 
@@ -327,12 +327,16 @@ async function configCmd(core, argv) {
   const [sub, ...rest] = argv
   const io = core.configio
   if (sub === 'export') {
-    const f = rest[0]
-    if (f?.startsWith('--')) fail('config export: give a file name, or nothing for stdout')
-    const text = JSON.stringify(io.exportConfig(), null, 2) + '\n'
+    const flags = rest.filter((a) => a.startsWith('--')), f = rest.find((a) => !a.startsWith('--'))
+    const bogus = flags.find((a) => a !== '--no-secrets')
+    if (bogus) fail(`config export: unknown option ${bogus}\nusage: config export [FILE] [--no-secrets]`)
+    const withSecrets = !flags.includes('--no-secrets')
+    const text = JSON.stringify(io.exportConfig({ includeSecrets: withSecrets }), null, 2) + '\n'
+    if (withSecrets) console.error('warning: the file contains your keys and tokens in plain text. Keep it private; anyone with it can use your RunPod account and buckets. (--no-secrets leaves them out)')
     if (!f || f === '-') { process.stdout.write(text); return 0 }
-    writeFileSync(f, text)
-    console.error(`wrote ${f} (no keys or tokens in it)`)
+    writeFileSync(f, text, { mode: 0o600 })
+    chmodSync(f, 0o600)   // the mode option only applies to a new file
+    console.error(`wrote ${f} (mode 0600${withSecrets ? ', with keys and tokens' : ', no keys or tokens'})`)
     return 0
   }
   if (sub === 'import') {
@@ -346,12 +350,15 @@ async function configCmd(core, argv) {
     for (const e of plan.errors) console.error(`error: ${e}`)
     if (!plan.ok) return 1
     for (const w of plan.warnings) console.log(`warning: ${w}`)
-    if (plan.source.secrets_set.length) console.log(`note: keys are never in the file; these were set where it was exported, enter them again: ${plan.source.secrets_set.join(', ')}`)
+    if (!plan.source.secrets_included && plan.source.secrets_set.length) console.log(`note: this file has no keys or tokens; these were set where it was exported, enter them yourself: ${plan.source.secrets_set.join(', ')}`)
     const wanted = o.sections ? [...csv(o.sections)] : plan.sections.filter((s) => s.default_checked).map((s) => s.key)
-    for (const s of plan.sections) console.log(`  [${wanted.includes(s.key) ? 'x' : ' '}] ${s.key.padEnd(13)} ${s.changed ? 'changes' : 'same   '}  ${s.label}${s.machine_specific ? '  (paths from another machine)' : ''}${s.account_specific ? '  (ids from another RunPod account)' : ''}${s.error ? `  ERROR: ${s.error}` : ''}`)
+    for (const s of plan.sections) {
+      console.log(`  [${wanted.includes(s.key) ? 'x' : ' '}] ${s.key.padEnd(13)} ${s.changed ? 'changes' : 'same   '}  ${s.label}${s.machine_specific ? '  (paths from another machine)' : ''}${s.account_specific ? '  (ids from another RunPod account)' : ''}${s.error ? `  ERROR: ${s.error}` : ''}`)
+      for (const i of s.items ?? []) console.log(`        ${i.name} ${i.error ? `NOT IMPORTED: ${i.error}` : `${i.hint}${i.changed ? '' : ' (same)'}`}`)   // names and last four characters only
+    }
     if (o['dry-run']) { console.log('dry run: nothing written'); return 0 }
     const r = io.applyImport(obj, { sections: wanted })
-    console.log(`imported ${r.applied.join(', ')}; the configuration before is saved in ${r.backup} (config undo puts it back)`)
+    console.log(`imported ${r.applied.join(', ')}${r.skipped?.length ? `; not imported (malformed): ${r.skipped.join(', ')}` : ''}; the configuration and keys before are saved in ${r.backup} (config undo puts them back)`)
     return 0
   }
   if (sub === 'undo') { const r = io.undoImport(); console.log(`restored ${r.restored}`); return 0 }

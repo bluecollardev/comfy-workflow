@@ -19,7 +19,7 @@ Each script also carries its own header comment; this page is the map. Add a row
 | `sync --pod <id>` / `--s3` | the CLI's sync: the mapped folders onto the volume, never deleting; `--s3` through RunPod's S3 API with no pod | Mac to RunPod | **leaves the PC**; `--plates` needs a named yes |
 | `pull --pod <id>` / `--s3` | renders back down (`comfy-shared/output`, the shots' review and deliver folders) | RunPod to Mac | no |
 | `import <folder> [--adapter ID] [--dry-run]` | a package folder into ComfyUI-Shared through an adapter (ADR-008) | Mac | no; writes only into ComfyUI-Shared |
-| `config export [file]` / `import <file> [--sections a,b] [--dry-run]` / `undo` | `cli/index.mjs config ...`: the Default Configuration as a JSON file with no keys in it; import previews every section and writes the ticked ones after a backup (ADR-023) | Mac | no; writes `mounts.json`, and the exchange-bucket fields in the settings file |
+| `config export [file] [--no-secrets]` / `import <file> [--sections a,b] [--dry-run]` / `undo` | `cli/index.mjs config ...`: the Default Configuration as a JSON file, **keys and tokens included unless `--no-secrets`** (warning on stderr, file written 0600); import previews every section (keys by last four characters only) and writes the ticked ones after a backup of the configuration and keys (ADR-023) | Mac | no; writes `mounts.json`, the settings file and `git_accounts.json` |
 | `mcp` | `mcp/server.mjs` over stdio, the pod manager for Claude Code | Mac | tools that spend need `approved_by` |
 | `test` | the merge gate: core suite, IPC table, browser suite, the app in no-spend mode | Mac | no |
 | `core-test`, `e2e`, `e2e-app`, `smoke` | the parts of the gate on their own; `smoke` boots the app headless | Mac | no |

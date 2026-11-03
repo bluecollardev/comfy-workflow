@@ -9,7 +9,12 @@
         <BButton v-if="canUndo" size="sm" variant="outline-warning" class="text-nowrap" :disabled="busy" :title="$t('configio.undoHint')" data-testid="cfg-io-undo" @click="undo"><i class="fa-solid fa-rotate-left me-1"></i>{{ $t('configio.undo') }}</BButton>
         <input ref="fileInput" type="file" accept=".json,application/json" class="d-none" data-testid="cfg-io-file" @change="onFile" />
       </div>
-      <div class="text-body-secondary mt-1" data-testid="cfg-io-excluded"><i class="fa-solid fa-shield-halved me-1"></i>{{ $t('configio.excluded') }}</div>
+      <div class="d-flex align-items-start gap-3 flex-wrap mt-1" data-testid="cfg-io-secrets-option">
+        <BFormCheckbox :model-value="includeSecrets" class="text-nowrap" data-testid="cfg-io-include-secrets" @update:model-value="includeSecrets = $event === true">{{ $t('configio.includeSecrets') }}</BFormCheckbox>
+        <div v-if="includeSecrets" class="text-danger fw-semibold flex-grow-1" data-testid="cfg-io-secrets-warning"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ $t('configio.secretsWarning') }}</div>
+        <div v-else class="text-body-secondary flex-grow-1" data-testid="cfg-io-secrets-off"><i class="fa-solid fa-shield-halved me-1"></i>{{ $t('configio.secretsOff') }}</div>
+      </div>
+      <div class="text-body-secondary mt-1" data-testid="cfg-io-excluded">{{ $t('configio.excluded') }}</div>
 
       <BAlert v-if="error" :model-value="true" variant="danger" dismissible class="mt-2 mb-0 py-2" data-testid="cfg-io-error" @update:model-value="error = null">{{ error }}</BAlert>
       <BAlert v-if="note" :model-value="true" variant="success" dismissible class="mt-2 mb-0 py-2" data-testid="cfg-io-done" @update:model-value="note = null">{{ note }}</BAlert>
@@ -22,7 +27,7 @@
         <template v-else>
           <div class="text-body-secondary mb-1" data-testid="cfg-io-source">{{ $t('configio.from', { name: fileName, version: plan.source.app_version || '?', when: plan.source.exported_at ? plan.source.exported_at.slice(0, 10) : '?' }) }}</div>
           <div v-for="(w, n) in plan.warnings" :key="`w${n}`" class="text-warning" data-testid="cfg-io-warning"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ w }}</div>
-          <div v-if="plan.source.secrets_set.length" class="text-body-secondary" data-testid="cfg-io-secrets"><i class="fa-solid fa-key me-1"></i>{{ $t('configio.secrets', { names: plan.source.secrets_set.join(', ') }) }}</div>
+          <div v-if="!plan.source.secrets_included && plan.source.secrets_set.length" class="text-body-secondary" data-testid="cfg-io-secrets"><i class="fa-solid fa-key me-1"></i>{{ $t('configio.secretsNone', { names: plan.source.secrets_set.join(', ') }) }}</div>
           <div v-for="s in plan.sections" :key="s.key" class="border-top py-2" :data-testid="`cfg-io-row-${s.key}`">
             <div class="d-flex align-items-center gap-2 flex-wrap">
               <BFormCheckbox :model-value="picked.has(s.key)" :disabled="!!s.error" :data-testid="`cfg-io-section-${s.key}`" @update:model-value="toggle(s.key, $event)">{{ s.label }}</BFormCheckbox>
@@ -30,9 +35,17 @@
               <BBadge v-if="s.machine_specific" variant="warning" class="fw-normal" data-testid="cfg-io-machine-flag">{{ $t('configio.machine') }}</BBadge>
               <BBadge v-if="s.account_specific" variant="secondary" class="fw-normal" data-testid="cfg-io-account-flag">{{ $t('configio.account') }}</BBadge>
             </div>
+            <div v-if="s.items?.length" class="ms-4 font-monospace" :data-testid="`cfg-io-items-${s.key}`">
+              <div v-for="i in s.items" :key="i.name" :class="i.error ? 'text-danger' : ''" data-testid="cfg-io-secret-item" :data-name="i.name">
+                <i :class="i.error ? 'fa-solid fa-circle-xmark me-1' : 'fa-solid fa-key me-1 text-body-secondary'"></i>{{ i.name }}
+                <span v-if="!i.error" class="text-body-secondary" data-testid="cfg-io-secret-hint">{{ i.hint }}</span>
+                <BBadge v-if="!i.error" :variant="i.changed ? 'info' : 'secondary'" class="fw-normal ms-1">{{ i.changed ? $t('configio.changed') : $t('configio.same') }}</BBadge>
+                <span v-else class="ms-1" data-testid="cfg-io-secret-error">{{ i.error }}</span>
+              </div>
+            </div>
             <div v-if="s.error" class="text-danger ms-4" :data-testid="`cfg-io-error-${s.key}`">{{ s.error }}</div>
             <div v-else-if="s.note" class="text-body-secondary ms-4">{{ s.note }}</div>
-            <details v-if="s.changed" class="ms-4">
+            <details v-if="s.changed && s.key !== 'secrets'" class="ms-4">
               <summary class="text-body-secondary">{{ $t('configio.diff') }}</summary>
               <BRow class="g-2"><BCol md="6"><div class="text-body-secondary">{{ $t('configio.now') }}</div><pre class="mb-0 small bg-body-tertiary rounded p-2">{{ show(s.current) }}</pre></BCol>
                 <BCol md="6"><div class="text-body-secondary">{{ $t('configio.file') }}</div><pre class="mb-0 small bg-body-tertiary rounded p-2" :data-testid="`cfg-io-incoming-${s.key}`">{{ show(s.incoming) }}</pre></BCol></BRow>
@@ -53,7 +66,7 @@
 /**
  * ConfigIoPanel — export and import of the Default Configuration as one JSON file (docs/ADR-023). Export saves it with the native Save dialog; Import opens the
  * native Open dialog, asks the core to PLAN the import (nothing is written), shows each section the file carries with what changes, and writes only the sections
- * that are ticked, after a backup, with an Undo. Keys and tokens are never in the file. Without Electron (a browser) the file is a download and an <input type=file>.
+ * that are ticked, after a backup, with an Undo. The file carries the keys and tokens unless 'Include keys and tokens' is unticked; the preview shows each only by its last four characters. Without Electron (a browser) the file is a download and an <input type=file>.
  */
 import { onMounted, ref } from 'vue'
 import { configioAPI, hasNativeFiles, openTextFile, saveTextFile } from '../api/configio'
@@ -70,6 +83,7 @@ const plan = ref(null)
 const file = ref(null)          // the parsed file, held to send back on Apply
 const fileName = ref('')
 const picked = ref(new Set())
+const includeSecrets = ref(true)   // keys and tokens go into the file unless this is unticked (ADR-023)
 const canUndo = ref(false)
 const fileInput = ref(null)
 const root = ref(null)
@@ -81,9 +95,9 @@ const refreshUndo = async () => { try { canUndo.value = (await configioAPI.backu
 async function doExport() {
   error.value = null; note.value = null; busy.value = true
   try {
-    const data = await configioAPI.export()
+    const data = await configioAPI.export(includeSecrets.value === true)   // an explicit boolean: unticked must never read as "not given"
     const r = await saveTextFile(await configioAPI.suggestedName(), JSON.stringify(data, null, 2) + '\n')
-    if (r && !r.canceled) toast.success(t('configio.saved', { where: r.path }))
+    if (r && !r.canceled) toast.success(t(includeSecrets.value ? 'configio.savedWithKeys' : 'configio.saved', { where: r.path }))
   } catch (e) { error.value = errorText(e) } finally { busy.value = false }
 }
 
@@ -118,7 +132,7 @@ async function apply() {
   busy.value = true; error.value = null
   try {
     const r = await configioAPI.apply(file.value, [...picked.value])
-    note.value = t('configio.applied', { n: r.applied.length, sections: r.applied.join(', ') })
+    note.value = t('configio.applied', { n: r.applied.length, sections: r.applied.join(', ') }) + (r.skipped?.length ? ' ' + t('configio.skipped', { names: r.skipped.join(', ') }) : '')
     plan.value = null; file.value = null
     await refreshUndo()
     emit('applied', r)

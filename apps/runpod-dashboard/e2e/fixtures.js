@@ -236,46 +236,75 @@ export async function mockApi(page, state) {
     if (method === 'DELETE' && path === '/mounts') { state.mounts.config = defaultState().mounts.config; state.mounts.stored = false; return json(mountsPayload(state)) }
     // Export and import of the Default Configuration (docs/ADR-023): the same sections as the core, simply computed.
     if (path.startsWith('/configio/')) {
-      const cio = (state.configio ||= { backups: [], applied: [], plans: 0, exports: 0, undone: 0 })
+      // `secrets`/`git` are the keys and tokens this fake PC holds; a backup keeps them, an Undo puts them back (docs/ADR-023)
+      const cio = (state.configio ||= { backups: [], applied: [], plans: 0, exports: 0, undone: 0, exportSecrets: [], secrets: { RUNPOD_API_KEY: 'rpa_CURRENT_PC_KEY_VALUE_0000', ANTHROPIC_API_KEY: 'sk-ant-CURRENT-PC-KEY-0000000000' }, git: [{ id: 'gh-1', provider: 'github', host: 'github.com', username: 'octo', token: 'ghp_CURRENT_PC_TOKEN_0000' }], secretsApplied: [], skipped: [] })
+      const MIN = { RUNPOD_API_KEY: 16, ANTHROPIC_API_KEY: 20, PANAMA_CONSOLE_KEY: 8 }
+      const last4 = (v) => (v.length >= 8 ? `••••${v.slice(-4)}` : '••••')
+      const looksSecret = (n) => /(SECRET|TOKEN|PASSW|CREDENTIAL|PRIVATE|AUTH|API[_-]?KEY|ACCESS[_-]?KEY|(^|_)KEY($|_))/i.test(n)
+      const maskEnv = (e) => Object.fromEntries(Object.entries(e || {}).map(([k, v]) => [k, looksSecret(k) ? last4(String(v)) : v]))
       const SEC = { volume: ['Volume and datacenter', ['network_volume_id', 'mount_path', 'data_center_id'], { account: true }], image: ['Image and registry login', ['image', 'registry_auth_id'], { account: true }], env: ['Environment', ['env'], {}], pod_defaults: ['Pod defaults', ['idle_stop_minutes', 'sync_parallel', 'sync_shared', 'pull_shared', 'apply_by_default', 'required', 'links'], {}], mcp: ['MCP servers', ['mcp_http'], {}], folders: ['Folders', ['folders', 'custom'], { machine: true }] }
       const DEF = { bucket: 'bh-panama-exchange-610140802195', region: 'us-west-2', profile: 'panama' }
       const panamaNow = () => ({ bucket: state.settings.panama_bucket || DEF.bucket, region: state.settings.panama_region || DEF.region, profile: state.settings.panama_profile || DEF.profile })
       const pickF = (o, fs) => Object.fromEntries(fs.filter((f) => f in o).map((f) => [f, o[f]]))
       if (method === 'GET' && path === '/configio/export') {
         cio.exports++
+        const withSecrets = query.secrets !== '0'
+        cio.exportSecrets.push(withSecrets)
         const { dry_run, ...config } = state.mounts.config
-        return json({ format: 'runpod-pod-manager-config', version: 1, exported_at: '2026-11-03T05:00:00.000Z', app_version: '1.0.2', config, panama: panamaNow(), secrets_set: ['RUNPOD_API_KEY'], env_omitted: [], not_exported: ['the no-spend switch (dry_run)', 'every key and token'] })
+        const env = Object.fromEntries(Object.entries(config.env || {}).filter(([k]) => withSecrets || !looksSecret(k)))
+        const omitted = withSecrets ? [] : Object.keys(config.env || {}).filter(looksSecret)
+        return json({ format: 'runpod-pod-manager-config', version: 1, exported_at: '2026-11-03T05:00:00.000Z', app_version: '1.0.2', config: { ...config, env }, panama: panamaNow(), secrets_included: withSecrets, ...(withSecrets ? { secrets: { settings: { ...cio.secrets }, git_accounts: cio.git.map((a) => ({ ...a })) } } : {}), secrets_set: [...Object.keys(cio.secrets), ...cio.git.map((a) => `git:${a.provider}/${a.username}`)], env_omitted: omitted, not_exported: ['the no-spend switch (dry_run)', 'per-pod configurations'] })
       }
       if (method === 'POST' && path === '/configio/plan') {
         cio.plans++
-        const f = body.file, plan = { ok: false, errors: [], warnings: [], sections: [], source: { app_version: f?.app_version ?? null, exported_at: f?.exported_at ?? null, secrets_set: f?.secrets_set ?? [], env_omitted: [] } }
+        const f = body.file, plan = { ok: false, errors: [], warnings: [], sections: [], source: { app_version: f?.app_version ?? null, exported_at: f?.exported_at ?? null, secrets_included: f?.secrets !== undefined && f?.secrets_included !== false, secrets_set: f?.secrets_set ?? [], env_omitted: f?.env_omitted ?? [] } }
         if (!f || typeof f !== 'object' || f.format !== 'runpod-pod-manager-config') { plan.errors.push(`That is not a pod manager configuration file (its "format" is ${JSON.stringify(f?.format ?? null)}, not "runpod-pod-manager-config").`); return json(plan) }
         if (f.version > 1) { plan.errors.push(`That file is version ${f.version}; this app reads up to version 1. Update the app, then import it.`); return json(plan) }
         for (const k of Object.keys(f.config || {})) if (k === 'dry_run') plan.warnings.push('Ignored "dry_run": the no-spend switch is never imported.')
         for (const [key, [label, fields, flags]] of Object.entries(SEC)) {
           const inc = pickF(f.config || {}, fields); if (!Object.keys(inc).length) continue
           const cur = pickF(state.mounts.config, fields), incoming = { ...cur, ...inc }, changed = JSON.stringify(cur) !== JSON.stringify(incoming)
-          plan.sections.push({ key, label, changed, current: cur, incoming, machine_specific: !!flags.machine, account_specific: !!flags.account, default_checked: changed && !flags.machine, error: null, note: flags.machine ? 'Paths from another machine.' : flags.account ? 'Ids that belong to the exporting RunPod account; they may not exist in yours.' : null })
+          plan.sections.push({ key, label, changed, current: key === 'env' ? { env: maskEnv(cur.env) } : cur, incoming: key === 'env' ? { env: maskEnv(incoming.env) } : incoming, machine_specific: !!flags.machine, account_specific: !!flags.account, default_checked: changed && !flags.machine, error: null, note: flags.machine ? 'Paths from another machine.' : flags.account ? 'Ids that belong to the exporting RunPod account; they may not exist in yours.' : null })
         }
         if (f.panama) { const now = panamaNow(), incoming = { ...now, ...f.panama }, changed = JSON.stringify(now) !== JSON.stringify(incoming); plan.sections.push({ key: 'panama', label: 'Panama bucket, region and profile', changed, current: now, incoming, machine_specific: false, account_specific: false, default_checked: changed, error: null, note: null }) }
+        if (f.secrets) {   // the keys and tokens: each named with its last four characters, never the value; a malformed one is named and flagged
+          const items = []
+          for (const [name, value] of Object.entries(f.secrets.settings || {})) {
+            if (typeof value !== 'string' || !value || /\s/.test(value) || value.length < (MIN[name] || 1)) items.push({ name, hint: '', changed: false, error: `${name} is too short or malformed` })
+            else items.push({ name, hint: last4(value), changed: cio.secrets[name] !== value, error: null })
+          }
+          for (const a of f.secrets.git_accounts || []) {
+            const nm = `git:${a.provider}/${a.username}`
+            if (!a.token || a.token.length < 8) items.push({ name: nm, hint: '', changed: false, error: `${nm}: the token is malformed (no spaces, at least 8 characters)` })
+            else items.push({ name: nm, hint: last4(a.token), changed: !cio.git.some((g) => g.id === a.id && g.token === a.token), error: null })
+          }
+          const ok = items.filter((i) => !i.error), changed = ok.some((i) => i.changed)
+          plan.sections.push({ key: 'secrets', label: 'Keys and tokens', changed, current: Object.fromEntries(Object.entries(cio.secrets).map(([n, v]) => [n, last4(v)])), incoming: Object.fromEntries(ok.map((i) => [i.name, i.hint])), machine_specific: false, account_specific: false, default_checked: changed && !!ok.length, error: ok.length ? null : 'None of the keys and tokens in the file can be imported.', note: items.length > ok.length && ok.length ? `Not imported, malformed: ${items.filter((i) => i.error).map((i) => i.name).join(', ')}.` : null, items })
+        }
         plan.ok = true
         return json(plan)
       }
       if (method === 'POST' && path === '/configio/apply') {
         const wanted = body.sections || []
         if (!wanted.length) return json({ detail: 'No section selected, or none of the selected ones is in the file.' }, 400)
-        cio.backups.push({ name: `mounts-2026-11-03T05-00-0${cio.backups.length}-000Z.json`, config: JSON.parse(JSON.stringify(state.mounts.config)), panama: panamaNow() })
+        cio.backups.push({ name: `mounts-2026-11-03T05-00-0${cio.backups.length}-000Z.json`, config: JSON.parse(JSON.stringify(state.mounts.config)), panama: panamaNow(), secrets: { ...cio.secrets }, git: cio.git.map((a) => ({ ...a })) })
         cio.applied.push(wanted)
         for (const key of wanted) {
+          if (key === 'secrets') {
+            const names = []
+            for (const [n, v] of Object.entries(body.file.secrets?.settings || {})) if (typeof v === 'string' && v.length >= (MIN[n] || 1) && !/\s/.test(v)) { cio.secrets[n] = v; names.push(n) } else cio.skipped.push(n)
+            for (const a of body.file.secrets?.git_accounts || []) if (a.token && a.token.length >= 8) { cio.git = [...cio.git.filter((g) => g.id !== a.id), a]; names.push(`git:${a.provider}/${a.username}`) } else cio.skipped.push(`git:${a.provider}/${a.username}`)
+            cio.secretsApplied.push(names); continue
+          }
           if (key === 'panama') { const p = body.file.panama || {}; state.settings = { ...state.settings, panama_bucket: p.bucket, panama_region: p.region, panama_profile: p.profile }; continue }
           Object.assign(state.mounts.config, pickF(body.file.config || {}, SEC[key][1]))
         }
         state.mounts.stored = true
-        return json({ payload: mountsPayload(state), backup: `/home/me/.config/runpod-pod-manager/backups/${cio.backups.at(-1).name}`, applied: wanted, settings: state.settings })
+        return json({ payload: mountsPayload(state), backup: `/home/me/.config/runpod-pod-manager/backups/${cio.backups.at(-1).name}`, applied: wanted, skipped: cio.skipped.splice(0), settings: state.settings })
       }
       if (method === 'POST' && path === '/configio/undo') {
         const b = cio.backups.pop(); if (!b) return json({ detail: 'Nothing to undo: there is no backup.' }, 400)
-        cio.undone++; state.mounts.config = b.config; state.settings = { ...state.settings, panama_bucket: b.panama.bucket, panama_region: b.panama.region, panama_profile: b.panama.profile }
+        cio.undone++; cio.secrets = b.secrets; cio.git = b.git; state.mounts.config = b.config; state.settings = { ...state.settings, panama_bucket: b.panama.bucket, panama_region: b.panama.region, panama_profile: b.panama.profile }
         return json({ payload: mountsPayload(state), restored: b.name, settings: state.settings })
       }
       if (method === 'GET' && path === '/configio/backups') return json(cio.backups.map((b) => ({ name: b.name, file: `/home/me/.config/runpod-pod-manager/backups/${b.name}`, at: b.name.slice(7, -5) })).reverse())
