@@ -7,7 +7,7 @@
 #
 #   ./build.sh                       # comfy-app:contract-v26 with the ShotPipe set the corrosion graphs need
 #   ./build.sh --push ghcr.io/<org>/comfy-app:contract-v26   # build, tag, push; prints the reference to configure
-#   ./build.sh --remote [--wait]     # build and push on GitLab CI next to the registry: nothing big leaves this Mac
+#   ./build.sh --remote [--wait]     # build and push on GitHub Actions to ghcr.io: nothing big leaves this Mac
 #   ./build.sh --shotpipe v26,v14,v7 # explicit versions instead of a set from shared/nodes/sets.json
 #   ./build.sh --tag comfy-app:test
 #   ./build.sh --no-shotpipe         # BincStereo only
@@ -19,13 +19,7 @@
 # which is what RunPod and the Windows/Linux boxes run; on Apple Silicon that
 # goes through emulation and is slow but works.
 #
-# --remote: the build context (under 2 MB: Dockerfile, requirements, docker/, workflows/
-# and the staged packs) is pushed as a branch of the GitLab project that holds the
-# registry, with a .gitlab-ci.yml that builds natively on amd64 and pushes into that
-# project's registry over the datacenter's link. The 3 GB torch layer never leaves this
-# Mac. Needs a GitLab token with api scope: GITLAB_TOKEN (env or the repo's .env), else
-# the one `docker login registry.gitlab.com` stored. Project: COMFY_CI_PROJECT (default
-# bcdevlucas/comfy-workflow). --wait follows the pipeline and prints the reference.
+# --remote: build on GitHub Actions (ADR-020): pushes a branch image/<variant>-<time>; the workflow reads the packs with a deploy key and pushes to ghcr.io.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
@@ -59,6 +53,27 @@ done
 if [ -n "$PUSH" ]; then
   case "$PUSH" in */*) ;; *) echo "--push needs a registry reference with a namespace, e.g. ghcr.io/<org>/comfy-app:$SHOTPIPE (a pod cannot pull a bare name)" >&2; exit 2 ;; esac
   case "$PUSH" in *:*) ;; *) PUSH="$PUSH:${SHOTPIPE:-base}" ;; esac
+fi
+
+if [ -n "$REMOTE" ]; then
+  # ----- build on GitHub Actions (.github/workflows/comfy-image.yml, ADR-020): push a branch, the runner builds and pushes to ghcr.io -----
+  command -v gh >/dev/null || { echo "--remote needs the GitHub CLI (gh), logged in" >&2; exit 1; }
+  SLUG="${COMFY_CI_REPO:-bluecollardev/comfy-workflow}"
+  IMAGE_TAG="${SHOTPIPE:-base}"; BRANCH="image/$IMAGE_TAG-$(date +%Y%m%d-%H%M%S)"
+  REF="ghcr.io/${SLUG%%/*}/comfy-app:$IMAGE_TAG"
+  git -C "$REPO" diff --quiet HEAD -- apps/comfy-app shared .github 2>/dev/null || echo "note: uncommitted changes under apps/comfy-app are not in the build; commit them first" >&2
+  git -C "$REPO" push -q origin "HEAD:refs/heads/$BRANCH"
+  echo "pushed $(git -C "$REPO" rev-parse --short HEAD) to $SLUG branch $BRANCH; Actions builds and pushes $REF"
+  echo "runs: https://github.com/$SLUG/actions/workflows/comfy-image.yml"
+  [ -n "$WAIT" ] || exit 0
+  sleep 15; RUN=""
+  for _ in 1 2 3 4 5 6; do RUN="$(gh run list -R "$SLUG" --workflow comfy-image.yml --branch "$BRANCH" --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null)"; [ -n "$RUN" ] && break; sleep 10; done
+  [ -n "$RUN" ] || { echo "no run appeared for $BRANCH" >&2; exit 1; }
+  echo "run $RUN: https://github.com/$SLUG/actions/runs/$RUN"
+  gh run watch "$RUN" -R "$SLUG" --exit-status --interval 30 >/dev/null && {
+    git -C "$REPO" push -q origin ":refs/heads/$BRANCH" 2>/dev/null || true
+    echo "pushed $REF"; echo "next: enter $REF as the image in the dashboard's Default Configuration, or ./start.sh package mac --comfy ${SHOTPIPE:-base} --image $REF"; exit 0; }
+  echo "run $RUN failed: gh run view $RUN -R $SLUG --log-failed" >&2; exit 1
 fi
 
 STAGE="$HERE/.build/custom_nodes"
@@ -109,70 +124,6 @@ for v in "${VERSIONS[@]}"; do
   echo "staged: ComfyUI-BH-ShotPipe-$v"
 done
 
-if [ -n "$REMOTE" ]; then
-  # ----- build on GitLab CI: push the context as a branch, the runner builds and pushes -----
-  [ -f "$REPO/.env" ] && GITLAB_TOKEN="${GITLAB_TOKEN:-$(sed -n 's/^GITLAB_TOKEN=//p' "$REPO/.env" | tr -d '"' | head -1)}"
-  if [ -z "${GITLAB_TOKEN:-}" ] && command -v docker-credential-desktop >/dev/null; then
-    GITLAB_TOKEN="$(echo registry.gitlab.com | docker-credential-desktop get 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin).get("Secret",""))' 2>/dev/null || true)"
-  fi
-  [ -n "${GITLAB_TOKEN:-}" ] || { echo "--remote needs GITLAB_TOKEN (api scope) in the environment or $REPO/.env, or a docker login to registry.gitlab.com" >&2; exit 1; }
-  IMAGE_TAG="${TAG##*:}"; [ "$IMAGE_TAG" != "$TAG" ] || IMAGE_TAG="${SHOTPIPE:-base}"
-  CTX="$(mktemp -d "${TMPDIR:-/tmp}/comfy-app-ci.XXXXXX")"
-  mkdir -p "$CTX/docker" "$CTX/workflows" "$CTX/.build"
-  cp "$HERE/Dockerfile" "$HERE/requirements-packs.txt" "$HERE/.dockerignore" "$CTX/"
-  cp -R "$HERE/docker/." "$CTX/docker/"; cp -R "$HERE/workflows/." "$CTX/workflows/"; cp -R "$HERE/.build/." "$CTX/.build/"
-  find "$CTX" -name __pycache__ -type d -prune -exec rm -rf {} +
-  cat > "$CTX/.gitlab-ci.yml" <<YML
-# Generated by apps/comfy-app/build.sh --remote. Builds the ComfyUI server image on a
-# shared runner (amd64, next to the registry) and pushes it into this project's registry.
-build:
-  image: docker:27
-  services: [docker:27-dind]
-  variables:
-    DOCKER_TLS_CERTDIR: "/certs"
-    IMAGE: "\$CI_REGISTRY_IMAGE/comfy-app:$IMAGE_TAG"
-  script:
-    - docker login -u "\$CI_REGISTRY_USER" -p "\$CI_REGISTRY_PASSWORD" "\$CI_REGISTRY"
-    - docker pull "\$IMAGE" || true
-    - docker build --platform $PLATFORM -t "\$IMAGE" --cache-from "\$IMAGE"
-        --label "dev.bluecollar.comfy-node-packs=$PACKS_REV" --label "dev.bluecollar.shotpipe=${SHOTPIPE:-none}"
-        --build-arg "COMFYUI_REPO=$COMFYUI_REPO" --build-arg "COMFYUI_REF=$COMFYUI_REF" ${BASE:+--build-arg "BASE_IMAGE=$BASE"} .
-    - docker push "\$IMAGE"
-    - echo "pushed \$IMAGE"
-YML
-  # One branch per run: the first one became the project's default branch, which refuses force pushes.
-  BRANCH="build-$IMAGE_TAG-$(date -u +%Y%m%d-%H%M%S)"
-  ( cd "$CTX" && git init -q -b "$BRANCH" && git add -A && git -c user.name=comfy-app -c user.email=build@comfy-app commit -q -m "build context for comfy-app:$IMAGE_TAG (packs $PACKS_REV, ComfyUI $COMFYUI_REF)" \
-    && git push -q "https://oauth2:$GITLAB_TOKEN@gitlab.com/$CI_PROJECT.git" "HEAD:refs/heads/$BRANCH" )
-  rm -rf "$CTX"
-  ENC="$(python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$CI_PROJECT")"
-  REF="registry.gitlab.com/$CI_PROJECT/comfy-app:$IMAGE_TAG"
-  echo "pushed the build context to gitlab.com/$CI_PROJECT branch $BRANCH; CI builds and pushes $REF"
-  echo "pipelines: https://gitlab.com/$CI_PROJECT/-/pipelines"
-  [ -n "$WAIT" ] || exit 0
-  sleep 5
-  PIPE=""
-  for _ in $(seq 1 12); do
-    PIPE="$(curl -fsS --max-time 20 -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "https://gitlab.com/api/v4/projects/$ENC/pipelines?ref=$(python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$BRANCH")&per_page=1" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[0]["id"] if d else "")')"
-    [ -n "$PIPE" ] && break; sleep 5
-  done
-  [ -n "$PIPE" ] || { echo "no pipeline started for $BRANCH: are shared runners enabled for the project?" >&2; exit 1; }
-  echo "pipeline $PIPE: https://gitlab.com/$CI_PROJECT/-/pipelines/$PIPE"
-  while :; do
-    ST="$(curl -fsS --max-time 20 -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "https://gitlab.com/api/v4/projects/$ENC/pipelines/$PIPE" | python3 -c 'import sys,json; print(json.load(sys.stdin)["status"])')"
-    case "$ST" in
-      success)
-        # prune earlier build branches for this tag (the default branch cannot be deleted; ignored)
-        curl -fsS --max-time 20 -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "https://gitlab.com/api/v4/projects/$ENC/repository/branches?search=build-$IMAGE_TAG-&per_page=100" \
-          | python3 -c 'import sys,json; [print(b["name"]) for b in json.load(sys.stdin)]' | grep -vx "$BRANCH" | while read -r old; do
-            curl -fsS --max-time 20 -o /dev/null -X DELETE -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "https://gitlab.com/api/v4/projects/$ENC/repository/branches/$(python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$old")" 2>/dev/null || true
-          done || true
-        echo "pushed $REF"; echo "next: enter $REF as the image in the dashboard's Default Configuration, or ./start.sh package mac --comfy ${SHOTPIPE:-base} --image $REF"; exit 0 ;;
-      failed|canceled|skipped) echo "pipeline $ST: https://gitlab.com/$CI_PROJECT/-/pipelines/$PIPE" >&2; exit 1 ;;
-      *) printf '  %s %s\n' "$(date +%H:%M:%S)" "$ST"; sleep 30 ;;
-    esac
-  done
-fi
 
 args=(build --platform "$PLATFORM" -t "$TAG" -f "$HERE/Dockerfile"
       --label "dev.bluecollar.comfy-node-packs=$PACKS_REV" --label "dev.bluecollar.shotpipe=${SHOTPIPE:-none}"

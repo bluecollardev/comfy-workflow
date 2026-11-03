@@ -64,6 +64,7 @@ RUN chmod +x /opt/comfy-app/entrypoint.sh \
     && mkdir -p /home/binc/CANALV2_r3 \
     && ln -s /workspace/project /home/binc/CANALV2_r3/CANALV2
 
+LABEL org.opencontainers.image.source="https://github.com/bluecollardev/comfy-workflow"
 EXPOSE 8188
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
     CMD curl -fs "http://127.0.0.1:${COMFY_PORT}/system_stats" || exit 1
