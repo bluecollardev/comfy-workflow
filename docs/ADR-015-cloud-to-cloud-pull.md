@@ -41,3 +41,19 @@ that exists only on the Mac.
   sets them on each new pod; an app-side "Pull from bucket" button that starts
   a short-lived pod, waits for `.s3-pull.done`, and stops it.
 - Plates need Binc's named yes before they move to a RunPod volume.
+
+## Decisions taken while building (2026-11-03)
+
+- **The key for the first test is `panama-lucas`** (read-only, Lucas's own, profile `panama` on this Mac), by Lucas's decision, "for now".
+  The Panama guide issues a separate `panama-pod` key so the pod's access can be revoked alone; it replaces `panama-lucas` as soon as
+  it is on this machine. The cost of the interim choice: revoking the pod's access also revokes Lucas's.
+- **The secret never passes through a chat or a tool call.** The two values go into RunPod Secrets by Lucas and the pod environment
+  refers to them (`{{ RUNPOD_SECRET_name }}`); the app and its agents only see the reference.
+- **The image is built on GitLab CI** (`./start.sh comfy-image --remote --wait`, ADR-006), not on the Mac. Built and pushed
+  2026-11-03: `registry.gitlab.com/bcdevlucas/comfy-workflow/comfy-app:contract-v26`, with `rclone`. The app's configured image is still
+  the `ghcr.io` reference; a pod for the test is created with the GitLab reference explicitly, which needs the GitLab registry login
+  on the RunPod account.
+- **First pull is the smallest round**, `brynley-inbox-2026-10-28-v001` (624 KB, 379 files), not a delivery round (9 to 39 GB), and
+  never `plates/` without Binc's named yes.
+- **Tested locally first** (Ubuntu container, `rclone` 1.53, an S3 server in the container): files land under `/workspace`, sha256
+  matches, a rerun transfers nothing, a destination outside `/workspace` is refused. Auth failure is not covered by that test.
