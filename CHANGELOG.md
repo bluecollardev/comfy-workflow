@@ -5,6 +5,9 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased
 
+### Pods grouped by datacenter
+- Lucas: "in pods cards list group pods by datacenter". The pod list shows a heading per datacenter (with a count) and the pods of that datacenter under it; groups are in name order, pods with no known datacenter last. The datacenter comes from the pod's machine.
+
 ### Round download: choose your pod or a sync agent; cheapest card; 15-minute idle stop (ADR-022)
 - Lucas: "use the cheapest card available for the job", "clicking download should pop open a modal with the option to start a sync agent pod or to do the work on the current pod", "if the pod is off, start the pod", "sync agent should auto turn off after 15mins of inactivity". Download opens a window with two choices: your pod on the volume (started first if it is off) or a sync-agent pod. The agent is created with exactly the cheapest free card the window shows (it used to take `auto`, the biggest card, e.g. an H100 at $3.99/h). A pod the job starts, or leaves behind, stops after 15 idle minutes once the job is over. MCP `panama_pod_plan` / `panama_pull` take `route: current | temporary`.
 
