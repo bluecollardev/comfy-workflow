@@ -5,7 +5,8 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const HERE = dirname(fileURLToPath(import.meta.url))
+// In the esbuild CommonJS bundles (the packaged app) import.meta.url is empty: then the search starts from the working directory.
+const HERE = (() => { try { return dirname(fileURLToPath(import.meta.url)) } catch { return process.cwd() } })()
 
 /** The repo root: COMFY_REPO_ROOT, else the nearest folder above this file with a README.md, a docs/ folder and start.sh. */
 export function root() {
