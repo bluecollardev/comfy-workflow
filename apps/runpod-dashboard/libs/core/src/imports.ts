@@ -6,7 +6,7 @@
  * plan and applies it: only inside the source (reads) and ComfyUI-Shared (writes), never deleting,
  * never replacing a different file unless told. The source is never changed.
  */
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { copyFileSync, constants, createReadStream, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { basename, dirname, isAbsolute, join, normalize, resolve, sep } from 'node:path'
@@ -24,7 +24,7 @@ export interface AdapterInfo { id: string; name: string; version: number; builti
   /** A built-in whose file in the adapters folder is used instead of the shipped one (an override, ADR-009): the shipped file is `original` and is never touched. */
   modified?: boolean; original?: string }
 export interface PlanSummary { copies: number; links: number; notes: number; bytes: number; by_kind: Record<string, { files: number; bytes: number }> }
-export interface Plan { adapter: { id: string; name: string; version: number; builtin: boolean }; source: string; ops: Op[]; findings: Finding[]; summary: PlanSummary; fenced: boolean }
+export interface Plan { /** the .zip the folder was unpacked from, when the source was one */ origin?: string; adapter: { id: string; name: string; version: number; builtin: boolean }; source: string; ops: Op[]; findings: Finding[]; summary: PlanSummary; fenced: boolean }
 export type OpStatus = 'copied' | 'replaced' | 'same' | 'conflict' | 'hash-mismatch' | 'linked' | 'verified' | 'noted' | 'placeholder' | 'would-copy' | 'would-replace' | 'would-link' | 'error' | 'skipped'
 export interface ApplyResult { dry_run: boolean; ok: boolean; counts: Record<string, number>; results: { i: number; status: OpStatus; detail?: string }[]; record: string | null }
 
@@ -327,6 +327,47 @@ export async function detect(sourceDir: string): Promise<Detected[]> {
   return found.sort((x, y) => y.match - x.match)
 }
 
+// ----- a zip as the source -----
+
+/** Limits on what a zip may unpack to: a package is files, not a bomb. */
+export const ZIP_MAX_ENTRIES = 200_000
+export const ZIP_MAX_BYTES = 200 * 1024 ** 3
+
+/** Is this entry name safe to unpack under a folder: relative, no `..`, no drive or leading slash? Pure, so the zip-slip rule is tested without a zip. */
+export const safeZipEntry = (name: string): boolean => !!name && !isAbsolute(name) && !/^[A-Za-z]:/.test(name) && !name.split(/[\\/]/).includes('..') && !name.includes('\0')
+
+/** Where unpacked zips live: beside the import records, not among them. */
+const zipsDir = () => process.env.POD_MANAGER_IMPORT_ZIPS_DIR || join(dirname(importsDir()), 'import-zips')
+/** A `.zip` source is unpacked once into this app's `import-zips/<name>-<hash>` folder and the plan runs on the unpacked folder; a folder passes through unchanged.
+ *  Refuses an entry that would leave the folder (zip-slip), too many entries, or a package past the size limit. A zip that holds a single top folder yields that folder, as a Drive download does.
+ *  Needs the system `unzip` (macOS and Linux have it; on Windows, unzip the package first). The zip itself is never changed. */
+export function prepareSource(source: string): string {
+  if (!source || !isAbsolute(source)) throw bad('the source must be an absolute path')
+  if (!existsSync(source) || !statSync(source).isFile()) return source
+  if (!/\.zip$/i.test(source)) throw bad(`not a folder or a .zip: ${source}`)
+  const stat = statSync(source)
+  const dest = join(zipsDir(), `${basename(source, '.zip').replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 60)}-${createHash('sha256').update(`${source}:${stat.size}:${stat.mtimeMs}`).digest('hex').slice(0, 10)}`)
+  const done = join(dest, '.extracted')
+  if (!existsSync(done)) {
+    const list = spawnSync('unzip', ['-Z1', source], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 })
+    if (list.error) throw bad(list.error.message.includes('ENOENT') ? 'unzip is not installed: unzip the package into a folder first, or install it (macOS and Linux have it)' : list.error.message)
+    if (list.status !== 0) throw bad(`could not read ${source} as a zip: ${(list.stderr || list.stdout).trim().split('\n').pop()}`)
+    const names = list.stdout.split('\n').filter(Boolean)
+    if (names.length > ZIP_MAX_ENTRIES) throw bad(`${source} has ${names.length} entries; the limit is ${ZIP_MAX_ENTRIES}`)
+    const unsafe = names.find((n) => !safeZipEntry(n))
+    if (unsafe) throw bad(`${source} has an entry that would unpack outside its folder (${JSON.stringify(unsafe)}); refused`)
+    const sizes = spawnSync('unzip', ['-Zt', source], { encoding: 'utf8' })   // "N files, M bytes uncompressed, ..."
+    const total = Number(/(\d+) bytes uncompressed/.exec(sizes.stdout || '')?.[1] ?? 0)
+    if (total > ZIP_MAX_BYTES) throw bad(`${source} unpacks to ${total} bytes; the limit is ${ZIP_MAX_BYTES}`)
+    rmSync(dest, { recursive: true, force: true }); mkdirSync(dest, { recursive: true })
+    const r = spawnSync('unzip', ['-q', '-o', source, '-d', dest], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+    if (r.status !== 0 && r.status !== 1) throw bad(`unzip failed on ${source}: ${(r.stderr || r.stdout).trim().split('\n').pop()}`)   // 1 = warnings only
+    writeFileSync(done, new Date().toISOString())
+  }
+  const top = readdirSync(dest).filter((n) => n !== '.extracted' && n !== '__MACOSX')
+  return top.length === 1 && statSync(join(dest, top[0])).isDirectory() ? join(dest, top[0]) : dest
+}
+
 function existingDir(p: string): string {
   if (!p || !isAbsolute(p)) throw bad('the source folder must be an absolute path')
   if (!existsSync(p) || !statSync(p).isDirectory()) throw bad(`not a folder: ${p}`)
@@ -520,7 +561,8 @@ function summarise(ops: Op[]): PlanSummary {
 
 /** Plan an import: the adapter named, or the best match, run fenced; its ops checked. Writes nothing. */
 export async function plan(sourceDir: string, adapterId?: string, options: Record<string, unknown> = {}): Promise<Plan> {
-  const dir = existingDir(sourceDir)
+  const origin = existsSync(sourceDir) && statSync(sourceDir).isFile() ? sourceDir : undefined
+  const dir = existingDir(prepareSource(sourceDir))   // a .zip is unpacked first (prepareSource)
   const all = await list()
   let chosen: AdapterInfo | undefined
   if (adapterId) {
@@ -536,7 +578,7 @@ export async function plan(sourceDir: string, adapterId?: string, options: Recor
   if (!out.ok) throw bad(`${chosen.id}: ${out.error}`)
   const r = (out.result || {}) as { ops?: unknown; findings?: unknown }
   const ops = validateOps(r.ops)
-  return { adapter: { id: chosen.id, name: chosen.name, version: chosen.version, builtin: chosen.builtin }, source: dir, ops, findings: validateFindings(r.findings), summary: summarise(ops), fenced }
+  return { ...(origin ? { origin } : {}), adapter: { id: chosen.id, name: chosen.name, version: chosen.version, builtin: chosen.builtin }, source: dir, ops, findings: validateFindings(r.findings), summary: summarise(ops), fenced }
 }
 
 // ----- applying a plan -----

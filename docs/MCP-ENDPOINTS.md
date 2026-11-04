@@ -105,14 +105,14 @@ settings, or no-spend mode.
 |---|---|---|---|
 | `list_pods` | none | every pod as the dashboard shows it: id, name, status, card, ComfyUI URL, idle stop, own configuration | |
 | `get_pod` | `pod_id` | the pod with RunPod's details: price per hour, cloud, datacenter, image, disks, status text | |
-| `create_pod` | `approved_by` (required), `name`, `gpu` (table or `auto`), `datacenter`, `image` (`configured`, `prebuilt` or a reference), `idle_stop_minutes`, `apply_mounts`, `config` (a per-pod configuration) | the new pod; "no card available" lists what was tried | spend: named yes, USD cap |
+| `create_pod` | `approved_by` (required), `name`, `gpu` (table, big cards by name, or `auto`), `gpu_type_id` (a raw RunPod id), `gpu_count`, `datacenter`, `instance_type`, `disk_gb`, `volume_gb`, `image` (`configured`, `prebuilt` or a reference), `idle_stop_minutes`, `apply_mounts`, `start_ssh`, `start_jupyter`, `env_vars`, `pip_requirements`, `custom_nodes`, `config` (a per-pod configuration) | the new pod; "no card available" lists what was tried. A datacenter other than the volume's needs `apply_mounts=false` (ADR-027) | spend: named yes, USD cap |
 | `stop_pod` / `resume_pod` / `delete_pod` | `pod_id` | confirmation; resume reports a full host and suggests `recreate_pod` | delete asks nothing, as the card does after its confirm |
 | `recreate_pod` | `pod_id` | the new pod, the old one terminated, its own configuration carried | |
 | `set_idle_stop` | `pod_id`, `minutes` (0 = never) | the new value | |
 | `get_logs` | `pod_id`, `lines` (default 100) | the last lines from RunPod | |
-| `list_datacenters` | none | every datacenter with S3 support and our cards in stock at the secure-cloud price | |
+| `list_datacenters` | `fresh?` | every listed datacenter with S3 support and every card RunPod runs there, free or in use, each with size, secure-cloud price, stock and whether the image can run it (ADR-027); most free cards first | |
 | `list_volumes` | none | the volumes with size, datacenter, cost per month, S3, the pods on each, the default | |
-| `create_volume` | `approved_by` (required), `name`, `size_gb`, `datacenter` | the volume | spend (monthly) |
+| `create_volume` | `approved_by` (required), `name`, `size_gb`, `datacenter` | the volume, created in the datacenter named (a new region means a new volume) | spend (monthly) |
 | `delete_volume` | `volume_id` | refused while a pod is attached | |
 | `set_default_volume` | `volume_id` | the Default Configuration updated with the volume and its datacenter | |
 | `get_configuration` | none | the Default Configuration: folders mapped, volume, datacenter, image, idle stop, mode | |
@@ -124,6 +124,93 @@ settings, or no-spend mode.
 | `import_plan` | `source`, `adapter` (optional) | which adapter recognises the folder, what it would copy where in ComfyUI-Shared by kind, findings; writes nothing | the adapter runs fenced, read-only on that folder |
 | `import_apply` | `source`, `adapter`, `dry_run` (default true), `overwrite` | imports into this PC's ComfyUI-Shared; never deletes; a differing file is a conflict unless `overwrite` | the adapter runs fenced, read-only on that folder |
 | `cost_now` | none | running pods' price per hour summed, volumes' cost per month | |
+
+### Everything else the window does (ADR-028: *anything the app can do, the MCP can do*)
+
+Each tool calls the core function the window's IPC channel calls. `mcp/parity.mjs` says which tool answers which channel of the app's dispatch table (`electron/core.cjs`), or why a channel needs a window (the git OAuth round trip, the Studio's chat loop, probing and serving the app's own MCP hosting); `mcp/parity.test.mjs` fails when a channel has neither. Also changed: `import_plan` / `import_apply` take a folder **or a `.zip`** (unpacked once into `import-zips/`, an entry that leaves the folder refused, `unzip` needed). The no-spend switch (`dry_run`) is never settable here. Keys and settings are the pod manager's own and take no named yes; their values are never returned, only whether set and the last four characters.
+
+#### Pods and configuration
+
+| Tool | Arguments (`?` optional) | Does | Gate |
+|---|---|---|---|
+| `list_gpus` | `datacenter?` | The card menu with what RunPod has in stock and the on-demand price, for a datacenter (or the volume's, or anywhere): the table's cards, big ones included (explicit-only, ADR-026) |  |
+| `get_volume_info` | `volume_id?` | The network volume a pod would use (the configured one, or the one named): size, datacenter, cost |  |
+| `get_pod_config` | `pod_id` | A pod's own configuration (the Default Configuration's shape, kept for recreate_pod), or null when it uses the Default Configuration |  |
+| `set_pod_config` | `pod_id`, `patch?`, `reset?`, `recreate?`, `approved_by?` | Change a pod's own configuration: a patch over its current one (or the Default Configuration), or reset it back to the default. | spend: named yes |
+| `set_configuration` | `patch` | Change the Default Configuration: a patch (objects such as folders, env, required merge by key; lists and the rest replace). |  |
+| `preview_configuration` | `patch?` | What a pod would get from a configuration without saving it: the env and the links. |  |
+| `reset_configuration` | none | Delete the saved Default Configuration and go back to the defaults (the keys and settings are separate and stay) |  |
+| `get_local_env` | none | The shell lines (export NAME=...) that set this PC up like a pod: the mapped folders as variables, for a terminal or an IDE run configuration |  |
+| `list_dirs` | `path?`, `hidden?` | The folders on this PC under a path (the window's folder picker), for choosing what to map |  |
+
+#### Keys and settings
+
+| Tool | Arguments (`?` optional) | Does | Gate |
+|---|---|---|---|
+| `get_settings` | none | The API keys and settings: whether each key is set and its last four characters, never a value; the Panama bucket, region and profile |  |
+| `set_settings` | `values` | Set or remove the pod manager's own keys and settings: runpod_api_key, anthropic_api_key, runpod_s3_access_key, runpod_s3_secret_key, panama_aws_access_key, panama_aws_secret_key, panama_console_key, panama_bucket, panama_region, panama_profile. |  |
+| `check_anthropic_key` | `key?` | Whether the Anthropic key (the one saved, or one passed to try) is accepted; used by the adapter drafting and describing tools |  |
+| `config_export` | `file?`, `include_secrets?` | The Default Configuration as the JSON the window exports (folders, volume, image, env, adapters list, ...). |  |
+| `config_import_plan` | `file` | What importing a configuration file would change, section by section (nothing is written): the folders (paths from another machine are flagged), the pod defaults, the keys (names and last four characters only) |  |
+| `config_import_apply` | `file`, `sections?`, `dry_run?` | Import a configuration file: backs up first, then applies the sections named (default: the ones the plan ticks). |  |
+| `config_undo` | none | Undo the last configuration import from its backup |  |
+| `config_backups` | none | The backups of the configuration that imports made |  |
+
+#### Volumes
+
+| Tool | Arguments (`?` optional) | Does | Gate |
+|---|---|---|---|
+| `resize_volume` | `approved_by?`, `volume_id`, `size_gb` | Grow a network volume (RunPod only grows them; billed monthly, USD 0.07 per GB). | spend: named yes |
+
+#### Panama / BH rounds
+
+| Tool | Arguments (`?` optional) | Does | Gate |
+|---|---|---|---|
+| `panama_status` | none | Is the BH exchange bucket reachable: the bucket, region, how it is read (the keys in the app or an AWS profile), where rounds are staged on this PC, and whether Pod mode is available |  |
+| `panama_rounds` | `target?` | The delivery rounds in the bucket with what is staged: on this PC (target local) or on the network volume as last seen by a pod (target pod). |  |
+| `panama_round_files` | `round`, `prefix?`, `limit?` | One round's files in the bucket as a folder tree (read-only), each marked when already on this PC. |  |
+| `panama_round_size` | `round` | Files and bytes in one round (a listing; a big round takes a few seconds) |  |
+| `panama_pod_plan` | `round` | What a pod download of a round would do before it does it: use a pod of yours or start a short-lived one, its card and price, the volume, the size, the ceiling in minutes |  |
+| `panama_pull` | `round`, `target?`, `approved_by?` | Download a round: to this PC (aws s3 sync, resumable, never deletes) or onto the network volume by a pod. | spend: named yes |
+| `panama_job` | `id`, `target?` | Where a download (or delete) is: state, files, bytes done of total, rate, the latest files |  |
+| `panama_cancel` | `id`, `target?` | Stop a download; what is already there stays and a later pull resumes |  |
+| `panama_remove` | `round`, `target?`, `approved_by?` | Delete a round's staged copy: on this PC, or on the volume by a pod (needs approved_by: it uses a pod). | spend: named yes |
+| `panama_import` | `round`, `adapter?`, `dry_run?`, `overwrite?` | Import a downloaded round into ComfyUI-Shared (the window's Use): plans it through an adapter, and applies unless dry_run (default true). |  |
+
+#### Import: packages, zips, adapters
+
+| Tool | Arguments (`?` optional) | Does | Gate |
+|---|---|---|---|
+| `import_detect` | `source` | Which adapters recognise a package, best first, with a match score. |  |
+| `package_summary` | `source` | A package at a glance (the window's description input): file counts, folders, sample files. |  |
+| `package_tree` | `source` | A package as a file tree (the Adapter Studio's explorer). |  |
+| `package_file` | `source`, `path` | Read one file of a package, as the Adapter Studio shows it (text, or what it is). |  |
+| `package_describe` | `source` | A written description of a package from Claude (needs the Anthropic key; sends file names and small text files to Anthropic). |  |
+| `adapter_draft` | `source`, `id?` | Have Claude draft an adapter for a package (needs the Anthropic key). |  |
+| `adapter_document` | `id` | Have Claude write the documentation header an adapter must carry (needs the Anthropic key). |  |
+| `adapter_problems` | `id`, `source?` | Check an adapter's code: its structure problems and, with a package, whether a test plan on it runs |  |
+| `adapter_manage` | `action`, `id?`, `from_id?`, `name?`, `new_id?`, `text?` | The adapters' housekeeping the Adapter Studio does: source (read the code), remove (a user's own, or reset a built-in override), template (a starter module), duplicate (from_id to id), get_prompt / save_prompt (the drafting prompt kept with it), rename (id and/or name), history (earlier versions), validate (check source text) |  |
+| `sync_after` | `pod_id?` | What to sync to a pod after an import (the follow-up the window offers): the folders and the pod, or why nothing |  |
+
+#### Images, git, repositories, MCP
+
+| Tool | Arguments (`?` optional) | Does | Gate |
+|---|---|---|---|
+| `image_env` | `source?`, `image?` | The ENV and ARG lines of the pod image (or the repo's Dockerfile) the form can load as pod environment |  |
+| `image_dockerfile` | `image?` | The Dockerfile an image was built from (read from its registry), for the image menu |  |
+| `git_accounts` | `action`, `id?`, `q?` | The git accounts connected (GitHub etc.): list, disconnect one, or list its repositories (q filters). |  |
+| `repositories` | `action`, `url?`, `branch?`, `id?`, `q?` | The repositories attached to pods: list, add (url, branch), remove, search (GitHub), branches (of a url), folders (of a url and branch) |  |
+| `remote_mcp` | `action` | The MCP servers this app uses (BH's console): status, or check (ask it for its tools). |  |
+| `mcp_endpoints` | `comfy?` | The two MCP endpoints the app offers (this pod manager and the ComfyUI bridge) with their client configuration snippets, and what the bridge can point at. |  |
+
+#### Documentation
+
+| Tool | Arguments (`?` optional) | Does | Gate |
+|---|---|---|---|
+| `docs` | `page?`, `search?` | Our README, changelog and documentation (docs/*.md: the ADRs, setup, MCP, workflows). |  |
+
+
+The README and these documents are also `docs://` resources; the `docs` tool excludes what the public documentation site leaves out. Live tests that create real pods use the cheap cards ([ADR-029](./ADR-029-live-tests-use-cheap-cards.md)).
 
 ## 2. ComfyUI bridge — `mcp/comfy-bridge.mjs`
 
