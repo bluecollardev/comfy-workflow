@@ -22,7 +22,13 @@
     "total": "Total pods",
     "running": "Running",
     "stopped": "Stopped",
-    "storage": "Storage / month ({size} GB)"
+    "storage": "Storage / month ({size} GB)",
+    "credits": "Credits Remaining",
+    "creditsTitle": "RunPod's own balance for the account. The account's spend limit is {limit}.",
+    "daysLeft": "about {n} days left",
+    "hoursLeft": "about {n} h left",
+    "atRate": "at ${rate}/h",
+    "nothingSpending": "nothing is spending"
   },
   "dashboard": {
     "createPod": "Create Pod",

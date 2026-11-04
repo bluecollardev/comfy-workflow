@@ -247,6 +247,17 @@ export async function volumeInfo(id?: string, client?: rp.RunPodClient): Promise
   return v && { id: v.id, name: v.name, size_gb: v.size, datacenter: v.dataCenterId, cost_per_month: volumeCostPerMonth(v.size), s3: S3_DATACENTERS.has(v.dataCenterId) }
 }
 
+/** The credits left on the account (RunPod's own figure) and how long they last at what the pods spend right now: `hours_left` is null while nothing is spending. Null in no-spend mode (nothing is billed). */
+export interface Credits { balance: number; spend_per_hr: number; spend_limit: number | null; hours_left: number | null; level: 'ok' | 'low' | 'critical' }
+export async function credits(client?: rp.RunPodClient): Promise<Credits | null> {
+  if (isDry()) return null
+  const a = await rp.account(client)
+  const hoursLeft = a.spend_per_hr > 0 ? Math.round((a.balance / a.spend_per_hr) * 10) / 10 : null
+  // critical: under $5 or under 6 hours at the current spend; low: under $15 or under 24 hours.
+  const level = a.balance < 5 || (hoursLeft !== null && hoursLeft < 6) ? 'critical' : a.balance < 15 || (hoursLeft !== null && hoursLeft < 24) ? 'low' : 'ok'
+  return { balance: Math.round(a.balance * 100) / 100, spend_per_hr: a.spend_per_hr, spend_limit: a.spend_limit, hours_left: hoursLeft, level }
+}
+
 export async function dashboard(client?: rp.RunPodClient) {
   const pods = await list(client)
   return { stats: stats(pods), pods, dry_run: isDry() }

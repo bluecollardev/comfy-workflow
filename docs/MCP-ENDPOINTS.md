@@ -114,6 +114,7 @@ settings, or no-spend mode.
 | `get_comfy_runs` | `pod_id` | the pod's ComfyUI runs newest first: status, started_at, duration_s, output files, error, `messages` (status timeline), `error_detail` (node, exception, traceback) | read from the pod's `/history` and `/queue`; the pod must be running (409 otherwise); IPC `history.runs` |
 | `get_comfy_logs` | `pod_id`, `level` (all, warnings, errors), `lines` (default 300, max 2000) | ComfyUI's own server log from the pod, oldest first: `{entries:[{ts, level, text}], truncated}`; errors, warnings, missing models or nodes, OOM, tracebacks | GET `/internal/logs/raw`, else `/internal/logs`; the pod must be running (409), an old ComfyUI without the endpoint answers 501; IPC `history.logs` |
 | `export_history` | `format` (`json` or `csv`), `what` (`events` or `spend`) | the file name and mime, then the file's text | read only, writes no file; IPC `history.export` |
+| `get_credits` | none | the credits left on the account, the spend per hour now, the spend limit, hours left and a level (ok, low, critical); null in no-spend mode | RunPod's own balance; read it before starting anything that spends |
 | `set_idle_stop` | `pod_id`, `minutes` (0 = never) | the new value | |
 | `get_logs` | `pod_id`, `lines` (default 100) | the last lines from RunPod | |
 | `list_datacenters` | `fresh?` | every listed datacenter with S3 support and every card RunPod runs there, free or in use, each with size, secure-cloud price, stock and whether the image can run it (ADR-027); most free cards first | |

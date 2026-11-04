@@ -66,6 +66,7 @@ const TABLE = {
     datacenters: (c, fresh) => c.pods.datacenters(undefined, !!fresh),
     setIdle: (c, id, minutes) => c.pods.setIdleStop(id, Number(minutes)),
     rename: (c, id, name) => c.pods.rename(id, name),
+    credits: (c) => c.pods.credits(),
 
     details: (c, id) => c.pods.details(id),
     recreate: (c, id) => c.pods.recreate(id),

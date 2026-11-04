@@ -243,3 +243,12 @@ export async function streamLogs(id: string, opts: { tail?: number; since?: stri
     if (!(signal?.aborted)) throw e
   }
 }
+
+/** The account's money as RunPod reports it: the credit balance, what the running pods spend per hour right now, and the account's spend limit. */
+export interface Account { balance: number; spend_per_hr: number; spend_limit: number | null }
+export async function account(client?: RunPodClient): Promise<Account> {
+  const d = await graphql<{ myself: { clientBalance: number | null; currentSpendPerHr: number | null; spendLimit: number | null } | null }>('query { myself { clientBalance currentSpendPerHr spendLimit } }', client)
+  const m = d?.myself
+  if (!m || typeof m.clientBalance !== 'number') throw new Error('RunPod did not report the account balance')
+  return { balance: m.clientBalance, spend_per_hr: m.currentSpendPerHr ?? 0, spend_limit: m.spendLimit ?? null }
+}

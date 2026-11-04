@@ -103,4 +103,22 @@ test.describe('Pod list grouped by datacenter', () => {
     await expect(groups.nth(1).locator('[data-testid="pod-card"]')).toHaveCount(2)
     await expect(groups.nth(0).locator('[data-testid="pod-card"]')).toHaveCount(1)
   })
+
+  test('a Credits Remaining card shows the account balance and how long it lasts; it warns as it runs low and is left out when RunPod does not say', async ({ page, api }) => {
+    await page.goto('/')
+    const card = page.getByTestId('stat-credits')
+    await expect(card).toContainText(t('stats.credits')); await expect(card.getByTestId('stat-value')).toHaveText('$36.42')
+    await expect(card.getByTestId('stat-sub')).toContainText('about 29 days left'); await expect(card.getByTestId('stat-sub')).toContainText('$0.05/h')
+    await expect(card.locator('.stat-card')).toHaveCSS('border-left-color', /./)
+    api.state.credits = { balance: 12.5, spend_per_hr: 1.18, spend_limit: 80, hours_left: 10.6, level: 'low' }
+    await page.reload()
+    await expect(page.getByTestId('stat-credits').getByTestId('stat-sub')).toContainText('about 11 h left')
+    api.state.credits = { balance: 3.1, spend_per_hr: 1.18, spend_limit: 80, hours_left: 2.6, level: 'critical' }
+    await page.reload()
+    await expect(page.getByTestId('stat-credits').getByTestId('stat-value')).toHaveText('$3.10')
+    api.state.credits = null
+    await page.reload()
+    await expect(page.getByTestId('stat-credits')).toHaveCount(0)
+    await expect(page.getByTestId('stat-total')).toBeVisible()
+  })
 })

@@ -5,6 +5,9 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased
 
+### A Credits Remaining card
+- Lucas: "show credits remaining card". The stats row has a Credits Remaining card with RunPod's own account balance, how long it lasts at what the pods spend now (days or hours, and the rate), green, amber under $15 or 24 hours, red under $5 or 6 hours; it refreshes every minute and when pods start or stop, and is left out in no-spend mode or when RunPod does not say. MCP: `get_credits` (balance, spend per hour, spend limit, hours left, level); IPC `pods.credits`.
+
 ### History: filters, paging and wrapping in Jobs & Changes
 - Lucas: "jobs & changes needs filters", "hide configuration changes by default", "What needs to have word row wrapping", "history jobs & changes should have paging", "100 per page", "make it configurable", "this does not affect export, export exports all". Jobs & Changes has a kind, a state, an App/MCP and a text filter (with a count and Clear Filters); configuration changes are hidden until the switch (or the Configuration kind) asks for them; the What column and the other free-text cells wrap; paging is 100 a page by default with 10, 25, 50 or 100 to choose, remembered. Export is untouched by all of it: it always exports the whole history.
 

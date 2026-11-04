@@ -215,6 +215,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
     { name: 'adapter_save', description: 'Save an adapter module (ES module source) as ~/.config/runpod-pod-manager/adapters/<id>.mjs. Syntax-checked and structure-checked, nothing is run. It is listed in Default Configuration > Import adapters with its code open to read, edit or delete; test it with import_plan', inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'lowercase letters, digits and dashes' }, source: { type: 'string', description: 'the module source' } }, required: ['id', 'source'] } },
     { name: 'import_plan', description: 'Dry-run an import (folder or .zip, which is unpacked once): which adapter recognises the package (or the one named), what it would copy where in ComfyUI-Shared, by kind with counts and bytes, and its findings. Writes nothing. The adapter runs fenced (read-only on that folder). Use it to test an adapter on a real folder', inputSchema: { type: 'object', properties: { source: { type: 'string', description: 'absolute path of the package folder or .zip' }, adapter: { type: 'string', description: 'adapter id (default: the best match)' } }, required: ['source'] } },
     { name: 'import_apply', description: 'Import a folder or .zip through an adapter into this PC\'s ComfyUI-Shared (copies; never deletes; a differing existing file is a conflict unless overwrite). dry_run defaults to true. Getting it onto a pod is the sync, not this', inputSchema: { type: 'object', properties: { source: { type: 'string' }, adapter: { type: 'string' }, dry_run: { type: 'boolean', description: 'default true' }, overwrite: { type: 'boolean' } }, required: ['source'] } },
+    { name: 'get_credits', description: "The credits left on the RunPod account (RunPod's own balance), what the running pods spend per hour right now, the account's spend limit, how many hours the credits last at this rate (null while nothing runs) and a level: ok, low (under $15 or 24 hours) or critical (under $5 or 6 hours). Null in no-spend mode. Call it before starting anything that spends", inputSchema: { type: 'object', properties: {} } },
     { name: 'cost_now', description: 'What is billing right now: the running pods\' price per hour summed, and the volumes\' cost per month', inputSchema: { type: 'object', properties: {} } },
   ]
 
@@ -395,6 +396,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
       const r = await imports.apply(p, { dryRun: dry_run !== false, overwrite: !!overwrite })
       return json({ adapter: p.adapter, dry_run: r.dry_run, ok: r.ok, counts: r.counts, record: r.record, findings: p.findings, problems: r.results.filter((x) => ['conflict', 'hash-mismatch', 'error'].includes(x.status)).slice(0, 30) })
     },
+    get_credits: async () => json({ credits: await pods.credits() }),
     cost_now: async () => {
       const [all, vols] = await Promise.all([pods.list(), volumes.list()])
       const billing = all.filter((p) => p.status === 'running' || p.status === 'starting')   // a starting pod is already billed
