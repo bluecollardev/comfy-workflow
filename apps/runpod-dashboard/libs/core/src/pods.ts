@@ -213,7 +213,9 @@ export async function comfyReady(url: string, fetchFn: typeof fetch = fetch): Pr
 
 export const list = async (client?: rp.RunPodClient): Promise<PodStatus[]> => {
   if (isDry()) return dry.list().map((p) => ({ ...p, name: podnames.get(p.id) || p.name, custom_config: podconfigs.has(p.id) }))
-  const pods = (await rp.listPods(client)).map(toStatus)
+  const raws = await rp.listPods(client)
+  const pods = raws.map(toStatus)
+  try { history.observe(raws.map((r, i) => ({ id: r.id, name: pods[i].name, status: pods[i].status, gpu: r.machine?.gpuDisplayName, datacenter: r.machine?.dataCenterId, cost_per_hr: r.costPerHr ?? null }))) } catch { /* the list never waits on the history */ }
   await Promise.all(pods.map(async (p) => { if (p.status === 'running' && p.web_ui_url) p.comfy_ready = await comfyReady(p.web_ui_url, client?.fetchFn || fetch) }))
   return pods
 }

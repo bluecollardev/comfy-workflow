@@ -20,11 +20,17 @@ const MAX_LINES = 5000   // the file is trimmed to the newest this many when it 
 
 export function record(e: Without<HistoryEvent>, now: () => Date = () => new Date()): void {
   try {
+    if (e.kind === 'pod' && sameAsLast(e.pod_id, e.action, e.ts ? new Date(e.ts) : now())) return   // observed and recorded for the same change: once
     const f = historyFile()
     mkdirSync(dirname(f), { recursive: true })
     appendFileSync(f, JSON.stringify({ ...e, ts: e.ts ?? now().toISOString() }) + '\n')
     trim(f)
   } catch { /* never in the way */ }
+}
+/** Is the newest event of this pod the same action, within five minutes? (A change seen by `observe` and recorded by the action itself is one event.) */
+function sameAsLast(podId: string, action: string, at: Date): boolean {
+  const last = list({ kind: 'pod', limit: MAX_LINES }).find((x) => x.pod_id === podId) as PodEvent | undefined
+  return !!last && last.action === action && Math.abs(at.getTime() - new Date(last.ts).getTime()) < 5 * 60_000
 }
 function trim(f: string) {
   try {
@@ -97,4 +103,32 @@ export function exportHistory(opts: { format?: 'json' | 'csv'; what?: 'events' |
     ? [e.ts, 'pod', e.action, e.name, e.pod_id, e.gpu, e.datacenter, e.cost_per_hr, '', '', '', e.detail]
     : [e.ts, 'job', e.job, e.what, e.pod_id, '', '', '', e.state, e.files, e.bytes, e.error])
   return { name: `pod-manager-history-${day}.csv`, mime: 'text/csv', text: csv(['time', 'kind', 'action', 'name', 'pod_id', 'gpu', 'datacenter', 'cost_per_hr', 'state', 'files', 'bytes', 'detail'], rows) }
+}
+
+// ----- observing pods started or stopped outside this app -----
+
+export interface LivePod { id: string; name: string; status: 'running' | 'starting' | 'stopped'; gpu?: string; datacenter?: string; cost_per_hr?: number | null }
+type Known = 'running' | 'stopped' | 'gone'
+
+/** Bring the history in line with the pods RunPod reports now. A pod started, stopped or deleted by anything else (the MCP server in another session, the idle watch, the RunPod
+ *  console) leaves no event of its own, so the difference is recorded here when the pod list is read: a pod running that the history has not seen start is `started` (or `created`
+ *  when it was never seen); one stopped that was running is `stopped`; one that was known and is gone is `deleted`. Stopped pods never seen before are only a baseline: no event.
+ *  The time is when it was noticed, so a session can start a little after the real start. Returns the events it recorded. */
+export function observe(live: LivePod[], now: () => Date = () => new Date()): number {
+  const state = new Map<string, { known: Known; name: string }>()
+  for (const e of (list({ kind: 'pod', limit: MAX_LINES }).reverse() as PodEvent[])) {
+    state.set(e.pod_id, { known: e.action === 'created' || e.action === 'started' ? 'running' : e.action === 'stopped' ? 'stopped' : e.action === 'renamed' ? (state.get(e.pod_id)?.known ?? 'stopped') : 'gone', name: e.name })
+  }
+  const seen = new Set(live.map((p) => p.id))
+  let n = 0
+  const rec = (e: Without<PodEvent>) => { record(e, now); n++ }
+  for (const p of live) {
+    const known = state.get(p.id)?.known
+    const on = p.status === 'running' || p.status === 'starting'
+    const base = { kind: 'pod' as const, pod_id: p.id, name: p.name, gpu: p.gpu, datacenter: p.datacenter, detail: 'seen by the app' }
+    if (on && known !== 'running') rec({ ...base, cost_per_hr: p.cost_per_hr ?? null, action: known === undefined ? 'created' : 'started' })
+    else if (!on && known === 'running') rec({ ...base, action: 'stopped' })
+  }
+  for (const [id, s] of state) if (s.known !== 'gone' && !seen.has(id)) rec({ kind: 'pod', action: 'deleted', pod_id: id, name: s.name, detail: 'no longer on the account' })
+  return n
 }

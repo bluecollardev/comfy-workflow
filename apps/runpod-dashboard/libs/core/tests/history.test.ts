@@ -50,3 +50,22 @@ describe('history export', () => {
     expect(history.exportHistory({ format: 'csv', what: 'spend', now }).text).toContain('pod_id,name,gpu')
   })
 })
+
+describe('history observe', () => {
+  it('records pods started, stopped or deleted outside the app, once, and baselines unseen stopped pods', () => {
+    const t = (m: number) => () => new Date(Date.UTC(2026, 10, 4, 10, m))
+    const live = (status: 'running' | 'stopped') => [{ id: 'a', name: 'A', status, gpu: 'A40', datacenter: 'EU-SE-1', cost_per_hr: 0.59 }, { id: 'z', name: 'Z', status: 'stopped' as const }]
+    expect(history.observe(live('running'), t(0))).toBe(1)          // a: created (z is only a baseline)
+    expect(history.observe(live('running'), t(1))).toBe(0)          // nothing changed
+    expect(history.observe(live('stopped'), t(30))).toBe(1)         // a: stopped
+    expect(history.observe(live('running'), t(60))).toBe(1)         // a: started
+    expect(history.observe([], t(90))).toBe(1)                      // a: deleted
+    expect(history.list({ kind: 'pod' }).map((e) => (e as history.PodEvent).action)).toEqual(['deleted', 'started', 'stopped', 'created'])
+    expect(history.spend(new Date(Date.UTC(2026, 10, 4, 12))).total).toBeCloseTo(0.59 * 0.5 + 0.59 * 0.5, 1)   // created→stopped 30 min, started→deleted 30 min
+  })
+  it('an event the action recorded and observe saw is one event', () => {
+    history.record({ kind: 'pod', action: 'created', pod_id: 'a', name: 'A', cost_per_hr: 1 }, () => new Date())
+    history.observe([{ id: 'a', name: 'A', status: 'starting' }])
+    expect(history.list({ kind: 'pod' })).toHaveLength(1)
+  })
+})
