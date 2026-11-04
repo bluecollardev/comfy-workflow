@@ -74,7 +74,7 @@ describe('the agent pool', () => {
 
   it('refuses what the core refuses: a card outside the table, a bad storage size, no name', async () => {
     expect(pool.GPU_TYPES).toEqual(['auto', ...Object.keys(gpus.GPUS)])   // the enum follows the core's card table
-    await expect(pool.create({ agent_name: 'x', gpu_type: 'h100' })).rejects.toThrow(/unknown GPU/)
+    await expect(pool.create({ agent_name: 'x', gpu_type: 'b200' })).rejects.toThrow(/unknown GPU/)
     await expect(pool.create({ agent_name: 'x', storage_gb: 10 })).rejects.toThrow(/storage_gb/)
     await expect(pool.create({ agent_name: ' ' })).rejects.toThrow(/needs a name/)
     expect(pool.agents()).toEqual([]); expect(await pods.list()).toEqual([])

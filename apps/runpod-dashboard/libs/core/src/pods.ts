@@ -138,7 +138,7 @@ export const NO_STOCK = /no longer any instances available|not enough|no instanc
  *  (a network volume pins the pod there) only the cards that datacenter has right now count as in stock. */
 export async function candidates(gpuTypeId: string, client?: rp.RunPodClient, dataCenterId?: string): Promise<string[]> {
   if (gpuTypeId !== gpus.AUTO) return [gpuTypeId]
-  const ids = Object.values(gpus.GPUS).map((g) => g.id)
+  const ids = gpus.autoCards().map((g) => g.id)   // not the explicit-only big cards
   let stock: rp.GpuStock[] = []
   try { stock = await rp.gpuStock(ids, client) } catch { /* no stock answer: try them all in table order */ }
   let here: Set<string> | null = null

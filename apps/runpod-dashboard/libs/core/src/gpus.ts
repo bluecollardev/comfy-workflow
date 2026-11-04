@@ -6,11 +6,11 @@
  * cloud (what a volume pod pays): the small Ampere and Ada cards, the L4, and the 48 GB workstation
  * cards (A40, A6000, L40) because the datacenter that holds the volume has them in stock when the
  * small ones are gone. Left out on purpose: A100, H100, L40S (several times the rate for no gain
- * here), the RTX 6000 Ada (dearer than a 4090), and the Blackwell cards (RTX PRO 4000/4500/6000,
+ * here; since 2026-11-04 they are in the table as explicit-only cards that `auto` never picks), the RTX 6000 Ada (dearer than a 4090), and the Blackwell cards (RTX PRO 4000/4500/6000,
  * RTX 5090), which need CUDA 12.8+ while the image is built on 12.6 (build.sh --base for a newer one).
  * In the secure cloud the A5000 and the 3090 are rarely offered; they stay for the community cloud.
  */
-export const GPUS: Record<string, { id: string; name: string; vram: number }> = {
+export const GPUS: Record<string, { id: string; name: string; vram: number; explicit?: true }> = {
   rtx2000ada: { id: 'NVIDIA RTX 2000 Ada Generation', name: 'RTX 2000 Ada', vram: 16 },
   a4000: { id: 'NVIDIA RTX A4000', name: 'RTX A4000', vram: 16 },
   rtx4000ada: { id: 'NVIDIA RTX 4000 Ada Generation', name: 'RTX 4000 Ada', vram: 20 },
@@ -21,7 +21,18 @@ export const GPUS: Record<string, { id: string; name: string; vram: number }> = 
   a6000: { id: 'NVIDIA RTX A6000', name: 'RTX A6000', vram: 48 },
   a40: { id: 'NVIDIA A40', name: 'A40', vram: 48 },
   l40: { id: 'NVIDIA L40', name: 'L40', vram: 48 },
+  // The big cards (Lucas, 2026-11-04: "i need the most powerful card"). Ids checked against RunPod's gpuTypes. They need CUDA 12.x only (Hopper, Ampere, Ada), so the image's 12.6 runs them.
+  // `explicit`: never picked by `auto`, because they cost several times a 4090 and `auto` would fall to them whenever the small cards are out. Ask for one by name.
+  l40s: { id: 'NVIDIA L40S', name: 'L40S', vram: 48, explicit: true },
+  rtx6000ada: { id: 'NVIDIA RTX 6000 Ada Generation', name: 'RTX 6000 Ada', vram: 48, explicit: true },
+  a100pcie: { id: 'NVIDIA A100 80GB PCIe', name: 'A100 PCIe', vram: 80, explicit: true },
+  a100: { id: 'NVIDIA A100-SXM4-80GB', name: 'A100 SXM', vram: 80, explicit: true },
+  h100pcie: { id: 'NVIDIA H100 PCIe', name: 'H100 PCIe', vram: 80, explicit: true },
+  h100: { id: 'NVIDIA H100 80GB HBM3', name: 'H100 SXM', vram: 80, explicit: true },
+  h200: { id: 'NVIDIA H200', name: 'H200 SXM', vram: 141, explicit: true },
 }
+/** The cards `auto` may choose from: the table without the explicit-only big cards. */
+export const autoCards = () => Object.values(GPUS).filter((g) => !g.explicit)
 /** `auto`: the cheapest card of the table that RunPod has in stock at that moment (pods.ts asks), then the next on failure. */
 export const AUTO = 'auto'
 export const DEFAULT_GPU = AUTO
@@ -38,4 +49,4 @@ export function vram(key: string): number {
   return 0
 }
 
-export const menu = () => [{ value: AUTO, text: 'Cheapest card in stock (16-48 GB)' }, ...Object.entries(GPUS).map(([value, g]) => ({ value, text: `${g.name} (${g.vram} GB)` }))]
+export const menu = () => [{ value: AUTO, text: 'Cheapest card in stock (16-48 GB)' }, ...Object.entries(GPUS).map(([value, g]) => ({ value, text: `${g.name} (${g.vram} GB)${g.explicit ? ' · pick by name' : ''}` }))]
