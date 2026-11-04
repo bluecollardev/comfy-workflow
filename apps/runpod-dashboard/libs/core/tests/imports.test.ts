@@ -371,7 +371,7 @@ describe('the rule: the app\'s Claude writes adapters and nothing else', () => {
     const r = await im.draft(root, { id: 'draft-x', fetchImpl: reply(hostile) })
     expect(r.adapter.id).toBe('draft-x'); expect(r.ignored).toBe(2)
     expect(r.valid).toBe(false); expect(r.errors.join()).toMatch(/must be "draft-x"/)   // the module's own id is wrong, and said so
-    const added = tree(dir).filter((f) => !before.includes(f))
+    const added = tree(dir).filter((f) => !before.includes(f) && f !== 'history.jsonl')   // the history line that says an adapter was saved is the one other file
     expect(added).toEqual(['adapters', 'adapters/draft-x.mjs'])   // nothing else on disk: no config, no script, no traversal
     expect(existsSync('/etc/evil')).toBe(false)
     expect(readFileSync(join(adaptersDir(), 'draft-x.mjs'), 'utf8')).not.toContain('rm -rf')

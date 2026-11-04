@@ -10,6 +10,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { bad } from './errors.js'
+import * as history from './history.js'
 import * as mounts from './mounts.js'
 import * as podconfigs from './podconfigs.js'
 import { S3_DATACENTERS, volumeCostPerMonth } from './pods.js'
@@ -65,6 +66,7 @@ export async function create(input: { name: string; size_gb: number; datacenter:
   let v: rp.NetworkVolume
   if (isDry()) { v = { id: `dry-vol-${Date.now().toString(36)}`, name: input.name.trim(), size: input.size_gb, dataCenterId: input.datacenter }; drySave([...dryLoad(), v]) }
   else v = await rp.createNetworkVolume({ name: input.name.trim(), size: input.size_gb, dataCenterId: input.datacenter }, client)
+  history.record({ kind: 'change', area: 'volume', action: 'created', what: input.name.trim(), detail: `${input.size_gb} GB in ${input.datacenter}` })
   return (await list(client)).find((x) => x.id === v.id) || { id: v.id, name: v.name, size_gb: v.size, datacenter: v.dataCenterId, cost_per_month: volumeCostPerMonth(v.size), s3: S3_DATACENTERS.has(v.dataCenterId), is_default: false, pods: [] }
 }
 
@@ -76,6 +78,7 @@ export async function resize(id: string, size_gb: number, client?: rp.RunPodClie
   if (size_gb > 4000) throw bad('4000 GB is the most RunPod allows')
   if (isDry()) drySave(dryLoad().map((v) => (v.id === id ? { ...v, size: size_gb } : v)))
   else await rp.updateNetworkVolume(id, { size: size_gb }, client)
+  history.record({ kind: 'change', area: 'volume', action: 'resized', what: current.name, detail: `${current.size_gb} → ${size_gb} GB` })
   return (await list(client)).find((v) => v.id === id)!
 }
 
@@ -87,7 +90,8 @@ export async function remove(id: string, client?: rp.RunPodClient): Promise<{ re
   if (attached.length) throw bad(`${current.name} is attached to ${attached.map((p) => p.name).join(', ')}: delete or recreate those pods first`)
   if (isDry()) drySave(dryLoad().filter((v) => v.id !== id))
   else await rp.deleteNetworkVolume(id, client)
-  if (current.is_default) { const cfg = mounts.load(); mounts.put({ ...cfg, network_volume_id: '', data_center_id: '' }) }
+  if (current.is_default) { const cfg = mounts.load(); mounts.put({ ...cfg, network_volume_id: '', data_center_id: '' }, { quiet: true }) }
+  history.record({ kind: 'change', area: 'volume', action: 'deleted', what: current.name, detail: `${current.size_gb} GB in ${current.datacenter}` })
   return { removed: id, was_default: current.is_default }
 }
 
@@ -96,6 +100,7 @@ export async function useAsDefault(id: string, client?: rp.RunPodClient): Promis
   const current = (await list(client)).find((v) => v.id === id)
   if (!current) throw bad(`No network volume ${id}`)
   const cfg = mounts.load()
-  mounts.put({ ...cfg, network_volume_id: id, data_center_id: current.datacenter })
+  mounts.put({ ...cfg, network_volume_id: id, data_center_id: current.datacenter }, { quiet: true })
+  history.record({ kind: 'change', area: 'volume', action: 'made the default', what: current.name, detail: current.datacenter })
   return { ...current, is_default: true }
 }

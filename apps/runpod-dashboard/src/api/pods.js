@@ -32,8 +32,10 @@ const ipc = core && {
   createPod: (podData) => core.invoke('pods', 'create', [toRequest(podData)]),
   gpus: (dc) => core.invoke('pods', 'gpus', [dc || '']),
   volume: (id) => core.invoke('pods', 'volume', [id || '']),
+  credits: () => core.invoke('pods', 'credits'),
   datacenters: (fresh) => core.invoke('pods', 'datacenters', [!!fresh]),
   setIdle: (id, minutes) => core.invoke('pods', 'setIdle', [id, minutes]),
+  rename: (id, name) => core.invoke('pods', 'rename', [id, name]),
   stopPod: (id) => core.invoke('pods', 'stop', [id]),
   resumePod: (id) => core.invoke('pods', 'resume', [id]),
   deletePod: (id) => core.invoke('pods', 'remove', [id]),
@@ -68,12 +70,22 @@ const http = {
     const { data } = await axios.get(`${API_BASE}/gpus`, { params: dc ? { dc } : {} });
     return data;
   },
+  async credits() {
+    const { data } = await axios.get(`${API_BASE}/credits`);
+    return data;
+  },
   async volume(id) {
     const { data } = await axios.get(`${API_BASE}/volumes/${encodeURIComponent(id)}`);
     return data;
   },
   async datacenters(fresh) {
     const { data } = await axios.get(`${API_BASE}/datacenters`, { params: fresh ? { fresh: 1 } : undefined });
+    return data;
+  },
+
+  // The name this app shows for a pod (RunPod's own is untouched); empty goes back to RunPod's
+  async rename(podId, name) {
+    const { data } = await axios.put(`${API_BASE}/pods/${podId}/name`, { name });
     return data;
   },
 

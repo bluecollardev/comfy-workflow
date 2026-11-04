@@ -43,6 +43,7 @@
               @stop="pods.stop(pod.id)"
               @resume="pods.resume(pod.id)"
               @delete="pods.remove(pod.id)"
+                  @rename="(name) => pods.rename(pod.id, name)"
             />
           </BCol>
         </BRow>
@@ -57,6 +58,7 @@
                   @stop="pods.stop(pod.id)"
                   @resume="pods.resume(pod.id)"
                   @delete="pods.remove(pod.id)"
+                  @rename="(name) => pods.rename(pod.id, name)"
                 />
               </BCol>
             </BRow>

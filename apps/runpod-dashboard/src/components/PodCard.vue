@@ -1,7 +1,15 @@
 <template>
   <BCard class="h-100" body-class="d-flex flex-column" data-testid="pod-card" :data-name="pod.name">
     <div class="d-flex align-items-start gap-2 mb-3">
-      <span class="fw-semibold fs-5 text-truncate" :title="pod.name">{{ pod.name }}</span>
+      <template v-if="!renaming">
+        <span class="fw-semibold fs-5 text-truncate" :title="pod.runpod_name ? $t('pod.runpodName', { name: pod.runpod_name }) : pod.name" data-testid="pod-name">{{ pod.name }}</span>
+        <button type="button" class="btn btn-link btn-sm p-0 align-baseline text-body-secondary" :title="$t('pod.rename')" :aria-label="$t('pod.editTitle')" data-testid="pod-rename" @click="startRename"><i class="fa-solid fa-pencil fa-xs"></i></button>
+      </template>
+      <div v-else class="input-group input-group-sm flex-grow-1" style="min-width: 0">
+        <input v-model="draft" type="text" class="form-control" maxlength="80" :placeholder="pod.runpod_name || pod.name" :aria-label="$t('pod.editTitle')" data-testid="pod-rename-input" @keydown.enter="saveRename" @keydown.esc="renaming = false" />
+        <button type="button" class="btn btn-primary" :title="$t('pod.renameSave')" data-testid="pod-rename-save" @click="saveRename"><i class="fa-solid fa-check"></i></button>
+        <button type="button" class="btn btn-outline-light" :title="$t('pod.renameCancel')" data-testid="pod-rename-cancel" @click="renaming = false"><i class="fa-solid fa-xmark"></i></button>
+      </div>
       <BBadge v-if="pod.custom_config" variant="warning" text-indicator class="ms-auto" :title="$t('pod.ownConfigTitle')" data-testid="pod-config-badge">{{ $t('pod.ownConfig') }}</BBadge>
       <BBadge :variant="STATUS_VARIANT[pod.status] ?? 'secondary'" :class="pod.custom_config ? '' : 'ms-auto'" data-testid="pod-status" :data-status="pod.status">
         {{ $t(`pod.statuses.${pod.status}`) }}
@@ -124,7 +132,7 @@
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.disk') }}</dt><dd class="col-8 mb-0">{{ volume ? $t('pod.diskNetwork', { disk: details.disk_gb, name: volume.name, size: volume.size_gb }) : $t('pod.diskValue', { disk: details.disk_gb, volume: details.volume_gb }) }}</dd>
       </dl>
     </div>
-    <ConfigModal v-if="configOpen" mode="pod" v-model="configOpen" :initial="ownConfig" :pod-name="pod.name" @apply="applyConfig" />
+    <ConfigModal v-if="configOpen" mode="pod" v-model="configOpen" :initial="ownConfig" :pod-name="pod.name" :pod-id="pod.id" :runpod-name="pod.runpod_name || ''" @apply="applyConfig" />
     <SyncModal v-model="showSync" :pod="pod" />
     <BModal v-model="showLogs" :title="$t('pod.logsTitle', { name: pod.name })" size="xl" scrollable ok-only :ok-title="$t('pod.close')" ok-variant="outline-light" body-class="p-0" @hidden="showLogs = false">
       <PodLogs v-if="showLogs" :pod-id="pod.id" modal />
@@ -198,7 +206,12 @@ const props = defineProps({
   pod: { type: Object, required: true },
   busy: { type: Boolean, default: false },
 })
-const emit = defineEmits(['stop', 'resume', 'delete'])
+const emit = defineEmits(['stop', 'resume', 'delete', 'rename'])
+/** The name is ours: a map on this app's side (RunPod keeps its own). Empty goes back to RunPod's name. */
+const renaming = ref(false)
+const draft = ref('')
+const startRename = () => { draft.value = props.pod.name; renaming.value = true }
+const saveRename = () => { const n = draft.value.trim(); renaming.value = false; if (n !== props.pod.name) emit('rename', n === (props.pod.runpod_name || '') ? '' : n) }
 
 const STATUS_VARIANT = {
   running: 'success',

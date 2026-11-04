@@ -19,6 +19,12 @@ async function loadCore() {
     ? path.join(process.resourcesPath, 'core', 'index.js')
     : path.resolve(__dirname, '..', 'libs', 'core', 'dist', 'index.js')
   core = await import(require('node:url').pathToFileURL(file).href)
+  // The history is pushed: every event recorded tells the windows (one message per burst), so the History window refreshes by itself.
+  let timer = null
+  const push = () => { if (timer) return; timer = setTimeout(() => { timer = null; for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('core:history', {}) }, 250) }
+  core.history.onChange(push)
+  // Events written by another process (the MCP server of another session, the CLI) arrive through the file.
+  try { const hf = core.paths.historyFile(); require('node:fs').mkdirSync(path.dirname(hf), { recursive: true }); require('node:fs').watch(path.dirname(hf), (_ev, name) => { if (name === path.basename(hf)) push() }) } catch { /* in-process changes still push */ }
   return core
 }
 
@@ -59,10 +65,20 @@ const TABLE = {
     volume: (c, id) => c.pods.volumeInfo(id || undefined),
     datacenters: (c, fresh) => c.pods.datacenters(undefined, !!fresh),
     setIdle: (c, id, minutes) => c.pods.setIdleStop(id, Number(minutes)),
+    rename: (c, id, name) => c.pods.rename(id, name),
+    credits: (c) => c.pods.credits(),
+
     details: (c, id) => c.pods.details(id),
     recreate: (c, id) => c.pods.recreate(id),
     config: (c, id) => c.pods.config(id),
     setConfig: (c, id, cfg) => c.pods.setConfig(id, cfg),
+  },
+  history: {
+    list: (c, kind, limit) => c.history.list({ ...(kind ? { kind } : {}), ...(limit ? { limit: Number(limit) } : {}) }),
+    spend: (c) => c.history.spend(),
+    runs: (c, podId) => c.comfyruns.runs(podId),
+    export: (c, opts) => c.history.exportHistory({ format: opts && opts.format, what: opts && opts.what }),
+    logs: (c, podId, opts) => c.comfyruns.logs(podId, opts || {}),
   },
   volumes: {
     list: (c) => c.volumes.list(),

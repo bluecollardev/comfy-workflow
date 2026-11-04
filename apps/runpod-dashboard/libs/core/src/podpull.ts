@@ -24,6 +24,7 @@ import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { CoreError, bad } from './errors.js'
 import * as dry from './dry.js'
+import * as history from './history.js'
 import * as gpus from './gpus.js'
 import * as idle from './idle.js'
 import * as mounts from './mounts.js'
@@ -456,6 +457,8 @@ async function run(i: Internal, opts: Opts) {
     if (!(e instanceof CoreError && e.status === 499)) { i.job.error = (e as Error).message; if (!i.cancelled) i.job.lines.push(`Failed: ${(e as Error).message}`) }
   } finally {
     conclude(i)
+    const jb = i.job
+    if (jb.state === 'done' || jb.state === 'failed' || jb.state === 'cancelled') history.record({ kind: 'job', job: jb.kind, state: jb.state, started_at: jb.started_at, what: jb.round, pod_id: jb.pod_id ?? undefined, pod_name: jb.pod_name ?? undefined, files: jb.files, bytes: jb.bytes_done || i.plan.bytes, ...(jb.error ? { error: jb.error } : {}) })
     busy.delete(i.job.round)
   }
 }

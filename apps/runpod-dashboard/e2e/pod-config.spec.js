@@ -120,3 +120,17 @@ test.describe('a pod\'s own Configuration › folders on this PC', () => {
     expect(api.state.mounts.config.sync_shared).toEqual(['input', 'workflows'])   // the default is not changed
   })
 })
+
+test.describe('a named pod\'s configuration', () => {
+  test('never says Default Pod Configuration, and the pod\'s title is edited above the tabs', async ({ page }) => {
+    await page.goto('/')
+    await podCard(page, 'ComfyUI-Dev').getByTestId('pod-config').click()
+    const panel = modal(page, t('config.podTitle', { name: 'ComfyUI-Dev' }))
+    await expect(panel.getByTestId('section-volume')).toHaveText(t('config.volumePod'))
+    await expect(panel).not.toContainText('Default Pod Configuration')
+    await expect(panel.locator('[data-testid="cfg-tab-volume"]')).toHaveText(t('config.volumePod'))
+    await panel.getByTestId('cfg-pod-name').fill('cgi-042 plates')
+    await panel.getByTestId('cfg-pod-name-save').click()
+    await expect(podCard(page, 'cgi-042 plates')).toBeVisible()
+  })
+})

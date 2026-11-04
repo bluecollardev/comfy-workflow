@@ -5,6 +5,22 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased
 
+### A Credits Remaining card
+- Lucas: "show credits remaining card". The stats row has a Credits Remaining card with RunPod's own account balance, how long it lasts at what the pods spend now (days or hours, and the rate), green, amber under $15 or 24 hours, red under $5 or 6 hours; it refreshes every minute and when pods start or stop, and is left out in no-spend mode or when RunPod does not say. MCP: `get_credits` (balance, spend per hour, spend limit, hours left, level); IPC `pods.credits`.
+- Lucas: "reduce cards text size for headings and values", "make sure cards are always same height use flex". The stat cards' headings and values are smaller (0.7rem and 1.5rem) and the cards of a row are always the same height (flex), with or without the line under the value.
+
+### History: filters, paging and wrapping in Jobs & Changes
+- Lucas: "jobs & changes needs filters", "hide configuration changes by default", "What needs to have word row wrapping", "history jobs & changes should have paging", "100 per page", "make it configurable", "this does not affect export, export exports all". Jobs & Changes has a kind, a state, an App/MCP and a text filter (with a count and Clear Filters); configuration changes are hidden until the switch (or the Configuration kind) asks for them; the What column and the other free-text cells wrap; paging is 100 a page by default with 10, 25, 50 or 100 to choose, remembered. Export is untouched by all of it: it always exports the whole history.
+
+### History
+- Lucas: "have a log viewer for comfy runs that tells us about any errors or feedback from comfy". Core: each ComfyUI run carries its `messages` timeline and, when it failed, `error_detail` (message, node, exception type, traceback); new `comfyruns.logs` reads ComfyUI's own server log from the pod (`/internal/logs/raw`, else `/internal/logs`), classifies lines as error, warning or info, filters by level and keeps the newest lines. IPC `history.logs`; MCP `get_comfy_logs`.
+- Lucas: "all". History: pod history, spend history, download/sync job history, ComfyUI runs. Core: `history` (pod and job events, spend worked out from them) and `comfyruns` (a running pod's ComfyUI `/history` and `/queue`, newest first); IPC `history.list`, `history.spend`, `history.runs`; MCP `get_history`, `get_spend_history`, `get_comfy_runs`.
+- Lucas: "make history exportable too". The history (events or spend) exports as JSON or CSV: IPC `history.export`, MCP `export_history` (returns the text and a suggested file name; writes nothing).
+
+### Rename a pod (a name on our side only)
+- Lucas: "i want an ability to edit the pod name once created - this is just a map on our end", "make sure this is mcp exposed". A pencil on the pod card edits the name (Enter saves, Escape cancels, empty goes back to RunPod's name). RunPod is not told: the name is kept in `pod-names.json` by pod id, shown on the card, in lists and by the MCP tools, carried by Recreate and dropped by Delete. MCP: `rename_pod` (pod manager server, so the stdio and the app-served endpoints both have it); IPC `pods.rename`.
+- Lucas: "this shouldn't say default pod configuration if we're configuring a named pod", "above the tabs, have the ability to name the pod". A pod's own Configuration window now says "Pod Configuration" (heading, tab and hint) and has a Pod title field above the tabs that saves at once.
+
 ### Pods grouped by datacenter
 - Lucas: "have a toggle to group by datacenter that enables this secondary view, otherwise view as list like it was before". A switch in the Pods header turns the grouping on; off (the default) is the plain list as before. The choice is remembered.
 - Lucas: "in pods cards list group pods by datacenter". The pod list shows a heading per datacenter (with a count) and the pods of that datacenter under it; groups are in name order, pods with no known datacenter last. The datacenter comes from the pod's machine.
