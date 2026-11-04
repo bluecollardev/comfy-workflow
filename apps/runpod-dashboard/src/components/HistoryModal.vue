@@ -1,5 +1,5 @@
 <template>
-  <BModal :model-value="ui.historyOpen" :title="$t('history.title')" size="xl" lazy ok-only :ok-title="$t('history.done')" ok-variant="outline-light" data-testid="history-modal" @update:model-value="ui.historyOpen = $event" @show="load">
+  <BModal :model-value="ui.historyOpen" :title="$t('history.title')" size="xl" lazy ok-only :ok-title="$t('history.done')" ok-variant="outline-light" data-testid="history-modal" @update:model-value="ui.historyOpen = $event" @show="load()">
     <p class="text-body-secondary small">{{ $t('history.intro') }}</p>
     <div class="d-flex justify-content-end mb-2">
       <BDropdown size="sm" variant="outline-light" right data-testid="history-export" :disabled="exporting">
@@ -112,10 +112,10 @@
  * HistoryModal — what happened: pod events, spend, jobs (pull/sync/remove) and the ComfyUI runs of a running pod.
  * The first three come from the core's history store; the runs are read live from the chosen pod.
  */
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useUiStore } from '../stores/ui'
 import { usePodsStore } from '../stores/pods'
-import { historyAPI } from '../api/history'
+import { historyAPI, onHistoryChange } from '../api/history'
 import { saveTextFile } from '../api/configio'
 
 const ui = useUiStore()
@@ -144,8 +144,16 @@ const when = (ts) => (ts ? new Date(ts).toLocaleString() : '')
 const money = (n) => `$${Number(n || 0).toFixed(2)}`
 const size = (b) => (b >= 1073741824 ? `${(b / 1073741824).toFixed(1)} GB` : b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : b >= 1024 ? `${(b / 1024).toFixed(1)} KB` : `${b} B`)
 
-async function load() {
-  loading.value = true; error.value = ''
+/** Updates by itself while the window is open: the app pushes each change (a poll where it cannot). The ComfyUI runs live on the pod, so that tab asks again every 5 seconds. */
+let stopWatch = null, runsTimer = null
+const live = () => { if (!stopWatch) stopWatch = onHistoryChange(() => load(true)) }
+const unlive = () => { stopWatch?.(); stopWatch = null }
+watch(() => ui.historyOpen, (open) => { if (open) live(); else unlive() }, { immediate: true })
+watch([() => ui.historyOpen, tabIndex, runPod], () => { clearInterval(runsTimer); runsTimer = null; if (ui.historyOpen && tabIndex.value === 3 && runPod.value) runsTimer = setInterval(() => loadRuns(true), 5000) })
+onBeforeUnmount(() => { unlive(); clearInterval(runsTimer) })
+async function load(quiet = false) {
+  if (!quiet) loading.value = true
+  error.value = ''
   try {
     const [ev, sp] = await Promise.all([historyAPI.list(undefined, 500), historyAPI.spend()])
     events.value = ev || []; spend.value = sp
@@ -157,11 +165,12 @@ async function doExport(format, what) {
   exporting.value = true; error.value = ''
   try { const f = await historyAPI.export(format, what); await saveTextFile(f.name, f.text) } catch (e) { error.value = msg(e) } finally { exporting.value = false }
 }
-async function loadRuns() {
-  runs.value = null; runsError.value = ''
+async function loadRuns(quiet = false) {
+  if (!quiet) runs.value = null
+  runsError.value = ''
   if (!runPod.value) runPod.value = runningPods.value[0]?.id || ''
   if (!runPod.value) return
-  runsLoading.value = true
+  if (!quiet) runsLoading.value = true
   try { runs.value = (await historyAPI.runs(runPod.value)) || [] } catch (e) { runsError.value = msg(e) } finally { runsLoading.value = false }
 }
 </script>

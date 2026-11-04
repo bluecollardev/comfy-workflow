@@ -88,4 +88,13 @@ test.describe('history', () => {
     expect(await grab('history-export-csv-events')).toBe('history-events.csv')
     expect(await grab('history-export-csv-spend')).toBe('history-spend.csv')
   })
+
+  test('the open window updates by itself (a poll in a browser, a push in the app)', async ({ page, api }) => {
+    await page.goto('/')
+    const d = await openHistory(page)
+    await expect(d.getByTestId('history-pod-row')).toHaveCount(2)
+    api.state.history.events.unshift({ ts: '2026-11-04T10:00:00Z', kind: 'pod', action: 'stopped', pod_id: 'pod-x', name: 'Stopped-elsewhere', gpu: 'A40', datacenter: 'EU-SE-1' })
+    await expect(d.getByTestId('history-pod-row')).toHaveCount(3, { timeout: 12000 })
+    await expect(d.getByTestId('history-pods')).toContainText('Stopped-elsewhere')
+  })
 })

@@ -19,6 +19,12 @@ async function loadCore() {
     ? path.join(process.resourcesPath, 'core', 'index.js')
     : path.resolve(__dirname, '..', 'libs', 'core', 'dist', 'index.js')
   core = await import(require('node:url').pathToFileURL(file).href)
+  // The history is pushed: every event recorded tells the windows (one message per burst), so the History window refreshes by itself.
+  let timer = null
+  const push = () => { if (timer) return; timer = setTimeout(() => { timer = null; for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('core:history', {}) }, 250) }
+  core.history.onChange(push)
+  // Events written by another process (the MCP server of another session, the CLI) arrive through the file.
+  try { const hf = core.paths.historyFile(); require('node:fs').mkdirSync(path.dirname(hf), { recursive: true }); require('node:fs').watch(path.dirname(hf), (_ev, name) => { if (name === path.basename(hf)) push() }) } catch { /* in-process changes still push */ }
   return core
 }
 

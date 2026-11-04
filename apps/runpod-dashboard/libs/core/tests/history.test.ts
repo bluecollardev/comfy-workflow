@@ -69,3 +69,17 @@ describe('history observe', () => {
     expect(history.list({ kind: 'pod' })).toHaveLength(1)
   })
 })
+
+describe('history onChange', () => {
+  it('tells listeners after each recorded event, until they unsubscribe, and a failing listener does not break a record', () => {
+    let n = 0
+    const off = history.onChange(() => { n++ })
+    const bad = history.onChange(() => { throw new Error('x') })
+    history.record({ kind: 'pod', action: 'created', pod_id: 'a', name: 'A' }, () => new Date('2026-11-04T10:00:00Z'))
+    history.record({ kind: 'job', job: 'sync', state: 'done', what: 'x' })
+    expect(n).toBe(2)
+    off(); bad()
+    history.record({ kind: 'job', job: 'sync', state: 'done', what: 'y' })
+    expect(n).toBe(2); expect(history.list()).toHaveLength(3)
+  })
+})

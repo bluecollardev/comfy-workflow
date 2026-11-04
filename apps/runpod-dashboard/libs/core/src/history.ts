@@ -16,6 +16,11 @@ export interface JobEvent { ts: string; kind: 'job'; job: 'pull' | 'remove' | 's
 export type HistoryEvent = PodEvent | JobEvent
 type Without<T> = T extends unknown ? Omit<T, 'ts'> & { ts?: string } : never
 
+const listeners = new Set<() => void>()
+/** Call `cb` after every event that is recorded (the app pushes this to its windows so History refreshes by itself). Returns the unsubscribe. */
+export function onChange(cb: () => void): () => void { listeners.add(cb); return () => { listeners.delete(cb) } }
+const changed = () => { for (const l of listeners) { try { l() } catch { /* a listener never breaks a record */ } } }
+
 const MAX_LINES = 5000   // the file is trimmed to the newest this many when it grows past 1.5 times it
 
 export function record(e: Without<HistoryEvent>, now: () => Date = () => new Date()): void {
@@ -25,6 +30,7 @@ export function record(e: Without<HistoryEvent>, now: () => Date = () => new Dat
     mkdirSync(dirname(f), { recursive: true })
     appendFileSync(f, JSON.stringify({ ...e, ts: e.ts ?? now().toISOString() }) + '\n')
     trim(f)
+    changed()
   } catch { /* never in the way */ }
 }
 /** Is the newest event of this pod the same action, within five minutes? (A change seen by `observe` and recorded by the action itself is one event.) */

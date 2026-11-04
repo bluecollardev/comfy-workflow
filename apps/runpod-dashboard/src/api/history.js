@@ -16,4 +16,10 @@ const http = {
   async export(format, what) { const { data } = await axios.get(`${API_BASE}/history/export`, { params: { format, what } }); return data },
   async runs(podId) { const { data } = await axios.get(`${API_BASE}/history/runs`, { params: { pod_id: podId } }); return data },
 }
+/** Call `cb` when the history changes; returns the stop function. In the app the main process pushes; where it cannot (a browser, an older host) the page asks again every 5 seconds. */
+export function onHistoryChange(cb, pollMs = 5000) {
+  if (core?.history?.onChange) return core.history.onChange(cb)
+  const t = setInterval(cb, pollMs)
+  return () => clearInterval(t)
+}
 export const historyAPI = ipc || http

@@ -18,6 +18,10 @@ contextBridge.exposeInMainWorld('core', {
     count: (req) => ipcRenderer.invoke('core:sync:count', JSON.parse(JSON.stringify(req))),
     onEvent(cb) { const h = (_e, payload) => cb(payload); ipcRenderer.on('core:sync', h); return () => ipcRenderer.removeListener('core:sync', h) },
   },
+  // History changes are pushed from the main process (one message per burst of events).
+  history: {
+    onChange(cb) { const h = () => cb(); ipcRenderer.on('core:history', h); return () => ipcRenderer.removeListener('core:history', h) },
+  },
   // Native Save / Open dialogs for the configuration file (docs/ADR-023): the main process picks the path; the page only sees the text.
   files: {
     saveText: (suggested, text) => ipcRenderer.invoke('core:file:save', String(suggested), String(text)),
