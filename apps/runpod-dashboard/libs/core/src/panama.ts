@@ -103,6 +103,43 @@ export function size(round: string) {
   return { round, files, bytes }
 }
 
+/** One entry of a round's file tree, in walk order (a folder, then its children): what the explorer modal shows. `local` marks a file already on this PC with the bucket's size. */
+export interface RoundEntry { path: string; dir: boolean; bytes: number; files?: number; local?: boolean }
+/** The lines of `aws s3 ls --recursive` (`2026-10-20 10:11:12   12345 rounds/<round>/a/b.txt`) as a tree under the round. Pure, so it is tested without a bucket. */
+export function roundTree(round: string, listing: string, hasLocal: (path: string, bytes: number) => boolean = () => false): RoundEntry[] {
+  const prefix = `rounds/${round}/`
+  const files: { path: string; bytes: number }[] = []
+  for (const line of listing.split('\n')) {
+    const m = /^\S+\s+\S+\s+(\d+)\s(.+)$/.exec(line.trimEnd())
+    if (!m || !m[2].startsWith(prefix)) continue
+    const path = m[2].slice(prefix.length)
+    if (path && !path.endsWith('/')) files.push({ path, bytes: Number(m[1]) })
+  }
+  const segs = (p: string) => p.split('/')
+  files.sort((a, b) => { const x = segs(a.path), y = segs(b.path); for (let i = 0; i < Math.min(x.length, y.length); i++) { if (x[i] !== y[i]) return (i === x.length - 1) !== (i === y.length - 1) ? (i === x.length - 1 ? 1 : -1) : x[i] < y[i] ? -1 : 1 } return x.length - y.length })   // folders before the files beside them
+  const out: RoundEntry[] = []; const dirs = new Map<string, RoundEntry>()
+  for (const f of files) {
+    const parts = segs(f.path)
+    for (let i = 1; i < parts.length; i++) {
+      const dp = parts.slice(0, i).join('/')
+      let d = dirs.get(dp)
+      if (!d) { d = { path: dp, dir: true, bytes: 0, files: 0 }; dirs.set(dp, d); out.push(d) }
+      d.bytes += f.bytes; d.files = (d.files ?? 0) + 1
+    }
+    out.push({ path: f.path, dir: false, bytes: f.bytes, local: hasLocal(f.path, f.bytes) })
+  }
+  return out
+}
+/** The files of one round in the bucket (read-only listing), each marked when it is already staged on this PC. */
+export function files(round: string) {
+  if (!ROUND.test(round)) throw bad(`Not a round name: ${round}`)
+  const r = run(['aws', 's3', 'ls', `s3://${bucket()}/rounds/${round}/`, '--recursive', ...aws([])], 120_000)
+  if (r.status !== 0) throw bad(`Could not list ${round}: ${(r.stderr || r.stdout).trim().split('\n').pop()}`)
+  const dir = join(stagingDir(), round)
+  const entries = roundTree(round, r.stdout, (p, bytes) => { try { return statSync(join(dir, p)).size === bytes } catch { return false } })
+  return { round, entries, files: entries.filter((e) => !e.dir).length, bytes: entries.filter((e) => !e.dir).reduce((n, e) => n + e.bytes, 0) }
+}
+
 // ----- pulling: one job per round, in this process, polled -----
 export interface Verify { listed: number; bad: string[]; extra: number; kind?: string; ok: boolean }
 // ----- progress read from the tools' own output (the same bar and file list as the Sync window) -----

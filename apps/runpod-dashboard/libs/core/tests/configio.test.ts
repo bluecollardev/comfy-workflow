@@ -140,7 +140,7 @@ describe('planImport: refuses what it cannot trust, flags what it must', () => {
     expect(configio.planImport(base({ idle_stop_minutes: 30 })).sections[0]).toMatchObject({ key: 'pod_defaults', changed: false, default_checked: false })   // nothing to change, nothing ticked
   })
   it('flags a folder that points into Binc\'s read-only mirror', () => {
-    const r = configio.planImport(base({ folders: { 'comfy-shared': join(process.cwd(), '..', '..', '..', '..', 'projects', 'desktop', 'ComfyUI-Shared') } }))
+    const r = configio.planImport(base({ folders: { 'comfy-shared': join(import.meta.dirname, '..', '..', '..', '..', '..', 'projects', 'desktop', 'ComfyUI-Shared') } }))
     const f = r.sections.find((s) => s.key === 'folders')!
     expect(f.note).toMatch(/read-only mirror/)
   })
