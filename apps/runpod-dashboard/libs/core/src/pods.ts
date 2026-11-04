@@ -274,7 +274,7 @@ export const runningIds = (client?: rp.RunPodClient) => async (): Promise<idle.R
 export const stopper = (client?: rp.RunPodClient) => async (id: string) => { if (isDry()) { dry.stop(id); return } await rp.stopPod(id, client) }
 
 export interface PodDetails {
-  id: string; name: string; status: string; status_text: string; cost_per_hr: number | null; cloud: string; datacenter: string
+  id: string; name: string; status: string; status_text: string; cost_per_hr: number | null; cost_estimated?: boolean; cloud: string; datacenter: string
   gpu: string; gpu_count: number; image: string; disk_gb: number; volume_gb: number; created_at: string; actions: string[]
   console_url: string; web_ui_url: string | null; ssh_command: string
 }
@@ -291,8 +291,18 @@ export async function details(podId: string, client?: rp.RunPodClient): Promise<
   }
   const r = await rp.podDetails(podId, client)
   const running = (r.desiredStatus || '').toUpperCase() === 'RUNNING'
+  // RunPod reports 0 for a stopped pod. The price it will have when it runs is still worth seeing (Lucas, 2026-11-04, ADR-031):
+  // the listed price of its card in its datacenter times the count, marked as an estimate. None known: no figure, never $0.
+  let cost = r.cost ?? r.costPerHr ?? null, estimated = false
+  if (!(cost && cost > 0) && !running && r.gpu?.id && r.dataCenterId) {
+    try {
+      const dc = (await rp.datacenterPrices([r.gpu.id], client, [r.dataCenterId]))[0]
+      const price = dc?.cards.find((c) => c.id === r.gpu!.id)?.price
+      if (price != null) { cost = Math.round(price * (r.gpu.count ?? 1) * 100) / 100; estimated = true }
+    } catch { /* no estimate: the row stays out */ }
+  }
   return {
-    id: r.id, name: r.name || '', status: r.desiredStatus || '', status_text: r.lastStatusChange || '', cost_per_hr: r.cost ?? r.costPerHr ?? null,
+    id: r.id, name: r.name || '', status: r.desiredStatus || '', status_text: r.lastStatusChange || '', cost_per_hr: cost, cost_estimated: estimated,
     cloud: r.cloud || '', datacenter: r.dataCenterId || '', gpu: r.gpu?.id || '', gpu_count: r.gpu?.count ?? 1, image: r.image || r.imageName || '',
     disk_gb: r.disk ?? 0, volume_gb: r.volume ?? 0, created_at: r.createdAt || '', actions: r.actions || [],
     console_url: consoleUrl(r.id), web_ui_url: running ? idle.proxyUrl(r.id) : null, ssh_command: `ssh root@${r.id}.proxy.runpod.io`,

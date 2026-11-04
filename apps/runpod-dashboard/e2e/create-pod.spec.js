@@ -21,7 +21,7 @@ test.describe('create pod', () => {
     await openCreatePod(page)
 
     await page.getByLabel('Name').fill('ComfyUI-Dev')
-    await page.getByLabel('GPU', { exact: true }).selectOption('a4000')
+    await page.locator('[data-testid="dc-chip"][data-card="RTX 4000 Ada"][data-dc="EU-RO-1"]').click()   // one picker: the card at its datacenter
     await page.getByLabel('GPU count').selectOption('2')
     await page.getByLabel('Instance type').selectOption('on-demand')
     await page.getByLabel('Per-pod volume (GB)').fill('100')
@@ -63,9 +63,9 @@ test.describe('create pod', () => {
     const post = api.calls.find((c) => c.method === 'POST' && c.path === '/pods')
     expect(post.body).toEqual({
       name: 'ComfyUI-Dev',
-      gpu: 'a4000',
+      gpu: 'rtx4000ada',
       gpu_count: 2,
-      data_center_id: null,
+      data_center_id: 'EU-RO-1',
       instance_type: 'on-demand',
       volume_gb: 100,
       disk_gb: 30,
@@ -241,6 +241,20 @@ test.describe('create pod', () => {
     await expect(page.getByLabel('Per-pod volume (GB)')).toHaveValue('0')
   })
 
+  test('a network volume is chosen on the form and sets the datacenter; the configured one can be chosen again', async ({ page, api }) => {
+    await page.goto('/')
+    await openCreatePod(page)
+    const dc = page.getByTestId('pod-datacenter')
+    await expect(page.locator('#pod-network-volume option')).toHaveText([t('form.networkVolumeNoneConfigured'), t('form.networkVolumeNone'), 'comfy-workspace · 120 GB · EU-RO-1', 'scratch · 50 GB · CA-MTL-1'])
+    await page.locator('#pod-network-volume').selectOption('vol2')
+    await expect(dc).toHaveAttribute('data-value', 'CA-MTL-1')   // a volume never leaves its datacenter
+    await page.locator('#pod-name').fill('With volume')
+    await page.locator('form button[type=submit]').click()
+    const post = api.calls.find((c) => c.method === 'POST' && c.path === '/pods')
+    expect(post.body.config.network_volume_id).toBe('vol2')
+    expect(post.body.config.data_center_id).toBe('CA-MTL-1')
+  })
+
   test('the datacenter is chosen from the table on the form; a volume in another region is offered, not forced', async ({ page, api }) => {
     await page.goto('/')
     await openCreatePod(page)
@@ -248,10 +262,29 @@ test.describe('create pod', () => {
     await expect(dc.getByTestId('dc-card-row').first()).toBeVisible()   // by card: where each card is
     await dc.locator('[data-testid="dc-chip"][data-dc="CA-MTL-1"]').first().click()
     await expect(dc).toHaveAttribute('data-value', 'CA-MTL-1')
+    await expect(page.getByTestId('pod-gpu-chosen')).toHaveAttribute('data-value', 'a40')   // one picker: the chip chose the card as well as the datacenter
+    await expect(dc.getByTestId('dc-table-chosen-card')).toContainText('A40')
+    await expect(dc.locator('[data-testid="dc-chip"][aria-pressed="true"]')).toHaveCount(1)   // exactly one card at one datacenter is marked
+    await expect(dc.locator('[data-testid="dc-card-row"][data-card="A40"]')).toHaveClass(/chosen/)
+    await expect(page.getByTestId('pod-cost-total')).toHaveText('$0.35/h')   // the chosen card's price at its datacenter
+    await page.getByLabel('GPU count').selectOption('2')
+    await expect(page.getByTestId('pod-cost-total')).toHaveText('$0.70/h')
+    await expect(page.getByTestId('pod-cost-detail')).toContainText('$16.80/day')
+    await page.getByLabel('GPU count').selectOption('1')
+    await dc.getByTestId('dc-filter').fill('4090')   // the filter narrows the list; x clears it
+    await expect(dc.getByTestId('dc-card-row').filter({ hasNotText: 'RTX 4090' })).toHaveCount(1)   // the chosen A40 stays listed
+    await dc.getByTestId('dc-filter-clear').click()
+    await expect(dc.getByTestId('dc-filter')).toHaveValue('')
+    await expect(dc.getByTestId('dc-card-row')).toHaveCount(4)
+    await page.getByTestId('pod-gpu-auto').click()   // back to automatic: the datacenter stays, no card is marked
+    await expect(page.getByTestId('pod-gpu-chosen')).toHaveAttribute('data-value', 'auto')
+    await expect(dc.locator('[data-testid="dc-chip"][aria-pressed="true"]')).toHaveCount(0)
+    await dc.locator('[data-testid="dc-chip"][data-card="A40"][data-dc="CA-MTL-1"]').click()
     await expect.poll(() => api.calls.some((c) => c.path === '/gpus' && c.query.dc === 'CA-MTL-1')).toBe(true)   // the card prices follow the choice
     await page.locator('#pod-name').fill('Free')
     await page.locator('form button[type=submit]').click()
     expect(api.calls.find((c) => c.method === 'POST' && c.path === '/pods').body.data_center_id).toBe('CA-MTL-1')
+    expect(api.calls.find((c) => c.method === 'POST' && c.path === '/pods').body.gpu).toBe('a40')
 
     api.state.mounts.config.network_volume_id = 'vol1'; api.state.mounts.config.data_center_id = 'EU-RO-1'
     await page.reload()

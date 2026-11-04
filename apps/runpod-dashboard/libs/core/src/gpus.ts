@@ -30,6 +30,8 @@ export const GPUS: Record<string, { id: string; name: string; vram: number; expl
   h100pcie: { id: 'NVIDIA H100 PCIe', name: 'H100 PCIe', vram: 80, explicit: true },
   h100: { id: 'NVIDIA H100 80GB HBM3', name: 'H100 SXM', vram: 80, explicit: true },
   h200: { id: 'NVIDIA H200', name: 'H200 SXM', vram: 141, explicit: true },
+  h100nvl: { id: 'NVIDIA H100 NVL', name: 'H100 NVL', vram: 94, explicit: true },   // Hopper: CUDA 12.x, ids read from RunPod's gpuTypes on 2026-11-04 (Lucas: "H200 and H100")
+  h200nvl: { id: 'NVIDIA H200 NVL', name: 'H200 NVL', vram: 143, explicit: true },
   // The Blackwell cards (docs/ADR-030). Compute capability 12.0 needs CUDA 12.8 or newer, so they run the CUDA 13 image (`-cu13` tag, built by `build.sh --cuda 13`) on a host whose driver
   // offers CUDA 13; plan() picks the image and the host filter from `cuda`. Ids and sizes read from RunPod's gpuTypes on 2026-11-04. Explicit-only like the other big cards.
   rtx5080: { id: 'NVIDIA GeForce RTX 5080', name: 'RTX 5080', vram: 16, explicit: true, cuda: 13 },

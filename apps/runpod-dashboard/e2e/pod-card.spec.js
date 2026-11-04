@@ -22,6 +22,25 @@ test.describe('pod card', () => {
     await expect(podCard(page, 'ComfyUI-Dev').getByTestId('pod-status-text')).toHaveCount(0)
   })
 
+  test('a stopped pod still shows its price per hour, marked as an estimate; a running pod shows RunPod\'s own', async ({ page }) => {
+    await page.goto('/')
+    const stopped = podCard(page, 'ComfyUI-Batch')
+    await stopped.getByTestId('pod-details-toggle').click()
+    await expect(stopped.getByTestId('pod-details-status')).toContainText('EXITED')
+    await expect(stopped.getByTestId('pod-details-cost')).toHaveText('≈ $0.28' + t('pod.perHour'))
+    const running = podCard(page, 'ComfyUI-Dev')
+    await running.getByTestId('pod-details-toggle').click()
+    await expect(running.getByTestId('pod-details-cost')).toHaveText('$0.28' + t('pod.perHour'))
+  })
+
+  test('a pod card names the network volume it is attached to; a pod with none shows no row', async ({ page }) => {
+    await page.goto('/')
+    const card = podCard(page, 'ComfyUI-Dev')
+    await expect(card.getByTestId('pod-volume')).toContainText('comfy-workspace')
+    await expect(card.getByTestId('pod-volume')).toContainText('120 GB · EU-RO-1')
+    await expect(podCard(page, 'ComfyUI-Batch').getByTestId('pod-volume')).toHaveCount(0)
+  })
+
   test('the details panel asks RunPod and shows the price, the place, the card and the image', async ({ page, api }) => {
     await page.goto('/')
     const card = podCard(page, 'ComfyUI-Dev')
@@ -32,7 +51,9 @@ test.describe('pod card', () => {
     await expect(details).toContainText('SECURE · EUR-IS-1')
     await expect(details).toContainText('NVIDIA RTX 4000 Ada Generation ×1')
     await expect(details).toContainText('ashleykza/comfyui:latest')
-    await expect(details).toContainText(t('pod.diskValue', { disk: 20, volume: 0 }))
+    await expect(details).toContainText(t('pod.diskNetwork', { disk: 20, name: 'comfy-workspace', size: 120 }))   // a pod on a network volume has 0 GB of its own: say where the data is
+    await podCard(page, 'ComfyUI-Batch').getByTestId('pod-details-toggle').click()
+    await expect(podCard(page, 'ComfyUI-Batch').getByTestId('pod-details')).toContainText(t('pod.diskValue', { disk: 20, volume: 0 }))   // no network volume: the plain figure
     expect(api.calls).toContainEqual(expect.objectContaining({ method: 'GET', path: '/pods/pod-aaaaaaaa/details' }))
   })
 

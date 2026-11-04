@@ -125,7 +125,7 @@ test.describe('configuration', () => {
     await expect(toast(page).first()).toContainText(t('toast.failedWith', { label: t('toast.saveConfig'), error: 'plates: a folder is an absolute path on this PC' }))
   })
 
-  test('the datacenter is chosen from a table of every card: by card (biggest first) or by datacenter, nothing hidden', async ({ page, api }) => {
+  test('the datacenter is chosen from a list of every card (biggest first), nothing hidden; one card at one datacenter', async ({ page, api }) => {
     api.state.mounts.config.data_center_id = 'EU-RO-1'
     await page.goto('/')
     await page.getByTestId('open-config').click()
@@ -140,14 +140,14 @@ test.describe('configuration', () => {
     await expect(dc.locator('[data-testid="dc-card-row"][data-card="RTX 5090"] [data-testid="dc-card-cu13"]')).toContainText(t('dc.cu13image'))   // marked: it boots the CUDA 13 image
     await dc.locator('[data-testid="dc-chip"][data-card="A40"][data-dc="CA-MTL-1"]').click()   // a datacenter that has the card I want
     await expect(dc).toHaveAttribute('data-value', 'CA-MTL-1')
-    // by datacenter: every datacenter listed, the ones with no card too
-    await dc.getByTestId('dc-view-dc').click()
-    expect(await dc.getByTestId('dc-table-row').evaluateAll((els) => [...new Set(els.map((e) => e.getAttribute('data-dc')))])).toEqual(['', 'EU-RO-1', 'CA-MTL-1', 'US-KS-2'])   // Any, then the datacenters
-    await expect(dc.locator('[data-testid="dc-table-row"][data-dc="CA-MTL-1"]').first()).toHaveClass(/chosen/)
-    await expect(dc.locator('[data-dc="US-KS-2"]')).toContainText(t('dc.noneListed'))
-    await dc.locator('[data-dc=""]').click()   // Any
+    await expect(dc.locator('[data-testid="dc-chip"][aria-pressed="true"]')).toHaveCount(1)   // one card at one datacenter is marked, in its row
+    await expect(dc.locator('[data-testid="dc-chip"][data-card="A40"][data-dc="CA-MTL-1"]')).toHaveAttribute('aria-pressed', 'true')
+    await expect(dc.locator('[data-testid="dc-card-row"][data-card="A40"]')).toHaveClass(/chosen/)
+    await expect(dc.getByTestId('dc-view-dc')).toHaveCount(0)   // there is only the by-card list
+    await dc.getByTestId('dc-any').click()   // Any
     await expect(dc).toHaveAttribute('data-value', '')
-    await dc.locator('[data-testid="dc-table-row"][data-dc="CA-MTL-1"]').first().click()
+    await expect(dc.locator('[data-testid="dc-chip"][aria-pressed="true"]')).toHaveCount(0)
+    await dc.locator('[data-testid="dc-chip"][data-card="A40"][data-dc="CA-MTL-1"]').click()
     await page.getByTestId('config-save').click()
     const put = api.calls.find((c) => c.method === 'PUT' && c.path === '/mounts')
     expect(put.body.data_center_id).toBe('CA-MTL-1')
@@ -285,7 +285,7 @@ test.describe('features that read the configuration', () => {
   test('the GPU menu comes from the API and the stock image is a choice', async ({ page }) => {
     await page.goto('/')
     await openCreatePod(page)
-    await expect(page.locator('#pod-gpu option')).toHaveText(['Cheapest card in stock (16-24 GB)', 'RTX A4000 (16 GB) · none in stock', 'RTX 4090 (24 GB) · $0.34/h · Low stock'])
+    await expect(page.getByTestId('pod-gpu-chosen')).toHaveText(/Cheapest card in stock|Automatic/)   // one picker, the table; the GPU field reads it out
     await expect(page.getByTestId('pod-gpu-group')).toContainText(t('form.gpuStock'))
     await expect(page.locator('#pod-image option')).toHaveText([t('form.imageConfigured'), t('form.imagePrebuilt'), t('form.imageCustom')])
   })

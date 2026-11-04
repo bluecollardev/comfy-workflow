@@ -28,7 +28,7 @@ test.describe('RunPod, live', () => {
     await expect(page.getByTestId('no-spend-badge')).toHaveCount(0)
     await openCreatePod(page)
     await page.locator('#pod-name').fill('Live-Proof')
-    await page.locator('#pod-gpu').selectOption('auto')   // ADR-029: tests that create real pods use the cheap cards, never a big one. the cheapest 16-24 GB card RunPod has in stock, the next on a stock refusal, then the other cloud
+    await expect(page.getByTestId('pod-gpu-chosen')).toHaveAttribute('data-value', 'auto')   // the default and the only choice a live test makes: no card picked in the table, so ADR-029 holds. // ADR-029: tests that create real pods use the cheap cards, never a big one. the cheapest 16-24 GB card RunPod has in stock, the next on a stock refusal, then the other cloud
     await page.locator('#pod-instance-type').selectOption('on-demand')
     await page.locator('#pod-image').selectOption('prebuilt')
     await page.locator('#pod-idle').fill('5')
