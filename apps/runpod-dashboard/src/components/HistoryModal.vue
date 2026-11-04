@@ -80,7 +80,7 @@
         <table v-else class="table table-sm align-middle" data-testid="history-jobs">
           <thead><tr><th>{{ $t('history.time') }}</th><th>{{ $t('history.jobKind') }}</th><th>{{ $t('history.what') }}</th><th>{{ $t('history.pod') }}</th><th>{{ $t('history.state') }}</th><th>{{ $t('history.size') }}</th><th>{{ $t('history.error') }}</th><th>{{ $t('history.via') }}</th></tr></thead>
           <tbody>
-            <tr v-for="(e, i) in shownJobs" :key="i" :data-testid="e.kind === 'change' ? 'history-change-row' : 'history-job-row'">
+            <tr v-for="(e, i) in pagedJobs" :key="i" :data-testid="e.kind === 'change' ? 'history-change-row' : 'history-job-row'">
               <td class="text-nowrap">{{ when(e.ts) }}</td>
               <td v-if="e.kind === 'change'"><BBadge variant="warning" data-testid="history-change-area">{{ $t(`history.area_${e.area}`) }}</BBadge></td>
               <td v-else>{{ e.job }}</td>
@@ -94,6 +94,17 @@
             </tr>
           </tbody>
         </table>
+        <div v-if="shownJobs.length" class="d-flex flex-wrap align-items-center gap-2" data-testid="history-jobs-paging">
+          <BFormSelect v-model.number="jobPageSize" size="sm" class="w-auto" :aria-label="$t('history.pageSize')" :options="[10, 25, 50, 100].map((n) => ({ value: n, text: $t('history.perPage', { n }) }))" data-testid="history-jobs-page-size" />
+          <span class="small text-body-secondary" data-testid="history-jobs-range">{{ $t('history.range', { from: jobFrom, to: jobTo, of: shownJobs.length }) }}</span>
+          <div class="btn-group btn-group-sm ms-auto" role="group">
+            <BButton variant="outline-secondary" :disabled="jobPage <= 1" :aria-label="$t('history.firstPage')" data-testid="history-jobs-first" @click="jobPage = 1"><i class="fa-solid fa-angles-left"></i></BButton>
+            <BButton variant="outline-secondary" :disabled="jobPage <= 1" :aria-label="$t('history.prevPage')" data-testid="history-jobs-prev" @click="jobPage--"><i class="fa-solid fa-angle-left"></i></BButton>
+            <span class="btn btn-outline-secondary disabled" data-testid="history-jobs-page">{{ $t('history.pageOf', { n: jobPage, of: jobPages }) }}</span>
+            <BButton variant="outline-secondary" :disabled="jobPage >= jobPages" :aria-label="$t('history.nextPage')" data-testid="history-jobs-next" @click="jobPage++"><i class="fa-solid fa-angle-right"></i></BButton>
+            <BButton variant="outline-secondary" :disabled="jobPage >= jobPages" :aria-label="$t('history.lastPage')" data-testid="history-jobs-last" @click="jobPage = jobPages"><i class="fa-solid fa-angles-right"></i></BButton>
+          </div>
+        </div>
         </template>
       </BTab>
 
@@ -256,6 +267,16 @@ const shownJobs = computed(() => {
   })
 })
 const jobEvents = computed(() => events.value.filter((e) => e.kind === 'job' || e.kind === 'change').sort((a, b) => String(b.ts).localeCompare(String(a.ts))))
+/** Paging of Jobs & Changes: the filtered list in pages (the size is remembered); a filter or a size change goes back to page 1, and a page past the end (the list shrank) comes back in range. */
+const jobPageSize = ref([10, 25, 50, 100].includes(Number(localStorage.getItem('history.jobsPageSize'))) ? Number(localStorage.getItem('history.jobsPageSize')) : 100)
+const jobPage = ref(1)
+const jobPages = computed(() => Math.max(1, Math.ceil(shownJobs.value.length / jobPageSize.value)))
+const pagedJobs = computed(() => shownJobs.value.slice((jobPage.value - 1) * jobPageSize.value, jobPage.value * jobPageSize.value))
+const jobFrom = computed(() => (shownJobs.value.length ? (jobPage.value - 1) * jobPageSize.value + 1 : 0))
+const jobTo = computed(() => Math.min(jobPage.value * jobPageSize.value, shownJobs.value.length))
+watch([jobKind, jobState, jobVia, jobText, showConfig, jobPageSize], () => { jobPage.value = 1 })
+watch(jobPageSize, (n) => localStorage.setItem('history.jobsPageSize', String(n)))
+watch(jobPages, (n) => { if (jobPage.value > n) jobPage.value = n })
 const runningPods = computed(() => pods.pods.filter((p) => p.status === 'running'))
 const shownLog = computed(() => {
   const q = logText.value.trim().toLowerCase()

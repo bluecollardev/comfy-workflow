@@ -270,4 +270,25 @@ test.describe('history', () => {
     const tab = d.getByTestId('history-jobs')
     expect(await tab.evaluate((el) => el.scrollWidth <= el.parentElement.clientWidth + 1)).toBe(true)   // and the table fits its window
   })
+
+  test('Jobs & Changes pages: 100 per page by default, next and previous, the size, and a filter goes back to page one', async ({ page, api }) => {
+    for (let i = 0; i < 127; i++) api.state.history.events.push({ ts: `2026-10-${String(1 + (i % 28)).padStart(2, '0')}T10:${String(i % 60).padStart(2, '0')}:00Z`, kind: 'job', job: 'pull', state: 'done', what: `bulk-round-${i}`, pod_name: 'ComfyUI-Dev', files: 1, bytes: 1024 })
+    await page.goto('/')
+    const d = await openHistory(page)
+    await d.getByRole('tab', { name: t('history.tabJobs') }).click()
+    await expect(d.getByTestId('history-jobs-page-size')).toHaveValue('100')
+    await expect(d.getByTestId('history-jobs').locator('tbody tr')).toHaveCount(100)   // 130 rows in all: 129 jobs and the volume change (the configuration change is hidden)
+    await expect(d.getByTestId('history-jobs-page')).toHaveText(t('history.pageOf', { n: 1, of: 2 }))
+    await expect(d.getByTestId('history-jobs-range')).toHaveText(t('history.range', { from: 1, to: 100, of: 130 }))
+    await expect(d.getByTestId('history-jobs-prev')).toBeDisabled()
+    await d.getByTestId('history-jobs-next').click()
+    await expect(d.getByTestId('history-jobs').locator('tbody tr')).toHaveCount(30)
+    await expect(d.getByTestId('history-jobs-next')).toBeDisabled()
+    await d.getByTestId('history-jobs-page-size').selectOption('10')
+    await expect(d.getByTestId('history-jobs-page')).toHaveText(t('history.pageOf', { n: 1, of: 13 }))   // a size change goes back to page one
+    await d.getByTestId('history-jobs-last').click()
+    await expect(d.getByTestId('history-jobs-page')).toHaveText(t('history.pageOf', { n: 13, of: 13 }))
+    await d.getByTestId('history-jobs-text').fill('bulk-round-1')   // 38 rounds match (1, 10-19, 100-126) at 10 a page
+    await expect(d.getByTestId('history-jobs-page')).toHaveText(t('history.pageOf', { n: 1, of: 4 }))   // a filter goes back to page one too
+  })
 })

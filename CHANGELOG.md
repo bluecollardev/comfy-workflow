@@ -5,6 +5,9 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased
 
+### History: filters, paging and wrapping in Jobs & Changes
+- Lucas: "jobs & changes needs filters", "hide configuration changes by default", "What needs to have word row wrapping", "history jobs & changes should have paging", "100 per page", "make it configurable", "this does not affect export, export exports all". Jobs & Changes has a kind, a state, an App/MCP and a text filter (with a count and Clear Filters); configuration changes are hidden until the switch (or the Configuration kind) asks for them; the What column and the other free-text cells wrap; paging is 100 a page by default with 10, 25, 50 or 100 to choose, remembered. Export is untouched by all of it: it always exports the whole history.
+
 ### History
 - Lucas: "have a log viewer for comfy runs that tells us about any errors or feedback from comfy". Core: each ComfyUI run carries its `messages` timeline and, when it failed, `error_detail` (message, node, exception type, traceback); new `comfyruns.logs` reads ComfyUI's own server log from the pod (`/internal/logs/raw`, else `/internal/logs`), classifies lines as error, warning or info, filters by level and keeps the newest lines. IPC `history.logs`; MCP `get_comfy_logs`.
 - Lucas: "all". History: pod history, spend history, download/sync job history, ComfyUI runs. Core: `history` (pod and job events, spend worked out from them) and `comfyruns` (a running pod's ComfyUI `/history` and `/queue`, newest first); IPC `history.list`, `history.spend`, `history.runs`; MCP `get_history`, `get_spend_history`, `get_comfy_runs`.
