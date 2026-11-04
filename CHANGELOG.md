@@ -10,6 +10,7 @@ completed items move here. Commit hashes are on `develop`.
 - The `contract-v26` image rebuilt on GitHub Actions with the fal pack (ADR-025) and pushed to `ghcr.io/bluecollardev/comfy-app:contract-v26`; the DMG bakes that reference.
 - Fixed a `configio` test that built its path from the working directory and failed under the gate. Known and unrelated: `e2e-electron/import-claude.spec.js` fails on `develop` (viewport check).
 - The big cards by name (Lucas: "i need the most powerful card"): L40S, RTX 6000 Ada, A100 (PCIe, SXM), H100 (PCIe, SXM), H200, ids checked against RunPod's `gpuTypes`. **Explicit-only**: `auto` never picks them (it falls to the next cheapest card in stock, which would land on a card several times a 4090's rate); `gpus.autoCards()`. They run on the image's CUDA 12.6 (Hopper, Ampere, Ada); the Blackwell cards (RTX 5090, RTX PRO 6000, B200) still need a CUDA 12.8+ image. The datacenter list now shows their stock too.
+  Documented in `docs/ADR-026-big-cards-by-name.md`, with the stock by datacenter on the day.
 - Released as `v1.0.3` on the downloads repo, re-released on 2026-11-04 with the GPU change (the first v1.0.3 build had the file explorer only).
 
 ### Export and import the Default Configuration, keys and tokens included (branches `feature/config-import-export`, `feature/config-secrets`; `docs/ADR-023-config-import-export.md`)
