@@ -1,7 +1,7 @@
 {
   "name": "runpod-pod-manager",
   "productName": "RunPod Manager",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Desktop dashboard for RunPod GPU pods running ComfyUI (apps/runpod-dashboard)",
   "author": "Blue Collar Dev <info@bluecollardev.com>",
   "license": "UNLICENSED",
