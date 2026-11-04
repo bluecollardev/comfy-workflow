@@ -38,6 +38,7 @@ import * as idle from './idle.js'
 import * as mounts from './mounts.js'
 import * as podconfigs from './podconfigs.js'
 import * as rp from './runpod.js'
+import * as history from './history.js'
 import * as sync from './sync.js'
 import * as settings from './settings.js'
 import { volumeInfo } from './pods.js'
@@ -341,7 +342,7 @@ export async function countFor(request: SyncRequest, client?: rp.RunPodClient, e
   return { all, without_renders: sumCounts(without, steps.length) }
 }
 
-export async function run(request: SyncRequest, send: (e: SyncEvent) => void, signal: AbortSignal, client?: rp.RunPodClient, exec: Exec = runCommand): Promise<SyncResult> {
+async function runSync(request: SyncRequest, send: (e: SyncEvent) => void, signal: AbortSignal, client?: rp.RunPodClient, exec: Exec = runCommand): Promise<SyncResult> {
   const req = resolved(request)
   const steps = planFor(req)
   send({ kind: 'plan', steps })
@@ -413,4 +414,18 @@ export async function run(request: SyncRequest, send: (e: SyncEvent) => void, si
   }
   send({ kind: 'done', text: result.cancelled ? 'cancelled' : result.failed ? `${result.failed} of ${result.steps} folders failed` : result.warned ? `${result.steps} folders in step, ${result.warned} with warnings` : `${result.steps} folders in step` })
   return result
+}
+
+/** A sync run, recorded in the history when it ends (done, failed or cancelled). */
+export async function run(request: SyncRequest, send: (e: SyncEvent) => void, signal: AbortSignal, client?: rp.RunPodClient, exec: Exec = runCommand): Promise<SyncResult> {
+  const started = new Date().toISOString()
+  const what = `sync ${request.pod_id ?? ''}`.trim()
+  try {
+    const r = await runSync(request, send, signal, client, exec)
+    history.record({ kind: 'job', job: 'sync', state: r.cancelled ? 'cancelled' : r.failed ? 'failed' : 'done', started_at: started, what, pod_id: request.pod_id, ...(r.failed ? { error: `${r.failed} of ${r.steps} folders failed` } : {}) })
+    return r
+  } catch (e) {
+    history.record({ kind: 'job', job: 'sync', state: 'failed', started_at: started, what, pod_id: request.pod_id, error: (e as Error).message })
+    throw e
+  }
 }

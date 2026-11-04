@@ -60,10 +60,15 @@ const TABLE = {
     datacenters: (c, fresh) => c.pods.datacenters(undefined, !!fresh),
     setIdle: (c, id, minutes) => c.pods.setIdleStop(id, Number(minutes)),
     rename: (c, id, name) => c.pods.rename(id, name),
+
     details: (c, id) => c.pods.details(id),
     recreate: (c, id) => c.pods.recreate(id),
     config: (c, id) => c.pods.config(id),
     setConfig: (c, id, cfg) => c.pods.setConfig(id, cfg),
+  },
+  history: {
+    list: (c, kind, limit) => c.history.list({ ...(kind ? { kind } : {}), ...(limit ? { limit: Number(limit) } : {}) }),
+    spend: (c) => c.history.spend(),
   },
   volumes: {
     list: (c) => c.volumes.list(),

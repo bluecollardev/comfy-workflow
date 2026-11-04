@@ -10,6 +10,7 @@ import * as idle from './idle.js'
 import * as mounts from './mounts.js'
 import * as podconfigs from './podconfigs.js'
 import * as podnames from './podnames.js'
+import * as history from './history.js'
 import * as rp from './runpod.js'
 import * as dry from './dry.js'
 
@@ -118,6 +119,15 @@ export function effectiveConfig(req: CreatePodRequest): { cfg: mounts.MountsConf
   return { cfg, own: true }
 }
 
+/** One pod event into the history, with the pod's card, datacenter and hourly price as RunPod reports them now (best effort, never throws, never waited on by the caller). */
+async function recordPod(action: history.PodAction, podId: string, client?: rp.RunPodClient, known: { name?: string; gpu?: string; detail?: string } = {}): Promise<void> {
+  try {
+    let name = known.name, gpu = known.gpu, datacenter: string | undefined, cost: number | null = null
+    if (!isDry()) { const raw = await rp.getPod(podId, client); if (raw) { name = name || raw.name; gpu = gpu || raw.machine?.gpuDisplayName; datacenter = raw.machine?.dataCenterId; cost = raw.costPerHr ?? null } }
+    history.record({ kind: 'pod', action, pod_id: podId, name: podnames.get(podId) || name || podId, gpu, datacenter, cost_per_hr: cost, ...(known.detail ? { detail: known.detail } : {}) })
+  } catch { /* never in the way */ }
+}
+
 export async function create(req: CreatePodRequest, client?: rp.RunPodClient, credentialsEnv: Record<string, string> = {}): Promise<PodStatus> {
   if (!req.name?.trim()) throw bad('A pod needs a name')
   const { cfg, own } = effectiveConfig(req)
@@ -125,12 +135,14 @@ export async function create(req: CreatePodRequest, client?: rp.RunPodClient, cr
   if (mounts.dryRun(cfg)) {
     const p = dry.create({ name: req.name, gpu: req.gpu, gpu_count: input.gpuCount, image: input.imageName, idle_stop_minutes: idleMinutes > 0 ? idleMinutes : 0 })
     if (own) podconfigs.set(p.id, cfg)
+    history.record({ kind: 'pod', action: 'created', pod_id: p.id, name: req.name, gpu: p.gpu, cost_per_hr: 0 })
     return { ...p, custom_config: own }
   }
   const { pod, gpuId } = await deployWithFallback(input, client)
   if (idleMinutes > 0) idle.register(pod.id, idleMinutes)
   if (own) podconfigs.set(pod.id, cfg)
   const key = gpuKey(gpuId)
+  void recordPod('created', pod.id, client, { name: req.name, gpu: `${key} x${input.gpuCount}` })
   return {
     id: pod.id, name: req.name, status: 'starting', gpu: `${key} x${input.gpuCount}`,
     vram: gpus.vram(key) * (input.gpuCount || 1), uptime_seconds: 0,
@@ -244,12 +256,13 @@ export async function rename(podId: string, name: string, client?: rp.RunPodClie
   if (n.length > 80) throw bad('A pod name is at most 80 characters')
   await get(podId, client)   // a clear 404 for a pod that is not there
   podnames.set(podId, n)
+  history.record({ kind: 'pod', action: 'renamed', pod_id: podId, name: n || '(RunPod name)', detail: n ? `shown as ${n}` : 'back to RunPod\'s name' })
   const p = await get(podId, client)
   return { pod_id: podId, name: p.name, runpod_name: p.runpod_name ?? null }
 }
-export async function stop(podId: string, client?: rp.RunPodClient) { if (isDry()) return dry.stop(podId); await rp.stopPod(podId, client); return { message: `Pod ${podId} stopped`, pod_id: podId } }
-export async function resume(podId: string, client?: rp.RunPodClient) { if (isDry()) return dry.resume(podId); await rp.resumePod(podId, 1, client); return { message: `Pod ${podId} resumed`, pod_id: podId } }
-export async function remove(podId: string, client?: rp.RunPodClient) { podconfigs.forget(podId); podnames.forget(podId); if (isDry()) { idle.forget(podId); return dry.remove(podId) } await rp.terminatePod(podId, client); idle.forget(podId); return { message: `Pod ${podId} deleted`, pod_id: podId } }
+export async function stop(podId: string, client?: rp.RunPodClient) { if (isDry()) { const r = dry.stop(podId); void recordPod('stopped', podId); return r } await rp.stopPod(podId, client); void recordPod('stopped', podId, client); return { message: `Pod ${podId} stopped`, pod_id: podId } }
+export async function resume(podId: string, client?: rp.RunPodClient) { if (isDry()) { const r = dry.resume(podId); void recordPod('started', podId); return r } await rp.resumePod(podId, 1, client); void recordPod('started', podId, client); return { message: `Pod ${podId} resumed`, pod_id: podId } }
+export async function remove(podId: string, client?: rp.RunPodClient) { const nm = podnames.get(podId) || undefined; podconfigs.forget(podId); podnames.forget(podId); if (isDry()) { idle.forget(podId); history.record({ kind: 'pod', action: 'deleted', pod_id: podId, name: nm || dry.list().find((x) => x.id === podId)?.name || podId }); return dry.remove(podId) } const raw = await rp.getPod(podId, client).catch(() => null); await rp.terminatePod(podId, client); history.record({ kind: 'pod', action: 'deleted', pod_id: podId, name: nm || raw?.name || podId, gpu: raw?.machine?.gpuDisplayName, datacenter: raw?.machine?.dataCenterId }); idle.forget(podId); return { message: `Pod ${podId} deleted`, pod_id: podId } }
 
 /** Change a pod's idle stop: registered for the watch (0 = never, dropped from it); a simulated pod's record follows,
  *  so what `get` shows is what was set in no-spend mode too. */
