@@ -25,7 +25,15 @@
       <BRow class="g-3">
       <BCol md="6" lg="4">
         <BFormGroup :label="$t('form.datacenter')" label-for="pod-datacenter" :description="volumeDc !== null ? $t('form.datacenterLocked', { dc: volumeDc || $t('form.datacenterUnset') }) : $t('form.datacenterHelp')" data-testid="pod-datacenter-group">
-          <BFormSelect id="pod-datacenter" v-model="form.dataCenterId" :options="dcOptions" :disabled="volumeDc !== null" data-testid="pod-datacenter" />
+          <div class="d-flex gap-2">
+            <div class="flex-grow-1 min-w-0"><DatacenterTable testid="pod-datacenter" :list="dcList" :model-value="form.dataCenterId" :any-label="volumeDc !== null ? '' : $t('form.datacenterAny')" @update:model-value="form.dataCenterId = $event" /></div>
+            <BButton variant="outline-light" size="sm" class="text-nowrap" :title="$t('form.datacenterRefresh')" :disabled="dcLoading" data-testid="pod-datacenter-refresh" @click="loadDatacenters(true)"><i class="fa-solid fa-rotate" :class="{ 'fa-spin': dcLoading }"></i></BButton>
+          </div>
+          <div v-if="dcAt" class="small text-body-secondary mt-1" data-testid="pod-datacenter-updated">{{ $t('form.datacenterUpdated', { time: dcAt.toLocaleTimeString() }) }}</div>
+          <div v-if="otherRegion" class="small mt-1" data-testid="pod-datacenter-other">
+            <i class="fa-solid fa-triangle-exclamation me-1 text-warning"></i>{{ $t('form.datacenterOther', { dc: form.dataCenterId }) }}
+            <BButton variant="link" size="sm" class="p-0 ms-1 align-baseline" data-testid="pod-datacenter-newvolume" @click="newVolumeHere">{{ $t('form.datacenterNewVolume', { dc: form.dataCenterId }) }}</BButton>
+          </div>
         </BFormGroup>
       </BCol>
       <BCol md="6" lg="4">
@@ -380,14 +388,14 @@
  * choose repo → branch (autocomplete from `git ls-remote`) → tick the subfolders to add.
  * The snake_case mapping lives in api/pods.js; this component sends camelCase.
  */
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { podsAPI } from '../api/pods'
 import { gitAPI } from '../api/git'
 import { imagesAPI } from '../api/images'
 import { useUiStore } from '../stores/ui'
 import { usePodsStore } from '../stores/pods'
 import { useMountsStore } from '../stores/mounts'
-import { datacenterOptions } from '../utils/datacenters'
+import DatacenterTable from './DatacenterTable.vue'
 import DockerfileModal from './DockerfileModal.vue'
 import { t } from '../i18n'
 import ConfigModal from './ConfigModal.vue'
@@ -400,7 +408,7 @@ const gpuOptions = ref([{ value: 'auto', text: 'Cheapest card in stock (16-24 GB
 const gpuLive = ref(false)
 async function loadGpus() {
   // prices at the datacenter the pod will land in: the volume's, else the form's choice, else RunPod's lowest anywhere
-  const dc = volumeDc.value !== null ? volumeDc.value : form.dataCenterId
+  const dc = form.dataCenterId || (volumeDc.value ?? '')
   try { const g = await podsAPI.gpus(dc || undefined); gpuOptions.value = g.gpus; gpuLive.value = !!g.live } catch { /* the plain menu stays */ }
 }
 defineExpose({ loadGpus })   // the first load comes from the datacenter watcher below (immediate), after volumeDc exists
@@ -484,13 +492,29 @@ const showDockerfile = ref(false)
 
 /** The datacenter: pinned by the network volume of the configuration this pod uses (its own or the default), free otherwise. */
 const dcList = ref([])
-async function loadDatacenters() { try { dcList.value = (await podsAPI.datacenters()).datacenters || [] } catch { /* the plain menu stays */ } }
+const dcLoading = ref(false)
+const dcAt = ref(null)   // when the list was last read
+async function loadDatacenters(fresh = false) {
+  dcLoading.value = true
+  try { dcList.value = (await podsAPI.datacenters(fresh)).datacenters || []; dcAt.value = new Date() } catch { /* the plain menu stays */ } finally { dcLoading.value = false }
+}
 loadDatacenters()
+// Stock changes by the minute (ADR-026): the list and the card prices follow it while the form is open.
+const dcTimer = setInterval(() => { loadDatacenters(true); loadGpus() }, 60_000)
+onUnmounted(() => clearInterval(dcTimer))
 const effectiveConfig = computed(() => form.config || mounts.config)
 const volumeDc = computed(() => (effectiveConfig.value?.network_volume_id ? (effectiveConfig.value.data_center_id || '') : null))
-const dcOptions = computed(() => datacenterOptions(dcList.value, { value: '', text: t('form.datacenterAny') }, volumeDc.value !== null ? volumeDc.value : form.dataCenterId))
 watch(volumeDc, (v) => { if (v !== null) form.dataCenterId = v; loadGpus() }, { immediate: true })
-watch(() => form.dataCenterId, () => { if (volumeDc.value === null) loadGpus() })
+/** A datacenter other than the volume's: the volume cannot go there, so the pod is made without it (and without the rest of the mount configuration) unless a volume is made in that region first. */
+const otherRegion = computed(() => !!form.dataCenterId && form.dataCenterId !== (volumeDc.value ?? ''))
+watch(() => form.dataCenterId, (dc) => {
+  if (volumeDc.value !== null) {
+    if (!dc) { form.dataCenterId = volumeDc.value; return }   // a volume is always somewhere: "Any" is the volume's datacenter
+    form.applyMounts = dc === volumeDc.value && mounts.applyByDefault !== false
+  }
+  loadGpus()
+})
+const newVolumeHere = () => { ui.volumeDc = form.dataCenterId; ui.volumesOpen = true }
 const mountsSummary = computed(() => mounts.summary)
 const configuredImage = computed(() => mounts.configuredImage || t('form.noImage'))
 const configuredIdle = computed(() => mounts.configuredIdle)

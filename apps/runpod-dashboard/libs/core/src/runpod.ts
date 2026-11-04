@@ -100,6 +100,15 @@ export async function datacenterStock(dataCenterId: string, client?: RunPodClien
   return (dc?.gpuAvailability || []).filter((g) => g.available).map((g) => g.gpuTypeId)
 }
 
+/** Every GPU type RunPod operates in each listed datacenter, free or not (`available`), NVIDIA and AMD alike. One query, so a datacenter never goes missing because a chunk of a bigger query failed.
+ *  This is what the datacenter picker lists: nothing is hidden because it is busy or outside our table (ADR-026). */
+export interface DcAvailability { id: string; cards: { id: string; name: string; available: boolean; stock: string | null }[] }
+export async function datacenterAvailability(client?: RunPodClient): Promise<DcAvailability[]> {
+  const d = await graphql<{ dataCenters: { id: string; listed: boolean; gpuAvailability: { gpuTypeId: string; gpuTypeDisplayName: string | null; available: boolean; stockStatus: string | null }[] | null }[] }>(
+    'query { dataCenters { id listed gpuAvailability { gpuTypeId gpuTypeDisplayName available stockStatus } } }', client)
+  return (d?.dataCenters || []).filter((x) => x.listed).map((x) => ({ id: x.id, cards: (x.gpuAvailability || []).map((g) => ({ id: g.gpuTypeId, name: g.gpuTypeDisplayName || g.gpuTypeId, available: !!g.available, stock: g.stockStatus })) }))
+}
+
 /** Every NVIDIA GPU type RunPod has free in ONE datacenter on the secure cloud, cheapest first: not only our table's ten cards. A pull, a hash or a delete never touches the GPU
  *  (ADR-022), so a pull pod may take whatever is free. */
 export interface FreeCard { id: string; name: string; vram: number | null; price: number; stock: string }
@@ -115,26 +124,27 @@ export async function freeCardsIn(dataCenterId: string, client?: RunPodClient): 
 /** Every listed datacenter with, for the given cards, the secure-cloud price and stock there. One request:
  *  the lowestPrice query takes a dataCenterId, aliased once per datacenter. Secure cloud, because a network
  *  volume pins its pods there and that is the price they pay. */
-export interface DatacenterPrices { id: string; cards: { id: string; price: number | null; stock: string | null }[] }
-export async function datacenterPrices(want: string[], client?: RunPodClient, only?: string[]): Promise<DatacenterPrices[]> {
+export interface DatacenterPrices { id: string; cards: { id: string; price: number | null; stock: string | null; name?: string; vram?: number | null }[] }
+/** `want`: the card ids to keep, or null for every NVIDIA card RunPod has there (the datacenter menu shows the cards our table leaves out too). */
+export async function datacenterPrices(want: string[] | null, client?: RunPodClient, only?: string[]): Promise<DatacenterPrices[]> {
   const dcs = await graphql<{ dataCenters: { id: string; listed: boolean }[] }>('query { dataCenters { id listed } }', client)
   const ids = (dcs?.dataCenters || []).filter((d) => d.listed && (!only || only.includes(d.id))).map((d) => d.id)
   if (!ids.length) return []
   const alias = (id: string) => 'dc_' + id.replace(/[^A-Za-z0-9]/g, '_')
   // RunPod answers 500 now and then to one query over all 34 datacenters: eight per request, a failed chunk is skipped.
-  type Priced = { id: string; lowestPrice: { uninterruptablePrice: number | null; stockStatus: string | null } | null }[]
+  type Priced = { id: string; displayName?: string | null; memoryInGb?: number | null; lowestPrice: { uninterruptablePrice: number | null; stockStatus: string | null } | null }[]
   const d: Record<string, Priced> = {}
   const chunks: string[][] = []
   for (let n = 0; n < ids.length; n += 8) chunks.push(ids.slice(n, n + 8))
   await Promise.all(chunks.map(async (chunk) => {
-    const q = `query { ${chunk.map((id) => `${alias(id)}: gpuTypes { id lowestPrice(input:{gpuCount:1, dataCenterId:${str(id)}, secureCloud:true}) { uninterruptablePrice stockStatus } }`).join(' ')} }`
+    const q = `query { ${chunk.map((id) => `${alias(id)}: gpuTypes { id displayName memoryInGb lowestPrice(input:{gpuCount:1, dataCenterId:${str(id)}, secureCloud:true}) { uninterruptablePrice stockStatus } }`).join(' ')} }`
     try { Object.assign(d, await graphql<Record<string, Priced>>(q, client)) } catch { /* that chunk's datacenters show no cards */ }
   }))
-  const w = new Set(want)
+  const w = want && new Set(want)
   return ids.map((id) => ({
     id,
-    cards: (d?.[alias(id)] || []).filter((g) => w.has(g.id) && g.lowestPrice?.uninterruptablePrice != null && g.lowestPrice?.stockStatus)
-      .map((g) => ({ id: g.id, price: g.lowestPrice!.uninterruptablePrice, stock: g.lowestPrice!.stockStatus })),
+    cards: (d?.[alias(id)] || []).filter((g) => (w ? w.has(g.id) : /^NVIDIA /.test(g.id)) && g.lowestPrice?.uninterruptablePrice != null && g.lowestPrice?.stockStatus)
+      .map((g) => ({ id: g.id, price: g.lowestPrice!.uninterruptablePrice, stock: g.lowestPrice!.stockStatus, name: g.displayName || undefined, vram: g.memoryInGb ?? null })),
   }))
 }
 

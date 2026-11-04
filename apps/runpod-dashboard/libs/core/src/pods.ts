@@ -71,7 +71,6 @@ export function plan(req: CreatePodRequest, cfg: mounts.MountsConfig, credential
     if (missing.length) throw bad(`Not mapped on this PC: ${missing.join(', ')}. Map them in Configuration (gear icon); in dev mode (COMFY_MODE=dev) plates are optional.`)
     const ov = mounts.podOverrides(cfg)
     for (const [k, v] of Object.entries(ov.env)) if (!(k in env)) env[k] = v
-    if (ov.registry_auth_id) volume.containerRegistryAuthId = ov.registry_auth_id   // a private registry: RunPod pulls with its saved credential
     if (ov.network_volume_id) {
       volume.networkVolumeId = ov.network_volume_id; volume.volumeMountPath = ov.volume_mount_path
       if (ov.data_center_id) volume.dataCenterId = ov.data_center_id
@@ -79,6 +78,8 @@ export function plan(req: CreatePodRequest, cfg: mounts.MountsConfig, credential
       volumeGb = 0   // the network volume carries the data; a per-pod volume beside it is billed for nothing
     }
   }
+  // The image's credential is the image's, not the mounts': a pod made without the mount configuration (another region, no volume) still pulls a private image (ADR-026: it did not, and RunPod exited it with "unauthorized").
+  if (cfg.registry_auth_id) volume.containerRegistryAuthId = cfg.registry_auth_id
   if (!volume.networkVolumeId && req.data_center_id) volume.dataCenterId = req.data_center_id
   const imageName = resolveImage(req.image, cfg)
   const gpuKey = req.gpu || gpus.DEFAULT_GPU
@@ -336,22 +337,34 @@ export interface GpuMenuEntry { value: string; text: string; price: number | nul
 /** Datacenters that serve a network volume over RunPod's S3 API (docs.runpod.io/storage/s3-api, 2026-10-21). */
 export const S3_DATACENTERS = new Set(['EU-CZ-1', 'EU-RO-1', 'EUR-IS-1', 'EUR-NO-1', 'US-CA-2', 'US-GA-2', 'US-IL-1', 'US-KS-2', 'US-MD-1', 'US-MO-1', 'US-MO-2', 'US-NC-1', 'US-NC-2', 'US-NE-1', 'US-WA-1'])
 
-export interface DatacenterEntry { value: string; text: string; s3: boolean; cards: { key: string; name: string; vram: number; price: number; stock: string }[] }
-/** The datacenter menu for the Configuration panel: every listed datacenter, S3 support, and our cards in stock there
- *  with the secure-cloud price per hour, cheapest first. Datacenters with a card in stock come first. */
-let dcCache: { at: number; value: { datacenters: DatacenterEntry[]; live: boolean } } | null = null   // a few seconds to build; five minutes is fresh enough for stock
-export async function datacenters(client?: rp.RunPodClient): Promise<{ datacenters: DatacenterEntry[]; live: boolean }> {
-  if (!client && dcCache && Date.now() - dcCache.at < 300_000) return dcCache.value
+export interface DatacenterEntry { value: string; text: string; s3: boolean; cards: { key: string; name: string; vram: number; price: number | null; stock: string; available: boolean; runs: boolean; why?: 'cuda13' | 'amd' }[] }
+/** The datacenter menu (the pod form and the Configuration panel): every listed datacenter, S3 support, and EVERY card in stock there at the secure-cloud
+ *  price per hour, ranked by how many cards a datacenter has. `runs` is false for a card outside our table (the Blackwell cards need a CUDA 12.8+ image, ADR-026).
+ *  A minute of cache; `fresh` skips it (the form's refresh button). */
+let dcCache: { at: number; value: { datacenters: DatacenterEntry[]; live: boolean } } | null = null
+export async function datacenters(client?: rp.RunPodClient, fresh = false): Promise<{ datacenters: DatacenterEntry[]; live: boolean }> {
+  if (!client && !fresh && dcCache && Date.now() - dcCache.at < 60_000) return dcCache.value
   if (isDry()) return { datacenters: [{ value: 'CA-MTL-1', text: 'CA-MTL-1 · simulated', s3: false, cards: [] }, { value: 'EU-RO-1', text: 'EU-RO-1 · S3 · simulated', s3: true, cards: [] }], live: false }
-  let stock: rp.DatacenterPrices[]
-  try { stock = await rp.datacenterPrices(Object.values(gpus.GPUS).map((g) => g.id), client) } catch { return { datacenters: [], live: false } }
-  const entries = stock.map((dc) => {
-    const cards = dc.cards.map((c) => ({ key: gpuKey(c.id), name: gpus.GPUS[gpuKey(c.id)]?.name || c.id, vram: gpus.vram(gpuKey(c.id)), price: c.price as number, stock: c.stock as string })).sort((a, b) => a.price - b.price)
+  // Every card RunPod runs in each datacenter, free or not (one query), with a price where RunPod gave one (the bigger query may fail for some datacenters: then the card is listed without a price).
+  let avail: rp.DcAvailability[]
+  try { avail = await rp.datacenterAvailability(client) } catch { return { datacenters: [], live: false } }
+  let priced: rp.DatacenterPrices[] = []
+  try { priced = await rp.datacenterPrices(null, client) } catch { /* cards are listed without prices */ }
+  const entries = avail.map((dc) => {
+    const price = new Map((priced.find((x) => x.id === dc.id)?.cards || []).map((c) => [c.id, c]))
+    const cards = dc.cards.map((c) => {
+      const k = gpuKey(c.id), known = k in gpus.GPUS, pr = price.get(c.id), amd = !/^NVIDIA /.test(c.id)
+      return { key: k, name: known ? gpus.GPUS[k].name : c.name.replace(/^NVIDIA /, ''), vram: known ? gpus.vram(k) : gpus.vram(c.name) || pr?.vram || 0, price: pr?.price ?? null, stock: c.available ? (c.stock || pr?.stock || 'In stock') : 'Out of stock', available: c.available, runs: known, ...(known ? {} : { why: (amd ? 'amd' : 'cuda13') as 'amd' | 'cuda13' }) }
+    }).sort((a, b) => Number(b.available) - Number(a.available) || (a.price ?? 9e9) - (b.price ?? 9e9) || b.vram - a.vram)
     const s3 = S3_DATACENTERS.has(dc.id)
-    const text = [dc.id, cards.length ? cards.slice(0, 3).map((c) => `${c.name} $${c.price}/h ${c.stock}`).join(', ') : 'none of our cards in stock', s3 ? 'S3' : null].filter(Boolean).join(' · ')
+    const free = cards.filter((c) => c.available)
+    const show = (c: typeof cards[number]) => `${c.name}${c.vram ? ` ${c.vram} GB` : ''}${c.price != null ? ` $${c.price}/h` : ''} ${c.stock}${c.runs ? '' : c.why === 'amd' ? ' (AMD, not CUDA)' : ' (needs CUDA 13)'}`
+    const text = [dc.id, free.length ? `${free.length} card${free.length === 1 ? '' : 's'} in stock: ${free.slice(0, 3).map(show).join(', ')}` : `no cards in stock (${cards.length} offered)`, s3 ? 'S3' : null].filter(Boolean).join(' · ')
     return { value: dc.id, text, s3, cards }
   })
-  entries.sort((a, b) => (b.cards.length ? 1 : 0) - (a.cards.length ? 1 : 0) || (a.cards[0]?.price ?? 9) - (b.cards[0]?.price ?? 9) || a.value.localeCompare(b.value))
+  const freeCount = (d: DatacenterEntry) => d.cards.filter((c) => c.available).length
+  const runnable = (d: DatacenterEntry) => d.cards.filter((c) => c.available && c.runs).length
+  entries.sort((a, b) => freeCount(b) - freeCount(a) || runnable(b) - runnable(a) || b.cards.length - a.cards.length || (a.cards.find((c) => c.available)?.price ?? 9e9) - (b.cards.find((c) => c.available)?.price ?? 9e9) || a.value.localeCompare(b.value))
   const value = { datacenters: entries, live: true }
   if (!client) dcCache = { at: Date.now(), value }
   return value
