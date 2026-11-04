@@ -11,6 +11,9 @@
         <BButton variant="outline-light" size="sm" :title="$t('app.volumesTitle')" :disabled="!settings.ready" data-testid="open-volumes" @click="ui.volumesOpen = true">
           <i class="fa-solid fa-hard-drive me-1"></i>{{ $t('app.volumes') }}
         </BButton>
+        <BButton variant="outline-light" size="sm" :title="$t('app.historyTitle')" data-testid="open-history" @click="ui.historyOpen = true">
+          <i class="fa-solid fa-clock-rotate-left me-1"></i>{{ $t('app.history') }}
+        </BButton>
         <BButton variant="outline-light" size="sm" :title="$t('app.configurationTitle')" :aria-label="$t('app.configuration')" data-testid="open-config" @click="ui.configOpen = true">
           <i class="fa-solid fa-gear"></i>
         </BButton>
@@ -52,6 +55,7 @@
     <ImportModal />
     <AdapterStudio />
     <VolumesModal />
+    <HistoryModal />
     <ToastHost />
     <WelcomeModal />
     <ConfigModal />
@@ -76,6 +80,7 @@ import { useUiStore } from './stores/ui'
 import { useSettingsStore } from './stores/settings'
 import { syncAPI } from './api/sync'
 import VolumesModal from './components/VolumesModal.vue'
+import HistoryModal from './components/HistoryModal.vue'
 import { useToastStore } from './stores/toast'
 import { t } from './i18n'
 import { usePodsStore } from './stores/pods'

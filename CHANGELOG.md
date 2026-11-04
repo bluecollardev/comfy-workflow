@@ -5,6 +5,10 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased
 
+### History
+- Lucas: "all". History: pod history, spend history, download/sync job history, ComfyUI runs. Core: `history` (pod and job events, spend worked out from them) and `comfyruns` (a running pod's ComfyUI `/history` and `/queue`, newest first); IPC `history.list`, `history.spend`, `history.runs`; MCP `get_history`, `get_spend_history`, `get_comfy_runs`.
+- Lucas: "make history exportable too". The history (events or spend) exports as JSON or CSV: IPC `history.export`, MCP `export_history` (returns the text and a suggested file name; writes nothing).
+
 ### Rename a pod (a name on our side only)
 - Lucas: "i want an ability to edit the pod name once created - this is just a map on our end", "make sure this is mcp exposed". A pencil on the pod card edits the name (Enter saves, Escape cancels, empty goes back to RunPod's name). RunPod is not told: the name is kept in `pod-names.json` by pod id, shown on the card, in lists and by the MCP tools, carried by Recreate and dropped by Delete. MCP: `rename_pod` (pod manager server, so the stdio and the app-served endpoints both have it); IPC `pods.rename`.
 - Lucas: "this shouldn't say default pod configuration if we're configuring a named pod", "above the tabs, have the ability to name the pod". A pod's own Configuration window now says "Pod Configuration" (heading, tab and hint) and has a Pod title field above the tabs that saves at once.

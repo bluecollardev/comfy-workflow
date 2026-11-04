@@ -74,7 +74,7 @@ export function privateSyncHost(core) {
 /** The pod manager's MCP server over `core` (libs/core's exports). `syncHost` runs the syncs: omitted, a private
  *  one (stdio). Returns a fresh SDK Server; call it again for another connection. */
 export function createPodManagerServer({ core, syncHost = privateSyncHost(core) }) {
-  const { governance, gpus, imports, mounts, pods, pool, syncrun, volumes } = core
+  const { comfyruns, governance, gpus, history, imports, mounts, pods, pool, syncrun, volumes } = core
   const LOG_WAIT_MS = Number(process.env.MCP_LOG_WAIT_MS) || LOG_WAIT_MS_DEFAULT   // RunPod's log stream stays open after the backfill; this is how long get_logs listens
 
   const agentId = { type: 'string', description: 'Agent ID' }
@@ -168,6 +168,10 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
     { name: 'resume_pod', description: 'Resume a stopped pod on its host; when that host is full the answer says so and suggests recreate_pod', inputSchema: { type: 'object', properties: { pod_id: podId }, required: ['pod_id'] } },
     { name: 'delete_pod', description: 'Terminate a pod (irreversible; asks nothing, as the card does after its confirm). A network volume is not touched', inputSchema: { type: 'object', properties: { pod_id: podId }, required: ['pod_id'] } },
     { name: 'recreate_pod', description: 'A fresh pod with the same name, image, card choice, disk, idle stop and own configuration on whatever host is free; the old one is terminated. The network volume follows', inputSchema: { type: 'object', properties: { pod_id: podId }, required: ['pod_id'] } },
+    { name: 'get_history', description: "What happened on this PC, newest first: `pod` events (a pod was created, started, stopped, recreated, renamed or deleted, with its GPU, datacenter and hourly price) and `job` events (a round pull, a delete of a round, or a sync, ended done, failed or cancelled, with files and bytes). Read from this app's own log, so it covers only what was done through this app. For ComfyUI's own runs use get_comfy_runs; for money use get_spend_history", inputSchema: { type: 'object', properties: { kind: { type: 'string', enum: ['pod', 'job'], description: 'only pod events or only job events (default: both)' }, limit: { type: 'integer', minimum: 1, maximum: 5000, description: 'most events to return (default 200)' } } } },
+    { name: 'get_spend_history', description: "What the pods have cost, worked out from the start and stop events in the history: the total, what is running now, each session (pod, from, to, hours, cost) and the cost by day. An estimate (RunPod bills by the second at the price listed then); read its `note`. For the live burn rate use cost_now", inputSchema: { type: 'object', properties: {} } },
+    { name: 'get_comfy_runs', description: "The runs on a pod's ComfyUI, newest first, read from the pod: queued and running ones, then finished ones (up to 50) with status (success, error, running, pending), start time, duration in seconds, the output files (filename, type, subfolder) and the error message of a failed run. The pod must be running (otherwise refused: start it first); ComfyUI forgets its history when the pod is recreated", inputSchema: { type: 'object', properties: { pod_id: podId }, required: ['pod_id'] } },
+    { name: 'export_history', description: "Export the history as a file's text with its suggested file name: `what` events (the pod and job events, default) or spend (the sessions the cost is worked out from), as `format` json (default) or csv. Only reads: it writes no file, so save the text yourself if it is wanted on disk", inputSchema: { type: 'object', properties: { format: { type: 'string', enum: ['json', 'csv'] }, what: { type: 'string', enum: ['events', 'spend'] } } } },
     { name: 'rename_pod', description: "Name a pod in this app (a map on our side only: RunPod's own name is untouched). An empty name goes back to RunPod's. list_pods and get_pod then show it", inputSchema: { type: 'object', properties: { pod_id: podId, name: { type: 'string', maxLength: 80 } }, required: ['pod_id', 'name'] } },
     { name: 'set_idle_stop', description: 'Set a pod\'s idle stop: stopped after this many minutes with nothing queued in its ComfyUI; 0 = never', inputSchema: { type: 'object', properties: { pod_id: podId, minutes: { type: 'integer', minimum: 0 } }, required: ['pod_id', 'minutes'] } },
     { name: 'get_logs', description: 'The last lines of a pod\'s logs from RunPod (container and system)', inputSchema: { type: 'object', properties: { pod_id: podId, lines: { type: 'integer', description: 'How many lines, 1-1000', default: 100 } }, required: ['pod_id'] } },
@@ -294,6 +298,18 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
     recreate_pod: async ({ pod_id }) => {
       const fresh = await pods.recreate(pod_id)
       return json({ ...fresh, replaced: pod_id, config: pods.config(fresh.id) })
+    },
+    get_history: async ({ kind, limit }) => {
+      if (kind != null && kind !== 'pod' && kind !== 'job') throw new Error("kind must be 'pod' or 'job'")
+      return json(history.list({ ...(kind ? { kind } : {}), ...(limit ? { limit: Number(limit) } : {}) }))
+    },
+    get_spend_history: async () => json(history.spend()),
+    get_comfy_runs: async ({ pod_id }) => json(await comfyruns.runs(pod_id)),
+    export_history: async ({ format, what }) => {
+      if (format != null && format !== 'json' && format !== 'csv') throw new Error("format must be 'json' or 'csv'")
+      if (what != null && what !== 'events' && what !== 'spend') throw new Error("what must be 'events' or 'spend'")
+      const f = history.exportHistory({ format: format || 'json', what: what || 'events' })
+      return text(`${f.name} (${f.mime})\n${f.text}`)
     },
     rename_pod: async ({ pod_id, name }) => json(await pods.rename(pod_id, String(name ?? ''))),
     set_idle_stop: async ({ pod_id, minutes }) => {

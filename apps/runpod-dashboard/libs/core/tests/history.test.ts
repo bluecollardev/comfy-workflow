@@ -35,3 +35,18 @@ describe('history', () => {
     expect(history.list({ kind: 'pod' }).map((e) => (e as history.PodEvent).action).sort()).toEqual(['deleted', 'renamed', 'started', 'stopped'])
   })
 })
+
+describe('history export', () => {
+  it('exports json (events and spend) and csv (events, or spend sessions), quoting what needs it', () => {
+    history.record({ kind: 'pod', action: 'created', pod_id: 'a', name: 'cgi, "042"', cost_per_hr: 4 }, () => new Date('2026-11-04T10:00:00Z'))
+    history.record({ kind: 'job', job: 'pull', state: 'failed', what: 'r1', files: 2, bytes: 9, error: 'no\nspace' }, () => new Date('2026-11-04T11:00:00Z'))
+    const now = new Date('2026-11-04T12:00:00Z')
+    const j = history.exportHistory({ now })
+    expect(j.name).toBe('pod-manager-history-2026-11-04.json')
+    expect(JSON.parse(j.text)).toMatchObject({ format: 'pod-manager-history', events: [{ kind: 'job' }, { kind: 'pod' }], spend: { total: 8 } })
+    const c = history.exportHistory({ format: 'csv', now })
+    expect(c.text.split('\n')[0]).toBe('time,kind,action,name,pod_id,gpu,datacenter,cost_per_hr,state,files,bytes,detail')
+    expect(c.text).toContain('"cgi, ""042"""'); expect(c.text).toContain('"no\nspace"')
+    expect(history.exportHistory({ format: 'csv', what: 'spend', now }).text).toContain('pod_id,name,gpu')
+  })
+})

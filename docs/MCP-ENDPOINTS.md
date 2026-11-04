@@ -109,6 +109,10 @@ settings, or no-spend mode.
 | `stop_pod` / `resume_pod` / `delete_pod` | `pod_id` | confirmation; resume reports a full host and suggests `recreate_pod` | delete asks nothing, as the card does after its confirm |
 | `recreate_pod` | `pod_id` | the new pod, the old one terminated, its own configuration carried | |
 | `rename_pod` | `pod_id`, `name` (empty = RunPod's own) | the name shown and RunPod's | a map on our side only: RunPod is not told; list_pods and get_pod show it; it goes with Recreate and goes on Delete |
+| `get_history` | `kind` (`pod` or `job`, optional), `limit` (default 200) | the events newest first: pod created/started/stopped/recreated/renamed/deleted, and pull/remove/sync jobs with files and bytes | from this app's own log; IPC `history.list` |
+| `get_spend_history` | none | total, running now, sessions and cost by day, with a note that it is an estimate | worked out from the pod events; IPC `history.spend` |
+| `get_comfy_runs` | `pod_id` | the pod's ComfyUI runs newest first: status, started_at, duration_s, output files, error | read from the pod's `/history` and `/queue`; the pod must be running (409 otherwise); IPC `history.runs` |
+| `export_history` | `format` (`json` or `csv`), `what` (`events` or `spend`) | the file name and mime, then the file's text | read only, writes no file; IPC `history.export` |
 | `set_idle_stop` | `pod_id`, `minutes` (0 = never) | the new value | |
 | `get_logs` | `pod_id`, `lines` (default 100) | the last lines from RunPod | |
 | `list_datacenters` | `fresh?` | every listed datacenter with S3 support and every card RunPod runs there, free or in use, each with size, secure-cloud price, stock and whether the image can run it (ADR-027); most free cards first | |

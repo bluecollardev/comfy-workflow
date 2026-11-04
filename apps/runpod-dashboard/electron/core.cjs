@@ -69,6 +69,9 @@ const TABLE = {
   history: {
     list: (c, kind, limit) => c.history.list({ ...(kind ? { kind } : {}), ...(limit ? { limit: Number(limit) } : {}) }),
     spend: (c) => c.history.spend(),
+    runs: (c, podId) => c.comfyruns.runs(podId),
+    export: (c, opts) => c.history.exportHistory({ format: opts && opts.format, what: opts && opts.what }),
+    runs: (c, podId) => c.comfyruns.runs(podId),
   },
   volumes: {
     list: (c) => c.volumes.list(),

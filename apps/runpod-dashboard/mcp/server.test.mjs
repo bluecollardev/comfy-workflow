@@ -55,7 +55,7 @@ test('initialize hands every client the governance instructions', async () => {
 })
 
 const POOL = ['list_agents', 'get_pool_status', 'governance', 'create_agent', 'stop_agent', 'resume_agent', 'delete_agent', 'health_check_agent', 'get_agent_info', 'submit_job', 'get_job_status']
-const PODS = ['list_pods', 'get_pod', 'create_pod', 'stop_pod', 'resume_pod', 'delete_pod', 'recreate_pod', 'rename_pod', 'set_idle_stop', 'get_logs', 'list_datacenters', 'list_volumes', 'create_volume', 'delete_volume', 'set_default_volume', 'get_configuration', 'sync', 'sync_status', 'adapter_spec', 'adapters_list', 'adapter_save', 'import_plan', 'import_apply', 'cost_now']
+const PODS = ['list_pods', 'get_pod', 'create_pod', 'stop_pod', 'resume_pod', 'delete_pod', 'recreate_pod', 'get_history', 'get_spend_history', 'get_comfy_runs', 'export_history', 'rename_pod', 'set_idle_stop', 'get_logs', 'list_datacenters', 'list_volumes', 'create_volume', 'delete_volume', 'set_default_volume', 'get_configuration', 'sync', 'sync_status', 'adapter_spec', 'adapters_list', 'adapter_save', 'import_plan', 'import_apply', 'cost_now']
 // The tools the app's other windows added (docs/ADR-028), in the order app-tools.mjs defines them.
 const APP = ['list_gpus', 'get_volume_info', 'get_pod_config', 'set_pod_config', 'set_configuration', 'preview_configuration', 'reset_configuration', 'get_local_env', 'list_dirs', 'get_settings', 'set_settings', 'check_anthropic_key', 'config_export', 'config_import_plan', 'config_import_apply', 'config_undo', 'config_backups', 'resize_volume', 'panama_status', 'panama_rounds', 'panama_round_files', 'panama_round_size', 'panama_pod_plan', 'panama_pull', 'panama_job', 'panama_cancel', 'panama_remove', 'panama_import', 'import_detect', 'package_summary', 'package_tree', 'package_file', 'package_describe', 'adapter_draft', 'adapter_document', 'adapter_problems', 'adapter_manage', 'sync_after', 'image_env', 'image_dockerfile', 'git_accounts', 'repositories', 'remote_mcp', 'mcp_endpoints', 'docs']
 
@@ -199,6 +199,26 @@ test('with a named yes: create, list, get, idle stop, logs, stop, resume, recrea
 
   const r = refused(await call('recreate_pod', { pod_id: 'dry-nope' }))
   assert.match(textOf(r), /^Pod dry-nope not found/)
+})
+
+test('history: pod and job events, spend with its note, and a pod\'s ComfyUI runs (refused while the pod is not running)', async () => {
+  await sleep(100)
+  const all = jsonOf(ok(await call('get_history')))
+  assert.ok(Array.isArray(all) && all.length > 0); assert.ok(all.every((e) => e.kind === 'pod' || e.kind === 'job'))
+  assert.ok(all.some((e) => e.kind === 'pod' && e.action === 'created'))
+  const podsOnly = jsonOf(ok(await call('get_history', { kind: 'pod', limit: 2 })))
+  assert.equal(podsOnly.length, 2); assert.ok(podsOnly.every((e) => e.kind === 'pod'))
+  assert.deepEqual(jsonOf(ok(await call('get_history', { kind: 'job' }))), [])
+  refused(await call('get_history', { kind: 'nope' }))
+  const spend = jsonOf(ok(await call('get_spend_history')))
+  assert.ok(Array.isArray(spend.sessions)); assert.equal(typeof spend.total, 'number'); assert.ok(spend.note)
+  const fresh = jsonOf(ok(await call('create_pod', { name: 'ComfyUI-Runs', gpu: 'a40', approved_by: 'Lucas' })))
+  assert.match(textOf(refused(await call('get_comfy_runs', { pod_id: fresh.id }))), /is not running: start it to read its ComfyUI history/)
+  assert.match(textOf(refused(await call('get_comfy_runs', { pod_id: 'dry-nope' }))), /^Pod dry-nope not found/)
+  await call('delete_pod', { pod_id: fresh.id })
+  const csv = textOf(ok(await call('export_history', { format: 'csv' }))); assert.match(csv, /\.csv/); assert.match(csv, /created/)
+  const js = textOf(ok(await call('export_history', { format: 'json', what: 'spend' }))); assert.match(js, /\.json/); assert.match(js, /sessions/)
+  refused(await call('export_history', { format: 'xml' }))
 })
 
 test('datacenters and volumes: list, create with a named yes, default, refused delete while attached, delete', async () => {

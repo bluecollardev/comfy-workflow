@@ -51,6 +51,19 @@ export const sampleRepository = () => ({
 
 export function defaultState() {
   return {
+    history: {
+      events: [
+        { ts: '2026-11-03T10:00:00Z', kind: 'pod', action: 'created', pod_id: 'pod-aaaaaaaa', name: 'ComfyUI-Dev', gpu: 'RTX 4090', datacenter: 'EU-RO-1', cost_per_hr: 0.69 },
+        { ts: '2026-11-03T12:30:00Z', kind: 'pod', action: 'stopped', pod_id: 'pod-aaaaaaaa', name: 'ComfyUI-Dev', gpu: 'RTX 4090', datacenter: 'EU-RO-1' },
+        { ts: '2026-11-03T13:00:00Z', kind: 'job', job: 'pull', state: 'done', what: 'round-3', pod_name: 'ComfyUI-Dev', files: 12, bytes: 3145728 },
+        { ts: '2026-11-03T13:30:00Z', kind: 'job', job: 'sync', state: 'failed', what: 'ComfyUI-Shared', pod_name: 'ComfyUI-Dev', error: 'rsync: connection reset' },
+      ],
+      spend: { total: 1.73, running_now: 1, sessions: [{ pod_id: 'pod-aaaaaaaa', name: 'ComfyUI-Dev', gpu: 'RTX 4090', datacenter: 'EU-RO-1', cost_per_hr: 0.69, from: '2026-11-03T10:00:00Z', to: '2026-11-03T12:30:00Z', hours: 2.5, cost: 1.73 }], by_day: [{ day: '2026-11-03', cost: 1.73, hours: 2.5 }], note: 'Worked out from recorded events; RunPod bills the truth.' },
+      runs: { 'pod-aaaaaaaa': [
+        { prompt_id: 'abcdef12-3456-7890', status: 'success', started_at: '2026-11-03T11:00:00Z', duration_s: 42.5, outputs: [{ filename: 'plate_0001.png', type: 'output', subfolder: 'shots' }] },
+        { prompt_id: 'fedcba98-7654-3210', status: 'error', started_at: '2026-11-03T11:10:00Z', duration_s: null, outputs: [], error: 'CUDA out of memory' },
+      ] },
+    },
     podConfigs: {},   // per-pod configurations (GET/PUT /pods/:id/config)
     pods: samplePods(),
     accounts: [],
@@ -326,6 +339,10 @@ export async function mockApi(page, state) {
       return json({ ...base, built: '# Reconstructed from ' + image + '\nRUN git clone comfy\nCOPY packs /opt/ComfyUI/custom_nodes/' })
     }
     if ((m = path.match(/^\/volumes\/([^/]+)$/)) && method === 'GET') { const v = state.volumes[m[1]]; return v ? json(v) : json({ detail: `no network volume ${m[1]}` }, 404) }
+    if (method === 'GET' && path === '/history') { const ev = state.history.events.filter((e) => !query.kind || e.kind === query.kind); return json(query.limit ? ev.slice(0, Number(query.limit)) : ev) }
+    if (method === 'GET' && path === '/history/export') { const csv = query.format === 'csv'; return json({ name: `history-${query.what || 'all'}.${csv ? 'csv' : 'json'}`, mime: csv ? 'text/csv' : 'application/json', text: csv ? 'ts,kind\n2026-11-03T10:00:00Z,pod\n' : JSON.stringify({ events: state.history.events, spend: state.history.spend }) }) }
+    if (method === 'GET' && path === '/history/spend') return json(state.history.spend)
+    if (method === 'GET' && path === '/history/runs') { const r = state.history.runs[query.pod_id]; return r ? json(r) : json({ detail: `pod ${query.pod_id} is not running` }, 400) }
     if (method === 'GET' && path === '/volumes') return json(Object.values(state.volumes).map((v) => ({ ...v, is_default: v.id === state.mounts.config.network_volume_id })))
     if (method === 'POST' && path === '/volumes') {
       const v = { id: `vol-new-${Object.keys(state.volumes).length + 1}`, name: body.name, size_gb: body.size_gb, datacenter: body.datacenter, cost_per_month: Math.round(body.size_gb * 7) / 100, s3: body.datacenter === 'EU-RO-1', is_default: false, pods: [] }

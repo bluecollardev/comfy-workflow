@@ -76,3 +76,25 @@ export function spend(now: Date = new Date()): Spend {
     note: 'Worked out from this app\'s own pod events at the price listed when each pod started; pods started or stopped outside this app are not seen. RunPod\'s console has the bill.',
   }
 }
+
+// ----- export -----
+
+export interface HistoryExport { name: string; mime: string; text: string }
+const csvCell = (v: unknown) => { const s = v == null ? '' : String(v); return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
+const csv = (header: string[], rows: unknown[][]) => [header, ...rows].map((r) => r.map(csvCell).join(',')).join('\n') + '\n'
+
+/** The history as a file. `format` json (one document: events and spend) or csv; `what` for csv: 'events' (pod and job events, one table) or 'spend' (one row per pod session).
+ *  Newest first, up to the whole file. Read-only: nothing is changed. */
+export function exportHistory(opts: { format?: 'json' | 'csv'; what?: 'events' | 'spend'; now?: Date } = {}): HistoryExport {
+  const now = opts.now ?? new Date()
+  const day = now.toISOString().slice(0, 10)
+  const format = opts.format === 'csv' ? 'csv' : 'json'
+  if (format === 'json') return { name: `pod-manager-history-${day}.json`, mime: 'application/json', text: JSON.stringify({ format: 'pod-manager-history', exported_at: now.toISOString(), events: list({ limit: MAX_LINES }), spend: spend(now) }, null, 2) + '\n' }
+  if (opts.what === 'spend') {
+    return { name: `pod-manager-spend-${day}.csv`, mime: 'text/csv', text: csv(['pod_id', 'name', 'gpu', 'datacenter', 'cost_per_hr', 'from', 'to', 'hours', 'cost'], spend(now).sessions.map((s) => [s.pod_id, s.name, s.gpu, s.datacenter, s.cost_per_hr, s.from, s.to ?? '', s.hours, s.cost])) }
+  }
+  const rows = list({ limit: MAX_LINES }).map((e) => e.kind === 'pod'
+    ? [e.ts, 'pod', e.action, e.name, e.pod_id, e.gpu, e.datacenter, e.cost_per_hr, '', '', '', e.detail]
+    : [e.ts, 'job', e.job, e.what, e.pod_id, '', '', '', e.state, e.files, e.bytes, e.error])
+  return { name: `pod-manager-history-${day}.csv`, mime: 'text/csv', text: csv(['time', 'kind', 'action', 'name', 'pod_id', 'gpu', 'datacenter', 'cost_per_hr', 'state', 'files', 'bytes', 'detail'], rows) }
+}
