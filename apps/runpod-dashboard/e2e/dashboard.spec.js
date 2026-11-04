@@ -90,8 +90,11 @@ test.describe('dashboard', () => {
 })
 
 test.describe('Pod list grouped by datacenter', () => {
-  test('pods are grouped under their datacenter, groups in name order, each with a count', async ({ page }) => {
+  test('a toggle groups the pods under their datacenter (off: the plain list); groups in name order, each with a count', async ({ page }) => {
     await page.goto('/')
+    await expect(page.getByTestId('pod-group')).toHaveCount(0)   // the plain list until the toggle is on
+    await expect(page.locator('[data-testid="pod-card"]')).toHaveCount(3)
+    await page.getByTestId('pods-group-toggle').check({ force: true })
     const groups = page.getByTestId('pod-group')
     await expect(groups).toHaveCount(2)
     await expect(groups.nth(0)).toHaveAttribute('data-dc', 'CA-MTL-1')
