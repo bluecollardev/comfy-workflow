@@ -155,3 +155,20 @@ describe('progress read from the tools\' own output', () => {
   })
 })
 
+describe('roundTree', () => {
+  const listing = [
+    '2026-10-20 10:11:12       200 rounds/r1/MANIFEST.json',
+    '2026-10-20 10:11:12      1000 rounds/r1/03_INBOX/ENTRY.md',
+    '2026-10-20 10:11:12      2000 rounds/r1/03_INBOX/sub/shot.exr',
+    '2026-10-20 10:11:12         0 rounds/r1/03_INBOX/',
+    '2026-10-20 10:11:12        50 rounds/other/x.txt',
+  ].join('\n')
+  it('makes a walk-ordered tree with folder totals and marks files already on disk', () => {
+    const t = panama.roundTree('r1', listing, (p, n) => p === 'MANIFEST.json' && n === 200)
+    expect(t.map((e) => e.path)).toEqual(['03_INBOX', '03_INBOX/sub', '03_INBOX/sub/shot.exr', '03_INBOX/ENTRY.md', 'MANIFEST.json'])
+    expect(t[0]).toMatchObject({ dir: true, bytes: 3000, files: 2 })
+    expect(t.find((e) => e.path === 'MANIFEST.json')?.local).toBe(true)
+    expect(t.find((e) => e.path === '03_INBOX/ENTRY.md')?.local).toBe(false)
+  })
+  it('refuses a bad round name', () => { expect(() => panama.files('../x')).toThrow(/Not a round name/) })
+})

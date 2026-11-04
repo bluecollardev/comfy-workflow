@@ -112,6 +112,7 @@ const TABLE = {
     status: (c) => c.panama.status(),
     rounds: (c) => c.panama.rounds(),
     size: (c, round) => c.panama.size(round),
+    files: (c, round) => c.panama.files(round),
     pull: (c, round) => c.panama.pull(round),
     job: (c, id) => c.panama.job(id),
     cancel: (c, id) => c.panama.cancel(id),

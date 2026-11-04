@@ -23,7 +23,7 @@
     <div v-if="store.loading" class="text-body-secondary small" data-testid="panama-loading"><BSpinner small class="me-2" />{{ $t('panama.loading') }}</div>
     <div v-else-if="!store.rows.length" class="small text-body-secondary" data-testid="panama-none">{{ $t('panama.none') }}</div>
     <div v-for="r in store.rows" :key="r.name" class="d-flex align-items-center gap-2 py-1 border-bottom" data-testid="panama-round" :data-round="r.name">
-      <code class="flex-grow-1">{{ r.name }}</code>
+      <code class="flex-grow-1 round-name" role="button" tabindex="0" :title="$t('panama.browse')" data-testid="panama-browse" @click="browsing = r.name" @keydown.enter="browsing = r.name"><i class="fa-regular fa-folder-open me-1"></i>{{ r.name }}</code>
       <BBadge v-if="r.state === 'complete'" variant="success" class="fw-normal" data-testid="panama-staged">{{ $t('panama.staged') }}</BBadge>
       <BBadge v-else-if="r.state === 'partial'" variant="warning" class="fw-normal" :title="r.missing != null ? $t('panama.missingHint', { n: r.missing }) : ''" data-testid="panama-partial">{{ r.expected != null ? $t('panama.stagedPartial', { present: r.present, expected: r.expected }) : $t('panama.stagedPartialUnknown', { present: r.present }) }}</BBadge>
       <BBadge v-else-if="r.state === 'unverified'" variant="info" class="fw-normal" data-testid="panama-unverified">{{ $t('panama.stagedUnverified') }}</BBadge>
@@ -35,6 +35,8 @@
       <span v-else-if="r.staged" class="small text-body-secondary text-nowrap" data-testid="panama-use-local-note">{{ $t('panama.importLocalNote') }}</span>
       <BButton v-if="r.state !== 'none' && store.removing !== r.name" size="sm" variant="outline-danger" class="text-nowrap" :disabled="busy" :title="$t(store.target === 'pod' ? 'panama.deleteHintPod' : 'panama.deleteHint')" data-testid="panama-delete" @click="store.askRemove(r.name)"><i class="fa-regular fa-trash-can me-1"></i>{{ $t('panama.delete') }}</BButton>
     </div>
+
+    <RoundFilesModal :round="browsing" :target="store.target" @close="browsing = ''" />
 
     <!-- Pod download: asked first, because it uses a pod or starts one (ADR-022 decision 2, 2c, 2d) -->
     <div v-if="store.confirming" class="alert alert-warning d-flex align-items-center gap-2 mt-2 mb-0 py-2 small" data-testid="panama-pod-confirm">
@@ -92,10 +94,12 @@ import { usePanamaStore } from '../stores/panama'
 import { useImportsStore } from '../stores/imports'
 import { useUiStore } from '../stores/ui'
 import { t } from '../i18n'
+import RoundFilesModal from './RoundFilesModal.vue'
 
 const store = usePanamaStore()
 const imports = useImportsStore()
 const ui = useUiStore()
+const browsing = ref('')   // the round whose files are open in the explorer modal
 const busy = computed(() => store.jobActive)
 const podAvailable = computed(() => store.podAvailable)
 const podReason = computed(() => store.status?.pod?.reason || t('panama.podUnavailable'))
@@ -143,3 +147,8 @@ watch(() => store.job?.recent?.length, async () => { await nextTick(); if (fileL
 onMounted(async () => { await store.loadStatus(); store.reload() })
 watch(() => store.podAvailable, () => store.reload())
 </script>
+
+<style scoped>
+.round-name { cursor: pointer; }
+.round-name:hover { text-decoration: underline; }
+</style>
