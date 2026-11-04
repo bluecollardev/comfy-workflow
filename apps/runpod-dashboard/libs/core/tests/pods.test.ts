@@ -50,7 +50,7 @@ describe('the datacenter menu', () => {
     const m = await pods.datacenters({ fetchFn, apiKey: 'k' })
     expect(m.live).toBe(true); expect(m.datacenters.map((d) => d.value)).toEqual(['EU-RO-1', 'CA-MTL-1'])   // cheapest card first; the unlisted one is gone
     expect(m.datacenters[0].s3).toBe(true); expect(m.datacenters[0].text).toBe('EU-RO-1 · RTX 4000 Ada $0.28/h Low, RTX 4090 $0.89/h High · S3')
-    expect(m.datacenters[1].s3).toBe(false); expect(m.datacenters[1].cards).toEqual([{ key: 'a40', name: 'A40', vram: 48, price: 0.35, stock: 'High' }])   // the H100 is not in our table
+    expect(m.datacenters[1].s3).toBe(false); expect(m.datacenters[1].cards).toEqual([{ key: 'a40', name: 'A40', vram: 48, price: 0.35, stock: 'High' }, { key: 'h100pcie', name: 'H100 PCIe', vram: 80, price: 2.5, stock: 'High' }])   // the H100 is in the table since 2026-11-04 (explicit-only, but its stock is listed)
   })
 })
 
@@ -89,7 +89,7 @@ describe('the plan sent to RunPod', () => {
     expect(pods.plan({ name: 't', data_center_id: 'US-NC-1' }, cfg).input.dataCenterId).toBe('US-NC-1')   // no volume: the form's choice
     expect(p2.input.volumeInGb).toBe(40); expect(p2.input.gpuTypeId).toBe('NVIDIA RTX A4000'); expect(p2.input.cloudType).toBe('SECURE'); expect(p2.idleMinutes).toBe(0)
     expect(p2.input.env.X).toBe('1'); expect(p2.input.env.Y).toBe('y')   // explicit env wins over a build arg
-    expect(() => pods.plan({ name: 't', gpu: 'h100' }, cfg)).toThrow(/unknown GPU/)
+    expect(() => pods.plan({ name: 't', gpu: 'b200' }, cfg)).toThrow(/unknown GPU/)
     expect(() => pods.plan({ name: 't', image: 'comfy-app:local' }, cfg)).toThrow(/local image name/)
   })
 
