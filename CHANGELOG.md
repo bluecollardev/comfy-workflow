@@ -5,6 +5,12 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased
 
+### v1.0.3: browse a round's files, and the fal pack in the image (branch `feature/round-file-explorer`)
+- Lucas: "can i have a file explorer in a modal when clicking on an item in the list". Clicking a round in the Panama pane opens a modal with the round's files in the bucket as a folder tree (read-only, folder totals, files already on this PC marked on Local). Core `panama.files()` / `roundTree()`, tests in `panama.test.ts` and `e2e/panama-files.spec.js`.
+- The `contract-v26` image rebuilt on GitHub Actions with the fal pack (ADR-025) and pushed to `ghcr.io/bluecollardev/comfy-app:contract-v26`; the DMG bakes that reference.
+- Fixed a `configio` test that built its path from the working directory and failed under the gate. Known and unrelated: `e2e-electron/import-claude.spec.js` fails on `develop` (viewport check).
+- Released as `v1.0.3` on the downloads repo.
+
 ### Export and import the Default Configuration, keys and tokens included (branches `feature/config-import-export`, `feature/config-secrets`; `docs/ADR-023-config-import-export.md`)
 - Lucas: "add a feature to allow the full configuration import and export for the default configuration"; "export to json and import json, user can pick from filesystem". **Export / Import** buttons at the top of Default Configuration use the native Save and Open dialogs; the file leaves out `dry_run`, per-pod settings, adapters and the repository list.
 - **Reversed on 2026-11-03** (Lucas: "wrong, export adds tokens", "import reads", "exports should have secrets"; the first version had left every key out): the export **includes the keys and tokens by default**, in a `secrets` block (RunPod, S3, exchange-bucket, console and Anthropic keys; the git accounts' tokens; and the environment variables named like secrets, which ride in `config.env`), with `"secrets_included": true`. A **Include keys and tokens** box, ticked, with a red warning beside it ("The file will contain your keys and tokens in plain text. Keep it private; anyone with it can use your RunPod account and buckets.") turns them off (`config export --no-secrets`); the file is written 0600.
