@@ -43,11 +43,11 @@
       <template v-if="store.confirming?.plan">
         <p class="small text-body-secondary mb-3" data-testid="panama-pod-confirm-text">{{ $t('panama.podAsk', { size: size(store.confirming.plan.bytes || 0), volume: store.confirming.plan.volume?.name || '' }) }}</p>
         <div class="d-grid gap-2">
-          <button type="button" class="btn text-start" :class="store.confirming.plan.choices?.current ? 'btn-outline-light' : 'btn-outline-secondary'" :disabled="!store.confirming.plan.choices?.current" data-testid="panama-pod-current" @click="store.confirmStart('current')">
+          <button type="button" class="btn text-start pod-choice" :disabled="!store.confirming.plan.choices?.current" data-testid="panama-pod-current" @click="store.confirmStart('current')">
             <strong><i class="fa-solid fa-server me-2"></i>{{ $t('panama.optCurrent') }}</strong>
             <div class="small text-body-secondary">{{ currentText(store.confirming.plan.choices?.current) }}</div>
           </button>
-          <button type="button" class="btn btn-outline-light text-start" data-testid="panama-pod-temporary" @click="store.confirmStart('temporary')">
+          <button type="button" class="btn text-start pod-choice" data-testid="panama-pod-temporary" @click="store.confirmStart('temporary')">
             <strong><i class="fa-solid fa-robot me-2"></i>{{ $t('panama.optAgent') }}</strong>
             <div class="small text-body-secondary">{{ $t('panama.planTemporary', { gpu: store.confirming.plan.choices?.temporary?.gpu || store.confirming.plan.gpu || '', price: (store.confirming.plan.choices?.temporary?.price_per_hour ?? store.confirming.plan.price_per_hour) != null ? (store.confirming.plan.choices?.temporary?.price_per_hour ?? store.confirming.plan.price_per_hour).toFixed(2) : '?', minutes: store.confirming.plan.idle_stop_minutes }) }}</div>
           </button>
@@ -163,4 +163,8 @@ watch(() => store.podAvailable, () => store.reload())
 <style scoped>
 .round-name { cursor: pointer; }
 .round-name:hover { text-decoration: underline; }
+.pod-choice { color: var(--bs-body-color); border: 1px solid var(--bs-border-color); background: transparent; }
+.pod-choice:hover:not(:disabled), .pod-choice:focus-visible { color: var(--bs-body-color); background: rgba(80, 140, 255, 0.18); border-color: #508cff; }
+.pod-choice .text-body-secondary { color: var(--bs-secondary-color) !important; }
+.pod-choice:disabled { opacity: 0.5; }
 </style>
