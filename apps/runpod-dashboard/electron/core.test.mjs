@@ -9,7 +9,7 @@ const { TABLE } = require('./core.cjs')
 
 const EXPECTED = {
   mounts: ['get', 'put', 'reset', 'preview', 'dirs'],
-  pods: ['dashboard', 'list', 'get', 'create', 'stop', 'resume', 'remove', 'gpus', 'volume', 'datacenters', 'setIdle', 'details', 'recreate', 'config', 'setConfig'],
+  pods: ['dashboard', 'list', 'get', 'create', 'stop', 'resume', 'remove', 'gpus', 'volume', 'datacenters', 'setIdle', 'rename', 'details', 'recreate', 'config', 'setConfig'],
   volumes: ['list', 'create', 'resize', 'remove', 'useAsDefault'],
   governance: ['summary'],
   settings: ['get', 'set', 'checkAnthropic'],

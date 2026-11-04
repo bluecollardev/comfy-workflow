@@ -108,6 +108,7 @@ settings, or no-spend mode.
 | `create_pod` | `approved_by` (required), `name`, `gpu` (table, big cards by name, or `auto`), `gpu_type_id` (a raw RunPod id), `gpu_count`, `datacenter`, `instance_type`, `disk_gb`, `volume_gb`, `image` (`configured`, `prebuilt` or a reference), `idle_stop_minutes`, `apply_mounts`, `start_ssh`, `start_jupyter`, `env_vars`, `pip_requirements`, `custom_nodes`, `config` (a per-pod configuration) | the new pod; "no card available" lists what was tried. A datacenter other than the volume's needs `apply_mounts=false` (ADR-027); a Blackwell card boots the `-cu13` image on a CUDA 13 host by itself (ADR-030) | spend: named yes, USD cap |
 | `stop_pod` / `resume_pod` / `delete_pod` | `pod_id` | confirmation; resume reports a full host and suggests `recreate_pod` | delete asks nothing, as the card does after its confirm |
 | `recreate_pod` | `pod_id` | the new pod, the old one terminated, its own configuration carried | |
+| `rename_pod` | `pod_id`, `name` (empty = RunPod's own) | the name shown and RunPod's | a map on our side only: RunPod is not told; list_pods and get_pod show it; it goes with Recreate and goes on Delete |
 | `set_idle_stop` | `pod_id`, `minutes` (0 = never) | the new value | |
 | `get_logs` | `pod_id`, `lines` (default 100) | the last lines from RunPod | |
 | `list_datacenters` | `fresh?` | every listed datacenter with S3 support and every card RunPod runs there, free or in use, each with size, secure-cloud price, stock and whether the image can run it (ADR-027); most free cards first | |

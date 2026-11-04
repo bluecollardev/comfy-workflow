@@ -145,6 +145,13 @@ export const usePodsStore = defineStore('pods', () => {
     return r
   }
 
+  /** Name a pod in this app (RunPod's own name is untouched); empty goes back to RunPod's. */
+  async function rename(id, name) {
+    const r = await toast.run(t('toast.rename'), () => podsAPI.rename(id, name), { ok: t('toast.renamed'), onError: (msg) => (actionError.value = msg) })
+    if (r.ok) await load()
+    return r
+  }
+
   /** A pod's own configuration (null = the Default Configuration). */
   const config = (id) => podsAPI.config(id)
   /** Give a pod its own configuration, applied when it is recreated; null puts it back on the default. */
@@ -158,5 +165,5 @@ export const usePodsStore = defineStore('pods', () => {
   const details = (id) => podsAPI.details(id)
   const remove = (id) => act(id, podsAPI.deletePod, 'Delete')
 
-  return { sync, syncStarted, syncEnded, syncEvent, syncRecover, stats, pods, dryRun, initialLoading, refreshing, loadError, actionError, busyPodId, pending, load, refreshList, startAutoRefresh, stopAutoRefresh, create, stop, stopAll, resume, remove, details, recreate, hostFull, setIdle, config, setConfig }
+  return { sync, syncStarted, syncEnded, syncEvent, syncRecover, stats, pods, dryRun, initialLoading, refreshing, loadError, actionError, busyPodId, pending, load, rename, refreshList, startAutoRefresh, stopAutoRefresh, create, stop, stopAll, resume, remove, details, recreate, hostFull, setIdle, config, setConfig }
 })

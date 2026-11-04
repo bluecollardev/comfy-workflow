@@ -9,6 +9,7 @@ import * as gpus from './gpus.js'
 import * as idle from './idle.js'
 import * as mounts from './mounts.js'
 import * as podconfigs from './podconfigs.js'
+import * as podnames from './podnames.js'
 import * as rp from './runpod.js'
 import * as dry from './dry.js'
 
@@ -43,6 +44,7 @@ export interface PodStatus {
   console_url?: string; status_text?: string; comfy_ready?: boolean | null   // null = not probed
   custom_config?: boolean   // created with its own configuration, kept for Recreate
   image?: string            // the image the pod boots (the card's Dockerfile link)
+  runpod_name?: string      // RunPod's own name, when we show a different one of ours (podnames)
   datacenter?: string       // where it runs (the machine's datacenter); the pod list groups by it
   port_mismatch?: boolean   // the pod does not expose the port its image serves ComfyUI on; only Recreate fixes it
 }
@@ -178,7 +180,7 @@ export function toStatus(p: rp.RawPod): PodStatus {
   const running = uptime != null && uptime > 0
   const wanted = (p.desiredStatus || '').toUpperCase() === 'RUNNING'
   return {
-    id: p.id, name: p.name || 'Unknown', status: running ? 'running' : wanted ? 'starting' : 'stopped',
+    id: p.id, name: podnames.get(p.id) || p.name || 'Unknown', ...(podnames.get(p.id) && p.name ? { runpod_name: p.name } : {}), status: running ? 'running' : wanted ? 'starting' : 'stopped',
     gpu: p.machine?.gpuDisplayName || String(p.gpuCount ?? '?'), vram: gpus.vram(p.machine?.gpuDisplayName || '') || 24,
     uptime_seconds: uptime, web_ui_url: running ? idle.proxyUrl(p.id, webPortOf(p.ports)) : null,
     ssh_command: `ssh root@${p.id}.proxy.runpod.io`, idle_stop_minutes: idle.entry(p.id)?.minutes ?? 0, comfy_ready: null,
@@ -198,14 +200,14 @@ export async function comfyReady(url: string, fetchFn: typeof fetch = fetch): Pr
 }
 
 export const list = async (client?: rp.RunPodClient): Promise<PodStatus[]> => {
-  if (isDry()) return dry.list().map((p) => ({ ...p, custom_config: podconfigs.has(p.id) }))
+  if (isDry()) return dry.list().map((p) => ({ ...p, name: podnames.get(p.id) || p.name, custom_config: podconfigs.has(p.id) }))
   const pods = (await rp.listPods(client)).map(toStatus)
   await Promise.all(pods.map(async (p) => { if (p.status === 'running' && p.web_ui_url) p.comfy_ready = await comfyReady(p.web_ui_url, client?.fetchFn || fetch) }))
   return pods
 }
 
 export async function get(podId: string, client?: rp.RunPodClient): Promise<PodStatus> {
-  if (isDry()) { const p = dry.list().find((x) => x.id === podId); if (!p) throw new CoreError(404, `Pod ${podId} not found`); return p }
+  if (isDry()) { const p = dry.list().find((x) => x.id === podId); if (!p) throw new CoreError(404, `Pod ${podId} not found`); return { ...p, name: podnames.get(p.id) || p.name } }
   const p = await rp.getPod(podId, client)
   if (!p) throw new CoreError(404, `Pod ${podId} not found`)
   return toStatus(p)
@@ -236,9 +238,18 @@ export async function dashboard(client?: rp.RunPodClient) {
   return { stats: stats(pods), pods, dry_run: isDry() }
 }
 
+/** Name a pod on our side only (RunPod is not told). An empty name goes back to RunPod's. */
+export async function rename(podId: string, name: string, client?: rp.RunPodClient): Promise<{ pod_id: string; name: string; runpod_name: string | null }> {
+  const n = String(name ?? '').trim()
+  if (n.length > 80) throw bad('A pod name is at most 80 characters')
+  await get(podId, client)   // a clear 404 for a pod that is not there
+  podnames.set(podId, n)
+  const p = await get(podId, client)
+  return { pod_id: podId, name: p.name, runpod_name: p.runpod_name ?? null }
+}
 export async function stop(podId: string, client?: rp.RunPodClient) { if (isDry()) return dry.stop(podId); await rp.stopPod(podId, client); return { message: `Pod ${podId} stopped`, pod_id: podId } }
 export async function resume(podId: string, client?: rp.RunPodClient) { if (isDry()) return dry.resume(podId); await rp.resumePod(podId, 1, client); return { message: `Pod ${podId} resumed`, pod_id: podId } }
-export async function remove(podId: string, client?: rp.RunPodClient) { podconfigs.forget(podId); if (isDry()) { idle.forget(podId); return dry.remove(podId) } await rp.terminatePod(podId, client); idle.forget(podId); return { message: `Pod ${podId} deleted`, pod_id: podId } }
+export async function remove(podId: string, client?: rp.RunPodClient) { podconfigs.forget(podId); podnames.forget(podId); if (isDry()) { idle.forget(podId); return dry.remove(podId) } await rp.terminatePod(podId, client); idle.forget(podId); return { message: `Pod ${podId} deleted`, pod_id: podId } }
 
 /** Change a pod's idle stop: registered for the watch (0 = never, dropped from it); a simulated pod's record follows,
  *  so what `get` shows is what was set in no-spend mode too. */
@@ -328,10 +339,12 @@ export async function recreate(podId: string, client?: rp.RunPodClient): Promise
     const old = dry.list().find((x) => x.id === podId)
     if (!old) throw new CoreError(404, `Pod ${podId} not found`)
     const own = podconfigs.get(podId)
-    dry.remove(podId); podconfigs.forget(podId)
+    const alias = podnames.get(podId)
+    dry.remove(podId); podconfigs.forget(podId); podnames.forget(podId)
     const fresh = dry.create({ name: old.name, gpu: gpuKey(old.gpu.split(' x')[0]) || gpus.DEFAULT_GPU, gpu_count: 1, image: 'simulated', idle_stop_minutes: old.idle_stop_minutes })
     if (own) podconfigs.set(fresh.id, own)
-    return { ...fresh, custom_config: !!own }
+    if (alias) podnames.set(fresh.id, alias)
+    return { ...fresh, name: alias || fresh.name, custom_config: !!own }
   }
   const d = await details(podId, client)
   const key = gpuKey(d.gpu)
@@ -340,9 +353,11 @@ export async function recreate(podId: string, client?: rp.RunPodClient): Promise
     instance_type: d.cloud === 'COMMUNITY' ? 'spot' : 'on-demand', image: d.image || 'configured', disk_gb: d.disk_gb || 20,
     idle_stop_minutes: idle.entry(podId)?.minutes ?? null, apply_mounts: null, config: podconfigs.get(podId),
   }
+  const alias = podnames.get(podId)   // our name for the pod goes to the new one
   const fresh = await create(req, client)
   await rp.terminatePod(podId, client)
-  idle.forget(podId); podconfigs.forget(podId)
+  idle.forget(podId); podconfigs.forget(podId); podnames.forget(podId)
+  if (alias) { podnames.set(fresh.id, alias); fresh.name = alias }
   return fresh
 }
 

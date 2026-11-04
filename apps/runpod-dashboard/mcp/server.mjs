@@ -168,6 +168,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
     { name: 'resume_pod', description: 'Resume a stopped pod on its host; when that host is full the answer says so and suggests recreate_pod', inputSchema: { type: 'object', properties: { pod_id: podId }, required: ['pod_id'] } },
     { name: 'delete_pod', description: 'Terminate a pod (irreversible; asks nothing, as the card does after its confirm). A network volume is not touched', inputSchema: { type: 'object', properties: { pod_id: podId }, required: ['pod_id'] } },
     { name: 'recreate_pod', description: 'A fresh pod with the same name, image, card choice, disk, idle stop and own configuration on whatever host is free; the old one is terminated. The network volume follows', inputSchema: { type: 'object', properties: { pod_id: podId }, required: ['pod_id'] } },
+    { name: 'rename_pod', description: "Name a pod in this app (a map on our side only: RunPod's own name is untouched). An empty name goes back to RunPod's. list_pods and get_pod then show it", inputSchema: { type: 'object', properties: { pod_id: podId, name: { type: 'string', maxLength: 80 } }, required: ['pod_id', 'name'] } },
     { name: 'set_idle_stop', description: 'Set a pod\'s idle stop: stopped after this many minutes with nothing queued in its ComfyUI; 0 = never', inputSchema: { type: 'object', properties: { pod_id: podId, minutes: { type: 'integer', minimum: 0 } }, required: ['pod_id', 'minutes'] } },
     { name: 'get_logs', description: 'The last lines of a pod\'s logs from RunPod (container and system)', inputSchema: { type: 'object', properties: { pod_id: podId, lines: { type: 'integer', description: 'How many lines, 1-1000', default: 100 } }, required: ['pod_id'] } },
     { name: 'list_datacenters', description: 'Every listed datacenter with S3 support and EVERY card RunPod runs there, free or in use (nothing is hidden: ADR-027), NVIDIA and AMD, each with size, secure-cloud price, stock and whether the image can run it; datacenters with most free cards first. Cached a minute', inputSchema: { type: 'object', properties: { fresh: { type: 'boolean', description: 'Skip the cache and read RunPod now' } } } },
@@ -294,6 +295,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
       const fresh = await pods.recreate(pod_id)
       return json({ ...fresh, replaced: pod_id, config: pods.config(fresh.id) })
     },
+    rename_pod: async ({ pod_id, name }) => json(await pods.rename(pod_id, String(name ?? ''))),
     set_idle_stop: async ({ pod_id, minutes }) => {
       const r = await pods.setIdleStop(pod_id, Number(minutes))
       return json({ ...r, note: r.idle_stop_minutes ? `stopped after ${r.idle_stop_minutes} quiet minutes with nothing queued, while the app's idle watch runs` : 'never stopped for being idle' })

@@ -14,6 +14,7 @@ export const configDir = () => process.env.POD_MANAGER_CONFIG_DIR || join(homedi
 export const mountsFile = () => process.env.MOUNTS_FILE || join(configDir(), 'mounts.json')
 export const idleFile = () => process.env.IDLE_FILE || join(configDir(), 'idle.json')
 export const podConfigsFile = () => process.env.POD_CONFIGS_FILE || join(configDir(), 'pod-configs.json')
+export const podNamesFile = () => process.env.POD_NAMES_FILE || join(configDir(), 'pod-names.json')
 export const gitAccountsFile = () => process.env.GIT_ACCOUNTS_FILE || join(configDir(), 'git_accounts.json')
 export const repositoriesFile = () => process.env.REPOSITORIES_FILE || join(configDir(), 'repositories.json')
 export const backupsDir = () => process.env.POD_MANAGER_BACKUPS_DIR || join(configDir(), 'backups')   // the configuration as it was before each import (docs/ADR-023)

@@ -16,6 +16,13 @@
 
     <template v-else-if="cfg">
       <ConfigIoPanel v-if="!forPod" :flash="ioFlash" @applied="afterImport" />
+      <!-- The pod's name, above the tabs: a name in this app only (RunPod keeps its own) -->
+      <BFormGroup v-if="forPod && podId" :label="$t('config.podNameLabel')" label-for="cfg-pod-name" :description="$t('config.podNameHelp', { name: runpodName || podName })" class="mb-3">
+        <div class="input-group input-group-sm">
+          <input id="cfg-pod-name" v-model="nameDraft" type="text" class="form-control" maxlength="80" :placeholder="runpodName || podName" data-testid="cfg-pod-name" @keydown.enter.prevent="saveName" />
+          <button type="button" class="btn btn-outline-light" :disabled="!nameChanged" :title="$t('config.podNameSave')" data-testid="cfg-pod-name-save" @click="saveName"><i class="fa-solid fa-check"></i></button>
+        </div>
+      </BFormGroup>
       <BAlert v-if="gated" :model-value="true" variant="warning" class="mb-3" data-testid="cfg-key-gate">
         <i class="fa-solid fa-key me-2"></i>{{ $t('config.keyGate') }}
       </BAlert>
@@ -93,8 +100,8 @@
 
       <template v-if="!gated">
       <fieldset v-show="show('volume')" class="cfg-section" data-section="volume">
-      <legend data-testid="section-volume">{{ $t('config.volume') }}</legend>
-      <BAlert :model-value="true" variant="info" class="small py-2 mb-3"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('config.volumeHint') }}</BAlert>
+      <legend data-testid="section-volume">{{ forPod ? $t('config.volumePod') : $t('config.volume') }}</legend>
+      <BAlert :model-value="true" variant="info" class="small py-2 mb-3"><i class="fa-solid fa-circle-info me-2"></i>{{ forPod ? $t('config.volumePodHint') : $t('config.volumeHint') }}</BAlert>
       <BRow class="g-3">
         <BCol cols="12">
           <BFormGroup :label="$t('config.datacenter')" label-for="cfg-dc" :description="$t('config.datacenterHelp')">
@@ -338,9 +345,16 @@ const props = defineProps({
   modelValue: { type: Boolean, default: false },    // pod mode: open
   initial: { type: Object, default: null },         // pod mode: the pod's own configuration, or null for the default
   podName: { type: String, default: '' },
+  podId: { type: String, default: '' },          // pod mode: the pod, so its name can be edited here
+  runpodName: { type: String, default: '' },     // pod mode: RunPod's own name when ours differs
 })
 const emit = defineEmits(['update:modelValue', 'apply'])
 const forPod = computed(() => props.mode === 'pod')
+/** The pod's name is saved on its own, at once (it is a map on our side), not with Apply. */
+const nameDraft = ref(props.podName)
+const nameChanged = computed(() => nameDraft.value.trim() !== props.podName && !(nameDraft.value.trim() === '' && !props.runpodName))
+const saveName = async () => { const n = nameDraft.value.trim(); await podsStore.rename(props.podId, n === props.runpodName ? '' : n) }
+watch(() => props.podName, (n) => { nameDraft.value = n })
 
 const ui = useUiStore()
 const studioStore = useStudioStore()
@@ -420,7 +434,7 @@ onBeforeUnmount(() => wideQuery?.removeEventListener('change', onWide))
 const tab = ref(props.mode === 'pod' ? 'volume' : 'runpod')
 const tabList = computed(() => [
   ...(forPod.value ? [] : [{ key: 'runpod', label: t('config.runpod') }]),
-  { key: 'volume', label: t('config.volume') },
+  { key: 'volume', label: forPod.value ? t('config.volumePod') : t('config.volume') },
   { key: 'folders', label: t('config.folders') },
   { key: 'environment', label: t('config.environment') },
   ...(forPod.value ? [] : [{ key: 'adapters', label: t('adapters.section') }]),

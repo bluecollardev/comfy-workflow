@@ -5,6 +5,10 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased
 
+### Rename a pod (a name on our side only)
+- Lucas: "i want an ability to edit the pod name once created - this is just a map on our end", "make sure this is mcp exposed". A pencil on the pod card edits the name (Enter saves, Escape cancels, empty goes back to RunPod's name). RunPod is not told: the name is kept in `pod-names.json` by pod id, shown on the card, in lists and by the MCP tools, carried by Recreate and dropped by Delete. MCP: `rename_pod` (pod manager server, so the stdio and the app-served endpoints both have it); IPC `pods.rename`.
+- Lucas: "this shouldn't say default pod configuration if we're configuring a named pod", "above the tabs, have the ability to name the pod". A pod's own Configuration window now says "Pod Configuration" (heading, tab and hint) and has a Pod title field above the tabs that saves at once.
+
 ### Pods grouped by datacenter
 - Lucas: "have a toggle to group by datacenter that enables this secondary view, otherwise view as list like it was before". A switch in the Pods header turns the grouping on; off (the default) is the plain list as before. The choice is remembered.
 - Lucas: "in pods cards list group pods by datacenter". The pod list shows a heading per datacenter (with a count) and the pods of that datacenter under it; groups are in name order, pods with no known datacenter last. The datacenter comes from the pod's machine.

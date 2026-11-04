@@ -364,6 +364,11 @@ export async function mockApi(page, state) {
       if (pod) pod.idle_stop_minutes = Number(query.minutes)
       return json({ pod_id: m[1], idle_stop_minutes: Number(query.minutes) })
     }
+    if ((m = path.match(/^\/pods\/([^/]+)\/name$/)) && method === 'PUT') {
+      const pod = state.pods.find((p) => p.id === m[1])
+      if (pod) { if (!pod.runpod_name) pod.runpod_name = pod.name; pod.name = String(body.name || '').trim() || pod.runpod_name; if (pod.name === pod.runpod_name) delete pod.runpod_name }
+      return json({ pod_id: m[1], name: pod?.name, runpod_name: pod?.runpod_name ?? null })
+    }
     if ((m = path.match(/^\/pods\/([^/]+)\/config$/)) && method === 'GET') return json(state.podConfigs[m[1]] || null)
     if ((m = path.match(/^\/pods\/([^/]+)\/config$/)) && method === 'PUT') {
       if (body) state.podConfigs[m[1]] = body; else delete state.podConfigs[m[1]]

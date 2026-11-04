@@ -167,3 +167,24 @@ test.describe('pod card', () => {
     await expect(card.getByTestId('pod-comfy-starting')).toHaveCount(0)
   })
 })
+
+test.describe('Pod card: rename (a name on our side only)', () => {
+  test('the pencil renames the pod here; the old name stays as a tooltip; empty goes back to RunPod\'s name; Escape cancels', async ({ page }) => {
+    await page.goto('/')
+    let card = podCard(page, 'ComfyUI-Batch')
+    await card.getByTestId('pod-rename').click()
+    await card.getByTestId('pod-rename-input').fill('cgi-042 plates')
+    await card.getByTestId('pod-rename-input').press('Escape')
+    await expect(podCard(page, 'ComfyUI-Batch')).toBeVisible()   // cancelled: nothing changed
+    await card.getByTestId('pod-rename').click()
+    await card.getByTestId('pod-rename-input').fill('cgi-042 plates')
+    await card.getByTestId('pod-rename-save').click()
+    card = podCard(page, 'cgi-042 plates')
+    await expect(card.getByTestId('pod-name')).toHaveText('cgi-042 plates')
+    await expect(card.getByTestId('pod-name')).toHaveAttribute('title', /ComfyUI-Batch/)
+    await card.getByTestId('pod-rename').click()
+    await card.getByTestId('pod-rename-input').fill('')
+    await card.getByTestId('pod-rename-input').press('Enter')
+    await expect(podCard(page, 'ComfyUI-Batch').getByTestId('pod-name')).toHaveText('ComfyUI-Batch')
+  })
+})

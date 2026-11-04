@@ -34,6 +34,7 @@ const ipc = core && {
   volume: (id) => core.invoke('pods', 'volume', [id || '']),
   datacenters: (fresh) => core.invoke('pods', 'datacenters', [!!fresh]),
   setIdle: (id, minutes) => core.invoke('pods', 'setIdle', [id, minutes]),
+  rename: (id, name) => core.invoke('pods', 'rename', [id, name]),
   stopPod: (id) => core.invoke('pods', 'stop', [id]),
   resumePod: (id) => core.invoke('pods', 'resume', [id]),
   deletePod: (id) => core.invoke('pods', 'remove', [id]),
@@ -74,6 +75,12 @@ const http = {
   },
   async datacenters(fresh) {
     const { data } = await axios.get(`${API_BASE}/datacenters`, { params: fresh ? { fresh: 1 } : undefined });
+    return data;
+  },
+
+  // The name this app shows for a pod (RunPod's own is untouched); empty goes back to RunPod's
+  async rename(podId, name) {
+    const { data } = await axios.put(`${API_BASE}/pods/${podId}/name`, { name });
     return data;
   },
 
