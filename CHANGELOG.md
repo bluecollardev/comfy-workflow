@@ -6,6 +6,7 @@ completed items move here. Commit hashes are on `develop`.
 ## Unreleased
 
 ### History
+- Lucas: "have a log viewer for comfy runs that tells us about any errors or feedback from comfy". Core: each ComfyUI run carries its `messages` timeline and, when it failed, `error_detail` (message, node, exception type, traceback); new `comfyruns.logs` reads ComfyUI's own server log from the pod (`/internal/logs/raw`, else `/internal/logs`), classifies lines as error, warning or info, filters by level and keeps the newest lines. IPC `history.logs`; MCP `get_comfy_logs`.
 - Lucas: "all". History: pod history, spend history, download/sync job history, ComfyUI runs. Core: `history` (pod and job events, spend worked out from them) and `comfyruns` (a running pod's ComfyUI `/history` and `/queue`, newest first); IPC `history.list`, `history.spend`, `history.runs`; MCP `get_history`, `get_spend_history`, `get_comfy_runs`.
 - Lucas: "make history exportable too". The history (events or spend) exports as JSON or CSV: IPC `history.export`, MCP `export_history` (returns the text and a suggested file name; writes nothing).
 

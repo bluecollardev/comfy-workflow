@@ -10,7 +10,7 @@ const { TABLE } = require('./core.cjs')
 const EXPECTED = {
   mounts: ['get', 'put', 'reset', 'preview', 'dirs'],
   pods: ['dashboard', 'list', 'get', 'create', 'stop', 'resume', 'remove', 'gpus', 'volume', 'datacenters', 'setIdle', 'rename', 'details', 'recreate', 'config', 'setConfig'],
-  history: ['list', 'spend', 'runs', 'export'],
+  history: ['list', 'spend', 'runs', 'export', 'logs'],
   volumes: ['list', 'create', 'resize', 'remove', 'useAsDefault'],
   governance: ['summary'],
   settings: ['get', 'set', 'checkAnthropic'],

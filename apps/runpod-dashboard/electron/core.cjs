@@ -77,7 +77,7 @@ const TABLE = {
     spend: (c) => c.history.spend(),
     runs: (c, podId) => c.comfyruns.runs(podId),
     export: (c, opts) => c.history.exportHistory({ format: opts && opts.format, what: opts && opts.what }),
-    runs: (c, podId) => c.comfyruns.runs(podId),
+    logs: (c, podId, opts) => c.comfyruns.logs(podId, opts || {}),
   },
   volumes: {
     list: (c) => c.volumes.list(),
