@@ -204,7 +204,7 @@ test('with a named yes: create, list, get, idle stop, logs, stop, resume, recrea
 test('history: pod and job events, spend with its note, and a pod\'s ComfyUI runs (refused while the pod is not running)', async () => {
   await sleep(100)
   const all = jsonOf(ok(await call('get_history')))
-  assert.ok(Array.isArray(all) && all.length > 0); assert.ok(all.every((e) => e.kind === 'pod' || e.kind === 'job'))
+  assert.ok(Array.isArray(all) && all.length > 0); assert.ok(all.every((e) => e.kind === 'pod' || e.kind === 'job' || e.kind === 'change'))
   assert.ok(all.some((e) => e.kind === 'pod' && e.action === 'created'))
   const podsOnly = jsonOf(ok(await call('get_history', { kind: 'pod', limit: 2 })))
   assert.equal(podsOnly.length, 2); assert.ok(podsOnly.every((e) => e.kind === 'pod'))

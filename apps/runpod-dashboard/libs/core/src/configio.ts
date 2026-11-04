@@ -13,6 +13,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync
 import { join } from 'node:path'
 import { bad } from './errors.js'
 import * as git from './git.js'
+import * as history from './history.js'
 import * as mounts from './mounts.js'
 import { APP_DIR, backupsDir } from './paths.js'
 import * as settings from './settings.js'
@@ -301,7 +302,8 @@ export function applyImport(file: unknown, opts: { sections: string[]; now?: Dat
   const panama = chosen.find((s) => s.key === 'panama')
   const withSecrets = chosen.some((s) => s.key === 'secrets') && secrets
   const backup = writeBackup(opts.now)
-  const payload = mounts.put(cfg)
+  const payload = mounts.put(cfg, { quiet: true })
+  history.record({ kind: 'change', area: 'configuration', action: 'imported from a file', what: chosen.map((s) => s.label).join(', ') })   // the section names only, never a value
   if (panama) setPanama(panama.incoming as { bucket: string; region: string; profile: string })
   if (withSecrets) {
     if (Object.keys(secrets.settings).length) settings.setSecrets(secrets.settings as Partial<Record<settings.SecretName, string>>)
@@ -320,7 +322,8 @@ export function undoImport() {
   if (!last) throw bad('Nothing to undo: there is no backup.')
   let b: Backup
   try { b = JSON.parse(readFileSync(last.file, 'utf8')) } catch (e) { throw bad(`${last.name} cannot be read: ${(e as Error).message}`) }
-  const payload = mounts.put(b.mounts)
+  const payload = mounts.put(b.mounts, { quiet: true })
+  history.record({ kind: 'change', area: 'configuration', action: 'restored from a backup', what: last.name })
   if (b.panama) setPanama(b.panama)
   if (b.secrets) { settings.restoreSecrets(b.secrets.settings); git.save(b.secrets.git_accounts) }
   try { unlinkSync(last.file) } catch { /* it stays; harmless */ }

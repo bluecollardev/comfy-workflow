@@ -13,6 +13,7 @@ import { basename, dirname, isAbsolute, join, normalize, resolve, sep } from 'no
 import { fileURLToPath } from 'node:url'
 import { bad } from './errors.js'
 import { REPO_ROOT, adaptersDir, importsDir } from './paths.js'
+import * as hist from './history.js'
 import * as mounts from './mounts.js'
 import * as settings from './settings.js'
 
@@ -219,6 +220,7 @@ export async function save(id: string, text: string): Promise<AdapterInfo> {
   if (check) throw bad(`the adapter does not parse:\n${check.replaceAll(tmp, `${id}.mjs`)}`)
   backup(id, file, 'mjs', text)
   writeFileSync(file, text)
+  hist.record({ kind: 'change', area: 'adapter', action: 'saved', what: id })
   return (await list()).find((a) => a.file === file)!
 }
 
@@ -679,5 +681,6 @@ export async function apply(p: Plan, opts: ApplyOptions = {}): Promise<ApplyResu
     record = join(importsDir(), `${new Date().toISOString().replace(/[:.]/g, '-')}-${p.adapter.id}.json`)
     writeFileSync(record, JSON.stringify({ at: new Date().toISOString(), adapter: p.adapter, source, target, overwrite: !!opts.overwrite, counts, findings: p.findings, summary: p.summary, problems: results.filter((r) => !['copied', 'same', 'linked', 'verified', 'noted', 'placeholder', 'replaced'].includes(r.status)) }, null, 2) + '\n')
   }
+  if (!dry) hist.record({ kind: 'change', area: 'import', action: ok ? 'imported' : 'imported with problems', what: basename(source), detail: Object.entries(counts).map(([k, n]) => `${n} ${k}`).join(', ') })
   return { dry_run: dry, ok, counts, results, record }
 }

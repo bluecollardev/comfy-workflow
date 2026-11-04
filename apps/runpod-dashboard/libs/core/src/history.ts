@@ -7,14 +7,23 @@
  * Recording never throws: a history that cannot be written must not stop a pod from starting.
  */
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { dirname } from 'node:path'
 import { historyFile } from './paths.js'
 
 export type PodAction = 'created' | 'started' | 'stopped' | 'recreated' | 'renamed' | 'deleted'
 export interface PodEvent { ts: string; kind: 'pod'; action: PodAction; pod_id: string; name: string; gpu?: string; datacenter?: string; cost_per_hr?: number | null; detail?: string }
 export interface JobEvent { ts: string; kind: 'job'; job: 'pull' | 'remove' | 'sync'; state: 'done' | 'failed' | 'cancelled'; started_at?: string; what: string; pod_id?: string; pod_name?: string; files?: number; bytes?: number; error?: string }
-export type HistoryEvent = PodEvent | JobEvent
-type Without<T> = T extends unknown ? Omit<T, 'ts'> & { ts?: string } : never
+/** A change to something that is not a pod or a job: a volume made, resized, deleted or made the default; the configuration saved or imported; a shot pack imported; an adapter saved. */
+export interface ChangeEvent { ts: string; kind: 'change'; area: 'volume' | 'configuration' | 'import' | 'adapter'; action: string; what: string; detail?: string }
+export type HistoryEvent = (PodEvent | JobEvent | ChangeEvent) & Origin
+/** Who did it: `source` is the app's window (default) or an MCP tool call (`tool`, and the `approved_by` of a spend). Taken from the context the caller runs in (`runAs`). */
+export interface Origin { source?: 'app' | 'mcp'; tool?: string; approved_by?: string }
+type Without<T> = T extends unknown ? Omit<T, 'ts'> & { ts?: string } & Origin : never
+
+const origin = new AsyncLocalStorage<Origin>()
+/** Run `fn` as `who`: every event recorded under it (even after an await) carries the source, the tool and the approver. The MCP servers wrap each tool call in this. */
+export const runAs = <T>(who: Origin, fn: () => T): T => origin.run(who, fn)
 
 const listeners = new Set<() => void>()
 /** Call `cb` after every event that is recorded (the app pushes this to its windows so History refreshes by itself). Returns the unsubscribe. */
@@ -28,14 +37,15 @@ export function record(e: Without<HistoryEvent>, now: () => Date = () => new Dat
     if (e.kind === 'pod' && sameAsLast(e.pod_id, e.action, e.ts ? new Date(e.ts) : now())) return   // observed and recorded for the same change: once
     const f = historyFile()
     mkdirSync(dirname(f), { recursive: true })
-    appendFileSync(f, JSON.stringify({ ...e, ts: e.ts ?? now().toISOString() }) + '\n')
+    const who = origin.getStore()
+    appendFileSync(f, JSON.stringify({ ...e, ts: e.ts ?? now().toISOString(), ...(who?.source && e.source === undefined ? { source: who.source } : {}), ...(who?.tool && !e.tool ? { tool: who.tool } : {}), ...(who?.approved_by && !e.approved_by ? { approved_by: who.approved_by } : {}) }) + '\n')
     trim(f)
     changed()
   } catch { /* never in the way */ }
 }
 /** Is the newest event of this pod the same action, within five minutes? (A change seen by `observe` and recorded by the action itself is one event.) */
 function sameAsLast(podId: string, action: string, at: Date): boolean {
-  const last = list({ kind: 'pod', limit: MAX_LINES }).find((x) => x.pod_id === podId) as PodEvent | undefined
+  const last = list({ kind: 'pod', limit: MAX_LINES }).find((x) => x.kind === 'pod' && x.pod_id === podId) as PodEvent | undefined
   return !!last && last.action === action && Math.abs(at.getTime() - new Date(last.ts).getTime()) < 5 * 60_000
 }
 function trim(f: string) {
@@ -46,7 +56,7 @@ function trim(f: string) {
 }
 
 /** The events, newest first. `kind` narrows to pod or job events; `limit` defaults to 200. */
-export function list(opts: { kind?: 'pod' | 'job'; limit?: number } = {}): HistoryEvent[] {
+export function list(opts: { kind?: 'pod' | 'job' | 'change'; limit?: number } = {}): HistoryEvent[] {
   const f = historyFile()
   if (!existsSync(f)) return []
   const out: HistoryEvent[] = []
@@ -105,10 +115,11 @@ export function exportHistory(opts: { format?: 'json' | 'csv'; what?: 'events' |
   if (opts.what === 'spend') {
     return { name: `pod-manager-spend-${day}.csv`, mime: 'text/csv', text: csv(['pod_id', 'name', 'gpu', 'datacenter', 'cost_per_hr', 'from', 'to', 'hours', 'cost'], spend(now).sessions.map((s) => [s.pod_id, s.name, s.gpu, s.datacenter, s.cost_per_hr, s.from, s.to ?? '', s.hours, s.cost])) }
   }
-  const rows = list({ limit: MAX_LINES }).map((e) => e.kind === 'pod'
+  const rows = list({ limit: MAX_LINES }).map((e) => [...(e.kind === 'pod'
     ? [e.ts, 'pod', e.action, e.name, e.pod_id, e.gpu, e.datacenter, e.cost_per_hr, '', '', '', e.detail]
-    : [e.ts, 'job', e.job, e.what, e.pod_id, '', '', '', e.state, e.files, e.bytes, e.error])
-  return { name: `pod-manager-history-${day}.csv`, mime: 'text/csv', text: csv(['time', 'kind', 'action', 'name', 'pod_id', 'gpu', 'datacenter', 'cost_per_hr', 'state', 'files', 'bytes', 'detail'], rows) }
+    : e.kind === 'job' ? [e.ts, 'job', e.job, e.what, e.pod_id, '', '', '', e.state, e.files, e.bytes, e.error]
+    : [e.ts, 'change', `${e.area} ${e.action}`, e.what, '', '', '', '', '', '', '', e.detail]), e.source ?? 'app', e.tool ?? '', e.approved_by ?? ''])
+  return { name: `pod-manager-history-${day}.csv`, mime: 'text/csv', text: csv(['time', 'kind', 'action', 'name', 'pod_id', 'gpu', 'datacenter', 'cost_per_hr', 'state', 'files', 'bytes', 'detail', 'source', 'tool', 'approved_by'], rows) }
 }
 
 // ----- observing pods started or stopped outside this app -----

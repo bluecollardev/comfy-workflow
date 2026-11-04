@@ -356,6 +356,7 @@ export async function recreate(podId: string, client?: rp.RunPodClient): Promise
     const own = podconfigs.get(podId)
     const alias = podnames.get(podId)
     dry.remove(podId); podconfigs.forget(podId); podnames.forget(podId)
+    history.record({ kind: 'pod', action: 'recreated', pod_id: podId, name: alias || old.name, detail: 'replaced' })
     const fresh = dry.create({ name: old.name, gpu: gpuKey(old.gpu.split(' x')[0]) || gpus.DEFAULT_GPU, gpu_count: 1, image: 'simulated', idle_stop_minutes: old.idle_stop_minutes })
     if (own) podconfigs.set(fresh.id, own)
     if (alias) podnames.set(fresh.id, alias)
@@ -371,6 +372,7 @@ export async function recreate(podId: string, client?: rp.RunPodClient): Promise
   const alias = podnames.get(podId)   // our name for the pod goes to the new one
   const fresh = await create(req, client)
   await rp.terminatePod(podId, client)
+  history.record({ kind: 'pod', action: 'recreated', pod_id: podId, name: alias || d.name || podId, gpu: d.gpu, datacenter: d.datacenter, detail: `replaced by ${fresh.id}` })
   idle.forget(podId); podconfigs.forget(podId); podnames.forget(podId)
   if (alias) { podnames.set(fresh.id, alias); fresh.name = alias }
   return fresh

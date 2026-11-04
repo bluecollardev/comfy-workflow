@@ -15,6 +15,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync,
 import { basename, dirname, join, resolve } from 'node:path'
 import { bad, CoreError } from './errors.js'
 import { mirrorDir, mountsFile } from './paths.js'
+import * as history from './history.js'
 import * as settings from './settings.js'
 import { folderShapes, shape } from './shape.js'
 
@@ -427,9 +428,10 @@ export function preview(data: Partial<MountsConfig>) {
 }
 
 /** Save after validating; returns the payload the panel shows. */
-export function put(data: Partial<MountsConfig>) {
+export function put(data: Partial<MountsConfig>, opts: { quiet?: boolean } = {}) {
   const cfg = validate(normalize(data))
   save(cfg)
+  if (!opts.quiet) history.record({ kind: 'change', area: 'configuration', action: 'saved', what: 'Default Configuration' })
   return payload(cfg)
 }
 
