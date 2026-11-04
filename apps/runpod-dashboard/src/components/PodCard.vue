@@ -27,6 +27,16 @@
         <dd class="col-8 mb-0">{{ formatUptime(pod.uptime_seconds) }}</dd>
       </template>
 
+      <template v-if="volume">   <!-- the network volume this pod is attached to (the Volumes list knows its pods, ADR-032) -->
+        <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.volume') }}</dt>
+        <dd class="col-8 mb-0" data-testid="pod-volume"><a href="#" :title="$t('pod.volumeOpen')" @click.prevent="ui.volumesOpen = true"><i class="fa-solid fa-hard-drive me-1"></i>{{ volume.name }}</a><span class="text-body-secondary"> · {{ volume.size_gb }} GB · {{ volume.datacenter }}</span></dd>
+      </template>
+
+      <template v-if="rate">   <!-- the price on the card itself, running or stopped (a stopped pod's is an estimate, ADR-031) -->
+        <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.cost') }}</dt>
+        <dd class="col-8 mb-0" data-testid="pod-price"><span class="badge text-bg-success fw-semibold" :title="rate.estimated ? $t('pod.costEstimate') : ''" :data-estimate="rate.estimated || null"><i class="fa-solid fa-dollar-sign me-1"></i>{{ (rate.estimated ? '≈ ' : '') + '$' + rate.perHr + $t('pod.perHour') }}</span></dd>
+      </template>
+
       <template v-if="pod.web_ui_url">
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.comfyui') }}</dt>
         <dd class="col-8 mb-0">
@@ -105,11 +115,13 @@
       <div v-else-if="!details" class="text-body-secondary">{{ $t('pod.loadingDetails') }}</div>
       <dl v-else class="row g-1 mb-0">
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.statusText') }}</dt><dd class="col-8 mb-0" data-testid="pod-details-status">{{ details.status }}<span v-if="details.status_text" class="text-body-secondary"> · {{ details.status_text }}</span></dd>
-        <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.cost') }}</dt><dd class="col-8 mb-0" data-testid="pod-details-cost">{{ details.cost_per_hr != null ? '$' + details.cost_per_hr + $t('pod.perHour') : '—' }}</dd>
+        <template v-if="details.cost_per_hr > 0">   <!-- RunPod reports 0 while a pod is stopped: the core then sends the listed price as an estimate; with none, no row, never $0 (ADR-031) -->
+          <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.cost') }}</dt><dd class="col-8 mb-0" data-testid="pod-details-cost"><span :title="details.cost_estimated ? $t('pod.costEstimate') : ''" :data-estimate="details.cost_estimated || null">{{ (details.cost_estimated ? '≈ ' : '') + '$' + details.cost_per_hr + $t('pod.perHour') }}</span></dd>
+        </template>
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.place') }}</dt><dd class="col-8 mb-0">{{ details.cloud }}<span v-if="details.datacenter"> · {{ details.datacenter }}</span></dd>
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.gpu') }}</dt><dd class="col-8 mb-0">{{ details.gpu }} ×{{ details.gpu_count }}</dd>
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.image') }}</dt><dd class="col-8 mb-0 text-break"><code>{{ details.image }}</code></dd>
-        <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.disk') }}</dt><dd class="col-8 mb-0">{{ $t('pod.diskValue', { disk: details.disk_gb, volume: details.volume_gb }) }}</dd>
+        <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.disk') }}</dt><dd class="col-8 mb-0">{{ volume ? $t('pod.diskNetwork', { disk: details.disk_gb, name: volume.name, size: volume.size_gb }) : $t('pod.diskValue', { disk: details.disk_gb, volume: details.volume_gb }) }}</dd>
       </dl>
     </div>
     <ConfigModal v-if="configOpen" mode="pod" v-model="configOpen" :initial="ownConfig" :pod-name="pod.name" @apply="applyConfig" />
@@ -172,7 +184,7 @@
  *   stop, resume, delete  — delete only fires after the user confirms
  */
 import { t } from '../i18n'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import PodLogs from './PodLogs.vue'
 import SyncModal from './SyncModal.vue'
 import DockerfileModal from './DockerfileModal.vue'
@@ -180,6 +192,7 @@ import ConfigModal from './ConfigModal.vue'
 import { usePodsStore } from '../stores/pods'
 import { useToastStore } from '../stores/toast'
 import { useUiStore } from '../stores/ui'
+import { useVolumesStore } from '../stores/volumes'
 import { barValue, detailParts, fresh } from '../sync-progress'
 const props = defineProps({
   pod: { type: Object, required: true },
@@ -229,6 +242,17 @@ const showDockerfile = ref(false)
 const shortImage = (ref) => ref.replace(/^registry\.gitlab\.com\/[^/]+\/[^/]+\//, '')
 const details = ref(null)
 const detailsError = ref(null)
+
+const volumes = useVolumesStore()
+const volume = computed(() => volumes.volumes.find((v) => v.pods?.some((x) => x.id === props.pod.id)) || null)
+onMounted(() => { if (!volumes.volumes.length && !volumes.loading) volumes.load() })
+/** The card's own price, asked once when it appears and again when the pod starts or stops; the details panel reads it fresh. Zero is never shown. */
+const rate = ref(null)
+async function loadRate() {
+  try { const d = await pods.details(props.pod.id); rate.value = d.cost_per_hr > 0 ? { perHr: d.cost_per_hr, estimated: !!d.cost_estimated } : null } catch { rate.value = null }
+}
+onMounted(loadRate)
+watch(() => props.pod.status, loadRate)
 
 async function toggleDetails() {
   showDetails.value = !showDetails.value

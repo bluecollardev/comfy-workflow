@@ -11,7 +11,8 @@
 #   ./build.sh --shotpipe v26,v14,v7 # explicit versions instead of a set from shared/nodes/sets.json
 #   ./build.sh --tag comfy-app:test
 #   ./build.sh --no-shotpipe         # BincStereo only
-#   ./build.sh --base pytorch/pytorch:2.12.1-cuda13.0-cudnn9-runtime   # e.g. for Blackwell GPUs
+#   ./build.sh --cuda 13              # the Blackwell image: CUDA 13 base (pins.env), tagged ...-cu13 (docs/ADR-030)
+#   ./build.sh --base pytorch/pytorch:2.12.1-cuda13.0-cudnn9-runtime   # any other base
 #
 # Node packs come from shared/nodes (the comfy-node-packs submodule); ShotPipe is
 # client's (projects/desktop/CANALV2/02_SCRIPTS/nodes/, not in git), so it is
@@ -29,6 +30,8 @@ source "$HERE/pins.env"
 SHOTPIPE="contract-v26"
 TAG=""
 BASE=""
+CUDA=""
+SUFFIX=""
 PLATFORM="linux/amd64"
 PUSH=""
 REMOTE=""
@@ -41,6 +44,7 @@ while [ $# -gt 0 ]; do
     --no-shotpipe) SHOTPIPE=""; shift ;;
     --tag) TAG="$2"; shift 2 ;;
     --base) BASE="$2"; shift 2 ;;
+    --cuda) CUDA="$2"; shift 2 ;;
     --platform) PLATFORM="$2"; shift 2 ;;
     --push) PUSH="$2"; shift 2 ;;
     --remote) REMOTE=1; shift ;;
@@ -49,17 +53,23 @@ while [ $# -gt 0 ]; do
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
-[ -n "$TAG" ] || TAG="comfy-app:${SHOTPIPE:-base}"
+case "$CUDA" in
+  "") ;;
+  13) BASE="${BASE:-$BASE_IMAGE_CU13}"; SUFFIX="-cu13" ;;
+  12.6|126) ;;   # the Dockerfile's default
+  *) echo "--cuda takes 13 (or 12.6, the default), not $CUDA" >&2; exit 2 ;;
+esac
+[ -n "$TAG" ] || TAG="comfy-app:${SHOTPIPE:-base}${SUFFIX}"
 if [ -n "$PUSH" ]; then
   case "$PUSH" in */*) ;; *) echo "--push needs a registry reference with a namespace, e.g. ghcr.io/<org>/comfy-app:$SHOTPIPE (a pod cannot pull a bare name)" >&2; exit 2 ;; esac
-  case "$PUSH" in *:*) ;; *) PUSH="$PUSH:${SHOTPIPE:-base}" ;; esac
+  case "$PUSH" in *:*) ;; *) PUSH="$PUSH:${SHOTPIPE:-base}${SUFFIX}" ;; esac
 fi
 
 if [ -n "$REMOTE" ]; then
   # ----- build on GitHub Actions (.github/workflows/comfy-image.yml, ADR-020): push a branch, the runner builds and pushes to ghcr.io -----
   command -v gh >/dev/null || { echo "--remote needs the GitHub CLI (gh), logged in" >&2; exit 1; }
   SLUG="${COMFY_CI_REPO:-bluecollardev/comfy-workflow}"
-  IMAGE_TAG="${SHOTPIPE:-base}"; BRANCH="image/$IMAGE_TAG-$(date +%Y%m%d-%H%M%S)"
+  IMAGE_TAG="${SHOTPIPE:-base}${SUFFIX}"; BRANCH="image/$IMAGE_TAG-$(date +%Y%m%d-%H%M%S)"
   REF="ghcr.io/${SLUG%%/*}/comfy-app:$IMAGE_TAG"
   git -C "$REPO" diff --quiet HEAD -- apps/comfy-app shared .github 2>/dev/null || echo "note: uncommitted changes under apps/comfy-app are not in the build; commit them first" >&2
   git -C "$REPO" push -q origin "HEAD:refs/heads/$BRANCH"
@@ -126,7 +136,7 @@ done
 
 
 args=(build --platform "$PLATFORM" -t "$TAG" -f "$HERE/Dockerfile"
-      --label "dev.bluecollar.comfy-node-packs=$PACKS_REV" --label "dev.bluecollar.shotpipe=${SHOTPIPE:-none}"
+      --label "dev.bluecollar.comfy-node-packs=$PACKS_REV" --label "dev.bluecollar.shotpipe=${SHOTPIPE:-none}" --label "dev.bluecollar.cuda=${CUDA:-12.6}"
       --build-arg "COMFYUI_REPO=$COMFYUI_REPO" --build-arg "COMFYUI_REF=$COMFYUI_REF")
 [ -n "$BASE" ] && args+=(--build-arg "BASE_IMAGE=$BASE")
 args+=("${EXTRA[@]}" "$HERE")

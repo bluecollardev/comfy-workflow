@@ -30,6 +30,8 @@ export interface CreatePodInput {
   gpuCount?: number; volumeInGb?: number; containerDiskInGb?: number; ports?: string; volumeMountPath?: string
   env?: Record<string, string>; networkVolumeId?: string; dataCenterId?: string; startSsh?: boolean; supportPublicIp?: boolean
   containerRegistryAuthId?: string
+  /** Hosts whose CUDA version is one of these (RunPod's allowedCudaVersions): a CUDA 13 image needs a host driver that offers it (docs/ADR-030). */
+  allowedCudaVersions?: string[]
 }
 
 /** The podFindAndDeployOnDemand mutation, field for field as the Python SDK builds it. */
@@ -46,6 +48,7 @@ export function deployMutation(i: CreatePodInput): string {
   if (i.env) f.push(`env: [${Object.entries(i.env).map(([k, v]) => `{ key: ${str(k)}, value: ${str(String(v))} }`).join(', ')}]`)
   if (i.networkVolumeId) f.push(`networkVolumeId: ${str(i.networkVolumeId)}`)
   if (i.containerRegistryAuthId) f.push(`containerRegistryAuthId: ${str(i.containerRegistryAuthId)}`)
+  if (i.allowedCudaVersions?.length) f.push(`allowedCudaVersions: [${i.allowedCudaVersions.map(str).join(', ')}]`)
   return `mutation { podFindAndDeployOnDemand(input: { ${f.join(', ')} }) { id imageName env machineId machine { podHostId } } }`
 }
 

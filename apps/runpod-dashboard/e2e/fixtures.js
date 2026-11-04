@@ -71,7 +71,7 @@ export function defaultState() {
       vol1: { id: 'vol1', name: 'comfy-workspace', size_gb: 120, datacenter: 'EU-RO-1', cost_per_month: 8.4, s3: true, is_default: false, pods: [{ id: 'pod-aaaaaaaa', name: 'ComfyUI-Dev', status: 'running', via: 'runpod' }, { id: 'pod-cccccccc', name: 'ComfyUI-Test', status: 'starting', via: 'config' }] },
       vol2: { id: 'vol2', name: 'scratch', size_gb: 50, datacenter: 'CA-MTL-1', cost_per_month: 3.5, s3: false, is_default: false, pods: [] },
     },
-    datacenters: { live: true, datacenters: [{ value: 'EU-RO-1', text: 'EU-RO-1 · RTX 4000 Ada $0.28/h Low, RTX 4090 $0.89/h High · S3', s3: true, cards: [{ key: 'rtx4000ada', name: 'RTX 4000 Ada', vram: 20, price: 0.28, stock: 'Low' }, { key: 'rtx4090', name: 'RTX 4090', vram: 24, price: 0.89, stock: 'High' }] }, { value: 'CA-MTL-1', text: 'CA-MTL-1 · A40 $0.35/h High', s3: false, cards: [{ key: 'a40', name: 'A40', vram: 48, price: 0.35, stock: 'High' }] }, { value: 'US-KS-2', text: 'US-KS-2 · none of our cards in stock · S3', s3: true, cards: [] }] },
+    datacenters: { live: true, datacenters: [{ value: 'EU-RO-1', text: 'EU-RO-1 · RTX 4000 Ada $0.28/h Low, RTX 4090 $0.89/h High · S3', s3: true, cards: [{ key: 'rtx4000ada', name: 'RTX 4000 Ada', vram: 20, price: 0.28, stock: 'Low' }, { key: 'rtx4090', name: 'RTX 4090', vram: 24, price: 0.89, stock: 'High' }] }, { value: 'CA-MTL-1', text: 'CA-MTL-1 · A40 $0.35/h High', s3: false, cards: [{ key: 'a40', name: 'A40', vram: 48, price: 0.35, stock: 'High' }, { key: 'rtx5090', name: 'RTX 5090', vram: 32, price: 0.69, stock: 'Low', available: true, runs: true, cuda: 13 }] }, { value: 'US-KS-2', text: 'US-KS-2 · none of our cards in stock · S3', s3: true, cards: [] }] },
     gpus: { default: 'auto', live: true, gpus: [{ value: 'auto', text: 'Cheapest card in stock (16-24 GB)', in_stock: true }, { value: 'a4000', text: 'RTX A4000 (16 GB) · none in stock', in_stock: false }, { value: 'rtx4090', text: 'RTX 4090 (24 GB) · $0.34/h · Low stock', in_stock: true, price: 0.34, stock: 'Low' }] },
     // The folder browser (GET /fs/dirs): a tiny disk.
     fs: { '/Users/lucas': ['ComfyUI-Shared', 'Projects'], '/Users/lucas/Projects': ['CANALV2', 'plates'], '/Users/lucas/Projects/CANALV2': ['00_POLICY', '04_TRACKER'] },
@@ -351,7 +351,7 @@ export async function mockApi(page, state) {
       const pod = state.pods.find((p) => p.id === m[1])
       if (!pod) return json({ detail: `RunPod has no such pod (${m[1]})` }, 404)
       return json({ id: pod.id, name: pod.name, status: pod.status === 'stopped' ? 'EXITED' : 'RUNNING', status_text: pod.status === 'stopped' ? 'Exited by user: Mon Oct 19 2026' : 'Rented by user: Mon Oct 19 2026',
-        cost_per_hr: 0.28, cloud: 'SECURE', datacenter: 'EUR-IS-1', gpu: 'NVIDIA RTX 4000 Ada Generation', gpu_count: 1, image: 'ashleykza/comfyui:latest', disk_gb: 20, volume_gb: 0,
+        cost_per_hr: 0.28, cost_estimated: pod.status === 'stopped', cloud: 'SECURE', datacenter: 'EUR-IS-1', gpu: 'NVIDIA RTX 4000 Ada Generation', gpu_count: 1, image: 'ashleykza/comfyui:latest', disk_gb: 20, volume_gb: 0,
         created_at: '2026-10-19T11:00:19Z', actions: ['start', 'terminate'], console_url: `https://console.runpod.io/pods?id=${pod.id}`, web_ui_url: pod.web_ui_url || null, ssh_command: pod.ssh_command })
     }
     if ((m = path.match(/^\/pods\/([^/]+)\/logs$/)) && method === 'GET') {

@@ -5,6 +5,18 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased
 
+### Volumes connected to pods; the NVL cards (ADR-032)
+- Lucas: "connect the volumes to the instances", "H200 and H100". A pod card shows the network volume it is attached to; the create form has a Network volume field (configured, none, or any) that sets the datacenter. `H100 NVL` and `H200 NVL` are in the card table.
+
+### One picker for the card and the datacenter; a price on the form; no $0 (ADR-027, ADR-031)
+- Lucas: "i don't want to have to select gpu in datacenter selector, as well as select a gpu from the second list it's redundant", "remove the by datacenter view", "you should ONLY be able to select ONE card", "have a text filter for the gpus", "i want to see the price per hour / total cost as a badge", "just hide the 0 from display".
+- The create form has one "Datacenter and GPU" list, by card: clicking a card at a datacenter sets both; exactly one card at one datacenter is marked and its row highlighted; "Cheapest in stock" goes back to automatic. The separate GPU dropdown and the by-datacenter view are gone; GPU count is on its own row above the full-width list; the refresh button no longer stretches.
+- A filter box (with an x) narrows the cards by name, memory or datacenter; the chosen card stays listed.
+- A price badge: the chosen card's hourly price at its datacenter times the GPU count, with day and month (on Automatic, "from" the cheapest in stock). RunPod reports $0/h for a stopped pod; the details show its price as an estimate ("≈ $0.28/h", the card's listed price in its datacenter × count) and never $0 (ADR-031).
+
+### CUDA 13 for the Blackwell cards (ADR-030; branch `feature/cuda13-image`)
+- Lucas: "what can we do to support cuda 13", "ok do this", "adr and doc where necessary". `./build.sh --cuda 13` builds the image on the CUDA 13 torch base (`...-cu13` tag; CI builds a `-cu13` variant); the Blackwell cards (RTX 5080/5090, RTX PRO 4000/4500/5000/6000, B200, B300) are explicit-only table cards that boot it on a host whose CUDA is 13 (`allowedCudaVersions`). Pull pods keep the normal image and choose only among the `auto` cards. The picker marks them "CUDA 13 image".
+
 ### v1.1.0: the MCP does everything the app does (ADR-028, ADR-029; branch `feature/mcp-drives-everything`)
 - Lucas: "make sure our mcp can drive the pod creation, the import from bh, import from zip, all of it"; "anything we can do in the app, we need to be able to do via mcp"; "make sure the mcp knows about our readme and other documentation too"; "it should be able to make adjustments to api keys and config"; "manage volumes and grow them or create them in a certain datacenter"; "release as 1.1 version when tested".
 - **45 new MCP tools** (about 80 in all): `create_pod` takes everything the form does; `list_gpus`; `list_datacenters` (every card, `fresh`); `get_pod_config` / `set_pod_config`; `set_configuration`, `preview_configuration`, `reset_configuration`; `get_settings` / `set_settings` (keys are never returned); `config_export` / `config_import_plan` / `config_import_apply` / `config_undo`; `resize_volume`; ten `panama_*` tools for the BH rounds on this PC or on the volume (including `panama_round_files` and `panama_import`); `import_detect`, `package_*`, `adapter_*`; `git_accounts`, `repositories`, `remote_mcp`, `mcp_endpoints`, `image_*`; and `docs` with `docs://` resources over the README and our documentation (minus what the public site leaves out).

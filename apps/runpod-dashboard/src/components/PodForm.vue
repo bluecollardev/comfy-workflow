@@ -24,10 +24,20 @@
       <BAlert v-if="ui.hints" :model-value="true" variant="info" class="small py-2 mb-3" data-testid="form-hint"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('form.groupGpuHint') }}</BAlert>
       <BRow class="g-3">
       <BCol md="6" lg="4">
-        <BFormGroup :label="$t('form.datacenter')" label-for="pod-datacenter" :description="volumeDc !== null ? $t('form.datacenterLocked', { dc: volumeDc || $t('form.datacenterUnset') }) : $t('form.datacenterHelp')" data-testid="pod-datacenter-group">
+        <BFormGroup :label="$t('form.gpuCount')" label-for="pod-gpu-count">
+          <BFormSelect id="pod-gpu-count" v-model="form.gpuCount" :options="GPU_COUNT_OPTIONS" />
+        </BFormGroup>
+      </BCol>
+      <BCol cols="12">
+        <BFormGroup :label="$t('form.datacenter')":description="volumeDc !== null ? $t('form.datacenterLocked', { dc: volumeDc || $t('form.datacenterUnset') }) : $t('form.datacenterHelp')" data-testid="pod-datacenter-group">
           <div class="d-flex gap-2">
-            <div class="flex-grow-1 min-w-0"><DatacenterTable testid="pod-datacenter" :list="dcList" :model-value="form.dataCenterId" :any-label="volumeDc !== null ? '' : $t('form.datacenterAny')" @update:model-value="form.dataCenterId = $event" /></div>
-            <BButton variant="outline-light" size="sm" class="text-nowrap" :title="$t('form.datacenterRefresh')" :disabled="dcLoading" data-testid="pod-datacenter-refresh" @click="loadDatacenters(true)"><i class="fa-solid fa-rotate" :class="{ 'fa-spin': dcLoading }"></i></BButton>
+            <div class="flex-grow-1 min-w-0"><DatacenterTable testid="pod-datacenter" :list="dcList" :model-value="form.dataCenterId" :selected-card="form.gpu === 'auto' ? '' : form.gpu" :card-label="gpuLabel" gpu-testid="pod-gpu" :any-label="volumeDc !== null ? '' : $t('form.datacenterAny')" @update:model-value="form.dataCenterId = $event" @pick="onPick" @auto="form.gpu = 'auto'" /></div>
+            <BButton variant="outline-light" size="sm" class="text-nowrap align-self-start" :title="$t('form.datacenterRefresh')" :disabled="dcLoading" data-testid="pod-datacenter-refresh" @click="loadDatacenters(true)"><i class="fa-solid fa-rotate" :class="{ 'fa-spin': dcLoading }"></i></BButton>
+          </div>
+          <div class="small text-body-secondary mt-1" data-testid="pod-gpu-group">{{ gpuLive ? $t('form.gpuStock') : $t('form.gpuNoStock') }}</div>
+          <div v-if="gpuCost" class="d-flex align-items-center flex-wrap gap-2 mt-2" data-testid="pod-cost">
+            <span class="badge text-bg-success fs-6 fw-semibold" data-testid="pod-cost-total"><i class="fa-solid fa-dollar-sign me-1"></i>{{ gpuCost.total }}/h</span>
+            <span class="small text-body-secondary" data-testid="pod-cost-detail">{{ gpuCost.auto ? $t('form.costFrom') : '' }} {{ gpuCost.unit }}/h × {{ gpuCost.count }} {{ $t('form.costGpus', gpuCost.count) }} · ≈ {{ gpuCost.day }}/day · {{ gpuCost.month }}/month</span>
           </div>
           <div v-if="dcAt" class="small text-body-secondary mt-1" data-testid="pod-datacenter-updated">{{ $t('form.datacenterUpdated', { time: dcAt.toLocaleTimeString() }) }}</div>
           <div v-if="otherRegion" class="small mt-1" data-testid="pod-datacenter-other">
@@ -36,22 +46,17 @@
           </div>
         </BFormGroup>
       </BCol>
-      <BCol md="6" lg="4">
-        <BFormGroup :label="$t('form.gpu')" label-for="pod-gpu" :description="gpuLive ? $t('form.gpuStock') : $t('form.gpuNoStock')" data-testid="pod-gpu-group">
-          <BFormSelect id="pod-gpu" v-model="form.gpu" :options="gpuOptions" />
-        </BFormGroup>
-      </BCol>
-      <BCol md="6" lg="4">
-        <BFormGroup :label="$t('form.gpuCount')" label-for="pod-gpu-count">
-          <BFormSelect id="pod-gpu-count" v-model="form.gpuCount" :options="GPU_COUNT_OPTIONS" />
-        </BFormGroup>
-      </BCol>
       </BRow>
     </fieldset>
     <fieldset class="cfg-section" data-testid="form-group-storage">
       <legend>{{ $t('form.groupStorage') }}</legend>
       <BAlert v-if="ui.hints" :model-value="true" variant="info" class="small py-2 mb-3" data-testid="form-hint"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('form.groupStorageHint') }}</BAlert>
       <BRow class="g-3">
+      <BCol md="6" lg="4">
+        <BFormGroup :label="$t('form.networkVolume')" label-for="pod-network-volume" :description="$t('form.networkVolumeHelp')">
+          <BFormSelect id="pod-network-volume" :model-value="volumeChoice" :options="volumeOptions" @update:model-value="pickVolume" />
+        </BFormGroup>
+      </BCol>
       <BCol md="6" lg="4">
         <BFormGroup :label="$t('form.volume')" label-for="pod-volume" :description="$t('form.volumeHelp')">
           <BFormInput id="pod-volume" v-model.number="form.volumeGb" type="number" min="0" max="500" />
@@ -395,6 +400,7 @@ import { imagesAPI } from '../api/images'
 import { useUiStore } from '../stores/ui'
 import { usePodsStore } from '../stores/pods'
 import { useMountsStore } from '../stores/mounts'
+import { useVolumesStore } from '../stores/volumes'
 import DatacenterTable from './DatacenterTable.vue'
 import DockerfileModal from './DockerfileModal.vue'
 import { t } from '../i18n'
@@ -410,6 +416,24 @@ async function loadGpus() {
   // prices at the datacenter the pod will land in: the volume's, else the form's choice, else RunPod's lowest anywhere
   const dc = form.dataCenterId || (volumeDc.value ?? '')
   try { const g = await podsAPI.gpus(dc || undefined); gpuOptions.value = g.gpus; gpuLive.value = !!g.live } catch { /* the plain menu stays */ }
+}
+/** The card chosen in the table (with its datacenter), or automatic. One picker: the table; the GPU field is its readout (docs/ADR-027). */
+const cardName = (key) => { for (const d of dcList.value || []) for (const c of d.cards || []) if (c.key === key) return c.name; return '' }
+/** What the choice costs per hour: the chosen card's price at the chosen datacenter times the GPU count; on automatic, the cheapest card in stock there (the first it will try). RunPod's listed price, before the volume. */
+const gpuCost = computed(() => {
+  const n = Math.max(1, Number(form.gpuCount) || 1)
+  const dcs = (dcList.value || []).filter((d) => !form.dataCenterId || d.value === form.dataCenterId)
+  const cards = dcs.flatMap((d) => d.cards || []).filter((c) => c.price != null && c.runs !== false)
+  const pool = form.gpu === 'auto' ? cards.filter((c) => c.available !== false) : cards.filter((c) => c.key === form.gpu)
+  if (!pool.length) return null
+  const unit = Math.min(...pool.map((c) => c.price))
+  const m = (v) => `$${v.toFixed(2)}`
+  return { auto: form.gpu === 'auto', unit: m(unit), count: n, total: m(unit * n), day: m(unit * n * 24), month: m(unit * n * 24 * 30) }
+})
+const gpuLabel = computed(() => form.gpu === 'auto' ? t('form.gpuAutoText') : cardName(form.gpu) || gpuOptions.value.find((g) => g.value === form.gpu)?.text || form.gpu)
+function onPick({ card, any }) {
+  if (any) form.gpu = 'auto'
+  else if (card) form.gpu = card.key
 }
 defineExpose({ loadGpus })   // the first load comes from the datacenter watcher below (immediate), after volumeDc exists
 const GPU_COUNT_OPTIONS = Array.from({ length: 8 }, (_, i) => ({ value: i + 1, text: String(i + 1) }))
@@ -514,6 +538,28 @@ watch(() => form.dataCenterId, (dc) => {
   }
   loadGpus()
 })
+/** The network volume this pod gets: the configured one, none, or any of the account's. A volume never leaves its datacenter, so choosing one sets the datacenter (ADR-032);
+ *  it rides in the pod's own configuration, the way "Override configuration" does. */
+const volumes = useVolumesStore()
+onMounted(() => { if (!volumes.volumes.length) volumes.load() })
+const volumeOnly = ref(false)   // the own configuration holds nothing but this volume choice, so choosing the configured one again drops it
+const volumeChoice = computed(() => (form.config ? (form.config.network_volume_id || 'none') : ''))
+const volumeOptions = computed(() => [
+  { value: '', text: mounts.config?.network_volume_id ? t('form.networkVolumeDefault', { name: volumes.volumes.find((v) => v.id === mounts.config.network_volume_id)?.name || mounts.config.network_volume_id }) : t('form.networkVolumeNoneConfigured') },
+  { value: 'none', text: t('form.networkVolumeNone') },
+  ...volumes.volumes.map((v) => ({ value: v.id, text: `${v.name} · ${v.size_gb} GB · ${v.datacenter}` })),
+])
+function pickVolume(v) {
+  const base = form.config || { ...mounts.config }
+  if (v === '') {
+    form.config = volumeOnly.value ? null : { ...base, network_volume_id: mounts.config.network_volume_id, data_center_id: mounts.config.data_center_id }
+    volumeOnly.value = false
+    return
+  }
+  if (!form.config) volumeOnly.value = true
+  const vol = volumes.volumes.find((x) => x.id === v)
+  form.config = { ...base, network_volume_id: v === 'none' ? '' : v, data_center_id: v === 'none' ? '' : vol?.datacenter || '' }
+}
 const newVolumeHere = () => { ui.volumeDc = form.dataCenterId; ui.volumesOpen = true }
 const mountsSummary = computed(() => mounts.summary)
 const configuredImage = computed(() => mounts.configuredImage || t('form.noImage'))

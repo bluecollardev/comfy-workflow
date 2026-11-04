@@ -104,7 +104,9 @@ cd apps/comfy-app
 ./build.sh                         # comfy-app:v26: ComfyUI at the pin, torch 2.12.1 CUDA 12.6, BincStereo + ShotPipe v26 from shared/nodes
 ./build.sh --shotpipe v26,v21      # more than one ShotPipe version side by side
 ./build.sh --no-shotpipe           # only the tracked packs
-./build.sh --base pytorch/pytorch:2.12.1-cuda13.0-cudnn9-runtime   # Blackwell (RTX 5090 / B200)
+./build.sh --cuda 13                # the Blackwell image (RTX 5090, RTX PRO 4500/6000, B200, B300): CUDA 13 base from pins.env, tagged comfy-app:contract-v26-cu13 (docs/ADR-030)
+./build.sh --cuda 13 --remote --wait   # the same on GitHub Actions: pushes ghcr.io/bluecollardev/comfy-app:contract-v26-cu13
+./build.sh --base pytorch/pytorch:2.12.1-cuda13.0-cudnn9-runtime   # any other base
 
 # Local GPU box (Linux, or Windows with Docker Desktop + WSL2 + NVIDIA driver):
 docker run --rm --gpus all -p 8188:8188 \
