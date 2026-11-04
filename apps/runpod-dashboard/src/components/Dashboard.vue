@@ -28,12 +28,24 @@
     <BCard no-body>
       <BCardHeader class="d-flex align-items-center">
         <span class="fw-semibold">{{ $t('dashboard.pods') }}</span>
-        <BBadge variant="secondary" pill class="ms-auto">{{ pods.pods.length }}</BBadge>
+        <BFormCheckbox v-model="grouped" switch class="ms-auto me-3 mb-0 small" data-testid="pods-group-toggle">{{ $t('dashboard.groupByDatacenter') }}</BFormCheckbox>
+        <BBadge variant="secondary" pill>{{ pods.pods.length }}</BBadge>
       </BCardHeader>
       <BCardBody>
         <div v-if="pods.pods.length === 0" class="text-center text-body-secondary py-4" data-testid="pods-empty">
           {{ $t('dashboard.noPods') }}
         </div>
+        <BRow v-else-if="!grouped" class="g-3" data-testid="pod-list">
+          <BCol v-for="pod in pods.pods" :key="pod.id" md="6" xl="4">
+            <PodCard
+              :pod="pod"
+              :busy="pods.busyPodId === pod.id"
+              @stop="pods.stop(pod.id)"
+              @resume="pods.resume(pod.id)"
+              @delete="pods.remove(pod.id)"
+            />
+          </BCol>
+        </BRow>
         <div v-else data-testid="pod-list">
           <section v-for="g in groups" :key="g.dc" class="pod-group mb-4" data-testid="pod-group" :data-dc="g.dc">
             <h6 class="d-flex align-items-center gap-2 text-body-secondary mb-2" data-testid="pod-group-title"><i class="fa-solid fa-location-dot"></i><span class="font-monospace">{{ g.dc || $t('dashboard.noDatacenter') }}</span><BBadge variant="secondary" pill class="fw-normal">{{ g.pods.length }}</BBadge></h6>
@@ -72,7 +84,7 @@
  * action live in the pods store; this component only lays them out and collapses the
  * create form when a pod has been created.
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import PodCard from './PodCard.vue'
 import PodForm from './PodForm.vue'
 import { useSettingsStore } from '../stores/settings'
@@ -80,6 +92,9 @@ import { useUiStore } from '../stores/ui'
 import { usePodsStore } from '../stores/pods'
 
 const pods = usePodsStore()
+/** The grouped view is a choice, off by default (the plain list); it is remembered. */
+const grouped = ref(localStorage.getItem('pods.groupByDatacenter') === '1')
+watch(grouped, (v) => localStorage.setItem('pods.groupByDatacenter', v ? '1' : '0'))
 /** The pods grouped by datacenter, in name order, the ones with no datacenter last; pods keep their order inside a group. */
 const groups = computed(() => {
   const m = new Map()

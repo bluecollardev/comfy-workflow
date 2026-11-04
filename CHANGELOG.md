@@ -6,6 +6,7 @@ completed items move here. Commit hashes are on `develop`.
 ## Unreleased
 
 ### Pods grouped by datacenter
+- Lucas: "have a toggle to group by datacenter that enables this secondary view, otherwise view as list like it was before". A switch in the Pods header turns the grouping on; off (the default) is the plain list as before. The choice is remembered.
 - Lucas: "in pods cards list group pods by datacenter". The pod list shows a heading per datacenter (with a count) and the pods of that datacenter under it; groups are in name order, pods with no known datacenter last. The datacenter comes from the pod's machine.
 
 ### Round download: choose your pod or a sync agent; cheapest card; 15-minute idle stop (ADR-022)

@@ -25,6 +25,7 @@
   "dashboard": {
     "createPod": "Create Pod",
     "pods": "Pods",
+    "groupByDatacenter": "Group by datacenter",
     "noDatacenter": "Datacenter unknown",
     "noPods": "No pods",
     "keyRequired": "Enter your RunPod API key in Default Configuration to start. Nothing works without it.",
