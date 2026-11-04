@@ -20,7 +20,7 @@
             <tr v-for="(e, i) in podEvents" :key="i" data-testid="history-pod-row">
               <td class="text-nowrap">{{ when(e.ts) }}</td>
               <td><BBadge :variant="ACTION[e.action] || 'secondary'" data-testid="history-action">{{ e.action }}</BBadge></td>
-              <td>{{ e.name }}</td>
+              <td class="history-wrap">{{ e.name }}</td>
               <td>{{ e.gpu || '' }}</td>
               <td>{{ e.datacenter || '' }}</td>
               <td><BBadge v-if="e.source === 'mcp'" variant="info" :title="viaTitle(e)" data-testid="history-via-mcp">{{ $t('history.viaMcp') }}</BBadge><span v-else class="text-body-secondary small" data-testid="history-via-app">{{ $t('history.viaApp') }}</span></td>
@@ -42,7 +42,7 @@
             <thead><tr><th>{{ $t('history.session') }}</th><th>{{ $t('history.from') }}</th><th>{{ $t('history.to') }}</th><th class="text-end">{{ $t('history.hours') }}</th><th class="text-end">{{ $t('history.cost') }}</th></tr></thead>
             <tbody>
               <tr v-for="(s, i) in spend.sessions" :key="i" data-testid="history-session">
-                <td>{{ s.name }}<small class="text-body-secondary"> · {{ s.gpu }} · {{ s.datacenter }}</small></td>
+                <td class="history-wrap">{{ s.name }}<small class="text-body-secondary"> · {{ s.gpu }} · {{ s.datacenter }}</small></td>
                 <td class="text-nowrap">{{ when(s.from) }}</td>
                 <td class="text-nowrap">{{ s.to ? when(s.to) : $t('history.stillRunning') }}</td>
                 <td class="text-end">{{ Number(s.hours).toFixed(2) }}</td>
@@ -84,12 +84,12 @@
               <td class="text-nowrap">{{ when(e.ts) }}</td>
               <td v-if="e.kind === 'change'"><BBadge variant="warning" data-testid="history-change-area">{{ $t(`history.area_${e.area}`) }}</BBadge></td>
               <td v-else>{{ e.job }}</td>
-              <td v-if="e.kind === 'change'"><span data-testid="history-change-action">{{ e.action }}</span> {{ e.what }}<div v-if="e.detail" class="small text-body-secondary">{{ e.detail }}</div></td>
-              <td v-else>{{ e.what }}</td>
-              <td>{{ e.pod_name || '' }}</td>
+              <td v-if="e.kind === 'change'" class="history-wrap"><span data-testid="history-change-action">{{ e.action }}</span> {{ e.what }}<div v-if="e.detail" class="small text-body-secondary">{{ e.detail }}</div></td>
+              <td v-else class="history-wrap">{{ e.what }}</td>
+              <td class="history-wrap">{{ e.pod_name || '' }}</td>
               <td><BBadge :variant="STATE[e.state] || 'secondary'" data-testid="history-state">{{ e.state }}</BBadge></td>
               <td class="text-nowrap">{{ e.files != null ? $t('history.files', { n: e.files }) : '' }}<span v-if="e.bytes != null"> · {{ size(e.bytes) }}</span></td>
-              <td class="text-danger-emphasis">{{ e.error || '' }}</td>
+              <td class="text-danger-emphasis history-wrap">{{ e.error || '' }}</td>
               <td><BBadge v-if="e.source === 'mcp'" variant="info" :title="viaTitle(e)" data-testid="history-via-mcp">{{ $t('history.viaMcp') }}</BBadge><span v-else class="text-body-secondary small" data-testid="history-via-app">{{ $t('history.viaApp') }}</span></td>
             </tr>
           </tbody>
@@ -115,10 +115,10 @@
               <template v-for="r in runs" :key="r.prompt_id">
                 <tr role="button" class="history-run-row" data-testid="history-run" @click="toggleRun(r.prompt_id)">
                   <td><i class="fa-solid me-2 small text-body-secondary" :class="open.has(r.prompt_id) ? 'fa-chevron-down' : 'fa-chevron-right'"></i><code>{{ String(r.prompt_id).slice(0, 8) }}</code></td>
-                  <td><BBadge :variant="RUN[r.status] || 'secondary'" data-testid="history-run-status">{{ r.status }}</BBadge><div v-if="r.error" class="small text-danger-emphasis">{{ r.error }}</div></td>
+                  <td class="history-wrap"><BBadge :variant="RUN[r.status] || 'secondary'" data-testid="history-run-status">{{ r.status }}</BBadge><div v-if="r.error" class="small text-danger-emphasis">{{ r.error }}</div></td>
                   <td class="text-nowrap">{{ when(r.started_at) }}</td>
                   <td>{{ r.duration_s != null ? `${Number(r.duration_s).toFixed(1)} s` : '' }}</td>
-                  <td><div v-for="(o, i) in r.outputs || []" :key="i" class="small"><code>{{ o.subfolder ? `${o.subfolder}/` : '' }}{{ o.filename }}</code></div></td>
+                  <td class="history-wrap"><div v-for="(o, i) in r.outputs || []" :key="i" class="small"><code>{{ o.subfolder ? `${o.subfolder}/` : '' }}{{ o.filename }}</code></div></td>
                   <td class="text-end text-nowrap" :title="$t('history.costTitle')" data-testid="history-run-cost">{{ runCost(r.cost_estimate) }}</td>
                 </tr>
                 <tr v-if="open.has(r.prompt_id)" data-testid="history-run-detail">
@@ -323,4 +323,6 @@ async function loadLog(quiet = false) {
 <style scoped>
 .history-mono { font-family: var(--bs-font-monospace); }
 .history-run-row { cursor: pointer; }
+/* Free text (names, what, errors, file names) wraps at any point instead of pushing the table wider than the window. */
+.history-wrap { white-space: normal; overflow-wrap: anywhere; word-break: break-word; min-width: 7rem; max-width: 26rem; }
 </style>

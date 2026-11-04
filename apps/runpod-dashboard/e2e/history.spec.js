@@ -256,4 +256,18 @@ test.describe('history', () => {
     await expect(d.getByTestId('history-change-row')).toHaveCount(2)
     await expect(d.getByTestId('history-jobs-count')).toHaveText(t('history.filterCount', { n: 4, of: 4 }))
   })
+
+  test('long names, items and errors wrap inside their cells instead of widening the table', async ({ page, api }) => {
+    const long = 'cgi-042-left-eye-plates-v013-final-graded-delivery_ProRes4444XQ_2048x858_24fps_rec709_gamma24_0001-0240.mov'
+    api.state.history.events.unshift({ ts: '2026-11-04T09:00:00Z', kind: 'job', job: 'sync', state: 'failed', what: long, pod_name: 'ComfyUI-Dev', error: 'rsync: ' + long + ': connection reset by peer while sending the file list' })
+    await page.goto('/')
+    const d = await openHistory(page)
+    await d.getByRole('tab', { name: t('history.tabJobs') }).click()
+    const cell = d.getByTestId('history-job-row').first().locator('td').nth(2)
+    await expect(cell).toContainText('cgi-042-left-eye')
+    const box = await cell.boundingBox()
+    expect(box.width).toBeLessThan(430)   // 26rem at most: the text wrapped
+    const tab = d.getByTestId('history-jobs')
+    expect(await tab.evaluate((el) => el.scrollWidth <= el.parentElement.clientWidth + 1)).toBe(true)   // and the table fits its window
+  })
 })
