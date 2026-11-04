@@ -1,10 +1,11 @@
 <template>
   <BRow class="g-3">
-    <BCol v-for="stat in cards" :key="stat.label" :md="cards.length > 4 ? true : 12 / cards.length" :data-testid="stat.id">
-      <BCard class="stat-card" :style="{ '--stat-color': `var(--bs-${stat.variant})` }" body-class="py-3">
-        <div class="text-body-secondary text-uppercase small fw-semibold mb-1">{{ stat.label }}</div>
-        <div class="fs-1 fw-bold lh-1" data-testid="stat-value">{{ stat.value }}</div>
-        <div v-if="stat.sub" class="small text-body-secondary mt-1" :title="stat.title" data-testid="stat-sub">{{ stat.sub }}</div>
+    <BCol v-for="stat in cards" :key="stat.label" class="d-flex" :md="cards.length > 4 ? true : 12 / cards.length" :data-testid="stat.id">
+      <!-- Every card is as tall as the tallest of the row (flex), whether it has a line under its value or not. -->
+      <BCard class="stat-card flex-fill" :style="{ '--stat-color': `var(--bs-${stat.variant})` }" body-class="py-2 d-flex flex-column justify-content-center h-100">
+        <div class="stat-label text-body-secondary text-uppercase fw-semibold mb-1">{{ stat.label }}</div>
+        <div class="stat-value fw-bold lh-1" data-testid="stat-value">{{ stat.value }}</div>
+        <div v-if="stat.sub" class="stat-sub text-body-secondary mt-1" :title="stat.title" data-testid="stat-sub">{{ stat.sub }}</div>
       </BCard>
     </BCol>
   </BRow>
@@ -58,6 +59,9 @@ const cards = computed(() => [
 </script>
 
 <style scoped>
+.stat-label { font-size: 0.7rem; letter-spacing: 0.03em; }
+.stat-value { font-size: 1.5rem; }
+.stat-sub { font-size: 0.72rem; }
 .stat-card {
   border-left: 4px solid var(--stat-color);
 }

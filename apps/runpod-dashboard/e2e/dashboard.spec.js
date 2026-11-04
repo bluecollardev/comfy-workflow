@@ -121,4 +121,14 @@ test.describe('Pod list grouped by datacenter', () => {
     await expect(page.getByTestId('stat-credits')).toHaveCount(0)
     await expect(page.getByTestId('stat-total')).toBeVisible()
   })
+
+  test('the stat cards are all the same height, with or without a line under the value', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.getByTestId('stat-credits')).toBeVisible()   // the only card with a second line
+    const heights = await page.locator('.stat-card').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().height)))
+    expect(heights.length).toBeGreaterThanOrEqual(4)
+    expect(new Set(heights).size).toBe(1)
+    const value = await page.getByTestId('stat-total').getByTestId('stat-value').evaluate((e) => parseFloat(getComputedStyle(e).fontSize))
+    expect(value).toBeLessThan(30)   // the values are smaller than the old fs-1 (40px)
+  })
 })
