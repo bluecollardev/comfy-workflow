@@ -88,3 +88,16 @@ test.describe('dashboard', () => {
     await expect(page.getByTestId('pause-all')).toBeDisabled()
   })
 })
+
+test.describe('Pod list grouped by datacenter', () => {
+  test('pods are grouped under their datacenter, groups in name order, each with a count', async ({ page }) => {
+    await page.goto('/')
+    const groups = page.getByTestId('pod-group')
+    await expect(groups).toHaveCount(2)
+    await expect(groups.nth(0)).toHaveAttribute('data-dc', 'CA-MTL-1')
+    await expect(groups.nth(1)).toHaveAttribute('data-dc', 'EU-RO-1')
+    await expect(groups.nth(1).getByTestId('pod-group-title')).toContainText('2')
+    await expect(groups.nth(1).locator('[data-testid="pod-card"]')).toHaveCount(2)
+    await expect(groups.nth(0).locator('[data-testid="pod-card"]')).toHaveCount(1)
+  })
+})

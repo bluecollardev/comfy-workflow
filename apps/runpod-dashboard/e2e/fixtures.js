@@ -37,12 +37,12 @@ export const BRIDGE_DEFS = [
 
 export const samplePods = () => [
   {
-    id: 'pod-aaaaaaaa', name: 'ComfyUI-Dev', status: 'running', gpu: 'RTX 4090', vram: 24, image: 'ghcr.io/example/comfy-app:v26',
+    id: 'pod-aaaaaaaa', name: 'ComfyUI-Dev', status: 'running', datacenter: 'EU-RO-1', gpu: 'RTX 4090', vram: 24, image: 'ghcr.io/example/comfy-app:v26',
     uptime_seconds: 7320, web_ui_url: 'https://pod-a.proxy.runpod.io:8188',
     ssh_command: 'ssh root@pod-a.proxy.runpod.io',
   },
-  { id: 'pod-bbbbbbbb', name: 'ComfyUI-Batch', status: 'stopped', gpu: 'A100', vram: 80, ssh_command: 'ssh root@pod-b.proxy.runpod.io' },
-  { id: 'pod-cccccccc', name: 'ComfyUI-Test', status: 'starting', gpu: 'L40S', vram: 48, ssh_command: 'ssh root@pod-c.proxy.runpod.io' },
+  { id: 'pod-bbbbbbbb', name: 'ComfyUI-Batch', status: 'stopped', datacenter: 'EU-RO-1', gpu: 'A100', vram: 80, ssh_command: 'ssh root@pod-b.proxy.runpod.io' },
+  { id: 'pod-cccccccc', name: 'ComfyUI-Test', status: 'starting', datacenter: 'CA-MTL-1', gpu: 'L40S', vram: 48, ssh_command: 'ssh root@pod-c.proxy.runpod.io' },
 ]
 
 export const sampleRepository = () => ({

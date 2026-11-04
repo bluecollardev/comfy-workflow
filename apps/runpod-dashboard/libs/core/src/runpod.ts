@@ -54,11 +54,11 @@ export function deployMutation(i: CreatePodInput): string {
 
 export interface RawPod {
   id: string; name: string; desiredStatus?: string; lastStatusChange?: string; imageName?: string; gpuCount?: number; costPerHr?: number
-  uptimeSeconds?: number; volumeInGb?: number; volumeMountPath?: string; networkVolumeId?: string | null; ports?: string | null; machine?: { gpuDisplayName?: string } | null
+  uptimeSeconds?: number; volumeInGb?: number; volumeMountPath?: string; networkVolumeId?: string | null; ports?: string | null; machine?: { gpuDisplayName?: string; dataCenterId?: string } | null
   runtime?: { ports?: { ip: string; isIpPublic: boolean; privatePort: number; publicPort: number; type: string }[]; uptimeInSeconds?: number } | null
 }
 
-const POD_FIELDS = 'id name desiredStatus lastStatusChange imageName gpuCount costPerHr uptimeSeconds volumeInGb volumeMountPath networkVolumeId ports machine { gpuDisplayName } runtime { uptimeInSeconds ports { ip isIpPublic privatePort publicPort type } }'
+const POD_FIELDS = 'id name desiredStatus lastStatusChange imageName gpuCount costPerHr uptimeSeconds volumeInGb volumeMountPath networkVolumeId ports machine { gpuDisplayName dataCenterId } runtime { uptimeInSeconds ports { ip isIpPublic privatePort publicPort type } }'
 
 export async function createPod(input: CreatePodInput, client?: RunPodClient): Promise<{ id: string }> {
   const d = await graphql<{ podFindAndDeployOnDemand: { id: string } | null }>(deployMutation(input), client)
