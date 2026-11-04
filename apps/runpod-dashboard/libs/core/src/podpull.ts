@@ -44,6 +44,8 @@ const ROUND = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/
 const assertRound = (round: string) => { if (typeof round !== 'string' || !ROUND.test(round)) throw bad(`Not a round name: ${round}`) }
 
 /** How long the idle timer is held for a pull: the larger of 30 minutes and the round's size at 30 MB/s. */
+/** The sync agent (a pod this job starts, or resumes) stops by itself after this many quiet minutes once the job is over. */
+export const AGENT_IDLE_MINUTES = 15
 export const ceilingMinutes = (bytes: number) => Math.max(30, Math.ceil(bytes / ASSUMED_BYTES_PER_SECOND / 60))
 export const podName = (round: string, now = new Date()) => `${POD_PREFIX}${round}-${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
 export const s3PullFor = (round: string) => `${panama.bucket()}/rounds/${round}=${REMOTE_ROUNDS}/${round}`
@@ -101,6 +103,8 @@ export interface Opts {
   listRounds?: () => string[]
   pollMs?: number
   now?: () => Date
+  /** Where a pod download runs: on 'current' (the user's pod on the volume, started first if it is off) or on a 'temporary' pod of the cheapest card. Unset: the user's pod if it is running, else a temporary one. */
+  route?: 'current' | 'temporary'
 }
 
 async function volumeOf(opts: Opts): Promise<Volume | null> {
@@ -121,6 +125,8 @@ export interface PodPlan {
   ceiling_minutes: number; files: number; volume: Volume | null
   /** Set when the card is outside the app's table (none of the table's cards was free): the RunPod id the pod is created with. */
   gpu_type_id?: string
+  /** Both ways to do the work, for the confirmation window: the user's own pod on the volume (running, or off and started first) and a temporary one of the cheapest card. */
+  choices?: { current: { id: string; name: string; running: boolean; price_per_hour: number | null; gpu: string } | null; temporary: { gpu: string; price_per_hour: number | null; gpu_type_id?: string } }
 }
 
 const gpuName = (id: string) => Object.entries(gpus.GPUS).find(([, g]) => g.id === id)?.[0] || id
@@ -128,19 +134,24 @@ const sizeOf = (round: string, opts: Opts) => {
   try { const s = (opts.sizeOf ?? panama.size)(round); return { files: s.files, bytes: s.bytes } } catch { return { files: 0, bytes: 0 } }
 }
 
-/** A pod the user runs on the configured volume that the Sync's SSH route can reach, if any. Our own pull pods never count. */
-async function findActivePod(cfg: mounts.MountsConfig, opts: Opts): Promise<{ id: string; name: string; price: number | null; gpu: string } | null> {
+/** A pod of the user's on the configured volume that the Sync's SSH route can reach, if any: a running one first, else an off one (started before the job). Our own pull pods never count. */
+async function findActivePod(cfg: mounts.MountsConfig, opts: Opts): Promise<{ id: string; name: string; price: number | null; gpu: string; running: boolean } | null> {
   if (mounts.dryRun(cfg)) {
-    const p = dry.list().find((x) => x.status === 'running' && !x.name.startsWith(POD_PREFIX))
-    return p ? { id: p.id, name: p.name, price: 0, gpu: p.gpu } : null
+    const all = dry.list().filter((x) => !x.name.startsWith(POD_PREFIX))
+    const p = all.find((x) => x.status === 'running') ?? all.find((x) => x.status === 'stopped')
+    return p ? { id: p.id, name: p.name, price: 0, gpu: p.gpu, running: p.status === 'running' } : null
   }
   const volume = (cfg.network_volume_id || '').trim()
+  let off: { id: string; name: string; price: number | null; gpu: string; running: boolean } | null = null
   for (const raw of await rp.listPods(opts.client)) {
-    if ((raw.runtime?.uptimeInSeconds ?? 0) <= 0 || (raw.networkVolumeId || '') !== volume || (raw.name || '').startsWith(POD_PREFIX)) continue
-    try { sync.sshTarget(raw) } catch { continue }
-    return { id: raw.id, name: raw.name || raw.id, price: raw.costPerHr ?? null, gpu: raw.machine?.gpuDisplayName || '' }
+    if ((raw.networkVolumeId || '') !== volume || (raw.name || '').startsWith(POD_PREFIX)) continue
+    if ((raw.runtime?.uptimeInSeconds ?? 0) > 0) {
+      try { sync.sshTarget(raw) } catch { continue }
+      return { id: raw.id, name: raw.name || raw.id, price: raw.costPerHr ?? null, gpu: raw.machine?.gpuDisplayName || '', running: true }
+    }
+    if (!off && raw.desiredStatus === 'EXITED') off = { id: raw.id, name: raw.name || raw.id, price: null, gpu: raw.machine?.gpuDisplayName || '', running: false }
   }
-  return null
+  return off
 }
 
 export async function plan(round: string, opts: Opts = {}): Promise<PodPlan> {
@@ -150,25 +161,35 @@ export async function plan(round: string, opts: Opts = {}): Promise<PodPlan> {
   const cfg = mounts.load()
   const volume = await volumeOf(opts)
   const size = sizeOf(round, opts)
-  const base = { round, bytes: size.bytes, files: size.files, idle_stop_minutes: cfg.idle_stop_minutes, ceiling_minutes: ceilingMinutes(size.bytes), volume }
-  const active = await findActivePod(cfg, opts)
-  if (active) return { ...base, route: 'active', pod: { id: active.id, name: active.name, price_per_hour: active.price }, gpu: active.gpu, price_per_hour: active.price }
-  if (mounts.dryRun(cfg)) return { ...base, route: 'temporary', pod: null, gpu: 'simulated', price_per_hour: 0 }
-  // A pull needs no GPU: take the cheapest card RunPod has free in the volume's datacenter, whatever its type. Our table's cards are named by their short key;
-  // a card outside the table is created by its RunPod id (and is often dearer, which is why the price is part of the plan the user confirms).
+  const base = { round, bytes: size.bytes, files: size.files, idle_stop_minutes: AGENT_IDLE_MINUTES, ceiling_minutes: ceilingMinutes(size.bytes), volume }
+  const found = await findActivePod(cfg, opts)
+  const current = found && opts.route !== 'temporary' && (found.running || opts.route === 'current') ? found : null
+  const currentChoice = found ? { id: found.id, name: found.name, running: found.running, price_per_hour: found.price, gpu: found.gpu } : null
+  if (opts.route === 'current' && !found) throw bad('No pod of yours is on this volume to do the work on: use a temporary pod.')
+  if (mounts.dryRun(cfg)) {
+    const temporary = { gpu: 'simulated', price_per_hour: 0 }
+    const choices = { current: currentChoice, temporary }
+    if (current) return { ...base, route: 'active', pod: { id: current.id, name: current.name, price_per_hour: current.price }, gpu: current.gpu, price_per_hour: current.price, choices }
+    return { ...base, route: 'temporary', pod: null, ...temporary, choices }
+  }
+  // A pull needs no GPU: take the CHEAPEST card RunPod has free in the volume's datacenter, whatever its type, and create the pod with exactly that card (by its RunPod id),
+  // so the price the user confirms is the price the pod pays. `auto` would take the table's preferred (biggest) card instead.
   let gpu = 'auto', price: number | null = null, gpuTypeId: string | undefined
   try {
     const table = new Set(gpus.autoCards().map((g) => g.id))   // not the explicit-only big cards (ADR-026)
     const anyCard = cfg.pull_any_card !== false   // the root setting (Default Configuration): off = only the table's cards, as before ADR-024
     const free = (volume?.datacenter ? await rp.freeCardsIn(volume.datacenter, opts.client) : []).filter((c) => anyCard || table.has(c.id))
-    const pick = free[0]
-    if (pick) { gpu = table.has(pick.id) ? gpuName(pick.id) : pick.name; price = pick.price; if (!table.has(pick.id)) gpuTypeId = pick.id }
+    const pick = free[0]   // freeCardsIn is sorted by price
+    if (pick) { gpu = table.has(pick.id) ? gpuName(pick.id) : pick.name; price = pick.price; gpuTypeId = pick.id }
     else {
       const first = (await pods.candidates(gpus.AUTO, opts.client, volume?.datacenter))[0]   // no answer about free cards: what the app would pick, as before
       if (first) { gpu = gpuName(first); price = (await rp.gpuStock([first], opts.client)).find((g) => g.id === first)?.price ?? null }
     }
   } catch { /* the card is chosen again at creation */ }
-  return { ...base, route: 'temporary', pod: null, gpu, price_per_hour: price, ...(gpuTypeId ? { gpu_type_id: gpuTypeId } : {}) }
+  const temporary = { gpu, price_per_hour: price, ...(gpuTypeId ? { gpu_type_id: gpuTypeId } : {}) }
+  const choices = { current: currentChoice, temporary }
+  if (current) return { ...base, route: 'active', pod: { id: current.id, name: current.name, price_per_hour: current.price }, gpu: current.gpu, price_per_hour: current.price, choices }
+  return { ...base, route: 'temporary', pod: null, ...temporary, choices }
 }
 
 // ----- the job -----
@@ -312,7 +333,7 @@ async function deleteTemp(i: Internal, podId: string, opts: Opts) {
   const was = i.job.state
   if (!i.cancelled) i.job.state = 'deleting'
   try { await pods.remove(podId, opts.client) }
-  catch (e) { i.job.lines.push(`Could not delete pod ${podId}: ${(e as Error).message}. It still has its idle timer, and it is in the pod list under ${i.job.pod_name}.`); if (!i.job.error) i.job.error = `The pod ${i.job.pod_name} could not be deleted; delete it in the pod list.` }
+  catch (e) { idle.register(podId, AGENT_IDLE_MINUTES); i.job.lines.push(`Could not delete pod ${podId}: ${(e as Error).message}. It still has its idle timer, and it is in the pod list under ${i.job.pod_name}.`); if (!i.job.error) i.job.error = `The pod ${i.job.pod_name} could not be deleted; delete it in the pod list.` }
   if (!i.cancelled) i.job.state = was
 }
 
@@ -339,11 +360,20 @@ async function runOnPod(i: Internal, host: string, port: number, script: string,
 
 async function runActive(i: Internal, opts: Opts) {
   const p = i.plan, pod = p.pod!, j = i.job
+  const startedHere = p.choices?.current?.id === pod.id && p.choices.current.running === false
+  let prev = idle.entry(pod.id)?.minutes ?? 0
+  if (startedHere) {
+    // The pod is off: start it, then wait for its SSH port. It stays ours afterwards, with the agent's idle stop.
+    j.state = 'starting'
+    idle.register(pod.id, p.ceiling_minutes)
+    await pods.resume(pod.id, opts.client)
+    prev = AGENT_IDLE_MINUTES
+    try { await waitForSshTarget(i, pod.id, opts, Date.now() + (p.ceiling_minutes + 10) * 60_000) } catch (e) { idle.register(pod.id, prev); throw e }
+  }
   const raw = await rp.getPod(pod.id, opts.client)
-  if (!raw) throw new CoreError(404, `Pod ${pod.id} is gone.`)
-  const { host, port } = sync.sshTarget(raw)
+  if (!raw && !mounts.dryRun(mounts.load())) throw new CoreError(404, `Pod ${pod.id} is gone.`)
+  const { host, port } = raw ? sync.sshTarget(raw) : { host: 'simulated', port: 22 }
   const k = j.kind === 'pull' ? keys() : null
-  const prev = idle.entry(pod.id)?.minutes ?? 0
   idle.register(pod.id, p.ceiling_minutes)   // held with a ceiling for the job, put back after (2d)
   try {
     j.state = j.kind === 'pull' ? 'pulling' : 'deleting'

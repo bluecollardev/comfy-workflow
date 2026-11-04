@@ -122,12 +122,12 @@ export function appTools({ core, governance, text, json, plain = text }) {
         return json({ round, files: r.files, bytes: r.bytes, shown: Math.min(all.length, n), matching: all.length, entries: all.slice(0, n) })
       } },
     { name: 'panama_round_size', description: 'Files and bytes in one round (a listing; a big round takes a few seconds)', inputSchema: obj({ round: S('Round name') }, ['round']), run: async ({ round }) => json(panama.size(round)) },
-    { name: 'panama_pod_plan', description: 'What a pod download of a round would do before it does it: use a pod of yours or start a short-lived one, its card and price, the volume, the size, the ceiling in minutes', inputSchema: obj({ round: S('Round name') }, ['round']), run: async ({ round }) => json(await podpull.plan(round)) },
+    { name: 'panama_pod_plan', description: 'What a pod download of a round would do before it does it: use a pod of yours or start a short-lived one, its card and price, the volume, the size, the ceiling in minutes', inputSchema: obj({ round: S('Round name'), route: S("'current' (your pod on the volume, started first if it is off) or 'temporary' (a sync-agent pod of the cheapest card). Default: your pod if it runs, else temporary") }, ['round']), run: async ({ round, route }) => json(await podpull.plan(round, route ? { route } : {})) },
     { name: 'panama_pull', description: 'Download a round: to this PC (aws s3 sync, resumable, never deletes) or onto the network volume by a pod. Returns a job; follow it with panama_job. A pod download may start a pod: needs approved_by',
-      inputSchema: obj({ round: S('Round name'), target, approved_by: approved.properties.approved_by }, ['round']),
+      inputSchema: obj({ round: S('Round name'), target, route: S("Pod downloads: 'current' (your pod, started first if off) or 'temporary' (sync-agent pod, cheapest card)"), approved_by: approved.properties.approved_by }, ['round']),
       run: async (args) => {
         if (args.target === 'pod') { const refusal = yes(args, 'panama_pull on a pod'); if (refusal) return text(refusal, true); console.error(`panama_pull ${args.round} on a pod approved by ${String(args.approved_by).trim()}`) }
-        return json(args.target === 'pod' ? await podpull.pull(args.round) : panama.pull(args.round))
+        return json(args.target === 'pod' ? await podpull.pull(args.round, args.route ? { route: args.route } : {}) : panama.pull(args.round))
       } },
     { name: 'panama_job', description: 'Where a download (or delete) is: state, files, bytes done of total, rate, the latest files', inputSchema: obj({ id: S('Job id from panama_pull'), target }, ['id']),
       run: async (args) => { const j = pickPanama(args).job(args.id); return j ? json(j) : text(`No such job: ${args.id}`, true) } },

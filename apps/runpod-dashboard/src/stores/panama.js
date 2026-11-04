@@ -62,10 +62,10 @@ export const usePanamaStore = defineStore('panama', () => {
     }
     try { job.value = await panamaAPI.pull(round); poll() } catch (e) { error.value = errorText(e) }
   }
-  async function confirmStart() {
+  async function confirmStart(route) {
     const c = confirming.value; if (!c) return
     confirming.value = null; error.value = null
-    try { job.value = await panamaAPI.podPull(c.round); poll() } catch (e) { error.value = errorText(e) }
+    try { job.value = await panamaAPI.podPull(c.round, route); poll() } catch (e) { error.value = errorText(e) }
   }
   const cancelConfirm = () => { confirming.value = null }
 

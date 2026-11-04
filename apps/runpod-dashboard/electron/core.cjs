@@ -119,8 +119,8 @@ const TABLE = {
     remove: (c, round) => c.panama.remove(round),
     // ADR-022: rounds on the network volume, pulled by a pod (libs/core/src/podpull.ts)
     podRounds: (c) => c.podpull.rounds(),
-    podPlan: (c, round) => c.podpull.plan(round),
-    podPull: (c, round) => c.podpull.pull(round),
+    podPlan: (c, round, route) => c.podpull.plan(round, route ? { route } : {}),
+    podPull: (c, round, route) => c.podpull.pull(round, route ? { route } : {}),
     podJob: (c, id) => c.podpull.job(id),
     podCancel: (c, id) => c.podpull.cancel(id),
     podRemove: (c, round) => c.podpull.remove(round),

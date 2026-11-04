@@ -5,6 +5,9 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased
 
+### Round download: choose your pod or a sync agent; cheapest card; 15-minute idle stop (ADR-022)
+- Lucas: "use the cheapest card available for the job", "clicking download should pop open a modal with the option to start a sync agent pod or to do the work on the current pod", "if the pod is off, start the pod", "sync agent should auto turn off after 15mins of inactivity". Download opens a window with two choices: your pod on the volume (started first if it is off) or a sync-agent pod. The agent is created with exactly the cheapest free card the window shows (it used to take `auto`, the biggest card, e.g. an H100 at $3.99/h). A pod the job starts, or leaves behind, stops after 15 idle minutes once the job is over. MCP `panama_pod_plan` / `panama_pull` take `route: current | temporary`.
+
 ### Volumes connected to pods; the NVL cards (ADR-032)
 - Lucas: "connect the volumes to the instances", "H200 and H100". A pod card shows the network volume it is attached to; the create form has a Network volume field (configured, none, or any) that sets the datacenter. `H100 NVL` and `H200 NVL` are in the card table.
 

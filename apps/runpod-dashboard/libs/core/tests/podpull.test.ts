@@ -138,7 +138,7 @@ describe('plan: a pull needs no GPU, so any free card will do (ADR-022)', () => 
     const rp = fakeRunPod([], { gpuTypes: [{ id: G1, price: 0.44, stock: 'Low' }, { id: OUTSIDE, displayName: 'H100 NVL', memoryInGb: 94, price: 2.49, stock: 'Low' }, { id: 'NVIDIA A100 80GB PCIe', price: 1.64, stock: 'None' }] })
     const p = await podpull.plan(ROUND, base({ client: rp.client }))
     expect(p).toMatchObject({ route: 'temporary', gpu: 'l4', price_per_hour: 0.44 })
-    expect(p.gpu_type_id).toBeUndefined()   // one of the table's cards: created by its key, as always
+    expect(p.gpu_type_id).toBe(G1)   // created by exactly this card, so the price confirmed is the price paid
   })
   it('takes a card outside the table when it is the only one free, and says so: its name, its price, and the RunPod id the pod is created with', async () => {
     const rp = fakeRunPod([], { gpuTypes: [{ id: G1, price: 0.44, stock: null }, { id: OUTSIDE, displayName: 'H100 NVL', memoryInGb: 94, price: 2.49, stock: 'Low' }] })
@@ -159,7 +159,7 @@ describe('plan: a pull needs no GPU, so any free card will do (ADR-022)', () => 
     const rp = fakeRunPod([], { gpuTypes: [{ id: OUTSIDE, displayName: 'H100 NVL', price: 2.49, stock: 'Low' }] })
     configure({ pull_any_card: false })
     const p = await podpull.plan(ROUND, base({ client: rp.client }))
-    expect(p.gpu_type_id).toBeUndefined()
+    expect(p.gpu_type_id).not.toBe(OUTSIDE)
     expect(p.gpu).not.toBe('H100 NVL')
   })
   it('only a real RunPod GPU type id is accepted, never free text, and never AMD or an empty one', async () => {
@@ -177,7 +177,7 @@ describe('plan: a pull needs no GPU, so any free card will do (ADR-022)', () => 
 describe('plan: which route', () => {
   it('temporary when no pod of yours runs on the volume: the cheapest card in stock there, its price, the size, the ceiling', async () => {
     const p = await podpull.plan(ROUND, base({ client: fakeRunPod().client }))
-    expect(p).toMatchObject({ round: ROUND, route: 'temporary', pod: null, gpu: 'rtx3090', price_per_hour: 0.22, bytes: SIZE.bytes, idle_stop_minutes: 30, ceiling_minutes: 167, files: SIZE.files })
+    expect(p).toMatchObject({ round: ROUND, route: 'temporary', pod: null, gpu: 'rtx3090', price_per_hour: 0.22, bytes: SIZE.bytes, idle_stop_minutes: 15, ceiling_minutes: 167, files: SIZE.files })
     expect(p.volume).toEqual({ id: 'vol1', name: 'comfy-workspace', datacenter: 'EUR-IS-2' })
   })
   it('active when a pod of yours runs on that volume and has a public SSH port; our own pull pods, other volumes and pods without SSH do not count', async () => {
@@ -278,7 +278,7 @@ describe('a temporary pod pull', () => {
     const job = await done((await podpull.pull(ROUND, base({ client: rp.client, logs: logsOf(...GOOD) }))).id)
     expect(job.state).toBe('done')
     expect(job.error).toContain(podpull.podName(ROUND)); expect(job.lines.join('\n')).toContain('Could not delete pod newpod1')
-    expect(idle.entry('newpod1')?.minutes).toBe(167)   // the ceiling stays as the backstop
+    expect(idle.entry('newpod1')?.minutes).toBe(15)   // the agent's idle stop is the backstop
   })
 })
 
