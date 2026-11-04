@@ -36,7 +36,7 @@ describe('comfyruns', () => {
     const bad = r.find((x) => x.prompt_id === 'p-bad')!
     expect(bad.error).toBe('CUDA out of memory'); expect(bad.duration_s).toBe(1)
     // the pod costs $1/h: a 12.5 s run is $0.0035, a 1 s run $0.0003; a run with no duration has no estimate
-    expect(ok.cost_estimate).toBe(0.0035); expect(bad.cost_estimate).toBe(0.0003)
+    expect(ok.cost_estimate).toBe(0.003472); expect(bad.cost_estimate).toBe(0.000278)
     expect(r.find((x) => x.prompt_id === 'p-run')!.cost_estimate).toBeNull()
   })
 })

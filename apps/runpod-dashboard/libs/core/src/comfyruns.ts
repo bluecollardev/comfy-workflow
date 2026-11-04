@@ -106,7 +106,7 @@ export async function runs(podId: string, client?: rp.RunPodClient, fetchFn: typ
   const seen = new Set(done.map((r) => r.prompt_id))
   let rate: number | null = null
   try { const raw = await rp.getPod(podId, client); rate = typeof raw?.costPerHr === 'number' && raw.costPerHr > 0 ? raw.costPerHr : null } catch { /* no price: no estimate */ }
-  const priced = (r: ComfyRun): ComfyRun => ({ ...r, cost_estimate: rate !== null && r.duration_s !== null ? Math.round((r.duration_s / 3600) * rate * 10000) / 10000 : null })
+  const priced = (r: ComfyRun): ComfyRun => ({ ...r, cost_estimate: rate !== null && r.duration_s !== null ? Math.round((r.duration_s / 3600) * rate * 1_000_000) / 1_000_000 : null })
   return [...live.filter((r) => !seen.has(r.prompt_id)), ...done].map(priced)
 }
 
