@@ -2,7 +2,7 @@
 // no-spend mode under a scratch config dir, so nothing reaches RunPod and no key is needed.
 // Run: npm run mcp:test (builds the core first) or node --test mcp/server.test.mjs.
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -56,6 +56,8 @@ test('initialize hands every client the governance instructions', async () => {
 
 const POOL = ['list_agents', 'get_pool_status', 'governance', 'create_agent', 'stop_agent', 'resume_agent', 'delete_agent', 'health_check_agent', 'get_agent_info', 'submit_job', 'get_job_status']
 const PODS = ['list_pods', 'get_pod', 'create_pod', 'stop_pod', 'resume_pod', 'delete_pod', 'recreate_pod', 'set_idle_stop', 'get_logs', 'list_datacenters', 'list_volumes', 'create_volume', 'delete_volume', 'set_default_volume', 'get_configuration', 'sync', 'sync_status', 'adapter_spec', 'adapters_list', 'adapter_save', 'import_plan', 'import_apply', 'cost_now']
+// The tools the app's other windows added (docs/ADR-028), in the order app-tools.mjs defines them.
+const APP = ['list_gpus', 'get_volume_info', 'get_pod_config', 'set_pod_config', 'set_configuration', 'preview_configuration', 'reset_configuration', 'get_local_env', 'list_dirs', 'get_settings', 'set_settings', 'check_anthropic_key', 'config_export', 'config_import_plan', 'config_import_apply', 'config_undo', 'config_backups', 'resize_volume', 'panama_status', 'panama_rounds', 'panama_round_files', 'panama_round_size', 'panama_pod_plan', 'panama_pull', 'panama_job', 'panama_cancel', 'panama_remove', 'panama_import', 'import_detect', 'package_summary', 'package_tree', 'package_file', 'package_describe', 'adapter_draft', 'adapter_document', 'adapter_problems', 'adapter_manage', 'sync_after', 'image_env', 'image_dockerfile', 'git_accounts', 'repositories', 'remote_mcp', 'mcp_endpoints', 'docs']
 
 test('an agent writes an adapter and tests it on a real folder; the code stays open to read', async () => {
   const spec = textOf(ok(await call('adapter_spec')))
@@ -78,7 +80,7 @@ test('an agent writes an adapter and tests it on a real folder; the code stays o
 
 test('tools/list is the documented set: the pool, then the pods and the rest of the app', async () => {
   const r = await rpc('tools/list')
-  assert.deepEqual(r.result.tools.map((t) => t.name), [...POOL, ...PODS])
+  assert.deepEqual(r.result.tools.map((t) => t.name), [...POOL, ...PODS, ...APP])
   const create = r.result.tools.find((t) => t.name === 'create_agent')
   assert.deepEqual(create.inputSchema.required, ['agent_name', 'gpu_type'])
   assert.ok(create.inputSchema.properties.approved_by)
@@ -282,8 +284,78 @@ test('over HTTP (--http 0): initialize and tools/list answer the same server at 
     const init = await post({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'http-test', version: '0' } } })
     assert.equal(init.result.serverInfo.name, 'comfy-moe-server'); assert.match(init.result.instructions, /^# Governance/)
     const tools = await post({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} })
-    assert.deepEqual(tools.result.tools.map((t) => t.name), [...POOL, ...PODS])
+    assert.deepEqual(tools.result.tools.map((t) => t.name), [...POOL, ...PODS, ...APP])
     const pods = await post({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'list_pods', arguments: {} } })
     assert.match(pods.result.content[0].text, /no-spend mode/)
   } finally { http.kill() }
+})
+
+// ----- docs/ADR-028: what the window does, the MCP does -----
+const zipOf = (file, entries) => { const py = 'import sys,zipfile,json\nz=zipfile.ZipFile(sys.argv[1],"w")\nfor n,t in json.loads(sys.argv[2]).items(): z.writestr(n,t)\nz.close()'; const r = spawnSync('python3', ['-c', py, file, JSON.stringify(entries)]); assert.equal(r.status, 0, String(r.stderr)) }
+
+test('a .zip is a source: unpacked once, planned through an adapter, dry-run applied; an entry that leaves the folder is refused', async () => {
+  const z = join(dir, 'pack.zip'); zipOf(z, { 'pack/input/a.png': 'png', 'pack/input/b.png': 'png2' })
+  const plan = jsonOf(ok(await call('import_plan', { source: z, adapter: 'agent-made' })))
+  assert.equal(plan.summary.copies, 2); assert.match(plan.source, /import-zips/)
+  const applied = jsonOf(ok(await call('import_apply', { source: z, adapter: 'agent-made' })))
+  assert.equal(applied.dry_run, true); assert.equal(applied.counts['would-copy'], 2)
+  const evil = join(dir, 'evil.zip'); zipOf(evil, { '../outside.txt': 'x', 'input/a.png': 'png' })
+  const refused = await call('import_plan', { source: evil, adapter: 'agent-made' })
+  assert.equal(refused.result.isError, true); assert.match(textOf(refused), /outside its folder/)
+  const notZip = join(dir, 'notes.txt'); writeFileSync(notZip, 'x')
+  assert.equal((await call('import_plan', { source: notZip })).result.isError, true)
+})
+
+test('configuration: a patch is validated and saved; the no-spend switch is not settable; a pod\'s own configuration can be read, changed and reset', async () => {
+  const refused = await call('set_configuration', { patch: { dry_run: false } })
+  assert.equal(refused.result.isError, true); assert.match(textOf(refused), /no-spend switch/)
+  const saved = jsonOf(ok(await call('set_configuration', { patch: { idle_stop_minutes: 12, env: { EXTRA: '1' } } })))
+  assert.equal(saved.saved, true); assert.equal(saved.configuration.idle_stop_minutes, 12)
+  assert.equal(jsonOf(ok(await call('get_configuration'))).idle_stop_minutes, 12)
+  assert.equal(jsonOf(ok(await call('preview_configuration', { patch: { env: { MORE: '2' } } }))).preview.env.MORE, '2')
+  const made = jsonOf(ok(await call('create_pod', { approved_by: 'Lucas', name: 'cfg-pod', gpu: 'auto', disk_gb: 40, instance_type: 'on-demand', env_vars: { A: 'b' } })))
+  const set = jsonOf(ok(await call('set_pod_config', { pod_id: made.id, patch: { idle_stop_minutes: 3 } })))
+  assert.equal(set.custom_config, true); assert.equal(set.config.idle_stop_minutes, 3)
+  assert.equal(jsonOf(ok(await call('get_pod_config', { pod_id: made.id }))).custom_config, true)
+  const noYes = await call('set_pod_config', { pod_id: made.id, patch: {}, recreate: true })
+  assert.equal(noYes.result.isError, true); assert.match(textOf(noYes), /approved_by/)   // a recreate spends
+  assert.equal(jsonOf(ok(await call('set_pod_config', { pod_id: made.id, reset: true }))).custom_config, false)
+  const reset = jsonOf(ok(await call('reset_configuration')))
+  assert.equal(reset.reset, true)
+})
+
+test('keys and settings are changed without a named yes and are never returned; an unknown setting is refused', async () => {
+  const bad = await call('set_settings', { values: { not_a_setting: 'x' } })
+  assert.equal(bad.result.isError, true); assert.match(textOf(bad), /Not a setting/)
+  const set = jsonOf(ok(await call('set_settings', { values: { panama_bucket: 'my-test-bucket', panama_aws_access_key: 'AKIAABCDEFGHIJKLMNOP', panama_aws_secret_key: 'secretsecretsecretsecret1234' } })))
+  assert.deepEqual(set.changed, ['panama_bucket', 'panama_aws_access_key', 'panama_aws_secret_key'])
+  const shown = textOf(ok(await call('get_settings')))
+  assert.match(shown, /my-test-bucket/); assert.match(shown, /••••MNOP/)
+  assert.ok(!shown.includes('AKIAABCDEFGHIJKLMNOP') && !shown.includes('secretsecretsecret'), 'a key is never returned')
+  await call('set_settings', { values: { panama_bucket: null, panama_aws_access_key: null, panama_aws_secret_key: null } })
+})
+
+test('spend is gated on the new tools: resize_volume and a pod download need approved_by', async () => {
+  for (const [name, args] of [['resize_volume', { volume_id: 'v', size_gb: 500 }], ['panama_pull', { round: 'r1', target: 'pod' }], ['panama_remove', { round: 'r1', target: 'pod' }]]) {
+    const r = await call(name, args)
+    assert.equal(r.result.isError, true, name); assert.match(textOf(r), /approved_by/, name)
+  }
+})
+
+test('Panama: the status, the rounds and a round\'s files answer through the same core as the window (no bucket here: a clear refusal, not a crash)', async () => {
+  const st = jsonOf(ok(await call('panama_status')))
+  assert.ok('bucket' in st && 'configured' in st)
+  const bad = await call('panama_round_size', { round: '../etc' })
+  assert.equal(bad.result.isError, true); assert.match(textOf(bad), /Not a round name/)
+  const gone = await call('panama_job', { id: 'nope-1' })
+  assert.equal(gone.result.isError, true)
+})
+
+test('docs: the list, a page, a search; a page the public site leaves out is refused', async () => {
+  const list = JSON.parse(textOf(await call('docs')))
+  assert.ok(list.some((p) => p.name === 'README.md') && list.some((p) => /ADR-028/.test(p.name)))
+  assert.ok(!list.some((p) => /CANALV2|ADR-004/.test(p.name)))
+  assert.match(textOf(await call('docs', { page: 'docs/ADR-028-mcp-can-do-everything-the-app-does.md' })), /Anything the app can do, the MCP can do/)
+  assert.ok(JSON.parse(textOf(await call('docs', { search: 'zip' }))).matches.length > 0)
+  assert.equal((await call('docs', { page: 'docs/ADR-004-where-the-workflows-run.md' })).result.isError, true)
 })

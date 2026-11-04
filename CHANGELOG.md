@@ -5,6 +5,14 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased
 
+### v1.1.0: the MCP does everything the app does (ADR-028, ADR-029; branch `feature/mcp-drives-everything`)
+- Lucas: "make sure our mcp can drive the pod creation, the import from bh, import from zip, all of it"; "anything we can do in the app, we need to be able to do via mcp"; "make sure the mcp knows about our readme and other documentation too"; "it should be able to make adjustments to api keys and config"; "manage volumes and grow them or create them in a certain datacenter"; "release as 1.1 version when tested".
+- **45 new MCP tools** (about 80 in all): `create_pod` takes everything the form does; `list_gpus`; `list_datacenters` (every card, `fresh`); `get_pod_config` / `set_pod_config`; `set_configuration`, `preview_configuration`, `reset_configuration`; `get_settings` / `set_settings` (keys are never returned); `config_export` / `config_import_plan` / `config_import_apply` / `config_undo`; `resize_volume`; ten `panama_*` tools for the BH rounds on this PC or on the volume (including `panama_round_files` and `panama_import`); `import_detect`, `package_*`, `adapter_*`; `git_accounts`, `repositories`, `remote_mcp`, `mcp_endpoints`, `image_*`; and `docs` with `docs://` resources over the README and our documentation (minus what the public site leaves out).
+- **Zip import** (the Import window had said "Zip or folder" since ADR-016 but only took a folder): `imports.prepareSource` unpacks a `.zip` once, refuses a zip-slip entry or a zip bomb, and the plan runs on the folder.
+- **Parity is tested**: `mcp/parity.mjs` maps every call in the app's dispatch table to a tool or to a stated reason it needs a window; `mcp/parity.test.mjs` fails on a call with neither.
+- Spend stays gated (`create_pod`, `create_volume`, `resize_volume`, a pod download, a recreate); the no-spend switch is never settable over MCP; the keys are the pod manager's own, not Binc's job, so no named yes.
+- ADR-029: tests that create real pods use the cheapest cards, short and deleted.
+
 ### v1.0.3: browse a round's files, and the fal pack in the image (branch `feature/round-file-explorer`)
 - Lucas: "can i have a file explorer in a modal when clicking on an item in the list". Clicking a round in the Panama pane opens a modal with the round's files in the bucket as a folder tree (read-only, folder totals, files already on this PC marked on Local). Core `panama.files()` / `roundTree()`, tests in `panama.test.ts` and `e2e/panama-files.spec.js`.
 - The `contract-v26` image rebuilt on GitHub Actions with the fal pack (ADR-025) and pushed to `ghcr.io/bluecollardev/comfy-app:contract-v26`; the DMG bakes that reference.

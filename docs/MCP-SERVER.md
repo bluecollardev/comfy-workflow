@@ -68,6 +68,8 @@ Claude now has access to:
 
 ---
 
+> **Since ADR-028 the server covers the whole app**, not only the pool: pods, the Default Configuration and keys, volumes, the BH (Panama) rounds, imports from a folder or a `.zip`, adapters, and our own documentation. The full table is in [MCP-ENDPOINTS.md](./MCP-ENDPOINTS.md); this page keeps the pool tools it was written for.
+
 ## Tools Reference
 
 ### Monitoring

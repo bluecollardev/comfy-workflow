@@ -19,6 +19,8 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { CallToolRequestSchema, ListResourcesRequestSchema, ListToolsRequestSchema, ReadResourceRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import pkg from '../package.json' with { type: 'json' }
 import { isMain, loadCore, serve, startHttp } from './transport.mjs'
+import { appTools } from './app-tools.mjs'
+import * as docs from './docs.mjs'
 
 export { startHttp }
 const version = pkg.version
@@ -143,7 +145,17 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
           approved_by: approvedBy,
           name: { type: 'string', description: 'Pod name' },
           gpu: { type: 'string', enum: pool.GPU_TYPES, description: 'A card from the table, or auto: the cheapest one in stock where the volume lives', default: gpus.DEFAULT_GPU },
-          datacenter: { type: 'string', description: 'Datacenter id (list_datacenters); the network volume\'s datacenter wins when one is configured' },
+          datacenter: { type: 'string', description: 'Datacenter id (list_datacenters). With a network volume applied its datacenter wins; to run in another region pass apply_mounts=false (no volume, no mount configuration) or make a volume there first (create_volume)' },
+          gpu_type_id: { type: 'string', description: 'A raw RunPod GPU id (list_gpus / list_datacenters) for a card outside the table, in place of gpu. Blackwell and AMD cards will not run the image' },
+          gpu_count: { type: 'integer', minimum: 1, maximum: 8, default: 1 },
+          instance_type: { type: 'string', enum: ['on-demand', 'spot'], description: 'on-demand = secure cloud; spot = community cloud. Omitted: the app\'s default (spot); a pod with a network volume is always secure' },
+          disk_gb: { type: 'integer', description: 'Container disk in GB (default 20)' },
+          volume_gb: { type: 'integer', description: 'A per-pod volume in GB; 0 beside a network volume (default)' },
+          start_ssh: { type: 'boolean', default: true },
+          start_jupyter: { type: 'boolean', default: false },
+          env_vars: { type: 'object', description: 'Extra environment variables for the pod', additionalProperties: { type: 'string' } },
+          pip_requirements: { type: 'string', description: 'Extra pip requirements installed at start (CUSTOM_PIP_REQUIREMENTS)' },
+          custom_nodes: { type: 'array', items: { type: 'object', properties: { url: { type: 'string' }, branch: { type: 'string' } }, required: ['url'] }, description: 'Node packs cloned at start' },
           image: { type: 'string', description: "'configured' (the configuration's image), 'prebuilt' (RunPod's stock ComfyUI image), or a registry reference. Omitted: ours when it has been pushed, else prebuilt" },
           idle_stop_minutes: { type: 'integer', description: 'Stop the pod after this many quiet minutes; 0 = never. Omitted: the configuration\'s value' },
           apply_mounts: { type: 'boolean', description: 'Apply the mount configuration (volume, env, links). Omitted: the configuration\'s apply_by_default' },
@@ -158,14 +170,14 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
     { name: 'recreate_pod', description: 'A fresh pod with the same name, image, card choice, disk, idle stop and own configuration on whatever host is free; the old one is terminated. The network volume follows', inputSchema: { type: 'object', properties: { pod_id: podId }, required: ['pod_id'] } },
     { name: 'set_idle_stop', description: 'Set a pod\'s idle stop: stopped after this many minutes with nothing queued in its ComfyUI; 0 = never', inputSchema: { type: 'object', properties: { pod_id: podId, minutes: { type: 'integer', minimum: 0 } }, required: ['pod_id', 'minutes'] } },
     { name: 'get_logs', description: 'The last lines of a pod\'s logs from RunPod (container and system)', inputSchema: { type: 'object', properties: { pod_id: podId, lines: { type: 'integer', description: 'How many lines, 1-1000', default: 100 } }, required: ['pod_id'] } },
-    { name: 'list_datacenters', description: 'Every datacenter with S3 support and our cards in stock there at the secure-cloud price per hour', inputSchema: { type: 'object', properties: {} } },
+    { name: 'list_datacenters', description: 'Every listed datacenter with S3 support and EVERY card RunPod runs there, free or in use (nothing is hidden: ADR-027), NVIDIA and AMD, each with size, secure-cloud price, stock and whether the image can run it; datacenters with most free cards first. Cached a minute', inputSchema: { type: 'object', properties: { fresh: { type: 'boolean', description: 'Skip the cache and read RunPod now' } } } },
     { name: 'list_volumes', description: 'The network volumes with size, datacenter, cost per month, S3 support, the pods on each, and which is the default', inputSchema: { type: 'object', properties: {} } },
     {
       name: 'create_volume',
       description: `Create a network volume (billed monthly: USD 0.07 per GB). Spends money: needs approved_by, the person behind the named yes (policy/agent-permissions.md, cap USD ${governance.SPEND_CAP_USD})`,
       inputSchema: {
         type: 'object',
-        properties: { approved_by: approvedBy, name: { type: 'string' }, size_gb: { type: 'integer', description: '10 to 4000' }, datacenter: { type: 'string', description: 'Datacenter id (list_datacenters); the volume and its pods live there' } },
+        properties: { approved_by: approvedBy, name: { type: 'string' }, size_gb: { type: 'integer', description: '10 to 4000' }, datacenter: { type: 'string', description: 'Datacenter id (list_datacenters). The volume lives there and pods that use it must run there; a new region means a new volume' } },
         required: ['name', 'size_gb', 'datacenter'],
       },
     },
@@ -195,22 +207,27 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
     { name: 'adapter_spec', description: 'The spec for writing an import adapter (a .mjs module that maps a package folder onto the ComfyUI-Shared structure): the target, the module shape, the plan, what the app enforces. Read this before adapter_save.', inputSchema: { type: 'object', properties: {} } },
     { name: 'adapters_list', description: 'The import adapters: built-in and the user\'s own, with the sha256 of each adapter code (read it with Inspect in the app, or ./start.sh import --show <id>)', inputSchema: { type: 'object', properties: {} } },
     { name: 'adapter_save', description: 'Save an adapter module (ES module source) as ~/.config/runpod-pod-manager/adapters/<id>.mjs. Syntax-checked and structure-checked, nothing is run. It is listed in Default Configuration > Import adapters with its code open to read, edit or delete; test it with import_plan', inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'lowercase letters, digits and dashes' }, source: { type: 'string', description: 'the module source' } }, required: ['id', 'source'] } },
-    { name: 'import_plan', description: 'Dry-run an import: which adapter recognises the folder (or the one named), what it would copy where in ComfyUI-Shared, by kind with counts and bytes, and its findings. Writes nothing. The adapter runs fenced (read-only on that folder). Use it to test an adapter on a real folder', inputSchema: { type: 'object', properties: { source: { type: 'string', description: 'absolute path of the package folder' }, adapter: { type: 'string', description: 'adapter id (default: the best match)' } }, required: ['source'] } },
-    { name: 'import_apply', description: 'Import a folder through an adapter into this PC\'s ComfyUI-Shared (copies; never deletes; a differing existing file is a conflict unless overwrite). dry_run defaults to true. Getting it onto a pod is the sync, not this', inputSchema: { type: 'object', properties: { source: { type: 'string' }, adapter: { type: 'string' }, dry_run: { type: 'boolean', description: 'default true' }, overwrite: { type: 'boolean' } }, required: ['source'] } },
+    { name: 'import_plan', description: 'Dry-run an import (folder or .zip, which is unpacked once): which adapter recognises the package (or the one named), what it would copy where in ComfyUI-Shared, by kind with counts and bytes, and its findings. Writes nothing. The adapter runs fenced (read-only on that folder). Use it to test an adapter on a real folder', inputSchema: { type: 'object', properties: { source: { type: 'string', description: 'absolute path of the package folder or .zip' }, adapter: { type: 'string', description: 'adapter id (default: the best match)' } }, required: ['source'] } },
+    { name: 'import_apply', description: 'Import a folder or .zip through an adapter into this PC\'s ComfyUI-Shared (copies; never deletes; a differing existing file is a conflict unless overwrite). dry_run defaults to true. Getting it onto a pod is the sync, not this', inputSchema: { type: 'object', properties: { source: { type: 'string' }, adapter: { type: 'string' }, dry_run: { type: 'boolean', description: 'default true' }, overwrite: { type: 'boolean' } }, required: ['source'] } },
     { name: 'cost_now', description: 'What is billing right now: the running pods\' price per hour summed, and the volumes\' cost per month', inputSchema: { type: 'object', properties: {} } },
   ]
-  const TOOLS = [...POOL_TOOLS, ...POD_TOOLS]
 
   const NO_SPEND = '(no-spend mode: simulated pod; nothing reached RunPod, nothing is billed)'
   const text = (t, isError = false) => ({ content: [{ type: 'text', text: pool.dryRun() ? `${t}\n\n${NO_SPEND}` : t }], isError })
   const json = (v) => text(JSON.stringify(pool.dryRun() && v && !Array.isArray(v) && typeof v === 'object' ? { ...v, dry_run: true } : v, null, 2))
   const round2 = (n) => Math.round(n * 100) / 100
+  /** An answer with no no-spend note: for documentation and other things that are not about pods. */
+  const plain = (v, isError = false) => ({ content: [{ type: 'text', text: typeof v === 'string' ? v : JSON.stringify(v, null, 2) }], isError })
+
+  const app = appTools({ core, governance, text, json, plain })   // everything else the window does (docs/ADR-028)
+  const TOOLS = [...POOL_TOOLS, ...POD_TOOLS, ...app.tools]
 
   /** Does RunPod's answer say the host or cloud has no card for this pod? */
   const hostFull = (message) => pods.NO_STOCK.test(message) || /host|unavailable|resources/i.test(message)
 
   /** tool name -> what it answers. Each returns a CallToolResult; the dispatcher below turns throws into one. */
   const HANDLERS = {
+    ...app.handlers,
     governance: async ({ page }) => {
       if (!page) return json(governance.listing())
       const t = governance.read(page)
@@ -254,8 +271,12 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
       const req = {
         name: args.name, gpu: args.gpu || gpus.DEFAULT_GPU, image: args.image || pool.imageChoice(mounts.load()), data_center_id: args.datacenter || null,
         idle_stop_minutes: args.idle_stop_minutes ?? null, apply_mounts: args.apply_mounts ?? null, config: args.config || null,
+        ...(args.gpu_type_id ? { gpu_type_id: args.gpu_type_id } : {}), ...(args.gpu_count ? { gpu_count: Number(args.gpu_count) } : {}), ...(args.instance_type ? { instance_type: args.instance_type } : {}),
+        ...(args.disk_gb != null ? { disk_gb: Number(args.disk_gb) } : {}), ...(args.volume_gb != null ? { volume_gb: Number(args.volume_gb) } : {}), ...(args.start_ssh != null ? { start_ssh: !!args.start_ssh } : {}), ...(args.start_jupyter ? { start_jupyter: true } : {}),
+        ...(args.env_vars ? { env_vars: args.env_vars } : {}), ...(args.pip_requirements ? { pip_requirements: args.pip_requirements } : {}), ...(Array.isArray(args.custom_nodes) && args.custom_nodes.length ? { custom_nodes: args.custom_nodes } : {}),
       }
-      const p = await pods.create(req)
+      const credentials = req.custom_nodes?.length ? await core.git.credentialsEnv(req.custom_nodes.map((n) => n.url || '')) : {}   // only the hosts the pod clones from, as the window does
+      const p = await pods.create(req, undefined, credentials)
       console.error(`create_pod ${p.id} (${p.name}, ${p.gpu}) approved by ${String(args.approved_by).trim()}`)
       return json({ ...p, config: pods.config(p.id), approved_by: String(args.approved_by).trim() })
     },
@@ -288,7 +309,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
       if (!out.length) return text(`No log lines for ${pod_id} in ${LOG_WAIT_MS} ms`)
       return text(`Last ${out.length} line${out.length === 1 ? '' : 's'} of ${pod_id}:\n` + out.map((e) => `${e.ts ? e.ts + ' ' : ''}[${e.source}] ${e.line}`).join('\n'))
     },
-    list_datacenters: async () => json(await pods.datacenters()),
+    list_datacenters: async ({ fresh } = {}) => json(await pods.datacenters(undefined, !!fresh)),
     list_volumes: async () => json(await volumes.list()),
     create_volume: async (args) => {
       const refusal = governance.namedYes(args, 'create_volume')
@@ -375,7 +396,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
   function makeServer() {
     const server = new Server({ name: 'comfy-moe-server', version }, {
       capabilities: { tools: {}, resources: {} },
-      instructions: governance.instructions(),   // applied to every client at initialize
+      instructions: governance.instructions() + (docs.root() ? '\n\n---\nThe README and our documentation (the ADRs, setup, MCP, workflows) are readable here: call the docs tool (no arguments lists the pages, page reads one, search finds text), or read the docs:// resources.\nAnything the app window can do has a tool here (docs/ADR-028); list_pods, list_datacenters and get_configuration are the quick look.' : '\n\n---\nAnything the app window can do has a tool here (docs/ADR-028).'),   // applied to every client at initialize
     })
 
     server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }))
@@ -395,9 +416,17 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
 
     // Every governance page, as governance://<page>.
     server.setRequestHandler(ListResourcesRequestSchema, async () => ({
-      resources: governance.listing().map((p) => ({ uri: p.uri, name: p.name, mimeType: 'text/markdown', description: "shared/governance: Binc's policies, copied from the CANALV2 tree" })),
+      resources: [
+        ...governance.listing().map((p) => ({ uri: p.uri, name: p.name, mimeType: 'text/markdown', description: "shared/governance: Binc's policies, copied from the CANALV2 tree" })),
+        ...docs.listing().map((p) => ({ uri: p.uri, name: p.name, mimeType: 'text/markdown', description: p.title })),   // the README and our documentation (docs/ADR-028)
+      ],
     }))
     server.setRequestHandler(ReadResourceRequestSchema, async ({ params }) => {
+      if (String(params.uri).startsWith('docs://')) {
+        const d = docs.read(params.uri)
+        if (d == null) throw new Error(`No such documentation page: ${docs.uriToName(params.uri)}`)
+        return { contents: [{ uri: params.uri, mimeType: 'text/markdown', text: d }] }
+      }
       const name = governance.uriToName(String(params.uri))
       const t = governance.read(name)
       if (t == null) throw new Error(`No such governance page: ${name}`)
