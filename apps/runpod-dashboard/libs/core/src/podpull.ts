@@ -158,7 +158,7 @@ export async function plan(round: string, opts: Opts = {}): Promise<PodPlan> {
   // a card outside the table is created by its RunPod id (and is often dearer, which is why the price is part of the plan the user confirms).
   let gpu = 'auto', price: number | null = null, gpuTypeId: string | undefined
   try {
-    const table = new Set(Object.values(gpus.GPUS).map((g) => g.id))
+    const table = new Set(gpus.autoCards().map((g) => g.id))   // not the explicit-only big cards (ADR-026)
     const anyCard = cfg.pull_any_card !== false   // the root setting (Default Configuration): off = only the table's cards, as before ADR-024
     const free = (volume?.datacenter ? await rp.freeCardsIn(volume.datacenter, opts.client) : []).filter((c) => anyCard || table.has(c.id))
     const pick = free[0]
@@ -362,7 +362,7 @@ async function runTemporary(i: Internal, opts: Opts) {
   try {
     const env: Record<string, string> = { ...cfg.env }
     if (j.kind === 'pull') env.S3_PULL = s3PullFor(j.round); else delete env.S3_PULL   // a delete never carries a pull (or the keys podOverrides adds for one)
-    const created = await pods.create({ name, ...(p.gpu_type_id ? { gpu_type_id: p.gpu_type_id } : { gpu: 'auto' }), image: 'configured', idle_stop_minutes: p.ceiling_minutes, config: { ...cfg, env } }, opts.client)
+    const created = await pods.create({ name, ...(p.gpu_type_id ? { gpu_type_id: p.gpu_type_id } : { gpu: 'auto' }), image: 'configured', cuda_match: false, idle_stop_minutes: p.ceiling_minutes, config: { ...cfg, env } }, opts.client)
     podId = created.id; j.pod_id = podId; tempSetId(name, podId)
     if (i.cancelled) return
     j.state = 'starting'
@@ -398,7 +398,7 @@ async function simulate(i: Internal, opts: Opts) {
   let podId: string | null = null
   try {
     if (temp) {
-      const created = await pods.create({ name: j.pod_name!, ...(i.plan.gpu_type_id ? { gpu_type_id: i.plan.gpu_type_id } : { gpu: 'auto' }), image: 'configured', idle_stop_minutes: i.plan.ceiling_minutes })
+      const created = await pods.create({ name: j.pod_name!, ...(i.plan.gpu_type_id ? { gpu_type_id: i.plan.gpu_type_id } : { gpu: 'auto' }), image: 'configured', cuda_match: false, idle_stop_minutes: i.plan.ceiling_minutes })
       podId = created.id; j.pod_id = podId; j.pod_name = created.name
     }
     const steps: [JobState, string[]][] = j.kind === 'pull'

@@ -133,34 +133,34 @@ describe('availability', () => {
 })
 
 describe('plan: a pull needs no GPU, so any free card will do (ADR-022)', () => {
-  const BLACKWELL = 'NVIDIA RTX PRO 6000 Blackwell Server Edition'
+  const OUTSIDE = 'NVIDIA H100 NVL'
   it('uses the cheapest card that is free in the volume\'s datacenter, from the table or not', async () => {
-    const rp = fakeRunPod([], { gpuTypes: [{ id: G1, price: 0.44, stock: 'Low' }, { id: BLACKWELL, displayName: 'RTX PRO 6000', memoryInGb: 96, price: 2.49, stock: 'Low' }, { id: 'NVIDIA A100 80GB PCIe', price: 1.64, stock: 'None' }] })
+    const rp = fakeRunPod([], { gpuTypes: [{ id: G1, price: 0.44, stock: 'Low' }, { id: OUTSIDE, displayName: 'H100 NVL', memoryInGb: 94, price: 2.49, stock: 'Low' }, { id: 'NVIDIA A100 80GB PCIe', price: 1.64, stock: 'None' }] })
     const p = await podpull.plan(ROUND, base({ client: rp.client }))
     expect(p).toMatchObject({ route: 'temporary', gpu: 'l4', price_per_hour: 0.44 })
     expect(p.gpu_type_id).toBeUndefined()   // one of the table's cards: created by its key, as always
   })
   it('takes a card outside the table when it is the only one free, and says so: its name, its price, and the RunPod id the pod is created with', async () => {
-    const rp = fakeRunPod([], { gpuTypes: [{ id: G1, price: 0.44, stock: null }, { id: BLACKWELL, displayName: 'RTX PRO 6000', memoryInGb: 96, price: 2.49, stock: 'Low' }] })
+    const rp = fakeRunPod([], { gpuTypes: [{ id: G1, price: 0.44, stock: null }, { id: OUTSIDE, displayName: 'H100 NVL', memoryInGb: 94, price: 2.49, stock: 'Low' }] })
     const p = await podpull.plan(ROUND, base({ client: rp.client }))
-    expect(p).toMatchObject({ route: 'temporary', gpu: 'RTX PRO 6000', price_per_hour: 2.49, gpu_type_id: BLACKWELL })
+    expect(p).toMatchObject({ route: 'temporary', gpu: 'H100 NVL', price_per_hour: 2.49, gpu_type_id: OUTSIDE })
   })
   it('creates the pod with that card and nothing else changes: the volume, the name, S3_PULL, the idle ceiling', async () => {
-    const rp = fakeRunPod([], { gpuTypes: [{ id: BLACKWELL, displayName: 'RTX PRO 6000', price: 2.49, stock: 'Low' }] })
+    const rp = fakeRunPod([], { gpuTypes: [{ id: OUTSIDE, displayName: 'H100 NVL', price: 2.49, stock: 'Low' }] })
     const lines = logsOf(...GOOD)
     const j0 = await podpull.pull(ROUND, base({ client: rp.client, logs: async () => lines() }))
     const j = await done(j0.id)
     expect(j).toMatchObject({ state: 'done', route: 'temporary' })
     const q = rp.calls.created[0]
-    expect(q).toContain(`gpuTypeId: "${BLACKWELL}"`); expect(q).toContain('networkVolumeId: "vol1"'); expect(q).toContain(`{ key: "S3_PULL", value: "${podpull.s3PullFor(ROUND)}" }`)
+    expect(q).toContain(`gpuTypeId: "${OUTSIDE}"`); expect(q).toContain('networkVolumeId: "vol1"'); expect(q).toContain(`{ key: "S3_PULL", value: "${podpull.s3PullFor(ROUND)}" }`)
     expect(rp.calls.terminated).toEqual(['newpod1'])   // and the pod is deleted when the job ends, as for any card
   })
   it('the root setting pull_any_card off keeps to the table\'s cards: an unlisted card that is free is ignored', async () => {
-    const rp = fakeRunPod([], { gpuTypes: [{ id: BLACKWELL, displayName: 'RTX PRO 6000', price: 2.49, stock: 'Low' }] })
+    const rp = fakeRunPod([], { gpuTypes: [{ id: OUTSIDE, displayName: 'H100 NVL', price: 2.49, stock: 'Low' }] })
     configure({ pull_any_card: false })
     const p = await podpull.plan(ROUND, base({ client: rp.client }))
     expect(p.gpu_type_id).toBeUndefined()
-    expect(p.gpu).not.toBe('RTX PRO 6000')
+    expect(p.gpu).not.toBe('H100 NVL')
   })
   it('only a real RunPod GPU type id is accepted, never free text, and never AMD or an empty one', async () => {
     for (const bad of ['', 'rm -rf', 'NVIDIA ', 'nvidia l4', 'AMD Instinct MI300X', 'NVIDIA "; drop']) {

@@ -28,6 +28,8 @@ export const webPortOf = (ports: string | null | undefined, fallback = 8188): nu
 export interface CreatePodRequest {
   /** A full RunPod GPU type id (`NVIDIA ...`) outside the app's table, used by pull pods when none of the table's cards is free (ADR-022). */
   gpu_type_id?: string
+  /** false: do not adapt the image and host to the card's CUDA (ADR-030). A pull pod never touches the GPU, so it boots the normal image wherever it lands. */
+  cuda_match?: boolean
   name: string; gpu?: string; gpu_count?: number; instance_type?: 'on-demand' | 'spot'; volume_gb?: number; disk_gb?: number
   image?: string; env_vars?: Record<string, string>; build_args?: Record<string, string>; pip_requirements?: string
   custom_nodes?: { name: string; url: string; branch: string; path: string }[]; start_ssh?: boolean; start_jupyter?: boolean
@@ -81,7 +83,6 @@ export function plan(req: CreatePodRequest, cfg: mounts.MountsConfig, credential
   // The image's credential is the image's, not the mounts': a pod made without the mount configuration (another region, no volume) still pulls a private image (ADR-026: it did not, and RunPod exited it with "unauthorized").
   if (cfg.registry_auth_id) volume.containerRegistryAuthId = cfg.registry_auth_id
   if (!volume.networkVolumeId && req.data_center_id) volume.dataCenterId = req.data_center_id
-  const imageName = resolveImage(req.image, cfg)
   const gpuKey = req.gpu || gpus.DEFAULT_GPU
   let gpuTypeId: string
   if (req.gpu_type_id !== undefined) {
@@ -89,6 +90,8 @@ export function plan(req: CreatePodRequest, cfg: mounts.MountsConfig, credential
     gpuTypeId = req.gpu_type_id
   } else if (gpuKey === gpus.AUTO) gpuTypeId = gpus.AUTO   // resolved against stock at creation
   else { try { gpuTypeId = gpus.runpodId(gpuKey) } catch (e) { throw bad((e as Error).message) } }
+  // Our image on the CUDA the card needs (ADR-030): a Blackwell card boots the `-cu13` tag, on a host whose driver offers CUDA 13.
+  const imageName = req.cuda_match === false ? resolveImage(req.image, cfg) : gpus.imageFor(resolveImage(req.image, cfg), gpuTypeId === gpus.AUTO ? gpuKey : gpuTypeId)
   const idleMinutes = req.idle_stop_minutes == null ? cfg.idle_stop_minutes : req.idle_stop_minutes
   return {
     input: {
@@ -96,6 +99,7 @@ export function plan(req: CreatePodRequest, cfg: mounts.MountsConfig, credential
       cloudType: ({ 'on-demand': 'SECURE', spot: 'COMMUNITY' } as const)[req.instance_type || 'spot'] || 'ALL',
       gpuCount: req.gpu_count ?? 1, volumeInGb: volumeGb, containerDiskInGb: req.disk_gb ?? 20,
       startSsh: req.start_ssh !== false, ports: portsFor(imageName), env, ...volume,
+      ...(imageName.endsWith('-cu13') ? { allowedCudaVersions: gpus.CUDA13_HOSTS } : {}),
     },
     idleMinutes,
   }
@@ -337,7 +341,7 @@ export interface GpuMenuEntry { value: string; text: string; price: number | nul
 /** Datacenters that serve a network volume over RunPod's S3 API (docs.runpod.io/storage/s3-api, 2026-10-21). */
 export const S3_DATACENTERS = new Set(['EU-CZ-1', 'EU-RO-1', 'EUR-IS-1', 'EUR-NO-1', 'US-CA-2', 'US-GA-2', 'US-IL-1', 'US-KS-2', 'US-MD-1', 'US-MO-1', 'US-MO-2', 'US-NC-1', 'US-NC-2', 'US-NE-1', 'US-WA-1'])
 
-export interface DatacenterEntry { value: string; text: string; s3: boolean; cards: { key: string; name: string; vram: number; price: number | null; stock: string; available: boolean; runs: boolean; why?: 'cuda13' | 'amd' }[] }
+export interface DatacenterEntry { value: string; text: string; s3: boolean; cards: { key: string; name: string; vram: number; price: number | null; stock: string; available: boolean; runs: boolean; cuda?: 13; why?: 'cuda13' | 'amd' }[] }
 /** The datacenter menu (the pod form and the Configuration panel): every listed datacenter, S3 support, and EVERY card in stock there at the secure-cloud
  *  price per hour, ranked by how many cards a datacenter has. `runs` is false for a card outside our table (the Blackwell cards need a CUDA 12.8+ image, ADR-026).
  *  A minute of cache; `fresh` skips it (the form's refresh button). */
@@ -354,11 +358,11 @@ export async function datacenters(client?: rp.RunPodClient, fresh = false): Prom
     const price = new Map((priced.find((x) => x.id === dc.id)?.cards || []).map((c) => [c.id, c]))
     const cards = dc.cards.map((c) => {
       const k = gpuKey(c.id), known = k in gpus.GPUS, pr = price.get(c.id), amd = !/^NVIDIA /.test(c.id)
-      return { key: k, name: known ? gpus.GPUS[k].name : c.name.replace(/^NVIDIA /, ''), vram: known ? gpus.vram(k) : gpus.vram(c.name) || pr?.vram || 0, price: pr?.price ?? null, stock: c.available ? (c.stock || pr?.stock || 'In stock') : 'Out of stock', available: c.available, runs: known, ...(known ? {} : { why: (amd ? 'amd' : 'cuda13') as 'amd' | 'cuda13' }) }
+      return { key: k, name: known ? gpus.GPUS[k].name : c.name.replace(/^NVIDIA /, ''), vram: known ? gpus.vram(k) : gpus.vram(c.name) || pr?.vram || 0, price: pr?.price ?? null, stock: c.available ? (c.stock || pr?.stock || 'In stock') : 'Out of stock', available: c.available, runs: known, ...(known && gpus.GPUS[k].cuda ? { cuda: 13 as const } : {}), ...(known ? {} : { why: (amd ? 'amd' : 'cuda13') as 'amd' | 'cuda13' }) }
     }).sort((a, b) => Number(b.available) - Number(a.available) || (a.price ?? 9e9) - (b.price ?? 9e9) || b.vram - a.vram)
     const s3 = S3_DATACENTERS.has(dc.id)
     const free = cards.filter((c) => c.available)
-    const show = (c: typeof cards[number]) => `${c.name}${c.vram ? ` ${c.vram} GB` : ''}${c.price != null ? ` $${c.price}/h` : ''} ${c.stock}${c.runs ? '' : c.why === 'amd' ? ' (AMD, not CUDA)' : ' (needs CUDA 13)'}`
+    const show = (c: typeof cards[number]) => `${c.name}${c.vram ? ` ${c.vram} GB` : ''}${c.price != null ? ` $${c.price}/h` : ''} ${c.stock}${c.runs ? (c.cuda ? ' (CUDA 13 image)' : '') : c.why === 'amd' ? ' (AMD, not CUDA)' : ' (not in the table)'}`
     const text = [dc.id, free.length ? `${free.length} card${free.length === 1 ? '' : 's'} in stock: ${free.slice(0, 3).map(show).join(', ')}` : `no cards in stock (${cards.length} offered)`, s3 ? 'S3' : null].filter(Boolean).join(' · ')
     return { value: dc.id, text, s3, cards }
   })

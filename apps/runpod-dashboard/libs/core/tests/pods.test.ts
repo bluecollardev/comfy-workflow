@@ -72,10 +72,28 @@ describe('the datacenter menu', () => {
     const m = await pods.datacenters({ fetchFn, apiKey: 'k' })
     expect(m.datacenters.map((d) => d.value)).toEqual(['AP-JP-1', 'EUR-IS-2', 'US-TX-3'])   // 2 free, then 1, then none
     expect(m.datacenters[0].cards.map((c) => [c.key, c.vram, c.price])).toEqual([['h200', 141, null], ['h100', 80, null]])   // listed with their sizes though no price came
-    expect(m.datacenters[1].cards[0]).toMatchObject({ name: 'RTX PRO 6000', vram: 96, runs: false, why: 'cuda13' })
-    expect(m.datacenters[1].text).toBe('EUR-IS-2 · 1 card in stock: RTX PRO 6000 96 GB Low (needs CUDA 13)')
+    expect(m.datacenters[1].cards[0]).toMatchObject({ key: 'rtxpro6000', name: 'RTX PRO 6000', vram: 96, runs: true, cuda: 13 })   // in the table since ADR-030, on the cu13 image
+    expect(m.datacenters[1].text).toBe('EUR-IS-2 · 1 card in stock: RTX PRO 6000 96 GB Low (CUDA 13 image)')
     expect(m.datacenters[2].text).toBe('US-TX-3 · no cards in stock (2 offered)')   // the H100 and the A40 are still in its cards
     expect(m.datacenters[2].cards).toHaveLength(2)
+  })
+})
+
+describe('CUDA 13 (ADR-030)', () => {
+  const cfg = () => mounts.validate(mounts.normalize({ ...mounts.load(), image: 'ghcr.io/example/comfy-app:v26', apply_by_default: false }))
+  it('a Blackwell card boots our -cu13 image on a CUDA 13 host; a Hopper card the normal image with no host filter', () => {
+    const bw = pods.plan({ name: 't', gpu: 'rtx5090', apply_mounts: false }, cfg()).input
+    expect(bw.imageName).toBe('ghcr.io/example/comfy-app:v26-cu13'); expect(bw.allowedCudaVersions).toEqual(['13.0', '13.1', '13.2', '13.3', '13.4'])
+    expect(pods.plan({ name: 't', gpu: 'h100', apply_mounts: false }, cfg()).input).toMatchObject({ imageName: 'ghcr.io/example/comfy-app:v26' })
+    expect(pods.plan({ name: 't', gpu: 'h100', apply_mounts: false }, cfg()).input.allowedCudaVersions).toBeUndefined()
+    const raw = pods.plan({ name: 't', gpu_type_id: 'NVIDIA B200', apply_mounts: false }, cfg()).input   // a raw id is matched too
+    expect(raw.imageName).toBe('ghcr.io/example/comfy-app:v26-cu13')
+  })
+  it('the mutation carries the host filter; a pull pod (cuda_match false) keeps the normal image', () => {
+    expect(rp.deployMutation({ name: 'n', imageName: 'i', gpuTypeId: 'g', allowedCudaVersions: ['13.0', '13.1'] })).toContain('allowedCudaVersions: ["13.0", "13.1"]')
+    expect(rp.deployMutation({ name: 'n', imageName: 'i', gpuTypeId: 'g' })).not.toContain('allowedCudaVersions')
+    const pull = pods.plan({ name: 't', gpu_type_id: 'NVIDIA GeForce RTX 5090', cuda_match: false, apply_mounts: false }, cfg()).input
+    expect(pull.imageName).toBe('ghcr.io/example/comfy-app:v26'); expect(pull.allowedCudaVersions).toBeUndefined()
   })
 })
 
@@ -123,7 +141,7 @@ describe('the plan sent to RunPod', () => {
     expect(pods.plan({ name: 't', data_center_id: 'US-NC-1' }, cfg).input.dataCenterId).toBe('US-NC-1')   // no volume: the form's choice
     expect(p2.input.volumeInGb).toBe(40); expect(p2.input.gpuTypeId).toBe('NVIDIA RTX A4000'); expect(p2.input.cloudType).toBe('SECURE'); expect(p2.idleMinutes).toBe(0)
     expect(p2.input.env.X).toBe('1'); expect(p2.input.env.Y).toBe('y')   // explicit env wins over a build arg
-    expect(() => pods.plan({ name: 't', gpu: 'b200' }, cfg)).toThrow(/unknown GPU/)
+    expect(() => pods.plan({ name: 't', gpu: 'mi300x' }, cfg)).toThrow(/unknown GPU/)
     expect(() => pods.plan({ name: 't', image: 'comfy-app:local' }, cfg)).toThrow(/local image name/)
   })
 

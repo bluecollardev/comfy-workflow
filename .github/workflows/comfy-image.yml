@@ -28,7 +28,9 @@ jobs:
         run: |
           if [ -n "${{ github.event.inputs.variant }}" ]; then V="${{ github.event.inputs.variant }}"
           else V="$(echo "$GITHUB_REF_NAME" | sed -E 's#^image/(.*)-[0-9]{8}-[0-9]{6}$#\1#')"; fi
-          echo "variant=$V" >> "$GITHUB_OUTPUT"; echo "variant: $V"
+          # A variant ending in -cu13 is the CUDA 13 (Blackwell) image of that set (docs/ADR-030): contract-v26-cu13 builds set contract-v26 on the CUDA 13 base, tagged contract-v26-cu13.
+          CUDA=""; case "$V" in *-cu13) CUDA=13; V="${V%-cu13}" ;; esac
+          echo "variant=$V" >> "$GITHUB_OUTPUT"; echo "cuda=$CUDA" >> "$GITHUB_OUTPUT"; echo "variant: $V cuda: ${CUDA:-12.6}"
       - name: Node packs (private submodule, read-only deploy key)
         env:
           KEY: ${{ secrets.NODES_DEPLOY_KEY }}
@@ -43,4 +45,6 @@ jobs:
       - name: Log in to ghcr.io
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
       - name: Build and push
-        run: apps/comfy-app/build.sh --shotpipe "${{ steps.v.outputs.variant }}" --push "ghcr.io/bluecollardev/comfy-app:${{ steps.v.outputs.variant }}"
+        run: |
+          V="${{ steps.v.outputs.variant }}"; C="${{ steps.v.outputs.cuda }}"
+          apps/comfy-app/build.sh --shotpipe "$V" ${C:+--cuda "$C"} --push "ghcr.io/bluecollardev/comfy-app:$V${C:+-cu$C}"

@@ -135,8 +135,9 @@ test.describe('configuration', () => {
     await expect(dc.getByTestId('dc-table-chosen')).toContainText('EU-RO-1')
     await expect(dc.getByTestId('dc-table-chosen-cards')).toContainText('RTX 4090')   // the chosen datacenter's cards, not a warning
     // by card is the default: the biggest card first, and where it is
-    expect(await dc.getByTestId('dc-card-row').evaluateAll((els) => els.map((e) => e.getAttribute('data-card')))).toEqual(['A40', 'RTX 4090', 'RTX 4000 Ada'])
+    expect(await dc.getByTestId('dc-card-row').evaluateAll((els) => els.map((e) => e.getAttribute('data-card')))).toEqual(['A40', 'RTX 5090', 'RTX 4090', 'RTX 4000 Ada'])   // biggest first; the RTX 5090 is a Blackwell card
     await expect(dc.locator('[data-testid="dc-card-row"][data-card="RTX 4090"] [data-dc="EU-RO-1"]')).toContainText('S3')
+    await expect(dc.locator('[data-testid="dc-card-row"][data-card="RTX 5090"] [data-testid="dc-card-cu13"]')).toContainText(t('dc.cu13image'))   // marked: it boots the CUDA 13 image
     await dc.locator('[data-testid="dc-chip"][data-card="A40"][data-dc="CA-MTL-1"]').click()   // a datacenter that has the card I want
     await expect(dc).toHaveAttribute('data-value', 'CA-MTL-1')
     // by datacenter: every datacenter listed, the ones with no card too

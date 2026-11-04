@@ -21,6 +21,7 @@
         <div class="d-flex align-items-baseline gap-2 flex-wrap">
           <strong>{{ c.name }}</strong>
           <span class="text-body-secondary small">{{ c.vram ? `${c.vram} GB` : '' }}</span>
+          <span v-if="c.cuda === 13" class="badge text-bg-info fw-normal" :title="$t('dc.cu13Tip')" data-testid="dc-card-cu13">{{ $t('dc.cu13image') }}</span>
           <span v-if="!c.runs" class="badge text-bg-warning fw-normal" :title="$t(c.why === 'amd' ? 'dc.amdTip' : 'dc.needsNewImage')">{{ $t(c.why === 'amd' ? 'dc.amd' : 'dc.cuda13') }}</span>
           <span class="small text-body-secondary">{{ $t('dc.offeredIn', { n: c.dcs.length, free: c.free }) }}</span>
         </div>
@@ -46,7 +47,7 @@
           <template v-for="d in dcRows" :key="d.value">
             <tr v-for="(c, i) in d.shown" :key="d.value + c.key + i" class="dc-row" :class="{ chosen: d.value === modelValue, first: i === 0 }" role="button" tabindex="0" data-testid="dc-table-row" :data-dc="d.value" @click="pick(d.value)" @keydown.enter="pick(d.value)">
               <td class="font-monospace"><template v-if="i === 0">{{ d.value }}<span v-if="d.s3" class="badge text-bg-secondary fw-normal ms-1" :title="$t('config.cardsS3')">S3</span><span class="text-body-secondary ms-1">· {{ freeIn(d) }}/{{ d.cards.length }}</span></template></td>
-              <td>{{ c.name }}<span v-if="!c.runs" class="badge text-bg-warning fw-normal ms-1" data-testid="dc-table-newimage" :title="$t(c.why === 'amd' ? 'dc.amdTip' : 'dc.needsNewImage')">{{ $t(c.why === 'amd' ? 'dc.amd' : 'dc.cuda13') }}</span></td>
+              <td>{{ c.name }}<span v-if="c.cuda === 13" class="badge text-bg-info fw-normal ms-1" :title="$t('dc.cu13Tip')" data-testid="dc-table-cu13">{{ $t('dc.cu13image') }}</span><span v-if="!c.runs" class="badge text-bg-warning fw-normal ms-1" data-testid="dc-table-newimage" :title="$t(c.why === 'amd' ? 'dc.amdTip' : 'dc.needsNewImage')">{{ $t(c.why === 'amd' ? 'dc.amd' : 'dc.cuda13') }}</span></td>
               <td class="text-end">{{ c.vram ? `${c.vram} GB` : '' }}</td>
               <td class="text-end">{{ c.price != null ? `$${c.price}/h` : '' }}</td>
               <td>{{ c.stock }}</td>
@@ -66,7 +67,7 @@
 /**
  * DatacenterTable — the datacenter picker (ADR-026). Nothing is hidden: RunPod's own list of every card each datacenter runs, free or busy, NVIDIA and AMD.
  * Every card is shown whether it is free or in use (Lucas: "if we have to wait we have to wait"): stock is a label, never a reason to hide or dim. "By card" lists the biggest card first and every
- * datacenter that offers it, free ones first; "By datacenter" lists each datacenter's cards, free ones first. A card the image cannot run (Blackwell, CUDA 12.8+; AMD) is marked. A click chooses the datacenter (v-model); `anyLabel` adds an "Any" row.
+ * datacenter that offers it, free ones first; "By datacenter" lists each datacenter's cards, free ones first. A Blackwell card is marked "CUDA 13 image" (it boots our -cu13 tag, ADR-030); a card outside our table, or an AMD one, is marked as such. A click chooses the datacenter (v-model); `anyLabel` adds an "Any" row.
  */
 import { computed, ref } from 'vue'
 const props = defineProps({ list: { type: Array, default: () => [] }, modelValue: { type: String, default: '' }, anyLabel: { type: String, default: '' }, testid: { type: String, default: 'dc-table' } })
@@ -81,7 +82,7 @@ const cardRows = computed(() => {
   const m = new Map()
   for (const d of props.list) for (const c of d.cards || []) {
     const k = c.name
-    if (!m.has(k)) m.set(k, { name: c.name, vram: c.vram || 0, runs: c.runs !== false, why: c.why, free: 0, dcs: [] })
+    if (!m.has(k)) m.set(k, { name: c.name, vram: c.vram || 0, runs: c.runs !== false, cuda: c.cuda, why: c.why, free: 0, dcs: [] })
     const e = m.get(k); if (free(c)) e.free++
     e.dcs.push({ value: d.value, s3: d.s3, price: c.price ?? null, stock: c.stock, available: free(c) })
   }

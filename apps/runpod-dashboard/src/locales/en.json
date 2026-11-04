@@ -567,8 +567,10 @@
     "noCards": "no cards in stock",
     "colDatacenter": "Datacenter",
     "colCards": "Card",
-    "cuda13": "needs CUDA 13",
-    "needsNewImage": "The image is built on CUDA 12.6; this card needs 12.8 or newer, so ComfyUI would not run on it until the image is rebuilt on a newer base (ADR-026).",
+    "cuda13": "not in the table",
+    "cu13image": "CUDA 13 image",
+    "cu13Tip": "A Blackwell card: the pod boots our CUDA 13 image (the -cu13 tag) on a host whose driver offers CUDA 13 (ADR-030).",
+    "needsNewImage": "Not in the app's card table: it can be chosen by its RunPod id, but whether the image runs on it is not known.",
     "noneIn": "Nothing in stock in {n} datacenters:"
   },
   "sync": {
