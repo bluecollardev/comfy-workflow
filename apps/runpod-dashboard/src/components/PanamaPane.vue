@@ -38,13 +38,23 @@
 
     <RoundFilesModal :round="browsing" :target="store.target" @close="browsing = ''" />
 
-    <!-- Pod download: asked first, because it uses a pod or starts one (ADR-022 decision 2, 2c, 2d) -->
-    <div v-if="store.confirming" class="alert alert-warning d-flex align-items-center gap-2 mt-2 mb-0 py-2 small" data-testid="panama-pod-confirm">
-      <i class="fa-solid fa-triangle-exclamation"></i>
-      <span class="flex-grow-1" data-testid="panama-pod-confirm-text">{{ planText(store.confirming.plan, 'pull') }}</span>
-      <BButton size="sm" variant="warning" data-testid="panama-pod-start" @click="store.confirmStart()">{{ $t('panama.podStart') }}</BButton>
-      <BButton size="sm" variant="outline-light" data-testid="panama-pod-cancel" @click="store.cancelConfirm()">{{ $t('panama.deleteNo') }}</BButton>
-    </div>
+    <!-- Pod download: asked first, in a window: do the work on your pod (started first if it is off) or on a sync-agent pod of the cheapest card (ADR-022 decision 2, 2c, 2d) -->
+    <BModal :model-value="!!store.confirming" :title="$t('panama.podTitle', { round: store.confirming?.round || '' })" no-footer @update:model-value="(v) => !v && store.cancelConfirm()" data-testid="panama-pod-confirm">
+      <template v-if="store.confirming?.plan">
+        <p class="small text-body-secondary mb-3" data-testid="panama-pod-confirm-text">{{ $t('panama.podAsk', { size: size(store.confirming.plan.bytes || 0), volume: store.confirming.plan.volume?.name || '' }) }}</p>
+        <div class="d-grid gap-2">
+          <button type="button" class="btn text-start pod-choice" :disabled="!store.confirming.plan.choices?.current" data-testid="panama-pod-current" @click="store.confirmStart('current')">
+            <strong><i class="fa-solid fa-server me-2"></i>{{ $t('panama.optCurrent') }}</strong>
+            <div class="small text-body-secondary">{{ currentText(store.confirming.plan.choices?.current) }}</div>
+          </button>
+          <button type="button" class="btn text-start pod-choice" data-testid="panama-pod-temporary" @click="store.confirmStart('temporary')">
+            <strong><i class="fa-solid fa-robot me-2"></i>{{ $t('panama.optAgent') }}</strong>
+            <div class="small text-body-secondary">{{ $t('panama.planTemporary', { gpu: store.confirming.plan.choices?.temporary?.gpu || store.confirming.plan.gpu || '', price: (store.confirming.plan.choices?.temporary?.price_per_hour ?? store.confirming.plan.price_per_hour) != null ? (store.confirming.plan.choices?.temporary?.price_per_hour ?? store.confirming.plan.price_per_hour).toFixed(2) : '?', minutes: store.confirming.plan.idle_stop_minutes }) }}</div>
+          </button>
+        </div>
+        <div class="text-end mt-3"><BButton size="sm" variant="outline-light" data-testid="panama-pod-cancel" @click="store.cancelConfirm()">{{ $t('panama.deleteNo') }}</BButton></div>
+      </template>
+    </BModal>
 
     <div v-if="store.removing" class="alert alert-danger d-flex align-items-center gap-2 mt-2 mb-0 py-2 small" data-testid="panama-delete-confirm">
       <i class="fa-solid fa-triangle-exclamation"></i>
@@ -113,6 +123,8 @@ const planText = (p, kind) => {
     gpu: p.gpu || '', price: p.price_per_hour != null ? p.price_per_hour.toFixed(2) : '?', volume: p.volume?.name || '', size: size(p.bytes || 0), minutes: p.idle_stop_minutes,
   })
 }
+/** What the "your pod" choice would do: use it, or start it first (it is off) and use it. */
+const currentText = (c) => !c ? t('panama.optCurrentNone') : t(c.running ? 'panama.optCurrentOn' : 'panama.optCurrentOff', { name: c.name, minutes: 15 })
 /** The staged round becomes the folder of the ordinary import, and the pane switches to it. */
 const use = (round) => {
   imports.folder = `${store.status.staging}/${round}`
@@ -151,4 +163,8 @@ watch(() => store.podAvailable, () => store.reload())
 <style scoped>
 .round-name { cursor: pointer; }
 .round-name:hover { text-decoration: underline; }
+.pod-choice { color: var(--bs-body-color); border: 1px solid var(--bs-border-color); background: transparent; }
+.pod-choice:hover:not(:disabled), .pod-choice:focus-visible { color: var(--bs-body-color); background: rgba(80, 140, 255, 0.18); border-color: #508cff; }
+.pod-choice .text-body-secondary { color: var(--bs-secondary-color) !important; }
+.pod-choice:disabled { opacity: 0.5; }
 </style>
