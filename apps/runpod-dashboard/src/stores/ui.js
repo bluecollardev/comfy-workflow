@@ -17,11 +17,12 @@ export const useUiStore = defineStore('ui', () => {
   const welcomeOpen = ref(false)  // the one-time 'import a configuration file or start from scratch' question on a new installation (docs/ADR-023)
   const configFocus = ref('')     // a section of Default Configuration to scroll to when it opens ('adapters', 'claude', 'import')
   const volumesOpen = ref(false)
+  const volumeDc = ref('')        // a datacenter the Volumes window preselects for a new volume (the pod form's "Create a volume in ...")
   // Help: the hints under the form's group headings, off by default; a per-viewer choice remembered in this browser.
   const hints = ref(false)
   try { hints.value = localStorage.getItem('runpod-manager.hints') === 'on' } catch { /* storage blocked: hints off */ }
   watch(hints, (v) => { try { localStorage.setItem('runpod-manager.hints', v ? 'on' : 'off') } catch { /* storage blocked */ } })
   const accountsOpen = computed({ get: () => connectOpen.value && connectTab.value === 'accounts', set: (v) => { if (v) connectTab.value = 'accounts'; connectOpen.value = v } })
   const repositoriesOpen = computed({ get: () => connectOpen.value && connectTab.value === 'repositories', set: (v) => { if (v) connectTab.value = 'repositories'; connectOpen.value = v } })
-  return { connectOpen, importOpen, importPod, importSource, importShown, connectTab, accountsOpen, repositoriesOpen, repositoriesVersion, configOpen, welcomeOpen, configFocus, volumesOpen, hints }
+  return { connectOpen, importOpen, importPod, importSource, importShown, connectTab, accountsOpen, repositoriesOpen, repositoriesVersion, configOpen, welcomeOpen, configFocus, volumesOpen, volumeDc, hints }
 })

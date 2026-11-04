@@ -73,7 +73,7 @@ test.describe('configuration', () => {
     await folderRow(dialog, 'project').getByTestId('folder-local').fill('/Users/lucas/Projects/CANALV2')
     await cfgTab(dialog, 'volume')
     await dialog.getByTestId('cfg-volume').selectOption('vol2')   // a volume of the account; picking it sets its datacenter
-    await expect(dialog.getByTestId('cfg-dc')).toHaveValue('CA-MTL-1')
+    await expect(dialog.getByTestId('cfg-dc')).toHaveAttribute('data-value', 'CA-MTL-1')
     await cfgTab(dialog, 'volume')   // the idle default sits with the volume and the image
     await dialog.getByTestId('cfg-idle').fill('45')
     await dialog.getByTestId('config-save').click()
@@ -125,20 +125,28 @@ test.describe('configuration', () => {
     await expect(toast(page).first()).toContainText(t('toast.failedWith', { label: t('toast.saveConfig'), error: 'plates: a folder is an absolute path on this PC' }))
   })
 
-  test('the datacenter is a menu from RunPod: S3 support and our cards at the secure-cloud price', async ({ page, api }) => {
+  test('the datacenter is chosen from a table of every card: by card (biggest first) or by datacenter, nothing hidden', async ({ page, api }) => {
     api.state.mounts.config.data_center_id = 'EU-RO-1'
     await page.goto('/')
     await page.getByTestId('open-config').click()
     await cfgTab(configModal(page), 'volume')
     const dc = page.getByTestId('cfg-dc')
-    await expect(dc).toHaveValue('EU-RO-1')
-    await expect(dc.locator('option')).toHaveText([t('config.datacenterAny'), 'CA-MTL-1 · A40 $0.35/h High', 'EU-RO-1 · RTX 4000 Ada $0.28/h Low, RTX 4090 $0.89/h High · S3', 'US-KS-2 · S3'])   // in-stock group first, then the S3 group, then none in stock
-    expect(await dc.locator('optgroup').evaluateAll((els) => els.map((e) => e.label))).toEqual([t('dc.groupOther'), t('dc.groupS3'), t('dc.groupNone')])   // S3 with stock, others with stock, nothing in stock
-    await dc.selectOption('EU-RO-1')
-    await expect(page.getByTestId('cfg-dc-card')).toHaveText(['RTX 4000 Ada20 GB$0.28/hLow', 'RTX 409024 GB$0.89/hHigh'])   // the read-only card table under the menu
-    await expect(page.getByTestId('cfg-dc-cards')).toContainText(t('config.cardsS3'))
-    await dc.selectOption('CA-MTL-1')
-    await expect(page.getByTestId('cfg-dc-card')).toHaveText(['A4048 GB$0.35/hHigh'])
+    await expect(dc).toHaveAttribute('data-value', 'EU-RO-1')
+    await expect(dc.getByTestId('dc-table-chosen')).toContainText('EU-RO-1')
+    await expect(dc.getByTestId('dc-table-chosen-cards')).toContainText('RTX 4090')   // the chosen datacenter's cards, not a warning
+    // by card is the default: the biggest card first, and where it is
+    expect(await dc.getByTestId('dc-card-row').evaluateAll((els) => els.map((e) => e.getAttribute('data-card')))).toEqual(['A40', 'RTX 4090', 'RTX 4000 Ada'])
+    await expect(dc.locator('[data-testid="dc-card-row"][data-card="RTX 4090"] [data-dc="EU-RO-1"]')).toContainText('S3')
+    await dc.locator('[data-testid="dc-chip"][data-card="A40"][data-dc="CA-MTL-1"]').click()   // a datacenter that has the card I want
+    await expect(dc).toHaveAttribute('data-value', 'CA-MTL-1')
+    // by datacenter: every datacenter listed, the ones with no card too
+    await dc.getByTestId('dc-view-dc').click()
+    expect(await dc.getByTestId('dc-table-row').evaluateAll((els) => [...new Set(els.map((e) => e.getAttribute('data-dc')))])).toEqual(['', 'EU-RO-1', 'CA-MTL-1', 'US-KS-2'])   // Any, then the datacenters
+    await expect(dc.locator('[data-testid="dc-table-row"][data-dc="CA-MTL-1"]').first()).toHaveClass(/chosen/)
+    await expect(dc.locator('[data-dc="US-KS-2"]')).toContainText(t('dc.noneListed'))
+    await dc.locator('[data-dc=""]').click()   // Any
+    await expect(dc).toHaveAttribute('data-value', '')
+    await dc.locator('[data-testid="dc-table-row"][data-dc="CA-MTL-1"]').first().click()
     await page.getByTestId('config-save').click()
     const put = api.calls.find((c) => c.method === 'PUT' && c.path === '/mounts')
     expect(put.body.data_center_id).toBe('CA-MTL-1')
@@ -152,7 +160,7 @@ test.describe('configuration', () => {
     await expect(page.getByTestId('cfg-volume-info')).toContainText(t('config.volumeInfo', { name: 'comfy-workspace', size: 120, dc: 'EU-RO-1', cost: 8.4 }))
     await expect(page.getByTestId('cfg-volume-info')).toContainText(t('config.volumeS3'))
     await expect(page.getByTestId('stat-storage')).toContainText('$8.40')   // the stats bar carries the monthly cost too
-    await page.getByTestId('cfg-dc').selectOption('CA-MTL-1')   // the menu follows the datacenter
+    await page.getByTestId('cfg-dc').locator('[data-testid="dc-chip"][data-dc="CA-MTL-1"]').first().click()   // the volume menu follows the datacenter
     await expect(page.getByTestId('cfg-volume').locator('option')).toHaveText([t('config.volumeNone'), 'scratch · 50 GB · vol2'])
     await page.getByTestId('cfg-volume').selectOption('vol2')
     await expect(page.getByTestId('cfg-volume-info')).toContainText(t('config.volumeInfo', { name: 'scratch', size: 50, dc: 'CA-MTL-1', cost: 3.5 }))

@@ -241,12 +241,13 @@ test.describe('create pod', () => {
     await expect(page.getByLabel('Per-pod volume (GB)')).toHaveValue('0')
   })
 
-  test('the datacenter is chosen on the form, or locked to the configuration\'s volume', async ({ page, api }) => {
+  test('the datacenter is chosen from the table on the form; a volume in another region is offered, not forced', async ({ page, api }) => {
     await page.goto('/')
     await openCreatePod(page)
     const dc = page.getByTestId('pod-datacenter')
-    await expect(dc).toBeEnabled()
-    await dc.selectOption('CA-MTL-1')
+    await expect(dc.getByTestId('dc-card-row').first()).toBeVisible()   // by card: where each card is
+    await dc.locator('[data-testid="dc-chip"][data-dc="CA-MTL-1"]').first().click()
+    await expect(dc).toHaveAttribute('data-value', 'CA-MTL-1')
     await expect.poll(() => api.calls.some((c) => c.path === '/gpus' && c.query.dc === 'CA-MTL-1')).toBe(true)   // the card prices follow the choice
     await page.locator('#pod-name').fill('Free')
     await page.locator('form button[type=submit]').click()
@@ -255,9 +256,21 @@ test.describe('create pod', () => {
     api.state.mounts.config.network_volume_id = 'vol1'; api.state.mounts.config.data_center_id = 'EU-RO-1'
     await page.reload()
     await openCreatePod(page)
-    await expect(dc).toBeDisabled()
-    await expect(dc).toHaveValue('EU-RO-1')
+    await expect(dc).toHaveAttribute('data-value', 'EU-RO-1')   // the volume's region is the default
     await expect(page.getByTestId('pod-datacenter-group')).toContainText(t('form.datacenterLocked', { dc: 'EU-RO-1' }))
+    await expect(page.getByTestId('pod-datacenter-other')).toHaveCount(0)
+    await expect(page.getByTestId('pod-mounts-group').locator('input')).toBeChecked()
+    await dc.locator('[data-testid="dc-chip"][data-dc="CA-MTL-1"]').first().click()   // another region: the pod goes without the volume, and the way to make one there is offered
+    await expect(page.getByTestId('pod-datacenter-other')).toContainText('CA-MTL-1')
+    await expect(page.getByTestId('pod-mounts-group').locator('input')).not.toBeChecked()
+    await page.getByTestId('pod-datacenter-newvolume').click()
+    await expect(page.getByTestId('volume-new-dc')).toHaveValue('CA-MTL-1')   // the Volumes window opens with that region chosen
+    await page.getByRole('dialog').getByRole('button', { name: t('volumes.done') }).click()
+    await expect(page.getByTestId('volume-new-dc')).toBeHidden()
+    await page.getByTestId('pod-datacenter-refresh').click()
+    await expect.poll(() => api.calls.some((c) => c.path === '/datacenters' && c.query.fresh === '1')).toBe(true)
+    await dc.locator('[data-testid="dc-chip"][data-dc="EU-RO-1"]').first().click()   // back to the volume's region: the volume returns
+    await expect(page.getByTestId('pod-mounts-group').locator('input')).toBeChecked()
   })
 
   test('a Help switch at the top shows the hints under the group headings', async ({ page }) => {

@@ -37,20 +37,54 @@ describe('the image a pod boots', () => {
 })
 
 describe('the datacenter menu', () => {
-  it('lists every listed datacenter with S3 support and our cards at the secure-cloud price, cheapest in stock first', async () => {
+  it('lists every card each listed datacenter runs, free or in use, with S3 support and the price where RunPod gave one; the datacenter with most free cards first', async () => {
     const fetchFn = (async (_url: string, init: RequestInit) => {
       const q = JSON.parse(String(init.body)).query as string
+      if (q.includes('gpuAvailability')) return new Response(JSON.stringify({ data: { dataCenters: [
+        { id: 'CA-MTL-1', listed: true, gpuAvailability: [{ gpuTypeId: 'NVIDIA A40', gpuTypeDisplayName: 'A40', available: true, stockStatus: 'High' }, { gpuTypeId: 'NVIDIA H100 PCIe', gpuTypeDisplayName: 'H100 PCIe', available: false, stockStatus: null }] },
+        { id: 'EU-RO-1', listed: true, gpuAvailability: [{ gpuTypeId: 'NVIDIA GeForce RTX 4090', gpuTypeDisplayName: 'RTX 4090', available: true, stockStatus: 'High' }, { gpuTypeId: 'NVIDIA RTX 4000 Ada Generation', gpuTypeDisplayName: 'RTX 4000 Ada', available: true, stockStatus: 'Low' }, { gpuTypeId: 'AMD Instinct MI300X OAM', gpuTypeDisplayName: 'MI300X', available: false, stockStatus: null }] },
+        { id: 'XX-OLD-1', listed: false, gpuAvailability: [] },
+      ] } }))
       if (q.includes('dataCenters { id listed }')) return new Response(JSON.stringify({ data: { dataCenters: [{ id: 'CA-MTL-1', listed: true }, { id: 'EU-RO-1', listed: true }, { id: 'XX-OLD-1', listed: false }] } }))
-      expect(q).toContain('dataCenterId:"EU-RO-1", secureCloud:true')
       return new Response(JSON.stringify({ data: {
-        dc_CA_MTL_1: [{ id: 'NVIDIA A40', lowestPrice: { uninterruptablePrice: 0.35, stockStatus: 'High' } }, { id: 'NVIDIA H100 PCIe', lowestPrice: { uninterruptablePrice: 2.5, stockStatus: 'High' } }],
-        dc_EU_RO_1: [{ id: 'NVIDIA GeForce RTX 4090', lowestPrice: { uninterruptablePrice: 0.89, stockStatus: 'High' } }, { id: 'NVIDIA RTX 4000 Ada Generation', lowestPrice: { uninterruptablePrice: 0.28, stockStatus: 'Low' } }, { id: 'NVIDIA RTX A4000', lowestPrice: { uninterruptablePrice: null, stockStatus: null } }],
+        dc_CA_MTL_1: [{ id: 'NVIDIA A40', lowestPrice: { uninterruptablePrice: 0.35, stockStatus: 'High' } }],
+        dc_EU_RO_1: [{ id: 'NVIDIA GeForce RTX 4090', lowestPrice: { uninterruptablePrice: 0.89, stockStatus: 'High' } }, { id: 'NVIDIA RTX 4000 Ada Generation', lowestPrice: { uninterruptablePrice: 0.28, stockStatus: 'Low' } }],
       } }))
     }) as unknown as typeof fetch
     const m = await pods.datacenters({ fetchFn, apiKey: 'k' })
-    expect(m.live).toBe(true); expect(m.datacenters.map((d) => d.value)).toEqual(['EU-RO-1', 'CA-MTL-1'])   // cheapest card first; the unlisted one is gone
-    expect(m.datacenters[0].s3).toBe(true); expect(m.datacenters[0].text).toBe('EU-RO-1 · RTX 4000 Ada $0.28/h Low, RTX 4090 $0.89/h High · S3')
-    expect(m.datacenters[1].s3).toBe(false); expect(m.datacenters[1].cards).toEqual([{ key: 'a40', name: 'A40', vram: 48, price: 0.35, stock: 'High' }, { key: 'h100pcie', name: 'H100 PCIe', vram: 80, price: 2.5, stock: 'High' }])   // the H100 is in the table since 2026-11-04 (explicit-only, but its stock is listed)
+    expect(m.live).toBe(true); expect(m.datacenters.map((d) => d.value)).toEqual(['EU-RO-1', 'CA-MTL-1'])   // 2 free cards before 1; the unlisted one is gone
+    expect(m.datacenters[0].s3).toBe(true); expect(m.datacenters[0].text).toBe('EU-RO-1 · 2 cards in stock: RTX 4000 Ada 20 GB $0.28/h Low, RTX 4090 24 GB $0.89/h High · S3')
+    expect(m.datacenters[0].cards.map((c) => [c.name, c.available, c.runs])).toEqual([['RTX 4000 Ada', true, true], ['RTX 4090', true, true], ['MI300X', false, false]])   // the busy AMD card is still there
+    expect(m.datacenters[0].cards[2]).toMatchObject({ stock: 'Out of stock', why: 'amd', price: null })
+    expect(m.datacenters[1].cards).toMatchObject([{ key: 'a40', available: true, price: 0.35 }, { key: 'h100pcie', name: 'H100 PCIe', vram: 80, available: false, stock: 'Out of stock', price: null }])   // an H100 in use is listed, not hidden
+  })
+
+  it('lists cards outside our table as not runnable on the image, a datacenter with nothing free with the count offered, and keeps every card when the price queries fail', async () => {
+    const fetchFn = (async (_url: string, init: RequestInit) => {
+      const q = JSON.parse(String(init.body)).query as string
+      if (q.includes('gpuAvailability')) return new Response(JSON.stringify({ data: { dataCenters: [
+        { id: 'AP-JP-1', listed: true, gpuAvailability: [{ gpuTypeId: 'NVIDIA H200', gpuTypeDisplayName: 'H200 SXM', available: true, stockStatus: 'Low' }, { gpuTypeId: 'NVIDIA H100 80GB HBM3', gpuTypeDisplayName: 'H100 SXM', available: true, stockStatus: 'Low' }] },
+        { id: 'EUR-IS-2', listed: true, gpuAvailability: [{ gpuTypeId: 'NVIDIA RTX PRO 6000 Blackwell Server Edition', gpuTypeDisplayName: 'RTX PRO 6000', available: true, stockStatus: 'Low' }] },
+        { id: 'US-TX-3', listed: true, gpuAvailability: [{ gpuTypeId: 'NVIDIA A40', gpuTypeDisplayName: 'A40', available: false, stockStatus: null }, { gpuTypeId: 'NVIDIA H100 80GB HBM3', gpuTypeDisplayName: 'H100 SXM', available: false, stockStatus: null }] },
+      ] } }))
+      throw new Error('RunPod 500')   // the price queries all fail
+    }) as unknown as typeof fetch
+    const m = await pods.datacenters({ fetchFn, apiKey: 'k' })
+    expect(m.datacenters.map((d) => d.value)).toEqual(['AP-JP-1', 'EUR-IS-2', 'US-TX-3'])   // 2 free, then 1, then none
+    expect(m.datacenters[0].cards.map((c) => [c.key, c.vram, c.price])).toEqual([['h200', 141, null], ['h100', 80, null]])   // listed with their sizes though no price came
+    expect(m.datacenters[1].cards[0]).toMatchObject({ name: 'RTX PRO 6000', vram: 96, runs: false, why: 'cuda13' })
+    expect(m.datacenters[1].text).toBe('EUR-IS-2 · 1 card in stock: RTX PRO 6000 96 GB Low (needs CUDA 13)')
+    expect(m.datacenters[2].text).toBe('US-TX-3 · no cards in stock (2 offered)')   // the H100 and the A40 are still in its cards
+    expect(m.datacenters[2].cards).toHaveLength(2)
+  })
+})
+
+describe('the registry credential', () => {
+  it('goes to RunPod with the mounts and without them: a private image needs it either way', () => {
+    const cfg = mounts.validate(mounts.normalize({ ...mounts.load(), registry_auth_id: 'auth123', apply_by_default: true }))
+    expect(pods.plan({ name: 't', apply_mounts: true }, cfg).input.containerRegistryAuthId).toBe('auth123')
+    expect(pods.plan({ name: 't', apply_mounts: false }, cfg).input.containerRegistryAuthId).toBe('auth123')
+    expect(pods.plan({ name: 't', apply_mounts: false }, mounts.validate(mounts.normalize({ ...cfg, registry_auth_id: '' }))).input.containerRegistryAuthId).toBeUndefined()
   })
 })
 

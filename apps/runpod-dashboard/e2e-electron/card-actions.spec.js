@@ -81,7 +81,7 @@ test.describe('card actions over IPC', () => {
     await expect(volumes).toBeHidden()
     await page.getByTestId('open-config').click()
     const dialog = page.locator('.modal.show', { has: page.getByTestId('config-modal') })
-    await expect(dialog.getByTestId('cfg-dc')).toHaveValue('EU-RO-1')
+    await expect(dialog.getByTestId('cfg-dc')).toHaveAttribute('data-value', 'EU-RO-1')
     await expect(dialog.getByTestId('cfg-volume').locator('option', { hasText: 'sim-vol' })).toHaveCount(1)
     await dialog.getByTestId('config-close').click()
   })

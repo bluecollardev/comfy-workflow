@@ -96,6 +96,7 @@ const dcOptions = computed(() => datacenterOptions(dcList.value, { value: '', te
 async function open() {
   store.load()
   try { dcList.value = (await podsAPI.datacenters()).datacenters || [] } catch { /* the menu stays empty; the id can still be typed in Default Configuration */ }
+  if (ui.volumeDc) { draft.datacenter = ui.volumeDc; ui.volumeDc = '' }   // chosen on the pod form
 }
 async function create() {
   const r = await store.create({ name: draft.name, size_gb: Number(draft.size_gb), datacenter: draft.datacenter })

@@ -15,7 +15,7 @@ Asking RunPod's `gpuTypes` showed the shortage was real and wider than the table
 1. **Seven big cards join the table by name**, with their RunPod ids confirmed against `gpuTypes` on the day: `l40s` (NVIDIA L40S, 48 GB), `rtx6000ada` (NVIDIA RTX 6000 Ada Generation, 48 GB), `a100pcie` (NVIDIA A100 80GB PCIe), `a100` (NVIDIA A100-SXM4-80GB), `h100pcie` (NVIDIA H100 PCIe), `h100` (NVIDIA H100 80GB HBM3, the SXM), `h200` (NVIDIA H200, 141 GB). They are Hopper, Ampere and Ada, so the image's CUDA 12.6 runs them.
 2. **They are explicit-only.** Each carries `explicit: true`. `auto` picks "the cheapest card in stock" and falls to the next one when a create fails; with these in its pool, a shortage of small cards (today's) would have landed a pod on a card at several times a 4090's rate without anyone choosing it. `auto` now draws from `gpus.autoCards()`, the original ten. The menu marks the new ones "pick by name".
 3. **The Blackwell cards stay out** (RTX 5090, RTX PRO 4500/6000, B200, B300). The image is built on CUDA 12.6 and they need 12.8 or newer; a pod on one starts and then cannot run ComfyUI work (ADR-025 saw `sm_120 is not compatible`). They need an image built with `build.sh --base pytorch/pytorch:2.12.1-cuda13.0-cudnn9-runtime` first.
-4. **The datacenter list shows the new cards' stock**, because it prices every card of the table.
+4. **The datacenter list shows the new cards' stock**, because it prices every card of the table. ([ADR-027](./ADR-027-datacenter-is-chosen-by-card.md) then lists every card RunPod runs, free or busy.)
 
 ## What was in stock (2026-11-04, about 13:15 local, secure cloud, all `Low`)
 
@@ -43,7 +43,7 @@ Seventeen datacenters had nothing. No datacenter had more than two cards. Elsewh
 ## Not decided
 
 - Whether to build the CUDA 13 image so the volume's datacenter becomes usable (the RTX PRO 6000, 96 GB, $2.49/h).
-- Whether to hold a second volume next to the Hopper cards (AP-JP-1 has the H200 and the H100) and what it costs per month.
+- A second volume next to the Hopper cards: decided in [ADR-027](./ADR-027-datacenter-is-chosen-by-card.md), a new volume is made for whichever region is chosen; what it costs per month and how the models get there are open there.
 - A way to wait for a card: today a retry loop is a script, not a feature of the app.
 - Prices are RunPod's secure-cloud rate on the day; the USD 100 agent cap is far closer at $4 to $9 an hour than at a 4090's $0.89.
 

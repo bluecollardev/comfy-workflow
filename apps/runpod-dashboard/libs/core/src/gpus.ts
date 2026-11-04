@@ -44,9 +44,11 @@ export function runpodId(key: string): string {
   throw new Error(`unknown GPU ${JSON.stringify(key)}; options: ${Object.keys(GPUS).join(', ')}`)
 }
 
+/** Cards outside the table that a datacenter list or a pod can still show (Blackwell and others, by RunPod's display name), so a pod on one reports its real memory and not a default. */
+export const OTHER_VRAM: Record<string, number> = { B200: 180, B300: 288, 'RTX PRO 6000': 96, 'RTX PRO 6000 WK': 96, 'RTX PRO 6000 MaxQ': 96, 'RTX PRO 4500': 32, 'RTX 5090': 32, 'PRO 6000 MIG 24GB': 24, 'PRO 6000 MIG 48GB': 48, 'H100 NVL': 94, 'H200 NVL': 143, 'A100 SXM 40GB': 40 }
 export function vram(key: string): number {
   for (const [k, g] of Object.entries(GPUS)) if (key === k || key === g.id || key === g.name) return g.vram   // RunPod's gpuDisplayName is the short name
-  return 0
+  return OTHER_VRAM[key] ?? 0
 }
 
 export const menu = () => [{ value: AUTO, text: 'Cheapest card in stock (16-48 GB)' }, ...Object.entries(GPUS).map(([value, g]) => ({ value, text: `${g.name} (${g.vram} GB)${g.explicit ? ' · pick by name' : ''}` }))]

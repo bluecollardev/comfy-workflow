@@ -32,7 +32,7 @@ const ipc = core && {
   createPod: (podData) => core.invoke('pods', 'create', [toRequest(podData)]),
   gpus: (dc) => core.invoke('pods', 'gpus', [dc || '']),
   volume: (id) => core.invoke('pods', 'volume', [id || '']),
-  datacenters: () => core.invoke('pods', 'datacenters'),
+  datacenters: (fresh) => core.invoke('pods', 'datacenters', [!!fresh]),
   setIdle: (id, minutes) => core.invoke('pods', 'setIdle', [id, minutes]),
   stopPod: (id) => core.invoke('pods', 'stop', [id]),
   resumePod: (id) => core.invoke('pods', 'resume', [id]),
@@ -72,8 +72,8 @@ const http = {
     const { data } = await axios.get(`${API_BASE}/volumes/${encodeURIComponent(id)}`);
     return data;
   },
-  async datacenters() {
-    const { data } = await axios.get(`${API_BASE}/datacenters`);
+  async datacenters(fresh) {
+    const { data } = await axios.get(`${API_BASE}/datacenters`, { params: fresh ? { fresh: 1 } : undefined });
     return data;
   },
 
