@@ -63,10 +63,24 @@
 
       <BTab :title="$t('history.tabJobs')" data-testid="history-tab-jobs">
         <div v-if="!jobEvents.length" class="text-body-secondary" data-testid="history-jobs-empty">{{ $t('history.noJobs') }}</div>
+        <template v-else>
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-2" data-testid="history-jobs-filters">
+          <BFormSelect v-model="jobKind" size="sm" class="w-auto" :aria-label="$t('history.filterKind')" :options="jobKindOptions" data-testid="history-jobs-kind" />
+          <BFormSelect v-model="jobState" size="sm" class="w-auto" :aria-label="$t('history.filterState')" :options="[{ value: '', text: $t('history.anyState') }, { value: 'done', text: $t('history.stateDone') }, { value: 'failed', text: $t('history.stateFailed') }, { value: 'cancelled', text: $t('history.stateCancelled') }]" data-testid="history-jobs-state" />
+          <BFormSelect v-model="jobVia" size="sm" class="w-auto" :aria-label="$t('history.filterVia')" :options="[{ value: '', text: $t('history.anyVia') }, { value: 'app', text: $t('history.viaApp') }, { value: 'mcp', text: $t('history.viaMcp') }]" data-testid="history-jobs-via" />
+          <div class="input-group input-group-sm w-auto">
+            <input v-model="jobText" type="text" class="form-control" :placeholder="$t('history.filterText')" :aria-label="$t('history.filterText')" data-testid="history-jobs-text" @keydown.esc="jobText = ''" />
+            <button v-if="jobText" type="button" class="btn btn-outline-secondary" :title="$t('history.filterClear')" :aria-label="$t('history.filterClear')" data-testid="history-jobs-text-clear" @click="jobText = ''"><i class="fa-solid fa-xmark"></i></button>
+          </div>
+          <BFormCheckbox v-model="showConfig" switch class="small mb-0" data-testid="history-jobs-show-config">{{ $t('history.showConfig', { n: configCount }) }}</BFormCheckbox>
+          <BButton v-if="jobsFiltered" size="sm" variant="outline-secondary" data-testid="history-jobs-clear" @click="clearJobFilters">{{ $t('history.clearFilters') }}</BButton>
+          <span class="small text-body-secondary ms-auto" data-testid="history-jobs-count">{{ $t('history.filterCount', { n: shownJobs.length, of: jobEvents.length - (showConfig ? 0 : configCount) }) }}</span>
+        </div>
+        <div v-if="!shownJobs.length" class="text-body-secondary" data-testid="history-jobs-nomatch">{{ $t('history.noMatch') }}</div>
         <table v-else class="table table-sm align-middle" data-testid="history-jobs">
           <thead><tr><th>{{ $t('history.time') }}</th><th>{{ $t('history.jobKind') }}</th><th>{{ $t('history.what') }}</th><th>{{ $t('history.pod') }}</th><th>{{ $t('history.state') }}</th><th>{{ $t('history.size') }}</th><th>{{ $t('history.error') }}</th><th>{{ $t('history.via') }}</th></tr></thead>
           <tbody>
-            <tr v-for="(e, i) in jobEvents" :key="i" :data-testid="e.kind === 'change' ? 'history-change-row' : 'history-job-row'">
+            <tr v-for="(e, i) in shownJobs" :key="i" :data-testid="e.kind === 'change' ? 'history-change-row' : 'history-job-row'">
               <td class="text-nowrap">{{ when(e.ts) }}</td>
               <td v-if="e.kind === 'change'"><BBadge variant="warning" data-testid="history-change-area">{{ $t(`history.area_${e.area}`) }}</BBadge></td>
               <td v-else>{{ e.job }}</td>
@@ -80,6 +94,7 @@
             </tr>
           </tbody>
         </table>
+        </template>
       </BTab>
 
       <BTab :title="$t('history.tabRuns')" data-testid="history-tab-runs">
@@ -214,6 +229,32 @@ const logBox = ref(null)
 let pinned = true                     // follow the newest line unless the user scrolled up
 
 const podEvents = computed(() => events.value.filter((e) => e.kind === 'pod'))
+/** The filters of Jobs & Changes: kind (a job kind, a change area, or just jobs / changes), state (jobs only), where it came from, and a text found in what, pod, detail, error or tool. */
+const jobKind = ref('')
+const jobState = ref('')
+const jobVia = ref('')
+const jobText = ref('')
+const jobKindOptions = computed(() => [{ value: '', text: t('history.anyKind') }, { value: 'jobs', text: t('history.kindJobs') }, { value: 'changes', text: t('history.kindChanges') }, ...['pull', 'sync', 'remove'].map((k) => ({ value: `job:${k}`, text: k })), ...['volume', 'configuration', 'import', 'adapter'].map((a) => ({ value: `area:${a}`, text: t(`history.area_${a}`) }))])
+/** Configuration saves are frequent and rarely the point: hidden unless asked for (the switch, or the Configuration kind picked). Remembered. */
+const showConfig = ref(localStorage.getItem('history.showConfig') === '1')
+watch(showConfig, (v) => localStorage.setItem('history.showConfig', v ? '1' : '0'))
+const configCount = computed(() => events.value.filter((e) => e.kind === 'change' && e.area === 'configuration').length)
+const jobsFiltered = computed(() => !!(jobKind.value || jobState.value || jobVia.value || jobText.value.trim()))
+const clearJobFilters = () => { jobKind.value = ''; jobState.value = ''; jobVia.value = ''; jobText.value = '' }
+const shownJobs = computed(() => {
+  const q = jobText.value.trim().toLowerCase()
+  const k = jobKind.value
+  return jobEvents.value.filter((e) => {
+    if (e.kind === 'change' && e.area === 'configuration' && !showConfig.value && k !== 'area:configuration') return false
+    if (k === 'jobs' && e.kind !== 'job') return false
+    if (k === 'changes' && e.kind !== 'change') return false
+    if (k.startsWith('job:') && !(e.kind === 'job' && e.job === k.slice(4))) return false
+    if (k.startsWith('area:') && !(e.kind === 'change' && e.area === k.slice(5))) return false
+    if (jobState.value && !(e.kind === 'job' && e.state === jobState.value)) return false   // a change has no state: a state filter is about jobs
+    if (jobVia.value && (e.source || 'app') !== jobVia.value) return false
+    return !q || [e.what, e.pod_name, e.detail, e.error, e.action, e.tool, e.job, e.area, e.approved_by].some((x) => x && String(x).toLowerCase().includes(q))
+  })
+})
 const jobEvents = computed(() => events.value.filter((e) => e.kind === 'job' || e.kind === 'change').sort((a, b) => String(b.ts).localeCompare(String(a.ts))))
 const runningPods = computed(() => pods.pods.filter((p) => p.status === 'running'))
 const shownLog = computed(() => {

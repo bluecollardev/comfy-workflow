@@ -57,6 +57,7 @@ export function defaultState() {
         { ts: '2026-11-03T12:30:00Z', kind: 'pod', action: 'stopped', pod_id: 'pod-aaaaaaaa', name: 'ComfyUI-Dev', gpu: 'RTX 4090', datacenter: 'EU-RO-1', source: 'mcp', tool: 'create_pod', approved_by: 'Lucas' },
         { ts: '2026-11-03T13:00:00Z', kind: 'job', job: 'pull', state: 'done', what: 'round-3', pod_name: 'ComfyUI-Dev', files: 12, bytes: 3145728 },
         { ts: '2026-11-03T13:30:00Z', kind: 'job', job: 'sync', state: 'failed', what: 'ComfyUI-Shared', pod_name: 'ComfyUI-Dev', error: 'rsync: connection reset' },
+        { ts: '2026-11-03T14:30:00Z', kind: 'change', area: 'configuration', action: 'saved', what: 'Default Configuration' },
         { ts: '2026-11-03T14:00:00Z', kind: 'change', area: 'volume', action: 'resized', what: 'comfy-workspace', detail: '120 GB to 200 GB', source: 'mcp', tool: 'resize_volume', approved_by: 'Lucas' },
       ],
       spend: { total: 1.73, running_now: 1, sessions: [{ pod_id: 'pod-aaaaaaaa', name: 'ComfyUI-Dev', gpu: 'RTX 4090', datacenter: 'EU-RO-1', cost_per_hr: 0.69, from: '2026-11-03T10:00:00Z', to: '2026-11-03T12:30:00Z', hours: 2.5, cost: 1.73 }], by_day: [{ day: '2026-11-03', cost: 1.73, hours: 2.5 }], note: 'Worked out from recorded events; RunPod bills the truth.' },
