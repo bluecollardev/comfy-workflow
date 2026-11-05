@@ -23,6 +23,8 @@ serves is in `README.md`, "Goal".
 **Jobs.** `queue/<project>/in/` holds job files; run one per session the way
 `shared/governance/operator-brief.md` says, moving it to `running/` then `done/`.
 
+**Running a BH shot on a pod.** `docs/RUNBOOK-ai-shot-generation.md`, through the `pod-manager` MCP only; update its Log in the same session whenever a step is proven or fails.
+
 **Start here.** `shared/governance/README.md` for precedence and what is where;
 `CLAUDE.md` for conventions and commands; `./start.sh` for running things;
 `docs/ADR-004-where-the-workflows-run.md` for which machine does what.
