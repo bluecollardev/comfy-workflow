@@ -16,6 +16,20 @@
 4. **One codebase, no second runtime**: the Python API retired, the core in
    TypeScript, the merge gate green (`docs/ADR-005`).
 
+## Important, open: AI-generated shots through MCP (ADR-034), cgi-042 first
+
+As of 2026-11-05. The requirement is `docs/ADR-034-shots-are-generated-by-ai-through-mcp.md`; the script and the Log are `docs/runbooks/shot-stereo-conversion.md`. Proven so far: the latest approved cgi-042 final found and hash-checked (`fe53cada…4630`, round `brynley-comfy-2026-10-22`), an H100 pod on `comfy-h100-apin1`, the round pulled and verified, its inputs and graphs placed (156 files hard-linked, ADR-033), the ComfyUI bridge pointed at the pod with the Binc/Stereo nodes present. **Not done: any stereo has been generated.**
+
+To do, in order:
+1. **Decide with Lucas** (blocking): the depth source (reuse his 241-frame `06-stereo/v03-depth-current` on the Mac, or regenerate with Depth Anything V2: weights on the pod unchecked); the parallax budget and screen plane (near, far, convergence); a go-ahead for a 5-frame test (about USD 0.06 at 3.99/h).
+2. **Build the stereo production graph** from `shared/nodes/portable/ComfyUI-BincStereo/workflows/binc-stereo-sequence-chain.json` (BH has none; their graph in the round is the history graph and is not rewired). Test on 5 frames through the bridge, check the parallax and hole report, then the full 241 frames.
+3. **A 16-bit TIFF eye output**, untagged, the final's raster, one file per frame, left and right (BH's return spec). `SaveImage` writes 8-bit PNG, so this needs a node or tool, tested.
+4. **Bring the output home and say where it is**: a pull of an arbitrary output folder plus a manifest (sha256 + bytes); Lucas asks for the output and gets files, a short report and the pod stopped.
+5. **Return to BH** (`returns/brynley-comfy-2026-10-22/cgi-042/`, manifest `bh-return-1`): a `panama_return` tool behind Lucas's named yes. Nothing is uploaded without it.
+6. **Close the MCP gaps** in ADR-034's table: `panama_read` (one small bucket file), a compact `panama_job` progress view, and the stale-tools problem (the stdio server needs a `/mcp` reconnect after a new tool).
+7. **Keep every runbook in `docs/runbooks/` current** as each step is run; a step counts as done only when its Log shows it ran.
+8. **Stop the pod `cgi-042` (`3h25wd2p4es40i`, USD 3.99/h, idle stop 360 min) when work pauses**; the idle watch only runs while the app is open.
+
 ## Next steps: importing the CANALV2 graphs
 
 Open work only, as of the evening of 2026-10-19. Done items are in
