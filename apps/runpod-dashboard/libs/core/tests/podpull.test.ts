@@ -400,7 +400,7 @@ describe('placing the round after a pull (ADR-033)', () => {
     const job = await done((await podpull.pull(ROUND, base({ client: rp.client, ssh: sshFor(GOOD, seen) }))).id)
     expect(job.state).toBe('done')
     expect(job.place).toMatchObject({ ok: true, linked: 4, mode: 'hardlink', dry_run: false })
-    expect(seen.length).toBe(3); expect(seen[1]).toContain(`PLACE_ROUND='${ROUND}'`); expect(seen[2]).toContain('PLACE_PAYLOAD')
+    expect(seen.length).toBe(3); expect(seen[1]).toContain(`PLACE_ROUND='${ROUND}'`); expect(seen[2]).toContain("PLACE_PAYLOAD_FILE")
     expect(seen[1]).not.toContain(KEY_SECRET); expect(seen[2]).not.toContain(KEY_SECRET)   // placing holds no secret
     expect(job.lines.join('\n')).toContain('placed 4 file(s)')
   })
@@ -422,7 +422,7 @@ describe('placing the round after a pull (ADR-033)', () => {
     const ssh = sshFor([], seen)
     const dryRep = await podpull.placeRound(ROUND, {}, base({ client: rp.client, ssh }))
     expect(dryRep.dry_run).toBe(true); 
-    expect(Buffer.from(/PLACE_PAYLOAD='([^']+)'/.exec(seen[1])![1], 'base64').toString()).toContain('"dry":true')
+    expect(Buffer.from(/<<'PLACE_B64'\n([^\n]+)\nPLACE_B64/.exec(seen[1])![1], 'base64').toString()).toContain('"dry":true')
     const real = await podpull.placeRound(ROUND, { pod_id: 'mine', dry_run: false }, base({ client: rp.client, ssh }))
     expect(real.dry_run).toBe(false)
     await expect(podpull.placeRound(ROUND, { pod_id: 'nope' }, base({ client: rp.client, ssh }))).rejects.toThrow(/not found/)

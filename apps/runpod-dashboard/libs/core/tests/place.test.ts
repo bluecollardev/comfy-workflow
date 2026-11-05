@@ -106,6 +106,17 @@ describe('place.run on a (local stand-in for the) pod', () => {
     expect(existsSync(join(root, 'input', fixed.nodes[1].widgets_values[0]))).toBe(true)
   })
 
+  it('a big graph works: the real ones are over 100 KB, twice in the payload, past what one environment string can hold', async () => {
+    const root = tmp(); stage(root)
+    const w = join(root, 'temp/rounds', ROUND, 'cgi-042/comfy/workflows')
+    const nodes = Array.from({ length: 4000 }, (_, k) => ({ id: k + 10, type: 'Note', widgets_values: ['x'.repeat(40)] }))
+    put(join(w, 'g.json'), JSON.stringify({ nodes: [{ id: 1, type: 'LoadImage', widgets_values: ['shots/cgi-042/a.png', 'image'] }, ...nodes] }))
+    expect(statSync(join(w, 'g.json')).size).toBeGreaterThan(200_000)
+    const r = await place.run(ROUND, { host: 'h', port: 1, ssh: localSsh(root), dry_run: false })
+    expect(r).toMatchObject({ ok: true, rewritten: 1 })
+    expect(statSync(join(root, 'workflows/rounds', ROUND, 'g.json')).size).toBeGreaterThan(200_000)
+  })
+
   it('is idempotent: a second run links nothing and changes nothing', async () => {
     const root = tmp(); stage(root)
     await place.run(ROUND, { host: 'h', port: 1, ssh: localSsh(root), dry_run: false })
