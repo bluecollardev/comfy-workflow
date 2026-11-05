@@ -37,6 +37,12 @@ The pull had worked (15.2 GB, 1,402 files, manifest verified). The cause is wher
 - A pull places on the same SSH session target: the user's pod directly; a temporary pod is waited for up to 3 minutes to expose SSH (a pod without SSH fails the placing, not the pull) and is deleted afterwards as before. A conflict names the path and both sizes; naming the other round would need a record the volume does not keep.
 - Measured: not yet on the real volume (no pod was touched while building this). The hard-link question stays open until the first real run: the report's `mode` says `hardlink` or `copy`.
 
+## Amendment 2026-11-05: graph values are flat unique names (the default)
+
+Found on the pod: ComfyUI's `LoadImage`/`LoadVideo` dropdowns list only the **top-level** files of `input/` (the pod listed two), and the frontend's "Missing Inputs" check compares a node's value with that list. So all 28 loaders of the cgi-042 graph were flagged red ("28 nodes, 28 missing inputs") even though the backend loaded them (the previews render, and a bridge run with a subfolder path validated and ran). A graph that is to open clean in the window must name files the dropdown lists.
+- **Decision:** placing also hard-links each loaded file at the top of `input/` as `<shot>__<file stem>__<first 8 of the manifest sha256>.<ext>` (`flatName`), and the corrected graph copy uses that name. Unique by content (a different file of the same name in another round gets another name, so there is no conflict to resolve) and stable (the same file always gets the same name). The `rounds/<round>/…` and shipped-path links stay, so older graphs and API runs keep working.
+- `names: 'round'` keeps the earlier form (`rounds/<round>/<path>`) for callers that want it; flat is the default.
+
 ## Consequences
 
 - A pulled round opens in ComfyUI with its inputs found, with no shell step. The cgi-042 case becomes: pull the 10-22 round, open `workflows/rounds/brynley-comfy-2026-10-22/cgi-042-common-nodes-v13-delivery-20261020.json`.

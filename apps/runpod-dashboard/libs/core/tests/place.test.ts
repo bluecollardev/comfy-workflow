@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -84,7 +84,7 @@ const tmp = () => mkdtempSync(join(tmpdir(), 'place-'))
 describe('place.run on a (local stand-in for the) pod', () => {
   it('a dry run reports and writes nothing', async () => {
     const root = tmp(); stage(root)
-    const r = await place.run(ROUND, { host: 'h', port: 1, ssh: localSsh(root) })   // dry_run defaults to true
+    const r = await place.run(ROUND, { host: 'h', port: 1, ssh: localSsh(root), names: 'round' })   // dry_run defaults to true
     expect(r.dry_run).toBe(true); expect(r.ok).toBe(true)
     expect(r.linked).toBe(4)   // two files, each at the round path and as shipped
     expect(r.graphs.map((g) => g.name)).toEqual(['g.json']); expect(r.rewritten).toBe(2)
@@ -93,7 +93,7 @@ describe('place.run on a (local stand-in for the) pod', () => {
 
   it('links the inputs twice (hard links), writes the corrected graph and the as-delivered one, and the paths then exist', async () => {
     const root = tmp(); const graph = stage(root)
-    const r = await place.run(ROUND, { host: 'h', port: 1, ssh: localSsh(root), dry_run: false })
+    const r = await place.run(ROUND, { host: 'h', port: 1, ssh: localSsh(root), dry_run: false, names: 'round' })
     expect(r).toMatchObject({ ok: true, mode: 'hardlink', linked: 4, already_there: 0, conflicts: [], missing: [] })
     const src = join(root, 'temp/rounds', ROUND, 'cgi-042/comfy/input/shots/cgi-042/a.png')
     expect(readFileSync(join(root, 'input/shots/cgi-042/a.png'), 'utf8')).toBe('AAAA')
@@ -112,16 +112,16 @@ describe('place.run on a (local stand-in for the) pod', () => {
     const nodes = Array.from({ length: 4000 }, (_, k) => ({ id: k + 10, type: 'Note', widgets_values: ['x'.repeat(40)] }))
     put(join(w, 'g.json'), JSON.stringify({ nodes: [{ id: 1, type: 'LoadImage', widgets_values: ['shots/cgi-042/a.png', 'image'] }, ...nodes] }))
     expect(statSync(join(w, 'g.json')).size).toBeGreaterThan(200_000)
-    const r = await place.run(ROUND, { host: 'h', port: 1, ssh: localSsh(root), dry_run: false })
+    const r = await place.run(ROUND, { host: 'h', port: 1, ssh: localSsh(root), dry_run: false, names: 'round' })
     expect(r).toMatchObject({ ok: true, rewritten: 1 })
     expect(statSync(join(root, 'workflows/rounds', ROUND, 'g.json')).size).toBeGreaterThan(200_000)
   })
 
   it('is idempotent: a second run links nothing and changes nothing', async () => {
     const root = tmp(); stage(root)
-    await place.run(ROUND, { host: 'h', port: 1, ssh: localSsh(root), dry_run: false })
+    await place.run(ROUND, { host: 'h', port: 1, ssh: localSsh(root), dry_run: false, names: 'round' })
     const before = readFileSync(join(root, 'workflows/rounds', ROUND, 'g.json'), 'utf8')
-    const r = await place.run(ROUND, { host: 'h', port: 1, ssh: localSsh(root), dry_run: false })
+    const r = await place.run(ROUND, { host: 'h', port: 1, ssh: localSsh(root), dry_run: false, names: 'round' })
     expect(r).toMatchObject({ ok: true, linked: 0, already_there: 4, conflicts: [] })
     expect(readFileSync(join(root, 'workflows/rounds', ROUND, 'g.json'), 'utf8')).toBe(before)
   })
@@ -129,7 +129,7 @@ describe('place.run on a (local stand-in for the) pod', () => {
   it('a different file already at the shipped path is a conflict: reported, never replaced; the round copy is still made', async () => {
     const root = tmp(); stage(root)
     put(join(root, 'input/shots/cgi-042/a.png'), 'OLD-DIFFERENT')
-    const r = await place.run(ROUND, { host: 'h', port: 1, ssh: localSsh(root), dry_run: false })
+    const r = await place.run(ROUND, { host: 'h', port: 1, ssh: localSsh(root), dry_run: false, names: 'round' })
     expect(r.conflicts).toEqual([{ path: 'shots/cgi-042/a.png', where: 'shipped', existing_size: 13, round_size: 4 }])
     expect(readFileSync(join(root, 'input/shots/cgi-042/a.png'), 'utf8')).toBe('OLD-DIFFERENT')
     expect(readFileSync(join(root, 'input/rounds', ROUND, 'shots/cgi-042/a.png'), 'utf8')).toBe('AAAA')
@@ -141,7 +141,7 @@ describe('place.run on a (local stand-in for the) pod', () => {
     const g = join(root, 'temp/rounds', ROUND, 'cgi-042/comfy/workflows')
     put(join(g, 'g-inputs-manifest.json'), JSON.stringify({ 'shots/cgi-042/a.png': {}, 'shots/cgi-042/v.mp4': {}, 'shots/cgi-042/gone.png': {} }))
     put(join(g, 'g.json'), JSON.stringify({ nodes: [{ id: 1, type: 'LoadImage', widgets_values: ['shots/cgi-042/gone.png', 'image'] }] }))
-    const r = await place.run(ROUND, { host: 'h', port: 1, ssh: localSsh(root), dry_run: false })
+    const r = await place.run(ROUND, { host: 'h', port: 1, ssh: localSsh(root), dry_run: false, names: 'round' })
     expect(r.ok).toBe(false); expect(r.missing).toEqual(['shots/cgi-042/gone.png'])
   })
 
@@ -149,6 +149,27 @@ describe('place.run on a (local stand-in for the) pod', () => {
     const root = tmp()
     const r = await place.run(ROUND, { host: 'h', port: 1, ssh: localSsh(root) })
     expect(r.ok).toBe(false); expect(r.error).toContain('not on the volume')
+  })
+
+  it('flat names (the default): the graph holds one unique bare name that ComfyUI\'s dropdown can list, hard-linked at the top of input/', async () => {
+    const root = tmp(); stage(root)
+    const w = join(root, 'temp/rounds', ROUND, 'cgi-042/comfy/workflows')
+    put(join(w, 'g-inputs-manifest.json'), JSON.stringify({ 'shots/cgi-042/a.png': { sha256: 'abcdef0123456789' }, 'shots/cgi-042/v.mp4': { sha256: '99887766aabb' } }))
+    const r = await place.run(ROUND, { host: 'h', port: 1, ssh: localSsh(root), dry_run: false })
+    expect(r).toMatchObject({ ok: true, conflicts: [], missing: [], rewritten: 2 })
+    const g = JSON.parse(readFileSync(join(root, 'workflows/rounds', ROUND, 'g.json'), 'utf8'))
+    expect(g.nodes[0].widgets_values[0]).toBe('cgi-042__a__abcdef01.png'); expect(g.nodes[1].widgets_values[0]).toBe('cgi-042__v__99887766.mp4')
+    expect(readFileSync(join(root, 'input/cgi-042__a__abcdef01.png'), 'utf8')).toBe('AAAA')
+    expect(readdirSync(join(root, 'input')).filter((f) => statSync(join(root, 'input', f)).isFile()).sort()).toEqual(['cgi-042__a__abcdef01.png', 'cgi-042__v__99887766.mp4'])   // top-level files: what the dropdown lists
+    const again = await place.run(ROUND, { host: 'h', port: 1, ssh: localSsh(root), dry_run: false })
+    expect(again).toMatchObject({ ok: true, linked: 0, conflicts: [] })
+    expect(JSON.parse(readFileSync(join(root, 'workflows/rounds', ROUND, 'g.json'), 'utf8'))).toEqual(g)
+  })
+
+  it('flatName: shot, file stem and the first 8 of the sha256; a different file of the same name gets a different name', () => {
+    expect(place.flatName('shots/cgi-042/05-outputs/Approved/master/cgi-042-pullback-4k-v03.mp4', { sha256: 'fe53cada90d469ef' })).toBe('cgi-042__cgi-042-pullback-4k-v03__fe53cada.mp4')
+    expect(place.flatName('shots/x/a.png', { sha256: '11111111aa' })).not.toBe(place.flatName('shots/x/a.png', { sha256: '22222222bb' }))
+    expect(place.flatName('a.png', {})).toBe('a.png')
   })
 
   it('hard links are optional: the script falls back to a copy where the volume has none', () => {

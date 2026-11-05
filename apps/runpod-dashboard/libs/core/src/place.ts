@@ -21,7 +21,7 @@ const assertRound = (round: string) => { if (typeof round !== 'string' || !ROUND
 /** Where a round's files and graphs go, relative to input/ and workflows/. */
 export const roundPrefix = (round: string) => `rounds/${round}/`
 
-export interface Conflict { path: string; where: 'round' | 'shipped'; existing_size?: number; round_size?: number }
+export interface Conflict { path: string; where: 'round' | 'shipped' | 'flat'; existing_size?: number; round_size?: number }
 export interface GraphReport { shot: string; name: string; path: string; rewritten: number; unresolved: string[] }
 export interface PlaceReport {
   round: string; dry_run: boolean; ok: boolean
@@ -36,7 +36,18 @@ export interface PlaceReport {
 // ----- the pure part: one graph + its inputs manifest -----
 
 type Json = null | boolean | number | string | Json[] | { [k: string]: Json }
-export interface RewriteResult { graph: Json; rewritten: string[]; unresolved: string[] }
+export interface RewriteResult { graph: Json; rewritten: string[]; unresolved: string[]; /** original manifest path -> the value now in the graph (relative to input/) */ targets: Record<string, string> }
+/** How a path is written into a graph: `round` = rounds/<round>/<path> (a subfolder); `flat` = one unique bare name at the top of input/, so ComfyUI's file dropdown lists it (it lists only top-level files, and its frontend calls anything else a missing input). */
+export type Names = 'round' | 'flat'
+const sha8 = (m: unknown) => { const h = (m as { sha256?: unknown } | null)?.sha256; return typeof h === 'string' && /^[0-9a-f]{8,}$/i.test(h) ? h.slice(0, 8).toLowerCase() : '' }
+/** `<shot>__<file stem>__<first 8 of the sha256>.<ext>`: unique by content, so two rounds with a different file of the same name never collide, and the same file always gets the same name. */
+export function flatName(path: string, entry: unknown): string {
+  const parts = path.split('/'), file = parts[parts.length - 1], dot = file.lastIndexOf('.')
+  const stem = dot > 0 ? file.slice(0, dot) : file, ext = dot > 0 ? file.slice(dot) : ''
+  const shot = parts[0] === 'shots' && parts.length > 2 ? parts[1] : ''
+  const h = sha8(entry)
+  return [shot, stem, h].filter(Boolean).join('__') + ext
+}
 /** A node type that loads media: LoadImage, LoadImageMask, LoadVideo, LoadAudio, and the packs' own (BincLoadImageSequence, ...). */
 const isLoader = (type: unknown) => typeof type === 'string' && /load/i.test(type)
 const MEDIA_EXT = /\.(png|jpe?g|webp|bmp|tiff?|exr|dpx|gif|mp4|mov|mkv|webm|avi|m4v|wav|mp3|flac|ogg|aac|obj|glb|safetensors)$/i
@@ -47,15 +58,19 @@ const looksLikePath = (v: string) => MEDIA_EXT.test(v)
  * ({ id: { class_type, inputs } }) are both handled. A value that is not a key of the manifest is left alone and, when it looks like a media path, listed
  * as unresolved. A value that already carries the round's prefix is left alone (so a second run changes nothing). The input is not modified.
  */
-export function rewriteGraph(graph: Json, manifest: Record<string, unknown>, round: string): RewriteResult {
+export function rewriteGraph(graph: Json, manifest: Record<string, unknown>, round: string, names: Names = 'round'): RewriteResult {
   assertRound(round)
   const prefix = roundPrefix(round)
   const out = JSON.parse(JSON.stringify(graph)) as Json
-  const rewritten: string[] = [], unresolved: string[] = []
+  const rewritten: string[] = [], unresolved: string[] = [], targets: Record<string, string> = {}
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(manifest, k)
+  const target = (k: string) => (names === 'flat' ? flatName(k, manifest[k]) : prefix + k)
+  const placed = new Set(Object.keys(manifest).map(target))   // a value that is already one of our targets: left alone, so a second run changes nothing
   const fix = (v: unknown): string | null => {
     if (typeof v !== 'string' || !v) return null
-    if (v.startsWith(prefix) && Object.prototype.hasOwnProperty.call(manifest, v.slice(prefix.length))) return null   // already placed
-    if (Object.prototype.hasOwnProperty.call(manifest, v)) { rewritten.push(v); return prefix + v }
+    if (placed.has(v)) return null
+    if (names === 'round' && v.startsWith(prefix) && has(v.slice(prefix.length))) return null   // already placed
+    if (has(v)) { rewritten.push(v); targets[v] = target(v); return targets[v] }
     if (looksLikePath(v) && !v.startsWith(prefix)) unresolved.push(v)
     return null
   }
@@ -72,7 +87,7 @@ export function rewriteGraph(graph: Json, manifest: Record<string, unknown>, rou
   const g = out as { nodes?: unknown[]; definitions?: { subgraphs?: { nodes?: unknown[] }[] } } & Record<string, unknown>
   if (Array.isArray(g.nodes)) { for (const n of g.nodes) node(n); for (const sg of g.definitions?.subgraphs ?? []) for (const n of sg.nodes ?? []) node(n) }
   else for (const v of Object.values(g)) node(v)   // API format: every top-level value is a node
-  return { graph: out, rewritten: [...new Set(rewritten)], unresolved: [...new Set(unresolved)] }
+  return { graph: out, rewritten: [...new Set(rewritten)], unresolved: [...new Set(unresolved)], targets }
 }
 
 /** The inputs manifest that goes with a graph: `<graph>-inputs-manifest.json`. */
@@ -80,9 +95,9 @@ export const manifestNameFor = (graphFile: string) => graphFile.replace(/\.json$
 export const isManifestFile = (f: string) => /-inputs-manifest\.json$/i.test(f)
 
 export interface InvFile { shot: string; name: string; text: string }
-export interface GraphPlan { shot: string; name: string; original: string; rewrittenText: string; rewritten: string[]; unresolved: string[] }
+export interface GraphPlan { shot: string; name: string; original: string; rewrittenText: string; rewritten: string[]; unresolved: string[]; targets: Record<string, string> }
 /** From the inventory (graph and manifest files by shot) to the graph copies to write. A graph with no manifest is copied unchanged and its media paths listed as unresolved. */
-export function planGraphs(files: InvFile[], round: string): GraphPlan[] {
+export function planGraphs(files: InvFile[], round: string, names: Names = 'flat'): GraphPlan[] {
   const byKey = new Map(files.map((f) => [`${f.shot}/${f.name}`, f]))
   const plans: GraphPlan[] = []
   for (const f of files) {
@@ -92,8 +107,8 @@ export function planGraphs(files: InvFile[], round: string): GraphPlan[] {
     const m = byKey.get(`${f.shot}/${manifestNameFor(f.name)}`)
     let manifest: Record<string, unknown> = {}
     try { if (m) manifest = JSON.parse(m.text) as Record<string, unknown> } catch { /* no usable manifest */ }
-    const r = rewriteGraph(graph, manifest, round)
-    plans.push({ shot: f.shot, name: f.name, original: f.text, rewrittenText: JSON.stringify(r.graph), rewritten: r.rewritten, unresolved: r.unresolved })
+    const r = rewriteGraph(graph, manifest, round, names)
+    plans.push({ shot: f.shot, name: f.name, original: f.text, rewrittenText: JSON.stringify(r.graph), rewritten: r.rewritten, unresolved: r.unresolved, targets: r.targets })
   }
   return plans
 }
@@ -165,6 +180,17 @@ if os.path.isdir(src):
                 rel = os.path.relpath(s, base)
                 put(s, os.path.join(R, 'input', 'rounds', rnd, rel), 'round', rel)
                 put(s, os.path.join(R, 'input', rel), 'shipped', rel)
+flat = {}
+for g in p['graphs']: flat.update(g['targets'])
+def source_of(path):
+    for shot in sorted(os.listdir(src)) if os.path.isdir(src) else []:
+        c = os.path.join(src, shot, 'comfy', 'input', path)
+        if os.path.isfile(c): return c
+    return None
+if p['flat']:
+    for path, name in sorted(flat.items()):
+        s0 = source_of(path)
+        if s0: put(s0, os.path.join(R, 'input', name), 'flat', name)
 rep['mode'] = 'copy' if 'copy' in used else ('hardlink' if 'hardlink' in used else 'none')
 if not dry:
     wd = os.path.join(R, 'workflows', 'rounds', rnd)
@@ -172,22 +198,20 @@ if not dry:
         os.makedirs(wd, exist_ok=True)
         open(os.path.join(wd, g['name']), 'w').write(g['rewritten'])
         open(os.path.join(wd, g['name'][:-5] + '.as-delivered.json'), 'w').write(g['original'])
-def exists_in_round(path):
-    if os.path.isfile(os.path.join(R, 'input', 'rounds', rnd, path)): return True
+def exists_placed(path, target):
+    if os.path.isfile(os.path.join(R, 'input', target)): return True
     if not dry: return False
-    for shot in os.listdir(src) if os.path.isdir(src) else []:
-        if os.path.isfile(os.path.join(src, shot, 'comfy', 'input', path)): return True
-    return False
+    return source_of(path) is not None
 for g in p['graphs']:
     for path in g['rewritten_paths']:
-        if not exists_in_round(path) and path not in rep['missing']: rep['missing'].append(path)
+        if not exists_placed(path, g['targets'][path]) and path not in rep['missing']: rep['missing'].append(path)
 print('PLACE-REPORT ' + json.dumps(rep))
 `
 
 /** The apply script: the plan (round, dry run, graph copies) rides as base64 in a temp file written by a heredoc; it holds no secret. */
-export function applyScript(round: string, plans: GraphPlan[], dryRun: boolean): string {
+export function applyScript(round: string, plans: GraphPlan[], dryRun: boolean, names: Names = 'flat'): string {
   assertRound(round)
-  const payload = Buffer.from(JSON.stringify({ round, dry: dryRun, graphs: plans.map((g) => ({ name: g.name, rewritten: g.rewrittenText, original: g.original, rewritten_paths: g.rewritten })) })).toString('base64')
+  const payload = Buffer.from(JSON.stringify({ round, dry: dryRun, flat: names === 'flat', graphs: plans.map((g) => ({ name: g.name, rewritten: g.rewrittenText, original: g.original, rewritten_paths: g.rewritten, targets: g.targets })) })).toString('base64')
   // The payload (two copies of every graph, base64) is far over the 128 KB a single environment string can hold on Linux, so it goes to a temp file through a heredoc, not through the environment.
   return ['set -eu', `export PLACE_ROOT=${q(REMOTE_SHARED)}`, 'PLACE_PAYLOAD_FILE="$(mktemp)"; export PLACE_PAYLOAD_FILE; trap \'rm -f "$PLACE_PAYLOAD_FILE"\' EXIT', `cat > "$PLACE_PAYLOAD_FILE" <<'PLACE_B64'`, payload, 'PLACE_B64', `python3 - <<'PY'`, APPLY_PY.trim(), 'PY', ''].join('\n')
 }
@@ -204,7 +228,7 @@ export function simulated(round: string, dryRun: boolean): PlaceReport {
   return { round, dry_run: dryRun, ok: true, mode: 'hardlink', linked: 2, already_there: 0, conflicts: [], graphs: [{ shot: 'cgi-042', name: 'cgi-042-graph.json', path: `workflows/${roundPrefix(round)}cgi-042-graph.json`, rewritten: 1, unresolved: [] }], rewritten: 1, unresolved: [], missing: [] }
 }
 
-export interface RunOpts { host: string; port: number; ssh: SshRunner; dry_run?: boolean; signal?: AbortSignal; onLine?: (l: string) => void }
+export interface RunOpts { host: string; port: number; ssh: SshRunner; dry_run?: boolean; names?: Names; signal?: AbortSignal; onLine?: (l: string) => void }
 
 /** Place a round that is on the pod's volume. Throws on a transport failure; a round that is not there, or a pod error, comes back as `ok: false` with `error`. */
 export async function run(round: string, o: RunOpts): Promise<PlaceReport> {
@@ -217,9 +241,10 @@ export async function run(round: string, o: RunOpts): Promise<PlaceReport> {
   const err = inv.find((l) => l.startsWith('PLACE-ERROR'))
   if (err) return empty(err.replace(/^PLACE-ERROR\s*/, ''))
   if (a.code !== 0 || !inv.includes('PLACE-INV-DONE')) return empty(`Could not read the round's graphs on the pod (exit ${a.code}).`)
-  const plans = planGraphs(parseInventory(inv), round)
+  const names = o.names ?? 'flat'
+  const plans = planGraphs(parseInventory(inv), round, names)
   const out: string[] = []
-  const b = await o.ssh({ host: o.host, port: o.port, script: applyScript(round, plans, dryRun), onLine: (l) => { out.push(l); o.onLine?.(l) }, signal })
+  const b = await o.ssh({ host: o.host, port: o.port, script: applyScript(round, plans, dryRun, names), onLine: (l) => { out.push(l); o.onLine?.(l) }, signal })
   const line = out.find((l) => l.startsWith('PLACE-REPORT '))
   if (b.code !== 0 || !line) return empty(`Placing did not finish on the pod (exit ${b.code}): ${out.slice(-2).join(' | ')}`)
   const r = JSON.parse(line.slice('PLACE-REPORT '.length)) as { linked: number; already_there: number; conflicts: Conflict[]; mode: PlaceReport['mode']; missing: string[] }
