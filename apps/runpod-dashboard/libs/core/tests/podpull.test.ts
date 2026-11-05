@@ -56,7 +56,7 @@ const done = async (id: string, ms = 4000) => {
   const t0 = Date.now()
   for (;;) { const j = podpull.job(id)!; if (['done', 'failed', 'cancelled'].includes(j.state) && !podpull.job(id)!.lines.includes('__busy__')) { await new Promise((r) => setTimeout(r, 15)); return podpull.job(id)! } if (Date.now() - t0 > ms) throw new Error('job did not finish: ' + JSON.stringify(j)); await new Promise((r) => setTimeout(r, 5)) }
 }
-const base = (extra: Partial<podpull.Opts> = {}): podpull.Opts => ({ sizeOf: () => SIZE, pollMs: 5, listRounds: () => [ROUND, 'brynley-inbox-2026-10-28-v001'], ...extra })
+const base = (extra: Partial<podpull.Opts> = {}): podpull.Opts => ({ sizeOf: () => SIZE, pollMs: 5, placeWaitMs: 40, ssh: async () => ({ code: 255 }), listRounds: () => [ROUND, 'brynley-inbox-2026-10-28-v001'], ...extra })
 const logsOf = (...lines: string[]) => { let n = 0; return async () => (n++ === 0 ? [] : lines.map((line, k) => ({ ts: String(k), line }))) }
 const GOOD = [`s3 pull: bh/rounds/${ROUND} -> /workspace/comfy-shared/temp/rounds/${ROUND}`, 'a/b.json: Copied (new)', 'c/d.json: Copied (new)', '2.861 MiB / 2.861 MiB, 100%, 1 MiB/s', `s3 pull done (manifest verified): /workspace/comfy-shared/temp/rounds/${ROUND}`]
 
@@ -383,5 +383,48 @@ describe('no-spend mode simulates the whole job', () => {
     expect(dry.list()).toEqual([])   // created and deleted again
     const rm = await done((await podpull.remove(ROUND, base({ client: rp.client }))).id, 6000)
     expect(rm).toMatchObject({ kind: 'remove', state: 'done' }); expect(rp.calls.total).toBe(0)
+  })
+})
+
+describe('placing the round after a pull (ADR-033)', () => {
+  const REPORT = { linked: 4, already_there: 0, conflicts: [], mode: 'hardlink', missing: [] }
+  /** An ssh that is the pull on call 1, then answers the inventory and the apply script of the placing. */
+  const sshFor = (pull: string[], seen: string[]): podpull.SshRunner => async (j) => {
+    seen.push(j.script)
+    if (j.script.includes('s3pull.sh')) { for (const l of pull) j.onLine(l); return { code: 0 } }
+    if (j.script.includes('PLACE-FILE')) { j.onLine('PLACE-INV-DONE'); return { code: 0 } }
+    j.onLine('PLACE-REPORT ' + JSON.stringify(REPORT)); return { code: 0 }
+  }
+  it('runs on the same pod once the manifest check passed: the job carries the report, History has the summary, the pull is still done', async () => {
+    const rp = fakeRunPod([upPod('mine', 'ComfyUI-Dev')]); const seen: string[] = []
+    const job = await done((await podpull.pull(ROUND, base({ client: rp.client, ssh: sshFor(GOOD, seen) }))).id)
+    expect(job.state).toBe('done')
+    expect(job.place).toMatchObject({ ok: true, linked: 4, mode: 'hardlink', dry_run: false })
+    expect(seen.length).toBe(3); expect(seen[1]).toContain(`PLACE_ROUND='${ROUND}'`); expect(seen[2]).toContain('PLACE_PAYLOAD')
+    expect(seen[1]).not.toContain(KEY_SECRET); expect(seen[2]).not.toContain(KEY_SECRET)   // placing holds no secret
+    expect(job.lines.join('\n')).toContain('placed 4 file(s)')
+  })
+  it('never after a failed or unverified check', async () => {
+    for (const verdict of [['s3 pull FAILED the manifest check: 1 listed, 1 bad, 0 on disk but not listed', 'SHA256 a/b.json'], ['s3 pull done, NOT verified (no MANIFEST.json)']]) {
+      const rp = fakeRunPod([upPod('mine', 'ComfyUI-Dev')]); const seen: string[] = []
+      const job = await done((await podpull.pull(ROUND, base({ client: rp.client, ssh: sshFor(verdict, seen) }))).id)
+      expect(job.state).toBe('failed'); expect(job.place).toBeUndefined(); expect(seen.length).toBe(1)
+    }
+  })
+  it('a placing that fails is on the job, not the pull', async () => {
+    const rp = fakeRunPod([upPod('mine', 'ComfyUI-Dev')])
+    const ssh: podpull.SshRunner = async (j) => { if (j.script.includes('s3pull.sh')) { for (const l of GOOD) j.onLine(l); return { code: 0 } } return { code: 255 } }
+    const job = await done((await podpull.pull(ROUND, base({ client: rp.client, ssh }))).id)
+    expect(job.state).toBe('done'); expect(job.place?.ok).toBe(false); expect(job.place?.error).toBeTruthy()
+  })
+  it('placeRound by hand: a dry run by default, on the running pod, and a real run is recorded; a stopped pod is refused', async () => {
+    const rp = fakeRunPod([upPod('mine', 'ComfyUI-Dev')]); const seen: string[] = []
+    const ssh = sshFor([], seen)
+    const dryRep = await podpull.placeRound(ROUND, {}, base({ client: rp.client, ssh }))
+    expect(dryRep.dry_run).toBe(true); 
+    expect(Buffer.from(/PLACE_PAYLOAD='([^']+)'/.exec(seen[1])![1], 'base64').toString()).toContain('"dry":true')
+    const real = await podpull.placeRound(ROUND, { pod_id: 'mine', dry_run: false }, base({ client: rp.client, ssh }))
+    expect(real.dry_run).toBe(false)
+    await expect(podpull.placeRound(ROUND, { pod_id: 'nope' }, base({ client: rp.client, ssh }))).rejects.toThrow(/not found/)
   })
 })

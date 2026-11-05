@@ -1,7 +1,7 @@
 # ADR-033: A pulled round's inputs are placed where its graphs look, automatically
 
 **Date:** 2026-11-05
-**Status:** Proposed. The route (stage files **and** write a path-corrected graph copy) is Lucas's choice, 2026-11-05: "when loading workflows, these paths need to get updated in graphs" and "Both".
+**Status:** Accepted and implemented 2026-11-05 (`libs/core/src/place.ts`, called from `podpull.ts`; MCP `panama_place`; the Place button). The route (stage files **and** write a path-corrected graph copy) is Lucas's choice, 2026-11-05: "when loading workflows, these paths need to get updated in graphs" and "Both".
 **Extends:** ADR-015 (the pod pulls from the bucket), ADR-022 (rounds stage on the volume), ADR-028 (MCP can do everything the app does).
 
 ## Context
@@ -30,8 +30,15 @@ The pull had worked (15.2 GB, 1,402 files, manifest verified). The cause is wher
 5. **Also by hand, same code.** MCP tool `panama_place` (`round`, optional `pod_id`, `dry_run` default true) and a Place button on a staged round in Pod mode run exactly this, for a round pulled before this ADR or after a conflict was resolved. Idempotent: a second run changes nothing. The Local route is untouched (Import already does this on the Mac).
 6. **Not done:** editing graphs in `temp/rounds`; rewriting `.json` that BH did not list in a manifest; guessing a path by file name; placing a round that is not verified; touching `projects/desktop/` (read-only, `.claude/rules/binc-tree.md`).
 
+## As built
+
+- `place.rewriteGraph` (pure) rewrites UI-format (`nodes[].widgets_values`, including subgraph nodes) and API-format graphs; a node counts as a loader when its type contains "load". Tested on the real cgi-042 graph and manifest: all 28 inputs rewritten, none unresolved, a second pass rewrites nothing.
+- The pod runs two scripts over the pull's SSH, neither holding a secret: an inventory (prints each shot's `comfy/workflows/*.json`) and an apply (the plan rides as one base64 value; python3 links, compares size then sha256, writes the graph copies, checks that every rewritten path exists). `dry_run` runs the same script and writes nothing.
+- A pull places on the same SSH session target: the user's pod directly; a temporary pod is waited for up to 3 minutes to expose SSH (a pod without SSH fails the placing, not the pull) and is deleted afterwards as before. A conflict names the path and both sizes; naming the other round would need a record the volume does not keep.
+- Measured: not yet on the real volume (no pod was touched while building this). The hard-link question stays open until the first real run: the report's `mode` says `hardlink` or `copy`.
+
 ## Consequences
 
 - A pulled round opens in ComfyUI with its inputs found, with no shell step. The cgi-042 case becomes: pull the 10-22 round, open `workflows/rounds/brynley-comfy-2026-10-22/cgi-042-common-nodes-v13-delivery-20261020.json`.
 - A graph keeps working after a later round brings a different `cgi-042` file, because its copy points into its own round.
-- Open until built: whether the network volume supports hard links (checked in the first run; the fallback is a copy, at the cost of the round's size again); the exact set of `Load*` widgets in the BH packs (taken from the manifests, which list them).
+- Open until the first real run: whether the network volume supports hard links (the report says; the fallback is a copy, at the cost of the round's size again).

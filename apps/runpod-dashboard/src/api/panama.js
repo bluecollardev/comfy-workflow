@@ -21,6 +21,7 @@ const ipc = core && {
   podJob: (id) => core.invoke('panama', 'podJob', [id]),
   podCancel: (id) => core.invoke('panama', 'podCancel', [id]),
   podRemove: (round) => core.invoke('panama', 'podRemove', [round]),
+  podPlace: (round, podId, dryRun = false) => core.invoke('panama', 'podPlace', [round, podId, dryRun]),
 }
 const http = {
   async status() { const { data } = await axios.get(`${API_BASE}/panama/status`); return data },
@@ -37,5 +38,6 @@ const http = {
   async podJob(id) { const { data } = await axios.get(`${API_BASE}/panama/pod/job`, { params: { id } }); return data },
   async podCancel(id) { const { data } = await axios.post(`${API_BASE}/panama/pod/cancel`, { id }); return data },
   async podRemove(round) { const { data } = await axios.delete(`${API_BASE}/panama/pod/staged`, { params: { round } }); return data },
+  async podPlace(round, podId, dryRun = false) { const { data } = await axios.post(`${API_BASE}/panama/pod/place`, { round, pod_id: podId, dry_run: dryRun }); return data },
 }
 export const panamaAPI = ipc || http

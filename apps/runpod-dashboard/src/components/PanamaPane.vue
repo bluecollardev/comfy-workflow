@@ -33,7 +33,16 @@
       <BButton size="sm" variant="primary" class="text-nowrap" :disabled="busy" data-testid="panama-pull" @click="store.pull(r.name)"><i class="fa-solid fa-cloud-arrow-down me-1"></i>{{ r.state === 'partial' ? $t('panama.resume') : r.state === 'none' || !r.state ? $t('panama.download') : $t('panama.again') }}</BButton>
       <BButton v-if="r.staged && store.target === 'local'" size="sm" variant="success" class="text-nowrap" data-testid="panama-use" @click="use(r.name)">{{ $t('panama.use') }}</BButton>
       <span v-else-if="r.staged" class="small text-body-secondary text-nowrap" data-testid="panama-use-local-note">{{ $t('panama.importLocalNote') }}</span>
+      <BButton v-if="r.staged && store.target === 'pod'" size="sm" variant="outline-light" class="text-nowrap" :disabled="busy || !!store.placing" :title="$t('panama.placeHint')" data-testid="panama-place" @click="store.place(r.name)"><i class="fa-solid fa-diagram-project me-1"></i>{{ store.placing === r.name ? $t('panama.placing') : $t('panama.place') }}</BButton>
       <BButton v-if="r.state !== 'none' && store.removing !== r.name" size="sm" variant="outline-danger" class="text-nowrap" :disabled="busy" :title="$t(store.target === 'pod' ? 'panama.deleteHintPod' : 'panama.deleteHint')" data-testid="panama-delete" @click="store.askRemove(r.name)"><i class="fa-regular fa-trash-can me-1"></i>{{ $t('panama.delete') }}</BButton>
+    </div>
+
+    <!-- What placing did (ADR-033): after a pod pull by itself, or by the Place button -->
+    <div v-if="placeReport" class="small mt-2" data-testid="panama-place-result" :data-ok="placeReport.ok ? 'true' : 'false'">
+      <i class="fa-solid me-1" :class="placeReport.ok ? 'fa-circle-check text-success' : 'fa-triangle-exclamation text-warning'"></i>
+      <span v-if="placeReport.error" data-testid="panama-place-error">{{ $t('panama.placeFailed', { error: placeReport.error }) }}</span>
+      <span v-else data-testid="panama-place-summary">{{ $t('panama.placeSummary', { round: placeReport.round, linked: placeReport.linked, already: placeReport.already_there, graphs: placeReport.graphs.length, conflicts: placeReport.conflicts.length }) }}</span>
+      <span v-if="placeReport.missing?.length" class="text-warning ms-1" data-testid="panama-place-missing">{{ $t('panama.placeMissing', { n: placeReport.missing.length }) }}</span>
     </div>
 
     <RoundFilesModal :round="browsing" :target="store.target" @close="browsing = ''" />
@@ -113,6 +122,8 @@ const browsing = ref('')   // the round whose files are open in the explorer mod
 const busy = computed(() => store.jobActive)
 const podAvailable = computed(() => store.podAvailable)
 const podReason = computed(() => store.status?.pod?.reason || t('panama.podUnavailable'))
+/** The report to show: the last Place click, else what the finished pull's own placing did. */
+const placeReport = computed(() => store.placed || (store.target === 'pod' && store.job?.kind === 'pull' && store.job.state === 'done' ? store.job.place : null) || null)
 const isPodJob = computed(() => store.job?.route !== undefined && store.job?.route !== null)
 const size = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : n >= 1e3 ? `${Math.round(n / 1e3)} KB` : `${n} B`)
 /** What a Pod download or delete would do, in words: a pod of yours, or a short-lived one that is named, priced, deleted after and stopped by the idle timer. */

@@ -69,6 +69,14 @@ export const usePanamaStore = defineStore('panama', () => {
   }
   const cancelConfirm = () => { confirming.value = null }
 
+  // ---- place a pulled round where its graphs look (ADR-033): a pod pull does it by itself; this re-runs it for a round pulled before
+  const placing = ref('')        // the round being placed
+  const placed = ref(null)       // the last report
+  async function place(round) {
+    placing.value = round; placed.value = null; error.value = null
+    try { placed.value = await panamaAPI.podPlace(round) } catch (e) { error.value = errorText(e) } finally { placing.value = '' }
+  }
+
   // ---- delete the staged copy: on this PC, or on the volume (a pod job, so it is planned and confirmed too)
   const removing = ref(null)     // the round whose Delete is awaiting its confirmation
   const removePlan = ref(null)   // Pod: what the delete would start
@@ -104,5 +112,5 @@ export const usePanamaStore = defineStore('panama', () => {
       else reload()
     }, 1000)
   }
-  return { status, rounds, podView, sizes, job, loading, error, wanted, target, podAvailable, rows, jobActive, loadStatus, loadRounds, loadPod, reload, setTarget, loadSize, pull, confirming, confirmStart, cancelConfirm, cancel, remove, askRemove, cancelRemove, removing, removePlan }
+  return { status, rounds, podView, sizes, job, loading, error, wanted, target, podAvailable, rows, jobActive, loadStatus, loadRounds, loadPod, reload, setTarget, loadSize, pull, confirming, confirmStart, cancelConfirm, placing, placed, place, cancel, remove, askRemove, cancelRemove, removing, removePlan }
 })
