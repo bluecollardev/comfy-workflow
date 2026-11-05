@@ -1,5 +1,7 @@
 # Runbook: an AI agent runs a BH shot on an H100 pod, through MCP only
 
+(Part of `docs/runbooks/`; the requirement is ADR-034. Sub-tasks: `pod-lifecycle.md`, `round-pull-and-place.md`, `mcp-session.md`.)
+
 **For:** an AI agent (Claude Code) with the `pod-manager` MCP server. Not for people; the app's window does the same things.
 **Status:** living document. Update it in the same session whenever a step is proven, fails, or changes (section "Log" at the end). First written 2026-11-05 from the cgi-042 session.
 **Rules that govern it:** `shared/governance/policy/agent-permissions.md` (USD 100 cap, a named yes for any spend), `.claude/rules/binc-tree.md` (never write into `projects/desktop/`), ADR-022 (pod pulls), ADR-033 (placing), ADR-028 (MCP does everything the window does).
@@ -38,7 +40,7 @@
 - A pull whose check passed places by itself (`job.place`). For a round pulled before ADR-033, or to re-run: `panama_place {round}` (dry run) then `panama_place {round, dry_run: false}`.
 - Result: inputs at `input/rounds/<round>/…` and, where free, at the shipped path `input/shots/<shot>/…`; graph copies in `workflows/rounds/<round>/<graph>.json` with the paths rewritten, originals beside them as `<graph>.as-delivered.json`. Read `conflicts`, `missing` and `mode` (`hardlink` or `copy`).
 - In ComfyUI open the graph from `workflows/rounds/<round>/`, not from the round folder. "Missing Inputs: a required media input has no file selected" means placing has not run or reported `missing`.
-- **Not yet proven on the real volume** (see Log).
+- Proven on the real volume 2026-11-05 (Log).
 
 ## 5. The work (stereo conversion of a final)
 
@@ -61,6 +63,7 @@ Not yet exercised. The return goes to S3 `returns/…` (a write to a shared buck
 ## Log (newest first; add a line each time something is proven or breaks)
 
 - 2026-11-05: cgi-042 latest = `cgi-042_main_final_v01_3840x2160_24_hevc.mp4`, sha256 `fe53cada90d469ef44e7777a123e82a220796de2610a58b2c0c0a26fbf164630`, identical in rounds 10-20 and 10-22; entry in `brynley-inbox-2026-10-28-v001`. Proven: sections 1, 2, 3 on pod `3h25wd2p4es40i` (named cgi-042), H100 SXM, AP-IN-1, 3.99/h.
+- 2026-11-05: **placing proven** on pod `3h25wd2p4es40i`: `panama_place` real run linked 156 files by hard link, wrote 3 graph copies (cgi-042: 28 inputs), no conflicts, none missing; rerun idempotent. The ComfyUI bridge (:8766) targets this pod's ComfyUI 0.39.2 and the Binc/Stereo nodes are present.
 - 2026-11-05: the graph failed with "Missing Inputs" because nothing copied the round's inputs into `input/`. Fixed in code by ADR-033; **not yet run on the pod**. Next: `panama_place` dry run for `brynley-comfy-2026-10-22`, then the real one; record `mode` and any `conflicts` here.
 - 2026-11-05: `rename_pod` was missing in the session until `/mcp` reconnect (stale stdio server); the HTTP MCP on :8765 had it.
 - 2026-11-05: `resume_pod` on the old H100 failed (host full); `recreate_pod` gave a new host; the image download made it `starting` for ~10 minutes.
