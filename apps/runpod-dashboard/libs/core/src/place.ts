@@ -125,7 +125,7 @@ export function inventoryScript(round: string): string {
 
 const APPLY_PY = String.raw`
 import os, sys, json, base64, hashlib, shutil
-p = json.loads(base64.b64decode(os.environ['PLACE_PAYLOAD']))
+p = json.loads(base64.b64decode(open(os.environ['PLACE_PAYLOAD_FILE']).read()))
 rnd = p['round']; dry = p['dry']
 R = os.environ['PLACE_ROOT']
 src = R + '/temp/rounds/' + rnd
@@ -184,11 +184,12 @@ for g in p['graphs']:
 print('PLACE-REPORT ' + json.dumps(rep))
 `
 
-/** The apply script: the plan (round, dry run, graph copies) rides as one base64 value in the environment of the command; it holds no secret. */
+/** The apply script: the plan (round, dry run, graph copies) rides as base64 in a temp file written by a heredoc; it holds no secret. */
 export function applyScript(round: string, plans: GraphPlan[], dryRun: boolean): string {
   assertRound(round)
   const payload = Buffer.from(JSON.stringify({ round, dry: dryRun, graphs: plans.map((g) => ({ name: g.name, rewritten: g.rewrittenText, original: g.original, rewritten_paths: g.rewritten })) })).toString('base64')
-  return ['set -eu', `export PLACE_ROOT=${q(REMOTE_SHARED)}`, `export PLACE_PAYLOAD=${q(payload)}`, `python3 - <<'PY'`, APPLY_PY.trim(), 'PY', ''].join('\n')
+  // The payload (two copies of every graph, base64) is far over the 128 KB a single environment string can hold on Linux, so it goes to a temp file through a heredoc, not through the environment.
+  return ['set -eu', `export PLACE_ROOT=${q(REMOTE_SHARED)}`, 'PLACE_PAYLOAD_FILE="$(mktemp)"; export PLACE_PAYLOAD_FILE; trap \'rm -f "$PLACE_PAYLOAD_FILE"\' EXIT', `cat > "$PLACE_PAYLOAD_FILE" <<'PLACE_B64'`, payload, 'PLACE_B64', `python3 - <<'PY'`, APPLY_PY.trim(), 'PY', ''].join('\n')
 }
 
 export const parseInventory = (lines: string[]): InvFile[] => lines.filter((l) => l.startsWith('PLACE-FILE\t')).map((l) => {
