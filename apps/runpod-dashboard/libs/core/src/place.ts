@@ -6,7 +6,8 @@
  *     the path BH shipped (input/<path>). A file already there with the same size and sha256 is left; a different one is a CONFLICT, reported, never
  *     replaced. Nothing is deleted and nothing under temp/ is written.
  *  2. graphs: each `comfy/workflows/<graph>.json` is copied to workflows/rounds/<round>/<graph>.json with the Load* paths that its inputs manifest lists
- *     rewritten to rounds/<round>/<path>; the untouched original sits beside it as <graph>.as-delivered.json.
+ *     rewritten (to unique top-level names, ADR-033 amendment). The untouched original stays where the pull put it, in the round folder; it is not copied into
+ *     the Workflows panel, so the panel lists only graphs that open clean.
  *
  * The rewrite is a pure function (`rewriteGraph`, tested without a pod). The pod only reads (`inventoryScript`) and writes (`applyScript`); what goes where is
  * decided here. The scripts take no secrets; the round name is checked against the same pattern as a pull.
@@ -197,7 +198,6 @@ if not dry:
     for g in p['graphs']:
         os.makedirs(wd, exist_ok=True)
         open(os.path.join(wd, g['name']), 'w').write(g['rewritten'])
-        open(os.path.join(wd, g['name'][:-5] + '.as-delivered.json'), 'w').write(g['original'])
 def exists_placed(path, target):
     if os.path.isfile(os.path.join(R, 'input', target)): return True
     if not dry: return False

@@ -102,7 +102,8 @@ describe('place.run on a (local stand-in for the) pod', () => {
     const w = join(root, 'workflows/rounds', ROUND)
     const fixed = JSON.parse(readFileSync(join(w, 'g.json'), 'utf8'))
     expect(fixed.nodes[0].widgets_values[0]).toBe(`rounds/${ROUND}/shots/cgi-042/a.png`)
-    expect(JSON.parse(readFileSync(join(w, 'g.as-delivered.json'), 'utf8'))).toEqual(graph)
+    expect(existsSync(join(w, 'g.as-delivered.json'))).toBe(false)   // the original stays in the round folder; the Workflows panel lists only graphs that open clean
+    expect(JSON.parse(readFileSync(join(root, 'temp/rounds', ROUND, 'cgi-042/comfy/workflows/g.json'), 'utf8'))).toEqual(graph)
     expect(existsSync(join(root, 'input', fixed.nodes[1].widgets_values[0]))).toBe(true)
   })
 
