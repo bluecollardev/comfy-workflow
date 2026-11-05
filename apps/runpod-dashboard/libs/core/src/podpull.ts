@@ -30,6 +30,7 @@ import * as idle from './idle.js'
 import * as mounts from './mounts.js'
 import * as panama from './panama.js'
 import { configDir } from './paths.js'
+import * as place from './place.js'
 import * as pods from './pods.js'
 import * as rp from './runpod.js'
 import * as settings from './settings.js'
@@ -103,6 +104,8 @@ export interface Opts {
   sizeOf?: (round: string) => { files: number; bytes: number }
   listRounds?: () => string[]
   pollMs?: number
+  /** How long a temporary pod is waited for to expose SSH so the round can be placed (ADR-033). Default 3 minutes; a pod without SSH fails the placing, not the pull. */
+  placeWaitMs?: number
   now?: () => Date
   /** Where a pod download runs: on 'current' (the user's pod on the volume, started first if it is off) or on a 'temporary' pod of the cheapest card. Unset: the user's pod if it is running, else a temporary one. */
   route?: 'current' | 'temporary'
@@ -195,10 +198,12 @@ export async function plan(round: string, opts: Opts = {}): Promise<PodPlan> {
 
 // ----- the job -----
 
-export type JobState = 'creating' | 'starting' | 'pulling' | 'verifying' | 'deleting' | 'done' | 'failed' | 'cancelled'
+export type JobState = 'creating' | 'starting' | 'pulling' | 'verifying' | 'placing' | 'deleting' | 'done' | 'failed' | 'cancelled'
 export interface PodJob {
   id: string; round: string; kind: 'pull' | 'remove'; route: 'active' | 'temporary'; pod_id: string | null; pod_name: string | null
   state: JobState; files: number; lines: string[]; error?: string; verify?: panama.Verify; started_at: string
+  /** ADR-033: what placing the verified round on the pod did (files linked, graphs written, conflicts); set only after a pull whose check passed. A placing failure is here, never the pull's. */
+  place?: place.PlaceReport
   /** From rclone's stats line and its Copied lines, for the same bar and file list as a local download. */
   bytes_done: number; bytes_total: number | null; rate: number | null; recent: string[]
 }
@@ -359,6 +364,20 @@ async function runOnPod(i: Internal, host: string, port: number, script: string,
   if (code !== 0 && !i.outcome) throw new CoreError(502, `The command on the pod ended with exit code ${code}.`)
 }
 
+/** ADR-033: after a pull whose manifest check passed, put the round's inputs where its graphs look. Never fails the pull: the outcome (or the error) is on the job. */
+async function placeAfter(i: Internal, host: string, port: number, opts: Opts) {
+  if (i.job.kind !== 'pull' || i.outcome !== 'done' || i.cancelled) return
+  i.job.state = 'placing'
+  try {
+    const r = await place.run(i.job.round, { host, port, ssh: opts.ssh ?? runSsh, dry_run: false, signal: i.abort.signal })
+    i.job.place = r
+    i.job.lines.push(r.ok ? `placed ${r.linked} file(s) (${r.already_there} already there), ${r.graphs.length} graph(s), ${r.conflicts.length} conflict(s)` : `placing: ${r.error ?? `missing ${r.missing.length} input(s)`}`)
+  } catch (e) {
+    i.job.place = place.failed(i.job.round, false, (e as Error).message)
+    i.job.lines.push(`placing failed: ${(e as Error).message}`)
+  }
+}
+
 async function runActive(i: Internal, opts: Opts) {
   const p = i.plan, pod = p.pod!, j = i.job
   const startedHere = p.choices?.current?.id === pod.id && p.choices.current.running === false
@@ -379,6 +398,7 @@ async function runActive(i: Internal, opts: Opts) {
   try {
     j.state = j.kind === 'pull' ? 'pulling' : 'deleting'
     await runOnPod(i, host, port, j.kind === 'pull' ? pullScript(j.round, k!) : removeScript(j.round), opts, k ? [k.secret, k.id] : [])
+    await placeAfter(i, host, port, opts)
   } finally { idle.register(pod.id, prev) }
 }
 
@@ -416,6 +436,10 @@ async function runTemporary(i: Internal, opts: Opts) {
       }
       if (Date.now() > deadline) throw new CoreError(504, `The pull did not finish within ${p.ceiling_minutes + 10} minutes; the pod is being deleted.`)
     }
+    if (i.outcome === 'done' && !i.cancelled) {
+      try { const { host, port } = await waitForSshTarget(i, podId, opts, Math.min(deadline, Date.now() + (opts.placeWaitMs ?? 180_000))); await placeAfter(i, host, port, opts) }
+      catch (e) { if (i.cancelled) return; i.job.place = place.failed(i.job.round, false, (e as Error).message); i.job.lines.push(`placing failed: ${(e as Error).message}`) }
+    }
   } finally {
     if (podId) await deleteTemp(i, podId, opts)
     tempDrop(name)
@@ -443,6 +467,7 @@ async function simulate(i: Internal, opts: Opts) {
       for (const l of lines) feed(i, l, [])
     }
     if (!i.outcome && j.kind === 'pull') i.outcome = 'done'
+    if (i.outcome === 'done' && !i.cancelled) { j.state = 'placing'; await sleep(i, ms); j.place = place.simulated(j.round, false); feed(i, 'placed 2 file(s), 1 graph(s)', []) }
   } finally {
     if (podId) { try { await pods.remove(podId) } catch { /* already gone */ } }
   }
@@ -458,10 +483,12 @@ async function run(i: Internal, opts: Opts) {
   } finally {
     conclude(i)
     const jb = i.job
-    if (jb.state === 'done' || jb.state === 'failed' || jb.state === 'cancelled') history.record({ kind: 'job', job: jb.kind, state: jb.state, started_at: jb.started_at, what: jb.round, pod_id: jb.pod_id ?? undefined, pod_name: jb.pod_name ?? undefined, files: jb.files, bytes: jb.bytes_done || i.plan.bytes, ...(jb.error ? { error: jb.error } : {}) })
+    if (jb.state === 'done' || jb.state === 'failed' || jb.state === 'cancelled') history.record({ kind: 'job', job: jb.kind, state: jb.state, started_at: jb.started_at, what: jb.round, pod_id: jb.pod_id ?? undefined, pod_name: jb.pod_name ?? undefined, files: jb.files, bytes: jb.bytes_done || i.plan.bytes, ...(jb.place ? { detail: placeSummary(jb.place) } : {}), ...(jb.error ? { error: jb.error } : {}) })
     busy.delete(i.job.round)
   }
 }
+
+export const placeSummary = (r: place.PlaceReport) => (r.error ? `placing failed: ${r.error}` : `placed: ${r.linked} linked, ${r.already_there} already there, ${r.graphs.length} graph(s), ${r.conflicts.length} conflict(s)${r.missing.length ? `, ${r.missing.length} input(s) missing` : ''}`)
 
 const claim = (round: string, kind: PodJob['kind']) => {
   if (busy.has(round)) {
@@ -520,4 +547,24 @@ export async function rounds(opts: Opts = {}): Promise<{ as_of: string | null; v
     as_of: rec?.as_of ?? null, volume,
     rounds: names.map((name) => { const r = rec?.rounds[name]; return { name, staged: r?.state === 'complete', state: r?.state ?? 'none', present: r?.present ?? 0, expected: r?.expected ?? null, missing: r?.missing ?? null, bytes: r?.bytes ?? 0 } }),
   }
+}
+
+/**
+ * Place a round that is already on the volume (ADR-033), on a running pod of the user's: the pod named, or the one on the configured volume. Dry run by default:
+ * it reads and reports, writes nothing. Idempotent. A real run is recorded in History as an import.
+ */
+export async function placeRound(round: string, o: { pod_id?: string; dry_run?: boolean } = {}, opts: Opts = {}): Promise<place.PlaceReport> {
+  assertRound(round)
+  const dryRun = o.dry_run !== false
+  const cfg = mounts.load()
+  if (mounts.dryRun(cfg)) return place.simulated(round, dryRun)
+  let raw: rp.RawPod | null = null
+  if (o.pod_id) raw = await rp.getPod(o.pod_id, opts.client)
+  else { const f = await findActivePod(cfg, opts); if (f?.running) raw = await rp.getPod(f.id, opts.client) }
+  if (!raw) throw bad(o.pod_id ? `Pod ${o.pod_id} was not found.` : 'No running pod of yours is on this volume: start one, or pass pod_id.')
+  if ((raw.runtime?.uptimeInSeconds ?? 0) <= 0) throw bad(`Pod ${raw.name || raw.id} is not running: placing needs a running pod.`)
+  const { host, port } = sync.sshTarget(raw)
+  const r = await place.run(round, { host, port, ssh: opts.ssh ?? runSsh, dry_run: dryRun })
+  if (!dryRun) history.record({ kind: 'change', area: 'import', action: 'place', what: round, detail: placeSummary(r) })
+  return r
 }

@@ -120,4 +120,29 @@ test.describe('Panama pane: Pod / Local', () => {
     await expect(row(dialog, 'brynley-comfy-2026-10-22').getByTestId('panama-staged')).toHaveCount(0)   // the volume row is empty after the job
     await expect(row(dialog, 'brynley-comfy-2026-10-22').getByTestId('panama-pull')).toHaveText(t('panama.download'))
   })
+  test('a finished pod pull shows what placing did; Place on a staged round re-runs it and reports, and a failure is said in words', async ({ page, api }) => {
+    api.state.panama = { configured: true, pod: { available: true, route: 'active', placeReport: true } }
+    const dialog = await open(page)
+    await dialog.getByTestId('panama-target-pod').check({ force: true })
+    await row(dialog, 'brynley-comfy-2026-10-23').getByTestId('panama-pull').click()
+    await page.getByTestId('panama-pod-current').click()
+    await expect(dialog.getByTestId('panama-job-state')).toHaveText(t('panama.state.done'))
+    await expect(dialog.getByTestId('panama-place-summary')).toContainText('12 files linked')   // the pull's own placing (ADR-033)
+    await expect(dialog.getByTestId('panama-place-result')).toHaveAttribute('data-ok', 'true')
+    // Place is on staged rows only, and calls the core with the round
+    await expect(row(dialog, 'brynley-comfy-2026-10-23').getByTestId('panama-place')).toHaveCount(0)
+    await row(dialog, 'brynley-comfy-2026-10-22').getByTestId('panama-place').click()
+    expect(api.state.panama.pod.placed).toEqual([{ round: 'brynley-comfy-2026-10-22', dry_run: false }])
+    await expect(dialog.getByTestId('panama-place-summary')).toContainText('56 files linked'); await expect(dialog.getByTestId('panama-place-summary')).toContainText('1 conflicts')
+    api.state.panama.pod.placeFails = true
+    await row(dialog, 'brynley-comfy-2026-10-22').getByTestId('panama-place').click()
+    await expect(dialog.getByTestId('panama-place-error')).toContainText('No running pod of yours')
+    await expect(dialog.getByTestId('panama-place-result')).toHaveAttribute('data-ok', 'false')
+  })
+
+  test('Place is not offered in Local mode', async ({ page, api }) => {
+    api.state.panama = { configured: true, pod: { available: true } }
+    const dialog = await open(page)
+    await expect(dialog.getByTestId('panama-place')).toHaveCount(0)
+  })
 })

@@ -140,6 +140,8 @@ const TABLE = {
     podJob: (c, id) => c.podpull.job(id),
     podCancel: (c, id) => c.podpull.cancel(id),
     podRemove: (c, round) => c.podpull.remove(round),
+    // ADR-033: put a pulled round's inputs where its graphs look, on the running pod
+    podPlace: (c, round, podId, dryRun) => c.podpull.placeRound(round, { pod_id: podId || undefined, dry_run: dryRun }),
   },
   imports: {   // docs/ADR-008: a folder through an adapter into ComfyUI-Shared
     list: (c) => c.imports.list(),

@@ -182,6 +182,7 @@ Each tool calls the core function the window's IPC channel calls. `mcp/parity.mj
 | `panama_job` | `id`, `target?` | Where a download (or delete) is: state, files, bytes done of total, rate, the latest files |  |
 | `panama_cancel` | `id`, `target?` | Stop a download; what is already there stays and a later pull resumes |  |
 | `panama_remove` | `round`, `target?`, `approved_by?` | Delete a round's staged copy: on this PC, or on the volume by a pod (needs approved_by: it uses a pod). | spend: named yes |
+| `panama_place` | `round`, `pod_id?`, `dry_run?` | Put a pod-pulled round where its graphs look (ADR-033), on a running pod of yours: inputs linked into `input/rounds/<round>/` and at the shipped path when free (a differing file is a conflict, never replaced), path-corrected graph copies in `workflows/rounds/<round>/` beside `.as-delivered.json` originals. A pod pull does it by itself once its check passes; this re-runs it. `dry_run` defaults to true (report only). Idempotent |
 | `panama_import` | `round`, `adapter?`, `dry_run?`, `overwrite?` | Import a downloaded round into ComfyUI-Shared (the window's Use): plans it through an adapter, and applies unless dry_run (default true). |  |
 
 #### Import: packages, zips, adapters

@@ -137,6 +137,9 @@ export function appTools({ core, governance, text, json, plain = text }) {
         if (args.target === 'pod') { const refusal = yes(args, 'panama_remove on a pod'); if (refusal) return text(refusal, true); return json(await podpull.remove(args.round)) }
         return json(panama.remove(args.round))
       } },
+    { name: 'panama_place', description: "Put a round that a pod has pulled where its graphs look (ADR-033), on a running pod of yours: its inputs linked into input/rounds/<round>/ (and at the shipped path when free, a differing file is a conflict, never replaced), and path-corrected copies of its graphs in workflows/rounds/<round>/ beside the untouched originals. A pod pull does this by itself once its check passes; this is for a round pulled before, or to re-run. dry_run (default true) reads and reports, writes nothing. Idempotent",
+      inputSchema: obj({ round: S('Round name'), pod_id: S('A running pod (default: the running pod of yours on the configured volume)'), dry_run: B('default true: report only') }, ['round']),
+      run: async ({ round, pod_id, dry_run = true }) => json(await podpull.placeRound(round, { pod_id: pod_id || undefined, dry_run: dry_run !== false })) },
     { name: 'panama_import', description: "Import a downloaded round into ComfyUI-Shared (the window's Use): plans it through an adapter, and applies unless dry_run (default true). The round must be staged on this PC (panama_pull)", inputSchema: obj({ round: S('Round name'), adapter: S('Adapter id (default: the best match)'), dry_run: B('default true'), overwrite: B('Replace differing files') }, ['round']),
       run: async ({ round, adapter, dry_run = true, overwrite = false }) => {
         const dir = `${panama.stagingDir()}/${round}`
