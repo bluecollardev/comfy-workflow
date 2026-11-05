@@ -21,6 +21,7 @@
 As of 2026-11-05. The requirement is `docs/ADR-034-shots-are-generated-by-ai-through-mcp.md`; the script and the Log are `docs/runbooks/shot-stereo-conversion.md`. Proven so far: the latest approved cgi-042 final found and hash-checked (`fe53cada…4630`, round `brynley-comfy-2026-10-22`), an H100 pod on `comfy-h100-apin1`, the round pulled and verified, its inputs and graphs placed (156 files hard-linked, ADR-033), the ComfyUI bridge pointed at the pod with the Binc/Stereo nodes present. **Not done: any stereo has been generated.**
 
 To do, in order:
+0. **Done 2026-11-05 (later):** the first full cgi-042 stereo pass: 241 frames, 8-bit PNG eyes, budgets met, 29 minutes, USD 1.90, output on Lucas's Desktop and in `ComfyUI-Shared/output/cgi-042-stereo-v01` (details in `RUN-DETAILS.md` and the runbook Log); pod stopped. Remaining: Lucas's review of it, then the 16-bit TIFF eyes and manifest (item 3-5 below).
 0. **Done 2026-11-05:** a 5-frame stereo test ran through the bridge (Depth Anything V2 Large fetched by the pod, node-default parallax); the existing graph `cgi-042-binc-stereo-v01` now loads the placed video. Still to judge: the pictures and the report, then the full 241 frames.
 1. **Decide with Lucas** (blocking, assumed meanwhile: regenerate depth with DA2 Large, the node-default parallax 1.0 / 0.25 %, convergence 0.35): the depth source (reuse his 241-frame `06-stereo/v03-depth-current` on the Mac, or regenerate with Depth Anything V2: weights on the pod unchecked); the parallax budget and screen plane (near, far, convergence); a go-ahead for a 5-frame test (about USD 0.06 at 3.99/h).
 2. **Build the stereo production graph** from `shared/nodes/portable/ComfyUI-BincStereo/workflows/binc-stereo-sequence-chain.json` (BH has none; their graph in the round is the history graph and is not rewired). Test on 5 frames through the bridge, check the parallax and hole report, then the full 241 frames.
@@ -29,7 +30,8 @@ To do, in order:
 5. **Return to BH** (`returns/brynley-comfy-2026-10-22/cgi-042/`, manifest `bh-return-1`): a `panama_return` tool behind Lucas's named yes. Nothing is uploaded without it.
 6. **Close the MCP gaps** in ADR-034's table: `panama_read` (one small bucket file), a compact `panama_job` progress view, and the stale-tools problem (the stdio server needs a `/mcp` reconnect after a new tool).
 7. **Keep every runbook in `docs/runbooks/` current** as each step is run; a step counts as done only when its Log shows it ran.
-8. **Stop the pod `cgi-042` (`3h25wd2p4es40i`, USD 3.99/h, idle stop 360 min) when work pauses**; the idle watch only runs while the app is open.
+8. Pod `cgi-042` (`3h25wd2p4es40i`) is **stopped** (2026-11-05); resume may need `recreate_pod` if the host is full. Stop it whenever work pauses; the idle watch only runs while the app is open.
+9. Small MCP gaps seen in the run: the bridge returns no text outputs (`PreviewAny` report), `sync` push of `output` is broader than asked and cannot be cancelled.
 
 ## Next steps: importing the CANALV2 graphs
 
