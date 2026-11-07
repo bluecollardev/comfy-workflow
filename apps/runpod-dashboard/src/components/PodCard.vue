@@ -117,6 +117,9 @@
       <BButton variant="primary" size="sm" class="flex-grow-1 text-nowrap" :title="$t('pod.importShotPackTitle')" data-testid="pod-import" @click="openImport">
         <i class="fa-solid fa-file-import me-1"></i>{{ $t('pod.importShotPack') }}
       </BButton>
+      <BButton variant="primary" size="sm" class="flex-grow-1 text-nowrap" :disabled="pod.status !== 'running'" :title="pod.status === 'running' ? $t('runflows.buttonTitle') : $t('runflows.needsRunning')" data-testid="pod-run-workflows" @click="showRunFlows = true">
+        <i class="fa-solid fa-play me-1"></i>{{ $t('runflows.button') }}
+      </BButton>
     </div>
     <div v-if="showDetails" class="small mb-2" data-testid="pod-details">
       <div v-if="detailsError" class="text-danger">{{ detailsError }}</div>
@@ -134,6 +137,7 @@
     </div>
     <ConfigModal v-if="configOpen" mode="pod" v-model="configOpen" :initial="ownConfig" :pod-name="pod.name" :pod-id="pod.id" :runpod-name="pod.runpod_name || ''" @apply="applyConfig" />
     <SyncModal v-model="showSync" :pod="pod" />
+    <RunWorkflowsModal v-if="showRunFlows" v-model="showRunFlows" :pod="pod" />
     <BModal v-model="showLogs" :title="$t('pod.logsTitle', { name: pod.name })" size="xl" scrollable ok-only :ok-title="$t('pod.close')" ok-variant="outline-light" body-class="p-0" @hidden="showLogs = false">
       <PodLogs v-if="showLogs" :pod-id="pod.id" modal />
     </BModal>
@@ -194,6 +198,7 @@
 import { t } from '../i18n'
 import { computed, onMounted, ref, watch } from 'vue'
 import PodLogs from './PodLogs.vue'
+import RunWorkflowsModal from './RunWorkflowsModal.vue'
 import SyncModal from './SyncModal.vue'
 import DockerfileModal from './DockerfileModal.vue'
 import ConfigModal from './ConfigModal.vue'
@@ -247,6 +252,7 @@ const toast = useToastStore()
 const showDetails = ref(false)
 const showLogs = ref(false)
 const showSync = ref(false)
+const showRunFlows = ref(false)
 const ui = useUiStore()
 /** Import Shot Pack: its own modal (a package folder into ComfyUI-Shared through an adapter; Sync then puts it on this pod, ADR-008). */
 /** One button: the modal opens on the source picker (a folder or zip on this PC, or the Panama bucket). */

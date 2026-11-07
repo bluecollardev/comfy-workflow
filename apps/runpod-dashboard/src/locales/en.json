@@ -337,6 +337,23 @@
     "pullAnyCard": "Pull pods may use any free card",
     "pullAnyCardHint": "(a Pod download needs no GPU, so it takes the cheapest card RunPod has free in the volume's datacenter, even one outside the usual list; the card and its price are shown before it starts. Off: only the usual cards)"
   },
+  "runflows": {
+    "button": "Run workflows",
+    "buttonTitle": "Choose which of this pod's workflows to run; every error is written to the History",
+    "needsRunning": "The pod must be running to run workflows",
+    "title": "Run workflows on {name}",
+    "loading": "Reading the pod's Workflows panel...",
+    "empty": "This pod's Workflows panel has no graphs. Pull a round (its graphs are placed under workflows/rounds/<round>/) first.",
+    "selectAll": "Select all",
+    "selectNone": "Select none",
+    "selected": "{n} of {of} selected",
+    "top": "(top level)",
+    "run": "Run {n} workflow(s)",
+    "cancel": "Stop",
+    "summary": "{ok} done, {failed} failed, of {total}",
+    "logged": "errors are in the History",
+    "state": { "pending": "waiting", "running": "running", "done": "done", "failed": "failed", "skipped": "skipped" }
+  },
   "picker": {
     "title": "Choose the {name} folder",
     "up": "Up one folder",

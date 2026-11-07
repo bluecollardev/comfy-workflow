@@ -124,6 +124,12 @@ const TABLE = {
     undo: (c) => c.configio.undoImport(),
     backups: (c) => c.configio.listBackups(),
   },
+  runflows: {   // docs/ADR-037: run workflows on a pod
+    list: (c, podId) => c.runflows.list(podId),
+    run: (c, podId, paths, approvedBy) => c.runflows.run(podId, paths, approvedBy ? { approvedBy } : {}),
+    job: (c, id) => c.runflows.job(id),
+    cancel: (c, id) => c.runflows.cancel(id),
+  },
   panama: {   // docs/ADR-015: the exchange bucket as an import source
     status: (c) => c.panama.status(),
     rounds: (c) => c.panama.rounds(),

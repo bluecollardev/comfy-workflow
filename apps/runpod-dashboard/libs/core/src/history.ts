@@ -13,7 +13,7 @@ import { historyFile } from './paths.js'
 
 export type PodAction = 'created' | 'started' | 'stopped' | 'recreated' | 'renamed' | 'deleted'
 export interface PodEvent { ts: string; kind: 'pod'; action: PodAction; pod_id: string; name: string; gpu?: string; datacenter?: string; cost_per_hr?: number | null; detail?: string }
-export interface JobEvent { ts: string; kind: 'job'; job: 'pull' | 'remove' | 'sync'; state: 'done' | 'failed' | 'cancelled'; started_at?: string; what: string; pod_id?: string; pod_name?: string; files?: number; bytes?: number; detail?: string; error?: string }
+export interface JobEvent { ts: string; kind: 'job'; job: 'pull' | 'remove' | 'sync' | 'run'; state: 'done' | 'failed' | 'cancelled'; started_at?: string; what: string; pod_id?: string; pod_name?: string; files?: number; bytes?: number; detail?: string; error?: string }
 /** A change to something that is not a pod or a job: a volume made, resized, deleted or made the default; the configuration saved or imported; a shot pack imported; an adapter saved. */
 export interface ChangeEvent { ts: string; kind: 'change'; area: 'volume' | 'configuration' | 'import' | 'adapter'; action: string; what: string; detail?: string }
 export type HistoryEvent = (PodEvent | JobEvent | ChangeEvent) & Origin

@@ -245,7 +245,7 @@ const jobKind = ref('')
 const jobState = ref('')
 const jobVia = ref('')
 const jobText = ref('')
-const jobKindOptions = computed(() => [{ value: '', text: t('history.anyKind') }, { value: 'jobs', text: t('history.kindJobs') }, { value: 'changes', text: t('history.kindChanges') }, ...['pull', 'sync', 'remove'].map((k) => ({ value: `job:${k}`, text: k })), ...['volume', 'configuration', 'import', 'adapter'].map((a) => ({ value: `area:${a}`, text: t(`history.area_${a}`) }))])
+const jobKindOptions = computed(() => [{ value: '', text: t('history.anyKind') }, { value: 'jobs', text: t('history.kindJobs') }, { value: 'changes', text: t('history.kindChanges') }, ...['pull', 'sync', 'remove', 'run'].map((k) => ({ value: `job:${k}`, text: k })), ...['volume', 'configuration', 'import', 'adapter'].map((a) => ({ value: `area:${a}`, text: t(`history.area_${a}`) }))])
 /** Configuration saves are frequent and rarely the point: hidden unless asked for (the switch, or the Configuration kind picked). Remembered. */
 const showConfig = ref(localStorage.getItem('history.showConfig') === '1')
 watch(showConfig, (v) => localStorage.setItem('history.showConfig', v ? '1' : '0'))

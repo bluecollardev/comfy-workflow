@@ -5,6 +5,11 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased
 
+### Run workflows on a pod: a card button, a modal, the History, MCP (ADR-037)
+- Lucas: "have a button on pod cards called run workflows. running this should log any errors to our logs", "run workflows should run all workflows in shot", "pop open a modal that allows you to select which workflows to run", "also exposed to mcp", and chose the ComfyUI frontend in a browser, on the pod and on this PC ("yes build both").
+- A **Run workflows** button on a running pod's card opens a modal listing the pod's graphs by folder, all ticked; Run converts each UI graph with ComfyUI's own frontend (`graphToPrompt`), queues it, waits, and shows each graph's result and error. Each outcome (and error: rejected node, execution error, conversion failure, locked shot, timeout) is a `run` event in the History. MCP: `list_pod_workflows`, `run_pod_workflows` (needs `approved_by`), `run_workflows_job`.
+- Conversion is tried on the pod first (`docker/ui2api.py`, a headless Chromium in the image; **new image tag not built**), else Chrome on this PC (`playwright-core`). Core and browser tests pass; **not yet run on a real pod**.
+
 ### Placed graphs name files ComfyUI's dropdown can list (ADR-033 amendment)
 - Lucas's screenshots: the cgi-042 graph showed "28 nodes, 28 Missing Inputs" although the images rendered. ComfyUI lists only top-level `input/` files and its frontend flags anything else. Placing now also hard-links each loaded file at the top of `input/` as `<shot>__<stem>__<sha8>.<ext>` and writes the graph copy with those names (`names: 'flat'`, the default; `'round'` keeps the subfolder form). No `.as-delivered.json` copy is written any more (Lucas opened one by mistake: "can we exclude those from the UI?"); the original stays in the round folder. Tests: the flat run (top-level files are exactly what the dropdown would list, second run changes nothing), `flatName`.
 
