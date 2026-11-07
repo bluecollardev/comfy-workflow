@@ -117,7 +117,7 @@
       <BButton variant="primary" size="sm" class="flex-grow-1 text-nowrap" :title="$t('pod.importShotPackTitle')" data-testid="pod-import" @click="openImport">
         <i class="fa-solid fa-file-import me-1"></i>{{ $t('pod.importShotPack') }}
       </BButton>
-      <BButton variant="primary" size="sm" class="flex-grow-1 text-nowrap" :disabled="pod.status !== 'running'" :title="pod.status === 'running' ? $t('runflows.buttonTitle') : $t('runflows.needsRunning')" data-testid="pod-run-workflows" @click="showRunFlows = true">
+      <BButton variant="success" size="sm" class="flex-grow-1 text-nowrap" :disabled="pod.status !== 'running'" :title="pod.status === 'running' ? $t('runflows.buttonTitle') : $t('runflows.needsRunning')" data-testid="pod-run-workflows" @click="showRunFlows = true">
         <i class="fa-solid fa-play me-1"></i>{{ $t('runflows.button') }}
       </BButton>
     </div>

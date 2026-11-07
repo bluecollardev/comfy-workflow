@@ -338,7 +338,7 @@
     "pullAnyCardHint": "(a Pod download needs no GPU, so it takes the cheapest card RunPod has free in the volume's datacenter, even one outside the usual list; the card and its price are shown before it starts. Off: only the usual cards)"
   },
   "runflows": {
-    "button": "Run workflows",
+    "button": "Run Workflows",
     "buttonTitle": "Choose which of this pod's workflows to run; every error is written to the History",
     "needsRunning": "The pod must be running to run workflows",
     "title": "Run workflows on {name}",
