@@ -50,6 +50,8 @@ export async function list(podId: string, client?: rp.RunPodClient, fetchFn: typ
   if (pod.status !== 'running' || !pod.web_ui_url) throw new CoreError(409, `Pod ${podId} is not running: start it to list its workflows`)
   const base = pod.web_ui_url.replace(/\/$/, '')
   const r = await fetchFn(`${base}/api/userdata?dir=workflows&recurse=true&split=false&full_info=true`, { signal: AbortSignal.timeout(15_000) })
+  // ComfyUI answers 404 "Directory not found" when user/default/workflows does not exist yet (a fresh ComfyUI): that is an empty panel, not a failure.
+  if (r.status === 404) return { pod_id: podId, pod_name: pod.name, count: 0, workflows: [] }
   if (r.status !== 200) throw new CoreError(502, `ComfyUI answered HTTP ${r.status} listing its workflows`)
   const w = toFiles(await r.json())
   return { pod_id: podId, pod_name: pod.name, count: w.length, workflows: w }

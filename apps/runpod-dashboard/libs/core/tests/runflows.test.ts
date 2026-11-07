@@ -40,6 +40,11 @@ describe('listing', () => {
     expect(w.map((x) => x.path)).toEqual(['top.json', 'rounds/r1/cgi-042/a.json', 'rounds/r1/cgi-042/b.json'])
     expect(w[0]).toMatchObject({ group: '', name: 'top.json' }); expect(w[1]).toMatchObject({ group: 'rounds/r1/cgi-042', name: 'a.json' })
   })
+  it('a ComfyUI with no workflows folder answers 404 and that is an empty list, not an error', async () => {
+    const client = { fetchFn: (async () => ({ status: 200, ok: true, json: async () => ({ data: { pod: { id: 'pod1', name: 'fresh', desiredStatus: 'RUNNING', imageName: 'i', runtime: { uptimeInSeconds: 5, ports: [] }, machine: { gpuDisplayName: 'RTX 4090' } } } }) })) as unknown as typeof fetch, apiKey: 't' }
+    const l = await runflows.list('pod1', client, (async () => ({ status: 404, ok: false, json: async () => ({}) })) as unknown as typeof fetch)
+    expect(l).toMatchObject({ count: 0, workflows: [] })
+  })
   it('a dry run lists simulated graphs', async () => {
     const cfg = mounts.load(); cfg.dry_run = true; mounts.save(cfg)
     const l = await runflows.list('x'); expect(l.count).toBeGreaterThan(0)
