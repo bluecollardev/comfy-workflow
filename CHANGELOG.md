@@ -5,6 +5,13 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased
 
+### Import Round and the Queue: one approval queues a pull and a run per shot for the pool pods (ADR-038)
+- Lucas: "i want a button, right side, with cta that allows user to import a round, a round import auto creates a bunch of pods, or queues the action. have a button in cta to view queue as well"; one task per shot on pool pods; "approve once per import, with a cap... except also have a default setting to disable cap"; the queue shows all tasks and their pods.
+- Two buttons at the right of the top bar: **Import Round** (green) opens a window to pick a round, its shots (all ticked), whether to run each shot's workflows, the pod limit and dollar cap, and who approves; **Queue** (with a count) lists every task with its state, pod and error, with Cancel, Retry and Cancel all.
+- Core `queue.ts`: a persisted queue (`queue.json`); a `pull` task (which places the round) then one `run` task per shot (ADR-037). A scheduler hands each run a pool pod: a running one, else a restarted stopped one, else a created one, within the pod limit; it holds work past the dollar cap, stops the pods it started when the import ends, and marks tasks that were running at a restart `interrupted`. Outcomes go to the History as `queue` jobs.
+- Settings in the Default Configuration (and the import/export): `import_max_pods` (2), `import_cost_cap_usd` (50), `import_cap_enabled` (on; off = no pod limit and no dollar cap on imports; Binc's USD 100 agent cap is separate). MCP: `plan_round_import`, `import_round` (needs `approved_by`), `queue_list`, `queue_task`.
+- Tested with fakes (12 core tests, one browser test); **not run against real pods**.
+
 ### Run workflows on a pod: a card button, a modal, the History, MCP (ADR-037)
 - Lucas: "have a button on pod cards called run workflows. running this should log any errors to our logs", "run workflows should run all workflows in shot", "pop open a modal that allows you to select which workflows to run", "also exposed to mcp", and chose the ComfyUI frontend in a browser, on the pod and on this PC ("yes build both").
 - A **Run workflows** button on a running pod's card opens a modal listing the pod's graphs by folder, all ticked; Run converts each UI graph with ComfyUI's own frontend (`graphToPrompt`), queues it, waits, and shows each graph's result and error. Each outcome (and error: rejected node, execution error, conversion failure, locked shot, timeout) is a `run` event in the History. MCP: `list_pod_workflows`, `run_pod_workflows` (needs `approved_by`), `run_workflows_job`.
