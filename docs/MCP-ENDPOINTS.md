@@ -187,8 +187,8 @@ Each tool calls the core function the window's IPC channel calls. `mcp/parity.mj
 | `panama_cancel` | `id`, `target?` | Stop a download; what is already there stays and a later pull resumes |  |
 | `panama_remove` | `round`, `target?`, `approved_by?` | Delete a round's staged copy: on this PC, or on the volume by a pod (needs approved_by: it uses a pod). | spend: named yes |
 | `plan_round_import` | `round`, `shots?`, `run_workflows?`, `max_pods?`, `cost_cap_usd?`, `cards?` | What importing a round would do and cost: shots, price, estimate, caps (ADR-038). | read |
-| `import_rounds` | `rounds` (each `round`, `shots?`, `cards?`, `max_pods?`), `run_workflows?`, `cost_cap_usd?` (total), `approved_by` | The imports queued, one per round | What the Import Round(s) window does: one approval, the dollar cap split evenly, every round planned first. Spends: needs `approved_by`. |
-| `import_round` | `round`, `shots?`, `run_workflows?`, `max_pods?`, `cost_cap_usd?`, `approved_by`, `cards?` | Queue a pull and one run-workflows task per shot; pool pods take them within the limits. One approval covers the import. | spend: named yes |
+| `import_rounds` | `rounds` (each `round`, `shots?`, `cards?`, `max_pods?`), `run_workflows?`, `volume_id?`, `cost_cap_usd?` (total), `approved_by` | The imports queued, one per round | What the Import Round(s) window does: one approval, the dollar cap split evenly, every round planned first. Spends: needs `approved_by`. |
+| `import_round` | `round`, `shots?`, `run_workflows?`, `max_pods?`, `cost_cap_usd?`, `approved_by`, `cards?`, `volume_id?` | Queue a pull and one run-workflows task per shot; pool pods take them within the limits. One approval covers the import. | spend: named yes |
 | `queue_list` | | Every import and task with state, pod and error. | read |
 | `queue_task` | `action`, `id`, `max_pods?`, `cost_cap_usd?` | `cancel`, `retry`, `cancel_import` or `set_limits`. | read/act |
 | `list_pod_workflows` | `pod_id` | The graphs in a running pod's Workflows panel, grouped by folder (ADR-037). | read |

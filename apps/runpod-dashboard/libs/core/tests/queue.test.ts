@@ -30,6 +30,7 @@ function world(pool: { id: string; name: string; state: 'running' | 'starting' |
     volumePods: async () => w.pods.map((p) => ({ id: p.id, name: p.name, state: p.state, price: p.price })),
     podReady: async (id) => ({ ready: w.ready.has(id), price }),
     resumePod: async (id) => { w.resumed.push(id); const p = w.pods.find((x) => x.id === id)!; p.state = 'running'; w.ready.add(id) },
+    ensureVolume: async (id) => { (w.vols ||= []).push(id ?? null) },
     cardPrice: async (g) => (g === 'rtx5090' ? 2 : null),
     createPod: async (name, round, gpu) => { (w.gpuOf ||= {})[`new${w.created.length + 1}`] = gpu; const id = `new${w.created.length + 1}`; w.created.push(id); (w.rounds ||= {})[id] = round; w.pods.push({ id, name, state: 'running', price }); w.ready.add(id); return { id, name } },
     stopPod: async (id) => { w.stopped.push(id) },
@@ -179,5 +180,16 @@ describe('several rounds on one approval', () => {
     const out = await queue.importRounds([{ round: 'r1', shots: ['cgi-042'] }, { round: 'r2', max_pods: 3 }], { approved_by: 'L', cost_cap_usd: 40 })
     expect(out.map((i) => [i.round, i.cost_cap_usd])).toEqual([['r1', 20], ['r2', 20]])
     expect(out[1].max_pods).toBe(3)
+  })
+})
+
+describe('the volume for an import', () => {
+  it('is checked before anything is queued and can be named; a missing one queues nothing', async () => {
+    const w = world()
+    await queue.importRounds([{ round: 'r1' }, { round: 'r2' }], { approved_by: 'L', volume_id: 'vol9' })
+    expect((w as any).vols[0]).toBe('vol9')
+    queue.configure({ ensureVolume: async () => { throw new Error('The network volume "x" is not one of your volumes') } })
+    await expect(queue.importRounds([{ round: 'r3' }], { approved_by: 'L' })).rejects.toThrow(/not one of your volumes/)
+    expect(queue.list().imports.map((i) => i.round)).not.toContain('r3')
   })
 })

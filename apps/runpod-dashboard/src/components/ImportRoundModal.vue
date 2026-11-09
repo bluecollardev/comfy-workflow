@@ -49,8 +49,14 @@
       <label class="d-flex align-items-center gap-2 small mt-3"><input v-model="runWorkflows" type="checkbox" class="form-check-input mt-0" data-testid="import-round-run" />{{ $t('importRound.runWorkflows') }}</label>
     </template>
 
-    <!-- 3. Choose cards for the shots -->
+    <!-- 3. Choose cards for the shots, and the volume -->
     <template v-else>
+      <div class="d-flex align-items-center gap-2 mb-3 small flex-wrap">
+        <label class="mb-0 fw-semibold" for="ir-volume">{{ $t('importRound.volume') }}</label>
+        <BFormSelect id="ir-volume" v-model="volumeId" :options="volumeOptions" size="sm" style="max-width: 30rem" data-testid="import-round-volume" />
+        <div v-if="volumeProblem" class="text-warning w-100" data-testid="import-round-volume-problem"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ volumeProblem }}</div>
+        <div v-else-if="volumeId && volumeId !== defaultVolume" class="text-body-secondary w-100" data-testid="import-round-volume-note">{{ $t('importRound.volumeNote') }}</div>
+      </div>
       <div class="d-flex align-items-center gap-2 mb-2 small">
         <label class="mb-0" for="ir-card-all">{{ $t('importRound.cardAll') }}</label>
         <BFormSelect id="ir-card-all" :model-value="''" :options="cardOptions" size="sm" style="max-width: 24rem" data-testid="import-round-card-all" @update:model-value="setAllCards" />
@@ -104,6 +110,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { panamaAPI } from '../api/panama'
 import { queueAPI } from '../api/queue'
 import { podsAPI } from '../api/pods'
+import { volumesAPI } from '../api/volumes'
 import { errorText } from '../stores/toast'
 import { t } from '../i18n'
 import { useUiStore } from '../stores/ui'
@@ -146,9 +153,16 @@ watch([cards, picked, runWorkflows], () => { if (step.value === 3) replan() }, {
 const canNext = computed(() => (step.value === 1 ? chosen.value.size > 0 && plans.value.size === chosen.value.size && !loadingPlan.value : totalShots.value > 0))
 /** A finished step can be revisited; a later one only once the step before it is complete. */
 const canGoTo = (n) => n <= step.value || (n === 2 ? canNext.value && step.value === 1 : n === 3 ? totalShots.value > 0 : false)
-const goTo = async (n) => { if (!canGoTo(n)) return; step.value = n; if (n === 3) await replan() }
-const next = async () => { step.value++; if (step.value === 3) await replan() }
-const hint = computed(() => (!chosen.value.size ? t('importRound.hintPick') : step.value < 3 ? t('importRound.hintSteps') : !totalShots.value ? t('importRound.hintShots') : t('importRound.hintApprove')))
+const goTo = async (n) => { if (!canGoTo(n)) return; step.value = n; if (n === 3) { await replan(); loadVolumes() } }
+const next = async () => { step.value++; if (step.value === 3) { await replan(); loadVolumes() } }
+const hint = computed(() => (!chosen.value.size ? t('importRound.hintPick') : step.value < 3 ? t('importRound.hintSteps') : !volumeId.value ? t('importRound.volumeNone') : !totalShots.value ? t('importRound.hintShots') : t('importRound.hintApprove')))
+const volumes = ref([]), volumeId = ref(''), defaultVolume = ref('')
+const volumeOptions = computed(() => [{ value: '', text: t('importRound.volumePick') }, ...volumes.value.map((v) => ({ value: v.id, text: `${v.name} · ${v.size_gb} GB · ${v.datacenter}${v.is_default ? ` · ${t('importRound.volumeDefault')}` : ''}` }))])
+const volumeProblem = computed(() => (volumes.value.length && !volumeId.value ? t('importRound.volumeNone') : !volumes.value.length && volumesLoaded.value ? t('importRound.volumeNoneAtAll') : ''))
+const volumesLoaded = ref(false)
+async function loadVolumes() {
+  try { volumes.value = await volumesAPI.list(); const d = volumes.value.find((v) => v.is_default); defaultVolume.value = d?.id || ''; if (!volumeId.value) volumeId.value = d?.id || (volumes.value.length === 1 ? volumes.value[0].id : '') } catch { /* the import says so if there is no volume */ } finally { volumesLoaded.value = true }
+}
 const browsing = ref('')   // the round whose files are open in the explorer
 const podsEdited = ref(false)   // until the pod limit is typed, it follows the shots ticked: one pod per shot
 const maxPods = ref(2), costCap = ref(50), approvedBy = ref(''), error = ref(''), loadingPlan = ref(false), starting = ref(false)
@@ -159,7 +173,7 @@ const first = computed(() => [...plans.value.values()][0] || {})
 const estimate = computed(() => Math.round([...plans.value.entries()].reduce((a, [r, p]) => a + ((estimates.value.get(r) || p).est_total_usd ?? 0) * ((picked.value.get(r)?.size || 0) > 0 ? 1 : 0), 0) * 100) / 100)
 const shotCount = (r) => picked.value.get(r)?.size || 0
 const totalShots = computed(() => [...plans.value.keys()].reduce((a, r) => a + shotCount(r), 0))
-const canStart = computed(() => step.value === 3 && totalShots.value > 0 && approvedBy.value.trim().length > 0)
+const canStart = computed(() => step.value === 3 && !!volumeId.value && totalShots.value > 0 && approvedBy.value.trim().length > 0)
 
 onMounted(async () => { try { gpuMenu.value = ((await podsAPI.gpus('')).gpus || []).filter((g) => g.value !== 'auto') } catch { /* the plain pool choice still works */ }
   try { const r = await panamaAPI.rounds(); rounds.value = Array.isArray(r) ? r : r.rounds || [] } catch (e) { error.value = errorText(e) } })
@@ -185,7 +199,7 @@ async function start() {
     try { localStorage.setItem('runpod-manager.approved-by', approvedBy.value.trim()) } catch { /* storage blocked */ }
     const todo = [...plans.value.keys()].filter((r) => shotCount(r) > 0)
     const capOn = first.value.cap_enabled
-    await queueAPI.importMany(todo.map((r) => ({ round: r, shots: [...picked.value.get(r)], cards: cardsFor(r), ...(capOn ? { max_pods: todo.length > 1 && !podsEdited.value ? shotCount(r) : maxPods.value } : {}) })), { run_workflows: runWorkflows.value, approved_by: approvedBy.value.trim(), ...(capOn ? { cost_cap_usd: costCap.value } : {}) })
+    await queueAPI.importMany(todo.map((r) => ({ round: r, shots: [...picked.value.get(r)], cards: cardsFor(r), ...(capOn ? { max_pods: todo.length > 1 && !podsEdited.value ? shotCount(r) : maxPods.value } : {}) })), { run_workflows: runWorkflows.value, volume_id: volumeId.value, approved_by: approvedBy.value.trim(), ...(capOn ? { cost_cap_usd: costCap.value } : {}) })
     open.value = false; ui.queueOpen = true   // the Queue shows what it queued
   } catch (e) { error.value = errorText(e) } finally { starting.value = false }
 }

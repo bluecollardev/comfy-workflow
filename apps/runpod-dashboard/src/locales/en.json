@@ -378,6 +378,12 @@
   },
   "importRound": {
     "browse": "Browse files",
+    "volume": "Network volume",
+    "volumePick": "Pick a volume...",
+    "volumeDefault": "default",
+    "volumeNone": "Pick the network volume the pods and the pull use.",
+    "volumeNoneAtAll": "You have no network volumes: create one in Volumes first.",
+    "volumeNote": "This volume becomes the default volume (pods are created next to it, in its datacenter).",
     "stepRounds": "Choose rounds",
     "stepShots": "Choose shots",
     "stepCards": "Choose cards",

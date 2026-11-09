@@ -15,6 +15,7 @@ import * as podpull from './podpull.js'
 import * as pods from './pods.js'
 import * as rp from './runpod.js'
 import * as runflows from './runflows.js'
+import * as volumes from './volumes.js'
 
 export type TaskKind = 'pull' | 'run'
 export type TaskState = 'waiting' | 'running' | 'done' | 'failed' | 'held' | 'cancelled' | 'interrupted'
@@ -45,6 +46,8 @@ export interface Deps {
   resumePod: (id: string) => Promise<void>
   createPod: (name: string, round: string, gpu?: string) => Promise<{ id: string; name: string }>
   cardPrice: (gpu: string) => Promise<number | null>
+  /** Make sure the volume the pods and the pull use exists; `id` (when given) becomes the Default Configuration's volume first. */
+  ensureVolume: (id?: string) => Promise<void>
   stopPod: (id: string) => Promise<void>
   planPull: (round: string) => Promise<{ price_per_hour: number | null; ceiling_minutes: number; bytes: number }>
   pull: (round: string) => Promise<{ id: string }>
@@ -73,6 +76,13 @@ const realDeps: Deps = {
   podReady: async (id) => { const p = await pods.get(id); const raw = await rp.getPod(id); return { ready: p.status === 'running' && !!p.web_ui_url && p.comfy_ready !== false, price: raw?.costPerHr ?? null } },
   resumePod: async (id) => { await pods.resume(id) },
   createPod: async (name, round, gpu) => { const p = await pods.create({ name, gpu: gpu || POOL_GPU, apply_mounts: true, round }); return { id: p.id, name: p.name } },
+  ensureVolume: async (id) => {
+    const want = (id || mounts.load().network_volume_id || '').trim()
+    if (!want) throw new CoreError(400, 'No network volume: pick one for the import (or set the default volume).')
+    const vol = (await volumes.list()).find((v) => v.id === want)
+    if (!vol) throw new CoreError(400, `The network volume "${want}" is not one of your volumes: pick a volume for the import.`)
+    if (!vol.is_default) await volumes.useAsDefault(want)
+  },
   cardPrice: async (gpu) => (await pods.gpuMenu()).gpus.find((g) => g.value === gpu)?.price ?? null,
   stopPod: async (id) => { await pods.stop(id) },
   planPull: async (round) => { const p = await podpull.plan(round); return { price_per_hour: p.price_per_hour, ceiling_minutes: p.ceiling_minutes, bytes: p.bytes } },
@@ -118,7 +128,7 @@ export interface ImportPlan {
   round: string; shots: string[]; price_per_hour: number | null; pull_hours: number; est_total_usd: number | null
   max_pods: number | null; cost_cap_usd: number | null; cap_enabled: boolean; over_cap: boolean
 }
-export interface ImportOpts { /** shot -> card (a GPU key); a shot without one takes the pool */ cards?: Record<string, string>; shots?: string[]; run_workflows?: boolean; max_pods?: number; cost_cap_usd?: number; approved_by?: string }
+export interface ImportOpts { /** the network volume the pods and the pull use; it becomes the default volume */ volume_id?: string; /** shot -> card (a GPU key); a shot without one takes the pool */ cards?: Record<string, string>; shots?: string[]; run_workflows?: boolean; max_pods?: number; cost_cap_usd?: number; approved_by?: string }
 
 /** The price per hour of the card chosen for each shot that has one (a card we cannot price is left out: the pull's price stands in). */
 async function cardPrices(shots: string[], o: ImportOpts): Promise<Record<string, number | null>> {
@@ -150,6 +160,7 @@ const newId = (p: string) => `${p}-${deps.now().getTime().toString(36)}-${(seq++
 export async function importRound(round: string, o: ImportOpts = {}): Promise<ImportRec> {
   const by = (o.approved_by || '').trim()
   if (!by) throw new CoreError(400, 'An import spends money on pods: say who approves it (approved_by).')
+  await deps.ensureVolume(o.volume_id)   // before any pod is created: a missing volume fails here, loudly, not in each pull
   const plan = await planImport(round, o)
   if (!plan.shots.length) throw new CoreError(404, `No shots found in ${round}.`)
   const q = state()
@@ -171,6 +182,8 @@ export async function importRounds(items: RoundItem[], o: Omit<ImportOpts, 'shot
   if (!(o.approved_by || '').trim()) throw new CoreError(400, 'An import spends money on pods: say who approves it (approved_by).')
   const names = items.map((i) => i.round)
   if (new Set(names).size !== names.length) throw new CoreError(400, 'A round is listed twice.')
+  await deps.ensureVolume(o.volume_id)
+  o = { ...o, volume_id: undefined }   // done once for all the rounds
   const each = o.cost_cap_usd != null ? Math.round((o.cost_cap_usd / items.length) * 100) / 100 : undefined
   const opts = (i: RoundItem): ImportOpts => ({ ...o, shots: i.shots, cards: i.cards, ...(each != null ? { cost_cap_usd: each } : {}), ...(i.max_pods != null ? { max_pods: i.max_pods } : {}) })
   for (const i of items) { const p = await planImport(i.round, opts(i)); if (!p.shots.length) throw new CoreError(404, `No shots found in ${i.round}.`); if (state().imports.some((x) => x.round === i.round && x.state === 'active')) throw new CoreError(409, `${i.round} is already being imported: see the queue.`) }

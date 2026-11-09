@@ -27,9 +27,12 @@ test('Import Round: three steps - rounds, shots, cards - then Import with the ap
   await expect(dlg.getByTestId('import-round-estimate')).toContainText('6.98')
   await expect(dlg.getByTestId('import-round-max-pods')).toHaveValue('1')   // one pod per shot ticked
   await dlg.getByTestId('import-round-card').selectOption('rtx4090')
-  await expect(dlg.getByTestId('import-round-start')).toBeDisabled()   // nobody has said yes yet
-  await dlg.getByTestId('import-round-approved-by').fill('Lucas')   // in the footer
-  await dlg.getByTestId('import-round-start').click()
+  await expect(dlg.getByTestId('import-round-volume-problem')).toBeVisible()   // no default volume: one has to be picked
+  await dlg.getByTestId('import-round-approved-by').fill('Lucas')
+  await expect(dlg.getByTestId('import-round-start')).toBeDisabled()   // no volume yet
+  await dlg.getByTestId('import-round-volume').selectOption('vol1')
+  await expect(dlg.getByTestId('import-round-volume-note')).toBeVisible()   // it becomes the default
+  await dlg.getByTestId('import-round-start').click()   // Approved by is in the footer
   expect(api.state.imported).toMatchObject({ shots: ['cgi-042'], cards: { 'cgi-042': 'rtx4090' }, approved_by: 'Lucas', run_workflows: true, max_pods: 1, cost_cap_usd: 50 })
   const q = page.getByTestId('queue-modal')
   await expect(q.getByTestId('queue-task')).toHaveCount(2)
@@ -47,6 +50,7 @@ test('Import Round(s): several rounds can be ticked; each is its own import, the
   await expect(dlg.getByTestId('import-round-group')).toHaveCount(2)
   await dlg.getByTestId('import-round-next').click()
   await expect(dlg.getByTestId('import-round-estimate')).toContainText('13.96')   // 6.98 for each round
+  await dlg.getByTestId('import-round-volume').selectOption('vol1')
   await dlg.getByTestId('import-round-approved-by').fill('Lucas')
   await dlg.getByTestId('import-round-start').click()
   await expect.poll(() => api.state.importedAll?.length).toBe(2)
