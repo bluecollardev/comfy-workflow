@@ -60,6 +60,7 @@ describe('a card for a shot', () => {
     expect((w as any).gpuOf.new1).toBe('rtx5090')
     expect(queue.list().tasks.find((x) => x.shot === 'cgi-043')?.pod_id).toBe('pool1')
     const evs = (shot: string) => (queue.list().tasks.find((x) => x.shot === shot)?.events ?? []).map((e) => e.text).join(' | ')
+    expect(queue.list().tasks.find((x) => x.shot === 'cgi-042')?.card).toBe('rtx5090')   // the card used is on the task
     expect(evs('cgi-042')).toMatch(/created pod .*rtx5090/)   // what happened to a task is kept, with times
     expect(evs('cgi-043')).toMatch(/reusing the pod pool/)
   })
@@ -206,5 +207,16 @@ describe('retrying a pull', () => {
     const pull = tasks().find((t) => t.kind === 'pull')!
     queue.retryTask(pull.id)
     expect(states()).toEqual(['pull=waiting', 'run:cgi-042=waiting'])
+  })
+})
+
+describe('the pool default card shows in the queue too', () => {
+  it('a pod the queue creates for a shot with no card says which card it is (the H100)', async () => {
+    const w = world()
+    await queue.importRound(ROUND, { shots: ['cgi-042'], approved_by: 'L' })
+    w.pull.state = 'done'; await queue.tick(); await queue.tick()
+    expect(w.created).toEqual(['new1'])
+    expect(queue.list().tasks.find((x) => x.shot === 'cgi-042')?.card).toBe(queue.POOL_GPU)
+    expect((queue.list().tasks.find((x) => x.shot === 'cgi-042')?.events ?? []).map((e) => e.text).join(' ')).toContain(queue.POOL_GPU)
   })
 })

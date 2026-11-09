@@ -19,7 +19,7 @@
                 <span class="badge" :class="badge(t.state)" data-testid="queue-task-state">{{ $t(`queue.state_${t.state}`) }}</span>
                 <div v-if="t.stage" class="small text-body-secondary" data-testid="queue-task-stage">{{ t.stage }}</div>
               </td>
-              <td class="small">{{ t.pod_name || '' }}<div v-if="t.pod_id" class="text-body-secondary font-monospace">{{ t.pod_id }}</div><div v-if="t.gpu" class="text-body-secondary">{{ t.gpu }}</div></td>
+              <td class="small">{{ t.pod_name || '' }}<div v-if="t.pod_id" class="text-body-secondary font-monospace">{{ t.pod_id }}</div><div v-if="t.card || t.gpu" class="text-body-secondary" data-testid="queue-task-card">{{ t.card || t.gpu }}</div></td>
               <td class="small" :class="t.error ? 'text-danger' : 'text-body-secondary'">{{ t.error || t.held_reason || t.detail || '' }}<div v-if="t.started_at" class="text-body-secondary">{{ $t('queue.started', { at: clock(t.started_at) }) }}<template v-if="t.finished_at"> · {{ $t('queue.took', { min: mins(t) }) }}</template></div></td>
               <td class="text-end text-nowrap">
                 <BButton v-if="t.events?.length" size="sm" variant="outline-light" :aria-expanded="open_.has(t.id)" data-testid="queue-details" @click="toggleDetails(t.id)"><i class="fa-solid" :class="open_.has(t.id) ? 'fa-chevron-up' : 'fa-list'"></i></BButton>

@@ -30,6 +30,8 @@ export interface Task {
   events?: { at: string; text: string }[]
   /** The live stage of the pull job or the run (`pulling`, `placing`, `running 3/12 graphs`...). */
   stage?: string
+  /** The card of the pod this task actually runs on, when the queue created it (the chosen card, else the pool's default): shown in the Queue for every task. */
+  card?: string
   started_at?: string; finished_at?: string; error?: string; detail?: string; held_reason?: string
 }
 export interface ImportRec {
@@ -288,7 +290,7 @@ async function begin(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> {
       podId = pick.id; podName = pick.name
       if (pick.state === 'off') { await deps.resumePod(pick.id); imp.started_pods.push(pick.id); ev(t, `restarted your stopped pod ${pick.name}`) } else ev(t, `reusing the pod ${pick.name} (${pick.state})`)
     } else {
-      const c = await deps.createPod(`queue-${imp.round}-${tasks.filter((x) => x.pod_id).length + 1}`.slice(0, 60), imp.round, t.gpu); podId = c.id; podName = c.name; imp.started_pods.push(c.id); ev(t, `created pod ${c.name} (${t.gpu || POOL_GPU}) in round ${imp.round}`)
+      const c = await deps.createPod(`queue-${imp.round}-${tasks.filter((x) => x.pod_id).length + 1}`.slice(0, 60), imp.round, t.gpu); podId = c.id; podName = c.name; t.card = t.gpu || POOL_GPU; imp.started_pods.push(c.id); ev(t, `created pod ${c.name} (${t.gpu || POOL_GPU}) in round ${imp.round}`)
     }
     t.pod_id = podId; t.pod_name = podName; t.phase = 'pod'; t.state = 'running'; t.started_at = deps.now().toISOString(); delete t.held_reason
   } catch (e) { finish(t, imp, 'failed', (e as Error).message) }

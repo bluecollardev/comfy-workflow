@@ -26,14 +26,14 @@ test('Import Round: three steps - rounds, shots, cards - then Import with the ap
   await expect(dlg.getByTestId('import-round-card-row')).toHaveCount(1)
   await expect(dlg.getByTestId('import-round-estimate')).toContainText('6.98')
   await expect(dlg.getByTestId('import-round-max-pods')).toHaveValue('1')   // one pod per shot ticked
-  await dlg.getByTestId('import-round-card').selectOption('rtx4090')
+  await dlg.getByTestId('import-round-card').selectOption('rtxpro6000')
   await expect(dlg.getByTestId('import-round-volume-problem')).toBeVisible()   // no default volume: one has to be picked
   await dlg.getByTestId('import-round-approved-by').fill('Lucas')
   await expect(dlg.getByTestId('import-round-start')).toBeDisabled()   // no volume yet
   await dlg.getByTestId('import-round-volume').selectOption('vol1')
   await expect(dlg.getByTestId('import-round-volume-note')).toBeVisible()   // it becomes the default
   await dlg.getByTestId('import-round-start').click()   // Approved by is in the footer
-  expect(api.state.imported).toMatchObject({ shots: ['cgi-042'], cards: { 'cgi-042': 'rtx4090' }, approved_by: 'Lucas', run_workflows: true, max_pods: 1, cost_cap_usd: 50 })
+  expect(api.state.imported).toMatchObject({ shots: ['cgi-042'], cards: { 'cgi-042': 'rtxpro6000' }, approved_by: 'Lucas', run_workflows: true, max_pods: 1, cost_cap_usd: 50 })
   const q = page.getByTestId('queue-modal')
   await expect(q.getByTestId('queue-task')).toHaveCount(2)
   await expect(q.getByTestId('queue-task').filter({ hasText: 'cgi-042' })).toContainText('boom (node 4, KSampler)')
@@ -90,12 +90,13 @@ test('Queue: the latest import is at the top, the oldest at the bottom, and the 
 })
 
 test('Queue: a task shows its pod, its stage and, opened, what happened and when', async ({ page, api }) => {
-  api.state.queue = { imports: [{ id: 'imp1', round: 'round-a', approved_by: 'L', created_at: '2026-11-09T01:00:00Z', state: 'active', spent_usd: 0, cap_enabled: true, cost_cap_usd: 10, max_pods: 2, counts: {} }], tasks: [{ id: 't1', import_id: 'imp1', round: 'round-a', shot: 'cgi-042', kind: 'run', state: 'running', pod_id: 'pod9', pod_name: 'queue-round-a-1', gpu: 'rtx4090', started_at: '2026-11-09T01:00:05Z', stage: 'running 1/3 graphs', events: [{ at: '2026-11-09T01:00:05Z', text: 'created pod queue-round-a-1 (rtx4090) in round round-a' }, { at: '2026-11-09T01:03:00Z', text: 'pod queue-round-a-1 is ready: running 3 graph(s)' }] }], active: 1 }
+  api.state.queue = { imports: [{ id: 'imp1', round: 'round-a', approved_by: 'L', created_at: '2026-11-09T01:00:00Z', state: 'active', spent_usd: 0, cap_enabled: true, cost_cap_usd: 10, max_pods: 2, counts: {} }], tasks: [{ id: 't1', import_id: 'imp1', round: 'round-a', shot: 'cgi-042', kind: 'run', state: 'running', pod_id: 'pod9', pod_name: 'queue-round-a-1', gpu: 'rtxpro6000', card: 'rtxpro6000', started_at: '2026-11-09T01:00:05Z', stage: 'running 1/3 graphs', events: [{ at: '2026-11-09T01:00:05Z', text: 'created pod queue-round-a-1 (rtxpro6000) in round round-a' }, { at: '2026-11-09T01:03:00Z', text: 'pod queue-round-a-1 is ready: running 3 graph(s)' }] }], active: 1 }
   await page.goto('/'); await page.getByTestId('open-queue').click()
   const q = page.getByTestId('queue-modal')
   await expect(q.getByTestId('queue-task-stage')).toHaveText('running 1/3 graphs')
   await expect(q.getByTestId('queue-task')).toContainText('pod9')
+  await expect(q.getByTestId('queue-task-card')).toHaveText('rtxpro6000')   // the card is in the queue
   await q.getByTestId('queue-details').click()
-  await expect(q.getByTestId('queue-task-events')).toContainText('created pod queue-round-a-1 (rtx4090)')
+  await expect(q.getByTestId('queue-task-events')).toContainText('created pod queue-round-a-1 (rtxpro6000)')
   await expect(q.getByTestId('queue-task-events')).toContainText('is ready: running 3 graph(s)')
 })
