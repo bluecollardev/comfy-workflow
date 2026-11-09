@@ -1,6 +1,6 @@
 <template>
   <BModal v-model="open" :title="$t('importRound.title')" size="lg" scrollable data-testid="import-round-modal" @hidden="open = false">
-    <ol class="stepper mb-5" data-testid="import-round-steps">
+    <ol class="stepper" data-testid="import-round-steps">
       <li v-for="(label, i) in stepLabels" :key="i" class="stepper-item" :class="{ active: step === i + 1, done: step > i + 1 }">
         <button type="button" class="stepper-btn" :disabled="!canGoTo(i + 1)" :aria-current="step === i + 1 ? 'step' : undefined" data-testid="import-round-step" :data-step="i + 1" :data-active="step === i + 1" @click="goTo(i + 1)">
           <span class="stepper-dot"><i v-if="step > i + 1" class="fa-solid fa-check"></i><template v-else>{{ i + 1 }}</template></span>
@@ -192,7 +192,7 @@ async function start() {
 </script>
 
 <style scoped>
-.stepper { display: flex; list-style: none; padding: 0; margin: 0; }
+.stepper { display: flex; list-style: none; padding: 0 0 1.75rem; margin: 0 0 2rem; border-bottom: 1px solid rgba(255, 255, 255, 0.15); }
 .stepper-item { flex: 1; position: relative; text-align: center; }
 .stepper-item:not(:last-child)::after { content: ''; position: absolute; top: 15px; left: calc(50% + 22px); width: calc(100% - 44px); height: 2px; background: rgba(255, 255, 255, 0.2); }
 .stepper-item.done:not(:last-child)::after { background: var(--bs-success); }
