@@ -196,3 +196,15 @@ describe('the volume for an import', () => {
     expect(queue.list().imports.map((i) => i.round)).not.toContain('r3')
   })
 })
+
+describe('retrying a pull', () => {
+  it('puts back the runs that failed only because the pull did not finish', async () => {
+    const w = world()
+    await queue.importRound(ROUND, { shots: ['cgi-042'], approved_by: 'L' })
+    w.pull.state = 'failed'; await queue.tick(); await queue.tick()
+    expect(states()).toEqual(['pull=failed', 'run:cgi-042=failed'])
+    const pull = tasks().find((t) => t.kind === 'pull')!
+    queue.retryTask(pull.id)
+    expect(states()).toEqual(['pull=waiting', 'run:cgi-042=waiting'])
+  })
+})

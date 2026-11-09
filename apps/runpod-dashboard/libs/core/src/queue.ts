@@ -321,6 +321,8 @@ export function retryTask(id: string): Task {
   const t = state().tasks.find((x) => x.id === id); if (!t) throw new CoreError(404, `No such task: ${id}`)
   if (live(t) && t.state !== 'held' && t.state !== 'interrupted') throw new CoreError(409, `Task ${id} is ${t.state}: nothing to retry.`)
   Object.assign(t, { state: 'waiting', error: undefined, detail: undefined, held_reason: undefined, job_id: undefined, phase: undefined, pod_id: null, pod_name: null, finished_at: undefined })
+  // retrying a pull also puts back the runs that failed only because it did not finish
+  if (t.kind === 'pull') for (const r of state().tasks) if (r.import_id === t.import_id && r.kind === 'run' && r.state === 'failed' && r.error === 'Its pull did not finish.') Object.assign(r, { state: 'waiting', error: undefined, finished_at: undefined, events: [...(r.events ?? []), { at: deps.now().toISOString(), text: 'its pull was retried: waiting for it again' }] })
   const imp = state().imports.find((i) => i.id === t.import_id)!; imp.state = 'active'
   save(); start(); return t
 }
