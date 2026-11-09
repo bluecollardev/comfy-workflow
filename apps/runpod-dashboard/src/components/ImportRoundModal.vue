@@ -1,6 +1,6 @@
 <template>
   <BModal v-model="open" :title="$t('importRound.title')" size="lg" scrollable data-testid="import-round-modal" @hidden="open = false">
-    <ol class="stepper mb-4" data-testid="import-round-steps">
+    <ol class="stepper mb-5" data-testid="import-round-steps">
       <li v-for="(label, i) in stepLabels" :key="i" class="stepper-item" :class="{ active: step === i + 1, done: step > i + 1 }">
         <button type="button" class="stepper-btn" :disabled="!canGoTo(i + 1)" :aria-current="step === i + 1 ? 'step' : undefined" data-testid="import-round-step" :data-step="i + 1" :data-active="step === i + 1" @click="goTo(i + 1)">
           <span class="stepper-dot"><i v-if="step > i + 1" class="fa-solid fa-check"></i><template v-else>{{ i + 1 }}</template></span>
