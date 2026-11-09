@@ -204,6 +204,7 @@ describe('retrying a pull', () => {
     await queue.importRound(ROUND, { shots: ['cgi-042'], approved_by: 'L' })
     w.pull.state = 'failed'; await queue.tick(); await queue.tick()
     expect(states()).toEqual(['pull=failed', 'run:cgi-042=failed'])
+    expect(tasks().find((x) => x.kind === 'run')?.error).toMatch(/^Not started: its pull did not finish: aws failed/)   // it says why
     const pull = tasks().find((t) => t.kind === 'pull')!
     queue.retryTask(pull.id)
     expect(states()).toEqual(['pull=waiting', 'run:cgi-042=waiting'])

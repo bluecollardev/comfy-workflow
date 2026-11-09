@@ -428,6 +428,8 @@
   },
   "queue": {
     "started": "started {at}",
+    "podNotCreated": "no pod was created",
+    "cardWanted": "{card} (chosen, not used)",
     "took": "took {min} min",
     "title": "Queue",
     "empty": "Nothing is queued. Import Round queues a pull and one run per shot.",

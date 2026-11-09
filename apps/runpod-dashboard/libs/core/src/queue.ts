@@ -199,6 +199,8 @@ export async function importRounds(items: RoundItem[], o: Omit<ImportOpts, 'shot
 }
 
 // ----- the scheduler -----
+/** A run that never started because its pull did not finish says so, and why. */
+const NOT_STARTED = 'Not started: its pull did not finish'
 const ev = (t: Task, text: string) => { (t.events ||= []).push({ at: deps.now().toISOString(), text }); if (t.events.length > 60) t.events.splice(0, t.events.length - 60) }
 const logTask = (t: Task, imp: ImportRec) => history.record({ kind: 'job', job: 'queue', state: t.state === 'done' ? 'done' : t.state === 'cancelled' ? 'cancelled' : 'failed', started_at: t.started_at, what: `${t.round} ${t.kind}${t.shot ? ` ${t.shot}` : ''}`, pod_id: t.pod_id ?? undefined, pod_name: t.pod_name ?? undefined, ...(t.error ? { error: t.error } : {}), detail: `import ${imp.id}; approved by ${imp.approved_by}${t.detail ? `; ${t.detail}` : ''}` })
 const finish = (t: Task, imp: ImportRec, s: 'done' | 'failed' | 'cancelled', error?: string) => { ev(t, error ? `${s}: ${error}` : s); t.stage = undefined; t.state = s; t.finished_at = deps.now().toISOString(); if (error) t.error = error; logTask(t, imp) }
@@ -217,7 +219,7 @@ export async function tick(): Promise<void> {
       // 2. waiting tasks whose dependencies are done
       for (const t of tasks.filter((x) => x.state === 'waiting')) {
         const deps_ = t.depends_on.map((id) => q.tasks.find((x) => x.id === id))
-        if (deps_.some((d) => d && (d.state === 'failed' || d.state === 'cancelled' || d.state === 'interrupted'))) { finish(t, imp, 'failed', 'Its pull did not finish.'); dirty = true; continue }
+        if (deps_.some((d) => d && (d.state === 'failed' || d.state === 'cancelled' || d.state === 'interrupted'))) { const why = deps_.find((d) => d && (d.state === 'failed' || d.state === 'cancelled' || d.state === 'interrupted')); finish(t, imp, 'failed', `${NOT_STARTED}${why?.error ? `: ${why.error}` : ''}`); dirty = true; continue }
         if (!deps_.every((d) => !d || d.state === 'done')) continue
         if (await begin(t, imp, tasks)) dirty = true
       }
@@ -324,7 +326,7 @@ export function retryTask(id: string): Task {
   if (live(t) && t.state !== 'held' && t.state !== 'interrupted') throw new CoreError(409, `Task ${id} is ${t.state}: nothing to retry.`)
   Object.assign(t, { state: 'waiting', error: undefined, detail: undefined, held_reason: undefined, job_id: undefined, phase: undefined, pod_id: null, pod_name: null, finished_at: undefined })
   // retrying a pull also puts back the runs that failed only because it did not finish
-  if (t.kind === 'pull') for (const r of state().tasks) if (r.import_id === t.import_id && r.kind === 'run' && r.state === 'failed' && r.error === 'Its pull did not finish.') Object.assign(r, { state: 'waiting', error: undefined, finished_at: undefined, events: [...(r.events ?? []), { at: deps.now().toISOString(), text: 'its pull was retried: waiting for it again' }] })
+  if (t.kind === 'pull') for (const r of state().tasks) if (r.import_id === t.import_id && r.kind === 'run' && r.state === 'failed' && (!!r.error?.startsWith(NOT_STARTED) || r.error === 'Its pull did not finish.')) Object.assign(r, { state: 'waiting', error: undefined, finished_at: undefined, events: [...(r.events ?? []), { at: deps.now().toISOString(), text: 'its pull was retried: waiting for it again' }] })
   const imp = state().imports.find((i) => i.id === t.import_id)!; imp.state = 'active'
   save(); start(); return t
 }
