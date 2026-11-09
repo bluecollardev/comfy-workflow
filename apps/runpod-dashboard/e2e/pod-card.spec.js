@@ -190,27 +190,33 @@ test.describe('Pod card: rename (a name on our side only)', () => {
 })
 
 test.describe('Rounds: a round holds a series of pods (ADR-039)', () => {
-  test('a pod is dropped into a round from its card, the round section holds it, the round is renamable, and the pod can leave', async ({ page, api }) => {
-    await page.goto('/')
-    await expect(page.getByTestId('round-section')).toHaveCount(0)
-    const card = podCard(page, 'ComfyUI-Dev')
-    await card.getByTestId('pod-round').selectOption('')   // nothing yet to pick: only "No round"
+  test('pods group by round into collapsible lists; a pod is dropped into a round from its card; a round is renamable; empty and "No round" groups show', async ({ page, api }) => {
     api.state.pods.find((p) => p.name === 'ComfyUI-Batch').round = 'brynley-comfy-2026-11-06'
-    await page.reload()
-    const section = page.getByTestId('round-section')
-    await expect(section).toHaveCount(1)
-    await expect(section.getByTestId('round-title')).toHaveText('brynley-comfy-2026-11-06')
-    await expect(section.getByTestId('pod-card')).toHaveCount(1)
-    // the other pod joins that round from its own card
+    api.state.pods.find((p) => p.name === 'ComfyUI-Batch').round_label = 'brynley-comfy-2026-11-06'
+    await page.goto('/')
+    const round = page.locator('[data-testid="round-section"][data-round="brynley-comfy-2026-11-06"]')
+    await expect(round.getByTestId('round-title')).toHaveText('brynley-comfy-2026-11-06')
+    await expect(round.getByTestId('pod-card')).toHaveCount(1)
+    await expect(page.locator('[data-testid="round-section"][data-round=""]').getByTestId('pod-card').first()).toBeVisible()   // the rest are in "No round"
+    // collapsible
+    await round.getByTestId('round-toggle').click()
+    await expect(round.getByTestId('pod-card')).toBeHidden()
+    await round.getByTestId('round-toggle').click()
+    await expect(round.getByTestId('pod-card')).toBeVisible()
+    // drop another pod in from its card
     await podCard(page, 'ComfyUI-Dev').getByTestId('pod-round').selectOption('brynley-comfy-2026-11-06')
-    await expect(section.getByTestId('pod-card')).toHaveCount(2)
+    await expect(round.getByTestId('pod-card')).toHaveCount(2)
+    await expect(round.getByTestId('round-count')).toContainText('2')
     // rename the round
-    await section.getByTestId('round-rename').click()
-    await section.getByTestId('round-rename-input').fill('Reel 1 conversions')
-    await section.getByTestId('round-rename-save').click()
-    await expect(page.getByTestId('round-section').getByTestId('round-title')).toHaveText('Reel 1 conversions')
-    // a pod leaves
+    await round.getByTestId('round-rename').click()
+    await round.getByTestId('round-rename-input').fill('Reel 1 conversions')
+    await round.getByTestId('round-rename-save').click()
+    await expect(round.getByTestId('round-title')).toHaveText('Reel 1 conversions')
+    // a pod leaves; the round stays listed
     await podCard(page, 'ComfyUI-Dev').getByTestId('pod-round').selectOption('')
-    await expect(page.getByTestId('round-section').getByTestId('pod-card')).toHaveCount(1)
+    await expect(round.getByTestId('pod-card')).toHaveCount(1)
+    // group by round off: one plain list
+    await page.getByTestId('pods-round-toggle').click()
+    await expect(page.getByTestId('round-toggle')).toHaveCount(0)
   })
 })

@@ -8,7 +8,7 @@ test.describe('dashboard', () => {
     await expect(page.locator('.stat-card', { hasText: 'Total pods' })).toContainText('3')
     await expect(page.locator('.stat-card', { hasText: 'Running' })).toContainText('1')
     await expect(page.locator('.stat-card', { hasText: 'Stopped' })).toContainText('1')
-    await expect(page.locator('.card-header', { hasText: 'Pods' }).locator('.badge')).toHaveText('3')
+    await expect(page.getByTestId('pods-card').locator('.card-header > .badge')).toHaveText('3')
 
     const dev = podCard(page, 'ComfyUI-Dev')
     await expect(dev.getByTestId('pod-status')).toHaveText(t('pod.statuses.running'))

@@ -36,6 +36,8 @@
     "rounds": "Rounds",
     "unassigned": "No round",
     "roundPods": "{n} pods",
+    "groupByRound": "Group by round",
+    "roundEmpty": "No pods in this round yet. Pick it on a pod's Round choice.",
     "roundRename": "Rename this round (only in this app)",
     "roundRenameSave": "Save the round name",
     "groupByDatacenter": "Group by datacenter",
