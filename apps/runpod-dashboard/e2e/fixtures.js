@@ -402,6 +402,16 @@ export async function mockApi(page, state) {
       if (pod) { if (!pod.runpod_name) pod.runpod_name = pod.name; pod.name = String(body.name || '').trim() || pod.runpod_name; if (pod.name === pod.runpod_name) delete pod.runpod_name }
       return json({ pod_id: m[1], name: pod?.name, runpod_name: pod?.runpod_name ?? null })
     }
+    if ((m = path.match(/^\/pods\/([^/]+)\/round$/)) && method === 'PUT') {
+      const pod = state.pods.find((p) => p.id === m[1]); const r = String(body.round || '').trim()
+      if (pod) { if (r) { pod.round = r; pod.round_label = (state.roundNames ||= {})[r] || r } else { delete pod.round; delete pod.round_label } }
+      return json({ pod_id: m[1], round: r || null })
+    }
+    if (path === '/rounds/name' && method === 'PUT') {
+      const names = (state.roundNames ||= {}); if (body.name) names[body.round] = body.name; else delete names[body.round]
+      for (const p of state.pods) if (p.round === body.round) p.round_label = names[body.round] || body.round
+      return json({ round: body.round, label: names[body.round] || body.round })
+    }
     if ((m = path.match(/^\/pods\/([^/]+)\/config$/)) && method === 'GET') return json(state.podConfigs[m[1]] || null)
     if ((m = path.match(/^\/pods\/([^/]+)\/config$/)) && method === 'PUT') {
       if (body) state.podConfigs[m[1]] = body; else delete state.podConfigs[m[1]]

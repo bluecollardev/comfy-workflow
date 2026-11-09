@@ -36,6 +36,8 @@ const ipc = core && {
   datacenters: (fresh) => core.invoke('pods', 'datacenters', [!!fresh]),
   setIdle: (id, minutes) => core.invoke('pods', 'setIdle', [id, minutes]),
   rename: (id, name) => core.invoke('pods', 'rename', [id, name]),
+  setRound: (id, round) => core.invoke('pods', 'setRound', [id, round]),
+  renameRound: (round, name) => core.invoke('pods', 'renameRound', [round, name]),
   stopPod: (id) => core.invoke('pods', 'stop', [id]),
   resumePod: (id) => core.invoke('pods', 'resume', [id]),
   deletePod: (id) => core.invoke('pods', 'remove', [id]),
@@ -86,6 +88,18 @@ const http = {
   // The name this app shows for a pod (RunPod's own is untouched); empty goes back to RunPod's
   async rename(podId, name) {
     const { data } = await axios.put(`${API_BASE}/pods/${podId}/name`, { name });
+    return data;
+  },
+
+  // Put a pod in a round (ADR-039), or take it out with an empty round
+  async setRound(podId, round) {
+    const { data } = await axios.put(`${API_BASE}/pods/${podId}/round`, { round });
+    return data;
+  },
+
+  // Name a round in this app (the delivery round's own name is kept); empty goes back to it
+  async renameRound(round, name) {
+    const { data } = await axios.put(`${API_BASE}/rounds/name`, { round, name });
     return data;
   },
 

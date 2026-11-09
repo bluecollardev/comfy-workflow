@@ -16,6 +16,8 @@ export const idleFile = () => process.env.IDLE_FILE || join(configDir(), 'idle.j
 export const podConfigsFile = () => process.env.POD_CONFIGS_FILE || join(configDir(), 'pod-configs.json')
 export const historyFile = () => process.env.HISTORY_FILE || join(configDir(), 'history.jsonl')
 export const podNamesFile = () => process.env.POD_NAMES_FILE || join(configDir(), 'pod-names.json')
+export const podRoundsFile = () => process.env.POD_ROUNDS_FILE || join(configDir(), 'pod-rounds.json')
+export const roundNamesFile = () => process.env.ROUND_NAMES_FILE || join(configDir(), 'round-names.json')
 export const gitAccountsFile = () => process.env.GIT_ACCOUNTS_FILE || join(configDir(), 'git_accounts.json')
 export const repositoriesFile = () => process.env.REPOSITORIES_FILE || join(configDir(), 'repositories.json')
 export const backupsDir = () => process.env.POD_MANAGER_BACKUPS_DIR || join(configDir(), 'backups')   // the configuration as it was before each import (docs/ADR-023)

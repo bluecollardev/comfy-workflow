@@ -33,6 +33,11 @@
   "dashboard": {
     "createPod": "Create Pod",
     "pods": "Pods",
+    "rounds": "Rounds",
+    "unassigned": "No round",
+    "roundPods": "{n} pods",
+    "roundRename": "Rename this round (only in this app)",
+    "roundRenameSave": "Save the round name",
     "groupByDatacenter": "Group by datacenter",
     "noDatacenter": "Datacenter unknown",
     "noPods": "No pods",
@@ -90,6 +95,10 @@
     "configTitle": "This pod’s own configuration: shown now, applied when the pod is recreated",
     "ownConfig": "Own Config",
     "rename": "Rename (only in this app)",
+    "round": "Round",
+    "roundNone": "No round",
+    "roundPick": "Round this pod belongs to",
+    "roundTip": "Drop this pod into a round. Only this app remembers it; the pod is not touched.",
     "editTitle": "Pod title",
     "renameSave": "Save name",
     "renameCancel": "Cancel",
@@ -349,6 +358,9 @@
     "use": "Use this folder"
   },
   "toast": {
+    "round": "Move pod to round",
+    "rounded": "Pod moved",
+    "renameRound": "Rename round",
     "done": "Done",
     "failed": "Failed",
     "note": "Note",

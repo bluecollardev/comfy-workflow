@@ -10,6 +10,7 @@ import * as idle from './idle.js'
 import * as mounts from './mounts.js'
 import * as podconfigs from './podconfigs.js'
 import * as podnames from './podnames.js'
+import * as podrounds from './podrounds.js'
 import * as history from './history.js'
 import * as rp from './runpod.js'
 import * as dry from './dry.js'
@@ -45,6 +46,8 @@ export interface PodStatus {
   console_url?: string; status_text?: string; comfy_ready?: boolean | null   // null = not probed
   custom_config?: boolean   // created with its own configuration, kept for Recreate
   image?: string            // the image the pod boots (the card's Dockerfile link)
+  round_label?: string      // the name this app shows for that round (a round is renamable), else the round itself
+  round?: string            // the delivery round this pod is in (podrounds, ADR-039); none = unassigned
   runpod_name?: string      // RunPod's own name, when we show a different one of ours (podnames)
   datacenter?: string       // where it runs (the machine's datacenter); the pod list groups by it
   port_mismatch?: boolean   // the pod does not expose the port its image serves ComfyUI on; only Recreate fixes it
@@ -187,6 +190,8 @@ async function deployWithFallback(input: rp.CreatePodInput, client?: rp.RunPodCl
 }
 
 /** A RunPod pod as the dashboard shows it. */
+/** The round a pod is in and the name this app shows for it (ADR-039), or nothing for an unassigned pod. */
+const roundOf = (id: string): { round?: string; round_label?: string } => { const r = podrounds.get(id); return r ? { round: r, round_label: podrounds.label(r) } : {} }
 export function toStatus(p: rp.RawPod): PodStatus {
   const uptime = p.runtime?.uptimeInSeconds ?? p.uptimeSeconds ?? null
   const running = uptime != null && uptime > 0
@@ -196,7 +201,7 @@ export function toStatus(p: rp.RawPod): PodStatus {
     gpu: p.machine?.gpuDisplayName || String(p.gpuCount ?? '?'), vram: gpus.vram(p.machine?.gpuDisplayName || '') || 24,
     uptime_seconds: uptime, web_ui_url: running ? idle.proxyUrl(p.id, webPortOf(p.ports)) : null,
     ssh_command: `ssh root@${p.id}.proxy.runpod.io`, idle_stop_minutes: idle.entry(p.id)?.minutes ?? 0, comfy_ready: null,
-    custom_config: podconfigs.has(p.id), image: p.imageName || undefined, datacenter: p.machine?.dataCenterId || undefined,
+    custom_config: podconfigs.has(p.id), ...roundOf(p.id), image: p.imageName || undefined, datacenter: p.machine?.dataCenterId || undefined,
     port_mismatch: (p.imageName || '') === PREBUILT_IMAGE && !/3001\/http/.test(p.ports || ''),
     console_url: consoleUrl(p.id), status_text: p.lastStatusChange || p.desiredStatus || '',
   }
@@ -212,7 +217,7 @@ export async function comfyReady(url: string, fetchFn: typeof fetch = fetch): Pr
 }
 
 export const list = async (client?: rp.RunPodClient): Promise<PodStatus[]> => {
-  if (isDry()) return dry.list().map((p) => ({ ...p, name: podnames.get(p.id) || p.name, custom_config: podconfigs.has(p.id) }))
+  if (isDry()) return dry.list().map((p) => ({ ...p, name: podnames.get(p.id) || p.name, custom_config: podconfigs.has(p.id), ...roundOf(p.id) }))
   const raws = await rp.listPods(client)
   const pods = raws.map(toStatus)
   try { history.observe(raws.map((r, i) => ({ id: r.id, name: pods[i].name, status: pods[i].status, gpu: r.machine?.gpuDisplayName, datacenter: r.machine?.dataCenterId, cost_per_hr: r.costPerHr ?? null }))) } catch { /* the list never waits on the history */ }
@@ -221,7 +226,7 @@ export const list = async (client?: rp.RunPodClient): Promise<PodStatus[]> => {
 }
 
 export async function get(podId: string, client?: rp.RunPodClient): Promise<PodStatus> {
-  if (isDry()) { const p = dry.list().find((x) => x.id === podId); if (!p) throw new CoreError(404, `Pod ${podId} not found`); return { ...p, name: podnames.get(p.id) || p.name } }
+  if (isDry()) { const p = dry.list().find((x) => x.id === podId); if (!p) throw new CoreError(404, `Pod ${podId} not found`); return { ...p, name: podnames.get(p.id) || p.name, ...roundOf(p.id) } }
   const p = await rp.getPod(podId, client)
   if (!p) throw new CoreError(404, `Pod ${podId} not found`)
   return toStatus(p)
@@ -273,9 +278,29 @@ export async function rename(podId: string, name: string, client?: rp.RunPodClie
   const p = await get(podId, client)
   return { pod_id: podId, name: p.name, runpod_name: p.runpod_name ?? null }
 }
+/** Put a pod in a round (ADR-039), or take it out with an empty round. A map on our side only; the pod is not touched. */
+export async function setRound(podId: string, round: string, client?: rp.RunPodClient): Promise<{ pod_id: string; round: string | null }> {
+  const r = String(round ?? '').trim()
+  if (r.length > 120 || /[\\/]/.test(r)) throw bad('A round name is at most 120 characters and has no slash')
+  await get(podId, client)   // a clear 404 for a pod that is not there
+  podrounds.set(podId, r)
+  history.record({ kind: 'pod', action: 'moved', pod_id: podId, name: podnames.get(podId) || podId, detail: r ? `put in round ${r}` : 'taken out of its round' })
+  return { pod_id: podId, round: r || null }
+}
+/** Name a round on our side (the delivery round's own name, the key, is kept); an empty name goes back to it. */
+export async function renameRound(round: string, name: string): Promise<{ round: string; label: string }> {
+  const r = String(round ?? '').trim(); const n = String(name ?? '').trim()
+  if (!r) throw bad('Which round?')
+  if (n.length > 80) throw bad('A round name is at most 80 characters')
+  podrounds.setLabel(r, n)
+  history.record({ kind: 'pod', action: 'moved', pod_id: '-', name: r, detail: n ? `round shown as ${n}` : 'round shown by its own name' })
+  return { round: r, label: podrounds.label(r) }
+}
+/** The rounds that have pods: key, shown name and pod ids. */
+export const rounds = (): { round: string; label: string; pod_ids: string[] }[] => podrounds.byRound().map((r) => ({ ...r, label: podrounds.label(r.round) }))
 export async function stop(podId: string, client?: rp.RunPodClient) { if (isDry()) { const r = dry.stop(podId); void recordPod('stopped', podId); return r } await rp.stopPod(podId, client); void recordPod('stopped', podId, client); return { message: `Pod ${podId} stopped`, pod_id: podId } }
 export async function resume(podId: string, client?: rp.RunPodClient) { if (isDry()) { const r = dry.resume(podId); void recordPod('started', podId); return r } await rp.resumePod(podId, 1, client); void recordPod('started', podId, client); return { message: `Pod ${podId} resumed`, pod_id: podId } }
-export async function remove(podId: string, client?: rp.RunPodClient) { const nm = podnames.get(podId) || undefined; podconfigs.forget(podId); podnames.forget(podId); if (isDry()) { idle.forget(podId); history.record({ kind: 'pod', action: 'deleted', pod_id: podId, name: nm || dry.list().find((x) => x.id === podId)?.name || podId }); return dry.remove(podId) } const raw = await rp.getPod(podId, client).catch(() => null); await rp.terminatePod(podId, client); history.record({ kind: 'pod', action: 'deleted', pod_id: podId, name: nm || raw?.name || podId, gpu: raw?.machine?.gpuDisplayName, datacenter: raw?.machine?.dataCenterId }); idle.forget(podId); return { message: `Pod ${podId} deleted`, pod_id: podId } }
+export async function remove(podId: string, client?: rp.RunPodClient) { const nm = podnames.get(podId) || undefined; podconfigs.forget(podId); podnames.forget(podId); podrounds.forget(podId); if (isDry()) { idle.forget(podId); history.record({ kind: 'pod', action: 'deleted', pod_id: podId, name: nm || dry.list().find((x) => x.id === podId)?.name || podId }); return dry.remove(podId) } const raw = await rp.getPod(podId, client).catch(() => null); await rp.terminatePod(podId, client); history.record({ kind: 'pod', action: 'deleted', pod_id: podId, name: nm || raw?.name || podId, gpu: raw?.machine?.gpuDisplayName, datacenter: raw?.machine?.dataCenterId }); idle.forget(podId); return { message: `Pod ${podId} deleted`, pod_id: podId } }
 
 /** Change a pod's idle stop: registered for the watch (0 = never, dropped from it); a simulated pod's record follows,
  *  so what `get` shows is what was set in no-spend mode too. */
@@ -366,12 +391,14 @@ export async function recreate(podId: string, client?: rp.RunPodClient): Promise
     if (!old) throw new CoreError(404, `Pod ${podId} not found`)
     const own = podconfigs.get(podId)
     const alias = podnames.get(podId)
-    dry.remove(podId); podconfigs.forget(podId); podnames.forget(podId)
+    const inRound = podrounds.get(podId)
+    dry.remove(podId); podconfigs.forget(podId); podnames.forget(podId); podrounds.forget(podId)
     history.record({ kind: 'pod', action: 'recreated', pod_id: podId, name: alias || old.name, detail: 'replaced' })
     const fresh = dry.create({ name: old.name, gpu: gpuKey(old.gpu.split(' x')[0]) || gpus.DEFAULT_GPU, gpu_count: 1, image: 'simulated', idle_stop_minutes: old.idle_stop_minutes })
     if (own) podconfigs.set(fresh.id, own)
     if (alias) podnames.set(fresh.id, alias)
-    return { ...fresh, name: alias || fresh.name, custom_config: !!own }
+    if (inRound) podrounds.set(fresh.id, inRound)
+    return { ...fresh, name: alias || fresh.name, custom_config: !!own, ...(inRound ? { round: inRound } : {}) }
   }
   const d = await details(podId, client)
   const key = gpuKey(d.gpu)
@@ -381,11 +408,13 @@ export async function recreate(podId: string, client?: rp.RunPodClient): Promise
     idle_stop_minutes: idle.entry(podId)?.minutes ?? null, apply_mounts: null, config: podconfigs.get(podId),
   }
   const alias = podnames.get(podId)   // our name for the pod goes to the new one
+  const inRound = podrounds.get(podId)   // and so does its round
   const fresh = await create(req, client)
   await rp.terminatePod(podId, client)
   history.record({ kind: 'pod', action: 'recreated', pod_id: podId, name: alias || d.name || podId, gpu: d.gpu, datacenter: d.datacenter, detail: `replaced by ${fresh.id}` })
-  idle.forget(podId); podconfigs.forget(podId); podnames.forget(podId)
+  idle.forget(podId); podconfigs.forget(podId); podnames.forget(podId); podrounds.forget(podId)
   if (alias) { podnames.set(fresh.id, alias); fresh.name = alias }
+  if (inRound) { podrounds.set(fresh.id, inRound); fresh.round = inRound }
   return fresh
 }
 

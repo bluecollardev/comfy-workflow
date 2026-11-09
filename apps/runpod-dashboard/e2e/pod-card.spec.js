@@ -188,3 +188,29 @@ test.describe('Pod card: rename (a name on our side only)', () => {
     await expect(podCard(page, 'ComfyUI-Batch').getByTestId('pod-name')).toHaveText('ComfyUI-Batch')
   })
 })
+
+test.describe('Rounds: a round holds a series of pods (ADR-039)', () => {
+  test('a pod is dropped into a round from its card, the round section holds it, the round is renamable, and the pod can leave', async ({ page, api }) => {
+    await page.goto('/')
+    await expect(page.getByTestId('round-section')).toHaveCount(0)
+    const card = podCard(page, 'ComfyUI-Dev')
+    await card.getByTestId('pod-round').selectOption('')   // nothing yet to pick: only "No round"
+    api.state.pods.find((p) => p.name === 'ComfyUI-Batch').round = 'brynley-comfy-2026-11-06'
+    await page.reload()
+    const section = page.getByTestId('round-section')
+    await expect(section).toHaveCount(1)
+    await expect(section.getByTestId('round-title')).toHaveText('brynley-comfy-2026-11-06')
+    await expect(section.getByTestId('pod-card')).toHaveCount(1)
+    // the other pod joins that round from its own card
+    await podCard(page, 'ComfyUI-Dev').getByTestId('pod-round').selectOption('brynley-comfy-2026-11-06')
+    await expect(section.getByTestId('pod-card')).toHaveCount(2)
+    // rename the round
+    await section.getByTestId('round-rename').click()
+    await section.getByTestId('round-rename-input').fill('Reel 1 conversions')
+    await section.getByTestId('round-rename-save').click()
+    await expect(page.getByTestId('round-section').getByTestId('round-title')).toHaveText('Reel 1 conversions')
+    // a pod leaves
+    await podCard(page, 'ComfyUI-Dev').getByTestId('pod-round').selectOption('')
+    await expect(page.getByTestId('round-section').getByTestId('pod-card')).toHaveCount(1)
+  })
+})

@@ -30,6 +30,14 @@
       <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.gpu') }}</dt>
       <dd class="col-8 mb-0">{{ pod.gpu }}<span v-if="pod.vram" class="text-body-secondary"> · {{ pod.vram }} GB</span></dd>
 
+      <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.round') }}</dt>
+      <dd class="col-8 mb-0">
+        <select class="form-select form-select-sm" :value="pod.round || ''" :disabled="busy" :aria-label="$t('pod.roundPick')" :title="$t('pod.roundTip')" data-testid="pod-round" @change="emit('round', $event.target.value)">
+          <option value="">{{ $t('pod.roundNone') }}</option>
+          <option v-for="r in roundOptions" :key="r.round" :value="r.round">{{ r.label }}</option>
+        </select>
+      </dd>
+
       <template v-if="pod.uptime_seconds">
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.uptime') }}</dt>
         <dd class="col-8 mb-0">{{ formatUptime(pod.uptime_seconds) }}</dd>
@@ -205,8 +213,11 @@ import { barValue, detailParts, fresh } from '../sync-progress'
 const props = defineProps({
   pod: { type: Object, required: true },
   busy: { type: Boolean, default: false },
+  rounds: { type: Array, default: () => [] },   // the rounds a pod can be dropped into (ADR-039)
 })
-const emit = defineEmits(['stop', 'resume', 'delete', 'rename'])
+const emit = defineEmits(['stop', 'resume', 'delete', 'rename', 'round'])
+/** The choices: the known rounds, plus the pod's own when it is not among them. */
+const roundOptions = computed(() => (props.pod.round && !props.rounds.some((r) => r.round === props.pod.round) ? [{ round: props.pod.round, label: props.pod.round_label || props.pod.round }, ...props.rounds] : props.rounds))
 /** The name is ours: a map on this app's side (RunPod keeps its own). Empty goes back to RunPod's name. */
 const renaming = ref(false)
 const draft = ref('')
