@@ -26,6 +26,10 @@ export interface Task {
   phase?: 'pod' | 'job'; job_id?: string; graphs?: string[]
   /** The card chosen for this shot: its run gets a pod of its own with that card (no pool pod is reused). Absent = the pool, else the default card. */
   gpu?: string; price?: number | null
+  /** What happened to this task and when: pod chosen / created / resumed, pod ready, job stages, results. The Queue shows it. */
+  events?: { at: string; text: string }[]
+  /** The live stage of the pull job or the run (`pulling`, `placing`, `running 3/12 graphs`...). */
+  stage?: string
   started_at?: string; finished_at?: string; error?: string; detail?: string; held_reason?: string
 }
 export interface ImportRec {
@@ -193,8 +197,9 @@ export async function importRounds(items: RoundItem[], o: Omit<ImportOpts, 'shot
 }
 
 // ----- the scheduler -----
+const ev = (t: Task, text: string) => { (t.events ||= []).push({ at: deps.now().toISOString(), text }); if (t.events.length > 60) t.events.splice(0, t.events.length - 60) }
 const logTask = (t: Task, imp: ImportRec) => history.record({ kind: 'job', job: 'queue', state: t.state === 'done' ? 'done' : t.state === 'cancelled' ? 'cancelled' : 'failed', started_at: t.started_at, what: `${t.round} ${t.kind}${t.shot ? ` ${t.shot}` : ''}`, pod_id: t.pod_id ?? undefined, pod_name: t.pod_name ?? undefined, ...(t.error ? { error: t.error } : {}), detail: `import ${imp.id}; approved by ${imp.approved_by}${t.detail ? `; ${t.detail}` : ''}` })
-const finish = (t: Task, imp: ImportRec, s: 'done' | 'failed' | 'cancelled', error?: string) => { t.state = s; t.finished_at = deps.now().toISOString(); if (error) t.error = error; logTask(t, imp) }
+const finish = (t: Task, imp: ImportRec, s: 'done' | 'failed' | 'cancelled', error?: string) => { ev(t, error ? `${s}: ${error}` : s); t.stage = undefined; t.state = s; t.finished_at = deps.now().toISOString(); if (error) t.error = error; logTask(t, imp) }
 
 let ticking = false
 /** One scheduler pass: read the running tasks' jobs, start what can start, stop pods the imports no longer need. Never throws. */
@@ -228,24 +233,31 @@ export async function tick(): Promise<void> {
 async function follow(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> {
   if (t.kind === 'run' && t.phase === 'pod') {
     const r = await deps.podReady(t.pod_id!)
-    if (!r.ready) return false
-    if (!t.graphs?.length) { t.detail = 'no graphs for this shot in the round'; finish(t, imp, 'done'); return true }
-    t.job_id = (await deps.run(t.pod_id!, t.graphs)).id; t.phase = 'job'; return true
+    if (!r.ready) { if (t.stage !== 'waiting for the pod to come up') { t.stage = 'waiting for the pod to come up'; return true } return false }
+    if (!t.graphs?.length) { t.detail = 'no graphs for this shot in the round'; ev(t, 'no graphs for this shot in the round'); finish(t, imp, 'done'); return true }
+    ev(t, `pod ${t.pod_name} is ready: running ${t.graphs.length} graph(s)`)
+    t.job_id = (await deps.run(t.pod_id!, t.graphs)).id; t.phase = 'job'; t.stage = `running 0/${t.graphs.length} graphs`; return true
   }
   if (t.kind === 'pull') {
     const j = t.job_id ? deps.pullJob(t.job_id) : null
     if (!j) { finish(t, imp, 'failed', 'The pull job is gone (the app restarted?).'); return true }
     if (j.state === 'failed' || j.state === 'cancelled') { finish(t, imp, j.state === 'cancelled' ? 'cancelled' : 'failed', j.error || `The pull ${j.state}.`); return true }
     if (j.state === 'done') {
+      ev(t, `pull done: ${j.files} file(s)${j.place ? `, placed ${j.place.linked}, ${j.place.graphs?.length ?? 0} graph(s)` : ''}`)
       for (const run of tasks.filter((x) => x.kind === 'run')) run.graphs = (j.place?.graphs ?? []).filter((g) => g.shot === run.shot).map((g) => g.path.replace(/^.*?workflows\//, ''))
       t.pod_id = j.pod_id; t.pod_name = j.pod_name; t.detail = `${j.files} file(s)${j.place ? `, placed ${j.place.linked}` : ''}`
       finish(t, imp, 'done'); return true
     }
-    t.pod_id = j.pod_id; t.pod_name = j.pod_name; return false
+    const stage = `${j.state}${j.files ? `: ${j.files} file(s)` : ''}${j.bytes_total ? `, ${Math.round((j.bytes_done / j.bytes_total) * 100)}%` : ''}`
+    let changed = false
+    if (t.stage !== stage) { if (!t.stage?.startsWith(j.state)) ev(t, `${j.state}${j.pod_name ? ` on ${j.pod_name}` : ''}`); t.stage = stage; changed = true }
+    if (j.pod_name && t.pod_name !== j.pod_name) { ev(t, `pod ${j.pod_name} (${j.pod_id})`); changed = true }
+    t.pod_id = j.pod_id; t.pod_name = j.pod_name; return changed
   }
   const j = t.job_id ? deps.runJob(t.job_id) : null
   if (!j) { finish(t, imp, 'failed', 'The run job is gone (the app restarted?).'); return true }
-  if (j.state === 'running') return false
+  if (j.state === 'running') { const stage = `running ${j.ok + j.failed}/${j.results.length} graphs${j.failed ? `, ${j.failed} failed` : ''}`; if (t.stage !== stage) { t.stage = stage; return true } return false }
+  ev(t, `finished: ${j.ok} ok, ${j.failed} failed of ${j.results.length}`)
   const hours = (deps.now().getTime() - new Date(t.started_at!).getTime()) / 3_600_000
   imp.spent_usd = Math.round((imp.spent_usd + (t.price ?? imp.price_per_hour ?? 0) * hours) * 100) / 100
   t.detail = `${j.ok} ok, ${j.failed} failed of ${j.results.length}`
@@ -256,7 +268,7 @@ async function follow(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> 
 
 async function begin(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> {
   if (t.kind === 'pull') {
-    try { t.job_id = (await deps.pull(t.round)).id; t.state = 'running'; t.started_at = deps.now().toISOString(); t.phase = 'job' } catch (e) { finish(t, imp, 'failed', (e as Error).message) }
+    try { t.job_id = (await deps.pull(t.round)).id; t.state = 'running'; t.started_at = deps.now().toISOString(); t.phase = 'job'; ev(t, `pull of ${t.round} started (a short-lived pod of the cheapest free card, or a pod of yours)`) } catch (e) { finish(t, imp, 'failed', (e as Error).message) }
     return true
   }
   // a run task needs a pod: within the import's pod limit and dollar cap
@@ -274,9 +286,9 @@ async function begin(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> {
     let podId: string, podName: string
     if (pick) {
       podId = pick.id; podName = pick.name
-      if (pick.state === 'off') { await deps.resumePod(pick.id); imp.started_pods.push(pick.id) }
+      if (pick.state === 'off') { await deps.resumePod(pick.id); imp.started_pods.push(pick.id); ev(t, `restarted your stopped pod ${pick.name}`) } else ev(t, `reusing the pod ${pick.name} (${pick.state})`)
     } else {
-      const c = await deps.createPod(`queue-${imp.round}-${tasks.filter((x) => x.pod_id).length + 1}`.slice(0, 60), imp.round, t.gpu); podId = c.id; podName = c.name; imp.started_pods.push(c.id)
+      const c = await deps.createPod(`queue-${imp.round}-${tasks.filter((x) => x.pod_id).length + 1}`.slice(0, 60), imp.round, t.gpu); podId = c.id; podName = c.name; imp.started_pods.push(c.id); ev(t, `created pod ${c.name} (${t.gpu || POOL_GPU}) in round ${imp.round}`)
     }
     t.pod_id = podId; t.pod_name = podName; t.phase = 'pod'; t.state = 'running'; t.started_at = deps.now().toISOString(); delete t.held_reason
   } catch (e) { finish(t, imp, 'failed', (e as Error).message) }

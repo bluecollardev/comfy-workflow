@@ -59,6 +59,9 @@ describe('a card for a shot', () => {
     expect(w.created).toEqual(['new1'])   // the shot with a card did not take the running pool pod
     expect((w as any).gpuOf.new1).toBe('rtx5090')
     expect(queue.list().tasks.find((x) => x.shot === 'cgi-043')?.pod_id).toBe('pool1')
+    const evs = (shot: string) => (queue.list().tasks.find((x) => x.shot === shot)?.events ?? []).map((e) => e.text).join(' | ')
+    expect(evs('cgi-042')).toMatch(/created pod .*rtx5090/)   // what happened to a task is kept, with times
+    expect(evs('cgi-043')).toMatch(/reusing the pod pool/)
   })
 })
 

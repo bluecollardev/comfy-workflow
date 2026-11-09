@@ -88,3 +88,14 @@ test('Queue: the latest import is at the top, the oldest at the bottom, and the 
   await body.hover(); await page.mouse.wheel(0, 600)
   await expect.poll(() => body.evaluate((b) => b.scrollTop)).toBeGreaterThan(300)
 })
+
+test('Queue: a task shows its pod, its stage and, opened, what happened and when', async ({ page, api }) => {
+  api.state.queue = { imports: [{ id: 'imp1', round: 'round-a', approved_by: 'L', created_at: '2026-11-09T01:00:00Z', state: 'active', spent_usd: 0, cap_enabled: true, cost_cap_usd: 10, max_pods: 2, counts: {} }], tasks: [{ id: 't1', import_id: 'imp1', round: 'round-a', shot: 'cgi-042', kind: 'run', state: 'running', pod_id: 'pod9', pod_name: 'queue-round-a-1', gpu: 'rtx4090', started_at: '2026-11-09T01:00:05Z', stage: 'running 1/3 graphs', events: [{ at: '2026-11-09T01:00:05Z', text: 'created pod queue-round-a-1 (rtx4090) in round round-a' }, { at: '2026-11-09T01:03:00Z', text: 'pod queue-round-a-1 is ready: running 3 graph(s)' }] }], active: 1 }
+  await page.goto('/'); await page.getByTestId('open-queue').click()
+  const q = page.getByTestId('queue-modal')
+  await expect(q.getByTestId('queue-task-stage')).toHaveText('running 1/3 graphs')
+  await expect(q.getByTestId('queue-task')).toContainText('pod9')
+  await q.getByTestId('queue-details').click()
+  await expect(q.getByTestId('queue-task-events')).toContainText('created pod queue-round-a-1 (rtx4090)')
+  await expect(q.getByTestId('queue-task-events')).toContainText('is ready: running 3 graph(s)')
+})

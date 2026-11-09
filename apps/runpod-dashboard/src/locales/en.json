@@ -427,6 +427,8 @@
     "start": "Import"
   },
   "queue": {
+    "started": "started {at}",
+    "took": "took {min} min",
     "title": "Queue",
     "empty": "Nothing is queued. Import Round queues a pull and one run per shot.",
     "approvedBy": "approved by {who}",
