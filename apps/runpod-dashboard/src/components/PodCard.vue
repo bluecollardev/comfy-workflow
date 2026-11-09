@@ -1,6 +1,7 @@
 <template>
   <BCard class="h-100" body-class="d-flex flex-column" data-testid="pod-card" :data-name="pod.name">
     <div class="d-flex align-items-start gap-2 mb-3">
+      <span v-if="handle" class="pod-handle text-body-secondary" draggable="true" role="button" :title="$t('pod.dragHandle')" :aria-label="$t('pod.dragHandle')" data-testid="pod-drag-handle" @dragstart="onHandleDragStart" @dragend="emit('dragend')"><i class="fa-solid fa-grip-vertical"></i></span>
       <template v-if="!renaming">
         <span class="fw-semibold fs-5 text-truncate" :title="pod.runpod_name ? $t('pod.runpodName', { name: pod.runpod_name }) : pod.name" data-testid="pod-name">{{ pod.name }}</span>
         <button type="button" class="btn btn-link btn-sm p-0 align-baseline text-body-secondary" :title="$t('pod.rename')" :aria-label="$t('pod.editTitle')" data-testid="pod-rename" @click="startRename"><i class="fa-solid fa-pencil fa-xs"></i></button>
@@ -213,9 +214,12 @@ import { barValue, detailParts, fresh } from '../sync-progress'
 const props = defineProps({
   pod: { type: Object, required: true },
   busy: { type: Boolean, default: false },
+  handle: { type: Boolean, default: false },   // show the grip a card is dragged by, to move it to another round (ADR-039)
   rounds: { type: Array, default: () => [] },   // the rounds a pod can be dropped into (ADR-039)
 })
-const emit = defineEmits(['stop', 'resume', 'delete', 'rename', 'round'])
+const emit = defineEmits(['stop', 'resume', 'delete', 'rename', 'round', 'dragstart', 'dragend'])
+/** The grip starts the drag; the whole card is the picture that follows the pointer. */
+const onHandleDragStart = (e) => { const card = e.target.closest('[data-testid="pod-card"]'); if (card && e.dataTransfer?.setDragImage) e.dataTransfer.setDragImage(card, 24, 24); emit('dragstart', e) }
 /** The choices: the known rounds, plus the pod's own when it is not among them. */
 const roundOptions = computed(() => (props.pod.round && !props.rounds.some((r) => r.round === props.pod.round) ? [{ round: props.pod.round, label: props.pod.round_label || props.pod.round }, ...props.rounds] : props.rounds))
 /** The name is ours: a map on this app's side (RunPod keeps its own). Empty goes back to RunPod's name. */
@@ -319,3 +323,8 @@ function confirmDelete() {
   }
 }
 </script>
+
+<style scoped>
+.pod-handle { cursor: grab; padding: 2px 4px; align-self: center; }
+.pod-handle:active { cursor: grabbing; }
+</style>

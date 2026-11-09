@@ -37,7 +37,7 @@
           {{ $t('dashboard.noPods') }}
         </div>
         <div v-else data-testid="pod-list">
-          <section v-for="sec in sections" :key="sec.key" class="round-section mb-3" data-testid="round-section" :data-round="sec.round ?? ''">
+          <section v-for="sec in sections" :key="sec.key" class="round-section mb-3" :class="{ 'drop-over': dragId && overKey === sec.key }" data-testid="round-section" :data-round="sec.round ?? ''" @dragover="onDragOver($event, sec)" @dragleave="onDragLeave(sec)" @drop="onDrop($event, sec)">
             <div v-if="byRound" class="d-flex align-items-center gap-2 round-head" :class="{ 'mb-2': !isCollapsed(sec) }">
               <button type="button" class="btn btn-link p-0 text-body d-flex align-items-center gap-2 text-decoration-none" :aria-expanded="!isCollapsed(sec)" data-testid="round-toggle" @click="toggleRound(sec)">
                 <i class="fa-solid fa-chevron-right fa-xs round-chevron" :class="{ open: !isCollapsed(sec) }"></i>
@@ -58,7 +58,7 @@
               <div v-if="!sec.pods.length" class="small text-body-secondary py-2" data-testid="round-empty">{{ $t('dashboard.roundEmpty') }}</div>
               <BRow v-else-if="!grouped" class="g-3" data-testid="round-pod-list">
                 <BCol v-for="pod in sec.pods" :key="pod.id" md="6" xl="4">
-                  <PodCard :pod="pod" :busy="pods.busyPodId === pod.id" :rounds="roundNames" @stop="pods.stop(pod.id)" @resume="pods.resume(pod.id)" @delete="pods.remove(pod.id)" @rename="(name) => pods.rename(pod.id, name)" @round="(rd) => pods.setRound(pod.id, rd)" />
+                  <div class="pod-drag" :class="{ dragging: dragId === pod.id }" data-testid="pod-drag" :data-pod="pod.id"><PodCard :pod="pod" :busy="pods.busyPodId === pod.id" :rounds="roundNames" :handle="byRound" @dragstart="(e) => onDragStart(e, pod)" @dragend="dragId = ''; overKey = null" @stop="pods.stop(pod.id)" @resume="pods.resume(pod.id)" @delete="pods.remove(pod.id)" @rename="(name) => pods.rename(pod.id, name)" @round="(rd) => pods.setRound(pod.id, rd)" /></div>
                 </BCol>
               </BRow>
               <template v-else>
@@ -66,7 +66,7 @@
                   <h6 class="d-flex align-items-center gap-2 text-body-secondary mb-2" data-testid="pod-group-title"><i class="fa-solid fa-location-dot"></i><span class="font-monospace">{{ g.dc || $t('dashboard.noDatacenter') }}</span><BBadge variant="secondary" pill class="fw-normal">{{ g.pods.length }}</BBadge></h6>
                   <BRow class="g-3">
                     <BCol v-for="pod in g.pods" :key="pod.id" md="6" xl="4">
-                      <PodCard :pod="pod" :busy="pods.busyPodId === pod.id" :rounds="roundNames" @stop="pods.stop(pod.id)" @resume="pods.resume(pod.id)" @delete="pods.remove(pod.id)" @rename="(name) => pods.rename(pod.id, name)" @round="(rd) => pods.setRound(pod.id, rd)" />
+                      <div class="pod-drag" :class="{ dragging: dragId === pod.id }" data-testid="pod-drag" :data-pod="pod.id"><PodCard :pod="pod" :busy="pods.busyPodId === pod.id" :rounds="roundNames" :handle="byRound" @dragstart="(e) => onDragStart(e, pod)" @dragend="dragId = ''; overKey = null" @stop="pods.stop(pod.id)" @resume="pods.resume(pod.id)" @delete="pods.remove(pod.id)" @rename="(name) => pods.rename(pod.id, name)" @round="(rd) => pods.setRound(pod.id, rd)" /></div>
                     </BCol>
                   </BRow>
                 </section>
@@ -133,6 +133,20 @@ const sections = computed(() => {
   if (rest.length || !out.length) out.push({ key: '', round: null, label: t('dashboard.unassigned'), pods: rest })
   return out
 })
+/** Drag a pod card onto another round (or onto "No round") to move it there, after a confirmation (ADR-039). Only while grouped by round. */
+const dragId = ref('')
+const overKey = ref(null)
+const onDragStart = (e, pod) => { if (!byRound.value) return; dragId.value = pod.id; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', pod.id) }
+const onDragOver = (e, sec) => { if (!dragId.value) return; const pod = pods.pods.find((p) => p.id === dragId.value); if ((pod?.round || '') === (sec.round || '')) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; overKey.value = sec.key }
+const onDragLeave = (sec) => { if (overKey.value === sec.key) overKey.value = null }
+const onDrop = (e, sec) => {
+  const id = dragId.value; dragId.value = ''; overKey.value = null
+  const pod = pods.pods.find((p) => p.id === id)
+  if (!pod || (pod.round || '') === (sec.round || '')) return
+  e.preventDefault()
+  const msg = sec.round ? t('dashboard.confirmMove', { name: pod.name, to: sec.label }) : t('dashboard.confirmMoveOut', { name: pod.name })
+  if (window.confirm(msg)) pods.setRound(pod.id, sec.round || '')
+}
 /** A round is renamable: the name is ours (the delivery round keeps its own); empty goes back to it. */
 const renamingRound = ref('')
 const roundDraft = ref('')
@@ -159,6 +173,8 @@ function handlePodCreated() {
 </script>
 
 <style scoped>
+.pod-drag.dragging { opacity: 0.45; }
+.round-section.drop-over { outline: 2px dashed #508cff; outline-offset: 4px; border-radius: 6px; background: rgba(80, 140, 255, 0.08); }
 .round-head { padding: 6px 8px; border-radius: 6px; background: rgba(255, 255, 255, 0.05); }
 .round-chevron { transition: transform 0.15s; }
 .round-chevron.open { transform: rotate(90deg); }

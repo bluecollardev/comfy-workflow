@@ -219,4 +219,36 @@ test.describe('Rounds: a round holds a series of pods (ADR-039)', () => {
     await page.getByTestId('pods-round-toggle').click()
     await expect(page.getByTestId('round-toggle')).toHaveCount(0)
   })
+
+  test('a pod card is dragged by its handle onto another round; the move asks first; Cancel leaves it; onto "No round" takes it out (ADR-039)', async ({ page, api }) => {
+    api.state.pods.find((p) => p.name === 'ComfyUI-Batch').round = 'round-a'
+    api.state.pods.find((p) => p.name === 'ComfyUI-Dev').round = 'round-b'
+    await page.setViewportSize({ width: 1280, height: 1800 })   // every round on screen: a drag that scrolls the page picks up another card
+    const asked = []; let answer = 'dismiss'
+    page.on('dialog', (d) => { asked.push(d.message()); return answer === 'accept' ? d.accept() : d.dismiss() })
+    await page.goto('/')
+    const a = page.locator('[data-testid="round-section"][data-round="round-a"]')
+    const b = page.locator('[data-testid="round-section"][data-round="round-b"]')
+    const none = page.locator('[data-testid="round-section"][data-round=""]')
+    await expect(a.getByTestId('pod-drag-handle')).toHaveCount(1)   // every card has its grip
+    // Cancel: nothing moves, and it asked once
+    await a.getByTestId('pod-drag-handle').dragTo(b.getByTestId('round-toggle'))
+    await expect.poll(() => asked.length).toBe(1)
+    expect(asked[0]).toContain('round-b')
+    await expect(a.getByTestId('pod-card')).toHaveCount(1)
+    await expect(b.getByTestId('pod-card')).toHaveCount(1)
+    // Confirm: it moves
+    answer = 'accept'
+    await a.getByTestId('pod-drag-handle').dragTo(b.getByTestId('round-toggle'))
+    await expect(b.getByTestId('pod-card')).toHaveCount(2)
+    await expect(a.getByTestId('pod-card')).toHaveCount(0)
+    expect(asked.length).toBe(2)
+    // Out of its round, onto "No round"
+    await b.getByTestId('pod-drag-handle').first().dragTo(none.getByTestId('round-toggle'))
+    await expect(b.getByTestId('pod-card')).toHaveCount(1)
+    expect(asked.length).toBe(3)
+    // Grouping by round off: no grips
+    await page.getByTestId('pods-round-toggle').click()
+    await expect(page.getByTestId('pod-drag-handle')).toHaveCount(0)
+  })
 })
