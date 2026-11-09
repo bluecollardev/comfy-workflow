@@ -32,6 +32,8 @@ export interface Task {
   stage?: string
   /** The card of the pod this task actually runs on, when the queue created it (the chosen card, else the pool's default): shown in the Queue for every task. */
   card?: string
+  /** A pod could not be had because RunPod had no card free: the run waits and asks again (not before `retry_at`), up to MAX_CARD_WAITS times. */
+  retry_at?: string; attempts?: number
   started_at?: string; finished_at?: string; error?: string; detail?: string; held_reason?: string
 }
 export interface ImportRec {
@@ -199,6 +201,9 @@ export async function importRounds(items: RoundItem[], o: Omit<ImportOpts, 'shot
 }
 
 // ----- the scheduler -----
+/** Waiting for a card to be free again: ask again every minute, for half an hour. */
+export const CARD_RETRY_MS = 60_000
+export const MAX_CARD_WAITS = 30
 /** A run that never started because its pull did not finish says so, and why. */
 const NOT_STARTED = 'Not started: its pull did not finish'
 const ev = (t: Task, text: string) => { (t.events ||= []).push({ at: deps.now().toISOString(), text }); if (t.events.length > 60) t.events.splice(0, t.events.length - 60) }
@@ -275,6 +280,7 @@ async function begin(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> {
     try { t.job_id = (await deps.pull(t.round)).id; t.state = 'running'; t.started_at = deps.now().toISOString(); t.phase = 'job'; ev(t, `pull of ${t.round} started (a short-lived pod of the cheapest free card, or a pod of yours)`) } catch (e) { finish(t, imp, 'failed', (e as Error).message) }
     return true
   }
+  if (t.retry_at && new Date(t.retry_at).getTime() > deps.now().getTime()) return false   // waiting for a card to be free again
   // a run task needs a pod: within the import's pod limit and dollar cap
   const running = tasks.filter((x) => x.kind === 'run' && x.state === 'running').length
   if (imp.max_pods != null && running >= imp.max_pods) return false   // wait for a pod to free up: not an error
@@ -294,8 +300,17 @@ async function begin(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> {
     } else {
       const c = await deps.createPod(`queue-${imp.round}-${tasks.filter((x) => x.pod_id).length + 1}`.slice(0, 60), imp.round, t.gpu); podId = c.id; podName = c.name; t.card = t.gpu || POOL_GPU; imp.started_pods.push(c.id); ev(t, `created pod ${c.name} (${t.gpu || POOL_GPU}) in round ${imp.round}`)
     }
-    t.pod_id = podId; t.pod_name = podName; t.phase = 'pod'; t.state = 'running'; t.started_at = deps.now().toISOString(); delete t.held_reason
-  } catch (e) { finish(t, imp, 'failed', (e as Error).message) }
+    t.pod_id = podId; t.pod_name = podName; t.phase = 'pod'; t.state = 'running'; t.retry_at = undefined; t.attempts = undefined; t.stage = undefined; t.started_at = deps.now().toISOString(); delete t.held_reason
+  } catch (e) {
+    const msg = (e as Error).message
+    if (/No card available/.test(msg) && (t.attempts ?? 0) < MAX_CARD_WAITS) {   // RunPod has none free right now: wait and ask again, as the datacenter table says "if we have to wait we have to wait"
+      t.attempts = (t.attempts ?? 0) + 1; t.retry_at = new Date(deps.now().getTime() + CARD_RETRY_MS).toISOString()
+      t.stage = `waiting for a free ${t.gpu || POOL_GPU} (try ${t.attempts} of ${MAX_CARD_WAITS}, next at ${t.retry_at.slice(11, 19)} UTC)`
+      if (t.attempts === 1) ev(t, `no card free right now: ${msg.slice(0, 160)}. Waiting and asking again every minute.`)
+      return true
+    }
+    finish(t, imp, 'failed', msg)
+  }
   return true
 }
 const q = () => state()
