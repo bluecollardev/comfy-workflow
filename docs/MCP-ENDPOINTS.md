@@ -109,6 +109,7 @@ settings, or no-spend mode.
 | `stop_pod` / `resume_pod` / `delete_pod` | `pod_id` | confirmation; resume reports a full host and suggests `recreate_pod` | delete asks nothing, as the card does after its confirm |
 | `recreate_pod` | `pod_id` | the new pod, the old one terminated, its own configuration carried | |
 | `set_pod_round` | `pod_id`, `round` (empty = out of its round) | the pod and its round | a map on our side only (ADR-039): the pod is not touched, no spend; list_pods and get_pod show `round` and `round_label` |
+| `delete_round` | `round` | the round and how many pods left it | the pods keep running; only our map and name are cleared |
 | `rename_round` | `round`, `name` (empty = the round's own) | the round and its shown name | the name is ours; the delivery round's own name stays the key |
 | `rename_pod` | `pod_id`, `name` (empty = RunPod's own) | the name shown and RunPod's | a map on our side only: RunPod is not told; list_pods and get_pod show it; it goes with Recreate and goes on Delete |
 | `get_history` | `kind` (`pod` or `job`, optional), `limit` (default 200) | the events newest first: pod created/started/stopped/recreated/renamed/deleted, and pull/remove/sync jobs with files and bytes | from this app's own log; IPC `history.list` |

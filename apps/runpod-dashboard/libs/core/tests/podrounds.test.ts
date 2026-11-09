@@ -50,4 +50,12 @@ describe('pods in rounds (ADR-039)', () => {
     await expect(create({ name: 'bad', gpu: 'rtx4090', round: 'a/b' } as any)).rejects.toThrow(/slash/)
     expect(dry.list().length).toBe(before)
   })
+  it('deleting a round takes its pods out of it and clears its name; the pods stay', async () => {
+    const p = await pods.create({ name: 'to-release', gpu: 'rtx4090', round: 'gone' } as any)
+    await pods.renameRound('gone', 'Gone reel')
+    expect(await pods.deleteRound('gone')).toEqual({ round: 'gone', pods_released: 1 })
+    expect((await pods.get(p.id)).round).toBeUndefined()
+    expect(pods.rounds().find((r) => r.round === 'gone')).toBeUndefined()
+    await expect(pods.deleteRound(' ')).rejects.toThrow(/Which round/)
+  })
 })

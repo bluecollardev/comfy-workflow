@@ -413,6 +413,10 @@ export async function mockApi(page, state) {
       if (pod) { if (r) { pod.round = r; pod.round_label = (state.roundNames ||= {})[r] || r } else { delete pod.round; delete pod.round_label } }
       return json({ pod_id: m[1], round: r || null })
     }
+    if (path === '/rounds' && method === 'DELETE') {
+      let n = 0; for (const p of state.pods) if (p.round === query.round) { delete p.round; delete p.round_label; n++ }
+      return json({ round: query.round, pods_released: n })
+    }
     if (path === '/rounds/name' && method === 'PUT') {
       const names = (state.roundNames ||= {}); if (body.name) names[body.round] = body.name; else delete names[body.round]
       for (const p of state.pods) if (p.round === body.round) p.round_label = names[body.round] || body.round

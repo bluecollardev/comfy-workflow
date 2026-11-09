@@ -69,6 +69,7 @@ const TABLE = {
     rename: (c, id, name) => c.pods.rename(id, name),
     setRound: (c, id, round) => c.pods.setRound(id, round || ''),
     renameRound: (c, round, name) => c.pods.renameRound(round, name || ''),
+    deleteRound: (c, round) => c.pods.deleteRound(round),
     rounds: (c) => c.pods.rounds(),
     credits: (c) => c.pods.credits(),
 

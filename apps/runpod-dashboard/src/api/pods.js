@@ -39,6 +39,7 @@ const ipc = core && {
   rename: (id, name) => core.invoke('pods', 'rename', [id, name]),
   setRound: (id, round) => core.invoke('pods', 'setRound', [id, round]),
   renameRound: (round, name) => core.invoke('pods', 'renameRound', [round, name]),
+  deleteRound: (round) => core.invoke('pods', 'deleteRound', [round]),
   stopPod: (id) => core.invoke('pods', 'stop', [id]),
   resumePod: (id) => core.invoke('pods', 'resume', [id]),
   deletePod: (id) => core.invoke('pods', 'remove', [id]),
@@ -101,6 +102,12 @@ const http = {
   // Name a round in this app (the delivery round's own name is kept); empty goes back to it
   async renameRound(round, name) {
     const { data } = await axios.put(`${API_BASE}/rounds/name`, { round, name });
+    return data;
+  },
+
+  // Delete a round on our side: its pods leave it, nothing on RunPod is touched
+  async deleteRound(round) {
+    const { data } = await axios.delete(`${API_BASE}/rounds`, { params: { round } });
     return data;
   },
 

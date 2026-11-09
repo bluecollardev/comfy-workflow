@@ -220,6 +220,24 @@ test.describe('Rounds: a round holds a series of pods (ADR-039)', () => {
     await expect(page.getByTestId('round-toggle')).toHaveCount(0)
   })
 
+  test('beside each round: Import this round again opens Import Round with it chosen; Delete asks, then its pods leave it and keep running (ADR-039)', async ({ page, api }) => {
+    api.state.pods.find((p) => p.name === 'ComfyUI-Batch').round = 'brynley-comfy-2026-11-06'
+    const asked = []; let answer = 'dismiss'
+    page.on('dialog', (d) => { asked.push(d.message()); return answer === 'accept' ? d.accept() : d.dismiss() })
+    await page.goto('/')
+    const round = page.locator('[data-testid="round-section"][data-round="brynley-comfy-2026-11-06"]')
+    await round.getByTestId('round-reimport').click()
+    await expect(page.getByTestId('import-round-modal').getByTestId('import-round-select')).toHaveValue('brynley-comfy-2026-11-06')
+    await page.getByTestId('import-round-modal').getByText('Cancel', { exact: true }).click()
+    await round.getByTestId('round-delete').click()   // Cancel: it stays
+    expect(asked).toHaveLength(1)
+    await expect(round.getByTestId('pod-card')).toHaveCount(1)
+    answer = 'accept'
+    await round.getByTestId('round-delete').click()
+    await expect(round).toHaveCount(0)
+    await expect(podCard(page, 'ComfyUI-Batch')).toBeVisible()   // the pod is still there, in "No round"
+  })
+
   test('a pod card is dragged by its handle onto another round; the move asks first; Cancel leaves it; onto "No round" takes it out (ADR-039)', async ({ page, api }) => {
     api.state.pods.find((p) => p.name === 'ComfyUI-Batch').round = 'round-a'
     api.state.pods.find((p) => p.name === 'ComfyUI-Dev').round = 'round-b'

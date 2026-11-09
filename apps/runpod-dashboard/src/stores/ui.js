@@ -17,6 +17,7 @@ export const useUiStore = defineStore('ui', () => {
   const welcomeOpen = ref(false)  // the one-time 'import a configuration file or start from scratch' question on a new installation (docs/ADR-023)
   const configFocus = ref('')     // a section of Default Configuration to scroll to when it opens ('adapters', 'claude', 'import')
   const volumesOpen = ref(false)
+  const importRoundPreset = ref('')   // Import Round opens with this round chosen (re-import)
   const importRoundOpen = ref(false)  // Import Round (ADR-038)
   const queueOpen = ref(false)        // the Queue window
   const historyOpen = ref(false)  // the History window: pod events, spend, jobs, ComfyUI runs
@@ -27,5 +28,5 @@ export const useUiStore = defineStore('ui', () => {
   watch(hints, (v) => { try { localStorage.setItem('runpod-manager.hints', v ? 'on' : 'off') } catch { /* storage blocked */ } })
   const accountsOpen = computed({ get: () => connectOpen.value && connectTab.value === 'accounts', set: (v) => { if (v) connectTab.value = 'accounts'; connectOpen.value = v } })
   const repositoriesOpen = computed({ get: () => connectOpen.value && connectTab.value === 'repositories', set: (v) => { if (v) connectTab.value = 'repositories'; connectOpen.value = v } })
-  return { connectOpen, importOpen, importPod, importSource, importShown, connectTab, accountsOpen, repositoriesOpen, repositoriesVersion, configOpen, welcomeOpen, configFocus, volumesOpen, importRoundOpen, queueOpen, historyOpen, volumeDc, hints }
+  return { connectOpen, importOpen, importPod, importSource, importShown, connectTab, accountsOpen, repositoriesOpen, repositoriesVersion, configOpen, welcomeOpen, configFocus, volumesOpen, importRoundOpen, importRoundPreset, queueOpen, historyOpen, volumeDc, hints }
 })

@@ -49,7 +49,7 @@
 /**
  * Import Round (ADR-038): choose a round, see its shots, the pods and the estimate with the caps, approve once. Starting queues a pull and one run per shot; pool pods take them (see the Queue).
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { panamaAPI } from '../api/panama'
 import { queueAPI } from '../api/queue'
 import { errorText } from '../stores/toast'
@@ -64,7 +64,12 @@ const podsEdited = ref(false)   // until the pod limit is typed, it follows the 
 const maxPods = ref(2), costCap = ref(50), approvedBy = ref(''), error = ref(''), loadingPlan = ref(false), starting = ref(false)
 try { approvedBy.value = localStorage.getItem('runpod-manager.approved-by') || '' } catch { /* storage blocked */ }
 
-const roundOptions = computed(() => [{ value: '', text: '-' }, ...rounds.value.map((r) => ({ value: r.name, text: r.name }))])
+const roundOptions = computed(() => {
+  const names = rounds.value.map((r) => r.name)
+  if (round.value && !names.includes(round.value)) names.push(round.value)
+  return [{ value: '', text: '-' }, ...names.map((n) => ({ value: n, text: n }))]
+})
+watch(() => ui.importRoundOpen, (o) => { if (o && ui.importRoundPreset) { round.value = ui.importRoundPreset; ui.importRoundPreset = ''; loadPlan() } }, { immediate: true })   // re-import: the round is already chosen
 const estimate = computed(() => plan.value?.est_total_usd ?? 0)
 const canStart = computed(() => !!plan.value && picked.value.size > 0 && approvedBy.value.trim().length > 0)
 

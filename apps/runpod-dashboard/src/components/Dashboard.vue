@@ -48,6 +48,8 @@
                 <span v-if="renamingRound !== sec.round" class="fw-semibold" data-testid="round-title" :title="sec.round && sec.label !== sec.round ? sec.round : ''">{{ sec.label }}</span>
               </button>
               <template v-if="sec.round && renamingRound !== sec.round">
+                <button type="button" class="btn btn-link btn-sm p-0 align-baseline text-body-secondary" :title="$t('dashboard.roundReimport')" :aria-label="$t('dashboard.roundReimport')" :disabled="!settings.ready" data-testid="round-reimport" @click="reimportRound(sec)"><i class="fa-solid fa-rotate-right fa-xs"></i></button>
+                <button type="button" class="btn btn-link btn-sm p-0 align-baseline text-body-secondary" :title="$t('dashboard.roundDelete')" :aria-label="$t('dashboard.roundDelete')" data-testid="round-delete" @click="deleteRound(sec)"><i class="fa-solid fa-trash fa-xs"></i></button>
                 <button type="button" class="btn btn-link btn-sm p-0 align-baseline text-body-secondary" :title="$t('dashboard.roundRename')" :aria-label="$t('dashboard.roundRename')" data-testid="round-rename" @click="startRenameRound(sec)"><i class="fa-solid fa-pencil fa-xs"></i></button>
               </template>
               <div v-else-if="sec.round" class="input-group input-group-sm" style="max-width: 24rem">
@@ -123,8 +125,11 @@ const collapsed = ref(new Set(JSON.parse(localStorage.getItem('pods.collapsedRou
 const isCollapsed = (sec) => collapsed.value.has(sec.key)
 const toggleRound = (sec) => { const n = new Set(collapsed.value); n.has(sec.key) ? n.delete(sec.key) : n.add(sec.key); collapsed.value = n; localStorage.setItem('pods.collapsedRounds', JSON.stringify([...n])) }
 /** The rounds a pod can be dropped into: the bucket's rounds, as far as the exchange is set up, and any round that already has pods. Each with the name this app shows. */
+/** A deleted round that is still in the bucket stays out of the list on this PC until it is imported again. */
+const hiddenRounds = ref(new Set(JSON.parse(localStorage.getItem('pods.hiddenRounds') || '[]')))
+const hideRound = (r, on) => { const n = new Set(hiddenRounds.value); on ? n.add(r) : n.delete(r); hiddenRounds.value = n; localStorage.setItem('pods.hiddenRounds', JSON.stringify([...n])) }
 const roundNames = computed(() => {
-  const m = new Map((panama.rounds || []).map((r) => [r.name, r.name]))
+  const m = new Map((panama.rounds || []).filter((r) => !hiddenRounds.value.has(r.name)).map((r) => [r.name, r.name]))
   for (const p of pods.pods) if (p.round) m.set(p.round, p.round_label || p.round)
   return [...m.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([round, label]) => ({ round, label }))
 })
@@ -150,6 +155,9 @@ const onDrop = (e, sec) => {
   const msg = sec.round ? t('dashboard.confirmMove', { name: pod.name, to: sec.label }) : t('dashboard.confirmMoveOut', { name: pod.name })
   if (window.confirm(msg)) pods.setRound(pod.id, sec.round || '')
 }
+/** Re-import opens Import Round with this round chosen. Delete clears the round on our side (after a confirmation): its pods leave it and keep running. */
+const reimportRound = (sec) => { hideRound(sec.round, false); ui.importRoundPreset = sec.round; ui.importRoundOpen = true }
+const deleteRound = (sec) => { if (window.confirm(t('dashboard.confirmDeleteRound', { name: sec.label, n: sec.pods.length }))) { hideRound(sec.round, true); pods.deleteRound(sec.round) } }
 /** A round is renamable: the name is ours (the delivery round keeps its own); empty goes back to it. */
 const renamingRound = ref('')
 const roundDraft = ref('')

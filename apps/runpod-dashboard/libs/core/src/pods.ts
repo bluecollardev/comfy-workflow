@@ -308,6 +308,16 @@ export async function renameRound(round: string, name: string): Promise<{ round:
   history.record({ kind: 'pod', action: 'moved', pod_id: '-', name: r, detail: n ? `round shown as ${n}` : 'round shown by its own name' })
   return { round: r, label: podrounds.label(r) }
 }
+/** Delete a round on our side: its pods leave it (they keep running, nothing on RunPod is touched) and its name goes back to the key. */
+export async function deleteRound(round: string): Promise<{ round: string; pods_released: number }> {
+  const r = String(round ?? '').trim()
+  if (!r) throw bad('Which round?')
+  const ids = podrounds.byRound().find((x) => x.round === r)?.pod_ids ?? []
+  for (const id of ids) podrounds.set(id, '')
+  podrounds.setLabel(r, '')
+  history.record({ kind: 'pod', action: 'moved', pod_id: '-', name: r, detail: `round deleted; ${ids.length} pod(s) left it` })
+  return { round: r, pods_released: ids.length }
+}
 /** The rounds that have pods: key, shown name and pod ids. */
 export const rounds = (): { round: string; label: string; pod_ids: string[] }[] => podrounds.byRound().map((r) => ({ ...r, label: podrounds.label(r.round) }))
 export async function stop(podId: string, client?: rp.RunPodClient) { if (isDry()) { const r = dry.stop(podId); void recordPod('stopped', podId); return r } await rp.stopPod(podId, client); void recordPod('stopped', podId, client); return { message: `Pod ${podId} stopped`, pod_id: podId } }

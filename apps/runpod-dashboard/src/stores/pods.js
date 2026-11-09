@@ -166,6 +166,13 @@ export const usePodsStore = defineStore('pods', () => {
     return r
   }
 
+  /** Delete a round: its pods leave it, nothing on RunPod is touched. */
+  async function deleteRound(round) {
+    const r = await toast.run(t('toast.deleteRound'), () => podsAPI.deleteRound(round), { ok: t('toast.roundDeleted'), onError: (msg) => (actionError.value = msg) })
+    if (r.ok) await load()
+    return r
+  }
+
   /** A pod's own configuration (null = the Default Configuration). */
   const config = (id) => podsAPI.config(id)
   /** Give a pod its own configuration, applied when it is recreated; null puts it back on the default. */
@@ -179,5 +186,5 @@ export const usePodsStore = defineStore('pods', () => {
   const details = (id) => podsAPI.details(id)
   const remove = (id) => act(id, podsAPI.deletePod, 'Delete')
 
-  return { sync, syncStarted, syncEnded, syncEvent, syncRecover, stats, pods, dryRun, initialLoading, refreshing, loadError, actionError, busyPodId, pending, load, rename, setRound, renameRound, refreshList, startAutoRefresh, stopAutoRefresh, create, stop, stopAll, resume, remove, details, recreate, hostFull, setIdle, config, setConfig }
+  return { sync, syncStarted, syncEnded, syncEvent, syncRecover, stats, pods, dryRun, initialLoading, refreshing, loadError, actionError, busyPodId, pending, load, rename, setRound, renameRound, deleteRound, refreshList, startAutoRefresh, stopAutoRefresh, create, stop, stopAll, resume, remove, details, recreate, hostFull, setIdle, config, setConfig }
 })
