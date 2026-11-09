@@ -32,6 +32,7 @@
           <i class="fa-solid fa-cloud-arrow-down me-1"></i>{{ $t('app.importRound') }}
         </BButton>
         <BFormCheckbox v-model="byRound" switch class="ms-auto me-3 mb-0 small" data-testid="pods-round-toggle">{{ $t('dashboard.groupByRound') }}</BFormCheckbox>
+        <BFormCheckbox v-if="byRound && emptyCount" v-model="showEmpty" switch class="me-3 mb-0 small" data-testid="pods-empty-toggle">{{ $t('dashboard.showEmpty', { n: emptyCount }) }}</BFormCheckbox>
         <BFormCheckbox v-model="grouped" switch class="me-3 mb-0 small" data-testid="pods-group-toggle">{{ $t('dashboard.groupByDatacenter') }}</BFormCheckbox>
         <BBadge variant="secondary" pill>{{ pods.pods.length }}</BBadge>
       </BCardHeader>
@@ -60,7 +61,10 @@
               <BBadge variant="secondary" pill class="ms-auto fw-normal" data-testid="round-count">{{ $t('dashboard.roundPods', { n: sec.pods.length }) }}</BBadge>
             </div>
             <div v-show="!byRound || !isCollapsed(sec)" data-testid="round-body">
-              <div v-if="!sec.pods.length" class="small text-body-secondary py-2" data-testid="round-empty">{{ $t('dashboard.roundEmpty') }}</div>
+              <div v-if="!sec.pods.length" class="small text-body-secondary py-2" data-testid="round-empty">
+                <template v-if="facts(sec.round).length"><span v-for="f in facts(sec.round)" :key="f" class="badge text-bg-secondary fw-normal me-2" data-testid="round-fact">{{ f }}</span></template>
+                {{ $t('dashboard.roundEmpty') }}
+              </div>
               <BRow v-else-if="!grouped" class="g-3" data-testid="round-pod-list">
                 <BCol v-for="pod in sec.pods" :key="pod.id" md="6" xl="4">
                   <div class="pod-drag" :class="{ dragging: dragId === pod.id }" data-testid="pod-drag" :data-pod="pod.id"><PodCard :pod="pod" :busy="pods.busyPodId === pod.id" :rounds="roundNames" :handle="byRound" @dragstart="(e) => onDragStart(e, pod)" @dragend="dragId = ''; overKey = null" @stop="pods.stop(pod.id)" @resume="pods.resume(pod.id)" @delete="pods.remove(pod.id)" @rename="(name) => pods.rename(pod.id, name)" @round="(rd) => pods.setRound(pod.id, rd)" /></div>
@@ -133,10 +137,20 @@ const roundNames = computed(() => {
   for (const p of pods.pods) if (p.round) m.set(p.round, p.round_label || p.round)
   return [...m.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([round, label]) => ({ round, label }))
 })
+/** Rounds with no pod are out of the way until asked for ("Show empty rounds"); then each says where its files are. */
+const showEmpty = ref(localStorage.getItem('pods.showEmptyRounds') === '1')
+watch(showEmpty, (v) => localStorage.setItem('pods.showEmptyRounds', v ? '1' : '0'))
+const emptyCount = computed(() => roundNames.value.filter((r) => !pods.pods.some((p) => p.round === r.round)).length)
+const facts = (round) => {
+  const out = [], loc = (panama.rounds || []).find((r) => r.name === round), vol = (panama.podView?.rounds || []).find((r) => r.name === round)
+  if (loc && loc.state !== 'none') out.push(t('dashboard.factLocal', { n: loc.present }))
+  if (vol && vol.state !== 'none') out.push(t('dashboard.factVolume', { n: vol.present }))
+  return out
+}
 /** What the list shows: with rounds on, every round (empty ones too) then the pods in no round; with rounds off, one list. */
 const sections = computed(() => {
   if (!byRound.value) return pods.pods.length ? [{ key: '*', round: null, label: '', pods: pods.pods }] : []
-  const out = roundNames.value.map((r) => ({ key: r.round, round: r.round, label: r.label, pods: pods.pods.filter((p) => p.round === r.round) }))
+  const out = roundNames.value.map((r) => ({ key: r.round, round: r.round, label: r.label, pods: pods.pods.filter((p) => p.round === r.round) })).filter((s) => s.pods.length || showEmpty.value)
   const rest = pods.pods.filter((p) => !p.round)
   if (rest.length || !out.length) out.push({ key: '', round: null, label: t('dashboard.unassigned'), pods: rest })
   return out
@@ -163,7 +177,7 @@ const renamingRound = ref('')
 const roundDraft = ref('')
 const startRenameRound = (r) => { roundDraft.value = r.label; renamingRound.value = r.round }
 const saveRenameRound = (r) => { const n = roundDraft.value.trim(); renamingRound.value = ''; if (n !== r.label) pods.renameRound(r.round, n === r.round ? '' : n) }
-onMounted(async () => { try { const st = await panama.loadStatus(); if (st?.configured) await panama.loadRounds() } catch { /* no exchange: only rounds with pods are offered */ } })
+onMounted(async () => { try { const st = await panama.loadStatus(); if (st?.configured) { await panama.loadRounds(); panama.loadPod() } } catch { /* no exchange: only rounds with pods are offered */ } })
 /** The grouped view is a choice, off by default (the plain list); it is remembered. */
 const grouped = ref(localStorage.getItem('pods.groupByDatacenter') === '1')
 watch(grouped, (v) => localStorage.setItem('pods.groupByDatacenter', v ? '1' : '0'))

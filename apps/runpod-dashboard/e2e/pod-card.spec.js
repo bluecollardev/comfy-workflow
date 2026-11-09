@@ -190,10 +190,15 @@ test.describe('Pod card: rename (a name on our side only)', () => {
 })
 
 test.describe('Rounds: a round holds a series of pods (ADR-039)', () => {
-  test('pods group by round into collapsible lists; a pod is dropped into a round from its card; a round is renamable; empty and "No round" groups show', async ({ page, api }) => {
+  test('pods group by round into collapsible lists; a pod is dropped into a round from its card; a round is renamable; empty rounds are hidden until asked for, and "No round" shows', async ({ page, api }) => {
     api.state.pods.find((p) => p.name === 'ComfyUI-Batch').round = 'brynley-comfy-2026-11-06'
     api.state.pods.find((p) => p.name === 'ComfyUI-Batch').round_label = 'brynley-comfy-2026-11-06'
+    api.state.panama = { configured: true }
     await page.goto('/')
+    await expect(page.locator('[data-testid="round-section"][data-round="brynley-comfy-2026-10-23"]')).toHaveCount(0)   // a bucket round with no pod is not listed
+    await page.getByTestId('pods-empty-toggle').click()
+    await expect(page.locator('[data-testid="round-section"][data-round="brynley-comfy-2026-10-23"]')).toHaveCount(1)   // until asked for
+    await page.getByTestId('pods-empty-toggle').click()
     const round = page.locator('[data-testid="round-section"][data-round="brynley-comfy-2026-11-06"]')
     await expect(round.getByTestId('round-title')).toHaveText('brynley-comfy-2026-11-06')
     await expect(round.getByTestId('pod-card')).toHaveCount(1)
