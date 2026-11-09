@@ -45,3 +45,10 @@ Today a round is pulled with Pod download (one pod, one round), placed, and its 
 - The button reads **Import Round(s)** and the window lists the rounds with a tick each (and Browse files). Ticking a round loads its plan; shots are grouped by round.
 - Each ticked round is its **own import** in the queue (own pull, own runs, own limits, cancelable alone). One approval covers them all.
 - The **dollar cap** typed is the total and is split evenly between the rounds, so the sum of the caps never passes it; the estimate shown is the sum. **Pods at once** is per round and follows each round's ticked shots until typed over.
+
+## Amendment (2026-11-09): the Import button is always shown; drop a round from the desktop
+
+- The window's **Import** button is always visible at the bottom (it was hidden until a plan loaded); it is disabled with a one-line reason until a round is ticked, a shot is ticked and "Approved by" is filled.
+- **Drag and drop** from the desktop onto the window: folders, files or a `.zip`. A zip is **extracted** (the existing safe unpack: no zip-slip, entry and size limits). The content is copied into a **new** folder under the staging folder (`ComfyUI-Shared/temp/rounds/<name>`), never overwriting (a taken name gets a `-2`); one folder or zip keeps its name, several things become `dropped-<date>-<time>`. The sources are only read.
+- A dropped round appears under "From this PC" with an **Import** button that opens Import Shot Pack on that folder (adapter, plan, Import into ComfyUI-Shared). It does **not** use pods and costs nothing; the pods get the files with Sync. It is not queued, because the queue's pull comes from the bucket. MCP: `panama_stage`.
+- The page needs the real path of a dropped item: Electron's `webUtils.getPathForFile` through the preload; a plain browser tab cannot see it and says so.

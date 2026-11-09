@@ -178,6 +178,7 @@ Each tool calls the core function the window's IPC channel calls. `mcp/parity.mj
 |---|---|---|---|
 | `panama_status` | none | Is the BH exchange bucket reachable: the bucket, region, how it is read (the keys in the app or an AWS profile), where rounds are staged on this PC, and whether Pod mode is available |  |
 | `panama_rounds` | `target?` | The delivery rounds in the bucket with what is staged: on this PC (target local) or on the network volume as last seen by a pod (target pod). |  |
+| `panama_stage` | `paths` (absolute folders, .zip files or files) | the new round (name, path, files, bytes, zips extracted) | What a desktop drop on Import Round(s) does: copies into a new staging folder, extracts zips, never overwrites, no spend. |  |
 | `panama_round_files` | `round`, `prefix?`, `limit?` | One round's files in the bucket as a folder tree (read-only), each marked when already on this PC. |  |
 | `panama_round_size` | `round` | Files and bytes in one round (a listing; a big round takes a few seconds) |  |
 | `panama_pod_plan` | `round` | What a pod download of a round would do before it does it: use a pod of yours or start a short-lived one, its card and price, the volume, the size, the ceiling in minutes |  |

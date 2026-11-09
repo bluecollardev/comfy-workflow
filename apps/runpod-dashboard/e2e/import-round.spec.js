@@ -39,3 +39,21 @@ test('Import Round(s): several rounds can be ticked; each is its own import, the
   expect(api.state.importedAll.map((i) => i.round)).toEqual(['brynley-comfy-2026-10-23', 'brynley-comfy-2026-10-20'])
   expect(api.state.importedAll.every((i) => i.approved_by === 'Lucas' && i.cost_cap_usd === 25 && i.max_pods === 2)).toBe(true)
 })
+
+test('Import Round(s): the Import button is always there; a zip or folder dropped from the desktop is staged and imported on this PC', async ({ page, api }) => {
+  await page.goto('/')
+  await page.getByTestId('open-import-round').click()
+  const dlg = page.getByTestId('import-round-modal')
+  await expect(dlg.getByTestId('import-round-start')).toBeDisabled()   // there before anything is ticked
+  await expect(dlg.getByTestId('import-round-hint')).toBeVisible()
+  await dlg.getByTestId('import-round-drop').evaluate((el) => {
+    const dt = new DataTransfer(); const f = new File(['x'], 'brynley-extra.zip'); Object.defineProperty(f, 'path', { value: '/Users/x/brynley-extra.zip' }); dt.items.add(f)
+    el.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }))
+  })
+  const row = dlg.getByTestId('import-round-dropped-row')
+  await expect(row).toContainText('brynley-extra')
+  await expect(row).toContainText('zip extracted')
+  expect(api.state.staged).toEqual(['/Users/x/brynley-extra.zip'])
+  await row.getByTestId('import-round-dropped-import').click()
+  await expect(page.getByTestId('import-modal')).toBeVisible()   // Import Shot Pack, on the dropped folder
+})

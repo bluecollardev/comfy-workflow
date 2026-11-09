@@ -1,6 +1,18 @@
 <template>
   <BModal v-model="open" :title="$t('importRound.title')" size="lg" scrollable no-footer data-testid="import-round-modal" @hidden="open = false">
     <div v-if="error" class="alert alert-danger small py-2" data-testid="import-round-error">{{ error }}</div>
+    <div class="drop-zone rounded p-3 mb-3 text-center small" :class="{ over: dragOver }" data-testid="import-round-drop" @dragover.prevent="dragOver = true" @dragleave="dragOver = false" @drop.prevent="onDrop">
+      <i class="fa-solid fa-file-zipper me-2"></i>{{ staging ? $t('importRound.dropping') : $t('importRound.drop') }}
+    </div>
+    <div v-if="dropped.length" class="mb-3" data-testid="import-round-dropped">
+      <div class="form-label small mb-1">{{ $t('importRound.droppedTitle') }}</div>
+      <div v-for="d in dropped" :key="d.round" class="d-flex align-items-center gap-2 small border rounded p-2 mb-1" data-testid="import-round-dropped-row" :data-round="d.round">
+        <span class="font-monospace flex-grow-1">{{ d.round }}</span>
+        <span class="text-body-secondary">{{ $t('importRound.droppedSize', { files: d.files }) }}<template v-if="d.extracted"> · {{ $t('importRound.droppedZip') }}</template></span>
+        <BButton variant="success" size="sm" class="py-0 text-nowrap" data-testid="import-round-dropped-import" @click="importDropped(d)"><i class="fa-solid fa-file-import me-1"></i>{{ $t('importRound.droppedImport') }}</BButton>
+      </div>
+      <div class="small text-body-secondary">{{ $t('importRound.droppedNote') }}</div>
+    </div>
     <div class="mb-3">
       <div class="form-label small mb-1">{{ $t('importRound.rounds') }}</div>
       <div class="border rounded p-2 round-list" data-testid="import-round-list">
@@ -41,11 +53,12 @@
         <label class="mb-0 small" for="ir-by">{{ $t('importRound.approvedBy') }}</label>
         <BFormInput id="ir-by" v-model="approvedBy" size="sm" style="width: 12rem" :placeholder="$t('importRound.approvedByPlaceholder')" data-testid="import-round-approved-by" />
       </div>
-      <div class="d-flex gap-2 justify-content-end">
-        <BButton variant="outline-light" size="sm" @click="open = false">{{ $t('picker.cancel') }}</BButton>
-        <BButton variant="success" size="sm" :disabled="!canStart || starting" data-testid="import-round-start" @click="start"><i class="fa-solid fa-play me-1"></i>{{ $t('importRound.start') }}</BButton>
-      </div>
     </template>
+    <div class="d-flex align-items-center gap-2 justify-content-end mt-3">
+      <span v-if="!canStart" class="small text-body-secondary me-auto" data-testid="import-round-hint">{{ $t(!chosen.size ? 'importRound.hintPick' : totalShots ? 'importRound.hintApprove' : 'importRound.hintShots') }}</span>
+      <BButton variant="outline-light" size="sm" @click="open = false">{{ $t('picker.cancel') }}</BButton>
+      <BButton variant="success" size="sm" :disabled="!canStart || starting" data-testid="import-round-start" @click="start"><i class="fa-solid fa-file-import me-1"></i>{{ $t('importRound.start') }}</BButton>
+    </div>
     <RoundFilesModal :round="browsing" target="local" @close="browsing = ''" />
   </BModal>
 </template>
@@ -59,12 +72,29 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { panamaAPI } from '../api/panama'
 import { queueAPI } from '../api/queue'
 import { errorText } from '../stores/toast'
+import { t } from '../i18n'
 import { useUiStore } from '../stores/ui'
 import RoundFilesModal from './RoundFilesModal.vue'
+import { useImportsStore } from '../stores/imports'
 
 const ui = useUiStore()
 const open = computed({ get: () => ui.importRoundOpen, set: (v) => { ui.importRoundOpen = v } })
 const rounds = ref([]), chosen = ref(new Set()), plans = ref(new Map()), picked = ref(new Map()), runWorkflows = ref(true)
+const dragOver = ref(false), staging = ref(false), dropped = ref([])
+const imports = useImportsStore()
+/** Files, folders and zips dragged from the desktop: copied (a zip extracted) into a new round folder on this PC. Needs the app for the real paths. */
+async function onDrop(ev) {
+  dragOver.value = false
+  const paths = [...(ev.dataTransfer?.files || [])].map((f) => window.core?.files?.pathFor?.(f) || f.path || '').filter(Boolean)
+  if (!paths.length) { error.value = t('importRound.dropNoPath'); return }
+  staging.value = true; error.value = ''
+  try { dropped.value = [...dropped.value, await panamaAPI.stageDrop(paths)] } catch (e) { error.value = errorText(e) } finally { staging.value = false }
+}
+/** A dropped round is imported into ComfyUI-Shared like any staged round: Import Shot Pack with its folder, planned first. No pods, no spend. */
+function importDropped(d) {
+  imports.folder = d.path; ui.importPod = null; ui.importSource = 'folder'; imports.makePlan(false)
+  open.value = false; ui.importOpen = true
+}
 const browsing = ref('')   // the round whose files are open in the explorer
 const podsEdited = ref(false)   // until the pod limit is typed, it follows the shots ticked: one pod per shot
 const maxPods = ref(2), costCap = ref(50), approvedBy = ref(''), error = ref(''), loadingPlan = ref(false), starting = ref(false)
@@ -110,5 +140,7 @@ async function start() {
 </script>
 
 <style scoped>
+.drop-zone { border: 2px dashed rgba(255, 255, 255, 0.3); color: var(--bs-secondary-color); }
+.drop-zone.over { border-color: #508cff; background: rgba(80, 140, 255, 0.12); color: inherit; }
 .round-list { max-height: 12rem; overflow: auto; }
 </style>

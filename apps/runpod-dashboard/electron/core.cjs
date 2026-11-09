@@ -149,6 +149,7 @@ const TABLE = {
     rounds: (c) => c.panama.rounds(),
     size: (c, round) => c.panama.size(round),
     files: (c, round) => c.panama.files(round),
+    stageDrop: (c, paths) => c.panama.stageDrop(paths),
     pull: (c, round) => c.panama.pull(round),
     job: (c, id) => c.panama.job(id),
     cancel: (c, id) => c.panama.cancel(id),

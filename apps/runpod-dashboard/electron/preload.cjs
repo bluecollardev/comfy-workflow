@@ -1,7 +1,7 @@
 // Preload: the one bridge between the page and the core in the main process. The page calls
 // window.core.invoke('pods', 'create', [request]) and gets the core's return value, or an Error
 // carrying the core's status and message. Nothing else of Node reaches the page.
-const { contextBridge, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 contextBridge.exposeInMainWorld('core', {
   logs: {
@@ -26,6 +26,8 @@ contextBridge.exposeInMainWorld('core', {
   files: {
     saveText: (suggested, text) => ipcRenderer.invoke('core:file:save', String(suggested), String(text)),
     openText: () => ipcRenderer.invoke('core:file:open'),
+    // The real path of a file or folder dropped from the desktop (the page only gets a File object).
+    pathFor: (file) => { try { return webUtils.getPathForFile(file) } catch { return '' } },
   },
   async invoke(ns, fn, args = []) {
     // Plain data only crosses the bridge: Vue's reactive proxies cannot be structured-cloned.

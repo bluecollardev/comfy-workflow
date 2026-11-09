@@ -7,10 +7,11 @@
  */
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { cpSync, createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join, normalize, relative } from 'node:path'
+import { basename, dirname, isAbsolute, join, normalize, relative } from 'node:path'
 import { bad } from './errors.js'
+import { prepareSource } from './imports.js'
 import * as mounts from './mounts.js'
 import { STAGED_ROUNDS } from './paths.js'
 import * as settings from './settings.js'
@@ -269,6 +270,33 @@ export function remove(round: string): { round: string; freed: number } {
   const freed = dirBytes(real)
   rmSync(real, { recursive: true, force: true })
   return { round, freed }
+}
+
+/** A round dropped from the desktop (ADR-038 amendment): folders and files are copied, a .zip is extracted, into a new folder under the staging folder, and the rest of the app treats it as a staged round.
+ *  One folder or zip: it keeps its name; several things, or loose files: `dropped-<date>`. Nothing is overwritten (a name already taken gets a suffix), the sources are only read, nothing leaves this PC. */
+export function stageDrop(paths: string[], now: Date = new Date()): { round: string; path: string; files: number; bytes: number; extracted: number } {
+  const srcs = (Array.isArray(paths) ? paths : []).map(String).filter(Boolean)
+  if (!srcs.length) throw bad('Nothing was dropped.')
+  let extracted = 0
+  const items = srcs.map((p) => {
+    if (!isAbsolute(p)) throw bad(`Not an absolute path: ${p}`)
+    if (!existsSync(p)) throw bad(`Not found: ${p}`)
+    const st = statSync(p)
+    if (st.isFile() && /\.zip$/i.test(p)) { extracted++; return { dir: prepareSource(p), name: basename(p).replace(/\.zip$/i, ''), file: false } }
+    return { dir: p, name: basename(p), file: st.isFile() }
+  })
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const base = (items.length === 1 && !items[0].file ? items[0].name : `dropped-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`).replace(/[^A-Za-z0-9._-]/g, '_').replace(/^[^A-Za-z0-9]+/, '').slice(0, 100) || 'dropped'
+  const root = stagingDir(); mkdirSync(root, { recursive: true })
+  let round = base
+  for (let i = 2; existsSync(join(root, round)); i++) round = `${base}-${i}`
+  if (!ROUND.test(round)) throw bad(`Not a usable round name: ${round}`)
+  const dest = join(root, round); mkdirSync(dest, { recursive: true })
+  for (const it of items) {
+    if (it.file) cpSync(it.dir, join(dest, it.name), { force: false })
+    else cpSync(it.dir, items.length === 1 ? dest : join(dest, it.name), { recursive: true, force: false })   // a single folder's contents are the round; several keep their own folders
+  }
+  return { round, path: dest, files: countFiles(dest), bytes: dirBytes(dest), extracted }
 }
 
 /** Stop a running download. The files already fetched stay; Download again carries on from them (sync skips what is complete). */

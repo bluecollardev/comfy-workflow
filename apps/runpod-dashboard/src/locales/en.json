@@ -378,6 +378,17 @@
   },
   "importRound": {
     "browse": "Browse files",
+    "drop": "Drop a round here from your desktop: folders, files or a .zip (zips are extracted)",
+    "dropping": "Copying into a new round folder...",
+    "dropNoPath": "The drop gave no file path: drag from your desktop in the app (a browser tab cannot see the path).",
+    "droppedTitle": "From this PC",
+    "droppedSize": "{files} files",
+    "droppedZip": "zip extracted",
+    "droppedImport": "Import",
+    "droppedNote": "A dropped round is imported into ComfyUI-Shared on this PC (no pods, no spend); the pods get it with Sync.",
+    "hintPick": "Tick a round, or drop one here.",
+    "hintShots": "Tick at least one shot.",
+    "hintApprove": "Say who approves the spend (Approved by).",
     "title": "Import Round",
     "rounds": "Rounds (tick one or more)",
     "noRounds": "No rounds yet: set up the exchange in Panama.",
@@ -394,7 +405,7 @@
     "overCap": "The estimate is over the cap: the queue will hold shots once it is reached.",
     "approvedBy": "Approved by",
     "approvedByPlaceholder": "who says yes to this spend",
-    "start": "Approve and start"
+    "start": "Import"
   },
   "queue": {
     "title": "Queue",
