@@ -1,19 +1,24 @@
 <template>
   <BModal v-model="open" :title="$t('importRound.title')" size="lg" scrollable data-testid="import-round-modal" @hidden="open = false">
+    <div class="d-flex gap-2 mb-3 small" data-testid="import-round-steps">
+      <span v-for="(label, i) in stepLabels" :key="i" class="badge fw-normal" :class="step === i + 1 ? 'text-bg-primary' : step > i + 1 ? 'text-bg-success' : 'text-bg-secondary'" data-testid="import-round-step" :data-step="i + 1" :data-active="step === i + 1">{{ i + 1 }}. {{ label }}</span>
+    </div>
     <div v-if="error" class="alert alert-danger small py-2" data-testid="import-round-error">{{ error }}</div>
-    <div class="drop-zone rounded p-3 mb-3 text-center small" :class="{ over: dragOver }" data-testid="import-round-drop" @dragover.prevent="dragOver = true" @dragleave="dragOver = false" @drop.prevent="onDrop">
-      <i class="fa-solid fa-file-zipper me-2"></i>{{ staging ? $t('importRound.dropping') : $t('importRound.drop') }}
-    </div>
-    <div v-if="dropped.length" class="mb-3" data-testid="import-round-dropped">
-      <div class="form-label small mb-1">{{ $t('importRound.droppedTitle') }}</div>
-      <div v-for="d in dropped" :key="d.round" class="d-flex align-items-center gap-2 small border rounded p-2 mb-1" data-testid="import-round-dropped-row" :data-round="d.round">
-        <span class="font-monospace flex-grow-1">{{ d.round }}</span>
-        <span class="text-body-secondary">{{ $t('importRound.droppedSize', { files: d.files }) }}<template v-if="d.extracted"> · {{ $t('importRound.droppedZip') }}</template></span>
-        <BButton variant="success" size="sm" class="py-0 text-nowrap" data-testid="import-round-dropped-import" @click="importDropped(d)"><i class="fa-solid fa-file-import me-1"></i>{{ $t('importRound.droppedImport') }}</BButton>
+
+    <!-- 1. Choose rounds -->
+    <template v-if="step === 1">
+      <div class="drop-zone rounded p-3 mb-3 text-center small" :class="{ over: dragOver }" data-testid="import-round-drop" @dragover.prevent="dragOver = true" @dragleave="dragOver = false" @drop.prevent="onDrop">
+        <i class="fa-solid fa-file-zipper me-2"></i>{{ staging ? $t('importRound.dropping') : $t('importRound.drop') }}
       </div>
-      <div class="small text-body-secondary">{{ $t('importRound.droppedNote') }}</div>
-    </div>
-    <div class="mb-3">
+      <div v-if="dropped.length" class="mb-3" data-testid="import-round-dropped">
+        <div class="form-label small mb-1">{{ $t('importRound.droppedTitle') }}</div>
+        <div v-for="d in dropped" :key="d.round" class="d-flex align-items-center gap-2 small border rounded p-2 mb-1" data-testid="import-round-dropped-row" :data-round="d.round">
+          <span class="font-monospace flex-grow-1">{{ d.round }}</span>
+          <span class="text-body-secondary">{{ $t('importRound.droppedSize', { files: d.files }) }}<template v-if="d.extracted"> · {{ $t('importRound.droppedZip') }}</template></span>
+          <BButton variant="success" size="sm" class="py-0 text-nowrap" data-testid="import-round-dropped-import" @click="importDropped(d)"><i class="fa-solid fa-file-import me-1"></i>{{ $t('importRound.droppedImport') }}</BButton>
+        </div>
+        <div class="small text-body-secondary">{{ $t('importRound.droppedNote') }}</div>
+      </div>
       <div class="form-label small mb-1">{{ $t('importRound.rounds') }}</div>
       <div class="border rounded p-2 round-list" data-testid="import-round-list">
         <div v-for="r in roundNamesList" :key="r" class="d-flex align-items-center gap-2 small" data-testid="import-round-option" :data-round="r">
@@ -23,9 +28,11 @@
         </div>
         <div v-if="!roundNamesList.length" class="small text-body-secondary">{{ $t('importRound.noRounds') }}</div>
       </div>
-    </div>
-    <div v-if="loadingPlan" class="small text-body-secondary" data-testid="import-round-loading">{{ $t('importRound.loadingPlan') }}</div>
-    <template v-else-if="chosen.size && plans.size">
+      <div v-if="loadingPlan" class="small text-body-secondary mt-2" data-testid="import-round-loading">{{ $t('importRound.loadingPlan') }}</div>
+    </template>
+
+    <!-- 2. Choose shots -->
+    <template v-else-if="step === 2">
       <div class="small fw-semibold mb-1">{{ $t('importRound.shots') }}</div>
       <div v-for="[r, pl] in plans" :key="r" class="mb-2" data-testid="import-round-group" :data-round="r">
         <div v-if="plans.size > 1" class="small text-body-secondary font-monospace">{{ r }}</div>
@@ -34,9 +41,25 @@
           <label :for="`ir-${r}-${s}`" class="font-monospace mb-0">{{ s }}</label>
         </div>
       </div>
-      <label class="d-flex align-items-center gap-2 small mb-3"><input v-model="runWorkflows" type="checkbox" class="form-check-input mt-0" data-testid="import-round-run" />{{ $t('importRound.runWorkflows') }}</label>
+      <label class="d-flex align-items-center gap-2 small mt-3"><input v-model="runWorkflows" type="checkbox" class="form-check-input mt-0" data-testid="import-round-run" />{{ $t('importRound.runWorkflows') }}</label>
+    </template>
 
-      <div class="border rounded p-2 mb-3 small" data-testid="import-round-estimate">
+    <!-- 3. Choose cards for the shots -->
+    <template v-else>
+      <div class="d-flex align-items-center gap-2 mb-2 small">
+        <label class="mb-0" for="ir-card-all">{{ $t('importRound.cardAll') }}</label>
+        <BFormSelect id="ir-card-all" :model-value="''" :options="cardOptions" size="sm" style="max-width: 24rem" data-testid="import-round-card-all" @update:model-value="setAllCards" />
+      </div>
+      <div v-for="[r, pl] in plans" :key="r" class="mb-2" data-testid="import-round-card-group" :data-round="r">
+        <div v-if="plans.size > 1" class="small text-body-secondary font-monospace">{{ r }}</div>
+        <div v-for="s in [...(picked.get(r) || [])]" :key="s" class="d-flex align-items-center gap-2 small mb-1" data-testid="import-round-card-row" :data-shot="s">
+          <span class="font-monospace" style="min-width: 9rem">{{ s }}</span>
+          <BFormSelect :model-value="cards[`${r}::${s}`] || ''" :options="cardOptions" size="sm" style="max-width: 24rem" data-testid="import-round-card" @update:model-value="(v) => setCard(r, s, v)" />
+        </div>
+      </div>
+      <div class="small text-body-secondary mb-3">{{ $t('importRound.cardNote') }}</div>
+
+      <div class="border rounded p-2 small" data-testid="import-round-estimate">
         <div>{{ $t('importRound.price', { price: first.price_per_hour ?? '?' }) }}</div>
         <div>{{ $t('importRound.estimate', { usd: estimate }) }}</div>
         <div v-if="first.cap_enabled" class="d-flex align-items-center gap-2 mt-2 flex-wrap">
@@ -48,18 +71,20 @@
         <div v-else class="text-warning mt-2" data-testid="import-round-cap-off"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ $t('importRound.capOff') }}</div>
         <div v-if="first.cap_enabled && estimate > costCap" class="text-warning mt-1" data-testid="import-round-over-cap">{{ $t('importRound.overCap') }}</div>
       </div>
-
-      <div class="d-flex align-items-center gap-2 mb-2">
-        <label class="mb-0 small" for="ir-by">{{ $t('importRound.approvedBy') }}</label>
-        <BFormInput id="ir-by" v-model="approvedBy" size="sm" style="width: 12rem" :placeholder="$t('importRound.approvedByPlaceholder')" data-testid="import-round-approved-by" />
-      </div>
     </template>
+
     <template #footer>
-    <div class="d-flex align-items-center gap-2 justify-content-end w-100">
-      <span v-if="!canStart" class="small text-body-secondary me-auto" data-testid="import-round-hint">{{ $t(!chosen.size ? 'importRound.hintPick' : totalShots ? 'importRound.hintApprove' : 'importRound.hintShots') }}</span>
-      <BButton variant="outline-light" size="sm" @click="open = false">{{ $t('picker.cancel') }}</BButton>
-      <BButton variant="success" size="sm" :disabled="!canStart || starting" data-testid="import-round-start" @click="start"><i class="fa-solid fa-file-import me-1"></i>{{ $t('importRound.start') }}</BButton>
-    </div>
+      <div class="d-flex align-items-center gap-2 w-100 flex-wrap">
+        <label class="mb-0 small" for="ir-by">{{ $t('importRound.approvedBy') }}</label>
+        <BFormInput id="ir-by" v-model="approvedBy" size="sm" style="width: 11rem" :placeholder="$t('importRound.approvedByPlaceholder')" data-testid="import-round-approved-by" />
+        <span v-if="!canStart" class="small text-body-secondary" data-testid="import-round-hint">{{ hint }}</span>
+        <div class="ms-auto d-flex gap-2">
+          <BButton variant="outline-light" size="sm" @click="open = false">{{ $t('picker.cancel') }}</BButton>
+          <BButton v-if="step > 1" variant="outline-light" size="sm" data-testid="import-round-back" @click="step--"><i class="fa-solid fa-arrow-left me-1"></i>{{ $t('importRound.back') }}</BButton>
+          <BButton v-if="step < 3" variant="primary" size="sm" :disabled="!canNext" data-testid="import-round-next" @click="next">{{ $t('importRound.next') }}<i class="fa-solid fa-arrow-right ms-1"></i></BButton>
+          <BButton variant="success" size="sm" :disabled="!canStart || starting" data-testid="import-round-start" @click="start"><i class="fa-solid fa-file-import me-1"></i>{{ $t('importRound.start') }}</BButton>
+        </div>
+      </div>
     </template>
     <RoundFilesModal :round="browsing" target="local" @close="browsing = ''" />
   </BModal>
@@ -73,6 +98,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { panamaAPI } from '../api/panama'
 import { queueAPI } from '../api/queue'
+import { podsAPI } from '../api/pods'
 import { errorText } from '../stores/toast'
 import { t } from '../i18n'
 import { useUiStore } from '../stores/ui'
@@ -97,6 +123,24 @@ function importDropped(d) {
   imports.folder = d.path; ui.importPod = null; ui.importSource = 'folder'; imports.makePlan(false)
   open.value = false; ui.importOpen = true
 }
+const step = ref(1)
+const stepLabels = computed(() => [t('importRound.stepRounds'), t('importRound.stepShots'), t('importRound.stepCards')])
+const cards = ref({})   // `${round}::${shot}` -> card key; absent = the pool
+const gpuMenu = ref([])
+const cardOptions = computed(() => [{ value: '', text: t('importRound.cardPool') }, ...gpuMenu.value.map((g) => ({ value: g.value, text: g.text }))])
+const setCard = (r, s, v) => { const n = { ...cards.value }; v ? (n[`${r}::${s}`] = v) : delete n[`${r}::${s}`]; cards.value = n }
+const setAllCards = (v) => { if (v === '' ) return; const n = { ...cards.value }; for (const [r, set] of picked.value) for (const s of set) n[`${r}::${s}`] = v; cards.value = n }
+const cardsFor = (r) => Object.fromEntries([...(picked.value.get(r) || [])].filter((s) => cards.value[`${r}::${s}`]).map((s) => [s, cards.value[`${r}::${s}`]]))
+const estimates = ref(new Map())   // round -> the plan for the shots and cards chosen (its estimate)
+async function replan() {
+  const m = new Map()
+  try { for (const r of plans.value.keys()) m.set(r, await queueAPI.plan(r, { shots: [...(picked.value.get(r) || [])], cards: cardsFor(r), run_workflows: runWorkflows.value })) } catch (e) { error.value = errorText(e) }
+  estimates.value = m
+}
+watch([cards, picked, runWorkflows], () => { if (step.value === 3) replan() }, { deep: true })
+const canNext = computed(() => (step.value === 1 ? chosen.value.size > 0 && plans.value.size === chosen.value.size && !loadingPlan.value : totalShots.value > 0))
+const next = async () => { step.value++; if (step.value === 3) await replan() }
+const hint = computed(() => (!chosen.value.size ? t('importRound.hintPick') : step.value < 3 ? t('importRound.hintSteps') : !totalShots.value ? t('importRound.hintShots') : t('importRound.hintApprove')))
 const browsing = ref('')   // the round whose files are open in the explorer
 const podsEdited = ref(false)   // until the pod limit is typed, it follows the shots ticked: one pod per shot
 const maxPods = ref(2), costCap = ref(50), approvedBy = ref(''), error = ref(''), loadingPlan = ref(false), starting = ref(false)
@@ -104,13 +148,14 @@ try { approvedBy.value = localStorage.getItem('runpod-manager.approved-by') || '
 
 const roundNamesList = computed(() => { const n = rounds.value.map((r) => r.name); for (const c of chosen.value) if (!n.includes(c)) n.push(c); return n })
 const first = computed(() => [...plans.value.values()][0] || {})
-const estimate = computed(() => Math.round([...plans.value.entries()].reduce((a, [r, p]) => a + (p.est_total_usd ?? 0) * ((picked.value.get(r)?.size || 0) > 0 ? 1 : 0), 0) * 100) / 100)
+const estimate = computed(() => Math.round([...plans.value.entries()].reduce((a, [r, p]) => a + ((estimates.value.get(r) || p).est_total_usd ?? 0) * ((picked.value.get(r)?.size || 0) > 0 ? 1 : 0), 0) * 100) / 100)
 const shotCount = (r) => picked.value.get(r)?.size || 0
 const totalShots = computed(() => [...plans.value.keys()].reduce((a, r) => a + shotCount(r), 0))
-const canStart = computed(() => totalShots.value > 0 && approvedBy.value.trim().length > 0)
+const canStart = computed(() => step.value === 3 && totalShots.value > 0 && approvedBy.value.trim().length > 0)
 
-onMounted(async () => { try { const r = await panamaAPI.rounds(); rounds.value = Array.isArray(r) ? r : r.rounds || [] } catch (e) { error.value = errorText(e) } })
-watch(() => ui.importRoundOpen, (o) => { if (o && ui.importRoundPreset) { toggleRound(ui.importRoundPreset, true); ui.importRoundPreset = '' } }, { immediate: true })   // re-import: the round is already ticked
+onMounted(async () => { try { gpuMenu.value = ((await podsAPI.gpus('')).gpus || []).filter((g) => g.value !== 'auto') } catch { /* the plain pool choice still works */ }
+  try { const r = await panamaAPI.rounds(); rounds.value = Array.isArray(r) ? r : r.rounds || [] } catch (e) { error.value = errorText(e) } })
+watch(() => ui.importRoundOpen, (o) => { if (o) step.value = 1; if (o && ui.importRoundPreset) { toggleRound(ui.importRoundPreset, true); ui.importRoundPreset = '' } }, { immediate: true })   // re-import: the round is already ticked
 const followPods = () => { if (!podsEdited.value) maxPods.value = Math.min(20, Math.max(1, ...[...plans.value.keys()].map(shotCount))) }
 async function toggleRound(r, on) {
   const n = new Set(chosen.value); on ? n.add(r) : n.delete(r); chosen.value = n
@@ -134,7 +179,7 @@ async function start() {
     const each = Math.round((costCap.value / todo.length) * 100) / 100   // the cap is the total: split evenly
     for (const r of todo) {
       const pl = plans.value.get(r)
-      await queueAPI.import(r, { shots: [...picked.value.get(r)], run_workflows: runWorkflows.value, approved_by: approvedBy.value.trim(), ...(pl.cap_enabled ? { max_pods: todo.length > 1 && !podsEdited.value ? shotCount(r) : maxPods.value, cost_cap_usd: each } : {}) })
+      await queueAPI.import(r, { shots: [...picked.value.get(r)], run_workflows: runWorkflows.value, cards: cardsFor(r), approved_by: approvedBy.value.trim(), ...(pl.cap_enabled ? { max_pods: todo.length > 1 && !podsEdited.value ? shotCount(r) : maxPods.value, cost_cap_usd: each } : {}) })
     }
     open.value = false; ui.queueOpen = true   // the Queue shows what it queued
   } catch (e) { error.value = errorText(e) } finally { starting.value = false }

@@ -30,7 +30,8 @@ function world(pool: { id: string; name: string; state: 'running' | 'starting' |
     volumePods: async () => w.pods.map((p) => ({ id: p.id, name: p.name, state: p.state, price: p.price })),
     podReady: async (id) => ({ ready: w.ready.has(id), price }),
     resumePod: async (id) => { w.resumed.push(id); const p = w.pods.find((x) => x.id === id)!; p.state = 'running'; w.ready.add(id) },
-    createPod: async (name, round) => { const id = `new${w.created.length + 1}`; w.created.push(id); (w.rounds ||= {})[id] = round; w.pods.push({ id, name, state: 'running', price }); w.ready.add(id); return { id, name } },
+    cardPrice: async (g) => (g === 'rtx5090' ? 2 : null),
+    createPod: async (name, round, gpu) => { (w.gpuOf ||= {})[`new${w.created.length + 1}`] = gpu; const id = `new${w.created.length + 1}`; w.created.push(id); (w.rounds ||= {})[id] = round; w.pods.push({ id, name, state: 'running', price }); w.ready.add(id); return { id, name } },
     stopPod: async (id) => { w.stopped.push(id) },
     pull: async () => ({ id: 'pj1' }),
     pullJob: (() => ({ id: 'pj1', state: w.pull.state, pod_id: 'pullpod', pod_name: 'pull', files: 9, place: w.pull.place, error: w.pull.state === 'failed' ? 'aws failed' : undefined })) as never,
@@ -43,6 +44,22 @@ function world(pool: { id: string; name: string; state: 'running' | 'starting' |
 }
 const tasks = () => queue.list().tasks
 const states = () => tasks().map((t) => `${t.kind}${t.shot ? ':' + t.shot : ''}=${t.state}`)
+
+describe('a card for a shot', () => {
+  it('prices the chosen card into the estimate, refuses an unknown card, and gives that shot a pod of its own with that card', async () => {
+    const w = world([{ id: 'pool1', name: 'pool', state: 'running' }])
+    const p = await queue.planImport(ROUND, { shots: ['cgi-042'], cards: { 'cgi-042': 'rtx5090' } })
+    expect(p.est_total_usd).toBe(4 * 1 + 2 * queue.RUN_ESTIMATE_H)   // the pull at the pool price, the run at the card's
+    await expect(queue.planImport(ROUND, { cards: { 'cgi-042': 'nope' } })).rejects.toThrow(/Unknown card/)
+    await queue.importRound(ROUND, { shots: ['cgi-042', 'cgi-043'], cards: { 'cgi-042': 'rtx5090' }, approved_by: 'Lucas' })
+    expect(queue.list().tasks.find((x) => x.shot === 'cgi-042')).toMatchObject({ gpu: 'rtx5090', price: 2 })
+    expect(queue.list().tasks.find((x) => x.shot === 'cgi-043')?.gpu).toBeUndefined()
+    w.pull.state = 'done'; await queue.tick(); await queue.tick()
+    expect(w.created).toEqual(['new1'])   // the shot with a card did not take the running pool pod
+    expect((w as any).gpuOf.new1).toBe('rtx5090')
+    expect(queue.list().tasks.find((x) => x.shot === 'cgi-043')?.pod_id).toBe('pool1')
+  })
+})
 
 describe('planning', () => {
   it('lists the shots, estimates the cost and applies the caps from the Default Configuration', async () => {

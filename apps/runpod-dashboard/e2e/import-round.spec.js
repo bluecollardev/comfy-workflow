@@ -1,24 +1,33 @@
 import { test, expect } from './fixtures'
 
 // Import Round and Queue (docs/ADR-038): a call to action at the right of the top bar; one approval queues a pull and a run per shot; the Queue shows each task with its state and error.
-test('Import Round: pick a round, see the shots and the caps, approve, and the Queue shows the tasks', async ({ page, api }) => {
+test('Import Round: three steps - rounds, shots, cards - then Import with the approval in the footer; the Queue shows the tasks', async ({ page, api }) => {
   await page.goto('/')
   await expect(page.getByTestId('open-queue')).toBeVisible()
   await page.getByTestId('open-import-round').click()
   const dlg = page.getByTestId('import-round-modal')
+  // 1. Choose rounds
+  await expect(dlg.locator('[data-testid="import-round-step"][data-active="true"]')).toContainText('Choose rounds')
+  await expect(dlg.getByTestId('import-round-next')).toBeDisabled()
   await dlg.getByTestId('import-round-option').first().locator('input').check()
-  await expect(dlg.getByTestId('import-round-shot')).toHaveCount(2)
   await dlg.getByTestId('import-round-browse').first().click()   // the round's files as a folder tree
   await expect(page.getByTestId('round-files-modal').getByTestId('round-files-row')).toHaveCount(5)
   await page.getByTestId('round-files-modal').getByText('Close', { exact: true }).click()
-  await expect(dlg.getByTestId('import-round-estimate')).toContainText('6.98')
-  await expect(dlg.getByTestId('import-round-max-pods')).toHaveValue('2')   // one pod per shot ticked
-  await expect(dlg.getByTestId('import-round-start')).toBeDisabled()   // nobody has said yes yet
+  await dlg.getByTestId('import-round-next').click()
+  // 2. Choose shots
+  await expect(dlg.locator('[data-testid="import-round-step"][data-active="true"]')).toContainText('Choose shots')
+  await expect(dlg.getByTestId('import-round-shot')).toHaveCount(2)
   await dlg.getByTestId('import-round-shot').filter({ hasText: 'cgi-043' }).locator('input').uncheck()
-  await expect(dlg.getByTestId('import-round-max-pods')).toHaveValue('1')   // it follows the ticks
-  await dlg.getByTestId('import-round-approved-by').fill('Lucas')
+  await dlg.getByTestId('import-round-next').click()
+  // 3. Choose cards for the shots
+  await expect(dlg.getByTestId('import-round-card-row')).toHaveCount(1)
+  await expect(dlg.getByTestId('import-round-estimate')).toContainText('6.98')
+  await expect(dlg.getByTestId('import-round-max-pods')).toHaveValue('1')   // one pod per shot ticked
+  await dlg.getByTestId('import-round-card').selectOption('rtx4090')
+  await expect(dlg.getByTestId('import-round-start')).toBeDisabled()   // nobody has said yes yet
+  await dlg.getByTestId('import-round-approved-by').fill('Lucas')   // in the footer
   await dlg.getByTestId('import-round-start').click()
-  expect(api.state.imported).toMatchObject({ shots: ['cgi-042'], approved_by: 'Lucas', run_workflows: true, max_pods: 1, cost_cap_usd: 50 })
+  expect(api.state.imported).toMatchObject({ shots: ['cgi-042'], cards: { 'cgi-042': 'rtx4090' }, approved_by: 'Lucas', run_workflows: true, max_pods: 1, cost_cap_usd: 50 })
   const q = page.getByTestId('queue-modal')
   await expect(q.getByTestId('queue-task')).toHaveCount(2)
   await expect(q.getByTestId('queue-task').filter({ hasText: 'cgi-042' })).toContainText('boom (node 4, KSampler)')
@@ -31,7 +40,9 @@ test('Import Round(s): several rounds can be ticked; each is its own import, the
   const dlg = page.getByTestId('import-round-modal')
   await dlg.getByTestId('import-round-option').nth(0).locator('input').check()
   await dlg.getByTestId('import-round-option').nth(1).locator('input').check()
+  await dlg.getByTestId('import-round-next').click()
   await expect(dlg.getByTestId('import-round-group')).toHaveCount(2)
+  await dlg.getByTestId('import-round-next').click()
   await expect(dlg.getByTestId('import-round-estimate')).toContainText('13.96')   // 6.98 for each round
   await dlg.getByTestId('import-round-approved-by').fill('Lucas')
   await dlg.getByTestId('import-round-start').click()

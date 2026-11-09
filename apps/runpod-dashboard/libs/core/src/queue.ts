@@ -6,6 +6,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { CoreError } from './errors.js'
+import * as gpus from './gpus.js'
 import * as history from './history.js'
 import * as mounts from './mounts.js'
 import { queueFile } from './paths.js'
@@ -22,6 +23,8 @@ export interface Task {
   depends_on: string[]; pod_id: string | null; pod_name: string | null
   /** `pod` while a run task waits for its pod to come up; `job` once the pull or run job exists. */
   phase?: 'pod' | 'job'; job_id?: string; graphs?: string[]
+  /** The card chosen for this shot: its run gets a pod of its own with that card (no pool pod is reused). Absent = the pool, else the default card. */
+  gpu?: string; price?: number | null
   started_at?: string; finished_at?: string; error?: string; detail?: string; held_reason?: string
 }
 export interface ImportRec {
@@ -40,7 +43,8 @@ export interface Deps {
   volumePods: () => Promise<VolPod[]>
   podReady: (id: string) => Promise<{ ready: boolean; price: number | null }>
   resumePod: (id: string) => Promise<void>
-  createPod: (name: string, round: string) => Promise<{ id: string; name: string }>
+  createPod: (name: string, round: string, gpu?: string) => Promise<{ id: string; name: string }>
+  cardPrice: (gpu: string) => Promise<number | null>
   stopPod: (id: string) => Promise<void>
   planPull: (round: string) => Promise<{ price_per_hour: number | null; ceiling_minutes: number; bytes: number }>
   pull: (round: string) => Promise<{ id: string }>
@@ -68,7 +72,8 @@ const realDeps: Deps = {
   },
   podReady: async (id) => { const p = await pods.get(id); const raw = await rp.getPod(id); return { ready: p.status === 'running' && !!p.web_ui_url && p.comfy_ready !== false, price: raw?.costPerHr ?? null } },
   resumePod: async (id) => { await pods.resume(id) },
-  createPod: async (name, round) => { const p = await pods.create({ name, gpu: POOL_GPU, apply_mounts: true, round }); return { id: p.id, name: p.name } },
+  createPod: async (name, round, gpu) => { const p = await pods.create({ name, gpu: gpu || POOL_GPU, apply_mounts: true, round }); return { id: p.id, name: p.name } },
+  cardPrice: async (gpu) => (await pods.gpuMenu()).gpus.find((g) => g.value === gpu)?.price ?? null,
   stopPod: async (id) => { await pods.stop(id) },
   planPull: async (round) => { const p = await podpull.plan(round); return { price_per_hour: p.price_per_hour, ceiling_minutes: p.ceiling_minutes, bytes: p.bytes } },
   pull: async (round) => podpull.pull(round),
@@ -113,17 +118,25 @@ export interface ImportPlan {
   round: string; shots: string[]; price_per_hour: number | null; pull_hours: number; est_total_usd: number | null
   max_pods: number | null; cost_cap_usd: number | null; cap_enabled: boolean; over_cap: boolean
 }
-export interface ImportOpts { shots?: string[]; run_workflows?: boolean; max_pods?: number; cost_cap_usd?: number; approved_by?: string }
+export interface ImportOpts { /** shot -> card (a GPU key); a shot without one takes the pool */ cards?: Record<string, string>; shots?: string[]; run_workflows?: boolean; max_pods?: number; cost_cap_usd?: number; approved_by?: string }
 
+/** The price per hour of the card chosen for each shot that has one (a card we cannot price is left out: the pull's price stands in). */
+async function cardPrices(shots: string[], o: ImportOpts): Promise<Record<string, number | null>> {
+  const out: Record<string, number | null> = {}, seen: Record<string, number | null> = {}
+  for (const s of shots) { const g = o.cards?.[s]; if (!g) continue; if (!(g in seen)) seen[g] = await deps.cardPrice(g).catch(() => null); out[s] = seen[g] }
+  return out
+}
 /** What importing the round would do and cost, before it does anything. */
 export async function planImport(round: string, o: ImportOpts = {}): Promise<ImportPlan> {
+  for (const [shot, card] of Object.entries(o.cards ?? {})) if (card && card !== gpus.AUTO && !gpus.GPUS[card]) throw new CoreError(400, `Unknown card "${card}" for ${shot}: use a key from list_gpus.`)
   const cfg = mounts.load()
   const all = await deps.shotsOf(round)
   const shots = o.shots?.length ? all.filter((s) => o.shots!.includes(s)) : all
   const p = await deps.planPull(round)
   const pullH = p.ceiling_minutes / 60
-  const runs = o.run_workflows === false ? 0 : shots.length
-  const est = p.price_per_hour == null ? null : Math.round(p.price_per_hour * (pullH + runs * RUN_ESTIMATE_H) * 100) / 100
+  const prices = await cardPrices(shots, o)
+  const runCost = o.run_workflows === false ? 0 : shots.reduce((a, s) => a + (prices[s] ?? p.price_per_hour ?? 0) * RUN_ESTIMATE_H, 0)
+  const est = p.price_per_hour == null ? null : Math.round((p.price_per_hour * pullH + runCost) * 100) / 100
   const capOn = cfg.import_cap_enabled
   const max = capOn ? (o.max_pods ?? cfg.import_max_pods) : (o.max_pods ?? null)
   const cap = capOn ? (o.cost_cap_usd ?? cfg.import_cost_cap_usd) : null
@@ -144,7 +157,8 @@ export async function importRound(round: string, o: ImportOpts = {}): Promise<Im
   const imp: ImportRec = { id: newId('imp'), round, approved_by: by, created_at: deps.now().toISOString(), state: 'active', max_pods: plan.max_pods, cost_cap_usd: plan.cost_cap_usd, cap_enabled: plan.cap_enabled, est_total_usd: plan.est_total_usd, spent_usd: 0, started_pods: [], price_per_hour: plan.price_per_hour }
   const pull: Task = { id: newId('t'), import_id: imp.id, round, shot: null, kind: 'pull', state: 'waiting', depends_on: [], pod_id: null, pod_name: null }
   q.imports.push(imp); q.tasks.push(pull)
-  if (o.run_workflows !== false) for (const shot of plan.shots) q.tasks.push({ id: newId('t'), import_id: imp.id, round, shot, kind: 'run', state: 'waiting', depends_on: [pull.id], pod_id: null, pod_name: null })
+  const prices = await cardPrices(plan.shots, o)
+  if (o.run_workflows !== false) for (const shot of plan.shots) q.tasks.push({ id: newId('t'), import_id: imp.id, round, shot, kind: 'run', state: 'waiting', depends_on: [pull.id], pod_id: null, pod_name: null, ...(o.cards?.[shot] ? { gpu: o.cards[shot], price: prices[shot] ?? null } : {}) })
   save(); start()
   return imp
 }
@@ -204,7 +218,7 @@ async function follow(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> 
   if (!j) { finish(t, imp, 'failed', 'The run job is gone (the app restarted?).'); return true }
   if (j.state === 'running') return false
   const hours = (deps.now().getTime() - new Date(t.started_at!).getTime()) / 3_600_000
-  imp.spent_usd = Math.round((imp.spent_usd + (imp.price_per_hour ?? 0) * hours) * 100) / 100
+  imp.spent_usd = Math.round((imp.spent_usd + (t.price ?? imp.price_per_hour ?? 0) * hours) * 100) / 100
   t.detail = `${j.ok} ok, ${j.failed} failed of ${j.results.length}`
   const firstErr = j.results.find((r) => r.error)
   finish(t, imp, j.state === 'cancelled' ? 'cancelled' : j.failed ? 'failed' : 'done', j.failed ? `${firstErr?.path}: ${firstErr?.error}` : undefined)
@@ -219,20 +233,21 @@ async function begin(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> {
   // a run task needs a pod: within the import's pod limit and dollar cap
   const running = tasks.filter((x) => x.kind === 'run' && x.state === 'running').length
   if (imp.max_pods != null && running >= imp.max_pods) return false   // wait for a pod to free up: not an error
-  if (imp.cap_enabled && imp.cost_cap_usd != null && imp.price_per_hour != null && imp.spent_usd + imp.price_per_hour * RUN_ESTIMATE_H > imp.cost_cap_usd) {
+  const rate = Math.max(imp.price_per_hour ?? 0, t.price ?? 0) || null   // a dearer card counts at its own price
+  if (imp.cap_enabled && imp.cost_cap_usd != null && rate != null && imp.spent_usd + rate * RUN_ESTIMATE_H > imp.cost_cap_usd) {
     if (t.state !== 'held') { t.state = 'held'; t.held_reason = `cap: spent about $${imp.spent_usd} of $${imp.cost_cap_usd}`; return true }
     return false
   }
   try {
     const busy = new Set(q().tasks.filter((x) => x.state === 'running' && x.pod_id).map((x) => x.pod_id))
     const pool = (await deps.volumePods()).filter((p) => !busy.has(p.id))
-    const pick = pool.find((p) => p.state === 'running') ?? pool.find((p) => p.state === 'starting') ?? pool.find((p) => p.state === 'off')
+    const pick = t.gpu ? undefined : pool.find((p) => p.state === 'running') ?? pool.find((p) => p.state === 'starting') ?? pool.find((p) => p.state === 'off')
     let podId: string, podName: string
     if (pick) {
       podId = pick.id; podName = pick.name
       if (pick.state === 'off') { await deps.resumePod(pick.id); imp.started_pods.push(pick.id) }
     } else {
-      const c = await deps.createPod(`queue-${imp.round}-${tasks.filter((x) => x.pod_id).length + 1}`.slice(0, 60), imp.round); podId = c.id; podName = c.name; imp.started_pods.push(c.id)
+      const c = await deps.createPod(`queue-${imp.round}-${tasks.filter((x) => x.pod_id).length + 1}`.slice(0, 60), imp.round, t.gpu); podId = c.id; podName = c.name; imp.started_pods.push(c.id)
     }
     t.pod_id = podId; t.pod_name = podName; t.phase = 'pod'; t.state = 'running'; t.started_at = deps.now().toISOString(); delete t.held_reason
   } catch (e) { finish(t, imp, 'failed', (e as Error).message) }
