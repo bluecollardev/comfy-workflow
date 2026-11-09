@@ -227,7 +227,7 @@ test.describe('Rounds: a round holds a series of pods (ADR-039)', () => {
     await page.goto('/')
     const round = page.locator('[data-testid="round-section"][data-round="brynley-comfy-2026-11-06"]')
     await round.getByTestId('round-reimport').click()
-    await expect(page.getByTestId('import-round-modal').getByTestId('import-round-select')).toHaveValue('brynley-comfy-2026-11-06')
+    await expect(page.getByTestId('import-round-modal').locator('[data-testid="import-round-option"][data-round="brynley-comfy-2026-11-06"] input')).toBeChecked()
     await page.getByTestId('import-round-modal').getByText('Cancel', { exact: true }).click()
     await round.getByTestId('round-delete').click()   // Cancel: it stays
     expect(asked).toHaveLength(1)

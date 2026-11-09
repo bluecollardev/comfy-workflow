@@ -39,3 +39,9 @@ Today a round is pulled with Pod download (one pod, one round), placed, and its 
 
 - The pods the queue **creates** are put in the round being imported (ADR-039), so the Rounds list shows them under it. Pods it only restarts or reuses are not moved.
 - The window's **pods at once** starts at the number of shots ticked (one pod per shot) and follows the ticks until it is typed over; before, it started at the Default Configuration's `import_max_pods`. The dollar cap and the governance cap still apply, and a shot waits when the limit is reached.
+
+## Amendment (2026-11-09): several rounds at once
+
+- The button reads **Import Round(s)** and the window lists the rounds with a tick each (and Browse files). Ticking a round loads its plan; shots are grouped by round.
+- Each ticked round is its **own import** in the queue (own pull, own runs, own limits, cancelable alone). One approval covers them all.
+- The **dollar cap** typed is the total and is split evenly between the rounds, so the sum of the caps never passes it; the estimate shown is the sum. **Pods at once** is per round and follows each round's ticked shots until typed over.

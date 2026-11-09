@@ -6,9 +6,9 @@ test('Import Round: pick a round, see the shots and the caps, approve, and the Q
   await expect(page.getByTestId('open-queue')).toBeVisible()
   await page.getByTestId('open-import-round').click()
   const dlg = page.getByTestId('import-round-modal')
-  await dlg.getByTestId('import-round-select').selectOption({ index: 1 })
+  await dlg.getByTestId('import-round-option').first().locator('input').check()
   await expect(dlg.getByTestId('import-round-shot')).toHaveCount(2)
-  await dlg.getByTestId('import-round-browse').click()   // the round's files as a folder tree
+  await dlg.getByTestId('import-round-browse').first().click()   // the round's files as a folder tree
   await expect(page.getByTestId('round-files-modal').getByTestId('round-files-row')).toHaveCount(5)
   await page.getByTestId('round-files-modal').getByText('Close', { exact: true }).click()
   await expect(dlg.getByTestId('import-round-estimate')).toContainText('6.98')
@@ -23,4 +23,19 @@ test('Import Round: pick a round, see the shots and the caps, approve, and the Q
   await expect(q.getByTestId('queue-task')).toHaveCount(2)
   await expect(q.getByTestId('queue-task').filter({ hasText: 'cgi-042' })).toContainText('boom (node 4, KSampler)')
   await expect(q.getByTestId('queue-task').filter({ hasText: 'cgi-042' }).getByTestId('queue-retry')).toBeVisible()
+})
+
+test('Import Round(s): several rounds can be ticked; each is its own import, the dollar cap is split between them', async ({ page, api }) => {
+  await page.goto('/')
+  await page.getByTestId('open-import-round').click()
+  const dlg = page.getByTestId('import-round-modal')
+  await dlg.getByTestId('import-round-option').nth(0).locator('input').check()
+  await dlg.getByTestId('import-round-option').nth(1).locator('input').check()
+  await expect(dlg.getByTestId('import-round-group')).toHaveCount(2)
+  await expect(dlg.getByTestId('import-round-estimate')).toContainText('13.96')   // 6.98 for each round
+  await dlg.getByTestId('import-round-approved-by').fill('Lucas')
+  await dlg.getByTestId('import-round-start').click()
+  await expect.poll(() => api.state.importedAll?.length).toBe(2)
+  expect(api.state.importedAll.map((i) => i.round)).toEqual(['brynley-comfy-2026-10-23', 'brynley-comfy-2026-10-20'])
+  expect(api.state.importedAll.every((i) => i.approved_by === 'Lucas' && i.cost_cap_usd === 25 && i.max_pods === 2)).toBe(true)
 })

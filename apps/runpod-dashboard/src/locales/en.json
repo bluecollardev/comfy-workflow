@@ -379,7 +379,10 @@
   "importRound": {
     "browse": "Browse files",
     "title": "Import Round",
-    "round": "Round",
+    "rounds": "Rounds (tick one or more)",
+    "noRounds": "No rounds yet: set up the exchange in Panama.",
+    "maxPodsEach": "Pods at once (each round)",
+    "costCapTotal": "Cost cap $ (total, split between the rounds)",
     "loadingPlan": "Reading the round and the price...",
     "shots": "Shots (each runs on a pod of the pool)",
     "runWorkflows": "Run each shot's workflows after the round is pulled and placed",
