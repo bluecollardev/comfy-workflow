@@ -12,7 +12,7 @@ Today a round is pulled with Pod download (one pod, one round), placed, and its 
 
 ## Decision
 
-1. **A call to action at the right of the top bar**, two buttons: **Import Round** (primary) and **Queue** (shows how many tasks are waiting or running).
+1. **Two buttons**: **Import Round** (green) in the **Rounds header** of the pod list (moved there from the top bar, Lucas 2026-11-09: "Rounds header should have import button for rounds ... like we used to have. this button will auto create pods for each shot"; ADR-039) and **Queue** at the right of the top bar (shows how many tasks are waiting or running).
 2. **Import Round** opens a window: pick a round from the exchange bucket's rounds; it lists the shots found in the round (all ticked); the work per shot (pull and place once for the round, then **run that shot's workflows**, ticked by default); the pods (how many may run at once, their card and hourly price from the Default Configuration); and the **estimate and caps**. One **Approve and start** covers the whole import: its name goes on every task and every pod it starts (`approved_by`).
 3. **The import creates tasks, in a queue that survives a restart** (`~/.config/runpod-pod-manager/queue.json`):
    - `pull` (once per round, on the volume; a verified pull places the round by itself, ADR-033, so there is no separate place task), then one `run` task per ticked shot, each running that shot's placed graphs (ADR-037, from the place report's graphs for that shot).
@@ -34,3 +34,8 @@ Today a round is pulled with Pod download (one pod, one round), placed, and its 
 - One approval starts a whole round across the pool, and the Queue shows what each pod is doing and what failed.
 - The queue is the first persistent work list in the app, so a task's state is data that survives restarts and must be migrated if it changes.
 - Spend is bounded by the pod limit and the dollar cap by default; switching the cap off is a deliberate setting, and is shown on the import window when it is off.
+
+## Amendment (2026-11-09): pods in the round, one pod per shot
+
+- The pods the queue **creates** are put in the round being imported (ADR-039), so the Rounds list shows them under it. Pods it only restarts or reuses are not moved.
+- The window's **pods at once** starts at the number of shots ticked (one pod per shot) and follows the ticks until it is typed over; before, it started at the Default Configuration's `import_max_pods`. The dollar cap and the governance cap still apply, and a shot waits when the limit is reached.

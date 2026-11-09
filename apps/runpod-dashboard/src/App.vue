@@ -20,9 +20,6 @@
         <BButton variant="outline-warning" size="sm" :disabled="!settings.ready || pods.refreshing || !pods.pods.some((p) => p.status !== 'stopped')" :title="$t('app.pauseAllTitle')" data-testid="pause-all" @click="pods.stopAll">
           <i class="fa-solid fa-pause me-1"></i>{{ $t('app.pauseAll') }}
         </BButton>
-        <BButton variant="success" size="sm" :disabled="!settings.ready" :title="$t('app.importRoundTitle')" data-testid="open-import-round" @click="ui.importRoundOpen = true">
-          <i class="fa-solid fa-cloud-arrow-down me-1"></i>{{ $t('app.importRound') }}
-        </BButton>
         <BButton variant="outline-light" size="sm" :title="$t('app.queueTitle')" data-testid="open-queue" @click="ui.queueOpen = true">
           <i class="fa-solid fa-list-check me-1"></i>{{ $t('app.queue') }}<BBadge v-if="queueCount" variant="primary" class="ms-1" data-testid="queue-badge">{{ queueCount }}</BBadge>
         </BButton>

@@ -28,6 +28,9 @@
     <BCard no-body data-testid="pods-card">
       <BCardHeader class="d-flex align-items-center">
         <span class="fw-semibold">{{ byRound ? $t('dashboard.rounds') : $t('dashboard.pods') }}</span>
+        <BButton variant="success" size="sm" class="ms-3" :disabled="!settings.ready" :title="$t('app.importRoundTitle')" data-testid="open-import-round" @click="ui.importRoundOpen = true">
+          <i class="fa-solid fa-cloud-arrow-down me-1"></i>{{ $t('app.importRound') }}
+        </BButton>
         <BFormCheckbox v-model="byRound" switch class="ms-auto me-3 mb-0 small" data-testid="pods-round-toggle">{{ $t('dashboard.groupByRound') }}</BFormCheckbox>
         <BFormCheckbox v-model="grouped" switch class="me-3 mb-0 small" data-testid="pods-group-toggle">{{ $t('dashboard.groupByDatacenter') }}</BFormCheckbox>
         <BBadge variant="secondary" pill>{{ pods.pods.length }}</BBadge>

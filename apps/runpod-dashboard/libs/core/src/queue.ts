@@ -40,7 +40,7 @@ export interface Deps {
   volumePods: () => Promise<VolPod[]>
   podReady: (id: string) => Promise<{ ready: boolean; price: number | null }>
   resumePod: (id: string) => Promise<void>
-  createPod: (name: string) => Promise<{ id: string; name: string }>
+  createPod: (name: string, round: string) => Promise<{ id: string; name: string }>
   stopPod: (id: string) => Promise<void>
   planPull: (round: string) => Promise<{ price_per_hour: number | null; ceiling_minutes: number; bytes: number }>
   pull: (round: string) => Promise<{ id: string }>
@@ -68,7 +68,7 @@ const realDeps: Deps = {
   },
   podReady: async (id) => { const p = await pods.get(id); const raw = await rp.getPod(id); return { ready: p.status === 'running' && !!p.web_ui_url && p.comfy_ready !== false, price: raw?.costPerHr ?? null } },
   resumePod: async (id) => { await pods.resume(id) },
-  createPod: async (name) => { const p = await pods.create({ name, gpu: POOL_GPU, apply_mounts: true }); return { id: p.id, name: p.name } },
+  createPod: async (name, round) => { const p = await pods.create({ name, gpu: POOL_GPU, apply_mounts: true, round }); return { id: p.id, name: p.name } },
   stopPod: async (id) => { await pods.stop(id) },
   planPull: async (round) => { const p = await podpull.plan(round); return { price_per_hour: p.price_per_hour, ceiling_minutes: p.ceiling_minutes, bytes: p.bytes } },
   pull: async (round) => podpull.pull(round),
@@ -232,7 +232,7 @@ async function begin(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> {
       podId = pick.id; podName = pick.name
       if (pick.state === 'off') { await deps.resumePod(pick.id); imp.started_pods.push(pick.id) }
     } else {
-      const c = await deps.createPod(`queue-${imp.round}-${tasks.filter((x) => x.pod_id).length + 1}`.slice(0, 60)); podId = c.id; podName = c.name; imp.started_pods.push(c.id)
+      const c = await deps.createPod(`queue-${imp.round}-${tasks.filter((x) => x.pod_id).length + 1}`.slice(0, 60), imp.round); podId = c.id; podName = c.name; imp.started_pods.push(c.id)
     }
     t.pod_id = podId; t.pod_name = podName; t.phase = 'pod'; t.state = 'running'; t.started_at = deps.now().toISOString(); delete t.held_reason
   } catch (e) { finish(t, imp, 'failed', (e as Error).message) }

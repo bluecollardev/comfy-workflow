@@ -25,7 +25,7 @@ Lucas (2026-11-09): "we have Create Pod. Pods sections. pods belong in rounds. h
 - "Round" means the delivery round (an S3 round), not a free-form group, so a round cannot be made up in the app. Where the exchange is not set up, only rounds that already have pods are listed.
 - Group by round is on by default, since a Rounds section was asked for; a user who wants the old flat list turns it off.
 - Renaming is a label, not a rename of the bucket's round.
-- The Import Round queue (ADR-038) does not yet put the pods it starts into the round it imports; that is a small follow-up once both are merged.
+- Import Round (ADR-038) lives in the Rounds header and puts the pods it creates into the round it imports (this branch carries ADR-037/038, merged in from `feature/round-import-queue`).
 
 ## Consequences
 

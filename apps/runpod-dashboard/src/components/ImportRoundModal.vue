@@ -21,7 +21,7 @@
         <div>{{ $t('importRound.estimate', { usd: plan.est_total_usd ?? '?' }) }}</div>
         <div v-if="plan.cap_enabled" class="d-flex align-items-center gap-2 mt-2 flex-wrap">
           <label class="mb-0" for="ir-pods">{{ $t('importRound.maxPods') }}</label>
-          <BFormInput id="ir-pods" v-model.number="maxPods" type="number" min="1" max="20" size="sm" style="width: 5rem" data-testid="import-round-max-pods" />
+          <BFormInput id="ir-pods" v-model.number="maxPods" type="number" min="1" max="20" size="sm" style="width: 5rem" data-testid="import-round-max-pods" @input="podsEdited = true" />
           <label class="mb-0 ms-2" for="ir-cap">{{ $t('importRound.costCap') }}</label>
           <BFormInput id="ir-cap" v-model.number="costCap" type="number" min="1" size="sm" style="width: 6rem" data-testid="import-round-cost-cap" />
         </div>
@@ -54,6 +54,7 @@ import { useUiStore } from '../stores/ui'
 const ui = useUiStore()
 const open = computed({ get: () => ui.importRoundOpen, set: (v) => { ui.importRoundOpen = v } })
 const rounds = ref([]), round = ref(''), plan = ref(null), picked = ref(new Set()), runWorkflows = ref(true)
+const podsEdited = ref(false)   // until the pod limit is typed, it follows the shots ticked: one pod per shot
 const maxPods = ref(2), costCap = ref(50), approvedBy = ref(''), error = ref(''), loadingPlan = ref(false), starting = ref(false)
 try { approvedBy.value = localStorage.getItem('runpod-manager.approved-by') || '' } catch { /* storage blocked */ }
 
@@ -66,10 +67,10 @@ async function loadPlan() {
   plan.value = null; error.value = ''
   if (!round.value) return
   loadingPlan.value = true
-  try { plan.value = await queueAPI.plan(round.value, {}); picked.value = new Set(plan.value.shots); maxPods.value = plan.value.max_pods ?? 2; costCap.value = plan.value.cost_cap_usd ?? 50 }   // every shot ticked
+  try { plan.value = await queueAPI.plan(round.value, {}); picked.value = new Set(plan.value.shots); podsEdited.value = false; maxPods.value = Math.min(20, Math.max(1, picked.value.size)); costCap.value = plan.value.cost_cap_usd ?? 50 }   // every shot ticked
   catch (e) { error.value = errorText(e) } finally { loadingPlan.value = false }
 }
-const toggle = (s, on) => { const n = new Set(picked.value); on ? n.add(s) : n.delete(s); picked.value = n }
+const toggle = (s, on) => { const n = new Set(picked.value); on ? n.add(s) : n.delete(s); picked.value = n; if (!podsEdited.value) maxPods.value = Math.min(20, Math.max(1, n.size)) }
 async function start() {
   starting.value = true; error.value = ''
   try {

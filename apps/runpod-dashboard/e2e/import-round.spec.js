@@ -9,11 +9,13 @@ test('Import Round: pick a round, see the shots and the caps, approve, and the Q
   await dlg.getByTestId('import-round-select').selectOption({ index: 1 })
   await expect(dlg.getByTestId('import-round-shot')).toHaveCount(2)
   await expect(dlg.getByTestId('import-round-estimate')).toContainText('6.98')
+  await expect(dlg.getByTestId('import-round-max-pods')).toHaveValue('2')   // one pod per shot ticked
   await expect(dlg.getByTestId('import-round-start')).toBeDisabled()   // nobody has said yes yet
   await dlg.getByTestId('import-round-shot').filter({ hasText: 'cgi-043' }).locator('input').uncheck()
+  await expect(dlg.getByTestId('import-round-max-pods')).toHaveValue('1')   // it follows the ticks
   await dlg.getByTestId('import-round-approved-by').fill('Lucas')
   await dlg.getByTestId('import-round-start').click()
-  expect(api.state.imported).toMatchObject({ shots: ['cgi-042'], approved_by: 'Lucas', run_workflows: true, max_pods: 2, cost_cap_usd: 50 })
+  expect(api.state.imported).toMatchObject({ shots: ['cgi-042'], approved_by: 'Lucas', run_workflows: true, max_pods: 1, cost_cap_usd: 50 })
   const q = page.getByTestId('queue-modal')
   await expect(q.getByTestId('queue-task')).toHaveCount(2)
   await expect(q.getByTestId('queue-task').filter({ hasText: 'cgi-042' })).toContainText('boom (node 4, KSampler)')

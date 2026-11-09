@@ -30,7 +30,7 @@ function world(pool: { id: string; name: string; state: 'running' | 'starting' |
     volumePods: async () => w.pods.map((p) => ({ id: p.id, name: p.name, state: p.state, price: p.price })),
     podReady: async (id) => ({ ready: w.ready.has(id), price }),
     resumePod: async (id) => { w.resumed.push(id); const p = w.pods.find((x) => x.id === id)!; p.state = 'running'; w.ready.add(id) },
-    createPod: async (name) => { const id = `new${w.created.length + 1}`; w.created.push(id); w.pods.push({ id, name, state: 'running', price }); w.ready.add(id); return { id, name } },
+    createPod: async (name, round) => { const id = `new${w.created.length + 1}`; w.created.push(id); (w.rounds ||= {})[id] = round; w.pods.push({ id, name, state: 'running', price }); w.ready.add(id); return { id, name } },
     stopPod: async (id) => { w.stopped.push(id) },
     pull: async () => ({ id: 'pj1' }),
     pullJob: (() => ({ id: 'pj1', state: w.pull.state, pod_id: 'pullpod', pod_name: 'pull', files: 9, place: w.pull.place, error: w.pull.state === 'failed' ? 'aws failed' : undefined })) as never,
@@ -96,6 +96,7 @@ describe('importing', () => {
     await queue.importRound(ROUND, { approved_by: 'Lucas', shots: ['cgi-042'] })
     await queue.tick(); w.pull.state = 'done'; await queue.tick(); await queue.tick(); await queue.tick()
     expect(w.created).toHaveLength(1)
+    expect((w as any).rounds).toEqual({ new1: ROUND })   // the pod it made goes into the round it imports (ADR-039)
     w.runs.get('rj1')!.state = 'done'; await queue.tick(); await queue.tick()
     expect(w.stopped).toEqual(['new1'])
   })
