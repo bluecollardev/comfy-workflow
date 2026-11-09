@@ -6,6 +6,7 @@ import { API_BASE } from './pods'
 const ipc = core && {
   plan: (round, opts) => core.invoke('queue', 'plan', [round, opts]),
   import: (round, opts) => core.invoke('queue', 'import', [round, opts]),
+  importMany: (items, opts) => core.invoke('queue', 'importMany', [items, opts]),
   list: () => core.invoke('queue', 'list'),
   cancelTask: (id) => core.invoke('queue', 'cancelTask', [id]),
   cancelImport: (id) => core.invoke('queue', 'cancelImport', [id]),
@@ -14,6 +15,7 @@ const ipc = core && {
 }
 const http = {
   async plan(round, opts) { const { data } = await axios.post(`${API_BASE}/queue/plan`, { round, ...opts }); return data },
+  async importMany(items, opts) { const { data } = await axios.post(`${API_BASE}/queue/import-many`, { items, ...opts }); return data },
   async import(round, opts) { const { data } = await axios.post(`${API_BASE}/queue/import`, { round, ...opts }); return data },
   async list() { const { data } = await axios.get(`${API_BASE}/queue`); return data },
   async cancelTask(id) { const { data } = await axios.post(`${API_BASE}/queue/tasks/${id}/cancel`); return data },

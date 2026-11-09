@@ -132,6 +132,7 @@ const TABLE = {
   queue: {   // docs/ADR-038: importing a round queues work for the pool pods
     plan: (c, round, opts) => c.queue.planImport(round, opts || {}),
     import: (c, round, opts) => c.queue.importRound(round, opts || {}),
+    importMany: (c, items, opts) => c.queue.importRounds(items || [], opts || {}),
     list: (c) => c.queue.list(),
     cancelTask: (c, id) => c.queue.cancelTask(id),
     cancelImport: (c, id) => c.queue.cancelImport(id),

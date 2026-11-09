@@ -163,6 +163,22 @@ export async function importRound(round: string, o: ImportOpts = {}): Promise<Im
   return imp
 }
 
+export interface RoundItem { round: string; shots?: string[]; cards?: Record<string, string>; max_pods?: number }
+/** Several rounds on one approval (the window's and MCP's one path): each round is its own import; `cost_cap_usd` is the TOTAL and is split evenly, so the caps never add up to more.
+ *  Every round is planned first, so a bad round or card queues nothing; `max_pods` (per round) may be set per item. */
+export async function importRounds(items: RoundItem[], o: Omit<ImportOpts, 'shots' | 'cards'> = {}): Promise<ImportRec[]> {
+  if (!Array.isArray(items) || !items.length) throw new CoreError(400, 'Which rounds? Give at least one.')
+  if (!(o.approved_by || '').trim()) throw new CoreError(400, 'An import spends money on pods: say who approves it (approved_by).')
+  const names = items.map((i) => i.round)
+  if (new Set(names).size !== names.length) throw new CoreError(400, 'A round is listed twice.')
+  const each = o.cost_cap_usd != null ? Math.round((o.cost_cap_usd / items.length) * 100) / 100 : undefined
+  const opts = (i: RoundItem): ImportOpts => ({ ...o, shots: i.shots, cards: i.cards, ...(each != null ? { cost_cap_usd: each } : {}), ...(i.max_pods != null ? { max_pods: i.max_pods } : {}) })
+  for (const i of items) { const p = await planImport(i.round, opts(i)); if (!p.shots.length) throw new CoreError(404, `No shots found in ${i.round}.`); if (state().imports.some((x) => x.round === i.round && x.state === 'active')) throw new CoreError(409, `${i.round} is already being imported: see the queue.`) }
+  const out: ImportRec[] = []
+  for (const i of items) out.push(await importRound(i.round, opts(i)))
+  return out
+}
+
 // ----- the scheduler -----
 const logTask = (t: Task, imp: ImportRec) => history.record({ kind: 'job', job: 'queue', state: t.state === 'done' ? 'done' : t.state === 'cancelled' ? 'cancelled' : 'failed', started_at: t.started_at, what: `${t.round} ${t.kind}${t.shot ? ` ${t.shot}` : ''}`, pod_id: t.pod_id ?? undefined, pod_name: t.pod_name ?? undefined, ...(t.error ? { error: t.error } : {}), detail: `import ${imp.id}; approved by ${imp.approved_by}${t.detail ? `; ${t.detail}` : ''}` })
 const finish = (t: Task, imp: ImportRec, s: 'done' | 'failed' | 'cancelled', error?: string) => { t.state = s; t.finished_at = deps.now().toISOString(); if (error) t.error = error; logTask(t, imp) }

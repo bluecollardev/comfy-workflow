@@ -168,3 +168,16 @@ describe('cancelling, retrying and restarting', () => {
     queue.retryTask('t1'); expect(tasks()[0].state).toBe('waiting')
   })
 })
+
+describe('several rounds on one approval', () => {
+  it('queues one import per round, splits the dollar cap, and queues nothing when a round or card is bad', async () => {
+    world()
+    await expect(queue.importRounds([{ round: 'r1' }, { round: 'r1' }], { approved_by: 'L' })).rejects.toThrow(/twice/)
+    await expect(queue.importRounds([{ round: 'r1' }], {})).rejects.toThrow(/approved_by/)
+    await expect(queue.importRounds([{ round: 'r1' }, { round: 'r2', cards: { 'cgi-042': 'nope' } }], { approved_by: 'L' })).rejects.toThrow(/Unknown card/)
+    expect(queue.list().imports).toHaveLength(0)   // nothing was queued
+    const out = await queue.importRounds([{ round: 'r1', shots: ['cgi-042'] }, { round: 'r2', max_pods: 3 }], { approved_by: 'L', cost_cap_usd: 40 })
+    expect(out.map((i) => [i.round, i.cost_cap_usd])).toEqual([['r1', 20], ['r2', 20]])
+    expect(out[1].max_pods).toBe(3)
+  })
+})

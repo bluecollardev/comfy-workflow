@@ -176,11 +176,8 @@ async function start() {
   try {
     try { localStorage.setItem('runpod-manager.approved-by', approvedBy.value.trim()) } catch { /* storage blocked */ }
     const todo = [...plans.value.keys()].filter((r) => shotCount(r) > 0)
-    const each = Math.round((costCap.value / todo.length) * 100) / 100   // the cap is the total: split evenly
-    for (const r of todo) {
-      const pl = plans.value.get(r)
-      await queueAPI.import(r, { shots: [...picked.value.get(r)], run_workflows: runWorkflows.value, cards: cardsFor(r), approved_by: approvedBy.value.trim(), ...(pl.cap_enabled ? { max_pods: todo.length > 1 && !podsEdited.value ? shotCount(r) : maxPods.value, cost_cap_usd: each } : {}) })
-    }
+    const capOn = first.value.cap_enabled
+    await queueAPI.importMany(todo.map((r) => ({ round: r, shots: [...picked.value.get(r)], cards: cardsFor(r), ...(capOn ? { max_pods: todo.length > 1 && !podsEdited.value ? shotCount(r) : maxPods.value } : {}) })), { run_workflows: runWorkflows.value, approved_by: approvedBy.value.trim(), ...(capOn ? { cost_cap_usd: costCap.value } : {}) })
     open.value = false; ui.queueOpen = true   // the Queue shows what it queued
   } catch (e) { error.value = errorText(e) } finally { starting.value = false }
 }
