@@ -147,9 +147,9 @@ const TABLE = {
   },
   panama: {   // docs/ADR-015: the exchange bucket as an import source
     status: (c) => c.panama.status(),
-    rounds: (c) => c.panama.rounds(),
-    size: (c, round) => c.panama.size(round),
-    files: (c, round) => c.panama.files(round),
+    rounds: (c) => c.panama.roundsAsync(),   // not the sync ones: they would hold the main process, and so the window, while aws lists the bucket
+    size: (c, round) => c.panama.sizeAsync(round),
+    files: (c, round) => c.panama.filesAsync(round),
     stageDrop: (c, paths) => c.panama.stageDrop(paths),
     pull: (c, round) => c.panama.pull(round),
     job: (c, id) => c.panama.job(id),

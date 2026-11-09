@@ -62,7 +62,7 @@ export const POOL_GPU = 'h100'
 export const RUN_ESTIMATE_H = 0.5
 
 const realDeps: Deps = {
-  shotsOf: async (round) => [...new Set(panama.files(round).entries.filter((e) => e.dir && !e.path.includes('/')).map((e) => e.path))].sort(),
+  shotsOf: async (round) => [...new Set((await panama.filesAsync(round)).entries.filter((e) => e.dir && !e.path.includes('/')).map((e) => e.path))].sort(),
   volumePods: async () => {
     const vol = (mounts.load().network_volume_id || '').trim()
     return (await rp.listPods()).filter((p) => (p.networkVolumeId || '') === vol && !(p.name || '').startsWith(podpull.POD_PREFIX)).map((p) => ({

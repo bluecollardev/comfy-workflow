@@ -101,7 +101,7 @@ export interface Opts {
   ssh?: SshRunner
   /** The pod's recent log lines (container and system). Default: RunPod's log stream, read for a few seconds. */
   logs?: (podId: string) => Promise<{ ts: string; line: string }[]>
-  sizeOf?: (round: string) => { files: number; bytes: number }
+  sizeOf?: (round: string) => { files: number; bytes: number } | Promise<{ files: number; bytes: number }>
   listRounds?: () => string[]
   pollMs?: number
   /** How long a temporary pod is waited for to expose SSH so the round can be placed (ADR-033). Default 3 minutes; a pod without SSH fails the placing, not the pull. */
@@ -134,8 +134,8 @@ export interface PodPlan {
 }
 
 const gpuName = (id: string) => Object.entries(gpus.GPUS).find(([, g]) => g.id === id)?.[0] || id
-const sizeOf = (round: string, opts: Opts) => {
-  try { const s = (opts.sizeOf ?? panama.size)(round); return { files: s.files, bytes: s.bytes } } catch { return { files: 0, bytes: 0 } }
+const sizeOf = async (round: string, opts: Opts) => {
+  try { const s = await (opts.sizeOf ?? panama.sizeAsync)(round); return { files: s.files, bytes: s.bytes } } catch { return { files: 0, bytes: 0 } }
 }
 
 /** A pod of the user's on the configured volume that the Sync's SSH route can reach, if any: a running one first, else an off one (started before the job). Our own pull pods never count. */
@@ -164,7 +164,7 @@ export async function plan(round: string, opts: Opts = {}): Promise<PodPlan> {
   if (!cap.available) throw bad(cap.reason)
   const cfg = mounts.load()
   const volume = await volumeOf(opts)
-  const size = sizeOf(round, opts)
+  const size = await sizeOf(round, opts)
   const base = { round, bytes: size.bytes, files: size.files, idle_stop_minutes: AGENT_IDLE_MINUTES, ceiling_minutes: ceilingMinutes(size.bytes), volume }
   const found = await findActivePod(cfg, opts)
   const current = found && opts.route !== 'temporary' && (found.running || opts.route === 'current') ? found : null
@@ -540,7 +540,7 @@ export function cancel(id: string): PodJob {
 
 /** The bucket's rounds with what the last pod job learned about each on the volume. */
 export async function rounds(opts: Opts = {}): Promise<{ as_of: string | null; volume: Volume | null; rounds: { name: string; staged: boolean; state: RoundState; present: number; expected: number | null; missing: number | null; bytes: number }[] }> {
-  const names = (opts.listRounds ?? (() => panama.rounds().map((r) => r.name)))()
+  const names = await (opts.listRounds ?? (async () => (await panama.roundsAsync()).map((r) => r.name)))()
   const volume = await volumeOf(opts)
   const rec = volume ? knownState(volume.id) : null
   return {

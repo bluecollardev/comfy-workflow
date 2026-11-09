@@ -5,7 +5,7 @@
  * this PC, never into ComfyUI-Shared directly: the Import Shot Pack adapters take it from there like any package folder.
  * Read-only against the bucket: ls and cp from it, nothing written to it.
  */
-import { spawn, spawnSync } from 'node:child_process'
+import { spawn, spawnSync, type SpawnSyncReturns } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { cpSync, createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -53,6 +53,19 @@ function run(cmd: string[], timeoutMs = 60_000) {
   return r
 }
 
+/** The same as run(), without blocking: the app's main process also serves the window, and a listing of a big round takes seconds. */
+function runAsync(cmd: string[], timeoutMs = 60_000): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const c = spawn(cmd[0], cmd.slice(1), { env: awsEnv() })
+    let out = '', err = '', over = false
+    const timer = setTimeout(() => { c.kill(); resolve({ status: null, stdout: out, stderr: `${err}\ntimed out after ${timeoutMs / 1000}s` }) }, timeoutMs)
+    c.stdout.on('data', (d) => { out += d; if (out.length > 64 * 1024 * 1024 && !over) { over = true; c.kill() } })
+    c.stderr.on('data', (d) => { err += d })
+    c.on('error', (e: NodeJS.ErrnoException) => { clearTimeout(timer); reject(bad(e.code === 'ENOENT' ? 'The AWS CLI (aws) is not installed on this PC: brew install awscli.' : e.message)) })
+    c.on('close', (status) => { clearTimeout(timer); resolve({ status, stdout: out, stderr: err }) })
+  })
+}
+
 /** Is Panama configured: the AWS CLI is there and the profile exists. The only thing the picker looks at. */
 /** Whether a round can be pulled onto the network volume by a pod (ADR-022). podpull.ts registers the real check when it loads (it needs the pod and volume modules, which
  *  import this one), so until then the answer is "no". */
@@ -60,10 +73,17 @@ export interface PodCapability { available: boolean; reason: string; volume: { i
 let podCapabilityFn: () => PodCapability = () => ({ available: false, reason: 'The pod download is not loaded.', volume: null })
 export const setPodCapability = (fn: () => PodCapability) => { podCapabilityFn = fn }
 
+/** `aws configure list-profiles` starts Python (a second or so, on the thread that serves the window): asked at most every 20 seconds. */
+let profilesAt = 0, profilesLast: SpawnSyncReturns<string> | null = null
+function profiles() {
+  if (profilesLast && Date.now() - profilesAt < 20_000 && !process.env.VITEST) return profilesLast
+  profilesLast = spawnSync('aws', ['configure', 'list-profiles'], { encoding: 'utf8', timeout: 15_000 }); profilesAt = Date.now()
+  return profilesLast!
+}
 export function status() {
   const withPod = <T extends object>(o: T) => ({ ...o, pod: podCapabilityFn() })
   if (appKeys()) return withPod({ configured: true, via: 'app keys', profile: profile(), bucket: bucket(), region: region(), staging: stagingDir(), reason: '' })
-  const r = spawnSync('aws', ['configure', 'list-profiles'], { encoding: 'utf8', timeout: 15_000 })
+  const r = profiles()
   if (r.error || r.status !== 0) return withPod({ configured: false, via: 'none', profile: profile(), bucket: bucket(), region: region(), staging: stagingDir(), reason: r.error ? 'The AWS CLI (aws) is not installed.' : 'The AWS CLI could not list its profiles.' })
   const has = r.stdout.split('\n').map((s) => s.trim()).includes(profile())
   return withPod({ configured: has, via: has ? 'aws profile' : 'none', profile: profile(), bucket: bucket(), region: region(), staging: stagingDir(), reason: has ? '' : `No Panama keys: enter them in Default Configuration (or add an AWS profile named "${profile()}").` })
@@ -92,6 +112,27 @@ export function rounds(): Round[] {
   if (r.status !== 0) throw bad(`Could not list the bucket: ${(r.stderr || r.stdout).trim().split('\n').pop()}`)
   return r.stdout.split('\n').map((l) => /^\s*PRE (.+)\/\s*$/.exec(l)?.[1]).filter((n): n is string => !!n && ROUND.test(n))
     .map((name) => { const st = stagedState(name); return { name, staged: st.state === 'complete', ...st, bytes: st.state === 'none' ? 0 : dirBytes(join(stagingDir(), name)) } })
+}
+
+export async function roundsAsync(): Promise<Round[]> {
+  const r = await runAsync(listCmd())
+  if (r.status !== 0) throw bad(`Could not list the bucket: ${(r.stderr || r.stdout).trim().split('\n').pop()}`)
+  return r.stdout.split('\n').map((l) => /^\s*PRE (.+)\/\s*$/.exec(l)?.[1]).filter((n): n is string => !!n && ROUND.test(n))
+    .map((name) => { const st = stagedState(name); return { name, staged: st.state === 'complete', ...st, bytes: st.state === 'none' ? 0 : dirBytes(join(stagingDir(), name)) } })
+}
+export async function sizeAsync(round: string) {
+  if (!ROUND.test(round)) throw bad(`Not a round name: ${round}`)
+  const r = await runAsync(sizeCmd(round), 120_000)
+  if (r.status !== 0) throw bad(`Could not size ${round}: ${(r.stderr || r.stdout).trim().split('\n').pop()}`)
+  return { round, files: Number(/Total Objects:\s*(\d+)/.exec(r.stdout)?.[1] ?? 0), bytes: Number(/Total Size:\s*(\d+)/.exec(r.stdout)?.[1] ?? 0) }
+}
+export async function filesAsync(round: string) {
+  if (!ROUND.test(round)) throw bad(`Not a round name: ${round}`)
+  const r = await runAsync(['aws', 's3', 'ls', `s3://${bucket()}/rounds/${round}/`, '--recursive', ...aws([])], 120_000)
+  if (r.status !== 0) throw bad(`Could not list ${round}: ${(r.stderr || r.stdout).trim().split('\n').pop()}`)
+  const dir = join(stagingDir(), round)
+  const entries = roundTree(round, r.stdout, (p, bytes) => { try { return statSync(join(dir, p)).size === bytes } catch { return false } })
+  return { round, entries, files: entries.filter((e) => !e.dir).length, bytes: entries.filter((e) => !e.dir).reduce((n, e) => n + e.bytes, 0) }
 }
 
 /** Files and bytes under one round (a listing, so a big round takes a few seconds). */
