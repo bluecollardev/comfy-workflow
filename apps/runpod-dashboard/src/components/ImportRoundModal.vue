@@ -3,7 +3,10 @@
     <div v-if="error" class="alert alert-danger small py-2" data-testid="import-round-error">{{ error }}</div>
     <div class="mb-3">
       <label class="form-label small mb-1" for="ir-round">{{ $t('importRound.round') }}</label>
-      <BFormSelect id="ir-round" v-model="round" :options="roundOptions" size="sm" data-testid="import-round-select" @change="loadPlan" />
+      <div class="d-flex gap-2">
+        <BFormSelect id="ir-round" v-model="round" :options="roundOptions" size="sm" data-testid="import-round-select" @change="loadPlan" />
+        <BButton variant="outline-light" size="sm" class="text-nowrap" :disabled="!round" data-testid="import-round-browse" @click="browsing = round"><i class="fa-solid fa-folder-tree me-1"></i>{{ $t('importRound.browse') }}</BButton>
+      </div>
     </div>
     <div v-if="loadingPlan" class="small text-body-secondary" data-testid="import-round-loading">{{ $t('importRound.loadingPlan') }}</div>
     <template v-else-if="plan">
@@ -38,6 +41,7 @@
         <BButton variant="success" size="sm" :disabled="!canStart || starting" data-testid="import-round-start" @click="start"><i class="fa-solid fa-play me-1"></i>{{ $t('importRound.start') }}</BButton>
       </div>
     </template>
+    <RoundFilesModal :round="browsing" target="local" @close="browsing = ''" />
   </BModal>
 </template>
 
@@ -50,10 +54,12 @@ import { panamaAPI } from '../api/panama'
 import { queueAPI } from '../api/queue'
 import { errorText } from '../stores/toast'
 import { useUiStore } from '../stores/ui'
+import RoundFilesModal from './RoundFilesModal.vue'
 
 const ui = useUiStore()
 const open = computed({ get: () => ui.importRoundOpen, set: (v) => { ui.importRoundOpen = v } })
 const rounds = ref([]), round = ref(''), plan = ref(null), picked = ref(new Set()), runWorkflows = ref(true)
+const browsing = ref('')   // the round whose files are open in the explorer
 const podsEdited = ref(false)   // until the pod limit is typed, it follows the shots ticked: one pod per shot
 const maxPods = ref(2), costCap = ref(50), approvedBy = ref(''), error = ref(''), loadingPlan = ref(false), starting = ref(false)
 try { approvedBy.value = localStorage.getItem('runpod-manager.approved-by') || '' } catch { /* storage blocked */ }

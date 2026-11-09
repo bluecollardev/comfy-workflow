@@ -8,6 +8,9 @@ test('Import Round: pick a round, see the shots and the caps, approve, and the Q
   const dlg = page.getByTestId('import-round-modal')
   await dlg.getByTestId('import-round-select').selectOption({ index: 1 })
   await expect(dlg.getByTestId('import-round-shot')).toHaveCount(2)
+  await dlg.getByTestId('import-round-browse').click()   // the round's files as a folder tree
+  await expect(page.getByTestId('round-files-modal').getByTestId('round-files-row')).toHaveCount(5)
+  await page.getByTestId('round-files-modal').getByText('Close', { exact: true }).click()
   await expect(dlg.getByTestId('import-round-estimate')).toContainText('6.98')
   await expect(dlg.getByTestId('import-round-max-pods')).toHaveValue('2')   // one pod per shot ticked
   await expect(dlg.getByTestId('import-round-start')).toBeDisabled()   // nobody has said yes yet

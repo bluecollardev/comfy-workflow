@@ -377,6 +377,7 @@
     "state": { "pending": "waiting", "running": "running", "done": "done", "failed": "failed", "skipped": "skipped" }
   },
   "importRound": {
+    "browse": "Browse files",
     "title": "Import Round",
     "round": "Round",
     "loadingPlan": "Reading the round and the price...",
