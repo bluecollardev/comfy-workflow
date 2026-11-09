@@ -23,6 +23,7 @@ async function loadCore() {
   let timer = null
   const push = () => { if (timer) return; timer = setTimeout(() => { timer = null; for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('core:history', {}) }, 250) }
   core.history.onChange(push)
+  core.queue.start()   // ADR-038: the round-import queue runs while the app is open
   // Events written by another process (the MCP server of another session, the CLI) arrive through the file.
   try { const hf = core.paths.historyFile(); require('node:fs').mkdirSync(path.dirname(hf), { recursive: true }); require('node:fs').watch(path.dirname(hf), (_ev, name) => { if (name === path.basename(hf)) push() }) } catch { /* in-process changes still push */ }
   return core
@@ -126,6 +127,21 @@ const TABLE = {
     apply: (c, file, sections) => c.configio.applyImport(file, { sections: Array.isArray(sections) ? sections : [] }),
     undo: (c) => c.configio.undoImport(),
     backups: (c) => c.configio.listBackups(),
+  },
+  queue: {   // docs/ADR-038: importing a round queues work for the pool pods
+    plan: (c, round, opts) => c.queue.planImport(round, opts || {}),
+    import: (c, round, opts) => c.queue.importRound(round, opts || {}),
+    list: (c) => c.queue.list(),
+    cancelTask: (c, id) => c.queue.cancelTask(id),
+    cancelImport: (c, id) => c.queue.cancelImport(id),
+    retryTask: (c, id) => c.queue.retryTask(id),
+    setLimits: (c, id, limits) => c.queue.setImportLimits(id, limits || {}),
+  },
+  runflows: {   // docs/ADR-037: run workflows on a pod
+    list: (c, podId) => c.runflows.list(podId),
+    run: (c, podId, paths, approvedBy) => c.runflows.run(podId, paths, approvedBy ? { approvedBy } : {}),
+    job: (c, id) => c.runflows.job(id),
+    cancel: (c, id) => c.runflows.cancel(id),
   },
   panama: {   // docs/ADR-015: the exchange bucket as an import source
     status: (c) => c.panama.status(),

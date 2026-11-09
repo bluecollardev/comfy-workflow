@@ -184,6 +184,13 @@ Each tool calls the core function the window's IPC channel calls. `mcp/parity.mj
 | `panama_job` | `id`, `target?` | Where a download (or delete) is: state, files, bytes done of total, rate, the latest files |  |
 | `panama_cancel` | `id`, `target?` | Stop a download; what is already there stays and a later pull resumes |  |
 | `panama_remove` | `round`, `target?`, `approved_by?` | Delete a round's staged copy: on this PC, or on the volume by a pod (needs approved_by: it uses a pod). | spend: named yes |
+| `plan_round_import` | `round`, `shots?`, `run_workflows?`, `max_pods?`, `cost_cap_usd?` | What importing a round would do and cost: shots, price, estimate, caps (ADR-038). | read |
+| `import_round` | `round`, `shots?`, `run_workflows?`, `max_pods?`, `cost_cap_usd?`, `approved_by` | Queue a pull and one run-workflows task per shot; pool pods take them within the limits. One approval covers the import. | spend: named yes |
+| `queue_list` | | Every import and task with state, pod and error. | read |
+| `queue_task` | `action`, `id`, `max_pods?`, `cost_cap_usd?` | `cancel`, `retry`, `cancel_import` or `set_limits`. | read/act |
+| `list_pod_workflows` | `pod_id` | The graphs in a running pod's Workflows panel, grouped by folder (ADR-037). | read |
+| `run_pod_workflows` | `pod_id`, `paths`, `approved_by` | Run chosen graphs on the pod one after another: convert with ComfyUI's frontend, queue, wait; every outcome and error goes to the History. Returns a job. | spend: named yes |
+| `run_workflows_job` | `id`, `cancel?` | A run's graphs: waiting, running, done, failed (with the error) or skipped; `cancel` stops it. | read |
 | `panama_place` | `round`, `pod_id?`, `dry_run?` | Put a pod-pulled round where its graphs look (ADR-033), on a running pod of yours: inputs linked into `input/rounds/<round>/` and at the shipped path when free (a differing file is a conflict, never replaced), each loaded file also hard-linked at the top of `input/` as a unique name `<shot>__<stem>__<sha8>.<ext>` (ComfyUI's dropdown lists only top-level files), path-corrected graph copies in `workflows/rounds/<round>/` using those names (the originals stay in the round folder, not in the Workflows panel). A pod pull does it by itself once its check passes; this re-runs it. `dry_run` defaults to true (report only). Idempotent |
 | `panama_import` | `round`, `adapter?`, `dry_run?`, `overwrite?` | Import a downloaded round into ComfyUI-Shared (the window's Use): plans it through an adapter, and applies unless dry_run (default true). |  |
 

@@ -267,6 +267,17 @@
       <BFormCheckbox v-if="!forPod" v-model="cfg.pull_any_card" :value="true" :unchecked-value="false" switch class="mb-2" data-testid="cfg-pull-any-card">
         {{ $t('config.pullAnyCard') }} <span class="text-body-secondary">{{ $t('config.pullAnyCardHint') }}</span>
       </BFormCheckbox>
+      <div v-if="!forPod" class="mb-2" data-testid="cfg-import-row">
+        <BFormCheckbox v-model="cfg.import_cap_enabled" :value="true" :unchecked-value="false" switch class="mb-1" data-testid="cfg-import-cap-enabled">
+          {{ $t('config.importCap') }} <span class="text-body-secondary">{{ $t('config.importCapHint') }}</span>
+        </BFormCheckbox>
+        <div v-if="cfg.import_cap_enabled" class="d-flex align-items-center gap-2 small ms-4">
+          <label class="mb-0" for="cfg-import-pods">{{ $t('importRound.maxPods') }}</label>
+          <BFormInput id="cfg-import-pods" v-model.number="cfg.import_max_pods" type="number" min="1" max="20" size="sm" style="width: 5rem" data-testid="cfg-import-max-pods" />
+          <label class="mb-0 ms-2" for="cfg-import-cap">{{ $t('importRound.costCap') }}</label>
+          <BFormInput id="cfg-import-cap" v-model.number="cfg.import_cost_cap_usd" type="number" min="1" size="sm" style="width: 6rem" data-testid="cfg-import-cost-cap" />
+        </div>
+      </div>
       <BFormCheckbox v-if="!forPod" v-model="cfg.dry_run" switch class="mb-1" :disabled="dryForced" data-testid="cfg-dry-run">
         {{ $t('config.dryRun') }} <span class="text-body-secondary">{{ $t('config.dryRunHint') }}</span>
       </BFormCheckbox>

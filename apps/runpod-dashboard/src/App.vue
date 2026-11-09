@@ -20,6 +20,12 @@
         <BButton variant="outline-warning" size="sm" :disabled="!settings.ready || pods.refreshing || !pods.pods.some((p) => p.status !== 'stopped')" :title="$t('app.pauseAllTitle')" data-testid="pause-all" @click="pods.stopAll">
           <i class="fa-solid fa-pause me-1"></i>{{ $t('app.pauseAll') }}
         </BButton>
+        <BButton variant="success" size="sm" :disabled="!settings.ready" :title="$t('app.importRoundTitle')" data-testid="open-import-round" @click="ui.importRoundOpen = true">
+          <i class="fa-solid fa-cloud-arrow-down me-1"></i>{{ $t('app.importRound') }}
+        </BButton>
+        <BButton variant="outline-light" size="sm" :title="$t('app.queueTitle')" data-testid="open-queue" @click="ui.queueOpen = true">
+          <i class="fa-solid fa-list-check me-1"></i>{{ $t('app.queue') }}<BBadge v-if="queueCount" variant="primary" class="ms-1" data-testid="queue-badge">{{ queueCount }}</BBadge>
+        </BButton>
         <BButton variant="primary" size="sm" :disabled="pods.refreshing" data-testid="refresh" @click="pods.load">
           <i class="fa-solid fa-rotate me-1" :class="{ 'fa-spin': pods.refreshing }"></i>
           {{ $t('app.refresh') }}
@@ -56,6 +62,8 @@
     <AdapterStudio />
     <VolumesModal />
     <HistoryModal />
+    <ImportRoundModal v-if="ui.importRoundOpen" />
+    <QueueModal v-if="ui.queueOpen" />
     <ToastHost />
     <WelcomeModal />
     <ConfigModal />
@@ -75,12 +83,15 @@
  *   Stats      – read-only pod counts from the pods store
  *   Dashboard  – create form + pod list, acting through the pods store
  */
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useUiStore } from './stores/ui'
 import { useSettingsStore } from './stores/settings'
 import { syncAPI } from './api/sync'
 import VolumesModal from './components/VolumesModal.vue'
 import HistoryModal from './components/HistoryModal.vue'
+import ImportRoundModal from './components/ImportRoundModal.vue'
+import QueueModal from './components/QueueModal.vue'
+import { queueAPI } from './api/queue'
 import { useToastStore } from './stores/toast'
 import { t } from './i18n'
 import { usePodsStore } from './stores/pods'
@@ -122,8 +133,13 @@ async function newInstallation() {
   } catch { return false }
 }
 
+/** How many queued or running tasks: the badge on the Queue button (ADR-038). Asked every 5 seconds; a failure is just no badge. */
+const queueCount = ref(0)
+let queueTimer = null
+const loadQueueCount = async () => { try { queueCount.value = (await queueAPI.list()).active } catch { queueCount.value = 0 } }
 let offSync = () => {}
 onMounted(async () => {
+  loadQueueCount(); queueTimer = setInterval(loadQueueCount, 5000)
   readOAuthResult()
   await pods.load()
   pods.startAutoRefresh()
@@ -135,5 +151,5 @@ onMounted(async () => {
     else ui.configOpen = true
   }
 })
-onUnmounted(() => { pods.stopAutoRefresh(); offSync() })
+onUnmounted(() => { pods.stopAutoRefresh(); offSync(); clearInterval(queueTimer) })
 </script>
