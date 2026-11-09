@@ -1,6 +1,6 @@
 {
   "app": {
-    "importRound": "Import Round",
+    "importRound": "Import Round(s)",
     "importRoundTitle": "Import a round: queue its pull and one run per shot for the pool pods",
     "queue": "Queue",
     "queueTitle": "The queue: every import's tasks, their pods and errors",
@@ -44,7 +44,7 @@
     "confirmMove": "Move pod \"{name}\" to round \"{to}\"? Only this app remembers it; the pod is not touched.",
     "confirmMoveOut": "Take pod \"{name}\" out of its round? Only this app remembers it; the pod is not touched.",
     "roundEmpty": "No pods in this round yet. Pick it on a pod's Round choice.",
-    "roundReimport": "Import this round again", "roundDelete": "Delete this round", "confirmDeleteRound": "Delete the round \"{name}\"? Its {n} pod(s) leave it and keep running; nothing on RunPod is deleted.", "roundRename": "Rename this round (only in this app)",
+    "roundReimportLabel": "Re-import", "roundReimport": "Import this round again", "roundDelete": "Delete this round", "confirmDeleteRound": "Delete the round \"{name}\"? Its {n} pod(s) leave it and keep running; nothing on RunPod is deleted.", "roundRename": "Rename this round (only in this app)",
     "roundRenameSave": "Save the round name",
     "groupByDatacenter": "Group by datacenter",
     "noDatacenter": "Datacenter unknown",

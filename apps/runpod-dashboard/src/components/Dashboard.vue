@@ -48,7 +48,7 @@
                 <span v-if="renamingRound !== sec.round" class="fw-semibold" data-testid="round-title" :title="sec.round && sec.label !== sec.round ? sec.round : ''">{{ sec.label }}</span>
               </button>
               <template v-if="sec.round && renamingRound !== sec.round">
-                <button type="button" class="btn btn-link btn-sm p-0 align-baseline text-body-secondary" :title="$t('dashboard.roundReimport')" :aria-label="$t('dashboard.roundReimport')" :disabled="!settings.ready" data-testid="round-reimport" @click="reimportRound(sec)"><i class="fa-solid fa-rotate-right fa-xs"></i></button>
+                <button type="button" class="btn btn-link btn-sm p-0 align-baseline text-body-secondary" :title="$t('dashboard.roundReimport')" :aria-label="$t('dashboard.roundReimport')" :disabled="!settings.ready" data-testid="round-reimport" @click="reimportRound(sec)"><i class="fa-solid fa-rotate-right fa-xs me-1"></i>{{ $t('dashboard.roundReimportLabel') }}</button>
                 <button type="button" class="btn btn-link btn-sm p-0 align-baseline text-body-secondary" :title="$t('dashboard.roundDelete')" :aria-label="$t('dashboard.roundDelete')" data-testid="round-delete" @click="deleteRound(sec)"><i class="fa-solid fa-trash fa-xs"></i></button>
                 <button type="button" class="btn btn-link btn-sm p-0 align-baseline text-body-secondary" :title="$t('dashboard.roundRename')" :aria-label="$t('dashboard.roundRename')" data-testid="round-rename" @click="startRenameRound(sec)"><i class="fa-solid fa-pencil fa-xs"></i></button>
               </template>
