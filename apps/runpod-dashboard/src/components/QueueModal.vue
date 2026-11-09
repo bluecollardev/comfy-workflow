@@ -2,7 +2,7 @@
   <BModal v-model="open" :title="$t('queue.title')" size="xl" scrollable no-footer data-testid="queue-modal" @hidden="open = false">
     <div v-if="error" class="alert alert-danger small py-2" data-testid="queue-error">{{ error }}</div>
     <div v-if="!view.imports.length" class="text-body-secondary small" data-testid="queue-empty">{{ $t('queue.empty') }}</div>
-    <div v-for="imp in view.imports" :key="imp.id" class="mb-4" data-testid="queue-import" :data-import="imp.id">
+    <div v-for="imp in newestFirst" :key="imp.id" class="mb-4" data-testid="queue-import" :data-import="imp.id">
       <div class="d-flex align-items-baseline gap-2 flex-wrap mb-1">
         <strong class="font-monospace">{{ imp.round }}</strong>
         <span class="badge" :class="imp.state === 'active' ? 'text-bg-primary' : 'text-bg-secondary'">{{ $t(`queue.import.${imp.state}`) }}</span>
@@ -39,6 +39,8 @@ const ui = useUiStore()
 const open = computed({ get: () => ui.queueOpen, set: (v) => { ui.queueOpen = v } })
 const view = ref({ imports: [], tasks: [], active: 0 }), error = ref('')
 let timer = null
+/** The latest import at the top, the oldest at the bottom. */
+const newestFirst = computed(() => [...view.value.imports].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))))
 const tasksOf = (imp) => view.value.tasks.filter((t) => t.import_id === imp.id)
 const badge = (s) => ({ done: 'text-bg-success', failed: 'text-bg-danger', running: 'text-bg-primary', waiting: 'text-bg-secondary', held: 'text-bg-warning', cancelled: 'text-bg-dark', interrupted: 'text-bg-warning' }[s] || 'text-bg-secondary')
 async function refresh() { try { view.value = await queueAPI.list(); error.value = '' } catch (e) { error.value = errorText(e) } }
@@ -46,3 +48,8 @@ async function act(fn) { try { await fn() } catch (e) { error.value = errorText(
 onMounted(() => { refresh(); timer = setInterval(refresh, 2500) })
 onBeforeUnmount(() => clearInterval(timer))
 </script>
+
+<style scoped>
+/* the list scrolls inside the window however many imports there are */
+:deep(.modal-body) { overflow-y: auto; max-height: calc(100vh - 9rem); overscroll-behavior: contain; }
+</style>

@@ -378,6 +378,7 @@
   },
   "importRound": {
     "browse": "Browse files",
+    "noCards": "The workflows are not run, so no shot pods are made: only the pull (a short-lived pod of the cheapest card) copies the round to the volume.",
     "volume": "Network volume",
     "volumePick": "Pick a volume...",
     "volumeDefault": "default",

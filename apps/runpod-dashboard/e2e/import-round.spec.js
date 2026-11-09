@@ -77,3 +77,14 @@ test('Import Round(s): the Import button is always there; a zip or folder droppe
   await row.getByTestId('import-round-dropped-import').click()
   await expect(page.getByTestId('import-modal')).toBeVisible()   // Import Shot Pack, on the dropped folder
 })
+
+test('Queue: the latest import is at the top, the oldest at the bottom, and the list scrolls', async ({ page, api }) => {
+  api.state.queue = { imports: Array.from({ length: 4 }, (_, n) => ({ id: `imp${n}`, round: `round-${n}`, approved_by: 'L', created_at: `2026-11-09T0${n}:00:00Z`, state: 'done', spent_usd: 0, cap_enabled: true, cost_cap_usd: 10, max_pods: 2, counts: {} })), tasks: Array.from({ length: 4 }, (_, n) => Array.from({ length: 8 }, (_, k) => ({ id: `t${n}-${k}`, import_id: `imp${n}`, round: `round-${n}`, shot: k ? `shot-${k}` : null, kind: k ? 'run' : 'pull', state: 'failed' }))).flat(), active: 0 }
+  await page.goto('/'); await page.getByTestId('open-queue').click()
+  const q = page.getByTestId('queue-modal')
+  await expect(q.getByTestId('queue-import').locator('strong').first()).toHaveText('round-3')
+  await expect(q.getByTestId('queue-import').locator('strong').last()).toHaveText('round-0')
+  const body = q.locator('.modal-body')
+  await body.hover(); await page.mouse.wheel(0, 600)
+  await expect.poll(() => body.evaluate((b) => b.scrollTop)).toBeGreaterThan(300)
+})

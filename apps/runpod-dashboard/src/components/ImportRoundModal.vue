@@ -57,18 +57,19 @@
         <div v-if="volumeProblem" class="text-warning w-100" data-testid="import-round-volume-problem"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ volumeProblem }}</div>
         <div v-else-if="volumeId && volumeId !== defaultVolume" class="text-body-secondary w-100" data-testid="import-round-volume-note">{{ $t('importRound.volumeNote') }}</div>
       </div>
-      <div class="d-flex align-items-center gap-2 mb-2 small">
+      <div v-if="!runWorkflows" class="small text-body-secondary mb-3" data-testid="import-round-no-cards">{{ $t('importRound.noCards') }}</div>
+      <div v-if="runWorkflows" class="d-flex align-items-center gap-2 mb-2 small">
         <label class="mb-0" for="ir-card-all">{{ $t('importRound.cardAll') }}</label>
         <BFormSelect id="ir-card-all" :model-value="''" :options="cardOptions" size="sm" style="max-width: 24rem" data-testid="import-round-card-all" @update:model-value="setAllCards" />
       </div>
-      <div v-for="[r, pl] in plans" :key="r" class="mb-2" data-testid="import-round-card-group" :data-round="r">
+      <div v-for="[r, pl] in (runWorkflows ? plans : [])" :key="r" class="mb-2" data-testid="import-round-card-group" :data-round="r">
         <div v-if="plans.size > 1" class="small text-body-secondary font-monospace">{{ r }}</div>
         <div v-for="s in [...(picked.get(r) || [])]" :key="s" class="d-flex align-items-center gap-2 small mb-1" data-testid="import-round-card-row" :data-shot="s">
           <span class="font-monospace" style="min-width: 9rem">{{ s }}</span>
           <BFormSelect :model-value="cards[`${r}::${s}`] || ''" :options="cardOptions" size="sm" style="max-width: 24rem" data-testid="import-round-card" @update:model-value="(v) => setCard(r, s, v)" />
         </div>
       </div>
-      <div class="small text-body-secondary mb-3">{{ $t('importRound.cardNote') }}</div>
+      <div v-if="runWorkflows" class="small text-body-secondary mb-3">{{ $t('importRound.cardNote') }}</div>
 
       <div class="border rounded p-2 small" data-testid="import-round-estimate">
         <div>{{ $t('importRound.price', { price: first.price_per_hour ?? '?' }) }}</div>
@@ -153,8 +154,8 @@ watch([cards, picked, runWorkflows], () => { if (step.value === 3) replan() }, {
 const canNext = computed(() => (step.value === 1 ? chosen.value.size > 0 && plans.value.size === chosen.value.size && !loadingPlan.value : totalShots.value > 0))
 /** A finished step can be revisited; a later one only once the step before it is complete. */
 const canGoTo = (n) => n <= step.value || (n === 2 ? canNext.value && step.value === 1 : n === 3 ? totalShots.value > 0 : false)
-const goTo = async (n) => { if (!canGoTo(n)) return; step.value = n; if (n === 3) { await replan(); loadVolumes() } }
-const next = async () => { step.value++; if (step.value === 3) { await replan(); loadVolumes() } }
+const goTo = async (n) => { if (!canGoTo(n)) return; step.value = n; if (n === 3) { loadVolumes(); await replan() } }
+const next = async () => { step.value++; if (step.value === 3) { loadVolumes(); await replan() } }
 const hint = computed(() => (!chosen.value.size ? t('importRound.hintPick') : step.value < 3 ? t('importRound.hintSteps') : !volumeId.value ? t('importRound.volumeNone') : !totalShots.value ? t('importRound.hintShots') : t('importRound.hintApprove')))
 const volumes = ref([]), volumeId = ref(''), defaultVolume = ref('')
 const volumeOptions = computed(() => [{ value: '', text: t('importRound.volumePick') }, ...volumes.value.map((v) => ({ value: v.id, text: `${v.name} · ${v.size_gb} GB · ${v.datacenter}${v.is_default ? ` · ${t('importRound.volumeDefault')}` : ''}` }))])
