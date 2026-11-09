@@ -1,8 +1,13 @@
 <template>
   <BModal v-model="open" :title="$t('importRound.title')" size="lg" scrollable data-testid="import-round-modal" @hidden="open = false">
-    <div class="d-flex gap-2 mb-3 small" data-testid="import-round-steps">
-      <span v-for="(label, i) in stepLabels" :key="i" class="badge fw-normal" :class="step === i + 1 ? 'text-bg-primary' : step > i + 1 ? 'text-bg-success' : 'text-bg-secondary'" data-testid="import-round-step" :data-step="i + 1" :data-active="step === i + 1">{{ i + 1 }}. {{ label }}</span>
-    </div>
+    <ol class="stepper mb-4" data-testid="import-round-steps">
+      <li v-for="(label, i) in stepLabels" :key="i" class="stepper-item" :class="{ active: step === i + 1, done: step > i + 1 }">
+        <button type="button" class="stepper-btn" :disabled="!canGoTo(i + 1)" :aria-current="step === i + 1 ? 'step' : undefined" data-testid="import-round-step" :data-step="i + 1" :data-active="step === i + 1" @click="goTo(i + 1)">
+          <span class="stepper-dot"><i v-if="step > i + 1" class="fa-solid fa-check"></i><template v-else>{{ i + 1 }}</template></span>
+          <span class="stepper-label">{{ label }}</span>
+        </button>
+      </li>
+    </ol>
     <div v-if="error" class="alert alert-danger small py-2" data-testid="import-round-error">{{ error }}</div>
 
     <!-- 1. Choose rounds -->
@@ -76,8 +81,8 @@
     <template #footer>
       <div class="d-flex align-items-center gap-2 w-100 flex-wrap">
         <label class="mb-0 small" for="ir-by">{{ $t('importRound.approvedBy') }}</label>
-        <BFormInput id="ir-by" v-model="approvedBy" size="sm" style="width: 11rem" :placeholder="$t('importRound.approvedByPlaceholder')" data-testid="import-round-approved-by" />
-        <span v-if="!canStart" class="small text-body-secondary" data-testid="import-round-hint">{{ hint }}</span>
+        <BFormInput id="ir-by" v-model="approvedBy" size="sm" style="width: 16rem" :placeholder="$t('importRound.approvedByPlaceholder')" data-testid="import-round-approved-by" />
+        <span v-if="!canStart" class="small text-body-secondary w-100 order-last" data-testid="import-round-hint">{{ hint }}</span>
         <div class="ms-auto d-flex gap-2">
           <BButton variant="outline-light" size="sm" @click="open = false">{{ $t('picker.cancel') }}</BButton>
           <BButton v-if="step > 1" variant="outline-light" size="sm" data-testid="import-round-back" @click="step--"><i class="fa-solid fa-arrow-left me-1"></i>{{ $t('importRound.back') }}</BButton>
@@ -139,6 +144,9 @@ async function replan() {
 }
 watch([cards, picked, runWorkflows], () => { if (step.value === 3) replan() }, { deep: true })
 const canNext = computed(() => (step.value === 1 ? chosen.value.size > 0 && plans.value.size === chosen.value.size && !loadingPlan.value : totalShots.value > 0))
+/** A finished step can be revisited; a later one only once the step before it is complete. */
+const canGoTo = (n) => n <= step.value || (n === 2 ? canNext.value && step.value === 1 : n === 3 ? totalShots.value > 0 : false)
+const goTo = async (n) => { if (!canGoTo(n)) return; step.value = n; if (n === 3) await replan() }
 const next = async () => { step.value++; if (step.value === 3) await replan() }
 const hint = computed(() => (!chosen.value.size ? t('importRound.hintPick') : step.value < 3 ? t('importRound.hintSteps') : !totalShots.value ? t('importRound.hintShots') : t('importRound.hintApprove')))
 const browsing = ref('')   // the round whose files are open in the explorer
@@ -184,6 +192,18 @@ async function start() {
 </script>
 
 <style scoped>
+.stepper { display: flex; list-style: none; padding: 0; margin: 0; }
+.stepper-item { flex: 1; position: relative; text-align: center; }
+.stepper-item:not(:last-child)::after { content: ''; position: absolute; top: 15px; left: calc(50% + 22px); width: calc(100% - 44px); height: 2px; background: rgba(255, 255, 255, 0.2); }
+.stepper-item.done:not(:last-child)::after { background: var(--bs-success); }
+.stepper-btn { background: none; border: 0; padding: 0; color: var(--bs-secondary-color); display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; }
+.stepper-btn:not(:disabled) { cursor: pointer; }
+.stepper-dot { width: 32px; height: 32px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.3); display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.85rem; background: transparent; }
+.stepper-item.active .stepper-dot { border-color: #508cff; background: #508cff; color: #fff; box-shadow: 0 0 0 4px rgba(80, 140, 255, 0.25); }
+.stepper-item.done .stepper-dot { border-color: var(--bs-success); background: var(--bs-success); color: #fff; }
+.stepper-item.active .stepper-label { color: var(--bs-body-color); font-weight: 600; }
+.stepper-item.done .stepper-label { color: var(--bs-body-color); }
+.stepper-label { font-size: 0.85rem; }
 .drop-zone { border: 2px dashed rgba(255, 255, 255, 0.3); color: var(--bs-secondary-color); }
 .drop-zone.over { border-color: #508cff; background: rgba(80, 140, 255, 0.12); color: inherit; }
 .round-list { max-height: 12rem; overflow: auto; }

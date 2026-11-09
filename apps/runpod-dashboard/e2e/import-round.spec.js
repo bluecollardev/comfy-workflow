@@ -20,6 +20,9 @@ test('Import Round: three steps - rounds, shots, cards - then Import with the ap
   await dlg.getByTestId('import-round-shot').filter({ hasText: 'cgi-043' }).locator('input').uncheck()
   await dlg.getByTestId('import-round-next').click()
   // 3. Choose cards for the shots
+  await dlg.locator('[data-testid="import-round-step"][data-step="1"]').click()   // a finished step can be revisited from the stepper
+  await expect(dlg.getByTestId('import-round-option').first()).toBeVisible()
+  await dlg.locator('[data-testid="import-round-step"][data-step="3"]').click()   // and so can the next one, once its shots are chosen
   await expect(dlg.getByTestId('import-round-card-row')).toHaveCount(1)
   await expect(dlg.getByTestId('import-round-estimate')).toContainText('6.98')
   await expect(dlg.getByTestId('import-round-max-pods')).toHaveValue('1')   // one pod per shot ticked
