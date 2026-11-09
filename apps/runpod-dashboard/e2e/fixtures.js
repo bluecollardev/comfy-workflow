@@ -375,7 +375,7 @@ export async function mockApi(page, state) {
     if (method === 'GET' && path === '/pods') return json(state.pods)
     if (method === 'POST' && path === '/pods') {
       const pod = { id: `pod-new-${state.pods.length + 1}`, name: body.name, status: 'starting', gpu: body.gpu, vram: 24,
-        ssh_command: 'ssh root@new.proxy.runpod.io', custom_config: !!body.config }
+        ssh_command: 'ssh root@new.proxy.runpod.io', custom_config: !!body.config, ...(body.round ? { round: body.round, round_label: (state.roundNames || {})[body.round] || body.round } : {}) }
       if (body.config) state.podConfigs[pod.id] = body.config
       state.pods.push(pod)
       return json(pod, 201)

@@ -29,6 +29,8 @@ export const webPortOf = (ports: string | null | undefined, fallback = 8188): nu
 }
 
 export interface CreatePodRequest {
+  /** The round to put the new pod in (ADR-039); none = no round. A map on our side. */
+  round?: string
   /** A full RunPod GPU type id (`NVIDIA ...`) outside the app's table, used by pull pods when none of the table's cards is free (ADR-022). */
   gpu_type_id?: string
   /** false: do not adapt the image and host to the card's CUDA (ADR-030). A pull pod never touches the GPU, so it boots the normal image wherever it lands. */
@@ -133,24 +135,34 @@ async function recordPod(action: history.PodAction, podId: string, client?: rp.R
 
 export async function create(req: CreatePodRequest, client?: rp.RunPodClient, credentialsEnv: Record<string, string> = {}): Promise<PodStatus> {
   if (!req.name?.trim()) throw bad('A pod needs a name')
+  if (req.round && (req.round.length > 120 || /[\\/]/.test(req.round))) throw bad('A round name is at most 120 characters and has no slash')   // before anything is spent
   const { cfg, own } = effectiveConfig(req)
   const { input, idleMinutes } = plan(req, cfg, credentialsEnv)
   if (mounts.dryRun(cfg)) {
     const p = dry.create({ name: req.name, gpu: req.gpu, gpu_count: input.gpuCount, image: input.imageName, idle_stop_minutes: idleMinutes > 0 ? idleMinutes : 0 })
     if (own) podconfigs.set(p.id, cfg)
-    history.record({ kind: 'pod', action: 'created', pod_id: p.id, name: req.name, gpu: p.gpu, cost_per_hr: 0 })
-    return { ...p, custom_config: own }
+    const rd = putInRound(p.id, req.round)
+    history.record({ kind: 'pod', action: 'created', pod_id: p.id, name: req.name, gpu: p.gpu, cost_per_hr: 0, ...(rd ? { detail: `in round ${rd}` } : {}) })
+    return { ...p, custom_config: own, ...roundOf(p.id) }
   }
   const { pod, gpuId } = await deployWithFallback(input, client)
   if (idleMinutes > 0) idle.register(pod.id, idleMinutes)
   if (own) podconfigs.set(pod.id, cfg)
+  putInRound(pod.id, req.round)
   const key = gpuKey(gpuId)
   void recordPod('created', pod.id, client, { name: req.name, gpu: `${key} x${input.gpuCount}` })
   return {
     id: pod.id, name: req.name, status: 'starting', gpu: `${key} x${input.gpuCount}`,
     vram: gpus.vram(key) * (input.gpuCount || 1), uptime_seconds: 0,
-    web_ui_url: idle.proxyUrl(pod.id, webPortOf(input.ports)), ssh_command: `ssh root@${pod.id}.proxy.runpod.io`, idle_stop_minutes: idleMinutes > 0 ? idleMinutes : 0, comfy_ready: false,
+    web_ui_url: idle.proxyUrl(pod.id, webPortOf(input.ports)), ssh_command: `ssh root@${pod.id}.proxy.runpod.io`, idle_stop_minutes: idleMinutes > 0 ? idleMinutes : 0, comfy_ready: false, ...roundOf(pod.id),
   }
+}
+/** A new pod goes into the round it was asked for (ADR-039); returns the round, or '' for none. */
+function putInRound(id: string, round?: string): string {
+  const r = String(round ?? '').trim()
+  if (r.length > 120 || /[\\/]/.test(r)) throw bad('A round name is at most 120 characters and has no slash')
+  if (r) podrounds.set(id, r)
+  return r
 }
 
 const gpuKey = (id: string) => Object.entries(gpus.GPUS).find(([, g]) => g.id === id)?.[0] || id

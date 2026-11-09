@@ -22,6 +22,7 @@ const toRequest = (podData) => ({
   start_ssh: podData.startSsh !== false,
   start_jupyter: podData.startJupyter === true,
   apply_mounts: podData.applyMounts !== false,
+  round: podData.round || undefined,   // the round to put the new pod in (ADR-039)
   config: podData.config || null,   // this pod's own configuration (the Default Configuration's shape), or the default
 });
 

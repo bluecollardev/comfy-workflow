@@ -39,4 +39,15 @@ describe('pods in rounds (ADR-039)', () => {
     await pods.remove(fresh.id)
     expect(pods.rounds()).toEqual([])
   })
+  it('a pod created with a round is in it from the start; a bad round is refused before anything is made', async () => {
+    const { create } = pods
+    const p = await create({ name: 'in-round', gpu: 'rtx4090', round: ' r9 ' } as any)
+    expect(p.round).toBe('r9')
+    expect((await pods.get(p.id)).round).toBe('r9')
+    const none = await create({ name: 'loose', gpu: 'rtx4090' } as any)
+    expect(none.round).toBeUndefined()
+    const before = dry.list().length
+    await expect(create({ name: 'bad', gpu: 'rtx4090', round: 'a/b' } as any)).rejects.toThrow(/slash/)
+    expect(dry.list().length).toBe(before)
+  })
 })

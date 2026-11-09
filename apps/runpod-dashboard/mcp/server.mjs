@@ -160,6 +160,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
           idle_stop_minutes: { type: 'integer', description: 'Stop the pod after this many quiet minutes; 0 = never. Omitted: the configuration\'s value' },
           apply_mounts: { type: 'boolean', description: 'Apply the mount configuration (volume, env, links). Omitted: the configuration\'s apply_by_default' },
           config: { type: 'object', description: "This pod's own configuration (the Default Configuration's shape, as get_configuration shows it), kept for recreate_pod" },
+          round: { type: 'string', maxLength: 120, description: 'Put the new pod in this delivery round (a map on our side; see set_pod_round). Omitted: no round' },
         },
         required: ['name'],
       },
@@ -279,7 +280,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
       if (refusal) return text(refusal, true)
       const req = {
         name: args.name, gpu: args.gpu || gpus.DEFAULT_GPU, image: args.image || pool.imageChoice(mounts.load()), data_center_id: args.datacenter || null,
-        idle_stop_minutes: args.idle_stop_minutes ?? null, apply_mounts: args.apply_mounts ?? null, config: args.config || null,
+        idle_stop_minutes: args.idle_stop_minutes ?? null, apply_mounts: args.apply_mounts ?? null, config: args.config || null, ...(args.round ? { round: String(args.round) } : {}),
         ...(args.gpu_type_id ? { gpu_type_id: args.gpu_type_id } : {}), ...(args.gpu_count ? { gpu_count: Number(args.gpu_count) } : {}), ...(args.instance_type ? { instance_type: args.instance_type } : {}),
         ...(args.disk_gb != null ? { disk_gb: Number(args.disk_gb) } : {}), ...(args.volume_gb != null ? { volume_gb: Number(args.volume_gb) } : {}), ...(args.start_ssh != null ? { start_ssh: !!args.start_ssh } : {}), ...(args.start_jupyter ? { start_jupyter: true } : {}),
         ...(args.env_vars ? { env_vars: args.env_vars } : {}), ...(args.pip_requirements ? { pip_requirements: args.pip_requirements } : {}), ...(Array.isArray(args.custom_nodes) && args.custom_nodes.length ? { custom_nodes: args.custom_nodes } : {}),

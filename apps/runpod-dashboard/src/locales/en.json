@@ -133,6 +133,8 @@
   },
   "form": {
     "name": "Name",
+    "round": "Round",
+    "roundHint": "Optional. Put the pod in a round; only this app remembers it.",
     "gpu": "GPU",
     "gpuCount": "GPU count",
     "instanceType": "Instance type",

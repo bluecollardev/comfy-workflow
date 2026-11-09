@@ -318,4 +318,17 @@ test.describe('create pod', () => {
     await page.getByTestId('pod-hints').uncheck()
     await expect(page.getByTestId('form-hint')).toHaveCount(0)
   })
+
+  test('the form has a Round choice (ADR-039): the new pod is created in that round', async ({ page, api }) => {
+    api.state.pods.find((x) => x.name === 'ComfyUI-Batch').round = 'brynley-comfy-2026-11-06'
+    await page.goto('/')
+    await openCreatePod(page)
+    await expect(page.getByTestId('form-round')).toHaveValue('')   // "No round" unless asked
+    await page.locator('#pod-name').fill('reel-1-pod')
+    await page.getByTestId('form-round').selectOption('brynley-comfy-2026-11-06')
+    await page.locator('[data-testid="dc-chip"][data-card="RTX 4000 Ada"][data-dc="EU-RO-1"]').click()
+    await page.getByRole('button', { name: /^Create/ }).last().click()
+    const round = page.locator('[data-testid="round-section"][data-round="brynley-comfy-2026-11-06"]')
+    await expect(round.getByTestId('pod-card').filter({ hasText: 'reel-1-pod' })).toHaveCount(1)
+  })
 })
