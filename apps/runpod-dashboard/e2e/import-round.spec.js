@@ -44,7 +44,9 @@ test('Import Round(s): the Import button is always there; a zip or folder droppe
   await page.goto('/')
   await page.getByTestId('open-import-round').click()
   const dlg = page.getByTestId('import-round-modal')
+  await page.setViewportSize({ width: 1000, height: 520 })   // a short window: the button is in the modal's footer, never scrolled out of sight
   await expect(dlg.getByTestId('import-round-start')).toBeDisabled()   // there before anything is ticked
+  await expect(dlg.getByTestId('import-round-start')).toBeInViewport()
   await expect(dlg.getByTestId('import-round-hint')).toBeVisible()
   await dlg.getByTestId('import-round-drop').evaluate((el) => {
     const dt = new DataTransfer(); const f = new File(['x'], 'brynley-extra.zip'); Object.defineProperty(f, 'path', { value: '/Users/x/brynley-extra.zip' }); dt.items.add(f)

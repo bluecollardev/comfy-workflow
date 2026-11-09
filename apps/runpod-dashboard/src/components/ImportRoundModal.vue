@@ -1,5 +1,5 @@
 <template>
-  <BModal v-model="open" :title="$t('importRound.title')" size="lg" scrollable no-footer data-testid="import-round-modal" @hidden="open = false">
+  <BModal v-model="open" :title="$t('importRound.title')" size="lg" scrollable data-testid="import-round-modal" @hidden="open = false">
     <div v-if="error" class="alert alert-danger small py-2" data-testid="import-round-error">{{ error }}</div>
     <div class="drop-zone rounded p-3 mb-3 text-center small" :class="{ over: dragOver }" data-testid="import-round-drop" @dragover.prevent="dragOver = true" @dragleave="dragOver = false" @drop.prevent="onDrop">
       <i class="fa-solid fa-file-zipper me-2"></i>{{ staging ? $t('importRound.dropping') : $t('importRound.drop') }}
@@ -54,11 +54,13 @@
         <BFormInput id="ir-by" v-model="approvedBy" size="sm" style="width: 12rem" :placeholder="$t('importRound.approvedByPlaceholder')" data-testid="import-round-approved-by" />
       </div>
     </template>
-    <div class="d-flex align-items-center gap-2 justify-content-end mt-3">
+    <template #footer>
+    <div class="d-flex align-items-center gap-2 justify-content-end w-100">
       <span v-if="!canStart" class="small text-body-secondary me-auto" data-testid="import-round-hint">{{ $t(!chosen.size ? 'importRound.hintPick' : totalShots ? 'importRound.hintApprove' : 'importRound.hintShots') }}</span>
       <BButton variant="outline-light" size="sm" @click="open = false">{{ $t('picker.cancel') }}</BButton>
       <BButton variant="success" size="sm" :disabled="!canStart || starting" data-testid="import-round-start" @click="start"><i class="fa-solid fa-file-import me-1"></i>{{ $t('importRound.start') }}</BButton>
     </div>
+    </template>
     <RoundFilesModal :round="browsing" target="local" @close="browsing = ''" />
   </BModal>
 </template>
