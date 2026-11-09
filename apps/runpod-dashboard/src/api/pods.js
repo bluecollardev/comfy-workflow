@@ -22,6 +22,7 @@ const toRequest = (podData) => ({
   start_ssh: podData.startSsh !== false,
   start_jupyter: podData.startJupyter === true,
   apply_mounts: podData.applyMounts !== false,
+  round: podData.round || undefined,   // the round to put the new pod in (ADR-039)
   config: podData.config || null,   // this pod's own configuration (the Default Configuration's shape), or the default
 });
 
@@ -36,6 +37,9 @@ const ipc = core && {
   datacenters: (fresh) => core.invoke('pods', 'datacenters', [!!fresh]),
   setIdle: (id, minutes) => core.invoke('pods', 'setIdle', [id, minutes]),
   rename: (id, name) => core.invoke('pods', 'rename', [id, name]),
+  setRound: (id, round) => core.invoke('pods', 'setRound', [id, round]),
+  renameRound: (round, name) => core.invoke('pods', 'renameRound', [round, name]),
+  deleteRound: (round) => core.invoke('pods', 'deleteRound', [round]),
   stopPod: (id) => core.invoke('pods', 'stop', [id]),
   resumePod: (id) => core.invoke('pods', 'resume', [id]),
   deletePod: (id) => core.invoke('pods', 'remove', [id]),
@@ -86,6 +90,24 @@ const http = {
   // The name this app shows for a pod (RunPod's own is untouched); empty goes back to RunPod's
   async rename(podId, name) {
     const { data } = await axios.put(`${API_BASE}/pods/${podId}/name`, { name });
+    return data;
+  },
+
+  // Put a pod in a round (ADR-039), or take it out with an empty round
+  async setRound(podId, round) {
+    const { data } = await axios.put(`${API_BASE}/pods/${podId}/round`, { round });
+    return data;
+  },
+
+  // Name a round in this app (the delivery round's own name is kept); empty goes back to it
+  async renameRound(round, name) {
+    const { data } = await axios.put(`${API_BASE}/rounds/name`, { round, name });
+    return data;
+  },
+
+  // Delete a round on our side: its pods leave it, nothing on RunPod is touched
+  async deleteRound(round) {
+    const { data } = await axios.delete(`${API_BASE}/rounds`, { params: { round } });
     return data;
   },
 

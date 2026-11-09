@@ -62,6 +62,10 @@ RUN [ ! -d /opt/ComfyUI/custom_nodes/ComfyUI-fal-API ] || python -c "import fal_
 # rclone, for the pod to pull from an S3 bucket itself (S3_PULL in entrypoint.sh).
 RUN apt-get update && apt-get install -y --no-install-recommends openssh-server rsync rclone \
     && rm -rf /var/lib/apt/lists/*
+# Headless Chromium for ui2api.py (ADR-037): converts a Workflows-panel graph to an API graph with ComfyUI's own frontend, on the pod. About 300 MB.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+RUN pip install --no-cache-dir playwright && playwright install --with-deps chromium && rm -rf /var/lib/apt/lists/*
+COPY docker/ui2api.py /opt/comfy-app/ui2api.py
 COPY docker/extra_model_paths.yaml /opt/comfy-app/extra_model_paths.yaml
 COPY workflows/ /opt/comfy-app/workflows/
 COPY docker/entrypoint.sh /opt/comfy-app/entrypoint.sh

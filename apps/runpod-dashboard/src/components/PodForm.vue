@@ -13,6 +13,11 @@
         </BFormGroup>
       </BCol>
       <BCol md="6" lg="4">
+        <BFormGroup :label="$t('form.round')" label-for="pod-round" :description="$t('form.roundHint')">
+          <BFormSelect id="pod-round" v-model="form.round" :options="roundChoices" data-testid="form-round" />
+        </BFormGroup>
+      </BCol>
+      <BCol md="6" lg="4">
         <BFormGroup :label="$t('form.instanceType')" label-for="pod-instance-type">
           <BFormSelect id="pod-instance-type" v-model="form.instanceType" :options="INSTANCE_TYPE_OPTIONS" />
         </BFormGroup>
@@ -401,6 +406,7 @@ import { useUiStore } from '../stores/ui'
 import { usePodsStore } from '../stores/pods'
 import { useMountsStore } from '../stores/mounts'
 import { useVolumesStore } from '../stores/volumes'
+import { usePanamaStore } from '../stores/panama'
 import DatacenterTable from './DatacenterTable.vue'
 import DockerfileModal from './DockerfileModal.vue'
 import { t } from '../i18n'
@@ -488,6 +494,7 @@ const emit = defineEmits(['pod-created'])
 
 const defaults = () => ({
   name: '',
+  round: '',
   gpu: 'auto',
   dataCenterId: '',
   gpuCount: 1,
@@ -507,6 +514,13 @@ const defaults = () => ({
 })
 
 const form = reactive(defaults())
+/** The rounds the new pod can go into (ADR-039): the bucket's, as far as the exchange is set up, and any that already has pods; "No round" first. */
+const panamaStore = usePanamaStore()
+const roundChoices = computed(() => {
+  const m = new Map((panamaStore.rounds || []).map((r) => [r.name, r.name]))
+  for (const p of pods.pods) if (p.round) m.set(p.round, p.round_label || p.round)
+  return [{ value: '', text: t('pod.roundNone') }, ...[...m.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([value, text]) => ({ value, text }))]
+})
 
 // The Mounts switch's one-line summary, the configured image and the idle default come from the mounts store.
 const ui = useUiStore()

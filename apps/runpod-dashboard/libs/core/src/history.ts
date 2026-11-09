@@ -11,9 +11,9 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { dirname } from 'node:path'
 import { historyFile } from './paths.js'
 
-export type PodAction = 'created' | 'started' | 'stopped' | 'recreated' | 'renamed' | 'deleted'
+export type PodAction = 'created' | 'started' | 'stopped' | 'recreated' | 'renamed' | 'moved' | 'deleted'
 export interface PodEvent { ts: string; kind: 'pod'; action: PodAction; pod_id: string; name: string; gpu?: string; datacenter?: string; cost_per_hr?: number | null; detail?: string }
-export interface JobEvent { ts: string; kind: 'job'; job: 'pull' | 'remove' | 'sync'; state: 'done' | 'failed' | 'cancelled'; started_at?: string; what: string; pod_id?: string; pod_name?: string; files?: number; bytes?: number; detail?: string; error?: string }
+export interface JobEvent { ts: string; kind: 'job'; job: 'pull' | 'remove' | 'sync' | 'run' | 'queue'; state: 'done' | 'failed' | 'cancelled'; started_at?: string; what: string; pod_id?: string; pod_name?: string; files?: number; bytes?: number; detail?: string; error?: string }
 /** A change to something that is not a pod or a job: a volume made, resized, deleted or made the default; the configuration saved or imported; a shot pack imported; an adapter saved. */
 export interface ChangeEvent { ts: string; kind: 'change'; area: 'volume' | 'configuration' | 'import' | 'adapter'; action: string; what: string; detail?: string }
 export type HistoryEvent = (PodEvent | JobEvent | ChangeEvent) & Origin
@@ -134,7 +134,7 @@ type Known = 'running' | 'stopped' | 'gone'
 export function observe(live: LivePod[], now: () => Date = () => new Date()): number {
   const state = new Map<string, { known: Known; name: string }>()
   for (const e of (list({ kind: 'pod', limit: MAX_LINES }).reverse() as PodEvent[])) {
-    state.set(e.pod_id, { known: e.action === 'created' || e.action === 'started' ? 'running' : e.action === 'stopped' ? 'stopped' : e.action === 'renamed' ? (state.get(e.pod_id)?.known ?? 'stopped') : 'gone', name: e.name })
+    state.set(e.pod_id, { known: e.action === 'created' || e.action === 'started' ? 'running' : e.action === 'stopped' ? 'stopped' : (e.action === 'renamed' || e.action === 'moved') ? (state.get(e.pod_id)?.known ?? 'stopped') : 'gone', name: e.name })
   }
   const seen = new Set(live.map((p) => p.id))
   let n = 0

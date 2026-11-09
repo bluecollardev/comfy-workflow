@@ -108,6 +108,9 @@ settings, or no-spend mode.
 | `create_pod` | `approved_by` (required), `name`, `gpu` (table, big cards by name, or `auto`), `gpu_type_id` (a raw RunPod id), `gpu_count`, `datacenter`, `instance_type`, `disk_gb`, `volume_gb`, `image` (`configured`, `prebuilt` or a reference), `idle_stop_minutes`, `apply_mounts`, `start_ssh`, `start_jupyter`, `env_vars`, `pip_requirements`, `custom_nodes`, `config` (a per-pod configuration) | the new pod; "no card available" lists what was tried. A datacenter other than the volume's needs `apply_mounts=false` (ADR-027); a Blackwell card boots the `-cu13` image on a CUDA 13 host by itself (ADR-030) | spend: named yes, USD cap |
 | `stop_pod` / `resume_pod` / `delete_pod` | `pod_id` | confirmation; resume reports a full host and suggests `recreate_pod` | delete asks nothing, as the card does after its confirm |
 | `recreate_pod` | `pod_id` | the new pod, the old one terminated, its own configuration carried | |
+| `set_pod_round` | `pod_id`, `round` (empty = out of its round) | the pod and its round | a map on our side only (ADR-039): the pod is not touched, no spend; list_pods and get_pod show `round` and `round_label` |
+| `delete_round` | `round` | the round and how many pods left it | the pods keep running; only our map and name are cleared |
+| `rename_round` | `round`, `name` (empty = the round's own) | the round and its shown name | the name is ours; the delivery round's own name stays the key |
 | `rename_pod` | `pod_id`, `name` (empty = RunPod's own) | the name shown and RunPod's | a map on our side only: RunPod is not told; list_pods and get_pod show it; it goes with Recreate and goes on Delete |
 | `get_history` | `kind` (`pod` or `job`, optional), `limit` (default 200) | the events newest first: pod created/started/stopped/recreated/renamed/deleted, and pull/remove/sync jobs with files and bytes | from this app's own log; IPC `history.list` |
 | `get_spend_history` | none | total, running now, sessions and cost by day, with a note that it is an estimate | worked out from the pod events; IPC `history.spend` |
@@ -175,6 +178,7 @@ Each tool calls the core function the window's IPC channel calls. `mcp/parity.mj
 |---|---|---|---|
 | `panama_status` | none | Is the BH exchange bucket reachable: the bucket, region, how it is read (the keys in the app or an AWS profile), where rounds are staged on this PC, and whether Pod mode is available |  |
 | `panama_rounds` | `target?` | The delivery rounds in the bucket with what is staged: on this PC (target local) or on the network volume as last seen by a pod (target pod). |  |
+| `panama_stage` | `paths` (absolute folders, .zip files or files) | the new round (name, path, files, bytes, zips extracted) | What a desktop drop on Import Round(s) does: copies into a new staging folder, extracts zips, never overwrites, no spend. |  |
 | `panama_round_files` | `round`, `prefix?`, `limit?` | One round's files in the bucket as a folder tree (read-only), each marked when already on this PC. |  |
 | `panama_round_size` | `round` | Files and bytes in one round (a listing; a big round takes a few seconds) |  |
 | `panama_pod_plan` | `round` | What a pod download of a round would do before it does it: use a pod of yours or start a short-lived one, its card and price, the volume, the size, the ceiling in minutes |  |
@@ -182,6 +186,14 @@ Each tool calls the core function the window's IPC channel calls. `mcp/parity.mj
 | `panama_job` | `id`, `target?` | Where a download (or delete) is: state, files, bytes done of total, rate, the latest files |  |
 | `panama_cancel` | `id`, `target?` | Stop a download; what is already there stays and a later pull resumes |  |
 | `panama_remove` | `round`, `target?`, `approved_by?` | Delete a round's staged copy: on this PC, or on the volume by a pod (needs approved_by: it uses a pod). | spend: named yes |
+| `plan_round_import` | `round`, `shots?`, `run_workflows?`, `max_pods?`, `cost_cap_usd?`, `cards?` | What importing a round would do and cost: shots, price, estimate, caps (ADR-038). | read |
+| `import_rounds` | `rounds` (each `round`, `shots?`, `cards?`, `max_pods?`), `run_workflows?`, `volume_id?`, `cost_cap_usd?` (total), `approved_by` | The imports queued, one per round | What the Import Round(s) window does: one approval, the dollar cap split evenly, every round planned first. Spends: needs `approved_by`. |
+| `import_round` | `round`, `shots?`, `run_workflows?`, `max_pods?`, `cost_cap_usd?`, `approved_by`, `cards?`, `volume_id?` | Queue a pull and one run-workflows task per shot; pool pods take them within the limits. One approval covers the import. | spend: named yes |
+| `queue_list` | | Every import and task with state, pod and error. | read |
+| `queue_task` | `action`, `id`, `max_pods?`, `cost_cap_usd?` | `cancel`, `retry`, `cancel_import` or `set_limits`. | read/act |
+| `list_pod_workflows` | `pod_id` | The graphs in a running pod's Workflows panel, grouped by folder (ADR-037). | read |
+| `run_pod_workflows` | `pod_id`, `paths`, `approved_by` | Run chosen graphs on the pod one after another: convert with ComfyUI's frontend, queue, wait; every outcome and error goes to the History. Returns a job. | spend: named yes |
+| `run_workflows_job` | `id`, `cancel?` | A run's graphs: waiting, running, done, failed (with the error) or skipped; `cancel` stops it. | read |
 | `panama_place` | `round`, `pod_id?`, `dry_run?` | Put a pod-pulled round where its graphs look (ADR-033), on a running pod of yours: inputs linked into `input/rounds/<round>/` and at the shipped path when free (a differing file is a conflict, never replaced), each loaded file also hard-linked at the top of `input/` as a unique name `<shot>__<stem>__<sha8>.<ext>` (ComfyUI's dropdown lists only top-level files), path-corrected graph copies in `workflows/rounds/<round>/` using those names (the originals stay in the round folder, not in the Workflows panel). A pod pull does it by itself once its check passes; this re-runs it. `dry_run` defaults to true (report only). Idempotent |
 | `panama_import` | `round`, `adapter?`, `dry_run?`, `overwrite?` | Import a downloaded round into ComfyUI-Shared (the window's Use): plans it through an adapter, and applies unless dry_run (default true). |  |
 

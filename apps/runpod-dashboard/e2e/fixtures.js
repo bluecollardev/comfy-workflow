@@ -88,7 +88,7 @@ export function defaultState() {
     imageBuildArgs: [],
     imageEnvSkipped: 0,
     // The mount configuration (GET /mounts): the image every pod boots and the idle default.
-    mounts: { config: { image: 'ghcr.io/example/comfy-app:v26', registry_auth_id: '', idle_stop_minutes: 30, sync_parallel: 8, sync_shared: ['input', 'models', 'workflows'], pull_shared: ['output'], network_volume_id: '', mount_path: '/workspace', apply_by_default: true, pull_any_card: true, dry_run: false, folders: { project: '', plates: '', 'comfy-shared': '' }, custom: [], env: {}, links: [], required: {} }, folders: [], links: [], mode: 'dev', require: [], require_source: 'config', stored: false, store: '', local_env: {}, preview: { env: {} }, catalog: {} },
+    mounts: { config: { image: 'ghcr.io/example/comfy-app:v26', registry_auth_id: '', idle_stop_minutes: 30, sync_parallel: 8, sync_shared: ['input', 'models', 'workflows'], pull_shared: ['output'], network_volume_id: '', mount_path: '/workspace', apply_by_default: true, pull_any_card: true, import_max_pods: 2, import_cost_cap_usd: 50, import_cap_enabled: true, dry_run: false, folders: { project: '', plates: '', 'comfy-shared': '' }, custom: [], env: {}, links: [], required: {} }, folders: [], links: [], mode: 'dev', require: [], require_source: 'config', stored: false, store: '', local_env: {}, preview: { env: {} }, catalog: {} },
     volumes: {
       vol1: { id: 'vol1', name: 'comfy-workspace', size_gb: 120, datacenter: 'EU-RO-1', cost_per_month: 8.4, s3: true, is_default: false, pods: [{ id: 'pod-aaaaaaaa', name: 'ComfyUI-Dev', status: 'running', via: 'runpod' }, { id: 'pod-cccccccc', name: 'ComfyUI-Test', status: 'starting', via: 'config' }] },
       vol2: { id: 'vol2', name: 'scratch', size_gb: 50, datacenter: 'CA-MTL-1', cost_per_month: 3.5, s3: false, is_default: false, pods: [] },
@@ -348,6 +348,14 @@ export async function mockApi(page, state) {
       return json({ ...base, built: '# Reconstructed from ' + image + '\nRUN git clone comfy\nCOPY packs /opt/ComfyUI/custom_nodes/' })
     }
     if ((m = path.match(/^\/volumes\/([^/]+)$/)) && method === 'GET') { const v = state.volumes[m[1]]; return v ? json(v) : json({ detail: `no network volume ${m[1]}` }, 404) }
+    if (method === 'POST' && path === '/queue/plan') return json({ round: body.round, shots: ['cgi-042', 'cgi-043'], price_per_hour: 3.99, pull_hours: 0.5, est_total_usd: 6.98, max_pods: 2, cost_cap_usd: 50, cap_enabled: true, over_cap: false })
+    if (method === 'POST' && path === '/queue/import-many') { for (const i of body.items) { const one = { round: i.round, shots: i.shots, cards: i.cards, max_pods: i.max_pods, cost_cap_usd: body.cost_cap_usd == null ? undefined : Math.round(body.cost_cap_usd / body.items.length * 100) / 100, approved_by: body.approved_by, run_workflows: body.run_workflows }; state.imported = one; (state.importedAll ||= []).push(one) }
+      state.queue = { imports: body.items.map((i, n) => ({ id: `imp${n + 1}`, round: i.round, approved_by: body.approved_by, state: 'active', spent_usd: 0, cap_enabled: true, cost_cap_usd: body.cost_cap_usd, max_pods: i.max_pods, counts: {} })), tasks: [{ id: 't1', import_id: 'imp1', round: body.items[0].round, shot: null, kind: 'pull', state: 'running', pod_name: 'pull' }, ...body.items[0].shots.map((s, k) => ({ id: `t${k + 2}`, import_id: 'imp1', round: body.items[0].round, shot: s, kind: 'run', state: k ? 'waiting' : 'failed', error: k ? undefined : 'boom (node 4, KSampler)' }))], active: 1 + body.items[0].shots.length }; return json(state.queue.imports) }
+    if (method === 'POST' && path === '/queue/import') { state.imported = body; (state.importedAll ||= []).push(body); state.queue = { imports: [{ id: 'imp1', round: body.round, approved_by: body.approved_by, state: 'active', spent_usd: 0, cap_enabled: true, cost_cap_usd: body.cost_cap_usd, max_pods: body.max_pods, counts: {} }], tasks: [{ id: 't1', import_id: 'imp1', round: body.round, shot: null, kind: 'pull', state: 'running', pod_name: 'pull' }, ...body.shots.map((s, i) => ({ id: `t${i + 2}`, import_id: 'imp1', round: body.round, shot: s, kind: 'run', state: i ? 'waiting' : 'failed', error: i ? undefined : 'boom (node 4, KSampler)' }))], active: 1 + body.shots.length }; return json(state.queue.imports[0]) }
+    if (method === 'GET' && path === '/queue') return json(state.queue || { imports: [], tasks: [], active: 0 })
+    if (method === 'GET' && path === '/runflows') return json({ pod_id: query.pod_id, pod_name: 'ComfyUI-Dev', count: 3, workflows: [{ path: 'rounds/r1/cgi-042/stereo.json', group: 'rounds/r1/cgi-042', name: 'stereo.json', size: 1, modified: 0 }, { path: 'rounds/r1/cgi-042/delivery.json', group: 'rounds/r1/cgi-042', name: 'delivery.json', size: 1, modified: 0 }, { path: 'rounds/r1/cgi-043/other.json', group: 'rounds/r1/cgi-043', name: 'other.json', size: 1, modified: 0 }] })
+    if (method === 'POST' && path === '/runflows') { state.ranFlows = body.paths; return json({ id: 'run-1', pod_id: body.pod_id, pod_name: 'ComfyUI-Dev', state: 'running', started_at: 'now', ok: 0, failed: 0, results: body.paths.map((p) => ({ path: p, state: 'pending' })) }) }
+    if (method === 'GET' && path.startsWith('/runflows/')) return json({ id: 'run-1', pod_id: 'pod-aaaaaaaa', pod_name: 'ComfyUI-Dev', state: 'done', started_at: 'now', ok: (state.ranFlows || []).length - 1, failed: 1, results: (state.ranFlows || []).map((p, i) => (i === 0 ? { path: p, state: 'failed', error: 'boom (node 4, KSampler)' } : { path: p, state: 'done' })) })
     if (method === 'GET' && path === '/history') { const ev = state.history.events.filter((e) => !query.kind || e.kind === query.kind); return json(query.limit ? ev.slice(0, Number(query.limit)) : ev) }
     if (method === 'GET' && path === '/history/export') { const csv = query.format === 'csv'; return json({ name: `history-${query.what || 'all'}.${csv ? 'csv' : 'json'}`, mime: csv ? 'text/csv' : 'application/json', text: csv ? 'ts,kind\n2026-11-03T10:00:00Z,pod\n' : JSON.stringify({ events: state.history.events, spend: state.history.spend }) }) }
     if (method === 'GET' && path === '/history/spend') return json(state.history.spend)
@@ -375,7 +383,7 @@ export async function mockApi(page, state) {
     if (method === 'GET' && path === '/pods') return json(state.pods)
     if (method === 'POST' && path === '/pods') {
       const pod = { id: `pod-new-${state.pods.length + 1}`, name: body.name, status: 'starting', gpu: body.gpu, vram: 24,
-        ssh_command: 'ssh root@new.proxy.runpod.io', custom_config: !!body.config }
+        ssh_command: 'ssh root@new.proxy.runpod.io', custom_config: !!body.config, ...(body.round ? { round: body.round, round_label: (state.roundNames || {})[body.round] || body.round } : {}) }
       if (body.config) state.podConfigs[pod.id] = body.config
       state.pods.push(pod)
       return json(pod, 201)
@@ -401,6 +409,20 @@ export async function mockApi(page, state) {
       const pod = state.pods.find((p) => p.id === m[1])
       if (pod) { if (!pod.runpod_name) pod.runpod_name = pod.name; pod.name = String(body.name || '').trim() || pod.runpod_name; if (pod.name === pod.runpod_name) delete pod.runpod_name }
       return json({ pod_id: m[1], name: pod?.name, runpod_name: pod?.runpod_name ?? null })
+    }
+    if ((m = path.match(/^\/pods\/([^/]+)\/round$/)) && method === 'PUT') {
+      const pod = state.pods.find((p) => p.id === m[1]); const r = String(body.round || '').trim()
+      if (pod) { if (r) { pod.round = r; pod.round_label = (state.roundNames ||= {})[r] || r } else { delete pod.round; delete pod.round_label } }
+      return json({ pod_id: m[1], round: r || null })
+    }
+    if (path === '/rounds' && method === 'DELETE') {
+      let n = 0; for (const p of state.pods) if (p.round === query.round) { delete p.round; delete p.round_label; n++ }
+      return json({ round: query.round, pods_released: n })
+    }
+    if (path === '/rounds/name' && method === 'PUT') {
+      const names = (state.roundNames ||= {}); if (body.name) names[body.round] = body.name; else delete names[body.round]
+      for (const p of state.pods) if (p.round === body.round) p.round_label = names[body.round] || body.round
+      return json({ round: body.round, label: names[body.round] || body.round })
     }
     if ((m = path.match(/^\/pods\/([^/]+)\/config$/)) && method === 'GET') return json(state.podConfigs[m[1]] || null)
     if ((m = path.match(/^\/pods\/([^/]+)\/config$/)) && method === 'PUT') {
@@ -573,6 +595,7 @@ export default {
     // MCP (the Connect › MCP tab)
     if (method === 'GET' && path === '/panama/status') { const pn = (state.panama ||= { configured: false }); return json({ configured: pn.configured, profile: 'panama', bucket: 'bh-panama-exchange-610140802195', region: 'us-west-2', staging: '/Users/lucas/panama-rounds', reason: pn.configured ? '' : 'No AWS profile named "panama"', pod: { available: !!pn.pod?.available, reason: pn.pod?.reason || 'Pod mode is not available in this build yet.', volume: pn.pod?.volume || POD_VOLUME } }) }
     if (method === 'GET' && path === '/panama/rounds') { const pn = state.panama || {}; const base = pn.rounds || [{ name: 'brynley-comfy-2026-10-23', staged: false, state: 'none', present: 0, expected: null, missing: null, bytes: 0 }, { name: 'brynley-comfy-2026-10-20', staged: false, state: 'partial', present: 391, expected: 1283, missing: 892, bytes: 8100000000 }, { name: 'brynley-inbox-2026-10-28-v001', staged: true, state: 'complete', present: 378, expected: 378, missing: 0, bytes: 623848 }]; return json(base.map((r) => (pn.deleted || []).includes(r.name) ? { ...r, staged: false, state: 'none', present: 0, expected: null, missing: null, bytes: 0 } : r)) }
+    if (method === 'POST' && path === '/panama/stage') { state.staged = body.paths; const n = String(body.paths[0]).split('/').pop().replace(/\.zip$/i, ''); return json({ round: n, path: `/staging/${n}`, files: 12, bytes: 4096, extracted: /\.zip$/i.test(body.paths[0]) ? 1 : 0 }) }
     if (method === 'GET' && path === '/panama/files') return json({ round: query.round, files: 4, bytes: 3200, entries: [{ path: '03_INBOX', dir: true, bytes: 3000, files: 2 }, { path: '03_INBOX/ENTRY.md', dir: false, bytes: 1000, local: true }, { path: '03_INBOX/shot-001.exr', dir: false, bytes: 2000, local: false }, { path: 'MANIFEST.json', dir: false, bytes: 200 }, { path: 'README.md', dir: false, bytes: 0 }] })
     if (method === 'GET' && path === '/panama/size') return json({ round: query.round, files: 5701, bytes: 29117613170 })
     if (method === 'DELETE' && path === '/panama/staged') { const pn = (state.panama ||= {}); (pn.deleted ||= []).push(query.round); return json({ round: query.round, freed: 1234567890 }) }

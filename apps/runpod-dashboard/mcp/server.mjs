@@ -160,6 +160,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
           idle_stop_minutes: { type: 'integer', description: 'Stop the pod after this many quiet minutes; 0 = never. Omitted: the configuration\'s value' },
           apply_mounts: { type: 'boolean', description: 'Apply the mount configuration (volume, env, links). Omitted: the configuration\'s apply_by_default' },
           config: { type: 'object', description: "This pod's own configuration (the Default Configuration's shape, as get_configuration shows it), kept for recreate_pod" },
+          round: { type: 'string', maxLength: 120, description: 'Put the new pod in this delivery round (a map on our side; see set_pod_round). Omitted: no round' },
         },
         required: ['name'],
       },
@@ -174,6 +175,9 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
     { name: 'get_comfy_logs', description: "ComfyUI's own server log read from a pod, oldest first, newest last: errors, warnings and feedback such as missing models or custom nodes, failed node imports, out-of-memory (OOM) and Python tracebacks. Each entry has `ts` (ISO time or null), `level` (error, warning, info) and `text`; `truncated` is true when older lines were cut by `lines`. Use `level` errors to find what went wrong, warnings for errors and warnings. The pod must be running (otherwise refused: start it first); an old ComfyUI with no log endpoint answers 501. For per-run results use get_comfy_runs", inputSchema: { type: 'object', properties: { pod_id: podId, level: { type: 'string', enum: ['all', 'warnings', 'errors'], description: 'all (default), warnings (warnings and errors) or errors' }, lines: { type: 'integer', minimum: 1, maximum: 2000, description: 'most lines to return, the newest (default 300, max 2000)' } }, required: ['pod_id'] } },
     { name: 'export_history', description: "Export the history as a file's text with its suggested file name: `what` events (the pod and job events, default) or spend (the sessions the cost is worked out from), as `format` json (default) or csv. Only reads: it writes no file, so save the text yourself if it is wanted on disk", inputSchema: { type: 'object', properties: { format: { type: 'string', enum: ['json', 'csv'] }, what: { type: 'string', enum: ['events', 'spend'] } } } },
     { name: 'rename_pod', description: "Name a pod in this app (a map on our side only: RunPod's own name is untouched). An empty name goes back to RunPod's. list_pods and get_pod then show it", inputSchema: { type: 'object', properties: { pod_id: podId, name: { type: 'string', maxLength: 80 } }, required: ['pod_id', 'name'] } },
+    { name: 'set_pod_round', description: "Put a pod in a delivery round, or take it out with an empty round (a map on our side only: the pod is not touched, no spend). A round holds a series of pods; list_pods and get_pod show each pod's `round`. Round names are the ones panama_rounds lists", inputSchema: { type: 'object', properties: { pod_id: podId, round: { type: 'string', maxLength: 120, description: 'the round name; empty takes the pod out of its round' } }, required: ['pod_id', 'round'] } },
+    { name: 'delete_round', description: "Delete a round on our side: its pods leave it (they keep running; nothing on RunPod is touched) and its name goes back to the key", inputSchema: { type: 'object', properties: { round: { type: 'string', maxLength: 120 } }, required: ['round'] } },
+    { name: 'rename_round', description: "Name a round in this app (a map on our side only: the delivery round's own name is kept as the key). An empty name goes back to the round's own. list_pods and get_pod show `round` and `round_label`", inputSchema: { type: 'object', properties: { round: { type: 'string', maxLength: 120, description: 'the round (its own name)' }, name: { type: 'string', maxLength: 80 } }, required: ['round', 'name'] } },
     { name: 'set_idle_stop', description: 'Set a pod\'s idle stop: stopped after this many minutes with nothing queued in its ComfyUI; 0 = never', inputSchema: { type: 'object', properties: { pod_id: podId, minutes: { type: 'integer', minimum: 0 } }, required: ['pod_id', 'minutes'] } },
     { name: 'get_logs', description: 'The last lines of a pod\'s logs from RunPod (container and system)', inputSchema: { type: 'object', properties: { pod_id: podId, lines: { type: 'integer', description: 'How many lines, 1-1000', default: 100 } }, required: ['pod_id'] } },
     { name: 'list_datacenters', description: 'Every listed datacenter with S3 support and EVERY card RunPod runs there, free or in use (nothing is hidden: ADR-027), NVIDIA and AMD, each with size, secure-cloud price, stock and whether the image can run it; datacenters with most free cards first. Cached a minute', inputSchema: { type: 'object', properties: { fresh: { type: 'boolean', description: 'Skip the cache and read RunPod now' } } } },
@@ -277,7 +281,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
       if (refusal) return text(refusal, true)
       const req = {
         name: args.name, gpu: args.gpu || gpus.DEFAULT_GPU, image: args.image || pool.imageChoice(mounts.load()), data_center_id: args.datacenter || null,
-        idle_stop_minutes: args.idle_stop_minutes ?? null, apply_mounts: args.apply_mounts ?? null, config: args.config || null,
+        idle_stop_minutes: args.idle_stop_minutes ?? null, apply_mounts: args.apply_mounts ?? null, config: args.config || null, ...(args.round ? { round: String(args.round) } : {}),
         ...(args.gpu_type_id ? { gpu_type_id: args.gpu_type_id } : {}), ...(args.gpu_count ? { gpu_count: Number(args.gpu_count) } : {}), ...(args.instance_type ? { instance_type: args.instance_type } : {}),
         ...(args.disk_gb != null ? { disk_gb: Number(args.disk_gb) } : {}), ...(args.volume_gb != null ? { volume_gb: Number(args.volume_gb) } : {}), ...(args.start_ssh != null ? { start_ssh: !!args.start_ssh } : {}), ...(args.start_jupyter ? { start_jupyter: true } : {}),
         ...(args.env_vars ? { env_vars: args.env_vars } : {}), ...(args.pip_requirements ? { pip_requirements: args.pip_requirements } : {}), ...(Array.isArray(args.custom_nodes) && args.custom_nodes.length ? { custom_nodes: args.custom_nodes } : {}),
@@ -314,6 +318,9 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
       const f = history.exportHistory({ format: format || 'json', what: what || 'events' })
       return text(`${f.name} (${f.mime})\n${f.text}`)
     },
+    set_pod_round: async ({ pod_id, round }) => json(await pods.setRound(pod_id, String(round ?? ''))),
+    delete_round: async ({ round }) => json(await pods.deleteRound(String(round ?? ''))),
+    rename_round: async ({ round, name }) => json(await pods.renameRound(String(round ?? ''), String(name ?? ''))),
     rename_pod: async ({ pod_id, name }) => json(await pods.rename(pod_id, String(name ?? ''))),
     set_idle_stop: async ({ pod_id, minutes }) => {
       const r = await pods.setIdleStop(pod_id, Number(minutes))

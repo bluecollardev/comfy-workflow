@@ -152,6 +152,27 @@ export const usePodsStore = defineStore('pods', () => {
     return r
   }
 
+  /** Put a pod in a round (ADR-039), or take it out with an empty round. A map on this app's side; the pod is not touched. */
+  async function setRound(id, round) {
+    const r = await toast.run(t('toast.round'), () => podsAPI.setRound(id, round), { ok: t('toast.rounded'), onError: (msg) => (actionError.value = msg) })
+    if (r.ok) await load()
+    return r
+  }
+
+  /** Name a round in this app (the delivery round's own name is kept); empty goes back to it. */
+  async function renameRound(round, name) {
+    const r = await toast.run(t('toast.renameRound'), () => podsAPI.renameRound(round, name), { ok: t('toast.renamed'), onError: (msg) => (actionError.value = msg) })
+    if (r.ok) await load()
+    return r
+  }
+
+  /** Delete a round: its pods leave it, nothing on RunPod is touched. */
+  async function deleteRound(round) {
+    const r = await toast.run(t('toast.deleteRound'), () => podsAPI.deleteRound(round), { ok: t('toast.roundDeleted'), onError: (msg) => (actionError.value = msg) })
+    if (r.ok) await load()
+    return r
+  }
+
   /** A pod's own configuration (null = the Default Configuration). */
   const config = (id) => podsAPI.config(id)
   /** Give a pod its own configuration, applied when it is recreated; null puts it back on the default. */
@@ -165,5 +186,5 @@ export const usePodsStore = defineStore('pods', () => {
   const details = (id) => podsAPI.details(id)
   const remove = (id) => act(id, podsAPI.deletePod, 'Delete')
 
-  return { sync, syncStarted, syncEnded, syncEvent, syncRecover, stats, pods, dryRun, initialLoading, refreshing, loadError, actionError, busyPodId, pending, load, rename, refreshList, startAutoRefresh, stopAutoRefresh, create, stop, stopAll, resume, remove, details, recreate, hostFull, setIdle, config, setConfig }
+  return { sync, syncStarted, syncEnded, syncEvent, syncRecover, stats, pods, dryRun, initialLoading, refreshing, loadError, actionError, busyPodId, pending, load, rename, setRound, renameRound, deleteRound, refreshList, startAutoRefresh, stopAutoRefresh, create, stop, stopAll, resume, remove, details, recreate, hostFull, setIdle, config, setConfig }
 })

@@ -41,6 +41,10 @@ export interface MountsConfig {
   apply_by_default: boolean
   /** Pull pods (the Pod download of a round, ADR-022/024) may take any NVIDIA card RunPod has free in the volume's datacenter, not only the table's ten; a pull needs no GPU. Default on. */
   pull_any_card: boolean
+  /** Round import (ADR-038): how many pool pods one import may run at once, the dollar cap on one import's estimate, and whether those two limits apply at all (the governance cap does not depend on this). */
+  import_max_pods: number
+  import_cost_cap_usd: number
+  import_cap_enabled: boolean
   required: Record<string, boolean>
   image: string
   registry_auth_id: string   // RunPod's saved credential for a private registry (saveRegistryAuth); '' for a public image
@@ -105,6 +109,9 @@ export function defaults(): MountsConfig {
     env: {},
     apply_by_default: true,
     pull_any_card: true,
+    import_max_pods: 2,
+    import_cost_cap_usd: 50,
+    import_cap_enabled: true,
     required: Object.fromEntries(names.map((n) => [n, false])),
     image: DEFAULT_IMAGE(),
     registry_auth_id: '',
@@ -149,6 +156,9 @@ export function normalize(data: Partial<MountsConfig>): MountsConfig {
     pull_shared: Array.isArray(data.pull_shared) ? SYNC_SHARED.filter((x) => data.pull_shared!.includes(x)) : d.pull_shared,
     sync_shared: Array.isArray(data.sync_shared) ? SYNC_SHARED.filter((x) => data.sync_shared!.includes(x)) : d.sync_shared,
     pull_any_card: data.pull_any_card !== false,   // absent means on
+    import_max_pods: Number.isInteger(data.import_max_pods) && (data.import_max_pods as number) >= 1 && (data.import_max_pods as number) <= 20 ? data.import_max_pods as number : 2,
+    import_cost_cap_usd: typeof data.import_cost_cap_usd === 'number' && data.import_cost_cap_usd > 0 ? data.import_cost_cap_usd : 50,
+    import_cap_enabled: data.import_cap_enabled !== false,   // absent means the cap is on
     dry_run: data.dry_run === true,
     mcp_http: normalizeMcpHttp(data.mcp_http),
   }

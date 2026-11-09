@@ -188,3 +188,85 @@ test.describe('Pod card: rename (a name on our side only)', () => {
     await expect(podCard(page, 'ComfyUI-Batch').getByTestId('pod-name')).toHaveText('ComfyUI-Batch')
   })
 })
+
+test.describe('Rounds: a round holds a series of pods (ADR-039)', () => {
+  test('pods group by round into collapsible lists; a pod is dropped into a round from its card; a round is renamable; empty and "No round" groups show', async ({ page, api }) => {
+    api.state.pods.find((p) => p.name === 'ComfyUI-Batch').round = 'brynley-comfy-2026-11-06'
+    api.state.pods.find((p) => p.name === 'ComfyUI-Batch').round_label = 'brynley-comfy-2026-11-06'
+    await page.goto('/')
+    const round = page.locator('[data-testid="round-section"][data-round="brynley-comfy-2026-11-06"]')
+    await expect(round.getByTestId('round-title')).toHaveText('brynley-comfy-2026-11-06')
+    await expect(round.getByTestId('pod-card')).toHaveCount(1)
+    await expect(page.locator('[data-testid="round-section"][data-round=""]').getByTestId('pod-card').first()).toBeVisible()   // the rest are in "No round"
+    // collapsible
+    await round.getByTestId('round-toggle').click()
+    await expect(round.getByTestId('pod-card')).toBeHidden()
+    await round.getByTestId('round-toggle').click()
+    await expect(round.getByTestId('pod-card')).toBeVisible()
+    // drop another pod in from its card
+    await podCard(page, 'ComfyUI-Dev').getByTestId('pod-round').selectOption('brynley-comfy-2026-11-06')
+    await expect(round.getByTestId('pod-card')).toHaveCount(2)
+    await expect(round.getByTestId('round-count')).toContainText('2')
+    // rename the round
+    await round.getByTestId('round-rename').click()
+    await round.getByTestId('round-rename-input').fill('Reel 1 conversions')
+    await round.getByTestId('round-rename-save').click()
+    await expect(round.getByTestId('round-title')).toHaveText('Reel 1 conversions')
+    // a pod leaves; the round stays listed
+    await podCard(page, 'ComfyUI-Dev').getByTestId('pod-round').selectOption('')
+    await expect(round.getByTestId('pod-card')).toHaveCount(1)
+    // group by round off: one plain list
+    await page.getByTestId('pods-round-toggle').click()
+    await expect(page.getByTestId('round-toggle')).toHaveCount(0)
+  })
+
+  test('beside each round: Import this round again opens Import Round with it chosen; Delete asks, then its pods leave it and keep running (ADR-039)', async ({ page, api }) => {
+    api.state.pods.find((p) => p.name === 'ComfyUI-Batch').round = 'brynley-comfy-2026-11-06'
+    const asked = []; let answer = 'dismiss'
+    page.on('dialog', (d) => { asked.push(d.message()); return answer === 'accept' ? d.accept() : d.dismiss() })
+    await page.goto('/')
+    const round = page.locator('[data-testid="round-section"][data-round="brynley-comfy-2026-11-06"]')
+    await round.getByTestId('round-reimport').click()
+    await expect(page.getByTestId('import-round-modal').locator('[data-testid="import-round-option"][data-round="brynley-comfy-2026-11-06"] input')).toBeChecked()
+    await page.getByTestId('import-round-modal').getByText('Cancel', { exact: true }).click()
+    await round.getByTestId('round-delete').click()   // Cancel: it stays
+    expect(asked).toHaveLength(1)
+    await expect(round.getByTestId('pod-card')).toHaveCount(1)
+    answer = 'accept'
+    await round.getByTestId('round-delete').click()
+    await expect(round).toHaveCount(0)
+    await expect(podCard(page, 'ComfyUI-Batch')).toBeVisible()   // the pod is still there, in "No round"
+  })
+
+  test('a pod card is dragged by its handle onto another round; the move asks first; Cancel leaves it; onto "No round" takes it out (ADR-039)', async ({ page, api }) => {
+    api.state.pods.find((p) => p.name === 'ComfyUI-Batch').round = 'round-a'
+    api.state.pods.find((p) => p.name === 'ComfyUI-Dev').round = 'round-b'
+    await page.setViewportSize({ width: 1280, height: 1800 })   // every round on screen: a drag that scrolls the page picks up another card
+    const asked = []; let answer = 'dismiss'
+    page.on('dialog', (d) => { asked.push(d.message()); return answer === 'accept' ? d.accept() : d.dismiss() })
+    await page.goto('/')
+    const a = page.locator('[data-testid="round-section"][data-round="round-a"]')
+    const b = page.locator('[data-testid="round-section"][data-round="round-b"]')
+    const none = page.locator('[data-testid="round-section"][data-round=""]')
+    await expect(a.getByTestId('pod-drag-handle')).toHaveCount(1)   // every card has its grip
+    // Cancel: nothing moves, and it asked once
+    await a.getByTestId('pod-drag-handle').dragTo(b.getByTestId('round-toggle'))
+    await expect.poll(() => asked.length).toBe(1)
+    expect(asked[0]).toContain('round-b')
+    await expect(a.getByTestId('pod-card')).toHaveCount(1)
+    await expect(b.getByTestId('pod-card')).toHaveCount(1)
+    // Confirm: it moves
+    answer = 'accept'
+    await a.getByTestId('pod-drag-handle').dragTo(b.getByTestId('round-toggle'))
+    await expect(b.getByTestId('pod-card')).toHaveCount(2)
+    await expect(a.getByTestId('pod-card')).toHaveCount(0)
+    expect(asked.length).toBe(2)
+    // Out of its round, onto "No round"
+    await b.getByTestId('pod-drag-handle').first().dragTo(none.getByTestId('round-toggle'))
+    await expect(b.getByTestId('pod-card')).toHaveCount(1)
+    expect(asked.length).toBe(3)
+    // Grouping by round off: no grips
+    await page.getByTestId('pods-round-toggle').click()
+    await expect(page.getByTestId('pod-drag-handle')).toHaveCount(0)
+  })
+})

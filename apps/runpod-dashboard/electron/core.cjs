@@ -23,6 +23,7 @@ async function loadCore() {
   let timer = null
   const push = () => { if (timer) return; timer = setTimeout(() => { timer = null; for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('core:history', {}) }, 250) }
   core.history.onChange(push)
+  core.queue.start()   // ADR-038: the round-import queue runs while the app is open
   // Events written by another process (the MCP server of another session, the CLI) arrive through the file.
   try { const hf = core.paths.historyFile(); require('node:fs').mkdirSync(path.dirname(hf), { recursive: true }); require('node:fs').watch(path.dirname(hf), (_ev, name) => { if (name === path.basename(hf)) push() }) } catch { /* in-process changes still push */ }
   return core
@@ -66,6 +67,10 @@ const TABLE = {
     datacenters: (c, fresh) => c.pods.datacenters(undefined, !!fresh),
     setIdle: (c, id, minutes) => c.pods.setIdleStop(id, Number(minutes)),
     rename: (c, id, name) => c.pods.rename(id, name),
+    setRound: (c, id, round) => c.pods.setRound(id, round || ''),
+    renameRound: (c, round, name) => c.pods.renameRound(round, name || ''),
+    deleteRound: (c, round) => c.pods.deleteRound(round),
+    rounds: (c) => c.pods.rounds(),
     credits: (c) => c.pods.credits(),
 
     details: (c, id) => c.pods.details(id),
@@ -124,11 +129,28 @@ const TABLE = {
     undo: (c) => c.configio.undoImport(),
     backups: (c) => c.configio.listBackups(),
   },
+  queue: {   // docs/ADR-038: importing a round queues work for the pool pods
+    plan: (c, round, opts) => c.queue.planImport(round, opts || {}),
+    import: (c, round, opts) => c.queue.importRound(round, opts || {}),
+    importMany: (c, items, opts) => c.queue.importRounds(items || [], opts || {}),
+    list: (c) => c.queue.list(),
+    cancelTask: (c, id) => c.queue.cancelTask(id),
+    cancelImport: (c, id) => c.queue.cancelImport(id),
+    retryTask: (c, id) => c.queue.retryTask(id),
+    setLimits: (c, id, limits) => c.queue.setImportLimits(id, limits || {}),
+  },
+  runflows: {   // docs/ADR-037: run workflows on a pod
+    list: (c, podId) => c.runflows.list(podId),
+    run: (c, podId, paths, approvedBy) => c.runflows.run(podId, paths, approvedBy ? { approvedBy } : {}),
+    job: (c, id) => c.runflows.job(id),
+    cancel: (c, id) => c.runflows.cancel(id),
+  },
   panama: {   // docs/ADR-015: the exchange bucket as an import source
     status: (c) => c.panama.status(),
-    rounds: (c) => c.panama.rounds(),
-    size: (c, round) => c.panama.size(round),
-    files: (c, round) => c.panama.files(round),
+    rounds: (c) => c.panama.roundsAsync(),   // not the sync ones: they would hold the main process, and so the window, while aws lists the bucket
+    size: (c, round) => c.panama.sizeAsync(round),
+    files: (c, round) => c.panama.filesAsync(round),
+    stageDrop: (c, paths) => c.panama.stageDrop(paths),
     pull: (c, round) => c.panama.pull(round),
     job: (c, id) => c.panama.job(id),
     cancel: (c, id) => c.panama.cancel(id),

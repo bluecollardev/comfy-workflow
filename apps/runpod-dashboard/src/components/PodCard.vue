@@ -1,6 +1,7 @@
 <template>
   <BCard class="h-100" body-class="d-flex flex-column" data-testid="pod-card" :data-name="pod.name">
     <div class="d-flex align-items-start gap-2 mb-3">
+      <span v-if="handle" class="pod-handle text-body-secondary" draggable="true" role="button" :title="$t('pod.dragHandle')" :aria-label="$t('pod.dragHandle')" data-testid="pod-drag-handle" @dragstart="onHandleDragStart" @dragend="emit('dragend')"><i class="fa-solid fa-grip-vertical"></i></span>
       <template v-if="!renaming">
         <span class="fw-semibold fs-5 text-truncate" :title="pod.runpod_name ? $t('pod.runpodName', { name: pod.runpod_name }) : pod.name" data-testid="pod-name">{{ pod.name }}</span>
         <button type="button" class="btn btn-link btn-sm p-0 align-baseline text-body-secondary" :title="$t('pod.rename')" :aria-label="$t('pod.editTitle')" data-testid="pod-rename" @click="startRename"><i class="fa-solid fa-pencil fa-xs"></i></button>
@@ -29,6 +30,14 @@
 
       <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.gpu') }}</dt>
       <dd class="col-8 mb-0">{{ pod.gpu }}<span v-if="pod.vram" class="text-body-secondary"> · {{ pod.vram }} GB</span></dd>
+
+      <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.round') }}</dt>
+      <dd class="col-8 mb-0">
+        <select class="form-select form-select-sm" :value="pod.round || ''" :disabled="busy" :aria-label="$t('pod.roundPick')" :title="$t('pod.roundTip')" data-testid="pod-round" @change="emit('round', $event.target.value)">
+          <option value="">{{ $t('pod.roundNone') }}</option>
+          <option v-for="r in roundOptions" :key="r.round" :value="r.round">{{ r.label }}</option>
+        </select>
+      </dd>
 
       <template v-if="pod.uptime_seconds">
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.uptime') }}</dt>
@@ -117,6 +126,9 @@
       <BButton variant="primary" size="sm" class="flex-grow-1 text-nowrap" :title="$t('pod.importShotPackTitle')" data-testid="pod-import" @click="openImport">
         <i class="fa-solid fa-file-import me-1"></i>{{ $t('pod.importShotPack') }}
       </BButton>
+      <BButton variant="success" size="sm" class="flex-grow-1 text-nowrap" :disabled="pod.status !== 'running'" :title="pod.status === 'running' ? $t('runflows.buttonTitle') : $t('runflows.needsRunning')" data-testid="pod-run-workflows" @click="showRunFlows = true">
+        <i class="fa-solid fa-play me-1"></i>{{ $t('runflows.button') }}
+      </BButton>
     </div>
     <div v-if="showDetails" class="small mb-2" data-testid="pod-details">
       <div v-if="detailsError" class="text-danger">{{ detailsError }}</div>
@@ -134,6 +146,7 @@
     </div>
     <ConfigModal v-if="configOpen" mode="pod" v-model="configOpen" :initial="ownConfig" :pod-name="pod.name" :pod-id="pod.id" :runpod-name="pod.runpod_name || ''" @apply="applyConfig" />
     <SyncModal v-model="showSync" :pod="pod" />
+    <RunWorkflowsModal v-if="showRunFlows" v-model="showRunFlows" :pod="pod" />
     <BModal v-model="showLogs" :title="$t('pod.logsTitle', { name: pod.name })" size="xl" scrollable ok-only :ok-title="$t('pod.close')" ok-variant="outline-light" body-class="p-0" @hidden="showLogs = false">
       <PodLogs v-if="showLogs" :pod-id="pod.id" modal />
     </BModal>
@@ -194,6 +207,7 @@
 import { t } from '../i18n'
 import { computed, onMounted, ref, watch } from 'vue'
 import PodLogs from './PodLogs.vue'
+import RunWorkflowsModal from './RunWorkflowsModal.vue'
 import SyncModal from './SyncModal.vue'
 import DockerfileModal from './DockerfileModal.vue'
 import ConfigModal from './ConfigModal.vue'
@@ -205,8 +219,14 @@ import { barValue, detailParts, fresh } from '../sync-progress'
 const props = defineProps({
   pod: { type: Object, required: true },
   busy: { type: Boolean, default: false },
+  handle: { type: Boolean, default: false },   // show the grip a card is dragged by, to move it to another round (ADR-039)
+  rounds: { type: Array, default: () => [] },   // the rounds a pod can be dropped into (ADR-039)
 })
-const emit = defineEmits(['stop', 'resume', 'delete', 'rename'])
+const emit = defineEmits(['stop', 'resume', 'delete', 'rename', 'round', 'dragstart', 'dragend'])
+/** The grip starts the drag; the whole card is the picture that follows the pointer. */
+const onHandleDragStart = (e) => { const card = e.target.closest('[data-testid="pod-card"]'); if (card && e.dataTransfer?.setDragImage) e.dataTransfer.setDragImage(card, 24, 24); emit('dragstart', e) }
+/** The choices: the known rounds, plus the pod's own when it is not among them. */
+const roundOptions = computed(() => (props.pod.round && !props.rounds.some((r) => r.round === props.pod.round) ? [{ round: props.pod.round, label: props.pod.round_label || props.pod.round }, ...props.rounds] : props.rounds))
 /** The name is ours: a map on this app's side (RunPod keeps its own). Empty goes back to RunPod's name. */
 const renaming = ref(false)
 const draft = ref('')
@@ -247,6 +267,7 @@ const toast = useToastStore()
 const showDetails = ref(false)
 const showLogs = ref(false)
 const showSync = ref(false)
+const showRunFlows = ref(false)
 const ui = useUiStore()
 /** Import Shot Pack: its own modal (a package folder into ComfyUI-Shared through an adapter; Sync then puts it on this pod, ADR-008). */
 /** One button: the modal opens on the source picker (a folder or zip on this PC, or the Panama bucket). */
@@ -308,3 +329,8 @@ function confirmDelete() {
   }
 }
 </script>
+
+<style scoped>
+.pod-handle { cursor: grab; padding: 2px 4px; align-self: center; }
+.pod-handle:active { cursor: grabbing; }
+</style>
