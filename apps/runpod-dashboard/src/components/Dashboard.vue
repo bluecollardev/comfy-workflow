@@ -134,23 +134,26 @@ const hiddenRounds = ref(new Set(JSON.parse(localStorage.getItem('pods.hiddenRou
 const hideRound = (r, on) => { const n = new Set(hiddenRounds.value); on ? n.add(r) : n.delete(r); hiddenRounds.value = n; localStorage.setItem('pods.hiddenRounds', JSON.stringify([...n])) }
 const roundNames = computed(() => {
   const m = new Map((panama.rounds || []).filter((r) => !hiddenRounds.value.has(r.name)).map((r) => [r.name, r.name]))
+  for (const r of panama.podView?.rounds || []) if (r.state !== 'none' && !hiddenRounds.value.has(r.name)) m.set(r.name, r.name)   // what a pod pulled onto the volume
   for (const p of pods.pods) if (p.round) m.set(p.round, p.round_label || p.round)
   return [...m.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([round, label]) => ({ round, label }))
 })
 /** Rounds with no pod are out of the way until asked for ("Show empty rounds"); then each says where its files are. */
 const showEmpty = ref(localStorage.getItem('pods.showEmptyRounds') === '1')
 watch(showEmpty, (v) => localStorage.setItem('pods.showEmptyRounds', v ? '1' : '0'))
-const emptyCount = computed(() => roundNames.value.filter((r) => !pods.pods.some((p) => p.round === r.round)).length)
+/** A round with its files on this PC or on the volume is listed even with no pod: it is something we imported. */
+const hasData = (round) => facts(round).length > 0
+const emptyCount = computed(() => roundNames.value.filter((r) => !pods.pods.some((p) => p.round === r.round) && !hasData(r.round)).length)
 const facts = (round) => {
   const out = [], loc = (panama.rounds || []).find((r) => r.name === round), vol = (panama.podView?.rounds || []).find((r) => r.name === round)
   if (loc && loc.state !== 'none') out.push(t('dashboard.factLocal', { n: loc.present }))
-  if (vol && vol.state !== 'none') out.push(t('dashboard.factVolume', { n: vol.present }))
+  if (vol && vol.state !== 'none') out.push(t('dashboard.factVolume', { n: vol.present, name: panama.podView?.volume?.name || '' }))
   return out
 }
 /** What the list shows: with rounds on, every round (empty ones too) then the pods in no round; with rounds off, one list. */
 const sections = computed(() => {
   if (!byRound.value) return pods.pods.length ? [{ key: '*', round: null, label: '', pods: pods.pods }] : []
-  const out = roundNames.value.map((r) => ({ key: r.round, round: r.round, label: r.label, pods: pods.pods.filter((p) => p.round === r.round) })).filter((s) => s.pods.length || showEmpty.value)
+  const out = roundNames.value.map((r) => ({ key: r.round, round: r.round, label: r.label, pods: pods.pods.filter((p) => p.round === r.round) })).filter((s) => s.pods.length || hasData(s.round) || showEmpty.value)
   const rest = pods.pods.filter((p) => !p.round)
   if (rest.length || !out.length) out.push({ key: '', round: null, label: t('dashboard.unassigned'), pods: rest })
   return out

@@ -196,6 +196,8 @@ test.describe('Rounds: a round holds a series of pods (ADR-039)', () => {
     api.state.panama = { configured: true }
     await page.goto('/')
     await expect(page.locator('[data-testid="round-section"][data-round="brynley-comfy-2026-10-23"]')).toHaveCount(0)   // a bucket round with no pod is not listed
+    const imported = page.locator('[data-testid="round-section"][data-round="brynley-comfy-2026-10-22"]')
+    await expect(imported.getByTestId('round-fact')).toContainText('files')   // imported rounds are listed with no pod
     await page.getByTestId('pods-empty-toggle').click()
     await expect(page.locator('[data-testid="round-section"][data-round="brynley-comfy-2026-10-23"]')).toHaveCount(1)   // until asked for
     await page.getByTestId('pods-empty-toggle').click()
