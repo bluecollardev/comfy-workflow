@@ -118,11 +118,27 @@ print(" ".join(sorted(seen, key=lambda v: int(v[1:]))))
 PY
 }
 pack_dir() { for f in portable bound; do [ -d "$NODES/$f/$1" ] && { echo "$NODES/$f/$1"; return; }; done; return 1; }
-for d in "$NODES"/portable/*/ "$NODES"/bound/*/; do
-  [ -d "$d" ] || continue
-  n="$(basename "$d")"; case "$n" in ComfyUI-BH-ShotPipe-*) continue ;; esac
-  rsync -a --exclude __pycache__ --exclude tests --exclude test-input "$d" "$STAGE/$n/"; echo "staged: $n"
-done
+# A set from sets.json stages exactly its own packs (lean tree: no second copy of a pack under another version that
+# registers the same node names); anything else stages every pack as before.
+SET_PACKS="$(python3 -c '
+import json, sys
+sets = json.load(open(sys.argv[1])); names = [n for n in sys.argv[2].split(",") if n]
+ok = names and all(isinstance(sets.get(n), dict) for n in names)
+packs = [p for n in names if ok for p in sets[n]["packs"] if "ShotPipe" not in p]
+print(" ".join(dict.fromkeys(packs)))
+' "$NODES/sets.json" "${SHOTPIPE:-}")"
+if [ -n "$SET_PACKS" ]; then
+  for n in $SET_PACKS; do
+    d="$(pack_dir "$n")" || { echo "set pack $n not in $NODES/portable or bound" >&2; exit 1; }
+    rsync -a --exclude __pycache__ --exclude tests --exclude test-input "$d/" "$STAGE/$n/"; echo "staged (set): $n"
+  done
+else
+  for d in "$NODES"/portable/*/ "$NODES"/bound/*/; do
+    [ -d "$d" ] || continue
+    n="$(basename "$d")"; case "$n" in ComfyUI-BH-ShotPipe-*) continue ;; esac
+    rsync -a --exclude __pycache__ --exclude tests --exclude test-input "$d" "$STAGE/$n/"; echo "staged: $n"
+  done
+fi
 PACKS_REV="$(git -C "$NODES" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 IFS=, read -ra REQUESTED <<< "$SHOTPIPE"
 VERSIONS=(); for r in "${REQUESTED[@]}"; do for v in $(expand_set "$r"); do VERSIONS+=("$v"); done; done

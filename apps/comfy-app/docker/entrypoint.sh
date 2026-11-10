@@ -4,6 +4,10 @@
 #   COMFY_SHARED  root of the shared input/output/models/workflows tree (default /workspace/comfy-shared)
 #   COMFY_PORT    default 8188
 #   COMFY_ARGS    extra arguments for main.py, e.g. "--highvram"
+#   COMFY_MODE    worker | ui | both (default both): worker = the queue the pod manager drives, on COMFY_PORT, --cache-none;
+#                 ui = a second ComfyUI on COMFY_UI_PORT (default 8189) for watching and editing during the run (ssh -L 8189:localhost:8189)
+#   Every instance starts with the same head flags: --base-directory /opt/ComfyUI (the frozen tree: custom_nodes and
+#   models baked at build), --offline (no frontend, registry or partner-node network), no Manager (--enable-manager never passed).
 #   COMFY_LINKS   "path=target;..." symlinks to make binc-PC paths resolve on the volume (see below)
 #   S3_PULL       "bucket/prefix=/local/dir;..." pulled from S3 at start, in the background (see below)
 #   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, S3_ENDPOINT   credentials for S3_PULL (endpoint only for non-AWS)
@@ -53,11 +57,27 @@ if [ -n "${S3_PULL:-}" ]; then
   /opt/comfy-app/s3pull.sh &
 fi
 TREE="${PROJECT_ROOT:-/workspace/project}"
-[ -e "$TREE" ] || echo "note: $TREE is not present; corrosion graphs will not find the project tree" >&2
+[ -e "$TREE" ] || echo "note: $TREE is not present; graphs will not find the project tree" >&2
 cd /opt/ComfyUI
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+MODE="${COMFY_MODE:-both}"
+# --headless and --dont-up-weights are our own launch tags, not ComfyUI flags (its parser exits on them): accepted
+# here and dropped, so a launch line or COMFY_ARGS that carries them still starts.
+keep=(); for a in "$@"; do case "$a" in --headless|--dont-up-weights) ;; *) keep+=("$a") ;; esac; done; set -- "${keep[@]+"${keep[@]}"}"
+ca=""; for a in ${COMFY_ARGS:-}; do case "$a" in --headless|--dont-up-weights) ;; *) ca="$ca $a" ;; esac; done; COMFY_ARGS="${ca# }"
+UI_PORT="${COMFY_UI_PORT:-8189}"
+# The head flag first: ComfyUI builds custom_nodes, models and user from the frozen tree and nothing else.
+HEAD=(--base-directory /opt/ComfyUI --offline --disable-auto-launch)
+IO=(--input-directory "$SHARED/input" --output-directory "$SHARED/output" --extra-model-paths-config /opt/comfy-app/extra_model_paths.yaml)
+if [ "$MODE" = ui ] || [ "$MODE" = both ]; then
+  mkdir -p /opt/comfy-ui-instance/user /opt/comfy-ui-instance/temp
+  # shellcheck disable=SC2086
+  python main.py "${HEAD[@]}" --listen 0.0.0.0 --port "$UI_PORT" "${IO[@]}" \
+    --user-directory /opt/comfy-ui-instance/user --temp-directory /opt/comfy-ui-instance/temp \
+    ${COMFY_ARGS:-} > /var/log/comfy-ui.log 2>&1 &
+  echo "ui instance on $UI_PORT (log /var/log/comfy-ui.log)"
+fi
+if [ "$MODE" = ui ]; then wait; exit $?; fi
 # shellcheck disable=SC2086
-exec python main.py --listen 0.0.0.0 --port "$PORT" \
-  --input-directory "$SHARED/input" \
-  --output-directory "$SHARED/output" \
-  --extra-model-paths-config /opt/comfy-app/extra_model_paths.yaml \
+exec python main.py "${HEAD[@]}" --listen 0.0.0.0 --port "$PORT" "${IO[@]}" --cache-none \
   ${COMFY_ARGS:-} "$@"

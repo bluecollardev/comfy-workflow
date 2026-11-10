@@ -54,9 +54,20 @@ COPY .build/custom_nodes/ /opt/ComfyUI/custom_nodes/
 RUN for req in /opt/ComfyUI/custom_nodes/*/requirements.txt; do \
         [ -f "$req" ] || continue; \
         sed -E 's/^opencv-python([<>=!~].*)?$/opencv-python-headless\1/' "$req" > /tmp/pack-req.txt; \
-        pip install -r /tmp/pack-req.txt; done; rm -f /tmp/pack-req.txt; true
-# The loop above ignores a failed install (as it always has); the fal pack must not be silently without its client library: fail the build instead (ADR-025).
+        pip install -r /tmp/pack-req.txt; done; rm -f /tmp/pack-req.txt
+# The loop above fails the build on a failed install (frozen image: nothing is installed at run time).
+# the fal pack must not be silently without its client library: fail the build instead (ADR-025).
 RUN [ ! -d /opt/ComfyUI/custom_nodes/ComfyUI-fal-API ] || python -c "import fal_client"
+# Depth Anything V2 Large, baked at a pinned revision where BincStereo looks (models/depth_anything): no download at run time.
+ARG DA2_REV=7581137eff8d4e94f6e796d3baea0e9fa79b22d2
+RUN python -c "from huggingface_hub import snapshot_download as d; d('depth-anything/Depth-Anything-V2-Large-hf', revision='${DA2_REV}', local_dir='/opt/ComfyUI/models/depth_anything/Depth-Anything-V2-Large-hf', allow_patterns=['config.json','model.safetensors','preprocessor_config.json'])" \
+    && rm -rf /opt/ComfyUI/models/depth_anything/Depth-Anything-V2-Large-hf/.cache \
+    && ls -la /opt/ComfyUI/models/depth_anything/Depth-Anything-V2-Large-hf
+# Load check: every baked pack must import in the frozen tree, or the build fails (the run-time lock-up caught here instead).
+RUN python main.py --cpu --base-directory /opt/ComfyUI --offline --quick-test-for-ci > /tmp/load.log 2>&1; cat /tmp/load.log; \
+    grep -q "Import times for custom nodes" /tmp/load.log && ! grep -q "IMPORT FAILED" /tmp/load.log; \
+    s=$?; rm -rf /opt/ComfyUI/user /opt/ComfyUI/temp /tmp/load.log; exit $s
+ENV HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 
 # sshd (RunPod injects PUBLIC_KEY; the entrypoint starts it) and rsync, for ./start.sh sync onto the volume;
 # rclone, for the pod to pull from an S3 bucket itself (S3_PULL in entrypoint.sh).
@@ -72,7 +83,7 @@ RUN chmod +x /opt/comfy-app/entrypoint.sh /opt/comfy-app/verify_round.py /opt/co
     && ln -s /workspace/project /home/binc/CANALV2_r3/CANALV2
 
 LABEL org.opencontainers.image.source="https://github.com/bluecollardev/comfy-workflow"
-EXPOSE 8188
+EXPOSE 8188 8189
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
     CMD curl -fs "http://127.0.0.1:${COMFY_PORT}/system_stats" || exit 1
 
