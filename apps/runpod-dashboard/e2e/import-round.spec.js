@@ -7,10 +7,10 @@ test('Import Round: three steps - rounds, shots, cards - then Import with the ap
   await page.getByTestId('open-import-round').click()
   const dlg = page.getByTestId('import-round-modal')
   // 1. Choose rounds
-  await expect(dlg.locator('[data-testid="import-round-step"][data-active="true"]')).toContainText('Choose rounds')
+  await expect(dlg.locator('[data-testid="import-round-step"][data-active="true"]')).toContainText('Choose Rounds')
   await dlg.getByTestId('import-round-next').click()   // nothing chosen: Next says why instead of doing nothing
   await expect(dlg.getByTestId('import-round-error')).toBeVisible()
-  await expect(dlg.locator('[data-testid="import-round-step"][data-active="true"]')).toContainText('Choose rounds')
+  await expect(dlg.locator('[data-testid="import-round-step"][data-active="true"]')).toContainText('Choose Rounds')
   await dlg.getByTestId('import-round-option').first().locator('input').check()
   await dlg.getByTestId('import-round-browse').first().click()   // the round's files as a folder tree
   await expect(page.getByTestId('round-files-modal').getByTestId('round-files-row')).toHaveCount(5)
@@ -18,7 +18,7 @@ test('Import Round: three steps - rounds, shots, cards - then Import with the ap
   await expect(dlg.locator('.stepper-item[data-done="true"]')).toHaveCount(1)   // step 1 is green with a check as soon as the round is chosen
   await dlg.getByTestId('import-round-next').click()
   // 2. Choose shots
-  await expect(dlg.locator('[data-testid="import-round-step"][data-active="true"]')).toContainText('Choose shots')
+  await expect(dlg.locator('[data-testid="import-round-step"][data-active="true"]')).toContainText('Choose Shots')
   await expect(dlg.getByTestId('import-round-shot')).toHaveCount(2)
   await dlg.getByTestId('import-round-shot').filter({ hasText: 'cgi-043' }).locator('input').uncheck()
   await dlg.getByTestId('import-round-next').click()
@@ -131,7 +131,7 @@ test('Import Round(s): a round with no shots is refused on its own row and stays
   await expect(dlg.getByTestId('import-round-row-error')).toContainText('No shots in this round')
   await expect(row.locator('input')).not.toBeChecked()
   await dlg.getByTestId('import-round-next').click()   // still nothing valid chosen
-  await expect(dlg.locator('[data-testid="import-round-step"][data-active="true"]')).toContainText('Choose rounds')
+  await expect(dlg.locator('[data-testid="import-round-step"][data-active="true"]')).toContainText('Choose Rounds')
   await dlg.locator('[data-testid="import-round-option"][data-round="brynley-comfy-2026-10-23"] input').check()
   await expect(dlg.getByTestId('import-round-row-error')).toHaveCount(1)   // the other round's check did not clear it
   await dlg.getByTestId('import-round-next').click()
