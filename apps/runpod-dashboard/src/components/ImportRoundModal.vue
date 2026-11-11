@@ -26,7 +26,7 @@
       </div>
       <div class="form-label small mb-1">{{ $t('importRound.rounds') }}</div>
       <div class="border rounded p-2 round-list" data-testid="import-round-list">
-        <div v-for="r in roundNamesList" :key="r" class="d-flex align-items-center gap-2 small" data-testid="import-round-option" :data-round="r">
+        <div v-for="r in roundNamesList" :key="r" class="d-flex align-items-center gap-2 small round-row" data-testid="import-round-option" :data-round="r">
           <input :id="`irr-${r}`" type="checkbox" class="form-check-input mt-0" :checked="chosen.has(r)" @change="toggleRound(r, $event.target.checked)" />
           <label :for="`irr-${r}`" class="font-monospace mb-0 flex-grow-1">{{ r }}</label>
           <BButton variant="outline-light" size="sm" class="py-0 text-nowrap" data-testid="import-round-browse" @click="browsing = r"><i class="fa-solid fa-folder-tree me-1"></i>{{ $t('importRound.browse') }}</BButton>
@@ -232,5 +232,7 @@ async function start() {
 .stepper-label { font-size: 0.85rem; }
 .drop-zone { border: 2px dashed rgba(255, 255, 255, 0.3); color: var(--bs-secondary-color); }
 .drop-zone.over { border-color: #508cff; background: rgba(80, 140, 255, 0.12); color: inherit; }
-.round-list { max-height: 12rem; overflow: auto; }
+.round-list { max-height: 14rem; overflow: auto; }
+.round-row { padding: 0.3rem 0; }
+.round-row + .round-row { border-top: 1px solid rgba(255, 255, 255, 0.08); }
 </style>
