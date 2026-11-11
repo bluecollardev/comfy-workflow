@@ -49,17 +49,19 @@
                 <span v-if="renamingRound !== sec.round" class="fw-semibold" data-testid="round-title" :title="sec.round && sec.label !== sec.round ? sec.round : ''">{{ sec.label }}</span>
               </button>
               <template v-if="sec.round && renamingRound !== sec.round">
-                <button type="button" class="btn btn-sm btn-outline-light py-0 text-nowrap" :title="$t('dashboard.roundReimport')" :aria-label="$t('dashboard.roundReimport')" :disabled="!settings.ready" data-testid="round-reimport" @click="reimportRound(sec)"><i class="fa-solid fa-cloud-arrow-down me-1"></i>{{ $t('dashboard.roundReimportLabel') }}</button>
-                <button type="button" class="btn btn-sm btn-outline-success py-0 text-nowrap" :title="runningPod(sec) ? $t('dashboard.roundRunTitle', { name: runningPod(sec).name }) : $t('dashboard.roundRunNoPod')" :aria-label="$t('dashboard.roundRun')" data-testid="round-run-workflows" @click="runRound(sec)"><i class="fa-solid fa-play me-1"></i>{{ $t('dashboard.roundRun') }}</button>
-                <button type="button" class="btn btn-sm btn-outline-danger py-0" :title="$t('dashboard.roundDelete')" :aria-label="$t('dashboard.roundDelete')" data-testid="round-delete" @click="deleteRound(sec)"><i class="fa-solid fa-trash"></i></button>
-                <button type="button" class="btn btn-sm btn-outline-light py-0" :title="$t('dashboard.roundRename')" :aria-label="$t('dashboard.roundRename')" data-testid="round-rename" @click="startRenameRound(sec)"><i class="fa-solid fa-pencil"></i></button>
+                <div class="ms-auto d-flex align-items-center gap-2" data-testid="round-actions">
+                  <button type="button" class="btn btn-sm btn-outline-light py-0 text-nowrap" :title="$t('dashboard.roundReimport')" :aria-label="$t('dashboard.roundReimport')" :disabled="!settings.ready" data-testid="round-reimport" @click="reimportRound(sec)"><i class="fa-solid fa-cloud-arrow-down me-1"></i>{{ $t('dashboard.roundReimportLabel') }}</button>
+                  <button type="button" class="btn btn-sm btn-outline-success py-0 text-nowrap" :title="runningPod(sec) ? $t('dashboard.roundRunTitle', { name: runningPod(sec).name }) : $t('dashboard.roundRunNoPod')" :aria-label="$t('dashboard.roundRun')" data-testid="round-run-workflows" @click="runRound(sec)"><i class="fa-solid fa-play me-1"></i>{{ $t('dashboard.roundRun') }}</button>
+                  <button type="button" class="btn btn-sm btn-outline-danger py-0" :title="$t('dashboard.roundDelete')" :aria-label="$t('dashboard.roundDelete')" data-testid="round-delete" @click="deleteRound(sec)"><i class="fa-solid fa-trash"></i></button>
+                  <button type="button" class="btn btn-sm btn-outline-light py-0" :title="$t('dashboard.roundRename')" :aria-label="$t('dashboard.roundRename')" data-testid="round-rename" @click="startRenameRound(sec)"><i class="fa-solid fa-pencil"></i></button>
+                </div>
               </template>
               <div v-else-if="sec.round" class="input-group input-group-sm" style="max-width: 24rem">
                 <input v-model="roundDraft" type="text" class="form-control" maxlength="80" :placeholder="sec.round" :aria-label="$t('dashboard.roundRename')" data-testid="round-rename-input" @keydown.enter="saveRenameRound(sec)" @keydown.esc="renamingRound = ''" />
                 <button type="button" class="btn btn-primary" :title="$t('dashboard.roundRenameSave')" data-testid="round-rename-save" @click="saveRenameRound(sec)"><i class="fa-solid fa-check"></i></button>
                 <button type="button" class="btn btn-outline-light" data-testid="round-rename-cancel" @click="renamingRound = ''"><i class="fa-solid fa-xmark"></i></button>
               </div>
-              <BBadge variant="secondary" pill class="ms-auto fw-normal" data-testid="round-count">{{ $t('dashboard.roundPods', { n: sec.pods.length }) }}</BBadge>
+              <BBadge variant="secondary" pill class="fw-normal" :class="{ 'ms-auto': !sec.round || renamingRound === sec.round }" data-testid="round-count">{{ $t('dashboard.roundPods', { n: sec.pods.length }) }}</BBadge>
             </div>
             <div v-show="!byRound || !isCollapsed(sec)" data-testid="round-body">
               <div v-if="!sec.pods.length" class="small text-body-secondary py-2" data-testid="round-empty">

@@ -254,7 +254,8 @@ test.describe('Rounds: a round holds a series of pods (ADR-039)', () => {
     await expect(running.getByTestId('round-reimport')).toContainText('Import')
     await running.getByTestId('round-run-workflows').click()
     await expect(page.getByTestId('runflows-modal')).toBeVisible()   // a pod of the round is running
-    await page.keyboard.press('Escape')
+    await page.getByTestId('runflows-modal').locator('.btn-close').click()
+    await expect(page.getByTestId('runflows-modal')).toBeHidden()
     const stopped = page.locator('[data-testid="round-section"][data-round="round-stopped"]')
     await stopped.getByTestId('round-run-workflows').click()   // none running: Import Round(s) on that round
     await expect(page.getByTestId('import-round-modal')).toBeVisible()
