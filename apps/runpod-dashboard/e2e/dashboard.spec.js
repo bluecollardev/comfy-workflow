@@ -132,3 +132,9 @@ test.describe('Pod list grouped by datacenter', () => {
     expect(value).toBeLessThan(30)   // the values are smaller than the old fs-1 (40px)
   })
 })
+
+test('the top bar reads Pause all, Connect, Volumes, Queue, History, Settings, Refresh', async ({ page }) => {
+  await page.goto('/')
+  const ids = await page.locator('nav [data-testid], .navbar [data-testid]').evaluateAll((els) => els.map((e) => e.dataset.testid).filter((id) => ['pause-all', 'open-connect', 'open-volumes', 'open-queue', 'open-history', 'open-config', 'refresh'].includes(id)))
+  expect(ids).toEqual(['pause-all', 'open-connect', 'open-volumes', 'open-queue', 'open-history', 'open-config', 'refresh'])
+})
