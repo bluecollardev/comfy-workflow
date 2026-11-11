@@ -13,6 +13,7 @@ test('Import Round: three steps - rounds, shots, cards - then Import with the ap
   await dlg.getByTestId('import-round-browse').first().click()   // the round's files as a folder tree
   await expect(page.getByTestId('round-files-modal').getByTestId('round-files-row')).toHaveCount(5)
   await page.getByTestId('round-files-modal').getByText('Close', { exact: true }).click()
+  await expect(dlg.locator('.stepper-item[data-done="true"]')).toHaveCount(1)   // step 1 is green with a check as soon as the round is chosen
   await dlg.getByTestId('import-round-next').click()
   // 2. Choose shots
   await expect(dlg.locator('[data-testid="import-round-step"][data-active="true"]')).toContainText('Choose shots')
@@ -32,6 +33,8 @@ test('Import Round: three steps - rounds, shots, cards - then Import with the ap
   await expect(dlg.getByTestId('import-round-start')).toBeDisabled()   // no volume yet
   await dlg.getByTestId('import-round-volume').selectOption('vol1')
   await expect(dlg.getByTestId('import-round-volume-note')).toBeVisible()   // it becomes the default
+  await expect(dlg.locator('.stepper-item[data-done="true"]')).toHaveCount(3)   // all three are green with a check once it can be imported
+  await expect(dlg.locator('.stepper-item.done .fa-check')).toHaveCount(3)
   await dlg.getByTestId('import-round-start').click()   // Approved by is in the footer
   expect(api.state.imported).toMatchObject({ shots: ['cgi-042'], cards: { 'cgi-042': 'rtxpro6000' }, approved_by: 'Lucas', run_workflows: true, max_pods: 1, cost_cap_usd: 50 })
   const q = page.getByTestId('queue-modal')
@@ -99,4 +102,20 @@ test('Queue: a task shows its pod, its stage and, opened, what happened and when
   await q.getByTestId('queue-details').click()
   await expect(q.getByTestId('queue-task-events')).toContainText('created pod queue-round-a-1 (rtxpro6000)')
   await expect(q.getByTestId('queue-task-events')).toContainText('is ready: running 3 graph(s)')
+})
+
+test('Import Round(s): the steps are clickable in any order once their needs are met; a step that is not ready says why', async ({ page }) => {
+  await page.goto('/'); await page.getByTestId('open-import-round').click()
+  const dlg = page.getByTestId('import-round-modal')
+  const step = (n) => dlg.locator(`[data-testid="import-round-step"][data-step="${n}"]`)
+  await step(3).click()   // nothing chosen yet: it says why and stays
+  await expect(dlg.getByTestId('import-round-error')).toBeVisible()
+  await expect(step(1)).toHaveAttribute('data-active', 'true')
+  await dlg.getByTestId('import-round-option').first().locator('input').check()
+  await step(3).click()   // straight to the last step, without Next
+  await expect(step(3)).toHaveAttribute('data-active', 'true')
+  await step(2).click()   // and back to the middle
+  await expect(dlg.getByTestId('import-round-shot').first()).toBeVisible()
+  await step(1).click()
+  await expect(dlg.getByTestId('import-round-option').first()).toBeVisible()
 })

@@ -1,9 +1,9 @@
 <template>
   <BModal v-model="open" :title="$t('importRound.title')" size="lg" scrollable data-testid="import-round-modal" @hidden="open = false">
     <ol class="stepper" data-testid="import-round-steps">
-      <li v-for="(label, i) in stepLabels" :key="i" class="stepper-item" :class="{ active: step === i + 1, done: step > i + 1 }">
-        <button type="button" class="stepper-btn" :disabled="!canGoTo(i + 1)" :aria-current="step === i + 1 ? 'step' : undefined" data-testid="import-round-step" :data-step="i + 1" :data-active="step === i + 1" @click="goTo(i + 1)">
-          <span class="stepper-dot"><i v-if="step > i + 1" class="fa-solid fa-check"></i><template v-else>{{ i + 1 }}</template></span>
+      <li v-for="(label, i) in stepLabels" :key="i" class="stepper-item" :class="{ active: step === i + 1, done: stepDone(i + 1) }" :data-done="stepDone(i + 1)">
+        <button type="button" class="stepper-btn" :class="{ blocked: !canGoTo(i + 1) }" :title="canGoTo(i + 1) ? '' : stepWhy(i + 1)" :aria-current="step === i + 1 ? 'step' : undefined" data-testid="import-round-step" :data-step="i + 1" :data-active="step === i + 1" @click="goTo(i + 1)">
+          <span class="stepper-dot"><i v-if="stepDone(i + 1)" class="fa-solid fa-check"></i><template v-else>{{ i + 1 }}</template></span>
           <span class="stepper-label">{{ label }}</span>
         </button>
       </li>
@@ -153,8 +153,15 @@ async function replan() {
 watch([cards, picked, runWorkflows], () => { if (step.value === 3) replan() }, { deep: true })
 const canNext = computed(() => (step.value === 1 ? chosen.value.size > 0 && plans.value.size === chosen.value.size && !loadingPlan.value : totalShots.value > 0))
 /** A finished step can be revisited; a later one only once the step before it is complete. */
-const canGoTo = (n) => n <= step.value || (n === 2 ? canNext.value && step.value === 1 : n === 3 ? totalShots.value > 0 : false)
-const goTo = async (n) => { if (!canGoTo(n)) return; step.value = n; if (n === 3) { loadVolumes(); await replan() } }
+/** A step shows green with a check once what it asks for is complete, wherever you are in the window: rounds chosen and read; shots chosen and gone past; a volume and an approver given. */
+const reached = ref(1)
+watch(step, (n) => { if (n > reached.value) reached.value = n })
+watch(() => ui.importRoundOpen, (o) => { if (o) reached.value = 1 })
+const stepDone = (n) => (n === 1 ? chosen.value.size > 0 && plans.value.size === chosen.value.size && !loadingPlan.value : n === 2 ? stepDone(1) && totalShots.value > 0 && reached.value >= 3 : canStart.value)
+/** Any step can be clicked, forwards or back, as long as what it needs is there: step 2 needs the rounds chosen and read, step 3 also a shot. */
+const canGoTo = (n) => n === 1 || (n === 2 ? stepDone(1) : stepDone(1) && totalShots.value > 0)
+const stepWhy = (n) => (n === 2 ? t('importRound.hintPick') : !chosen.value.size ? t('importRound.hintPick') : t('importRound.hintShots'))
+const goTo = async (n) => { if (!canGoTo(n)) { error.value = stepWhy(n); return } error.value = ''; step.value = n; if (n === 3) { loadVolumes(); await replan() } }
 const next = async () => { step.value++; if (step.value === 3) { loadVolumes(); await replan() } }
 const hint = computed(() => (!chosen.value.size ? t('importRound.hintPick') : step.value < 3 ? t('importRound.hintSteps') : !volumeId.value ? t('importRound.volumeNone') : !totalShots.value ? t('importRound.hintShots') : t('importRound.hintApprove')))
 const volumes = ref([]), volumeId = ref(''), defaultVolume = ref('')
@@ -212,10 +219,14 @@ async function start() {
 .stepper-item:not(:last-child)::after { content: ''; position: absolute; top: 15px; left: calc(50% + 22px); width: calc(100% - 44px); height: 2px; background: rgba(255, 255, 255, 0.2); }
 .stepper-item.done:not(:last-child)::after { background: var(--bs-success); }
 .stepper-btn { background: none; border: 0; padding: 0; color: var(--bs-secondary-color); display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; }
-.stepper-btn:not(:disabled) { cursor: pointer; }
+.stepper-btn { cursor: pointer; }
+.stepper-btn.blocked { opacity: 0.55; }
+.stepper-btn:hover .stepper-dot { border-color: #508cff; }
+.stepper-btn:hover .stepper-label { text-decoration: underline; }
 .stepper-dot { width: 32px; height: 32px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.3); display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.85rem; background: transparent; }
-.stepper-item.active .stepper-dot { border-color: #508cff; background: #508cff; color: #fff; box-shadow: 0 0 0 4px rgba(80, 140, 255, 0.25); }
+.stepper-item.active:not(.done) .stepper-dot { border-color: #508cff; background: #508cff; color: #fff; box-shadow: 0 0 0 4px rgba(80, 140, 255, 0.25); }
 .stepper-item.done .stepper-dot { border-color: var(--bs-success); background: var(--bs-success); color: #fff; }
+.stepper-item.done.active .stepper-dot { box-shadow: 0 0 0 4px rgba(25, 135, 84, 0.3); }
 .stepper-item.active .stepper-label { color: var(--bs-body-color); font-weight: 600; }
 .stepper-item.done .stepper-label { color: var(--bs-body-color); }
 .stepper-label { font-size: 0.85rem; }
