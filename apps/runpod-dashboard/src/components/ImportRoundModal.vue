@@ -36,15 +36,15 @@
         </template>
         <div v-if="!roundNamesList.length" class="small text-body-secondary">{{ $t('importRound.noRounds') }}</div>
       </div>
-      <div v-if="loadingPlan" class="small text-body-secondary mt-2" data-testid="import-round-loading">{{ $t('importRound.loadingPlan') }}</div>
     </template>
 
     <!-- 2. Choose shots -->
     <template v-else-if="step === 2">
       <div class="small fw-semibold mb-1">{{ $t('importRound.shots') }}</div>
-      <div v-for="[r, pl] in plans" :key="r" class="mb-2" data-testid="import-round-group" :data-round="r">
-        <div v-if="plans.size > 1" class="small text-body-secondary font-monospace">{{ r }}</div>
-        <div v-for="s in pl.shots" :key="s" class="d-flex align-items-center gap-2 small" data-testid="import-round-shot" :data-shot="s">
+      <div v-for="r in [...chosen]" :key="r" class="mb-2" data-testid="import-round-group" :data-round="r">
+        <div v-if="chosen.size > 1 || pending.has(r)" class="small text-body-secondary font-monospace">{{ r }}</div>
+        <div v-if="pending.has(r)" class="small text-body-secondary" data-testid="import-round-reading"><BSpinner small class="me-2" />{{ $t('importRound.loadingPlan') }}</div>
+        <div v-for="s in plans.get(r)?.shots || []" :key="s" class="d-flex align-items-center gap-2 small" data-testid="import-round-shot" :data-shot="s">
           <input :id="`ir-${r}-${s}`" type="checkbox" class="form-check-input mt-0" :checked="picked.get(r)?.has(s)" @change="toggleShot(r, s, $event.target.checked)" />
           <label :for="`ir-${r}-${s}`" class="font-monospace mb-0">{{ s }}</label>
         </div>
@@ -155,18 +155,18 @@ async function replan() {
   estimates.value = m
 }
 watch([cards, picked, runWorkflows], () => { if (step.value === 3) replan() }, { deep: true })
-const canNext = computed(() => (step.value === 1 ? chosen.value.size > 0 && plans.value.size === chosen.value.size && !loadingPlan.value : totalShots.value > 0))
+const canNext = computed(() => (step.value === 1 ? chosen.value.size > 0 : totalShots.value > 0 && !loadingPlan.value))
 /** A finished step can be revisited; a later one only once the step before it is complete. */
 /** A step shows green with a check once what it asks for is complete, wherever you are in the window: rounds chosen and read; shots chosen and gone past; a volume and an approver given. */
 const reached = ref(1)
 watch(step, (n) => { if (n > reached.value) reached.value = n })
 watch(() => ui.importRoundOpen, (o) => { if (o) reached.value = 1 })
-const stepDone = (n) => (n === 1 ? chosen.value.size > 0 && plans.value.size === chosen.value.size && !loadingPlan.value : n === 2 ? stepDone(1) && totalShots.value > 0 && reached.value >= 3 : canStart.value)
+const stepDone = (n) => (n === 1 ? chosen.value.size > 0 : n === 2 ? stepDone(1) && totalShots.value > 0 && !loadingPlan.value && reached.value >= 3 : canStart.value)
 /** Any step can be clicked, forwards or back, as long as what it needs is there: step 2 needs the rounds chosen and read, step 3 also a shot. */
-const canGoTo = (n) => n === 1 || (n === 2 ? stepDone(1) : stepDone(1) && totalShots.value > 0)
+const canGoTo = (n) => n === 1 || (n === 2 ? chosen.value.size > 0 : chosen.value.size > 0 && !loadingPlan.value && totalShots.value > 0)
 const stepWhy = (n) => (n === 2 ? t('importRound.hintPick') : !chosen.value.size ? t('importRound.hintPick') : t('importRound.hintShots'))
 const goTo = async (n) => { if (!canGoTo(n)) { error.value = stepWhy(n); return } error.value = ''; step.value = n; if (n === 3) { loadVolumes(); await replan() } }
-const next = async () => { if (!canNext.value) { error.value = loadingPlan.value ? t('importRound.loadingPlan') : step.value === 1 ? t('importRound.hintPick') : t('importRound.hintShots'); return } error.value = ''; step.value++; if (step.value === 3) { loadVolumes(); await replan() } }
+const next = async () => { if (!canNext.value) { error.value = step.value === 2 && loadingPlan.value ? t('importRound.loadingPlan') : step.value === 1 ? t('importRound.hintPick') : t('importRound.hintShots'); return } error.value = ''; step.value++; if (step.value === 3) { loadVolumes(); await replan() } }
 const hint = computed(() => (!chosen.value.size ? t('importRound.hintPick') : step.value < 3 ? t('importRound.hintSteps') : !volumeId.value ? t('importRound.volumeNone') : !totalShots.value ? t('importRound.hintShots') : t('importRound.hintApprove')))
 const volumes = ref([]), volumeId = ref(''), defaultVolume = ref('')
 const volumeOptions = computed(() => [{ value: '', text: t('importRound.volumePick') }, ...volumes.value.map((v) => ({ value: v.id, text: `${v.name} · ${v.size_gb} GB · ${v.datacenter}${v.is_default ? ` · ${t('importRound.volumeDefault')}` : ''}` }))])
@@ -177,7 +177,9 @@ async function loadVolumes() {
 }
 const browsing = ref('')   // the round whose files are open in the explorer
 const podsEdited = ref(false)   // until the pod limit is typed, it follows the shots ticked: one pod per shot
-const maxPods = ref(2), costCap = ref(50), approvedBy = ref(''), error = ref(''), loadingPlan = ref(false), starting = ref(false)
+const maxPods = ref(2), costCap = ref(50), approvedBy = ref(''), error = ref(''), starting = ref(false)
+const pending = ref(new Set())   // rounds whose plan is still being read (a big round takes seconds): step 2 can be opened meanwhile
+const loadingPlan = computed(() => pending.value.size > 0)
 try { approvedBy.value = localStorage.getItem('runpod-manager.approved-by') || '' } catch { /* storage blocked */ }
 
 const roundNamesList = computed(() => { const n = rounds.value.map((r) => r.name); for (const c of chosen.value) if (!n.includes(c)) n.push(c); return n })
@@ -195,15 +197,15 @@ async function toggleRound(r, on) {
   const n = new Set(chosen.value); on ? n.add(r) : n.delete(r); chosen.value = n
   error.value = ''; { const e = { ...rowErrors.value }; delete e[r]; rowErrors.value = e }
   if (!on) { plans.value.delete(r); picked.value.delete(r); plans.value = new Map(plans.value); picked.value = new Map(picked.value); followPods(); return }
-  loadingPlan.value = true
+  pending.value = new Set(pending.value).add(r)
   try {
     const pl = await queueAPI.plan(r, {})
     if (!chosen.value.has(r)) return
-    if (!pl.shots?.length) { rowErrors.value = { ...rowErrors.value, [r]: t('importRound.noShots') }; const m = new Set(chosen.value); m.delete(r); chosen.value = m; return }   // nothing to run in it: say so on its row and leave it unticked
+    if (!pl.shots?.length) { error.value = `${r}: ${t('importRound.noShots')}`; rowErrors.value = { ...rowErrors.value, [r]: t('importRound.noShots') }; const m = new Set(chosen.value); m.delete(r); chosen.value = m; return }   // nothing to run in it: say so on its row and leave it unticked
     plans.value = new Map(plans.value).set(r, pl); picked.value = new Map(picked.value).set(r, new Set(pl.shots))   // every shot ticked
     if (plans.value.size === 1) costCap.value = pl.cost_cap_usd ?? 50
     podsEdited.value = false; followPods()
-  } catch (e) { rowErrors.value = { ...rowErrors.value, [r]: errorText(e) }; const m = new Set(chosen.value); m.delete(r); chosen.value = m } finally { loadingPlan.value = false }
+  } catch (e) { error.value = `${r}: ${errorText(e)}`; rowErrors.value = { ...rowErrors.value, [r]: errorText(e) }; const m = new Set(chosen.value); m.delete(r); chosen.value = m } finally { const q = new Set(pending.value); q.delete(r); pending.value = q }
 }
 function toggleShot(r, s, on) { const m = new Map(picked.value); const n = new Set(m.get(r)); on ? n.add(s) : n.delete(s); m.set(r, n); picked.value = m; followPods() }
 async function start() {

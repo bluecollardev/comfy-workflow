@@ -137,3 +137,17 @@ test('Import Round(s): a round with no shots is refused on its own row and stays
   await dlg.getByTestId('import-round-next').click()
   await expect(dlg.getByTestId('import-round-shot')).toHaveCount(1)
 })
+
+test('Import Round(s): step 2 opens right after a round is ticked, while its shots are still being read', async ({ page }) => {
+  await page.route('**/queue/plan', async (route) => { const body = route.request().postDataJSON(); await new Promise((r) => setTimeout(r, 2000)); await route.fulfill({ json: { round: body.round, shots: ['cgi-042', 'cgi-043'], price_per_hour: 3.99, pull_hours: 0.5, est_total_usd: 6, max_pods: 2, cost_cap_usd: 50, cap_enabled: true, over_cap: false } }) })
+  await page.goto('/'); await page.getByTestId('open-import-round').click()
+  const dlg = page.getByTestId('import-round-modal')
+  await dlg.getByTestId('import-round-option').first().locator('input').check()
+  await dlg.locator('[data-testid="import-round-step"][data-step="2"]').click()   // not waiting for the plan
+  await expect(dlg.locator('[data-testid="import-round-step"][data-step="2"]')).toHaveAttribute('data-active', 'true')
+  await expect(dlg.getByTestId('import-round-reading')).toBeVisible()
+  await dlg.getByTestId('import-round-next').click()   // still reading: says so
+  await expect(dlg.getByTestId('import-round-error')).toBeVisible()
+  await expect(dlg.getByTestId('import-round-shot')).toHaveCount(2)   // then the shots appear
+  await expect(dlg.getByTestId('import-round-reading')).toHaveCount(0)
+})
