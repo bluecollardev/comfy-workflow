@@ -32,7 +32,8 @@ function world(pool: { id: string; name: string; state: 'running' | 'starting' |
     resumePod: async (id) => { w.resumed.push(id); const p = w.pods.find((x) => x.id === id)!; p.state = 'running'; w.ready.add(id) },
     ensureVolume: async (id) => { (w.vols ||= []).push(id ?? null) },
     cardPrice: async (g) => (g === 'rtx5090' ? 2 : null),
-    createPod: async (name, round, gpu) => { (w.gpuOf ||= {})[`new${w.created.length + 1}`] = gpu; const id = `new${w.created.length + 1}`; w.created.push(id); (w.rounds ||= {})[id] = round; w.pods.push({ id, name, state: 'running', price }); w.ready.add(id); return { id, name } },
+    now: () => new Date((w as any).clock ?? Date.now()),
+    createPod: async (name, round, gpu) => { if ((w as any).noCard) throw new Error('No card available right now: tried rtxpro6000 on SECURE'); (w.gpuOf ||= {})[`new${w.created.length + 1}`] = gpu; const id = `new${w.created.length + 1}`; w.created.push(id); (w.rounds ||= {})[id] = round; w.pods.push({ id, name, state: 'running', price }); w.ready.add(id); return { id, name } },
     stopPod: async (id) => { w.stopped.push(id) },
     pull: async () => ({ id: 'pj1' }),
     pullJob: (() => ({ id: 'pj1', state: w.pull.state, pod_id: 'pullpod', pod_name: 'pull', files: 9, place: w.pull.place, error: w.pull.state === 'failed' ? 'aws failed' : undefined })) as never,
@@ -59,6 +60,10 @@ describe('a card for a shot', () => {
     expect(w.created).toEqual(['new1'])   // the shot with a card did not take the running pool pod
     expect((w as any).gpuOf.new1).toBe('rtx5090')
     expect(queue.list().tasks.find((x) => x.shot === 'cgi-043')?.pod_id).toBe('pool1')
+    const evs = (shot: string) => (queue.list().tasks.find((x) => x.shot === shot)?.events ?? []).map((e) => e.text).join(' | ')
+    expect(queue.list().tasks.find((x) => x.shot === 'cgi-042')?.card).toBe('rtx5090')   // the card used is on the task
+    expect(evs('cgi-042')).toMatch(/created pod .*rtx5090/)   // what happened to a task is kept, with times
+    expect(evs('cgi-043')).toMatch(/reusing the pod pool/)
   })
 })
 
@@ -191,5 +196,45 @@ describe('the volume for an import', () => {
     queue.configure({ ensureVolume: async () => { throw new Error('The network volume "x" is not one of your volumes') } })
     await expect(queue.importRounds([{ round: 'r3' }], { approved_by: 'L' })).rejects.toThrow(/not one of your volumes/)
     expect(queue.list().imports.map((i) => i.round)).not.toContain('r3')
+  })
+})
+
+describe('retrying a pull', () => {
+  it('puts back the runs that failed only because the pull did not finish', async () => {
+    const w = world()
+    await queue.importRound(ROUND, { shots: ['cgi-042'], approved_by: 'L' })
+    w.pull.state = 'failed'; await queue.tick(); await queue.tick()
+    expect(states()).toEqual(['pull=failed', 'run:cgi-042=failed'])
+    expect(tasks().find((x) => x.kind === 'run')?.error).toMatch(/^Not started: its pull did not finish: aws failed/)   // it says why
+    const pull = tasks().find((t) => t.kind === 'pull')!
+    queue.retryTask(pull.id)
+    expect(states()).toEqual(['pull=waiting', 'run:cgi-042=waiting'])
+  })
+})
+
+describe('the pool default card shows in the queue too', () => {
+  it('a pod the queue creates for a shot with no card says which card it is (the H100)', async () => {
+    const w = world()
+    await queue.importRound(ROUND, { shots: ['cgi-042'], approved_by: 'L' })
+    w.pull.state = 'done'; await queue.tick(); await queue.tick()
+    expect(w.created).toEqual(['new1'])
+    expect(queue.list().tasks.find((x) => x.shot === 'cgi-042')?.card).toBe(queue.POOL_GPU)
+    expect((queue.list().tasks.find((x) => x.shot === 'cgi-042')?.events ?? []).map((e) => e.text).join(' ')).toContain(queue.POOL_GPU)
+  })
+})
+
+describe('no card free', () => {
+  it('a run waits and asks again later instead of failing', async () => {
+    const w = world() as any
+    w.clock = Date.parse('2026-11-09T12:00:00Z'); w.noCard = true
+    await queue.importRound(ROUND, { shots: ['cgi-042'], cards: { 'cgi-042': 'rtxpro6000' }, approved_by: 'L' })
+    w.pull.state = 'done'; await queue.tick(); await queue.tick()
+    let t = tasks().find((x) => x.shot === 'cgi-042')!
+    expect(t.state).toBe('waiting'); expect(t.attempts).toBe(1); expect(t.stage).toMatch(/waiting for a free rtxpro6000/)
+    await queue.tick(); expect(tasks().find((x) => x.shot === 'cgi-042')!.attempts).toBe(1)   // not before the minute is up
+    w.clock += queue.CARD_RETRY_MS + 1; w.noCard = false
+    await queue.tick()
+    t = tasks().find((x) => x.shot === 'cgi-042')!
+    expect(t.state).toBe('running'); expect(w.created).toEqual(['new1']); expect(t.attempts).toBeUndefined()
   })
 })

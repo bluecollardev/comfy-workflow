@@ -30,3 +30,8 @@ Lucas (2026-11-09): "we have Create Pod. Pods sections. pods belong in rounds. h
 ## Consequences
 
 Pods can be read by round. Nothing about how pods are created, billed or stopped changes.
+
+## Amendment (2026-11-09): rounds with no pod are hidden until asked for
+
+- Listing every bucket round (a dozen, each "0 pods") buried the pods. The Rounds list now shows only rounds that have a pod, plus "No round"; a **Show empty rounds (N)** switch (remembered) lists the rest. A shown empty round says where its files are ("On this PC: n files", "On the volume: n files") before the hint to pick it on a pod's Round choice.
+- A round still appears in every Round choice (card, Create Pod, Import Round(s)), whether or not it is listed.

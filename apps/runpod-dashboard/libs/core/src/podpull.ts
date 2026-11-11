@@ -413,7 +413,23 @@ async function runTemporary(i: Internal, opts: Opts) {
   try {
     const env: Record<string, string> = { ...cfg.env }
     if (j.kind === 'pull') env.S3_PULL = s3PullFor(j.round); else delete env.S3_PULL   // a delete never carries a pull (or the keys podOverrides adds for one)
-    const created = await pods.create({ name, ...(p.gpu_type_id ? { gpu_type_id: p.gpu_type_id } : { gpu: 'auto' }), image: 'configured', cuda_match: false, idle_stop_minutes: p.ceiling_minutes, config: { ...cfg, env } }, opts.client)
+    // The cheapest free card can be taken between the plan and the create ("No card available"): try the next free card of the volume's datacenter, then the app's own choice.
+    const base = { name, image: 'configured', cuda_match: false, idle_stop_minutes: p.ceiling_minutes, config: { ...cfg, env } } as const
+    const tried = new Set<string>()
+    let created: Awaited<ReturnType<typeof pods.create>> | null = null
+    let next: string | undefined = p.gpu_type_id
+    for (let attempt = 0; attempt < 5 && !created; attempt++) {
+      try { created = await pods.create({ ...base, ...(next ? { gpu_type_id: next } : { gpu: 'auto' }) }, opts.client) } catch (e) {
+        if (!/No card available/.test((e as Error).message)) throw e
+        if (next) tried.add(next)
+        const dc = p.volume?.datacenter
+        const more = dc ? (await rp.freeCardsIn(dc, opts.client).catch(() => [])).filter((c) => !tried.has(c.id) && (cfg.pull_any_card !== false || gpus.autoCards().some((g) => g.id === c.id))) : []
+        if (!more.length && !next) throw e   // 'auto' failed as well: nothing is free
+        next = more[0]?.id   // undefined: the app's own choice, once
+        if (!next && attempt > 0 && tried.size > 0 && !more.length) { try { created = await pods.create({ ...base, gpu: 'auto' }, opts.client) } catch { throw e } }
+      }
+    }
+    if (!created) throw new CoreError(502, 'No card available right now in the volume\'s datacenter (tried several). Try again in a few minutes.')
     podId = created.id; j.pod_id = podId; tempSetId(name, podId)
     if (i.cancelled) return
     j.state = 'starting'

@@ -190,10 +190,17 @@ test.describe('Pod card: rename (a name on our side only)', () => {
 })
 
 test.describe('Rounds: a round holds a series of pods (ADR-039)', () => {
-  test('pods group by round into collapsible lists; a pod is dropped into a round from its card; a round is renamable; empty and "No round" groups show', async ({ page, api }) => {
+  test('pods group by round into collapsible lists; a pod is dropped into a round from its card; a round is renamable; empty rounds are hidden until asked for, and "No round" shows', async ({ page, api }) => {
     api.state.pods.find((p) => p.name === 'ComfyUI-Batch').round = 'brynley-comfy-2026-11-06'
     api.state.pods.find((p) => p.name === 'ComfyUI-Batch').round_label = 'brynley-comfy-2026-11-06'
+    api.state.panama = { configured: true }
     await page.goto('/')
+    await expect(page.locator('[data-testid="round-section"][data-round="brynley-comfy-2026-10-23"]')).toHaveCount(0)   // a bucket round with no pod is not listed
+    const imported = page.locator('[data-testid="round-section"][data-round="brynley-comfy-2026-10-22"]')
+    await expect(imported.getByTestId('round-fact')).toContainText('files')   // imported rounds are listed with no pod
+    await page.getByTestId('pods-empty-toggle').click()
+    await expect(page.locator('[data-testid="round-section"][data-round="brynley-comfy-2026-10-23"]')).toHaveCount(1)   // until asked for
+    await page.getByTestId('pods-empty-toggle').click()
     const round = page.locator('[data-testid="round-section"][data-round="brynley-comfy-2026-11-06"]')
     await expect(round.getByTestId('round-title')).toHaveText('brynley-comfy-2026-11-06')
     await expect(round.getByTestId('pod-card')).toHaveCount(1)
@@ -236,6 +243,22 @@ test.describe('Rounds: a round holds a series of pods (ADR-039)', () => {
     await round.getByTestId('round-delete').click()
     await expect(round).toHaveCount(0)
     await expect(podCard(page, 'ComfyUI-Batch')).toBeVisible()   // the pod is still there, in "No round"
+  })
+
+  test('each round header has Import (the cloud icon, like Import Round(s)) and Run workflows: on a running pod of the round it opens Run Workflows; with none running it opens Import Round(s)', async ({ page, api }) => {
+    const dev = api.state.pods.find((p) => p.name === 'ComfyUI-Dev'); dev.round = 'brynley-comfy-2026-11-06'; dev.round_label = 'brynley-comfy-2026-11-06'
+    const batch = api.state.pods.find((p) => p.name === 'ComfyUI-Batch'); batch.round = 'round-stopped'; batch.round_label = 'round-stopped'
+    await page.goto('/')
+    const running = page.locator('[data-testid="round-section"][data-round="brynley-comfy-2026-11-06"]')
+    await expect(running.getByTestId('round-reimport').locator('.fa-cloud-arrow-down')).toBeVisible()
+    await expect(running.getByTestId('round-reimport')).toContainText('Import')
+    await running.getByTestId('round-run-workflows').click()
+    await expect(page.getByTestId('runflows-modal')).toBeVisible()   // a pod of the round is running
+    await page.getByTestId('runflows-modal').locator('.btn-close').click()
+    await expect(page.getByTestId('runflows-modal')).toBeHidden()
+    const stopped = page.locator('[data-testid="round-section"][data-round="round-stopped"]')
+    await stopped.getByTestId('round-run-workflows').click()   // none running: Import Round(s) on that round
+    await expect(page.getByTestId('import-round-modal')).toBeVisible()
   })
 
   test('a pod card is dragged by its handle onto another round; the move asks first; Cancel leaves it; onto "No round" takes it out (ADR-039)', async ({ page, api }) => {

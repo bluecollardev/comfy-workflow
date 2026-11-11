@@ -7,33 +7,38 @@ test('Import Round: three steps - rounds, shots, cards - then Import with the ap
   await page.getByTestId('open-import-round').click()
   const dlg = page.getByTestId('import-round-modal')
   // 1. Choose rounds
-  await expect(dlg.locator('[data-testid="import-round-step"][data-active="true"]')).toContainText('Choose rounds')
-  await expect(dlg.getByTestId('import-round-next')).toBeDisabled()
+  await expect(dlg.locator('[data-testid="import-round-step"][data-active="true"]')).toContainText('Choose Rounds')
+  await dlg.getByTestId('import-round-next').click()   // nothing chosen: Next says why instead of doing nothing
+  await expect(dlg.getByTestId('import-round-error')).toBeVisible()
+  await expect(dlg.locator('[data-testid="import-round-step"][data-active="true"]')).toContainText('Choose Rounds')
   await dlg.getByTestId('import-round-option').first().locator('input').check()
   await dlg.getByTestId('import-round-browse').first().click()   // the round's files as a folder tree
   await expect(page.getByTestId('round-files-modal').getByTestId('round-files-row')).toHaveCount(5)
   await page.getByTestId('round-files-modal').getByText('Close', { exact: true }).click()
+  await expect(dlg.locator('.stepper-item[data-done="true"]')).toHaveCount(1)   // step 1 is green with a check as soon as the round is chosen
   await dlg.getByTestId('import-round-next').click()
   // 2. Choose shots
-  await expect(dlg.locator('[data-testid="import-round-step"][data-active="true"]')).toContainText('Choose shots')
+  await expect(dlg.locator('[data-testid="import-round-step"][data-active="true"]')).toContainText('Choose Shots')
   await expect(dlg.getByTestId('import-round-shot')).toHaveCount(2)
   await dlg.getByTestId('import-round-shot').filter({ hasText: 'cgi-043' }).locator('input').uncheck()
   await dlg.getByTestId('import-round-next').click()
-  // 3. Choose cards for the shots
+  // 3. Configure deployment: cards for the shots, volume, caps
   await dlg.locator('[data-testid="import-round-step"][data-step="1"]').click()   // a finished step can be revisited from the stepper
   await expect(dlg.getByTestId('import-round-option').first()).toBeVisible()
   await dlg.locator('[data-testid="import-round-step"][data-step="3"]').click()   // and so can the next one, once its shots are chosen
   await expect(dlg.getByTestId('import-round-card-row')).toHaveCount(1)
   await expect(dlg.getByTestId('import-round-estimate')).toContainText('6.98')
   await expect(dlg.getByTestId('import-round-max-pods')).toHaveValue('1')   // one pod per shot ticked
-  await dlg.getByTestId('import-round-card').selectOption('rtx4090')
+  await dlg.getByTestId('import-round-card').selectOption('rtxpro6000')
   await expect(dlg.getByTestId('import-round-volume-problem')).toBeVisible()   // no default volume: one has to be picked
   await dlg.getByTestId('import-round-approved-by').fill('Lucas')
   await expect(dlg.getByTestId('import-round-start')).toBeDisabled()   // no volume yet
   await dlg.getByTestId('import-round-volume').selectOption('vol1')
   await expect(dlg.getByTestId('import-round-volume-note')).toBeVisible()   // it becomes the default
+  await expect(dlg.locator('.stepper-item[data-done="true"]')).toHaveCount(3)   // all three are green with a check once it can be imported
+  await expect(dlg.locator('.stepper-item.done .fa-check')).toHaveCount(3)
   await dlg.getByTestId('import-round-start').click()   // Approved by is in the footer
-  expect(api.state.imported).toMatchObject({ shots: ['cgi-042'], cards: { 'cgi-042': 'rtx4090' }, approved_by: 'Lucas', run_workflows: true, max_pods: 1, cost_cap_usd: 50 })
+  expect(api.state.imported).toMatchObject({ shots: ['cgi-042'], cards: { 'cgi-042': 'rtxpro6000' }, approved_by: 'Lucas', run_workflows: true, max_pods: 1, cost_cap_usd: 50 })
   const q = page.getByTestId('queue-modal')
   await expect(q.getByTestId('queue-task')).toHaveCount(2)
   await expect(q.getByTestId('queue-task').filter({ hasText: 'cgi-042' })).toContainText('boom (node 4, KSampler)')
@@ -87,4 +92,62 @@ test('Queue: the latest import is at the top, the oldest at the bottom, and the 
   const body = q.locator('.modal-body')
   await body.hover(); await page.mouse.wheel(0, 600)
   await expect.poll(() => body.evaluate((b) => b.scrollTop)).toBeGreaterThan(300)
+})
+
+test('Queue: a task shows its pod, its stage and, opened, what happened and when', async ({ page, api }) => {
+  api.state.queue = { imports: [{ id: 'imp1', round: 'round-a', approved_by: 'L', created_at: '2026-11-09T01:00:00Z', state: 'active', spent_usd: 0, cap_enabled: true, cost_cap_usd: 10, max_pods: 2, counts: {} }], tasks: [{ id: 't1', import_id: 'imp1', round: 'round-a', shot: 'cgi-042', kind: 'run', state: 'running', pod_id: 'pod9', pod_name: 'queue-round-a-1', gpu: 'rtxpro6000', card: 'rtxpro6000', started_at: '2026-11-09T01:00:05Z', stage: 'running 1/3 graphs', events: [{ at: '2026-11-09T01:00:05Z', text: 'created pod queue-round-a-1 (rtxpro6000) in round round-a' }, { at: '2026-11-09T01:03:00Z', text: 'pod queue-round-a-1 is ready: running 3 graph(s)' }] }], active: 1 }
+  await page.goto('/'); await page.getByTestId('open-queue').click()
+  const q = page.getByTestId('queue-modal')
+  await expect(q.getByTestId('queue-task-stage')).toHaveText('running 1/3 graphs')
+  await expect(q.getByTestId('queue-task')).toContainText('pod9')
+  await expect(q.getByTestId('queue-task-card')).toHaveText('rtxpro6000')   // the card is in the queue
+  await q.getByTestId('queue-details').click()
+  await expect(q.getByTestId('queue-task-events')).toContainText('created pod queue-round-a-1 (rtxpro6000)')
+  await expect(q.getByTestId('queue-task-events')).toContainText('is ready: running 3 graph(s)')
+})
+
+test('Import Round(s): the steps are clickable in any order once their needs are met; a step that is not ready says why', async ({ page }) => {
+  await page.goto('/'); await page.getByTestId('open-import-round').click()
+  const dlg = page.getByTestId('import-round-modal')
+  const step = (n) => dlg.locator(`[data-testid="import-round-step"][data-step="${n}"]`)
+  await step(3).click()   // nothing chosen yet: it says why and stays
+  await expect(dlg.getByTestId('import-round-error')).toBeVisible()
+  await expect(step(1)).toHaveAttribute('data-active', 'true')
+  await dlg.getByTestId('import-round-option').first().locator('input').check()
+  await step(3).click()   // straight to the last step, without Next
+  await expect(step(3)).toHaveAttribute('data-active', 'true')
+  await step(2).click()   // and back to the middle
+  await expect(dlg.getByTestId('import-round-shot').first()).toBeVisible()
+  await step(1).click()
+  await expect(dlg.getByTestId('import-round-option').first()).toBeVisible()
+})
+
+test('Import Round(s): a round with no shots is refused on its own row and stays unticked', async ({ page, api }) => {
+  await page.route('**/queue/plan', async (route) => { const body = route.request().postDataJSON(); await route.fulfill({ json: body.round === 'brynley-comfy-2026-10-20' ? { round: body.round, shots: [], price_per_hour: 3.99, pull_hours: 0.5, est_total_usd: 2, max_pods: 2, cost_cap_usd: 50, cap_enabled: true, over_cap: false } : { round: body.round, shots: ['cgi-042'], price_per_hour: 3.99, pull_hours: 0.5, est_total_usd: 6, max_pods: 2, cost_cap_usd: 50, cap_enabled: true, over_cap: false } }) })
+  await page.goto('/'); await page.getByTestId('open-import-round').click()
+  const dlg = page.getByTestId('import-round-modal')
+  const row = dlg.locator('[data-testid="import-round-option"][data-round="brynley-comfy-2026-10-20"]')
+  await row.locator('input').check()
+  await expect(dlg.getByTestId('import-round-row-error')).toContainText('No shots in this round')
+  await expect(row.locator('input')).not.toBeChecked()
+  await dlg.getByTestId('import-round-next').click()   // still nothing valid chosen
+  await expect(dlg.locator('[data-testid="import-round-step"][data-active="true"]')).toContainText('Choose Rounds')
+  await dlg.locator('[data-testid="import-round-option"][data-round="brynley-comfy-2026-10-23"] input').check()
+  await expect(dlg.getByTestId('import-round-row-error')).toHaveCount(1)   // the other round's check did not clear it
+  await dlg.getByTestId('import-round-next').click()
+  await expect(dlg.getByTestId('import-round-shot')).toHaveCount(1)
+})
+
+test('Import Round(s): step 2 opens right after a round is ticked, while its shots are still being read', async ({ page }) => {
+  await page.route('**/queue/plan', async (route) => { const body = route.request().postDataJSON(); await new Promise((r) => setTimeout(r, 2000)); await route.fulfill({ json: { round: body.round, shots: ['cgi-042', 'cgi-043'], price_per_hour: 3.99, pull_hours: 0.5, est_total_usd: 6, max_pods: 2, cost_cap_usd: 50, cap_enabled: true, over_cap: false } }) })
+  await page.goto('/'); await page.getByTestId('open-import-round').click()
+  const dlg = page.getByTestId('import-round-modal')
+  await dlg.getByTestId('import-round-option').first().locator('input').check()
+  await dlg.locator('[data-testid="import-round-step"][data-step="2"]').click()   // not waiting for the plan
+  await expect(dlg.locator('[data-testid="import-round-step"][data-step="2"]')).toHaveAttribute('data-active', 'true')
+  await expect(dlg.getByTestId('import-round-reading')).toBeVisible()
+  await dlg.getByTestId('import-round-next').click()   // still reading: says so
+  await expect(dlg.getByTestId('import-round-error')).toBeVisible()
+  await expect(dlg.getByTestId('import-round-shot')).toHaveCount(2)   // then the shots appear
+  await expect(dlg.getByTestId('import-round-reading')).toHaveCount(0)
 })

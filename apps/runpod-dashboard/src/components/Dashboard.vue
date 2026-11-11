@@ -32,6 +32,7 @@
           <i class="fa-solid fa-cloud-arrow-down me-1"></i>{{ $t('app.importRound') }}
         </BButton>
         <BFormCheckbox v-model="byRound" switch class="ms-auto me-3 mb-0 small" data-testid="pods-round-toggle">{{ $t('dashboard.groupByRound') }}</BFormCheckbox>
+        <BFormCheckbox v-if="byRound && emptyCount" v-model="showEmpty" switch class="me-3 mb-0 small" data-testid="pods-empty-toggle">{{ $t('dashboard.showEmpty', { n: emptyCount }) }}</BFormCheckbox>
         <BFormCheckbox v-model="grouped" switch class="me-3 mb-0 small" data-testid="pods-group-toggle">{{ $t('dashboard.groupByDatacenter') }}</BFormCheckbox>
         <BBadge variant="secondary" pill>{{ pods.pods.length }}</BBadge>
       </BCardHeader>
@@ -48,19 +49,25 @@
                 <span v-if="renamingRound !== sec.round" class="fw-semibold" data-testid="round-title" :title="sec.round && sec.label !== sec.round ? sec.round : ''">{{ sec.label }}</span>
               </button>
               <template v-if="sec.round && renamingRound !== sec.round">
-                <button type="button" class="btn btn-link btn-sm p-0 align-baseline text-body-secondary" :title="$t('dashboard.roundReimport')" :aria-label="$t('dashboard.roundReimport')" :disabled="!settings.ready" data-testid="round-reimport" @click="reimportRound(sec)"><i class="fa-solid fa-rotate-right fa-xs me-1"></i>{{ $t('dashboard.roundReimportLabel') }}</button>
-                <button type="button" class="btn btn-link btn-sm p-0 align-baseline text-body-secondary" :title="$t('dashboard.roundDelete')" :aria-label="$t('dashboard.roundDelete')" data-testid="round-delete" @click="deleteRound(sec)"><i class="fa-solid fa-trash fa-xs"></i></button>
-                <button type="button" class="btn btn-link btn-sm p-0 align-baseline text-body-secondary" :title="$t('dashboard.roundRename')" :aria-label="$t('dashboard.roundRename')" data-testid="round-rename" @click="startRenameRound(sec)"><i class="fa-solid fa-pencil fa-xs"></i></button>
+                <div class="ms-auto d-flex align-items-center gap-2" data-testid="round-actions">
+                  <button type="button" class="btn btn-sm btn-outline-light py-0 text-nowrap" :title="$t('dashboard.roundReimport')" :aria-label="$t('dashboard.roundReimport')" :disabled="!settings.ready" data-testid="round-reimport" @click="reimportRound(sec)"><i class="fa-solid fa-cloud-arrow-down me-1"></i>{{ $t('dashboard.roundReimportLabel') }}</button>
+                  <button type="button" class="btn btn-sm btn-outline-success py-0 text-nowrap" :title="runningPod(sec) ? $t('dashboard.roundRunTitle', { name: runningPod(sec).name }) : $t('dashboard.roundRunNoPod')" :aria-label="$t('dashboard.roundRun')" data-testid="round-run-workflows" @click="runRound(sec)"><i class="fa-solid fa-play me-1"></i>{{ $t('dashboard.roundRun') }}</button>
+                  <button type="button" class="btn btn-sm btn-outline-danger py-0" :title="$t('dashboard.roundDelete')" :aria-label="$t('dashboard.roundDelete')" data-testid="round-delete" @click="deleteRound(sec)"><i class="fa-solid fa-trash"></i></button>
+                  <button type="button" class="btn btn-sm btn-outline-light py-0" :title="$t('dashboard.roundRename')" :aria-label="$t('dashboard.roundRename')" data-testid="round-rename" @click="startRenameRound(sec)"><i class="fa-solid fa-pencil"></i></button>
+                </div>
               </template>
               <div v-else-if="sec.round" class="input-group input-group-sm" style="max-width: 24rem">
                 <input v-model="roundDraft" type="text" class="form-control" maxlength="80" :placeholder="sec.round" :aria-label="$t('dashboard.roundRename')" data-testid="round-rename-input" @keydown.enter="saveRenameRound(sec)" @keydown.esc="renamingRound = ''" />
                 <button type="button" class="btn btn-primary" :title="$t('dashboard.roundRenameSave')" data-testid="round-rename-save" @click="saveRenameRound(sec)"><i class="fa-solid fa-check"></i></button>
                 <button type="button" class="btn btn-outline-light" data-testid="round-rename-cancel" @click="renamingRound = ''"><i class="fa-solid fa-xmark"></i></button>
               </div>
-              <BBadge variant="secondary" pill class="ms-auto fw-normal" data-testid="round-count">{{ $t('dashboard.roundPods', { n: sec.pods.length }) }}</BBadge>
+              <BBadge variant="secondary" pill class="fw-normal" :class="{ 'ms-auto': !sec.round || renamingRound === sec.round }" data-testid="round-count">{{ $t('dashboard.roundPods', { n: sec.pods.length }) }}</BBadge>
             </div>
             <div v-show="!byRound || !isCollapsed(sec)" data-testid="round-body">
-              <div v-if="!sec.pods.length" class="small text-body-secondary py-2" data-testid="round-empty">{{ $t('dashboard.roundEmpty') }}</div>
+              <div v-if="!sec.pods.length" class="small text-body-secondary py-2" data-testid="round-empty">
+                <template v-if="facts(sec.round).length"><span v-for="f in facts(sec.round)" :key="f" class="badge text-bg-secondary fw-normal me-2" data-testid="round-fact">{{ f }}</span></template>
+                <template v-if="!facts(sec.round).length">{{ $t('dashboard.roundEmpty') }}</template>
+              </div>
               <BRow v-else-if="!grouped" class="g-3" data-testid="round-pod-list">
                 <BCol v-for="pod in sec.pods" :key="pod.id" md="6" xl="4">
                   <div class="pod-drag" :class="{ dragging: dragId === pod.id }" data-testid="pod-drag" :data-pod="pod.id"><PodCard :pod="pod" :busy="pods.busyPodId === pod.id" :rounds="roundNames" :handle="byRound" @dragstart="(e) => onDragStart(e, pod)" @dragend="dragId = ''; overKey = null" @stop="pods.stop(pod.id)" @resume="pods.resume(pod.id)" @delete="pods.remove(pod.id)" @rename="(name) => pods.rename(pod.id, name)" @round="(rd) => pods.setRound(pod.id, rd)" /></div>
@@ -92,6 +99,7 @@
     >
       {{ pods.actionError }}
     </BAlert>
+    <RunWorkflowsModal v-if="runFlows" :model-value="true" :pod="runFlows.pod" :round="runFlows.round" @update:model-value="(v) => !v && (runFlows = null)" />
   </div>
 </template>
 
@@ -109,6 +117,7 @@ import { useUiStore } from '../stores/ui'
 import { usePodsStore } from '../stores/pods'
 import { usePanamaStore } from '../stores/panama'
 import { t } from '../i18n'
+import RunWorkflowsModal from './RunWorkflowsModal.vue'
 
 const pods = usePodsStore()
 const panama = usePanamaStore()
@@ -130,13 +139,26 @@ const hiddenRounds = ref(new Set(JSON.parse(localStorage.getItem('pods.hiddenRou
 const hideRound = (r, on) => { const n = new Set(hiddenRounds.value); on ? n.add(r) : n.delete(r); hiddenRounds.value = n; localStorage.setItem('pods.hiddenRounds', JSON.stringify([...n])) }
 const roundNames = computed(() => {
   const m = new Map((panama.rounds || []).filter((r) => !hiddenRounds.value.has(r.name)).map((r) => [r.name, r.name]))
+  for (const r of panama.podView?.rounds || []) if (r.state !== 'none' && !hiddenRounds.value.has(r.name)) m.set(r.name, r.name)   // what a pod pulled onto the volume
   for (const p of pods.pods) if (p.round) m.set(p.round, p.round_label || p.round)
   return [...m.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([round, label]) => ({ round, label }))
 })
+/** Rounds with no pod are out of the way until asked for ("Show empty rounds"); then each says where its files are. */
+const showEmpty = ref(localStorage.getItem('pods.showEmptyRounds') === '1')
+watch(showEmpty, (v) => localStorage.setItem('pods.showEmptyRounds', v ? '1' : '0'))
+/** A round with its files on this PC or on the volume is listed even with no pod: it is something we imported. */
+const hasData = (round) => facts(round).length > 0
+const emptyCount = computed(() => roundNames.value.filter((r) => !pods.pods.some((p) => p.round === r.round) && !hasData(r.round)).length)
+const facts = (round) => {
+  const out = [], loc = (panama.rounds || []).find((r) => r.name === round), vol = (panama.podView?.rounds || []).find((r) => r.name === round)
+  if (loc && loc.state !== 'none') out.push(t('dashboard.factLocal', { n: loc.present }))
+  if (vol && vol.state !== 'none') out.push(t('dashboard.factVolume', { n: vol.present, name: panama.podView?.volume?.name || '' }))
+  return out
+}
 /** What the list shows: with rounds on, every round (empty ones too) then the pods in no round; with rounds off, one list. */
 const sections = computed(() => {
   if (!byRound.value) return pods.pods.length ? [{ key: '*', round: null, label: '', pods: pods.pods }] : []
-  const out = roundNames.value.map((r) => ({ key: r.round, round: r.round, label: r.label, pods: pods.pods.filter((p) => p.round === r.round) }))
+  const out = roundNames.value.map((r) => ({ key: r.round, round: r.round, label: r.label, pods: pods.pods.filter((p) => p.round === r.round) })).filter((s) => s.pods.length || hasData(s.round) || showEmpty.value)
   const rest = pods.pods.filter((p) => !p.round)
   if (rest.length || !out.length) out.push({ key: '', round: null, label: t('dashboard.unassigned'), pods: rest })
   return out
@@ -156,6 +178,10 @@ const onDrop = (e, sec) => {
   if (window.confirm(msg)) pods.setRound(pod.id, sec.round || '')
 }
 /** Re-import opens Import Round with this round chosen. Delete clears the round on our side (after a confirmation): its pods leave it and keep running. */
+/** Run all workflows of a round: on a running pod of the round (Run Workflows opens with the round's graphs ticked); with none running, Import Round(s) opens on the round to pick pods and cards. */
+const runFlows = ref(null)
+const runningPod = (sec) => sec.pods.find((p) => p.status === 'running') || null
+const runRound = (sec) => { const pod = runningPod(sec); if (pod) runFlows.value = { pod: { id: pod.id, name: pod.name }, round: sec.round }; else reimportRound(sec) }
 const reimportRound = (sec) => { hideRound(sec.round, false); ui.importRoundPreset = sec.round; ui.importRoundOpen = true }
 const deleteRound = (sec) => { if (window.confirm(t('dashboard.confirmDeleteRound', { name: sec.label, n: sec.pods.length }))) { hideRound(sec.round, true); pods.deleteRound(sec.round) } }
 /** A round is renamable: the name is ours (the delivery round keeps its own); empty goes back to it. */
@@ -163,7 +189,7 @@ const renamingRound = ref('')
 const roundDraft = ref('')
 const startRenameRound = (r) => { roundDraft.value = r.label; renamingRound.value = r.round }
 const saveRenameRound = (r) => { const n = roundDraft.value.trim(); renamingRound.value = ''; if (n !== r.label) pods.renameRound(r.round, n === r.round ? '' : n) }
-onMounted(async () => { try { const st = await panama.loadStatus(); if (st?.configured) await panama.loadRounds() } catch { /* no exchange: only rounds with pods are offered */ } })
+onMounted(async () => { try { const st = await panama.loadStatus(); if (st?.configured) { await panama.loadRounds(); panama.loadPod() } } catch { /* no exchange: only rounds with pods are offered */ } })
 /** The grouped view is a choice, off by default (the plain list); it is remembered. */
 const grouped = ref(localStorage.getItem('pods.groupByDatacenter') === '1')
 watch(grouped, (v) => localStorage.setItem('pods.groupByDatacenter', v ? '1' : '0'))

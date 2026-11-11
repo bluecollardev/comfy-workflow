@@ -26,6 +26,14 @@ export interface Task {
   phase?: 'pod' | 'job'; job_id?: string; graphs?: string[]
   /** The card chosen for this shot: its run gets a pod of its own with that card (no pool pod is reused). Absent = the pool, else the default card. */
   gpu?: string; price?: number | null
+  /** What happened to this task and when: pod chosen / created / resumed, pod ready, job stages, results. The Queue shows it. */
+  events?: { at: string; text: string }[]
+  /** The live stage of the pull job or the run (`pulling`, `placing`, `running 3/12 graphs`...). */
+  stage?: string
+  /** The card of the pod this task actually runs on, when the queue created it (the chosen card, else the pool's default): shown in the Queue for every task. */
+  card?: string
+  /** A pod could not be had because RunPod had no card free: the run waits and asks again (not before `retry_at`), up to MAX_CARD_WAITS times. */
+  retry_at?: string; attempts?: number
   started_at?: string; finished_at?: string; error?: string; detail?: string; held_reason?: string
 }
 export interface ImportRec {
@@ -193,8 +201,14 @@ export async function importRounds(items: RoundItem[], o: Omit<ImportOpts, 'shot
 }
 
 // ----- the scheduler -----
+/** Waiting for a card to be free again: ask again every minute, for half an hour. */
+export const CARD_RETRY_MS = 60_000
+export const MAX_CARD_WAITS = 30
+/** A run that never started because its pull did not finish says so, and why. */
+const NOT_STARTED = 'Not started: its pull did not finish'
+const ev = (t: Task, text: string) => { (t.events ||= []).push({ at: deps.now().toISOString(), text }); if (t.events.length > 60) t.events.splice(0, t.events.length - 60) }
 const logTask = (t: Task, imp: ImportRec) => history.record({ kind: 'job', job: 'queue', state: t.state === 'done' ? 'done' : t.state === 'cancelled' ? 'cancelled' : 'failed', started_at: t.started_at, what: `${t.round} ${t.kind}${t.shot ? ` ${t.shot}` : ''}`, pod_id: t.pod_id ?? undefined, pod_name: t.pod_name ?? undefined, ...(t.error ? { error: t.error } : {}), detail: `import ${imp.id}; approved by ${imp.approved_by}${t.detail ? `; ${t.detail}` : ''}` })
-const finish = (t: Task, imp: ImportRec, s: 'done' | 'failed' | 'cancelled', error?: string) => { t.state = s; t.finished_at = deps.now().toISOString(); if (error) t.error = error; logTask(t, imp) }
+const finish = (t: Task, imp: ImportRec, s: 'done' | 'failed' | 'cancelled', error?: string) => { ev(t, error ? `${s}: ${error}` : s); t.stage = undefined; t.state = s; t.finished_at = deps.now().toISOString(); if (error) t.error = error; logTask(t, imp) }
 
 let ticking = false
 /** One scheduler pass: read the running tasks' jobs, start what can start, stop pods the imports no longer need. Never throws. */
@@ -210,7 +224,7 @@ export async function tick(): Promise<void> {
       // 2. waiting tasks whose dependencies are done
       for (const t of tasks.filter((x) => x.state === 'waiting')) {
         const deps_ = t.depends_on.map((id) => q.tasks.find((x) => x.id === id))
-        if (deps_.some((d) => d && (d.state === 'failed' || d.state === 'cancelled' || d.state === 'interrupted'))) { finish(t, imp, 'failed', 'Its pull did not finish.'); dirty = true; continue }
+        if (deps_.some((d) => d && (d.state === 'failed' || d.state === 'cancelled' || d.state === 'interrupted'))) { const why = deps_.find((d) => d && (d.state === 'failed' || d.state === 'cancelled' || d.state === 'interrupted')); finish(t, imp, 'failed', `${NOT_STARTED}${why?.error ? `: ${why.error}` : ''}`); dirty = true; continue }
         if (!deps_.every((d) => !d || d.state === 'done')) continue
         if (await begin(t, imp, tasks)) dirty = true
       }
@@ -228,24 +242,31 @@ export async function tick(): Promise<void> {
 async function follow(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> {
   if (t.kind === 'run' && t.phase === 'pod') {
     const r = await deps.podReady(t.pod_id!)
-    if (!r.ready) return false
-    if (!t.graphs?.length) { t.detail = 'no graphs for this shot in the round'; finish(t, imp, 'done'); return true }
-    t.job_id = (await deps.run(t.pod_id!, t.graphs)).id; t.phase = 'job'; return true
+    if (!r.ready) { if (t.stage !== 'waiting for the pod to come up') { t.stage = 'waiting for the pod to come up'; return true } return false }
+    if (!t.graphs?.length) { t.detail = 'no graphs for this shot in the round'; ev(t, 'no graphs for this shot in the round'); finish(t, imp, 'done'); return true }
+    ev(t, `pod ${t.pod_name} is ready: running ${t.graphs.length} graph(s)`)
+    t.job_id = (await deps.run(t.pod_id!, t.graphs)).id; t.phase = 'job'; t.stage = `running 0/${t.graphs.length} graphs`; return true
   }
   if (t.kind === 'pull') {
     const j = t.job_id ? deps.pullJob(t.job_id) : null
     if (!j) { finish(t, imp, 'failed', 'The pull job is gone (the app restarted?).'); return true }
     if (j.state === 'failed' || j.state === 'cancelled') { finish(t, imp, j.state === 'cancelled' ? 'cancelled' : 'failed', j.error || `The pull ${j.state}.`); return true }
     if (j.state === 'done') {
+      ev(t, `pull done: ${j.files} file(s)${j.place ? `, placed ${j.place.linked}, ${j.place.graphs?.length ?? 0} graph(s)` : ''}`)
       for (const run of tasks.filter((x) => x.kind === 'run')) run.graphs = (j.place?.graphs ?? []).filter((g) => g.shot === run.shot).map((g) => g.path.replace(/^.*?workflows\//, ''))
       t.pod_id = j.pod_id; t.pod_name = j.pod_name; t.detail = `${j.files} file(s)${j.place ? `, placed ${j.place.linked}` : ''}`
       finish(t, imp, 'done'); return true
     }
-    t.pod_id = j.pod_id; t.pod_name = j.pod_name; return false
+    const stage = `${j.state}${j.files ? `: ${j.files} file(s)` : ''}${j.bytes_total ? `, ${Math.round((j.bytes_done / j.bytes_total) * 100)}%` : ''}`
+    let changed = false
+    if (t.stage !== stage) { if (!t.stage?.startsWith(j.state)) ev(t, `${j.state}${j.pod_name ? ` on ${j.pod_name}` : ''}`); t.stage = stage; changed = true }
+    if (j.pod_name && t.pod_name !== j.pod_name) { ev(t, `pod ${j.pod_name} (${j.pod_id})`); changed = true }
+    t.pod_id = j.pod_id; t.pod_name = j.pod_name; return changed
   }
   const j = t.job_id ? deps.runJob(t.job_id) : null
   if (!j) { finish(t, imp, 'failed', 'The run job is gone (the app restarted?).'); return true }
-  if (j.state === 'running') return false
+  if (j.state === 'running') { const stage = `running ${j.ok + j.failed}/${j.results.length} graphs${j.failed ? `, ${j.failed} failed` : ''}`; if (t.stage !== stage) { t.stage = stage; return true } return false }
+  ev(t, `finished: ${j.ok} ok, ${j.failed} failed of ${j.results.length}`)
   const hours = (deps.now().getTime() - new Date(t.started_at!).getTime()) / 3_600_000
   imp.spent_usd = Math.round((imp.spent_usd + (t.price ?? imp.price_per_hour ?? 0) * hours) * 100) / 100
   t.detail = `${j.ok} ok, ${j.failed} failed of ${j.results.length}`
@@ -256,9 +277,10 @@ async function follow(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> 
 
 async function begin(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> {
   if (t.kind === 'pull') {
-    try { t.job_id = (await deps.pull(t.round)).id; t.state = 'running'; t.started_at = deps.now().toISOString(); t.phase = 'job' } catch (e) { finish(t, imp, 'failed', (e as Error).message) }
+    try { t.job_id = (await deps.pull(t.round)).id; t.state = 'running'; t.started_at = deps.now().toISOString(); t.phase = 'job'; ev(t, `pull of ${t.round} started (a short-lived pod of the cheapest free card, or a pod of yours)`) } catch (e) { finish(t, imp, 'failed', (e as Error).message) }
     return true
   }
+  if (t.retry_at && new Date(t.retry_at).getTime() > deps.now().getTime()) return false   // waiting for a card to be free again
   // a run task needs a pod: within the import's pod limit and dollar cap
   const running = tasks.filter((x) => x.kind === 'run' && x.state === 'running').length
   if (imp.max_pods != null && running >= imp.max_pods) return false   // wait for a pod to free up: not an error
@@ -274,12 +296,21 @@ async function begin(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> {
     let podId: string, podName: string
     if (pick) {
       podId = pick.id; podName = pick.name
-      if (pick.state === 'off') { await deps.resumePod(pick.id); imp.started_pods.push(pick.id) }
+      if (pick.state === 'off') { await deps.resumePod(pick.id); imp.started_pods.push(pick.id); ev(t, `restarted your stopped pod ${pick.name}`) } else ev(t, `reusing the pod ${pick.name} (${pick.state})`)
     } else {
-      const c = await deps.createPod(`queue-${imp.round}-${tasks.filter((x) => x.pod_id).length + 1}`.slice(0, 60), imp.round, t.gpu); podId = c.id; podName = c.name; imp.started_pods.push(c.id)
+      const c = await deps.createPod(`queue-${imp.round}-${tasks.filter((x) => x.pod_id).length + 1}`.slice(0, 60), imp.round, t.gpu); podId = c.id; podName = c.name; t.card = t.gpu || POOL_GPU; imp.started_pods.push(c.id); ev(t, `created pod ${c.name} (${t.gpu || POOL_GPU}) in round ${imp.round}`)
     }
-    t.pod_id = podId; t.pod_name = podName; t.phase = 'pod'; t.state = 'running'; t.started_at = deps.now().toISOString(); delete t.held_reason
-  } catch (e) { finish(t, imp, 'failed', (e as Error).message) }
+    t.pod_id = podId; t.pod_name = podName; t.phase = 'pod'; t.state = 'running'; t.retry_at = undefined; t.attempts = undefined; t.stage = undefined; t.started_at = deps.now().toISOString(); delete t.held_reason
+  } catch (e) {
+    const msg = (e as Error).message
+    if (/No card available/.test(msg) && (t.attempts ?? 0) < MAX_CARD_WAITS) {   // RunPod has none free right now: wait and ask again, as the datacenter table says "if we have to wait we have to wait"
+      t.attempts = (t.attempts ?? 0) + 1; t.retry_at = new Date(deps.now().getTime() + CARD_RETRY_MS).toISOString()
+      t.stage = `waiting for a free ${t.gpu || POOL_GPU} (try ${t.attempts} of ${MAX_CARD_WAITS}, next at ${t.retry_at.slice(11, 19)} UTC)`
+      if (t.attempts === 1) ev(t, `no card free right now: ${msg.slice(0, 160)}. Waiting and asking again every minute.`)
+      return true
+    }
+    finish(t, imp, 'failed', msg)
+  }
   return true
 }
 const q = () => state()
@@ -309,6 +340,8 @@ export function retryTask(id: string): Task {
   const t = state().tasks.find((x) => x.id === id); if (!t) throw new CoreError(404, `No such task: ${id}`)
   if (live(t) && t.state !== 'held' && t.state !== 'interrupted') throw new CoreError(409, `Task ${id} is ${t.state}: nothing to retry.`)
   Object.assign(t, { state: 'waiting', error: undefined, detail: undefined, held_reason: undefined, job_id: undefined, phase: undefined, pod_id: null, pod_name: null, finished_at: undefined })
+  // retrying a pull also puts back the runs that failed only because it did not finish
+  if (t.kind === 'pull') for (const r of state().tasks) if (r.import_id === t.import_id && r.kind === 'run' && r.state === 'failed' && (!!r.error?.startsWith(NOT_STARTED) || r.error === 'Its pull did not finish.')) Object.assign(r, { state: 'waiting', error: undefined, finished_at: undefined, events: [...(r.events ?? []), { at: deps.now().toISOString(), text: 'its pull was retried: waiting for it again' }] })
   const imp = state().imports.find((i) => i.id === t.import_id)!; imp.state = 'active'
   save(); start(); return t
 }

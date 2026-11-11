@@ -45,7 +45,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { runflowsAPI } from '../api/runflows'
 import { errorText } from '../stores/toast'
 
-const props = defineProps({ modelValue: { type: Boolean, default: false }, pod: { type: Object, required: true } })
+const props = defineProps({ modelValue: { type: Boolean, default: false }, pod: { type: Object, required: true }, round: { type: String, default: '' } })
 const emit = defineEmits(['update:modelValue'])
 const open = computed({ get: () => props.modelValue, set: (v) => emit('update:modelValue', v) })
 const files = ref([]), picked = ref(new Set()), loading = ref(false), error = ref(''), job = ref(null)
@@ -62,7 +62,7 @@ const badgeClass = (s) => ({ done: 'text-bg-success', failed: 'text-bg-danger', 
 
 async function load() {
   loading.value = true; error.value = ''; job.value = null
-  try { files.value = (await runflowsAPI.list(props.pod.id)).workflows; picked.value = new Set(files.value.map((f) => f.path)) }   // every graph ticked: "run all workflows in the shot"
+  try { files.value = (await runflowsAPI.list(props.pod.id)).workflows; picked.value = new Set(files.value.map((f) => f.path)); if (props.round) { const mine = files.value.filter((f) => `/${f.path}`.includes(`/${props.round}/`)); if (mine.length) picked.value = new Set(mine.map((f) => f.path)) } }   // every graph ticked, or every graph of the round it was opened from: "run all workflows in the shot"
   catch (e) { error.value = errorText(e); files.value = [] }
   finally { loading.value = false }
 }
