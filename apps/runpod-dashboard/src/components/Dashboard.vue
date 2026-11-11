@@ -63,7 +63,7 @@
             <div v-show="!byRound || !isCollapsed(sec)" data-testid="round-body">
               <div v-if="!sec.pods.length" class="small text-body-secondary py-2" data-testid="round-empty">
                 <template v-if="facts(sec.round).length"><span v-for="f in facts(sec.round)" :key="f" class="badge text-bg-secondary fw-normal me-2" data-testid="round-fact">{{ f }}</span></template>
-                {{ $t('dashboard.roundEmpty') }}
+                <template v-if="!facts(sec.round).length">{{ $t('dashboard.roundEmpty') }}</template>
               </div>
               <BRow v-else-if="!grouped" class="g-3" data-testid="round-pod-list">
                 <BCol v-for="pod in sec.pods" :key="pod.id" md="6" xl="4">
