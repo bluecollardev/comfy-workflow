@@ -381,6 +381,7 @@
   },
   "importRound": {
     "browse": "Browse files",
+    "selectAll": "Select all",
     "noShots": "No shots in this round (it has no shot folders: it is not something to run). Use Panama to copy it as files.",
     "noCards": "The workflows are not run, so no shot pods are made: only the pull (a short-lived pod of the cheapest card) copies the round to the volume.",
     "volume": "Network volume",

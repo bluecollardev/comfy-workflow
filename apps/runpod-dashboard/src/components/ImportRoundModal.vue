@@ -24,7 +24,12 @@
         </div>
         <div class="small text-body-secondary">{{ $t('importRound.droppedNote') }}</div>
       </div>
-      <div class="form-label small mb-1">{{ $t('importRound.rounds') }}</div>
+      <div class="d-flex align-items-center justify-content-between mb-1">
+        <div class="form-label small mb-0">{{ $t('importRound.rounds') }}</div>
+        <label v-if="selectable.length > 1" class="d-flex align-items-center gap-2 small mb-0" for="irr-all">
+          <input id="irr-all" type="checkbox" class="form-check-input mt-0" :checked="allChosen" :indeterminate.prop="chosen.size > 0 && !allChosen" data-testid="import-round-select-all" @change="toggleAll($event.target.checked)" />{{ $t('importRound.selectAll') }}
+        </label>
+      </div>
       <div class="border rounded p-2 round-list" data-testid="import-round-list">
         <template v-for="r in roundNamesList" :key="r">
         <div class="d-flex align-items-center gap-2 small round-row" data-testid="import-round-option" :data-round="r">
@@ -193,6 +198,10 @@ onMounted(async () => { try { gpuMenu.value = ((await podsAPI.gpus('')).gpus || 
   try { const r = await panamaAPI.rounds(); rounds.value = Array.isArray(r) ? r : r.rounds || [] } catch (e) { error.value = errorText(e) } })
 watch(() => ui.importRoundOpen, (o) => { if (o) step.value = 1; if (o && ui.importRoundPreset) { toggleRound(ui.importRoundPreset, true); ui.importRoundPreset = '' } }, { immediate: true })   // re-import: the round is already ticked
 const followPods = () => { if (!podsEdited.value) maxPods.value = Math.min(20, Math.max(1, ...[...plans.value.keys()].map(shotCount))) }
+/** Select all: every round that can be ticked (one refused for having no shots stays out); unticking clears them all. */
+const selectable = computed(() => roundNamesList.value.filter((r) => !rowErrors.value[r]))
+const allChosen = computed(() => selectable.value.length > 0 && selectable.value.every((r) => chosen.value.has(r)))
+const toggleAll = (on) => { for (const r of on ? selectable.value.filter((x) => !chosen.value.has(x)) : [...chosen.value]) toggleRound(r, on) }
 async function toggleRound(r, on) {
   const n = new Set(chosen.value); on ? n.add(r) : n.delete(r); chosen.value = n
   error.value = ''; { const e = { ...rowErrors.value }; delete e[r]; rowErrors.value = e }

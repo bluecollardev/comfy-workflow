@@ -151,3 +151,17 @@ test('Import Round(s): step 2 opens right after a round is ticked, while its sho
   await expect(dlg.getByTestId('import-round-shot')).toHaveCount(2)   // then the shots appear
   await expect(dlg.getByTestId('import-round-reading')).toHaveCount(0)
 })
+
+test('Import Round(s): Select all ticks every round (and clears them), and Next goes on with all of them', async ({ page }) => {
+  await page.goto('/'); await page.getByTestId('open-import-round').click()
+  const dlg = page.getByTestId('import-round-modal')
+  const boxes = dlg.getByTestId('import-round-option').locator('input')
+  await dlg.getByTestId('import-round-select-all').check()
+  const n = await boxes.count()
+  for (let i = 0; i < n; i++) await expect(boxes.nth(i)).toBeChecked()
+  await dlg.getByTestId('import-round-next').click()
+  await expect(dlg.getByTestId('import-round-group')).toHaveCount(n)
+  await dlg.locator('[data-testid="import-round-step"][data-step="1"]').click()
+  await dlg.getByTestId('import-round-select-all').uncheck()
+  for (let i = 0; i < await boxes.count(); i++) await expect(boxes.nth(i)).not.toBeChecked()
+})
