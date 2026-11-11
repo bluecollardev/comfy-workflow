@@ -133,8 +133,8 @@ test.describe('Pod list grouped by datacenter', () => {
   })
 })
 
-test('the top bar reads Pause all, Connect, Volumes, Queue, History, Settings, Refresh', async ({ page }) => {
+test('the top bar reads Connect, Volumes, Queue, History, Settings, Pause all, Refresh', async ({ page }) => {
   await page.goto('/')
-  const ids = await page.locator('nav [data-testid], .navbar [data-testid]').evaluateAll((els) => els.map((e) => e.dataset.testid).filter((id) => ['pause-all', 'open-connect', 'open-volumes', 'open-queue', 'open-history', 'open-config', 'refresh'].includes(id)))
-  expect(ids).toEqual(['pause-all', 'open-connect', 'open-volumes', 'open-queue', 'open-history', 'open-config', 'refresh'])
+  const ids = await page.locator('nav [data-testid], .navbar [data-testid]').evaluateAll((els) => els.map((e) => e.dataset.testid).filter((id) => ['open-connect', 'open-volumes', 'open-queue', 'open-history', 'open-config', 'pause-all', 'refresh'].includes(id)))
+  expect(ids).toEqual(['open-connect', 'open-volumes', 'open-queue', 'open-history', 'open-config', 'pause-all', 'refresh'])
 })
