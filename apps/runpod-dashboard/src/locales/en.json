@@ -47,7 +47,7 @@
     "factLocal": "On this PC: {n} files",
     "factVolume": "On the volume {name}: {n} files",
     "roundEmpty": "No pods in it yet: pick it on a pod's Round choice.",
-    "roundReimportLabel": "Re-import", "roundReimport": "Import this round again", "roundDelete": "Delete this round", "confirmDeleteRound": "Delete the round \"{name}\"? Its {n} pod(s) leave it and keep running; nothing on RunPod is deleted.", "roundRename": "Rename this round (only in this app)",
+    "roundReimportLabel": "Import", "roundRun": "Run workflows", "roundRunTitle": "Run all workflows of this round on {name}", "roundRunNoPod": "No pod of this round is running: opens Import Round(s) on it, to pick the pods and cards", "roundReimport": "Import this round again", "roundDelete": "Delete this round", "confirmDeleteRound": "Delete the round \"{name}\"? Its {n} pod(s) leave it and keep running; nothing on RunPod is deleted.", "roundRename": "Rename this round (only in this app)",
     "roundRenameSave": "Save the round name",
     "groupByDatacenter": "Group by datacenter",
     "noDatacenter": "Datacenter unknown",

@@ -49,7 +49,8 @@
                 <span v-if="renamingRound !== sec.round" class="fw-semibold" data-testid="round-title" :title="sec.round && sec.label !== sec.round ? sec.round : ''">{{ sec.label }}</span>
               </button>
               <template v-if="sec.round && renamingRound !== sec.round">
-                <button type="button" class="btn btn-link btn-sm p-0 align-baseline text-body-secondary" :title="$t('dashboard.roundReimport')" :aria-label="$t('dashboard.roundReimport')" :disabled="!settings.ready" data-testid="round-reimport" @click="reimportRound(sec)"><i class="fa-solid fa-rotate-right fa-xs me-1"></i>{{ $t('dashboard.roundReimportLabel') }}</button>
+                <button type="button" class="btn btn-link btn-sm p-0 align-baseline text-body-secondary" :title="$t('dashboard.roundReimport')" :aria-label="$t('dashboard.roundReimport')" :disabled="!settings.ready" data-testid="round-reimport" @click="reimportRound(sec)"><i class="fa-solid fa-cloud-arrow-down fa-xs me-1"></i>{{ $t('dashboard.roundReimportLabel') }}</button>
+                <button type="button" class="btn btn-link btn-sm p-0 align-baseline text-body-secondary" :title="runningPod(sec) ? $t('dashboard.roundRunTitle', { name: runningPod(sec).name }) : $t('dashboard.roundRunNoPod')" :aria-label="$t('dashboard.roundRun')" data-testid="round-run-workflows" @click="runRound(sec)"><i class="fa-solid fa-play fa-xs me-1"></i>{{ $t('dashboard.roundRun') }}</button>
                 <button type="button" class="btn btn-link btn-sm p-0 align-baseline text-body-secondary" :title="$t('dashboard.roundDelete')" :aria-label="$t('dashboard.roundDelete')" data-testid="round-delete" @click="deleteRound(sec)"><i class="fa-solid fa-trash fa-xs"></i></button>
                 <button type="button" class="btn btn-link btn-sm p-0 align-baseline text-body-secondary" :title="$t('dashboard.roundRename')" :aria-label="$t('dashboard.roundRename')" data-testid="round-rename" @click="startRenameRound(sec)"><i class="fa-solid fa-pencil fa-xs"></i></button>
               </template>
@@ -96,6 +97,7 @@
     >
       {{ pods.actionError }}
     </BAlert>
+    <RunWorkflowsModal v-if="runFlows" :model-value="true" :pod="runFlows.pod" :round="runFlows.round" @update:model-value="(v) => !v && (runFlows = null)" />
   </div>
 </template>
 
@@ -113,6 +115,7 @@ import { useUiStore } from '../stores/ui'
 import { usePodsStore } from '../stores/pods'
 import { usePanamaStore } from '../stores/panama'
 import { t } from '../i18n'
+import RunWorkflowsModal from './RunWorkflowsModal.vue'
 
 const pods = usePodsStore()
 const panama = usePanamaStore()
@@ -173,6 +176,10 @@ const onDrop = (e, sec) => {
   if (window.confirm(msg)) pods.setRound(pod.id, sec.round || '')
 }
 /** Re-import opens Import Round with this round chosen. Delete clears the round on our side (after a confirmation): its pods leave it and keep running. */
+/** Run all workflows of a round: on a running pod of the round (Run Workflows opens with the round's graphs ticked); with none running, Import Round(s) opens on the round to pick pods and cards. */
+const runFlows = ref(null)
+const runningPod = (sec) => sec.pods.find((p) => p.status === 'running') || null
+const runRound = (sec) => { const pod = runningPod(sec); if (pod) runFlows.value = { pod: { id: pod.id, name: pod.name }, round: sec.round }; else reimportRound(sec) }
 const reimportRound = (sec) => { hideRound(sec.round, false); ui.importRoundPreset = sec.round; ui.importRoundOpen = true }
 const deleteRound = (sec) => { if (window.confirm(t('dashboard.confirmDeleteRound', { name: sec.label, n: sec.pods.length }))) { hideRound(sec.round, true); pods.deleteRound(sec.round) } }
 /** A round is renamable: the name is ours (the delivery round keeps its own); empty goes back to it. */
