@@ -26,11 +26,14 @@
       </div>
       <div class="form-label small mb-1">{{ $t('importRound.rounds') }}</div>
       <div class="border rounded p-2 round-list" data-testid="import-round-list">
-        <div v-for="r in roundNamesList" :key="r" class="d-flex align-items-center gap-2 small round-row" data-testid="import-round-option" :data-round="r">
+        <template v-for="r in roundNamesList" :key="r">
+        <div class="d-flex align-items-center gap-2 small round-row" data-testid="import-round-option" :data-round="r">
           <input :id="`irr-${r}`" type="checkbox" class="form-check-input mt-0" :checked="chosen.has(r)" @change="toggleRound(r, $event.target.checked)" />
           <label :for="`irr-${r}`" class="font-monospace mb-0 flex-grow-1">{{ r }}</label>
           <BButton variant="outline-light" size="sm" class="py-0 text-nowrap" data-testid="import-round-browse" @click="browsing = r"><i class="fa-solid fa-folder-tree me-1"></i>{{ $t('importRound.browse') }}</BButton>
         </div>
+        <div v-if="rowErrors[r]" class="small text-danger pb-1 ps-4" data-testid="import-round-row-error" :data-round="r">{{ rowErrors[r] }}</div>
+        </template>
         <div v-if="!roundNamesList.length" class="small text-body-secondary">{{ $t('importRound.noRounds') }}</div>
       </div>
       <div v-if="loadingPlan" class="small text-body-secondary mt-2" data-testid="import-round-loading">{{ $t('importRound.loadingPlan') }}</div>
@@ -93,7 +96,7 @@
         <div class="ms-auto d-flex gap-2">
           <BButton variant="outline-light" size="sm" @click="open = false">{{ $t('picker.cancel') }}</BButton>
           <BButton v-if="step > 1" variant="outline-light" size="sm" data-testid="import-round-back" @click="step--"><i class="fa-solid fa-arrow-left me-1"></i>{{ $t('importRound.back') }}</BButton>
-          <BButton v-if="step < 3" variant="primary" size="sm" :disabled="!canNext" data-testid="import-round-next" @click="next">{{ $t('importRound.next') }}<i class="fa-solid fa-arrow-right ms-1"></i></BButton>
+          <BButton v-if="step < 3" variant="primary" size="sm" :class="{ blocked: !canNext }" data-testid="import-round-next" @click="next">{{ $t('importRound.next') }}<i class="fa-solid fa-arrow-right ms-1"></i></BButton>
           <BButton variant="success" size="sm" :disabled="!canStart || starting" data-testid="import-round-start" @click="start"><i class="fa-solid fa-file-import me-1"></i>{{ $t('importRound.start') }}</BButton>
         </div>
       </div>
@@ -136,6 +139,7 @@ function importDropped(d) {
   imports.folder = d.path; ui.importPod = null; ui.importSource = 'folder'; imports.makePlan(false)
   open.value = false; ui.importOpen = true
 }
+const rowErrors = ref({})   // round -> why it cannot be ticked (no shots in it, or its plan failed)
 const step = ref(1)
 const stepLabels = computed(() => [t('importRound.stepRounds'), t('importRound.stepShots'), t('importRound.stepCards')])
 const cards = ref({})   // `${round}::${shot}` -> card key; absent = the pool
@@ -162,7 +166,7 @@ const stepDone = (n) => (n === 1 ? chosen.value.size > 0 && plans.value.size ===
 const canGoTo = (n) => n === 1 || (n === 2 ? stepDone(1) : stepDone(1) && totalShots.value > 0)
 const stepWhy = (n) => (n === 2 ? t('importRound.hintPick') : !chosen.value.size ? t('importRound.hintPick') : t('importRound.hintShots'))
 const goTo = async (n) => { if (!canGoTo(n)) { error.value = stepWhy(n); return } error.value = ''; step.value = n; if (n === 3) { loadVolumes(); await replan() } }
-const next = async () => { step.value++; if (step.value === 3) { loadVolumes(); await replan() } }
+const next = async () => { if (!canNext.value) { error.value = loadingPlan.value ? t('importRound.loadingPlan') : step.value === 1 ? t('importRound.hintPick') : t('importRound.hintShots'); return } error.value = ''; step.value++; if (step.value === 3) { loadVolumes(); await replan() } }
 const hint = computed(() => (!chosen.value.size ? t('importRound.hintPick') : step.value < 3 ? t('importRound.hintSteps') : !volumeId.value ? t('importRound.volumeNone') : !totalShots.value ? t('importRound.hintShots') : t('importRound.hintApprove')))
 const volumes = ref([]), volumeId = ref(''), defaultVolume = ref('')
 const volumeOptions = computed(() => [{ value: '', text: t('importRound.volumePick') }, ...volumes.value.map((v) => ({ value: v.id, text: `${v.name} · ${v.size_gb} GB · ${v.datacenter}${v.is_default ? ` · ${t('importRound.volumeDefault')}` : ''}` }))])
@@ -189,16 +193,17 @@ watch(() => ui.importRoundOpen, (o) => { if (o) step.value = 1; if (o && ui.impo
 const followPods = () => { if (!podsEdited.value) maxPods.value = Math.min(20, Math.max(1, ...[...plans.value.keys()].map(shotCount))) }
 async function toggleRound(r, on) {
   const n = new Set(chosen.value); on ? n.add(r) : n.delete(r); chosen.value = n
-  error.value = ''
+  error.value = ''; { const e = { ...rowErrors.value }; delete e[r]; rowErrors.value = e }
   if (!on) { plans.value.delete(r); picked.value.delete(r); plans.value = new Map(plans.value); picked.value = new Map(picked.value); followPods(); return }
   loadingPlan.value = true
   try {
     const pl = await queueAPI.plan(r, {})
     if (!chosen.value.has(r)) return
+    if (!pl.shots?.length) { rowErrors.value = { ...rowErrors.value, [r]: t('importRound.noShots') }; const m = new Set(chosen.value); m.delete(r); chosen.value = m; return }   // nothing to run in it: say so on its row and leave it unticked
     plans.value = new Map(plans.value).set(r, pl); picked.value = new Map(picked.value).set(r, new Set(pl.shots))   // every shot ticked
     if (plans.value.size === 1) costCap.value = pl.cost_cap_usd ?? 50
     podsEdited.value = false; followPods()
-  } catch (e) { error.value = errorText(e); const m = new Set(chosen.value); m.delete(r); chosen.value = m } finally { loadingPlan.value = false }
+  } catch (e) { rowErrors.value = { ...rowErrors.value, [r]: errorText(e) }; const m = new Set(chosen.value); m.delete(r); chosen.value = m } finally { loadingPlan.value = false }
 }
 function toggleShot(r, s, on) { const m = new Map(picked.value); const n = new Set(m.get(r)); on ? n.add(s) : n.delete(s); m.set(r, n); picked.value = m; followPods() }
 async function start() {
@@ -234,5 +239,6 @@ async function start() {
 .drop-zone.over { border-color: #508cff; background: rgba(80, 140, 255, 0.12); color: inherit; }
 .round-list { max-height: 14rem; overflow: auto; }
 .round-row { padding: 0.3rem 0; }
-.round-row + .round-row { border-top: 1px solid rgba(255, 255, 255, 0.08); }
+.round-row { border-top: 1px solid rgba(255, 255, 255, 0.08); }
+.round-row:first-child { border-top: 0; }
 </style>
