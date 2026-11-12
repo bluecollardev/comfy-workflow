@@ -45,7 +45,12 @@
 
     <!-- 2. Choose shots -->
     <template v-else-if="step === 2">
-      <div class="small fw-semibold mb-1">{{ $t('importRound.shots') }}</div>
+      <div class="d-flex align-items-center justify-content-between mb-1">
+        <div class="small fw-semibold">{{ $t('importRound.shots') }}</div>
+        <label v-if="allShots.length > 1" class="d-flex align-items-center gap-2 small mb-0" for="irs-all">
+          <input id="irs-all" type="checkbox" class="form-check-input mt-0" :checked="allShotsPicked" :indeterminate.prop="pickedCount > 0 && !allShotsPicked" data-testid="import-round-shots-select-all" @change="toggleAllShots($event.target.checked)" />{{ $t('importRound.selectAll') }}
+        </label>
+      </div>
       <div v-for="r in [...chosen]" :key="r" class="mb-2" data-testid="import-round-group" :data-round="r">
         <div v-if="chosen.size > 1 || pending.has(r)" class="small text-body-secondary font-monospace">{{ r }}</div>
         <div v-if="pending.has(r)" class="small text-body-secondary" data-testid="import-round-reading"><BSpinner small class="me-2" />{{ $t('importRound.loadingPlan') }}</div>
@@ -216,6 +221,10 @@ async function toggleRound(r, on) {
     podsEdited.value = false; followPods()
   } catch (e) { error.value = `${r}: ${errorText(e)}`; rowErrors.value = { ...rowErrors.value, [r]: errorText(e) }; const m = new Set(chosen.value); m.delete(r); chosen.value = m } finally { const q = new Set(pending.value); q.delete(r); pending.value = q }
 }
+const allShots = computed(() => [...chosen.value].flatMap((r) => (plans.value.get(r)?.shots || []).map((s) => [r, s])))
+const pickedCount = computed(() => allShots.value.filter(([r, s]) => picked.value.get(r)?.has(s)).length)
+const allShotsPicked = computed(() => allShots.value.length > 0 && pickedCount.value === allShots.value.length)
+function toggleAllShots(on) { const m = new Map(picked.value); for (const r of chosen.value) m.set(r, new Set(on ? plans.value.get(r)?.shots || [] : [])); picked.value = m; followPods() }
 function toggleShot(r, s, on) { const m = new Map(picked.value); const n = new Set(m.get(r)); on ? n.add(s) : n.delete(s); m.set(r, n); picked.value = m; followPods() }
 async function start() {
   starting.value = true; error.value = ''

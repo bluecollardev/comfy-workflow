@@ -20,6 +20,12 @@ test('Import Round: three steps - rounds, shots, cards - then Import with the ap
   // 2. Choose shots
   await expect(dlg.locator('[data-testid="import-round-step"][data-active="true"]')).toContainText('Choose Shots')
   await expect(dlg.getByTestId('import-round-shot')).toHaveCount(2)
+  const all = dlg.getByTestId('import-round-shots-select-all')
+  await expect(all).toBeChecked()
+  await all.uncheck()   // select all clears every shot, then ticks them again
+  await expect(dlg.getByTestId('import-round-shot').locator('input:checked')).toHaveCount(0)
+  await all.check()
+  await expect(dlg.getByTestId('import-round-shot').locator('input:checked')).toHaveCount(2)
   await dlg.getByTestId('import-round-shot').filter({ hasText: 'cgi-043' }).locator('input').uncheck()
   await dlg.getByTestId('import-round-next').click()
   // 3. Configure deployment: cards for the shots, volume, caps
