@@ -316,3 +316,21 @@ test.describe('Top of the page', () => {
     await expect(alert).toBeInViewport()   // and the alert stays while scrolling
   })
 })
+
+test('a pod card has its edit button at the right of the heading row and, right of it, a coloured dot for the status', async ({ page }) => {
+  await page.goto('/')
+  const card = podCard(page, 'ComfyUI-Dev')
+  const name = await card.getByTestId('pod-name').boundingBox(), edit = await card.getByTestId('pod-rename').boundingBox(), dot = await card.getByTestId('pod-status-dot').boundingBox()
+  const box = await card.boundingBox()
+  expect(Math.abs(edit.y - dot.y)).toBeLessThan(12)   // the same row
+  expect(edit.height).toBeGreaterThan(30)   // a decent size
+  const mid = (b) => b.y + b.height / 2
+  expect(Math.abs(mid(edit) - mid(name))).toBeLessThan(2)   // centred on the heading text
+  expect(Math.abs(mid(dot) - mid(name))).toBeLessThan(2)
+  expect(edit.x).toBeGreaterThan(name.x)   // edit to the right of the name...
+  expect(dot.x).toBeGreaterThan(edit.x)   // ...and the dot to the right of edit
+  expect(box.x + box.width - (dot.x + dot.width)).toBeLessThan(40)   // at the card's right edge
+  await expect(card.getByTestId('pod-status-dot')).toHaveAttribute('data-status', 'running')
+  await expect(card.getByTestId('pod-status-dot')).toHaveClass(/bg-success/)
+  await expect(podCard(page, 'ComfyUI-Batch').getByTestId('pod-status-dot')).toHaveClass(/bg-danger/)
+})

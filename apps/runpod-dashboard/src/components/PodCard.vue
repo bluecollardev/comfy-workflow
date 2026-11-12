@@ -1,17 +1,20 @@
 <template>
   <BCard class="h-100" body-class="d-flex flex-column" data-testid="pod-card" :data-name="pod.name">
-    <div class="d-flex align-items-start gap-2 mb-3">
+    <div class="d-flex align-items-center gap-2 mb-3">
       <span v-if="handle" class="pod-handle text-body-secondary" draggable="true" role="button" :title="$t('pod.dragHandle')" :aria-label="$t('pod.dragHandle')" data-testid="pod-drag-handle" @dragstart="onHandleDragStart" @dragend="emit('dragend')"><i class="fa-solid fa-grip-vertical"></i></span>
       <template v-if="!renaming">
-        <span class="fw-semibold fs-5 text-truncate" :title="pod.runpod_name ? $t('pod.runpodName', { name: pod.runpod_name }) : pod.name" data-testid="pod-name">{{ pod.name }}</span>
-        <button type="button" class="btn btn-link btn-sm p-0 align-baseline text-body-secondary" :title="$t('pod.rename')" :aria-label="$t('pod.editTitle')" data-testid="pod-rename" @click="startRename"><i class="fa-solid fa-pencil fa-xs"></i></button>
+        <span class="fw-semibold fs-5 text-truncate flex-grow-1" style="min-width: 0" :title="pod.runpod_name ? $t('pod.runpodName', { name: pod.runpod_name }) : pod.name" data-testid="pod-name">{{ pod.name }}</span>
       </template>
       <div v-else class="input-group input-group-sm flex-grow-1" style="min-width: 0">
         <input v-model="draft" type="text" class="form-control" maxlength="80" :placeholder="pod.runpod_name || pod.name" :aria-label="$t('pod.editTitle')" data-testid="pod-rename-input" @keydown.enter="saveRename" @keydown.esc="renaming = false" />
         <button type="button" class="btn btn-primary" :title="$t('pod.renameSave')" data-testid="pod-rename-save" @click="saveRename"><i class="fa-solid fa-check"></i></button>
         <button type="button" class="btn btn-outline-light" :title="$t('pod.renameCancel')" data-testid="pod-rename-cancel" @click="renaming = false"><i class="fa-solid fa-xmark"></i></button>
       </div>
-      <BBadge v-if="pod.custom_config" variant="warning" text-indicator class="ms-auto" :title="$t('pod.ownConfigTitle')" data-testid="pod-config-badge">{{ $t('pod.ownConfig') }}</BBadge>
+      <div class="d-flex align-items-center gap-2 ms-auto flex-shrink-0" data-testid="pod-head-actions">
+        <BBadge v-if="pod.custom_config" variant="warning" text-indicator :title="$t('pod.ownConfigTitle')" data-testid="pod-config-badge">{{ $t('pod.ownConfig') }}</BBadge>
+        <button v-if="!renaming" type="button" class="btn btn-outline-light edit-btn" :title="$t('pod.rename')" :aria-label="$t('pod.editTitle')" data-testid="pod-rename" @click="startRename"><i class="fa-solid fa-pencil"></i></button>
+        <span class="status-dot" :class="`bg-${STATUS_VARIANT[pod.status] ?? 'secondary'}`" role="img" :title="$t(`pod.statuses.${pod.status}`)" :aria-label="$t(`pod.statuses.${pod.status}`)" data-testid="pod-status-dot" :data-status="pod.status"></span>
+      </div>
     </div>
 
     <dl class="row g-1 small mb-3 flex-grow-1">
@@ -330,6 +333,8 @@ function confirmDelete() {
 </script>
 
 <style scoped>
+.edit-btn { width: 2.2rem; height: 2.2rem; padding: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 1rem; line-height: 1; }
+.status-dot { width: 0.8rem; height: 0.8rem; border-radius: 50%; display: inline-block; flex: none; }
 .pod-handle { cursor: grab; padding: 2px 4px; align-self: center; }
 .pod-handle:active { cursor: grabbing; }
 </style>
