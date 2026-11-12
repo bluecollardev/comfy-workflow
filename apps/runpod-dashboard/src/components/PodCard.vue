@@ -35,7 +35,7 @@
         <BBadge :variant="STATUS_VARIANT[pod.status] ?? 'secondary'" data-testid="pod-status" :data-status="pod.status">
           {{ $t(`pod.statuses.${pod.status}`) }}
         </BBadge>
-        <span v-if="rate" class="badge text-bg-success fw-semibold ms-1" :title="rate.estimated ? $t('pod.costEstimate') : ''" :data-estimate="rate.estimated || null" data-testid="pod-price">{{ (rate.estimated ? '≈ ' : '') + '$' + rate.perHr + $t('pod.perHour') }}</span>
+        <span v-if="rate" class="badge text-bg-primary fw-semibold ms-1" :title="rate.estimated ? $t('pod.costEstimate') : ''" :data-estimate="rate.estimated || null" data-testid="pod-price">{{ (rate.estimated ? '≈ ' : '') + '$' + rate.perHr + $t('pod.perHour') }}</span>
       </dd>
 
 

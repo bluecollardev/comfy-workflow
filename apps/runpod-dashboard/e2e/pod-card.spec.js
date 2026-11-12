@@ -355,5 +355,6 @@ test('the price is another badge on the Status row, not a row of its own', async
   const status = await card.getByTestId('pod-status').boundingBox(), price = await card.getByTestId('pod-price').boundingBox()
   expect(Math.abs(status.y - price.y)).toBeLessThan(6)   // the same row
   expect(price.x).toBeGreaterThan(status.x)
+  await expect(card.getByTestId('pod-price')).toHaveClass(/text-bg-primary/)   // a blue badge
   await expect(card.locator('dl > dt', { hasText: t('pod.cost') })).toHaveCount(0)
 })
