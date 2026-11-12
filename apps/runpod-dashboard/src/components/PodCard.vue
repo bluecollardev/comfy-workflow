@@ -47,6 +47,14 @@
         </select>
       </dd>
 
+      <template v-if="pod.round">   <!-- with a round chosen: the shot this pod works on, typed or picked from the round's shots -->
+        <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.shot') }}</dt>
+        <dd class="col-8 mb-0">
+          <input v-model="shotDraft" type="text" class="form-control form-control-sm" maxlength="120" :list="`shots-${pod.id}`" :disabled="busy" :placeholder="$t('pod.shotPlaceholder')" :aria-label="$t('pod.shotPick')" autocomplete="off" data-testid="pod-shot" @focus="loadShots" @change="saveShot" @keydown.enter="$event.target.blur()" />
+          <datalist :id="`shots-${pod.id}`"><option v-for="s in shotOptions" :key="s" :value="s"></option></datalist>
+        </dd>
+      </template>
+
       <template v-if="pod.uptime_seconds">
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.uptime') }}</dt>
         <dd class="col-8 mb-0">{{ formatUptime(pod.uptime_seconds) }}</dd>
@@ -208,6 +216,7 @@ import PodLogs from './PodLogs.vue'
 import RunWorkflowsModal from './RunWorkflowsModal.vue'
 import SyncModal from './SyncModal.vue'
 import DockerfileModal from './DockerfileModal.vue'
+import { roundShots } from '../utils/roundShots'
 import ConfigModal from './ConfigModal.vue'
 import { usePodsStore } from '../stores/pods'
 import { useToastStore } from '../stores/toast'
@@ -220,10 +229,16 @@ const props = defineProps({
   handle: { type: Boolean, default: false },   // show the grip a card is dragged by, to move it to another round (ADR-039)
   rounds: { type: Array, default: () => [] },   // the rounds a pod can be dropped into (ADR-039)
 })
-const emit = defineEmits(['stop', 'resume', 'delete', 'rename', 'round', 'dragstart', 'dragend'])
+const emit = defineEmits(['stop', 'resume', 'delete', 'rename', 'round', 'shot', 'dragstart', 'dragend'])
 /** The grip starts the drag; the whole card is the picture that follows the pointer. */
 const onHandleDragStart = (e) => { const card = e.target.closest('[data-testid="pod-card"]'); if (card && e.dataTransfer?.setDragImage) e.dataTransfer.setDragImage(card, 24, 24); emit('dragstart', e) }
 /** The choices: the known rounds, plus the pod's own when it is not among them. */
+/** The shot: free text, or one of the round's shots (read when the field is first focused). Saved when it changes. */
+const shotDraft = ref(props.pod.shot || '')
+watch(() => [props.pod.shot, props.pod.round], () => { shotDraft.value = props.pod.shot || '' })
+const shotOptions = ref([t('pod.allShots')])   // "All Shots" first, then the round's own shots once they are read
+async function loadShots() { if (props.pod.round) shotOptions.value = [t('pod.allShots'), ...(await roundShots(props.pod.round))] }
+const saveShot = () => { const v = shotDraft.value.trim(); if (v !== (props.pod.shot || '')) emit('shot', v) }
 const roundOptions = computed(() => (props.pod.round && !props.rounds.some((r) => r.round === props.pod.round) ? [{ round: props.pod.round, label: props.pod.round_label || props.pod.round }, ...props.rounds] : props.rounds))
 /** The name is ours: a map on this app's side (RunPod keeps its own). Empty goes back to RunPod's name. */
 const renaming = ref(false)

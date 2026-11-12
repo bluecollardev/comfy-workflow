@@ -38,6 +38,7 @@ const ipc = core && {
   setIdle: (id, minutes) => core.invoke('pods', 'setIdle', [id, minutes]),
   rename: (id, name) => core.invoke('pods', 'rename', [id, name]),
   setRound: (id, round) => core.invoke('pods', 'setRound', [id, round]),
+  setShot: (podId, shot) => core.invoke('pods', 'setShot', [podId, shot]),
   renameRound: (round, name) => core.invoke('pods', 'renameRound', [round, name]),
   deleteRound: (round) => core.invoke('pods', 'deleteRound', [round]),
   stopPod: (id) => core.invoke('pods', 'stop', [id]),
@@ -96,6 +97,12 @@ const http = {
   // Put a pod in a round (ADR-039), or take it out with an empty round
   async setRound(podId, round) {
     const { data } = await axios.put(`${API_BASE}/pods/${podId}/round`, { round });
+    return data;
+  },
+
+  // Say which shot a pod works on (free text or one of its round's shots); empty clears it
+  async setShot(podId, shot) {
+    const { data } = await axios.put(`${API_BASE}/pods/${podId}/shot`, { shot });
     return data;
   },
 

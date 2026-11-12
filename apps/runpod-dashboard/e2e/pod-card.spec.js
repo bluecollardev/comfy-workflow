@@ -358,3 +358,27 @@ test('the price is another badge on the Status row, not a row of its own', async
   await expect(card.getByTestId('pod-price')).toHaveClass(/text-bg-primary/)   // a blue badge
   await expect(card.locator('dl > dt', { hasText: t('pod.cost') })).toHaveCount(0)
 })
+
+test('with a round chosen, a pod card has a Shot field: free text or one of the round\'s shots', async ({ page, api }) => {
+  api.state.pods.find((p) => p.name === 'ComfyUI-Dev').round = 'brynley-comfy-2026-11-06'
+  api.state.pods.find((p) => p.name === 'ComfyUI-Dev').round_label = 'brynley-comfy-2026-11-06'
+  await page.goto('/')
+  await expect(podCard(page, 'ComfyUI-Batch').getByTestId('pod-shot')).toHaveCount(0)   // no round, no shot field
+  const card = podCard(page, 'ComfyUI-Dev')
+  const shot = card.getByTestId('pod-shot')
+  await expect(shot).toBeVisible()
+  const rows = await card.locator('dl > dt').evaluateAll((els) => els.map((e) => e.textContent.trim()))
+  expect(rows.indexOf(t('pod.shot'))).toBe(rows.indexOf(t('pod.round')) + 1)   // right below Round
+  await shot.focus()
+  await expect(card.locator('datalist option').first()).toHaveAttribute('value', 'All Shots')   // "All Shots" first
+  await expect(card.locator('datalist option')).not.toHaveCount(1)   // then the round's shots, read from the bucket
+  await shot.fill('All Shots'); await shot.blur()
+  await expect.poll(() => api.state.pods.find((p) => p.name === 'ComfyUI-Dev').shot).toBe('All Shots')
+  await shot.fill('03_INBOX')   // one of the round's shots
+  await shot.blur()
+  await expect.poll(() => api.state.pods.find((p) => p.name === 'ComfyUI-Dev').shot).toBe('03_INBOX')
+  await shot.fill('my own label')   // or free text
+  await shot.blur()
+  await expect.poll(() => api.state.pods.find((p) => p.name === 'ComfyUI-Dev').shot).toBe('my own label')
+  await expect(shot).toHaveValue('my own label')
+})

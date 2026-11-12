@@ -5,7 +5,7 @@ import * as dry from '../src/dry.js'
 import { scratch } from './helpers.js'
 
 let dir: string
-beforeEach(() => { dir = scratch(); process.env.DRY_PODS_FILE = join(dir, 'dry-pods.json'); process.env.POD_ROUNDS_FILE = join(dir, 'pod-rounds.json'); process.env.ROUND_NAMES_FILE = join(dir, 'round-names.json'); process.env.POD_NAMES_FILE = join(dir, 'pod-names.json'); process.env.RUNPOD_DRY_RUN = '1' })
+beforeEach(() => { dir = scratch(); process.env.DRY_PODS_FILE = join(dir, 'dry-pods.json'); process.env.POD_SHOTS_FILE = join(dir, 'pod-shots.json'); process.env.POD_ROUNDS_FILE = join(dir, 'pod-rounds.json'); process.env.ROUND_NAMES_FILE = join(dir, 'round-names.json'); process.env.POD_NAMES_FILE = join(dir, 'pod-names.json'); process.env.RUNPOD_DRY_RUN = '1' })
 const mk = (name: string) => dry.create({ name, gpu: 'rtx4090', gpu_count: 1, image: 'simulated', idle_stop_minutes: 0 })
 
 describe('pods in rounds (ADR-039)', () => {
@@ -57,5 +57,17 @@ describe('pods in rounds (ADR-039)', () => {
     expect((await pods.get(p.id)).round).toBeUndefined()
     expect(pods.rounds().find((r) => r.round === 'gone')).toBeUndefined()
     await expect(pods.deleteRound(' ')).rejects.toThrow(/Which round/)
+  })
+  it('a pod in a round can say which shot it works on; free text; cleared when it leaves the round; refused with no round', async () => {
+    const p = await pods.create({ name: 'shotty', gpu: 'rtx4090' } as any)
+    await expect(pods.setShot(p.id, 'cgi-042')).rejects.toThrow(/in a round first/)
+    await pods.setRound(p.id, 'r5')
+    expect(await pods.setShot(p.id, ' cgi-042 ')).toEqual({ pod_id: p.id, round: 'r5', shot: 'cgi-042' })
+    expect((await pods.get(p.id)).shot).toBe('cgi-042')
+    await expect(pods.setShot(p.id, 'a/b')).rejects.toThrow(/slash/)
+    expect((await pods.setShot(p.id, '')).shot).toBeNull()
+    await pods.setShot(p.id, 'free text shot')
+    await pods.setRound(p.id, 'r6')   // another round: no shot yet
+    expect((await pods.get(p.id)).shot).toBeUndefined()
   })
 })

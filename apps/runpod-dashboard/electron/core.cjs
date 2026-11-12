@@ -68,6 +68,7 @@ const TABLE = {
     setIdle: (c, id, minutes) => c.pods.setIdleStop(id, Number(minutes)),
     rename: (c, id, name) => c.pods.rename(id, name),
     setRound: (c, id, round) => c.pods.setRound(id, round || ''),
+    setShot: (c, id, shot) => c.pods.setShot(id, shot || ''),
     renameRound: (c, round, name) => c.pods.renameRound(round, name || ''),
     deleteRound: (c, round) => c.pods.deleteRound(round),
     rounds: (c) => c.pods.rounds(),
