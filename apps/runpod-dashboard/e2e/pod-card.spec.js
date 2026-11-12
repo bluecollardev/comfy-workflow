@@ -342,3 +342,9 @@ test('the Config, Sync, Details and Logs buttons are the same width with equal g
   expect(Math.max(...m.gaps) - Math.min(...m.gaps)).toBeLessThan(1)
   expect(Math.max(...m.edges)).toBeLessThan(1)
 })
+
+test('a pod card lists ID, then GPU, then Status', async ({ page }) => {
+  await page.goto('/')
+  const labels = await podCard(page, 'ComfyUI-Dev').locator('dl > dt').evaluateAll((els) => els.slice(0, 3).map((e) => e.textContent.trim()))
+  expect(labels).toEqual([t('pod.id'), t('pod.gpu'), t('pod.statusLabel')])
+})

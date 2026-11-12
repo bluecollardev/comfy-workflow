@@ -27,6 +27,9 @@
         <button type="button" class="btn btn-link btn-sm p-0 ms-2 align-baseline" :title="$t('pod.copyId')" data-testid="pod-copy-id" @click="copyId"><i class="fa-regular fa-copy fa-xs"></i></button>
       </dd>
 
+      <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.gpu') }}</dt>
+      <dd class="col-8 mb-0">{{ pod.gpu }}<span v-if="pod.vram" class="text-body-secondary"> · {{ pod.vram }} GB</span></dd>
+
       <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.statusLabel') }}</dt>
       <dd class="col-8 mb-0">
         <BBadge :variant="STATUS_VARIANT[pod.status] ?? 'secondary'" data-testid="pod-status" :data-status="pod.status">
@@ -34,9 +37,6 @@
         </BBadge>
       </dd>
 
-
-      <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.gpu') }}</dt>
-      <dd class="col-8 mb-0">{{ pod.gpu }}<span v-if="pod.vram" class="text-body-secondary"> · {{ pod.vram }} GB</span></dd>
 
       <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.round') }}</dt>
       <dd class="col-8 mb-0">
