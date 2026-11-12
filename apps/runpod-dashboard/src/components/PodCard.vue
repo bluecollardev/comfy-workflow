@@ -12,7 +12,7 @@
       </div>
       <div class="d-flex align-items-center gap-2 ms-auto flex-shrink-0" data-testid="pod-head-actions">
         <BBadge v-if="pod.custom_config" variant="warning" text-indicator :title="$t('pod.ownConfigTitle')" data-testid="pod-config-badge">{{ $t('pod.ownConfig') }}</BBadge>
-        <button v-if="!renaming" type="button" class="btn btn-outline-light edit-btn" :title="$t('pod.rename')" :aria-label="$t('pod.editTitle')" data-testid="pod-rename" @click="startRename"><i class="fa-solid fa-pencil"></i></button>
+        <button v-if="!renaming" type="button" class="edit-btn" :title="$t('pod.rename')" :aria-label="$t('pod.editTitle')" data-testid="pod-rename" @click="startRename"><i class="fa-solid fa-pencil"></i></button>
         <span class="status-dot" :class="`bg-${STATUS_VARIANT[pod.status] ?? 'secondary'}`" role="img" :title="$t(`pod.statuses.${pod.status}`)" :aria-label="$t(`pod.statuses.${pod.status}`)" data-testid="pod-status-dot" :data-status="pod.status"></span>
       </div>
     </div>
@@ -333,7 +333,7 @@ function confirmDelete() {
 </script>
 
 <style scoped>
-.edit-btn { width: 2.2rem; height: 2.2rem; padding: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 1rem; line-height: 1; }
+.edit-btn { width: 2.2rem; height: 2.2rem; padding: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 1rem; line-height: 1; background: none; border: 0; color: var(--bs-secondary-color); }   /* just the pencil: no outline, no hover style */
 .status-dot { width: 0.8rem; height: 0.8rem; border-radius: 50%; display: inline-block; flex: none; }
 .pod-handle { cursor: grab; padding: 2px 4px; align-self: center; }
 .pod-handle:active { cursor: grabbing; }
