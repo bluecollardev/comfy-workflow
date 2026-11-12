@@ -3,7 +3,7 @@
     <div class="d-flex align-items-center gap-2 mb-3">
       <span v-if="handle" class="pod-handle text-body-secondary" draggable="true" role="button" :title="$t('pod.dragHandle')" :aria-label="$t('pod.dragHandle')" data-testid="pod-drag-handle" @dragstart="onHandleDragStart" @dragend="emit('dragend')"><i class="fa-solid fa-grip-vertical"></i></span>
       <template v-if="!renaming">
-        <span class="fw-semibold fs-5 text-truncate flex-grow-1" style="min-width: 0" :title="pod.runpod_name ? $t('pod.runpodName', { name: pod.runpod_name }) : pod.name" data-testid="pod-name">{{ pod.name }}</span>
+        <span class="fw-semibold fs-6 text-truncate flex-grow-1" style="min-width: 0" :title="pod.runpod_name ? $t('pod.runpodName', { name: pod.runpod_name }) : pod.name" data-testid="pod-name">{{ pod.name }}</span>
       </template>
       <div v-else class="input-group input-group-sm flex-grow-1" style="min-width: 0">
         <input v-model="draft" type="text" class="form-control" maxlength="80" :placeholder="pod.runpod_name || pod.name" :aria-label="$t('pod.editTitle')" data-testid="pod-rename-input" @keydown.enter="saveRename" @keydown.esc="renaming = false" />
