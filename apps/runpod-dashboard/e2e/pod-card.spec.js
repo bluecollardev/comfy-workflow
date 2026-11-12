@@ -37,7 +37,7 @@ test.describe('pod card', () => {
     await page.goto('/')
     const card = podCard(page, 'ComfyUI-Dev')
     await expect(card.getByTestId('pod-volume')).toContainText('comfy-workspace')
-    await expect(card.getByTestId('pod-volume')).toContainText('120 GB · EU-RO-1')
+    await expect(card.getByTestId('pod-volume-facts')).toHaveText('120 GB · EU-RO-1')   // on its own row under the name
     await expect(podCard(page, 'ComfyUI-Batch').getByTestId('pod-volume')).toHaveCount(0)
   })
 

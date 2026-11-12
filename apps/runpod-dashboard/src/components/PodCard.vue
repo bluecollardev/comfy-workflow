@@ -50,7 +50,7 @@
 
       <template v-if="volume">   <!-- the network volume this pod is attached to (the Volumes list knows its pods, ADR-032) -->
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.volume') }}</dt>
-        <dd class="col-8 mb-0" data-testid="pod-volume"><a href="#" :title="$t('pod.volumeOpen')" @click.prevent="ui.volumesOpen = true"><i class="fa-solid fa-hard-drive me-1"></i>{{ volume.name }}</a><span class="text-body-secondary"> · {{ volume.size_gb }} GB · {{ volume.datacenter }}</span></dd>
+        <dd class="col-8 mb-0" data-testid="pod-volume"><a href="#" :title="$t('pod.volumeOpen')" @click.prevent="ui.volumesOpen = true"><i class="fa-solid fa-hard-drive me-1"></i>{{ volume.name }}</a><div class="text-body-secondary" data-testid="pod-volume-facts">{{ volume.size_gb }} GB · {{ volume.datacenter }}</div></dd>
       </template>
 
       <template v-if="rate">   <!-- the price on the card itself, running or stopped (a stopped pod's is an estimate, ADR-031) -->
