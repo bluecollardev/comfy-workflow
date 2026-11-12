@@ -141,3 +141,13 @@ test('the top bar reads Connect, Volumes, Queue, History, Settings, Pause all, R
   const ids = await page.locator('nav [data-testid], .navbar [data-testid]').evaluateAll((els) => els.map((e) => e.dataset.testid).filter((id) => ['open-connect', 'open-volumes', 'open-queue', 'open-history', 'open-config', 'pause-all', 'refresh'].includes(id)))
   expect(ids).toEqual(['open-connect', 'open-volumes', 'open-queue', 'open-history', 'open-config', 'pause-all', 'refresh'])
 })
+
+test('the content below the nav bar is wide (up to 1680px) and never wider than the window', async ({ page }) => {
+  const width = async () => (await page.locator('.app-content').boundingBox()).width
+  await page.setViewportSize({ width: 2200, height: 900 }); await page.goto('/')
+  expect(await width()).toBeLessThanOrEqual(1680); expect(await width()).toBeGreaterThan(1500)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  expect(await width()).toBeGreaterThan(1380); expect(await width()).toBeLessThanOrEqual(1440)   // a MacBook screen: the whole width, never more
+  await page.setViewportSize({ width: 1000, height: 900 })
+  expect(await width()).toBeLessThanOrEqual(1000)
+})

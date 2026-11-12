@@ -34,7 +34,7 @@
     <BAlert v-if="pods.actionError" :model-value="true" variant="danger" dismissible class="mb-0 rounded-0 border-start-0 border-end-0" data-testid="action-error" @update:model-value="pods.actionError = null">{{ pods.actionError }}</BAlert>
     </div>
 
-    <BContainer class="py-4 flex-grow-1" style="max-width: 1200px">
+    <BContainer class="py-4 flex-grow-1 app-content" style="width: 100%; max-width: min(100%, 1680px)">
       <BAlert
         v-if="pods.loadError"
         :model-value="true"
