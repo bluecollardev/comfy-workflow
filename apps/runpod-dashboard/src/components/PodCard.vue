@@ -35,6 +35,7 @@
         <BBadge :variant="STATUS_VARIANT[pod.status] ?? 'secondary'" data-testid="pod-status" :data-status="pod.status">
           {{ $t(`pod.statuses.${pod.status}`) }}
         </BBadge>
+        <span v-if="rate" class="badge text-bg-success fw-semibold ms-1" :title="rate.estimated ? $t('pod.costEstimate') : ''" :data-estimate="rate.estimated || null" data-testid="pod-price">{{ (rate.estimated ? '≈ ' : '') + '$' + rate.perHr + $t('pod.perHour') }}</span>
       </dd>
 
 
@@ -54,11 +55,6 @@
       <template v-if="volume">   <!-- the network volume this pod is attached to (the Volumes list knows its pods, ADR-032) -->
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.volume') }}</dt>
         <dd class="col-8 mb-0" data-testid="pod-volume"><a href="#" :title="$t('pod.volumeOpen')" @click.prevent="ui.volumesOpen = true"><i class="fa-solid fa-hard-drive me-1"></i>{{ volume.name }}</a><div class="text-body-secondary" data-testid="pod-volume-facts">{{ volume.size_gb }} GB · {{ volume.datacenter }}</div></dd>
-      </template>
-
-      <template v-if="rate">   <!-- the price on the card itself, running or stopped (a stopped pod's is an estimate, ADR-031) -->
-        <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.cost') }}</dt>
-        <dd class="col-8 mb-0" data-testid="pod-price"><span class="badge text-bg-success fw-semibold" :title="rate.estimated ? $t('pod.costEstimate') : ''" :data-estimate="rate.estimated || null">{{ (rate.estimated ? '≈ ' : '') + '$' + rate.perHr + $t('pod.perHour') }}</span></dd>
       </template>
 
       <template v-if="pod.web_ui_url">
