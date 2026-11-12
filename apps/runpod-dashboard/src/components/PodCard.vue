@@ -101,7 +101,7 @@
       </template>
     </dl>
 
-    <div class="d-flex mb-2 justify-content-evenly flex-nowrap card-actions">
+    <div class="d-flex gap-1 mb-2 flex-nowrap card-actions">
       <BButton variant="outline-light" size="sm" class="text-nowrap px-2" :title="$t('pod.config') + ': ' + $t('pod.configTitle')" :aria-label="$t('pod.config')" data-testid="pod-config" @click="openConfig">
         <i class="fa-solid fa-sliders me-1"></i>{{ $t('pod.config') }}
       </BButton>
@@ -333,6 +333,7 @@ function confirmDelete() {
 </script>
 
 <style scoped>
+.card-actions > * { flex: 1 1 0; min-width: 0; padding-left: 0.25rem !important; padding-right: 0.25rem !important; }   /* four equal buttons with the same gap between and around them */
 .edit-btn { width: 2.2rem; height: 2.2rem; padding: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 1rem; line-height: 1; background: none; border: 0; color: var(--bs-secondary-color); }   /* just the pencil: no outline, no hover style */
 .status-dot { width: 0.8rem; height: 0.8rem; border-radius: 50%; display: inline-block; flex: none; }
 .pod-handle { cursor: grab; padding: 2px 4px; align-self: center; }

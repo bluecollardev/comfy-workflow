@@ -334,3 +334,11 @@ test('a pod card has its edit button at the right of the heading row and, right 
   await expect(card.getByTestId('pod-status-dot')).toHaveClass(/bg-success/)
   await expect(podCard(page, 'ComfyUI-Batch').getByTestId('pod-status-dot')).toHaveClass(/bg-danger/)
 })
+
+test('the Config, Sync, Details and Logs buttons are the same width with equal gaps, filling the row', async ({ page }) => {
+  await page.goto('/')
+  const m = await podCard(page, 'ComfyUI-Dev').locator('.card-actions').evaluate((el) => { const p = el.getBoundingClientRect(), bs = [...el.children].map((b) => b.getBoundingClientRect()); return { w: bs.map((b) => b.width), gaps: bs.slice(1).map((b, i) => b.left - bs[i].right), edges: [bs[0].left - p.left, p.right - bs[bs.length - 1].right] } })
+  expect(Math.max(...m.w) - Math.min(...m.w)).toBeLessThan(1)
+  expect(Math.max(...m.gaps) - Math.min(...m.gaps)).toBeLessThan(1)
+  expect(Math.max(...m.edges)).toBeLessThan(1)
+})
