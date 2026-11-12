@@ -50,9 +50,11 @@ test.describe('the Dockerfile modal', () => {
     await expect(modal(page, t('dockerfile.title')).getByTestId('dockerfile-image')).toHaveValue(CONFIGURED)
   })
 
-  test('a pod card has an Image row with a Dockerfile link that opens the same modal on the pod\'s image', async ({ page }) => {
+  test('a pod card has an Image row under Details with a Dockerfile link that opens the same modal on the pod\'s image', async ({ page }) => {
     await page.goto('/')
     const card = page.locator('[data-testid="pod-card"][data-name="ComfyUI-Dev"]')
+    await expect(card.getByTestId('pod-dockerfile')).toHaveCount(0)   // not on the card itself
+    await card.getByTestId('pod-details-toggle').click()
     await expect(card.getByTestId('pod-image-ref')).toHaveText(CONFIGURED)
     await card.getByTestId('pod-dockerfile').click()
     const dialog = modal(page, t('dockerfile.title'))

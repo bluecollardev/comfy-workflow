@@ -12,9 +12,6 @@
         <button type="button" class="btn btn-outline-light" :title="$t('pod.renameCancel')" data-testid="pod-rename-cancel" @click="renaming = false"><i class="fa-solid fa-xmark"></i></button>
       </div>
       <BBadge v-if="pod.custom_config" variant="warning" text-indicator class="ms-auto" :title="$t('pod.ownConfigTitle')" data-testid="pod-config-badge">{{ $t('pod.ownConfig') }}</BBadge>
-      <BBadge :variant="STATUS_VARIANT[pod.status] ?? 'secondary'" :class="pod.custom_config ? '' : 'ms-auto'" data-testid="pod-status" :data-status="pod.status">
-        {{ $t(`pod.statuses.${pod.status}`) }}
-      </BBadge>
     </div>
 
     <dl class="row g-1 small mb-3 flex-grow-1">
@@ -25,6 +22,13 @@
           <i class="fa-solid fa-arrow-up-right-from-square fa-xs"></i> RunPod
         </a>
         <button type="button" class="btn btn-link btn-sm p-0 ms-2 align-baseline" :title="$t('pod.copyId')" data-testid="pod-copy-id" @click="copyId"><i class="fa-regular fa-copy fa-xs"></i></button>
+      </dd>
+
+      <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.statusLabel') }}</dt>
+      <dd class="col-8 mb-0">
+        <BBadge :variant="STATUS_VARIANT[pod.status] ?? 'secondary'" data-testid="pod-status" :data-status="pod.status">
+          {{ $t(`pod.statuses.${pod.status}`) }}
+        </BBadge>
       </dd>
 
 
@@ -51,7 +55,7 @@
 
       <template v-if="rate">   <!-- the price on the card itself, running or stopped (a stopped pod's is an estimate, ADR-031) -->
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.cost') }}</dt>
-        <dd class="col-8 mb-0" data-testid="pod-price"><span class="badge text-bg-success fw-semibold" :title="rate.estimated ? $t('pod.costEstimate') : ''" :data-estimate="rate.estimated || null"><i class="fa-solid fa-dollar-sign me-1"></i>{{ (rate.estimated ? '≈ ' : '') + '$' + rate.perHr + $t('pod.perHour') }}</span></dd>
+        <dd class="col-8 mb-0" data-testid="pod-price"><span class="badge text-bg-success fw-semibold" :title="rate.estimated ? $t('pod.costEstimate') : ''" :data-estimate="rate.estimated || null">{{ (rate.estimated ? '≈ ' : '') + '$' + rate.perHr + $t('pod.perHour') }}</span></dd>
       </template>
 
       <template v-if="pod.web_ui_url">
@@ -92,20 +96,6 @@
           </div>
         </dd>
       </template>
-
-      <template v-if="pod.ssh_command">
-        <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.ssh') }}</dt>
-        <dd class="col-8 mb-0"><code class="text-break">{{ pod.ssh_command }}</code></dd>
-      </template>
-
-      <template v-if="pod.image">
-        <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.image') }}</dt>
-        <dd class="col-8 mb-0">
-          <a href="#" class="d-block text-break" :title="pod.image" data-testid="pod-dockerfile" @click.prevent="showDockerfile = true"><i class="fa-solid fa-file-code me-1"></i>{{ $t('dockerfile.button') }}</a>
-          <code class="d-block small text-body-secondary text-break" data-testid="pod-image-ref">{{ shortImage(pod.image) }}</code>
-          <DockerfileModal v-model="showDockerfile" :image="pod.image" this-pod />
-        </dd>
-      </template>
     </dl>
 
     <div class="d-flex mb-2 justify-content-evenly flex-nowrap card-actions">
@@ -140,7 +130,16 @@
         </template>
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.place') }}</dt><dd class="col-8 mb-0">{{ details.cloud }}<span v-if="details.datacenter"> · {{ details.datacenter }}</span></dd>
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.gpu') }}</dt><dd class="col-8 mb-0">{{ details.gpu }} ×{{ details.gpu_count }}</dd>
-        <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.image') }}</dt><dd class="col-8 mb-0 text-break"><code>{{ details.image }}</code></dd>
+        <template v-if="pod.ssh_command">
+          <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.ssh') }}</dt>
+          <dd class="col-8 mb-0"><code class="text-break" data-testid="pod-ssh">{{ pod.ssh_command }}</code></dd>
+        </template>
+        <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.image') }}</dt>
+        <dd class="col-8 mb-0 text-break">
+          <a href="#" class="d-block text-break" :title="details.image || pod.image" data-testid="pod-dockerfile" @click.prevent="showDockerfile = true"><i class="fa-solid fa-file-code me-1"></i>{{ $t('dockerfile.button') }}</a>
+          <code class="d-block small text-body-secondary text-break" data-testid="pod-image-ref">{{ shortImage(pod.image || details.image) }}</code>
+          <DockerfileModal v-model="showDockerfile" :image="pod.image || details.image" this-pod />
+        </dd>
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.disk') }}</dt><dd class="col-8 mb-0">{{ volume ? $t('pod.diskNetwork', { disk: details.disk_gb, name: volume.name, size: volume.size_gb }) : $t('pod.diskValue', { disk: details.disk_gb, volume: details.volume_gb }) }}</dd>
       </dl>
     </div>

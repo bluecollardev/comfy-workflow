@@ -50,7 +50,7 @@ test.describe('pod card', () => {
     await expect(details.getByTestId('pod-details-cost')).toHaveText('$0.28' + t('pod.perHour'))
     await expect(details).toContainText('SECURE · EUR-IS-1')
     await expect(details).toContainText('NVIDIA RTX 4000 Ada Generation ×1')
-    await expect(details).toContainText('ashleykza/comfyui:latest')
+    await expect(details.getByTestId('pod-image-ref')).toHaveText('ghcr.io/example/comfy-app:v26')   // the image is under Details, with its Dockerfile link
     await expect(details).toContainText(t('pod.diskNetwork', { disk: 20, name: 'comfy-workspace', size: 120 }))   // a pod on a network volume has 0 GB of its own: say where the data is
     await podCard(page, 'ComfyUI-Batch').getByTestId('pod-details-toggle').click()
     await expect(podCard(page, 'ComfyUI-Batch').getByTestId('pod-details')).toContainText(t('pod.diskValue', { disk: 20, volume: 0 }))   // no network volume: the plain figure
@@ -291,5 +291,28 @@ test.describe('Rounds: a round holds a series of pods (ADR-039)', () => {
     // Grouping by round off: no grips
     await page.getByTestId('pods-round-toggle').click()
     await expect(page.getByTestId('pod-drag-handle')).toHaveCount(0)
+  })
+})
+
+test.describe('Top of the page', () => {
+  test('the nav bar stays at the top when the page scrolls; a failed action is shown right under it and toasts sit under it', async ({ page, api }) => {
+    await page.setViewportSize({ width: 1280, height: 700 })
+    await page.goto('/')
+    await expect(page.getByTestId('navbar')).toBeVisible()
+    await page.mouse.wheel(0, 1500)
+    await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(200)
+    await expect(page.getByTestId('navbar')).toBeInViewport()   // sticky: still at the top after scrolling
+    // a failed Resume says why under the nav bar
+    await page.evaluate(() => window.scrollTo(0, 0))
+    api.state.failures['POST /pods/pod-bbbbbbbb/resume'] = 'There are not enough free GPUs on the host machine to start this pod.'
+    await podCard(page, 'ComfyUI-Batch').getByTestId('pod-resume').click()
+    const alert = page.getByTestId('action-error')
+    await expect(alert).toContainText('not enough free GPUs')
+    const nav = await page.getByTestId('navbar').boundingBox(), al = await alert.boundingBox()
+    expect(al.y).toBeGreaterThanOrEqual(nav.y + nav.height - 1)   // below the nav bar
+    const toast = await page.getByTestId('toast').last().boundingBox()
+    expect(toast.y).toBeGreaterThanOrEqual(nav.y + nav.height - 1)   // toasts do not cover the nav bar either
+    await page.mouse.wheel(0, 1500)
+    await expect(alert).toBeInViewport()   // and the alert stays while scrolling
   })
 })

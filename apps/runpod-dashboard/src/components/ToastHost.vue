@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1090" aria-live="polite" aria-atomic="true">
+    <div class="toast-container position-fixed end-0 p-3" style="z-index: 1090; top: var(--app-top-height, 3.75rem)" aria-live="polite" aria-atomic="true">
       <TransitionGroup name="toast-slide">
         <div v-for="t in toasts" :key="t.id" class="toast show align-items-center border-0 mb-2" :class="'text-bg-' + t.variant" role="status" data-testid="toast" :data-variant="t.variant">
           <div class="d-flex">
@@ -18,7 +18,7 @@
 
 <script setup>
 /**
- * ToastHost — renders the global toast list (stores/toast.js) top right, above everything,
+ * ToastHost — renders the global toast list (stores/toast.js) top right, just under the sticky nav bar and above everything,
  * teleported to <body> so no layout or modal can hide it. Mounted once in App.vue.
  */
 import { storeToRefs } from 'pinia'

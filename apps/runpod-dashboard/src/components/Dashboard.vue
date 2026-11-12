@@ -89,16 +89,6 @@
       </BCardBody>
     </BCard>
 
-    <BAlert
-      v-if="pods.actionError"
-      :model-value="true"
-      variant="danger"
-      dismissible
-      data-testid="action-error"
-      @update:model-value="pods.actionError = null"
-    >
-      {{ pods.actionError }}
-    </BAlert>
     <RunWorkflowsModal v-if="runFlows" :model-value="true" :pod="runFlows.pod" :round="runFlows.round" @update:model-value="(v) => !v && (runFlows = null)" />
   </div>
 </template>

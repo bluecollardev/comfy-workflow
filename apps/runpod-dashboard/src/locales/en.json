@@ -76,6 +76,7 @@
     "details": "Details",
     "logs": "Logs",
     "hideLogs": "Hide logs",
+    "statusLabel": "Status",
     "statusText": "RunPod says",
     "cost": "Price",
     "volume": "Volume",

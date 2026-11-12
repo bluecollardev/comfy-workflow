@@ -16,7 +16,10 @@ test.describe('dashboard', () => {
     await expect(dev).toContainText('24 GB')
     await expect(dev).toContainText('2h 2m')
     await expect(dev.getByRole('link', { name: /Open/ })).toHaveAttribute('href', 'https://pod-a.proxy.runpod.io:8188')
-    await expect(dev).toContainText('ssh root@pod-a.proxy.runpod.io')
+    await expect(dev).not.toContainText('ssh root@pod-a.proxy.runpod.io')   // SSH and the image are under Details, not on the card
+    await dev.getByTestId('pod-details-toggle').click()
+    await expect(dev.getByTestId('pod-ssh')).toHaveText('ssh root@pod-a.proxy.runpod.io')
+    await dev.getByTestId('pod-details-toggle').click()
     await expect(dev.getByRole('button', { name: 'Stop' })).toBeVisible()
 
     await expect(podCard(page, 'ComfyUI-Batch').getByRole('button', { name: 'Resume' })).toBeVisible()
