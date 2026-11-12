@@ -367,6 +367,7 @@ test('with a round chosen, a pod card has a Shot field: free text or one of the 
   const card = podCard(page, 'ComfyUI-Dev')
   const shot = card.getByTestId('pod-shot')
   await expect(shot).toBeVisible()
+  await expect(card.getByTestId('pod-shot-arrow')).toBeVisible()   // the dropdown arrow is always shown
   const rows = await card.locator('dl > dt').evaluateAll((els) => els.map((e) => e.textContent.trim()))
   expect(rows.indexOf(t('pod.shot'))).toBe(rows.indexOf(t('pod.round')) + 1)   // right below Round
   await shot.focus()

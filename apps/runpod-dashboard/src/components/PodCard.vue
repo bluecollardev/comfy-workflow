@@ -49,8 +49,9 @@
 
       <template v-if="pod.round">   <!-- with a round chosen: the shot this pod works on, typed or picked from the round's shots -->
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.shot') }}</dt>
-        <dd class="col-8 mb-0">
-          <input v-model="shotDraft" type="text" class="form-control form-control-sm" maxlength="120" :list="`shots-${pod.id}`" :disabled="busy" :placeholder="$t('pod.shotPlaceholder')" :aria-label="$t('pod.shotPick')" autocomplete="off" data-testid="pod-shot" @focus="loadShots" @change="saveShot" @keydown.enter="$event.target.blur()" />
+        <dd class="col-8 mb-0 shot-wrap">
+          <input v-model="shotDraft" type="text" class="form-control form-control-sm shot-input" maxlength="120" :list="`shots-${pod.id}`" :disabled="busy" :placeholder="$t('pod.shotPlaceholder')" :aria-label="$t('pod.shotPick')" autocomplete="off" data-testid="pod-shot" @focus="loadShots" @change="saveShot" @keydown.enter="$event.target.blur()" />
+          <i class="fa-solid fa-chevron-down shot-chevron" data-testid="pod-shot-arrow" aria-hidden="true"></i>
           <datalist :id="`shots-${pod.id}`"><option v-for="s in shotOptions" :key="s" :value="s"></option></datalist>
         </dd>
       </template>
@@ -345,6 +346,10 @@ function confirmDelete() {
 
 <style scoped>
 .card-actions > * { flex: 1 1 0; min-width: 0; padding-left: 0.25rem !important; padding-right: 0.25rem !important; }   /* four equal buttons with the same gap between and around them */
+.shot-wrap { position: relative; }
+.shot-input { padding-right: 2rem; }
+.shot-input::-webkit-calendar-picker-indicator { opacity: 0; position: absolute; top: 0; bottom: 0; right: 0; width: 2rem; cursor: pointer; }   /* the browser's own arrow is a hit area over our always-visible chevron */
+.shot-chevron { position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%); font-size: 0.7rem; pointer-events: none; color: var(--bs-secondary-color); }
 .edit-btn { width: 2.2rem; height: 2.2rem; padding: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 1rem; line-height: 1; background: none; border: 0; color: var(--bs-secondary-color); }   /* just the pencil: no outline, no hover style */
 .status-dot { width: 0.8rem; height: 0.8rem; border-radius: 50%; display: inline-block; flex: none; }
 .pod-handle { cursor: grab; padding: 2px 4px; align-self: center; }

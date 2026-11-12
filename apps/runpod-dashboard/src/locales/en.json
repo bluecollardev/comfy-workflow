@@ -110,7 +110,7 @@
     "round": "Round",
     "shot": "Shot",
     "allShots": "All Shots",
-    "shotPlaceholder": "type, or pick a shot of the round",
+    "shotPlaceholder": "type or pick a shot",
     "shotPick": "The shot this pod works on",
     "roundNone": "No round",
     "dragHandle": "Drag to move this pod to another round",
