@@ -414,7 +414,7 @@ async function runTemporary(i: Internal, opts: Opts) {
     const env: Record<string, string> = { ...cfg.env }
     if (j.kind === 'pull') env.S3_PULL = s3PullFor(j.round); else delete env.S3_PULL   // a delete never carries a pull (or the keys podOverrides adds for one)
     // The cheapest free card can be taken between the plan and the create ("No card available"): try the next free card of the volume's datacenter, then the app's own choice.
-    const base = { name, image: 'configured', cuda_match: false, idle_stop_minutes: p.ceiling_minutes, config: { ...cfg, env } } as const
+    const base = { name, round: j.round, image: 'configured', cuda_match: false, idle_stop_minutes: p.ceiling_minutes, config: { ...cfg, env } } as const
     const tried = new Set<string>()
     let created: Awaited<ReturnType<typeof pods.create>> | null = null
     let next: string | undefined = p.gpu_type_id
@@ -469,7 +469,7 @@ async function simulate(i: Internal, opts: Opts) {
   let podId: string | null = null
   try {
     if (temp) {
-      const created = await pods.create({ name: j.pod_name!, ...(i.plan.gpu_type_id ? { gpu_type_id: i.plan.gpu_type_id } : { gpu: 'auto' }), image: 'configured', cuda_match: false, idle_stop_minutes: i.plan.ceiling_minutes })
+      const created = await pods.create({ name: j.pod_name!, ...(i.plan.gpu_type_id ? { gpu_type_id: i.plan.gpu_type_id } : { gpu: 'auto' }), image: 'configured', cuda_match: false, idle_stop_minutes: i.plan.ceiling_minutes, round: j.round })
       podId = created.id; j.pod_id = podId; j.pod_name = created.name
     }
     const steps: [JobState, string[]][] = j.kind === 'pull'
