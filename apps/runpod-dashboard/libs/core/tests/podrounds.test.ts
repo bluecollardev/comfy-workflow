@@ -65,9 +65,9 @@ describe('pods in rounds (ADR-039)', () => {
     expect(await pods.setShot(p.id, ' cgi-042 ')).toEqual({ pod_id: p.id, round: 'r5', shot: 'cgi-042' })
     expect((await pods.get(p.id)).shot).toBe('cgi-042')
     await expect(pods.setShot(p.id, 'a/b')).rejects.toThrow(/slash/)
-    expect((await pods.setShot(p.id, '')).shot).toBeNull()
+    expect((await pods.setShot(p.id, '')).shot).toBe('All Shots')   // cleared: back to the default
     await pods.setShot(p.id, 'free text shot')
     await pods.setRound(p.id, 'r6')   // another round: no shot yet
-    expect((await pods.get(p.id)).shot).toBeUndefined()
+    expect((await pods.get(p.id)).shot).toBe('All Shots')   // another round: the default, all of its shots
   })
 })

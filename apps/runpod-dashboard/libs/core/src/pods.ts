@@ -204,7 +204,9 @@ async function deployWithFallback(input: rp.CreatePodInput, client?: rp.RunPodCl
 
 /** A RunPod pod as the dashboard shows it. */
 /** The round a pod is in and the name this app shows for it (ADR-039), or nothing for an unassigned pod. */
-const roundOf = (id: string): { round?: string; round_label?: string; shot?: string } => { const r = podrounds.get(id); const sh = r ? podrounds.getShot(id) : null; return r ? { round: r, round_label: podrounds.label(r), ...(sh ? { shot: sh } : {}) } : {} }
+/** A pod in a round that has no shot of its own works on all of them. */
+export const ALL_SHOTS = 'All Shots'
+const roundOf = (id: string): { round?: string; round_label?: string; shot?: string } => { const r = podrounds.get(id); const sh = r ? podrounds.getShot(id) : null; return r ? { round: r, round_label: podrounds.label(r), shot: sh || ALL_SHOTS } : {} }
 export function toStatus(p: rp.RawPod): PodStatus {
   const uptime = p.runtime?.uptimeInSeconds ?? p.uptimeSeconds ?? null
   const running = uptime != null && uptime > 0
@@ -309,7 +311,7 @@ export async function setShot(podId: string, shot: string, client?: rp.RunPodCli
   if (!round) throw bad('Put the pod in a round first: the shot belongs to a round')
   podrounds.setShot(podId, s)
   history.record({ kind: 'pod', action: 'moved', pod_id: podId, name: podnames.get(podId) || podId, detail: s ? `working on shot ${s}` : 'shot cleared' })
-  return { pod_id: podId, round, shot: s || null }
+  return { pod_id: podId, round, shot: s || ALL_SHOTS }
 }
 /** Name a round on our side (the delivery round's own name, the key, is kept); an empty name goes back to it. */
 export async function renameRound(round: string, name: string): Promise<{ round: string; label: string }> {
