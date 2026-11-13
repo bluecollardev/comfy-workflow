@@ -138,6 +138,7 @@ const TABLE = {
     cancelTask: (c, id) => c.queue.cancelTask(id),
     cancelImport: (c, id) => c.queue.cancelImport(id),
     retryTask: (c, id) => c.queue.retryTask(id),
+    purge: (c, opts) => c.queue.purge(opts || {}),
     setLimits: (c, id, limits) => c.queue.setImportLimits(id, limits || {}),
   },
   runflows: {   // docs/ADR-037: run workflows on a pod

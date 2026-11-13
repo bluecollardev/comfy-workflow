@@ -239,4 +239,17 @@ describe('no card free', () => {
     t = tasks().find((x) => x.shot === 'cgi-042')!
     expect(t.state).toBe('running'); expect(w.created).toEqual(['new1']); expect(t.attempts).toBeUndefined()
   })
+
+  it('purges finished imports only on a yes, never one with work left, and can limit by id or age', async () => {
+    const w = world([{ id: 'pool1', name: 'pool', state: 'running' }])
+    const a = await queue.importRound(ROUND, { shots: ['cgi-042'], approved_by: 'Lucas' })
+    expect(() => queue.purge({})).toThrow(/yes/)
+    expect(queue.purge({ confirmed: true })).toEqual({ removed_imports: 0, removed_tasks: 0 })   // still active: kept
+    queue.cancelImport(a.id)
+    expect(() => queue.purge({ confirmed: true, import_id: 'nope' })).toThrow(/No such import/)
+    expect(queue.purge({ confirmed: true, older_than_days: 1 })).toEqual({ removed_imports: 0, removed_tasks: 0 })   // finished just now
+    expect(queue.purge({ confirmed: true })).toEqual({ removed_imports: 1, removed_tasks: 2 })
+    expect(queue.list().imports).toHaveLength(0)
+    void w
+  })
 })

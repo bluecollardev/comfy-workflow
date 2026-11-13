@@ -333,6 +333,25 @@ export function cancelImport(id: string): ImportRec {
   for (const t of state().tasks.filter((x) => x.import_id === id && live(x))) cancelTask(t.id)
   return imp
 }
+/** Purge finished imports and their tasks from the queue (the history keeps what they did). Only on a yes: `confirmed` must be true, so a caller has asked the user first.
+ *  `import_id` purges that one import; `older_than_days` only those finished that long ago. An import with a task still waiting, running or held is never purged. */
+export function purge(o: { confirmed?: boolean; import_id?: string; older_than_days?: number } = {}): { removed_imports: number; removed_tasks: number } {
+  if (o.confirmed !== true) throw new CoreError(400, 'Purging the queue needs the user\'s yes: ask them, then call again with confirmed: true.')
+  const q = state(), cutoff = o.older_than_days != null ? Date.now() - o.older_than_days * 86_400_000 : null
+  if (o.import_id && !q.imports.some((i) => i.id === o.import_id)) throw new CoreError(404, `No such import: ${o.import_id}`)
+  const done = (i: ImportRec) => {
+    const ts = q.tasks.filter((t) => t.import_id === i.id)
+    if (ts.some(live)) return false
+    if (o.import_id && i.id !== o.import_id) return false
+    if (cutoff != null) { const last = Math.max(0, ...ts.map((t) => Date.parse(t.finished_at || '') || 0), Date.parse(i.created_at || '') || 0); if (last > cutoff) return false }
+    return true
+  }
+  const gone = new Set(q.imports.filter(done).map((i) => i.id))
+  const before = q.tasks.length
+  q.imports = q.imports.filter((i) => !gone.has(i.id)); q.tasks = q.tasks.filter((t) => !gone.has(t.import_id))
+  if (gone.size) save()
+  return { removed_imports: gone.size, removed_tasks: before - q.tasks.length }
+}
 /** Change an import's limits (raise the cap so held tasks can go on: Retry them after). null removes a limit. */
 export function setImportLimits(id: string, o: { max_pods?: number | null; cost_cap_usd?: number | null }): ImportRec {
   const imp = state().imports.find((i) => i.id === id); if (!imp) throw new CoreError(404, `No such import: ${id}`)

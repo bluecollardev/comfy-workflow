@@ -1,5 +1,8 @@
 <template>
   <BModal v-model="open" :title="$t('queue.title')" size="xl" scrollable no-footer data-testid="queue-modal" @hidden="open = false">
+    <div v-if="finished.length" class="d-flex justify-content-end mb-2">
+      <BButton size="sm" variant="outline-danger" data-testid="queue-purge" @click="purge"><i class="fa-solid fa-broom me-1"></i>{{ $t('queue.purge') }}</BButton>
+    </div>
     <div v-if="error" class="alert alert-danger small py-2" data-testid="queue-error">{{ error }}</div>
     <div v-if="ui.queueStartError" class="alert alert-danger small py-2" data-testid="queue-start-error">{{ $t('queue.startFailed', { why: ui.queueStartError }) }}</div>
     <div v-if="ui.queueStarting.length" class="alert alert-info small py-2 d-flex align-items-center gap-2" data-testid="queue-starting"><BSpinner small />{{ $t('queue.starting', { rounds: ui.queueStarting.join(', ') }, ui.queueStarting.length) }}</div>
@@ -54,13 +57,21 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { queueAPI } from '../api/queue'
 import { errorText } from '../stores/toast'
 import { useUiStore } from '../stores/ui'
+import { useI18n } from 'vue-i18n'
 
 const ui = useUiStore()
+const { t } = useI18n()
 const open = computed({ get: () => ui.queueOpen, set: (v) => { ui.queueOpen = v } })
 const view = ref({ imports: [], tasks: [], active: 0 }), error = ref('')
 let timer = null
 /** The latest import at the top, the oldest at the bottom. */
 const newestFirst = computed(() => [...view.value.imports].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))))
+/** Imports with nothing left to run: the ones Purge removes. */
+const finished = computed(() => view.value.imports.filter((i) => !view.value.tasks.some((t) => t.import_id === i.id && ['waiting', 'running', 'held'].includes(t.state))))
+async function purge() {
+  if (!window.confirm(t('queue.confirmPurge', { n: finished.value.length }))) return   // the user says yes first
+  await act(() => queueAPI.purge({ confirmed: true }))
+}
 const open_ = ref(new Set())
 const toggleDetails = (id) => { const n = new Set(open_.value); n.has(id) ? n.delete(id) : n.add(id); open_.value = n }
 const clock = (iso) => new Date(iso).toLocaleTimeString()

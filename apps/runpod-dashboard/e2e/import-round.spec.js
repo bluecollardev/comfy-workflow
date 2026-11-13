@@ -177,3 +177,20 @@ test('Import Round(s): Select all ticks every round (and clears them), and Next 
   await dlg.getByTestId('import-round-select-all').uncheck()
   for (let i = 0; i < await boxes.count(); i++) await expect(boxes.nth(i)).not.toBeChecked()
 })
+
+test('Queue: Purge finished asks first; No keeps everything, Yes removes finished imports and leaves the running one', async ({ page, api }) => {
+  const imp = (id, state) => ({ id, round: `round-${id}`, approved_by: 'L', created_at: '2026-11-09T01:00:00Z', state, spent_usd: 0, cap_enabled: true, cost_cap_usd: 10, max_pods: 2, counts: {} })
+  api.state.queue = { imports: [imp('a', 'done'), imp('b', 'active')], tasks: [{ id: 't1', import_id: 'a', round: 'round-a', shot: null, kind: 'pull', state: 'done' }, { id: 't2', import_id: 'b', round: 'round-b', shot: 'x', kind: 'run', state: 'running' }], active: 1 }
+  await page.goto('/'); await page.getByTestId('open-queue').click()
+  const q = page.getByTestId('queue-modal')
+  await expect(q.getByTestId('queue-import')).toHaveCount(2)
+  page.once('dialog', (d) => d.dismiss())   // the user says no
+  await q.getByTestId('queue-purge').click()
+  await expect(q.getByTestId('queue-import')).toHaveCount(2)
+  expect(api.state.purged).toBeUndefined()
+  page.once('dialog', (d) => { expect(d.message()).toContain('1 finished'); d.accept() })   // the user says yes
+  await q.getByTestId('queue-purge').click()
+  await expect(q.getByTestId('queue-import')).toHaveCount(1)
+  await expect(q.getByTestId('queue-import')).toContainText('round-b')
+  expect(api.state.purged).toEqual({ confirmed: true })
+})
