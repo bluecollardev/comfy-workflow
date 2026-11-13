@@ -228,13 +228,14 @@ function toggleAllShots(on) { const m = new Map(picked.value); for (const r of c
 function toggleShot(r, s, on) { const m = new Map(picked.value); const n = new Set(m.get(r)); on ? n.add(s) : n.delete(s); m.set(r, n); picked.value = m; followPods() }
 async function start() {
   starting.value = true; error.value = ''
-  try {
-    try { localStorage.setItem('runpod-manager.approved-by', approvedBy.value.trim()) } catch { /* storage blocked */ }
-    const todo = [...plans.value.keys()].filter((r) => shotCount(r) > 0)
-    const capOn = first.value.cap_enabled
-    await queueAPI.importMany(todo.map((r) => ({ round: r, shots: [...picked.value.get(r)], cards: cardsFor(r), ...(capOn ? { max_pods: todo.length > 1 && !podsEdited.value ? shotCount(r) : maxPods.value } : {}) })), { run_workflows: runWorkflows.value, volume_id: volumeId.value, approved_by: approvedBy.value.trim(), ...(capOn ? { cost_cap_usd: costCap.value } : {}) })
-    open.value = false; ui.queueOpen = true   // the Queue shows what it queued
-  } catch (e) { error.value = errorText(e) } finally { starting.value = false }
+  try { localStorage.setItem('runpod-manager.approved-by', approvedBy.value.trim()) } catch { /* storage blocked */ }
+  const todo = [...plans.value.keys()].filter((r) => shotCount(r) > 0)
+  const capOn = first.value.cap_enabled
+  const items = todo.map((r) => ({ round: r, shots: [...picked.value.get(r)], cards: cardsFor(r), ...(capOn ? { max_pods: todo.length > 1 && !podsEdited.value ? shotCount(r) : maxPods.value } : {}) }))
+  const opts = { run_workflows: runWorkflows.value, volume_id: volumeId.value, approved_by: approvedBy.value.trim(), ...(capOn ? { cost_cap_usd: costCap.value } : {}) }
+  // The Queue opens at once and says it is queueing: reading and planning the rounds takes a while, and the button alone says nothing.
+  ui.queueStartError = ''; ui.queueStarting = todo; open.value = false; ui.queueOpen = true
+  try { await queueAPI.importMany(items, opts) } catch (e) { ui.queueStartError = errorText(e) } finally { ui.queueStarting = []; ui.queueVersion++; starting.value = false }
 }
 </script>
 

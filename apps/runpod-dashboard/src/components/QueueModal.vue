@@ -1,7 +1,9 @@
 <template>
   <BModal v-model="open" :title="$t('queue.title')" size="xl" scrollable no-footer data-testid="queue-modal" @hidden="open = false">
     <div v-if="error" class="alert alert-danger small py-2" data-testid="queue-error">{{ error }}</div>
-    <div v-if="!view.imports.length" class="text-body-secondary small" data-testid="queue-empty">{{ $t('queue.empty') }}</div>
+    <div v-if="ui.queueStartError" class="alert alert-danger small py-2" data-testid="queue-start-error">{{ $t('queue.startFailed', { why: ui.queueStartError }) }}</div>
+    <div v-if="ui.queueStarting.length" class="alert alert-info small py-2 d-flex align-items-center gap-2" data-testid="queue-starting"><BSpinner small />{{ $t('queue.starting', { rounds: ui.queueStarting.join(', ') }, ui.queueStarting.length) }}</div>
+    <div v-if="!view.imports.length && !ui.queueStarting.length" class="text-body-secondary small" data-testid="queue-empty">{{ $t('queue.empty') }}</div>
     <div v-for="imp in newestFirst" :key="imp.id" class="mb-4" data-testid="queue-import" :data-import="imp.id">
       <div class="d-flex align-items-baseline gap-2 flex-wrap mb-1">
         <strong class="font-monospace">{{ imp.round }}</strong>
@@ -27,9 +29,11 @@
               </td>
               <td class="small" :class="t.error ? 'text-danger' : 'text-body-secondary'">{{ t.error || t.held_reason || t.detail || '' }}<div v-if="t.started_at" class="text-body-secondary">{{ $t('queue.started', { at: clock(t.started_at) }) }}<template v-if="t.finished_at"> · {{ $t('queue.took', { min: mins(t) }) }}</template></div></td>
               <td class="text-end text-nowrap">
-                <BButton v-if="t.events?.length" size="sm" variant="outline-light" :aria-expanded="open_.has(t.id)" data-testid="queue-details" @click="toggleDetails(t.id)"><i class="fa-solid" :class="open_.has(t.id) ? 'fa-chevron-up' : 'fa-list'"></i></BButton>
-                <BButton v-if="['waiting', 'running', 'held'].includes(t.state)" size="sm" variant="outline-light" data-testid="queue-cancel" @click="act(() => queueAPI.cancelTask(t.id))">{{ $t('queue.cancel') }}</BButton>
-                <BButton v-if="['failed', 'held', 'interrupted', 'cancelled'].includes(t.state)" size="sm" variant="outline-light" data-testid="queue-retry" @click="act(() => queueAPI.retryTask(t.id))">{{ $t('queue.retry') }}</BButton>
+                <div class="d-inline-flex gap-2 justify-content-end" data-testid="queue-actions">
+                  <BButton v-if="t.events?.length" size="sm" variant="outline-light" :aria-expanded="open_.has(t.id)" data-testid="queue-details" @click="toggleDetails(t.id)"><i class="fa-solid" :class="open_.has(t.id) ? 'fa-chevron-up' : 'fa-list'"></i></BButton>
+                  <BButton v-if="['waiting', 'running', 'held'].includes(t.state)" size="sm" variant="outline-light" data-testid="queue-cancel" @click="act(() => queueAPI.cancelTask(t.id))">{{ $t('queue.cancel') }}</BButton>
+                  <BButton v-if="['failed', 'held', 'interrupted', 'cancelled'].includes(t.state)" size="sm" variant="outline-light" data-testid="queue-retry" @click="act(() => queueAPI.retryTask(t.id))">{{ $t('queue.retry') }}</BButton>
+                </div>
               </td>
             </tr>
             <tr v-if="open_.has(t.id)" data-testid="queue-task-events">
@@ -46,7 +50,7 @@
 
 <script setup>
 /** The Queue (ADR-038): every import's tasks with their state, pod and error; Cancel, Retry, Cancel all. Refreshes by itself while open. */
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { queueAPI } from '../api/queue'
 import { errorText } from '../stores/toast'
 import { useUiStore } from '../stores/ui'
@@ -65,6 +69,7 @@ const tasksOf = (imp) => view.value.tasks.filter((t) => t.import_id === imp.id)
 const badge = (s) => ({ done: 'text-bg-success', failed: 'text-bg-danger', running: 'text-bg-primary', waiting: 'text-bg-secondary', held: 'text-bg-warning', cancelled: 'text-bg-dark', interrupted: 'text-bg-warning' }[s] || 'text-bg-secondary')
 async function refresh() { try { view.value = await queueAPI.list(); error.value = '' } catch (e) { error.value = errorText(e) } }
 async function act(fn) { try { await fn() } catch (e) { error.value = errorText(e) } await refresh() }
+watch(() => ui.queueVersion, refresh)   // an import was just queued: show it now, not at the next tick
 onMounted(() => { refresh(); timer = setInterval(refresh, 2500) })
 onBeforeUnmount(() => clearInterval(timer))
 </script>

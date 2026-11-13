@@ -434,6 +434,8 @@
     "start": "Import"
   },
   "queue": {
+    "starting": "Queueing {rounds}: reading the round, planning the pull and the runs. It appears below in a moment.",
+    "startFailed": "The import could not be queued: {why}",
     "started": "started {at}",
     "podNotCreated": "no pod was created",
     "cardWanted": "{card} (chosen, not used)",

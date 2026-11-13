@@ -20,6 +20,9 @@ export const useUiStore = defineStore('ui', () => {
   const importRoundPreset = ref('')   // Import Round opens with this round chosen (re-import)
   const importRoundOpen = ref(false)  // Import Round (ADR-038)
   const queueOpen = ref(false)        // the Queue window
+  const queueStarting = ref([])       // rounds Import Round is queueing right now (the Queue says so while it reads and plans)
+  const queueStartError = ref('')     // why the last import could not be queued
+  const queueVersion = ref(0)         // bumped when an import was queued, so the open Queue reloads at once
   const historyOpen = ref(false)  // the History window: pod events, spend, jobs, ComfyUI runs
   const volumeDc = ref('')        // a datacenter the Volumes window preselects for a new volume (the pod form's "Create a volume in ...")
   // Help: the hints under the form's group headings, off by default; a per-viewer choice remembered in this browser.
@@ -28,5 +31,5 @@ export const useUiStore = defineStore('ui', () => {
   watch(hints, (v) => { try { localStorage.setItem('runpod-manager.hints', v ? 'on' : 'off') } catch { /* storage blocked */ } })
   const accountsOpen = computed({ get: () => connectOpen.value && connectTab.value === 'accounts', set: (v) => { if (v) connectTab.value = 'accounts'; connectOpen.value = v } })
   const repositoriesOpen = computed({ get: () => connectOpen.value && connectTab.value === 'repositories', set: (v) => { if (v) connectTab.value = 'repositories'; connectOpen.value = v } })
-  return { connectOpen, importOpen, importPod, importSource, importShown, connectTab, accountsOpen, repositoriesOpen, repositoriesVersion, configOpen, welcomeOpen, configFocus, volumesOpen, importRoundOpen, importRoundPreset, queueOpen, historyOpen, volumeDc, hints }
+  return { connectOpen, importOpen, importPod, importSource, importShown, connectTab, accountsOpen, repositoriesOpen, repositoriesVersion, configOpen, welcomeOpen, configFocus, volumesOpen, importRoundOpen, importRoundPreset, queueOpen, queueStarting, queueStartError, queueVersion, historyOpen, volumeDc, hints }
 })
