@@ -70,7 +70,7 @@
               </div>
               <BRow v-else-if="!grouped" class="g-3" data-testid="round-pod-list">
                 <BCol v-for="pod in sec.pods" :key="pod.id" md="6" xl="4">
-                  <div class="pod-drag" :class="{ dragging: dragId === pod.id }" data-testid="pod-drag" :data-pod="pod.id"><PodCard :pod="pod" :busy="pods.busyPodId === pod.id" :rounds="roundNames" :handle="byRound" @dragstart="(e) => onDragStart(e, pod)" @dragend="dragId = ''; overKey = null" @stop="pods.stop(pod.id)" @resume="pods.resume(pod.id)" @delete="pods.remove(pod.id)" @rename="(name) => pods.rename(pod.id, name)" @round="(rd) => pods.setRound(pod.id, rd)" /></div>
+                  <div class="pod-drag" :class="{ dragging: dragId === pod.id }" data-testid="pod-drag" :data-pod="pod.id"><PodCard :pod="pod" :busy="pods.busyPodId === pod.id" :rounds="roundNames" :handle="byRound" @dragstart="(e) => onDragStart(e, pod)" @dragend="dragId = ''; overKey = null" @stop="pods.stop(pod.id)" @resume="pods.resume(pod.id)" @delete="pods.remove(pod.id)" @rename="(name) => pods.rename(pod.id, name)" @round="(rd) => pods.setRound(pod.id, rd)" @shot="(sh) => pods.setShot(pod.id, sh)" /></div>
                 </BCol>
               </BRow>
               <template v-else>
@@ -78,7 +78,7 @@
                   <h6 class="d-flex align-items-center gap-2 text-body-secondary mb-2" data-testid="pod-group-title"><i class="fa-solid fa-location-dot"></i><span class="font-monospace">{{ g.dc || $t('dashboard.noDatacenter') }}</span><BBadge variant="secondary" pill class="fw-normal">{{ g.pods.length }}</BBadge></h6>
                   <BRow class="g-3">
                     <BCol v-for="pod in g.pods" :key="pod.id" md="6" xl="4">
-                      <div class="pod-drag" :class="{ dragging: dragId === pod.id }" data-testid="pod-drag" :data-pod="pod.id"><PodCard :pod="pod" :busy="pods.busyPodId === pod.id" :rounds="roundNames" :handle="byRound" @dragstart="(e) => onDragStart(e, pod)" @dragend="dragId = ''; overKey = null" @stop="pods.stop(pod.id)" @resume="pods.resume(pod.id)" @delete="pods.remove(pod.id)" @rename="(name) => pods.rename(pod.id, name)" @round="(rd) => pods.setRound(pod.id, rd)" /></div>
+                      <div class="pod-drag" :class="{ dragging: dragId === pod.id }" data-testid="pod-drag" :data-pod="pod.id"><PodCard :pod="pod" :busy="pods.busyPodId === pod.id" :rounds="roundNames" :handle="byRound" @dragstart="(e) => onDragStart(e, pod)" @dragend="dragId = ''; overKey = null" @stop="pods.stop(pod.id)" @resume="pods.resume(pod.id)" @delete="pods.remove(pod.id)" @rename="(name) => pods.rename(pod.id, name)" @round="(rd) => pods.setRound(pod.id, rd)" @shot="(sh) => pods.setShot(pod.id, sh)" /></div>
                     </BCol>
                   </BRow>
                 </section>
@@ -89,16 +89,6 @@
       </BCardBody>
     </BCard>
 
-    <BAlert
-      v-if="pods.actionError"
-      :model-value="true"
-      variant="danger"
-      dismissible
-      data-testid="action-error"
-      @update:model-value="pods.actionError = null"
-    >
-      {{ pods.actionError }}
-    </BAlert>
     <RunWorkflowsModal v-if="runFlows" :model-value="true" :pod="runFlows.pod" :round="runFlows.round" @update:model-value="(v) => !v && (runFlows = null)" />
   </div>
 </template>

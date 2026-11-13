@@ -76,6 +76,7 @@
     "details": "Details",
     "logs": "Logs",
     "hideLogs": "Hide logs",
+    "statusLabel": "Status",
     "statusText": "RunPod says",
     "cost": "Price",
     "volume": "Volume",
@@ -107,6 +108,10 @@
     "ownConfig": "Own Config",
     "rename": "Rename (only in this app)",
     "round": "Round",
+    "shot": "Shot",
+    "allShots": "All Shots",
+    "shotPlaceholder": "type or pick a shot",
+    "shotPick": "The shot this pod works on",
     "roundNone": "No round",
     "dragHandle": "Drag to move this pod to another round",
     "roundPick": "Round this pod belongs to",
@@ -381,6 +386,7 @@
   },
   "importRound": {
     "browse": "Browse files",
+    "selectAll": "Select all",
     "noShots": "No shots in this round (it has no shot folders: it is not something to run). Use Panama to copy it as files.",
     "noCards": "The workflows are not run, so no shot pods are made: only the pull (a short-lived pod of the cheapest card) copies the round to the volume.",
     "volume": "Network volume",
@@ -428,6 +434,8 @@
     "start": "Import"
   },
   "queue": {
+    "starting": "Queueing {rounds}: reading the round, planning the pull and the runs. It appears below in a moment.",
+    "startFailed": "The import could not be queued: {why}",
     "started": "started {at}",
     "podNotCreated": "no pod was created",
     "cardWanted": "{card} (chosen, not used)",
@@ -460,7 +468,7 @@
   },
   "toast": {
     "round": "Move pod to round",
-    "deleteRound": "Delete the round", "roundDeleted": "Round deleted", "rounded": "Pod moved",
+    "deleteRound": "Delete the round", "roundDeleted": "Round deleted", "shot": "Set the shot", "shotSet": "Shot saved", "rounded": "Pod moved",
     "renameRound": "Rename round",
     "done": "Done",
     "failed": "Failed",

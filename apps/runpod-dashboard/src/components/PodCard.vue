@@ -1,20 +1,20 @@
 <template>
   <BCard class="h-100" body-class="d-flex flex-column" data-testid="pod-card" :data-name="pod.name">
-    <div class="d-flex align-items-start gap-2 mb-3">
+    <div class="d-flex align-items-center gap-2 mb-3">
       <span v-if="handle" class="pod-handle text-body-secondary" draggable="true" role="button" :title="$t('pod.dragHandle')" :aria-label="$t('pod.dragHandle')" data-testid="pod-drag-handle" @dragstart="onHandleDragStart" @dragend="emit('dragend')"><i class="fa-solid fa-grip-vertical"></i></span>
       <template v-if="!renaming">
-        <span class="fw-semibold fs-5 text-truncate" :title="pod.runpod_name ? $t('pod.runpodName', { name: pod.runpod_name }) : pod.name" data-testid="pod-name">{{ pod.name }}</span>
-        <button type="button" class="btn btn-link btn-sm p-0 align-baseline text-body-secondary" :title="$t('pod.rename')" :aria-label="$t('pod.editTitle')" data-testid="pod-rename" @click="startRename"><i class="fa-solid fa-pencil fa-xs"></i></button>
+        <span class="fw-semibold fs-6 text-truncate flex-grow-1" style="min-width: 0" :title="pod.runpod_name ? $t('pod.runpodName', { name: pod.runpod_name }) : pod.name" data-testid="pod-name">{{ pod.name }}</span>
       </template>
       <div v-else class="input-group input-group-sm flex-grow-1" style="min-width: 0">
         <input v-model="draft" type="text" class="form-control" maxlength="80" :placeholder="pod.runpod_name || pod.name" :aria-label="$t('pod.editTitle')" data-testid="pod-rename-input" @keydown.enter="saveRename" @keydown.esc="renaming = false" />
         <button type="button" class="btn btn-primary" :title="$t('pod.renameSave')" data-testid="pod-rename-save" @click="saveRename"><i class="fa-solid fa-check"></i></button>
         <button type="button" class="btn btn-outline-light" :title="$t('pod.renameCancel')" data-testid="pod-rename-cancel" @click="renaming = false"><i class="fa-solid fa-xmark"></i></button>
       </div>
-      <BBadge v-if="pod.custom_config" variant="warning" text-indicator class="ms-auto" :title="$t('pod.ownConfigTitle')" data-testid="pod-config-badge">{{ $t('pod.ownConfig') }}</BBadge>
-      <BBadge :variant="STATUS_VARIANT[pod.status] ?? 'secondary'" :class="pod.custom_config ? '' : 'ms-auto'" data-testid="pod-status" :data-status="pod.status">
-        {{ $t(`pod.statuses.${pod.status}`) }}
-      </BBadge>
+      <div class="d-flex align-items-center gap-2 ms-auto flex-shrink-0" data-testid="pod-head-actions">
+        <BBadge v-if="pod.custom_config" variant="warning" text-indicator :title="$t('pod.ownConfigTitle')" data-testid="pod-config-badge">{{ $t('pod.ownConfig') }}</BBadge>
+        <button v-if="!renaming" type="button" class="edit-btn" :title="$t('pod.rename')" :aria-label="$t('pod.editTitle')" data-testid="pod-rename" @click="startRename"><i class="fa-solid fa-pencil"></i></button>
+        <span class="status-dot" :class="`bg-${STATUS_VARIANT[pod.status] ?? 'secondary'}`" role="img" :title="$t(`pod.statuses.${pod.status}`)" :aria-label="$t(`pod.statuses.${pod.status}`)" data-testid="pod-status-dot" :data-status="pod.status"></span>
+      </div>
     </div>
 
     <dl class="row g-1 small mb-3 flex-grow-1">
@@ -27,9 +27,17 @@
         <button type="button" class="btn btn-link btn-sm p-0 ms-2 align-baseline" :title="$t('pod.copyId')" data-testid="pod-copy-id" @click="copyId"><i class="fa-regular fa-copy fa-xs"></i></button>
       </dd>
 
-
       <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.gpu') }}</dt>
       <dd class="col-8 mb-0">{{ pod.gpu }}<span v-if="pod.vram" class="text-body-secondary"> · {{ pod.vram }} GB</span></dd>
+
+      <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.statusLabel') }}</dt>
+      <dd class="col-8 mb-0">
+        <BBadge :variant="STATUS_VARIANT[pod.status] ?? 'secondary'" data-testid="pod-status" :data-status="pod.status">
+          {{ $t(`pod.statuses.${pod.status}`) }}
+        </BBadge>
+        <span v-if="rate" class="badge text-bg-primary fw-semibold ms-1" :title="rate.estimated ? $t('pod.costEstimate') : ''" :data-estimate="rate.estimated || null" data-testid="pod-price">{{ (rate.estimated ? '≈ ' : '') + '$' + rate.perHr + $t('pod.perHour') }}</span>
+      </dd>
+
 
       <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.round') }}</dt>
       <dd class="col-8 mb-0">
@@ -39,6 +47,15 @@
         </select>
       </dd>
 
+      <template v-if="pod.round">   <!-- with a round chosen: the shot this pod works on, typed or picked from the round's shots -->
+        <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.shot') }}</dt>
+        <dd class="col-8 mb-0 shot-wrap">
+          <input v-model="shotDraft" type="text" class="form-control form-control-sm shot-input" maxlength="120" :list="`shots-${pod.id}`" :disabled="busy" :placeholder="$t('pod.shotPlaceholder')" :aria-label="$t('pod.shotPick')" autocomplete="off" data-testid="pod-shot" @focus="loadShots" @change="saveShot" @keydown.enter="$event.target.blur()" />
+          <i class="fa-solid fa-chevron-down shot-chevron" data-testid="pod-shot-arrow" aria-hidden="true"></i>
+          <datalist :id="`shots-${pod.id}`"><option v-for="s in shotOptions" :key="s" :value="s"></option></datalist>
+        </dd>
+      </template>
+
       <template v-if="pod.uptime_seconds">
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.uptime') }}</dt>
         <dd class="col-8 mb-0">{{ formatUptime(pod.uptime_seconds) }}</dd>
@@ -46,12 +63,7 @@
 
       <template v-if="volume">   <!-- the network volume this pod is attached to (the Volumes list knows its pods, ADR-032) -->
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.volume') }}</dt>
-        <dd class="col-8 mb-0" data-testid="pod-volume"><a href="#" :title="$t('pod.volumeOpen')" @click.prevent="ui.volumesOpen = true"><i class="fa-solid fa-hard-drive me-1"></i>{{ volume.name }}</a><span class="text-body-secondary"> · {{ volume.size_gb }} GB · {{ volume.datacenter }}</span></dd>
-      </template>
-
-      <template v-if="rate">   <!-- the price on the card itself, running or stopped (a stopped pod's is an estimate, ADR-031) -->
-        <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.cost') }}</dt>
-        <dd class="col-8 mb-0" data-testid="pod-price"><span class="badge text-bg-success fw-semibold" :title="rate.estimated ? $t('pod.costEstimate') : ''" :data-estimate="rate.estimated || null"><i class="fa-solid fa-dollar-sign me-1"></i>{{ (rate.estimated ? '≈ ' : '') + '$' + rate.perHr + $t('pod.perHour') }}</span></dd>
+        <dd class="col-8 mb-0" data-testid="pod-volume"><a href="#" :title="$t('pod.volumeOpen')" @click.prevent="ui.volumesOpen = true"><i class="fa-solid fa-hard-drive me-1"></i>{{ volume.name }}</a><div class="text-body-secondary" data-testid="pod-volume-facts">{{ volume.size_gb }} GB · {{ volume.datacenter }}</div></dd>
       </template>
 
       <template v-if="pod.web_ui_url">
@@ -92,23 +104,9 @@
           </div>
         </dd>
       </template>
-
-      <template v-if="pod.ssh_command">
-        <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.ssh') }}</dt>
-        <dd class="col-8 mb-0"><code class="text-break">{{ pod.ssh_command }}</code></dd>
-      </template>
-
-      <template v-if="pod.image">
-        <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.image') }}</dt>
-        <dd class="col-8 mb-0">
-          <a href="#" class="d-block text-break" :title="pod.image" data-testid="pod-dockerfile" @click.prevent="showDockerfile = true"><i class="fa-solid fa-file-code me-1"></i>{{ $t('dockerfile.button') }}</a>
-          <code class="d-block small text-body-secondary text-break" data-testid="pod-image-ref">{{ shortImage(pod.image) }}</code>
-          <DockerfileModal v-model="showDockerfile" :image="pod.image" this-pod />
-        </dd>
-      </template>
     </dl>
 
-    <div class="d-flex mb-2 justify-content-evenly flex-nowrap card-actions">
+    <div class="d-flex gap-1 mb-2 flex-nowrap card-actions">
       <BButton variant="outline-light" size="sm" class="text-nowrap px-2" :title="$t('pod.config') + ': ' + $t('pod.configTitle')" :aria-label="$t('pod.config')" data-testid="pod-config" @click="openConfig">
         <i class="fa-solid fa-sliders me-1"></i>{{ $t('pod.config') }}
       </BButton>
@@ -140,7 +138,16 @@
         </template>
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.place') }}</dt><dd class="col-8 mb-0">{{ details.cloud }}<span v-if="details.datacenter"> · {{ details.datacenter }}</span></dd>
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.gpu') }}</dt><dd class="col-8 mb-0">{{ details.gpu }} ×{{ details.gpu_count }}</dd>
-        <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.image') }}</dt><dd class="col-8 mb-0 text-break"><code>{{ details.image }}</code></dd>
+        <template v-if="pod.ssh_command">
+          <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.ssh') }}</dt>
+          <dd class="col-8 mb-0"><code class="text-break" data-testid="pod-ssh">{{ pod.ssh_command }}</code></dd>
+        </template>
+        <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.image') }}</dt>
+        <dd class="col-8 mb-0 text-break">
+          <a href="#" class="d-block text-break" :title="details.image || pod.image" data-testid="pod-dockerfile" @click.prevent="showDockerfile = true"><i class="fa-solid fa-file-code me-1"></i>{{ $t('dockerfile.button') }}</a>
+          <code class="d-block small text-body-secondary text-break" data-testid="pod-image-ref">{{ shortImage(pod.image || details.image) }}</code>
+          <DockerfileModal v-model="showDockerfile" :image="pod.image || details.image" this-pod />
+        </dd>
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.disk') }}</dt><dd class="col-8 mb-0">{{ volume ? $t('pod.diskNetwork', { disk: details.disk_gb, name: volume.name, size: volume.size_gb }) : $t('pod.diskValue', { disk: details.disk_gb, volume: details.volume_gb }) }}</dd>
       </dl>
     </div>
@@ -210,6 +217,7 @@ import PodLogs from './PodLogs.vue'
 import RunWorkflowsModal from './RunWorkflowsModal.vue'
 import SyncModal from './SyncModal.vue'
 import DockerfileModal from './DockerfileModal.vue'
+import { roundShots } from '../utils/roundShots'
 import ConfigModal from './ConfigModal.vue'
 import { usePodsStore } from '../stores/pods'
 import { useToastStore } from '../stores/toast'
@@ -222,10 +230,16 @@ const props = defineProps({
   handle: { type: Boolean, default: false },   // show the grip a card is dragged by, to move it to another round (ADR-039)
   rounds: { type: Array, default: () => [] },   // the rounds a pod can be dropped into (ADR-039)
 })
-const emit = defineEmits(['stop', 'resume', 'delete', 'rename', 'round', 'dragstart', 'dragend'])
+const emit = defineEmits(['stop', 'resume', 'delete', 'rename', 'round', 'shot', 'dragstart', 'dragend'])
 /** The grip starts the drag; the whole card is the picture that follows the pointer. */
 const onHandleDragStart = (e) => { const card = e.target.closest('[data-testid="pod-card"]'); if (card && e.dataTransfer?.setDragImage) e.dataTransfer.setDragImage(card, 24, 24); emit('dragstart', e) }
 /** The choices: the known rounds, plus the pod's own when it is not among them. */
+/** The shot: free text, or one of the round's shots (read when the field is first focused). Saved when it changes. */
+const shotDraft = ref(props.pod.shot || '')
+watch(() => [props.pod.shot, props.pod.round], () => { shotDraft.value = props.pod.shot || '' })
+const shotOptions = ref([t('pod.allShots')])   // "All Shots" first, then the round's own shots once they are read
+async function loadShots() { if (props.pod.round) shotOptions.value = [t('pod.allShots'), ...(await roundShots(props.pod.round))] }
+const saveShot = () => { const v = shotDraft.value.trim(); if (v !== (props.pod.shot || '')) emit('shot', v) }
 const roundOptions = computed(() => (props.pod.round && !props.rounds.some((r) => r.round === props.pod.round) ? [{ round: props.pod.round, label: props.pod.round_label || props.pod.round }, ...props.rounds] : props.rounds))
 /** The name is ours: a map on this app's side (RunPod keeps its own). Empty goes back to RunPod's name. */
 const renaming = ref(false)
@@ -331,6 +345,13 @@ function confirmDelete() {
 </script>
 
 <style scoped>
+.card-actions > * { flex: 1 1 0; min-width: 0; padding-left: 0.25rem !important; padding-right: 0.25rem !important; }   /* four equal buttons with the same gap between and around them */
+.shot-wrap { position: relative; }
+.shot-input { padding-right: 2rem; }
+.shot-input::-webkit-calendar-picker-indicator { opacity: 0; position: absolute; top: 0; bottom: 0; right: 0; width: 2rem; cursor: pointer; }   /* the browser's own arrow is a hit area over our always-visible chevron */
+.shot-chevron { position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%); font-size: 0.7rem; pointer-events: none; color: var(--bs-secondary-color); }
+.edit-btn { width: 2.2rem; height: 2.2rem; padding: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 1rem; line-height: 1; background: none; border: 0; color: var(--bs-secondary-color); }   /* just the pencil: no outline, no hover style */
+.status-dot { width: 0.8rem; height: 0.8rem; border-radius: 50%; display: inline-block; flex: none; }
 .pod-handle { cursor: grab; padding: 2px 4px; align-self: center; }
 .pod-handle:active { cursor: grabbing; }
 </style>

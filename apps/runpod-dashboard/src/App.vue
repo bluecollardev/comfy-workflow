@@ -1,5 +1,6 @@
 <template>
   <div class="min-vh-100 d-flex flex-column">
+    <div class="sticky-top bg-body app-top" data-testid="app-top">
     <BNavbar class="border-bottom px-3 py-2" data-testid="navbar">
       <BNavbarBrand tag="div" class="fw-semibold">
         <AppBrand />
@@ -29,8 +30,11 @@
         </BButton>
       </div>
     </BNavbar>
+    <!-- A failed action (Resume with no free GPU on the host, Stop, Delete...) is said right under the nav bar, and stays there while the page scrolls -->
+    <BAlert v-if="pods.actionError" :model-value="true" variant="danger" dismissible class="mb-0 rounded-0 border-start-0 border-end-0" data-testid="action-error" @update:model-value="pods.actionError = null">{{ pods.actionError }}</BAlert>
+    </div>
 
-    <BContainer class="py-4 flex-grow-1" style="max-width: 1200px">
+    <BContainer class="py-4 flex-grow-1 app-content" style="width: 100%; max-width: min(100%, 1680px)">
       <BAlert
         v-if="pods.loadError"
         :model-value="true"
@@ -135,6 +139,13 @@ const queueCount = ref(0)
 let queueTimer = null
 const loadQueueCount = async () => { try { queueCount.value = (await queueAPI.list()).active } catch { queueCount.value = 0 } }
 let offSync = () => {}
+/** The toasts sit just under the sticky top (nav bar, and a failed action's alert below it): its height is published as --app-top-height. */
+let topObserver = null
+onMounted(() => {
+  const el = document.querySelector('[data-testid="app-top"]')
+  if (el && typeof ResizeObserver !== 'undefined') { topObserver = new ResizeObserver(() => document.documentElement.style.setProperty('--app-top-height', `${el.offsetHeight}px`)); topObserver.observe(el) }
+})
+onUnmounted(() => topObserver?.disconnect())
 onMounted(async () => {
   loadQueueCount(); queueTimer = setInterval(loadQueueCount, 5000)
   readOAuthResult()

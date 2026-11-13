@@ -37,7 +37,7 @@ test.describe('pod card', () => {
     await page.goto('/')
     const card = podCard(page, 'ComfyUI-Dev')
     await expect(card.getByTestId('pod-volume')).toContainText('comfy-workspace')
-    await expect(card.getByTestId('pod-volume')).toContainText('120 GB · EU-RO-1')
+    await expect(card.getByTestId('pod-volume-facts')).toHaveText('120 GB · EU-RO-1')   // on its own row under the name
     await expect(podCard(page, 'ComfyUI-Batch').getByTestId('pod-volume')).toHaveCount(0)
   })
 
@@ -50,7 +50,7 @@ test.describe('pod card', () => {
     await expect(details.getByTestId('pod-details-cost')).toHaveText('$0.28' + t('pod.perHour'))
     await expect(details).toContainText('SECURE · EUR-IS-1')
     await expect(details).toContainText('NVIDIA RTX 4000 Ada Generation ×1')
-    await expect(details).toContainText('ashleykza/comfyui:latest')
+    await expect(details.getByTestId('pod-image-ref')).toHaveText('ghcr.io/example/comfy-app:v26')   // the image is under Details, with its Dockerfile link
     await expect(details).toContainText(t('pod.diskNetwork', { disk: 20, name: 'comfy-workspace', size: 120 }))   // a pod on a network volume has 0 GB of its own: say where the data is
     await podCard(page, 'ComfyUI-Batch').getByTestId('pod-details-toggle').click()
     await expect(podCard(page, 'ComfyUI-Batch').getByTestId('pod-details')).toContainText(t('pod.diskValue', { disk: 20, volume: 0 }))   // no network volume: the plain figure
@@ -292,4 +292,94 @@ test.describe('Rounds: a round holds a series of pods (ADR-039)', () => {
     await page.getByTestId('pods-round-toggle').click()
     await expect(page.getByTestId('pod-drag-handle')).toHaveCount(0)
   })
+})
+
+test.describe('Top of the page', () => {
+  test('the nav bar stays at the top when the page scrolls; a failed action is shown right under it and toasts sit under it', async ({ page, api }) => {
+    await page.setViewportSize({ width: 1280, height: 700 })
+    await page.goto('/')
+    await expect(page.getByTestId('navbar')).toBeVisible()
+    await page.mouse.wheel(0, 1500)
+    await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(200)
+    await expect(page.getByTestId('navbar')).toBeInViewport()   // sticky: still at the top after scrolling
+    // a failed Resume says why under the nav bar
+    await page.evaluate(() => window.scrollTo(0, 0))
+    api.state.failures['POST /pods/pod-bbbbbbbb/resume'] = 'There are not enough free GPUs on the host machine to start this pod.'
+    await podCard(page, 'ComfyUI-Batch').getByTestId('pod-resume').click()
+    const alert = page.getByTestId('action-error')
+    await expect(alert).toContainText('not enough free GPUs')
+    const nav = await page.getByTestId('navbar').boundingBox(), al = await alert.boundingBox()
+    expect(al.y).toBeGreaterThanOrEqual(nav.y + nav.height - 1)   // below the nav bar
+    const toast = await page.getByTestId('toast').last().boundingBox()
+    expect(toast.y).toBeGreaterThanOrEqual(nav.y + nav.height - 1)   // toasts do not cover the nav bar either
+    await page.mouse.wheel(0, 1500)
+    await expect(alert).toBeInViewport()   // and the alert stays while scrolling
+  })
+})
+
+test('a pod card has its edit button at the right of the heading row and, right of it, a coloured dot for the status', async ({ page }) => {
+  await page.goto('/')
+  const card = podCard(page, 'ComfyUI-Dev')
+  const name = await card.getByTestId('pod-name').boundingBox(), edit = await card.getByTestId('pod-rename').boundingBox(), dot = await card.getByTestId('pod-status-dot').boundingBox()
+  const box = await card.boundingBox()
+  expect(Math.abs(edit.y - dot.y)).toBeLessThan(12)   // the same row
+  expect(edit.height).toBeGreaterThan(30)   // a decent size
+  const mid = (b) => b.y + b.height / 2
+  expect(Math.abs(mid(edit) - mid(name))).toBeLessThan(2)   // centred on the heading text
+  expect(Math.abs(mid(dot) - mid(name))).toBeLessThan(2)
+  expect(edit.x).toBeGreaterThan(name.x)   // edit to the right of the name...
+  expect(dot.x).toBeGreaterThan(edit.x)   // ...and the dot to the right of edit
+  expect(box.x + box.width - (dot.x + dot.width)).toBeLessThan(40)   // at the card's right edge
+  await expect(card.getByTestId('pod-status-dot')).toHaveAttribute('data-status', 'running')
+  await expect(card.getByTestId('pod-status-dot')).toHaveClass(/bg-success/)
+  await expect(podCard(page, 'ComfyUI-Batch').getByTestId('pod-status-dot')).toHaveClass(/bg-danger/)
+})
+
+test('the Config, Sync, Details and Logs buttons are the same width with equal gaps, filling the row', async ({ page }) => {
+  await page.goto('/')
+  const m = await podCard(page, 'ComfyUI-Dev').locator('.card-actions').evaluate((el) => { const p = el.getBoundingClientRect(), bs = [...el.children].map((b) => b.getBoundingClientRect()); return { w: bs.map((b) => b.width), gaps: bs.slice(1).map((b, i) => b.left - bs[i].right), edges: [bs[0].left - p.left, p.right - bs[bs.length - 1].right] } })
+  expect(Math.max(...m.w) - Math.min(...m.w)).toBeLessThan(1)
+  expect(Math.max(...m.gaps) - Math.min(...m.gaps)).toBeLessThan(1)
+  expect(Math.max(...m.edges)).toBeLessThan(1)
+})
+
+test('a pod card lists ID, then GPU, then Status', async ({ page }) => {
+  await page.goto('/')
+  const labels = await podCard(page, 'ComfyUI-Dev').locator('dl > dt').evaluateAll((els) => els.slice(0, 3).map((e) => e.textContent.trim()))
+  expect(labels).toEqual([t('pod.id'), t('pod.gpu'), t('pod.statusLabel')])
+})
+
+test('the price is another badge on the Status row, not a row of its own', async ({ page }) => {
+  await page.goto('/')
+  const card = podCard(page, 'ComfyUI-Dev')
+  const status = await card.getByTestId('pod-status').boundingBox(), price = await card.getByTestId('pod-price').boundingBox()
+  expect(Math.abs(status.y - price.y)).toBeLessThan(6)   // the same row
+  expect(price.x).toBeGreaterThan(status.x)
+  await expect(card.getByTestId('pod-price')).toHaveClass(/text-bg-primary/)   // a blue badge
+  await expect(card.locator('dl > dt', { hasText: t('pod.cost') })).toHaveCount(0)
+})
+
+test('with a round chosen, a pod card has a Shot field: free text or one of the round\'s shots', async ({ page, api }) => {
+  api.state.pods.find((p) => p.name === 'ComfyUI-Dev').round = 'brynley-comfy-2026-11-06'
+  api.state.pods.find((p) => p.name === 'ComfyUI-Dev').round_label = 'brynley-comfy-2026-11-06'
+  await page.goto('/')
+  await expect(podCard(page, 'ComfyUI-Batch').getByTestId('pod-shot')).toHaveCount(0)   // no round, no shot field
+  const card = podCard(page, 'ComfyUI-Dev')
+  const shot = card.getByTestId('pod-shot')
+  await expect(shot).toBeVisible()
+  await expect(card.getByTestId('pod-shot-arrow')).toBeVisible()   // the dropdown arrow is always shown
+  const rows = await card.locator('dl > dt').evaluateAll((els) => els.map((e) => e.textContent.trim()))
+  expect(rows.indexOf(t('pod.shot'))).toBe(rows.indexOf(t('pod.round')) + 1)   // right below Round
+  await shot.focus()
+  await expect(card.locator('datalist option').first()).toHaveAttribute('value', 'All Shots')   // "All Shots" first
+  await expect(card.locator('datalist option')).not.toHaveCount(1)   // then the round's shots, read from the bucket
+  await shot.fill('All Shots'); await shot.blur()
+  await expect.poll(() => api.state.pods.find((p) => p.name === 'ComfyUI-Dev').shot).toBe('All Shots')
+  await shot.fill('03_INBOX')   // one of the round's shots
+  await shot.blur()
+  await expect.poll(() => api.state.pods.find((p) => p.name === 'ComfyUI-Dev').shot).toBe('03_INBOX')
+  await shot.fill('my own label')   // or free text
+  await shot.blur()
+  await expect.poll(() => api.state.pods.find((p) => p.name === 'ComfyUI-Dev').shot).toBe('my own label')
+  await expect(shot).toHaveValue('my own label')
 })

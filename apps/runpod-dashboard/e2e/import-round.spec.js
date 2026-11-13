@@ -20,6 +20,12 @@ test('Import Round: three steps - rounds, shots, cards - then Import with the ap
   // 2. Choose shots
   await expect(dlg.locator('[data-testid="import-round-step"][data-active="true"]')).toContainText('Choose Shots')
   await expect(dlg.getByTestId('import-round-shot')).toHaveCount(2)
+  const all = dlg.getByTestId('import-round-shots-select-all')
+  await expect(all).toBeChecked()
+  await all.uncheck()   // select all clears every shot, then ticks them again
+  await expect(dlg.getByTestId('import-round-shot').locator('input:checked')).toHaveCount(0)
+  await all.check()
+  await expect(dlg.getByTestId('import-round-shot').locator('input:checked')).toHaveCount(2)
   await dlg.getByTestId('import-round-shot').filter({ hasText: 'cgi-043' }).locator('input').uncheck()
   await dlg.getByTestId('import-round-next').click()
   // 3. Configure deployment: cards for the shots, volume, caps
@@ -37,12 +43,18 @@ test('Import Round: three steps - rounds, shots, cards - then Import with the ap
   await expect(dlg.getByTestId('import-round-volume-note')).toBeVisible()   // it becomes the default
   await expect(dlg.locator('.stepper-item[data-done="true"]')).toHaveCount(3)   // all three are green with a check once it can be imported
   await expect(dlg.locator('.stepper-item.done .fa-check')).toHaveCount(3)
+  await page.route('**/queue/import-many', async (route) => { await new Promise((r) => setTimeout(r, 1200)); await route.fallback() })   // planning takes a while
   await dlg.getByTestId('import-round-start').click()   // Approved by is in the footer
+  await expect(dlg).toBeHidden()   // the wizard gives way at once to the Queue, which says what is going on
+  await expect(page.getByTestId('queue-modal').getByTestId('queue-starting')).toContainText('Queueing')
+  await expect(page.getByTestId('queue-modal').getByTestId('queue-starting')).toBeHidden()
   expect(api.state.imported).toMatchObject({ shots: ['cgi-042'], cards: { 'cgi-042': 'rtxpro6000' }, approved_by: 'Lucas', run_workflows: true, max_pods: 1, cost_cap_usd: 50 })
   const q = page.getByTestId('queue-modal')
   await expect(q.getByTestId('queue-task')).toHaveCount(2)
   await expect(q.getByTestId('queue-task').filter({ hasText: 'cgi-042' })).toContainText('boom (node 4, KSampler)')
   await expect(q.getByTestId('queue-task').filter({ hasText: 'cgi-042' }).getByTestId('queue-retry')).toBeVisible()
+  const bs = await q.getByTestId('queue-task').filter({ hasText: 'cgi-042' }).getByTestId('queue-actions').locator('button').evaluateAll((els) => els.map((e) => e.getBoundingClientRect()))
+  for (let i = 1; i < bs.length; i++) expect(bs[i].left - bs[i - 1].right).toBeGreaterThanOrEqual(4)   // the buttons do not touch
 })
 
 test('Import Round(s): several rounds can be ticked; each is its own import, the dollar cap is split between them', async ({ page, api }) => {
@@ -150,4 +162,18 @@ test('Import Round(s): step 2 opens right after a round is ticked, while its sho
   await expect(dlg.getByTestId('import-round-error')).toBeVisible()
   await expect(dlg.getByTestId('import-round-shot')).toHaveCount(2)   // then the shots appear
   await expect(dlg.getByTestId('import-round-reading')).toHaveCount(0)
+})
+
+test('Import Round(s): Select all ticks every round (and clears them), and Next goes on with all of them', async ({ page }) => {
+  await page.goto('/'); await page.getByTestId('open-import-round').click()
+  const dlg = page.getByTestId('import-round-modal')
+  const boxes = dlg.getByTestId('import-round-option').locator('input')
+  await dlg.getByTestId('import-round-select-all').check()
+  const n = await boxes.count()
+  for (let i = 0; i < n; i++) await expect(boxes.nth(i)).toBeChecked()
+  await dlg.getByTestId('import-round-next').click()
+  await expect(dlg.getByTestId('import-round-group')).toHaveCount(n)
+  await dlg.locator('[data-testid="import-round-step"][data-step="1"]').click()
+  await dlg.getByTestId('import-round-select-all').uncheck()
+  for (let i = 0; i < await boxes.count(); i++) await expect(boxes.nth(i)).not.toBeChecked()
 })

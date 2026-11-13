@@ -12,6 +12,7 @@ import * as mounts from './mounts.js'
 import { queueFile } from './paths.js'
 import * as panama from './panama.js'
 import * as podpull from './podpull.js'
+import * as podrounds from './podrounds.js'
 import * as pods from './pods.js'
 import * as rp from './runpod.js'
 import * as runflows from './runflows.js'
@@ -54,6 +55,8 @@ export interface Deps {
   resumePod: (id: string) => Promise<void>
   createPod: (name: string, round: string, gpu?: string) => Promise<{ id: string; name: string }>
   cardPrice: (gpu: string) => Promise<number | null>
+  /** Put the pod in the round and name the shot it works on, so the pod card says so (ADR-039). */
+  assignShot: (podId: string, round: string, shot: string) => void
   /** Make sure the volume the pods and the pull use exists; `id` (when given) becomes the Default Configuration's volume first. */
   ensureVolume: (id?: string) => Promise<void>
   stopPod: (id: string) => Promise<void>
@@ -84,6 +87,7 @@ const realDeps: Deps = {
   podReady: async (id) => { const p = await pods.get(id); const raw = await rp.getPod(id); return { ready: p.status === 'running' && !!p.web_ui_url && p.comfy_ready !== false, price: raw?.costPerHr ?? null } },
   resumePod: async (id) => { await pods.resume(id) },
   createPod: async (name, round, gpu) => { const p = await pods.create({ name, gpu: gpu || POOL_GPU, apply_mounts: true, round }); return { id: p.id, name: p.name } },
+  assignShot: (podId, round, shot) => { if (podrounds.get(podId) !== round) podrounds.set(podId, round); podrounds.setShot(podId, shot) },
   ensureVolume: async (id) => {
     const want = (id || mounts.load().network_volume_id || '').trim()
     if (!want) throw new CoreError(400, 'No network volume: pick one for the import (or set the default volume).')
@@ -300,6 +304,7 @@ async function begin(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> {
     } else {
       const c = await deps.createPod(`queue-${imp.round}-${tasks.filter((x) => x.pod_id).length + 1}`.slice(0, 60), imp.round, t.gpu); podId = c.id; podName = c.name; t.card = t.gpu || POOL_GPU; imp.started_pods.push(c.id); ev(t, `created pod ${c.name} (${t.gpu || POOL_GPU}) in round ${imp.round}`)
     }
+    if (t.shot) { try { deps.assignShot(podId, imp.round, t.shot); ev(t, `pod card: round ${imp.round}, shot ${t.shot}`) } catch { /* the card label is ours only: never fail a run over it */ } }
     t.pod_id = podId; t.pod_name = podName; t.phase = 'pod'; t.state = 'running'; t.retry_at = undefined; t.attempts = undefined; t.stage = undefined; t.started_at = deps.now().toISOString(); delete t.held_reason
   } catch (e) {
     const msg = (e as Error).message

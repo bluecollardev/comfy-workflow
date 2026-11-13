@@ -16,7 +16,10 @@ test.describe('dashboard', () => {
     await expect(dev).toContainText('24 GB')
     await expect(dev).toContainText('2h 2m')
     await expect(dev.getByRole('link', { name: /Open/ })).toHaveAttribute('href', 'https://pod-a.proxy.runpod.io:8188')
-    await expect(dev).toContainText('ssh root@pod-a.proxy.runpod.io')
+    await expect(dev).not.toContainText('ssh root@pod-a.proxy.runpod.io')   // SSH and the image are under Details, not on the card
+    await dev.getByTestId('pod-details-toggle').click()
+    await expect(dev.getByTestId('pod-ssh')).toHaveText('ssh root@pod-a.proxy.runpod.io')
+    await dev.getByTestId('pod-details-toggle').click()
     await expect(dev.getByRole('button', { name: 'Stop' })).toBeVisible()
 
     await expect(podCard(page, 'ComfyUI-Batch').getByRole('button', { name: 'Resume' })).toBeVisible()
@@ -137,4 +140,14 @@ test('the top bar reads Connect, Volumes, Queue, History, Settings, Pause all, R
   await page.goto('/')
   const ids = await page.locator('nav [data-testid], .navbar [data-testid]').evaluateAll((els) => els.map((e) => e.dataset.testid).filter((id) => ['open-connect', 'open-volumes', 'open-queue', 'open-history', 'open-config', 'pause-all', 'refresh'].includes(id)))
   expect(ids).toEqual(['open-connect', 'open-volumes', 'open-queue', 'open-history', 'open-config', 'pause-all', 'refresh'])
+})
+
+test('the content below the nav bar is wide (up to 1680px) and never wider than the window', async ({ page }) => {
+  const width = async () => (await page.locator('.app-content').boundingBox()).width
+  await page.setViewportSize({ width: 2200, height: 900 }); await page.goto('/')
+  expect(await width()).toBeLessThanOrEqual(1680); expect(await width()).toBeGreaterThan(1500)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  expect(await width()).toBeGreaterThan(1380); expect(await width()).toBeLessThanOrEqual(1440)   // a MacBook screen: the whole width, never more
+  await page.setViewportSize({ width: 1000, height: 900 })
+  expect(await width()).toBeLessThanOrEqual(1000)
 })

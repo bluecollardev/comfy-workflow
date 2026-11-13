@@ -24,7 +24,12 @@
         </div>
         <div class="small text-body-secondary">{{ $t('importRound.droppedNote') }}</div>
       </div>
-      <div class="form-label small mb-1">{{ $t('importRound.rounds') }}</div>
+      <div class="d-flex align-items-center justify-content-between mb-1">
+        <div class="form-label small mb-0">{{ $t('importRound.rounds') }}</div>
+        <label v-if="selectable.length > 1" class="d-flex align-items-center gap-2 small mb-0" for="irr-all">
+          <input id="irr-all" type="checkbox" class="form-check-input mt-0" :checked="allChosen" :indeterminate.prop="chosen.size > 0 && !allChosen" data-testid="import-round-select-all" @change="toggleAll($event.target.checked)" />{{ $t('importRound.selectAll') }}
+        </label>
+      </div>
       <div class="border rounded p-2 round-list" data-testid="import-round-list">
         <template v-for="r in roundNamesList" :key="r">
         <div class="d-flex align-items-center gap-2 small round-row" data-testid="import-round-option" :data-round="r">
@@ -40,7 +45,12 @@
 
     <!-- 2. Choose shots -->
     <template v-else-if="step === 2">
-      <div class="small fw-semibold mb-1">{{ $t('importRound.shots') }}</div>
+      <div class="d-flex align-items-center justify-content-between mb-1">
+        <div class="small fw-semibold">{{ $t('importRound.shots') }}</div>
+        <label v-if="allShots.length > 1" class="d-flex align-items-center gap-2 small mb-0" for="irs-all">
+          <input id="irs-all" type="checkbox" class="form-check-input mt-0" :checked="allShotsPicked" :indeterminate.prop="pickedCount > 0 && !allShotsPicked" data-testid="import-round-shots-select-all" @change="toggleAllShots($event.target.checked)" />{{ $t('importRound.selectAll') }}
+        </label>
+      </div>
       <div v-for="r in [...chosen]" :key="r" class="mb-2" data-testid="import-round-group" :data-round="r">
         <div v-if="chosen.size > 1 || pending.has(r)" class="small text-body-secondary font-monospace">{{ r }}</div>
         <div v-if="pending.has(r)" class="small text-body-secondary" data-testid="import-round-reading"><BSpinner small class="me-2" />{{ $t('importRound.loadingPlan') }}</div>
@@ -193,6 +203,10 @@ onMounted(async () => { try { gpuMenu.value = ((await podsAPI.gpus('')).gpus || 
   try { const r = await panamaAPI.rounds(); rounds.value = Array.isArray(r) ? r : r.rounds || [] } catch (e) { error.value = errorText(e) } })
 watch(() => ui.importRoundOpen, (o) => { if (o) step.value = 1; if (o && ui.importRoundPreset) { toggleRound(ui.importRoundPreset, true); ui.importRoundPreset = '' } }, { immediate: true })   // re-import: the round is already ticked
 const followPods = () => { if (!podsEdited.value) maxPods.value = Math.min(20, Math.max(1, ...[...plans.value.keys()].map(shotCount))) }
+/** Select all: every round that can be ticked (one refused for having no shots stays out); unticking clears them all. */
+const selectable = computed(() => roundNamesList.value.filter((r) => !rowErrors.value[r]))
+const allChosen = computed(() => selectable.value.length > 0 && selectable.value.every((r) => chosen.value.has(r)))
+const toggleAll = (on) => { for (const r of on ? selectable.value.filter((x) => !chosen.value.has(x)) : [...chosen.value]) toggleRound(r, on) }
 async function toggleRound(r, on) {
   const n = new Set(chosen.value); on ? n.add(r) : n.delete(r); chosen.value = n
   error.value = ''; { const e = { ...rowErrors.value }; delete e[r]; rowErrors.value = e }
@@ -207,16 +221,21 @@ async function toggleRound(r, on) {
     podsEdited.value = false; followPods()
   } catch (e) { error.value = `${r}: ${errorText(e)}`; rowErrors.value = { ...rowErrors.value, [r]: errorText(e) }; const m = new Set(chosen.value); m.delete(r); chosen.value = m } finally { const q = new Set(pending.value); q.delete(r); pending.value = q }
 }
+const allShots = computed(() => [...chosen.value].flatMap((r) => (plans.value.get(r)?.shots || []).map((s) => [r, s])))
+const pickedCount = computed(() => allShots.value.filter(([r, s]) => picked.value.get(r)?.has(s)).length)
+const allShotsPicked = computed(() => allShots.value.length > 0 && pickedCount.value === allShots.value.length)
+function toggleAllShots(on) { const m = new Map(picked.value); for (const r of chosen.value) m.set(r, new Set(on ? plans.value.get(r)?.shots || [] : [])); picked.value = m; followPods() }
 function toggleShot(r, s, on) { const m = new Map(picked.value); const n = new Set(m.get(r)); on ? n.add(s) : n.delete(s); m.set(r, n); picked.value = m; followPods() }
 async function start() {
   starting.value = true; error.value = ''
-  try {
-    try { localStorage.setItem('runpod-manager.approved-by', approvedBy.value.trim()) } catch { /* storage blocked */ }
-    const todo = [...plans.value.keys()].filter((r) => shotCount(r) > 0)
-    const capOn = first.value.cap_enabled
-    await queueAPI.importMany(todo.map((r) => ({ round: r, shots: [...picked.value.get(r)], cards: cardsFor(r), ...(capOn ? { max_pods: todo.length > 1 && !podsEdited.value ? shotCount(r) : maxPods.value } : {}) })), { run_workflows: runWorkflows.value, volume_id: volumeId.value, approved_by: approvedBy.value.trim(), ...(capOn ? { cost_cap_usd: costCap.value } : {}) })
-    open.value = false; ui.queueOpen = true   // the Queue shows what it queued
-  } catch (e) { error.value = errorText(e) } finally { starting.value = false }
+  try { localStorage.setItem('runpod-manager.approved-by', approvedBy.value.trim()) } catch { /* storage blocked */ }
+  const todo = [...plans.value.keys()].filter((r) => shotCount(r) > 0)
+  const capOn = first.value.cap_enabled
+  const items = todo.map((r) => ({ round: r, shots: [...picked.value.get(r)], cards: cardsFor(r), ...(capOn ? { max_pods: todo.length > 1 && !podsEdited.value ? shotCount(r) : maxPods.value } : {}) }))
+  const opts = { run_workflows: runWorkflows.value, volume_id: volumeId.value, approved_by: approvedBy.value.trim(), ...(capOn ? { cost_cap_usd: costCap.value } : {}) }
+  // The Queue opens at once and says it is queueing: reading and planning the rounds takes a while, and the button alone says nothing.
+  ui.queueStartError = ''; ui.queueStarting = todo; open.value = false; ui.queueOpen = true
+  try { await queueAPI.importMany(items, opts) } catch (e) { ui.queueStartError = errorText(e) } finally { ui.queueStarting = []; ui.queueVersion++; starting.value = false }
 }
 </script>
 

@@ -1,6 +1,6 @@
 {
   "comfy_variant": "contract-v26",
-  "comfy_image": "ghcr.io/bluecollardev/comfy-app:contract-v26",
+  "comfy_image": "comfy-app:contract-v26",
   "shotpipe_sets": "shared/nodes/sets.json",
-  "built_at": "2026-10-27T06:01Z"
+  "built_at": "2026-11-11T16:33Z"
 }

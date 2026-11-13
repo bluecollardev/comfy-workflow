@@ -41,7 +41,7 @@
           </div>
           <div class="small text-body-secondary mt-1" data-testid="pod-gpu-group">{{ gpuLive ? $t('form.gpuStock') : $t('form.gpuNoStock') }}</div>
           <div v-if="gpuCost" class="d-flex align-items-center flex-wrap gap-2 mt-2" data-testid="pod-cost">
-            <span class="badge text-bg-success fs-6 fw-semibold" data-testid="pod-cost-total"><i class="fa-solid fa-dollar-sign me-1"></i>{{ gpuCost.total }}/h</span>
+            <span class="badge text-bg-success fs-6 fw-semibold" data-testid="pod-cost-total">{{ gpuCost.total }}/h</span>
             <span class="small text-body-secondary" data-testid="pod-cost-detail">{{ gpuCost.auto ? $t('form.costFrom') : '' }} {{ gpuCost.unit }}/h × {{ gpuCost.count }} {{ $t('form.costGpus', gpuCost.count) }} · ≈ {{ gpuCost.day }}/day · {{ gpuCost.month }}/month</span>
           </div>
           <div v-if="dcAt" class="small text-body-secondary mt-1" data-testid="pod-datacenter-updated">{{ $t('form.datacenterUpdated', { time: dcAt.toLocaleTimeString() }) }}</div>

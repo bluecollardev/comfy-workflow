@@ -50,6 +50,7 @@ export interface PodStatus {
   image?: string            // the image the pod boots (the card's Dockerfile link)
   round_label?: string      // the name this app shows for that round (a round is renamable), else the round itself
   round?: string            // the delivery round this pod is in (podrounds, ADR-039); none = unassigned
+  shot?: string             // the shot it works on within the round: free text or one of the round's shots
   runpod_name?: string      // RunPod's own name, when we show a different one of ours (podnames)
   datacenter?: string       // where it runs (the machine's datacenter); the pod list groups by it
   port_mismatch?: boolean   // the pod does not expose the port its image serves ComfyUI on; only Recreate fixes it
@@ -203,7 +204,7 @@ async function deployWithFallback(input: rp.CreatePodInput, client?: rp.RunPodCl
 
 /** A RunPod pod as the dashboard shows it. */
 /** The round a pod is in and the name this app shows for it (ADR-039), or nothing for an unassigned pod. */
-const roundOf = (id: string): { round?: string; round_label?: string } => { const r = podrounds.get(id); return r ? { round: r, round_label: podrounds.label(r) } : {} }
+const roundOf = (id: string): { round?: string; round_label?: string; shot?: string } => { const r = podrounds.get(id); const sh = r ? podrounds.getShot(id) : null; return r ? { round: r, round_label: podrounds.label(r), ...(sh ? { shot: sh } : {}) } : {} }
 export function toStatus(p: rp.RawPod): PodStatus {
   const uptime = p.runtime?.uptimeInSeconds ?? p.uptimeSeconds ?? null
   const running = uptime != null && uptime > 0
@@ -298,6 +299,17 @@ export async function setRound(podId: string, round: string, client?: rp.RunPodC
   podrounds.set(podId, r)
   history.record({ kind: 'pod', action: 'moved', pod_id: podId, name: podnames.get(podId) || podId, detail: r ? `put in round ${r}` : 'taken out of its round' })
   return { pod_id: podId, round: r || null }
+}
+/** Say which shot a pod works on: free text, or one of its round's shots. Only for a pod in a round; empty clears it. Our side only, like the round. */
+export async function setShot(podId: string, shot: string, client?: rp.RunPodClient): Promise<{ pod_id: string; round: string; shot: string | null }> {
+  const s = String(shot ?? '').trim()
+  if (s.length > 120 || /[\\/]/.test(s)) throw bad('A shot name is at most 120 characters and has no slash')
+  await get(podId, client)
+  const round = podrounds.get(podId)
+  if (!round) throw bad('Put the pod in a round first: the shot belongs to a round')
+  podrounds.setShot(podId, s)
+  history.record({ kind: 'pod', action: 'moved', pod_id: podId, name: podnames.get(podId) || podId, detail: s ? `working on shot ${s}` : 'shot cleared' })
+  return { pod_id: podId, round, shot: s || null }
 }
 /** Name a round on our side (the delivery round's own name, the key, is kept); an empty name goes back to it. */
 export async function renameRound(round: string, name: string): Promise<{ round: string; label: string }> {
@@ -413,13 +425,13 @@ export async function recreate(podId: string, client?: rp.RunPodClient): Promise
     if (!old) throw new CoreError(404, `Pod ${podId} not found`)
     const own = podconfigs.get(podId)
     const alias = podnames.get(podId)
-    const inRound = podrounds.get(podId)
+    const inRound = podrounds.get(podId), inShot = podrounds.getShot(podId)
     dry.remove(podId); podconfigs.forget(podId); podnames.forget(podId); podrounds.forget(podId)
     history.record({ kind: 'pod', action: 'recreated', pod_id: podId, name: alias || old.name, detail: 'replaced' })
     const fresh = dry.create({ name: old.name, gpu: gpuKey(old.gpu.split(' x')[0]) || gpus.DEFAULT_GPU, gpu_count: 1, image: 'simulated', idle_stop_minutes: old.idle_stop_minutes })
     if (own) podconfigs.set(fresh.id, own)
     if (alias) podnames.set(fresh.id, alias)
-    if (inRound) podrounds.set(fresh.id, inRound)
+    if (inRound) { podrounds.set(fresh.id, inRound); if (inShot) podrounds.setShot(fresh.id, inShot) }
     return { ...fresh, name: alias || fresh.name, custom_config: !!own, ...(inRound ? { round: inRound } : {}) }
   }
   const d = await details(podId, client)
@@ -430,13 +442,13 @@ export async function recreate(podId: string, client?: rp.RunPodClient): Promise
     idle_stop_minutes: idle.entry(podId)?.minutes ?? null, apply_mounts: null, config: podconfigs.get(podId),
   }
   const alias = podnames.get(podId)   // our name for the pod goes to the new one
-  const inRound = podrounds.get(podId)   // and so does its round
+  const inRound = podrounds.get(podId), inShot = podrounds.getShot(podId)   // and so does its round and shot
   const fresh = await create(req, client)
   await rp.terminatePod(podId, client)
   history.record({ kind: 'pod', action: 'recreated', pod_id: podId, name: alias || d.name || podId, gpu: d.gpu, datacenter: d.datacenter, detail: `replaced by ${fresh.id}` })
   idle.forget(podId); podconfigs.forget(podId); podnames.forget(podId); podrounds.forget(podId)
   if (alias) { podnames.set(fresh.id, alias); fresh.name = alias }
-  if (inRound) { podrounds.set(fresh.id, inRound); fresh.round = inRound }
+  if (inRound) { podrounds.set(fresh.id, inRound); if (inShot) podrounds.setShot(fresh.id, inShot); fresh.round = inRound }
   return fresh
 }
 

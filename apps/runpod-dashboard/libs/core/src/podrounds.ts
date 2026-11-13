@@ -5,7 +5,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { podRoundsFile, roundNamesFile } from './paths.js'
+import { podRoundsFile, podShotsFile, roundNamesFile } from './paths.js'
 
 type Registry = Record<string, string>
 
@@ -19,10 +19,15 @@ function save(reg: Registry) {
   mkdirSync(dirname(f), { recursive: true })
   writeFileSync(f, JSON.stringify(reg, null, 2) + '\n')
 }
+/** The shot a pod works on (a free label, usually one of the round's shots), on our side like the round: kept in pod-shots.json, dropped when the pod leaves its round. */
+function loadShots(): Registry { const f = podShotsFile(); if (!existsSync(f)) return {}; try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return {} } }
+function saveShots(reg: Registry) { const f = podShotsFile(); mkdirSync(dirname(f), { recursive: true }); writeFileSync(f, JSON.stringify(reg, null, 2) + '\n') }
+export const getShot = (podId: string): string | null => loadShots()[podId] ?? null
+export function setShot(podId: string, shot: string): void { const reg = loadShots(); if (shot) reg[podId] = shot; else delete reg[podId]; saveShots(reg) }
 export const get = (podId: string): string | null => load()[podId] ?? null
 /** Put a pod in a round; an empty name takes it out (unassigned). */
-export function set(podId: string, round: string): void { const reg = load(); if (round) reg[podId] = round; else delete reg[podId]; save(reg) }
-export function forget(podId: string): void { const reg = load(); if (podId in reg) { delete reg[podId]; save(reg) } }
+export function set(podId: string, round: string): void { const reg = load(); if ((reg[podId] ?? '') !== round) setShot(podId, ''); if (round) reg[podId] = round; else delete reg[podId]; save(reg) }   // a pod in another round has no shot yet
+export function forget(podId: string): void { const reg = load(); if (podId in reg) { delete reg[podId]; save(reg) } setShot(podId, '') }
 /** The rounds that have pods, each with its pod ids, in round-name order. */
 export function byRound(): { round: string; pod_ids: string[] }[] {
   const m = new Map<string, string[]>()

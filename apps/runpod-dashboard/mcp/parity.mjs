@@ -4,7 +4,7 @@
 export const PARITY = {
   'mounts.get': 'get_configuration', 'mounts.put': 'set_configuration', 'mounts.preview': 'preview_configuration', 'mounts.reset': 'reset_configuration', 'mounts.env': 'get_local_env', 'mounts.dirs': 'list_dirs',
   'pods.dashboard': 'list_pods', 'pods.list': 'list_pods', 'pods.get': 'get_pod', 'pods.create': 'create_pod', 'pods.stop': 'stop_pod', 'pods.resume': 'resume_pod', 'pods.remove': 'delete_pod',
-  'pods.gpus': 'list_gpus', 'pods.volume': 'get_volume_info', 'pods.datacenters': 'list_datacenters', 'pods.setIdle': 'set_idle_stop', 'pods.rename': 'rename_pod', 'pods.setRound': 'set_pod_round', 'pods.renameRound': 'rename_round', 'pods.deleteRound': 'delete_round', 'pods.rounds': 'list_pods', 'pods.credits': 'get_credits', 'pods.details': 'get_pod', 'pods.recreate': 'recreate_pod',
+  'pods.gpus': 'list_gpus', 'pods.volume': 'get_volume_info', 'pods.datacenters': 'list_datacenters', 'pods.setIdle': 'set_idle_stop', 'pods.rename': 'rename_pod', 'pods.setRound': 'set_pod_round', 'pods.setShot': 'set_pod_shot', 'pods.renameRound': 'rename_round', 'pods.deleteRound': 'delete_round', 'pods.rounds': 'list_pods', 'pods.credits': 'get_credits', 'pods.details': 'get_pod', 'pods.recreate': 'recreate_pod',
   'history.list': 'get_history', 'history.spend': 'get_spend_history', 'history.runs': 'get_comfy_runs', 'history.logs': 'get_comfy_logs', 'history.export': 'export_history', 'pods.config': 'get_pod_config', 'pods.setConfig': 'set_pod_config',
   'volumes.list': 'list_volumes', 'volumes.create': 'create_volume', 'volumes.resize': 'resize_volume', 'volumes.remove': 'delete_volume', 'volumes.useAsDefault': 'set_default_volume',
   'governance.summary': 'governance',

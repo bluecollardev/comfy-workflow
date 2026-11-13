@@ -35,3 +35,8 @@ Pods can be read by round. Nothing about how pods are created, billed or stopped
 
 - Listing every bucket round (a dozen, each "0 pods") buried the pods. The Rounds list now shows only rounds that have a pod, plus "No round"; a **Show empty rounds (N)** switch (remembered) lists the rest. A shown empty round says where its files are ("On this PC: n files", "On the volume: n files") before the hint to pick it on a pod's Round choice.
 - A round still appears in every Round choice (card, Create Pod, Import Round(s)), whether or not it is listed.
+
+## Amendment (2026-11-12): the shot a pod works on
+
+- With a round chosen, a pod card has a **Shot** field right under Round: an autocomplete that takes **free text**, **All Shots**, or one of the round's shots (its top-level folders in the bucket, read when the field is first focused and kept). Saved when it changes; a map on our side (`pod-shots.json`), no spend, RunPod untouched.
+- The shot belongs to the round: a pod with no round cannot have one, and moving a pod to another round (or out) clears it. A deleted pod's shot goes with it; a recreated pod keeps it. MCP: `set_pod_shot`; `list_pods` / `get_pod` show `shot`.

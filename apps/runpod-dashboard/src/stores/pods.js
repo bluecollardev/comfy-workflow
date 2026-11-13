@@ -159,6 +159,13 @@ export const usePodsStore = defineStore('pods', () => {
     return r
   }
 
+  /** Say which shot a pod works on (free text or one of its round's shots). */
+  async function setShot(podId, shot) {
+    const r = await toast.run(t('toast.shot'), () => podsAPI.setShot(podId, shot), { ok: t('toast.shotSet'), onError: (msg) => (actionError.value = msg) })
+    if (r.ok) await load()
+    return r
+  }
+
   /** Name a round in this app (the delivery round's own name is kept); empty goes back to it. */
   async function renameRound(round, name) {
     const r = await toast.run(t('toast.renameRound'), () => podsAPI.renameRound(round, name), { ok: t('toast.renamed'), onError: (msg) => (actionError.value = msg) })
@@ -186,5 +193,5 @@ export const usePodsStore = defineStore('pods', () => {
   const details = (id) => podsAPI.details(id)
   const remove = (id) => act(id, podsAPI.deletePod, 'Delete')
 
-  return { sync, syncStarted, syncEnded, syncEvent, syncRecover, stats, pods, dryRun, initialLoading, refreshing, loadError, actionError, busyPodId, pending, load, rename, setRound, renameRound, deleteRound, refreshList, startAutoRefresh, stopAutoRefresh, create, stop, stopAll, resume, remove, details, recreate, hostFull, setIdle, config, setConfig }
+  return { sync, syncStarted, syncEnded, syncEvent, syncRecover, stats, pods, dryRun, initialLoading, refreshing, loadError, actionError, busyPodId, pending, load, rename, setRound, setShot, renameRound, deleteRound, refreshList, startAutoRefresh, stopAutoRefresh, create, stop, stopAll, resume, remove, details, recreate, hostFull, setIdle, config, setConfig }
 })

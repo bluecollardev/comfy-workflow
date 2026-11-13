@@ -412,8 +412,14 @@ export async function mockApi(page, state) {
     }
     if ((m = path.match(/^\/pods\/([^/]+)\/round$/)) && method === 'PUT') {
       const pod = state.pods.find((p) => p.id === m[1]); const r = String(body.round || '').trim()
-      if (pod) { if (r) { pod.round = r; pod.round_label = (state.roundNames ||= {})[r] || r } else { delete pod.round; delete pod.round_label } }
+      if (pod) { if (r) { pod.round = r; pod.round_label = (state.roundNames ||= {})[r] || r } else { delete pod.round; delete pod.round_label; delete pod.shot } }
       return json({ pod_id: m[1], round: r || null })
+    }
+    if ((m = path.match(/^\/pods\/([^/]+)\/shot$/)) && method === 'PUT') {
+      const pod = state.pods.find((p) => p.id === m[1]); const sh = String(body.shot || '').trim()
+      if (!pod?.round) return json({ detail: 'Put the pod in a round first: the shot belongs to a round' }, 400)
+      if (sh) pod.shot = sh; else delete pod.shot
+      return json({ pod_id: m[1], round: pod.round, shot: sh || null })
     }
     if (path === '/rounds' && method === 'DELETE') {
       let n = 0; for (const p of state.pods) if (p.round === query.round) { delete p.round; delete p.round_label; n++ }
