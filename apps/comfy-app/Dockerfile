@@ -71,7 +71,8 @@ COPY workflows/ /opt/comfy-app/workflows/
 COPY docker/entrypoint.sh /opt/comfy-app/entrypoint.sh
 COPY docker/verify_round.py /opt/comfy-app/verify_round.py
 COPY docker/s3pull.sh /opt/comfy-app/s3pull.sh
-RUN chmod +x /opt/comfy-app/entrypoint.sh /opt/comfy-app/verify_round.py /opt/comfy-app/s3pull.sh \
+COPY docker/round-nodes.sh /opt/comfy-app/round-nodes.sh
+RUN chmod +x /opt/comfy-app/entrypoint.sh /opt/comfy-app/verify_round.py /opt/comfy-app/s3pull.sh /opt/comfy-app/round-nodes.sh \
     && mkdir -p /home/binc/CANALV2_r3 \
     && ln -s /workspace/project /home/binc/CANALV2_r3/CANALV2
 

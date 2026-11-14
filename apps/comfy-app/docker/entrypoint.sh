@@ -52,6 +52,9 @@ fi
 if [ -n "${S3_PULL:-}" ]; then
   /opt/comfy-app/s3pull.sh &
 fi
+# Node packs a round ships with its shots (<round>/<shot>/nodes/<pack>): linked into custom_nodes BEFORE ComfyUI starts, so a pod that starts after the
+# pull needs no restart. One the image already has, byte for byte, is skipped. Never stops the start (docker/round-nodes.sh, ADR-040).
+[ -x /opt/comfy-app/round-nodes.sh ] && /opt/comfy-app/round-nodes.sh || true
 TREE="${PROJECT_ROOT:-/workspace/project}"
 [ -e "$TREE" ] || echo "note: $TREE is not present; corrosion graphs will not find the project tree" >&2
 cd /opt/ComfyUI
