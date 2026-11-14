@@ -54,7 +54,7 @@
       <div v-for="r in [...chosen]" :key="r" class="mb-2" data-testid="import-round-group" :data-round="r">
         <div v-if="chosen.size > 1 || pending.has(r)" class="small text-body-secondary font-monospace">{{ r }}</div>
         <div v-if="pending.has(r)" class="small text-body-secondary" data-testid="import-round-reading"><BSpinner small class="me-2" />{{ $t('importRound.loadingPlan') }}</div>
-        <div v-for="s in plans.get(r)?.shots || []" :key="s" class="d-flex align-items-center gap-2 small" data-testid="import-round-shot" :data-shot="s">
+        <div v-for="s in plans.get(r)?.shots || []" :key="s" class="d-flex align-items-center gap-2 small round-row" data-testid="import-round-shot" :data-shot="s">
           <input :id="`ir-${r}-${s}`" type="checkbox" class="form-check-input mt-0" :checked="picked.get(r)?.has(s)" @change="toggleShot(r, s, $event.target.checked)" />
           <label :for="`ir-${r}-${s}`" class="font-monospace mb-0 flex-grow-1">{{ s }}</label>
           <BButton variant="outline-light" size="sm" class="py-0 text-nowrap" data-testid="import-round-shot-browse" @click="browsing = r; browsingShot = s"><i class="fa-solid fa-folder-tree me-1"></i>{{ $t('importRound.browse') }}</BButton>
@@ -263,5 +263,5 @@ async function start() {
 .round-list { max-height: 14rem; overflow: auto; }
 .round-row { padding: 0.3rem 0; }
 .round-row { border-top: 1px solid rgba(255, 255, 255, 0.08); }
-.round-row:first-child { border-top: 0; }
+.round-row:first-child, [data-testid="import-round-group"] > :not(.round-row) + .round-row { border-top: 0; }
 </style>
