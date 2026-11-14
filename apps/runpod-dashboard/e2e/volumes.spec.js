@@ -10,6 +10,20 @@ const openVolumes = async (page) => {
 const volume = (dialog, id) => dialog.locator('[data-testid="volume"]', { has: dialog.page().locator(`[data-id="${id}"]`) }).first()
 
 test.describe('volumes: browse and erase', () => {
+  test('every action button keeps its icon and text on one row, at a narrow window too', async ({ page }) => {
+    for (const w of [1100, 700]) {
+      await page.setViewportSize({ width: w, height: 900 })
+      await page.goto('/')
+      const dialog = await openVolumes(page)
+      const row = dialog.locator('[data-testid="volume"][data-id="vol1"]')
+      for (const id of ['volume-browse', 'volume-resize', 'volume-erase', 'volume-delete', 'volume-use-default']) {
+        const b = row.getByTestId(id)
+        if (!(await b.count())) continue
+        expect((await b.boundingBox()).height, `${id} at ${w}px`).toBeLessThan(36)   // a button with its icon on top of its text is about twice that
+      }
+    }
+  })
+
   test('Browse lists a volume\'s folders with sizes; Erase needs folders, your name and the volume\'s name typed back, then reports what it freed', async ({ page, api }) => {
     await page.goto('/')
     const dialog = await openVolumes(page)

@@ -50,19 +50,19 @@
               <span v-else class="text-body-secondary">{{ $t('volumes.noPods') }}</span>
             </div>
           </div>
-          <div class="d-flex flex-column gap-1 align-items-end">
-            <BButton v-if="!v.is_default" size="sm" variant="outline-light" :disabled="store.busyId === v.id" data-testid="volume-use-default" @click="store.useAsDefault(v)">{{ $t('volumes.useAsDefault') }}</BButton>
-            <div class="d-flex gap-1 align-items-center">
+          <div class="d-flex flex-column gap-1 align-items-end flex-shrink-0">
+            <BButton v-if="!v.is_default" size="sm" class="text-nowrap" variant="outline-light" :disabled="store.busyId === v.id" data-testid="volume-use-default" @click="store.useAsDefault(v)">{{ $t('volumes.useAsDefault') }}</BButton>
+            <div class="d-flex gap-1 align-items-center flex-wrap justify-content-end">
               <template v-if="resizing === v.id">
                 <BFormInput v-model.number="resizeTo" type="number" :min="v.size_gb + 1" max="4000" size="sm" style="width: 6rem" data-testid="volume-resize-input" @keydown.enter.prevent="doResize(v)" @keydown.esc.prevent="resizing = null" />
-                <BButton size="sm" variant="primary" data-testid="volume-resize-save" @click="doResize(v)">{{ $t('volumes.grow') }}</BButton>
+                <BButton size="sm" class="text-nowrap" variant="primary" data-testid="volume-resize-save" @click="doResize(v)">{{ $t('volumes.grow') }}</BButton>
                 <BButton size="sm" variant="outline-light" @click="resizing = null">{{ $t('picker.cancel') }}</BButton>
               </template>
               <template v-else>
-                <BButton size="sm" variant="outline-light" :disabled="store.busyId === v.id" data-testid="volume-browse" @click="browsing = v"><i class="fa-solid fa-folder-tree me-1"></i>{{ $t('volumes.browse') }}</BButton>
-                <BButton size="sm" variant="outline-light" :disabled="store.busyId === v.id" data-testid="volume-resize" @click="resizing = v.id; resizeTo = v.size_gb + 20">{{ $t('volumes.resize') }}</BButton>
-                <BButton size="sm" variant="outline-danger" :disabled="store.busyId === v.id" data-testid="volume-erase" @click="erasing = v"><i class="fa-solid fa-eraser me-1"></i>{{ $t('volumes.erase') }}</BButton>
-                <BButton size="sm" variant="outline-danger" :disabled="store.busyId === v.id || v.pods.some((p) => p.via === 'runpod')" :title="v.pods.some((p) => p.via === 'runpod') ? $t('volumes.deleteBlocked') : ''" data-testid="volume-delete" @click="confirmRemove(v)">{{ $t('volumes.delete') }}</BButton>
+                <BButton size="sm" class="text-nowrap" variant="outline-light" :disabled="store.busyId === v.id" data-testid="volume-browse" @click="browsing = v"><i class="fa-solid fa-folder-tree me-1"></i>{{ $t('volumes.browse') }}</BButton>
+                <BButton size="sm" class="text-nowrap" variant="outline-light" :disabled="store.busyId === v.id" data-testid="volume-resize" @click="resizing = v.id; resizeTo = v.size_gb + 20">{{ $t('volumes.resize') }}</BButton>
+                <BButton size="sm" class="text-nowrap" variant="outline-danger" :disabled="store.busyId === v.id" data-testid="volume-erase" @click="erasing = v"><i class="fa-solid fa-eraser me-1"></i>{{ $t('volumes.erase') }}</BButton>
+                <BButton size="sm" class="text-nowrap" variant="outline-danger" :disabled="store.busyId === v.id || v.pods.some((p) => p.via === 'runpod')" :title="v.pods.some((p) => p.via === 'runpod') ? $t('volumes.deleteBlocked') : ''" data-testid="volume-delete" @click="confirmRemove(v)">{{ $t('volumes.delete') }}</BButton>
               </template>
             </div>
           </div>
