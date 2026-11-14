@@ -62,13 +62,11 @@
     <template v-else>
       <label class="d-flex align-items-center gap-2 small mb-3"><input v-model="runWorkflows" type="checkbox" class="form-check-input mt-0" data-testid="import-round-run" />{{ $t('importRound.runWorkflows') }}</label>
       <div v-if="!runWorkflows" class="small text-body-secondary mb-3" data-testid="import-round-no-cards">{{ $t('importRound.noCards') }}</div>
-      <!-- Choose Card: the same card and datacenter table as Create Pod; the card goes to every shot, and the datacenter picks the network volume -->
-      <div v-if="runWorkflows" class="mb-3" data-testid="import-round-choose-card">
-        <div class="d-flex align-items-center gap-2 mb-1">
-          <div class="fw-semibold small">{{ $t('importRound.cardAll') }}</div>
-          <BButton variant="outline-light" size="sm" class="py-0 ms-auto" :title="$t('form.datacenterRefresh')" :disabled="dcLoading" data-testid="import-round-dc-refresh" @click="loadDcs(true)"><i class="fa-solid fa-rotate" :class="{ 'fa-spin': dcLoading }"></i></BButton>
-        </div>
-        <DatacenterTable testid="import-round-dc" :list="dcList" :model-value="dcChoice" :selected-card="allCard" :card-label="allCardLabel" gpu-testid="import-round-dc-gpu" @update:model-value="dcChoice = $event" @pick="onPickCard" @auto="clearAllCards" />
+      <!-- Choose Card: a button that opens the same card and datacenter table as Create Pod, in a window of its own -->
+      <div v-if="runWorkflows" class="d-flex align-items-center gap-2 mb-3 flex-wrap" data-testid="import-round-choose-card">
+        <BButton :variant="allCard ? 'outline-success' : 'outline-light'" size="sm" data-testid="import-round-choose-card-btn" @click="cardModal = true"><i class="fa-solid fa-microchip me-1"></i>{{ $t('importRound.cardAll') }}</BButton>
+        <span v-if="allCard" class="small" data-testid="import-round-chosen-card"><strong>{{ allCardLabel }}</strong><span class="text-body-secondary"> · {{ dcChoice }}</span></span>
+        <span v-else class="small text-body-secondary">{{ $t('importRound.chooseCardNone') }}</span>
       </div>
       <div class="d-flex align-items-center gap-2 mb-3 small flex-wrap">
         <label class="mb-0 fw-semibold" for="ir-volume">{{ $t('importRound.volume') }}</label>
@@ -130,6 +128,7 @@
         </div>
       </div>
     </template>
+    <ChooseCardModal :show="cardModal" :list="dcList" :loading="dcLoading" :datacenter="dcChoice" :card="allCard" :card-label="allCardLabel" @close="cardModal = false" @refresh="loadDcs(true)" @update:datacenter="dcChoice = $event" @pick="onPickCard" @auto="clearAllCards" />
     <RoundFilesModal :round="browsing" :shot="browsingShot" target="local" @close="browsing = ''; browsingShot = ''" />
   </BModal>
 </template>
@@ -148,7 +147,7 @@ import { errorText } from '../stores/toast'
 import { t } from '../i18n'
 import { useUiStore } from '../stores/ui'
 import RoundFilesModal from './RoundFilesModal.vue'
-import DatacenterTable from './DatacenterTable.vue'
+import ChooseCardModal from './ChooseCardModal.vue'
 import { useImportsStore } from '../stores/imports'
 
 const ui = useUiStore()
@@ -200,10 +199,11 @@ const next = async () => { if (!canNext.value) { error.value = step.value === 2 
 const hint = computed(() => (!chosen.value.size ? t('importRound.hintPick') : step.value < 3 ? t('importRound.hintSteps') : !volumeId.value ? t('importRound.volumeNone') : !totalShots.value ? t('importRound.hintShots') : t('importRound.hintApprove')))
 const volumes = ref([]), volumeId = ref(''), defaultVolume = ref('')
 // Choose Card (as in Create Pod): a card at a datacenter. The card goes to every shot; the datacenter picks the volume that lives there.
-const dcList = ref([]), dcLoading = ref(false), dcChoice = ref(''), allCard = ref(''), allCardLabel = ref('')
+const cardModal = ref(false), dcList = ref([]), dcLoading = ref(false), dcChoice = ref(''), allCard = ref(''), allCardLabel = ref('')
 async function loadDcs(fresh = false) { dcLoading.value = true; try { dcList.value = (await podsAPI.datacenters(fresh)).datacenters || [] } catch { /* the per-shot choices still work */ } finally { dcLoading.value = false } }
 const volumesIn = (dc) => volumes.value.filter((v) => v.datacenter === dc)
 function onPickCard({ dc, card }) {
+  if (card) cardModal.value = false   // a card at a datacenter is the choice: back to the volumes
   if (card) { allCard.value = card.key; allCardLabel.value = `${card.name}${card.vram ? ` ${card.vram} GB` : ''}`; setAllCards(card.key) }
   const vs = volumesIn(dc)
   if (dc) volumeId.value = vs.length ? (vs.find((v) => v.is_default) || vs[0]).id : ''   // none there: no volume is chosen (a pod cannot leave its volume's datacenter), so Import waits for one

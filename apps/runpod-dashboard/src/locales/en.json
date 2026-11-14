@@ -401,6 +401,8 @@
     "next": "Next",
     "back": "Back",
     "cardAll": "Choose Card",
+    "chooseCardHelp": "Pick a card at a datacenter: every shot gets it, and the network volumes in that datacenter are offered next.",
+    "chooseCardNone": "No card chosen: shots run on the pool (a running pod, else an H100)",
     "createVolume": "Create a new volume in {dc}",
     "newVolumeName": "Name of the new volume",
     "newVolumeSize": "Size of the new volume in GB",
