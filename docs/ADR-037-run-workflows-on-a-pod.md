@@ -34,3 +34,9 @@ A pod's Workflows panel holds **UI graphs** (nodes with positions and links; set
 - The packaged app gains a dependency, `playwright-core` (no bundled browser).
 - Until a new image tag is built and used, conversion happens on this PC.
 - Untested against a real pod: the page-side calls (`window.app.loadGraphData`, `graphToPrompt`) are those of the current ComfyUI frontend and could change with it. The first live run goes in the runbook's Log.
+
+## Amendment (2026-11-15): two steps, Outputs
+
+- Run Workflows has two steps, **Run** and **Outputs** (the shared `StepperNav`). Pod cards show Import · Run · Outputs; Outputs is off until the pod has any.
+- Each prompt is tagged `extra_data.pod_manager.workflow`, so outputs are listed by the workflow that made them (read from ComfyUI's history), filtered by the pod's shot.
+- The viewer is an overlay (Esc and arrows); files download singly or **as one zip** (streamed, stored). Previews go through a `podfile://` protocol served by the main process, because RunPod's proxy refuses cross-site page requests.

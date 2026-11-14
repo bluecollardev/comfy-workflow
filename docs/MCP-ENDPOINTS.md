@@ -172,6 +172,10 @@ Each tool calls the core function the window's IPC channel calls. `mcp/parity.mj
 | Tool | Arguments (`?` optional) | Does | Gate |
 |---|---|---|---|
 | `resize_volume` | `approved_by?`, `volume_id`, `size_gb` | Grow a network volume (RunPod only grows them; billed monthly, USD 0.07 per GB). | spend: named yes |
+| `volume_files` | `approved_by`, `volume_id`, `path?` | Explore a volume: folders and sizes, one level at a time (`path` goes into a folder). Through RunPod's S3 API from this PC when the datacenter has it and S3 keys are set (no pod, no cost); otherwise a short pod (a few cents). Starts a job. | spend (small): named yes |
+| `volume_erase` | `approved_by`, `volume_id`, `what`, `confirm_name` | Empty chosen folders (`what` from the fixed list; `models` is in no default). Not reversible; the volume's exact name is typed back. | spend: named yes |
+| `volume_clone` | `approved_by`, `volume_id`, `to_volume_id?` or `new_volume?`, `include_input?` | Copy a volume to another datacenter: RunPod to RunPod by a pod on each (rsync over SSH, a one-off key), or through the S3 API when keys exist. The source is never changed. | spend: named yes |
+| `volume_job` | `job_id`, `action?`, `plan_volume_id?` | State of a volume_files / erase / clone job (listing, freed bytes); `cancel` deletes its pod; `plan_volume_id` says where a job would run and what it costs. | read |
 
 #### Panama / BH rounds
 

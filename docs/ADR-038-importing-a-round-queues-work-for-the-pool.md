@@ -64,3 +64,10 @@ Today a round is pulled with Pod download (one pod, one round), placed, and its 
 
 - Step 3 has a **Network volume** choice (the account's volumes: name, size, datacenter, the default marked). The default is preselected; with no default, or one that is not among the account's volumes, **Import stays off until one is picked**. Before this, a stale default (`0k6nhjo1ko`, deleted) made every pull fail one by one in the Queue with "Network volume not found" and nothing had been said in the window.
 - The chosen volume **becomes the Default Configuration's volume** (the same change as `set_default_volume`), because pods are created next to it and the pull and the runs follow the default; the window says so. The core checks the volume exists **before** anything is queued (`ensureVolume`), for the window and for MCP (`import_round` / `import_rounds` take `volume_id`; without it the current default must exist).
+
+## Amendment (2026-11-15): per-shot pulls, pods stay, lost pull pods are adopted
+
+- Only the **ticked shots** are copied (`rclone copy` with an exclude for every other shot); the manifest check covers those shots only.
+- **Pods are never stopped at the end of an import**; the idle stop does it.
+- A pull pod still running after an app restart is **adopted** on retry (`pull-pods.json`), not orphaned.
+- The Queue opens by itself on Import; Cancel and Cancel all ask first; **Purge finished** removes imports with nothing left to run after a confirmation. Each task shows the pod's real card and price.

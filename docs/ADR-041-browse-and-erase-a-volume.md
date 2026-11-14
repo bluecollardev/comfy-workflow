@@ -30,3 +30,9 @@ Clone copies a volume's files into an existing volume or a new one in another da
 
 - A volume can be inspected and cleared without leaving the app; the cost is the short pod's minutes (a few cents).
 - Erasing is not reversible; re-pulling a round needs a named yes and the bucket.
+
+## Amendment (2026-11-15): the explorer, the keys alert, icon buttons
+
+- Browse is a **tree you go into**: a folder opens its children; deeper ones load with **List inside** (`volume_files` takes a `path`). No more `-1 folders` for an empty listing.
+- In an S3-capable datacenter **without S3 keys**, Browse and Erase say so before any pod is started, with **Add S3 keys** (opens Default Configuration at the S3 section) and **List with a short pod** as the explicit alternative. Keys come from the RunPod console, Settings, S3 API Keys.
+- The Volumes list uses **icon buttons with instant tooltips** (`v-tip`); Default is **Set as Default**; the datacenter menu groups S3 and non-S3 datacenters.
