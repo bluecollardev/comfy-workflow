@@ -1,5 +1,25 @@
 <template>
   <BModal v-model="open" :title="$t('runflows.title', { name: pod.name })" size="lg" scrollable no-footer data-testid="runflows-modal" @hidden="onHidden">
+    <div v-if="!loading && !error && files.length" class="steps d-flex gap-2 mb-3" data-testid="runflows-steps">
+      <button type="button" class="step-btn" :class="{ active: step === 1 }" data-testid="runflows-step" data-step="1" @click="step = 1"><span class="step-num">1</span>{{ $t('runflows.stepRun') }}</button>
+      <button type="button" class="step-btn" :class="{ active: step === 2, off: !hasOutputs }" :disabled="!hasOutputs" :title="hasOutputs ? '' : $t('runflows.stepOutputsWait')" data-testid="runflows-step" data-step="2" @click="step = 2"><span class="step-num">2</span>{{ $t('runflows.stepOutputs') }}<span v-if="outputCount" class="badge text-bg-success ms-2 fw-normal">{{ outputCount }}</span></button>
+    </div>
+    <template v-if="step === 2 && hasOutputs">
+      <div v-for="r in withOutputs" :key="r.path" class="mb-4" data-testid="runflows-outputs" :data-path="r.path">
+        <div class="d-flex align-items-baseline gap-2 mb-2 small">
+          <i class="fa-solid fa-check text-success"></i><span class="font-monospace fw-semibold text-truncate" :title="r.path">{{ r.path.split('/').pop() }}</span>
+          <span class="text-body-secondary">{{ $t('runflows.tookSeconds', { s: r.seconds ?? 0 }) }} · {{ $t('runflows.filesCount', { n: r.files.length }) }}</span>
+        </div>
+        <OutputsGallery :files="r.files" :base="baseUrl" />
+      </div>
+      <div v-if="failedCount" class="small text-body-secondary mb-2" data-testid="runflows-outputs-failed">{{ $t('runflows.outputsFailed', { n: failedCount }) }}</div>
+      <hr />
+      <div class="d-flex gap-2 justify-content-end">
+        <BButton variant="outline-light" size="sm" data-testid="runflows-back" @click="step = 1"><i class="fa-solid fa-arrow-left me-1"></i>{{ $t('importRound.back') }}</BButton>
+        <BButton variant="outline-light" size="sm" data-testid="runflows-close" @click="open = false">{{ $t('pod.close') }}</BButton>
+      </div>
+    </template>
+    <template v-else>
     <div v-if="loading" class="text-body-secondary small" data-testid="runflows-loading">{{ $t('runflows.loading') }}</div>
     <div v-else-if="error" class="alert alert-danger small py-2" data-testid="runflows-error">{{ error }}</div>
     <div v-else-if="!files.length" class="text-body-secondary small" data-testid="runflows-empty">{{ $t('runflows.empty') }}</div>
@@ -33,6 +53,7 @@
         <BButton variant="primary" size="sm" :disabled="running || !picked.size" data-testid="runflows-run" @click="run"><i class="fa-solid fa-play me-1"></i>{{ $t('runflows.run', { n: picked.size }) }}</BButton>
       </div>
     </template>
+    </template>
   </BModal>
 </template>
 
@@ -41,15 +62,24 @@
  * Run workflows (ADR-037): a pod card's button opens this. It lists the graphs in the pod's Workflows panel grouped by folder (a shot or a round), all ticked, so the user picks which to run;
  * running converts each to an API graph, queues it on the pod, waits, and shows each one's result. Every error is also written to the History (see the core).
  */
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { runflowsAPI } from '../api/runflows'
 import { errorText } from '../stores/toast'
+import OutputsGallery from './OutputsGallery.vue'
 
 const props = defineProps({ modelValue: { type: Boolean, default: false }, pod: { type: Object, required: true }, round: { type: String, default: '' } })
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'finished'])
 const open = computed({ get: () => props.modelValue, set: (v) => emit('update:modelValue', v) })
 const files = ref([]), picked = ref(new Set()), loading = ref(false), error = ref(''), job = ref(null)
 const running = computed(() => job.value?.state === 'running')
+// Step 2: what the successful runs produced (the Outputs gallery). It opens by itself when a run ends with something to show, and can be left and re-entered.
+const step = ref(1)
+const withOutputs = computed(() => (job.value?.results || []).filter((r) => r.state === 'done' && r.files?.length))
+const hasOutputs = computed(() => withOutputs.value.length > 0 && job.value?.state !== 'running')
+const outputCount = computed(() => withOutputs.value.reduce((n, r) => n + r.files.length, 0))
+const failedCount = computed(() => (job.value?.results || []).filter((r) => r.state === 'failed').length)
+const baseUrl = computed(() => job.value?.base_url || props.pod.web_ui_url || '')
+watch(() => job.value?.state, (s, was) => { if (was === 'running' && s && s !== 'running') { emit('finished'); if (withOutputs.value.length) step.value = 2 } })
 let timer = null
 
 const groups = computed(() => {
@@ -61,7 +91,7 @@ const result = (path) => job.value?.results.find((r) => r.path === path) || null
 const badgeClass = (s) => ({ done: 'text-bg-success', failed: 'text-bg-danger', running: 'text-bg-primary', pending: 'text-bg-secondary', skipped: 'text-bg-warning' }[s] || 'text-bg-secondary')
 
 async function load() {
-  loading.value = true; error.value = ''; job.value = null
+  loading.value = true; error.value = ''; job.value = null; step.value = 1
   try { files.value = (await runflowsAPI.list(props.pod.id)).workflows; picked.value = new Set(files.value.map((f) => f.path)); if (props.round) { const mine = files.value.filter((f) => `/${f.path}`.includes(`/${props.round}/`)); if (mine.length) picked.value = new Set(mine.map((f) => f.path)) } }   // every graph ticked, or every graph of the round it was opened from: "run all workflows in the shot"
   catch (e) { error.value = errorText(e); files.value = [] }
   finally { loading.value = false }
@@ -86,3 +116,10 @@ function onHidden() { clearTimeout(timer); emit('update:modelValue', false) }
 onMounted(load)   // the card mounts this only when the button is pressed
 onBeforeUnmount(() => clearTimeout(timer))
 </script>
+
+<style scoped>
+.step-btn { display: inline-flex; align-items: center; gap: 0.5rem; background: none; border: 0; border-bottom: 2px solid transparent; padding: 0.25rem 0.5rem; color: var(--bs-secondary-color); cursor: pointer; }
+.step-btn.active { color: var(--bs-body-color); border-bottom-color: #508cff; }
+.step-btn.off { opacity: 0.5; cursor: default; }
+.step-num { display: inline-flex; align-items: center; justify-content: center; width: 1.4rem; height: 1.4rem; border-radius: 50%; border: 1px solid currentColor; font-size: 0.75rem; }
+</style>

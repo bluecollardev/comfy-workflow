@@ -259,6 +259,23 @@ function register() {
     } catch (e) { return { ok: false, error: { message: `Could not read ${path.basename(p)}: ${e.message}` } } }
   })
 
+  // Download one output file of a run (the viewer's Download): a Save As dialog, then the bytes from the pod's ComfyUI /view. Only an https RunPod proxy address (or this PC) is fetched, and the page never sees a path.
+  ipcMain.handle('core:file:download', async (event, url, suggested) => {
+    let u
+    try { u = new URL(String(url)) } catch { return { ok: false, error: { message: 'That is not a file address.' } } }
+    const okHost = (u.protocol === 'https:' && /\.proxy\.runpod\.net$/i.test(u.hostname)) || (u.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(u.hostname))
+    if (!okHost || !/^\/view$/.test(u.pathname)) return { ok: false, error: { message: 'Only a file of a pod\'s ComfyUI can be downloaded here.' } }
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const r = await dialog.showSaveDialog(win, { defaultPath: path.join(app.getPath('downloads'), path.basename(String(suggested || u.searchParams.get('filename') || 'output'))) })
+    if (r.canceled || !r.filePath) return { ok: true, canceled: true }
+    try {
+      const res = await fetch(u, { signal: AbortSignal.timeout(30 * 60_000) })
+      if (!res.ok || !res.body) return { ok: false, error: { message: `The pod answered HTTP ${res.status} for that file.` } }
+      await require('node:stream/promises').pipeline(require('node:stream').Readable.fromWeb(res.body), fs.createWriteStream(r.filePath))
+      return { ok: true, path: r.filePath }
+    } catch (e) { return { ok: false, error: { message: `Could not download the file: ${e.message}` } } }
+  })
+
   ipcMain.handle('core:logs:start', async (event, id, opts = {}) => {
     const key = streamKey(event.sender, id)
     streams.get(key)?.abort()

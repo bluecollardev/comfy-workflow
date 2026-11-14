@@ -122,4 +122,16 @@ describe('running', () => {
     const j = await finish(j0.id)
     expect(j.state).toBe('cancelled'); expect(j.results.map((r) => r.state)).toEqual(['skipped', 'skipped']); expect(c.calls.interrupts).toBe(1)
   })
+  it('filesOf: the files a run produced, saved ones before previews, loader echoes (type input) left out, a kind from the extension', () => {
+    const files = runflows.filesOf({
+      '9': { images: [{ filename: 'prev_00001_.png', subfolder: '', type: 'temp' }] },
+      '12': { images: [{ filename: 'out_00001_.png', subfolder: 'r1', type: 'output' }], animated: [false], gifs: [{ filename: 'clip.mp4', subfolder: '', type: 'output' }] },
+      '30': { audio: [{ filename: 'a.wav', subfolder: '', type: 'output' }], files: [{ filename: 'seq.exr', subfolder: '', type: 'output' }] },
+      '4': { images: [{ filename: 'source.mov', subfolder: '', type: 'input' }] },
+    })
+    expect(files.map((f) => `${f.type}:${f.filename}:${f.kind}`)).toEqual(['output:out_00001_.png:image', 'output:clip.mp4:video', 'output:a.wav:audio', 'output:seq.exr:other', 'temp:prev_00001_.png:image'])
+    expect(files[0]).toMatchObject({ subfolder: 'r1', node: '12' })
+    expect(runflows.filesOf(undefined)).toEqual([])
+  })
+
 })

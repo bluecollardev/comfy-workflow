@@ -120,12 +120,15 @@
         <i class="fa-solid fa-scroll me-1"></i>{{ $t('pod.logs') }}
       </BButton>
     </div>
-    <div class="mb-2 d-flex gap-1">
-      <BButton variant="primary" size="sm" class="flex-grow-1 text-nowrap" :title="$t('pod.importShotPackTitle')" data-testid="pod-import" @click="openImport">
-        <i class="fa-solid fa-file-import me-1"></i>{{ $t('pod.importShotPack') }}
+    <div class="mb-2 d-flex gap-1" data-testid="pod-work-row">   <!-- Import, Run, Outputs -->
+      <BButton variant="primary" size="sm" class="flex-fill text-nowrap" :title="$t('pod.importShotPackTitle')" data-testid="pod-import" @click="openImport">
+        <i class="fa-solid fa-file-import me-1"></i>{{ $t('pod.importShort') }}
       </BButton>
-      <BButton variant="success" size="sm" class="flex-grow-1 text-nowrap" :disabled="pod.status !== 'running'" :title="pod.status === 'running' ? $t('runflows.buttonTitle') : $t('runflows.needsRunning')" data-testid="pod-run-workflows" @click="showRunFlows = true">
+      <BButton variant="success" size="sm" class="flex-fill text-nowrap" :disabled="pod.status !== 'running'" :title="pod.status === 'running' ? $t('runflows.buttonTitle') : $t('runflows.needsRunning')" data-testid="pod-run-workflows" @click="showRunFlows = true">
         <i class="fa-solid fa-play me-1"></i>{{ $t('runflows.button') }}
+      </BButton>
+      <BButton variant="outline-light" size="sm" class="flex-fill text-nowrap" :disabled="!outputRuns.length" :title="outputRuns.length ? $t('outputs.buttonTitle') : $t('outputs.noRuns')" data-testid="pod-outputs" @click="showOutputs = true">
+        <i class="fa-regular fa-images me-1"></i>{{ $t('outputs.button') }}
       </BButton>
     </div>
     <div v-if="showDetails" class="small mb-2" data-testid="pod-details">
@@ -153,7 +156,8 @@
     </div>
     <ConfigModal v-if="configOpen" mode="pod" v-model="configOpen" :initial="ownConfig" :pod-name="pod.name" :pod-id="pod.id" :runpod-name="pod.runpod_name || ''" @apply="applyConfig" />
     <SyncModal v-model="showSync" :pod="pod" />
-    <RunWorkflowsModal v-if="showRunFlows" v-model="showRunFlows" :pod="pod" />
+    <RunWorkflowsModal v-if="showRunFlows" v-model="showRunFlows" :pod="pod" @finished="loadOutputs" />
+    <PodOutputsModal v-if="showOutputs" :pod="pod" :runs="outputRuns" @close="showOutputs = false" @refresh="loadOutputs" />
     <BModal v-model="showLogs" :title="$t('pod.logsTitle', { name: pod.name })" size="xl" scrollable ok-only :ok-title="$t('pod.close')" ok-variant="outline-light" body-class="p-0" @hidden="showLogs = false">
       <PodLogs v-if="showLogs" :pod-id="pod.id" modal />
     </BModal>
@@ -215,6 +219,9 @@ import { t } from '../i18n'
 import { computed, onMounted, ref, watch } from 'vue'
 import PodLogs from './PodLogs.vue'
 import RunWorkflowsModal from './RunWorkflowsModal.vue'
+import PodOutputsModal from './PodOutputsModal.vue'
+import { historyAPI } from '../api/history'
+import { runsWithOutputs } from '../utils/outputs'
 import SyncModal from './SyncModal.vue'
 import DockerfileModal from './DockerfileModal.vue'
 import { roundShots } from '../utils/roundShots'
@@ -282,7 +289,13 @@ const toast = useToastStore()
 const showDetails = ref(false)
 const showLogs = ref(false)
 const showSync = ref(false)
-const showRunFlows = ref(false)
+const showRunFlows = ref(false), showOutputs = ref(false)
+/** What the pod's finished runs produced (ComfyUI's history): the Outputs button is enabled when there is something. Read when the card shows and the pod's status changes, and after a Run. */
+const outputRuns = ref([])
+async function loadOutputs() {
+  if (props.pod.status !== 'running') { outputRuns.value = []; return }
+  try { outputRuns.value = runsWithOutputs(await historyAPI.runs(props.pod.id)) } catch { outputRuns.value = [] }
+}
 const ui = useUiStore()
 const confirm = useConfirmStore()
 /** Import Shot Pack: its own modal (a package folder into ComfyUI-Shared through an adapter; Sync then puts it on this pod, ADR-008). */
@@ -303,6 +316,8 @@ async function loadRate() {
 }
 onMounted(loadRate)
 watch(() => props.pod.status, loadRate)
+onMounted(loadOutputs)
+watch(() => props.pod.status, loadOutputs)
 
 async function toggleDetails() {
   showDetails.value = !showDetails.value

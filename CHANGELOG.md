@@ -5,6 +5,9 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased
 
+### Run, Outputs and a file viewer
+- Lucas: "when workflows successfully run, (have two steps in this run workflows modal) the second should have a reusable component that shows the outputs generated", "and a file viewer for the outputs", "and a download", "the cards should have an outputs button, Run Workflows can just say Run", "Import, Run, Output (disabled if no output)". The Run window has two steps: **Run** and **Outputs** (it moves to Outputs by itself when a run ends with files). The reusable `OutputsGallery` shows a run's files as thumbnails (images, videos, audio; saved results before previews) read from the pod's ComfyUI `/view`; a click opens `OutputViewerModal` (large, Previous/Next, Open in a tab, **Download**: a Save As dialog in the app). Pod cards: **Import · Run · Outputs** on one row; Outputs is disabled until the pod's history has files, and opens every run's files in the same gallery. Core: each run result carries its `files`.
+
 ### Browse and Erase a network volume (ADR-041)
 - Lucas: "have an option like grow and delete to clear a volume", "Erase", "also have an explore button to explore the volume. Browse". Volumes window: **Browse** (a read-only listing of the volume to depth 3 with sizes) and **Erase** (empties folders you tick: rounds, inputs, round graphs, outputs; models unticked and warned about; sizes by a scan; your name and the volume's name typed back). Both run on your pod on the volume or a short-lived cheap pod, on any volume of the account. MCP `volume_files`, `volume_erase`, `volume_job`. Not run on a real pod yet.
 

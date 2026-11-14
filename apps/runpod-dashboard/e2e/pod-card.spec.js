@@ -138,7 +138,7 @@ test.describe('pod card', () => {
     await page.goto('/')
     const card = podCard(page, 'ComfyUI-Dev')
     const btn = card.getByTestId('pod-import')
-    await expect(btn).toHaveText(t('pod.importShotPack'))
+    await expect(btn).toHaveText(t('pod.importShort'))
     await expect(btn).toHaveClass(/btn-primary/)
     const [row, actions] = await Promise.all([btn.boundingBox(), card.getByTestId('pod-config').boundingBox()])
     expect(row.y).toBeGreaterThan(actions.y + actions.height - 1)   // below the Config / Sync / Details / Logs row, not in it

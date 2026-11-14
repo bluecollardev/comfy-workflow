@@ -59,9 +59,11 @@ export async function list(podId: string, client?: rp.RunPodClient, fetchFn: typ
 
 // ----- running -----
 
-export interface RunResult { path: string; state: 'pending' | 'running' | 'done' | 'failed' | 'skipped'; prompt_id?: string; seconds?: number; error?: string; node?: string; outputs?: number }
+/** One file a run produced, as ComfyUI's history names it: fetched with GET /view?filename=&subfolder=&type=. `output` is a saved result, `temp` a preview node's file. */
+export interface OutputFile { filename: string; subfolder: string; type: 'output' | 'temp'; kind: 'image' | 'video' | 'audio' | 'other'; node?: string }
+export interface RunResult { path: string; state: 'pending' | 'running' | 'done' | 'failed' | 'skipped'; prompt_id?: string; seconds?: number; error?: string; node?: string; outputs?: number; files?: OutputFile[] }
 export interface RunJob {
-  id: string; pod_id: string; pod_name: string; state: 'running' | 'done' | 'failed' | 'cancelled'; started_at: string; finished_at?: string
+  id: string; pod_id: string; pod_name: string; /** the pod's ComfyUI address: where each result's files are fetched (GET /view) */ base_url?: string; state: 'running' | 'done' | 'failed' | 'cancelled'; started_at: string; finished_at?: string
   results: RunResult[]; ok: number; failed: number; error?: string
 }
 export interface RunOpts {
@@ -99,13 +101,33 @@ export function describeRejection(body: unknown): { text: string; node?: string 
   return { text: b?.error?.message ? `${b.error.message}${b.error.details ? `: ${b.error.details}` : ''}` : 'ComfyUI rejected the prompt' }
 }
 
+const KIND_BY_EXT: Record<string, OutputFile['kind']> = { png: 'image', jpg: 'image', jpeg: 'image', webp: 'image', gif: 'image', bmp: 'image', avif: 'image', mp4: 'video', webm: 'video', mov: 'video', m4v: 'video', wav: 'audio', mp3: 'audio', flac: 'audio', ogg: 'audio', m4a: 'audio' }
+export const kindOf = (filename: string): OutputFile['kind'] => KIND_BY_EXT[(filename.split('.').pop() || '').toLowerCase()] ?? 'other'
+/** The files a finished run produced: every item with a filename under a node's outputs (images, gifs, videos, audio, files), the saved ones first. The `input` echoes of a loader node are the source media, not a result, and are left out. */
+export function filesOf(outputs: Record<string, unknown> | undefined): OutputFile[] {
+  const out: OutputFile[] = []
+  for (const [node, v] of Object.entries(outputs || {})) {
+    if (!v || typeof v !== 'object') continue
+    for (const list of Object.values(v as Record<string, unknown>)) {
+      if (!Array.isArray(list)) continue
+      for (const it of list as { filename?: unknown; subfolder?: unknown; type?: unknown }[]) {
+        if (!it || typeof it !== 'object' || typeof it.filename !== 'string') continue
+        const type = it.type === 'temp' ? 'temp' : it.type === 'output' ? 'output' : null
+        if (!type) continue
+        out.push({ filename: it.filename, subfolder: typeof it.subfolder === 'string' ? it.subfolder : '', type, kind: kindOf(it.filename), node })
+      }
+    }
+  }
+  return out.sort((a, b) => Number(a.type === 'temp') - Number(b.type === 'temp'))
+}
+
 /** Read one finished history entry into ok / the failure ComfyUI recorded. */
-export function outcomeOf(entry: { status?: { status_str?: string; completed?: boolean; messages?: [string, Record<string, unknown>?][] }; outputs?: Record<string, unknown> } | undefined): { done: boolean; error?: string; node?: string; outputs: number } | null {
+export function outcomeOf(entry: { status?: { status_str?: string; completed?: boolean; messages?: [string, Record<string, unknown>?][] }; outputs?: Record<string, unknown> } | undefined): { done: boolean; error?: string; node?: string; outputs: number; files?: OutputFile[] } | null {
   if (!entry) return null
   const st = entry.status
   const err = (st?.messages || []).find((m) => m[0] === 'execution_error')?.[1] as { exception_message?: string; node_id?: string; node_type?: string } | undefined
   if (st?.status_str === 'error' || err) return { done: true, error: `${err?.exception_message ?? 'The run failed'}${err?.node_type ? ` (node ${err.node_id}, ${err.node_type})` : ''}`.trim(), node: err?.node_id, outputs: 0 }
-  if (st?.status_str === 'success' || st?.completed) return { done: true, outputs: Object.keys(entry.outputs || {}).length }
+  if (st?.status_str === 'success' || st?.completed) return { done: true, outputs: Object.keys(entry.outputs || {}).length, files: filesOf(entry.outputs) }
   return null
 }
 
@@ -126,7 +148,7 @@ async function runOne(i: Internal, r: RunResult, base: string, o: RunOpts, fetch
     if (signal.aborted) { await fetchFn(`${base}/interrupt`, { method: 'POST' }).catch(() => {}); throw new CoreError(499, 'cancelled') }
     const h = (await getJson(`${base}/history/${r.prompt_id}`)) as Record<string, Parameters<typeof outcomeOf>[0]>
     const out = outcomeOf(h?.[r.prompt_id])
-    if (out) { r.seconds = Math.round((Date.now() - t0) / 100) / 10; r.outputs = out.outputs; r.node = out.node; if (out.error) throw new CoreError(500, out.error); return }
+    if (out) { r.seconds = Math.round((Date.now() - t0) / 100) / 10; r.outputs = out.outputs; r.files = out.files; r.node = out.node; if (out.error) throw new CoreError(500, out.error); return }
     if (Date.now() - t0 > limit) throw new CoreError(504, `Still running after ${Math.round(limit / 60000)} minutes; it keeps running on the pod (prompt ${r.prompt_id}).`)
     await sleep(o.pollMs ?? 2000, signal)
   }
@@ -158,7 +180,7 @@ export async function run(podId: string, paths: string[], o: RunOpts = {}): Prom
     if (pod.status !== 'running' || !pod.web_ui_url) throw new CoreError(409, `Pod ${podId} is not running: start it to run workflows.`)
     base = pod.web_ui_url.replace(/\/$/, ''); podName = pod.name
   }
-  const j: RunJob = { id: `run-${podId}-${Date.now()}`, pod_id: podId, pod_name: podName, state: 'running', started_at: new Date().toISOString(), results: paths.map((path) => ({ path, state: 'pending' })), ok: 0, failed: 0 }
+  const j: RunJob = { id: `run-${podId}-${Date.now()}`, pod_id: podId, pod_name: podName, base_url: base, state: 'running', started_at: new Date().toISOString(), results: paths.map((path) => ({ path, state: 'pending' })), ok: 0, failed: 0 }
   const i: Internal = { job: j, abort: new AbortController() }
   jobs.set(j.id, i)
   void (async () => {
@@ -167,7 +189,7 @@ export async function run(podId: string, paths: string[], o: RunOpts = {}): Prom
       r.state = 'running'
       const t0 = Date.now()
       try {
-        if (mounts.dryRun(mounts.load())) { await sleep(o.pollMs ?? 300, i.abort.signal); r.state = 'done'; r.seconds = 0.3; r.outputs = 1 }
+        if (mounts.dryRun(mounts.load())) { await sleep(o.pollMs ?? 300, i.abort.signal); r.state = 'done'; r.seconds = 0.3; r.outputs = 1; r.files = [{ filename: 'simulated_00001_.png', subfolder: '', type: 'output', kind: 'image', node: '9' }] }
         else { await runOne(i, r, base, o, fetchFn); r.state = 'done' }
         j.ok++
       } catch (e) {
