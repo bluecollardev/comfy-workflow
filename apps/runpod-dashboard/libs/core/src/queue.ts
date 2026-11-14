@@ -231,10 +231,9 @@ export async function tick(): Promise<void> {
         if (!deps_.every((d) => !d || d.state === 'done')) continue
         if (await begin(t, imp, tasks)) dirty = true
       }
-      // 3. nothing left: the import is over; stop the pods it started
+      // 3. nothing left: the import is over. The pods it started are LEFT RUNNING (Lucas, 2026-11-15: stopping a pod the moment its run failed threw away a booted card that RunPod would not give back); the idle stop (30 quiet minutes) ends them.
       if (!tasks.some(live)) {
         imp.state = tasks.every((t) => t.state === 'cancelled') ? 'cancelled' : 'done'
-        for (const id of imp.started_pods) { try { await deps.stopPod(id) } catch (e) { history.record({ kind: 'job', job: 'queue', state: 'failed', what: `${imp.round} stop pod ${id}`, pod_id: id, error: (e as Error).message }) } }
         imp.started_pods = []; dirty = true
       }
     }

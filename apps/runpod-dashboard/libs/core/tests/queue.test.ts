@@ -102,7 +102,7 @@ describe('importing', () => {
     await expect(queue.importRound(ROUND, { approved_by: 'Lucas' })).rejects.toThrow(/already being imported/)
   })
 
-  it('pull first; then runs on pool pods within the pod limit; the next shot waits for a free pod; pods it started are stopped at the end, the one already running is not', async () => {
+  it('pull first; then runs on pool pods within the pod limit; the next shot waits for a free pod; no pod is stopped at the end', async () => {
     const w = world([{ id: 'p1', name: 'h100-1', state: 'running' }, { id: 'p2', name: 'h100-2', state: 'off' }])
     await queue.importRound(ROUND, { approved_by: 'Lucas' })
     await queue.tick(); expect(states()[0]).toBe('pull=running'); expect(w.runs.size).toBe(0)   // the runs wait for the pull
@@ -117,18 +117,18 @@ describe('importing', () => {
     for (const r of w.runs.values()) r.state = 'done'
     await queue.tick(); await queue.tick()
     expect(states()).toEqual(['pull=done', 'run:cgi-042=done', 'run:cgi-043=done', 'run:cgi-044=done'])
-    expect(queue.list().imports[0].state).toBe('done'); expect(w.stopped).toEqual(['p2'])   // p1 was already running: left alone
+    expect(queue.list().imports[0].state).toBe('done'); expect(w.stopped).toEqual([])   // no pod is stopped when the import ends: the idle stop does that
     expect(history.list({ kind: 'job' }).filter((e) => e.kind === 'job' && e.job === 'queue' && e.state === 'done').length).toBeGreaterThanOrEqual(4)
   })
 
-  it('creates a pod only when none can be started, and stops it afterwards', async () => {
+  it('creates a pod only when none can be started, and leaves it running afterwards', async () => {
     const w = world([])
     await queue.importRound(ROUND, { approved_by: 'Lucas', shots: ['cgi-042'] })
     await queue.tick(); w.pull.state = 'done'; await queue.tick(); await queue.tick(); await queue.tick()
     expect(w.created).toHaveLength(1)
     expect((w as any).rounds).toEqual({ new1: ROUND })   // the pod it made goes into the round it imports (ADR-039)
     w.runs.get('rj1')!.state = 'done'; await queue.tick(); await queue.tick()
-    expect(w.stopped).toEqual(['new1'])
+    expect(w.stopped).toEqual([])   // left running: the idle stop ends it
   })
 
   it('a failed run is a failed task with its error, and is in the History', async () => {
