@@ -47,7 +47,7 @@ export interface ImportRec {
 }
 interface QueueFile { version: 1; imports: ImportRec[]; tasks: Task[] }
 
-export interface VolPod { id: string; name: string; state: 'running' | 'starting' | 'off'; price: number | null }
+export interface VolPod { id: string; name: string; state: 'running' | 'starting' | 'off'; price: number | null; gpu?: string }
 export interface Deps {
   shotsOf: (round: string) => Promise<string[]>
   volumePods: () => Promise<VolPod[]>
@@ -80,7 +80,7 @@ const realDeps: Deps = {
   volumePods: async () => {
     const vol = (mounts.load().network_volume_id || '').trim()
     return (await rp.listPods()).filter((p) => (p.networkVolumeId || '') === vol && !(p.name || '').startsWith(podpull.POD_PREFIX)).map((p) => ({
-      id: p.id, name: p.name || p.id, price: p.costPerHr ?? null,
+      id: p.id, name: p.name || p.id, price: p.costPerHr ?? null, gpu: p.machine?.gpuDisplayName,
       state: p.desiredStatus === 'EXITED' ? 'off' : (p.runtime?.uptimeInSeconds ?? 0) > 0 ? 'running' : 'starting',
     }) as VolPod)
   },
@@ -263,7 +263,8 @@ async function follow(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> 
     const stage = `${j.state}${j.files ? `: ${j.files} file(s)` : ''}${j.bytes_total ? `, ${Math.round((j.bytes_done / j.bytes_total) * 100)}%` : ''}`
     let changed = false
     if (t.stage !== stage) { if (!t.stage?.startsWith(j.state)) ev(t, `${j.state}${j.pod_name ? ` on ${j.pod_name}` : ''}`); t.stage = stage; changed = true }
-    if (j.pod_name && t.pod_name !== j.pod_name) { ev(t, `pod ${j.pod_name} (${j.pod_id})`); changed = true }
+    if (j.gpu && t.card !== j.gpu) { t.card = j.gpu; if (j.price_per_hour != null) t.price = j.price_per_hour; changed = true }   // the card the pull's pod really has
+    if (j.pod_name && t.pod_name !== j.pod_name) { ev(t, `pod ${j.pod_name} (${j.pod_id}${j.gpu ? `, ${j.gpu}` : ''}${j.price_per_hour != null ? `, $${j.price_per_hour}/h` : ''})`); changed = true }
     t.pod_id = j.pod_id; t.pod_name = j.pod_name; return changed
   }
   const j = t.job_id ? deps.runJob(t.job_id) : null
@@ -298,8 +299,8 @@ async function begin(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> {
     const pick = t.gpu ? undefined : pool.find((p) => p.state === 'running') ?? pool.find((p) => p.state === 'starting') ?? pool.find((p) => p.state === 'off')
     let podId: string, podName: string
     if (pick) {
-      podId = pick.id; podName = pick.name
-      if (pick.state === 'off') { await deps.resumePod(pick.id); imp.started_pods.push(pick.id); ev(t, `restarted your stopped pod ${pick.name}`) } else ev(t, `reusing the pod ${pick.name} (${pick.state})`)
+      podId = pick.id; podName = pick.name; if (pick.gpu) t.card = pick.gpu   // the card the reused pod really has
+      if (pick.state === 'off') { await deps.resumePod(pick.id); imp.started_pods.push(pick.id); ev(t, `restarted your stopped pod ${pick.name}${pick.gpu ? ` (${pick.gpu})` : ''}`) } else ev(t, `reusing the pod ${pick.name} (${pick.gpu ? `${pick.gpu}, ` : ''}${pick.state})`)
     } else {
       const c = await deps.createPod(`queue-${imp.round}-${tasks.filter((x) => x.pod_id).length + 1}`.slice(0, 60), imp.round, t.gpu); podId = c.id; podName = c.name; t.card = t.gpu || POOL_GPU; imp.started_pods.push(c.id); ev(t, `created pod ${c.name} (${t.gpu || POOL_GPU}) in round ${imp.round}`)
     }
@@ -309,7 +310,7 @@ async function begin(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> {
     const msg = (e as Error).message
     if (/No card available/.test(msg) && (t.attempts ?? 0) < MAX_CARD_WAITS) {   // RunPod has none free right now: wait and ask again, as the datacenter table says "if we have to wait we have to wait"
       t.attempts = (t.attempts ?? 0) + 1; t.retry_at = new Date(deps.now().getTime() + CARD_RETRY_MS).toISOString()
-      t.stage = `waiting for a free ${t.gpu || POOL_GPU} (try ${t.attempts} of ${MAX_CARD_WAITS}, next at ${t.retry_at.slice(11, 19)} UTC)`
+      t.stage = `waiting for a free ${t.gpu || POOL_GPU}${t.gpu ? '' : ' (the pool default: no card was chosen for this shot)'} (try ${t.attempts} of ${MAX_CARD_WAITS}, next at ${t.retry_at.slice(11, 19)} UTC)`
       if (t.attempts === 1) ev(t, `no card free right now: ${msg.slice(0, 160)}. Waiting and asking again every minute.`)
       return true
     }

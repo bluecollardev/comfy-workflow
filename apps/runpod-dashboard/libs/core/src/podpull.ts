@@ -201,6 +201,8 @@ export async function plan(round: string, opts: Opts = {}): Promise<PodPlan> {
 export type JobState = 'creating' | 'starting' | 'pulling' | 'verifying' | 'placing' | 'deleting' | 'done' | 'failed' | 'cancelled'
 export interface PodJob {
   id: string; round: string; kind: 'pull' | 'remove'; route: 'active' | 'temporary'; pod_id: string | null; pod_name: string | null
+  /** The card the pod actually has and its price per hour, once the pod exists (the Queue shows them). */
+  gpu?: string; price_per_hour?: number | null
   state: JobState; files: number; lines: string[]; error?: string; verify?: panama.Verify; started_at: string
   /** ADR-033: what placing the verified round on the pod did (files linked, graphs written, conflicts); set only after a pull whose check passed. A placing failure is here, never the pull's. */
   place?: place.PlaceReport
@@ -430,7 +432,7 @@ async function runTemporary(i: Internal, opts: Opts) {
       }
     }
     if (!created) throw new CoreError(502, 'No card available right now in the volume\'s datacenter (tried several). Try again in a few minutes.')
-    podId = created.id; j.pod_id = podId; tempSetId(name, podId)
+    podId = created.id; j.pod_id = podId; j.gpu = (created as { gpu?: string }).gpu ?? p.gpu; j.price_per_hour = p.price_per_hour; tempSetId(name, podId)
     if (i.cancelled) return
     j.state = 'starting'
     if (j.kind === 'remove') {
@@ -470,7 +472,7 @@ async function simulate(i: Internal, opts: Opts) {
   try {
     if (temp) {
       const created = await pods.create({ name: j.pod_name!, ...(i.plan.gpu_type_id ? { gpu_type_id: i.plan.gpu_type_id } : { gpu: 'auto' }), image: 'configured', cuda_match: false, idle_stop_minutes: i.plan.ceiling_minutes, round: j.round })
-      podId = created.id; j.pod_id = podId; j.pod_name = created.name
+      podId = created.id; j.pod_id = podId; j.pod_name = created.name; j.gpu = i.plan.gpu; j.price_per_hour = i.plan.price_per_hour
     }
     const steps: [JobState, string[]][] = j.kind === 'pull'
       ? [['starting', ['no-spend mode: the pod is simulated']], ['pulling', [`s3 pull: ${panama.bucket()}/rounds/${j.round} -> ${REMOTE_ROUNDS}/${j.round}`, 'a.json: Copied (new)', 'b.json: Copied (new)']], ['verifying', ['100%, 0 B/s']], ['pulling', ['s3 pull done (manifest verified): ' + `${REMOTE_ROUNDS}/${j.round}`]]]

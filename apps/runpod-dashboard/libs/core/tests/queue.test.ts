@@ -27,7 +27,7 @@ function world(pool: { id: string; name: string; state: 'running' | 'starting' |
   queue.configure({
     shotsOf: async () => ['cgi-042', 'cgi-043', 'cgi-044'],
     planPull: async () => ({ price_per_hour: price, ceiling_minutes: 60, bytes: 1 }),
-    volumePods: async () => w.pods.map((p) => ({ id: p.id, name: p.name, state: p.state, price: p.price })),
+    volumePods: async () => w.pods.map((p) => ({ id: p.id, name: p.name, state: p.state, price: p.price, gpu: 'RTX 2000 Ada' })),
     podReady: async (id) => ({ ready: w.ready.has(id), price }),
     resumePod: async (id) => { w.resumed.push(id); const p = w.pods.find((x) => x.id === id)!; p.state = 'running'; w.ready.add(id) },
     ensureVolume: async (id) => { (w.vols ||= []).push(id ?? null) },
@@ -37,7 +37,7 @@ function world(pool: { id: string; name: string; state: 'running' | 'starting' |
     assignShot: (id, round, shot) => { (w.shotOf ||= {})[id] = `${round}/${shot}` },
     stopPod: async (id) => { w.stopped.push(id) },
     pull: async () => ({ id: 'pj1' }),
-    pullJob: (() => ({ id: 'pj1', state: w.pull.state, pod_id: 'pullpod', pod_name: 'pull', files: 9, place: w.pull.place, error: w.pull.state === 'failed' ? 'aws failed' : undefined })) as never,
+    pullJob: (() => ({ id: 'pj1', state: w.pull.state, pod_id: 'pullpod', pod_name: 'pull', gpu: 'RTX 4090', price_per_hour: 0.34, files: 9, place: w.pull.place, error: w.pull.state === 'failed' ? 'aws failed' : undefined })) as never,
     cancelPull: () => { w.pull.state = 'failed' },
     run: async (podId, paths) => { const id = `rj${w.runs.size + 1}`; w.runs.set(id, { podId, paths, state: 'running' }); return { id } },
     runJob: ((id: string) => { const r = w.runs.get(id); return r ? { id, state: r.state, ok: r.state === 'done' ? r.paths.length : 0, failed: r.state === 'failed' ? 1 : 0, results: r.paths.map((p) => ({ path: p, state: r.state === 'failed' ? 'failed' : 'done', error: r.err })) } : null }) as never,
@@ -57,11 +57,16 @@ describe('a card for a shot', () => {
     await queue.importRound(ROUND, { shots: ['cgi-042', 'cgi-043'], cards: { 'cgi-042': 'rtx5090' }, approved_by: 'Lucas' })
     expect(queue.list().tasks.find((x) => x.shot === 'cgi-042')).toMatchObject({ gpu: 'rtx5090', price: 2 })
     expect(queue.list().tasks.find((x) => x.shot === 'cgi-043')?.gpu).toBeUndefined()
+    await queue.tick(); await queue.tick()   // the pull is running: its pod's card is read
     w.pull.state = 'done'; await queue.tick(); await queue.tick()
     expect(w.created).toEqual(['new1'])   // the shot with a card did not take the running pool pod
     expect((w as any).gpuOf.new1).toBe('rtx5090')
     expect((w as any).shotOf).toEqual({ new1: `${ROUND}/cgi-042`, pool1: `${ROUND}/cgi-043` })   // each pod card names its round and shot
     expect(queue.list().tasks.find((x) => x.shot === 'cgi-043')?.pod_id).toBe('pool1')
+    expect(queue.list().tasks.find((x) => x.shot === 'cgi-043')?.card).toBe('RTX 2000 Ada')   // a reused pod: the card it really has
+    const pullT = queue.list().tasks.find((x) => x.kind === 'pull')!
+    expect(pullT.card).toBe('RTX 4090'); expect(pullT.price).toBe(0.34)   // the pull's pod: its real card and price, not blank
+    expect(pullT.events?.map((e) => e.text).join(' | ')).toMatch(/pod pull \(pullpod, RTX 4090, \$0.34\/h\)/)
     const evs = (shot: string) => (queue.list().tasks.find((x) => x.shot === shot)?.events ?? []).map((e) => e.text).join(' | ')
     expect(queue.list().tasks.find((x) => x.shot === 'cgi-042')?.card).toBe('rtx5090')   // the card used is on the task
     expect(evs('cgi-042')).toMatch(/created pod .*rtx5090/)   // what happened to a task is kept, with times
