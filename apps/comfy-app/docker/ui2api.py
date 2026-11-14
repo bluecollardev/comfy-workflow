@@ -18,6 +18,8 @@ PAGE_CONVERT = """async (graph) => {
 def main() -> int:
     try:
         graph = json.loads(base64.b64decode(open(sys.argv[1]).read()))
+        import os
+        os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/playwright")   # an ssh session does not carry the image's ENV
         from playwright.sync_api import sync_playwright
         url = os.environ.get("COMFY_URL", "http://127.0.0.1:%s" % os.environ.get("COMFY_PORT", "8188"))
         with sync_playwright() as p:

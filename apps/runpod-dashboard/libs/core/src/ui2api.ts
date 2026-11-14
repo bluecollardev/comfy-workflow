@@ -37,7 +37,7 @@ export function browserConverter(base: string, opts: { timeoutMs?: number } = {}
 /** The pod's way: a script on the pod runs the same page code in the pod's own Chromium. It prints `UI2API-RESULT<TAB><base64 json>` or `UI2API-ERROR<TAB><message>`; exit 127 means an image without it. */
 export function podScript(graph: unknown): string {
   const payload = Buffer.from(JSON.stringify(graph)).toString('base64').replace(/(.{76})/g, '$1\n')
-  return ['set -eu', 'UI2API_FILE="$(mktemp)"; trap \'rm -f "$UI2API_FILE"\' EXIT', `cat > "$UI2API_FILE" <<'UI2API_B64'`, payload, 'UI2API_B64', 'python3 /opt/comfy-app/ui2api.py "$UI2API_FILE"'].join('\n')
+  return ['set -eu', 'export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-/opt/playwright}"   # an ssh session does not carry the image\'s ENV: the browser is in /opt/playwright, not /root/.cache', 'UI2API_FILE="$(mktemp)"; trap \'rm -f "$UI2API_FILE"\' EXIT', `cat > "$UI2API_FILE" <<'UI2API_B64'`, payload, 'UI2API_B64', 'python3 /opt/comfy-app/ui2api.py "$UI2API_FILE"'].join('\n')
 }
 export function parsePodOutput(lines: string[]): Record<string, unknown> {
   const err = lines.find((l) => l.startsWith('UI2API-ERROR\t'))

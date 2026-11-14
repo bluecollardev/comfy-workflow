@@ -65,7 +65,7 @@ describe('what ComfyUI says, in words', () => {
 
 describe('converting', () => {
   it('the pod script carries the graph as base64 in a temp file, and its answer parses back', () => {
-    const s = ui2api.podScript(UI); expect(s).toContain('python3 /opt/comfy-app/ui2api.py'); expect(s).not.toContain('"nodes"')
+    const s = ui2api.podScript(UI); expect(s).toContain('python3 /opt/comfy-app/ui2api.py'); expect(s).not.toContain('"nodes"'); expect(s).toContain('PLAYWRIGHT_BROWSERS_PATH')   // an ssh session has no image ENV: the browser is in /opt/playwright
     const line = 'UI2API-RESULT\t' + Buffer.from(JSON.stringify(API)).toString('base64')
     expect(ui2api.parsePodOutput(['noise', line])).toEqual(API)
     expect(() => ui2api.parsePodOutput(['UI2API-ERROR\tthe page returned no API graph'])).toThrow(/could not convert the graph: the page returned no API graph/)
