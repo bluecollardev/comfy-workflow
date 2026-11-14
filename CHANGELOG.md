@@ -5,6 +5,9 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased
 
+## v1.1.10 (2026-11-15)
+Tagged `v1.1.10`; DMG on bluecollardev/downloads. Contains everything below (volume explorer, Erase, Clone, S3 route, per-shot import, Outputs, Queue confirms), plus the volume tools in `docs/MCP-ENDPOINTS.md`.
+
 ### Volumes: an explorer you can go into, S3 or pod, and Clone
 - Lucas: "i should be able to go into folders like we can in our other explorers"; "if it's an s3 storage volume, can't we use the S3 API to read?"; "have a button that allows us to clone a volume to another datacenter"; "should be able to clone to another s3 volume OR a regular runpod volume". Browse is a tree: folders open and close (closed to start), each with its size and a bar; a folder at the edge of a listing has **List inside**, which lists it (three more levels) and adds it. Browse and Erase go through RunPod's S3 API from this PC (no pod, no cost) in an S3 datacenter with S3 keys, else a pod, and the window says which and why. **Clone** copies a volume's files into an existing volume or a new one in another datacenter. RunPod to RunPod needs no S3: a short pod on each volume and the target's pod rsyncs from the source's over SSH with a one-off key (Lucas: "we can do runpod to runpod"); with S3 keys and an S3 datacenter on one side, one pod does it through the S3 API. input/ is left out unless asked. The volume datacenter menus are grouped S3 / no S3. "Use as default" is just **Default**. MCP `volume_clone`; `volume_files` takes `path`. The S3 and clone paths are tested with stand-ins; not yet run against RunPod's S3 API (no S3 keys set).
 
