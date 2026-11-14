@@ -56,7 +56,6 @@
           <BButton variant="outline-light" size="sm" class="py-0 text-nowrap" data-testid="import-round-shot-browse" @click="browsing = r; browsingShot = s"><i class="fa-solid fa-folder-tree me-1"></i>{{ $t('importRound.browse') }}</BButton>
         </div>
       </div>
-      <label class="d-flex align-items-center gap-2 small mt-3"><input v-model="runWorkflows" type="checkbox" class="form-check-input mt-0" data-testid="import-round-run" />{{ $t('importRound.runWorkflows') }}</label>
     </template>
 
     <!-- 3. Choose cards for the shots, and the volume -->
@@ -67,6 +66,7 @@
         <div v-if="volumeProblem" class="text-warning w-100" data-testid="import-round-volume-problem"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ volumeProblem }}</div>
         <div v-else-if="volumeId && volumeId !== defaultVolume" class="text-body-secondary w-100" data-testid="import-round-volume-note">{{ $t('importRound.volumeNote') }}</div>
       </div>
+      <label class="d-flex align-items-center gap-2 small mb-3"><input v-model="runWorkflows" type="checkbox" class="form-check-input mt-0" data-testid="import-round-run" />{{ $t('importRound.runWorkflows') }}</label>
       <div v-if="!runWorkflows" class="small text-body-secondary mb-3" data-testid="import-round-no-cards">{{ $t('importRound.noCards') }}</div>
       <div v-if="runWorkflows" class="d-flex align-items-center gap-2 mb-2 small">
         <label class="mb-0" for="ir-card-all">{{ $t('importRound.cardAll') }}</label>

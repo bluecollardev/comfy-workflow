@@ -43,6 +43,9 @@ test('Import Round: three steps - rounds, shots, cards - then Import with the ap
   await expect(dlg.getByTestId('import-round-card-row')).toHaveCount(1)
   await expect(dlg.getByTestId('import-round-estimate')).toContainText('6.98')
   await expect(dlg.getByTestId('import-round-max-pods')).toHaveValue('1')   // one pod per shot ticked
+  await expect(dlg.getByTestId('import-round-run')).toBeChecked()   // Run each shot's workflows is on step 3
+  await dlg.getByTestId('import-round-run').uncheck(); await expect(dlg.getByTestId('import-round-card')).toHaveCount(0)   // off: no cards to choose
+  await dlg.getByTestId('import-round-run').check()
   await dlg.getByTestId('import-round-card').selectOption('rtxpro6000')
   await expect(dlg.getByTestId('import-round-volume-problem')).toBeVisible()   // no default volume: one has to be picked
   await dlg.getByTestId('import-round-approved-by').fill('Lucas')
