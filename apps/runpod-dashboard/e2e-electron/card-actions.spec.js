@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { launchApp, openCreatePod, podCard, toast } from './app.js'
 import { t } from '../e2e/i18n.js'
+import { answerConfirm } from '../e2e/fixtures.js'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -59,8 +60,8 @@ test.describe('card actions over IPC', () => {
     await expect(card.getByTestId('pod-config-badge')).toBeVisible()
     await card.getByTestId('pod-stop').click()
     await expect(card.getByTestId('pod-status')).toHaveText(t('pod.statuses.stopped'))
-    page.once('dialog', (d) => d.accept())
     await card.getByTestId('pod-recreate').click()                                     // pods.recreate
+    await answerConfirm(page)
     await expect(toast(page).last()).toContainText(t('toast.podRecreated'))
     await expect(card.getByTestId('pod-status')).toHaveText(/Starting|Running/)
     await expect(card.getByTestId('pod-config-badge')).toBeVisible()                  // the own configuration moved to the new pod

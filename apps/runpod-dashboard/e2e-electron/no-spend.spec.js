@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { configModal, launchApp, openCreatePod, podCard, toast } from './app.js'
 import { t } from '../e2e/i18n.js'
+import { answerConfirm } from '../e2e/fixtures.js'
 
 // The whole pod lifecycle in the real app, over IPC, with pods simulated. Nothing bills.
 test.describe('the app in no-spend mode', () => {
@@ -39,8 +40,8 @@ test.describe('the app in no-spend mode', () => {
     await expect(toast(page).last()).toContainText(t('toast.podResumed'))
     await expect(card.getByTestId('pod-status')).toHaveText(/Starting|Running/)
 
-    page.once('dialog', (d) => d.accept())
     await card.getByTestId('pod-delete').click()
+    await answerConfirm(page)
     await expect(toast(page).last()).toContainText(t('toast.podDeleted'))
     await expect(card).toHaveCount(0)
   })
