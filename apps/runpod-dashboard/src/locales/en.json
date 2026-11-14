@@ -408,7 +408,6 @@
     "newVolumeSize": "Size of the new volume in GB",
     "newVolumeCost": "about ${usd} a month, charged by RunPod from the moment it is made",
     "volumesIn": "Network volumes in {dc}:",
-    "cardPerShot": "Card per shot (optional; the pool takes a pod that is already on the volume)",
     "dcNoVolume": "You have no network volume in {dc}; a pod can only run in its volume's datacenter.",
     "cardPool": "Pool pod (a running pod, else an H100)",
     "cardNote": "A shot with a card gets a pod of its own with that card (created in its round); a shot on the pool takes a pod that is already on the volume.",

@@ -91,7 +91,6 @@
         <div v-else-if="volumeProblem" class="text-warning w-100" data-testid="import-round-volume-problem"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ volumeProblem }}</div>
         <div v-else-if="volumeId && volumeId !== defaultVolume" class="text-body-secondary w-100" data-testid="import-round-volume-note">{{ $t('importRound.volumeNote') }}</div>
       </div>
-      <div v-if="runWorkflows" class="small fw-semibold mb-1">{{ $t('importRound.cardPerShot') }}</div>
       <div v-for="[r, pl] in (runWorkflows ? plans : [])" :key="r" class="mb-2" data-testid="import-round-card-group" :data-round="r">
         <div v-if="plans.size > 1" class="small text-body-secondary font-monospace">{{ r }}</div>
         <div v-for="s in [...(picked.get(r) || [])]" :key="s" class="d-flex align-items-center gap-2 small mb-1" data-testid="import-round-card-row" :data-shot="s">
