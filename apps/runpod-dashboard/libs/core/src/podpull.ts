@@ -57,7 +57,17 @@ export const s3PullFor = (round: string) => `${panama.bucket()}/rounds/${round}=
 export type RoundState = panama.Staged['state']
 interface RoundRec { state: RoundState; present: number; expected: number | null; missing: number | null; bytes: number }
 interface VolRec { as_of: string; rounds: Record<string, RoundRec> }
-const stateFile = () => process.env.POD_ROUNDS_FILE || join(configDir(), 'pod-rounds.json')
+const stateFile = () => process.env.VOLUME_ROUNDS_FILE || join(configDir(), 'volume-rounds.json')
+/** The volume records used to share pod-rounds.json with the pod -> round map (a round deleted in the window then failed on an object where a name was expected). Move them to their own file once. */
+function migrateState() {
+  const f = stateFile(); if (existsSync(f)) return
+  const old = process.env.POD_ROUNDS_FILE || join(configDir(), 'pod-rounds.json')
+  const all = readJson<Record<string, unknown>>(old, {})
+  const vols = Object.fromEntries(Object.entries(all).filter(([, v]) => v && typeof v === 'object'))
+  if (!Object.keys(vols).length) return
+  writeJson(f, vols)
+  writeJson(old, Object.fromEntries(Object.entries(all).filter(([, v]) => typeof v === 'string')))
+}
 const tempFile = () => process.env.PULL_PODS_FILE || join(configDir(), 'pull-pods.json')
 const readJson = <T>(f: string, fallback: T): T => { try { return existsSync(f) ? (JSON.parse(readFileSync(f, 'utf8')) as T) : fallback } catch { return fallback } }
 const writeJson = (f: string, v: unknown) => { mkdirSync(dirname(f), { recursive: true }); writeFileSync(f, JSON.stringify(v, null, 2) + '\n') }
@@ -65,13 +75,14 @@ const writeJson = (f: string, v: unknown) => { mkdirSync(dirname(f), { recursive
 const volKey = (volumeId: string) => (mounts.dryRun(mounts.load()) ? `simulated:${volumeId}` : volumeId)
 
 export function recordState(volumeId: string, round: string, rec: RoundRec | null, now = new Date()) {
+  migrateState()
   const all = readJson<Record<string, VolRec>>(stateFile(), {})
   const v = (all[volKey(volumeId)] ||= { as_of: now.toISOString(), rounds: {} })
   if (rec) v.rounds[round] = rec; else delete v.rounds[round]
   v.as_of = now.toISOString()
   writeJson(stateFile(), all)
 }
-export const knownState = (volumeId: string): VolRec | null => readJson<Record<string, VolRec>>(stateFile(), {})[volKey(volumeId)] ?? null
+export const knownState = (volumeId: string): VolRec | null => { migrateState(); return readJson<Record<string, VolRec>>(stateFile(), {})[volKey(volumeId)] ?? null }
 
 export interface TempPod { round: string; kind: 'pull' | 'remove'; name: string; pod_id: string | null; volume: string; created_at: string; approved_by: string }
 /** The temporary pods this app has made and not yet deleted. One left behind (the app closed mid-job) is listed here and shows in the manager under its name. */

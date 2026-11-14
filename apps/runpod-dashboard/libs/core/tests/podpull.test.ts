@@ -61,7 +61,7 @@ const logsOf = (...lines: string[]) => { let n = 0; return async () => (n++ === 
 const GOOD = [`s3 pull: bh/rounds/${ROUND} -> /workspace/comfy-shared/temp/rounds/${ROUND}`, 'a/b.json: Copied (new)', 'c/d.json: Copied (new)', '2.861 MiB / 2.861 MiB, 100%, 1 MiB/s', `s3 pull done (manifest verified): /workspace/comfy-shared/temp/rounds/${ROUND}`]
 
 let envBackup: Record<string, string | undefined> = {}
-const KEYS = ['RUNPOD_API_KEY', 'PANAMA_AWS_ACCESS_KEY_ID', 'PANAMA_AWS_SECRET_ACCESS_KEY', 'SETTINGS_ENV_FILE', 'PULL_PODS_FILE', 'POD_ROUNDS_FILE', 'PANAMA_S3_REGION']
+const KEYS = ['RUNPOD_API_KEY', 'PANAMA_AWS_ACCESS_KEY_ID', 'PANAMA_AWS_SECRET_ACCESS_KEY', 'SETTINGS_ENV_FILE', 'PULL_PODS_FILE', 'VOLUME_ROUNDS_FILE', 'POD_ROUNDS_FILE', 'PANAMA_S3_REGION']
 function configure(over: Partial<mounts.MountsConfig> = {}) {
   const cfg = mounts.defaults(); cfg.image = 'ghcr.io/example/comfy-app:v26'; cfg.network_volume_id = 'vol1'; cfg.data_center_id = 'EUR-IS-2'; cfg.idle_stop_minutes = 30
   Object.assign(cfg, over); mounts.save(cfg); return cfg
@@ -71,7 +71,7 @@ beforeEach(() => {
   const dir = scratch()
   process.env.SETTINGS_ENV_FILE = join(mkdtempSync(join(tmpdir(), 'pp-')), '.env')   // never the developer's own settings
   process.env.RUNPOD_API_KEY = 'test'; process.env.PANAMA_AWS_ACCESS_KEY_ID = KEY_ID; process.env.PANAMA_AWS_SECRET_ACCESS_KEY = KEY_SECRET
-  process.env.PULL_PODS_FILE = join(dir, 'pull-pods.json'); process.env.POD_ROUNDS_FILE = join(dir, 'pod-rounds.json'); delete process.env.PANAMA_S3_REGION
+  process.env.PULL_PODS_FILE = join(dir, 'pull-pods.json'); process.env.VOLUME_ROUNDS_FILE = join(dir, 'volume-rounds.json'); process.env.POD_ROUNDS_FILE = join(dir, 'pod-rounds.json'); delete process.env.PANAMA_S3_REGION
   process.env.DRY_PODS_FILE = join(dir, 'dry-pods.json')
   configure()
 })
@@ -240,7 +240,7 @@ describe('a temporary pod pull', () => {
       expect(podpull.temporaryPods(), label).toEqual([])
       const rec = (await podpull.rounds(base({ client: rp.client }))).rounds.find((x) => x.name === ROUND)
       check(rec && rec.state !== 'none' ? rec : undefined)
-      process.env.POD_ROUNDS_FILE = join(mkdtempSync(join(tmpdir(), 'pr-')), 'r.json')   // each case starts with nothing known
+      process.env.VOLUME_ROUNDS_FILE = join(mkdtempSync(join(tmpdir(), 'pr-')), 'r.json')   // each case starts with nothing known
     }
     // and the check failure carries the list
     const rp = fakeRunPod()
@@ -427,4 +427,13 @@ describe('placing the round after a pull (ADR-033)', () => {
     expect(real.dry_run).toBe(false)
     await expect(podpull.placeRound(ROUND, { pod_id: 'nope' }, base({ client: rp.client, ssh }))).rejects.toThrow(/not found/)
   })
+  it('volume records move out of pod-rounds.json into volume-rounds.json once, leaving the pod -> round map', async () => {
+    const { writeFileSync, readFileSync } = await import('node:fs')
+    const old = process.env.POD_ROUNDS_FILE!
+    writeFileSync(old, JSON.stringify({ podA: 'r1', vol9: { as_of: '2026-11-13T00:00:00Z', rounds: { r1: { state: 'complete', present: 1, expected: 1, missing: 0, bytes: 5 } } } }))
+    expect(podpull.knownState('vol9')?.rounds.r1.state).toBe('complete')   // found in the new file
+    expect(JSON.parse(readFileSync(old, 'utf8'))).toEqual({ podA: 'r1' })   // and gone from the pod map
+    expect(JSON.parse(readFileSync(process.env.VOLUME_ROUNDS_FILE!, 'utf8')).vol9.rounds.r1.bytes).toBe(5)
+  })
+
 })

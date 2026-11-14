@@ -50,6 +50,16 @@ describe('pods in rounds (ADR-039)', () => {
     await expect(create({ name: 'bad', gpu: 'rtx4090', round: 'a/b' } as any)).rejects.toThrow(/slash/)
     expect(dry.list().length).toBe(before)
   })
+  it('volume pull records in the same file (an old layout) do not break the rounds: a delete works and the records are kept', async () => {
+    const { writeFileSync, readFileSync } = await import('node:fs')
+    const f = process.env.POD_ROUNDS_FILE!
+    writeFileSync(f, JSON.stringify({ vol1: { as_of: '2026-11-13T00:00:00Z', rounds: { r1: { state: 'complete' } } } }))
+    const p = await pods.create({ name: 'mixed', gpu: 'rtx4090', round: 'mix' } as any)
+    expect(pods.rounds().map((r) => r.round)).toEqual(['mix'])   // an object is not a round name
+    expect(await pods.deleteRound('mix')).toEqual({ round: 'mix', pods_released: 1 })   // used to fail: a.localeCompare is not a function
+    expect((await pods.get(p.id)).round).toBeUndefined()
+    expect(JSON.parse(readFileSync(f, 'utf8')).vol1.rounds.r1.state).toBe('complete')   // the volume record was not lost
+  })
   it('deleting a round takes its pods out of it and clears its name; the pods stay', async () => {
     const p = await pods.create({ name: 'to-release', gpu: 'rtx4090', round: 'gone' } as any)
     await pods.renameRound('gone', 'Gone reel')

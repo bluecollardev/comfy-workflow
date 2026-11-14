@@ -9,15 +9,20 @@ import { podRoundsFile, podShotsFile, roundNamesFile } from './paths.js'
 
 type Registry = Record<string, string>
 
-export function load(): Registry {
+/** The whole file. It once also held the volumes' pull records (objects keyed by volume id: podpull.ts keeps those in volume-rounds.json now and moves them out); only the pod -> round strings are ours. */
+function raw(): Record<string, unknown> {
   const f = podRoundsFile()
   if (!existsSync(f)) return {}
-  try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return {} }
+  try { const j = JSON.parse(readFileSync(f, 'utf8')); return j && typeof j === 'object' ? j : {} } catch { return {} }
+}
+export function load(): Registry {
+  return Object.fromEntries(Object.entries(raw()).filter(([, v]) => typeof v === 'string' && v)) as Registry
 }
 function save(reg: Registry) {
   const f = podRoundsFile()
   mkdirSync(dirname(f), { recursive: true })
-  writeFileSync(f, JSON.stringify(reg, null, 2) + '\n')
+  const others = Object.fromEntries(Object.entries(raw()).filter(([, v]) => typeof v !== 'string'))   // not ours: kept until podpull moves it out
+  writeFileSync(f, JSON.stringify({ ...others, ...reg }, null, 2) + '\n')
 }
 /** The shot a pod works on (a free label, usually one of the round's shots), on our side like the round: kept in pod-shots.json, dropped when the pod leaves its round. */
 function loadShots(): Registry { const f = podShotsFile(); if (!existsSync(f)) return {}; try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return {} } }
