@@ -70,6 +70,8 @@ test('pod card: Import, Run and Outputs sit on one row; Outputs is disabled unti
   const m = page.getByTestId('pod-outputs-modal')
   await expect(m.getByTestId('pod-outputs-run')).toHaveCount(2)   // the failed run has no files and is not listed
   await expect(m.getByTestId('outputs-tile')).toHaveCount(2)
+  const bar = await m.getByTestId('pod-outputs-toolbar').boundingBox(), refresh = await m.getByTestId('pod-outputs-refresh').boundingBox()
+  expect(refresh.x + refresh.width).toBeGreaterThan(bar.x + bar.width - 4)   // Refresh sits at the right edge of the toolbar
   await expect(m.getByTestId('pod-outputs-workflow').first()).toHaveText('stereo')
   await expect(m.getByTestId('pod-outputs-workflow').nth(1)).toHaveText('other')   // each run names the workflow it came from, with its folder beside it
   await expect(m.getByTestId('pod-outputs-run-title').first()).toContainText('rounds/r1/cgi-042')
@@ -87,6 +89,8 @@ test('pod Outputs: with a Shot set on the pod only that shot\'s runs show, with 
   await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
   const m = page.getByTestId('pod-outputs-modal')
   await expect(m.getByTestId('pod-outputs-run')).toHaveCount(1)
+  const bar2 = await m.getByTestId('pod-outputs-toolbar').boundingBox(), refresh2 = await m.getByTestId('pod-outputs-refresh').boundingBox()
+  expect(refresh2.x + refresh2.width).toBeGreaterThan(bar2.x + bar2.width - 4)   // and with the shot filter on and one run showing
   await expect(m.getByTestId('pod-outputs-workflow')).toHaveText('stereo')
   await expect(m.getByTestId('pod-outputs-shot-filter')).toContainText('1')   // "1 other run hidden"
   await m.getByTestId('pod-outputs-shot-filter').locator('input').uncheck()

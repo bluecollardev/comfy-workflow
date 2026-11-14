@@ -1,9 +1,11 @@
 <template>
   <BModal :model-value="true" :title="$t('outputs.title', { name: pod.name })" size="xl" scrollable lazy no-footer data-testid="pod-outputs-modal" @update:model-value="(v) => !v && $emit('close')">
-    <div class="d-flex align-items-center mb-2">
+    <div class="d-flex align-items-center gap-2 mb-2" data-testid="pod-outputs-toolbar">
       <span class="small text-body-secondary">{{ $t('outputs.buttonTitle') }}</span>
-      <BButton v-if="shown.length > 1" variant="outline-light" size="sm" class="ms-auto me-2" :disabled="!canZip || zipping" :title="canZip ? '' : $t('outputs.zipApp')" data-testid="pod-outputs-zip-all" @click="zipAll"><BSpinner v-if="zipping" small class="me-1" /><i v-else class="fa-solid fa-file-zipper me-1"></i>{{ $t('outputs.zipAllRuns') }}</BButton>
-      <BButton variant="outline-light" size="sm" :class="{ 'ms-auto': runs.length <= 1 }" data-testid="pod-outputs-refresh" @click="$emit('refresh')"><i class="fa-solid fa-rotate me-1"></i>{{ $t('outputs.refresh') }}</BButton>
+      <div class="ms-auto d-flex gap-2">   <!-- the buttons sit at the right, whatever else shows -->
+        <BButton v-if="shown.length > 1" variant="outline-light" size="sm" class="text-nowrap" :disabled="!canZip || zipping" :title="canZip ? '' : $t('outputs.zipApp')" data-testid="pod-outputs-zip-all" @click="zipAll"><BSpinner v-if="zipping" small class="me-1" /><i v-else class="fa-solid fa-file-zipper me-1"></i>{{ $t('outputs.zipAllRuns') }}</BButton>
+        <BButton variant="outline-light" size="sm" class="text-nowrap" data-testid="pod-outputs-refresh" @click="$emit('refresh')"><i class="fa-solid fa-rotate me-1"></i>{{ $t('outputs.refresh') }}</BButton>
+      </div>
     </div>
     <label v-if="shot" class="d-flex align-items-center gap-2 small mb-3" data-testid="pod-outputs-shot-filter">
       <input v-model="onlyShot" type="checkbox" class="form-check-input mt-0" />{{ $t('outputs.onlyShot', { shot }) }}
