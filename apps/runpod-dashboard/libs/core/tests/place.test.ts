@@ -167,6 +167,24 @@ describe('place.run on a (local stand-in for the) pod', () => {
     expect(JSON.parse(readFileSync(join(root, 'workflows/rounds', ROUND, 'g.json'), 'utf8'))).toEqual(g)
   })
 
+  it('a frame-sequence input (a folder) is linked into input/ under the name the graph holds, from the round\'s solves folder (the provenance copy is not preferred)', async () => {
+    const root = tmp()
+    const shot = join(root, 'temp/rounds', ROUND, 'cgi-042')
+    put(join(shot, 'solves/seq-v001/u.0000.png'), 'F0'); put(join(shot, 'solves/seq-v001/u.0001.png'), 'F1')
+    put(join(shot, 'provenance/03-scripts/comfyui/solves/seq-v001/u.0000.png'), 'OLD')   // a second copy, deeper: not the one linked
+    put(join(shot, 'comfy/workflows/s.json'), JSON.stringify({ nodes: [{ id: 5, type: 'BincLoadImageSequence', widgets_values: ['shots/cgi-042/03-scripts/comfyui/solves/seq-v001', 0, 24] }] }))
+    put(join(shot, 'comfy/workflows/s-inputs-manifest.json'), JSON.stringify({ 'shots/cgi-042/03-scripts/comfyui/solves/seq-v001': { repo_path: 'x/seq-v001' } }))
+    const r = await place.run(ROUND, { host: 'h', port: 1, ssh: localSsh(root), dry_run: false })
+    expect(r).toMatchObject({ ok: true, missing: [], conflicts: [] })
+    const g = JSON.parse(readFileSync(join(root, 'workflows/rounds', ROUND, 's.json'), 'utf8'))
+    const name = g.nodes[0].widgets_values[0]
+    expect(name).toContain('seq-v001')
+    expect(readdirSync(join(root, 'input', name)).sort()).toEqual(['u.0000.png', 'u.0001.png'])   // the loader finds the folder
+    expect(readFileSync(join(root, 'input', name, 'u.0000.png'), 'utf8')).toBe('F0')
+    const again = await place.run(ROUND, { host: 'h', port: 1, ssh: localSsh(root), dry_run: false })
+    expect(again).toMatchObject({ ok: true, linked: 0, conflicts: [] })
+  })
+
   it('flatName: shot, file stem and the first 8 of the sha256; a different file of the same name gets a different name', () => {
     expect(place.flatName('shots/cgi-042/05-outputs/Approved/master/cgi-042-pullback-4k-v03.mp4', { sha256: 'fe53cada90d469ef' })).toBe('cgi-042__cgi-042-pullback-4k-v03__fe53cada.mp4')
     expect(place.flatName('shots/x/a.png', { sha256: '11111111aa' })).not.toBe(place.flatName('shots/x/a.png', { sha256: '22222222bb' }))

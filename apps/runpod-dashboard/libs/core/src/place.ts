@@ -188,10 +188,34 @@ def source_of(path):
         c = os.path.join(src, shot, 'comfy', 'input', path)
         if os.path.isfile(c): return c
     return None
+# A frame-sequence input (BincLoadImageSequence) is a folder, not a file: the round ships it beside the shot (<shot>/solves/<name>, a copy under provenance/ too).
+# Link the shallowest one into input/ under the name the graph now holds, so the loader finds the folder.
+def dir_of(path):
+    want = os.path.basename(path.rstrip('/'))
+    best = None
+    for shot in sorted(os.listdir(src)) if os.path.isdir(src) else []:
+        for dp, dn, fn in os.walk(os.path.join(src, shot)):
+            dn.sort()
+            if os.path.basename(dp) == want:
+                depth = dp.count('/') + (100 if 'provenance' in dp.split('/') else 0)
+                if best is None or depth < best[0]: best = (depth, dp)
+    return best[1] if best else None
+def put_dir(d, link, rel):
+    if os.path.lexists(link):
+        if os.path.islink(link) and os.path.realpath(link) == os.path.realpath(d): rep['already_there'] += 1
+        else: rep['conflicts'].append({'path': rel, 'where': 'flat', 'existing_size': None, 'round_size': None})
+        return
+    rep['linked'] += 1
+    if dry: return
+    os.makedirs(os.path.dirname(link), exist_ok=True)
+    os.symlink(d, link)
 if p['flat']:
     for path, name in sorted(flat.items()):
         s0 = source_of(path)
         if s0: put(s0, os.path.join(R, 'input', name), 'flat', name)
+        else:
+            d0 = dir_of(path)
+            if d0: put_dir(d0, os.path.join(R, 'input', name), name)
 rep['mode'] = 'copy' if 'copy' in used else ('hardlink' if 'hardlink' in used else 'none')
 if not dry:
     wd = os.path.join(R, 'workflows', 'rounds', rnd)
@@ -199,9 +223,9 @@ if not dry:
         os.makedirs(wd, exist_ok=True)
         open(os.path.join(wd, g['name']), 'w').write(g['rewritten'])
 def exists_placed(path, target):
-    if os.path.isfile(os.path.join(R, 'input', target)): return True
+    if os.path.isfile(os.path.join(R, 'input', target)) or os.path.isdir(os.path.join(R, 'input', target)): return True
     if not dry: return False
-    return source_of(path) is not None
+    return source_of(path) is not None or dir_of(path) is not None
 for g in p['graphs']:
     for path in g['rewritten_paths']:
         if not exists_placed(path, g['targets'][path]) and path not in rep['missing']: rep['missing'].append(path)
