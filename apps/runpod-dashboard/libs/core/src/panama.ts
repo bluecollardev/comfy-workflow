@@ -120,18 +120,29 @@ export async function roundsAsync(): Promise<Round[]> {
   return r.stdout.split('\n').map((l) => /^\s*PRE (.+)\/\s*$/.exec(l)?.[1]).filter((n): n is string => !!n && ROUND.test(n))
     .map((name) => { const st = stagedState(name); return { name, staged: st.state === 'complete', ...st, bytes: st.state === 'none' ? 0 : dirBytes(join(stagingDir(), name)) } })
 }
+/** One recursive listing of a round is slow (seconds for thousands of files) and the plan needs it twice (the shots and the size): share a running one, and keep the answer for a minute. */
+const listings = new Map<string, { at: number; p: Promise<string> }>()
+const LISTING_TTL_MS = 60_000
+function listingOf(round: string): Promise<string> {
+  const hit = listings.get(round)
+  if (hit && Date.now() - hit.at < LISTING_TTL_MS) return hit.p
+  const p = runAsync(['aws', 's3', 'ls', `s3://${bucket()}/rounds/${round}/`, '--recursive', ...aws([])], 120_000).then((r) => {
+    if (r.status !== 0) throw bad(`Could not list ${round}: ${(r.stderr || r.stdout).trim().split('\n').pop()}`)
+    return r.stdout
+  })
+  listings.set(round, { at: Date.now(), p }); p.catch(() => { if (listings.get(round)?.p === p) listings.delete(round) })   // a failure is not kept
+  return p
+}
 export async function sizeAsync(round: string) {
   if (!ROUND.test(round)) throw bad(`Not a round name: ${round}`)
-  const r = await runAsync(sizeCmd(round), 120_000)
-  if (r.status !== 0) throw bad(`Could not size ${round}: ${(r.stderr || r.stdout).trim().split('\n').pop()}`)
-  return { round, files: Number(/Total Objects:\s*(\d+)/.exec(r.stdout)?.[1] ?? 0), bytes: Number(/Total Size:\s*(\d+)/.exec(r.stdout)?.[1] ?? 0) }
+  const f = roundTree(round, await listingOf(round)).filter((e) => !e.dir)
+  return { round, files: f.length, bytes: f.reduce((n, e) => n + e.bytes, 0) }
 }
 export async function filesAsync(round: string) {
   if (!ROUND.test(round)) throw bad(`Not a round name: ${round}`)
-  const r = await runAsync(['aws', 's3', 'ls', `s3://${bucket()}/rounds/${round}/`, '--recursive', ...aws([])], 120_000)
-  if (r.status !== 0) throw bad(`Could not list ${round}: ${(r.stderr || r.stdout).trim().split('\n').pop()}`)
+  const out = await listingOf(round)
   const dir = join(stagingDir(), round)
-  const entries = roundTree(round, r.stdout, (p, bytes) => { try { return statSync(join(dir, p)).size === bytes } catch { return false } })
+  const entries = roundTree(round, out, (p, bytes) => { try { return statSync(join(dir, p)).size === bytes } catch { return false } })
   return { round, entries, files: entries.filter((e) => !e.dir).length, bytes: entries.filter((e) => !e.dir).reduce((n, e) => n + e.bytes, 0) }
 }
 

@@ -152,9 +152,8 @@ async function cardPrices(shots: string[], o: ImportOpts): Promise<Record<string
 export async function planImport(round: string, o: ImportOpts = {}): Promise<ImportPlan> {
   for (const [shot, card] of Object.entries(o.cards ?? {})) if (card && card !== gpus.AUTO && !gpus.GPUS[card]) throw new CoreError(400, `Unknown card "${card}" for ${shot}: use a key from list_gpus.`)
   const cfg = mounts.load()
-  const all = await deps.shotsOf(round)
+  const [all, p] = await Promise.all([deps.shotsOf(round), deps.planPull(round)])   // both read the round's listing (shared), the pull plan also asks RunPod
   const shots = o.shots?.length ? all.filter((s) => o.shots!.includes(s)) : all
-  const p = await deps.planPull(round)
   const pullH = p.ceiling_minutes / 60
   const prices = await cardPrices(shots, o)
   const runCost = o.run_workflows === false ? 0 : shots.reduce((a, s) => a + (prices[s] ?? p.price_per_hour ?? 0) * RUN_ESTIMATE_H, 0)
