@@ -24,12 +24,10 @@
         </div>
         <div class="small text-body-secondary">{{ $t('importRound.droppedNote') }}</div>
       </div>
-      <div class="d-flex align-items-center justify-content-between mb-1">
-        <div class="form-label small mb-0">{{ $t('importRound.rounds') }}</div>
-        <label v-if="selectable.length > 1" class="d-flex align-items-center gap-2 small mb-0" for="irr-all">
-          <input id="irr-all" type="checkbox" class="form-check-input mt-0" :checked="allChosen" :indeterminate.prop="chosen.size > 0 && !allChosen" data-testid="import-round-select-all" @change="toggleAll($event.target.checked)" />{{ $t('importRound.selectAll') }}
-        </label>
-      </div>
+      <div class="form-label small mb-1">{{ $t('importRound.rounds') }}</div>
+      <label v-if="selectable.length > 1" class="d-flex align-items-center gap-2 small mb-1 select-all-row select-all-in-list" for="irr-all">   <!-- above the checkbox column of the list -->
+        <input id="irr-all" type="checkbox" class="form-check-input mt-0" :checked="allChosen" :indeterminate.prop="chosen.size > 0 && !allChosen" data-testid="import-round-select-all" @change="toggleAll($event.target.checked)" />{{ $t('importRound.selectAll') }}
+      </label>
       <div class="border rounded p-2 round-list" data-testid="import-round-list">
         <template v-for="r in roundNamesList" :key="r">
         <div class="d-flex align-items-center gap-2 small round-row" data-testid="import-round-option" :data-round="r">
@@ -45,12 +43,10 @@
 
     <!-- 2. Choose shots -->
     <template v-else-if="step === 2">
-      <div class="d-flex align-items-center justify-content-between mb-1">
-        <div class="small fw-semibold">{{ $t('importRound.shots') }}</div>
-        <label v-if="allShots.length > 1" class="d-flex align-items-center gap-2 small mb-0" for="irs-all">
-          <input id="irs-all" type="checkbox" class="form-check-input mt-0" :checked="allShotsPicked" :indeterminate.prop="pickedCount > 0 && !allShotsPicked" data-testid="import-round-shots-select-all" @change="toggleAllShots($event.target.checked)" />{{ $t('importRound.selectAll') }}
-        </label>
-      </div>
+      <div class="small fw-semibold mb-1">{{ $t('importRound.shots') }}</div>
+      <label v-if="allShots.length > 1" class="d-flex align-items-center gap-2 small mb-1" for="irs-all">   <!-- above the checkbox column of the shots -->
+        <input id="irs-all" type="checkbox" class="form-check-input mt-0" :checked="allShotsPicked" :indeterminate.prop="pickedCount > 0 && !allShotsPicked" data-testid="import-round-shots-select-all" @change="toggleAllShots($event.target.checked)" />{{ $t('importRound.selectAll') }}
+      </label>
       <div v-for="r in [...chosen]" :key="r" class="mb-2" data-testid="import-round-group" :data-round="r">
         <div v-if="chosen.size > 1 || pending.has(r)" class="small text-body-secondary font-monospace">{{ r }}</div>
         <div v-if="pending.has(r)" class="small text-body-secondary" data-testid="import-round-reading"><BSpinner small class="me-2" />{{ $t('importRound.loadingPlan') }}</div>
@@ -261,6 +257,7 @@ async function start() {
 .drop-zone { border: 2px dashed rgba(255, 255, 255, 0.3); color: var(--bs-secondary-color); }
 .drop-zone.over { border-color: #508cff; background: rgba(80, 140, 255, 0.12); color: inherit; }
 .round-list { max-height: 14rem; overflow: auto; }
+.select-all-in-list { padding-left: calc(0.5rem + 1px); }   /* the list's border and padding, so the box sits above the row boxes */
 .round-row { padding: 0.3rem 0; }
 .round-row { border-top: 1px solid rgba(255, 255, 255, 0.08); }
 .round-row:first-child, [data-testid="import-round-group"] > :not(.round-row) + .round-row { border-top: 0; }

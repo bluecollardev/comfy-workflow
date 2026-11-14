@@ -27,6 +27,8 @@ test('Import Round: three steps - rounds, shots, cards - then Import with the ap
   await expect(files).toContainText('a.json'); await expect(files).not.toContainText('b.json')
   await files.getByText('Close', { exact: true }).click()
   const all = dlg.getByTestId('import-round-shots-select-all')
+  const left = async (l) => (await l.boundingBox()).x
+  expect(Math.abs(await left(all) - await left(dlg.getByTestId('import-round-shot').first().locator('input')))).toBeLessThan(2)   // above the checkbox column
   await expect(all).toBeChecked()
   await all.uncheck()   // select all clears every shot, then ticks them again
   await expect(dlg.getByTestId('import-round-shot').locator('input:checked')).toHaveCount(0)
@@ -174,6 +176,7 @@ test('Import Round(s): Select all ticks every round (and clears them), and Next 
   await page.goto('/'); await page.getByTestId('open-import-round').click()
   const dlg = page.getByTestId('import-round-modal')
   const boxes = dlg.getByTestId('import-round-option').locator('input')
+  { const x = async (l) => (await l.boundingBox()).x; expect(Math.abs(await x(dlg.getByTestId('import-round-select-all')) - await x(dlg.getByTestId('import-round-option').first().locator('input')))).toBeLessThan(2) }   // above the checkbox column
   await dlg.getByTestId('import-round-select-all').check()
   const n = await boxes.count()
   for (let i = 0; i < n; i++) await expect(boxes.nth(i)).toBeChecked()
