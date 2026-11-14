@@ -56,7 +56,8 @@
         <div v-if="pending.has(r)" class="small text-body-secondary" data-testid="import-round-reading"><BSpinner small class="me-2" />{{ $t('importRound.loadingPlan') }}</div>
         <div v-for="s in plans.get(r)?.shots || []" :key="s" class="d-flex align-items-center gap-2 small" data-testid="import-round-shot" :data-shot="s">
           <input :id="`ir-${r}-${s}`" type="checkbox" class="form-check-input mt-0" :checked="picked.get(r)?.has(s)" @change="toggleShot(r, s, $event.target.checked)" />
-          <label :for="`ir-${r}-${s}`" class="font-monospace mb-0">{{ s }}</label>
+          <label :for="`ir-${r}-${s}`" class="font-monospace mb-0 flex-grow-1">{{ s }}</label>
+          <BButton variant="outline-light" size="sm" class="py-0 text-nowrap" data-testid="import-round-shot-browse" @click="browsing = r; browsingShot = s"><i class="fa-solid fa-folder-tree me-1"></i>{{ $t('importRound.browse') }}</BButton>
         </div>
       </div>
       <label class="d-flex align-items-center gap-2 small mt-3"><input v-model="runWorkflows" type="checkbox" class="form-check-input mt-0" data-testid="import-round-run" />{{ $t('importRound.runWorkflows') }}</label>
@@ -111,7 +112,7 @@
         </div>
       </div>
     </template>
-    <RoundFilesModal :round="browsing" target="local" @close="browsing = ''" />
+    <RoundFilesModal :round="browsing" :shot="browsingShot" target="local" @close="browsing = ''; browsingShot = ''" />
   </BModal>
 </template>
 
@@ -185,6 +186,7 @@ const volumesLoaded = ref(false)
 async function loadVolumes() {
   try { volumes.value = await volumesAPI.list(); const d = volumes.value.find((v) => v.is_default); defaultVolume.value = d?.id || ''; if (!volumeId.value) volumeId.value = d?.id || (volumes.value.length === 1 ? volumes.value[0].id : '') } catch { /* the import says so if there is no volume */ } finally { volumesLoaded.value = true }
 }
+const browsingShot = ref('')   // with `browsing`: only that shot's folder
 const browsing = ref('')   // the round whose files are open in the explorer
 const podsEdited = ref(false)   // until the pod limit is typed, it follows the shots ticked: one pod per shot
 const maxPods = ref(2), costCap = ref(50), approvedBy = ref(''), error = ref(''), starting = ref(false)

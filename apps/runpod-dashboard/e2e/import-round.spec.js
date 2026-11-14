@@ -20,6 +20,12 @@ test('Import Round: three steps - rounds, shots, cards - then Import with the ap
   // 2. Choose shots
   await expect(dlg.locator('[data-testid="import-round-step"][data-active="true"]')).toContainText('Choose Shots')
   await expect(dlg.getByTestId('import-round-shot')).toHaveCount(2)
+  await page.route('**/panama/files*', (r) => r.fulfill({ json: { round: 'r', files: 3, bytes: 600, entries: [{ path: 'cgi-042', dir: true, bytes: 300, files: 1 }, { path: 'cgi-042/a.json', dir: false, bytes: 300 }, { path: 'cgi-043', dir: true, bytes: 300, files: 1 }, { path: 'cgi-043/b.json', dir: false, bytes: 300 }] } }))
+  await dlg.getByTestId('import-round-shot').filter({ hasText: 'cgi-042' }).getByTestId('import-round-shot-browse').click()   // each shot has its own Browse: that shot's files only
+  const files = page.getByTestId('round-files-modal')
+  await expect(files.getByTestId('round-files-row')).toHaveCount(2)
+  await expect(files).toContainText('a.json'); await expect(files).not.toContainText('b.json')
+  await files.getByText('Close', { exact: true }).click()
   const all = dlg.getByTestId('import-round-shots-select-all')
   await expect(all).toBeChecked()
   await all.uncheck()   // select all clears every shot, then ticks them again
