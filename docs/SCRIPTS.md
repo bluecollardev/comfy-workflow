@@ -45,7 +45,7 @@ Each script also carries its own header comment; this page is the map. Add a row
 
 | Script | Runs on | What it does |
 |---|---|---|
-| `apps/comfy-app/docker/entrypoint.sh` | pod | The image's entry point. Makes the shared folders, seeds `workflows/` while empty, links binc-PC's paths onto the volume (`COMFY_LINKS`), starts `sshd` from `PUBLIC_KEY`, starts `s3pull.sh` in the background when `S3_PULL` is set, then starts ComfyUI. |
+| `apps/comfy-app/docker/entrypoint.sh` | pod | The image's entry point. Makes the shared folders, links the Workflows panel to the mount (no seed), links binc-PC's paths onto the volume (`COMFY_LINKS`), starts `sshd` from `PUBLIC_KEY`, starts `s3pull.sh` in the background when `S3_PULL` is set, then starts ComfyUI. |
 | `apps/comfy-app/docker/s3pull.sh` | pod | Pulls `bucket/prefix=/workspace/dir` pairs from S3 onto the volume with `rclone copy --checksum` (additive; destinations only under `/workspace`), then runs `verify_round.py` and leaves `.s3-pull.done`, `.s3-pull.failed` or `.s3-pull.unverified` in the folder. Env: `S3_PULL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `S3_ENDPOINT`, `S3_PROVIDER`. Also run over SSH on a pod that is already up (ADR-022). **Leaves the PC's control**: copies bucket data onto RunPod's volume. See `POD-PULLS-FROM-S3.md`. |
 | `apps/comfy-app/docker/verify_round.py` | pod | Checks a pulled round against its `MANIFEST.json` files (size and sha256). Exit 0 match, 1 mismatch, 2 no file list. The pod-side twin of the app's check (`libs/core/src/panama.ts`) and of BH's own. |
 | `apps/comfy-app/docker/swarm.sh up|init|join|deploy|status|logs|down` | Linux box | Runs the image with Compose on one NVIDIA box or as a Swarm (`compose.yml`, `compose.gpu.yml`). Not for macOS. |

@@ -26,7 +26,7 @@ image is a link onto the volume at `/workspace/comfy-shared/workflows`
 
 | Call | Does | Used by |
 |---|---|---|
-| `GET /api/userdata?dir=workflows&recurse=true` | lists the files in the panel | what we check on a new pod: nine names means the seed landed |
+| `GET /api/userdata?dir=workflows&recurse=true` | lists the files in the panel | what we check on a new pod: only the placed round graphs under `rounds/` (the image no longer seeds the nine stereo test graphs) |
 | `POST /api/userdata/workflows%2F<folder>%2F<name>.json?overwrite=false` with the graph as the body | saves a graph into the panel; `overwrite=true` replaces | `02_SCRIPTS/queue-graphs/corrosion_load-graphs_v002.py` posts the newest UI graph per shot under a `CANALV2_corrosion` folder; it queues nothing |
 | `GET /api/userdata/<path>` | reads one back | the UI |
 

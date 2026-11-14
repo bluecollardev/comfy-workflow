@@ -14,6 +14,10 @@ Lucas (2026-11-15): "how do we get the nodes from each shot pack when importing 
 
 Because the run pods an import creates start after the pull has finished, **their first start needs no restart**. A pod that is already up (a reused pool pod, a pull pod) reads `custom_nodes` only at start: run the script over SSH and it says to restart ComfyUI.
 
+## Amendment 2026-11-15: the image no longer seeds `workflows/`
+
+Lucas, looking at a pod's Workflows panel: the nine `binc-stereo-*` / `cgi-042-*` graphs listed beside the round graphs are not needed to run a round ("i don't think so"). They were the repo's `apps/comfy-app/workflows/`, copied by the entrypoint onto an empty `workflows/` mount. That seeding is removed (entrypoint and the Dockerfile's `COPY workflows/`): a new volume starts with only the graphs a pull places under `workflows/rounds/<round>/`. A volume that already has the nine keeps them (delete them by hand or with a pod on it; nothing here deletes). The Mac's `apps/comfy-app/workflows/` is unchanged.
+
 ## Consequences
 
 - Rounds that ship a pack the image lacks run on any pod without a rebuild; what ships that the image has is not loaded twice.

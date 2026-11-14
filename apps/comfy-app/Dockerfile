@@ -9,7 +9,6 @@
 #   /opt/ComfyUI/custom_nodes/        what build.sh staged from shared/nodes: BincStereo + the ShotPipe versions asked for
 #   /workspace/comfy-shared/{input,output,models,workflows}   mount: same layout as the Mac and binc-PC
 #   /opt/ComfyUI/user/default/workflows -> /workspace/comfy-shared/workflows   the UI's Workflows panel reads the mount
-#   /opt/comfy-app/workflows          workflows/ from the repo: copied onto the mount only while it is empty
 #   /workspace/project                mount: the project tree
 #   sshd on 22 when RunPod passes PUBLIC_KEY, so `./start.sh sync --pod <id>` can rsync onto the volume
 #   /home/binc/CANALV2_r3/CANALV2 -> /workspace/project   so graphs keep their binc-PC paths
@@ -67,7 +66,6 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 RUN pip install --no-cache-dir playwright && playwright install --with-deps chromium && rm -rf /var/lib/apt/lists/*
 COPY docker/ui2api.py /opt/comfy-app/ui2api.py
 COPY docker/extra_model_paths.yaml /opt/comfy-app/extra_model_paths.yaml
-COPY workflows/ /opt/comfy-app/workflows/
 COPY docker/entrypoint.sh /opt/comfy-app/entrypoint.sh
 COPY docker/verify_round.py /opt/comfy-app/verify_round.py
 COPY docker/s3pull.sh /opt/comfy-app/s3pull.sh

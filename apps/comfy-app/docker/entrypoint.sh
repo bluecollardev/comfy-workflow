@@ -17,13 +17,10 @@ mkdir -p "$SHARED/input" "$SHARED/output" "$SHARED/models"
 for d in checkpoints clip clip_vision controlnet diffusion_models embeddings loras upscale_models vae; do
   mkdir -p "$SHARED/models/$d"
 done
-# Workflows live on the mount, so they change without a rebuild and survive the pod. The
-# image carries the repo's workflows/ as a seed and copies it in only while the mount is empty;
-# ComfyUI's Workflows panel reads the mount through the link.
+# Workflows live on the mount, so they change without a rebuild and survive the pod. ComfyUI's Workflows panel reads the mount through the link.
+# The image no longer seeds it with the repo's stereo test graphs (Lucas, 2026-11-15: not needed to run a round): a new volume starts with the
+# graphs a pull places under workflows/rounds/<round>/, and whatever a sync puts there.
 mkdir -p "$SHARED/workflows" /opt/ComfyUI/user/default
-if [ -z "$(ls -A "$SHARED/workflows" 2>/dev/null)" ] && [ -d /opt/comfy-app/workflows ]; then
-  cp -R /opt/comfy-app/workflows/. "$SHARED/workflows/" && echo "seeded $SHARED/workflows from the image"
-fi
 rm -rf /opt/ComfyUI/user/default/workflows
 ln -sfn "$SHARED/workflows" /opt/ComfyUI/user/default/workflows
 echo "workflows $SHARED/workflows ($(find "$SHARED/workflows" -name '*.json' | wc -l | tr -d ' ') graphs)"

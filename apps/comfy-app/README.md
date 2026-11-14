@@ -15,7 +15,7 @@ changed file modes) with exactly five things layered on top:
 | Layer | What | Now |
 |---|---|---|
 | `ComfyUI-BincStereo` | The stereo / depth node pack (pure torch, proprietary to Cinematic Immunity / Bincos) | In the `shared/nodes` submodule (`comfy-node-packs`), symlinked into the clone by `setup.sh` |
-| `user/default/workflows/*.json` | Nine saved workflows (stereo QC, cgi-042) | **Tracked** in `workflows/`, symlinked, so saving in the UI writes to the repo. In the image the same link points at the mount, `/workspace/comfy-shared/workflows`, seeded from `workflows/` only while empty, so a pod's workflows change without a rebuild |
+| `user/default/workflows/*.json` | Nine saved workflows (stereo QC, cgi-042) | **Tracked** in `workflows/`, symlinked, so saving in the UI writes to the repo. In the image the same link points at the mount, `/workspace/comfy-shared/workflows`, not seeded (the image no longer carries `workflows/`), so a pod's workflows change without a rebuild |
 | `models/depth_anything/Depth-Anything-V2-Large-hf` | 1.2 GB of weights | Not in git; `models.txt` + `fetch-models.sh` |
 | `input/binc-stereo-test`, `input/cgi-042-render-mono` | 129 MB of local test frames | Not in git; left on disk |
 | `.venv`, `user/` settings and db | Machine-specific | Rebuilt by `setup.sh`; settings ignored |

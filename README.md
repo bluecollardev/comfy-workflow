@@ -257,8 +257,7 @@ What follows from that:
   volume, so two ComfyUI instances can read the same plates and models. They share
   the output folder too: fine for different shots, a collision for the same file name.
 - **Workflows are on the volume, not in the image.** The image links ComfyUI's
-  Workflows panel to `comfy-shared/workflows` and seeds it from
-  `apps/comfy-app/workflows/` only while it is empty. A workflow saved in one pod's
+  Workflows panel to `comfy-shared/workflows` (not seeded: a new volume has only the graphs a pull places under `workflows/rounds/<round>/`). A workflow saved in one pod's
   UI shows in the next pod; changing them needs no rebuild.
 - **The image is the only thing pulled, not copied.** Pods pull
   `registry.gitlab.com/bcdevlucas/comfy-workflow/comfy-app:contract-v26`, a private
