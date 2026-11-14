@@ -1,4 +1,4 @@
-import { test, expect, podCard } from './fixtures'
+import { test, expect, podCard, answerConfirm } from './fixtures'
 import { t } from './i18n'
 
 // What a card tells about its pod beyond the buttons: the id that matches the RunPod console, the
@@ -74,13 +74,13 @@ test.describe('pod card', () => {
 
   test('when the host has no free GPU, the card says so and Recreate makes the pod on another host', async ({ page, api }) => {
     api.state.failures['POST /pods/pod-bbbbbbbb/resume'] = 'There are not enough free GPUs on the host machine to start this pod.'
-    page.on('dialog', (d) => d.accept())
     await page.goto('/')
     const card = podCard(page, 'ComfyUI-Batch')
     await card.getByTestId('pod-resume').click()
     await expect(card.getByTestId('pod-host-full')).toHaveText(t('pod.hostFull'))
     await expect(page.getByTestId('toast').last()).toContainText(t('toast.hostFull'))
     await card.getByTestId('pod-recreate').click()
+    await answerConfirm(page, true)
     await expect(page.getByTestId('toast').last()).toContainText(t('toast.podRecreated'))
     expect(api.calls).toContainEqual(expect.objectContaining({ method: 'POST', path: '/pods/pod-bbbbbbbb/recreate' }))
     await expect(podCard(page, 'ComfyUI-Batch').getByTestId('pod-id')).toHaveText('pod-re-bbbb')
@@ -229,18 +229,16 @@ test.describe('Rounds: a round holds a series of pods (ADR-039)', () => {
 
   test('beside each round: Import this round again opens Import Round with it chosen; Delete asks, then its pods leave it and keep running (ADR-039)', async ({ page, api }) => {
     api.state.pods.find((p) => p.name === 'ComfyUI-Batch').round = 'brynley-comfy-2026-11-06'
-    const asked = []; let answer = 'dismiss'
-    page.on('dialog', (d) => { asked.push(d.message()); return answer === 'accept' ? d.accept() : d.dismiss() })
     await page.goto('/')
     const round = page.locator('[data-testid="round-section"][data-round="brynley-comfy-2026-11-06"]')
     await round.getByTestId('round-reimport').click()
     await expect(page.getByTestId('import-round-modal').locator('[data-testid="import-round-option"][data-round="brynley-comfy-2026-11-06"] input')).toBeChecked()
     await page.getByTestId('import-round-modal').getByText('Cancel', { exact: true }).click()
     await round.getByTestId('round-delete').click()   // Cancel: it stays
-    expect(asked).toHaveLength(1)
+    expect(await answerConfirm(page, false)).toContain('brynley-comfy-2026-11-06')
     await expect(round.getByTestId('pod-card')).toHaveCount(1)
-    answer = 'accept'
     await round.getByTestId('round-delete').click()
+    await answerConfirm(page, true)
     await expect(round).toHaveCount(0)
     await expect(podCard(page, 'ComfyUI-Batch')).toBeVisible()   // the pod is still there, in "No round"
   })
@@ -265,8 +263,6 @@ test.describe('Rounds: a round holds a series of pods (ADR-039)', () => {
     api.state.pods.find((p) => p.name === 'ComfyUI-Batch').round = 'round-a'
     api.state.pods.find((p) => p.name === 'ComfyUI-Dev').round = 'round-b'
     await page.setViewportSize({ width: 1280, height: 1800 })   // every round on screen: a drag that scrolls the page picks up another card
-    const asked = []; let answer = 'dismiss'
-    page.on('dialog', (d) => { asked.push(d.message()); return answer === 'accept' ? d.accept() : d.dismiss() })
     await page.goto('/')
     const a = page.locator('[data-testid="round-section"][data-round="round-a"]')
     const b = page.locator('[data-testid="round-section"][data-round="round-b"]')
@@ -274,20 +270,18 @@ test.describe('Rounds: a round holds a series of pods (ADR-039)', () => {
     await expect(a.getByTestId('pod-drag-handle')).toHaveCount(1)   // every card has its grip
     // Cancel: nothing moves, and it asked once
     await a.getByTestId('pod-drag-handle').dragTo(b.getByTestId('round-toggle'))
-    await expect.poll(() => asked.length).toBe(1)
-    expect(asked[0]).toContain('round-b')
+    expect(await answerConfirm(page, false)).toContain('round-b')
     await expect(a.getByTestId('pod-card')).toHaveCount(1)
     await expect(b.getByTestId('pod-card')).toHaveCount(1)
     // Confirm: it moves
-    answer = 'accept'
     await a.getByTestId('pod-drag-handle').dragTo(b.getByTestId('round-toggle'))
+    await answerConfirm(page, true)
     await expect(b.getByTestId('pod-card')).toHaveCount(2)
     await expect(a.getByTestId('pod-card')).toHaveCount(0)
-    expect(asked.length).toBe(2)
     // Out of its round, onto "No round"
     await b.getByTestId('pod-drag-handle').first().dragTo(none.getByTestId('round-toggle'))
+    await answerConfirm(page, true)
     await expect(b.getByTestId('pod-card')).toHaveCount(1)
-    expect(asked.length).toBe(3)
     // Grouping by round off: no grips
     await page.getByTestId('pods-round-toggle').click()
     await expect(page.getByTestId('pod-drag-handle')).toHaveCount(0)

@@ -105,11 +105,13 @@ import PodForm from './PodForm.vue'
 import { useSettingsStore } from '../stores/settings'
 import { useUiStore } from '../stores/ui'
 import { usePodsStore } from '../stores/pods'
+import { useConfirmStore } from '../stores/confirm'
 import { usePanamaStore } from '../stores/panama'
 import { t } from '../i18n'
 import RunWorkflowsModal from './RunWorkflowsModal.vue'
 
 const pods = usePodsStore()
+const confirm = useConfirmStore()
 const panama = usePanamaStore()
 /** The pods grouped by datacenter, in name order, the ones with no datacenter last; pods keep their order inside a group. */
 const dcGroups = (list) => {
@@ -159,13 +161,13 @@ const overKey = ref(null)
 const onDragStart = (e, pod) => { if (!byRound.value) return; dragId.value = pod.id; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', pod.id) }
 const onDragOver = (e, sec) => { if (!dragId.value) return; const pod = pods.pods.find((p) => p.id === dragId.value); if ((pod?.round || '') === (sec.round || '')) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; overKey.value = sec.key }
 const onDragLeave = (sec) => { if (overKey.value === sec.key) overKey.value = null }
-const onDrop = (e, sec) => {
+const onDrop = async (e, sec) => {
   const id = dragId.value; dragId.value = ''; overKey.value = null
   const pod = pods.pods.find((p) => p.id === id)
   if (!pod || (pod.round || '') === (sec.round || '')) return
   e.preventDefault()
   const msg = sec.round ? t('dashboard.confirmMove', { name: pod.name, to: sec.label }) : t('dashboard.confirmMoveOut', { name: pod.name })
-  if (window.confirm(msg)) pods.setRound(pod.id, sec.round || '')
+  if (await confirm.ask(msg, { okLabel: t('dashboard.moveOk'), danger: false })) pods.setRound(pod.id, sec.round || '')
 }
 /** Re-import opens Import Round with this round chosen. Delete clears the round on our side (after a confirmation): its pods leave it and keep running. */
 /** Run all workflows of a round: on a running pod of the round (Run Workflows opens with the round's graphs ticked); with none running, Import Round(s) opens on the round to pick pods and cards. */
@@ -173,7 +175,7 @@ const runFlows = ref(null)
 const runningPod = (sec) => sec.pods.find((p) => p.status === 'running') || null
 const runRound = (sec) => { const pod = runningPod(sec); if (pod) runFlows.value = { pod: { id: pod.id, name: pod.name }, round: sec.round }; else reimportRound(sec) }
 const reimportRound = (sec) => { hideRound(sec.round, false); ui.importRoundPreset = sec.round; ui.importRoundOpen = true }
-const deleteRound = (sec) => { if (window.confirm(t('dashboard.confirmDeleteRound', { name: sec.label, n: sec.pods.length }))) { hideRound(sec.round, true); pods.deleteRound(sec.round) } }
+const deleteRound = async (sec) => { if (await confirm.ask(t('dashboard.confirmDeleteRound', { name: sec.label, n: sec.pods.length }), { okLabel: t('dashboard.roundDeleteOk') })) { hideRound(sec.round, true); pods.deleteRound(sec.round) } }
 /** A round is renamable: the name is ours (the delivery round keeps its own); empty goes back to it. */
 const renamingRound = ref('')
 const roundDraft = ref('')

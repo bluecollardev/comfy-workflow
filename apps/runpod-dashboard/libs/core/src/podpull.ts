@@ -300,7 +300,8 @@ export function removeScript(round: string): string {
   ].join('\n')
 }
 /** What Erase can clear on a volume: a fixed list, never a path from the caller. Each is a folder whose contents go and which stays. */
-export const ERASABLE: Record<string, { path: string; label: string }> = {
+export const ERASABLE: Record<string, { path: string; label: string; json_only?: boolean }> = {
+  seedflows: { path: '/workspace/comfy-shared/workflows', label: 'Seed Graphs', json_only: true },
   rounds: { path: '/workspace/comfy-shared/temp/rounds', label: 'Pulled rounds (temp/rounds)' },
   inputs: { path: '/workspace/comfy-shared/input', label: 'Inputs (input), including the files placed from rounds' },
   workflows: { path: '/workspace/comfy-shared/workflows/rounds', label: 'Round graphs (workflows/rounds)' },
@@ -322,7 +323,9 @@ export function eraseScript(keys: string[]): string {
   for (const k of keys) {
     const e = ERASABLE[k]; if (!e) throw bad(`Not something Erase clears: ${k} (one of ${Object.keys(ERASABLE).join(', ')})`)
     lines.push(`d=${q(e.path)}`, 'case "$d" in /workspace/comfy-shared/?*) ;; *) echo "refused: $d"; exit 64 ;; esac',
-      `if [ -d "$d" ]; then b=$(du -sb "$d" 2>/dev/null | cut -f1); find "$d" -mindepth 1 -delete && echo "ERASED ${k} \${b:-0}"; else echo "ERASED ${k} 0"; fi`)
+      e.json_only
+        ? `if [ -d "$d" ]; then b=$(find "$d" -maxdepth 1 -type f -name '*.json' -exec du -cb {} + 2>/dev/null | tail -n 1 | cut -f1); find "$d" -maxdepth 1 -type f -name '*.json' -delete && echo "ERASED ${k} \${b:-0}"; else echo "ERASED ${k} 0"; fi`   // only the loose .json files, never the folders in it
+        : `if [ -d "$d" ]; then b=$(du -sb "$d" 2>/dev/null | cut -f1); find "$d" -mindepth 1 -delete && echo "ERASED ${k} \${b:-0}"; else echo "ERASED ${k} 0"; fi`)
   }
   lines.push('echo "ERASE-DONE"', '')
   return lines.join('\n')

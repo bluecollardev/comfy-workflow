@@ -87,12 +87,14 @@ import VolumeFilesModal from './VolumeFilesModal.vue'
 import EraseVolumeModal from './EraseVolumeModal.vue'
 import { useUiStore } from '../stores/ui'
 import { useVolumesStore } from '../stores/volumes'
+import { useConfirmStore } from '../stores/confirm'
 import { podsAPI } from '../api/pods'
 import { datacenterOptions } from '../utils/datacenters'
 import { t } from '../i18n'
 
 const ui = useUiStore()
 const store = useVolumesStore()
+const confirm = useConfirmStore()
 const draft = reactive({ name: '', size_gb: 100, datacenter: '' })
 const resizing = ref(null)
 const browsing = ref(null), erasing = ref(null)   // the volume whose files are open, or whose Erase is
@@ -113,7 +115,7 @@ async function doResize(v) {
   const r = await store.resize(v, Number(resizeTo.value))
   if (r.ok) resizing.value = null
 }
-function confirmRemove(v) {
-  if (window.confirm(t('volumes.confirmDelete', { name: v.name, size: v.size_gb }))) store.remove(v)
+async function confirmRemove(v) {
+  if (await confirm.ask(t('volumes.confirmDelete', { name: v.name, size: v.size_gb }), { okLabel: t('volumes.delete') })) store.remove(v)
 }
 </script>

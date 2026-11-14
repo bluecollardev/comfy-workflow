@@ -1,4 +1,4 @@
-import { test, expect, podCard } from './fixtures'
+import { test, expect, podCard, answerConfirm } from './fixtures'
 import { t } from './i18n'
 
 test.describe('dashboard', () => {
@@ -27,7 +27,6 @@ test.describe('dashboard', () => {
   })
 
   test('stop, resume and delete hit the API and refresh the list', async ({ page, api }) => {
-    page.on('dialog', (d) => d.accept())
     await page.goto('/')
     const dev = podCard(page, 'ComfyUI-Dev')
 
@@ -40,14 +39,15 @@ test.describe('dashboard', () => {
     expect(api.calls).toContainEqual(expect.objectContaining({ method: 'POST', path: '/pods/pod-aaaaaaaa/resume' }))
 
     await podCard(page, 'ComfyUI-Test').getByRole('button', { name: 'Delete' }).click()
+    await answerConfirm(page, true)
     await expect(page.locator('.card.h-100')).toHaveCount(2)
     expect(api.calls).toContainEqual(expect.objectContaining({ method: 'DELETE', path: '/pods/pod-cccccccc' }))
   })
 
   test('delete does nothing when the confirm is dismissed', async ({ page, api }) => {
-    page.on('dialog', (d) => d.dismiss())
     await page.goto('/')
     await podCard(page, 'ComfyUI-Test').getByRole('button', { name: 'Delete' }).click()
+    await answerConfirm(page, false)
     await expect(page.locator('.card.h-100')).toHaveCount(3)
     expect(api.calls.filter((c) => c.method === 'DELETE')).toHaveLength(0)
   })

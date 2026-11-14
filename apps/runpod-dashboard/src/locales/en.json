@@ -41,13 +41,14 @@
     "unassigned": "No round",
     "roundPods": "{n} pods",
     "groupByRound": "Group by round",
+    "moveOk": "Move",
     "confirmMove": "Move pod \"{name}\" to round \"{to}\"? Only this app remembers it; the pod is not touched.",
     "confirmMoveOut": "Take pod \"{name}\" out of its round? Only this app remembers it; the pod is not touched.",
     "showEmpty": "Show empty rounds ({n})",
     "factLocal": "On this PC: {n} files",
     "factVolume": "On the volume {name}: {n} files",
     "roundEmpty": "No pods in it yet: pick it on a pod's Round choice.",
-    "roundReimportLabel": "Import", "roundRun": "Run workflows", "roundRunTitle": "Run all workflows of this round on {name}", "roundRunNoPod": "No pod of this round is running: opens Import Round(s) on it, to pick the pods and cards", "roundReimport": "Import this round again", "roundDelete": "Delete this round", "confirmDeleteRound": "Delete the round \"{name}\"? Its {n} pod(s) leave it and keep running; nothing on RunPod is deleted.", "roundRename": "Rename this round (only in this app)",
+    "roundReimportLabel": "Import", "roundRun": "Run workflows", "roundRunTitle": "Run all workflows of this round on {name}", "roundRunNoPod": "No pod of this round is running: opens Import Round(s) on it, to pick the pods and cards", "roundReimport": "Import this round again", "roundDelete": "Delete this round", "roundDeleteOk": "Delete round", "confirmDeleteRound": "Delete the round \"{name}\"? Its {n} pod(s) leave it and keep running; nothing on RunPod is deleted.", "roundRename": "Rename this round (only in this app)",
     "roundRenameSave": "Save the round name",
     "groupByDatacenter": "Group by datacenter",
     "noDatacenter": "Datacenter unknown",
@@ -647,6 +648,7 @@
     "runCost": "Estimated cost",
     "logTruncated": "Older lines are not shown."
   },
+  "confirm": { "title": "Please confirm", "ok": "Confirm" },
   "volumes": {
     "browse": "Browse",
     "browseTitle": "{name}: files",

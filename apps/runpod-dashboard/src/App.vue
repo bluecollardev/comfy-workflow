@@ -66,6 +66,7 @@
     <ImportRoundModal v-if="ui.importRoundOpen" />
     <QueueModal v-if="ui.queueOpen" />
     <ToastHost />
+    <ConfirmHost />
     <WelcomeModal />
     <ConfigModal />
   </div>
@@ -92,6 +93,7 @@ import VolumesModal from './components/VolumesModal.vue'
 import HistoryModal from './components/HistoryModal.vue'
 import ImportRoundModal from './components/ImportRoundModal.vue'
 import QueueModal from './components/QueueModal.vue'
+import ConfirmHost from './components/ConfirmHost.vue'
 import { queueAPI } from './api/queue'
 import { useToastStore } from './stores/toast'
 import { t } from './i18n'

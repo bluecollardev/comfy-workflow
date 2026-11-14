@@ -1,4 +1,4 @@
-import { test, expect, modal } from './fixtures'
+import { test, expect, modal, answerConfirm } from './fixtures'
 import { t } from './i18n'
 
 const openVolumes = async (page) => {
@@ -23,9 +23,9 @@ test.describe('volumes: browse and erase', () => {
     await files.getByText('Close', { exact: true }).click()
     await dialog.locator('[data-testid="volume"][data-id="vol1"]').getByTestId('volume-erase').click()
     const er = page.getByTestId('volume-erase-modal')
-    await expect(er.locator('[data-testid="volume-erase-option"][data-key="models"] input')).not.toBeChecked()   // models are not in any default
-    await expect(er.locator('[data-testid="volume-erase-option"][data-key="output"] input')).toBeChecked()
+    await expect(er.locator('[data-testid="volume-erase-option"] input:checked')).toHaveCount(0)   // nothing is ticked for you
     await expect(er.getByTestId('volume-erase-go')).toBeDisabled()
+    for (const k of ['rounds', 'inputs', 'workflows', 'output']) await er.locator(`[data-testid="volume-erase-option"][data-key="${k}"] input`).check()
     await er.getByTestId('volume-erase-by').fill('Lucas')
     await er.getByTestId('volume-erase-name').fill('wrong')
     await expect(er.getByTestId('volume-erase-go')).toBeDisabled()   // the name has to match exactly
@@ -80,8 +80,8 @@ test.describe('volumes', () => {
     await created.getByTestId('volume-resize-input').fill('300')
     await created.getByTestId('volume-resize-save').click()
     await expect(created.getByTestId('volume-facts')).toContainText('300 GB')
-    page.on('dialog', (d) => d.accept())
     await dialog.locator('[data-testid="volume"][data-id="vol2"]').getByTestId('volume-delete').click()
+    await answerConfirm(page, true)
     await expect(dialog.locator('[data-testid="volume"][data-id="vol2"]')).toHaveCount(0)
     expect(api.calls.some((c) => c.method === 'DELETE' && c.path === '/volumes/vol2')).toBe(true)
   })

@@ -68,7 +68,8 @@ function close() { stop(); if (busy.value) volumesAPI.cancel(job.value.id).catch
 watch(() => props.volume?.id, async (id) => {
   stop(); job.value = null; plan.value = null; error.value = ''; typed.value = ''; sizes.value = {}; scanning.value = false
   if (!id) return
-  try { options.value = await volumesAPI.erasable(); picked.value = options.value.filter((o) => o.key !== 'models').map((o) => o.key) } catch (e) { error.value = errorText(e) }
+  // nothing is ticked for you: what goes is what you chose
+  try { options.value = await volumesAPI.erasable(); picked.value = [] } catch (e) { error.value = errorText(e) }
   try { plan.value = await volumesAPI.plan(id) } catch { /* the erase says why */ }
 }, { immediate: true })
 onBeforeUnmount(stop)

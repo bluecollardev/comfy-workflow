@@ -467,6 +467,8 @@ describe('browse and erase one volume', () => {
     expect(job).toMatchObject({ kind: 'erase', state: 'done', freed: { rounds: 12345, output: 0 } })
     expect(calls[0].script).toContain("d='/workspace/comfy-shared/temp/rounds'"); expect(calls[0].script).toContain("d='/workspace/comfy-shared/output'")
     expect(calls[0].script).not.toContain('/models'); expect(calls[0].script).toContain('-mindepth 1 -delete')   // contents only, never the folder
+    const seed = podpull.eraseScript(['seedflows'])
+    expect(seed).toContain("-maxdepth 1 -type f -name '*.json' -delete"); expect(seed).not.toContain('-mindepth 1')   // only the loose .json files, never the rounds folder inside workflows
     expect(podpull.knownState('vol1')).toBeNull()   // what was known about its rounds is gone
   })
   it('a second job on the volume is refused while one runs; the scripts refuse a path outside the shared tree', async () => {

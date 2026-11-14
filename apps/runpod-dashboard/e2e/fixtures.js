@@ -370,7 +370,7 @@ export async function mockApi(page, state) {
     if (method === 'GET' && path === '/credits') return state.credits === null ? json({ detail: 'RunPod did not report the account balance' }, 502) : json(state.credits ?? { balance: 36.42, spend_per_hr: 0.053, spend_limit: 80, hours_left: 687.2, level: 'ok' })
     if (method === 'GET' && path === '/volumes') return json(Object.values(state.volumes).map((v) => ({ ...v, is_default: v.id === state.mounts.config.network_volume_id })))
     // one volume: browse (a listing by a pod) and erase
-    if (method === 'GET' && path === '/volumes/erasable') return json([{ key: 'rounds', label: 'Pulled rounds (temp/rounds)', path: '/workspace/comfy-shared/temp/rounds' }, { key: 'inputs', label: 'Inputs (input), including the files placed from rounds', path: '/workspace/comfy-shared/input' }, { key: 'workflows', label: 'Round graphs (workflows/rounds)', path: '/workspace/comfy-shared/workflows/rounds' }, { key: 'output', label: 'Outputs (output)', path: '/workspace/comfy-shared/output' }, { key: 'models', label: 'Models (models)', path: '/workspace/comfy-shared/models' }])
+    if (method === 'GET' && path === '/volumes/erasable') return json([{ key: 'seedflows', label: 'Seed Graphs', path: '/workspace/comfy-shared/workflows' }, { key: 'rounds', label: 'Pulled rounds (temp/rounds)', path: '/workspace/comfy-shared/temp/rounds' }, { key: 'inputs', label: 'Inputs (input), including the files placed from rounds', path: '/workspace/comfy-shared/input' }, { key: 'workflows', label: 'Round graphs (workflows/rounds)', path: '/workspace/comfy-shared/workflows/rounds' }, { key: 'output', label: 'Outputs (output)', path: '/workspace/comfy-shared/output' }, { key: 'models', label: 'Models (models)', path: '/workspace/comfy-shared/models' }])
     if (method === 'GET' && (m = path.match(/^\/volumes\/([^/]+)\/plan$/))) return json({ route: 'temporary', gpu: 'RTX 2000 Ada', price_per_hour: 0.24, pod: null })
     if (method === 'POST' && (m = path.match(/^\/volumes\/([^/]+)\/browse$/))) { state.volumeJob = { id: 'vj1', kind: 'browse', state: 'done', pod_name: 'ComfyUI-Pull-vol', volume_id: m[1], listing: [{ path: '/workspace', bytes: 5e9 }, { path: '/workspace/comfy-shared', bytes: 4e9 }, { path: '/workspace/comfy-shared/temp', bytes: 3e9 }, { path: '/workspace/comfy-shared/temp/rounds', bytes: 3e9 }, { path: '/workspace/comfy-shared/output', bytes: 1e9 }, { path: '/workspace/comfy-shared/models', bytes: 6e8 }] }; return json({ ...state.volumeJob, state: 'creating' }) }
     if (method === 'POST' && (m = path.match(/^\/volumes\/([^/]+)\/erase$/))) { state.erased = { id: m[1], ...body }; state.volumeJob = { id: 'vj2', kind: 'erase', state: 'done', volume_id: m[1], freed: Object.fromEntries((body.keys || []).map((k) => [k, 1e9])) }; return json({ ...state.volumeJob, state: 'creating' }) }
@@ -698,3 +698,13 @@ export const cfgTab = async (root, key) => {
   if (await tab.count()) await tab.click()
 }
 export const modal = (page, text) => page.locator('.modal.show', { hasText: text })
+
+/** The in-app confirmation (stores/confirm.js): waits for it, reads what it asks, answers Yes (OK) or No (Cancel), and returns the question. */
+export async function answerConfirm(page, yes = true) {
+  const m = page.getByTestId('confirm-modal')
+  await expect(m).toBeVisible()
+  const msg = await m.getByTestId('confirm-message').innerText()
+  await m.getByTestId(yes ? 'confirm-ok' : 'confirm-cancel').click()
+  await expect(m).toBeHidden()
+  return msg
+}

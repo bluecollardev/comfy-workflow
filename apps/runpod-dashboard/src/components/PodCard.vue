@@ -222,6 +222,7 @@ import ConfigModal from './ConfigModal.vue'
 import { usePodsStore } from '../stores/pods'
 import { useToastStore } from '../stores/toast'
 import { useUiStore } from '../stores/ui'
+import { useConfirmStore } from '../stores/confirm'
 import { useVolumesStore } from '../stores/volumes'
 import { barValue, detailParts, fresh } from '../sync-progress'
 const props = defineProps({
@@ -283,6 +284,7 @@ const showLogs = ref(false)
 const showSync = ref(false)
 const showRunFlows = ref(false)
 const ui = useUiStore()
+const confirm = useConfirmStore()
 /** Import Shot Pack: its own modal (a package folder into ComfyUI-Shared through an adapter; Sync then puts it on this pod, ADR-008). */
 /** One button: the modal opens on the source picker (a folder or zip on this PC, or the Panama bucket). */
 const openImport = () => { ui.importPod = { id: props.pod.id, name: props.pod.name }; ui.importOpen = true }
@@ -333,12 +335,12 @@ async function applyConfig(cfg) {
   if (r.ok) ownConfig.value = cfg
 }
 
-function confirmRecreate() {
-  if (window.confirm(t('pod.confirmRecreate', { name: props.pod.name }))) pods.recreate(props.pod.id)
+async function confirmRecreate() {
+  if (await confirm.ask(t('pod.confirmRecreate', { name: props.pod.name }), { okLabel: t('pod.recreate'), danger: false })) pods.recreate(props.pod.id)
 }
 
-function confirmDelete() {
-  if (window.confirm(t('pod.confirmDelete', { name: props.pod.name }))) {
+async function confirmDelete() {
+  if (await confirm.ask(t('pod.confirmDelete', { name: props.pod.name }), { okLabel: t('pod.delete') })) {
     emit('delete')
   }
 }

@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures'
+import { test, expect, answerConfirm } from './fixtures'
 
 // Import Round and Queue (docs/ADR-038): a call to action at the right of the top bar; one approval queues a pull and a run per shot; the Queue shows each task with its state and error.
 test('Import Round: three steps - rounds, shots, cards - then Import with the approval in the footer; the Queue shows the tasks', async ({ page, api }) => {
@@ -216,12 +216,12 @@ test('Queue: Purge finished asks first; No keeps everything, Yes removes finishe
   await page.goto('/'); await page.getByTestId('open-queue').click()
   const q = page.getByTestId('queue-modal')
   await expect(q.getByTestId('queue-import')).toHaveCount(2)
-  page.once('dialog', (d) => d.dismiss())   // the user says no
   await q.getByTestId('queue-purge').click()
+  await answerConfirm(page, false)   // the user says no
   await expect(q.getByTestId('queue-import')).toHaveCount(2)
   expect(api.state.purged).toBeUndefined()
-  page.once('dialog', (d) => { expect(d.message()).toContain('1 finished'); d.accept() })   // the user says yes
   await q.getByTestId('queue-purge').click()
+  expect(await answerConfirm(page, true)).toContain('1 finished')   // the user says yes
   await expect(q.getByTestId('queue-import')).toHaveCount(1)
   await expect(q.getByTestId('queue-import')).toContainText('round-b')
   expect(api.state.purged).toEqual({ confirmed: true })
@@ -257,20 +257,20 @@ test('Queue: Cancel all asks first; No leaves the tasks, Yes cancels the import'
   api.state.queue = { imports: [{ id: 'a', round: 'round-a', approved_by: 'L', created_at: '2026-11-09T01:00:00Z', state: 'active', spent_usd: 0, cap_enabled: true, cost_cap_usd: 10, max_pods: 2, counts: {} }], tasks: [{ id: 't1', import_id: 'a', round: 'round-a', shot: 'x', kind: 'run', state: 'running' }, { id: 't2', import_id: 'a', round: 'round-a', shot: 'y', kind: 'run', state: 'waiting' }], active: 2 }
   await page.goto('/'); await page.getByTestId('open-queue').click()
   const q = page.getByTestId('queue-modal')
-  page.once('dialog', (d) => { expect(d.message()).toContain('2 unfinished'); d.dismiss() })   // no
   await q.getByTestId('queue-cancel-import').click()
+  expect(await answerConfirm(page, false)).toContain('2 unfinished')   // no
   await page.waitForTimeout(300); expect(calls).toHaveLength(0)
-  page.once('dialog', (d) => d.accept())   // yes
   await q.getByTestId('queue-cancel-import').click()
+  await answerConfirm(page, true)   // yes
   await expect.poll(() => calls.length).toBe(1)
   // and the cancel of one task asks too
   const one = []
   await page.route('**/queue/tasks/*/cancel', async (r) => { one.push(r.request().url()); await r.fulfill({ json: {} }) })
   const row = q.getByTestId('queue-task').filter({ hasText: 'x' }).first()
-  page.once('dialog', (d) => { expect(d.message()).toContain('run x'); d.dismiss() })
   await row.getByTestId('queue-cancel').click()
+  expect(await answerConfirm(page, false)).toContain('run x')
   await page.waitForTimeout(300); expect(one).toHaveLength(0)
-  page.once('dialog', (d) => d.accept())
   await row.getByTestId('queue-cancel').click()
+  await answerConfirm(page, true)
   await expect.poll(() => one.length).toBe(1)
 })

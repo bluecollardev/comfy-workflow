@@ -58,9 +58,11 @@ import { queueAPI } from '../api/queue'
 import { errorText } from '../stores/toast'
 import { useUiStore } from '../stores/ui'
 import { useI18n } from 'vue-i18n'
+import { useConfirmStore } from '../stores/confirm'
 
 const ui = useUiStore()
 const { t } = useI18n()
+const confirm = useConfirmStore()
 const open = computed({ get: () => ui.queueOpen, set: (v) => { ui.queueOpen = v } })
 const view = ref({ imports: [], tasks: [], active: 0 }), error = ref('')
 let timer = null
@@ -69,7 +71,7 @@ const newestFirst = computed(() => [...view.value.imports].sort((a, b) => String
 /** Imports with nothing left to run: the ones Purge removes. */
 const finished = computed(() => view.value.imports.filter((i) => !view.value.tasks.some((t) => t.import_id === i.id && ['waiting', 'running', 'held'].includes(t.state))))
 async function purge() {
-  if (!window.confirm(t('queue.confirmPurge', { n: finished.value.length }))) return   // the user says yes first
+  if (!(await confirm.ask(t('queue.confirmPurge', { n: finished.value.length }), { okLabel: t('queue.purge') }))) return   // the user says yes first
   await act(() => queueAPI.purge({ confirmed: true }))
 }
 const open_ = ref(new Set())
@@ -80,13 +82,13 @@ const tasksOf = (imp) => view.value.tasks.filter((t) => t.import_id === imp.id)
 const badge = (s) => ({ done: 'text-bg-success', failed: 'text-bg-danger', running: 'text-bg-primary', waiting: 'text-bg-secondary', held: 'text-bg-warning', cancelled: 'text-bg-dark', interrupted: 'text-bg-warning' }[s] || 'text-bg-secondary')
 async function refresh() { try { view.value = await queueAPI.list(); error.value = '' } catch (e) { error.value = errorText(e) } }
 /** Cancel all asks first: running pulls and runs stop and their pods are deleted. */
-function cancelAll(imp) {
+async function cancelAll(imp) {
   const n = tasksOf(imp).filter((x) => ['waiting', 'running', 'held'].includes(x.state)).length
-  if (window.confirm(t('queue.confirmCancelAll', { n, round: imp.round }))) act(() => queueAPI.cancelImport(imp.id))
+  if (await confirm.ask(t('queue.confirmCancelAll', { n, round: imp.round }), { okLabel: t('queue.cancelAll') })) act(() => queueAPI.cancelImport(imp.id))
 }
 /** Cancel on one task asks first too: a running one stops and its pod goes. */
-function cancelTask(task) {
-  if (window.confirm(t('queue.confirmCancel', { what: `${task.kind}${task.shot ? ` ${task.shot}` : ''}`, round: task.round }))) act(() => queueAPI.cancelTask(task.id))
+async function cancelTask(task) {
+  if (await confirm.ask(t('queue.confirmCancel', { what: `${task.kind}${task.shot ? ` ${task.shot}` : ''}`, round: task.round }), { okLabel: t('queue.cancel') })) act(() => queueAPI.cancelTask(task.id))
 }
 async function act(fn) { try { await fn() } catch (e) { error.value = errorText(e) } await refresh() }
 watch(() => ui.queueVersion, refresh)   // an import was just queued: show it now, not at the next tick
