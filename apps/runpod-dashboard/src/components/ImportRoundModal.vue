@@ -60,18 +60,33 @@
 
     <!-- 3. Choose cards for the shots, and the volume -->
     <template v-else>
+      <label class="d-flex align-items-center gap-2 small mb-3"><input v-model="runWorkflows" type="checkbox" class="form-check-input mt-0" data-testid="import-round-run" />{{ $t('importRound.runWorkflows') }}</label>
+      <div v-if="!runWorkflows" class="small text-body-secondary mb-3" data-testid="import-round-no-cards">{{ $t('importRound.noCards') }}</div>
+      <!-- Choose Card: the same card and datacenter table as Create Pod; the card goes to every shot, and the datacenter picks the network volume -->
+      <div v-if="runWorkflows" class="mb-3" data-testid="import-round-choose-card">
+        <div class="d-flex align-items-center gap-2 mb-1">
+          <div class="fw-semibold small">{{ $t('importRound.cardAll') }}</div>
+          <BButton variant="outline-light" size="sm" class="py-0 ms-auto" :title="$t('form.datacenterRefresh')" :disabled="dcLoading" data-testid="import-round-dc-refresh" @click="loadDcs(true)"><i class="fa-solid fa-rotate" :class="{ 'fa-spin': dcLoading }"></i></BButton>
+        </div>
+        <DatacenterTable testid="import-round-dc" :list="dcList" :model-value="dcChoice" :selected-card="allCard" :card-label="allCardLabel" gpu-testid="import-round-dc-gpu" @update:model-value="dcChoice = $event" @pick="onPickCard" @auto="clearAllCards" />
+      </div>
       <div class="d-flex align-items-center gap-2 mb-3 small flex-wrap">
         <label class="mb-0 fw-semibold" for="ir-volume">{{ $t('importRound.volume') }}</label>
         <BFormSelect id="ir-volume" v-model="volumeId" :options="volumeOptions" size="sm" style="max-width: 30rem" data-testid="import-round-volume" />
-        <div v-if="volumeProblem" class="text-warning w-100" data-testid="import-round-volume-problem"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ volumeProblem }}</div>
+        <div v-if="dcChoice && volumesIn(dcChoice).length" class="w-100" data-testid="import-round-dc-volumes">   <!-- after a card at a datacenter: the volumes that live there -->
+          <div class="text-body-secondary mb-1">{{ $t('importRound.volumesIn', { dc: dcChoice }) }}</div>
+          <div class="d-flex flex-wrap gap-2">
+            <BButton v-for="v in volumesIn(dcChoice)" :key="v.id" size="sm" :variant="volumeId === v.id ? 'primary' : 'outline-light'" :aria-pressed="volumeId === v.id" data-testid="import-round-dc-volume" :data-volume="v.id" @click="volumeId = v.id">
+              <i class="fa-solid fa-hard-drive me-1"></i>{{ v.name }} · {{ v.size_gb }} GB<template v-if="v.is_default"> · {{ $t('importRound.volumeDefault') }}</template>
+            </BButton>
+          </div>
+        </div>
+        <div v-if="dcNoVolume" class="text-warning w-100" data-testid="import-round-dc-novolume"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ $t('importRound.dcNoVolume', { dc: dcChoice }) }}
+          <BButton variant="link" size="sm" class="p-0 ms-1 align-baseline" data-testid="import-round-dc-newvolume" @click="newVolumeHere">{{ $t('form.datacenterNewVolume', { dc: dcChoice }) }}</BButton></div>
+        <div v-else-if="volumeProblem" class="text-warning w-100" data-testid="import-round-volume-problem"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ volumeProblem }}</div>
         <div v-else-if="volumeId && volumeId !== defaultVolume" class="text-body-secondary w-100" data-testid="import-round-volume-note">{{ $t('importRound.volumeNote') }}</div>
       </div>
-      <label class="d-flex align-items-center gap-2 small mb-3"><input v-model="runWorkflows" type="checkbox" class="form-check-input mt-0" data-testid="import-round-run" />{{ $t('importRound.runWorkflows') }}</label>
-      <div v-if="!runWorkflows" class="small text-body-secondary mb-3" data-testid="import-round-no-cards">{{ $t('importRound.noCards') }}</div>
-      <div v-if="runWorkflows" class="d-flex align-items-center gap-2 mb-2 small">
-        <label class="mb-0" for="ir-card-all">{{ $t('importRound.cardAll') }}</label>
-        <BFormSelect id="ir-card-all" :model-value="''" :options="cardOptions" size="sm" style="max-width: 24rem" data-testid="import-round-card-all" @update:model-value="setAllCards" />
-      </div>
+      <div v-if="runWorkflows" class="small fw-semibold mb-1">{{ $t('importRound.cardPerShot') }}</div>
       <div v-for="[r, pl] in (runWorkflows ? plans : [])" :key="r" class="mb-2" data-testid="import-round-card-group" :data-round="r">
         <div v-if="plans.size > 1" class="small text-body-secondary font-monospace">{{ r }}</div>
         <div v-for="s in [...(picked.get(r) || [])]" :key="s" class="d-flex align-items-center gap-2 small mb-1" data-testid="import-round-card-row" :data-shot="s">
@@ -126,6 +141,7 @@ import { errorText } from '../stores/toast'
 import { t } from '../i18n'
 import { useUiStore } from '../stores/ui'
 import RoundFilesModal from './RoundFilesModal.vue'
+import DatacenterTable from './DatacenterTable.vue'
 import { useImportsStore } from '../stores/imports'
 
 const ui = useUiStore()
@@ -176,6 +192,19 @@ const goTo = async (n) => { if (!canGoTo(n)) { error.value = stepWhy(n); return 
 const next = async () => { if (!canNext.value) { error.value = step.value === 2 && loadingPlan.value ? t('importRound.loadingPlan') : step.value === 1 ? t('importRound.hintPick') : t('importRound.hintShots'); return } error.value = ''; step.value++; if (step.value === 3) { loadVolumes(); await replan() } }
 const hint = computed(() => (!chosen.value.size ? t('importRound.hintPick') : step.value < 3 ? t('importRound.hintSteps') : !volumeId.value ? t('importRound.volumeNone') : !totalShots.value ? t('importRound.hintShots') : t('importRound.hintApprove')))
 const volumes = ref([]), volumeId = ref(''), defaultVolume = ref('')
+// Choose Card (as in Create Pod): a card at a datacenter. The card goes to every shot; the datacenter picks the volume that lives there.
+const dcList = ref([]), dcLoading = ref(false), dcChoice = ref(''), allCard = ref(''), allCardLabel = ref('')
+async function loadDcs(fresh = false) { dcLoading.value = true; try { dcList.value = (await podsAPI.datacenters(fresh)).datacenters || [] } catch { /* the per-shot choices still work */ } finally { dcLoading.value = false } }
+const volumesIn = (dc) => volumes.value.filter((v) => v.datacenter === dc)
+function onPickCard({ dc, card }) {
+  if (card) { allCard.value = card.key; allCardLabel.value = `${card.name}${card.vram ? ` ${card.vram} GB` : ''}`; setAllCards(card.key) }
+  const vs = volumesIn(dc)
+  if (dc) volumeId.value = vs.length ? (vs.find((v) => v.is_default) || vs[0]).id : ''   // none there: no volume is chosen (a pod cannot leave its volume's datacenter), so Import waits for one
+}
+function clearAllCards() { allCard.value = ''; allCardLabel.value = ''; const n = { ...cards.value }; for (const [r, set] of picked.value) for (const sh of set) delete n[`${r}::${sh}`]; cards.value = n }
+const dcNoVolume = computed(() => !!dcChoice.value && volumes.value.length > 0 && !volumesIn(dcChoice.value).length)
+watch(volumeId, (id) => { const v = volumes.value.find((x) => x.id === id); if (v) dcChoice.value = v.datacenter })   // choosing a volume says where the pods will be
+const newVolumeHere = () => { ui.volumeDc = dcChoice.value; ui.volumesOpen = true }
 const volumeOptions = computed(() => [{ value: '', text: t('importRound.volumePick') }, ...volumes.value.map((v) => ({ value: v.id, text: `${v.name} · ${v.size_gb} GB · ${v.datacenter}${v.is_default ? ` · ${t('importRound.volumeDefault')}` : ''}` }))])
 const volumeProblem = computed(() => (volumes.value.length && !volumeId.value ? t('importRound.volumeNone') : !volumes.value.length && volumesLoaded.value ? t('importRound.volumeNoneAtAll') : ''))
 const volumesLoaded = ref(false)
@@ -197,7 +226,7 @@ const shotCount = (r) => picked.value.get(r)?.size || 0
 const totalShots = computed(() => [...plans.value.keys()].reduce((a, r) => a + shotCount(r), 0))
 const canStart = computed(() => step.value === 3 && !!volumeId.value && totalShots.value > 0 && approvedBy.value.trim().length > 0)
 
-onMounted(async () => { try { gpuMenu.value = ((await podsAPI.gpus('')).gpus || []).filter((g) => g.value !== 'auto') } catch { /* the plain pool choice still works */ }
+onMounted(async () => { loadDcs(); try { gpuMenu.value = ((await podsAPI.gpus('')).gpus || []).filter((g) => g.value !== 'auto') } catch { /* the plain pool choice still works */ }
   try { const r = await panamaAPI.rounds(); rounds.value = Array.isArray(r) ? r : r.rounds || [] } catch (e) { error.value = errorText(e) } })
 watch(() => ui.importRoundOpen, (o) => { if (o) step.value = 1; if (o && ui.importRoundPreset) { toggleRound(ui.importRoundPreset, true); ui.importRoundPreset = '' } }, { immediate: true })   // re-import: the round is already ticked
 const followPods = () => { if (!podsEdited.value) maxPods.value = Math.min(20, Math.max(1, ...[...plans.value.keys()].map(shotCount))) }

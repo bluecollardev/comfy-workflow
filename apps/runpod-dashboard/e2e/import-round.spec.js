@@ -2,6 +2,7 @@ import { test, expect } from './fixtures'
 
 // Import Round and Queue (docs/ADR-038): a call to action at the right of the top bar; one approval queues a pull and a run per shot; the Queue shows each task with its state and error.
 test('Import Round: three steps - rounds, shots, cards - then Import with the approval in the footer; the Queue shows the tasks', async ({ page, api }) => {
+  api.state.datacenters.datacenters[2].cards = [{ key: 'rtx6000ada', name: 'RTX 6000 Ada', vram: 48, price: 1.09, stock: 'Low' }]   // a datacenter with a card but no volume of ours
   await page.goto('/')
   await expect(page.getByTestId('open-queue')).toBeVisible()
   await page.getByTestId('open-import-round').click()
@@ -46,7 +47,20 @@ test('Import Round: three steps - rounds, shots, cards - then Import with the ap
   await expect(dlg.getByTestId('import-round-run')).toBeChecked()   // Run each shot's workflows is on step 3
   await dlg.getByTestId('import-round-run').uncheck(); await expect(dlg.getByTestId('import-round-card')).toHaveCount(0)   // off: no cards to choose
   await dlg.getByTestId('import-round-run').check()
+  // Choose Card: the Create Pod table. A card at a datacenter sets the card of every shot, and the volume that lives in that datacenter is picked
+  const table = dlg.getByTestId('import-round-choose-card')
+  await expect(table).toContainText('Choose Card')
+  await table.locator('[data-testid="dc-card-row"][data-card="RTX 4090"] [data-testid="dc-chip"][data-dc="EU-RO-1"]').click()
+  await expect(dlg.getByTestId('import-round-card').first()).toHaveValue('rtx4090')
+  await expect(dlg.getByTestId('import-round-volume')).toHaveValue('vol1')   // the volume in EU-RO-1
+  await expect(dlg.getByTestId('import-round-dc-volumes')).toContainText('Network volumes in EU-RO-1')   // and the volumes there are listed
+  await expect(dlg.getByTestId('import-round-dc-volume').first()).toHaveAttribute('aria-pressed', 'true')
+  await table.locator('[data-testid="dc-card-row"][data-card="RTX 6000 Ada"] [data-testid="dc-chip"][data-dc="US-KS-2"]').click()
+  await expect(dlg.getByTestId('import-round-dc-novolume')).toBeVisible()   // no volume in US-KS-2: it says so, and offers to make one
+  await dlg.getByTestId('import-round-volume').selectOption('vol1')   // choosing a volume goes back to its datacenter
+  await expect(table.getByTestId('dc-table-chosen')).toContainText('EU-RO-1')
   await dlg.getByTestId('import-round-card').selectOption('rtxpro6000')
+  await dlg.getByTestId('import-round-volume').selectOption('')
   await expect(dlg.getByTestId('import-round-volume-problem')).toBeVisible()   // no default volume: one has to be picked
   await dlg.getByTestId('import-round-approved-by').fill('Lucas')
   await expect(dlg.getByTestId('import-round-start')).toBeDisabled()   // no volume yet
