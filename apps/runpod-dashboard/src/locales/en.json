@@ -689,6 +689,8 @@
     "browseIntro": "A volume cannot be read without a pod. Browse lists its folders (three levels, with sizes) and changes nothing: it uses a pod of yours that is on the volume, else starts a short-lived one of the cheapest card and deletes it afterwards.",
     "browseStart": "List the volume",
     "browseSummary": "{size} in total, {n} folders",
+    "runsOnS3": "It goes through RunPod's S3 API from this PC: no pod, no cost.",
+    "s3Note": { "keys": "Add RunPod S3 keys in Default Configuration and this volume is read without a pod.", "datacenter": "This datacenter has no S3 API, so a pod does the work." },
     "runsOnYours": "It runs on your pod {pod}.",
     "runsOnTemp": "It runs on a short-lived {gpu} pod at ${price}/h (a few minutes), deleted afterwards.",
     "jobWorking": "{state} {pod}…",

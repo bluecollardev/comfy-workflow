@@ -3,7 +3,7 @@
     <BAlert v-if="error" :model-value="true" variant="danger" data-testid="volume-files-error">{{ error }}</BAlert>
     <div v-if="!job && !starting" data-testid="volume-files-intro">
       <p class="small mb-2">{{ $t('volumes.browseIntro') }}</p>
-      <div v-if="plan" class="small text-body-secondary mb-3" data-testid="volume-files-plan">{{ plan.route === 'active' ? $t('volumes.runsOnYours', { pod: plan.pod?.name }) : $t('volumes.runsOnTemp', { gpu: plan.gpu, price: plan.price_per_hour ?? '?' }) }}</div>
+      <div v-if="plan" class="small text-body-secondary mb-3" data-testid="volume-files-plan">{{ plan.route === 's3' ? $t('volumes.runsOnS3') : plan.route === 'active' ? $t('volumes.runsOnYours', { pod: plan.pod?.name }) : $t('volumes.runsOnTemp', { gpu: plan.gpu, price: plan.price_per_hour ?? '?' }) }}<span v-if="plan.s3_note" class="d-block" data-testid="volume-s3-note">{{ $t(`volumes.s3Note.${plan.s3_note}`) }}</span></div>
       <BButton variant="primary" size="sm" data-testid="volume-files-start" @click="start"><i class="fa-solid fa-folder-tree me-1"></i>{{ $t('volumes.browseStart') }}</BButton>
     </div>
     <div v-else-if="!listing" class="small text-body-secondary" data-testid="volume-files-working"><BSpinner small class="me-2" />{{ $t('volumes.jobWorking', { state: job?.state || 'creating', pod: job?.pod_name || '' }) }}</div>

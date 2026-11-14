@@ -13,7 +13,7 @@
       <BButton variant="outline-light" size="sm" :disabled="busy || scanning" data-testid="volume-erase-scan" @click="scan"><BSpinner v-if="scanning" small class="me-1" /><i v-else class="fa-solid fa-ruler me-1"></i>{{ $t('volumes.eraseScan') }}</BButton>
       <span class="text-body-secondary">{{ $t('volumes.eraseScanNote') }}</span>
     </div>
-    <div v-if="plan" class="small text-body-secondary mb-3" data-testid="volume-erase-plan">{{ plan.route === 'active' ? $t('volumes.runsOnYours', { pod: plan.pod?.name }) : $t('volumes.runsOnTemp', { gpu: plan.gpu, price: plan.price_per_hour ?? '?' }) }}</div>
+    <div v-if="plan" class="small text-body-secondary mb-3" data-testid="volume-erase-plan">{{ plan.route === 's3' ? $t('volumes.runsOnS3') : plan.route === 'active' ? $t('volumes.runsOnYours', { pod: plan.pod?.name }) : $t('volumes.runsOnTemp', { gpu: plan.gpu, price: plan.price_per_hour ?? '?' }) }}<span v-if="plan.s3_note" class="d-block" data-testid="volume-s3-note">{{ $t(`volumes.s3Note.${plan.s3_note}`) }}</span></div>
     <div class="row g-2 align-items-center mb-2">
       <div class="col-sm-5"><label class="small mb-0" for="er-by">{{ $t('importRound.approvedBy') }}</label><BFormInput id="er-by" v-model="approvedBy" size="sm" data-testid="volume-erase-by" /></div>
       <div class="col-sm-7"><label class="small mb-0" for="er-name">{{ $t('volumes.eraseType', { name: volume?.name || '' }) }}</label><BFormInput id="er-name" v-model="typed" size="sm" autocomplete="off" data-testid="volume-erase-name" /></div>

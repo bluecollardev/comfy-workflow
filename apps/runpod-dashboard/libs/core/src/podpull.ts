@@ -114,7 +114,11 @@ function volumeJobCapability(): { available: boolean; reason: string } {
   return { available: true, reason: '' }
 }
 
+export interface AwsResult { code: number | null; stdout: string; stderr: string }
+export type AwsRunner = (args: string[], env: Record<string, string>) => Promise<AwsResult>
 export interface Opts {
+  /** Runs the `aws` CLI (RunPod's S3 API for a volume). Tests inject one. */
+  aws?: AwsRunner
   client?: rp.RunPodClient
   /** Runs a script on a pod over SSH. Tests inject one; the default is `ssh` itself. */
   ssh?: SshRunner
@@ -150,7 +154,9 @@ async function volumeOf(opts: Opts): Promise<Volume | null> {
 }
 
 export interface PodPlan {
-  round: string; route: 'active' | 'temporary'; pod: { id: string; name: string; price_per_hour: number | null } | null
+  round: string; route: 'active' | 'temporary' | 's3'; pod: { id: string; name: string; price_per_hour: number | null } | null
+  /** A volume job that went through a pod: why it did not use RunPod's S3 API (the volume's datacenter has none, or no S3 keys are set) */
+  s3_note?: 'datacenter' | 'keys'
   gpu: string; price_per_hour: number | null; bytes: number; idle_stop_minutes: number
   /** Beyond the contract: how long the idle timer is held for this job (decision 2d), and how many files the bucket has under the round. */
   ceiling_minutes: number; files: number; volume: Volume | null
@@ -235,7 +241,7 @@ export async function plan(round: string, opts: Opts = {}): Promise<PodPlan> {
 
 export type JobState = 'creating' | 'starting' | 'pulling' | 'verifying' | 'placing' | 'deleting' | 'done' | 'failed' | 'cancelled'
 export interface PodJob {
-  id: string; round: string; kind: 'pull' | 'remove' | 'browse' | 'erase'; route: 'active' | 'temporary'; pod_id: string | null; pod_name: string | null
+  id: string; round: string; kind: 'pull' | 'remove' | 'browse' | 'erase'; route: 'active' | 'temporary' | 's3'; pod_id: string | null; pod_name: string | null
   /** The card the pod actually has and its price per hour, once the pod exists (the Queue shows them). */
   gpu?: string; price_per_hour?: number | null
   /** A volume job (`browse`, `erase`): the volume, what a browse found (folders with their sizes), what an erase was asked to clear and how many bytes it freed from each. */
@@ -414,7 +420,7 @@ export const runSsh: SshRunner = ({ host, port, script, onLine, signal }) => new
 const newJob = (round: string, kind: PodJob['kind'], p: PodPlan, now: Date): Internal => {
   // A pod job always has a route and a pod name from the start (the UI tells it from a local job by `route`, and shows the name at once): the user's pod on the active route,
   // the name the temporary pod will be created with on the other.
-  const job: PodJob = { id: `${kind}-${round}-${now.getTime()}`, round, kind, route: p.route, pod_id: p.route === 'active' ? p.pod!.id : null, pod_name: p.route === 'active' ? p.pod!.name : podName(round, now), state: 'creating', files: 0, lines: [], started_at: now.toISOString(), bytes_done: 0, bytes_total: null, rate: null, recent: [] }
+  const job: PodJob = { id: `${kind}-${round}-${now.getTime()}`, round, kind, route: p.route, pod_id: p.route === 'active' ? p.pod!.id : null, pod_name: p.route === 'active' ? p.pod!.name : p.route === 's3' ? null : podName(round, now), state: 'creating', files: 0, lines: [], started_at: now.toISOString(), bytes_done: 0, bytes_total: null, rate: null, recent: [] }
   const i: Internal = { job, cancelled: false, abort: new AbortController(), wake: null, seen: new Set(), bad: [], totals: null, outcome: null, plan: p }
   jobs.set(job.id, i)
   return i
@@ -626,9 +632,50 @@ async function simulate(i: Internal, opts: Opts) {
   }
 }
 
+/** Browse and Erase through RunPod's S3 API (the bucket is the volume id): `aws s3 ls` / `aws s3 rm` from this PC, the same job shape as over a pod. */
+async function runS3(i: Internal, opts: Opts) {
+  const j = i.job, vol = i.plan.volume!
+  const a = s3Access(vol); if (!a.ok) throw new CoreError(400, `RunPod's S3 API is not available for this volume (${a.why}).`)
+  const aws = opts.aws ?? defaultAws
+  const env = { AWS_ACCESS_KEY_ID: a.id, AWS_SECRET_ACCESS_KEY: a.secret }
+  const common = ['--endpoint-url', a.endpoint, '--region', a.region]
+  const run = async (args: string[]) => { const r = await aws([...args, ...common], env); if (r.code !== 0) throw new CoreError(502, `RunPod's S3 API: ${(r.stderr || r.stdout).trim().split('\n').pop() || `aws exited ${r.code}`}`); return r.stdout }
+  const sizes = async () => {   // every object: bytes by key
+    const out = await run(['s3', 'ls', `s3://${a.bucket}/`, '--recursive'])
+    return out.split('\n').map((l) => /^\S+\s+\S+\s+(\d+)\s+(.+)$/.exec(l)).filter((m): m is RegExpExecArray => !!m).map((m) => ({ bytes: Number(m[1]), key: m[2] }))
+  }
+  j.state = 'verifying'
+  if (j.kind === 'browse') {
+    const dirs = new Map<string, number>(); let total = 0
+    for (const o of await sizes()) {
+      total += o.bytes
+      const parts = o.key.split('/').slice(0, -1)
+      for (let d = 1; d <= Math.min(3, parts.length); d++) { const k = parts.slice(0, d).join('/'); dirs.set(k, (dirs.get(k) ?? 0) + o.bytes) }
+    }
+    j.listing = [{ path: '/workspace', bytes: total }, ...[...dirs.entries()].sort(([x], [y]) => x.localeCompare(y)).slice(0, 5000).map(([k, b]) => ({ path: `/workspace/${k}`, bytes: b }))]
+    i.outcome = 'removed'; return
+  }
+  if (j.kind === 'erase') {
+    j.state = 'deleting'
+    const all = await sizes()
+    for (const key of j.erase_keys ?? []) {
+      const e = ERASABLE[key]; if (!e) throw bad(`Not something Erase clears: ${key}`)
+      const prefix = e.path.replace(/^\/workspace\//, '')   // /workspace/comfy-shared/input -> comfy-shared/input
+      const mine = all.filter((o) => (e.json_only ? o.key.startsWith(`${prefix}/`) && !o.key.slice(prefix.length + 1).includes('/') && o.key.endsWith('.json') : o.key.startsWith(`${prefix}/`)))
+      const bytes = mine.reduce((n, o) => n + o.bytes, 0)
+      if (mine.length) await run(['s3', 'rm', `s3://${a.bucket}/${prefix}/`, '--recursive', ...(e.json_only ? ['--exclude', '*', '--include', '*.json', '--exclude', '*/*'] : [])])
+      ;(j.freed ||= {})[key] = bytes
+      j.lines.push(`ERASED ${key} ${bytes}`)
+    }
+    i.outcome = 'removed'; return
+  }
+  throw bad(`A ${j.kind} job does not go through the S3 API`)
+}
+
 async function run(i: Internal, opts: Opts) {
   try {
     if (mounts.dryRun(mounts.load())) await simulate(i, opts)
+    else if (i.plan.route === 's3') await runS3(i, opts)
     else if (i.plan.route === 'active') await runActive(i, opts)
     else await runTemporary(i, opts)
   } catch (e) {
@@ -684,8 +731,25 @@ export async function remove(round: string, opts: Opts = {}): Promise<PodJob> {
 
 const volLabel = (volumeId: string) => { if (!/^[A-Za-z0-9]{3,40}$/.test(volumeId)) throw bad(`Not a network volume id: ${volumeId}`); return `vol-${volumeId}` }
 /** What a job on this volume would cost and where it runs, before it starts. */
+/** RunPod's S3 API reads and writes a volume's files with no pod, but only in some datacenters and with S3 keys (Default Configuration): the keys and the endpoint, or why not. */
+function s3Access(vol: Volume | null): { ok: true; id: string; secret: string; endpoint: string; bucket: string; region: string } | { ok: false; why: 'datacenter' | 'keys' } {
+  if (!vol || !pods.S3_DATACENTERS.has(vol.datacenter)) return { ok: false, why: 'datacenter' }
+  const id = settings.lookup('RUNPOD_S3_ACCESS_KEY') || '', secret = settings.lookup('RUNPOD_S3_SECRET_KEY') || ''
+  if (!id || !secret) return { ok: false, why: 'keys' }
+  return { ok: true, id, secret, endpoint: sync.s3Endpoint(vol.datacenter), bucket: vol.id, region: vol.datacenter }
+}
+const defaultAws: AwsRunner = (args, env) => new Promise((res) => {
+  const c = spawn('aws', args, { env: { ...process.env, ...env, AWS_EC2_METADATA_DISABLED: 'true' } })
+  let stdout = '', stderr = ''
+  c.stdout.on('data', (d) => { stdout += d }); c.stderr.on('data', (d) => { stderr += d })
+  c.on('error', (e) => res({ code: 127, stdout, stderr: `${stderr}${e.message}` }))
+  c.on('close', (code) => res({ code, stdout, stderr }))
+})
 export async function volumePlan(volumeId: string, opts: Opts = {}): Promise<PodPlan> {
-  return plan(volLabel(volumeId), { ...opts, volumeId, sizeOf: () => ({ files: 0, bytes: 0 }) })
+  const p = await plan(volLabel(volumeId), { ...opts, volumeId, sizeOf: () => ({ files: 0, bytes: 0 }) })
+  const a = s3Access(p.volume)
+  // The S3 API when the volume's datacenter has it and the keys are set: no pod, no cost. Otherwise a pod does it, and the plan says why.
+  return a.ok ? { ...p, route: 's3', pod: null, gpu: '', price_per_hour: 0, choices: undefined } : { ...p, s3_note: a.why }
 }
 async function startVolumeJob(volumeId: string, kind: 'browse' | 'erase', keys: string[], opts: Opts): Promise<PodJob> {
   const label = volLabel(volumeId)

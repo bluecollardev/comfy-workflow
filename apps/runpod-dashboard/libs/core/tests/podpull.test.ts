@@ -22,13 +22,13 @@ interface RawPodFake { id: string; name: string; networkVolumeId?: string; costP
 const upPod = (id: string, name: string, vol = 'vol1', cost = 0.59): RawPodFake => ({ id, name, networkVolumeId: vol, costPerHr: cost, machine: { gpuDisplayName: 'L4' }, runtime: { uptimeInSeconds: 120, ports: [{ ip: '1.2.3.4', isIpPublic: true, privatePort: 22, publicPort: 2222, type: 'tcp' }] } })
 
 /** A RunPod that answers what the pull code asks, and remembers it. */
-function fakeRunPod(initial: RawPodFake[] = [], hooks: { onCreate?: (query: string) => void; terminateFails?: boolean; gpuTypes?: { id: string; displayName?: string; memoryInGb?: number; price: number | null; stock: string | null }[] } = {}) {
+function fakeRunPod(initial: RawPodFake[] = [], hooks: { volumeDc?: string; onCreate?: (query: string) => void; terminateFails?: boolean; gpuTypes?: { id: string; displayName?: string; memoryInGb?: number; price: number | null; stock: string | null }[] } = {}) {
   const pods = [...initial]
   const calls = { created: [] as string[], terminated: [] as string[], stopped: [] as string[], total: 0 }
   const fetchFn = (async (url: string, init?: { body?: string }) => {
     calls.total++
     const ok = (body: unknown) => ({ status: 200, ok: true, json: async () => body })
-    if (String(url).includes('/v1/networkvolumes/')) return ok({ id: 'vol1', name: 'comfy-workspace', size: 100, dataCenterId: 'EUR-IS-2' })
+    if (String(url).includes('/v1/networkvolumes/')) return ok({ id: 'vol1', name: 'comfy-workspace', size: 100, dataCenterId: hooks.volumeDc ?? 'EUR-IS-2' })
     const q = JSON.parse(init?.body || '{}').query as string
     if (q.includes('myPods')) return ok({ data: { myself: { pods } } })
     if (q.includes('query pod {')) { const id = /podId: "([^"]+)"/.exec(q)![1]; return ok({ data: { pod: pods.find((p) => p.id === id) ?? null } }) }
@@ -520,6 +520,47 @@ describe('browse and erase one volume', () => {
     const e = (path: string, dir = false) => ({ path, dir, bytes: 1 })
     expect(panama.shotDirsOf([e('a', true), e('a/MANIFEST.json'), e('b', true), e('b/MANIFEST.json'), e('templates', true), e('templates/x.py'), e('MANIFEST.json')])).toEqual(['a', 'b'])
     expect(panama.shotDirsOf([e('x', true), e('y', true), e('y/f')])).toEqual(['x', 'y'])
+  })
+
+  describe('through RunPod\'s S3 API (no pod)', () => {
+    const LS = ['2026-11-14 10:00:00       1000 comfy-shared/temp/rounds/r1/a/x.png', '2026-11-14 10:00:00        500 comfy-shared/temp/rounds/r1/b.txt', '2026-11-14 10:00:00         50 comfy-shared/workflows/seed.json', '2026-11-14 10:00:00         70 comfy-shared/workflows/rounds/r1/g.json', '2026-11-14 10:00:00         10 top.txt'].join('\n')
+    const withKeys = () => { process.env.RUNPOD_S3_ACCESS_KEY = 'user_x'; process.env.RUNPOD_S3_SECRET_KEY = 'rps_y' }
+    afterEach(() => { delete process.env.RUNPOD_S3_ACCESS_KEY; delete process.env.RUNPOD_S3_SECRET_KEY })
+    const fakeAws = () => { const calls: { args: string[]; env: Record<string, string> }[] = []; const aws: podpull.AwsRunner = async (args, env) => { calls.push({ args, env }); return { code: 0, stdout: args[1] === 'ls' ? LS : '', stderr: '' } }; return { calls, aws } }
+    it('browse: in an S3 datacenter with keys, no pod is made; the listing is the S3 listing to depth 3', async () => {
+      withKeys(); const rp = fakeRunPod([], { volumeDc: 'EU-RO-1' }); const { calls, aws } = fakeAws()
+      const plan = await podpull.volumePlan('vol1', base({ client: rp.client }))
+      expect(plan).toMatchObject({ route: 's3', price_per_hour: 0 })
+      const job0 = await podpull.browseVolume('vol1', base({ client: rp.client, aws }))
+      expect(job0).toMatchObject({ kind: 'browse', route: 's3', pod_name: null })
+      const job = await done(job0.id)
+      expect(job.state).toBe('done')
+      expect(job.listing).toContainEqual({ path: '/workspace', bytes: 1630 }); expect(job.listing).toContainEqual({ path: '/workspace/comfy-shared/temp/rounds', bytes: 1500 }); expect(job.listing).toContainEqual({ path: '/workspace/comfy-shared/workflows/rounds', bytes: 70 })
+      expect(calls[0].args).toEqual(expect.arrayContaining(['s3', 'ls', 's3://vol1/', '--recursive', '--endpoint-url', 'https://s3api-eu-ro-1.runpod.io/', '--region', 'EU-RO-1']))
+      expect(calls[0].env).toMatchObject({ AWS_ACCESS_KEY_ID: 'user_x', AWS_SECRET_ACCESS_KEY: 'rps_y' })
+      expect(rp.calls.created).toEqual([])   // no pod
+    })
+    it('erase: rm per chosen folder; the seed graphs only the loose .json files; what was freed is counted from the listing', async () => {
+      withKeys(); const rp = fakeRunPod([], { volumeDc: 'EU-RO-1' }); const { calls, aws } = fakeAws()
+      podpull.recordState('vol1', ROUND, { state: 'complete', present: 1, expected: 1, missing: 0, bytes: 1 })
+      const job0 = await podpull.eraseVolume('vol1', ['rounds', 'seedflows'], { approved_by: 'Lucas', confirm_name: 'comfy-workspace' }, base({ client: rp.client, aws }))
+      const job = await done(job0.id)
+      expect(job).toMatchObject({ state: 'done', route: 's3', freed: { rounds: 1500, seedflows: 50 } })
+      const rms = calls.filter((c) => c.args[1] === 'rm').map((c) => c.args.join(' '))
+      expect(rms[0]).toContain('s3 rm s3://vol1/comfy-shared/temp/rounds/ --recursive')
+      expect(rms[1]).toContain("s3://vol1/comfy-shared/workflows/ --recursive --exclude * --include *.json --exclude */*")
+      expect(podpull.knownState('vol1')).toBeNull(); expect(rp.calls.created).toEqual([])
+    })
+    it('a failure of the S3 API is the job\'s error; no keys or a datacenter without S3 falls back to a pod and says why', async () => {
+      withKeys(); const rp = fakeRunPod([], { volumeDc: 'EU-RO-1' })
+      const bad: podpull.AwsRunner = async () => ({ code: 1, stdout: '', stderr: 'An error occurred (AccessDenied)' })
+      const j = await done((await podpull.browseVolume('vol1', base({ client: rp.client, aws: bad }))).id)
+      expect(j.state).toBe('failed'); expect(j.error).toMatch(/S3 API: .*AccessDenied/)
+      delete process.env.RUNPOD_S3_ACCESS_KEY
+      expect(await podpull.volumePlan('vol1', base({ client: fakeRunPod([], { volumeDc: 'EU-RO-1' }).client }))).toMatchObject({ route: 'temporary', s3_note: 'keys' })
+      withKeys()
+      expect(await podpull.volumePlan('vol1', base({ client: fakeRunPod().client }))).toMatchObject({ route: 'temporary', s3_note: 'datacenter' })   // EUR-IS-2: no S3 API
+    })
   })
 
 })

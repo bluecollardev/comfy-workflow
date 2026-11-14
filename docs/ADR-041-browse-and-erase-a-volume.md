@@ -18,6 +18,10 @@ Lucas (2026-11-15), looking at a volume that still listed an old pod: "have an o
 - **Guards:** refused while another job (a pull, a place, another browse or erase) runs on the same volume. Erasing `temp/rounds` forgets what the app knew about the volume's rounds (`volume-rounds.json`).
 - **Not guarded:** a Queue run in progress on a pod of the volume is not known to this layer; do not erase while an import is running.
 
+## Amendment 2026-11-15: two ways to reach a volume (Lucas: "if it's an s3 storage volume, can't we use the S3 API to read? have a runpod adapter and an s3 adapter")
+
+Browse and Erase pick their route from the volume: the **S3 route** (`aws s3 ls` / `aws s3 rm` from this PC against `https://s3api-<datacenter>.runpod.io/`, the bucket being the volume id; no pod, no cost) when the volume's datacenter has RunPod's S3 API and S3 keys are in Default Configuration, else the **pod route** (your pod on the volume, or a short-lived one). The plan (`volume_job plan_volume_id`, and the window before anything starts) says which, and when it is the pod route, why (`s3_note`: `datacenter` or `keys`). Same job shape and the same guards either way. `comfy-workspace` is in EUR-IS-2, which has no S3 API, so it stays on the pod route; `brynley-rounds-eu-ro-1` and `-us-ne-1` can use S3 once keys are set. Not run against RunPod's S3 API yet (no keys were set when this was written); the commands are tested with a stand-in. A pull and the placing still need a pod: S3 has no links.
+
 ## Consequences
 
 - A volume can be inspected and cleared without leaving the app; the cost is the short pod's minutes (a few cents).
