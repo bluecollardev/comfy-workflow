@@ -93,8 +93,9 @@ const TABLE = {
     remove: (c, id) => c.volumes.remove(id),
     useAsDefault: (c, id) => c.volumes.useAsDefault(id),
     plan: (c, id) => c.podpull.volumePlan(id),   // what a browse or erase on this volume would run on and cost
-    browse: (c, id) => c.podpull.browseVolume(id),
+    browse: (c, id, path) => c.podpull.browseVolume(id, path ? { path } : {}),
     erase: (c, id, keys, o) => c.podpull.eraseVolume(id, keys || [], o || {}),
+    clone: (c, id, o) => c.podpull.cloneVolume(id, o || {}),
     job: (c, id) => c.podpull.job(id),
     cancel: (c, id) => c.podpull.cancel(id),
     erasable: (c) => Object.entries(c.podpull.ERASABLE).map(([key, e]) => ({ key, label: e.label, path: e.path })),

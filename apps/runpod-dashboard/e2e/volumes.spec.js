@@ -9,6 +9,36 @@ const openVolumes = async (page) => {
 }
 const volume = (dialog, id) => dialog.locator('[data-testid="volume"]', { has: dialog.page().locator(`[data-id="${id}"]`) }).first()
 
+test.describe('volumes: clone', () => {
+  test('Clone: into an existing volume or a new one in another datacenter; it says which way the files go and what it costs, then copies', async ({ page, api }) => {
+    await page.goto('/')
+    const dialog = await openVolumes(page)
+    await dialog.locator('[data-testid="volume"][data-id="vol2"]').getByTestId('volume-clone').click()   // scratch, CA-MTL-1: no S3 API
+    const m = page.getByTestId('volume-clone-modal')
+    await m.getByTestId('volume-clone-to').selectOption('vol1')   // comfy-workspace, EU-RO-1: has it
+    await expect(m.getByTestId('volume-clone-way')).toContainText('pushes')   // a pod on the source pushes to the target's S3 API
+    await expect(m.getByTestId('volume-clone-go')).toBeDisabled()   // nobody has said yes yet
+    await m.getByTestId('volume-clone-by').fill('Lucas')
+    await expect(m.getByTestId('volume-clone-go')).toBeEnabled()
+    await m.getByTestId('volume-clone-kind-new').check()
+    await m.getByTestId('volume-clone-dc').selectOption('US-KS-2')
+    await m.getByTestId('volume-clone-name').fill('scratch-ks')
+    await expect(m.getByTestId('volume-clone-cost')).toContainText('3.5')   // 50 GB at $0.07
+    await m.getByTestId('volume-clone-go').click()
+    await expect(m.getByTestId('volume-clone-job')).toContainText('12 file')
+    expect(api.state.cloned).toMatchObject({ id: 'vol2', approved_by: 'Lucas', include_input: false, new_volume: { name: 'scratch-ks', size_gb: 50, datacenter: 'US-KS-2' } })
+  })
+  test('Clone from an S3 volume into a regular one: a pod on the target pulls; the Default button is short', async ({ page }) => {
+    await page.goto('/')
+    const dialog = await openVolumes(page)
+    await expect(dialog.locator('[data-testid="volume"][data-id="vol2"]').getByTestId('volume-use-default')).toHaveText('Default')
+    await dialog.locator('[data-testid="volume"][data-id="vol1"]').getByTestId('volume-clone').click()
+    const m = page.getByTestId('volume-clone-modal')
+    await m.getByTestId('volume-clone-to').selectOption('vol2')   // CA-MTL-1: no S3 API
+    await expect(m.getByTestId('volume-clone-way')).toContainText('pulls')
+  })
+})
+
 test.describe('volumes: browse and erase', () => {
   test('a volume the S3 API can read says it needs no pod', async ({ page }) => {
     await page.goto('/')
@@ -40,9 +70,22 @@ test.describe('volumes: browse and erase', () => {
     await expect(files.getByTestId('volume-files-plan')).toContainText('RTX 2000 Ada')   // where it runs and the price, before anything starts
     await expect(files.getByTestId('volume-s3-note')).toContainText('S3 keys')   // and why it is not the S3 API
     await files.getByTestId('volume-files-start').click()
-    await expect(files.getByTestId('volume-files-row')).toHaveCount(5)
+    await expect(files.getByTestId('volume-files-row')).toHaveCount(1)   // folders start closed: the top level only
     await expect(files.getByTestId('volume-files-summary')).toContainText('5.0 GB')
-    await expect(files.locator('[data-testid="volume-files-row"][data-path="comfy-shared/temp/rounds"]')).toContainText('3.0 GB')
+    await files.locator('[data-testid="volume-files-row"][data-path="/workspace/comfy-shared"] [data-testid="volume-files-toggle"]').click()   // open a folder
+    await expect(files.getByTestId('volume-files-row')).toHaveCount(4)   // temp, output, models inside
+    await expect(files.locator('[data-testid="volume-files-row"][data-path="/workspace/comfy-shared/temp"]')).toHaveAttribute('data-depth', '1')
+    await files.locator('[data-testid="volume-files-row"][data-path="/workspace/comfy-shared/temp"] [data-testid="volume-files-toggle"]').click()
+    const rounds = files.locator('[data-testid="volume-files-row"][data-path="/workspace/comfy-shared/temp/rounds"]')
+    await expect(rounds).toContainText('3.0 GB')
+    await expect(rounds.getByTestId('volume-files-inside')).toBeVisible()   // at the edge of what was listed: List inside
+    await rounds.getByTestId('volume-files-inside').click()
+    await expect(files.locator('[data-testid="volume-files-row"][data-path="/workspace/comfy-shared/temp/rounds/r1"]')).toBeVisible()   // the folder opens with what is in it
+    await expect(files.locator('[data-testid="volume-files-row"][data-path="/workspace/comfy-shared/temp/rounds"]').getByTestId('volume-files-inside')).toHaveCount(0)
+    await files.getByTestId('volume-files-collapse').click()
+    await expect(files.getByTestId('volume-files-row')).toHaveCount(1)
+    await files.getByTestId('volume-files-expand').click()
+    await expect(files.getByTestId('volume-files-row').first()).toBeVisible()
     await files.getByText('Close', { exact: true }).click()
     await dialog.locator('[data-testid="volume"][data-id="vol1"]').getByTestId('volume-erase').click()
     const er = page.getByTestId('volume-erase-modal')

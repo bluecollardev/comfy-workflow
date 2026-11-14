@@ -22,13 +22,13 @@ interface RawPodFake { id: string; name: string; networkVolumeId?: string; costP
 const upPod = (id: string, name: string, vol = 'vol1', cost = 0.59): RawPodFake => ({ id, name, networkVolumeId: vol, costPerHr: cost, machine: { gpuDisplayName: 'L4' }, runtime: { uptimeInSeconds: 120, ports: [{ ip: '1.2.3.4', isIpPublic: true, privatePort: 22, publicPort: 2222, type: 'tcp' }] } })
 
 /** A RunPod that answers what the pull code asks, and remembers it. */
-function fakeRunPod(initial: RawPodFake[] = [], hooks: { volumeDc?: string; onCreate?: (query: string) => void; terminateFails?: boolean; gpuTypes?: { id: string; displayName?: string; memoryInGb?: number; price: number | null; stock: string | null }[] } = {}) {
+function fakeRunPod(initial: RawPodFake[] = [], hooks: { volumeDc?: string; volumes?: Record<string, { name: string; dc: string }>; onCreate?: (query: string) => void; terminateFails?: boolean; gpuTypes?: { id: string; displayName?: string; memoryInGb?: number; price: number | null; stock: string | null }[] } = {}) {
   const pods = [...initial]
   const calls = { created: [] as string[], terminated: [] as string[], stopped: [] as string[], total: 0 }
   const fetchFn = (async (url: string, init?: { body?: string }) => {
     calls.total++
     const ok = (body: unknown) => ({ status: 200, ok: true, json: async () => body })
-    if (String(url).includes('/v1/networkvolumes/')) return ok({ id: 'vol1', name: 'comfy-workspace', size: 100, dataCenterId: hooks.volumeDc ?? 'EUR-IS-2' })
+    if (String(url).includes('/v1/networkvolumes/')) { const vid = decodeURIComponent(String(url).split('/networkvolumes/')[1] || 'vol1'); const sp = hooks.volumes?.[vid]; return ok({ id: vid, name: sp?.name ?? 'comfy-workspace', size: 100, dataCenterId: sp?.dc ?? hooks.volumeDc ?? 'EUR-IS-2' }) }
     const q = JSON.parse(init?.body || '{}').query as string
     if (q.includes('myPods')) return ok({ data: { myself: { pods } } })
     if (q.includes('query pod {')) { const id = /podId: "([^"]+)"/.exec(q)![1]; return ok({ data: { pod: pods.find((p) => p.id === id) ?? null } }) }
@@ -561,6 +561,61 @@ describe('browse and erase one volume', () => {
       withKeys()
       expect(await podpull.volumePlan('vol1', base({ client: fakeRunPod().client }))).toMatchObject({ route: 'temporary', s3_note: 'datacenter' })   // EUR-IS-2: no S3 API
     })
+  })
+
+  describe('clone a volume', () => {
+    const keys = () => { process.env.RUNPOD_S3_ACCESS_KEY = 'user_x'; process.env.RUNPOD_S3_SECRET_KEY = 'rps_y' }
+    afterEach(() => { delete process.env.RUNPOD_S3_ACCESS_KEY; delete process.env.RUNPOD_S3_SECRET_KEY })
+    const dcs = { vol1: { name: 'comfy-workspace', dc: 'EUR-IS-2' }, volS3: { name: 'rounds-ro', dc: 'EU-RO-1' }, volS3b: { name: 'rounds-ne', dc: 'US-NE-1' } }
+    it('cloneMode: push when the target has the S3 API, pull when only the source has it, an explanation otherwise', () => {
+      expect(podpull.cloneMode({ datacenter: 'EUR-IS-2' }, { datacenter: 'EU-RO-1' }, true)).toEqual({ mode: 'push' })   // a regular volume into an S3 one
+      expect(podpull.cloneMode({ datacenter: 'EU-RO-1' }, { datacenter: 'EUR-IS-2' }, true)).toEqual({ mode: 'pull' })   // an S3 volume into a regular one
+      expect(podpull.cloneMode({ datacenter: 'EU-RO-1' }, { datacenter: 'US-NE-1' }, true)).toEqual({ mode: 'push' })
+      expect(podpull.cloneMode({ datacenter: 'EU-RO-1' }, { datacenter: 'US-NE-1' }, false)).toMatchObject({ error: expect.stringMatching(/S3 keys/) })
+      expect(podpull.cloneMode({ datacenter: 'EUR-IS-2' }, { datacenter: 'CA-MTL-1' }, true)).toMatchObject({ error: expect.stringMatching(/no way to copy/) })
+    })
+    it('the script: rclone to or from RunPod\'s S3 API, input/ left out unless asked, the keys only inside it', () => {
+      const c = { mode: 'push' as const, from: { id: 'a', datacenter: 'EUR-IS-2', name: 'src' }, to: { id: 'b', datacenter: 'EU-RO-1', name: 'dst' }, include_input: false }
+      const push = podpull.cloneScript(c, { id: 'AK', secret: 'SK' })
+      expect(push).toContain("rclone copy '/workspace' 'S3SIDE:b'"); expect(push).toContain("--exclude '/comfy-shared/input/**'"); expect(push).toContain('--copy-links'); expect(push).toContain("ENDPOINT='https://s3api-eu-ro-1.runpod.io/'"); expect(push).toContain('CLONE-DONE')
+      const pull = podpull.cloneScript({ ...c, mode: 'pull', include_input: true, from: { id: 'b', datacenter: 'EU-RO-1', name: 'dst' }, to: { id: 'a', datacenter: 'EUR-IS-2', name: 'src' } }, { id: 'AK', secret: 'SK' })
+      expect(pull).toContain("rclone copy 'S3SIDE:b' '/workspace'"); expect(pull).not.toContain('comfy-shared/input'); expect(pull).not.toContain('--copy-links')
+    })
+    it('regular -> S3: a pod on the SOURCE pushes; S3 -> regular: a pod on the TARGET pulls; refused before any spend without keys or the right fields', async () => {
+      const calls: podpull.SshJob[] = []
+      const ssh: podpull.SshRunner = async (j) => { calls.push(j); j.onLine('CLONE-DONE'); return { code: 0 } }
+      const rp = fakeRunPod([], { volumes: dcs })
+      const o = base({ client: rp.client, ssh })
+      await expect(podpull.cloneVolume('vol1', { to_volume_id: 'volS3' }, o)).rejects.toThrow(/approved_by/)
+      await expect(podpull.cloneVolume('vol1', { approved_by: 'L', to_volume_id: 'volS3' }, o)).rejects.toThrow(/S3 keys/)
+      await expect(podpull.cloneVolume('vol1', { approved_by: 'L' }, o)).rejects.toThrow(/Say where to/)
+      await expect(podpull.cloneVolume('vol1', { approved_by: 'L', to_volume_id: 'vol1' }, o)).rejects.toThrow(/onto itself/)
+      expect(rp.calls.created).toEqual([])
+      keys()
+      const j0 = await podpull.cloneVolume('vol1', { approved_by: 'L', to_volume_id: 'volS3' }, o)   // EUR-IS-2 -> EU-RO-1
+      expect(j0.clone).toMatchObject({ mode: 'push', from: { id: 'vol1' }, to: { id: 'volS3' } })
+      expect((await done(j0.id)).state).toBe('done')
+      expect(calls[0].script).toContain("rclone copy '/workspace' 'S3SIDE:volS3'"); expect(calls[0].script).not.toContain('exec /opt/comfy-app/s3pull.sh')
+      expect(JSON.stringify(rp.calls.created)).toContain('vol1')   // the pod was made on the source volume
+      const j1 = await podpull.cloneVolume('volS3', { approved_by: 'L', to_volume_id: 'vol1' }, o)   // EU-RO-1 -> EUR-IS-2
+      expect(j1.clone?.mode).toBe('pull')
+      expect((await done(j1.id)).state).toBe('done')
+      expect(calls[1].script).toContain("rclone copy 'S3SIDE:volS3' '/workspace'")
+    })
+  })
+
+  it('browse a folder inside the volume: the path is checked, the script lists that folder; the S3 route lists the prefix', async () => {
+    expect(podpull.browsePathOf()).toBe('/workspace'); expect(podpull.browsePathOf('/workspace/comfy-shared/temp/')).toBe('/workspace/comfy-shared/temp')
+    for (const bad of ['/etc', '/workspace/../etc', "/workspace/a'b", '/workspace/a;rm -rf x', 'workspace/x']) expect(() => podpull.browsePathOf(bad)).toThrow(/Not a path/)
+    expect(podpull.browseScript('/workspace/comfy-shared')).toContain("du -b --max-depth=3 '/workspace/comfy-shared'")
+    process.env.RUNPOD_S3_ACCESS_KEY = 'user_x'; process.env.RUNPOD_S3_SECRET_KEY = 'rps_y'
+    try {
+      const rp = fakeRunPod([], { volumeDc: 'EU-RO-1' })
+      const aws: podpull.AwsRunner = async () => ({ code: 0, stdout: ['2026 x 100 comfy-shared/temp/rounds/r1/a/b/c/x.png', '2026 x 5 comfy-shared/temp/rounds/r1/y.txt', '2026 x 9 comfy-shared/output/o.png', '2026 x 1 top.txt'].join('\n'), stderr: '' })
+      const j = await done((await podpull.browseVolume('vol1', base({ client: rp.client, aws, path: '/workspace/comfy-shared/temp/rounds' }))).id)
+      expect(j.browse_path).toBe('/workspace/comfy-shared/temp/rounds')
+      expect(j.listing).toEqual([{ path: '/workspace/comfy-shared/temp/rounds', bytes: 105 }, { path: '/workspace/comfy-shared/temp/rounds/r1', bytes: 105 }, { path: '/workspace/comfy-shared/temp/rounds/r1/a', bytes: 100 }, { path: '/workspace/comfy-shared/temp/rounds/r1/a/b', bytes: 100 }])   // three levels below the folder asked for
+    } finally { delete process.env.RUNPOD_S3_ACCESS_KEY; delete process.env.RUNPOD_S3_SECRET_KEY }
   })
 
 })

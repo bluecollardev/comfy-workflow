@@ -35,6 +35,7 @@ import * as pods from './pods.js'
 import * as rp from './runpod.js'
 import * as settings from './settings.js'
 import * as sync from './sync.js'
+import * as volumesMod from './volumes.js'
 
 export const REMOTE_ROUNDS = '/workspace/comfy-shared/temp/rounds'
 export const POD_PREFIX = 'ComfyUI-Pull-'
@@ -86,7 +87,7 @@ export function recordState(volumeId: string, round: string, rec: RoundRec | nul
 export function forgetVolume(volumeId: string): void { migrateState(); const all = readJson<Record<string, VolRec>>(stateFile(), {}); if (all[volKey(volumeId)]) { delete all[volKey(volumeId)]; writeJson(stateFile(), all) } }
 export const knownState = (volumeId: string): VolRec | null => { migrateState(); return readJson<Record<string, VolRec>>(stateFile(), {})[volKey(volumeId)] ?? null }
 
-export interface TempPod { round: string; kind: 'pull' | 'remove' | 'browse' | 'erase'; name: string; pod_id: string | null; volume: string; created_at: string; approved_by: string }
+export interface TempPod { round: string; kind: 'pull' | 'remove' | 'browse' | 'erase' | 'clone'; name: string; pod_id: string | null; volume: string; created_at: string; approved_by: string }
 /** The temporary pods this app has made and not yet deleted. One left behind (the app closed mid-job) is listed here and shows in the manager under its name. */
 export const temporaryPods = (): TempPod[] => readJson<TempPod[]>(tempFile(), [])
 const tempAdd = (t: TempPod) => writeJson(tempFile(), [...temporaryPods().filter((x) => x.name !== t.name), t])
@@ -241,11 +242,15 @@ export async function plan(round: string, opts: Opts = {}): Promise<PodPlan> {
 
 export type JobState = 'creating' | 'starting' | 'pulling' | 'verifying' | 'placing' | 'deleting' | 'done' | 'failed' | 'cancelled'
 export interface PodJob {
-  id: string; round: string; kind: 'pull' | 'remove' | 'browse' | 'erase'; route: 'active' | 'temporary' | 's3'; pod_id: string | null; pod_name: string | null
+  id: string; round: string; kind: 'pull' | 'remove' | 'browse' | 'erase' | 'clone'; route: 'active' | 'temporary' | 's3'; pod_id: string | null; pod_name: string | null
   /** The card the pod actually has and its price per hour, once the pod exists (the Queue shows them). */
   gpu?: string; price_per_hour?: number | null
   /** A volume job (`browse`, `erase`): the volume, what a browse found (folders with their sizes), what an erase was asked to clear and how many bytes it freed from each. */
   /** A pull of some shots: the shot folders it did not copy, and the ones it did */ skip_shots?: string[]; pulled_shots?: string[]
+  /** A clone: which way the files go (a pod on the source pushes to an S3-capable target; a pod on the target pulls from an S3-capable source), from where to where */
+  clone?: { mode: 'push' | 'pull'; from: { id: string; datacenter: string; name: string }; to: { id: string; datacenter: string; name: string }; include_input: boolean }
+  /** A browse: the folder it listed (default the whole volume) */
+  browse_path?: string
   volume_id?: string; listing?: { path: string; bytes: number }[]; erase_keys?: string[]; freed?: Record<string, number>
   state: JobState; files: number; lines: string[]; error?: string; verify?: panama.Verify; started_at: string
   /** ADR-033: what placing the verified round on the pod did (files linked, graphs written, conflicts); set only after a pull whose check passed. A placing failure is here, never the pull's. */
@@ -286,7 +291,7 @@ function feed(i: Internal, raw: string, secrets: string[]) {
   else if (/s3 pull refused|s3 pull FAILED: |S3_PULL set but/.test(line)) i.outcome = 'copy-failed'
   else if (/^(removed|nothing to remove at) /.test(line)) i.outcome = 'removed'
   else if (/^BROWSE \d+ \//.test(line)) { const m = /^BROWSE (\d+) (\/.*)$/.exec(line); if (m) (j.listing ||= []).push({ path: m[2], bytes: Number(m[1]) }) }
-  else if (/^BROWSE-DONE/.test(line) || /^ERASE-DONE/.test(line)) i.outcome = 'removed'
+  else if (/^BROWSE-DONE/.test(line) || /^ERASE-DONE/.test(line) || /^CLONE-DONE/.test(line)) i.outcome = 'removed'
   else if (/^ERASED \w+ \d+/.test(line)) { const m = /^ERASED (\w+) (\d+)/.exec(line); if (m) (j.freed ||= {})[m[1]] = Number(m[2]) }
   else if (/^BROWSE-FAILED/.test(line)) i.outcome = 'refused'
   else if (/^refused/.test(line)) i.outcome = 'refused'
@@ -374,10 +379,16 @@ export const ERASABLE: Record<string, { path: string; label: string; json_only?:
   models: { path: '/workspace/comfy-shared/models', label: 'Models (models)' },
 }
 /** The folders of a volume to depth 3 with their sizes, one `BROWSE <bytes> <path>` line each, then `BROWSE-DONE`. Read-only. */
-export function browseScript(): string {
+/** A path to list inside a volume: /workspace and folders under it; names of plain characters only, no `..`. */
+export function browsePathOf(p?: string): string {
+  const path = String(p ?? '/workspace').replace(/\/+$/, '') || '/workspace'
+  if (!/^\/workspace(\/[\w .+@=,()-]+){0,12}$/.test(path) || path.split('/').includes('..')) throw bad(`Not a path inside the volume: ${path}`)
+  return path
+}
+export function browseScript(path = '/workspace'): string {
   return [
     'set -u', 'cd /workspace 2>/dev/null || { echo "BROWSE-FAILED no /workspace"; exit 64; }',
-    `du -b --max-depth=3 /workspace 2>/dev/null | head -n 5000 | awk -F'\t' '{ print "BROWSE " $1 " " $2 }'`,
+    `du -b --max-depth=3 ${q(browsePathOf(path))} 2>/dev/null | head -n 5000 | awk -F'\t' '{ print "BROWSE " $1 " " $2 }'`,
     'echo "BROWSE-DONE"', '',
   ].join('\n')
 }
@@ -395,8 +406,29 @@ export function eraseScript(keys: string[]): string {
   lines.push('echo "ERASE-DONE"', '')
   return lines.join('\n')
 }
+/** Which way a clone goes. RunPod's S3 API reaches a volume only in some datacenters and with S3 keys: a target that has it is written to from a pod on the source (push); else a source that has it is read from a pod on the target (pull); with neither, a clone is not possible here. */
+export function cloneMode(from: { datacenter: string }, to: { datacenter: string }, haveKeys: boolean): { mode: 'push' | 'pull' } | { error: string } {
+  const s3 = (d: string) => pods.S3_DATACENTERS.has(d)
+  if (s3(to.datacenter) && haveKeys) return { mode: 'push' }
+  if (s3(from.datacenter) && haveKeys) return { mode: 'pull' }
+  if (s3(to.datacenter) || s3(from.datacenter)) return { error: 'Add RunPod S3 keys in Default Configuration: a clone goes through RunPod\'s S3 API on whichever side has one.' }
+  return { error: `Neither ${from.datacenter} nor ${to.datacenter} has RunPod's S3 API (${[...pods.S3_DATACENTERS].join(', ')}), so there is no way to copy between them from here. Clone into a volume in one of those datacenters.` }
+}
+/** The clone's copy, run on a pod over SSH: rclone against RunPod's S3 API (endpoint of the S3 side, bucket = its volume id). `input/` holds links of the rounds' files (a copy would double them): left out unless asked; placing the round again relinks it. */
+export function cloneScript(c: NonNullable<PodJob['clone']>, k: { id: string; secret: string }): string {
+  const s3 = c.mode === 'push' ? c.to : c.from
+  const env = `export RCLONE_CONFIG_S3SIDE_TYPE=s3 RCLONE_CONFIG_S3SIDE_PROVIDER=Other RCLONE_CONFIG_S3SIDE_ENDPOINT=${q(sync.s3Endpoint(s3.datacenter))} RCLONE_CONFIG_S3SIDE_ACCESS_KEY_ID=${q(k.id)} RCLONE_CONFIG_S3SIDE_SECRET_ACCESS_KEY=${q(k.secret)} RCLONE_CONFIG_S3SIDE_REGION=${q(s3.datacenter)}`
+  const [src, dst] = c.mode === 'push' ? ['/workspace', `S3SIDE:${s3.id}`] : [`S3SIDE:${s3.id}`, '/workspace']
+  const excludes = [...(c.include_input ? [] : ["--exclude '/comfy-shared/input/**'"]), "--exclude '/lost+found/**'"].join(' ')
+  return [
+    'set -u', env,
+    'command -v rclone >/dev/null || { echo "clone refused: rclone is not in this image" >&2; exit 65; }',
+    `echo "clone: ${c.from.name} (${c.from.datacenter}) -> ${c.to.name} (${c.to.datacenter}), ${c.mode}"`,
+    `if rclone copy ${q(src)} ${q(dst)} ${excludes} ${c.mode === 'push' ? '--copy-links ' : ''}--s3-no-check-bucket --transfers 8 --checksum --stats 30s --stats-one-line -v; then echo "CLONE-DONE"; else echo "clone FAILED (rclone exit $?); run it again, a rerun carries on" >&2; exit 1; fi`, '',
+  ].join('\n')
+}
 /** The script a job runs on its pod. */
-const scriptOf = (j: PodJob, k: { id: string; secret: string } | null): string => j.kind === 'pull' ? (j.skip_shots?.length ? pullShotsScript(j.round, j.skip_shots, k!) : pullScript(j.round, k!)) : j.kind === 'browse' ? browseScript() : j.kind === 'erase' ? eraseScript(j.erase_keys ?? []) : removeScript(j.round)
+const scriptOf = (j: PodJob, k: { id: string; secret: string } | null): string => j.kind === 'clone' ? cloneScript(j.clone!, s3Keys()!) : j.kind === 'pull' ? (j.skip_shots?.length ? pullShotsScript(j.round, j.skip_shots, k!) : pullScript(j.round, k!)) : j.kind === 'browse' ? browseScript(j.browse_path) : j.kind === 'erase' ? eraseScript(j.erase_keys ?? []) : removeScript(j.round)
 const KILL_SCRIPT = 'pkill -f /opt/comfy-app/s3pull.sh; pkill -x rclone; true\n'
 
 export interface SshJob { host: string; port: number; script: string; onLine: (line: string) => void; signal: AbortSignal }
@@ -530,8 +562,9 @@ async function runActive(i: Internal, opts: Opts) {
   idle.register(pod.id, p.ceiling_minutes)   // held with a ceiling for the job, put back after (2d)
   try {
     j.state = j.kind === 'pull' ? 'pulling' : 'deleting'
-    await runOnPod(i, host, port, scriptOf(j, k), opts, k ? [k.secret, k.id] : [])
-    await placeAfter(i, host, port, opts)
+    const s3k = j.kind === 'clone' ? s3Keys() : null
+    await runOnPod(i, host, port, scriptOf(j, k), opts, k ? [k.secret, k.id] : s3k ? [s3k.secret, s3k.id] : [])
+    if (j.kind === 'pull') await placeAfter(i, host, port, opts)
   } finally { idle.register(pod.id, prev) }
 }
 
@@ -616,6 +649,7 @@ async function simulate(i: Internal, opts: Opts) {
     const steps: [JobState, string[]][] = j.kind === 'pull'
       ? [['starting', ['no-spend mode: the pod is simulated']], ['pulling', [`s3 pull: ${panama.bucket()}/rounds/${j.round} -> ${REMOTE_ROUNDS}/${j.round}`, 'a.json: Copied (new)', 'b.json: Copied (new)']], ['verifying', ['100%, 0 B/s']], ['pulling', ['s3 pull done (manifest verified): ' + `${REMOTE_ROUNDS}/${j.round}`]]]
       : j.kind === 'browse' ? [['verifying', ['BROWSE 1000 /workspace', 'BROWSE 600 /workspace/comfy-shared', 'BROWSE 500 /workspace/comfy-shared/temp', 'BROWSE-DONE']]]
+      : j.kind === 'clone' ? [['pulling', ['clone: simulated', 'CLONE-DONE']]]
       : j.kind === 'erase' ? [['deleting', [...(j.erase_keys ?? []).map((k) => `ERASED ${k} 100`), 'ERASE-DONE']]]
       : [['deleting', [`removed ${REMOTE_ROUNDS}/${j.round}`]]]
     for (const [state, lines] of steps) {
@@ -646,13 +680,16 @@ async function runS3(i: Internal, opts: Opts) {
   }
   j.state = 'verifying'
   if (j.kind === 'browse') {
+    const base = (j.browse_path ?? '/workspace').replace(/^\/workspace\/?/, '')   // '' = the whole volume; else the folder's key prefix
+    const baseParts = base ? base.split('/') : []
     const dirs = new Map<string, number>(); let total = 0
     for (const o of await sizes()) {
+      if (base && !o.key.startsWith(`${base}/`)) continue
       total += o.bytes
       const parts = o.key.split('/').slice(0, -1)
-      for (let d = 1; d <= Math.min(3, parts.length); d++) { const k = parts.slice(0, d).join('/'); dirs.set(k, (dirs.get(k) ?? 0) + o.bytes) }
+      for (let d = baseParts.length + 1; d <= Math.min(baseParts.length + 3, parts.length); d++) { const k = parts.slice(0, d).join('/'); dirs.set(k, (dirs.get(k) ?? 0) + o.bytes) }
     }
-    j.listing = [{ path: '/workspace', bytes: total }, ...[...dirs.entries()].sort(([x], [y]) => x.localeCompare(y)).slice(0, 5000).map(([k, b]) => ({ path: `/workspace/${k}`, bytes: b }))]
+    j.listing = [{ path: j.browse_path ?? '/workspace', bytes: total }, ...[...dirs.entries()].sort(([x], [y]) => x.localeCompare(y)).slice(0, 5000).map(([k, b]) => ({ path: `/workspace/${k}`, bytes: b }))]
     i.outcome = 'removed'; return
   }
   if (j.kind === 'erase') {
@@ -732,6 +769,8 @@ export async function remove(round: string, opts: Opts = {}): Promise<PodJob> {
 const volLabel = (volumeId: string) => { if (!/^[A-Za-z0-9]{3,40}$/.test(volumeId)) throw bad(`Not a network volume id: ${volumeId}`); return `vol-${volumeId}` }
 /** What a job on this volume would cost and where it runs, before it starts. */
 /** RunPod's S3 API reads and writes a volume's files with no pod, but only in some datacenters and with S3 keys (Default Configuration): the keys and the endpoint, or why not. */
+/** The RunPod S3 keys of Default Configuration, or none. */
+function s3Keys(): { id: string; secret: string } | null { const id = settings.lookup('RUNPOD_S3_ACCESS_KEY') || '', secret = settings.lookup('RUNPOD_S3_SECRET_KEY') || ''; return id && secret ? { id, secret } : null }
 function s3Access(vol: Volume | null): { ok: true; id: string; secret: string; endpoint: string; bucket: string; region: string } | { ok: false; why: 'datacenter' | 'keys' } {
   if (!vol || !pods.S3_DATACENTERS.has(vol.datacenter)) return { ok: false, why: 'datacenter' }
   const id = settings.lookup('RUNPOD_S3_ACCESS_KEY') || '', secret = settings.lookup('RUNPOD_S3_SECRET_KEY') || ''
@@ -751,7 +790,7 @@ export async function volumePlan(volumeId: string, opts: Opts = {}): Promise<Pod
   // The S3 API when the volume's datacenter has it and the keys are set: no pod, no cost. Otherwise a pod does it, and the plan says why.
   return a.ok ? { ...p, route: 's3', pod: null, gpu: '', price_per_hour: 0, choices: undefined } : { ...p, s3_note: a.why }
 }
-async function startVolumeJob(volumeId: string, kind: 'browse' | 'erase', keys: string[], opts: Opts): Promise<PodJob> {
+async function startVolumeJob(volumeId: string, kind: 'browse' | 'erase', keys: string[], opts: Opts, path?: string): Promise<PodJob> {
   const label = volLabel(volumeId)
   const live = [...jobs.values()].find((x) => !TERMINAL.includes(x.job.state) && x.plan.volume?.id === volumeId)
   if (live && !(live.job.kind === kind && kind === 'browse')) throw new CoreError(409, `A ${live.job.kind} job is running on this volume (${live.job.round}): wait for it to finish.`)
@@ -759,13 +798,39 @@ async function startVolumeJob(volumeId: string, kind: 'browse' | 'erase', keys: 
   try {
     const p = await volumePlan(volumeId, opts)
     const i = newJob(label, kind, p, (opts.now ?? (() => new Date()))())
-    i.job.volume_id = volumeId; if (kind === 'erase') i.job.erase_keys = keys
+    i.job.volume_id = volumeId; if (kind === 'erase') i.job.erase_keys = keys; if (kind === 'browse') i.job.browse_path = browsePathOf(path)
     void run(i, { ...opts, volumeId })
     return view(i)
   } catch (e) { busy.delete(label); throw e }
 }
+/** Copy one volume's files to another (an existing one, or a new one made here) through RunPod's S3 API, by a short pod: the source is never changed, and a rerun carries on (rclone copy, checksums). Spends: the new volume's monthly price and the pod's minutes, so it needs `approved_by`. */
+export async function cloneVolume(sourceId: string, o: { approved_by?: string; to_volume_id?: string; new_volume?: { name: string; size_gb: number; datacenter: string }; include_input?: boolean }, opts: Opts = {}): Promise<PodJob> {
+  volLabel(sourceId)
+  if (!String(o.approved_by ?? '').trim()) throw new CoreError(400, 'Cloning needs a name behind it: approved_by.')
+  if (!!o.to_volume_id === !!o.new_volume) throw bad('Say where to: an existing volume (to_volume_id) or a new one (new_volume: name, size_gb, datacenter).')
+  const from = await volumeOf({ ...opts, volumeId: sourceId }); if (!from) throw new CoreError(404, `No network volume ${sourceId}.`)
+  let to: Volume | null = null
+  if (o.to_volume_id) { volLabel(o.to_volume_id); if (o.to_volume_id === sourceId) throw bad('A volume cannot be cloned onto itself.'); to = await volumeOf({ ...opts, volumeId: o.to_volume_id }); if (!to) throw new CoreError(404, `No network volume ${o.to_volume_id}.`) }
+  const targetDc = to?.datacenter ?? o.new_volume!.datacenter
+  const way = cloneMode(from, { datacenter: targetDc }, !!s3Keys())
+  if ('error' in way) throw new CoreError(400, way.error)   // before any spend
+  if (!to) { const v = await volumesMod.create(o.new_volume!, opts.client); to = { id: v.id, name: v.name, datacenter: v.datacenter } }   // the volume's monthly price starts here
+  const podVol = way.mode === 'push' ? from : to   // the pod mounts the side that is not served by S3
+  const label = volLabel(podVol.id)
+  const live = [...jobs.values()].find((x) => !TERMINAL.includes(x.job.state) && x.plan.volume?.id === podVol.id)
+  if (live) throw new CoreError(409, `A ${live.job.kind} job is running on ${podVol.name}: wait for it to finish (the new volume ${to.id} stays).`)
+  const existing = claim(label, 'clone'); if (existing) return view(existing)
+  try {
+    const p = await plan(label, { ...opts, volumeId: podVol.id, sizeOf: () => ({ files: 0, bytes: 0 }) })
+    const i = newJob(label, 'clone', p, (opts.now ?? (() => new Date()))())
+    i.job.volume_id = podVol.id
+    i.job.clone = { mode: way.mode, from: { id: from.id, datacenter: from.datacenter, name: from.name }, to: { id: to.id, datacenter: to.datacenter, name: to.name }, include_input: !!o.include_input }
+    void run(i, { ...opts, volumeId: podVol.id })
+    return view(i)
+  } catch (e) { busy.delete(label); throw e }
+}
 /** List a volume's folders to depth 3 with their sizes. Read-only; costs the short pod's minutes (or nothing on a pod of yours that is running). */
-export const browseVolume = (volumeId: string, opts: Opts = {}) => startVolumeJob(volumeId, 'browse', [], opts)
+export const browseVolume = (volumeId: string, opts: Opts & { path?: string } = {}) => startVolumeJob(volumeId, 'browse', [], opts, opts.path)
 /** Empty chosen folders of a volume (keys of ERASABLE). Not reversible: it needs the user's name behind it (`approved_by`) and the volume's name typed back (`confirm_name`). Refused while a pull, place or other job is running on the volume. */
 export async function eraseVolume(volumeId: string, keys: string[], o: { approved_by?: string; confirm_name?: string }, opts: Opts = {}): Promise<PodJob> {
   const label = volLabel(volumeId)

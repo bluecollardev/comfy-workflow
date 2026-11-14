@@ -60,6 +60,7 @@
               </template>
               <template v-else>
                 <BButton size="sm" class="text-nowrap w-100" variant="outline-light" :disabled="store.busyId === v.id" data-testid="volume-browse" @click="browsing = v"><i class="fa-solid fa-folder-tree me-1"></i>{{ $t('volumes.browse') }}</BButton>
+                <BButton size="sm" class="text-nowrap w-100" variant="outline-light" :disabled="store.busyId === v.id" data-testid="volume-clone" @click="cloning = v"><i class="fa-solid fa-clone me-1"></i>{{ $t('volumes.clone') }}</BButton>
                 <BButton size="sm" class="text-nowrap w-100" variant="outline-light" :disabled="store.busyId === v.id" data-testid="volume-resize" @click="resizing = v.id; resizeTo = v.size_gb + 20">{{ $t('volumes.resize') }}</BButton>
                 <BButton size="sm" class="text-nowrap w-100" variant="outline-danger" :disabled="store.busyId === v.id" data-testid="volume-erase" @click="erasing = v"><i class="fa-solid fa-eraser me-1"></i>{{ $t('volumes.erase') }}</BButton>
                 <BButton size="sm" class="text-nowrap" variant="outline-danger" :disabled="store.busyId === v.id || v.pods.some((p) => p.via === 'runpod')" :title="v.pods.some((p) => p.via === 'runpod') ? $t('volumes.deleteBlocked') : ''" data-testid="volume-delete" @click="confirmRemove(v)">{{ $t('volumes.delete') }}</BButton>
@@ -73,6 +74,7 @@
 
   </BModal>
   <VolumeFilesModal :volume="browsing" @close="browsing = null" />
+  <CloneVolumeModal :volume="cloning" @close="cloning = null" />
   <EraseVolumeModal :volume="erasing" @close="erasing = null" @erased="store.load()" />
 </template>
 
@@ -85,6 +87,7 @@
 import { computed, reactive, ref } from 'vue'
 import VolumeFilesModal from './VolumeFilesModal.vue'
 import EraseVolumeModal from './EraseVolumeModal.vue'
+import CloneVolumeModal from './CloneVolumeModal.vue'
 import { useUiStore } from '../stores/ui'
 import { useVolumesStore } from '../stores/volumes'
 import { useConfirmStore } from '../stores/confirm'
@@ -97,7 +100,7 @@ const store = useVolumesStore()
 const confirm = useConfirmStore()
 const draft = reactive({ name: '', size_gb: 100, datacenter: '' })
 const resizing = ref(null)
-const browsing = ref(null), erasing = ref(null)   // the volume whose files are open, or whose Erase is
+const browsing = ref(null), erasing = ref(null), cloning = ref(null)   // the volume whose files are open, or whose Erase is
 const resizeTo = ref(0)
 const dcList = ref([])
 const dcOptions = computed(() => datacenterOptions(dcList.value, { value: '', text: t('volumes.pickDatacenter') }))
