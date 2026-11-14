@@ -456,6 +456,8 @@
     "spent": "spent about ${spent} of ${cap}",
     "podLimit": "pods at once: {n}",
     "cancelAll": "Cancel all",
+    "confirmCancel": "Cancel {what} of {round}? A running task stops and its pod is deleted. Retry can start it again, from the beginning.",
+    "confirmCancelAll": "Cancel the {n} unfinished task(s) of {round}? Running pulls and runs stop and their pods are deleted. Retry can start a task again, from the beginning.",
     "task": "Task",
     "state": "State",
     "pod": "Pod",

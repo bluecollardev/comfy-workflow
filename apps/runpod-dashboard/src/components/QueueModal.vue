@@ -12,7 +12,7 @@
         <strong class="font-monospace">{{ imp.round }}</strong>
         <span class="badge" :class="imp.state === 'active' ? 'text-bg-primary' : 'text-bg-secondary'">{{ $t(`queue.import.${imp.state}`) }}</span>
         <span class="small text-body-secondary">{{ $t('queue.approvedBy', { who: imp.approved_by }) }} · {{ $t('queue.spent', { spent: imp.spent_usd, cap: imp.cap_enabled && imp.cost_cap_usd != null ? imp.cost_cap_usd : '∞' }) }} · {{ $t('queue.podLimit', { n: imp.max_pods ?? '∞' }) }}</span>
-        <BButton v-if="imp.state === 'active'" size="sm" variant="outline-danger" class="ms-auto" data-testid="queue-cancel-import" @click="act(() => queueAPI.cancelImport(imp.id))">{{ $t('queue.cancelAll') }}</BButton>
+        <BButton v-if="imp.state === 'active'" size="sm" variant="outline-danger" class="ms-auto" data-testid="queue-cancel-import" @click="cancelAll(imp)">{{ $t('queue.cancelAll') }}</BButton>
       </div>
       <table class="table table-sm align-middle mb-0">
         <thead><tr><th>{{ $t('queue.task') }}</th><th>{{ $t('queue.state') }}</th><th>{{ $t('queue.pod') }}</th><th>{{ $t('queue.result') }}</th><th></th></tr></thead>
@@ -34,7 +34,7 @@
               <td class="text-end text-nowrap">
                 <div class="d-inline-flex gap-2 justify-content-end" data-testid="queue-actions">
                   <BButton v-if="t.events?.length" size="sm" variant="outline-light" :aria-expanded="open_.has(t.id)" data-testid="queue-details" @click="toggleDetails(t.id)"><i class="fa-solid" :class="open_.has(t.id) ? 'fa-chevron-up' : 'fa-list'"></i></BButton>
-                  <BButton v-if="['waiting', 'running', 'held'].includes(t.state)" size="sm" variant="outline-light" data-testid="queue-cancel" @click="act(() => queueAPI.cancelTask(t.id))">{{ $t('queue.cancel') }}</BButton>
+                  <BButton v-if="['waiting', 'running', 'held'].includes(t.state)" size="sm" variant="outline-light" data-testid="queue-cancel" @click="cancelTask(t)">{{ $t('queue.cancel') }}</BButton>
                   <BButton v-if="['failed', 'held', 'interrupted', 'cancelled'].includes(t.state)" size="sm" variant="outline-light" data-testid="queue-retry" @click="act(() => queueAPI.retryTask(t.id))">{{ $t('queue.retry') }}</BButton>
                 </div>
               </td>
@@ -79,6 +79,15 @@ const mins = (t) => Math.max(1, Math.round((new Date(t.finished_at) - new Date(t
 const tasksOf = (imp) => view.value.tasks.filter((t) => t.import_id === imp.id)
 const badge = (s) => ({ done: 'text-bg-success', failed: 'text-bg-danger', running: 'text-bg-primary', waiting: 'text-bg-secondary', held: 'text-bg-warning', cancelled: 'text-bg-dark', interrupted: 'text-bg-warning' }[s] || 'text-bg-secondary')
 async function refresh() { try { view.value = await queueAPI.list(); error.value = '' } catch (e) { error.value = errorText(e) } }
+/** Cancel all asks first: running pulls and runs stop and their pods are deleted. */
+function cancelAll(imp) {
+  const n = tasksOf(imp).filter((x) => ['waiting', 'running', 'held'].includes(x.state)).length
+  if (window.confirm(t('queue.confirmCancelAll', { n, round: imp.round }))) act(() => queueAPI.cancelImport(imp.id))
+}
+/** Cancel on one task asks first too: a running one stops and its pod goes. */
+function cancelTask(task) {
+  if (window.confirm(t('queue.confirmCancel', { what: `${task.kind}${task.shot ? ` ${task.shot}` : ''}`, round: task.round }))) act(() => queueAPI.cancelTask(task.id))
+}
 async function act(fn) { try { await fn() } catch (e) { error.value = errorText(e) } await refresh() }
 watch(() => ui.queueVersion, refresh)   // an import was just queued: show it now, not at the next tick
 onMounted(() => { refresh(); timer = setInterval(refresh, 2500) })

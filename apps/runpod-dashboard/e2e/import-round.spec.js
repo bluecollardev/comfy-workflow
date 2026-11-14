@@ -250,3 +250,27 @@ test('Import Round: no volume in the card\'s datacenter - tick Create a new volu
   const made = Object.values(api.state.volumes).find((v) => v.name === 'brynley-rounds-us-ks-2')
   await expect.poll(() => api.state.imported?.volume_id).toBe(made.id)   // and the import uses it
 })
+
+test('Queue: Cancel all asks first; No leaves the tasks, Yes cancels the import', async ({ page, api }) => {
+  const calls = []
+  await page.route('**/queue/imports/*/cancel', async (r) => { calls.push(r.request().url()); await r.fulfill({ json: {} }) })
+  api.state.queue = { imports: [{ id: 'a', round: 'round-a', approved_by: 'L', created_at: '2026-11-09T01:00:00Z', state: 'active', spent_usd: 0, cap_enabled: true, cost_cap_usd: 10, max_pods: 2, counts: {} }], tasks: [{ id: 't1', import_id: 'a', round: 'round-a', shot: 'x', kind: 'run', state: 'running' }, { id: 't2', import_id: 'a', round: 'round-a', shot: 'y', kind: 'run', state: 'waiting' }], active: 2 }
+  await page.goto('/'); await page.getByTestId('open-queue').click()
+  const q = page.getByTestId('queue-modal')
+  page.once('dialog', (d) => { expect(d.message()).toContain('2 unfinished'); d.dismiss() })   // no
+  await q.getByTestId('queue-cancel-import').click()
+  await page.waitForTimeout(300); expect(calls).toHaveLength(0)
+  page.once('dialog', (d) => d.accept())   // yes
+  await q.getByTestId('queue-cancel-import').click()
+  await expect.poll(() => calls.length).toBe(1)
+  // and the cancel of one task asks too
+  const one = []
+  await page.route('**/queue/tasks/*/cancel', async (r) => { one.push(r.request().url()); await r.fulfill({ json: {} }) })
+  const row = q.getByTestId('queue-task').filter({ hasText: 'x' }).first()
+  page.once('dialog', (d) => { expect(d.message()).toContain('run x'); d.dismiss() })
+  await row.getByTestId('queue-cancel').click()
+  await page.waitForTimeout(300); expect(one).toHaveLength(0)
+  page.once('dialog', (d) => d.accept())
+  await row.getByTestId('queue-cancel').click()
+  await expect.poll(() => one.length).toBe(1)
+})
