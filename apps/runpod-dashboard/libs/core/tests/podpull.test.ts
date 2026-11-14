@@ -496,4 +496,30 @@ describe('browse and erase one volume', () => {
     expect(rp.calls.terminated).toEqual(['old1'])   // and it is deleted at the end, like any pull pod
   })
 
+  it('a pull of some shots: over ssh (no S3_PULL at start), the round without the other shots\' folders, the check for what was copied; the plan is the smaller size', async () => {
+    const rp = fakeRunPod([upPod('mine', 'ComfyUI-Dev')])
+    const calls: podpull.SshJob[] = []
+    const ssh: podpull.SshRunner = async (j) => { calls.push(j); if (j.script.includes('rclone copy')) { j.onLine('s3 pull done (manifest verified): x'); } return { code: 0 } }
+    const sizes: string[][] = []
+    const o = base({ client: rp.client, ssh, shotDirs: ['s1', 's2', 's3'], sizeOf: () => { sizes.push(['called']); return { files: 3, bytes: 3e9 } } })
+    await expect(podpull.pull(ROUND, { ...o, shots: ['nope'] })).rejects.toThrow(/not a shot/)
+    const job0 = await podpull.pull(ROUND, { ...o, shots: ['s2'] })
+    expect(job0.skip_shots).toEqual(['s1', 's3']); expect(job0.pulled_shots).toEqual(['s2'])
+    const job = await done(job0.id)
+    expect(job.state).toBe('done')
+    const pullCall = calls.find((c) => c.script.includes('rclone copy'))!
+    expect(pullCall.script).toContain("--exclude '/s1/**'"); expect(pullCall.script).toContain("--exclude '/s3/**'"); expect(pullCall.script).not.toContain("--exclude '/s2/**'")
+    expect(pullCall.script).toContain('verify_round.py'); expect(pullCall.script).toContain('s3 pull done (manifest verified)')
+    expect(pullCall.script).not.toContain('exec /opt/comfy-app/s3pull.sh')   // not the whole-round script
+    expect(podpull.knownState('vol1')?.rounds[ROUND]).toMatchObject({ state: 'complete', shots: ['s2'] })
+    // asking for every shot is the plain whole-round pull
+    const all = await podpull.pull(ROUND, { ...o, shots: ['s1', 's2', 's3'] })
+    expect(all.skip_shots).toBeUndefined(); await done(all.id)
+  })
+  it('shotDirsOf: the folders with their own MANIFEST.json are the shots (templates/ is shared files); a round without per-shot manifests has every folder', () => {
+    const e = (path: string, dir = false) => ({ path, dir, bytes: 1 })
+    expect(panama.shotDirsOf([e('a', true), e('a/MANIFEST.json'), e('b', true), e('b/MANIFEST.json'), e('templates', true), e('templates/x.py'), e('MANIFEST.json')])).toEqual(['a', 'b'])
+    expect(panama.shotDirsOf([e('x', true), e('y', true), e('y/f')])).toEqual(['x', 'y'])
+  })
+
 })

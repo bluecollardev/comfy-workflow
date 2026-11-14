@@ -41,6 +41,8 @@ export interface ImportRec {
   id: string; round: string; approved_by: string; created_at: string; state: 'active' | 'done' | 'cancelled'
   max_pods: number | null; cost_cap_usd: number | null; cap_enabled: boolean
   est_total_usd: number | null; spent_usd: number
+  /** The shots this import brings: the pull copies only these (and the round's shared files), the runs are of these */
+  shots?: string[]
   /** Pods this import started or created: stopped when the import has no more tasks for them. A pod that was already running is never in here. */
   started_pods: string[]
   price_per_hour: number | null
@@ -60,8 +62,8 @@ export interface Deps {
   /** Make sure the volume the pods and the pull use exists; `id` (when given) becomes the Default Configuration's volume first. */
   ensureVolume: (id?: string) => Promise<void>
   stopPod: (id: string) => Promise<void>
-  planPull: (round: string) => Promise<{ price_per_hour: number | null; ceiling_minutes: number; bytes: number }>
-  pull: (round: string) => Promise<{ id: string }>
+  planPull: (round: string, shots?: string[]) => Promise<{ price_per_hour: number | null; ceiling_minutes: number; bytes: number }>
+  pull: (round: string, shots?: string[]) => Promise<{ id: string }>
   pullJob: (id: string) => ReturnType<typeof podpull.job>
   cancelPull: (id: string) => void
   run: (podId: string, paths: string[]) => Promise<{ id: string }>
@@ -76,7 +78,7 @@ export const POOL_GPU = 'h100'
 export const RUN_ESTIMATE_H = 0.5
 
 const realDeps: Deps = {
-  shotsOf: async (round) => [...new Set((await panama.filesAsync(round)).entries.filter((e) => e.dir && !e.path.includes('/')).map((e) => e.path))].sort(),
+  shotsOf: async (round) => panama.shotDirsOf((await panama.filesAsync(round)).entries),   // the shot folders (with their own MANIFEST.json), not templates/
   volumePods: async () => {
     const vol = (mounts.load().network_volume_id || '').trim()
     return (await rp.listPods()).filter((p) => (p.networkVolumeId || '') === vol && !(p.name || '').startsWith(podpull.POD_PREFIX)).map((p) => ({
@@ -97,8 +99,8 @@ const realDeps: Deps = {
   },
   cardPrice: async (gpu) => (await pods.gpuMenu()).gpus.find((g) => g.value === gpu)?.price ?? null,
   stopPod: async (id) => { await pods.stop(id) },
-  planPull: async (round) => { const p = await podpull.plan(round); return { price_per_hour: p.price_per_hour, ceiling_minutes: p.ceiling_minutes, bytes: p.bytes } },
-  pull: async (round) => podpull.pull(round),
+  planPull: async (round, shots) => { const p = await podpull.plan(round, shots?.length ? { shots } : {}); return { price_per_hour: p.price_per_hour, ceiling_minutes: p.ceiling_minutes, bytes: p.bytes } },
+  pull: async (round, shots) => podpull.pull(round, shots?.length ? { shots } : {}),
   pullJob: (id) => podpull.job(id),
   cancelPull: (id) => { try { podpull.cancel(id) } catch { /* already over */ } },
   run: async (podId, paths) => runflows.run(podId, paths),
@@ -152,7 +154,7 @@ async function cardPrices(shots: string[], o: ImportOpts): Promise<Record<string
 export async function planImport(round: string, o: ImportOpts = {}): Promise<ImportPlan> {
   for (const [shot, card] of Object.entries(o.cards ?? {})) if (card && card !== gpus.AUTO && !gpus.GPUS[card]) throw new CoreError(400, `Unknown card "${card}" for ${shot}: use a key from list_gpus.`)
   const cfg = mounts.load()
-  const [all, p] = await Promise.all([deps.shotsOf(round), deps.planPull(round)])   // both read the round's listing (shared), the pull plan also asks RunPod
+  const [all, p] = await Promise.all([deps.shotsOf(round), deps.planPull(round, o.shots)])   // both read the round's listing (shared), the pull plan also asks RunPod
   const shots = o.shots?.length ? all.filter((s) => o.shots!.includes(s)) : all
   const pullH = p.ceiling_minutes / 60
   const prices = await cardPrices(shots, o)
@@ -176,7 +178,7 @@ export async function importRound(round: string, o: ImportOpts = {}): Promise<Im
   if (!plan.shots.length) throw new CoreError(404, `No shots found in ${round}.`)
   const q = state()
   if (q.imports.some((i) => i.round === round && i.state === 'active')) throw new CoreError(409, `${round} is already being imported: see the queue.`)
-  const imp: ImportRec = { id: newId('imp'), round, approved_by: by, created_at: deps.now().toISOString(), state: 'active', max_pods: plan.max_pods, cost_cap_usd: plan.cost_cap_usd, cap_enabled: plan.cap_enabled, est_total_usd: plan.est_total_usd, spent_usd: 0, started_pods: [], price_per_hour: plan.price_per_hour }
+  const imp: ImportRec = { id: newId('imp'), round, approved_by: by, created_at: deps.now().toISOString(), state: 'active', max_pods: plan.max_pods, cost_cap_usd: plan.cost_cap_usd, cap_enabled: plan.cap_enabled, est_total_usd: plan.est_total_usd, spent_usd: 0, started_pods: [], shots: [...plan.shots], price_per_hour: plan.price_per_hour }
   const pull: Task = { id: newId('t'), import_id: imp.id, round, shot: null, kind: 'pull', state: 'waiting', depends_on: [], pod_id: null, pod_name: null }
   q.imports.push(imp); q.tasks.push(pull)
   const prices = await cardPrices(plan.shots, o)
@@ -280,7 +282,7 @@ async function follow(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> 
 
 async function begin(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> {
   if (t.kind === 'pull') {
-    try { t.job_id = (await deps.pull(t.round)).id; t.state = 'running'; t.started_at = deps.now().toISOString(); t.phase = 'job'; ev(t, `pull of ${t.round} started (a short-lived pod of the cheapest free card, or a pod of yours)`) } catch (e) { finish(t, imp, 'failed', (e as Error).message) }
+    try { t.job_id = (await deps.pull(t.round, imp.shots)).id; t.state = 'running'; t.started_at = deps.now().toISOString(); t.phase = 'job'; ev(t, `pull of ${t.round} started (a short-lived pod of the cheapest free card, or a pod of yours)`) } catch (e) { finish(t, imp, 'failed', (e as Error).message) }
     return true
   }
   if (t.retry_at && new Date(t.retry_at).getTime() > deps.now().getTime()) return false   // waiting for a card to be free again

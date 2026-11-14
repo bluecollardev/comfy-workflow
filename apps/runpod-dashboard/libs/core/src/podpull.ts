@@ -55,7 +55,7 @@ export const s3PullFor = (round: string) => `${panama.bucket()}/rounds/${round}=
 // ----- what was last learned about each volume, and the temporary pods this app made -----
 
 export type RoundState = panama.Staged['state']
-interface RoundRec { state: RoundState; present: number; expected: number | null; missing: number | null; bytes: number }
+interface RoundRec { state: RoundState; present: number; expected: number | null; missing: number | null; bytes: number; /** the shots copied, when the pull was of some shots only */ shots?: string[] }
 interface VolRec { as_of: string; rounds: Record<string, RoundRec> }
 const stateFile = () => process.env.VOLUME_ROUNDS_FILE || join(configDir(), 'volume-rounds.json')
 /** The volume records used to share pod-rounds.json with the pod -> round map (a round deleted in the window then failed on an object where a name was expected). Move them to their own file once. */
@@ -130,6 +130,12 @@ export interface Opts {
   route?: 'current' | 'temporary'
   /** Work on this volume instead of the Default Configuration's (browse and erase are about one volume of the account). */
   volumeId?: string
+  /** Pull only these shots (and the round's shared files): the other shot folders are left in the bucket. Unset or all of them: the whole round. */
+  shots?: string[]
+  /** (set by pull) the shot folders left out, for the size of the plan */
+  skipShots?: string[]
+  /** (tests) the round's shot folders, instead of reading the bucket */
+  shotDirs?: string[]
 }
 
 async function volumeOf(opts: Opts): Promise<Volume | null> {
@@ -156,7 +162,7 @@ export interface PodPlan {
 
 const gpuName = (id: string) => Object.entries(gpus.GPUS).find(([, g]) => g.id === id)?.[0] || id
 const sizeOf = async (round: string, opts: Opts) => {
-  try { const s = await (opts.sizeOf ?? panama.sizeAsync)(round); return { files: s.files, bytes: s.bytes } } catch { return { files: 0, bytes: 0 } }
+  try { const s = await (opts.sizeOf ?? ((r: string) => panama.sizeAsync(r, opts.skipShots)))(round); return { files: s.files, bytes: s.bytes } } catch { return { files: 0, bytes: 0 } }
 }
 
 /** A pod of the user's on the configured volume that the Sync's SSH route can reach, if any: a running one first, else an off one (started before the job). Our own pull pods never count. */
@@ -179,13 +185,21 @@ async function findActivePod(cfg: mounts.MountsConfig, opts: Opts): Promise<{ id
   return off
 }
 
+/** The shot folders a pull of `opts.shots` leaves out (none for the whole round). */
+async function skipOf(round: string, opts: Opts): Promise<string[]> {
+  if (!opts.shots?.length) return []
+  const all = opts.shotDirs ? opts.shotDirs : panama.shotDirsOf((await panama.filesAsync(round)).entries)
+  for (const s of opts.shots) if (!all.includes(s)) throw bad(`${s} is not a shot of ${round}: ${all.join(', ')}`)
+  return all.filter((s) => !opts.shots!.includes(s))
+}
+
 export async function plan(round: string, opts: Opts = {}): Promise<PodPlan> {
   assertRound(round)
   const cap = opts.volumeId ? volumeJobCapability() : capability()   // a job on one volume needs RunPod, not the Panama keys
   if (!cap.available) throw bad(cap.reason)
   const cfg = mounts.load()
   const volume = await volumeOf(opts)
-  const size = await sizeOf(round, opts)
+  const size = await sizeOf(round, { ...opts, skipShots: opts.skipShots ?? (await skipOf(round, opts)) })
   const base = { round, bytes: size.bytes, files: size.files, idle_stop_minutes: AGENT_IDLE_MINUTES, ceiling_minutes: ceilingMinutes(size.bytes), volume }
   const found = await findActivePod(cfg, opts)
   const current = found && opts.route !== 'temporary' && (found.running || opts.route === 'current') ? found : null
@@ -225,6 +239,7 @@ export interface PodJob {
   /** The card the pod actually has and its price per hour, once the pod exists (the Queue shows them). */
   gpu?: string; price_per_hour?: number | null
   /** A volume job (`browse`, `erase`): the volume, what a browse found (folders with their sizes), what an erase was asked to clear and how many bytes it freed from each. */
+  /** A pull of some shots: the shot folders it did not copy, and the ones it did */ skip_shots?: string[]; pulled_shots?: string[]
   volume_id?: string; listing?: { path: string; bytes: number }[]; erase_keys?: string[]; freed?: Record<string, number>
   state: JobState; files: number; lines: string[]; error?: string; verify?: panama.Verify; started_at: string
   /** ADR-033: what placing the verified round on the pod did (files linked, graphs written, conflicts); set only after a pull whose check passed. A placing failure is here, never the pull's. */
@@ -291,6 +306,50 @@ export function pullScript(round: string, k: { id: string; secret: string }): st
   ].join('\n')
 }
 /** Removes exactly one round folder under the constant root; the name has been checked against ROUND and the path is checked again on the pod. */
+/** A pull of some shots over SSH (the pod needs no S3_PULL at start): the round without the shot folders in `skip`, then the manifest check for what was copied only. Same marker files and last lines as s3pull.sh, so the job reads it the same way. */
+export function pullShotsScript(round: string, skip: string[], k: { id: string; secret: string }): string {
+  assertRound(round)
+  for (const s of skip) assertRound(s)
+  const src = `${panama.bucket()}/rounds/${round}`, dst = `${REMOTE_ROUNDS}/${round}`
+  const excl = skip.map((s) => `--exclude ${q(`/${s}/**`)}`).join(' ')
+  return [
+    'set -u',
+    `export RCLONE_CONFIG_PODS3_TYPE=s3 RCLONE_CONFIG_PODS3_PROVIDER=AWS RCLONE_CONFIG_PODS3_ACCESS_KEY_ID=${q(k.id)} RCLONE_CONFIG_PODS3_SECRET_ACCESS_KEY=${q(k.secret)} RCLONE_CONFIG_PODS3_REGION=${q(settings.lookup('PANAMA_S3_REGION') || settings.PANAMA_DEFAULTS.region)}`,
+    `src=${q(src)}; dst=${q(dst)}; SKIP=${q(skip.join(','))}`,
+    'command -v rclone >/dev/null || { echo "s3 pull refused: rclone is not in this image" >&2; exit 65; }',
+    'mkdir -p "$dst" && echo "s3 pull: $src -> $dst (shots left out: $SKIP)"',
+    `if rclone copy "PODS3:$src" "$dst" ${excl} --transfers 8 --checksum --stats 30s --stats-one-line -v; then`,
+    '  rm -f "$dst/.s3-pull.done" "$dst/.s3-pull.failed" "$dst/.s3-pull.unverified"',
+    '  if [ -f "$dst/MANIFEST.json" ]; then',
+    `    PY="$(command -v python3 || command -v python)"`,
+    `    if "$PY" - "$dst" "$SKIP" > "$dst/.s3-pull.check" 2>&1 <<'PY'`,
+    'import sys, os, importlib.util',
+    "spec = importlib.util.spec_from_file_location('verify_round', '/opt/comfy-app/verify_round.py'); v = importlib.util.module_from_spec(spec); spec.loader.exec_module(v)",
+    "root = sys.argv[1]; skip = set(x for x in sys.argv[2].split(',') if x)",
+    'files = v.listed(root)',
+    "if not files:",
+    "    print('NO FILE LIST'); sys.exit(2)",
+    'bad = []; n = 0',
+    'for p, f in files.items():',
+    "    if p.split(os.sep)[0] in skip: continue",
+    '    n += 1; full = os.path.join(root, p)',
+    "    if not os.path.isfile(full): bad.append('MISSING  ' + p)",
+    "    elif os.path.getsize(full) != f['bytes']: bad.append('SIZE     ' + p)",
+    "    elif v.sha256(full) != f['sha256']: bad.append('SHA256   ' + p)",
+    "for b in bad[:50]: print(b)",
+    "print('%d listed, %d bad, 0 on disk but not listed' % (n, len(bad)))",
+    "print('OK' if not bad else 'FAIL')",
+    'sys.exit(0 if not bad else 1)',
+    'PY',
+    '    then mv "$dst/.s3-pull.check" "$dst/.s3-pull.done" && echo "s3 pull done (manifest verified): $dst"',
+    '    else mv "$dst/.s3-pull.check" "$dst/.s3-pull.failed"; echo "s3 pull FAILED the manifest check: $dst" >&2; tail -n 5 "$dst/.s3-pull.failed" >&2; exit 1',
+    '    fi',
+    '  else echo "no MANIFEST.json" > "$dst/.s3-pull.unverified"; echo "s3 pull done, NOT verified (no MANIFEST.json): $dst"',
+    '  fi',
+    'else echo "s3 pull FAILED: $src (rclone exit $?); run it again, a rerun carries on" >&2; exit 1',
+    'fi', '',
+  ].join('\n')
+}
 export function removeScript(round: string): string {
   assertRound(round)
   return [
@@ -331,7 +390,7 @@ export function eraseScript(keys: string[]): string {
   return lines.join('\n')
 }
 /** The script a job runs on its pod. */
-const scriptOf = (j: PodJob, k: { id: string; secret: string } | null): string => j.kind === 'pull' ? pullScript(j.round, k!) : j.kind === 'browse' ? browseScript() : j.kind === 'erase' ? eraseScript(j.erase_keys ?? []) : removeScript(j.round)
+const scriptOf = (j: PodJob, k: { id: string; secret: string } | null): string => j.kind === 'pull' ? (j.skip_shots?.length ? pullShotsScript(j.round, j.skip_shots, k!) : pullScript(j.round, k!)) : j.kind === 'browse' ? browseScript() : j.kind === 'erase' ? eraseScript(j.erase_keys ?? []) : removeScript(j.round)
 const KILL_SCRIPT = 'pkill -f /opt/comfy-app/s3pull.sh; pkill -x rclone; true\n'
 
 export interface SshJob { host: string; port: number; script: string; onLine: (line: string) => void; signal: AbortSignal }
@@ -383,7 +442,13 @@ function conclude(i: Internal) {
   switch (i.outcome) {
     case 'done':
       j.verify = { listed: p.files, bad: [], extra: 0, ok: true }; done('done')
-      if (vol) recordState(vol, j.round, { state: 'complete', present: p.files, expected: p.files, missing: 0, bytes: p.bytes }); break
+      if (vol) {
+        // A round pulled by shots keeps which shots are there (added to what an earlier pull brought); a whole-round pull clears the list.
+        const before = knownState(vol)?.rounds[j.round]
+        const shots = j.pulled_shots ? [...new Set([...(before?.shots ?? []), ...j.pulled_shots])].sort() : undefined
+        recordState(vol, j.round, { state: 'complete', present: p.files, expected: p.files, missing: 0, bytes: p.bytes, ...(shots && (before?.shots || !before) ? { shots } : {}) })
+      }
+      break
     case 'check-failed': {
       const t = i.totals
       j.verify = { listed: t?.listed ?? 0, bad: i.bad.slice(0, 50), extra: t?.extra ?? 0, ok: false }
@@ -478,7 +543,8 @@ async function runTemporary(i: Internal, opts: Opts) {
   const deadline = Date.now() + (p.ceiling_minutes + 10) * 60_000
   try {
     const env: Record<string, string> = { ...cfg.env }
-    if (j.kind === 'pull') env.S3_PULL = s3PullFor(j.round); else delete env.S3_PULL   // a delete never carries a pull (or the keys podOverrides adds for one)
+    const viaSsh = j.kind === 'pull' && !!j.skip_shots?.length   // a pull of some shots is run over SSH (the pod's own S3_PULL would copy the whole round)
+    if (j.kind === 'pull' && !viaSsh) env.S3_PULL = s3PullFor(j.round); else delete env.S3_PULL   // a delete never carries a pull (or the keys podOverrides adds for one)
     // The cheapest free card can be taken between the plan and the create ("No card available"): try the next free card of the volume's datacenter, then the app's own choice.
     const onVol = opts.volumeId && p.volume ? { network_volume_id: p.volume.id, ...(p.volume.datacenter ? { data_center_id: p.volume.datacenter } : {}) } : {}   // a job on another volume than the default one
     const base = { name, round: j.round, image: 'configured', cuda_match: false, idle_stop_minutes: p.ceiling_minutes, config: { ...cfg, ...onVol, env } } as const
@@ -501,10 +567,11 @@ async function runTemporary(i: Internal, opts: Opts) {
     podId = created.id; j.pod_id = podId; j.gpu = (created as { gpu?: string }).gpu ?? p.gpu; j.price_per_hour = p.price_per_hour; tempSetId(name, podId)
     if (i.cancelled) return
     j.state = 'starting'
-    if (j.kind !== 'pull') {   // remove, browse, erase: one script over SSH
+    if (j.kind !== 'pull' || viaSsh) {   // remove, browse, erase, and a pull of some shots: one script over SSH
       const { host, port } = await waitForSshTarget(i, podId, opts, deadline)
-      j.state = j.kind === 'browse' ? 'verifying' : 'deleting'
-      await runOnPod(i, host, port, scriptOf(j, null), opts, secrets)
+      j.state = j.kind === 'browse' ? 'verifying' : j.kind === 'pull' ? 'pulling' : 'deleting'
+      await runOnPod(i, host, port, scriptOf(j, k), opts, secrets)
+      if (viaSsh && i.outcome === 'done' && !i.cancelled) await placeAfter(i, host, port, opts)   // the same placing as after a whole-round pull
       return
     }
     const logs = opts.logs ?? ((id: string) => defaultLogs(id, opts.client))
@@ -591,8 +658,11 @@ export async function pull(round: string, opts: Opts = {}): Promise<PodJob> {
   assertRound(round)
   const existing = claim(round, 'pull'); if (existing) return view(existing)
   try {
-    const p = await plan(round, opts)
+    // Only the shots asked for: every other shot folder of the round stays in the bucket (a shot is 1 to 15 GB; the whole round was 29 GB for a 1.3 GB shot).
+    const skip = await skipOf(round, opts)
+    const p = await plan(round, { ...opts, skipShots: skip })
     const i = newJob(round, 'pull', p, (opts.now ?? (() => new Date()))())
+    if (skip.length) { i.job.skip_shots = skip; i.job.pulled_shots = [...opts.shots!].sort() }
     void run(i, opts)
     return view(i)
   } catch (e) { busy.delete(round); throw e }

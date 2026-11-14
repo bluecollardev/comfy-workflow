@@ -133,9 +133,17 @@ function listingOf(round: string): Promise<string> {
   listings.set(round, { at: Date.now(), p }); p.catch(() => { if (listings.get(round)?.p === p) listings.delete(round) })   // a failure is not kept
   return p
 }
-export async function sizeAsync(round: string) {
+/** The shot folders of a round: the top-level folders that hold their own MANIFEST.json (`templates/` and the like are the round's shared files, not a shot). A round with no per-shot manifests: every top-level folder. */
+export function shotDirsOf(entries: RoundEntry[]): string[] {
+  const top = [...new Set(entries.filter((e) => e.dir && !e.path.includes('/')).map((e) => e.path))].sort()
+  const withManifest = top.filter((d) => entries.some((e) => !e.dir && e.path === `${d}/MANIFEST.json`))
+  return withManifest.length ? withManifest : top
+}
+/** Size of a round, or of what a pull that skips some shot folders would copy (`skip`). */
+export async function sizeAsync(round: string, skip: string[] = []) {
   if (!ROUND.test(round)) throw bad(`Not a round name: ${round}`)
-  const f = roundTree(round, await listingOf(round)).filter((e) => !e.dir)
+  const skipped = new Set(skip)
+  const f = roundTree(round, await listingOf(round)).filter((e) => !e.dir && !skipped.has(e.path.split('/')[0]))
   return { round, files: f.length, bytes: f.reduce((n, e) => n + e.bytes, 0) }
 }
 export async function filesAsync(round: string) {

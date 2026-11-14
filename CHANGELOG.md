@@ -5,6 +5,9 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased
 
+### Import Round copies only the shots you tick (ADR-038 amendment)
+- Lucas, after importing 10-23 for one shot: "well that's fucking dumb". An import pulled the whole round (29 GB) whatever shots were ticked; `archival-085` is 1.3 GB of it. Now the pull copies the round's shared files and **only the ticked shots' folders** (`rclone copy` with an exclude per other shot folder, over SSH, the same markers and placing as before), and checks the manifest for what was copied only. The plan's size and price are for those shots; the shot list no longer offers `templates/` (a shot is a folder with its own MANIFEST.json). The volume's record of the round lists which shots are there. MCP `panama_pull` (pod) takes `shots`. Pulling every shot is the old whole-round pull.
+
 ### Run, Outputs and a file viewer
 - Lucas: "when workflows successfully run, (have two steps in this run workflows modal) the second should have a reusable component that shows the outputs generated", "and a file viewer for the outputs", "and a download", "the cards should have an outputs button, Run Workflows can just say Run", "Import, Run, Output (disabled if no output)". The Run window has two steps: **Run** and **Outputs** (it moves to Outputs by itself when a run ends with files). The reusable `OutputsGallery` shows a run's files as thumbnails (images, videos, audio; saved results before previews) read from the pod's ComfyUI `/view`; a click opens `OutputViewerModal` (large, Previous/Next, Open in a tab, **Download**: a Save As dialog in the app). Pod cards: **Import · Run · Outputs** on one row; Outputs is disabled until the pod's history has files, and opens every run's files in the same gallery. Core: each run result carries its `files`.
 
