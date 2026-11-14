@@ -58,7 +58,8 @@ test('Run workflows: step 2 shows what the successful runs produced; a tile open
   await expect(dlg.getByTestId('runflows-run')).toBeVisible()
 })
 
-test('pod card: Import, Run and Outputs sit on one row; Outputs is disabled until the pod has produced files, then opens the gallery', async ({ page }) => {
+test('pod card: Import, Run and Outputs sit on one row; Outputs is disabled until the pod has produced files, then opens the gallery', async ({ page, api }) => {
+  api.state.history.runs['pod-aaaaaaaa'].splice(1, 0, { prompt_id: 'beadbead-1111-2222', workflow: 'rounds/r1/cgi-043/other.json', status: 'success', started_at: '2026-11-03T11:20:00Z', duration_s: 9.1, cost_estimate: 0.01, outputs: [{ filename: 'other_0001.png', type: 'output', subfolder: '' }] })   // a second finished run, in another workflow
   await page.route('**/view?*', (r) => r.fulfill({ status: 200, contentType: 'image/png', body: PNG }))
   await page.goto('/')
   const dev = podCard(page, 'ComfyUI-Dev')   // has a finished run with a file in its history
@@ -83,6 +84,7 @@ test('pod card: Import, Run and Outputs sit on one row; Outputs is disabled unti
 })
 
 test('pod Outputs: with a Shot set on the pod only that shot\'s runs show, with a box to see them all', async ({ page, api }) => {
+  api.state.history.runs['pod-aaaaaaaa'].splice(1, 0, { prompt_id: 'beadbead-1111-2222', workflow: 'rounds/r1/cgi-043/other.json', status: 'success', started_at: '2026-11-03T11:20:00Z', duration_s: 9.1, cost_estimate: 0.01, outputs: [{ filename: 'other_0001.png', type: 'output', subfolder: '' }] })
   await page.route('**/view?*', (r) => r.fulfill({ status: 200, contentType: 'image/png', body: PNG }))
   const dev = api.state.pods.find((p) => p.name === 'ComfyUI-Dev'); dev.round = 'r1'; dev.shot = 'stereo'
   await page.goto('/')

@@ -18,3 +18,16 @@ export function datacenterOptions(list, first, extra) {
   if (extra && !list.some((d) => d.value === extra)) out.push({ value: extra, text: extra })
   return out
 }
+
+/** The datacenter menu for a volume in two groups: the datacenters with RunPod's S3 API (a volume there is read and written without a pod) and the rest. Stock is not what matters for a volume. */
+export function volumeDatacenterOptions(list, first, extra) {
+  const label = (d) => `${d.value}${d.s3 ? ' · S3' : ''}`
+  const opt = (d) => ({ value: d.value, text: label(d) })
+  const groups = [
+    { label: t('dc.groupVolS3'), options: list.filter((d) => d.s3).map(opt) },
+    { label: t('dc.groupVolNoS3'), options: list.filter((d) => !d.s3).map(opt) },
+  ].filter((g) => g.options.length)
+  const out = [first, ...groups]
+  if (extra && !list.some((d) => d.value === extra)) out.push({ value: extra, text: extra })
+  return out
+}

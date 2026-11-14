@@ -1,4 +1,4 @@
-import { test, expect, openCreatePod, podCard, modal, cfgTab } from './fixtures'
+import { test, expect, openCreatePod, podCard, modal, cfgTab, answerConfirm } from './fixtures'
 import { t } from './i18n'
 
 // The Configuration panel (gear icon): the RunPod key, the pod volume, the three folders mapped on
@@ -298,13 +298,13 @@ test.describe('features that read the configuration', () => {
   })
 
   test('every pod action toasts its outcome', async ({ page }) => {
-    page.on('dialog', (d) => d.accept())
     await page.goto('/')
     await podCard(page, 'ComfyUI-Dev').getByTestId('pod-stop').click()
     await expect(toast(page).first()).toContainText(t('toast.podStopped'))
     await podCard(page, 'ComfyUI-Batch').getByTestId('pod-resume').click()
     await expect(toast(page).last()).toContainText(t('toast.podResumed'))
     await podCard(page, 'ComfyUI-Test').getByTestId('pod-delete').click()
+    await answerConfirm(page, true)
     await expect(toast(page).last()).toContainText(t('toast.podDeleted'))
     await expect(toast(page)).toHaveCount(3)
     await toast(page).first().getByTestId('toast-close').click()

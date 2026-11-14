@@ -120,6 +120,8 @@ export type AwsRunner = (args: string[], env: Record<string, string>) => Promise
 export interface Opts {
   /** Runs the `aws` CLI (RunPod's S3 API for a volume). Tests inject one. */
   aws?: AwsRunner
+  /** Makes the one-off SSH key pair a clone between two pods uses. Tests inject one. */
+  keygen?: () => Promise<{ priv: string; pub: string; comment: string }>
   client?: rp.RunPodClient
   /** Runs a script on a pod over SSH. Tests inject one; the default is `ssh` itself. */
   ssh?: SshRunner
@@ -248,7 +250,7 @@ export interface PodJob {
   /** A volume job (`browse`, `erase`): the volume, what a browse found (folders with their sizes), what an erase was asked to clear and how many bytes it freed from each. */
   /** A pull of some shots: the shot folders it did not copy, and the ones it did */ skip_shots?: string[]; pulled_shots?: string[]
   /** A clone: which way the files go (a pod on the source pushes to an S3-capable target; a pod on the target pulls from an S3-capable source), from where to where */
-  clone?: { mode: 'push' | 'pull'; from: { id: string; datacenter: string; name: string }; to: { id: string; datacenter: string; name: string }; include_input: boolean }
+  clone?: { mode: 'push' | 'pull' | 'rsync'; from: { id: string; datacenter: string; name: string }; to: { id: string; datacenter: string; name: string }; include_input: boolean }
   /** A browse: the folder it listed (default the whole volume) */
   browse_path?: string
   volume_id?: string; listing?: { path: string; bytes: number }[]; erase_keys?: string[]; freed?: Record<string, number>
@@ -406,13 +408,12 @@ export function eraseScript(keys: string[]): string {
   lines.push('echo "ERASE-DONE"', '')
   return lines.join('\n')
 }
-/** Which way a clone goes. RunPod's S3 API reaches a volume only in some datacenters and with S3 keys: a target that has it is written to from a pod on the source (push); else a source that has it is read from a pod on the target (pull); with neither, a clone is not possible here. */
-export function cloneMode(from: { datacenter: string }, to: { datacenter: string }, haveKeys: boolean): { mode: 'push' | 'pull' } | { error: string } {
+/** Which way a clone goes. With RunPod's S3 API on one side (some datacenters, and S3 keys) one pod does it: a target that has it is written to from a pod on the source (push); else a source that has it is read from a pod on the target (pull). Otherwise, and for any two volumes, RunPod to RunPod: a short pod on each, and the target's pod rsyncs from the source's over SSH. */
+export function cloneMode(from: { datacenter: string }, to: { datacenter: string }, haveKeys: boolean): { mode: 'push' | 'pull' | 'rsync' } {
   const s3 = (d: string) => pods.S3_DATACENTERS.has(d)
-  if (s3(to.datacenter) && haveKeys) return { mode: 'push' }
-  if (s3(from.datacenter) && haveKeys) return { mode: 'pull' }
-  if (s3(to.datacenter) || s3(from.datacenter)) return { error: 'Add RunPod S3 keys in Default Configuration: a clone goes through RunPod\'s S3 API on whichever side has one.' }
-  return { error: `Neither ${from.datacenter} nor ${to.datacenter} has RunPod's S3 API (${[...pods.S3_DATACENTERS].join(', ')}), so there is no way to copy between them from here. Clone into a volume in one of those datacenters.` }
+  if (s3(to.datacenter) && haveKeys) return { mode: 'push' }   // one pod, on the source
+  if (s3(from.datacenter) && haveKeys) return { mode: 'pull' }   // one pod, on the target
+  return { mode: 'rsync' }   // RunPod to RunPod, no S3 needed: a pod on each volume, the target's pulls from the source's over SSH
 }
 /** The clone's copy, run on a pod over SSH: rclone against RunPod's S3 API (endpoint of the S3 side, bucket = its volume id). `input/` holds links of the rounds' files (a copy would double them): left out unless asked; placing the round again relinks it. */
 export function cloneScript(c: NonNullable<PodJob['clone']>, k: { id: string; secret: string }): string {
@@ -568,6 +569,26 @@ async function runActive(i: Internal, opts: Opts) {
   } finally { idle.register(pod.id, prev) }
 }
 
+/** A pod of its own on a volume: the plan's card, else the next free card of the volume's datacenter (the cheapest one can be taken between the plan and the create: "No card available"), else the app's own choice, once. */
+async function createTempPod(p: PodPlan, base: Record<string, unknown>, opts: Opts, cfg: mounts.MountsConfig): Promise<Awaited<ReturnType<typeof pods.create>>> {
+  const tried = new Set<string>()
+  let created: Awaited<ReturnType<typeof pods.create>> | null = null
+  let next: string | undefined = p.gpu_type_id
+  for (let attempt = 0; attempt < 5 && !created; attempt++) {
+    try { created = await pods.create({ ...base, ...(next ? { gpu_type_id: next } : { gpu: 'auto' }) } as never, opts.client) } catch (e) {
+      if (!/No card available/.test((e as Error).message)) throw e
+      if (next) tried.add(next)
+      const dc = p.volume?.datacenter
+      const more = dc ? (await rp.freeCardsIn(dc, opts.client).catch(() => [])).filter((c) => !tried.has(c.id) && (cfg.pull_any_card !== false || gpus.autoCards().some((g) => g.id === c.id))) : []
+      if (!more.length && !next) throw e   // 'auto' failed as well: nothing is free
+      next = more[0]?.id   // undefined: the app's own choice, once
+      if (!next && attempt > 0 && tried.size > 0 && !more.length) { try { created = await pods.create({ ...base, gpu: 'auto' } as never, opts.client) } catch { throw e } }
+    }
+  }
+  if (!created) throw new CoreError(502, 'No card available right now in the volume\'s datacenter (tried several). Try again in a few minutes.')
+  return created
+}
+
 async function runTemporary(i: Internal, opts: Opts) {
   const p = i.plan, j = i.job, cfg = mounts.load()
   const name = j.pod_name!   // set when the job was created
@@ -587,22 +608,9 @@ async function runTemporary(i: Internal, opts: Opts) {
     // The cheapest free card can be taken between the plan and the create ("No card available"): try the next free card of the volume's datacenter, then the app's own choice.
     const onVol = opts.volumeId && p.volume ? { network_volume_id: p.volume.id, ...(p.volume.datacenter ? { data_center_id: p.volume.datacenter } : {}) } : {}   // a job on another volume than the default one
     const base = { name, round: j.round, image: 'configured', cuda_match: false, idle_stop_minutes: p.ceiling_minutes, config: { ...cfg, ...onVol, env } } as const
-    const tried = new Set<string>()
     let created: Awaited<ReturnType<typeof pods.create>> | null = adopted ? ({ id: adopted.id, name: adopted.name } as Awaited<ReturnType<typeof pods.create>>) : null
     if (adopted) j.lines.push(`taking over the pod ${adopted.name} (${adopted.id}) that was already pulling this round`)
-    let next: string | undefined = p.gpu_type_id
-    for (let attempt = 0; attempt < 5 && !created; attempt++) {
-      try { created = await pods.create({ ...base, ...(next ? { gpu_type_id: next } : { gpu: 'auto' }) }, opts.client) } catch (e) {
-        if (!/No card available/.test((e as Error).message)) throw e
-        if (next) tried.add(next)
-        const dc = p.volume?.datacenter
-        const more = dc ? (await rp.freeCardsIn(dc, opts.client).catch(() => [])).filter((c) => !tried.has(c.id) && (cfg.pull_any_card !== false || gpus.autoCards().some((g) => g.id === c.id))) : []
-        if (!more.length && !next) throw e   // 'auto' failed as well: nothing is free
-        next = more[0]?.id   // undefined: the app's own choice, once
-        if (!next && attempt > 0 && tried.size > 0 && !more.length) { try { created = await pods.create({ ...base, gpu: 'auto' }, opts.client) } catch { throw e } }
-      }
-    }
-    if (!created) throw new CoreError(502, 'No card available right now in the volume\'s datacenter (tried several). Try again in a few minutes.')
+    if (!created) created = await createTempPod(p, base, opts, cfg)
     podId = created.id; j.pod_id = podId; j.gpu = (created as { gpu?: string }).gpu ?? p.gpu; j.price_per_hour = p.price_per_hour; tempSetId(name, podId)
     if (i.cancelled) return
     j.state = 'starting'
@@ -709,9 +717,67 @@ async function runS3(i: Internal, opts: Opts) {
   throw bad(`A ${j.kind} job does not go through the S3 API`)
 }
 
+const keygenDefault = async (): Promise<{ priv: string; pub: string; comment: string }> => {
+  const { mkdtempSync, readFileSync, rmSync } = await import('node:fs'), { tmpdir } = await import('node:os'), { execFile } = await import('node:child_process')
+  const dir = mkdtempSync(join(tmpdir(), 'clonekey-')), comment = `pod-manager-clone-${Date.now()}`
+  try {
+    await new Promise<void>((res, rej) => execFile('ssh-keygen', ['-t', 'ed25519', '-N', '', '-C', comment, '-f', join(dir, 'k')], (e) => (e ? rej(new CoreError(500, `Could not make a one-off SSH key (ssh-keygen): ${e.message}`)) : res())))
+    return { priv: readFileSync(join(dir, 'k'), 'utf8'), pub: readFileSync(join(dir, 'k.pub'), 'utf8').trim(), comment }
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+}
+/** The source pod lets the one-off key in (and takes it out afterwards by its comment). */
+export const cloneAuthorizeScript = (pub: string) => ['set -eu', 'mkdir -p /root/.ssh && chmod 700 /root/.ssh', `printf '%s\\n' ${q(pub)} >> /root/.ssh/authorized_keys`, 'chmod 600 /root/.ssh/authorized_keys', 'echo "key added"', ''].join('\n')
+export const cloneRevokeScript = (comment: string) => ['set -u', `grep -v ${q(comment)} /root/.ssh/authorized_keys > /tmp/ak.new 2>/dev/null; cat /tmp/ak.new > /root/.ssh/authorized_keys; rm -f /tmp/ak.new`, 'echo "key removed"', ''].join('\n')
+/** On the target's pod: rsync the source's /workspace over SSH with the one-off key. -H keeps hard links (input/ is a set of links of the rounds' files), so inputs cost nothing extra when they are copied. */
+export function cloneRsyncScript(c: NonNullable<PodJob['clone']>, src: { host: string; port: number }, priv: string): string {
+  const excludes = [...(c.include_input ? [] : ["--exclude '/comfy-shared/input/'"]), "--exclude '/lost+found/'"].join(' ')
+  const ssh = `ssh -i /tmp/clone_key -p ${src.port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o ConnectTimeout=30`
+  return [
+    'set -u',
+    `umask 077; cat > /tmp/clone_key <<'CLONE_KEY'`, priv.trim(), 'CLONE_KEY', 'chmod 600 /tmp/clone_key',
+    'command -v rsync >/dev/null || { echo "clone refused: rsync is not in this image" >&2; rm -f /tmp/clone_key; exit 65; }',
+    `echo "clone: ${c.from.name} (${c.from.datacenter}) -> ${c.to.name} (${c.to.datacenter}), rsync over ssh"`,
+    `if rsync -aH --partial --info=progress2,stats1 ${excludes} -e ${q(ssh)} ${q(`${src.host}:/workspace/`)} /workspace/; then rm -f /tmp/clone_key; echo "CLONE-DONE"; else code=$?; rm -f /tmp/clone_key; echo "clone FAILED (rsync exit $code); run it again, a rerun carries on" >&2; exit 1; fi`, '',
+  ].join('\n')
+}
+/** A clone RunPod to RunPod: a short pod on the source volume and one on the target, a one-off SSH key from this app (never stored), and the target's pod pulls the files from the source's. Both pods are deleted at the end, the key is taken out of the source first. */
+async function runCloneRsync(i: Internal, opts: Opts) {
+  const j = i.job, c = j.clone!, cfg = mounts.load()
+  const made: { id: string; name: string }[] = []
+  const mk = async (vol: { id: string; datacenter: string; name: string }, side: 'src' | 'dst') => {
+    const label = volLabel(vol.id)
+    const p = await plan(label, { ...opts, volumeId: vol.id, route: 'temporary', sizeOf: () => ({ files: 0, bytes: 0 }) })
+    const name = `${POD_PREFIX}clone-${side}-${vol.id}-${String(new Date().getMonth() + 1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}`.slice(0, 60)
+    const env: Record<string, string> = { ...cfg.env }; delete env.S3_PULL
+    const base = { name, image: 'configured', cuda_match: false, idle_stop_minutes: Math.max(120, p.ceiling_minutes), config: { ...cfg, network_volume_id: vol.id, ...(vol.datacenter ? { data_center_id: vol.datacenter } : {}), env } }
+    tempAdd({ round: label, kind: 'clone', name, pod_id: null, volume: vol.id, created_at: new Date().toISOString(), approved_by: APPROVED_BY })
+    const created = await createTempPod(p, base, opts, cfg)
+    tempSetId(name, created.id); made.push({ id: created.id, name }); j.lines.push(`${side === 'src' ? 'source' : 'target'} pod ${created.id} on ${vol.name}`)
+    return created
+  }
+  try {
+    const src = await mk(c.from, 'src'); j.pod_id = src.id; j.pod_name = (src as { name?: string }).name ?? null
+    if (i.cancelled) return
+    const dst = await mk(c.to, 'dst')
+    j.state = 'starting'
+    const deadline = Date.now() + 40 * 60_000
+    const s = await waitForSshTarget(i, src.id, opts, deadline), d = await waitForSshTarget(i, dst.id, opts, deadline)
+    if (i.cancelled) return
+    const kp = await (opts.keygen ?? keygenDefault)()
+    j.state = 'pulling'
+    try {
+      await runOnPod(i, s.host, s.port, cloneAuthorizeScript(kp.pub), opts, [])
+      await runOnPod(i, d.host, d.port, cloneRsyncScript(c, s, kp.priv), opts, kp.priv.split('\n').filter((l) => l.length > 16))
+    } finally { try { await runOnPod(i, s.host, s.port, cloneRevokeScript(kp.comment), opts, []) } catch { /* the pod is deleted next */ } }
+  } finally {
+    for (const m of made) { try { await pods.remove(m.id, opts.client) } catch { /* already gone */ } tempDrop(m.name) }
+  }
+}
+
 async function run(i: Internal, opts: Opts) {
   try {
     if (mounts.dryRun(mounts.load())) await simulate(i, opts)
+    else if (i.job.kind === 'clone' && i.job.clone?.mode === 'rsync') await runCloneRsync(i, opts)
     else if (i.plan.route === 's3') await runS3(i, opts)
     else if (i.plan.route === 'active') await runActive(i, opts)
     else await runTemporary(i, opts)
@@ -813,15 +879,14 @@ export async function cloneVolume(sourceId: string, o: { approved_by?: string; t
   if (o.to_volume_id) { volLabel(o.to_volume_id); if (o.to_volume_id === sourceId) throw bad('A volume cannot be cloned onto itself.'); to = await volumeOf({ ...opts, volumeId: o.to_volume_id }); if (!to) throw new CoreError(404, `No network volume ${o.to_volume_id}.`) }
   const targetDc = to?.datacenter ?? o.new_volume!.datacenter
   const way = cloneMode(from, { datacenter: targetDc }, !!s3Keys())
-  if ('error' in way) throw new CoreError(400, way.error)   // before any spend
   if (!to) { const v = await volumesMod.create(o.new_volume!, opts.client); to = { id: v.id, name: v.name, datacenter: v.datacenter } }   // the volume's monthly price starts here
-  const podVol = way.mode === 'push' ? from : to   // the pod mounts the side that is not served by S3
+  const podVol = way.mode === 'pull' ? to : from   // the pod mounts the side that is not served by S3 (rsync: both get a pod; the job is about the source)
   const label = volLabel(podVol.id)
-  const live = [...jobs.values()].find((x) => !TERMINAL.includes(x.job.state) && x.plan.volume?.id === podVol.id)
+  const live = [...jobs.values()].find((x) => !TERMINAL.includes(x.job.state) && (x.plan.volume?.id === podVol.id || (way.mode === 'rsync' && x.plan.volume?.id === to!.id)))
   if (live) throw new CoreError(409, `A ${live.job.kind} job is running on ${podVol.name}: wait for it to finish (the new volume ${to.id} stays).`)
   const existing = claim(label, 'clone'); if (existing) return view(existing)
   try {
-    const p = await plan(label, { ...opts, volumeId: podVol.id, sizeOf: () => ({ files: 0, bytes: 0 }) })
+    const p = await plan(label, { ...opts, volumeId: podVol.id, sizeOf: () => ({ files: 0, bytes: 0 }), ...(way.mode === 'rsync' ? { route: 'temporary' as const } : {}) })
     const i = newJob(label, 'clone', p, (opts.now ?? (() => new Date()))())
     i.job.volume_id = podVol.id
     i.job.clone = { mode: way.mode, from: { id: from.id, datacenter: from.datacenter, name: from.name }, to: { id: to.id, datacenter: to.datacenter, name: to.name }, include_input: !!o.include_input }

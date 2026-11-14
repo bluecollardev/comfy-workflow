@@ -686,7 +686,7 @@
   "volumes": {
     "clone": "Clone",
     "cloneTitle": "Clone {name}",
-    "cloneIntro": "Copies this volume's files into another volume in another datacenter, through RunPod's S3 API by a short pod. This volume is not changed. At least one of the two datacenters must have the S3 API, and the S3 keys are set in Default Configuration.",
+    "cloneIntro": "Copies this volume's files into another volume, in another datacenter. This volume is not changed. With RunPod S3 keys set (Default Configuration) and an S3 datacenter on one side, one short pod does it through the S3 API; otherwise a short pod on each volume copies RunPod to RunPod over SSH.",
     "cloneExisting": "Into an existing volume",
     "cloneNew": "Into a new volume",
     "cloneTo": "Volume to copy into (its files stay; same names are replaced when different)",
@@ -694,6 +694,7 @@
     "cloneNoOthers": "There is no other volume: make a new one.",
     "clonePush": "A short pod on this volume ({from}) pushes the files to {to} through its S3 API.",
     "clonePull": "A short pod on the target ({to}) pulls the files from this volume ({from}) through its S3 API.",
+    "cloneRsync": "RunPod to RunPod: a short pod on each volume ({from} and {to}); the target's pod copies the files from the source's over SSH, with a one-off key that is removed afterwards. Both pods are deleted at the end and bill by the hour while it runs.",
     "cloneNoS3": "Neither {from} nor {to} has the S3 API, so there is no way to copy between them from here: pick a volume in an S3 datacenter.",
     "cloneCost": "The new volume bills about ${usd} a month from the moment it is made, plus a few cents for the pod.",
     "cloneInput": "Also copy input/ (links of the rounds' files: a copy doubles them; placing the round again relinks them)",
@@ -736,7 +737,7 @@
     "viaRunpod": "Attached on RunPod ({status})",
     "viaConfig": "Named by this pod's own configuration; a recreate attaches it",
     "configOnly": "on recreate",
-    "useAsDefault": "Default",
+    "useAsDefault": "Set as Default",
     "resize": "Grow",
     "grow": "Grow to",
     "delete": "Delete",
@@ -905,7 +906,7 @@
     "planUsing": "by the adapter {name}"
   },
   "dc": {
-    "groupS3": "S3: uploads need no pod · cards in stock",
+    "groupVolS3": "S3 API: read and written without a pod", "groupVolNoS3": "No S3 API: a pod is needed", "groupS3": "S3: uploads need no pod · cards in stock",
     "groupOther": "Cards in stock (most cards first)",
     "groupNone": "No cards in stock right now",
     "tableTitle": "Click a row to choose its datacenter.",

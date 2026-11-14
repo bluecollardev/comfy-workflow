@@ -38,8 +38,9 @@ function fakeRunPod(initial: RawPodFake[] = [], hooks: { volumeDc?: string; volu
     if (q.includes('podFindAndDeployOnDemand')) {
       hooks.onCreate?.(q); calls.created.push(q)
       const name = /name: "([^"]+)"/.exec(q)![1]
-      pods.push(upPod('newpod1', name))
-      return ok({ data: { podFindAndDeployOnDemand: { id: 'newpod1' } } })
+      const nid = `newpod${calls.created.length}`
+      pods.push(upPod(nid, name))
+      return ok({ data: { podFindAndDeployOnDemand: { id: nid } } })
     }
     if (q.includes('podTerminate')) {
       if (hooks.terminateFails) return ok({ errors: [{ message: 'terminate refused' }] })
@@ -571,8 +572,8 @@ describe('browse and erase one volume', () => {
       expect(podpull.cloneMode({ datacenter: 'EUR-IS-2' }, { datacenter: 'EU-RO-1' }, true)).toEqual({ mode: 'push' })   // a regular volume into an S3 one
       expect(podpull.cloneMode({ datacenter: 'EU-RO-1' }, { datacenter: 'EUR-IS-2' }, true)).toEqual({ mode: 'pull' })   // an S3 volume into a regular one
       expect(podpull.cloneMode({ datacenter: 'EU-RO-1' }, { datacenter: 'US-NE-1' }, true)).toEqual({ mode: 'push' })
-      expect(podpull.cloneMode({ datacenter: 'EU-RO-1' }, { datacenter: 'US-NE-1' }, false)).toMatchObject({ error: expect.stringMatching(/S3 keys/) })
-      expect(podpull.cloneMode({ datacenter: 'EUR-IS-2' }, { datacenter: 'CA-MTL-1' }, true)).toMatchObject({ error: expect.stringMatching(/no way to copy/) })
+      expect(podpull.cloneMode({ datacenter: 'EU-RO-1' }, { datacenter: 'US-NE-1' }, false)).toEqual({ mode: 'rsync' })   // no S3 keys: RunPod to RunPod
+      expect(podpull.cloneMode({ datacenter: 'EUR-IS-2' }, { datacenter: 'CA-MTL-1' }, true)).toEqual({ mode: 'rsync' })   // neither has S3: still possible
     })
     it('the script: rclone to or from RunPod\'s S3 API, input/ left out unless asked, the keys only inside it', () => {
       const c = { mode: 'push' as const, from: { id: 'a', datacenter: 'EUR-IS-2', name: 'src' }, to: { id: 'b', datacenter: 'EU-RO-1', name: 'dst' }, include_input: false }
@@ -581,13 +582,30 @@ describe('browse and erase one volume', () => {
       const pull = podpull.cloneScript({ ...c, mode: 'pull', include_input: true, from: { id: 'b', datacenter: 'EU-RO-1', name: 'dst' }, to: { id: 'a', datacenter: 'EUR-IS-2', name: 'src' } }, { id: 'AK', secret: 'SK' })
       expect(pull).toContain("rclone copy 'S3SIDE:b' '/workspace'"); expect(pull).not.toContain('comfy-shared/input'); expect(pull).not.toContain('--copy-links')
     })
+    it('RunPod to RunPod (no S3 keys, or no S3 on either side): a pod on each volume; the target pod rsyncs from the source pod with a one-off key; the key is removed; both pods are deleted', async () => {
+      const calls: { host: string; port: number; script: string }[] = []
+      const ssh: podpull.SshRunner = async (j) => { calls.push({ host: j.host, port: j.port, script: j.script }); if (j.script.includes('rsync -aH')) j.onLine('CLONE-DONE'); return { code: 0 } }
+      const rp = fakeRunPod([], { volumes: { vol1: { name: 'comfy-workspace', dc: 'EUR-IS-2' }, volReg: { name: 'other', dc: 'CA-MTL-1' } } })
+      const keygen = async () => ({ priv: '-----BEGIN OPENSSH PRIVATE KEY-----\nSECRETSECRETSECRETSECRET\n-----END OPENSSH PRIVATE KEY-----', pub: 'ssh-ed25519 AAAA pod-manager-clone-1', comment: 'pod-manager-clone-1' })
+      const j0 = await podpull.cloneVolume('vol1', { approved_by: 'Lucas', to_volume_id: 'volReg', include_input: false }, base({ client: rp.client, ssh, keygen }))   // no S3 keys set at all
+      expect(j0.clone).toMatchObject({ mode: 'rsync', from: { id: 'vol1' }, to: { id: 'volReg' } })
+      const job = await done(j0.id)
+      expect(job.state).toBe('done')
+      expect(rp.calls.created).toHaveLength(2)   // one pod per volume
+      expect(JSON.stringify(rp.calls.created[0])).toContain('vol1'); expect(JSON.stringify(rp.calls.created[1])).toContain('volReg')
+      expect(calls).toHaveLength(3); expect(calls[0].script).toContain('authorized_keys'); expect(calls[1].script).toContain('rsync -aH'); expect(calls[2].script).toContain('grep -v')   // key in, copy, key out
+      const rsync = calls[1].script
+      expect(rsync).toContain('cat > /tmp/clone_key'); expect(rsync).toContain("--exclude '/comfy-shared/input/'"); expect(rsync).toMatch(/root@[\d.]+:\/workspace\//); expect(rsync).toContain('-aH')
+      expect(job.lines.join('\n')).not.toContain('SECRETSECRET')   // the key never reaches the log
+      expect(rp.calls.terminated.sort()).toEqual(['newpod1', 'newpod2'])   // both pods are deleted
+      expect(podpull.temporaryPods()).toEqual([])
+    })
     it('regular -> S3: a pod on the SOURCE pushes; S3 -> regular: a pod on the TARGET pulls; refused before any spend without keys or the right fields', async () => {
       const calls: podpull.SshJob[] = []
       const ssh: podpull.SshRunner = async (j) => { calls.push(j); j.onLine('CLONE-DONE'); return { code: 0 } }
       const rp = fakeRunPod([], { volumes: dcs })
       const o = base({ client: rp.client, ssh })
       await expect(podpull.cloneVolume('vol1', { to_volume_id: 'volS3' }, o)).rejects.toThrow(/approved_by/)
-      await expect(podpull.cloneVolume('vol1', { approved_by: 'L', to_volume_id: 'volS3' }, o)).rejects.toThrow(/S3 keys/)
       await expect(podpull.cloneVolume('vol1', { approved_by: 'L' }, o)).rejects.toThrow(/Say where to/)
       await expect(podpull.cloneVolume('vol1', { approved_by: 'L', to_volume_id: 'vol1' }, o)).rejects.toThrow(/onto itself/)
       expect(rp.calls.created).toEqual([])

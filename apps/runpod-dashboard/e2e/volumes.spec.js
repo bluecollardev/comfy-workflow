@@ -11,6 +11,7 @@ const volume = (dialog, id) => dialog.locator('[data-testid="volume"]', { has: d
 
 test.describe('volumes: clone', () => {
   test('Clone: into an existing volume or a new one in another datacenter; it says which way the files go and what it costs, then copies', async ({ page, api }) => {
+    api.state.settings.s3_keys_set = true   // S3 keys: an S3 datacenter on one side means one pod
     await page.goto('/')
     const dialog = await openVolumes(page)
     await dialog.locator('[data-testid="volume"][data-id="vol2"]').getByTestId('volume-clone').click()   // scratch, CA-MTL-1: no S3 API
@@ -21,6 +22,9 @@ test.describe('volumes: clone', () => {
     await m.getByTestId('volume-clone-by').fill('Lucas')
     await expect(m.getByTestId('volume-clone-go')).toBeEnabled()
     await m.getByTestId('volume-clone-kind-new').check()
+    const groups = await m.getByTestId('volume-clone-dc').evaluate((el) => [...el.querySelectorAll('optgroup')].map((g) => ({ label: g.label, options: [...g.querySelectorAll('option')].map((o) => o.value) })))   // grouped by S3: the datacenters with the API, then those without
+    expect(groups.map((g) => g.label)).toEqual(['S3 API: read and written without a pod'])   // from CA-MTL-1 the other datacenters on offer both have the API
+    expect(groups[0].options).toEqual(['EU-RO-1', 'US-KS-2'])
     await m.getByTestId('volume-clone-dc').selectOption('US-KS-2')
     await m.getByTestId('volume-clone-name').fill('scratch-ks')
     await expect(m.getByTestId('volume-clone-cost')).toContainText('3.5')   // 50 GB at $0.07
@@ -28,14 +32,35 @@ test.describe('volumes: clone', () => {
     await expect(m.getByTestId('volume-clone-job')).toContainText('12 file')
     expect(api.state.cloned).toMatchObject({ id: 'vol2', approved_by: 'Lucas', include_input: false, new_volume: { name: 'scratch-ks', size_gb: 50, datacenter: 'US-KS-2' } })
   })
-  test('Clone from an S3 volume into a regular one: a pod on the target pulls; the Default button is short', async ({ page }) => {
+  test('Clone from an S3 volume into a regular one: a pod on the target pulls; the Default button is an icon', async ({ page, api }) => {
+    api.state.settings.s3_keys_set = true
     await page.goto('/')
     const dialog = await openVolumes(page)
-    await expect(dialog.locator('[data-testid="volume"][data-id="vol2"]').getByTestId('volume-use-default')).toHaveText('Default')
+    await expect(dialog.locator('[data-testid="volume"][data-id="vol2"]').getByTestId('volume-use-default')).toHaveAttribute('aria-label', 'Set as Default')   // an icon (a star) named Set as Default
     await dialog.locator('[data-testid="volume"][data-id="vol1"]').getByTestId('volume-clone').click()
     const m = page.getByTestId('volume-clone-modal')
     await m.getByTestId('volume-clone-to').selectOption('vol2')   // CA-MTL-1: no S3 API
     await expect(m.getByTestId('volume-clone-way')).toContainText('pulls')
+    await m.getByTestId('volume-clone-kind-new').check()
+    const groups = await m.getByTestId('volume-clone-dc').evaluate((el) => [...el.querySelectorAll('optgroup')].map((g) => ({ label: g.label, options: [...g.querySelectorAll('option')].map((o) => o.value) })))
+    expect(groups).toEqual([{ label: 'S3 API: read and written without a pod', options: ['US-KS-2'] }, { label: 'No S3 API: a pod is needed', options: ['CA-MTL-1'] }])   // grouped: S3 first, then the rest
+  })
+})
+
+test.describe('volumes: clone without S3', () => {
+  test('without S3 keys a clone is RunPod to RunPod: a pod on each volume, over SSH; nothing is refused', async ({ page, api }) => {
+    api.state.settings.s3_keys_set = false
+    await page.goto('/')
+    const dialog = await openVolumes(page)
+    await dialog.locator('[data-testid="volume"][data-id="vol2"]').getByTestId('volume-clone').click()   // CA-MTL-1, no S3 API
+    const m = page.getByTestId('volume-clone-modal')
+    await m.getByTestId('volume-clone-to').selectOption('vol1')
+    await expect(m.getByTestId('volume-clone-way')).toContainText('RunPod to RunPod')
+    await expect(m.getByTestId('volume-clone-way')).toContainText('a short pod on each volume')
+    await m.getByTestId('volume-clone-by').fill('Lucas')
+    await expect(m.getByTestId('volume-clone-go')).toBeEnabled()   // it does not need S3
+    await m.getByTestId('volume-clone-go').click()
+    await expect(m.getByTestId('volume-clone-job')).toContainText('12 file')
   })
 })
 
@@ -48,16 +73,19 @@ test.describe('volumes: browse and erase', () => {
     await expect(page.getByTestId('volume-s3-note')).toHaveCount(0)
   })
 
-  test('every action button keeps its icon and text on one row, at a narrow window too', async ({ page }) => {
+  test('every action is an icon button with a name (tooltip and label), all one size and on one row', async ({ page }) => {
     for (const w of [1100, 700]) {
       await page.setViewportSize({ width: w, height: 900 })
       await page.goto('/')
       const dialog = await openVolumes(page)
       const row = dialog.locator('[data-testid="volume"][data-id="vol1"]')
-      for (const id of ['volume-browse', 'volume-resize', 'volume-erase', 'volume-delete', 'volume-use-default']) {
+      for (const id of ['volume-browse', 'volume-clone', 'volume-resize', 'volume-erase', 'volume-delete', 'volume-use-default']) {
         const b = row.getByTestId(id)
         if (!(await b.count())) continue
-        expect((await b.boundingBox()).height, `${id} at ${w}px`).toBeLessThan(36)   // a button with its icon on top of its text is about twice that
+        expect((await b.boundingBox()).height, `${id} at ${w}px`).toBeLessThan(36)
+        await expect(b).toHaveAttribute('aria-label', /.+/)   // an icon alone says nothing: the name is its label and its tooltip
+        await expect(b).toHaveAttribute('title', /.+/)
+        await expect(b.locator('svg, i').first()).toBeVisible()
       }
     }
   })

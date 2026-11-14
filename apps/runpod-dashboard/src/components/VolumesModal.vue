@@ -50,22 +50,20 @@
               <span v-else class="text-body-secondary">{{ $t('volumes.noPods') }}</span>
             </div>
           </div>
-          <div class="vol-side d-flex flex-column gap-1 flex-shrink-0">
-            <BButton v-if="!v.is_default" size="sm" class="text-nowrap w-100" variant="outline-light" :disabled="store.busyId === v.id" data-testid="volume-use-default" @click="store.useAsDefault(v)">{{ $t('volumes.useAsDefault') }}</BButton>
-            <div :class="resizing === v.id ? 'd-flex gap-1 align-items-center flex-wrap justify-content-end' : 'vol-actions'">
-              <template v-if="resizing === v.id">
-                <BFormInput v-model.number="resizeTo" type="number" :min="v.size_gb + 1" max="4000" size="sm" style="width: 6rem" data-testid="volume-resize-input" @keydown.enter.prevent="doResize(v)" @keydown.esc.prevent="resizing = null" />
-                <BButton size="sm" class="text-nowrap" variant="primary" data-testid="volume-resize-save" @click="doResize(v)">{{ $t('volumes.grow') }}</BButton>
-                <BButton size="sm" variant="outline-light" @click="resizing = null">{{ $t('picker.cancel') }}</BButton>
-              </template>
-              <template v-else>
-                <BButton size="sm" class="text-nowrap w-100" variant="outline-light" :disabled="store.busyId === v.id" data-testid="volume-browse" @click="browsing = v"><i class="fa-solid fa-folder-tree me-1"></i>{{ $t('volumes.browse') }}</BButton>
-                <BButton size="sm" class="text-nowrap w-100" variant="outline-light" :disabled="store.busyId === v.id" data-testid="volume-clone" @click="cloning = v"><i class="fa-solid fa-clone me-1"></i>{{ $t('volumes.clone') }}</BButton>
-                <BButton size="sm" class="text-nowrap w-100" variant="outline-light" :disabled="store.busyId === v.id" data-testid="volume-resize" @click="resizing = v.id; resizeTo = v.size_gb + 20">{{ $t('volumes.resize') }}</BButton>
-                <BButton size="sm" class="text-nowrap w-100" variant="outline-danger" :disabled="store.busyId === v.id" data-testid="volume-erase" @click="erasing = v"><i class="fa-solid fa-eraser me-1"></i>{{ $t('volumes.erase') }}</BButton>
-                <BButton size="sm" class="text-nowrap" variant="outline-danger" :disabled="store.busyId === v.id || v.pods.some((p) => p.via === 'runpod')" :title="v.pods.some((p) => p.via === 'runpod') ? $t('volumes.deleteBlocked') : ''" data-testid="volume-delete" @click="confirmRemove(v)">{{ $t('volumes.delete') }}</BButton>
-              </template>
-            </div>
+          <div class="vol-side d-flex flex-wrap gap-1 justify-content-end align-items-start flex-shrink-0">   <!-- icon buttons: the name is the tooltip and the accessible label -->
+            <template v-if="resizing === v.id">
+              <BFormInput v-model.number="resizeTo" type="number" :min="v.size_gb + 1" max="4000" size="sm" style="width: 6rem" data-testid="volume-resize-input" @keydown.enter.prevent="doResize(v)" @keydown.esc.prevent="resizing = null" />
+              <BButton size="sm" class="text-nowrap" variant="primary" data-testid="volume-resize-save" @click="doResize(v)">{{ $t('volumes.grow') }}</BButton>
+              <BButton size="sm" variant="outline-light" @click="resizing = null">{{ $t('picker.cancel') }}</BButton>
+            </template>
+            <template v-else>
+              <BButton v-if="!v.is_default" size="sm" class="vol-icon" variant="outline-light" :disabled="store.busyId === v.id" :title="$t('volumes.useAsDefault')" :aria-label="$t('volumes.useAsDefault')" data-testid="volume-use-default" @click="store.useAsDefault(v)"><i class="fa-regular fa-star"></i></BButton>
+              <BButton size="sm" class="vol-icon" variant="outline-light" :disabled="store.busyId === v.id" :title="$t('volumes.browse')" :aria-label="$t('volumes.browse')" data-testid="volume-browse" @click="browsing = v"><i class="fa-solid fa-folder-tree"></i></BButton>
+              <BButton size="sm" class="vol-icon" variant="outline-light" :disabled="store.busyId === v.id" :title="$t('volumes.clone')" :aria-label="$t('volumes.clone')" data-testid="volume-clone" @click="cloning = v"><i class="fa-solid fa-clone"></i></BButton>
+              <BButton size="sm" class="vol-icon" variant="outline-light" :disabled="store.busyId === v.id" :title="$t('volumes.resize')" :aria-label="$t('volumes.resize')" data-testid="volume-resize" @click="resizing = v.id; resizeTo = v.size_gb + 20"><i class="fa-solid fa-up-right-and-down-left-from-center"></i></BButton>
+              <BButton size="sm" class="vol-icon" variant="outline-danger" :disabled="store.busyId === v.id" :title="$t('volumes.erase')" :aria-label="$t('volumes.erase')" data-testid="volume-erase" @click="erasing = v"><i class="fa-solid fa-eraser"></i></BButton>
+              <BButton size="sm" class="vol-icon" variant="outline-danger" :disabled="store.busyId === v.id || v.pods.some((p) => p.via === 'runpod')" :title="v.pods.some((p) => p.via === 'runpod') ? $t('volumes.deleteBlocked') : $t('volumes.delete')" :aria-label="$t('volumes.delete')" data-testid="volume-delete" @click="confirmRemove(v)"><i class="fa-solid fa-trash"></i></BButton>
+            </template>
           </div>
         </div>
       </div>
@@ -92,7 +90,7 @@ import { useUiStore } from '../stores/ui'
 import { useVolumesStore } from '../stores/volumes'
 import { useConfirmStore } from '../stores/confirm'
 import { podsAPI } from '../api/pods'
-import { datacenterOptions } from '../utils/datacenters'
+import { volumeDatacenterOptions } from '../utils/datacenters'
 import { t } from '../i18n'
 
 const ui = useUiStore()
@@ -103,7 +101,7 @@ const resizing = ref(null)
 const browsing = ref(null), erasing = ref(null), cloning = ref(null)   // the volume whose files are open, or whose Erase is
 const resizeTo = ref(0)
 const dcList = ref([])
-const dcOptions = computed(() => datacenterOptions(dcList.value, { value: '', text: t('volumes.pickDatacenter') }))
+const dcOptions = computed(() => volumeDatacenterOptions(dcList.value, { value: '', text: t('volumes.pickDatacenter') }))
 
 async function open() {
   store.load()
@@ -124,6 +122,6 @@ async function confirmRemove(v) {
 </script>
 
 <style scoped>
-.vol-side { width: 13rem; }
-.vol-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.25rem; }   /* two rows of two equal buttons under Use as default */
+.vol-icon { width: 2rem; padding-left: 0; padding-right: 0; }   /* the same square for every action */
+.vol-side { max-width: 16rem; }
 </style>

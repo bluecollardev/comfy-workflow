@@ -22,6 +22,10 @@ Lucas (2026-11-15), looking at a volume that still listed an old pod: "have an o
 
 Browse and Erase pick their route from the volume: the **S3 route** (`aws s3 ls` / `aws s3 rm` from this PC against `https://s3api-<datacenter>.runpod.io/`, the bucket being the volume id; no pod, no cost) when the volume's datacenter has RunPod's S3 API and S3 keys are in Default Configuration, else the **pod route** (your pod on the volume, or a short-lived one). The plan (`volume_job plan_volume_id`, and the window before anything starts) says which, and when it is the pod route, why (`s3_note`: `datacenter` or `keys`). Same job shape and the same guards either way. `comfy-workspace` is in EUR-IS-2, which has no S3 API, so it stays on the pod route; `brynley-rounds-eu-ro-1` and `-us-ne-1` can use S3 once keys are set. Not run against RunPod's S3 API yet (no keys were set when this was written); the commands are tested with a stand-in. A pull and the placing still need a pod: S3 has no links.
 
+## Amendment 2026-11-15: Clone (Lucas: "clone a volume to another datacenter", "we can do runpod to runpod")
+
+Clone copies a volume's files into an existing volume or a new one in another datacenter. **RunPod to RunPod is the default and needs no S3**: a short pod on the source volume and one on the target (a pod mounts only one volume, in one datacenter), a one-off ed25519 key made here (never stored) added to the source pod, and the target pod runs `rsync -aH` from the source pod over SSH (`-H` keeps the hard links of `input/`); the key is removed and both pods are deleted at the end. When RunPod S3 keys are set and one side is in an S3 datacenter, one pod does it through the S3 API instead (push from a pod on the source, or pull by a pod on the target): cheaper. `input/` is left out unless asked (placing a round again relinks it). Both pods bill by the hour while it runs, a new volume monthly: it needs `approved_by`. Not run against real pods yet.
+
 ## Consequences
 
 - A volume can be inspected and cleared without leaving the app; the cost is the short pod's minutes (a few cents).
