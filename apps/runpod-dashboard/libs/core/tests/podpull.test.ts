@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -481,4 +481,17 @@ describe('browse and erase one volume', () => {
     for (const k of Object.keys(podpull.ERASABLE)) expect(podpull.ERASABLE[k].path.startsWith('/workspace/comfy-shared/')).toBe(true)
     await expect(podpull.browseVolume('../x', o)).rejects.toThrow(/Not a network volume id/)
   })
+  it('a pull the app lost track of: its pod, still copying, is taken over instead of making a second pod for the same round', async () => {
+    const name = podpull.podName(ROUND)
+    const rp = fakeRunPod([{ ...upPod('old1', name), desiredStatus: 'RUNNING' }])
+    writeFileSync(process.env.PULL_PODS_FILE!, JSON.stringify([{ round: ROUND, kind: 'pull', name, pod_id: 'old1', volume: 'vol1', created_at: '2026-11-14T20:25:00Z', approved_by: 'Lucas' }]))
+    const lines = logsOf(...GOOD)
+    const j0 = await podpull.pull(ROUND, base({ client: rp.client, logs: async () => lines(), ssh: async () => ({ code: 0 }) }))
+    const j = await done(j0.id)
+    expect(rp.calls.created).toEqual([])   // no second pod
+    expect(j.pod_id).toBe('old1')
+    expect(j.lines.join('\n')).toMatch(/taking over the pod/)
+    expect(rp.calls.terminated).toEqual(['old1'])   // and it is deleted at the end, like any pull pod
+  })
+
 })

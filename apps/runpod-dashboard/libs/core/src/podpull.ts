@@ -466,7 +466,11 @@ async function runTemporary(i: Internal, opts: Opts) {
   const name = j.pod_name!   // set when the job was created
   const k = j.kind === 'pull' ? keys() : null
   const secrets = k ? [k.secret, k.id] : []
-  tempAdd({ round: j.round, kind: j.kind, name, pod_id: null, volume: p.volume?.id || '', created_at: new Date().toISOString(), approved_by: APPROVED_BY })   // before the pod exists
+  // A pull the app lost track of (it was closed mid-pull) left its pod running and still copying: take that pod over instead of making a second one that pulls the same round again.
+  const prior = j.kind === 'pull' ? temporaryPods().find((t) => t.kind === 'pull' && t.round === j.round && t.pod_id && (t.volume || '') === (p.volume?.id || '')) : null
+  let adopted: { id: string; name: string } | null = null
+  if (prior?.pod_id) { const raw = await rp.getPod(prior.pod_id, opts.client).catch(() => null); if (raw && (raw.desiredStatus ?? 'RUNNING') === 'RUNNING') adopted = { id: prior.pod_id, name: raw.name || prior.name } }
+  tempAdd({ round: j.round, kind: j.kind, name, pod_id: adopted?.id ?? null, volume: p.volume?.id || '', created_at: prior && adopted ? prior.created_at : new Date().toISOString(), approved_by: APPROVED_BY })   // before the pod exists
   let podId: string | null = null
   const deadline = Date.now() + (p.ceiling_minutes + 10) * 60_000
   try {
@@ -476,7 +480,8 @@ async function runTemporary(i: Internal, opts: Opts) {
     const onVol = opts.volumeId && p.volume ? { network_volume_id: p.volume.id, ...(p.volume.datacenter ? { data_center_id: p.volume.datacenter } : {}) } : {}   // a job on another volume than the default one
     const base = { name, round: j.round, image: 'configured', cuda_match: false, idle_stop_minutes: p.ceiling_minutes, config: { ...cfg, ...onVol, env } } as const
     const tried = new Set<string>()
-    let created: Awaited<ReturnType<typeof pods.create>> | null = null
+    let created: Awaited<ReturnType<typeof pods.create>> | null = adopted ? ({ id: adopted.id, name: adopted.name } as Awaited<ReturnType<typeof pods.create>>) : null
+    if (adopted) j.lines.push(`taking over the pod ${adopted.name} (${adopted.id}) that was already pulling this round`)
     let next: string | undefined = p.gpu_type_id
     for (let attempt = 0; attempt < 5 && !created; attempt++) {
       try { created = await pods.create({ ...base, ...(next ? { gpu_type_id: next } : { gpu: 'auto' }) }, opts.client) } catch (e) {
