@@ -68,6 +68,18 @@
         <span v-if="allCard" class="small" data-testid="import-round-chosen-card"><strong>{{ allCardLabel }}</strong><span class="text-body-secondary"> · {{ dcChoice }}</span></span>
         <span v-else class="small text-body-secondary">{{ $t('importRound.chooseCardNone') }}</span>
       </div>
+      <div class="border rounded p-2 small mb-3" data-testid="import-round-estimate">
+        <div>{{ $t('importRound.price', { price: first.price_per_hour ?? '?' }) }}</div>
+        <div>{{ $t('importRound.estimate', { usd: estimate }) }}</div>
+        <div v-if="first.cap_enabled" class="d-flex align-items-center gap-2 mt-2 flex-wrap">
+          <label class="mb-0" for="ir-pods">{{ $t(plans.size > 1 ? 'importRound.maxPodsEach' : 'importRound.maxPods') }}</label>
+          <BFormInput id="ir-pods" v-model.number="maxPods" type="number" min="1" max="20" size="sm" style="width: 5rem" data-testid="import-round-max-pods" @input="podsEdited = true" />
+          <label class="mb-0 ms-2" for="ir-cap">{{ $t(plans.size > 1 ? 'importRound.costCapTotal' : 'importRound.costCap') }}</label>
+          <BFormInput id="ir-cap" v-model.number="costCap" type="number" min="1" size="sm" style="width: 6rem" data-testid="import-round-cost-cap" />
+        </div>
+        <div v-else class="text-warning mt-2" data-testid="import-round-cap-off"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ $t('importRound.capOff') }}</div>
+        <div v-if="first.cap_enabled && estimate > costCap" class="text-warning mt-1" data-testid="import-round-over-cap">{{ $t('importRound.overCap') }}</div>
+      </div>
       <div class="d-flex align-items-center gap-2 mb-3 small flex-wrap">
         <label class="mb-0 fw-semibold" for="ir-volume">{{ $t('importRound.volume') }}</label>
         <BFormSelect id="ir-volume" v-model="volumeId" :options="volumeOptions" size="sm" style="max-width: 30rem" data-testid="import-round-volume" />
@@ -99,19 +111,6 @@
         </div>
       </div>
       <div v-if="runWorkflows" class="small text-body-secondary mb-3">{{ $t('importRound.cardNote') }}</div>
-
-      <div class="border rounded p-2 small" data-testid="import-round-estimate">
-        <div>{{ $t('importRound.price', { price: first.price_per_hour ?? '?' }) }}</div>
-        <div>{{ $t('importRound.estimate', { usd: estimate }) }}</div>
-        <div v-if="first.cap_enabled" class="d-flex align-items-center gap-2 mt-2 flex-wrap">
-          <label class="mb-0" for="ir-pods">{{ $t(plans.size > 1 ? 'importRound.maxPodsEach' : 'importRound.maxPods') }}</label>
-          <BFormInput id="ir-pods" v-model.number="maxPods" type="number" min="1" max="20" size="sm" style="width: 5rem" data-testid="import-round-max-pods" @input="podsEdited = true" />
-          <label class="mb-0 ms-2" for="ir-cap">{{ $t(plans.size > 1 ? 'importRound.costCapTotal' : 'importRound.costCap') }}</label>
-          <BFormInput id="ir-cap" v-model.number="costCap" type="number" min="1" size="sm" style="width: 6rem" data-testid="import-round-cost-cap" />
-        </div>
-        <div v-else class="text-warning mt-2" data-testid="import-round-cap-off"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ $t('importRound.capOff') }}</div>
-        <div v-if="first.cap_enabled && estimate > costCap" class="text-warning mt-1" data-testid="import-round-over-cap">{{ $t('importRound.overCap') }}</div>
-      </div>
     </template>
 
     <template #footer>

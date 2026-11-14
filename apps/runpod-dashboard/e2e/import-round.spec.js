@@ -45,6 +45,7 @@ test('Import Round: three steps - rounds, shots, cards - then Import with the ap
   await expect(dlg.getByTestId('import-round-estimate')).toContainText('6.98')
   await expect(dlg.getByTestId('import-round-max-pods')).toHaveValue('1')   // one pod per shot ticked
   await expect(dlg.getByTestId('import-round-run')).toBeChecked()   // Run each shot's workflows is on step 3
+  { const y = async (id) => (await dlg.getByTestId(id).boundingBox()).y; const c = await y('import-round-choose-card'), e = await y('import-round-estimate'), v = await y('import-round-volume'); expect(c).toBeLessThan(e); expect(e).toBeLessThan(v) }   // the price and caps sit right below Choose Card, above the volume
   await dlg.getByTestId('import-round-run').uncheck(); await expect(dlg.getByTestId('import-round-card')).toHaveCount(0)   // off: no cards to choose
   await dlg.getByTestId('import-round-run').check()
   // Choose Card: the Create Pod table. A card at a datacenter sets the card of every shot, and the volume that lives in that datacenter is picked
