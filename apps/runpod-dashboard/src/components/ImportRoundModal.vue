@@ -60,8 +60,6 @@
 
     <!-- 3. Choose cards for the shots, and the volume -->
     <template v-else>
-      <label class="d-flex align-items-center gap-2 small mb-3"><input v-model="runWorkflows" type="checkbox" class="form-check-input mt-0" data-testid="import-round-run" />{{ $t('importRound.runWorkflows') }}</label>
-      <div v-if="!runWorkflows" class="small text-body-secondary mb-3" data-testid="import-round-no-cards">{{ $t('importRound.noCards') }}</div>
       <!-- Choose Card: a button that opens the same card and datacenter table as Create Pod, in a window of its own -->
       <div v-if="runWorkflows" class="d-flex align-items-center gap-2 mb-3 flex-wrap" data-testid="import-round-choose-card">
         <BButton :variant="allCard ? 'outline-success' : 'outline-light'" size="sm" data-testid="import-round-choose-card-btn" @click="cardModal = true"><i class="fa-solid fa-microchip me-1"></i>{{ $t('importRound.cardAll') }}</BButton>
@@ -103,14 +101,8 @@
         <div v-else-if="volumeProblem" class="text-warning w-100" data-testid="import-round-volume-problem"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ volumeProblem }}</div>
         <div v-else-if="volumeId && volumeId !== defaultVolume" class="text-body-secondary w-100" data-testid="import-round-volume-note">{{ $t('importRound.volumeNote') }}</div>
       </div>
-      <div v-for="[r, pl] in (runWorkflows ? plans : [])" :key="r" class="mb-2" data-testid="import-round-card-group" :data-round="r">
-        <div v-if="plans.size > 1" class="small text-body-secondary font-monospace">{{ r }}</div>
-        <div v-for="s in [...(picked.get(r) || [])]" :key="s" class="d-flex align-items-center gap-2 small mb-1" data-testid="import-round-card-row" :data-shot="s">
-          <span class="font-monospace" style="min-width: 9rem">{{ s }}</span>
-          <BFormSelect :model-value="cards[`${r}::${s}`] || ''" :options="cardOptions" size="sm" style="max-width: 24rem" data-testid="import-round-card" @update:model-value="(v) => setCard(r, s, v)" />
-        </div>
-      </div>
-      <div v-if="runWorkflows" class="small text-body-secondary mb-3">{{ $t('importRound.cardNote') }}</div>
+      <label class="d-flex align-items-center gap-2 small mb-3"><input v-model="runWorkflows" type="checkbox" class="form-check-input mt-0" data-testid="import-round-run" />{{ $t('importRound.runWorkflows') }}</label>
+      <div v-if="!runWorkflows" class="small text-body-secondary mb-3" data-testid="import-round-no-cards">{{ $t('importRound.noCards') }}</div>
     </template>
 
     <template #footer>
@@ -170,9 +162,6 @@ const rowErrors = ref({})   // round -> why it cannot be ticked (no shots in it,
 const step = ref(1)
 const stepLabels = computed(() => [t('importRound.stepRounds'), t('importRound.stepShots'), t('importRound.stepCards')])
 const cards = ref({})   // `${round}::${shot}` -> card key; absent = the pool
-const gpuMenu = ref([])
-const cardOptions = computed(() => [{ value: '', text: t('importRound.cardPool') }, ...gpuMenu.value.map((g) => ({ value: g.value, text: g.text }))])
-const setCard = (r, s, v) => { const n = { ...cards.value }; v ? (n[`${r}::${s}`] = v) : delete n[`${r}::${s}`]; cards.value = n }
 const setAllCards = (v) => { if (v === '' ) return; const n = { ...cards.value }; for (const [r, set] of picked.value) for (const s of set) n[`${r}::${s}`] = v; cards.value = n }
 const cardsFor = (r) => Object.fromEntries([...(picked.value.get(r) || [])].filter((s) => cards.value[`${r}::${s}`]).map((s) => [s, cards.value[`${r}::${s}`]]))
 const estimates = ref(new Map())   // round -> the plan for the shots and cards chosen (its estimate)
@@ -208,7 +197,7 @@ function onPickCard({ dc, card }) {
 }
 function clearAllCards() { allCard.value = ''; allCardLabel.value = ''; const n = { ...cards.value }; for (const [r, set] of picked.value) for (const sh of set) delete n[`${r}::${sh}`]; cards.value = n }
 const dcNoVolume = computed(() => !!dcChoice.value && volumes.value.length > 0 && !volumesIn(dcChoice.value).length)
-watch(volumeId, (id) => { const v = volumes.value.find((x) => x.id === id); if (v) dcChoice.value = v.datacenter })   // choosing a volume says where the pods will be
+watch(volumeId, (id) => { const v = volumes.value.find((x) => x.id === id); if (!v) return; if (allCard.value && dcChoice.value && v.datacenter !== dcChoice.value) clearAllCards(); dcChoice.value = v.datacenter })   // a volume elsewhere: the card was chosen at another datacenter, so it goes   // choosing a volume says where the pods will be
 // No volume of yours in the card's datacenter: tick "Create a new volume" and Import makes it first (a volume costs per month, so it is the user's tick and the Approved by that count)
 const createVol = ref(false), newVolName = ref(''), newVolSize = ref(250)
 const newVolCost = computed(() => Math.round((Math.min(newVolSize.value || 0, 1000) * 0.07 + Math.max((newVolSize.value || 0) - 1000, 0) * 0.05) * 100) / 100)   // RunPod's price per GB per month, as in Volumes
@@ -235,7 +224,7 @@ const shotCount = (r) => picked.value.get(r)?.size || 0
 const totalShots = computed(() => [...plans.value.keys()].reduce((a, r) => a + shotCount(r), 0))
 const canStart = computed(() => step.value === 3 && (!!volumeId.value || newVolOk.value) && totalShots.value > 0 && approvedBy.value.trim().length > 0)
 
-onMounted(async () => { loadDcs(); try { gpuMenu.value = ((await podsAPI.gpus('')).gpus || []).filter((g) => g.value !== 'auto') } catch { /* the plain pool choice still works */ }
+onMounted(async () => { loadDcs()
   try { const r = await panamaAPI.rounds(); rounds.value = Array.isArray(r) ? r : r.rounds || [] } catch (e) { error.value = errorText(e) } })
 watch(() => ui.importRoundOpen, (o) => { if (o) step.value = 1; if (o && ui.importRoundPreset) { toggleRound(ui.importRoundPreset, true); ui.importRoundPreset = '' } }, { immediate: true })   // re-import: the round is already ticked
 const followPods = () => { if (!podsEdited.value) maxPods.value = Math.min(20, Math.max(1, ...[...plans.value.keys()].map(shotCount))) }

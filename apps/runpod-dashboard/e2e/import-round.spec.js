@@ -41,12 +41,12 @@ test('Import Round: three steps - rounds, shots, cards - then Import with the ap
   await dlg.locator('[data-testid="import-round-step"][data-step="1"]').click()   // a finished step can be revisited from the stepper
   await expect(dlg.getByTestId('import-round-option').first()).toBeVisible()
   await dlg.locator('[data-testid="import-round-step"][data-step="3"]').click()   // and so can the next one, once its shots are chosen
-  await expect(dlg.getByTestId('import-round-card-row')).toHaveCount(1)
+  await expect(dlg.getByTestId('import-round-card-row')).toHaveCount(0)   // no per-shot card rows: Choose Card gives every shot its card
   await expect(dlg.getByTestId('import-round-estimate')).toContainText('6.98')
   await expect(dlg.getByTestId('import-round-max-pods')).toHaveValue('1')   // one pod per shot ticked
   await expect(dlg.getByTestId('import-round-run')).toBeChecked()   // Run each shot's workflows is on step 3
-  { const y = async (id) => (await dlg.getByTestId(id).boundingBox()).y; const c = await y('import-round-choose-card'), e = await y('import-round-estimate'), v = await y('import-round-volume'); expect(c).toBeLessThan(e); expect(e).toBeLessThan(v) }   // the price and caps sit right below Choose Card, above the volume
-  await dlg.getByTestId('import-round-run').uncheck(); await expect(dlg.getByTestId('import-round-card')).toHaveCount(0)   // off: no cards to choose
+  { const y = async (id) => (await dlg.getByTestId(id).boundingBox()).y; const c = await y('import-round-choose-card'), e = await y('import-round-estimate'), v = await y('import-round-volume'); expect(c).toBeLessThan(e); expect(e).toBeLessThan(v); expect(v).toBeLessThan(await y('import-round-run')) }   // the price and caps sit right below Choose Card, above the volume; Run each shot's workflows is the last item
+  await dlg.getByTestId('import-round-run').uncheck(); await expect(dlg.getByTestId('import-round-choose-card')).toHaveCount(0)   // off: no cards to choose
   await dlg.getByTestId('import-round-run').check()
   // Choose Card: the Create Pod table. A card at a datacenter sets the card of every shot, and the volume that lives in that datacenter is picked
   await expect(dlg.getByTestId('import-round-choose-card')).toContainText('Choose Card')   // a button: the table is in its own window
@@ -55,7 +55,6 @@ test('Import Round: three steps - rounds, shots, cards - then Import with the ap
   await table.locator('[data-testid="dc-card-row"][data-card="RTX 4090"] [data-testid="dc-chip"][data-dc="EU-RO-1"]').click()
   await expect(table).toBeHidden()   // choosing a card closes the window
   await expect(dlg.getByTestId('import-round-chosen-card')).toContainText('RTX 4090')
-  await expect(dlg.getByTestId('import-round-card').first()).toHaveValue('rtx4090')
   await expect(dlg.getByTestId('import-round-volume')).toHaveValue('vol1')   // the volume in EU-RO-1
   await expect(dlg.getByTestId('import-round-dc-volumes')).toContainText('Network volumes in EU-RO-1')   // and the volumes there are listed
   await expect(dlg.getByTestId('import-round-dc-volume').first()).toHaveAttribute('aria-pressed', 'true')
@@ -63,8 +62,10 @@ test('Import Round: three steps - rounds, shots, cards - then Import with the ap
   await page.getByTestId('choose-card-modal').locator('[data-testid="dc-card-row"][data-card="RTX 6000 Ada"] [data-testid="dc-chip"][data-dc="US-KS-2"]').click()
   await expect(dlg.getByTestId('import-round-dc-novolume')).toBeVisible()   // no volume in US-KS-2: it says so, and offers to make one
   await dlg.getByTestId('import-round-volume').selectOption('vol1')   // choosing a volume goes back to its datacenter
+  await expect(dlg.getByTestId('import-round-chosen-card')).toHaveCount(0)   // the card was at US-KS-2: a volume elsewhere clears it
+  await dlg.getByTestId('import-round-choose-card-btn').click()
+  await page.getByTestId('choose-card-modal').locator('[data-testid="dc-card-row"][data-card="RTX 4090"] [data-testid="dc-chip"][data-dc="EU-RO-1"]').click()
   await expect(dlg.getByTestId('import-round-chosen-card')).toContainText('EU-RO-1')
-  await dlg.getByTestId('import-round-card').selectOption('rtxpro6000')
   await dlg.getByTestId('import-round-volume').selectOption('')
   await expect(dlg.getByTestId('import-round-volume-problem')).toBeVisible()   // no default volume: one has to be picked
   await dlg.getByTestId('import-round-approved-by').fill('Lucas')
@@ -78,7 +79,7 @@ test('Import Round: three steps - rounds, shots, cards - then Import with the ap
   await expect(dlg).toBeHidden()   // the wizard gives way at once to the Queue, which says what is going on
   await expect(page.getByTestId('queue-modal').getByTestId('queue-starting')).toContainText('Queueing')
   await expect(page.getByTestId('queue-modal').getByTestId('queue-starting')).toBeHidden()
-  expect(api.state.imported).toMatchObject({ shots: ['cgi-042'], cards: { 'cgi-042': 'rtxpro6000' }, approved_by: 'Lucas', run_workflows: true, max_pods: 1, cost_cap_usd: 50 })
+  expect(api.state.imported).toMatchObject({ shots: ['cgi-042'], cards: { 'cgi-042': 'rtx4090' }, approved_by: 'Lucas', run_workflows: true, max_pods: 1, cost_cap_usd: 50 })
   const q = page.getByTestId('queue-modal')
   await expect(q.getByTestId('queue-task')).toHaveCount(2)
   await expect(q.getByTestId('queue-task').filter({ hasText: 'cgi-042' })).toContainText('boom (node 4, KSampler)')
