@@ -57,12 +57,12 @@
               <BButton size="sm" variant="outline-light" @click="resizing = null">{{ $t('picker.cancel') }}</BButton>
             </template>
             <template v-else>
-              <BButton v-if="!v.is_default" size="sm" class="vol-icon" variant="outline-light" :disabled="store.busyId === v.id" :title="$t('volumes.useAsDefault')" :aria-label="$t('volumes.useAsDefault')" data-testid="volume-use-default" @click="store.useAsDefault(v)"><i class="fa-regular fa-star"></i></BButton>
-              <BButton size="sm" class="vol-icon" variant="outline-light" :disabled="store.busyId === v.id" :title="$t('volumes.browse')" :aria-label="$t('volumes.browse')" data-testid="volume-browse" @click="browsing = v"><i class="fa-solid fa-folder-tree"></i></BButton>
-              <BButton size="sm" class="vol-icon" variant="outline-light" :disabled="store.busyId === v.id" :title="$t('volumes.clone')" :aria-label="$t('volumes.clone')" data-testid="volume-clone" @click="cloning = v"><i class="fa-solid fa-clone"></i></BButton>
-              <BButton size="sm" class="vol-icon" variant="outline-light" :disabled="store.busyId === v.id" :title="$t('volumes.resize')" :aria-label="$t('volumes.resize')" data-testid="volume-resize" @click="resizing = v.id; resizeTo = v.size_gb + 20"><i class="fa-solid fa-up-right-and-down-left-from-center"></i></BButton>
-              <BButton size="sm" class="vol-icon" variant="outline-danger" :disabled="store.busyId === v.id" :title="$t('volumes.erase')" :aria-label="$t('volumes.erase')" data-testid="volume-erase" @click="erasing = v"><i class="fa-solid fa-eraser"></i></BButton>
-              <BButton size="sm" class="vol-icon" variant="outline-danger" :disabled="store.busyId === v.id || v.pods.some((p) => p.via === 'runpod')" :title="v.pods.some((p) => p.via === 'runpod') ? $t('volumes.deleteBlocked') : $t('volumes.delete')" :aria-label="$t('volumes.delete')" data-testid="volume-delete" @click="confirmRemove(v)"><i class="fa-solid fa-trash"></i></BButton>
+              <span v-if="!v.is_default" v-tip="$t('volumes.useAsDefault')" class="tipwrap"><BButton size="sm" class="vol-icon" variant="outline-light" :disabled="store.busyId === v.id" :aria-label="$t('volumes.useAsDefault')" data-testid="volume-use-default" @click="store.useAsDefault(v)"><i class="fa-regular fa-star"></i></BButton></span>
+              <span v-tip="$t('volumes.browse')" class="tipwrap"><BButton size="sm" class="vol-icon" variant="outline-light" :disabled="store.busyId === v.id" :aria-label="$t('volumes.browse')" data-testid="volume-browse" @click="browsing = v"><i class="fa-solid fa-folder-tree"></i></BButton></span>
+              <span v-tip="$t('volumes.clone')" class="tipwrap"><BButton size="sm" class="vol-icon" variant="outline-light" :disabled="store.busyId === v.id" :aria-label="$t('volumes.clone')" data-testid="volume-clone" @click="cloning = v"><i class="fa-solid fa-clone"></i></BButton></span>
+              <span v-tip="$t('volumes.resize')" class="tipwrap"><BButton size="sm" class="vol-icon" variant="outline-light" :disabled="store.busyId === v.id" :aria-label="$t('volumes.resize')" data-testid="volume-resize" @click="resizing = v.id; resizeTo = v.size_gb + 20"><i class="fa-solid fa-up-right-and-down-left-from-center"></i></BButton></span>
+              <span v-tip="$t('volumes.erase')" class="tipwrap"><BButton size="sm" class="vol-icon" variant="outline-danger" :disabled="store.busyId === v.id" :aria-label="$t('volumes.erase')" data-testid="volume-erase" @click="erasing = v"><i class="fa-solid fa-eraser"></i></BButton></span>
+              <span v-tip="v.pods.some((p) => p.via === 'runpod') ? $t('volumes.deleteBlocked') : $t('volumes.delete')" class="tipwrap"><BButton size="sm" class="vol-icon" variant="outline-danger" :disabled="store.busyId === v.id || v.pods.some((p) => p.via === 'runpod')" :aria-label="v.pods.some((p) => p.via === 'runpod') ? $t('volumes.deleteBlocked') : $t('volumes.delete')" data-testid="volume-delete" @click="confirmRemove(v)"><i class="fa-solid fa-trash"></i></BButton></span>
             </template>
           </div>
         </div>
@@ -122,6 +122,8 @@ async function confirmRemove(v) {
 </script>
 
 <style scoped>
+.tipwrap { display: inline-block; }
+.tipwrap > :disabled { pointer-events: none; }   /* a disabled button swallows hover: the wrapper gets it instead, so its tooltip (the reason) shows */   /* the tooltip sits on this wrapper: a disabled button gets no mouse events of its own */
 .vol-icon { width: 2rem; padding-left: 0; padding-right: 0; }   /* the same square for every action */
 .vol-side { max-width: 16rem; }
 </style>

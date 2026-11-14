@@ -108,3 +108,6 @@ $enable-shadows: false;
   padding-right: 2.75rem;
   .btn-close { top: 50%; transform: translateY(-50%); padding: 0.5rem 0.75rem; }
 }
+
+/* v-tip: the instant tooltip (src/directives/tip.js) */
+.app-tip { position: fixed; z-index: 3000; background: rgba(0, 0, 0, 0.92); color: #fff; border: 1px solid rgba(255, 255, 255, 0.2); padding: 0.25rem 0.55rem; border-radius: 0.3rem; font-size: 0.78rem; pointer-events: none; white-space: nowrap; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); }

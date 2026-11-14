@@ -3,12 +3,18 @@
     <BAlert v-if="error" :model-value="true" variant="danger" data-testid="volume-files-error">{{ error }}</BAlert>
     <div v-if="!entries.size && !working" data-testid="volume-files-intro">
       <p class="small mb-2">{{ $t('volumes.browseIntro') }}</p>
-      <div v-if="plan" class="small text-body-secondary mb-3" data-testid="volume-files-plan">{{ plan.route === 's3' ? $t('volumes.runsOnS3') : plan.route === 'active' ? $t('volumes.runsOnYours', { pod: plan.pod?.name }) : $t('volumes.runsOnTemp', { gpu: plan.gpu, price: plan.price_per_hour ?? '?' }) }}<span v-if="plan.s3_note" class="d-block" data-testid="volume-s3-note">{{ $t(`volumes.s3Note.${plan.s3_note}`) }}</span></div>
-      <BButton variant="primary" size="sm" data-testid="volume-files-start" @click="list('/workspace')"><i class="fa-solid fa-folder-tree me-1"></i>{{ $t('volumes.browseStart') }}</BButton>
+      <!-- This volume could be read through RunPod's S3 API, but there are no S3 keys: say so before a pod is started and paid for -->
+      <BAlert v-if="plan && plan.s3_note === 'keys' && plan.route !== 's3'" :model-value="true" variant="warning" class="small py-2 mb-3" data-testid="volume-s3-keys-alert">
+        <i class="fa-solid fa-triangle-exclamation me-1"></i>{{ $t('volumes.s3KeysPrompt', { dc: volume.datacenter }) }}
+        <BButton variant="link" size="sm" class="p-0 ms-1 align-baseline" data-testid="volume-add-s3-keys" @click="addKeys">{{ $t('volumes.addS3Keys') }}</BButton>
+      </BAlert>
+      <div v-if="plan" class="small text-body-secondary mb-3" data-testid="volume-files-plan">{{ plan.route === 's3' ? $t('volumes.runsOnS3') : plan.route === 'active' ? $t('volumes.runsOnYours', { pod: plan.pod?.name }) : $t('volumes.runsOnTemp', { gpu: plan.gpu, price: plan.price_per_hour ?? '?' }) }}<span v-if="plan.s3_note && plan.s3_note !== 'keys'" class="d-block" data-testid="volume-s3-note">{{ $t(`volumes.s3Note.${plan.s3_note}`) }}</span><span v-else-if="plan.s3_note === 'keys' && !volume.s3" class="d-block" data-testid="volume-s3-note">{{ $t('volumes.s3Note.keys') }}</span></div>
+      <BButton variant="primary" size="sm" data-testid="volume-files-start" @click="list('/workspace')"><i class="fa-solid fa-folder-tree me-1"></i>{{ plan && plan.route !== 's3' ? $t('volumes.browseStartPod') : $t('volumes.browseStart') }}</BButton>
     </div>
+    <div v-else-if="!entries.size" class="small text-body-secondary" data-testid="volume-files-working"><BSpinner small class="me-2" />{{ $t('volumes.jobWorking', { state: job?.state || 'creating', pod: job?.pod_name || '' }) }}</div>
     <template v-else>
       <div class="d-flex align-items-center gap-2 mb-2 small flex-wrap" data-testid="volume-files-summary">
-        <span class="text-body-secondary">{{ $t('volumes.browseSummary', { size: fmt(total), n: entries.size - 1 }) }}</span>
+        <span class="text-body-secondary">{{ $t('volumes.browseSummary', { size: fmt(total), n: Math.max(0, entries.size - 1) }) }}</span>
         <span v-if="working" class="text-body-secondary" data-testid="volume-files-working"><BSpinner small class="me-1" />{{ $t('volumes.jobWorking', { state: job?.state || 'creating', pod: job?.pod_name || '' }) }}</span>
         <BButton size="sm" variant="outline-light" class="py-0 ms-auto" data-testid="volume-files-expand" @click="expandAll"><i class="fa-solid fa-angles-down me-1"></i>{{ $t('volumes.expandAll') }}</BButton>
         <BButton size="sm" variant="outline-light" class="py-0" data-testid="volume-files-collapse" @click="collapsed = new Set(openable)"><i class="fa-solid fa-angles-up me-1"></i>{{ $t('volumes.collapseAll') }}</BButton>
@@ -37,8 +43,12 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { volumesAPI } from '../api/volumes'
 import { errorText } from '../stores/toast'
 import { fmtBytes as fmt } from '../utils/studioTree'
+import { useUiStore } from '../stores/ui'
 
 const props = defineProps({ volume: { type: Object, default: null } })
+const ui = useUiStore()
+/** Opens Default Configuration at the S3 key fields; this window stays, so the volume can be listed afterwards. */
+const addKeys = () => { ui.configFocus = 's3'; ui.configOpen = true }
 const emit = defineEmits(['close'])
 const job = ref(null), plan = ref(null), error = ref(''), working = ref(false)
 const entries = ref(new Map())       // absolute path -> bytes, merged across the listings

@@ -13,6 +13,7 @@
       <BButton variant="outline-light" size="sm" :disabled="busy || scanning" data-testid="volume-erase-scan" @click="scan"><BSpinner v-if="scanning" small class="me-1" /><i v-else class="fa-solid fa-ruler me-1"></i>{{ $t('volumes.eraseScan') }}</BButton>
       <span class="text-body-secondary">{{ $t('volumes.eraseScanNote') }}</span>
     </div>
+    <BAlert v-if="plan && plan.s3_note === 'keys' && plan.route !== 's3' && volume?.s3" :model-value="true" variant="warning" class="small py-2" data-testid="volume-s3-keys-alert"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ $t('volumes.s3KeysPrompt', { dc: volume.datacenter }) }}<BButton variant="link" size="sm" class="p-0 ms-1 align-baseline" data-testid="volume-add-s3-keys" @click="ui.configFocus = 's3'; ui.configOpen = true">{{ $t('volumes.addS3Keys') }}</BButton></BAlert>
     <div v-if="plan" class="small text-body-secondary mb-3" data-testid="volume-erase-plan">{{ plan.route === 's3' ? $t('volumes.runsOnS3') : plan.route === 'active' ? $t('volumes.runsOnYours', { pod: plan.pod?.name }) : $t('volumes.runsOnTemp', { gpu: plan.gpu, price: plan.price_per_hour ?? '?' }) }}<span v-if="plan.s3_note" class="d-block" data-testid="volume-s3-note">{{ $t(`volumes.s3Note.${plan.s3_note}`) }}</span></div>
     <div class="row g-2 align-items-center mb-2">
       <div class="col-sm-5"><label class="small mb-0" for="er-by">{{ $t('importRound.approvedBy') }}</label><BFormInput id="er-by" v-model="approvedBy" size="sm" data-testid="volume-erase-by" /></div>
@@ -36,8 +37,10 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { volumesAPI } from '../api/volumes'
 import { errorText } from '../stores/toast'
 import { fmtBytes as fmt } from '../utils/studioTree'
+import { useUiStore } from '../stores/ui'
 
 const props = defineProps({ volume: { type: Object, default: null } })
+const ui = useUiStore()
 const emit = defineEmits(['close', 'erased'])
 const options = ref([]), picked = ref([]), sizes = ref({}), plan = ref(null), job = ref(null), error = ref(''), scanning = ref(false), typed = ref(''), approvedBy = ref('')
 try { approvedBy.value = localStorage.getItem('runpod-manager.approved-by') || '' } catch { /* storage blocked */ }

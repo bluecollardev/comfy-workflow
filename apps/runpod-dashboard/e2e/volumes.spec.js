@@ -83,8 +83,9 @@ test.describe('volumes: browse and erase', () => {
         const b = row.getByTestId(id)
         if (!(await b.count())) continue
         expect((await b.boundingBox()).height, `${id} at ${w}px`).toBeLessThan(36)
-        await expect(b).toHaveAttribute('aria-label', /.+/)   // an icon alone says nothing: the name is its label and its tooltip
-        await expect(b).toHaveAttribute('title', /.+/)
+        await expect(b).toHaveAttribute('aria-label', /.+/)   // an icon alone says nothing: the name is its accessible label
+        await b.locator('..').hover(); await expect(page.locator('.app-tip')).toBeVisible()   // and hovering shows it at once, as a tooltip
+        await expect(page.locator('.app-tip')).toHaveText(await b.getAttribute('aria-label'))
         await expect(b.locator('svg, i').first()).toBeVisible()
       }
     }
@@ -96,7 +97,12 @@ test.describe('volumes: browse and erase', () => {
     await dialog.locator('[data-testid="volume"][data-id="vol1"]').getByTestId('volume-browse').click()
     const files = page.getByTestId('volume-files-modal')
     await expect(files.getByTestId('volume-files-plan')).toContainText('RTX 2000 Ada')   // where it runs and the price, before anything starts
-    await expect(files.getByTestId('volume-s3-note')).toContainText('S3 keys')   // and why it is not the S3 API
+    await expect(files.getByTestId('volume-s3-keys-alert')).toContainText('S3')   // this volume could be read through S3: it says so, with the reason, before a pod is started
+    await expect(files.getByTestId('volume-files-start')).toContainText('short pod')   // and the button says a pod is what it starts
+    await files.getByTestId('volume-add-s3-keys').click()
+    await expect(page.locator('#cfg-s3-access')).toBeVisible()   // Add S3 keys opens Default Configuration at the key fields
+    await page.getByTestId('config-close').first().click()
+    await expect(files.getByTestId('volume-files-start')).toBeVisible()   // and the Browse window is still there
     await files.getByTestId('volume-files-start').click()
     await expect(files.getByTestId('volume-files-row')).toHaveCount(1)   // folders start closed: the top level only
     await expect(files.getByTestId('volume-files-summary')).toContainText('5.0 GB')

@@ -1,41 +1,58 @@
 <template>
-  <BModal :model-value="!!file" :title="file?.filename || ''" size="xl" centered scrollable lazy no-footer data-testid="output-viewer" @update:model-value="(v) => !v && $emit('close')">
-    <div v-if="file" class="viewer-stage text-center" data-testid="output-viewer-stage" :data-kind="file.kind">
-      <img v-if="file.kind === 'image'" :src="url" :alt="file.filename" class="viewer-media" data-testid="output-viewer-image" />
-      <video v-else-if="file.kind === 'video'" :src="url" controls autoplay loop class="viewer-media" data-testid="output-viewer-video"></video>
-      <audio v-else-if="file.kind === 'audio'" :src="url" controls autoplay class="w-100" data-testid="output-viewer-audio"></audio>
-      <div v-else class="text-body-secondary py-5" data-testid="output-viewer-other"><i class="fa-regular fa-file fs-1 d-block mb-2"></i>{{ $t('outputs.noPreview') }}</div>
+  <Teleport to="body">
+    <div v-if="file" class="viewer-overlay" data-testid="output-viewer" @click.self="$emit('close')">
+      <div class="viewer-card" role="dialog" aria-modal="true" :aria-label="file.filename">
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <strong class="text-truncate" data-testid="output-viewer-title">{{ file.filename }}</strong>
+          <button type="button" class="btn-close btn-close-white ms-auto" :aria-label="$t('pod.close')" data-testid="output-viewer-close" @click="$emit('close')"></button>
+        </div>
+        <div class="viewer-stage text-center" data-testid="output-viewer-stage" :data-kind="file.kind">
+          <img v-if="file.kind === 'image'" :src="url" :alt="file.filename" class="viewer-media" data-testid="output-viewer-image" />
+          <video v-else-if="file.kind === 'video'" :src="url" controls autoplay loop class="viewer-media" data-testid="output-viewer-video"></video>
+          <audio v-else-if="file.kind === 'audio'" :src="url" controls autoplay class="w-100" data-testid="output-viewer-audio"></audio>
+          <div v-else class="text-body-secondary py-5" data-testid="output-viewer-other"><i class="fa-regular fa-file fs-1 d-block mb-2"></i>{{ $t('outputs.noPreview') }}</div>
+        </div>
+        <div class="d-flex align-items-center gap-2 mt-3 small flex-wrap">
+          <span class="badge" :class="file.type === 'output' ? 'text-bg-success' : 'text-bg-secondary'">{{ $t(`outputs.type.${file.type}`) }}</span>
+          <span class="font-monospace text-body-secondary text-truncate" :title="path">{{ path }}</span>
+          <span class="ms-auto d-flex gap-2">
+            <BButton v-if="hasPrev" variant="outline-light" size="sm" data-testid="output-viewer-prev" :title="$t('outputs.prev')" @click="$emit('step', -1)"><i class="fa-solid fa-chevron-left"></i></BButton>
+            <span v-if="count > 1" class="align-self-center text-body-secondary">{{ index + 1 }} / {{ count }}</span>
+            <BButton v-if="hasNext" variant="outline-light" size="sm" data-testid="output-viewer-next" :title="$t('outputs.next')" @click="$emit('step', 1)"><i class="fa-solid fa-chevron-right"></i></BButton>
+            <BButton variant="outline-light" size="sm" data-testid="output-viewer-open" :href="webUrl" target="_blank" rel="noopener"><i class="fa-solid fa-arrow-up-right-from-square me-1"></i>{{ $t('outputs.open') }}</BButton>
+            <BButton variant="primary" size="sm" data-testid="output-viewer-download" @click="download"><i class="fa-solid fa-download me-1"></i>{{ $t('outputs.download') }}</BButton>
+          </span>
+        </div>
+        <div v-if="error" class="text-danger small mt-2" data-testid="output-viewer-error">{{ error }}</div>
+      </div>
     </div>
-    <div v-if="file" class="d-flex align-items-center gap-2 mt-3 small flex-wrap">
-      <span class="badge" :class="file.type === 'output' ? 'text-bg-success' : 'text-bg-secondary'">{{ $t(`outputs.type.${file.type}`) }}</span>
-      <span class="font-monospace text-body-secondary text-truncate" :title="path">{{ path }}</span>
-      <span class="ms-auto d-flex gap-2">
-        <BButton v-if="hasPrev" variant="outline-light" size="sm" data-testid="output-viewer-prev" :title="$t('outputs.prev')" @click="$emit('step', -1)"><i class="fa-solid fa-chevron-left"></i></BButton>
-        <span v-if="count > 1" class="align-self-center text-body-secondary">{{ index + 1 }} / {{ count }}</span>
-        <BButton v-if="hasNext" variant="outline-light" size="sm" data-testid="output-viewer-next" :title="$t('outputs.next')" @click="$emit('step', 1)"><i class="fa-solid fa-chevron-right"></i></BButton>
-        <BButton variant="outline-light" size="sm" data-testid="output-viewer-open" :href="webUrl" target="_blank" rel="noopener"><i class="fa-solid fa-arrow-up-right-from-square me-1"></i>{{ $t('outputs.open') }}</BButton>
-        <BButton variant="primary" size="sm" data-testid="output-viewer-download" @click="download"><i class="fa-solid fa-download me-1"></i>{{ $t('outputs.download') }}</BButton>
-      </span>
-    </div>
-    <div v-if="error" class="text-danger small mt-2" data-testid="output-viewer-error">{{ error }}</div>
-  </BModal>
+  </Teleport>
 </template>
 
 <script setup>
 /** OutputViewerModal: one output file of a run, large (image, video or audio of the pod's ComfyUI /view), with Previous/Next among the gallery's files, Open in a new tab and Download. */
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { core } from '../api/bridge'
 import { viewUrl } from '../utils/outputs'
 import { errorText } from '../stores/toast'
 
 const props = defineProps({ file: { type: Object, default: null }, base: { type: String, default: '' }, index: { type: Number, default: 0 }, count: { type: Number, default: 1 } })
-defineEmits(['close', 'step'])
+const emit = defineEmits(['close', 'step'])
 const error = ref('')
 const url = computed(() => (props.file ? viewUrl(props.base, props.file) : ''))   // what the viewer shows
 const webUrl = computed(() => (props.file ? viewUrl(props.base, props.file, { web: true }) : ''))   // what Open and Download use
 const path = computed(() => (props.file ? [props.file.subfolder, props.file.filename].filter(Boolean).join('/') : ''))
 const hasPrev = computed(() => props.index > 0), hasNext = computed(() => props.index < props.count - 1)
 watch(() => props.file, () => { error.value = '' })
+/** Esc closes the viewer (not the window under it); the arrow keys step through the files. */
+const onKey = (e) => {
+  if (!props.file) return
+  if (e.key === 'Escape') { e.stopImmediatePropagation(); e.preventDefault(); emit('close') }
+  else if (e.key === 'ArrowLeft' && hasPrev.value) emit('step', -1)
+  else if (e.key === 'ArrowRight' && hasNext.value) emit('step', 1)
+}
+window.addEventListener('keydown', onKey, true)
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
 /** In the app: a Save As dialog and the bytes from the pod; in a browser: the address with a download attribute. */
 async function download() {
   error.value = ''
@@ -45,6 +62,8 @@ async function download() {
 </script>
 
 <style scoped>
+.viewer-overlay { position: fixed; inset: 0; z-index: 2500; background: rgba(0, 0, 0, 0.8); display: flex; align-items: center; justify-content: center; padding: 1.5rem; }
+.viewer-card { background: #20232a; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 0.5rem; padding: 1rem; max-width: min(96vw, 1400px); max-height: 94vh; overflow: auto; width: 100%; }
 .viewer-stage { background: #14161b; border-radius: 0.375rem; padding: 0.5rem; }
 .viewer-media { max-width: 100%; max-height: 70vh; }
 </style>

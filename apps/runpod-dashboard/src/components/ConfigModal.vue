@@ -625,6 +625,12 @@ async function focusSection() {
     ioFlash.value = true; setTimeout(() => { ioFlash.value = false }, 2000)
   }
   if (where === 'adapters') { tab.value = 'adapters'; await nextTick(); document.querySelector('[data-testid="section-adapters"]')?.scrollIntoView({ block: 'start' }) }
+  if (where === 's3') {   // from Browse / Erase / Clone: the RunPod S3 key fields, in view and focused
+    tab.value = 'runpod'; await nextTick()
+    const input = document.getElementById('cfg-s3-access')
+    input?.scrollIntoView({ block: 'center' })
+    input?.focus({ preventScroll: true })
+  }
   if (where === 'claude') {
     tab.value = 'runpod'; await nextTick()
     const input = document.getElementById('cfg-claude-key')
