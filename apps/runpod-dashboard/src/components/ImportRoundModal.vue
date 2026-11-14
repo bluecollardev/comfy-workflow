@@ -81,8 +81,15 @@
             </BButton>
           </div>
         </div>
-        <div v-if="dcNoVolume" class="text-warning w-100" data-testid="import-round-dc-novolume"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ $t('importRound.dcNoVolume', { dc: dcChoice }) }}
-          <BButton variant="link" size="sm" class="p-0 ms-1 align-baseline" data-testid="import-round-dc-newvolume" @click="newVolumeHere">{{ $t('form.datacenterNewVolume', { dc: dcChoice }) }}</BButton></div>
+        <div v-if="dcNoVolume" class="w-100" data-testid="import-round-dc-novolume">
+          <div class="text-warning mb-1"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ $t('importRound.dcNoVolume', { dc: dcChoice }) }}</div>
+          <label class="d-flex align-items-center gap-2 mb-1"><input v-model="createVol" type="checkbox" class="form-check-input mt-0" data-testid="import-round-create-volume" />{{ $t('importRound.createVolume', { dc: dcChoice }) }}</label>
+          <div v-if="createVol" class="d-flex align-items-center gap-2 flex-wrap ps-4" data-testid="import-round-new-volume">
+            <BFormInput v-model="newVolName" size="sm" style="max-width: 18rem" maxlength="60" :aria-label="$t('importRound.newVolumeName')" data-testid="import-round-new-volume-name" />
+            <BFormInput v-model.number="newVolSize" type="number" min="10" max="4000" size="sm" style="width: 6rem" :aria-label="$t('importRound.newVolumeSize')" data-testid="import-round-new-volume-size" /> GB
+            <span class="text-body-secondary" data-testid="import-round-new-volume-cost">{{ $t('importRound.newVolumeCost', { usd: newVolCost }) }}</span>
+          </div>
+        </div>
         <div v-else-if="volumeProblem" class="text-warning w-100" data-testid="import-round-volume-problem"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ volumeProblem }}</div>
         <div v-else-if="volumeId && volumeId !== defaultVolume" class="text-body-secondary w-100" data-testid="import-round-volume-note">{{ $t('importRound.volumeNote') }}</div>
       </div>
@@ -204,7 +211,11 @@ function onPickCard({ dc, card }) {
 function clearAllCards() { allCard.value = ''; allCardLabel.value = ''; const n = { ...cards.value }; for (const [r, set] of picked.value) for (const sh of set) delete n[`${r}::${sh}`]; cards.value = n }
 const dcNoVolume = computed(() => !!dcChoice.value && volumes.value.length > 0 && !volumesIn(dcChoice.value).length)
 watch(volumeId, (id) => { const v = volumes.value.find((x) => x.id === id); if (v) dcChoice.value = v.datacenter })   // choosing a volume says where the pods will be
-const newVolumeHere = () => { ui.volumeDc = dcChoice.value; ui.volumesOpen = true }
+// No volume of yours in the card's datacenter: tick "Create a new volume" and Import makes it first (a volume costs per month, so it is the user's tick and the Approved by that count)
+const createVol = ref(false), newVolName = ref(''), newVolSize = ref(250)
+const newVolCost = computed(() => Math.round((Math.min(newVolSize.value || 0, 1000) * 0.07 + Math.max((newVolSize.value || 0) - 1000, 0) * 0.05) * 100) / 100)   // RunPod's price per GB per month, as in Volumes
+const newVolOk = computed(() => createVol.value && dcNoVolume.value && newVolName.value.trim().length > 0 && Number.isInteger(newVolSize.value) && newVolSize.value >= 10 && newVolSize.value <= 4000)
+watch(dcChoice, (dc) => { createVol.value = false; newVolName.value = dc ? `brynley-rounds-${dc.toLowerCase()}` : '' })
 const volumeOptions = computed(() => [{ value: '', text: t('importRound.volumePick') }, ...volumes.value.map((v) => ({ value: v.id, text: `${v.name} · ${v.size_gb} GB · ${v.datacenter}${v.is_default ? ` · ${t('importRound.volumeDefault')}` : ''}` }))])
 const volumeProblem = computed(() => (volumes.value.length && !volumeId.value ? t('importRound.volumeNone') : !volumes.value.length && volumesLoaded.value ? t('importRound.volumeNoneAtAll') : ''))
 const volumesLoaded = ref(false)
@@ -224,7 +235,7 @@ const first = computed(() => [...plans.value.values()][0] || {})
 const estimate = computed(() => Math.round([...plans.value.entries()].reduce((a, [r, p]) => a + ((estimates.value.get(r) || p).est_total_usd ?? 0) * ((picked.value.get(r)?.size || 0) > 0 ? 1 : 0), 0) * 100) / 100)
 const shotCount = (r) => picked.value.get(r)?.size || 0
 const totalShots = computed(() => [...plans.value.keys()].reduce((a, r) => a + shotCount(r), 0))
-const canStart = computed(() => step.value === 3 && !!volumeId.value && totalShots.value > 0 && approvedBy.value.trim().length > 0)
+const canStart = computed(() => step.value === 3 && (!!volumeId.value || newVolOk.value) && totalShots.value > 0 && approvedBy.value.trim().length > 0)
 
 onMounted(async () => { loadDcs(); try { gpuMenu.value = ((await podsAPI.gpus('')).gpus || []).filter((g) => g.value !== 'auto') } catch { /* the plain pool choice still works */ }
   try { const r = await panamaAPI.rounds(); rounds.value = Array.isArray(r) ? r : r.rounds || [] } catch (e) { error.value = errorText(e) } })
@@ -259,10 +270,11 @@ async function start() {
   const todo = [...plans.value.keys()].filter((r) => shotCount(r) > 0)
   const capOn = first.value.cap_enabled
   const items = todo.map((r) => ({ round: r, shots: [...picked.value.get(r)], cards: cardsFor(r), ...(capOn ? { max_pods: todo.length > 1 && !podsEdited.value ? shotCount(r) : maxPods.value } : {}) }))
+  const makeVol = newVolOk.value ? { name: newVolName.value.trim(), size_gb: newVolSize.value, datacenter: dcChoice.value } : null
   const opts = { run_workflows: runWorkflows.value, volume_id: volumeId.value, approved_by: approvedBy.value.trim(), ...(capOn ? { cost_cap_usd: costCap.value } : {}) }
   // The Queue opens at once and says it is queueing: reading and planning the rounds takes a while, and the button alone says nothing.
   ui.queueStartError = ''; ui.queueStarting = todo; open.value = false; ui.queueOpen = true
-  try { await queueAPI.importMany(items, opts) } catch (e) { ui.queueStartError = errorText(e) } finally { ui.queueStarting = []; ui.queueVersion++; starting.value = false }
+  try { if (makeVol) { const v = await volumesAPI.create(makeVol); opts.volume_id = v.id }; await queueAPI.importMany(items, opts) } catch (e) { ui.queueStartError = errorText(e) } finally { ui.queueStarting = []; ui.queueVersion++; starting.value = false }
 }
 </script>
 

@@ -220,3 +220,26 @@ test('Queue: Purge finished asks first; No keeps everything, Yes removes finishe
   await expect(q.getByTestId('queue-import')).toContainText('round-b')
   expect(api.state.purged).toEqual({ confirmed: true })
 })
+
+test('Import Round: no volume in the card\'s datacenter - tick Create a new volume there, and Import makes it first and imports into it', async ({ page, api }) => {
+  api.state.datacenters.datacenters[2].cards = [{ key: 'rtx6000ada', name: 'RTX 6000 Ada', vram: 48, price: 1.09, stock: 'Low' }]
+  await page.goto('/')
+  await page.getByTestId('open-import-round').click()
+  const dlg = page.getByTestId('import-round-modal')
+  await dlg.getByTestId('import-round-option').first().locator('input').check()
+  await dlg.getByTestId('import-round-next').click()
+  await dlg.getByTestId('import-round-next').click()
+  await dlg.getByTestId('import-round-approved-by').fill('Lucas')
+  await dlg.locator('[data-testid="dc-card-row"][data-card="RTX 6000 Ada"] [data-testid="dc-chip"][data-dc="US-KS-2"]').click()
+  await expect(dlg.getByTestId('import-round-dc-novolume')).toBeVisible()
+  await expect(dlg.getByTestId('import-round-start')).toBeDisabled()   // no volume yet
+  await dlg.getByTestId('import-round-create-volume').check()
+  await expect(dlg.getByTestId('import-round-new-volume-name')).toHaveValue('brynley-rounds-us-ks-2')
+  await expect(dlg.getByTestId('import-round-new-volume-size')).toHaveValue('250')
+  await expect(dlg.getByTestId('import-round-new-volume-cost')).toContainText('17.5')
+  await expect(dlg.getByTestId('import-round-start')).toBeEnabled()
+  await dlg.getByTestId('import-round-start').click()
+  await expect.poll(() => Object.values(api.state.volumes).find((v) => v.name === 'brynley-rounds-us-ks-2')).toMatchObject({ size_gb: 250, datacenter: 'US-KS-2' })   // made first
+  const made = Object.values(api.state.volumes).find((v) => v.name === 'brynley-rounds-us-ks-2')
+  await expect.poll(() => api.state.imported?.volume_id).toBe(made.id)   // and the import uses it
+})
