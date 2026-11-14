@@ -9,6 +9,36 @@ const openVolumes = async (page) => {
 }
 const volume = (dialog, id) => dialog.locator('[data-testid="volume"]', { has: dialog.page().locator(`[data-id="${id}"]`) }).first()
 
+test.describe('volumes: browse and erase', () => {
+  test('Browse lists a volume\'s folders with sizes; Erase needs folders, your name and the volume\'s name typed back, then reports what it freed', async ({ page, api }) => {
+    await page.goto('/')
+    const dialog = await openVolumes(page)
+    await dialog.locator('[data-testid="volume"][data-id="vol1"]').getByTestId('volume-browse').click()
+    const files = page.getByTestId('volume-files-modal')
+    await expect(files.getByTestId('volume-files-plan')).toContainText('RTX 2000 Ada')   // where it runs and the price, before anything starts
+    await files.getByTestId('volume-files-start').click()
+    await expect(files.getByTestId('volume-files-row')).toHaveCount(5)
+    await expect(files.getByTestId('volume-files-summary')).toContainText('5.0 GB')
+    await expect(files.locator('[data-testid="volume-files-row"][data-path="comfy-shared/temp/rounds"]')).toContainText('3.0 GB')
+    await files.getByText('Close', { exact: true }).click()
+    await dialog.locator('[data-testid="volume"][data-id="vol1"]').getByTestId('volume-erase').click()
+    const er = page.getByTestId('volume-erase-modal')
+    await expect(er.locator('[data-testid="volume-erase-option"][data-key="models"] input')).not.toBeChecked()   // models are not in any default
+    await expect(er.locator('[data-testid="volume-erase-option"][data-key="output"] input')).toBeChecked()
+    await expect(er.getByTestId('volume-erase-go')).toBeDisabled()
+    await er.getByTestId('volume-erase-by').fill('Lucas')
+    await er.getByTestId('volume-erase-name').fill('wrong')
+    await expect(er.getByTestId('volume-erase-go')).toBeDisabled()   // the name has to match exactly
+    await er.getByTestId('volume-erase-scan').click()
+    await expect(er.locator('[data-testid="volume-erase-option"][data-key="output"]').getByTestId('volume-erase-size')).toContainText('1.0 GB')
+    await er.getByTestId('volume-erase-name').fill('comfy-workspace')
+    await expect(er.getByTestId('volume-erase-go')).toBeEnabled()
+    await er.getByTestId('volume-erase-go').click()
+    await expect(er.getByTestId('volume-erase-job')).toContainText('Erased')
+    expect(api.state.erased).toMatchObject({ id: 'vol1', keys: ['rounds', 'inputs', 'workflows', 'output'], approved_by: 'Lucas', confirm_name: 'comfy-workspace' })
+  })
+})
+
 test.describe('volumes', () => {
   test('lists the account\'s volumes with cost, datacenter, S3 and the pods on each', async ({ page }) => {
     await page.goto('/')

@@ -33,6 +33,7 @@ export function appTools({ core, governance, text, json, plain = text }) {
   const approved = obj({ approved_by: S('Who said yes to this spend. Required; never guessed.') })
   const absolutePath = (p, what) => { if (!p || !isAbsolute(p)) throw Object.assign(new Error(`${what} must be an absolute path`), { status: 400 }); return p }
   const target = { type: 'string', enum: ['local', 'pod'], default: 'local', description: 'local = staged on this PC; pod = staged on the network volume by a pod (a pod download may start a pod: needs approved_by)' }
+  const volumes_job = { browse: (id) => podpull.browseVolume(id), erase: (id, keys, o) => podpull.eraseVolume(id, keys, o) }
   const pickPanama = (args) => (args.target === 'pod' ? podpull : panama)
   const summaryOf = (cfg) => { const p = mounts.payload(cfg); return { mode: p.mode, volume: cfg.network_volume_id || null, datacenter: cfg.data_center_id || null, image: cfg.image, idle_stop_minutes: cfg.idle_stop_minutes, apply_by_default: cfg.apply_by_default, folders: p.folders.map((r) => ({ key: r.key, local: r.local || null, on_pod: r.container })) } }
 
@@ -109,6 +110,15 @@ export function appTools({ core, governance, text, json, plain = text }) {
         console.error(`resize_volume ${v.id} to ${v.size_gb} GB approved by ${String(args.approved_by).trim()}`)
         return json({ ...v, approved_by: String(args.approved_by).trim() })
       } },
+
+    { name: 'volume_files', description: 'Explore a network volume: its folders to depth 3 with sizes (a read-only listing by a short-lived pod of the cheapest card, or your own pod on it; a few cents). Starts a job: poll it with volume_job. volume_plan says where it would run and what it costs. Spends a little: needs approved_by',
+      inputSchema: obj({ approved_by: approved.properties.approved_by, volume_id: S('Volume ID (list_volumes)') }, ['volume_id']),
+      run: async (args) => { const refusal = yes(args, 'volume_files'); if (refusal) return text(refusal, true); try { return json(await volumes_job.browse(args.volume_id)) } catch (e) { return text(e.message, true) } } },
+    { name: 'volume_erase', description: `Empty chosen folders of a network volume (the volume and the folders stay; contents are deleted, not reversible). what: any of ${Object.keys(podpull.ERASABLE).join(', ')} (models is not in any default). Ask the user first: needs approved_by (the name behind the yes) and confirm_name (the volume's exact name, typed back). Runs on a short-lived pod or your pod on it; refused while another job runs on the volume. Poll with volume_job; a volume_files listing first shows sizes`,
+      inputSchema: obj({ approved_by: approved.properties.approved_by, volume_id: S('Volume ID (list_volumes)'), what: { type: 'array', items: { type: 'string' }, description: 'Folders to empty, from the list above' }, confirm_name: S("The volume's exact name") }, ['volume_id', 'what', 'confirm_name']),
+      run: async (args) => { const refusal = yes(args, 'volume_erase'); if (refusal) return text(refusal, true); try { console.error(`volume_erase ${args.volume_id} [${(args.what || []).join(',')}] approved by ${String(args.approved_by).trim()}`); return json(await volumes_job.erase(args.volume_id, args.what || [], { approved_by: args.approved_by, confirm_name: args.confirm_name })) } catch (e) { return text(e.message, true) } } },
+    { name: 'volume_job', description: 'A volume_files or volume_erase job: its state, the pod, the listing (folders and bytes) or what an erase freed from each folder. action cancel stops it (the pod is deleted)', inputSchema: obj({ job_id: S('The job id the call returned'), action: S('status (default) | cancel'), plan_volume_id: S('Instead of a job: a volume ID whose job plan (where it would run, the card and price) to show') }, []),
+      run: async (a) => { try { if (a.plan_volume_id) return json(await podpull.volumePlan(a.plan_volume_id)); if (!a.job_id) return text('Give job_id (or plan_volume_id)', true); const j = a.action === 'cancel' ? podpull.cancel(a.job_id) : podpull.job(a.job_id); return j ? json(j) : text(`No such job: ${a.job_id}`, true) } catch (e) { return text(e.message, true) } } },
 
     // ---------- Panama / BH ----------
     { name: 'panama_status', description: 'Is the BH exchange bucket reachable: the bucket, region, how it is read (the keys in the app or an AWS profile), where rounds are staged on this PC, and whether Pod mode is available', inputSchema: obj(), run: async () => json(panama.status()) },

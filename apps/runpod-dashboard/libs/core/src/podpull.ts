@@ -82,9 +82,11 @@ export function recordState(volumeId: string, round: string, rec: RoundRec | nul
   v.as_of = now.toISOString()
   writeJson(stateFile(), all)
 }
+/** Everything known about the rounds on a volume is dropped (after its pulled rounds were erased). */
+export function forgetVolume(volumeId: string): void { migrateState(); const all = readJson<Record<string, VolRec>>(stateFile(), {}); if (all[volKey(volumeId)]) { delete all[volKey(volumeId)]; writeJson(stateFile(), all) } }
 export const knownState = (volumeId: string): VolRec | null => { migrateState(); return readJson<Record<string, VolRec>>(stateFile(), {})[volKey(volumeId)] ?? null }
 
-export interface TempPod { round: string; kind: 'pull' | 'remove'; name: string; pod_id: string | null; volume: string; created_at: string; approved_by: string }
+export interface TempPod { round: string; kind: 'pull' | 'remove' | 'browse' | 'erase'; name: string; pod_id: string | null; volume: string; created_at: string; approved_by: string }
 /** The temporary pods this app has made and not yet deleted. One left behind (the app closed mid-job) is listed here and shows in the manager under its name. */
 export const temporaryPods = (): TempPod[] => readJson<TempPod[]>(tempFile(), [])
 const tempAdd = (t: TempPod) => writeJson(tempFile(), [...temporaryPods().filter((x) => x.name !== t.name), t])
@@ -106,6 +108,12 @@ export function capability(): panama.PodCapability {
 }
 panama.setPodCapability(capability)
 
+/** Browse and erase work on any volume of the account over a short-lived pod: no bucket keys, only RunPod. */
+function volumeJobCapability(): { available: boolean; reason: string } {
+  if (!mounts.dryRun(mounts.load()) && !settings.lookup('RUNPOD_API_KEY')) return { available: false, reason: 'No RunPod API key: enter it in Default Configuration.' }
+  return { available: true, reason: '' }
+}
+
 export interface Opts {
   client?: rp.RunPodClient
   /** Runs a script on a pod over SSH. Tests inject one; the default is `ssh` itself. */
@@ -120,11 +128,13 @@ export interface Opts {
   now?: () => Date
   /** Where a pod download runs: on 'current' (the user's pod on the volume, started first if it is off) or on a 'temporary' pod of the cheapest card. Unset: the user's pod if it is running, else a temporary one. */
   route?: 'current' | 'temporary'
+  /** Work on this volume instead of the Default Configuration's (browse and erase are about one volume of the account). */
+  volumeId?: string
 }
 
 async function volumeOf(opts: Opts): Promise<Volume | null> {
   const cfg = mounts.load()
-  const id = (cfg.network_volume_id || '').trim()
+  const id = (opts.volumeId || cfg.network_volume_id || '').trim()
   if (!id) return null
   try {
     const v = await pods.volumeInfo(id, opts.client)
@@ -156,7 +166,7 @@ async function findActivePod(cfg: mounts.MountsConfig, opts: Opts): Promise<{ id
     const p = all.find((x) => x.status === 'running') ?? all.find((x) => x.status === 'stopped')
     return p ? { id: p.id, name: p.name, price: 0, gpu: p.gpu, running: p.status === 'running' } : null
   }
-  const volume = (cfg.network_volume_id || '').trim()
+  const volume = (opts.volumeId || cfg.network_volume_id || '').trim()
   let off: { id: string; name: string; price: number | null; gpu: string; running: boolean } | null = null
   for (const raw of await rp.listPods(opts.client)) {
     if ((raw.networkVolumeId || '') !== volume || (raw.name || '').startsWith(POD_PREFIX)) continue
@@ -171,7 +181,7 @@ async function findActivePod(cfg: mounts.MountsConfig, opts: Opts): Promise<{ id
 
 export async function plan(round: string, opts: Opts = {}): Promise<PodPlan> {
   assertRound(round)
-  const cap = capability()
+  const cap = opts.volumeId ? volumeJobCapability() : capability()   // a job on one volume needs RunPod, not the Panama keys
   if (!cap.available) throw bad(cap.reason)
   const cfg = mounts.load()
   const volume = await volumeOf(opts)
@@ -211,9 +221,11 @@ export async function plan(round: string, opts: Opts = {}): Promise<PodPlan> {
 
 export type JobState = 'creating' | 'starting' | 'pulling' | 'verifying' | 'placing' | 'deleting' | 'done' | 'failed' | 'cancelled'
 export interface PodJob {
-  id: string; round: string; kind: 'pull' | 'remove'; route: 'active' | 'temporary'; pod_id: string | null; pod_name: string | null
+  id: string; round: string; kind: 'pull' | 'remove' | 'browse' | 'erase'; route: 'active' | 'temporary'; pod_id: string | null; pod_name: string | null
   /** The card the pod actually has and its price per hour, once the pod exists (the Queue shows them). */
   gpu?: string; price_per_hour?: number | null
+  /** A volume job (`browse`, `erase`): the volume, what a browse found (folders with their sizes), what an erase was asked to clear and how many bytes it freed from each. */
+  volume_id?: string; listing?: { path: string; bytes: number }[]; erase_keys?: string[]; freed?: Record<string, number>
   state: JobState; files: number; lines: string[]; error?: string; verify?: panama.Verify; started_at: string
   /** ADR-033: what placing the verified round on the pod did (files linked, graphs written, conflicts); set only after a pull whose check passed. A placing failure is here, never the pull's. */
   place?: place.PlaceReport
@@ -252,6 +264,10 @@ function feed(i: Internal, raw: string, secrets: string[]) {
   else if (/s3 pull done, NOT verified/.test(line)) i.outcome = 'unverified'
   else if (/s3 pull refused|s3 pull FAILED: |S3_PULL set but/.test(line)) i.outcome = 'copy-failed'
   else if (/^(removed|nothing to remove at) /.test(line)) i.outcome = 'removed'
+  else if (/^BROWSE \d+ \//.test(line)) { const m = /^BROWSE (\d+) (\/.*)$/.exec(line); if (m) (j.listing ||= []).push({ path: m[2], bytes: Number(m[1]) }) }
+  else if (/^BROWSE-DONE/.test(line) || /^ERASE-DONE/.test(line)) i.outcome = 'removed'
+  else if (/^ERASED \w+ \d+/.test(line)) { const m = /^ERASED (\w+) (\d+)/.exec(line); if (m) (j.freed ||= {})[m[1]] = Number(m[2]) }
+  else if (/^BROWSE-FAILED/.test(line)) i.outcome = 'refused'
   else if (/^refused/.test(line)) i.outcome = 'refused'
 }
 
@@ -283,6 +299,36 @@ export function removeScript(round: string): string {
     'if [ -d "$d" ]; then rm -rf -- "$d" && echo "removed $d"; else echo "nothing to remove at $d"; fi', '',
   ].join('\n')
 }
+/** What Erase can clear on a volume: a fixed list, never a path from the caller. Each is a folder whose contents go and which stays. */
+export const ERASABLE: Record<string, { path: string; label: string }> = {
+  rounds: { path: '/workspace/comfy-shared/temp/rounds', label: 'Pulled rounds (temp/rounds)' },
+  inputs: { path: '/workspace/comfy-shared/input', label: 'Inputs (input), including the files placed from rounds' },
+  workflows: { path: '/workspace/comfy-shared/workflows/rounds', label: 'Round graphs (workflows/rounds)' },
+  output: { path: '/workspace/comfy-shared/output', label: 'Outputs (output)' },
+  models: { path: '/workspace/comfy-shared/models', label: 'Models (models)' },
+}
+/** The folders of a volume to depth 3 with their sizes, one `BROWSE <bytes> <path>` line each, then `BROWSE-DONE`. Read-only. */
+export function browseScript(): string {
+  return [
+    'set -u', 'cd /workspace 2>/dev/null || { echo "BROWSE-FAILED no /workspace"; exit 64; }',
+    `du -b --max-depth=3 /workspace 2>/dev/null | head -n 5000 | awk -F'\t' '{ print "BROWSE " $1 " " $2 }'`,
+    'echo "BROWSE-DONE"', '',
+  ].join('\n')
+}
+/** Empties the chosen folders (their contents; the folders stay). Keys are checked against ERASABLE here and the path again on the pod. */
+export function eraseScript(keys: string[]): string {
+  if (!keys.length) throw bad('Choose what to erase')
+  const lines = ['set -u']
+  for (const k of keys) {
+    const e = ERASABLE[k]; if (!e) throw bad(`Not something Erase clears: ${k} (one of ${Object.keys(ERASABLE).join(', ')})`)
+    lines.push(`d=${q(e.path)}`, 'case "$d" in /workspace/comfy-shared/?*) ;; *) echo "refused: $d"; exit 64 ;; esac',
+      `if [ -d "$d" ]; then b=$(du -sb "$d" 2>/dev/null | cut -f1); find "$d" -mindepth 1 -delete && echo "ERASED ${k} \${b:-0}"; else echo "ERASED ${k} 0"; fi`)
+  }
+  lines.push('echo "ERASE-DONE"', '')
+  return lines.join('\n')
+}
+/** The script a job runs on its pod. */
+const scriptOf = (j: PodJob, k: { id: string; secret: string } | null): string => j.kind === 'pull' ? pullScript(j.round, k!) : j.kind === 'browse' ? browseScript() : j.kind === 'erase' ? eraseScript(j.erase_keys ?? []) : removeScript(j.round)
 const KILL_SCRIPT = 'pkill -f /opt/comfy-app/s3pull.sh; pkill -x rclone; true\n'
 
 export interface SshJob { host: string; port: number; script: string; onLine: (line: string) => void; signal: AbortSignal }
@@ -327,8 +373,8 @@ function conclude(i: Internal) {
   const vol = p.volume?.id || ''
   const done = (state: JobState, error?: string) => { if (j.state !== 'cancelled') { j.state = state; if (error) j.error = error } }
   if (i.cancelled) { j.state = 'cancelled'; if (vol && j.kind === 'pull' && j.files > 0) recordState(vol, j.round, { state: 'partial', present: j.files, expected: p.files || null, missing: p.files ? Math.max(p.files - j.files, 0) : null, bytes: p.bytes }); return }
-  if (j.kind === 'remove') {
-    if (i.outcome === 'removed') { done('done'); if (vol) recordState(vol, j.round, null) } else done('failed', j.error || (i.outcome === 'refused' ? 'The pod refused the path.' : 'The delete did not report back.'))
+  if (j.kind !== 'pull') {
+    if (i.outcome === 'removed') { done('done'); if (j.kind === 'remove' && vol) recordState(vol, j.round, null); if (j.kind === 'erase' && vol && j.erase_keys?.includes('rounds')) forgetVolume(vol) } else done('failed', j.error || (i.outcome === 'refused' ? 'The pod refused the path.' : 'The delete did not report back.'))
     return
   }
   switch (i.outcome) {
@@ -410,7 +456,7 @@ async function runActive(i: Internal, opts: Opts) {
   idle.register(pod.id, p.ceiling_minutes)   // held with a ceiling for the job, put back after (2d)
   try {
     j.state = j.kind === 'pull' ? 'pulling' : 'deleting'
-    await runOnPod(i, host, port, j.kind === 'pull' ? pullScript(j.round, k!) : removeScript(j.round), opts, k ? [k.secret, k.id] : [])
+    await runOnPod(i, host, port, scriptOf(j, k), opts, k ? [k.secret, k.id] : [])
     await placeAfter(i, host, port, opts)
   } finally { idle.register(pod.id, prev) }
 }
@@ -427,7 +473,8 @@ async function runTemporary(i: Internal, opts: Opts) {
     const env: Record<string, string> = { ...cfg.env }
     if (j.kind === 'pull') env.S3_PULL = s3PullFor(j.round); else delete env.S3_PULL   // a delete never carries a pull (or the keys podOverrides adds for one)
     // The cheapest free card can be taken between the plan and the create ("No card available"): try the next free card of the volume's datacenter, then the app's own choice.
-    const base = { name, round: j.round, image: 'configured', cuda_match: false, idle_stop_minutes: p.ceiling_minutes, config: { ...cfg, env } } as const
+    const onVol = opts.volumeId && p.volume ? { network_volume_id: p.volume.id, ...(p.volume.datacenter ? { data_center_id: p.volume.datacenter } : {}) } : {}   // a job on another volume than the default one
+    const base = { name, round: j.round, image: 'configured', cuda_match: false, idle_stop_minutes: p.ceiling_minutes, config: { ...cfg, ...onVol, env } } as const
     const tried = new Set<string>()
     let created: Awaited<ReturnType<typeof pods.create>> | null = null
     let next: string | undefined = p.gpu_type_id
@@ -446,10 +493,10 @@ async function runTemporary(i: Internal, opts: Opts) {
     podId = created.id; j.pod_id = podId; j.gpu = (created as { gpu?: string }).gpu ?? p.gpu; j.price_per_hour = p.price_per_hour; tempSetId(name, podId)
     if (i.cancelled) return
     j.state = 'starting'
-    if (j.kind === 'remove') {
+    if (j.kind !== 'pull') {   // remove, browse, erase: one script over SSH
       const { host, port } = await waitForSshTarget(i, podId, opts, deadline)
-      j.state = 'deleting'
-      await runOnPod(i, host, port, removeScript(j.round), opts, secrets)
+      j.state = j.kind === 'browse' ? 'verifying' : 'deleting'
+      await runOnPod(i, host, port, scriptOf(j, null), opts, secrets)
       return
     }
     const logs = opts.logs ?? ((id: string) => defaultLogs(id, opts.client))
@@ -487,6 +534,8 @@ async function simulate(i: Internal, opts: Opts) {
     }
     const steps: [JobState, string[]][] = j.kind === 'pull'
       ? [['starting', ['no-spend mode: the pod is simulated']], ['pulling', [`s3 pull: ${panama.bucket()}/rounds/${j.round} -> ${REMOTE_ROUNDS}/${j.round}`, 'a.json: Copied (new)', 'b.json: Copied (new)']], ['verifying', ['100%, 0 B/s']], ['pulling', ['s3 pull done (manifest verified): ' + `${REMOTE_ROUNDS}/${j.round}`]]]
+      : j.kind === 'browse' ? [['verifying', ['BROWSE 1000 /workspace', 'BROWSE 600 /workspace/comfy-shared', 'BROWSE 500 /workspace/comfy-shared/temp', 'BROWSE-DONE']]]
+      : j.kind === 'erase' ? [['deleting', [...(j.erase_keys ?? []).map((k) => `ERASED ${k} 100`), 'ERASE-DONE']]]
       : [['deleting', [`removed ${REMOTE_ROUNDS}/${j.round}`]]]
     for (const [state, lines] of steps) {
       if (i.cancelled) return
@@ -551,6 +600,40 @@ export async function remove(round: string, opts: Opts = {}): Promise<PodJob> {
     void run(i, opts)
     return view(i)
   } catch (e) { busy.delete(round); throw e }
+}
+
+// ----- one volume: browse and erase (a short-lived pod, or the user's own pod on it) -----
+
+const volLabel = (volumeId: string) => { if (!/^[A-Za-z0-9]{3,40}$/.test(volumeId)) throw bad(`Not a network volume id: ${volumeId}`); return `vol-${volumeId}` }
+/** What a job on this volume would cost and where it runs, before it starts. */
+export async function volumePlan(volumeId: string, opts: Opts = {}): Promise<PodPlan> {
+  return plan(volLabel(volumeId), { ...opts, volumeId, sizeOf: () => ({ files: 0, bytes: 0 }) })
+}
+async function startVolumeJob(volumeId: string, kind: 'browse' | 'erase', keys: string[], opts: Opts): Promise<PodJob> {
+  const label = volLabel(volumeId)
+  const live = [...jobs.values()].find((x) => !TERMINAL.includes(x.job.state) && x.plan.volume?.id === volumeId)
+  if (live && !(live.job.kind === kind && kind === 'browse')) throw new CoreError(409, `A ${live.job.kind} job is running on this volume (${live.job.round}): wait for it to finish.`)
+  const existing = claim(label, kind); if (existing) return view(existing)
+  try {
+    const p = await volumePlan(volumeId, opts)
+    const i = newJob(label, kind, p, (opts.now ?? (() => new Date()))())
+    i.job.volume_id = volumeId; if (kind === 'erase') i.job.erase_keys = keys
+    void run(i, { ...opts, volumeId })
+    return view(i)
+  } catch (e) { busy.delete(label); throw e }
+}
+/** List a volume's folders to depth 3 with their sizes. Read-only; costs the short pod's minutes (or nothing on a pod of yours that is running). */
+export const browseVolume = (volumeId: string, opts: Opts = {}) => startVolumeJob(volumeId, 'browse', [], opts)
+/** Empty chosen folders of a volume (keys of ERASABLE). Not reversible: it needs the user's name behind it (`approved_by`) and the volume's name typed back (`confirm_name`). Refused while a pull, place or other job is running on the volume. */
+export async function eraseVolume(volumeId: string, keys: string[], o: { approved_by?: string; confirm_name?: string }, opts: Opts = {}): Promise<PodJob> {
+  const label = volLabel(volumeId)
+  if (!String(o.approved_by ?? '').trim()) throw new CoreError(400, 'Erasing needs a name behind it: approved_by.')
+  const ks = [...new Set(keys)]; if (!ks.length) throw bad('Choose what to erase')
+  for (const k of ks) if (!ERASABLE[k]) throw bad(`Not something Erase clears: ${k} (one of ${Object.keys(ERASABLE).join(', ')})`)
+  const vol = (await volumeOf({ ...opts, volumeId })) ?? { id: volumeId, name: volumeId, datacenter: '' }
+  if (String(o.confirm_name ?? '') !== vol.name) throw new CoreError(400, `Type the volume's name (${vol.name}) to confirm: this cannot be undone.`)
+  void label
+  return startVolumeJob(volumeId, 'erase', ks, opts)
 }
 
 export function job(id: string): PodJob | null { const i = jobs.get(id); return i ? view(i) : null }

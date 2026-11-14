@@ -437,3 +437,48 @@ describe('placing the round after a pull (ADR-033)', () => {
   })
 
 })
+
+describe('browse and erase one volume', () => {
+  it('browse: a short-lived pod lists the volume to depth 3 with sizes (read-only script), then is deleted', async () => {
+    const rp = fakeRunPod()
+    const calls: podpull.SshJob[] = []
+    const ssh: podpull.SshRunner = async (j) => { calls.push(j); for (const l of ['BROWSE 1000 /workspace', 'BROWSE 600 /workspace/comfy-shared', 'BROWSE 400 /workspace/comfy-shared/temp', 'BROWSE-DONE']) j.onLine(l); return { code: 0 } }
+    const job0 = await podpull.browseVolume('vol1', base({ client: rp.client, ssh }))
+    expect(job0).toMatchObject({ kind: 'browse', volume_id: 'vol1', route: 'temporary' })
+    const job = await done(job0.id)
+    expect(job.state).toBe('done')
+    expect(job.listing).toEqual([{ path: '/workspace', bytes: 1000 }, { path: '/workspace/comfy-shared', bytes: 600 }, { path: '/workspace/comfy-shared/temp', bytes: 400 }])
+    expect(calls[0].script).toContain('du -b --max-depth=3'); expect(calls[0].script).not.toMatch(/rm |-delete/)   // never writes
+    expect(rp.calls.terminated).toEqual(['newpod1'])
+  })
+  it('erase: needs a name, the volume name typed back and known folders; then clears only those, keeps the folders, forgets the pulled rounds', async () => {
+    const rp = fakeRunPod()
+    podpull.recordState('vol1', ROUND, { state: 'complete', present: 5, expected: 5, missing: 0, bytes: 10 })
+    const calls: podpull.SshJob[] = []
+    const ssh: podpull.SshRunner = async (j) => { calls.push(j); j.onLine('ERASED rounds 12345'); j.onLine('ERASED output 0'); j.onLine('ERASE-DONE'); return { code: 0 } }
+    const o = base({ client: rp.client, ssh })
+    await expect(podpull.eraseVolume('vol1', ['rounds'], { confirm_name: 'comfy-workspace' }, o)).rejects.toThrow(/approved_by/)
+    await expect(podpull.eraseVolume('vol1', ['rounds'], { approved_by: 'Lucas', confirm_name: 'nope' }, o)).rejects.toThrow(/Type the volume's name/)
+    await expect(podpull.eraseVolume('vol1', ['../etc'], { approved_by: 'Lucas', confirm_name: 'comfy-workspace' }, o)).rejects.toThrow(/Not something Erase clears/)
+    await expect(podpull.eraseVolume('vol1', [], { approved_by: 'Lucas', confirm_name: 'comfy-workspace' }, o)).rejects.toThrow(/Choose what/)
+    expect(rp.calls.created).toEqual([])   // every refusal came before a pod
+    const job0 = await podpull.eraseVolume('vol1', ['rounds', 'output'], { approved_by: 'Lucas', confirm_name: 'comfy-workspace' }, o)
+    const job = await done(job0.id)
+    expect(job).toMatchObject({ kind: 'erase', state: 'done', freed: { rounds: 12345, output: 0 } })
+    expect(calls[0].script).toContain("d='/workspace/comfy-shared/temp/rounds'"); expect(calls[0].script).toContain("d='/workspace/comfy-shared/output'")
+    expect(calls[0].script).not.toContain('/models'); expect(calls[0].script).toContain('-mindepth 1 -delete')   // contents only, never the folder
+    expect(podpull.knownState('vol1')).toBeNull()   // what was known about its rounds is gone
+  })
+  it('a second job on the volume is refused while one runs; the scripts refuse a path outside the shared tree', async () => {
+    const rp = fakeRunPod()
+    let release!: () => void
+    const gate = new Promise<void>((r) => { release = r })
+    const ssh: podpull.SshRunner = async (j) => { await gate; j.onLine('BROWSE-DONE'); return { code: 0 } }
+    const o = base({ client: rp.client, ssh })
+    const first = await podpull.browseVolume('vol1', o)
+    await expect(podpull.eraseVolume('vol1', ['output'], { approved_by: 'L', confirm_name: 'comfy-workspace' }, o)).rejects.toThrow(/running on this volume|busy/)
+    release(); await done(first.id)
+    for (const k of Object.keys(podpull.ERASABLE)) expect(podpull.ERASABLE[k].path.startsWith('/workspace/comfy-shared/')).toBe(true)
+    await expect(podpull.browseVolume('../x', o)).rejects.toThrow(/Not a network volume id/)
+  })
+})

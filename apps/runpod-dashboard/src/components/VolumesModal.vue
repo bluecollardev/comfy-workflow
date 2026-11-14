@@ -59,7 +59,9 @@
                 <BButton size="sm" variant="outline-light" @click="resizing = null">{{ $t('picker.cancel') }}</BButton>
               </template>
               <template v-else>
+                <BButton size="sm" variant="outline-light" :disabled="store.busyId === v.id" data-testid="volume-browse" @click="browsing = v"><i class="fa-solid fa-folder-tree me-1"></i>{{ $t('volumes.browse') }}</BButton>
                 <BButton size="sm" variant="outline-light" :disabled="store.busyId === v.id" data-testid="volume-resize" @click="resizing = v.id; resizeTo = v.size_gb + 20">{{ $t('volumes.resize') }}</BButton>
+                <BButton size="sm" variant="outline-danger" :disabled="store.busyId === v.id" data-testid="volume-erase" @click="erasing = v"><i class="fa-solid fa-eraser me-1"></i>{{ $t('volumes.erase') }}</BButton>
                 <BButton size="sm" variant="outline-danger" :disabled="store.busyId === v.id || v.pods.some((p) => p.via === 'runpod')" :title="v.pods.some((p) => p.via === 'runpod') ? $t('volumes.deleteBlocked') : ''" data-testid="volume-delete" @click="confirmRemove(v)">{{ $t('volumes.delete') }}</BButton>
               </template>
             </div>
@@ -70,6 +72,8 @@
     </div>
 
   </BModal>
+  <VolumeFilesModal :volume="browsing" @close="browsing = null" />
+  <EraseVolumeModal :volume="erasing" @close="erasing = null" @erased="store.load()" />
 </template>
 
 <script setup>
@@ -79,6 +83,8 @@
  * Configuration uses. Use as default, grow, delete (refused while a pod is attached), create.
  */
 import { computed, reactive, ref } from 'vue'
+import VolumeFilesModal from './VolumeFilesModal.vue'
+import EraseVolumeModal from './EraseVolumeModal.vue'
 import { useUiStore } from '../stores/ui'
 import { useVolumesStore } from '../stores/volumes'
 import { podsAPI } from '../api/pods'
@@ -89,6 +95,7 @@ const ui = useUiStore()
 const store = useVolumesStore()
 const draft = reactive({ name: '', size_gb: 100, datacenter: '' })
 const resizing = ref(null)
+const browsing = ref(null), erasing = ref(null)   // the volume whose files are open, or whose Erase is
 const resizeTo = ref(0)
 const dcList = ref([])
 const dcOptions = computed(() => datacenterOptions(dcList.value, { value: '', text: t('volumes.pickDatacenter') }))

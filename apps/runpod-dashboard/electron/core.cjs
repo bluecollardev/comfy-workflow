@@ -92,6 +92,12 @@ const TABLE = {
     resize: (c, id, size) => c.volumes.resize(id, Number(size)),
     remove: (c, id) => c.volumes.remove(id),
     useAsDefault: (c, id) => c.volumes.useAsDefault(id),
+    plan: (c, id) => c.podpull.volumePlan(id),   // what a browse or erase on this volume would run on and cost
+    browse: (c, id) => c.podpull.browseVolume(id),
+    erase: (c, id, keys, o) => c.podpull.eraseVolume(id, keys || [], o || {}),
+    job: (c, id) => c.podpull.job(id),
+    cancel: (c, id) => c.podpull.cancel(id),
+    erasable: (c) => Object.entries(c.podpull.ERASABLE).map(([key, e]) => ({ key, label: e.label, path: e.path })),
   },
   governance: {
     summary: (c) => c.governance.summary(),

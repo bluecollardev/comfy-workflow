@@ -5,6 +5,9 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased
 
+### Browse and Erase a network volume (ADR-041)
+- Lucas: "have an option like grow and delete to clear a volume", "Erase", "also have an explore button to explore the volume. Browse". Volumes window: **Browse** (a read-only listing of the volume to depth 3 with sizes) and **Erase** (empties folders you tick: rounds, inputs, round graphs, outputs; models unticked and warned about; sizes by a scan; your name and the volume's name typed back). Both run on your pod on the volume or a short-lived cheap pod, on any volume of the account. MCP `volume_files`, `volume_erase`, `volume_job`. Not run on a real pod yet.
+
 ### Node packs a round ships with its shots (ADR-040)
 - Lucas: "how do we get the nodes from each shot pack when importing via import rounds into comfy on the runpod", "not if it's first run i shouldn't need a restart". `docker/round-nodes.sh` (run by the entrypoint before ComfyUI starts) links each `<round>/<shot>/nodes/<pack>/` into `custom_nodes` and installs its requirements; a pack identical to one in the image (the fal pack, in `brynley-comfy-2026-11-06`) is skipped. Tested with a scratch tree (`docker/round-nodes.test.sh`); needs a new image to take effect.
 - Also: Select all and per-shot Browse in Import Round step 2, a shot of All Shots by default, Purge finished in the Queue (asks first), the import opens the Queue at once, the plan lists a round once (faster Loading data).
