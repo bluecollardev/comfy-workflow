@@ -1,13 +1,6 @@
 <template>
   <BModal v-model="open" :title="$t('importRound.title')" size="lg" scrollable data-testid="import-round-modal" @hidden="open = false">
-    <ol class="stepper" data-testid="import-round-steps">
-      <li v-for="(label, i) in stepLabels" :key="i" class="stepper-item" :class="{ active: step === i + 1, done: stepDone(i + 1) }" :data-done="stepDone(i + 1)">
-        <button type="button" class="stepper-btn" :class="{ blocked: !canGoTo(i + 1) }" :title="canGoTo(i + 1) ? '' : stepWhy(i + 1)" :aria-current="step === i + 1 ? 'step' : undefined" data-testid="import-round-step" :data-step="i + 1" :data-active="step === i + 1" @click="goTo(i + 1)">
-          <span class="stepper-dot"><i v-if="stepDone(i + 1)" class="fa-solid fa-check"></i><template v-else>{{ i + 1 }}</template></span>
-          <span class="stepper-label">{{ label }}</span>
-        </button>
-      </li>
-    </ol>
+    <StepperNav testid="import-round" :steps="stepItems" :active="step" @go="goTo" />
     <div v-if="error" class="alert alert-danger small py-2" data-testid="import-round-error">{{ error }}</div>
 
     <!-- 1. Choose rounds -->
@@ -138,6 +131,7 @@ import { t } from '../i18n'
 import { useUiStore } from '../stores/ui'
 import RoundFilesModal from './RoundFilesModal.vue'
 import ChooseCardModal from './ChooseCardModal.vue'
+import StepperNav from './StepperNav.vue'
 import { useImportsStore } from '../stores/imports'
 
 const ui = useUiStore()
@@ -161,6 +155,7 @@ function importDropped(d) {
 const rowErrors = ref({})   // round -> why it cannot be ticked (no shots in it, or its plan failed)
 const step = ref(1)
 const stepLabels = computed(() => [t('importRound.stepRounds'), t('importRound.stepShots'), t('importRound.stepCards')])
+const stepItems = computed(() => stepLabels.value.map((label, i) => ({ label, done: stepDone(i + 1), blocked: !canGoTo(i + 1), why: stepWhy(i + 1) })))
 const cards = ref({})   // `${round}::${shot}` -> card key; absent = the pool
 const setAllCards = (v) => { if (v === '' ) return; const n = { ...cards.value }; for (const [r, set] of picked.value) for (const s of set) n[`${r}::${s}`] = v; cards.value = n }
 const cardsFor = (r) => Object.fromEntries([...(picked.value.get(r) || [])].filter((s) => cards.value[`${r}::${s}`]).map((s) => [s, cards.value[`${r}::${s}`]]))
@@ -266,22 +261,6 @@ async function start() {
 </script>
 
 <style scoped>
-.stepper { display: flex; list-style: none; padding: 0 0 1.75rem; margin: 0 0 2rem; border-bottom: 1px solid rgba(255, 255, 255, 0.15); }
-.stepper-item { flex: 1; position: relative; text-align: center; }
-.stepper-item:not(:last-child)::after { content: ''; position: absolute; top: 15px; left: calc(50% + 22px); width: calc(100% - 44px); height: 2px; background: rgba(255, 255, 255, 0.2); }
-.stepper-item.done:not(:last-child)::after { background: var(--bs-success); }
-.stepper-btn { background: none; border: 0; padding: 0; color: var(--bs-secondary-color); display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; }
-.stepper-btn { cursor: pointer; }
-.stepper-btn.blocked { opacity: 0.55; }
-.stepper-btn:hover .stepper-dot { border-color: #508cff; }
-.stepper-btn:hover .stepper-label { text-decoration: underline; }
-.stepper-dot { width: 32px; height: 32px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.3); display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.85rem; background: transparent; }
-.stepper-item.active:not(.done) .stepper-dot { border-color: #508cff; background: #508cff; color: #fff; box-shadow: 0 0 0 4px rgba(80, 140, 255, 0.25); }
-.stepper-item.done .stepper-dot { border-color: var(--bs-success); background: var(--bs-success); color: #fff; }
-.stepper-item.done.active .stepper-dot { box-shadow: 0 0 0 4px rgba(25, 135, 84, 0.3); }
-.stepper-item.active .stepper-label { color: var(--bs-body-color); font-weight: 600; }
-.stepper-item.done .stepper-label { color: var(--bs-body-color); }
-.stepper-label { font-size: 0.85rem; }
 .drop-zone { border: 2px dashed rgba(255, 255, 255, 0.3); color: var(--bs-secondary-color); }
 .drop-zone.over { border-color: #508cff; background: rgba(80, 140, 255, 0.12); color: inherit; }
 .round-list { max-height: 14rem; overflow: auto; }

@@ -1,9 +1,14 @@
 <template>
   <div data-testid="outputs-gallery">
     <div v-if="!files.length" class="text-body-secondary small" data-testid="outputs-empty">{{ $t('outputs.none') }}</div>
-    <div v-else class="gallery">
+    <div v-if="files.length && !hideZip" class="d-flex align-items-center gap-2 mb-2 small">
+      <span class="text-body-secondary">{{ $t('outputs.filesCount', { n: files.length }) }}</span>
+      <BButton variant="outline-light" size="sm" class="ms-auto" :disabled="!canZip || zipping" :title="canZip ? '' : $t('outputs.zipApp')" data-testid="outputs-zip" @click="zip"><BSpinner v-if="zipping" small class="me-1" /><i v-else class="fa-solid fa-file-zipper me-1"></i>{{ $t('outputs.zip') }}</BButton>
+      <span v-if="zipNote" class="text-body-secondary" data-testid="outputs-zip-note">{{ zipNote }}</span>
+    </div>
+    <div v-if="files.length" class="gallery">
       <button v-for="(f, i) in files" :key="`${f.type}/${f.subfolder}/${f.filename}`" type="button" class="tile" data-testid="outputs-tile" :data-kind="f.kind" :data-type="f.type" :title="f.filename" @click="current = i">
-        <img v-if="f.kind === 'image'" :src="viewUrl(base, f)" :alt="f.filename" loading="lazy" class="thumb" />
+        <img v-if="f.kind === 'image'" :src="viewUrl(base, f, { thumb: true })" :alt="f.filename" loading="lazy" class="thumb" />
         <video v-else-if="f.kind === 'video'" :src="viewUrl(base, f)" preload="metadata" muted class="thumb"></video>
         <span v-else class="thumb d-flex align-items-center justify-content-center text-body-secondary"><i class="fa-solid fs-3" :class="f.kind === 'audio' ? 'fa-music' : 'fa-file'"></i></span>
         <span class="cap text-truncate">{{ f.filename }}</span>
@@ -21,9 +26,22 @@
  */
 import { ref, watch } from 'vue'
 import { viewUrl } from '../utils/outputs'
+import { core } from '../api/bridge'
+import { errorText } from '../stores/toast'
+import { t } from '../i18n'
 import OutputViewerModal from './OutputViewerModal.vue'
 
-const props = defineProps({ files: { type: Array, default: () => [] }, base: { type: String, default: '' } })
+const props = defineProps({ files: { type: Array, default: () => [] }, base: { type: String, default: '' }, zipName: { type: String, default: 'outputs.zip' }, hideZip: { type: Boolean, default: false } })
+const canZip = !!core?.files?.downloadZip
+const zipping = ref(false), zipNote = ref('')
+/** All of this list in one zip: a Save As dialog, then the main process streams the files from the pod into it (the app only). */
+async function zip() {
+  zipping.value = true; zipNote.value = ''
+  try {
+    const r = await core.files.downloadZip(props.files.map((f) => ({ url: viewUrl(props.base, f, { web: true }), name: [f.subfolder, f.filename].filter(Boolean).join('/') })), props.zipName)
+    if (!r.canceled) zipNote.value = t('outputs.zipDone', { n: r.files })
+  } catch (e) { zipNote.value = errorText(e) } finally { zipping.value = false }
+}
 const current = ref(null)
 watch(() => props.files, () => { current.value = null })
 </script>

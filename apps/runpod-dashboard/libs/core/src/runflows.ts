@@ -139,7 +139,7 @@ async function runOne(i: Internal, r: RunResult, base: string, o: RunOpts, fetch
   const api = await (o.convert ?? defaultConvert)(ui, { base, podId: i.job.pod_id })
   const gate = shots.lockedIn(api, o.projectRoot)
   if (gate.locked.length) throw new CoreError(403, `Refused: the graph names locked shot${gate.locked.length === 1 ? '' : 's'} ${gate.locked.join(', ')}; client-approved shots are never run by us.`)
-  const q = await fetchFn(`${base}/prompt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt: api, client_id: 'pod-manager-runflows' }), signal: AbortSignal.timeout(60_000) })
+  const q = await fetchFn(`${base}/prompt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt: api, client_id: 'pod-manager-runflows', extra_data: { pod_manager: { workflow: r.path } } }), signal: AbortSignal.timeout(60_000) })
   const qb = await q.json().catch(() => ({}))
   if (q.status !== 200) { const d = describeRejection(qb); r.node = d.node; throw new CoreError(400, d.text) }
   r.prompt_id = (qb as { prompt_id: string }).prompt_id

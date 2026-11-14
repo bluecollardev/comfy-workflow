@@ -62,7 +62,8 @@ export function defaultState() {
       ],
       spend: { total: 1.73, running_now: 1, sessions: [{ pod_id: 'pod-aaaaaaaa', name: 'ComfyUI-Dev', gpu: 'RTX 4090', datacenter: 'EU-RO-1', cost_per_hr: 0.69, from: '2026-11-03T10:00:00Z', to: '2026-11-03T12:30:00Z', hours: 2.5, cost: 1.73 }], by_day: [{ day: '2026-11-03', cost: 1.73, hours: 2.5 }], note: 'Worked out from recorded events; RunPod bills the truth.' },
       runs: { 'pod-aaaaaaaa': [
-        { prompt_id: 'abcdef12-3456-7890', status: 'success', started_at: '2026-11-03T11:00:00Z', duration_s: 42.5, cost_estimate: 0.00814, outputs: [{ filename: 'plate_0001.png', type: 'output', subfolder: 'shots' }] },
+        { prompt_id: 'abcdef12-3456-7890', workflow: 'rounds/r1/cgi-042/stereo.json', status: 'success', started_at: '2026-11-03T11:00:00Z', duration_s: 42.5, cost_estimate: 0.00814, outputs: [{ filename: 'plate_0001.png', type: 'output', subfolder: 'shots' }] },
+        { prompt_id: 'beadbead-1111-2222', workflow: 'rounds/r1/cgi-043/other.json', status: 'success', started_at: '2026-11-03T11:20:00Z', duration_s: 9.1, cost_estimate: 0.01, outputs: [{ filename: 'other_0001.png', type: 'output', subfolder: '' }] },
         { prompt_id: 'fedcba98-7654-3210', status: 'error', started_at: '2026-11-03T11:10:00Z', duration_s: null, cost_estimate: null, outputs: [], error: 'CUDA out of memory',
           messages: [{ type: 'execution_start', ts: '2026-11-03T11:10:00Z', data: { prompt_id: 'fedcba98' } }, { type: 'execution_error', ts: '2026-11-03T11:10:07Z', data: { node_id: '12' } }],
           error_detail: { message: 'CUDA out of memory', node_id: '12', node_type: 'KSampler', exception_type: 'torch.OutOfMemoryError', traceback: ['Traceback (most recent call last):', '  File "execution.py", line 300, in execute', 'torch.OutOfMemoryError: CUDA out of memory'] } },

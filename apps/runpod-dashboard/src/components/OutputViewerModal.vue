@@ -13,7 +13,7 @@
         <BButton v-if="hasPrev" variant="outline-light" size="sm" data-testid="output-viewer-prev" :title="$t('outputs.prev')" @click="$emit('step', -1)"><i class="fa-solid fa-chevron-left"></i></BButton>
         <span v-if="count > 1" class="align-self-center text-body-secondary">{{ index + 1 }} / {{ count }}</span>
         <BButton v-if="hasNext" variant="outline-light" size="sm" data-testid="output-viewer-next" :title="$t('outputs.next')" @click="$emit('step', 1)"><i class="fa-solid fa-chevron-right"></i></BButton>
-        <BButton variant="outline-light" size="sm" data-testid="output-viewer-open" :href="url" target="_blank" rel="noopener"><i class="fa-solid fa-arrow-up-right-from-square me-1"></i>{{ $t('outputs.open') }}</BButton>
+        <BButton variant="outline-light" size="sm" data-testid="output-viewer-open" :href="webUrl" target="_blank" rel="noopener"><i class="fa-solid fa-arrow-up-right-from-square me-1"></i>{{ $t('outputs.open') }}</BButton>
         <BButton variant="primary" size="sm" data-testid="output-viewer-download" @click="download"><i class="fa-solid fa-download me-1"></i>{{ $t('outputs.download') }}</BButton>
       </span>
     </div>
@@ -31,15 +31,16 @@ import { errorText } from '../stores/toast'
 const props = defineProps({ file: { type: Object, default: null }, base: { type: String, default: '' }, index: { type: Number, default: 0 }, count: { type: Number, default: 1 } })
 defineEmits(['close', 'step'])
 const error = ref('')
-const url = computed(() => (props.file ? viewUrl(props.base, props.file) : ''))
+const url = computed(() => (props.file ? viewUrl(props.base, props.file) : ''))   // what the viewer shows
+const webUrl = computed(() => (props.file ? viewUrl(props.base, props.file, { web: true }) : ''))   // what Open and Download use
 const path = computed(() => (props.file ? [props.file.subfolder, props.file.filename].filter(Boolean).join('/') : ''))
 const hasPrev = computed(() => props.index > 0), hasNext = computed(() => props.index < props.count - 1)
 watch(() => props.file, () => { error.value = '' })
 /** In the app: a Save As dialog and the bytes from the pod; in a browser: the address with a download attribute. */
 async function download() {
   error.value = ''
-  if (core?.files?.download) { try { await core.files.download(url.value, props.file.filename) } catch (e) { error.value = errorText(e) } return }
-  const a = document.createElement('a'); a.href = url.value; a.download = props.file.filename; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove()
+  if (core?.files?.download) { try { await core.files.download(webUrl.value, props.file.filename) } catch (e) { error.value = errorText(e) } return }
+  const a = document.createElement('a'); a.href = webUrl.value; a.download = props.file.filename; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove()
 }
 </script>
 

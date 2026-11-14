@@ -236,6 +236,14 @@ function streamKey(sender, id) { return `${sender.id}:${id}` }
 const MAX_FILE_BYTES = 2 * 1024 * 1024   // a configuration is a few KB
 const JSON_FILTER = [{ name: 'JSON', extensions: ['json'] }]
 
+/** Only the /view of a pod's ComfyUI (a RunPod proxy address, or this PC) is fetched for the Outputs viewer's Download and Download zip. */
+function podViewUrl(url) {
+  let u
+  try { u = new URL(String(url)) } catch { return null }
+  const okHost = (u.protocol === 'https:' && /\.proxy\.runpod\.net$/i.test(u.hostname)) || (u.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(u.hostname))
+  return okHost && u.pathname === '/view' ? u : null
+}
+
 function register() {
   // The two native file dialogs the configuration export and import use (docs/ADR-023). They only pick one path and move one UTF-8 text file; the page gets the text, never a path to read.
   ipcMain.handle('core:file:save', async (event, suggested, text) => {
@@ -261,10 +269,8 @@ function register() {
 
   // Download one output file of a run (the viewer's Download): a Save As dialog, then the bytes from the pod's ComfyUI /view. Only an https RunPod proxy address (or this PC) is fetched, and the page never sees a path.
   ipcMain.handle('core:file:download', async (event, url, suggested) => {
-    let u
-    try { u = new URL(String(url)) } catch { return { ok: false, error: { message: 'That is not a file address.' } } }
-    const okHost = (u.protocol === 'https:' && /\.proxy\.runpod\.net$/i.test(u.hostname)) || (u.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(u.hostname))
-    if (!okHost || !/^\/view$/.test(u.pathname)) return { ok: false, error: { message: 'Only a file of a pod\'s ComfyUI can be downloaded here.' } }
+    const u = podViewUrl(url)
+    if (!u) return { ok: false, error: { message: 'Only a file of a pod\'s ComfyUI can be downloaded here.' } }
     const win = BrowserWindow.fromWebContents(event.sender)
     const r = await dialog.showSaveDialog(win, { defaultPath: path.join(app.getPath('downloads'), path.basename(String(suggested || u.searchParams.get('filename') || 'output'))) })
     if (r.canceled || !r.filePath) return { ok: true, canceled: true }
@@ -274,6 +280,20 @@ function register() {
       await require('node:stream/promises').pipeline(require('node:stream').Readable.fromWeb(res.body), fs.createWriteStream(r.filePath))
       return { ok: true, path: r.filePath }
     } catch (e) { return { ok: false, error: { message: `Could not download the file: ${e.message}` } } }
+  })
+
+  // Download all (zip): Save As, then every file of the list fetched from the pod and streamed into one zip (electron/zip.cjs). The page passes [{ url, name }]; each url is checked like a single download.
+  ipcMain.handle('core:file:downloadZip', async (event, entries, suggested) => {
+    if (!Array.isArray(entries) || !entries.length || entries.length > 5000) return { ok: false, error: { message: 'There are no files to put in a zip.' } }
+    const urls = entries.map((e) => podViewUrl(e && e.url))
+    if (urls.some((u) => !u)) return { ok: false, error: { message: 'Only files of a pod\'s ComfyUI can be downloaded here.' } }
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const r = await dialog.showSaveDialog(win, { defaultPath: path.join(app.getPath('downloads'), path.basename(String(suggested || 'outputs.zip'))), filters: [{ name: 'Zip', extensions: ['zip'] }] })
+    if (r.canceled || !r.filePath) return { ok: true, canceled: true }
+    try {
+      const out = await require('./zip.cjs').writeZip(entries.map((e, i) => ({ url: urls[i].href, name: String(e.name || '') })), r.filePath, { fetchFn: (u) => fetch(u, { signal: AbortSignal.timeout(30 * 60_000) }) })
+      return { ok: true, path: r.filePath, files: out.files, bytes: out.bytes }
+    } catch (e) { return { ok: false, error: { message: `Could not make the zip: ${e.message}` } } }
   })
 
   ipcMain.handle('core:logs:start', async (event, id, opts = {}) => {

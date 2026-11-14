@@ -45,6 +45,18 @@ const TB_LIST = ['  File "/comfy/execution.py", line 327, in execute\n', '    ou
 const BAD_HISTORY = { 'p-x': { outputs: {}, status: { status_str: 'error', completed: false, messages: [['execution_start', { prompt_id: 'p-x', timestamp: T0 }], ['execution_cached', { nodes: [], timestamp: T0 + 1 }], ['execution_error', { prompt_id: 'p-x', node_id: '12', node_type: 'KSampler', executed: [], exception_message: 'CUDA out of memory.\n', exception_type: 'torch.OutOfMemoryError', traceback: TB_LIST, current_inputs: { huge: 'x'.repeat(5000) }, timestamp: T0 + 2000 }]] } } }
 const hist = (h: unknown): typeof fetch => (async (url: string) => (String(url).includes('/history') ? new Response(JSON.stringify(h), { status: 200 }) : new Response('', { status: 404 }))) as unknown as typeof fetch
 
+describe('comfyruns names the workflow a run came from', () => {
+  it('reads the app\'s tag from the prompt\'s extra_data; a run from ComfyUI\'s own window has none', async () => {
+    const h = {
+      a: { prompt: [1, 'a', {}, { pod_manager: { workflow: 'rounds/r1/archival-123/archival-123a-stereo-v01.json' } }, ['9']], outputs: {}, status: { status_str: 'success', completed: true, messages: [['execution_start', { prompt_id: 'a', timestamp: T0 }], ['execution_success', { prompt_id: 'a', timestamp: T0 + 5 }]] } },
+      b: { prompt: [2, 'b', {}, { client_id: 'x' }, ['9']], outputs: {}, status: { status_str: 'success', completed: true, messages: [['execution_start', { prompt_id: 'b', timestamp: T0 + 100 }], ['execution_success', { prompt_id: 'b', timestamp: T0 + 105 }]] } },
+    }
+    const r = await comfyruns.runs('abc', client('RUNNING'), hist(h))
+    expect(r.find((x) => x.prompt_id === 'a')?.workflow).toBe('rounds/r1/archival-123/archival-123a-stereo-v01.json')
+    expect(r.find((x) => x.prompt_id === 'b')?.workflow).toBeUndefined()
+  })
+})
+
 describe('comfyruns messages and error_detail', () => {
   it('gives the timeline and the failure detail', async () => {
     const [r] = await comfyruns.runs('abc', client('RUNNING'), hist(BAD_HISTORY))

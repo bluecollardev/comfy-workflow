@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld('core', {
     openText: () => ipcRenderer.invoke('core:file:open'),
     // Save one output file of a run (Save As, then the bytes from the pod); the page passes the pod's /view address.
     download: (url, suggested) => ipcRenderer.invoke('core:file:download', String(url), String(suggested || '')),
+    // Many output files into one zip (Save As, streamed): entries are [{ url, name }].
+    downloadZip: (entries, suggested) => ipcRenderer.invoke('core:file:downloadZip', JSON.parse(JSON.stringify(entries)), String(suggested || '')),
     // The real path of a file or folder dropped from the desktop (the page only gets a File object).
     pathFor: (file) => { try { return webUtils.getPathForFile(file) } catch { return '' } },
   },

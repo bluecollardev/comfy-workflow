@@ -8,7 +8,7 @@
 // Settings (RUNPOD_API_KEY, GITHUB_CLIENT_ID, …) come from ~/.config/runpod-pod-manager/.env
 // (and <repo>/.env in development).
 
-const { app, BrowserWindow, dialog, shell, nativeImage } = require('electron')
+const { app, BrowserWindow, dialog, shell, nativeImage, protocol } = require('electron')
 const coreBridge = require('./core.cjs')
 const fs = require('node:fs')
 const os = require('node:os')
@@ -87,7 +87,25 @@ function coreEnv() {
   process.env.MCP_EXEC ||= process.execPath
 }
 
+// podfile://<pod>-8188.proxy.runpod.net/view?... : the files of a pod's ComfyUI (the Outputs gallery and viewer). RunPod's proxy answers 403 to a page's own image or video request (the browser marks it cross-site), so the main
+// process fetches them and hands the bytes (with Range, for video) to the page. Only the /view of a RunPod proxy host is fetched.
+protocol.registerSchemesAsPrivileged([{ scheme: 'podfile', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, bypassCSP: true } }])
+function handlePodFiles() {
+  protocol.handle('podfile', async (request) => {
+    const u = new URL(request.url)
+    if (!/^[a-z0-9]+-\d+\.proxy\.runpod\.net$/i.test(u.hostname) || u.pathname !== '/view') return new Response('Only the /view of a pod\'s ComfyUI is served here.', { status: 403 })
+    const range = request.headers.get('range')
+    try {
+      const r = await fetch(`https://${u.hostname}/view${u.search}`, { headers: range ? { range } : {}, signal: AbortSignal.timeout(10 * 60_000) })
+      // content-length is not forwarded: fetch has already decoded the body (a gzipped one would then be cut short at the encoded length); the page reads it to the end. A partial answer keeps its content-range.
+      const h = Object.fromEntries(['content-type', 'content-range', 'accept-ranges'].map((k) => [k, r.headers.get(k)]).filter(([, v]) => v))
+      return new Response(r.body, { status: r.status, headers: { ...h, 'access-control-allow-origin': '*' } })
+    } catch (e) { return new Response(`The pod did not answer: ${e.message}`, { status: 502 }) }
+  })
+}
+
 async function boot() {
+  handlePodFiles()
   if (process.platform === 'darwin' && !app.isPackaged && exists(ICON)) app.dock.setIcon(nativeImage.createFromPath(ICON))
   coreEnv()
   coreBridge.register()

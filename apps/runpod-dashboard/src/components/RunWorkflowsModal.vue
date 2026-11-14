@@ -1,9 +1,6 @@
 <template>
   <BModal v-model="open" :title="$t('runflows.title', { name: pod.name })" size="lg" scrollable no-footer data-testid="runflows-modal" @hidden="onHidden">
-    <div v-if="!loading && !error && files.length" class="steps d-flex gap-2 mb-3" data-testid="runflows-steps">
-      <button type="button" class="step-btn" :class="{ active: step === 1 }" data-testid="runflows-step" data-step="1" @click="step = 1"><span class="step-num">1</span>{{ $t('runflows.stepRun') }}</button>
-      <button type="button" class="step-btn" :class="{ active: step === 2, off: !hasOutputs }" :disabled="!hasOutputs" :title="hasOutputs ? '' : $t('runflows.stepOutputsWait')" data-testid="runflows-step" data-step="2" @click="step = 2"><span class="step-num">2</span>{{ $t('runflows.stepOutputs') }}<span v-if="outputCount" class="badge text-bg-success ms-2 fw-normal">{{ outputCount }}</span></button>
-    </div>
+    <StepperNav v-if="!loading && !error && files.length" testid="runflows" :steps="stepItems" :active="step" @go="goStep" />
     <template v-if="step === 2 && hasOutputs">
       <div v-for="r in withOutputs" :key="r.path" class="mb-4" data-testid="runflows-outputs" :data-path="r.path">
         <div class="d-flex align-items-baseline gap-2 mb-2 small">
@@ -65,7 +62,9 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { runflowsAPI } from '../api/runflows'
 import { errorText } from '../stores/toast'
+import { t } from '../i18n'
 import OutputsGallery from './OutputsGallery.vue'
+import StepperNav from './StepperNav.vue'
 
 const props = defineProps({ modelValue: { type: Boolean, default: false }, pod: { type: Object, required: true }, round: { type: String, default: '' } })
 const emit = defineEmits(['update:modelValue', 'finished'])
@@ -78,6 +77,8 @@ const withOutputs = computed(() => (job.value?.results || []).filter((r) => r.st
 const hasOutputs = computed(() => withOutputs.value.length > 0 && job.value?.state !== 'running')
 const outputCount = computed(() => withOutputs.value.reduce((n, r) => n + r.files.length, 0))
 const failedCount = computed(() => (job.value?.results || []).filter((r) => r.state === 'failed').length)
+const stepItems = computed(() => [{ label: t('runflows.stepRun'), done: !!job.value && job.value.state !== 'running' && job.value.ok > 0 }, { label: t('runflows.stepOutputs'), done: hasOutputs.value && step.value === 2, blocked: !hasOutputs.value, why: t('runflows.stepOutputsWait') }])
+const goStep = (n) => { if (n === 2 && !hasOutputs.value) return; step.value = n }
 const baseUrl = computed(() => job.value?.base_url || props.pod.web_ui_url || '')
 watch(() => job.value?.state, (s, was) => { if (was === 'running' && s && s !== 'running') { emit('finished'); if (withOutputs.value.length) step.value = 2 } })
 let timer = null
@@ -92,7 +93,14 @@ const badgeClass = (s) => ({ done: 'text-bg-success', failed: 'text-bg-danger', 
 
 async function load() {
   loading.value = true; error.value = ''; job.value = null; step.value = 1
-  try { files.value = (await runflowsAPI.list(props.pod.id)).workflows; picked.value = new Set(files.value.map((f) => f.path)); if (props.round) { const mine = files.value.filter((f) => `/${f.path}`.includes(`/${props.round}/`)); if (mine.length) picked.value = new Set(mine.map((f) => f.path)) } }   // every graph ticked, or every graph of the round it was opened from: "run all workflows in the shot"
+  try {
+    files.value = (await runflowsAPI.list(props.pod.id)).workflows
+    picked.value = new Set(files.value.map((f) => f.path))   // every graph ticked ...
+    if (props.round) { const mine = files.value.filter((f) => `/${f.path}`.includes(`/${props.round}/`)); if (mine.length) picked.value = new Set(mine.map((f) => f.path)) }   // ... or every graph of the round it was opened from
+    // A pod with a Shot set (the card's field) runs that shot: only its graphs are ticked. "All Shots", or no shot, leaves them all ticked; nothing matching also leaves them all.
+    const shot = props.pod.shot && props.pod.shot !== 'All Shots' ? props.pod.shot.toLowerCase() : ''
+    if (shot) { const mine = files.value.filter((f) => f.path.toLowerCase().includes(shot)); if (mine.length) picked.value = new Set(mine.map((f) => f.path)) }
+  }
   catch (e) { error.value = errorText(e); files.value = [] }
   finally { loading.value = false }
 }
@@ -116,10 +124,3 @@ function onHidden() { clearTimeout(timer); emit('update:modelValue', false) }
 onMounted(load)   // the card mounts this only when the button is pressed
 onBeforeUnmount(() => clearTimeout(timer))
 </script>
-
-<style scoped>
-.step-btn { display: inline-flex; align-items: center; gap: 0.5rem; background: none; border: 0; border-bottom: 2px solid transparent; padding: 0.25rem 0.5rem; color: var(--bs-secondary-color); cursor: pointer; }
-.step-btn.active { color: var(--bs-body-color); border-bottom-color: #508cff; }
-.step-btn.off { opacity: 0.5; cursor: default; }
-.step-num { display: inline-flex; align-items: center; justify-content: center; width: 1.4rem; height: 1.4rem; border-radius: 50%; border: 1px solid currentColor; font-size: 0.75rem; }
-</style>

@@ -90,6 +90,7 @@ describe('running', () => {
     expect(j.results.map((r) => r.state)).toEqual(['done', 'failed']); expect(j).toMatchObject({ ok: 1, failed: 1, state: 'done' })
     expect(j.results[1].error).toBe('boom (node 4, KSampler)')
     expect(c.calls.queued).toHaveLength(2); expect((c.calls.queued[0] as { prompt: unknown }).prompt).toEqual(API)
+    expect((c.calls.queued[0] as { extra_data: { pod_manager: { workflow: string } } }).extra_data.pod_manager.workflow).toMatch(/\.json$/)   // each prompt is tagged with the workflow it came from: ComfyUI keeps it in its history
     const ev = history.list({ kind: 'job' }).filter((e) => e.kind === 'job' && e.job === 'run')
     expect(ev).toHaveLength(2)
     expect(ev.find((e) => e.kind === 'job' && e.what === 'rounds/r/b.json')).toMatchObject({ state: 'failed', error: 'boom (node 4, KSampler)', pod_id: 'pod1' })

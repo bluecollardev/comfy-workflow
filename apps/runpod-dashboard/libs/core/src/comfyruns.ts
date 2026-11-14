@@ -20,12 +20,14 @@ export interface ComfyRun {
   messages: RunMessage[]
   /** For a failed run: where and why it failed, from the execution_error message. */
   error_detail?: ErrorDetail
+  /** The workflow this app ran (its Workflows-panel path), when the run was queued by Run: the app tags the prompt's extra_data, and ComfyUI keeps it in its history. Absent for a run started in ComfyUI's own window. */
+  workflow?: string
 }
 export interface RunMessage { type: string; ts: string | null; data: Record<string, unknown> }
 export interface ErrorDetail { message: string; node_id: string | null; node_type: string | null; exception_type: string | null; traceback: string[] }
 
 type Msg = [string, { timestamp?: number; exception_message?: string; [k: string]: unknown }?]
-interface Entry { outputs?: Record<string, Record<string, unknown>>; status?: { status_str?: string; completed?: boolean; messages?: Msg[] } }
+interface Entry { prompt?: unknown[]; outputs?: Record<string, Record<string, unknown>>; status?: { status_str?: string; completed?: boolean; messages?: Msg[] } }
 
 function flatten(outputs: Entry['outputs']): RunOutput[] {
   const out: RunOutput[] = []
@@ -74,6 +76,8 @@ function fromEntry(id: string, e: Entry): ComfyRun {
     outputs: flatten(e.outputs),
     messages: msgs.filter((m) => Array.isArray(m) && typeof m[0] === 'string').map((m) => ({ type: m[0], ts: toIso(m[1]?.timestamp), data: slim(m[1]) })),
   }
+  const wf = (e.prompt?.[3] as { pod_manager?: { workflow?: unknown } } | undefined)?.pod_manager?.workflow
+  if (typeof wf === 'string' && wf) run.workflow = wf
   if (errMsg) run.error_detail = errorDetail(errMsg)
   if (errMsg) run.error = String(errMsg.exception_message || 'execution error').trim()
   else if (failed) run.error = 'execution error'
