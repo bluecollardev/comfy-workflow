@@ -386,6 +386,15 @@ export async function mockApi(page, state) {
     if (method === 'GET' && path === '/models/search') { (state.modelSearches ||= []).push(query.q); return json(/^zzz/.test(query.q) ? [] : [{ id: 'Comfy-Org/SeedVR2', downloads: 829248, likes: 120, updated: '2026-11-14', gated: false }, { id: 'numz/SeedVR2_comfyUI', downloads: 788853, likes: 80, updated: '2026-10-02', gated: false }, { id: 'someone/gated-model', downloads: 10, likes: 1, updated: null, gated: true }]) }
     if (method === 'GET' && path === '/models/files') { (state.modelFilesFor ||= []).push(query.repo); return json(query.repo === 'Comfy-Org/SeedVR2' ? [{ path: 'vae/seedvr2_ema_vae_fp16.safetensors', bytes: 501324814, sha256: 'a'.repeat(64), folder: 'vae' }, { path: 'diffusion_models/seedvr2_3b_fp8_e4m3fn.safetensors', bytes: 3392794232, sha256: 'b'.repeat(64), folder: 'diffusion_models' }, { path: 'diffusion_models/seedvr2_3b_fp16.safetensors', bytes: 6784268336, sha256: 'c'.repeat(64), folder: 'diffusion_models' }] : []) }
     if (method === 'POST' && path === '/models/fetch') { state.modelFetch = { volume_id: body.volume_id, items: body.items }; state.volumeJob = { id: 'vjm1', kind: 'fetch', state: 'done', volume_id: body.volume_id, pod_name: 'ComfyUI-Pull-vol', fetched: body.items.map((i) => i.path.split('/').pop()), lines: ['Approved by a click in the app window.', ...body.items.map((i) => `FETCHED ${i.path.split('/').pop()} 1`), 'FETCH-DONE'] }; return json({ ...state.volumeJob, state: 'creating', fetched: undefined, lines: [] }) }
+    if (method === 'POST' && path === '/models/delete') {   // ADR-042 section 15: only with confirmed: true, as the core does
+      if (body.confirmed !== true) return json({ error: 'Deleting model files cannot be undone: confirm it (confirmed: true).' }, 400)
+      ;(state.modelDeletes ||= []).push({ volume_id: body.volume_id, items: body.items })
+      const gone = new Set((body.items || []).map((i) => `${i.folder}/${i.name}`)), at = (f) => f.path || [f.folder, f.name].filter(Boolean).join('/')
+      const freed = (state.modelsOnVolume || []).filter((f) => gone.has(at(f))).reduce((n, f) => n + (f.bytes ?? f.size ?? 0), 0)
+      state.modelsOnVolume = (state.modelsOnVolume || []).filter((f) => !gone.has(at(f)))
+      state.volumeJob = { id: 'vjd1', kind: 'delete-models', state: 'done', volume_id: body.volume_id, route: 's3', deleted: (body.items || []).map((i) => ({ ...i, bytes: 1 })), freed_bytes: freed, lines: [] }
+      return json({ ...state.volumeJob, state: 'creating', deleted: undefined, lines: [] })
+    }
     if (method === 'GET' && path === '/models/status') return json(state.modelsOnVolume === undefined ? null : state.modelsOnVolume)
     if (method === 'GET' && path === '/models/folders') return json(['diffusion_models', 'vae', 'checkpoints', 'loras', 'text_encoders', 'clip', 'clip_vision', 'controlnet', 'upscale_models', 'embeddings'])
     // The wanted-models list (ADR-042 section 12): names as Hugging Face coordinates, compared with state.wantedOnVolume (folder/name) when the volume can be listed

@@ -58,7 +58,7 @@ test('initialize hands every client the governance instructions', async () => {
 const POOL = ['list_agents', 'get_pool_status', 'governance', 'create_agent', 'stop_agent', 'resume_agent', 'delete_agent', 'health_check_agent', 'get_agent_info', 'submit_job', 'get_job_status']
 const PODS = ['list_pods', 'get_pod', 'create_pod', 'stop_pod', 'resume_pod', 'delete_pod', 'recreate_pod', 'get_history', 'get_spend_history', 'get_comfy_runs', 'get_comfy_logs', 'export_history', 'rename_pod', 'set_pod_round', 'set_pod_shot', 'delete_round', 'rename_round', 'set_idle_stop', 'get_logs', 'list_datacenters', 'list_volumes', 'create_volume', 'delete_volume', 'set_default_volume', 'get_configuration', 'sync', 'sync_status', 'adapter_spec', 'adapters_list', 'adapter_save', 'import_plan', 'import_apply', 'get_credits', 'cost_now']
 // The tools the app's other windows added (docs/ADR-028), in the order app-tools.mjs defines them.
-const APP = ['list_gpus', 'get_volume_info', 'get_pod_config', 'set_pod_config', 'set_configuration', 'preview_configuration', 'reset_configuration', 'get_local_env', 'list_dirs', 'get_settings', 'set_settings', 'check_anthropic_key', 'config_export', 'config_import_plan', 'config_import_apply', 'config_undo', 'config_backups', 'resize_volume', 'volume_files', 'volume_erase', 'volume_clone', 'volume_job', 'agent_guard_status', 'models_search', 'models_files', 'models_fetch', 'models_status', 'models_wanted', 'models_wanted_add', 'models_wanted_remove', 'models_load_wanted', 'set_shared_volume', 'panama_status', 'panama_rounds', 'panama_round_files', 'panama_stage', 'panama_round_size', 'panama_pod_plan', 'panama_pull', 'panama_job', 'panama_cancel', 'panama_remove', 'plan_round_import', 'import_rounds', 'import_round', 'queue_list', 'queue_task', 'list_pod_workflows', 'run_pod_workflows', 'pod_models', 'run_workflows_job', 'panama_place', 'panama_import', 'import_detect', 'package_summary', 'package_tree', 'package_file', 'package_describe', 'adapter_draft', 'adapter_document', 'adapter_problems', 'adapter_manage', 'sync_after', 'image_env', 'image_dockerfile', 'git_accounts', 'repositories', 'remote_mcp', 'mcp_endpoints', 'docs']
+const APP = ['list_gpus', 'get_volume_info', 'get_pod_config', 'set_pod_config', 'set_configuration', 'preview_configuration', 'reset_configuration', 'get_local_env', 'list_dirs', 'get_settings', 'set_settings', 'check_anthropic_key', 'config_export', 'config_import_plan', 'config_import_apply', 'config_undo', 'config_backups', 'resize_volume', 'volume_files', 'volume_erase', 'volume_clone', 'volume_job', 'agent_guard_status', 'models_search', 'models_files', 'models_fetch', 'models_status', 'models_delete', 'models_wanted', 'models_wanted_add', 'models_wanted_remove', 'models_load_wanted', 'set_shared_volume', 'panama_status', 'panama_rounds', 'panama_round_files', 'panama_stage', 'panama_round_size', 'panama_pod_plan', 'panama_pull', 'panama_job', 'panama_cancel', 'panama_remove', 'plan_round_import', 'import_rounds', 'import_round', 'queue_list', 'queue_task', 'list_pod_workflows', 'run_pod_workflows', 'pod_models', 'run_workflows_job', 'panama_place', 'panama_import', 'import_detect', 'package_summary', 'package_tree', 'package_file', 'package_describe', 'adapter_draft', 'adapter_document', 'adapter_problems', 'adapter_manage', 'sync_after', 'image_env', 'image_dockerfile', 'git_accounts', 'repositories', 'remote_mcp', 'mcp_endpoints', 'docs']
 
 test('an agent writes an adapter and tests it on a real folder; the code stays open to read', async () => {
   const spec = textOf(ok(await call('adapter_spec')))
@@ -382,6 +382,24 @@ test('docs: the list, a page, a search; a page the public site leaves out is ref
   assert.match(textOf(await call('docs', { page: 'docs/ADR-028-mcp-can-do-everything-the-app-does.md' })), /Anything the app can do, the MCP can do/)
   assert.ok(JSON.parse(textOf(await call('docs', { search: 'zip' }))).matches.length > 0)
   assert.equal((await call('docs', { page: 'docs/ADR-004-where-the-workflows-run.md' })).result.isError, true)
+})
+
+test('models_delete: needs the named yes (on here) and confirmed: true; refuses paths outside models/ and the bookkeeping folder, before any pod', async () => {
+  const items = [{ folder: 'vae', name: 'a.safetensors' }]
+  const noName = await call('models_delete', { volume_id: 'vol1', items, confirmed: true })
+  assert.equal(noName.result.isError, true); assert.match(textOf(noName), /approved_by/)
+  const noConfirm = await call('models_delete', { volume_id: 'vol1', items, approved_by: 'Lucas' })
+  assert.equal(noConfirm.result.isError, true); assert.match(textOf(noConfirm), /confirm/i)
+  const falsy = await call('models_delete', { volume_id: 'vol1', items, approved_by: 'Lucas', confirmed: false })
+  assert.equal(falsy.result.isError, true); assert.match(textOf(falsy), /confirm/i)
+  const up = await call('models_delete', { volume_id: 'vol1', items: [{ folder: 'vae', name: '../../input/x.png' }], approved_by: 'Lucas', confirmed: true })
+  assert.equal(up.result.isError, true); assert.match(textOf(up), /Not a file name/)
+  const star = await call('models_delete', { volume_id: 'vol1', items: [{ folder: 'vae', name: '*' }], approved_by: 'Lucas', confirmed: true })
+  assert.equal(star.result.isError, true); assert.match(textOf(star), /Not a file name/)
+  const book = await call('models_delete', { volume_id: 'vol1', items: [{ folder: '_canalv2_pull', name: 'MODELS_PULL_v003.csv' }], approved_by: 'Lucas', confirmed: true })
+  assert.equal(book.result.isError, true); assert.match(textOf(book), /bookkeeping/)
+  const none = await call('models_delete', { volume_id: 'vol1', items: [], approved_by: 'Lucas', confirmed: true })
+  assert.equal(none.result.isError, true); assert.match(textOf(none), /at least one/)
 })
 
 test('the wanted-models list: add by entries and by CSV, list, remove; loading spends and needs the named yes', async () => {

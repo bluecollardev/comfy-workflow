@@ -54,7 +54,8 @@
     </div>
 
     <div v-if="job" class="small p-2 border rounded mb-3" data-testid="models-job" :data-state="job.state">
-      <template v-if="job.state === 'done'"><i class="fa-solid fa-check text-success me-1"></i>{{ $t('models.jobDone', { files: (job.fetched || []).join(', ') || '—' }) }}</template>
+      <template v-if="job.state === 'done' && job.kind === 'delete-models'"><i class="fa-solid fa-check text-success me-1"></i>{{ $t('models.deleteDone', { what: nFiles((job.deleted || []).length), size: fmt(job.freed_bytes || 0) }) }}</template>
+      <template v-else-if="job.state === 'done'"><i class="fa-solid fa-check text-success me-1"></i>{{ $t('models.jobDone', { files: (job.fetched || []).join(', ') || '—' }) }}</template>
       <template v-else-if="['failed', 'cancelled'].includes(job.state)"><i class="fa-solid fa-triangle-exclamation text-danger me-1"></i>{{ $t('models.jobFailed', { why: job.error || job.state }) }}</template>
       <template v-else>
         <BSpinner small class="me-2" />{{ $t('models.jobWorking', { state: job.state, pod: job.pod_name || '…' }) }}
@@ -96,7 +97,16 @@
       <span v-if="onVolume === null" class="text-body-secondary" data-testid="models-on-volume-unknown">{{ $t('models.onVolumeUnknown') }}</span>
       <span v-else-if="!onVolume.length" class="text-body-secondary">{{ $t('models.onVolumeNone') }}</span>
       <template v-else>
-        <div v-for="f in onVolume" :key="f.path" class="d-flex justify-content-between" data-testid="models-on-volume-file"><span class="font-monospace">{{ f.path }}</span><span class="text-body-secondary">{{ fmt(f.bytes) }}</span></div>
+        <div v-if="onVolume.some((f) => f.deletable)" class="d-flex align-items-center gap-2 mb-1" data-testid="models-delete-bar">
+          <BButton size="sm" variant="outline-danger" :disabled="!delPicked.length || busy || delBusy" data-testid="models-delete-selected" @click="deleteFiles(delPicked)"><i class="fa-solid fa-trash me-1"></i>{{ $t('models.deleteSelected', { n: delPicked.length, size: fmt(delPickedBytes) }) }}</BButton>
+        </div>
+        <div v-for="f in onVolume" :key="f.path" class="d-flex align-items-center gap-2" data-testid="models-on-volume-file" :data-path="f.path">
+          <input v-if="f.deletable" v-model="delChosen[f.path]" type="checkbox" class="form-check-input mt-0" :disabled="busy || delBusy" :aria-label="f.path" data-testid="models-delete-check" />
+          <span v-else style="width: 1rem" aria-hidden="true"></span>
+          <span class="font-monospace flex-grow-1 text-break">{{ f.path }}</span>
+          <span class="text-body-secondary text-nowrap">{{ fmt(f.bytes) }}</span>
+          <span v-if="f.deletable" v-tip="$t('models.deleteOne')" class="tipwrap"><BButton size="sm" variant="outline-danger" :disabled="busy || delBusy" :aria-label="$t('models.deleteOne')" data-testid="models-delete-one" @click="deleteFiles([f])"><i class="fa-solid fa-trash"></i></BButton></span>
+        </div>
       </template>
     </div>
   </BModal>
@@ -115,6 +125,7 @@ import { volumesAPI } from '../api/volumes'
 import { useUiStore } from '../stores/ui'
 import { useVolumesStore } from '../stores/volumes'
 import { useMountsStore } from '../stores/mounts'
+import { useConfirmStore } from '../stores/confirm'
 import { errorText } from '../stores/toast'
 import { fmtBytes as fmt } from '../utils/studioTree'
 import { t } from '../i18n'
@@ -124,6 +135,7 @@ const TERMINAL = ['done', 'failed', 'cancelled']
 const ui = useUiStore()
 const volumes = useVolumesStore()
 const mounts = useMountsStore()
+const confirm = useConfirmStore()
 const error = ref(''), query = ref(''), searching = ref(false), results = ref(null)
 const repo = ref(''), files = ref([]), loadingFiles = ref(false)
 const chosen = reactive({}), folders = reactive({})
@@ -139,6 +151,13 @@ const sharedOptions = computed(() => [{ value: '', text: t('models.sharedNone') 
 const picked = computed(() => files.value.filter((f) => chosen[f.path]))
 const pickedBytes = computed(() => picked.value.reduce((n, f) => n + (f.bytes || 0), 0))
 const busy = computed(() => !!job.value && !TERMINAL.includes(job.value.state))
+// deleting files already on the volume (ADR-042 section 15)
+const delChosen = reactive({}), delBusy = ref(false)
+const SEG = /^[A-Za-z0-9_+@=,()-][\w .+@=,()-]*$/   // the core's own file-name rule: anything else it would refuse, so no Delete is offered
+const canDelete = (folder, name) => folder !== '_canalv2_pull' && SEG.test(folder) && !!name && name.split('/').every((x) => SEG.test(x))
+const nFiles = (n) => t(n === 1 ? 'models.fileOne' : 'models.fileMany', { n })
+const delPicked = computed(() => (onVolume.value || []).filter((f) => f.deletable && delChosen[f.path]))
+const delPickedBytes = computed(() => delPicked.value.reduce((n, f) => n + (f.bytes || 0), 0))
 
 async function open() {
   error.value = ''
@@ -189,8 +208,22 @@ async function refreshOnVolume() {
   try {
     const r = await modelsAPI.status(target.value.id)
     const list = Array.isArray(r) ? r : r?.files || r?.items || null
-    onVolume.value = list ? list.map((f) => ({ path: f.path || [f.folder, f.name].filter(Boolean).join('/'), bytes: f.bytes ?? f.size ?? 0 })) : null
+    onVolume.value = list ? list.map((f) => { const path = f.path || [f.folder, f.name].filter(Boolean).join('/'), cut = path.indexOf('/'), folder = f.folder || (cut > 0 ? path.slice(0, cut) : ''), name = f.name || (cut > 0 ? path.slice(cut + 1) : path); return { path, folder, name, bytes: f.bytes ?? f.size ?? 0, deletable: canDelete(folder, name) } }) : null
+    for (const k of Object.keys(delChosen)) if (!onVolume.value?.some((f) => f.path === k)) delete delChosen[k]
   } catch { onVolume.value = null }
+}
+/** Delete model files from the volume: the app asks first (what and how much; this cannot be undone), then the core removes exactly those files. A deleted file stays in the wanted list and shows as missing. */
+async function deleteFiles(list) {
+  error.value = ''
+  if (!target.value || !list.length) return
+  const total = list.reduce((n, f) => n + (f.bytes || 0), 0)
+  const names = list.slice(0, 8).map((f) => f.path).join('\n') + (list.length > 8 ? `\n… +${list.length - 8}` : '')
+  if (!(await confirm.ask(`${t('models.confirmDelete', { what: nFiles(list.length), size: fmt(total), volume: target.value.name })}\n\n${names}`, { okLabel: t('models.delete') }))) return
+  delBusy.value = true
+  try {
+    job.value = await modelsAPI.delete(target.value.id, list.map((f) => ({ folder: f.folder, name: f.name })), true)
+    track()
+  } catch (e) { error.value = errorText(e) } finally { delBusy.value = false }
 }
 /** The wanted list against the target volume: the core says present, missing or unknown (the volume cannot be listed) for each row. */
 async function refreshWanted() {

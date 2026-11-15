@@ -167,6 +167,7 @@ const TABLE = {
     fetch: (c, volumeId, items) => c.podpull.fetchModels(volumeId || c.mounts.load().shared_volume_id || c.mounts.load().network_volume_id, items || [], {}),
     status: (c, volumeId) => c.podpull.modelsOnVolume(volumeId || c.mounts.load().shared_volume_id || c.mounts.load().network_volume_id),
     folders: (c) => [...c.hf.FOLDERS],
+    delete: (c, volumeId, items, confirmed) => c.podpull.deleteModels(volumeId || c.mounts.load().shared_volume_id || c.mounts.load().network_volume_id, items || [], { confirmed: confirmed === true }),   // ADR-042 section 15: the window has asked first
   },
   wanted: {   // docs/ADR-042 section 12: the wanted-models list (names, not weights), loadable onto a Shared volume anywhere
     list: (c) => c.wantedmodels.list(),

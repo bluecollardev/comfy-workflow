@@ -691,3 +691,86 @@ describe('models from Hugging Face onto a volume (ADR-042)', () => {
   })
 })
 
+
+describe('delete model files from a volume (ADR-042 section 15)', () => {
+  const MODELS = [
+    '2026-11-15 12:00:00  501324814 comfy-shared/models/vae/seedvr2_ema_vae_fp16.safetensors',
+    '2026-11-15 12:00:00 6784268336 comfy-shared/models/diffusion_models/seedvr2_3b_fp16.safetensors',
+    '2026-11-15 12:00:00 29145431166 comfy-shared/models/checkpoints/ltx-2.3/ltx-2.3-22b-dev-fp8.safetensors',
+    '2026-11-15 12:00:00  444473596 comfy-shared/models/background_removal/birefnet.safetensors',
+    '2026-11-15 12:00:00       6375 comfy-shared/models/_canalv2_pull/MODELS_PULL_v003.csv',
+  ].join('\n')
+  const withKeys = () => { process.env.RUNPOD_S3_ACCESS_KEY = 'user_x'; process.env.RUNPOD_S3_SECRET_KEY = 'rps_y' }
+  afterEach(() => { delete process.env.RUNPOD_S3_ACCESS_KEY; delete process.env.RUNPOD_S3_SECRET_KEY })
+  const ok = { confirmed: true }
+
+  it('checkDeleteItems: a folder under models/ and a name, sub-folders allowed; traversal, absolute paths, globs and the bookkeeping folder refused; duplicates dropped', () => {
+    expect(podpull.checkDeleteItems([{ folder: 'vae', name: 'a.safetensors' }, { folder: 'vae', name: 'a.safetensors' }, { folder: 'checkpoints', name: 'ltx-2.3/x (1).safetensors' }, { folder: 'background_removal', name: 'birefnet.safetensors' }]))
+      .toEqual([{ folder: 'vae', name: 'a.safetensors' }, { folder: 'checkpoints', name: 'ltx-2.3/x (1).safetensors' }, { folder: 'background_removal', name: 'birefnet.safetensors' }])
+    for (const bad of [
+      { folder: 'vae', name: '../../input/x.png' }, { folder: 'vae', name: 'a/../b.safetensors' }, { folder: 'vae', name: '/etc/passwd' }, { folder: '..', name: 'x' }, { folder: 'vae/../input', name: 'x' }, { folder: '', name: 'x' }, { folder: 'vae', name: '' },
+      { folder: 'vae', name: '*.safetensors' }, { folder: 'vae', name: 'a?.safetensors' }, { folder: 'vae', name: 'a;rm -rf x' }, { folder: 'vae', name: '$(id)' }, { folder: 'vae', name: "a'b" }, { folder: 'vae', name: '.hidden' }, { folder: '.git', name: 'x' }, { folder: 'vae', name: 'a//b' },
+    ]) expect(() => podpull.checkDeleteItems([bad]), JSON.stringify(bad)).toThrow(/Not a (folder|file name)/)
+    expect(() => podpull.checkDeleteItems([{ folder: '_canalv2_pull', name: 'MODELS_PULL_v003.csv' }])).toThrow(/bookkeeping/)
+    expect(() => podpull.checkDeleteItems([])).toThrow(/at least one/)
+    expect(() => podpull.checkDeleteItems(Array.from({ length: 201 }, (_, n) => ({ folder: 'vae', name: `f${n}.safetensors` })))).toThrow(/At most 200/)
+  })
+  it('needs confirmed: true, and the checks come before any pod or S3 call', async () => {
+    const rp = fakeRunPod(); let called = 0
+    const aws: podpull.AwsRunner = async () => { called++; return { code: 0, stdout: '', stderr: '' } }
+    const o = base({ client: rp.client, aws })
+    await expect(podpull.deleteModels('vol1', [{ folder: 'vae', name: 'a.safetensors' }], {}, o)).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/confirm/i) })
+    await expect(podpull.deleteModels('vol1', [{ folder: 'vae', name: 'a.safetensors' }], { confirmed: 'yes' as never }, o)).rejects.toThrow(/confirm/i)
+    await expect(podpull.deleteModels('vol1', [{ folder: 'vae', name: '../x' }], ok, o)).rejects.toThrow(/Not a file name/)
+    await expect(podpull.deleteModels('../x', [{ folder: 'vae', name: 'a' }], ok, o)).rejects.toThrow(/Not a network volume id/)
+    expect(rp.calls.created).toEqual([]); expect(called).toBe(0)
+  })
+  it('over the S3 API: removes only the exact keys (no --recursive), counts the bytes freed, notes a file that is not there, makes no pod', async () => {
+    withKeys(); const rp = fakeRunPod([], { volumeDc: 'EU-RO-1' }); const calls: string[][] = []
+    const aws: podpull.AwsRunner = async (args) => { calls.push(args); return { code: 0, stdout: args[1] === 'ls' ? MODELS : '', stderr: '' } }
+    const job0 = await podpull.deleteModels('vol1', [{ folder: 'vae', name: 'seedvr2_ema_vae_fp16.safetensors' }, { folder: 'checkpoints', name: 'ltx-2.3/ltx-2.3-22b-dev-fp8.safetensors' }, { folder: 'loras', name: 'gone.safetensors' }], ok, base({ client: rp.client, aws }))
+    expect(job0).toMatchObject({ kind: 'delete-models', volume_id: 'vol1', route: 's3', pod_name: null })
+    const job = await done(job0.id)
+    expect(job).toMatchObject({ state: 'done', freed_bytes: 501324814 + 29145431166 })
+    expect(job.deleted).toEqual([{ folder: 'vae', name: 'seedvr2_ema_vae_fp16.safetensors', bytes: 501324814 }, { folder: 'checkpoints', name: 'ltx-2.3/ltx-2.3-22b-dev-fp8.safetensors', bytes: 29145431166 }])
+    expect(job.lines).toContain('MISSING loras/gone.safetensors')
+    const rms = calls.filter((c) => c[1] === 'rm')
+    expect(rms.map((c) => c[2])).toEqual(['s3://vol1/comfy-shared/models/vae/seedvr2_ema_vae_fp16.safetensors', 's3://vol1/comfy-shared/models/checkpoints/ltx-2.3/ltx-2.3-22b-dev-fp8.safetensors'])
+    for (const c of rms) { expect(c).not.toContain('--recursive'); expect(c).toContain('https://s3api-eu-ro-1.runpod.io/') }
+    expect(calls.find((c) => c[1] === 'ls')).toContain('s3://vol1/comfy-shared/models/')
+    expect(rp.calls.created).toEqual([])
+  })
+  it('a failure of the S3 API is the job\'s error and later files are not touched', async () => {
+    withKeys(); const rp = fakeRunPod([], { volumeDc: 'EU-RO-1' }); const rms: string[] = []
+    const aws: podpull.AwsRunner = async (args) => { if (args[1] === 'rm') { rms.push(args[2]); return { code: 1, stdout: '', stderr: 'An error occurred (AccessDenied)' } } return { code: 0, stdout: MODELS, stderr: '' } }
+    const j = await done((await podpull.deleteModels('vol1', [{ folder: 'vae', name: 'seedvr2_ema_vae_fp16.safetensors' }, { folder: 'diffusion_models', name: 'seedvr2_3b_fp16.safetensors' }], ok, base({ client: rp.client, aws }))).id)
+    expect(j.state).toBe('failed'); expect(j.error).toMatch(/S3 API: .*AccessDenied/); expect(rms).toHaveLength(1); expect(j.deleted ?? []).toEqual([])
+  })
+  it('without the S3 API a short pod runs a script that deletes only the named files, then is deleted itself', async () => {
+    const rp = fakeRunPod(); const calls: podpull.SshJob[] = []
+    const ssh: podpull.SshRunner = async (j) => { calls.push(j); j.onLine('DELETED vae/a.safetensors 1234'); j.onLine('MISSING loras/b.safetensors'); j.onLine('DELETE-DONE'); return { code: 0 } }
+    const job0 = await podpull.deleteModels('vol1', [{ folder: 'vae', name: 'a.safetensors' }, { folder: 'loras', name: 'b.safetensors' }], ok, base({ client: rp.client, ssh }))
+    expect(job0).toMatchObject({ kind: 'delete-models', route: 'temporary' })
+    const job = await done(job0.id)
+    expect(job).toMatchObject({ state: 'done', freed_bytes: 1234, deleted: [{ folder: 'vae', name: 'a.safetensors', bytes: 1234 }] })
+    const sc = calls[0].script
+    expect(sc).toContain("root='/workspace/comfy-shared/models'"); expect(sc).toContain(`f="$root"/'vae/a.safetensors'`); expect(sc).toContain('rm -f -- "$f"'); expect(sc).toContain('stat -c %s')
+    expect(sc).toContain('exit 64'); expect(sc).toContain('echo "DELETE-DONE"'); expect(sc).not.toMatch(/rm -rf|-delete|find /)
+    expect(rp.calls.terminated).toEqual(['newpod1'])
+  })
+  it('the pod refusing a path, or failing to delete, fails the job with the pod\'s words', async () => {
+    const rp = fakeRunPod()
+    const ssh: podpull.SshRunner = async (j) => { j.onLine('DELETE-FAILED could not delete vae/a.safetensors'); return { code: 1 } }
+    const j = await done((await podpull.deleteModels('vol1', [{ folder: 'vae', name: 'a.safetensors' }], ok, base({ client: rp.client, ssh }))).id)
+    expect(j.state).toBe('failed'); expect(j.error).toMatch(/Delete failed: could not delete vae\/a.safetensors/)
+  })
+  it('is refused while another job runs on the volume', async () => {
+    const rp = fakeRunPod(); let release!: () => void
+    const gate = new Promise<void>((r) => { release = r })
+    const ssh: podpull.SshRunner = async (j) => { await gate; j.onLine('BROWSE-DONE'); return { code: 0 } }
+    const o = base({ client: rp.client, ssh })
+    const first = await podpull.browseVolume('vol1', o)
+    await expect(podpull.deleteModels('vol1', [{ folder: 'vae', name: 'a.safetensors' }], ok, o)).rejects.toThrow(/running on this volume|busy/)
+    release(); await done(first.id)
+  })
+})
