@@ -5,6 +5,9 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased
 
+### The image is pinned by digest (ADR-020 amendment, ADR-042)
+- Lucas: "can't we rebuild and pin image". `contract-v26` moved on 2026-11-14; the default image and Lucas's Default Configuration are now `@sha256:a06a461c…`, with `CU13_PINS` for Blackwell cards; the workflow tags by commit and prints the digest. Also written, not yet wired: `.claude/hooks/guard-bash.sh`. ADR-042 records the open questions (the agent on binc-pc, SeedVR2 weights and VAE).
+
 ## v1.1.10 (2026-11-15)
 Tagged `v1.1.10`; DMG on bluecollardev/downloads. Contains everything below (volume explorer, Erase, Clone, S3 route, per-shot import, Outputs, Queue confirms), plus the volume tools in `docs/MCP-ENDPOINTS.md`.
 
