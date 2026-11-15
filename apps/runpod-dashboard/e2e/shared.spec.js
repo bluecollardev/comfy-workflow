@@ -123,7 +123,7 @@ test.describe('Shared', () => {
     await row('vae/ae.safetensors').getByTestId('models-delete-one').click()
     await answerConfirm(page, true)
     await expect(m.getByTestId('models-on-volume-file')).toHaveCount(3)
-    await expect(m.getByTestId('models-job')).toContainText(t('models.fileOne', { n: 1 }))
+    await expect(m.getByTestId('models-job')).toContainText(new RegExp(t('models.fileOne', { n: 1 }), 'i'))   // job lines are shown in title case
     expect(api.state.modelDeletes).toEqual([{ volume_id: 'vol1', items: [{ folder: 'vae', name: 'ae.safetensors' }] }])
     // several at once: tick two, the button carries the count, the confirmation lists both
     await row('diffusion_models/z_image.safetensors').getByTestId('models-delete-check').check()
@@ -229,6 +229,95 @@ test.describe('Shared', () => {
     await m.getByTestId('wanted-clear').click()
     await answerConfirm(page, true)
     await expect(m.getByTestId('wanted-empty')).toBeVisible()
+  })
+
+  const fetchJob = (over) => ({ id: 'vjf1', kind: 'fetch', volume_id: 'vol1', pod_name: 'ComfyUI-Pull-vol-vol1-1115', started_at: '2026-11-15T17:00:00.000Z', files: 0, lines: ['Approved by a click in the app window.'], bytes_done: 0, bytes_total: 20e9, rate: null, recent: [], fetched: [], fetch_items: [], ...over })
+
+  test('a download shows each state as it happens (creating, starting, connecting, downloading file i of n with a bar, verifying, done), in title case, with Cancel at the right', async ({ page, api }) => {
+    api.state.sharedVolume = 'vol1'
+    api.state.volumeSteps = [
+      fetchJob({ state: 'creating' }),
+      fetchJob({ state: 'creating' }),
+      fetchJob({ state: 'starting' }),
+      fetchJob({ state: 'connecting' }),
+      fetchJob({ state: 'pulling', bytes_done: 5e9, rate: 50e6, fetch: { file: 'a.safetensors', index: 1, count: 2, file_done: 5e9, file_total: 8e9, eta_s: 300 } }),
+      fetchJob({ state: 'pulling', bytes_done: 14e9, rate: 60e6, fetched: ['a.safetensors'], fetch: { file: 'b.safetensors', index: 2, count: 2, file_done: 6e9, file_total: 12e9, eta_s: 100 } }),
+      fetchJob({ state: 'verifying', bytes_done: 20e9, fetched: ['a.safetensors'], fetch: { file: 'b.safetensors', index: 2, count: 2, file_done: 12e9, file_total: 12e9, eta_s: 0 } }),
+      fetchJob({ state: 'done', bytes_done: 20e9, fetched: ['a.safetensors', 'b.safetensors'] }),
+    ]
+    await page.goto('/')
+    await openModels(page)
+    const m = page.getByTestId('models-modal')
+    const state = m.getByTestId('volume-job-state')
+    await expect(state).toHaveText('Creating Pod')                       // not the first log line: the state, in title case
+    await expect(state).toHaveText('Pod Starting')
+    await expect(state).toHaveText('Connecting (SSH)')
+    await expect(state).toHaveText('Downloading File 1 Of 2')
+    await expect(m.getByTestId('models-job')).toHaveAttribute('data-state', 'pulling')
+    await expect(m.getByTestId('volume-job-detail')).toContainText('a.safetensors')
+    await expect(m.getByTestId('volume-job-detail')).toContainText('5.0 GB of 20.0 GB')
+    await expect(m.getByTestId('volume-job-bar')).toHaveAttribute('data-percent', '25')
+    await expect(m.getByTestId('volume-job-pod')).toHaveText('ComfyUI-Pull-vol-vol1-1115')          // the pod's name is kept exactly
+    const cancel = m.getByTestId('models-cancel'), card = m.getByTestId('models-job')
+    const [cb, jb] = [await cancel.boundingBox(), await card.boundingBox()]
+    expect(cb.x + cb.width).toBeGreaterThan(jb.x + jb.width - 40)        // Cancel floats to the right end of the row
+    await expect(state).toHaveText('Downloading File 2 Of 2')
+    await expect(state).toHaveText('Verifying Checksum')
+    await expect(state).toHaveText(/^Done: 2 Files Loaded/)
+    await expect(m.getByTestId('models-cancel')).toHaveCount(0)
+    await expect(m.getByTestId('models-job-lines')).toContainText('Approved By A Click In The App Window.')
+  })
+
+  test('closing and reopening the Models window shows the download that is running', async ({ page, api }) => {
+    api.state.sharedVolume = 'vol1'
+    api.state.volumeJob = fetchJob({ state: 'pulling', bytes_done: 2e9, rate: 40e6, fetch: { file: 'a.safetensors', index: 1, count: 3, file_done: 2e9, file_total: 8e9, eta_s: 150 } })
+    await page.goto('/')
+    await openModels(page)
+    const m = page.getByTestId('models-modal')
+    await expect(m.getByTestId('volume-job-state')).toHaveText('Downloading File 1 Of 3')
+    await m.getByRole('button', { name: t('models.done') }).click()
+    await expect(m).toBeHidden()
+    await openModels(page)
+    await expect(page.getByTestId('models-modal').getByTestId('volume-job-state')).toHaveText('Downloading File 1 Of 3')
+  })
+
+  test('a wanted model whose .part is on the volume says Downloading with the percent, and its row on the volume has no Delete', async ({ page, api }) => {
+    api.state.sharedVolume = 'vol1'
+    api.state.wanted = [{ folder: 'text_encoders', name: 'q.safetensors', repo: 'a/b', path: 'q.safetensors', bytes: 8e9 }]
+    api.state.wantedOnVolume = []
+    api.state.wantedParts = { 'text_encoders/q.safetensors': 2e9 }
+    api.state.modelsOnVolume = [{ folder: 'text_encoders', name: 'q.safetensors.part', bytes: 2e9 }]
+    api.state.volumeJob = fetchJob({ state: 'pulling', bytes_done: 2e9, fetch: { file: 'q.safetensors', index: 1, count: 1, file_done: 2e9, file_total: 8e9, eta_s: null } })   // a download is running
+    await page.goto('/')
+    await openModels(page)
+    const m = page.getByTestId('models-modal')
+    const row = m.locator('[data-testid="wanted-row"][data-name="q.safetensors"]')
+    await expect(row).toHaveAttribute('data-state', 'downloading')
+    await expect(row.getByTestId('wanted-state')).toHaveText('Downloading 25%')
+    const part = m.locator('[data-testid="models-on-volume-file"][data-path="text_encoders/q.safetensors.part"]')
+    await expect(part.getByTestId('models-part-badge')).toHaveText('Downloading')
+    await expect(part.getByTestId('models-delete-one')).toHaveCount(0)
+  })
+
+  test('the Queue lists the volume jobs with their progress and Cancel, and a pod the app lost at a restart with a Delete Pod button; the nav badge counts them', async ({ page, api }) => {
+    api.state.volumeJob = fetchJob({ state: 'pulling', bytes_done: 2e9, rate: 40e6, fetch: { file: 'a.safetensors', index: 1, count: 3, file_done: 2e9, file_total: 8e9, eta_s: 150 } })
+    api.state.interrupted = [{ name: 'ComfyUI-Pull-vol-a3upg9ey48-1115', kind: 'fetch', round: 'vol-a3upg9ey48', pod_id: 'p9', volume: 'a3upg9ey48', created_at: '2026-11-15T16:56:04.000Z', approved_by: 'a click in the app window' }]
+    await page.goto('/')
+    await expect(page.getByTestId('queue-badge')).toHaveText('2')           // the running download and the interrupted pod
+    await page.getByTestId('open-queue').click()
+    const q = page.getByTestId('queue-modal')
+    const job = q.getByTestId('queue-volume-job')
+    await expect(job).toHaveAttribute('data-kind', 'fetch')
+    await expect(job.getByTestId('volume-job-state')).toHaveText('Downloading File 1 Of 3')
+    await expect(job.getByTestId('volume-job-bar')).toBeVisible()
+    await expect(job.getByTestId('queue-volume-cancel')).toBeVisible()
+    const lost = q.getByTestId('queue-interrupted')
+    await expect(lost).toContainText('Interrupted (No Job)')
+    await expect(lost).toContainText('ComfyUI-Pull-vol-a3upg9ey48-1115')
+    await lost.getByTestId('queue-interrupted-delete').click()
+    await answerConfirm(page, true)
+    await expect(q.getByTestId('queue-interrupted')).toHaveCount(0)
+    expect(api.state.droppedPod).toBe('ComfyUI-Pull-vol-a3upg9ey48-1115')
   })
 
   test('Wanted models: a too-small volume shows the warning; a volume that cannot be listed shows every row as not checked', async ({ page, api }) => {

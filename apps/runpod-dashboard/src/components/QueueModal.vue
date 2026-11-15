@@ -3,10 +3,31 @@
     <div v-if="finished.length" class="d-flex justify-content-end mb-2">
       <BButton size="sm" variant="outline-danger" data-testid="queue-purge" @click="purge"><i class="fa-solid fa-broom me-1"></i>{{ $t('queue.purge') }}</BButton>
     </div>
+    <div v-if="vjobs.jobs.length || vjobs.interrupted.length" class="mb-4" data-testid="queue-volume-jobs">
+      <h6 class="mb-2">{{ $t('queue.volumeJobs') }}</h6>
+      <div v-for="p in vjobs.interrupted" :key="p.name" class="border rounded p-2 mb-2 small d-flex align-items-center gap-2 flex-wrap" data-testid="queue-interrupted" :data-name="p.name">
+        <i class="fa-solid fa-triangle-exclamation text-warning"></i>
+        <strong>{{ $t('queue.interrupted') }}</strong>
+        <span class="font-monospace text-body-secondary">{{ p.name }}</span>
+        <span class="text-body-secondary">{{ $t('queue.interruptedNote') }}</span>
+        <BButton size="sm" variant="outline-danger" class="ms-auto" data-testid="queue-interrupted-delete" @click="dropPod(p)"><i class="fa-solid fa-trash me-1"></i>{{ $t('queue.deletePod') }}</BButton>
+      </div>
+      <div v-for="j in vjobs.jobs" :key="j.id" class="border rounded p-2 mb-2 small" data-testid="queue-volume-job" :data-state="j.state" :data-kind="j.kind">
+        <div class="d-flex align-items-baseline gap-2 flex-wrap mb-1">
+          <strong>{{ ucwords($t(`vjob.kind_${j.kind}`)) }}</strong>
+          <span class="text-body-secondary">{{ $t('queue.volume') }} <span class="font-monospace">{{ j.volume_id }}</span> · {{ $t('queue.started', { at: clock(j.started_at) }) }}</span>
+        </div>
+        <VolumeJobView :job="j">
+          <template #actions>
+            <BButton v-if="!['done', 'failed', 'cancelled'].includes(j.state)" size="sm" variant="outline-light" data-testid="queue-volume-cancel" @click="vcancel(j)">{{ $t('queue.cancel') }}</BButton>
+          </template>
+        </VolumeJobView>
+      </div>
+    </div>
     <div v-if="error" class="alert alert-danger small py-2" data-testid="queue-error">{{ error }}</div>
     <div v-if="ui.queueStartError" class="alert alert-danger small py-2" data-testid="queue-start-error">{{ $t('queue.startFailed', { why: ui.queueStartError }) }}</div>
     <div v-if="ui.queueStarting.length" class="alert alert-info small py-2 d-flex align-items-center gap-2" data-testid="queue-starting"><BSpinner small />{{ $t('queue.starting', { rounds: ui.queueStarting.join(', ') }, ui.queueStarting.length) }}</div>
-    <div v-if="!view.imports.length && !ui.queueStarting.length" class="text-body-secondary small" data-testid="queue-empty">{{ $t('queue.empty') }}</div>
+    <div v-if="!view.imports.length && !ui.queueStarting.length && !vjobs.jobs.length && !vjobs.interrupted.length" class="text-body-secondary small" data-testid="queue-empty">{{ $t('queue.empty') }}</div>
     <div v-for="imp in newestFirst" :key="imp.id" class="mb-4" data-testid="queue-import" :data-import="imp.id">
       <div class="d-flex align-items-baseline gap-2 flex-wrap mb-1">
         <strong class="font-monospace">{{ imp.round }}</strong>
@@ -59,10 +80,14 @@ import { errorText } from '../stores/toast'
 import { useUiStore } from '../stores/ui'
 import { useI18n } from 'vue-i18n'
 import { useConfirmStore } from '../stores/confirm'
+import { useVolumeJobsStore } from '../stores/volumejobs'
+import VolumeJobView from './VolumeJobView.vue'
+import { ucwords } from '../utils/ucwords'
 
 const ui = useUiStore()
 const { t } = useI18n()
 const confirm = useConfirmStore()
+const vjobs = useVolumeJobsStore()
 const open = computed({ get: () => ui.queueOpen, set: (v) => { ui.queueOpen = v } })
 const view = ref({ imports: [], tasks: [], active: 0 }), error = ref('')
 let timer = null
@@ -90,10 +115,14 @@ async function cancelAll(imp) {
 async function cancelTask(task) {
   if (await confirm.ask(t('queue.confirmCancel', { what: `${task.kind}${task.shot ? ` ${task.shot}` : ''}`, round: task.round }), { okLabel: t('queue.cancel') })) act(() => queueAPI.cancelTask(task.id))
 }
+/** A volume job's Cancel asks first: a running download stops and its pod is deleted. */
+async function vcancel(j) { if (await confirm.ask(t('queue.confirmCancel', { what: ucwords(t(`vjob.kind_${j.kind}`)), round: j.volume_id }), { okLabel: t('queue.cancel') })) { try { await vjobs.cancel(j.id) } catch (e) { error.value = errorText(e) } } }
+/** An interrupted job's pod (the app was restarted): deleted only on a click, after a confirm. */
+async function dropPod(p) { if (await confirm.ask(t('queue.confirmDeletePod', { name: p.name }), { okLabel: t('queue.deletePod') })) { try { await vjobs.dropInterrupted(p.name) } catch (e) { error.value = errorText(e) } } }
 async function act(fn) { try { await fn() } catch (e) { error.value = errorText(e) } await refresh() }
 watch(() => ui.queueVersion, refresh)   // an import was just queued: show it now, not at the next tick
-onMounted(() => { refresh(); timer = setInterval(refresh, 2500) })
-onBeforeUnmount(() => clearInterval(timer))
+onMounted(() => { refresh(); timer = setInterval(refresh, 2500); vjobs.watch() })
+onBeforeUnmount(() => { clearInterval(timer); vjobs.unwatch() })
 </script>
 
 <style scoped>

@@ -98,6 +98,7 @@ import ImportRoundModal from './components/ImportRoundModal.vue'
 import QueueModal from './components/QueueModal.vue'
 import ConfirmHost from './components/ConfirmHost.vue'
 import { queueAPI } from './api/queue'
+import { useVolumeJobsStore } from './stores/volumejobs'
 import { useToastStore } from './stores/toast'
 import { t } from './i18n'
 import { usePodsStore } from './stores/pods'
@@ -142,7 +143,9 @@ async function newInstallation() {
 /** How many queued or running tasks: the badge on the Queue button (ADR-038). Asked every 5 seconds; a failure is just no badge. */
 const queueCount = ref(0)
 let queueTimer = null
-const loadQueueCount = async () => { try { queueCount.value = (await queueAPI.list()).active } catch { queueCount.value = 0 } }
+const vjobsStore = useVolumeJobsStore()
+/** Queued or running tasks plus the running volume jobs (a download, a delete) and the pods of jobs lost at a restart. */
+const loadQueueCount = async () => { try { queueCount.value = (await queueAPI.list()).active } catch { queueCount.value = 0 }; try { await vjobsStore.refresh(); queueCount.value += vjobsStore.running + vjobsStore.interrupted.length } catch { /* no volume jobs known */ } }
 let offSync = () => {}
 /** The toasts sit just under the sticky top (nav bar, and a failed action's alert below it): its height is published as --app-top-height. */
 let topObserver = null

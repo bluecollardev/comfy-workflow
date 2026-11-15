@@ -682,6 +682,50 @@ describe('models from Hugging Face onto a volume (ADR-042)', () => {
     const sc = podpull.fetchScript([{ repo: 'o/r', revision: 'main', path: 'a.safetensors', name: 'a.safetensors', folder: 'vae', bytes: 1, sha256: 'a'.repeat(64), url: 'https://huggingface.co/o/r/resolve/main/a.safetensors' }])
     expect(sc).not.toMatch(/Authorization|-K |mktemp/); expect(sc).toContain('curl -fL --proto-redir =https')
   })
+  it('the script tells the progress every 3 s and the job view follows it: file i of n, bytes, rate, ETA, the stage; progress lines are not kept as job lines', async () => {
+    const sc = podpull.fetchScript([{ repo: 'o/r', revision: 'main', path: 'a.safetensors', name: 'a.safetensors', folder: 'vae', bytes: 4242, sha256: 'a'.repeat(64), url: 'https://huggingface.co/o/r/resolve/main/a.safetensors' }])
+    expect(sc).toContain('& cp=$!'); expect(sc).toContain('while kill -0 $cp'); expect(sc).toContain('FETCH-PROGRESS $(stat -c %s "$f.part" 2>/dev/null || echo 0) 4242 a.safetensors'); expect(sc).toContain('sleep 3'); expect(sc).toContain('wait $cp || { echo "FETCH-FAILED a.safetensors (curl $?')
+    expect(sc).toContain('echo "FETCH-VERIFY a.safetensors"')
+    const rp = fakeRunPod()
+    const snaps: podpull.PodJob[] = []
+    const snap = () => snaps.push(podpull.volumeJobs().jobs.find((x) => x.kind === 'fetch')!)
+    const ssh: podpull.SshRunner = async (j) => {
+      j.onLine('FETCH-PROGRESS 100 501324814 seedvr2_ema_vae_fp16.safetensors'); snap()
+      await new Promise((r) => setTimeout(r, 60))
+      j.onLine('FETCH-PROGRESS 250000100 501324814 seedvr2_ema_vae_fp16.safetensors'); snap()
+      j.onLine('FETCH-VERIFY seedvr2_ema_vae_fp16.safetensors'); snap()
+      j.onLine('FETCHED seedvr2_ema_vae_fp16.safetensors 501324814'); snap()
+      j.onLine('FETCH-PROGRESS 5 6784268336 seedvr2_3b_fp16.safetensors'); snap()
+      j.onLine('FETCHED seedvr2_3b_fp16.safetensors skipped'); j.onLine('FETCH-DONE'); return { code: 0 }
+    }
+    const j = await done((await podpull.fetchModels('vol1', items, {}, { ...base({ client: rp.client, ssh }), fetchFn: hfFetch })).id)
+    const total = 501324814 + 6784268336
+    expect(snaps[0]).toMatchObject({ state: 'pulling', bytes_total: total, bytes_done: 100, fetch: { file: 'seedvr2_ema_vae_fp16.safetensors', index: 1, count: 2, file_done: 100, file_total: 501324814 } })
+    expect(snaps[1].rate).toBeGreaterThan(0); expect(typeof snaps[1].fetch!.eta_s).toBe('number'); expect(snaps[1].bytes_done).toBe(250000100)
+    expect(snaps[2].state).toBe('verifying')
+    expect(snaps[3]).toMatchObject({ state: 'pulling', files: 1, bytes_done: 501324814 })
+    expect(snaps[4]).toMatchObject({ bytes_done: 501324814 + 5, fetch: { file: 'seedvr2_3b_fp16.safetensors', index: 2, count: 2 } })
+    expect(j).toMatchObject({ state: 'done', files: 2, bytes_done: total }); expect(j.fetch).toBeUndefined()
+    expect(j.lines.join('\n')).not.toContain('FETCH-PROGRESS'); expect(JSON.stringify(history.list({ limit: 500 }))).not.toContain('FETCH-PROGRESS')
+  })
+  it('volumeJobs lists the volume jobs newest first with how many run; a temporary pod no job owns is listed as interrupted and only dropInterrupted deletes it (and only a pod this app made)', async () => {
+    writeFileSync(process.env.PULL_PODS_FILE!, JSON.stringify([{ round: 'vol-vol1', kind: 'fetch', name: 'ComfyUI-Pull-vol-vol1-1115', pod_id: 'lost1', volume: 'vol1', created_at: '2026-11-15T16:56:04Z', approved_by: 'a click in the app window' }]))
+    const before = podpull.volumeJobs()
+    expect(before.interrupted.map((x) => x.name)).toEqual(['ComfyUI-Pull-vol-vol1-1115'])
+    const rp = fakeRunPod()
+    await expect(podpull.dropInterrupted('ComfyUI-Pull-vol-nope', { client: rp.client })).rejects.toThrow(/No interrupted volume job pod/)
+    expect(rp.calls.terminated).toEqual([])
+    await expect(podpull.dropInterrupted('ComfyUI-Pull-vol-vol1-1115', { client: rp.client })).resolves.toEqual({ deleted: 'ComfyUI-Pull-vol-vol1-1115' })
+    expect(rp.calls.terminated).toEqual(['lost1']); expect(podpull.volumeJobs().interrupted).toEqual([])
+    let release!: () => void; const gate = new Promise<void>((r) => (release = r))
+    const ssh: podpull.SshRunner = async (j) => { await gate; j.onLine('FETCH-DONE'); return { code: 0 } }
+    const rp2 = fakeRunPod()
+    const job0 = await podpull.fetchModels('vol1', items.slice(0, 1), {}, { ...base({ client: rp2.client, ssh }), fetchFn: hfFetch })
+    const mid = podpull.volumeJobs()
+    expect(mid.jobs[0].id).toBe(job0.id); expect(mid.running).toBe(1); expect(mid.interrupted).toEqual([])   // a job's own pod is not 'interrupted'
+    release(); await done(job0.id)
+    expect(podpull.volumeJobs().running).toBe(0)
+  })
   it('a failed download is a failed job (the pod says which file), and the refusals come before any pod', async () => {
     const rp = fakeRunPod()
     const ssh: podpull.SshRunner = async (j) => { j.onLine('FETCH-FAILED seedvr2_3b_fp16.safetensors (the checksum does not match)'); return { code: 1 } }

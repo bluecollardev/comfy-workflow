@@ -243,7 +243,7 @@ export async function plan(round: string, opts: Opts = {}): Promise<PodPlan> {
 
 // ----- the job -----
 
-export type JobState = 'creating' | 'starting' | 'pulling' | 'verifying' | 'placing' | 'deleting' | 'done' | 'failed' | 'cancelled'
+export type JobState = 'creating' | 'starting' | 'connecting' | 'pulling' | 'verifying' | 'placing' | 'deleting' | 'done' | 'failed' | 'cancelled'
 export interface PodJob {
   id: string; round: string; kind: 'pull' | 'remove' | 'browse' | 'erase' | 'clone' | 'fetch' | 'delete-models'; route: 'active' | 'temporary' | 's3'; pod_id: string | null; pod_name: string | null
   /** The card the pod actually has and its price per hour, once the pod exists (the Queue shows them). */
@@ -255,6 +255,8 @@ export interface PodJob {
   /** A browse: the folder it listed (default the whole volume) */
   browse_path?: string
   /** A model fetch: the files asked for (as Hugging Face describes them) and the names the pod reported done */ fetch_items?: hf.Resolved[]; fetched?: string[]
+  /** A model fetch, while it runs (ADR-042 section 16): the file being downloaded (1-based `index` of `count`), its bytes so far and in all, and the seconds left at the current rate. */
+  fetch?: { file: string; index: number; count: number; file_done: number; file_total: number; eta_s: number | null }
   /** A model delete (ADR-042 section 15): the files asked for (folder under models/, name under it), and the ones reported deleted with their sizes */ delete_items?: { folder: string; name: string }[]; deleted?: { folder: string; name: string; bytes: number }[]; freed_bytes?: number
   volume_id?: string; listing?: { path: string; bytes: number }[]; erase_keys?: string[]; freed?: Record<string, number>
   state: JobState; files: number; lines: string[]; error?: string; verify?: panama.Verify; started_at: string
@@ -263,7 +265,7 @@ export interface PodJob {
   /** From rclone's stats line and its Copied lines, for the same bar and file list as a local download. */
   bytes_done: number; bytes_total: number | null; rate: number | null; recent: string[]
 }
-interface Internal { job: PodJob; cancelled: boolean; abort: AbortController; wake: (() => void) | null; seen: Set<string>; bad: string[]; totals: { listed: number; bad: number; extra: number } | null; outcome: Outcome | null; plan: PodPlan }
+interface Internal { prog?: { t: number; b: number }; job: PodJob; cancelled: boolean; abort: AbortController; wake: (() => void) | null; seen: Set<string>; bad: string[]; totals: { listed: number; bad: number; extra: number } | null; outcome: Outcome | null; plan: PodPlan }
 type Outcome = 'done' | 'check-failed' | 'unverified' | 'copy-failed' | 'removed' | 'refused'
 const jobs = new Map<string, Internal>()
 const busy = new Set<string>()   // rounds with a job in flight: one at a time
@@ -279,12 +281,34 @@ function addDeleted(j: PodJob, path: string, bytes: number) {
 // eslint-disable-next-line no-control-regex
 const stripAnsi = (s: string) => s.replace(/\u001b\[[0-9;]*m/g, '')
 
+/** The bar's numbers for a fetch: bytes of the files the pod has finished (+ the one being downloaded), the whole job's bytes, the file count and which file is current. */
+function fetchTotals(i: Internal, partial = 0, current?: string) {
+  const j = i.job, items = j.fetch_items ?? [], done = new Set(j.fetched ?? [])
+  j.bytes_total = items.reduce((n, f) => n + f.bytes, 0)
+  j.bytes_done = items.filter((f) => done.has(f.name)).reduce((n, f) => n + f.bytes, 0) + partial
+  j.files = done.size
+  const cur = current ? items.findIndex((f) => f.name === current) : items.findIndex((f) => !done.has(f.name))
+  if (cur >= 0 && done.size < items.length) j.fetch = { ...(j.fetch ?? { file_done: 0, file_total: 0, eta_s: null }), file: items[cur].name, index: Math.min(done.size + 1, items.length), count: items.length, file_total: items[cur].bytes, file_done: partial }
+  else if (done.size >= items.length) j.fetch = undefined
+}
+/** `FETCH-PROGRESS <bytes of the .part so far> <bytes in all> <name>`: the download's position. The rate is smoothed over the readings, the ETA follows from it. */
+function feedFetchProgress(i: Internal, line: string) {
+  const m = /^FETCH-PROGRESS (\d+) (\d+) (\S.*)$/.exec(line); if (!m) return
+  const j = i.job, partial = Number(m[1]), now = Date.now()
+  if (!TERMINAL.includes(j.state)) j.state = 'pulling'
+  fetchTotals(i, partial, m[3])
+  if (i.prog && now > i.prog.t && partial >= i.prog.b) { const r = (partial - i.prog.b) / ((now - i.prog.t) / 1000); j.rate = j.rate ? j.rate * 0.7 + r * 0.3 : r }
+  i.prog = { t: now, b: partial }
+  if (j.fetch) { j.fetch.file_done = partial; j.fetch.eta_s = j.rate && j.rate > 0 && j.bytes_total != null ? Math.max(0, Math.round((j.bytes_total - j.bytes_done) / j.rate)) : null }
+}
+
 /** Read one log or SSH line: count copied files, notice the stages, and catch the s3pull.sh verdict lines. */
 function feed(i: Internal, raw: string, secrets: string[]) {
   let line = stripAnsi(raw).replace(/^\s*\d{4}\/\d\d\/\d\d \d\d:\d\d:\d\d\s+/, '').trimEnd()
   for (const s of secrets) if (s) line = line.split(s).join('***')
   if (!line) return
   const j = i.job
+  if (j.kind === 'fetch' && line.startsWith('FETCH-PROGRESS ')) { feedFetchProgress(i, line); return }   // the pod says this every few seconds: it moves the bar, it is not a line to keep
   j.lines.push(line); if (j.lines.length > 200) j.lines.shift()
   const copied = panama.rcloneCopiedPath(line)
   if (copied) { j.files++; j.recent.push(copied); if (j.recent.length > panama.RECENT_FILES) j.recent.shift() }
@@ -304,7 +328,8 @@ function feed(i: Internal, raw: string, secrets: string[]) {
   else if (/^BROWSE \d+ \//.test(line)) { const m = /^BROWSE (\d+) (\/.*)$/.exec(line); if (m) (j.listing ||= []).push({ path: m[2], bytes: Number(m[1]) }) }
   else if (/^BROWSE-DONE/.test(line) || /^ERASE-DONE/.test(line) || /^CLONE-DONE/.test(line)) i.outcome = 'removed'
   else if (/^ERASED \w+ \d+/.test(line)) { const m = /^ERASED (\w+) (\d+)/.exec(line); if (m) (j.freed ||= {})[m[1]] = Number(m[2]) }
-  else if (/^FETCHED /.test(line)) { const m = /^FETCHED (\S.*?) (\d+|skipped)$/.exec(line); if (m) (j.fetched ||= []).push(m[1]) }
+  else if (/^FETCHED /.test(line)) { const m = /^FETCHED (\S.*?) (\d+|skipped)$/.exec(line); if (m) { (j.fetched ||= []).push(m[1]); fetchTotals(i); if (j.state === 'verifying' || j.state === 'connecting') j.state = 'pulling' } }
+  else if (/^FETCH-VERIFY /.test(line)) { if (!TERMINAL.includes(j.state)) j.state = 'verifying' }   // the checksum of a big file takes minutes: the window says so
   else if (/^FETCH-DONE/.test(line)) i.outcome = 'removed'
   else if (/^FETCH-FAILED/.test(line)) { i.outcome = 'refused'; j.error = line.replace(/^FETCH-FAILED /, 'Download failed: ') }
   else if (/^DELETED \S/.test(line)) { const m = /^DELETED (\S.*?) (\d+)$/.exec(line); if (m) addDeleted(j, m[1], Number(m[2])) }
@@ -475,7 +500,11 @@ export function fetchScript(items: hf.Resolved[], hfToken = ''): string {
     lines.push(
       `d=/workspace/comfy-shared/models/${f.folder}; f="$d"/${q(f.name)}; mkdir -p "$d"`,
       `if [ -f "$f" ] && [ "$(stat -c %s "$f")" = "${f.bytes}" ]; then echo "FETCHED ${f.name} skipped"; else`,
-      `  curl -fL ${auth}--proto-redir =https --retry 5 --retry-delay 5 -C - -o "$f.part" ${q(f.url)} || { echo "FETCH-FAILED ${f.name} (curl $?${hfToken ? ': Hugging Face refused it or has no such file; for a gated repo accept its terms with the token account' : ''})"; exit 1; }`,
+      `  curl -fL ${auth}--proto-redir =https --retry 5 --retry-delay 5 -C - -o "$f.part" ${q(f.url)} & cp=$!`,
+      // every 3 s the size of the .part says where the download is (the window's bar and the Queue read it); the checksum and the move follow the wait
+      `  while kill -0 $cp 2>/dev/null; do echo "FETCH-PROGRESS $(stat -c %s "$f.part" 2>/dev/null || echo 0) ${f.bytes} ${f.name}"; sleep 3; done`,
+      `  wait $cp || { echo "FETCH-FAILED ${f.name} (curl $?${hfToken ? ': Hugging Face refused it or has no such file; for a gated repo accept its terms with the token account' : ''})"; exit 1; }`,
+      `  echo "FETCH-VERIFY ${f.name}"`,
       `  echo "${f.sha256}  $f.part" | sha256sum -c - >/dev/null 2>&1 || { rm -f "$f.part"; echo "FETCH-FAILED ${f.name} (the checksum does not match)"; exit 1; }`,
       `  mv "$f.part" "$f" && echo "FETCHED ${f.name} ${f.bytes}"`,
       'fi')
@@ -691,7 +720,7 @@ async function runTemporary(i: Internal, opts: Opts) {
     j.state = 'starting'
     if (j.kind !== 'pull' || viaSsh) {   // remove, browse, erase, and a pull of some shots: one script over SSH
       const { host, port } = await waitForSshTarget(i, podId, opts, deadline)
-      j.state = j.kind === 'browse' ? 'verifying' : j.kind === 'pull' || j.kind === 'fetch' ? 'pulling' : 'deleting'
+      j.state = j.kind === 'fetch' ? 'connecting' : j.kind === 'browse' ? 'verifying' : j.kind === 'pull' ? 'pulling' : 'deleting'   // a fetch is 'connecting' until the pod's first progress line says it is downloading
       await runOnPod(i, host, port, scriptOf(j, k), opts, secrets)
       if (viaSsh && i.outcome === 'done' && !i.cancelled) await placeAfter(i, host, port, opts)   // the same placing as after a whole-round pull
       return
@@ -1049,6 +1078,24 @@ export async function deleteModels(volumeId: string, items: { folder: string; na
 }
 
 export function job(id: string): PodJob | null { const i = jobs.get(id); return i ? view(i) : null }
+
+/** The jobs that work on a volume (ADR-042 section 16), newest first, for the Queue and the Models window; and the temporary pods this app made for a volume job it no longer has (the app was restarted mid-job): they keep billing until someone deletes them. Nothing here deletes anything. */
+const VOLUME_KINDS: PodJob['kind'][] = ['browse', 'erase', 'clone', 'fetch', 'delete-models']
+export function volumeJobs(): { jobs: PodJob[]; interrupted: TempPod[]; running: number } {
+  const all = [...jobs.values()].filter((i) => VOLUME_KINDS.includes(i.job.kind)).sort((a, b) => b.job.started_at.localeCompare(a.job.started_at)).slice(0, 30)
+  const live = new Set([...jobs.values()].filter((i) => !TERMINAL.includes(i.job.state)).map((i) => i.job.pod_name).filter(Boolean))
+  const interrupted = temporaryPods().filter((t) => VOLUME_KINDS.includes(t.kind) && !live.has(t.name))
+  return { jobs: all.map((i) => view(i)), interrupted, running: all.filter((i) => !TERMINAL.includes(i.job.state)).length }
+}
+/** Delete the pod of an interrupted volume job and forget it. Only a pod this app made for a volume job (it is in pull-pods.json) and that no running job owns. */
+export async function dropInterrupted(name: string, opts: Opts = {}): Promise<{ deleted: string }> {
+  const t = temporaryPods().find((x) => x.name === name && VOLUME_KINDS.includes(x.kind))
+  if (!t) throw new CoreError(404, `No interrupted volume job pod named ${name}`)
+  if ([...jobs.values()].some((i) => !TERMINAL.includes(i.job.state) && i.job.pod_name === name)) throw new CoreError(409, 'A running job owns that pod: cancel the job instead.')
+  if (t.pod_id) { try { await pods.remove(t.pod_id, opts.client) } catch (e) { if (!/not found|no such|404/i.test(String((e as Error).message))) throw e } }
+  tempDrop(name)
+  return { deleted: name }
+}
 
 /** Stop a job. A temporary pod is deleted by the job's own cleanup; on the user's pod the SSH session is cut and the remote rclone stopped. */
 export function cancel(id: string): PodJob {

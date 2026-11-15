@@ -55,14 +55,12 @@
     </div>
 
     <div v-if="job" class="small p-2 border rounded mb-3" data-testid="models-job" :data-state="job.state">
-      <template v-if="job.state === 'done' && job.kind === 'delete-models'"><i class="fa-solid fa-check text-success me-1"></i>{{ $t('models.deleteDone', { what: nFiles((job.deleted || []).length), size: fmt(job.freed_bytes || 0) }) }}</template>
-      <template v-else-if="job.state === 'done'"><i class="fa-solid fa-check text-success me-1"></i>{{ $t('models.jobDone', { files: (job.fetched || []).join(', ') || '—' }) }}</template>
-      <template v-else-if="['failed', 'cancelled'].includes(job.state)"><i class="fa-solid fa-triangle-exclamation text-danger me-1"></i>{{ $t('models.jobFailed', { why: job.error || job.state }) }}</template>
-      <template v-else>
-        <BSpinner small class="me-2" />{{ $t('models.jobWorking', { state: job.state, pod: job.pod_name || '…' }) }}
-        <BButton size="sm" variant="outline-light" class="ms-2" data-testid="models-cancel" @click="cancel">{{ $t('models.cancel') }}</BButton>
-      </template>
-      <pre v-if="job.lines?.length" class="mb-0 mt-1 small text-body-secondary" data-testid="models-job-lines">{{ job.lines.slice(-6).join('\n') }}</pre>
+      <VolumeJobView :job="job">
+        <template #actions>
+          <BButton v-if="busy" size="sm" variant="outline-light" data-testid="models-cancel" @click="cancel">{{ $t('models.cancel') }}</BButton>
+        </template>
+      </VolumeJobView>
+      <pre v-if="job.lines?.length" class="mb-0 mt-1 small text-body-secondary" data-testid="models-job-lines">{{ ucwords(job.lines.slice(-6).join('\n')) }}</pre>
     </div>
 
     <h6 class="mb-1" data-testid="wanted-heading">{{ $t('wanted.title', { n: wanted.rows.length }) }}</h6>
@@ -87,7 +85,7 @@
           <td class="font-monospace small text-break">{{ r.folder }}/{{ r.name }}<div v-if="r.note" class="text-body-secondary">{{ r.note }}</div></td>
           <td class="small text-body-secondary text-break">{{ r.repo || $t('wanted.noRepo') }}</td>
           <td class="small text-nowrap text-body-secondary">{{ r.bytes ? fmt(r.bytes) : '' }}</td>
-          <td class="text-nowrap"><BBadge :variant="r.state === 'present' ? 'success' : r.state === 'missing' ? 'warning' : 'secondary'" data-testid="wanted-state">{{ $t(`wanted.state_${r.state}`) }}</BBadge></td>
+          <td class="text-nowrap"><BBadge :variant="r.state === 'present' ? 'success' : r.state === 'downloading' ? 'info' : r.state === 'missing' ? 'warning' : 'secondary'" data-testid="wanted-state">{{ r.state === 'downloading' && r.bytes && r.downloaded ? $t(busy ? 'wanted.downloadingPct' : 'wanted.partialPct', { pct: Math.min(99, Math.floor((r.downloaded / r.bytes) * 100)) }) : r.state === 'downloading' ? $t(busy ? 'wanted.state_downloading' : 'wanted.state_partial') : $t(`wanted.state_${r.state}`) }}</BBadge></td>
           <td class="text-end"><BButton size="sm" variant="outline-light" :aria-label="$t('wanted.remove')" data-testid="wanted-remove" @click="removeOne(r)"><i class="fa-solid fa-xmark"></i></BButton></td>
         </tr>
       </tbody>
@@ -104,7 +102,7 @@
         <div v-for="f in onVolume" :key="f.path" class="d-flex align-items-center gap-2 py-1" data-testid="models-on-volume-file" :data-path="f.path">
           <input v-if="f.deletable" v-model="delChosen[f.path]" type="checkbox" class="form-check-input mt-0" :disabled="busy || delBusy" :aria-label="f.path" data-testid="models-delete-check" />
           <span v-else style="width: 1rem" aria-hidden="true"></span>
-          <span class="font-monospace flex-grow-1 text-break">{{ f.path }}</span>
+          <span class="font-monospace flex-grow-1 text-break">{{ f.path }}<BBadge v-if="isPart(f)" variant="info" class="ms-2" data-testid="models-part-badge">{{ $t(busy ? 'wanted.state_downloading' : 'wanted.state_partial') }}</BBadge></span>
           <span class="text-body-secondary text-nowrap">{{ fmt(f.bytes) }}</span>
           <span v-if="f.deletable" v-tip="$t('models.deleteOne')" class="tipwrap"><BButton size="sm" variant="outline-danger" :disabled="busy || delBusy" :aria-label="$t('models.deleteOne')" data-testid="models-delete-one" @click="deleteFiles([f])"><i class="fa-solid fa-trash"></i></BButton></span>
         </div>
@@ -119,10 +117,9 @@
  * models/ each goes to, and load them onto the Shared volume (the Default Configuration's volume until one is Shared) by a short pod.
  * The core re-reads every file from Hugging Face, so the window sends only repo, path, revision and folder. No approval is asked for.
  */
-import { computed, onBeforeUnmount, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { modelsAPI } from '../api/models'
 import { wantedAPI } from '../api/wanted'
-import { volumesAPI } from '../api/volumes'
 import { useUiStore } from '../stores/ui'
 import { useVolumesStore } from '../stores/volumes'
 import { useMountsStore } from '../stores/mounts'
@@ -130,6 +127,9 @@ import { useConfirmStore } from '../stores/confirm'
 import { errorText } from '../stores/toast'
 import { fmtBytes as fmt } from '../utils/studioTree'
 import { t } from '../i18n'
+import { ucwords } from '../utils/ucwords'
+import VolumeJobView from './VolumeJobView.vue'
+import { useVolumeJobsStore } from '../stores/volumejobs'
 
 const FOLDERS = ['diffusion_models', 'vae', 'vae_approx', 'checkpoints', 'loras', 'text_encoders', 'clip', 'clip_vision', 'controlnet', 'upscale_models', 'latent_upscale_models', 'model_patches', 'unet', 'embeddings', 'depthanything', 'sam2', 'SEEDVR2']
 const TERMINAL = ['done', 'failed', 'cancelled']
@@ -140,7 +140,8 @@ const confirm = useConfirmStore()
 const error = ref(''), query = ref(''), searching = ref(false), results = ref(null)
 const repo = ref(''), files = ref([]), loadingFiles = ref(false)
 const chosen = reactive({}), folders = reactive({})
-const job = ref(null), onVolume = ref(null)
+const vjobs = useVolumeJobsStore()
+const onVolume = ref(null)
 // the wanted list with each row's state on the target volume; `warning` when that volume is too small
 const wanted = reactive({ rows: [], loadable: 0, loadableBytes: 0, warning: '' })
 const wantedBusy = ref(false), wantedNote = ref(''), pasteOpen = ref(false), pasted = ref('')
@@ -152,7 +153,10 @@ const sharedOptions = computed(() => [{ value: '', text: t('models.sharedNone') 
 const picked = computed(() => files.value.filter((f) => chosen[f.path]))
 const lockedPicked = computed(() => picked.value.some((f) => f.locked))
 const pickedBytes = computed(() => picked.value.reduce((n, f) => n + (f.bytes || 0), 0))
+// the job this window shows is read from the store's live list (polled every 1.5 s while the window is open), not kept in this component: it follows every state change, and a window opened later shows the job that is running
+const job = computed(() => (target.value ? vjobs.jobs.find((j) => j.volume_id === target.value.id && ['fetch', 'delete-models'].includes(j.kind) && !TERMINAL.includes(j.state)) || vjobs.jobs.find((j) => j.volume_id === target.value.id && ['fetch', 'delete-models'].includes(j.kind)) || null : null))
 const busy = computed(() => !!job.value && !TERMINAL.includes(job.value.state))
+const isPart = (f) => /\.part$/.test(f.path)
 // deleting files already on the volume (ADR-042 section 15)
 const delChosen = reactive({}), delBusy = ref(false)
 const SEG = /^[A-Za-z0-9_+@=,()-][\w .+@=,()-]*$/   // the core's own file-name rule: anything else it would refuse, so no Delete is offered
@@ -189,20 +193,11 @@ async function load() {
   error.value = ''
   if (!target.value) return
   try {
-    job.value = await modelsAPI.fetch(target.value.id, picked.value.map((f) => ({ repo: repo.value, path: f.path, revision: 'main', folder: folders[f.path] })))
-    track()
+    await modelsAPI.fetch(target.value.id, picked.value.map((f) => ({ repo: repo.value, path: f.path, revision: 'main', folder: folders[f.path] })))
+    vjobs.refresh()
   } catch (e) { error.value = errorText(e) }
 }
-function track() {
-  stop()
-  timer = setInterval(async () => {
-    try {
-      job.value = await volumesAPI.job(job.value.id)
-      if (TERMINAL.includes(job.value.state)) { stop(); refreshOnVolume(); refreshWanted() }
-    } catch (e) { stop(); error.value = errorText(e) }
-  }, 1500)
-}
-async function cancel() { try { job.value = await volumesAPI.cancel(job.value.id) } catch (e) { error.value = errorText(e) } }
+async function cancel() { try { await vjobs.cancel(job.value.id) } catch (e) { error.value = errorText(e) } }
 /** What models/ already holds, when the core can say (null: it cannot without listing the volume). */
 async function refreshOnVolume() {
   onVolume.value = null
@@ -210,7 +205,7 @@ async function refreshOnVolume() {
   try {
     const r = await modelsAPI.status(target.value.id)
     const list = Array.isArray(r) ? r : r?.files || r?.items || null
-    onVolume.value = list ? list.map((f) => { const path = f.path || [f.folder, f.name].filter(Boolean).join('/'), cut = path.indexOf('/'), folder = f.folder || (cut > 0 ? path.slice(0, cut) : ''), name = f.name || (cut > 0 ? path.slice(cut + 1) : path); return { path, folder, name, bytes: f.bytes ?? f.size ?? 0, deletable: canDelete(folder, name) } }) : null
+    onVolume.value = list ? list.map((f) => { const path = f.path || [f.folder, f.name].filter(Boolean).join('/'), cut = path.indexOf('/'), folder = f.folder || (cut > 0 ? path.slice(0, cut) : ''), name = f.name || (cut > 0 ? path.slice(cut + 1) : path); return { path, folder, name, bytes: f.bytes ?? f.size ?? 0, deletable: canDelete(folder, name) && !/\.part$/.test(name) } }) : null
     for (const k of Object.keys(delChosen)) if (!onVolume.value?.some((f) => f.path === k)) delete delChosen[k]
   } catch { onVolume.value = null }
 }
@@ -223,8 +218,8 @@ async function deleteFiles(list) {
   if (!(await confirm.ask(`${t('models.confirmDelete', { what: nFiles(list.length), size: fmt(total), volume: target.value.name })}\n\n${names}`, { okLabel: t('models.delete') }))) return
   delBusy.value = true
   try {
-    job.value = await modelsAPI.delete(target.value.id, list.map((f) => ({ folder: f.folder, name: f.name })), true)
-    track()
+    await modelsAPI.delete(target.value.id, list.map((f) => ({ folder: f.folder, name: f.name })), true)
+    vjobs.refresh()
   } catch (e) { error.value = errorText(e) } finally { delBusy.value = false }
 }
 /** The wanted list against the target volume: the core says present, missing or unknown (the volume cannot be listed) for each row. */
@@ -259,8 +254,14 @@ const clearAll = async () => {
 /** Load what the volume lacks: the first job is shown here; the core starts the others (20 files each) as each finishes. */
 async function loadMissing() {
   const r = await wantedDo(() => wantedAPI.load(target.value.id), (x) => t('wanted.started', { files: x.files, size: fmt(x.bytes), jobs: x.jobs }))
-  if (r) { if (r.warning) wanted.warning = r.warning; job.value = r.job; track() }
+  if (r) { if (r.warning) wanted.warning = r.warning; vjobs.refresh() }
 }
-const stop = () => { if (timer) { clearInterval(timer); timer = null } }
-onBeforeUnmount(stop)
+// while the window is open: the job list is polled; while a job runs, what the volume holds and the wanted list's badges are re-read every 6 s (the Downloading badge, the .part sizes), and once more when it ends
+watch(() => ui.modelsOpen, (o) => { if (o) vjobs.watch(); else vjobs.unwatch() }, { immediate: true })
+watch(busy, (b) => {
+  if (b && !timer) timer = setInterval(() => { refreshOnVolume(); refreshWanted() }, 6000)
+  if (!b && timer) { clearInterval(timer); timer = null }
+}, { immediate: true })
+watch(() => (job.value ? `${job.value.id}:${job.value.state}` : ''), (k, old) => { if (k && k !== old && TERMINAL.includes(job.value.state)) { refreshOnVolume(); refreshWanted() } })   // a job ended (or is seen ended): what the volume holds changed
+onBeforeUnmount(() => { if (timer) clearInterval(timer); if (ui.modelsOpen) vjobs.unwatch() })
 </script>
