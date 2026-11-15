@@ -146,10 +146,10 @@ Depth Anything V2 Large fp32 and fp16, SeedVR2 3B fp16 and VAE, SAM 2.1 base+ an
 
 ### Needed but not in the image
 
-- **ComfyUI-OCIO** (`OCIOVAEDecode`): not installed; the build never clones it.
-- **ComfyUI-LTXVideo**: not installed; Binc reports it fails to import on both Macs, so test it on a pod first.
+- **ComfyUI-OCIO** (`OCIOVAEDecode`, EXR read/write): now in `comfy-node-packs` (`ef909b2`), so the next image build stages it; the pinned digest predates it.
+- **ComfyUI-LTXVideo**: now in `comfy-node-packs` (`ef909b2`, LTX-2 Community License: keep repo and image private), staged by the next build; Binc reports it fails to import on both Macs, so test it on a pod first.
 - **SeedVR2**: ComfyUI core node in v0.39.2; weights are on the Shared volume, not a pack.
-- **MoGe** (`LoadMoGeModel`, `MoGeInference`, `MoGeRender`, ...): used by Binc's graphs, provided by no pack here.
+- **MoGe** (`LoadMoGeModel`, `MoGeInference`, `MoGeGeometryToFOV`): ComfyUI core nodes (`cnr_id: comfy-core` in Binc's graphs), no pack needed. `MoGeRender` and `MoGePointMapToMesh` are not confirmed core.
 - Core ComfyUI nodes used by graphs (PreviewImage, ImageScaleBy, MaskToImage, SaveGLB, ...) need nothing.
 
 
