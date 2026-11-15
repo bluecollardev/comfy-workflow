@@ -388,6 +388,34 @@ export async function mockApi(page, state) {
     if (method === 'POST' && path === '/models/fetch') { state.modelFetch = { volume_id: body.volume_id, items: body.items }; state.volumeJob = { id: 'vjm1', kind: 'fetch', state: 'done', volume_id: body.volume_id, pod_name: 'ComfyUI-Pull-vol', fetched: body.items.map((i) => i.path.split('/').pop()), lines: ['Approved by a click in the app window.', ...body.items.map((i) => `FETCHED ${i.path.split('/').pop()} 1`), 'FETCH-DONE'] }; return json({ ...state.volumeJob, state: 'creating', fetched: undefined, lines: [] }) }
     if (method === 'GET' && path === '/models/status') return json(state.modelsOnVolume === undefined ? null : state.modelsOnVolume)
     if (method === 'GET' && path === '/models/folders') return json(['diffusion_models', 'vae', 'checkpoints', 'loras', 'text_encoders', 'clip', 'clip_vision', 'controlnet', 'upscale_models', 'embeddings'])
+    // The wanted-models list (ADR-042 section 12): names as Hugging Face coordinates, compared with state.wantedOnVolume (folder/name) when the volume can be listed
+    if (path.startsWith('/wanted')) {
+      const list = (state.wanted ||= [])
+      const keyOf = (e) => `${e.repo}|${e.repo ? e.path : e.name}|${e.folder}`
+      const clean = (e) => ({ folder: e.folder, name: e.name || String(e.path || '').split('/').pop(), repo: e.repo || '', path: e.path || '', bytes: e.bytes || 0, ...(e.note ? { note: e.note } : {}) })
+      const addAll = (items) => { let added = 0, updated = 0; for (const e of items.map(clean)) { const i = list.findIndex((x) => keyOf(x) === keyOf(e)); if (i < 0) { list.push(e); added++ } else { list[i] = e; updated++ } } return { added, updated, models: list } }
+      if (method === 'GET' && path === '/wanted') return json(list)
+      if (method === 'GET' && path === '/wanted/status') {
+        const on = state.wantedOnVolume
+        const rows = list.map((e) => ({ ...e, key: keyOf(e), loadable: !!e.repo, state: on === undefined ? 'unknown' : on.includes(`${e.folder}/${e.name}`) ? 'present' : 'missing' }))
+        const missing = rows.filter((r) => r.state === 'missing')
+        return json({ volume_id: query.volume_id || 'vol1', volume_gb: state.wantedVolumeGb ?? 500, rows, present: rows.filter((r) => r.state === 'present').length, missing: missing.length, unknown: 0, missing_bytes: missing.reduce((n, r) => n + r.bytes, 0), present_bytes: 0, short_by_bytes: state.wantedShort || 0 })
+      }
+      if (method === 'POST' && path === '/wanted/add') { (state.wantedAdds ||= []).push(body.items); return json(addAll(body.items)) }
+      if (method === 'POST' && path === '/wanted/add-list') {
+        if (!body.csv && state.wantedCsvUnreadable) return json({ detail: 'The volume cannot be read over S3 from here (no S3 keys, or its datacenter has no S3 API): paste the CSV text instead.' }, 400)
+        ;(state.wantedLists ||= []).push(body)
+        return json({ ...addAll([{ folder: 'loras/ltx2', repo: 'Kijai/LTX2.3_comfy', path: 'loras/dyn.safetensors', bytes: 2600000000, note: 'ltx-2.3' }, { folder: 'vae', repo: 'Kijai/LTX2.3_comfy', path: 'vae/v.safetensors', bytes: 1500000000 }]), skipped: [{ file: 'd.pth', why: 'x' }] })
+      }
+      if (method === 'POST' && path === '/wanted/save-installed') { state.wantedSaved = body.volume_id; return json({ ...addAll([{ folder: 'diffusion_models', name: 'seedvr2_ema_3b_fp16.safetensors', bytes: 6780000000 }]), skipped: 0 }) }
+      if (method === 'POST' && path === '/wanted/remove') { const before = list.length; if (body.all) list.length = 0; else for (const k of body.keys) { const i = list.findIndex((x) => keyOf(x) === k); if (i >= 0) list.splice(i, 1) } return json({ removed: before - list.length, models: list }) }
+      if (method === 'POST' && path === '/wanted/load') {
+        const on = state.wantedOnVolume || [], todo = list.filter((e) => e.repo && !on.includes(`${e.folder}/${e.name}`))
+        state.wantedLoad = { volume_id: body.volume_id, files: todo.map((e) => `${e.folder}/${e.name}`) }
+        state.volumeJob = { id: 'vjw1', kind: 'fetch', state: 'done', volume_id: body.volume_id, pod_name: 'ComfyUI-Pull-vol', fetched: todo.map((e) => e.name), lines: ['FETCH-DONE'] }
+        return json({ job: { ...state.volumeJob, state: 'creating', fetched: undefined, lines: [] }, jobs: Math.ceil(todo.length / 20), files: todo.length, bytes: todo.reduce((n, e) => n + e.bytes, 0), volume_gb: state.wantedVolumeGb ?? 500, short_by_bytes: state.wantedShort || 0, warning: state.wantedShort ? 'The volume is 50 GB; the models alone need about 100 GB. Grow it first (Volumes > Resize).' : null })
+      }
+    }
     // The shell guard (a PreToolUse hook for Claude Code's Bash tool): a system-wide setting the core installs into ~/.claude/settings.json
     if (path === '/agentguard') {
       const g = (state.agentguard ||= { enabled: false, installed: false, settings_file: '', script_file: '' })

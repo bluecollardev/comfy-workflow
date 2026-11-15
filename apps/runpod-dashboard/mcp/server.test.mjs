@@ -40,6 +40,7 @@ const rpc = (method, params = {}) => new Promise((resolve) => {
 })
 const notify = (method, params = {}) => child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method, params }) + '\n')
 const call = (name, args = {}) => rpc('tools/call', { name, arguments: args })
+const first = (r) => r.result.content.map((c) => c.text).join('\n').split('\n\n(no-spend')[0]
 const textOf = (r) => r.result.content.map((c) => c.text).join('\n')
 
 test('initialize hands every client the governance instructions', async () => {
@@ -57,7 +58,7 @@ test('initialize hands every client the governance instructions', async () => {
 const POOL = ['list_agents', 'get_pool_status', 'governance', 'create_agent', 'stop_agent', 'resume_agent', 'delete_agent', 'health_check_agent', 'get_agent_info', 'submit_job', 'get_job_status']
 const PODS = ['list_pods', 'get_pod', 'create_pod', 'stop_pod', 'resume_pod', 'delete_pod', 'recreate_pod', 'get_history', 'get_spend_history', 'get_comfy_runs', 'get_comfy_logs', 'export_history', 'rename_pod', 'set_pod_round', 'set_pod_shot', 'delete_round', 'rename_round', 'set_idle_stop', 'get_logs', 'list_datacenters', 'list_volumes', 'create_volume', 'delete_volume', 'set_default_volume', 'get_configuration', 'sync', 'sync_status', 'adapter_spec', 'adapters_list', 'adapter_save', 'import_plan', 'import_apply', 'get_credits', 'cost_now']
 // The tools the app's other windows added (docs/ADR-028), in the order app-tools.mjs defines them.
-const APP = ['list_gpus', 'get_volume_info', 'get_pod_config', 'set_pod_config', 'set_configuration', 'preview_configuration', 'reset_configuration', 'get_local_env', 'list_dirs', 'get_settings', 'set_settings', 'check_anthropic_key', 'config_export', 'config_import_plan', 'config_import_apply', 'config_undo', 'config_backups', 'resize_volume', 'volume_files', 'volume_erase', 'volume_clone', 'volume_job', 'agent_guard_status', 'models_search', 'models_files', 'models_fetch', 'models_status', 'set_shared_volume', 'panama_status', 'panama_rounds', 'panama_round_files', 'panama_stage', 'panama_round_size', 'panama_pod_plan', 'panama_pull', 'panama_job', 'panama_cancel', 'panama_remove', 'plan_round_import', 'import_rounds', 'import_round', 'queue_list', 'queue_task', 'list_pod_workflows', 'run_pod_workflows', 'pod_models', 'run_workflows_job', 'panama_place', 'panama_import', 'import_detect', 'package_summary', 'package_tree', 'package_file', 'package_describe', 'adapter_draft', 'adapter_document', 'adapter_problems', 'adapter_manage', 'sync_after', 'image_env', 'image_dockerfile', 'git_accounts', 'repositories', 'remote_mcp', 'mcp_endpoints', 'docs']
+const APP = ['list_gpus', 'get_volume_info', 'get_pod_config', 'set_pod_config', 'set_configuration', 'preview_configuration', 'reset_configuration', 'get_local_env', 'list_dirs', 'get_settings', 'set_settings', 'check_anthropic_key', 'config_export', 'config_import_plan', 'config_import_apply', 'config_undo', 'config_backups', 'resize_volume', 'volume_files', 'volume_erase', 'volume_clone', 'volume_job', 'agent_guard_status', 'models_search', 'models_files', 'models_fetch', 'models_status', 'models_wanted', 'models_wanted_add', 'models_wanted_remove', 'models_load_wanted', 'set_shared_volume', 'panama_status', 'panama_rounds', 'panama_round_files', 'panama_stage', 'panama_round_size', 'panama_pod_plan', 'panama_pull', 'panama_job', 'panama_cancel', 'panama_remove', 'plan_round_import', 'import_rounds', 'import_round', 'queue_list', 'queue_task', 'list_pod_workflows', 'run_pod_workflows', 'pod_models', 'run_workflows_job', 'panama_place', 'panama_import', 'import_detect', 'package_summary', 'package_tree', 'package_file', 'package_describe', 'adapter_draft', 'adapter_document', 'adapter_problems', 'adapter_manage', 'sync_after', 'image_env', 'image_dockerfile', 'git_accounts', 'repositories', 'remote_mcp', 'mcp_endpoints', 'docs']
 
 test('an agent writes an adapter and tests it on a real folder; the code stays open to read', async () => {
   const spec = textOf(ok(await call('adapter_spec')))
@@ -381,4 +382,20 @@ test('docs: the list, a page, a search; a page the public site leaves out is ref
   assert.match(textOf(await call('docs', { page: 'docs/ADR-028-mcp-can-do-everything-the-app-does.md' })), /Anything the app can do, the MCP can do/)
   assert.ok(JSON.parse(textOf(await call('docs', { search: 'zip' }))).matches.length > 0)
   assert.equal((await call('docs', { page: 'docs/ADR-004-where-the-workflows-run.md' })).result.isError, true)
+})
+
+test('the wanted-models list: add by entries and by CSV, list, remove; loading spends and needs the named yes', async () => {
+  const add = await call('models_wanted_add', { items: [{ folder: 'vae', repo: 'a/b', path: 'x.safetensors', bytes: 5 }, { folder: 'loras/ltx2', repo: 'a/b', path: 'l/y.safetensors', bytes: 7 }] })
+  assert.ok(!add.result.isError); assert.equal(JSON.parse(first(add)).added, 2)
+  const bad = await call('models_wanted_add', { items: [{ folder: 'custom_nodes', repo: 'a/b', path: 'z.safetensors' }] })
+  assert.equal(bad.result.isError, true); assert.match(textOf(bad), /Not a models folder/)
+  const csv = await call('models_wanted_add', { csv: 'pipeline,install_to,file,hf_repo,hf_path,bytes,notes\nltx,unet/,q.gguf,c/d,q.gguf,9,' })
+  assert.equal(JSON.parse(first(csv)).added, 1)
+  const plain = JSON.parse(first(await call('models_wanted', { plain: true }))).models
+  assert.deepEqual(plain.map((m) => `${m.folder}/${m.name}`).sort(), ['loras/ltx2/y.safetensors', 'unet/q.gguf', 'vae/x.safetensors'])
+  const key = 'a/b|x.safetensors|vae'
+  assert.equal(JSON.parse(first(await call('models_wanted_remove', { keys: [key] }))).removed, 1)
+  const loaded = await call('models_load_wanted', { volume_id: 'vol1' })
+  assert.equal(loaded.result.isError, true); assert.match(textOf(loaded), /approved_by/)   // spends: the named yes is on in this server
+  assert.equal(JSON.parse(first(await call('models_wanted_remove', { all: true }))).models.length, 0)
 })

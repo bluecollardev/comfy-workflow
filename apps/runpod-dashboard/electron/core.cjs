@@ -168,6 +168,15 @@ const TABLE = {
     status: (c, volumeId) => c.podpull.modelsOnVolume(volumeId || c.mounts.load().shared_volume_id || c.mounts.load().network_volume_id),
     folders: (c) => [...c.hf.FOLDERS],
   },
+  wanted: {   // docs/ADR-042 section 12: the wanted-models list (names, not weights), loadable onto a Shared volume anywhere
+    list: (c) => c.wantedmodels.list(),
+    status: (c, volumeId) => c.wantedmodels.status(volumeId || ''),
+    add: (c, items) => c.wantedmodels.add(items || []),
+    addList: (c, o) => c.wantedmodels.addPullList(o || {}),
+    saveInstalled: (c, volumeId) => c.wantedmodels.saveInstalled(volumeId || ''),
+    remove: (c, keys, all) => c.wantedmodels.remove(keys || [], !!all),
+    load: (c, volumeId) => c.wantedmodels.loadMissing(volumeId || '', {}),
+  },
   panama: {   // docs/ADR-015: the exchange bucket as an import source
     status: (c) => c.panama.status(),
     rounds: (c) => c.panama.roundsAsync(),   // not the sync ones: they would hold the main process, and so the window, while aws lists the bucket

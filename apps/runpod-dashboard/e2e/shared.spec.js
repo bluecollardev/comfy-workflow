@@ -117,4 +117,55 @@ test.describe('Shared', () => {
     await expect(again.getByTestId('cfg-agent-named-yes')).toBeChecked()
     await expect(again.getByTestId('cfg-agent-cap')).toHaveValue('40')
   })
+
+  test('Wanted models: add files from a search, save what the volume holds, add Binc\'s list (pasted when the volume cannot be read), see what is missing, load it', async ({ page, api }) => {
+    api.state.sharedVolume = 'vol1'
+    api.state.wantedOnVolume = ['diffusion_models/seedvr2_ema_3b_fp16.safetensors']
+    await page.goto('/')
+    await openModels(page)
+    const m = page.getByTestId('models-modal')
+    await expect(m.getByTestId('wanted-empty')).toBeVisible()
+    await expect(m.getByTestId('wanted-load')).toBeDisabled()
+    await m.getByTestId('models-search').fill('seedvr2')
+    await m.getByTestId('models-search-go').click()
+    await m.locator('[data-testid="models-result"][data-repo="Comfy-Org/SeedVR2"]').click()
+    await m.locator('[data-testid="models-file"][data-path="vae/seedvr2_ema_vae_fp16.safetensors"]').getByTestId('models-file-check').check()
+    await m.getByTestId('models-want').click()                                           // the file is listed, not loaded
+    await expect(m.getByTestId('wanted-row')).toHaveCount(1)
+    expect(api.state.wantedAdds[0]).toMatchObject([{ folder: 'vae', repo: 'Comfy-Org/SeedVR2', path: 'vae/seedvr2_ema_vae_fp16.safetensors' }])
+    expect(api.state.modelFetch).toBeUndefined()
+    await m.getByTestId('wanted-save').click()                                           // what the volume holds is recorded
+    await expect(m.getByTestId('wanted-note')).toContainText(t('wanted.added', { n: 1, u: 0 }))
+    api.state.wantedCsvUnreadable = true
+    await m.getByTestId('wanted-binc').click()                                           // the volume cannot be read: the paste box opens
+    await expect(m.getByTestId('wanted-paste')).toBeVisible()
+    await m.getByTestId('wanted-paste-text').fill('pipeline,install_to,file,hf_repo,hf_path,bytes,notes\nx,vae/,v.safetensors,a/b,v.safetensors,5,')
+    await m.getByTestId('wanted-paste-add').click()
+    await expect(m.getByTestId('wanted-paste')).toHaveCount(0)
+    await expect(m.getByTestId('wanted-row')).toHaveCount(4)
+    await expect(m.locator('[data-testid="wanted-row"][data-name="seedvr2_ema_3b_fp16.safetensors"]')).toHaveAttribute('data-state', 'present')
+    await expect(m.locator('[data-testid="wanted-row"][data-name="dyn.safetensors"]')).toHaveAttribute('data-state', 'missing')
+    await expect(m.getByTestId('wanted-load')).toContainText('3 files')                    // the saved file has no repo and the present one is skipped: dyn, v and the VAE
+    await m.getByTestId('wanted-load').click()
+    await expect(m.getByTestId('models-job')).toHaveAttribute('data-state', 'done')
+    expect(api.state.wantedLoad.files.sort()).toEqual(['loras/ltx2/dyn.safetensors', 'vae/seedvr2_ema_vae_fp16.safetensors', 'vae/v.safetensors'])
+    await m.locator('[data-testid="wanted-row"][data-name="dyn.safetensors"]').getByTestId('wanted-remove').click()
+    await expect(m.getByTestId('wanted-row')).toHaveCount(3)
+    await m.getByTestId('wanted-clear').click()
+    await expect(m.getByTestId('wanted-empty')).toBeVisible()
+  })
+
+  test('Wanted models: a too-small volume shows the warning; a volume that cannot be listed shows every row as not checked', async ({ page, api }) => {
+    api.state.sharedVolume = 'vol1'
+    api.state.wanted = [{ folder: 'vae', name: 'v.safetensors', repo: 'a/b', path: 'v.safetensors', bytes: 90_000_000_000 }]
+    api.state.wantedShort = 40_000_000_000
+    await page.goto('/')
+    await openModels(page)
+    const m = page.getByTestId('models-modal')
+    await expect(m.getByTestId('wanted-warning')).toBeVisible()
+    api.state.wantedShort = 0
+    api.state.wantedOnVolume = undefined
+    await m.getByTestId('wanted-save').click()
+    await expect(m.locator('[data-testid="wanted-row"][data-name="v.safetensors"]')).toHaveAttribute('data-state', 'unknown')
+  })
 })
