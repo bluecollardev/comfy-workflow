@@ -5,6 +5,12 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased
 
+### Delete models already on the volume (ADR-042 section 15)
+- Lucas: "Already on the volume models should be able to be deleted too." Shared > Models: a checkbox and trash icon per file, *Delete selected (n, size)*, an app confirmation that lists the files; the core's `deleteModels` (S3 `rm` of exact keys with no pod, or a short pod's `delete-models` job), `confirmed: true` required, traversal, globs and `_canalv2_pull` refused, refused while another job runs; MCP `models_delete`. The wanted list keeps what was deleted. Not tried on a real volume.
+
+### The Hugging Face token and gated repos (ADR-042 section 14)
+- Lucas pasted "black-forest-labs/FLUX.2-klein-9b-fp8 has no weight file flux-2-klein-9b-fp8.safetensors" and said "fix this". The repo is gated: Hugging Face masks the file's hash without a token, so the file was dropped from the list and the error named the wrong cause. New secret setting `HF_TOKEN` (Default Configuration, export secrets, MCP `set_settings hf_token`); gated files are listed as locked with a clear message, load with a token, and the token reaches the pod only through a RAM-held curl config (`-K`, `-L` without `--location-trusted`) and is redacted from every stored line. Not tried with a real token.
+
 ### The default card (ADR-042 section 13)
 - Lucas: "set pro 6000 as default card". `default_gpu` (default `rtxpro6000`), system-wide, in Default Configuration > Options and the *Pod defaults* export section; used by pods created with no card, MCP `create_pod` with `gpu` omitted, the create form's first card and the Queue's pool (it was a hard-coded H100). An explicit card wins; an out-of-stock default is an error, not a silent swap; the CUDA 13 image is paired automatically.
 

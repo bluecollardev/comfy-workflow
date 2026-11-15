@@ -465,14 +465,17 @@ export function deleteModelsScript(items: { folder: string; name: string }[]): s
 const deleteSummary = (j: PodJob) => `deleted ${j.deleted?.length ?? 0} of ${j.delete_items?.length ?? 0} model file(s), ${j.freed_bytes ?? 0} bytes: ${(j.deleted ?? []).map((f) => `${f.folder}/${f.name}`).join(', ')}`.slice(0, 600)
 
 /** Downloads the chosen files from Hugging Face onto the volume, on the pod: resumable, the size checked, then the sha256 Hugging Face gave; a file already there at the right size is left. Names, folders and URLs were fixed by `hf.resolve`; they are quoted here all the same. */
-export function fetchScript(items: hf.Resolved[]): string {
+export function fetchScript(items: hf.Resolved[], hfToken = ''): string {
   if (!items.length) throw bad('Choose at least one file.')
   const lines = ['set -u']
+  // The token (gated repos) goes into a curl config file in RAM (/dev/shm), mode 600, removed when the script ends: never on the command line, never on the volume. The script itself travels on ssh's stdin. curl follows Hugging Face's redirect to its CDN with -L only (not --location-trusted), which drops the Authorization header when the host changes.
+  if (hfToken) lines.push('umask 077; H=$(mktemp /dev/shm/hf.XXXXXX 2>/dev/null || mktemp /tmp/hf.XXXXXX); trap \'rm -f "$H"\' EXIT', `printf 'header = "Authorization: Bearer %s"\\n' ${q(hfToken)} > "$H"`)
+  const auth = hfToken ? '-K "$H" ' : ''
   for (const f of items) {
     lines.push(
       `d=/workspace/comfy-shared/models/${f.folder}; f="$d"/${q(f.name)}; mkdir -p "$d"`,
       `if [ -f "$f" ] && [ "$(stat -c %s "$f")" = "${f.bytes}" ]; then echo "FETCHED ${f.name} skipped"; else`,
-      `  curl -fL --retry 5 --retry-delay 5 -C - -o "$f.part" ${q(f.url)} || { echo "FETCH-FAILED ${f.name} (curl $?)"; exit 1; }`,
+      `  curl -fL ${auth}--proto-redir =https --retry 5 --retry-delay 5 -C - -o "$f.part" ${q(f.url)} || { echo "FETCH-FAILED ${f.name} (curl $?${hfToken ? ': Hugging Face refused it or has no such file; for a gated repo accept its terms with the token account' : ''})"; exit 1; }`,
       `  echo "${f.sha256}  $f.part" | sha256sum -c - >/dev/null 2>&1 || { rm -f "$f.part"; echo "FETCH-FAILED ${f.name} (the checksum does not match)"; exit 1; }`,
       `  mv "$f.part" "$f" && echo "FETCHED ${f.name} ${f.bytes}"`,
       'fi')
@@ -501,7 +504,7 @@ export function cloneScript(c: NonNullable<PodJob['clone']>, k: { id: string; se
   ].join('\n')
 }
 /** The script a job runs on its pod. */
-const scriptOf = (j: PodJob, k: { id: string; secret: string } | null): string => j.kind === 'clone' ? cloneScript(j.clone!, s3Keys()!) : j.kind === 'pull' ? (j.skip_shots?.length ? pullShotsScript(j.round, j.skip_shots, k!) : pullScript(j.round, k!)) : j.kind === 'browse' ? browseScript(j.browse_path) : j.kind === 'erase' ? eraseScript(j.erase_keys ?? []) : j.kind === 'fetch' ? fetchScript(j.fetch_items ?? []) : j.kind === 'delete-models' ? deleteModelsScript(j.delete_items ?? []) : removeScript(j.round)
+const scriptOf = (j: PodJob, k: { id: string; secret: string } | null): string => j.kind === 'clone' ? cloneScript(j.clone!, s3Keys()!) : j.kind === 'pull' ? (j.skip_shots?.length ? pullShotsScript(j.round, j.skip_shots, k!) : pullScript(j.round, k!)) : j.kind === 'browse' ? browseScript(j.browse_path) : j.kind === 'erase' ? eraseScript(j.erase_keys ?? []) : j.kind === 'fetch' ? fetchScript(j.fetch_items ?? [], settings.lookup('HF_TOKEN')) : j.kind === 'delete-models' ? deleteModelsScript(j.delete_items ?? []) : removeScript(j.round)
 const KILL_SCRIPT = 'pkill -f /opt/comfy-app/s3pull.sh; pkill -x rclone; true\n'
 
 export interface SshJob { host: string; port: number; script: string; onLine: (line: string) => void; signal: AbortSignal }
@@ -636,7 +639,7 @@ async function runActive(i: Internal, opts: Opts) {
   try {
     j.state = j.kind === 'pull' ? 'pulling' : 'deleting'
     const s3k = j.kind === 'clone' ? s3Keys() : null
-    await runOnPod(i, host, port, scriptOf(j, k), opts, k ? [k.secret, k.id] : s3k ? [s3k.secret, s3k.id] : [])
+    await runOnPod(i, host, port, scriptOf(j, k), opts, k ? [k.secret, k.id] : s3k ? [s3k.secret, s3k.id] : j.kind === 'fetch' && settings.lookup('HF_TOKEN') ? [settings.lookup('HF_TOKEN')] : [])
     if (j.kind === 'pull') await placeAfter(i, host, port, opts)
   } finally { idle.register(pod.id, prev) }
 }
@@ -665,7 +668,7 @@ async function runTemporary(i: Internal, opts: Opts) {
   const p = i.plan, j = i.job, cfg = mounts.load()
   const name = j.pod_name!   // set when the job was created
   const k = j.kind === 'pull' ? keys() : null
-  const secrets = k ? [k.secret, k.id] : []
+  const secrets = k ? [k.secret, k.id] : j.kind === 'fetch' && settings.lookup('HF_TOKEN') ? [settings.lookup('HF_TOKEN')] : []
   // A pull the app lost track of (it was closed mid-pull) left its pod running and still copying: take that pod over instead of making a second one that pulls the same round again.
   const prior = j.kind === 'pull' ? temporaryPods().find((t) => t.kind === 'pull' && t.round === j.round && t.pod_id && (t.volume || '') === (p.volume?.id || '')) : null
   let adopted: { id: string; name: string } | null = null

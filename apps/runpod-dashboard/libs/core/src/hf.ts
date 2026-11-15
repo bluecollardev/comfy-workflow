@@ -4,6 +4,7 @@
  * only weight files are allowed, and the destination is one of a fixed list of ComfyUI model folders.
  */
 import { bad, CoreError } from './errors.js'
+import * as settings from './settings.js'
 
 export const HF = 'https://huggingface.co'
 /** Where a file may be put: the folders of `models/` that hold weights. */
@@ -16,7 +17,16 @@ export const EXTENSIONS = ['safetensors', 'gguf', 'pth'] as const
 const extOf = (p: string) => (p.split('.').pop() || '').toLowerCase()
 
 export interface HfRepo { id: string; downloads: number; likes: number; updated: string | null; gated: boolean }
-export interface HfFile { path: string; bytes: number; sha256: string; folder: Folder }
+/** `locked`: Hugging Face hides the hash of a gated repo's files until the account has accepted its terms: the file is listed (name, size) but cannot be loaded. */
+export interface HfFile { path: string; bytes: number; sha256: string; folder: Folder; locked?: boolean }
+
+/** The Hugging Face token (a system-wide secret, Default Configuration): sent to huggingface.co only, never logged, never in an error. */
+export const token = (): string => settings.lookup('HF_TOKEN')
+const isMasked = (oid: unknown) => typeof oid === 'string' && /^\*+$/.test(oid)
+/** Why a gated repo's file cannot be loaded, said for the case: no token, or a token whose account has not accepted the terms. */
+export const gatedMessage = (repo: string, haveToken = !!token()) => haveToken
+  ? `${repo} is gated and this Hugging Face token cannot read it: accept its terms at https://huggingface.co/${repo} with the account that owns the token (and give the token read access).`
+  : `${repo} is gated: accept its terms on huggingface.co and set a Hugging Face token (Default Configuration).`
 
 const REPO = /^[A-Za-z0-9][\w.-]{0,95}\/[A-Za-z0-9][\w.-]{0,95}$/
 export const assertRepo = (repo: string) => { if (!REPO.test(repo)) throw bad(`Not a Hugging Face repo (owner/name): ${repo}`); return repo }
@@ -39,9 +49,10 @@ export function guessFolder(path: string): Folder {
 }
 
 const getJson = async (fetchFn: typeof fetch, url: string): Promise<unknown> => {
-  const r = await fetchFn(url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(30_000) })
+  const t = token()
+  const r = await fetchFn(url, { headers: { accept: 'application/json', ...(t && url.startsWith(`${HF}/`) ? { authorization: `Bearer ${t}` } : {}) }, signal: AbortSignal.timeout(30_000) })
   if (r.status === 404) throw new CoreError(404, 'Hugging Face has no such repo.')
-  if (r.status === 401 || r.status === 403) throw new CoreError(403, 'That repo is gated or private: Hugging Face wants a login and an accepted licence, which a pod cannot give.')
+  if (r.status === 401 || r.status === 403) throw new CoreError(403, t ? 'Hugging Face refused this token for that repo: it is private, or its terms are not accepted by the token\'s account, or the token cannot read it.' : 'That repo is gated or private: set a Hugging Face token (Default Configuration) and accept its terms on huggingface.co.')
   if (r.status !== 200) throw new CoreError(502, `Hugging Face answered HTTP ${r.status}.`)
   return r.json()
 }
@@ -58,8 +69,8 @@ export async function files(repo: string, revision = 'main', fetchFn: typeof fet
   assertRepo(repo); assertRevision(revision)
   const j = (await getJson(fetchFn, `${HF}/api/models/${repo}/tree/${revision}?recursive=true`)) as { type?: string; path?: string; size?: number; lfs?: { oid?: string; size?: number } }[]
   return (Array.isArray(j) ? j : [])
-    .filter((f) => f.type === 'file' && typeof f.path === 'string' && (EXTENSIONS as readonly string[]).includes(extOf(f.path)) && f.lfs?.oid && /^[0-9a-f]{64}$/.test(f.lfs.oid))
-    .map((f) => ({ path: f.path!, bytes: Number(f.lfs?.size ?? f.size) || 0, sha256: f.lfs!.oid!, folder: guessFolder(f.path!) }))
+    .filter((f) => f.type === 'file' && typeof f.path === 'string' && (EXTENSIONS as readonly string[]).includes(extOf(f.path)) && f.lfs?.oid && (/^[0-9a-f]{64}$/.test(f.lfs.oid) || isMasked(f.lfs.oid)))
+    .map((f) => { const locked = isMasked(f.lfs!.oid); return { path: f.path!, bytes: Number(f.lfs?.size ?? f.size) || 0, sha256: locked ? '' : f.lfs!.oid!, folder: guessFolder(f.path!), ...(locked ? { locked: true } : {}) } })
     .sort((a, b) => a.bytes - b.bytes)
 }
 
@@ -77,6 +88,7 @@ export async function resolve(items: FetchItem[], fetchFn: typeof fetch = fetch)
     const key = `${repo}@${revision}`
     if (!cache.has(key)) cache.set(key, await files(repo, revision, fetchFn))
     const f = cache.get(key)!.find((x) => x.path === path)
+    if (f?.locked) throw new CoreError(403, gatedMessage(repo))
     if (!f) throw bad(`${repo} has no weight file ${path} (only ${EXTENSIONS.join(', ')} files are fetched).`)
     const name = path.split('/').pop()!
     if (!/^[\w.+\- ]{1,200}$/.test(name)) throw bad(`Unsafe file name: ${name}`)

@@ -359,6 +359,17 @@ test('keys and settings are changed without a named yes and are never returned; 
   await call('set_settings', { values: { panama_bucket: null, panama_aws_access_key: null, panama_aws_secret_key: null } })
 })
 
+test('the Hugging Face token is a setting: set without a named yes, validated, shown as a hint only, removed with null', async () => {
+  const short = await call('set_settings', { values: { hf_token: 'short' } })
+  assert.equal(short.result.isError, true); assert.match(textOf(short), /does not look like a Hugging Face token/)
+  const set = jsonOf(ok(await call('set_settings', { values: { hf_token: 'hf_ABCDEFGHIJKLMNOP9876' } })))
+  assert.deepEqual(set.changed, ['hf_token'])
+  const shown = textOf(ok(await call('get_settings')))
+  assert.match(shown, /hf_token_set"?: ?true/); assert.match(shown, /••••9876/); assert.ok(!shown.includes('ABCDEFGHIJKLMNOP'), 'the token is never returned')
+  await call('set_settings', { values: { hf_token: null } })
+  assert.match(textOf(ok(await call('get_settings'))), /hf_token_set"?: ?false/)
+})
+
 test('spend is gated on the new tools: resize_volume and a pod download need approved_by', async () => {
   for (const [name, args] of [['resize_volume', { volume_id: 'v', size_gb: 500 }], ['panama_pull', { round: 'r1', target: 'pod' }], ['panama_remove', { round: 'r1', target: 'pod' }]]) {
     const r = await call(name, args)

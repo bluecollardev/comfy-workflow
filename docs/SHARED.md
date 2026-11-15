@@ -9,7 +9,7 @@ Source list: `comfy-shared/models/_canalv2_pull/MODELS_PULL_v003.csv` on the Sha
 ### How to load them
 
 1. **Grow the volume first.** The Shared volume must hold the total below plus what is already on it. Volumes cost about $0.07/GB/month; RunPod volumes can only grow.
-2. **Gated files need a Hugging Face token** and the account's acceptance of the gate (e.g. `Lightricks/LTX-2.3-22b-IC-LoRA-HDR`, accept as Binko65). The Models fetch refuses gated repos today; a token setting is the next change.
+2. **Gated files need a Hugging Face token** and the account's acceptance of the gate (e.g. `Lightricks/LTX-2.3-22b-IC-LoRA-HDR`, accept as Binko65). Set the token in Default Configuration (Keys, from huggingface.co/settings/tokens, read access): a gated file is then listed with real hashes and loads; without it the file is listed with a gated badge and cannot be loaded, and the message says so (ADR-042 section 14).
 3. In **Shared → Models**, search the repo, pick the file and folder, Fetch. A short pod runs `curl -C -` with size and sha256 checks and is deleted when done (about $0.07 for 10 GB). Do one pipeline at a time.
 4. Files whose destination is not `models/` (`depth_anything_v2_vitl.pth`, controlnet_aux ckpts) need a separate destination.
 
@@ -109,6 +109,10 @@ Depth Anything V2 Large fp32 and fp16, SeedVR2 3B fp16 and VAE, SAM 2.1 base+ an
 ### Wanted models list
 
 The names of the models you want on a Shared volume, kept in the configuration and exported with it (section *Wanted models*), so a new machine or a new datacenter can be filled from the same list (ADR-042 section 12). Open Shared > Models: add files from a search (*Add to wanted list*), record what the volume holds (*Saved List*) or add Binc's list above (*Install Defaults*, read off the volume or pasted). Each row shows whether the volume has it; *Load missing* fetches the rest from Hugging Face in jobs of 20 files, and warns when the volume is too small. MCP: `models_wanted`, `models_wanted_add`, `models_wanted_remove`, `models_load_wanted`.
+
+### Deleting models already on the volume
+
+Shared > Models lists what the volume holds ("Already on the volume"). Tick files (or use a row's trash icon) and press *Delete selected*: the app asks first and lists the files and the GB; the files are removed from `comfy-shared/models/` (over RunPod's S3 API with no pod when the volume has it, else by a short pod). The `_canalv2_pull` folder is never deleted from. A deleted model stays in the wanted list and shows as missing. MCP: `models_delete` with `confirmed: true`. Details: ADR-042 section 15.
 
 ## Custom nodes
 

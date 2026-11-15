@@ -23,7 +23,7 @@ export function mergeConfig(base, patch) {
 }
 
 /** The settings `set_settings` takes, by field. A value of null removes it. */
-export const SETTING_FIELDS = ['runpod_api_key', 'anthropic_api_key', 'runpod_s3_access_key', 'runpod_s3_secret_key', 'panama_aws_access_key', 'panama_aws_secret_key', 'panama_console_key', 'panama_bucket', 'panama_region', 'panama_profile', 'agent_named_yes_required', 'agent_spend_cap_usd', 'agent_shell_guard']
+export const SETTING_FIELDS = ['runpod_api_key', 'anthropic_api_key', 'hf_token', 'runpod_s3_access_key', 'runpod_s3_secret_key', 'panama_aws_access_key', 'panama_aws_secret_key', 'panama_console_key', 'panama_bucket', 'panama_region', 'panama_profile', 'agent_named_yes_required', 'agent_spend_cap_usd', 'agent_shell_guard']
 
 const MAX_FILE = 2 * 1024 * 1024
 
