@@ -151,3 +151,32 @@ test('the content below the nav bar is wide (up to 1680px) and never wider than 
   await page.setViewportSize({ width: 1000, height: 900 })
   expect(await width()).toBeLessThanOrEqual(1000)
 })
+
+test('Pause all, Refresh and Settings are icons without labels; each shows the app tooltip below it, even Pause all when it is disabled', async ({ page, api }) => {
+  await page.goto('/')
+  await expect(page.getByTestId('pod-card').first()).toBeVisible()
+  for (const [id, label] of [['pause-all', t('app.pauseAll')], ['refresh', t('app.refresh')], ['open-config', t('app.configuration')]]) {
+    const b = page.getByTestId(id)
+    await expect(b).toHaveText('')                                                       // no label, only the icon
+    await b.locator('..').hover()
+    const tip = page.locator('.app-tip')
+    await expect(tip).toHaveText(label)
+    const [bb, tb] = [await b.boundingBox(), await tip.boundingBox()]
+    expect(tb.y, `${id}: the tooltip is below the button`).toBeGreaterThan(bb.y + bb.height - 1)
+    await page.mouse.move(0, 400)
+  }
+  api.state.pods = []
+  await page.getByTestId('refresh').click()
+  await expect(page.getByTestId('pause-all')).toBeDisabled()
+  await page.getByTestId('pause-all').locator('..').hover()
+  await expect(page.locator('.app-tip')).toHaveText(t('app.pauseAll'))                   // a disabled button's tooltip still shows
+})
+
+test('any icon-only button gets the app tooltip, and its slow native title goes', async ({ page }) => {
+  await page.goto('/')
+  const copy = page.getByTestId('pod-copy-id').first()
+  await expect(copy).toBeVisible()
+  await copy.hover()
+  await expect(page.locator('.app-tip')).toHaveText(t('pod.copyId'))
+  await expect(copy).not.toHaveAttribute('title', /.+/)
+})

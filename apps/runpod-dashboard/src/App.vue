@@ -18,16 +18,15 @@
         <BButton variant="outline-light" size="sm" :title="$t('app.historyTitle')" data-testid="open-history" @click="ui.historyOpen = true">
           <i class="fa-solid fa-clock-rotate-left me-1"></i>{{ $t('app.history') }}
         </BButton>
-        <BButton variant="outline-light" size="sm" :title="$t('app.configurationTitle')" :aria-label="$t('app.configuration')" data-testid="open-config" @click="ui.configOpen = true">
+        <span v-tip="$t('app.configuration')" class="tipwrap"><BButton variant="outline-light" size="sm" data-testid="open-config" :aria-label="$t('app.configuration')" @click="ui.configOpen = true">
           <i class="fa-solid fa-gear"></i>
-        </BButton>
-        <BButton variant="outline-warning" size="sm" :disabled="!settings.ready || pods.refreshing || !pods.pods.some((p) => p.status !== 'stopped')" :title="$t('app.pauseAllTitle')" data-testid="pause-all" @click="pods.stopAll">
-          <i class="fa-solid fa-pause me-1"></i>{{ $t('app.pauseAll') }}
-        </BButton>
-        <BButton variant="primary" size="sm" :disabled="pods.refreshing" data-testid="refresh" @click="pods.load">
-          <i class="fa-solid fa-rotate me-1" :class="{ 'fa-spin': pods.refreshing }"></i>
-          {{ $t('app.refresh') }}
-        </BButton>
+        </BButton></span>
+        <span v-tip="$t('app.pauseAll')" class="tipwrap"><BButton variant="outline-warning" size="sm" :disabled="!settings.ready || pods.refreshing || !pods.pods.some((p) => p.status !== 'stopped')" data-testid="pause-all" :aria-label="$t('app.pauseAll')" @click="pods.stopAll">
+          <i class="fa-solid fa-pause"></i>
+        </BButton></span>
+        <span v-tip="$t('app.refresh')" class="tipwrap"><BButton variant="primary" size="sm" :disabled="pods.refreshing" data-testid="refresh" :aria-label="$t('app.refresh')" @click="pods.load">
+          <i class="fa-solid fa-rotate" :class="{ 'fa-spin': pods.refreshing }"></i>
+        </BButton></span>
       </div>
     </BNavbar>
     <!-- A failed action (Resume with no free GPU on the host, Stop, Delete...) is said right under the nav bar, and stays there while the page scrolls -->

@@ -18,3 +18,21 @@ export const vTip = {
   updated(node, b) { set(node, b.value) },
   unmounted(node) { node.removeEventListener('mouseenter', enter); node.removeEventListener('focus', enter); node.removeEventListener('mouseleave', hide); node.removeEventListener('blur', hide); node.removeEventListener('click', hide); hide() },
 }
+
+/**
+ * Every icon-only button gets the app's tooltip, whatever its author wrote: a button with no text, only an icon, whose name is in `title` or `aria-label`,
+ * is taken over the first time the pointer or the keyboard reaches it (its `title` moves into the tooltip so the browser's slow one does not also show).
+ * A button that uses v-tip, or has text, is left to itself. A disabled button gets no pointer events: wrap it in a `.tipwrap` span with v-tip.
+ */
+const isIconOnly = (el) => !el.textContent.trim() && !!el.querySelector('i, svg')
+function adopt(e) {
+  const el = e.target instanceof Element ? e.target.closest('button, a.btn') : null
+  if (!el || el.hasAttribute('data-tip') || el.dataset.autotip || !isIconOnly(el)) return
+  const label = el.getAttribute('title') || el.getAttribute('aria-label') || ''
+  if (!label) return
+  el.dataset.autotip = '1'
+  set(el, label); el.removeAttribute('title')
+  el.addEventListener('mouseenter', enter); el.addEventListener('focus', enter); el.addEventListener('mouseleave', hide); el.addEventListener('blur', hide); el.addEventListener('click', hide)
+  enter({ currentTarget: el })
+}
+export function installAutoTips() { document.addEventListener('mouseover', adopt, true); document.addEventListener('focusin', adopt, true) }
