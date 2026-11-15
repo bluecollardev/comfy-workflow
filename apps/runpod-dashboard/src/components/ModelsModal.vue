@@ -130,7 +130,6 @@ import { useConfirmStore } from '../stores/confirm'
 import { errorText } from '../stores/toast'
 import { fmtBytes as fmt } from '../utils/studioTree'
 import { t } from '../i18n'
-import { useConfirmStore } from '../stores/confirm'
 
 const FOLDERS = ['diffusion_models', 'vae', 'vae_approx', 'checkpoints', 'loras', 'text_encoders', 'clip', 'clip_vision', 'controlnet', 'upscale_models', 'latent_upscale_models', 'model_patches', 'unet', 'embeddings', 'depthanything', 'sam2', 'SEEDVR2']
 const TERMINAL = ['done', 'failed', 'cancelled']
@@ -253,7 +252,6 @@ async function addPasted() {
   if (r) { pasteOpen.value = false; pasted.value = '' }
 }
 const removeOne = (r) => wantedDo(() => wantedAPI.remove([r.key], false))
-const confirm = useConfirmStore()
 const clearAll = async () => {
   if (!(await confirm.ask(t('wanted.confirmClear', { n: wanted.rows.length }), { okLabel: t('wanted.clear') }))) return   // the user says yes first
   await wantedDo(() => wantedAPI.remove([], true))
