@@ -8,6 +8,7 @@ import * as mounts from './mounts.js'
 import * as pods from './pods.js'
 import * as rp from './runpod.js'
 import * as podpull from './podpull.js'
+import * as podmodels from './podmodels.js'
 import * as shots from './shots.js'
 import * as sync from './sync.js'
 import * as ui2api from './ui2api.js'
@@ -57,11 +58,25 @@ export async function list(podId: string, client?: rp.RunPodClient, fetchFn: typ
   return { pod_id: podId, pod_name: pod.name, count: w.length, workflows: w }
 }
 
+// ----- the pod's model choice (ADR-042) -----
+
+/** The pod's chosen VAE / diffusion model (empty slots: the graphs keep their own) and the files its ComfyUI offers for each. */
+export interface PodModels { pod_id: string; chosen: podmodels.Choice; choices: Record<podmodels.Slot, string[]>; running: boolean }
+export async function models(podId: string, client?: rp.RunPodClient, fetchFn: typeof fetch = fetch): Promise<PodModels> {
+  const chosen = podmodels.get(podId)
+  if (mounts.dryRun(mounts.load())) return { pod_id: podId, chosen, running: true, choices: { vae: ['simulated_vae.safetensors', 'ae.safetensors'], diffusion_model: ['simulated_model_fp16.safetensors'] } }
+  const pod = await pods.get(podId, client)
+  if (pod.status !== 'running' || !pod.web_ui_url) return { pod_id: podId, chosen, running: false, choices: { vae: [], diffusion_model: [] } }
+  return { pod_id: podId, chosen, running: true, choices: await podmodels.choices(pod.web_ui_url.replace(/\/$/, ''), fetchFn) }
+}
+/** Choose the pod's files: a slot with a name sets it, an empty one clears it. Our side only, no spend. */
+export const setModels = (podId: string, choice: podmodels.Choice): podmodels.Choice => podmodels.set(podId, choice)
+
 // ----- running -----
 
 /** One file a run produced, as ComfyUI's history names it: fetched with GET /view?filename=&subfolder=&type=. `output` is a saved result, `temp` a preview node's file. */
 export interface OutputFile { filename: string; subfolder: string; type: 'output' | 'temp'; kind: 'image' | 'video' | 'audio' | 'other'; node?: string }
-export interface RunResult { path: string; state: 'pending' | 'running' | 'done' | 'failed' | 'skipped'; prompt_id?: string; seconds?: number; error?: string; node?: string; outputs?: number; files?: OutputFile[] }
+export interface RunResult { /** the model files the pod's choice put into this graph, and what was left alone */ models?: string[]; path: string; state: 'pending' | 'running' | 'done' | 'failed' | 'skipped'; prompt_id?: string; seconds?: number; error?: string; node?: string; outputs?: number; files?: OutputFile[] }
 export interface RunJob {
   id: string; pod_id: string; pod_name: string; /** the pod's ComfyUI address: where each result's files are fetched (GET /view) */ base_url?: string; state: 'running' | 'done' | 'failed' | 'cancelled'; started_at: string; finished_at?: string
   results: RunResult[]; ok: number; failed: number; error?: string
@@ -137,6 +152,8 @@ async function runOne(i: Internal, r: RunResult, base: string, o: RunOpts, fetch
   const ui = await getJson(`${base}/api/userdata/${encodeURIComponent(`workflows/${r.path}`)}`)
   if (!Array.isArray((ui as { nodes?: unknown }).nodes)) throw new CoreError(422, `${r.path} is not a UI graph (it has no nodes list).`)
   const api = await (o.convert ?? defaultConvert)(ui, { base, podId: i.job.pod_id })
+  const chosen = podmodels.apply(api, podmodels.get(i.job.pod_id))   // the pod's own VAE / diffusion model (ADR-042)
+  if (chosen.applied.length || chosen.skipped.length) r.models = [...chosen.applied.map((a) => `${a.slot}: ${a.to} (was ${a.from || 'unset'})`), ...chosen.skipped]
   const gate = shots.lockedIn(api, o.projectRoot)
   if (gate.locked.length) throw new CoreError(403, `Refused: the graph names locked shot${gate.locked.length === 1 ? '' : 's'} ${gate.locked.join(', ')}; client-approved shots are never run by us.`)
   const q = await fetchFn(`${base}/prompt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt: api, client_id: 'pod-manager-runflows', extra_data: { pod_manager: { workflow: r.path } } }), signal: AbortSignal.timeout(60_000) })

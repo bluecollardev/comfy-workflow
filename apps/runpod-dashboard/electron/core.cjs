@@ -151,6 +151,8 @@ const TABLE = {
   runflows: {   // docs/ADR-037: run workflows on a pod
     list: (c, podId) => c.runflows.list(podId),
     run: (c, podId, paths, approvedBy) => c.runflows.run(podId, paths, approvedBy ? { approvedBy } : {}),
+    models: (c, podId) => c.runflows.models(podId),
+    setModels: (c, podId, choice) => c.runflows.setModels(podId, choice || {}),
     job: (c, id) => c.runflows.job(id),
     cancel: (c, id) => c.runflows.cancel(id),
   },

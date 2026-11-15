@@ -26,6 +26,14 @@ The spend gate (`approved_by`, USD 100) lives only in the pod-manager MCP. A she
 
 ComfyUI lists every file in `models/vae` in its VAE loader, and it recognises SeedVR2's VAE by its contents (`comfy/sd.py`: the `decoder.up_blocks.2.upsamplers.0.upscale_conv.weight` key), not by name. So choosing a VAE needs no code in the image: it is whichever files are on the volume. The weights manifest should therefore list **every** VAE we want selectable, not one, and a graph picks by file name. **Open:** which VAE files (the SeedVR2 one, and any others for other graphs), and whether the app should show what is in `models/vae` on the volume (Browse already lists folders).
 
+## 6. Built 2026-11-15: a model choice per pod
+
+`libs/core/src/podmodels.ts` keeps, per pod (`pod-models.json`, dropped with the pod), a **VAE** (`VAELoader.vae_name`) and a **diffusion model** (`UNETLoader.unet_name`). `runflows.run` puts the choice into each converted graph that has exactly one loader of that class; with two or none it leaves the graph alone and names it in the result (`models`). `runflows.models(pod)` lists the files the pod's ComfyUI offers (`/object_info/<loader>`), so whatever is on the volume can be picked and **nothing is baked into the image or downloaded by the app**. MCP: `pod_models` (read, and set with `vae` / `diffusion_model`; empty clears). Tests: `libs/core/tests/podmodels.test.ts`. **Not built:** the picker in the Run workflows window, and the weights manifest and download script.
+
+## 7. Where the weights go: all of them, on the volume
+
+Every variant (3B and 7B, fp16 and fp8, and the VAEs) is kept on the volume under `models/`, about 35 to 45 GB (estimate, not measured), roughly USD 2.50 to 3 a month; each pod chooses at run time (section 6). Not streamed at run time (a billed pod waits for the download, and Hugging Face may refuse it); not baked into the image. The S3 route needs RunPod S3 keys: Settings, S3 API Keys in the RunPod console, then Default Configuration's S3 fields (or the Add S3 keys button in the volume browser). **Open:** free space on `a3upg9ey48` (it holds rounds), a named yes for the pod or the transfer, and the exact file names from the official template.
+
 ## Consequences
 
 - One tag no longer means two images; Blackwell cards keep their CUDA 13 build.

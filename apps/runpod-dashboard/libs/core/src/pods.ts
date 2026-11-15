@@ -9,6 +9,7 @@ import * as gpus from './gpus.js'
 import * as idle from './idle.js'
 import * as mounts from './mounts.js'
 import * as podconfigs from './podconfigs.js'
+import * as podmodels from './podmodels.js'
 import * as podnames from './podnames.js'
 import * as podrounds from './podrounds.js'
 import * as history from './history.js'
@@ -336,7 +337,7 @@ export async function deleteRound(round: string): Promise<{ round: string; pods_
 export const rounds = (): { round: string; label: string; pod_ids: string[] }[] => podrounds.byRound().map((r) => ({ ...r, label: podrounds.label(r.round) }))
 export async function stop(podId: string, client?: rp.RunPodClient) { if (isDry()) { const r = dry.stop(podId); void recordPod('stopped', podId); return r } await rp.stopPod(podId, client); void recordPod('stopped', podId, client); return { message: `Pod ${podId} stopped`, pod_id: podId } }
 export async function resume(podId: string, client?: rp.RunPodClient) { if (isDry()) { const r = dry.resume(podId); void recordPod('started', podId); return r } await rp.resumePod(podId, 1, client); void recordPod('started', podId, client); return { message: `Pod ${podId} resumed`, pod_id: podId } }
-export async function remove(podId: string, client?: rp.RunPodClient) { const nm = podnames.get(podId) || undefined; podconfigs.forget(podId); podnames.forget(podId); podrounds.forget(podId); if (isDry()) { idle.forget(podId); history.record({ kind: 'pod', action: 'deleted', pod_id: podId, name: nm || dry.list().find((x) => x.id === podId)?.name || podId }); return dry.remove(podId) } const raw = await rp.getPod(podId, client).catch(() => null); await rp.terminatePod(podId, client); history.record({ kind: 'pod', action: 'deleted', pod_id: podId, name: nm || raw?.name || podId, gpu: raw?.machine?.gpuDisplayName, datacenter: raw?.machine?.dataCenterId }); idle.forget(podId); return { message: `Pod ${podId} deleted`, pod_id: podId } }
+export async function remove(podId: string, client?: rp.RunPodClient) { const nm = podnames.get(podId) || undefined; podconfigs.forget(podId); podmodels.forget(podId); podnames.forget(podId); podrounds.forget(podId); if (isDry()) { idle.forget(podId); history.record({ kind: 'pod', action: 'deleted', pod_id: podId, name: nm || dry.list().find((x) => x.id === podId)?.name || podId }); return dry.remove(podId) } const raw = await rp.getPod(podId, client).catch(() => null); await rp.terminatePod(podId, client); history.record({ kind: 'pod', action: 'deleted', pod_id: podId, name: nm || raw?.name || podId, gpu: raw?.machine?.gpuDisplayName, datacenter: raw?.machine?.dataCenterId }); idle.forget(podId); return { message: `Pod ${podId} deleted`, pod_id: podId } }
 
 /** Change a pod's idle stop: registered for the watch (0 = never, dropped from it); a simulated pod's record follows,
  *  so what `get` shows is what was set in no-spend mode too. */

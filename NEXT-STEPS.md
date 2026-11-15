@@ -21,7 +21,7 @@
 1. Merge `feature/pin-image-digest` (the image pinned by digest, cu13 pair, workflow tags), release it, and send Binc the digest `sha256:a06a461c…` and what the 14 Nov rebuild changed.
 2. Wire `.claude/hooks/guard-bash.sh` into `.claude/settings.json` (Bash matcher, a `permissions` block) and ship it to binc-pc through `shared/governance/`; get one real example of what Binc's agent bypassed.
 3. Get the exact "unauthorized" text from binc-pc; test the registry login with one short pod (needs a named yes).
-4. SeedVR2: choose the size (3B or 7B, fp16 or fp8) and the VAE files, then put them on the volumes with a manifest (S3 API for EU-RO-1 if RunPod S3 keys are created, a short pod otherwise; EUR-IS-2 by pod or Clone). Weights stay out of the image.
+4. Built: the per-pod VAE / diffusion model choice (`pod_models`, ADR-042 section 6). Not built: its picker in the Run workflows window. SeedVR2: all variants go on the volume (section 7); create RunPod S3 keys (console, Settings, S3 API Keys), enter them in Default Configuration, check free space, then upload with a manifest. Before: choose the size (3B or 7B, fp16 or fp8) and the VAE files, then put them on the volumes with a manifest (S3 API for EU-RO-1 if RunPod S3 keys are created, a short pod otherwise; EUR-IS-2 by pod or Clone). Weights stay out of the image.
 
 ## Important, open: AI-generated shots through MCP (ADR-034), cgi-042 first
 

@@ -18,6 +18,7 @@ export const queueFile = () => process.env.QUEUE_FILE || join(configDir(), 'queu
 export const historyFile = () => process.env.HISTORY_FILE || join(configDir(), 'history.jsonl')
 export const podNamesFile = () => process.env.POD_NAMES_FILE || join(configDir(), 'pod-names.json')
 export const podRoundsFile = () => process.env.POD_ROUNDS_FILE || join(configDir(), 'pod-rounds.json')
+export const podModelsFile = () => process.env.POD_MODELS_FILE || join(configDir(), 'pod-models.json')
 export const podShotsFile = () => process.env.POD_SHOTS_FILE || join(configDir(), 'pod-shots.json')
 export const roundNamesFile = () => process.env.ROUND_NAMES_FILE || join(configDir(), 'round-names.json')
 export const gitAccountsFile = () => process.env.GIT_ACCOUNTS_FILE || join(configDir(), 'git_accounts.json')

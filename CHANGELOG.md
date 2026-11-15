@@ -5,6 +5,9 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased
 
+### A VAE and a diffusion model per pod (ADR-042)
+- Lucas: "we also need to be able to choose vae", "make this configurable", "per pod". `podmodels.ts`, `runflows.models` / `setModels`, MCP `pod_models`; applied by Run workflows to graphs with one loader of the class. The picker UI is still to do.
+
 ### The image is pinned by digest (ADR-020 amendment, ADR-042)
 - Lucas: "can't we rebuild and pin image". `contract-v26` moved on 2026-11-14; the default image and Lucas's Default Configuration are now `@sha256:a06a461c…`, with `CU13_PINS` for Blackwell cards; the workflow tags by commit and prints the digest. Also written, not yet wired: `.claude/hooks/guard-bash.sh`. ADR-042 records the open questions (the agent on binc-pc, SeedVR2 weights and VAE).
 

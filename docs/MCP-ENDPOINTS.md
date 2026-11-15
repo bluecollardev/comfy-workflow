@@ -196,6 +196,7 @@ Each tool calls the core function the window's IPC channel calls. `mcp/parity.mj
 | `import_round` | `round`, `shots?`, `run_workflows?`, `max_pods?`, `cost_cap_usd?`, `approved_by`, `cards?`, `volume_id?` | Queue a pull and one run-workflows task per shot; pool pods take them within the limits. One approval covers the import. | spend: named yes |
 | `queue_list` | | Every import and task with state, pod and error. | read |
 | `queue_task` | `action`, `id`, `max_pods?`, `cost_cap_usd?` | `cancel`, `retry`, `cancel_import` or `set_limits`. | read/act |
+| `pod_models` | `pod_id`, `vae?`, `diffusion_model?` | Which VAE and diffusion model the pod's workflows use, and the files its ComfyUI offers for each; with `vae` / `diffusion_model` it sets them (empty clears). `run_pod_workflows` applies them to graphs with exactly one such loader. | read / our side only |
 | `list_pod_workflows` | `pod_id` | The graphs in a running pod's Workflows panel, grouped by folder (ADR-037). | read |
 | `run_pod_workflows` | `pod_id`, `paths`, `approved_by` | Run chosen graphs on the pod one after another: convert with ComfyUI's frontend, queue, wait; every outcome and error goes to the History. Returns a job. | spend: named yes |
 | `run_workflows_job` | `id`, `cancel?` | A run's graphs: waiting, running, done, failed (with the error) or skipped; `cancel` stops it. | read |
