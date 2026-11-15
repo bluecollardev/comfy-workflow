@@ -140,12 +140,13 @@ Depth Anything V2 Large fp32 and fp16, SeedVR2 3B fp16 and VAE, SAM 2.1 base+ an
 |---|---|---|
 | `BH_ReadSequence` | ComfyUI-BH-ShotPipe-v6, ComfyUI-BH-ShotPipe-v7 | yes |
 | `BH_ReadStill` | ComfyUI-BH-ShotPipe-v6, ComfyUI-BH-ShotPipe-v7 | yes |
-| `BincSeqToImage` | no pack in the repo | no |
-| `BincWriteGenDPX_v002` | no pack in the repo | no |
-| `OCIOVAEDecode` | no pack in the repo | no |
+| `BincSeqToImage` | ComfyUI-BincPlateIO-v004 | next build |
+| `BincWriteGenDPX_v002` | ComfyUI-BincGenDPX-v002 | next build |
+| `OCIOVAEDecode` | ComfyUI-OCIO | next build |
 
 ### Needed but not in the image
 
+- **ComfyUI-BincGenDPX-v002, ComfyUI-BincPlateIO-v004**: from Binc's `BH_loaders_and_DPX_writer_mac8194_20261115_v002` package (Downloads, 15 Nov); in `comfy-node-packs`, staged by the next build. PlateIO needs ShotPipe v7 (in the image) and OpenImageIO.
 - **ComfyUI-OCIO** (`OCIOVAEDecode`, EXR read/write): now in `comfy-node-packs` (`ef909b2`), so the next image build stages it; the pinned digest predates it.
 - **ComfyUI-LTXVideo**: now in `comfy-node-packs` (`ef909b2`, LTX-2 Community License: keep repo and image private), staged by the next build; Binc reports it fails to import on both Macs, so test it on a pod first.
 - **SeedVR2**: ComfyUI core node in v0.39.2; weights are on the Shared volume, not a pack.
@@ -160,4 +161,4 @@ Depth Anything V2 Large fp32 and fp16, SeedVR2 3B fp16 and VAE, SAM 2.1 base+ an
 - Extra Python packages for the packs: `apps/comfy-app/requirements-packs.txt`; each pack's own `requirements.txt` too, with `opencv-python` swapped for the headless build.
 - System: openssh-server, rsync, rclone, headless Chromium (Playwright at `/opt/playwright`) for `ui2api.py`.
 - Pinned image: `ghcr.io/bluecollardev/comfy-app@sha256:a06a461ce3b38c6a3badf9cd7d47e77f12247a38785511f8b4ca077aedb4d457` (CUDA 13: `@sha256:116c2012a094e627623c3883ef96dd1c6f828d97009064371d9556be81eac43a`).
-- Not yet in the image: ComfyUI-OCIO, ComfyUI-LTXVideo (see Custom nodes).
+- In `comfy-node-packs` but not yet in a built image: ComfyUI-OCIO, ComfyUI-LTXVideo, ComfyUI-BincGenDPX-v002, ComfyUI-BincPlateIO-v004 (see Custom nodes).

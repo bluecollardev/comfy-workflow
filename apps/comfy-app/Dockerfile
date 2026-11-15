@@ -58,6 +58,7 @@ RUN for req in /opt/ComfyUI/custom_nodes/*/requirements.txt; do \
 RUN [ ! -d /opt/ComfyUI/custom_nodes/ComfyUI-fal-API ] || python -c "import fal_client"
 # The OCIO pack needs PyOpenColorIO and OpenEXR, the LTX pack needs its HDR libraries: fail the build instead of shipping nodes that cannot import (ADR-042).
 RUN [ ! -d /opt/ComfyUI/custom_nodes/ComfyUI-OCIO ] || python -c "import PyOpenColorIO, OpenEXR"
+RUN [ ! -d /opt/ComfyUI/custom_nodes/ComfyUI-BincGenDPX-v002 ] || python -c "import OpenImageIO"
 RUN [ ! -d /opt/ComfyUI/custom_nodes/ComfyUI-LTXVideo ] || python -c "import colour, einops, kornia, diffusers"
 
 # sshd (RunPod injects PUBLIC_KEY; the entrypoint starts it) and rsync, for ./start.sh sync onto the volume;
