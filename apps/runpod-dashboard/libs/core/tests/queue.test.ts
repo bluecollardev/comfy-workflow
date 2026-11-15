@@ -221,13 +221,13 @@ describe('retrying a pull', () => {
 })
 
 describe('the pool default card shows in the queue too', () => {
-  it('a pod the queue creates for a shot with no card says which card it is (the H100)', async () => {
+  it('a pod the queue creates for a shot with no card says which card it is (the default card)', async () => {
     const w = world()
     await queue.importRound(ROUND, { shots: ['cgi-042'], approved_by: 'L' })
     w.pull.state = 'done'; await queue.tick(); await queue.tick()
     expect(w.created).toEqual(['new1'])
-    expect(queue.list().tasks.find((x) => x.shot === 'cgi-042')?.card).toBe(queue.POOL_GPU)
-    expect((queue.list().tasks.find((x) => x.shot === 'cgi-042')?.events ?? []).map((e) => e.text).join(' ')).toContain(queue.POOL_GPU)
+    expect(queue.list().tasks.find((x) => x.shot === 'cgi-042')?.card).toBe(queue.poolGpu())
+    expect((queue.list().tasks.find((x) => x.shot === 'cgi-042')?.events ?? []).map((e) => e.text).join(' ')).toContain(queue.poolGpu())
   })
 })
 

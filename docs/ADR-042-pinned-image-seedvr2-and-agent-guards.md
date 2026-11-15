@@ -87,6 +87,16 @@ Lucas: "when importing and exporting settings, keep a copy of the names of the m
 5. **MCP.** `models_wanted` (the list; with a volume, each row's state and the totals), `models_wanted_add` (entries, CSV text, or from `binc_list` / `installed`), `models_wanted_remove`, `models_load_wanted` (spends: the named yes when that setting is on, as for the other spend tools).
 6. **Not done.** The list is not matched against what an installed file's repo was when the file was fetched before this section (such files are recorded with no repo until added from Hugging Face or Binc's list). Verified by tests with fake S3 and fake jobs; not run against a real volume or Hugging Face.
 
+## 13. The default card (built 2026-11-15)
+
+Lucas: "set pro 6000 as default card".
+
+1. **One system-wide setting.** `default_gpu` in the Default Configuration: a key of the card table (`gpus.ts`) or `auto` (the cheapest card in stock). Default `rtxpro6000`. Not per pod: a pod's own configuration carries the field like any other, but the setting is shown once, in Default Configuration > Options, and travels in the *Pod defaults* export section.
+2. **Where it applies.** A pod created with no card named (`pods.plan`: `req.gpu || cfg.default_gpu`), MCP `create_pod` when `gpu` is omitted, the create form's initial card (a card nobody picked follows the setting when it loads or changes; a picked one stays), the Queue's pool when a shot has no card (it was a hard-coded H100: `queue.poolGpu()`), and the card menu's `default`. An explicit card always wins; `pull_any_card` is unchanged.
+3. **CUDA 13.** The RTX PRO 6000 needs the CUDA 13 image: the existing pairing picks it (a tag gets `-cu13`, a pinned digest its CU13_PINS pair, and the pod gets the CUDA 13 host filter), tested in `defaultgpu.test.ts`. The pin still names the 15 Nov images that predate the OCIO, LTX and Binc DPX packs until the CUDA 13 build of the new image is pinned.
+4. **Out of stock.** The default card is treated like an explicit one: when RunPod has none in the datacenter the create fails with the list of what was tried; nothing silently picks another card. Choose `auto` to take whatever is cheapest.
+5. **MCP.** `get_configuration` shows `default_gpu`; `set_configuration` takes it in `patch`.
+
 ## Consequences
 
 - One tag no longer means two images; Blackwell cards keep their CUDA 13 build.

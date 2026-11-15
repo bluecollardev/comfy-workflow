@@ -29,7 +29,7 @@ export const SECTIONS: Record<SectionKey, SectionDef> = {
   volume: { label: 'Volume and datacenter', fields: ['network_volume_id', 'mount_path', 'data_center_id', 'shared_volume_id'], account: true },
   image: { label: 'Image and registry login', fields: ['image', 'registry_auth_id'], account: true },
   env: { label: 'Environment', fields: ['env'] },
-  pod_defaults: { label: 'Pod defaults', fields: ['idle_stop_minutes', 'models', 'sync_parallel', 'sync_shared', 'pull_shared', 'apply_by_default', 'pull_any_card', 'import_max_pods', 'import_cost_cap_usd', 'import_cap_enabled', 'required', 'links'] },
+  pod_defaults: { label: 'Pod defaults', fields: ['idle_stop_minutes', 'models', 'sync_parallel', 'sync_shared', 'pull_shared', 'apply_by_default', 'pull_any_card', 'default_gpu', 'import_max_pods', 'import_cost_cap_usd', 'import_cap_enabled', 'required', 'links'] },
   mcp: { label: 'MCP servers', fields: ['mcp_http'] },
   mcp_connections: { label: 'MCP connections (the console this app uses)', fields: [] },
   repositories: { label: 'Repositories and accounts', fields: [] },
@@ -40,7 +40,7 @@ export const SECTIONS: Record<SectionKey, SectionDef> = {
   secrets: { label: 'Keys and tokens', fields: [] },
 }
 export const SECTION_KEYS = Object.keys(SECTIONS) as SectionKey[]
-const CONFIG_KEYS = new Set<string>(['folders', 'custom', 'network_volume_id', 'shared_volume_id', 'mount_path', 'data_center_id', 'links', 'env', 'apply_by_default', 'pull_any_card', 'import_max_pods', 'import_cost_cap_usd', 'import_cap_enabled', 'required', 'image', 'registry_auth_id', 'idle_stop_minutes', 'models', 'wanted_models', 'pull_shared', 'sync_shared', 'sync_parallel', 'dry_run', 'mcp_http'])
+const CONFIG_KEYS = new Set<string>(['folders', 'custom', 'network_volume_id', 'shared_volume_id', 'mount_path', 'data_center_id', 'links', 'env', 'apply_by_default', 'pull_any_card', 'default_gpu', 'import_max_pods', 'import_cost_cap_usd', 'import_cap_enabled', 'required', 'image', 'registry_auth_id', 'idle_stop_minutes', 'models', 'wanted_models', 'pull_shared', 'sync_shared', 'sync_parallel', 'dry_run', 'mcp_http'])
 const TOP_KEYS = new Set(['format', 'version', 'exported_at', 'app_version', 'config', 'panama', 'governance', 'mcp_connections', 'repositories', 'secrets_included', 'secrets', 'secrets_set', 'env_omitted', 'not_exported'])
 /** Listed in every export, so a reader knows what to set up again by hand. */
 export const NOT_EXPORTED = ['the no-spend switch (dry_run)', 'per-pod configurations', 'per-pod model choices (a pod id means nothing on another machine; the defaults travel)', 'adapters you wrote', 'which pod a repository is cloned onto (pod ids are not portable; the repository list itself travels)']
@@ -54,6 +54,7 @@ const appVersion = (): string => { try { return JSON.parse(readFileSync(join(APP
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 import * as repos from './repositories.js'
+import * as gpus from './gpus.js'
 import * as wanted from './wanted.js'
 import * as remote from './remote.js'
 type PublicAccount = Omit<git.Account, 'token' | 'refresh_token'>
@@ -105,6 +106,7 @@ const checkType = (key: string, v: unknown): string | null => {
     case 'idle_stop_minutes': case 'sync_parallel': return typeof v === 'number' && Number.isFinite(v) ? null : `${key} must be a number`
     case 'apply_by_default':
     case 'pull_any_card': return typeof v === 'boolean' ? null : `${key} must be true or false`
+    case 'default_gpu': return str(v) && (v === 'auto' || (v as string) in gpus.GPUS) ? null : `${key} must be auto or a card of the table`
     case 'import_max_pods': return Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 20 ? null : `${key} must be a whole number from 1 to 20`
     case 'import_cost_cap_usd': return typeof v === 'number' && v > 0 ? null : `${key} must be a number above 0`
     case 'import_cap_enabled': return typeof v === 'boolean' ? null : `${key} must be true or false`

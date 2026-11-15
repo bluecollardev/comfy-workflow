@@ -287,6 +287,11 @@
       <BFormCheckbox v-if="!forPod" v-model="cfg.pull_any_card" :value="true" :unchecked-value="false" switch class="mb-2" data-testid="cfg-pull-any-card">
         {{ $t('config.pullAnyCard') }} <span class="text-body-secondary">{{ $t('config.pullAnyCardHint') }}</span>
       </BFormCheckbox>
+      <div v-if="!forPod" class="mb-2 d-flex align-items-center gap-2 flex-wrap" data-testid="cfg-default-gpu-row">
+        <label class="mb-0" for="cfg-default-gpu">{{ $t('config.defaultGpu') }}</label>
+        <BFormSelect id="cfg-default-gpu" v-model="cfg.default_gpu" :options="gpuChoices" size="sm" style="width: 22rem" data-testid="cfg-default-gpu" />
+        <span class="small text-body-secondary">{{ $t('config.defaultGpuHint') }}</span>
+      </div>
       <div v-if="!forPod" class="mb-2" data-testid="cfg-import-row">
         <BFormCheckbox v-model="cfg.import_cap_enabled" :value="true" :unchecked-value="false" switch class="mb-1" data-testid="cfg-import-cap-enabled">
           {{ $t('config.importCap') }} <span class="text-body-secondary">{{ $t('config.importCapHint') }}</span>
@@ -548,13 +553,18 @@ async function loadVolume() {
   try { volume.value = await podsAPI.volume(id) } catch (e) { volume.value = e.response?.status === 404 ? null : undefined }
 }
 
+/** The card table for the default-card select: the menu's names, with auto as the cheapest card in stock. */
+const gpuChoices = ref([{ value: 'rtxpro6000', text: 'RTX PRO 6000 (96 GB)' }, { value: 'auto', text: 'Cheapest card in stock (16-24 GB)' }])
+async function loadGpuChoices() {
+  try { const g = await podsAPI.gpus(); if (g.gpus?.length) gpuChoices.value = g.gpus.map((x) => ({ value: x.value, text: String(x.text).split(' · ')[0] })) } catch { /* the short menu stays */ }
+}
 async function loadDatacenters() {
   try { dcList.value = (await podsAPI.datacenters()).datacenters || [] } catch { /* the saved id stays selectable */ }
 }
 
 async function load() {
   overStudio.value = studioStore.open   // opened from inside the Adapter Studio (the Claude key): it must sit above it
-  loadDatacenters()
+  loadDatacenters(); loadGpuChoices()
   loadVolumes()
   loading.value = true; error.value = null
   if (forPod.value) {
@@ -637,7 +647,7 @@ async function afterImport() {
   const payload = await mounts.load()
   if (payload) take(payload)
   try { keyInfo.value = await settingsAPI.get() } catch { /* unchanged */ }
-  loadVolume(); loadDatacenters(); loadVolumes()
+  loadVolume(); loadDatacenters(); loadGpuChoices(); loadVolumes()
   settingsStore.load(); panamaStore.loadStatus()
 }
 async function focusSection() {

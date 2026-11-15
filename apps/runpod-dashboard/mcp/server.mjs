@@ -144,7 +144,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
         properties: {
           approved_by: approvedBy,
           name: { type: 'string', description: 'Pod name' },
-          gpu: { type: 'string', enum: pool.GPU_TYPES, description: 'A card from the table, or auto: the cheapest one in stock where the volume lives', default: gpus.DEFAULT_GPU },
+          gpu: { type: 'string', enum: pool.GPU_TYPES, description: "A card from the table, or auto: the cheapest one in stock where the volume lives. Omitted: the Default Configuration's default card (RTX PRO 6000 unless changed; get_configuration shows it as default_gpu)" },
           datacenter: { type: 'string', description: 'Datacenter id (list_datacenters). With a network volume applied its datacenter wins; to run in another region pass apply_mounts=false (no volume, no mount configuration) or make a volume there first (create_volume)' },
           gpu_type_id: { type: 'string', description: 'A raw RunPod GPU id (list_gpus / list_datacenters) for a card outside the table, in place of gpu. Blackwell and AMD cards will not run the image' },
           gpu_count: { type: 'integer', minimum: 1, maximum: 8, default: 1 },
@@ -281,7 +281,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
       const refusal = governance.namedYes(args, 'create_pod')
       if (refusal) return text(refusal, true)
       const req = {
-        name: args.name, gpu: args.gpu || gpus.DEFAULT_GPU, image: args.image || pool.imageChoice(mounts.load()), data_center_id: args.datacenter || null,
+        name: args.name, gpu: args.gpu || mounts.load().default_gpu || gpus.DEFAULT_GPU, image: args.image || pool.imageChoice(mounts.load()), data_center_id: args.datacenter || null,
         idle_stop_minutes: args.idle_stop_minutes ?? null, apply_mounts: args.apply_mounts ?? null, config: args.config || null, ...(args.round ? { round: String(args.round) } : {}),
         ...(args.gpu_type_id ? { gpu_type_id: args.gpu_type_id } : {}), ...(args.gpu_count ? { gpu_count: Number(args.gpu_count) } : {}), ...(args.instance_type ? { instance_type: args.instance_type } : {}),
         ...(args.disk_gb != null ? { disk_gb: Number(args.disk_gb) } : {}), ...(args.volume_gb != null ? { volume_gb: Number(args.volume_gb) } : {}), ...(args.start_ssh != null ? { start_ssh: !!args.start_ssh } : {}), ...(args.start_jupyter ? { start_jupyter: true } : {}),

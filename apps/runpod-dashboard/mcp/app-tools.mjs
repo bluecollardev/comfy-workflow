@@ -59,7 +59,7 @@ export function appTools({ core, governance, text, json, plain = text }) {
 
     // ---------- the Default Configuration and the keys ----------
     { name: 'set_configuration', description: 'Change the Default Configuration: a patch (objects such as folders, env, required merge by key; lists and the rest replace). Same validation as the window. dry_run (no-spend) is never settable. Returns the saved summary.',
-      inputSchema: obj({ patch: O('Fields to change, as get_configuration shows them: folders {key: path}, network_volume_id, data_center_id, mount_path, image, registry_auth_id, idle_stop_minutes, apply_by_default, env {NAME: value}, links, custom, required, sync_shared, pull_shared, pull_any_card, mcp_http ...') }, ['patch']),
+      inputSchema: obj({ patch: O('Fields to change, as get_configuration shows them: folders {key: path}, network_volume_id, data_center_id, mount_path, image, registry_auth_id, idle_stop_minutes, apply_by_default, env {NAME: value}, links, custom, required, sync_shared, pull_shared, pull_any_card, default_gpu (the card a new pod gets when none is named: a table key or auto), mcp_http ...') }, ['patch']),
       run: async ({ patch }) => { const saved = mounts.put(mergeConfig(mounts.load(), patch || {})); return json({ saved: true, configuration: summaryOf(mounts.load()), warnings: saved.warnings ?? undefined }) } },
     { name: 'preview_configuration', description: 'What a pod would get from a configuration without saving it: the env and the links. A patch over the Default Configuration, or none for the saved one', inputSchema: obj({ patch: O('Fields to change') }),
       run: async ({ patch }) => json(mounts.preview(mergeConfig(mounts.load(), patch || {}))) },

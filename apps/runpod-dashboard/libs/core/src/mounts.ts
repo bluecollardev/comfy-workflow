@@ -16,6 +16,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { bad, CoreError } from './errors.js'
 import { mirrorDir, mountsFile } from './paths.js'
 import * as wanted from './wanted.js'
+import * as gpus from './gpus.js'
 import * as history from './history.js'
 import * as settings from './settings.js'
 import { folderShapes, shape } from './shape.js'
@@ -47,6 +48,8 @@ export interface MountsConfig {
   apply_by_default: boolean
   /** Pull pods (the Pod download of a round, ADR-022/024) may take any NVIDIA card RunPod has free in the volume's datacenter, not only the table's ten; a pull needs no GPU. Default on. */
   pull_any_card: boolean
+  /** The card a new pod gets when the caller names none: a key of the card table (gpus.ts) or `auto` (the cheapest in stock). System-wide, not per pod. Default the RTX PRO 6000. */
+  default_gpu: string
   /** Round import (ADR-038): how many pool pods one import may run at once, the dollar cap on one import's estimate, and whether those two limits apply at all (the governance cap does not depend on this). */
   import_max_pods: number
   import_cost_cap_usd: number
@@ -119,6 +122,7 @@ export function defaults(): MountsConfig {
     env: {},
     apply_by_default: true,
     pull_any_card: true,
+    default_gpu: 'rtxpro6000',
     import_max_pods: 2,
     import_cost_cap_usd: 50,
     import_cap_enabled: true,
@@ -169,6 +173,7 @@ export function normalize(data: Partial<MountsConfig>): MountsConfig {
     pull_shared: Array.isArray(data.pull_shared) ? SYNC_SHARED.filter((x) => data.pull_shared!.includes(x)) : d.pull_shared,
     sync_shared: Array.isArray(data.sync_shared) ? SYNC_SHARED.filter((x) => data.sync_shared!.includes(x)) : d.sync_shared,
     pull_any_card: data.pull_any_card !== false,   // absent means on
+    default_gpu: typeof data.default_gpu === 'string' && data.default_gpu.trim() ? data.default_gpu.trim() : d.default_gpu,   // absent or empty: the default; an unknown card is refused by validate
     import_max_pods: Number.isInteger(data.import_max_pods) && (data.import_max_pods as number) >= 1 && (data.import_max_pods as number) <= 20 ? data.import_max_pods as number : 2,
     import_cost_cap_usd: typeof data.import_cost_cap_usd === 'number' && data.import_cost_cap_usd > 0 ? data.import_cost_cap_usd : 50,
     import_cap_enabled: data.import_cap_enabled !== false,   // absent means the cap is on
@@ -434,6 +439,7 @@ export function validate(cfg: MountsConfig): MountsConfig {
     if (c.container && !c.container.startsWith('/')) throw bad(`${c.name}: the pod path is absolute, not ${JSON.stringify(c.container)}`)
   }
   linksEnv(allLinks(cfg))
+  if (cfg.default_gpu !== gpus.AUTO && !(cfg.default_gpu in gpus.GPUS)) throw bad(`default_gpu is auto or one of ${Object.keys(gpus.GPUS).join(', ')}, not ${JSON.stringify(cfg.default_gpu)}`)
   if (cfg.idle_stop_minutes < 0) throw bad('idle_stop_minutes is 0 (never) or a number of minutes')
   if (!Number.isInteger(cfg.sync_parallel) || cfg.sync_parallel < 1 || cfg.sync_parallel > 16) throw bad('sync_parallel is a whole number of parallel uploads, 1 to 16')
   const ports = new Set<number>()
