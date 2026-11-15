@@ -50,7 +50,7 @@ test.describe('Shared', () => {
     await openModels(page)
     const m = page.getByTestId('models-modal')
     await expect(m.getByTestId('models-target')).toContainText('comfy-workspace')
-    await expect(m.getByTestId('models-target')).toContainText(t('models.targetShared'))
+    await expect(m.getByTestId('models-target')).not.toContainText(t('models.targetDefault'))   // a Shared volume adds no extra text
     await expect(m.getByTestId('models-on-volume-unknown')).toBeVisible()                // status answered null: it says it does not know
     await expect(m.getByTestId('models-search-go')).toBeDisabled()                        // two characters at least
     await m.getByTestId('models-search').fill('seedvr2')
@@ -90,7 +90,7 @@ test.describe('Shared', () => {
     await expect(m.getByTestId('models-on-volume-file')).toHaveCount(2)
     await expect(m.getByTestId('models-on-volume')).toContainText('diffusion_models/z_image.safetensors')
     await m.getByTestId('models-shared-select').selectOption('vol1')                     // choosing it is the same as Make Shared
-    await expect(m.getByTestId('models-target')).toContainText(t('models.targetShared'))
+    await expect(m.getByTestId('models-target')).not.toContainText(t('models.targetDefault'))   // a Shared volume adds no extra text
     expect(api.state.sharedVolume).toBe('vol1')
     await m.getByTestId('models-search').fill('zzz nothing')
     await m.getByTestId('models-search-go').click()
