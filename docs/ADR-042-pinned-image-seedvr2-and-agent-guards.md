@@ -146,6 +146,35 @@ Tested with fake pod output (progress, verify, finished files, the job view at e
 
 **Not verified.** The scripts are tested as text and against a fake pod; they have never run on a real pod (`setsid`, `stat -c` and `/dev/shm` are Linux-only, so they cannot run on this Mac). The first real Load Missing with a deliberately cut connection is the test.
 
+## 18. RunPod's request limit: one shared answer, a calm banner, never "no volume" (amendment, 16 Nov 2026)
+
+Lucas, in the window: "There is no volume to load onto: set a Default Configuration volume or make one Shared." (his configuration had both set), then "the fuck". Cause, verified: RunPod answered `429 listing network volumes: rate limit exceeded for the hour window`. The Models window builds its target from the volume list; an unreadable list was an empty list, so it said there was no volume. The app itself, and the agent pollers running beside it, had used the hour's requests.
+
+**What the app asked RunPod, per minute, with the window open (read from the code, `setInterval`s and call sites; before this change):**
+
+| Caller | Every | RunPod requests |
+|---|---|---|
+| Pods store `load()` (list + stats) | 30 s, **5 s** while a pod is starting | 2 a minute, **12** while a pod starts |
+| Credits (Stats) | 60 s | 1 |
+| Create-pod form open: datacenters and cards | 60 s | about 8 to 14 (one availability query, one datacenter list and five price chunks, plus the stock query) |
+| Models window open: what is on the volume and the wanted list | 6 s, each one looks the volume up (REST) | **20** |
+| Queue tick with an import running | 3 s | up to 20 (the pods on the volume) |
+| Idle sweep | 60 s | 1 |
+| A volume job following its pod | a few seconds | a few |
+| Agent pollers (`list_pods`, `volume_job`, `models_*` through MCP) | whatever the agent chose | 4 to 8 each |
+
+A window left open on the create form and the Models window, with one pod starting, was about 50 requests a minute; with an agent polling it was well past that.
+
+**Now:**
+- **One answer, shared.** `ratelimit.cached` keeps one answer per call for a while and lets concurrent callers share one request: pods 8 s, one pod 3 s, volumes 15 s, a volume 15 s, the account 30 s, GPU stock and a datacenter's cards 60 s, datacenter availability and prices 120 s. A write (create, stop, resume, delete a pod; create, resize, delete a volume) drops what it changed. Cached only when the call goes to RunPod itself: a test that injects its own `fetch` is not cached unless it says `cache: true`.
+- **Steady state, same situation:** list_pods at most 7.5 a minute (the 8 s answer), volumes 4, a volume lookup 4, credits 2, the create form's 120 s answer 3 to 7 instead of 8 to 14; the Models window's 20 become at most 4 because the six-second poll reads the cached volume; the Queue tick shares the pods answer. About 15 to 20 a minute where it was about 50. An agent polling the same call costs nothing extra inside the window.
+- **429.** `ratelimit.noteLimited` reads the window from RunPod's words (minute or hour) and `Retry-After`: a minute window waits 60 s; an hour window waits 5 minutes, then one probe, and on another refusal 10, then 15. Every read waits (`guard`) while backing off; a write still tries and says so when refused. The first answer after the wait ends it. The last good answer of every cached call is served instead (stale, with its age) while RunPod limits; with nothing to serve the 429 is thrown with its window and the retry time.
+- **The banner.** One line under the nav bar: "RunPod Is Limiting Requests (Hour Window); Showing What Was Known 7 Min Ago; Retrying At 09:30." It is read from the core's memory every 5 seconds and makes no request to RunPod. MCP: the `rate_limit_status` tool, and every object answer carries `rate_limited` while it holds (a list stays a list).
+- **A volume is never "no volume" because RunPod would not list it.** The last volumes seen are kept on disk (`volumes-cache.json`), so a restart during a limit still knows the names and datacenters. `volumes.list`, `volumeInfo` and the job's volume lookup fall back to that record, then to the stored ids (name = id, the configured datacenter), marked `stale`. The Models window takes its target from the stored Shared or default id when the list failed; "There is no volume to load onto" appears only when no id is stored at all.
+- **Test hygiene.** A full run of the core tests appended "imported from a file" and "restored from a backup" entries to the real `~/.config/runpod-pod-manager/history.jsonl` (`configio.test.ts` isolated the mounts file and the settings but not History). `tests/setup.ts` (vitest `setupFiles`) now points the config directory and Claude Code's settings at a scratch folder before any test; `tests/realconfig.test.ts` fails when any path the core writes would resolve inside the real directory. The MCP tests and the Electron specs already used scratch directories; the browser specs use a fake API.
+
+Unproven: nothing was run against a real rate-limited RunPod; the answers are fake 429s. The call counts are read from the code, not measured on the wire.
+
 ## Consequences
 
 - One tag no longer means two images; Blackwell cards keep their CUDA 13 build.

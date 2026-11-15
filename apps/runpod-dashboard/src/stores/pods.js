@@ -12,7 +12,7 @@ import { fold, fresh } from '../sync-progress'
  * success; `actionError` holds the last failure for an inline alert.
  */
 export const REFRESH_MS = 30_000
-export const STARTING_REFRESH_MS = 5_000   // while a pod is coming up, poll fast so the card follows it
+export const STARTING_REFRESH_MS = 8_000   // while a pod is coming up, poll fast so the card follows it
 
 export const usePodsStore = defineStore('pods', () => {
   const toast = useToastStore()

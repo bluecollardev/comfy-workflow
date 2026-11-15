@@ -374,6 +374,9 @@ export async function mockApi(page, state) {
     }
     if (method === 'GET' && path === '/history/runs') { const r = state.history.runs[query.pod_id]; return r ? json(r) : json({ detail: `pod ${query.pod_id} is not running` }, 400) }
     if (method === 'GET' && path === '/credits') return state.credits === null ? json({ detail: 'RunPod did not report the account balance' }, 502) : json(state.credits ?? { balance: 36.42, spend_per_hr: 0.053, spend_limit: 80, hours_left: 687.2, level: 'ok' })
+    // RunPod's request limit (ADR-042 section 18): the core's local state, and a volume list RunPod refuses to give while it limits
+    if (method === 'GET' && path === '/ratelimit') return json(state.ratelimit || { limited: false, window: null, retry_at: null, since: null, stale_age_s: null, message: null })
+    if (method === 'GET' && path === '/volumes' && state.volumesFail) return json({ detail: 'RunPod answered 429 listing network volumes: rate limit exceeded for the hour window' }, 502)
     if (method === 'GET' && path === '/volumes') return json(Object.values(state.volumes).map((v) => ({ ...v, is_default: v.id === state.mounts.config.network_volume_id, is_shared: !!state.sharedVolume && v.id === state.sharedVolume })))
     // the Shared volume (ADR-042 section 9): the one the models live on; it cannot be deleted while it is Shared
     if (method === 'POST' && path === '/volumes/shared') { state.sharedVolume = body.id || ''; state.sharedCalls = (state.sharedCalls || []).concat(body.id || ''); return json(body.id ? { ...state.volumes[body.id], is_shared: true } : { shared: null }) }

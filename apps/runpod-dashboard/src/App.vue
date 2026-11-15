@@ -29,6 +29,7 @@
         </BButton></span>
       </div>
     </BNavbar>
+    <RateLimitBanner />
     <!-- A failed action (Resume with no free GPU on the host, Stop, Delete...) is said right under the nav bar, and stays there while the page scrolls -->
     <BAlert v-if="pods.actionError" :model-value="true" variant="danger" dismissible class="mb-0 rounded-0 border-start-0 border-end-0" data-testid="action-error" @update:model-value="pods.actionError = null">{{ pods.actionError }}</BAlert>
     </div>
@@ -97,6 +98,7 @@ import HistoryModal from './components/HistoryModal.vue'
 import ImportRoundModal from './components/ImportRoundModal.vue'
 import QueueModal from './components/QueueModal.vue'
 import ConfirmHost from './components/ConfirmHost.vue'
+import RateLimitBanner from './components/RateLimitBanner.vue'
 import { queueAPI } from './api/queue'
 import { useVolumeJobsStore } from './stores/volumejobs'
 import { useToastStore } from './stores/toast'

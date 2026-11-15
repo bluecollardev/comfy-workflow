@@ -16,6 +16,7 @@ import * as podconfigs from './podconfigs.js'
 import { S3_DATACENTERS, volumeCostPerMonth } from './pods.js'
 import * as dry from './dry.js'
 import * as rp from './runpod.js'
+import * as rl from './ratelimit.js'
 import { configDir } from './paths.js'
 
 export interface VolumePod { id: string; name: string; status: string; via: 'runpod' | 'config' }
@@ -24,6 +25,8 @@ export interface Volume {
   is_default: boolean       // the Default Configuration's volume
   is_shared: boolean        // the volume that holds the shared models (Shared badge; it cannot be deleted from here)
   pods: VolumePod[]         // attached on RunPod ('runpod'), or named by a pod's own configuration ('config')
+  /** Set when RunPod is limiting requests and this record is the last one seen (or only the stored id): name, size and pods may be old. */
+  stale?: true
 }
 
 const isDry = () => mounts.dryRun(mounts.load())
@@ -43,12 +46,23 @@ export async function list(client?: rp.RunPodClient): Promise<Volume[]> {
   const byVolume = new Map<string, VolumePod[]>()
   const add = (vid: string, p: VolumePod) => { if (!byVolume.has(vid)) byVolume.set(vid, []); const l = byVolume.get(vid)!; if (!l.some((x) => x.id === p.id)) l.push(p) }
   let volumes: rp.NetworkVolume[]
+  let stale = false
   if (isDry()) {
     volumes = dryLoad()
     for (const p of dry.list()) { const own = podconfigs.get(p.id); const vid = own?.network_volume_id || cfg.network_volume_id; if (vid) add(vid, { id: p.id, name: p.name, status: p.status, via: own ? 'config' : 'runpod' }) }
   } else {
-    const [vols, pods] = await Promise.all([rp.listNetworkVolumes(client), rp.listPods(client)])
-    volumes = vols
+    let pods: rp.RawPod[] = []
+    try {
+      const [vols, ps] = await Promise.all([rp.listNetworkVolumes(client), rp.listPods(client)])
+      volumes = vols; pods = ps
+      if (rl.status().limited) stale = true
+    } catch (e) {
+      if (!(e instanceof rl.RateLimited)) throw e
+      // RunPod is limiting requests: what was last seen, then the stored ids, never "no volumes"
+      stale = true
+      volumes = rl.lastVolumes().volumes.map((v) => ({ id: v.id, name: v.name, size: v.size, dataCenterId: v.dataCenterId }))
+      for (const id of [cfg.shared_volume_id, cfg.network_volume_id]) if (id && !volumes.some((v) => v.id === id)) volumes.push({ id, name: id, size: 0, dataCenterId: id === cfg.network_volume_id ? cfg.data_center_id || '' : '' })
+    }
     for (const p of pods) {
       const status = (p.runtime?.uptimeInSeconds ?? 0) > 0 ? 'running' : (p.desiredStatus || '').toUpperCase() === 'RUNNING' ? 'starting' : 'stopped'
       if (p.networkVolumeId) add(p.networkVolumeId, { id: p.id, name: p.name, status, via: 'runpod' })
@@ -58,7 +72,7 @@ export async function list(client?: rp.RunPodClient): Promise<Volume[]> {
   }
   return volumes.map((v) => ({
     id: v.id, name: v.name, size_gb: v.size, datacenter: v.dataCenterId, cost_per_month: volumeCostPerMonth(v.size), s3: S3_DATACENTERS.has(v.dataCenterId),
-    is_default: v.id === cfg.network_volume_id, is_shared: !!cfg.shared_volume_id && v.id === cfg.shared_volume_id, pods: byVolume.get(v.id) || [],
+    is_default: v.id === cfg.network_volume_id, is_shared: !!cfg.shared_volume_id && v.id === cfg.shared_volume_id, pods: byVolume.get(v.id) || [], ...(stale ? { stale: true as const } : {}),
   })).sort((a, b) => Number(b.is_default) - Number(a.is_default) || a.name.localeCompare(b.name))
 }
 

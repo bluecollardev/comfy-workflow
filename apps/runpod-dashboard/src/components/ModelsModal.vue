@@ -148,7 +148,13 @@ const wantedBusy = ref(false), wantedNote = ref(''), pasteOpen = ref(false), pas
 let timer = null
 
 /** Where the files go: the Shared volume, else the Default Configuration's volume. */
-const target = computed(() => volumes.shared || volumes.volumes.find((v) => v.id === mounts.config?.network_volume_id) || volumes.volumes.find((v) => v.is_default) || null)
+/** The volume to load onto: the Shared one, else the Default Configuration's, from the list when it was read; from the stored ids when it was not (RunPod limits requests, ADR-042 section 18): 'no volume' only when no id is stored at all. */
+const target = computed(() => {
+  const listed = volumes.shared || volumes.volumes.find((v) => v.id === mounts.config?.network_volume_id) || volumes.volumes.find((v) => v.is_default)
+  if (listed) return listed
+  const id = mounts.config?.shared_volume_id || mounts.config?.network_volume_id
+  return id ? { id, name: id, datacenter: mounts.config?.data_center_id || '', is_shared: !!mounts.config?.shared_volume_id, stale: true } : null
+})
 const sharedOptions = computed(() => [{ value: '', text: t('models.sharedNone') }, ...volumes.volumes.map((v) => ({ value: v.id, text: `${v.name} (${v.datacenter})` }))])
 const picked = computed(() => files.value.filter((f) => chosen[f.path]))
 const lockedPicked = computed(() => picked.value.some((f) => f.locked))

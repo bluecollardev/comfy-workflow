@@ -4,8 +4,16 @@
  * environment or the caller. Errors carry RunPod's own message.
  */
 import { CoreError } from './errors.js'
+import * as rl from './ratelimit.js'
 
-export interface RunPodClient { apiKey?: string; fetchFn?: typeof fetch; baseUrl?: string }
+/** `cache`: share and keep read answers (ADR-042 section 18). On by default; off when a test injects its own fetch, unless it sets this. */
+export interface RunPodClient { apiKey?: string; fetchFn?: typeof fetch; baseUrl?: string; cache?: boolean }
+const useCache = (c?: RunPodClient) => c?.cache ?? !c?.fetchFn
+const ckey = (c: RunPodClient | undefined, k: string) => `${(c?.apiKey || process.env.RUNPOD_API_KEY || '').slice(-6)}|${c?.baseUrl || ''}|${k}`
+const retryAfter = (res: Response) => { const v = Number(res.headers?.get?.('retry-after')); return Number.isFinite(v) && v > 0 ? v : null }
+/** A 429 (or a GraphQL error saying so): remember it core-wide and throw it. */
+async function limited(res: Response | null, text: string): Promise<never> { throw rl.noteLimited(text, res ? retryAfter(res) : null) }
+const isWrite = (init?: RequestInit) => !!init?.method && init.method !== 'GET'
 
 const str = (v: string) => JSON.stringify(v)   // a GraphQL string literal, quotes and backslashes escaped
 
@@ -13,6 +21,7 @@ export async function graphql<T = unknown>(query: string, client: RunPodClient =
   const apiKey = client.apiKey || process.env.RUNPOD_API_KEY
   if (!apiKey) throw new CoreError(401, 'RUNPOD_API_KEY not set')
   const base = client.baseUrl || process.env.RUNPOD_API_BASE_URL || 'https://api.runpod.io'
+  if (!/^\s*mutation\b/.test(query)) rl.guard()   // a read waits while RunPod limits; a write still tries
   const res = await (client.fetchFn || fetch)(`${base}/graphql`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`, 'User-Agent': 'comfy-workflow pod manager' },
@@ -20,8 +29,10 @@ export async function graphql<T = unknown>(query: string, client: RunPodClient =
     signal: AbortSignal.timeout(30_000),
   })
   if (res.status === 401) throw new CoreError(401, 'Unauthorized request, please check your API key.')
+  if (res.status === 429) { let t = ''; try { t = await res.text() } catch { /* no body */ } return limited(res, t || 'RunPod answered 429') }
   const body = (await res.json()) as { data?: T; errors?: { message: string }[] }
-  if (body.errors?.length) throw new CoreError(502, body.errors[0].message)
+  if (body.errors?.length) { if (/rate.?limit|too many requests/i.test(body.errors[0].message)) return limited(res, body.errors[0].message); throw new CoreError(502, body.errors[0].message) }
+  rl.noteOk()
   return body.data as T
 }
 
@@ -62,33 +73,34 @@ const POD_FIELDS = 'id name desiredStatus lastStatusChange imageName gpuCount co
 
 export async function createPod(input: CreatePodInput, client?: RunPodClient): Promise<{ id: string }> {
   const d = await graphql<{ podFindAndDeployOnDemand: { id: string } | null }>(deployMutation(input), client)
+  rl.invalidate('|pod'); rl.invalidate('|volumes')
   if (!d?.podFindAndDeployOnDemand?.id) throw new CoreError(500, 'Failed to create pod')
   return d.podFindAndDeployOnDemand
 }
 
-export async function listPods(client?: RunPodClient): Promise<RawPod[]> {
+async function listPodsRaw(client?: RunPodClient): Promise<RawPod[]> {
   const d = await graphql<{ myself: { pods: RawPod[] } }>(`query myPods { myself { pods { ${POD_FIELDS} } } }`, client)
   return d?.myself?.pods || []
 }
 
-export async function getPod(podId: string, client?: RunPodClient): Promise<RawPod | null> {
+async function getPodRaw(podId: string, client?: RunPodClient): Promise<RawPod | null> {
   const d = await graphql<{ pod: RawPod | null }>(`query pod { pod(input: { podId: ${str(podId)} }) { ${POD_FIELDS} } }`, client)
   return d?.pod || null
 }
 
 export const stopPod = (podId: string, client?: RunPodClient) =>
-  graphql(`mutation { podStop(input: { podId: ${str(podId)} }) { id desiredStatus } }`, client)
+  graphql(`mutation { podStop(input: { podId: ${str(podId)} }) { id desiredStatus } }`, client).then((r) => { rl.invalidate('|pod'); return r })
 
 export const resumePod = (podId: string, gpuCount = 1, client?: RunPodClient) =>
-  graphql(`mutation { podResume(input: { podId: ${str(podId)}, gpuCount: ${gpuCount} }) { id desiredStatus imageName env machineId machine { podHostId } } }`, client)
+  graphql(`mutation { podResume(input: { podId: ${str(podId)}, gpuCount: ${gpuCount} }) { id desiredStatus imageName env machineId machine { podHostId } } }`, client).then((r) => { rl.invalidate('|pod'); return r })
 
 export const terminatePod = (podId: string, client?: RunPodClient) =>
-  graphql(`mutation { podTerminate(input: { podId: ${str(podId)} }) }`, client)
+  graphql(`mutation { podTerminate(input: { podId: ${str(podId)} }) }`, client).then((r) => { rl.invalidate('|pod'); rl.invalidate('|volumes'); return r })
 
 export interface GpuStock { id: string; price: number | null; stock: string | null; secure: boolean; community: boolean }
 
 /** What RunPod has in stock for a set of gpu ids, with the on-demand price. */
-export async function gpuStock(ids: string[], client?: RunPodClient): Promise<GpuStock[]> {
+async function gpuStockRaw(ids: string[], client?: RunPodClient): Promise<GpuStock[]> {
   const d = await graphql<{ gpuTypes: { id: string; secureCloud: boolean; communityCloud: boolean; lowestPrice: { uninterruptablePrice: number | null; stockStatus: string | null } | null }[] }>(
     'query { gpuTypes { id secureCloud communityCloud lowestPrice(input:{gpuCount:1}) { uninterruptablePrice stockStatus } } }', client)
   const want = new Set(ids)
@@ -96,7 +108,7 @@ export async function gpuStock(ids: string[], client?: RunPodClient): Promise<Gp
 }
 
 /** The cards one datacenter has available right now (a network volume pins pods to its datacenter). */
-export async function datacenterStock(dataCenterId: string, client?: RunPodClient): Promise<string[]> {
+async function datacenterStockRaw(dataCenterId: string, client?: RunPodClient): Promise<string[]> {
   const d = await graphql<{ dataCenters: { id: string; gpuAvailability: { available: boolean; gpuTypeId: string }[] | null }[] }>(
     'query { dataCenters { id gpuAvailability { available gpuTypeId } } }', client)
   const dc = (d?.dataCenters || []).find((x) => x.id === dataCenterId)
@@ -106,7 +118,7 @@ export async function datacenterStock(dataCenterId: string, client?: RunPodClien
 /** Every GPU type RunPod operates in each listed datacenter, free or not (`available`), NVIDIA and AMD alike. One query, so a datacenter never goes missing because a chunk of a bigger query failed.
  *  This is what the datacenter picker lists: nothing is hidden because it is busy or outside our table (ADR-026). */
 export interface DcAvailability { id: string; cards: { id: string; name: string; available: boolean; stock: string | null }[] }
-export async function datacenterAvailability(client?: RunPodClient): Promise<DcAvailability[]> {
+async function datacenterAvailabilityRaw(client?: RunPodClient): Promise<DcAvailability[]> {
   const d = await graphql<{ dataCenters: { id: string; listed: boolean; gpuAvailability: { gpuTypeId: string; gpuTypeDisplayName: string | null; available: boolean; stockStatus: string | null }[] | null }[] }>(
     'query { dataCenters { id listed gpuAvailability { gpuTypeId gpuTypeDisplayName available stockStatus } } }', client)
   return (d?.dataCenters || []).filter((x) => x.listed).map((x) => ({ id: x.id, cards: (x.gpuAvailability || []).map((g) => ({ id: g.gpuTypeId, name: g.gpuTypeDisplayName || g.gpuTypeId, available: !!g.available, stock: g.stockStatus })) }))
@@ -115,7 +127,7 @@ export async function datacenterAvailability(client?: RunPodClient): Promise<DcA
 /** Every NVIDIA GPU type RunPod has free in ONE datacenter on the secure cloud, cheapest first: not only our table's ten cards. A pull, a hash or a delete never touches the GPU
  *  (ADR-022), so a pull pod may take whatever is free. */
 export interface FreeCard { id: string; name: string; vram: number | null; price: number; stock: string }
-export async function freeCardsIn(dataCenterId: string, client?: RunPodClient): Promise<FreeCard[]> {
+async function freeCardsInRaw(dataCenterId: string, client?: RunPodClient): Promise<FreeCard[]> {
   const d = await graphql<{ gpuTypes: { id: string; displayName: string | null; memoryInGb: number | null; lowestPrice: { uninterruptablePrice: number | null; stockStatus: string | null } | null }[] }>(
     `query { gpuTypes { id displayName memoryInGb lowestPrice(input:{gpuCount:1, dataCenterId:${str(dataCenterId)}, secureCloud:true}) { uninterruptablePrice stockStatus } } }`, client)
   return (d?.gpuTypes || [])
@@ -129,7 +141,7 @@ export async function freeCardsIn(dataCenterId: string, client?: RunPodClient): 
  *  volume pins its pods there and that is the price they pay. */
 export interface DatacenterPrices { id: string; cards: { id: string; price: number | null; stock: string | null; name?: string; vram?: number | null }[] }
 /** `want`: the card ids to keep, or null for every NVIDIA card RunPod has there (the datacenter menu shows the cards our table leaves out too). */
-export async function datacenterPrices(want: string[] | null, client?: RunPodClient, only?: string[]): Promise<DatacenterPrices[]> {
+async function datacenterPricesRaw(want: string[] | null, client?: RunPodClient, only?: string[]): Promise<DatacenterPrices[]> {
   const dcs = await graphql<{ dataCenters: { id: string; listed: boolean }[] }>('query { dataCenters { id listed } }', client)
   const ids = (dcs?.dataCenters || []).filter((d) => d.listed && (!only || only.includes(d.id))).map((d) => d.id)
   if (!ids.length) return []
@@ -157,37 +169,46 @@ async function restV1(path: string, client: RunPodClient = {}, init: RequestInit
   const apiKey = client.apiKey || process.env.RUNPOD_API_KEY
   if (!apiKey) throw new CoreError(401, 'RUNPOD_API_KEY not set')
   const base = client.baseUrl || process.env.RUNPOD_REST_BASE_URL || 'https://rest.runpod.io'
-  return (client.fetchFn || fetch)(`${base}/v1${path}`, { ...init, headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json', ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...(init.headers || {}) }, signal: init.signal ?? AbortSignal.timeout(30_000) })
+  if (!isWrite(init)) rl.guard()
+  const res = await (client.fetchFn || fetch)(`${base}/v1${path}`, { ...init, headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json', ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...(init.headers || {}) }, signal: init.signal ?? AbortSignal.timeout(30_000) })
+  if (res.status === 429) { let t = ''; try { const b = await res.clone().json() as { error?: string; message?: string }; t = b.error || b.message || '' } catch { /* no body */ } return limited(res, t || 'RunPod answered 429') }
+  if (res.ok) rl.noteOk()
+  return res
 }
 async function restError(res: Response, what: string): Promise<CoreError> {
   let detail = ''
   try { const b = await res.json() as { error?: string; message?: string }; detail = b.error || b.message || '' } catch { /* no body */ }
   return new CoreError(502, `RunPod answered ${res.status} ${what}${detail ? `: ${detail}` : ''}`)
 }
-export async function networkVolume(id: string, client: RunPodClient = {}): Promise<NetworkVolume | null> {
+async function networkVolumeRaw(id: string, client: RunPodClient = {}): Promise<NetworkVolume | null> {
   const res = await restV1(`/networkvolumes/${encodeURIComponent(id)}`, client)
   if (res.status === 404) return null
   if (!res.ok) throw await restError(res, `for volume ${id}`)
   return (await res.json()) as NetworkVolume
 }
-export async function listNetworkVolumes(client: RunPodClient = {}): Promise<NetworkVolume[]> {
+async function listNetworkVolumesRaw(client: RunPodClient = {}): Promise<NetworkVolume[]> {
   const res = await restV1('/networkvolumes', client)
   if (!res.ok) throw await restError(res, 'listing network volumes')
-  return (await res.json()) as NetworkVolume[]
+  const all = (await res.json()) as NetworkVolume[]
+  if (useCache(client)) rl.rememberVolumes(all.map((v) => ({ id: v.id, name: v.name, size: v.size, dataCenterId: v.dataCenterId })))
+  return all
 }
 export async function createNetworkVolume(input: { name: string; size: number; dataCenterId: string }, client: RunPodClient = {}): Promise<NetworkVolume> {
   const res = await restV1('/networkvolumes', client, { method: 'POST', body: JSON.stringify(input) })
   if (!res.ok) throw await restError(res, 'creating the network volume')
+  rl.invalidate('|volume')
   return (await res.json()) as NetworkVolume
 }
 export async function updateNetworkVolume(id: string, input: { name?: string; size?: number }, client: RunPodClient = {}): Promise<NetworkVolume> {
   const res = await restV1(`/networkvolumes/${encodeURIComponent(id)}`, client, { method: 'PATCH', body: JSON.stringify(input) })
   if (!res.ok) throw await restError(res, `updating volume ${id}`)
+  rl.invalidate('|volume')
   return (await res.json()) as NetworkVolume
 }
 export async function deleteNetworkVolume(id: string, client: RunPodClient = {}): Promise<void> {
   const res = await restV1(`/networkvolumes/${encodeURIComponent(id)}`, client, { method: 'DELETE' })
   if (!res.ok && res.status !== 404) throw await restError(res, `deleting volume ${id}`)
+  rl.invalidate('|volume')
 }
 
 /** RunPod's v2 REST API (api.runpod.io/v2): the pod record with its status text, and the log stream. */
@@ -195,7 +216,9 @@ export async function rest<T = unknown>(path: string, client: RunPodClient = {},
   const apiKey = client.apiKey || process.env.RUNPOD_API_KEY
   if (!apiKey) throw new CoreError(401, 'RUNPOD_API_KEY not set')
   const base = client.baseUrl || process.env.RUNPOD_API_BASE_URL || 'https://api.runpod.io'
+  if (!isWrite(init)) rl.guard()
   const res = await (client.fetchFn || fetch)(`${base}/v2${path}`, { ...init, headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json', ...(init.headers || {}) }, signal: init.signal ?? AbortSignal.timeout(30_000) })
+  if (res.status === 429) { let t = ''; try { t = await res.text() } catch { /* no body */ } return limited(res, t || 'RunPod answered 429') }
   if (res.status === 401 || res.status === 403) throw new CoreError(res.status, 'RunPod refused the API key for this request')
   if (res.status === 404) throw new CoreError(404, `RunPod has no such pod (${path})`)
   if (!res.ok) throw new CoreError(502, `RunPod answered ${res.status} for ${path}`)
@@ -222,6 +245,7 @@ export async function streamLogs(id: string, opts: { tail?: number; since?: stri
   if (opts.since) q.set('since', opts.since)
   if (opts.source) q.set('source', opts.source)
   const res = await (client.fetchFn || fetch)(`${base}/v2/pods/${encodeURIComponent(id)}/logs?${q}`, { headers: { Authorization: `Bearer ${apiKey}`, Accept: 'text/event-stream' }, signal })
+  if (res.status === 429) return limited(res, 'RunPod answered 429 for the log stream')
   if (!res.ok || !res.body) throw new CoreError(res.status === 404 ? 404 : 502, `RunPod answered ${res.status} for the log stream`)
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
@@ -246,9 +270,29 @@ export async function streamLogs(id: string, opts: { tail?: number; since?: stri
 
 /** The account's money as RunPod reports it: the credit balance, what the running pods spend per hour right now, and the account's spend limit. */
 export interface Account { balance: number; spend_per_hr: number; spend_limit: number | null }
-export async function account(client?: RunPodClient): Promise<Account> {
+async function accountRaw(client?: RunPodClient): Promise<Account> {
   const d = await graphql<{ myself: { clientBalance: number | null; currentSpendPerHr: number | null; spendLimit: number | null } | null }>('query { myself { clientBalance currentSpendPerHr spendLimit } }', client)
   const m = d?.myself
   if (!m || typeof m.clientBalance !== 'number') throw new Error('RunPod did not report the account balance')
   return { balance: m.clientBalance, spend_per_hr: m.currentSpendPerHr ?? 0, spend_limit: m.spendLimit ?? null }
 }
+
+export const listPods = (client?: RunPodClient) => (useCache(client) ? rl.cached(ckey(client, 'pods'), 8000, () => listPodsRaw(client)) : listPodsRaw(client))
+
+export const getPod = (podId: string, client?: RunPodClient) => (useCache(client) ? rl.cached(ckey(client, 'pod:' + podId), 3000, () => getPodRaw(podId, client)) : getPodRaw(podId, client))
+
+export const gpuStock = (ids: string[], client?: RunPodClient) => (useCache(client) ? rl.cached(ckey(client, 'stock:' + ids.join(',')), 60000, () => gpuStockRaw(ids, client)) : gpuStockRaw(ids, client))
+
+export const datacenterStock = (dataCenterId: string, client?: RunPodClient) => (useCache(client) ? rl.cached(ckey(client, 'dcstock:' + dataCenterId), 60000, () => datacenterStockRaw(dataCenterId, client)) : datacenterStockRaw(dataCenterId, client))
+
+export const datacenterAvailability = (client?: RunPodClient) => (useCache(client) ? rl.cached(ckey(client, 'avail'), 120000, () => datacenterAvailabilityRaw(client)) : datacenterAvailabilityRaw(client))
+
+export const freeCardsIn = (dataCenterId: string, client?: RunPodClient) => (useCache(client) ? rl.cached(ckey(client, 'free:' + dataCenterId), 60000, () => freeCardsInRaw(dataCenterId, client)) : freeCardsInRaw(dataCenterId, client))
+
+export const datacenterPrices = (want: string[] | null, client?: RunPodClient, only?: string[]) => (useCache(client) ? rl.cached(ckey(client, 'prices:' + (want ? want.join(',') : '*') + ':' + (only ? only.join(',') : '*')), 120000, () => datacenterPricesRaw(want, client, only)) : datacenterPricesRaw(want, client, only))
+
+export const listNetworkVolumes = (client: RunPodClient = {}) => (useCache(client) ? rl.cached(ckey(client, 'volumes'), 15000, () => listNetworkVolumesRaw(client)) : listNetworkVolumesRaw(client))
+
+export const networkVolume = (id: string, client: RunPodClient = {}) => (useCache(client) ? rl.cached(ckey(client, 'volume:' + id), 15000, () => networkVolumeRaw(id, client)) : networkVolumeRaw(id, client))
+
+export const account = (client?: RunPodClient) => (useCache(client) ? rl.cached(ckey(client, 'account'), 30000, () => accountRaw(client)) : accountRaw(client))
