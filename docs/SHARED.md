@@ -114,6 +114,10 @@ The names of the models you want on a Shared volume, kept in the configuration a
 
 Shared > Models lists what the volume holds ("Already on the volume"). Tick files (or use a row's trash icon) and press *Delete selected*: the app asks first and lists the files and the GB; the files are removed from `comfy-shared/models/` (over RunPod's S3 API with no pod when the volume has it, else by a short pod). The `_canalv2_pull` folder is never deleted from. A deleted model stays in the wanted list and shows as missing. MCP: `models_delete` with `confirmed: true`. Details: ADR-042 section 15.
 
+### A download survives dropped connections
+
+The download runs detached on its pod and the app follows its log with short ssh calls (ADR-042 section 17). A dropped connection shows *Reconnecting (Attempt n)* and the download carries on; if the pod cannot be reached for ten minutes the job is *Interrupted* and the pod is kept, listed in the Queue with **Reattach** and **Delete Pod**. Cancel stops the script on the pod.
+
 ### Download progress and volume jobs
 
 While Load Missing or a Hugging Face load runs, Shared > Models shows the job live: *Creating Pod*, *Pod Starting*, *Connecting (SSH)*, *Downloading File 2 Of 5* with a bar (*file i of n: name - X of Y GB (rate, ETA)*), *Verifying Checksum*, *Done*; Cancel is at the right of the row. A wanted row whose `<name>.part` is on the volume says *Downloading N%* (or *Partial N%* if no download is running; Load Missing resumes it). The Queue has a *Volume Jobs* section (downloads, deletes, erases, clones, browses) and lists a pod the app lost at a restart as *Interrupted (No Job)* with *Delete Pod*. MCP: `volume_jobs`. See ADR-042 section 16.

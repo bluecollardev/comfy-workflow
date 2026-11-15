@@ -88,7 +88,9 @@ export function recordState(volumeId: string, round: string, rec: RoundRec | nul
 export function forgetVolume(volumeId: string): void { migrateState(); const all = readJson<Record<string, VolRec>>(stateFile(), {}); if (all[volKey(volumeId)]) { delete all[volKey(volumeId)]; writeJson(stateFile(), all) } }
 export const knownState = (volumeId: string): VolRec | null => { migrateState(); return readJson<Record<string, VolRec>>(stateFile(), {})[volKey(volumeId)] ?? null }
 
-export interface TempPod { round: string; kind: 'pull' | 'remove' | 'browse' | 'erase' | 'clone' | 'fetch' | 'delete-models'; name: string; pod_id: string | null; volume: string; created_at: string; approved_by: string }
+export interface TempPod { round: string; kind: 'pull' | 'remove' | 'browse' | 'erase' | 'clone' | 'fetch' | 'delete-models'; name: string; pod_id: string | null; volume: string; created_at: string; approved_by: string
+  /** A fetch runs detached on the pod (ADR-042 section 17): the id of its folder there (/tmp/volfetch-<id>) and the files it was asked for (names, folders, sizes: no URLs, no token), so a restarted app can follow it again. */
+  remote_id?: string; fetch_items?: { name: string; folder: string; bytes: number }[] }
 /** The temporary pods this app has made and not yet deleted. One left behind (the app closed mid-job) is listed here and shows in the manager under its name. */
 export const temporaryPods = (): TempPod[] => readJson<TempPod[]>(tempFile(), [])
 const tempAdd = (t: TempPod) => writeJson(tempFile(), [...temporaryPods().filter((x) => x.name !== t.name), t])
@@ -144,6 +146,9 @@ export interface Opts {
   skipShots?: string[]
   /** (tests) the round's shot folders, instead of reading the bucket */
   shotDirs?: string[]
+  /** A detached fetch: how long the pod may be unreachable before the job is given up (its pod is kept), default 10 minutes; and how long one short ssh call may take, default 40 s. */
+  reconnectMs?: number
+  followTimeoutMs?: number
 }
 
 async function volumeOf(opts: Opts): Promise<Volume | null> {
@@ -243,7 +248,7 @@ export async function plan(round: string, opts: Opts = {}): Promise<PodPlan> {
 
 // ----- the job -----
 
-export type JobState = 'creating' | 'starting' | 'connecting' | 'pulling' | 'verifying' | 'placing' | 'deleting' | 'done' | 'failed' | 'cancelled'
+export type JobState = 'creating' | 'starting' | 'connecting' | 'reconnecting' | 'pulling' | 'verifying' | 'placing' | 'deleting' | 'done' | 'failed' | 'cancelled' | 'interrupted'
 export interface PodJob {
   id: string; round: string; kind: 'pull' | 'remove' | 'browse' | 'erase' | 'clone' | 'fetch' | 'delete-models'; route: 'active' | 'temporary' | 's3'; pod_id: string | null; pod_name: string | null
   /** The card the pod actually has and its price per hour, once the pod exists (the Queue shows them). */
@@ -265,11 +270,13 @@ export interface PodJob {
   /** From rclone's stats line and its Copied lines, for the same bar and file list as a local download. */
   bytes_done: number; bytes_total: number | null; rate: number | null; recent: string[]
 }
-interface Internal { prog?: { t: number; b: number }; job: PodJob; cancelled: boolean; abort: AbortController; wake: (() => void) | null; seen: Set<string>; bad: string[]; totals: { listed: number; bad: number; extra: number } | null; outcome: Outcome | null; plan: PodPlan }
+interface Internal { prog?: { t: number; b: number }; job: PodJob; cancelled: boolean; abort: AbortController; wake: (() => void) | null; seen: Set<string>; bad: string[]; totals: { listed: number; bad: number; extra: number } | null; outcome: Outcome | null; plan: PodPlan
+  /** A detached fetch the app could not reach for the whole retry budget: its pod is left running (the script is still downloading) and listed as interrupted. */ keepPod?: boolean
+  /** A fetch followed again after an app restart: the pod that still has its script. */ reattach?: TempPod }
 type Outcome = 'done' | 'check-failed' | 'unverified' | 'copy-failed' | 'removed' | 'refused'
 const jobs = new Map<string, Internal>()
 const busy = new Set<string>()   // rounds with a job in flight: one at a time
-const TERMINAL: JobState[] = ['done', 'failed', 'cancelled']
+const TERMINAL: JobState[] = ['done', 'failed', 'cancelled', 'interrupted']
 const view = (i: Internal): PodJob => ({ ...i.job, lines: [...i.job.lines], recent: [...i.job.recent] })
 
 /** A file the pod (or the S3 call) reported deleted: `folder/name` and its bytes. */
@@ -536,11 +543,73 @@ export function cloneScript(c: NonNullable<PodJob['clone']>, k: { id: string; se
 const scriptOf = (j: PodJob, k: { id: string; secret: string } | null): string => j.kind === 'clone' ? cloneScript(j.clone!, s3Keys()!) : j.kind === 'pull' ? (j.skip_shots?.length ? pullShotsScript(j.round, j.skip_shots, k!) : pullScript(j.round, k!)) : j.kind === 'browse' ? browseScript(j.browse_path) : j.kind === 'erase' ? eraseScript(j.erase_keys ?? []) : j.kind === 'fetch' ? fetchScript(j.fetch_items ?? [], settings.lookup('HF_TOKEN')) : j.kind === 'delete-models' ? deleteModelsScript(j.delete_items ?? []) : removeScript(j.round)
 const KILL_SCRIPT = 'pkill -f /opt/comfy-app/s3pull.sh; pkill -x rclone; true\n'
 
+// ----- a script that runs detached on the pod, followed by short ssh calls (ADR-042 section 17) -----
+// A fetch runs for an hour or more. One ssh session carrying it breaks on any network drop, and a broken session used to fail the job and delete the pod mid-download. Now the script is started once, detached (its own session, output in a log file on the pod), and the app follows the log from a byte offset with short calls. A dropped call is retried; the script keeps downloading.
+
+/** The folder on the pod for one detached run: the log, the pid of its session leader and, once it ends, its exit status. */
+export const remoteDirOf = (id: string) => `/tmp/volfetch-${String(id).replace(/[^A-Za-z0-9_.-]/g, '_')}`
+const remoteScriptOf = (id: string) => `/dev/shm/volfetch-${String(id).replace(/[^A-Za-z0-9_.-]/g, '_')}.sh`
+
+/** Start `script` detached (setsid + nohup), unless this run is already going or has finished: the same call can be repeated after a dropped connection. The script (and the token in it) is written to RAM (/dev/shm, mode 700) and removed when it ends; it is never on the disk. */
+export function detachScript(id: string, script: string): string {
+  const D = remoteDirOf(id), S = remoteScriptOf(id), end = `PODSCRIPT_${Math.random().toString(36).slice(2, 10).toUpperCase()}`
+  return [
+    'set -u', `D=${q(D)}; S=${q(S)}; mkdir -p "$D"`,
+    'if [ -s "$D/exit" ]; then echo "DETACHED already finished"; exit 0; fi',
+    'if [ -s "$D/pid" ] && kill -0 "$(cat "$D/pid")" 2>/dev/null; then echo "DETACHED already running"; exit 0; fi',
+    'umask 077', `cat > "$S" <<'${end}'`, script.replace(/\n$/, ''), end, 'chmod 700 "$S"',
+    'rm -f "$D/exit" "$D/pid"',
+    `setsid nohup bash -c 'echo $$ > "$1/pid"; bash "$0"; echo $? > "$1/exit"; rm -f "$0"' "$S" "$D" > "$D/log" 2>&1 < /dev/null &`,
+    'for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do [ -s "$D/pid" ] && break; sleep 0.2; done',
+    '[ -s "$D/pid" ] || { echo "DETACH-FAILED the script did not start"; exit 1; }', 'echo "DETACHED"', '',
+  ].join('\n')
+}
+/** Read the log from byte `offset` (whole lines only, at most 4 MB a call) and say what became of the script. The exit status is read before the log, so an exit seen here means the log read here is complete. Lines: the log's lines, then `FOLLOW-AT <bytes read>` and one of FOLLOW-EXIT <code> / FOLLOW-RUNNING / FOLLOW-DEAD / FOLLOW-MORE; FOLLOW-NONE when the pod has no such run, FOLLOW-RESET when the log is shorter than the offset. */
+export function followScript(id: string, offset: number): string {
+  const D = remoteDirOf(id)
+  return [
+    'set -u', `D=${q(D)}; L="$D/log"; OFF=${Math.max(0, Math.floor(offset))}`,
+    '[ -d "$D" ] || { echo "FOLLOW-NONE"; exit 0; }',
+    'X=""; [ -s "$D/exit" ] && X=$(cat "$D/exit")',
+    'ALIVE=0; [ -s "$D/pid" ] && kill -0 "$(cat "$D/pid")" 2>/dev/null && ALIVE=1',
+    'SZ=$(stat -c %s "$L" 2>/dev/null || echo 0)',
+    '[ "$SZ" -lt "$OFF" ] && { echo "FOLLOW-RESET"; exit 0; }',
+    'N=$((SZ-OFF)); MORE=0; if [ "$N" -gt 4194304 ]; then N=4194304; MORE=1; fi',
+    'if [ "$N" -gt 0 ]; then T=$(mktemp /tmp/volfetch-read.XXXXXX); tail -c +$((OFF+1)) "$L" | head -c "$N" > "$T"',
+    '  if [ -z "$X" ] || [ "$MORE" = 1 ]; then if [ "$(tail -c1 "$T" | od -An -tx1 | tr -d " ")" != "0a" ]; then P=$(tail -n1 "$T" | wc -c); N=$((N-P)); fi; fi',
+    '  head -c "$N" "$T"; rm -f "$T"; fi',
+    'echo "FOLLOW-AT $N"',
+    'if [ "$MORE" = 1 ]; then echo "FOLLOW-MORE"; elif [ -n "$X" ]; then echo "FOLLOW-EXIT $X"; elif [ "$ALIVE" = 1 ]; then echo "FOLLOW-RUNNING"; else echo "FOLLOW-DEAD"; fi', '',
+  ].join('\n')
+}
+/** Stop a detached run: its whole process group (the script, curl), and take its script and any curl config of the token out of RAM. */
+export function killRemoteScript(id: string): string {
+  const D = remoteDirOf(id), S = remoteScriptOf(id)
+  return [`D=${q(D)}; [ -s "$D/pid" ] && kill -TERM -- "-$(cat "$D/pid")" 2>/dev/null; sleep 1; [ -s "$D/pid" ] && kill -KILL -- "-$(cat "$D/pid")" 2>/dev/null`, `rm -f ${q(S)} /dev/shm/hf.??????`, 'true', ''].join('\n')
+}
+
+/** What one follow call said: the log lines, how many bytes of the log they were, and the verdict. */
+export function parseFollow(lines: string[]): { lines: string[]; at: number; verdict: 'exit' | 'running' | 'dead' | 'more' | 'none' | 'reset' | null; code: number | null } {
+  const out: string[] = []; let at = 0, verdict: ReturnType<typeof parseFollow>['verdict'] = null, code: number | null = null
+  for (const l of lines) {
+    let m: RegExpExecArray | null
+    if ((m = /^FOLLOW-AT (\d+)$/.exec(l))) at = Number(m[1])
+    else if ((m = /^FOLLOW-EXIT (-?\d+)$/.exec(l))) { verdict = 'exit'; code = Number(m[1]) }
+    else if (l === 'FOLLOW-RUNNING') verdict = 'running'
+    else if (l === 'FOLLOW-DEAD') verdict = 'dead'
+    else if (l === 'FOLLOW-MORE') verdict = 'more'
+    else if (l === 'FOLLOW-NONE') verdict = 'none'
+    else if (l === 'FOLLOW-RESET') verdict = 'reset'
+    else out.push(l)
+  }
+  return { lines: out, at, verdict, code }
+}
+
 export interface SshJob { host: string; port: number; script: string; onLine: (line: string) => void; signal: AbortSignal }
 export type SshRunner = (job: SshJob) => Promise<{ code: number | null }>
 /** `ssh -p <port> root@<ip> bash -s` with the script on stdin, the way the Sync reaches a pod (host and port from RunPod's own port list). */
 /** The ssh arguments: where and how, never what. The script (and any key in it) goes on stdin. */
-export const sshArgs = (host: string, port: number) => ['-p', String(port), '-o', 'StrictHostKeyChecking=accept-new', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=20', host, 'bash -s']
+export const sshArgs = (host: string, port: number) => ['-p', String(port), '-o', 'StrictHostKeyChecking=accept-new', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=20', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3', host, 'bash -s']
 export const runSsh: SshRunner = ({ host, port, script, onLine, signal }) => new Promise((resolve, reject) => {
   const child = spawn('ssh', sshArgs(host, port), { stdio: ['pipe', 'pipe', 'pipe'] })
   const onAbort = () => child.kill('SIGTERM')
@@ -577,6 +646,7 @@ function conclude(i: Internal) {
   const j = i.job, p = i.plan
   const vol = p.volume?.id || ''
   const done = (state: JobState, error?: string) => { if (j.state !== 'cancelled') { j.state = state; if (error) j.error = error } }
+  if (i.keepPod && !i.cancelled) { j.state = 'interrupted'; return }   // the pod could not be reached: its script may still be downloading
   if (i.cancelled) { j.state = 'cancelled'; if (vol && j.kind === 'pull' && j.files > 0) recordState(vol, j.round, { state: 'partial', present: j.files, expected: p.files || null, missing: p.files ? Math.max(p.files - j.files, 0) : null, bytes: p.bytes }); return }
   if (j.kind !== 'pull') {
     if (i.outcome === 'removed') { done('done'); if (j.kind === 'remove' && vol) recordState(vol, j.round, null); if (j.kind === 'erase' && vol && j.erase_keys?.includes('rounds')) forgetVolume(vol) } else done('failed', j.error || (i.outcome === 'refused' ? 'The pod refused the path.' : 'The delete did not report back.'))
@@ -634,6 +704,59 @@ async function runOnPod(i: Internal, host: string, port: number, script: string,
   if (code !== 0 && !i.outcome) throw new CoreError(502, `The command on the pod ended with exit code ${code}.`)
 }
 
+/** A fetch on a pod, detached and followed (detachScript, followScript). Resolves when the script has ended (the verdict lines it printed are on the job); throws when it could not be started or it died. When the pod cannot be reached for the whole retry budget it throws too, with `i.keepPod` set: the script is still downloading there, so the pod is not deleted and shows as interrupted. `script` null: a run already started (a reattach), followed from `startOffset`. */
+async function runDetached(i: Internal, host: string, port: number, remoteId: string, script: string | null, opts: Opts, secrets: string[], startOffset = 0) {
+  const ssh = opts.ssh ?? runSsh, j = i.job
+  const budget = opts.reconnectMs ?? 600_000, pace = opts.pollMs ?? 3000
+  const call = async (body: string) => {   // one short ssh call, cut off after followTimeoutMs
+    const lines: string[] = [], ac = new AbortController(), onAbort = () => ac.abort()
+    i.abort.signal.addEventListener('abort', onAbort)
+    const t = setTimeout(() => ac.abort(), opts.followTimeoutMs ?? 40_000)
+    try { const r = await ssh({ host, port, script: body, onLine: (l) => lines.push(l), signal: ac.signal }); return { code: r.code, lines } }
+    finally { clearTimeout(t); i.abort.signal.removeEventListener('abort', onAbort) }
+  }
+  // Cancel stops the script's whole process group on the pod (the pod itself is deleted by the job's own cleanup).
+  i.abort.signal.addEventListener('abort', () => { void ssh({ host, port, script: killRemoteScript(remoteId), onLine: () => {}, signal: AbortSignal.timeout(15_000) }).catch(() => {}) }, { once: true })
+  let started = script === null, offset = startOffset, lostSince = 0, attempt = 0
+  for (;;) {
+    if (i.cancelled) return
+    let answered = false, fast = false
+    try {
+      if (!started) {
+        const r = await call(detachScript(remoteId, script!))
+        if (r.lines.some((l) => l.startsWith('DETACH-FAILED'))) throw new CoreError(502, `The download did not start on the pod: ${r.lines.find((l) => l.startsWith('DETACH-FAILED'))!.replace('DETACH-FAILED ', '')}`)
+        if (r.code === 0 && r.lines.some((l) => l.startsWith('DETACHED'))) { started = true; answered = true }
+      } else {
+        const r = await call(followScript(remoteId, offset))
+        if (i.cancelled) return
+        if (r.code === 0) {
+          const f = parseFollow(r.lines)
+          if (f.verdict === 'none') throw new CoreError(502, 'The pod has no download running (it was restarted, or its folder is gone). Load Missing starts it again; the files already finished stay.')
+          answered = true
+          if (f.verdict === 'reset') { offset = 0; j.fetched = []; continue }
+          for (const l of f.lines) feed(i, l, secrets)
+          offset += f.at
+          if (f.verdict === 'exit') { if (f.code !== 0 && !i.outcome) throw new CoreError(502, `The command on the pod ended with exit code ${f.code}.`); return }
+          if (f.verdict === 'dead') throw new CoreError(502, 'The download stopped on the pod without a result (the pod may have been restarted). Load Missing resumes it; the files already finished stay.')
+          if (f.verdict === 'more') fast = true
+        }
+      }
+    } catch (e) { if (e instanceof CoreError) throw e /* anything else is the network: a spawn error, or the call cut off */ }
+    if (i.cancelled) return
+    if (answered) { lostSince = 0; attempt = 0; if (j.state === 'reconnecting') j.state = j.fetch ? 'pulling' : 'connecting' }
+    else {
+      if (!lostSince) lostSince = Date.now()
+      attempt++
+      if (Date.now() - lostSince > budget) {
+        if (started) { i.keepPod = true; throw new CoreError(502, `Lost the connection to the pod ${j.pod_name ?? ''} for ${Math.max(1, Math.round(budget / 60_000))} minutes. The pod is still running and downloading; it was not deleted. Follow it again from the Queue (Reattach), or delete the pod there.`) }
+        throw new CoreError(502, `Could not reach the pod over SSH (${host}:${port}). The Sync needs the same thing: an SSH public key on the RunPod account, added before the pod started.`)
+      }
+      j.state = 'reconnecting'; j.lines.push(`Reconnecting (Attempt ${attempt})`); if (j.lines.length > 200) j.lines.shift()
+    }
+    if (!fast) await sleep(i, answered ? pace : Math.min(30_000, pace * (attempt + 1)))
+  }
+}
+
 /** ADR-033: after a pull whose manifest check passed, put the round's inputs where its graphs look. Never fails the pull: the outcome (or the error) is on the job. */
 async function placeAfter(i: Internal, host: string, port: number, opts: Opts) {
   if (i.job.kind !== 'pull' || i.outcome !== 'done' || i.cancelled) return
@@ -668,7 +791,9 @@ async function runActive(i: Internal, opts: Opts) {
   try {
     j.state = j.kind === 'pull' ? 'pulling' : 'deleting'
     const s3k = j.kind === 'clone' ? s3Keys() : null
-    await runOnPod(i, host, port, scriptOf(j, k), opts, k ? [k.secret, k.id] : s3k ? [s3k.secret, s3k.id] : j.kind === 'fetch' && settings.lookup('HF_TOKEN') ? [settings.lookup('HF_TOKEN')] : [])
+    const secrets = k ? [k.secret, k.id] : s3k ? [s3k.secret, s3k.id] : j.kind === 'fetch' && settings.lookup('HF_TOKEN') ? [settings.lookup('HF_TOKEN')] : []
+    if (j.kind === 'fetch') await runDetached(i, host, port, j.id, scriptOf(j, k), opts, secrets)
+    else await runOnPod(i, host, port, scriptOf(j, k), opts, secrets)
     if (j.kind === 'pull') await placeAfter(i, host, port, opts)
   } finally { idle.register(pod.id, prev) }
 }
@@ -702,7 +827,7 @@ async function runTemporary(i: Internal, opts: Opts) {
   const prior = j.kind === 'pull' ? temporaryPods().find((t) => t.kind === 'pull' && t.round === j.round && t.pod_id && (t.volume || '') === (p.volume?.id || '')) : null
   let adopted: { id: string; name: string } | null = null
   if (prior?.pod_id) { const raw = await rp.getPod(prior.pod_id, opts.client).catch(() => null); if (raw && (raw.desiredStatus ?? 'RUNNING') === 'RUNNING') adopted = { id: prior.pod_id, name: raw.name || prior.name } }
-  tempAdd({ round: j.round, kind: j.kind, name, pod_id: adopted?.id ?? null, volume: p.volume?.id || '', created_at: prior && adopted ? prior.created_at : new Date().toISOString(), approved_by: APPROVED_BY })   // before the pod exists
+  tempAdd({ round: j.round, kind: j.kind, name, pod_id: adopted?.id ?? null, volume: p.volume?.id || '', created_at: prior && adopted ? prior.created_at : new Date().toISOString(), approved_by: APPROVED_BY, ...(j.kind === 'fetch' ? { remote_id: j.id, fetch_items: (j.fetch_items ?? []).map((f) => ({ name: f.name, folder: f.folder, bytes: f.bytes })) } : {}) })   // before the pod exists
   let podId: string | null = null
   const deadline = Date.now() + (p.ceiling_minutes + 10) * 60_000
   try {
@@ -721,7 +846,8 @@ async function runTemporary(i: Internal, opts: Opts) {
     if (j.kind !== 'pull' || viaSsh) {   // remove, browse, erase, and a pull of some shots: one script over SSH
       const { host, port } = await waitForSshTarget(i, podId, opts, deadline)
       j.state = j.kind === 'fetch' ? 'connecting' : j.kind === 'browse' ? 'verifying' : j.kind === 'pull' ? 'pulling' : 'deleting'   // a fetch is 'connecting' until the pod's first progress line says it is downloading
-      await runOnPod(i, host, port, scriptOf(j, k), opts, secrets)
+      if (j.kind === 'fetch') await runDetached(i, host, port, j.id, scriptOf(j, k), opts, secrets)   // detached: a dropped connection does not end the download
+      else await runOnPod(i, host, port, scriptOf(j, k), opts, secrets)
       if (viaSsh && i.outcome === 'done' && !i.cancelled) await placeAfter(i, host, port, opts)   // the same placing as after a whole-round pull
       return
     }
@@ -743,8 +869,8 @@ async function runTemporary(i: Internal, opts: Opts) {
       catch (e) { if (i.cancelled) return; i.job.place = place.failed(i.job.round, false, (e as Error).message); i.job.lines.push(`placing failed: ${(e as Error).message}`) }
     }
   } finally {
-    if (podId) await deleteTemp(i, podId, opts)
-    tempDrop(name)
+    if (i.keepPod && podId) j.lines.push(`The pod ${name} was kept: its download is still running.`)   // listed as interrupted in the Queue, with Reattach and Delete Pod
+    else { if (podId) await deleteTemp(i, podId, opts); tempDrop(name) }
   }
 }
 
@@ -895,6 +1021,7 @@ async function runCloneRsync(i: Internal, opts: Opts) {
 async function run(i: Internal, opts: Opts) {
   try {
     if (mounts.dryRun(mounts.load())) await simulate(i, opts)
+    else if (i.reattach) await runReattached(i, opts)
     else if (i.job.kind === 'clone' && i.job.clone?.mode === 'rsync') await runCloneRsync(i, opts)
     else if (i.plan.route === 's3') await runS3(i, opts)
     else if (i.plan.route === 'active') await runActive(i, opts)
@@ -904,7 +1031,7 @@ async function run(i: Internal, opts: Opts) {
   } finally {
     conclude(i)
     const jb = i.job
-    if (jb.state === 'done' || jb.state === 'failed' || jb.state === 'cancelled') history.record({ kind: 'job', job: jb.kind, state: jb.state, started_at: jb.started_at, what: jb.round, pod_id: jb.pod_id ?? undefined, pod_name: jb.pod_name ?? undefined, files: jb.files, bytes: jb.bytes_done || i.plan.bytes, ...(jb.place ? { detail: placeSummary(jb.place) } : jb.kind === 'delete-models' ? { detail: deleteSummary(jb) } : {}), ...(jb.error ? { error: jb.error } : {}) })
+    if (jb.state === 'done' || jb.state === 'failed' || jb.state === 'cancelled' || jb.state === 'interrupted') history.record({ kind: 'job', job: jb.kind, state: jb.state, started_at: jb.started_at, what: jb.round, pod_id: jb.pod_id ?? undefined, pod_name: jb.pod_name ?? undefined, files: jb.files, bytes: jb.bytes_done || i.plan.bytes, ...(jb.place ? { detail: placeSummary(jb.place) } : jb.kind === 'delete-models' ? { detail: deleteSummary(jb) } : {}), ...(jb.error ? { error: jb.error } : {}) })
     busy.delete(i.job.round)
   }
 }
@@ -1078,6 +1205,43 @@ export async function deleteModels(volumeId: string, items: { folder: string; na
 }
 
 export function job(id: string): PodJob | null { const i = jobs.get(id); return i ? view(i) : null }
+
+/** A fetch whose app was restarted (or lost the pod for a while): follow its script on the pod again from the start of its log (so the bar and the file list are rebuilt), then finish like any fetch: the pod is deleted at the end. */
+async function runReattached(i: Internal, opts: Opts) {
+  const t = i.reattach!, j = i.job
+  const secrets = [settings.lookup('HF_TOKEN')].filter((x): x is string => !!x)
+  let target: { host: string; port: number }
+  try {
+    const raw = await rp.getPod(t.pod_id!, opts.client)
+    if (!raw) { tempDrop(t.name); throw new CoreError(404, `The pod ${t.name} is gone.`) }
+    if ((raw.desiredStatus ?? 'RUNNING') !== 'RUNNING') throw new CoreError(409, `The pod ${t.name} is not running; a stopped pod has lost its download.`)
+    target = sync.sshTarget(raw)
+  } catch (e) { j.pod_id = t.pod_id; throw e }
+  j.state = 'connecting'
+  try { await runDetached(i, target.host, target.port, t.remote_id!, null, opts, secrets, 0) }
+  finally {
+    if (i.keepPod) j.lines.push(`The pod ${t.name} was kept: its download is still running.`)
+    else { if (t.pod_id) await deleteTemp(i, t.pod_id, opts); tempDrop(t.name) }
+  }
+}
+/** Follow an interrupted fetch again (its pod still has the script). */
+export async function reattach(name: string, opts: Opts = {}): Promise<PodJob> {
+  const t = temporaryPods().find((x) => x.name === name && x.kind === 'fetch')
+  if (!t || !t.pod_id || !t.remote_id) throw new CoreError(404, `No interrupted download on a pod named ${name} that can be followed again.`)
+  if (mounts.dryRun(mounts.load())) throw new CoreError(400, 'No-spend mode has no pods to follow.')
+  if ([...jobs.values()].some((x) => !TERMINAL.includes(x.job.state) && x.job.pod_name === name)) throw new CoreError(409, 'A running job owns that pod already.')
+  const label = volLabel(t.volume)
+  const existing = claim(label, 'fetch'); if (existing) return view(existing)
+  try {
+    const p = await plan(label, { ...opts, volumeId: t.volume, sizeOf: () => ({ files: 0, bytes: 0 }) })
+    const i = newJob(label, 'fetch', p, (opts.now ?? (() => new Date()))())
+    i.reattach = t
+    Object.assign(i.job, { route: 'temporary', pod_id: t.pod_id, pod_name: t.name, volume_id: t.volume, fetch_items: (t.fetch_items ?? []) as hf.Resolved[], state: 'connecting' })
+    i.job.lines.push(`Following ${t.name} again.`)
+    void run(i, { ...opts, volumeId: t.volume })
+    return view(i)
+  } catch (e) { busy.delete(label); throw e }
+}
 
 /** The jobs that work on a volume (ADR-042 section 16), newest first, for the Queue and the Models window; and the temporary pods this app made for a volume job it no longer has (the app was restarted mid-job): they keep billing until someone deletes them. Nothing here deletes anything. */
 const VOLUME_KINDS: PodJob['kind'][] = ['browse', 'erase', 'clone', 'fetch', 'delete-models']

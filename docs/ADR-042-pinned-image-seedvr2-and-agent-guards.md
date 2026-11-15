@@ -131,6 +131,21 @@ Lucas, with Load Missing running: "i don't see the models installing", "it just 
 
 Tested with fake pod output (progress, verify, finished files, the job view at each step, no progress lines kept), the list and drop of interrupted pods, the badge states, and Playwright with a job that advances one state every 1.5 s. Not tested against a real pod's stream: whether `stat` of the `.part` during a resumed `curl -C -` reports the full size from the start (it does on Linux; the bar then starts at the resumed point).
 
+## 17. A download survives dropped connections (amendment, 16 Nov 2026)
+
+**What happened.** Lucas's Load Missing ran 35 minutes (16:56 to 17:31 UTC), put 25 of 39 files (190 of 307 GB) on the volume, then failed with "Could not reach the pod over SSH". The script ran in the foreground of one ssh session, so one drop ended the job, and the job's cleanup deleted the pod in the middle of a 10 GB file.
+
+**Decision.**
+- The download script is started once on the pod, detached (`setsid nohup`, its own session, output in `/tmp/volfetch-<job id>/log`, its pid and its exit status next to it). The start call is repeatable: it starts nothing if the run is going or has ended. The script and the Hugging Face token in it are written to RAM (`/dev/shm`, mode 700) and removed when it ends; nothing of it is on the disk.
+- The app follows the log with short ssh calls every 3 seconds, from a byte offset it keeps (`followScript`: whole lines only; the exit status is read before the log, so an exit means the log read is complete). `ServerAliveInterval=15`, `ServerAliveCountMax=3` and a 40 second limit per call.
+- A call that fails (exit 255, a spawn error, the limit) is retried with a growing pause for up to 10 minutes. The job says **Reconnecting (Attempt n)** and goes back to the download state when a call answers; the offset is kept, so no line is lost or repeated.
+- If the pod stays unreachable for the whole budget the job ends **interrupted** and its pod is **not** deleted: the script is still downloading. The error says so. The pod is listed in the Queue's Volume Jobs as *Interrupted (No Job)* with **Reattach** and **Delete Pod**. If the script never started the job fails and the pod is deleted as before (nothing runs there).
+- **Reattach** (also `volume_jobs` with `action: reattach`) follows the run again from the start of its log, so the bar and the file list are rebuilt, and finishes like any download (the pod is deleted at the end). The pod record keeps the run id and the files' names, folders and sizes (never URLs or the token) so a restarted app can do this.
+- Cancel stops the script's whole process group on the pod, takes its script and any curl config out of RAM, and the pod is deleted.
+- Only a download (`fetch`) is detached for now; delete, erase, clone and pull still run in one session.
+
+**Not verified.** The scripts are tested as text and against a fake pod; they have never run on a real pod (`setsid`, `stat -c` and `/dev/shm` are Linux-only, so they cannot run on this Mac). The first real Load Missing with a deliberately cut connection is the test.
+
 ## Consequences
 
 - One tag no longer means two images; Blackwell cards keep their CUDA 13 build.

@@ -11,7 +11,7 @@ import { errorText } from './toast'
 export const useVolumeJobsStore = defineStore('volumejobs', () => {
   const jobs = ref([]), interrupted = ref([]), running = ref(0), error = ref('')
   let watchers = 0, timer = null, busy = false
-  const TERMINAL = ['done', 'failed', 'cancelled']
+  const TERMINAL = ['done', 'failed', 'cancelled', 'interrupted']
   const live = computed(() => jobs.value.filter((j) => !TERMINAL.includes(j.state)))
 
   async function refresh() {
@@ -25,7 +25,8 @@ export const useVolumeJobsStore = defineStore('volumejobs', () => {
   function unwatch() { watchers = Math.max(0, watchers - 1); if (!watchers && timer) { clearInterval(timer); timer = null } }
   async function cancel(id) { await volumesAPI.cancel(id); await refresh() }
   async function dropInterrupted(name) { await volumesAPI.dropInterrupted(name); await refresh() }
+  async function reattach(name) { await volumesAPI.reattach(name); await refresh() }
   /** The job to show for a volume: the one running on it, else the newest of that volume (its result stays on screen). */
   const forVolume = (volumeId) => jobs.value.find((j) => j.volume_id === volumeId && !TERMINAL.includes(j.state)) || jobs.value.find((j) => j.volume_id === volumeId) || null
-  return { jobs, interrupted, running, error, live, refresh, watch, unwatch, cancel, dropInterrupted, forVolume }
+  return { jobs, interrupted, running, error, live, refresh, watch, unwatch, cancel, dropInterrupted, reattach, forVolume }
 })

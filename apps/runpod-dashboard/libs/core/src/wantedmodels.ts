@@ -135,7 +135,7 @@ export async function loadMissing(volumeId?: string, o: { approved_by?: string; 
     try {
       let cur = first.id
       for (let c = 1; c <= chunks.length; c++) {
-        for (;;) { const j = jobOf(cur); if (!j) throw new Error('the job is gone'); if (['done', 'failed', 'cancelled'].includes(j.state)) { if (j.state !== 'done') throw new Error(j.error || `job ${j.state}`); break } await sleep(o.poll_ms ?? 3000) }
+        for (;;) { const j = jobOf(cur); if (!j) throw new Error('the job is gone'); if (['done', 'failed', 'cancelled', 'interrupted'].includes(j.state)) { if (j.state !== 'done') throw new Error(j.error || `job ${j.state}`); break } await sleep(o.poll_ms ?? 3000) }
         if (c === chunks.length) break
         cur = (await fetchModels(vol, chunks[c], { approved_by: o.approved_by }, opts)).id; chain.jobs.push(cur)
       }

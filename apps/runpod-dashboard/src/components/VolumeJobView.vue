@@ -24,7 +24,7 @@ import { fmtBytes as fmt } from '../utils/studioTree'
 import { ucwords } from '../utils/ucwords'
 
 const props = defineProps({ job: { type: Object, required: true } })
-const TERMINAL = ['done', 'failed', 'cancelled']
+const TERMINAL = ['done', 'failed', 'cancelled', 'interrupted']
 const live = computed(() => !TERMINAL.includes(props.job.state))
 const isFetch = computed(() => props.job.kind === 'fetch')
 const stateText = computed(() => {
