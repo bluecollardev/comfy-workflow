@@ -3,7 +3,9 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
-## Unreleased
+## v1.2.1 (tag v1.2.1, 2026-11-16)
+
+The default image is still the contract-v27 pair pinned in v1.2.0 (no rebuild). The package build's variant is contract-v27 now (v1.2.0 said contract-v26 in build-info.json).
 
 ### Download progress, Downloading badge, volume jobs in the Queue (ADR-042 section 16)
 - Lucas: "i don't see the models installing", "it just keeps spinning i don't see progress", "badge should show downloading if downloading", "i don't see any jobs in queue for this either", "make sure these status updates are realtime", "ucwords the starting: ...", "float the Cancel button to the right". The pod prints `FETCH-PROGRESS` every 3 s (and `FETCH-VERIFY`); the job view carries file i of n, bytes, rate and ETA; the Models window reads the live volume-jobs list (1.5 s) with a bar and the stage in title case, Cancel at the right; a wanted row with a `.part` says Downloading N% (Partial N% when nothing runs); the Queue has a Volume Jobs section and lists pods lost at a restart as Interrupted (No Job) with Delete Pod; MCP `volume_jobs`; the nav badge counts them. New `connecting` job state.
