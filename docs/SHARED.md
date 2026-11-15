@@ -9,7 +9,7 @@ Source list: `comfy-shared/models/_canalv2_pull/MODELS_PULL_v003.csv` on the Sha
 ### How to load them
 
 1. **Grow the volume first.** The Shared volume must hold the total below plus what is already on it. Volumes cost about $0.07/GB/month; RunPod volumes can only grow.
-2. **Gated files need a Hugging Face token** and the account's acceptance of the gate (e.g. `Lightricks/LTX-2.3-22b-IC-LoRA-HDR`, accept as Binko65). The Models fetch refuses gated repos today; a token setting is the next change.
+2. **Gated files need a Hugging Face token** and the account's acceptance of the gate (e.g. `Lightricks/LTX-2.3-22b-IC-LoRA-HDR`, accept as Binko65). Set the token in Default Configuration (Keys, from huggingface.co/settings/tokens, read access): a gated file is then listed with real hashes and loads; without it the file is listed with a gated badge and cannot be loaded, and the message says so (ADR-042 section 14).
 3. In **Shared → Models**, search the repo, pick the file and folder, Fetch. A short pod runs `curl -C -` with size and sha256 checks and is deleted when done (about $0.07 for 10 GB). Do one pipeline at a time.
 4. Files whose destination is not `models/` (`depth_anything_v2_vitl.pth`, controlnet_aux ckpts) need a separate destination.
 

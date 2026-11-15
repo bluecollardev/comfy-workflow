@@ -112,7 +112,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 /**
  * Load what the volume lacks, in jobs of at most 20 files one after another (a volume runs one job at a time): the first job is started and returned,
  * the rest follow when each finishes, stopping at the first that fails. An entry with no repo cannot be loaded (it only names a file). Repos that are
- * gated are refused by Hugging Face's lookup, as in Shared > Models; that stops the job it is in with Hugging Face's message.
+ * gated load when a Hugging Face token is set (and its account accepted the terms); otherwise they are refused with the clear gated message (hf.gatedMessage), as in Shared > Models, which stops the job it is in.
  * With S3 not available the whole list is sent: the pod skips a file already there at the right size.
  */
 export async function loadMissing(volumeId?: string, o: { approved_by?: string; poll_ms?: number } = {}, opts: PullOpts & { fetchFn?: typeof fetch; fetchModels?: typeof podpull.fetchModels; jobOf?: typeof podpull.job } = {}) {

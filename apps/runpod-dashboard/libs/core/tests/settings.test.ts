@@ -24,6 +24,18 @@ describe('settings', () => {
     expect(process.env.RUNPOD_API_KEY).toBeUndefined()
   })
 
+  it('stores the Hugging Face token like the other keys: hint only, in the .env, in the environment, removable, no spaces', () => {
+    delete process.env.HF_TOKEN
+    expect(settings.get()).toMatchObject({ hf_token_set: false, hf_token_hint: '' })
+    expect(() => settings.set({ hf_token: 'short' })).toThrow(/does not look like a Hugging Face token/)
+    expect(() => settings.set({ hf_token: 'hf_has a space_1234' })).toThrow(/does not look like/)
+    const r = settings.set({ hf_token: 'hf_ABCDEFGHIJKLMNOP1234' })
+    expect(r).toMatchObject({ hf_token_set: true, hf_token_hint: '••••1234' }); expect(JSON.stringify(r)).not.toContain('ABCDEFGHIJKLMNOP')
+    expect(process.env.HF_TOKEN).toBe('hf_ABCDEFGHIJKLMNOP1234'); expect(readFileSync(join(dir, '.env'), 'utf8')).toContain('HF_TOKEN=hf_ABCDEFGHIJKLMNOP1234')
+    expect(settings.checkSecret('HF_TOKEN', 'hf_ABCDEFGHIJKLMNOP1234')).toBeNull(); expect(settings.secretValues().HF_TOKEN).toBe('hf_ABCDEFGHIJKLMNOP1234')
+    expect(settings.set({ hf_token: null }).hf_token_set).toBe(false); expect(process.env.HF_TOKEN).toBeUndefined()
+  })
+
   it('stores the optional Anthropic key like the others: hint only, in the .env, in the environment, removable', () => {
     delete process.env.ANTHROPIC_API_KEY
     expect(settings.get()).toMatchObject({ anthropic_key_set: false, anthropic_key_hint: '' })

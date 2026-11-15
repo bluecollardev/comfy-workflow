@@ -97,6 +97,16 @@ Lucas: "set pro 6000 as default card".
 4. **Out of stock.** The default card is treated like an explicit one: when RunPod has none in the datacenter the create fails with the list of what was tried; nothing silently picks another card. Choose `auto` to take whatever is cheapest.
 5. **MCP.** `get_configuration` shows `default_gpu`; `set_configuration` takes it in `patch`.
 
+## 14. The Hugging Face token and gated repos (built 2026-11-15)
+
+Lucas pasted the app's error "black-forest-labs/FLUX.2-klein-9b-fp8 has no weight file flux-2-klein-9b-fp8.safetensors" and said "fix this".
+
+1. **Cause.** The repo is gated (`gated: auto`). Without a token Hugging Face's tree API still lists the file but masks its `lfs.oid` as asterisks, and `/resolve` answers 401. `hf.files()` kept only files with a 64-hex oid, so the file vanished and `resolve` reported a missing file: the wrong reason.
+2. **A secret setting, `HF_TOKEN`** (`hf_token` in `set_settings`): stored with the other keys in the settings `.env`, shown as the last four characters only, in the Default Configuration (Keys), in the export's `secrets` section when secrets are included, and in the MCP `get_settings` and `set_settings`. System-wide, not per pod. The hint in the window points to huggingface.co/settings/tokens (read access) and says the repo's terms must also be accepted on its page with the same account.
+3. **hf.ts.** With a token every call to huggingface.co carries `Authorization: Bearer <token>` (only to huggingface.co; never logged, never in an error). A file whose hash is masked is listed with its name and size and `locked: true`; `resolve` refuses it with a 403 that says what to do: without a token, "<repo> is gated: accept its terms on huggingface.co and set a Hugging Face token (Default Configuration)"; with a token, that the token's account has not accepted the terms. A 401 or 403 from the API itself is said the same way. The window shows a gated badge on such files and keeps Load disabled for them (Add to wanted list still works: naming a file for later is not downloading it). Wanted-list loading goes through the same lookup, so a token makes gated repos load and no token refuses them with the clear message.
+4. **On the pod.** The token reaches the pod only on ssh's stdin, in the script: one line writes it to a curl config file under `/dev/shm` (RAM, mode 600, removed by a `trap` when the script ends), and curl reads it with `-K`. It is never on a command line or on the volume. curl follows Hugging Face's redirect to its CDN with `-L` (never `--location-trusted`) and `--proto-redir =https`, so the Authorization header is dropped when the host changes. Everything the pod prints passes the same redaction as the S3 keys, so a token echoed by mistake is stored as `***` in the job's lines, its record and the History.
+5. **Not tested live.** No real token was available: a fetch of a gated repo with a real token and an account that accepted its terms is unproven. The tests cover the header, the masked-hash detection, the messages, the script's text and the redaction, with fake Hugging Face answers.
+
 ## Consequences
 
 - One tag no longer means two images; Blackwell cards keep their CUDA 13 build.

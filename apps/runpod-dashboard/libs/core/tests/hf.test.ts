@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import * as hf from '../src/hf.js'
+import * as settings from '../src/settings.js'
 
 // Hugging Face as a source of model files (ADR-042): what a request may ask for is fixed here, not by the window.
 const TREE = [
@@ -11,6 +15,9 @@ const TREE = [
   { type: 'directory', path: 'vae' },
 ]
 const fakeFetch = (status = 200, body: unknown = TREE) => (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch
+
+beforeEach(() => { process.env.SETTINGS_ENV_FILE = join(mkdtempSync(join(tmpdir(), 'hf-')), '.env'); delete process.env.HF_TOKEN })   // never the real stored token
+afterEach(() => { delete process.env.SETTINGS_ENV_FILE; delete process.env.HF_TOKEN })
 
 describe('hugging face', () => {
   it('searches: needs two characters, keeps well-formed repos, reads gated', async () => {
@@ -52,5 +59,35 @@ describe('hugging face', () => {
     await expect(hf.files('o/gated', 'main', fakeFetch(401, {}))).rejects.toThrow(/gated or private/)
     await expect(hf.files('o/none', 'main', fakeFetch(404, {}))).rejects.toThrow(/no such repo/)
     await expect(hf.files('o/err', 'main', fakeFetch(500, {}))).rejects.toThrow(/HTTP 500/)
+  })
+
+  it('a gated repo: the tree masks the hash, so the file is listed (name, size) as locked and cannot be loaded; without a token the message says what to do', async () => {
+    const MASKED = [{ type: 'file', path: 'flux-2-klein-9b-fp8.safetensors', size: 9433061528, lfs: { oid: '*'.repeat(64), size: 9433061528 } }, { type: 'file', path: 'editing.jpg', size: 5, lfs: { oid: '*'.repeat(64), size: 5 } }]
+    const f = fakeFetch(200, MASKED)
+    const r = await hf.files('black-forest-labs/FLUX.2-klein-9b-fp8', 'main', f)
+    expect(r).toEqual([{ path: 'flux-2-klein-9b-fp8.safetensors', bytes: 9433061528, sha256: '', folder: 'diffusion_models', locked: true }])
+    await expect(hf.resolve([{ repo: 'black-forest-labs/FLUX.2-klein-9b-fp8', path: 'flux-2-klein-9b-fp8.safetensors', folder: 'diffusion_models' }], f)).rejects.toMatchObject({ status: 403, message: expect.stringMatching(/is gated: accept its terms on huggingface\.co and set a Hugging Face token \(Default Configuration\)/) })
+    await expect(hf.resolve([{ repo: 'black-forest-labs/FLUX.2-klein-9b-fp8', path: 'flux-2-klein-9b-fp8.safetensors', folder: 'diffusion_models' }], f)).rejects.not.toThrow(/no weight file/)
+  })
+  it('with a token: it is sent to huggingface.co as a bearer header, the real hashes load, and it is in no error message', async () => {
+    settings.set({ hf_token: 'hf_SECRET_TOKEN_VALUE_1234' })
+    const seen: { url: string; auth: string | null }[] = []
+    const f = (async (url: string, init: RequestInit) => { seen.push({ url, auth: new Headers(init.headers).get('authorization') }); return new Response(JSON.stringify([{ type: 'file', path: 'a.safetensors', size: 1, lfs: { oid: 'e'.repeat(64), size: 1 } }]), { status: 200 }) }) as unknown as typeof fetch
+    const r = await hf.resolve([{ repo: 'o/gated', path: 'a.safetensors', folder: 'vae' }], f)
+    expect(r[0]).toMatchObject({ sha256: 'e'.repeat(64) })
+    expect(seen.every((s) => s.auth === 'Bearer hf_SECRET_TOKEN_VALUE_1234' && s.url.startsWith('https://huggingface.co/'))).toBe(true)
+    for (const status of [401, 403]) {
+      const err = await hf.files('o/gated', 'main', fakeFetch(status, {})).catch((e) => e)
+      expect(err.message).toMatch(/refused this token/); expect(err.message).not.toContain('hf_SECRET')
+    }
+    // masked even with a token: the account has not accepted the terms
+    const masked = fakeFetch(200, [{ type: 'file', path: 'a.safetensors', size: 1, lfs: { oid: '*'.repeat(64), size: 1 } }])
+    const e2 = await hf.resolve([{ repo: 'o/gated', path: 'a.safetensors', folder: 'vae' }], masked).catch((e) => e)
+    expect(e2.message).toMatch(/this Hugging Face token cannot read it: accept its terms at https:\/\/huggingface\.co\/o\/gated/); expect(e2.message).not.toContain('hf_SECRET')
+  })
+  it('no token: no Authorization header at all', async () => {
+    let auth: string | null = 'unset'
+    const f = (async (_u: string, init: RequestInit) => { auth = new Headers(init.headers).get('authorization'); return new Response('[]', { status: 200 }) }) as unknown as typeof fetch
+    await hf.files('o/x', 'main', f); expect(auth).toBeNull()
   })
 })

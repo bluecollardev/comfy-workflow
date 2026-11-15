@@ -159,7 +159,7 @@ Each tool calls the core function the window's IPC channel calls. `mcp/parity.mj
 | Tool | Arguments (`?` optional) | Does | Gate |
 |---|---|---|---|
 | `get_settings` | none | The API keys and settings: whether each key is set and its last four characters, never a value; the Panama bucket, region and profile |  |
-| `set_settings` | `values` | Set or remove the pod manager's own keys and settings: runpod_api_key, anthropic_api_key, runpod_s3_access_key, runpod_s3_secret_key, panama_aws_access_key, panama_aws_secret_key, panama_console_key, panama_bucket, panama_region, panama_profile. |  |
+| `set_settings` | `values` | Set or remove the pod manager's own keys and settings: runpod_api_key, anthropic_api_key, hf_token (Hugging Face token for gated repos; shown as its last four characters), runpod_s3_access_key, runpod_s3_secret_key, panama_aws_access_key, panama_aws_secret_key, panama_console_key, panama_bucket, panama_region, panama_profile. |  |
 | `check_anthropic_key` | `key?` | Whether the Anthropic key (the one saved, or one passed to try) is accepted; used by the adapter drafting and describing tools |  |
 | `config_export` | `file?`, `include_secrets?` | The Default Configuration as the JSON the window exports (folders, volume, image, env, adapters list, ...). |  |
 | `config_import_plan` | `file` | What importing a configuration file would change, section by section (nothing is written): the folders (paths from another machine are flagged), the pod defaults, the keys (names and last four characters only) |  |
