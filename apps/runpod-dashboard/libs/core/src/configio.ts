@@ -29,17 +29,17 @@ export const SECTIONS: Record<SectionKey, SectionDef> = {
   volume: { label: 'Volume and datacenter', fields: ['network_volume_id', 'mount_path', 'data_center_id'], account: true },
   image: { label: 'Image and registry login', fields: ['image', 'registry_auth_id'], account: true },
   env: { label: 'Environment', fields: ['env'] },
-  pod_defaults: { label: 'Pod defaults', fields: ['idle_stop_minutes', 'sync_parallel', 'sync_shared', 'pull_shared', 'apply_by_default', 'pull_any_card', 'import_max_pods', 'import_cost_cap_usd', 'import_cap_enabled', 'required', 'links'] },
+  pod_defaults: { label: 'Pod defaults', fields: ['idle_stop_minutes', 'models', 'sync_parallel', 'sync_shared', 'pull_shared', 'apply_by_default', 'pull_any_card', 'import_max_pods', 'import_cost_cap_usd', 'import_cap_enabled', 'required', 'links'] },
   mcp: { label: 'MCP servers', fields: ['mcp_http'] },
   folders: { label: 'Folders', fields: ['folders', 'custom'], machine: true },
   panama: { label: 'Panama bucket, region and profile', fields: [] },
   secrets: { label: 'Keys and tokens', fields: [] },
 }
 export const SECTION_KEYS = Object.keys(SECTIONS) as SectionKey[]
-const CONFIG_KEYS = new Set<string>(['folders', 'custom', 'network_volume_id', 'mount_path', 'data_center_id', 'links', 'env', 'apply_by_default', 'pull_any_card', 'import_max_pods', 'import_cost_cap_usd', 'import_cap_enabled', 'required', 'image', 'registry_auth_id', 'idle_stop_minutes', 'pull_shared', 'sync_shared', 'sync_parallel', 'dry_run', 'mcp_http'])
+const CONFIG_KEYS = new Set<string>(['folders', 'custom', 'network_volume_id', 'mount_path', 'data_center_id', 'links', 'env', 'apply_by_default', 'pull_any_card', 'import_max_pods', 'import_cost_cap_usd', 'import_cap_enabled', 'required', 'image', 'registry_auth_id', 'idle_stop_minutes', 'models', 'pull_shared', 'sync_shared', 'sync_parallel', 'dry_run', 'mcp_http'])
 const TOP_KEYS = new Set(['format', 'version', 'exported_at', 'app_version', 'config', 'panama', 'secrets_included', 'secrets', 'secrets_set', 'env_omitted', 'not_exported'])
 /** Listed in every export, so a reader knows what to set up again by hand. */
-export const NOT_EXPORTED = ['the no-spend switch (dry_run)', 'per-pod configurations', 'adapters you wrote', 'the repositories attached to pods']
+export const NOT_EXPORTED = ['the no-spend switch (dry_run)', 'per-pod configurations', 'per-pod model choices (a pod id means nothing on another machine; the defaults travel)', 'adapters you wrote', 'the repositories attached to pods']
 /** An environment variable name that looks like it holds a secret: with the keys included it travels in config.env like any other; without them it is left out. */
 export const looksSecret = (name: string) => /(SECRET|TOKEN|PASSW|CREDENTIAL|PRIVATE|AUTH|API[_-]?KEY|ACCESS[_-]?KEY|(^|_)KEY($|_))/i.test(name)
 
@@ -93,6 +93,7 @@ const checkType = (key: string, v: unknown): string | null => {
     case 'import_max_pods': return Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 20 ? null : `${key} must be a whole number from 1 to 20`
     case 'import_cost_cap_usd': return typeof v === 'number' && v > 0 ? null : `${key} must be a number above 0`
     case 'import_cap_enabled': return typeof v === 'boolean' ? null : `${key} must be true or false`
+    case 'models': return v && typeof v === 'object' && !Array.isArray(v) && Object.values(v as object).every(str) && Object.keys(v as object).every((k) => k === 'vae' || k === 'diffusion_model') ? null : `${key} must be {vae, diffusion_model} as file names`
     case 'sync_shared': case 'pull_shared': return strArr(v) ? null : `${key} must be a list of folder names`
     case 'folders': return isObj(v) && Object.values(v).every(str) ? null : 'folders must map names to paths (text)'
     case 'required': return isObj(v) && Object.values(v).every((x) => typeof x === 'boolean') ? null : 'required must map folder names to true or false'

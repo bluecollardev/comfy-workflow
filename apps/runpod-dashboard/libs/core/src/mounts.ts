@@ -50,6 +50,8 @@ export interface MountsConfig {
   image: string
   registry_auth_id: string   // RunPod's saved credential for a private registry (saveRegistryAuth); '' for a public image
   idle_stop_minutes: number
+  /** The VAE and diffusion model a pod's workflows use unless the pod has its own choice (ADR-042); '' = the graph's own */
+  models: { vae: string; diffusion_model: string }
   pull_shared: string[]      // which ComfyUI-Shared subfolders a pull brings back down (default: output)
   sync_shared: string[]      // which ComfyUI-Shared subfolders a push carries: input, models, output, workflows (a pod's own configuration can differ from the default)
   sync_parallel: number      // rsync streams at a time on a push (1..16); the uplink is the limit, streams keep it full across small files
@@ -117,6 +119,7 @@ export function defaults(): MountsConfig {
     image: DEFAULT_IMAGE(),
     registry_auth_id: '',
     idle_stop_minutes: 30,
+    models: { vae: '', diffusion_model: '' },
     sync_parallel: 8,   // streams at a time: the uplink is the limit and more streams keep it full across many small files (was 4)
     sync_shared: [...SYNC_SHARED_DEFAULT],
     pull_shared: [...PULL_SHARED_DEFAULT],
@@ -153,6 +156,7 @@ export function normalize(data: Partial<MountsConfig>): MountsConfig {
     image: data.image ?? d.image,
     registry_auth_id: (data.registry_auth_id ?? '').trim(),
     idle_stop_minutes: data.idle_stop_minutes ?? d.idle_stop_minutes,
+    models: { vae: String(data.models?.vae ?? '').trim(), diffusion_model: String(data.models?.diffusion_model ?? '').trim() },
     sync_parallel: data.sync_parallel ?? d.sync_parallel,
     pull_shared: Array.isArray(data.pull_shared) ? SYNC_SHARED.filter((x) => data.pull_shared!.includes(x)) : d.pull_shared,
     sync_shared: Array.isArray(data.sync_shared) ? SYNC_SHARED.filter((x) => data.sync_shared!.includes(x)) : d.sync_shared,

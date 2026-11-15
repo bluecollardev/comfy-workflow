@@ -36,6 +36,12 @@ describe('per-pod model choice (ADR-042)', () => {
     expect(r.applied).toEqual([]); expect(r.skipped[0]).toMatch(/2 VAELoader nodes/)
     expect(podmodels.apply({ '1': { class_type: 'KSampler', inputs: {} } }, { vae: 'x' })).toEqual({ applied: [], skipped: [] })
   })
+  it('the Default Configuration supplies the choice, a pod own choice wins per slot, and the defaults export and import with the configuration', async () => {
+    const mounts = await import('../src/mounts.js'); const configio = await import('../src/configio.js')
+    expect(mounts.normalize({ models: { vae: ' d.safetensors ', diffusion_model: '' } } as never).models).toEqual({ vae: 'd.safetensors', diffusion_model: '' })
+    expect(configio.SECTIONS.pod_defaults.fields).toContain('models')
+    expect(configio.NOT_EXPORTED.join(' ')).toMatch(/per-pod model choices/)
+  })
   it('reads the files ComfyUI offers from /object_info', async () => {
     const f = (async (u: string) => new Response(JSON.stringify(u.includes('VAELoader') ? { VAELoader: { input: { required: { vae_name: [['a.safetensors', 'b.safetensors']] } } } } : {}), { status: 200 })) as unknown as typeof fetch
     expect(await podmodels.choices('http://pod', f)).toEqual({ vae: ['a.safetensors', 'b.safetensors'], diffusion_model: [] })

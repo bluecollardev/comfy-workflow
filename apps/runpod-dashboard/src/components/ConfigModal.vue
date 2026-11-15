@@ -145,6 +145,16 @@
           </BFormGroup>
         </BCol>
         <BCol md="4">
+          <BFormGroup :label="$t('config.defaultVae')" label-for="cfg-vae" :description="$t('config.modelsHelp')">
+            <BFormInput id="cfg-vae" v-model="cfg.models.vae" placeholder="seedvr2_ema_vae_fp16.safetensors" data-testid="cfg-vae" />
+          </BFormGroup>
+        </BCol>
+        <BCol md="4">
+          <BFormGroup :label="$t('config.defaultDiffusion')" label-for="cfg-diffusion" :description="$t('config.modelsHelp')">
+            <BFormInput id="cfg-diffusion" v-model="cfg.models.diffusion_model" placeholder="seedvr2_3b_fp16.safetensors" data-testid="cfg-diffusion" />
+          </BFormGroup>
+        </BCol>
+        <BCol md="4">
           <BFormGroup :label="$t('config.syncParallel')" label-for="cfg-sync-parallel" :description="$t('config.syncParallelHelp')">
             <BFormInput id="cfg-sync-parallel" v-model.number="cfg.sync_parallel" type="number" min="1" max="16" data-testid="cfg-sync-parallel" />
           </BFormGroup>
@@ -481,6 +491,7 @@ const customRow = (c) => folders.value.find((f) => f.custom && f.key === c.name)
 function take(payload) {
   cfg.value = JSON.parse(JSON.stringify(payload.config))   // a copy: unsaved edits must not leak into the store (the stats bar reads it)
   cfg.value.custom ||= []
+  cfg.value.models = { vae: '', diffusion_model: '', ...(cfg.value.models || {}) }   // an older payload has none
   folders.value = payload.folders || []
   envRows.value = Object.entries(payload.config.env || {}).map(([key, value]) => ({ key, value }))
   localEnv.value = payload.local_env || {}

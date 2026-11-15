@@ -63,7 +63,7 @@ export async function list(podId: string, client?: rp.RunPodClient, fetchFn: typ
 /** The pod's chosen VAE / diffusion model (empty slots: the graphs keep their own) and the files its ComfyUI offers for each. */
 export interface PodModels { pod_id: string; chosen: podmodels.Choice; choices: Record<podmodels.Slot, string[]>; running: boolean }
 export async function models(podId: string, client?: rp.RunPodClient, fetchFn: typeof fetch = fetch): Promise<PodModels> {
-  const chosen = podmodels.get(podId)
+  const chosen = podmodels.effective(podId)
   if (mounts.dryRun(mounts.load())) return { pod_id: podId, chosen, running: true, choices: { vae: ['simulated_vae.safetensors', 'ae.safetensors'], diffusion_model: ['simulated_model_fp16.safetensors'] } }
   const pod = await pods.get(podId, client)
   if (pod.status !== 'running' || !pod.web_ui_url) return { pod_id: podId, chosen, running: false, choices: { vae: [], diffusion_model: [] } }
@@ -152,7 +152,7 @@ async function runOne(i: Internal, r: RunResult, base: string, o: RunOpts, fetch
   const ui = await getJson(`${base}/api/userdata/${encodeURIComponent(`workflows/${r.path}`)}`)
   if (!Array.isArray((ui as { nodes?: unknown }).nodes)) throw new CoreError(422, `${r.path} is not a UI graph (it has no nodes list).`)
   const api = await (o.convert ?? defaultConvert)(ui, { base, podId: i.job.pod_id })
-  const chosen = podmodels.apply(api, podmodels.get(i.job.pod_id))   // the pod's own VAE / diffusion model (ADR-042)
+  const chosen = podmodels.apply(api, podmodels.effective(i.job.pod_id))   // the pod's own VAE / diffusion model (ADR-042)
   if (chosen.applied.length || chosen.skipped.length) r.models = [...chosen.applied.map((a) => `${a.slot}: ${a.to} (was ${a.from || 'unset'})`), ...chosen.skipped]
   const gate = shots.lockedIn(api, o.projectRoot)
   if (gate.locked.length) throw new CoreError(403, `Refused: the graph names locked shot${gate.locked.length === 1 ? '' : 's'} ${gate.locked.join(', ')}; client-approved shots are never run by us.`)

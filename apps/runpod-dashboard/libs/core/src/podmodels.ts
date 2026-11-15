@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { podModelsFile } from './paths.js'
 import { bad } from './errors.js'
+import * as mounts from './mounts.js'
 
 /** What can be chosen: a label, the ComfyUI loader class and the input that names the file. */
 export const SLOTS = {
@@ -22,6 +23,11 @@ function load(): Registry { const f = podModelsFile(); if (!existsSync(f)) retur
 function save(reg: Registry) { const f = podModelsFile(); mkdirSync(dirname(f), { recursive: true }); writeFileSync(f, JSON.stringify(reg, null, 2) + '\n') }
 
 export const get = (podId: string): Choice => load()[podId] ?? {}
+/** What a pod's workflows use: the Default Configuration's choice (`models`), over which the pod's own choice wins per slot. */
+export function effective(podId: string): Choice {
+  const def = mounts.load().models || { vae: '', diffusion_model: '' }
+  return { ...(def.vae ? { vae: def.vae } : {}), ...(def.diffusion_model ? { diffusion_model: def.diffusion_model } : {}), ...get(podId) }
+}
 /** Set the pod's choice: a slot with a file name sets it, an empty string clears it (the graph keeps its own). */
 export function set(podId: string, choice: Choice): Choice {
   const reg = load(), cur: Choice = { ...(reg[podId] ?? {}) }
