@@ -41,7 +41,7 @@ test.describe('accounts', () => {
     await expect(github).toContainText('Lucas')
 
     await github.getByRole('button', { name: 'Disconnect' }).click()
-    await expect(dialog.locator('.list-group-item')).toHaveCount(1)
+    await expect(dialog.getByTestId('connect-accounts').locator('.list-group-item')).toHaveCount(1)   // the repositories below it have list items too
     expect(api.calls).toContainEqual(expect.objectContaining({ method: 'DELETE', path: '/git-accounts/a1' }))
   })
 
