@@ -10,7 +10,7 @@ on:
     inputs:
       variant:
         description: ShotPipe set or versions (see shared/nodes/sets.json)
-        default: contract-v26
+        default: contract-v27
 permissions:
   contents: read
   packages: write
@@ -28,7 +28,7 @@ jobs:
         run: |
           if [ -n "${{ github.event.inputs.variant }}" ]; then V="${{ github.event.inputs.variant }}"
           else V="$(echo "$GITHUB_REF_NAME" | sed -E 's#^image/(.*)-[0-9]{8}-[0-9]{6}$#\1#')"; fi
-          # A variant ending in -cu13 is the CUDA 13 (Blackwell) image of that set (docs/ADR-030): contract-v26-cu13 builds set contract-v26 on the CUDA 13 base, tagged contract-v26-cu13.
+          # A variant ending in -cu13 is the CUDA 13 (Blackwell) image of that set (docs/ADR-030): contract-v27-cu13 builds set contract-v27 on the CUDA 13 base, tagged contract-v27-cu13.
           CUDA=""; case "$V" in *-cu13) CUDA=13; V="${V%-cu13}" ;; esac
           echo "variant=$V" >> "$GITHUB_OUTPUT"; echo "cuda=$CUDA" >> "$GITHUB_OUTPUT"; echo "variant: $V cuda: ${CUDA:-12.6}"
       - name: Node packs (private submodule, read-only deploy key)

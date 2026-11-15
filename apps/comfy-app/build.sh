@@ -5,8 +5,8 @@
 # `docker login <registry>`. The pushed reference is what the dashboard's
 # Configuration (Image) and `./start.sh package --image` take.
 #
-#   ./build.sh                       # comfy-app:contract-v26 with the ShotPipe set the corrosion graphs need
-#   ./build.sh --push ghcr.io/<org>/comfy-app:contract-v26   # build, tag, push; prints the reference to configure
+#   ./build.sh                       # comfy-app:contract-v27 with the ShotPipe set the corrosion graphs need
+#   ./build.sh --push ghcr.io/<org>/comfy-app:contract-v27   # build, tag, push; prints the reference to configure
 #   ./build.sh --remote [--wait]     # build and push on GitHub Actions to ghcr.io: nothing big leaves this Mac
 #   ./build.sh --shotpipe v26,v14,v7 # explicit versions instead of a set from shared/nodes/sets.json
 #   ./build.sh --tag comfy-app:test
@@ -27,7 +27,7 @@ REPO="$(cd "$HERE/../.." && pwd)"
 # shellcheck disable=SC1091
 source "$HERE/pins.env"
 
-SHOTPIPE="contract-v26"
+SHOTPIPE="contract-v27"
 TAG=""
 BASE=""
 CUDA=""
@@ -91,7 +91,7 @@ rm -rf "$HERE/.build" && mkdir -p "$STAGE"
 
 NODES="${COMFY_NODES_DIR:-$REPO/shared/nodes}"
 [ -f "$NODES/README.md" ] || git -C "$REPO" submodule update --init --depth 1 shared/nodes
-# A name in sets.json (e.g. contract-v26) expands to its packs; anything else is a version like v26.
+# A name in sets.json (e.g. contract-v27) expands to its packs; anything else is a version like v26.
 expand_set() { python3 - "$NODES/sets.json" "$1" <<'PY'
 import json, sys
 sets = json.load(open(sys.argv[1])); s = sets.get(sys.argv[2])
