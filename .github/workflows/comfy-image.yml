@@ -48,3 +48,12 @@ jobs:
         run: |
           V="${{ steps.v.outputs.variant }}"; C="${{ steps.v.outputs.cuda }}"
           apps/comfy-app/build.sh --shotpipe "$V" ${C:+--cuda "$C"} --push "ghcr.io/bluecollardev/comfy-app:$V${C:+-cu$C}"
+      - name: Tag by commit and print the digest (ADR-020 amendment: pin the image, do not follow the tag)
+        run: |
+          V="${{ steps.v.outputs.variant }}"; C="${{ steps.v.outputs.cuda }}"
+          REF="ghcr.io/bluecollardev/comfy-app:$V${C:+-cu$C}"
+          SHA="${GITHUB_SHA::7}"
+          docker tag "$REF" "$REF-$SHA" && docker push "$REF-$SHA"
+          DIGEST="$(docker inspect --format '{{index .RepoDigests 0}}' "$REF")"
+          echo "pin this: $DIGEST   (also tagged $REF-$SHA)"
+          { echo "### Image built"; echo; echo "Pin it in Default Configuration (image):"; echo; echo '```'; echo "$DIGEST"; echo '```'; echo "Commit tag: \`$REF-$SHA\`"; } >> "$GITHUB_STEP_SUMMARY"

@@ -25,7 +25,8 @@ export const SYNC_SHARED_DEFAULT = ['input', 'models', 'workflows'] as const
 export const PULL_SHARED_DEFAULT = ['output'] as const
 /** The pod image selected by default (ADR-020, ADR-024): ours, on GitHub's registry, built by Actions. A pod cannot pull a bare local name, so the default is the registry reference;
  *  COMFY_IMAGE overrides it, and an image saved in the Default Configuration wins over both. */
-export const DEFAULT_IMAGE_REF = 'ghcr.io/bluecollardev/comfy-app:contract-v26'
+/** Pinned by digest (ADR-020 amendment 2026-11-15): the contract-v26 tag is re-pushed on every rebuild, a digest is not. Bump it with a release when a new build is trusted. */
+export const DEFAULT_IMAGE_REF = 'ghcr.io/bluecollardev/comfy-app@sha256:a06a461ce3b38c6a3badf9cd7d47e77f12247a38785511f8b4ca077aedb4d457'
 export const DEFAULT_IMAGE = () => process.env.COMFY_IMAGE || DEFAULT_IMAGE_REF
 
 export interface Link { path: string; target: string; required: boolean; mode: string; what: string; folder: string }

@@ -66,3 +66,10 @@ Actions started on the second attempt (cause not identified; no change was made 
 has no access to it. Fix, in the browser (no API at our token's scope): the package's settings, "Manage Actions access", add
 `bluecollardev/comfy-workflow` with the Write role (https://github.com/orgs/bluecollardev/packages/container/comfy-app/settings), then rerun
 `./start.sh comfy-image --remote --wait`. The pushed image was not stored, so the rerun rebuilds it.
+
+## Amendment (2026-11-15): pin by digest
+
+- `contract-v26` is a name that every rebuild re-pushes (it moved on 2026-11-14 at 20:58 UTC), so two pods created a day apart could run different contents. The default image is now **`ghcr.io/bluecollardev/comfy-app@sha256:a06a461ce3b38c6a3badf9cd7d47e77f12247a38785511f8b4ca077aedb4d457`** (`mounts.DEFAULT_IMAGE_REF`); RunPod pulls a digest reference like any other.
+- The workflow also tags each build `<variant>-<commit>` and prints its digest in the run summary. A new build is adopted by copying that digest into `DEFAULT_IMAGE_REF` (and the Default Configuration) in a release; nothing follows the moving tag by itself.
+- The variant tags (`contract-v26`, `contract-v26-cu13`) remain for humans and for `COMFY_IMAGE` overrides.
+- A digest has no `-cu13` suffix to add, so `gpus.CU13_PINS` pairs each pinned digest with its CUDA 13 build (`contract-v26-cu13`, `sha256:116c2012…`); a Blackwell card gets that one. Bump both together.
