@@ -5,6 +5,9 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased
 
+### The default card (ADR-042 section 13)
+- Lucas: "set pro 6000 as default card". `default_gpu` (default `rtxpro6000`), system-wide, in Default Configuration > Options and the *Pod defaults* export section; used by pods created with no card, MCP `create_pod` with `gpu` omitted, the create form's first card and the Queue's pool (it was a hard-coded H100). An explicit card wins; an out-of-stock default is an error, not a silent swap; the CUDA 13 image is paired automatically.
+
 ### The wanted-models list (ADR-042 section 12)
 - Lucas: "when importing and exporting settings, keep a copy of the names of the models, so we can import. these models can then be loaded onto a shared volume in any datacenter." A list of Hugging Face coordinates in the Default Configuration (`wanted_models`), its own export section (merged on import, undone with the rest), a panel in Shared > Models (add from a search, save from the volume, Binc's list read off the volume or pasted, per-row state, Load missing in jobs of 20 with a size warning) and four MCP tools. Tests: Vitest (`wanted`, `wantedmodels`), Playwright (`shared.spec.js`), `node --test mcp/*.test.mjs`. Not run against a real volume or Hugging Face.
 

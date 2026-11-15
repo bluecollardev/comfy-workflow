@@ -120,7 +120,7 @@ describe('the volume and its cost', () => {
 
 describe('the plan sent to RunPod', () => {
   it('applies the cheap defaults and the mount configuration', () => {
-    const cfg = mounts.defaults(); cfg.image = 'ghcr.io/example/comfy-app:v26'; cfg.network_volume_id = 'vol1'; cfg.data_center_id = 'EU-RO-1'
+    const cfg = mounts.defaults(); cfg.image = 'ghcr.io/example/comfy-app:v26'; cfg.network_volume_id = 'vol1'; cfg.data_center_id = 'EU-RO-1'; cfg.default_gpu = 'auto'
     cfg.folders.project = fakeTree(dir)
     const { input, idleMinutes } = pods.plan({ name: 't' }, cfg)
     expect(input.imageName).toBe('ghcr.io/example/comfy-app:v26'); expect(input.gpuTypeId).toBe('auto')

@@ -94,7 +94,7 @@ export function plan(req: CreatePodRequest, cfg: mounts.MountsConfig, credential
   // The image's credential is the image's, not the mounts': a pod made without the mount configuration (another region, no volume) still pulls a private image (ADR-026: it did not, and RunPod exited it with "unauthorized").
   if (cfg.registry_auth_id) volume.containerRegistryAuthId = cfg.registry_auth_id
   if (!volume.networkVolumeId && req.data_center_id) volume.dataCenterId = req.data_center_id
-  const gpuKey = req.gpu || gpus.DEFAULT_GPU
+  const gpuKey = req.gpu || cfg.default_gpu || gpus.DEFAULT_GPU   // the system-wide default card when the caller names none (an explicit card always wins)
   let gpuTypeId: string
   if (req.gpu_type_id !== undefined) {
     if (!/^NVIDIA [A-Za-z0-9 ._()-]{2,80}$/.test(req.gpu_type_id)) throw bad(`Not a RunPod GPU type id: ${req.gpu_type_id}`)
@@ -498,7 +498,7 @@ export async function datacenters(client?: rp.RunPodClient, fresh = false): Prom
  *  else RunPod's lowest price anywhere. `dataCenterId` overrides the configured one. */
 export async function gpuMenu(client?: rp.RunPodClient, dataCenterId?: string): Promise<{ default: string; gpus: GpuMenuEntry[]; live: boolean; datacenter: string | null }> {
   const plain = gpus.menu().map((m) => ({ ...m, price: null, stock: null, in_stock: m.value === gpus.AUTO }))
-  if (isDry()) return { default: gpus.DEFAULT_GPU, gpus: plain.map((m) => ({ ...m, in_stock: true, stock: 'simulated' })), live: false, datacenter: null }
+  if (isDry()) return { default: mounts.load().default_gpu || gpus.DEFAULT_GPU, gpus: plain.map((m) => ({ ...m, in_stock: true, stock: 'simulated' })), live: false, datacenter: null }
   const cfg = mounts.load()
   const dc = dataCenterId ?? (cfg.network_volume_id ? cfg.data_center_id : '')
   let stock: rp.GpuStock[]
@@ -507,10 +507,10 @@ export async function gpuMenu(client?: rp.RunPodClient, dataCenterId?: string): 
       const [here] = await rp.datacenterPrices(Object.values(gpus.GPUS).map((g) => g.id), client, [dc])
       stock = (here?.cards || []).map((c) => ({ id: c.id, price: c.price, stock: c.stock, secure: true, community: false }))
     } else stock = await rp.gpuStock(Object.values(gpus.GPUS).map((g) => g.id), client)
-  } catch { return { default: gpus.DEFAULT_GPU, gpus: plain, live: false, datacenter: dc || null } }
+  } catch { return { default: mounts.load().default_gpu || gpus.DEFAULT_GPU, gpus: plain, live: false, datacenter: dc || null } }
   const byId = new Map(stock.map((s) => [s.id, s]))
   return {
-    default: gpus.DEFAULT_GPU, live: true, datacenter: dc || null,
+    default: cfg.default_gpu || gpus.DEFAULT_GPU, live: true, datacenter: dc || null,
     gpus: plain.map((m) => {
       if (m.value === gpus.AUTO) return m
       const s = byId.get(gpus.GPUS[m.value].id)

@@ -75,7 +75,7 @@ describe('no-spend mode', () => {
     await pods.remove(fresh.id)
     expect(pods.config(fresh.id)).toBeNull()
     // the plan uses the pod's own configuration, not the default
-    const { input } = pods.plan({ name: 'x' }, pods.effectiveConfig({ name: 'x', config: own }).cfg)
+    const { input } = pods.plan({ name: 'x', gpu: 'auto' }, pods.effectiveConfig({ name: 'x', config: own }).cfg)
     expect(input.imageName).toBe('ghcr.io/example/comfy-app:other'); expect(input.networkVolumeId).toBe('volB')
   })
 })

@@ -73,7 +73,8 @@ export interface Deps {
 }
 
 /** The card the pool is made of when the queue has to create a pod. */
-export const POOL_GPU = 'h100'
+/** The card a pool pod gets when none was chosen for its shot: the system-wide default card (Default Configuration), not a constant. */
+export const poolGpu = () => mounts.load().default_gpu
 /** A run's duration is unknown: this many hours per shot go into the estimate. */
 export const RUN_ESTIMATE_H = 0.5
 
@@ -88,7 +89,7 @@ const realDeps: Deps = {
   },
   podReady: async (id) => { const p = await pods.get(id); const raw = await rp.getPod(id); return { ready: p.status === 'running' && !!p.web_ui_url && p.comfy_ready !== false, price: raw?.costPerHr ?? null } },
   resumePod: async (id) => { await pods.resume(id) },
-  createPod: async (name, round, gpu) => { const p = await pods.create({ name, gpu: gpu || POOL_GPU, apply_mounts: true, round }); return { id: p.id, name: p.name } },
+  createPod: async (name, round, gpu) => { const p = await pods.create({ name, gpu: gpu || poolGpu(), apply_mounts: true, round }); return { id: p.id, name: p.name } },
   assignShot: (podId, round, shot) => { if (podrounds.get(podId) !== round) podrounds.set(podId, round); podrounds.setShot(podId, shot) },
   ensureVolume: async (id) => {
     const want = (id || mounts.load().network_volume_id || '').trim()
@@ -303,7 +304,7 @@ async function begin(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> {
       podId = pick.id; podName = pick.name; if (pick.gpu) t.card = pick.gpu   // the card the reused pod really has
       if (pick.state === 'off') { await deps.resumePod(pick.id); imp.started_pods.push(pick.id); ev(t, `restarted your stopped pod ${pick.name}${pick.gpu ? ` (${pick.gpu})` : ''}`) } else ev(t, `reusing the pod ${pick.name} (${pick.gpu ? `${pick.gpu}, ` : ''}${pick.state})`)
     } else {
-      const c = await deps.createPod(`queue-${imp.round}-${tasks.filter((x) => x.pod_id).length + 1}`.slice(0, 60), imp.round, t.gpu); podId = c.id; podName = c.name; t.card = t.gpu || POOL_GPU; imp.started_pods.push(c.id); ev(t, `created pod ${c.name} (${t.gpu || POOL_GPU}) in round ${imp.round}`)
+      const c = await deps.createPod(`queue-${imp.round}-${tasks.filter((x) => x.pod_id).length + 1}`.slice(0, 60), imp.round, t.gpu); podId = c.id; podName = c.name; t.card = t.gpu || poolGpu(); imp.started_pods.push(c.id); ev(t, `created pod ${c.name} (${t.gpu || poolGpu()}) in round ${imp.round}`)
     }
     if (t.shot) { try { deps.assignShot(podId, imp.round, t.shot); ev(t, `pod card: round ${imp.round}, shot ${t.shot}`) } catch { /* the card label is ours only: never fail a run over it */ } }
     t.pod_id = podId; t.pod_name = podName; t.phase = 'pod'; t.state = 'running'; t.retry_at = undefined; t.attempts = undefined; t.stage = undefined; t.started_at = deps.now().toISOString(); delete t.held_reason
@@ -311,7 +312,7 @@ async function begin(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> {
     const msg = (e as Error).message
     if (/No card available/.test(msg) && (t.attempts ?? 0) < MAX_CARD_WAITS) {   // RunPod has none free right now: wait and ask again, as the datacenter table says "if we have to wait we have to wait"
       t.attempts = (t.attempts ?? 0) + 1; t.retry_at = new Date(deps.now().getTime() + CARD_RETRY_MS).toISOString()
-      t.stage = `waiting for a free ${t.gpu || POOL_GPU}${t.gpu ? '' : ' (the pool default: no card was chosen for this shot)'} (try ${t.attempts} of ${MAX_CARD_WAITS}, next at ${t.retry_at.slice(11, 19)} UTC)`
+      t.stage = `waiting for a free ${t.gpu || poolGpu()}${t.gpu ? '' : ' (the pool default: no card was chosen for this shot)'} (try ${t.attempts} of ${MAX_CARD_WAITS}, next at ${t.retry_at.slice(11, 19)} UTC)`
       if (t.attempts === 1) ev(t, `no card free right now: ${msg.slice(0, 160)}. Waiting and asking again every minute.`)
       return true
     }

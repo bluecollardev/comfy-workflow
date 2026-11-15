@@ -495,7 +495,7 @@ const emit = defineEmits(['pod-created'])
 const defaults = () => ({
   name: '',
   round: '',
-  gpu: 'auto',
+  gpu: useMountsStore().config?.default_gpu || 'auto',   // the system-wide default card (Default Configuration)
   dataCenterId: '',
   gpuCount: 1,
   instanceType: 'spot',
@@ -514,6 +514,8 @@ const defaults = () => ({
 })
 
 const form = reactive(defaults())
+// The configuration loads after the form is made, and the default card can be changed while it is open: a card nobody picked follows the default (a card the user picked stays).
+watch(() => useMountsStore().config?.default_gpu, (now, was) => { if (now && form.gpu === (was || 'auto')) form.gpu = now })
 /** The rounds the new pod can go into (ADR-039): the bucket's, as far as the exchange is set up, and any that already has pods; "No round" first. */
 const panamaStore = usePanamaStore()
 const roundChoices = computed(() => {
