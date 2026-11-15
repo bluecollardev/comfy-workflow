@@ -18,6 +18,42 @@ const openMcp = async (page) => {
 const endpoint = (dialog, id) => dialog.locator(`[data-testid="mcp-endpoint"][data-id="${id}"]`)
 const snippet = async (card, client) => { await card.getByTestId('mcp-client-select').selectOption(client); return card.locator(`[data-testid="mcp-client"][data-client="${client}"]`).getByTestId('mcp-snippet') }
 
+test.describe('Connect: tabs and the shell guard', () => {
+  test('MCP is the first tab and the one shown; Repositories holds the Git accounts on top and the repositories below', async ({ page }) => {
+    await page.goto('/')
+    await page.getByTestId('open-connect').click()
+    const dialog = modal(page, t('connect.title'))
+    expect(await dialog.getByRole('tab').allTextContents()).toEqual([t('connect.mcp'), t('connect.repositories')])
+    await expect(dialog.getByTestId('connect-mcp')).toBeVisible()                        // the default tab
+    await dialog.getByRole('tab', { name: t('connect.repositories') }).click()
+    await expect(dialog.getByTestId('connect-accounts')).toBeVisible()
+    await expect(dialog.getByTestId('connect-repositories')).toBeVisible()
+    const [a, r] = [await dialog.getByTestId('connect-accounts').boundingBox(), await dialog.getByTestId('connect-repositories').boundingBox()]
+    expect(a.y).toBeLessThan(r.y)                                                         // accounts above repositories
+  })
+  test('the shell guard switch installs it and shows where, switches it off again, and says why when it fails', async ({ page, api }) => {
+    await page.goto('/')
+    const dialog = await openMcp(page)
+    const status = dialog.getByTestId('mcp-shell-guard-status')
+    await expect(dialog.getByTestId('mcp-shell-guard-block')).toContainText(t('mcp.guardTitle'))
+    await expect(dialog.getByTestId('mcp-shell-guard-help')).toContainText('runpodctl')
+    await expect(dialog.getByTestId('mcp-shell-guard')).not.toBeChecked()
+    await expect(status).toContainText(t('mcp.guardNotInstalled'))
+    await dialog.getByTestId('mcp-shell-guard').check({ force: true })
+    await expect(status).toContainText(t('mcp.guardInstalled'))
+    await expect(dialog.getByTestId('mcp-shell-guard-files')).toContainText('/Users/me/.claude/settings.json')
+    await expect(dialog.getByTestId('mcp-shell-guard-files')).toContainText('agent-shell-guard.sh')
+    expect(api.state.agentguardCalls).toEqual([true])
+    await dialog.getByTestId('mcp-shell-guard').uncheck({ force: true })
+    await expect(status).toContainText(t('mcp.guardNotInstalled'))
+    expect(api.state.agentguardCalls).toEqual([true, false])
+    api.state.failures['POST /agentguard'] = 'cannot write /Users/me/.claude/settings.json: permission denied'
+    await dialog.getByTestId('mcp-shell-guard').check({ force: true })
+    await expect(dialog.getByTestId('mcp-shell-guard-error')).toContainText('permission denied')
+    await expect(dialog.getByTestId('mcp-shell-guard')).not.toBeChecked()                // it did not take
+  })
+})
+
 test.describe('Connect › MCP', () => {
   test.use({ permissions: ['clipboard-read', 'clipboard-write'] })
 

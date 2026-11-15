@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { volumesAPI } from '../api/volumes'
 import { useToastStore } from './toast'
 import { useMountsStore } from './mounts'
@@ -29,5 +29,11 @@ export const useVolumesStore = defineStore('volumes', () => {
   const resize = (v, size_gb) => act(v.id, 'toast.resizeVolume', () => volumesAPI.resize(v.id, size_gb), t('toast.volumeResized', { name: v.name, size: size_gb }))
   const remove = async (v) => { const r = await act(v.id, 'toast.deleteVolume', () => volumesAPI.remove(v.id), t('toast.volumeDeleted', { name: v.name })); if (r.ok) mounts.load(); return r }
   const useAsDefault = async (v) => { const r = await act(v.id, 'toast.defaultVolume', () => volumesAPI.useAsDefault(v.id), t('toast.volumeDefault', { name: v.name, dc: v.datacenter })); if (r.ok) mounts.load(); return r }
-  return { volumes, loading, error, busyId, load, create, resize, remove, useAsDefault }
+  /** Make a volume the Shared one (the models live there; it cannot be deleted while it is), or none when `v` is null. */
+  const setShared = async (v) => {
+    if (!v) return act(null, 'toast.unsharedVolume', () => volumesAPI.setShared(''), t('toast.volumeUnshared', { name: shared.value?.name || '' }))
+    return act(v.id, 'toast.sharedVolume', () => volumesAPI.setShared(v.id), t('toast.volumeShared', { name: v.name }))
+  }
+  const shared = computed(() => volumes.value.find((v) => v.is_shared) || null)
+  return { volumes, loading, error, busyId, shared, load, create, resize, remove, useAsDefault, setShared }
 })

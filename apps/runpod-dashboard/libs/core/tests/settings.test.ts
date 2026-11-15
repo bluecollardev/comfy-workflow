@@ -62,3 +62,22 @@ describe('settings', () => {
     settings.set({ anthropic_api_key: null })
   })
 })
+
+describe('the agent rules (system-wide, ADR-042)', () => {
+  it('are off with no ceiling by default, stored in the settings file, shown by get(), and cleared with off or 0', () => {
+    expect(settings.agentRules()).toEqual({ require_named_yes: false, spend_cap_usd: 0, shell_guard: false })
+    expect(settings.get()).toMatchObject({ agent_named_yes_required: false, agent_spend_cap_usd: 0 })
+    settings.set({ agent_named_yes_required: true, agent_spend_cap_usd: 25.5 })
+    expect(settings.agentRules()).toEqual({ require_named_yes: true, spend_cap_usd: 25.5, shell_guard: false })
+    expect(readFileSync(join(dir, '.env'), 'utf8')).toMatch(/AGENT_REQUIRE_NAMED_YES=1/)
+    expect(settings.get()).toMatchObject({ agent_named_yes_required: true, agent_spend_cap_usd: 25.5 })
+    settings.set({ agent_named_yes_required: false, agent_spend_cap_usd: null })
+    expect(settings.agentRules()).toEqual({ require_named_yes: false, spend_cap_usd: 0, shell_guard: false })
+  })
+  it('refuse a negative or non-numeric ceiling and a non-boolean switch', () => {
+    expect(() => settings.set({ agent_spend_cap_usd: -1 })).toThrow(/dollars/)
+    expect(() => settings.set({ agent_named_yes_required: 'yes' as never })).toThrow(/true or false/)
+    expect(settings.checkAgentRules({ require_named_yes: 'x', spend_cap_usd: 1 })).toMatch(/true or false/)
+  })
+})
+

@@ -16,7 +16,7 @@
  * job reported, kept per volume with the time it was learned (`as_of`).
  *
  * No-spend mode (mounts.dryRun) simulates the whole job without RunPod or SSH. Spend: a temporary pod is a pod creation; it is recorded with
- * `approved_by` (the user's approval to build this feature); the USD 100 cap is enforced where governance is (the MCP server), core keeps no ledger.
+ * `approved_by` (the user's approval to build this feature); the agent rules (named yes, ceiling) are system-wide settings read where governance is (the MCP server); core keeps no ledger.
  */
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -29,6 +29,7 @@ import * as gpus from './gpus.js'
 import * as idle from './idle.js'
 import * as mounts from './mounts.js'
 import * as panama from './panama.js'
+import * as hf from './hf.js'
 import { configDir } from './paths.js'
 import * as place from './place.js'
 import * as pods from './pods.js'
@@ -87,7 +88,7 @@ export function recordState(volumeId: string, round: string, rec: RoundRec | nul
 export function forgetVolume(volumeId: string): void { migrateState(); const all = readJson<Record<string, VolRec>>(stateFile(), {}); if (all[volKey(volumeId)]) { delete all[volKey(volumeId)]; writeJson(stateFile(), all) } }
 export const knownState = (volumeId: string): VolRec | null => { migrateState(); return readJson<Record<string, VolRec>>(stateFile(), {})[volKey(volumeId)] ?? null }
 
-export interface TempPod { round: string; kind: 'pull' | 'remove' | 'browse' | 'erase' | 'clone'; name: string; pod_id: string | null; volume: string; created_at: string; approved_by: string }
+export interface TempPod { round: string; kind: 'pull' | 'remove' | 'browse' | 'erase' | 'clone' | 'fetch'; name: string; pod_id: string | null; volume: string; created_at: string; approved_by: string }
 /** The temporary pods this app has made and not yet deleted. One left behind (the app closed mid-job) is listed here and shows in the manager under its name. */
 export const temporaryPods = (): TempPod[] => readJson<TempPod[]>(tempFile(), [])
 const tempAdd = (t: TempPod) => writeJson(tempFile(), [...temporaryPods().filter((x) => x.name !== t.name), t])
@@ -244,7 +245,7 @@ export async function plan(round: string, opts: Opts = {}): Promise<PodPlan> {
 
 export type JobState = 'creating' | 'starting' | 'pulling' | 'verifying' | 'placing' | 'deleting' | 'done' | 'failed' | 'cancelled'
 export interface PodJob {
-  id: string; round: string; kind: 'pull' | 'remove' | 'browse' | 'erase' | 'clone'; route: 'active' | 'temporary' | 's3'; pod_id: string | null; pod_name: string | null
+  id: string; round: string; kind: 'pull' | 'remove' | 'browse' | 'erase' | 'clone' | 'fetch'; route: 'active' | 'temporary' | 's3'; pod_id: string | null; pod_name: string | null
   /** The card the pod actually has and its price per hour, once the pod exists (the Queue shows them). */
   gpu?: string; price_per_hour?: number | null
   /** A volume job (`browse`, `erase`): the volume, what a browse found (folders with their sizes), what an erase was asked to clear and how many bytes it freed from each. */
@@ -253,6 +254,7 @@ export interface PodJob {
   clone?: { mode: 'push' | 'pull' | 'rsync'; from: { id: string; datacenter: string; name: string }; to: { id: string; datacenter: string; name: string }; include_input: boolean }
   /** A browse: the folder it listed (default the whole volume) */
   browse_path?: string
+  /** A model fetch: the files asked for (as Hugging Face describes them) and the names the pod reported done */ fetch_items?: hf.Resolved[]; fetched?: string[]
   volume_id?: string; listing?: { path: string; bytes: number }[]; erase_keys?: string[]; freed?: Record<string, number>
   state: JobState; files: number; lines: string[]; error?: string; verify?: panama.Verify; started_at: string
   /** ADR-033: what placing the verified round on the pod did (files linked, graphs written, conflicts); set only after a pull whose check passed. A placing failure is here, never the pull's. */
@@ -295,6 +297,9 @@ function feed(i: Internal, raw: string, secrets: string[]) {
   else if (/^BROWSE \d+ \//.test(line)) { const m = /^BROWSE (\d+) (\/.*)$/.exec(line); if (m) (j.listing ||= []).push({ path: m[2], bytes: Number(m[1]) }) }
   else if (/^BROWSE-DONE/.test(line) || /^ERASE-DONE/.test(line) || /^CLONE-DONE/.test(line)) i.outcome = 'removed'
   else if (/^ERASED \w+ \d+/.test(line)) { const m = /^ERASED (\w+) (\d+)/.exec(line); if (m) (j.freed ||= {})[m[1]] = Number(m[2]) }
+  else if (/^FETCHED /.test(line)) { const m = /^FETCHED (\S.*?) (\d+|skipped)$/.exec(line); if (m) (j.fetched ||= []).push(m[1]) }
+  else if (/^FETCH-DONE/.test(line)) i.outcome = 'removed'
+  else if (/^FETCH-FAILED/.test(line)) { i.outcome = 'refused'; j.error = line.replace(/^FETCH-FAILED /, 'Download failed: ') }
   else if (/^BROWSE-FAILED/.test(line)) i.outcome = 'refused'
   else if (/^refused/.test(line)) i.outcome = 'refused'
 }
@@ -408,6 +413,22 @@ export function eraseScript(keys: string[]): string {
   lines.push('echo "ERASE-DONE"', '')
   return lines.join('\n')
 }
+/** Downloads the chosen files from Hugging Face onto the volume, on the pod: resumable, the size checked, then the sha256 Hugging Face gave; a file already there at the right size is left. Names, folders and URLs were fixed by `hf.resolve`; they are quoted here all the same. */
+export function fetchScript(items: hf.Resolved[]): string {
+  if (!items.length) throw bad('Choose at least one file.')
+  const lines = ['set -u']
+  for (const f of items) {
+    lines.push(
+      `d=/workspace/comfy-shared/models/${f.folder}; f="$d"/${q(f.name)}; mkdir -p "$d"`,
+      `if [ -f "$f" ] && [ "$(stat -c %s "$f")" = "${f.bytes}" ]; then echo "FETCHED ${f.name} skipped"; else`,
+      `  curl -fL --retry 5 --retry-delay 5 -C - -o "$f.part" ${q(f.url)} || { echo "FETCH-FAILED ${f.name} (curl $?)"; exit 1; }`,
+      `  echo "${f.sha256}  $f.part" | sha256sum -c - >/dev/null 2>&1 || { rm -f "$f.part"; echo "FETCH-FAILED ${f.name} (the checksum does not match)"; exit 1; }`,
+      `  mv "$f.part" "$f" && echo "FETCHED ${f.name} ${f.bytes}"`,
+      'fi')
+  }
+  lines.push('echo "FETCH-DONE"', '')
+  return lines.join('\n')
+}
 /** Which way a clone goes. With RunPod's S3 API on one side (some datacenters, and S3 keys) one pod does it: a target that has it is written to from a pod on the source (push); else a source that has it is read from a pod on the target (pull). Otherwise, and for any two volumes, RunPod to RunPod: a short pod on each, and the target's pod rsyncs from the source's over SSH. */
 export function cloneMode(from: { datacenter: string }, to: { datacenter: string }, haveKeys: boolean): { mode: 'push' | 'pull' | 'rsync' } {
   const s3 = (d: string) => pods.S3_DATACENTERS.has(d)
@@ -429,7 +450,7 @@ export function cloneScript(c: NonNullable<PodJob['clone']>, k: { id: string; se
   ].join('\n')
 }
 /** The script a job runs on its pod. */
-const scriptOf = (j: PodJob, k: { id: string; secret: string } | null): string => j.kind === 'clone' ? cloneScript(j.clone!, s3Keys()!) : j.kind === 'pull' ? (j.skip_shots?.length ? pullShotsScript(j.round, j.skip_shots, k!) : pullScript(j.round, k!)) : j.kind === 'browse' ? browseScript(j.browse_path) : j.kind === 'erase' ? eraseScript(j.erase_keys ?? []) : removeScript(j.round)
+const scriptOf = (j: PodJob, k: { id: string; secret: string } | null): string => j.kind === 'clone' ? cloneScript(j.clone!, s3Keys()!) : j.kind === 'pull' ? (j.skip_shots?.length ? pullShotsScript(j.round, j.skip_shots, k!) : pullScript(j.round, k!)) : j.kind === 'browse' ? browseScript(j.browse_path) : j.kind === 'erase' ? eraseScript(j.erase_keys ?? []) : j.kind === 'fetch' ? fetchScript(j.fetch_items ?? []) : removeScript(j.round)
 const KILL_SCRIPT = 'pkill -f /opt/comfy-app/s3pull.sh; pkill -x rclone; true\n'
 
 export interface SshJob { host: string; port: number; script: string; onLine: (line: string) => void; signal: AbortSignal }
@@ -616,7 +637,7 @@ async function runTemporary(i: Internal, opts: Opts) {
     j.state = 'starting'
     if (j.kind !== 'pull' || viaSsh) {   // remove, browse, erase, and a pull of some shots: one script over SSH
       const { host, port } = await waitForSshTarget(i, podId, opts, deadline)
-      j.state = j.kind === 'browse' ? 'verifying' : j.kind === 'pull' ? 'pulling' : 'deleting'
+      j.state = j.kind === 'browse' ? 'verifying' : j.kind === 'pull' || j.kind === 'fetch' ? 'pulling' : 'deleting'
       await runOnPod(i, host, port, scriptOf(j, k), opts, secrets)
       if (viaSsh && i.outcome === 'done' && !i.cancelled) await placeAfter(i, host, port, opts)   // the same placing as after a whole-round pull
       return
@@ -658,6 +679,7 @@ async function simulate(i: Internal, opts: Opts) {
       ? [['starting', ['no-spend mode: the pod is simulated']], ['pulling', [`s3 pull: ${panama.bucket()}/rounds/${j.round} -> ${REMOTE_ROUNDS}/${j.round}`, 'a.json: Copied (new)', 'b.json: Copied (new)']], ['verifying', ['100%, 0 B/s']], ['pulling', ['s3 pull done (manifest verified): ' + `${REMOTE_ROUNDS}/${j.round}`]]]
       : j.kind === 'browse' ? [['verifying', ['BROWSE 1000 /workspace', 'BROWSE 600 /workspace/comfy-shared', 'BROWSE 500 /workspace/comfy-shared/temp', 'BROWSE-DONE']]]
       : j.kind === 'clone' ? [['pulling', ['clone: simulated', 'CLONE-DONE']]]
+      : j.kind === 'fetch' ? [['pulling', [...(j.fetch_items ?? []).map((f) => `FETCHED ${f.name} ${f.bytes}`), 'FETCH-DONE']]]
       : j.kind === 'erase' ? [['deleting', [...(j.erase_keys ?? []).map((k) => `ERASED ${k} 100`), 'ERASE-DONE']]]
       : [['deleting', [`removed ${REMOTE_ROUNDS}/${j.round}`]]]
     for (const [state, lines] of steps) {
@@ -906,6 +928,38 @@ export async function eraseVolume(volumeId: string, keys: string[], o: { approve
   if (String(o.confirm_name ?? '') !== vol.name) throw new CoreError(400, `Type the volume's name (${vol.name}) to confirm: this cannot be undone.`)
   void label
   return startVolumeJob(volumeId, 'erase', ks, opts)
+}
+
+/** What a volume holds under comfy-shared/models/<folder>/, read over RunPod's S3 API (no pod, no cost): one entry per file with its folder and size. null when the S3 API cannot be used for this volume (no keys, or a datacenter without it): only a pod could say. */
+export async function modelsOnVolume(volumeId: string, opts: Opts = {}): Promise<{ folder: string; name: string; bytes: number }[] | null> {
+  volLabel(volumeId)
+  if (mounts.dryRun(mounts.load())) return [{ folder: 'diffusion_models', name: 'simulated_model_fp16.safetensors', bytes: 1000 }, { folder: 'vae', name: 'simulated_vae.safetensors', bytes: 500 }]
+  const vol = await volumeOf({ ...opts, volumeId })
+  const a = s3Access(vol); if (!a.ok) return null
+  const r = await (opts.aws ?? defaultAws)(['s3', 'ls', `s3://${a.bucket}/comfy-shared/models/`, '--recursive', '--endpoint-url', a.endpoint, '--region', a.region], { AWS_ACCESS_KEY_ID: a.id, AWS_SECRET_ACCESS_KEY: a.secret })
+  if (r.code !== 0) throw new CoreError(502, `RunPod's S3 API: ${(r.stderr || r.stdout).trim().split('\n').pop() || `aws exited ${r.code}`}`)
+  const out: { folder: string; name: string; bytes: number }[] = []
+  for (const line of r.stdout.split('\n')) {
+    const m = /^\S+\s+\S+\s+(\d+)\s+comfy-shared\/models\/([^/]+)\/(.+)$/.exec(line)
+    if (m) out.push({ folder: m[2], name: m[3], bytes: Number(m[1]) })
+  }
+  return out.sort((x, y) => x.folder.localeCompare(y.folder) || x.name.localeCompare(y.name))
+}
+
+/** Put model files from Hugging Face onto a volume (ADR-042): a short pod (or yours running on it) downloads them straight into `comfy-shared/models/<folder>/`. Spends the pod's minutes. From the window the click is the yes (`approved_by` is optional and, when absent, the History says it was clicked in the app); the MCP tool still requires a name, as an agent's spend does (shared/governance/policy/agent-permissions.md). The files are looked up on Hugging Face again here; see hf.resolve. */
+export async function fetchModels(volumeId: string, items: hf.FetchItem[], o: { approved_by?: string }, opts: Opts & { fetchFn?: typeof fetch } = {}): Promise<PodJob> {
+  const label = volLabel(volumeId)
+  const resolved = await hf.resolve(items, opts.fetchFn)
+  const live = [...jobs.values()].find((x) => !TERMINAL.includes(x.job.state) && x.plan.volume?.id === volumeId)
+  if (live) throw new CoreError(409, `A ${live.job.kind} job is running on this volume (${live.job.round}): wait for it to finish.`)
+  const existing = claim(label, 'fetch'); if (existing) return view(existing)
+  try {
+    const p = await plan(label, { ...opts, volumeId, sizeOf: () => ({ files: 0, bytes: 0 }) })   // always a pod: the download happens there, not over S3
+    const i = newJob(label, 'fetch', p, (opts.now ?? (() => new Date()))())
+    i.job.volume_id = volumeId; i.job.fetch_items = resolved; i.job.lines.push(`Approved by ${String(o.approved_by ?? '').trim() || 'a click in the app window'}.`)
+    void run(i, { ...opts, volumeId })
+    return view(i)
+  } catch (e) { busy.delete(label); throw e }
 }
 
 export function job(id: string): PodJob | null { const i = jobs.get(id); return i ? view(i) : null }

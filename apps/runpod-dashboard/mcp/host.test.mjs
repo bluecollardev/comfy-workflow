@@ -20,12 +20,14 @@ const POD = { id: 'pod-1', name: 'ComfyUI-Dev', status: 'running', gpu: 'rtx4090
 /** Just enough of the core for the pod manager's tools used here. */
 function fakeCore(events) {
   return {
-    governance: { SPEND_CAP_USD: 100, instructions: () => '# Governance (fake)', listing: () => [], read: () => null, uriToName: (u) => u, folder: () => null },
+    governance: { spendCap: () => 0, gateOn: () => false, instructions: () => '# Governance (fake)', listing: () => [], read: () => null, uriToName: (u) => u, folder: () => null },
     pool: { GPU_TYPES: ['auto', 'rtx4090'], dryRun: () => false },
     gpus: { DEFAULT_GPU: 'rtx4090' },
     mounts: { load: () => ({ folders: {}, mcp_http: {} }), dryRun: () => false },
     shots: { lockedShots: () => ({ file: null, shots: new Set(), found: false }), lockedIn: () => null },
     volumes: { list: async () => [] },
+    podpull: { ERASABLE: {} },   // read while the tool descriptions are built
+    hf: { EXTENSIONS: [], FOLDERS: [] },
     pods: {
       list: async () => [POD], config: () => null,
       get: async (id) => { if (id !== POD.id) throw Object.assign(new Error(`Pod not found: ${id}`), { status: 404 }); return POD },

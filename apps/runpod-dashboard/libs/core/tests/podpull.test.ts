@@ -637,3 +637,57 @@ describe('browse and erase one volume', () => {
   })
 
 })
+
+describe('models from Hugging Face onto a volume (ADR-042)', () => {
+  const TREE = [{ type: 'file', path: 'vae/seedvr2_ema_vae_fp16.safetensors', size: 1, lfs: { oid: 'b'.repeat(64), size: 501324814 } }, { type: 'file', path: 'diffusion_models/seedvr2_3b_fp16.safetensors', size: 1, lfs: { oid: 'a'.repeat(64), size: 6784268336 } }]
+  const hfFetch = (async () => new Response(JSON.stringify(TREE))) as unknown as typeof fetch
+  const items = [{ repo: 'Comfy-Org/SeedVR2', path: 'vae/seedvr2_ema_vae_fp16.safetensors', folder: 'vae' }, { repo: 'Comfy-Org/SeedVR2', path: 'diffusion_models/seedvr2_3b_fp16.safetensors', folder: 'diffusion_models' }]
+  it('needs no approval; a short pod runs the download script, the pod reports each file, and it is deleted', async () => {
+    const rp = fakeRunPod()
+    const calls: podpull.SshJob[] = []
+    const ssh: podpull.SshRunner = async (j) => { calls.push(j); j.onLine('FETCHED seedvr2_ema_vae_fp16.safetensors 501324814'); j.onLine('FETCHED seedvr2_3b_fp16.safetensors skipped'); j.onLine('FETCH-DONE'); return { code: 0 } }
+    const job0 = await podpull.fetchModels('vol1', items, {}, { ...base({ client: rp.client, ssh }), fetchFn: hfFetch })
+    expect(job0).toMatchObject({ kind: 'fetch', volume_id: 'vol1', route: 'temporary' })
+    const job = await done(job0.id)
+    expect(job).toMatchObject({ state: 'done', fetched: ['seedvr2_ema_vae_fp16.safetensors', 'seedvr2_3b_fp16.safetensors'] })
+    const sc = calls[0].script
+    expect(sc).toContain('d=/workspace/comfy-shared/models/vae'); expect(sc).toContain('d=/workspace/comfy-shared/models/diffusion_models')
+    expect(sc).toContain("'https://huggingface.co/Comfy-Org/SeedVR2/resolve/main/vae/seedvr2_ema_vae_fp16.safetensors'")
+    expect(sc).toContain('curl -fL --retry 5'); expect(sc).toContain('-C -'); expect(sc).toContain('b'.repeat(64) + '  $f.part'); expect(sc).toContain('sha256sum -c -')
+    expect(sc).toContain('stat -c %s'); expect(sc).toContain('echo "FETCH-DONE"')
+    expect(rp.calls.terminated).toEqual(['newpod1'])
+  })
+  it('a failed download is a failed job (the pod says which file), and the refusals come before any pod', async () => {
+    const rp = fakeRunPod()
+    const ssh: podpull.SshRunner = async (j) => { j.onLine('FETCH-FAILED seedvr2_3b_fp16.safetensors (the checksum does not match)'); return { code: 1 } }
+    const o = { ...base({ client: rp.client, ssh }), fetchFn: hfFetch }
+    await expect(podpull.fetchModels('vol1', [{ repo: 'x', path: 'a.safetensors', folder: 'vae' }], {}, o)).rejects.toThrow(/Not a Hugging Face repo/)
+    await expect(podpull.fetchModels('vol1', [{ ...items[0], folder: 'rounds' }], {}, o)).rejects.toThrow(/Not a models folder/)
+    await expect(podpull.fetchModels('../x', items, {}, o)).rejects.toThrow(/Not a network volume id/)
+    expect(rp.calls.created).toEqual([])
+    const j = await done((await podpull.fetchModels('vol1', items, {}, o)).id)
+    expect(j.state).toBe('failed'); expect(j.error).toMatch(/Download failed: seedvr2_3b_fp16.safetensors \(the checksum does not match\)/)
+  })
+  it('is refused while another job runs on the volume', async () => {
+    const rp = fakeRunPod()
+    let release!: () => void
+    const gate = new Promise<void>((r) => { release = r })
+    const ssh: podpull.SshRunner = async (j) => { await gate; j.onLine('BROWSE-DONE'); return { code: 0 } }
+    const o = { ...base({ client: rp.client, ssh }), fetchFn: hfFetch }
+    const first = await podpull.browseVolume('vol1', o)
+    await expect(podpull.fetchModels('vol1', items, {}, o)).rejects.toThrow(/running on this volume|busy/)
+    release(); await done(first.id)
+  })
+  it('modelsOnVolume lists the models folder over S3 as folder, name and bytes; null with no S3 keys', async () => {
+    process.env.RUNPOD_S3_ACCESS_KEY = 'user_x'; process.env.RUNPOD_S3_SECRET_KEY = 'rps_y'
+    try {
+      const calls: string[][] = []
+      const aws: podpull.AwsRunner = async (args) => { calls.push(args); return { code: 0, stdout: '2026-11-15 12:00:00  501324814 comfy-shared/models/vae/seedvr2_ema_vae_fp16.safetensors\n2026-11-15 12:00:00  124 comfy-shared/models/diffusion_models/z.gguf\n2026-11-15 12:00:00  9 comfy-shared/temp/other.txt\n', stderr: '' } }
+      const rp = fakeRunPod([], { volumes: { vol1: { name: 'comfy-workspace', dc: 'EU-RO-1' } } })
+      expect(await podpull.modelsOnVolume('vol1', { client: rp.client, aws })).toEqual([{ folder: 'diffusion_models', name: 'z.gguf', bytes: 124 }, { folder: 'vae', name: 'seedvr2_ema_vae_fp16.safetensors', bytes: 501324814 }])
+      expect(calls[0]).toContain('s3://vol1/comfy-shared/models/'); expect(calls[0]).toContain('https://s3api-eu-ro-1.runpod.io/')
+    } finally { delete process.env.RUNPOD_S3_ACCESS_KEY; delete process.env.RUNPOD_S3_SECRET_KEY }
+    expect(await podpull.modelsOnVolume('vol1', { client: fakeRunPod().client })).toBeNull()
+  })
+})
+

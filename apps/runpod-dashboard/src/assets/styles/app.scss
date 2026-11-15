@@ -111,3 +111,7 @@ $enable-shadows: false;
 
 /* v-tip: the instant tooltip (src/directives/tip.js) */
 .app-tip { position: fixed; z-index: 3000; background: rgba(0, 0, 0, 0.92); color: #fff; border: 1px solid rgba(255, 255, 255, 0.2); padding: 0.25rem 0.55rem; border-radius: 0.3rem; font-size: 0.78rem; pointer-events: none; white-space: nowrap; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); }
+
+/* a wrapper that carries a tooltip for a button that may be disabled (a disabled button gets no pointer events of its own) */
+.tipwrap { display: inline-block; }
+.tipwrap > :disabled { pointer-events: none; }

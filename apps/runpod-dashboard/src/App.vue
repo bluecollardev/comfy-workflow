@@ -9,8 +9,8 @@
         <BButton variant="outline-light" size="sm" :title="$t('app.connectTitle')" :disabled="!settings.ready" data-testid="open-connect" @click="ui.connectOpen = true">
           <i class="fa-solid fa-plug me-1"></i>{{ $t('app.connect') }}
         </BButton>
-        <BButton variant="outline-light" size="sm" :title="$t('app.volumesTitle')" :disabled="!settings.ready" data-testid="open-volumes" @click="ui.volumesOpen = true">
-          <i class="fa-solid fa-hard-drive me-1"></i>{{ $t('app.volumes') }}
+        <BButton variant="outline-light" size="sm" :title="$t('app.sharedTitle')" :disabled="!settings.ready" data-testid="open-shared" @click="ui.sharedOpen = true">
+          <i class="fa-solid fa-share-nodes me-1"></i>{{ $t('app.shared') }}
         </BButton>
         <BButton variant="outline-light" size="sm" :title="$t('app.queueTitle')" data-testid="open-queue" @click="ui.queueOpen = true">
           <i class="fa-solid fa-list-check me-1"></i>{{ $t('app.queue') }}<BBadge v-if="queueCount" variant="primary" class="ms-1" data-testid="queue-badge">{{ queueCount }}</BBadge>
@@ -18,16 +18,15 @@
         <BButton variant="outline-light" size="sm" :title="$t('app.historyTitle')" data-testid="open-history" @click="ui.historyOpen = true">
           <i class="fa-solid fa-clock-rotate-left me-1"></i>{{ $t('app.history') }}
         </BButton>
-        <BButton variant="outline-light" size="sm" :title="$t('app.configurationTitle')" :aria-label="$t('app.configuration')" data-testid="open-config" @click="ui.configOpen = true">
+        <span v-tip="$t('app.configuration')" class="tipwrap"><BButton variant="outline-light" size="sm" data-testid="open-config" :aria-label="$t('app.configuration')" @click="ui.configOpen = true">
           <i class="fa-solid fa-gear"></i>
-        </BButton>
-        <BButton variant="outline-warning" size="sm" :disabled="!settings.ready || pods.refreshing || !pods.pods.some((p) => p.status !== 'stopped')" :title="$t('app.pauseAllTitle')" data-testid="pause-all" @click="pods.stopAll">
-          <i class="fa-solid fa-pause me-1"></i>{{ $t('app.pauseAll') }}
-        </BButton>
-        <BButton variant="primary" size="sm" :disabled="pods.refreshing" data-testid="refresh" @click="pods.load">
-          <i class="fa-solid fa-rotate me-1" :class="{ 'fa-spin': pods.refreshing }"></i>
-          {{ $t('app.refresh') }}
-        </BButton>
+        </BButton></span>
+        <span v-tip="$t('app.pauseAll')" class="tipwrap"><BButton variant="outline-warning" size="sm" :disabled="!settings.ready || pods.refreshing || !pods.pods.some((p) => p.status !== 'stopped')" data-testid="pause-all" :aria-label="$t('app.pauseAll')" @click="pods.stopAll">
+          <i class="fa-solid fa-pause"></i>
+        </BButton></span>
+        <span v-tip="$t('app.refresh')" class="tipwrap"><BButton variant="primary" size="sm" :disabled="pods.refreshing" data-testid="refresh" :aria-label="$t('app.refresh')" @click="pods.load">
+          <i class="fa-solid fa-rotate" :class="{ 'fa-spin': pods.refreshing }"></i>
+        </BButton></span>
       </div>
     </BNavbar>
     <!-- A failed action (Resume with no free GPU on the host, Stop, Delete...) is said right under the nav bar, and stays there while the page scrolls -->
@@ -61,7 +60,9 @@
     <ConnectModal />
     <ImportModal />
     <AdapterStudio />
+    <SharedModal />
     <VolumesModal />
+    <ModelsModal />
     <HistoryModal />
     <ImportRoundModal v-if="ui.importRoundOpen" />
     <QueueModal v-if="ui.queueOpen" />
@@ -90,6 +91,8 @@ import { useUiStore } from './stores/ui'
 import { useSettingsStore } from './stores/settings'
 import { syncAPI } from './api/sync'
 import VolumesModal from './components/VolumesModal.vue'
+import SharedModal from './components/SharedModal.vue'
+import ModelsModal from './components/ModelsModal.vue'
 import HistoryModal from './components/HistoryModal.vue'
 import ImportRoundModal from './components/ImportRoundModal.vue'
 import QueueModal from './components/QueueModal.vue'

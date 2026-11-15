@@ -9,10 +9,13 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { governanceDir } from './paths.js'
+import * as settings from './settings.js'
 
 export const SCHEME = 'governance://'
 export const LEAD_PAGES = ['policy/agent-permissions.md', 'operator-brief.md']
-export const SPEND_CAP_USD = 100   // policy/agent-permissions.md, 2026-10-09, until Brynley sets another figure
+/** System-wide agent rules (settings.ts, not a configuration: no pod has its own): is the named yes required, and the spend ceiling advertised to agents (0 = none). */
+export const gateOn = (): boolean => settings.agentRules().require_named_yes
+export const spendCap = (): number => settings.agentRules().spend_cap_usd
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -58,7 +61,9 @@ export function instructions(): string {
     '# Governance (applied to this session)',
     `These rules are Binc's, copied from the CANALV2 tree on ${syncedOn()}, and govern anything that touches that job: its tree, shots, plates and client. This repo's own rules govern its code. Where they meet, Binc's win for their material. Every page is a resource under governance:// and readable with the \`governance\` tool; \`README.md\` is the precedence page.`,
     '',
-    `Enforced by this server: tools that spend need \`approved_by\`, the name behind the yes, and the spend cap is USD ${SPEND_CAP_USD} total for agents and cloud GPU. Everything else below is a rule you follow.`,
+    gateOn()
+      ? `Enforced by this server: tools that spend need \`approved_by\`, the name behind the yes${spendCap() ? `, and the spend ceiling is USD ${spendCap()} total for agents and cloud GPU` : ''}. Everything else below is a rule you follow.`
+      : `This server does not ask for a named yes: RunPod Manager is Lucas's own tool, and the approval rule below is Binc's, for their CANALV2 job${spendCap() ? `; Lucas's spend ceiling for agents is USD ${spendCap()}` : ''}. Follow the rest for anything that touches Binc's tree, shots, plates or client.`,
   ]
   for (const name of LEAD_PAGES) {
     const text = read(name)
@@ -70,13 +75,14 @@ export function instructions(): string {
 export const listing = () => Object.entries(pages()).map(([n, p]) => ({ uri: SCHEME + n, name: n, size: statSync(p).size }))
 export const uriToName = (uri: string) => (uri.startsWith(SCHEME) ? uri.slice(SCHEME.length) : uri)
 
-export const summary = () => ({ folder: folder(), synced_on: syncedOn(), spend_cap_usd: SPEND_CAP_USD, lead_pages: LEAD_PAGES, pages: listing(), instructions: instructions() })
+export const summary = () => ({ folder: folder(), synced_on: syncedOn(), spend_cap_usd: spendCap() || null, named_yes_required: gateOn(), lead_pages: LEAD_PAGES, pages: listing(), instructions: instructions() })
 
 /** The refusal for a spending tool called without the named yes; null when it may proceed. */
 export function namedYes(args: Record<string, unknown>, what: string): string | null {
+  if (!gateOn()) return null   // Binc's rule, switched off in this tool's configuration (require_named_yes)
   const who = String(args.approved_by ?? '').trim()
   if (!who) {
-    return `Refused: ${what} spends money, and policy/agent-permissions.md needs a named yes for any spend (cap USD ${SPEND_CAP_USD}). Call again with approved_by=<the person who said yes> once you have it. Do not guess a name.`
+    return `Refused: ${what} spends money, and policy/agent-permissions.md needs a named yes for any spend (approval is switched on in this tool's settings). Call again with approved_by=<the person who said yes> once you have it. Do not guess a name.`
   }
   return null
 }

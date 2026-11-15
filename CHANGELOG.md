@@ -5,6 +5,24 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased
 
+### The export carries repositories, accounts and MCP connections (ADR-023 amendment)
+- Lucas: "make sure accounts, repositories and mcp connections are stored in the export / import too". Sections `mcp_connections` (the console URL; the key stays in secrets) and `repositories` (repositories and accounts merged; tokens only through the secrets section, otherwise flagged token missing), both after `mcp` in the plan, each with plan, apply and undo.
+
+### The agent shell guard, a setting (ADR-042 section 10)
+- Lucas: "a bash script / PreToolUse hook for Bash that stops agents freelancing, as a setting ... included in import/export". `agentguard.ts` (script, status, install, uninstall into the user's `~/.claude/settings.json` with a backup, idempotent, other hooks kept, invalid JSON refused), the `AGENT_SHELL_GUARD` setting, the `agentguard` IPC namespace and `src/api/agentguard.js`, MCP `agent_guard_status` and `set_settings agent_shell_guard`, and `governance.shell_guard` in the configuration export. A heuristic, not a sandbox.
+
+### Shared: the IPC, the MCP tools and the export section (ADR-042 section 9)
+- `models` over IPC and `src/api/models.js` (search, files, fetch, status), MCP `models_search`, `models_files`, `models_fetch`, `models_status`, `set_shared_volume`; the agent rules (named yes, ceiling) are exported and imported as their own system-wide section, not in a pod configuration; the MCP tool descriptions no longer say a spend needs `approved_by`. Tests for hf, the fetch job, the Shared volume, the settings and the export section.
+
+### Shared: models from Hugging Face onto the Shared volume (ADR-042 section 9; core only so far)
+- Lucas: "under models, we should be able to search hugging face repos and choose the model we want ... and load that into our shared volume"; "shared volume ... NOT deleteable ... shared badge". `hf.ts`, `podpull.fetchModels` (a pod downloads, `approved_by` needed), `shared_volume_id` in the configuration (exported and imported), `volumes.setShared`, and `volumes.remove` refuses the Shared volume. The windows and the MCP tools are still to do.
+
+### A VAE and a diffusion model per pod (ADR-042)
+- Lucas: "we also need to be able to choose vae", "make this configurable", "per pod". `podmodels.ts`, `runflows.models` / `setModels`, MCP `pod_models`; applied by Run workflows to graphs with one loader of the class. The picker UI is still to do.
+
+### The image is pinned by digest (ADR-020 amendment, ADR-042)
+- Lucas: "can't we rebuild and pin image". `contract-v26` moved on 2026-11-14; the default image and Lucas's Default Configuration are now `@sha256:a06a461c…`, with `CU13_PINS` for Blackwell cards; the workflow tags by commit and prints the digest. Also written, not yet wired: `.claude/hooks/guard-bash.sh`. ADR-042 records the open questions (the agent on binc-pc, SeedVR2 weights and VAE).
+
 ## v1.1.10 (2026-11-15)
 Tagged `v1.1.10`; DMG on bluecollardev/downloads. Contains everything below (volume explorer, Erase, Clone, S3 route, per-shot import, Outputs, Queue confirms), plus the volume tools in `docs/MCP-ENDPOINTS.md`.
 

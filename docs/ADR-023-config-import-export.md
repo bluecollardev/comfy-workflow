@@ -83,3 +83,12 @@ With the box unticked (`--no-secrets`) the file has `"secrets_included": false`,
 ## Not covered
 
 Per-pod configurations, adapters, the attached repositories, and a passphrase-protected (encrypted) file, which remains the better answer if the file is going anywhere but straight to the other computer. Merging two configurations (an import replaces whole sections, or leaves them). Cloud storage of the file.
+
+## Amendment (2026-11-15): repositories and accounts, the MCP connections, the agent rules
+
+Lucas: "make sure accounts, repositories and mcp connections are stored in the export / import too"; "MCP should also come before accounts and repositories. accounts and repositories can be merged into a single Repositories tab".
+
+- **`mcp_connections`** (label *MCP connections (the console this app uses)*): the console URL of the remote MCP server this app uses (`remote.url()`, setting `PANAMA_CONSOLE_URL`; https, or http for 127.0.0.1). The console **key** is a secret and stays in the *Keys and tokens* section. The MCP servers the app itself serves (enable and port) stay in the existing `mcp` section (`mcp_http`); the client snippets in Connect > MCP are generated, nothing about them is persisted.
+- **`repositories`** (label *Repositories and accounts*, one section; there is no separate accounts section): the repository list (url, branch, name, host) and the git accounts without their tokens (provider, host, username, display fields, `token_set`). Applying merges the repository list by url and branch (what is here stays); accounts are never created from this section, because an account needs its token: with the *Keys and tokens* section chosen the accounts come with their tokens, without it the plan says `Token missing for github/octocat`. Which pod a repository is cloned onto is pod-bound and stays in `not_exported`.
+- **`governance`** (label *Agent rules (system-wide)*): the named-yes switch, the agent spend ceiling and the shell guard (ADR-042 sections 6 and 10); importing it with the shell guard on installs the Bash hook.
+- **Order in the plan:** volume, image, env, pod defaults, MCP servers, MCP connections, repositories and accounts, folders, Panama, agent rules, keys and tokens. Each has plan, apply and a backup that Undo restores (the console URL and the repository list are in the backup).

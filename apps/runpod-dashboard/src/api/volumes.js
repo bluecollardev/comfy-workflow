@@ -9,6 +9,7 @@ const ipc = core && {
   resize: (id, size_gb) => core.invoke('volumes', 'resize', [id, size_gb]),
   remove: (id) => core.invoke('volumes', 'remove', [id]),
   useAsDefault: (id) => core.invoke('volumes', 'useAsDefault', [id]),
+  setShared: (id) => core.invoke('volumes', 'setShared', [id || '']),
   plan: (id) => core.invoke('volumes', 'plan', [id]),
   browse: (id, path) => core.invoke('volumes', 'browse', [id, path || '']),
   erase: (id, keys, o) => core.invoke('volumes', 'erase', [id, keys, o]),
@@ -29,6 +30,7 @@ const http = {
   async job(id) { const { data } = await axios.get(`${API_BASE}/volumes/job`, { params: { id } }); return data },
   async cancel(id) { const { data } = await axios.post(`${API_BASE}/volumes/job/cancel`, { id }); return data },
   async erasable() { const { data } = await axios.get(`${API_BASE}/volumes/erasable`); return data },
+  async setShared(id) { const { data } = await axios.post(`${API_BASE}/volumes/shared`, { id: id || '' }); return data },
   async useAsDefault(id) { const { data } = await axios.post(`${API_BASE}/volumes/${encodeURIComponent(id)}/default`); return data },
 }
 export const volumesAPI = ipc || http

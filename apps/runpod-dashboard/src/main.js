@@ -39,7 +39,7 @@ import './assets/styles/tailwind.scss'
 import 'bootstrap-vue-next/dist/bootstrap-vue-next.css'
 import '@fortawesome/fontawesome-free/css/all.min.css'
 
-import { vTip } from './directives/tip'
+import { vTip, installAutoTips } from './directives/tip'
 import App from './App.vue'
 
 const app = createApp(App)
@@ -48,6 +48,7 @@ app.use(createPinia())
 app.use(i18n)
 app.use(createBootstrap())
 app.directive('tip', vTip)
+installAutoTips()   // icon-only buttons get the app's tooltip too
 
 app.component('BAlert', BAlert)
 app.component('BBadge', BBadge)

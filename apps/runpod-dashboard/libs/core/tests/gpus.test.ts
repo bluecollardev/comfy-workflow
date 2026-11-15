@@ -8,6 +8,8 @@ describe('CUDA 13 (ADR-030)', () => {
     expect(cudaOf('NVIDIA GeForce RTX 5090')).toBe(13); expect(cudaOf('RTX PRO 6000')).toBe(13); expect(cudaOf('nonesuch')).toBeUndefined()
     const ours = 'ghcr.io/bluecollardev/comfy-app:contract-v26'
     expect(imageFor(ours, 'rtx5090')).toBe(`${ours}-cu13`); expect(imageFor(`${ours}-cu13`, 'rtx5090')).toBe(`${ours}-cu13`)
+    const pin = 'ghcr.io/bluecollardev/comfy-app@sha256:a06a461ce3b38c6a3badf9cd7d47e77f12247a38785511f8b4ca077aedb4d457'
+    expect(imageFor(pin, 'rtx5090')).toContain('@sha256:116c2012'); expect(imageFor(pin, 'h100')).toBe(pin)   // a digest has its own CUDA 13 digest
     expect(imageFor(ours, 'h100')).toBe(ours); expect(imageFor('runpod/comfyui:latest', 'rtx5090')).toBe('runpod/comfyui:latest')
     expect(autoCards().some((g) => g.cuda)).toBe(false)   // auto never lands on a Blackwell card
     expect(Object.values(GPUS).filter((g) => g.cuda).every((g) => g.explicit)).toBe(true)

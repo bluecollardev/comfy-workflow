@@ -16,6 +16,13 @@
 4. **One codebase, no second runtime**: the Python API retired, the core in
    TypeScript, the merge gate green (`docs/ADR-005`).
 
+## Open from 2026-11-15 (ADR-042)
+
+1. Merge `feature/pin-image-digest` (the image pinned by digest, cu13 pair, workflow tags), release it, and send Binc the digest `sha256:a06a461c…` and what the 14 Nov rebuild changed.
+2. Wire `.claude/hooks/guard-bash.sh` into `.claude/settings.json` (Bash matcher, a `permissions` block) and ship it to binc-pc through `shared/governance/`; get one real example of what Binc's agent bypassed.
+3. Get the exact "unauthorized" text from binc-pc; test the registry login with one short pod (needs a named yes).
+4. Shared (ADR-042 section 9): core is built (Hugging Face search, the `fetch` job, `shared_volume_id`, Shared volumes cannot be deleted); to build: the Shared button with its two windows (Volumes, Models), the Shared badge in the Volumes list, the MCP tools `models_search` / `models_files` / `models_fetch` / `set_shared_volume`, tests; then load the four SeedVR2 files through it (approved by Lucas). Built before: the per-pod VAE / diffusion model choice (`pod_models`, ADR-042 section 6). Not built: its picker in the Run workflows window. SeedVR2: all variants go on the volume (section 7); create RunPod S3 keys (console, Settings, S3 API Keys), enter them in Default Configuration, check free space, then upload with a manifest. Before: choose the size (3B or 7B, fp16 or fp8) and the VAE files, then put them on the volumes with a manifest (S3 API for EU-RO-1 if RunPod S3 keys are created, a short pod otherwise; EUR-IS-2 by pod or Clone). Weights stay out of the image.
+
 ## Important, open: AI-generated shots through MCP (ADR-034), cgi-042 first
 
 As of 2026-11-05. The requirement is `docs/ADR-034-shots-are-generated-by-ai-through-mcp.md`; the script and the Log are `docs/runbooks/shot-stereo-conversion.md`. Proven so far: the latest approved cgi-042 final found and hash-checked (`fe53cada…4630`, round `brynley-comfy-2026-10-22`), an H100 pod on `comfy-h100-apin1`, the round pulled and verified, its inputs and graphs placed (156 files hard-linked, ADR-033), the ComfyUI bridge pointed at the pod with the Binc/Stereo nodes present. **Not done: any stereo has been generated.**

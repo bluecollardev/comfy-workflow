@@ -81,6 +81,7 @@ test.describe('setup walkthrough: a new user, a new app', () => {
     const { page } = ctx
     await configModal(page).getByTestId('config-close').first().click()
     await page.getByTestId('open-connect').click()
+    await page.locator('.modal.show').getByRole('tab', { name: t('connect.repositories') }).click()   // the Git accounts are on the Repositories tab
     await expect(page.getByTestId('connect-accounts')).toBeVisible()
     await shot('07-git-accounts')
     await page.locator('.modal.show').getByLabel('Close').first().click()
@@ -101,7 +102,8 @@ test.describe('setup walkthrough: a new user, a new app', () => {
 
   test('8 create a volume: a name, a size, a datacenter', async () => {
     const { page } = ctx
-    await page.getByTestId('open-volumes').click()
+    await page.getByTestId('open-shared').click()
+    await page.getByTestId('shared-volumes').click()
     const dialog = page.locator('.modal.show', { hasText: t('volumes.title') })
     await dialog.getByTestId('volume-new-name').fill('comfy-volume')
     await dialog.getByTestId('volume-new-size').fill('100')

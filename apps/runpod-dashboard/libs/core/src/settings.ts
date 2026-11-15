@@ -6,6 +6,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import * as agentguard from './agentguard.js'
 import { bad } from './errors.js'
 import { configDir } from './paths.js'
 
@@ -75,7 +76,7 @@ export function checkPanama(key: 'bucket' | 'region' | 'profile', v: unknown): s
   const [re, what] = PANAMA_PATTERNS[key]
   return re.test(t) ? null : `Panama ${key}: ${t.slice(0, 80)} is not ${what}`
 }
-const KEYS = ['PANAMA_S3_BUCKET', 'PANAMA_S3_REGION', 'PANAMA_S3_PROFILE', 'RUNPOD_API_KEY', 'RUNPOD_S3_ACCESS_KEY', 'RUNPOD_S3_SECRET_KEY', 'ANTHROPIC_API_KEY', 'PANAMA_CONSOLE_KEY', 'PANAMA_AWS_ACCESS_KEY_ID', 'PANAMA_AWS_SECRET_ACCESS_KEY'] as const   // ANTHROPIC_API_KEY: only for "Write an adapter with Claude" (ADR-008); optional   // the S3 pair: uploads onto a volume with no pod (ADR-007 G)
+const KEYS = ['AGENT_REQUIRE_NAMED_YES', 'AGENT_SPEND_CAP_USD', 'AGENT_SHELL_GUARD', 'PANAMA_S3_BUCKET', 'PANAMA_S3_REGION', 'PANAMA_S3_PROFILE', 'RUNPOD_API_KEY', 'RUNPOD_S3_ACCESS_KEY', 'RUNPOD_S3_SECRET_KEY', 'ANTHROPIC_API_KEY', 'PANAMA_CONSOLE_KEY', 'PANAMA_AWS_ACCESS_KEY_ID', 'PANAMA_AWS_SECRET_ACCESS_KEY'] as const   // ANTHROPIC_API_KEY: only for "Write an adapter with Claude" (ADR-008); optional   // the S3 pair: uploads onto a volume with no pod (ADR-007 G)
 
 function readEnvFile(): Record<string, string> {
   const f = file()
@@ -104,6 +105,18 @@ function writeEnvFile(values: Record<string, string>) {
   writeFileSync(f, out.join('\n').replace(/\n*$/, '\n'), { mode: 0o600 })
 }
 
+/** The agent rules, system-wide (ADR-042): the name behind a spending tool's yes (Binc's policy for the CANALV2 job, off in RunPod Manager unless switched on) and the ceiling advertised to agents. Stored as AGENT_REQUIRE_NAMED_YES (1 or absent) and AGENT_SPEND_CAP_USD in the settings file. */
+export function agentRules(): { require_named_yes: boolean; spend_cap_usd: number; shell_guard: boolean } {
+  const on = lookup('AGENT_REQUIRE_NAMED_YES'), cap = Number(lookup('AGENT_SPEND_CAP_USD')), guard = lookup('AGENT_SHELL_GUARD')
+  return { require_named_yes: on === '1' || on.toLowerCase() === 'true', spend_cap_usd: Number.isFinite(cap) && cap > 0 ? cap : 0, shell_guard: guard === '1' || guard.toLowerCase() === 'true' }
+}
+export function checkAgentRules(v: { require_named_yes?: unknown; spend_cap_usd?: unknown; shell_guard?: unknown }): string | null {
+  if (v.shell_guard !== undefined && typeof v.shell_guard !== 'boolean') return 'shell_guard must be true or false'
+  if (v.require_named_yes !== undefined && typeof v.require_named_yes !== 'boolean') return 'require_named_yes must be true or false'
+  if (v.spend_cap_usd !== undefined && !(typeof v.spend_cap_usd === 'number' && Number.isFinite(v.spend_cap_usd) && v.spend_cap_usd >= 0)) return 'spend_cap_usd must be a number, 0 or more'
+  return null
+}
+
 /** One value by name, the environment first, then the file: how the CLI finds the RunPod key and the sync finds the S3 keys. */
 export const lookup = (name: string): string => process.env[name] || readEnvFile()[name] || ''
 
@@ -120,11 +133,12 @@ export function get() {
   const awsSecret = process.env.PANAMA_AWS_SECRET_ACCESS_KEY || stored.PANAMA_AWS_SECRET_ACCESS_KEY || ''
   const eff = (name: string, d: string) => process.env[name] || stored[name] || d
   const panamaCfg = { panama_bucket: eff('PANAMA_S3_BUCKET', PANAMA_DEFAULTS.bucket), panama_region: eff('PANAMA_S3_REGION', PANAMA_DEFAULTS.region), panama_profile: eff('PANAMA_S3_PROFILE', PANAMA_DEFAULTS.profile), panama_defaults: { ...PANAMA_DEFAULTS } }
-  return { ...panamaCfg, panama_aws_keys_set: !!(awsId && awsSecret), panama_aws_access_key_hint: hint(awsId), panama_console_key_set: !!panama, panama_console_key_hint: hint(panama), anthropic_key_set: !!claude, anthropic_key_hint: hint(claude), s3_keys_set: !!s3, s3_access_key_hint: hint(process.env.RUNPOD_S3_ACCESS_KEY || stored.RUNPOD_S3_ACCESS_KEY || ''), runpod_api_key_set: !!key, runpod_api_key_hint: hint(key), source: process.env.RUNPOD_API_KEY && !stored.RUNPOD_API_KEY ? 'environment' : stored.RUNPOD_API_KEY ? file() : 'none' }
+  const rules = agentRules()
+  return { agent_shell_guard: rules.shell_guard, agent_named_yes_required: rules.require_named_yes, agent_spend_cap_usd: rules.spend_cap_usd, ...panamaCfg, panama_aws_keys_set: !!(awsId && awsSecret), panama_aws_access_key_hint: hint(awsId), panama_console_key_set: !!panama, panama_console_key_hint: hint(panama), anthropic_key_set: !!claude, anthropic_key_hint: hint(claude), s3_keys_set: !!s3, s3_access_key_hint: hint(process.env.RUNPOD_S3_ACCESS_KEY || stored.RUNPOD_S3_ACCESS_KEY || ''), runpod_api_key_set: !!key, runpod_api_key_hint: hint(key), source: process.env.RUNPOD_API_KEY && !stored.RUNPOD_API_KEY ? 'environment' : stored.RUNPOD_API_KEY ? file() : 'none' }
 }
 
 /** Store a secret. An empty value leaves the stored one alone; `null` removes it. */
-export function set(values: { panama_bucket?: string | null; panama_region?: string | null; panama_profile?: string | null; anthropic_api_key?: string | null; runpod_api_key?: string | null; runpod_s3_access_key?: string | null; runpod_s3_secret_key?: string | null; panama_console_key?: string | null; panama_aws_access_key?: string | null; panama_aws_secret_key?: string | null }) {
+export function set(values: { panama_console_url?: string | null; agent_shell_guard?: boolean | null; agent_named_yes_required?: boolean | null; agent_spend_cap_usd?: number | null; panama_bucket?: string | null; panama_region?: string | null; panama_profile?: string | null; anthropic_api_key?: string | null; runpod_api_key?: string | null; runpod_s3_access_key?: string | null; runpod_s3_secret_key?: string | null; panama_console_key?: string | null; panama_aws_access_key?: string | null; panama_aws_secret_key?: string | null }) {
   const updates: Record<string, string> = {}
   // The bucket, region and profile: ordinary settings, not secrets. A value equal to the built-in default (or empty, or null) removes the override.
   for (const [field, key, name] of [['panama_bucket', 'bucket', 'PANAMA_S3_BUCKET'], ['panama_region', 'region', 'PANAMA_S3_REGION'], ['panama_profile', 'profile', 'PANAMA_S3_PROFILE']] as const) {
@@ -163,6 +177,25 @@ export function set(values: { panama_bucket?: string | null; panama_region?: str
     const v = values.runpod_api_key.trim()
     if (/\s/.test(v) || v.length < 16) throw bad('That does not look like a RunPod API key (no spaces, at least 16 characters)')
     updates.RUNPOD_API_KEY = v
+  }
+  // The console URL the app uses as a remote MCP server (an ordinary setting, the key is the secret): https, or http only for 127.0.0.1.
+  if (values.panama_console_url !== undefined) {
+    const u = (values.panama_console_url ?? '').trim()
+    if (u) { let x: URL; try { x = new URL(u) } catch { throw bad(`Not a URL: ${u}`) }; if (!(x.protocol === 'https:' || (x.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(x.hostname)))) throw bad('The console URL must be https (http is allowed only for 127.0.0.1)') }
+    updates.PANAMA_CONSOLE_URL = u === 'https://panama-console.beinghuman.studio/api/mcp' ? '' : u
+  }
+  // The agent shell guard (ADR-042 section 10): on installs the Bash hook into the user's Claude Code settings, off removes only our entry. A failure is thrown and the setting is not left on.
+  if (values.agent_shell_guard !== undefined) {
+    if (values.agent_shell_guard !== null && typeof values.agent_shell_guard !== 'boolean') throw bad('agent_shell_guard is true or false')
+    if (values.agent_shell_guard) agentguard.install(); else agentguard.uninstall()
+    updates.AGENT_SHELL_GUARD = values.agent_shell_guard ? '1' : ''
+  }
+  // The agent rules (system-wide): ordinary settings. Off / 0 removes the entry.
+  if (values.agent_named_yes_required !== undefined) { if (values.agent_named_yes_required !== null && typeof values.agent_named_yes_required !== 'boolean') throw bad('agent_named_yes_required is true or false'); updates.AGENT_REQUIRE_NAMED_YES = values.agent_named_yes_required ? '1' : '' }
+  if (values.agent_spend_cap_usd !== undefined) {
+    const c = values.agent_spend_cap_usd
+    if (c !== null && !(typeof c === 'number' && Number.isFinite(c) && c >= 0)) throw bad('agent_spend_cap_usd is a number of dollars, 0 or more (0 = no ceiling)')
+    updates.AGENT_SPEND_CAP_USD = c ? String(c) : ''
   }
   if (Object.keys(updates).length) {
     writeEnvFile(updates)

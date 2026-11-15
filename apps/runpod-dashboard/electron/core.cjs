@@ -92,6 +92,7 @@ const TABLE = {
     resize: (c, id, size) => c.volumes.resize(id, Number(size)),
     remove: (c, id) => c.volumes.remove(id),
     useAsDefault: (c, id) => c.volumes.useAsDefault(id),
+    setShared: (c, id) => c.volumes.setShared(id || ''),
     plan: (c, id) => c.podpull.volumePlan(id),   // what a browse or erase on this volume would run on and cost
     browse: (c, id, path) => c.podpull.browseVolume(id, path ? { path } : {}),
     erase: (c, id, keys, o) => c.podpull.eraseVolume(id, keys || [], o || {}),
@@ -151,8 +152,21 @@ const TABLE = {
   runflows: {   // docs/ADR-037: run workflows on a pod
     list: (c, podId) => c.runflows.list(podId),
     run: (c, podId, paths, approvedBy) => c.runflows.run(podId, paths, approvedBy ? { approvedBy } : {}),
+    models: (c, podId) => c.runflows.models(podId),
+    setModels: (c, podId, choice) => c.runflows.setModels(podId, choice || {}),
     job: (c, id) => c.runflows.job(id),
     cancel: (c, id) => c.runflows.cancel(id),
+  },
+  agentguard: {   // docs/ADR-042 section 10: the Bash guard for agents, in the user's Claude Code settings
+    status: (c) => c.agentguard.status(),
+    set: (c, on) => { c.settings.set({ agent_shell_guard: !!on }); return c.agentguard.status() },
+  },
+  models: {   // docs/ADR-042: Hugging Face onto the Shared volume
+    search: (c, q) => c.hf.search(String(q || '')),
+    files: (c, repo, revision) => c.hf.files(String(repo || ''), revision || 'main'),
+    fetch: (c, volumeId, items) => c.podpull.fetchModels(volumeId || c.mounts.load().shared_volume_id || c.mounts.load().network_volume_id, items || [], {}),
+    status: (c, volumeId) => c.podpull.modelsOnVolume(volumeId || c.mounts.load().shared_volume_id || c.mounts.load().network_volume_id),
+    folders: (c) => [...c.hf.FOLDERS],
   },
   panama: {   // docs/ADR-015: the exchange bucket as an import source
     status: (c) => c.panama.status(),
