@@ -16,7 +16,7 @@
  * job reported, kept per volume with the time it was learned (`as_of`).
  *
  * No-spend mode (mounts.dryRun) simulates the whole job without RunPod or SSH. Spend: a temporary pod is a pod creation; it is recorded with
- * `approved_by` (the user's approval to build this feature); the USD 100 cap is enforced where governance is (the MCP server), core keeps no ledger.
+ * `approved_by` (the user's approval to build this feature); the agent rules (named yes, ceiling) are system-wide settings read where governance is (the MCP server); core keeps no ledger.
  */
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'

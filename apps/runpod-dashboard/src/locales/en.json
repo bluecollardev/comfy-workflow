@@ -371,7 +371,7 @@
     "panamaProfileHelp": "Used only when no keys are stored above.",
     "panamaReset": "Back to the built-in default",
     "importCap": "Round imports have a pod limit and a dollar cap",
-    "importCapHint": "(Import Round runs at most this many pods at once and holds work once its estimate passes the cap. Switch off for no limit on imports; Binc's USD 100 cap on agents is separate and stays.)",
+    "importCapHint": "(Import Round runs at most this many pods at once and holds work once its estimate passes the cap. Switch off for no limit on imports; the agent rules (named yes, ceiling) are a separate system-wide setting.)",
     "pullAnyCard": "Pull pods may use any free card",
     "pullAnyCardHint": "(a Pod download needs no GPU, so it takes the cheapest card RunPod has free in the volume's datacenter, even one outside the usual list; the card and its price are shown before it starts. Off: only the usual cards)"
   },

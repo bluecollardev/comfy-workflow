@@ -23,7 +23,7 @@ export function mergeConfig(base, patch) {
 }
 
 /** The settings `set_settings` takes, by field. A value of null removes it. */
-export const SETTING_FIELDS = ['runpod_api_key', 'anthropic_api_key', 'runpod_s3_access_key', 'runpod_s3_secret_key', 'panama_aws_access_key', 'panama_aws_secret_key', 'panama_console_key', 'panama_bucket', 'panama_region', 'panama_profile']
+export const SETTING_FIELDS = ['runpod_api_key', 'anthropic_api_key', 'runpod_s3_access_key', 'runpod_s3_secret_key', 'panama_aws_access_key', 'panama_aws_secret_key', 'panama_console_key', 'panama_bucket', 'panama_region', 'panama_profile', 'agent_named_yes_required', 'agent_spend_cap_usd']
 
 const MAX_FILE = 2 * 1024 * 1024
 
@@ -71,8 +71,8 @@ export function appTools({ core, governance, text, json, plain = text }) {
       run: async ({ path, hidden }) => json(core.listDirs(path || '', !!hidden)) },
     { name: 'get_settings', description: 'The API keys and settings: whether each key is set and its last four characters, never a value; the Panama bucket, region and profile', inputSchema: obj(),
       run: async () => json(settings.get()) },
-    { name: 'set_settings', description: `Set or remove the pod manager's own keys and settings: ${SETTING_FIELDS.join(', ')}. A string sets it, null removes it. Values are never returned (get_settings shows the last four characters). A key typed here is in this conversation's transcript: prefer entering it in the app if that matters. The no-spend switch is not a setting here.`,
-      inputSchema: obj({ values: { type: 'object', description: 'field -> value or null', properties: Object.fromEntries(SETTING_FIELDS.map((f) => [f, { type: ['string', 'null'] }])), additionalProperties: false } }, ['values']),
+    { name: 'set_settings', description: `Set or remove the pod manager's own keys and settings: ${SETTING_FIELDS.join(', ')}. A string sets it, null removes it (agent_named_yes_required is true or false: whether a spending tool asks for approved_by, off by default; agent_spend_cap_usd is a number of dollars advertised to agents, 0 or null for none). Values are never returned (get_settings shows the last four characters). A key typed here is in this conversation's transcript: prefer entering it in the app if that matters. The no-spend switch is not a setting here.`,
+      inputSchema: obj({ values: { type: 'object', description: 'field -> value or null', properties: Object.fromEntries(SETTING_FIELDS.map((f) => [f, { type: f === 'agent_named_yes_required' ? ['boolean', 'null'] : f === 'agent_spend_cap_usd' ? ['number', 'null'] : ['string', 'null'] }])), additionalProperties: false } }, ['values']),
       run: async ({ values }) => {
         const unknown = Object.keys(values || {}).filter((k) => !SETTING_FIELDS.includes(k))
         if (unknown.length) return text(`Not a setting: ${unknown.join(', ')}. Settings: ${SETTING_FIELDS.join(', ')}`, true)
@@ -102,7 +102,7 @@ export function appTools({ core, governance, text, json, plain = text }) {
     { name: 'config_backups', description: 'The backups of the configuration that imports made', inputSchema: obj(), run: async () => json(configio.listBackups()) },
 
     // ---------- volumes ----------
-    { name: 'resize_volume', description: `Grow a network volume (RunPod only grows them; billed monthly, USD 0.07 per GB). Spends money: needs approved_by (cap USD ${governance.SPEND_CAP_USD}). Create one in a chosen datacenter with create_volume`,
+    { name: 'resize_volume', description: `Grow a network volume (RunPod only grows them; billed monthly, USD 0.07 per GB). Spends money: approved_by is asked for only when switched on in this tool's settings. Create one in a chosen datacenter with create_volume`,
       inputSchema: obj({ approved_by: approved.properties.approved_by, volume_id: S('Volume ID (list_volumes)'), size_gb: N('The new size in GB, larger than now') }, ['volume_id', 'size_gb']),
       run: async (args) => {
         const refusal = yes(args, 'resize_volume'); if (refusal) return text(refusal, true)

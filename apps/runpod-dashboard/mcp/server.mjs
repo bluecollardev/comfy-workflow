@@ -91,7 +91,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
     },
     {
       name: 'create_agent',
-      description: `Create a new GPU pod agent for the pool. Spends money: needs approved_by, the person behind the named yes (policy/agent-permissions.md, cap USD ${governance.SPEND_CAP_USD})`,
+      description: `Create a new GPU pod agent for the pool. Spends money: needs approved_by, the person behind the named yes (the named yes is asked for only when switched on in this tool's settings)`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -138,7 +138,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
     { name: 'get_pod', description: "One pod with RunPod's details: price per hour, cloud, datacenter, image, disks, status text, and its own configuration", inputSchema: { type: 'object', properties: { pod_id: podId }, required: ['pod_id'] } },
     {
       name: 'create_pod',
-      description: `Create a pod the way the dashboard's form does, with the Default Configuration (or a per-pod one) applied. Spends money: needs approved_by, the person behind the named yes (policy/agent-permissions.md, cap USD ${governance.SPEND_CAP_USD}). "No card available" lists what was tried.`,
+      description: `Create a pod the way the dashboard's form does, with the Default Configuration (or a per-pod one) applied. Spends money: needs approved_by, the person behind the named yes (the named yes is asked for only when switched on in this tool's settings). "No card available" lists what was tried.`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -185,7 +185,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
     { name: 'list_volumes', description: 'The network volumes with size, datacenter, cost per month, S3 support, the pods on each, and which is the default', inputSchema: { type: 'object', properties: {} } },
     {
       name: 'create_volume',
-      description: `Create a network volume (billed monthly: USD 0.07 per GB). Spends money: needs approved_by, the person behind the named yes (policy/agent-permissions.md, cap USD ${governance.SPEND_CAP_USD})`,
+      description: `Create a network volume (billed monthly: USD 0.07 per GB). Spends money: needs approved_by, the person behind the named yes (the named yes is asked for only when switched on in this tool's settings)`,
       inputSchema: {
         type: 'object',
         properties: { approved_by: approvedBy, name: { type: 'string' }, size_gb: { type: 'integer', description: '10 to 4000' }, datacenter: { type: 'string', description: 'Datacenter id (list_datacenters). The volume lives there and pods that use it must run there; a new region means a new volume' } },
@@ -418,7 +418,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
         currency: 'USD', pods_per_hour: round2(priced.reduce((s, p) => s + (p.cost_per_hr ?? 0), 0)), running_pods: priced,
         unpriced_pods: priced.filter((p) => p.cost_per_hr == null).map((p) => p.id),
         volumes_per_month: round2(vols.reduce((s, v) => s + (v.cost_per_month || 0), 0)), volumes: vols.map((v) => ({ id: v.id, name: v.name, size_gb: v.size_gb, datacenter: v.datacenter, cost_per_month: v.cost_per_month })),
-        spend_cap_usd: governance.SPEND_CAP_USD,
+        spend_cap_usd: governance.spendCap() || null,
       })
     },
   }

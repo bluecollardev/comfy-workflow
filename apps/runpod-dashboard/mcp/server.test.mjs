@@ -50,7 +50,7 @@ test('initialize hands every client the governance instructions', async () => {
   assert.match(r.result.instructions, /^# Governance \(applied to this session\)/)
   assert.match(r.result.instructions, /## policy\/agent-permissions\.md/)
   assert.match(r.result.instructions, /## operator-brief\.md/)
-  assert.match(r.result.instructions, /approved_by.*USD 100/)
+  assert.match(r.result.instructions, /does not ask for a named yes/)
   notify('notifications/initialized')
 })
 

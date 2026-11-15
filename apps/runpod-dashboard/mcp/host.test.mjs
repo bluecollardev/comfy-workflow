@@ -20,7 +20,7 @@ const POD = { id: 'pod-1', name: 'ComfyUI-Dev', status: 'running', gpu: 'rtx4090
 /** Just enough of the core for the pod manager's tools used here. */
 function fakeCore(events) {
   return {
-    governance: { SPEND_CAP_USD: 100, instructions: () => '# Governance (fake)', listing: () => [], read: () => null, uriToName: (u) => u, folder: () => null },
+    governance: { spendCap: () => 0, gateOn: () => false, instructions: () => '# Governance (fake)', listing: () => [], read: () => null, uriToName: (u) => u, folder: () => null },
     pool: { GPU_TYPES: ['auto', 'rtx4090'], dryRun: () => false },
     gpus: { DEFAULT_GPU: 'rtx4090' },
     mounts: { load: () => ({ folders: {}, mcp_http: {} }), dryRun: () => false },
