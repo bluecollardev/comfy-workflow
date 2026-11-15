@@ -98,10 +98,10 @@
       <span v-if="onVolume === null" class="text-body-secondary" data-testid="models-on-volume-unknown">{{ $t('models.onVolumeUnknown') }}</span>
       <span v-else-if="!onVolume.length" class="text-body-secondary">{{ $t('models.onVolumeNone') }}</span>
       <template v-else>
-        <div v-if="onVolume.some((f) => f.deletable)" class="d-flex align-items-center gap-2 mb-1" data-testid="models-delete-bar">
+        <div v-if="onVolume.some((f) => f.deletable)" class="d-flex align-items-center gap-2 mb-2" data-testid="models-delete-bar">
           <BButton size="sm" variant="outline-danger" :disabled="!delPicked.length || busy || delBusy" data-testid="models-delete-selected" @click="deleteFiles(delPicked)"><i class="fa-solid fa-trash me-1"></i>{{ $t('models.deleteSelected', { n: delPicked.length, size: fmt(delPickedBytes) }) }}</BButton>
         </div>
-        <div v-for="f in onVolume" :key="f.path" class="d-flex align-items-center gap-2" data-testid="models-on-volume-file" :data-path="f.path">
+        <div v-for="f in onVolume" :key="f.path" class="d-flex align-items-center gap-2 py-1" data-testid="models-on-volume-file" :data-path="f.path">
           <input v-if="f.deletable" v-model="delChosen[f.path]" type="checkbox" class="form-check-input mt-0" :disabled="busy || delBusy" :aria-label="f.path" data-testid="models-delete-check" />
           <span v-else style="width: 1rem" aria-hidden="true"></span>
           <span class="font-monospace flex-grow-1 text-break">{{ f.path }}</span>
