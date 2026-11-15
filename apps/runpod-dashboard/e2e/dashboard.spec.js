@@ -136,10 +136,10 @@ test.describe('Pod list grouped by datacenter', () => {
   })
 })
 
-test('the top bar reads Connect, Volumes, Queue, History, Settings, Pause all, Refresh', async ({ page }) => {
+test('the top bar reads Connect, Shared, Queue, History, Settings, Pause all, Refresh', async ({ page }) => {
   await page.goto('/')
-  const ids = await page.locator('nav [data-testid], .navbar [data-testid]').evaluateAll((els) => els.map((e) => e.dataset.testid).filter((id) => ['open-connect', 'open-volumes', 'open-queue', 'open-history', 'open-config', 'pause-all', 'refresh'].includes(id)))
-  expect(ids).toEqual(['open-connect', 'open-volumes', 'open-queue', 'open-history', 'open-config', 'pause-all', 'refresh'])
+  const ids = await page.locator('nav [data-testid], .navbar [data-testid]').evaluateAll((els) => els.map((e) => e.dataset.testid).filter((id) => ['open-connect', 'open-shared', 'open-queue', 'open-history', 'open-config', 'pause-all', 'refresh'].includes(id)))
+  expect(ids).toEqual(['open-connect', 'open-shared', 'open-queue', 'open-history', 'open-config', 'pause-all', 'refresh'])
 })
 
 test('the content below the nav bar is wide (up to 1680px) and never wider than the window', async ({ page }) => {

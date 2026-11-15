@@ -2,7 +2,8 @@ import { test, expect, modal, answerConfirm } from './fixtures'
 import { t } from './i18n'
 
 const openVolumes = async (page) => {
-  await page.getByTestId('open-volumes').click()
+  await page.getByTestId('open-shared').click()
+  await page.getByTestId('shared-volumes').click()
   const dialog = modal(page, t('volumes.title'))
   await expect(dialog).toBeVisible()
   return dialog
@@ -79,7 +80,7 @@ test.describe('volumes: browse and erase', () => {
       await page.goto('/')
       const dialog = await openVolumes(page)
       const row = dialog.locator('[data-testid="volume"][data-id="vol1"]')
-      for (const id of ['volume-browse', 'volume-clone', 'volume-resize', 'volume-erase', 'volume-delete', 'volume-use-default']) {
+      for (const id of ['volume-browse', 'volume-clone', 'volume-resize', 'volume-erase', 'volume-delete', 'volume-use-default', 'volume-set-shared']) {
         const b = row.getByTestId(id)
         if (!(await b.count())) continue
         expect((await b.boundingBox()).height, `${id} at ${w}px`).toBeLessThan(36)

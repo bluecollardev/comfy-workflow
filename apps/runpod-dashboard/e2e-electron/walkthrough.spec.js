@@ -101,7 +101,8 @@ test.describe('setup walkthrough: a new user, a new app', () => {
 
   test('8 create a volume: a name, a size, a datacenter', async () => {
     const { page } = ctx
-    await page.getByTestId('open-volumes').click()
+    await page.getByTestId('open-shared').click()
+    await page.getByTestId('shared-volumes').click()
     const dialog = page.locator('.modal.show', { hasText: t('volumes.title') })
     await dialog.getByTestId('volume-new-name').fill('comfy-volume')
     await dialog.getByTestId('volume-new-size').fill('100')

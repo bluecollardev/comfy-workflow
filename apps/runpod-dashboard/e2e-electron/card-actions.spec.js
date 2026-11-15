@@ -69,7 +69,8 @@ test.describe('card actions over IPC', () => {
 
   test('volumes and datacenters answer over IPC', async () => {
     const { page } = ctx
-    await page.getByTestId('open-volumes').click()
+    await page.getByTestId('open-shared').click()
+    await page.getByTestId('shared-volumes').click()
     const volumes = page.locator('.modal.show', { hasText: t('volumes.title') })
     await expect(volumes).toBeVisible()
     await volumes.getByTestId('volume-new-name').fill('sim-vol')

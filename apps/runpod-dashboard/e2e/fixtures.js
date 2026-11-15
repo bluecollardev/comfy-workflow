@@ -97,7 +97,7 @@ export function defaultState() {
     gpus: { default: 'auto', live: true, gpus: [{ value: 'auto', text: 'Cheapest card in stock (16-24 GB)', in_stock: true }, { value: 'a4000', text: 'RTX A4000 (16 GB) · none in stock', in_stock: false }, { value: 'rtx4090', text: 'RTX 4090 (24 GB) · $0.34/h · Low stock', in_stock: true, price: 0.34, stock: 'Low' }, { value: 'rtxpro6000', text: 'RTX PRO 6000 (96 GB) · $2.49/h · Low stock', in_stock: true, price: 2.49, stock: 'Low' }] },
     // The folder browser (GET /fs/dirs): a tiny disk.
     fs: { '/Users/lucas': ['ComfyUI-Shared', 'Projects'], '/Users/lucas/Projects': ['CANALV2', 'plates'], '/Users/lucas/Projects/CANALV2': ['00_POLICY', '04_TRACKER'] },
-    settings: { runpod_api_key_set: true, runpod_api_key_hint: '••••AAAA', source: '/home/me/.config/runpod-pod-manager/.env', s3_keys_set: false, s3_access_key_hint: '' },   // most specs start with a key; the gate spec clears it
+    settings: { runpod_api_key_set: true, runpod_api_key_hint: '••••AAAA', source: '/home/me/.config/runpod-pod-manager/.env', s3_keys_set: false, s3_access_key_hint: '', agent_named_yes_required: false, agent_spend_cap_usd: 0 },   // most specs start with a key; the gate spec clears it
     logs: {},   // pod id -> lines for GET /pods/:id/logs
     // The Connect › MCP tab: where the two programs live, what the bridge can point at, and what Check answers per endpoint.
     mcp: {
@@ -249,6 +249,8 @@ export async function mockApi(page, state) {
       for (const [f, k, d] of [['panama_bucket', 'bucket', 'bh-panama-exchange-610140802195'], ['panama_region', 'region', 'us-west-2'], ['panama_profile', 'profile', 'panama']]) {
         if (body[f] !== undefined) state.settings = { ...state.settings, [f]: body[f] === d || !body[f] ? d : body[f], panama_defaults: { bucket: 'bh-panama-exchange-610140802195', region: 'us-west-2', profile: 'panama' } }
       }
+      if (body.agent_named_yes_required !== undefined) state.settings = { ...state.settings, agent_named_yes_required: !!body.agent_named_yes_required }
+      if (body.agent_spend_cap_usd !== undefined) state.settings = { ...state.settings, agent_spend_cap_usd: body.agent_spend_cap_usd || 0 }
       if (body.anthropic_api_key) state.settings = { ...state.settings, anthropic_key_set: true, anthropic_key_hint: '••••' + body.anthropic_api_key.slice(-4) }
       return json(state.settings)
     }
@@ -368,13 +370,22 @@ export async function mockApi(page, state) {
     }
     if (method === 'GET' && path === '/history/runs') { const r = state.history.runs[query.pod_id]; return r ? json(r) : json({ detail: `pod ${query.pod_id} is not running` }, 400) }
     if (method === 'GET' && path === '/credits') return state.credits === null ? json({ detail: 'RunPod did not report the account balance' }, 502) : json(state.credits ?? { balance: 36.42, spend_per_hr: 0.053, spend_limit: 80, hours_left: 687.2, level: 'ok' })
-    if (method === 'GET' && path === '/volumes') return json(Object.values(state.volumes).map((v) => ({ ...v, is_default: v.id === state.mounts.config.network_volume_id })))
+    if (method === 'GET' && path === '/volumes') return json(Object.values(state.volumes).map((v) => ({ ...v, is_default: v.id === state.mounts.config.network_volume_id, is_shared: !!state.sharedVolume && v.id === state.sharedVolume })))
+    // the Shared volume (ADR-042 section 9): the one the models live on; it cannot be deleted while it is Shared
+    if (method === 'POST' && path === '/volumes/shared') { state.sharedVolume = body.id || ''; state.sharedCalls = (state.sharedCalls || []).concat(body.id || ''); return json(body.id ? { ...state.volumes[body.id], is_shared: true } : { shared: null }) }
     // one volume: browse (a listing by a pod) and erase
     if (method === 'GET' && path === '/volumes/erasable') return json([{ key: 'seedflows', label: 'Seed Graphs', path: '/workspace/comfy-shared/workflows' }, { key: 'rounds', label: 'Pulled rounds (temp/rounds)', path: '/workspace/comfy-shared/temp/rounds' }, { key: 'inputs', label: 'Inputs (input), including the files placed from rounds', path: '/workspace/comfy-shared/input' }, { key: 'workflows', label: 'Round graphs (workflows/rounds)', path: '/workspace/comfy-shared/workflows/rounds' }, { key: 'output', label: 'Outputs (output)', path: '/workspace/comfy-shared/output' }, { key: 'models', label: 'Models (models)', path: '/workspace/comfy-shared/models' }])
     if (method === 'GET' && (m = path.match(/^\/volumes\/([^/]+)\/plan$/))) return json(m[1] === 'vol2' ? { route: 's3', gpu: '', price_per_hour: 0, pod: null } : { route: 'temporary', gpu: 'RTX 2000 Ada', price_per_hour: 0.24, pod: null, s3_note: 'keys' })
     if (method === 'POST' && (m = path.match(/^\/volumes\/([^/]+)\/browse$/))) { state.browsed = (state.browsed || []).concat(body?.path || ''); state.volumeJob = { id: 'vj1', kind: 'browse', state: 'done', pod_name: 'ComfyUI-Pull-vol', volume_id: m[1], listing: body?.path ? [{ path: body.path, bytes: 3e9 }, { path: `${body.path}/r1`, bytes: 3e9 }, { path: `${body.path}/r1/cgi-042`, bytes: 2e9 }, { path: `${body.path}/r1/cgi-043`, bytes: 1e9 }] : [{ path: '/workspace', bytes: 5e9 }, { path: '/workspace/comfy-shared', bytes: 4e9 }, { path: '/workspace/comfy-shared/temp', bytes: 3e9 }, { path: '/workspace/comfy-shared/temp/rounds', bytes: 3e9 }, { path: '/workspace/comfy-shared/output', bytes: 1e9 }, { path: '/workspace/comfy-shared/models', bytes: 6e8 }] }; return json({ ...state.volumeJob, state: 'creating' }) }
     if (method === 'POST' && (m = path.match(/^\/volumes\/([^/]+)\/clone$/))) { state.cloned = { id: m[1], ...body }; state.volumeJob = { id: 'vj3', kind: 'clone', state: 'done', volume_id: m[1], files: 12, bytes_done: 3e9, clone: { mode: 'push' } }; return json({ ...state.volumeJob, state: 'creating', files: 0 }) }
     if (method === 'POST' && (m = path.match(/^\/volumes\/([^/]+)\/erase$/))) { state.erased = { id: m[1], ...body }; state.volumeJob = { id: 'vj2', kind: 'erase', state: 'done', volume_id: m[1], freed: Object.fromEntries((body.keys || []).map((k) => [k, 1e9])) }; return json({ ...state.volumeJob, state: 'creating' }) }
+    // Models (ADR-042 section 9): Hugging Face search, a repo's weight files, loading onto the volume by a pod job
+    if (method === 'GET' && path === '/models/search') { (state.modelSearches ||= []).push(query.q); return json(/^zzz/.test(query.q) ? [] : [{ id: 'Comfy-Org/SeedVR2', downloads: 829248, likes: 120, updated: '2026-11-14', gated: false }, { id: 'numz/SeedVR2_comfyUI', downloads: 788853, likes: 80, updated: '2026-10-02', gated: false }, { id: 'someone/gated-model', downloads: 10, likes: 1, updated: null, gated: true }]) }
+    if (method === 'GET' && path === '/models/files') { (state.modelFilesFor ||= []).push(query.repo); return json(query.repo === 'Comfy-Org/SeedVR2' ? [{ path: 'vae/seedvr2_ema_vae_fp16.safetensors', bytes: 501324814, sha256: 'a'.repeat(64), folder: 'vae' }, { path: 'diffusion_models/seedvr2_3b_fp8_e4m3fn.safetensors', bytes: 3392794232, sha256: 'b'.repeat(64), folder: 'diffusion_models' }, { path: 'diffusion_models/seedvr2_3b_fp16.safetensors', bytes: 6784268336, sha256: 'c'.repeat(64), folder: 'diffusion_models' }] : []) }
+    if (method === 'POST' && path === '/models/fetch') { state.modelFetch = { volume_id: body.volume_id, items: body.items }; state.volumeJob = { id: 'vjm1', kind: 'fetch', state: 'done', volume_id: body.volume_id, pod_name: 'ComfyUI-Pull-vol', fetched: body.items.map((i) => i.path.split('/').pop()), lines: ['Approved by a click in the app window.', ...body.items.map((i) => `FETCHED ${i.path.split('/').pop()} 1`), 'FETCH-DONE'] }; return json({ ...state.volumeJob, state: 'creating', fetched: undefined, lines: [] }) }
+    if (method === 'GET' && path === '/models/status') return json(state.modelsOnVolume === undefined ? null : state.modelsOnVolume)
+    if (method === 'GET' && path === '/models/folders') return json(['diffusion_models', 'vae', 'checkpoints', 'loras', 'text_encoders', 'clip', 'clip_vision', 'controlnet', 'upscale_models', 'embeddings'])
+    if (method === 'POST' && path === '/volumes/job/cancel') { state.volumeJob = { ...(state.volumeJob || {}), id: body.id, state: 'cancelled' }; state.volumeJobCancelled = body.id; return json(state.volumeJob) }
     if (method === 'GET' && path === '/volumes/job') return json(state.volumeJob || { id: query.id, state: 'failed', error: 'no job' })
     if (method === 'POST' && path === '/volumes') {
       const v = { id: `vol-new-${Object.keys(state.volumes).length + 1}`, name: body.name, size_gb: body.size_gb, datacenter: body.datacenter, cost_per_month: Math.round(body.size_gb * 7) / 100, s3: body.datacenter === 'EU-RO-1', is_default: false, pods: [] }
@@ -383,6 +394,7 @@ export async function mockApi(page, state) {
     if ((m = path.match(/^\/volumes\/([^/]+)$/)) && method === 'PATCH') { const v = state.volumes[m[1]]; v.size_gb = body.size_gb; v.cost_per_month = Math.round(body.size_gb * 7) / 100; return json(v) }
     if ((m = path.match(/^\/volumes\/([^/]+)$/)) && method === 'DELETE') {
       const v = state.volumes[m[1]]
+      if (state.sharedVolume === m[1]) return json({ detail: `${v.name} is the Shared volume (it holds the models): choose another Shared volume, or none, before deleting it.` }, 400)
       if (v.pods.some((p) => p.via === 'runpod')) return json({ detail: `${v.name} is attached to ${v.pods.map((p) => p.name).join(', ')}: delete or recreate those pods first` }, 400)
       delete state.volumes[m[1]]; return json({ removed: m[1], was_default: false })
     }
@@ -699,6 +711,17 @@ export const cfgTab = async (root, key) => {
   if (await tab.count()) await tab.click()
 }
 export const modal = (page, text) => page.locator('.modal.show', { hasText: text })
+
+/** The Shared button, then its Volumes card: what the Volumes button used to be. */
+export async function openVolumes(page) {
+  await page.getByTestId('open-shared').click()
+  await page.getByTestId('shared-volumes').click()
+}
+/** The Shared button, then its Models card. */
+export async function openModels(page) {
+  await page.getByTestId('open-shared').click()
+  await page.getByTestId('shared-models').click()
+}
 
 /** The in-app confirmation (stores/confirm.js): waits for it, reads what it asks, answers Yes (OK) or No (Cancel), and returns the question. */
 export async function answerConfirm(page, yes = true) {

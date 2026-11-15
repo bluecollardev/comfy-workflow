@@ -209,7 +209,7 @@ test.describe('the RunPod key', () => {
     await expect(dialog.getByTestId('section-volume')).toHaveCount(0)     // the other settings are out of reach
     await expect(dialog.getByTestId('config-close')).toHaveCount(0)       // and the panel cannot be dismissed
     await expect(page.getByTestId('key-required')).toContainText(t('dashboard.keyRequired'))
-    await expect(page.getByTestId('open-volumes')).toBeDisabled()
+    await expect(page.getByTestId('open-shared')).toBeDisabled()
     await expect(dialog.getByTestId('cfg-key-group')).toContainText(t('config.apiKeyUnset'))
     await expect(dialog.getByTestId('config-save')).toBeDisabled()        // nothing to save until a key is typed
     await dialog.getByTestId('cfg-key').fill('rpa_0123456789ABCDEFXYZ9')
@@ -217,7 +217,7 @@ test.describe('the RunPod key', () => {
     await cfgTab(dialog, 'volume')
     await expect(dialog.getByTestId('section-volume')).toBeVisible()      // the key is in: the rest appears, the panel stays open
     await expect(dialog.getByTestId('cfg-key-gate')).toHaveCount(0)
-    await expect(page.getByTestId('open-volumes')).toBeEnabled()
+    await expect(page.getByTestId('open-shared')).toBeEnabled()
     await dialog.getByTestId('config-close').click()
     await expect(dialog).toBeHidden()
     await expect(page.getByTestId('key-required')).toHaveCount(0)

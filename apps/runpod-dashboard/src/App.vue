@@ -9,8 +9,8 @@
         <BButton variant="outline-light" size="sm" :title="$t('app.connectTitle')" :disabled="!settings.ready" data-testid="open-connect" @click="ui.connectOpen = true">
           <i class="fa-solid fa-plug me-1"></i>{{ $t('app.connect') }}
         </BButton>
-        <BButton variant="outline-light" size="sm" :title="$t('app.volumesTitle')" :disabled="!settings.ready" data-testid="open-volumes" @click="ui.volumesOpen = true">
-          <i class="fa-solid fa-hard-drive me-1"></i>{{ $t('app.volumes') }}
+        <BButton variant="outline-light" size="sm" :title="$t('app.sharedTitle')" :disabled="!settings.ready" data-testid="open-shared" @click="ui.sharedOpen = true">
+          <i class="fa-solid fa-share-nodes me-1"></i>{{ $t('app.shared') }}
         </BButton>
         <BButton variant="outline-light" size="sm" :title="$t('app.queueTitle')" data-testid="open-queue" @click="ui.queueOpen = true">
           <i class="fa-solid fa-list-check me-1"></i>{{ $t('app.queue') }}<BBadge v-if="queueCount" variant="primary" class="ms-1" data-testid="queue-badge">{{ queueCount }}</BBadge>
@@ -61,7 +61,9 @@
     <ConnectModal />
     <ImportModal />
     <AdapterStudio />
+    <SharedModal />
     <VolumesModal />
+    <ModelsModal />
     <HistoryModal />
     <ImportRoundModal v-if="ui.importRoundOpen" />
     <QueueModal v-if="ui.queueOpen" />
@@ -90,6 +92,8 @@ import { useUiStore } from './stores/ui'
 import { useSettingsStore } from './stores/settings'
 import { syncAPI } from './api/sync'
 import VolumesModal from './components/VolumesModal.vue'
+import SharedModal from './components/SharedModal.vue'
+import ModelsModal from './components/ModelsModal.vue'
 import HistoryModal from './components/HistoryModal.vue'
 import ImportRoundModal from './components/ImportRoundModal.vue'
 import QueueModal from './components/QueueModal.vue'

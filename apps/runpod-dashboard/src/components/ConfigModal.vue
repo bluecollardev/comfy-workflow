@@ -95,6 +95,16 @@
             <BFormInput id="cfg-panama-pull" v-model.trim="pullSetting" autocomplete="off" placeholder="bh-panama-exchange-610140802195/rounds/<round>=/workspace/comfy-shared/input/<round>" class="font-monospace" data-testid="cfg-panama-pull" />
           </BFormGroup>
         </BCol>
+        <BCol v-if="!gated" md="12"><hr class="my-1" /><div class="small fw-semibold" data-testid="cfg-agent-title">{{ $t('config.agentTitle') }}</div><div class="form-text mt-0">{{ $t('config.agentHelp') }}</div></BCol>
+        <BCol v-if="!gated" md="7">
+          <BFormCheckbox v-model="agentRules.namedYes" switch data-testid="cfg-agent-named-yes">{{ $t('config.agentNamedYes') }}</BFormCheckbox>
+          <div class="form-text mt-0">{{ $t('config.agentNamedYesHelp') }}</div>
+        </BCol>
+        <BCol v-if="!gated" md="5">
+          <BFormGroup :label="$t('config.agentCap')" label-for="cfg-agent-cap" :description="$t('config.agentCapHelp')">
+            <BFormInput id="cfg-agent-cap" v-model.number="agentRules.cap" type="number" min="0" step="1" data-testid="cfg-agent-cap" />
+          </BFormGroup>
+        </BCol>
       </BRow>
       </fieldset>
 
@@ -473,6 +483,10 @@ const panamaDefaults = computed(() => keyInfo.value.panama_defaults || { bucket:
 const panamaCfg = reactive({ bucket: '', region: '', profile: '' })
 watch(keyInfo, (k) => { panamaCfg.bucket = k.panama_bucket || panamaDefaults.value.bucket; panamaCfg.region = k.panama_region || panamaDefaults.value.region; panamaCfg.profile = k.panama_profile || panamaDefaults.value.profile }, { immediate: true })
 const panamaCfgChanged = () => { const k = keyInfo.value; return panamaCfg.bucket !== (k.panama_bucket || panamaDefaults.value.bucket) || panamaCfg.region !== (k.panama_region || panamaDefaults.value.region) || panamaCfg.profile !== (k.panama_profile || panamaDefaults.value.profile) }
+/** The agent rules: one setting for the whole app (a system setting like the Panama bucket), never part of a pod's configuration. */
+const agentRules = reactive({ namedYes: false, cap: 0 })
+watch(keyInfo, (k) => { agentRules.namedYes = !!k.agent_named_yes_required; agentRules.cap = Number(k.agent_spend_cap_usd) || 0 }, { immediate: true })
+const agentRulesChanged = () => agentRules.namedYes !== !!keyInfo.value.agent_named_yes_required || (Number(agentRules.cap) || 0) !== (Number(keyInfo.value.agent_spend_cap_usd) || 0)
 const newPanama = reactive({ access: '', secret: '' })   // the Panama bucket keys (BH): saved as app secrets, handed to a pod that has a pull set (docs/ADR-015)
 /** S3_PULL is one row of the environment table; this field edits that row, adding or removing it. */
 const pullSetting = computed({
@@ -664,6 +678,10 @@ async function save() {
   }
   if (panamaCfgChanged()) {
     try { keyInfo.value = await settingsAPI.set({ panama_bucket: panamaCfg.bucket, panama_region: panamaCfg.region, panama_profile: panamaCfg.profile }); await panamaStore.loadStatus() }
+    catch (e) { error.value = e.response?.data?.detail || e.message; saving.value = false; return }
+  }
+  if (agentRulesChanged()) {
+    try { keyInfo.value = await settingsAPI.set({ agent_named_yes_required: !!agentRules.namedYes, agent_spend_cap_usd: Math.max(0, Number(agentRules.cap) || 0) }) }
     catch (e) { error.value = e.response?.data?.detail || e.message; saving.value = false; return }
   }
   if (newPanama.access || newPanama.secret) {

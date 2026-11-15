@@ -37,6 +37,7 @@
               <span class="fw-semibold" data-testid="volume-name">{{ v.name }}</span>
               <code class="small" data-testid="volume-id">{{ v.id }}</code>
               <BBadge v-if="v.is_default" variant="primary" text-indicator data-testid="volume-default">{{ $t('volumes.isDefault') }}</BBadge>
+              <BBadge v-if="v.is_shared" variant="success" :title="$t('volumes.sharedBadgeTitle')" data-testid="volume-shared-badge"><i class="fa-solid fa-share-nodes me-1"></i>{{ $t('volumes.sharedBadge') }}</BBadge>
               <BBadge v-if="v.s3" variant="info" text-indicator :title="$t('volumes.s3Title')" data-testid="volume-s3">S3</BBadge>
             </div>
             <small class="text-body-secondary d-block" data-testid="volume-facts">{{ $t('volumes.facts', { size: v.size_gb, dc: v.datacenter, cost: v.cost_per_month.toFixed(2) }) }}</small>
@@ -58,11 +59,12 @@
             </template>
             <template v-else>
               <span v-if="!v.is_default" v-tip="$t('volumes.useAsDefault')" class="tipwrap"><BButton size="sm" class="vol-icon" variant="outline-light" :disabled="store.busyId === v.id" :aria-label="$t('volumes.useAsDefault')" data-testid="volume-use-default" @click="store.useAsDefault(v)"><i class="fa-regular fa-star"></i></BButton></span>
+              <span v-tip="v.is_shared ? $t('volumes.notShared') : $t('volumes.makeShared')" class="tipwrap"><BButton size="sm" class="vol-icon" :variant="v.is_shared ? 'success' : 'outline-light'" :disabled="store.busyId === v.id" :aria-label="v.is_shared ? $t('volumes.notShared') : $t('volumes.makeShared')" data-testid="volume-set-shared" @click="store.setShared(v.is_shared ? null : v)"><i class="fa-solid fa-share-nodes"></i></BButton></span>
               <span v-tip="$t('volumes.browse')" class="tipwrap"><BButton size="sm" class="vol-icon" variant="outline-light" :disabled="store.busyId === v.id" :aria-label="$t('volumes.browse')" data-testid="volume-browse" @click="browsing = v"><i class="fa-solid fa-folder-tree"></i></BButton></span>
               <span v-tip="$t('volumes.clone')" class="tipwrap"><BButton size="sm" class="vol-icon" variant="outline-light" :disabled="store.busyId === v.id" :aria-label="$t('volumes.clone')" data-testid="volume-clone" @click="cloning = v"><i class="fa-solid fa-clone"></i></BButton></span>
               <span v-tip="$t('volumes.resize')" class="tipwrap"><BButton size="sm" class="vol-icon" variant="outline-light" :disabled="store.busyId === v.id" :aria-label="$t('volumes.resize')" data-testid="volume-resize" @click="resizing = v.id; resizeTo = v.size_gb + 20"><i class="fa-solid fa-up-right-and-down-left-from-center"></i></BButton></span>
               <span v-tip="$t('volumes.erase')" class="tipwrap"><BButton size="sm" class="vol-icon" variant="outline-danger" :disabled="store.busyId === v.id" :aria-label="$t('volumes.erase')" data-testid="volume-erase" @click="erasing = v"><i class="fa-solid fa-eraser"></i></BButton></span>
-              <span v-tip="v.pods.some((p) => p.via === 'runpod') ? $t('volumes.deleteBlocked') : $t('volumes.delete')" class="tipwrap"><BButton size="sm" class="vol-icon" variant="outline-danger" :disabled="store.busyId === v.id || v.pods.some((p) => p.via === 'runpod')" :aria-label="v.pods.some((p) => p.via === 'runpod') ? $t('volumes.deleteBlocked') : $t('volumes.delete')" data-testid="volume-delete" @click="confirmRemove(v)"><i class="fa-solid fa-trash"></i></BButton></span>
+              <span v-tip="deleteReason(v) || $t('volumes.delete')" class="tipwrap"><BButton size="sm" class="vol-icon" variant="outline-danger" :disabled="store.busyId === v.id || !!deleteReason(v)" :aria-label="deleteReason(v) || $t('volumes.delete')" data-testid="volume-delete" @click="confirmRemove(v)"><i class="fa-solid fa-trash"></i></BButton></span>
             </template>
           </div>
         </div>
@@ -116,6 +118,8 @@ async function doResize(v) {
   const r = await store.resize(v, Number(resizeTo.value))
   if (r.ok) resizing.value = null
 }
+/** Why a volume cannot be deleted from here: it is the Shared one, or a pod is attached. */
+const deleteReason = (v) => (v.is_shared ? t('volumes.deleteShared') : v.pods.some((p) => p.via === 'runpod') ? t('volumes.deleteBlocked') : '')
 async function confirmRemove(v) {
   if (await confirm.ask(t('volumes.confirmDelete', { name: v.name, size: v.size_gb }), { okLabel: t('volumes.delete') })) store.remove(v)
 }
