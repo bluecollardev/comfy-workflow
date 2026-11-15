@@ -25,6 +25,7 @@
 6. Default card (ADR-042 section 13): built and tested; after the app restarts set it (the code default is `rtxpro6000`; the stored configuration has no value until saved, so it reads the default). Pin the CUDA 13 digest of the 15 Nov image build in `gpus.CU13_PINS` and the default image, or the RTX PRO 6000 boots the older CUDA 13 image without the OCIO, LTX and Binc DPX packs.
 7. Hugging Face token (ADR-042 section 14): built and tested with fake answers; enter a real token in Default Configuration, accept the terms of `black-forest-labs/FLUX.2-klein-9b-fp8` and the gated LTX repos with the same account, and load one gated file to prove it.
 5. Wanted models (ADR-042 section 12): built and tested with fake S3 and fake jobs; try it on a real Shared volume (Save list from the volume, Add Binc's list, Load missing) after growing the volume. Gated LTX files still need a Hugging Face token setting.
+8. Delete models on a volume (ADR-042 section 15): built and tested with a fake `aws`, a fake pod and a fake API; try it once on the real Shared volume (one small test file: S3 route, then check `comfy-shared/models/` and the History entry).
 
 ## Important, open: AI-generated shots through MCP (ADR-034), cgi-042 first
 

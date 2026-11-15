@@ -88,7 +88,7 @@ export function recordState(volumeId: string, round: string, rec: RoundRec | nul
 export function forgetVolume(volumeId: string): void { migrateState(); const all = readJson<Record<string, VolRec>>(stateFile(), {}); if (all[volKey(volumeId)]) { delete all[volKey(volumeId)]; writeJson(stateFile(), all) } }
 export const knownState = (volumeId: string): VolRec | null => { migrateState(); return readJson<Record<string, VolRec>>(stateFile(), {})[volKey(volumeId)] ?? null }
 
-export interface TempPod { round: string; kind: 'pull' | 'remove' | 'browse' | 'erase' | 'clone' | 'fetch'; name: string; pod_id: string | null; volume: string; created_at: string; approved_by: string }
+export interface TempPod { round: string; kind: 'pull' | 'remove' | 'browse' | 'erase' | 'clone' | 'fetch' | 'delete-models'; name: string; pod_id: string | null; volume: string; created_at: string; approved_by: string }
 /** The temporary pods this app has made and not yet deleted. One left behind (the app closed mid-job) is listed here and shows in the manager under its name. */
 export const temporaryPods = (): TempPod[] => readJson<TempPod[]>(tempFile(), [])
 const tempAdd = (t: TempPod) => writeJson(tempFile(), [...temporaryPods().filter((x) => x.name !== t.name), t])
@@ -245,7 +245,7 @@ export async function plan(round: string, opts: Opts = {}): Promise<PodPlan> {
 
 export type JobState = 'creating' | 'starting' | 'pulling' | 'verifying' | 'placing' | 'deleting' | 'done' | 'failed' | 'cancelled'
 export interface PodJob {
-  id: string; round: string; kind: 'pull' | 'remove' | 'browse' | 'erase' | 'clone' | 'fetch'; route: 'active' | 'temporary' | 's3'; pod_id: string | null; pod_name: string | null
+  id: string; round: string; kind: 'pull' | 'remove' | 'browse' | 'erase' | 'clone' | 'fetch' | 'delete-models'; route: 'active' | 'temporary' | 's3'; pod_id: string | null; pod_name: string | null
   /** The card the pod actually has and its price per hour, once the pod exists (the Queue shows them). */
   gpu?: string; price_per_hour?: number | null
   /** A volume job (`browse`, `erase`): the volume, what a browse found (folders with their sizes), what an erase was asked to clear and how many bytes it freed from each. */
@@ -255,6 +255,7 @@ export interface PodJob {
   /** A browse: the folder it listed (default the whole volume) */
   browse_path?: string
   /** A model fetch: the files asked for (as Hugging Face describes them) and the names the pod reported done */ fetch_items?: hf.Resolved[]; fetched?: string[]
+  /** A model delete (ADR-042 section 15): the files asked for (folder under models/, name under it), and the ones reported deleted with their sizes */ delete_items?: { folder: string; name: string }[]; deleted?: { folder: string; name: string; bytes: number }[]; freed_bytes?: number
   volume_id?: string; listing?: { path: string; bytes: number }[]; erase_keys?: string[]; freed?: Record<string, number>
   state: JobState; files: number; lines: string[]; error?: string; verify?: panama.Verify; started_at: string
   /** ADR-033: what placing the verified round on the pod did (files linked, graphs written, conflicts); set only after a pull whose check passed. A placing failure is here, never the pull's. */
@@ -268,6 +269,12 @@ const jobs = new Map<string, Internal>()
 const busy = new Set<string>()   // rounds with a job in flight: one at a time
 const TERMINAL: JobState[] = ['done', 'failed', 'cancelled']
 const view = (i: Internal): PodJob => ({ ...i.job, lines: [...i.job.lines], recent: [...i.job.recent] })
+
+/** A file the pod (or the S3 call) reported deleted: `folder/name` and its bytes. */
+function addDeleted(j: PodJob, path: string, bytes: number) {
+  const k = path.indexOf('/'); if (k < 1) return
+  ;(j.deleted ||= []).push({ folder: path.slice(0, k), name: path.slice(k + 1), bytes }); j.freed_bytes = (j.freed_bytes ?? 0) + bytes
+}
 
 // eslint-disable-next-line no-control-regex
 const stripAnsi = (s: string) => s.replace(/\u001b\[[0-9;]*m/g, '')
@@ -300,6 +307,9 @@ function feed(i: Internal, raw: string, secrets: string[]) {
   else if (/^FETCHED /.test(line)) { const m = /^FETCHED (\S.*?) (\d+|skipped)$/.exec(line); if (m) (j.fetched ||= []).push(m[1]) }
   else if (/^FETCH-DONE/.test(line)) i.outcome = 'removed'
   else if (/^FETCH-FAILED/.test(line)) { i.outcome = 'refused'; j.error = line.replace(/^FETCH-FAILED /, 'Download failed: ') }
+  else if (/^DELETED \S/.test(line)) { const m = /^DELETED (\S.*?) (\d+)$/.exec(line); if (m) addDeleted(j, m[1], Number(m[2])) }
+  else if (/^DELETE-DONE/.test(line)) i.outcome = 'removed'
+  else if (/^DELETE-FAILED/.test(line)) { i.outcome = 'refused'; j.error = line.replace(/^DELETE-FAILED /, 'Delete failed: ') }
   else if (/^BROWSE-FAILED/.test(line)) i.outcome = 'refused'
   else if (/^refused/.test(line)) i.outcome = 'refused'
 }
@@ -413,6 +423,47 @@ export function eraseScript(keys: string[]): string {
   lines.push('echo "ERASE-DONE"', '')
   return lines.join('\n')
 }
+// ----- deleting model files from a volume (ADR-042 section 15) -----
+
+/** Where the models live on a volume, as a path under /workspace and as an S3 key. */
+const MODELS_KEY = 'comfy-shared/models'
+const MODELS_ROOT = '/workspace/comfy-shared/models'
+/** Folders under models/ that hold the app's own bookkeeping (Binc's pull list and scripts), never model weights. */
+const MODELS_PROTECTED = new Set(['_canalv2_pull'])
+const SEG = /^[A-Za-z0-9_+@=,()-][\w .+@=,()-]*$/   // one path segment: plain characters, no leading dot, no glob or shell characters
+export const MAX_DELETE_FILES = 200
+/** The files to delete, checked: a folder directly under models/ (any that exists there, not only the ones Hugging Face loads go to) and a name under it, which may sit in sub-folders. No `..`, no absolute path, no globbing, never the bookkeeping folder. */
+export function checkDeleteItems(items: unknown): { folder: string; name: string }[] {
+  if (!Array.isArray(items) || !items.length) throw bad('Choose at least one file to delete.')
+  if (items.length > MAX_DELETE_FILES) throw bad(`At most ${MAX_DELETE_FILES} files at a time.`)
+  const seen = new Set<string>(), out: { folder: string; name: string }[] = []
+  for (const it of items as { folder?: unknown; name?: unknown }[]) {
+    const folder = String(it?.folder ?? ''), name = String(it?.name ?? '')
+    if (!SEG.test(folder) || folder.includes('/')) throw bad(`Not a folder under models/: ${folder}`)
+    if (MODELS_PROTECTED.has(folder)) throw bad(`${folder} holds the app's own bookkeeping files and is never deleted from.`)
+    const parts = name.split('/')
+    if (!name || name.startsWith('/') || parts.some((x) => !SEG.test(x) || x === '.' || x === '..')) throw bad(`Not a file name under models/${folder}/: ${name}`)
+    const k = `${folder}/${name}`; if (seen.has(k)) continue
+    seen.add(k); out.push({ folder, name })
+  }
+  return out
+}
+/** Removes the chosen files only (each path is rebuilt under the models root and checked again on the pod), one DELETED line each with its size, a MISSING line for one that is not there, then DELETE-DONE. */
+export function deleteModelsScript(items: { folder: string; name: string }[]): string {
+  const files = checkDeleteItems(items)
+  const lines = ['set -u', `root=${q(MODELS_ROOT)}`]
+  for (const f of files) {
+    lines.push(`f="$root"/${q(`${f.folder}/${f.name}`)}`,
+      'case "$f" in "$root"/*/*) ;; *) echo "DELETE-FAILED refused: $f"; exit 64 ;; esac',
+      'case "$f" in *..*|"$root"/_canalv2_pull/*) echo "DELETE-FAILED refused: $f"; exit 64 ;; esac',
+      `if [ -f "$f" ]; then b=$(stat -c %s "$f" 2>/dev/null || echo 0); rm -f -- "$f" && echo "DELETED ${f.folder}/${f.name} $b" || { echo "DELETE-FAILED could not delete ${f.folder}/${f.name}"; exit 1; }; else echo "MISSING ${f.folder}/${f.name}"; fi`)
+  }
+  lines.push('echo "DELETE-DONE"', '')
+  return lines.join('\n')
+}
+/** One line for the History: how many files and how much, with the names. */
+const deleteSummary = (j: PodJob) => `deleted ${j.deleted?.length ?? 0} of ${j.delete_items?.length ?? 0} model file(s), ${j.freed_bytes ?? 0} bytes: ${(j.deleted ?? []).map((f) => `${f.folder}/${f.name}`).join(', ')}`.slice(0, 600)
+
 /** Downloads the chosen files from Hugging Face onto the volume, on the pod: resumable, the size checked, then the sha256 Hugging Face gave; a file already there at the right size is left. Names, folders and URLs were fixed by `hf.resolve`; they are quoted here all the same. */
 export function fetchScript(items: hf.Resolved[], hfToken = ''): string {
   if (!items.length) throw bad('Choose at least one file.')
@@ -453,7 +504,7 @@ export function cloneScript(c: NonNullable<PodJob['clone']>, k: { id: string; se
   ].join('\n')
 }
 /** The script a job runs on its pod. */
-const scriptOf = (j: PodJob, k: { id: string; secret: string } | null): string => j.kind === 'clone' ? cloneScript(j.clone!, s3Keys()!) : j.kind === 'pull' ? (j.skip_shots?.length ? pullShotsScript(j.round, j.skip_shots, k!) : pullScript(j.round, k!)) : j.kind === 'browse' ? browseScript(j.browse_path) : j.kind === 'erase' ? eraseScript(j.erase_keys ?? []) : j.kind === 'fetch' ? fetchScript(j.fetch_items ?? [], settings.lookup('HF_TOKEN')) : removeScript(j.round)
+const scriptOf = (j: PodJob, k: { id: string; secret: string } | null): string => j.kind === 'clone' ? cloneScript(j.clone!, s3Keys()!) : j.kind === 'pull' ? (j.skip_shots?.length ? pullShotsScript(j.round, j.skip_shots, k!) : pullScript(j.round, k!)) : j.kind === 'browse' ? browseScript(j.browse_path) : j.kind === 'erase' ? eraseScript(j.erase_keys ?? []) : j.kind === 'fetch' ? fetchScript(j.fetch_items ?? [], settings.lookup('HF_TOKEN')) : j.kind === 'delete-models' ? deleteModelsScript(j.delete_items ?? []) : removeScript(j.round)
 const KILL_SCRIPT = 'pkill -f /opt/comfy-app/s3pull.sh; pkill -x rclone; true\n'
 
 export interface SshJob { host: string; port: number; script: string; onLine: (line: string) => void; signal: AbortSignal }
@@ -684,6 +735,7 @@ async function simulate(i: Internal, opts: Opts) {
       : j.kind === 'clone' ? [['pulling', ['clone: simulated', 'CLONE-DONE']]]
       : j.kind === 'fetch' ? [['pulling', [...(j.fetch_items ?? []).map((f) => `FETCHED ${f.name} ${f.bytes}`), 'FETCH-DONE']]]
       : j.kind === 'erase' ? [['deleting', [...(j.erase_keys ?? []).map((k) => `ERASED ${k} 100`), 'ERASE-DONE']]]
+      : j.kind === 'delete-models' ? [['deleting', [...(j.delete_items ?? []).map((f) => `DELETED ${f.folder}/${f.name} 100`), 'DELETE-DONE']]]
       : [['deleting', [`removed ${REMOTE_ROUNDS}/${j.round}`]]]
     for (const [state, lines] of steps) {
       if (i.cancelled) return
@@ -736,6 +788,18 @@ async function runS3(i: Internal, opts: Opts) {
       if (mine.length) await run(['s3', 'rm', `s3://${a.bucket}/${prefix}/`, '--recursive', ...(e.json_only ? ['--exclude', '*', '--include', '*.json', '--exclude', '*/*'] : [])])
       ;(j.freed ||= {})[key] = bytes
       j.lines.push(`ERASED ${key} ${bytes}`)
+    }
+    i.outcome = 'removed'; return
+  }
+  if (j.kind === 'delete-models') {
+    j.state = 'deleting'
+    const have = new Map<string, number>()   // the objects under models/ with their sizes: only exact keys are removed, never a prefix
+    for (const l of (await run(['s3', 'ls', `s3://${a.bucket}/${MODELS_KEY}/`, '--recursive'])).split('\n')) { const m = /^\S+\s+\S+\s+(\d+)\s+(.+)$/.exec(l); if (m) have.set(m[2], Number(m[1])) }
+    for (const f of j.delete_items ?? []) {
+      const key = `${MODELS_KEY}/${f.folder}/${f.name}`, bytes = have.get(key)
+      if (bytes === undefined) { j.lines.push(`MISSING ${f.folder}/${f.name}`); continue }
+      await run(['s3', 'rm', `s3://${a.bucket}/${key}`])
+      addDeleted(j, `${f.folder}/${f.name}`, bytes); j.lines.push(`DELETED ${f.folder}/${f.name} ${bytes}`)
     }
     i.outcome = 'removed'; return
   }
@@ -811,7 +875,7 @@ async function run(i: Internal, opts: Opts) {
   } finally {
     conclude(i)
     const jb = i.job
-    if (jb.state === 'done' || jb.state === 'failed' || jb.state === 'cancelled') history.record({ kind: 'job', job: jb.kind, state: jb.state, started_at: jb.started_at, what: jb.round, pod_id: jb.pod_id ?? undefined, pod_name: jb.pod_name ?? undefined, files: jb.files, bytes: jb.bytes_done || i.plan.bytes, ...(jb.place ? { detail: placeSummary(jb.place) } : {}), ...(jb.error ? { error: jb.error } : {}) })
+    if (jb.state === 'done' || jb.state === 'failed' || jb.state === 'cancelled') history.record({ kind: 'job', job: jb.kind, state: jb.state, started_at: jb.started_at, what: jb.round, pod_id: jb.pod_id ?? undefined, pod_name: jb.pod_name ?? undefined, files: jb.files, bytes: jb.bytes_done || i.plan.bytes, ...(jb.place ? { detail: placeSummary(jb.place) } : jb.kind === 'delete-models' ? { detail: deleteSummary(jb) } : {}), ...(jb.error ? { error: jb.error } : {}) })
     busy.delete(i.job.round)
   }
 }
@@ -881,7 +945,7 @@ export async function volumePlan(volumeId: string, opts: Opts = {}): Promise<Pod
   // The S3 API when the volume's datacenter has it and the keys are set: no pod, no cost. Otherwise a pod does it, and the plan says why.
   return a.ok ? { ...p, route: 's3', pod: null, gpu: '', price_per_hour: 0, choices: undefined } : { ...p, s3_note: a.why }
 }
-async function startVolumeJob(volumeId: string, kind: 'browse' | 'erase', keys: string[], opts: Opts, path?: string): Promise<PodJob> {
+async function startVolumeJob(volumeId: string, kind: 'browse' | 'erase' | 'delete-models', keys: string[], opts: Opts, path?: string, deleteItems?: { folder: string; name: string }[]): Promise<PodJob> {
   const label = volLabel(volumeId)
   const live = [...jobs.values()].find((x) => !TERMINAL.includes(x.job.state) && x.plan.volume?.id === volumeId)
   if (live && !(live.job.kind === kind && kind === 'browse')) throw new CoreError(409, `A ${live.job.kind} job is running on this volume (${live.job.round}): wait for it to finish.`)
@@ -889,7 +953,7 @@ async function startVolumeJob(volumeId: string, kind: 'browse' | 'erase', keys: 
   try {
     const p = await volumePlan(volumeId, opts)
     const i = newJob(label, kind, p, (opts.now ?? (() => new Date()))())
-    i.job.volume_id = volumeId; if (kind === 'erase') i.job.erase_keys = keys; if (kind === 'browse') i.job.browse_path = browsePathOf(path)
+    i.job.volume_id = volumeId; if (kind === 'erase') i.job.erase_keys = keys; if (kind === 'browse') i.job.browse_path = browsePathOf(path); if (kind === 'delete-models') i.job.delete_items = deleteItems ?? []
     void run(i, { ...opts, volumeId })
     return view(i)
   } catch (e) { busy.delete(label); throw e }
@@ -975,6 +1039,13 @@ export async function fetchModels(volumeId: string, items: hf.FetchItem[], o: { 
     void run(i, { ...opts, volumeId })
     return view(i)
   } catch (e) { busy.delete(label); throw e }
+}
+
+/** Delete model files from a volume's comfy-shared/models/ (ADR-042 section 15). Not reversible: the caller must say `confirmed: true` (the window asks first and lists the files). Over RunPod's S3 API when the volume has it (no pod, no cost), else by a short pod or yours on the volume. Refused while another job runs on the volume. Nothing but the named files goes: not a folder, not a prefix, not the bookkeeping folder. */
+export async function deleteModels(volumeId: string, items: { folder: string; name: string }[], o: { confirmed?: boolean }, opts: Opts = {}): Promise<PodJob> {
+  volLabel(volumeId)
+  if (o?.confirmed !== true) throw bad('Deleting model files cannot be undone: confirm it (confirmed: true).')
+  return startVolumeJob(volumeId, 'delete-models', [], opts, undefined, checkDeleteItems(items))
 }
 
 export function job(id: string): PodJob | null { const i = jobs.get(id); return i ? view(i) : null }

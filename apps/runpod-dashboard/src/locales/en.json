@@ -827,7 +827,14 @@
     "onVolume": "Already on the volume",
     "onVolumeUnknown": "What the volume holds is not known without listing it (add RunPod S3 keys in Default Configuration for a free listing).",
     "onVolumeNone": "No model files found under models/.",
-    "want": "Add to wanted list"
+    "want": "Add to wanted list",
+    "deleteOne": "Delete this file from the volume",
+    "deleteSelected": "Delete selected ({n}, {size})",
+    "delete": "Delete",
+    "fileOne": "{n} file",
+    "fileMany": "{n} files",
+    "confirmDelete": "Delete {what}, {size}, from {volume}? This cannot be undone.",
+    "deleteDone": "Deleted {what}, {size} freed."
   },
   "wanted": {
     "title": "Wanted models ({n})",

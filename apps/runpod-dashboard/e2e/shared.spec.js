@@ -97,6 +97,46 @@ test.describe('Shared', () => {
     await expect(m.getByTestId('models-no-results')).toBeVisible()
   })
 
+  test('Models: files already on the volume can be deleted one by one or several at once, after a confirmation; the bookkeeping folder is not offered', async ({ page, api }) => {
+    api.state.sharedVolume = 'vol1'
+    api.state.modelsOnVolume = [
+      { folder: 'vae', name: 'ae.safetensors', bytes: 335000000 },
+      { folder: 'diffusion_models', name: 'z_image.safetensors', bytes: 12000000000 },
+      { folder: 'checkpoints', name: 'ltx-2.3/ltx-2.3-22b-dev-fp8.safetensors', bytes: 29145431166 },
+      { folder: '_canalv2_pull', name: 'MODELS_PULL_v003.csv', bytes: 6375 },
+    ]
+    await page.goto('/')
+    await openModels(page)
+    const m = page.getByTestId('models-modal')
+    const row = (path) => m.locator(`[data-testid="models-on-volume-file"][data-path="${path}"]`)
+    await expect(m.getByTestId('models-on-volume-file')).toHaveCount(4)
+    await expect(row('_canalv2_pull/MODELS_PULL_v003.csv').getByTestId('models-delete-one')).toHaveCount(0)    // Binc's pull list is bookkeeping: no Delete
+    await expect(row('_canalv2_pull/MODELS_PULL_v003.csv').getByTestId('models-delete-check')).toHaveCount(0)
+    await expect(m.getByTestId('models-delete-selected')).toBeDisabled()
+    // one file: the trash icon asks first; No leaves everything as it was
+    await row('vae/ae.safetensors').getByTestId('models-delete-one').click()
+    const msg = await answerConfirm(page, false)
+    expect(msg).toContain(t('models.fileOne', { n: 1 })); expect(msg).toContain('vae/ae.safetensors'); expect(msg).toContain('cannot be undone')
+    expect(api.state.modelDeletes).toBeUndefined()
+    await expect(m.getByTestId('models-on-volume-file')).toHaveCount(4)
+    // Yes: the core is asked with confirmed: true, the list refreshes and the job says what was freed
+    await row('vae/ae.safetensors').getByTestId('models-delete-one').click()
+    await answerConfirm(page, true)
+    await expect(m.getByTestId('models-on-volume-file')).toHaveCount(3)
+    await expect(m.getByTestId('models-job')).toContainText(t('models.fileOne', { n: 1 }))
+    expect(api.state.modelDeletes).toEqual([{ volume_id: 'vol1', items: [{ folder: 'vae', name: 'ae.safetensors' }] }])
+    // several at once: tick two, the button carries the count, the confirmation lists both
+    await row('diffusion_models/z_image.safetensors').getByTestId('models-delete-check').check()
+    await row('checkpoints/ltx-2.3/ltx-2.3-22b-dev-fp8.safetensors').getByTestId('models-delete-check').check()
+    await expect(m.getByTestId('models-delete-selected')).toBeEnabled()
+    await expect(m.getByTestId('models-delete-selected')).toContainText('(2,')
+    await m.getByTestId('models-delete-selected').click()
+    const msg2 = await answerConfirm(page, true)
+    expect(msg2).toContain(t('models.fileMany', { n: 2 })); expect(msg2).toContain('diffusion_models/z_image.safetensors'); expect(msg2).toContain('checkpoints/ltx-2.3/ltx-2.3-22b-dev-fp8.safetensors')
+    await expect(m.getByTestId('models-on-volume-file')).toHaveCount(1)
+    expect(api.state.modelDeletes[1]).toEqual({ volume_id: 'vol1', items: [{ folder: 'diffusion_models', name: 'z_image.safetensors' }, { folder: 'checkpoints', name: 'ltx-2.3/ltx-2.3-22b-dev-fp8.safetensors' }] })
+  })
+
   test('the agent rules are one app-wide setting: a switch and a ceiling, saved with the settings', async ({ page, api }) => {
     await page.goto('/')
     await page.getByTestId('open-config').click()

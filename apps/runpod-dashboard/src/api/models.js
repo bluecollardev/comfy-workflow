@@ -11,6 +11,7 @@ const ipc = core && {
   fetch: (volumeId, items) => core.invoke('models', 'fetch', [volumeId || '', items]),
   status: (volumeId) => core.invoke('models', 'status', [volumeId || '']),
   folders: () => core.invoke('models', 'folders'),
+  delete: (volumeId, items, confirmed) => core.invoke('models', 'delete', [volumeId || '', items, confirmed === true]),
 }
 const http = {
   async search(q) { const { data } = await axios.get(`${API_BASE}/models/search`, { params: { q } }); return data },
@@ -18,5 +19,6 @@ const http = {
   async fetch(volumeId, items) { const { data } = await axios.post(`${API_BASE}/models/fetch`, { volume_id: volumeId || '', items }); return data },
   async status(volumeId) { const { data } = await axios.get(`${API_BASE}/models/status`, { params: { volume_id: volumeId || '' } }); return data },
   async folders() { const { data } = await axios.get(`${API_BASE}/models/folders`); return data },
+  async delete(volumeId, items, confirmed) { const { data } = await axios.post(`${API_BASE}/models/delete`, { volume_id: volumeId || '', items, confirmed: confirmed === true }); return data },
 }
 export const modelsAPI = ipc || http

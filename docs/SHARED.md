@@ -110,6 +110,10 @@ Depth Anything V2 Large fp32 and fp16, SeedVR2 3B fp16 and VAE, SAM 2.1 base+ an
 
 The names of the models you want on a Shared volume, kept in the configuration and exported with it (section *Wanted models*), so a new machine or a new datacenter can be filled from the same list (ADR-042 section 12). Open Shared > Models: add files from a search (*Add to wanted list*), record what the volume holds (*Saved List*) or add Binc's list above (*Install Defaults*, read off the volume or pasted). Each row shows whether the volume has it; *Load Missing* fetches the rest from Hugging Face in jobs of 20 files, and warns when the volume is too small. MCP: `models_wanted`, `models_wanted_add`, `models_wanted_remove`, `models_load_wanted`.
 
+### Deleting models already on the volume
+
+Shared > Models lists what the volume holds ("Already on the volume"). Tick files (or use a row's trash icon) and press *Delete selected*: the app asks first and lists the files and the GB; the files are removed from `comfy-shared/models/` (over RunPod's S3 API with no pod when the volume has it, else by a short pod). The `_canalv2_pull` folder is never deleted from. A deleted model stays in the wanted list and shows as missing. MCP: `models_delete` with `confirmed: true`. Details: ADR-042 section 15.
+
 ## Custom nodes
 
 ### Packs in the repo (`shared/nodes/packs.json`)
