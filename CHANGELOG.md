@@ -3,6 +3,10 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## v1.2.4 (tag v1.2.4, 2026-11-16)
+
+- The Shared > Models list of what the volume holds no longer blanks and reloads every 6 s while a download runs; a failed refresh (a RunPod limit, a dropped link) keeps the list that was shown (`29fede9`).
+
 ## v1.2.3 (tag v1.2.3, 2026-11-16)
 
 ### RunPod's request limit (ADR-042 section 18)
