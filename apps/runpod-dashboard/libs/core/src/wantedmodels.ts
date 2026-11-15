@@ -77,11 +77,12 @@ export async function saveInstalled(volumeId?: string, opts: PullOpts = {}) {
   return { ...add(items), skipped }
 }
 
-export type RowState = 'present' | 'missing' | 'unknown'
-export interface Row extends wanted.WantedModel { key: string; state: RowState; loadable: boolean }
+export type RowState = 'present' | 'downloading' | 'missing' | 'unknown'
+/** `downloaded` is the bytes of the file's `<name>.part` when one is on the volume (a download is under way, or was interrupted: Load Missing resumes it). */
+export interface Row extends wanted.WantedModel { key: string; state: RowState; loadable: boolean; downloaded?: number }
 export interface Status {
   volume_id: string; volume_name: string | null; datacenter: string | null; volume_gb: number | null
-  rows: Row[]; present: number; missing: number; unknown: number; missing_bytes: number; present_bytes: number
+  rows: Row[]; present: number; downloading: number; missing: number; unknown: number; missing_bytes: number; present_bytes: number
   /** the models on the volume plus the missing ones are more than the volume's size (rounds and other data on it are not counted, so this is the least it needs) */
   short_by_bytes: number
 }
@@ -92,15 +93,17 @@ export async function status(volumeId?: string, opts: PullOpts = {}): Promise<St
   const have = new Map((onVol ?? []).map((v) => [`${v.folder}/${v.name}`, v.bytes]))
   const rows: Row[] = list().map((e) => {
     const got = have.get(`${e.folder}/${e.name}`)
-    const state: RowState = onVol === null ? 'unknown' : got !== undefined && (e.bytes === 0 || got >= e.bytes * 0.98) ? 'present' : 'missing'
-    return { ...e, key: wanted.keyOf(e), state, loadable: !!e.repo }
+    const part = have.get(`${e.folder}/${e.name}.part`)
+    const state: RowState = onVol === null ? 'unknown' : got !== undefined && (e.bytes === 0 || got >= e.bytes * 0.98) ? 'present' : part !== undefined ? 'downloading' : 'missing'
+    return { ...e, key: wanted.keyOf(e), state, loadable: !!e.repo, ...(part !== undefined && state === 'downloading' ? { downloaded: part } : {}) }
   })
   const sum = (s: RowState) => rows.filter((r) => r.state === s).reduce((n, r) => n + r.bytes, 0)
-  const present_bytes = onVol ? onVol.reduce((n, v) => n + v.bytes, 0) : 0, missing_bytes = sum('missing')
+  const present_bytes = onVol ? onVol.reduce((n, v) => n + v.bytes, 0) : 0
+  const missing_bytes = sum('missing') + rows.filter((r) => r.state === 'downloading').reduce((n, r) => n + Math.max(0, r.bytes - (r.downloaded ?? 0)), 0)   // what is still to come: the part already on the volume is in present_bytes
   const cap = info ? info.size_gb * 1e9 : null
   return {
     volume_id: vol, volume_name: info?.name ?? null, datacenter: info?.datacenter ?? null, volume_gb: info?.size_gb ?? null, rows,
-    present: rows.filter((r) => r.state === 'present').length, missing: rows.filter((r) => r.state === 'missing').length, unknown: rows.filter((r) => r.state === 'unknown').length,
+    present: rows.filter((r) => r.state === 'present').length, downloading: rows.filter((r) => r.state === 'downloading').length, missing: rows.filter((r) => r.state === 'missing').length, unknown: rows.filter((r) => r.state === 'unknown').length,
     missing_bytes, present_bytes, short_by_bytes: cap === null ? 0 : Math.max(0, present_bytes + missing_bytes - cap),
   }
 }

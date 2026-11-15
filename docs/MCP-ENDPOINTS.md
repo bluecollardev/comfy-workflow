@@ -187,6 +187,7 @@ Each tool calls the core function the window's IPC channel calls. `mcp/parity.mj
 | `volume_erase` | `approved_by`, `volume_id`, `what`, `confirm_name` | Empty chosen folders (`what` from the fixed list; `models` is in no default). Not reversible; the volume's exact name is typed back. | spend; `approved_by` only when `agent_named_yes_required` is on |
 | `volume_clone` | `approved_by`, `volume_id`, `to_volume_id?` or `new_volume?`, `include_input?` | Copy a volume to another datacenter: RunPod to RunPod by a pod on each (rsync over SSH, a one-off key), or through the S3 API when keys exist. The source is never changed. | spend; `approved_by` only when `agent_named_yes_required` is on |
 | `volume_job` | `job_id`, `action?`, `plan_volume_id?` | State of a volume_files / erase / clone job (listing, freed bytes); `cancel` deletes its pod; `plan_volume_id` says where a job would run and what it costs. | read |
+| `volume_jobs` | `action?` (`list`, `drop`), `name?` | The jobs on volumes, newest first, with a download's progress (file i of n, bytes, rate, ETA), and the `interrupted` temporary pods of jobs lost at a restart; `drop` deletes one by name | `drop` removes a pod |
 
 #### Panama / BH rounds
 

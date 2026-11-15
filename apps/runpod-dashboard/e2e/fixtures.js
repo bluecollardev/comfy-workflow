@@ -353,7 +353,7 @@ export async function mockApi(page, state) {
       if (image.includes('missing')) return json({ ...base, built: null, error: 'manifest unknown', env: [], ports: [], entrypoint: [], labels: {}, created: null, source: null, source_path: null, source_kind: null, source_note: 'No source repository is known for this image: it has no org.opencontainers.image.source label and is not in the known list.' })
       return json({ ...base, built: '# Reconstructed from ' + image + '\nRUN git clone comfy\nCOPY packs /opt/ComfyUI/custom_nodes/' })
     }
-    if ((m = path.match(/^\/volumes\/([^/]+)$/)) && method === 'GET' && !['job', 'erasable'].includes(m[1])) { const v = state.volumes[m[1]]; return v ? json(v) : json({ detail: `no network volume ${m[1]}` }, 404) }
+    if ((m = path.match(/^\/volumes\/([^/]+)$/)) && method === 'GET' && !['job', 'jobs', 'erasable'].includes(m[1])) { const v = state.volumes[m[1]]; return v ? json(v) : json({ detail: `no network volume ${m[1]}` }, 404) }
     if (method === 'POST' && path === '/queue/plan') return json({ round: body.round, shots: ['cgi-042', 'cgi-043'], price_per_hour: 3.99, pull_hours: 0.5, est_total_usd: 6.98, max_pods: 2, cost_cap_usd: 50, cap_enabled: true, over_cap: false })
     if (method === 'POST' && path === '/queue/import-many') { for (const i of body.items) { const one = { round: i.round, shots: i.shots, cards: i.cards, max_pods: i.max_pods, cost_cap_usd: body.cost_cap_usd == null ? undefined : Math.round(body.cost_cap_usd / body.items.length * 100) / 100, approved_by: body.approved_by, run_workflows: body.run_workflows, volume_id: body.volume_id }; state.imported = one; (state.importedAll ||= []).push(one) }
       state.queue = { imports: body.items.map((i, n) => ({ id: `imp${n + 1}`, round: i.round, approved_by: body.approved_by, state: 'active', spent_usd: 0, cap_enabled: true, cost_cap_usd: body.cost_cap_usd, max_pods: i.max_pods, counts: {} })), tasks: [{ id: 't1', import_id: 'imp1', round: body.items[0].round, shot: null, kind: 'pull', state: 'running', pod_name: 'pull' }, ...body.items[0].shots.map((s, k) => ({ id: `t${k + 2}`, import_id: 'imp1', round: body.items[0].round, shot: s, kind: 'run', state: k ? 'waiting' : 'failed', error: k ? undefined : 'boom (node 4, KSampler)' }))], active: 1 + body.items[0].shots.length }; return json(state.queue.imports) }
@@ -393,7 +393,7 @@ export async function mockApi(page, state) {
       const gone = new Set((body.items || []).map((i) => `${i.folder}/${i.name}`)), at = (f) => f.path || [f.folder, f.name].filter(Boolean).join('/')
       const freed = (state.modelsOnVolume || []).filter((f) => gone.has(at(f))).reduce((n, f) => n + (f.bytes ?? f.size ?? 0), 0)
       state.modelsOnVolume = (state.modelsOnVolume || []).filter((f) => !gone.has(at(f)))
-      state.volumeJob = { id: 'vjd1', kind: 'delete-models', state: 'done', volume_id: body.volume_id, route: 's3', deleted: (body.items || []).map((i) => ({ ...i, bytes: 1 })), freed_bytes: freed, lines: [] }
+      state.volumeJob = { id: `vjd${state.modelDeletes.length}`, kind: 'delete-models', state: 'done', volume_id: body.volume_id, route: 's3', deleted: (body.items || []).map((i) => ({ ...i, bytes: 1 })), freed_bytes: freed, lines: [] }
       return json({ ...state.volumeJob, state: 'creating', deleted: undefined, lines: [] })
     }
     if (method === 'GET' && path === '/models/status') return json(state.modelsOnVolume === undefined ? null : state.modelsOnVolume)
@@ -407,7 +407,7 @@ export async function mockApi(page, state) {
       if (method === 'GET' && path === '/wanted') return json(list)
       if (method === 'GET' && path === '/wanted/status') {
         const on = state.wantedOnVolume
-        const rows = list.map((e) => ({ ...e, key: keyOf(e), loadable: !!e.repo, state: on === undefined ? 'unknown' : on.includes(`${e.folder}/${e.name}`) ? 'present' : 'missing' }))
+        const rows = list.map((e) => ({ ...e, key: keyOf(e), loadable: !!e.repo, state: on === undefined ? 'unknown' : on.includes(`${e.folder}/${e.name}`) ? 'present' : (state.wantedParts || {})[`${e.folder}/${e.name}`] !== undefined ? 'downloading' : 'missing', ...((state.wantedParts || {})[`${e.folder}/${e.name}`] !== undefined ? { downloaded: state.wantedParts[`${e.folder}/${e.name}`] } : {}) }))   // a <name>.part on the volume: Downloading
         const missing = rows.filter((r) => r.state === 'missing')
         return json({ volume_id: query.volume_id || 'vol1', volume_gb: state.wantedVolumeGb ?? 500, rows, present: rows.filter((r) => r.state === 'present').length, missing: missing.length, unknown: 0, missing_bytes: missing.reduce((n, r) => n + r.bytes, 0), present_bytes: 0, short_by_bytes: state.wantedShort || 0 })
       }
@@ -433,6 +433,12 @@ export async function mockApi(page, state) {
       return json(g)
     }
     if (method === 'POST' && path === '/volumes/job/cancel') { state.volumeJob = { ...(state.volumeJob || {}), id: body.id, state: 'cancelled' }; state.volumeJobCancelled = body.id; return json(state.volumeJob) }
+    if (method === 'GET' && path === '/volumes/jobs') {   // ADR-042 section 16: the volume jobs list the Models window, the Queue and the nav badge poll; `volumeSteps` advances one state per call, as a real job moves on
+      if (state.volumeSteps?.length) { const now = Date.now(); if (state.volumeStepAt === undefined || now - state.volumeStepTs >= 1500) { const k = Math.min((state.volumeStepAt ?? -1) + 1, state.volumeSteps.length - 1); state.volumeStepAt = k; state.volumeStepTs = now; state.volumeJob = state.volumeSteps[k] } }   // one state per 1.5 s, whoever asks
+      const list = state.volumeJob ? [state.volumeJob] : []
+      return json({ jobs: list, interrupted: state.interrupted || [], running: list.filter((j) => !['done', 'failed', 'cancelled'].includes(j.state)).length })
+    }
+    if (method === 'POST' && path === '/volumes/jobs/drop') { state.droppedPod = body.name; state.interrupted = (state.interrupted || []).filter((p) => p.name !== body.name); return json({ deleted: body.name }) }
     if (method === 'GET' && path === '/volumes/job') return json(state.volumeJob || { id: query.id, state: 'failed', error: 'no job' })
     if (method === 'POST' && path === '/volumes') {
       const v = { id: `vol-new-${Object.keys(state.volumes).length + 1}`, name: body.name, size_gb: body.size_gb, datacenter: body.datacenter, cost_per_month: Math.round(body.size_gb * 7) / 100, s3: body.datacenter === 'EU-RO-1', is_default: false, pods: [] }

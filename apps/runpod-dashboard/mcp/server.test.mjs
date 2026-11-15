@@ -58,7 +58,7 @@ test('initialize hands every client the governance instructions', async () => {
 const POOL = ['list_agents', 'get_pool_status', 'governance', 'create_agent', 'stop_agent', 'resume_agent', 'delete_agent', 'health_check_agent', 'get_agent_info', 'submit_job', 'get_job_status']
 const PODS = ['list_pods', 'get_pod', 'create_pod', 'stop_pod', 'resume_pod', 'delete_pod', 'recreate_pod', 'get_history', 'get_spend_history', 'get_comfy_runs', 'get_comfy_logs', 'export_history', 'rename_pod', 'set_pod_round', 'set_pod_shot', 'delete_round', 'rename_round', 'set_idle_stop', 'get_logs', 'list_datacenters', 'list_volumes', 'create_volume', 'delete_volume', 'set_default_volume', 'get_configuration', 'sync', 'sync_status', 'adapter_spec', 'adapters_list', 'adapter_save', 'import_plan', 'import_apply', 'get_credits', 'cost_now']
 // The tools the app's other windows added (docs/ADR-028), in the order app-tools.mjs defines them.
-const APP = ['list_gpus', 'get_volume_info', 'get_pod_config', 'set_pod_config', 'set_configuration', 'preview_configuration', 'reset_configuration', 'get_local_env', 'list_dirs', 'get_settings', 'set_settings', 'check_anthropic_key', 'config_export', 'config_import_plan', 'config_import_apply', 'config_undo', 'config_backups', 'resize_volume', 'volume_files', 'volume_erase', 'volume_clone', 'volume_job', 'agent_guard_status', 'models_search', 'models_files', 'models_fetch', 'models_status', 'models_delete', 'models_wanted', 'models_wanted_add', 'models_wanted_remove', 'models_load_wanted', 'set_shared_volume', 'panama_status', 'panama_rounds', 'panama_round_files', 'panama_stage', 'panama_round_size', 'panama_pod_plan', 'panama_pull', 'panama_job', 'panama_cancel', 'panama_remove', 'plan_round_import', 'import_rounds', 'import_round', 'queue_list', 'queue_task', 'list_pod_workflows', 'run_pod_workflows', 'pod_models', 'run_workflows_job', 'panama_place', 'panama_import', 'import_detect', 'package_summary', 'package_tree', 'package_file', 'package_describe', 'adapter_draft', 'adapter_document', 'adapter_problems', 'adapter_manage', 'sync_after', 'image_env', 'image_dockerfile', 'git_accounts', 'repositories', 'remote_mcp', 'mcp_endpoints', 'docs']
+const APP = ['list_gpus', 'get_volume_info', 'get_pod_config', 'set_pod_config', 'set_configuration', 'preview_configuration', 'reset_configuration', 'get_local_env', 'list_dirs', 'get_settings', 'set_settings', 'check_anthropic_key', 'config_export', 'config_import_plan', 'config_import_apply', 'config_undo', 'config_backups', 'resize_volume', 'volume_files', 'volume_erase', 'volume_clone', 'volume_job', 'volume_jobs', 'agent_guard_status', 'models_search', 'models_files', 'models_fetch', 'models_status', 'models_delete', 'models_wanted', 'models_wanted_add', 'models_wanted_remove', 'models_load_wanted', 'set_shared_volume', 'panama_status', 'panama_rounds', 'panama_round_files', 'panama_stage', 'panama_round_size', 'panama_pod_plan', 'panama_pull', 'panama_job', 'panama_cancel', 'panama_remove', 'plan_round_import', 'import_rounds', 'import_round', 'queue_list', 'queue_task', 'list_pod_workflows', 'run_pod_workflows', 'pod_models', 'run_workflows_job', 'panama_place', 'panama_import', 'import_detect', 'package_summary', 'package_tree', 'package_file', 'package_describe', 'adapter_draft', 'adapter_document', 'adapter_problems', 'adapter_manage', 'sync_after', 'image_env', 'image_dockerfile', 'git_accounts', 'repositories', 'remote_mcp', 'mcp_endpoints', 'docs']
 
 test('an agent writes an adapter and tests it on a real folder; the code stays open to read', async () => {
   const spec = textOf(ok(await call('adapter_spec')))
@@ -411,6 +411,15 @@ test('models_delete: needs the named yes (on here) and confirmed: true; refuses 
   assert.equal(book.result.isError, true); assert.match(textOf(book), /bookkeeping/)
   const none = await call('models_delete', { volume_id: 'vol1', items: [], approved_by: 'Lucas', confirmed: true })
   assert.equal(none.result.isError, true); assert.match(textOf(none), /at least one/)
+})
+
+test('volume_jobs: lists the volume jobs (progress) and the interrupted pods; drop refuses a name that is not an interrupted volume-job pod', async () => {
+  const r = await call('volume_jobs', {})
+  assert.ok(!r.result.isError); const v = JSON.parse(first(r)); assert.ok(Array.isArray(v.jobs)); assert.ok(Array.isArray(v.interrupted)); assert.equal(typeof v.running, 'number')
+  const nope = await call('volume_jobs', { action: 'drop', name: 'ComfyUI-Pull-vol-nope' })
+  assert.equal(nope.result.isError, true); assert.match(textOf(nope), /No interrupted volume job pod/)
+  const noName = await call('volume_jobs', { action: 'drop' })
+  assert.equal(noName.result.isError, true); assert.match(textOf(noName), /name/)
 })
 
 test('the wanted-models list: add by entries and by CSV, list, remove; loading spends and needs the named yes', async () => {

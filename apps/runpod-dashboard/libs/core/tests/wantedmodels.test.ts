@@ -58,6 +58,16 @@ describe('status', () => {
     expect((await wm.status('vol1', { aws })).rows.every((r) => r.state === 'unknown')).toBe(true)
   })
 })
+describe('status: a download under way', () => {
+  it('a wanted model with a <name>.part on the volume is downloading (with the part bytes), counts what is still to come, and stays loadable so Load Missing resumes it', async () => {
+    wm.add([{ folder: 'text_encoders', repo: 'a/b', path: 'q.safetensors', bytes: 8000000000 }, { folder: 'vae', repo: 'a/b', path: 'v.safetensors', bytes: 1500000000 }])
+    const awsPart: podpull.AwsRunner = async () => ({ code: 0, stdout: ['2026 x 2000000000 comfy-shared/models/text_encoders/q.safetensors.part', '2026 x 1500000000 comfy-shared/models/vae/v.safetensors'].join('\n'), stderr: '' })
+    const s = await wm.status('vol1', { aws: awsPart })
+    expect(s.rows.map((r) => `${r.name}:${r.state}`)).toEqual(['q.safetensors:downloading', 'v.safetensors:present'])
+    expect(s.rows[0]).toMatchObject({ downloaded: 2000000000, loadable: true })
+    expect(s).toMatchObject({ present: 1, downloading: 1, missing: 0, missing_bytes: 6000000000 })
+  })
+})
 describe('loadMissing', () => {
   const fakeJobs = () => {
     const calls: { vol: string; n: number }[] = []; const states = new Map<string, string>(); let n = 0
