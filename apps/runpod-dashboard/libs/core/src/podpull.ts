@@ -930,10 +930,9 @@ export async function eraseVolume(volumeId: string, keys: string[], o: { approve
   return startVolumeJob(volumeId, 'erase', ks, opts)
 }
 
-/** Put model files from Hugging Face onto a volume (ADR-042): a short pod (or yours running on it) downloads them straight into `comfy-shared/models/<folder>/`. Spends the pod's minutes, so it needs the name behind the yes (`approved_by`). The files are looked up on Hugging Face again here; see hf.resolve. */
+/** Put model files from Hugging Face onto a volume (ADR-042): a short pod (or yours running on it) downloads them straight into `comfy-shared/models/<folder>/`. Spends the pod's minutes. From the window the click is the yes (`approved_by` is optional and, when absent, the History says it was clicked in the app); the MCP tool still requires a name, as an agent's spend does (shared/governance/policy/agent-permissions.md). The files are looked up on Hugging Face again here; see hf.resolve. */
 export async function fetchModels(volumeId: string, items: hf.FetchItem[], o: { approved_by?: string }, opts: Opts & { fetchFn?: typeof fetch } = {}): Promise<PodJob> {
   const label = volLabel(volumeId)
-  if (!String(o.approved_by ?? '').trim()) throw new CoreError(400, 'Downloading models needs a name behind it: approved_by.')
   const resolved = await hf.resolve(items, opts.fetchFn)
   const live = [...jobs.values()].find((x) => !TERMINAL.includes(x.job.state) && x.plan.volume?.id === volumeId)
   if (live) throw new CoreError(409, `A ${live.job.kind} job is running on this volume (${live.job.round}): wait for it to finish.`)
@@ -941,7 +940,7 @@ export async function fetchModels(volumeId: string, items: hf.FetchItem[], o: { 
   try {
     const p = await plan(label, { ...opts, volumeId, sizeOf: () => ({ files: 0, bytes: 0 }) })   // always a pod: the download happens there, not over S3
     const i = newJob(label, 'fetch', p, (opts.now ?? (() => new Date()))())
-    i.job.volume_id = volumeId; i.job.fetch_items = resolved
+    i.job.volume_id = volumeId; i.job.fetch_items = resolved; i.job.lines.push(`Approved by ${String(o.approved_by ?? '').trim() || 'a click in the app window'}.`)
     void run(i, { ...opts, volumeId })
     return view(i)
   } catch (e) { busy.delete(label); throw e }
