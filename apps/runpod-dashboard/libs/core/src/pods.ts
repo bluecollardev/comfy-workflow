@@ -14,6 +14,7 @@ import * as podnames from './podnames.js'
 import * as podrounds from './podrounds.js'
 import * as history from './history.js'
 import * as rp from './runpod.js'
+import * as rl from './ratelimit.js'
 import * as dry from './dry.js'
 
 export const PREBUILT_IMAGE = 'ashleykza/comfyui:latest'   // the stock image: no packs, ignores COMFY_LINKS
@@ -258,13 +259,20 @@ export function stats(pods: PodStatus[]) {
 /** RunPod's network volume price: USD 0.07 per GB a month for the first TB, 0.05 beyond (docs.runpod.io/storage/s3-api, 2026-10-21). */
 export const volumeCostPerMonth = (sizeGb: number) => Math.round((Math.min(sizeGb, 1000) * 0.07 + Math.max(sizeGb - 1000, 0) * 0.05) * 100) / 100
 
-export interface VolumeInfo { id: string; name: string; size_gb: number; datacenter: string; cost_per_month: number; s3: boolean }
+export interface VolumeInfo { id: string; name: string; size_gb: number; datacenter: string; cost_per_month: number; s3: boolean; /** the last record seen while RunPod limits requests */ stale?: true }
 /** The configured network volume (or the one asked for) with what it costs a month; null when RunPod has no such volume. */
 export async function volumeInfo(id?: string, client?: rp.RunPodClient): Promise<VolumeInfo | null> {
   const vid = (id ?? (mounts.load().network_volume_id || '')).trim()
   if (!vid) return null
   if (isDry()) return { id: vid, name: 'simulated', size_gb: 100, datacenter: 'CA-MTL-1', cost_per_month: volumeCostPerMonth(100), s3: false }
-  const v = await rp.networkVolume(vid, client)
+  let v: rp.NetworkVolume | null
+  try { v = await rp.networkVolume(vid, client) } catch (e) {
+    if (!(e instanceof rl.RateLimited)) throw e
+    const last = rl.lastVolume(vid)   // RunPod is limiting requests: the last record seen, else only the id
+    const cfg = mounts.load()
+    return last ? { id: last.id, name: last.name, size_gb: last.size, datacenter: last.dataCenterId, cost_per_month: volumeCostPerMonth(last.size), s3: S3_DATACENTERS.has(last.dataCenterId), stale: true }
+      : { id: vid, name: vid, size_gb: 0, datacenter: cfg.data_center_id || '', cost_per_month: 0, s3: S3_DATACENTERS.has(cfg.data_center_id || ''), stale: true }
+  }
   return v && { id: v.id, name: v.name, size_gb: v.size, datacenter: v.dataCenterId, cost_per_month: volumeCostPerMonth(v.size), s3: S3_DATACENTERS.has(v.dataCenterId) }
 }
 

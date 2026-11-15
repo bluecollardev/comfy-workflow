@@ -540,7 +540,7 @@ async function loadDatacenters(fresh = false) {
 }
 loadDatacenters()
 // Stock changes by the minute (ADR-026): the list and the card prices follow it while the form is open.
-const dcTimer = setInterval(() => { loadDatacenters(true); loadGpus() }, 60_000)
+const dcTimer = setInterval(() => { loadDatacenters(true); loadGpus() }, 120_000)   // the core shares one answer for two minutes anyway (ADR-042 section 18)
 onUnmounted(() => clearInterval(dcTimer))
 const effectiveConfig = computed(() => form.config || mounts.config)
 const volumeDc = computed(() => (effectiveConfig.value?.network_volume_id ? (effectiveConfig.value.data_center_id || '') : null))

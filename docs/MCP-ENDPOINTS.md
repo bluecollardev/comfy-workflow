@@ -171,6 +171,7 @@ Each tool calls the core function the window's IPC channel calls. `mcp/parity.mj
 
 | Tool | Arguments (`?` optional) | Does | Gate |
 |---|---|---|---|
+| `rate_limit_status` | none | Whether RunPod is limiting the app's requests (ADR-042 section 18): `limited`, `window` (`minute` or `hour`), `retry_at`, `since`, `stale_age_s` (how old the cached answer last served is) and `message`. Local state: no request to RunPod. While limited, the list tools answer from the last good answer, and every object answer carries a `rate_limited` field (a list stays a list: ask this tool). | read |
 | `agent_guard_status` | none | The agent shell guard: `enabled` (the setting), `installed` (the Bash hook is in this OS user's Claude Code settings and its script is executable), the two paths. Switch it with `set_settings` `agent_shell_guard`. | read |
 | `models_search` | `query` | Search Hugging Face for model repos: id, downloads, likes, update date, gated. | read |
 | `models_files` | `repo`, `revision?` | A repo's weight files (`.safetensors`, `.gguf`, `.pth`) with exact size, sha256 and the models folder each probably belongs in. | read |

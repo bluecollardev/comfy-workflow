@@ -226,7 +226,13 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
 
   const NO_SPEND = '(no-spend mode: simulated pod; nothing reached RunPod, nothing is billed)'
   const text = (t, isError = false) => ({ content: [{ type: 'text', text: pool.dryRun() ? `${t}\n\n${NO_SPEND}` : t }], isError })
-  const json = (v) => text(JSON.stringify(pool.dryRun() && v && !Array.isArray(v) && typeof v === 'object' ? { ...v, dry_run: true } : v, null, 2))
+  /** RunPod's request limit (ADR-042 section 18): an object answer carries it while it holds; a list stays a list (ask rate_limit_status). */
+  const limitNow = () => { try { const s = core.ratelimit?.status?.(); return s?.limited ? s : null } catch { return null } }
+  const json = (v) => {
+    const isObj = v && !Array.isArray(v) && typeof v === 'object'
+    const rl = isObj && !('retry_at' in v && 'limited' in v) ? limitNow() : null
+    return text(JSON.stringify(isObj ? { ...v, ...(pool.dryRun() ? { dry_run: true } : {}), ...(rl ? { rate_limited: rl } : {}) } : v, null, 2))
+  }
   const round2 = (n) => Math.round(n * 100) / 100
   /** An answer with no no-spend note: for documentation and other things that are not about pods. */
   const plain = (v, isError = false) => ({ content: [{ type: 'text', text: typeof v === 'string' ? v : JSON.stringify(v, null, 2) }], isError })

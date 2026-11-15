@@ -16,7 +16,7 @@ export const useVolumesStore = defineStore('volumes', () => {
 
   async function load() {
     loading.value = true; error.value = null
-    try { volumes.value = (await volumesAPI.list()) || [] } catch (e) { error.value = e.response?.data?.detail || e.message } finally { loading.value = false }
+    try { volumes.value = (await volumesAPI.list()) || [] } catch (e) { error.value = e.response?.data?.detail || e.message /* the list already on screen stays */ } finally { loading.value = false }
   }
   async function act(id, label, action, ok) {
     busyId.value = id; error.value = null

@@ -86,6 +86,9 @@ const TABLE = {
     export: (c, opts) => c.history.exportHistory({ format: opts && opts.format, what: opts && opts.what }),
     logs: (c, podId, opts) => c.comfyruns.logs(podId, opts || {}),
   },
+  ratelimit: {
+    status: (c) => c.ratelimit.status(),   // RunPod's request limit: local state, no request to RunPod
+  },
   volumes: {
     list: (c) => c.volumes.list(),
     create: (c, input) => c.volumes.create(input),

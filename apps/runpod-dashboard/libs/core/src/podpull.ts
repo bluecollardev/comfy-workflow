@@ -34,6 +34,7 @@ import { configDir } from './paths.js'
 import * as place from './place.js'
 import * as pods from './pods.js'
 import * as rp from './runpod.js'
+import * as rl from './ratelimit.js'
 import * as settings from './settings.js'
 import * as sync from './sync.js'
 import * as volumesMod from './volumes.js'
@@ -158,8 +159,9 @@ async function volumeOf(opts: Opts): Promise<Volume | null> {
   try {
     const v = await pods.volumeInfo(id, opts.client)
     if (v) { const vol = { id: v.id, name: v.name, datacenter: v.datacenter }; volCache.set(id, vol); return vol }
-  } catch { /* fall back to what the configuration says */ }
-  return volCache.get(id) ?? { id, name: id, datacenter: cfg.data_center_id || '' }
+  } catch { /* fall back to what was last seen, then to what the configuration says */ }
+  const last = rl.lastVolume(id)
+  return volCache.get(id) ?? (last ? { id, name: last.name, datacenter: last.dataCenterId } : { id, name: id, datacenter: cfg.data_center_id || '' })
 }
 
 export interface PodPlan {
