@@ -7,7 +7,7 @@
       <div class="col-md-7 small" data-testid="models-target">
         <template v-if="target">
           <i class="fa-solid fa-hard-drive me-1"></i>{{ $t('models.target', { name: target.name, dc: target.datacenter }) }}
-          <span class="text-body-secondary">{{ target.is_shared ? $t('models.targetShared') : $t('models.targetDefault') }}</span>
+          <span v-if="!target.is_shared" class="text-body-secondary">{{ $t('models.targetDefault') }}</span>
         </template>
         <span v-else class="text-warning">{{ $t('models.targetNone') }}</span>
       </div>
