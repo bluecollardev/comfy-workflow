@@ -21,11 +21,11 @@ const PANAMA_PATTERNS = {
 /** The secrets this file holds, by the name they are stored under, and the field `set` takes them by (a configuration export carries these, docs/ADR-023). */
 export const SECRET_FIELDS = {
   RUNPOD_API_KEY: 'runpod_api_key', RUNPOD_S3_ACCESS_KEY: 'runpod_s3_access_key', RUNPOD_S3_SECRET_KEY: 'runpod_s3_secret_key',
-  PANAMA_AWS_ACCESS_KEY_ID: 'panama_aws_access_key', PANAMA_AWS_SECRET_ACCESS_KEY: 'panama_aws_secret_key', PANAMA_CONSOLE_KEY: 'panama_console_key', ANTHROPIC_API_KEY: 'anthropic_api_key',
+  PANAMA_AWS_ACCESS_KEY_ID: 'panama_aws_access_key', PANAMA_AWS_SECRET_ACCESS_KEY: 'panama_aws_secret_key', PANAMA_CONSOLE_KEY: 'panama_console_key', ANTHROPIC_API_KEY: 'anthropic_api_key', HF_TOKEN: 'hf_token',
 } as const
 export type SecretName = keyof typeof SECRET_FIELDS
 export const SECRET_NAMES_LIST = Object.keys(SECRET_FIELDS) as SecretName[]
-const MIN_LENGTH: Partial<Record<SecretName, number>> = { RUNPOD_API_KEY: 16, ANTHROPIC_API_KEY: 20, PANAMA_CONSOLE_KEY: 8 }
+const MIN_LENGTH: Partial<Record<SecretName, number>> = { RUNPOD_API_KEY: 16, ANTHROPIC_API_KEY: 20, PANAMA_CONSOLE_KEY: 8, HF_TOKEN: 8 }
 
 /** Whether `set` would accept this secret (null), or why not. The reason names the key and never contains the value. */
 export function checkSecret(name: string, v: unknown): string | null {
@@ -76,7 +76,7 @@ export function checkPanama(key: 'bucket' | 'region' | 'profile', v: unknown): s
   const [re, what] = PANAMA_PATTERNS[key]
   return re.test(t) ? null : `Panama ${key}: ${t.slice(0, 80)} is not ${what}`
 }
-const KEYS = ['AGENT_REQUIRE_NAMED_YES', 'AGENT_SPEND_CAP_USD', 'AGENT_SHELL_GUARD', 'PANAMA_S3_BUCKET', 'PANAMA_S3_REGION', 'PANAMA_S3_PROFILE', 'RUNPOD_API_KEY', 'RUNPOD_S3_ACCESS_KEY', 'RUNPOD_S3_SECRET_KEY', 'ANTHROPIC_API_KEY', 'PANAMA_CONSOLE_KEY', 'PANAMA_AWS_ACCESS_KEY_ID', 'PANAMA_AWS_SECRET_ACCESS_KEY'] as const   // ANTHROPIC_API_KEY: only for "Write an adapter with Claude" (ADR-008); optional   // the S3 pair: uploads onto a volume with no pod (ADR-007 G)
+const KEYS = ['AGENT_REQUIRE_NAMED_YES', 'AGENT_SPEND_CAP_USD', 'AGENT_SHELL_GUARD', 'PANAMA_S3_BUCKET', 'PANAMA_S3_REGION', 'PANAMA_S3_PROFILE', 'RUNPOD_API_KEY', 'RUNPOD_S3_ACCESS_KEY', 'RUNPOD_S3_SECRET_KEY', 'ANTHROPIC_API_KEY', 'HF_TOKEN', 'PANAMA_CONSOLE_KEY', 'PANAMA_AWS_ACCESS_KEY_ID', 'PANAMA_AWS_SECRET_ACCESS_KEY'] as const   // ANTHROPIC_API_KEY: only for "Write an adapter with Claude" (ADR-008); optional   // the S3 pair: uploads onto a volume with no pod (ADR-007 G)
 
 function readEnvFile(): Record<string, string> {
   const f = file()
@@ -129,16 +129,17 @@ export function get() {
   const s3 = (process.env.RUNPOD_S3_ACCESS_KEY || stored.RUNPOD_S3_ACCESS_KEY || '') && (process.env.RUNPOD_S3_SECRET_KEY || stored.RUNPOD_S3_SECRET_KEY || '')
   const claude = process.env.ANTHROPIC_API_KEY || stored.ANTHROPIC_API_KEY || ''
   const panama = process.env.PANAMA_CONSOLE_KEY || stored.PANAMA_CONSOLE_KEY || ''
+  const hfToken = process.env.HF_TOKEN || stored.HF_TOKEN || ''
   const awsId = process.env.PANAMA_AWS_ACCESS_KEY_ID || stored.PANAMA_AWS_ACCESS_KEY_ID || ''
   const awsSecret = process.env.PANAMA_AWS_SECRET_ACCESS_KEY || stored.PANAMA_AWS_SECRET_ACCESS_KEY || ''
   const eff = (name: string, d: string) => process.env[name] || stored[name] || d
   const panamaCfg = { panama_bucket: eff('PANAMA_S3_BUCKET', PANAMA_DEFAULTS.bucket), panama_region: eff('PANAMA_S3_REGION', PANAMA_DEFAULTS.region), panama_profile: eff('PANAMA_S3_PROFILE', PANAMA_DEFAULTS.profile), panama_defaults: { ...PANAMA_DEFAULTS } }
   const rules = agentRules()
-  return { agent_shell_guard: rules.shell_guard, agent_named_yes_required: rules.require_named_yes, agent_spend_cap_usd: rules.spend_cap_usd, ...panamaCfg, panama_aws_keys_set: !!(awsId && awsSecret), panama_aws_access_key_hint: hint(awsId), panama_console_key_set: !!panama, panama_console_key_hint: hint(panama), anthropic_key_set: !!claude, anthropic_key_hint: hint(claude), s3_keys_set: !!s3, s3_access_key_hint: hint(process.env.RUNPOD_S3_ACCESS_KEY || stored.RUNPOD_S3_ACCESS_KEY || ''), runpod_api_key_set: !!key, runpod_api_key_hint: hint(key), source: process.env.RUNPOD_API_KEY && !stored.RUNPOD_API_KEY ? 'environment' : stored.RUNPOD_API_KEY ? file() : 'none' }
+  return { hf_token_set: !!hfToken, hf_token_hint: hint(hfToken), agent_shell_guard: rules.shell_guard, agent_named_yes_required: rules.require_named_yes, agent_spend_cap_usd: rules.spend_cap_usd, ...panamaCfg, panama_aws_keys_set: !!(awsId && awsSecret), panama_aws_access_key_hint: hint(awsId), panama_console_key_set: !!panama, panama_console_key_hint: hint(panama), anthropic_key_set: !!claude, anthropic_key_hint: hint(claude), s3_keys_set: !!s3, s3_access_key_hint: hint(process.env.RUNPOD_S3_ACCESS_KEY || stored.RUNPOD_S3_ACCESS_KEY || ''), runpod_api_key_set: !!key, runpod_api_key_hint: hint(key), source: process.env.RUNPOD_API_KEY && !stored.RUNPOD_API_KEY ? 'environment' : stored.RUNPOD_API_KEY ? file() : 'none' }
 }
 
 /** Store a secret. An empty value leaves the stored one alone; `null` removes it. */
-export function set(values: { panama_console_url?: string | null; agent_shell_guard?: boolean | null; agent_named_yes_required?: boolean | null; agent_spend_cap_usd?: number | null; panama_bucket?: string | null; panama_region?: string | null; panama_profile?: string | null; anthropic_api_key?: string | null; runpod_api_key?: string | null; runpod_s3_access_key?: string | null; runpod_s3_secret_key?: string | null; panama_console_key?: string | null; panama_aws_access_key?: string | null; panama_aws_secret_key?: string | null }) {
+export function set(values: { panama_console_url?: string | null; agent_shell_guard?: boolean | null; agent_named_yes_required?: boolean | null; agent_spend_cap_usd?: number | null; panama_bucket?: string | null; panama_region?: string | null; panama_profile?: string | null; anthropic_api_key?: string | null; hf_token?: string | null; runpod_api_key?: string | null; runpod_s3_access_key?: string | null; runpod_s3_secret_key?: string | null; panama_console_key?: string | null; panama_aws_access_key?: string | null; panama_aws_secret_key?: string | null }) {
   const updates: Record<string, string> = {}
   // The bucket, region and profile: ordinary settings, not secrets. A value equal to the built-in default (or empty, or null) removes the override.
   for (const [field, key, name] of [['panama_bucket', 'bucket', 'PANAMA_S3_BUCKET'], ['panama_region', 'region', 'PANAMA_S3_REGION'], ['panama_profile', 'profile', 'PANAMA_S3_PROFILE']] as const) {
@@ -171,6 +172,12 @@ export function set(values: { panama_console_url?: string | null; agent_shell_gu
     const v = values.anthropic_api_key.trim()
     if (/\s/.test(v) || v.length < 20) throw bad('That does not look like an Anthropic API key (no spaces, at least 20 characters)')
     updates.ANTHROPIC_API_KEY = v
+  }
+  if (values.hf_token === null) updates.HF_TOKEN = ''
+  else if (values.hf_token && values.hf_token.trim()) {
+    const v = values.hf_token.trim()
+    if (/\s/.test(v) || v.length < 8) throw bad('That does not look like a Hugging Face token (no spaces; it starts with hf_)')
+    updates.HF_TOKEN = v
   }
   if (values.runpod_api_key === null) updates.RUNPOD_API_KEY = ''
   else if (values.runpod_api_key) {

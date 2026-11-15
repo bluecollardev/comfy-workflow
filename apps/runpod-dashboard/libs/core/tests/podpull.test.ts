@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import * as dry from '../src/dry.js'
 import * as gpus from '../src/gpus.js'
+import * as history from '../src/history.js'
 import * as idle from '../src/idle.js'
 import * as mounts from '../src/mounts.js'
 import * as panama from '../src/panama.js'
@@ -653,9 +654,33 @@ describe('models from Hugging Face onto a volume (ADR-042)', () => {
     const sc = calls[0].script
     expect(sc).toContain('d=/workspace/comfy-shared/models/vae'); expect(sc).toContain('d=/workspace/comfy-shared/models/diffusion_models')
     expect(sc).toContain("'https://huggingface.co/Comfy-Org/SeedVR2/resolve/main/vae/seedvr2_ema_vae_fp16.safetensors'")
-    expect(sc).toContain('curl -fL --retry 5'); expect(sc).toContain('-C -'); expect(sc).toContain('b'.repeat(64) + '  $f.part'); expect(sc).toContain('sha256sum -c -')
+    expect(sc).toContain('curl -fL --proto-redir =https --retry 5'); expect(sc).toContain('-C -'); expect(sc).toContain('b'.repeat(64) + '  $f.part'); expect(sc).toContain('sha256sum -c -')
     expect(sc).toContain('stat -c %s'); expect(sc).toContain('echo "FETCH-DONE"')
     expect(rp.calls.terminated).toEqual(['newpod1'])
+  })
+  it('with a Hugging Face token the script reads it from a RAM file, sends it only with -L (never --location-trusted), and no job line, record or event ever holds it', async () => {
+    const TOKEN = 'hf_PODPULL_SECRET_TOKEN_5555'
+    process.env.HF_TOKEN = TOKEN
+    try {
+      const rp = fakeRunPod()
+      const calls: podpull.SshJob[] = []
+      const ssh: podpull.SshRunner = async (j) => { calls.push(j); j.onLine(`debug: the pod echoed ${TOKEN} by mistake`); j.onLine('FETCHED seedvr2_ema_vae_fp16.safetensors 501324814'); j.onLine('FETCH-DONE'); return { code: 0 } }
+      const j = await done((await podpull.fetchModels('vol1', items.slice(0, 1), {}, { ...base({ client: rp.client, ssh }), fetchFn: hfFetch })).id)
+      expect(j.state).toBe('done')
+      const sc = calls[0].script.split('\n')
+      expect(sc.filter((l) => l.includes(TOKEN))).toHaveLength(1)   // once: the line that writes the curl config file
+      expect(sc.find((l) => l.includes(TOKEN))).toMatch(/^printf 'header = "Authorization: Bearer %s"\\n' '.*' > "\$H"$/)
+      expect(sc.join('\n')).toMatch(/mktemp \/dev\/shm\/hf\./); expect(sc.join('\n')).toContain(`trap 'rm -f "$H"' EXIT`); expect(sc.join('\n')).toContain('umask 077')
+      const curl = sc.find((l) => l.includes('curl -fL'))!
+      expect(curl).toContain('-K "$H"'); expect(curl).toContain('--proto-redir =https'); expect(calls[0].script).not.toContain('--location-trusted'); expect(curl).not.toContain(TOKEN)
+      expect(JSON.stringify(j)).not.toContain(TOKEN); expect(j.lines.join('\n')).toContain('***')
+      expect(JSON.stringify(history.list({ limit: 500 }))).not.toContain(TOKEN)
+    } finally { delete process.env.HF_TOKEN }
+  })
+  it('without a token the script has no Authorization at all', () => {
+    delete process.env.HF_TOKEN
+    const sc = podpull.fetchScript([{ repo: 'o/r', revision: 'main', path: 'a.safetensors', name: 'a.safetensors', folder: 'vae', bytes: 1, sha256: 'a'.repeat(64), url: 'https://huggingface.co/o/r/resolve/main/a.safetensors' }])
+    expect(sc).not.toMatch(/Authorization|-K |mktemp/); expect(sc).toContain('curl -fL --proto-redir =https')
   })
   it('a failed download is a failed job (the pod says which file), and the refusals come before any pod', async () => {
     const rp = fakeRunPod()

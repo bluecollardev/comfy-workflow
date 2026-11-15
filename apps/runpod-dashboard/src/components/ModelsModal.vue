@@ -39,7 +39,7 @@
         <tbody>
           <tr v-for="f in files" :key="f.path" data-testid="models-file" :data-path="f.path">
             <td style="width: 2rem"><input v-model="chosen[f.path]" type="checkbox" class="form-check-input" :disabled="busy" :aria-label="f.path" data-testid="models-file-check" /></td>
-            <td class="font-monospace small text-break">{{ f.path }}</td>
+            <td class="font-monospace small text-break">{{ f.path }}<BBadge v-if="f.locked" variant="warning" class="ms-2" data-testid="models-file-locked" :title="$t('models.gatedTitle')">{{ $t('models.locked') }}</BBadge></td>
             <td class="text-nowrap small text-body-secondary" data-testid="models-file-size">{{ fmt(f.bytes) }}</td>
             <td style="width: 12rem"><BFormSelect v-model="folders[f.path]" :options="FOLDERS" size="sm" :disabled="busy" :aria-label="$t('models.folder')" data-testid="models-file-folder" /></td>
           </tr>
@@ -47,9 +47,10 @@
       </table>
       <div v-if="files.length" class="d-flex align-items-center gap-3">
         <span class="small text-body-secondary" data-testid="models-selected">{{ $t('models.selected', { n: picked.length, size: fmt(pickedBytes) }) }}</span>
-        <BButton size="sm" variant="primary" :disabled="!picked.length || !target || busy" data-testid="models-load" @click="load"><i class="fa-solid fa-cloud-arrow-down me-1"></i>{{ $t('models.load') }}</BButton>
+        <BButton size="sm" variant="primary" :disabled="!picked.length || !target || busy || lockedPicked" data-testid="models-load" @click="load"><i class="fa-solid fa-cloud-arrow-down me-1"></i>{{ $t('models.load') }}</BButton>
         <BButton size="sm" variant="outline-light" :disabled="!picked.length" data-testid="models-want" @click="want"><i class="fa-solid fa-bookmark me-1"></i>{{ $t('models.want') }}</BButton>
-        <span class="small text-body-secondary">{{ $t('models.billed') }}</span>
+        <span v-if="lockedPicked" class="small text-warning" data-testid="models-locked-note">{{ $t('models.lockedNote') }}</span>
+        <span v-else class="small text-body-secondary">{{ $t('models.billed') }}</span>
       </div>
     </div>
 
@@ -137,6 +138,7 @@ let timer = null
 const target = computed(() => volumes.shared || volumes.volumes.find((v) => v.id === mounts.config?.network_volume_id) || volumes.volumes.find((v) => v.is_default) || null)
 const sharedOptions = computed(() => [{ value: '', text: t('models.sharedNone') }, ...volumes.volumes.map((v) => ({ value: v.id, text: `${v.name} (${v.datacenter})` }))])
 const picked = computed(() => files.value.filter((f) => chosen[f.path]))
+const lockedPicked = computed(() => picked.value.some((f) => f.locked))
 const pickedBytes = computed(() => picked.value.reduce((n, f) => n + (f.bytes || 0), 0))
 const busy = computed(() => !!job.value && !TERMINAL.includes(job.value.state))
 

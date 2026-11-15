@@ -61,6 +61,12 @@
             </div>
           </BFormGroup>
         </BCol>
+        <BCol v-if="!gated" md="8">
+          <BFormGroup :label="$t('config.hfToken')" label-for="cfg-hf-token" data-testid="cfg-hf-group" :description="keyInfo.hf_token_set ? $t('config.hfStored', { hint: keyInfo.hf_token_hint }) : $t('config.hfUnset')">
+            <BFormInput id="cfg-hf-token" v-model.trim="newHf" type="password" autocomplete="off" placeholder="hf_…" class="font-monospace" data-testid="cfg-hf-token" />
+            <div class="form-text">{{ $t('config.hfHelp') }} <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener">huggingface.co/settings/tokens</a></div>
+          </BFormGroup>
+        </BCol>
         <BCol v-if="!gated" md="12"><hr class="my-1" /><div class="small fw-semibold" data-testid="cfg-panama-title">{{ $t('config.panamaTitle') }}</div><div class="form-text mt-0">{{ $t('config.panamaHelp') }}</div></BCol>
         <BCol v-if="!gated" md="6">
           <BFormGroup :label="$t('config.panamaAccess')" label-for="cfg-panama-access" data-testid="cfg-panama-group" :description="keyInfo.panama_aws_keys_set ? $t('config.panamaStored', { hint: keyInfo.panama_aws_access_key_hint }) : $t('config.panamaUnset')">
@@ -434,6 +440,7 @@ const requireSource = ref('config')
 const picker = reactive({ open: false, key: '', title: '', start: '', memory: '' })
 const keyInfo = ref({ runpod_api_key_set: false, runpod_api_key_hint: '', source: 'none', anthropic_key_set: false, anthropic_key_hint: '' })
 const newClaude = ref('')
+const newHf = ref('')
 const claudeChecking = ref(false)
 const claudeResult = ref(null)
 /** The Anthropic key tests itself, no button: the stored one when the panel opens, a typed one a moment after the typing stops (it is tested
@@ -700,6 +707,10 @@ async function save() {
   }
   if (newClaude.value) {
     try { keyInfo.value = await settingsAPI.set({ anthropic_api_key: newClaude.value }); claudeSaved = true; newClaude.value = ''; await settingsStore.load() }
+    catch (e) { error.value = e.response?.data?.detail || e.message; saving.value = false; return }
+  }
+  if (newHf.value) {
+    try { keyInfo.value = await settingsAPI.set({ hf_token: newHf.value }); newHf.value = '' }
     catch (e) { error.value = e.response?.data?.detail || e.message; saving.value = false; return }
   }
   const r = await mounts.save(body())

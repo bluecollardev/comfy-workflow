@@ -8,10 +8,10 @@ import * as mounts from '../src/mounts.js'
 import * as settings from '../src/settings.js'
 
 // Export and import of the Default Configuration (docs/ADR-023): keys and tokens travel in the file (Lucas, 2026-11-03), nothing secret is ever shown, validate then preview then apply, backup and undo.
-const ENVS = ['MOUNTS_FILE', 'SETTINGS_ENV_FILE', 'POD_MANAGER_BACKUPS_DIR', 'GIT_ACCOUNTS_FILE', 'PANAMA_S3_BUCKET', 'PANAMA_S3_REGION', 'PANAMA_S3_PROFILE', 'RUNPOD_API_KEY', 'ANTHROPIC_API_KEY', 'PANAMA_AWS_ACCESS_KEY_ID', 'PANAMA_AWS_SECRET_ACCESS_KEY', 'PANAMA_CONSOLE_KEY']
+const ENVS = ['MOUNTS_FILE', 'SETTINGS_ENV_FILE', 'POD_MANAGER_BACKUPS_DIR', 'GIT_ACCOUNTS_FILE', 'PANAMA_S3_BUCKET', 'PANAMA_S3_REGION', 'PANAMA_S3_PROFILE', 'RUNPOD_API_KEY', 'ANTHROPIC_API_KEY', 'PANAMA_AWS_ACCESS_KEY_ID', 'PANAMA_AWS_SECRET_ACCESS_KEY', 'PANAMA_CONSOLE_KEY', 'HF_TOKEN']
 const KEYS_ALL = {
   RUNPOD_API_KEY: 'rpa_THIS_IS_A_RUNPOD_SECRET_1234', RUNPOD_S3_ACCESS_KEY: 'user_S3ACCESS_VALUE_ABCD', RUNPOD_S3_SECRET_KEY: 'rps_S3SECRET_VALUE_EFGH',
-  PANAMA_AWS_ACCESS_KEY_ID: 'AKIAEXAMPLESECRET99', PANAMA_AWS_SECRET_ACCESS_KEY: 'panama-secret-value-do-not-leak', PANAMA_CONSOLE_KEY: 'console-key-value-xyz-123', ANTHROPIC_API_KEY: 'sk-ant-THIS-IS-AN-ANTHROPIC-KEY-0000',
+  PANAMA_AWS_ACCESS_KEY_ID: 'AKIAEXAMPLESECRET99', PANAMA_AWS_SECRET_ACCESS_KEY: 'panama-secret-value-do-not-leak', PANAMA_CONSOLE_KEY: 'console-key-value-xyz-123', ANTHROPIC_API_KEY: 'sk-ant-THIS-IS-AN-ANTHROPIC-KEY-0000', HF_TOKEN: 'hf_SYSTEM_TOKEN_SECRET_9999',
 } as const
 const GIT = { id: 'gh-1', provider: 'github', host: 'github.com', username: 'octocat', name: null, avatar_url: null, profile_url: null, scope: 'repo', token: 'ghp_GITHUB_TOKEN_SECRET_5555', refresh_token: 'ghr_REFRESH_TOKEN_SECRET_6666', expires_at: null, connected_at: 1_700_000_000 } as git.Account
 const ENV_SECRETS = { HF_TOKEN: 'hf_ENV_TOKEN_SECRET_7777', AWS_SECRET_ACCESS_KEY: 'aws-env-secret-8888' }

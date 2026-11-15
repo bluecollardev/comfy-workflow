@@ -118,6 +118,38 @@ test.describe('Shared', () => {
     await expect(again.getByTestId('cfg-agent-cap')).toHaveValue('40')
   })
 
+  test('a gated repo: its files are listed (name, size) with a gated badge but cannot be loaded; the Hugging Face token is a setting that is stored and shown as a hint only', async ({ page, api }) => {
+    api.state.sharedVolume = 'vol1'
+    await page.goto('/')
+    await openModels(page)
+    const m = page.getByTestId('models-modal')
+    await m.getByTestId('models-search').fill('gated')
+    await m.getByTestId('models-search-go').click()
+    await m.locator('[data-testid="models-result"][data-repo="someone/gated-model"]').click()
+    const row = m.locator('[data-testid="models-file"][data-path="gated-model-fp8.safetensors"]')
+    await expect(row.getByTestId('models-file-locked')).toBeVisible()
+    await row.getByTestId('models-file-check').check()
+    await expect(m.getByTestId('models-load')).toBeDisabled()
+    await expect(m.getByTestId('models-locked-note')).toContainText(t('models.lockedNote'))
+    await m.getByTestId('models-want').click()                                           // naming it for later is allowed
+    expect(api.state.wantedAdds[0]).toMatchObject([{ repo: 'someone/gated-model', path: 'gated-model-fp8.safetensors' }])
+    await page.keyboard.press('Escape')
+    await page.getByTestId('open-config').click()
+    const dialog = configModal(page)
+    await cfgTab(dialog, 'runpod')
+    await expect(dialog.getByTestId('cfg-hf-group')).toContainText(t('config.hfUnset'))
+    await dialog.getByTestId('cfg-hf-token').fill('hf_0123456789ABCDEFGHWXYZ')
+    await dialog.getByTestId('config-save').click()
+    await expect(dialog).toBeHidden()
+    expect(api.state.settings.hf_token_set).toBe(true)
+    expect(JSON.stringify(api.state.settings)).not.toContain('0123456789ABCDEFGH')       // only the hint is kept
+    await page.getByTestId('open-config').click()
+    const again = configModal(page)
+    await cfgTab(again, 'runpod')
+    await expect(again.getByTestId('cfg-hf-group')).toContainText('••••WXYZ')
+    await expect(again.getByTestId('cfg-hf-token')).toHaveValue('')
+  })
+
   test('Wanted models: add files from a search, save what the volume holds, add Binc\'s list (pasted when the volume cannot be read), see what is missing, load it', async ({ page, api }) => {
     api.state.sharedVolume = 'vol1'
     api.state.wantedOnVolume = ['diffusion_models/seedvr2_ema_3b_fp16.safetensors']
