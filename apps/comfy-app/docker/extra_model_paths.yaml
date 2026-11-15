@@ -11,3 +11,11 @@ shared:
   loras: loras
   upscale_models: upscale_models
   vae: vae
+  text_encoders: text_encoders
+  vae_approx: vae_approx
+  latent_upscale_models: latent_upscale_models
+  model_patches: model_patches
+  unet: unet
+  depthanything: depthanything
+  sam2: sam2
+  SEEDVR2: SEEDVR2

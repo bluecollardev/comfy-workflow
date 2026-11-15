@@ -14,7 +14,7 @@ PORT="${COMFY_PORT:-8188}"
 mkdir -p "$SHARED/input" "$SHARED/output" "$SHARED/models"
 # ComfyUI-Shared/models mirrors the Mac layout; make sure the folders exist so
 # extra_model_paths.yaml points at something.
-for d in checkpoints clip clip_vision controlnet diffusion_models embeddings loras upscale_models vae; do
+for d in checkpoints clip clip_vision controlnet diffusion_models embeddings loras upscale_models vae text_encoders vae_approx latent_upscale_models model_patches unet depthanything sam2 SEEDVR2; do
   mkdir -p "$SHARED/models/$d"
 done
 # Workflows live on the mount, so they change without a rebuild and survive the pod. ComfyUI's Workflows panel reads the mount through the link.
