@@ -5,6 +5,9 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased
 
+## v1.1.11 (2026-11-15)
+Tagged `v1.1.11`; DMG on bluecollardev/downloads. The default image is pinned by digest (`sha256:a06a461c…`, with its CUDA 13 pair); Shared (Volumes and Models windows, a Shared volume that cannot be deleted, Hugging Face search and load by a short pod, no approval asked); a VAE and diffusion model per pod and as defaults; the agent rules (named yes, ceiling) as off-by-default system-wide settings with no hard-coded cap; the agent shell guard in Connect, MCP; the export and import carry the agent rules, MCP connections and merged Repositories and accounts; MCP first and one Repositories tab in Connect. See ADR-042.
+
 ### The export carries repositories, accounts and MCP connections (ADR-023 amendment)
 - Lucas: "make sure accounts, repositories and mcp connections are stored in the export / import too". Sections `mcp_connections` (the console URL; the key stays in secrets) and `repositories` (repositories and accounts merged; tokens only through the secrets section, otherwise flagged token missing), both after `mcp` in the plan, each with plan, apply and undo.
 
