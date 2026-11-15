@@ -3,7 +3,14 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
-## Unreleased
+## v1.2.0 (tag v1.2.0, 2026-11-16)
+
+### The v27 image (ADR-042)
+- Lucas: "bump image to v27, rebuild images, re-release as 1.2 minor version update". New set `contract-v27` in comfy-node-packs (`1f5bb8c`): contract-v26's ShotPipe packs; every image also carries ComfyUI-OCIO, ComfyUI-LTXVideo, ComfyUI-BincPlateIO-v004 and ComfyUI-BincGenDPX-v002 (Binc's 15 Nov package), with import checks in the Dockerfile and the extra model folders mapped (text_encoders, vae_approx, latent_upscale_models, model_patches, unet, depthanything, sam2, SEEDVR2). Built from `334b45e`: CUDA 12.6 `@sha256:c0b6ec76db493318d0b28b5e9905523abe0cfb2246baca92326044dc462d5969` (tag `contract-v27-334b45e`), CUDA 13 `@sha256:edae46f4d87ba86ba039abce053867d301d6500dec2b8126f13c22574b12e769` (tag `contract-v27-cu13-334b45e`); pinned as the default image and its CUDA 13 pair (`b4c1f71`). Tested on pods (RTX 4090 cu126, RTX PRO 6000 cu130): 3349 nodes, OCIOVAEDecode, BincSeqToImage, BincWritePlateDPX, BincWriteGenDPX_v002, BH_ReadSequence, BH_ReadStill, 84 LTX nodes load. The workflow's digest step had a colon in a step name that made the workflow invalid (no job ran since the v1.1.11 work): fixed.
+- The release's `build/build-info.json` still says `contract-v26` (start.sh's package default); changed for the next release.
+- Also in this release: default card (RTX PRO 6000), wanted-models list in the export, Hugging Face token for gated repos, delete models on the Shared volume, title-case buttons and badges. Known failing spec: e2e-electron/import-claude.spec.js:66 (a viewport check).
+
+### Also in v1.2.0
 
 ### Delete models already on the volume (ADR-042 section 15)
 - Lucas: "Already on the volume models should be able to be deleted too." Shared > Models: a checkbox and trash icon per file, *Delete selected (n, size)*, an app confirmation that lists the files; the core's `deleteModels` (S3 `rm` of exact keys with no pod, or a short pod's `delete-models` job), `confirmed: true` required, traversal, globs and `_canalv2_pull` refused, refused while another job runs; MCP `models_delete`. The wanted list keeps what was deleted. Not tried on a real volume.

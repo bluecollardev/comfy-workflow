@@ -119,11 +119,11 @@ case "${1:-help}" in
     # ./start.sh package [mac|win|linux|all] [--comfy <set-or-tag>] [--image <registry ref>]
     #   -> apps/runpod-dashboard/dist-electron/<variant>/
     # The variant is a comfy-app build (apps/comfy-app/build.sh, a ShotPipe set from
-    # shared/nodes/sets.json, default contract-v26). It is baked into the app as
+    # shared/nodes/sets.json, default contract-v27). It is baked into the app as
     # build/build-info.json: the image a new pod boots by default (--image, the pushed
     # reference of that build; else the local tag, refused at pod creation until pushed).
     shift; target="${1:-mac}"; [ $# -gt 0 ] && shift
-    variant="contract-v26"; image=""
+    variant="contract-v27"; image=""
     while [ $# -gt 0 ]; do case "$1" in
       --comfy) variant="$2"; shift 2 ;;
       --image) image="$2"; shift 2 ;;
