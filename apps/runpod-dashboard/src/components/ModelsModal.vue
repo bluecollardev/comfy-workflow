@@ -132,7 +132,7 @@ import VolumeJobView from './VolumeJobView.vue'
 import { useVolumeJobsStore } from '../stores/volumejobs'
 
 const FOLDERS = ['diffusion_models', 'vae', 'vae_approx', 'checkpoints', 'loras', 'text_encoders', 'clip', 'clip_vision', 'controlnet', 'upscale_models', 'latent_upscale_models', 'model_patches', 'unet', 'embeddings', 'depthanything', 'sam2', 'SEEDVR2']
-const TERMINAL = ['done', 'failed', 'cancelled']
+const TERMINAL = ['done', 'failed', 'cancelled', 'interrupted']
 const ui = useUiStore()
 const volumes = useVolumesStore()
 const mounts = useMountsStore()

@@ -320,6 +320,25 @@ test.describe('Shared', () => {
     expect(api.state.droppedPod).toBe('ComfyUI-Pull-vol-a3upg9ey48-1115')
   })
 
+  test('an interrupted download (its pod could not be reached) offers Reattach as well as Delete Pod; Reattach follows it again; a pod with no run to follow offers Delete only', async ({ page, api }) => {
+    api.state.interrupted = [
+      { name: 'ComfyUI-Pull-vol-a3upg9ey48-1115', kind: 'fetch', round: 'vol-a3upg9ey48', pod_id: 'p9', volume: 'a3upg9ey48', created_at: '2026-11-15T16:56:04.000Z', approved_by: 'a click in the app window', remote_id: 'fetch-vol-a3upg9ey48-1', fetch_items: [{ name: 'a.safetensors', folder: 'vae', bytes: 8e9 }] },
+      { name: 'ComfyUI-Pull-vol-a3upg9ey48-1116', kind: 'erase', round: 'vol-a3upg9ey48', pod_id: 'p8', volume: 'a3upg9ey48', created_at: '2026-11-15T16:56:04.000Z', approved_by: 'a click in the app window' },
+    ]
+    await page.goto('/')
+    await page.getByTestId('open-queue').click()
+    const q = page.getByTestId('queue-modal')
+    const lost = q.locator('[data-testid="queue-interrupted"][data-name="ComfyUI-Pull-vol-a3upg9ey48-1115"]')
+    await expect(lost.getByTestId('queue-interrupted-reattach')).toHaveText('Reattach')
+    await expect(q.locator('[data-testid="queue-interrupted"][data-name="ComfyUI-Pull-vol-a3upg9ey48-1116"]').getByTestId('queue-interrupted-reattach')).toHaveCount(0)
+    await expect(q.locator('[data-testid="queue-interrupted"][data-name="ComfyUI-Pull-vol-a3upg9ey48-1116"]').getByTestId('queue-interrupted-delete')).toBeVisible()
+    await lost.getByTestId('queue-interrupted-reattach').click()
+    await expect(q.getByTestId('queue-volume-job')).toHaveAttribute('data-kind', 'fetch')
+    await expect(q.getByTestId('queue-volume-job').getByTestId('volume-job-state')).toHaveText('Connecting (SSH)')
+    await expect(q.locator('[data-testid="queue-interrupted"][data-name="ComfyUI-Pull-vol-a3upg9ey48-1115"]')).toHaveCount(0)
+    expect(api.state.reattached).toBe('ComfyUI-Pull-vol-a3upg9ey48-1115')
+  })
+
   test('Wanted models: a too-small volume shows the warning; a volume that cannot be listed shows every row as not checked', async ({ page, api }) => {
     api.state.sharedVolume = 'vol1'
     api.state.wanted = [{ folder: 'vae', name: 'v.safetensors', repo: 'a/b', path: 'v.safetensors', bytes: 90_000_000_000 }]

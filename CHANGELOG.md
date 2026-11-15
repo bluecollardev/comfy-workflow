@@ -3,6 +3,11 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## Unreleased
+
+### A download survives dropped connections (ADR-042 section 17)
+- Lucas's Load Missing ran 35 minutes (25 of 39 files, 190 GB), then "Could not reach the pod over SSH" failed the job and deleted the pod in the middle of a 10 GB file: the script ran in the foreground of one ssh session. Now it is started detached on the pod (`setsid nohup`, log, pid and exit status under `/tmp/volfetch-<id>`; the script and the token only in RAM) and followed by short ssh calls from a byte offset; a failed call is retried for up to 10 minutes (job state *Reconnecting (Attempt n)*), keepalive options on every call. Unreachable for the whole budget: the job is *Interrupted*, the pod is **kept** (still downloading) and listed in the Queue with Reattach (follow it again from its log, also `volume_jobs` action `reattach`) and Delete Pod; never reached at all: failed, pod deleted. Cancel kills the remote process group. Tests with a fake detached pod; never run on a real pod. Also: the stray `@hidden="stop"` of the Models window removed.
+
 ## v1.2.1 (tag v1.2.1, 2026-11-16)
 
 The default image is still the contract-v27 pair pinned in v1.2.0 (no rebuild). The package build's variant is contract-v27 now (v1.2.0 said contract-v26 in build-info.json).

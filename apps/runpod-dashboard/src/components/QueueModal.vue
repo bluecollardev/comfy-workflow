@@ -10,7 +10,10 @@
         <strong>{{ $t('queue.interrupted') }}</strong>
         <span class="font-monospace text-body-secondary">{{ p.name }}</span>
         <span class="text-body-secondary">{{ $t('queue.interruptedNote') }}</span>
-        <BButton size="sm" variant="outline-danger" class="ms-auto" data-testid="queue-interrupted-delete" @click="dropPod(p)"><i class="fa-solid fa-trash me-1"></i>{{ $t('queue.deletePod') }}</BButton>
+        <span class="ms-auto d-inline-flex gap-2">
+          <BButton v-if="p.kind === 'fetch' && p.remote_id" size="sm" variant="outline-primary" data-testid="queue-interrupted-reattach" @click="reattachPod(p)"><i class="fa-solid fa-plug me-1"></i>{{ $t('queue.reattach') }}</BButton>
+          <BButton size="sm" variant="outline-danger" data-testid="queue-interrupted-delete" @click="dropPod(p)"><i class="fa-solid fa-trash me-1"></i>{{ $t('queue.deletePod') }}</BButton>
+        </span>
       </div>
       <div v-for="j in vjobs.jobs" :key="j.id" class="border rounded p-2 mb-2 small" data-testid="queue-volume-job" :data-state="j.state" :data-kind="j.kind">
         <div class="d-flex align-items-baseline gap-2 flex-wrap mb-1">
@@ -117,6 +120,8 @@ async function cancelTask(task) {
 }
 /** A volume job's Cancel asks first: a running download stops and its pod is deleted. */
 async function vcancel(j) { if (await confirm.ask(t('queue.confirmCancel', { what: ucwords(t(`vjob.kind_${j.kind}`)), round: j.volume_id }), { okLabel: t('queue.cancel') })) { try { await vjobs.cancel(j.id) } catch (e) { error.value = errorText(e) } } }
+/** An interrupted download's pod still has its script: follow it again (the bar and the file list are rebuilt from its log). */
+async function reattachPod(p) { try { await vjobs.reattach(p.name) } catch (e) { error.value = errorText(e) } }
 /** An interrupted job's pod (the app was restarted): deleted only on a click, after a confirm. */
 async function dropPod(p) { if (await confirm.ask(t('queue.confirmDeletePod', { name: p.name }), { okLabel: t('queue.deletePod') })) { try { await vjobs.dropInterrupted(p.name) } catch (e) { error.value = errorText(e) } } }
 async function act(fn) { try { await fn() } catch (e) { error.value = errorText(e) } await refresh() }

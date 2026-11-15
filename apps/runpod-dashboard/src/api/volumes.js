@@ -17,6 +17,7 @@ const ipc = core && {
   job: (id) => core.invoke('volumes', 'job', [id]),
   jobs: () => core.invoke('volumes', 'jobs'),
   dropInterrupted: (name) => core.invoke('volumes', 'dropInterrupted', [name]),
+  reattach: (name) => core.invoke('volumes', 'reattach', [name]),
   cancel: (id) => core.invoke('volumes', 'cancel', [id]),
   erasable: () => core.invoke('volumes', 'erasable'),
 }
@@ -31,6 +32,7 @@ const http = {
   async erase(id, keys, o) { const { data } = await axios.post(`${API_BASE}/volumes/${encodeURIComponent(id)}/erase`, { keys, ...o }); return data },
   async jobs() { const { data } = await axios.get(`${API_BASE}/volumes/jobs`); return data },
   async dropInterrupted(name) { const { data } = await axios.post(`${API_BASE}/volumes/jobs/drop`, { name }); return data },
+  async reattach(name) { const { data } = await axios.post(`${API_BASE}/volumes/jobs/reattach`, { name }); return data },
   async job(id) { const { data } = await axios.get(`${API_BASE}/volumes/job`, { params: { id } }); return data },
   async cancel(id) { const { data } = await axios.post(`${API_BASE}/volumes/job/cancel`, { id }); return data },
   async erasable() { const { data } = await axios.get(`${API_BASE}/volumes/erasable`); return data },

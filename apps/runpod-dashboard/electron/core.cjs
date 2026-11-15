@@ -100,6 +100,7 @@ const TABLE = {
     job: (c, id) => c.podpull.job(id),
     jobs: (c) => c.podpull.volumeJobs(),   // the volume jobs (fetch, delete, erase, clone, browse) and the pods of ones lost at a restart (ADR-042 section 16)
     dropInterrupted: (c, name) => c.podpull.dropInterrupted(name),
+    reattach: (c, name) => c.podpull.reattach(name),   // follow a fetch the app lost (or could not reach) on its pod again (ADR-042 section 17)
     cancel: (c, id) => c.podpull.cancel(id),
     erasable: (c) => Object.entries(c.podpull.ERASABLE).map(([key, e]) => ({ key, label: e.label, path: e.path })),
   },

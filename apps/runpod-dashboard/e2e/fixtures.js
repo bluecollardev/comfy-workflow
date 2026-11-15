@@ -436,7 +436,12 @@ export async function mockApi(page, state) {
     if (method === 'GET' && path === '/volumes/jobs') {   // ADR-042 section 16: the volume jobs list the Models window, the Queue and the nav badge poll; `volumeSteps` advances one state per call, as a real job moves on
       if (state.volumeSteps?.length) { const now = Date.now(); if (state.volumeStepAt === undefined || now - state.volumeStepTs >= 1500) { const k = Math.min((state.volumeStepAt ?? -1) + 1, state.volumeSteps.length - 1); state.volumeStepAt = k; state.volumeStepTs = now; state.volumeJob = state.volumeSteps[k] } }   // one state per 1.5 s, whoever asks
       const list = state.volumeJob ? [state.volumeJob] : []
-      return json({ jobs: list, interrupted: state.interrupted || [], running: list.filter((j) => !['done', 'failed', 'cancelled'].includes(j.state)).length })
+      return json({ jobs: list, interrupted: state.interrupted || [], running: list.filter((j) => !['done', 'failed', 'cancelled', 'interrupted'].includes(j.state)).length })
+    }
+    if (method === 'POST' && path === '/volumes/jobs/reattach') {   // ADR-042 section 17: follow an interrupted download again: the pod leaves the interrupted list and a running job takes its place
+      state.reattached = body.name; state.interrupted = (state.interrupted || []).filter((p) => p.name !== body.name)
+      state.volumeJob = { id: 'fetch-vol-a3upg9ey48-re', round: 'vol-a3upg9ey48', kind: 'fetch', route: 'temporary', pod_id: 'p9', pod_name: body.name, volume_id: 'a3upg9ey48', state: 'connecting', files: 0, lines: [`Following ${body.name} again.`], started_at: new Date().toISOString(), bytes_done: 0, bytes_total: null, rate: null, recent: [] }
+      return json(state.volumeJob)
     }
     if (method === 'POST' && path === '/volumes/jobs/drop') { state.droppedPod = body.name; state.interrupted = (state.interrupted || []).filter((p) => p.name !== body.name); return json({ deleted: body.name }) }
     if (method === 'GET' && path === '/volumes/job') return json(state.volumeJob || { id: query.id, state: 'failed', error: 'no job' })
