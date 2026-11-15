@@ -835,7 +835,7 @@
     "save": "Saved List",
     "binc": "Install Defaults",
     "load": "Load missing: {n} files, {size}",
-    "clear": "Clear List",
+    "clear": "Remove All",
     "empty": "Nothing yet: add files from a search, press Saved List to record what the volume holds, or Install Defaults.",
     "noRepo": "(no repo known: cannot be loaded)",
     "remove": "Remove from the list",
