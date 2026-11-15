@@ -34,6 +34,22 @@ ComfyUI lists every file in `models/vae` in its VAE loader, and it recognises Se
 
 Every variant (3B and 7B, fp16 and fp8, and the VAEs) is kept on the volume under `models/`, about 35 to 45 GB (estimate, not measured), roughly USD 2.50 to 3 a month; each pod chooses at run time (section 6). Not streamed at run time (a billed pod waits for the download, and Hugging Face may refuse it); not baked into the image. The S3 route needs RunPod S3 keys: Settings, S3 API Keys in the RunPod console, then Default Configuration's S3 fields (or the Add S3 keys button in the volume browser). **Update:** S3 keys added 2026-11-15 and proven (a free listing of `a3upg9ey48`); the volume holds 89 GB of 250. Files, from `Comfy-Org/SeedVR2` on Hugging Face (Apache-2.0): `diffusion_models/seedvr2_3b_fp16` 6.78 GB, `seedvr2_3b_fp8_e4m3fn` 3.39 GB, `seedvr2_7b_fp16` 16.48 GB, `seedvr2_7b_fp8_e4m3fn` 8.24 GB (each `.safetensors`), and `vae/seedvr2_ema_vae_fp16.safetensors` 0.5 GB. They stay on the volume, mounted into pods, not in the image (the registry's 10 GB layer limit would also stop the 7B fp16). **Open:** the transfer: from this Mac over the S3 API (no spend, but the uplink is the limit) or by a short pod downloading directly (cents, fast, needs a named yes). Previously: free space on `a3upg9ey48` (it holds rounds), a named yes for the pod or the transfer, and the exact file names from the official template.
 
+## 8. What the SeedVR2 files are
+
+SeedVR2 is a video and image upscaler. ComfyUI has its nodes built in (`comfy_extras/nodes_seedvr.py`: `SeedVR2Preprocess`, `SeedVR2Conditioning`, `SeedVR2TemporalChunk`, `SeedVR2TemporalMerge`, `SeedVR2PostProcessing`); only its **weights** are missing from the image, and they are kept on the volume, never in the image. Source: Hugging Face `Comfy-Org/SeedVR2` (Apache-2.0). Sizes as listed there on 2026-11-15.
+
+| File | Goes in | Size | What it is |
+|---|---|---|---|
+| `seedvr2_3b_fp16.safetensors` | `models/diffusion_models/` | 6.78 GB | The upscaler network, 3 billion parameters, full 16-bit precision. The safe default. |
+| `seedvr2_3b_fp8_e4m3fn.safetensors` | `models/diffusion_models/` | 3.39 GB | The same, 8-bit: half the size and memory, slightly lower quality. |
+| `seedvr2_7b_fp16.safetensors` | `models/diffusion_models/` | 16.48 GB | 7 billion parameters, 16-bit: the best quality, the most VRAM. Over the registry's 10 GB layer limit, so it could not be baked into an image anyway. |
+| `seedvr2_7b_fp8_e4m3fn.safetensors` | `models/diffusion_models/` | 8.24 GB | 7 billion, 8-bit: near the 7B quality in about half the memory. |
+| `seedvr2_ema_vae_fp16.safetensors` | `models/vae/` | 0.5 GB | The VAE: encodes frames into SeedVR2's latent space and decodes the result. Every SeedVR2 graph needs it, whichever network is chosen. ComfyUI recognises it by its contents, not its name. |
+
+A graph uses **one** diffusion model and **one** VAE. Which ones a pod uses is the pod's choice (section 6), so having all four on the volume costs only storage (about 35 GB, USD 2.50 a month); nothing is loaded into a pod's memory until a graph names it. The Comfy-Org repack also has `sharp`, int8, mxfp8 and nvfp4 variants of the 7B and 3B networks; they are not fetched.
+
+Status 2026-11-15: the VAE is on `a3upg9ey48` (`comfy-shared/models/vae/seedvr2_ema_vae_fp16.safetensors`, 478.1 MiB, uploaded over the S3 API at about 2.5 MB/s); the four networks are not yet (approved by Lucas for a short pod; the Mac's uplink would take about four hours). The 110 to 124 byte files already in `diffusion_models/` and `vae/` are placeholders, not weights.
+
 ## Consequences
 
 - One tag no longer means two images; Blackwell cards keep their CUDA 13 build.
