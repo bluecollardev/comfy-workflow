@@ -108,7 +108,7 @@ Depth Anything V2 Large fp32 and fp16, SeedVR2 3B fp16 and VAE, SAM 2.1 base+ an
 
 ### Wanted models list
 
-The names of the models you want on a Shared volume, kept in the configuration and exported with it (section *Wanted models*), so a new machine or a new datacenter can be filled from the same list (ADR-042 section 12). Open Shared > Models: add files from a search (*Add to wanted list*), record what the volume holds (*Save list from the volume*) or add Binc's list above (*Add Binc's list*, read off the volume or pasted). Each row shows whether the volume has it; *Load missing* fetches the rest from Hugging Face in jobs of 20 files, and warns when the volume is too small. MCP: `models_wanted`, `models_wanted_add`, `models_wanted_remove`, `models_load_wanted`.
+The names of the models you want on a Shared volume, kept in the configuration and exported with it (section *Wanted models*), so a new machine or a new datacenter can be filled from the same list (ADR-042 section 12). Open Shared > Models: add files from a search (*Add to wanted list*), record what the volume holds (*Saved List*) or add Binc's list above (*Install Defaults*, read off the volume or pasted). Each row shows whether the volume has it; *Load missing* fetches the rest from Hugging Face in jobs of 20 files, and warns when the volume is too small. MCP: `models_wanted`, `models_wanted_add`, `models_wanted_remove`, `models_load_wanted`.
 
 ## Custom nodes
 
