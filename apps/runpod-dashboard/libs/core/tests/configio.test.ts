@@ -27,10 +27,11 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'cio-'))
   process.env.MOUNTS_FILE = join(dir, 'mounts.json'); process.env.SETTINGS_ENV_FILE = join(dir, '.env'); process.env.POD_MANAGER_BACKUPS_DIR = join(dir, 'backups'); process.env.GIT_ACCOUNTS_FILE = join(dir, 'git_accounts.json')
   for (const k of ENVS.slice(4)) delete process.env[k]
+  process.env.REPOSITORIES_FILE = join(dir, 'repositories.json'); delete process.env.PANAMA_CONSOLE_URL
   process.env.CLAUDE_USER_SETTINGS = join(dir, 'claude-settings.json'); process.env.AGENT_GUARD_SCRIPT = join(dir, 'hooks', 'guard-bash.sh')   // never the real ~/.claude
   mounts.save(mounts.normalize({ network_volume_id: 'vol1', data_center_id: 'EUR-IS-2', image: 'ghcr.io/x/y:1', idle_stop_minutes: 30, env: { COMFY_PORT: '8188' }, folders: { 'comfy-shared': '/home/me/ComfyUI-Shared' } }))
 })
-afterEach(() => { for (const k of ENVS) delete process.env[k]; delete process.env.CLAUDE_USER_SETTINGS; delete process.env.AGENT_GUARD_SCRIPT })
+afterEach(() => { for (const k of ENVS) delete process.env[k]; delete process.env.CLAUDE_USER_SETTINGS; delete process.env.REPOSITORIES_FILE; delete process.env.AGENT_GUARD_SCRIPT })
 
 describe('exportConfig', () => {
   it('carries the format, the version and the configuration, and no dry_run', () => {
@@ -373,3 +374,61 @@ describe('the agent shell guard travels with the agent rules (ADR-042 section 10
     expect(JSON.parse(readFileSync(process.env.CLAUDE_USER_SETTINGS!, 'utf8')).hooks.PreToolUse).toHaveLength(1)
   })
 })
+
+
+describe('repositories and accounts, and the MCP connections, travel in the export (ADR-023 amendment)', () => {
+  const REPO = { id: 'r1', url: 'https://github.com/bluecollardev/comfy-node-packs', branch: 'main', name: 'comfy-node-packs', host: 'github.com', attached_at: 1700000000 }
+  const URL = 'https://console.example.test/api/mcp'
+  const setup = async () => {
+    const repos = await import('../src/repositories.js')
+    git.save([GIT]); repos.save([REPO]); settings.set({ panama_console_url: URL, panama_console_key: 'console-key-value-xyz-123' })
+    return repos
+  }
+  const wipe = async () => { const repos = await import('../src/repositories.js'); git.save([]); repos.save([]); settings.set({ panama_console_url: '', panama_console_key: null }); return repos }
+
+  it('the sections come in the order MCP, then repositories and accounts (merged), and the file carries them without the token', async () => {
+    await setup()
+    expect(configio.SECTION_KEYS.indexOf('mcp')).toBeLessThan(configio.SECTION_KEYS.indexOf('mcp_connections'))
+    expect(configio.SECTION_KEYS.indexOf('mcp_connections')).toBeLessThan(configio.SECTION_KEYS.indexOf('repositories'))
+    expect(configio.SECTION_KEYS).not.toContain('accounts')
+    const f = configio.exportConfig({ includeSecrets: false, appVersion: '9.9.9' })
+    expect(f.mcp_connections).toEqual({ console_url: URL })
+    expect(f.repositories!.repositories).toEqual([REPO])
+    expect(f.repositories!.accounts).toEqual([expect.objectContaining({ id: 'gh-1', provider: 'github', username: 'octocat', token_set: true })])
+    expect(JSON.stringify(f)).not.toContain(GIT.token); expect(JSON.stringify(f)).not.toContain('console-key-value-xyz-123')
+    expect(configio.NOT_EXPORTED.join(' ')).not.toMatch(/repositories attached to pods/)
+  })
+  it('round trip with the secrets: a clean config gets the same accounts, repositories and console URL back', async () => {
+    const repos = await setup()
+    const f = configio.exportConfig({ includeSecrets: true, appVersion: '9.9.9' })
+    await wipe()
+    const plan = configio.planImport(f)
+    const by = Object.fromEntries(plan.sections.map((s) => [s.key, s]))
+    expect(by.repositories).toMatchObject({ changed: true, default_checked: true, label: 'Repositories and accounts' }); expect(by.repositories.note).toBeNull()   // the token comes in the same file
+    expect(by.mcp_connections).toMatchObject({ changed: true, default_checked: true })
+    configio.applyImport(f, { sections: ['mcp_connections', 'repositories', 'secrets'] })
+    expect(repos.load()).toEqual([REPO]); expect(git.load().map((a) => [a.id, a.username, a.token])).toEqual([['gh-1', 'octocat', GIT.token]])
+    expect((await import('../src/remote.js')).url()).toBe(URL); expect(settings.secretValues().PANAMA_CONSOLE_KEY).toBe('console-key-value-xyz-123')
+  })
+  it('without the secrets the repository list comes and the account is flagged token missing, not connected; undo restores what was there', async () => {
+    const repos = await setup()
+    const f = configio.exportConfig({ includeSecrets: false, appVersion: '9.9.9' })
+    await wipe()
+    const other = { ...REPO, id: 'r9', url: 'https://github.com/x/y', name: 'y' }; repos.save([other])
+    const sec = configio.planImport(f).sections.find((s) => s.key === 'repositories')!
+    expect(sec.note).toMatch(/Token missing for github\/octocat/)
+    configio.applyImport(f, { sections: ['repositories', 'mcp_connections'] })
+    expect(repos.load().map((r) => r.url).sort()).toEqual(['https://github.com/bluecollardev/comfy-node-packs', 'https://github.com/x/y'])   // merged: what was here stays
+    expect(git.load()).toEqual([])   // no account without a token
+    configio.undoImport()
+    expect(repos.load()).toEqual([other]); expect((await import('../src/remote.js')).url()).toBe(remoteDefault())
+  })
+  it('refuses a console URL that is not https and skips a repository entry that is not a git url', async () => {
+    await wipe()
+    const f = { ...base({}), mcp_connections: { console_url: 'http://evil.example.com/mcp' }, repositories: { accounts: [], repositories: [{ url: 'file:///etc', branch: 'main' }, { url: 'https://github.com/a/b', branch: 'main' }] } }
+    const by = Object.fromEntries(configio.planImport(f).sections.map((s) => [s.key, s]))
+    expect(by.mcp_connections).toMatchObject({ error: expect.stringMatching(/https/), default_checked: false })
+    expect((by.repositories.incoming as { repositories: unknown[] }).repositories).toHaveLength(1); expect(by.repositories.note).toMatch(/Not imported/)
+  })
+})
+const remoteDefault = () => 'https://panama-console.beinghuman.studio/api/mcp'

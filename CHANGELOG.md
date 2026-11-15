@@ -5,6 +5,9 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased
 
+### The export carries repositories, accounts and MCP connections (ADR-023 amendment)
+- Lucas: "make sure accounts, repositories and mcp connections are stored in the export / import too". Sections `mcp_connections` (the console URL; the key stays in secrets) and `repositories` (repositories and accounts merged; tokens only through the secrets section, otherwise flagged token missing), both after `mcp` in the plan, each with plan, apply and undo.
+
 ### The agent shell guard, a setting (ADR-042 section 10)
 - Lucas: "a bash script / PreToolUse hook for Bash that stops agents freelancing, as a setting ... included in import/export". `agentguard.ts` (script, status, install, uninstall into the user's `~/.claude/settings.json` with a backup, idempotent, other hooks kept, invalid JSON refused), the `AGENT_SHELL_GUARD` setting, the `agentguard` IPC namespace and `src/api/agentguard.js`, MCP `agent_guard_status` and `set_settings agent_shell_guard`, and `governance.shell_guard` in the configuration export. A heuristic, not a sandbox.
 

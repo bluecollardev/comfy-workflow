@@ -138,7 +138,7 @@ export function get() {
 }
 
 /** Store a secret. An empty value leaves the stored one alone; `null` removes it. */
-export function set(values: { agent_shell_guard?: boolean | null; agent_named_yes_required?: boolean | null; agent_spend_cap_usd?: number | null; panama_bucket?: string | null; panama_region?: string | null; panama_profile?: string | null; anthropic_api_key?: string | null; runpod_api_key?: string | null; runpod_s3_access_key?: string | null; runpod_s3_secret_key?: string | null; panama_console_key?: string | null; panama_aws_access_key?: string | null; panama_aws_secret_key?: string | null }) {
+export function set(values: { panama_console_url?: string | null; agent_shell_guard?: boolean | null; agent_named_yes_required?: boolean | null; agent_spend_cap_usd?: number | null; panama_bucket?: string | null; panama_region?: string | null; panama_profile?: string | null; anthropic_api_key?: string | null; runpod_api_key?: string | null; runpod_s3_access_key?: string | null; runpod_s3_secret_key?: string | null; panama_console_key?: string | null; panama_aws_access_key?: string | null; panama_aws_secret_key?: string | null }) {
   const updates: Record<string, string> = {}
   // The bucket, region and profile: ordinary settings, not secrets. A value equal to the built-in default (or empty, or null) removes the override.
   for (const [field, key, name] of [['panama_bucket', 'bucket', 'PANAMA_S3_BUCKET'], ['panama_region', 'region', 'PANAMA_S3_REGION'], ['panama_profile', 'profile', 'PANAMA_S3_PROFILE']] as const) {
@@ -177,6 +177,12 @@ export function set(values: { agent_shell_guard?: boolean | null; agent_named_ye
     const v = values.runpod_api_key.trim()
     if (/\s/.test(v) || v.length < 16) throw bad('That does not look like a RunPod API key (no spaces, at least 16 characters)')
     updates.RUNPOD_API_KEY = v
+  }
+  // The console URL the app uses as a remote MCP server (an ordinary setting, the key is the secret): https, or http only for 127.0.0.1.
+  if (values.panama_console_url !== undefined) {
+    const u = (values.panama_console_url ?? '').trim()
+    if (u) { let x: URL; try { x = new URL(u) } catch { throw bad(`Not a URL: ${u}`) }; if (!(x.protocol === 'https:' || (x.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(x.hostname)))) throw bad('The console URL must be https (http is allowed only for 127.0.0.1)') }
+    updates.PANAMA_CONSOLE_URL = u === 'https://panama-console.beinghuman.studio/api/mcp' ? '' : u
   }
   // The agent shell guard (ADR-042 section 10): on installs the Bash hook into the user's Claude Code settings, off removes only our entry. A failure is thrown and the setting is not left on.
   if (values.agent_shell_guard !== undefined) {

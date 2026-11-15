@@ -72,6 +72,10 @@ Lucas: "a bash script / PreToolUse hook for Bash that stops agents freelancing, 
 - **Per-user scope:** `~/.claude/settings.json` applies to every project of that OS user, not only this repo. A project's own `.claude/settings.json` is not edited. On binc-pc the switch has to be turned on in the app (or the configuration file imported) while logged in as the user whose Claude Code runs the agent.
 - **Status:** `agentguard.status()` gives `enabled` (the setting), `installed` (our entry is present and the script exists and is executable), the settings file and the script path; over IPC `agentguard.status/set`, in the MCP `agent_guard_status` (read) and `set_settings agent_shell_guard`. It is part of the `governance` section of the configuration export (`governance.shell_guard`): importing that section installs or removes the hook, and undo restores it.
 
+## 11. What travels in the configuration export
+
+The export (ADR-023, amended 2026-11-15) carries what this ADR adds: the Shared volume id (*Volume and datacenter*), the default VAE and diffusion model (*Pod defaults*), the agent rules and the shell guard (*Agent rules (system-wide)*), and, with the other connections, the console URL (*MCP connections*) and the repositories and accounts (*Repositories and accounts*). Per-pod model choices and pod attachments are pod-bound and are not exported.
+
 ## Consequences
 
 - One tag no longer means two images; Blackwell cards keep their CUDA 13 build.
