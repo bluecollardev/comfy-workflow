@@ -26,6 +26,8 @@ function fakeCore(events) {
     mounts: { load: () => ({ folders: {}, mcp_http: {} }), dryRun: () => false },
     shots: { lockedShots: () => ({ file: null, shots: new Set(), found: false }), lockedIn: () => null },
     volumes: { list: async () => [] },
+    podpull: { ERASABLE: {} },   // read while the tool descriptions are built
+    hf: { EXTENSIONS: [], FOLDERS: [] },
     pods: {
       list: async () => [POD], config: () => null,
       get: async (id) => { if (id !== POD.id) throw Object.assign(new Error(`Pod not found: ${id}`), { status: 404 }); return POD },

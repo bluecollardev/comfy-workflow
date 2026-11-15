@@ -81,6 +81,7 @@ test.describe('setup walkthrough: a new user, a new app', () => {
     const { page } = ctx
     await configModal(page).getByTestId('config-close').first().click()
     await page.getByTestId('open-connect').click()
+    await page.locator('.modal.show').getByRole('tab', { name: t('connect.repositories') }).click()   // the Git accounts are on the Repositories tab
     await expect(page.getByTestId('connect-accounts')).toBeVisible()
     await shot('07-git-accounts')
     await page.locator('.modal.show').getByLabel('Close').first().click()

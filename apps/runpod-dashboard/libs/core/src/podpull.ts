@@ -930,6 +930,22 @@ export async function eraseVolume(volumeId: string, keys: string[], o: { approve
   return startVolumeJob(volumeId, 'erase', ks, opts)
 }
 
+/** What a volume holds under comfy-shared/models/<folder>/, read over RunPod's S3 API (no pod, no cost): one entry per file with its folder and size. null when the S3 API cannot be used for this volume (no keys, or a datacenter without it): only a pod could say. */
+export async function modelsOnVolume(volumeId: string, opts: Opts = {}): Promise<{ folder: string; name: string; bytes: number }[] | null> {
+  volLabel(volumeId)
+  if (mounts.dryRun(mounts.load())) return [{ folder: 'diffusion_models', name: 'simulated_model_fp16.safetensors', bytes: 1000 }, { folder: 'vae', name: 'simulated_vae.safetensors', bytes: 500 }]
+  const vol = await volumeOf({ ...opts, volumeId })
+  const a = s3Access(vol); if (!a.ok) return null
+  const r = await (opts.aws ?? defaultAws)(['s3', 'ls', `s3://${a.bucket}/comfy-shared/models/`, '--recursive', '--endpoint-url', a.endpoint, '--region', a.region], { AWS_ACCESS_KEY_ID: a.id, AWS_SECRET_ACCESS_KEY: a.secret })
+  if (r.code !== 0) throw new CoreError(502, `RunPod's S3 API: ${(r.stderr || r.stdout).trim().split('\n').pop() || `aws exited ${r.code}`}`)
+  const out: { folder: string; name: string; bytes: number }[] = []
+  for (const line of r.stdout.split('\n')) {
+    const m = /^\S+\s+\S+\s+(\d+)\s+comfy-shared\/models\/([^/]+)\/(.+)$/.exec(line)
+    if (m) out.push({ folder: m[2], name: m[3], bytes: Number(m[1]) })
+  }
+  return out.sort((x, y) => x.folder.localeCompare(y.folder) || x.name.localeCompare(y.name))
+}
+
 /** Put model files from Hugging Face onto a volume (ADR-042): a short pod (or yours running on it) downloads them straight into `comfy-shared/models/<folder>/`. Spends the pod's minutes. From the window the click is the yes (`approved_by` is optional and, when absent, the History says it was clicked in the app); the MCP tool still requires a name, as an agent's spend does (shared/governance/policy/agent-permissions.md). The files are looked up on Hugging Face again here; see hf.resolve. */
 export async function fetchModels(volumeId: string, items: hf.FetchItem[], o: { approved_by?: string }, opts: Opts & { fetchFn?: typeof fetch } = {}): Promise<PodJob> {
   const label = volLabel(volumeId)

@@ -92,8 +92,8 @@ test.describe('card actions over IPC', () => {
     const { page } = ctx
     await page.getByTestId('open-connect').click()
     const connect = page.locator('.modal.show', { hasText: t('connect.title') })
+    await connect.getByRole('tab', { name: t('connect.repositories') }).click()   // MCP is first; the Git accounts and the repositories share this tab
     await expect(connect.getByTestId('connect-accounts')).toContainText('No accounts connected')    // git.accounts
-    await connect.getByRole('tab', { name: t('connect.repositories') }).click()
     await expect(connect.getByTestId('connect-repositories')).toContainText('No repositories attached yet')   // repositories.list
     await connect.getByRole('button', { name: t('connect.done') }).click()
   })

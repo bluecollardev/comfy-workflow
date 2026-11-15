@@ -79,6 +79,8 @@
       </div>
     </div>
     <McpRemote />
+    <McpShellGuard />
+
     <McpDocsModal v-if="docsEp" :model-value="true" :ep="docsEp" @update:model-value="docsFor = ''" />
   </div>
 </template>
@@ -95,6 +97,7 @@ import { useMcpStore } from '../stores/mcp'
 import { t } from '../i18n'
 import McpDocsModal from './McpDocsModal.vue'
 import McpRemote from './McpRemote.vue'
+import McpShellGuard from './McpShellGuard.vue'
 import McpStatus from './McpStatus.vue'
 import McpTarget from './McpTarget.vue'
 

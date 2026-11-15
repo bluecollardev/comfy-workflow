@@ -5,6 +5,12 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased
 
+### The agent shell guard, a setting (ADR-042 section 10)
+- Lucas: "a bash script / PreToolUse hook for Bash that stops agents freelancing, as a setting ... included in import/export". `agentguard.ts` (script, status, install, uninstall into the user's `~/.claude/settings.json` with a backup, idempotent, other hooks kept, invalid JSON refused), the `AGENT_SHELL_GUARD` setting, the `agentguard` IPC namespace and `src/api/agentguard.js`, MCP `agent_guard_status` and `set_settings agent_shell_guard`, and `governance.shell_guard` in the configuration export. A heuristic, not a sandbox.
+
+### Shared: the IPC, the MCP tools and the export section (ADR-042 section 9)
+- `models` over IPC and `src/api/models.js` (search, files, fetch, status), MCP `models_search`, `models_files`, `models_fetch`, `models_status`, `set_shared_volume`; the agent rules (named yes, ceiling) are exported and imported as their own system-wide section, not in a pod configuration; the MCP tool descriptions no longer say a spend needs `approved_by`. Tests for hf, the fetch job, the Shared volume, the settings and the export section.
+
 ### Shared: models from Hugging Face onto the Shared volume (ADR-042 section 9; core only so far)
 - Lucas: "under models, we should be able to search hugging face repos and choose the model we want ... and load that into our shared volume"; "shared volume ... NOT deleteable ... shared badge". `hf.ts`, `podpull.fetchModels` (a pod downloads, `approved_by` needed), `shared_volume_id` in the configuration (exported and imported), `volumes.setShared`, and `volumes.remove` refuses the Shared volume. The windows and the MCP tools are still to do.
 

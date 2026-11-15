@@ -823,7 +823,7 @@
   "connect": {
     "title": "Connect",
     "done": "Done",
-    "intro": "Accounts give the app access to private repositories; repositories attached here are what Attach node offers when creating a pod; MCP hands Claude, Codex or ChatGPT the pods and a ComfyUI.",
+    "intro": "MCP hands Claude, Codex or ChatGPT the pods and a ComfyUI. Repositories: Git accounts give the app access to private repositories, and the repositories attached here are what Attach node offers when creating a pod.",
     "accounts": "Accounts",
     "repositories": "Repositories",
     "mcp": "MCP"
@@ -1064,6 +1064,13 @@
     "countSkipped": "{n} skipped"
   },
   "mcp": {
+    "guardTitle": "Stop agents freelancing in the shell",
+    "guardHelp": "Claude Code can run shell commands that go around this app's MCP tools. With this on, a guard (a PreToolUse hook for its Bash tool) refuses the usual routes: runpodctl, direct calls to RunPod's API, the pod CLI's create, resume and delete, changes to the BH bucket, and writes into Binc's mirror, and tells the agent which tool to use instead. It is a pattern check, not a sandbox. It applies to Claude Code for the current user on this Mac. A system-wide setting, with the agent rules; it travels in the configuration export.",
+    "guardSwitch": "Block shell routes around the MCP tools",
+    "guardInstalled": "Installed: the hook is in Claude Code's settings.",
+    "guardNotInstalled": "Not installed.",
+    "guardSettingsFile": "Claude Code settings:",
+    "guardScriptFile": "Guard script:",
     "intro": "Two MCP servers come with this app: the pod manager (what the dashboard does) and the ComfyUI bridge (inside one ComfyUI). A client launches them with this app as its program, nothing else to install, or reaches them over HTTP while the app serves them. Pick a client below, copy its setup, and press Check to see the server answer from here.",
     "loading": "Asking the core…",
     "none": "No MCP endpoints.",

@@ -23,7 +23,7 @@ export const VERSION = 1
 export const MAX_BYTES = 2 * 1024 * 1024   // a configuration is a few KB; refuse anything near this as "not a configuration"
 export const KEEP_BACKUPS = 10
 
-export type SectionKey = 'volume' | 'image' | 'env' | 'pod_defaults' | 'mcp' | 'folders' | 'panama' | 'secrets'
+export type SectionKey = 'volume' | 'image' | 'env' | 'pod_defaults' | 'mcp' | 'folders' | 'panama' | 'governance' | 'secrets'
 interface SectionDef { label: string; fields: (keyof mounts.MountsConfig)[]; machine?: boolean; account?: boolean }
 export const SECTIONS: Record<SectionKey, SectionDef> = {
   volume: { label: 'Volume and datacenter', fields: ['network_volume_id', 'mount_path', 'data_center_id', 'shared_volume_id'], account: true },
@@ -33,11 +33,12 @@ export const SECTIONS: Record<SectionKey, SectionDef> = {
   mcp: { label: 'MCP servers', fields: ['mcp_http'] },
   folders: { label: 'Folders', fields: ['folders', 'custom'], machine: true },
   panama: { label: 'Panama bucket, region and profile', fields: [] },
+  governance: { label: 'Agent rules (system-wide)', fields: [] },
   secrets: { label: 'Keys and tokens', fields: [] },
 }
 export const SECTION_KEYS = Object.keys(SECTIONS) as SectionKey[]
 const CONFIG_KEYS = new Set<string>(['folders', 'custom', 'network_volume_id', 'shared_volume_id', 'mount_path', 'data_center_id', 'links', 'env', 'apply_by_default', 'pull_any_card', 'import_max_pods', 'import_cost_cap_usd', 'import_cap_enabled', 'required', 'image', 'registry_auth_id', 'idle_stop_minutes', 'models', 'pull_shared', 'sync_shared', 'sync_parallel', 'dry_run', 'mcp_http'])
-const TOP_KEYS = new Set(['format', 'version', 'exported_at', 'app_version', 'config', 'panama', 'secrets_included', 'secrets', 'secrets_set', 'env_omitted', 'not_exported'])
+const TOP_KEYS = new Set(['format', 'version', 'exported_at', 'app_version', 'config', 'panama', 'governance', 'secrets_included', 'secrets', 'secrets_set', 'env_omitted', 'not_exported'])
 /** Listed in every export, so a reader knows what to set up again by hand. */
 export const NOT_EXPORTED = ['the no-spend switch (dry_run)', 'per-pod configurations', 'per-pod model choices (a pod id means nothing on another machine; the defaults travel)', 'adapters you wrote', 'the repositories attached to pods']
 /** An environment variable name that looks like it holds a secret: with the keys included it travels in config.env like any other; without them it is left out. */
@@ -49,6 +50,8 @@ export const maskSecret = (v: string) => (v.length >= 8 ? `••••${v.slice
 const appVersion = (): string => { try { return JSON.parse(readFileSync(join(APP_DIR, 'package.json'), 'utf8')).version || 'unknown' } catch { return 'unknown' } }
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
+type Rules = { require_named_yes: boolean; spend_cap_usd: number; shell_guard?: boolean }
+const rulesNow = (): Rules => settings.agentRules()
 const panamaNow = () => { const g = settings.get(); return { bucket: g.panama_bucket, region: g.panama_region, profile: g.panama_profile } }
 const pick = (cfg: mounts.MountsConfig, fields: (keyof mounts.MountsConfig)[]) => Object.fromEntries(fields.map((f) => [f, cfg[f]]))
 const short = (s: unknown, n = 60) => String(s).slice(0, n)
@@ -56,7 +59,7 @@ const short = (s: unknown, n = 60) => String(s).slice(0, n)
 export interface SecretsBlock { settings: Record<string, string>; git_accounts: git.Account[] }
 export interface ConfigFile {
   format: typeof FORMAT; version: number; exported_at: string; app_version: string
-  config: Record<string, unknown>; panama: { bucket: string; region: string; profile: string }
+  config: Record<string, unknown>; panama: { bucket: string; region: string; profile: string }; governance?: Rules
   secrets_included: boolean; secrets?: SecretsBlock
   secrets_set: string[]; env_omitted: string[]; not_exported: string[]
 }
@@ -73,7 +76,7 @@ export function exportConfig(opts: { appVersion?: string; now?: Date; includeSec
   const values = settings.secretValues(), accounts = git.load()
   const file: ConfigFile = {
     format: FORMAT, version: VERSION, exported_at: (opts.now ?? new Date()).toISOString(), app_version: opts.appVersion || appVersion(),
-    config: { ...cfg, env }, panama: panamaNow(), secrets_included: withSecrets,
+    config: { ...cfg, env }, panama: panamaNow(), governance: rulesNow(), secrets_included: withSecrets,
     secrets_set: [...Object.keys(values), ...accounts.map((a) => `git:${a.provider}/${a.username}`)], env_omitted: omitted, not_exported: [...NOT_EXPORTED],
   }
   if (withSecrets) file.secrets = { settings: values as Record<string, string>, git_accounts: accounts }
@@ -212,6 +215,15 @@ function buildPlan(file: unknown): { plan: ImportPlan; secrets: ParsedSecrets | 
       })
       continue
     }
+    if (key === 'governance') {
+      if (!isObj(file.governance)) continue
+      const now = rulesNow()
+      const g = file.governance as Record<string, unknown>
+      const incoming = { require_named_yes: g.require_named_yes ?? now.require_named_yes, spend_cap_usd: g.spend_cap_usd ?? now.spend_cap_usd, shell_guard: g.shell_guard ?? now.shell_guard }
+      const err = settings.checkAgentRules(incoming)
+      plan.sections.push({ key, label: def.label, changed: !same(now, incoming), current: now, incoming, machine_specific: false, account_specific: false, default_checked: !err && !same(now, incoming), error: err, note: null })
+      continue
+    }
     if (key === 'panama') {
       if (!isObj(file.panama)) continue
       const now = panamaNow()
@@ -256,7 +268,7 @@ export function planImport(file: unknown): ImportPlan {
 // ----- applying, backing up, undoing -----
 
 interface Backup {
-  at: string; mounts: mounts.MountsConfig; panama: { bucket: string; region: string; profile: string }
+  at: string; mounts: mounts.MountsConfig; panama: { bucket: string; region: string; profile: string }; governance?: Rules
   /** The keys and tokens as they were (so Undo restores them too). Absent in a backup made before the export carried keys. */
   secrets?: { settings: Partial<Record<settings.SecretName, string>>; git_accounts: git.Account[] }
 }
@@ -275,13 +287,14 @@ function writeBackup(now = new Date()): string {
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   chmodSync(dir, 0o700)   // the mode option only applies to a folder this call creates
   const file = join(dir, `mounts-${stamp(now)}.json`)
-  const b: Backup = { at: now.toISOString(), mounts: mounts.load(), panama: panamaNow(), secrets: { settings: settings.storedSecretValues(), git_accounts: git.load() } }
+  const b: Backup = { at: now.toISOString(), mounts: mounts.load(), panama: panamaNow(), governance: rulesNow(), secrets: { settings: settings.storedSecretValues(), git_accounts: git.load() } }
   writeFileSync(file, JSON.stringify(b, null, 2) + '\n', { mode: 0o600 })
   chmodSync(file, 0o600)
   for (const old of listBackups().slice(KEEP_BACKUPS)) { try { unlinkSync(old.file) } catch { /* a backup that cannot be pruned stays */ } }
   return file
 }
 
+const setRules = (r: Rules) => settings.set({ agent_named_yes_required: r.require_named_yes, agent_spend_cap_usd: r.spend_cap_usd, ...(r.shell_guard === undefined ? {} : { agent_shell_guard: r.shell_guard }) })
 const setPanama = (p: { bucket: string; region: string; profile: string }) => settings.set({ panama_bucket: p.bucket, panama_region: p.region, panama_profile: p.profile })
 
 /** Write the checked sections. Everything is validated first; the current configuration and keys are backed up; then it is saved through `mounts.put`, `settings.set` and the git store. */
@@ -299,16 +312,18 @@ export function applyImport(file: unknown, opts: { sections: string[]; now?: Dat
   const current = mounts.load()
   const next: Record<string, unknown> = { ...current }
   for (const s of chosen) {
-    if (s.key === 'panama' || s.key === 'secrets') continue
+    if (s.key === 'panama' || s.key === 'governance' || s.key === 'secrets') continue
     for (const [f, v] of Object.entries(s.incoming as Record<string, unknown>)) next[f] = v
   }
   const cfg = mounts.validate(mounts.normalize(next as Partial<mounts.MountsConfig>))   // the panel's own check, on the merged result
   const panama = chosen.find((s) => s.key === 'panama')
+  const rules = chosen.find((s) => s.key === 'governance')
   const withSecrets = chosen.some((s) => s.key === 'secrets') && secrets
   const backup = writeBackup(opts.now)
   const payload = mounts.put(cfg, { quiet: true })
   history.record({ kind: 'change', area: 'configuration', action: 'imported from a file', what: chosen.map((s) => s.label).join(', ') })   // the section names only, never a value
   if (panama) setPanama(panama.incoming as { bucket: string; region: string; profile: string })
+  if (rules) setRules(rules.incoming as Rules)
   if (withSecrets) {
     if (Object.keys(secrets.settings).length) settings.setSecrets(secrets.settings as Partial<Record<settings.SecretName, string>>)
     if (secrets.git.length) {
@@ -329,6 +344,7 @@ export function undoImport() {
   const payload = mounts.put(b.mounts, { quiet: true })
   history.record({ kind: 'change', area: 'configuration', action: 'restored from a backup', what: last.name })
   if (b.panama) setPanama(b.panama)
+  if (b.governance) setRules(b.governance)
   if (b.secrets) { settings.restoreSecrets(b.secrets.settings); git.save(b.secrets.git_accounts) }
   try { unlinkSync(last.file) } catch { /* it stays; harmless */ }
   return { payload, restored: last.name, settings: settings.get() }

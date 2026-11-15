@@ -43,6 +43,35 @@ test.describe('Configuration file: export', () => {
 })
 
 test.describe('Configuration file: import', () => {
+  test('the plan screen lists the sections in the order the plan returns them (MCP connections first, then Repositories, then the rest), each with the core\'s label, the agent rules and the shell guard among them', async ({ page }) => {
+    await page.route('**/api/configio/plan', (route) => route.fulfill({ json: {
+      ok: true, errors: [], warnings: [], source: { app_version: '1.1.11', exported_at: '2026-11-15T10:00:00.000Z', secrets_included: false, secrets_set: [], env_omitted: [] },
+      sections: [
+        { key: 'mcp_connections', label: 'MCP connections', changed: true, current: { 'pod-manager': false }, incoming: { 'pod-manager': true }, machine_specific: false, account_specific: false, default_checked: true, error: null, note: null },
+        { key: 'repositories', label: 'Repositories and Git accounts', changed: true, current: {}, incoming: { repositories: [] }, machine_specific: false, account_specific: false, default_checked: true, error: null, note: null },
+        { key: 'governance', label: 'Agent rules and the shell guard (system-wide)', changed: true, current: { shell_guard: false }, incoming: { shell_guard: true }, machine_specific: false, account_specific: false, default_checked: true, error: null, note: null },
+        { key: 'image', label: 'Image and registry login', changed: false, current: {}, incoming: {}, machine_specific: false, account_specific: true, default_checked: false, error: null, note: null },
+      ] } }))
+    const dialog = await open(page)
+    await dialog.getByTestId('cfg-io-file').setInputFiles(file(good()))
+    await expect(dialog.getByTestId('cfg-io-preview')).toBeVisible()
+    const order = await dialog.locator('[data-testid^="cfg-io-row-"]').evaluateAll((els) => els.map((e) => e.dataset.testid.replace('cfg-io-row-', '')))
+    expect(order).toEqual(['mcp_connections', 'repositories', 'governance', 'image'])   // the plan's order, not a fixed one
+    await expect(dialog.getByTestId('cfg-io-row-mcp_connections')).toContainText('MCP connections')
+    await expect(dialog.getByTestId('cfg-io-row-repositories')).toContainText('Repositories and Git accounts')
+    await expect(dialog.getByTestId('cfg-io-row-governance')).toContainText('Agent rules and the shell guard')
+    await expect(dialog.getByTestId('cfg-io-section-governance')).toBeChecked()
+  })
+  test('a configuration file with the governance block shows it as its own section, and applying it sets the agent rules and the shell guard', async ({ page, api }) => {
+    const dialog = await open(page)
+    await dialog.getByTestId('cfg-io-file').setInputFiles(file({ ...good(), governance: { require_named_yes: true, spend_cap_usd: 25, shell_guard: true } }))
+    await expect(dialog.getByTestId('cfg-io-row-governance')).toContainText('Agent rules and the shell guard')
+    await expect(dialog.getByTestId('cfg-io-changed-governance')).toHaveText(t('configio.changed'))
+    await dialog.getByTestId('cfg-io-apply').click()
+    await expect.poll(() => api.state.settings.agent_spend_cap_usd).toBe(25)
+    expect(api.state.settings.agent_named_yes_required).toBe(true)
+    expect(api.state.agentguard.enabled).toBe(true)
+  })
   test('the preview lists each section with what changes; Folders is flagged as paths from another machine and starts unticked, the rest of the changes ticked', async ({ page }) => {
     const dialog = await open(page)
     await dialog.getByTestId('cfg-io-file').setInputFiles(file(good({}, { bucket: 'other-bucket', region: 'us-west-2', profile: 'panama' })))

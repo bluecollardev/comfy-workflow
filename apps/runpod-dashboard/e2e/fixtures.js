@@ -269,6 +269,7 @@ export async function mockApi(page, state) {
       const SEC = { volume: ['Volume and datacenter', ['network_volume_id', 'mount_path', 'data_center_id'], { account: true }], image: ['Image and registry login', ['image', 'registry_auth_id'], { account: true }], env: ['Environment', ['env'], {}], pod_defaults: ['Pod defaults', ['idle_stop_minutes', 'sync_parallel', 'sync_shared', 'pull_shared', 'apply_by_default', 'pull_any_card', 'required', 'links'], {}], mcp: ['MCP servers', ['mcp_http'], {}], folders: ['Folders', ['folders', 'custom'], { machine: true }] }
       const DEF = { bucket: 'bh-panama-exchange-610140802195', region: 'us-west-2', profile: 'panama' }
       const panamaNow = () => ({ bucket: state.settings.panama_bucket || DEF.bucket, region: state.settings.panama_region || DEF.region, profile: state.settings.panama_profile || DEF.profile })
+      const govNow = () => ({ require_named_yes: !!state.settings.agent_named_yes_required, spend_cap_usd: state.settings.agent_spend_cap_usd || 0, shell_guard: !!state.agentguard?.enabled })
       const pickF = (o, fs) => Object.fromEntries(fs.filter((f) => f in o).map((f) => [f, o[f]]))
       if (method === 'GET' && path === '/configio/export') {
         cio.exports++
@@ -277,7 +278,7 @@ export async function mockApi(page, state) {
         const { dry_run, ...config } = state.mounts.config
         const env = Object.fromEntries(Object.entries(config.env || {}).filter(([k]) => withSecrets || !looksSecret(k)))
         const omitted = withSecrets ? [] : Object.keys(config.env || {}).filter(looksSecret)
-        return json({ format: 'runpod-pod-manager-config', version: 1, exported_at: '2026-11-03T05:00:00.000Z', app_version: '1.0.2', config: { ...config, env }, panama: panamaNow(), secrets_included: withSecrets, ...(withSecrets ? { secrets: { settings: { ...cio.secrets }, git_accounts: cio.git.map((a) => ({ ...a })) } } : {}), secrets_set: [...Object.keys(cio.secrets), ...cio.git.map((a) => `git:${a.provider}/${a.username}`)], env_omitted: omitted, not_exported: ['the no-spend switch (dry_run)', 'per-pod configurations'] })
+        return json({ format: 'runpod-pod-manager-config', version: 1, exported_at: '2026-11-03T05:00:00.000Z', app_version: '1.0.2', config: { ...config, env }, panama: panamaNow(), governance: govNow(), secrets_included: withSecrets, ...(withSecrets ? { secrets: { settings: { ...cio.secrets }, git_accounts: cio.git.map((a) => ({ ...a })) } } : {}), secrets_set: [...Object.keys(cio.secrets), ...cio.git.map((a) => `git:${a.provider}/${a.username}`)], env_omitted: omitted, not_exported: ['the no-spend switch (dry_run)', 'per-pod configurations'] })
       }
       if (method === 'POST' && path === '/configio/plan') {
         cio.plans++
@@ -290,6 +291,7 @@ export async function mockApi(page, state) {
           const cur = pickF(state.mounts.config, fields), incoming = { ...cur, ...inc }, changed = JSON.stringify(cur) !== JSON.stringify(incoming)
           plan.sections.push({ key, label, changed, current: key === 'env' ? { env: maskEnv(cur.env) } : cur, incoming: key === 'env' ? { env: maskEnv(incoming.env) } : incoming, machine_specific: !!flags.machine, account_specific: !!flags.account, default_checked: changed && !flags.machine, error: null, note: flags.machine ? 'Paths from another machine.' : flags.account ? 'Ids that belong to the exporting RunPod account; they may not exist in yours.' : null })
         }
+        if (f.governance) { const now = govNow(), incoming = { ...now, ...f.governance }, changed = JSON.stringify(now) !== JSON.stringify(incoming); plan.sections.push({ key: 'governance', label: 'Agent rules and the shell guard (system-wide)', changed, current: now, incoming, machine_specific: false, account_specific: false, default_checked: changed, error: null, note: null }) }
         if (f.panama) { const now = panamaNow(), incoming = { ...now, ...f.panama }, changed = JSON.stringify(now) !== JSON.stringify(incoming); plan.sections.push({ key: 'panama', label: 'Panama bucket, region and profile', changed, current: now, incoming, machine_specific: false, account_specific: false, default_checked: changed, error: null, note: null }) }
         if (f.secrets) {   // the keys and tokens: each named with its last four characters, never the value; a malformed one is named and flagged
           const items = []
@@ -320,6 +322,7 @@ export async function mockApi(page, state) {
             for (const a of body.file.secrets?.git_accounts || []) if (a.token && a.token.length >= 8) { cio.git = [...cio.git.filter((g) => g.id !== a.id), a]; names.push(`git:${a.provider}/${a.username}`) } else cio.skipped.push(`git:${a.provider}/${a.username}`)
             cio.secretsApplied.push(names); continue
           }
+          if (key === 'governance') { const g = body.file.governance || {}; state.settings = { ...state.settings, agent_named_yes_required: !!g.require_named_yes, agent_spend_cap_usd: g.spend_cap_usd || 0 }; state.agentguard = { ...(state.agentguard || {}), enabled: !!g.shell_guard, installed: !!g.shell_guard }; continue }
           if (key === 'panama') { const p = body.file.panama || {}; state.settings = { ...state.settings, panama_bucket: p.bucket, panama_region: p.region, panama_profile: p.profile }; continue }
           Object.assign(state.mounts.config, pickF(body.file.config || {}, SEC[key][1]))
         }
@@ -385,6 +388,12 @@ export async function mockApi(page, state) {
     if (method === 'POST' && path === '/models/fetch') { state.modelFetch = { volume_id: body.volume_id, items: body.items }; state.volumeJob = { id: 'vjm1', kind: 'fetch', state: 'done', volume_id: body.volume_id, pod_name: 'ComfyUI-Pull-vol', fetched: body.items.map((i) => i.path.split('/').pop()), lines: ['Approved by a click in the app window.', ...body.items.map((i) => `FETCHED ${i.path.split('/').pop()} 1`), 'FETCH-DONE'] }; return json({ ...state.volumeJob, state: 'creating', fetched: undefined, lines: [] }) }
     if (method === 'GET' && path === '/models/status') return json(state.modelsOnVolume === undefined ? null : state.modelsOnVolume)
     if (method === 'GET' && path === '/models/folders') return json(['diffusion_models', 'vae', 'checkpoints', 'loras', 'text_encoders', 'clip', 'clip_vision', 'controlnet', 'upscale_models', 'embeddings'])
+    // The shell guard (a PreToolUse hook for Claude Code's Bash tool): a system-wide setting the core installs into ~/.claude/settings.json
+    if (path === '/agentguard') {
+      const g = (state.agentguard ||= { enabled: false, installed: false, settings_file: '', script_file: '' })
+      if (method === 'POST') { (state.agentguardCalls ||= []).push(!!body.enabled); Object.assign(g, body.enabled ? { enabled: true, installed: true, settings_file: '/Users/me/.claude/settings.json', script_file: '/Users/me/.config/runpod-pod-manager/agent-shell-guard.sh' } : { enabled: false, installed: false, settings_file: '/Users/me/.claude/settings.json', script_file: '' }) }
+      return json(g)
+    }
     if (method === 'POST' && path === '/volumes/job/cancel') { state.volumeJob = { ...(state.volumeJob || {}), id: body.id, state: 'cancelled' }; state.volumeJobCancelled = body.id; return json(state.volumeJob) }
     if (method === 'GET' && path === '/volumes/job') return json(state.volumeJob || { id: query.id, state: 'failed', error: 'no job' })
     if (method === 'POST' && path === '/volumes') {

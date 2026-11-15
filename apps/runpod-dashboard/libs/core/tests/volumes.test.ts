@@ -54,4 +54,18 @@ describe('network volumes', () => {
     expect(await volumes.list()).toEqual([])
     await expect(volumes.create({ name: '', size_gb: 60, datacenter: 'EU-RO-1' })).rejects.toThrow(/needs a name/)
   })
+
+  it('the Shared volume is marked, cannot be deleted from here, and frees up when another (or none) is chosen', async () => {
+    mounts.save(mounts.defaults())
+    const f = fetchFn([{ id: 'v1', name: 'work', size: 120, dataCenterId: 'EU-RO-1' }, { id: 'v2', name: 'models', size: 60, dataCenterId: 'EU-RO-1' }], [])
+    const o = { fetchFn: f, apiKey: 'k' }
+    expect((await volumes.list(o)).map((v) => v.is_shared)).toEqual([false, false])
+    const v = await volumes.setShared('v2', o)
+    expect(v).toMatchObject({ id: 'v2', is_shared: true }); expect(mounts.load().shared_volume_id).toBe('v2')
+    expect((await volumes.list(o)).find((x) => x.id === 'v2')!.is_shared).toBe(true)
+    await expect(volumes.remove('v2', o)).rejects.toThrow(/is the Shared volume/)
+    await expect(volumes.setShared('nope', o)).rejects.toThrow(/No network volume nope/)
+    expect(await volumes.setShared('', o)).toEqual({ shared: null }); expect(mounts.load().shared_volume_id).toBe('')
+    expect(await volumes.remove('v2', o)).toMatchObject({ removed: 'v2' })
+  })
 })

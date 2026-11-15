@@ -27,9 +27,10 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'cio-'))
   process.env.MOUNTS_FILE = join(dir, 'mounts.json'); process.env.SETTINGS_ENV_FILE = join(dir, '.env'); process.env.POD_MANAGER_BACKUPS_DIR = join(dir, 'backups'); process.env.GIT_ACCOUNTS_FILE = join(dir, 'git_accounts.json')
   for (const k of ENVS.slice(4)) delete process.env[k]
+  process.env.CLAUDE_USER_SETTINGS = join(dir, 'claude-settings.json'); process.env.AGENT_GUARD_SCRIPT = join(dir, 'hooks', 'guard-bash.sh')   // never the real ~/.claude
   mounts.save(mounts.normalize({ network_volume_id: 'vol1', data_center_id: 'EUR-IS-2', image: 'ghcr.io/x/y:1', idle_stop_minutes: 30, env: { COMFY_PORT: '8188' }, folders: { 'comfy-shared': '/home/me/ComfyUI-Shared' } }))
 })
-afterEach(() => { for (const k of ENVS) delete process.env[k] })
+afterEach(() => { for (const k of ENVS) delete process.env[k]; delete process.env.CLAUDE_USER_SETTINGS; delete process.env.AGENT_GUARD_SCRIPT })
 
 describe('exportConfig', () => {
   it('carries the format, the version and the configuration, and no dry_run', () => {
@@ -331,5 +332,44 @@ describe('keys and tokens on import (ADR-023, reversed 2026-11-03)', () => {
     expect(statSync(dirB).mode & 0o777).toBe(0o700)
     expect(statSync(r.backup).mode & 0o777).toBe(0o600)
     expect(readdirSync(dirB).every((n) => (statSync(join(dirB, n)).mode & 0o777) === 0o600)).toBe(true)
+  })
+})
+
+describe('the agent rules are a system-wide section (ADR-042)', () => {
+  it('are exported with the file, planned as their own section, applied through the settings, and undone with the backup', () => {
+    settings.set({ agent_named_yes_required: true, agent_spend_cap_usd: 40 })
+    const f = configio.exportConfig({ appVersion: '9.9.9', now: new Date('2026-11-15T05:00:00Z') })
+    expect(f.governance).toEqual({ require_named_yes: true, spend_cap_usd: 40, shell_guard: false })
+    expect('require_named_yes' in f.config).toBe(false)   // not part of any pod's configuration
+    settings.set({ agent_named_yes_required: false, agent_spend_cap_usd: 0 })
+    const plan = configio.planImport(f)
+    const g = plan.sections.find((s) => s.key === 'governance')!
+    expect(g).toMatchObject({ label: 'Agent rules (system-wide)', changed: true, default_checked: true, error: null, incoming: { require_named_yes: true, spend_cap_usd: 40 } })
+    configio.applyImport(f, { sections: ['governance'] })
+    expect(settings.agentRules()).toEqual({ require_named_yes: true, spend_cap_usd: 40, shell_guard: false })
+    configio.undoImport()
+    expect(settings.agentRules()).toEqual({ require_named_yes: false, spend_cap_usd: 0, shell_guard: false })
+  })
+  it('refuses a bad value and ignores a file without the section', () => {
+    const bad = { ...base({}), governance: { require_named_yes: 'yes', spend_cap_usd: -3 } }
+    expect(configio.planImport(bad).sections.find((s) => s.key === 'governance')).toMatchObject({ error: expect.stringMatching(/true or false/), default_checked: false })
+    expect(configio.planImport(base({ idle_stop_minutes: 45 })).sections.some((s) => s.key === 'governance')).toBe(false)
+  })
+})
+
+
+describe('the agent shell guard travels with the agent rules (ADR-042 section 10)', () => {
+  it('importing the section with shell_guard on installs the hook, off removes it, and undo puts the flag back', () => {
+    const file = { ...base({}), governance: { require_named_yes: false, spend_cap_usd: 0, shell_guard: true } }
+    const g = configio.planImport(file).sections.find((s) => s.key === 'governance')!
+    expect(g).toMatchObject({ changed: true, error: null, incoming: { shell_guard: true } })
+    configio.applyImport(file, { sections: ['governance'] })
+    expect(settings.agentRules().shell_guard).toBe(true)
+    expect(JSON.parse(readFileSync(process.env.CLAUDE_USER_SETTINGS!, 'utf8')).hooks.PreToolUse).toHaveLength(1)
+    configio.applyImport({ ...file, governance: { ...file.governance, shell_guard: false } }, { sections: ['governance'] })
+    expect(settings.agentRules().shell_guard).toBe(false); expect(JSON.parse(readFileSync(process.env.CLAUDE_USER_SETTINGS!, 'utf8')).hooks).toBeUndefined()
+    configio.undoImport()   // back to the state before the second import: on, hook installed
+    expect(settings.agentRules().shell_guard).toBe(true)
+    expect(JSON.parse(readFileSync(process.env.CLAUDE_USER_SETTINGS!, 'utf8')).hooks.PreToolUse).toHaveLength(1)
   })
 })

@@ -79,7 +79,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
 
   const agentId = { type: 'string', description: 'Agent ID' }
   const podId = { type: 'string', description: 'Pod ID (list_pods)' }
-  const approvedBy = { type: 'string', description: 'Who said yes to this spend. Required; never guessed.' }
+  const approvedBy = { type: 'string', description: 'Who said yes to this spend. Only needed when the named-yes setting is on (set_settings agent_named_yes_required); never guessed.' }
   /** The Python's tool list, verbatim where the core allows; the GPU menu is the core's card table, not a guess. */
   const POOL_TOOLS = [
     { name: 'list_agents', description: 'List all agents in the MOE pool with their status', inputSchema: { type: 'object', properties: {} } },
@@ -91,7 +91,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
     },
     {
       name: 'create_agent',
-      description: `Create a new GPU pod agent for the pool. Spends money: needs approved_by, the person behind the named yes (the named yes is asked for only when switched on in this tool's settings)`,
+      description: `Create a new GPU pod agent for the pool. Spends money. approved_by, the person behind the yes, is needed only when the named-yes setting is on`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -138,7 +138,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
     { name: 'get_pod', description: "One pod with RunPod's details: price per hour, cloud, datacenter, image, disks, status text, and its own configuration", inputSchema: { type: 'object', properties: { pod_id: podId }, required: ['pod_id'] } },
     {
       name: 'create_pod',
-      description: `Create a pod the way the dashboard's form does, with the Default Configuration (or a per-pod one) applied. Spends money: needs approved_by, the person behind the named yes (the named yes is asked for only when switched on in this tool's settings). "No card available" lists what was tried.`,
+      description: `Create a pod the way the dashboard's form does, with the Default Configuration (or a per-pod one) applied. Spends money. approved_by, the person behind the yes, is needed only when the named-yes setting is on. "No card available" lists what was tried.`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -185,7 +185,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
     { name: 'list_volumes', description: 'The network volumes with size, datacenter, cost per month, S3 support, the pods on each, and which is the default', inputSchema: { type: 'object', properties: {} } },
     {
       name: 'create_volume',
-      description: `Create a network volume (billed monthly: USD 0.07 per GB). Spends money: needs approved_by, the person behind the named yes (the named yes is asked for only when switched on in this tool's settings)`,
+      description: `Create a network volume (billed monthly: USD 0.07 per GB). Spends money. approved_by, the person behind the yes, is needed only when the named-yes setting is on`,
       inputSchema: {
         type: 'object',
         properties: { approved_by: approvedBy, name: { type: 'string' }, size_gb: { type: 'integer', description: '10 to 4000' }, datacenter: { type: 'string', description: 'Datacenter id (list_datacenters). The volume lives there and pods that use it must run there; a new region means a new volume' } },
@@ -208,7 +208,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
           skip_tests: { type: 'boolean', description: "Push: leave Binc's 80_TEST-BUCKET behind" },
           existing: { type: 'string', enum: ['update', 'size', 'checksum', 'replace'], description: 'A file already on the pod (SSH only): update = send what changed (default), size = skip the same name and size, checksum = skip identical content, replace = send everything again' },
           shared: { type: 'array', items: { type: 'string', enum: ['input', 'models', 'output', 'workflows'] }, description: 'Push: which ComfyUI-Shared folders to send. Default: the pod\'s own configuration, else the Default Configuration (input, models, workflows: output is what pods write and stays home)' },
-          plates: { type: 'boolean', description: 'Push the served plates too (client material leaving this PC: needs approved_by)', default: false },
+          plates: { type: 'boolean', description: 'Push the served plates too (client material leaving this PC: approved_by (only when the named-yes setting is on))', default: false },
           approved_by: { type: 'string', description: 'The named yes for plates leaving this PC' },
         },
         required: ['pod_id'],

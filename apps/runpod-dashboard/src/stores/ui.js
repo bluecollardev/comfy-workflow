@@ -7,7 +7,7 @@ import { computed, ref, watch } from 'vue'
 // `accountsOpen` / `repositoriesOpen` open it on that tab, so callers read as before.
 export const useUiStore = defineStore('ui', () => {
   const connectOpen = ref(false)
-  const connectTab = ref('accounts')   // 'accounts' | 'repositories' | 'mcp'
+  const connectTab = ref('mcp')   // 'mcp' | 'repositories' (the Git accounts are on the Repositories tab; the old key 'accounts' is read as that)
   const importOpen = ref(false)   // the Import Shot Pack modal (docs/ADR-008), opened by the pod card's primary button
   const importPod = ref(null)     // { id, name } of the pod whose card opened it: where the import is synced afterwards
   const importSource = ref('')    // '' = ask (always), 'folder' or 'panama': the source of Import Shot Pack (docs/ADR-015)
@@ -31,7 +31,8 @@ export const useUiStore = defineStore('ui', () => {
   const hints = ref(false)
   try { hints.value = localStorage.getItem('runpod-manager.hints') === 'on' } catch { /* storage blocked: hints off */ }
   watch(hints, (v) => { try { localStorage.setItem('runpod-manager.hints', v ? 'on' : 'off') } catch { /* storage blocked */ } })
-  const accountsOpen = computed({ get: () => connectOpen.value && connectTab.value === 'accounts', set: (v) => { if (v) connectTab.value = 'accounts'; connectOpen.value = v } })
+  watch(connectTab, (v) => { if (v === 'accounts') connectTab.value = 'repositories' })   // the old key
+  const accountsOpen = computed({ get: () => connectOpen.value && connectTab.value === 'repositories', set: (v) => { if (v) connectTab.value = 'repositories'; connectOpen.value = v } })
   const repositoriesOpen = computed({ get: () => connectOpen.value && connectTab.value === 'repositories', set: (v) => { if (v) connectTab.value = 'repositories'; connectOpen.value = v } })
   return { connectOpen, importOpen, importPod, importSource, importShown, connectTab, accountsOpen, repositoriesOpen, repositoriesVersion, configOpen, welcomeOpen, configFocus, volumesOpen, sharedOpen, modelsOpen, importRoundOpen, importRoundPreset, queueOpen, queueStarting, queueStartError, queueVersion, historyOpen, volumeDc, hints }
 })

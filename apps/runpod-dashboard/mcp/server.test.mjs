@@ -21,7 +21,7 @@ before(() => {
   for (const f of ['project', 'shared']) mkdirSync(join(dir, f), { recursive: true })
   writeFileSync(join(dir, 'mounts.json'), JSON.stringify({ folders: { project: join(dir, 'project'), 'comfy-shared': join(dir, 'shared') } }))
   child = spawn(process.execPath, [SERVER], {
-    env: { ...process.env, SYNC_SIM_MS: '1', RUNPOD_DRY_RUN: '1', POD_MANAGER_CONFIG_DIR: dir, RUNPOD_API_KEY: '' },
+    env: { ...process.env, SYNC_SIM_MS: '1', RUNPOD_DRY_RUN: '1', POD_MANAGER_CONFIG_DIR: dir, RUNPOD_API_KEY: '', AGENT_REQUIRE_NAMED_YES: '1' },
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   createInterface({ input: child.stdout }).on('line', (line) => {
@@ -50,14 +50,14 @@ test('initialize hands every client the governance instructions', async () => {
   assert.match(r.result.instructions, /^# Governance \(applied to this session\)/)
   assert.match(r.result.instructions, /## policy\/agent-permissions\.md/)
   assert.match(r.result.instructions, /## operator-brief\.md/)
-  assert.match(r.result.instructions, /does not ask for a named yes/)
+  assert.match(r.result.instructions, /tools that spend need `approved_by`/)   // the test server runs with the named yes switched on (AGENT_REQUIRE_NAMED_YES)
   notify('notifications/initialized')
 })
 
 const POOL = ['list_agents', 'get_pool_status', 'governance', 'create_agent', 'stop_agent', 'resume_agent', 'delete_agent', 'health_check_agent', 'get_agent_info', 'submit_job', 'get_job_status']
 const PODS = ['list_pods', 'get_pod', 'create_pod', 'stop_pod', 'resume_pod', 'delete_pod', 'recreate_pod', 'get_history', 'get_spend_history', 'get_comfy_runs', 'get_comfy_logs', 'export_history', 'rename_pod', 'set_pod_round', 'set_pod_shot', 'delete_round', 'rename_round', 'set_idle_stop', 'get_logs', 'list_datacenters', 'list_volumes', 'create_volume', 'delete_volume', 'set_default_volume', 'get_configuration', 'sync', 'sync_status', 'adapter_spec', 'adapters_list', 'adapter_save', 'import_plan', 'import_apply', 'get_credits', 'cost_now']
 // The tools the app's other windows added (docs/ADR-028), in the order app-tools.mjs defines them.
-const APP = ['list_gpus', 'get_volume_info', 'get_pod_config', 'set_pod_config', 'set_configuration', 'preview_configuration', 'reset_configuration', 'get_local_env', 'list_dirs', 'get_settings', 'set_settings', 'check_anthropic_key', 'config_export', 'config_import_plan', 'config_import_apply', 'config_undo', 'config_backups', 'resize_volume', 'volume_files', 'volume_erase', 'volume_clone', 'volume_job', 'panama_status', 'panama_rounds', 'panama_round_files', 'panama_stage', 'panama_round_size', 'panama_pod_plan', 'panama_pull', 'panama_job', 'panama_cancel', 'panama_remove', 'plan_round_import', 'import_rounds', 'import_round', 'queue_list', 'queue_task', 'list_pod_workflows', 'pod_models', 'run_pod_workflows', 'run_workflows_job', 'panama_place', 'panama_import', 'import_detect', 'package_summary', 'package_tree', 'package_file', 'package_describe', 'adapter_draft', 'adapter_document', 'adapter_problems', 'adapter_manage', 'sync_after', 'image_env', 'image_dockerfile', 'git_accounts', 'repositories', 'remote_mcp', 'mcp_endpoints', 'docs']
+const APP = ['list_gpus', 'get_volume_info', 'get_pod_config', 'set_pod_config', 'set_configuration', 'preview_configuration', 'reset_configuration', 'get_local_env', 'list_dirs', 'get_settings', 'set_settings', 'check_anthropic_key', 'config_export', 'config_import_plan', 'config_import_apply', 'config_undo', 'config_backups', 'resize_volume', 'volume_files', 'volume_erase', 'volume_clone', 'volume_job', 'agent_guard_status', 'models_search', 'models_files', 'models_fetch', 'models_status', 'set_shared_volume', 'panama_status', 'panama_rounds', 'panama_round_files', 'panama_stage', 'panama_round_size', 'panama_pod_plan', 'panama_pull', 'panama_job', 'panama_cancel', 'panama_remove', 'plan_round_import', 'import_rounds', 'import_round', 'queue_list', 'queue_task', 'list_pod_workflows', 'run_pod_workflows', 'pod_models', 'run_workflows_job', 'panama_place', 'panama_import', 'import_detect', 'package_summary', 'package_tree', 'package_file', 'package_describe', 'adapter_draft', 'adapter_document', 'adapter_problems', 'adapter_manage', 'sync_after', 'image_env', 'image_dockerfile', 'git_accounts', 'repositories', 'remote_mcp', 'mcp_endpoints', 'docs']
 
 test('an agent writes an adapter and tests it on a real folder; the code stays open to read', async () => {
   const spec = textOf(ok(await call('adapter_spec')))
@@ -251,7 +251,7 @@ test('datacenters and volumes: list, create with a named yes, default, refused d
   assert.match(textOf(refused(await call('delete_volume', { volume_id: 'dry-vol-nope' }))), /^No network volume dry-vol-nope/)
 
   const cost = jsonOf(ok(await call('cost_now')))
-  assert.equal(cost.currency, 'USD'); assert.equal(cost.pods_per_hour, 0); assert.deepEqual(cost.running_pods.map((p) => p.id), [pod.id]); assert.equal(cost.volumes_per_month, 14); assert.equal(cost.spend_cap_usd, 100)
+  assert.equal(cost.currency, 'USD'); assert.equal(cost.pods_per_hour, 0); assert.deepEqual(cost.running_pods.map((p) => p.id), [pod.id]); assert.equal(cost.volumes_per_month, 14); assert.equal(cost.spend_cap_usd, null)
 
   assert.match(textOf(ok(await call('delete_pod', { pod_id: pod.id }))), new RegExp(`^✓ Pod deleted: ${pod.id}`))
   assert.deepEqual(jsonOf(await call('list_pods')), [])
@@ -293,7 +293,7 @@ test('nothing but JSON-RPC went to stdout; the banner went to stderr', () => {
 })
 
 test('over HTTP (--http 0): initialize and tools/list answer the same server at /mcp', async () => {
-  const http = spawn(process.execPath, [SERVER, '--http', '0'], { env: { ...process.env, SYNC_SIM_MS: '1', RUNPOD_DRY_RUN: '1', POD_MANAGER_CONFIG_DIR: dir, RUNPOD_API_KEY: '' }, stdio: ['ignore', 'pipe', 'pipe'] })
+  const http = spawn(process.execPath, [SERVER, '--http', '0'], { env: { ...process.env, SYNC_SIM_MS: '1', RUNPOD_DRY_RUN: '1', POD_MANAGER_CONFIG_DIR: dir, RUNPOD_API_KEY: '', AGENT_REQUIRE_NAMED_YES: '1' }, stdio: ['ignore', 'pipe', 'pipe'] })
   try {
     const url = await new Promise((resolve, reject) => {
       createInterface({ input: http.stderr }).on('line', (l) => { const m = /on (http:\/\/127\.0\.0\.1:\d+\/mcp)/.exec(l); if (m) resolve(m[1]) })

@@ -188,7 +188,7 @@ async function detach(repo) {
 }
 
 function openAccounts() {
-  ui.connectTab = 'accounts'   // same modal, other tab
+  document.querySelector('[data-testid="connect-accounts"]')?.scrollIntoView({ block: 'start' })   // the accounts are on this same tab, above
 }
 
 // Lazy tab: the pane mounts when its tab is shown, so load on mount; the `active` watch covers a re-show without a remount.
