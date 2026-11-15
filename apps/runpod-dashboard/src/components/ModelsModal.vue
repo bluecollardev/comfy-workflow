@@ -89,7 +89,7 @@ import { errorText } from '../stores/toast'
 import { fmtBytes as fmt } from '../utils/studioTree'
 import { t } from '../i18n'
 
-const FOLDERS = ['diffusion_models', 'vae', 'checkpoints', 'loras', 'text_encoders', 'clip', 'clip_vision', 'controlnet', 'upscale_models', 'embeddings']
+const FOLDERS = ['diffusion_models', 'vae', 'vae_approx', 'checkpoints', 'loras', 'text_encoders', 'clip', 'clip_vision', 'controlnet', 'upscale_models', 'latent_upscale_models', 'model_patches', 'unet', 'embeddings', 'depthanything', 'sam2', 'SEEDVR2']
 const TERMINAL = ['done', 'failed', 'cancelled']
 const ui = useUiStore()
 const volumes = useVolumesStore()

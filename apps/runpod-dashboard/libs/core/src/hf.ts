@@ -7,8 +7,10 @@ import { bad, CoreError } from './errors.js'
 
 export const HF = 'https://huggingface.co'
 /** Where a file may be put: the folders of `models/` that hold weights. */
-export const FOLDERS = ['diffusion_models', 'vae', 'checkpoints', 'loras', 'text_encoders', 'clip', 'clip_vision', 'controlnet', 'upscale_models', 'embeddings'] as const
-export type Folder = typeof FOLDERS[number]
+export const FOLDERS = ['diffusion_models', 'vae', 'vae_approx', 'checkpoints', 'loras', 'text_encoders', 'clip', 'clip_vision', 'controlnet', 'upscale_models', 'latent_upscale_models', 'model_patches', 'unet', 'embeddings', 'depthanything', 'sam2', 'SEEDVR2'] as const
+/** A folder is one of these under models/, optionally with one sub-folder (loras/ltx2, checkpoints/ltx-2.3): what Binc's pull list names (MODELS_PULL_v003.csv). */
+export type Folder = string
+export const isFolder = (f: string): boolean => { const [top, sub, ...rest] = String(f).split('/'); return (FOLDERS as readonly string[]).includes(top) && !rest.length && (sub === undefined || /^[A-Za-z0-9][\w.-]{0,60}$/.test(sub)) }
 /** Weight files only: no scripts, no archives. (.pth is what the upscalers ship; ComfyUI loads it with weights_only.) */
 export const EXTENSIONS = ['safetensors', 'gguf', 'pth'] as const
 const extOf = (p: string) => (p.split('.').pop() || '').toLowerCase()
@@ -71,14 +73,14 @@ export async function resolve(items: FetchItem[], fetchFn: typeof fetch = fetch)
   const cache = new Map<string, HfFile[]>(), out: Resolved[] = []
   for (const it of items) {
     const repo = assertRepo(String(it.repo)), revision = assertRevision(String(it.revision || 'main')), path = safePath(String(it.path))
-    if (!(FOLDERS as readonly string[]).includes(it.folder)) throw bad(`Not a models folder: ${it.folder} (one of ${FOLDERS.join(', ')}).`)
+    if (!isFolder(it.folder)) throw bad(`Not a models folder: ${it.folder} (one of ${FOLDERS.join(', ')}, with at most one sub-folder).`)
     const key = `${repo}@${revision}`
     if (!cache.has(key)) cache.set(key, await files(repo, revision, fetchFn))
     const f = cache.get(key)!.find((x) => x.path === path)
     if (!f) throw bad(`${repo} has no weight file ${path} (only ${EXTENSIONS.join(', ')} files are fetched).`)
     const name = path.split('/').pop()!
     if (!/^[\w.+\- ]{1,200}$/.test(name)) throw bad(`Unsafe file name: ${name}`)
-    out.push({ repo, revision, path, name, folder: it.folder as Folder, bytes: f.bytes, sha256: f.sha256, url: `${HF}/${repo}/resolve/${revision}/${path.split('/').map(encodeURIComponent).join('/')}` })
+    out.push({ repo, revision, path, name, folder: it.folder, bytes: f.bytes, sha256: f.sha256, url: `${HF}/${repo}/resolve/${revision}/${path.split('/').map(encodeURIComponent).join('/')}` })
   }
   return out
 }

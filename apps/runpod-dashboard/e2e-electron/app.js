@@ -29,6 +29,7 @@ export async function launchApp({ dry = true, live = false, env: extra = {} } = 
     MOUNTS_FILE: join(configDir, 'mounts.json'),
     IDLE_FILE: join(configDir, 'idle.json'),
     DRY_PODS_FILE: join(configDir, 'dry-pods.json'),
+    CLAUDE_USER_SETTINGS: join(configDir, 'claude-user-settings.json'),   // the shell guard writes a hook into the user's Claude settings: a spec must never touch the real ~/.claude
     RUNPOD_MANAGER_NO_BACKEND: '1',
     IDLE_WATCH: '0',
     COMFY_MODE: 'dev',
