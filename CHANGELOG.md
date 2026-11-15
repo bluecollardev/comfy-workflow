@@ -3,7 +3,7 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
-## Unreleased
+## v1.2.3 (tag v1.2.3, 2026-11-16)
 
 ### RunPod's request limit (ADR-042 section 18)
 - Lucas: "There is no volume to load onto: set a Default Configuration volume or make one Shared." (both were set), "the fuck". RunPod answered `429 ... rate limit exceeded for the hour window`; an unreadable volume list was treated as no volume. Now: one shared, cached answer per RunPod read (single flight; pods 8 s, volumes 15 s, stock 60 s, datacenter prices 120 s), writes drop what they change; a 429 sets a core-wide backoff (minute window 60 s; hour window 5, 10, 15 minutes), serves the last good answer, and is shown as ONE banner under the nav bar (`RateLimitBanner`); `rate_limit_status` and `rate_limited` in MCP answers; the last volumes seen are kept on disk and the stored ids resolve the Shared or default volume when the list cannot be read ("no volume" only when no id is stored). Call rate with the window open: about 50 a minute down to about 15 to 20 (read from the code). Core tests: `tests/ratelimit.test.ts` (15), the guard `tests/realconfig.test.ts`; `e2e/ratelimit.spec.js` (3).
