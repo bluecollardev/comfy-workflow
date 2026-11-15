@@ -1,4 +1,4 @@
-import { test, expect, modal, cfgTab, openVolumes, openModels } from './fixtures'
+import { test, expect, modal, cfgTab, openVolumes, openModels, answerConfirm } from './fixtures'
 import { t } from './i18n'
 
 // Shared (ADR-042 section 9): the nav button opens a chooser with Volumes and Models; the Shared volume is badged and cannot be deleted;
@@ -184,6 +184,10 @@ test.describe('Shared', () => {
     await m.locator('[data-testid="wanted-row"][data-name="dyn.safetensors"]').getByTestId('wanted-remove').click()
     await expect(m.getByTestId('wanted-row')).toHaveCount(3)
     await m.getByTestId('wanted-clear').click()
+    await answerConfirm(page, false)                                                      // No keeps the list
+    await expect(m.getByTestId('wanted-row')).toHaveCount(3)
+    await m.getByTestId('wanted-clear').click()
+    await answerConfirm(page, true)
     await expect(m.getByTestId('wanted-empty')).toBeVisible()
   })
 

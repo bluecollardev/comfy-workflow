@@ -119,6 +119,7 @@ import { useMountsStore } from '../stores/mounts'
 import { errorText } from '../stores/toast'
 import { fmtBytes as fmt } from '../utils/studioTree'
 import { t } from '../i18n'
+import { useConfirmStore } from '../stores/confirm'
 
 const FOLDERS = ['diffusion_models', 'vae', 'vae_approx', 'checkpoints', 'loras', 'text_encoders', 'clip', 'clip_vision', 'controlnet', 'upscale_models', 'latent_upscale_models', 'model_patches', 'unet', 'embeddings', 'depthanything', 'sam2', 'SEEDVR2']
 const TERMINAL = ['done', 'failed', 'cancelled']
@@ -219,7 +220,11 @@ async function addPasted() {
   if (r) { pasteOpen.value = false; pasted.value = '' }
 }
 const removeOne = (r) => wantedDo(() => wantedAPI.remove([r.key], false))
-const clearAll = () => wantedDo(() => wantedAPI.remove([], true))
+const confirm = useConfirmStore()
+const clearAll = async () => {
+  if (!(await confirm.ask(t('wanted.confirmClear', { n: wanted.rows.length }), { okLabel: t('wanted.clear') }))) return   // the user says yes first
+  await wantedDo(() => wantedAPI.remove([], true))
+}
 /** Load what the volume lacks: the first job is shown here; the core starts the others (20 files each) as each finishes. */
 async function loadMissing() {
   const r = await wantedDo(() => wantedAPI.load(target.value.id), (x) => t('wanted.started', { files: x.files, size: fmt(x.bytes), jobs: x.jobs }))

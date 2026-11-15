@@ -836,6 +836,7 @@
     "binc": "Install Defaults",
     "load": "Load missing: {n} files, {size}",
     "clear": "Remove All",
+    "confirmClear": "Remove all {n} models from the wanted list? The files on the volume stay.",
     "empty": "Nothing yet: add files from a search, press Saved List to record what the volume holds, or Install Defaults.",
     "noRepo": "(no repo known: cannot be loaded)",
     "remove": "Remove from the list",
