@@ -34,6 +34,8 @@ export interface CustomFolder { name: string; local: string; container: string; 
 export interface MountsConfig {
   folders: Record<string, string>
   custom: CustomFolder[]
+  /** The volume that holds the shared models (ADR-042): marked Shared in the Volumes list and never deleted from there; '' = none chosen (the models go to the Default Configuration's volume) */
+  shared_volume_id: string
   network_volume_id: string
   mount_path: string
   data_center_id: string
@@ -105,6 +107,7 @@ export function defaults(): MountsConfig {
   return {
     folders: Object.fromEntries(names.map((n) => [n, ''])),
     custom: [],
+    shared_volume_id: '',
     network_volume_id: '',
     mount_path: '/workspace',
     data_center_id: '',

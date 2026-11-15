@@ -5,6 +5,9 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased
 
+### Shared: models from Hugging Face onto the Shared volume (ADR-042 section 9; core only so far)
+- Lucas: "under models, we should be able to search hugging face repos and choose the model we want ... and load that into our shared volume"; "shared volume ... NOT deleteable ... shared badge". `hf.ts`, `podpull.fetchModels` (a pod downloads, `approved_by` needed), `shared_volume_id` in the configuration (exported and imported), `volumes.setShared`, and `volumes.remove` refuses the Shared volume. The windows and the MCP tools are still to do.
+
 ### A VAE and a diffusion model per pod (ADR-042)
 - Lucas: "we also need to be able to choose vae", "make this configurable", "per pod". `podmodels.ts`, `runflows.models` / `setModels`, MCP `pod_models`; applied by Run workflows to graphs with one loader of the class. The picker UI is still to do.
 

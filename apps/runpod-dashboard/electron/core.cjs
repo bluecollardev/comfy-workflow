@@ -92,6 +92,7 @@ const TABLE = {
     resize: (c, id, size) => c.volumes.resize(id, Number(size)),
     remove: (c, id) => c.volumes.remove(id),
     useAsDefault: (c, id) => c.volumes.useAsDefault(id),
+    setShared: (c, id) => c.volumes.setShared(id || ''),
     plan: (c, id) => c.podpull.volumePlan(id),   // what a browse or erase on this volume would run on and cost
     browse: (c, id, path) => c.podpull.browseVolume(id, path ? { path } : {}),
     erase: (c, id, keys, o) => c.podpull.eraseVolume(id, keys || [], o || {}),

@@ -26,7 +26,7 @@ export const KEEP_BACKUPS = 10
 export type SectionKey = 'volume' | 'image' | 'env' | 'pod_defaults' | 'mcp' | 'folders' | 'panama' | 'secrets'
 interface SectionDef { label: string; fields: (keyof mounts.MountsConfig)[]; machine?: boolean; account?: boolean }
 export const SECTIONS: Record<SectionKey, SectionDef> = {
-  volume: { label: 'Volume and datacenter', fields: ['network_volume_id', 'mount_path', 'data_center_id'], account: true },
+  volume: { label: 'Volume and datacenter', fields: ['network_volume_id', 'mount_path', 'data_center_id', 'shared_volume_id'], account: true },
   image: { label: 'Image and registry login', fields: ['image', 'registry_auth_id'], account: true },
   env: { label: 'Environment', fields: ['env'] },
   pod_defaults: { label: 'Pod defaults', fields: ['idle_stop_minutes', 'models', 'sync_parallel', 'sync_shared', 'pull_shared', 'apply_by_default', 'pull_any_card', 'import_max_pods', 'import_cost_cap_usd', 'import_cap_enabled', 'required', 'links'] },
@@ -36,7 +36,7 @@ export const SECTIONS: Record<SectionKey, SectionDef> = {
   secrets: { label: 'Keys and tokens', fields: [] },
 }
 export const SECTION_KEYS = Object.keys(SECTIONS) as SectionKey[]
-const CONFIG_KEYS = new Set<string>(['folders', 'custom', 'network_volume_id', 'mount_path', 'data_center_id', 'links', 'env', 'apply_by_default', 'pull_any_card', 'import_max_pods', 'import_cost_cap_usd', 'import_cap_enabled', 'required', 'image', 'registry_auth_id', 'idle_stop_minutes', 'models', 'pull_shared', 'sync_shared', 'sync_parallel', 'dry_run', 'mcp_http'])
+const CONFIG_KEYS = new Set<string>(['folders', 'custom', 'network_volume_id', 'shared_volume_id', 'mount_path', 'data_center_id', 'links', 'env', 'apply_by_default', 'pull_any_card', 'import_max_pods', 'import_cost_cap_usd', 'import_cap_enabled', 'required', 'image', 'registry_auth_id', 'idle_stop_minutes', 'models', 'pull_shared', 'sync_shared', 'sync_parallel', 'dry_run', 'mcp_http'])
 const TOP_KEYS = new Set(['format', 'version', 'exported_at', 'app_version', 'config', 'panama', 'secrets_included', 'secrets', 'secrets_set', 'env_omitted', 'not_exported'])
 /** Listed in every export, so a reader knows what to set up again by hand. */
 export const NOT_EXPORTED = ['the no-spend switch (dry_run)', 'per-pod configurations', 'per-pod model choices (a pod id means nothing on another machine; the defaults travel)', 'adapters you wrote', 'the repositories attached to pods']
@@ -86,7 +86,7 @@ const checkType = (key: string, v: unknown): string | null => {
   const str = (x: unknown) => typeof x === 'string'
   const strArr = (x: unknown) => Array.isArray(x) && x.every(str)
   switch (key) {
-    case 'network_volume_id': case 'mount_path': case 'data_center_id': case 'image': case 'registry_auth_id': return str(v) ? null : `${key} must be text`
+    case 'shared_volume_id': case 'network_volume_id': case 'mount_path': case 'data_center_id': case 'image': case 'registry_auth_id': return str(v) ? null : `${key} must be text`
     case 'idle_stop_minutes': case 'sync_parallel': return typeof v === 'number' && Number.isFinite(v) ? null : `${key} must be a number`
     case 'apply_by_default':
     case 'pull_any_card': return typeof v === 'boolean' ? null : `${key} must be true or false`

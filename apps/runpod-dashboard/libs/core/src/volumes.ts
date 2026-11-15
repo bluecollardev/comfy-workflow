@@ -22,6 +22,7 @@ export interface VolumePod { id: string; name: string; status: string; via: 'run
 export interface Volume {
   id: string; name: string; size_gb: number; datacenter: string; cost_per_month: number; s3: boolean
   is_default: boolean       // the Default Configuration's volume
+  is_shared: boolean        // the volume that holds the shared models (Shared badge; it cannot be deleted from here)
   pods: VolumePod[]         // attached on RunPod ('runpod'), or named by a pod's own configuration ('config')
 }
 
@@ -57,7 +58,7 @@ export async function list(client?: rp.RunPodClient): Promise<Volume[]> {
   }
   return volumes.map((v) => ({
     id: v.id, name: v.name, size_gb: v.size, datacenter: v.dataCenterId, cost_per_month: volumeCostPerMonth(v.size), s3: S3_DATACENTERS.has(v.dataCenterId),
-    is_default: v.id === cfg.network_volume_id, pods: byVolume.get(v.id) || [],
+    is_default: v.id === cfg.network_volume_id, is_shared: !!cfg.shared_volume_id && v.id === cfg.shared_volume_id, pods: byVolume.get(v.id) || [],
   })).sort((a, b) => Number(b.is_default) - Number(a.is_default) || a.name.localeCompare(b.name))
 }
 
@@ -67,7 +68,7 @@ export async function create(input: { name: string; size_gb: number; datacenter:
   if (isDry()) { v = { id: `dry-vol-${Date.now().toString(36)}`, name: input.name.trim(), size: input.size_gb, dataCenterId: input.datacenter }; drySave([...dryLoad(), v]) }
   else v = await rp.createNetworkVolume({ name: input.name.trim(), size: input.size_gb, dataCenterId: input.datacenter }, client)
   history.record({ kind: 'change', area: 'volume', action: 'created', what: input.name.trim(), detail: `${input.size_gb} GB in ${input.datacenter}` })
-  return (await list(client)).find((x) => x.id === v.id) || { id: v.id, name: v.name, size_gb: v.size, datacenter: v.dataCenterId, cost_per_month: volumeCostPerMonth(v.size), s3: S3_DATACENTERS.has(v.dataCenterId), is_default: false, pods: [] }
+  return (await list(client)).find((x) => x.id === v.id) || { id: v.id, name: v.name, size_gb: v.size, datacenter: v.dataCenterId, cost_per_month: volumeCostPerMonth(v.size), s3: S3_DATACENTERS.has(v.dataCenterId), is_default: false, is_shared: false, pods: [] }
 }
 
 /** A volume only grows (RunPod never shrinks one). */
@@ -86,6 +87,7 @@ export async function resize(id: string, size_gb: number, client?: rp.RunPodClie
 export async function remove(id: string, client?: rp.RunPodClient): Promise<{ removed: string; was_default: boolean }> {
   const current = (await list(client)).find((v) => v.id === id)
   if (!current) throw bad(`No network volume ${id}`)
+  if (current.is_shared) throw bad(`${current.name} is the Shared volume (it holds the models): choose another Shared volume, or none, before deleting it.`)
   const attached = current.pods.filter((p) => p.via === 'runpod')
   if (attached.length) throw bad(`${current.name} is attached to ${attached.map((p) => p.name).join(', ')}: delete or recreate those pods first`)
   if (isDry()) drySave(dryLoad().filter((v) => v.id !== id))
@@ -96,6 +98,16 @@ export async function remove(id: string, client?: rp.RunPodClient): Promise<{ re
 }
 
 /** Make this the Default Configuration's volume: its id and its datacenter, together, since a volume pins both. */
+/** Say which volume holds the shared models (marked Shared, never deleted from the Volumes window); an empty id clears it. */
+export async function setShared(id: string, client?: rp.RunPodClient): Promise<Volume | { shared: null }> {
+  const cfg = mounts.load()
+  if (!id) { mounts.put({ ...cfg, shared_volume_id: '' }, { quiet: true }); history.record({ kind: 'change', area: 'volume', action: 'no longer Shared', what: cfg.shared_volume_id || '' }); return { shared: null } }
+  const current = (await list(client)).find((v) => v.id === id)
+  if (!current) throw bad(`No network volume ${id}`)
+  mounts.put({ ...cfg, shared_volume_id: id }, { quiet: true })
+  history.record({ kind: 'change', area: 'volume', action: 'made Shared', what: current.name, detail: current.datacenter })
+  return { ...current, is_shared: true }
+}
 export async function useAsDefault(id: string, client?: rp.RunPodClient): Promise<Volume> {
   const current = (await list(client)).find((v) => v.id === id)
   if (!current) throw bad(`No network volume ${id}`)
