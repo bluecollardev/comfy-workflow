@@ -56,7 +56,7 @@ export function cudaOf(key: string): 13 | undefined {
 }
 /** The CUDA 13 build of each pinned digest (ADR-020 amendment): a digest has no `-cu13` suffix to add, so the pair is listed. Keep it in step with mounts.DEFAULT_IMAGE_REF. */
 export const CU13_PINS: Record<string, string> = {
-  'ghcr.io/bluecollardev/comfy-app@sha256:a06a461ce3b38c6a3badf9cd7d47e77f12247a38785511f8b4ca077aedb4d457': 'ghcr.io/bluecollardev/comfy-app@sha256:116c2012a094e627623c3883ef96dd1c6f828d97009064371d9556be81eac43a',
+  'ghcr.io/bluecollardev/comfy-app@sha256:c0b6ec76db493318d0b28b5e9905523abe0cfb2246baca92326044dc462d5969': 'ghcr.io/bluecollardev/comfy-app@sha256:edae46f4d87ba86ba039abce053867d301d6500dec2b8126f13c22574b12e769',
 }
 /** Our image on the right CUDA for the card: `ghcr.io/.../comfy-app:<tag>` becomes `...:<tag>-cu13` for a card that needs it, and a pinned digest becomes its CUDA 13 digest (CU13_PINS). Another image (the stock one, a custom reference) is left alone: it is the caller's to match. */
 export function imageFor(image: string, key: string): string {

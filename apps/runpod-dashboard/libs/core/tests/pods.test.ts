@@ -24,7 +24,7 @@ function fakeFetch(answers: (query: string) => unknown) {
 describe('the image a pod boots', () => {
   it('must be pullable', () => {
     const cfg = mounts.defaults()
-    expect(pods.resolveImage('configured', cfg)).toBe('ghcr.io/bluecollardev/comfy-app@sha256:a06a461ce3b38c6a3badf9cd7d47e77f12247a38785511f8b4ca077aedb4d457')   // the default is already pullable
+    expect(pods.resolveImage('configured', cfg)).toBe('ghcr.io/bluecollardev/comfy-app@sha256:c0b6ec76db493318d0b28b5e9905523abe0cfb2246baca92326044dc462d5969')   // the default is already pullable
     cfg.image = 'comfy-app:contract-v26'   // a bare local name (what the default used to be) is refused
     expect(() => pods.resolveImage('configured', cfg)).toThrow(/local image name/)
     cfg.image = 'ghcr.io/example/comfy-app:v26'
