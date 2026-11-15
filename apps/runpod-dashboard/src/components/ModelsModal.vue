@@ -205,15 +205,16 @@ async function load() {
 }
 async function cancel() { try { await vjobs.cancel(job.value.id) } catch (e) { error.value = errorText(e) } }
 /** What models/ already holds, when the core can say (null: it cannot without listing the volume). */
+let onVolumeFor = ''
 async function refreshOnVolume() {
-  onVolume.value = null
-  if (!target.value) return
+  if (!target.value) { onVolume.value = null; onVolumeFor = ''; return }
+  if (onVolumeFor !== target.value.id) { onVolume.value = null; onVolumeFor = target.value.id }   // another volume: start empty; the same volume keeps what it showed while it reloads (no blinking)
   try {
     const r = await modelsAPI.status(target.value.id)
     const list = Array.isArray(r) ? r : r?.files || r?.items || null
     onVolume.value = list ? list.map((f) => { const path = f.path || [f.folder, f.name].filter(Boolean).join('/'), cut = path.indexOf('/'), folder = f.folder || (cut > 0 ? path.slice(0, cut) : ''), name = f.name || (cut > 0 ? path.slice(cut + 1) : path); return { path, folder, name, bytes: f.bytes ?? f.size ?? 0, deletable: canDelete(folder, name) && !/\.part$/.test(name) } }) : null
     for (const k of Object.keys(delChosen)) if (!onVolume.value?.some((f) => f.path === k)) delete delChosen[k]
-  } catch { onVolume.value = null }
+  } catch { /* a failed refresh (RunPod limiting, a dropped link) keeps the list that was shown */ }
 }
 /** Delete model files from the volume: the app asks first (what and how much; this cannot be undone), then the core removes exactly those files. A deleted file stays in the wanted list and shows as missing. */
 async function deleteFiles(list) {
