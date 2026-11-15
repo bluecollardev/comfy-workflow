@@ -818,7 +818,29 @@
     "cancel": "Cancel",
     "onVolume": "Already on the volume",
     "onVolumeUnknown": "What the volume holds is not known without listing it (add RunPod S3 keys in Default Configuration for a free listing).",
-    "onVolumeNone": "No model files found under models/."
+    "onVolumeNone": "No model files found under models/.",
+    "want": "Add to wanted list"
+  },
+  "wanted": {
+    "title": "Wanted models ({n})",
+    "intro": "The names of the models you want on a Shared volume, kept in your configuration and exported with it. Load what a volume lacks onto any Shared volume, in any datacenter.",
+    "save": "Save list from the volume",
+    "binc": "Add Binc's list",
+    "load": "Load missing: {n} files, {size}",
+    "clear": "Clear list",
+    "empty": "Nothing yet: add files from a search, save what the volume holds, or add Binc's list.",
+    "noRepo": "(no repo known: cannot be loaded)",
+    "remove": "Remove from the list",
+    "state_present": "on the volume",
+    "state_missing": "missing",
+    "state_unknown": "not checked",
+    "added": "{n} added, {u} updated.",
+    "skipped": "{n} rows skipped (no repo, or not a models folder).",
+    "started": "Loading {files} files, {size}, in {jobs} job(s) one after another.",
+    "tooSmall": "The volume is {vol} GB; its models need about {need} GB. Grow it first (Volumes, Resize).",
+    "pasteWhy": "This volume cannot be read over S3 from here: paste the list's CSV text instead.",
+    "pastePlaceholder": "pipeline,install_to,file,hf_repo,hf_path,bytes,notes",
+    "pasteAdd": "Add the pasted list"
   },
   "connect": {
     "title": "Connect",

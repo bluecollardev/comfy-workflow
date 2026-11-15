@@ -23,7 +23,7 @@ export const VERSION = 1
 export const MAX_BYTES = 2 * 1024 * 1024   // a configuration is a few KB; refuse anything near this as "not a configuration"
 export const KEEP_BACKUPS = 10
 
-export type SectionKey = 'volume' | 'image' | 'env' | 'pod_defaults' | 'mcp' | 'mcp_connections' | 'repositories' | 'folders' | 'panama' | 'governance' | 'secrets'
+export type SectionKey = 'volume' | 'image' | 'env' | 'pod_defaults' | 'mcp' | 'mcp_connections' | 'repositories' | 'wanted_models' | 'folders' | 'panama' | 'governance' | 'secrets'
 interface SectionDef { label: string; fields: (keyof mounts.MountsConfig)[]; machine?: boolean; account?: boolean }
 export const SECTIONS: Record<SectionKey, SectionDef> = {
   volume: { label: 'Volume and datacenter', fields: ['network_volume_id', 'mount_path', 'data_center_id', 'shared_volume_id'], account: true },
@@ -33,13 +33,14 @@ export const SECTIONS: Record<SectionKey, SectionDef> = {
   mcp: { label: 'MCP servers', fields: ['mcp_http'] },
   mcp_connections: { label: 'MCP connections (the console this app uses)', fields: [] },
   repositories: { label: 'Repositories and accounts', fields: [] },
+  wanted_models: { label: 'Wanted models (names, to load onto a Shared volume)', fields: ['wanted_models'] },
   folders: { label: 'Folders', fields: ['folders', 'custom'], machine: true },
   panama: { label: 'Panama bucket, region and profile', fields: [] },
   governance: { label: 'Agent rules (system-wide)', fields: [] },
   secrets: { label: 'Keys and tokens', fields: [] },
 }
 export const SECTION_KEYS = Object.keys(SECTIONS) as SectionKey[]
-const CONFIG_KEYS = new Set<string>(['folders', 'custom', 'network_volume_id', 'shared_volume_id', 'mount_path', 'data_center_id', 'links', 'env', 'apply_by_default', 'pull_any_card', 'import_max_pods', 'import_cost_cap_usd', 'import_cap_enabled', 'required', 'image', 'registry_auth_id', 'idle_stop_minutes', 'models', 'pull_shared', 'sync_shared', 'sync_parallel', 'dry_run', 'mcp_http'])
+const CONFIG_KEYS = new Set<string>(['folders', 'custom', 'network_volume_id', 'shared_volume_id', 'mount_path', 'data_center_id', 'links', 'env', 'apply_by_default', 'pull_any_card', 'import_max_pods', 'import_cost_cap_usd', 'import_cap_enabled', 'required', 'image', 'registry_auth_id', 'idle_stop_minutes', 'models', 'wanted_models', 'pull_shared', 'sync_shared', 'sync_parallel', 'dry_run', 'mcp_http'])
 const TOP_KEYS = new Set(['format', 'version', 'exported_at', 'app_version', 'config', 'panama', 'governance', 'mcp_connections', 'repositories', 'secrets_included', 'secrets', 'secrets_set', 'env_omitted', 'not_exported'])
 /** Listed in every export, so a reader knows what to set up again by hand. */
 export const NOT_EXPORTED = ['the no-spend switch (dry_run)', 'per-pod configurations', 'per-pod model choices (a pod id means nothing on another machine; the defaults travel)', 'adapters you wrote', 'which pod a repository is cloned onto (pod ids are not portable; the repository list itself travels)']
@@ -53,6 +54,7 @@ const appVersion = (): string => { try { return JSON.parse(readFileSync(join(APP
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 import * as repos from './repositories.js'
+import * as wanted from './wanted.js'
 import * as remote from './remote.js'
 type PublicAccount = Omit<git.Account, 'token' | 'refresh_token'>
 type RepoSection = { accounts: (PublicAccount & { token_set?: boolean })[]; repositories: repos.Repository[] }
@@ -107,6 +109,7 @@ const checkType = (key: string, v: unknown): string | null => {
     case 'import_cost_cap_usd': return typeof v === 'number' && v > 0 ? null : `${key} must be a number above 0`
     case 'import_cap_enabled': return typeof v === 'boolean' ? null : `${key} must be true or false`
     case 'models': return v && typeof v === 'object' && !Array.isArray(v) && Object.values(v as object).every(str) && Object.keys(v as object).every((k) => k === 'vae' || k === 'diffusion_model') ? null : `${key} must be {vae, diffusion_model} as file names`
+    case 'wanted_models': return wanted.checkList(v)
     case 'sync_shared': case 'pull_shared': return strArr(v) ? null : `${key} must be a list of folder names`
     case 'folders': return isObj(v) && Object.values(v).every(str) ? null : 'folders must map names to paths (text)'
     case 'required': return isObj(v) && Object.values(v).every((x) => typeof x === 'boolean') ? null : 'required must map folder names to true or false'
@@ -276,6 +279,7 @@ function buildPlan(file: unknown): { plan: ImportPlan; secrets: ParsedSecrets | 
     }
     if (!def.fields.some((f) => f in inc)) continue
     const merged = { ...current, ...Object.fromEntries(def.fields.filter((f) => f in inc).map((f) => [f, inc[f]])) } as Partial<mounts.MountsConfig>
+    if (key === 'wanted_models') merged.wanted_models = wanted.merge(current.wanted_models, wanted.normalizeList(inc.wanted_models))   // merged by repo, path and folder: what is here stays
     let err: string | null = null, normalized: mounts.MountsConfig
     try { normalized = mounts.validate(mounts.normalize(merged)) } catch (e) { err = (e as Error).message; normalized = mounts.normalize(merged) }
     const cur = pick(current, def.fields), incoming = pick(normalized, def.fields)

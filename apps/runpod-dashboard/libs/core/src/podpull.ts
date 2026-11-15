@@ -946,6 +946,18 @@ export async function modelsOnVolume(volumeId: string, opts: Opts = {}): Promise
   return out.sort((x, y) => x.folder.localeCompare(y.folder) || x.name.localeCompare(y.name))
 }
 
+/** One small text file from a volume over RunPod's S3 API (no pod, no cost), e.g. Binc's pull list; null when the S3 API cannot be used for this volume. */
+export async function readVolumeText(volumeId: string, key: string, opts: Opts = {}): Promise<string | null> {
+  volLabel(volumeId)
+  if (!/^[\w .+@=,()/-]{1,300}$/.test(key) || key.split('/').includes('..')) throw bad(`Not a path inside the volume: ${key}`)
+  if (mounts.dryRun(mounts.load())) return null
+  const vol = await volumeOf({ ...opts, volumeId })
+  const a = s3Access(vol); if (!a.ok) return null
+  const r = await (opts.aws ?? defaultAws)(['s3', 'cp', `s3://${a.bucket}/${key}`, '-', '--endpoint-url', a.endpoint, '--region', a.region], { AWS_ACCESS_KEY_ID: a.id, AWS_SECRET_ACCESS_KEY: a.secret })
+  if (r.code !== 0) throw new CoreError(502, `RunPod's S3 API: ${(r.stderr || r.stdout).trim().split('\n').pop() || `aws exited ${r.code}`}`)
+  return r.stdout
+}
+
 /** Put model files from Hugging Face onto a volume (ADR-042): a short pod (or yours running on it) downloads them straight into `comfy-shared/models/<folder>/`. Spends the pod's minutes. From the window the click is the yes (`approved_by` is optional and, when absent, the History says it was clicked in the app); the MCP tool still requires a name, as an agent's spend does (shared/governance/policy/agent-permissions.md). The files are looked up on Hugging Face again here; see hf.resolve. */
 export async function fetchModels(volumeId: string, items: hf.FetchItem[], o: { approved_by?: string }, opts: Opts & { fetchFn?: typeof fetch } = {}): Promise<PodJob> {
   const label = volLabel(volumeId)

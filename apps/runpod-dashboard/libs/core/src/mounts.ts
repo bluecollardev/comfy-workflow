@@ -15,6 +15,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync,
 import { basename, dirname, join, resolve } from 'node:path'
 import { bad, CoreError } from './errors.js'
 import { mirrorDir, mountsFile } from './paths.js'
+import * as wanted from './wanted.js'
 import * as history from './history.js'
 import * as settings from './settings.js'
 import { folderShapes, shape } from './shape.js'
@@ -36,6 +37,8 @@ export interface MountsConfig {
   custom: CustomFolder[]
   /** The volume that holds the shared models (ADR-042): marked Shared in the Volumes list and never deleted from there; '' = none chosen (the models go to the Default Configuration's volume) */
   shared_volume_id: string
+  /** The model files wanted on a Shared volume, as Hugging Face coordinates (ADR-042 section 12); travels in the export, tied to no volume */
+  wanted_models: wanted.WantedModel[]
   network_volume_id: string
   mount_path: string
   data_center_id: string
@@ -108,6 +111,7 @@ export function defaults(): MountsConfig {
     folders: Object.fromEntries(names.map((n) => [n, ''])),
     custom: [],
     shared_volume_id: '',
+    wanted_models: [],
     network_volume_id: '',
     mount_path: '/workspace',
     data_center_id: '',
@@ -159,6 +163,7 @@ export function normalize(data: Partial<MountsConfig>): MountsConfig {
     image: data.image ?? d.image,
     registry_auth_id: (data.registry_auth_id ?? '').trim(),
     idle_stop_minutes: data.idle_stop_minutes ?? d.idle_stop_minutes,
+    wanted_models: wanted.normalizeList(data.wanted_models),
     models: { vae: String(data.models?.vae ?? '').trim(), diffusion_model: String(data.models?.diffusion_model ?? '').trim() },
     sync_parallel: data.sync_parallel ?? d.sync_parallel,
     pull_shared: Array.isArray(data.pull_shared) ? SYNC_SHARED.filter((x) => data.pull_shared!.includes(x)) : d.pull_shared,

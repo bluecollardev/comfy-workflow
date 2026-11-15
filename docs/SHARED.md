@@ -106,6 +106,10 @@ Source list: `comfy-shared/models/_canalv2_pull/MODELS_PULL_v003.csv` on the Sha
 
 Depth Anything V2 Large fp32 and fp16, SeedVR2 3B fp16 and VAE, SAM 2.1 base+ and large. Extra test file: `vae/seedvr2_ema_vae_fp16.safetensors`.
 
+### Wanted models list
+
+The names of the models you want on a Shared volume, kept in the configuration and exported with it (section *Wanted models*), so a new machine or a new datacenter can be filled from the same list (ADR-042 section 12). Open Shared > Models: add files from a search (*Add to wanted list*), record what the volume holds (*Save list from the volume*) or add Binc's list above (*Add Binc's list*, read off the volume or pasted). Each row shows whether the volume has it; *Load missing* fetches the rest from Hugging Face in jobs of 20 files, and warns when the volume is too small. MCP: `models_wanted`, `models_wanted_add`, `models_wanted_remove`, `models_load_wanted`.
+
 ## Custom nodes
 
 ### Packs in the repo (`shared/nodes/packs.json`)
@@ -140,9 +144,9 @@ Depth Anything V2 Large fp32 and fp16, SeedVR2 3B fp16 and VAE, SAM 2.1 base+ an
 |---|---|---|
 | `BH_ReadSequence` | ComfyUI-BH-ShotPipe-v6, ComfyUI-BH-ShotPipe-v7 | yes |
 | `BH_ReadStill` | ComfyUI-BH-ShotPipe-v6, ComfyUI-BH-ShotPipe-v7 | yes |
-| `BincSeqToImage` | ComfyUI-BincPlateIO-v004 | next build |
-| `BincWriteGenDPX_v002` | ComfyUI-BincGenDPX-v002 | next build |
-| `OCIOVAEDecode` | ComfyUI-OCIO | next build |
+| `BincSeqToImage` | ComfyUI-BincPlateIO-v004 | yes (tested on a pod) |
+| `BincWriteGenDPX_v002` | ComfyUI-BincGenDPX-v002 | yes (tested on a pod) |
+| `OCIOVAEDecode` | ComfyUI-OCIO | yes (tested on a pod) |
 
 ### Needed but not in the image
 
@@ -154,11 +158,17 @@ Depth Anything V2 Large fp32 and fp16, SeedVR2 3B fp16 and VAE, SAM 2.1 base+ an
 - Core ComfyUI nodes used by graphs (PreviewImage, ImageScaleBy, MaskToImage, SaveGLB, ...) need nothing.
 
 
+### Still to load (read from volume `a3upg9ey48`, 15 Nov)
+
+281.4 GB of the 307.9 GB list is not on `a3upg9ey48` (250 GB, EU-RO-1): ltx-2.5 110.8, ltx-2.3 94.7, h3 46.7, gen-fill 27.9, stereo 1.3. SeedVR2 3B and VAE, Depth Anything V2 Large and SAM 2.1 are installed. `comfy-workspace` (`kceera10qh`, 2.2 TB, EUR-IS-2, no S3 API) has not been checked.
+
 ## Image dependencies
 
 - Base: `pytorch/pytorch:2.12.1-cuda12.6-cudnn9-runtime` (CUDA 13 variant for Blackwell cards), torch 2.12.1, Python 3.13.
 - ComfyUI v0.39.2, commit `3c1b7a17fdf239d35ce98cc777756f572d089795` (BH says 0.36.0; the Mac is on 0.39.2). Its `requirements.txt` and `manager_requirements.txt` are installed.
 - Extra Python packages for the packs: `apps/comfy-app/requirements-packs.txt`; each pack's own `requirements.txt` too, with `opencv-python` swapped for the headless build.
 - System: openssh-server, rsync, rclone, headless Chromium (Playwright at `/opt/playwright`) for `ui2api.py`.
-- Pinned image: `ghcr.io/bluecollardev/comfy-app@sha256:a06a461ce3b38c6a3badf9cd7d47e77f12247a38785511f8b4ca077aedb4d457` (CUDA 13: `@sha256:116c2012a094e627623c3883ef96dd1c6f828d97009064371d9556be81eac43a`).
-- In `comfy-node-packs` but not yet in a built image: ComfyUI-OCIO, ComfyUI-LTXVideo, ComfyUI-BincGenDPX-v002, ComfyUI-BincPlateIO-v004 (see Custom nodes).
+- Image built 15 Nov with the OCIO, LTXVideo, BincPlateIO and BincGenDPX packs and the extra model folders (CUDA 12.6): `ghcr.io/bluecollardev/comfy-app@sha256:2e86f1da319474030d59e459bda31576f57ef0bbe9a2f23eba9ab0ad592bd3e9` (tag `contract-v26-7825d00`). Tested on a pod (RTX 4090, EU-RO-1) with the previous build `38f40fb6…`: OCIO, Binc DPX and sequence nodes, BH loaders and 84 LTX nodes load.
+- Default Configuration still pins the older `@sha256:a06a461ce3b38c6a3badf9cd7d47e77f12247a38785511f8b4ca077aedb4d457` (CUDA 13: `@sha256:116c2012a094e627623c3883ef96dd1c6f828d97009064371d9556be81eac43a`); no CUDA 13 build of the new image yet.
+- Model folders mapped from the Shared volume (`docker/extra_model_paths.yaml`): checkpoints, clip, clip_vision, controlnet, diffusion_models, embeddings, loras, upscale_models, vae, text_encoders, vae_approx, latent_upscale_models, model_patches, unet, depthanything, sam2, SEEDVR2.
+- In the image since the 15 Nov build: ComfyUI-OCIO, ComfyUI-LTXVideo, ComfyUI-BincGenDPX-v002, ComfyUI-BincPlateIO-v004. A second LTX copy that arrives with Binc's round (`ComfyUI-LTXVideo-<hash>`, missing `nodes_registry.py`) fails to import; ours loads.
