@@ -93,7 +93,7 @@ case "${1:-help}" in
   chunk-live)
     # the proof of chunked runs and the RAM guard against RunPod: one real pod, tiny frames (spends a few minutes of the cheapest card)
     shift; load_env; ensure_app
-    cd "$APP"; RUNPOD_LIVE=1 exec npx vitest run libs/core/tests/chunking.live.test.ts "$@" ;;
+    cd "$APP"; RUNPOD_LIVE=1 exec npx vitest run --config libs/core/vitest.config.ts tests/chunking.live.test.ts "$@" ;;
   config)
     # export / import / undo of the Default Configuration as a JSON file; keys and tokens in it unless --no-secrets (docs/ADR-023)
     shift; load_env; ensure_app

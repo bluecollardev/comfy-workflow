@@ -3,7 +3,9 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import * as chunking from '../src/chunking.js'
+import { scratch } from './helpers.js'
 import * as mounts from '../src/mounts.js'
+import { mountsFile } from '../src/paths.js'
 import * as podpull from '../src/podpull.js'
 import * as pods from '../src/pods.js'
 import * as rp from '../src/runpod.js'
@@ -34,6 +36,11 @@ describe.skipIf(!LIVE)('chunked runs on a real pod', () => {
   }
 
   it('makes a pod, reads its container memory, runs 3 chunks, and the guard stops a run when the limit is low', async () => {
+    // This test saves a configuration and makes a pod. It must never touch the app's real Default Configuration (a run once did, by being started
+    // without the core suite's setup file): work in a scratch config directory, and refuse to go on if that did not happen.
+    scratch()
+    expect(process.env.POD_MANAGER_CONFIG_DIR, 'the live test would use the real configuration directory').not.toBe(join(homedir(), '.config', 'runpod-pod-manager'))
+    expect(mountsFile(), 'the live test would write the real mounts.json').not.toContain(join('.config', 'runpod-pod-manager'))
     // the key: the environment, else the app's own settings (the test's config directory is a scratch one, so look in the real one for it, read-only)
     if (!process.env.RUNPOD_API_KEY) {
       const was = process.env.SETTINGS_ENV_FILE
