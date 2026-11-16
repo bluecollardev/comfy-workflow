@@ -3,6 +3,14 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## v1.2.6 (tag v1.2.6, 2026-11-16)
+
+### Chunked runs and the RAM guard (docs/CHUNKING.md)
+- `run_shot_chunked` runs a shot's graph on a pod as consecutive frame ranges (BincSeqToImage first_frame/last_frame, or BH_ReadSequence first_index/count), frees ComfyUI's memory between chunks, and follows with `chunked_job`.
+- The RAM guard reads the pod's container memory (its cgroup, over SSH; not the host's) while a chunk runs: past `ram_guard_pct` (default 85) it interrupts, frees memory and stops with the chunk and the frame to resume from. Memory that does not fall after a free stops the run before the next chunk. `pod_ram` shows the reading.
+- `chunk_plan` and `./start.sh chunk plan` split a range and write one queue job file per chunk (never into `queue/canalv2/`).
+- `./start.sh chunk-live` proves it on a real pod: container RAM read, twelve tiny DPX frames run as three chunks, and the guard stopped by a 0.1% limit (no memory used for the proof). `CHUNKING.md` also documents the ComfyUI memory flags from v1.2.5.
+
 ## v1.2.5 (tag v1.2.5, 2026-11-16)
 
 - Every pod now starts ComfyUI with `--cache-lru 1 --disable-smart-memory` (set by the app as `COMFY_ARGS`, and the default in the image entrypoint and compose file), so node outputs and models are freed between runs and system RAM no longer climbs until the container is OOM-killed (exit 137). A pod's own `COMFY_ARGS` replaces it; add `--lowvram` there for a small card. It applies to pods created from now on, with the pinned image as it is.
