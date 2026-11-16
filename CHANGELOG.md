@@ -3,6 +3,13 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## v1.2.8 (tag v1.2.8, 2026-11-17)
+
+### Retry Later (ADR-042 section 19)
+- When a stopped pod cannot resume because its host has no free GPU, the pod card offers **Retry Later** beside Recreate; when a Create finds no card, the form offers it too. A watch retries the same request every 2 minutes (minimum 60 s) until a card is free, up to 12 hours (72 at most), and shows in a list above the pods with its tries, next try and Cancel.
+- Watches survive an app restart (`pod-watches.json`). A create never makes a second pod: it writes an in-flight marker first, and a lost answer is settled by finding the pod by name. A 429 waits for the rate limiter's own time; any other error stops the watch with its reason.
+- MCP: `resume_pod` and `create_pod` take `retry_until_free`, `every_minutes`, `give_up_hours`; `pod_watch` lists and cancels. Recreate's confirm and `recreate_pod`'s description now say the pod and its container disk are deleted (and that it keeps the old pod's image).
+
 ## v1.2.7 (tag v1.2.7, 2026-11-16)
 
 - **Volume Files no longer sits on "verifying" for minutes.** A browse listed the whole volume (600+ GB, about 23,000 objects) on every click, and "List inside" did the same, with no timeout. It now lists only the folder asked for, has a 90 s stall limit and a 20 min deadline, shows "N objects listed so far", can be cancelled, and fails with a Try Again button. A dead listing no longer blocks the next one (`94491da`).
