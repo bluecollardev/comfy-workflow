@@ -28,6 +28,7 @@ function fakeCore(events) {
     volumes: { list: async () => [] },
     podpull: { ERASABLE: {} },   // read while the tool descriptions are built
     hf: { EXTENSIONS: [], FOLDERS: [] },
+    chunking: { DEFAULT_CHUNK: 100, DEFAULT_RAM_GUARD_PCT: 85 },
     pods: {
       list: async () => [POD], config: () => null,
       get: async (id) => { if (id !== POD.id) throw Object.assign(new Error(`Pod not found: ${id}`), { status: 404 }); return POD },
