@@ -750,6 +750,8 @@
     "runsOnYours": "It runs on your pod {pod}.",
     "runsOnTemp": "It runs on a short-lived {gpu} pod at ${price}/h (a few minutes), deleted afterwards.",
     "jobWorking": "{state} {pod}…",
+    "listedSoFar": "{n} objects listed so far",
+    "retryList": "Try Again",
     "erase": "Erase",
     "eraseTitle": "Erase {name}",
     "eraseWarn": "This deletes the contents of the folders you tick. It cannot be undone. The volume itself and the folders stay, and it keeps billing.",

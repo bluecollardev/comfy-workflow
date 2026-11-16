@@ -566,6 +566,67 @@ describe('browse and erase one volume', () => {
     })
   })
 
+  describe('a listing through S3 that does not finish (volume Files stuck on "verifying")', () => {
+    const withKeys = () => { process.env.RUNPOD_S3_ACCESS_KEY = 'user_x'; process.env.RUNPOD_S3_SECRET_KEY = 'rps_y' }
+    afterEach(() => { delete process.env.RUNPOD_S3_ACCESS_KEY; delete process.env.RUNPOD_S3_SECRET_KEY })
+    /** An `aws` that never answers on its own: it ends only when it is stopped (the stall limit or the deadline in the real runner, here the signal or `stallMs`). */
+    const silent = (seen: { signal?: AbortSignal; stallMs?: number }[] = []): podpull.AwsRunner => (_a, _e, o) => new Promise((res) => {
+      seen.push({ signal: o?.signal, stallMs: o?.stallMs })
+      o?.signal?.addEventListener('abort', () => res({ code: 137, stdout: '', stderr: 'killed' }), { once: true })
+      if (o?.stallMs) setTimeout(() => res({ code: podpull.AWS_STALLED, stdout: '', stderr: `no answer for ${Math.round(o.stallMs! / 1000)} s` }), o.stallMs)
+    })
+    it('every S3 call is held to a stall limit and can be stopped', async () => {
+      withKeys(); const rp = fakeRunPod([], { volumeDc: 'EU-RO-1' }); const seen: { signal?: AbortSignal; stallMs?: number }[] = []
+      const j = await done((await podpull.browseVolume('vol1', base({ client: rp.client, aws: silent(seen), s3StallMs: 30 }))).id)
+      expect(seen[0].stallMs).toBe(30); expect(seen[0].signal).toBeInstanceOf(AbortSignal)
+      expect(j.state).toBe('failed')
+    })
+    it('a call that goes silent ends the job failed with what happened, not "verifying" for ever', async () => {
+      withKeys(); const rp = fakeRunPod([], { volumeDc: 'EU-RO-1' })
+      const j = await done((await podpull.browseVolume('vol1', base({ client: rp.client, aws: silent(), s3StallMs: 30 }))).id)
+      expect(j.state).toBe('failed'); expect(j.error).toMatch(/RunPod's S3 did not answer in \d+ s .*try again/)
+      // and the volume is free for the next listing: it is a new job, not the dead one handed back
+      const again = await podpull.browseVolume('vol1', base({ client: rp.client, aws: async () => ({ code: 0, stdout: '2026-11-14 10:00:00 5 comfy-shared/x.txt\n', stderr: '' }) }))
+      expect(again.id).not.toBe(j.id); expect((await done(again.id)).state).toBe('done')
+    })
+    it('the whole job has a deadline: a listing that never ends fails when it is over', async () => {
+      withKeys(); const rp = fakeRunPod([], { volumeDc: 'EU-RO-1' })
+      const j = await done((await podpull.browseVolume('vol1', base({ client: rp.client, aws: silent(), s3StallMs: 60_000, s3DeadlineMs: 40 }))).id)
+      expect(j.state).toBe('failed'); expect(j.error).toMatch(/RunPod's S3 did not finish in \d+ s \(the limit is \d+ s\)/)
+    })
+    it('cancel stops the call and the job is cancelled, not failed', async () => {
+      withKeys(); const rp = fakeRunPod([], { volumeDc: 'EU-RO-1' })
+      const j0 = await podpull.browseVolume('vol1', base({ client: rp.client, aws: silent(), s3StallMs: 60_000 }))
+      await new Promise((r) => setTimeout(r, 20)); podpull.cancel(j0.id)
+      expect((await done(j0.id)).state).toBe('cancelled')
+    })
+    it('a slow listing is not a failure: it reports how many objects it has, then finishes', async () => {
+      withKeys(); const rp = fakeRunPod([], { volumeDc: 'EU-RO-1' })
+      let progressSeen = 0
+      const slow: podpull.AwsRunner = async (_a, _e, o) => { for (const n of [1000, 2000, 3000]) { await new Promise((r) => setTimeout(r, 15)); o?.onLines?.(n); progressSeen = n } return { code: 0, stdout: '2026-11-14 10:00:00 7 comfy-shared/a/x.txt\n', stderr: '' } }
+      const j0 = await podpull.browseVolume('vol1', base({ client: rp.client, aws: slow, s3StallMs: 5_000 }))
+      let mid = 0; for (let n = 0; n < 40 && !mid; n++) { await new Promise((r) => setTimeout(r, 10)); mid = podpull.job(j0.id)?.files ?? 0 }
+      expect(mid).toBeGreaterThan(0)   // the window can say "1,000 objects listed so far"
+      const j = await done(j0.id); expect(j.state).toBe('done'); expect(progressSeen).toBe(3000)
+    })
+    it('"list inside" lists only that folder, not the whole volume again', async () => {
+      withKeys(); const rp = fakeRunPod([], { volumeDc: 'EU-RO-1' }); const calls: string[][] = []
+      const aws: podpull.AwsRunner = async (args) => { calls.push(args); return { code: 0, stdout: '2026-11-14 10:00:00 9 comfy-shared/models/vae/v.safetensors\n', stderr: '' } }
+      const j = await done((await podpull.browseVolume('vol1', base({ client: rp.client, aws, path: '/workspace/comfy-shared/models' }))).id)
+      expect(j.state).toBe('done'); expect(calls[0]).toContain('s3://vol1/comfy-shared/models/')
+      expect(j.listing).toContainEqual({ path: '/workspace/comfy-shared/models', bytes: 9 })
+    })
+    it('an S3 job older than its deadline counts as failed and is not handed back for a new browse', async () => {
+      withKeys(); const rp = fakeRunPod([], { volumeDc: 'EU-RO-1' }); const t0 = new Date('2026-11-16T10:00:00Z')
+      const stuck = await podpull.browseVolume('vol1', base({ client: rp.client, aws: silent(), s3StallMs: 3_600_000, s3DeadlineMs: 3_600_000, now: () => t0 }))
+      const later = new Date(t0.getTime() + 30 * 60_000)   // 30 minutes on: past the deadline
+      const next = await podpull.browseVolume('vol1', base({ client: rp.client, aws: async () => ({ code: 0, stdout: '', stderr: '' }), now: () => later }))
+      expect(next.id).not.toBe(stuck.id)
+      expect(podpull.job(stuck.id)).toMatchObject({ state: 'failed', error: expect.stringMatching(/did not finish in/) })
+      await done(next.id)
+    })
+  })
+
   describe('clone a volume', () => {
     const keys = () => { process.env.RUNPOD_S3_ACCESS_KEY = 'user_x'; process.env.RUNPOD_S3_SECRET_KEY = 'rps_y' }
     afterEach(() => { delete process.env.RUNPOD_S3_ACCESS_KEY; delete process.env.RUNPOD_S3_SECRET_KEY })
