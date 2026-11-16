@@ -92,6 +92,20 @@ test.describe('volumes: browse and erase', () => {
     }
   })
 
+  test('a listing that fails says why and offers Try Again, which lists again; it is never an endless spinner', async ({ page, api }) => {
+    api.state.browseFails = 1
+    await page.goto('/')
+    const dialog = await openVolumes(page)
+    await dialog.locator('[data-testid="volume"][data-id="vol1"]').getByTestId('volume-browse').click()
+    const files = page.getByTestId('volume-files-modal')
+    await files.getByTestId('volume-files-start').click()
+    await expect(files.getByTestId('volume-files-error')).toContainText("RunPod's S3 did not answer in 90 s")
+    await expect(files.getByTestId('volume-files-working')).toHaveCount(0)   // nothing keeps spinning
+    await files.getByTestId('volume-files-retry').click()
+    await expect(files.getByTestId('volume-files-row').first()).toBeVisible()   // the second try lists
+    await expect(files.getByTestId('volume-files-error')).toHaveCount(0)
+  })
+
   test('Browse lists a volume\'s folders with sizes; Erase needs folders, your name and the volume\'s name typed back, then reports what it freed', async ({ page, api }) => {
     await page.goto('/')
     const dialog = await openVolumes(page)

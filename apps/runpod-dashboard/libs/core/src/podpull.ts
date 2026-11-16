@@ -120,10 +120,18 @@ function volumeJobCapability(): { available: boolean; reason: string } {
 }
 
 export interface AwsResult { code: number | null; stdout: string; stderr: string }
-export type AwsRunner = (args: string[], env: Record<string, string>) => Promise<AwsResult>
+/** What a call to the `aws` CLI may be held to: how long it may stay silent (the CLI prints each page of a listing as it comes), a way to stop it, and who hears each line. */
+export interface AwsCallOpts { stallMs?: number; signal?: AbortSignal; onLines?: (n: number) => void }
+export type AwsRunner = (args: string[], env: Record<string, string>, o?: AwsCallOpts) => Promise<AwsResult>
+/** Exit code of a call that was stopped because it went silent (nothing from RunPod's S3 for `stallMs`). */
+export const AWS_STALLED = 124
+/** One S3 listing may stay silent this long (a page of 1000 objects takes seconds), and the whole job may take this long: a volume of 600 GB lists in minutes, not hours. */
+export const S3_STALL_MS = 90_000, S3_DEADLINE_MS = 20 * 60_000
 export interface Opts {
   /** Runs the `aws` CLI (RunPod's S3 API for a volume). Tests inject one. */
   aws?: AwsRunner
+  /** How long a listing through RunPod's S3 may stay silent, and how long a whole S3 job may take (defaults S3_STALL_MS, S3_DEADLINE_MS). Tests shorten them. */
+  s3StallMs?: number; s3DeadlineMs?: number
   /** Makes the one-off SSH key pair a clone between two pods uses. Tests inject one. */
   keygen?: () => Promise<{ priv: string; pub: string; comment: string }>
   client?: rp.RunPodClient
@@ -915,17 +923,30 @@ async function runS3(i: Internal, opts: Opts) {
   const aws = opts.aws ?? defaultAws
   const env = { AWS_ACCESS_KEY_ID: a.id, AWS_SECRET_ACCESS_KEY: a.secret }
   const common = ['--endpoint-url', a.endpoint, '--region', a.region]
-  const run = async (args: string[]) => { const r = await aws([...args, ...common], env); if (r.code !== 0) throw new CoreError(502, `RunPod's S3 API: ${(r.stderr || r.stdout).trim().split('\n').pop() || `aws exited ${r.code}`}`); return r.stdout }
-  const sizes = async () => {   // every object: bytes by key
-    const out = await run(['s3', 'ls', `s3://${a.bucket}/`, '--recursive'])
+  // The whole job has a deadline and every call a stall limit: a dropped connection ends the job `failed` with the reason, instead of a spinner nobody can stop. Cancel stops the call.
+  const started = Date.now(), deadline = setTimeout(() => i.abort.abort(), opts.s3DeadlineMs ?? S3_DEADLINE_MS)
+  const stallMs = opts.s3StallMs ?? S3_STALL_MS
+  const run = async (args: string[], progress?: (n: number) => void) => {
+    const r = await aws([...args, ...common], env, { stallMs, signal: i.abort.signal, onLines: progress })
+    if (i.cancelled) throw new CoreError(499, 'cancelled')
+    if (i.abort.signal.aborted) throw new CoreError(504, `RunPod's S3 did not finish in ${Math.round((Date.now() - started) / 1000)} s (the limit is ${Math.round((opts.s3DeadlineMs ?? S3_DEADLINE_MS) / 1000)} s): try again, or list a smaller folder.`)
+    if (r.code === AWS_STALLED) throw new CoreError(504, `RunPod's S3 did not answer in ${Math.round(stallMs / 1000)} s (${(r.stderr || '').trim() || 'no output'}): the connection may have dropped; try again.`)
+    if (r.code !== 0) throw new CoreError(502, `RunPod's S3 API: ${(r.stderr || r.stdout).trim().split('\n').pop() || `aws exited ${r.code}`}`)
+    return r.stdout
+  }
+  const sizes = async (prefix = '') => {   // every object under the prefix ('' = the whole volume): bytes by key; the count so far is the job's `files`
+    const out = await run(['s3', 'ls', `s3://${a.bucket}/${prefix ? `${prefix}/` : ''}`, '--recursive'], (n) => { j.files = n })
     return out.split('\n').map((l) => /^\S+\s+\S+\s+(\d+)\s+(.+)$/.exec(l)).filter((m): m is RegExpExecArray => !!m).map((m) => ({ bytes: Number(m[1]), key: m[2] }))
   }
   j.state = 'verifying'
+  try { await s3Work(i, a, j, sizes, run) } finally { clearTimeout(deadline) }
+}
+async function s3Work(i: Internal, a: { bucket: string }, j: PodJob, sizes: (prefix?: string) => Promise<{ bytes: number; key: string }[]>, run: (args: string[], progress?: (n: number) => void) => Promise<string>) {
   if (j.kind === 'browse') {
     const base = (j.browse_path ?? '/workspace').replace(/^\/workspace\/?/, '')   // '' = the whole volume; else the folder's key prefix
     const baseParts = base ? base.split('/') : []
     const dirs = new Map<string, number>(); let total = 0
-    for (const o of await sizes()) {
+    for (const o of await sizes(base)) {
       if (base && !o.key.startsWith(`${base}/`)) continue
       total += o.bytes
       const parts = o.key.split('/').slice(0, -1)
@@ -1090,12 +1111,17 @@ function s3Access(vol: Volume | null): { ok: true; id: string; secret: string; e
   if (!id || !secret) return { ok: false, why: 'keys' }
   return { ok: true, id, secret, endpoint: sync.s3Endpoint(vol.datacenter), bucket: vol.id, region: vol.datacenter }
 }
-const defaultAws: AwsRunner = (args, env) => new Promise((res) => {
+const defaultAws: AwsRunner = (args, env, o = {}) => new Promise((res) => {
   const c = spawn('aws', args, { env: { ...process.env, ...env, AWS_EC2_METADATA_DISABLED: 'true' } })
-  let stdout = '', stderr = ''
-  c.stdout.on('data', (d) => { stdout += d }); c.stderr.on('data', (d) => { stderr += d })
-  c.on('error', (e) => res({ code: 127, stdout, stderr: `${stderr}${e.message}` }))
-  c.on('close', (code) => res({ code, stdout, stderr }))
+  let stdout = '', stderr = '', stalled = false, lines = 0, timer: NodeJS.Timeout | null = null
+  const stop = () => { if (timer) clearTimeout(timer); o.signal?.removeEventListener('abort', onAbort) }
+  const arm = () => { if (!o.stallMs) return; if (timer) clearTimeout(timer); timer = setTimeout(() => { stalled = true; c.kill('SIGKILL') }, o.stallMs) }
+  const onAbort = () => c.kill('SIGKILL')
+  if (o.signal?.aborted) onAbort(); else o.signal?.addEventListener('abort', onAbort, { once: true })
+  arm()
+  c.stdout.on('data', (d) => { stdout += d; arm(); if (o.onLines) { lines += String(d).split('\n').length - 1; o.onLines(lines) } }); c.stderr.on('data', (d) => { stderr += d; arm() })
+  c.on('error', (e) => { stop(); res({ code: 127, stdout, stderr: `${stderr}${e.message}` }) })
+  c.on('close', (code) => { stop(); res(stalled ? { code: AWS_STALLED, stdout, stderr: `${stderr}no answer for ${Math.round((o.stallMs ?? 0) / 1000)} s`.trim() } : { code, stdout, stderr }) })
 })
 export async function volumePlan(volumeId: string, opts: Opts = {}): Promise<PodPlan> {
   const p = await plan(volLabel(volumeId), { ...opts, volumeId, sizeOf: () => ({ files: 0, bytes: 0 }) })
@@ -1103,8 +1129,17 @@ export async function volumePlan(volumeId: string, opts: Opts = {}): Promise<Pod
   // The S3 API when the volume's datacenter has it and the keys are set: no pod, no cost. Otherwise a pod does it, and the plan says why.
   return a.ok ? { ...p, route: 's3', pod: null, gpu: '', price_per_hour: 0, choices: undefined } : { ...p, s3_note: a.why }
 }
+/** A job through RunPod's S3 that outlived its deadline (the app slept, or a call never returned) is failed, not "verifying" for ever: it must not block or be handed back for a new browse. */
+function expireStale(now: Date) {
+  for (const i of jobs.values()) {
+    if (TERMINAL.includes(i.job.state) || i.plan.route !== 's3') continue
+    if (now.getTime() - new Date(i.job.started_at).getTime() <= S3_DEADLINE_MS + 60_000) continue
+    i.job.state = 'failed'; i.job.error = `RunPod's S3 did not finish in ${Math.round(S3_DEADLINE_MS / 60000)} minutes: try again.`; i.abort.abort(); busy.delete(i.job.round)
+  }
+}
 async function startVolumeJob(volumeId: string, kind: 'browse' | 'erase' | 'delete-models', keys: string[], opts: Opts, path?: string, deleteItems?: { folder: string; name: string }[]): Promise<PodJob> {
   const label = volLabel(volumeId)
+  expireStale((opts.now ?? (() => new Date()))())
   const live = [...jobs.values()].find((x) => !TERMINAL.includes(x.job.state) && x.plan.volume?.id === volumeId)
   if (live && !(live.job.kind === kind && kind === 'browse')) throw new CoreError(409, `A ${live.job.kind} job is running on this volume (${live.job.round}): wait for it to finish.`)
   const existing = claim(label, kind); if (existing) return view(existing)

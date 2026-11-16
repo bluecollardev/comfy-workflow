@@ -1,6 +1,8 @@
 <template>
   <BModal :model-value="!!volume" :title="$t('volumes.browseTitle', { name: volume?.name || '' })" size="xl" scrollable lazy ok-only :ok-title="$t('panama.filesClose')" ok-variant="outline-light" data-testid="volume-files-modal" @update:model-value="(v) => !v && close()">
-    <BAlert v-if="error" :model-value="true" variant="danger" data-testid="volume-files-error">{{ error }}</BAlert>
+    <BAlert v-if="error" :model-value="true" variant="danger" data-testid="volume-files-error">{{ error }}
+      <BButton variant="link" size="sm" class="p-0 ms-2 align-baseline" data-testid="volume-files-retry" @click="list(base)">{{ $t('volumes.retryList') }}</BButton>
+    </BAlert>
     <div v-if="!entries.size && !working" data-testid="volume-files-intro">
       <p class="small mb-2">{{ $t('volumes.browseIntro') }}</p>
       <!-- This volume could be read through RunPod's S3 API, but there are no S3 keys: say so before a pod is started and paid for -->
@@ -11,11 +13,11 @@
       <div v-if="plan" class="small text-body-secondary mb-3" data-testid="volume-files-plan">{{ plan.route === 's3' ? $t('volumes.runsOnS3') : plan.route === 'active' ? $t('volumes.runsOnYours', { pod: plan.pod?.name }) : $t('volumes.runsOnTemp', { gpu: plan.gpu, price: plan.price_per_hour ?? '?' }) }}<span v-if="plan.s3_note && plan.s3_note !== 'keys'" class="d-block" data-testid="volume-s3-note">{{ $t(`volumes.s3Note.${plan.s3_note}`) }}</span><span v-else-if="plan.s3_note === 'keys' && !volume.s3" class="d-block" data-testid="volume-s3-note">{{ $t('volumes.s3Note.keys') }}</span></div>
       <BButton variant="primary" size="sm" data-testid="volume-files-start" @click="list('/workspace')"><i class="fa-solid fa-folder-tree me-1"></i>{{ plan && plan.route !== 's3' ? $t('volumes.browseStartPod') : $t('volumes.browseStart') }}</BButton>
     </div>
-    <div v-else-if="!entries.size" class="small text-body-secondary" data-testid="volume-files-working"><BSpinner small class="me-2" />{{ $t('volumes.jobWorking', { state: job?.state || 'creating', pod: job?.pod_name || '' }) }}</div>
+    <div v-else-if="!entries.size" class="small text-body-secondary" data-testid="volume-files-working"><BSpinner small class="me-2" />{{ $t('volumes.jobWorking', { state: job?.state || 'creating', pod: job?.pod_name || '' }) }}<span v-if="job?.files" class="ms-2" data-testid="volume-files-progress">{{ $t('volumes.listedSoFar', { n: job.files.toLocaleString() }) }}</span></div>
     <template v-else>
       <div class="d-flex align-items-center gap-2 mb-2 small flex-wrap" data-testid="volume-files-summary">
         <span class="text-body-secondary">{{ $t('volumes.browseSummary', { size: fmt(total), n: Math.max(0, entries.size - 1) }) }}</span>
-        <span v-if="working" class="text-body-secondary" data-testid="volume-files-working"><BSpinner small class="me-1" />{{ $t('volumes.jobWorking', { state: job?.state || 'creating', pod: job?.pod_name || '' }) }}</span>
+        <span v-if="working" class="text-body-secondary" data-testid="volume-files-working"><BSpinner small class="me-1" />{{ $t('volumes.jobWorking', { state: job?.state || 'creating', pod: job?.pod_name || '' }) }}<span v-if="job?.files" class="ms-2" data-testid="volume-files-progress">{{ $t('volumes.listedSoFar', { n: job.files.toLocaleString() }) }}</span></span>
         <BButton size="sm" variant="outline-light" class="py-0 ms-auto" data-testid="volume-files-expand" @click="expandAll"><i class="fa-solid fa-angles-down me-1"></i>{{ $t('volumes.expandAll') }}</BButton>
         <BButton size="sm" variant="outline-light" class="py-0" data-testid="volume-files-collapse" @click="collapsed = new Set(openable)"><i class="fa-solid fa-angles-up me-1"></i>{{ $t('volumes.collapseAll') }}</BButton>
       </div>
