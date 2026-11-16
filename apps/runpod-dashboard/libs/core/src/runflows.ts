@@ -146,16 +146,24 @@ export function outcomeOf(entry: { status?: { status_str?: string; completed?: b
   return null
 }
 
+/** A panel graph as an API graph ready to queue: fetched from the pod, converted, the pod's model choice applied, the locked-shot rule checked. */
+export async function apiGraph(podId: string, path: string, base: string, o: RunOpts, fetchFn: typeof fetch): Promise<{ api: Record<string, unknown>; models?: string[] }> {
+  const getJson = async (url: string) => { const x = await fetchFn(url, { signal: AbortSignal.timeout(30_000) }); if (x.status !== 200) throw new CoreError(502, `ComfyUI answered HTTP ${x.status} for ${url.replace(base, '')}`); return x.json() }
+  const ui = await getJson(`${base}/api/userdata/${encodeURIComponent(`workflows/${path}`)}`)
+  if (!Array.isArray((ui as { nodes?: unknown }).nodes)) throw new CoreError(422, `${path} is not a UI graph (it has no nodes list).`)
+  const api = await (o.convert ?? defaultConvert)(ui, { base, podId })
+  const chosen = podmodels.apply(api, podmodels.effective(podId))   // the pod's own VAE / diffusion model (ADR-042)
+  const models = chosen.applied.length || chosen.skipped.length ? [...chosen.applied.map((a) => `${a.slot}: ${a.to} (was ${a.from || 'unset'})`), ...chosen.skipped] : undefined
+  const gate = shots.lockedIn(api, o.projectRoot)
+  if (gate.locked.length) throw new CoreError(403, `Refused: the graph names locked shot${gate.locked.length === 1 ? '' : 's'} ${gate.locked.join(', ')}; client-approved shots are never run by us.`)
+  return { api, models }
+}
+
 async function runOne(i: Internal, r: RunResult, base: string, o: RunOpts, fetchFn: typeof fetch) {
   const signal = i.abort.signal
   const getJson = async (url: string) => { const x = await fetchFn(url, { signal: AbortSignal.timeout(30_000) }); if (x.status !== 200) throw new CoreError(502, `ComfyUI answered HTTP ${x.status} for ${url.replace(base, '')}`); return x.json() }
-  const ui = await getJson(`${base}/api/userdata/${encodeURIComponent(`workflows/${r.path}`)}`)
-  if (!Array.isArray((ui as { nodes?: unknown }).nodes)) throw new CoreError(422, `${r.path} is not a UI graph (it has no nodes list).`)
-  const api = await (o.convert ?? defaultConvert)(ui, { base, podId: i.job.pod_id })
-  const chosen = podmodels.apply(api, podmodels.effective(i.job.pod_id))   // the pod's own VAE / diffusion model (ADR-042)
-  if (chosen.applied.length || chosen.skipped.length) r.models = [...chosen.applied.map((a) => `${a.slot}: ${a.to} (was ${a.from || 'unset'})`), ...chosen.skipped]
-  const gate = shots.lockedIn(api, o.projectRoot)
-  if (gate.locked.length) throw new CoreError(403, `Refused: the graph names locked shot${gate.locked.length === 1 ? '' : 's'} ${gate.locked.join(', ')}; client-approved shots are never run by us.`)
+  const { api, models } = await apiGraph(i.job.pod_id, r.path, base, o, fetchFn)
+  if (models) r.models = models
   const q = await fetchFn(`${base}/prompt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt: api, client_id: 'pod-manager-runflows', extra_data: { pod_manager: { workflow: r.path } } }), signal: AbortSignal.timeout(60_000) })
   const qb = await q.json().catch(() => ({}))
   if (q.status !== 200) { const d = describeRejection(qb); r.node = d.node; throw new CoreError(400, d.text) }
