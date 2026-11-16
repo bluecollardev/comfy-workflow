@@ -392,7 +392,7 @@ export const DEFAULT_COMFY_ARGS = '--cache-lru 1 --disable-smart-memory'
 
 /** What pod creation adds: RunPod volume fields and the env the image reads. */
 export function podOverrides(cfg: MountsConfig): PodOverrides {
-  const env = { COMFY_ARGS: DEFAULT_COMFY_ARGS, ...podEnv(cfg), ...cfg.env }
+  const env: Record<string, string> = { COMFY_ARGS: DEFAULT_COMFY_ARGS, ...podEnv(cfg), ...cfg.env }
   const links = allLinks(cfg)
   if (links.length) env.COMFY_LINKS = linksEnv(links)
   // S3_PULL (the image pulls from a bucket at start, ADR-015): give the pod the Panama keys the app holds, so nothing is typed twice.
