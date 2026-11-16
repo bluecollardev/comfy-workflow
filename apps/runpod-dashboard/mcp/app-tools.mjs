@@ -297,6 +297,17 @@ export function appTools({ core, governance, text, json, plain = text }) {
       run: async ({ id, cancel }) => { try { const j = cancel ? chunking.cancel(id) : chunking.job(id); return j ? json(j) : text(`No such chunked run: ${id}`, true) } catch (e) { return text(e.message, true) } } },
     { name: 'pod_ram', description: "A pod's container memory right now, from its cgroup over SSH (the host's figure that ComfyUI's own /system_stats gives is not the container's limit): used, limit, percent, and whether it is over the guard's limit. null when the pod has no memory limit or cannot be reached. Read-only, no spend", inputSchema: obj({ pod_id: S('A running pod'), ram_guard_pct: N(`The limit to compare with (default ${chunking.DEFAULT_RAM_GUARD_PCT})`) }, ['pod_id']),
       run: async ({ pod_id, ram_guard_pct }) => { const r = await chunking.readRam(pod_id); const lim = ram_guard_pct ?? chunking.DEFAULT_RAM_GUARD_PCT; return json(r ? { ...r, used_gib: chunking.gib(r.used), limit_gib: chunking.gib(r.limit), ram_guard_pct: lim, over: chunking.overLimit(r, lim) } : { ram: null, note: 'No container memory limit found, or the pod could not be reached over SSH.' }) } },
+    // ---------- retry later (ADR-042 section 19) ----------
+    { name: 'pod_watch', description: "The Retry Later watches: what is waiting for RunPod to have a free card, started by resume_pod or create_pod with retry_until_free (or the window's Retry Later). action list (default): every watch with its kind (resume | create), state (waiting, done, stopped, expired, cancelled), tries, next try, last answer, give-up time and the pod it made; action cancel: stop one (id from the list, or the pod_id of a resume watch). Cancelling nothing deletes or resumes anything; a create cancelled while a try was in flight says to check the pod list. No spend",
+      inputSchema: obj({ action: S('list (default) | cancel'), id: S('cancel: the watch id'), pod_id: S('cancel: the pod whose resume watch to stop') }),
+      run: async ({ action, id, pod_id }) => {
+        try {
+          if (action === 'cancel') { const w = pods.cancelWatch(String(id || pod_id || '')); return json({ cancelled: w.id, watch: w }) }
+          if (action != null && action !== 'list') return text("action must be 'list' or 'cancel'", true)
+          const all = pods.watches()
+          return json({ waiting: all.filter((w) => w.state === 'waiting').length, watches: all })
+        } catch (e) { return text(e.message, true) }
+      } },
   ]
 
   const readJsonFile = (file) => {
