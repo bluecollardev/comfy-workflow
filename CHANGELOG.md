@@ -3,6 +3,11 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## v1.2.7 (tag v1.2.7, 2026-11-16)
+
+- **Volume Files no longer sits on "verifying" for minutes.** A browse listed the whole volume (600+ GB, about 23,000 objects) on every click, and "List inside" did the same, with no timeout. It now lists only the folder asked for, has a 90 s stall limit and a 20 min deadline, shows "N objects listed so far", can be cancelled, and fails with a Try Again button. A dead listing no longer blocks the next one (`94491da`).
+- The live chunking test (`./start.sh chunk-live`) runs in a scratch configuration and refuses the real one: a run without the core suite's setup once overwrote the Default Configuration (volume, wanted models, folders, MCP hosting). `start.sh` now passes the core config.
+
 ## v1.2.6 (tag v1.2.6, 2026-11-16)
 
 ### Chunked runs and the RAM guard (docs/CHUNKING.md)
