@@ -374,6 +374,22 @@ export async function mockApi(page, state) {
     }
     if (method === 'GET' && path === '/history/runs') { const r = state.history.runs[query.pod_id]; return r ? json(r) : json({ detail: `pod ${query.pod_id} is not running` }, 400) }
     if (method === 'GET' && path === '/credits') return state.credits === null ? json({ detail: 'RunPod did not report the account balance' }, 502) : json(state.credits ?? { balance: 36.42, spend_per_hr: 0.053, spend_limit: 80, hours_left: 687.2, level: 'ok' })
+    // Retry Later (ADR-042 section 19): the watches the core keeps; `api.state.watches` is what GET /pod-watches answers, `resumeWhenFree` and `createWhenFree` record the asks
+    if (method === 'GET' && path === '/pod-watches') return json(state.watches || [])
+    if ((m = path.match(/^\/pods\/([^/]+)\/resume-when-free$/)) && method === 'POST') {
+      const pod = state.pods.find((p) => p.id === m[1]); (state.resumeWhenFree ||= []).push({ id: m[1], ...body })
+      const w = { id: `watch-${(state.watches || []).length + 1}`, kind: 'resume', state: 'waiting', pod_id: m[1], name: pod?.name || m[1], label: `Waiting for a free ${pod?.gpu || 'GPU'}: ${pod?.name || m[1]} is pinned to its host`, every_s: body.every_s || 120, attempts: 0, created_at: new Date().toISOString(), next_at: new Date(Date.now() + 120000).toISOString(), give_up_at: new Date(Date.now() + 12 * 3600000).toISOString() }
+      ;(state.watches ||= []).push(w); return json(w)
+    }
+    if (method === 'POST' && path === '/pods/create-when-free') {
+      ;(state.createWhenFree ||= []).push(body)
+      const w = { id: `watch-${(state.watches || []).length + 1}`, kind: 'create', state: 'waiting', name: body.request.name, label: `Waiting for a free ${body.request.gpu} in EU-RO-1`, request: body.request, every_s: body.every_s || 120, attempts: 0, created_at: new Date().toISOString(), next_at: new Date(Date.now() + 120000).toISOString(), give_up_at: new Date(Date.now() + 12 * 3600000).toISOString() }
+      ;(state.watches ||= []).push(w); return json(w)
+    }
+    if ((m = path.match(/^\/pod-watches\/([^/]+)$/)) && method === 'DELETE') {
+      const w = (state.watches || []).find((x) => x.id === m[1]); if (!w) return json({ detail: `No such watch: ${m[1]}` }, 404)
+      w.state = 'cancelled'; w.finished_at = new Date().toISOString(); return json(w)
+    }
     // RunPod's request limit (ADR-042 section 18): the core's local state, and a volume list RunPod refuses to give while it limits
     if (method === 'GET' && path === '/ratelimit') return json(state.ratelimit || { limited: false, window: null, retry_at: null, since: null, stale_age_s: null, message: null })
     if (method === 'GET' && path === '/volumes' && state.volumesFail) return json({ detail: 'RunPod answered 429 listing network volumes: rate limit exceeded for the hour window' }, 502)

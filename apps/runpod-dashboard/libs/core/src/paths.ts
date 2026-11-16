@@ -12,6 +12,7 @@ export const REPO_ROOT = resolve(APP_DIR, '..', '..')
 
 export const configDir = () => process.env.POD_MANAGER_CONFIG_DIR || join(homedir(), '.config', 'runpod-pod-manager')
 export const mountsFile = () => process.env.MOUNTS_FILE || join(configDir(), 'mounts.json')
+export const podWatchesFile = () => process.env.POD_WATCHES_FILE || join(configDir(), 'pod-watches.json')
 export const idleFile = () => process.env.IDLE_FILE || join(configDir(), 'idle.json')
 export const podConfigsFile = () => process.env.POD_CONFIGS_FILE || join(configDir(), 'pod-configs.json')
 export const queueFile = () => process.env.QUEUE_FILE || join(configDir(), 'queue.json')

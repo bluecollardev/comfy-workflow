@@ -353,6 +353,10 @@
       @update:model-value="error = null"
     >
       {{ error }}
+      <div v-if="noCard" class="mt-2">
+        <div class="small mb-2">{{ $t('form.noCardHint') }}</div>
+        <BButton size="sm" variant="warning" :disabled="submitting" :title="$t('form.retryLaterTitle')" data-testid="pod-retry-later" @click="retryLater"><i class="fa-solid fa-hourglass-half me-1"></i>{{ $t('form.retryLater') }}</BButton>
+      </div>
     </BAlert>
 
     <div class="d-flex gap-2 mt-4">
@@ -404,6 +408,7 @@ import { gitAPI } from '../api/git'
 import { imagesAPI } from '../api/images'
 import { useUiStore } from '../stores/ui'
 import { usePodsStore } from '../stores/pods'
+import { usePodWatchStore } from '../stores/podwatch'
 import { useMountsStore } from '../stores/mounts'
 import { useVolumesStore } from '../stores/volumes'
 import { usePanamaStore } from '../stores/panama'
@@ -527,6 +532,7 @@ const roundChoices = computed(() => {
 // The Mounts switch's one-line summary, the configured image and the idle default come from the mounts store.
 const ui = useUiStore()
 const pods = usePodsStore()
+const watches = usePodWatchStore()
 const mounts = useMountsStore()
 const showDockerfile = ref(false)
 
@@ -586,6 +592,8 @@ const open = reactive({ envVars: false, pipRequirements: false, customNodes: fal
 const overrideOpen = ref(false)
 const submitting = ref(false)
 const error = ref(null)
+const noCard = ref(false)   // the last create found no card: Retry Later is offered with the same form
+let lastPayload = null
 
 // ----- Attach node -----
 
@@ -826,10 +834,7 @@ function reset() {
   error.value = null
 }
 
-async function submit() {
-  submitting.value = true
-  error.value = null
-  const created = await pods.create({
+const payloadOf = () => ({
     ...form,
     image: form.image === 'custom' ? form.customImageUri : form.image,
     idleStopMinutes: form.idleStopMinutes === '' ? null : form.idleStopMinutes,
@@ -838,8 +843,24 @@ async function submit() {
     pipRequirements: form.pipRequirements.trim(),
     customNodes: parseCustomNodes(form.customNodes),
   })
+async function submit() {
+  submitting.value = true
+  error.value = null
+  noCard.value = false
+  lastPayload = payloadOf()
+  const created = await pods.create(lastPayload)
   submitting.value = false
-  if (!created.ok) { error.value = created.text; return }
+  if (!created.ok) { error.value = created.text; noCard.value = !!created.noCard; return }
+  reset()
+  emit('pod-created')
+}
+/** Retry Later: the same request again every 2 minutes until a card is free; one pod is made. The form is done with: the watch shows in the list. */
+async function retryLater() {
+  submitting.value = true
+  const r = await watches.retryCreateLater(lastPayload || payloadOf())
+  submitting.value = false
+  if (!r.ok) { error.value = r.text; return }
+  error.value = null; noCard.value = false
   reset()
   emit('pod-created')
 }

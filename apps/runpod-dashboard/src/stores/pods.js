@@ -68,7 +68,7 @@ export const usePodsStore = defineStore('pods', () => {
     let text = null
     const r = await toast.run(t('toast.createPod'), () => podsAPI.createPod(payload), { ok: t('toast.podCreated', { name: payload.name }), onError: (msg) => (text = msg) })
     if (r.ok) await load()   // the list and the stats
-    return { ...r, text }
+    return { ...r, text, noCard: !r.ok && (isNoCard(r.error) || NO_CARD.test(text || '')) }
   }
 
   const LABEL = { Stop: 'toast.stopPod', Resume: 'toast.resumePod', Delete: 'toast.deletePod' }
@@ -97,10 +97,14 @@ export const usePodsStore = defineStore('pods', () => {
     return r
   }
   const HOST_FULL = /not enough free GPUs on the host/i
+  const NO_CARD = /No card available right now/i
+  /** The core's own code when it came over IPC (host_full, no_card); the words RunPod uses when it did not (the browser). */
+  const isHostFull = (e) => e?.code === 'host_full' || HOST_FULL.test(errorText(e))
+  const isNoCard = (e) => e?.code === 'no_card' || NO_CARD.test(errorText(e))
   const resume = async (id) => {
     const r = await act(id, podsAPI.resumePod, 'Resume')
     if (r.ok) startAutoRefresh()
-    else if (HOST_FULL.test(errorText(r.error))) { hostFull.value = id; toast.info(t('toast.hostFull')) }
+    else if (isHostFull(r.error)) { hostFull.value = id; toast.info(t('toast.hostFull')) }
     return r
   }
   /** A sync running for a pod (started from its card): the bar shows it like the other actions, filled by its progress

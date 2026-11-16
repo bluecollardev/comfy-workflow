@@ -75,6 +75,7 @@ export function privateSyncHost(core) {
  *  one (stdio). Returns a fresh SDK Server; call it again for another connection. */
 export function createPodManagerServer({ core, syncHost = privateSyncHost(core) }) {
   const { comfyruns, governance, gpus, history, imports, mounts, pods, pool, syncrun, volumes } = core
+  pods.startWatches?.()   // Retry Later (ADR-042 section 19): a watch this server registers is tried again while it is up (the app does the same; a claim keeps the two apart)
   const LOG_WAIT_MS = Number(process.env.MCP_LOG_WAIT_MS) || LOG_WAIT_MS_DEFAULT   // RunPod's log stream stays open after the backfill; this is how long get_logs listens
 
   const agentId = { type: 'string', description: 'Agent ID' }
@@ -158,6 +159,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
           custom_nodes: { type: 'array', items: { type: 'object', properties: { url: { type: 'string' }, branch: { type: 'string' } }, required: ['url'] }, description: 'Node packs cloned at start' },
           image: { type: 'string', description: "'configured' (the configuration's image), 'prebuilt' (RunPod's stock ComfyUI image), or a registry reference. Omitted: ours when it has been pushed, else prebuilt" },
           idle_stop_minutes: { type: 'integer', description: 'Stop the pod after this many quiet minutes; 0 = never. Omitted: the configuration\'s value' },
+          retry_until_free: { type: 'boolean', description: 'When RunPod has no free GPU for this create, do not fail: keep trying the same create (a watch, seen with pod_watch) every every_minutes until it works, for up to give_up_hours. Nothing is deleted or made twice' }, every_minutes: { type: 'number', description: 'With retry_until_free: minutes between tries (default 2, at least 1)' }, give_up_hours: { type: 'number', description: 'With retry_until_free: give up after this create many hours (default 12, at most 72)' },
           apply_mounts: { type: 'boolean', description: 'Apply the mount configuration (volume, env, links). Omitted: the configuration\'s apply_by_default' },
           config: { type: 'object', description: "This pod's own configuration (the Default Configuration's shape, as get_configuration shows it), kept for recreate_pod" },
           round: { type: 'string', maxLength: 120, description: 'Put the new pod in this delivery round (a map on our side; see set_pod_round). Omitted: no round' },
@@ -166,9 +168,9 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
       },
     },
     { name: 'stop_pod', description: 'Stop a pod (pauses the hourly bill; the disk and the volume stay)', inputSchema: { type: 'object', properties: { pod_id: podId }, required: ['pod_id'] } },
-    { name: 'resume_pod', description: 'Resume a stopped pod on its host; when that host is full the answer says so and suggests recreate_pod', inputSchema: { type: 'object', properties: { pod_id: podId }, required: ['pod_id'] } },
+    { name: 'resume_pod', description: "Resume a stopped pod on its host. RunPod pins a stopped pod to its host: when that host has no free GPU the answer says so and offers two ways on: retry_until_free: true keeps trying every few minutes until the host has a card (nothing is deleted; seen with pod_watch), or recreate_pod (a fresh pod elsewhere; this pod and its container disk are deleted, so only for a pod with a network volume or nothing to keep)", inputSchema: { type: 'object', properties: { pod_id: podId, retry_until_free: { type: 'boolean', description: 'When RunPod has no free GPU for this, do not fail: keep trying (a watch, seen with pod_watch) every every_minutes until it works, for up to give_up_hours. Nothing is deleted or made twice' }, every_minutes: { type: 'number', description: 'With retry_until_free: minutes between tries (default 2, at least 1)' }, give_up_hours: { type: 'number', description: 'With retry_until_free: give up after this many hours (default 12, at most 72)' } }, required: ['pod_id'] } },
     { name: 'delete_pod', description: 'Terminate a pod (irreversible; asks nothing, as the card does after its confirm). A network volume is not touched', inputSchema: { type: 'object', properties: { pod_id: podId }, required: ['pod_id'] } },
-    { name: 'recreate_pod', description: 'A fresh pod with the same name, image, card choice, disk, idle stop and own configuration on whatever host is free; the old one is terminated. The network volume follows', inputSchema: { type: 'object', properties: { pod_id: podId }, required: ['pod_id'] } },
+    { name: 'recreate_pod', description: 'A fresh pod with the same name, image, card choice, disk, idle stop and own configuration on whatever host is free; the old one is TERMINATED with its container disk (files that live only on a pod with no network volume are lost). The network volume follows. When a resume failed only because the host is full, resume_pod with retry_until_free: true is the way that deletes nothing', inputSchema: { type: 'object', properties: { pod_id: podId }, required: ['pod_id'] } },
     { name: 'get_history', description: "What happened on this PC, newest first: `pod` events (a pod was created, started, stopped, recreated, renamed or deleted, with its GPU, datacenter and hourly price) `job` events (a round pull, a delete of a round, or a sync, ended done, failed or cancelled, with files and bytes) and `change` events (a volume made, resized, deleted or made the default; the configuration saved or imported; a shot pack imported; an adapter saved). Each says where it came from: `source` app or mcp, with the `tool` and the `approved_by` of an MCP call. Read from this app's own log, so it covers only what was done through this app. For ComfyUI's own runs use get_comfy_runs; for money use get_spend_history", inputSchema: { type: 'object', properties: { kind: { type: 'string', enum: ['pod', 'job', 'change'], description: 'only pod events, job events or changes (volumes, configuration, imports, adapters); default: all' }, limit: { type: 'integer', minimum: 1, maximum: 5000, description: 'most events to return (default 200)' } } } },
     { name: 'get_spend_history', description: "What the pods have cost, worked out from the start and stop events in the history: the total, what is running now, each session (pod, from, to, hours, cost) and the cost by day. An estimate (RunPod bills by the second at the price listed then); read its `note`. For the live burn rate use cost_now", inputSchema: { type: 'object', properties: {} } },
     { name: 'get_comfy_runs', description: "The runs on a pod's ComfyUI, newest first, read from the pod: queued and running ones, then finished ones (up to 50) with status (success, error, running, pending), start time, duration in seconds, an estimated cost (`cost_estimate`, USD: the run's seconds at the pod's hourly price), the output files (filename, type, subfolder) the error message of a failed run, `messages` (ComfyUI's own status timeline for the run: execution_start, execution_cached, execution_success, execution_error, execution_interrupted, each with its time and data) and, for a failed run, `error_detail` (message, node_id, node_type, exception_type, traceback lines). For the server's own log use get_comfy_logs. The pod must be running (otherwise refused: start it first); ComfyUI forgets its history when the pod is recreated", inputSchema: { type: 'object', properties: { pod_id: podId }, required: ['pod_id'] } },
@@ -241,6 +243,8 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
   const TOOLS = [...POOL_TOOLS, ...POD_TOOLS, ...app.tools]
 
   /** Does RunPod's answer say the host or cloud has no card for this pod? */
+  /** retry_until_free's numbers (minutes, hours) as the core's watch options (seconds, hours); the core checks the limits. */
+  const watchOpts = (a) => ({ ...(a.every_minutes != null ? { every_s: Math.round(Number(a.every_minutes) * 60) } : {}), ...(a.give_up_hours != null ? { give_up_h: Number(a.give_up_hours) } : {}) })
   const hostFull = (message) => pods.NO_STOCK.test(message) || /host|unavailable|resources/i.test(message)
 
   /** tool name -> what it answers. Each returns a CallToolResult; the dispatcher below turns throws into one. */
@@ -294,16 +298,28 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
         ...(args.env_vars ? { env_vars: args.env_vars } : {}), ...(args.pip_requirements ? { pip_requirements: args.pip_requirements } : {}), ...(Array.isArray(args.custom_nodes) && args.custom_nodes.length ? { custom_nodes: args.custom_nodes } : {}),
       }
       const credentials = req.custom_nodes?.length ? await core.git.credentialsEnv(req.custom_nodes.map((n) => n.url || '')) : {}   // only the hosts the pod clones from, as the window does
-      const p = await pods.create(req, undefined, credentials)
+      let p
+      try { p = await pods.create(req, undefined, credentials) }
+      catch (e) {
+        if (e?.code !== 'no_card') throw e
+        if (!args.retry_until_free) throw new Error(`${e.message}\n\nretry_until_free: true keeps trying the same create every few minutes until a card is free (one pod is made, never two; see pod_watch), or ask again with another gpu or datacenter.`)
+        const w = pods.createWhenFree(req, watchOpts(args))
+        console.error(`create_pod ${req.name}: no card, waiting (${w.id}) approved by ${String(args.approved_by).trim()}`)
+        return json({ waiting: true, message: `No card is free right now. Waiting: the same create is tried every ${Math.round(w.every_s / 60)} min until a card is free (up to ${Math.round((Date.parse(w.give_up_at) - Date.parse(w.created_at)) / 3600000)} h). Cancel with pod_watch.`, watch: w, approved_by: String(args.approved_by).trim() })
+      }
       console.error(`create_pod ${p.id} (${p.name}, ${p.gpu}) approved by ${String(args.approved_by).trim()}`)
       return json({ ...p, config: pods.config(p.id), approved_by: String(args.approved_by).trim() })
     },
     stop_pod: async ({ pod_id }) => { const r = await pods.stop(pod_id); return text(`✓ Pod stopped: ${pod_id}\n${r.message}`) },
-    resume_pod: async ({ pod_id }) => {
+    resume_pod: async ({ pod_id, retry_until_free, every_minutes, give_up_hours }) => {
       try { const r = await pods.resume(pod_id); return text(`✓ Pod resumed: ${pod_id}\n${r.message}`) }
       catch (e) {
         const m = e?.message || String(e)
-        if (e?.status !== 404 && hostFull(m)) return text(`✗ Pod ${pod_id} could not resume: RunPod pins a stopped pod to its host, and that host has no free card right now (RunPod: ${m}). Use recreate_pod: a fresh pod with the same settings on a free host; the network volume follows it.`, true)
+        if (e?.status !== 404 && (e?.code === 'host_full' || hostFull(m)) && retry_until_free) {
+          const w = await pods.resumeWhenFree(pod_id, watchOpts({ every_minutes, give_up_hours }))
+          return text(`⏳ Pod ${pod_id}: its host has no free GPU right now (RunPod: ${m}). Waiting: Resume is tried again every ${Math.round(w.every_s / 60)} min until it works (up to ${Math.round((Date.parse(w.give_up_at) - Date.parse(w.created_at)) / 3600000)} h). Nothing is deleted. Watch ${w.id}: follow or cancel it with pod_watch.`)
+        }
+        if (e?.status !== 404 && (e?.code === 'host_full' || hostFull(m))) return text(`✗ Pod ${pod_id} could not resume: RunPod pins a stopped pod to its host, and that host has no free card right now (RunPod: ${m}). Two ways on. (1) resume_pod again with retry_until_free: true: it keeps trying every few minutes until the host has a card, and nothing is deleted (follow it with pod_watch). (2) recreate_pod: a fresh pod with the same settings on a free host, and the network volume follows it; but this pod is terminated with its container disk, so only when nothing on that disk is needed (a pod with no network volume keeps its files only there).`, true)
         throw e
       }
     },

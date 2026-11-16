@@ -58,7 +58,7 @@ test('initialize hands every client the governance instructions', async () => {
 const POOL = ['list_agents', 'get_pool_status', 'governance', 'create_agent', 'stop_agent', 'resume_agent', 'delete_agent', 'health_check_agent', 'get_agent_info', 'submit_job', 'get_job_status']
 const PODS = ['list_pods', 'get_pod', 'create_pod', 'stop_pod', 'resume_pod', 'delete_pod', 'recreate_pod', 'get_history', 'get_spend_history', 'get_comfy_runs', 'get_comfy_logs', 'export_history', 'rename_pod', 'set_pod_round', 'set_pod_shot', 'delete_round', 'rename_round', 'set_idle_stop', 'get_logs', 'list_datacenters', 'list_volumes', 'create_volume', 'delete_volume', 'set_default_volume', 'get_configuration', 'sync', 'sync_status', 'adapter_spec', 'adapters_list', 'adapter_save', 'import_plan', 'import_apply', 'get_credits', 'cost_now']
 // The tools the app's other windows added (docs/ADR-028), in the order app-tools.mjs defines them.
-const APP = ['list_gpus', 'get_volume_info', 'get_pod_config', 'set_pod_config', 'set_configuration', 'preview_configuration', 'reset_configuration', 'get_local_env', 'list_dirs', 'get_settings', 'set_settings', 'check_anthropic_key', 'config_export', 'config_import_plan', 'config_import_apply', 'config_undo', 'config_backups', 'resize_volume', 'volume_files', 'volume_erase', 'volume_clone', 'volume_job', 'volume_jobs', 'rate_limit_status', 'agent_guard_status', 'models_search', 'models_files', 'models_fetch', 'models_status', 'models_delete', 'models_wanted', 'models_wanted_add', 'models_wanted_remove', 'models_load_wanted', 'set_shared_volume', 'panama_status', 'panama_rounds', 'panama_round_files', 'panama_stage', 'panama_round_size', 'panama_pod_plan', 'panama_pull', 'panama_job', 'panama_cancel', 'panama_remove', 'plan_round_import', 'import_rounds', 'import_round', 'queue_list', 'queue_task', 'list_pod_workflows', 'run_pod_workflows', 'pod_models', 'run_workflows_job', 'panama_place', 'panama_import', 'import_detect', 'package_summary', 'package_tree', 'package_file', 'package_describe', 'adapter_draft', 'adapter_document', 'adapter_problems', 'adapter_manage', 'sync_after', 'image_env', 'image_dockerfile', 'git_accounts', 'repositories', 'remote_mcp', 'mcp_endpoints', 'docs', 'chunk_plan', 'run_shot_chunked', 'chunked_job', 'pod_ram']
+const APP = ['list_gpus', 'get_volume_info', 'get_pod_config', 'set_pod_config', 'set_configuration', 'preview_configuration', 'reset_configuration', 'get_local_env', 'list_dirs', 'get_settings', 'set_settings', 'check_anthropic_key', 'config_export', 'config_import_plan', 'config_import_apply', 'config_undo', 'config_backups', 'resize_volume', 'volume_files', 'volume_erase', 'volume_clone', 'volume_job', 'volume_jobs', 'rate_limit_status', 'agent_guard_status', 'models_search', 'models_files', 'models_fetch', 'models_status', 'models_delete', 'models_wanted', 'models_wanted_add', 'models_wanted_remove', 'models_load_wanted', 'set_shared_volume', 'panama_status', 'panama_rounds', 'panama_round_files', 'panama_stage', 'panama_round_size', 'panama_pod_plan', 'panama_pull', 'panama_job', 'panama_cancel', 'panama_remove', 'plan_round_import', 'import_rounds', 'import_round', 'queue_list', 'queue_task', 'list_pod_workflows', 'run_pod_workflows', 'pod_models', 'run_workflows_job', 'panama_place', 'panama_import', 'import_detect', 'package_summary', 'package_tree', 'package_file', 'package_describe', 'adapter_draft', 'adapter_document', 'adapter_problems', 'adapter_manage', 'sync_after', 'image_env', 'image_dockerfile', 'git_accounts', 'repositories', 'remote_mcp', 'mcp_endpoints', 'docs', 'chunk_plan', 'run_shot_chunked', 'chunked_job', 'pod_ram', 'pod_watch']
 
 test('an agent writes an adapter and tests it on a real folder; the code stays open to read', async () => {
   const spec = textOf(ok(await call('adapter_spec')))
@@ -444,4 +444,29 @@ test('the wanted-models list: add by entries and by CSV, list, remove; loading s
   const loaded = await call('models_load_wanted', { volume_id: 'vol1' })
   assert.equal(loaded.result.isError, true); assert.match(textOf(loaded), /approved_by/)   // spends: the named yes is on in this server
   assert.equal(JSON.parse(first(await call('models_wanted_remove', { all: true }))).models.length, 0)
+})
+
+test('Retry Later: resume_pod and create_pod take retry_until_free; pod_watch lists and cancels the watches (kept in a file)', async () => {
+  const tools = (await rpc('tools/list')).result.tools
+  for (const name of ['resume_pod', 'create_pod']) {
+    const props = tools.find((t) => t.name === name).inputSchema.properties
+    for (const k of ['retry_until_free', 'every_minutes', 'give_up_hours']) assert.ok(props[k], `${name} has ${k}`)
+  }
+  assert.match(tools.find((t) => t.name === 'resume_pod').description, /retry_until_free: true keeps trying/)
+  assert.match(tools.find((t) => t.name === 'recreate_pod').description, /TERMINATED with its container disk/)
+
+  const none = jsonOf(await call('pod_watch')); assert.equal(none.waiting, 0); assert.deepEqual(none.watches, [])
+  // a watch as the app or an earlier session left it in the file
+  const now = Date.now(), iso = (ms) => new Date(ms).toISOString()
+  const watch = (id, kind, extra) => ({ id, kind, state: 'waiting', name: `n-${id}`, label: 'Waiting for a free A100 SXM in EU-RO-1', every_s: 120, created_at: iso(now), next_at: iso(now + 600000), give_up_at: iso(now + 43200000), attempts: 2, ...extra })
+  writeFileSync(join(dir, 'pod-watches.json'), JSON.stringify({ watches: [watch('w-resume', 'resume', { pod_id: 'pod-x' }), watch('w-create', 'create', { request: { name: 'n-w-create' } })] }))
+  const listed = jsonOf(await call('pod_watch', { action: 'list' }))
+  assert.equal(listed.waiting, 2); assert.deepEqual(listed.watches.map((w) => [w.id, w.kind, w.state]), [['w-resume', 'resume', 'waiting'], ['w-create', 'create', 'waiting']])
+
+  assert.equal(jsonOf(await call('pod_watch', { action: 'cancel', pod_id: 'pod-x' })).watch.state, 'cancelled')   // a resume watch, by its pod
+  const c = jsonOf(await call('pod_watch', { action: 'cancel', id: 'w-create' }))
+  assert.equal(c.cancelled, 'w-create')
+  assert.equal(jsonOf(await call('pod_watch')).waiting, 0)
+  assert.match(textOf(refused(await call('pod_watch', { action: 'cancel', id: 'nope' }))), /No such watch/)
+  assert.match(textOf(refused(await call('pod_watch', { action: 'delete' }))), /action must be/)
 })

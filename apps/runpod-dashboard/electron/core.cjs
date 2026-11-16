@@ -24,6 +24,7 @@ async function loadCore() {
   const push = () => { if (timer) return; timer = setTimeout(() => { timer = null; for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('core:history', {}) }, 250) }
   core.history.onChange(push)
   core.queue.start()   // ADR-038: the round-import queue runs while the app is open
+  core.pods.startWatches()   // ADR-042 section 19: a pod waiting for a free card is tried again while the app is open
   // Events written by another process (the MCP server of another session, the CLI) arrive through the file.
   try { const hf = core.paths.historyFile(); require('node:fs').mkdirSync(path.dirname(hf), { recursive: true }); require('node:fs').watch(path.dirname(hf), (_ev, name) => { if (name === path.basename(hf)) push() }) } catch { /* in-process changes still push */ }
   return core
@@ -61,6 +62,11 @@ const TABLE = {
     create: async (c, req) => c.pods.create(req, undefined, req.custom_nodes?.length ? await c.git.credentialsEnv(req.custom_nodes.map((n) => n.url || '')) : {}),
     stop: (c, id) => c.pods.stop(id),
     resume: (c, id) => c.pods.resume(id),
+    // Retry later (ADR-042 section 19): keep trying to resume or create until RunPod has a free card.
+    resumeWhenFree: (c, id, opts) => c.pods.resumeWhenFree(id, opts || {}),
+    createWhenFree: (c, req, opts) => c.pods.createWhenFree(req, opts || {}),
+    watches: (c) => c.pods.watches(),
+    cancelWatch: (c, id) => c.pods.cancelWatch(id),
     remove: (c, id) => c.pods.remove(id),
     gpus: (c, dc) => c.pods.gpuMenu(undefined, dc || undefined),
     volume: (c, id) => c.pods.volumeInfo(id || undefined),
@@ -357,7 +363,7 @@ function register() {
       const value = await f(await loadCore(), ...args)
       return { ok: true, value }
     } catch (e) {
-      return { ok: false, error: { status: e.status || 500, message: e.message || String(e) } }
+      return { ok: false, error: { status: e.status || 500, message: e.message || String(e), ...(e.code ? { code: e.code } : {}) } }
     }
   })
 }

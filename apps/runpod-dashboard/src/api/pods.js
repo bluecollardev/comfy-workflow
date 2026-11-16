@@ -47,6 +47,10 @@ const ipc = core && {
   getDashboard: () => core.invoke('pods', 'dashboard'),
   details: (id) => core.invoke('pods', 'details', [id]),
   recreate: (id) => core.invoke('pods', 'recreate', [id]),
+  resumeWhenFree: (id, opts) => core.invoke('pods', 'resumeWhenFree', [id, opts || {}]),
+  createWhenFree: (podData, opts) => core.invoke('pods', 'createWhenFree', [toRequest(podData), opts || {}]),
+  watches: () => core.invoke('pods', 'watches'),
+  cancelWatch: (id) => core.invoke('pods', 'cancelWatch', [id]),
   config: (id) => core.invoke('pods', 'config', [id]),
   setConfig: (id, config) => core.invoke('pods', 'setConfig', [id, config]),
 };
@@ -151,6 +155,24 @@ const http = {
   // Same pod, new host: for a stopped pod whose host has no free GPU
   async recreate(id) {
     const { data } = await axios.post(`${API_BASE}/pods/${id}/recreate`);
+    return data;
+  },
+
+  // Retry later: keep trying to resume (or create) until RunPod has a free card, and the watches that are doing it
+  async resumeWhenFree(id, opts) {
+    const { data } = await axios.post(`${API_BASE}/pods/${id}/resume-when-free`, opts || {});
+    return data;
+  },
+  async createWhenFree(podData, opts) {
+    const { data } = await axios.post(`${API_BASE}/pods/create-when-free`, { request: toRequest(podData), ...(opts || {}) });
+    return data;
+  },
+  async watches() {
+    const { data } = await axios.get(`${API_BASE}/pod-watches`);
+    return data;
+  },
+  async cancelWatch(id) {
+    const { data } = await axios.delete(`${API_BASE}/pod-watches/${id}`);
     return data;
   },
 

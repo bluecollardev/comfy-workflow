@@ -15,7 +15,7 @@ export type PodAction = 'created' | 'started' | 'stopped' | 'recreated' | 'renam
 export interface PodEvent { ts: string; kind: 'pod'; action: PodAction; pod_id: string; name: string; gpu?: string; datacenter?: string; cost_per_hr?: number | null; detail?: string }
 export interface JobEvent { ts: string; kind: 'job'; job: 'pull' | 'remove' | 'browse' | 'erase' | 'clone' | 'fetch' | 'delete-models' | 'sync' | 'run' | 'queue'; state: 'done' | 'failed' | 'cancelled' | 'interrupted'; started_at?: string; what: string; pod_id?: string; pod_name?: string; files?: number; bytes?: number; detail?: string; error?: string }
 /** A change to something that is not a pod or a job: a volume made, resized, deleted or made the default; the configuration saved or imported; a shot pack imported; an adapter saved. */
-export interface ChangeEvent { ts: string; kind: 'change'; area: 'volume' | 'configuration' | 'import' | 'adapter'; action: string; what: string; detail?: string }
+export interface ChangeEvent { ts: string; kind: 'change'; area: 'volume' | 'configuration' | 'import' | 'adapter' | 'pod'; action: string; what: string; detail?: string }
 export type HistoryEvent = (PodEvent | JobEvent | ChangeEvent) & Origin
 /** Who did it: `source` is the app's window (default) or an MCP tool call (`tool`, and the `approved_by` of a spend). Taken from the context the caller runs in (`runAs`). */
 export interface Origin { source?: 'app' | 'mcp'; tool?: string; approved_by?: string }

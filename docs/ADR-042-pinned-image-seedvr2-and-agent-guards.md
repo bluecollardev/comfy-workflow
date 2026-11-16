@@ -175,6 +175,25 @@ A window left open on the create form and the Models window, with one pod starti
 
 Unproven: nothing was run against a real rate-limited RunPod; the answers are fake 429s. The call counts are read from the code, not measured on the wire.
 
+## 19. Retry Later: a wait instead of a failure, for Resume and for Create (amendment, 17 Nov 2026)
+
+Lucas, after a resume of `CanalV2-base-graphs-v001` (a pod made outside the app, an RTX PRO 6000, no network volume, a 200 GB container disk) failed with "There are not enough free GPUs on the host machine to start this pod", and a create of `CanalV2-lores-v003-a-v27` on an A100 SXM failed with "No card available right now": "Retry later - when clicking resume, have this be an option, let the user pick, or mcp", and then the same for creating a pod.
+
+**The problem.** RunPod pins a stopped pod to the host it ran on; with no free GPU there the resume fails, and the only way on the app had was Recreate, which terminates the old pod **and its container disk**. For a pod with no network volume that is the loss of whatever is on the disk, and the pod was Binc's. A create has the same shape: a failure with nothing to do but ask again by hand.
+
+**What it does.**
+- A *watch* (`libs/core/src/podwatch.ts`, kept in `~/.config/runpod-pod-manager/pod-watches.json`, so it survives a restart) retries the same resume, or the same create request, every `every_s` (default 120, at least 60) up to `give_up_h` hours (default 12, at most 72). The app's timer (and an MCP server's, while it is up) looks for due watches every 15 s.
+- Only "no free GPU" keeps a watch waiting, and the core now says so in a field, not just words: `CoreError.code` is `host_full` (a resume) or `no_card` (a create). A missing pod, a rejected key or a bad request stops the watch with the reason. RunPod's request limit (ADR-042 section 18) is waited out to the limiter's own time, never hammered. A dropped connection is not an answer: the watch goes on.
+- **A create never makes a second pod.** The watch writes `creating` to its file *before* it asks RunPod and clears it only on a definite "no card". If the answer is lost (a dropped connection, a restart in the middle) the marker stays, and the next try looks for a pod with that name first and adopts it. Cancelling while a try was in flight says to check the pod list. Two watches for the same pod, or the same name, are refused.
+- Two processes (the app and an MCP server) may both run the timer: a watch carries a short claim (pid and time) and the other waits it out; the by-name check is the second guard for a create.
+- History: a successful watch records the normal `started` / `created` pod event with "pod resumed / created after waiting N min"; a watch that gave up, stopped or was cancelled is a `change` event in the new area `pod`.
+- **Window.** After a Resume that finds the host full the card offers **Retry Later** beside Recreate (Recreate's confirm now says the pod and its container disk are deleted and points to Retry Later). A Create that finds no card shows **Retry Later** in the form's error. What is waiting, with its try count, next try and last answer, is listed above the pods with a Cancel, and what ended in the last 10 minutes stays there. The list follows the core every 6 s; the pod list refreshes when a watch ends.
+- **MCP.** `resume_pod` and `create_pod` take `retry_until_free`, `every_minutes`, `give_up_hours`; without `retry_until_free` the answer says plainly that it is an option next to `recreate_pod`. `pod_watch {action: list|cancel, id|pod_id}` lists and cancels both kinds. `recreate_pod`'s description now says it terminates the container disk.
+
+**Cost and consent.** A retry spends exactly what the same Resume or Create would; the watch adds no spend of its own beyond the pod it eventually starts (a started pod bills at once). The named-yes rule, when the setting is on, is asked once, at the `create_pod` call that registers the watch (the watch records it in the log line, not in the file).
+
+**Unproven.** Built and tested with fake RunPod answers (core, MCP, browser); not yet run against a real full host or a real out-of-stock create. The label of a resume watch is read from the pod's details at registration, which is one extra RunPod call.
+
 ## Consequences
 
 - One tag no longer means two images; Blackwell cards keep their CUDA 13 build.

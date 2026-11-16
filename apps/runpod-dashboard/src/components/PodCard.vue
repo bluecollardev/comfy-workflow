@@ -82,7 +82,17 @@
         <BProgress :value="loading.value" :max="100" height="6px" :variant="loading.sync ? 'warning' : 'info'" :striped="loading.indeterminate || !loading.sync || loading.value < 100" :animated="loading.indeterminate || !loading.sync || loading.value < 100" />
         <div class="small text-body-secondary mt-1" data-testid="pod-progress-label">{{ loading.sync ? '' : $t('pod.stepOf', { n: loading.step, of: 3 }) + ' · ' }}{{ loading.label }}</div>
       </div>
-      <div v-if="pods.hostFull === pod.id" class="col-12 small text-warning" data-testid="pod-host-full">{{ $t('pod.hostFull') }}</div>
+      <div v-if="pods.hostFull === pod.id && !waitWatch" class="col-12 small text-warning" data-testid="pod-host-full">
+        {{ $t('pod.hostFull') }}
+        <div class="mt-2 d-flex gap-2">
+          <BButton size="sm" variant="warning" :disabled="busy" :title="$t('pod.retryLaterTitle')" data-testid="pod-retry-later" @click="watches.retryResumeLater(pod.id)"><i class="fa-solid fa-hourglass-half me-1"></i>{{ $t('pod.retryLater') }}</BButton>
+          <BButton size="sm" variant="outline-light" data-testid="pod-host-full-dismiss" @click="pods.hostFull = null">{{ $t('podWatch.cancel') }}</BButton>
+        </div>
+      </div>
+      <div v-if="waitWatch" class="col-12 small text-warning d-flex align-items-center gap-2" data-testid="pod-waiting">
+        <BSpinner small /><span class="flex-grow-1">{{ $t('pod.waitingFor', { n: Math.round(waitWatch.every_s / 60), at: new Date(waitWatch.next_at).toTimeString().slice(0, 5) }) }}</span>
+        <BButton size="sm" variant="outline-light" data-testid="pod-waiting-cancel" @click="watches.cancel(waitWatch.id)">{{ $t('podWatch.cancel') }}</BButton>
+      </div>
 
       <template v-if="pod.status_text">
         <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.statusText') }}</dt>
@@ -231,6 +241,7 @@ import { useToastStore } from '../stores/toast'
 import { useUiStore } from '../stores/ui'
 import { useConfirmStore } from '../stores/confirm'
 import { useVolumesStore } from '../stores/volumes'
+import { usePodWatchStore } from '../stores/podwatch'
 import { barValue, detailParts, fresh } from '../sync-progress'
 const props = defineProps({
   pod: { type: Object, required: true },
@@ -269,6 +280,9 @@ function formatUptime(seconds) {
 }
 
 const pods = usePodsStore()
+const watches = usePodWatchStore()
+/** The watch that is waiting to resume this pod (Retry Later), if any. */
+const waitWatch = computed(() => watches.forPod(props.pod.id))
 
 /** Where a pod is on its way to a usable ComfyUI: requested, container up, ready. The image pull itself has no
  *  progress RunPod exposes, so the bar moves by step; the Logs modal shows the pull lines. */

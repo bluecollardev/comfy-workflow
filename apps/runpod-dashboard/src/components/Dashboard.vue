@@ -24,6 +24,8 @@
       </BCollapse>
     </BCard>
 
+    <PodWatchList />
+
     <!-- Pods. Grouped by round (ADR-039: a round holds a series of pods; each round is a collapsible list, empty ones too) and/or by datacenter. -->
     <BCard no-body data-testid="pods-card">
       <BCardHeader class="d-flex align-items-center">
@@ -102,6 +104,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import PodCard from './PodCard.vue'
 import PodForm from './PodForm.vue'
+import PodWatchList from './PodWatchList.vue'
 import { useSettingsStore } from '../stores/settings'
 import { useUiStore } from '../stores/ui'
 import { usePodsStore } from '../stores/pods'
