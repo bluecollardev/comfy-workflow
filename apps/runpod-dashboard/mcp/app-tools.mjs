@@ -28,7 +28,7 @@ export const SETTING_FIELDS = ['runpod_api_key', 'anthropic_api_key', 'hf_token'
 const MAX_FILE = 2 * 1024 * 1024
 
 export function appTools({ core, governance, text, json, plain = text }) {
-  const { hf, wantedmodels, mounts, pods, volumes, settings, configio, panama, podpull, runflows, queue, imports, studio, images, git, repositories, remote, mcp } = core
+  const { hf, wantedmodels, mounts, pods, volumes, settings, configio, panama, podpull, runflows, chunking, queue, imports, studio, images, git, repositories, remote, mcp } = core
   const yes = (args, what) => governance.namedYes(args, what)
   const approved = obj({ approved_by: S('Who said yes to this spend. Only needed when the named-yes setting is on (set_settings agent_named_yes_required); never guessed.') })
   const absolutePath = (p, what) => { if (!p || !isAbsolute(p)) throw Object.assign(new Error(`${what} must be an absolute path`), { status: 400 }); return p }
@@ -273,6 +273,30 @@ export function appTools({ core, governance, text, json, plain = text }) {
         const t = docs.read(page)
         return t == null ? plain(`No such page: ${page}. Pages: ${docs.listing().map((p) => p.name).join(', ')}`, true) : plain(t)
       } },
+    // ---------- chunked runs (docs/CHUNKING.md) ----------
+    { name: 'chunk_plan', description: "Split a frame range into chunks (docs/CHUNKING.md): a long shot loaded whole can fill a container's RAM and be OOM-killed (exit 137). Returns the ranges; with write_jobs, also writes one job file per chunk into queue/<project>/in/ (never queue/canalv2/). A graph with BincSeqToImage takes frame NUMBERS (the file names); one with only BH_ReadSequence takes INDEXES. No spend",
+      inputSchema: obj({ first: N('First frame'), last: N('Last frame'), chunk: N(`Frames per chunk (default ${chunking.DEFAULT_CHUNK}; about 50 for 4K with SeedVR2 or LTX)`), write_jobs: obj({ project: S('queue/<project>/ folder, not canalv2'), shot: S('Shot name for the job files'), graph_path: S('The panel path the jobs run'), pod_id: S('A pod to name in the jobs') }, ['project', 'shot']) }, ['first', 'last']),
+      run: async ({ first, last, chunk, write_jobs }) => {
+        try {
+          const chunks = chunking.plan(first, last, chunk ?? chunking.DEFAULT_CHUNK)
+          if (!write_jobs) return json({ count: chunks.length, chunks })
+          const w = chunking.writeJobFiles({ ...write_jobs, first, last, chunk })
+          return json({ count: chunks.length, chunks, dir: w.dir, files: w.files })
+        } catch (e) { return text(e.message, true) }
+      } },
+    { name: 'run_shot_chunked', description: "Run a shot's graph on a running pod as consecutive frame ranges (docs/CHUNKING.md), so RAM never holds the whole sequence: each chunk sets BincSeqToImage first_frame/last_frame (or BH_ReadSequence first_index/count), runs, then ComfyUI is told to free memory. The RAM guard reads the pod's container memory over SSH while it runs: past ram_guard_pct (default 85) the chunk is interrupted and the job stops with the chunk and frames to resume from. Give the graph (API format) or a panel path. Locked shots are refused. Returns a job: follow it with chunked_job. Runs on a pod already billing: approved_by (only when the named-yes setting is on)",
+      inputSchema: obj({ pod_id: S('A running pod'), path: S('Panel path from list_pod_workflows (a UI graph, converted like run_pod_workflows)'), graph: O('Or an API-format graph'), first: N('First frame (a frame number with BincSeqToImage, an index with BH_ReadSequence only)'), last: N('Last frame'), chunk: N(`Frames per chunk (default ${chunking.DEFAULT_CHUNK})`), ram_guard_pct: N(`Stop when the container passes this share of its RAM (default ${chunking.DEFAULT_RAM_GUARD_PCT})`), approved_by: approved.properties.approved_by }, ['pod_id', 'first', 'last']),
+      run: async (args) => {
+        const refusal = yes(args, 'run_shot_chunked'); if (refusal) return text(refusal, true)
+        try {
+          console.error(`run_shot_chunked on ${args.pod_id} frames ${args.first}-${args.last} approved by ${String(args.approved_by).trim()}`)
+          return json(await chunking.run(args.pod_id, { path: args.path, graph: args.graph, first: args.first, last: args.last, chunk: args.chunk, ramGuardPct: args.ram_guard_pct, approvedBy: String(args.approved_by).trim() }))
+        } catch (e) { return text(e.message, true) }
+      } },
+    { name: 'chunked_job', description: 'Where a run_shot_chunked job is: each chunk waiting, running, done or failed, the RAM now and its peak, and why it stopped (the RAM guard names the chunk and the frame to resume from); cancel: true interrupts the running chunk and skips the rest', inputSchema: obj({ id: S('Job id from run_shot_chunked'), cancel: B('Stop the job') }, ['id']),
+      run: async ({ id, cancel }) => { try { const j = cancel ? chunking.cancel(id) : chunking.job(id); return j ? json(j) : text(`No such chunked run: ${id}`, true) } catch (e) { return text(e.message, true) } } },
+    { name: 'pod_ram', description: "A pod's container memory right now, from its cgroup over SSH (the host's figure that ComfyUI's own /system_stats gives is not the container's limit): used, limit, percent, and whether it is over the guard's limit. null when the pod has no memory limit or cannot be reached. Read-only, no spend", inputSchema: obj({ pod_id: S('A running pod'), ram_guard_pct: N(`The limit to compare with (default ${chunking.DEFAULT_RAM_GUARD_PCT})`) }, ['pod_id']),
+      run: async ({ pod_id, ram_guard_pct }) => { const r = await chunking.readRam(pod_id); const lim = ram_guard_pct ?? chunking.DEFAULT_RAM_GUARD_PCT; return json(r ? { ...r, used_gib: chunking.gib(r.used), limit_gib: chunking.gib(r.limit), ram_guard_pct: lim, over: chunking.overLimit(r, lim) } : { ram: null, note: 'No container memory limit found, or the pod could not be reached over SSH.' }) } },
   ]
 
   const readJsonFile = (file) => {

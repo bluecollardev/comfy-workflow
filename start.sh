@@ -9,6 +9,8 @@
 #   ./start.sh sync --pod <id> | --s3   copy the mapped folders onto the network volume (never deletes)
 #   ./start.sh pull --pod <id> | --s3   bring renders back down (comfy-shared/output, the shots' review and deliver)
 #   ./start.sh import <folder> [--adapter ID] [--dry-run]   a package folder into ComfyUI-Shared through an adapter (docs/ADR-008)
+#   ./start.sh chunk plan --first N --last N [--chunk N] [--project P --shot S] | ram --pod-id ID   frame ranges, queue job files, a pod's RAM (docs/CHUNKING.md)
+#   ./start.sh chunk-live   chunked runs and the RAM guard against RunPod: one real pod, tiny frames (spends)
 #   ./start.sh config export [file] [--no-secrets] | import <file> [--sections a,b] [--dry-run] | undo   the Default Configuration as a JSON file, keys and tokens included unless --no-secrets (docs/ADR-023)
 #   ./start.sh mcp            the MCP server over stdio (what Claude Code launches)
 #   ./start.sh e2e | e2e-app | e2e-live | core-test | smoke   browser suite; the app in no-spend mode; the live RunPod proof (spends); core suite; headless boot
@@ -84,6 +86,14 @@ case "${1:-help}" in
   import)
     shift; load_env; ensure_app
     cd "$APP"; exec node cli/index.mjs import "$@" ;;
+  chunk)
+    # split a shot into frame ranges and write queue job files; a pod's container RAM (docs/CHUNKING.md)
+    shift; load_env; ensure_app
+    cd "$APP"; exec node cli/index.mjs chunk "$@" ;;
+  chunk-live)
+    # the proof of chunked runs and the RAM guard against RunPod: one real pod, tiny frames (spends a few minutes of the cheapest card)
+    shift; load_env; ensure_app
+    cd "$APP"; RUNPOD_LIVE=1 exec npx vitest run libs/core/tests/chunking.live.test.ts "$@" ;;
   config)
     # export / import / undo of the Default Configuration as a JSON file; keys and tokens in it unless --no-secrets (docs/ADR-023)
     shift; load_env; ensure_app

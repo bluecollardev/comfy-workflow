@@ -309,6 +309,8 @@ async function importCmd(core, argv) {
 const HELP = `usage: npm run cli -- <command> [options]   (./start.sh pod|sync|pull)
 
   pod create --name NAME [--gpu KEY] [--image REF] [--network-volume ID] [--link PATH=TARGET]... [--no-mounts] ...
+  chunk plan --first N --last N [--chunk N] [--project NAME --shot NAME]   split a shot into frame ranges, and write queue job files (docs/CHUNKING.md)
+  chunk ram --pod-id ID   a pod's container memory against the guard's limit
   pod list
   pod status|stop|resume|delete --pod-id ID [--force]
   sync --pod ID | --s3 [--volume ID]  [--only project,plates,comfy-shared,workflows] [--shared input,models,output,workflows]
@@ -365,6 +367,35 @@ async function configCmd(core, argv) {
   fail('config: one of export, import, undo\n' + HELP)
 }
 
+async function chunkCmd(core, argv) {
+  const [sub, ...rest] = argv
+  if (sub === 'ram') {
+    const o = parse(rest, { 'pod-id': { kind: 'str', meta: 'ID', required: true, help: 'a running pod' }, 'ram-guard-pct': { kind: 'str', meta: 'N', help: `the limit to compare with [${core.chunking.DEFAULT_RAM_GUARD_PCT}]` } }, 'chunk ram')
+    loadKey(core)
+    const r = await core.chunking.readRam(o['pod-id'])
+    if (!r) { console.log('no container memory limit found, or the pod could not be reached over SSH'); return 1 }
+    const lim = Number(o['ram-guard-pct'] || core.chunking.DEFAULT_RAM_GUARD_PCT)
+    console.log(`${core.chunking.gib(r.used)} of ${core.chunking.gib(r.limit)} (${r.pct}%) ${core.chunking.overLimit(r, lim) ? `OVER the ${lim}% limit` : `under the ${lim}% limit`}`)
+    return core.chunking.overLimit(r, lim) ? 3 : 0
+  }
+  if (sub !== 'plan') fail('chunk: one of plan, ram\n  chunk plan --first N --last N [--chunk N] [--project NAME --shot NAME [--graph-path P] [--pod-id ID]]   print the ranges; with --project and --shot, write one job file per chunk into queue/<project>/in/\n  chunk ram --pod-id ID   the pod\'s container memory (docs/CHUNKING.md)')
+  const o = parse(rest, {
+    first: { kind: 'str', meta: 'N', required: true, help: 'first frame' }, last: { kind: 'str', meta: 'N', required: true, help: 'last frame' },
+    chunk: { kind: 'str', meta: 'N', help: `frames per chunk [${core.chunking.DEFAULT_CHUNK}]` },
+    project: { kind: 'str', meta: 'NAME', help: 'queue/<project>/in/ to write the job files into (not canalv2)' }, shot: { kind: 'str', meta: 'NAME', help: 'shot name for the job files' },
+    'graph-path': { kind: 'str', meta: 'P', help: 'the panel path the jobs run' }, 'pod-id': { kind: 'str', meta: 'ID', help: 'a pod to name in the jobs' },
+  }, 'chunk plan')
+  const first = Number(o.first), last = Number(o.last), chunk = o.chunk ? Number(o.chunk) : undefined
+  const chunks = core.chunking.plan(first, last, chunk ?? core.chunking.DEFAULT_CHUNK)
+  for (const c of chunks) console.log(`chunk ${String(c.n).padStart(3)}  ${c.first}-${c.last}  (${c.count} frames)`)
+  if (o.project || o.shot) {
+    if (!o.project || !o.shot) fail('chunk plan: --project and --shot go together')
+    const w = core.chunking.writeJobFiles({ project: o.project, shot: o.shot, first, last, chunk, graph_path: o['graph-path'], pod_id: o['pod-id'] })
+    console.log(`wrote ${w.files.length} job files into ${w.dir}`)
+  }
+  return 0
+}
+
 async function main(argv) {
   const [cmd, ...rest] = argv
   if (!cmd || cmd === '--help' || cmd === '-h') { console.log(HELP); return cmd ? 0 : 2 }
@@ -380,6 +411,7 @@ async function main(argv) {
   if (cmd === 'pull') return pull(core, rest)
   if (cmd === 'import') return importCmd(core, rest)
   if (cmd === 'config') return configCmd(core, rest)
+  if (cmd === 'chunk') return chunkCmd(core, rest)
   fail(`unknown command ${cmd}\n${HELP}`)
 }
 
