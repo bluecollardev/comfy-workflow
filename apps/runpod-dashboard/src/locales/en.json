@@ -685,6 +685,7 @@
     "area_volume": "volume",
     "area_configuration": "configuration",
     "area_import": "import",
+    "area_pod": "pod",
     "area_adapter": "adapter",
     "changeDetail": "Details",
     "runMessages": "Messages",

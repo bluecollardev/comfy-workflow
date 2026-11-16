@@ -1,6 +1,7 @@
 /** An error with an HTTP-ish status, so an adapter (IPC or HTTP) can report it as the Python API did. */
 export class CoreError extends Error {
-  constructor(public status: number, message: string) {
+  /** A machine-readable reason a caller can act on without parsing the text: `host_full` (a stopped pod's host has no free GPU), `no_card` (a create found no card in stock). */
+  constructor(public status: number, message: string, public code?: string) {
     super(message)
     this.name = 'CoreError'
   }
