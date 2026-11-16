@@ -386,9 +386,13 @@ export function linksEnv(links: Link[]): string {
 
 export interface PodOverrides { env: Record<string, string>; network_volume_id?: string; volume_mount_path?: string; data_center_id?: string; registry_auth_id?: string }
 
+/** ComfyUI's memory flags for every pod: free each node's output once it is used and unload models after a run, so system RAM
+ *  does not climb until the container is OOM-killed (exit 137). A pod's own COMFY_ARGS (even empty) replaces it; add --lowvram there. */
+export const DEFAULT_COMFY_ARGS = '--cache-lru 1 --disable-smart-memory'
+
 /** What pod creation adds: RunPod volume fields and the env the image reads. */
 export function podOverrides(cfg: MountsConfig): PodOverrides {
-  const env = { ...podEnv(cfg), ...cfg.env }
+  const env = { COMFY_ARGS: DEFAULT_COMFY_ARGS, ...podEnv(cfg), ...cfg.env }
   const links = allLinks(cfg)
   if (links.length) env.COMFY_LINKS = linksEnv(links)
   // S3_PULL (the image pulls from a bucket at start, ADR-015): give the pod the Panama keys the app holds, so nothing is typed twice.

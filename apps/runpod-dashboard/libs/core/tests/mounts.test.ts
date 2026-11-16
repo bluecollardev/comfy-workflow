@@ -205,3 +205,14 @@ describe('mcp_http: the MCP servers the app serves over HTTP', () => {
     expect(m.load().sync_shared).toEqual(['output'])
   })
 })
+
+describe('pod memory flags', () => {
+  it('every pod gets the cache and memory flags unless its own COMFY_ARGS replaces them', () => {
+    const cfg = m.defaults()
+    expect(m.podOverrides(cfg).env.COMFY_ARGS).toBe(m.DEFAULT_COMFY_ARGS)
+    expect(m.DEFAULT_COMFY_ARGS).toContain('--cache-lru 1')
+    expect(m.DEFAULT_COMFY_ARGS).toContain('--disable-smart-memory')
+    cfg.env = { COMFY_ARGS: '--lowvram' }
+    expect(m.podOverrides(cfg).env.COMFY_ARGS).toBe('--lowvram')
+  })
+})

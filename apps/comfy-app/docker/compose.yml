@@ -23,7 +23,7 @@ services:
       - "${COMFY_PORT:-8188}:8188"
     environment:
       COMFY_SHARED: /workspace/comfy-shared
-      COMFY_ARGS: ${COMFY_ARGS:-}
+      COMFY_ARGS: ${COMFY_ARGS---cache-lru 1 --disable-smart-memory}
     volumes:
       - ${PROJECT_ROOT:-/home/binc/CANALV2_r3/CANALV2}:/home/binc/CANALV2_r3/CANALV2
       - ${COMFY_SHARED:-/home/binc/ComfyUI-Shared}:/workspace/comfy-shared

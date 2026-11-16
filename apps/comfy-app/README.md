@@ -136,7 +136,7 @@ stages the packs from `shared/nodes` (BincStereo always, ShotPipe as asked) and 
 `/opt/ComfyUI`, the shared tree is `/workspace/comfy-shared/{input,output,models}`
 and `/home/binc/CANALV2_r3/CANALV2` links to `/workspace/project`, so graphs run
 with their binc-PC paths unchanged. `COMFY_PORT`, `COMFY_SHARED` and
-`COMFY_ARGS` override the defaults; arguments after the image name go to
+`COMFY_ARGS` override the defaults (ComfyUI starts with `--cache-lru 1 --disable-smart-memory` so RAM is freed between nodes and runs; set `COMFY_ARGS` to replace it, e.g. `--lowvram`); arguments after the image name go to
 `main.py`. The image never contains models or plates.
 
 On RunPod: the image is pushed to `registry.gitlab.com/bcdevlucas/comfy-workflow/comfy-app:contract-v26`

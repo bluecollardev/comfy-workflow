@@ -3,7 +3,8 @@
 #
 #   COMFY_SHARED  root of the shared input/output/models/workflows tree (default /workspace/comfy-shared)
 #   COMFY_PORT    default 8188
-#   COMFY_ARGS    extra arguments for main.py, e.g. "--highvram"
+#   COMFY_ARGS    arguments for main.py; default "--cache-lru 1 --disable-smart-memory" (frees node outputs and models, so RAM
+#                 does not grow until the container is OOM-killed). Set it to replace them, e.g. "--lowvram", or "" for none.
 #   COMFY_LINKS   "path=target;..." symlinks to make binc-PC paths resolve on the volume (see below)
 #   S3_PULL       "bucket/prefix=/local/dir;..." pulled from S3 at start, in the background (see below)
 #   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, S3_ENDPOINT   credentials for S3_PULL (endpoint only for non-AWS)
@@ -60,4 +61,4 @@ exec python main.py --listen 0.0.0.0 --port "$PORT" \
   --input-directory "$SHARED/input" \
   --output-directory "$SHARED/output" \
   --extra-model-paths-config /opt/comfy-app/extra_model_paths.yaml \
-  ${COMFY_ARGS:-} "$@"
+  ${COMFY_ARGS-"--cache-lru 1 --disable-smart-memory"} "$@"
