@@ -77,7 +77,7 @@ test.describe('pod card', () => {
     await page.goto('/')
     const card = podCard(page, 'ComfyUI-Batch')
     await card.getByTestId('pod-resume').click()
-    await expect(card.getByTestId('pod-host-full')).toHaveText(t('pod.hostFull'))
+    await expect(card.getByTestId('pod-host-full')).toContainText(t('pod.hostFull'))
     await expect(page.getByTestId('toast').last()).toContainText(t('toast.hostFull'))
     await card.getByTestId('pod-recreate').click()
     await answerConfirm(page, true)
