@@ -3,6 +3,10 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## v1.2.5 (tag v1.2.5, 2026-11-16)
+
+- Every pod now starts ComfyUI with `--cache-lru 1 --disable-smart-memory` (set by the app as `COMFY_ARGS`, and the default in the image entrypoint and compose file), so node outputs and models are freed between runs and system RAM no longer climbs until the container is OOM-killed (exit 137). A pod's own `COMFY_ARGS` replaces it; add `--lowvram` there for a small card. It applies to pods created from now on, with the pinned image as it is.
+
 ## v1.2.4 (tag v1.2.4, 2026-11-16)
 
 - The Shared > Models list of what the volume holds no longer blanks and reloads every 6 s while a download runs; a failed refresh (a RunPod limit, a dropped link) keeps the list that was shown (`29fede9`).
