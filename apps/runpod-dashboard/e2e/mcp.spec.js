@@ -367,7 +367,7 @@ test.describe('Connect › MCP › Docs', () => {
 
   test('Docs opened while the automatic probe is still running waits for it instead of probing twice', async ({ page, api }) => {
     api.state.mcp.probe['comfy-bridge'] = { ok: true, tools: BRIDGE_DEFS.map((d) => d.name), definitions: BRIDGE_DEFS, error: null, ms: 80 }
-    api.state.mcp.delay = 500
+    api.state.mcp.delay = 2500   // long enough that the probe is still in flight when Docs opens, even on a slow run (500 ms raced it)
     await page.goto('/')
     const dialog = await openMcp(page)
     const br = endpoint(dialog, 'comfy-bridge')
