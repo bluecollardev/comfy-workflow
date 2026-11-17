@@ -667,18 +667,19 @@ async function focusSection() {
     ioFlash.value = true; setTimeout(() => { ioFlash.value = false }, 2000)
   }
   if (where === 'adapters') { tab.value = 'adapters'; await nextTick(); document.querySelector('[data-testid="section-adapters"]')?.scrollIntoView({ block: 'start' }) }
-  if (where === 's3') {   // from Browse / Erase / Clone: the RunPod S3 key fields, in view and focused
-    tab.value = 'runpod'; await nextTick()
-    const input = document.getElementById('cfg-s3-access')
-    input?.scrollIntoView({ block: 'center' })
-    input?.focus({ preventScroll: true })
-  }
-  if (where === 'claude') {
-    tab.value = 'runpod'; await nextTick()
-    const input = document.getElementById('cfg-claude-key')
-    input?.scrollIntoView({ block: 'center' })
-    input?.focus({ preventScroll: true })
-  }
+  if (where === 's3') await scrollToField('cfg-s3-access')    // from Browse / Erase / Clone: the RunPod S3 key fields, in view and focused
+  if (where === 'claude') await scrollToField('cfg-claude-key')
+}
+/** Open on a field: wait for it (the body loads first), centre it and focus it, then centre it again once the lists
+ *  that load beside it (volumes, datacenters, cards) have settled the layout; a single scroll right away ended up out of view. */
+async function scrollToField(id) {
+  tab.value = 'runpod'
+  let input = null
+  for (let i = 0; i < 30 && !input; i++) { await nextTick(); input = document.getElementById(id); if (!input) await new Promise((r) => setTimeout(r, 100)) }
+  if (!input) return
+  input.scrollIntoView({ block: 'center' })
+  input.focus({ preventScroll: true })
+  for (const ms of [250, 700, 1500]) setTimeout(() => { if (document.activeElement === input) input.scrollIntoView({ block: 'center' }) }, ms)
 }
 
 async function save() {
