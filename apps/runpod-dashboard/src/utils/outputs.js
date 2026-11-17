@@ -83,5 +83,12 @@ export const inFolder = (run, prefix) => {
   if (!p) return true
   return (run?.files || []).some((f) => { const s = String(f.subfolder || '').replace(/^\/+|\/+$/g, ''); return s === p || s.startsWith(`${p}/`) })
 }
+/** A run narrowed to the files that are in a folder (or inside it): same run, `files` only those, and `totalFiles` the count it had before so a screen can say '12 of 26'. No folder (the root): the run as it is. */
+export const narrowToFolder = (run, prefix) => {
+  const p = String(prefix || '').replace(/^\/+|\/+$/g, '')
+  if (!p || !run) return run
+  const files = (run.files || []).filter((f) => { const s = String(f.subfolder || '').replace(/^\/+|\/+$/g, ''); return s === p || s.startsWith(`${p}/`) })
+  return { ...run, files, totalFiles: run.totalFiles ?? (run.files || []).length }
+}
 /** A byte count for a run's title. */
 export const sizeText = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${Math.round(n / 1e6)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`)

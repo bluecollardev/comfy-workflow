@@ -2,7 +2,7 @@
   <div data-testid="outputs-gallery">
     <div v-if="!files.length" class="text-body-secondary small" data-testid="outputs-empty">{{ $t('outputs.none') }}</div>
     <div v-if="files.length && !hideZip" class="d-flex align-items-center gap-2 mb-2 small">
-      <span class="text-body-secondary">{{ $t('outputs.filesCount', { n: files.length }) }}</span>
+      <span class="text-body-secondary" data-testid="outputs-files-count">{{ totalFiles > files.length ? $t('outputs.filesOf', { n: files.length, total: totalFiles }) : $t('outputs.filesCount', { n: files.length }) }}</span>
       <BButton variant="outline-light" size="sm" class="ms-auto" :disabled="!canZip || zipping || offline" :title="canZip ? '' : $t('outputs.zipApp')" data-testid="outputs-zip" @click="zip"><BSpinner v-if="zipping" small class="me-1" /><i v-else class="fa-solid fa-file-zipper me-1"></i>{{ $t('outputs.zip') }}</BButton>
       <span v-if="zipNote" class="text-body-secondary" data-testid="outputs-zip-note">{{ zipNote }}</span>
     </div>
@@ -36,7 +36,7 @@ import OutputViewerModal from './OutputViewerModal.vue'
 import DpxViewerModal from './DpxViewerModal.vue'
 import SequenceThumb from './SequenceThumb.vue'
 
-const props = defineProps({ files: { type: Array, default: () => [] }, base: { type: String, default: '' }, zipName: { type: String, default: 'outputs.zip' }, hideZip: { type: Boolean, default: false }, scope: { type: String, default: '' }, volumeName: { type: String, default: '' }, offline: { type: Boolean, default: false } })   // offline: no pod serves the files (a saved run): tiles list the names, nothing opens
+const props = defineProps({ files: { type: Array, default: () => [] }, totalFiles: { type: Number, default: 0 }, base: { type: String, default: '' }, zipName: { type: String, default: 'outputs.zip' }, hideZip: { type: Boolean, default: false }, scope: { type: String, default: '' }, volumeName: { type: String, default: '' }, offline: { type: Boolean, default: false } })   // offline: no pod serves the files (a saved run): tiles list the names, nothing opens
 const canZip = !!core?.files?.downloadZip
 const zipping = ref(false), zipNote = ref('')
 /** All of this list in one zip: a Save As dialog, then the main process streams the files from the pod into it (the app only). */
