@@ -20,6 +20,14 @@
         <BButton variant="link" size="sm" class="p-0" data-testid="pod-outputs-crumb" data-prefix="" @click="go('')">{{ $t('outputs.volumeRoot') }}</BButton>
         <template v-for="c in crumbs" :key="c.prefix"><span class="text-body-secondary">›</span><BButton variant="link" size="sm" class="p-0" data-testid="pod-outputs-crumb" :data-prefix="c.prefix" @click="go(c.prefix)">{{ c.name }}</BButton></template>
       </nav>
+      <div class="d-flex align-items-center gap-2 flex-wrap small mb-2" data-testid="pod-outputs-scope">
+        <span class="text-body-secondary">{{ $t('outputs.scope') }}</span>
+        <div class="btn-group btn-group-sm" role="group">
+          <button type="button" class="btn btn-outline-light" :class="{ active: scope === 'all' }" data-testid="pod-outputs-scope-all" :title="$t('outputs.scopeAllTitle')" @click="scope = 'all'">{{ $t('outputs.scopeAll') }}</button>
+          <button type="button" class="btn btn-outline-light" :class="{ active: scope === 'folder' }" data-testid="pod-outputs-scope-folder" :title="$t('outputs.scopeFolderTitle')" @click="scope = 'folder'">{{ vol.prefix ? $t('outputs.scopeFolder', { path: vol.prefix }) : $t('outputs.scopeFolderRoot') }}</button>
+        </div>
+        <span class="text-body-secondary" data-testid="pod-outputs-scope-count">{{ $t('outputs.scopeCount', { n: all.length }) }}<template v-if="scope === 'folder' && hiddenByFolder"> · {{ $t('outputs.scopeHidden', { n: hiddenByFolder }) }}</template></span>
+      </div>
       <div v-if="vol.loading" class="text-body-secondary small" data-testid="pod-outputs-volume-loading"><BSpinner small class="me-1" />{{ $t('outputs.volumeLoading', { path: `output/${vol.prefix}`.replace(/\/$/, '') }) }}</div>
       <div v-else>
         <div class="d-flex gap-1 flex-wrap" data-testid="pod-outputs-folders"><BButton v-for="f in vol.folders" :key="f" variant="outline-light" size="sm" data-testid="pod-outputs-folder" :data-name="f" @click="go(vol.prefix ? `${vol.prefix}/${f}` : f)"><i class="fa-regular fa-folder me-1"></i>{{ f }}</BButton></div>
@@ -56,7 +64,7 @@ import OutputsGallery from './OutputsGallery.vue'
 import { core } from '../api/bridge'
 import { historyAPI } from '../api/history'
 import { useUiStore } from '../stores/ui'
-import { viewUrl, runName, runsForShot, volumeAsRuns, mergeWithVolume, s3Base, sizeText } from '../utils/outputs'
+import { viewUrl, runName, runsForShot, inFolder, volumeAsRuns, mergeWithVolume, s3Base, sizeText } from '../utils/outputs'
 import { errorText } from '../stores/toast'
 import { sharedThumbs, thumbTimeouts, withTimeout } from '../utils/thumbs'
 import { previewBus } from '../utils/thumbsBus'
@@ -69,8 +77,13 @@ const canZip = !!core?.files?.downloadZip, zipping = ref(false)
 // The pod's Shot (the card's field) narrows the list to that shot's runs; "All Shots", or no shot, shows every run. A checkbox turns it off.
 const shot = computed(() => (props.pod.shot && props.pod.shot !== 'All Shots' ? props.pod.shot : ''))
 const onlyShot = ref(true)
-const shown = computed(() => (shot.value && onlyShot.value ? runsForShot(props.runs, shot.value) : props.runs))
-const hidden = computed(() => props.runs.length - shown.value.length)
+// The folder chosen in the volume browser narrows the pod's own and the saved runs too (Lucas: 'an option to view all or just in the folder selection'): scope 'folder' keeps the runs with files in it, 'all' shows every run of the pod and the volume folder listed.
+const scope = ref('folder')
+const inScope = (rs) => (scope.value === 'folder' && vol.prefix ? rs.filter((r) => inFolder(r, vol.prefix)) : rs)
+const shotRuns = computed(() => (shot.value && onlyShot.value ? runsForShot(props.runs, shot.value) : props.runs))
+const shown = computed(() => inScope(shotRuns.value))
+const hidden = computed(() => props.runs.length - shotRuns.value.length)
+const hiddenByFolder = computed(() => shotRuns.value.length - shown.value.length)
 
 // The volume source: one prefix at a time (the whole tree takes minutes to list), starting in the pod's shot folder when there is one.
 const vol = reactive({ failed: false, restart: false, loaded: false, loading: false, ok: false, reason: '', keysMissing: false, runs: [], folders: [], prefix: '', capped: false, total: 0, shownCount: 0, note: '' })

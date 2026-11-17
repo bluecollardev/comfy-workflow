@@ -3,6 +3,12 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## v1.3.2 (tag v1.3.2, 2026-11-17)
+
+- **Outputs: view all, or just the folder you picked:** the volume browser's folder selection only listed the volume's own runs, and the pod's live and saved runs ignored it, so the list never seemed to filter. A *Show* switch (All outputs | Just in `<folder>`) now applies the folder to the pod's and the saved runs too (a run is in a folder when some file of it is in or under it), with a count ("n run(s) shown · m outside this folder hidden"). *All outputs* shows every run of the pod plus the volume folder listed (the whole volume is too big to list at once). The existing "Only runs of `<shot>`" checkbox stays. Not yet tested (a unit test for `inFolder` is written, not run).
+
+- **The DPX viewer buffers several frames at once:** the cache used two requests at a time; it now fetches **4 frames at once** by default, and a *Frames at once* choice (1, 2, 4, 6, 8) next to Cache sequence changes it, remembered between sessions. Changing it applies at once (the loader changes its limit; a cache that is running restarts its workers, and what is cached stays). Each frame in flight is about 50 MB. Not yet tested (a unit test for the loader's new `setConcurrency` is written, not run).
+
 ## v1.3.1 (tag v1.3.1, 2026-11-17)
 
 - **The Volume source works in the real app:** the window asked the core for `library.status`, `library.round` and `library.preflight` (the status, the round description and Check models of a volume), but the core's call table never had them, so the Volume source answered "Restart the app to list volumes" however often the app was restarted; `library.list` also dropped the volume options (`volume_id`, `fresh`). The table now has all three and passes the options through. The tests used a fake API, so they could not see it (NEXT-STEPS: a check that every call the page makes is in the table).

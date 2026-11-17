@@ -77,5 +77,11 @@ export function mergeWithVolume(podRuns, volumeRuns) {
   const extra = (volumeRuns || []).filter((r) => !r.files.some((f) => have.has(`${f.subfolder || ''}/${f.filename}`)))
   return [...(podRuns || []), ...extra].map((r, i) => ({ r, i })).sort((a, b) => (a.r.started_at && b.r.started_at ? String(b.r.started_at).localeCompare(String(a.r.started_at)) : a.r.started_at ? -1 : b.r.started_at ? 1 : a.i - b.i)).map((x) => x.r)
 }
+/** Whether a run has files in a folder of the output tree (the volume browser's selection): some file's subfolder is that folder or one inside it. No folder (the root) is every run. */
+export const inFolder = (run, prefix) => {
+  const p = String(prefix || '').replace(/^\/+|\/+$/g, '')
+  if (!p) return true
+  return (run?.files || []).some((f) => { const s = String(f.subfolder || '').replace(/^\/+|\/+$/g, ''); return s === p || s.startsWith(`${p}/`) })
+}
 /** A byte count for a run's title. */
 export const sizeText = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${Math.round(n / 1e6)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`)

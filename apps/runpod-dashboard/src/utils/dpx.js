@@ -160,15 +160,15 @@ export function drawToCanvas(canvas, frame) {
 }
 
 /**
- * A download queue for frames: at most `concurrency` (2) requests to the pod at once, higher `priority` first (a frame the viewer is waiting for before one being cached), one request per address (asking again shares it and can raise its priority).
+ * A download queue for frames: at most `concurrency` (default 2; the viewer sets 4 and lets the person change it with `setConcurrency`) requests to the pod at once, higher `priority` first (a frame the viewer is waiting for before one being cached), one request per address (asking again shares it and can raise its priority).
  * `load(url, { priority, onProgress })` resolves to the decoded frame; `abort(url)` cancels one (queued or running) with an AbortError.
  */
 export function createFrameLoader({ concurrency = 2, maxWidth = 1920, fallback } = {}) {
   const jobs = new Map(), queue = []
-  let running = 0, n = 0
+  let running = 0, n = 0, limit = Math.max(1, Math.floor(concurrency) || 1)
   const aborted = () => Object.assign(new Error('aborted'), { name: 'AbortError' })
   function pump() {
-    while (running < concurrency && queue.length) {
+    while (running < limit && queue.length) {
       let bi = 0
       queue.forEach((j, i) => { if (j.priority > queue[bi].priority || (j.priority === queue[bi].priority && j.seq < queue[bi].seq)) bi = i })
       const j = queue.splice(bi, 1)[0]
@@ -191,6 +191,9 @@ export function createFrameLoader({ concurrency = 2, maxWidth = 1920, fallback }
       if (!j.started) { queue.splice(queue.indexOf(j), 1); j.reject(aborted()) }
     },
     abortAll() { for (const u of [...jobs.keys()]) this.abort(u) },
+    /** Change how many requests may run at once, now: more start at once, fewer let the running ones finish. */
+    setConcurrency(v) { limit = Math.max(1, Math.min(16, Math.floor(v) || 1)); pump() },
+    get concurrency() { return limit },
     get running() { return running },
     get queued() { return queue.length },
   }

@@ -76,6 +76,22 @@ test('frame loader: never more than 2 requests at once, higher priority first, o
   } finally { globalThis.fetch = real }
 })
 
+test('frame loader: the limit can change while it runs, and more frames then load at once', async () => {
+  const bytes = makeDpx({ width: 4, height: 2, bits: 8, fn: () => 9 })
+  let live = 0, peak = 0
+  const real = globalThis.fetch
+  globalThis.fetch = async () => { live++; peak = Math.max(peak, live); await new Promise((r) => setTimeout(r, 15)); live--; return new Response(bytes) }
+  try {
+    const { createFrameLoader } = await import('./dpx.js')
+    const L = createFrameLoader({ concurrency: 2 })
+    assert.equal(L.concurrency, 2)
+    const first = ['a', 'b', 'c', 'd', 'e', 'f'].map((u) => L.load(u)); await Promise.all(first); assert.equal(peak, 2)
+    peak = 0; L.setConcurrency(5); assert.equal(L.concurrency, 5)
+    await Promise.all(['g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'].map((u) => L.load(u))); assert.equal(peak, 5)   // five at once now
+    L.setConcurrency(0); assert.equal(L.concurrency, 1); L.setConcurrency(99); assert.equal(L.concurrency, 16)   // clamped
+  } finally { globalThis.fetch = real }
+})
+
 import { DpxError, problemOfError, loadDpx } from './dpx.js'
 test('empty frames: all black and flat grey are flagged; a gradient, mostly black with a bright region, and a clipped frame are not', () => {
   const black = decodeDpx(makeDpx({ bits: 16, fn: () => 0 }))
