@@ -89,7 +89,8 @@ function coreEnv() {
 
 // podfile://<pod>-8188.proxy.runpod.net/view?... : the files of a pod's ComfyUI (the Outputs gallery and viewer). RunPod's proxy answers 403 to a page's own image or video request (the browser marks it cross-site), so the main
 // process fetches them and hands the bytes (with Range, for video) to the page. Only the /view of a RunPod proxy host is fetched.
-protocol.registerSchemesAsPrivileged([{ scheme: 'podfile', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, bypassCSP: true } }])
+// corsEnabled: an <img> or <video> may load a podfile:// address from any page, but fetch() (the DPX viewer reads the bytes with it) is a cross-origin request from the page's own origin (Vite's localhost, or file://) and fails with "Failed to fetch" without it; the answer already carries access-control-allow-origin.
+protocol.registerSchemesAsPrivileged([{ scheme: 'podfile', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, bypassCSP: true } }])
 function handlePodFiles() {
   protocol.handle('podfile', async (request) => {
     const u = new URL(request.url)
@@ -104,8 +105,31 @@ function handlePodFiles() {
   })
 }
 
+// s3file://<volume>/<url-encoded key> : one output file straight from a network volume over RunPod's S3 API, with no pod (docs/ADR-045). The core checks the address (only keys under comfy-shared/output/ of a volume the app knows,
+// never `..`: anything else is a 403) and signs a read (SigV4 headers: RunPod's S3 API refuses presigned query URLs) with the app's RunPod S3 keys; this handler fetches it, Range included, and hands the bytes to the page. The keys and the signature stay in this process: they are
+// not in the answer, a header or a log. Only GET and HEAD.
+protocol.registerSchemesAsPrivileged([{ scheme: 's3file', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, bypassCSP: true } }])
+function handleS3Files() {
+  protocol.handle('s3file', async (request) => {
+    const text = (status, msg) => new Response(msg, { status, headers: { 'content-type': 'text/plain', 'access-control-allow-origin': '*' } })
+    if (request.method !== 'GET' && request.method !== 'HEAD') return text(405, 'Volume files are read-only.')
+    const range = request.headers.get('range')
+    const f = await coreBridge.fetchable(request.url, range)
+    if (!f.url) return text(f.status || 502, f.message)
+    try {
+      const r = await fetch(f.url, { method: request.method, headers: f.headers || (range ? { range } : {}), signal: AbortSignal.timeout(10 * 60_000) })
+      if (r.status >= 400) return text(r.status === 403 ? 502 : r.status, `The volume's S3 API answered HTTP ${r.status}.`)   // never its body: it may echo the request
+      const h = Object.fromEntries(['content-type', 'content-range', 'accept-ranges'].map((k) => [k, r.headers.get(k)]).filter(([, v]) => v))
+      const ext = decodeURIComponent(new URL(request.url).pathname).split('.').pop().toLowerCase(), guess = { mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', wav: 'audio/wav', mp3: 'audio/mpeg' }[ext]
+      if (guess && (!h['content-type'] || /octet-stream/.test(h['content-type']))) h['content-type'] = guess   // an S3 object often has no type: a <video> needs one
+      return new Response(r.body, { status: r.status, headers: { ...h, 'access-control-allow-origin': '*' } })
+    } catch (e) { return text(502, `The volume did not answer (${e.cause?.code || e.name}).`) }
+  })
+}
+
 async function boot() {
   handlePodFiles()
+  handleS3Files()
   if (process.platform === 'darwin' && !app.isPackaged && exists(ICON)) app.dock.setIcon(nativeImage.createFromPath(ICON))
   coreEnv()
   coreBridge.register()

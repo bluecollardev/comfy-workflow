@@ -85,12 +85,16 @@
       <div v-if="pods.hostFull === pod.id && !waitWatch" class="col-12 small text-warning" data-testid="pod-host-full">
         {{ $t('pod.hostFull') }}
         <div class="mt-2 d-flex gap-2">
-          <BButton size="sm" variant="warning" :disabled="busy" :title="$t('pod.retryLaterTitle')" data-testid="pod-retry-later" @click="watches.retryResumeLater(pod.id)"><i class="fa-solid fa-hourglass-half me-1"></i>{{ $t('pod.retryLater') }}</BButton>
+          <BButton size="sm" variant="warning" :disabled="busy" :title="$t('pod.retryLaterTitle')" data-testid="pod-retry-later" @click="showRetryLater = true"><i class="fa-solid fa-hourglass-half me-1"></i>{{ $t('pod.retryLater') }}</BButton>
           <BButton size="sm" variant="outline-light" data-testid="pod-host-full-dismiss" @click="pods.hostFull = null">{{ $t('podWatch.cancel') }}</BButton>
         </div>
       </div>
+      <div v-for="lw in likeWatches" :key="lw.id" class="col-12 small text-warning d-flex align-items-center gap-2" data-testid="pod-like-waiting" :data-watch="lw.id">
+        <BSpinner small /><span class="flex-grow-1">{{ $t('pod.waitingForNewPod', { label: lw.label, n: Math.round(lw.every_s / 60), at: new Date(lw.next_at).toTimeString().slice(0, 5), tries: lw.attempts }) }}</span>
+        <BButton size="sm" variant="outline-light" data-testid="pod-like-waiting-cancel" @click="watches.cancel(lw.id)">{{ $t('podWatch.cancel') }}</BButton>
+      </div>
       <div v-if="waitWatch" class="col-12 small text-warning d-flex align-items-center gap-2" data-testid="pod-waiting">
-        <BSpinner small /><span class="flex-grow-1">{{ $t('pod.waitingFor', { n: Math.round(waitWatch.every_s / 60), at: new Date(waitWatch.next_at).toTimeString().slice(0, 5) }) }}</span>
+        <BSpinner small /><span class="flex-grow-1">{{ $t('pod.waitingForGpu', { gpu: pod.gpu, place: pod.datacenter ? ' in ' + pod.datacenter : '', n: Math.round(waitWatch.every_s / 60), at: new Date(waitWatch.next_at).toTimeString().slice(0, 5) }) }}</span>
         <BButton size="sm" variant="outline-light" data-testid="pod-waiting-cancel" @click="watches.cancel(waitWatch.id)">{{ $t('podWatch.cancel') }}</BButton>
       </div>
 
@@ -134,10 +138,10 @@
       <BButton variant="primary" size="sm" class="flex-fill text-nowrap" :title="$t('pod.importShotPackTitle')" data-testid="pod-import" @click="openImport">
         <i class="fa-solid fa-file-import me-1"></i>{{ $t('pod.importShort') }}
       </BButton>
-      <BButton variant="success" size="sm" class="flex-fill text-nowrap" :disabled="pod.status !== 'running'" :title="pod.status === 'running' ? $t('runflows.buttonTitle') : $t('runflows.needsRunning')" data-testid="pod-run-workflows" @click="showRunFlows = true">
-        <i class="fa-solid fa-play me-1"></i>{{ $t('runflows.button') }}
+      <BButton variant="success" size="sm" class="flex-fill text-nowrap" :class="{ 'run-running': flowRunning }" :disabled="pod.status !== 'running'" :title="flowRunning ? $t('runflows.runningTitle', { done: flowDone, total: flowTotal }) : pod.status === 'running' ? $t('runflows.buttonTitle') : $t('runflows.needsRunning')" data-testid="pod-run-workflows" :data-running="flowRunning ? 'true' : 'false'" @click="showRunFlows = true">
+        <BSpinner v-if="flowRunning" small class="me-1" /><i v-else class="fa-solid fa-play me-1"></i>{{ flowRunning ? $t('runflows.running') : $t('runflows.button') }}
       </BButton>
-      <BButton variant="outline-light" size="sm" class="flex-fill text-nowrap" :disabled="!outputRuns.length" :title="outputRuns.length ? $t('outputs.buttonTitle') : $t('outputs.noRuns')" data-testid="pod-outputs" @click="showOutputs = true">
+      <BButton variant="outline-light" size="sm" class="flex-fill text-nowrap" :disabled="!outputsAvailable" :title="outputsAvailable ? $t('outputs.buttonTitle') : $t('outputs.noRuns')" data-testid="pod-outputs" @click="showOutputs = true">
         <i class="fa-regular fa-images me-1"></i>{{ $t('outputs.button') }}
       </BButton>
     </div>
@@ -166,8 +170,9 @@
     </div>
     <ConfigModal v-if="configOpen" mode="pod" v-model="configOpen" :initial="ownConfig" :pod-name="pod.name" :pod-id="pod.id" :runpod-name="pod.runpod_name || ''" @apply="applyConfig" />
     <SyncModal v-model="showSync" :pod="pod" />
+    <RetryLaterModal v-model="showRetryLater" :pod="pod" :volume="volume" />
     <RunWorkflowsModal v-if="showRunFlows" v-model="showRunFlows" :pod="pod" @finished="loadOutputs" />
-    <PodOutputsModal v-if="showOutputs" :pod="pod" :runs="outputRuns" @close="showOutputs = false" @refresh="loadOutputs" />
+    <PodOutputsModal v-if="showOutputs" :pod="pod" :runs="outputRuns" :base="outputBase" :volume-name="outputVolumeName" :volume-id="outputVolumeId" @close="showOutputs = false" @refresh="loadOutputs" />
     <BModal v-model="showLogs" :title="$t('pod.logsTitle', { name: pod.name })" size="xl" scrollable ok-only :ok-title="$t('pod.close')" ok-variant="outline-light" body-class="p-0" @hidden="showLogs = false">
       <PodLogs v-if="showLogs" :pod-id="pod.id" modal />
     </BModal>
@@ -226,13 +231,16 @@
  *   stop, resume, delete  — delete only fires after the user confirms
  */
 import { t } from '../i18n'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { runflowsAPI } from '../api/runflows'
 import PodLogs from './PodLogs.vue'
 import RunWorkflowsModal from './RunWorkflowsModal.vue'
 import PodOutputsModal from './PodOutputsModal.vue'
 import { historyAPI } from '../api/history'
-import { runsWithOutputs } from '../utils/outputs'
+import { runsWithOutputs, mergeRuns } from '../utils/outputs'
+import { withTimeout } from '../utils/thumbs'
 import SyncModal from './SyncModal.vue'
+import RetryLaterModal from './RetryLaterModal.vue'
 import DockerfileModal from './DockerfileModal.vue'
 import { roundShots } from '../utils/roundShots'
 import ConfigModal from './ConfigModal.vue'
@@ -283,6 +291,8 @@ const pods = usePodsStore()
 const watches = usePodWatchStore()
 /** The watch that is waiting to resume this pod (Retry Later), if any. */
 const waitWatch = computed(() => watches.forPod(props.pod.id))
+/** The waits to make a new pod like this one with another GPU (Retry Later > Another GPU): the old pod stays as it is. */
+const likeWatches = computed(() => watches.likeFor(props.pod))
 
 /** Where a pod is on its way to a usable ComfyUI: requested, container up, ready. The image pull itself has no
  *  progress RunPod exposes, so the bar moves by step; the Logs modal shows the pull lines. */
@@ -303,13 +313,42 @@ const toast = useToastStore()
 const showDetails = ref(false)
 const showLogs = ref(false)
 const showSync = ref(false)
+const showRetryLater = ref(false)
 const showRunFlows = ref(false), showOutputs = ref(false)
+// A run in progress on this pod shows in the Run button itself ("Running"); the button stays clickable and opens the window on that run's progress. The run lives in the core, so this asks it (in memory, no network) every few seconds while the pod runs.
+const flow = ref(null)
+const flowRunning = computed(() => props.pod.status === 'running' && flow.value?.state === 'running')
+const flowTotal = computed(() => flow.value?.results?.length || 0)
+const flowDone = computed(() => (flow.value?.results || []).filter((r) => ['done', 'failed', 'skipped'].includes(r.state)).length)
+async function pollFlow() {
+  if (props.pod.status !== 'running') { flow.value = null; return }
+  try { const last = await runflowsAPI.latest(props.pod.id); flow.value = last && Array.isArray(last.results) ? last : null } catch { /* the button just keeps its last state */ }
+}
+let flowTimer = null
+onMounted(() => { pollFlow(); flowTimer = setInterval(pollFlow, 2500) })
+onBeforeUnmount(() => clearInterval(flowTimer))
+watch(showRunFlows, pollFlow)   // closing the window refreshes the button at once
 /** What the pod's finished runs produced (ComfyUI's history): the Outputs button is enabled when there is something. Read when the card shows and the pod's status changes, and after a Run. */
 const outputRuns = ref([])
+/** Live runs (the running pod's ComfyUI history) merged with the app's saved ones (by this pod or by its network volume), so the button survives a stop and an app restart (ADR-037, 2026-11-17). */
 async function loadOutputs() {
-  if (props.pod.status !== 'running') { outputRuns.value = []; return }
-  try { outputRuns.value = runsWithOutputs(await historyAPI.runs(props.pod.id)) } catch { outputRuns.value = [] }
+  let live = [], saved = []
+  if (props.pod.status === 'running') { try { live = runsWithOutputs(await withTimeout(historyAPI.runs(props.pod.id), 30_000, 'The pod')) } catch { live = [] } }
+  try { saved = await withTimeout(historyAPI.saved(props.pod.id, outputVolumeId.value), 30_000, 'The saved record') } catch { saved = [] }   // a hung call never leaves the button waiting
+  outputRuns.value = mergeRuns(live, saved)
 }
+const outputVolumeId = computed(() => volume.value?.id || props.pod.volume_id || '')
+/** Never greyed out for a stopped pod (docs/ADR-045): the live and saved runs enable it, and so does a network volume, whose outputs the S3 source lists with no pod. */
+const outputsAvailable = computed(() => !!outputRuns.value.length || !!outputVolumeId.value)
+/** Where the files are served from: this pod when it runs, else another running pod on the same volume (the files live on the volume). '' = none: the gallery lists the runs and says to start a pod. */
+const outputBase = computed(() => {
+  if (props.pod.status === 'running' && props.pod.web_ui_url) return props.pod.web_ui_url
+  const vid = outputVolumeId.value
+  if (!vid) return ''
+  const onVolume = new Set((volumes.volumes.find((v) => v.id === vid)?.pods || []).map((x) => x.id))
+  return pods.pods.find((p) => p.id !== props.pod.id && p.status === 'running' && p.web_ui_url && (p.volume_id === vid || onVolume.has(p.id)))?.web_ui_url || ''
+})
+const outputVolumeName = computed(() => volumes.volumes.find((v) => v.id === outputVolumeId.value)?.name || outputVolumeId.value)
 const ui = useUiStore()
 const confirm = useConfirmStore()
 /** Import Shot Pack: its own modal (a package folder into ComfyUI-Shared through an adapter; Sync then puts it on this pod, ADR-008). */
@@ -332,6 +371,7 @@ onMounted(loadRate)
 watch(() => props.pod.status, loadRate)
 onMounted(loadOutputs)
 watch(() => props.pod.status, loadOutputs)
+watch(outputVolumeId, loadOutputs)
 
 async function toggleDetails() {
   showDetails.value = !showDetails.value
@@ -376,6 +416,16 @@ async function confirmDelete() {
 </script>
 
 <style scoped>
+/* A run in progress: the Run button keeps the success button's hue, mixed toward black (and reads Running) */
+.run-running {
+  --bs-btn-bg: color-mix(in srgb, var(--bs-success) 50%, #000);
+  --bs-btn-border-color: color-mix(in srgb, var(--bs-success) 40%, #000);
+  --bs-btn-hover-bg: color-mix(in srgb, var(--bs-success) 56%, #000);
+  --bs-btn-hover-border-color: color-mix(in srgb, var(--bs-success) 46%, #000);
+  --bs-btn-active-bg: color-mix(in srgb, var(--bs-success) 44%, #000);
+  --bs-btn-active-border-color: color-mix(in srgb, var(--bs-success) 34%, #000);
+  --bs-btn-color: #fff; --bs-btn-hover-color: #fff; --bs-btn-active-color: #fff;
+}
 .card-actions > * { flex: 1 1 0; min-width: 0; padding-left: 0.25rem !important; padding-right: 0.25rem !important; }   /* four equal buttons with the same gap between and around them */
 .shot-wrap { position: relative; }
 .shot-input { padding-right: 2rem; }

@@ -232,6 +232,27 @@ describe('against RunPod', () => {
     expect(idle.entry('old1')).toBeUndefined(); expect(idle.entry('new1')?.minutes).toBe(15)
   })
 
+  it('Retry Later, another GPU: a request like the old pod on the new card, same datacenter, volume, image, ports; nothing is deleted', async () => {
+    const cfg = mounts.defaults(); cfg.image = 'ghcr.io/example/comfy-app:v26'; cfg.network_volume_id = 'vol1'; cfg.data_center_id = 'EU-RO-1'; cfg.apply_by_default = true; mounts.save(cfg)
+    const { fetchFn, queries } = fakeFetch(() => ({}))
+    const restFetch = (async (url: string, init: { body?: string }) => {
+      if (String(url).includes('/v2/pods/old1')) return { ok: true, status: 200, json: async () => ({ id: 'old1', name: 'Canal', desiredStatus: 'EXITED', cost: 0.9, cloud: 'SECURE', dataCenterId: 'EU-RO-1', gpu: { id: 'NVIDIA RTX PRO 6000', count: 1 }, image: 'ghcr.io/example/comfy-app:v26', disk: 40, volume: 0, actions: ['start', 'terminate'] }) }
+      return (fetchFn as unknown as (u: string, i: unknown) => Promise<unknown>)(url, init)
+    }) as unknown as typeof fetch
+    idle.register('old1', 20)
+    const req = await pods.requestLike('old1', 'rtx4090', { fetchFn: restFetch })
+    expect(req).toMatchObject({ gpu: 'rtx4090', data_center_id: 'EU-RO-1', image: 'ghcr.io/example/comfy-app:v26', disk_gb: 40, idle_stop_minutes: 20, name: 'Canal-RTX-4090' })
+    expect(req.name).not.toBe('Canal')   // never the old pod's name: a lost-answer retry looks a pod up by name
+    const { input } = pods.plan(req, mounts.load())
+    expect(input).toMatchObject({ networkVolumeId: 'vol1', dataCenterId: 'EU-RO-1', gpuTypeId: 'NVIDIA GeForce RTX 4090', imageName: 'ghcr.io/example/comfy-app:v26', ports: pods.OUR_PORTS, cloudType: 'SECURE' })
+    const w = await pods.createLikeWhenFree('old1', 'rtx4090', {}, { fetchFn: restFetch })
+    expect(w).toMatchObject({ kind: 'create', name: 'Canal-RTX-4090', label: 'Waiting for a free RTX 4090 in EU-RO-1' })
+    expect((w as unknown as { request: Record<string, unknown> }).request).toMatchObject({ gpu: 'rtx4090', data_center_id: 'EU-RO-1' })
+    expect(queries.some((q) => /podTerminate|podStop|terminate/i.test(q))).toBe(false)   // the old pod is never touched
+    await expect(pods.requestLike('old1', 'not-a-card', { fetchFn: restFetch })).rejects.toThrow(/Not a card/)
+    pods.cancelWatch(w.id)
+  })
+
   it('the GPU menu says what is in stock and at what price', async () => {
     const { fetchFn } = fakeFetch((q) => q.includes('gpuTypes') ? { gpuTypes: [
       { id: 'NVIDIA RTX A5000', secureCloud: true, communityCloud: true, lowestPrice: { uninterruptablePrice: 0.16, stockStatus: 'Low' } },

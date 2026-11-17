@@ -11,4 +11,5 @@
 6. **Stop:** `stop_pod` pauses the bill; disk and volume stay. Delete only what you created and no longer need: `delete_pod` is irreversible (the volume is untouched).
 
 ## Log
+- 2026-11-17: Retry Later in the window now opens a choice first: Same GPU (resume watch) or Another GPU in the pod's datacenter (a create watch for a new pod; the old pod is not deleted). MCP: `create_pod` with `like_pod_id` + `gpu` (+ `retry_until_free`). Fakes only so far.
 - 2026-11-17: Retry Later built (ADR-042 section 19): `resume_pod` / `create_pod` `retry_until_free`, `pod_watch`, the window's Retry Later button. Not yet seen against a real full host: the tests use fake answers.- 2026-11-05: duplicate H100 created by mistake, deleted at once. `resume_pod` failed on a full host; `recreate_pod` worked. `rename_pod` needed the app's HTTP MCP until `/mcp` reconnect.

@@ -143,7 +143,7 @@ test.describe('Connect › MCP › served from the app', () => {
       await expect(toast(page).last()).toContainText(`Port ${port} is in use`)
       await expect(br.getByTestId('mcp-serving')).toHaveCount(0)
       await expect(br.getByTestId('mcp-serve-comfy-bridge')).not.toBeChecked()
-      expect(await toast(page).count()).toBeLessThanOrEqual(2)   // one refusal, not a stack of them
+      expect(await toast(page).filter({ hasText: 'is in use' }).count()).toBe(1)   // one refusal, not a stack of them (toasts left by earlier tests in this serial run do not count)
     } finally { taken.close() }
   })
 })

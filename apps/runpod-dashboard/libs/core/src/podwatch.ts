@@ -31,6 +31,8 @@ export interface Watch {
   label: string
   /** A create watch keeps its request, to send again as it was. */
   request?: Record<string, unknown>
+  /** A create made like another pod (the Retry Later choice 'Another GPU'): the pod it was made from, so that pod's card can show the wait. That pod is never touched. */
+  from_pod_id?: string
   every_s: number; give_up_at: string; created_at: string; next_at: string; attempts: number
   last_error?: string
   /** Set before a create is asked of RunPod, cleared on a definite "no card": while it is set the answer to the last ask is unknown. */
@@ -78,7 +80,7 @@ function save(watches: Watch[]): void {
 
 // ----- registering -----
 
-export interface WatchOpts { every_s?: number; give_up_h?: number }
+export interface WatchOpts { every_s?: number; give_up_h?: number; from_pod_id?: string }
 function limits(o: WatchOpts): { every_s: number; give_up_h: number } {
   const every_s = o.every_s ?? DEFAULT_EVERY_S, give_up_h = o.give_up_h ?? DEFAULT_GIVE_UP_H
   if (!Number.isFinite(every_s) || every_s < MIN_EVERY_S) throw bad(`Try again no more often than every ${MIN_EVERY_S} seconds (every_s is ${every_s})`)
@@ -106,10 +108,17 @@ export const watchResume = (podId: string, name: string, label: string, o: Watch
 export const watchCreate = (request: Record<string, unknown>, label: string, o: WatchOpts = {}): Watch => {
   const name = String(request?.name ?? '').trim()
   if (!name) throw bad('A pod needs a name')
-  return add({ kind: 'create', name, label, request }, o)
+  const from = typeof o.from_pod_id === 'string' && o.from_pod_id ? o.from_pod_id : ''
+  // Two waits for different cards from the same pod would each make a pod when a card frees: one at a time, cancel the first to change it.
+  const other = from ? load().find((x) => x.state === 'waiting' && x.kind === 'create' && x.from_pod_id === from) : undefined
+  if (other) throw new CoreError(409, `Already waiting to make a pod like ${from} (${other.label}, ${other.id}): cancel that watch first to choose another GPU.`)
+  return add({ kind: 'create', name, label, request, ...(from ? { from_pod_id: from } : {}) }, o)
 }
 
 export const list = (): Watch[] => load()
+/** The waits that belong to a pod's card (the window's rule, kept here so the MCP says the same): a resume watch for it, and the creates made like it by `from_pod_id`, or, for one saved before that was kept, by the name it carries (`<pod name>-<card>`). */
+export const watchesFor = (podId: string, podName = '', ws: Watch[] = load()): Watch[] =>
+  ws.filter((w) => (w.kind === 'resume' && w.pod_id === podId) || (w.kind === 'create' && (w.from_pod_id ? w.from_pod_id === podId : !!podName && String(w.name || '').startsWith(`${podName}-`))))
 export const waiting = (): Watch[] => load().filter((w) => w.state === 'waiting')
 export function cancel(id: string): Watch {
   const watches = load(), w = watches.find((x) => x.id === id || (x.state === 'waiting' && x.pod_id === id))

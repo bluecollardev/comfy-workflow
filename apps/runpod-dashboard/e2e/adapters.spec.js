@@ -86,3 +86,14 @@ test.describe('Default Configuration › Import adapters', () => {
     await expect(cfg.getByTestId('adapters-none')).toBeVisible()
   })
 })
+
+// A chip on every row says what the adapter reads: a shot pack (a delivery package or a ComfyUI-Shared folder) or a round (per-shot graphs).
+test('Default Configuration › Import adapters: each adapter has a chip, Shot pack or Round', async ({ page }) => {
+  const cfg = await openManager(page)
+  for (const id of ['comfy-shared', 'panama-imax-redux']) {
+    await expect(row(cfg, id).getByTestId('adapter-kind')).toHaveText(t('adapters.kindShotPack'))
+    await expect(row(cfg, id).getByTestId('adapter-kind')).toHaveAttribute('data-kind', 'shot-pack')
+  }
+  await expect(row(cfg, 'agent-made').getByTestId('adapter-kind')).toHaveText(t('adapters.kindRound'))
+  await expect(row(cfg, 'agent-made').getByTestId('adapter-kind')).toHaveAttribute('data-kind', 'round')
+})

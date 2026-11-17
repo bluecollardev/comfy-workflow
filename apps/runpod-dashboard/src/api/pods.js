@@ -49,6 +49,7 @@ const ipc = core && {
   recreate: (id) => core.invoke('pods', 'recreate', [id]),
   resumeWhenFree: (id, opts) => core.invoke('pods', 'resumeWhenFree', [id, opts || {}]),
   createWhenFree: (podData, opts) => core.invoke('pods', 'createWhenFree', [toRequest(podData), opts || {}]),
+  createLikeWhenFree: (id, gpu, opts) => core.invoke('pods', 'createLikeWhenFree', [id, gpu, opts || {}]),
   watches: () => core.invoke('pods', 'watches'),
   cancelWatch: (id) => core.invoke('pods', 'cancelWatch', [id]),
   config: (id) => core.invoke('pods', 'config', [id]),
@@ -165,6 +166,10 @@ const http = {
   },
   async createWhenFree(podData, opts) {
     const { data } = await axios.post(`${API_BASE}/pods/create-when-free`, { request: toRequest(podData), ...(opts || {}) });
+    return data;
+  },
+  async createLikeWhenFree(id, gpu, opts) {
+    const { data } = await axios.post(`${API_BASE}/pods/${id}/create-like-when-free`, { gpu, ...(opts || {}) });
     return data;
   },
   async watches() {

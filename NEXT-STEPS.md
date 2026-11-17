@@ -16,6 +16,13 @@
 4. **One codebase, no second runtime**: the Python API retired, the core in
    TypeScript, the merge gate green (`docs/ADR-005`).
 
+## Open from 2026-11-17 (ADR-044, ADR-037 amendment)
+
+1. Run workflows window: the state and the card's **Running** button are built and tested (core `latest`, selection kept per pod, MCP `pod_id`); uncommitted on `feature/volumes-v2-fallback`, app not yet relaunched on it. Written, not yet built or tested (hold until Lucas says build): the split pane with progress, report and log, and `RunJob.log` (ADR-037 amendment, points 2 and 3); needs `core:build`, the tests (add core tests for the log lines and `started_at`, a browser test for the pane), and an app relaunch once no run is in flight (a relaunch drops the app's tracking of a running job). To build: an ETA in the header, and a job that survives an app restart with Reattach (point 4). After the MCP server restarts (`/mcp` reconnect), `run_workflows_job` takes `pod_id`.
+2. Rounds from a volume (ADR-044): steps 1 to 4, the three guards (no Replace; locked and `04_GRAPH` shots never run; the estimate against the cap before Start), the preflight and MCP parity are built and tested with fakes (uncommitted). Open: (a) look at the REAL volume once in the window (Source = Volume on `a3upg9ey48`, then Check models on `proxy_v005`) and record what the listing and the preflight say in `docs/runbooks/import-a-round.md`'s Log; (b) the Adapter Studio kind switch (source / round / package) and `adapter_spec` for the round kind (step 5); (c) the scheduler's held-task rule still counts half an hour per shot, not the plan's per-graph estimate; (d) fixing a model the preflight finds missing (a named-yes download or a copy into the right folder) is not built; (e) a segment is a set of shots of one round only, not a sub-folder. Ask Binc: where the locked list lives for the volume's rounds, and whether names of his graphs may go to the Anthropic API from the Studio (with TODO section 5).
+3a. Outputs from the volume (ADR-045): built and tested with fakes; the browser's click-through in the real app (restart first, S3 keys set, a stopped pod on the Shared volume, open a DPX sequence and a video) is not yet done. Not built: a delete (never), a listing that stops early at the 3000 cap (aws still pages the whole subtree), thumbnails for volume images (they load full size), Open in a tab for an s3file file.
+3. The 1.0 x2 spatial upscaler (ADR-043, Open): a commit or tag with the file, or a checksum run from a pod (named yes). The audio VAE fix is done (`archival-080__a` ran to success on the A100 pod after it).
+
 ## Open from 2026-11-15 (ADR-042)
 
 1. Merge `feature/pin-image-digest` (the image pinned by digest, cu13 pair, workflow tags), release it, and send Binc the digest `sha256:a06a461c…` and what the 14 Nov rebuild changed.
@@ -46,6 +53,7 @@ To do, in order:
 7. **Keep every runbook in `docs/runbooks/` current** as each step is run; a step counts as done only when its Log shows it ran.
 8. Pod `cgi-042` (`3h25wd2p4es40i`) is **stopped** (2026-11-05); resume may need `recreate_pod` if the host is full. Stop it whenever work pauses; the idle watch only runs while the app is open.
 9. Small MCP gaps seen in the run: the bridge returns no text outputs (`PreviewAny` report), `sync` push of `output` is broader than asked and cannot be cancelled.
+10. Outputs viewer follow-ups: the DPX viewer and video controls are built and tested in the browser suite; look at them once in the app window (podfile:// sends no Content-Length, so the frame loading line shows MB, not a percentage). ProRes and some HEVC .mov fall back to Download/DJV; a pod-side transcode to a browser codec is not done.
 
 ## Next steps: importing the CANALV2 graphs
 

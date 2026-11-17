@@ -9,6 +9,7 @@ const ipc = core && {
   models: (podId) => core.invoke('runflows', 'models', [podId]),
   setModels: (podId, choice) => core.invoke('runflows', 'setModels', [podId, choice]),
   job: (id) => core.invoke('runflows', 'job', [id]),
+  latest: (podId) => core.invoke('runflows', 'latest', [podId]),
   cancel: (id) => core.invoke('runflows', 'cancel', [id]),
 }
 const http = {
@@ -17,6 +18,7 @@ const http = {
   async models(podId) { const { data } = await axios.get(`${API_BASE}/runflows/models`, { params: { pod_id: podId } }); return data },
   async setModels(podId, choice) { const { data } = await axios.put(`${API_BASE}/runflows/models`, { pod_id: podId, ...choice }); return data },
   async job(id) { const { data } = await axios.get(`${API_BASE}/runflows/${id}`); return data },
+  async latest(podId) { const { data } = await axios.get(`${API_BASE}/runflows/latest`, { params: { pod_id: podId } }); return data || null },
   async cancel(id) { const { data } = await axios.delete(`${API_BASE}/runflows/${id}`); return data },
 }
 export const runflowsAPI = ipc || http

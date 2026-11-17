@@ -113,3 +113,16 @@ describe('comfyruns.logs', () => {
     await expect(comfyruns.logs('abc', { level: 'loud' as never }, client('RUNNING'), logFetch(200, 200))).rejects.toMatchObject({ status: 400 })
   })
 })
+
+describe('comfyruns lists the frames of a writer node that reports a first file and a count (OCIOWrite)', () => {
+  const FOLDER = 'proxy_v004/archival-080/archival-080_a_v004_dpx16'
+  const H = { 'p-dpx': { prompt: [1, 'p-dpx', { '128': { class_type: 'OCIOWrite', inputs: { output_folder: FOLDER, filename: 'archival-080_a_v004_proxy', write_sidecar: true } } }, {}, ['128']], outputs: { '128': { ocio: ['x'], count: ['2'], saved: ['archival-080_a_v004_proxy.0000.dpx'], meta: ['m'] } }, status: { status_str: 'success', completed: true, messages: [['execution_start', { timestamp: T0 }], ['execution_success', { timestamp: T0 + 5000 }]] } } }
+  it('a successful run of only that writer still has its files, so the Outputs button can open them', async () => {
+    const r = await comfyruns.runs('abc', client('RUNNING'), hist(H))
+    expect(r.find((x) => x.prompt_id === 'p-dpx')!.outputs).toEqual([
+      { filename: 'archival-080_a_v004_proxy.0000.dpx', type: 'output', subfolder: FOLDER },
+      { filename: 'archival-080_a_v004_proxy.0001.dpx', type: 'output', subfolder: FOLDER },
+      { filename: 'archival-080_a_v004_proxy.json', type: 'output', subfolder: FOLDER },
+    ])
+  })
+})

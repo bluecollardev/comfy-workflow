@@ -14,7 +14,7 @@ An adapter is **one `.mjs` file**: a plain JavaScript (ES) module, `adapters/<id
 app **loads at runtime**. It is not compiled into the app and it is not a plugin that needs a
 build or a restart: put the file in the adapters folder, or save it from the Adapter Studio, and
 the next import uses it. Edit the file and the next import uses the edit. Delete it and it is
-gone. (Two ship with the app, under `libs/core/runtime/adapters/`, and are read-only.)
+gone. (Three ship with the app, under `libs/core/runtime/adapters/`, and are read-only: `comfy-shared`, `panama-imax-redux` and `brynley-rounds`. Every adapter we build goes there, ADR-043.)
 
 What it does is small and fixed. It `export default`s an object with an `id`, a `name`, and two
 functions, `detect(root, ctx)` and `plan(root, ctx)`. `detect` looks at a folder and says
@@ -80,6 +80,7 @@ export default {
   id: 'panama-imax-redux',               // kebab-case, unique
   name: 'Panama Canal v2 delivery package',
   version: 1,
+  kind: 'shot-pack',                     // 'shot-pack' (a delivery package or a ComfyUI-Shared folder, the default) or 'round' (per-shot graphs); shown as a chip
 
   // Cheap and read-only. Say whether this folder is yours and why.
   async detect(root, ctx) {
@@ -150,6 +151,18 @@ Finding = { level: 'info' | 'warn' | 'problem', text: string, path?: string }
 - A dry run (the plan, rendered) comes first; applying needs a go.
 - The plan, with the source hashes, is kept as the record of the import.
 - Nothing is uploaded. Pushing to a volume is the sync (ADR-007), with its own rules.
+
+## The two kinds, and `describe` (ADR-044)
+
+An adapter has a `kind`: **`shot-pack`** (the default) or **`round`**. The chip in Import adapters shows it.
+
+- **shot-pack** maps a folder of a package onto the ComfyUI-Shared structure: `detect(root, ctx)` and `plan(root, ctx)` as above.
+- **round** says what a round of per-shot graphs is. A round adapter still has `detect` and `plan` (a folder, as above; `brynley-rounds` copies a round folder onto the volume), and may also have **`describe(listing, ctx)`**, which reads a round that is already on a network volume:
+  - `listing`: an array of `{ path, bytes }`, the files of ONE round, paths relative to the round folder (`archival-080/archival-080__a__proxy_v005.json`). The volume source made it with one prefix listing over RunPod's S3 API; the adapter never sees the volume.
+  - `ctx`: `roundName`, `target`, `options`. No file reads, no network, no writes: it runs in the same fenced child as `plan`, with the listing on stdin (`adapter-runner.mjs <adapter> describe - <options>`).
+  - returns `{ kind: 'round', round, shots[], variants[], graphs[], locked[], findings[] }`; each graph is `{ path (as the pod's Workflows panel names it, round/shot/file), shot, variant, bytes, locked }`; `locked` lists shots that are listed for reference and never run (Binc's rules: `cgi-042`, anything under `04_GRAPH`; the core applies its own copy of the same rule whatever the adapter says).
+  - the built-in is `brynley-rounds-layout`; its `detect` returns 0 and its `plan` no ops (it describes listings, it does not match folders).
+  - `info`, `detect` and `plan` are unchanged; `describe` is the only action that takes a listing instead of a folder.
 
 ## After the import: the sync
 

@@ -18,6 +18,7 @@ export default {
   id: 'panama-imax-redux',
   name: 'Panama Canal v2 delivery package',
   version: 1,
+  kind: 'shot-pack',   // a package or folder of shots
 
   async detect(root, ctx) {
     const evidence = []

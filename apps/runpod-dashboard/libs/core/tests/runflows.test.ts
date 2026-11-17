@@ -97,6 +97,21 @@ describe('running', () => {
     expect(ev.find((e) => e.kind === 'job' && e.what === 'rounds/r/a.json')).toMatchObject({ state: 'done' })
   })
 
+  it('latest finds a pod\'s current run again: the one still running, else the newest; nothing for a pod with no run', async () => {
+    expect(runflows.latest('no-such-pod')).toBeNull()
+    const quick = fakeComfy({ history: { p1: { status: { status_str: 'success' }, outputs: { '9': {} } } } })
+    const first = await finish((await runflows.run('podL', ['a.json'], opts(quick))).id)
+    expect(runflows.latest('podL')?.id).toBe(first.id)   // a finished run is still found: the window shows its results again
+    await new Promise((r) => setTimeout(r, 5))   // the ids carry the start time to the millisecond
+    const slow = fakeComfy()   // history never answers: this one keeps running
+    const second = await runflows.run('podL', ['b.json', 'c.json'], opts(slow))
+    expect(runflows.latest('podL')).toMatchObject({ id: second.id, state: 'running' })
+    expect(runflows.latest('podL')?.results.map((r) => r.path)).toEqual(['b.json', 'c.json'])   // its graphs are what the window re-ticks
+    expect(runflows.latest('another-pod')).toBeNull()
+    runflows.cancel(second.id); await finish(second.id)
+    expect(runflows.latest('podL')?.id).toBe(second.id)   // newest wins once nothing is running
+  })
+
   it('a rejected prompt (400) is a failed graph with the bad node named, and the run goes on to the next', async () => {
     const c = fakeComfy({ reject: { error: { message: 'Prompt outputs failed validation' }, node_errors: { '3': { class_type: 'LoadVideo', errors: [{ message: 'Value not in list' }] } } } })
     const j = await finish((await runflows.run('pod1', ['a.json', 'b.json'], opts(c))).id)

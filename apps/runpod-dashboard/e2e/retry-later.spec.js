@@ -17,12 +17,13 @@ test.describe('retry later', () => {
     await expect(card.getByTestId('pod-recreate')).toBeVisible()   // the other way on is still there
 
     await card.getByTestId('pod-retry-later').click()
+    await page.getByTestId('retry-later-start').click()   // the choice's default: the same GPU
     await expect(page.getByTestId('toast').last()).toContainText(t('toast.retryLaterSet', { n: 2 }))
     expect(api.state.resumeWhenFree).toEqual([{ id: 'pod-bbbbbbbb' }])   // the same pod, the default interval (the core's)
     expect(api.calls).not.toContainEqual(expect.objectContaining({ method: 'POST', path: '/pods/pod-bbbbbbbb/recreate' }))   // nothing deleted
 
     // the card says it is waiting (and no longer offers the choice); the list names what is waiting
-    await expect(card.getByTestId('pod-waiting')).toContainText('Waiting for a free GPU, trying every 2 min')
+    await expect(card.getByTestId('pod-waiting')).toContainText('Waiting for a free A100 in EU-RO-1 · trying every 2 min')
     await expect(card.getByTestId('pod-host-full')).toHaveCount(0)
     const row = page.getByTestId('pod-watch-waiting')
     await expect(row).toHaveCount(1)

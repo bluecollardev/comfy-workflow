@@ -1206,6 +1206,45 @@ export async function modelsOnVolume(volumeId: string, opts: Opts = {}): Promise
   return out.sort((x, y) => x.folder.localeCompare(y.folder) || x.name.localeCompare(y.name))
 }
 
+/** Whether a volume can be read over RunPod's S3 API from this PC (no pod, no spend), and if not, why. Read-only: asks RunPod for the volume's record only. */
+export async function volumeS3(volumeId: string, opts: Opts = {}): Promise<{ ok: boolean; reason: string; volume: Volume | null }> {
+  volLabel(volumeId)
+  if (mounts.dryRun(mounts.load())) return { ok: true, reason: '', volume: { id: volumeId, name: volumeId, datacenter: 'EU-RO-1' } }
+  const vol = await volumeOf({ ...opts, volumeId })
+  const a = s3Access(vol)
+  if (a.ok) return { ok: true, reason: '', volume: vol }
+  return { ok: false, volume: vol, reason: a.why === 'keys' ? 'RUNPOD_S3_ACCESS_KEY and RUNPOD_S3_SECRET_KEY are not set (Default Configuration): without them only a pod could list this volume, and that costs money, so nothing was started.' : `${vol?.datacenter || "This volume's datacenter"} has no S3 API: only a pod could list it, and that costs money, so nothing was started.` }
+}
+
+/** A listing of a volume's keys under `prefix` over RunPod's S3 API (read-only: only `aws s3 ls`). List by prefix, never the whole volume (it pages 1,000 objects per call and takes minutes). `recursive: false` gives one level: folders have bytes 0 and a trailing slash. null when the S3 API cannot be used. */
+export async function listVolumeKeys(volumeId: string, prefix: string, o: { recursive?: boolean } = {}, opts: Opts = {}): Promise<{ key: string; bytes: number; modified?: string }[] | null> {
+  volLabel(volumeId)
+  if (!/^[\w .+@=,()/-]{1,300}$/.test(prefix) || prefix.split('/').includes('..') || prefix.startsWith('/')) throw bad(`Not a path inside the volume: ${prefix}`)
+  const dir = prefix.replace(/\/+$/, '') + '/'
+  if (mounts.dryRun(mounts.load())) return []
+  const vol = await volumeOf({ ...opts, volumeId })
+  const a = s3Access(vol); if (!a.ok) return null
+  const recursive = o.recursive !== false
+  const r = await (opts.aws ?? defaultAws)(['s3', 'ls', `s3://${a.bucket}/${dir}`, ...(recursive ? ['--recursive'] : []), '--endpoint-url', a.endpoint, '--region', a.region], { AWS_ACCESS_KEY_ID: a.id, AWS_SECRET_ACCESS_KEY: a.secret }, { stallMs: opts.s3StallMs ?? S3_STALL_MS })
+  if (r.code !== 0) throw new CoreError(502, `RunPod's S3 API: ${(r.stderr || r.stdout).trim().split('\n').pop() || `aws exited ${r.code}`}`)
+  const out: { key: string; bytes: number; modified?: string }[] = []
+  for (const line of r.stdout.split('\n')) {
+    const f = /^(\d{4}-\d\d-\d\d)\s+(\d\d:\d\d:\d\d)\s+(\d+)\s+(.+)$/.exec(line)
+    if (f) { out.push({ key: recursive ? f[4] : dir + f[4], bytes: Number(f[3]), modified: `${f[1]}T${f[2]}` }); continue }
+    const d = /^\s*PRE\s+(.+\/)$/.exec(line)
+    if (d && !recursive) out.push({ key: dir + d[1], bytes: 0 })
+  }
+  return out
+}
+
+/** What a read of one object needs: the endpoint, bucket, region and the S3 keys, or why not. For the main process's presigner ONLY (libs/core/src/outputsources.ts); the keys never leave the main process. Asks RunPod for the volume record, nothing else. */
+export async function s3ReadAccess(volumeId: string, opts: Opts = {}): Promise<{ ok: true; id: string; secret: string; endpoint: string; bucket: string; region: string } | { ok: false; reason: string }> {
+  const r = await volumeS3(volumeId, opts)
+  if (!r.ok) return { ok: false, reason: r.reason }
+  const a = s3Access(r.volume)
+  return a.ok ? a : { ok: false, reason: r.reason || (a.why === 'keys' ? 'RUNPOD_S3_ACCESS_KEY and RUNPOD_S3_SECRET_KEY are not set (Default Configuration): nothing was fetched.' : `${r.volume?.datacenter || "This volume's datacenter"} has no S3 API.`) }
+}
+
 /** One small text file from a volume over RunPod's S3 API (no pod, no cost), e.g. Binc's pull list; null when the S3 API cannot be used for this volume. */
 export async function readVolumeText(volumeId: string, key: string, opts: Opts = {}): Promise<string | null> {
   volLabel(volumeId)

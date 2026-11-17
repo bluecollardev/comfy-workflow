@@ -62,6 +62,21 @@ it; the prompt is text you can edit yourself. Save is explicit (no autosave); Sa
 fixes what fails. Claude writes adapters and their prompts and nothing else. Details: `docs/IMPORT-ADAPTERS.md`,
 "The Adapter Studio".
 
+## Which adapter for which source
+
+Decided in `docs/ADR-043-which-adapter-for-which-source.md`; do not write a new adapter while one fits. The list in Default Configuration > Import adapters shows a chip on each: **Shot pack** (a delivery package or a ComfyUI-Shared folder) or **Round** (per-shot graphs).
+
+| Source | Adapter |
+|---|---|
+| Panama S3 bucket (BH) rounds staged in `temp/rounds/<round>`; Kyle's delivery packages | `panama-imax-redux` (built in) |
+| Brynley's rounds, `<round>/<shot>/<shot>__<variant>__<round>.json` | `brynley-rounds` (built in; kind: round) |
+| A folder that is already a ComfyUI-Shared | `comfy-shared` (built in) |
+
+The bucket download and the adapter are separate steps. The rounds already on the EU-RO-1 volume
+(`proxy_v004e/f/g`, `proxy_v005` under `comfy-shared/workflows/`) need no import; the Run workflows window
+lists them. `brynley-rounds` is named for the volumes that keep rounds this way; `brynley-rounds-eu-ro-1`
+is the example. Run `import_detect` on a folder first.
+
 ## Where things are
 
 | What | Where |

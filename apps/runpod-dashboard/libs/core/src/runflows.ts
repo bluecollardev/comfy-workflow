@@ -2,6 +2,7 @@
  * Run workflows (ADR-037): list the graphs in a pod's Workflows panel, and (next) run chosen ones on that pod, logging every error to the history.
  * The panel holds UI graphs; ComfyUI queues only API graphs, so running converts each one first (see ADR-037).
  */
+import { writtenFiles } from './writers.js'
 import { CoreError } from './errors.js'
 import * as history from './history.js'
 import * as mounts from './mounts.js'
@@ -10,6 +11,7 @@ import * as rp from './runpod.js'
 import * as podpull from './podpull.js'
 import * as podmodels from './podmodels.js'
 import * as shots from './shots.js'
+import * as outputruns from './outputruns.js'
 import * as sync from './sync.js'
 import * as ui2api from './ui2api.js'
 
@@ -76,11 +78,13 @@ export const setModels = (podId: string, choice: podmodels.Choice): podmodels.Ch
 
 /** One file a run produced, as ComfyUI's history names it: fetched with GET /view?filename=&subfolder=&type=. `output` is a saved result, `temp` a preview node's file. */
 export interface OutputFile { filename: string; subfolder: string; type: 'output' | 'temp'; kind: 'image' | 'video' | 'audio' | 'other'; node?: string }
-export interface RunResult { /** the model files the pod's choice put into this graph, and what was left alone */ models?: string[]; path: string; state: 'pending' | 'running' | 'done' | 'failed' | 'skipped'; prompt_id?: string; seconds?: number; error?: string; node?: string; outputs?: number; files?: OutputFile[] }
+export interface RunResult { /** when this graph started (ISO), for its elapsed time */ started_at?: string; /** the model files the pod's choice put into this graph, and what was left alone */ models?: string[]; path: string; state: 'pending' | 'running' | 'done' | 'failed' | 'skipped'; prompt_id?: string; seconds?: number; error?: string; node?: string; outputs?: number; files?: OutputFile[] }
 export interface RunJob {
   id: string; pod_id: string; pod_name: string; /** the pod's ComfyUI address: where each result's files are fetched (GET /view) */ base_url?: string; state: 'running' | 'done' | 'failed' | 'cancelled'; started_at: string; finished_at?: string
   results: RunResult[]; ok: number; failed: number; error?: string
+  /** One line per step, newest last (at most 500): what the window's log shows and the MCP returns. */ log: LogLine[]
 }
+export interface LogLine { ts: string; level: 'info' | 'warn' | 'error'; text: string; /** the graph it is about; none for the run as a whole */ path?: string }
 export interface RunOpts {
   client?: rp.RunPodClient; fetchFn?: typeof fetch
   /** How a UI graph becomes an API graph; default: the pod's own Chromium if the image has it, else Chrome on this PC. Tests inject one. */
@@ -95,7 +99,21 @@ export interface RunOpts {
 interface Internal { job: RunJob; abort: AbortController }
 const jobs = new Map<string, Internal>()
 const view = (i: Internal): RunJob => JSON.parse(JSON.stringify(i.job))
+const LOG_MAX = 500
+function note(i: Internal, text: string, path?: string, level: LogLine['level'] = 'info') {
+  const log = i.job.log; log.push({ ts: new Date().toISOString(), level, text, ...(path ? { path } : {}) })
+  if (log.length > LOG_MAX) log.splice(0, log.length - LOG_MAX)
+}
 export function job(id: string): RunJob | null { const i = jobs.get(id); return i ? view(i) : null }
+/** The pod's current run: the one still running, else the newest. Lets the window find its run again after it was closed (the jobs live here, in the core, not in the window). */
+export function latest(podId: string): RunJob | null {
+  let best: Internal | null = null
+  for (const i of jobs.values()) {
+    if (i.job.pod_id !== podId) continue
+    if (!best || (i.job.state === 'running') > (best.job.state === 'running') || ((i.job.state === 'running') === (best.job.state === 'running') && i.job.started_at >= best.job.started_at)) best = i
+  }
+  return best ? view(best) : null
+}
 export function cancel(id: string): RunJob {
   const i = jobs.get(id); if (!i) throw new CoreError(404, `No such run: ${id}`)
   if (i.job.state === 'running') i.abort.abort()
@@ -119,7 +137,7 @@ export function describeRejection(body: unknown): { text: string; node?: string 
 const KIND_BY_EXT: Record<string, OutputFile['kind']> = { png: 'image', jpg: 'image', jpeg: 'image', webp: 'image', gif: 'image', bmp: 'image', avif: 'image', mp4: 'video', webm: 'video', mov: 'video', m4v: 'video', wav: 'audio', mp3: 'audio', flac: 'audio', ogg: 'audio', m4a: 'audio' }
 export const kindOf = (filename: string): OutputFile['kind'] => KIND_BY_EXT[(filename.split('.').pop() || '').toLowerCase()] ?? 'other'
 /** The files a finished run produced: every item with a filename under a node's outputs (images, gifs, videos, audio, files), the saved ones first. The `input` echoes of a loader node are the source media, not a result, and are left out. */
-export function filesOf(outputs: Record<string, unknown> | undefined): OutputFile[] {
+export function filesOf(outputs: Record<string, unknown> | undefined, api?: unknown): OutputFile[] {
   const out: OutputFile[] = []
   for (const [node, v] of Object.entries(outputs || {})) {
     if (!v || typeof v !== 'object') continue
@@ -133,16 +151,17 @@ export function filesOf(outputs: Record<string, unknown> | undefined): OutputFil
       }
     }
   }
+  for (const w of writtenFiles(outputs, api)) if (!out.some((f) => f.filename === w.filename && f.subfolder === w.subfolder)) out.push({ filename: w.filename, subfolder: w.subfolder, type: 'output', kind: kindOf(w.filename), node: w.node })   // a writer that reports only its first file and a count (writers.ts)
   return out.sort((a, b) => Number(a.type === 'temp') - Number(b.type === 'temp'))
 }
 
 /** Read one finished history entry into ok / the failure ComfyUI recorded. */
-export function outcomeOf(entry: { status?: { status_str?: string; completed?: boolean; messages?: [string, Record<string, unknown>?][] }; outputs?: Record<string, unknown> } | undefined): { done: boolean; error?: string; node?: string; outputs: number; files?: OutputFile[] } | null {
+export function outcomeOf(entry: { status?: { status_str?: string; completed?: boolean; messages?: [string, Record<string, unknown>?][] }; outputs?: Record<string, unknown>; prompt?: unknown[] } | undefined): { done: boolean; error?: string; node?: string; outputs: number; files?: OutputFile[] } | null {
   if (!entry) return null
   const st = entry.status
   const err = (st?.messages || []).find((m) => m[0] === 'execution_error')?.[1] as { exception_message?: string; node_id?: string; node_type?: string } | undefined
   if (st?.status_str === 'error' || err) return { done: true, error: `${err?.exception_message ?? 'The run failed'}${err?.node_type ? ` (node ${err.node_id}, ${err.node_type})` : ''}`.trim(), node: err?.node_id, outputs: 0 }
-  if (st?.status_str === 'success' || st?.completed) return { done: true, outputs: Object.keys(entry.outputs || {}).length, files: filesOf(entry.outputs) }
+  if (st?.status_str === 'success' || st?.completed) return { done: true, outputs: Object.keys(entry.outputs || {}).length, files: filesOf(entry.outputs, entry.prompt?.[2]) }
   return null
 }
 
@@ -162,18 +181,23 @@ export async function apiGraph(podId: string, path: string, base: string, o: Run
 async function runOne(i: Internal, r: RunResult, base: string, o: RunOpts, fetchFn: typeof fetch) {
   const signal = i.abort.signal
   const getJson = async (url: string) => { const x = await fetchFn(url, { signal: AbortSignal.timeout(30_000) }); if (x.status !== 200) throw new CoreError(502, `ComfyUI answered HTTP ${x.status} for ${url.replace(base, '')}`); return x.json() }
+  note(i, 'Converting the graph to an API graph', r.path)
   const { api, models } = await apiGraph(i.job.pod_id, r.path, base, o, fetchFn)
-  if (models) r.models = models
+  if (models) { r.models = models; note(i, `Pod models applied: ${models.join('; ')}`, r.path) }
   const q = await fetchFn(`${base}/prompt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt: api, client_id: 'pod-manager-runflows', extra_data: { pod_manager: { workflow: r.path } } }), signal: AbortSignal.timeout(60_000) })
   const qb = await q.json().catch(() => ({}))
   if (q.status !== 200) { const d = describeRejection(qb); r.node = d.node; throw new CoreError(400, d.text) }
   r.prompt_id = (qb as { prompt_id: string }).prompt_id
+  note(i, `Queued on the pod as prompt ${r.prompt_id}`, r.path)
   const t0 = Date.now(), limit = (o.graphTimeoutS ?? 4 * 3600) * 1000
+  let beat = t0
   for (;;) {
     if (signal.aborted) { await fetchFn(`${base}/interrupt`, { method: 'POST' }).catch(() => {}); throw new CoreError(499, 'cancelled') }
     const h = (await getJson(`${base}/history/${r.prompt_id}`)) as Record<string, Parameters<typeof outcomeOf>[0]>
     const out = outcomeOf(h?.[r.prompt_id])
-    if (out) { r.seconds = Math.round((Date.now() - t0) / 100) / 10; r.outputs = out.outputs; r.files = out.files; r.node = out.node; if (out.error) throw new CoreError(500, out.error); return }
+    if (out) { r.seconds = Math.round((Date.now() - t0) / 100) / 10; r.outputs = out.outputs; r.files = out.files; r.node = out.node; if (out.error) throw new CoreError(500, out.error); void outputruns.ctxFor(i.job.pod_id, o.client).then((ctx) => outputruns.record(ctx, [{ prompt_id: r.prompt_id!, status: 'success', workflow: r.path, started_at: new Date(t0).toISOString(), duration_s: r.seconds, outputs: (out.files || []).map((f) => ({ filename: f.filename, subfolder: f.subfolder, type: f.type })) }]))   // saved outputs
+    note(i, `Finished in ${r.seconds} s, ${out.outputs} output${out.outputs === 1 ? '' : 's'}`, r.path); return }
+    if (Date.now() - beat >= 30_000) { beat = Date.now(); note(i, `Still running: ${Math.round((beat - t0) / 1000)} s`, r.path) }
     if (Date.now() - t0 > limit) throw new CoreError(504, `Still running after ${Math.round(limit / 60000)} minutes; it keeps running on the pod (prompt ${r.prompt_id}).`)
     await sleep(o.pollMs ?? 2000, signal)
   }
@@ -205,13 +229,17 @@ export async function run(podId: string, paths: string[], o: RunOpts = {}): Prom
     if (pod.status !== 'running' || !pod.web_ui_url) throw new CoreError(409, `Pod ${podId} is not running: start it to run workflows.`)
     base = pod.web_ui_url.replace(/\/$/, ''); podName = pod.name
   }
-  const j: RunJob = { id: `run-${podId}-${Date.now()}`, pod_id: podId, pod_name: podName, base_url: base, state: 'running', started_at: new Date().toISOString(), results: paths.map((path) => ({ path, state: 'pending' })), ok: 0, failed: 0 }
+  const j: RunJob = { id: `run-${podId}-${Date.now()}`, pod_id: podId, pod_name: podName, base_url: base, state: 'running', started_at: new Date().toISOString(), results: paths.map((path) => ({ path, state: 'pending' })), ok: 0, failed: 0, log: [] }
   const i: Internal = { job: j, abort: new AbortController() }
   jobs.set(j.id, i)
+  note(i, `Run started: ${paths.length} workflow${paths.length === 1 ? '' : 's'} on ${podName}`)
   void (async () => {
+    let k = 0
     for (const r of j.results) {
-      if (i.abort.signal.aborted) { r.state = 'skipped'; continue }
-      r.state = 'running'
+      k++
+      if (i.abort.signal.aborted) { r.state = 'skipped'; note(i, 'Skipped (cancelled)', r.path, 'warn'); continue }
+      r.state = 'running'; r.started_at = new Date().toISOString()
+      note(i, `Starting ${k} of ${paths.length}`, r.path)
       const t0 = Date.now()
       try {
         if (mounts.dryRun(mounts.load())) { await sleep(o.pollMs ?? 300, i.abort.signal); r.state = 'done'; r.seconds = 0.3; r.outputs = 1; r.files = [{ filename: 'simulated_00001_.png', subfolder: '', type: 'output', kind: 'image', node: '9' }] }
@@ -220,13 +248,14 @@ export async function run(podId: string, paths: string[], o: RunOpts = {}): Prom
       } catch (e) {
         const cancelled = e instanceof CoreError && e.status === 499
         r.state = cancelled ? 'skipped' : 'failed'
-        if (!cancelled) { r.error = (e as Error).message; j.failed++ }
+        if (!cancelled) { r.error = (e as Error).message; j.failed++; note(i, `Failed${r.node ? ` at node ${r.node}` : ''}: ${r.error}`, r.path, 'error') } else note(i, 'Cancelled: the running graph was interrupted', r.path, 'warn')
         r.seconds ??= Math.round((Date.now() - t0) / 100) / 10
       }
-      history.record({ kind: 'job', job: 'run', state: r.state === 'done' ? 'done' : r.state === 'skipped' ? 'cancelled' : 'failed', started_at: new Date(t0).toISOString(), what: r.path, pod_id: podId, pod_name: podName, ...(r.error ? { error: r.error } : {}), detail: `${r.prompt_id ? `prompt ${r.prompt_id}; ` : ''}${r.seconds ?? 0}s${r.node ? `; node ${r.node}` : ''}` })
+      try { history.record({ kind: 'job', job: 'run', state: r.state === 'done' ? 'done' : r.state === 'skipped' ? 'cancelled' : 'failed', started_at: new Date(t0).toISOString(), what: r.path, pod_id: podId, pod_name: podName, ...(r.error ? { error: r.error } : {}), detail: `${r.prompt_id ? `prompt ${r.prompt_id}; ` : ''}${r.seconds ?? 0}s${r.node ? `; node ${r.node}` : ''}` }) } catch { /* the History could not be written: the run goes on */ }
     }
     j.state = i.abort.signal.aborted ? 'cancelled' : j.failed && !j.ok ? 'failed' : 'done'
     j.finished_at = new Date().toISOString()
-  })()
+    note(i, `Run ${j.state}: ${j.ok} finished, ${j.failed} failed of ${j.results.length}`, undefined, j.failed ? 'warn' : 'info')
+  })().catch((e) => { j.state = 'failed'; j.error = (e as Error).message; j.finished_at = new Date().toISOString() })   // whatever throws, the run never stays 'running'
   return view(i)
 }

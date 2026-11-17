@@ -54,3 +54,4 @@ export function governanceDir(): string | null {
 }
 
 export const readJson = <T = unknown>(file: string): T => JSON.parse(readFileSync(file, 'utf8')) as T
+export const outputRunsFile = () => process.env.OUTPUT_RUNS_FILE || join(configDir(), 'output-runs.json')   // the runs' output files, kept past a pod stop (docs/ADR-037, 2026-11-17)
