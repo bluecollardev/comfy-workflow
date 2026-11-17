@@ -65,6 +65,7 @@ const TABLE = {
     // Retry later (ADR-042 section 19): keep trying to resume or create until RunPod has a free card.
     resumeWhenFree: (c, id, opts) => c.pods.resumeWhenFree(id, opts || {}),
     createWhenFree: (c, req, opts) => c.pods.createWhenFree(req, opts || {}),
+    createLikeWhenFree: (c, id, gpu, opts) => c.pods.createLikeWhenFree(id, gpu, opts || {}),
     watches: (c) => c.pods.watches(),
     cancelWatch: (c, id) => c.pods.cancelWatch(id),
     remove: (c, id) => c.pods.remove(id),
@@ -89,8 +90,11 @@ const TABLE = {
     list: (c, kind, limit) => c.history.list({ ...(kind ? { kind } : {}), ...(limit ? { limit: Number(limit) } : {}) }),
     spend: (c) => c.history.spend(),
     runs: (c, podId) => c.comfyruns.runs(podId),
+    saved: (c, q) => c.outputs.saved(q || {}),
     export: (c, opts) => c.history.exportHistory({ format: opts && opts.format, what: opts && opts.what }),
     logs: (c, podId, opts) => c.comfyruns.logs(podId, opts || {}),
+    outputSources: (c, ctx) => c.outputsources.availability(ctx || {}),   // docs/ADR-045: which output sources can answer now, and why not
+    listOutputs: (c, ctx, o) => c.outputsources.listOutputs(ctx || {}, o || {}),   // all of them merged, or one `source`; `prefix` browses the volume
   },
   ratelimit: {
     status: (c) => c.ratelimit.status(),   // RunPod's request limit: local state, no request to RunPod
@@ -167,6 +171,7 @@ const TABLE = {
     models: (c, podId) => c.runflows.models(podId),
     setModels: (c, podId, choice) => c.runflows.setModels(podId, choice || {}),
     job: (c, id) => c.runflows.job(id),
+    latest: (c, podId) => c.runflows.latest(podId),
     cancel: (c, id) => c.runflows.cancel(id),
   },
   agentguard: {   // docs/ADR-042 section 10: the Bash guard for agents, in the user's Claude Code settings
@@ -189,6 +194,10 @@ const TABLE = {
     saveInstalled: (c, volumeId) => c.wantedmodels.saveInstalled(volumeId || ''),
     remove: (c, keys, all) => c.wantedmodels.remove(keys || [], !!all),
     load: (c, volumeId) => c.wantedmodels.loadMissing(volumeId || '', {}),
+  },
+  library: {   // docs/ADR-044: where rounds come from (the BH bucket first); a source only lists
+    sources: (c) => c.library.sources(),
+    list: (c, sourceId) => c.library.list(sourceId || undefined),
   },
   panama: {   // docs/ADR-015: the exchange bucket as an import source
     status: (c) => c.panama.status(),
@@ -281,6 +290,15 @@ function podViewUrl(url) {
   return okHost && u.pathname === '/view' ? u : null
 }
 
+/** An address the main process may fetch: a pod's /view, or (s3file://) a signed read of one output file of a known volume. Returns { url, headers? } or { status, message }; the signature headers never leave the main process. */
+async function fetchable(url, range) {
+  if (/^s3file:/i.test(String(url))) {
+    try { return await (await loadCore()).outputsources.signGet(String(url), { range }) } catch (e) { return { status: e.status || 502, message: e.message } }
+  }
+  const u = podViewUrl(url)
+  return u ? { url: u.href } : { status: 403, message: 'Only a file of a pod\'s ComfyUI or of a volume\'s output folder can be read here.' }
+}
+
 function register() {
   // The two native file dialogs the configuration export and import use (docs/ADR-023). They only pick one path and move one UTF-8 text file; the page gets the text, never a path to read.
   ipcMain.handle('core:file:save', async (event, suggested, text) => {
@@ -306,29 +324,42 @@ function register() {
 
   // Download one output file of a run (the viewer's Download): a Save As dialog, then the bytes from the pod's ComfyUI /view. Only an https RunPod proxy address (or this PC) is fetched, and the page never sees a path.
   ipcMain.handle('core:file:download', async (event, url, suggested) => {
-    const u = podViewUrl(url)
-    if (!u) return { ok: false, error: { message: 'Only a file of a pod\'s ComfyUI can be downloaded here.' } }
+    const f = await fetchable(url)
+    if (!f.url) return { ok: false, error: { message: f.message } }
+    const u = new URL(f.url)   // an s3file address is signed by headers that stay in this function
     const win = BrowserWindow.fromWebContents(event.sender)
-    const r = await dialog.showSaveDialog(win, { defaultPath: path.join(app.getPath('downloads'), path.basename(String(suggested || u.searchParams.get('filename') || 'output'))) })
+    const r = await dialog.showSaveDialog(win, { defaultPath: path.join(app.getPath('downloads'), path.basename(String(suggested || u.searchParams.get('filename') || decodeURIComponent(u.pathname.split('/').pop() || '') || 'output'))) })
     if (r.canceled || !r.filePath) return { ok: true, canceled: true }
     try {
-      const res = await fetch(u, { signal: AbortSignal.timeout(30 * 60_000) })
+      const res = await fetch(u, { headers: f.headers, signal: AbortSignal.timeout(30 * 60_000) })
       if (!res.ok || !res.body) return { ok: false, error: { message: `The pod answered HTTP ${res.status} for that file.` } }
       await require('node:stream/promises').pipeline(require('node:stream').Readable.fromWeb(res.body), fs.createWriteStream(r.filePath))
       return { ok: true, path: r.filePath }
     } catch (e) { return { ok: false, error: { message: `Could not download the file: ${e.message}` } } }
   })
 
+  // Read one output file of a run into the page (the DPX viewer decodes the bytes in the page): the same https /view address the Download uses, fetched here in the main process. This is the fallback for when the page's own
+  // fetch() of a podfile:// address fails (the scheme lacks its privilege); the answer carries the HTTP status so the page can tell a missing file from a pod it cannot reach. Only a pod's /view is read.
+  ipcMain.handle('core:file:read', async (event, url) => {
+    const f = await fetchable(url)
+    if (!f.url) return { ok: false, status: f.status, error: { message: f.message } }
+    try {
+      const res = await fetch(f.url, { headers: f.headers, signal: AbortSignal.timeout(10 * 60_000) })
+      return { ok: true, status: res.status, bytes: res.ok ? Buffer.from(await res.arrayBuffer()) : null }
+    } catch (e) { return { ok: false, error: { message: `Could not reach the file: ${/^s3file:/i.test(String(url)) ? 'the volume did not answer' : e.message}` } } }
+  })
+
   // Download all (zip): Save As, then every file of the list fetched from the pod and streamed into one zip (electron/zip.cjs). The page passes [{ url, name }]; each url is checked like a single download.
   ipcMain.handle('core:file:downloadZip', async (event, entries, suggested) => {
     if (!Array.isArray(entries) || !entries.length || entries.length > 5000) return { ok: false, error: { message: 'There are no files to put in a zip.' } }
-    const urls = entries.map((e) => podViewUrl(e && e.url))
-    if (urls.some((u) => !u)) return { ok: false, error: { message: 'Only files of a pod\'s ComfyUI can be downloaded here.' } }
+    const fs_ = await Promise.all(entries.map((e) => fetchable(e && e.url))), signed = new Map(fs_.filter((f) => f.headers).map((f) => [f.url, f.headers]))
+    const urls = fs_.map((f) => (f.url ? { href: f.url } : null))   // s3file entries are signed here, in the main process
+    if (urls.some((u) => !u)) return { ok: false, error: { message: 'Only files of a pod\'s ComfyUI or of a volume\'s output folder can be downloaded here.' } }
     const win = BrowserWindow.fromWebContents(event.sender)
     const r = await dialog.showSaveDialog(win, { defaultPath: path.join(app.getPath('downloads'), path.basename(String(suggested || 'outputs.zip'))), filters: [{ name: 'Zip', extensions: ['zip'] }] })
     if (r.canceled || !r.filePath) return { ok: true, canceled: true }
     try {
-      const out = await require('./zip.cjs').writeZip(entries.map((e, i) => ({ url: urls[i].href, name: String(e.name || '') })), r.filePath, { fetchFn: (u) => fetch(u, { signal: AbortSignal.timeout(30 * 60_000) }) })
+      const out = await require('./zip.cjs').writeZip(entries.map((e, i) => ({ url: urls[i].href, name: String(e.name || '') })), r.filePath, { fetchFn: (u) => fetch(u, { headers: signed.get(String(u)), signal: AbortSignal.timeout(30 * 60_000) }) })
       return { ok: true, path: r.filePath, files: out.files, bytes: out.bytes }
     } catch (e) { return { ok: false, error: { message: `Could not make the zip: ${e.message}` } } }
   })
@@ -380,4 +411,4 @@ function stopIdleWatch() { if (stopIdle) stopIdle(); stopIdle = null }
 async function startMcpHost() { await host().apply() }
 async function stopMcpHost() { if (mcpHost) await mcpHost.stop() }
 
-module.exports = { register, loadCore, startIdleWatch, stopIdleWatch, startMcpHost, stopMcpHost, syncJobs, TABLE }
+module.exports = { fetchable, register, loadCore, startIdleWatch, stopIdleWatch, startMcpHost, stopMcpHost, syncJobs, TABLE }

@@ -14,6 +14,7 @@
         <small class="d-block text-body-secondary font-monospace">{{ a.sha256.slice(0, 12) }}…</small>
         <small v-if="a.error" class="text-danger d-block">{{ a.error }}</small>
       </div>
+      <BBadge :variant="a.kind === 'round' ? 'primary' : 'success'" class="fw-normal" :title="$t(a.kind === 'round' ? 'adapters.kindRoundHint' : 'adapters.kindShotPackHint')" data-testid="adapter-kind" :data-kind="a.kind === 'round' ? 'round' : 'shot-pack'">{{ $t(a.kind === 'round' ? 'adapters.kindRound' : 'adapters.kindShotPack') }}</BBadge>
       <BBadge v-if="a.builtin" :variant="a.modified ? 'warning' : 'secondary'" class="fw-normal" data-testid="adapter-builtin">{{ a.modified ? $t('studio.builtinModified') : $t('import.builtIn') }}</BBadge>
       <BBadge v-else variant="info" class="fw-normal" data-testid="adapter-yours">{{ $t('import.yours') }}</BBadge>
       <div class="d-flex gap-1">

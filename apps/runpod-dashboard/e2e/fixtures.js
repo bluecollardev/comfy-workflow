@@ -115,9 +115,9 @@ export function defaultState() {
     // The Import Shot Pack modal (docs/ADR-008): the adapters, the plan each known folder gets, and what applying says.
     imports: {
       adapters: [
-        { id: 'comfy-shared', name: 'A ComfyUI-Shared folder', version: 1, builtin: true, sha256: 'a'.repeat(64), file: '' },
-        { id: 'panama-imax-redux', name: 'Panama Canal v2 delivery package', version: 1, builtin: true, sha256: 'b'.repeat(64), file: '' },
-        { id: 'agent-made', name: 'Agent made', version: 1, builtin: false, sha256: 'c'.repeat(64), file: '/home/me/.config/runpod-pod-manager/adapters/agent-made.mjs' },
+        { id: 'comfy-shared', name: 'A ComfyUI-Shared folder', version: 1, kind: 'shot-pack', builtin: true, sha256: 'a'.repeat(64), file: '' },
+        { id: 'panama-imax-redux', name: 'Panama Canal v2 delivery package', version: 1, kind: 'shot-pack', builtin: true, sha256: 'b'.repeat(64), file: '' },
+        { id: 'agent-made', name: 'Agent made', version: 1, kind: 'round', builtin: false, sha256: 'c'.repeat(64), file: '/home/me/.config/runpod-pod-manager/adapters/agent-made.mjs' },
       ],
       sources: {
         'comfy-shared': "/**\n * What it does: maps a package folder onto ComfyUI-Shared. Detects: its telltale files. Maps: input to input, workflows to workflows.\n * Leaves in place: everything else. Needs / assumes: nothing special. Limits: a test double.\n */\nexport default { id: 'comfy-shared', name: 'A ComfyUI-Shared folder', async detect() {}, async plan() {} }",
@@ -354,7 +354,24 @@ export async function mockApi(page, state) {
       return json({ ...base, built: '# Reconstructed from ' + image + '\nRUN git clone comfy\nCOPY packs /opt/ComfyUI/custom_nodes/' })
     }
     if ((m = path.match(/^\/volumes\/([^/]+)$/)) && method === 'GET' && !['job', 'jobs', 'erasable'].includes(m[1])) { const v = state.volumes[m[1]]; return v ? json(v) : json({ detail: `no network volume ${m[1]}` }, 404) }
+    if (method === 'POST' && path === '/queue/plan' && body.source === 'volume') {   // the core's volume plan: locked shots left out (refused when asked for), 2 graphs a shot, $0.06 a graph, the cap checked
+      (state.planCalls ||= []).push(body)
+      const all = { proxy_v005: ['archival-080', 'archival-084', 'cgi-042'], proxy_v004g: ['archival-080'] }[body.round] || []
+      const lockedAll = all.filter((s) => s === 'cgi-042'), refused = (body.shots || []).filter((s) => lockedAll.includes(s))
+      const shots = (body.shots?.length ? body.shots : all).filter((s) => !lockedAll.includes(s)), graphs = shots.length * 2, est = Math.round(graphs * 0.06 * 100) / 100 * (state.volumeLib?.priceFactor || 1)
+      const cap = body.cost_cap_usd ?? 50
+      return json({ round: body.round, source: 'volume', volume_id: body.volume_id, shots, graphs, graphs_by_shot: Object.fromEntries(shots.map((s) => [s, 2])), seconds_per_graph: 600, samples: 0, price_per_hour: 0.36, pull_hours: 0, est_total_usd: est, max_pods: 2, cost_cap_usd: cap, cap_enabled: true, over_cap: est > cap, locked: lockedAll, refused, remaining_usd: 94.5, assumption: `${graphs} graph(s) x 600 s (no run in the History: the default 600 s) x the pod's hourly price ($0.36/h).` })
+    }
     if (method === 'POST' && path === '/queue/plan') return json({ round: body.round, shots: ['cgi-042', 'cgi-043'], price_per_hour: 3.99, pull_hours: 0.5, est_total_usd: 6.98, max_pods: 2, cost_cap_usd: 50, cap_enabled: true, over_cap: false })
+    if (method === 'POST' && path === '/queue/import-many' && body.source === 'volume') {   // guards (b) and (c) again, as the core answers them
+      (state.volumeImportCalls ||= []).push(body)
+      if (body.items.some((i) => (i.shots || []).includes('cgi-042'))) return json({ detail: 'Refused: cgi-042 is locked (client-approved, or under 04_GRAPH): listed for reference, never run (Binc\'s rules).' }, 403)
+      const est = body.items.reduce((a, i) => a + (i.shots || []).length * 0.12, 0) * (state.volumeLib?.priceFactor || 1)
+      if (body.cost_cap_usd != null && est > body.cost_cap_usd) return json({ detail: `Refused: the estimate $${est.toFixed(2)} passes the cap $${body.cost_cap_usd}.` }, 402)
+      state.imported = { ...body, ...body.items[0] }; (state.importedAll ||= []).push(state.imported)
+      state.queue = { imports: body.items.map((i, n) => ({ id: `imp${n + 1}`, round: i.round, source: 'volume', approved_by: body.approved_by, state: 'active', spent_usd: 0, cap_enabled: true, cost_cap_usd: body.cost_cap_usd, max_pods: i.max_pods, counts: {} })), tasks: body.items.flatMap((i, n) => i.shots.map((s, k) => ({ id: `t${n}-${k}`, import_id: `imp${n + 1}`, round: i.round, shot: s, kind: 'run', state: 'waiting', graphs: [`${i.round}/${s}/${s}__a__${i.round}.json`] }))), active: 1 }
+      return json(state.queue.imports)
+    }
     if (method === 'POST' && path === '/queue/import-many') { for (const i of body.items) { const one = { round: i.round, shots: i.shots, cards: i.cards, max_pods: i.max_pods, cost_cap_usd: body.cost_cap_usd == null ? undefined : Math.round(body.cost_cap_usd / body.items.length * 100) / 100, approved_by: body.approved_by, run_workflows: body.run_workflows, volume_id: body.volume_id }; state.imported = one; (state.importedAll ||= []).push(one) }
       state.queue = { imports: body.items.map((i, n) => ({ id: `imp${n + 1}`, round: i.round, approved_by: body.approved_by, state: 'active', spent_usd: 0, cap_enabled: true, cost_cap_usd: body.cost_cap_usd, max_pods: i.max_pods, counts: {} })), tasks: [{ id: 't1', import_id: 'imp1', round: body.items[0].round, shot: null, kind: 'pull', state: 'running', pod_name: 'pull' }, ...body.items[0].shots.map((s, k) => ({ id: `t${k + 2}`, import_id: 'imp1', round: body.items[0].round, shot: s, kind: 'run', state: k ? 'waiting' : 'failed', error: k ? undefined : 'boom (node 4, KSampler)' }))], active: 1 + body.items[0].shots.length }; return json(state.queue.imports) }
     if (method === 'POST' && path === '/queue/import') { state.imported = body; (state.importedAll ||= []).push(body); state.queue = { imports: [{ id: 'imp1', round: body.round, approved_by: body.approved_by, state: 'active', spent_usd: 0, cap_enabled: true, cost_cap_usd: body.cost_cap_usd, max_pods: body.max_pods, counts: {} }], tasks: [{ id: 't1', import_id: 'imp1', round: body.round, shot: null, kind: 'pull', state: 'running', pod_name: 'pull' }, ...body.shots.map((s, i) => ({ id: `t${i + 2}`, import_id: 'imp1', round: body.round, shot: s, kind: 'run', state: i ? 'waiting' : 'failed', error: i ? undefined : 'boom (node 4, KSampler)' }))], active: 1 + body.shots.length }; return json(state.queue.imports[0]) }
@@ -362,6 +379,7 @@ export async function mockApi(page, state) {
     if (method === 'GET' && path === '/queue') return json(state.queue || { imports: [], tasks: [], active: 0 })
     if (method === 'GET' && path === '/runflows') return json({ pod_id: query.pod_id, pod_name: 'ComfyUI-Dev', count: 3, workflows: [{ path: 'rounds/r1/cgi-042/stereo.json', group: 'rounds/r1/cgi-042', name: 'stereo.json', size: 1, modified: 0 }, { path: 'rounds/r1/cgi-042/delivery.json', group: 'rounds/r1/cgi-042', name: 'delivery.json', size: 1, modified: 0 }, { path: 'rounds/r1/cgi-043/other.json', group: 'rounds/r1/cgi-043', name: 'other.json', size: 1, modified: 0 }] })
     if (method === 'POST' && path === '/runflows') { state.ranFlows = body.paths; return json({ id: 'run-1', pod_id: body.pod_id, pod_name: 'ComfyUI-Dev', state: 'running', started_at: 'now', ok: 0, failed: 0, results: body.paths.map((p) => ({ path: p, state: 'pending' })) }) }
+    if (method === 'GET' && path === '/runflows/latest') return json(state.latestFlow || null)   // a test sets state.latestFlow to a run the window should find again
     if (method === 'GET' && path.startsWith('/runflows/')) return json({ id: 'run-1', pod_id: 'pod-aaaaaaaa', pod_name: 'ComfyUI-Dev', state: 'done', started_at: 'now', ok: (state.ranFlows || []).length - 1, failed: 1, results: (state.ranFlows || []).map((p, i) => (i === 0 ? { path: p, state: 'failed', error: 'boom (node 4, KSampler)' } : { path: p, state: 'done', seconds: 4.2, outputs: 2, files: [{ filename: 'result_00001_.png', subfolder: 'r1', type: 'output', kind: 'image' }, { filename: 'clip.mp4', subfolder: '', type: 'output', kind: 'video' }, { filename: 'prev_00001_.png', subfolder: '', type: 'temp', kind: 'image' }] })), base_url: 'http://pod-a.test' })
     if (method === 'GET' && path === '/history') { const ev = state.history.events.filter((e) => !query.kind || e.kind === query.kind); return json(query.limit ? ev.slice(0, Number(query.limit)) : ev) }
     if (method === 'GET' && path === '/history/export') { const csv = query.format === 'csv'; return json({ name: `history-${query.what || 'all'}.${csv ? 'csv' : 'json'}`, mime: csv ? 'text/csv' : 'application/json', text: csv ? 'ts,kind\n2026-11-03T10:00:00Z,pod\n' : JSON.stringify({ events: state.history.events, spend: state.history.spend }) }) }
@@ -371,6 +389,28 @@ export async function mockApi(page, state) {
       if (!l) return json({ detail: `pod ${query.pod_id} is not running` }, 400)
       const keep = { all: ['info', 'warning', 'error'], warnings: ['warning', 'error'], errors: ['error'] }[query.level || 'all'] || ['info', 'warning', 'error']
       return json({ ...l, entries: l.entries.filter((e) => keep.includes(e.level)) })
+    }
+    if (method === 'GET' && path === '/history/saved') return json((state.history.saved || []).filter((r) => (!query.pod_id && !query.volume_id) || (query.pod_id && r.pod_id === query.pod_id) || (query.volume_id && r.volume_id === query.volume_id)))   // a test sets state.history.saved to the saved runs
+    // Output sources (docs/ADR-045). `api.state.s3Outputs = { files: [{ key: 'proxy_v004/archival-080/seq/f.0000.dpx', bytes, modified }], keys: true }` is a volume's comfy-shared/output/ tree; absent = no S3 keys set. Calls are recorded in state.outputCalls.
+    if (method === 'GET' && path === '/history/output-sources') return json([{ id: 'pod-history', name: 'Pod history', hint: '', ok: !!state.history.runs[query.pod_id], reason: '' }, { id: 'saved', name: 'Saved record', hint: '', ok: true, reason: '' }, { id: 'volume-s3', name: 'Network volume (S3)', hint: '', ok: !!state.s3Outputs, reason: state.s3Outputs ? '' : 'RUNPOD_S3_ACCESS_KEY and RUNPOD_S3_SECRET_KEY are not set (Default Configuration): without them only a pod could list this volume, and that costs money, so nothing was started.' }])
+    if (method === 'GET' && path === '/history/outputs') {
+      ;(state.outputCalls ||= []).push({ ...query })
+      const s3 = state.s3Outputs
+      if (!s3) return json({ sources: [{ id: 'volume-s3', name: 'Network volume (S3)', hint: '', ok: false, reason: 'RUNPOD_S3_ACCESS_KEY and RUNPOD_S3_SECRET_KEY are not set (Default Configuration): without them only a pod could list this volume, and that costs money, so nothing was started.' }], runs: [], folders: [], prefix: '', capped: false, total: 0, volume_id: query.volume_id || '' })
+      let prefix = query.prefix, note
+      if (prefix === undefined) {
+        prefix = ''
+        const sh = query.shot
+        const hit = sh && [...new Set(s3.files.map((f) => f.key.split('/').slice(0, 2).join('/')))].find((p) => p.endsWith(`/${sh}`))
+        if (hit) { prefix = hit; note = `Started in ${hit}, the pod's shot.` }
+      }
+      const under = s3.files.filter((f) => !prefix || f.key.startsWith(`${prefix}/`)), rel = (f) => (prefix ? f.key.slice(prefix.length + 1) : f.key)
+      const folders = [...new Set(under.filter((f) => rel(f).includes('/')).map((f) => rel(f).split('/')[0]))].sort()
+      const direct = prefix.split('/').filter(Boolean).length >= 2 ? under : under.filter((f) => !rel(f).includes('/'))
+      const groups = new Map()
+      for (const f of direct) { const dir = f.key.includes('/') ? f.key.slice(0, f.key.lastIndexOf('/')) : ''; (groups.get(dir) || groups.set(dir, []).get(dir)).push({ filename: f.key.split('/').pop(), subfolder: dir, type: 'output', bytes: f.bytes, modified: f.modified }) }
+      const runs = [...groups].map(([dir, files]) => ({ prompt_id: `volume:${query.volume_id}:${dir || '.'}`, workflow: null, started_at: files.map((f) => f.modified).sort().pop() || null, files, source: 'volume-s3', folder: dir })).sort((a, b) => String(b.started_at).localeCompare(String(a.started_at)))
+      return json({ sources: [{ id: 'volume-s3', name: 'Network volume (S3)', hint: '', ok: true, reason: '' }], runs, folders, prefix, capped: !!s3.capped, total: s3.total ?? direct.length, volume_id: query.volume_id || '', ...(note ? { start_note: note } : {}) })
     }
     if (method === 'GET' && path === '/history/runs') { const r = state.history.runs[query.pod_id]; return r ? json(r) : json({ detail: `pod ${query.pod_id} is not running` }, 400) }
     if (method === 'GET' && path === '/credits') return state.credits === null ? json({ detail: 'RunPod did not report the account balance' }, 502) : json(state.credits ?? { balance: 36.42, spend_per_hr: 0.053, spend_limit: 80, hours_left: 687.2, level: 'ok' })
@@ -384,6 +424,13 @@ export async function mockApi(page, state) {
     if (method === 'POST' && path === '/pods/create-when-free') {
       ;(state.createWhenFree ||= []).push(body)
       const w = { id: `watch-${(state.watches || []).length + 1}`, kind: 'create', state: 'waiting', name: body.request.name, label: `Waiting for a free ${body.request.gpu} in EU-RO-1`, request: body.request, every_s: body.every_s || 120, attempts: 0, created_at: new Date().toISOString(), next_at: new Date(Date.now() + 120000).toISOString(), give_up_at: new Date(Date.now() + 12 * 3600000).toISOString() }
+      ;(state.watches ||= []).push(w); return json(w)
+    }
+    if ((m = path.match(/^\/pods\/([^/]+)\/create-like-when-free$/)) && method === 'POST') {
+      // another GPU (ADR-042 section 19): a NEW pod like this one, same datacenter; the old pod is never touched
+      const pod = state.pods.find((p) => p.id === m[1]); (state.createLikeWhenFree ||= []).push({ id: m[1], ...body })
+      const card = state.datacenters.datacenters.flatMap((d) => d.cards).find((c) => c.key === body.gpu)
+      const w = { id: `watch-${(state.watches || []).length + 1}`, kind: 'create', state: 'waiting', name: `${pod?.name || m[1]}-${(card?.name || body.gpu).replace(/ /g, '-')}`, label: `Waiting for a free ${card?.name || body.gpu} in ${pod?.datacenter || ''}`, every_s: body.every_s || 120, attempts: 0, created_at: new Date().toISOString(), next_at: new Date(Date.now() + 120000).toISOString(), give_up_at: new Date(Date.now() + 12 * 3600000).toISOString() }
       ;(state.watches ||= []).push(w); return json(w)
     }
     if ((m = path.match(/^\/pod-watches\/([^/]+)$/)) && method === 'DELETE') {
@@ -697,7 +744,26 @@ export default {
     }
     // MCP (the Connect › MCP tab)
     if (method === 'GET' && path === '/panama/status') { const pn = (state.panama ||= { configured: false }); return json({ configured: pn.configured, profile: 'panama', bucket: 'bh-panama-exchange-610140802195', region: 'us-west-2', staging: '/Users/lucas/panama-rounds', reason: pn.configured ? '' : 'No AWS profile named "panama"', pod: { available: !!pn.pod?.available, reason: pn.pod?.reason || 'Pod mode is not available in this build yet.', volume: pn.pod?.volume || POD_VOLUME } }) }
-    if (method === 'GET' && path === '/panama/rounds') { const pn = state.panama || {}; const base = pn.rounds || [{ name: 'brynley-comfy-2026-10-23', staged: false, state: 'none', present: 0, expected: null, missing: null, bytes: 0 }, { name: 'brynley-comfy-2026-10-20', staged: false, state: 'partial', present: 391, expected: 1283, missing: 892, bytes: 8100000000 }, { name: 'brynley-inbox-2026-10-28-v001', staged: true, state: 'complete', present: 378, expected: 378, missing: 0, bytes: 623848 }]; return json(base.map((r) => (pn.deleted || []).includes(r.name) ? { ...r, staged: false, state: 'none', present: 0, expected: null, missing: null, bytes: 0 } : r)) }
+    const panamaRoundList = () => { const pn = state.panama || {}; const base = pn.rounds || [{ name: 'brynley-comfy-2026-10-23', staged: false, state: 'none', present: 0, expected: null, missing: null, bytes: 0 }, { name: 'brynley-comfy-2026-10-20', staged: false, state: 'partial', present: 391, expected: 1283, missing: 892, bytes: 8100000000 }, { name: 'brynley-inbox-2026-10-28-v001', staged: true, state: 'complete', present: 378, expected: 378, missing: 0, bytes: 623848 }]; return base.map((r) => (pn.deleted || []).includes(r.name) ? { ...r, staged: false, state: 'none', present: 0, expected: null, missing: null, bytes: 0 } : r) }   // one list for /panama/rounds and the library's panama-s3 source
+    if (method === 'GET' && path === '/panama/rounds') return json(panamaRoundList())
+    // ADR-044: the library. Sources list; every item has the one shape (the BH rounds are the panama-s3 source).
+    if (method === 'GET' && path === '/library/sources') return json([{ id: 'panama-s3', name: 'BH (Panama bucket)', hint: 'The rounds BH delivers to the exchange bucket, downloaded to this PC and checked against their manifest.', available: true, reason: '' }, { id: 'volume', name: 'Volume (rounds already on a network volume)', hint: 'Read-only listing over the S3 API.', available: true, reason: '', needs: 'volume' }])
+    // ADR-044 step 2: the volume source. state.volumeLib = { status, rounds } overrides what the fake volume holds.
+    if (method === 'GET' && path === '/library/status') { (state.libraryCalls ||= []).push({ path, ...query }); return json(state.volumeLib?.status || { available: true, reason: '', volume_id: query.volume_id }) }
+    if (method === 'GET' && path === '/library/round') return json({ kind: 'round', round: query.round, shots: ['archival-080', 'archival-084', 'cgi-042'], variants: ['a', 'b'], graphs: [], locked: ['cgi-042'], findings: [] })
+    if (method === 'POST' && path === '/library/preflight') { (state.libraryCalls ||= []).push({ path, ...body }); return json(state.volumeLib?.preflight || { round: body.round, volume_id: body.volume_id, checked: 4, total_graphs: 5, missing_total: 1, graphs: [{ graph: `${body.round}/archival-080/archival-080__a__${body.round}.json`, models: ['LTX23_audio_vae_bf16.safetensors'], missing: [{ name: 'LTX23_audio_vae_bf16.safetensors', node_type: 'LTXVAudioVAELoader', reads: ['models/checkpoints/'], elsewhere: ['models/vae/LTX23_audio_vae_bf16.safetensors'] }] }], note: 'read-only' }) }
+    if (method === 'GET' && path === '/library/items' && query.source === 'volume') {
+      (state.libraryCalls ||= []).push({ path, ...query })
+      return json(state.volumeLib?.rounds || [
+        { source: 'volume', id: 'proxy_v005', name: 'proxy_v005', kind: 'round', volume_id: query.volume_id, shots: ['archival-080', 'archival-084', 'cgi-042'], graphs: 5, locked: ['cgi-042'], variants: ['a', 'b', 'main'], staged: true, verified: false, importable: true },
+        { source: 'volume', id: 'proxy_v004g', name: 'proxy_v004g', kind: 'round', volume_id: query.volume_id, shots: ['archival-080'], graphs: 1, locked: [], variants: ['e'], staged: true, verified: false, importable: true },
+        { source: 'volume', id: 'canalv2', name: 'canalv2', kind: 'round', volume_id: query.volume_id, shots: [], staged: true, verified: false, importable: false, note: 'no layout' },
+      ])
+    }
+    if (method === 'GET' && path === '/library/items') {
+      if (query.source && query.source !== 'panama-s3') return json({ detail: `No such source: ${query.source}` }, 404)
+      return json(panamaRoundList().map((r) => ({ source: 'panama-s3', id: r.name, name: r.name, shots: [], staged: r.staged, verified: r.state === 'complete', importable: true, state: r.state, present: r.present, expected: r.expected, missing: r.missing, bytes: r.bytes })))
+    }
     if (method === 'POST' && path === '/panama/stage') { state.staged = body.paths; const n = String(body.paths[0]).split('/').pop().replace(/\.zip$/i, ''); return json({ round: n, path: `/staging/${n}`, files: 12, bytes: 4096, extracted: /\.zip$/i.test(body.paths[0]) ? 1 : 0 }) }
     if (method === 'GET' && path === '/panama/files') return json({ round: query.round, files: 4, bytes: 3200, entries: [{ path: '03_INBOX', dir: true, bytes: 3000, files: 2 }, { path: '03_INBOX/ENTRY.md', dir: false, bytes: 1000, local: true }, { path: '03_INBOX/shot-001.exr', dir: false, bytes: 2000, local: false }, { path: 'MANIFEST.json', dir: false, bytes: 200 }, { path: 'README.md', dir: false, bytes: 0 }] })
     if (method === 'GET' && path === '/panama/size') return json({ round: query.round, files: 5701, bytes: 29117613170 })

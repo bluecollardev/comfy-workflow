@@ -274,3 +274,24 @@ test('Queue: Cancel all asks first; No leaves the tasks, Yes cancels the import'
   await answerConfirm(page, true)
   await expect.poll(() => one.length).toBe(1)
 })
+
+// ADR-044 step 1: Choose Rounds has a Source dropdown. The BH bucket is the only source so far and behaves as before; the rounds come through the library (the one item shape).
+test('Import Round: step 1 has a Source dropdown with BH selected, its rounds listed; choosing BH again keeps them and a round can still be ticked', async ({ page }) => {
+  const asked = []
+  page.on('request', (r) => { if (r.url().includes('/library/')) asked.push(new URL(r.url()).pathname + new URL(r.url()).search) })
+  await page.goto('/')
+  await page.getByTestId('open-import-round').click()
+  const dlg = page.getByTestId('import-round-modal')
+  const src = dlg.getByTestId('import-round-source')
+  await expect(src).toBeVisible()
+  await expect(src).toHaveValue('panama-s3')   // BH, by default
+  await expect(src.locator('option')).toHaveCount(2)   // BH and Volume (ADR-044 step 2)
+  await expect(src.locator('option').first()).toHaveText('BH (Panama bucket)')   // the name comes from the source
+  await expect(dlg.getByTestId('import-round-option')).toHaveCount(3)   // the same three rounds as ever
+  await dlg.getByTestId('import-round-option').first().locator('input').check()
+  await src.selectOption('panama-s3')   // BH again: nothing changes
+  await expect(dlg.getByTestId('import-round-option')).toHaveCount(3)
+  await expect(dlg.getByTestId('import-round-option').first().locator('input')).toBeChecked()
+  expect(asked.some((u) => u.startsWith('/api/library/sources') || u.includes('/library/sources'))).toBe(true)
+  expect(asked.some((u) => u.includes('/library/items') && u.includes('source=panama-s3'))).toBe(true)
+})

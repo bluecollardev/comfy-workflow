@@ -5,6 +5,7 @@ export default {
   id: 'comfy-shared',
   name: 'A ComfyUI-Shared folder',
   version: 1,
+  kind: 'shot-pack',   // a package or folder of shots
 
   async detect(root, ctx) {
     const present = []

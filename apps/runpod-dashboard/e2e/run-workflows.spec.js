@@ -58,7 +58,7 @@ test('Run workflows: step 2 shows what the successful runs produced; a tile open
   await expect(dlg.getByTestId('runflows-run')).toBeVisible()
 })
 
-test('pod card: Import, Run and Outputs sit on one row; Outputs is disabled until the pod has produced files, then opens the gallery', async ({ page, api }) => {
+test('pod card: Import, Run and Outputs sit on one row; Outputs is disabled until the pod has produced files or sits on a network volume, then opens the gallery', async ({ page, api }) => {
   api.state.history.runs['pod-aaaaaaaa'].splice(1, 0, { prompt_id: 'beadbead-1111-2222', workflow: 'rounds/r1/cgi-043/other.json', status: 'success', started_at: '2026-11-03T11:20:00Z', duration_s: 9.1, cost_estimate: 0.01, outputs: [{ filename: 'other_0001.png', type: 'output', subfolder: '' }] })   // a second finished run, in another workflow
   await page.route('**/view?*', (r) => r.fulfill({ status: 200, contentType: 'image/png', body: PNG }))
   await page.goto('/')
@@ -73,14 +73,14 @@ test('pod card: Import, Run and Outputs sit on one row; Outputs is disabled unti
   await expect(m.getByTestId('outputs-tile')).toHaveCount(2)
   const bar = await m.getByTestId('pod-outputs-toolbar').boundingBox(), refresh = await m.getByTestId('pod-outputs-refresh').boundingBox()
   expect(refresh.x + refresh.width).toBeGreaterThan(bar.x + bar.width - 4)   // Refresh sits at the right edge of the toolbar
-  await expect(m.getByTestId('pod-outputs-workflow').first()).toHaveText('stereo')
-  await expect(m.getByTestId('pod-outputs-workflow').nth(1)).toHaveText('other')   // each run names the workflow it came from, with its folder beside it
-  await expect(m.getByTestId('pod-outputs-run-title').first()).toContainText('rounds/r1/cgi-042')
+  await expect(m.getByTestId('pod-outputs-workflow').first()).toHaveText('other')   // newest first (11:20), then stereo (11:00)
+  await expect(m.getByTestId('pod-outputs-workflow').nth(1)).toHaveText('stereo')   // each run names the workflow it came from, with its folder beside it
+  await expect(m.getByTestId('pod-outputs-run-title').nth(1)).toContainText('rounds/r1/cgi-042')
   await m.getByTestId('outputs-tile').first().click()
   await expect(page.getByTestId('output-viewer').getByTestId('output-viewer-image')).toBeVisible()
   await page.keyboard.press('Escape'); await page.keyboard.press('Escape')
-  const test2 = podCard(page, 'ComfyUI-Test')   // starting, no history: nothing to show
-  await expect(test2.getByTestId('pod-outputs')).toBeDisabled()
+  await expect(podCard(page, 'ComfyUI-Test').getByTestId('pod-outputs')).toBeEnabled()   // starting, no history, but on the network volume: its outputs can be listed over S3 (docs/ADR-045)
+  await expect(podCard(page, 'ComfyUI-Batch').getByTestId('pod-outputs')).toBeDisabled()   // no runs and no volume: nothing to show
 })
 
 test('pod Outputs: with a Shot set on the pod only that shot\'s runs show, with a box to see them all', async ({ page, api }) => {
@@ -108,4 +108,65 @@ test('Run workflows: a pod with a Shot set pre-ticks only that shot\'s graphs; "
   await expect(dlg.getByTestId('runflows-run')).toContainText('1')
   await dlg.getByTestId('runflows-all').click()
   await expect(dlg.getByTestId('runflows-run')).toContainText('3')   // and the user can still tick the rest
+})
+
+// State survives closing the window (the run lives in the core; the ticks are kept per pod): reopening shows what was ticked and a run still going.
+test('Run workflows: closing and reopening keeps what was ticked, and finds a run that is still going', async ({ page, api }) => {
+  await page.goto('/')
+  const open = async () => { await podCard(page, 'ComfyUI-Dev').getByTestId('pod-run-workflows').click(); return page.getByTestId('runflows-modal') }
+  let dlg = await open()
+  await expect(dlg.getByTestId('runflows-count')).toContainText('3')
+  await dlg.getByTestId('runflows-file').filter({ hasText: 'other.json' }).locator('input').uncheck()
+  await expect(dlg.getByTestId('runflows-count')).toContainText('2')
+  await dlg.getByTestId('runflows-close').click()
+  await expect(page.getByTestId('runflows-modal')).toBeHidden()
+  dlg = await open()   // the ticks come back, not "everything ticked"
+  await expect(dlg.getByTestId('runflows-count')).toContainText('2')
+  await expect(dlg.getByTestId('runflows-file').filter({ hasText: 'other.json' }).locator('input')).not.toBeChecked()
+  await dlg.getByTestId('runflows-close').click()
+  await expect(page.getByTestId('runflows-modal')).toBeHidden()
+  // a run the core still has going: the window finds it again, shows each graph's state, and its graphs are the selection
+  api.state.ranFlows = ['rounds/r1/cgi-042/stereo.json', 'rounds/r1/cgi-043/other.json']
+  api.state.latestFlow = { id: 'run-1', pod_id: 'pod-aaaaaaaa', pod_name: 'ComfyUI-Dev', state: 'running', started_at: 'now', ok: 0, failed: 0, results: [{ path: 'rounds/r1/cgi-042/stereo.json', state: 'running' }, { path: 'rounds/r1/cgi-043/other.json', state: 'pending' }] }
+  dlg = await open()
+  await expect(dlg.getByTestId('runflows-count')).toContainText('2')
+  await expect(dlg.getByTestId('runflows-cancel')).toBeVisible()
+  await expect(dlg.getByTestId('runflows-run')).toBeDisabled()
+  await expect(dlg.getByTestId('runflows-result').first()).toHaveAttribute('data-state', 'running')
+})
+
+// A run in progress shows in the card's own Run button: it says Running, stays clickable, and opens the window on that run's progress.
+test('pod card: while a run is in progress the Run button says Running and opens the window on its progress; when it is over the button says Run again', async ({ page, api }) => {
+  api.state.ranFlows = ['rounds/r1/cgi-042/stereo.json', 'rounds/r1/cgi-043/other.json']
+  api.state.latestFlow = { id: 'run-1', pod_id: 'pod-aaaaaaaa', pod_name: 'ComfyUI-Dev', state: 'running', started_at: 'now', ok: 0, failed: 0, results: [{ path: 'rounds/r1/cgi-042/stereo.json', state: 'running' }, { path: 'rounds/r1/cgi-043/other.json', state: 'pending' }] }
+  await page.goto('/')
+  const btn = podCard(page, 'ComfyUI-Dev').getByTestId('pod-run-workflows')
+  await expect(btn).toContainText(t('runflows.running'))
+  await expect(btn).toHaveAttribute('data-running', 'true')
+  await expect(btn).toBeEnabled()
+  await expect(btn).toHaveAttribute('title', t('runflows.runningTitle', { done: 0, total: 2 }))
+  await btn.click()
+  const dlg = page.getByTestId('runflows-modal')
+  await expect(dlg.getByTestId('runflows-cancel')).toBeVisible()   // its progress, not an empty list
+  await expect(dlg.getByTestId('runflows-result').first()).toHaveAttribute('data-state', 'running')
+  api.state.latestFlow = null   // the run is over
+  await dlg.getByTestId('runflows-close').click()
+  await expect(btn).toHaveAttribute('data-running', 'false')
+  await expect(btn).toContainText(t('runflows.button'))
+})
+
+// The right pane has two logs: this run's own steps, and ComfyUI's log on the pod, line for line (the same data as the pod's Logs button).
+test('Run workflows: the Pod log tab shows the pod\'s ComfyUI log line for line, errors and warnings coloured', async ({ page }) => {
+  await page.goto('/')
+  await podCard(page, 'ComfyUI-Dev').getByTestId('pod-run-workflows').click()
+  const dlg = page.getByTestId('runflows-modal')
+  await expect(dlg.getByTestId('runflows-log')).toBeVisible()   // the run's own log is the default tab
+  await dlg.getByTestId('runflows-tab-pod').click()
+  await expect(dlg.getByTestId('runflows-podlog-line')).toHaveCount(3)
+  await expect(dlg.getByTestId('runflows-podlog-line').nth(0)).toContainText('Starting server')
+  await expect(dlg.getByTestId('runflows-podlog-line').nth(2)).toContainText('CUDA out of memory')
+  await expect(dlg.getByTestId('runflows-podlog-line').nth(2)).toHaveClass(/text-danger/)
+  await expect(dlg.getByTestId('runflows-podlog-line').nth(1)).toHaveClass(/text-warning/)
+  await dlg.getByTestId('runflows-tab-run').click()
+  await expect(dlg.getByTestId('runflows-log')).toBeVisible()
 })

@@ -17,6 +17,7 @@ import * as pods from './pods.js'
 import * as rp from './runpod.js'
 import * as runflows from './runflows.js'
 import * as volumes from './volumes.js'
+import * as volumeround from './volumeround.js'
 
 export type TaskKind = 'pull' | 'run'
 export type TaskState = 'waiting' | 'running' | 'done' | 'failed' | 'held' | 'cancelled' | 'interrupted'
@@ -46,6 +47,8 @@ export interface ImportRec {
   /** Pods this import started or created: stopped when the import has no more tasks for them. A pod that was already running is never in here. */
   started_pods: string[]
   price_per_hour: number | null
+  /** `volume`: a round that already sits on a network volume, run in place (ADR-044): no pull task, the graphs are named at the start; `volume_id` is where. */
+  source?: 'volume'; volume_id?: string; graphs?: number; seconds_per_graph?: number
 }
 interface QueueFile { version: 1; imports: ImportRec[]; tasks: Task[] }
 
@@ -69,6 +72,11 @@ export interface Deps {
   run: (podId: string, paths: string[]) => Promise<{ id: string }>
   runJob: (id: string) => runflows.RunJob | null
   cancelRun: (id: string) => void
+  /** ADR-044: what a round on a volume holds (shots, graphs as the Workflows panel names them, the locked shots), read-only over S3. */
+  describeVolumeRound: (volumeId: string, round: string) => Promise<volumeround.RoundInfo>
+  /** The History's median seconds per graph (null: none recorded) and what the USD 100 rule leaves (null: no cap set). */
+  runSeconds: () => { seconds: number | null; samples: number }
+  remainingUsd: () => number | null
   now: () => Date
 }
 
@@ -107,6 +115,9 @@ const realDeps: Deps = {
   run: async (podId, paths) => runflows.run(podId, paths),
   runJob: (id) => runflows.job(id),
   cancelRun: (id) => { try { runflows.cancel(id) } catch { /* already over */ } },
+  describeVolumeRound: (volumeId, round) => volumeround.describeRound(volumeId, round),
+  runSeconds: () => volumeround.medianSecondsPerGraph(),
+  remainingUsd: () => volumeround.governanceRemainingUsd(),
   now: () => new Date(),
 }
 let deps: Deps = realDeps
@@ -142,8 +153,17 @@ export function list(): QueueView {
 export interface ImportPlan {
   round: string; shots: string[]; price_per_hour: number | null; pull_hours: number; est_total_usd: number | null
   max_pods: number | null; cost_cap_usd: number | null; cap_enabled: boolean; over_cap: boolean
+  /** ADR-044 volume source only: what was assumed, what was refused, and the cap left. */
+  source?: 'volume'; volume_id?: string
+  graphs?: number; graphs_by_shot?: Record<string, number>; seconds_per_graph?: number; samples?: number
+  /** Locked shots (cgi-042, anything under 04_GRAPH): listed, never run. `refused` are the ones asked for by name. */
+  locked?: string[]; refused?: string[]
+  /** What is left of the caps: the import's cap, and Binc's USD 100 rule (the History's spend against it). */
+  remaining_usd?: number | null; assumption?: string; blocked?: string
 }
-export interface ImportOpts { /** the network volume the pods and the pull use; it becomes the default volume */ volume_id?: string; /** shot -> card (a GPU key); a shot without one takes the pool */ cards?: Record<string, string>; shots?: string[]; run_workflows?: boolean; max_pods?: number; cost_cap_usd?: number; approved_by?: string }
+export interface ImportOpts { /** the network volume the pods and the pull use; it becomes the default volume */ volume_id?: string; /** shot -> card (a GPU key); a shot without one takes the pool */ cards?: Record<string, string>; shots?: string[]; run_workflows?: boolean; max_pods?: number; cost_cap_usd?: number; approved_by?: string
+  /** `volume`: the round already sits on `volume_id` and is run in place (ADR-044). Default: a BH round, pulled first. */ source?: string
+  /** Refused on a volume source (guard a): Binc's rule, nothing on the volume is overwritten. Accepted by nothing; named so a caller that sends it gets a clear error. */ replace?: boolean; overwrite?: boolean }
 
 /** The price per hour of the card chosen for each shot that has one (a card we cannot price is left out: the pull's price stands in). */
 async function cardPrices(shots: string[], o: ImportOpts): Promise<Record<string, number | null>> {
@@ -153,6 +173,8 @@ async function cardPrices(shots: string[], o: ImportOpts): Promise<Record<string
 }
 /** What importing the round would do and cost, before it does anything. */
 export async function planImport(round: string, o: ImportOpts = {}): Promise<ImportPlan> {
+  if (o.source === 'volume') return planVolumeImport(round, o)
+  if (o.source && o.source !== 'panama-s3') throw new CoreError(400, `Unknown source "${o.source}": use panama-s3 (BH) or volume.`)
   for (const [shot, card] of Object.entries(o.cards ?? {})) if (card && card !== gpus.AUTO && !gpus.GPUS[card]) throw new CoreError(400, `Unknown card "${card}" for ${shot}: use a key from list_gpus.`)
   const cfg = mounts.load()
   const [all, p] = await Promise.all([deps.shotsOf(round), deps.planPull(round, o.shots)])   // both read the round's listing (shared), the pull plan also asks RunPod
@@ -167,11 +189,82 @@ export async function planImport(round: string, o: ImportOpts = {}): Promise<Imp
   return { round, shots, price_per_hour: p.price_per_hour, pull_hours: Math.round(pullH * 100) / 100, est_total_usd: est, max_pods: max, cost_cap_usd: cap, cap_enabled: capOn, over_cap: cap != null && est != null && est > cap }
 }
 
+// ----- a round that already sits on a volume (ADR-044): run in place, never pulled, never written -----
+
+/** Guard (a): a volume source never offers or accepts Replace / overwrite. Binc: nothing is renamed, moved, overwritten or deleted. */
+function refuseOverwrite(o: ImportOpts) {
+  if (o.replace || o.overwrite) throw new CoreError(400, 'A volume round is run in place and never overwritten: there is no Replace for a volume source (Binc: nothing is overwritten, moved or deleted).')
+}
+const volumeIdOf = (o: ImportOpts) => (o.volume_id || volumeround.defaultVolumeId()).trim()
+
+/** What running a volume round's shots would do and cost, before it does anything: the shots (locked ones listed and refused when asked for), the graphs as the Workflows panel names them, and the estimate against the caps. Reads the volume's listing only. */
+export async function planVolumeImport(round: string, o: ImportOpts = {}): Promise<ImportPlan> {
+  refuseOverwrite(o)
+  for (const [shot, card] of Object.entries(o.cards ?? {})) if (card && card !== gpus.AUTO && !gpus.GPUS[card]) throw new CoreError(400, `Unknown card "${card}" for ${shot}: use a key from list_gpus.`)
+  const volumeId = volumeIdOf(o)
+  if (!volumeId) throw new CoreError(400, 'No network volume: pick the volume the round sits on (volume_id).')
+  const cfg = mounts.load()
+  const info = await deps.describeVolumeRound(volumeId, round)
+  const locked = new Set(info.locked)
+  const asked = o.shots?.length ? o.shots : null
+  if (asked) for (const s of asked) if (!info.shots.includes(s)) throw new CoreError(404, `${round} on ${volumeId} has no shot ${s} (has: ${info.shots.join(', ')}).`)
+  const refused = asked ? asked.filter((s) => locked.has(s)) : []
+  const shots = (asked ?? info.shots).filter((s) => !locked.has(s))
+  const graphsBy: Record<string, number> = {}
+  for (const s of shots) graphsBy[s] = (info.by_shot[s] ?? []).filter((g) => !volumeround.isLockedPath(g)).length
+  const graphs = Object.values(graphsBy).reduce((a, b) => a + b, 0)
+  const med = deps.runSeconds()
+  const secs = med.seconds ?? volumeround.DEFAULT_SECONDS_PER_GRAPH
+  const poolPrice = await deps.cardPrice(poolGpu()).catch(() => null)
+  const prices = await cardPrices(shots, o)
+  const est = poolPrice == null && shots.some((s) => prices[s] == null) ? null : Math.round(shots.reduce((a, s) => a + graphsBy[s] * (secs / 3600) * ((prices[s] ?? poolPrice) as number), 0) * 100) / 100
+  const capOn = cfg.import_cap_enabled
+  const max = capOn ? (o.max_pods ?? cfg.import_max_pods) : (o.max_pods ?? null)
+  const cap = capOn ? (o.cost_cap_usd ?? cfg.import_cost_cap_usd) : (o.cost_cap_usd ?? null)
+  const remaining = deps.remainingUsd()
+  const limit = [cap, remaining].filter((x): x is number => x != null).reduce<number | null>((a, x) => (a == null ? x : Math.min(a, x)), null)
+  const over = limit != null && est != null && est > limit
+  const assumption = `${graphs} graph(s) x ${secs} s each (${med.seconds != null ? `the median of ${med.samples} run(s) in the History` : `no run in the History: the default ${volumeround.DEFAULT_SECONDS_PER_GRAPH} s`}) x the pod's hourly price (${poolPrice != null ? `$${poolPrice}/h for the pool card ${poolGpu()}` : 'the pool card has no price'}; a card chosen for a shot is priced at its own).`
+  const blocked = refused.length ? `${refused.join(', ')} ${refused.length === 1 ? 'is' : 'are'} locked (client-approved, or under 04_GRAPH): listed for reference, never run (Binc's rules).` : over ? `The estimate $${est} passes the ${cap != null && est! > cap ? `cap $${cap}` : `USD ${remaining} left of the agent spend cap`}: raise the cap on purpose, or choose fewer shots.` : est == null ? 'The pool card has no price: choose a card for the shots.' : undefined
+  return { round, shots, price_per_hour: poolPrice, pull_hours: 0, est_total_usd: est, max_pods: max, cost_cap_usd: cap, cap_enabled: capOn, over_cap: over,
+    source: 'volume', volume_id: volumeId, graphs, graphs_by_shot: graphsBy, seconds_per_graph: secs, samples: med.samples, locked: info.locked, refused, remaining_usd: remaining, assumption, ...(blocked ? { blocked } : {}) }
+}
+
+/** Queue a volume round: NO pull (nothing is copied, nothing on the volume is touched); one run task per shot, with the shot's graph paths as the Workflows panel names them. Guards (b) locked shots and (c) the cap are enforced here, before anything starts. */
+async function importVolumeRound(round: string, o: ImportOpts): Promise<ImportRec> {
+  refuseOverwrite(o)
+  const by = (o.approved_by || '').trim()
+  if (!by) throw new CoreError(400, 'An import spends money on pods: say who approves it (approved_by).')
+  if (o.run_workflows === false) throw new CoreError(400, 'A volume round is already where the pods mount it: importing it means running its shots, so there is nothing to do without run_workflows.')
+  const volumeId = volumeIdOf(o)
+  const plan = await planVolumeImport(round, o)
+  if (plan.refused?.length) throw new CoreError(403, `Refused: ${plan.blocked}`)   // guard (b)
+  if (!plan.shots.length) throw new CoreError(404, `No shots to run in ${round}${plan.locked?.length ? ` (${plan.locked.join(', ')} ${plan.locked.length === 1 ? 'is' : 'are'} locked)` : ''}.`)
+  if (plan.est_total_usd == null) throw new CoreError(400, plan.blocked || 'The cost cannot be estimated: choose a card with a price.')
+  if (plan.over_cap) throw new CoreError(402, `Refused: ${plan.blocked}`)   // guard (c)
+  await deps.ensureVolume(volumeId)
+  const q = state()
+  if (q.imports.some((i) => i.round === round && i.state === 'active')) throw new CoreError(409, `${round} is already being imported: see the queue.`)
+  const info = await deps.describeVolumeRound(volumeId, round)
+  const imp: ImportRec = { id: newId('imp'), round, approved_by: by, created_at: deps.now().toISOString(), state: 'active', max_pods: plan.max_pods, cost_cap_usd: plan.cost_cap_usd, cap_enabled: plan.cap_enabled, est_total_usd: plan.est_total_usd, spent_usd: 0, started_pods: [], shots: [...plan.shots], price_per_hour: plan.price_per_hour,
+    source: 'volume', volume_id: volumeId, graphs: plan.graphs, seconds_per_graph: plan.seconds_per_graph }
+  q.imports.push(imp)
+  const prices = await cardPrices(plan.shots, o)
+  for (const shot of plan.shots) {
+    const graphs = (info.by_shot[shot] ?? []).filter((g) => !volumeround.isLockedPath(g) && !info.locked.includes(shot))   // paths relative to workflows/, as the pod's panel names them
+    q.tasks.push({ id: newId('t'), import_id: imp.id, round, shot, kind: 'run', state: 'waiting', depends_on: [], pod_id: null, pod_name: null, graphs, ...(o.cards?.[shot] ? { gpu: o.cards[shot], price: prices[shot] ?? null } : {}) })
+  }
+  history.record({ kind: 'change', area: 'import', action: 'queued a volume round', what: `${round} on ${volumeId}`, detail: `${plan.shots.length} shot(s), ${plan.graphs} graph(s), est $${plan.est_total_usd}; run in place, nothing copied or written`, approved_by: by } as never)
+  save(); start()
+  return imp
+}
+
 let seq = 0
 const newId = (p: string) => `${p}-${deps.now().getTime().toString(36)}-${(seq++).toString(36)}`
 
 /** Queue the import: one pull, one run per shot. `approved_by` is the one approval for everything it starts. */
 export async function importRound(round: string, o: ImportOpts = {}): Promise<ImportRec> {
+  if (o.source === 'volume') return importVolumeRound(round, o)
   const by = (o.approved_by || '').trim()
   if (!by) throw new CoreError(400, 'An import spends money on pods: say who approves it (approved_by).')
   await deps.ensureVolume(o.volume_id)   // before any pod is created: a missing volume fails here, loudly, not in each pull
@@ -196,11 +289,12 @@ export async function importRounds(items: RoundItem[], o: Omit<ImportOpts, 'shot
   if (!(o.approved_by || '').trim()) throw new CoreError(400, 'An import spends money on pods: say who approves it (approved_by).')
   const names = items.map((i) => i.round)
   if (new Set(names).size !== names.length) throw new CoreError(400, 'A round is listed twice.')
-  await deps.ensureVolume(o.volume_id)
-  o = { ...o, volume_id: undefined }   // done once for all the rounds
+  if (o.source === 'volume') refuseOverwrite(o)
+  await deps.ensureVolume(o.source === 'volume' ? volumeIdOf(o) : o.volume_id)
+  o = { ...o, ...(o.source === 'volume' ? { volume_id: volumeIdOf(o) } : { volume_id: undefined }) }   // done once for all the rounds (a volume round keeps its volume: it is where the round sits)
   const each = o.cost_cap_usd != null ? Math.round((o.cost_cap_usd / items.length) * 100) / 100 : undefined
   const opts = (i: RoundItem): ImportOpts => ({ ...o, shots: i.shots, cards: i.cards, ...(each != null ? { cost_cap_usd: each } : {}), ...(i.max_pods != null ? { max_pods: i.max_pods } : {}) })
-  for (const i of items) { const p = await planImport(i.round, opts(i)); if (!p.shots.length) throw new CoreError(404, `No shots found in ${i.round}.`); if (state().imports.some((x) => x.round === i.round && x.state === 'active')) throw new CoreError(409, `${i.round} is already being imported: see the queue.`) }
+  for (const i of items) { const p = await planImport(i.round, opts(i)); if (p.refused?.length) throw new CoreError(403, `Refused: ${p.blocked}`); if (p.source === 'volume' && p.over_cap) throw new CoreError(402, `Refused: ${p.blocked}`); if (!p.shots.length) throw new CoreError(404, `No shots found in ${i.round}.`); if (state().imports.some((x) => x.round === i.round && x.state === 'active')) throw new CoreError(409, `${i.round} is already being imported: see the queue.`) }
   const out: ImportRec[] = []
   for (const i of items) out.push(await importRound(i.round, opts(i)))
   return out

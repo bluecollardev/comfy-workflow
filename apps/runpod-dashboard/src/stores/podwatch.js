@@ -5,6 +5,7 @@ import { t } from '../i18n'
 import { usePodsStore } from './pods'
 import { errorText, useToastStore } from './toast'
 
+const GIVE_UP_H = 12           // the core's default give-up (podwatch.ts DEFAULT_GIVE_UP_H): shown in the Retry Later choice, never changed from here
 const EVERY_MIN = 2            // the default the core uses (every_s 120): the page offers no other
 const POLL_MS = 6000
 const RECENT_MS = 10 * 60_000   // a finished watch stays on screen this long, so the person sees what came of it
@@ -20,6 +21,8 @@ export const usePodWatchStore = defineStore('podwatch', () => {
   const recent = computed(() => watches.value.filter((w) => w.state !== 'waiting' && w.finished_at && Date.now() - Date.parse(w.finished_at) < RECENT_MS))
   /** The waiting resume watch of a pod, if there is one. */
   const forPod = (podId) => waiting.value.find((w) => w.kind === 'resume' && w.pod_id === podId) || null
+  /** The waits to make a NEW pod like this one (Retry Later > Another GPU): by the pod they were made from, or, for one saved before that was kept, by the name they carry (<this pod's name>-<card>). */
+  const likeFor = (pod) => waiting.value.filter((w) => w.kind === 'create' && (w.from_pod_id ? w.from_pod_id === pod.id : !!pod.name && String(w.name || '').startsWith(`${pod.name}-`)))
 
   async function refresh() {
     try {
@@ -38,6 +41,13 @@ export const usePodWatchStore = defineStore('podwatch', () => {
     if (r.ok) { usePodsStore().hostFull = null; await refresh() }
     return r
   }
+  /** Keep trying to create a NEW pod like this one on another card in the same datacenter. The old pod is not touched: there is no delete anywhere in this path. */
+  async function retryLikeLater(podId, gpu, gpuName, dc) {
+    let text = null
+    const r = await toast.run(t('pod.retryLater'), () => podsAPI.createLikeWhenFree(podId, gpu, {}), { ok: t('toast.retryLaterLikeSet', { gpu: gpuName, dc: dc || '', n: EVERY_MIN }), onError: (m) => (text = m) })
+    if (r.ok) { usePodsStore().hostFull = null; await refresh() }
+    return { ...r, text: text || (r.error ? errorText(r.error) : null) }
+  }
   /** Keep trying to create the pod of this form when no card is free. */
   async function retryCreateLater(payload) {
     let text = null
@@ -50,5 +60,5 @@ export const usePodWatchStore = defineStore('podwatch', () => {
     await refresh()
     return r
   }
-  return { watches, waiting, recent, forPod, refresh, watch, stop, retryResumeLater, retryCreateLater, cancel, EVERY_MIN }
+  return { watches, waiting, recent, forPod, likeFor, refresh, watch, stop, retryResumeLater, retryLikeLater, retryCreateLater, cancel, EVERY_MIN, GIVE_UP_H }
 })

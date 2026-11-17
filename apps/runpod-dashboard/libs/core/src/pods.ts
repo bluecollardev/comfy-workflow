@@ -7,6 +7,7 @@
 import { CoreError, bad } from './errors.js'
 import * as gpus from './gpus.js'
 import * as idle from './idle.js'
+import * as outputruns from './outputruns.js'
 import * as mounts from './mounts.js'
 import * as podconfigs from './podconfigs.js'
 import * as podmodels from './podmodels.js'
@@ -55,6 +56,7 @@ export interface PodStatus {
   round?: string            // the delivery round this pod is in (podrounds, ADR-039); none = unassigned
   shot?: string             // the shot it works on within the round: free text or one of the round's shots
   runpod_name?: string      // RunPod's own name, when we show a different one of ours (podnames)
+  volume_id?: string        // the network volume it mounts: its outputs live there, so every pod on the volume lists the same saved runs (outputruns)
   datacenter?: string       // where it runs (the machine's datacenter); the pod list groups by it
   port_mismatch?: boolean   // the pod does not expose the port its image serves ComfyUI on; only Recreate fixes it
 }
@@ -219,7 +221,7 @@ export function toStatus(p: rp.RawPod): PodStatus {
     gpu: p.machine?.gpuDisplayName || String(p.gpuCount ?? '?'), vram: gpus.vram(p.machine?.gpuDisplayName || '') || 24,
     uptime_seconds: uptime, web_ui_url: running ? idle.proxyUrl(p.id, webPortOf(p.ports)) : null,
     ssh_command: `ssh root@${p.id}.proxy.runpod.io`, idle_stop_minutes: idle.entry(p.id)?.minutes ?? 0, comfy_ready: null,
-    custom_config: podconfigs.has(p.id), ...roundOf(p.id), image: p.imageName || undefined, datacenter: p.machine?.dataCenterId || undefined,
+    custom_config: podconfigs.has(p.id), ...roundOf(p.id), image: p.imageName || undefined, datacenter: p.machine?.dataCenterId || undefined, ...(p.networkVolumeId ? { volume_id: p.networkVolumeId } : {}),
     port_mismatch: (p.imageName || '') === PREBUILT_IMAGE && !/3001\/http/.test(p.ports || ''),
     console_url: consoleUrl(p.id), status_text: p.lastStatusChange || p.desiredStatus || '',
   }
@@ -344,7 +346,7 @@ export async function deleteRound(round: string): Promise<{ round: string; pods_
 }
 /** The rounds that have pods: key, shown name and pod ids. */
 export const rounds = (): { round: string; label: string; pod_ids: string[] }[] => podrounds.byRound().map((r) => ({ ...r, label: podrounds.label(r.round) }))
-export async function stop(podId: string, client?: rp.RunPodClient) { if (isDry()) { const r = dry.stop(podId); void recordPod('stopped', podId); return r } await rp.stopPod(podId, client); void recordPod('stopped', podId, client); return { message: `Pod ${podId} stopped`, pod_id: podId } }
+export async function stop(podId: string, client?: rp.RunPodClient) { if (isDry()) { const r = dry.stop(podId); void recordPod('stopped', podId); return r } await outputruns.beforeStop(podId, client); await rp.stopPod(podId, client); void recordPod('stopped', podId, client); return { message: `Pod ${podId} stopped`, pod_id: podId } }
 /** "The host has no free GPU": RunPod's own words, from a resume. Not a missing pod, a rejected key or the request limit. */
 export const isHostFull = (e: unknown): boolean => { const x = e as { message?: string; status?: number }; return ![404, 401, 403, 429].includes(x?.status ?? 0) && (NO_STOCK.test(x?.message || '') || /host|unavailable|resources/i.test(x?.message || '')) }
 export async function resume(podId: string, client?: rp.RunPodClient, note?: string) {
@@ -388,7 +390,7 @@ export const runningIds = (client?: rp.RunPodClient) => async (): Promise<idle.R
   }
   return out
 }
-export const stopper = (client?: rp.RunPodClient) => async (id: string) => { if (isDry()) { dry.stop(id); return } await rp.stopPod(id, client) }
+export const stopper = (client?: rp.RunPodClient) => async (id: string) => { if (isDry()) { dry.stop(id); return } await outputruns.beforeStop(id, client); await rp.stopPod(id, client) }   // the idle watch's stop: record the pod's outputs first
 
 export interface PodDetails {
   id: string; name: string; status: string; status_text: string; cost_per_hr: number | null; cost_estimated?: boolean; cloud: string; datacenter: string
@@ -436,6 +438,28 @@ export async function logs(podId: string, opts: { tail?: number; since?: string;
   return rp.streamLogs(podId, opts, onEvent, signal, client)
 }
 
+/** The create request that makes a pod like this one: its name, card choice, count, cloud, image, disk, idle stop and own configuration
+ *  (the network volume, its datacenter and the environment come from that configuration). Shared by Recreate and by Retry Later's "another GPU". */
+function requestFromPod(podId: string, d: PodDetails): CreatePodRequest {
+  const key = gpuKey(d.gpu)
+  return {
+    name: d.name || 'pod', gpu: key in gpus.GPUS ? key : gpus.AUTO, gpu_count: d.gpu_count || 1,
+    instance_type: d.cloud === 'COMMUNITY' ? 'spot' : 'on-demand', image: d.image || 'configured', disk_gb: d.disk_gb || 20,
+    idle_stop_minutes: idle.entry(podId)?.minutes ?? null, apply_mounts: null, config: podconfigs.get(podId),
+  }
+}
+
+/** The request for a NEW pod like this one but on another card, in the same datacenter (Retry Later, ADR-042 section 19). It only builds a request:
+ *  nothing here, and nothing the watch does with it, deletes or stops the old pod. The name gets the card appended: the old pod keeps its name, and a
+ *  create watch that lost an answer looks a pod up by name, so a shared name would adopt the old pod. */
+export async function requestLike(podId: string, gpu: string, client?: rp.RunPodClient): Promise<CreatePodRequest> {
+  if (!(gpu in gpus.GPUS) || gpu === gpus.AUTO) throw bad(`Not a card this app runs: ${gpu}`)
+  const d = await details(podId, client)
+  const base = requestFromPod(podId, d)
+  const card = gpus.GPUS[gpu as keyof typeof gpus.GPUS].name
+  return { ...base, name: `${base.name}-${card.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '')}`, gpu, data_center_id: d.datacenter && d.datacenter !== 'local' ? d.datacenter : null }
+}
+
 /** RunPod pins a stopped pod to its host; when that host has no free GPU, Resume fails. Recreate makes a
  *  fresh pod with the same name, image, card choice, disk and idle stop on whatever host is free, and
  *  terminates the old one. With no per-pod volume nothing is lost; a network volume follows the new pod. */
@@ -455,12 +479,7 @@ export async function recreate(podId: string, client?: rp.RunPodClient): Promise
     return { ...fresh, name: alias || fresh.name, custom_config: !!own, ...(inRound ? { round: inRound } : {}) }
   }
   const d = await details(podId, client)
-  const key = gpuKey(d.gpu)
-  const req: CreatePodRequest = {
-    name: d.name || 'pod', gpu: key in gpus.GPUS ? key : gpus.AUTO, gpu_count: d.gpu_count || 1,
-    instance_type: d.cloud === 'COMMUNITY' ? 'spot' : 'on-demand', image: d.image || 'configured', disk_gb: d.disk_gb || 20,
-    idle_stop_minutes: idle.entry(podId)?.minutes ?? null, apply_mounts: null, config: podconfigs.get(podId),
-  }
+  const req = requestFromPod(podId, d)
   const alias = podnames.get(podId)   // our name for the pod goes to the new one
   const inRound = podrounds.get(podId), inShot = podrounds.getShot(podId)   // and so does its round and shot
   const fresh = await create(req, client)
@@ -569,6 +588,14 @@ export function createWhenFree(req: CreatePodRequest, opts: podwatch.WatchOpts =
   if (!req.name?.trim()) throw bad('A pod needs a name')
   return podwatch.watchCreate({ ...req } as unknown as Record<string, unknown>, wantLabel(req), opts)
 }
+/** Keep trying to CREATE a new pod like this one on `gpu` (a card key from the app's table) in the same datacenter, with the same volume, image and configuration, until a card is free.
+ *  The old pod is not touched: no delete, no stop, here or in the watch (it only ever calls create). */
+export async function createLikeWhenFree(podId: string, gpu: string, opts: podwatch.WatchOpts = {}, client?: rp.RunPodClient): Promise<podwatch.Watch> {
+  const req = await requestLike(podId, gpu, client)
+  const label = `Waiting for a free ${gpus.GPUS[gpu as keyof typeof gpus.GPUS].name}${req.data_center_id ? ` in ${req.data_center_id}` : ''}`
+  return podwatch.watchCreate({ ...req } as unknown as Record<string, unknown>, label, { ...opts, from_pod_id: podId })
+}
 export const watches = (): podwatch.Watch[] => podwatch.list()
+export const watchesFor = (podId: string, podName = ''): podwatch.Watch[] => podwatch.watchesFor(podId, podName)
 export const cancelWatch = (id: string): podwatch.Watch => podwatch.cancel(id)
 export const startWatches = (): void => podwatch.start()

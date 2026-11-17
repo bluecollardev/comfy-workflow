@@ -1,10 +1,8 @@
 <template>
-  <template v-if="ep.id === 'comfy-bridge'">
-    <BBadge v-if="kind === 'none'" variant="warning" class="fw-normal" :title="$t('mcp.noTargetHint')" data-testid="mcp-no-target"><i class="fa-solid fa-bullseye me-1"></i>{{ $t('mcp.noTarget') }}</BBadge>
-    <BBadge v-else-if="kind === 'pod'" variant="info" class="fw-normal" :title="url" data-testid="mcp-target-pod" :data-pod="pod.pod_id"><i class="fa-solid fa-cloud me-1"></i>{{ $t('mcp.targetPod', { name: pod.name }) }}</BBadge>
-    <BBadge v-else-if="kind === 'local'" variant="info" class="fw-normal" :title="url" data-testid="mcp-target-local"><i class="fa-solid fa-laptop me-1"></i>{{ $t('mcp.targetLocal') }}</BBadge>
-    <BBadge v-else variant="secondary" class="fw-normal" :title="url" data-testid="mcp-target-url-badge"><i class="fa-solid fa-link me-1"></i>{{ $t('mcp.targetCustomBadge') }}</BBadge>
-  </template>
+    <BBadge v-if="ep.id === 'comfy-bridge' && kind === 'none'" variant="warning" class="fw-normal" :title="$t('mcp.noTargetHint')" data-testid="mcp-no-target"><i class="fa-solid fa-bullseye me-1"></i>{{ $t('mcp.noTarget') }}</BBadge>
+    <BBadge v-else-if="ep.id === 'comfy-bridge' && kind === 'pod'" variant="info" class="fw-normal" :title="url" data-testid="mcp-target-pod" :data-pod="pod.pod_id"><i class="fa-solid fa-cloud me-1"></i>{{ $t('mcp.targetPod', { name: pod.name }) }}</BBadge>
+    <BBadge v-else-if="ep.id === 'comfy-bridge' && kind === 'local'" variant="info" class="fw-normal" :title="url" data-testid="mcp-target-local"><i class="fa-solid fa-laptop me-1"></i>{{ $t('mcp.targetLocal') }}</BBadge>
+    <BBadge v-else-if="ep.id === 'comfy-bridge'" variant="secondary" class="fw-normal" :title="url" data-testid="mcp-target-url-badge"><i class="fa-solid fa-link me-1"></i>{{ $t('mcp.targetCustomBadge') }}</BBadge>
 </template>
 
 <script setup>

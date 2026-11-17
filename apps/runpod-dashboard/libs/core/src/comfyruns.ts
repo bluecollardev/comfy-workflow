@@ -2,9 +2,11 @@
  * ComfyUI runs: what a pod's ComfyUI has run, read from the pod itself (GET /history and /queue), newest first.
  * Nothing is stored here: ComfyUI keeps its own history and loses it when the pod is recreated.
  */
+import { writtenFiles } from './writers.js'
 import { CoreError } from './errors.js'
 import * as pods from './pods.js'
 import * as rp from './runpod.js'
+import * as outputruns from './outputruns.js'
 
 export interface RunOutput { filename: string; type: string; subfolder: string }
 export interface ComfyRun {
@@ -29,7 +31,7 @@ export interface ErrorDetail { message: string; node_id: string | null; node_typ
 type Msg = [string, { timestamp?: number; exception_message?: string; [k: string]: unknown }?]
 interface Entry { prompt?: unknown[]; outputs?: Record<string, Record<string, unknown>>; status?: { status_str?: string; completed?: boolean; messages?: Msg[] } }
 
-function flatten(outputs: Entry['outputs']): RunOutput[] {
+function flatten(outputs: Entry['outputs'], api?: unknown): RunOutput[] {
   const out: RunOutput[] = []
   for (const node of Object.values(outputs || {})) {
     for (const v of Object.values(node || {})) {
@@ -37,6 +39,7 @@ function flatten(outputs: Entry['outputs']): RunOutput[] {
       for (const f of v) if (f && typeof f === 'object' && typeof (f as RunOutput).filename === 'string') out.push({ filename: (f as RunOutput).filename, type: (f as RunOutput).type || 'output', subfolder: (f as RunOutput).subfolder || '' })
     }
   }
+  for (const w of writtenFiles(outputs, api)) if (!out.some((f) => f.filename === w.filename && f.subfolder === w.subfolder)) out.push({ filename: w.filename, type: 'output', subfolder: w.subfolder })   // a writer that reports only its first file and a count (writers.ts)
   return out
 }
 
@@ -73,7 +76,7 @@ function fromEntry(id: string, e: Entry): ComfyRun {
     prompt_id: id, status,
     started_at: typeof start === 'number' ? new Date(start).toISOString() : null,
     duration_s: typeof start === 'number' && typeof end === 'number' ? Math.round((end - start)) / 1000 : null,
-    outputs: flatten(e.outputs),
+    outputs: flatten(e.outputs, e.prompt?.[2]),
     messages: msgs.filter((m) => Array.isArray(m) && typeof m[0] === 'string').map((m) => ({ type: m[0], ts: toIso(m[1]?.timestamp), data: slim(m[1]) })),
   }
   const wf = (e.prompt?.[3] as { pod_manager?: { workflow?: unknown } } | undefined)?.pod_manager?.workflow
@@ -88,6 +91,13 @@ async function getJson(url: string, fetchFn: typeof fetch): Promise<unknown> {
   const r = await fetchFn(url, { signal: AbortSignal.timeout(15_000) })
   if (r.status !== 200) throw new CoreError(502, `ComfyUI answered HTTP ${r.status} for ${url}`)
   return r.json()
+}
+
+/** A pod's finished runs read straight from its ComfyUI /history (no RunPod call), for the saved-outputs record before a stop. */
+export async function finishedRuns(base: string, fetchFn: typeof fetch = fetch, signal?: AbortSignal): Promise<ComfyRun[]> {
+  const r = await fetchFn(`${base}/history?max_items=50`, { signal: signal ?? AbortSignal.timeout(8000) })
+  if (r.status !== 200) throw new CoreError(502, `ComfyUI answered HTTP ${r.status} for ${base}/history`)
+  return Object.entries(((await r.json()) || {}) as Record<string, Entry>).map(([id, e]) => fromEntry(id, e))
 }
 
 /** The runs on a pod's ComfyUI, newest first: queued and running ones (from /queue) then finished ones (from /history). */
@@ -111,6 +121,7 @@ export async function runs(podId: string, client?: rp.RunPodClient, fetchFn: typ
   let rate: number | null = null
   try { const raw = await rp.getPod(podId, client); rate = typeof raw?.costPerHr === 'number' && raw.costPerHr > 0 ? raw.costPerHr : null } catch { /* no price: no estimate */ }
   const priced = (r: ComfyRun): ComfyRun => ({ ...r, cost_estimate: rate !== null && r.duration_s !== null ? Math.round((r.duration_s / 3600) * rate * 1_000_000) / 1_000_000 : null })
+  outputruns.record({ pod_id: podId, pod_name: pod.name, volume_id: pod.volume_id, datacenter: pod.datacenter }, done)   // saved outputs: what this read saw outlives the pod
   return [...live.filter((r) => !seen.has(r.prompt_id)), ...done].map(priced)
 }
 

@@ -21,7 +21,9 @@ export type OpName = 'copy' | 'link' | 'verify' | 'note' | 'placeholder'
 export type OpKind = 'input' | 'workflow' | 'model' | 'node-pack' | 'reference' | 'manifest'
 export interface Op { op: OpName; kind: OpKind; from?: string; to?: string; bytes?: number; sha256?: string; note?: string }
 export interface Finding { level: 'info' | 'warn' | 'problem'; text: string; path?: string }
-export interface AdapterInfo { id: string; name: string; version: number; builtin: boolean; file: string; sha256: string; error?: string
+/** What an adapter reads (ADR-043/044): a delivery package (`shot-pack`, the default) or a round of per-shot graphs (`round`). Shown as a chip. */
+export type AdapterKind = 'shot-pack' | 'round'
+export interface AdapterInfo { id: string; name: string; version: number; kind: AdapterKind; builtin: boolean; file: string; sha256: string; error?: string
   /** A built-in whose file in the adapters folder is used instead of the shipped one (an override, ADR-009): the shipped file is `original` and is never touched. */
   modified?: boolean; original?: string }
 export interface PlanSummary { copies: number; links: number; notes: number; bytes: number; by_kind: Record<string, { files: number; bytes: number }> }
@@ -65,26 +67,27 @@ export function spec(): string {
 /** Whether this Node can fence a child with --permission (22.13+ and Electron's Node). */
 export const fenceSupported = (): boolean => process.allowedNodeEnvironmentFlags.has('--permission')
 
-interface Ran { ok: boolean; error?: string; id?: string; name?: string; version?: number; result?: unknown }
+interface Ran { ok: boolean; error?: string; id?: string; name?: string; version?: number; kind?: string; result?: unknown }
 
 /** Run the runner on one adapter file, fenced where the Node allows it. */
-async function runAdapter(file: string, action: 'info' | 'detect' | 'plan', source: string | null, options: unknown = {}): Promise<{ out: Ran; fenced: boolean }> {
+async function runAdapter(file: string, action: 'info' | 'detect' | 'plan' | 'describe', source: string | null, options: unknown = {}, stdin?: string): Promise<{ out: Ran; fenced: boolean }> {
   const runner = join(runtimeDir(), 'adapter-runner.mjs')
   const real = realpathSync(file)
   const root = source ? realpathSync(source) : null
   const fenced = fenceSupported()
   const args = [
     ...(fenced ? ['--permission', `--allow-fs-read=${runner}`, `--allow-fs-read=${real}`, ...(root ? [`--allow-fs-read=${root}`] : [])] : []),
-    runner, real, action, ...(root ? [root, JSON.stringify(options ?? {})] : []),
+    runner, real, action, ...(root ? [root, JSON.stringify(options ?? {})] : action === 'describe' ? ['-', JSON.stringify(options ?? {})] : []),
   ]
   const env = { ...process.env, ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}) }
   return new Promise((ok) => {
-    const child = spawn(process.execPath, args, { env, stdio: ['ignore', 'pipe', 'pipe'], cwd: root || dirname(real) })
+    const child = spawn(process.execPath, args, { env, stdio: [stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] as ['ignore' | 'pipe', 'pipe', 'pipe'], cwd: root || dirname(real) })
+    if (stdin !== undefined) { child.stdin!.on('error', () => { /* the child ended early: its answer says why */ }); child.stdin!.end(stdin) }
     let out = '', err = '', size = 0, done = false
     const finish = (r: Ran) => { if (!done) { done = true; clearTimeout(timer); ok({ out: r, fenced }) } }
     const timer = setTimeout(() => { child.kill('SIGKILL'); finish({ ok: false, error: `the adapter took longer than ${TIMEOUT_MS / 1000}s and was stopped` }) }, TIMEOUT_MS)
-    child.stdout.on('data', (c) => { size += c.length; if (size > MAX_OUTPUT) { child.kill('SIGKILL'); finish({ ok: false, error: 'the adapter returned too much output' }) } else out += c })
-    child.stderr.on('data', (c) => { if (err.length < 4000) err += c })
+    child.stdout!.on('data', (c) => { size += c.length; if (size > MAX_OUTPUT) { child.kill('SIGKILL'); finish({ ok: false, error: 'the adapter returned too much output' }) } else out += c })
+    child.stderr!.on('data', (c) => { if (err.length < 4000) err += c })
     child.on('error', (e) => finish({ ok: false, error: e.message }))
     child.on('close', () => {
       const line = out.trim().split('\n').pop() || ''
@@ -113,13 +116,13 @@ export async function list(): Promise<AdapterInfo[]> {
     const over = users.find((f) => basename(f, '.mjs') === id)
     const file = over || shipped
     const { out } = await runAdapter(file, 'info', null)
-    rows.push({ id, name: out.name || id, version: out.version ?? 1, builtin: true, file, sha256: await sha256File(file), ...(over ? { modified: true, original: shipped } : {}), ...(out.ok ? {} : { error: out.error }) })
+    rows.push({ id, name: out.name || id, version: out.version ?? 1, kind: out.kind === 'round' ? 'round' : 'shot-pack', builtin: true, file, sha256: await sha256File(file), ...(over ? { modified: true, original: shipped } : {}), ...(out.ok ? {} : { error: out.error }) })
   }
   for (const file of users) {
     const id = basename(file, '.mjs')
     if (builtinIds.has(id)) continue
     const { out } = await runAdapter(file, 'info', null)
-    rows.push({ id, name: out.name || id, version: out.version ?? 1, builtin: false, file, sha256: await sha256File(file), ...(out.ok ? {} : { error: out.error }) })
+    rows.push({ id, name: out.name || id, version: out.version ?? 1, kind: out.kind === 'round' ? 'round' : 'shot-pack', builtin: false, file, sha256: await sha256File(file), ...(out.ok ? {} : { error: out.error }) })
   }
   return rows
 }
@@ -166,6 +169,7 @@ export default {
   id: '${id}',
   name: '${name || id}',
   version: 1,
+  kind: 'shot-pack',   // 'shot-pack' (a delivery package) or 'round' (a round of per-shot graphs): shown as a chip
 
   async detect(root, ctx) {
     // e.g. return { match: (await ctx.exists('MANIFEST.json')) ? 1 : 0, evidence: ['MANIFEST.json'] }
@@ -450,6 +454,8 @@ export function validateSource(text: string, id?: string): string[] {
     if (id && m[1] !== id) errs.push(`the id is "${m[1]}" but it must be "${id}"`)
   }
   if (!/\bname\s*:\s*['"`]/.test(text)) errs.push("there is no `name: '...'` (a string)")
+  const km = /^ {1,2}kind\s*:\s*['"`]([^'"`]*)['"`]/m.exec(text.slice(Math.max(0, text.search(/export\s+default/))))   // the adapter's own kind: a top-level key of the exported object (a literal defined before it, or op kinds deeper, do not count)
+  if (km && !['shot-pack', 'round'].includes(km[1])) errs.push(`the kind "${km[1]}" must be 'shot-pack' or 'round'`)
   for (const fn of ['detect', 'plan']) if (!new RegExp(`\\b${fn}\\s*[(:]`).test(text)) errs.push(`there is no ${fn}(root, ctx) function`)
   if (!hasDocHeader(text)) errs.push('there is no documentation header: a comment block before `export default` saying what it does, what it detects, what it maps where, what it leaves in place, what it assumes and its limits')
   const banned: [RegExp, string][] = [
@@ -581,6 +587,27 @@ export async function plan(sourceDir: string, adapterId?: string, options: Recor
   const r = (out.result || {}) as { ops?: unknown; findings?: unknown }
   const ops = validateOps(r.ops)
   return { ...(origin ? { origin } : {}), adapter: { id: chosen.id, name: chosen.name, version: chosen.version, builtin: chosen.builtin }, source: dir, ops, findings: validateFindings(r.findings), summary: summarise(ops), fenced }
+}
+
+// ----- describing a round from a listing (ADR-044) -----
+
+export interface RoundGraph { path: string; shot: string; variant: string; bytes: number; locked: boolean }
+export interface RoundDescription { kind: 'round'; round: string; shots: string[]; variants: string[]; graphs: RoundGraph[]; locked: string[]; findings: Finding[]; adapter: string }
+
+/** What a round adapter says a round is, from a LISTING of it (`[{path, bytes}]`, paths relative to the round folder), not a folder: no network, no writes, fenced like `plan`. The default adapter is the built-in `brynley-rounds-layout`. */
+export async function describeRound(listing: { path: string; bytes: number }[], opts: { round: string; adapter?: string }): Promise<RoundDescription> {
+  const id = opts.adapter || 'brynley-rounds-layout'
+  const all = await list()
+  const chosen = all.find((a) => a.id === id)
+  if (!chosen) throw bad(`no adapter ${id}; one of ${all.map((a) => a.id).join(', ')}`)
+  if (chosen.error) throw bad(`${id} failed to load: ${chosen.error}`)
+  if (chosen.kind !== 'round') throw bad(`${id} is a ${chosen.kind} adapter: describing a round needs a round adapter`)
+  const { out } = await runAdapter(chosen.file, 'describe', null, { round: opts.round }, JSON.stringify(listing))
+  if (!out.ok) throw bad(`${id}: ${out.error}`)
+  const r = (out.result || {}) as Record<string, unknown>
+  const strs = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
+  const graphs = (Array.isArray(r.graphs) ? r.graphs : []).filter((g): g is Record<string, unknown> => !!g && typeof (g as { path?: unknown }).path === 'string').map((g) => ({ path: String(g.path), shot: String(g.shot ?? ''), variant: String(g.variant ?? ''), bytes: Number(g.bytes) || 0, locked: g.locked === true }))
+  return { kind: 'round', round: typeof r.round === 'string' && r.round ? r.round : opts.round, shots: strs(r.shots), variants: strs(r.variants), graphs, locked: strs(r.locked), findings: validateFindings(r.findings), adapter: id }
 }
 
 // ----- applying a plan -----

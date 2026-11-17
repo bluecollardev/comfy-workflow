@@ -42,11 +42,23 @@ const HEADER = `/**
 const OK_ADAPTER = (ops = '[]') => `${HEADER}export default { id: 'mine', name: 'Mine', version: 1, async detect() { return { match: 1, evidence: ['x'] } }, async plan() { return { ops: ${ops}, findings: [] } } }`
 
 describe('adapters', () => {
-  it('lists the two built-ins, with their code hash, and none of yours until you add them', async () => {
+  it('lists the four built-ins, with their code hash, and none of yours until you add them', async () => {
     const rows = await im.list()
-    expect(rows.map((r) => r.id)).toEqual(['comfy-shared', 'panama-imax-redux'])
+    expect(rows.map((r) => r.id)).toEqual(['brynley-rounds-layout', 'brynley-rounds', 'comfy-shared', 'panama-imax-redux'])
     expect(rows.every((r) => r.builtin && !r.error && /^[0-9a-f]{64}$/.test(r.sha256))).toBe(true)
   }, 20000)
+
+  it('says what each adapter reads (a chip in the list): the two package adapters are shot packs, the rounds adapter is a round, yours default to a shot pack; a bad kind is refused', async () => {
+    expect(Object.fromEntries((await im.list()).map((r) => [r.id, r.kind]))).toEqual({ 'brynley-rounds': 'round', 'brynley-rounds-layout': 'round', 'comfy-shared': 'shot-pack', 'panama-imax-redux': 'shot-pack' })
+    const text = im.template('mine', 'Mine')
+    expect(text).toMatch(/^ {2}kind: 'shot-pack'/m)   // a new adapter starts as a shot pack
+    expect(im.validateSource(text, 'mine').filter((e) => /kind/.test(e))).toEqual([])
+    expect(im.validateSource(text.replace("kind: 'shot-pack'", "kind: 'bogus'"), 'mine')).toEqual(expect.arrayContaining([expect.stringMatching(/kind "bogus" must be 'shot-pack' or 'round'/)]))
+    await im.save('mine', text.replace("kind: 'shot-pack'", "kind: 'round'"))
+    expect((await im.list()).find((r) => r.id === 'mine')).toMatchObject({ builtin: false, kind: 'round' })
+    await im.save('plain', text.replace(/^ {2}kind:.*\n/m, '').replace("id: 'mine'", "id: 'plain'"))   // no kind at all: a shot pack
+    expect((await im.list()).find((r) => r.id === 'plain')).toMatchObject({ kind: 'shot-pack' })
+  }, 30000)
 
   it('runs yours as soon as it is saved (no approval step), always fenced, and picks up an edit on the next call', async () => {
     const src = join(dir, 'src'); put(src, 'a.txt', 'a')
@@ -145,6 +157,34 @@ describe('the delivery package adapter', () => {
     const r = await im.apply(p, { target })
     expect(r.ok).toBe(false); expect(r.counts['hash-mismatch']).toBe(1); expect(r.counts.copied).toBe(4)
     expect(existsSync(join(target, 'workflows/panama-imax-redux/brynley-comfy-2026-10-20/shotA-graph-v01.json'))).toBe(false)
+  }, 30000)
+})
+
+/** ADR-043: the adapter for Brynley's rounds ships with the app: <round>/<shot>/<shot>__<variant>__<round>.json onto workflows/<round>/<shot>/. */
+describe("the Brynley rounds adapter (built in)", () => {
+  const round = (base: string) => {
+    const root = join(base, 'proxy_v005')
+    put(root, 'archival-080/archival-080__a__proxy_v005.json', '{"nodes":[]}')
+    put(root, 'archival-080/archival-080__b__proxy_v005.json', '{"nodes":[]}')
+    put(root, 'archival-080/preview.mp4', 'not a graph')
+    put(root, 'cgi-042/cgi-042__main__proxy_v005.json', '{"nodes":[]}')
+    put(root, '_scripts/build.py', 'print(1)')
+    return root
+  }
+  it('is a built-in (no override file needed) and recognises a round folder, which the other two do not', async () => {
+    const root = round(dir)
+    const d = await im.detect(root)
+    expect(d[0]).toMatchObject({ id: 'brynley-rounds' }); expect(d[0].match).toBeGreaterThan(0.9)
+    expect(d.filter((x) => x.id !== 'brynley-rounds').every((x) => x.match === 0)).toBe(true)
+    expect((await im.list()).find((r) => r.id === 'brynley-rounds')).toMatchObject({ builtin: true })
+  }, 30000)
+  it('maps each graph to workflows/<round>/<shot>/ with the name kept, notes what is not a graph, and flags the locked shot', async () => {
+    const p = await im.plan(round(dir), 'brynley-rounds')
+    const to = p.ops.filter((o) => o.op === 'copy').map((o) => o.to).sort()
+    expect(to).toEqual(['workflows/proxy_v005/archival-080/archival-080__a__proxy_v005.json', 'workflows/proxy_v005/archival-080/archival-080__b__proxy_v005.json', 'workflows/proxy_v005/cgi-042/cgi-042__main__proxy_v005.json'])
+    expect(p.ops.filter((o) => o.op === 'note').map((o) => o.from).sort()).toEqual(['_scripts', 'archival-080/preview.mp4'])   // not graphs, not shots: left in place
+    expect(p.findings.some((f) => f.level === 'warn' && /cgi-042 is a locked/.test(f.text))).toBe(true)   // imported for reference, never edited or run (Binc's rules)
+    expect(p.findings.some((f) => /3 graphs planned/.test(f.text))).toBe(true)
   }, 30000)
 })
 
@@ -338,7 +378,7 @@ describe('managing your adapters', () => {
   it('deletes yours, refuses a built-in, and says when there is none', async () => {
     await im.save('mine', OK_ADAPTER())
     expect(im.remove('mine')).toEqual({ id: 'mine' })
-    expect((await im.list()).map((a) => a.id)).toEqual(['comfy-shared', 'panama-imax-redux'])
+    expect((await im.list()).map((a) => a.id)).toEqual(['brynley-rounds-layout', 'brynley-rounds', 'comfy-shared', 'panama-imax-redux'])
     expect(existsSync(join(adaptersDir(), 'mine.mjs'))).toBe(false)
     expect(() => im.remove('comfy-shared')).toThrow(/built-in/)
     expect(() => im.remove('mine')).toThrow(/no adapter mine/)
@@ -413,12 +453,12 @@ describe('the Studio\'s files: built-in overrides, prompts, history, names, the 
     const row = await im.save('comfy-shared', text)
     expect(row).toMatchObject({ id: 'comfy-shared', builtin: true, modified: true, name: 'Mine, edited' })
     expect(row.original).toBe(shipped); expect(row.file).toBe(join(adaptersDir(), 'comfy-shared.mjs'))
-    expect((await im.list()).map((a) => a.id)).toEqual(['comfy-shared', 'panama-imax-redux'])   // one row, not two
+    expect((await im.list()).map((a) => a.id)).toEqual(['brynley-rounds-layout', 'brynley-rounds', 'comfy-shared', 'panama-imax-redux'])   // one row, not two
     const src = im.source('comfy-shared')
     expect(src).toMatchObject({ builtin: true, modified: true, text }); expect(src.original).toBe(before)
     expect(readFileSync(shipped, 'utf8')).toBe(before)
     expect(im.remove('comfy-shared')).toEqual({ id: 'comfy-shared', reset: true })
-    expect((await im.list())[0]).toMatchObject({ builtin: true, name: 'A ComfyUI-Shared folder' }); expect((await im.list())[0].modified).toBeUndefined()
+    expect((await im.list()).find((a) => a.id === 'comfy-shared')).toMatchObject({ builtin: true, name: 'A ComfyUI-Shared folder' }); expect((await im.list()).find((a) => a.id === 'comfy-shared').modified).toBeUndefined()
     expect(() => im.remove('comfy-shared')).toThrow(/has not been modified/)
   }, 30000)
 
@@ -459,7 +499,7 @@ describe('the Studio\'s files: built-in overrides, prompts, history, names, the 
     expect(im.validateSource(bare, 'bare')).toEqual([expect.stringContaining('no documentation header')])
     expect(im.validateSource('// short\n' + bare, 'bare')).toEqual([expect.stringContaining('no documentation header')])   // a comment is not documentation until it says something
     expect(im.validateSource(OK_ADAPTER(), 'mine')).toEqual([])
-    for (const id of ['comfy-shared', 'panama-imax-redux']) expect(im.validateSource(im.source(id).text, id), id).toEqual([])
+    for (const id of ['brynley-rounds', 'brynley-rounds-layout', 'comfy-shared', 'panama-imax-redux']) expect(im.validateSource(im.source(id).text, id), id).toEqual([])
     expect(im.validateSource(im.template('new-one'), 'new-one')).toEqual([])
     const doc = '/**\n * Rewritten header. What it does: it maps nothing, on purpose. Detects: nothing. Maps: nothing. Leaves in place: everything. Needs: nothing. Limits: none.\n */'
     const out = im.withDocHeader(OK_ADAPTER(), doc)

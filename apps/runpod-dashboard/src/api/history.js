@@ -8,7 +8,10 @@ const ipc = core && {
   list: (kind, limit) => core.invoke('history', 'list', [kind, limit]),
   spend: () => core.invoke('history', 'spend'),
   runs: (podId) => core.invoke('history', 'runs', [podId]),
+  saved: (podId, volumeId) => core.invoke('history', 'saved', [{ ...(podId ? { pod_id: podId } : {}), ...(volumeId ? { volume_id: volumeId } : {}) }]),
   export: (format, what) => core.invoke('history', 'export', [{ format, what }]),
+  outputSources: (ctx) => core.invoke('history', 'outputSources', [ctx || {}]),
+  listOutputs: (ctx, o) => core.invoke('history', 'listOutputs', [ctx || {}, o || {}]),
   logs: (podId, level, lines) => core.invoke('history', 'logs', [podId, { level: LEVEL[level] || 'all', lines }]),
 }
 const http = {
@@ -16,6 +19,12 @@ const http = {
   async spend() { const { data } = await axios.get(`${API_BASE}/history/spend`); return data },
   async export(format, what) { const { data } = await axios.get(`${API_BASE}/history/export`, { params: { format, what } }); return data },
   async runs(podId) { const { data } = await axios.get(`${API_BASE}/history/runs`, { params: { pod_id: podId } }); return data },
+  /** The saved runs (libs/core/src/outputruns.ts): what runs wrote, kept past a pod stop; newest first, narrowed to a pod and/or the network volume. */
+  async saved(podId, volumeId) { const { data } = await axios.get(`${API_BASE}/history/saved`, { params: { pod_id: podId, volume_id: volumeId } }); return data },
+  /** Which output sources can answer (docs/ADR-045): [{ id, name, hint, ok, reason }]. */
+  async outputSources(ctx) { const { data } = await axios.get(`${API_BASE}/history/output-sources`, { params: ctx || {} }); return data },
+  /** The output sources merged (or one `source`): { sources, runs, folders, prefix, capped, total, volume_id }; `prefix` browses the volume's comfy-shared/output/. */
+  async listOutputs(ctx, o) { const { data } = await axios.get(`${API_BASE}/history/outputs`, { params: { ...(ctx || {}), source: o?.source, prefix: o?.prefix, fresh: o?.fresh ? 1 : undefined } }); return data },
   /** ComfyUI's own server log of a pod: { entries: [{ ts, level: 'error'|'warning'|'info', text }] (newest last), truncated }. */
   async logs(podId, level, lines) { const { data } = await axios.get(`${API_BASE}/history/logs`, { params: { pod_id: podId, level: LEVEL[level] || 'all', lines } }); return data },
 }

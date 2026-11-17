@@ -122,6 +122,26 @@ describe('resume watch', () => {
 
 describe('create watch', () => {
   const REQ = { name: 'CanalV2-lores-v003-a-v27', gpu: 'a100', data_center_id: 'EU-RO-1' }
+  it('watchesFor: the waits on a pod\'s card are its resume watch and the creates made like it, by id or by the name a watch saved earlier carries (the rule the window and the MCP share)', () => {
+    const mk = (over) => ({ id: over.id, kind: 'create', state: 'waiting', name: 'x', label: 'l', every_s: 120, created_at: '', next_at: '', give_up_at: '', attempts: 0, ...over })
+    const ws = [mk({ id: 'r', kind: 'resume', pod_id: 'p1', name: 'Pod-1' }), mk({ id: 'by-id', name: 'whatever', from_pod_id: 'p1' }), mk({ id: 'by-name', name: 'Pod-1-A100-PCIe' }), mk({ id: 'other', name: 'Pod-2-RTX', from_pod_id: 'p2' }), mk({ id: 'r2', kind: 'resume', pod_id: 'p2', name: 'Pod-2' }), mk({ id: 'prefix-trap', name: 'Pod-10-RTX' })]
+    expect(podwatch.watchesFor('p1', 'Pod-1', ws).map((w) => w.id)).toEqual(['r', 'by-id', 'by-name'])
+    expect(podwatch.watchesFor('p1', '', ws).map((w) => w.id)).toEqual(['r', 'by-id'])   // a pod whose name is unknown: only the id rules
+    expect(podwatch.watchesFor('p2', 'Pod-2', ws).map((w) => w.id)).toEqual(['other', 'r2'])   // a from_pod_id wins over the name rule; 'Pod-10-RTX' is not 'Pod-1-...'
+  })
+  it('a create made like another pod remembers that pod, and a second wait for the same pod is refused (two cards would make two pods)', () => {
+    fake({})
+    const a = podwatch.watchCreate({ ...REQ, name: 'old-pod-A100-PCIe' }, 'Waiting for a free A100 PCIe in EU-RO-1', { every_s: 60, from_pod_id: 'old-id' })
+    expect(a).toMatchObject({ kind: 'create', from_pod_id: 'old-id' })
+    expect(() => podwatch.watchCreate({ ...REQ, name: 'old-pod-RTX-PRO-4000' }, 'Waiting for a free RTX PRO 4000 in EU-RO-1', { every_s: 60, from_pod_id: 'old-id' })).toThrow(/Already waiting to make a pod like old-id .*cancel that watch first/)
+    expect(podwatch.list().filter((w) => w.state === 'waiting')).toHaveLength(1)
+    // another pod's wait, and a plain create with no source pod, are not blocked
+    expect(() => podwatch.watchCreate({ ...REQ, name: 'other-pod-RTX' }, 'x', { every_s: 60, from_pod_id: 'other-id' })).not.toThrow()
+    expect(() => podwatch.watchCreate({ ...REQ, name: 'plain' }, 'x', { every_s: 60 })).not.toThrow()
+    // after the first is cancelled the same pod can choose again
+    podwatch.cancel(a.id)
+    expect(() => podwatch.watchCreate({ ...REQ, name: 'old-pod-RTX-PRO-4000' }, 'y', { every_s: 60, from_pod_id: 'old-id' })).not.toThrow()
+  })
   it('sends the same request again until a card is free, then makes exactly one pod', async () => {
     const s = fake({ create: (n) => { if (n < 3) throw noCard() } })
     const w = podwatch.watchCreate(REQ, 'Waiting for a free A100 SXM in EU-RO-1', { every_s: 60 })

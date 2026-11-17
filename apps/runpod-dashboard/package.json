@@ -23,7 +23,7 @@
     "mcp": "node mcp/server.mjs",
     "mcp:bridge": "node mcp/comfy-bridge.mjs",
     "mcp:test": "npm run core:build && npm run mcp:bundle && node --test mcp/server.test.mjs mcp/comfy-bridge.test.mjs mcp/bundle.test.mjs mcp/host.test.mjs",
-    "test": "npm run core:test && npm run mcp:test && npm run ipc:test",
+    "test": "npm run core:test && npm run mcp:test && npm run ipc:test && npm run dpx:test",
     "electron:build:mac": "npm run build && electron-builder --mac",
     "electron:build:win": "npm run build && electron-builder --win",
     "electron:build:linux": "npm run build && electron-builder --linux",
@@ -31,6 +31,7 @@
     "test:live": "RUNPOD_LIVE=1 playwright test --config playwright.electron.config.js live.spec.js",
     "cli": "node cli/index.mjs",
     "ipc:test": "node --test electron/core.test.mjs",
+    "dpx:test": "node --test src/utils/dpx.test.mjs src/utils/playback.test.mjs src/utils/thumbs.test.mjs",
     "mcp:bundle": "esbuild mcp/server.mjs mcp/comfy-bridge.mjs --bundle --platform=node --format=cjs --target=node22 --define:__MCP_BUNDLE__=true --define:import.meta.url=undefined --log-level=warning --outdir=mcp/dist --out-extension:.js=.cjs"
   },
   "dependencies": {
