@@ -3,6 +3,11 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## v1.3.1 (tag v1.3.1, 2026-11-17)
+
+- **The Volume source works in the real app:** the window asked the core for `library.status`, `library.round` and `library.preflight` (the status, the round description and Check models of a volume), but the core's call table never had them, so the Volume source answered "Restart the app to list volumes" however often the app was restarted; `library.list` also dropped the volume options (`volume_id`, `fresh`). The table now has all three and passes the options through. The tests used a fake API, so they could not see it (NEXT-STEPS: a check that every call the page makes is in the table).
+- **DPX previews load on a click again:** automatic loading as tiles scrolled into view (v1.3.0) caused too much loading. A preview already made still shows at once from the cache; every other tile has Load preview, and the header has Load all previews (`AUTO_CAP` is `0`).
+
 ## v1.3.0 (tag v1.3.0, 2026-11-17)
 
 - **DPX previews load as you scroll** (ADR-045): every tile on screen loads its first-frame preview by itself, one at a time; a tile that scrolls away is cancelled and one that scrolls in starts, and a finished preview is cached and never fetched again. The old cap of six automatic previews per open is off by default (`AUTO_CAP` is `Infinity`; a number brings it back, with the Load preview buttons).

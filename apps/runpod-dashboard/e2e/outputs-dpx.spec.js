@@ -200,13 +200,13 @@ const seqRun = (i, n = 3) => ({ prompt_id: `seq${i}0000-1111`, workflow: `rounds
   outputs: Array.from({ length: n }, (_, k) => ({ filename: `s${i}_proxy.${String(k).padStart(4, '0')}.dpx`, subfolder: `seqs/s${i}`, type: 'output' })) })
 const flat = () => makeDpx({ width: 16, height: 8, bits: 16, fn: () => 0 })
 
-test('DPX previews: every visible tile shows its first frame by itself, one at a time, once; reopening uses the cache; an empty first frame says so', async ({ page, api }) => {
-  api.state.history.runs['pod-aaaaaaaa'] = [{ ...seqRun(1), outputs: [1, 2, 3, 4, 5, 6, 7, 8, 9].flatMap((i) => seqRun(i).outputs) }]   // nine sequences in one run: all on screen at once
+test('DPX previews: nothing loads by itself, even scrolling; a click loads one tile once; Load all loads the rest one at a time; reopening uses the cache; an empty first frame says so', async ({ page, api }) => {
+  api.state.history.runs['pod-aaaaaaaa'] = [{ ...seqRun(1), outputs: Array.from({ length: 30 }, (_, i) => seqRun(i + 1).outputs).flat() }]   // thirty sequences: some far below the fold
   const hits = {}
   let live = 0, peak = 0
   await page.context().route('**/view?*', async (r) => {
     const name = decodeURIComponent(/filename=([^&]+)/.exec(r.request().url())[1]); hits[name] = (hits[name] || 0) + 1
-    live++; peak = Math.max(peak, live); await new Promise((res) => setTimeout(res, 30)); live--
+    live++; peak = Math.max(peak, live); await new Promise((res) => setTimeout(res, 20)); live--
     const empty = name.startsWith('s2_')
     return r.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: empty ? flat() : dpx(0) })
   })
@@ -214,49 +214,27 @@ test('DPX previews: every visible tile shows its first frame by itself, one at a
   await page.goto('/')
   await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
   const m = page.getByTestId('pod-outputs-modal')
-  await expect(m.getByTestId('outputs-tile')).toHaveCount(9)   // one tile per sequence, unchanged
-  await expect.poll(() => Object.keys(hits).length, { timeout: 20000 }).toBe(9)   // all nine, with no click: scrolling or not, a tile on screen loads
-  await expect(m.getByTestId('outputs-dpx-thumb-empty')).toHaveCount(1)   // s2's first frame is flat: a badge, not a black square
-  await expect(m.getByTestId('outputs-dpx-thumb')).toHaveCount(8)
-  await expect(m.getByTestId('outputs-dpx-load-preview')).toHaveCount(0)   // nothing waits for a click
-  await expect(m.getByTestId('pod-outputs-load-previews')).toHaveCount(0)
-  expect(Object.keys(hits).every((n) => n.endsWith('.0000.dpx'))).toBe(true)   // only the first frame of each sequence
-  expect(Object.values(hits).every((n) => n === 1)).toBe(true)
-  expect(peak).toBe(1)   // one frame in flight at a time
-  // close and reopen: the eight already made come from the cache (IndexedDB), no new request for them
+  await expect(m.getByTestId('outputs-tile')).toHaveCount(30)
+  await expect(m.getByTestId('outputs-dpx-load-preview').first()).toBeVisible({ timeout: 15000 })   // every tile waits for a click
+  await m.getByTestId('outputs-tile').last().scrollIntoViewIfNeeded()   // scrolling to the end costs nothing
+  await page.waitForTimeout(800)
+  expect(Object.keys(hits)).toHaveLength(0)
+  // one click, one frame, once
+  await m.getByTestId('outputs-dpx-load-preview').first().click()
+  await expect.poll(() => Object.keys(hits).length, { timeout: 15000 }).toBe(1)
+  await expect(m.getByTestId('outputs-dpx-thumb').first()).toBeVisible({ timeout: 15000 })
+  expect(Object.keys(hits)[0].endsWith('.0000.dpx')).toBe(true)
+  // Load all: the rest, one frame at a time, each once (s2's first frame is flat: a badge, not a black square)
+  await m.getByTestId('pod-outputs-load-previews').click()
+  await expect.poll(() => Object.keys(hits).length, { timeout: 30000 }).toBe(30)
+  expect(peak).toBe(1); expect(Object.values(hits).every((n) => n === 1)).toBe(true)
+  await expect(m.getByTestId('outputs-dpx-thumb-empty')).toHaveCount(1)
+  // close and reopen: what was made comes from the cache with no new request
   const before = { ...hits }
   await page.keyboard.press('Escape')
   await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
-  await expect(m.getByTestId('outputs-dpx-thumb').first()).toBeVisible()
-  await expect.poll(async () => m.getByTestId('outputs-dpx-thumb').count()).toBe(8)
-  for (const n of Object.keys(before)) if (!n.startsWith('s2_')) expect(hits[n], n).toBe(before[n])   // the route was hit once across two opens
-})
-
-test('DPX previews: tiles below the fold load when they scroll into view, one at a time, and not before', async ({ page, api }) => {
-  const N = 30
-  api.state.history.runs['pod-aaaaaaaa'] = [{ ...seqRun(1), outputs: Array.from({ length: N }, (_, i) => seqRun(i + 1).outputs).flat() }]
-  const hits = {}
-  let live = 0, peak = 0
-  await page.context().route('**/view?*', async (r) => {
-    const name = decodeURIComponent(/filename=([^&]+)/.exec(r.request().url())[1]); hits[name] = (hits[name] || 0) + 1
-    live++; peak = Math.max(peak, live); await new Promise((res) => setTimeout(res, 20)); live--
-    return r.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: dpx(0) })
-  })
-  await page.addInitScript(() => { try { indexedDB.deleteDatabase('pod-manager-thumbs') } catch { /* none */ } })
-  await page.goto('/')
-  await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
-  const m = page.getByTestId('pod-outputs-modal')
-  await expect(m.getByTestId('outputs-tile')).toHaveCount(N)
-  await expect.poll(() => Object.keys(hits).length, { timeout: 20000 }).toBeGreaterThan(2)   // the tiles on screen load by themselves
-  await page.waitForTimeout(800)   // and the ones far below stay untouched
-  const firstScreen = Object.keys(hits).length
-  expect(firstScreen).toBeLessThan(N); expect(Object.keys(hits).some((n) => n.startsWith(`s${N}_`))).toBe(false)
-  await m.getByTestId('outputs-tile').last().scrollIntoViewIfNeeded()   // scroll to the end
-  await expect.poll(() => Object.keys(hits).some((n) => n.startsWith(`s${N}_`)), { timeout: 20000 }).toBe(true)   // the last tile loads without a click
-  await expect(m.getByTestId('outputs-dpx-thumb').last()).toBeVisible({ timeout: 20000 })
-  expect(Object.keys(hits).length).toBeGreaterThan(firstScreen)
-  expect(peak).toBe(1)
-  expect(Object.values(hits).every((n) => n === 1)).toBe(true)   // never fetched twice
+  await expect.poll(async () => m.getByTestId('outputs-dpx-thumb').count(), { timeout: 15000 }).toBe(29)
+  for (const n of Object.keys(before)) if (!n.startsWith('s2_')) expect(hits[n], n).toBe(before[n])
 })
 
 // A preview or a list never spins forever (docs/ADR-045): a visible end for every case.

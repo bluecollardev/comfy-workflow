@@ -195,9 +195,12 @@ const TABLE = {
     remove: (c, keys, all) => c.wantedmodels.remove(keys || [], !!all),
     load: (c, volumeId) => c.wantedmodels.loadMissing(volumeId || '', {}),
   },
-  library: {   // docs/ADR-044: where rounds come from (the BH bucket first); a source only lists
+  library: {   // docs/ADR-044: where rounds come from (the BH bucket first, a network volume second); a source only lists, read-only
     sources: (c) => c.library.sources(),
-    list: (c, sourceId) => c.library.list(sourceId || undefined),
+    status: (c, sourceId, opts) => c.library.status(sourceId || undefined, opts || {}),   // can this source be used now, and why not (a volume asks RunPod about its datacenter)
+    list: (c, sourceId, opts) => c.library.list(sourceId || undefined, opts || {}),   // opts: { volume_id, fresh }
+    round: (c, volumeId, round, opts) => c.library.round(volumeId || undefined, round, opts || {}),   // one round described by the round adapter
+    preflight: (c, volumeId, round, opts) => c.library.preflight(volumeId || undefined, round, opts || {}),   // one round's models checked against the volume's model list
   },
   panama: {   // docs/ADR-015: the exchange bucket as an import source
     status: (c) => c.panama.status(),

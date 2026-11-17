@@ -28,12 +28,17 @@ test('with a cap set (autoCap: 6) only the first 6 automatic requests load; the 
   assert.equal((await t.request('k7', {}, { manual: true })).status, 'ready'); assert.equal(fetched, 7)
   t.reset(); assert.equal((await t.request('k6', {})).status, 'ready')
 })
-test('by default there is no cap: every visible tile loads by itself, one at a time', async () => {
-  let fetched = 0, live = 0, peak = 0
-  const t = createThumbs({ cache: memCache(), produce: async () => { fetched++; live++; peak = Math.max(peak, live); await new Promise((r) => setTimeout(r, 2)); live--; return { url: 'data:x' } } })
-  const rs = await Promise.all(Array.from({ length: 12 }, (_, i) => t.request(`k${i}`, { url: `u${i}` })))
-  assert.deepEqual([...new Set(rs.map((r) => r.status))], ['ready']); assert.equal(fetched, 12); assert.equal(peak, 1)
-  assert.equal(AUTO_CAP, Infinity)
+test('by default nothing loads by itself: a cached tile shows at once, any other waits for a click, and a click loads it', async () => {
+  let fetched = 0
+  const cache = memCache(); await cache.set('k-cached', { url: 'data:cached' })
+  const t = createThumbs({ cache, produce: async () => { fetched++; return { url: 'data:x' } } })
+  assert.equal(AUTO_CAP, 0)
+  const hit = await t.request('k-cached', { url: 'u' })
+  assert.deepEqual([hit.status, hit.cached], ['ready', true]); assert.equal(fetched, 0)   // the cache is free
+  const rs = await Promise.all(Array.from({ length: 5 }, (_, i) => t.request(`k${i}`, { url: `u${i}` })))
+  assert.deepEqual([...new Set(rs.map((r) => r.status))], ['capped']); assert.equal(fetched, 0)   // nothing fetched without a click
+  const clicked = await t.request('k0', { url: 'u0' }, { manual: true })
+  assert.equal(clicked.status, 'ready'); assert.equal(fetched, 1)
 })
 
 test('a cache hit means no fetch and does not use a cap slot', async () => {
