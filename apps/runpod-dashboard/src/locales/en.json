@@ -500,6 +500,8 @@
       "cache": "Cache sequence",
       "cacheStop": "Stop caching",
       "cached": "{n} of {total} cached",
+      "streams": "Frames at once",
+      "streamsTitle": "How many frames are fetched at the same time while buffering. More is faster on a fast link, but each frame in flight is about 50 MB.",
       "cacheHint": "Frames are about 50 MB each over the pod's proxy, so playback is smooth only once they are cached (Play starts the caching by itself).",
       "tooLong": "Too long to cache whole: {n} of {total} frames fit in the {mb} MB cache; the others are fetched as the playhead reaches them.",
       "note": "A quick look: the values are shown as stored (not colour-managed) and scaled to fit. Use DJV to review the real picture."

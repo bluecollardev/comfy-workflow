@@ -75,3 +75,5 @@ A pod's Workflows panel holds **UI graphs** (nodes with positions and links; set
 7. Tests: `libs/core/tests/outputruns.test.ts`, the MCP test for `saved: true`, `e2e/outputs-saved.spec.js`.
 
 **Amendment 2026-11-17 (ADR-045):** the limit in point 6 no longer holds when the RunPod S3 keys are set: the Outputs button is enabled for any pod with a network volume, the gallery lists the volume's `comfy-shared/output/` by folder, and files open through `s3file://` with no pod running. See ADR-045. DPX sequence tiles also show a cached preview of the first frame (ADR-045, point 9).
+
+- **Buffering several frames at once (2026-11-17):** Lucas: 'can we buffer multiple frames at once?'. The DPX viewer's cache fetched two frames at a time; it now fetches 4 by default with a *Frames at once* choice (1, 2, 4, 6, 8, remembered in `dpx.viewer.streams`), and `createFrameLoader` has `setConcurrency`. The frame the playhead waits for still goes first in the queue; the rest are worked in order from the playhead. More streams are faster on a fast link and cost about 50 MB of memory per frame in flight.

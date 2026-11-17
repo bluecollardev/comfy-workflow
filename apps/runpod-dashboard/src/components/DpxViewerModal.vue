@@ -28,6 +28,9 @@
             <BButton variant="outline-warning" size="sm" data-testid="dpx-viewer-prev-problem" :disabled="!problemBefore" :title="$t('outputs.dpx.prevProblem')" @click="goTo(problemBefore.i)"><i class="fa-solid fa-angles-left"></i></BButton>
             <BButton variant="outline-warning" size="sm" data-testid="dpx-viewer-next-problem" :disabled="!problemAfter" :title="$t('outputs.dpx.nextProblem')" @click="goTo(problemAfter.i)"><i class="fa-solid fa-angles-right"></i></BButton>
           </template>
+          <label class="d-flex align-items-center gap-1 mb-0 text-body-secondary" :title="$t('outputs.dpx.streamsTitle')">{{ $t('outputs.dpx.streams') }}
+            <select v-model.number="streams" class="form-select form-select-sm w-auto py-0" data-testid="dpx-viewer-streams"><option v-for="n in STREAM_OPTIONS" :key="n" :value="n">{{ n }}</option></select>
+          </label>
           <span v-if="tooLong" class="text-warning" data-testid="dpx-viewer-cache-limit">{{ $t('outputs.dpx.tooLong', { n: cachedCount, total: frames.length, mb: CACHE_BYTES / 1048576 }) }}</span>
           <span v-else class="text-body-secondary">{{ $t('outputs.dpx.cacheHint') }}</span>
         </div>
@@ -66,6 +69,9 @@ import TransportBar from './TransportBar.vue'
 const props = defineProps({ frames: { type: Array, default: () => [] }, base: { type: String, default: '' } })
 const emit = defineEmits(['close', 'problems'])
 const CACHE_BYTES = 600 * 1048576
+/** How many frames are fetched at once while buffering (Lucas: 'can we buffer multiple frames at once?'): each is ~50 MB in flight, so 4 by default; the person can change it and it is remembered. */
+const STREAM_OPTIONS = [1, 2, 4, 6, 8]
+const streams = ref((() => { try { const v = Number(localStorage.getItem('dpx.viewer.streams')); return STREAM_OPTIONS.includes(v) ? v : 4 } catch { return 4 } })())
 const index = ref(0), canvas = ref(null)
 const loading = ref(false), shown = ref(false), drawn = ref(-1), error = ref(''), progress = ref({ got: 0, total: 0 })
 const playing = ref(false), fps = ref(24), loop = ref(true), buffering = ref(null)
@@ -78,7 +84,7 @@ const fullyCached = computed(() => cachedCount.value >= props.frames.length)
 
 // If the page's own fetch() of a podfile:// address fails (the scheme lacks its privilege), the frame is read once through the main process instead (core.files.read).
 const readViaApp = appReader(core)
-let loader = createFrameLoader({ concurrency: 2, maxWidth: 1920, fallback: readViaApp })   // never more than two requests to the pod at once
+let loader = createFrameLoader({ concurrency: streams.value, maxWidth: 1920, fallback: readViaApp })   // at most `streams` requests to the pod at once (default 4)
 let lru = frameCache(6), seq = new Map(), seqBytes = 0, cacheCtl = null, fgUrl = '', waitLoad = -1
 const bg = new Set()
 const player = createPlayback({ count: 0, fps: 24, loop: true, isCached: (i) => !!getFrame(i) })
@@ -158,7 +164,7 @@ async function show() {
 }
 function prefetch(i) { if (props.frames[i] && !getFrame(i)) fetchIndex(i, 0).catch(() => {}) }
 
-/** Cache the sequence: from the playhead on, wrapping, two workers; stops at the memory cap, on an error, or when told. */
+/** Cache the sequence: from the playhead on, wrapping, `streams` workers at once (default 4); stops at the memory cap, on an error, or when told. */
 async function startCache() {
   if (cacheCtl || !props.frames.length) return
   const ctl = (cacheCtl = { stop: false }); running.value = true; tooLong.value = false
@@ -173,7 +179,7 @@ async function startCache() {
       try { await fetchIndex(i, 0) } catch (e) { if (e?.name !== 'AbortError' && !ctl.stop) { error.value = errorText(e); ctl.stop = true } } finally { bg.delete(url) }
     }
   }
-  await Promise.all([worker(), worker()])
+  await Promise.all(Array.from({ length: streams.value }, () => worker()))
   if (cacheCtl === ctl) { running.value = false; cacheCtl = null }
 }
 function stopCache() {
@@ -210,6 +216,11 @@ function goTo(i) { pause(); const k = Math.min(props.frames.length - 1, Math.max
 
 watch(index, () => { if (props.frames.length) show() })
 watch(fps, (v) => player.setFps(v)); watch(loop, (v) => player.setLoop(v))
+watch(streams, (v) => {   // more or fewer frames at once: the loader changes its limit now, and a cache that is running restarts its workers (what is cached stays)
+  try { localStorage.setItem('dpx.viewer.streams', String(v)) } catch { /* storage blocked: it lasts this session */ }
+  loader.setConcurrency(v)
+  if (cacheCtl) { stopCache(); startCache() }
+})
 watch(() => props.frames, (fr) => {
   pause(); stopCache(); loader.abortAll(); lru = frameCache(6); seq = new Map(); seqBytes = 0; problems = new Map(); problemsVer.value++; curProblem.value = null; curStats.value = null; cachedCount.value = 0; cachedVer.value++; tooLong.value = false; fgUrl = ''; waitLoad = -1
   player.setCount(fr.length); player.seek(0); token++; shown.value = false; drawn.value = -1; error.value = ''; loading.value = false
