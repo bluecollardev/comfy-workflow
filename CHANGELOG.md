@@ -3,6 +3,10 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## Unreleased (2026-11-17, on `feature/outputs-file-counts`)
+
+- **Outputs: file counts follow the folder selection:** with *Just in `<folder>`* a run showed all of its files (for example "26 file(s)") although only some were in the folder. A run now keeps only the files in the folder, and says "12 of 26 file(s) in this folder"; the count line reads "n run(s) · 26 file(s) shown of 102 total". Zip all follows the selection. Not yet tested (unit tests for `narrowToFolder` are written, not run).
+
 ## v1.3.2 (tag v1.3.2, 2026-11-17)
 
 - **Outputs: view all, or just the folder you picked:** the volume browser's folder selection only listed the volume's own runs, and the pod's live and saved runs ignored it, so the list never seemed to filter. A *Show* switch (All outputs | Just in `<folder>`) now applies the folder to the pod's and the saved runs too (a run is in a folder when some file of it is in or under it), with a count ("n run(s) shown · m outside this folder hidden"). *All outputs* shows every run of the pod plus the volume folder listed (the whole volume is too big to list at once). The existing "Only runs of `<shot>`" checkbox stays. Not yet tested (a unit test for `inFolder` is written, not run).

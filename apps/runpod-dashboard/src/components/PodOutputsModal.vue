@@ -26,7 +26,7 @@
           <button type="button" class="btn btn-outline-light" :class="{ active: scope === 'all' }" data-testid="pod-outputs-scope-all" :title="$t('outputs.scopeAllTitle')" @click="scope = 'all'">{{ $t('outputs.scopeAll') }}</button>
           <button type="button" class="btn btn-outline-light" :class="{ active: scope === 'folder' }" data-testid="pod-outputs-scope-folder" :title="$t('outputs.scopeFolderTitle')" @click="scope = 'folder'">{{ vol.prefix ? $t('outputs.scopeFolder', { path: vol.prefix }) : $t('outputs.scopeFolderRoot') }}</button>
         </div>
-        <span class="text-body-secondary" data-testid="pod-outputs-scope-count">{{ $t('outputs.scopeCount', { n: all.length }) }}<template v-if="scope === 'folder' && hiddenByFolder"> · {{ $t('outputs.scopeHidden', { n: hiddenByFolder }) }}</template></span>
+        <span class="text-body-secondary" data-testid="pod-outputs-scope-count">{{ $t('outputs.scopeCount', { n: all.length, files: fileCount(all), total: fileCount(mergeWithVolume(shotRuns, vol.runs)) }) }}<template v-if="scope === 'folder' && hiddenByFolder"> · {{ $t('outputs.scopeHidden', { n: hiddenByFolder }) }}</template></span>
       </div>
       <div v-if="vol.loading" class="text-body-secondary small" data-testid="pod-outputs-volume-loading"><BSpinner small class="me-1" />{{ $t('outputs.volumeLoading', { path: `output/${vol.prefix}`.replace(/\/$/, '') }) }}</div>
       <div v-else>
@@ -52,7 +52,7 @@
         <span v-if="r.source === 'volume'" class="text-body-secondary ms-auto" data-testid="pod-outputs-volume-run">{{ $t('outputs.volumeRun', { when: r.started_at ? new Date(r.started_at).toLocaleString() : '?', files: r.files.length, size: sizeText(r.files.reduce((n, f) => n + (f.bytes || 0), 0)) }) }}</span>
         <span v-else class="text-body-secondary ms-auto">{{ $t('outputs.run', { when: new Date(r.started_at).toLocaleString(), s: r.duration_s ?? '?' }) }} · <span class="font-monospace">{{ r.prompt_id.slice(0, 8) }}</span></span>
       </div>
-      <OutputsGallery :files="r.files" :base="baseFor(r)" :scope="volumeId || pod.id" :volume-name="volumeName" :offline="!baseFor(r)" :zip-name="`${runName(r) || pod.name}-${idOf(r)}.zip`" />
+      <OutputsGallery :files="r.files" :total-files="r.totalFiles || 0" :base="baseFor(r)" :scope="volumeId || pod.id" :volume-name="volumeName" :offline="!baseFor(r)" :zip-name="`${runName(r) || pod.name}-${idOf(r)}.zip`" />
     </div>
   </BModal>
 </template>
@@ -64,7 +64,7 @@ import OutputsGallery from './OutputsGallery.vue'
 import { core } from '../api/bridge'
 import { historyAPI } from '../api/history'
 import { useUiStore } from '../stores/ui'
-import { viewUrl, runName, runsForShot, inFolder, volumeAsRuns, mergeWithVolume, s3Base, sizeText } from '../utils/outputs'
+import { viewUrl, runName, runsForShot, inFolder, narrowToFolder, volumeAsRuns, mergeWithVolume, s3Base, sizeText } from '../utils/outputs'
 import { errorText } from '../stores/toast'
 import { sharedThumbs, thumbTimeouts, withTimeout } from '../utils/thumbs'
 import { previewBus } from '../utils/thumbsBus'
@@ -79,11 +79,12 @@ const shot = computed(() => (props.pod.shot && props.pod.shot !== 'All Shots' ? 
 const onlyShot = ref(true)
 // The folder chosen in the volume browser narrows the pod's own and the saved runs too (Lucas: 'an option to view all or just in the folder selection'): scope 'folder' keeps the runs with files in it, 'all' shows every run of the pod and the volume folder listed.
 const scope = ref('folder')
-const inScope = (rs) => (scope.value === 'folder' && vol.prefix ? rs.filter((r) => inFolder(r, vol.prefix)) : rs)
+const inScope = (rs) => (scope.value === 'folder' && vol.prefix ? rs.map((r) => narrowToFolder(r, vol.prefix)).filter((r) => r.files.length) : rs)
 const shotRuns = computed(() => (shot.value && onlyShot.value ? runsForShot(props.runs, shot.value) : props.runs))
 const shown = computed(() => inScope(shotRuns.value))
 const hidden = computed(() => props.runs.length - shotRuns.value.length)
 const hiddenByFolder = computed(() => shotRuns.value.length - shown.value.length)
+const fileCount = (rs) => rs.reduce((n, r) => n + (r.files || []).length, 0)
 
 // The volume source: one prefix at a time (the whole tree takes minutes to list), starting in the pod's shot folder when there is one.
 const vol = reactive({ failed: false, restart: false, loaded: false, loading: false, ok: false, reason: '', keysMissing: false, runs: [], folders: [], prefix: '', capped: false, total: 0, shownCount: 0, note: '' })
