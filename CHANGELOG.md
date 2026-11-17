@@ -3,7 +3,7 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
-## Unreleased (2026-11-17, on `feature/outputs-auto-previews`)
+## v1.3.0 (tag v1.3.0, 2026-11-17)
 
 - **DPX previews load as you scroll** (ADR-045): every tile on screen loads its first-frame preview by itself, one at a time; a tile that scrolls away is cancelled and one that scrolls in starts, and a finished preview is cached and never fetched again. The old cap of six automatic previews per open is off by default (`AUTO_CAP` is `Infinity`; a number brings it back, with the Load preview buttons).
 
