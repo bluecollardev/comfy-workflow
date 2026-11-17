@@ -16,6 +16,10 @@
 4. **One codebase, no second runtime**: the Python API retired, the core in
    TypeScript, the merge gate green (`docs/ADR-005`).
 
+## Open from 2026-11-17 (v1.3.1 follow-up)
+
+0. **A test that the page and the core agree:** every `core.invoke('<ns>', '<method>')` in `src/api/` must be a key of the core's call table in `electron/core.cjs`. v1.3.1 fixed three missing `library` calls that the browser tests (fake API) and the IPC parity test (it checks the table against the MCP map, not the page against the table) could not see. A static test over both files would have caught it. Not yet written; v1.3.1 was released without running the tests, at Lucas's request.
+
 ## Open from 2026-11-17 (ADR-044, ADR-037 amendment)
 
 1. Run workflows window: the state and the card's **Running** button are built and tested (core `latest`, selection kept per pod, MCP `pod_id`); uncommitted on `feature/volumes-v2-fallback`, app not yet relaunched on it. Written, not yet built or tested (hold until Lucas says build): the split pane with progress, report and log, and `RunJob.log` (ADR-037 amendment, points 2 and 3); needs `core:build`, the tests (add core tests for the log lines and `started_at`, a browser test for the pane), and an app relaunch once no run is in flight (a relaunch drops the app's tracking of a running job). To build: an ETA in the header, and a job that survives an app restart with Reattach (point 4). After the MCP server restarts (`/mcp` reconnect), `run_workflows_job` takes `pod_id`.

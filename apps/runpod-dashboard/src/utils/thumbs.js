@@ -1,10 +1,10 @@
 // Previews of DPX sequences (docs/ADR-045, ADR-037): the FIRST frame of a sequence, decoded to about 320 px, kept as a small WebP/JPEG data URL in IndexedDB.
-// A frame is ~50 MB, so this is lazy and bounded: one sequence at a time, only tiles that are on screen load (a tile that scrolls away is cancelled, one that scrolls in starts), and a finished
+// A frame is ~50 MB, so this is lazy and bounded: one sequence at a time, only a click loads one (a tile that scrolls away while loading is cancelled), a preview already in the cache shows at once, and a finished
 // thumbnail is fetched once ever (volume + folder + first file, whatever address served it). Everything here is pure (the cache and the producer are passed in) except `idbBackend` and `produceDpxThumb`.
 import { DpxError, drawToCanvas, loadDpx, problemOfError } from './dpx.js'
 
-/** How many visible tiles may load by themselves per modal open. Unlimited by default (Lucas: 'when scrolling load previews automatically'): the one-at-a-time queue, the scroll-away cancel and the cache already bound the cost. A number turns the old cap back on: the rest wait for a click ('capped'). */
-export const AUTO_CAP = Infinity
+/** How many tiles may load by themselves per modal open: NONE (Lucas, 2026-11-17, after trying automatic loading: 'let's click the button, this causes too much loading'). A preview already in the cache still shows at once with no fetch; every other tile waits for a click on its Load preview button (or Load all previews in the modal header). A number or Infinity turns automatic loading back on. */
+export const AUTO_CAP = 0
 export const THUMB_WIDTH = 320
 
 /**
