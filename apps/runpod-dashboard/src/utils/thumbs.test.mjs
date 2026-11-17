@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createStore, createThumbs, memoryBackend, thumbKey } from './thumbs.js'
+import { AUTO_CAP, createStore, createThumbs, memoryBackend, thumbKey } from './thumbs.js'
 
 const memCache = () => { const m = new Map(); return { get: async (k) => m.get(k), set: async (k, v) => { m.set(k, v) }, m } }
 const gate = () => { let go; const p = new Promise((r) => { go = r }); return { p, go } }
@@ -20,13 +20,20 @@ test('runs one at a time', async () => {
   assert.deepEqual(rs.map((r) => r.status), ['ready', 'ready', 'ready']); assert.equal(peak, 1)
 })
 
-test('only the first 6 automatic requests load; the rest are capped until asked by a click', async () => {
+test('with a cap set (autoCap: 6) only the first 6 automatic requests load; the rest are capped until asked by a click', async () => {
   let fetched = 0
-  const t = createThumbs({ cache: memCache(), produce: async () => { fetched++; return { url: 'data:x' } } })
+  const t = createThumbs({ cache: memCache(), produce: async () => { fetched++; return { url: 'data:x' } }, autoCap: 6 })
   const rs = []; for (let i = 0; i < 8; i++) rs.push(await t.request(`k${i}`, {}))
   assert.deepEqual(rs.map((r) => r.status), ['ready', 'ready', 'ready', 'ready', 'ready', 'ready', 'capped', 'capped']); assert.equal(fetched, 6)
   assert.equal((await t.request('k7', {}, { manual: true })).status, 'ready'); assert.equal(fetched, 7)
   t.reset(); assert.equal((await t.request('k6', {})).status, 'ready')
+})
+test('by default there is no cap: every visible tile loads by itself, one at a time', async () => {
+  let fetched = 0, live = 0, peak = 0
+  const t = createThumbs({ cache: memCache(), produce: async () => { fetched++; live++; peak = Math.max(peak, live); await new Promise((r) => setTimeout(r, 2)); live--; return { url: 'data:x' } } })
+  const rs = await Promise.all(Array.from({ length: 12 }, (_, i) => t.request(`k${i}`, { url: `u${i}` })))
+  assert.deepEqual([...new Set(rs.map((r) => r.status))], ['ready']); assert.equal(fetched, 12); assert.equal(peak, 1)
+  assert.equal(AUTO_CAP, Infinity)
 })
 
 test('a cache hit means no fetch and does not use a cap slot', async () => {
