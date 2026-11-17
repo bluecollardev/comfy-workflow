@@ -163,51 +163,109 @@ async function datacenterPricesRaw(want: string[] | null, client?: RunPodClient,
   }))
 }
 
-/** RunPod's v1 REST API (rest.runpod.io/v1): network volumes. */
+/** RunPod's REST API for network volumes: v1 (rest.runpod.io/v1) first; when that host cannot be reached (DNS, refused
+ *  connection) the same call goes to v2 (api.runpod.io/v2/network-volumes), and v1 is not tried again for a few minutes. */
 export interface NetworkVolume { id: string; name: string; size: number; dataCenterId: string }
-async function restV1(path: string, client: RunPodClient = {}, init: RequestInit = {}): Promise<Response> {
+type RestVersion = 'v1' | 'v2'
+async function restVol(version: RestVersion, path: string, client: RunPodClient = {}, init: RequestInit = {}): Promise<Response> {
   const apiKey = client.apiKey || process.env.RUNPOD_API_KEY
   if (!apiKey) throw new CoreError(401, 'RUNPOD_API_KEY not set')
-  const base = client.baseUrl || process.env.RUNPOD_REST_BASE_URL || 'https://rest.runpod.io'
+  const base = version === 'v1' ? (client.baseUrl || process.env.RUNPOD_REST_BASE_URL || 'https://rest.runpod.io') : (client.baseUrl || process.env.RUNPOD_API_BASE_URL || 'https://api.runpod.io')
   if (!isWrite(init)) rl.guard()
-  const res = await (client.fetchFn || fetch)(`${base}/v1${path}`, { ...init, headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json', ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...(init.headers || {}) }, signal: init.signal ?? AbortSignal.timeout(30_000) })
-  if (res.status === 429) { let t = ''; try { const b = await res.clone().json() as { error?: string; message?: string }; t = b.error || b.message || '' } catch { /* no body */ } return limited(res, t || 'RunPod answered 429') }
+  const res = await (client.fetchFn || fetch)(`${base}/${version}${path}`, { ...init, headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json', ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...(init.headers || {}) }, signal: init.signal ?? AbortSignal.timeout(30_000) })
+  if (res.status === 429) { let t = ''; try { const b = await res.clone().json() as { error?: string; message?: string; detail?: string }; t = b.error || b.message || b.detail || '' } catch { /* no body */ } return limited(res, t || 'RunPod answered 429') }
   if (res.ok) rl.noteOk()
   return res
 }
 async function restError(res: Response, what: string): Promise<CoreError> {
   let detail = ''
-  try { const b = await res.json() as { error?: string; message?: string }; detail = b.error || b.message || '' } catch { /* no body */ }
+  try { const b = await res.json() as { error?: string; message?: string; detail?: string }; detail = b.error || b.message || b.detail || '' } catch { /* no body */ }
   return new CoreError(502, `RunPod answered ${res.status} ${what}${detail ? `: ${detail}` : ''}`)
 }
+
+/** The request never reached RunPod: the name does not resolve or the connection was refused. Safe to repeat on v2, even a write. */
+const UNREACHED = new Set(['ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'ENETUNREACH', 'EHOSTUNREACH'])
+export function hostUnreachable(e: unknown): boolean {
+  if (e instanceof CoreError) return false
+  const c = (e as { cause?: { code?: string } } | null)?.cause?.code
+  return !!c && UNREACHED.has(c)
+}
+const V1_RETRY_MS = 5 * 60_000
+let v1DownSince = 0
+/** Test hook: forget that v1 was unreachable. */
+export const resetVolumeApi = () => { v1DownSince = 0 }
+async function volumeApi<T>(client: RunPodClient, call: (v: RestVersion) => Promise<T>): Promise<T> {
+  if (v1DownSince && Date.now() - v1DownSince < V1_RETRY_MS) return call('v2')
+  try {
+    const out = await call('v1')
+    v1DownSince = 0
+    return out
+  } catch (e) {
+    if (!hostUnreachable(e)) throw e
+    v1DownSince = Date.now()
+    return call('v2')
+  }
+}
+interface V2Volume { id: string; name: string; size: number; dataCenter: string }
+const fromV2 = (v: V2Volume): NetworkVolume => ({ id: v.id, name: v.name, size: v.size, dataCenterId: v.dataCenter })
+
 async function networkVolumeRaw(id: string, client: RunPodClient = {}): Promise<NetworkVolume | null> {
-  const res = await restV1(`/networkvolumes/${encodeURIComponent(id)}`, client)
-  if (res.status === 404) return null
-  if (!res.ok) throw await restError(res, `for volume ${id}`)
-  return (await res.json()) as NetworkVolume
+  return volumeApi(client, async (v) => {
+    const res = await restVol(v, v === 'v1' ? `/networkvolumes/${encodeURIComponent(id)}` : `/network-volumes/${encodeURIComponent(id)}`, client)
+    if (res.status === 404) return null
+    if (!res.ok) throw await restError(res, `for volume ${id}`)
+    const body = await res.json()
+    return v === 'v1' ? body as NetworkVolume : fromV2(body as V2Volume)
+  })
 }
 async function listNetworkVolumesRaw(client: RunPodClient = {}): Promise<NetworkVolume[]> {
-  const res = await restV1('/networkvolumes', client)
-  if (!res.ok) throw await restError(res, 'listing network volumes')
-  const all = (await res.json()) as NetworkVolume[]
+  const all = await volumeApi(client, async (v) => {
+    if (v === 'v1') {
+      const res = await restVol('v1', '/networkvolumes', client)
+      if (!res.ok) throw await restError(res, 'listing network volumes')
+      return (await res.json()) as NetworkVolume[]
+    }
+    const out: NetworkVolume[] = []
+    let cursor: string | null = null
+    do {
+      const res = await restVol('v2', `/network-volumes${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`, client)
+      if (!res.ok) throw await restError(res, 'listing network volumes')
+      const page = await res.json() as { networkVolumes?: V2Volume[]; pagination?: { nextCursor?: string | null; hasNextPage?: boolean } }
+      out.push(...(page.networkVolumes || []).map(fromV2))
+      cursor = page.pagination?.hasNextPage ? page.pagination.nextCursor ?? null : null
+    } while (cursor)
+    return out
+  })
   if (useCache(client)) rl.rememberVolumes(all.map((v) => ({ id: v.id, name: v.name, size: v.size, dataCenterId: v.dataCenterId })))
   return all
 }
 export async function createNetworkVolume(input: { name: string; size: number; dataCenterId: string }, client: RunPodClient = {}): Promise<NetworkVolume> {
-  const res = await restV1('/networkvolumes', client, { method: 'POST', body: JSON.stringify(input) })
-  if (!res.ok) throw await restError(res, 'creating the network volume')
+  const out = await volumeApi(client, async (v) => {
+    const res = v === 'v1'
+      ? await restVol('v1', '/networkvolumes', client, { method: 'POST', body: JSON.stringify(input) })
+      : await restVol('v2', '/network-volumes', client, { method: 'POST', body: JSON.stringify({ name: input.name, size: input.size, dataCenter: input.dataCenterId }) })
+    if (!res.ok) throw await restError(res, 'creating the network volume')
+    const body = await res.json()
+    return v === 'v1' ? body as NetworkVolume : fromV2(body as V2Volume)
+  })
   rl.invalidate('|volume')
-  return (await res.json()) as NetworkVolume
+  return out
 }
 export async function updateNetworkVolume(id: string, input: { name?: string; size?: number }, client: RunPodClient = {}): Promise<NetworkVolume> {
-  const res = await restV1(`/networkvolumes/${encodeURIComponent(id)}`, client, { method: 'PATCH', body: JSON.stringify(input) })
-  if (!res.ok) throw await restError(res, `updating volume ${id}`)
+  const out = await volumeApi(client, async (v) => {
+    const res = await restVol(v, v === 'v1' ? `/networkvolumes/${encodeURIComponent(id)}` : `/network-volumes/${encodeURIComponent(id)}`, client, { method: 'PATCH', body: JSON.stringify(input) })
+    if (!res.ok) throw await restError(res, `updating volume ${id}`)
+    const body = await res.json()
+    return v === 'v1' ? body as NetworkVolume : fromV2(body as V2Volume)
+  })
   rl.invalidate('|volume')
-  return (await res.json()) as NetworkVolume
+  return out
 }
 export async function deleteNetworkVolume(id: string, client: RunPodClient = {}): Promise<void> {
-  const res = await restV1(`/networkvolumes/${encodeURIComponent(id)}`, client, { method: 'DELETE' })
-  if (!res.ok && res.status !== 404) throw await restError(res, `deleting volume ${id}`)
+  await volumeApi(client, async (v) => {
+    const res = await restVol(v, v === 'v1' ? `/networkvolumes/${encodeURIComponent(id)}` : `/network-volumes/${encodeURIComponent(id)}`, client, { method: 'DELETE' })
+    if (!res.ok && res.status !== 404) throw await restError(res, `deleting volume ${id}`)
+  })
   rl.invalidate('|volume')
 }
 

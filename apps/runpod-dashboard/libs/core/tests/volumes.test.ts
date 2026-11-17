@@ -2,10 +2,11 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import * as mounts from '../src/mounts.js'
 import * as podconfigs from '../src/podconfigs.js'
 import * as volumes from '../src/volumes.js'
+import { resetVolumeApi } from '../src/runpod.js'
 import { scratch } from './helpers.js'
 
 let dir: string
-beforeEach(() => { dir = scratch() })
+beforeEach(() => { dir = scratch(); resetVolumeApi() })
 
 const fetchFn = (volumesOnAccount: unknown[], pods: unknown[]) => (async (url: string, init?: RequestInit) => {
   if (url.includes('/v1/networkvolumes') && (!init?.method || init.method === 'GET')) return new Response(JSON.stringify(volumesOnAccount))
@@ -67,5 +68,48 @@ describe('network volumes', () => {
     await expect(volumes.setShared('nope', o)).rejects.toThrow(/No network volume nope/)
     expect(await volumes.setShared('', o)).toEqual({ shared: null }); expect(mounts.load().shared_volume_id).toBe('')
     expect(await volumes.remove('v2', o)).toMatchObject({ removed: 'v2' })
+  })
+})
+
+describe('network volumes: v1 host unreachable, v2 takes over', () => {
+  const dnsDown = () => new TypeError('fetch failed', { cause: { code: 'ENOTFOUND' } })
+  const v2Volumes = [{ id: 'a1', name: 'work', size: 120, dataCenter: 'EU-RO-1', type: 'STANDARD' }, { id: 'b2', name: 'scratch', size: 50, dataCenter: 'CA-MTL-1', type: 'STANDARD' }]
+  const calls: string[] = []
+  const f = ((url: string, init?: RequestInit) => {
+    calls.push(`${init?.method || 'GET'} ${url}`)
+    if (url.startsWith('https://rest.runpod.io')) throw dnsDown()
+    if (url.includes('/graphql')) return Promise.resolve(new Response(JSON.stringify({ data: { myself: { pods: [] } } })))
+    if (url.includes('/v2/network-volumes') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('cursor=c2')) return Promise.resolve(new Response(JSON.stringify({ networkVolumes: [v2Volumes[1]], pagination: { nextCursor: null, hasNextPage: false } })))
+      return Promise.resolve(new Response(JSON.stringify({ networkVolumes: [v2Volumes[0]], pagination: { nextCursor: 'c2', hasNextPage: true } })))
+    }
+    if (url.endsWith('/v2/network-volumes') && init?.method === 'POST') return Promise.resolve(new Response(JSON.stringify({ id: 'n3', ...JSON.parse(String(init.body)), type: 'STANDARD' }), { status: 201 }))
+    if (init?.method === 'DELETE') return Promise.resolve(new Response(null, { status: 204 }))
+    return Promise.resolve(new Response('', { status: 404 }))
+  }) as unknown as typeof fetch
+  beforeEach(() => { calls.length = 0 })
+
+  it('lists every page from v2 and maps dataCenter to dataCenterId, then stays on v2', async () => {
+    mounts.save(mounts.defaults())
+    const list = await volumes.list({ fetchFn: f, apiKey: 'k' })
+    expect(list.map((v) => [v.id, v.datacenter]).sort()).toEqual([['a1', 'EU-RO-1'], ['b2', 'CA-MTL-1']])   // both pages, whatever the list's order
+    expect(calls.filter((c) => c.includes('rest.runpod.io'))).toHaveLength(1)
+    calls.length = 0
+    await volumes.list({ fetchFn: f, apiKey: 'k' })
+    expect(calls.some((c) => c.includes('rest.runpod.io'))).toBe(false)   // v1 is not tried again for a few minutes
+  })
+
+  it('creates on v2 with dataCenter, and deletes there', async () => {
+    mounts.save(mounts.defaults())
+    const v = await volumes.create({ name: 'new', size_gb: 60, datacenter: 'EU-RO-1' }, { fetchFn: f, apiKey: 'k' })
+    expect(v).toMatchObject({ id: 'n3', name: 'new', size_gb: 60 })
+    const post = calls.find((c) => c.startsWith('POST https://api.runpod.io/v2/network-volumes'))
+    expect(post).toBeTruthy()
+  })
+
+  it('does not fall back on an answer from RunPod (a 401 stays a 401)', async () => {
+    mounts.save(mounts.defaults())
+    const refused = (async (url: string) => url.includes('rest.runpod.io') ? new Response('{"error":"bad key"}', { status: 401 }) : new Response('{}', { status: 200 })) as unknown as typeof fetch
+    await expect(volumes.list({ fetchFn: refused, apiKey: 'k' })).rejects.toThrow(/401/)
   })
 })
