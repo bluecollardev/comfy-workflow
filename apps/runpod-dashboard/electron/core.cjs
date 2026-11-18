@@ -128,11 +128,24 @@ const TABLE = {
     approve: (c, podId, yes) => c.autosync.approve(podId, yes === true),
     dismiss: (c, podId) => c.autosync.dismiss(podId),
   },
+  sync: {   // docs/ADR-011 "Leaving folders out": the top-level folders of each push step, and the size of one on demand (the copy itself runs through core:sync:* below)
+    folders: (c, o) => c.syncfolders.folders(o || {}),
+    measure: (c, o) => c.syncfolders.measure(o || {}),
+    measureCancel: (c, id) => c.syncfolders.measureCancel(String(id || '')),
+  },
   syncs: {   // docs/ADR-046 "Sync explorer and logs": every sync run (manual and automatic), its log, and what the watchers do; all from memory except a finished run's log
     active: (c) => c.syncruns.registry.active(),
     recent: (c, podId, limit) => c.syncruns.registry.recent(podId || undefined, limit ? Number(limit) : 20),
     log: (c, runId, o) => c.syncruns.registry.log(String(runId || ''), o || {}),
     watch: (c) => c.autosync.watch(),
+  },
+  renders: {   // docs/ADR-048: DPX sequences rendered into mp4 proxies (on the pod, or on this PC), kept on the volume and on this PC
+    plan: (c, o) => c.renders.plan(o || {}),
+    start: (c, o) => c.renders.start(o || {}),
+    status: (c, jobId) => c.renders.status(jobId || undefined),
+    cancel: (c, jobId) => c.renders.cancel(String(jobId || '')),
+    proxies: (c, o) => c.renders.proxies(o || {}),
+    clearLocal: (c) => c.renders.clearLocal(),   // only files inside the mapped local output/.proxies
   },
   governance: {
     summary: (c) => c.governance.summary(),

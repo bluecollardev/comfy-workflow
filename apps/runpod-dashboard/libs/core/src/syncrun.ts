@@ -35,7 +35,7 @@ import { readdirSync } from 'node:fs'
 import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { bad } from './errors.js'
+import { CoreError, bad } from './errors.js'
 import * as idle from './idle.js'
 import * as mounts from './mounts.js'
 import * as podconfigs from './podconfigs.js'
@@ -44,6 +44,7 @@ import * as history from './history.js'
 import * as journal from './journal.js'
 import { registry } from './syncruns.js'
 import * as sync from './sync.js'
+import * as syncdelete from './syncdelete.js'
 import * as settings from './settings.js'
 import { volumeInfo } from './pods.js'
 import { SHARED_TEMP } from './paths.js'
@@ -54,6 +55,10 @@ export interface SyncRequest {
   pod_id: string; direction: 'push' | 'pull'; only?: string[]; plates?: boolean; approved_by?: string; skip_renders?: boolean; skip_tests?: boolean; existing?: sync.Existing
   /** A push of ComfyUI-Shared: which of SHARED_DIRS go up. Left out, the pod's own configuration decides (else the Default Configuration's `sync_shared`); the app's confirmation sends the choice shown. Anything else in the folder always goes. */
   shared?: string[]
+  /** Folders or files this push leaves out, for this run (rsync patterns relative to each step's local root: `/X/` the top-level folder, `X/` folders anywhere, `X` anything named X); added to the configuration's `sync_exclude`. Only ever removes things from a push. */
+  exclude?: string[]
+  /** A push with exclusions also REMOVES, before copying, what the patterns match on the volume (a targeted, guarded removal: never rsync --delete-excluded). Default: the configuration's `sync_exclude_delete`. Needs `approved_by` when anything would be removed. Not for a pull or a files list. */
+  delete_excluded?: boolean
   /** Only these files (docs/ADR-046): paths relative to the local ComfyUI-Shared root (`output/proxy_v004/a.dpx`), each inside the root (no `..`, not absolute, in one of SHARED_DIRS).
    *  Over SSH they become rsync `--files-from`, over the S3 transport one `aws s3 cp` each. Additive, never deletes, never the project tree or plates; with `paths`, a pull's `only` and a push's `plates` are ignored. */
   paths?: string[]
@@ -65,15 +70,18 @@ export interface SyncRequest {
   note?: string
 }
 export interface SyncEvent {
-  kind: 'plan' | 'listing' | 'totals' | 'step' | 'line' | 'file' | 'progress' | 'problem' | 'step-done' | 'done' | 'error'
-  key?: string; local?: string; remote?: string; text?: string; code?: number; steps?: sync.Step[]; path?: string
+  kind: 'plan' | 'listing' | 'totals' | 'step' | 'line' | 'file' | 'progress' | 'problem' | 'warning' | 'delete' | 'step-done' | 'done' | 'error'
+  key?: string; local?: string; remote?: string; text?: string; /** a step's exit code; on a warning `skipped`, on an error `volume_full`, `disk_full` or `over_capacity` */ code?: number | string; steps?: sync.Step[]; path?: string
   streams?: number                              // step: how many copies run at once for a `paths` sync (sync_parallel, or fewer files)
   stream?: string                               // the top-level directory this line came from, when the folder went in streams
+  /** totals (a push): the volume's size, its free space when the pod answered `df` (null: unknown), and whether the push cannot fit; error/done: `volume_full` or `disk_full` when a disk filled */
+  /** delete: what is being removed from the volume (`state`: removing, removed, failed); totals: how much a removal frees */ state?: string; bytes?: number | null; would_delete_bytes?: number | null
+  capacity_bytes?: number | null; free_bytes?: number | null; over_capacity?: boolean; /** warning: why a step was skipped; error: the steps not started or unfinished */ reason?: string; not_done?: string[]
   total_files?: number; total_bytes?: number   // step: that folder's, from the listing; totals: the run's; line: openrsync's own count
   file_percent?: number; bytes_done?: number; run_bytes_done?: number; rate_bps?: number; eta_s?: number   // progress
 }
-export interface SyncResult { steps: number; failed: number; warned: number; cancelled: boolean }
-export interface Counts { total_files?: number; total_bytes?: number; scanned_files?: number /* every file in scope, sent or not: the difference is what was skipped */ }
+export interface SyncResult { steps: number; failed: number; warned: number; cancelled: boolean; /** `volume_full` (a push) or `disk_full` (a pull on this PC) when a disk filled, with the message */ code?: string; message?: string }
+export interface Counts { /** a push's room (docs/ADR-011): the volume's size and free space (null: unknown) and whether this much cannot fit */ capacity_bytes?: number | null; free_bytes?: number | null; over_capacity?: boolean; total_files?: number; total_bytes?: number; scanned_files?: number /* every file in scope, sent or not: the difference is what was skipped */ }
 /** rsync exit codes that still copied everything they could: a warning on the folder, not a failed one.
  *  23: some files or attributes were not transferred (the volume refuses a chown or a time; the lines above name them).
  *  24: a file vanished on this PC while rsync read it. The run goes on either way; the result counts them as warned. */
@@ -126,6 +134,8 @@ export function validatePaths(paths: unknown): string[] {
 export const effectiveShared = (req: Pick<SyncRequest, 'pod_id' | 'shared'>): string[] => req.shared ?? configFor(req.pod_id).sync_shared ?? [...mounts.SYNC_SHARED_DEFAULT]
 /** The request with that choice filled in, so the plan, the counts and the run agree. */
 const resolved = (req: SyncRequest): SyncRequest => {
+  if (req.exclude !== undefined) mounts.validateExcludes(req.exclude, 'exclude')
+  if (req.delete_excluded === true && (req.direction !== 'push' || req.paths)) throw bad('Removing excluded folders from the volume is only for a push of folders (not a pull, not a files list)')
   const withPaths = req.paths === undefined ? req : { ...req, paths: validatePaths(req.paths) }
   return withPaths.direction === 'push' ? { ...withPaths, shared: withPaths.paths ? withPaths.shared ?? [...SHARED_DIRS] : effectiveShared(withPaths) } : withPaths
 }
@@ -134,7 +144,7 @@ const stepDir = (req: SyncRequest, step: sync.Step): string => (req.direction ==
 export const stepPaths = (req: SyncRequest, step: sync.Step): string[] => { const d = stepDir(req, step); return (req.paths ?? []).filter((p) => !d || p.startsWith(`${d}/`)).map((p) => (d ? p.slice(d.length + 1) : p)) }
 
 /** What a run would copy, without running it (the confirmation shows this). */
-export function planFor(request: SyncRequest): sync.Step[] {
+export function planFor(request: SyncRequest, warn: (msg: string) => void = () => {}): sync.Step[] {
   const req = resolved(request)
   const cfg = configFor(req.pod_id)
   const only = new Set(req.only || [])
@@ -144,20 +154,32 @@ export function planFor(request: SyncRequest): sync.Step[] {
   }
   if (req.direction === 'pull') return sync.pullPlan(cfg, sync.listShots(cfg.folders.project || ''), only)
   if (req.plates && !req.approved_by?.trim()) throw bad('Plates leaving this PC need a named yes: give approved_by (shared/governance/policy/agent-permissions.md)')
-  const steps = sync.plan(cfg, only, !!req.plates)
+  const steps = sync.plan(cfg, only, !!req.plates, warn)
   // the graphs step puts the repo's workflows into ComfyUI-Shared/workflows: unchecked, it goes too
   return req.shared && !req.shared.includes('workflows') ? steps.filter((s) => s.key !== 'workflows') : steps
 }
 /** The excludes a step takes beyond sync.EXCLUDE, on a push: the shots' renders (project, with skip_renders: `NAME/`, at any depth) and the
  *  ComfyUI-Shared subfolders that were not chosen (`/NAME/`, a leading slash: the top level of that folder only, so an `output` folder deeper down is not touched). */
-export const excludesFor = (req: SyncRequest, step: sync.Step): string[] => {
+/** The patterns a push leaves out: the pod's own `sync_exclude` (else the Default Configuration's) UNION the request's `exclude`. */
+/** Per-folder defaults for ONE step: the pod's own map replaces the Default's per key; a key the pod lacks falls back to the Default's; an empty list in the pod clears that key for the pod. */
+export const folderExcludesFor = (podId: string, stepKey: string): string[] => { const own = podconfigs.get(podId)?.folder_excludes; return (own && stepKey in own ? own[stepKey] : mounts.load().folder_excludes?.[stepKey]) ?? [] }
+/** The patterns ONE step of a push leaves out, relative to THAT step's root: the global list (pod's else Default's) UNION this step's per-folder list UNION the request's. A pattern saved for project never reaches comfy-shared. */
+export const effectiveExcludesFor = (req: Pick<SyncRequest, 'pod_id' | 'exclude'>, stepKey: string): string[] => [...new Set([...effectiveExcludes(req), ...folderExcludesFor(req.pod_id, stepKey)])]
+/** Every pattern in play for a push, across its steps (the History's count). */
+export const allExcludes = (req: Pick<SyncRequest, 'pod_id' | 'exclude'>): string[] => [...new Set([...effectiveExcludes(req), ...mounts.FOLDER_EXCLUDE_KEYS.flatMap((k) => folderExcludesFor(req.pod_id, k))])]
+export const effectiveExcludes = (req: Pick<SyncRequest, 'pod_id' | 'exclude'>): string[] => [...new Set([...(podconfigs.get(req.pod_id)?.sync_exclude ?? mounts.load().sync_exclude ?? []), ...mounts.validateExcludes(req.exclude, 'exclude')])]
+/** Whether this push also removes what the patterns match on the volume: the request's choice, else the pod's own configuration, else the Default's. */
+export const wantsDelete = (req: Pick<SyncRequest, 'pod_id' | 'delete_excluded' | 'direction' | 'paths'>): boolean => req.direction === 'push' && !req.paths && (req.delete_excluded ?? podconfigs.get(req.pod_id)?.sync_exclude_delete ?? mounts.load().sync_exclude_delete ?? false)
+export const excludesFor = (req: SyncRequest, step: sync.Step, graphsViaOwnStep = false): string[] => {
   if (req.direction !== 'push') return []
   const out: string[] = []
   if (req.skip_renders && step.key === 'project') out.push(...RENDER_DIRS.map((d) => `${d}/`))
   if (req.skip_tests && step.key === 'project') out.push(`/${TEST_DIR}/`)
   if (step.key === 'comfy-shared') out.push(`/${SHARED_TEMP}/`)   // temp/ (staged Panama rounds, scratch) stays on this PC
+  if (step.key === 'comfy-shared' && graphsViaOwnStep && !out.includes('/workflows/')) out.push('/workflows/')   // the graphs step already pushes that folder (from the mapped ComfyUI-Shared): not twice
+  if (!req.paths) out.push(...effectiveExcludesFor(req, step.key))   // what the person leaves out of THIS step: the configuration's lists (global, this folder's) and this run's
   if (step.key === 'comfy-shared' && req.shared) out.push(...SHARED_DIRS.filter((d) => !req.shared!.includes(d)).map((d) => `/${d}/`))
-  return out
+  return [...new Set(out)]
 }
 
 const num = (s: string) => Number(s.replace(/,/g, ''))
@@ -195,7 +217,7 @@ export function parseStats(lines: string[]): Counts {
   return out
 }
 const sumCounts = (list: Counts[], expected: number): Counts => {
-  const sum = (k: keyof Counts) => (list.length === expected && list.every((c) => c[k] !== undefined) ? list.reduce((a, c) => a + c[k]!, 0) : undefined)
+  const sum = (k: 'total_files' | 'total_bytes' | 'scanned_files') => (list.length === expected && list.every((c) => c[k] !== undefined) ? list.reduce((a, c) => a + c[k]!, 0) : undefined)
   return { total_files: sum('total_files'), total_bytes: sum('total_bytes'), scanned_files: sum('scanned_files') }
 }
 
@@ -371,18 +393,23 @@ function commandFor(req: SyncRequest, transport: Transport, step: sync.Step, mou
 }
 
 /** What a run would send, from the listing passes: all of it, and with the request's own skips (the renders, the test bucket) when the plan has the project. The confirmation shows the one the switches describe. */
-export async function countFor(request: SyncRequest, client?: rp.RunPodClient, exec: Exec = runCommand): Promise<{ all: Counts; without_renders?: Counts }> {
+export async function countFor(request: SyncRequest, client?: rp.RunPodClient, exec: Exec = runCommand): Promise<{ all: Counts; without_renders?: Counts; would_delete?: syncdelete.Match[]; would_delete_bytes?: number | null }> {
   const req = resolved(request)
   if (req.paths) return { all: { total_files: req.paths.length, ...(req.path_sizes ? { total_bytes: req.paths.reduce((a, p) => a + (req.path_sizes![p] ?? 0), 0) } : {}) } }
-  const steps = planFor(req)
+  let steps = planFor(req)
+  const none = { capacity: null, free: null }
+  if (req.direction === 'push' && !mounts.dryRun(mounts.load())) steps = (await Promise.all(steps.map(async (st) => ((await isDirAsync(st.local)) ? st : null)))).filter((x): x is sync.Step => !!x)   // as the run does: a missing local folder is skipped
+  const gv = steps.some((st) => st.key === 'workflows' && st.source === 'shared')
   const project = req.direction === 'push' && steps.some((s) => s.key === 'project')
   if (mounts.dryRun(mounts.load())) {
-    const all = sumCounts(steps.map((s, n) => withScanned(parseStats(simStats(n, excludesFor({ ...req, skip_renders: false, skip_tests: false }, s))))), steps.length)
-    return { all, without_renders: project ? sumCounts(steps.map((s, n) => withScanned(parseStats(simStats(n, excludesFor(req, s))))), steps.length) : undefined }
+    const all = sumCounts(steps.map((s, n) => withScanned(parseStats(simStats(n, excludesFor({ ...req, skip_renders: false, skip_tests: false }, s, gv))))), steps.length)
+    return { all: withRoom(all, none), ...(wantsDelete(req) ? { would_delete: [] as syncdelete.Match[], would_delete_bytes: 0 } : {}), without_renders: project ? withRoom(sumCounts(steps.map((s, n) => withScanned(parseStats(simStats(n, excludesFor(req, s, gv))))), steps.length), none) : undefined }
   }
   const transport = await transportFor(req.pod_id, client)
-  if (transport.kind !== 'ssh') return { all: {} }
   const mountPath = configFor(req.pod_id).mount_path || '/workspace'
+  const wd = await plannedDeletes(req, steps, transport, mountPath, exec, new AbortController().signal, transport.kind === 's3' ? { ...process.env, ...sync.s3Env(settings.lookup) } : process.env).catch((e) => { if (e instanceof CoreError) throw e; return { items: [] as syncdelete.Match[], bytes: 0 } })
+  const dw = wantsDelete(req) ? { would_delete: wd.items, would_delete_bytes: wd.bytes } : {}
+  if (transport.kind !== 'ssh') return { all: withRoom({}, none), ...dw }
   const progress = sync.progressFlag(await rsyncVersion())   // openrsync refuses --info=progress2 even on a dry run
   const signal = new AbortController().signal
   // what would be sent, and (a second pass that counts every file in scope, as if all were to be replaced) what is already there
@@ -394,20 +421,81 @@ export async function countFor(request: SyncRequest, client?: rp.RunPodClient, e
     return { ...sent, scanned_files: scope.total_files }
   }
   const counts: Counts[] = []
-  for (const step of steps) counts.push(await list(step, excludesFor({ ...req, skip_renders: false, skip_tests: false }, step)))
-  const all = sumCounts(counts, steps.length)
-  if (!project) return { all }
-  const without = await Promise.all(steps.map((step, i) => (step.key === 'project' ? list(step, excludesFor(req, step)) : Promise.resolve(counts[i]))))
-  return { all, without_renders: sumCounts(without, steps.length) }
+  for (const step of steps) counts.push(await list(step, excludesFor({ ...req, skip_renders: false, skip_tests: false }, step, gv)))
+  const all = sumCounts(counts, steps.length), room = await roomFor(req, transport, mountPath, client, exec)   // the room is looked up once; over_capacity is worked out for each variant
+  if (!project) return { all: withRoom(all, room, wd.bytes ?? 0), ...dw }
+  const without = await Promise.all(steps.map((step, i) => (step.key === 'project' ? list(step, excludesFor(req, step, gv)) : Promise.resolve(counts[i]))))
+  return { all: withRoom(all, room, wd.bytes ?? 0), without_renders: withRoom(sumCounts(without, steps.length), room, wd.bytes ?? 0), ...dw }
 }
 
-async function runSync(request: SyncRequest, send: (e: SyncEvent) => void, signal: AbortSignal, client?: rp.RunPodClient, exec: Exec = runCommand): Promise<SyncResult> {
+/** Disk-full lines of rsync, aws and ssh: a volume quota, a full disk. One of them stops the whole run (docs/ADR-011, amendment 2026-11-18). */
+export const FULL_RE = /Disk quota exceeded|No space left on device|ENOSPC/i
+const fmtBytes = (b: number) => (b >= 1e12 ? `${(b / 1e12).toFixed(1)} TB` : b >= 1e9 ? `${Math.round(b / 1e9).toLocaleString('en-US')} GB` : b >= 1e6 ? `${Math.round(b / 1e6)} MB` : `${Math.round(b / 1e3)} KB`)
+const isDirAsync = async (p: string) => { try { return (await stat(p)).isDirectory() } catch { return false } }
+/** The volume's size in bytes from RunPod's record (GB as RunPod counts them), or null. Async, best effort. */
+async function volumeCapacity(podId: string, client?: rp.RunPodClient): Promise<number | null> {
+  try { const vid = volumeIdFor(podId); if (!vid) return null; const v = await Promise.race([volumeInfo(vid, client), new Promise<null>((r) => { const t = setTimeout(() => r(null), 10_000); if (typeof t === 'object' && 'unref' in t) t.unref() })]); return v && v.size_gb > 0 ? v.size_gb * 1e9 : null } catch { return null }
+}
+/** The real free space where the volume is mounted on the pod: `df -Pk` over SSH, 10 seconds at most, best effort (null when it does not answer). */
+async function dfFree(t: { host?: string; port?: number }, mountPath: string, exec: Exec): Promise<number | null> {
+  if (!t.host || !t.port) return null
+  const ac = new AbortController(), timer = setTimeout(() => ac.abort(), 10_000), lines: string[] = []
+  try {
+    const code = await exec(['ssh', '-p', String(t.port), '-o', 'StrictHostKeyChecking=accept-new', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', t.host, `df -Pk '${mountPath.replace(/'/g, `'\\''`)}'`], (l) => lines.push(l), ac.signal, process.env)
+    if (code !== 0) return null
+    const row = lines.map((l) => l.trim().split(/\s+/)).filter((f) => f.length >= 6 && /^\d+$/.test(f[3])).pop()
+    return row ? Number(row[3]) * 1024 : null
+  } catch { return null } finally { clearTimeout(timer) }
+}
+
+/** The volume's room for a push: its size and the real free space (best effort, null when unknown). Nothing for a pull, a paths run, a simulated run or the S3 transport (no pod to ask). */
+async function roomFor(req: SyncRequest, transport: Transport, mountPath: string, client: rp.RunPodClient | undefined, exec: Exec): Promise<{ capacity: number | null; free: number | null }> {
+  if (req.direction !== 'push' || req.paths || mounts.dryRun(mounts.load()) || transport.kind !== 'ssh') return { capacity: null, free: null }
+  const [capacity, free] = await Promise.all([volumeCapacity(req.pod_id, client), dfFree(transport, mountPath, exec)])
+  return { capacity, free }
+}
+const withRoom = (c: Counts, room: { capacity: number | null; free: number | null }, freed = 0): Counts => { const r = room.free !== null ? room.free + freed : room.capacity; return { ...c, capacity_bytes: room.capacity, free_bytes: room.free, over_capacity: r !== null && c.total_bytes !== undefined && c.total_bytes > r } }
+/** What a push with `delete_excluded` would remove from the volume (docs/ADR-011), with sizes: per matched top folder `{ step, path, bytes, files }` and the bytes it frees (null when none could be measured). Empty when it is not asked for. */
+async function plannedDeletes(req: SyncRequest, steps: sync.Step[], transport: Transport, mountPath: string, exec: Exec, signal: AbortSignal, env: NodeJS.ProcessEnv = process.env): Promise<{ items: syncdelete.Match[]; bytes: number | null }> {
+  const none = { items: [] as syncdelete.Match[], bytes: 0 }
+  if (!wantsDelete(req) || mounts.dryRun(mounts.load()) || transport.kind === 'none') return none
+  if (!steps.some((st) => effectiveExcludesFor(req, st.key).length)) return none
+  const target: syncdelete.Target = transport.kind === 'ssh' ? { kind: 'ssh', host: transport.host, port: transport.port } : { kind: 's3', volume: transport.volume, env }
+  const found = await syncdelete.resolve({ exec, target, roots: steps.map((st) => ({ key: st.key, remote: st.remote })), patterns: (k) => effectiveExcludesFor(req, k), signal, mountPath })
+  const seen = new Set<string>(), uniq = found.filter((m) => !seen.has(m.abs) && !!seen.add(m.abs))   // the graphs step's folder lies inside comfy-shared: once
+  if (!uniq.length) return none
+  const items = await syncdelete.measure({ exec, target, matches: uniq, signal, mountPath })
+  const known = items.filter((m) => m.bytes !== null)
+  return { items, bytes: known.length ? known.reduce((a, m) => a + (m.bytes ?? 0), 0) : null }
+}
+
+async function runSync(request: SyncRequest, send0: (e: SyncEvent) => void, outer: AbortSignal, client?: rp.RunPodClient, exec: Exec = runCommand): Promise<SyncResult> {
   const req = resolved(request)
-  const steps = planFor(req)
-  send({ kind: 'plan', steps })
+  let written = 0
+  const send = (e: SyncEvent) => { if (e.kind === 'file') written++; send0(e) }
+  // one controller for the run: the person's cancel, and a full disk, both stop every stream at once
+  const runAc = new AbortController()
+  if (outer.aborted) runAc.abort(); else outer.addEventListener('abort', () => runAc.abort(), { once: true })
+  const signal = runAc.signal
+  const full: { hit: boolean; line: string } = { hit: false, line: '' }
+  const watch = (text: string) => { if (!full.hit) { const m = FULL_RE.exec(text); if (m) { full.hit = true; full.line = m[0]; runAc.abort() } } }
+  const warnings: string[] = []
+  const planned = planFor(req, (m) => warnings.push(m))
+  send({ kind: 'plan', steps: planned })
+  for (const w of warnings) { const key = /^skip (\S+?):/.exec(w)?.[1] ?? (/workflows/i.test(w) ? 'workflows' : undefined); send({ kind: 'warning', code: 'skipped', ...(key ? { key } : {}), reason: w, text: w }) }
+  let steps = req.direction === 'push' && !req.paths ? sync.orderForRun(planned) : planned   // the RUN order of a push: graphs, ComfyUI-Shared, project, plates (the panel keeps its own order)
   if (!steps.length) throw bad('Nothing to copy: map the folders in Default Configuration first')
   const cfg = configFor(req.pod_id)
   const dry = mounts.dryRun(mounts.load())
+  if (req.direction === 'push' && !req.paths && !dry) {   // a step whose local folder is not there is skipped with a word, never a failed run
+    const keep: sync.Step[] = []
+    for (const st of steps) { if (await isDirAsync(st.local)) keep.push(st); else send({ kind: 'warning', code: 'skipped', key: st.key, reason: `${st.local} does not exist on this PC`, text: `Skipped ${st.key}: ${st.local} does not exist on this PC` }) }
+    steps = keep
+    if (!steps.length) throw bad('Nothing to copy: none of the chosen folders exists on this PC')
+  }
+  const finishedKeys = new Set<string>()
+  const simN = (st: sync.Step) => Math.max(0, planned.findIndex((p) => p.key === st.key))   // the simulated files follow the panel's order, whatever the run order
+  const graphsViaOwnStep = steps.some((st) => st.key === 'workflows' && st.source === 'shared')
   const result: SyncResult = { steps: steps.length, failed: 0, warned: 0, cancelled: false }
   const transport = await transportFor(req.pod_id, client)
   if (transport.kind === 'none') throw bad(transport.reason)
@@ -433,24 +521,47 @@ async function runSync(request: SyncRequest, send: (e: SyncEvent) => void, signa
     for (const [n, step] of steps.entries()) {
       if (signal.aborted) break
       send({ kind: 'listing', key: step.key })
-      const exclude = excludesFor(req, step)
-      if (dry) totals.push(parseStats(req.paths ? simStatsOf(simPathNames(req, step)) : simStats(n, exclude)))
+      const exclude = excludesFor(req, step, graphsViaOwnStep)
+      if (dry) totals.push(parseStats(req.paths ? simStatsOf(simPathNames(req, step)) : simStats(simN(step), exclude)))
       else if (transport.kind === 'ssh') totals.push(await listStep(commandFor(req, transport, step, mountPath, { progress, verbose: true, dryRun: true, stats: true, exclude, filesFrom: await filesFromFor(step) }), signal, env, exec))
       else if (req.paths) { const ps = stepPaths(req, step), d = stepDir(req, step); totals.push({ total_files: ps.length, ...(req.path_sizes ? { total_bytes: ps.reduce((a, p) => a + (req.path_sizes![d ? `${d}/${p}` : p] ?? 0), 0) } : {}) }) }
       else totals.push({})   // aws s3 sync has no cheap count
     }
-    const meter = new RunMeter(); meter.total = sumCounts(totals, steps.length).total_bytes
-    send({ kind: 'totals', ...sumCounts(totals, steps.length) })
+    const sums = sumCounts(totals, steps.length)
+    const meter = new RunMeter(); meter.total = sums.total_bytes
+    // what a push with delete_excluded would remove from the volume: listed and measured first, so the free space AFTER the removal counts below, and the named yes is checked before anything moves
+    const del = signal.aborted ? { items: [] as syncdelete.Match[], bytes: 0 } : await plannedDeletes(req, steps, transport, mountPath, exec, signal, env)
+    if (del.items.length && !(req.approved_by ?? '').trim()) throw bad(syncdelete.NEEDS_YES)
+    // PREFLIGHT before any byte moves: a push that cannot fit the volume is refused with the sizes (no override: fix the selection or the volume)
+    let preflight: Pick<SyncEvent, 'capacity_bytes' | 'free_bytes' | 'over_capacity'> = {}, tooBig = ''
+    if (req.direction === 'push' && !req.paths && !dry && transport.kind === 'ssh' && sums.total_bytes !== undefined && !signal.aborted) {
+      const { capacity, free } = await roomFor(req, transport, mountPath, client, exec), room = free !== null ? free + (del.bytes ?? 0) : capacity
+      const over = room !== null && sums.total_bytes > room
+      preflight = { capacity_bytes: capacity, free_bytes: free, over_capacity: over }
+      if (over) tooBig = `This push would send ${fmtBytes(sums.total_bytes)}; the volume is ${capacity ? `${Math.round(capacity / 1e9).toLocaleString('en-US')} GB` : 'too small'}${free !== null ? ` (about ${fmtBytes(free)} free)` : ''}. Nothing was copied. By step: ${steps.map((st, n) => `${st.key} ${fmtBytes(totals[n]?.total_bytes ?? 0)}`).join(', ')}. Push only the graphs (untick the project), or enlarge the volume.`
+      else if (room !== null && capacity && room - sums.total_bytes < 0.05 * capacity) send({ kind: 'warning', text: `This push fits but leaves under 5% of the volume free (${fmtBytes(room - sums.total_bytes)} of ${fmtBytes(capacity)}).` })
+    }
+    send({ kind: 'totals', ...sums, ...preflight, ...(del.items.length ? { would_delete_bytes: del.bytes } : {}) })
+    if (tooBig) { send({ kind: 'error', text: tooBig, code: 'over_capacity', not_done: steps.map((st) => st.key) }); throw new CoreError(400, tooBig, 'over_capacity') }
+    // the removal, before any copy: one folder at a time; a failure stops the run here and says what was already removed
+    const removed: string[] = []
+    for (const m of del.items) {
+      if (signal.aborted) break
+      const root = steps.find((st) => st.key === m.step)!
+      send({ kind: 'delete', key: m.step, path: m.path, bytes: m.bytes, state: 'removing', text: `Removing ${m.path} from the volume (${m.step})` })
+      try { await syncdelete.removeOne({ exec, target: transport.kind === 'ssh' ? { kind: 'ssh', host: transport.host, port: transport.port } : { kind: 's3', volume: transport.volume, env }, root: { key: root.key, remote: root.remote }, match: m, signal, mountPath }); removed.push(`${m.step}/${m.path}`); send({ kind: 'delete', key: m.step, path: m.path, bytes: m.bytes, state: 'removed', text: `Removed ${m.path}` }) }
+      catch (e) { send({ kind: 'delete', key: m.step, path: m.path, state: 'failed', text: (e as Error).message }); throw bad(`Removal failed at ${m.path} (${m.step}): ${(e as Error).message}. Removed before it: ${removed.length ? removed.join(', ') : 'nothing'}. Nothing was copied.`) }
+    }
     for (const [n, step] of steps.entries()) {
-      if (signal.aborted) { result.cancelled = true; break }
-      const exclude = excludesFor(req, step)
+      if (signal.aborted) { result.cancelled = !full.hit; break }
+      const exclude = excludesFor(req, step, graphsViaOwnStep)
       send({ kind: 'step', key: step.key, local: step.local, remote: step.remote, ...totals[n], ...(req.paths ? { streams: Math.max(1, Math.min(parallel, stepPaths(req, step).length)) } : {}) })
       const tally = new StepTally(step.key, meter, send)
       const codes: number[] = []
       if (dry) {
         send({ kind: 'line', key: step.key, text: `simulated: ${step.local} -> ${step.remote} (no-spend mode: nothing is copied)` })
         const byDir = new Map<string, string[]>()
-        for (const f of req.paths ? simPathNames(req, step) : simNames(n, exclude)) { const d = f.split('/')[0]; byDir.set(d, [...(byDir.get(d) || []), f]) }
+        for (const f of req.paths ? simPathNames(req, step) : simNames(simN(step), exclude)) { const d = f.split('/')[0]; byDir.set(d, [...(byDir.get(d) || []), f]) }
         await pool([...byDir.entries()], parallel, async ([dir, names]) => {
           const s = tally.stream(dir)
           for (const line of simLines(names)) { await simPause(); if (signal.aborted) break; s.line(line) }
@@ -470,7 +581,7 @@ async function runSync(request: SyncRequest, send: (e: SyncEvent) => void, signa
           const cmd = sync.s3FileCmd(req.direction, transport.volume!, step.remote, step.local, rel, { mountPath })
           send({ kind: 'line', key: step.key, text: '$ ' + cmd.map((c) => (/\s/.test(c) ? JSON.stringify(c) : c)).join(' ') })
           const s = tally.stream(`k${k}`)
-          codes.push(await exec(cmd, (text) => s.line(text), signal, env))
+          codes.push(await exec(cmd, (text) => { watch(text); s.line(text) }, signal, env))
           s.finish()
         })
       } else if (req.paths && transport.kind === 'ssh') {
@@ -482,7 +593,7 @@ async function runSync(request: SyncRequest, send: (e: SyncEvent) => void, signa
           const cmd = commandFor(req, transport, step, mountPath, { progress, verbose: true, exclude, filesFrom })
           send({ kind: 'line', key: step.key, stream: `p${k}`, text: '$ ' + cmd.map((c) => (/\s/.test(c) ? JSON.stringify(c) : c)).join(' ') })
           const s = tally.stream(`p${k}`)
-          codes.push(await exec(cmd, (text) => s.line(text), signal, env))
+          codes.push(await exec(cmd, (text) => { watch(text); s.line(text) }, signal, env))
           s.finish()
         })
       } else {
@@ -492,7 +603,7 @@ async function runSync(request: SyncRequest, send: (e: SyncEvent) => void, signa
           const cmd = commandFor(req, transport, step, mountPath, { progress, verbose: true, exclude: u.name === '.' ? exclude : exclude.filter((e) => !e.startsWith('/')), shallow: u.shallow }, u.local, u.remote)
           send({ kind: 'line', key: step.key, stream: u.name === '.' ? undefined : u.name, text: '$ ' + cmd.map((c) => (/\s/.test(c) ? JSON.stringify(c) : c)).join(' ') })
           const s = tally.stream(u.name)
-          codes.push(await exec(cmd, (text) => s.line(text), signal, env))
+          codes.push(await exec(cmd, (text) => { watch(text); s.line(text) }, signal, env))
           s.finish()
         }
         await one(streams[0])   // the root first: the folder exists on the pod before the streams write into it
@@ -505,13 +616,20 @@ async function runSync(request: SyncRequest, send: (e: SyncEvent) => void, signa
         else result.failed++
       }
       send({ kind: 'step-done', key: step.key, code })
-      if (signal.aborted) { result.cancelled = true; break }
+      if (!full.hit && !signal.aborted) finishedKeys.add(step.key)
+      if (signal.aborted) { result.cancelled = !full.hit; break }
     }
   } finally {
     if (held) idle.register(req.pod_id, held)
     if (listDir) await rm(listDir, { recursive: true, force: true }).catch(() => undefined)
   }
-  send({ kind: 'done', text: result.cancelled ? 'cancelled' : result.failed ? `${result.failed} of ${result.steps} folders failed` : result.warned ? `${result.steps} folders in step, ${result.warned} with warnings` : `${result.steps} folders in step` })
+  if (full.hit) {   // a full disk stops everything: say what was written and what was not done
+    const push = req.direction === 'push', undone = steps.filter((st) => !finishedKeys.has(st.key)).map((st) => st.key)
+    result.cancelled = false; result.failed = Math.max(1, result.failed); result.code = push ? 'volume_full' : 'disk_full'
+    result.message = `${push ? `The volume is full (${full.line})` : `The disk on this PC is full (${full.line})`}. ${written} file${written === 1 ? ' was' : 's were'} written. Not done: ${undone.length ? undone.join(', ') : 'nothing more'}. ${push ? 'Free space or enlarge the volume' : 'Free space on this PC'}, then run again.`
+    send({ kind: 'error', text: result.message, code: result.code, not_done: undone })
+  }
+  send({ kind: 'done', text: result.message ?? (result.cancelled ? 'cancelled' : result.failed ? `${result.failed} of ${result.steps} folders failed` : result.warned ? `${result.steps} folders in step, ${result.warned} with warnings` : `${result.steps} folders in step`) })
   return result
 }
 
@@ -520,19 +638,20 @@ export async function run(request: SyncRequest, send: (e: SyncEvent) => void, si
   const started = new Date().toISOString()
   const auto = !!request.trigger?.startsWith('auto-sync')
   const what = auto ? `auto sync ${request.direction} ${request.pod_id ?? ''}`.trim() : `sync ${request.pod_id ?? ''}`.trim()
-  let streams = 0, moved = 0
+  let streams = 0, moved = 0, movedBytes = 0
+  const deleted: { path: string; bytes: number }[] = []
   const reg = registry.begin(request)   // the sync explorer and its logs (syncruns.ts): additive, it never changes the events or the History entry
-  const seen = (e: SyncEvent) => { if (e.kind === 'step' && e.streams) streams = Math.max(streams, e.streams); else if (e.kind === 'file') moved++; reg.event(e); send(e) }
+  const seen = (e: SyncEvent) => { if (e.kind === 'step' && e.streams) streams = Math.max(streams, e.streams); else if (e.kind === 'file') moved++; else if (e.kind === 'progress' && e.run_bytes_done !== undefined) movedBytes = Math.max(movedBytes, e.run_bytes_done); else if (e.kind === 'delete' && e.state === 'removed') deleted.push({ path: `${e.key}/${e.path}`, bytes: Number(e.bytes ?? 0) }); reg.event(e); send(e) }
   try {
     const r = await runSync(request, seen, signal, client, exec)
-    reg.end(r)
+    reg.end(r, r.message)
     if (request.direction === 'push' && !r.cancelled && !r.failed) journalPush(request)
     // ONE entry per run (a `paths` run is one run, however many files). An automatic run that moved nothing records nothing (no noise).
-    if (!(auto && !r.failed && !r.cancelled && moved === 0)) history.record({ kind: 'job', job: 'sync', state: r.cancelled ? 'cancelled' : r.failed ? 'failed' : 'done', started_at: started, what, pod_id: request.pod_id, ...(request.trigger ? { trigger: request.trigger } : {}), ...(request.paths ? runCounts(request, streams) : {}), ...(r.failed ? { error: `${r.failed} of ${r.steps} folders failed` } : {}) })
+    if (!(auto && !r.failed && !r.cancelled && moved === 0)) history.record({ kind: 'job', job: 'sync', state: r.cancelled ? 'cancelled' : r.failed ? 'failed' : 'done', started_at: started, what, pod_id: request.pod_id, ...(request.trigger ? { trigger: request.trigger } : {}), ...(request.paths ? runCounts(request, streams) : leftOut(request, deleted)), ...(deleted.length ? { approved_by: (request.approved_by ?? '').trim() } : {}), ...(r.code ? { files: moved, bytes: movedBytes } : {}), ...(r.failed ? { error: r.message ?? `${r.failed} of ${r.steps} folders failed` } : {}) })
     return r
   } catch (e) {
     reg.end(null, (e as Error).message)
-    history.record({ kind: 'job', job: 'sync', state: 'failed', started_at: started, what, pod_id: request.pod_id, ...(request.trigger ? { trigger: request.trigger } : {}), ...(request.paths ? { files: request.paths.length } : {}), error: (e as Error).message })
+    history.record({ kind: 'job', job: 'sync', state: 'failed', started_at: started, what, pod_id: request.pod_id, ...(request.trigger ? { trigger: request.trigger } : {}), ...(request.paths ? { files: request.paths.length } : leftOut(request, deleted)), ...(deleted.length ? { approved_by: (request.approved_by ?? '').trim() } : {}), error: (e as Error).message })
     throw e
   }
 }
@@ -557,4 +676,15 @@ function runCounts(req: SyncRequest, streams: number): { files: number; bytes?: 
   const size = bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : bytes >= 1e6 ? `${(bytes / 1e6).toFixed(1)} MB` : bytes ? `${Math.round(bytes / 1e3)} KB` : ''
   const label = req.trigger ? req.trigger.replace('auto-sync:', 'automatic, ') : 'files filter'
   return { files: paths.length, ...(bytes ? { bytes } : {}), detail: `${label}: ${paths.length} file${paths.length === 1 ? '' : 's'}${size ? ` (${size})` : ''}${streams ? `, ${streams} stream${streams === 1 ? '' : 's'}` : ''}; ${first}${req.note ? `; ${req.note}` : ''}` }
+}
+
+/** The History's words for the folders a push left out: how many, and the first few. */
+function leftOut(req: SyncRequest, deleted: { path: string; bytes: number }[] = []): { detail?: string } {
+  try {
+    if (req.direction !== 'push') return {}
+    const ex = allExcludes(req); if (!ex.length) return {}
+    const out = `left out ${ex.length} pattern${ex.length === 1 ? '' : 's'}: ${ex.slice(0, 3).join(', ')}${ex.length > 3 ? ` (+${ex.length - 3} more)` : ''}`
+    const gb = deleted.reduce((a, d) => a + d.bytes, 0), size = gb >= 1e12 ? `${(gb / 1e12).toFixed(1)} TB` : gb >= 1e9 ? `${Math.round(gb / 1e9)} GB` : gb >= 1e6 ? `${Math.round(gb / 1e6)} MB` : `${Math.round(gb / 1e3)} KB`
+    return { detail: deleted.length ? `${out}; removed ${deleted.length} folder${deleted.length === 1 ? '' : 's'} from the volume${gb ? ` (${size})` : ''}: ${deleted.slice(0, 3).map((d) => d.path).join(', ')}${deleted.length > 3 ? ` (+${deleted.length - 3} more)` : ''}; approved by ${(req.approved_by ?? '').trim()}` : out }
+  } catch { return {} }
 }

@@ -10,6 +10,8 @@ export const PARITY = {
   'volumes.changes': 'volume_changes',
   'autosync.get': 'auto_sync', 'autosync.set': 'auto_sync', 'autosync.status': 'auto_sync', 'autosync.pause': 'auto_sync', 'autosync.syncNow': 'auto_sync', 'autosync.approve': 'auto_sync', 'autosync.dismiss': 'auto_sync',
   'syncs.active': 'sync_runs', 'syncs.recent': 'sync_runs', 'syncs.log': 'sync_runs', 'syncs.watch': 'sync_runs',
+  'renders.plan': 'render_sequences', 'renders.start': 'render_sequences', 'renders.status': 'render_sequences', 'renders.cancel': 'render_sequences', 'renders.proxies': 'render_sequences', 'renders.clearLocal': 'window: deletes the proxies cached on this PC (only inside its output/.proxies); an agent has no use for clearing the person\'s cache',
+  'sync.folders': 'sync_folders', 'sync.measure': 'sync_folders', 'sync.measureCancel': 'window: stops a running folder measurement; the MCP call returns when `du` is done (or times out after 120 s)',
   'ratelimit.status': 'rate_limit_status',
   'governance.summary': 'governance',
   'settings.get': 'get_settings', 'settings.set': 'set_settings', 'settings.checkAnthropic': 'check_anthropic_key',

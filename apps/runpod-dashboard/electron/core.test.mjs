@@ -25,7 +25,9 @@ const EXPECTED = {
   studio: ['step', 'saveChecked', 'document', 'tree', 'file', 'problems', 'context'],
   mcp: ['endpoints', 'targets', 'probe', 'serve'],
   autosync: ['get', 'set', 'status', 'pause', 'syncNow', 'approve', 'dismiss'],
-  syncs: ['active', 'recent', 'log', 'watch'],   // docs/ADR-046
+  syncs: ['active', 'recent', 'log', 'watch'],
+  sync: ['folders', 'measure', 'measureCancel'],
+  renders: ['plan', 'start', 'status', 'cancel', 'proxies', 'clearLocal'],   // docs/ADR-046
 }
 for (const [ns, fns] of Object.entries(EXPECTED)) {
   test(`core.${ns} answers ${fns.join(', ')}`, () => {

@@ -95,25 +95,25 @@ describe('sync from the app', () => {
     const events: syncrun.SyncEvent[] = []
     const r = await syncrun.run({ pod_id: 'p1', direction: 'push' }, (e) => events.push(e), new AbortController().signal)
     expect(r).toEqual({ steps: 2, failed: 0, warned: 0, cancelled: false })   // project and the workflows
-    const kinds = events.map((e) => e.kind)
+    const evs = events.filter((e) => e.kind !== 'warning'), kinds = evs.map((e) => e.kind)   // a step whose folder is not mapped is a warning, not a failure
     expect(kinds.slice(0, 5)).toEqual(['plan', 'line', 'listing', 'listing', 'totals'])   // the listing passes come first
-    expect(events[4]).toMatchObject({ total_files: 7, total_bytes: 7 * 1.5 * GiB })
-    expect(events.filter((e) => e.kind === 'step')).toMatchObject([{ key: 'project', total_files: 3, total_bytes: 3 * 1.5 * GiB }, { key: 'workflows', total_files: 4, total_bytes: 4 * 1.5 * GiB }])
+    expect(evs[4]).toMatchObject({ total_files: 7, total_bytes: 7 * 1.5 * GiB })
+    expect(events.filter((e) => e.kind === 'step')).toMatchObject([{ key: 'workflows', total_files: 4, total_bytes: 4 * 1.5 * GiB }, { key: 'project', total_files: 3, total_bytes: 3 * 1.5 * GiB }])   // the graphs run first
     expect(events.filter((e) => e.kind === 'line' && e.total_files).reduce((a, e) => a + e.total_files!, 0)).toBe(7)   // openrsync's own count, per stream
     const files = events.filter((e) => e.kind === 'file')
     expect(files).toHaveLength(7)
     expect(new Set(files.map((e) => e.stream))).toEqual(new Set(['models', '10_CORROSION', 'input', 'output']))   // one stream per top-level directory
     expect(kinds.indexOf('step-done')).toBeLessThan(kinds.lastIndexOf('step'))   // the second folder starts after the first ends
     const progress = events.filter((e) => e.kind === 'progress')
-    expect(progress.at(-1)).toMatchObject({ key: 'workflows', bytes_done: 4 * 1.5 * GiB, run_bytes_done: 7 * 1.5 * GiB })
+    expect(progress.at(-1)).toMatchObject({ key: 'project', bytes_done: 3 * 1.5 * GiB, run_bytes_done: 7 * 1.5 * GiB })
     expect(progress.every((e, i) => i === 0 || e.run_bytes_done! >= progress[i - 1].run_bytes_done!)).toBe(true)
     expect(events.at(-1)).toMatchObject({ kind: 'done', text: '2 folders in step' })
     // without the renders: the project's review frame stays home; the confirmation gets both figures
     const skipped: syncrun.SyncEvent[] = []
     await syncrun.run({ pod_id: 'p1', direction: 'push', skip_renders: true }, (e) => skipped.push(e), new AbortController().signal)
     expect(skipped.filter((e) => e.kind === 'file')).toHaveLength(6)
-    expect(skipped.find((e) => e.kind === 'step')).toMatchObject({ key: 'project', total_files: 2 })
-    expect(await syncrun.countFor({ pod_id: 'p1', direction: 'push', skip_renders: true })).toEqual({ all: { total_files: 7, total_bytes: 7 * 1.5 * GiB, scanned_files: 7 }, without_renders: { total_files: 6, total_bytes: 6 * 1.5 * GiB, scanned_files: 6 } })
+    expect(skipped.find((e) => e.kind === 'step' && e.key === 'project')).toMatchObject({ key: 'project', total_files: 2 })
+    expect(await syncrun.countFor({ pod_id: 'p1', direction: 'push', skip_renders: true })).toMatchObject({ all: { total_files: 7, total_bytes: 7 * 1.5 * GiB, scanned_files: 7 }, without_renders: { total_files: 6, total_bytes: 6 * 1.5 * GiB, scanned_files: 6 } })
     expect((await syncrun.countFor({ pod_id: 'p1', direction: 'pull' })).without_renders).toBeUndefined()   // a pull brings the renders back: one figure
   })
 
@@ -122,6 +122,8 @@ describe('sync from the app', () => {
     const copies: string[][] = []; const listings: string[][] = []
     let inFlight = 0, most = 0
     const exec: syncrun.Exec = async (cmd, onLine) => {
+      if (cmd[0] === 'ssh') return 0   // the preflight's df: no answer, the free space is unknown
+
       const remote = cmd[cmd.length - 1]
       if (cmd.includes('-n')) { listings.push(cmd); for (const l of ['Transfer starting: 3 files', 'a.png', 'b.png', 'Number of files transferred: 2', 'Total transferred file size: 300 B']) onLine(l); return 0 }
       copies.push(cmd); inFlight++; most = Math.max(most, inFlight)
@@ -133,26 +135,25 @@ describe('sync from the app', () => {
     const events: syncrun.SyncEvent[] = []
     const r = await syncrun.run({ pod_id: 'p1', direction: 'push', plates: true, approved_by: 'Binc', skip_renders: true }, (e) => events.push(e), new AbortController().signal, client, exec)
     expect(r).toEqual({ steps: 3, failed: 1, warned: 1, cancelled: false })
-    expect(listings).toHaveLength(3); expect(listings[0]).toContain('--stats'); expect(listings[0][listings[0].length - 1]).toBe('root@5.6.7.8:/workspace/project/')
-    expect(listings[0]).toContain('06_REVIEW/'); expect(listings[2]).not.toContain('06_REVIEW/')   // the renders left out of the project's count, and its copy
+    expect(listings).toHaveLength(3); expect(listings[1]).toContain('--stats'); expect(listings[1][listings[1].length - 1]).toBe('root@5.6.7.8:/workspace/project/'); expect(listings[1]).toContain('06_REVIEW/'); expect(listings[0]).not.toContain('06_REVIEW/')   // the renders left out of the project's count, and its copy
     const project = copies.filter((c) => c[c.length - 1].startsWith('root@5.6.7.8:/workspace/project/'))
     expect(project.map((c) => c[c.length - 1])).toEqual(['root@5.6.7.8:/workspace/project/', 'root@5.6.7.8:/workspace/project/00_POLICY/', 'root@5.6.7.8:/workspace/project/04_TRACKER/', 'root@5.6.7.8:/workspace/project/10_CORROSION/'])
     expect(project[0]).toContain('-d'); expect(project[0]).toContain('-lt'); expect(project[0]).not.toContain('-rlt')   // the root: its own files, the directory entries, no recursion
     expect(project[1]).toContain('-rlt'); expect(project[1]).not.toContain('-n'); expect(project[1]).toContain('06_REVIEW/')
     expect(most).toBe(2)   // sync_parallel
     expect(events.find((e) => e.kind === 'totals')).toMatchObject({ total_files: 6, total_bytes: 900 })
-    expect(events.filter((e) => e.kind === 'step').map((e) => [e.key, e.total_files])).toEqual([['project', 2], ['plates', 2], ['workflows', 2]])
+    expect(events.filter((e) => e.kind === 'step').map((e) => [e.key, e.total_files])).toEqual([['workflows', 2], ['project', 2], ['plates', 2]])
     const order = events.filter((e) => e.kind === 'step' || e.kind === 'step-done').map((e) => `${e.kind}:${e.key}${e.code !== undefined ? ':' + e.code : ''}`)
-    expect(order).toEqual(['step:project', 'step-done:project:23', 'step:plates', 'step-done:plates:255', 'step:workflows', 'step-done:workflows:0'])
+    expect(order).toEqual(['step:workflows', 'step-done:workflows:0', 'step:project', 'step-done:project:23', 'step:plates', 'step-done:plates:255'])
     expect(events.find((e) => e.kind === 'line' && /^rsync exit 23/.test(e.text || ''))?.key).toBe('project')
     expect(events.filter((e) => e.kind === 'file' && e.key === 'project').map((e) => e.stream).sort()).toEqual(['00_POLICY', '04_TRACKER', '10_CORROSION', undefined].sort())
     expect(events.at(-1)).toMatchObject({ kind: 'done', text: '1 of 3 folders failed' })
-    expect(await syncrun.countFor({ pod_id: 'p1', direction: 'push', plates: true, approved_by: 'Binc' }, client, exec)).toEqual({ all: { total_files: 6, total_bytes: 900, scanned_files: 6 }, without_renders: { total_files: 6, total_bytes: 900, scanned_files: 6 } })
+    expect(await syncrun.countFor({ pod_id: 'p1', direction: 'push', plates: true, approved_by: 'Binc' }, client, exec)).toMatchObject({ all: { total_files: 6, total_bytes: 900, scanned_files: 6 }, without_renders: { total_files: 6, total_bytes: 900, scanned_files: 6 } })
     // skipped = every file in scope less what would be sent: a second listing, as if everything were replaced
     const scoped: syncrun.Exec = async (cmd, onLine) => { for (const l of cmd.includes('--ignore-times') ? ['Number of files transferred: 10', 'Total transferred file size: 1000 B'] : ['Number of files transferred: 2', 'Total transferred file size: 300 B']) onLine(l); return 0 }
     const sk = await syncrun.countFor({ pod_id: 'p1', direction: 'push', plates: true, approved_by: 'Binc', existing: 'size' }, client, scoped)
-    expect(sk.all).toEqual({ total_files: 6, total_bytes: 900, scanned_files: 30 })
-    expect((await syncrun.countFor({ pod_id: 'p1', direction: 'push', plates: true, approved_by: 'Binc', existing: 'replace' }, client, scoped)).all).toEqual({ total_files: 30, total_bytes: 3000, scanned_files: 30 })   // replace sends it all: nothing skipped
+    expect(sk.all).toMatchObject({ total_files: 6, total_bytes: 900, scanned_files: 30 })
+    expect((await syncrun.countFor({ pod_id: 'p1', direction: 'push', plates: true, approved_by: 'Binc', existing: 'replace' }, client, scoped)).all).toMatchObject({ total_files: 30, total_bytes: 3000, scanned_files: 30 })   // replace sends it all: nothing skipped
   })
 
   it('a real process: its lines, then its exit code once it closes (23 included); a listing that runs out knows nothing', async () => {
@@ -243,7 +244,9 @@ describe('sync from the app', () => {
   it('over SSH: the root stream keeps the top-level exclude, no stream is made for the unchosen folder, and the other streams do not carry an exclude that would hit a folder of the same name deeper down', async () => {
     const cfg = mounts.defaults(); cfg.folders['comfy-shared'] = sharedTree(); mounts.save(cfg)
     const copies: string[][] = []
-    const exec: syncrun.Exec = async (cmd, onLine) => { if (!cmd.includes('-n')) copies.push(cmd); for (const l of ['Transfer starting: 1 files', 'a.txt', 'Number of files transferred: 1', 'Total transferred file size: 5 B']) onLine(l); return 0 }
+    const exec: syncrun.Exec = async (cmd, onLine) => {
+      if (cmd[0] === 'ssh') return 0   // the preflight's df: no answer, the free space is unknown
+ if (!cmd.includes('-n')) copies.push(cmd); for (const l of ['Transfer starting: 1 files', 'a.txt', 'Number of files transferred: 1', 'Total transferred file size: 5 B']) onLine(l); return 0 }
     await syncrun.run({ pod_id: 'p1', direction: 'push', only: ['comfy-shared'] }, () => {}, new AbortController().signal, client, exec)
     const dests = copies.map((c) => c[c.length - 1])
     expect(dests).toEqual(['root@5.6.7.8:/workspace/comfy-shared/', ...['custom', 'input', 'models', 'workflows'].map((n) => `root@5.6.7.8:/workspace/comfy-shared/${n}/`)].sort((a, b) => (a.endsWith('comfy-shared/') ? -1 : b.endsWith('comfy-shared/') ? 1 : a < b ? -1 : 1)).sort((a, b) => dests.indexOf(a) - dests.indexOf(b)) as string[])

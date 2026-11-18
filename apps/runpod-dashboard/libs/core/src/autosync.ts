@@ -338,7 +338,8 @@ async function execute(rt: Rt, podId: string, cursorKey: string, held: Held): Pr
   let thrown = ''
   try {
     const r = await deps.run({ pod_id: podId, direction: 'pull', paths: files.map((f) => f.path), path_sizes: sizes, existing: 'size', trigger: held.trigger, ...(held.note ? { note: held.note } : {}) }, send, ac.signal)
-    if (r.cancelled && !stalled) thrown = 'The pull was cancelled.'
+    if (r.code && r.message) thrown = r.message   // disk_full on this PC: the same words as the Sync window
+    else if (r.cancelled && !stalled) thrown = 'The pull was cancelled.'
   } catch (e) { thrown = (e as Error).message } finally { clearInterval(watchdog) }
   if (stalled) thrown = `No progress for ${Math.round(STALL_MS / 60000)} minutes: the pull was stopped (it is tried again in ${Math.round(RETRY_MS / 60000)} minutes).`
   // what actually landed, whatever the exit codes said

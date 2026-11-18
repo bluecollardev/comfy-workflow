@@ -5,14 +5,29 @@
         <div class="d-flex align-items-center gap-2 mb-2">
           <strong class="text-truncate" data-testid="dpx-viewer-title">{{ file.filename }}</strong>
           <span class="badge text-bg-secondary">DPX</span>
+          <span v-if="rendered" class="badge" :class="reviewing ? 'text-bg-success' : proxy.partial ? 'text-bg-warning' : 'text-bg-primary'" data-testid="dpx-viewer-rendered-badge" :data-kind="reviewing ? 'review' : 'proxy'" :data-where="(reviewing ? review : proxy).exists_local ? 'local' : 'remote'">{{ badgeText }}</span>
+           <span v-if="proxySrc && reviewSrc" class="btn-group btn-group-sm" role="group" data-testid="dpx-viewer-source"><button type="button" class="btn btn-outline-light" :class="{ active: !reviewing }" data-testid="dpx-viewer-source-proxy" @click="wantReview = false">{{ $t('outputs.render.sourceProxy') }}</button><button type="button" class="btn btn-outline-light" :class="{ active: reviewing }" data-testid="dpx-viewer-source-review" @click="wantReview = true">{{ $t('outputs.render.sourceReview', { v: versionName(review.version).slice(1) }) }}</button></span>
+          <span v-if="rendered && !reviewing && proxy && proxy.frames" class="small text-body-secondary" data-testid="dpx-viewer-rendered-frames">{{ $t('outputs.render.framesRange', { first: sequence ? sequence.first : 0, last: sequence ? sequence.last : proxy.frames - 1, n: proxy.frames }) }}</span>
+          <BButton v-if="movieSrc" variant="outline-light" size="sm" class="ms-2" data-testid="dpx-viewer-full" :data-mode="rendered ? 'rendered' : 'full'" :title="rendered ? $t('outputs.render.fullTitle') : $t('outputs.render.backToRenderedTitle')" @click="forceFull = !forceFull">{{ rendered ? $t('outputs.render.full') : $t('outputs.render.backToRendered') }}</BButton>
           <button type="button" class="btn-close btn-close-white ms-auto" :aria-label="$t('pod.close')" data-testid="dpx-viewer-close" @click="$emit('close')"></button>
         </div>
-        <div class="viewer-stage text-center position-relative" data-testid="dpx-viewer-stage">
+        <div v-if="review && !reviewSrc && unplayableFiles(review).length" class="alert alert-info py-1 px-2 small mb-2 d-flex align-items-center gap-2 flex-wrap" data-testid="dpx-viewer-review-mov"><span class="badge text-bg-success">{{ $t('outputs.render.badgeReview', { v: versionName(review.version).slice(1) }) }}</span><span>{{ $t('outputs.render.proresMov') }}</span><span v-for="n in unplayableFiles(review)" :key="n" class="d-inline-flex align-items-center gap-1"><span class="font-monospace" data-testid="dpx-viewer-review-mov-name">{{ n }}</span><BButton v-if="base" variant="outline-light" size="sm" data-testid="dpx-viewer-review-download" @click="downloadReview(n)"><i class="fa-solid fa-download me-1"></i>{{ $t('outputs.render.download') }}</BButton></span></div>
+        <div v-if="reviewing && unplayableFiles(review).length" class="small text-body-secondary mb-1" data-testid="dpx-viewer-review-files"><span v-for="n in unplayableFiles(review)" :key="n" class="me-2 font-monospace">{{ n }} · {{ $t('outputs.render.notPlayable') }}</span></div>
+        <RenderedPlayer v-if="rendered" :src="movieSrc" :fps="fps" @update:fps="(v) => (fps = v)" />
+        <div v-else-if="sequence && !movieSrc" class="d-flex align-items-center gap-2 flex-wrap small mb-2" data-testid="dpx-viewer-render-hint">
+          <span class="text-body-secondary">{{ $t('outputs.render.noProxyHint') }}</span>
+          <BButton v-if="!hintJob" variant="outline-primary" size="sm" data-testid="dpx-viewer-render-this" :disabled="starting" @click="renderThis"><BSpinner v-if="starting" small class="me-1" />{{ $t('outputs.render.renderThis') }}</BButton>
+          <span v-else class="text-info" data-testid="dpx-viewer-render-status">{{ $t('outputs.render.rendering', { pct: hintPct }) }}</span>
+          <span v-if="hintError && !hintProblem" class="text-danger" data-testid="dpx-viewer-render-error">{{ hintError }}</span>
+          <FfmpegAlert v-if="hintProblem" class="w-100" :problem="{ ...hintProblem, blocker: true }" @check="hintErr = null" />
+        </div>
+        <div v-if="!rendered" class="viewer-stage text-center position-relative" data-testid="dpx-viewer-stage">
           <canvas v-show="shown" ref="canvas" class="viewer-media" data-testid="dpx-viewer-canvas" :data-drawn="drawn"></canvas>
           <div v-if="loading" class="loading text-body-secondary small" data-testid="dpx-viewer-loading">
             <BSpinner small class="me-2" />{{ progress.total ? $t('outputs.dpx.loadingPct', { pct: Math.round((100 * progress.got) / progress.total) }) : progress.got ? $t('outputs.dpx.loadingMb', { mb: (progress.got / 1048576).toFixed(0) }) : $t('outputs.dpx.loading') }}
           </div>
         </div>
+        <template v-if="!rendered">
         <div v-if="curProblem" class="alert alert-warning py-1 px-2 small mt-2 mb-0" role="alert" data-testid="dpx-viewer-banner" :data-kind="curProblem.kind"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ problemText(curProblem) }}</div>
         <div v-if="curStats && !curProblem" class="small text-body-secondary mt-1 font-monospace" data-testid="dpx-viewer-stats">{{ statsText }}</div>
         <TransportBar v-if="frames.length > 1" tid="dpx-viewer" :playing="playing" :pos="index" :max="frames.length - 1" :buffered="cachedRanges" :label="$t('outputs.dpx.frameOf', { n: index + 1, total: frames.length })"
@@ -34,6 +49,7 @@
           <span v-if="tooLong" class="text-warning" data-testid="dpx-viewer-cache-limit">{{ $t('outputs.dpx.tooLong', { n: cachedCount, total: frames.length, mb: CACHE_BYTES / 1048576 }) }}</span>
           <span v-else class="text-body-secondary">{{ $t('outputs.dpx.cacheHint') }}</span>
         </div>
+        </template>
         <div class="d-flex align-items-center gap-2 mt-2 small flex-wrap">
           <span class="badge" :class="file.type === 'output' ? 'text-bg-success' : 'text-bg-secondary'">{{ $t(`outputs.type.${file.type}`) }}</span>
           <span class="font-monospace text-body-secondary text-truncate" :title="path">{{ path }}</span>
@@ -65,8 +81,12 @@ import { appReader } from '../utils/thumbs'
 import { errorText } from '../stores/toast'
 import { t } from '../i18n'
 import TransportBar from './TransportBar.vue'
+import RenderedPlayer from './RenderedPlayer.vue'
+import FfmpegAlert from './FfmpegAlert.vue'
+import { useRendersStore } from '../stores/renders'
+import { fpsFromName, fpsFor, ffmpegProblem, jobPercent, isActive, deliverableParts, versionName, reviewMp4, unplayableFiles, widthLabel } from '../utils/renders'
 
-const props = defineProps({ frames: { type: Array, default: () => [] }, base: { type: String, default: '' } })
+const props = defineProps({ frames: { type: Array, default: () => [] }, base: { type: String, default: '' }, proxy: { type: Object, default: null }, review: { type: Object, default: null }, startReview: { type: Boolean, default: false }, sequence: { type: Object, default: null }, podId: { type: String, default: '' } })
 const emit = defineEmits(['close', 'problems'])
 const CACHE_BYTES = 600 * 1048576
 /** How many frames are fetched at once while buffering (Lucas: 'can we buffer multiple frames at once?'): each is ~50 MB in flight, so 4 by default; the person can change it and it is remembered. */
@@ -76,6 +96,42 @@ const index = ref(0), canvas = ref(null)
 const loading = ref(false), shown = ref(false), drawn = ref(-1), error = ref(''), progress = ref({ got: 0, total: 0 })
 const playing = ref(false), fps = ref(24), loop = ref(true), buffering = ref(null)
 const running = ref(false), cachedCount = ref(0), cachedVer = ref(0), tooLong = ref(false)
+/** Rendered mode (docs/ADR-048): when a proxy movie exists (on this PC through its local_url, else on the volume/pod) the viewer plays it; Full resolution goes back to the frames. */
+const renders = useRendersStore()
+const forceFull = ref(false)
+const proxySrc = computed(() => {
+  const p = props.proxy
+  if (!p) return ''
+  if (p.exists_local && p.local_url) return p.local_url
+  if (p.exists_remote && p.remote_ready !== false && props.base && props.sequence) return viewUrl(props.base, { filename: `${props.sequence.name}_${p.width}${p.partial ? '_partial' : ''}.mp4`, subfolder: `.proxies${props.sequence.dir ? `/${props.sequence.dir}` : ''}`, type: 'output' })
+  return ''
+})
+/** The latest review video (the deliverable, output/deliver/<shot>/v###/): on this PC through its local_url, else from the volume or pod. A switch Proxy | Review v### plays either. */
+const reviewSrc = computed(() => {
+  const d = props.review, mp4 = reviewMp4(d)   // the H.264 .mp4 plays; a ProRes .mov is a master copy the app cannot play
+  if (!d || !mp4) return ''
+  if (d.exists_local && mp4.local_url) return mp4.local_url
+  if (d.exists_remote && props.base && mp4.file) return viewUrl(props.base, { ...deliverableParts({ file: mp4.file }), type: 'output' })
+  return ''
+})
+const wantReview = ref(false)
+const reviewing = computed(() => !!reviewSrc.value && (wantReview.value || !proxySrc.value))
+const movieSrc = computed(() => (reviewing.value ? reviewSrc.value : proxySrc.value))
+const rendered = computed(() => !!movieSrc.value && !forceFull.value)
+const badgeText = computed(() => (reviewing.value
+  ? t(`outputs.render.viewerReview${props.review.exists_local ? 'Local' : 'Remote'}`, { v: versionName(props.review.version).slice(1) })
+  : t(`outputs.render.viewer${props.proxy.exists_local ? 'Local' : 'Remote'}${props.proxy.partial ? 'Partial' : ''}`, { width: widthLabel(props.proxy.width) })))
+const starting = ref(false), hintErr = ref(null)
+const hintJob = computed(() => { const j = renders.jobForPod(props.podId); return isActive(j) ? j : null })
+const hintPct = computed(() => jobPercent(hintJob.value))
+const hintProblem = computed(() => (hintErr.value ? ffmpegProblem([], 'auto', hintErr.value) : null))
+const hintError = computed(() => (hintErr.value ? errorText(hintErr.value) : ''))
+async function renderThis() {
+  starting.value = true; hintErr.value = null
+  const pf = renders.prefs
+  try { await renders.start({ pod_id: props.podId, sequences: [{ ...props.sequence, fps: fpsFor(pf.fps, props.sequence.name) }], width: pf.width, where: 'auto', kind: 'proxy', ...(pf.fps !== 'auto' ? { fps: Number(pf.fps) } : {}), pull: !!pf.pull }) } catch (e) { hintErr.value = e } finally { starting.value = false }
+}
+watch(rendered, (r) => { if (!r && props.frames.length) nextTick(show) })
 const file = computed(() => props.frames[index.value] || props.frames[0] || {})
 const urlOf = (f) => viewUrl(props.base, f)
 const webUrl = computed(() => (file.value.filename ? viewUrl(props.base, file.value, { web: true }) : ''))
@@ -139,6 +195,7 @@ function drawNow(fr, i) {
   notePixels(i, fr); shown.value = true; loading.value = false; drawn.value = i
 }
 async function show() {
+  if (rendered.value) return   // the proxy movie shows; the frames are fetched only in Full resolution
   const my = ++token, i = index.value, f = props.frames[i]
   if (!f) return
   const url = urlOf(f)
@@ -223,6 +280,8 @@ watch(streams, (v) => {   // more or fewer frames at once: the loader changes it
 })
 watch(() => props.frames, (fr) => {
   pause(); stopCache(); loader.abortAll(); lru = frameCache(6); seq = new Map(); seqBytes = 0; problems = new Map(); problemsVer.value++; curProblem.value = null; curStats.value = null; cachedCount.value = 0; cachedVer.value++; tooLong.value = false; fgUrl = ''; waitLoad = -1
+  forceFull.value = false; hintErr.value = null; wantReview.value = props.startReview
+  { const nf = fpsFromName(fr[0]?.filename) || 24; fps.value = nf; player.setFps(nf) }   // the sequence's own rate from its name (_23.976_), else 24
   player.setCount(fr.length); player.seek(0); token++; shown.value = false; drawn.value = -1; error.value = ''; loading.value = false
   if (index.value !== 0) index.value = 0; else if (fr.length) show()
 }, { immediate: true })
@@ -230,6 +289,7 @@ watch(() => props.frames, (fr) => {
 /** Esc closes the viewer (not the window under it); Space plays and pauses; the arrow keys step (and pause). */
 const onKey = (e) => {
   if (!props.frames.length) return
+  if (rendered.value && e.key !== 'Escape') return   // the proxy player has its own keys
   if (e.key === 'Escape') { e.stopImmediatePropagation(); e.preventDefault(); pause(); emit('close') }
   else if (e.key === ' ') { e.preventDefault(); if (e.repeat) return; if (props.frames.length > 1) togglePlay() }
   else if (e.key === 'ArrowLeft') { e.preventDefault(); goTo(index.value - (e.shiftKey ? 10 : 1)) }
@@ -241,6 +301,12 @@ window.addEventListener('keydown', onKey, true); window.addEventListener('keyup'
 onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); window.removeEventListener('keyup', onKeyUp, true); document.removeEventListener('visibilitychange', onHide); pause(); token++; stopCache(); loader.abortAll() })
 
 /** In the app: a Save As dialog and the bytes from the pod; in a browser: the address with a download attribute. */
+/** A review's ProRes file (the app cannot play it): a Save As dialog in the app, the address in a browser. */
+async function downloadReview(name) {
+  const url = viewUrl(props.base, { ...deliverableParts(props.review), filename: name, type: 'output' }, { web: true })
+  if (core?.files?.download) { try { await core.files.download(url, name) } catch (e) { error.value = errorText(e) } return }
+  const a = document.createElement('a'); a.href = url; a.download = name; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove()
+}
 async function download() {
   error.value = ''
   if (core?.files?.download) { try { await core.files.download(webUrl.value, file.value.filename) } catch (e) { error.value = errorText(e) } return }

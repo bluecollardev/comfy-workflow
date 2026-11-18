@@ -199,6 +199,8 @@ test('DPX: a frame the page cannot reach says so ("Could not reach the pod file"
 // Sequence previews (docs/ADR-045): the first frame of a sequence, lazily, six at a time by themselves, cached across opens.
 const seqRun = (i, n = 3) => ({ prompt_id: `seq${i}0000-1111`, workflow: `rounds/r1/s${i}.json`, status: 'success', started_at: `2026-11-17T${String(10 + i).padStart(2, '0')}:00:00Z`, duration_s: 5, cost_estimate: 0,
   outputs: Array.from({ length: n }, (_, k) => ({ filename: `s${i}_proxy.${String(k).padStart(4, '0')}.dpx`, subfolder: `seqs/s${i}`, type: 'output' })) })
+/** The Previews button opens the Previews window (Load all previews, Render sequences). */
+const openPreviews = async (page) => { await page.getByTestId('pod-outputs-previews').click(); await expect(page.getByTestId('pod-outputs-previews-modal')).toBeVisible() }
 const flat = () => makeDpx({ width: 16, height: 8, bits: 16, fn: () => 0 })
 
 test('DPX previews: nothing loads by itself, even scrolling; a click loads one tile once; Load all loads the rest one at a time; reopening uses the cache; an empty first frame says so', async ({ page, api }) => {
@@ -226,13 +228,15 @@ test('DPX previews: nothing loads by itself, even scrolling; a click loads one t
   await expect(m.getByTestId('outputs-dpx-thumb').first()).toBeVisible({ timeout: 15000 })
   expect(Object.keys(hits)[0].endsWith('.0000.dpx')).toBe(true)
   // Load all: the rest, one frame at a time, each once (s2's first frame is flat: a badge, not a black square)
-  await m.getByTestId('pod-outputs-load-previews').click()
+  await openPreviews(page)
+  await page.getByTestId('pod-outputs-previews-modal').getByTestId('pod-outputs-load-previews').click()
   await expect.poll(() => Object.keys(hits).length, { timeout: 30000 }).toBe(30)
   expect(peak).toBe(1); expect(Object.values(hits).every((n) => n === 1)).toBe(true)
   await expect(m.getByTestId('outputs-dpx-thumb-empty')).toHaveCount(1)
   // close and reopen: what was made comes from the cache with no new request
   const before = { ...hits }
-  await page.keyboard.press('Escape')
+  await page.getByTestId('pod-outputs-previews-modal').locator('.modal-footer button').click(); await expect(page.getByTestId('pod-outputs-previews-modal')).toBeHidden()   // the Previews window first, then the Outputs window
+  await m.locator('.btn-close').click(); await expect(m).toBeHidden()
   await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
   await expect.poll(async () => m.getByTestId('outputs-dpx-thumb').count(), { timeout: 15000 }).toBeGreaterThan(15)   // the cache fills the tiles in view at once
   await m.getByTestId('outputs-tile').last().scrollIntoViewIfNeeded()
@@ -336,7 +340,8 @@ test('DPX previews: a preview you asked for is NOT cancelled by scrolling away, 
   await expect(m.getByTestId('outputs-dpx-thumb').first()).toBeVisible({ timeout: 15000 })   // done, not back to "Load preview"
   expect(Object.values(hits).every((n) => n === 1)).toBe(true)
   // Load all, then scroll to the end and back: every tile ends with its preview, each frame fetched once
-  await m.getByTestId('pod-outputs-load-previews').click()
+  await openPreviews(page)
+  await page.getByTestId('pod-outputs-previews-modal').getByTestId('pod-outputs-load-previews').click()
   await m.getByTestId('outputs-tile').last().scrollIntoViewIfNeeded()
   await page.waitForTimeout(600)
   await m.getByTestId('outputs-tile').first().scrollIntoViewIfNeeded()
@@ -344,4 +349,91 @@ test('DPX previews: a preview you asked for is NOT cancelled by scrolling away, 
   await expect.poll(async () => m.getByTestId('outputs-dpx-thumb').count(), { timeout: 30000 }).toBe(29)
   await expect(m.getByTestId('outputs-dpx-load-preview')).toHaveCount(0)   // nothing is left asking for another click
   expect(Object.values(hits).every((n) => n === 1)).toBe(true)
+})
+
+// The Previews window (Load all previews): a batch reaches tiles never scrolled into view, a cached sequence costs no download, the failed count, Stop, the batch ending by itself, the counts line, the progress.
+const manySeqs = (n) => [{ ...seqRun(1), outputs: Array.from({ length: n }, (_, i) => seqRun(i + 1).outputs).flat() }]
+const pv = (page) => page.getByTestId('pod-outputs-previews-modal')
+async function previewsPage(page, api, { n = 12, delayMs = 40, fail = () => false, empty = () => false } = {}) {
+  api.state.history.runs['pod-aaaaaaaa'] = manySeqs(n)
+  const hits = {}
+  await page.context().route('**/view?*', async (r) => {
+    const name = decodeURIComponent(/filename=([^&]+)/.exec(r.request().url())[1]); hits[name] = (hits[name] || 0) + 1
+    await new Promise((res) => setTimeout(res, delayMs))
+    if (fail(name)) return r.fulfill({ status: 500, body: 'boom' }).catch(() => {})
+    return r.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: empty(name) ? flat() : dpx(0) }).catch(() => {})
+  })
+  await page.addInitScript(() => { try { indexedDB.deleteDatabase('pod-manager-thumbs') } catch { /* none */ } })   // an empty cache for this test
+  await page.goto('/')
+  await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
+  const m = page.getByTestId('pod-outputs-modal')
+  await expect(m.getByTestId('outputs-tile')).toHaveCount(n)
+  return { m, hits }
+}
+
+test('Previews window: Generate all reaches tiles that were never scrolled into view; the counts line and the progress follow; the batch ends by itself and a failed one is counted', async ({ page, api }) => {
+  const { m, hits } = await previewsPage(page, api, { n: 12, fail: (name) => name.startsWith('s3_'), empty: (name) => name.startsWith('s2_') })
+  await openPreviews(page)
+  const p = pv(page)
+  await expect(p.getByTestId('pod-outputs-previews-counts')).toHaveText('0 ready · 12 waiting · 0 failed')
+  await expect(p.getByTestId('pod-outputs-previews-progress')).toHaveCount(0)
+  expect(Object.keys(hits)).toHaveLength(0)   // opening the window costs nothing
+  await p.getByTestId('pod-outputs-load-previews').click()
+  await expect(p.getByTestId('pod-outputs-previews-progress')).toBeVisible()
+  await expect.poll(async () => Number(await p.getByTestId('pod-outputs-previews-progress').getAttribute('data-percent')), { timeout: 15000 }).toBeGreaterThan(0)   // it moves
+  await expect(p.getByTestId('pod-outputs-previews-progress')).toHaveCount(0, { timeout: 30000 })   // and ends by itself: no Stop needed
+  await expect(p.getByTestId('pod-outputs-stop-previews')).toHaveCount(0)
+  expect(Object.keys(hits).length).toBeGreaterThanOrEqual(12)   // every sequence was asked for, the last ones never scrolled to
+  await expect(p.getByTestId('pod-outputs-previews-counts')).toHaveText('11 ready · 1 waiting · 1 failed')   // the flat first frame counts as ready; the 500 is failed (and can be tried again)
+  await expect(p.getByTestId('pod-outputs-load-previews')).toBeEnabled()
+  await expect(p).toContainText('1 failed')
+  void m
+})
+
+test('Previews window: the progress bar reports data-percent up to 100 while a batch runs', async ({ page, api }) => {
+  await previewsPage(page, api, { n: 6, delayMs: 150 })
+  await openPreviews(page)
+  const bar = pv(page).getByTestId('pod-outputs-previews-progress')
+  await pv(page).getByTestId('pod-outputs-load-previews').click()
+  const seen = new Set()
+  await expect.poll(async () => { const v = await bar.getAttribute('data-percent', { timeout: 150 }).catch(() => null); if (v !== null) seen.add(Number(v)); return bar.count() }, { timeout: 30000, intervals: [50] }).toBe(0)
+  expect(Math.max(...seen)).toBeGreaterThan(0); expect([...seen].every((v) => v >= 0 && v <= 100)).toBe(true); expect(seen.size).toBeGreaterThan(2)
+  await expect(pv(page).getByTestId('pod-outputs-previews-counts')).toHaveText('6 ready · 0 waiting · 0 failed')
+  await expect(pv(page).getByTestId('pod-outputs-load-previews')).toBeDisabled()   // nothing left to make
+})
+
+test('Previews window: Stop ends the batch and nothing restarts when you scroll afterwards', async ({ page, api }) => {
+  const { m, hits } = await previewsPage(page, api, { n: 12, delayMs: 300 })
+  await openPreviews(page)
+  await pv(page).getByTestId('pod-outputs-load-previews').click()
+  await expect.poll(() => Object.keys(hits).length, { timeout: 10000 }).toBeGreaterThan(0)
+  await pv(page).getByTestId('pod-outputs-stop-previews').click()
+  await expect(pv(page).getByTestId('pod-outputs-previews-progress')).toHaveCount(0)
+  await expect(pv(page).getByTestId('pod-outputs-stop-previews')).toHaveCount(0)
+  await page.waitForTimeout(700)   // whatever was in flight settles
+  const after = Object.keys(hits).length
+  expect(after).toBeLessThan(12)
+  await pv(page).locator('.modal-footer button').click(); await expect(pv(page)).toBeHidden()
+  await m.getByTestId('outputs-tile').last().scrollIntoViewIfNeeded()
+  await m.getByTestId('outputs-tile').nth(5).scrollIntoViewIfNeeded()
+  await page.waitForTimeout(900)
+  expect(Object.keys(hits).length).toBe(after)   // scrolling starts nothing
+  await openPreviews(page)
+  await expect(pv(page).getByTestId('pod-outputs-load-previews')).toBeEnabled()   // the rest is still waiting for a click
+})
+
+test('Previews window: a sequence already in the cache costs no download when Generate all runs again', async ({ page, api }) => {
+  const { m, hits } = await previewsPage(page, api, { n: 4, delayMs: 20 })
+  await openPreviews(page)
+  await pv(page).getByTestId('pod-outputs-load-previews').click()
+  await expect(pv(page).getByTestId('pod-outputs-previews-counts')).toHaveText('4 ready · 0 waiting · 0 failed', { timeout: 20000 })
+  const before = { ...hits }
+  expect(Object.keys(before)).toHaveLength(4)
+  await pv(page).locator('.modal-footer button').click(); await expect(pv(page)).toBeHidden()
+  await m.locator('.btn-close').click(); await expect(m).toBeHidden()
+  await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
+  await openPreviews(page)
+  if (await pv(page).getByTestId('pod-outputs-load-previews').isEnabled()) await pv(page).getByTestId('pod-outputs-load-previews').click()   // tiles out of view are made now: from the cache
+  await expect(pv(page).getByTestId('pod-outputs-previews-counts')).toHaveText('4 ready · 0 waiting · 0 failed', { timeout: 20000 })
+  expect(hits).toEqual(before)   // all four came from the cache
 })

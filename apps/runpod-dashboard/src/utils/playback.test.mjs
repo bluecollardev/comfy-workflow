@@ -69,3 +69,18 @@ test('buffered fractions and codec errors', () => {
   assert.deepEqual(bufferedFractions(r, 10), [[0, 0.2], [0.5, 1]]); assert.deepEqual(bufferedFractions(null, 10), []); assert.deepEqual(bufferedFractions(r, 0), [])
   assert.equal(isCodecError({ code: 4 }), true); assert.equal(isCodecError(3), true); assert.equal(isCodecError({ code: 2 }), false); assert.equal(isCodecError(null), false)
 })
+
+// 23.976 fps (the rendered proxy's rate): the clock advances one frame every 41.708 ms, 239 or 240 frames in 10 s, never skipping; the timecode counts frames at the true rate.
+test('23.976 fps: the frame interval is 1000/23.976 ms and ten seconds is about 240 frames', () => {
+  const p = createPlayback({ count: 100000, fps: 23.976 })
+  p.play(0)
+  let n = 0
+  for (let t = 0; t <= 10000; t += 1) if (p.tick(t).changed) n++
+  assert.ok(n >= 239 && n <= 240, `advanced ${n} frames`)
+  const q = createPlayback({ count: 10, fps: 23.976 }); q.play(0)
+  assert.equal(q.tick(41).changed, false); assert.equal(q.tick(42).changed, true)   // 41.708 ms
+})
+test('timecode at 23.976: frame numbers count at the true rate over a long clip (no drift against the 24 timebase)', () => {
+  assert.equal(timecode(1, 23.976), '00:00:23'); assert.equal(timecode(1000, 23.976), '16:39:00'); assert.equal(timecode(1000, 24), '16:40:00')
+  assert.equal(frameAt(1, 23.976), 23); assert.ok(stepTime(0, 1, 23.976) > 1 / 23.976 && stepTime(0, 1, 23.976) < 2 / 23.976)
+})

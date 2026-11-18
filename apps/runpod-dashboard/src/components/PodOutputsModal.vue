@@ -5,7 +5,7 @@
       <div class="ms-auto d-flex gap-2">   <!-- the buttons sit at the right, whatever else shows -->
         <BButton v-if="all.length > 1" variant="outline-light" size="sm" class="text-nowrap" :disabled="!canZip || zipping || !anyBase" :title="canZip ? '' : $t('outputs.zipApp')" data-testid="pod-outputs-zip-all" @click="zipAll"><BSpinner v-if="zipping" small class="me-1" /><i v-else class="fa-solid fa-file-zipper me-1"></i>{{ $t('outputs.zipAllRuns') }}</BButton>
         <BButton variant="outline-light" size="sm" class="text-nowrap" data-testid="pod-outputs-clear-previews" :title="$t('outputs.dpx.clearCacheTitle')" @click="clearPreviews"><i class="fa-regular fa-trash-can me-1"></i>{{ $t('outputs.dpx.cached', { n: cachedCount }) }} · {{ $t('outputs.dpx.clearCache') }}</BButton>
-        <BButton variant="outline-light" size="sm" class="text-nowrap" data-testid="pod-outputs-previews" :title="$t('outputs.dpx.previewsTitle')" @click="previewsOpen = true"><BSpinner v-if="previewBus.batch" small class="me-1" /><i v-else class="fa-regular fa-images me-1"></i>{{ previewBus.batch ? $t('outputs.dpx.generating', { done: batchDone, total: previewBus.batchTotal }) : $t('outputs.dpx.previews') }}</BButton>
+        <BButton variant="outline-light" size="sm" class="text-nowrap" data-testid="pod-outputs-previews" :title="$t('outputs.dpx.previewsTitle')" @click="previewsOpen = true"><BSpinner v-if="previewBus.batch || renderJob" small class="me-1" /><i v-else class="fa-regular fa-images me-1"></i>{{ previewBus.batch ? $t('outputs.dpx.generating', { done: batchDone, total: previewBus.batchTotal }) : $t('outputs.dpx.previews') }}<span v-if="renderJob" class="ms-1 text-info" data-testid="pod-outputs-render-button-status">· {{ renderJob.state === 'pulling' ? $t('outputs.render.buttonSyncing') : $t('outputs.render.buttonRendering', { done: renderJob.frames_done || 0, total: renderJob.frames_total || 0 }) }}</span></BButton>
         <BButton variant="outline-light" size="sm" class="text-nowrap" data-testid="pod-outputs-refresh" @click="refresh"><i class="fa-solid fa-rotate me-1"></i>{{ $t('outputs.refresh') }}</BButton>
       </div>
     </div>
@@ -52,7 +52,7 @@
         <span v-if="r.source === 'volume'" class="text-body-secondary ms-auto" data-testid="pod-outputs-volume-run">{{ $t('outputs.volumeRun', { when: r.started_at ? new Date(r.started_at).toLocaleString() : '?', files: r.files.length, size: sizeText(r.files.reduce((n, f) => n + (f.bytes || 0), 0)) }) }}</span>
         <span v-else class="text-body-secondary ms-auto">{{ $t('outputs.run', { when: new Date(r.started_at).toLocaleString(), s: r.duration_s ?? '?' }) }} · <span class="font-monospace">{{ r.prompt_id.slice(0, 8) }}</span></span>
       </div>
-      <OutputsGallery :files="r.files" :total-files="r.totalFiles || 0" :base="baseFor(r)" :scope="volumeId || pod.id" :volume-name="volumeName" :offline="!baseFor(r)" :zip-name="`${runName(r) || pod.name}-${idOf(r)}.zip`" />
+      <OutputsGallery :files="r.files" :total-files="r.totalFiles || 0" :base="baseFor(r)" :scope="volumeId || pod.id" :volume-name="volumeName" :offline="!baseFor(r)" :zip-name="`${runName(r) || pod.name}-${idOf(r)}.zip`" :pod-id="pod.id" />
     </div>
   </BModal>
   <BModal v-model="previewsOpen" :title="$t('outputs.dpx.previewsModalTitle')" size="md" lazy ok-only :ok-title="$t('outputs.dpx.close')" data-testid="pod-outputs-previews-modal">
@@ -67,6 +67,7 @@
         <span v-if="previewBus.counts.error" class="small text-warning">{{ $t('outputs.dpx.generatingFailed', { n: previewBus.counts.error }) }}</span>
       </div>
     </div>
+    <RenderSequences :pod="pod" :items="renderItems" :skipped="renderSkipped" @play="previewsOpen = false" />
   </BModal>
 </template>
 
@@ -74,13 +75,16 @@
 /** PodOutputsModal: every file the pod's finished runs produced (from ComfyUI's history), run by run, in the reusable OutputsGallery (viewer, download). With a network volume it also browses the volume's comfy-shared/output/ by folder over RunPod's S3 API, no pod needed (docs/ADR-045). */
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import OutputsGallery from './OutputsGallery.vue'
+import RenderSequences from './RenderSequences.vue'
 import { core } from '../api/bridge'
 import { historyAPI } from '../api/history'
 import { useUiStore } from '../stores/ui'
-import { viewUrl, runName, runsForShot, inFolder, narrowToFolder, volumeAsRuns, mergeWithVolume, s3Base, sizeText } from '../utils/outputs'
+import { viewUrl, galleryTiles, runName, runsForShot, inFolder, narrowToFolder, volumeAsRuns, mergeWithVolume, s3Base, sizeText } from '../utils/outputs'
 import { errorText } from '../stores/toast'
 import { sharedThumbs, thumbTimeouts, withTimeout } from '../utils/thumbs'
 import { previewBus } from '../utils/thumbsBus'
+import { useRendersStore } from '../stores/renders'
+import { sequenceItems, isActive } from '../utils/renders'
 const folderOf = (p) => p.split('/').slice(0, -1).join('/')
 /** `base`: the web address files are served from (this pod, or another running pod on its volume); '' when none runs: the files are then read from the volume over S3 when its keys are set, else only listed. */
 const props = defineProps({ pod: { type: Object, required: true }, runs: { type: Array, default: () => [] }, base: { type: String, default: '' }, volumeName: { type: String, default: '' }, volumeId: { type: String, default: '' } })
@@ -140,6 +144,17 @@ const refresh = () => { emit('refresh'); loadVolume(vol.loaded ? vol.prefix : un
 
 /** The runs shown: the pod's and the saved ones, and the volume's folder runs that are not already one of them. */
 const all = computed(() => mergeWithVolume(shown.value, vol.runs))
+/** Render sequences (docs/ADR-048): the DPX sequences this window lists (folder scope respected) are what the core renders; the proxies' state is asked in ONE batched call per open (and again when a job ends) for the tile badges and the viewer. */
+const renders = useRendersStore()
+const renderTiles = computed(() => all.value.flatMap((r) => galleryTiles(r.files)))
+const renderSeqs = computed(() => sequenceItems(renderTiles.value))
+const renderItems = computed(() => renderSeqs.value.items), renderSkipped = computed(() => renderSeqs.value.skipped)
+const renderJob = computed(() => { const j = renders.jobForPod(props.pod.id); return isActive(j) ? j : null })
+let proxyTimer = null
+const proxySig = computed(() => renderItems.value.map((i) => `${i.dir}/${i.name}`).join('|'))
+watch(proxySig, () => { clearTimeout(proxyTimer); proxyTimer = setTimeout(() => renders.loadProxies({ pod_id: props.pod.id, ...(props.volumeId ? { volume_id: props.volumeId } : {}), items: renderItems.value.map((i) => ({ dir: i.dir, name: i.name })) }), 120) }, { immediate: true })
+onMounted(() => renders.watch())
+onBeforeUnmount(() => clearTimeout(proxyTimer))
 /** Where a run's files are fetched from: a running pod's address when there is one, else the volume over S3 (its keys set), else nowhere (only listed). */
 const baseFor = (r) => props.base || (s3ok.value ? s3Base(props.volumeId) : '')
 const anyBase = computed(() => !!props.base || s3ok.value)

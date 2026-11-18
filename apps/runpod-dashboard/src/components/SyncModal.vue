@@ -28,6 +28,49 @@
         <BFormCheckbox v-model="skipTests" switch class="mt-2" data-testid="sync-skip-tests">{{ $t('sync.skipTests') }}</BFormCheckbox>
         <div class="form-text">{{ $t('sync.skipTestsHelp') }}</div>
       </div>
+      <div v-if="direction === 'push' && folderSteps.length" class="mb-2 border rounded p-2" data-testid="sync-exclude">
+        <div class="fw-semibold small mb-1">{{ $t('sync.leaveOut') }}</div>
+        <div v-if="canalv2 && !isOut(canalv2.step, canalv2.name)" class="mb-2"><BButton size="sm" variant="outline-warning" data-testid="sync-exclude-canalv2" @click="tick(canalv2.step, canalv2.name, true)"><i class="fa-solid fa-ban me-1"></i>{{ $t('sync.leaveOutChip', { name: canalv2.name }) }}</BButton></div>
+        <div v-for="st in folderSteps" :key="st.key" class="mb-2" data-testid="sync-exclude-step" :data-step="st.key">
+          <div class="small text-body-secondary">{{ st.key }}</div>
+          <div v-if="stepSaved(st.key).length" class="small mb-1" data-testid="sync-exclude-step-saved" :data-step="st.key"><span class="text-body-secondary">{{ $t('sync.stepSavedTitle', { step: st.key }) }}:</span> <span v-for="p in stepSaved(st.key)" :key="p" class="font-monospace me-2">{{ p }} <span class="badge text-bg-secondary">{{ $t('sync.savedTag') }}</span></span></div>
+          <div class="d-flex flex-wrap gap-x-3 gap-y-1" style="column-gap: 1.25rem">
+            <div v-for="f in st.folders" :key="f.name" class="d-flex align-items-center gap-1 small">
+              <input :id="`sync-ex-${st.key}-${f.name}`" type="checkbox" class="form-check-input mt-0" :checked="isOut(st.key, f.name)" :disabled="isStepSaved(st.key, f.name)" data-testid="sync-exclude-folder" :data-step="st.key" :data-name="f.name" @change="tick(st.key, f.name, $event.target.checked)" />
+              <label :for="`sync-ex-${st.key}-${f.name}`" class="mb-0 font-monospace">{{ f.name }}</label>
+              <span v-if="isStepSaved(st.key, f.name)" class="badge text-bg-secondary" data-testid="sync-exclude-saved">{{ $t('sync.savedTag') }}</span>
+              <template v-if="meas[`${st.key}/${f.name}`]?.busy"><BSpinner small /><BButton variant="link" size="sm" class="p-0" data-testid="sync-measure-cancel" :data-name="f.name" @click="cancelMeasure(st.key, f.name)">{{ $t('sync.measureCancel') }}</BButton></template>
+              <span v-else-if="meas[`${st.key}/${f.name}`]?.bytes != null" class="text-body-secondary" data-testid="sync-measure-size" :data-name="f.name">{{ formatBytes(meas[`${st.key}/${f.name}`].bytes) }}</span>
+              <span v-else-if="meas[`${st.key}/${f.name}`]?.error" class="text-danger" data-testid="sync-measure-error">{{ $t('sync.measureFailed') }}</span>
+              <BButton v-else variant="link" size="sm" class="p-0" data-testid="sync-measure" :data-step="st.key" :data-name="f.name" @click="measure(st.key, f.name)">{{ $t('sync.measure') }}</BButton>
+            </div>
+          </div>
+        </div>
+        <div class="d-flex gap-2 align-items-start mb-1">
+          <div class="flex-grow-1" style="max-width: 22rem"><BFormInput v-model="newPattern" size="sm" class="font-monospace" :placeholder="$t('sync.patternPlaceholder')" data-testid="sync-exclude-add" @keydown.enter.prevent="addPattern" /><div v-if="patternError" class="text-danger small" data-testid="sync-exclude-error">{{ $t(`sync.${patternError}`) }}</div></div>
+          <BButton size="sm" variant="outline-light" data-testid="sync-exclude-add-button" @click="addPattern">{{ $t('sync.patternAdd') }}</BButton>
+        </div>
+        <div v-if="savedPatterns.length || runPatterns.length" class="small mb-1" data-testid="sync-exclude-patterns">
+          <div v-for="p in savedPatterns" :key="`s-${p}`" class="d-flex align-items-center gap-2" data-testid="sync-exclude-pattern" data-saved="true"><span class="font-monospace">{{ p }}</span><span class="badge text-bg-secondary">{{ $t('sync.savedTag') }}</span></div>
+          <div v-for="p in runPatterns" :key="`r-${p}`" class="d-flex align-items-center gap-2" data-testid="sync-exclude-pattern" data-saved="false"><span class="font-monospace">{{ p }}</span><BButton variant="link" size="sm" class="p-0 text-danger" data-testid="sync-exclude-remove" :data-pattern="p" @click="removePattern(p)">{{ $t('sync.patternRemove') }}</BButton></div>
+        </div>
+        <div v-if="!deleteUnsupported" class="border-top pt-2 mt-2" data-testid="sync-exclude-delete-block">
+          <BFormCheckbox v-model="delDelete" class="small" data-testid="sync-exclude-delete">{{ $t('sync.excludeDelete') }}</BFormCheckbox>
+          <div class="form-text text-danger" data-testid="sync-exclude-delete-warning">{{ $t('sync.excludeDeleteWarn') }}</div>
+          <div v-if="delDelete && delPreview !== null && !delPreview.length" class="small text-body-secondary mt-1" data-testid="sync-delete-nothing">{{ $t('sync.deleteNothing') }}</div>
+          <div v-if="delDelete && delPreview && delPreview.length" class="border border-danger rounded p-2 mt-2 small" data-testid="sync-delete-preview">
+            <div class="fw-semibold text-danger mb-1"><i class="fa-solid fa-trash me-1"></i>{{ $t('sync.deletePreviewTitle') }}</div>
+            <div v-for="(w, i) in delPreview" :key="i" class="font-monospace text-break" data-testid="sync-delete-path">{{ $t('sync.deleteItem', { path: w.path, size: w.bytes == null ? $t('sync.sizeUnknown') : formatBytes(w.bytes) }) }}</div>
+            <div class="mt-1" data-testid="sync-delete-total">{{ $t('sync.deleteTotal', { size: delTotal == null ? $t('sync.sizeUnknown') : formatBytes(delTotal) }) }}</div>
+            <div class="d-flex align-items-center gap-2 mt-2 flex-wrap"><label class="mb-0" for="sync-delete-by">{{ $t('sync.deleteApprovedBy') }}</label><BFormInput id="sync-delete-by" v-model.trim="delApproved" size="sm" style="max-width: 16rem" data-testid="sync-delete-approved-by" /></div>
+            <div v-if="!delApproved" class="text-warning" data-testid="sync-delete-approved-hint">{{ $t('sync.deleteNeedsName') }}</div>
+            <BFormCheckbox v-model="delConfirm" class="mt-1" data-testid="sync-delete-confirm">{{ $t('sync.deleteConfirm') }}</BFormCheckbox>
+          </div>
+        </div>
+        <BFormCheckbox v-model="remember" class="small mt-2" data-testid="sync-exclude-remember">{{ $t('sync.remember') }}</BFormCheckbox>
+        <div class="form-text" data-testid="sync-exclude-help">{{ $t('sync.leaveOutHelp') }}</div>
+        <div v-if="rememberError" class="text-danger small" data-testid="sync-exclude-remember-error">{{ rememberError }}</div>
+      </div>
       <div v-if="transport.kind === 'ssh'" class="mb-2" data-testid="sync-existing">
         <div class="fw-semibold small mb-1">{{ $t('sync.existingTitle') }}</div>
         <div v-for="m in EXISTING" :key="m" class="form-check">
@@ -40,6 +83,8 @@
         <template v-else-if="counts.all.total_files != null">{{ $t(skipping ? 'sync.planCountsWithout' : 'sync.planCounts', { files: fmtN(shownCounts.total_files), bytes: formatBytes(shownCounts.total_bytes) }) }}</template>
         <template v-else>{{ $t('sync.noCount') }}</template>
       </div>
+      <BAlert v-if="overCap" :model-value="true" variant="danger" class="small py-2" data-testid="sync-over-capacity"><i class="fa-solid fa-hard-drive me-2"></i>{{ $t(capSrc.free_bytes != null ? 'sync.overCapacity' : 'sync.overCapacityNoFree', { send: formatBytes(sendBytes), capacity: formatBytes(capSrc.capacity_bytes), free: formatBytes(capSrc.free_bytes) }) }}</BAlert>
+      <BAlert v-else-if="lowSpace" :model-value="true" variant="warning" class="small py-2" data-testid="sync-low-space"><i class="fa-solid fa-hard-drive me-2"></i>{{ $t('sync.lowSpace', { left: formatBytes(capSrc.free_bytes - sendBytes) }) }}</BAlert>
       <div v-if="planError" class="text-danger small mb-2" data-testid="sync-plan-error">{{ planError }}</div>
       <BAlert :model-value="true" :variant="transport.kind === 'none' ? 'danger' : 'info'" class="small py-2" data-testid="sync-transport"><i :class="transport.kind === 'none' ? 'fa-solid fa-ban' : 'fa-solid fa-route'" class="me-2"></i>{{ transport.kind === 'none' ? transport.reason : $t('sync.transport', { how: transport.reason }) }}</BAlert>
       <table v-if="!planError" class="table table-sm small mb-3" data-testid="sync-plan">
@@ -63,6 +108,14 @@
         <span class="text-success"><i class="fa-solid fa-check me-1"></i>{{ $t('sync.countFiles', { n: fileCount }) }}</span>
         <span v-if="skippedCount != null" class="text-body-secondary" data-testid="sync-skipped"><i class="fa-solid fa-forward me-1"></i>{{ $t('sync.countSkipped', { n: fmtN(skippedCount) }) }}</span>
         <span :class="problems.length ? 'text-danger' : 'text-body-secondary'"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ $t('sync.countErrors', { n: problems.length }) }}</span>
+      </div>
+      <BAlert v-if="fullError" :model-value="true" variant="danger" class="small py-2" data-testid="sync-volume-full" :data-code="fullError.code"><div class="fw-semibold"><i class="fa-solid fa-hard-drive me-2"></i>{{ $t(fullError.code === 'disk_full' ? 'sync.diskFullTitle' : 'sync.volumeFullTitle') }}</div><div data-testid="sync-volume-full-text">{{ fullError.text }}</div><div v-if="(fullError.not_done || []).length" class="mt-1" data-testid="sync-not-done">{{ $t('sync.notDone') }} <span v-for="k in fullError.not_done" :key="k" class="font-monospace me-2" data-testid="sync-not-done-step">{{ k }}</span></div></BAlert>
+      <div v-if="deleteEvents.length" class="mb-2" data-testid="sync-deletes">
+        <div v-for="(e, i) in deleteEvents" :key="i" class="small" :class="e.state === 'failed' ? 'text-danger' : e.state === 'removed' ? 'text-success' : 'text-body-secondary'" data-testid="sync-delete-event" :data-state="e.state"><i class="fa-solid me-1" :class="e.state === 'failed' ? 'fa-circle-xmark' : e.state === 'removed' ? 'fa-trash-can' : 'fa-spinner'"></i>{{ e.state === 'failed' ? $t('sync.deleteFailed', { path: e.path, error: e.text || '' }) : e.state === 'removed' ? (e.bytes == null ? $t('sync.deleteRemovedNoSize', { path: e.path }) : $t('sync.deleteRemoved', { path: e.path, size: formatBytes(e.bytes) })) : $t('sync.deleteRemoving', { path: e.path }) }}</div>
+      </div>
+      <div v-if="skippedSteps.length" class="mb-2" data-testid="sync-steps">
+        <div class="small fw-semibold mb-1">{{ $t('sync.stepsTitle') }}</div>
+        <div v-for="(s, i) in skippedSteps" :key="i" class="small text-body-secondary" data-testid="sync-step-skipped" :data-key="s.key"><i class="fa-solid fa-forward me-1"></i>{{ s.reason ? $t('sync.stepSkipped', { key: s.key, reason: s.reason }) : $t('sync.stepSkippedNoReason', { key: s.key }) }}</div>
       </div>
       <div v-if="problems.length" class="mb-2" data-testid="sync-errors">
         <div class="small fw-semibold text-danger mb-1">{{ $t('sync.errors') }}</div>
@@ -113,6 +166,10 @@ import { useAutosyncStore } from '../stores/autosync'
 import { barValue, detailParts, fold, formatBytes, fresh } from '../sync-progress'
 import { t } from '../i18n'
 import SyncLogsModal from './SyncLogsModal.vue'
+import { podsAPI } from '../api/pods'
+import { mountsAPI } from '../api/mounts'
+import { errorText } from '../stores/toast'
+import { excludeProblem, listProblem, folderPattern, isCanalV2 } from '../utils/syncexclude'
 
 const props = defineProps({ modelValue: Boolean, pod: { type: Object, required: true } })
 const emit = defineEmits(['update:modelValue'])
@@ -136,6 +193,11 @@ const counts = ref({ pending: false, all: {}, without_renders: undefined })   //
 const skipping = computed(() => (skipRenders.value || skipTests.value) && counts.value.without_renders?.total_files != null)
 const shownCounts = computed(() => (skipping.value ? counts.value.without_renders : counts.value.all))
 // files in scope that are already on the pod (or left out by the same rule): the listing's scope less what it would send
+// Capacity (the core's listing pass): a push larger than the volume is refused before anything is copied; the window says so and keeps Start off.
+const capSrc = computed(() => { const c = shownCounts.value || {}; return c.over_capacity !== undefined || c.capacity_bytes != null ? c : counts.value })
+const sendBytes = computed(() => Number(shownCounts.value?.total_bytes) || 0)
+const overCap = computed(() => direction.value === 'push' && !!capSrc.value.over_capacity)
+const lowSpace = computed(() => { const c = capSrc.value; return direction.value === 'push' && !c.over_capacity && c.free_bytes != null && c.capacity_bytes > 0 && (c.free_bytes - sendBytes.value) / c.capacity_bytes < 0.05 })
 const skippedCount = computed(() => { const c = shownCounts.value; return c?.scanned_files != null && c.total_files != null ? Math.max(0, c.scanned_files - c.total_files) : null })
 const fmtN = (x) => Number(x).toLocaleString('en-US')
 let countRun = 0
@@ -145,6 +207,66 @@ async function loadCounts() {
   try { const r = await syncAPI.count(request()); if (mine === countRun) counts.value = { pending: false, ...r } }
   catch { if (mine === countRun) counts.value = { pending: false, all: {}, without_renders: undefined } }
 }
+// Leave out (v1.5.0): folders and patterns a push never sends. The saved patterns (the pod's configuration, else the Default's) are always in force and listed; the ticks and patterns added here are this run's, sent as `exclude` on the count and the run.
+const folderSteps = ref([])          // [{ key, local, folders: [{ name }] }] from the core; empty (the section hidden) on a core without it
+const savedPatterns = ref([])
+const runPatterns = ref([])          // this run's patterns, folder ticks included (as /name/)
+const newPattern = ref(''), patternError = ref(''), remember = ref(false), rememberError = ref('')
+const meas = ref({})                 // `${step}/${name}` -> { busy, bytes, error, id }
+const isSaved = (p) => savedPatterns.value.includes(p)
+const covers = (p, name) => p === `/${name}/` || p === `${name}/`
+const stepSaved = (step) => (folderSteps.value.find((s) => s.key === step)?.saved || []).filter((p) => !savedPatterns.value.includes(p))   // per-folder defaults (the global ones are listed below)
+const isStepSaved = (step, name) => isSaved(folderPattern(name)) || (folderSteps.value.find((s) => s.key === step)?.saved || []).some((p) => covers(p, name))
+const isOut = (step, name) => isStepSaved(step, name) || runPatterns.value.includes(folderPattern(name))
+const canalv2 = computed(() => { for (const st of folderSteps.value) { const f = st.folders.find((x) => isCanalV2(x.name)); if (f) return { step: st.key, name: f.name } } return null })
+function tick(step, name, on) { const p = folderPattern(name); runPatterns.value = on ? (runPatterns.value.includes(p) ? runPatterns.value : [...runPatterns.value, p]) : runPatterns.value.filter((x) => x !== p) }
+function addPattern() {
+  const p = newPattern.value.trim(), bad = excludeProblem(p)
+  if (bad) { patternError.value = bad; return }
+  if (runPatterns.value.length + savedPatterns.value.length >= 100) { patternError.value = 'excludeMany'; return }
+  patternError.value = ''
+  if (!runPatterns.value.includes(p) && !isSaved(p)) runPatterns.value = [...runPatterns.value, p]
+  newPattern.value = ''
+}
+const removePattern = (p) => { runPatterns.value = runPatterns.value.filter((x) => x !== p) }
+let measureSeq = 0
+async function measure(step, name) {
+  const k = `${step}/${name}`, id = `m${++measureSeq}-${Date.now()}`
+  meas.value = { ...meas.value, [k]: { busy: true, id } }
+  try { const r = await syncAPI.measure({ pod_id: props.pod.id, step, name, id }); if (meas.value[k]?.id === id) meas.value = { ...meas.value, [k]: { bytes: r?.bytes ?? 0 } } }
+  catch { if (meas.value[k]?.id === id) { const { [k]: _gone, ...rest } = meas.value; meas.value = { ...rest, ...(meas.value[k]?.cancelled ? {} : { [k]: { error: true } }) } } }
+}
+function cancelMeasure(step, name) { const k = `${step}/${name}`, m = meas.value[k]; if (!m) return; syncAPI.measureCancel(m.id); const { [k]: _gone, ...rest } = meas.value; meas.value = rest }
+async function loadFolders() {
+  try { const r = await syncAPI.folders({ pod_id: props.pod.id }); folderSteps.value = (r.steps || []).filter((s) => (s.folders || []).length) } catch { folderSteps.value = [] }
+}
+async function loadSavedPatterns() {
+  try {
+    const own = await podsAPI.config(props.pod.id)
+    const d = await mountsAPI.get(), own2 = own && Object.keys(own).length ? own : null
+    savedPatterns.value = Array.isArray(own2?.sync_exclude) ? [...own2.sync_exclude] : own2 ? [] : Array.isArray(d?.config?.sync_exclude) ? [...d.config.sync_exclude] : []
+    const sd = own2 && own2.sync_exclude_delete !== undefined ? own2.sync_exclude_delete : d?.config?.sync_exclude_delete
+    savedDelete.value = !!sd; delDelete.value = !!sd
+  } catch { savedPatterns.value = [] }
+}
+/** Remember for this pod: the pattern list goes into the pod's own configuration, the rest of it unchanged (the pod's, else the Default's as it is). */
+async function rememberPatterns() {
+  rememberError.value = ''
+  try {
+    const own = await podsAPI.config(props.pod.id)
+    const base = own && Object.keys(own).length ? own : (await mountsAPI.get())?.config || {}   // (no own configuration: null, or empty)
+    await podsAPI.setConfig(props.pod.id, { ...base, sync_exclude: [...new Set([...savedPatterns.value, ...runPatterns.value])], ...(delDelete.value || savedDelete.value ? { sync_exclude_delete: delDelete.value } : {}) })
+    savedPatterns.value = [...new Set([...savedPatterns.value, ...runPatterns.value])]; runPatterns.value = []; savedDelete.value = delDelete.value
+  } catch (e) { rememberError.value = t('sync.rememberFailed', { error: errorText(e) }) }
+}
+// Also remove from the volume (v1.5.0): what is already there and matches the left-out folders, deleted by the core's targeted removal (never rsync --delete-excluded). Needs a name and an explicit tick; never for a pull.
+const delDelete = ref(false), delConfirm = ref(false), savedDelete = ref(false), deleteUnsupported = ref(false)
+const delApproved = ref((() => { try { return localStorage.getItem('runpod-manager.approved-by') || '' } catch { return '' } })())
+const delSrc = computed(() => { const c = shownCounts.value || {}; return c.would_delete !== undefined ? c : counts.value })
+const delPreview = computed(() => (Array.isArray(delSrc.value.would_delete) ? delSrc.value.would_delete : null))
+const delTotal = computed(() => (delSrc.value.would_delete_bytes !== undefined ? delSrc.value.would_delete_bytes : delPreview.value && delPreview.value.every((w) => w.bytes != null) ? delPreview.value.reduce((n, w) => n + w.bytes, 0) : null))
+const deleting = computed(() => direction.value === 'push' && delDelete.value && !!delPreview.value?.length)
+const deleteEvents = ref([])   // `delete` events of the run, one per path: removing -> removed or failed
 const started = ref(false)   // a run is showing (in flight or finished): the confirmation gives way to it
 const running = ref(false)
 const out = ref(null)
@@ -157,13 +279,27 @@ const fileCount = ref(0)
 const problems = ref([])       // every rsync complaint, { key, text }
 const lines = ref([])          // the raw output's last KEEP_LINES, { n, text }
 const last = ref(null)         // the latest step, result or error: what the status says
+const fullError = ref(null)    // an error event with code volume_full or disk_full: a banner, not a generic failure
+const skippedSteps = ref([])   // steps skipped with a warning (their local source is missing), { key, reason }
 const local = ref(fresh())     // the progress state, when the store has none for this pod (a run started elsewhere)
 let n = 0
-function reset() { files.value = []; fileCount.value = 0; problems.value = []; lines.value = []; last.value = null; local.value = fresh(); n = 0 }
+function reset() { deleteEvents.value = []; files.value = []; fileCount.value = 0; problems.value = []; lines.value = []; last.value = null; fullError.value = null; skippedSteps.value = []; local.value = fresh(); n = 0 }
 let scrollQueued = false
 function ingest(ev) {
   if (ev.kind === 'result') { last.value = ev; running.value = false; pods.syncEnded(props.pod.id); return }
+  if (ev.kind === 'skipped' || ((ev.kind === 'warning' || ev.kind === 'problem') && (ev.code === 'skipped' || ev.skipped))) {   // a step whose local source is missing: shown grey with its reason, not counted as an error
+    skippedSteps.value.push({ key: ev.key || '', reason: ev.reason || ev.text || '' })
+    if (ev.text != null) { lines.value.push({ n: ++n, text: ev.text }); if (lines.value.length > KEEP_LINES) lines.value.shift() }
+    return
+  }
+  if (ev.kind === 'delete') {   // the targeted removal before any copy: one row per path
+    const i = deleteEvents.value.findIndex((e) => e.path === ev.path)
+    if (i >= 0) deleteEvents.value[i] = { ...ev }; else deleteEvents.value.push({ ...ev })
+    if (ev.text != null) { lines.value.push({ n: ++n, text: ev.text }); if (lines.value.length > KEEP_LINES) lines.value.shift() }
+    return
+  }
   fold(local.value, ev)
+  if (ev.kind === 'error' && (ev.code === 'volume_full' || ev.code === 'disk_full')) fullError.value = ev
   if (ev.kind === 'step' || ev.kind === 'listing' || ev.kind === 'error') last.value = ev
   if (ev.kind === 'error') { running.value = false; pods.syncEnded(props.pod.id) }
   if (ev.kind === 'file') { fileCount.value += 1; files.value.push({ n: ++n, key: ev.key, path: ev.path }); if (files.value.length > KEEP_FILES) files.value.shift() }
@@ -173,14 +309,17 @@ function ingest(ev) {
   if (!scrollQueued) { scrollQueued = true; nextTick(() => { scrollQueued = false; for (const el of [out.value, fileList.value]) if (el) el.scrollTop = el.scrollHeight }) }
 }
 
-const request = () => ({ pod_id: props.pod.id, direction: direction.value, plates: plates.value, approved_by: approvedBy.value, skip_renders: skipRenders.value, skip_tests: skipTests.value, existing: existing.value, ...(shared.value ? { shared: [...shared.value] } : {}) })
+const request = () => ({ pod_id: props.pod.id, direction: direction.value, plates: plates.value, approved_by: direction.value === 'push' && delDelete.value && delApproved.value ? delApproved.value : approvedBy.value, skip_renders: skipRenders.value, skip_tests: skipTests.value, existing: existing.value, ...(direction.value === 'push' && delDelete.value ? { delete_excluded: true } : {}), ...(runPatterns.value.length ? { exclude: [...runPatterns.value] } : {}), ...(shared.value ? { shared: [...shared.value] } : {}) })
 async function loadPlan() {
   planError.value = null
   try { const r = await syncAPI.plan(request()); plan.value = r.steps; transport.value = r.transport; if (shared.value === null && r.shared) shared.value = [...r.shared] } catch (e) { plan.value = []; planError.value = e.message }
   if (plan.value.length && transport.value.kind !== 'none') loadCounts()
 }
 watch([direction, plates, approvedBy], loadPlan)
-watch([skipRenders, skipTests, existing], () => { if (plan.value.length && transport.value.kind !== 'none') loadCounts() })   // the figure is for the switches as set
+let excludeTimer = null
+watch([skipRenders, skipTests, existing], () => { if (plan.value.length && transport.value.kind !== 'none') loadCounts() })
+watch(delDelete, (on) => { delConfirm.value = false; if (plan.value.length && transport.value.kind !== 'none') loadCounts().then(() => { if (on && !counts.value.pending && delPreview.value === null) { deleteUnsupported.value = true; delDelete.value = false } }) })   // a core without the fields answers no would_delete: the option goes away quietly
+watch(runPatterns, () => { clearTimeout(excludeTimer); excludeTimer = setTimeout(() => { if (plan.value.length && transport.value.kind !== 'none') loadCounts() }, 300) })   // each tick or pattern re-counts, debounced; a stale count is dropped (countRun)   // the figure is for the switches as set
 watch(shared, (v, old) => { if (old) { loadPlan() } }, { deep: true })   // another set of folders is another plan and another count
 
 // Auto sync (ADR-046): this pod's switch, loaded when the window opens and saved with its own button, whatever the manual flow below is doing.
@@ -211,7 +350,9 @@ async function saveAuto() {
 let off = () => {}
 async function open() {
   loadAuto()
-  shared.value = null
+  shared.value = null; runPatterns.value = []; meas.value = {}; remember.value = false; rememberError.value = ''; newPattern.value = ''; patternError.value = ''
+  delDelete.value = false; delConfirm.value = false; deleteUnsupported.value = false; deleteEvents.value = []
+  loadSavedPatterns(); loadFolders()
   await loadPlan()
   off()   // a second opening must not listen twice
   // Listen first, then ask for the job's state: everything the main process sent before it answered is in that
@@ -223,13 +364,16 @@ async function open() {
   running.value = state.running; started.value = state.running || state.events.length > 0
   primed = true
 }
-onUnmounted(() => off())
+onUnmounted(() => { off(); clearTimeout(excludeTimer) })
 
 async function start() {
   // clear and mark running before the call: a short (simulated) run sends every event before start() returns
   reset(); running.value = true; started.value = true
   pods.syncStarted(props.pod.id)
-  const r = await syncAPI.start(request())
+  const asked = request()
+  if (asked.delete_excluded && delApproved.value) { try { localStorage.setItem('runpod-manager.approved-by', delApproved.value) } catch { /* storage blocked */ } }
+  if (remember.value && (runPatterns.value.length || delDelete.value !== savedDelete.value)) await rememberPatterns()   // saved first; this run still sends them as its own
+  const r = await syncAPI.start(asked)
   if (!r.ok) { running.value = false; started.value = false; pods.syncEnded(props.pod.id) }
 }
 const cancel = () => syncAPI.cancel(props.pod.id)
@@ -237,7 +381,7 @@ function again() { reset(); started.value = false }
 // The modal's own footer (Lucas, 2026-10-21: the built-in buttons): OK starts the copy, then stops it, then offers another run; Cancel closes, the run goes on in the app.
 const okTitle = computed(() => (!started.value ? (direction.value === 'push' ? t('sync.startPush') : t('sync.startPull')) : running.value ? t('sync.cancelRun') : t('sync.again')))
 const okVariant = computed(() => (!started.value ? 'warning' : running.value ? 'outline-danger' : 'outline-light'))
-const okDisabled = computed(() => !started.value && (!plan.value.length || transport.value.kind === 'none' || (plates.value && !approvedBy.value)))
+const okDisabled = computed(() => !started.value && (!plan.value.length || transport.value.kind === 'none' || (plates.value && !approvedBy.value) || overCap.value || (deleting.value && (!delApproved.value || !delConfirm.value))))
 function onOk(e) { e.preventDefault(); if (!started.value) start(); else if (running.value) cancel(); else again() }
 
 const state = computed(() => pods.sync[props.pod.id] || local.value)
@@ -255,7 +399,7 @@ const status = computed(() => {
   const l = last.value
   if (!l) return t('sync.starting')
   if (l.kind === 'listing') return t('sync.listing', { folder: l.key })
-  if (l.kind === 'error') return t('sync.failed', { error: l.text })
+  if (l.kind === 'error') return l.code === 'volume_full' || l.code === 'disk_full' ? t(l.code === 'disk_full' ? 'sync.diskFullTitle' : 'sync.volumeFullTitle') : t('sync.failed', { error: l.text })
   if (l.kind === 'result') {
     const r = l.result
     return r.cancelled ? t('sync.cancelled') : r.failed ? t('sync.failedSteps', { failed: r.failed, steps: r.steps }) : r.warned ? t('sync.finishedWarnings', { steps: r.steps, warned: r.warned }) : t('sync.finished', { steps: r.steps })

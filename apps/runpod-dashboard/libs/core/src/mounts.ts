@@ -40,6 +40,61 @@ export const normalizeAutoSync = (v: unknown): AutoSyncConfig => {
   const o = (v && typeof v === 'object' ? v : {}) as Partial<AutoSyncConfig>
   return { enabled: o.enabled === true, pull: o.pull === undefined ? true : o.pull === true, push: o.push === true, approved_by: typeof o.approved_by === 'string' ? o.approved_by.trim() : '' }
 }
+/** How DPX sequences are rendered into mp4 for playback and review (docs/ADR-048): where, which kind, the sizes, the codecs, the frame rate, whether the proxies are pulled to this PC. NEVER holds an approver or an allow_partial default: a review needs a named yes on each run, and partial is chosen per run. */
+export interface RenderSettings { where: 'auto' | 'pod' | 'local'; kind: 'proxy' | 'review'; proxy_width: 'source' | 960 | 1280 | 1920; review_width: 'source' | 960 | 1280 | 1920; codecs: ('h264' | 'prores422hq')[]; fps: 'auto' | number; pull: boolean }
+export const RENDER_DEFAULT: RenderSettings = { where: 'auto', kind: 'proxy', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto', pull: true }
+export const RENDER_WIDTHS = ['source', 960, 1280, 1920] as const
+export const RENDER_CODECS = ['h264', 'prores422hq'] as const
+export function normalizeRender(v: unknown): RenderSettings {
+  const o = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>, d = RENDER_DEFAULT
+  const width = (x: unknown, dflt: RenderSettings['proxy_width']) => ((RENDER_WIDTHS as readonly unknown[]).includes(x) ? x : (RENDER_WIDTHS as readonly unknown[]).includes(Number(x)) && x !== '' && x !== null ? Number(x) : x === undefined ? dflt : x) as RenderSettings['proxy_width']
+  return {
+    where: (o.where === undefined ? d.where : o.where) as RenderSettings['where'], kind: (o.kind === undefined ? d.kind : o.kind) as RenderSettings['kind'], proxy_width: width(o.proxy_width, d.proxy_width), review_width: width(o.review_width, d.review_width),
+    codecs: (Array.isArray(o.codecs) ? [...new Set(o.codecs as RenderSettings['codecs'])] : [...d.codecs]), fps: (o.fps === undefined ? d.fps : o.fps) as RenderSettings['fps'], pull: o.pull === undefined ? d.pull : (o.pull as boolean),
+  }
+}
+export function validateRender(r: RenderSettings): void {
+  if (!['auto', 'pod', 'local'].includes(r.where)) throw bad('render.where is auto, pod or local')
+  if (!['proxy', 'review'].includes(r.kind)) throw bad('render.kind is proxy or review')
+  for (const k of ['proxy_width', 'review_width'] as const) if (!(RENDER_WIDTHS as readonly unknown[]).includes(r[k])) throw bad(`render.${k} is source, 960, 1280 or 1920`)
+  if (!Array.isArray(r.codecs) || !r.codecs.length || r.codecs.some((c) => !(RENDER_CODECS as readonly string[]).includes(c))) throw bad('render.codecs is a non-empty list of h264, prores422hq')
+  if (!(r.fps === 'auto' || (typeof r.fps === 'number' && Number.isFinite(r.fps) && r.fps >= 1 && r.fps <= 240))) throw bad('render.fps is auto or a number from 1 to 240')
+  if (typeof r.pull !== 'boolean') throw bad('render.pull is true or false')
+}
+/** Patterns a push leaves out (rsync semantics, relative to each step's local root): a leading `/` anchors to the root, a trailing `/` means folders only, otherwise it matches at any depth. They only ever REMOVE things from a push; nothing on the volume is deleted. */
+export const EXCLUDE_MAX = 100, EXCLUDE_LEN = 200
+export function validateExcludes(list: unknown, field = 'sync_exclude'): string[] {
+  if (list === undefined || list === null) return []
+  if (!Array.isArray(list)) throw bad(`${field} is a list of folder or file patterns`)
+  if (list.length > EXCLUDE_MAX) throw bad(`${field}: at most ${EXCLUDE_MAX} patterns`)
+  const out: string[] = []
+  for (const raw of list) {
+    if (typeof raw !== 'string') throw bad(`${field}: each pattern is text`)
+    const p = raw.trim()
+    if (!p) throw bad(`${field}: a pattern is not empty`)
+    if (p.length > EXCLUDE_LEN) throw bad(`${field}: a pattern is at most ${EXCLUDE_LEN} characters`)
+    // eslint-disable-next-line no-control-regex
+    if (/[\u0000\n\r]/.test(p)) throw bad(`${field}: a pattern has no NUL or line break`)
+    if (p.split('/').includes('..')) throw bad(`${field}: a pattern has no .. segment (${JSON.stringify(p.slice(0, 60))})`)
+    if (p.startsWith('~')) throw bad(`${field}: a pattern does not start with ~ (${JSON.stringify(p.slice(0, 60))})`)
+    if (!out.includes(p)) out.push(p)
+  }
+  return out
+}
+/** Per-folder exclusion defaults, keyed by the push step (the mapped folder row): patterns relative to THAT step's root. A pod's own map replaces the Default's per key; keys it lacks fall back to the Default's; an empty list in the pod clears that key for the pod. */
+export const FOLDER_EXCLUDE_KEYS = ['project', 'plates', 'comfy-shared', 'workflows'] as const
+export const FOLDER_EXCLUDE_TOTAL = 300
+export function normalizeFolderExcludes(v: unknown): Record<string, string[]> {
+  const out: Record<string, string[]> = {}
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return out
+  for (const k of FOLDER_EXCLUDE_KEYS) { const l = (v as Record<string, unknown>)[k]; if (Array.isArray(l)) out[k] = [...new Set(l.map((x) => (typeof x === 'string' ? x.trim() : x)))].filter((x) => x !== '') as string[] }
+  return out
+}
+export function validateFolderExcludes(m: Record<string, string[]> | undefined): void {
+  let total = 0
+  for (const [k, l] of Object.entries(m ?? {})) { total += validateExcludes(l, `folder_excludes.${k}`).length }
+  if (total > FOLDER_EXCLUDE_TOTAL) throw bad(`folder_excludes: at most ${FOLDER_EXCLUDE_TOTAL} patterns in all`)
+}
 export interface MountsConfig {
   folders: Record<string, string>
   custom: CustomFolder[]
@@ -72,6 +127,14 @@ export interface MountsConfig {
   sync_parallel: number      // rsync streams at a time on a push (1..16); the uplink is the limit, streams keep it full across small files
   /** Auto sync for each pod created under this configuration (default off; Pull on, Push off); enabled needs approved_by */
   auto_sync?: AutoSyncConfig
+  /** Patterns a push leaves out (see validateExcludes); a pod's own configuration may carry its own (it replaces the default's) */
+  sync_exclude?: string[]
+  /** A push with exclusions also REMOVES what the patterns match on the volume (a targeted, guarded removal, never rsync --delete-excluded); default off; the run still needs a named yes */
+  sync_exclude_delete?: boolean
+  /** Per-folder exclusion defaults (see normalizeFolderExcludes), added to `sync_exclude` for that step only */
+  folder_excludes?: Record<string, string[]>
+  /** Render settings for DPX sequences (ADR-048); a pod's own configuration may carry its own */
+  render?: RenderSettings
   dry_run: boolean
   mcp_http: McpHttp          // the MCP servers the app itself serves over HTTP on 127.0.0.1 (Connect › MCP); off by default
 }
@@ -144,6 +207,10 @@ export function defaults(): MountsConfig {
     sync_shared: [...SYNC_SHARED_DEFAULT],
     pull_shared: [...PULL_SHARED_DEFAULT],
     auto_sync: { ...AUTO_SYNC_DEFAULT },
+    render: { ...RENDER_DEFAULT, codecs: [...RENDER_DEFAULT.codecs] },
+    sync_exclude: [],
+    sync_exclude_delete: false,
+    folder_excludes: {},
     dry_run: false,
     mcp_http: mcpHttpDefaults(),
   }
@@ -188,6 +255,10 @@ export function normalize(data: Partial<MountsConfig>): MountsConfig {
     import_cost_cap_usd: typeof data.import_cost_cap_usd === 'number' && data.import_cost_cap_usd > 0 ? data.import_cost_cap_usd : 50,
     import_cap_enabled: data.import_cap_enabled !== false,   // absent means the cap is on
     auto_sync: normalizeAutoSync(data.auto_sync),
+    render: normalizeRender(data.render),
+    sync_exclude: Array.isArray(data.sync_exclude) ? [...new Set(data.sync_exclude.map((x) => (typeof x === 'string' ? x.trim() : x)))].filter((x) => x !== '') as string[] : [],
+    sync_exclude_delete: data.sync_exclude_delete === true,
+    folder_excludes: normalizeFolderExcludes(data.folder_excludes),
     dry_run: data.dry_run === true,
     mcp_http: normalizeMcpHttp(data.mcp_http),
   }
@@ -457,6 +528,9 @@ export function validate(cfg: MountsConfig): MountsConfig {
   if (cfg.default_gpu !== gpus.AUTO && !(cfg.default_gpu in gpus.GPUS)) throw bad(`default_gpu is auto or one of ${Object.keys(gpus.GPUS).join(', ')}, not ${JSON.stringify(cfg.default_gpu)}`)
   if (cfg.idle_stop_minutes < 0) throw bad('idle_stop_minutes is 0 (never) or a number of minutes')
   if (!Number.isInteger(cfg.sync_parallel) || cfg.sync_parallel < 1 || cfg.sync_parallel > 16) throw bad('sync_parallel is a whole number of parallel uploads, 1 to 16')
+  if (cfg.render) validateRender(cfg.render)
+  validateExcludes(cfg.sync_exclude)
+  validateFolderExcludes(cfg.folder_excludes)
   if (cfg.auto_sync?.enabled && !cfg.auto_sync.approved_by.trim()) throw bad('Auto sync needs the name of who says yes')
   const ports = new Set<number>()
   for (const [id, e] of Object.entries(cfg.mcp_http)) {

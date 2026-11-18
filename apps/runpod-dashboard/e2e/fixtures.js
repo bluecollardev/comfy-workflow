@@ -258,6 +258,12 @@ export async function mockApi(page, state) {
     if (method === 'GET' && path === '/mounts') return json(mountsPayload(state))
     const asBad = (b) => b && b.auto_sync && b.auto_sync.enabled && !String(b.auto_sync.approved_by || '').trim()   // the core's named yes for Auto sync
     const asNeedsName = () => json({ detail: 'Auto sync needs the name of who says yes' }, 400)
+    // render settings of a configuration (docs/ADR-048): codecs non-empty and known, widths in the allowed sets
+    const renderBad = (b) => { const r = b && b.render; if (!r) return false; const W = ['source', 960, 1280, 1920]; return !Array.isArray(r.codecs) || !r.codecs.length || r.codecs.some((c) => !['h264', 'prores422hq'].includes(c)) || !['auto', 'pod', 'local'].includes(r.where) || !['proxy', 'review'].includes(r.kind) || !W.includes(r.proxy_width) || !W.includes(r.review_width) }
+    // folder_excludes (v1.5.0): { folderKey: [patterns] }, the same pattern rules as sync_exclude; the 400 names the folder and the pattern
+    const feBad = (b) => { for (const [k, list] of Object.entries((b && b.folder_excludes) || {})) for (const p of list || []) { const s = String(p).trim(); if (!s || s.length > 200 || s.includes('..') || /[\0\n]/.test(s) || s.startsWith('~')) return `folder_excludes.${k}: bad pattern ${JSON.stringify(p)}` } return '' }
+    if (((method === 'PUT' && path === '/mounts') || (method === 'POST' && path === '/mounts/preview') || ((m = path.match(/^\/pods\/([^/]+)\/config$/)) && method === 'PUT')) && feBad(body)) return json({ detail: feBad(body) }, 400)
+    if ((method === 'PUT' && path === '/mounts') || (method === 'POST' && path === '/mounts/preview') || ((m = path.match(/^\/pods\/([^/]+)\/config$/)) && method === 'PUT')) if (renderBad(body)) return json({ detail: 'render: pick at least one codec and a size from the list' }, 400)
     if (method === 'PUT' && path === '/mounts' && asBad(body)) return asNeedsName()
     if (method === 'POST' && path === '/mounts/preview' && asBad(body)) return asNeedsName()
     if ((m = path.match(/^\/pods\/([^/]+)\/config$/)) && method === 'PUT' && asBad(body)) return asNeedsName()
@@ -419,6 +425,44 @@ export async function mockApi(page, state) {
         return json({ run_id: query.run_id, lines: ls.slice(off, off + lim), total: ls.length, truncated: false })
       }
       if (method === 'GET' && path === '/syncs/watch') return json({ paused: false, pull: [], push: [], events: [], ...(sy.watch || {}) })
+    }
+    // Render sequences (docs/ADR-048): state.renders = { adapters: { pod: { ok, reason }, local: { ok, reason, code } }, jobs: [...], proxies: { 'dir/name': {...} }, deliverables: [...], remote: { 'dir/name': true }, local: {...}, missing: { 'dir/name': [{ from, to }] }, nextVersion, startError: { detail, code }, cleared: { removed, bytes } };
+    // the fake records `planned`, `started`, `cancelled`, `proxyCalls`, `clearCalls`. A test edits jobs between polls. state.rendersOld = true answers like a core that predates it.
+    if (path.startsWith('/renders/')) {
+      if (state.rendersOld) return json({ detail: `no core call renders.${path.slice(9)}` }, 500)
+      const rs = (state.renders ||= {})
+      rs.adapters ||= { pod: { ok: true }, local: { ok: true } }
+      rs.jobs ||= []; rs.proxies ||= {}; rs.deliverables ||= []; rs.remote ||= {}; rs.local ||= {}; rs.missing ||= {}
+      for (const k of ['planned', 'started', 'cancelled', 'proxyCalls']) rs[k] ||= []
+      rs.clearCalls ||= 0
+      const key = (s) => `${s.dir || ''}/${s.name}`
+      const chosen = (where) => { const a = rs.adapters; return where === 'pod' ? (a.pod.ok ? 'pod' : null) : where === 'local' ? (a.local.ok ? 'local' : null) : a.pod.ok ? 'pod' : a.local.ok ? 'local' : null }
+      const adapters = () => ['pod', 'local'].map((id) => ({ id, ok: !!rs.adapters[id].ok, ...(rs.adapters[id].reason ? { reason: rs.adapters[id].reason } : {}), ...(rs.adapters[id].code ? { code: rs.adapters[id].code } : {}), ...(rs.adapters[id].install_hint ? { install_hint: rs.adapters[id].install_hint } : {}) }))
+      const badClip = (seqs) => (seqs || []).map((s) => s.clip_name).find((c) => c !== undefined && (!String(c).trim() || /[/\\]|\.\./.test(c) || !/^[A-Za-z0-9._\- ]+$/.test(c) || c.length > 200))
+      if ((path === '/renders/plan' || path === '/renders/start') && badClip(body.sequences) !== undefined) return json({ detail: `clip_name is not a usable file name: ${badClip(body.sequences)}` }, 400)
+      if (path === '/renders/plan') {
+        rs.planned.push(body)
+        const w = chosen(body.where || 'auto'), seqs = body.sequences || []
+        const shotOf = (n) => (/^([A-Za-z]+-\d+[a-z]?)/i.exec(n) || [, n])[1].toLowerCase()
+        return json({ ...(rs.podCpu ? { pod_cpu: rs.podCpu } : {}), ...(rs.notes ? { notes: rs.notes } : {}), ...(rs.settings ? { settings: rs.settings, settings_source: rs.settingsSource || 'default' } : {}), pod_ok: !!rs.adapters.pod.ok, ...(w ? {} : { reason: rs.adapters.pod.reason || rs.adapters.local.reason || 'Nothing can render' }), adapters: adapters(), total_frames: seqs.reduce((n, s) => n + s.frames, 0),
+          sequences: seqs.map((s) => ({ ...s, out: `output/.proxies/${s.dir}/${s.name}_${body.width}.mp4`, ...(body.kind !== 'review' ? { source: rs.source || { width: 3840, height: 2160, bits: 10 } } : {}), exists_remote: !!rs.remote[key(s)], exists_local: !!rs.local[key(s)], gaps: (rs.missing[key(s)] || []).reduce((n, r) => n + (r.to - r.from + 1), 0), complete: !(rs.missing[key(s)] || []).length, missing: rs.missing[key(s)] || [], where: w || 'pod', shot: shotOf(s.name), next_version: rs.nextVersion || 1, clip_name: s.clip_name || s.name, ...(body.kind === 'review' ? { source: rs.source || { width: 3840, height: 2160, bits: 10 }, estimate: { frames: s.frames, note: 'slow: expect minutes per 100 frames', ...(rs.outputGb ? { output_gb: rs.outputGb } : {}) } } : rs.outputGb ? { estimate: { frames: s.frames, output_gb: rs.outputGb } } : {}) })) })
+      }
+      if (path === '/renders/start') {
+        rs.started.push(body)
+        if (rs.startError) return json(rs.startError, 500)
+        if (body.kind === 'review' && !body.approved_by) return json({ detail: 'A review video needs the name of who says yes' }, 400)
+        const n = rs.started.length, w = chosen(body.where || 'auto')
+        rs.jobs.push({ job_id: `job-${n}`, pod_id: w === 'local' ? '' : body.pod_id, pod_name: 'ComfyUI-Dev', kind: body.kind || 'proxy', codecs: body.codecs || [], state: 'rendering', started_at: `2026-11-18T10:0${n}:00Z`, finished_at: null, width: body.width, frames_done: 0, frames_total: body.sequences.reduce((a, s) => a + s.frames, 0), rate_fps: 0, current: '', pulled_files: 0, pulled_bytes: 0, error: '', summary: '',
+          sequences: body.sequences.map((s) => ({ dir: s.dir, name: s.name, clip_name: s.clip_name || s.name, where: w || 'pod', state: 'waiting', frames_done: 0, frames_total: s.frames, out: '', bytes: 0, error: '' })) })
+        return json({ job_id: `job-${n}` })
+      }
+      if (path === '/renders/status') return json({ jobs: rs.jobs.filter((j) => !query.job_id || j.job_id === query.job_id) })
+      if (path === '/renders/cancel') { rs.cancelled.push(body.job_id); const j = rs.jobs.find((x) => x.job_id === body.job_id); if (j) { j.state = 'cancelled'; j.finished_at = 'now' } return json(j || {}) }
+      if (path === '/renders/proxies') {
+        rs.proxyCalls.push(body)
+        return json({ items: (body.items || []).map((s) => { const p = rs.proxies[key(s)]; return p ? { dir: s.dir, name: s.name, width: 1280, exists_remote: false, exists_local: false, local_url: '', remote_ready: true, bytes: 0, modified: '', ...p } : { dir: s.dir, name: s.name, width: body.width || 1280, exists_remote: false, exists_local: false, local_url: '', remote_ready: false, bytes: 0, modified: '' } }), deliverables: rs.deliverables })
+      }
+      if (method === 'DELETE' && path === '/renders/local') { rs.clearCalls++; return json(rs.cleared || { removed: 0, bytes: 0 }) }
     }
     if (method === 'GET' && path === '/runflows') return json({ pod_id: query.pod_id, pod_name: 'ComfyUI-Dev', count: 3, workflows: [{ path: 'rounds/r1/cgi-042/stereo.json', group: 'rounds/r1/cgi-042', name: 'stereo.json', size: 1, modified: 0 }, { path: 'rounds/r1/cgi-042/delivery.json', group: 'rounds/r1/cgi-042', name: 'delivery.json', size: 1, modified: 0 }, { path: 'rounds/r1/cgi-043/other.json', group: 'rounds/r1/cgi-043', name: 'other.json', size: 1, modified: 0 }] })
     if (method === 'POST' && path === '/runflows') { state.ranFlows = body.paths; return json({ id: 'run-1', pod_id: body.pod_id, pod_name: 'ComfyUI-Dev', state: 'running', started_at: 'now', ok: 0, failed: 0, results: body.paths.map((p) => ({ path: p, state: 'pending' })) }) }

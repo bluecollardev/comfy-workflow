@@ -2,12 +2,12 @@
  * Timecode and frame-step math for the video viewer (pure). The file's frame rate is not exposed by the browser, so the viewer's fps selector (12, 24, 25, 30; default 24) is the display rate.
  * Timecode is mm:ss:ff (minutes may pass 59: no hours). A step is one frame (1/fps s), or 10 with Shift; positions are clamped to [0, duration] and snapped to a frame boundary (+ a quarter frame so the frame shown is the intended one).
  */
-export const FPS_OPTIONS = [12, 24, 25, 30]
+export const FPS_OPTIONS = [12, 23.976, 24, 25, 30]
 export const SPEEDS = [0.25, 0.5, 1, 2]
 const pad = (n) => String(n).padStart(2, '0')
 export function timecode(seconds, fps = 24) {
-  const s = Math.max(0, Number(seconds) || 0), f = Math.round(fps)
-  const total = Math.floor(s * f + 1e-6)
+  const s = Math.max(0, Number(seconds) || 0), f = Math.round(fps)   // the timebase (24 for 23.976); the frame NUMBER counts at the true rate, so a long 23.976 clip does not drift
+  const total = Math.floor(s * fps + 1e-6)
   const frames = total % f, secs = Math.floor(total / f)
   return `${pad(Math.floor(secs / 60))}:${pad(secs % 60)}:${pad(frames)}`
 }
