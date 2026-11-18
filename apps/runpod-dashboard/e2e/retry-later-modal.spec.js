@@ -49,12 +49,14 @@ test.describe('retry later: the GPU choice', () => {
     const { modal } = await openChoice(page, api)
     await modal.getByTestId('retry-later-other').check()
     await expect(modal.getByTestId('retry-later-other-text')).toHaveText('Another GPU in EU-RO-1')
-    const select = modal.getByTestId('retry-later-gpu')
-    const opts = await select.locator('option').allTextContents()
+    const rows = modal.getByTestId('retry-later-gpu-option')
+    const opts = await rows.allTextContents()
     expect(opts).toHaveLength(3)                                      // the card the app cannot run is not offered
     expect(opts[0]).toContain('RTX 4000 Ada'); expect(opts[0]).toContain('$0.28')   // cheapest free card first
     expect(opts[2]).toContain('L40S'); expect(opts[2]).toContain(t('pod.rlNoStock'))   // out of stock stays choosable: the watch waits for it
-    await select.selectOption('rtx4090')
+    await expect(rows.nth(0).locator('input')).toBeChecked()          // the first card is ticked: one click starts it
+    await rows.nth(0).locator('input').uncheck()
+    await rows.nth(1).locator('input').check()                        // rtx4090 only
     await modal.getByTestId('retry-later-start').click()
     await expect(modal).toBeHidden()
     expect(api.state.createLikeWhenFree).toEqual([{ id: 'pod-bbbbbbbb', gpu: 'rtx4090' }])
@@ -66,6 +68,32 @@ test.describe('retry later: the GPU choice', () => {
     await expect(podCard(page, 'ComfyUI-Batch')).toBeVisible()   // the old pod is still there
     await row.getByTestId('pod-watch-cancel').click()           // Cancel works as today
     expect(api.calls).toContainEqual(expect.objectContaining({ method: 'DELETE', path: '/pod-watches/watch-1' }))
+  })
+
+  test('Another GPU takes several cards: ranked in the order they are clicked, sent in that order as one wait that makes one pod', async ({ page, api }) => {
+    api.state.datacenters.datacenters[0].cards = [
+      { key: 'rtx4090', name: 'RTX 4090', vram: 24, price: 0.89, stock: 'High', available: true, runs: true },
+      { key: 'rtx4000ada', name: 'RTX 4000 Ada', vram: 20, price: 0.28, stock: 'Low', available: true, runs: true },
+      { key: 'l40s', name: 'L40S', vram: 48, price: 0.99, stock: 'Out of stock', available: false, runs: true },
+    ]
+    const { modal } = await openChoice(page, api)
+    await modal.getByTestId('retry-later-other').check()
+    const rows = modal.getByTestId('retry-later-gpu-option')
+    await expect(modal.getByTestId('retry-later-order-note')).toContainText(t('pod.rlOrderNote').slice(0, 20))
+    await expect(rows.nth(0).getByTestId('retry-later-gpu-rank')).toHaveText('1')   // the first card starts ticked, rank 1
+    await rows.nth(2).locator('input').check()                                      // L40S second
+    await rows.nth(1).locator('input').check()                                      // RTX 4090 third
+    await expect(rows.nth(2).getByTestId('retry-later-gpu-rank')).toHaveText('2')
+    await expect(rows.nth(1).getByTestId('retry-later-gpu-rank')).toHaveText('3')
+    await rows.nth(2).locator('input').uncheck()                                    // drop L40S: RTX 4090 moves up
+    await expect(rows.nth(1).getByTestId('retry-later-gpu-rank')).toHaveText('2')
+    await modal.getByTestId('retry-later-start').click()
+    await expect(modal).toBeHidden()
+    expect(api.state.createLikeWhenFree).toEqual([{ id: 'pod-bbbbbbbb', gpu: ['rtx4000ada', 'rtx4090'] }])   // the order chosen
+    const row = page.getByTestId('pod-watch-waiting')
+    await expect(row.getByTestId('pod-watch-label')).toHaveText('Waiting for a free RTX 4000 Ada or RTX 4090 in EU-RO-1')
+    expect(api.state.watches).toHaveLength(1)   // one wait
+    noDelete(api)
   })
 
   test('Cancel starts nothing and the card keeps its choice', async ({ page, api }) => {

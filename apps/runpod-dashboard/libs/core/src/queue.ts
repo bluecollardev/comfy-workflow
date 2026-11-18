@@ -28,6 +28,8 @@ export interface Task {
   phase?: 'pod' | 'job'; job_id?: string; graphs?: string[]
   /** The card chosen for this shot: its run gets a pod of its own with that card (no pool pod is reused). Absent = the pool, else the default card. */
   gpu?: string; price?: number | null
+  /** The cards chosen for this shot, in the person's order (`gpu` is the first). Every new pod of the task asks them in this order, from the first: the first with a card free is used. */
+  gpus?: string[]
   /** What happened to this task and when: pod chosen / created / resumed, pod ready, job stages, results. The Queue shows it. */
   events?: { at: string; text: string }[]
   /** The live stage of the pull job or the run (`pulling`, `placing`, `running 3/12 graphs`...). */
@@ -161,21 +163,39 @@ export interface ImportPlan {
   /** What is left of the caps: the import's cap, and Binc's USD 100 rule (the History's spend against it). */
   remaining_usd?: number | null; assumption?: string; blocked?: string
 }
-export interface ImportOpts { /** the network volume the pods and the pull use; it becomes the default volume */ volume_id?: string; /** shot -> card (a GPU key); a shot without one takes the pool */ cards?: Record<string, string>; shots?: string[]; run_workflows?: boolean; max_pods?: number; cost_cap_usd?: number; approved_by?: string
+export interface ImportOpts { /** the network volume the pods and the pull use; it becomes the default volume */ volume_id?: string; /** shot -> card (a GPU key); a shot without one takes the pool */ cards?: Record<string, string | string[]>; shots?: string[]; run_workflows?: boolean; max_pods?: number; cost_cap_usd?: number; approved_by?: string
   /** `volume`: the round already sits on `volume_id` and is run in place (ADR-044). Default: a BH round, pulled first. */ source?: string
   /** Refused on a volume source (guard a): Binc's rule, nothing on the volume is overwritten. Accepted by nothing; named so a caller that sends it gets a clear error. */ replace?: boolean; overwrite?: boolean }
 
-/** The price per hour of the card chosen for each shot that has one (a card we cannot price is left out: the pull's price stands in). */
+/** A shot's card as an ordered list of keys: a string is one card, an array keeps the person's order (duplicates dropped, blanks ignored). */
+export const cardList = (v: string | string[] | undefined | null): string[] => [...new Set((Array.isArray(v) ? v : v ? [v] : []).map((c) => String(c || '').trim()).filter(Boolean))]
+/** Every key of every shot must be a card we know (or `auto`). */
+function checkCards(o: ImportOpts) {
+  for (const [shot, v] of Object.entries(o.cards ?? {})) {
+    if (Array.isArray(v) && !cardList(v).length) throw new CoreError(400, `Cards for ${shot}: an empty list. Leave the shot out to use the pool, or name a card.`)
+    if (Array.isArray(v) && v.some((c) => typeof c !== 'string')) throw new CoreError(400, `Cards for ${shot}: give card keys (a string, or a list of strings).`)
+    for (const card of cardList(v)) if (card !== gpus.AUTO && !gpus.GPUS[card]) throw new CoreError(400, `Unknown card "${card}" for ${shot}: use a key from list_gpus.`)
+  }
+}
+/** The price per hour used for each shot that has a card: with several, the MOST EXPENSIVE one (conservative: whichever the pod gets, the cap is not passed). A card we cannot price is left out: the pull's price stands in. */
 async function cardPrices(shots: string[], o: ImportOpts): Promise<Record<string, number | null>> {
   const out: Record<string, number | null> = {}, seen: Record<string, number | null> = {}
-  for (const s of shots) { const g = o.cards?.[s]; if (!g) continue; if (!(g in seen)) seen[g] = await deps.cardPrice(g).catch(() => null); out[s] = seen[g] }
+  for (const s of shots) {
+    const list = cardList(o.cards?.[s]); if (!list.length) continue
+    const ps: number[] = []
+    for (const g of list) { if (!(g in seen)) seen[g] = await deps.cardPrice(g).catch(() => null); if (seen[g] != null) ps.push(seen[g] as number) }
+    out[s] = ps.length ? Math.max(...ps) : null
+  }
   return out
 }
+const severalCards = (o: ImportOpts) => Object.values(o.cards ?? {}).some((v) => cardList(v).length > 1)
+const MOST_EXPENSIVE = 'Where a shot has several cards, the most expensive one is priced (a pod may get any of them, so the cap is never passed).'
+const taskCards = (o: ImportOpts, shot: string | null) => { const l = shot ? cardList(o.cards?.[shot]) : []; return l.length ? { gpu: l[0], ...(l.length > 1 ? { gpus: l } : {}) } : {} }
 /** What importing the round would do and cost, before it does anything. */
 export async function planImport(round: string, o: ImportOpts = {}): Promise<ImportPlan> {
   if (o.source === 'volume') return planVolumeImport(round, o)
   if (o.source && o.source !== 'panama-s3') throw new CoreError(400, `Unknown source "${o.source}": use panama-s3 (BH) or volume.`)
-  for (const [shot, card] of Object.entries(o.cards ?? {})) if (card && card !== gpus.AUTO && !gpus.GPUS[card]) throw new CoreError(400, `Unknown card "${card}" for ${shot}: use a key from list_gpus.`)
+  checkCards(o)
   const cfg = mounts.load()
   const [all, p] = await Promise.all([deps.shotsOf(round), deps.planPull(round, o.shots)])   // both read the round's listing (shared), the pull plan also asks RunPod
   const shots = o.shots?.length ? all.filter((s) => o.shots!.includes(s)) : all
@@ -186,7 +206,7 @@ export async function planImport(round: string, o: ImportOpts = {}): Promise<Imp
   const capOn = cfg.import_cap_enabled
   const max = capOn ? (o.max_pods ?? cfg.import_max_pods) : (o.max_pods ?? null)
   const cap = capOn ? (o.cost_cap_usd ?? cfg.import_cost_cap_usd) : null
-  return { round, shots, price_per_hour: p.price_per_hour, pull_hours: Math.round(pullH * 100) / 100, est_total_usd: est, max_pods: max, cost_cap_usd: cap, cap_enabled: capOn, over_cap: cap != null && est != null && est > cap }
+  return { round, shots, price_per_hour: p.price_per_hour, pull_hours: Math.round(pullH * 100) / 100, est_total_usd: est, max_pods: max, cost_cap_usd: cap, cap_enabled: capOn, over_cap: cap != null && est != null && est > cap, ...(severalCards(o) ? { assumption: MOST_EXPENSIVE } : {}) }
 }
 
 // ----- a round that already sits on a volume (ADR-044): run in place, never pulled, never written -----
@@ -200,7 +220,7 @@ const volumeIdOf = (o: ImportOpts) => (o.volume_id || volumeround.defaultVolumeI
 /** What running a volume round's shots would do and cost, before it does anything: the shots (locked ones listed and refused when asked for), the graphs as the Workflows panel names them, and the estimate against the caps. Reads the volume's listing only. */
 export async function planVolumeImport(round: string, o: ImportOpts = {}): Promise<ImportPlan> {
   refuseOverwrite(o)
-  for (const [shot, card] of Object.entries(o.cards ?? {})) if (card && card !== gpus.AUTO && !gpus.GPUS[card]) throw new CoreError(400, `Unknown card "${card}" for ${shot}: use a key from list_gpus.`)
+  checkCards(o)
   const volumeId = volumeIdOf(o)
   if (!volumeId) throw new CoreError(400, 'No network volume: pick the volume the round sits on (volume_id).')
   const cfg = mounts.load()
@@ -224,7 +244,7 @@ export async function planVolumeImport(round: string, o: ImportOpts = {}): Promi
   const remaining = deps.remainingUsd()
   const limit = [cap, remaining].filter((x): x is number => x != null).reduce<number | null>((a, x) => (a == null ? x : Math.min(a, x)), null)
   const over = limit != null && est != null && est > limit
-  const assumption = `${graphs} graph(s) x ${secs} s each (${med.seconds != null ? `the median of ${med.samples} run(s) in the History` : `no run in the History: the default ${volumeround.DEFAULT_SECONDS_PER_GRAPH} s`}) x the pod's hourly price (${poolPrice != null ? `$${poolPrice}/h for the pool card ${poolGpu()}` : 'the pool card has no price'}; a card chosen for a shot is priced at its own).`
+  const assumption = `${graphs} graph(s) x ${secs} s each (${med.seconds != null ? `the median of ${med.samples} run(s) in the History` : `no run in the History: the default ${volumeround.DEFAULT_SECONDS_PER_GRAPH} s`}) x the pod's hourly price (${poolPrice != null ? `$${poolPrice}/h for the pool card ${poolGpu()}` : 'the pool card has no price'}; a card chosen for a shot is priced at its own).${severalCards(o) ? ` ${MOST_EXPENSIVE}` : ''}`
   const blocked = refused.length ? `${refused.join(', ')} ${refused.length === 1 ? 'is' : 'are'} locked (client-approved, or under 04_GRAPH): listed for reference, never run (Binc's rules).` : over ? `The estimate $${est} passes the ${cap != null && est! > cap ? `cap $${cap}` : `USD ${remaining} left of the agent spend cap`}: raise the cap on purpose, or choose fewer shots.` : est == null ? 'The pool card has no price: choose a card for the shots.' : undefined
   return { round, shots, price_per_hour: poolPrice, pull_hours: 0, est_total_usd: est, max_pods: max, cost_cap_usd: cap, cap_enabled: capOn, over_cap: over,
     source: 'volume', volume_id: volumeId, graphs, graphs_by_shot: graphsBy, seconds_per_graph: secs, samples: med.samples, locked: info.locked, refused, remaining_usd: remaining, assumption, ...(blocked ? { blocked } : {}) }
@@ -252,7 +272,7 @@ async function importVolumeRound(round: string, o: ImportOpts): Promise<ImportRe
   const prices = await cardPrices(plan.shots, o)
   for (const shot of plan.shots) {
     const graphs = (info.by_shot[shot] ?? []).filter((g) => !volumeround.isLockedPath(g) && !info.locked.includes(shot))   // paths relative to workflows/, as the pod's panel names them
-    q.tasks.push({ id: newId('t'), import_id: imp.id, round, shot, kind: 'run', state: 'waiting', depends_on: [], pod_id: null, pod_name: null, graphs, ...(o.cards?.[shot] ? { gpu: o.cards[shot], price: prices[shot] ?? null } : {}) })
+    q.tasks.push({ id: newId('t'), import_id: imp.id, round, shot, kind: 'run', state: 'waiting', depends_on: [], pod_id: null, pod_name: null, graphs, ...(cardList(o.cards?.[shot]).length ? { ...taskCards(o, shot), price: prices[shot] ?? null } : {}) })
   }
   history.record({ kind: 'change', area: 'import', action: 'queued a volume round', what: `${round} on ${volumeId}`, detail: `${plan.shots.length} shot(s), ${plan.graphs} graph(s), est $${plan.est_total_usd}; run in place, nothing copied or written`, approved_by: by } as never)
   save(); start()
@@ -276,12 +296,12 @@ export async function importRound(round: string, o: ImportOpts = {}): Promise<Im
   const pull: Task = { id: newId('t'), import_id: imp.id, round, shot: null, kind: 'pull', state: 'waiting', depends_on: [], pod_id: null, pod_name: null }
   q.imports.push(imp); q.tasks.push(pull)
   const prices = await cardPrices(plan.shots, o)
-  if (o.run_workflows !== false) for (const shot of plan.shots) q.tasks.push({ id: newId('t'), import_id: imp.id, round, shot, kind: 'run', state: 'waiting', depends_on: [pull.id], pod_id: null, pod_name: null, ...(o.cards?.[shot] ? { gpu: o.cards[shot], price: prices[shot] ?? null } : {}) })
+  if (o.run_workflows !== false) for (const shot of plan.shots) q.tasks.push({ id: newId('t'), import_id: imp.id, round, shot, kind: 'run', state: 'waiting', depends_on: [pull.id], pod_id: null, pod_name: null, ...(cardList(o.cards?.[shot]).length ? { ...taskCards(o, shot), price: prices[shot] ?? null } : {}) })
   save(); start()
   return imp
 }
 
-export interface RoundItem { round: string; shots?: string[]; cards?: Record<string, string>; max_pods?: number }
+export interface RoundItem { round: string; shots?: string[]; cards?: Record<string, string | string[]>; max_pods?: number }
 /** Several rounds on one approval (the window's and MCP's one path): each round is its own import; `cost_cap_usd` is the TOTAL and is split evenly, so the caps never add up to more.
  *  Every round is planned first, so a bad round or card queues nothing; `max_pods` (per round) may be set per item. */
 export async function importRounds(items: RoundItem[], o: Omit<ImportOpts, 'shots' | 'cards'> = {}): Promise<ImportRec[]> {
@@ -392,13 +412,23 @@ async function begin(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> {
   try {
     const busy = new Set(q().tasks.filter((x) => x.state === 'running' && x.pod_id).map((x) => x.pod_id))
     const pool = (await deps.volumePods()).filter((p) => !busy.has(p.id))
-    const pick = t.gpu ? undefined : pool.find((p) => p.state === 'running') ?? pool.find((p) => p.state === 'starting') ?? pool.find((p) => p.state === 'off')
+    const pick = (t.gpus?.length || t.gpu) ? undefined : pool.find((p) => p.state === 'running') ?? pool.find((p) => p.state === 'starting') ?? pool.find((p) => p.state === 'off')
     let podId: string, podName: string
     if (pick) {
       podId = pick.id; podName = pick.name; if (pick.gpu) t.card = pick.gpu   // the card the reused pod really has
       if (pick.state === 'off') { await deps.resumePod(pick.id); imp.started_pods.push(pick.id); ev(t, `restarted your stopped pod ${pick.name}${pick.gpu ? ` (${pick.gpu})` : ''}`) } else ev(t, `reusing the pod ${pick.name} (${pick.gpu ? `${pick.gpu}, ` : ''}${pick.state})`)
     } else {
-      const c = await deps.createPod(`queue-${imp.round}-${tasks.filter((x) => x.pod_id).length + 1}`.slice(0, 60), imp.round, t.gpu); podId = c.id; podName = c.name; t.card = t.gpu || poolGpu(); imp.started_pods.push(c.id); ev(t, `created pod ${c.name} (${t.gpu || poolGpu()}) in round ${imp.round}`)
+      // Cards in the person's order, always from the FIRST (so every pod gets the first choice while RunPod has one free; later pods start again from the first). Only a definite no-card goes on to the next card: any other error stops here, so at most ONE pod is made per attempt.
+      const order = t.gpus?.length ? t.gpus : [t.gpu]   // [undefined]: the pool's default card
+      let c: { id: string; name: string } | undefined, got: string | undefined, noCard: unknown
+      for (const g of order) {
+        try { c = await deps.createPod(`queue-${imp.round}-${tasks.filter((x) => x.pod_id).length + 1}`.slice(0, 60), imp.round, g); got = g || poolGpu(); break } catch (e) {
+          if ((e as { code?: string })?.code !== 'no_card' || order.length === 1) throw e
+          noCard = e; ev(t, `no ${g} free: trying the next card`)
+        }
+      }
+      if (!c) throw noCard
+      podId = c.id; podName = c.name; t.card = got; imp.started_pods.push(c.id); ev(t, `created pod ${c.name} (${got}) in round ${imp.round}`)
     }
     if (t.shot) { try { deps.assignShot(podId, imp.round, t.shot); ev(t, `pod card: round ${imp.round}, shot ${t.shot}`) } catch { /* the card label is ours only: never fail a run over it */ } }
     t.pod_id = podId; t.pod_name = podName; t.phase = 'pod'; t.state = 'running'; t.retry_at = undefined; t.attempts = undefined; t.stage = undefined; t.started_at = deps.now().toISOString(); delete t.held_reason
@@ -406,7 +436,7 @@ async function begin(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> {
     const msg = (e as Error).message
     if (/No card available/.test(msg) && (t.attempts ?? 0) < MAX_CARD_WAITS) {   // RunPod has none free right now: wait and ask again, as the datacenter table says "if we have to wait we have to wait"
       t.attempts = (t.attempts ?? 0) + 1; t.retry_at = new Date(deps.now().getTime() + CARD_RETRY_MS).toISOString()
-      t.stage = `waiting for a free ${t.gpu || poolGpu()}${t.gpu ? '' : ' (the pool default: no card was chosen for this shot)'} (try ${t.attempts} of ${MAX_CARD_WAITS}, next at ${t.retry_at.slice(11, 19)} UTC)`
+      t.stage = `waiting for a free ${t.gpus && t.gpus.length > 1 ? t.gpus.join(' or ') : t.gpu || poolGpu()}${t.gpu ? '' : ' (the pool default: no card was chosen for this shot)'} (try ${t.attempts} of ${MAX_CARD_WAITS}, next at ${t.retry_at.slice(11, 19)} UTC)`
       if (t.attempts === 1) ev(t, `no card free right now: ${msg.slice(0, 160)}. Waiting and asking again every minute.`)
       return true
     }

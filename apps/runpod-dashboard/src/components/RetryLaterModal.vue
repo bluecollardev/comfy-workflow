@@ -21,7 +21,14 @@
       <div v-if="choice === 'other'" class="mt-2 ms-4">
         <div v-if="loading" class="small text-body-secondary"><BSpinner small class="me-1" />{{ $t('pod.rlLoading') }}</div>
         <div v-else-if="!cards.length" class="small text-warning" data-testid="retry-later-none">{{ $t('pod.rlNone', { dc: pod.datacenter || '?' }) }}</div>
-        <BFormSelect v-else v-model="gpu" :options="options" size="sm" :disabled="busy" data-testid="retry-later-gpu" />
+        <div v-else data-testid="retry-later-gpus">
+          <div class="small text-body-secondary mb-1" data-testid="retry-later-order-note">{{ $t('pod.rlOrderNote') }}</div>
+          <label v-for="c in cards" :key="c.key" class="d-flex align-items-center gap-2 small py-1" data-testid="retry-later-gpu-option" :data-gpu="c.key">
+            <input type="checkbox" class="form-check-input mt-0" :checked="picked.includes(c.key)" :disabled="busy" @change="toggle(c.key)" />
+            <span class="flex-grow-1">{{ optionText(c) }}</span>
+            <span v-if="picked.includes(c.key)" class="badge text-bg-warning" data-testid="retry-later-gpu-rank" :title="$t('pod.rlRankTitle')">{{ picked.indexOf(c.key) + 1 }}</span>
+          </label>
+        </div>
       </div>
     </div>
     <BAlert v-if="error" :model-value="true" variant="danger" class="small py-2 mt-2 mb-0" data-testid="retry-later-error">{{ error }}</BAlert>
@@ -44,24 +51,27 @@ import { t } from '../i18n'
 const props = defineProps({ modelValue: { type: Boolean, default: false }, pod: { type: Object, required: true }, volume: { type: Object, default: null } })
 const emit = defineEmits(['update:modelValue'])
 const watches = usePodWatchStore()
-const choice = ref('same'), gpu = ref(''), loading = ref(false), busy = ref(false), error = ref(''), dcCards = ref([])
+const choice = ref('same'), picked = ref([]), loading = ref(false), busy = ref(false), error = ref(''), dcCards = ref([])
 
 /** The cards this datacenter runs that the app can start (a card outside its table is listed by the core as `runs: false`): the free ones first, then by price. An out of stock card stays choosable, because the create watch retries until it is free. */
 const cards = computed(() => dcCards.value.filter((c) => c.runs !== false).slice().sort((a, b) => Number(b.available !== false) - Number(a.available !== false) || (a.price ?? 9e9) - (b.price ?? 9e9)))
-const options = computed(() => cards.value.map((c) => ({ value: c.key, text: [c.name, c.vram ? `${c.vram} GB` : '', c.price != null ? `$${c.price}${t('pod.perHour')}` : '', c.available === false ? t('pod.rlNoStock') : c.stock || ''].filter(Boolean).join(' · ') })))
-const ready = computed(() => choice.value === 'same' || (choice.value === 'other' && !!gpu.value && !loading.value))
+const optionText = (c) => [c.name, c.vram ? `${c.vram} GB` : '', c.price != null ? `$${c.price}${t('pod.perHour')}` : '', c.available === false ? t('pod.rlNoStock') : c.stock || ''].filter(Boolean).join(' · ')
+const ready = computed(() => choice.value === 'same' || (choice.value === 'other' && picked.value.length > 0 && !loading.value))
+/** The cards chosen, in the order they were clicked: that is the order they are tried in, and the first with a card free is used (one pod is made). */
+const toggle = (key) => { picked.value = picked.value.includes(key) ? picked.value.filter((k) => k !== key) : [...picked.value, key] }
 
 async function loadCards() {
   loading.value = true
   try { dcCards.value = ((await podsAPI.datacenters()).datacenters || []).find((d) => d.value === props.pod.datacenter)?.cards || [] } catch { dcCards.value = [] } finally { loading.value = false }
-  if (!cards.value.some((c) => c.key === gpu.value)) gpu.value = cards.value[0]?.key || ''
+  picked.value = picked.value.filter((k) => cards.value.some((c) => c.key === k))
+  if (!picked.value.length && cards.value[0]) picked.value = [cards.value[0].key]   // one click starts it: the first card (a free one, then the cheapest) is ticked
 }
-watch(() => props.modelValue, (open) => { if (open) { choice.value = 'same'; gpu.value = ''; error.value = ''; loadCards() } }, { immediate: true })
+watch(() => props.modelValue, (open) => { if (open) { choice.value = 'same'; picked.value = []; error.value = ''; loadCards() } }, { immediate: true })
 
 function close() { emit('update:modelValue', false) }
 async function start() {
   busy.value = true; error.value = ''
-  const r = choice.value === 'same' ? await watches.retryResumeLater(props.pod.id) : await watches.retryLikeLater(props.pod.id, gpu.value, cards.value.find((c) => c.key === gpu.value)?.name || gpu.value, props.pod.datacenter)
+  const r = choice.value === 'same' ? await watches.retryResumeLater(props.pod.id) : await watches.retryLikeLater(props.pod.id, picked.value.length > 1 ? [...picked.value] : picked.value[0], picked.value.map((k) => cards.value.find((c) => c.key === k)?.name || k).join(', '), props.pod.datacenter)
   busy.value = false
   if (r.ok) close(); else error.value = r.text || ''
 }

@@ -362,7 +362,11 @@ export async function mockApi(page, state) {
       const cap = body.cost_cap_usd ?? 50
       return json({ round: body.round, source: 'volume', volume_id: body.volume_id, shots, graphs, graphs_by_shot: Object.fromEntries(shots.map((s) => [s, 2])), seconds_per_graph: 600, samples: 0, price_per_hour: 0.36, pull_hours: 0, est_total_usd: est, max_pods: 2, cost_cap_usd: cap, cap_enabled: true, over_cap: est > cap, locked: lockedAll, refused, remaining_usd: 94.5, assumption: `${graphs} graph(s) x 600 s (no run in the History: the default 600 s) x the pod's hourly price ($0.36/h).` })
     }
-    if (method === 'POST' && path === '/queue/plan') return json({ round: body.round, shots: ['cgi-042', 'cgi-043'], price_per_hour: 3.99, pull_hours: 0.5, est_total_usd: 6.98, max_pods: 2, cost_cap_usd: 50, cap_enabled: true, over_cap: false })
+    if (method === 'POST' && path === '/queue/plan') {   // a shot's card is a key or an ordered list; the core validates each and prices the dearest (the plan says so)
+      (state.planCalls ||= []).push(body)
+      const several = Object.values(body.cards || {}).some((v) => Array.isArray(v) && v.length > 1)
+      return json({ round: body.round, shots: ['cgi-042', 'cgi-043'], price_per_hour: 3.99, pull_hours: 0.5, est_total_usd: 6.98, max_pods: 2, cost_cap_usd: 50, cap_enabled: true, over_cap: false, ...(several ? { assumption: 'Where a shot has several cards, the most expensive one is priced.' } : {}) })
+    }
     if (method === 'POST' && path === '/queue/import-many' && body.source === 'volume') {   // guards (b) and (c) again, as the core answers them
       (state.volumeImportCalls ||= []).push(body)
       if (body.items.some((i) => (i.shots || []).includes('cgi-042'))) return json({ detail: 'Refused: cgi-042 is locked (client-approved, or under 04_GRAPH): listed for reference, never run (Binc\'s rules).' }, 403)
@@ -429,8 +433,10 @@ export async function mockApi(page, state) {
     if ((m = path.match(/^\/pods\/([^/]+)\/create-like-when-free$/)) && method === 'POST') {
       // another GPU (ADR-042 section 19): a NEW pod like this one, same datacenter; the old pod is never touched
       const pod = state.pods.find((p) => p.id === m[1]); (state.createLikeWhenFree ||= []).push({ id: m[1], ...body })
-      const card = state.datacenters.datacenters.flatMap((d) => d.cards).find((c) => c.key === body.gpu)
-      const w = { id: `watch-${(state.watches || []).length + 1}`, kind: 'create', state: 'waiting', name: `${pod?.name || m[1]}-${(card?.name || body.gpu).replace(/ /g, '-')}`, label: `Waiting for a free ${card?.name || body.gpu} in ${pod?.datacenter || ''}`, every_s: body.every_s || 120, attempts: 0, created_at: new Date().toISOString(), next_at: new Date(Date.now() + 120000).toISOString(), give_up_at: new Date(Date.now() + 12 * 3600000).toISOString() }
+      const keys = Array.isArray(body.gpu) ? body.gpu : [body.gpu]   // one card, or several in the order chosen (the first free one is used; one pod, named <old>-alt)
+      const cardNames = keys.map((k) => state.datacenters.datacenters.flatMap((d) => d.cards).find((c) => c.key === k)?.name || k)
+      const card = { name: cardNames.length > 1 ? `${cardNames.slice(0, -1).join(', ')} or ${cardNames[cardNames.length - 1]}` : cardNames[0] }
+      const w = { id: `watch-${(state.watches || []).length + 1}`, kind: 'create', state: 'waiting', name: keys.length > 1 ? `${pod?.name || m[1]}-alt` : `${pod?.name || m[1]}-${cardNames[0].replace(/ /g, '-')}`, label: `Waiting for a free ${card.name} in ${pod?.datacenter || ''}`, every_s: body.every_s || 120, attempts: 0, created_at: new Date().toISOString(), next_at: new Date(Date.now() + 120000).toISOString(), give_up_at: new Date(Date.now() + 12 * 3600000).toISOString() }
       ;(state.watches ||= []).push(w); return json(w)
     }
     if ((m = path.match(/^\/pod-watches\/([^/]+)$/)) && method === 'DELETE') {

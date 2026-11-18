@@ -3,7 +3,7 @@
 **For an AI agent.** ADR-038 (queue), ADR-035 (pull picks the pod), ADR-037 (run workflows).
 
 1. `plan_round_import {round}`: the shots, the pod price, the estimate and the caps (pod limit, dollar cap; `cap_enabled: false` means none).
-2. `import_round {round, shots?, approved_by}` (a named yes; one approval covers the import and every pod it starts). It queues a pull (which places the round) and one run per shot.
+2. `import_round {round, shots?, cards?, max_pods?, approved_by}` (`cards`: `shot -> card key`, or a list of keys of one datacenter in your order: every new pod asks them from the first, one pod per attempt, the first free is used, the estimate uses the dearest; `max_pods` is the number of shots/pods running at once) (a named yes; one approval covers the import and every pod it starts). It queues a pull (which places the round) and one run per shot.
 3. `queue_list` until the import's `state` is `done`. Tasks: `waiting`, `running`, `done`, `failed` (read `error`), `held` (past the cap: `queue_task {action: "set_limits", id: <import id>, cost_cap_usd}` then `retry` the held tasks), `interrupted` (the app stopped: `retry`).
 4. `queue_task {action: "cancel_import", id}` stops everything. Pods the import started are stopped when it ends; a pod that was already running is left running.
 5. Every task's outcome is also in the History (`job: queue`).

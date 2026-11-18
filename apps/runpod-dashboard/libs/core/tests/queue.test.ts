@@ -4,6 +4,7 @@ import { writeFileSync } from 'node:fs'
 import * as history from '../src/history.js'
 import * as mounts from '../src/mounts.js'
 import * as queue from '../src/queue.js'
+import { CoreError } from '../src/errors.js'
 import { scratch } from './helpers.js'
 
 // The round-import queue (docs/ADR-038): importing a round queues a pull and one run per shot; pool pods take the runs, within a pod limit and a dollar cap. No pod, no RunPod: fakes for every outside effect.
@@ -31,9 +32,9 @@ function world(pool: { id: string; name: string; state: 'running' | 'starting' |
     podReady: async (id) => ({ ready: w.ready.has(id), price }),
     resumePod: async (id) => { w.resumed.push(id); const p = w.pods.find((x) => x.id === id)!; p.state = 'running'; w.ready.add(id) },
     ensureVolume: async (id) => { (w.vols ||= []).push(id ?? null) },
-    cardPrice: async (g) => (g === 'rtx5090' ? 2 : null),
+    cardPrice: async (g) => ({ rtx5090: 2, a40: 0.5, rtx4090: 1 } as Record<string, number>)[g] ?? null,
     now: () => new Date((w as any).clock ?? Date.now()),
-    createPod: async (name, round, gpu) => { if ((w as any).noCard) throw new Error('No card available right now: tried rtxpro6000 on SECURE'); (w.gpuOf ||= {})[`new${w.created.length + 1}`] = gpu; const id = `new${w.created.length + 1}`; w.created.push(id); (w.rounds ||= {})[id] = round; w.pods.push({ id, name, state: 'running', price }); w.ready.add(id); return { id, name } },
+    createPod: async (name, round, gpu) => { const fm = (w as any).freeLeft as Record<string, number> | undefined; (w as any).asked = [...((w as any).asked ?? []), gpu]; if (fm && gpu && gpu in fm) { if (fm[gpu] <= 0) throw new CoreError(502, `No card available right now: tried ${gpu} on SECURE`, 'no_card'); fm[gpu]-- } if ((w as any).transient) throw new CoreError(502, 'RunPod 500'); if ((w as any).noCard) throw new Error('No card available right now: tried rtxpro6000 on SECURE'); (w.gpuOf ||= {})[`new${w.created.length + 1}`] = gpu; const id = `new${w.created.length + 1}`; w.created.push(id); (w.rounds ||= {})[id] = round; w.pods.push({ id, name, state: 'running', price }); w.ready.add(id); return { id, name } },
     assignShot: (id, round, shot) => { (w.shotOf ||= {})[id] = `${round}/${shot}` },
     stopPod: async (id) => { w.stopped.push(id) },
     pull: async (_r: string, shots?: string[]) => { (w as any).pulledShots = shots; return { id: 'pj1' } },
@@ -257,5 +258,71 @@ describe('no card free', () => {
     expect(queue.purge({ confirmed: true })).toEqual({ removed_imports: 1, removed_tasks: 2 })
     expect(queue.list().imports).toHaveLength(0)
     void w
+  })
+})
+
+describe('several cards for a shot: the first free one in order, one pod per attempt', () => {
+  const three = ['cgi-042', 'cgi-043', 'cgi-044']
+  const manyCards = (cards: string[] | string) => Object.fromEntries(three.map((s) => [s, cards]))
+  const cardOf = (s: string) => tasks().find((t) => t.shot === s)!
+  const settle = async () => { await queue.tick(); await queue.tick(); await queue.tick() }
+  it('every new pod asks from the first card: A, A, then B when A has only two free; a later pod tries A again', async () => {
+    const w = world(); (w as any).freeLeft = { rtx4090: 2, a40: 9 }
+    await queue.importRound(ROUND, { shots: three, cards: manyCards(['rtx4090', 'a40']), approved_by: 'Lucas', max_pods: 3 })
+    expect(cardOf('cgi-042')).toMatchObject({ gpu: 'rtx4090', gpus: ['rtx4090', 'a40'] })
+    w.pull.state = 'done'; await settle()
+    expect(three.map((s) => cardOf(s).card)).toEqual(['rtx4090', 'rtx4090', 'a40'])   // mixed only because A ran out
+    expect((w as any).asked).toEqual(['rtx4090', 'rtx4090', 'rtx4090', 'a40'])   // the third pod asked A first, got no-card, then B: one pod made
+    expect(w.created).toHaveLength(3)
+    // A frees up: the next import's pod starts again from the first card
+    ;(w as any).freeLeft.rtx4090 = 1; (w as any).asked = []
+    await queue.importRound('round-two', { shots: ['cgi-042'], cards: { 'cgi-042': ['rtx4090', 'a40'] }, approved_by: 'Lucas' })
+    await settle()
+    expect((w as any).asked[0]).toBe('rtx4090')
+    expect(queue.list().tasks.find((x) => x.round === 'round-two' && x.shot === 'cgi-042')?.card).toBe('rtx4090')
+  })
+  it('none free on every card behaves as one no-card does: the task waits and asks again', async () => {
+    const w = world(); (w as any).freeLeft = { rtx4090: 0, a40: 0 }; (w as any).clock = Date.parse('2026-11-09T12:00:00Z')
+    await queue.importRound(ROUND, { shots: ['cgi-042'], cards: { 'cgi-042': ['rtx4090', 'a40'] }, approved_by: 'Lucas' })
+    w.pull.state = 'done'; await settle()
+    const t = cardOf('cgi-042')
+    expect(t.state).toBe('waiting'); expect(t.attempts).toBe(1); expect(t.stage).toMatch(/waiting for a free rtx4090 or a40/)
+    expect((w as any).asked).toEqual(['rtx4090', 'a40']); expect(w.created).toHaveLength(0)
+  })
+  it('an unknown or transient error never goes on to a second card', async () => {
+    const w = world(); (w as any).transient = true
+    await queue.importRound(ROUND, { shots: ['cgi-042'], cards: { 'cgi-042': ['rtx4090', 'a40'] }, approved_by: 'Lucas' })
+    w.pull.state = 'done'; await settle()
+    expect((w as any).asked).toEqual(['rtx4090']); expect(cardOf('cgi-042').state).toBe('failed'); expect(w.created).toHaveLength(0)
+  })
+  it('a single card (string, or a one-element list) behaves as today; every key is validated; the most expensive card prices the estimate', async () => {
+    world()
+    await queue.importRound(ROUND, { shots: ['cgi-042'], cards: { 'cgi-042': 'rtx5090' }, approved_by: 'Lucas' })
+    expect(cardOf('cgi-042')).toMatchObject({ gpu: 'rtx5090', price: 2 }); expect(cardOf('cgi-042').gpus).toBeUndefined()
+    await expect(queue.planImport(ROUND, { cards: { 'cgi-042': ['rtx4090', 'nope'] } })).rejects.toThrow(/Unknown card "nope"/)
+    const one = await queue.planImport(ROUND, { shots: ['cgi-042'], cards: { 'cgi-042': ['a40'] } })
+    const two = await queue.planImport(ROUND, { shots: ['cgi-042'], cards: { 'cgi-042': ['a40', 'rtx5090'] } })
+    expect(one.est_total_usd).toBe(4 * 1 + 0.5 * queue.RUN_ESTIMATE_H)
+    expect(two.est_total_usd).toBe(4 * 1 + 2 * queue.RUN_ESTIMATE_H)   // the dearer of the two
+    expect(two.assumption).toMatch(/most expensive/); expect(one.assumption).toBeUndefined()
+  })
+  it('edge cases: duplicates collapse, one card in a list is a single card, an empty list is refused, an unknown key in the middle refuses the plan', async () => {
+    world()
+    expect(queue.cardList(['a40', 'a40', ' rtx4090 ', ''])).toEqual(['a40', 'rtx4090'])
+    expect(queue.cardList('a40')).toEqual(['a40']); expect(queue.cardList(undefined)).toEqual([])
+    await queue.importRound(ROUND, { shots: ['cgi-042'], cards: { 'cgi-042': ['a40', 'a40'] }, approved_by: 'Lucas' })
+    expect(cardOf('cgi-042')).toMatchObject({ gpu: 'a40' }); expect(cardOf('cgi-042').gpus).toBeUndefined()
+    await expect(queue.planImport(ROUND, { cards: { 'cgi-042': [] } })).rejects.toThrow(/empty list/)
+    await expect(queue.planImport(ROUND, { cards: { 'cgi-042': ['a40', 'nope', 'rtx4090'] } })).rejects.toThrow(/Unknown card "nope" for cgi-042/)
+    await expect(queue.planImport(ROUND, { cards: { 'cgi-042': ['a40', 5 as never] } })).rejects.toThrow(/card keys/)
+  })
+  it('several rounds on one approval: each shot of each round gets the ordered list; max_pods per round is kept; a bad key in any round queues nothing', async () => {
+    world()
+    const out = await queue.importRounds([{ round: 'r1', shots: ['cgi-042'], cards: { 'cgi-042': ['rtx4090', 'a40'] }, max_pods: 3 }, { round: 'r2', shots: ['cgi-043'], cards: { 'cgi-043': 'a40' }, max_pods: 1 }], { approved_by: 'Lucas', cost_cap_usd: 40 })
+    expect(out.map((i) => i.max_pods)).toEqual([3, 1]); expect(out.map((i) => i.cost_cap_usd)).toEqual([20, 20])
+    expect(tasks().find((t) => t.round === 'r1' && t.shot === 'cgi-042')).toMatchObject({ gpus: ['rtx4090', 'a40'], gpu: 'rtx4090', price: 1 })
+    expect(tasks().find((t) => t.round === 'r2' && t.shot === 'cgi-043')).toMatchObject({ gpu: 'a40' })
+    queue.forget()
+    await expect(queue.importRounds([{ round: 'r3', cards: { 'cgi-042': ['a40'] } }, { round: 'r4', cards: { 'cgi-042': ['a40', 'nope'] } }], { approved_by: 'Lucas' })).rejects.toThrow(/Unknown card/)
   })
 })

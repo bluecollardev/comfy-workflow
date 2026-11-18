@@ -87,9 +87,10 @@
     <template v-else>
       <!-- Choose Card: a button that opens the same card and datacenter table as Create Pod, in a window of its own -->
       <div v-if="runWorkflows || isVolume" class="d-flex align-items-center gap-2 mb-3 flex-wrap" data-testid="import-round-choose-card">
-        <BButton :variant="allCard ? 'outline-success' : 'outline-light'" size="sm" data-testid="import-round-choose-card-btn" @click="cardModal = true"><i class="fa-solid fa-microchip me-1"></i>{{ $t('importRound.cardAll') }}</BButton>
-        <span v-if="allCard" class="small" data-testid="import-round-chosen-card"><strong>{{ allCardLabel }}</strong><span class="text-body-secondary"> · {{ dcChoice }}</span></span>
+        <BButton :variant="allCards.length ? 'outline-success' : 'outline-light'" size="sm" data-testid="import-round-choose-card-btn" @click="cardModal = true"><i class="fa-solid fa-microchip me-1"></i>{{ $t('importRound.cardAll') }}</BButton>
+        <span v-if="allCards.length" class="small" data-testid="import-round-chosen-card"><strong>{{ allCardLabel }}</strong><span class="text-body-secondary"> · {{ dcChoice }}</span></span>
         <span v-else class="small text-body-secondary">{{ $t('importRound.chooseCardNone') }}</span>
+        <div v-if="allCards.length > 1" class="w-100 small text-body-secondary" data-testid="import-round-same-card-first">{{ $t('importRound.sameCardFirst') }}</div>
       </div>
       <div class="border rounded p-2 small mb-3" data-testid="import-round-estimate">
         <template v-if="isVolume">
@@ -106,6 +107,7 @@
         <div v-if="first.cap_enabled" class="d-flex align-items-center gap-2 mt-2 flex-wrap">
           <label class="mb-0" for="ir-pods">{{ $t(plans.size > 1 ? 'importRound.maxPodsEach' : 'importRound.maxPods') }}</label>
           <BFormInput id="ir-pods" v-model.number="maxPods" type="number" min="1" max="20" size="sm" style="width: 5rem" data-testid="import-round-max-pods" @input="podsEdited = true" />
+          <div class="w-100 text-body-secondary" data-testid="import-round-pods-note">{{ $t('importRound.podsNote') }}</div>
           <label class="mb-0 ms-2" for="ir-cap">{{ $t(plans.size > 1 ? 'importRound.costCapTotal' : 'importRound.costCap') }}</label>
           <BFormInput id="ir-cap" v-model.number="costCap" type="number" min="1" size="sm" style="width: 6rem" data-testid="import-round-cost-cap" />
         </div>
@@ -157,7 +159,7 @@
         </div>
       </div>
     </template>
-    <ChooseCardModal :show="cardModal" :list="dcList" :loading="dcLoading" :datacenter="dcChoice" :card="allCard" :card-label="allCardLabel" @close="cardModal = false" @refresh="loadDcs(true)" @update:datacenter="dcChoice = $event" @pick="onPickCard" @auto="clearAllCards" />
+    <ChooseCardModal :show="cardModal" :list="dcList" :loading="dcLoading" :datacenter="dcChoice" :cards="allCards" :card-label="allCardLabel" @close="cardModal = false" @refresh="loadDcs(true)" @update:datacenter="dcChoice = $event" @pick="onPickCard" @auto="clearAllCards" />
     <RoundFilesModal :round="browsing" :shot="browsingShot" target="local" @close="browsing = ''; browsingShot = ''" />
   </BModal>
 </template>
@@ -203,9 +205,9 @@ const rowErrors = ref({})   // round -> why it cannot be ticked (no shots in it,
 const step = ref(1)
 const stepLabels = computed(() => [t('importRound.stepRounds'), t('importRound.stepShots'), t('importRound.stepCards')])
 const stepItems = computed(() => stepLabels.value.map((label, i) => ({ label, done: stepDone(i + 1), blocked: !canGoTo(i + 1), why: stepWhy(i + 1) })))
-const cards = ref({})   // `${round}::${shot}` -> card key; absent = the pool
-const setAllCards = (v) => { if (v === '' ) return; const n = { ...cards.value }; for (const [r, set] of picked.value) for (const s of set) n[`${r}::${s}`] = v; cards.value = n }
-const cardsFor = (r) => Object.fromEntries([...(picked.value.get(r) || [])].filter((s) => cards.value[`${r}::${s}`]).map((s) => [s, cards.value[`${r}::${s}`]]))
+const cards = ref({})   // `${round}::${shot}` -> the ordered card keys (the first free one is used); absent = the pool
+const setAllCards = (list) => { if (!list.length) return; const n = { ...cards.value }; for (const [r, set] of picked.value) for (const s of set) n[`${r}::${s}`] = [...list]; cards.value = n }
+const cardsFor = (r) => Object.fromEntries([...(picked.value.get(r) || [])].filter((s) => cards.value[`${r}::${s}`]).map((s) => [s, cards.value[`${r}::${s}`].length === 1 ? cards.value[`${r}::${s}`][0] : cards.value[`${r}::${s}`]]))
 const estimates = ref(new Map())   // round -> the plan for the shots and cards chosen (its estimate)
 async function replan() {
   const m = new Map()
@@ -227,19 +229,32 @@ const next = async () => { if (!canNext.value) { error.value = step.value === 2 
 const hint = computed(() => (!chosen.value.size ? t('importRound.hintPick') : step.value < 3 ? t('importRound.hintSteps') : !isVolume.value && !volumeId.value ? t('importRound.volumeNone') : !totalShots.value ? t('importRound.hintShots') : t('importRound.hintApprove')))
 const volumes = ref([]), volumeId = ref(''), defaultVolume = ref('')
 // Choose Card (as in Create Pod): a card at a datacenter. The card goes to every shot; the datacenter picks the volume that lives there.
-const cardModal = ref(false), dcList = ref([]), dcLoading = ref(false), dcChoice = ref(''), allCard = ref(''), allCardLabel = ref('')
+const cardModal = ref(false), dcList = ref([]), dcLoading = ref(false), dcChoice = ref(''), allCards = ref([]), cardsDc = ref(''), allCardLabel = ref('')   // allCards: [{ key, name, vram }] in click order, all of the datacenter dcChoice
 async function loadDcs(fresh = false) { dcLoading.value = true; try { dcList.value = (await podsAPI.datacenters(fresh)).datacenters || [] } catch { /* the per-shot choices still work */ } finally { dcLoading.value = false } }
 const volumesIn = (dc) => volumes.value.filter((v) => v.datacenter === dc)
+const cardName = (c) => `${c.name}${c.vram ? ` ${c.vram} GB` : ''}`
+/** A click on a card at a datacenter: the same datacenter toggles the card in the ranked list; another datacenter replaces the list (volumes and pods are pinned to one datacenter). The window stays open until Done. */
 function onPickCard({ dc, card }) {
-  if (card) cardModal.value = false   // a card at a datacenter is the choice: back to the volumes
-  if (isVolume.value) { if (card) { allCard.value = card.key; allCardLabel.value = `${card.name}${card.vram ? ` ${card.vram} GB` : ''}`; setAllCards(card.key) } dcChoice.value = dc || dcChoice.value; return }   // a volume round runs where its volume is: the card is chosen, the volume is not
-  if (card) { allCard.value = card.key; allCardLabel.value = `${card.name}${card.vram ? ` ${card.vram} GB` : ''}`; setAllCards(card.key) }
+  if (card) {
+    const same = !allCards.value.length || dc === cardsDc.value   // (the table has already moved dcChoice to this click's datacenter, so the selection's own is kept apart)
+    const has = allCards.value.some((c) => c.key === card.key)
+    allCards.value = same ? (has ? allCards.value.filter((c) => c.key !== card.key) : [...allCards.value, card]) : [card]
+    cardsDc.value = allCards.value.length ? dc : ''
+    syncCards()
+  }
+  if (isVolume.value) { dcChoice.value = dc || dcChoice.value; return }   // a volume round runs where its volume is: the card is chosen, the volume is not
   const vs = volumesIn(dc)
-  if (dc) volumeId.value = vs.length ? (vs.find((v) => v.is_default) || vs[0]).id : ''   // none there: no volume is chosen (a pod cannot leave its volume's datacenter), so Import waits for one
+  if (dc && (card ? !volumes.value.some((v) => v.id === volumeId.value && v.datacenter === dc) : true)) volumeId.value = vs.length ? (vs.find((v) => v.is_default) || vs[0]).id : ''   // none there: no volume is chosen (a pod cannot leave its volume's datacenter), so Import waits for one
 }
-function clearAllCards() { allCard.value = ''; allCardLabel.value = ''; const n = { ...cards.value }; for (const [r, set] of picked.value) for (const sh of set) delete n[`${r}::${sh}`]; cards.value = n }
+/** The label and every shot's list follow the ranked cards. */
+function syncCards() {
+  allCardLabel.value = allCards.value.map(cardName).join(', ')
+  const n = { ...cards.value }; for (const [r, set] of picked.value) for (const sh of set) delete n[`${r}::${sh}`]; cards.value = n
+  setAllCards(allCards.value.map((c) => c.key))
+}
+function clearAllCards() { allCards.value = []; cardsDc.value = ''; allCardLabel.value = ''; const n = { ...cards.value }; for (const [r, set] of picked.value) for (const sh of set) delete n[`${r}::${sh}`]; cards.value = n }
 const dcNoVolume = computed(() => !!dcChoice.value && volumes.value.length > 0 && !volumesIn(dcChoice.value).length)
-watch(volumeId, (id) => { if (isVolume.value) return; const v = volumes.value.find((x) => x.id === id); if (!v) return; if (allCard.value && dcChoice.value && v.datacenter !== dcChoice.value) clearAllCards(); dcChoice.value = v.datacenter })   // a volume elsewhere: the card was chosen at another datacenter, so it goes   // choosing a volume says where the pods will be
+watch(volumeId, (id) => { if (isVolume.value) return; const v = volumes.value.find((x) => x.id === id); if (!v) return; if (allCards.value.length && dcChoice.value && v.datacenter !== dcChoice.value) clearAllCards(); dcChoice.value = v.datacenter })   // a volume elsewhere: the card was chosen at another datacenter, so it goes   // choosing a volume says where the pods will be
 // No volume of yours in the card's datacenter: tick "Create a new volume" and Import makes it first (a volume costs per month, so it is the user's tick and the Approved by that count)
 const createVol = ref(false), newVolName = ref(''), newVolSize = ref(250)
 const newVolCost = computed(() => Math.round((Math.min(newVolSize.value || 0, 1000) * 0.07 + Math.max((newVolSize.value || 0) - 1000, 0) * 0.05) * 100) / 100)   // RunPod's price per GB per month, as in Volumes
@@ -352,7 +367,7 @@ async function start() {
   try { localStorage.setItem('runpod-manager.approved-by', approvedBy.value.trim()) } catch { /* storage blocked */ }
   const todo = [...plans.value.keys()].filter((r) => shotCount(r) > 0)
   const capOn = first.value.cap_enabled
-  const items = todo.map((r) => ({ round: r, shots: [...picked.value.get(r)], cards: cardsFor(r), ...(capOn ? { max_pods: todo.length > 1 && !podsEdited.value ? shotCount(r) : maxPods.value } : {}) }))
+  const items = todo.map((r) => ({ round: r, shots: [...picked.value.get(r)], cards: cardsFor(r), ...(capOn ? { max_pods: todo.length > 1 && !podsEdited.value ? shotCount(r) : Math.min(20, Math.max(1, Math.round(Number(maxPods.value)) || 1)) } : {}) }))
   const makeVol = !isVolume.value && newVolOk.value ? { name: newVolName.value.trim(), size_gb: newVolSize.value, datacenter: dcChoice.value } : null
   const opts = { run_workflows: isVolume.value ? true : runWorkflows.value, volume_id: isVolume.value ? sourceVolumeId.value : volumeId.value, approved_by: approvedBy.value.trim(), ...(isVolume.value ? { source: 'volume' } : {}), ...(capOn ? { cost_cap_usd: costCap.value } : {}) }
   // The Queue opens at once and says it is queueing: reading and planning the rounds takes a while, and the button alone says nothing.

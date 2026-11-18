@@ -28,6 +28,7 @@ test('Outputs: a DPX sequence is one tile with a frame count; the viewer decodes
   await expect(tile).toHaveAttribute('data-frames', '3')
   await expect(tiles.filter({ hasText: '.json' })).toHaveCount(1)   // the sidecar and the png keep their own tiles
   await expect(tiles).toHaveCount(4 /* dpx, json, png, plate of the older run */)
+  await tile.getByTestId('outputs-dpx-load-preview').click()   // previews load on a click (nothing loads by itself)
   await expect(tile.getByTestId('outputs-dpx-thumb')).toBeVisible()   // the first frame is the tile's preview (docs/ADR-045)
   expect([...new Set(asked.filter((n) => n.endsWith('.dpx')))]).toEqual([frameName(0)])   // never all the frames for a tile: the first only
   await expect(m.getByTestId('outputs-zip').first()).toBeVisible()   // Download all (zip) is still offered (disabled outside the app); the zip takes every file
@@ -233,7 +234,9 @@ test('DPX previews: nothing loads by itself, even scrolling; a click loads one t
   const before = { ...hits }
   await page.keyboard.press('Escape')
   await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
-  await expect.poll(async () => m.getByTestId('outputs-dpx-thumb').count(), { timeout: 15000 }).toBe(29)
+  await expect.poll(async () => m.getByTestId('outputs-dpx-thumb').count(), { timeout: 15000 }).toBeGreaterThan(15)   // the cache fills the tiles in view at once
+  await m.getByTestId('outputs-tile').last().scrollIntoViewIfNeeded()
+  await expect.poll(async () => m.getByTestId('outputs-dpx-thumb').count(), { timeout: 15000 }).toBe(29)   // and the rest as they scroll in
   for (const n of Object.keys(before)) if (!n.startsWith('s2_')) expect(hits[n], n).toBe(before[n])
 })
 
@@ -261,6 +264,7 @@ test('previews: a fetch that rejects ends in a retry icon with the reason in its
   await page.goto('/')
   await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
   const m = page.getByTestId('pod-outputs-modal')
+  await m.getByTestId('outputs-dpx-load-preview').first().click()   // previews load on a click
   await expect(m.getByTestId('outputs-dpx-thumb-retry')).toBeVisible()
   await expect(m.getByTestId('outputs-dpx-thumb-retry')).toHaveAttribute('title', /Could not reach/)
   await expect(m.getByTestId('outputs-dpx-thumb-loading')).toHaveCount(0)
@@ -271,6 +275,7 @@ test('previews: a pod that answers 404 for the file says the pod does not serve 
   await page.context().route('**/view?*', (r) => r.fulfill({ status: 404, body: 'nope', headers: { 'access-control-allow-origin': '*' } }))
   await page.goto('/')
   await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
+  await page.getByTestId('pod-outputs-modal').getByTestId('outputs-dpx-load-preview').first().click()   // previews load on a click
   await expect(page.getByTestId('pod-outputs-modal').getByTestId('outputs-dpx-thumb-retry')).toHaveAttribute('title', /does not serve this file \(is it stopped\?\)/)
 })
 
@@ -281,6 +286,7 @@ test('previews: a route that never answers is ended by the timeout (shortened fo
   await page.goto('/')
   await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
   const m = page.getByTestId('pod-outputs-modal')
+  await m.getByTestId('outputs-dpx-load-preview').first().click()   // previews load on a click
   await expect(m.getByTestId('outputs-dpx-thumb-loading')).toBeVisible()
   await expect(m.getByTestId('outputs-dpx-thumb-retry')).toBeVisible({ timeout: 5000 })
   await expect(m.getByTestId('outputs-dpx-thumb-retry')).toHaveAttribute('title', /did not arrive in time/)

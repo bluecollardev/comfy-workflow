@@ -118,6 +118,16 @@ function world(over: Partial<queue.Deps> = {}) {
 }
 
 describe('importing a volume round: in place', () => {
+  it('several cards for a shot: priced at the dearest, the plan says so, the task keeps the ordered list; an unknown key refuses', async () => {
+    world({ cardPrice: async (g) => (g === 'a40' ? 0.18 : g === 'rtx5090' ? 0.72 : null) })
+    const one = await queue.planImport('proxy_v005', { source: 'volume', volume_id: VOL, shots: ['archival-080'], cards: { 'archival-080': ['a40'] } })
+    const two = await queue.planImport('proxy_v005', { source: 'volume', volume_id: VOL, shots: ['archival-080'], cards: { 'archival-080': ['a40', 'rtx5090'] } })
+    expect(two.est_total_usd).toBe(Math.round(one.est_total_usd! * 4 * 100) / 100)   // 0.72 / 0.18
+    expect(two.assumption).toMatch(/most expensive/); expect(one.assumption).not.toMatch(/most expensive/)
+    await expect(queue.planImport('proxy_v005', { source: 'volume', volume_id: VOL, shots: ['archival-080'], cards: { 'archival-080': ['a40', 'nope'] } })).rejects.toThrow(/Unknown card/)
+    await queue.importRound('proxy_v005', { source: 'volume', volume_id: VOL, shots: ['archival-080'], cards: { 'archival-080': ['a40', 'rtx5090'] }, approved_by: 'Lucas', cost_cap_usd: 50 })
+    expect(queue.list().tasks.find((t) => t.shot === 'archival-080')).toMatchObject({ gpu: 'a40', gpus: ['a40', 'rtx5090'], price: 0.72 })
+  })
   it('plans the shots, the graphs as the panel names them and the estimate with its assumption; locked shots are listed, not planned', async () => {
     world()
     const p = await queue.planImport('proxy_v005', { source: 'volume', volume_id: VOL })
