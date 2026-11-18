@@ -2,5 +2,5 @@
   "comfy_variant": "contract-v27",
   "comfy_image": "comfy-app:contract-v27",
   "shotpipe_sets": "shared/nodes/sets.json",
-  "built_at": "2026-11-18T14:12Z"
+  "built_at": "2026-11-18T15:21Z"
 }
