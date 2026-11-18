@@ -3,7 +3,7 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
-## Unreleased
+## v1.4.0 (tag v1.4.0, 2026-11-18)
 
 - **Auto sync, phase 1 (ADR-046), the engine, the API and the MCP:** a change journal on the volume (`comfy-shared/.journal/`, written by the app's sync, round pulls, model fetches and erases, and by an S3 reconciler that lists `output/` (newest folders), `workflows/` and `node-packs/` every 5 minutes with the pod stopped); `volume_changes`; Auto sync per pod (off by default; Pull on, Push off; a named yes to turn on) that pulls outputs by itself (a run's files at once, others from the feed), additive, a file changed on both sides is reported and skipped, above 5 GB it waits for approval, `sync_parallel` files at a time; Push through a debounced local watcher; Auto sync in the configuration and in Import Round, applied to each pod created; the sync explorer (`syncs.*`, `sync_runs`) with persisted logs; automatic runs labelled in the History. Auto sync never pushes `models/` (Lucas, 2026-11-18: "we already have models baked into app"); approving a big pull does not ask for its own name. Turning Auto sync on pulls what was already in `output/` (a background catch-up, History trigger `auto-sync:enable`); a file modified in the last 5 seconds is waited for. Nothing in the pod image changed. Tests: `libs/core/tests/{journal,changes,autosync*,syncpaths,syncruns}.test.ts`.
 
