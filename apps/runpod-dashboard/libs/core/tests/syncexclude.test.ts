@@ -125,11 +125,11 @@ describe('the configuration carries it', () => {
 })
 
 describe('folders() and measure()', () => {
-  it('lists the top-level directories of each push step in run order, sorted, hiding dotfiles, symlinks, files and what a sync never carries; never recursive', async () => {
+  it('lists the top-level directories of each push step in run order, sorted, hiding dotfiles, files and what a sync never carries (a link to a folder is listed, marked as a link); never recursive', async () => {
     const proj = mounts.load().folders.project!
     for (const d of ['zeta', 'Alpha', 'CANALV2', '.hidden', 'logs', '__pycache__', '.git']) mkdirSync(join(proj, d), { recursive: true }); writeFileSync(join(proj, 'file.txt'), 'x'); mkdirSync(join(proj, 'Alpha', 'deep'), { recursive: true }); symlinkSync(shared, join(proj, 'link'))
     const r = await syncfolders.folders({ pod_id: 'p1' }); expect(r.steps.map((s) => s.key)).toEqual(['workflows', 'comfy-shared', 'project'])   // plates is not mapped to an existing folder here
-    const p = r.steps.find((s) => s.key === 'project')!; expect(p.folders.map((f) => f.name)).toEqual(expect.arrayContaining(['Alpha', 'CANALV2', 'zeta'])); for (const bad of ['.hidden', 'logs', '__pycache__', '.git', 'link', 'file.txt', 'deep']) expect(p.folders.map((f) => f.name)).not.toContain(bad)
+    const p = r.steps.find((s) => s.key === 'project')!; expect(p.folders.map((f) => f.name)).toEqual(expect.arrayContaining(['Alpha', 'CANALV2', 'zeta'])); for (const bad of ['.hidden', 'logs', '__pycache__', '.git', 'file.txt', 'deep']) expect(p.folders.map((f) => f.name)).not.toContain(bad)
     expect(p.folders.every((f) => f.bytes === null)).toBe(true); const names = p.folders.map((f) => f.name); expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b))); expect(p.local).toBe(proj + '/')
     await expect(syncfolders.folders({} as never)).rejects.toThrow(/Which pod/)
   })
@@ -140,7 +140,7 @@ describe('folders() and measure()', () => {
   it('measure: a direct child directory only (no .., no slash, no symlink escape, no file), du -sk in bytes, cached 5 minutes, cancellable, never recursive in the listing', async () => {
     const proj = mounts.load().folders.project!; mkdirSync(join(proj, 'CANALV2')); writeFileSync(join(proj, 'f.txt'), 'x'); symlinkSync(shared, join(proj, 'esc')); mkdirSync(join(proj, 'CANALV2', 'sub'))
     let calls = 0, t = 1000; const seen: string[] = []; syncfolders.setDeps({ now: () => t, du: async (p) => { calls++; seen.push(p); return 2048 } })
-    for (const bad of ['..', '../x', 'a/b', '/etc', '', '.', 'f.txt', 'esc', 'nope', 'CANALV2/sub', 'a\\b']) await expect(syncfolders.measure({ pod_id: 'p1', step: 'project', name: bad }), bad).rejects.toThrow(); expect(calls).toBe(0)
+    for (const bad of ['..', '../x', 'a/b', '/etc', '', '.', 'f.txt', 'nope', 'CANALV2/sub', 'a\\b']) await expect(syncfolders.measure({ pod_id: 'p1', step: 'project', name: bad }), bad).rejects.toThrow(); expect(calls).toBe(0)
     await expect(syncfolders.measure({ pod_id: 'p1', step: 'nothing', name: 'CANALV2' })).rejects.toThrow(/No such step/)
     expect(await syncfolders.measure({ pod_id: 'p1', step: 'project', name: 'CANALV2' })).toEqual({ bytes: 2048 * 1024 }); expect(seen[0]).toBe(join(proj, 'CANALV2'))
     expect(await syncfolders.measure({ pod_id: 'p1', step: 'project', name: 'CANALV2' })).toMatchObject({ bytes: 2048 * 1024, cached: true }); expect(calls).toBe(1)

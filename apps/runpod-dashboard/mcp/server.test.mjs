@@ -592,3 +592,10 @@ test('sync takes exclude; sync_folders lists and measures; the configuration too
   const sf = jsonOf(await call('sync_folders', { pod_id: 'pod-x' })); assert.ok(Array.isArray(sf.steps)); assert.deepEqual(sf.supports, { exclude: true, delete_excluded: true, folder_excludes: true, measure: true })
   assert.match(textOf(refused(await call('sync_folders', { pod_id: 'pod-x', measure: { step: 'project', name: '..' } }))), /Not a folder name/)
 })
+
+test('list_dirs: logical paths, links, volumes (ADR-011)', async () => {
+  const tl = (await rpc('tools/list')).result.tools; assert.equal(tl.find((t) => t.name === 'list_dirs').inputSchema.properties.volumes.type, 'boolean')
+  const home = jsonOf(await call('list_dirs', {})); assert.ok(Array.isArray(home.dirs)); assert.ok(home.dirs.every((d) => typeof d.link === 'boolean'))
+  const v = jsonOf(await call('list_dirs', { volumes: true })); assert.ok(Array.isArray(v.volumes))
+  assert.match(textOf(refused(await call('list_dirs', { path: '/no/such/folder/anywhere' }))), /cannot resolve|not a folder/)
+})

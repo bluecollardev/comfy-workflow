@@ -4,8 +4,8 @@
  * `measure` is path-guarded: the name must be a direct child directory of that step's local root (no slash, no `..`, no symlink out).
  */
 import { spawn } from 'node:child_process'
-import { lstat, readdir, realpath } from 'node:fs/promises'
-import { join, sep } from 'node:path'
+import { lstat, readdir, readlink, realpath, stat } from 'node:fs/promises'
+import { join, resolve, sep } from 'node:path'
 import { CoreError, bad } from './errors.js'
 import * as mounts from './mounts.js'
 import * as podconfigs from './podconfigs.js'
@@ -13,7 +13,8 @@ import * as sync from './sync.js'
 import { excluded, folderExcludesFor } from './syncrun.js'
 
 export const FOLDER_CAP = 500, MEASURE_MS = 120_000, CACHE_MS = 5 * 60_000
-export interface FolderStep { key: string; local: string; folders: { name: string; bytes: number | null }[]; capped?: boolean; /** the patterns already saved for this step (global + per-folder, de-duplicated) and where each comes from */ saved: string[]; saved_sources: Record<string, 'default' | 'pod' | 'folder'> }
+export const LINK_NOTE = 'A link: copied as a link, its contents are not sent'
+export interface FolderStep { key: string; local: string; /** the step's root is itself a link (it is FOLLOWED: it is the folder the person chose) and where it points */ link?: boolean; target?: string; folders: { name: string; bytes: number | null; link?: boolean; target?: string; note?: string }[]; capped?: boolean; /** the patterns already saved for this step (global + per-folder, de-duplicated) and where each comes from */ saved: string[]; saved_sources: Record<string, 'default' | 'pod' | 'folder'> }
 
 export interface Deps { now(): number; du(path: string, signal: AbortSignal): Promise<number | null> }
 const realDu: Deps['du'] = (path, signal) => new Promise((resolve) => {
@@ -31,7 +32,7 @@ const cfgOf = (podId: string) => podconfigs.get(podId) ?? mounts.load()
 async function stepsOf(podId: string): Promise<sync.Step[]> {
   const steps = sync.orderForRun(sync.plan(cfgOf(podId), new Set(), true))
   const ok: sync.Step[] = []
-  for (const st of steps) { try { if ((await lstat(st.local)).isDirectory()) ok.push(st) } catch { /* not there */ } }
+  for (const st of steps) { try { if ((await stat(st.local)).isDirectory()) ok.push(st) } catch { /* not there, or a link to nowhere */ } }   // stat, not lstat: a symlinked step root is followed
   return ok
 }
 
@@ -44,10 +45,14 @@ export async function folders(o: { pod_id: string }): Promise<{ steps: FolderSte
   for (const st of await stepsOf(o.pod_id)) {
     let entries: import('node:fs').Dirent[] = []
     try { entries = await readdir(st.local, { withFileTypes: true }) } catch { /* unreadable: no folders */ }
-    const names = entries.filter((e) => e.isDirectory() && !e.isSymbolicLink() && !e.name.startsWith('.') && !excluded(e.name)).map((e) => e.name).sort((a, b) => a.localeCompare(b))
+    const links = new Map<string, string>()   // a link to a folder is listed (marked), a broken link is not
+    for (const e of entries) if (e.isSymbolicLink() && !e.name.startsWith('.') && !excluded(e.name)) { try { if ((await stat(join(st.local, e.name))).isDirectory()) links.set(e.name, resolve(st.local, await readlink(join(st.local, e.name)))) } catch { /* broken */ } }
+    const names = [...entries.filter((e) => e.isDirectory() && !e.name.startsWith('.') && !excluded(e.name)).map((e) => e.name), ...links.keys()].sort((a, b) => a.localeCompare(b))
+    let rootLink: { link: true; target: string } | null = null
+    try { if ((await lstat(st.local.replace(/\/+$/, ''))).isSymbolicLink()) rootLink = { link: true, target: await realpath(st.local) } } catch { /* not a link */ }
     const saved: string[] = [], saved_sources: FolderStep['saved_sources'] = {}
     for (const [list, src] of [[podconfigs.get(o.pod_id) ? podconfigs.get(o.pod_id)!.sync_exclude ?? [] : mounts.load().sync_exclude ?? [], podconfigs.get(o.pod_id) ? 'pod' : 'default'], [folderExcludesFor(o.pod_id, st.key), 'folder']] as [string[], 'default' | 'pod' | 'folder'][]) for (const p of list) if (!saved.includes(p)) { saved.push(p); saved_sources[p] = src }
-    out.push({ key: st.key, local: st.local, saved, saved_sources, folders: names.slice(0, FOLDER_CAP).map((name) => ({ name, bytes: null })), ...(names.length > FOLDER_CAP ? { capped: true } : {}) })
+    out.push({ key: st.key, local: st.local, ...(rootLink ?? {}), saved, saved_sources, folders: names.slice(0, FOLDER_CAP).map((name) => (links.has(name) ? { name, bytes: null, link: true, target: links.get(name)!, note: LINK_NOTE } : { name, bytes: null })), ...(names.length > FOLDER_CAP ? { capped: true } : {}) })
   }
   return { steps: out, supports: { ...SUPPORTS } }
 }
@@ -56,7 +61,7 @@ const cache = new Map<string, { at: number; bytes: number }>()
 const running = new Map<string, AbortController>()
 export const forgetMeasures = () => { cache.clear() }
 /** The size of one top-level folder of a step (`du -sk`), cached for 5 minutes. `id` lets `measureCancel` stop it. */
-export async function measure(o: { pod_id: string; step: string; name: string; id?: string }): Promise<{ bytes: number; cached?: boolean }> {
+export async function measure(o: { pod_id: string; step: string; name: string; id?: string }): Promise<{ bytes: number; cached?: boolean; link?: boolean; target?: string; note?: string }> {
   const name = o?.name
   if (typeof name !== 'string' || !name || name.includes('/') || name.includes('\\') || name === '.' || name === '..' || name.includes('\u0000')) throw bad(`Not a folder name: ${String(name).slice(0, 60)}`)
   const st = (await stepsOf(o.pod_id)).find((s) => s.key === o.step)
@@ -64,7 +69,11 @@ export async function measure(o: { pod_id: string; step: string; name: string; i
   const path = join(st.local, name)
   try {
     const l = await lstat(path)
-    if (!l.isDirectory() || l.isSymbolicLink()) throw new Error('not a plain folder')
+    if (l.isSymbolicLink()) {   // a link is copied as a link: nothing to measure, and the target's size is not sent
+      if (!(await stat(path)).isDirectory()) throw new Error('not a folder link')
+      return { bytes: 0, link: true, target: resolve(st.local, await readlink(path)), note: LINK_NOTE }
+    }
+    if (!l.isDirectory()) throw new Error('not a plain folder')
     const root = await realpath(st.local), real = await realpath(path)
     if (!real.startsWith(root + sep)) throw new Error('outside')
   } catch { throw bad(`${name} is not a folder directly inside ${st.local}`) }

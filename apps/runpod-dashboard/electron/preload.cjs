@@ -45,7 +45,8 @@ contextBridge.exposeInMainWorld('core', {
     const e = new Error(r.error.message)
     e.status = r.error.status
     if (r.error.code) e.code = r.error.code   // host_full, no_card: what the page offers Retry Later for
-    e.response = { status: r.error.status, data: { detail: r.error.message } }   // what the HTTP client shape gives the stores
+    if (r.error.hint) e.hint = r.error.hint   // no_permission: where on macOS to allow the folder (the folder picker shows it)
+    e.response = { status: r.error.status, data: { detail: r.error.message, ...(r.error.code ? { code: r.error.code } : {}), ...(r.error.hint ? { hint: r.error.hint } : {}) } }   // what the HTTP client shape gives the stores
     throw e
   },
 })

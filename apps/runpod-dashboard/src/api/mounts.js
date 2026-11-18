@@ -12,6 +12,7 @@ const ipc = core && {
   // The derived rows for a configuration that is not saved: a pod's own configuration being edited
   preview: (config) => core.invoke('mounts', 'preview', [config]),
   dirs: (path = '', hidden = false) => core.invoke('mounts', 'dirs', [path, hidden]),
+  volumes: () => core.invoke('mounts', 'volumes', []),
 }
 
 const http = {
@@ -36,6 +37,14 @@ const http = {
     const { data } = await axios.get(`${API_BASE}/fs/dirs`, { params: { path, hidden } })
     return data
   },
+  // The mounted volumes (v1.5.1): name, path, link, target, size_bytes, free_bytes, readable, reason
+  async volumes() {
+    const { data } = await axios.get(`${API_BASE}/fs/volumes`)
+    return data
+  },
 }
 
-export const mountsAPI = ipc || http
+const base = ipc || http
+/** The volumes list; a core older than v1.5.1 has no such call: an empty list, quietly (the Volumes section hides). */
+const volumes = async () => { try { const r = await base.volumes(); return Array.isArray(r) ? r : [] } catch (e) { if (/no core call/i.test(String(e?.response?.data?.detail || e?.message || e))) return []; throw e } }
+export const mountsAPI = { ...base, volumes }

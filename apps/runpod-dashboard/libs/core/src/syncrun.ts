@@ -32,7 +32,7 @@
  */
 import { execFile, spawn } from 'node:child_process'
 import { readdirSync } from 'node:fs'
-import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { lstat, mkdtemp, readdir, readlink, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CoreError, bad } from './errors.js'
@@ -76,7 +76,7 @@ export interface SyncEvent {
   stream?: string                               // the top-level directory this line came from, when the folder went in streams
   /** totals (a push): the volume's size, its free space when the pod answered `df` (null: unknown), and whether the push cannot fit; error/done: `volume_full` or `disk_full` when a disk filled */
   /** delete: what is being removed from the volume (`state`: removing, removed, failed); totals: how much a removal frees */ state?: string; bytes?: number | null; would_delete_bytes?: number | null
-  capacity_bytes?: number | null; free_bytes?: number | null; over_capacity?: boolean; /** warning: why a step was skipped; error: the steps not started or unfinished */ reason?: string; not_done?: string[]
+  capacity_bytes?: number | null; free_bytes?: number | null; over_capacity?: boolean; /** warning `symlink`: where the link points */ target?: string; /** warning: why a step was skipped; error: the steps not started or unfinished */ reason?: string; not_done?: string[]
   total_files?: number; total_bytes?: number   // step: that folder's, from the listing; totals: the run's; line: openrsync's own count
   file_percent?: number; bytes_done?: number; run_bytes_done?: number; rate_bps?: number; eta_s?: number   // progress
 }
@@ -448,6 +448,27 @@ async function dfFree(t: { host?: string; port?: number }, mountPath: string, ex
   } catch { return null } finally { clearTimeout(timer) }
 }
 
+export const MAX_LINK_WARNINGS = 50
+/** The links a push meets, without walking: a step's root that is itself a link (FOLLOWED: it is the folder the person chose, its contents are sent) and every TOP-LEVEL entry that is a link to a folder (copied as a link by rsync, skipped on the S3 route). One warning each, at most 50 and then "and N more". Cheap (one readdir per root), async, best effort. */
+export async function symlinkWarnings(steps: sync.Step[], s3: boolean): Promise<SyncEvent[]> {
+  const out: SyncEvent[] = []; let extra = 0
+  const add = (e: SyncEvent) => { if (out.length < MAX_LINK_WARNINGS) out.push(e); else extra++ }
+  for (const st of steps) {
+    const root = st.local.replace(/\/+$/, '')
+    try { if ((await lstat(root)).isSymbolicLink()) { const target = await readlink(root); add({ kind: 'warning', code: 'symlink', key: st.key, path: '', target, text: `${st.key}: ${root} is a link to ${target}: its contents are sent, because it is the folder you chose` }) } } catch { /* not a link */ }
+    let entries: import('node:fs').Dirent[] = []
+    try { entries = await readdir(root, { withFileTypes: true }) } catch { continue }
+    for (const e of entries) {
+      if (!e.isSymbolicLink()) continue
+      try { if (!(await stat(join(root, e.name))).isDirectory()) continue } catch { continue }   // a link to a file or to nowhere is not a folder link
+      const target = await readlink(join(root, e.name)).catch(() => '?')
+      add({ kind: 'warning', code: 'symlink', key: st.key, path: e.name, target, text: `${e.name} is a link to ${target}: it is copied as a link, not its contents${s3 ? ' (skipped on the S3 route)' : ''}` })
+    }
+  }
+  if (extra) out.push({ kind: 'warning', code: 'symlink', text: `and ${extra} more link${extra === 1 ? '' : 's'}` })
+  return out
+}
+
 /** The volume's room for a push: its size and the real free space (best effort, null when unknown). Nothing for a pull, a paths run, a simulated run or the S3 transport (no pod to ask). */
 async function roomFor(req: SyncRequest, transport: Transport, mountPath: string, client: rp.RunPodClient | undefined, exec: Exec): Promise<{ capacity: number | null; free: number | null }> {
   if (req.direction !== 'push' || req.paths || mounts.dryRun(mounts.load()) || transport.kind !== 'ssh') return { capacity: null, free: null }
@@ -500,6 +521,7 @@ async function runSync(request: SyncRequest, send0: (e: SyncEvent) => void, oute
   const transport = await transportFor(req.pod_id, client)
   if (transport.kind === 'none') throw bad(transport.reason)
   send({ kind: 'line', text: `Copying ${transport.reason}` })
+  if (req.direction === 'push' && !req.paths && !dry) for (const w of await symlinkWarnings(steps, transport.kind === 's3')) send(w)
   const mountPath = cfg.mount_path || '/workspace'
   const progress = dry || transport.kind !== 'ssh' ? '--progress' : sync.progressFlag(await rsyncVersion())
   const env = transport.kind === 's3' ? { ...process.env, ...sync.s3Env(settings.lookup) } : process.env

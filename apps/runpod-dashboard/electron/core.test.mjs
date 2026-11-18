@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url)
 const { TABLE } = require('./core.cjs')
 
 const EXPECTED = {
-  mounts: ['get', 'put', 'reset', 'preview', 'dirs'],
+  mounts: ['get', 'put', 'reset', 'preview', 'dirs', 'volumes'],
   pods: ['dashboard', 'list', 'get', 'create', 'stop', 'resume', 'remove', 'gpus', 'volume', 'datacenters', 'setIdle', 'rename', 'credits', 'details', 'recreate', 'config', 'setConfig'],
   history: ['list', 'spend', 'runs', 'export', 'logs'],
   volumes: ['list', 'create', 'resize', 'remove', 'useAsDefault'],
@@ -51,4 +51,18 @@ test('autosync.get/set/status/pause/dismiss: defaults, the named yes (400), plai
   assert.equal(T.dismiss(core, 'p1').state, 'idle')
   JSON.stringify(st)
   core.autosync.stop()
+})
+
+// The folder picker's 403 reaches the IPC wrapper with status, code and hint (the wrapper in core.cjs copies exactly these three)
+test('mounts.dirs: an unreadable folder is 403, code no_permission, with the macOS hint', async () => {
+  const { mkdtempSync, mkdirSync, chmodSync } = await import('node:fs'), { tmpdir } = await import('node:os'), { join } = await import('node:path'), { pathToFileURL } = await import('node:url')
+  if (process.getuid && process.getuid() === 0) return
+  const core = await import(pathToFileURL(join(import.meta.dirname, '..', 'libs', 'core', 'dist', 'index.js')).href)
+  const dir = mkdtempSync(join(tmpdir(), 'ipc-dirs-')), locked = join(dir, 'locked'); mkdirSync(locked); chmodSync(locked, 0)
+  const was = Object.getOwnPropertyDescriptor(process, 'platform'); Object.defineProperty(process, 'platform', { value: 'darwin' })
+  try {
+    let e; try { TABLE.mounts.dirs(core, locked) } catch (x) { e = x }
+    const wrapped = { status: e.status || 500, message: e.message, ...(e.code ? { code: e.code } : {}), ...(e.hint ? { hint: e.hint } : {}) }   // the shape core.cjs's invoke wrapper sends
+    assert.equal(wrapped.status, 403); assert.equal(wrapped.code, 'no_permission'); assert.match(wrapped.hint, /System Settings > Privacy & Security > Files and Folders \(or Full Disk Access\)/)
+  } finally { Object.defineProperty(process, 'platform', was); chmodSync(locked, 0o755) }
 })
