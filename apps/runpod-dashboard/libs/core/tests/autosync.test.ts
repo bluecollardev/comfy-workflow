@@ -181,7 +181,7 @@ describe('the History', () => {
   it('records the approval of a big pull with the name of who enabled Auto sync, and pause and resume (once each)', async () => {
     enable(); addEvent({ prefix: 'output/big/' }); remote = [R('output/big/a.exr', 6e9)]; await runAll()
     await autosync.approve(POD, true); await autosync.settle()
-    expect(changes().find((e) => e.action === 'auto sync approved a big pull')).toMatchObject({ area: 'pod', approved_by: 'Lucas', what: POD })
+    expect(changes().find((e) => e.action === 'auto sync approved a big pull')).toMatchObject({ area: 'pod', approved_by: 'Lucas', what: 'CanalV2-lores' })
     autosync.pause(true); autosync.pause(true); autosync.pause(false)
     expect(changes().filter((e) => e.action === 'auto sync paused')).toHaveLength(1); expect(changes().filter((e) => e.action === 'auto sync resumed')).toHaveLength(1)
   })
@@ -191,6 +191,34 @@ describe('the History', () => {
     addEvent({ prefix: 'output/r2/', writer: 'app:sync' }); remote.push(R('output/r2/b.dpx')); await runAll(); expect(runs[1].trigger).toBe('auto-sync:feed')
     autosync.notifyOutputs(POD, VOL, ['output/r3/c.dpx']); remote.push(R('output/r3/c.dpx')); await new Promise((r) => setTimeout(r, 20)); await autosync.settle(); expect(runs[2].trigger).toBe('auto-sync:output')
     writeLocal('input/p.png', 3); store.set(POD, { push: true }); expect(await autosync.pushFiles(POD, ['input/p.png'])).toBe(1); await autosync.settle(); expect(runs[3].trigger).toBe('auto-sync:push')
+  })
+})
+
+describe('pod names and pods that are gone (live pod list)', () => {
+  let list: { id: string; name: string }[] | Error, listCalls: number
+  beforeEach(() => { listCalls = 0; list = [{ id: POD, name: 'CanalV2-mono-v015-RO-auto-b' }] })
+  const wire = () => autosync.setDeps({ podName: autosync.podNameOf, listPods: async () => { listCalls++; if (list instanceof Error) throw list; return list } })
+  it('the name comes from the live list, not the raw id; a failing list falls back to the id', async () => {
+    wire(); enable(); await autosync.tick(); expect(item().pod_name).toBe('CanalV2-mono-v015-RO-auto-b')
+    list = new Error('RunPod is down'); autosync.forgetLive(); wire(); await autosync.tick(); expect(item().pod_name).toBe(POD)
+  })
+  it('refreshes at most once a minute, and not at all with no Auto sync pod', async () => {
+    wire(); await autosync.tick(); expect(listCalls).toBe(0)
+    enable(); await autosync.tick(); await autosync.tick(); expect(listCalls).toBe(1); t += 61_000; await autosync.tick(); expect(listCalls).toBe(2)
+    list = [{ id: POD, name: 'Renamed' }]; t += 61_000; await autosync.tick(); expect(item().pod_name).toBe('Renamed')   // existing items follow the map
+  })
+  it('a pod missing from a fresh live list is skipped and its item is dropped, even one waiting for approval; its settings stay; one History line', async () => {
+    wire(); enable(); addEvent({ prefix: 'output/big/' }); remote = [R('output/big/a.exr', 6e9)]; await autosync.tick(); await autosync.settle()
+    expect(item().state).toBe('needs_approval')
+    list = [{ id: 'someone-else', name: 'x' }]; t += 61_000; await autosync.tick()
+    expect(autosync.status().items.find((i) => i.pod_id === POD)).toBeUndefined(); expect(autosync.get(POD).enabled).toBe(true)
+    await autosync.tick(); await autosync.tick(); expect(runs).toHaveLength(0)
+    expect(history.list({ kind: 'change' }).filter((e) => e.kind === 'change' && e.detail === `Pod ${POD} is not in RunPod any more: auto sync skipped`)).toHaveLength(1)
+  })
+  it('a failed list (or an old one) drops nothing', async () => {
+    wire(); enable(); await autosync.tick(); list = [{ id: 'other', name: 'x' }]; t += 61_000; await autosync.tick(); expect(autosync.status().items.some((i) => i.pod_id === POD)).toBe(false)
+    list = [{ id: POD, name: 'x' }]; autosync.forgetLive(); wire(); enable(); await autosync.tick(); list = new Error('down'); t += 61_000; await autosync.tick(); expect(autosync.status().items.some((i) => i.pod_id === POD)).toBe(true)
+    t += 121_000; expect(autosync.status().items.some((i) => i.pod_id === POD)).toBe(true)   // the list is old now: believed no more, nothing dropped
   })
 })
 

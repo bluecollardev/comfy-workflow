@@ -10,6 +10,7 @@ import { setStopReader } from '../src/outputruns.js'
 import { setAwsOverride } from '../src/podpull.js'
 
 setAwsOverride(async () => ({ code: 127, stdout: '', stderr: 'aws is not run in tests: inject an AwsRunner' }))   // no test ever reaches a real volume
+delete process.env.RUNPOD_API_KEY   // a test that needs a key sets its own; none ever reaches the real RunPod with the developer's
 setStopReader(async () => null)   // a test that stops a pod never reads a real pod's history first (outputruns.test.ts sets its own)
 
 const dir = mkdtempSync(join(tmpdir(), 'runpod-core-global-'))

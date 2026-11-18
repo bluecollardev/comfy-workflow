@@ -27,6 +27,7 @@ import * as mounts from './mounts.js'
 import * as outputruns from './outputruns.js'
 import * as podconfigs from './podconfigs.js'
 import * as podnames from './podnames.js'
+import * as pods from './pods.js'
 import { Collector, PushWatch, nodeWatch, realTimer, type Timer, type WatchFn } from './autosyncpush.js'
 import * as store from './autosyncstore.js'
 import * as syncrun from './syncrun.js'
@@ -64,6 +65,8 @@ const yieldLoop = (): Promise<void> => new Promise((r) => setImmediate(r))
 export interface Deps {
   now(): number
   podName(podId: string): string
+  /** The live pod list (id and name), best effort: used for names and to notice a pod that is gone */
+  listPods(): Promise<{ id: string; name: string }[]>
   volumeOf(podId: string): Promise<string>
   feed(volumeId: string, since: string): Promise<journal.Feed>
   tail(volumeId: string): Promise<string>
@@ -95,7 +98,8 @@ async function remoteFiles(volumeId: string, entries: Entry[]): Promise<Remote[]
 }
 const realDeps = (): Deps => ({
   now: () => Date.now(),
-  podName: (id) => podnames.get(id) || id,
+  podName: (id) => podNameOf(id),
+  listPods: async () => (await pods.list()).map((p) => ({ id: p.id, name: p.name })),
   volumeOf: async (id) => syncrun.volumeIdFor(id),
   feed: (vol, since) => journal.list({ volume_id: vol, since, limit: journal.MAX_LIMIT }),
   tail: (vol) => journal.tail(vol),
@@ -119,6 +123,34 @@ export const setDeps = (d: Partial<Deps> | null) => { deps = d ? { ...deps, ...d
 interface Held { files: Remote[]; bytes: number; cursor: string | null; synced: Record<string, store.Synced>; trigger: string; note: string }
 interface Rt { lastEventAt: string; pendingEvents: number; pendingPaths: number; pendingBytes: number; lastPushAt: string; item: Item; busy: boolean; job?: Promise<void>; held?: Held; queued: Map<string, number>; retryAt: number; abort?: AbortController; s3: boolean }
 const rts = new Map<string, Rt>()
+// ----- the live pod list (names, and pods that are gone) -----
+const live = new Map<string, string>()   // pod id -> its live name; podName() reads it synchronously
+let liveAt = 0, liveTried = 0
+/** The live RunPod name, else the name this app gave the pod, else its id. Synchronous, from memory. */
+export const podNameOf = (id: string): string => live.get(id) || podnames.get(id) || id
+const goneLogged = new Set<string>()
+export const LIVE_EVERY_MS = 60_000, LIVE_FRESH_MS = 120_000
+/** Refresh the live pod list at most once a minute, only while an Auto sync pod exists; best effort (a failed call keeps what was known, and drops nothing). */
+async function refreshLive(): Promise<void> {
+  const now = deps.now()
+  if (!store.enabledPods().length || now - liveTried < LIVE_EVERY_MS) return
+  liveTried = now
+  try {
+    const list = await withDeadline(deps.listPods(), 20_000, 'The pod list')
+    live.clear(); for (const p of list) live.set(p.id, p.name)
+    liveAt = deps.now()
+    for (const [id, rt] of rts) rt.item.pod_name = deps.podName(id)
+  } catch { /* the list failed: behave as before */ }
+}
+/** True when a fresh, successful pod list (at most 2 minutes old) does not contain the pod: it was deleted outside the app. Settings are kept, nothing is deleted. */
+const isGone = (podId: string): boolean => liveAt > 0 && deps.now() - liveAt <= LIVE_FRESH_MS && !live.has(podId)
+function noteGone(podId: string): void {
+  rts.delete(podId)
+  if (goneLogged.has(podId)) return
+  goneLogged.add(podId)
+  history.record({ kind: 'change', area: 'pod', action: 'auto sync skipped', what: podId, detail: `Pod ${podId} is not in RunPod any more: auto sync skipped` })
+}
+
 const blank = (podId: string): Item => ({ pod_id: podId, pod_name: deps.podName(podId), volume_id: '', state: 'idle', direction: 'pull', files_done: 0, files_total: 0, bytes_done: 0, bytes_total: 0, rate_bps: 0, current: '', pending_bytes: 0, started_at: '', finished_at: '', summary: '', error: '', conflicts: [], streams: 0 })
 function rtOf(podId: string): Rt {
   let r = rts.get(podId)
@@ -142,13 +174,15 @@ const saveConflicts = (podId: string, list: store.Conflict[]) => { try { store.u
 /** What the card, the banner and the MCP show. From memory: never waits on a pull or a listing. `done` shows for a few seconds, then the item is idle again (its summary stays). */
 export function status(): Status {
   const now = deps.now()
+  for (const id of [...rts.keys()]) if (isGone(id)) noteGone(id)   // a pod deleted outside the app: its item (even one waiting for approval) goes
   const enabled = store.entries(), st0 = store.loadState()
-  for (const [id, s] of Object.entries(enabled)) if (s.enabled) rtOf(id)
+  for (const [id, s] of Object.entries(enabled)) if (s.enabled && !isGone(id)) rtOf(id)
   const items: Item[] = []
   for (const [id, rt] of rts) {
     const it = rt.item
     if (it.state === 'done' && it.finished_at && now - Date.parse(it.finished_at) > DONE_SHOW_MS) it.state = 'idle'
     if (!enabled[id]?.enabled && it.state === 'idle') continue
+    it.pod_name = deps.podName(id)
     items.push({ ...it, conflicts: [...it.conflicts] })
   }
   return { paused: st0.paused, items: items.sort((a, b) => a.pod_id.localeCompare(b.pod_id)) }
@@ -178,6 +212,7 @@ const outputPath = (f: string | { filename?: string; subfolder?: string; type?: 
 const underDirs = (p: string, dirs: string[]) => dirs.includes(p.split('/')[0])
 
 async function cycle(podId: string, mode: Mode): Promise<void> {
+  if (isGone(podId)) { noteGone(podId); return }
   const rt = rtOf(podId), st = store.get(podId), s = store.loadState()
   if (rt.busy || rt.item.state === 'needs_approval' || rt.item.state === 'syncing') return
   if (mode !== 'now' && mode !== 'enable' && (!st.enabled || !st.pull || s.paused)) return
@@ -394,7 +429,7 @@ export async function approve(podId: string, yes: boolean): Promise<Item> {
   const rt = rtOf(podId), held = rt.held
   if (!held || rt.item.state !== 'needs_approval') throw new CoreError(409, 'Nothing waits for approval on this pod.')
   const key = `${rt.item.volume_id}:${podId}`
-  history.record({ kind: 'change', area: 'pod', action: yes ? 'auto sync approved a big pull' : 'auto sync skipped a big pull', what: podnames.get(podId) || podId, detail: `${plural(held.files.length, 'file')} (${fmt(held.bytes)}), above the ${fmt(GATE_BYTES)} gate`, approved_by: store.get(podId).approved_by || undefined })
+  history.record({ kind: 'change', area: 'pod', action: yes ? 'auto sync approved a big pull' : 'auto sync skipped a big pull', what: deps.podName(podId), detail: `${plural(held.files.length, 'file')} (${fmt(held.bytes)}), above the ${fmt(GATE_BYTES)} gate`, approved_by: store.get(podId).approved_by || undefined })
   if (yes) { rt.busy = true; rt.job = execute(rt, podId, key, held); await Promise.resolve(); return { ...rt.item, conflicts: [...rt.item.conflicts] } }
   rt.held = undefined
   store.updateState((x) => { if (held.cursor) x.cursors[key] = held.cursor })
@@ -466,7 +501,7 @@ export async function pushFiles(podId: string, paths: string[]): Promise<number>
 
 /** Start or stop each pod's local watcher to match its settings (every tick). A watcher that cannot start is an error item, not an exception. */
 async function syncWatchers(): Promise<void> {
-  const want = new Map(store.enabledPods().filter((p) => p.settings.push).map((p) => [p.pod_id, p]))
+  const want = new Map(store.enabledPods().filter((p) => p.settings.push && !isGone(p.pod_id)).map((p) => [p.pod_id, p]))
   for (const [id, p] of pushers) if (!want.has(id)) { p.watch.close(); pushers.delete(id) }
   for (const [id] of want) {
     const root = deps.localRoot(id)
@@ -490,6 +525,7 @@ export async function tick(): Promise<void> {
   if (ticking) return
   ticking = true
   try {
+    await refreshLive()
     for (const { pod_id, settings } of store.enabledPods()) { if (settings.pull) await cycle(pod_id, 'tick').catch(() => undefined) }
     await syncWatchers().catch(() => undefined)
   } finally { ticking = false }
@@ -515,8 +551,10 @@ export function set(podId: string, settings: Partial<store.Settings>): store.Set
   if (r.enabled) { start(); if (!before.enabled && r.pull) void catchUp(podId).catch(() => undefined); else void tick() } else { const p = pushers.get(podId); if (p) { p.watch.close(); pushers.delete(podId) } }
   return r
 }
+/** Forget the live pod list and the items (tests). */
+export function forgetLive(): void { rts.clear(); live.clear(); liveAt = 0; liveTried = 0; goneLogged.clear() }
 /** Forget the runtime memory (tests). */
-export function reset(): void { stop(); rts.clear(); feedRing.length = 0; feedSeen.clear(); store.resetMemory(); setDeps(null) }
+export function reset(): void { stop(); rts.clear(); live.clear(); liveAt = 0; liveTried = 0; goneLogged.clear(); feedRing.length = 0; feedSeen.clear(); store.resetMemory(); setDeps(null) }
 
 // ----- the sync explorer's view of the watchers (docs/ADR-046, "Sync explorer and logs") -----
 
@@ -543,6 +581,7 @@ export function watch(): WatchView {
   const st = store.loadState(), now = deps.now(), out: WatchView = { paused: st.paused, pull: [], push: [], events: [...feedRing] }
   const iso0 = (ms: number) => (ms ? new Date(ms).toISOString() : '')
   for (const { pod_id, settings } of store.enabledPods()) {
+    if (isGone(pod_id)) continue
     const rt = rtOf(pod_id), vol = syncrun.volumeIdFor(pod_id) || rt.item.volume_id
     if (settings.pull) {
       const last = changes.lastReconcile(vol)

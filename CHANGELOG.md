@@ -6,6 +6,7 @@ completed items move here. Commit hashes are on `develop`.
 ## v1.4.2 (tag v1.4.2, 2026-11-18)
 
 - **Fix: Outputs previews lost their state and were cancelled when you scrolled.** A tile that scrolled out of view aborted the preview it was making and went back to "Load preview"; scrolling back asked again as an automatic request, which stops at "click to load", so a Load preview or Load all previews click was lost. Now a preview you asked for (one tile or Load all) is never cancelled by scrolling, and after Load all previews every tile that scrolls into view later loads by itself while the Outputs window stays open. Only an automatic preview is still dropped when it scrolls away. Test: `e2e/outputs-dpx.spec.js` (a slow preview survives scrolling to the end and back; Load all ends with every tile loaded, each frame fetched once).
+- **Fix: Auto sync named pods by their raw ID, and kept asking about pods that no longer exist.** The banner said "Pull 6.0 GB of outputs from 4mkyrwxxzu3ggw?" because names came only from the app's own naming register. Names now come from RunPod's live pod list (refreshed at most once a minute, only while an Auto sync pod exists), then the app's own name, then the ID. A pod missing from a fresh live list (deleted outside the app) is skipped, its banner row removed (including a pending approval) and one History line written; its settings are kept and nothing is dropped if the list call fails. Tests: `libs/core/tests/autosync.test.ts`.
 
 ## v1.4.1 (tag v1.4.1, 2026-11-18)
 
