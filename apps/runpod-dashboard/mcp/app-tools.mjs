@@ -311,7 +311,7 @@ export function appTools({ core, governance, text, json, plain = text }) {
           return json({ waiting: all.filter((w) => w.state === 'waiting').length, watches: all })
         } catch (e) { return text(e.message, true) }
       } },
-    { name: 'pod_retry_options', description: "What the window's Retry Later popup offers for a pod that cannot resume because its host has no free GPU, in one answer: (1) same_gpu: wait for THIS pod's own host (resume_pod with retry_until_free: true; the pod is pinned to its host); (2) another_gpu: the cards its datacenter runs that the app can start, free ones first then cheapest, each with its key (use it as `gpu`), name, VRAM, price per hour and stock; start one with create_pod { like_pod_id, gpu, approved_by, retry_until_free: true }: a NEW pod like this one (same image, disk, network volume and configuration) in the same datacenter, this pod is NOT stopped or deleted. Also the waits already on this pod's card (the window allows one 'another GPU' wait per pod; cancel it with pod_watch). Read-only, no spend",
+    { name: 'pod_retry_options', description: "What the window's Retry Later popup offers for a pod that cannot resume because its host has no free GPU, in one answer: (1) same_gpu: wait for THIS pod's own host (resume_pod with retry_until_free: true; the pod is pinned to its host); (2) another_gpu: the cards its datacenter runs that the app can start, free ones first then cheapest, each with its key (use it as `gpu`), name, VRAM, price per hour and stock; start one with create_pod { like_pod_id, gpu, approved_by, retry_until_free: true } (or gpus: [several keys in your order of preference]: the first with a card free is used and ONE pod is made): a NEW pod like this one (same image, disk, network volume and configuration) in the same datacenter, this pod is NOT stopped or deleted. Also the waits already on this pod's card (the window allows one 'another GPU' wait per pod; cancel it with pod_watch). Read-only, no spend",
       inputSchema: obj({ pod_id: S('The pod (list_pods)') }, ['pod_id']),
       run: async ({ pod_id }) => {
         try {
@@ -323,7 +323,7 @@ export function appTools({ core, governance, text, json, plain = text }) {
           return json({
             pod: { id: p.id, name: p.name, gpu: p.gpu, datacenter: p.datacenter || null, status: p.status },
             same_gpu: { gpu: p.gpu, how: 'resume_pod { pod_id, retry_until_free: true }: resumes this pod when its own host has a free GPU' },
-            another_gpu: { datacenter: p.datacenter || null, how: 'create_pod { like_pod_id, gpu: <a card key below>, approved_by, retry_until_free: true }: makes a NEW pod like this one in the same datacenter when that card is free; this pod is not stopped or deleted', cards },
+            another_gpu: { datacenter: p.datacenter || null, how: 'create_pod { like_pod_id, gpu: <a card key below> (or gpus: [keys in your order of preference]: the first free one is used, one pod is made), approved_by, retry_until_free: true }: makes a NEW pod like this one in the same datacenter when a card is free; this pod is not stopped or deleted', cards },
             waiting,
             ...(waiting.length ? { note: 'This pod already has a wait: cancel it with pod_watch { action: "cancel", id } before starting another one.' } : {}),
           })

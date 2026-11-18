@@ -148,6 +148,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
           gpu: { type: 'string', enum: pool.GPU_TYPES, description: "A card from the table, or auto: the cheapest one in stock where the volume lives. Omitted: the Default Configuration's default card (RTX PRO 6000 unless changed; get_configuration shows it as default_gpu)" },
           datacenter: { type: 'string', description: 'Datacenter id (list_datacenters). With a network volume applied its datacenter wins; to run in another region pass apply_mounts=false (no volume, no mount configuration) or make a volume there first (create_volume)' },
           like_pod_id: { type: 'string', description: "A new pod like this one (its image, disk, cloud, idle stop, own configuration and so its network volume and datacenter) on the card named by gpu, in the SAME datacenter; name is then ignored (the new pod is named <old name>-<card>). The old pod is NOT stopped or deleted. Add retry_until_free to wait for a free card (Retry Later's 'Another GPU')" },
+          gpus: { type: 'array', items: { type: 'string', enum: pool.GPU_TYPES }, description: "With like_pod_id: several cards in the order you prefer them; each try asks them in that order and the first with a card free is used. ONE pod is made, named <old name>-alt. Use with retry_until_free to wait until one is free (Retry Later's 'Another GPU', several chosen)" },
           gpu_type_id: { type: 'string', description: 'A raw RunPod GPU id (list_gpus / list_datacenters) for a card outside the table, in place of gpu. Blackwell and AMD cards will not run the image' },
           gpu_count: { type: 'integer', minimum: 1, maximum: 8, default: 1 },
           instance_type: { type: 'string', enum: ['on-demand', 'spot'], description: 'on-demand = secure cloud; spot = community cloud. Omitted: the app\'s default (spot); a pod with a network volume is always secure' },
@@ -293,17 +294,20 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
       const refusal = governance.namedYes(args, 'create_pod')
       if (refusal) return text(refusal, true)
       if (args.like_pod_id) {
-        // a pod like another one on another card, same datacenter: a request only, the old pod is never touched (ADR-042 section 19)
-        const pid = String(args.like_pod_id), card = String(args.gpu || '')
-        const likeReq = await pods.requestLike(pid, card)
-        try { const p = await pods.create(likeReq); console.error(`create_pod ${p.id} (${p.name}, ${p.gpu}) like ${pid} approved by ${String(args.approved_by).trim()}`); return json({ ...p, like: pid, old_pod_untouched: true, config: pods.config(p.id), approved_by: String(args.approved_by).trim() }) }
-        catch (e) {
-          if (e?.code !== 'no_card') throw e
-          if (!args.retry_until_free) throw new Error(`${e.message}\n\nretry_until_free: true keeps trying until a ${card} is free in that datacenter (the old pod ${pid} is not touched; see pod_watch).`)
-          const w = await pods.createLikeWhenFree(pid, card, watchOpts(args))
-          console.error(`create_pod like ${pid}: no card, waiting (${w.id}) approved by ${String(args.approved_by).trim()}`)
-          return json({ waiting: true, message: `No card is free right now. Waiting: a new pod like ${pid} on ${card} is tried every ${Math.round(w.every_s / 60)} min until a card is free (up to ${Math.round((Date.parse(w.give_up_at) - Date.parse(w.created_at)) / 3600000)} h). The old pod is not stopped or deleted. Cancel with pod_watch.`, watch: w, approved_by: String(args.approved_by).trim() })
+        // a pod like another one on another card (or the first free of several, in the order given), same datacenter: a request only, the old pod is never touched (ADR-042 section 19)
+        const pid = String(args.like_pod_id)
+        const cards = [...new Set((Array.isArray(args.gpus) && args.gpus.length ? args.gpus : [args.gpu]).map((c) => String(c || '').trim()).filter(Boolean))]
+        if (!cards.length) throw new Error('like_pod_id needs gpu (a card) or gpus (several cards, the first free one is used)')
+        let noCard = null
+        for (const card of cards) {
+          const likeReq = await pods.requestLike(pid, card, undefined, cards.length > 1 ? 'alt' : undefined)
+          try { const p = await pods.create(likeReq); console.error(`create_pod ${p.id} (${p.name}, ${p.gpu}) like ${pid} approved by ${String(args.approved_by).trim()}`); return json({ ...p, like: pid, old_pod_untouched: true, config: pods.config(p.id), approved_by: String(args.approved_by).trim() }) }
+          catch (e) { if (e?.code !== 'no_card') throw e; noCard = e }   // nothing was made: the next card
         }
+        if (!args.retry_until_free) throw new Error(`${noCard.message}\n\nretry_until_free: true keeps trying until ${cards.length > 1 ? `one of ${cards.join(', ')} is` : `a ${cards[0]} is`} free in that datacenter (the old pod ${pid} is not touched; see pod_watch).`)
+        const w = await pods.createLikeWhenFree(pid, cards, watchOpts(args))
+        console.error(`create_pod like ${pid}: no card, waiting (${w.id}) approved by ${String(args.approved_by).trim()}`)
+        return json({ waiting: true, message: `No card is free right now. Waiting: a new pod like ${pid} on ${cards.length > 1 ? `the first free of ${cards.join(', ')} (in that order; one pod is made)` : cards[0]} is tried every ${Math.round(w.every_s / 60)} min until a card is free (up to ${Math.round((Date.parse(w.give_up_at) - Date.parse(w.created_at)) / 3600000)} h). The old pod is not stopped or deleted. Cancel with pod_watch.`, watch: w, approved_by: String(args.approved_by).trim() })
       }
       const req = {
         name: args.name, gpu: args.gpu || mounts.load().default_gpu || gpus.DEFAULT_GPU, image: args.image || pool.imageChoice(mounts.load()), data_center_id: args.datacenter || null,

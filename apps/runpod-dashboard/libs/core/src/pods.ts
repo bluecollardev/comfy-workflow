@@ -452,12 +452,12 @@ function requestFromPod(podId: string, d: PodDetails): CreatePodRequest {
 /** The request for a NEW pod like this one but on another card, in the same datacenter (Retry Later, ADR-042 section 19). It only builds a request:
  *  nothing here, and nothing the watch does with it, deletes or stops the old pod. The name gets the card appended: the old pod keeps its name, and a
  *  create watch that lost an answer looks a pod up by name, so a shared name would adopt the old pod. */
-export async function requestLike(podId: string, gpu: string, client?: rp.RunPodClient): Promise<CreatePodRequest> {
+export async function requestLike(podId: string, gpu: string, client?: rp.RunPodClient, nameSuffix?: string): Promise<CreatePodRequest> {
   if (!(gpu in gpus.GPUS) || gpu === gpus.AUTO) throw bad(`Not a card this app runs: ${gpu}`)
   const d = await details(podId, client)
   const base = requestFromPod(podId, d)
   const card = gpus.GPUS[gpu as keyof typeof gpus.GPUS].name
-  return { ...base, name: `${base.name}-${card.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '')}`, gpu, data_center_id: d.datacenter && d.datacenter !== 'local' ? d.datacenter : null }
+  return { ...base, name: `${base.name}-${nameSuffix ?? card.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '')}`, gpu, data_center_id: d.datacenter && d.datacenter !== 'local' ? d.datacenter : null }
 }
 
 /** RunPod pins a stopped pod to its host; when that host has no free GPU, Resume fails. Recreate makes a
@@ -590,10 +590,18 @@ export function createWhenFree(req: CreatePodRequest, opts: podwatch.WatchOpts =
 }
 /** Keep trying to CREATE a new pod like this one on `gpu` (a card key from the app's table) in the same datacenter, with the same volume, image and configuration, until a card is free.
  *  The old pod is not touched: no delete, no stop, here or in the watch (it only ever calls create). */
-export async function createLikeWhenFree(podId: string, gpu: string, opts: podwatch.WatchOpts = {}, client?: rp.RunPodClient): Promise<podwatch.Watch> {
-  const req = await requestLike(podId, gpu, client)
-  const label = `Waiting for a free ${gpus.GPUS[gpu as keyof typeof gpus.GPUS].name}${req.data_center_id ? ` in ${req.data_center_id}` : ''}`
-  return podwatch.watchCreate({ ...req } as unknown as Record<string, unknown>, label, { ...opts, from_pod_id: podId })
+export async function createLikeWhenFree(podId: string, gpu: string | string[], opts: podwatch.WatchOpts = {}, client?: rp.RunPodClient): Promise<podwatch.Watch> {
+  const cards = [...new Set((Array.isArray(gpu) ? gpu : [gpu]).map((g) => String(g).trim()).filter(Boolean))]
+  if (!cards.length) throw bad('Choose at least one card')
+  // One card: as before (the pod is named for it). Several: one shared name (`<old name>-alt`), because every try is for the same single pod, and the first card in the
+  // person's order that has one free is used; each card is checked now, so a card this app cannot run is refused before anything waits.
+  const many = cards.length > 1
+  const reqs = await Promise.all(cards.map((c) => requestLike(podId, c, client, many ? 'alt' : undefined)))
+  const req = reqs[0]
+  const names = cards.map((c) => gpus.GPUS[c as keyof typeof gpus.GPUS].name)
+  const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}` : names[0]
+  const label = `Waiting for a free ${list}${req.data_center_id ? ` in ${req.data_center_id}` : ''}`
+  return podwatch.watchCreate({ ...req } as unknown as Record<string, unknown>, label, { ...opts, from_pod_id: podId, ...(many ? { gpus: cards } : {}) })
 }
 export const watches = (): podwatch.Watch[] => podwatch.list()
 export const watchesFor = (podId: string, podName = ''): podwatch.Watch[] => podwatch.watchesFor(podId, podName)

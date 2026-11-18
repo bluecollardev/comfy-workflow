@@ -129,6 +129,44 @@ describe('create watch', () => {
     expect(podwatch.watchesFor('p1', '', ws).map((w) => w.id)).toEqual(['r', 'by-id'])   // a pod whose name is unknown: only the id rules
     expect(podwatch.watchesFor('p2', 'Pod-2', ws).map((w) => w.id)).toEqual(['other', 'r2'])   // a from_pod_id wins over the name rule; 'Pod-10-RTX' is not 'Pod-1-...'
   })
+  it('several cards: asked in the order chosen, the first with a card free is used, ONE pod is made, and every ask carries the same pod name', async () => {
+    const s = fake({ create: (n) => { if (n <= 2) throw noCard() } })   // the first two cards have none free, the third does
+    const w = podwatch.watchCreate({ ...REQ, name: 'old-pod-alt' }, 'Waiting for a free A, B or C in EU-RO-1', { every_s: 60, from_pod_id: 'old-id', gpus: ['rtx4090', 'a100', 'l40s'] })
+    expect(w.gpus).toEqual(['rtx4090', 'a100', 'l40s'])
+    advance(60); await podwatch.tick()
+    expect(s.creates.map((c) => c.req.gpu)).toEqual(['rtx4090', 'a100', 'l40s'])   // the order chosen, all in the one try
+    expect(new Set(s.creates.map((c) => c.req.name)).size).toBe(1)                 // one shared name
+    expect(s.pods).toHaveLength(1)                                                 // one pod
+    expect(podwatch.list()[0]).toMatchObject({ state: 'done', pod_id: 'pod1', attempts: 1 })
+    expect(s.creates[2].note).toMatch(/on l40s/)
+  })
+  it('several cards, none free: nothing is made, every refusal is kept, and the next try asks them all again', async () => {
+    const s = fake({ create: () => { throw noCard() } })
+    podwatch.watchCreate({ ...REQ, name: 'old-pod-alt' }, 'x', { every_s: 60, gpus: ['rtx4090', 'a100'] })
+    advance(60); await podwatch.tick()
+    expect(s.creates).toHaveLength(2); expect(s.pods).toHaveLength(0)
+    const w = podwatch.list()[0]
+    expect(w).toMatchObject({ state: 'waiting', attempts: 1 }); expect(w.creating).toBeUndefined()
+    expect(w.last_error).toMatch(/rtx4090: .*\| a100: /)
+    advance(60); await podwatch.tick()
+    expect(s.creates.map((c) => c.req.gpu)).toEqual(['rtx4090', 'a100', 'rtx4090', 'a100'])
+  })
+  it('several cards and a lost answer: the pod is found by its shared name next time and no second pod is made on another card', async () => {
+    const s = fake({ create: (n) => (n === 1 ? { lost: true } : undefined) })   // the first card made a pod but the answer was lost
+    podwatch.watchCreate({ ...REQ, name: 'old-pod-alt' }, 'x', { every_s: 60, gpus: ['rtx4090', 'a100'] })
+    advance(60); await podwatch.tick()
+    expect(s.creates).toHaveLength(1)                       // it did not go on to ask the second card
+    expect(podwatch.list()[0].creating).toBeTruthy()
+    advance(60); await podwatch.tick()
+    expect(s.creates).toHaveLength(1); expect(s.pods).toHaveLength(1)   // found by name: still one pod
+    expect(podwatch.list()[0]).toMatchObject({ state: 'done', pod_id: 'pod1' })
+  })
+  it('a single card in gpus (or none) is the old behaviour: no gpus list is kept', () => {
+    fake({})
+    expect(podwatch.watchCreate({ ...REQ, name: 'p1' }, 'x', { every_s: 60, gpus: ['a100'] }).gpus).toBeUndefined()
+    expect(podwatch.watchCreate({ ...REQ, name: 'p2' }, 'x', { every_s: 60 }).gpus).toBeUndefined()
+    expect(podwatch.watchCreate({ ...REQ, name: 'p3' }, 'x', { every_s: 60, gpus: ['a100', 'a100', ' ', 'l40s'] }).gpus).toEqual(['a100', 'l40s'])   // duplicates and blanks dropped
+  })
   it('a create made like another pod remembers that pod, and a second wait for the same pod is refused (two cards would make two pods)', () => {
     fake({})
     const a = podwatch.watchCreate({ ...REQ, name: 'old-pod-A100-PCIe' }, 'Waiting for a free A100 PCIe in EU-RO-1', { every_s: 60, from_pod_id: 'old-id' })

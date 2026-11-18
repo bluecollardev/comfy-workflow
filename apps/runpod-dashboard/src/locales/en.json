@@ -103,6 +103,8 @@
     "retryLaterTitle": "Keep trying to resume this pod every 2 minutes until its host has a free GPU, for up to 12 hours. Nothing is deleted.",
     "waitingFor": "Waiting for a free GPU, trying every {n} min · next try {at}",
     "waitingForGpu": "Waiting for a free {gpu}{place} · trying every {n} min · next try {at}",
+    "rlOrderNote": "Choose one or more cards. They are tried in the order you click them: the first one that has a card free is used, and only one pod is made.",
+    "rlRankTitle": "Its place in the order they are tried",
     "waitingForNewPod": "{label}: makes a new pod, this one is not deleted · trying every {n} min · next try {at} · tried {tries}×",
     "rlTitle": "Retry Later: what to wait for",
     "rlIntro": "{name} is in {dc}. Its host has no free GPU right now. Choose what to wait for before the waiting starts.",

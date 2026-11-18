@@ -429,8 +429,10 @@ export async function mockApi(page, state) {
     if ((m = path.match(/^\/pods\/([^/]+)\/create-like-when-free$/)) && method === 'POST') {
       // another GPU (ADR-042 section 19): a NEW pod like this one, same datacenter; the old pod is never touched
       const pod = state.pods.find((p) => p.id === m[1]); (state.createLikeWhenFree ||= []).push({ id: m[1], ...body })
-      const card = state.datacenters.datacenters.flatMap((d) => d.cards).find((c) => c.key === body.gpu)
-      const w = { id: `watch-${(state.watches || []).length + 1}`, kind: 'create', state: 'waiting', name: `${pod?.name || m[1]}-${(card?.name || body.gpu).replace(/ /g, '-')}`, label: `Waiting for a free ${card?.name || body.gpu} in ${pod?.datacenter || ''}`, every_s: body.every_s || 120, attempts: 0, created_at: new Date().toISOString(), next_at: new Date(Date.now() + 120000).toISOString(), give_up_at: new Date(Date.now() + 12 * 3600000).toISOString() }
+      const keys = Array.isArray(body.gpu) ? body.gpu : [body.gpu]   // one card, or several in the order chosen (the first free one is used; one pod, named <old>-alt)
+      const cardNames = keys.map((k) => state.datacenters.datacenters.flatMap((d) => d.cards).find((c) => c.key === k)?.name || k)
+      const card = { name: cardNames.length > 1 ? `${cardNames.slice(0, -1).join(', ')} or ${cardNames[cardNames.length - 1]}` : cardNames[0] }
+      const w = { id: `watch-${(state.watches || []).length + 1}`, kind: 'create', state: 'waiting', name: keys.length > 1 ? `${pod?.name || m[1]}-alt` : `${pod?.name || m[1]}-${cardNames[0].replace(/ /g, '-')}`, label: `Waiting for a free ${card.name} in ${pod?.datacenter || ''}`, every_s: body.every_s || 120, attempts: 0, created_at: new Date().toISOString(), next_at: new Date(Date.now() + 120000).toISOString(), give_up_at: new Date(Date.now() + 12 * 3600000).toISOString() }
       ;(state.watches ||= []).push(w); return json(w)
     }
     if ((m = path.match(/^\/pod-watches\/([^/]+)$/)) && method === 'DELETE') {

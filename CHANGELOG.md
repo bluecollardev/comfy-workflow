@@ -3,6 +3,10 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## Unreleased (2026-11-18, on `feature/retry-later-multi-gpu`)
+
+- **Retry Later > Another GPU takes several cards:** the card list in the popup is checkboxes, ranked in the order you click them; the wait asks them in that order and the first one with a card free is used. ONE pod is made, named `<old name>-alt`, and every ask carries that name, so a lost answer is found by name and never followed by a second pod on another card. `create_pod { like_pod_id, gpus: [...] }` over MCP. Needs an app restart (core and MCP). Core tests for the watch ran (41 passed); the browser and MCP suites were not run.
+
 ## v1.3.3 (tag v1.3.3, 2026-11-17)
 
 - **Outputs: file counts follow the folder selection:** with *Just in `<folder>`* a run showed all of its files (for example "26 file(s)") although only some were in the folder. A run now keeps only the files in the folder, and says "12 of 26 file(s) in this folder"; the count line reads "n run(s) · 26 file(s) shown of 102 total". Zip all follows the selection. Not yet tested (unit tests for `narrowToFolder` are written, not run).

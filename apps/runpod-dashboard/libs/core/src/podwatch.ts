@@ -33,6 +33,8 @@ export interface Watch {
   request?: Record<string, unknown>
   /** A create made like another pod (the Retry Later choice 'Another GPU'): the pod it was made from, so that pod's card can show the wait. That pod is never touched. */
   from_pod_id?: string
+  /** A create with more than one card to choose from (Retry Later > Another GPU, several chosen): the card keys in the order the person chose them. Each try asks them in that order and the first that has a card free is used; ONE pod is made. */
+  gpus?: string[]
   every_s: number; give_up_at: string; created_at: string; next_at: string; attempts: number
   last_error?: string
   /** Set before a create is asked of RunPod, cleared on a definite "no card": while it is set the answer to the last ask is unknown. */
@@ -80,7 +82,7 @@ function save(watches: Watch[]): void {
 
 // ----- registering -----
 
-export interface WatchOpts { every_s?: number; give_up_h?: number; from_pod_id?: string }
+export interface WatchOpts { every_s?: number; give_up_h?: number; from_pod_id?: string; gpus?: string[] }
 function limits(o: WatchOpts): { every_s: number; give_up_h: number } {
   const every_s = o.every_s ?? DEFAULT_EVERY_S, give_up_h = o.give_up_h ?? DEFAULT_GIVE_UP_H
   if (!Number.isFinite(every_s) || every_s < MIN_EVERY_S) throw bad(`Try again no more often than every ${MIN_EVERY_S} seconds (every_s is ${every_s})`)
@@ -112,7 +114,8 @@ export const watchCreate = (request: Record<string, unknown>, label: string, o: 
   // Two waits for different cards from the same pod would each make a pod when a card frees: one at a time, cancel the first to change it.
   const other = from ? load().find((x) => x.state === 'waiting' && x.kind === 'create' && x.from_pod_id === from) : undefined
   if (other) throw new CoreError(409, `Already waiting to make a pod like ${from} (${other.label}, ${other.id}): cancel that watch first to choose another GPU.`)
-  return add({ kind: 'create', name, label, request, ...(from ? { from_pod_id: from } : {}) }, o)
+  const gpus = Array.isArray(o.gpus) ? [...new Set(o.gpus.map((g) => String(g).trim()).filter(Boolean))] : []
+  return add({ kind: 'create', name, label, request, ...(from ? { from_pod_id: from } : {}), ...(gpus.length > 1 ? { gpus } : {}) }, o)
 }
 
 export const list = (): Watch[] => load()
@@ -219,24 +222,35 @@ async function attemptCreate(w: Watch, watches: Watch[]): Promise<void> {
   w.attempts++
   w.creating = iso(nowFn())
   save(watches)   // the marker is on disk BEFORE RunPod is asked
-  try {
-    const pod = await deps!.create(w.request!, `pod created after waiting ${minutes(w)} min`)
-    w.pod_id = pod.id
-    finish(w, 'done', `Created after waiting ${minutes(w)} min (${w.attempts} tries).`); w.last_error = undefined
-    save(watches); note(w, 'done', w.detail || '')
-  } catch (e) {
-    const msg = (e as Error).message
-    if (isNoCard(e) || isLimit(e)) {   // a definite "nothing was made": the marker goes
-      w.creating = undefined; w.last_error = msg; w.next_at = iso(nowFn() + w.every_s * 1000); w.claim = undefined
-      save(watches)
-    } else if (isTransient(e)) {       // unknown: keep the marker, look by name next time
-      w.last_error = msg; w.next_at = iso(nowFn() + w.every_s * 1000); w.claim = undefined
-      save(watches)
-    } else {
+  // With several cards chosen they are asked in the person's order and the first that has one free is used. Every card asks for the SAME pod name, so an answer that is lost is
+  // found by name next time and is never followed by a second pod on another card: one pod, whichever card it ends up on.
+  const cards: (string | undefined)[] = w.gpus && w.gpus.length > 1 ? w.gpus : [undefined]
+  const refused: string[] = []
+  for (const card of cards) {
+    const req = card ? { ...w.request!, gpu: card } : w.request!
+    try {
+      const pod = await deps!.create(req, `pod created after waiting ${minutes(w)} min${card ? ` on ${card}` : ''}`)
+      w.pod_id = pod.id
+      finish(w, 'done', `Created after waiting ${minutes(w)} min (${w.attempts} tries${card ? `, on ${card}` : ''}).`); w.last_error = undefined
+      save(watches); note(w, 'done', w.detail || ''); return
+    } catch (e) {
+      const msg = (e as Error).message
+      if (isNoCard(e)) { refused.push(card ? `${card}: ${msg}` : msg); continue }   // a definite "nothing was made": the next card
+      if (isLimit(e)) {   // nothing was made, and RunPod asks us to slow down: the rest wait for the next time
+        w.creating = undefined; w.last_error = msg; w.next_at = iso(nowFn() + w.every_s * 1000); w.claim = undefined
+        save(watches); return
+      }
+      if (isTransient(e)) {   // unknown: keep the marker, look by name next time, and do not ask another card meanwhile
+        w.last_error = msg; w.next_at = iso(nowFn() + w.every_s * 1000); w.claim = undefined
+        save(watches); return
+      }
       finish(w, 'stopped', `Stopped: ${msg}`); w.last_error = msg
-      save(watches); note(w, 'stopped', msg)
+      save(watches); note(w, 'stopped', msg); return
     }
   }
+  // every card said there is none free: nothing was made
+  w.creating = undefined; w.last_error = refused.join(' | '); w.next_at = iso(nowFn() + w.every_s * 1000); w.claim = undefined
+  save(watches)
 }
 
 // ----- the timer -----
