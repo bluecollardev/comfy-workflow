@@ -3,6 +3,11 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## v1.5.3 (tag v1.5.3, 2026-11-19)
+
+- **Fix: one dropped connection to RunPod no longer fails a sync plan (or anything else that reads from RunPod).** On Binc's PC a sync plan asking RunPod for the pod's SSH address failed with `TypeError: fetch failed` (the network blipped once), left a red error, and the push then ran anyway from a later lookup. The RunPod client now retries a read that fails on a network error (twice more, after 0.4 s and 1.2 s; also on a 502, 503 or 504 answer), so a blip passes quietly. After three tries the error says what happened ("Could not reach RunPod's API: the network dropped the request (ETIMEDOUT). Tried 3 times. Check this PC's connection and try again."). A write (create, stop, resume...) is never repeated after a reset, since it may have gone through; it is retried only when the request provably never left (DNS or refused), and a real answer from RunPod (401, 404, 429) is never retried. `libs/core/src/runpod.ts` (`fetchRetrying`, `isTransientNetwork`), test file `libs/core/tests/runpod-retry.test.ts`.
+- Tests at release: core 913, MCP 69, IPC 25 (all green); the browser and real-Electron suites were not run for this patch (Lucas's call; the change is core-only). Needs an app restart. The Mac DMG is the only platform the release script builds: Binc is on Linux and needs his own build (`./start.sh package linux`).
+
 ## v1.5.2 (tag v1.5.2, 2026-11-18)
 
 - **Fix: beach ball when choosing a folder or a mounted volume.** The folder listing (`listDirs`) used synchronous file calls inside the app's main process, so a big, sleeping or network volume (or a macOS permission prompt) froze the whole app. It is now async with a 15 second limit (a hung folder answers "The folder did not answer within 15 seconds (a sleeping drive or an unavailable network mount)" with Try again), at most 2,000 folders returned (`total` and `truncated`, a **Filter** box narrows before the cap), symlink checks 16 at a time, and a stale slow answer can no longer overwrite a newer click. Reading the project tree's own declarations when you pick a folder stops after 400 ms and returns what it found. Not converted: the mount configuration read/write and a few `existsSync` calls.
