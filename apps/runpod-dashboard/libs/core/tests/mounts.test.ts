@@ -162,13 +162,13 @@ describe('required folders by mode', () => {
 })
 
 describe('the folder browser', () => {
-  it('lists subfolders, hidden on request, home by default', () => {
+  it('lists subfolders, hidden on request, home by default', async () => {
     mkdirSync(join(dir, 'b')); mkdirSync(join(dir, 'a')); mkdirSync(join(dir, '.hidden')); writeFileSync(join(dir, 'file.txt'), 'x')
-    const r = listDirs(dir)
+    const r = await listDirs(dir)
     expect(r.dirs.map((d) => d.name)).toEqual(['a', 'b']); expect(r.parent).toBeTruthy(); expect(r.home).toBeTruthy()
-    expect(listDirs(dir, true).dirs.map((d) => d.name)).toEqual(['.hidden', 'a', 'b'])
-    expect(listDirs().path).toBeTruthy()
-    expect(() => listDirs(join(dir, 'file.txt'))).toThrow(/not a folder/)
+    expect((await listDirs(dir, true)).dirs.map((d) => d.name)).toEqual(['.hidden', 'a', 'b'])
+    expect((await listDirs()).path).toBeTruthy()
+    await expect(listDirs(join(dir, 'file.txt'))).rejects.toThrow(/not a folder/)
   })
 })
 

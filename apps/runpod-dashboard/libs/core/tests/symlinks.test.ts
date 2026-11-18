@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { realpathSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -16,23 +16,26 @@ beforeEach(() => { dir = realpathSync(scratch()); process.env.HISTORY_FILE = joi
 const asPlatform = <T>(p: string, f: () => T): T => { const d = Object.getOwnPropertyDescriptor(process, 'platform')!; Object.defineProperty(process, 'platform', { value: p }); try { return f() } finally { Object.defineProperty(process, 'platform', d) } }
 
 describe('the folder picker keeps the logical path', () => {
-  it('through a link: path and parent are the ones you came by, real is the realpath; Up returns to where you came from', () => {
+  it('through a link: path and parent are the ones you came by, real is the realpath; Up returns to where you came from', async () => {
     mkdirSync(join(dir, 'real', 'a', 'b'), { recursive: true }); mkdirSync(join(dir, 'home')); symlinkSync(join(dir, 'real', 'a'), join(dir, 'home', 'lnk'))
-    const r = fsmod.listDirs(join(dir, 'home', 'lnk')); expect(r.path).toBe(join(dir, 'home', 'lnk')); expect(r.parent).toBe(join(dir, 'home')); expect((r as { real?: string }).real).toBe(join(dir, 'real', 'a')); expect(r.dirs.map((d) => d.name)).toEqual(['b'])
-    const up = fsmod.listDirs(r.parent!); expect(up.path).toBe(join(dir, 'home')); expect((up as { real?: string }).real).toBeUndefined()   // not through the target's parent
+    const r = await fsmod.listDirs(join(dir, 'home', 'lnk')); expect(r.path).toBe(join(dir, 'home', 'lnk')); expect(r.parent).toBe(join(dir, 'home')); expect((r as { real?: string }).real).toBe(join(dir, 'real', 'a')); expect(r.dirs.map((d) => d.name)).toEqual(['b'])
+    const up = await fsmod.listDirs(r.parent!); expect(up.path).toBe(join(dir, 'home')); expect((up as { real?: string }).real).toBeUndefined()   // not through the target's parent
   })
-  it('a link to a folder has link: true and its target; a broken link and a link to a file are hidden; a plain folder is link: false', () => {
+  it('a link to a folder has link: true and its target; a broken link and a link to a file are hidden; a plain folder is link: false', async () => {
     mkdirSync(join(dir, 'x', 'plain'), { recursive: true }); mkdirSync(join(dir, 'tgt')); writeFileSync(join(dir, 'f.txt'), 'x'); symlinkSync(join(dir, 'tgt'), join(dir, 'x', 'good')); symlinkSync(join(dir, 'gone'), join(dir, 'x', 'broken')); symlinkSync(join(dir, 'f.txt'), join(dir, 'x', 'tofile')); symlinkSync('../tgt', join(dir, 'x', 'rel'))
-    const d = fsmod.listDirs(join(dir, 'x')).dirs; expect(d).toEqual([{ name: 'good', path: join(dir, 'x', 'good'), link: true, target: join(dir, 'tgt') }, { name: 'plain', path: join(dir, 'x', 'plain'), link: false }, { name: 'rel', path: join(dir, 'x', 'rel'), link: true, target: join(dir, 'tgt') }])
-    expect(() => fsmod.listDirs(join(dir, 'nope'))).toThrow(CoreError); expect(() => fsmod.listDirs(join(dir, 'f.txt'))).toThrow(/not a folder/)
+    const d = (await fsmod.listDirs(join(dir, 'x'))).dirs; expect(d).toEqual([{ name: 'good', path: join(dir, 'x', 'good'), link: true, target: join(dir, 'tgt') }, { name: 'plain', path: join(dir, 'x', 'plain'), link: false }, { name: 'rel', path: join(dir, 'x', 'rel'), link: true, target: join(dir, 'tgt') }])
+    await expect(fsmod.listDirs(join(dir, 'nope'))).rejects.toThrow(CoreError); await expect(fsmod.listDirs(join(dir, 'f.txt'))).rejects.toThrow(/not a folder/)
   })
-  it('an unreadable folder is a 403 with code no_permission, and on macOS a hint about Files and Folders / Full Disk Access', () => {
+  it('an unreadable folder is a 403 with code no_permission, and on macOS a hint about Files and Folders / Full Disk Access', async () => {
     if (process.getuid?.() === 0) return   // root can read anything
     mkdirSync(join(dir, 'locked')); chmodSync(join(dir, 'locked'), 0)
     try {
-      const e = asPlatform('darwin', () => { try { fsmod.listDirs(join(dir, 'locked')) } catch (x) { return x as CoreError & { hint?: string } } })!
-      expect(e.status).toBe(403); expect(e.code).toBe('no_permission'); expect(e.hint).toBe('macOS may need to allow RunPod Manager to read this folder: System Settings > Privacy & Security > Files and Folders (or Full Disk Access)')
-      const l = asPlatform('linux', () => { try { fsmod.listDirs(join(dir, 'locked')) } catch (x) { return x as CoreError & { hint?: string } } })!; expect(l.code).toBe('no_permission'); expect(l.hint).toBeUndefined()
+      const caught = async () => { try { await fsmod.listDirs(join(dir, 'locked')) } catch (x) { return x as CoreError } }
+      const d = Object.getOwnPropertyDescriptor(process, 'platform')!; Object.defineProperty(process, 'platform', { value: 'darwin' })
+      let e: CoreError | undefined; try { e = await caught() } finally { Object.defineProperty(process, 'platform', d) }
+      expect(e!.status).toBe(403); expect(e!.code).toBe('no_permission'); expect(e!.hint).toBe('macOS may need to allow RunPod Manager to read this folder: System Settings > Privacy & Security > Files and Folders (or Full Disk Access)')
+      Object.defineProperty(process, 'platform', { value: 'linux' }); let l: CoreError | undefined; try { l = await caught() } finally { Object.defineProperty(process, 'platform', d) }
+      expect(l!.code).toBe('no_permission'); expect(l!.hint).toBeUndefined()
     } finally { chmodSync(join(dir, 'locked'), 0o755) }
   })
 })
@@ -107,5 +110,43 @@ describe('a push meets links: warned about, never followed, the same on both tra
   })
   it('over S3 a push adds --no-follow-symlinks (links skipped), a pull does not', () => {
     const v = { id: 'v', datacenter: 'EU-RO-1' }; expect(sync.s3Cmd('/l/', v, '/workspace/project/')).toContain('--no-follow-symlinks'); expect(sync.s3PullCmd(v, '/workspace/project/', '/l/')).not.toContain('--no-follow-symlinks'); expect(sync.s3FileCmd('push', v, '/workspace/project/', '/l/', 'a')).not.toContain('--no-follow-symlinks')
+  })
+})
+
+
+// ===== the picker never freezes the app (async, a timeout, a cap, a filter) =====
+const lagProbe = async (work: () => Promise<unknown>) => { let last = performance.now(), worst = 0; const t = setInterval(() => { const n = performance.now(); worst = Math.max(worst, n - last); last = n }, 1); await new Promise((r) => setTimeout(r, 5)); last = performance.now(); worst = 0; try { await work() } finally { clearInterval(t) } return worst }
+describe('listDirs is async, bounded and capped', () => {
+  afterEach(() => { fsmod.setFs(null); delete process.env.LISTDIRS_TIMEOUT_MS })
+  const ent = (name: string, kind: 'd' | 'l' = 'd') => ({ name, isDirectory: () => kind === 'd', isSymbolicLink: () => kind === 'l' })
+  it('a hanging readdir (a sleeping drive) is a 504 timeout within the limit, the stuck call is abandoned, and the event loop is never blocked', async () => {
+    process.env.LISTDIRS_TIMEOUT_MS = '60'; let abandoned = false
+    fsmod.setFs({ realpath: async (p) => p, stat: async () => ({ isDirectory: () => true }), readdir: () => new Promise(() => { abandoned = true }) })
+    let err: CoreError | undefined; const t0 = Date.now(); const lag = await lagProbe(async () => { err = await fsmod.listDirs('/Volumes/Asleep').catch((e) => e as CoreError) })
+    expect(Date.now() - t0).toBeLessThan(400); expect(abandoned).toBe(true); expect(err).toBeInstanceOf(CoreError); expect(err).toMatchObject({ status: 504, code: 'timeout', message: 'The folder did not answer within 15 seconds (a sleeping drive or an unavailable network mount). Try again, or pick another place.' }); expect(lag).toBeLessThan(50)
+    fsmod.setFs({ realpath: () => new Promise(() => undefined) }); await expect(fsmod.listDirs('/x')).rejects.toMatchObject({ code: 'timeout' })   // a hung realpath too
+    fsmod.setFs({ realpath: async (p) => p, stat: async () => ({ isDirectory: () => true }), readdir: async () => { await new Promise((r) => setTimeout(r, 120)); throw new Error('late') } }); await expect(fsmod.listDirs('/x')).rejects.toMatchObject({ code: 'timeout' }); await new Promise((r) => setTimeout(r, 150))   // the abandoned call failing later is not an unhandled rejection
+  })
+  it('the default limit is 15 seconds', async () => { fsmod.setFs({ realpath: async (p) => p, stat: async () => ({ isDirectory: () => true }), readdir: async () => [ent('a')] }); expect((await fsmod.listDirs('/x')).dirs).toHaveLength(1); expect(process.env.LISTDIRS_TIMEOUT_MS).toBeUndefined() })
+  it('a 10,000-entry folder (with links) stays responsive; links are checked at most 16 at a time', async () => {
+    const entries = [...Array.from({ length: 9_000 }, (_, i) => ent(`dir${String(i).padStart(5, '0')}`)), ...Array.from({ length: 1_000 }, (_, i) => ent(`link${String(i).padStart(4, '0')}`, 'l'))]
+    let inFlight = 0, peak = 0
+    fsmod.setFs({ realpath: async (p) => p, readdir: async () => entries, readlink: async (p) => `/t/${p.split('/').pop()}`, stat: async (p) => { if (p.includes('/link')) { inFlight++; peak = Math.max(peak, inFlight); await new Promise((r) => setImmediate(r)); inFlight--; return { isDirectory: () => true } } return { isDirectory: () => true } } })
+    let r: Awaited<ReturnType<typeof fsmod.listDirs>> | undefined; const lag = await lagProbe(async () => { r = await fsmod.listDirs('/big') })
+    expect(lag).toBeLessThan(50); expect(peak).toBeLessThanOrEqual(16); expect(peak).toBeGreaterThan(1); expect(r!.total).toBe(10_000); expect(r!.dirs).toHaveLength(2000); expect(r!.truncated).toBe(8000)
+  })
+  it('the cap: at most 2,000 sorted folders with total and truncated; under the cap neither truncated is set', async () => {
+    fsmod.setFs({ realpath: async (p) => p, stat: async () => ({ isDirectory: () => true }), readdir: async () => Array.from({ length: 2500 }, (_, i) => ent(`d${String(2499 - i).padStart(4, '0')}`)) })
+    const r = await fsmod.listDirs('/big'); expect(r.dirs).toHaveLength(2000); expect(r.total).toBe(2500); expect(r.truncated).toBe(500); expect(r.dirs[0].name).toBe('d0000'); expect(r.dirs[1999].name).toBe('d1999')
+    fsmod.setFs({ realpath: async (p) => p, stat: async () => ({ isDirectory: () => true }), readdir: async () => Array.from({ length: 5 }, (_, i) => ent(`d${i}`)) }); const s = await fsmod.listDirs('/small'); expect(s.total).toBe(5); expect('truncated' in s).toBe(false); expect(fsmod.DIR_CAP).toBe(2000)
+  })
+  it('filter: a case-insensitive substring of the name, applied BEFORE the cap (total counts the matches); hidden still follows the flag', async () => {
+    fsmod.setFs({ realpath: async (p) => p, stat: async () => ({ isDirectory: () => true }), readdir: async () => [...Array.from({ length: 3000 }, (_, i) => ent(`shot_${i}`)), ent('CANALV2'), ent('canalv2-old'), ent('.hidden-canal'), ent('Other')] })
+    let r = await fsmod.listDirs('/x', false, 'canal'); expect(r.dirs.map((d) => d.name)).toEqual(['CANALV2', 'canalv2-old']); expect(r.total).toBe(2); expect('truncated' in r).toBe(false)
+    r = await fsmod.listDirs('/x', true, '  CANAL '); expect(r.dirs.map((d) => d.name)).toEqual(['.hidden-canal', 'CANALV2', 'canalv2-old']); r = await fsmod.listDirs('/x', false, 'shot_29'); expect(r.total).toBe(111); expect((await fsmod.listDirs('/x', false, 'zzz')).dirs).toEqual([])
+  })
+  it('parity with the old behaviour on a real folder: sorted, hidden on request, links marked, logical path', async () => {
+    mkdirSync(join(dir, 'p', 'b'), { recursive: true }); mkdirSync(join(dir, 'p', 'a')); mkdirSync(join(dir, 'p', '.h')); writeFileSync(join(dir, 'p', 'f.txt'), 'x'); const r = await fsmod.listDirs(join(dir, 'p'))
+    expect(r.dirs.map((d) => d.name)).toEqual(['a', 'b']); expect((await fsmod.listDirs(join(dir, 'p'), true)).dirs.map((d) => d.name)).toEqual(['.h', 'a', 'b']); expect(r).toMatchObject({ path: join(dir, 'p'), parent: dir, total: 2 })
   })
 })

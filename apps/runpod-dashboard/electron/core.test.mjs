@@ -61,8 +61,16 @@ test('mounts.dirs: an unreadable folder is 403, code no_permission, with the mac
   const dir = mkdtempSync(join(tmpdir(), 'ipc-dirs-')), locked = join(dir, 'locked'); mkdirSync(locked); chmodSync(locked, 0)
   const was = Object.getOwnPropertyDescriptor(process, 'platform'); Object.defineProperty(process, 'platform', { value: 'darwin' })
   try {
-    let e; try { TABLE.mounts.dirs(core, locked) } catch (x) { e = x }
+    let e; try { await TABLE.mounts.dirs(core, locked) } catch (x) { e = x }
     const wrapped = { status: e.status || 500, message: e.message, ...(e.code ? { code: e.code } : {}), ...(e.hint ? { hint: e.hint } : {}) }   // the shape core.cjs's invoke wrapper sends
     assert.equal(wrapped.status, 403); assert.equal(wrapped.code, 'no_permission'); assert.match(wrapped.hint, /System Settings > Privacy & Security > Files and Folders \(or Full Disk Access\)/)
   } finally { Object.defineProperty(process, 'platform', was); chmodSync(locked, 0o755) }
+})
+
+test('mounts.dirs is async and takes a filter: a list with total, narrowed by name', async () => {
+  const { mkdtempSync, mkdirSync } = await import('node:fs'), { tmpdir } = await import('node:os'), { join } = await import('node:path'), { pathToFileURL } = await import('node:url')
+  const core = await import(pathToFileURL(join(import.meta.dirname, '..', 'libs', 'core', 'dist', 'index.js')).href)
+  const dir = mkdtempSync(join(tmpdir(), 'ipc-dirs2-')); for (const n of ['CANALV2', 'other', 'canal-old']) mkdirSync(join(dir, n))
+  const p = TABLE.mounts.dirs(core, dir, false, 'canal'); assert.equal(typeof p.then, 'function')
+  const r = await p; assert.deepEqual(r.dirs.map((d) => d.name), ['canal-old', 'CANALV2']); assert.equal(r.total, 2); assert.equal((await TABLE.mounts.dirs(core, dir)).total, 3)
 })

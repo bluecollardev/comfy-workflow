@@ -53,7 +53,7 @@ const TABLE = {
     preview: (c, cfg) => c.mounts.preview(cfg),
     reset: (c) => c.mounts.payload(c.mounts.reset()),
     env: (c) => c.mounts.envLines(c.mounts.load()),
-    dirs: (c, p, hidden) => c.listDirs(p || '', !!hidden),
+    dirs: (c, p, hidden, filter) => c.listDirs(p || '', !!hidden, String(filter || '')),   // async with a 15 s timeout and a 2,000-folder cap; `filter` narrows a huge folder before the cap
     volumes: (c) => c.listVolumes(),   // the volumes mounted on this PC (the folder picker's side list); a mount that does not answer is listed unreadable, never waited for
   },
   pods: {

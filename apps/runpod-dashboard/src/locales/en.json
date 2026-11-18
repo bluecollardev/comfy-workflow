@@ -889,7 +889,12 @@
     "realPath": "link to {real}",
     "noPermissionTitle": "This folder cannot be read",
     "noPermissionBody": "The app is not allowed to read {path}.",
-    "noPermissionWhere": "Allow it in System Settings > Privacy & Security (Files and Folders, or Full Disk Access), then try again."
+    "noPermissionWhere": "Allow it in System Settings > Privacy & Security (Files and Folders, or Full Disk Access), then try again.",
+    "filter": "Filter folders",
+    "truncated": "Showing the first {shown} of {total} folders: type to filter",
+    "timeoutTitle": "The folder is not answering",
+    "retry": "Try again",
+    "loading": "Reading the folder…"
   },
   "toast": {
     "round": "Move pod to round",
