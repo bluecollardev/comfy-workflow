@@ -315,6 +315,19 @@
       <div v-if="!forPod && dryForced" class="small text-warning mb-3" data-testid="cfg-dry-forced"><i class="fa-solid fa-lock me-1"></i>{{ $t('config.dryForced') }}</div>
       <div v-else-if="!forPod" class="mb-2"></div>
 
+      <div class="border rounded p-2 mb-3" data-testid="config-autosync">
+        <BFormCheckbox v-model="cfg.auto_sync.enabled" :value="true" :unchecked-value="false" data-testid="config-autosync-enabled">{{ $t('autosync.configLabel') }}</BFormCheckbox>
+        <div v-if="cfg.auto_sync.enabled" class="ps-4 small" data-testid="config-autosync-options">
+          <BFormCheckbox v-model="cfg.auto_sync.pull" :value="true" :unchecked-value="false" data-testid="config-autosync-pull">{{ $t('autosync.pull') }}</BFormCheckbox>
+          <BFormCheckbox v-model="cfg.auto_sync.push" :value="true" :unchecked-value="false" data-testid="config-autosync-push">{{ $t('autosync.push') }}</BFormCheckbox>
+          <div class="d-flex align-items-center gap-2 mt-1">
+            <label class="mb-0" for="cfg-autosync-by">{{ $t('autosync.approvedBy') }}</label>
+            <BFormInput id="cfg-autosync-by" v-model="cfg.auto_sync.approved_by" size="sm" style="width: 16rem" :placeholder="$t('autosync.approvedByPlaceholder')" data-testid="config-autosync-approved-by" />
+          </div>
+        </div>
+        <div class="form-text mt-1" data-testid="config-autosync-help">{{ $t('autosync.configHelp') }}</div>
+        <div v-if="autoSyncError" class="text-danger small mt-1" data-testid="config-autosync-error">{{ autoSyncError }}</div>
+      </div>
       <details class="mb-2">
         <summary class="small text-body-secondary">{{ $t('config.previewLocal') }}</summary>
         <pre class="small bg-body-tertiary rounded p-2 mt-2 mb-0" style="white-space: pre-wrap">{{ localText }}</pre>
@@ -528,6 +541,20 @@ function take(payload) {
   require.value = payload.require || []
   requireSource.value = payload.require_source || 'config'
   cfg.value.required ||= {}
+  autoSyncStored = !!payload.config.auto_sync   // an untouched, unticked object is not added to what is saved
+  cfg.value.auto_sync = { enabled: false, pull: true, push: false, approved_by: '', ...(cfg.value.auto_sync || {}) }
+  if (!cfg.value.auto_sync.approved_by) try { cfg.value.auto_sync.approved_by = localStorage.getItem('runpod-manager.approved-by') || '' } catch { /* storage blocked */ }
+  autoSyncError.value = ''
+}
+let autoSyncStored = false
+const autoSyncError = ref('')
+/** A named yes (ADR-046): ticking Auto sync needs the name of who says yes, refused here before any call; the core refuses it too. */
+function autoSyncOk() {
+  const a = cfg.value.auto_sync
+  if (a.enabled && !String(a.approved_by || '').trim()) { autoSyncError.value = t('autosync.needName'); return false }
+  autoSyncError.value = ''
+  if (a.enabled) try { localStorage.setItem('runpod-manager.approved-by', a.approved_by.trim()) } catch { /* storage blocked */ }
+  return true
 }
 
 /** The datacenter menu: RunPod's list with S3 support and our cards at the secure-cloud price; the saved id is kept even when the list lacks it. */
@@ -593,6 +620,7 @@ async function load() {
 
 /** Pod mode: validate through the API's preview, hand the configuration to the owner, close. */
 async function apply() {
+  if (!autoSyncOk()) return
   saving.value = true; error.value = null
   try {
     const payload = await mountsAPI.preview(body())
@@ -627,7 +655,8 @@ function picked(path) {
 function body() {
   const env = {}
   for (const r of envRows.value) if (r.key) env[r.key] = r.value
-  return { ...cfg.value, env }
+  const { auto_sync: a, ...rest } = cfg.value
+  return { ...rest, ...(a.enabled || autoSyncStored ? { auto_sync: { ...a, approved_by: String(a.approved_by || '').trim() } } : {}), env }
 }
 
 const localText = computed(() => {
@@ -683,6 +712,7 @@ async function scrollToField(id) {
 }
 
 async function save() {
+  if (!gated.value && !autoSyncOk()) return
   saving.value = true; error.value = null
   const wasGated = gated.value
   if (newKey.value) {

@@ -92,6 +92,11 @@
         <span v-else class="small text-body-secondary">{{ $t('importRound.chooseCardNone') }}</span>
         <div v-if="allCards.length > 1" class="w-100 small text-body-secondary" data-testid="import-round-same-card-first">{{ $t('importRound.sameCardFirst') }}</div>
       </div>
+      <div v-if="runWorkflows || isVolume" class="small mb-3" data-testid="import-round-autosync-block">
+        <label class="d-flex align-items-center gap-2"><input v-model="autoSync" type="checkbox" class="form-check-input mt-0" data-testid="import-round-autosync" />{{ $t('importRound.autoSync') }}</label>
+        <label v-if="autoSync" class="d-flex align-items-center gap-2 ps-4 mt-1"><input v-model="autoSyncPush" type="checkbox" class="form-check-input mt-0" data-testid="import-round-autosync-push" />{{ $t('importRound.autoSyncPush') }}</label>
+        <div class="text-body-secondary ps-4" data-testid="import-round-autosync-hint">{{ $t('importRound.autoSyncHint') }}</div>
+      </div>
       <div class="border rounded p-2 small mb-3" data-testid="import-round-estimate">
         <template v-if="isVolume">
           <div data-testid="import-round-inplace">{{ $t('importRound.inPlace') }}</div>
@@ -104,6 +109,7 @@
         <div>{{ $t('importRound.price', { price: first.price_per_hour ?? '?' }) }}</div>
         <div>{{ $t('importRound.estimate', { usd: estimate }) }}</div>
         </template>
+        <div v-if="autoSync" data-testid="import-round-autosync-line">{{ $t(autoSyncPush ? 'importRound.autoSyncLinePush' : 'importRound.autoSyncLine') }}</div>
         <div v-if="first.cap_enabled" class="d-flex align-items-center gap-2 mt-2 flex-wrap">
           <label class="mb-0" for="ir-pods">{{ $t(plans.size > 1 ? 'importRound.maxPodsEach' : 'importRound.maxPods') }}</label>
           <BFormInput id="ir-pods" v-model.number="maxPods" type="number" min="1" max="20" size="sm" style="width: 5rem" data-testid="import-round-max-pods" @input="podsEdited = true" />
@@ -211,7 +217,7 @@ const cardsFor = (r) => Object.fromEntries([...(picked.value.get(r) || [])].filt
 const estimates = ref(new Map())   // round -> the plan for the shots and cards chosen (its estimate)
 async function replan() {
   const m = new Map()
-  try { for (const r of plans.value.keys()) m.set(r, await queueAPI.plan(r, { shots: [...(picked.value.get(r) || [])], cards: cardsFor(r), run_workflows: runWorkflows.value, ...volumeOpts(), ...(isVolume.value && first.value.cap_enabled ? { cost_cap_usd: Math.round(costCap.value / Math.max(1, plans.value.size) * 100) / 100 } : {}) })) } catch (e) { error.value = errorText(e) }
+  try { for (const r of plans.value.keys()) m.set(r, await queueAPI.plan(r, { shots: [...(picked.value.get(r) || [])], cards: cardsFor(r), run_workflows: runWorkflows.value, ...autoSyncKey(), ...volumeOpts(), ...(isVolume.value && first.value.cap_enabled ? { cost_cap_usd: Math.round(costCap.value / Math.max(1, plans.value.size) * 100) / 100 } : {}) })) } catch (e) { error.value = errorText(e) }
   estimates.value = m
 }
 const canNext = computed(() => (step.value === 1 ? chosen.value.size > 0 : totalShots.value > 0 && !loadingPlan.value))
@@ -269,8 +275,11 @@ async function loadVolumes() {
 const browsingShot = ref('')   // with `browsing`: only that shot's folder
 const browsing = ref('')   // the round whose files are open in the explorer
 const podsEdited = ref(false)   // until the pod limit is typed, it follows the shots ticked: one pod per shot
+const autoSync = ref(false), autoSyncPush = ref(false)   // Auto sync (ADR-046): pods this import creates get it; the key is sent only when ticked
+const autoSyncOpt = computed(() => (autoSync.value ? (autoSyncPush.value ? { pull: true, push: true } : true) : undefined))
+const autoSyncKey = () => (autoSyncOpt.value === undefined ? {} : { auto_sync: autoSyncOpt.value })
 const maxPods = ref(2), costCap = ref(50), approvedBy = ref(''), error = ref(''), starting = ref(false)
-watch([cards, picked, runWorkflows, costCap], () => { if (step.value === 3) replan() }, { deep: true })
+watch([cards, picked, runWorkflows, costCap, autoSyncOpt], () => { if (step.value === 3) replan() }, { deep: true })
 const pending = ref(new Set())   // rounds whose plan is still being read (a big round takes seconds): step 2 can be opened meanwhile
 const loadingPlan = computed(() => pending.value.size > 0)
 try { approvedBy.value = localStorage.getItem('runpod-manager.approved-by') || '' } catch { /* storage blocked */ }
@@ -369,9 +378,9 @@ async function start() {
   try { localStorage.setItem('runpod-manager.approved-by', approvedBy.value.trim()) } catch { /* storage blocked */ }
   const todo = [...plans.value.keys()].filter((r) => shotCount(r) > 0)
   const capOn = first.value.cap_enabled
-  const items = todo.map((r) => ({ round: r, shots: [...picked.value.get(r)], cards: cardsFor(r), ...(capOn ? { max_pods: todo.length > 1 && !podsEdited.value ? shotCount(r) : Math.min(20, Math.max(1, Math.round(Number(maxPods.value)) || 1)) } : {}) }))
+  const items = todo.map((r) => ({ round: r, shots: [...picked.value.get(r)], cards: cardsFor(r), ...autoSyncKey(), ...(capOn ? { max_pods: todo.length > 1 && !podsEdited.value ? shotCount(r) : Math.min(20, Math.max(1, Math.round(Number(maxPods.value)) || 1)) } : {}) }))
   const makeVol = !isVolume.value && newVolOk.value ? { name: newVolName.value.trim(), size_gb: newVolSize.value, datacenter: dcChoice.value } : null
-  const opts = { run_workflows: isVolume.value ? true : runWorkflows.value, volume_id: isVolume.value ? sourceVolumeId.value : volumeId.value, approved_by: approvedBy.value.trim(), ...(isVolume.value ? { source: 'volume' } : {}), ...(capOn ? { cost_cap_usd: costCap.value } : {}) }
+  const opts = { run_workflows: isVolume.value ? true : runWorkflows.value, volume_id: isVolume.value ? sourceVolumeId.value : volumeId.value, approved_by: approvedBy.value.trim(), ...autoSyncKey(), ...(isVolume.value ? { source: 'volume' } : {}), ...(capOn ? { cost_cap_usd: costCap.value } : {}) }
   // The Queue opens at once and says it is queueing: reading and planning the rounds takes a while, and the button alone says nothing.
   ui.queueStartError = ''; ui.queueStarting = todo; open.value = false; ui.queueOpen = true
   try { if (makeVol) { const v = await volumesAPI.create(makeVol); opts.volume_id = v.id }; await queueAPI.importMany(items, opts) } catch (e) { ui.queueStartError = errorText(e) } finally { ui.queueStarting = []; ui.queueVersion++; starting.value = false }

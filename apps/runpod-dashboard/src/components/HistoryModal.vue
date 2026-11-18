@@ -85,7 +85,7 @@
               <td v-if="e.kind === 'change'"><BBadge variant="warning" data-testid="history-change-area">{{ $t(`history.area_${e.area}`) }}</BBadge></td>
               <td v-else>{{ e.job }}</td>
               <td v-if="e.kind === 'change'" class="history-wrap"><span data-testid="history-change-action">{{ e.action }}</span> {{ e.what }}<div v-if="e.detail" class="small text-body-secondary">{{ e.detail }}</div></td>
-              <td v-else class="history-wrap">{{ e.what }}</td>
+              <td v-else class="history-wrap">{{ e.what }}<BBadge v-if="isAuto(e.trigger)" variant="info" class="ms-1" data-testid="history-auto">{{ $t('history.autoBadge') }}</BBadge><div v-if="detailText(e.detail)" class="small text-body-secondary" data-testid="history-job-detail">{{ detailText(e.detail) }}</div></td>
               <td class="history-wrap">{{ e.pod_name || '' }}</td>
               <td><BBadge :variant="STATE[e.state] || 'secondary'" data-testid="history-state">{{ e.state }}</BBadge></td>
               <td class="text-nowrap">{{ e.files != null ? $t('history.files', { n: e.files }) : '' }}<span v-if="e.bytes != null"> · {{ size(e.bytes) }}</span></td>
@@ -205,6 +205,7 @@ import { useUiStore } from '../stores/ui'
 import { usePodsStore } from '../stores/pods'
 import { historyAPI, onHistoryChange } from '../api/history'
 import { saveTextFile } from '../api/configio'
+import { detailText, isAuto } from '../utils/syncs'
 import { useToastStore } from '../stores/toast'
 
 const ui = useUiStore()

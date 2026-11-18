@@ -147,6 +147,8 @@ export interface Opts {
   now?: () => Date
   /** Where a pod download runs: on 'current' (the user's pod on the volume, started first if it is off) or on a 'temporary' pod of the cheapest card. Unset: the user's pod if it is running, else a temporary one. */
   route?: 'current' | 'temporary'
+  /** Read the volume's record without remembering it (the change journal asks in the background and must not change what a later plan sees) */
+  noCache?: boolean
   /** Work on this volume instead of the Default Configuration's (browse and erase are about one volume of the account). */
   volumeId?: string
   /** Pull only these shots (and the round's shared files): the other shot folders are left in the bucket. Unset or all of them: the whole round. */
@@ -166,7 +168,7 @@ async function volumeOf(opts: Opts): Promise<Volume | null> {
   if (!id) return null
   try {
     const v = await pods.volumeInfo(id, opts.client)
-    if (v) { const vol = { id: v.id, name: v.name, datacenter: v.datacenter }; volCache.set(id, vol); return vol }
+    if (v) { const vol = { id: v.id, name: v.name, datacenter: v.datacenter }; if (!opts.noCache) volCache.set(id, vol); return vol }
   } catch { /* fall back to what was last seen, then to what the configuration says */ }
   const last = rl.lastVolume(id)
   return volCache.get(id) ?? (last ? { id, name: last.name, datacenter: last.dataCenterId } : { id, name: id, datacenter: cfg.data_center_id || '' })
@@ -1055,6 +1057,7 @@ async function run(i: Internal, opts: Opts) {
     conclude(i)
     const jb = i.job
     if (jb.state === 'done' || jb.state === 'failed' || jb.state === 'cancelled' || jb.state === 'interrupted') history.record({ kind: 'job', job: jb.kind, state: jb.state, started_at: jb.started_at, what: jb.round, pod_id: jb.pod_id ?? undefined, pod_name: jb.pod_name ?? undefined, files: jb.files, bytes: jb.bytes_done || i.plan.bytes, ...(jb.place ? { detail: placeSummary(jb.place) } : jb.kind === 'delete-models' ? { detail: deleteSummary(jb) } : {}), ...(jb.error ? { error: jb.error } : {}) })
+    if (jb.state === 'done') void import('./journal.js').then((j) => j.emitForJob(jb as never, i.plan.volume?.id || jb.volume_id || '', i.plan.volume ? { known: i.plan.volume } : {})).catch(() => undefined)   // the change journal (ADR-046): best effort, after the fact
     busy.delete(i.job.round)
   }
 }
@@ -1105,13 +1108,19 @@ const volLabel = (volumeId: string) => { if (!/^[A-Za-z0-9]{3,40}$/.test(volumeI
 /** RunPod's S3 API reads and writes a volume's files with no pod, but only in some datacenters and with S3 keys (Default Configuration): the keys and the endpoint, or why not. */
 /** The RunPod S3 keys of Default Configuration, or none. */
 function s3Keys(): { id: string; secret: string } | null { const id = settings.lookup('RUNPOD_S3_ACCESS_KEY') || '', secret = settings.lookup('RUNPOD_S3_SECRET_KEY') || ''; return id && secret ? { id, secret } : null }
+/** A volume's S3 reach from what is already known (its id and datacenter) and the stored keys: no request to RunPod, no state touched. null without keys or an S3 datacenter. */
+export const s3AccessOf = (vol: Volume | null): { id: string; secret: string; endpoint: string; bucket: string; region: string } | null => { const a = s3Access(vol); return a.ok ? a : null }
 function s3Access(vol: Volume | null): { ok: true; id: string; secret: string; endpoint: string; bucket: string; region: string } | { ok: false; why: 'datacenter' | 'keys' } {
   if (!vol || !pods.S3_DATACENTERS.has(vol.datacenter)) return { ok: false, why: 'datacenter' }
   const id = settings.lookup('RUNPOD_S3_ACCESS_KEY') || '', secret = settings.lookup('RUNPOD_S3_SECRET_KEY') || ''
   if (!id || !secret) return { ok: false, why: 'keys' }
   return { ok: true, id, secret, endpoint: sync.s3Endpoint(vol.datacenter), bucket: vol.id, region: vol.datacenter }
 }
-const defaultAws: AwsRunner = (args, env, o = {}) => new Promise((res) => {
+/** Tests replace the real `aws` with a runner that never spawns anything (tests/setup.ts): no test may ever reach a real volume. */
+let awsOverride: AwsRunner | null = null
+export const setAwsOverride = (r: AwsRunner | null) => { awsOverride = r }
+export const defaultAws: AwsRunner = (args, env, o) => (awsOverride ?? realAws)(args, env, o)
+const realAws: AwsRunner = (args, env, o = {}) => new Promise((res) => {
   const c = spawn('aws', args, { env: { ...process.env, ...env, AWS_EC2_METADATA_DISABLED: 'true' } })
   let stdout = '', stderr = '', stalled = false, lines = 0, timer: NodeJS.Timeout | null = null
   const stop = () => { if (timer) clearTimeout(timer); o.signal?.removeEventListener('abort', onAbort) }

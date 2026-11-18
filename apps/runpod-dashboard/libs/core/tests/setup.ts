@@ -7,7 +7,9 @@ import { mkdtempSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setStopReader } from '../src/outputruns.js'
+import { setAwsOverride } from '../src/podpull.js'
 
+setAwsOverride(async () => ({ code: 127, stdout: '', stderr: 'aws is not run in tests: inject an AwsRunner' }))   // no test ever reaches a real volume
 setStopReader(async () => null)   // a test that stops a pod never reads a real pod's history first (outputruns.test.ts sets its own)
 
 const dir = mkdtempSync(join(tmpdir(), 'runpod-core-global-'))

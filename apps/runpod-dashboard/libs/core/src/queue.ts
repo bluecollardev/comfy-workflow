@@ -8,6 +8,7 @@ import { dirname } from 'node:path'
 import { CoreError } from './errors.js'
 import * as gpus from './gpus.js'
 import * as history from './history.js'
+import * as autosyncstore from './autosyncstore.js'
 import * as mounts from './mounts.js'
 import { queueFile } from './paths.js'
 import * as panama from './panama.js'
@@ -42,6 +43,8 @@ export interface Task {
 }
 export interface ImportRec {
   id: string; round: string; approved_by: string; created_at: string; state: 'active' | 'done' | 'cancelled'
+  /** Auto sync for every pod this import CREATES (docs/ADR-046), with this import's approver as the named yes; pods reused from the pool are not changed */
+  auto_sync?: { pull: boolean; push: boolean }
   max_pods: number | null; cost_cap_usd: number | null; cap_enabled: boolean
   est_total_usd: number | null; spent_usd: number
   /** The shots this import brings: the pull copies only these (and the round's shared files), the runs are of these */
@@ -61,6 +64,8 @@ export interface Deps {
   podReady: (id: string) => Promise<{ ready: boolean; price: number | null }>
   resumePod: (id: string) => Promise<void>
   createPod: (name: string, round: string, gpu?: string) => Promise<{ id: string; name: string }>
+  /** Turn Auto sync on for a pod this import created (ADR-046); true when it was switched on */
+  autoSync: (podId: string, approvedBy: string, a: { pull: boolean; push: boolean }) => boolean
   cardPrice: (gpu: string) => Promise<number | null>
   /** Put the pod in the round and name the shot it works on, so the pod card says so (ADR-039). */
   assignShot: (podId: string, round: string, shot: string) => void
@@ -99,6 +104,7 @@ const realDeps: Deps = {
   },
   podReady: async (id) => { const p = await pods.get(id); const raw = await rp.getPod(id); return { ready: p.status === 'running' && !!p.web_ui_url && p.comfy_ready !== false, price: raw?.costPerHr ?? null } },
   resumePod: async (id) => { await pods.resume(id) },
+  autoSync: (podId, by, a) => autosyncstore.applyFromConfig(podId, { enabled: true, pull: a.pull, push: a.push, approved_by: by }, 'import'),
   createPod: async (name, round, gpu) => { const p = await pods.create({ name, gpu: gpu || poolGpu(), apply_mounts: true, round }); return { id: p.id, name: p.name } },
   assignShot: (podId, round, shot) => { if (podrounds.get(podId) !== round) podrounds.set(podId, round); podrounds.setShot(podId, shot) },
   ensureVolume: async (id) => {
@@ -163,7 +169,7 @@ export interface ImportPlan {
   /** What is left of the caps: the import's cap, and Binc's USD 100 rule (the History's spend against it). */
   remaining_usd?: number | null; assumption?: string; blocked?: string
 }
-export interface ImportOpts { /** the network volume the pods and the pull use; it becomes the default volume */ volume_id?: string; /** shot -> card (a GPU key); a shot without one takes the pool */ cards?: Record<string, string | string[]>; shots?: string[]; run_workflows?: boolean; max_pods?: number; cost_cap_usd?: number; approved_by?: string
+export interface ImportOpts { /** true: every pod this import creates pulls its volume's changes to this PC (Auto sync, ADR-046); { pull, push } to choose. Needs approved_by (already required). */ auto_sync?: boolean | { pull?: boolean; push?: boolean }; /** the network volume the pods and the pull use; it becomes the default volume */ volume_id?: string; /** shot -> card (a GPU key); a shot without one takes the pool */ cards?: Record<string, string | string[]>; shots?: string[]; run_workflows?: boolean; max_pods?: number; cost_cap_usd?: number; approved_by?: string
   /** `volume`: the round already sits on `volume_id` and is run in place (ADR-044). Default: a BH round, pulled first. */ source?: string
   /** Refused on a volume source (guard a): Binc's rule, nothing on the volume is overwritten. Accepted by nothing; named so a caller that sends it gets a clear error. */ replace?: boolean; overwrite?: boolean }
 
@@ -266,7 +272,7 @@ async function importVolumeRound(round: string, o: ImportOpts): Promise<ImportRe
   const q = state()
   if (q.imports.some((i) => i.round === round && i.state === 'active')) throw new CoreError(409, `${round} is already being imported: see the queue.`)
   const info = await deps.describeVolumeRound(volumeId, round)
-  const imp: ImportRec = { id: newId('imp'), round, approved_by: by, created_at: deps.now().toISOString(), state: 'active', max_pods: plan.max_pods, cost_cap_usd: plan.cost_cap_usd, cap_enabled: plan.cap_enabled, est_total_usd: plan.est_total_usd, spent_usd: 0, started_pods: [], shots: [...plan.shots], price_per_hour: plan.price_per_hour,
+  const imp: ImportRec = { id: newId('imp'), round, approved_by: by, created_at: deps.now().toISOString(), state: 'active', ...(autoOf(o.auto_sync) ? { auto_sync: autoOf(o.auto_sync) } : {}), max_pods: plan.max_pods, cost_cap_usd: plan.cost_cap_usd, cap_enabled: plan.cap_enabled, est_total_usd: plan.est_total_usd, spent_usd: 0, started_pods: [], shots: [...plan.shots], price_per_hour: plan.price_per_hour,
     source: 'volume', volume_id: volumeId, graphs: plan.graphs, seconds_per_graph: plan.seconds_per_graph }
   q.imports.push(imp)
   const prices = await cardPrices(plan.shots, o)
@@ -278,6 +284,9 @@ async function importVolumeRound(round: string, o: ImportOpts): Promise<ImportRe
   save(); start()
   return imp
 }
+
+/** The Auto sync choice of an import: true is pull only; an object chooses; false or nothing is none. */
+export const autoOf = (a: ImportOpts['auto_sync']): { pull: boolean; push: boolean } | undefined => (a === true ? { pull: true, push: false } : a && typeof a === 'object' && (a.pull !== false || a.push === true) ? { pull: a.pull !== false, push: a.push === true } : undefined)
 
 let seq = 0
 const newId = (p: string) => `${p}-${deps.now().getTime().toString(36)}-${(seq++).toString(36)}`
@@ -292,7 +301,7 @@ export async function importRound(round: string, o: ImportOpts = {}): Promise<Im
   if (!plan.shots.length) throw new CoreError(404, `No shots found in ${round}.`)
   const q = state()
   if (q.imports.some((i) => i.round === round && i.state === 'active')) throw new CoreError(409, `${round} is already being imported: see the queue.`)
-  const imp: ImportRec = { id: newId('imp'), round, approved_by: by, created_at: deps.now().toISOString(), state: 'active', max_pods: plan.max_pods, cost_cap_usd: plan.cost_cap_usd, cap_enabled: plan.cap_enabled, est_total_usd: plan.est_total_usd, spent_usd: 0, started_pods: [], shots: [...plan.shots], price_per_hour: plan.price_per_hour }
+  const imp: ImportRec = { id: newId('imp'), round, approved_by: by, created_at: deps.now().toISOString(), state: 'active', ...(autoOf(o.auto_sync) ? { auto_sync: autoOf(o.auto_sync) } : {}), max_pods: plan.max_pods, cost_cap_usd: plan.cost_cap_usd, cap_enabled: plan.cap_enabled, est_total_usd: plan.est_total_usd, spent_usd: 0, started_pods: [], shots: [...plan.shots], price_per_hour: plan.price_per_hour }
   const pull: Task = { id: newId('t'), import_id: imp.id, round, shot: null, kind: 'pull', state: 'waiting', depends_on: [], pod_id: null, pod_name: null }
   q.imports.push(imp); q.tasks.push(pull)
   const prices = await cardPrices(plan.shots, o)
@@ -301,7 +310,7 @@ export async function importRound(round: string, o: ImportOpts = {}): Promise<Im
   return imp
 }
 
-export interface RoundItem { round: string; shots?: string[]; cards?: Record<string, string | string[]>; max_pods?: number }
+export interface RoundItem { auto_sync?: boolean | { pull?: boolean; push?: boolean }; round: string; shots?: string[]; cards?: Record<string, string | string[]>; max_pods?: number }
 /** Several rounds on one approval (the window's and MCP's one path): each round is its own import; `cost_cap_usd` is the TOTAL and is split evenly, so the caps never add up to more.
  *  Every round is planned first, so a bad round or card queues nothing; `max_pods` (per round) may be set per item. */
 export async function importRounds(items: RoundItem[], o: Omit<ImportOpts, 'shots' | 'cards'> = {}): Promise<ImportRec[]> {
@@ -313,7 +322,7 @@ export async function importRounds(items: RoundItem[], o: Omit<ImportOpts, 'shot
   await deps.ensureVolume(o.source === 'volume' ? volumeIdOf(o) : o.volume_id)
   o = { ...o, ...(o.source === 'volume' ? { volume_id: volumeIdOf(o) } : { volume_id: undefined }) }   // done once for all the rounds (a volume round keeps its volume: it is where the round sits)
   const each = o.cost_cap_usd != null ? Math.round((o.cost_cap_usd / items.length) * 100) / 100 : undefined
-  const opts = (i: RoundItem): ImportOpts => ({ ...o, shots: i.shots, cards: i.cards, ...(each != null ? { cost_cap_usd: each } : {}), ...(i.max_pods != null ? { max_pods: i.max_pods } : {}) })
+  const opts = (i: RoundItem): ImportOpts => ({ ...o, ...(i.auto_sync !== undefined ? { auto_sync: i.auto_sync } : {}), shots: i.shots, cards: i.cards, ...(each != null ? { cost_cap_usd: each } : {}), ...(i.max_pods != null ? { max_pods: i.max_pods } : {}) })
   for (const i of items) { const p = await planImport(i.round, opts(i)); if (p.refused?.length) throw new CoreError(403, `Refused: ${p.blocked}`); if (p.source === 'volume' && p.over_cap) throw new CoreError(402, `Refused: ${p.blocked}`); if (!p.shots.length) throw new CoreError(404, `No shots found in ${i.round}.`); if (state().imports.some((x) => x.round === i.round && x.state === 'active')) throw new CoreError(409, `${i.round} is already being imported: see the queue.`) }
   const out: ImportRec[] = []
   for (const i of items) out.push(await importRound(i.round, opts(i)))
@@ -429,6 +438,7 @@ async function begin(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> {
       }
       if (!c) throw noCard
       podId = c.id; podName = c.name; t.card = got; imp.started_pods.push(c.id); ev(t, `created pod ${c.name} (${got}) in round ${imp.round}`)
+      if (imp.auto_sync) { try { if (deps.autoSync(c.id, imp.approved_by, imp.auto_sync)) ev(t, 'Auto sync on for this pod (pull' + (imp.auto_sync.push ? ' and push' : '') + `), named yes: ${imp.approved_by}`) } catch { /* never fails a run */ } }
     }
     if (t.shot) { try { deps.assignShot(podId, imp.round, t.shot); ev(t, `pod card: round ${imp.round}, shot ${t.shot}`) } catch { /* the card label is ours only: never fail a run over it */ } }
     t.pod_id = podId; t.pod_name = podName; t.phase = 'pod'; t.state = 'running'; t.retry_at = undefined; t.attempts = undefined; t.stage = undefined; t.started_at = deps.now().toISOString(); delete t.held_reason

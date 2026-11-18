@@ -43,6 +43,11 @@ function save(runs: SavedRun[]): void {
 const when = (r: { started_at: string | null; recorded_at: string }) => r.started_at || r.recorded_at
 const newestFirst = (a: SavedRun, b: SavedRun) => when(b).localeCompare(when(a))
 
+/** Told about every run recorded (autosync.ts registers here, docs/ADR-046): best effort, a hook that throws never breaks the recording. */
+export type RecordedHook = (ctx: PodCtx, files: SavedFile[]) => void
+let recordedHook: RecordedHook | null = null
+export const setRecordedHook = (fn: RecordedHook | null) => { recordedHook = fn }
+
 /** Record what these runs wrote; returns how many entries were added or refreshed. Never throws. */
 export function record(ctx: PodCtx, runs: RunLike[], now = new Date()): number {
   try {
@@ -65,6 +70,7 @@ export function record(ctx: PodCtx, runs: RunLike[], now = new Date()): number {
     const byId = new Map(load().map((r) => [r.prompt_id, r]))
     for (const r of fresh) { const old = byId.get(r.prompt_id); byId.set(r.prompt_id, old ? { ...r, workflow: r.workflow || old.workflow, volume_id: r.volume_id || old.volume_id, pod_name: r.pod_name || old.pod_name, datacenter: r.datacenter || old.datacenter, recorded_at: old.recorded_at } : r) }
     save([...byId.values()].sort(newestFirst).slice(0, MAX_RUNS))
+    if (recordedHook) for (const r of fresh) { try { recordedHook(ctx, r.files) } catch { /* never in the way */ } }
     return fresh.length
   } catch { return 0 }
 }

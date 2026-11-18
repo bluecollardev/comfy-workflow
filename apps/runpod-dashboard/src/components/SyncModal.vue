@@ -78,6 +78,24 @@
         <pre ref="out" class="small bg-body-tertiary rounded p-2 mt-2 mb-0" style="max-height: 40vh; overflow: auto; white-space: pre-wrap" data-testid="sync-output"><div v-for="l in lines" :key="l.n">{{ l.text }}</div></pre>
       </details>
     </template>
+    <div class="mt-3"><BButton size="sm" variant="outline-light" data-testid="sync-view-logs" @click="logsOpen = true"><i class="fa-solid fa-scroll me-1"></i>{{ $t('syncs.viewLogs') }}</BButton></div>
+    <div class="border-top mt-3 pt-3" data-testid="sync-autosync-section">
+      <BFormCheckbox v-model="auto.enabled" switch data-testid="sync-autosync"><span class="fw-semibold">{{ $t('autosync.label') }}</span></BFormCheckbox>
+      <div class="form-text mb-2">{{ $t('autosync.help') }}</div>
+      <div class="ms-4">
+        <BFormCheckbox v-model="auto.pull" :disabled="!auto.enabled" data-testid="sync-autosync-pull">{{ $t('autosync.pull') }}</BFormCheckbox>
+        <BFormCheckbox v-model="auto.push" :disabled="!auto.enabled" data-testid="sync-autosync-push">{{ $t('autosync.push') }}</BFormCheckbox>
+      </div>
+      <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
+        <label class="mb-0 small" for="sync-autosync-by">{{ $t('autosync.approvedBy') }}</label>
+        <BFormInput id="sync-autosync-by" v-model.trim="auto.approved_by" size="sm" style="max-width: 16rem" :placeholder="$t('autosync.approvedByPlaceholder')" data-testid="sync-autosync-approved-by" />
+        <BButton size="sm" variant="success" :disabled="autoSaving" data-testid="sync-autosync-save" @click="saveAuto">{{ $t('autosync.save') }}</BButton>
+        <span v-if="autoSaved" class="small text-success" data-testid="sync-autosync-saved"><i class="fa-solid fa-check me-1"></i>{{ $t('autosync.saved') }}</span>
+      </div>
+      <div v-if="autoError" class="text-danger small mt-1" data-testid="sync-autosync-error">{{ autoError }}</div>
+      <div v-if="autoLast" class="small text-body-secondary mt-1" data-testid="sync-autosync-status">{{ $t('autosync.last', { summary: autoLast }) }}</div>
+    </div>
+    <SyncLogsModal v-if="logsOpen" v-model="logsOpen" :pod-id="pod.id" :pod-name="pod.name" />
   </BModal>
 </template>
 
@@ -91,14 +109,17 @@
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { syncAPI } from '../api/sync'
 import { usePodsStore } from '../stores/pods'
+import { useAutosyncStore } from '../stores/autosync'
 import { barValue, detailParts, fold, formatBytes, fresh } from '../sync-progress'
 import { t } from '../i18n'
+import SyncLogsModal from './SyncLogsModal.vue'
 
 const props = defineProps({ modelValue: Boolean, pod: { type: Object, required: true } })
 const emit = defineEmits(['update:modelValue'])
 const pods = usePodsStore()
 
 const direction = ref('push')
+const logsOpen = ref(false)   // the Sync logs window (docs/ADR-046)
 const plates = ref(false)
 const approvedBy = ref('')
 const SHARED = ['input', 'models', 'output', 'workflows']
@@ -162,8 +183,34 @@ watch([direction, plates, approvedBy], loadPlan)
 watch([skipRenders, skipTests, existing], () => { if (plan.value.length && transport.value.kind !== 'none') loadCounts() })   // the figure is for the switches as set
 watch(shared, (v, old) => { if (old) { loadPlan() } }, { deep: true })   // another set of folders is another plan and another count
 
+// Auto sync (ADR-046): this pod's switch, loaded when the window opens and saved with its own button, whatever the manual flow below is doing.
+const autosync = useAutosyncStore()
+const auto = ref({ enabled: false, pull: true, push: false, approved_by: '' })
+const autoSaving = ref(false), autoSaved = ref(false), autoError = ref('')
+const autoLast = computed(() => { const it = autosync.byPod(props.pod.id); return it ? (it.state === 'error' ? it.error : it.summary) || '' : '' })
+async function loadAuto() {
+  autoSaved.value = false; autoError.value = ''
+  await autosync.loadSettings(props.pod.id)
+  const s = autosync.settings[props.pod.id] || {}
+  let by = s.approved_by || ''
+  if (!by) { try { by = localStorage.getItem('runpod-manager.approved-by') || '' } catch { /* storage blocked */ } }
+  auto.value = { enabled: !!s.enabled, pull: s.pull !== false, push: !!s.push, approved_by: by }
+}
+async function saveAuto() {
+  autoSaved.value = false; autoError.value = ''
+  if (auto.value.enabled && !auto.value.approved_by.trim()) { autoError.value = t('autosync.needName'); return }
+  autoSaving.value = true
+  try {
+    await autosync.save(props.pod.id, { ...auto.value, approved_by: auto.value.approved_by.trim() })
+    if (auto.value.approved_by.trim()) { try { localStorage.setItem('runpod-manager.approved-by', auto.value.approved_by.trim()) } catch { /* storage blocked */ } }
+    autoSaved.value = true
+  } catch (e) { autoError.value = e?.response?.data?.detail || e?.message || String(e) }
+  finally { autoSaving.value = false }
+}
+
 let off = () => {}
 async function open() {
+  loadAuto()
   shared.value = null
   await loadPlan()
   off()   // a second opening must not listen twice

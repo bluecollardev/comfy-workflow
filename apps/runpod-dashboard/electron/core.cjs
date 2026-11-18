@@ -24,6 +24,7 @@ async function loadCore() {
   const push = () => { if (timer) return; timer = setTimeout(() => { timer = null; for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('core:history', {}) }, 250) }
   core.history.onChange(push)
   core.queue.start()   // ADR-038: the round-import queue runs while the app is open
+  core.autosync.start()   // ADR-046: Auto sync's timer (pulls for pods with it on) and the volume reconciler run while the app is open
   core.pods.startWatches()   // ADR-042 section 19: a pod waiting for a free card is tried again while the app is open
   // Events written by another process (the MCP server of another session, the CLI) arrive through the file.
   try { const hf = core.paths.historyFile(); require('node:fs').mkdirSync(path.dirname(hf), { recursive: true }); require('node:fs').watch(path.dirname(hf), (_ev, name) => { if (name === path.basename(hf)) push() }) } catch { /* in-process changes still push */ }
@@ -115,7 +116,23 @@ const TABLE = {
     dropInterrupted: (c, name) => c.podpull.dropInterrupted(name),
     reattach: (c, name) => c.podpull.reattach(name),   // follow a fetch the app lost (or could not reach) on its pod again (ADR-042 section 17)
     cancel: (c, id) => c.podpull.cancel(id),
+    changes: (c, o) => c.journal.list({ volume_id: (o && o.volume_id) || c.mounts.load().shared_volume_id || c.mounts.load().network_volume_id, since: o && o.since, prefix: o && o.prefix, limit: o && o.limit }),   // ADR-046: the volume's change feed (read-only, no pod)
     erasable: (c) => Object.entries(c.podpull.ERASABLE).map(([key, e]) => ({ key, label: e.label, path: e.path })),
+  },
+  autosync: {   // docs/ADR-046: pull a volume's changes (and push this PC's) by themselves; all answers are plain JSON
+    get: (c, podId) => c.autosync.get(podId),
+    set: (c, podId, settings) => c.autosync.set(podId, settings || {}),   // enabled: true needs approved_by (a named yes)
+    status: (c) => c.autosync.status(),
+    pause: (c, on) => c.autosync.pause(!!on),
+    syncNow: (c, podId) => c.autosync.syncNow(podId),
+    approve: (c, podId, yes) => c.autosync.approve(podId, yes === true),
+    dismiss: (c, podId) => c.autosync.dismiss(podId),
+  },
+  syncs: {   // docs/ADR-046 "Sync explorer and logs": every sync run (manual and automatic), its log, and what the watchers do; all from memory except a finished run's log
+    active: (c) => c.syncruns.registry.active(),
+    recent: (c, podId, limit) => c.syncruns.registry.recent(podId || undefined, limit ? Number(limit) : 20),
+    log: (c, runId, o) => c.syncruns.registry.log(String(runId || ''), o || {}),
+    watch: (c) => c.autosync.watch(),
   },
   governance: {
     summary: (c) => c.governance.summary(),
