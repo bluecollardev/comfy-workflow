@@ -21,7 +21,7 @@
 
     <!-- One list, by card: the biggest card first and where it is offered. Exactly one card at one datacenter is chosen. -->
     <div class="table-wrap" data-testid="dc-by-card">
-      <div v-for="c in shownRows" :key="c.name" class="card-row" :class="{ chosen: cardKey === c.key && c.dcs.some((d) => d.value === modelValue) }" data-testid="dc-card-row" :data-card="c.name">
+      <div v-for="c in shownRows" :key="c.name" class="card-row" :class="{ chosen: (multi ? selectedCards.includes(c.key) : cardKey === c.key) && c.dcs.some((d) => d.value === modelValue) }" data-testid="dc-card-row" :data-card="c.name">
         <div class="d-flex align-items-baseline gap-2 flex-wrap">
           <strong>{{ c.name }}</strong>
           <span class="text-body-secondary small">{{ c.vram ? `${c.vram} GB` : '' }}</span>
@@ -31,7 +31,7 @@
         </div>
         <div class="d-flex flex-wrap gap-1 mt-1">
           <button v-for="d in c.dcs" :key="d.value" type="button" class="btn btn-sm dc-chip" :class="isChosen(d.value, c.key) ? 'btn-primary' : 'btn-outline-light'" :aria-pressed="isChosen(d.value, c.key)" :disabled="!c.runs" :title="c.runs ? '' : $t('dc.notPickable')" data-testid="dc-chip" :data-dc="d.value" :data-card="c.name" @click="pick(d.value, c)">
-            <span class="font-monospace">{{ d.value }}</span><span v-if="d.s3" class="ms-1 small">S3</span><span class="ms-1 small">{{ d.price != null ? `$${d.price}/h` : '' }} {{ d.stock }}</span>
+            <span class="font-monospace">{{ d.value }}</span><span v-if="d.s3" class="ms-1 small">S3</span><span class="ms-1 small">{{ d.price != null ? `$${d.price}/h` : '' }} {{ d.stock }}</span><span v-if="rankOf(d.value, c.key)" class="badge text-bg-warning ms-1" data-testid="dc-chip-rank" :title="$t('importRound.rankTitle')">{{ rankOf(d.value, c.key) }}</span>
           </button>
         </div>
       </div>
@@ -47,15 +47,17 @@
  * datacenter that offers it, free ones first; one card at one datacenter is chosen. A Blackwell card is marked "CUDA 13 image" (it boots our -cu13 tag, ADR-030); a card outside our table, or an AMD one, is marked as such. A click chooses the datacenter (v-model); `anyLabel` adds an "Any" row.
  */
 import { computed, ref } from 'vue'
-const props = defineProps({ list: { type: Array, default: () => [] }, modelValue: { type: String, default: '' }, anyLabel: { type: String, default: '' }, testid: { type: String, default: 'dc-table' }, selectedCard: { type: String, default: '' }, cardLabel: { type: String, default: '' }, gpuTestid: { type: String, default: 'dc-table-gpu' } })
+const props = defineProps({ list: { type: Array, default: () => [] }, modelValue: { type: String, default: '' }, anyLabel: { type: String, default: '' }, testid: { type: String, default: 'dc-table' }, selectedCard: { type: String, default: '' }, cardLabel: { type: String, default: '' }, gpuTestid: { type: String, default: 'dc-table-gpu' }, multi: { type: Boolean, default: false }, selectedCards: { type: Array, default: () => [] } })
 const emit = defineEmits(['update:modelValue', 'pick', 'auto'])
 /** A click chooses the datacenter and, on a card's chip or row, that card too: `pick` carries both ({ dc, card }), the v-model only the datacenter. */
 const picked = ref({ dc: '', key: '' })   // the card last clicked here, for a form with no card of its own (the Configuration's datacenter)
 const pick = (dc, card = null) => { picked.value = { dc, key: card?.key || '' }; emit('update:modelValue', dc); emit('pick', { dc, card: card && card.runs !== false ? { key: card.key, name: card.name, vram: card.vram } : null }) }
 const pickAny = () => { picked.value = { dc: '', key: '' }; emit('update:modelValue', ''); emit('pick', { dc: '', card: null, any: true }) }
 /** The chosen card: the form's, else the one clicked here at this datacenter. Exactly one card at one datacenter is marked, never all of a datacenter's. */
-const cardKey = computed(() => props.selectedCard || (picked.value.dc === props.modelValue ? picked.value.key : ''))
-const isChosen = (dc, key) => !!cardKey.value && dc === props.modelValue && key === cardKey.value
+/** `multi` (Import Round's Choose Card): several cards of one datacenter, ranked in the order they were clicked; the parent owns the list and each click is a `pick` it toggles. */
+const rankOf = (dc, key) => (props.multi && dc === props.modelValue ? props.selectedCards.indexOf(key) + 1 : 0)
+const cardKey = computed(() => props.multi ? '' : props.selectedCard || (picked.value.dc === props.modelValue ? picked.value.key : ''))
+const isChosen = (dc, key) => props.multi ? rankOf(dc, key) > 0 : !!cardKey.value && dc === props.modelValue && key === cardKey.value
 const free = (c) => c.available !== false   // a list from an older core has no flag: every card in it was in stock
 const freeIn = (d) => (d.cards || []).filter(free).length
 const chosen = computed(() => props.list.find((d) => d.value === props.modelValue) || null)

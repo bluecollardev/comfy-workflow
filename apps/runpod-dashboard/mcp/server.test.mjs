@@ -398,6 +398,26 @@ test('Panama: the status, the rounds and a round\'s files answer through the sam
   assert.equal(gone.result.isError, true)
 })
 
+test('import tools take a shot\'s cards as a string or an ordered list (docs/ADR-038): the schema says so and every key is validated', async () => {
+  const tools = (await rpc('tools/list')).result.tools
+  for (const name of ['plan_round_import', 'import_round']) {
+    const t = tools.find((x) => x.name === name), c = t.inputSchema.properties.cards
+    assert.deepEqual(c.additionalProperties.anyOf.map((x) => x.type), ['string', 'array'], name); assert.match(c.description, /first with a card free/); assert.match(c.description, /most expensive/)
+    assert.match(t.inputSchema.properties.max_pods.description, /Number of pods/)
+  }
+  const many = tools.find((x) => x.name === 'import_rounds').inputSchema.properties.rounds.items.properties.cards
+  assert.deepEqual(many.additionalProperties.anyOf.map((x) => x.type), ['string', 'array'])
+  const base = { round: 'proxy_v005', source: 'volume', volume_id: 'vol1' }
+  const list = await call('plan_round_import', { ...base, cards: { 'archival-080': ['rtx4090', 'nope'] } })
+  assert.equal(list.result.isError, true); assert.match(textOf(list), /Unknown card "nope" for archival-080/)
+  const str = await call('plan_round_import', { ...base, cards: { 'archival-080': 'nope' } })
+  assert.equal(str.result.isError, true); assert.match(textOf(str), /Unknown card "nope"/)
+  const empty = await call('plan_round_import', { ...base, cards: { 'archival-080': [] } })
+  assert.equal(empty.result.isError, true); assert.match(textOf(empty), /empty list/)
+  const ok = await call('plan_round_import', { ...base, cards: { 'archival-080': ['rtx4090', 'a40'] } })   // valid keys pass validation (the no-spend volume holds no shot: a different, later error)
+  assert.doesNotMatch(textOf(ok), /Unknown card|empty list/)
+})
+
 test('volume rounds (ADR-044): list_rounds offers the volume source, round_info reads a prefix listing, and the import tools refuse Replace with no pod started', async () => {
   const src = JSON.parse(first(await call('list_rounds', { sources: true })))
   assert.deepEqual(src.map((s) => s.id), ['panama-s3', 'volume']); assert.equal(src[1].needs, 'volume')

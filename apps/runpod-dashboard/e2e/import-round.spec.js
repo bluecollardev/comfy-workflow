@@ -53,18 +53,22 @@ test('Import Round: three steps - rounds, shots, cards - then Import with the ap
   await dlg.getByTestId('import-round-choose-card-btn').click()
   const table = page.getByTestId('choose-card-modal')
   await table.locator('[data-testid="dc-card-row"][data-card="RTX 4090"] [data-testid="dc-chip"][data-dc="EU-RO-1"]').click()
-  await expect(table).toBeHidden()   // choosing a card closes the window
+  await expect(table).toBeVisible()   // several cards can be ticked: the window stays open until Done
+  await table.getByRole('button', { name: 'Use these cards' }).click()
+  await expect(table).toBeHidden()
   await expect(dlg.getByTestId('import-round-chosen-card')).toContainText('RTX 4090')
   await expect(dlg.getByTestId('import-round-volume')).toHaveValue('vol1')   // the volume in EU-RO-1
   await expect(dlg.getByTestId('import-round-dc-volumes')).toContainText('Network volumes in EU-RO-1')   // and the volumes there are listed
   await expect(dlg.getByTestId('import-round-dc-volume').first()).toHaveAttribute('aria-pressed', 'true')
   await dlg.getByTestId('import-round-choose-card-btn').click()
   await page.getByTestId('choose-card-modal').locator('[data-testid="dc-card-row"][data-card="RTX 6000 Ada"] [data-testid="dc-chip"][data-dc="US-KS-2"]').click()
+  await page.getByTestId('choose-card-modal').getByRole('button', { name: 'Use these cards' }).click()
   await expect(dlg.getByTestId('import-round-dc-novolume')).toBeVisible()   // no volume in US-KS-2: it says so, and offers to make one
   await dlg.getByTestId('import-round-volume').selectOption('vol1')   // choosing a volume goes back to its datacenter
   await expect(dlg.getByTestId('import-round-chosen-card')).toHaveCount(0)   // the card was at US-KS-2: a volume elsewhere clears it
   await dlg.getByTestId('import-round-choose-card-btn').click()
   await page.getByTestId('choose-card-modal').locator('[data-testid="dc-card-row"][data-card="RTX 4090"] [data-testid="dc-chip"][data-dc="EU-RO-1"]').click()
+  await page.getByTestId('choose-card-modal').getByRole('button', { name: 'Use these cards' }).click()
   await expect(dlg.getByTestId('import-round-chosen-card')).toContainText('EU-RO-1')
   await dlg.getByTestId('import-round-volume').selectOption('')
   await expect(dlg.getByTestId('import-round-volume-problem')).toBeVisible()   // no default volume: one has to be picked
@@ -238,6 +242,7 @@ test('Import Round: no volume in the card\'s datacenter - tick Create a new volu
   await dlg.getByTestId('import-round-approved-by').fill('Lucas')
   await dlg.getByTestId('import-round-choose-card-btn').click()
   await page.getByTestId('choose-card-modal').locator('[data-testid="dc-card-row"][data-card="RTX 6000 Ada"] [data-testid="dc-chip"][data-dc="US-KS-2"]').click()
+  await page.getByTestId('choose-card-modal').getByRole('button', { name: 'Use these cards' }).click()
   await expect(dlg.getByTestId('import-round-dc-novolume')).toBeVisible()
   await expect(dlg.getByTestId('import-round-start')).toBeDisabled()   // no volume yet
   await dlg.getByTestId('import-round-create-volume').check()

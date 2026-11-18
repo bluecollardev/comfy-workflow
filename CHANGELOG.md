@@ -5,6 +5,7 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased (2026-11-18, on `feature/retry-later-multi-gpu`)
 
+- **Import Round: Choose Card takes several cards, and Number of Pods:** step 3's Choose Card ticks several cards of one datacenter, ranked in click order (another datacenter replaces the selection); every shot gets the ordered list, and each new pod asks them from the first (one pod per attempt; only a no-card goes on to the next), so pods are mixed only when availability forces it. The estimate uses the dearest card. `cards` takes a key or a list in the core and the MCP import tools. "Pods at once" is now "Number of Pods" with a note: it is the number of shots/pods running at the same time (ADR-038, amendment 2026-11-18).
 - **Retry Later > Another GPU takes several cards:** the card list in the popup is checkboxes, ranked in the order you click them; the wait asks them in that order and the first one with a card free is used. ONE pod is made, named `<old name>-alt`, and every ask carries that name, so a lost answer is found by name and never followed by a second pod on another card. `create_pod { like_pod_id, gpus: [...] }` over MCP. Needs an app restart (core and MCP). Core tests for the watch ran (41 passed); the browser and MCP suites were not run.
 
 ## v1.3.3 (tag v1.3.3, 2026-11-17)

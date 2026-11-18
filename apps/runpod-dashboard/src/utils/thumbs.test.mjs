@@ -15,7 +15,7 @@ test('thumbKey: volume, folder and first file; never the address that served it,
 
 test('runs one at a time', async () => {
   let live = 0, peak = 0
-  const t = createThumbs({ cache: memCache(), produce: async () => { live++; peak = Math.max(peak, live); await new Promise((r) => setTimeout(r, 5)); live--; return { url: 'data:x' } } })
+  const t = createThumbs({ autoCap: Infinity, cache: memCache(), produce: async () => { live++; peak = Math.max(peak, live); await new Promise((r) => setTimeout(r, 5)); live--; return { url: 'data:x' } } })
   const rs = await Promise.all(['a', 'b', 'c'].map((k) => t.request(k, { k })))
   assert.deepEqual(rs.map((r) => r.status), ['ready', 'ready', 'ready']); assert.equal(peak, 1)
 })
@@ -52,7 +52,7 @@ test('a cache hit means no fetch and does not use a cap slot', async () => {
 
 test('a decoded blank frame keeps its verdict (no fetch next time); a missing file and an error are not cached', async () => {
   const cache = memCache(); let fetched = 0
-  const t = createThumbs({ cache, produce: async (j) => { fetched++; if (j.blank) return { empty: true, reason: 'black', verdict: true }; if (j.gone) return { empty: true, reason: 'missing' }; throw new Error('boom') } })
+  const t = createThumbs({ autoCap: Infinity, cache, produce: async (j) => { fetched++; if (j.blank) return { empty: true, reason: 'black', verdict: true }; if (j.gone) return { empty: true, reason: 'missing' }; throw new Error('boom') } })
   assert.deepEqual(await t.request('e', { blank: true }), { status: 'empty', reason: 'black' })
   assert.deepEqual(await t.request('e', { blank: true }), { status: 'empty', reason: 'black', cached: true }); assert.equal(fetched, 1)
   assert.equal((await t.request('g', { gone: true })).status, 'empty')
@@ -63,7 +63,7 @@ test('a decoded blank frame keeps its verdict (no fetch next time); a missing fi
 test('create then reopen (a new controller on the same store) is zero fetches', async () => {
   const backend = memoryBackend()
   let fetched = 0
-  const mk = () => createThumbs({ cache: createStore(backend), produce: async () => { fetched++; return { url: 'data:img' } } })
+  const mk = () => createThumbs({ autoCap: Infinity, cache: createStore(backend), produce: async () => { fetched++; return { url: 'data:img' } } })
   assert.equal((await mk().request('v|s|f.dpx', { url: 'a' })).status, 'ready'); assert.equal(fetched, 1)
   const again = await mk().request('v|s|f.dpx', { url: 'a' })   // after a restart: a new controller, the persisted store
   assert.deepEqual(again, { status: 'ready', url: 'data:img', cached: true }); assert.equal(fetched, 1)
@@ -71,7 +71,7 @@ test('create then reopen (a new controller on the same store) is zero fetches', 
 
 test('the same key reached through two different bases is one fetch', async () => {
   const urls = []
-  const t = createThumbs({ cache: createStore(memoryBackend()), produce: async (j) => { urls.push(j.url); return { url: 'data:img' } } })
+  const t = createThumbs({ autoCap: Infinity, cache: createStore(memoryBackend()), produce: async (j) => { urls.push(j.url); return { url: 'data:img' } } })
   const key = thumbKey('vol1', { subfolder: 'p/s', filename: 'a.0000.dpx' })
   await t.request(key, { url: 'podfile://pod-a.proxy.runpod.net/view?x' }, { manual: true })
   const r = await t.request(key, { url: `s3file://vol1/${encodeURIComponent('comfy-shared/output/p/s/a.0000.dpx')}`, bytes: 49768064 }, { manual: true })
@@ -80,7 +80,7 @@ test('the same key reached through two different bases is one fetch', async () =
 
 test('a file whose size is now known and differs from the record is fetched again', async () => {
   let fetched = 0
-  const t = createThumbs({ cache: createStore(memoryBackend()), produce: async () => { fetched++; return { url: 'data:img' } } })
+  const t = createThumbs({ autoCap: Infinity, cache: createStore(memoryBackend()), produce: async () => { fetched++; return { url: 'data:img' } } })
   await t.request('k', { bytes: 10 }, { manual: true }); await t.request('k', { bytes: 10 }, { manual: true }); assert.equal(fetched, 1)
   await t.request('k', { bytes: 11 }, { manual: true }); assert.equal(fetched, 2)
 })
@@ -97,7 +97,7 @@ test('the store keeps at most its cap and evicts the oldest; count and clear', a
 
 test('abort stops a queued and a running preview', async () => {
   const g = gate(); let seen = null
-  const t = createThumbs({ cache: memCache(), produce: (j, signal) => { seen = signal; return g.p.then(() => ({ url: 'data:x' })) } })
+  const t = createThumbs({ autoCap: Infinity, cache: memCache(), produce: (j, signal) => { seen = signal; return g.p.then(() => ({ url: 'data:x' })) } })
   const a = t.request('a', {}), b = t.request('b', {})
   await new Promise((r) => setTimeout(r, 2))
   t.abort('b'); assert.equal((await b).status, 'aborted')
@@ -107,7 +107,7 @@ test('abort stops a queued and a running preview', async () => {
 })
 
 test('a storage that throws does not stop the tile', async () => {
-  const t = createThumbs({ cache: { get: async () => { throw new Error('no idb') }, set: async () => { throw new Error('no idb') } }, produce: async () => ({ url: 'data:x' }) })
+  const t = createThumbs({ autoCap: Infinity, cache: { get: async () => { throw new Error('no idb') }, set: async () => { throw new Error('no idb') } }, produce: async () => ({ url: 'data:x' }) })
   assert.deepEqual(await t.request('a', {}), { status: 'ready', url: 'data:x' })
 })
 

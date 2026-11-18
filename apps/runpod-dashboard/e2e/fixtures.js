@@ -362,7 +362,11 @@ export async function mockApi(page, state) {
       const cap = body.cost_cap_usd ?? 50
       return json({ round: body.round, source: 'volume', volume_id: body.volume_id, shots, graphs, graphs_by_shot: Object.fromEntries(shots.map((s) => [s, 2])), seconds_per_graph: 600, samples: 0, price_per_hour: 0.36, pull_hours: 0, est_total_usd: est, max_pods: 2, cost_cap_usd: cap, cap_enabled: true, over_cap: est > cap, locked: lockedAll, refused, remaining_usd: 94.5, assumption: `${graphs} graph(s) x 600 s (no run in the History: the default 600 s) x the pod's hourly price ($0.36/h).` })
     }
-    if (method === 'POST' && path === '/queue/plan') return json({ round: body.round, shots: ['cgi-042', 'cgi-043'], price_per_hour: 3.99, pull_hours: 0.5, est_total_usd: 6.98, max_pods: 2, cost_cap_usd: 50, cap_enabled: true, over_cap: false })
+    if (method === 'POST' && path === '/queue/plan') {   // a shot's card is a key or an ordered list; the core validates each and prices the dearest (the plan says so)
+      (state.planCalls ||= []).push(body)
+      const several = Object.values(body.cards || {}).some((v) => Array.isArray(v) && v.length > 1)
+      return json({ round: body.round, shots: ['cgi-042', 'cgi-043'], price_per_hour: 3.99, pull_hours: 0.5, est_total_usd: 6.98, max_pods: 2, cost_cap_usd: 50, cap_enabled: true, over_cap: false, ...(several ? { assumption: 'Where a shot has several cards, the most expensive one is priced.' } : {}) })
+    }
     if (method === 'POST' && path === '/queue/import-many' && body.source === 'volume') {   // guards (b) and (c) again, as the core answers them
       (state.volumeImportCalls ||= []).push(body)
       if (body.items.some((i) => (i.shots || []).includes('cgi-042'))) return json({ detail: 'Refused: cgi-042 is locked (client-approved, or under 04_GRAPH): listed for reference, never run (Binc\'s rules).' }, 403)
