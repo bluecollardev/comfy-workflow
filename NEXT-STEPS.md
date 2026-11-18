@@ -16,6 +16,11 @@
 4. **One codebase, no second runtime**: the Python API retired, the core in
    TypeScript, the merge gate green (`docs/ADR-005`).
 
+## Open from 2026-11-18 (v1.4.3)
+
+0. **Write the tests for the Previews modal** (released untested, Lucas's call for that patch only): update `e2e/outputs-dpx.spec.js` (open `pod-outputs-previews` first; the Generate button is now `pod-outputs-load-previews` inside `pod-outputs-previews-modal`) and add: a batch reaches tiles never scrolled into view, a cached sequence costs no download, the failed count, Stop (scrolling afterwards starts nothing), the batch ending by itself, counts (`pod-outputs-previews-counts`). Run the full gate, then remove this item.
+1. **"Build sequences" option of the Previews modal:** Lucas asked for it beside Load all previews; what it should do was not said (asked, unanswered). Decide and build.
+
 ## Open from 2026-11-17 (v1.3.1 follow-up)
 
 0. **A test that the page and the core agree:** every `core.invoke('<ns>', '<method>')` in `src/api/` must be a key of the core's call table in `electron/core.cjs`. v1.3.1 fixed three missing `library` calls that the browser tests (fake API) and the IPC parity test (it checks the table against the MCP map, not the page against the table) could not see. A static test over both files would have caught it. Not yet written; v1.3.1 was released without running the tests, at Lucas's request.

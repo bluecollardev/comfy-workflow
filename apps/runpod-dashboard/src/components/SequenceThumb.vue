@@ -32,6 +32,8 @@ let visible = false, io = null, myKey = '', wanted = false   // wanted: the pers
 const setState = (s) => {
   if (state.value === 'capped' && s !== 'capped') previewBus.capped--
   if (s === 'capped' && state.value !== 'capped') previewBus.capped++
+  if (previewBus.counts[state.value] > 0) previewBus.counts[state.value]--
+  previewBus.counts[s]++
   state.value = s; emit('state', s)
 }
 async function load(manual = false) {
@@ -53,13 +55,18 @@ function seen(v) {
   else if (state.value === 'loading' && !wanted && !previewBus.loadAll) { sharedThumbs().abort(key.value); setState('idle') }   // only an automatic one is dropped when it scrolls away
 }
 onMounted(() => {
+  previewBus.counts[state.value]++   // this tile counts toward "Generate all previews"
   if (typeof IntersectionObserver === 'undefined') { seen(true); return }
   io = new IntersectionObserver((es) => { for (const e of es) seen(e.isIntersecting) }, { rootMargin: '200px' })
   io.observe(root.value.parentElement || root.value)
 })
-onBeforeUnmount(() => { io?.disconnect(); if (state.value === 'loading') sharedThumbs().abort(key.value); if (state.value === 'capped') previewBus.capped-- })
+onBeforeUnmount(() => { io?.disconnect(); if (state.value === 'loading') sharedThumbs().abort(key.value); if (state.value === 'capped') previewBus.capped--; if (previewBus.counts[state.value] > 0) previewBus.counts[state.value]-- })
 watch(usable, (u) => { if (u && visible && ['idle', 'nobase'].includes(state.value)) load(false) })
-watch(() => previewBus.tick, () => { if (state.value === 'capped') load(true) })
+watch(() => previewBus.tick, () => {
+  if (state.value === 'capped') load(true)
+  else if (previewBus.batch && usable.value && ['idle', 'error'].includes(state.value)) load(true)   // Generate all: tiles not scrolled to yet and failed ones too (a cached one is a hit with no download)
+})
+watch(() => previewBus.stopTick, () => { wanted = false })   // Stop: nothing asked for any more
 </script>
 
 <style scoped>
