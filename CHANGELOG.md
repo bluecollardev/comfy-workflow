@@ -3,6 +3,10 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## Unreleased (2026-11-18, on `feature/choose-card-default-filter`)
+
+- **Choose Card lists only the datacenters that matter, with a dropdown:** the Choose Card window listed every datacenter (32 cards, 24 datacenters). It now has a *Datacenters shown* dropdown next to the text filter, and starts on **the datacenters where you have a network volume** (a pod can only run there); a volume round starts on its own volume's datacenter. *All datacenters* and each single datacenter are one choice away (a datacenter with no volume of yours, for the Create a new volume flow, is under All), the text filter works inside the choice, and the datacenter you have chosen never vanishes from the list. If none of your volumes' datacenters is in the list it shows all and says so.
+
 ## v1.3.4 (tag v1.3.4, 2026-11-18)
 
 - **Import Round: Choose Card takes several cards, and Number of Pods:** step 3's Choose Card ticks several cards of one datacenter, ranked in click order (another datacenter replaces the selection); every shot gets the ordered list, and each new pod asks them from the first (one pod per attempt; only a no-card goes on to the next), so pods are mixed only when availability forces it. The estimate uses the dearest card. `cards` takes a key or a list in the core and the MCP import tools. "Pods at once" is now "Number of Pods" with a note: it is the number of shots/pods running at the same time (ADR-038, amendment 2026-11-18).

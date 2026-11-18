@@ -61,6 +61,7 @@ test('Import Round: three steps - rounds, shots, cards - then Import with the ap
   await expect(dlg.getByTestId('import-round-dc-volumes')).toContainText('Network volumes in EU-RO-1')   // and the volumes there are listed
   await expect(dlg.getByTestId('import-round-dc-volume').first()).toHaveAttribute('aria-pressed', 'true')
   await dlg.getByTestId('import-round-choose-card-btn').click()
+  await page.getByTestId('choose-card-modal').getByTestId('dc-dc-filter').selectOption('')   // a datacenter with no volume of ours starts hidden: All datacenters
   await page.getByTestId('choose-card-modal').locator('[data-testid="dc-card-row"][data-card="RTX 6000 Ada"] [data-testid="dc-chip"][data-dc="US-KS-2"]').click()
   await page.getByTestId('choose-card-modal').getByRole('button', { name: 'Use these cards' }).click()
   await expect(dlg.getByTestId('import-round-dc-novolume')).toBeVisible()   // no volume in US-KS-2: it says so, and offers to make one
@@ -241,6 +242,7 @@ test('Import Round: no volume in the card\'s datacenter - tick Create a new volu
   await dlg.getByTestId('import-round-next').click()
   await dlg.getByTestId('import-round-approved-by').fill('Lucas')
   await dlg.getByTestId('import-round-choose-card-btn').click()
+  await page.getByTestId('choose-card-modal').getByTestId('dc-dc-filter').selectOption('')   // a datacenter with no volume of ours starts hidden: All datacenters
   await page.getByTestId('choose-card-modal').locator('[data-testid="dc-card-row"][data-card="RTX 6000 Ada"] [data-testid="dc-chip"][data-dc="US-KS-2"]').click()
   await page.getByTestId('choose-card-modal').getByRole('button', { name: 'Use these cards' }).click()
   await expect(dlg.getByTestId('import-round-dc-novolume')).toBeVisible()

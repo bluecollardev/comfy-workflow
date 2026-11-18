@@ -12,6 +12,9 @@
     </div>
     <div class="d-flex align-items-center gap-3 mb-2 flex-wrap">
       <button v-if="anyLabel" type="button" class="btn btn-sm" :class="!modelValue ? 'btn-primary' : 'btn-outline-light'" data-testid="dc-any" @click="pickAny">{{ anyLabel }}</button>
+      <select v-if="dcDropdown" v-model="dcSel" class="form-select form-select-sm dc-dc-select" :aria-label="$t('dc.filterDcLabel')" :title="$t('dc.filterDcLabel')" data-testid="dc-dc-filter" @change="onDc">
+        <option v-for="o in dcOptions" :key="o.value" :value="o.value">{{ o.text }}</option>
+      </select>
       <div class="input-group input-group-sm dc-filter">
         <input v-model="filter" type="text" class="form-control" :placeholder="$t('dc.filter')" :aria-label="$t('dc.filter')" data-testid="dc-filter" @keydown.esc="filter = ''" />
         <button v-if="filter" type="button" class="btn btn-outline-light" :title="$t('dc.filterClear')" :aria-label="$t('dc.filterClear')" data-testid="dc-filter-clear" @click="filter = ''"><i class="fa-solid fa-xmark"></i></button>
@@ -19,6 +22,7 @@
       <span class="small text-body-secondary">{{ filter ? $t('dc.filterCount', { n: shownRows.length, of: cardRows.length }) : $t('dc.summary', { n: freeDcs, cards: cardRows.length }) }}</span>
     </div>
 
+    <div v-if="volumesNotListed" class="small text-warning mb-2" data-testid="dc-volumes-not-listed">{{ $t('dc.filterVolumesNone') }}</div>
     <!-- One list, by card: the biggest card first and where it is offered. Exactly one card at one datacenter is chosen. -->
     <div class="table-wrap" data-testid="dc-by-card">
       <div v-for="c in shownRows" :key="c.name" class="card-row" :class="{ chosen: (multi ? selectedCards.includes(c.key) : cardKey === c.key) && c.dcs.some((d) => d.value === modelValue) }" data-testid="dc-card-row" :data-card="c.name">
@@ -46,8 +50,11 @@
  * Every card is shown whether it is free or in use (Lucas: "if we have to wait we have to wait"): stock is a label, never a reason to hide or dim. The list is by card: the biggest card first and every
  * datacenter that offers it, free ones first; one card at one datacenter is chosen. A Blackwell card is marked "CUDA 13 image" (it boots our -cu13 tag, ADR-030); a card outside our table, or an AMD one, is marked as such. A click chooses the datacenter (v-model); `anyLabel` adds an "Any" row.
  */
-import { computed, ref } from 'vue'
-const props = defineProps({ list: { type: Array, default: () => [] }, modelValue: { type: String, default: '' }, anyLabel: { type: String, default: '' }, testid: { type: String, default: 'dc-table' }, selectedCard: { type: String, default: '' }, cardLabel: { type: String, default: '' }, gpuTestid: { type: String, default: 'dc-table-gpu' }, multi: { type: Boolean, default: false }, selectedCards: { type: Array, default: () => [] } })
+import { computed, ref, watch } from 'vue'
+import { t } from '../i18n'
+const props = defineProps({ list: { type: Array, default: () => [] }, modelValue: { type: String, default: '' }, anyLabel: { type: String, default: '' }, testid: { type: String, default: 'dc-table' }, selectedCard: { type: String, default: '' }, cardLabel: { type: String, default: '' }, gpuTestid: { type: String, default: 'dc-table-gpu' }, multi: { type: Boolean, default: false }, selectedCards: { type: Array, default: () => [] },
+  /** A datacenter dropdown next to the text filter (Import Round's Choose Card). It starts on `defaultDc` (a datacenter to pin, e.g. where a volume round's volume lives), else on the datacenters of the person's own network volumes (`volumeDcs`; a pod can only run where a volume lives), else on all of them. */
+  dcDropdown: { type: Boolean, default: false }, volumeDcs: { type: Array, default: () => [] }, defaultDc: { type: String, default: '' } })
 const emit = defineEmits(['update:modelValue', 'pick', 'auto'])
 /** A click chooses the datacenter and, on a card's chip or row, that card too: `pick` carries both ({ dc, card }), the v-model only the datacenter. */
 const picked = ref({ dc: '', key: '' })   // the card last clicked here, for a form with no card of its own (the Configuration's datacenter)
@@ -62,12 +69,34 @@ const free = (c) => c.available !== false   // a list from an older core has no 
 const freeIn = (d) => (d.cards || []).filter(free).length
 const chosen = computed(() => props.list.find((d) => d.value === props.modelValue) || null)
 const filter = ref('')
+const VOLUMES = '__volumes'   // the dropdown's value for 'the datacenters of my volumes'
+const dcSel = ref(props.defaultDc || (props.volumeDcs.length ? VOLUMES : ''))
+// the default can arrive after the volumes are loaded: until the person touches the dropdown it follows the props
+let dcTouched = false
+watch(() => [props.defaultDc, props.volumeDcs.join(',')], () => { if (!dcTouched) dcSel.value = props.defaultDc || (props.volumeDcs.length ? VOLUMES : '') })
+const onDc = () => { dcTouched = true }
+/** The datacenters the table works from: all of them, only those of the person's volumes, or just one; the chosen datacenter is always in (a selection never vanishes). With nothing of the volumes listed it falls back to all and says so. */
+const volumeMatches = computed(() => props.list.filter((d) => props.volumeDcs.includes(d.value)))
+const baseList = computed(() => {
+  if (!props.dcDropdown || !dcSel.value) return props.list
+  const keep = dcSel.value === VOLUMES ? (volumeMatches.value.length ? volumeMatches.value : props.list) : props.list.filter((d) => d.value === dcSel.value)
+  const chosenDc = props.list.find((d) => d.value === props.modelValue)
+  return chosenDc && !keep.includes(chosenDc) ? [...keep, chosenDc] : keep
+})
+const volumesNotListed = computed(() => props.dcDropdown && dcSel.value === VOLUMES && !volumeMatches.value.length)
+const dcOptions = computed(() => {
+  const o = []
+  if (props.volumeDcs.length) o.push({ value: VOLUMES, text: t('dc.filterVolumes', { list: props.volumeDcs.join(', ') }) })
+  o.push({ value: '', text: t('dc.filterAllDcs', { n: props.list.length }) })
+  for (const d of props.list) o.push({ value: d.value, text: `${d.value}${freeIn(d) ? ` · ${t('dc.freeCards', { n: freeIn(d) })}` : ''}` })
+  return o
+})
 /** The cards whose name, memory or datacenter contains every word typed ("5090", "96 eur", "ada"); the chosen card stays listed either way. */
 const shownRows = computed(() => { const w = filter.value.toLowerCase().split(/\s+/).filter(Boolean); return !w.length ? cardRows.value : cardRows.value.filter((c) => w.every((x) => `${c.name} ${c.vram ? c.vram + ' gb' : ''} ${c.cuda === 13 ? 'cuda 13 blackwell' : ''} ${c.dcs.map((d) => d.value).join(' ')}`.toLowerCase().includes(x)) || c.key === cardKey.value) })
-const freeDcs = computed(() => props.list.filter((d) => freeIn(d)).length)
+const freeDcs = computed(() => baseList.value.filter((d) => freeIn(d)).length)
 const cardRows = computed(() => {
   const m = new Map()
-  for (const d of props.list) for (const c of d.cards || []) {
+  for (const d of baseList.value) for (const c of d.cards || []) {
     const k = c.name
     if (!m.has(k)) m.set(k, { key: c.key, name: c.name, vram: c.vram || 0, runs: c.runs !== false, cuda: c.cuda, why: c.why, free: 0, dcs: [] })
     const e = m.get(k); if (free(c)) e.free++
@@ -82,5 +111,6 @@ const cardRows = computed(() => {
 .card-row { padding: 6px 4px; border-top: 1px solid rgba(255, 255, 255, 0.1); }
 .dc-chip { line-height: 1.2; }
 .dc-filter { max-width: 18rem; }
+.dc-dc-select { max-width: 22rem; }
 .card-row.chosen { background: rgba(80, 140, 255, 0.22); box-shadow: inset 3px 0 0 #508cff; }
 </style>

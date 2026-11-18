@@ -159,7 +159,7 @@
         </div>
       </div>
     </template>
-    <ChooseCardModal :show="cardModal" :list="dcList" :loading="dcLoading" :datacenter="dcChoice" :cards="allCards" :card-label="allCardLabel" @close="cardModal = false" @refresh="loadDcs(true)" @update:datacenter="dcChoice = $event" @pick="onPickCard" @auto="clearAllCards" />
+    <ChooseCardModal :show="cardModal" :list="dcList" :loading="dcLoading" :datacenter="dcChoice" :cards="allCards" :card-label="allCardLabel" :volume-dcs="volumeDcs" :default-dc="isVolume ? (sourceVolume?.datacenter || '') : ''" @close="cardModal = false" @refresh="loadDcs(true)" @update:datacenter="dcChoice = $event" @pick="onPickCard" @auto="clearAllCards" />
     <RoundFilesModal :round="browsing" :shot="browsingShot" target="local" @close="browsing = ''; browsingShot = ''" />
   </BModal>
 </template>
@@ -288,6 +288,8 @@ const source = ref('panama-s3'), sources = ref([])
 const isVolume = computed(() => sourceInfo.value?.needs === 'volume')
 const sourceVolumeId = ref(''), srcVolumes = ref([]), sourceStatus = ref({ available: true, reason: '' }), loadingRounds = ref(false)
 const sourceVolume = computed(() => srcVolumes.value.find((v) => v.id === sourceVolumeId.value) || null)
+/** The datacenters where the person has a network volume: a pod can only run where one lives, so Choose Card starts on these. */
+const volumeDcs = computed(() => [...new Set((volumes.value.length ? volumes.value : srcVolumes.value).map((v) => v.datacenter).filter(Boolean))].sort())
 const sourceVolumeName = computed(() => (sourceVolume.value ? `${sourceVolume.value.name} · ${sourceVolume.value.size_gb} GB · ${sourceVolume.value.datacenter}` : sourceVolumeId.value))
 const sourceVolumeOptions = computed(() => [{ value: '', text: t('importRound.volumePick') }, ...srcVolumes.value.map((v) => ({ value: v.id, text: `${v.name} · ${v.size_gb} GB · ${v.datacenter}${v.is_shared ? ' · Shared' : v.is_default ? ` · ${t('importRound.volumeDefault')}` : ''}${v.s3 ? '' : ' · no S3'}` }))])
 const volumeOpts = () => (isVolume.value ? { source: 'volume', volume_id: sourceVolumeId.value } : {})
