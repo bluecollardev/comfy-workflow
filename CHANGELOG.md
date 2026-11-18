@@ -3,7 +3,7 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
-## Unreleased (2026-11-18, on `feature/choose-card-default-filter`)
+## v1.3.5 (tag v1.3.5, 2026-11-18)
 
 - **Choose Card lists only the datacenters that matter, with a dropdown:** the Choose Card window listed every datacenter (32 cards, 24 datacenters). It now has a *Datacenters shown* dropdown next to the text filter, and starts on **the datacenters where you have a network volume** (a pod can only run there); a volume round starts on its own volume's datacenter. *All datacenters* and each single datacenter are one choice away (a datacenter with no volume of yours, for the Create a new volume flow, is under All), the text filter works inside the choice, and the datacenter you have chosen never vanishes from the list. If none of your volumes' datacenters is in the list it shows all and says so.
 
