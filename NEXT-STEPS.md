@@ -16,6 +16,10 @@
 4. **One codebase, no second runtime**: the Python API retired, the core in
    TypeScript, the merge gate green (`docs/ADR-005`).
 
+## Open from 2026-11-18 (v1.5.2, released untested)
+
+0. **Run the tests the v1.5.2 beach-ball fix shipped without** and fix what they find: `libs/core/tests/symlinks.test.ts` ("listDirs is async, bounded and capped": its first run had 3 test mistakes patched by hand and never re-run), `electron/core.test.mjs` ("mounts.dirs is async and takes a filter"), `mcp/server.test.mjs` ("list_dirs takes a filter and returns total"), `e2e/folder-picker-big.spec.js` (4 tests; fake API `fsTruncated`, `fsTimeout`, `fsDelay` untried). Then the full gate. Also decide the 400 ms budget of `declared()` (it can truncate tree hints on a slow volume) and convert the remaining sync calls on the folder-selection path (`mounts.ts` config read/write, `existsSync`).
+
 ## Open from 2026-11-18 (Render sequences, ADR-048)
 
 0. The Render sequences UI (Previews window option, tile badges, the viewer's Proxy | Review player, the configuration section) is built and tested with fakes (`e2e/render-sequences.spec.js`, `e2e/render-config.spec.js`); not yet tried in the real app against the real core: restart first, then render one sequence on the pod and one on this PC and play both. Check that a `<video>` plays a `localfile://` `local_url` in Electron (the protocol is registered in `electron/main.cjs`).
