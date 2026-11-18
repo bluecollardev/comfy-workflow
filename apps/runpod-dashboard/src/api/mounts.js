@@ -11,7 +11,7 @@ const ipc = core && {
   reset: () => core.invoke('mounts', 'reset'),
   // The derived rows for a configuration that is not saved: a pod's own configuration being edited
   preview: (config) => core.invoke('mounts', 'preview', [config]),
-  dirs: (path = '', hidden = false) => core.invoke('mounts', 'dirs', [path, hidden]),
+  dirs: (path = '', hidden = false, filter = '') => core.invoke('mounts', 'dirs', [path, hidden, filter]),
   volumes: () => core.invoke('mounts', 'volumes', []),
 }
 
@@ -33,8 +33,8 @@ const http = {
     return data
   },
   // Folder picker: subfolders of a folder on this PC; empty path = home.
-  async dirs(path = '', hidden = false) {
-    const { data } = await axios.get(`${API_BASE}/fs/dirs`, { params: { path, hidden } })
+  async dirs(path = '', hidden = false, filter = '') {
+    const { data } = await axios.get(`${API_BASE}/fs/dirs`, { params: { path, hidden, ...(filter ? { filter } : {}) } })
     return data
   },
   // The mounted volumes (v1.5.1): name, path, link, target, size_bytes, free_bytes, readable, reason

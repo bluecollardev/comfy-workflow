@@ -352,11 +352,16 @@ export async function mockApi(page, state) {
       const p = query.path || '/Users/lucas'
       // v1.5.1: state.fsPermission = [paths the app may not read] (403 no_permission with state.fsHint), state.fsLinks = { path: { name: target } } (entries that are links), state.fsReal = { path: real } (a logical path that is a link)
       if ((state.fsPermission || []).includes(p)) return json({ detail: `Cannot read ${p}: operation not permitted`, code: 'no_permission', ...(state.fsHint === null ? {} : { hint: state.fsHint || 'macOS blocked access: allow RunPod Manager under System Settings > Privacy & Security > Files and Folders.' }) }, 403)
-      const names = state.fs[p]
+      // big and slow volumes (v1.5.1): state.fsTimeout = [paths that answer 504 timeout], state.fsDelay = { path: ms }, state.fsTruncated = { path: total } (the listing is capped: `truncated` says how many were left out), `filter` is a case-insensitive substring
+      if (state.fsDelay?.[p]) await new Promise((r) => setTimeout(r, state.fsDelay[p]))
+      if ((state.fsTimeout || []).includes(p)) return json({ detail: 'The folder did not answer within 15 seconds (a sleeping drive or an unavailable network mount). Try again, or pick another place.', code: 'timeout' }, 504)
+      let names = state.fs[p]
       if (!names) return json({ detail: `not a folder: ${p}` }, 404)
+      if (query.filter) names = names.filter((n) => n.toLowerCase().includes(String(query.filter).toLowerCase()))
+      const bigTotal = state.fsTruncated?.[p], capped = bigTotal && !query.filter ? { total: bigTotal, truncated: bigTotal - names.length } : bigTotal ? { total: names.length, truncated: 0 } : {}
       const parent = p === '/' ? null : p.replace(/\/[^/]+$/, '') || '/'
       const links = (state.fsLinks || {})[p] || {}
-      return json({ path: p, parent, home: '/Users/lucas', ...((state.fsReal || {})[p] ? { real: state.fsReal[p] } : {}), dirs: names.map((n) => ({ name: n, path: `${p}/${n}`, ...(links[n] ? { link: true, target: links[n] } : {}) })) })
+      return json({ path: p, parent, home: '/Users/lucas', ...((state.fsReal || {})[p] ? { real: state.fsReal[p] } : {}), ...capped, dirs: names.map((n) => ({ name: n, path: `${p}/${n}`, ...(links[n] ? { link: true, target: links[n] } : {}) })) })
     }
     if (method === 'GET' && path === '/fs/volumes') {   // v1.5.1: state.volumes = [{ name, path, link, target?, size_bytes, free_bytes, readable, reason? }]; state.volumesOld answers like a core without the call
       if (state.volumesOld) return json({ detail: 'no core call mounts.volumes' }, 500)

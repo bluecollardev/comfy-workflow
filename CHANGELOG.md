@@ -3,6 +3,11 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## v1.5.2 (tag v1.5.2, 2026-11-18)
+
+- **Fix: beach ball when choosing a folder or a mounted volume.** The folder listing (`listDirs`) used synchronous file calls inside the app's main process, so a big, sleeping or network volume (or a macOS permission prompt) froze the whole app. It is now async with a 15 second limit (a hung folder answers "The folder did not answer within 15 seconds (a sleeping drive or an unavailable network mount)" with Try again), at most 2,000 folders returned (`total` and `truncated`, a **Filter** box narrows before the cap), symlink checks 16 at a time, and a stale slow answer can no longer overwrite a newer click. Reading the project tree's own declarations when you pick a folder stops after 400 ms and returns what it found. Not converted: the mount configuration read/write and a few `existsSync` calls.
+- **Released without tests (Lucas's call for this patch only; compile checks only).** Written but not run: `libs/core/tests/symlinks.test.ts` ("listDirs is async, bounded and capped"), `electron/core.test.mjs` ("mounts.dirs is async and takes a filter"), `mcp/server.test.mjs` ("list_dirs takes a filter and returns total"), `e2e/folder-picker-big.spec.js` (4 tests). The agent reported that its first run of the new `listDirs` tests had 3 test mistakes that were patched by hand and never re-run. Debt: `NEXT-STEPS.md`.
+
 ## v1.5.1 (tag v1.5.1, 2026-11-18)
 
 - **Folder browser: mounted volumes and symlinks (ADR-011).** The folder picker has a **Volumes** section (`/Volumes` on macOS, `/media`, `/run/media`, `/mnt` elsewhere) with free space, an "unreadable" tag and reason for a mount that does not answer (each lookup is limited to 3 seconds, so a hung network mount cannot block it), the boot-volume link last. It keeps the path you navigated, so **Up** returns through a link; links show a link badge with their target, and "link to <real>" when the current folder is itself a link. A folder macOS will not let the app read shows a clear hint about where to allow it (Privacy & Security), carried over IPC by the preload (`code` and `hint`).

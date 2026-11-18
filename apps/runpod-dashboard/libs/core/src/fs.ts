@@ -1,5 +1,4 @@
-import { readdirSync, readlinkSync, realpathSync, statSync } from 'node:fs'
-import { lstat, readdir, readlink, statfs } from 'node:fs/promises'
+import { lstat, readdir, readlink, realpath, stat, statfs } from 'node:fs/promises'
 import { homedir, userInfo } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { CoreError } from './errors.js'
@@ -7,33 +6,60 @@ import { CoreError } from './errors.js'
 export const MAC_PERMISSION_HINT = 'macOS may need to allow RunPod Manager to read this folder: System Settings > Privacy & Security > Files and Folders (or Full Disk Access)'
 export interface DirEntry { name: string; path: string; /** a symbolic link to a folder (a broken link is not listed) */ link: boolean; /** where the link points, resolved */ target?: string }
 
+export const DIR_CAP = 2000, LINK_CONCURRENCY = 16
+export const TIMEOUT_MESSAGE = 'The folder did not answer within 15 seconds (a sleeping drive or an unavailable network mount). Try again, or pick another place.'
+type Ent = { name: string; isDirectory(): boolean; isSymbolicLink(): boolean }
+/** The file system calls the picker makes (all async); tests replace them to simulate a hung mount. */
+export interface FsDeps { realpath(p: string): Promise<string>; stat(p: string): Promise<{ isDirectory(): boolean }>; readdir(p: string): Promise<Ent[]>; readlink(p: string): Promise<string> }
+const realFs: FsDeps = { realpath: (p) => realpath(p), stat: (p) => stat(p), readdir: (p) => readdir(p, { withFileTypes: true }), readlink: (p) => readlink(p) }
+let fsDeps: FsDeps = realFs
+export const setFs = (d: Partial<FsDeps> | null) => { fsDeps = d ? { ...realFs, ...d } : realFs }
+const yieldLoop = () => new Promise<void>((r) => setImmediate(r))
+
 /**
- * Subfolders of a folder on this PC, for the folder picker. Empty path = the home folder.
- * The path stays LOGICAL: `path` and `parent` come from the path as given (after `~` and resolve), never from its realpath, so Up goes back to where you came from through a link;
- * `real` is the realpath when it differs. A symlink to a folder is listed with `link: true` and its `target`; a broken link is hidden. An unreadable folder is a 403 with
- * `code: 'no_permission'` and (on macOS) a `hint` about Files and Folders / Full Disk Access.
+ * Subfolders of a folder on this PC, for the folder picker. Empty path = the home folder. ASYNC (the core runs in Electron's main process: a sleeping drive, a big or network volume or a macOS
+ * permission prompt must never freeze the window) with a hard timeout (15 s, `LISTDIRS_TIMEOUT_MS`): a listing that does not answer is a 504 `timeout` and the stuck call is abandoned, not awaited.
+ * The path stays LOGICAL: `path` and `parent` are the path you came by (after `~` and resolve), so Up goes back through a link; `real` is the realpath when it differs. A link to a folder has `link: true`
+ * and its `target` (checked 16 at a time, yielding to the event loop); a broken link is hidden. `filter` (case-insensitive substring of the name) applies BEFORE the cap: at most 2,000 folders are returned,
+ * sorted, with `total` (after the filter) and `truncated` (how many were left out). An unreadable folder is a 403 `no_permission` with, on macOS, a `hint`.
  */
-export function listDirs(path = '', hidden = false) {
+export async function listDirs(path = '', hidden = false, filter = ''): Promise<{ path: string; parent: string | null; real?: string; home: string; dirs: DirEntry[]; total: number; truncated?: number }> {
+  const limit = Number(process.env.LISTDIRS_TIMEOUT_MS) || 15_000
+  const work = listDirsInner(path, hidden, filter)
+  work.catch(() => undefined)   // if the timeout wins, a later failure of the abandoned call is not an unhandled rejection
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try { return await Promise.race([work, new Promise<never>((_r, rej) => { timer = setTimeout(() => rej(new CoreError(504, TIMEOUT_MESSAGE, 'timeout')), limit) })]) } finally { if (timer) clearTimeout(timer) }
+}
+async function listDirsInner(path: string, hidden: boolean, filter: string) {
   const logical = resolve(path ? path.replace(/^~(?=$|\/)/, homedir()) : homedir())
   let real = logical
-  try { real = realpathSync(logical) } catch (e) { if ((e as NodeJS.ErrnoException).code === 'EACCES' || (e as NodeJS.ErrnoException).code === 'EPERM') throw denied(logical); throw new CoreError(400, `cannot resolve ${JSON.stringify(path)}`) }
+  try { real = await fsDeps.realpath(logical) } catch (e) { if ((e as NodeJS.ErrnoException).code === 'EACCES' || (e as NodeJS.ErrnoException).code === 'EPERM') throw denied(logical); throw new CoreError(400, `cannot resolve ${JSON.stringify(path)}`) }
   let isDir = false
-  try { isDir = statSync(logical).isDirectory() } catch { /* not there */ }
+  try { isDir = (await fsDeps.stat(logical)).isDirectory() } catch { /* not there */ }
   if (!isDir) throw new CoreError(404, `not a folder: ${logical}`)
-  let entries
-  try { entries = readdirSync(logical, { withFileTypes: true }) } catch { throw denied(logical) }
-  const dirs: DirEntry[] = []
-  for (const e of entries) {
-    if (!hidden && e.name.startsWith('.')) continue
-    const p = join(logical, e.name)
-    if (e.isDirectory()) { dirs.push({ name: e.name, path: p, link: false }); continue }
-    if (e.isSymbolicLink()) {
-      try { if (statSync(p).isDirectory()) { let target: string | undefined; try { target = resolve(logical, readlinkSync(p)) } catch { /* unreadable link */ } dirs.push({ name: e.name, path: p, link: true, ...(target ? { target } : {}) }) } } catch { /* a broken link stays hidden */ }
-    }
+  let entries: Ent[]
+  try { entries = await fsDeps.readdir(logical) } catch { throw denied(logical) }
+  const needle = filter.trim().toLowerCase()
+  const plain: DirEntry[] = [], links: Ent[] = []
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i]
+    if ((hidden || !e.name.startsWith('.')) && (!needle || e.name.toLowerCase().includes(needle))) { if (e.isDirectory()) plain.push({ name: e.name, path: join(logical, e.name), link: false }); else if (e.isSymbolicLink()) links.push(e) }
+    if (i % 500 === 499) await yieldLoop()
+  }
+  const dirs: DirEntry[] = [...plain]
+  for (let i = 0; i < links.length; i += LINK_CONCURRENCY) {   // bounded concurrency: never one stat per link in a row, never all at once
+    const part = await Promise.all(links.slice(i, i + LINK_CONCURRENCY).map(async (e): Promise<DirEntry | null> => {
+      const p = join(logical, e.name)
+      try { if (!(await fsDeps.stat(p)).isDirectory()) return null } catch { return null }   // broken, or a link to a file: hidden
+      let target: string | undefined; try { target = resolve(logical, await fsDeps.readlink(p)) } catch { /* unreadable link */ }
+      return { name: e.name, path: p, link: true, ...(target ? { target } : {}) }
+    }))
+    for (const d of part) if (d) dirs.push(d)
+    if (i % 500 === 499) await yieldLoop()
   }
   dirs.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
-  const parent = dirname(logical)
-  return { path: logical, parent: parent !== logical ? parent : null, ...(real !== logical ? { real } : {}), home: homedir(), dirs }
+  const total = dirs.length, parent = dirname(logical)
+  return { path: logical, parent: parent !== logical ? parent : null, ...(real !== logical ? { real } : {}), home: homedir(), dirs: dirs.slice(0, DIR_CAP), total, ...(total > DIR_CAP ? { truncated: total - DIR_CAP } : {}) }
 }
 function denied(p: string): CoreError {
   return new CoreError(403, `no permission to read ${p}`, 'no_permission', process.platform === 'darwin' ? MAC_PERMISSION_HINT : undefined)

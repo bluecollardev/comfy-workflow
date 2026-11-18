@@ -316,10 +316,13 @@ export const isDirFollow = (parent: string, e: { name: string; isDirectory(): bo
   try { return statSync(join(parent, e.name)).isDirectory() } catch { return false }
 }
 const WALK_DEPTH = 12
+/** The tree readers below run when a folder is chosen (folderRows -> declared) in the main process: on a slow or sleeping volume they stop after a time budget (set by `declared`) and report what they found so far, instead of freezing the window. */
+let budgetUntil = Infinity
+const overBudget = () => Date.now() > budgetUntil
 /** Every file under a folder, following links to folders safely: depth-bounded and loop-safe (a folder is entered once, by its realpath). */
 function walk(dir: string, out: string[] = [], seen = new Set<string>(), depth = 0): string[] {
   let real = dir; try { real = realpathSync(dir) } catch { return out }
-  if (seen.has(real) || depth > WALK_DEPTH) return out
+  if (seen.has(real) || depth > WALK_DEPTH || overBudget()) return out
   seen.add(real)
   for (const e of entries(dir)) {
     const p = join(dir, e.name)
@@ -388,8 +391,10 @@ export function declaredPlates(tree: string): Declared | null {
   const found: string[] = []
   if (!isDir(tree)) return null
   for (const type of entries(tree).filter((e) => isDirFollow(tree, e))) {
+    if (overBudget()) break
     const typeDir = join(tree, type.name)
     for (const shot of entries(typeDir).filter((e) => isDirFollow(typeDir, e))) {
+      if (overBudget()) break
       const f = join(typeDir, shot.name, '02_SOURCE', 'SOURCES.csv')
       if (!existsSync(f)) continue
       for (const row of parseCsv(readText(f))) {
@@ -414,10 +419,13 @@ export function declared(cfg: MountsConfig): Record<string, Declared | null> {
   const out: Record<string, Declared | null> = Object.fromEntries(folderShapes().map((m) => [m.name, null]))
   const tree = cfg.folders.project || ''
   if (!tree || !isDir(tree)) return out
-  const root = declaredRoot(tree)
-  out.project = root
-  out.plates = declaredPlates(tree)
-  out['comfy-shared'] = declaredShared(root ? root.path : null)
+  budgetUntil = Date.now() + 400   // a time budget for the whole read
+  try {
+    const root = declaredRoot(tree)
+    out.project = root
+    out.plates = declaredPlates(tree)
+    out['comfy-shared'] = declaredShared(root ? root.path : null)
+  } finally { budgetUntil = Infinity }
   return out
 }
 

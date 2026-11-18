@@ -599,3 +599,8 @@ test('list_dirs: logical paths, links, volumes (ADR-011)', async () => {
   const v = jsonOf(await call('list_dirs', { volumes: true })); assert.ok(Array.isArray(v.volumes))
   assert.match(textOf(refused(await call('list_dirs', { path: '/no/such/folder/anywhere' }))), /cannot resolve|not a folder/)
 })
+
+test('list_dirs takes a filter and returns total (async, capped)', async () => {
+  const tl = (await rpc('tools/list')).result.tools; assert.equal(tl.find((t) => t.name === 'list_dirs').inputSchema.properties.filter.type, 'string')
+  const r = jsonOf(await call('list_dirs', { filter: 'zzzz-no-such-folder-name' })); assert.deepEqual(r.dirs, []); assert.equal(r.total, 0)
+})
