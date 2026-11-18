@@ -370,7 +370,7 @@ export async function mockApi(page, state) {
     if (method === 'POST' && path === '/queue/plan') {   // a shot's card is a key or an ordered list; the core validates each and prices the dearest (the plan says so)
       (state.planCalls ||= []).push(body)
       const several = Object.values(body.cards || {}).some((v) => Array.isArray(v) && v.length > 1)
-      return json({ round: body.round, shots: ['cgi-042', 'cgi-043'], price_per_hour: 3.99, pull_hours: 0.5, est_total_usd: 6.98, max_pods: 2, cost_cap_usd: 50, cap_enabled: true, over_cap: false, ...(several ? { assumption: 'Where a shot has several cards, the most expensive one is priced.' } : {}) })
+      return json({ round: body.round, shots: ['cgi-042', 'cgi-043'], price_per_hour: 3.99, pull_hours: 0.5, est_total_usd: 6.98, max_pods: 2, cost_cap_usd: 50, cap_enabled: state.capEnabled !== false, over_cap: false, ...(several ? { assumption: 'Where a shot has several cards, the most expensive one is priced.' } : {}) })
     }
     if (method === 'POST' && path === '/queue/import-many' && body.source === 'volume') {   // guards (b) and (c) again, as the core answers them
       (state.volumeImportCalls ||= []).push(body)

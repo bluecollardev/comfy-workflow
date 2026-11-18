@@ -110,14 +110,16 @@
         <div>{{ $t('importRound.estimate', { usd: estimate }) }}</div>
         </template>
         <div v-if="autoSync" data-testid="import-round-autosync-line">{{ $t(autoSyncPush ? 'importRound.autoSyncLinePush' : 'importRound.autoSyncLine') }}</div>
-        <div v-if="first.cap_enabled" class="d-flex align-items-center gap-2 mt-2 flex-wrap">
+        <div class="d-flex align-items-center gap-2 mt-2 flex-wrap">
           <label class="mb-0" for="ir-pods">{{ $t(plans.size > 1 ? 'importRound.maxPodsEach' : 'importRound.maxPods') }}</label>
           <BFormInput id="ir-pods" v-model.number="maxPods" type="number" min="1" max="20" size="sm" style="width: 5rem" data-testid="import-round-max-pods" @input="podsEdited = true" />
           <div class="w-100 text-body-secondary" data-testid="import-round-pods-note">{{ $t('importRound.podsNote') }}</div>
+          <template v-if="first.cap_enabled">
           <label class="mb-0 ms-2" for="ir-cap">{{ $t(plans.size > 1 ? 'importRound.costCapTotal' : 'importRound.costCap') }}</label>
           <BFormInput id="ir-cap" v-model.number="costCap" type="number" min="1" size="sm" style="width: 6rem" data-testid="import-round-cost-cap" />
+          </template>
         </div>
-        <div v-else class="text-warning mt-2" data-testid="import-round-cap-off"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ $t('importRound.capOff') }}</div>
+        <div v-if="!first.cap_enabled" class="text-warning mt-2" data-testid="import-round-cap-off"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ $t('importRound.capOff') }}</div>
         <div v-if="isVolume && volOver" class="text-danger mt-1" data-testid="import-round-over-cap"><i class="fa-solid fa-ban me-1"></i>{{ $t('importRound.volOverCap') }}</div>
         <div v-else-if="first.cap_enabled && estimate > costCap" class="text-warning mt-1" data-testid="import-round-over-cap">{{ $t('importRound.overCap') }}</div>
       </div>
@@ -378,7 +380,7 @@ async function start() {
   try { localStorage.setItem('runpod-manager.approved-by', approvedBy.value.trim()) } catch { /* storage blocked */ }
   const todo = [...plans.value.keys()].filter((r) => shotCount(r) > 0)
   const capOn = first.value.cap_enabled
-  const items = todo.map((r) => ({ round: r, shots: [...picked.value.get(r)], cards: cardsFor(r), ...autoSyncKey(), ...(capOn ? { max_pods: todo.length > 1 && !podsEdited.value ? shotCount(r) : Math.min(20, Math.max(1, Math.round(Number(maxPods.value)) || 1)) } : {}) }))
+  const items = todo.map((r) => ({ round: r, shots: [...picked.value.get(r)], cards: cardsFor(r), ...autoSyncKey(), max_pods: todo.length > 1 && !podsEdited.value ? shotCount(r) : Math.min(20, Math.max(1, Math.round(Number(maxPods.value)) || 1)) }))   // always sent: the pod limit is not the dollar cap (with the cap off it was dropped and the queue started as many pods as it liked)
   const makeVol = !isVolume.value && newVolOk.value ? { name: newVolName.value.trim(), size_gb: newVolSize.value, datacenter: dcChoice.value } : null
   const opts = { run_workflows: isVolume.value ? true : runWorkflows.value, volume_id: isVolume.value ? sourceVolumeId.value : volumeId.value, approved_by: approvedBy.value.trim(), ...autoSyncKey(), ...(isVolume.value ? { source: 'volume' } : {}), ...(capOn ? { cost_cap_usd: costCap.value } : {}) }
   // The Queue opens at once and says it is queueing: reading and planning the rounds takes a while, and the button alone says nothing.

@@ -152,3 +152,15 @@ test('Choose Card: the datacenter dropdown starts on the datacenters of your vol
   await sel.selectOption('CA-MTL-1')
   await expect(chip(page, 'RTX 4090', 'EU-RO-1').getByTestId('dc-chip-rank')).toHaveText('1')
 })
+
+test('Number of Pods is sent even when the dollar cap is off (it is the pod limit, not the cap)', async ({ page, api }) => {
+  api.state.capEnabled = false
+  const dlg = await toStep3(page, api)
+  await dlg.getByTestId('import-round-max-pods').fill('3')
+  await dlg.getByTestId('import-round-volume').selectOption('vol1')
+  await dlg.getByTestId('import-round-approved-by').fill('Lucas')
+  await dlg.getByTestId('import-round-start').click()
+  await expect.poll(() => api.state.imported).toBeTruthy()
+  expect(api.state.imported.max_pods).toBe(3)
+  expect(api.state.imported.cost_cap_usd).toBeUndefined()   // no dollar cap sent
+})
