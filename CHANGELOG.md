@@ -3,6 +3,10 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## v1.4.2 (tag v1.4.2, 2026-11-18)
+
+- **Fix: Outputs previews lost their state and were cancelled when you scrolled.** A tile that scrolled out of view aborted the preview it was making and went back to "Load preview"; scrolling back asked again as an automatic request, which stops at "click to load", so a Load preview or Load all previews click was lost. Now a preview you asked for (one tile or Load all) is never cancelled by scrolling, and after Load all previews every tile that scrolls into view later loads by itself while the Outputs window stays open. Only an automatic preview is still dropped when it scrolls away. Test: `e2e/outputs-dpx.spec.js` (a slow preview survives scrolling to the end and back; Load all ends with every tile loaded, each frame fetched once).
+
 ## v1.4.1 (tag v1.4.1, 2026-11-18)
 
 - **Fix: Import Round's "Number of Pods" was ignored when the dollar cap was off.** The field was only shown, and `max_pods` only sent, when the cost cap was on, so with it off the queue started as many pods as there were shots (about 20 at once on the volume, with ComfyUI answering HTTP 502 on the overloaded or not-yet-ready ones). The field now always shows and its value is always sent; only the cost-cap field depends on the cap. The core's rule that the setting which switches the cap off removes the limit for callers that send no number is unchanged. Test: `e2e/import-multi-card.spec.js` (the pod limit with the cap off).

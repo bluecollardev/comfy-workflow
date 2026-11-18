@@ -5,7 +5,7 @@
       <div class="ms-auto d-flex gap-2">   <!-- the buttons sit at the right, whatever else shows -->
         <BButton v-if="all.length > 1" variant="outline-light" size="sm" class="text-nowrap" :disabled="!canZip || zipping || !anyBase" :title="canZip ? '' : $t('outputs.zipApp')" data-testid="pod-outputs-zip-all" @click="zipAll"><BSpinner v-if="zipping" small class="me-1" /><i v-else class="fa-solid fa-file-zipper me-1"></i>{{ $t('outputs.zipAllRuns') }}</BButton>
         <BButton variant="outline-light" size="sm" class="text-nowrap" data-testid="pod-outputs-clear-previews" :title="$t('outputs.dpx.clearCacheTitle')" @click="clearPreviews"><i class="fa-regular fa-trash-can me-1"></i>{{ $t('outputs.dpx.cached', { n: cachedCount }) }} · {{ $t('outputs.dpx.clearCache') }}</BButton>
-        <BButton v-if="previewBus.capped > 0" variant="outline-light" size="sm" class="text-nowrap" data-testid="pod-outputs-load-previews" :title="$t('outputs.dpx.loadAllTitle')" @click="previewBus.tick++"><i class="fa-regular fa-images me-1"></i>{{ $t('outputs.dpx.loadAll', { n: previewBus.capped }) }}</BButton>
+        <BButton v-if="previewBus.capped > 0" variant="outline-light" size="sm" class="text-nowrap" data-testid="pod-outputs-load-previews" :title="$t('outputs.dpx.loadAllTitle')" @click="previewBus.loadAll = true; previewBus.tick++"><i class="fa-regular fa-images me-1"></i>{{ $t('outputs.dpx.loadAll', { n: previewBus.capped }) }}</BButton>
         <BButton variant="outline-light" size="sm" class="text-nowrap" data-testid="pod-outputs-refresh" @click="refresh"><i class="fa-solid fa-rotate me-1"></i>{{ $t('outputs.refresh') }}</BButton>
       </div>
     </div>
@@ -103,8 +103,8 @@ async function loadVolume(prefix, fresh = false) {
     vol.shownCount = vol.runs.reduce((n, r) => n + r.files.length, 0); vol.note = prefix === undefined ? a.start_note || '' : ''
   } catch (e) { if (mine === seq) { vol.ok = false; vol.failed = true; vol.runs = []; vol.folders = []; vol.reason = errorText(e); vol.restart = /no core call/i.test(vol.reason); vol.keysMissing = !vol.restart && /S3_ACCESS_KEY|S3 keys/.test(vol.reason) } } finally { if (mine === seq) { vol.loading = false; vol.loaded = true } }
 }
-onMounted(() => { sharedThumbs().reset(); previewBus.capped = 0; loadVolume(undefined) })   // the automatic preview cap starts again for each open
-onBeforeUnmount(() => { sharedThumbs().abortAll(); previewBus.capped = 0 })
+onMounted(() => { sharedThumbs().reset(); previewBus.capped = 0; previewBus.loadAll = false; loadVolume(undefined) })   // the automatic preview cap starts again for each open
+onBeforeUnmount(() => { sharedThumbs().abortAll(); previewBus.capped = 0; previewBus.loadAll = false })
 /** The preview cache (IndexedDB): how many are kept, and a Clear that only means they are downloaded again. */
 const cachedCount = ref(0)
 const countCached = async () => { try { cachedCount.value = await sharedThumbs().count() } catch { cachedCount.value = 0 } }

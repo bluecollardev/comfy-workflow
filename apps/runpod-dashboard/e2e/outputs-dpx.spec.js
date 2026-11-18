@@ -312,3 +312,36 @@ test('an older running app (no core call) says to restart instead of spinning', 
   await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
   await expect(page.getByTestId('pod-outputs-modal').getByTestId('pod-outputs-volume-error')).toHaveText('Restart the app to enable previews from the volume.')
 })
+
+test('DPX previews: a preview you asked for is NOT cancelled by scrolling away, and Load all keeps loading tiles that scroll into view later', async ({ page, api }) => {
+  api.state.history.runs['pod-aaaaaaaa'] = [{ ...seqRun(1), outputs: Array.from({ length: 30 }, (_, i) => seqRun(i + 1).outputs).flat() }]
+  const hits = {}; let aborted = 0
+  await page.context().route('**/view?*', async (r) => {
+    const name = decodeURIComponent(/filename=([^&]+)/.exec(r.request().url())[1]); hits[name] = (hits[name] || 0) + 1
+    await new Promise((res) => setTimeout(res, 250))   // slow enough that the person scrolls away while it is being made
+    const empty = name.startsWith('s2_')
+    try { await r.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: empty ? flat() : dpx(0) }) } catch { aborted++ }
+  })
+  await page.addInitScript(() => { try { indexedDB.deleteDatabase('pod-manager-thumbs') } catch { /* none */ } })
+  await page.goto('/')
+  await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
+  const m = page.getByTestId('pod-outputs-modal')
+  await expect(m.getByTestId('outputs-tile')).toHaveCount(30)
+  await expect(m.getByTestId('outputs-dpx-load-preview').first()).toBeVisible({ timeout: 15000 })
+  // ask for the first tile, then scroll far away while it is still being made: it must finish anyway
+  await m.getByTestId('outputs-dpx-load-preview').first().click()
+  await m.getByTestId('outputs-tile').last().scrollIntoViewIfNeeded()
+  await page.waitForTimeout(900)
+  await m.getByTestId('outputs-tile').first().scrollIntoViewIfNeeded()
+  await expect(m.getByTestId('outputs-dpx-thumb').first()).toBeVisible({ timeout: 15000 })   // done, not back to "Load preview"
+  expect(Object.values(hits).every((n) => n === 1)).toBe(true)
+  // Load all, then scroll to the end and back: every tile ends with its preview, each frame fetched once
+  await m.getByTestId('pod-outputs-load-previews').click()
+  await m.getByTestId('outputs-tile').last().scrollIntoViewIfNeeded()
+  await page.waitForTimeout(600)
+  await m.getByTestId('outputs-tile').first().scrollIntoViewIfNeeded()
+  await expect.poll(() => Object.keys(hits).length, { timeout: 30000 }).toBe(30)
+  await expect.poll(async () => m.getByTestId('outputs-dpx-thumb').count(), { timeout: 30000 }).toBe(29)
+  await expect(m.getByTestId('outputs-dpx-load-preview')).toHaveCount(0)   // nothing is left asking for another click
+  expect(Object.values(hits).every((n) => n === 1)).toBe(true)
+})
