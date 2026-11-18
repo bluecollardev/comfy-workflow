@@ -3,6 +3,10 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## v1.4.3 (tag v1.4.3, 2026-11-18)
+
+- **Outputs: one Previews button and modal to generate every sequence preview.** The top bar's separate "Load all previews" button is now a single **Previews** button that opens a modal: **Generate all previews (n)** makes the first-frame preview of every sequence in the window, one at a time, including ones you have not scrolled to; a sequence already in the saved cache is a hit and costs no download, a failed one is counted and retried by the next batch. It shows progress (done of total, a bar), the ready / waiting / failed counts, and **Stop** (nothing restarts when you scroll afterwards); the batch ends by itself. The "N previews cached / Clear preview cache" button stays. **Released without tests** (Lucas's call for this patch only): the test debt is in `NEXT-STEPS.md` and the README's Testing section. "Build sequences", the second option Lucas asked for, is not built yet (what it does was not said).
+
 ## v1.4.2 (tag v1.4.2, 2026-11-18)
 
 - **Fix: Outputs previews lost their state and were cancelled when you scrolled.** A tile that scrolled out of view aborted the preview it was making and went back to "Load preview"; scrolling back asked again as an automatic request, which stops at "click to load", so a Load preview or Load all previews click was lost. Now a preview you asked for (one tile or Load all) is never cancelled by scrolling, and after Load all previews every tile that scrolls into view later loads by itself while the Outputs window stays open. Only an automatic preview is still dropped when it scrolls away. Test: `e2e/outputs-dpx.spec.js` (a slow preview survives scrolling to the end and back; Load all ends with every tile loaded, each frame fetched once).

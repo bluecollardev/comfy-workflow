@@ -5,7 +5,7 @@
       <div class="ms-auto d-flex gap-2">   <!-- the buttons sit at the right, whatever else shows -->
         <BButton v-if="all.length > 1" variant="outline-light" size="sm" class="text-nowrap" :disabled="!canZip || zipping || !anyBase" :title="canZip ? '' : $t('outputs.zipApp')" data-testid="pod-outputs-zip-all" @click="zipAll"><BSpinner v-if="zipping" small class="me-1" /><i v-else class="fa-solid fa-file-zipper me-1"></i>{{ $t('outputs.zipAllRuns') }}</BButton>
         <BButton variant="outline-light" size="sm" class="text-nowrap" data-testid="pod-outputs-clear-previews" :title="$t('outputs.dpx.clearCacheTitle')" @click="clearPreviews"><i class="fa-regular fa-trash-can me-1"></i>{{ $t('outputs.dpx.cached', { n: cachedCount }) }} · {{ $t('outputs.dpx.clearCache') }}</BButton>
-        <BButton v-if="previewBus.capped > 0" variant="outline-light" size="sm" class="text-nowrap" data-testid="pod-outputs-load-previews" :title="$t('outputs.dpx.loadAllTitle')" @click="previewBus.loadAll = true; previewBus.tick++"><i class="fa-regular fa-images me-1"></i>{{ $t('outputs.dpx.loadAll', { n: previewBus.capped }) }}</BButton>
+        <BButton variant="outline-light" size="sm" class="text-nowrap" data-testid="pod-outputs-previews" :title="$t('outputs.dpx.previewsTitle')" @click="previewsOpen = true"><BSpinner v-if="previewBus.batch" small class="me-1" /><i v-else class="fa-regular fa-images me-1"></i>{{ previewBus.batch ? $t('outputs.dpx.generating', { done: batchDone, total: previewBus.batchTotal }) : $t('outputs.dpx.previews') }}</BButton>
         <BButton variant="outline-light" size="sm" class="text-nowrap" data-testid="pod-outputs-refresh" @click="refresh"><i class="fa-solid fa-rotate me-1"></i>{{ $t('outputs.refresh') }}</BButton>
       </div>
     </div>
@@ -53,6 +53,19 @@
         <span v-else class="text-body-secondary ms-auto">{{ $t('outputs.run', { when: new Date(r.started_at).toLocaleString(), s: r.duration_s ?? '?' }) }} · <span class="font-monospace">{{ r.prompt_id.slice(0, 8) }}</span></span>
       </div>
       <OutputsGallery :files="r.files" :total-files="r.totalFiles || 0" :base="baseFor(r)" :scope="volumeId || pod.id" :volume-name="volumeName" :offline="!baseFor(r)" :zip-name="`${runName(r) || pod.name}-${idOf(r)}.zip`" />
+    </div>
+  </BModal>
+  <BModal v-model="previewsOpen" :title="$t('outputs.dpx.previewsModalTitle')" size="md" lazy ok-only :ok-title="$t('outputs.dpx.close')" data-testid="pod-outputs-previews-modal">
+    <div class="border rounded p-2 mb-2">
+      <div class="fw-semibold">{{ $t('outputs.dpx.loadAllOption') }}</div>
+      <div class="small text-body-secondary mb-2">{{ $t('outputs.dpx.loadAllTitle') }}</div>
+      <div class="small mb-2" data-testid="pod-outputs-previews-counts">{{ $t('outputs.dpx.previewCounts', { ready: previewBus.counts.ready + previewBus.counts.empty, waiting, failed: previewBus.counts.error }) }}</div>
+      <div v-if="previewBus.batch" class="mb-2"><BProgress :value="batchDone" :max="Math.max(1, previewBus.batchTotal)" animated striped height="0.6rem" :data-percent="Math.round((batchDone / Math.max(1, previewBus.batchTotal)) * 100)" data-testid="pod-outputs-previews-progress" /></div>
+      <div class="d-flex gap-2 align-items-center">
+        <BButton variant="primary" size="sm" :disabled="previewBus.batch || waiting === 0" data-testid="pod-outputs-load-previews" @click="generateAll"><BSpinner v-if="previewBus.batch" small class="me-1" />{{ previewBus.batch ? $t('outputs.dpx.generating', { done: batchDone, total: previewBus.batchTotal }) : $t('outputs.dpx.loadAll', { n: waiting }) }}</BButton>
+        <BButton v-if="previewBus.batch" variant="outline-warning" size="sm" data-testid="pod-outputs-stop-previews" @click="stopGenerate"><i class="fa-solid fa-stop me-1"></i>{{ $t('outputs.dpx.stopGenerate') }}</BButton>
+        <span v-if="previewBus.counts.error" class="small text-warning">{{ $t('outputs.dpx.generatingFailed', { n: previewBus.counts.error }) }}</span>
+      </div>
     </div>
   </BModal>
 </template>
@@ -110,6 +123,14 @@ const cachedCount = ref(0)
 const countCached = async () => { try { cachedCount.value = await sharedThumbs().count() } catch { cachedCount.value = 0 } }
 onMounted(countCached)
 watch(() => previewBus.cacheVer, countCached)
+/** Sequences still without a preview (not yet made, waiting for a click, or failed): what "Generate all previews" will work through, one at a time; one already in the cache is a hit and costs no download. */
+const previewsOpen = ref(false)
+const waiting = computed(() => previewBus.counts.idle + previewBus.counts.capped + previewBus.counts.error)
+const batchLeft = computed(() => previewBus.counts.idle + previewBus.counts.capped + previewBus.counts.loading)
+const batchDone = computed(() => Math.max(0, previewBus.batchTotal - batchLeft.value))
+function generateAll() { previewBus.batchTotal = waiting.value; previewBus.batch = true; previewBus.loadAll = true; previewBus.tick++ }
+function stopGenerate() { previewBus.batch = false; previewBus.loadAll = false; previewBus.stopTick++; sharedThumbs().abortAll() }
+watch(batchLeft, (n) => { if (previewBus.batch && n === 0) { previewBus.batch = false; previewBus.loadAll = false } })   // the batch ends by itself when nothing is left
 async function clearPreviews() { try { await sharedThumbs().clear() } finally { cachedCount.value = 0 } }
 const go = (prefix) => loadVolume(prefix)
 const crumbs = computed(() => vol.prefix.split('/').filter(Boolean).map((name, i, a) => ({ name, prefix: a.slice(0, i + 1).join('/') })))
