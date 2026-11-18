@@ -15,6 +15,35 @@ const retryAfter = (res: Response) => { const v = Number(res.headers?.get?.('ret
 async function limited(res: Response | null, text: string): Promise<never> { throw rl.noteLimited(text, res ? retryAfter(res) : null) }
 const isWrite = (init?: RequestInit) => !!init?.method && init.method !== 'GET'
 
+/** A dropped connection is not an answer: the first request that fails with a network error is tried again (a read twice more, after 0.4 s and 1.2 s), because on a flaky link one
+ *  blip would otherwise surface as `TypeError: fetch failed` (seen on Binc's PC, 2026-11-19, while a sync plan asked RunPod for a pod's SSH address). A WRITE is never repeated
+ *  unless the request provably never left (DNS or refused: `hostUnreachable`), so a create can not run twice. After the last try the error says what happened in words. */
+const TRANSIENT = new Set(['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED', 'EPIPE', 'ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'ENETUNREACH', 'EHOSTUNREACH', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT'])
+export function isTransientNetwork(e: unknown): boolean {
+  if (e instanceof CoreError || !e) return false
+  const err = e as { name?: string; message?: string; cause?: { code?: string } }
+  return (err.name === 'TypeError' && /fetch failed/i.test(err.message || '')) || err.name === 'TimeoutError' || (!!err.cause?.code && TRANSIENT.has(err.cause.code))
+}
+const RETRY_WAITS_MS = [400, 1200]
+let retrySleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms))
+/** Test hook: replace the wait between tries (the core tests make it instant). */
+export const setRetrySleep = (f: (ms: number) => Promise<void>) => { retrySleep = f }
+const reachMessage = (e: unknown) => { const c = (e as { cause?: { code?: string } })?.cause?.code; return `Could not reach RunPod's API: the network dropped the request${c ? ` (${c})` : ''}. Tried 3 times. Check this PC's connection and try again.` }
+export async function fetchRetrying(doFetch: () => Promise<Response>, write: boolean, skipUnreached = false): Promise<Response> {
+  for (let i = 0; ; i++) {
+    try {
+      const res = await doFetch()
+      if (!write && (res.status === 502 || res.status === 503 || res.status === 504) && i < RETRY_WAITS_MS.length) { await retrySleep(RETRY_WAITS_MS[i]); continue }
+      return res
+    } catch (e) {
+      const retry = write ? hostUnreachable(e) : isTransientNetwork(e) && !(skipUnreached && hostUnreachable(e))
+      if (!retry) throw e
+      if (i >= RETRY_WAITS_MS.length) { if (hostUnreachable(e)) throw e; throw new CoreError(503, reachMessage(e)) }   // an unreached host keeps its raw error: the volume API falls back to v2 on it
+      await retrySleep(RETRY_WAITS_MS[i])
+    }
+  }
+}
+
 const str = (v: string) => JSON.stringify(v)   // a GraphQL string literal, quotes and backslashes escaped
 
 export async function graphql<T = unknown>(query: string, client: RunPodClient = {}): Promise<T> {
@@ -22,12 +51,12 @@ export async function graphql<T = unknown>(query: string, client: RunPodClient =
   if (!apiKey) throw new CoreError(401, 'RUNPOD_API_KEY not set')
   const base = client.baseUrl || process.env.RUNPOD_API_BASE_URL || 'https://api.runpod.io'
   if (!/^\s*mutation\b/.test(query)) rl.guard()   // a read waits while RunPod limits; a write still tries
-  const res = await (client.fetchFn || fetch)(`${base}/graphql`, {
+  const res = await fetchRetrying(() => (client.fetchFn || fetch)(`${base}/graphql`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`, 'User-Agent': 'comfy-workflow pod manager' },
     body: JSON.stringify({ query }),
     signal: AbortSignal.timeout(30_000),
-  })
+  }), /^\s*mutation\b/.test(query))
   if (res.status === 401) throw new CoreError(401, 'Unauthorized request, please check your API key.')
   if (res.status === 429) { let t = ''; try { t = await res.text() } catch { /* no body */ } return limited(res, t || 'RunPod answered 429') }
   const body = (await res.json()) as { data?: T; errors?: { message: string }[] }
@@ -172,7 +201,7 @@ async function restVol(version: RestVersion, path: string, client: RunPodClient 
   if (!apiKey) throw new CoreError(401, 'RUNPOD_API_KEY not set')
   const base = version === 'v1' ? (client.baseUrl || process.env.RUNPOD_REST_BASE_URL || 'https://rest.runpod.io') : (client.baseUrl || process.env.RUNPOD_API_BASE_URL || 'https://api.runpod.io')
   if (!isWrite(init)) rl.guard()
-  const res = await (client.fetchFn || fetch)(`${base}/${version}${path}`, { ...init, headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json', ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...(init.headers || {}) }, signal: init.signal ?? AbortSignal.timeout(30_000) })
+  const res = await fetchRetrying(() => (client.fetchFn || fetch)(`${base}/${version}${path}`, { ...init, headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json', ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...(init.headers || {}) }, signal: init.signal ?? AbortSignal.timeout(30_000) }), isWrite(init), true)   // skipUnreached: v1 unreachable falls back to v2 at once, no waiting
   if (res.status === 429) { let t = ''; try { const b = await res.clone().json() as { error?: string; message?: string; detail?: string }; t = b.error || b.message || b.detail || '' } catch { /* no body */ } return limited(res, t || 'RunPod answered 429') }
   if (res.ok) rl.noteOk()
   return res
@@ -275,7 +304,7 @@ export async function rest<T = unknown>(path: string, client: RunPodClient = {},
   if (!apiKey) throw new CoreError(401, 'RUNPOD_API_KEY not set')
   const base = client.baseUrl || process.env.RUNPOD_API_BASE_URL || 'https://api.runpod.io'
   if (!isWrite(init)) rl.guard()
-  const res = await (client.fetchFn || fetch)(`${base}/v2${path}`, { ...init, headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json', ...(init.headers || {}) }, signal: init.signal ?? AbortSignal.timeout(30_000) })
+  const res = await fetchRetrying(() => (client.fetchFn || fetch)(`${base}/v2${path}`, { ...init, headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json', ...(init.headers || {}) }, signal: init.signal ?? AbortSignal.timeout(30_000) }), isWrite(init))
   if (res.status === 429) { let t = ''; try { t = await res.text() } catch { /* no body */ } return limited(res, t || 'RunPod answered 429') }
   if (res.status === 401 || res.status === 403) throw new CoreError(res.status, 'RunPod refused the API key for this request')
   if (res.status === 404) throw new CoreError(404, `RunPod has no such pod (${path})`)
