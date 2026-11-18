@@ -88,6 +88,7 @@ test('Choose Card: with several rounds ticked every shot of every round gets the
 test('Choose Card: a card where none of your volumes live says so; the Auto button clears every card', async ({ page, api }) => {
   const dlg = await toStep3(page, api)
   await dlg.getByTestId('import-round-choose-card-btn').click()
+  await page.getByTestId('choose-card-modal').getByTestId('dc-dc-filter').selectOption('')   // US-KS-2 has no volume of ours: it starts hidden, All datacenters shows it
   await chip(page, 'RTX PRO 6000', 'US-KS-2').click(); await done(page)
   await expect(dlg.getByTestId('import-round-dc-novolume')).toBeVisible()
   await dlg.getByTestId('import-round-choose-card-btn').click()
@@ -124,4 +125,30 @@ test('Number of Pods: out-of-range values are brought to 1..20 on Import; with s
   await dlg.getByTestId('import-round-start').click()
   await expect.poll(() => api.state.importedAll?.length).toBe(2)
   expect(api.state.importedAll.map((i) => i.max_pods)).toEqual([20, 20])
+})
+
+// Choose Card's datacenter dropdown (Lucas, 2026-11-18: 'by default datacenters should be filtered', 'filter datacenters can be a dropdown too'): it starts on the datacenters where the person has a network volume (a pod can only run there), All datacenters and each single datacenter are one choice away, and the text filter works inside it.
+test('Choose Card: the datacenter dropdown starts on the datacenters of your volumes; All, or one datacenter, change what is listed; the text filter works inside it; a chosen datacenter never vanishes', async ({ page, api }) => {
+  const dlg = await toStep3(page, api)
+  await dlg.getByTestId('import-round-choose-card-btn').click()
+  const modal = page.getByTestId('choose-card-modal'), sel = modal.getByTestId('dc-dc-filter')
+  const chipsIn = (dc) => modal.locator(`[data-testid="dc-chip"][data-dc="${dc}"]`)
+  await expect(sel).toHaveValue('__volumes')                                              // filtered by default
+  await expect(sel.locator('option:checked')).toContainText('CA-MTL-1, EU-RO-1')           // and it says which datacenters
+  await expect(chipsIn('EU-RO-1').first()).toBeVisible()
+  await expect(chipsIn('CA-MTL-1').first()).toBeVisible()
+  await expect(chipsIn('US-KS-2')).toHaveCount(0)                                          // no volume of ours there: hidden
+  await sel.selectOption('')                                                              // All datacenters
+  await expect(chipsIn('US-KS-2').first()).toBeVisible()
+  await sel.selectOption('EU-RO-1')                                                       // one datacenter
+  await expect(modal.locator('[data-testid="dc-chip"]:not([data-dc="EU-RO-1"])')).toHaveCount(0)
+  await expect(chipsIn('EU-RO-1').first()).toBeVisible()
+  await sel.selectOption('')                                                              // the text filter inside All
+  await modal.getByTestId('dc-filter').fill('4090')
+  await expect(modal.getByTestId('dc-card-row')).toHaveCount(1)
+  await modal.getByTestId('dc-filter').fill('')
+  await sel.selectOption('__volumes')                                                     // a chosen datacenter stays listed whatever the dropdown says
+  await chip(page, 'RTX 4090', 'EU-RO-1').click()
+  await sel.selectOption('CA-MTL-1')
+  await expect(chip(page, 'RTX 4090', 'EU-RO-1').getByTestId('dc-chip-rank')).toHaveText('1')
 })
