@@ -8,6 +8,7 @@ import { CoreError, bad } from './errors.js'
 import * as gpus from './gpus.js'
 import * as idle from './idle.js'
 import * as outputruns from './outputruns.js'
+import * as autosyncstore from './autosyncstore.js'
 import * as mounts from './mounts.js'
 import * as podconfigs from './podconfigs.js'
 import * as podmodels from './podmodels.js'
@@ -147,6 +148,7 @@ export async function create(req: CreatePodRequest, client?: rp.RunPodClient, cr
   if (mounts.dryRun(cfg)) {
     const p = dry.create({ name: req.name, gpu: req.gpu, gpu_count: input.gpuCount, image: input.imageName, idle_stop_minutes: idleMinutes > 0 ? idleMinutes : 0 })
     if (own) podconfigs.set(p.id, cfg)
+    autosyncstore.applyFromConfig(p.id, cfg.auto_sync)   // Auto sync from the configuration (ADR-046), best effort
     const rd = putInRound(p.id, req.round)
     history.record({ kind: 'pod', action: 'created', pod_id: p.id, name: req.name, gpu: p.gpu, cost_per_hr: 0, ...(rd || note ? { detail: [note, rd ? `in round ${rd}` : ''].filter(Boolean).join('; ') } : {}) })
     return { ...p, custom_config: own, ...roundOf(p.id) }
@@ -154,6 +156,7 @@ export async function create(req: CreatePodRequest, client?: rp.RunPodClient, cr
   const { pod, gpuId } = await deployWithFallback(input, client)
   if (idleMinutes > 0) idle.register(pod.id, idleMinutes)
   if (own) podconfigs.set(pod.id, cfg)
+  autosyncstore.applyFromConfig(pod.id, cfg.auto_sync)   // Auto sync from the configuration (ADR-046), best effort
   putInRound(pod.id, req.round)
   const key = gpuKey(gpuId)
   void recordPod('created', pod.id, client, { name: req.name, gpu: `${key} x${input.gpuCount}`, ...(note ? { detail: note } : {}) })
@@ -356,7 +359,7 @@ export async function resume(podId: string, client?: rp.RunPodClient, note?: str
   void recordPod('started', podId, client, note ? { detail: note } : {})
   return { message: `Pod ${podId} resumed`, pod_id: podId }
 }
-export async function remove(podId: string, client?: rp.RunPodClient) { const nm = podnames.get(podId) || undefined; podconfigs.forget(podId); podmodels.forget(podId); podnames.forget(podId); podrounds.forget(podId); if (isDry()) { idle.forget(podId); history.record({ kind: 'pod', action: 'deleted', pod_id: podId, name: nm || dry.list().find((x) => x.id === podId)?.name || podId }); return dry.remove(podId) } const raw = await rp.getPod(podId, client).catch(() => null); await rp.terminatePod(podId, client); history.record({ kind: 'pod', action: 'deleted', pod_id: podId, name: nm || raw?.name || podId, gpu: raw?.machine?.gpuDisplayName, datacenter: raw?.machine?.dataCenterId }); idle.forget(podId); return { message: `Pod ${podId} deleted`, pod_id: podId } }
+export async function remove(podId: string, client?: rp.RunPodClient) { const nm = podnames.get(podId) || undefined; podconfigs.forget(podId); autosyncstore.forget(podId); podmodels.forget(podId); podnames.forget(podId); podrounds.forget(podId); if (isDry()) { idle.forget(podId); history.record({ kind: 'pod', action: 'deleted', pod_id: podId, name: nm || dry.list().find((x) => x.id === podId)?.name || podId }); return dry.remove(podId) } const raw = await rp.getPod(podId, client).catch(() => null); await rp.terminatePod(podId, client); history.record({ kind: 'pod', action: 'deleted', pod_id: podId, name: nm || raw?.name || podId, gpu: raw?.machine?.gpuDisplayName, datacenter: raw?.machine?.dataCenterId }); idle.forget(podId); return { message: `Pod ${podId} deleted`, pod_id: podId } }
 
 /** Change a pod's idle stop: registered for the watch (0 = never, dropped from it); a simulated pod's record follows,
  *  so what `get` shows is what was set in no-spend mode too. */
@@ -474,6 +477,7 @@ export async function recreate(podId: string, client?: rp.RunPodClient): Promise
     history.record({ kind: 'pod', action: 'recreated', pod_id: podId, name: alias || old.name, detail: 'replaced' })
     const fresh = dry.create({ name: old.name, gpu: gpuKey(old.gpu.split(' x')[0]) || gpus.DEFAULT_GPU, gpu_count: 1, image: 'simulated', idle_stop_minutes: old.idle_stop_minutes })
     if (own) podconfigs.set(fresh.id, own)
+    autosyncstore.carry(podId, fresh.id); autosyncstore.forget(podId)
     if (alias) podnames.set(fresh.id, alias)
     if (inRound) { podrounds.set(fresh.id, inRound); if (inShot) podrounds.setShot(fresh.id, inShot) }
     return { ...fresh, name: alias || fresh.name, custom_config: !!own, ...(inRound ? { round: inRound } : {}) }
@@ -486,6 +490,7 @@ export async function recreate(podId: string, client?: rp.RunPodClient): Promise
   await rp.terminatePod(podId, client)
   history.record({ kind: 'pod', action: 'recreated', pod_id: podId, name: alias || d.name || podId, gpu: d.gpu, datacenter: d.datacenter, detail: `replaced by ${fresh.id}` })
   idle.forget(podId); podconfigs.forget(podId); podnames.forget(podId); podrounds.forget(podId)
+  autosyncstore.carry(podId, fresh.id); autosyncstore.forget(podId)   // Auto sync follows the pod (docs/ADR-046)
   if (alias) { podnames.set(fresh.id, alias); fresh.name = alias }
   if (inRound) { podrounds.set(fresh.id, inRound); if (inShot) podrounds.setShot(fresh.id, inShot); fresh.round = inRound }
   return fresh

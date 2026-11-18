@@ -164,6 +164,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
           retry_until_free: { type: 'boolean', description: 'When RunPod has no free GPU for this create, do not fail: keep trying the same create (a watch, seen with pod_watch) every every_minutes until it works, for up to give_up_hours. Nothing is deleted or made twice' }, every_minutes: { type: 'number', description: 'With retry_until_free: minutes between tries (default 2, at least 1)' }, give_up_hours: { type: 'number', description: 'With retry_until_free: give up after this create many hours (default 12, at most 72)' },
           apply_mounts: { type: 'boolean', description: 'Apply the mount configuration (volume, env, links). Omitted: the configuration\'s apply_by_default' },
           config: { type: 'object', description: "This pod's own configuration (the Default Configuration's shape, as get_configuration shows it), kept for recreate_pod" },
+          auto_sync: { anyOf: [{ type: 'boolean' }, { type: 'object', properties: { pull: { type: 'boolean' }, push: { type: 'boolean' } } }], description: 'Auto sync (docs/ADR-046) for the pods this CREATES (pods reused from the pool are not changed): true = pull the volume\'s changes to this PC, or { pull, push }. Turned on with approved_by as the named yes. See auto_sync' },
           round: { type: 'string', maxLength: 120, description: 'Put the new pod in this delivery round (a map on our side; see set_pod_round). Omitted: no round' },
         },
         required: ['name'],
@@ -199,7 +200,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
     },
     { name: 'delete_volume', description: 'Delete a network volume; refused while a pod is attached to it', inputSchema: { type: 'object', properties: { volume_id: { type: 'string', description: 'Volume ID (list_volumes)' } }, required: ['volume_id'] } },
     { name: 'set_default_volume', description: 'Make a volume the Default Configuration\'s: its id and its datacenter together, since a volume pins both', inputSchema: { type: 'object', properties: { volume_id: { type: 'string', description: 'Volume ID (list_volumes)' } }, required: ['volume_id'] } },
-    { name: 'get_configuration', description: 'The Default Configuration: the folders mapped on this PC and where a pod has them, the volume, datacenter, image, idle stop, mode and what is required', inputSchema: { type: 'object', properties: {} } },
+    { name: 'get_configuration', description: '[auto_sync { enabled, pull, push, approved_by } is part of the configuration (ADR-046): Auto sync for each pod created under it; enabled: true needs approved_by, the named yes; default off, Pull on, Push off.] The Default Configuration: the folders mapped on this PC and where a pod has them, the volume, datacenter, image, idle stop, mode and what is required', inputSchema: { type: 'object', properties: {} } },
     {
       name: 'sync',
       description: "Start a copy between this PC's mapped folders and the pod's volume, in the app's job runner: push (project, comfy-shared, the repo workflows; plates only with a named yes) or pull (ComfyUI's output, each shot's renders and packages). Returns the plan and the transport (SSH into the running pod, or RunPod's S3 API onto the volume); sync_status follows it",
@@ -293,6 +294,14 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
     create_pod: async (args) => {
       const refusal = governance.namedYes(args, 'create_pod')
       if (refusal) return text(refusal, true)
+      // Auto sync for the new pod (ADR-046): true is pull only; the named yes is approved_by. Never fails the create.
+      const wantAuto = args.auto_sync === true ? { pull: true, push: false } : args.auto_sync && typeof args.auto_sync === 'object' ? { pull: args.auto_sync.pull !== false, push: args.auto_sync.push === true } : null
+      const applyAuto = (id) => {
+        if (!wantAuto) return undefined
+        const by = String(args.approved_by || '').trim()
+        if (!by) return { enabled: false, skipped: 'Auto sync needs the name of who says yes: give approved_by' }
+        try { return core.autosync.set(id, { enabled: true, ...wantAuto, approved_by: by }) } catch (e) { return { enabled: false, skipped: e.message } }
+      }
       if (args.like_pod_id) {
         // a pod like another one on another card (or the first free of several, in the order given), same datacenter: a request only, the old pod is never touched (ADR-042 section 19)
         const pid = String(args.like_pod_id)
@@ -301,7 +310,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
         let noCard = null
         for (const card of cards) {
           const likeReq = await pods.requestLike(pid, card, undefined, cards.length > 1 ? 'alt' : undefined)
-          try { const p = await pods.create(likeReq); console.error(`create_pod ${p.id} (${p.name}, ${p.gpu}) like ${pid} approved by ${String(args.approved_by).trim()}`); return json({ ...p, like: pid, old_pod_untouched: true, config: pods.config(p.id), approved_by: String(args.approved_by).trim() }) }
+          try { const p = await pods.create(likeReq); const auto = applyAuto(p.id); console.error(`create_pod ${p.id} (${p.name}, ${p.gpu}) like ${pid} approved by ${String(args.approved_by).trim()}`); return json({ ...p, ...(auto ? { auto_sync: auto } : {}), like: pid, old_pod_untouched: true, config: pods.config(p.id), approved_by: String(args.approved_by).trim() }) }
           catch (e) { if (e?.code !== 'no_card') throw e; noCard = e }   // nothing was made: the next card
         }
         if (!args.retry_until_free) throw new Error(`${noCard.message}\n\nretry_until_free: true keeps trying until ${cards.length > 1 ? `one of ${cards.join(', ')} is` : `a ${cards[0]} is`} free in that datacenter (the old pod ${pid} is not touched; see pod_watch).`)
@@ -326,8 +335,9 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
         console.error(`create_pod ${req.name}: no card, waiting (${w.id}) approved by ${String(args.approved_by).trim()}`)
         return json({ waiting: true, message: `No card is free right now. Waiting: the same create is tried every ${Math.round(w.every_s / 60)} min until a card is free (up to ${Math.round((Date.parse(w.give_up_at) - Date.parse(w.created_at)) / 3600000)} h). Cancel with pod_watch.`, watch: w, approved_by: String(args.approved_by).trim() })
       }
+      const auto = applyAuto(p.id)
       console.error(`create_pod ${p.id} (${p.name}, ${p.gpu}) approved by ${String(args.approved_by).trim()}`)
-      return json({ ...p, config: pods.config(p.id), approved_by: String(args.approved_by).trim() })
+      return json({ ...p, ...(auto ? { auto_sync: auto } : {}), config: pods.config(p.id), approved_by: String(args.approved_by).trim() })
     },
     stop_pod: async ({ pod_id }) => { const r = await pods.stop(pod_id); return text(`✓ Pod stopped: ${pod_id}\n${r.message}`) },
     resume_pod: async ({ pod_id, retry_until_free, every_minutes, give_up_hours }) => {

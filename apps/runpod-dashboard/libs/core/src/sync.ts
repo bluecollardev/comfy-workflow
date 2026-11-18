@@ -75,14 +75,14 @@ const EXISTING_FLAG: Record<Exclude<Existing, 'update'>, string> = { size: '--si
 /** verbose: every file named as it lands (the app's progress view); stats: the counts at the end (the listing pass);
  *  existing: what to do with a file already there (docs/ADR-011): by default rsync sends what differs in size or time;
  *  exclude: patterns beyond EXCLUDE (the renders); shallow: the folder's own files and its directory entries, no recursion (the root stream). */
-export interface RsyncOptions { dryRun?: boolean; progress?: string; verbose?: boolean; stats?: boolean; exclude?: string[]; shallow?: boolean; existing?: Existing }
+export interface RsyncOptions { dryRun?: boolean; progress?: string; verbose?: boolean; stats?: boolean; exclude?: string[]; shallow?: boolean; existing?: Existing; filesFrom?: string }
 
 // -rlt, not -a: the network volume refuses chown, so no owner, group or perms; times and links are kept.
 // With progress2 the whole list is scanned first (--no-inc-recursive): the percentage is of the real total and only
 // climbs; scanned incrementally it falls back every time more files turn up. openrsync has neither option.
 function rsyncBase(port: number, o: RsyncOptions): string[] {
   const progress = o.progress || '--info=progress2'
-  return ['rsync', ...(o.dryRun ? ['-n'] : []), ...(o.verbose ? ['-v'] : []), ...(o.stats ? ['--stats'] : []), ...(o.existing && o.existing !== 'update' ? [EXISTING_FLAG[o.existing]] : []), ...(o.shallow ? ['-lt', '-d'] : ['-rlt']), progress, ...(progress === '--info=progress2' ? ['--no-inc-recursive'] : []), '--partial',
+  return ['rsync', ...(o.dryRun ? ['-n'] : []), ...(o.verbose ? ['-v'] : []), ...(o.stats ? ['--stats'] : []), ...(o.existing && o.existing !== 'update' ? [EXISTING_FLAG[o.existing]] : []), ...(o.shallow ? ['-lt', '-d'] : ['-rlt']), ...(o.filesFrom ? ['--files-from', o.filesFrom] : []), progress, ...(progress === '--info=progress2' ? ['--no-inc-recursive'] : []), '--partial',
     '-e', `ssh -p ${port} -o StrictHostKeyChecking=accept-new`, ...[...EXCLUDE, ...(o.exclude || [])].flatMap((e) => ['--exclude', e])]
 }
 /** Push one folder into the pod. */
@@ -145,6 +145,13 @@ const bucketUrl = (volume: VolumeRef, remote: string, o: S3Options) => `s3://${v
 export const s3Cmd = (local: string, volume: VolumeRef, remote: string, o: S3Options = {}): string[] => [...s3Base(volume, o), local, bucketUrl(volume, remote, o)]
 /** Pull one folder off the volume. */
 export const s3PullCmd = (volume: VolumeRef, remote: string, local: string, o: S3Options = {}): string[] => [...s3Base(volume, o), bucketUrl(volume, remote, o), local]
+
+/** One file copied by key (`aws s3 cp`): the paths filter of an S3 sync (docs/ADR-046). `rel` is relative to the step's folder on both sides; additive, nothing is removed.
+ *  Pull: the volume's file to `local`; push: this PC's file to the volume. `aws s3 cp` makes the folders it needs on this PC. */
+export const s3FileCmd = (direction: 'push' | 'pull', volume: VolumeRef, remote: string, local: string, rel: string, o: S3Options = {}): string[] => {
+  const url = `s3://${volume.id}/${s3Key(remote, o.mountPath)}${rel}`, file = `${slash(local)}${rel}`
+  return ['aws', 's3', 'cp', '--endpoint-url', s3Endpoint(volume.datacenter), '--region', volume.datacenter, ...(o.dryRun ? ['--dryrun'] : []), ...(direction === 'push' ? [file, url] : [url, file])]
+}
 
 // ----- pull -----
 

@@ -32,6 +32,8 @@
  */
 import { execFile, spawn } from 'node:child_process'
 import { readdirSync } from 'node:fs'
+import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { bad } from './errors.js'
 import * as idle from './idle.js'
@@ -39,6 +41,8 @@ import * as mounts from './mounts.js'
 import * as podconfigs from './podconfigs.js'
 import * as rp from './runpod.js'
 import * as history from './history.js'
+import * as journal from './journal.js'
+import { registry } from './syncruns.js'
 import * as sync from './sync.js'
 import * as settings from './settings.js'
 import { volumeInfo } from './pods.js'
@@ -50,10 +54,20 @@ export interface SyncRequest {
   pod_id: string; direction: 'push' | 'pull'; only?: string[]; plates?: boolean; approved_by?: string; skip_renders?: boolean; skip_tests?: boolean; existing?: sync.Existing
   /** A push of ComfyUI-Shared: which of SHARED_DIRS go up. Left out, the pod's own configuration decides (else the Default Configuration's `sync_shared`); the app's confirmation sends the choice shown. Anything else in the folder always goes. */
   shared?: string[]
+  /** Only these files (docs/ADR-046): paths relative to the local ComfyUI-Shared root (`output/proxy_v004/a.dpx`), each inside the root (no `..`, not absolute, in one of SHARED_DIRS).
+   *  Over SSH they become rsync `--files-from`, over the S3 transport one `aws s3 cp` each. Additive, never deletes, never the project tree or plates; with `paths`, a pull's `only` and a push's `plates` are ignored. */
+  paths?: string[]
+  /** A pull with `paths`: the files' sizes on the volume. A file already here with that size is skipped (the S3 copy has no other way to tell). */
+  path_sizes?: Record<string, number>
+  /** Who started it, for the History (ADR-046): 'auto-sync:output' | 'auto-sync:feed' | 'auto-sync:reconcile' | 'auto-sync:push'; left out for a person's Sync */
+  trigger?: string
+  /** Words the caller adds to the History entry (e.g. the conflicts it skipped) */
+  note?: string
 }
 export interface SyncEvent {
   kind: 'plan' | 'listing' | 'totals' | 'step' | 'line' | 'file' | 'progress' | 'problem' | 'step-done' | 'done' | 'error'
   key?: string; local?: string; remote?: string; text?: string; code?: number; steps?: sync.Step[]; path?: string
+  streams?: number                              // step: how many copies run at once for a `paths` sync (sync_parallel, or fewer files)
   stream?: string                               // the top-level directory this line came from, when the folder went in streams
   total_files?: number; total_bytes?: number   // step: that folder's, from the listing; totals: the run's; line: openrsync's own count
   file_percent?: number; bytes_done?: number; run_bytes_done?: number; rate_bps?: number; eta_s?: number   // progress
@@ -77,16 +91,57 @@ export const TEST_DIR = '80_TEST-BUCKET'
 /** The effective configuration for a pod: its own, else the default. */
 const configFor = (podId: string) => podconfigs.get(podId) ?? mounts.load()
 
+/** The volume this pod's sync reaches, for the journal: its own configuration's, else the Default Configuration's network or Shared volume. */
+export const volumeIdFor = (podId: string): string => { const c = configFor(podId), d = mounts.load(); return (c.network_volume_id || d.network_volume_id || d.shared_volume_id || '').trim() }
+
+export const DEFAULT_PARALLEL = 8, MAX_PARALLEL = 32
+/** How many files are copied at once for a `paths` sync (and the auto pull): the pod's own configuration's sync_parallel, else the Default Configuration's, else 8; clamped 1..32. */
+export function parallelFor(podId: string): number {
+  const own = podconfigs.get(podId)?.sync_parallel, def = mounts.load().sync_parallel
+  const n = [own, def].find((v) => typeof v === 'number' && Number.isFinite(v) && v >= 1)
+  return Math.max(1, Math.min(MAX_PARALLEL, Math.floor((n as number | undefined) ?? DEFAULT_PARALLEL)))
+}
+/** A list split into at most n contiguous chunks of about the same size. */
+export const chunksOf = <T>(items: T[], n: number): T[][] => { const size = Math.max(1, Math.ceil(items.length / Math.max(1, n))), out: T[][] = []; for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size)); return out }
+export const MAX_PATHS = 50_000
+/** The `paths` of a request, checked: a list of files relative to the local ComfyUI-Shared root, each inside it. Files the sync never carries (OS litter, git, caches) are dropped. Throws on anything else. */
+export function validatePaths(paths: unknown): string[] {
+  if (!Array.isArray(paths) || !paths.length) throw bad('paths is a list of files relative to ComfyUI-Shared')
+  if (paths.length > MAX_PATHS) throw bad(`At most ${MAX_PATHS} paths in one sync`)
+  const out = new Set<string>()
+  for (const p of paths) {
+    if (typeof p !== 'string' || !p || p.length > 1024) throw bad(`Not a path inside ComfyUI-Shared: ${String(p).slice(0, 80)}`)
+    // eslint-disable-next-line no-control-regex
+    if (p.startsWith('/') || /^[A-Za-z]:/.test(p) || p.includes('\\') || /[\u0000-\u001f]/.test(p) || p.endsWith('/') || p.split('/').some((x) => x === '..' || x === '.' || x === '')) throw bad(`Not a path inside ComfyUI-Shared: ${p.slice(0, 80)}`)
+    const top = p.split('/')[0]
+    if (!(SHARED_DIRS as readonly string[]).includes(top) || p === top) throw bad(`${p.slice(0, 80)} is not in a ComfyUI-Shared folder a sync carries (${SHARED_DIRS.join(', ')})`)
+    if (p.split('/').some((seg) => excluded(seg))) continue
+    out.add(p)
+  }
+  if (!out.size) throw bad('Nothing to copy: every path is a file a sync never carries')
+  return [...out].sort()
+}
+
 /** The ComfyUI-Shared subfolders this pod's pushes carry: the request's choice, else the pod's own configuration, else the default. */
 export const effectiveShared = (req: Pick<SyncRequest, 'pod_id' | 'shared'>): string[] => req.shared ?? configFor(req.pod_id).sync_shared ?? [...mounts.SYNC_SHARED_DEFAULT]
 /** The request with that choice filled in, so the plan, the counts and the run agree. */
-const resolved = (req: SyncRequest): SyncRequest => (req.direction === 'push' ? { ...req, shared: effectiveShared(req) } : req)
+const resolved = (req: SyncRequest): SyncRequest => {
+  const withPaths = req.paths === undefined ? req : { ...req, paths: validatePaths(req.paths) }
+  return withPaths.direction === 'push' ? { ...withPaths, shared: withPaths.paths ? withPaths.shared ?? [...SHARED_DIRS] : effectiveShared(withPaths) } : withPaths
+}
+/** The folder of ComfyUI-Shared a step carries a `paths` file under ('' for the push of the whole root), and the file relative to the step. */
+const stepDir = (req: SyncRequest, step: sync.Step): string => (req.direction === 'push' ? '' : step.key === 'output' ? 'output' : step.key.replace(/^shared\//, ''))
+export const stepPaths = (req: SyncRequest, step: sync.Step): string[] => { const d = stepDir(req, step); return (req.paths ?? []).filter((p) => !d || p.startsWith(`${d}/`)).map((p) => (d ? p.slice(d.length + 1) : p)) }
 
 /** What a run would copy, without running it (the confirmation shows this). */
 export function planFor(request: SyncRequest): sync.Step[] {
   const req = resolved(request)
   const cfg = configFor(req.pod_id)
   const only = new Set(req.only || [])
+  if (req.paths) {   // a files filter touches ComfyUI-Shared only: never the project tree, the plates or the repo's workflows
+    if (req.direction === 'pull') return sync.pullPlan(cfg, [], new Set()).filter((s) => stepPaths(req, s).length)
+    return sync.plan(cfg, new Set(['comfy-shared']), false).filter((s) => s.key === 'comfy-shared')
+  }
   if (req.direction === 'pull') return sync.pullPlan(cfg, sync.listShots(cfg.folders.project || ''), only)
   if (req.plates && !req.approved_by?.trim()) throw bad('Plates leaving this PC need a named yes: give approved_by (shared/governance/policy/agent-permissions.md)')
   const steps = sync.plan(cfg, only, !!req.plates)
@@ -228,7 +283,7 @@ export async function transportFor(podId: string, client?: rp.RunPodClient): Pro
 /** How a folder splits into streams: the loose files in its root (first, on its own: that creates the folder and its
  *  subfolders on the pod), then each top-level directory that the excludes do not drop. A folder that cannot be read is one stream. */
 export interface Stream { name: string; local: string; remote: string; shallow: boolean }
-const excluded = (name: string) => sync.EXCLUDE.some((p) => new RegExp('^' + p.replace(/\/$/, '').replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$').test(name))
+export const excluded = (name: string) => sync.EXCLUDE.some((p) => new RegExp('^' + p.replace(/\/$/, '').replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$').test(name))
 export function streamsOf(local: string, remote: string, exclude: string[] = []): Stream[] {
   const root: Stream = { name: '.', local, remote, shallow: true }
   try {
@@ -257,6 +312,9 @@ export const SIM_FILE_BYTES = 1.5 * 1024 ** 3
 const simDrops = (excludes: string[], f: string) => excludes.some((e) => (e.startsWith('/') ? f.startsWith(e.slice(1)) : f.includes(`/${e}`)))
 const simNames = (n: number, excludes: string[]) => SIM_FILES[n % SIM_FILES.length].filter((f) => !simDrops(excludes, f))
 const simStats = (n: number, excludes: string[]) => [`Number of files transferred: ${simNames(n, excludes).length}`, `Total transferred file size: ${simNames(n, excludes).length * SIM_FILE_BYTES} B`]
+/** The simulated copy of a `paths` request: those files themselves. */
+const simPathNames = (req: SyncRequest, step: sync.Step) => { const d = stepDir(req, step); return stepPaths(req, step).map((p) => (d ? `${d}/${p}` : p)) }
+const simStatsOf = (names: string[]) => [`Number of files transferred: ${names.length}`, `Total transferred file size: ${names.length * SIM_FILE_BYTES} B`]
 const withScanned = (c: Counts): Counts => ({ ...c, scanned_files: c.total_files })   // the simulated copy finds nothing already there
 function* simLines(names: string[]): Generator<string> {
   yield `Transfer starting: ${names.length} files`
@@ -315,6 +373,7 @@ function commandFor(req: SyncRequest, transport: Transport, step: sync.Step, mou
 /** What a run would send, from the listing passes: all of it, and with the request's own skips (the renders, the test bucket) when the plan has the project. The confirmation shows the one the switches describe. */
 export async function countFor(request: SyncRequest, client?: rp.RunPodClient, exec: Exec = runCommand): Promise<{ all: Counts; without_renders?: Counts }> {
   const req = resolved(request)
+  if (req.paths) return { all: { total_files: req.paths.length, ...(req.path_sizes ? { total_bytes: req.paths.reduce((a, p) => a + (req.path_sizes![p] ?? 0), 0) } : {}) } }
   const steps = planFor(req)
   const project = req.direction === 'push' && steps.some((s) => s.key === 'project')
   if (mounts.dryRun(mounts.load())) {
@@ -356,9 +415,18 @@ async function runSync(request: SyncRequest, send: (e: SyncEvent) => void, signa
   const mountPath = cfg.mount_path || '/workspace'
   const progress = dry || transport.kind !== 'ssh' ? '--progress' : sync.progressFlag(await rsyncVersion())
   const env = transport.kind === 's3' ? { ...process.env, ...sync.s3Env(settings.lookup) } : process.env
-  const parallel = Math.max(1, cfg.sync_parallel || 1)
+  const parallel = req.paths ? parallelFor(req.pod_id) : Math.max(1, cfg.sync_parallel || 1)
   const held = idle.entry(req.pod_id)?.minutes
   if (held) idle.register(req.pod_id, 0)   // not stopped mid-copy; restored below
+  let listDir: string | undefined
+  /** A list of relative paths for rsync's --files-from, written with fs.promises (a list can be tens of thousands of lines). */
+  const writeList = async (name: string, list: string[]): Promise<string> => {
+    listDir ??= await mkdtemp(join(tmpdir(), 'syncpaths-'))
+    const file = join(listDir, `${name.replace(/\W/g, '_')}.txt`)
+    await writeFile(file, list.join('\n') + '\n', { mode: 0o600 })
+    return file
+  }
+  const filesFromFor = async (step: sync.Step): Promise<string | undefined> => (!req.paths || transport.kind !== 'ssh' || dry ? undefined : writeList(step.key, stepPaths(req, step)))
   try {
     // Every folder listed first, so the run's total is known before the first byte moves.
     const totals: Counts[] = []
@@ -366,8 +434,9 @@ async function runSync(request: SyncRequest, send: (e: SyncEvent) => void, signa
       if (signal.aborted) break
       send({ kind: 'listing', key: step.key })
       const exclude = excludesFor(req, step)
-      if (dry) totals.push(parseStats(simStats(n, exclude)))
-      else if (transport.kind === 'ssh') totals.push(await listStep(commandFor(req, transport, step, mountPath, { progress, verbose: true, dryRun: true, stats: true, exclude }), signal, env, exec))
+      if (dry) totals.push(parseStats(req.paths ? simStatsOf(simPathNames(req, step)) : simStats(n, exclude)))
+      else if (transport.kind === 'ssh') totals.push(await listStep(commandFor(req, transport, step, mountPath, { progress, verbose: true, dryRun: true, stats: true, exclude, filesFrom: await filesFromFor(step) }), signal, env, exec))
+      else if (req.paths) { const ps = stepPaths(req, step), d = stepDir(req, step); totals.push({ total_files: ps.length, ...(req.path_sizes ? { total_bytes: ps.reduce((a, p) => a + (req.path_sizes![d ? `${d}/${p}` : p] ?? 0), 0) } : {}) }) }
       else totals.push({})   // aws s3 sync has no cheap count
     }
     const meter = new RunMeter(); meter.total = sumCounts(totals, steps.length).total_bytes
@@ -375,20 +444,49 @@ async function runSync(request: SyncRequest, send: (e: SyncEvent) => void, signa
     for (const [n, step] of steps.entries()) {
       if (signal.aborted) { result.cancelled = true; break }
       const exclude = excludesFor(req, step)
-      send({ kind: 'step', key: step.key, local: step.local, remote: step.remote, ...totals[n] })
+      send({ kind: 'step', key: step.key, local: step.local, remote: step.remote, ...totals[n], ...(req.paths ? { streams: Math.max(1, Math.min(parallel, stepPaths(req, step).length)) } : {}) })
       const tally = new StepTally(step.key, meter, send)
       const codes: number[] = []
       if (dry) {
         send({ kind: 'line', key: step.key, text: `simulated: ${step.local} -> ${step.remote} (no-spend mode: nothing is copied)` })
         const byDir = new Map<string, string[]>()
-        for (const f of simNames(n, exclude)) { const d = f.split('/')[0]; byDir.set(d, [...(byDir.get(d) || []), f]) }
+        for (const f of req.paths ? simPathNames(req, step) : simNames(n, exclude)) { const d = f.split('/')[0]; byDir.set(d, [...(byDir.get(d) || []), f]) }
         await pool([...byDir.entries()], parallel, async ([dir, names]) => {
           const s = tally.stream(dir)
           for (const line of simLines(names)) { await simPause(); if (signal.aborted) break; s.line(line) }
           s.finish(); codes.push(0)
         })
+      } else if (req.paths && transport.kind === 's3') {
+        // the paths filter over the S3 transport: one `aws s3 cp` per file, up to sync_parallel at a time; a file already here with the size the volume has is skipped
+        const d = stepDir(req, step)
+        const all = stepPaths(req, step), todo: string[] = []
+        for (let i = 0; i < all.length; i += 500) {   // stat in chunks, off the event loop
+          const part = all.slice(i, i + 500)
+          const need = await Promise.all(part.map(async (rel) => { if (req.direction !== 'pull') return true; const want = req.path_sizes?.[d ? `${d}/${rel}` : rel]; if (want === undefined) return true; try { return (await stat(`${step.local}${rel}`)).size !== want } catch { return true } }))
+          part.forEach((rel, j) => { if (need[j]) todo.push(rel) })
+        }
+        await pool(todo.map((rel, k) => ({ rel, k })), parallel, async ({ rel, k }) => {
+          if (signal.aborted) return
+          const cmd = sync.s3FileCmd(req.direction, transport.volume!, step.remote, step.local, rel, { mountPath })
+          send({ kind: 'line', key: step.key, text: '$ ' + cmd.map((c) => (/\s/.test(c) ? JSON.stringify(c) : c)).join(' ') })
+          const s = tally.stream(`k${k}`)
+          codes.push(await exec(cmd, (text) => s.line(text), signal, env))
+          s.finish()
+        })
+      } else if (req.paths && transport.kind === 'ssh') {
+        // the paths filter over SSH: the list split into up to sync_parallel chunks, each its own rsync with its own --files-from, all at once
+        const chunks = chunksOf(stepPaths(req, step), parallel)
+        await pool(chunks.map((list, k) => ({ list, k })), parallel, async ({ list, k }) => {
+          if (signal.aborted) return
+          const filesFrom = await writeList(`${step.key}-${k}`, list)
+          const cmd = commandFor(req, transport, step, mountPath, { progress, verbose: true, exclude, filesFrom })
+          send({ kind: 'line', key: step.key, stream: `p${k}`, text: '$ ' + cmd.map((c) => (/\s/.test(c) ? JSON.stringify(c) : c)).join(' ') })
+          const s = tally.stream(`p${k}`)
+          codes.push(await exec(cmd, (text) => s.line(text), signal, env))
+          s.finish()
+        })
       } else {
-        const streams = req.direction === 'push' && transport.kind === 'ssh' ? streamsOf(step.local, step.remote, exclude) : [{ name: '.', local: step.local, remote: step.remote, shallow: false } as Stream]
+        const streams = req.direction === 'push' && transport.kind === 'ssh' && !req.paths ? streamsOf(step.local, step.remote, exclude) : [{ name: '.', local: step.local, remote: step.remote, shallow: false } as Stream]
         const one = async (u: Stream) => {
           if (signal.aborted) return
           const cmd = commandFor(req, transport, step, mountPath, { progress, verbose: true, exclude: u.name === '.' ? exclude : exclude.filter((e) => !e.startsWith('/')), shallow: u.shallow }, u.local, u.remote)
@@ -411,6 +509,7 @@ async function runSync(request: SyncRequest, send: (e: SyncEvent) => void, signa
     }
   } finally {
     if (held) idle.register(req.pod_id, held)
+    if (listDir) await rm(listDir, { recursive: true, force: true }).catch(() => undefined)
   }
   send({ kind: 'done', text: result.cancelled ? 'cancelled' : result.failed ? `${result.failed} of ${result.steps} folders failed` : result.warned ? `${result.steps} folders in step, ${result.warned} with warnings` : `${result.steps} folders in step` })
   return result
@@ -419,13 +518,43 @@ async function runSync(request: SyncRequest, send: (e: SyncEvent) => void, signa
 /** A sync run, recorded in the history when it ends (done, failed or cancelled). */
 export async function run(request: SyncRequest, send: (e: SyncEvent) => void, signal: AbortSignal, client?: rp.RunPodClient, exec: Exec = runCommand): Promise<SyncResult> {
   const started = new Date().toISOString()
-  const what = `sync ${request.pod_id ?? ''}`.trim()
+  const auto = !!request.trigger?.startsWith('auto-sync')
+  const what = auto ? `auto sync ${request.direction} ${request.pod_id ?? ''}`.trim() : `sync ${request.pod_id ?? ''}`.trim()
+  let streams = 0, moved = 0
+  const reg = registry.begin(request)   // the sync explorer and its logs (syncruns.ts): additive, it never changes the events or the History entry
+  const seen = (e: SyncEvent) => { if (e.kind === 'step' && e.streams) streams = Math.max(streams, e.streams); else if (e.kind === 'file') moved++; reg.event(e); send(e) }
   try {
-    const r = await runSync(request, send, signal, client, exec)
-    history.record({ kind: 'job', job: 'sync', state: r.cancelled ? 'cancelled' : r.failed ? 'failed' : 'done', started_at: started, what, pod_id: request.pod_id, ...(r.failed ? { error: `${r.failed} of ${r.steps} folders failed` } : {}) })
+    const r = await runSync(request, seen, signal, client, exec)
+    reg.end(r)
+    if (request.direction === 'push' && !r.cancelled && !r.failed) journalPush(request)
+    // ONE entry per run (a `paths` run is one run, however many files). An automatic run that moved nothing records nothing (no noise).
+    if (!(auto && !r.failed && !r.cancelled && moved === 0)) history.record({ kind: 'job', job: 'sync', state: r.cancelled ? 'cancelled' : r.failed ? 'failed' : 'done', started_at: started, what, pod_id: request.pod_id, ...(request.trigger ? { trigger: request.trigger } : {}), ...(request.paths ? runCounts(request, streams) : {}), ...(r.failed ? { error: `${r.failed} of ${r.steps} folders failed` } : {}) })
     return r
   } catch (e) {
-    history.record({ kind: 'job', job: 'sync', state: 'failed', started_at: started, what, pod_id: request.pod_id, error: (e as Error).message })
+    reg.end(null, (e as Error).message)
+    history.record({ kind: 'job', job: 'sync', state: 'failed', started_at: started, what, pod_id: request.pod_id, ...(request.trigger ? { trigger: request.trigger } : {}), ...(request.paths ? { files: request.paths.length } : {}), error: (e as Error).message })
     throw e
   }
+}
+
+/** A push that landed changed the volume: ONE batch event for what it carried (docs/ADR-046). Best effort, after the fact, never in the way. A pull changes only this PC, so it writes no event
+ *  (the feed would echo our own pull back at us). Only ComfyUI-Shared reaches the journal; the project tree and plates are not part of it. */
+function journalPush(request: SyncRequest): void {
+  try {
+    const vol = volumeIdFor(request.pod_id)
+    if (!vol) return
+    const req = resolved(request)
+    const dirs = req.paths ? [...new Set(req.paths.map((p) => p.split('/')[0]))] : (req.shared ?? [])
+    if (req.paths) { void journal.emit(vol, { writer: 'app:sync', op: 'batch', prefix: dirs.length === 1 ? `${dirs[0]}/` : undefined, paths: req.paths.slice(0, journal.MAX_PATHS), files: req.paths.length, bytes: req.paths.reduce((a, p) => a + (req.path_sizes?.[p] ?? 0), 0) || undefined }); return }
+    for (const d of dirs) void journal.emit(vol, { writer: 'app:sync', op: 'batch', prefix: `${d}/` })
+  } catch { /* the journal never fails a sync */ }
+}
+
+/** The counts of a `paths` run for its History entry: files, bytes and a detail that says what it did (the trigger, the streams used, the first paths, what the caller noted). */
+function runCounts(req: SyncRequest, streams: number): { files: number; bytes?: number; detail: string } {
+  const paths = req.paths ?? [], bytes = paths.reduce((a, p) => a + (req.path_sizes?.[p] ?? 0), 0)
+  const first = paths.slice(0, 3).join(', ') + (paths.length > 3 ? ` (+${paths.length - 3} more)` : '')
+  const size = bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : bytes >= 1e6 ? `${(bytes / 1e6).toFixed(1)} MB` : bytes ? `${Math.round(bytes / 1e3)} KB` : ''
+  const label = req.trigger ? req.trigger.replace('auto-sync:', 'automatic, ') : 'files filter'
+  return { files: paths.length, ...(bytes ? { bytes } : {}), detail: `${label}: ${paths.length} file${paths.length === 1 ? '' : 's'}${size ? ` (${size})` : ''}${streams ? `, ${streams} stream${streams === 1 ? '' : 's'}` : ''}; ${first}${req.note ? `; ${req.note}` : ''}` }
 }

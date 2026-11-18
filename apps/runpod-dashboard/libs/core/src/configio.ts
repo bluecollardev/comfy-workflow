@@ -29,7 +29,7 @@ export const SECTIONS: Record<SectionKey, SectionDef> = {
   volume: { label: 'Volume and datacenter', fields: ['network_volume_id', 'mount_path', 'data_center_id', 'shared_volume_id'], account: true },
   image: { label: 'Image and registry login', fields: ['image', 'registry_auth_id'], account: true },
   env: { label: 'Environment', fields: ['env'] },
-  pod_defaults: { label: 'Pod defaults', fields: ['idle_stop_minutes', 'models', 'sync_parallel', 'sync_shared', 'pull_shared', 'apply_by_default', 'pull_any_card', 'default_gpu', 'import_max_pods', 'import_cost_cap_usd', 'import_cap_enabled', 'required', 'links'] },
+  pod_defaults: { label: 'Pod defaults', fields: ['idle_stop_minutes', 'models', 'sync_parallel', 'sync_shared', 'pull_shared', 'auto_sync', 'apply_by_default', 'pull_any_card', 'default_gpu', 'import_max_pods', 'import_cost_cap_usd', 'import_cap_enabled', 'required', 'links'] },
   mcp: { label: 'MCP servers', fields: ['mcp_http'] },
   mcp_connections: { label: 'MCP connections (the console this app uses)', fields: [] },
   repositories: { label: 'Repositories and accounts', fields: [] },
@@ -40,7 +40,7 @@ export const SECTIONS: Record<SectionKey, SectionDef> = {
   secrets: { label: 'Keys and tokens', fields: [] },
 }
 export const SECTION_KEYS = Object.keys(SECTIONS) as SectionKey[]
-const CONFIG_KEYS = new Set<string>(['folders', 'custom', 'network_volume_id', 'shared_volume_id', 'mount_path', 'data_center_id', 'links', 'env', 'apply_by_default', 'pull_any_card', 'default_gpu', 'import_max_pods', 'import_cost_cap_usd', 'import_cap_enabled', 'required', 'image', 'registry_auth_id', 'idle_stop_minutes', 'models', 'wanted_models', 'pull_shared', 'sync_shared', 'sync_parallel', 'dry_run', 'mcp_http'])
+const CONFIG_KEYS = new Set<string>(['folders', 'custom', 'network_volume_id', 'shared_volume_id', 'mount_path', 'data_center_id', 'links', 'env', 'apply_by_default', 'pull_any_card', 'default_gpu', 'import_max_pods', 'import_cost_cap_usd', 'import_cap_enabled', 'required', 'image', 'registry_auth_id', 'idle_stop_minutes', 'models', 'wanted_models', 'pull_shared', 'sync_shared', 'sync_parallel', 'auto_sync', 'dry_run', 'mcp_http'])
 const TOP_KEYS = new Set(['format', 'version', 'exported_at', 'app_version', 'config', 'panama', 'governance', 'mcp_connections', 'repositories', 'secrets_included', 'secrets', 'secrets_set', 'env_omitted', 'not_exported'])
 /** Listed in every export, so a reader knows what to set up again by hand. */
 export const NOT_EXPORTED = ['the no-spend switch (dry_run)', 'per-pod configurations', 'per-pod model choices (a pod id means nothing on another machine; the defaults travel)', 'adapters you wrote', 'which pod a repository is cloned onto (pod ids are not portable; the repository list itself travels)']
@@ -117,6 +117,7 @@ const checkType = (key: string, v: unknown): string | null => {
     case 'required': return isObj(v) && Object.values(v).every((x) => typeof x === 'boolean') ? null : 'required must map folder names to true or false'
     case 'custom': case 'links': return Array.isArray(v) && v.every(isObj) ? null : `${key} must be a list of entries`
     case 'env': return isObj(v) && Object.values(v).every((x) => ['string', 'number', 'boolean'].includes(typeof x)) ? null : 'env must map names to text'
+    case 'auto_sync': return isObj(v) && ['enabled', 'pull', 'push'].every((k) => v[k] === undefined || typeof v[k] === 'boolean') && (v.approved_by === undefined || str(v.approved_by)) ? null : 'auto_sync is { enabled, pull, push, approved_by }'
     case 'mcp_http': return isObj(v) && Object.values(v).every(isObj) ? null : 'mcp_http must map each server to its settings'
     default: return null
   }

@@ -55,3 +55,11 @@ export function governanceDir(): string | null {
 
 export const readJson = <T = unknown>(file: string): T => JSON.parse(readFileSync(file, 'utf8')) as T
 export const outputRunsFile = () => process.env.OUTPUT_RUNS_FILE || join(configDir(), 'output-runs.json')   // the runs' output files, kept past a pod stop (docs/ADR-037, 2026-11-17)
+
+// Auto sync (docs/ADR-046): the per-pod settings, the controller's cursors and last-synced manifests, and the reconciler's snapshots of the volume.
+export const autosyncFile = () => process.env.AUTOSYNC_FILE || join(configDir(), 'autosync.json')
+export const autosyncStateFile = () => process.env.AUTOSYNC_STATE_FILE || join(configDir(), 'autosync-state.json')
+export const volumeSnapshotsFile = () => process.env.VOLUME_SNAPSHOTS_FILE || join(configDir(), 'volume-snapshots.json')
+export const syncLogsDir = () => process.env.SYNC_LOGS_DIR || join(configDir(), 'sync-logs')
+export const syncRunsFile = () => process.env.SYNC_RUNS_FILE || join(configDir(), 'sync-runs.json')
+export const autosyncManifestFile = () => process.env.AUTOSYNC_MANIFEST_FILE || join(configDir(), 'autosync-manifest.json')

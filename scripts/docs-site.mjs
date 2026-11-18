@@ -13,7 +13,7 @@ const out = resolve(process.argv[2] || join(ROOT, 'downloads/docs-site'))
 const EXCLUDE = [
   /^CLAUDE\.md$/, /^NEXT-STEPS\.md$/, /^projects\//, /^queue\//, /^shared\//,
   /CANALV2/i, /DELIVERY-PACKAGES/, /MOUNT-POINTS/, /PROMPTS/, /TEST-RESULTS/, /IMPORT-SHOT-PACKS/,
-  /ADR-004/, /ADR-008/, /ADR-043/, /ADR-044/, /ADR-045/, /NODE-PACKS/,
+  /ADR-004/, /ADR-008/, /ADR-043/, /ADR-044/, /ADR-045/, /ADR-046/, /NODE-PACKS/,
   /ADR-01[5-79]/, /ADR-02[12345]/, /POD-PULLS-FROM-S3/, /SCRIPTS/,   // the BH bucket, its keys and the Panama export (names a client project)
 ]
 

@@ -124,7 +124,7 @@
       <BButton variant="outline-light" size="sm" class="text-nowrap px-2" :title="$t('pod.config') + ': ' + $t('pod.configTitle')" :aria-label="$t('pod.config')" data-testid="pod-config" @click="openConfig">
         <i class="fa-solid fa-sliders me-1"></i>{{ $t('pod.config') }}
       </BButton>
-      <BButton variant="outline-light" size="sm" class="text-nowrap px-2" :title="$t('pod.sync') + ': ' + $t('pod.syncTitle')" :aria-label="$t('pod.sync')" data-testid="pod-sync" @click="showSync = true">
+      <BButton :variant="autoOn ? (autoErr ? 'warning' : 'success') : 'outline-light'" size="sm" class="text-nowrap px-2" :title="syncTitle" :aria-label="$t('pod.sync')" data-testid="pod-sync" :data-autosync="autoOn ? 'true' : undefined" :data-autosync-state="autoErr ? 'error' : undefined" @click="showSync = true">
         <i class="fa-solid fa-arrows-rotate me-1"></i>{{ $t('pod.sync') }}
       </BButton>
       <BButton variant="outline-light" size="sm" class="text-nowrap px-2" :pressed="showDetails" :title="$t('pod.details') + ': ' + $t('pod.detailsTitle')" :aria-label="$t('pod.details')" data-testid="pod-details-toggle" @click="toggleDetails">
@@ -240,6 +240,7 @@ import { historyAPI } from '../api/history'
 import { runsWithOutputs, mergeRuns } from '../utils/outputs'
 import { withTimeout } from '../utils/thumbs'
 import SyncModal from './SyncModal.vue'
+import { useAutosyncStore } from '../stores/autosync'
 import RetryLaterModal from './RetryLaterModal.vue'
 import DockerfileModal from './DockerfileModal.vue'
 import { roundShots } from '../utils/roundShots'
@@ -313,6 +314,18 @@ const toast = useToastStore()
 const showDetails = ref(false)
 const showLogs = ref(false)
 const showSync = ref(false)
+/** Auto sync (ADR-046): the Sync button is green while it is on for this pod, amber when its last run failed. */
+const autosync = useAutosyncStore()
+const autoOn = computed(() => autosync.enabled(props.pod.id))
+const autoItem = computed(() => autosync.byPod(props.pod.id))
+const autoErr = computed(() => autoOn.value && autoItem.value?.state === 'error')
+const syncTitle = computed(() => {
+  const base = t('pod.sync') + ': ' + t('pod.syncTitle')
+  if (!autoOn.value) return base
+  const it = autoItem.value
+  if (autoErr.value) return t('autosync.buttonError', { error: it.error || '' })
+  return t('autosync.buttonOn', { what: (it?.state === 'done' && it.summary) || t('autosync.buttonWaiting') })
+})
 const showRetryLater = ref(false)
 const showRunFlows = ref(false), showOutputs = ref(false)
 // A run in progress on this pod shows in the Run button itself ("Running"); the button stays clickable and opens the window on that run's progress. The run lives in the core, so this asks it (in memory, no network) every few seconds while the pod runs.

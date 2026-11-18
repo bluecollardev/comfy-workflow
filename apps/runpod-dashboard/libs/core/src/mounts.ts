@@ -33,6 +33,13 @@ export const DEFAULT_IMAGE = () => process.env.COMFY_IMAGE || DEFAULT_IMAGE_REF
 
 export interface Link { path: string; target: string; required: boolean; mode: string; what: string; folder: string }
 export interface CustomFolder { name: string; local: string; container: string; link: string; mode: string }
+/** Auto sync for the pods a configuration creates (docs/ADR-046): applied to each new pod right after it is created. Turning it on needs the name of who says yes. */
+export interface AutoSyncConfig { enabled: boolean; pull: boolean; push: boolean; approved_by: string }
+export const AUTO_SYNC_DEFAULT: AutoSyncConfig = { enabled: false, pull: true, push: false, approved_by: '' }
+export const normalizeAutoSync = (v: unknown): AutoSyncConfig => {
+  const o = (v && typeof v === 'object' ? v : {}) as Partial<AutoSyncConfig>
+  return { enabled: o.enabled === true, pull: o.pull === undefined ? true : o.pull === true, push: o.push === true, approved_by: typeof o.approved_by === 'string' ? o.approved_by.trim() : '' }
+}
 export interface MountsConfig {
   folders: Record<string, string>
   custom: CustomFolder[]
@@ -63,6 +70,8 @@ export interface MountsConfig {
   pull_shared: string[]      // which ComfyUI-Shared subfolders a pull brings back down (default: output)
   sync_shared: string[]      // which ComfyUI-Shared subfolders a push carries: input, models, output, workflows (a pod's own configuration can differ from the default)
   sync_parallel: number      // rsync streams at a time on a push (1..16); the uplink is the limit, streams keep it full across small files
+  /** Auto sync for each pod created under this configuration (default off; Pull on, Push off); enabled needs approved_by */
+  auto_sync?: AutoSyncConfig
   dry_run: boolean
   mcp_http: McpHttp          // the MCP servers the app itself serves over HTTP on 127.0.0.1 (Connect › MCP); off by default
 }
@@ -134,6 +143,7 @@ export function defaults(): MountsConfig {
     sync_parallel: 8,   // streams at a time: the uplink is the limit and more streams keep it full across many small files (was 4)
     sync_shared: [...SYNC_SHARED_DEFAULT],
     pull_shared: [...PULL_SHARED_DEFAULT],
+    auto_sync: { ...AUTO_SYNC_DEFAULT },
     dry_run: false,
     mcp_http: mcpHttpDefaults(),
   }
@@ -177,6 +187,7 @@ export function normalize(data: Partial<MountsConfig>): MountsConfig {
     import_max_pods: Number.isInteger(data.import_max_pods) && (data.import_max_pods as number) >= 1 && (data.import_max_pods as number) <= 20 ? data.import_max_pods as number : 2,
     import_cost_cap_usd: typeof data.import_cost_cap_usd === 'number' && data.import_cost_cap_usd > 0 ? data.import_cost_cap_usd : 50,
     import_cap_enabled: data.import_cap_enabled !== false,   // absent means the cap is on
+    auto_sync: normalizeAutoSync(data.auto_sync),
     dry_run: data.dry_run === true,
     mcp_http: normalizeMcpHttp(data.mcp_http),
   }
@@ -446,6 +457,7 @@ export function validate(cfg: MountsConfig): MountsConfig {
   if (cfg.default_gpu !== gpus.AUTO && !(cfg.default_gpu in gpus.GPUS)) throw bad(`default_gpu is auto or one of ${Object.keys(gpus.GPUS).join(', ')}, not ${JSON.stringify(cfg.default_gpu)}`)
   if (cfg.idle_stop_minutes < 0) throw bad('idle_stop_minutes is 0 (never) or a number of minutes')
   if (!Number.isInteger(cfg.sync_parallel) || cfg.sync_parallel < 1 || cfg.sync_parallel > 16) throw bad('sync_parallel is a whole number of parallel uploads, 1 to 16')
+  if (cfg.auto_sync?.enabled && !cfg.auto_sync.approved_by.trim()) throw bad('Auto sync needs the name of who says yes')
   const ports = new Set<number>()
   for (const [id, e] of Object.entries(cfg.mcp_http)) {
     if (!Number.isInteger(e.port) || e.port < 1024 || e.port > 65535) throw bad(`mcp_http.${id}.port is a whole number from 1024 to 65535, not ${JSON.stringify(e.port)}`)

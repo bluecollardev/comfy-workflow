@@ -31,7 +31,7 @@
     "test:live": "RUNPOD_LIVE=1 playwright test --config playwright.electron.config.js live.spec.js",
     "cli": "node cli/index.mjs",
     "ipc:test": "node --test electron/core.test.mjs",
-    "dpx:test": "node --test src/utils/dpx.test.mjs src/utils/playback.test.mjs src/utils/thumbs.test.mjs src/utils/outputs.test.mjs",
+    "dpx:test": "node --test src/utils/dpx.test.mjs src/utils/playback.test.mjs src/utils/thumbs.test.mjs src/utils/outputs.test.mjs src/utils/autosync.test.mjs src/utils/syncs.test.mjs",
     "mcp:bundle": "esbuild mcp/server.mjs mcp/comfy-bridge.mjs --bundle --platform=node --format=cjs --target=node22 --define:__MCP_BUNDLE__=true --define:import.meta.url=undefined --log-level=warning --outdir=mcp/dist --out-extension:.js=.cjs"
   },
   "dependencies": {

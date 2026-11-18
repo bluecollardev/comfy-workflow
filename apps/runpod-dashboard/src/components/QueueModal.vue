@@ -72,6 +72,7 @@
         </tbody>
       </table>
     </div>
+    <SyncExplorer />
   </BModal>
 </template>
 
@@ -85,6 +86,7 @@ import { useI18n } from 'vue-i18n'
 import { useConfirmStore } from '../stores/confirm'
 import { useVolumeJobsStore } from '../stores/volumejobs'
 import VolumeJobView from './VolumeJobView.vue'
+import SyncExplorer from './SyncExplorer.vue'
 import { ucwords } from '../utils/ucwords'
 
 const ui = useUiStore()

@@ -12,6 +12,7 @@ import * as podpull from './podpull.js'
 import * as podmodels from './podmodels.js'
 import * as shots from './shots.js'
 import * as outputruns from './outputruns.js'
+import * as autosync from './autosync.js'
 import * as sync from './sync.js'
 import * as ui2api from './ui2api.js'
 
@@ -195,7 +196,7 @@ async function runOne(i: Internal, r: RunResult, base: string, o: RunOpts, fetch
     if (signal.aborted) { await fetchFn(`${base}/interrupt`, { method: 'POST' }).catch(() => {}); throw new CoreError(499, 'cancelled') }
     const h = (await getJson(`${base}/history/${r.prompt_id}`)) as Record<string, Parameters<typeof outcomeOf>[0]>
     const out = outcomeOf(h?.[r.prompt_id])
-    if (out) { r.seconds = Math.round((Date.now() - t0) / 100) / 10; r.outputs = out.outputs; r.files = out.files; r.node = out.node; if (out.error) throw new CoreError(500, out.error); void outputruns.ctxFor(i.job.pod_id, o.client).then((ctx) => outputruns.record(ctx, [{ prompt_id: r.prompt_id!, status: 'success', workflow: r.path, started_at: new Date(t0).toISOString(), duration_s: r.seconds, outputs: (out.files || []).map((f) => ({ filename: f.filename, subfolder: f.subfolder, type: f.type })) }]))   // saved outputs
+    if (out) { r.seconds = Math.round((Date.now() - t0) / 100) / 10; r.outputs = out.outputs; r.files = out.files; r.node = out.node; if (out.error) throw new CoreError(500, out.error); try { autosync.notifyOutputs(i.job.pod_id, null, out.files ?? []) } catch { /* Auto sync never fails a run */ }; void outputruns.ctxFor(i.job.pod_id, o.client).then((ctx) => outputruns.record(ctx, [{ prompt_id: r.prompt_id!, status: 'success', workflow: r.path, started_at: new Date(t0).toISOString(), duration_s: r.seconds, outputs: (out.files || []).map((f) => ({ filename: f.filename, subfolder: f.subfolder, type: f.type })) }]))   // saved outputs
     note(i, `Finished in ${r.seconds} s, ${out.outputs} output${out.outputs === 1 ? '' : 's'}`, r.path); return }
     if (Date.now() - beat >= 30_000) { beat = Date.now(); note(i, `Still running: ${Math.round((beat - t0) / 1000)} s`, r.path) }
     if (Date.now() - t0 > limit) throw new CoreError(504, `Still running after ${Math.round(limit / 60000)} minutes; it keeps running on the pod (prompt ${r.prompt_id}).`)

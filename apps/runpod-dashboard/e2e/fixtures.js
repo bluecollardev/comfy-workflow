@@ -256,6 +256,11 @@ export async function mockApi(page, state) {
       return json(state.settings)
     }
     if (method === 'GET' && path === '/mounts') return json(mountsPayload(state))
+    const asBad = (b) => b && b.auto_sync && b.auto_sync.enabled && !String(b.auto_sync.approved_by || '').trim()   // the core's named yes for Auto sync
+    const asNeedsName = () => json({ detail: 'Auto sync needs the name of who says yes' }, 400)
+    if (method === 'PUT' && path === '/mounts' && asBad(body)) return asNeedsName()
+    if (method === 'POST' && path === '/mounts/preview' && asBad(body)) return asNeedsName()
+    if ((m = path.match(/^\/pods\/([^/]+)\/config$/)) && method === 'PUT' && asBad(body)) return asNeedsName()
     if (method === 'PUT' && path === '/mounts') { state.mounts.config = body; state.mounts.stored = true; return json(mountsPayload(state)) }
     if (method === 'POST' && path === '/mounts/preview') return json(mountsPayload({ ...state, mounts: { ...state.mounts, config: { ...state.mounts.config, ...body } } }))
     if (method === 'DELETE' && path === '/mounts') { state.mounts.config = defaultState().mounts.config; state.mounts.stored = false; return json(mountsPayload(state)) }
@@ -381,6 +386,40 @@ export async function mockApi(page, state) {
     if (method === 'POST' && path === '/queue/import') { state.imported = body; (state.importedAll ||= []).push(body); state.queue = { imports: [{ id: 'imp1', round: body.round, approved_by: body.approved_by, state: 'active', spent_usd: 0, cap_enabled: true, cost_cap_usd: body.cost_cap_usd, max_pods: body.max_pods, counts: {} }], tasks: [{ id: 't1', import_id: 'imp1', round: body.round, shot: null, kind: 'pull', state: 'running', pod_name: 'pull' }, ...body.shots.map((s, i) => ({ id: `t${i + 2}`, import_id: 'imp1', round: body.round, shot: s, kind: 'run', state: i ? 'waiting' : 'failed', error: i ? undefined : 'boom (node 4, KSampler)' }))], active: 1 + body.shots.length }; return json(state.queue.imports[0]) }
     if (method === 'POST' && path === '/queue/purge') { const q = state.queue || { imports: [], tasks: [] }; const live = new Set(q.tasks.filter((t) => ['waiting', 'running', 'held'].includes(t.state)).map((t) => t.import_id)); const gone = q.imports.filter((i) => !live.has(i.id)).map((i) => i.id); state.purged = body; q.imports = q.imports.filter((i) => !gone.includes(i.id)); q.tasks = q.tasks.filter((t) => !gone.includes(t.import_id)); return json({ removed_imports: gone.length }) }
     if (method === 'GET' && path === '/queue') return json(state.queue || { imports: [], tasks: [], active: 0 })
+    // Auto sync (ADR-046): state.autosync = { settings: { podId: {...} }, status: { paused, items } }; a test sets progress and finished states there. state.autosyncOld = true answers like a core that predates it.
+    if (path.startsWith('/autosync')) {
+      const as = (state.autosync ||= { settings: {}, status: { paused: false, items: [] } })
+      if (state.autosyncOld) return json({ detail: `no core call autosync.${path.slice(10) || 'get'}` }, 500)
+      const DEF = { enabled: false, pull: true, push: false, approved_by: '' }
+      if (method === 'GET' && path === '/autosync') return json({ ...DEF, ...(as.settings[query.pod_id] || {}) })
+      if (method === 'PUT' && path === '/autosync') {
+        if (body.enabled && !String(body.approved_by || '').trim()) return json({ detail: 'Auto sync needs the name of who says yes' }, 400)
+        const { pod_id, ...rest } = body
+        as.settings[pod_id] = { ...DEF, ...rest, ...(rest.enabled ? { approved_at: '2026-11-18T10:00:00Z' } : {}) }
+        return json(as.settings[pod_id])
+      }
+      if (method === 'GET' && path === '/autosync/status') return json(as.status)
+      if (method === 'POST' && path === '/autosync/pause') { as.status.paused = !!body.on; return json({ paused: as.status.paused }) }
+      if (method === 'POST' && path === '/autosync/sync-now') return json({ ok: true })
+      if (method === 'POST' && path === '/autosync/approve') { const it = as.status.items.find((i) => i.pod_id === body.pod_id); if (it && !as.keepApproval) it.state = body.yes ? 'syncing' : 'idle'; return json({ ok: true }) }
+      if (method === 'POST' && path === '/autosync/dismiss') { as.status.items = as.status.items.filter((i) => i.pod_id !== body.pod_id); return json({ ok: true }) }
+    }
+    // Sync explorer and logs (ADR-046): state.syncs = { active: [...], recent: [...], logs: { runId: [lines] }, watch: {...} }; a test edits them between polls.
+    // state.syncsOld = true answers like a core that predates them. A failing call: state.failures['GET /syncs/log'] = 'why'.
+    if (path.startsWith('/syncs/')) {
+      if (state.syncsOld) return json({ detail: `no core call syncs.${path.slice(7)}` }, 500)
+      const sy = (state.syncs ||= {})
+      if (method === 'GET' && path === '/syncs/active') return json({ items: sy.active || [] })
+      if (method === 'GET' && path === '/syncs/recent') { const r = (sy.recent || []).filter((x) => !query.pod_id || x.pod_id === query.pod_id); return json(r.slice(0, Number(query.limit) || 50)) }
+      if (method === 'GET' && path === '/syncs/log') {
+        let ls = (sy.logs || {})[query.run_id] || []
+        if (query.level === 'warn') ls = ls.filter((l) => l.level === 'warn' || l.level === 'error')
+        if (query.level === 'error') ls = ls.filter((l) => l.level === 'error')
+        const off = Number(query.offset) || 0, lim = Number(query.limit) || 500
+        return json({ run_id: query.run_id, lines: ls.slice(off, off + lim), total: ls.length, truncated: false })
+      }
+      if (method === 'GET' && path === '/syncs/watch') return json({ paused: false, pull: [], push: [], events: [], ...(sy.watch || {}) })
+    }
     if (method === 'GET' && path === '/runflows') return json({ pod_id: query.pod_id, pod_name: 'ComfyUI-Dev', count: 3, workflows: [{ path: 'rounds/r1/cgi-042/stereo.json', group: 'rounds/r1/cgi-042', name: 'stereo.json', size: 1, modified: 0 }, { path: 'rounds/r1/cgi-042/delivery.json', group: 'rounds/r1/cgi-042', name: 'delivery.json', size: 1, modified: 0 }, { path: 'rounds/r1/cgi-043/other.json', group: 'rounds/r1/cgi-043', name: 'other.json', size: 1, modified: 0 }] })
     if (method === 'POST' && path === '/runflows') { state.ranFlows = body.paths; return json({ id: 'run-1', pod_id: body.pod_id, pod_name: 'ComfyUI-Dev', state: 'running', started_at: 'now', ok: 0, failed: 0, results: body.paths.map((p) => ({ path: p, state: 'pending' })) }) }
     if (method === 'GET' && path === '/runflows/latest') return json(state.latestFlow || null)   // a test sets state.latestFlow to a run the window should find again

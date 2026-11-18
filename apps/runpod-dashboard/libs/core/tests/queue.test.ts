@@ -37,6 +37,7 @@ function world(pool: { id: string; name: string; state: 'running' | 'starting' |
     createPod: async (name, round, gpu) => { const fm = (w as any).freeLeft as Record<string, number> | undefined; (w as any).asked = [...((w as any).asked ?? []), gpu]; if (fm && gpu && gpu in fm) { if (fm[gpu] <= 0) throw new CoreError(502, `No card available right now: tried ${gpu} on SECURE`, 'no_card'); fm[gpu]-- } if ((w as any).transient) throw new CoreError(502, 'RunPod 500'); if ((w as any).noCard) throw new Error('No card available right now: tried rtxpro6000 on SECURE'); (w.gpuOf ||= {})[`new${w.created.length + 1}`] = gpu; const id = `new${w.created.length + 1}`; w.created.push(id); (w.rounds ||= {})[id] = round; w.pods.push({ id, name, state: 'running', price }); w.ready.add(id); return { id, name } },
     assignShot: (id, round, shot) => { (w.shotOf ||= {})[id] = `${round}/${shot}` },
     stopPod: async (id) => { w.stopped.push(id) },
+    autoSync: (id: string, by: string, a: { pull: boolean; push: boolean }) => { ((w as any).auto ||= []).push({ id, by, a }); return true },
     pull: async (_r: string, shots?: string[]) => { (w as any).pulledShots = shots; return { id: 'pj1' } },
     pullJob: (() => ({ id: 'pj1', state: w.pull.state, pod_id: 'pullpod', pod_name: 'pull', gpu: 'RTX 4090', price_per_hour: 0.34, files: 9, place: w.pull.place, error: w.pull.state === 'failed' ? 'aws failed' : undefined })) as never,
     cancelPull: () => { w.pull.state = 'failed' },
@@ -324,5 +325,35 @@ describe('several cards for a shot: the first free one in order, one pod per att
     expect(tasks().find((t) => t.round === 'r2' && t.shot === 'cgi-043')).toMatchObject({ gpu: 'a40' })
     queue.forget()
     await expect(queue.importRounds([{ round: 'r3', cards: { 'cgi-042': ['a40'] } }, { round: 'r4', cards: { 'cgi-042': ['a40', 'nope'] } }], { approved_by: 'Lucas' })).rejects.toThrow(/Unknown card/)
+  })
+})
+
+describe('Auto sync for the pods an import creates (docs/ADR-046)', () => {
+  it('autoOf: true is pull only; an object chooses; nothing or false is none', () => {
+    expect(queue.autoOf(true)).toEqual({ pull: true, push: false }); expect(queue.autoOf({ push: true })).toEqual({ pull: true, push: true }); expect(queue.autoOf({ pull: false })).toBeUndefined()
+    expect(queue.autoOf(false)).toBeUndefined(); expect(queue.autoOf(undefined)).toBeUndefined()
+  })
+  it('a pod the import CREATES gets it, with the import\'s approver; the record says so', async () => {
+    const w = world([])
+    const imp = await queue.importRound(ROUND, { approved_by: 'Lucas', shots: ['cgi-042'], auto_sync: true })
+    expect(imp.auto_sync).toEqual({ pull: true, push: false })
+    await queue.tick(); w.pull.state = 'done'; await queue.tick(); await queue.tick(); await queue.tick()
+    expect(w.created).toHaveLength(1); expect((w as any).auto).toEqual([{ id: w.created[0], by: 'Lucas', a: { pull: true, push: false } }])
+    expect(tasks().find((t) => t.kind === 'run')?.events?.some((e) => /Auto sync on/.test(e.text))).toBe(true)
+  })
+  it('a pod reused from the pool is not changed, and an import without auto_sync touches nothing', async () => {
+    const w = world([{ id: 'p1', name: 'pool-1', state: 'running' }])
+    await queue.importRound(ROUND, { approved_by: 'Lucas', shots: ['cgi-042'], auto_sync: { pull: true, push: true } })
+    await queue.tick(); w.pull.state = 'done'; await queue.tick(); await queue.tick(); await queue.tick()
+    expect(w.created).toHaveLength(0); expect((w as any).auto).toBeUndefined()
+  })
+  it('an import without auto_sync touches nothing', async () => {
+    const w2 = world([])
+    await queue.importRound(ROUND, { approved_by: 'Lucas', shots: ['cgi-042'] }); await queue.tick(); w2.pull.state = 'done'; await queue.tick(); await queue.tick(); await queue.tick()
+    expect(w2.created).toHaveLength(1); expect((w2 as any).auto).toBeUndefined()
+  })
+  it('importRounds: a per-round choice overrides the import-wide one', async () => {
+    world([]); const imps = await queue.importRounds([{ round: ROUND, shots: ['cgi-042'], auto_sync: false }, { round: 'other-round', shots: ['cgi-042'] }], { approved_by: 'Lucas', auto_sync: true }).catch(() => null)
+    if (imps) { expect(imps[0].auto_sync).toBeUndefined(); expect(imps[1].auto_sync).toEqual({ pull: true, push: false }) }
   })
 })

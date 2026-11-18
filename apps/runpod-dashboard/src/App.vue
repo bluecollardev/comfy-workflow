@@ -32,6 +32,7 @@
     <RateLimitBanner />
     <!-- A failed action (Resume with no free GPU on the host, Stop, Delete...) is said right under the nav bar, and stays there while the page scrolls -->
     <BAlert v-if="pods.actionError" :model-value="true" variant="danger" dismissible class="mb-0 rounded-0 border-start-0 border-end-0" data-testid="action-error" @update:model-value="pods.actionError = null">{{ pods.actionError }}</BAlert>
+    <AutoSyncBanner />
     </div>
 
     <BContainer class="py-4 flex-grow-1 app-content" style="width: 100%; max-width: min(100%, 1680px)">
@@ -97,8 +98,11 @@ import ModelsModal from './components/ModelsModal.vue'
 import HistoryModal from './components/HistoryModal.vue'
 import ImportRoundModal from './components/ImportRoundModal.vue'
 import QueueModal from './components/QueueModal.vue'
+import { syncsAPI } from './api/syncs'
 import ConfirmHost from './components/ConfirmHost.vue'
 import RateLimitBanner from './components/RateLimitBanner.vue'
+import AutoSyncBanner from './components/AutoSyncBanner.vue'
+import { useAutosyncStore } from './stores/autosync'
 import { queueAPI } from './api/queue'
 import { useVolumeJobsStore } from './stores/volumejobs'
 import { useToastStore } from './stores/toast'
@@ -147,7 +151,7 @@ const queueCount = ref(0)
 let queueTimer = null
 const vjobsStore = useVolumeJobsStore()
 /** Queued or running tasks plus the running volume jobs (a download, a delete) and the pods of jobs lost at a restart. */
-const loadQueueCount = async () => { try { queueCount.value = (await queueAPI.list()).active } catch { queueCount.value = 0 }; try { await vjobsStore.refresh(); queueCount.value += vjobsStore.running + vjobsStore.interrupted.length } catch { /* no volume jobs known */ } }
+const loadQueueCount = async () => { try { queueCount.value = (await queueAPI.list()).active } catch { queueCount.value = 0 }; try { await vjobsStore.refresh(); queueCount.value += vjobsStore.running + vjobsStore.interrupted.length } catch { /* no volume jobs known */ }; try { queueCount.value += (await syncsAPI.active()).items.length } catch { /* no syncs known */ } }
 let offSync = () => {}
 /** The toasts sit just under the sticky top (nav bar, and a failed action's alert below it): its height is published as --app-top-height. */
 let topObserver = null
@@ -163,11 +167,12 @@ onMounted(async () => {
   pods.startAutoRefresh()
   offSync = syncAPI.onEvent((ev) => pods.syncEvent(ev))   // sync jobs run in the main process; every card follows them from here
   pods.syncRecover(syncAPI)
+  useAutosyncStore().start()   // Auto sync's status and settings, polled while the window is open (ADR-046)
   await settings.load()
   if (!settings.ready) {   // nothing works without a RunPod key: the panel opens on the key field, after asking once, on a new installation, whether to load a configuration file instead
     if (await newInstallation()) ui.welcomeOpen = true
     else ui.configOpen = true
   }
 })
-onUnmounted(() => { pods.stopAutoRefresh(); offSync(); clearInterval(queueTimer) })
+onUnmounted(() => { pods.stopAutoRefresh(); offSync(); clearInterval(queueTimer); useAutosyncStore().stop() })
 </script>
