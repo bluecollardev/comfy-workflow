@@ -28,7 +28,7 @@ const state = ref('idle'), url = ref(''), reason = ref('')
 const first = computed(() => props.tile.frames?.[0] || props.tile.file)
 const key = computed(() => thumbKey(props.scope || props.base, first.value))
 const usable = computed(() => !!props.base && !props.offline)
-let visible = false, io = null, myKey = ''
+let visible = false, io = null, myKey = '', wanted = false   // wanted: the person asked for this preview (Load preview, Load all previews); scrolling away never cancels it
 const setState = (s) => {
   if (state.value === 'capped' && s !== 'capped') previewBus.capped--
   if (s === 'capped' && state.value !== 'capped') previewBus.capped++
@@ -36,6 +36,7 @@ const setState = (s) => {
 }
 async function load(manual = false) {
   if (!usable.value) { setState('nobase'); return }
+  if (manual) wanted = true
   const thumbs = sharedThumbs(), k = myKey = key.value
   setState('loading')
   const r = await thumbs.request(k, { url: viewUrl(props.base, first.value), fallback: appReader(core), bytes: first.value.bytes ?? null, modified: first.value.modified ?? null }, { manual })
@@ -48,8 +49,8 @@ async function load(manual = false) {
 }
 function seen(v) {
   visible = v
-  if (v) { if (state.value === 'idle' || state.value === 'nobase') load(false) }
-  else if (state.value === 'loading') { sharedThumbs().abort(key.value); setState('idle') }
+  if (v) { if (state.value === 'idle' || state.value === 'nobase') load(wanted || previewBus.loadAll) }
+  else if (state.value === 'loading' && !wanted && !previewBus.loadAll) { sharedThumbs().abort(key.value); setState('idle') }   // only an automatic one is dropped when it scrolls away
 }
 onMounted(() => {
   if (typeof IntersectionObserver === 'undefined') { seen(true); return }
