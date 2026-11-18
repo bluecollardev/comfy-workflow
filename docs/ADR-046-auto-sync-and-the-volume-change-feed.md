@@ -52,6 +52,13 @@ ComfyUI writes its outputs itself, so there is no "save event" in our code for t
 ### 4. Also useful to the pod, with no copy (phase 2)
 The same feed lets the pod agent refresh what ComfyUI caches without a person: a `models/` event triggers a model-list refresh, `node-packs/` events link the packs and mark the pod "needs restart", `input/` and `workflows/` need nothing (read on demand). It never restarts ComfyUI by itself.
 
+### 5. Outputs come to this PC by themselves, with a banner (Lucas, 2026-11-18)
+Lucas: "when outputs are generated we want them to sync to our local. display progress as an alert just below nav above the summary / aggregate cards" (the row with Total pods, Running, Stopped, Credits Remaining, Storage / month).
+- **The trigger for outputs does not have to wait for the feed.** A run started from the app already ends with the list of files it made (the run job's `files`, the saved record in `output-runs.json`, ADR-037 and ADR-045). When a graph finishes with files, the pull controller is told at once and pulls exactly those paths; a run started somewhere else (ComfyUI's own window, an agent) is found by the feed and the reconciler (sections 1 and 2). So the latency for the common case is seconds, and phase 1 needs no image change.
+- **Where they land:** the same relative path under this PC's mapped ComfyUI-Shared `output/` folder (`output/proxy_v004/.../*.dpx`); additive, an existing file with the same size is skipped; the transport is the S3 route when the volume has it (works with the pod stopped) else SSH to a running pod.
+- **The banner:** one alert under the navigation bar and above the summary cards (the same band as the failed-action alert and the toasts' anchor, so nothing is covered), shown while something syncs and for a few seconds after. It reads like "Syncing outputs to this PC: 12 of 25 files · 1.1 of 1.2 GB · 38 MB/s · `archival-080_a_v004_proxy.0011.dpx`", with a progress bar, one row per pod when several sync, a **Pause auto sync** link, a click that opens that pod's Sync window, and on finish "Pulled 25 files (1.2 GB) to `output/`" that dismisses itself after about 8 seconds. An error does not dismiss: it names the file and the reason and offers **Retry**. It reuses the Sync window's progress events (files done and left, bytes, rate, the newest files), so the two always agree.
+- **Size is real:** a DPX sequence is about 1.2 GB per 25 frames, so the controller has a size cap per run (default: ask, above 5 GB) and a global **Pause**, and it never starts a second pull for the same pod while one runs.
+
 ## Consequences
 - Phase 1 needs no image change and no new service: the journal written by the app, the S3 reconciler, the `volume_changes` API, the Sync window checkbox and the green button, the paths filter, the pull controller. Latency for ComfyUI's outputs is the reconciler's interval (minutes).
 - Phase 2 adds the pod agent: seconds of latency, deletes and renames, the refresh actions; costs an image rebuild.
@@ -64,6 +71,8 @@ The same feed lets the pod agent refresh what ComfyUI caches without a person: a
 3. **Conflicts:** report and skip (recommended), or prefer the newer side for `workflows` only?
 4. **Reach:** `output/` only for pull at first, or also `workflows/` (Binc and pods both write graphs)?
 5. **Retention:** 14 days then compacted, 90 days then removed: acceptable?
+6. **Outputs to this PC:** pull every new output automatically (the banner shows it), or only for runs started from the app, or only after a click on the banner? What size is too big to pull without asking (default 5 GB per run)?
+7. **Where:** the mapped ComfyUI-Shared `output/` with the same relative paths (recommended), or a separate folder per pod?
 
 ## Not decided / open
 Whether a person other than Lucas will share one feed (a database then earns its place); an hourly bandwidth cap default; how a pod that was created before the agent existed learns the agent (a one-time install over SSH is possible but is an install and needs its own yes).
