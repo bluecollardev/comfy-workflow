@@ -22,7 +22,11 @@ import type { RawPod } from './runpod.js'
 import * as settings from './settings.js'
 
 /** One copy: `local` on this PC, `remote` on the volume as the pod sees it (under the mount path). Both end in '/'. */
-export interface Step { key: string; local: string; remote: string }
+export interface Step { key: string; local: string; remote: string; /** the graphs step: where its local files come from (the repo's apps/comfy-app/workflows, else the mapped ComfyUI-Shared/workflows) */ source?: 'repo' | 'shared' }
+
+/** The order a PUSH runs in (docs/ADR-011, amendment 2026-11-18): the small and important first, so a later failure (a full volume) never costs the graphs. The panel's order is only for display. */
+export const PUSH_ORDER = ['workflows', 'comfy-shared', 'project', 'plates']
+export const orderForRun = <T extends { key: string }>(steps: T[]): T[] => steps.map((s, i) => ({ s, i, k: PUSH_ORDER.indexOf(s.key) })).sort((a, b) => (a.k < 0 ? 99 : a.k) - (b.k < 0 ? 99 : b.k) || a.i - b.i).map((x) => x.s)
 
 /** What never leaves the PC: OS litter, git, Python caches, logs, virtualenvs. rsync patterns. */
 export const EXCLUDE = ['.DS_Store', '._*', '.git', '__pycache__', '*.pyc', 'logs/', '.venv/']
@@ -30,6 +34,8 @@ export const EXCLUDE = ['.DS_Store', '._*', '.git', '__pycache__', '*.pyc', 'log
 /** The repo's workflows (ours, tracked in git) go to comfy-shared/workflows on the volume, the folder the image links
  *  ComfyUI's Workflows panel to. Key `workflows`. */
 export const WORKFLOWS_DIR = resolve(REPO_ROOT, 'apps', 'comfy-app', 'workflows')
+/** The repo's graphs folder (an installed app has no repo beside it); COMFY_APP_WORKFLOWS_DIR points elsewhere (tests). */
+export const workflowsDir = (): string => process.env.COMFY_APP_WORKFLOWS_DIR || WORKFLOWS_DIR
 
 const slash = (p: string) => p.replace(/\/+$/, '') + '/'
 
@@ -46,9 +52,14 @@ export function plan(cfg: mounts.MountsConfig, only: Set<string> = new Set(), pl
     if (!r.local) { warn(`skip ${r.key}: not mapped on this PC`); continue }
     out.push({ key: r.key, local: slash(r.local), remote: slash(r.container) })
   }
-  // The workflows ride with comfy-shared's place on the volume, whether or not that folder is mapped here.
+  // The workflows ride with comfy-shared's place on the volume. Their local source: the repo's apps/comfy-app/workflows when it exists, else the mapped local ComfyUI-Shared/workflows (an installed app has no repo beside it),
+  // else the step is skipped with a plain warning: a missing source never fails a run.
   const shared = rows.find((r) => r.key === 'comfy-shared')
-  if (shared && (!only.size || only.has('workflows'))) out.push({ key: 'workflows', local: slash(WORKFLOWS_DIR), remote: slash(shared.container) + 'workflows/' })
+  if (shared && (!only.size || only.has('workflows'))) {
+    if (isDir(workflowsDir())) out.push({ key: 'workflows', local: slash(workflowsDir()), remote: slash(shared.container) + 'workflows/', source: 'repo' })
+    else if (shared.local && isDir(join(shared.local, 'workflows'))) out.push({ key: 'workflows', local: slash(join(shared.local, 'workflows')), remote: slash(shared.container) + 'workflows/', source: 'shared' })
+    else warn('No local workflows folder: the graphs step was skipped')
+  }
   return out
 }
 
@@ -119,10 +130,13 @@ export function s3Key(remote: string, mountPath = '/workspace'): string {
 export const s3Excludes = (): string[] => EXCLUDE.map((e) => e.replace(/\/$/, '')).flatMap((n) => [n, `*/${n}`, `${n}/*`, `*/${n}/*`]).flatMap((p) => ['--exclude', p])
 
 /** The AWS CLI's globs for the run's own excludes: `/NAME/` is the top level of the folder pushed, `NAME/` that folder anywhere below it. */
-export const s3ExcludesFor = (exclude: string[] = []): string[] => exclude.flatMap((e) => {
-  const name = e.replace(/^\//, '').replace(/\/$/, '')
-  return (e.startsWith('/') ? [`${name}/*`] : [`${name}/*`, `*/${name}/*`]).flatMap((g) => ['--exclude', g])
-})
+/** One rsync-style exclude pattern as AWS CLI globs (a pure function, `*` crosses `/`): `X/` is a folder anywhere (`X/*`, `*\/X/*`), `/X/` the one at the top (`X/*`), a plain `X` a file or folder at any depth (`X`, `*\/X` and what is under it), `/X` the top-level one; a pattern with a slash inside is anchored, as in rsync. */
+export function s3Glob(p: string): string[] {
+  const dirOnly = p.endsWith('/'), name = p.replace(/^\//, '').replace(/\/$/, ''), anchored = p.startsWith('/') || name.includes('/')
+  if (dirOnly) return anchored ? [`${name}/*`] : [`${name}/*`, `*/${name}/*`]
+  return anchored ? [name, `${name}/*`] : [name, `*/${name}`, `${name}/*`, `*/${name}/*`]
+}
+export const s3ExcludesFor = (exclude: string[] = []): string[] => exclude.flatMap((e) => s3Glob(e).flatMap((g) => ['--exclude', g]))
 
 export const S3_KEYS = ['RUNPOD_S3_ACCESS_KEY', 'RUNPOD_S3_SECRET_KEY'] as const
 

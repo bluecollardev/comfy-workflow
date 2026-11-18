@@ -19,7 +19,7 @@ export const MAX_CURRENT = 8, MAX_RECENT = 20, MAX_INDEX = 200, KEEP_IN_MEMORY =
 export const LOG_DAYS = 14, LOG_MAX_BYTES = 50 * 1024 * 1024
 export const FLUSH_MS = 250, PRUNE_EVERY_MS = 24 * 3600_000
 
-export type Trigger = 'manual' | 'auto-sync:output' | 'auto-sync:feed' | 'auto-sync:reconcile' | 'auto-sync:push' | 'auto-sync:enable'
+export type Trigger = 'manual' | 'auto-sync:output' | 'auto-sync:feed' | 'auto-sync:reconcile' | 'auto-sync:push' | 'auto-sync:enable' | 'render:pull'
 export interface Line { ts: string; level: 'info' | 'warn' | 'error'; text: string; path?: string }
 export interface StepView { key: string; state: 'waiting' | 'running' | 'done' | 'failed'; files_done: number; files_total: number; bytes_done: number; bytes_total: number }
 export interface Flight { path: string; bytes_done: number; bytes_total: number; percent: number }
@@ -132,12 +132,14 @@ export class Registry {
         const last = [...run.perStream.values()].pop(); if (last && e.file_percent !== undefined) { last.percent = e.file_percent; last.bytes_done = last.bytes_total ? Math.round(last.bytes_total * e.file_percent / 100) : last.bytes_done }
         break
       }
+      case 'delete': this.line(run, e.state === 'failed' ? 'error' : 'info', e.text ?? `delete ${e.path}`, e.path); break
+      case 'warning': this.line(run, 'warn', e.text ?? 'warning'); break
       case 'problem': run.problems++; this.line(run, 'warn', e.text ?? 'problem'); break
       case 'step-done': {
-        const s = v.steps.find((x) => x.key === e.key); const bad = (e.code ?? 0) !== 0 && ![23, 24].includes(e.code ?? 0)
+        const ec = typeof e.code === 'number' ? e.code : 0, s = v.steps.find((x) => x.key === e.key); const bad = ec !== 0 && ![23, 24].includes(ec)
         if (s) { s.state = bad ? 'failed' : 'done'; if (s.files_total === 0) s.files_total = s.files_done }
-        if (bad) run.failed++; else if ((e.code ?? 0) !== 0) run.warned++
-        this.line(run, bad ? 'error' : (e.code ?? 0) !== 0 ? 'warn' : 'info', `Folder ${e.key} finished${e.code ? ` with code ${e.code}` : ''}`); break
+        if (bad) run.failed++; else if (ec !== 0) run.warned++
+        this.line(run, bad ? 'error' : ec !== 0 ? 'warn' : 'info', `Folder ${e.key} finished${ec ? ` with code ${ec}` : ''}`); break
       }
       case 'done': this.line(run, 'info', e.text ?? 'done'); break
       case 'error': this.line(run, 'error', e.text ?? 'error'); break

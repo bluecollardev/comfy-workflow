@@ -19,7 +19,7 @@ describe('static: no synchronous process or file calls on anything big or slow',
   // The one exception, with its reason: autosyncstore.ts reads and writes autosync.json and autosync-state.json (a few KB: the settings per pod, a cursor per pod, up to 200 conflicts)
   // synchronously, once per click or per tick. The manifest and the reconciler's snapshot (thousands of entries) use fs.promises. Nothing else is allowed.
   const ALLOWED: Record<string, string[]> = { 'autosyncstore.ts': ['readFileSync', 'writeFileSync'] }
-  for (const f of ['journal.ts', 'changes.ts', 'autosync.ts', 'autosyncpush.ts', 'autosyncstore.ts', 'syncruns.ts']) {
+  for (const f of ['journal.ts', 'changes.ts', 'autosync.ts', 'autosyncpush.ts', 'autosyncstore.ts', 'syncruns.ts', 'renders.ts']) {
     it(`${f} has none${ALLOWED[f] ? ` beyond the tiny-config helper (${ALLOWED[f].join(', ')})` : ''}`, () => {
       const used = new Set(text(f).match(new RegExp(FORBIDDEN, 'g')) ?? [])
       for (const a of ALLOWED[f] ?? []) used.delete(a)
@@ -60,7 +60,7 @@ describe('event-loop lag', () => {
     which = rows2
     const lag = await maxLag(async () => { const r = await changes.reconcile(VOL, { aws, objectCap: 60_000 }); expect(r.listed).toBeGreaterThan(50_000) })
     expect(lag).toBeLessThan(BOUND_MS)
-  }, 60_000)
+  }, { timeout: 60_000, retry: 2 })   // a 1 ms probe is noisy when other test files load the machine: it must pass once in three tries, and a real blocking loop fails all three
 
   it(`the controller turning a 2,000-path feed into a pull never holds the loop for ${BOUND_MS} ms`, async () => {
     const shared = join(dir, 'shared'); mkdirSync(join(shared, 'output'), { recursive: true })
@@ -76,7 +76,7 @@ describe('event-loop lag', () => {
     const lag = await maxLag(async () => { await autosync.tick(); await autosync.settle() })
     expect(lag).toBeLessThan(BOUND_MS)
     for (const k of ['AUTOSYNC_FILE', 'AUTOSYNC_STATE_FILE', 'AUTOSYNC_MANIFEST_FILE']) delete process.env[k]
-  }, 30_000)
+  }, { timeout: 30_000, retry: 2 })
 
   it('status() and get() answer in a few ms while a pull is in flight', async () => {
     const shared = join(dir, 'shared'); mkdirSync(join(shared, 'output'), { recursive: true })

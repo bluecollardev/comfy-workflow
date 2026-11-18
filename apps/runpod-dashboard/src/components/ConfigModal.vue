@@ -207,6 +207,13 @@
               <small v-else-if="f.declared" class="text-body-secondary" data-testid="folder-note">{{ $t('config.linkedFrom', { source: f.declared.source }) }}</small>
               <small v-else-if="f.key === 'project' && cfg.folders.project && f.local === cfg.folders.project && f.exists" class="text-warning">{{ $t('config.noRoot') }}</small>
               <small v-else-if="f.key !== 'project' && cfg.folders.project" class="text-body-secondary">{{ $t('config.noDeclared') }}</small>
+              <div class="mt-2" data-testid="folder-exclude-block" :data-folder="f.key">
+                <label class="small text-body-secondary mb-0" :for="`cfg-folder-ex-${f.key}`">{{ $t('sync.folderExcludeLabel') }}</label>
+                <textarea :id="`cfg-folder-ex-${f.key}`" :value="folderEx[f.key]?.text ?? ''" class="form-control form-control-sm font-monospace" rows="2" :placeholder="forPod && (folderEx[f.key]?.inherit ?? true) ? (defaultFolderEx[f.key] || []).join('\n') : 'CANALV2/'" data-testid="config-folder-exclude" :data-folder="f.key" @input="onFolderEx(f.key, $event.target.value)"></textarea>
+                <div v-if="forPod && (folderEx[f.key]?.inherit ?? true)" class="form-text" data-testid="config-folder-exclude-inherit" :data-folder="f.key">{{ $t('sync.folderExcludeInherit') }}</div>
+                <BButton v-if="forPod && folderEx[f.key] && !folderEx[f.key].inherit" variant="link" size="sm" class="p-0" data-testid="config-folder-exclude-use-default" :data-folder="f.key" @click="folderEx[f.key] = { text: '', inherit: true }">{{ $t('sync.folderExcludeUseDefault') }}</BButton>
+                <div v-if="folderExError[f.key]" class="text-danger small" data-testid="config-folder-exclude-error" :data-folder="f.key">{{ folderExError[f.key] }}</div>
+              </div>
             </td>
             <td class="font-monospace small" data-testid="folder-container">{{ f.container }}<br /><span class="text-body-secondary" data-testid="folder-env">{{ f.env_key }}</span></td>
             <td></td>
@@ -234,6 +241,7 @@
           </tr>
         </tbody>
       </table>
+      <div class="form-text mt-2" data-testid="config-folder-exclude-help">{{ $t('sync.folderExcludeHelp') }}</div>
       <div class="mt-3" data-testid="cfg-sync-shared">
         <div class="fw-semibold small mb-1">{{ $t('config.syncShared') }}</div>
         <div class="form-text mt-0 mb-2">{{ forPod ? $t('config.syncSharedPodHint') : $t('config.syncSharedHint') }}</div>
@@ -328,6 +336,41 @@
         <div class="form-text mt-1" data-testid="config-autosync-help">{{ $t('autosync.configHelp') }}</div>
         <div v-if="autoSyncError" class="text-danger small mt-1" data-testid="config-autosync-error">{{ autoSyncError }}</div>
       </div>
+      <div class="border rounded p-2 mb-3" data-testid="config-sync-exclude-block">
+        <label class="fw-semibold mb-1" for="cfg-sync-exclude">{{ $t('sync.excludeConfigLabel') }}</label>
+        <textarea id="cfg-sync-exclude" v-model="syncExcludeText" class="form-control form-control-sm font-monospace" rows="3" placeholder="CANALV2/" data-testid="config-sync-exclude"></textarea>
+        <div class="form-text" data-testid="config-sync-exclude-help">{{ $t('sync.excludeConfigHelp') }}</div>
+        <BFormCheckbox v-model="syncExcludeDelete" :value="true" :unchecked-value="false" class="small mt-1" data-testid="config-sync-exclude-delete">{{ $t('sync.excludeDeleteConfigLabel') }}</BFormCheckbox>
+        <div v-if="syncExcludeError" class="text-danger small mt-1" data-testid="config-sync-exclude-error">{{ syncExcludeError }}</div>
+      </div>
+      <div class="border rounded p-2 mb-3" data-testid="config-render">
+        <div class="fw-semibold mb-1">{{ $t('outputs.render.cfg.title') }}</div>
+        <div class="d-flex gap-3 flex-wrap align-items-end small mb-2">
+          <label class="mb-0">{{ $t('outputs.render.cfg.where') }}
+            <select v-model="cfg.render.where" class="form-select form-select-sm" data-testid="config-render-where"><option value="auto">{{ $t('outputs.render.cfg.whereAuto') }}</option><option value="pod">{{ $t('outputs.render.cfg.wherePod') }}</option><option value="local">{{ $t('outputs.render.cfg.whereLocal') }}</option></select>
+          </label>
+          <div role="radiogroup" data-testid="config-render-kind"><div>{{ $t('outputs.render.cfg.kind') }}</div>
+            <label class="me-3"><input v-model="cfg.render.kind" type="radio" value="proxy" class="form-check-input me-1" data-testid="config-render-kind-proxy" />{{ $t('outputs.render.cfg.kindProxy') }}</label>
+            <label><input v-model="cfg.render.kind" type="radio" value="review" class="form-check-input me-1" data-testid="config-render-kind-review" />{{ $t('outputs.render.cfg.kindReview') }}</label>
+          </div>
+          <label class="mb-0">{{ $t('outputs.render.cfg.proxyWidth') }}
+            <select v-model="cfg.render.proxy_width" class="form-select form-select-sm" data-testid="config-render-proxy-width"><option v-for="w in WIDTH_CHOICES" :key="w" :value="w">{{ w === 'source' ? $t('outputs.render.cfg.source') : `${w} px` }}</option></select>
+          </label>
+          <label class="mb-0">{{ $t('outputs.render.cfg.reviewWidth') }}
+            <select v-model="cfg.render.review_width" class="form-select form-select-sm" data-testid="config-render-review-width"><option v-for="w in WIDTH_CHOICES" :key="w" :value="w">{{ w === 'source' ? $t('outputs.render.cfg.source') : `${w} px` }}</option></select>
+          </label>
+          <label class="mb-0">{{ $t('outputs.render.cfg.fps') }}
+            <select v-model="cfg.render.fps" class="form-select form-select-sm" data-testid="config-render-fps"><option v-for="f in FPS_CHOICES" :key="f" :value="f">{{ f === 'auto' ? $t('outputs.render.cfg.fpsAuto') : `${f} fps` }}</option></select>
+          </label>
+        </div>
+        <div class="d-flex gap-3 flex-wrap small mb-1" data-testid="config-render-codecs">
+          <label><input v-model="cfg.render.codecs" type="checkbox" value="h264" class="form-check-input me-1" data-testid="config-render-codec-h264" />{{ $t('outputs.render.cfg.codecH264') }}</label>
+          <label><input v-model="cfg.render.codecs" type="checkbox" value="prores422hq" class="form-check-input me-1" data-testid="config-render-codec-prores" />{{ $t('outputs.render.cfg.codecProres') }}</label>
+          <label><input v-model="cfg.render.pull" type="checkbox" class="form-check-input me-1" data-testid="config-render-pull" />{{ $t('outputs.render.cfg.pull') }}</label>
+        </div>
+        <div class="form-text" data-testid="config-render-help">{{ $t('outputs.render.cfg.help') }}</div>
+        <div v-if="renderError" class="text-danger small mt-1" data-testid="config-render-error">{{ renderError }}</div>
+      </div>
       <details class="mb-2">
         <summary class="small text-body-secondary">{{ $t('config.previewLocal') }}</summary>
         <pre class="small bg-body-tertiary rounded p-2 mt-2 mb-0" style="white-space: pre-wrap">{{ localText }}</pre>
@@ -394,6 +437,8 @@ import { usePanamaStore } from '../stores/panama'
 import { t } from '../i18n'
 import FolderPicker from './FolderPicker.vue'
 import AdapterManager from './AdapterManager.vue'
+import { parsePatterns, listProblem } from '../utils/syncexclude'
+import { RENDER_DEFAULTS, WIDTH_CHOICES, FPS_CHOICES, renderProblem, renderIsDefault } from '../utils/renders'
 
 const props = defineProps({
   mode: { type: String, default: 'default' },      // 'default' | 'pod'
@@ -544,7 +589,55 @@ function take(payload) {
   autoSyncStored = !!payload.config.auto_sync   // an untouched, unticked object is not added to what is saved
   cfg.value.auto_sync = { enabled: false, pull: true, push: false, approved_by: '', ...(cfg.value.auto_sync || {}) }
   if (!cfg.value.auto_sync.approved_by) try { cfg.value.auto_sync.approved_by = localStorage.getItem('runpod-manager.approved-by') || '' } catch { /* storage blocked */ }
+  syncExcludeStored = Array.isArray(payload.config.sync_exclude)   // an untouched, empty list is not added to what is saved
+  syncExcludeText.value = (payload.config.sync_exclude || []).join('\n'); syncExcludeError.value = ''
+  { // folder_excludes: the Default editor shows its own lists; a pod shows its OWN (the props' raw configuration), inheriting the keys it lacks
+    const own = forPod.value ? (props.initial?.folder_excludes || {}) : (payload.config.folder_excludes || {})
+    folderExStored = forPod.value ? !!props.initial?.folder_excludes : !!payload.config.folder_excludes; folderExLoaded.clear()
+    for (const k of Object.keys(folderEx)) delete folderEx[k]
+    for (const f of payload.folders || []) if (!f.custom) folderEx[f.key] = Object.prototype.hasOwnProperty.call(own, f.key) ? { text: (own[f.key] || []).join('\n'), inherit: false } : { text: '', inherit: forPod.value }
+    for (const k of Object.keys(own)) { folderExLoaded.add(k); if (!folderEx[k]) folderEx[k] = { text: (own[k] || []).join('\n'), inherit: false } }
+    for (const k of Object.keys(folderExError)) delete folderExError[k]
+  }
+  syncExcludeDeleteStored = payload.config.sync_exclude_delete !== undefined; syncExcludeDelete.value = !!payload.config.sync_exclude_delete
+  renderStored = !!payload.config.render   // an untouched render object is not added to what is saved
+  cfg.value.render = { ...RENDER_DEFAULTS, ...(cfg.value.render || {}), codecs: [...((cfg.value.render || {}).codecs || RENDER_DEFAULTS.codecs)] }
+  renderError.value = ''
   autoSyncError.value = ''
+}
+let renderStored = false
+let syncExcludeStored = false, syncExcludeDeleteStored = false, folderExStored = false
+// Exclude by default, per mapped folder (v1.5.0): `folder_excludes` { rowKey: [patterns] }. The Default editor loads and saves its own lists; a pod's editor starts every key inheriting the Default's (placeholder), typing replaces it for that key, Use the Default goes back.
+const folderEx = reactive({}), folderExError = reactive({}), defaultFolderEx = ref({})
+function onFolderEx(key, text) { folderEx[key] = { text, inherit: false }; delete folderExError[key] }
+function folderExOk() {
+  let ok = true
+  for (const [key, v] of Object.entries(folderEx)) {
+    const bad = v.inherit ? null : listProblem(parsePatterns(v.text))
+    if (bad) { folderExError[key] = t('sync.folderExcludeError', { folder: key, pattern: bad.pattern, problem: t(`sync.${bad.problem}`) }); ok = false } else delete folderExError[key]
+  }
+  return ok
+}
+function folderExBody() {
+  const out = {}
+  for (const [key, v] of Object.entries(folderEx)) { if (v.inherit) continue; const list = parsePatterns(v.text); if (list.length || folderExLoaded.has(key) || forPod.value) out[key] = list }
+  return out
+}
+const folderExLoaded = new Set()
+const syncExcludeDelete = ref(false)
+const syncExcludeText = ref(''), syncExcludeError = ref('')
+/** Sync: leave out: one pattern per line, the core's rules checked here before any call. */
+function syncExcludeOk() {
+  const bad = listProblem(parsePatterns(syncExcludeText.value))
+  syncExcludeError.value = bad ? t('sync.excludeConfigError', { pattern: bad.pattern, problem: t(`sync.${bad.problem}`) }) : ''
+  return !bad
+}
+const renderError = ref('')
+/** Render sequences: at least one codec, known choices; refused here before any call (the core refuses it too). */
+function renderOk() {
+  const p = renderProblem(cfg.value.render)
+  renderError.value = p ? t('outputs.render.cfg.needCodec') : ''
+  return !p
 }
 let autoSyncStored = false
 const autoSyncError = ref('')
@@ -606,6 +699,7 @@ async function load() {
     try { take(props.initial ? await mountsAPI.preview(props.initial) : (await mounts.load()) || {}) }
     catch (e) { error.value = e.response?.data?.detail || e.message }
     if (!cfg.value) error.value ||= mounts.error
+    try { defaultFolderEx.value = (await mountsAPI.get())?.config?.folder_excludes || {} } catch { defaultFolderEx.value = {} }   // the placeholders of the keys this pod inherits
     loading.value = false
     return
   }
@@ -620,7 +714,7 @@ async function load() {
 
 /** Pod mode: validate through the API's preview, hand the configuration to the owner, close. */
 async function apply() {
-  if (!autoSyncOk()) return
+  if (!autoSyncOk() || !renderOk() || !syncExcludeOk() || !folderExOk()) return
   saving.value = true; error.value = null
   try {
     const payload = await mountsAPI.preview(body())
@@ -655,8 +749,10 @@ function picked(path) {
 function body() {
   const env = {}
   for (const r of envRows.value) if (r.key) env[r.key] = r.value
-  const { auto_sync: a, ...rest } = cfg.value
-  return { ...rest, ...(a.enabled || autoSyncStored ? { auto_sync: { ...a, approved_by: String(a.approved_by || '').trim() } } : {}), env }
+  const { auto_sync: a, render: r, sync_exclude: _se, sync_exclude_delete: _sd, folder_excludes: _fe, ...rest } = cfg.value
+  const patterns = parsePatterns(syncExcludeText.value)
+  const fe = folderExBody()
+  return { ...rest, ...(a.enabled || autoSyncStored ? { auto_sync: { ...a, approved_by: String(a.approved_by || '').trim() } } : {}), ...(patterns.length || syncExcludeStored ? { sync_exclude: patterns } : {}), ...(Object.keys(fe).length || folderExStored ? { folder_excludes: fe } : {}), ...(syncExcludeDelete.value || syncExcludeDeleteStored ? { sync_exclude_delete: !!syncExcludeDelete.value } : {}), ...(r && (renderStored || !renderIsDefault(r)) ? { render: { ...r } } : {}), env }
 }
 
 const localText = computed(() => {
@@ -712,7 +808,7 @@ async function scrollToField(id) {
 }
 
 async function save() {
-  if (!gated.value && !autoSyncOk()) return
+  if (!gated.value && (!autoSyncOk() || !renderOk() || !syncExcludeOk() || !folderExOk())) return
   saving.value = true; error.value = null
   const wasGated = gated.value
   if (newKey.value) {

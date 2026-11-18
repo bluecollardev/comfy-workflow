@@ -63,3 +63,4 @@ export const volumeSnapshotsFile = () => process.env.VOLUME_SNAPSHOTS_FILE || jo
 export const syncLogsDir = () => process.env.SYNC_LOGS_DIR || join(configDir(), 'sync-logs')
 export const syncRunsFile = () => process.env.SYNC_RUNS_FILE || join(configDir(), 'sync-runs.json')
 export const autosyncManifestFile = () => process.env.AUTOSYNC_MANIFEST_FILE || join(configDir(), 'autosync-manifest.json')
+export const rendersFile = () => process.env.RENDERS_FILE || join(configDir(), 'renders.json')   // the newest finished render jobs (docs/ADR-048)

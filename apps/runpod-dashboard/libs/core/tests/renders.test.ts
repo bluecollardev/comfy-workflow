@@ -1,0 +1,525 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { execFile } from 'node:child_process'
+import { existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
+import { readdir } from 'node:fs/promises'
+import { join } from 'node:path'
+import { CoreError } from '../src/errors.js'
+import * as history from '../src/history.js'
+import * as renders from '../src/renders.js'
+import { scratch } from './helpers.js'
+
+// ADR-048: rendered sequences. A fake pod (ssh), a fake ffmpeg (spawn), a fake sync: no pod, no ffmpeg, no aws, no RunPod.
+let dir: string, shared: string, t: number
+let pod: { frames: number[]; lastM: number; outM: number; outS: number; failExit: number; nodir: boolean; hold: Promise<void> | null; header: Buffer; ffprobe: boolean; count: number | null; versions: string[]; vexists: boolean; cpu: { cores: number; memMb: number; dfKb: number } | 'fail' | null }
+let scripts: string[], pulls: { req: Record<string, unknown> }[], emitted: string[], spawned: { cmd: string; args: string[] }[], podOk: boolean, ffmpegAt: string | null, versionExit: number, versionLine: string
+let localCount = 10, cancelSeen: boolean, probeName = 'ARCHIVAL-085_MAIN_23.976_PRORES'
+const SEQ = { dir: 'proxy_v004/shotA', name: 'ARCHIVAL-085_MAIN_23.976_PRORES', first: 0, last: 9, frames: 10, pad: 4 }
+/** A DPX header the way the camera or OCIOWrite makes one: big-endian, 3840x2160, 10-bit RGB packed, with the given transfer. */
+const dpxHeader = (o: { transfer?: number; colorimetric?: number; width?: number; height?: number; bits?: number } = {}) => { const b = Buffer.alloc(820); b.write('SDPX', 0); b.writeUInt32BE(o.width ?? 3840, 772); b.writeUInt32BE(o.height ?? 2160, 776); b.writeUInt8(50, 800); b.writeUInt8(o.transfer ?? 0, 801); b.writeUInt8(o.colorimetric ?? 0, 802); b.writeUInt8(o.bits ?? 10, 803); b.writeUInt16BE(0, 804); return b }
+const hex = (b: Buffer) => b.toString('hex')
+const range = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => a + i)
+const until = async (f: () => unknown, n = 200) => { for (let i = 0; i < n && !f(); i++) await new Promise((r) => setTimeout(r, 5)) }
+const job = (id: string) => renders.status(id).jobs[0]
+
+beforeEach(() => {
+  dir = scratch(); shared = join(dir, 'shared'); mkdirSync(join(shared, 'output'), { recursive: true }); process.env.RENDERS_FILE = join(dir, 'renders.json'); process.env.HISTORY_FILE = join(dir, 'h.jsonl')
+  renders.reset(); t = Date.parse('2026-11-19T10:00:00Z'); scripts = []; pulls = []; emitted = []; spawned = []; podOk = true; ffmpegAt = '/opt/homebrew/bin/ffmpeg'; versionExit = 0; versionLine = 'ffmpeg version 9.0.2'; cancelSeen = false
+  localCount = 10; pod = { frames: range(0, 9), lastM: 100, outM: 0, outS: 0, failExit: 0, nodir: false, hold: null, header: dpxHeader(), ffprobe: true, count: null, versions: [], vexists: false, cpu: null }
+  renders.setDeps({
+    now: () => t, podName: () => 'CanalV2', volumeId: () => 'volx1', localRoot: () => shared, outputDir: () => '/workspace/comfy-shared/output',
+    target: async () => (podOk ? { host: 'root@1.2.3.4', port: 22 } : { reason: 'Start the pod: rendering happens on the pod' }),
+    ssh: async ({ script, onLine, signal }) => {
+      scripts.push(script)
+      if (script.includes('NPROC')) { if (pod.cpu === 'fail') throw new Error('ssh: timeout'); if (pod.cpu) { onLine(`NPROC ${pod.cpu.cores}`); onLine(`MEM ${pod.cpu.memMb} ${Math.round(pod.cpu.memMb / 2)}`); onLine(`DF ${pod.cpu.dfKb}`) } return { code: 0 } }
+      if (script.includes('PROBE-DONE')) {
+        onLine('FFV ffmpeg version 7.1'); onLine(`OUTM ${pod.outM}`); onLine(`OUTS ${pod.outS}`); onLine('OMETS 0'); onLine('POUTM 0'); onLine('POUTS 0'); onLine('PMETS 0')
+        if (pod.nodir) onLine('PROBE-NODIR')
+        else { onLine(`HDR ${hex(pod.header)}`); onLine(`FFP ${pod.ffprobe ? 1 : 0}`); for (const f of pod.frames) onLine(`F 1000 ${pod.lastM}.0 ${probeName}.${String(f).padStart(4, '0')}.dpx`) }
+        onLine('PROBE-DONE')
+      } else if (script.startsWith('ls -1')) { for (const v of pod.versions) onLine(v) }
+      else if (script.includes('CANCELLED')) { cancelSeen = true }
+      else if (script.includes('nice -n 10')) {
+        if (pod.hold) { await Promise.race([pod.hold, new Promise<void>((r) => signal.addEventListener('abort', () => r()))]); if (signal.aborted) return { code: 255 } }
+        if (pod.vexists) { onLine('RENDER-VEXISTS'); return { code: 0 } }
+        const nPass = (script.match(/^PASS \d+$/gm) ?? []).length || 1
+        for (let k = 0; k < nPass; k++) { onLine(`PASS ${k}`); onLine('frame=5'); onLine('progress=continue'); onLine('frame=10'); onLine('progress=end'); if (pod.failExit) { onLine(`RENDER-EXIT ${pod.failExit}`); return { code: 0 } }
+          if (pod.count !== null) { onLine(`RENDER-COUNT ${pod.count} 10`); return { code: 0 } }; onLine(`RENDER-DONE ${k} ${123456 + k} 10`) }
+        onLine('RENDER-ALL')
+      }
+      return { code: 0 }
+    },
+    pull: async (req) => { pulls.push({ req: req as never }); return { steps: 1, failed: 0, warned: 0, cancelled: false } },
+    listing: async (_v, d) => (d === 'proxy_v004/shotA' ? [{ name: `${SEQ.name}_960.mp4`, bytes: 777, modified: '2026-11-19T09:00:00' }, { name: `${SEQ.name}_1280.mp4`, bytes: 999, modified: '2026-11-19T09:01:00' }] : []),
+    emit: async (_v, prefix) => { emitted.push(prefix) },
+    findFfmpeg: async () => ffmpegAt, findFfprobe: async () => '/fake/ffprobe', deliverDirs: async () => [], deliverFiles: async () => [],
+    spawn: async (cmd, args, onLine) => { spawned.push({ cmd, args }); if (cmd.endsWith('ffprobe')) { onLine(String(localCount)); return { code: 0 } } if (args[0] === '-version') { onLine(versionLine); return { code: versionExit } } const part = args.at(-1)!; mkdirSync(join(part, '..'), { recursive: true }); writeFileSync(part, 'x'.repeat(50)); onLine('frame=4'); onLine('frame=10'); return { code: 0 } },
+  })
+})
+afterEach(() => { renders.reset(); delete process.env.RENDERS_FILE })
+
+describe('quoting and arguments', () => {
+  const quoted = (s: string) => new Promise<string>((res, rej) => execFile('bash', ['-c', `printf %s ${renders.q(s)}`], (e, out) => (e ? rej(e) : res(out))))
+  it('every file name stays data: spaces, quotes, ; $() and backticks survive bash exactly', async () => {
+    for (const n of ["A B", "it's", 'a;rm -rf /', '$(touch /tmp/pwned)', '`id`', 'a"b', "x'; echo hi #"]) expect(await quoted(n)).toBe(n)
+    expect(existsSync('/tmp/pwned')).toBe(false)
+  })
+  it('the exact ffmpeg arguments: fps from the name, pad, first, frames, width, .part output', () => {
+    expect(renders.ffmpegArgs(SEQ, 1280, { outputDir: '/workspace/comfy-shared/output', frames: 10 })).toEqual(['ffmpeg', '-nostdin', '-y', '-loglevel', 'warning', '-framerate', '24000/1001', '-start_number', '0', '-i', `/workspace/comfy-shared/output/proxy_v004/shotA/${SEQ.name}.%04d.dpx`, '-frames:v', '10',
+      '-vf', 'scale=1280:-2:flags=lanczos:out_color_matrix=bt709,format=yuv420p', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-colorspace', 'bt709', '-movflags', '+faststart', '-an', '-progress', 'pipe:1', `/workspace/comfy-shared/output/.proxies/proxy_v004/shotA/${SEQ.name}_1280.mp4.part`])
+    const a = renders.ffmpegArgs({ ...SEQ, first: 1001, pad: 6 }, 960, { outputDir: '/o', frames: 5, fps: 25 }); expect(a[a.indexOf('-framerate') + 1]).toBe('25'); expect(a[a.indexOf('-start_number') + 1]).toBe('1001'); expect(a[a.indexOf('-i') + 1]).toMatch(/%06d\.dpx$/)
+  })
+  it('fps: the request, else _NN.NNN_ in the name (12 to 120), else 24', () => { expect(renders.fpsOf('a_23.976_b')).toBe('23.976'); expect(renders.rationalFps('23.976')).toBe('24000/1001'); expect(renders.rationalFps('29.97')).toBe('30000/1001'); expect(renders.rationalFps('59.94')).toBe('60000/1001'); expect(renders.rationalFps('25')).toBe('25'); expect(renders.rationalFps('12.5')).toBe('12.5'); expect(renders.fpsOf('a_3840X2160_23.976_x')).toBe('23.976'); expect(renders.fpsOf('a_200_b')).toBe('24'); expect(renders.fpsOf('plain')).toBe('24'); expect(renders.fpsOf('a_30_b', 48)).toBe('48') })
+  it('a script with awkward names puts them in quotes only', () => {
+    const s = renders.renderScript([{ args: renders.ffmpegArgs({ ...SEQ, name: "A B's;x" }, 960, { outputDir: '/o' }), fmt: 'mp4', verify: null }], 'job1', 0)
+    expect(s).toContain(renders.q("/o/proxy_v004/shotA/A B's;x.%04d.dpx")); expect(s).not.toMatch(/;x\.%04d\.dpx[^']/)
+  })
+  it('validation: no .., no absolute, no % or slash in a name, a width from the list or source, whole numbers', () => {
+    for (const bad of [{ ...SEQ, dir: '../x' }, { ...SEQ, dir: '/abs' }, { ...SEQ, name: 'a/b' }, { ...SEQ, name: 'a%d' }, { ...SEQ, last: -1 }, { ...SEQ, pad: 0 }, { ...SEQ, fps: 999 }, null]) expect(() => renders.validateSequence(bad as never)).toThrow()
+    expect(() => renders.validateWidth(800)).toThrow(/width is source or one of/); expect(renders.validateWidth('source')).toBe('source'); expect(renders.validateWidth('1280')).toBe(1280)
+  })
+  it('reads ffmpeg -progress lines', () => {
+    expect(renders.parseProgress('frame=123')).toEqual({ frame: 123 }); expect(renders.parseProgress('progress=end')).toEqual({ ended: true }); expect(renders.parseProgress('progress=continue')).toEqual({ ended: false })
+    expect(renders.parseProgress('fps=23.1')).toBeNull(); expect(renders.parseProgress('Error opening input')).toBeNull(); expect(renders.parseProgress('frame=NaN')).toBeNull()
+  })
+})
+
+describe('plan and the choice of adapter', () => {
+  it('plan shape: out path, exists_remote (S3 listing), exists_local, gaps, adapters, where; the pod reason', async () => {
+    const p = await renders.plan({ pod_id: 'p1', sequences: [{ ...SEQ, frames: 8 }], width: 960 })
+    expect(p).toMatchObject({ pod_ok: true, where: 'pod', total_frames: 8, adapters: [{ id: 'pod', ok: true }, { id: 'local', ok: true }] })
+    expect(p.sequences[0]).toMatchObject({ out: `output/.proxies/proxy_v004/shotA/${SEQ.name}_960.mp4`, exists_remote: true, exists_local: false, gaps: 0, complete: true, missing: [], where: 'pod', source: { width: 3840, height: 2160, bits: 10 } })
+    podOk = false; const q = await renders.plan({ pod_id: 'p1', sequences: [SEQ], width: 960, where: 'pod' })
+    expect(q.pod_ok).toBe(false); expect(q.reason).toBe('Start the pod: rendering happens on the pod')
+  })
+  it('auto: pod when it runs; else this PC; else both reasons; explicit pod and local fail with that adapter\'s reason', async () => {
+    const A = (pod: boolean, local: boolean) => [{ id: 'pod' as const, ok: pod, reason: 'pod off' }, { id: 'local' as const, ok: local, reason: 'no ffmpeg', code: 'no_ffmpeg' }]
+    expect(renders.chooseWhere('auto', A(true, true))).toBe('pod'); expect(renders.chooseWhere('auto', A(false, true))).toBe('local'); expect(renders.chooseWhere('auto', A(true, false))).toBe('pod')
+    expect(() => renders.chooseWhere('auto', A(false, false))).toThrow(/on the pod, pod off; on this PC, no ffmpeg/)
+    expect(() => renders.chooseWhere('pod', A(false, true))).toThrow('pod off'); expect(() => renders.chooseWhere('local', A(true, false))).toThrow('no ffmpeg')
+    expect(renders.chooseWhere('pod', A(true, false))).toBe('pod'); expect(renders.chooseWhere('local', A(false, true))).toBe('local')
+  })
+  it('start refuses with the reason(s) (400) and plan with no pod_id works for local', async () => {
+    podOk = false; ffmpegAt = null
+    await expect(renders.start({ pod_id: 'p1', sequences: [SEQ], width: 960 })).rejects.toThrow(/on the pod, Start the pod.*on this PC, ffmpeg is not installed/)
+    await expect(renders.start({ sequences: [SEQ], width: 960, where: 'pod' })).rejects.toThrow(/Which pod/)
+    ffmpegAt = '/opt/homebrew/bin/ffmpeg'; t += 31_000; const p = await renders.plan({ sequences: [SEQ], width: 960, where: 'local' }); expect(p.where).toBe('local'); expect(p.adapters[0].ok).toBe(false)
+  })
+})
+
+describe('the missing or broken ffmpeg', () => {
+  it('says to install it with Homebrew, with a code and an install hint, in plan, start and the status error; never installs anything', async () => {
+    ffmpegAt = null; podOk = false
+    const p = await renders.plan({ sequences: [SEQ], width: 960, where: 'local' }); const l = p.adapters.find((a) => a.id === 'local')!
+    expect(l).toMatchObject({ ok: false, code: 'no_ffmpeg', install_hint: 'brew install ffmpeg', reason: 'ffmpeg is not installed on this PC. Install it with Homebrew: brew install ffmpeg (Homebrew itself: https://brew.sh), then try again.' })
+    const e = await renders.start({ sequences: [SEQ], width: 960, where: 'local' }).catch((x) => x as CoreError)
+    expect(e).toBeInstanceOf(CoreError); expect(e.status).toBe(400); expect(e.code).toBe('no_ffmpeg'); expect(e.message).toBe(l.reason)
+    expect(spawned.every((s) => s.args[0] === '-version')).toBe(true)
+  })
+  it('a miss is looked at again after 30 s, so installing and retrying needs no restart; a hit stays cached', async () => {
+    ffmpegAt = null; expect((await renders.adapterStates()).find((a) => a.id === 'local')!.ok).toBe(false)
+    ffmpegAt = '/opt/homebrew/bin/ffmpeg'; t += 10_000; expect((await renders.adapterStates()).find((a) => a.id === 'local')!.ok).toBe(false)   // still the cached miss
+    t += 25_000; expect((await renders.adapterStates()).find((a) => a.id === 'local')!.ok).toBe(true)
+    ffmpegAt = null; t += 3_600_000; expect((await renders.adapterStates()).find((a) => a.id === 'local')!.ok).toBe(true)   // found once: kept
+  })
+  it('a found ffmpeg that does not run is a different reason with its first line, code ffmpeg_broken, and is re-checked after 30 s', async () => {
+    versionExit = 1; versionLine = 'Bad CPU type in executable'
+    const l = (await renders.adapterStates()).find((a) => a.id === 'local')!
+    expect(l).toMatchObject({ ok: false, code: 'ffmpeg_broken', reason: 'ffmpeg was found at /opt/homebrew/bin/ffmpeg but did not run: Bad CPU type in executable' })
+    versionExit = 0; t += 31_000; expect((await renders.adapterStates()).find((a) => a.id === 'local')!.ok).toBe(true)
+  })
+  it('the lookup order: PATH first, then the usual folders', async () => {
+    renders.setDeps(null); renders.reset()
+    const bin = join(dir, 'bin'); mkdirSync(bin); writeFileSync(join(bin, 'ffmpeg'), ''); const was = process.env.PATH; process.env.PATH = bin
+    try { renders.setDeps({ spawn: async () => ({ code: 0 }) }); expect((await renders.ffmpegState()).path).toBe(join(bin, 'ffmpeg')) } finally { process.env.PATH = was }
+    expect(renders.FFMPEG_PATHS).toEqual(['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg'])
+  })
+})
+
+describe('rendering on the pod', () => {
+  const go = async (o: Record<string, unknown> = {}) => { const { job_id } = await renders.start({ pod_id: 'p1', sequences: [SEQ], width: 960, ...o }); await renders.settled(); return job(job_id) }
+  it('probe, render, pull exactly the proxy path (sync_parallel and the S3 or SSH transport are the sync\'s), states, History, journal event', async () => {
+    const j = await go()
+    expect(j).toMatchObject({ state: 'done', pulled_files: 1, pulled_bytes: 123456, frames_done: 10, frames_total: 10 }); expect(j.sequences[0]).toMatchObject({ state: 'pulled', where: 'pod', bytes: 123456, frames_done: 10 })
+    expect(pulls).toHaveLength(1); expect(pulls[0].req).toMatchObject({ pod_id: 'p1', direction: 'pull', paths: [`output/.proxies/proxy_v004/shotA/${SEQ.name}_960.mp4`, `output/.proxies/proxy_v004/shotA/${SEQ.name}_960.mp4.meta.json`], trigger: 'render:pull', existing: 'size' })
+    expect(scripts.filter((s) => s.includes('nice -n 10'))).toHaveLength(1); expect(scripts[1]).toContain("nice -n 10 'ffmpeg' '-nostdin'"); expect(emitted).toEqual(['output/.proxies/proxy_v004/shotA/'])
+    const h = history.list({ kind: 'job' }).filter((e) => e.kind === 'job' && e.job === 'render'); expect(h).toHaveLength(1); expect(h[0]).toMatchObject({ state: 'done', files: 1, bytes: 123456, pod_id: 'p1' }); expect((h[0] as { what: string }).what).toMatch(/\(pod\)/)
+  })
+  it('pull: false pulls nothing and the sequence stays rendered', async () => { const j = await go({ pull: false }); expect(pulls).toHaveLength(0); expect(j.sequences[0].state).toBe('rendered') })
+  it('a proxy that is already there and newer than the last frame is skipped (a re-run does nothing); it is still pulled', async () => {
+    pod.outM = 200; pod.outS = 555; const j = await go()
+    expect(scripts.some((s) => s.includes('nice -n 10'))).toBe(false); expect(j.sequences[0]).toMatchObject({ state: 'pulled', bytes: 555 }); expect(pulls).toHaveLength(1)
+    pod.outM = 50; scripts = []; await go(); expect(scripts.some((s) => s.includes('nice -n 10'))).toBe(true)   // older than the last frame: rendered again
+  })
+  it('gaps are a warning; the contiguous run from first is rendered', async () => {
+    pod.frames = [0, 1, 2, 3, 5, 6]; const j = await go({ allow_partial: true }); expect(j.sequences[0].warning).toMatch(/frame numbers? missing/); expect(j.sequences[0].frames_total).toBe(4); expect(j.sequences[0].out).toMatch(/_960_partial\.mp4$/)
+    expect(scripts.find((s) => s.includes('nice -n 10'))).toContain("'-frames:v' '4'")
+  })
+  it('one failing sequence does not stop the next', async () => {
+    const two = [{ ...SEQ, name: 'bad_24_x' }, SEQ]
+    renders.setDeps({ ssh: async ({ script, onLine }) => { scripts.push(script); if (script.includes('PROBE-DONE')) { const n = script.includes('bad_24_x') ? 'bad_24_x' : SEQ.name; for (const f of range(0, 9)) onLine(`F 1000 5.0 ${n}.${String(f).padStart(4, '0')}.dpx`); onLine('OUTM 0'); onLine('OUTS 0'); onLine('PROBE-DONE') } else { onLine('PASS 0'); onLine(script.includes('bad_24_x.%04d.dpx') ? 'RENDER-EXIT 1' : 'RENDER-DONE 0 9 10'); if (!script.includes('bad_24_x.%04d.dpx')) onLine('RENDER-ALL') }; return { code: 0 } } })
+    const { job_id } = await renders.start({ pod_id: 'p1', sequences: two, width: 960 }); await renders.settled(); const j = job(job_id)
+    expect(j.sequences.map((s) => s.state)).toEqual(['failed', 'pulled']); expect(j.sequences[0].error).toMatch(/ffmpeg failed \(exit 1\)/); expect(j.state).toBe('done'); expect(pulls).toHaveLength(1)
+  })
+  it('a frame missing on the pod fails that sequence with a clear message; no folder too', async () => {
+    pod.frames = [1, 2]; let j = await go(); expect(j.sequences[0]).toMatchObject({ state: 'failed', error: expect.stringMatching(/first frame \(0000\) is not on the pod/) }); expect(j.state).toBe('failed')
+    pod.nodir = true; j = await go(); expect(j.sequences[0].error).toMatch(/is not on the pod's output folder/)
+  })
+  it('status() answers from memory during a render; cancel kills the ffmpeg on the pod (a second ssh call) and the job is cancelled', async () => {
+    let release!: () => void; pod.hold = new Promise<void>((r) => { release = r })
+    const { job_id } = await renders.start({ pod_id: 'p1', sequences: [SEQ], width: 960 }); await until(() => job(job_id).state === 'rendering' && scripts.some((s) => s.includes('nice -n 10')))
+    const t0 = performance.now(); const s = job(job_id); expect(performance.now() - t0).toBeLessThan(10); expect(s).toMatchObject({ state: 'rendering', current: SEQ.name, pod_name: 'CanalV2' })
+    renders.cancel(job_id); await renders.settled(); release()
+    expect(cancelSeen).toBe(true); expect(scripts.at(-1)).toContain('rm -f'); expect(job(job_id).state).toBe('cancelled'); expect(pulls).toHaveLength(0)
+  })
+  it('finished jobs are kept in an index that survives a restart', async () => {
+    const j = await go(); await renders.settled(); renders.reset(); process.env.RENDERS_FILE = join(dir, 'renders.json'); await renders.load()
+    expect(renders.status().jobs.map((x) => x.job_id)).toContain(j.job_id)
+  })
+})
+
+describe('rendering on this PC (the local adapter)', () => {
+  const frames = (n: number, name = SEQ.name) => { mkdirSync(join(shared, 'output', SEQ.dir), { recursive: true }); for (let i = 0; i < n; i++) writeFileSync(join(shared, 'output', SEQ.dir, `${name}.${String(i).padStart(4, '0')}.dpx`), i === 0 ? dpxHeader() : 'x') }
+  const goLocal = async (o: Record<string, unknown> = {}) => { const { job_id } = await renders.start({ sequences: [SEQ], width: 960, where: 'local', ...o }); await renders.settled(); return job(job_id) }
+  it('the same ffmpeg arguments as the pod (bar the paths), a local ffmpeg, a .part renamed into place, no pull, state done', async () => {
+    frames(10); const j = await goLocal()
+    expect(j.sequences[0]).toMatchObject({ state: 'done', where: 'local', bytes: 50 }); expect(pulls).toHaveLength(0)
+    const run = spawned.find((s) => s.args[0] !== '-version')!; expect(run.cmd).toBe('/opt/homebrew/bin/ffmpeg')
+    const podArgs = renders.ffmpegArgs(SEQ, 960, { outputDir: '/workspace/comfy-shared/output', frames: 10 }).slice(1), strip = (a: string[]) => a.map((x) => x.replace('/workspace/comfy-shared/output', 'O').replace(join(shared, 'output'), 'O'))
+    expect(strip(run.args)).toEqual(strip(podArgs))
+    expect(existsSync(join(shared, 'output', '.proxies', SEQ.dir, `${SEQ.name}_960.mp4`))).toBe(true); expect(existsSync(join(shared, 'output', '.proxies', SEQ.dir, `${SEQ.name}_960.mp4.part`))).toBe(false)
+  })
+  it('no pod needed: pod_id omitted works; the History says (local)', async () => { frames(10); await goLocal(); expect((history.list({ kind: 'job' })[0] as { what: string }).what).toMatch(/on this PC \(local\)/) })
+  it('frames missing here: the message says to sync the outputs first or render on the pod; gaps are a warning', async () => {
+    let j = await goLocal(); expect(j.sequences[0]).toMatchObject({ state: 'failed', error: 'The frames are not on this PC yet: sync the outputs first, or render on the pod' })
+    frames(10); const { unlinkSync } = await import('node:fs'); unlinkSync(join(shared, 'output', SEQ.dir, `${SEQ.name}.0003.dpx`))
+    j = await goLocal({ allow_partial: true }); expect(j.sequences[0].warning).toMatch(/1 frame number missing/); expect(j.sequences[0].frames_total).toBe(3)
+  })
+  it('a proxy newer than the last frame is skipped', async () => { frames(10); await goLocal(); spawned.length = 0; const j = await goLocal(); expect(j.sequences[0].state).toBe('skipped'); expect(spawned.some((s) => s.args[0] !== '-version')).toBe(false) })
+  it('never writes outside .proxies: a crafted sequence is refused before anything is spawned', async () => {
+    expect(() => renders.validateSequence({ ...SEQ, dir: 'a/../../etc' })).toThrow(); frames(10)
+    const j = await goLocal({ sequences: [{ ...SEQ, name: '..' }] }).catch((e) => e as Error); expect(j).toBeInstanceOf(Error)
+    expect(spawned.some((s) => s.args[0] !== '-version')).toBe(false)
+  })
+  it('cancel kills the local child and removes the .part', async () => {
+    frames(10); let seen!: AbortSignal
+    renders.setDeps({ spawn: async (_c, args, _l, signal) => { if (args[0] === '-version') return { code: 0 }; seen = signal; writeFileSync(args.at(-1)!, 'half'); await new Promise<void>((r) => signal.addEventListener('abort', () => r())); return { code: null } } })
+    const { job_id } = await renders.start({ sequences: [SEQ], width: 960, where: 'local' }); await until(() => seen); renders.cancel(job_id); await renders.settled()
+    expect(seen.aborted).toBe(true); expect(job(job_id).state).toBe('cancelled'); expect((await readdir(join(shared, 'output', '.proxies', SEQ.dir))).filter((n) => n.endsWith('.part'))).toEqual([])
+  })
+  it('auto: the pod is chosen, but a sequence the pod cannot read that is present here is rendered here (where recorded per sequence)', async () => {
+    frames(10); pod.nodir = true
+    const { job_id } = await renders.start({ pod_id: 'p1', sequences: [SEQ], width: 960 }); await renders.settled(); const j = job(job_id)
+    expect(j.sequences[0]).toMatchObject({ where: 'local', state: 'done' }); expect(pulls).toHaveLength(0)
+  })
+  it('explicit where pod does not fall back', async () => { frames(10); pod.nodir = true; const { job_id } = await renders.start({ pod_id: 'p1', sequences: [SEQ], width: 960, where: 'pod' }); await renders.settled(); expect(job(job_id).sequences[0]).toMatchObject({ where: 'pod', state: 'failed' }) })
+})
+
+describe('proxies, the local file guard and clearLocal', () => {
+  const proxyDir = () => join(shared, 'output', '.proxies')
+  it('proxies(): remote from an S3 listing (the pod may be stopped), local by stat, the widest width found, a local_url', async () => {
+    podOk = false; mkdirSync(join(proxyDir(), SEQ.dir), { recursive: true }); writeFileSync(join(proxyDir(), SEQ.dir, `${SEQ.name}_1280.mp4`), 'v')
+    const r = await renders.proxies({ pod_id: 'p1', items: [{ dir: SEQ.dir, name: SEQ.name }, { dir: SEQ.dir, name: 'none' }] })
+    expect(r.items[0]).toMatchObject({ width: 1280, exists_remote: true, remote_ready: true, exists_local: true, bytes: 999 }); expect(r.items[0].local_url).toBe(`localfile://p/proxy_v004/shotA/${SEQ.name}_1280.mp4`)
+    expect(r.items[1]).toMatchObject({ exists_remote: false, exists_local: false, local_url: '' })
+    expect((await renders.proxies({ pod_id: 'p1', items: [{ dir: SEQ.dir, name: SEQ.name }], width: 960 })).items[0]).toMatchObject({ width: 960, exists_remote: true, exists_local: false })
+  })
+  it('the remote listing is cached for 60 s', async () => {
+    let calls = 0; renders.setDeps({ listing: async () => { calls++; return [] } }); renders.forgetListings()
+    await renders.proxies({ pod_id: 'p1', items: [{ dir: 'a', name: 'x' }] }); await renders.proxies({ pod_id: 'p1', items: [{ dir: 'a', name: 'x' }] }); expect(calls).toBe(1); t += 61_000; await renders.proxies({ pod_id: 'p1', items: [{ dir: 'a', name: 'x' }] }); expect(calls).toBe(2)
+  })
+  it('resolveProxyFile: only a plain .mp4 inside the proxies folder (traversal, absolute, symlinks, wrong extension, wrong folder, unmapped)', async () => {
+    mkdirSync(join(proxyDir(), 'd'), { recursive: true }); writeFileSync(join(proxyDir(), 'd', 'a.mp4'), 'abc'); writeFileSync(join(proxyDir(), 'd', 'a.dpx'), 'x'); writeFileSync(join(shared, 'secret.mp4'), 'secret'); mkdirSync(join(dir, 'outside')); writeFileSync(join(dir, 'outside', 'o.mp4'), 'o')
+    symlinkSync(join(shared, 'secret.mp4'), join(proxyDir(), 'link.mp4')); symlinkSync(join(dir, 'outside'), join(proxyDir(), 'linkdir'))
+    const ok = await renders.resolveProxyFile(proxyDir(), '/d/a.mp4'); expect(ok).toMatchObject({ ok: true, size: 3 })
+    for (const bad of ['/../secret.mp4', '/d/../../secret.mp4', '/%2e%2e/secret.mp4', '/d/a.dpx', '/d/missing.mp4', '/link.mp4', '/linkdir/o.mp4', '//etc/passwd.mp4', '/d%5Ca.mp4', '/d/a.mp4%00.png', '/d']) expect((await renders.resolveProxyFile(proxyDir(), bad)).ok, bad).toBe(false)
+    expect((await renders.resolveProxyFile(null, '/d/a.mp4'))).toMatchObject({ ok: false, status: 404 }); expect((await renders.resolveProxyFile(join(shared, 'output'), '/.proxies/../secret.mp4')).ok).toBe(false)
+  })
+  it('clearLocal removes ONLY files inside the mapped output/.proxies; a symlink out is unlinked, never followed; nothing else is touched', async () => {
+    mkdirSync(join(proxyDir(), 'd', 'e'), { recursive: true }); writeFileSync(join(proxyDir(), 'd', 'a.mp4'), 'abc'); writeFileSync(join(proxyDir(), 'd', 'e', 'b.mp4'), 'de')
+    const keep = join(shared, 'output', 'keep.dpx'), keep2 = join(shared, 'input.png'), outside = join(dir, 'outside'); mkdirSync(outside); writeFileSync(keep, 'k'); writeFileSync(keep2, 'k'); writeFileSync(join(outside, 'o.mp4'), 'o')
+    symlinkSync(outside, join(proxyDir(), 'escape')); symlinkSync(join(outside, 'o.mp4'), join(proxyDir(), 'escape.mp4'))
+    const r = await renders.clearLocal(); expect(r.removed).toBeGreaterThanOrEqual(2); expect(r.bytes).toBeGreaterThanOrEqual(5)
+    expect(existsSync(keep) && existsSync(keep2) && existsSync(join(outside, 'o.mp4'))).toBe(true); expect(existsSync(join(proxyDir(), 'd', 'a.mp4'))).toBe(false); expect(existsSync(join(proxyDir(), 'd', 'e', 'b.mp4'))).toBe(false)
+    renders.setDeps({ localRoot: () => null }); expect(await renders.clearLocal()).toEqual({ removed: 0, bytes: 0 })
+  })
+})
+
+
+// ===== governance: completeness, the sidecar, the two kinds (docs/ADR-048 "Governance fit") =====
+const ctrl = () => ({ job: (id: string) => renders.status(id).jobs[0] })
+const runJob = async (o: Record<string, unknown>) => { const { job_id } = await renders.start({ pod_id: 'p1', sequences: [SEQ], width: 960, ...o }); await renders.settled(); return renders.status(job_id).jobs[0] }
+void ctrl
+
+describe('completeness: an incomplete sequence is refused unless a partial is asked for', () => {
+  it('default: state incomplete, "Incomplete: frames ... missing (N gaps)", nothing rendered, never the full-length name (pod)', async () => {
+    pod.frames = [0, 1, 2, 5, 6, 9]
+    const j = await runJob({})
+    expect(j.sequences[0]).toMatchObject({ state: 'incomplete', complete: false, error: 'Incomplete: frames 3-4, 7-8 are missing (2 gaps)', missing: [{ from: 3, to: 4 }, { from: 7, to: 8 }] })
+    expect(scripts.some((s) => s.includes('nice -n 10'))).toBe(false); expect(pulls).toHaveLength(0); expect(j.state).toBe('failed')
+  })
+  it('the missing ranges are capped at 10 in the message', async () => {
+    const S = { ...SEQ, last: 59, frames: 30 }; pod.frames = range(0, 59).filter((n) => n % 2 === 0)   // 30 single missing frames
+    const j = await runJob({ sequences: [S] }); expect(j.sequences[0].error).toMatch(/^Incomplete: frames 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, \.\.\. are missing \(30 gaps\)$/); expect(j.sequences[0].missing).toHaveLength(10)
+    expect(renders.incompleteMessage({ missing: [{ from: 5, to: 5 }], ranges: 1, gaps: 1 })).toBe('Incomplete: frames 5 is missing (1 gap)')
+  })
+  it('allow_partial renders the contiguous run and names it _partial; the full-length name is never written for it', async () => {
+    pod.frames = [0, 1, 2, 3, 5, 6]; const j = await runJob({ allow_partial: true })
+    expect(j.sequences[0]).toMatchObject({ state: 'pulled', partial: true, complete: false, out: `output/.proxies/proxy_v004/shotA/${SEQ.name}_960_partial.mp4` })
+    const script = scripts.find((s) => s.includes('nice -n 10'))!; expect(script).toContain(`${SEQ.name}_960_partial.mp4.part`); expect(script).not.toMatch(new RegExp(`${SEQ.name}_960\\.mp4`))
+    expect(pulls[0].req.paths).toEqual([`output/.proxies/proxy_v004/shotA/${SEQ.name}_960_partial.mp4`, `output/.proxies/proxy_v004/shotA/${SEQ.name}_960_partial.mp4.meta.json`])
+  })
+  it('the local adapter refuses and allows the same way', async () => {
+    const dirF = join(shared, 'output', SEQ.dir); mkdirSync(dirF, { recursive: true }); for (const i of [0, 1, 2, 4]) writeFileSync(join(dirF, `${SEQ.name}.${String(i).padStart(4, '0')}.dpx`), 'x')
+    const { job_id } = await renders.start({ sequences: [{ ...SEQ, last: 4, frames: 4 }], width: 960, where: 'local' }); await renders.settled(); expect(renders.status(job_id).jobs[0].sequences[0]).toMatchObject({ state: 'incomplete', error: 'Incomplete: frames 3 is missing (1 gap)' })
+    const b = await renders.start({ sequences: [{ ...SEQ, last: 4, frames: 4 }], width: 960, where: 'local', allow_partial: true }); await renders.settled(); expect(renders.status(b.job_id).jobs[0].sequences[0]).toMatchObject({ state: 'done', partial: true })
+    expect(existsSync(join(shared, 'output', '.proxies', SEQ.dir, `${SEQ.name}_960_partial.mp4`))).toBe(true); expect(existsSync(join(shared, 'output', '.proxies', SEQ.dir, `${SEQ.name}_960.mp4`))).toBe(false)
+  })
+  it('plan() says complete and the missing ranges; odd files and unusual sizes are reported, not hidden', async () => {
+    pod.frames = [0, 1, 4]; let p = await renders.plan({ pod_id: 'p1', sequences: [SEQ], width: 960 }); expect(p.sequences[0]).toMatchObject({ complete: false, missing: [{ from: 2, to: 3 }, { from: 5, to: 9 }], partial: false })
+    p = await renders.plan({ pod_id: 'p1', sequences: [SEQ], width: 960, allow_partial: true }); expect(p.sequences[0].partial).toBe(true)
+    const probe = renders.parseProbe([`F 10 1.0 ${SEQ.name}.0000.dpx`, `F 10 1.0 ${SEQ.name}.0001.dpx`, `F 99 1.0 ${SEQ.name}.0002.dpx`, `F 10 1.0 ${SEQ.name}.003.dpx`, 'F 10 1.0 other.0001.dpx'], { ...SEQ, last: 2 })
+    expect(probe).toMatchObject({ complete: true, odd: 2, size_odd: 1 })
+  })
+})
+
+describe('the sidecar travels with the proxy', () => {
+  it('pod: written after the mp4 by the script (temp name, then mv), listed in the pull; the content says what it is', async () => {
+    const j = await runJob({ fps: 25 }); const script = scripts.find((s) => s.includes('nice -n 10'))!
+    expect(script).toMatch(/cat > '.*\.mp4\.meta\.json\.tmp' <<'RENDER_EOF_0'/); expect(script).toMatch(/mv '.*\.meta\.json\.tmp' '.*\.meta\.json'/)
+    const body = script.split("<<'RENDER_EOF_0'\n")[1].split('\nRENDER_EOF_0')[0], m = JSON.parse(body)
+    expect(m).toMatchObject({ kind: 'proxy', source_dir: SEQ.dir, name: SEQ.name, first: 0, last: 9, frames: 10, complete: true, partial: false, fps: 25, width: 960, adapter: 'pod', ffmpeg_version: 'ffmpeg version 7.1', source_sizes_total: 10000 }); expect(m.ffmpeg_args[0]).toBe('ffmpeg'); expect(m.rendered_at).toBeTruthy(); expect('not_a_deliverable' in m).toBe(false)
+    expect(pulls[0].req.paths).toContain(`output/.proxies/proxy_v004/shotA/${SEQ.name}_960.mp4.meta.json`); expect(j.sequences[0].state).toBe('pulled')
+  })
+  it('local: an atomic write of the same content (no .tmp left) next to the mp4', async () => {
+    const dirF = join(shared, 'output', SEQ.dir); mkdirSync(dirF, { recursive: true }); for (let i = 0; i < 10; i++) writeFileSync(join(dirF, `${SEQ.name}.${String(i).padStart(4, '0')}.dpx`), i === 0 ? dpxHeader() : 'x')
+    const { job_id } = await renders.start({ sequences: [SEQ], width: 960, where: 'local' }); await renders.settled()
+    const pdir = join(shared, 'output', '.proxies', SEQ.dir), names = await readdir(pdir); expect(names.sort()).toEqual([`${SEQ.name}_960.mp4`, `${SEQ.name}_960.mp4.meta.json`]); expect(job_id).toBeTruthy()
+    const { readFileSync } = await import('node:fs'); expect(JSON.parse(readFileSync(join(pdir, `${SEQ.name}_960.mp4.meta.json`), 'utf8'))).toMatchObject({ kind: 'proxy', adapter: 'local', complete: true, frames: 10, fps: 23.976, ffmpeg_version: 'ffmpeg version 9.0.2' })
+  })
+  it('proxies() reads complete, partial, fps, frames and the real size from the sidecar; no sidecar is unknown, not an error', async () => {
+    const pd = join(shared, 'output', '.proxies', SEQ.dir); mkdirSync(pd, { recursive: true }); writeFileSync(join(pd, `${SEQ.name}_960.mp4`), 'v')
+    let r = (await renders.proxies({ pod_id: 'p1', items: [{ dir: SEQ.dir, name: SEQ.name }], width: 960 })).items[0]; expect(r).toMatchObject({ exists_local: true, complete: null, fps: null, frames: null, partial: false })
+    writeFileSync(join(pd, `${SEQ.name}_960.mp4.meta.json`), JSON.stringify({ complete: false, partial: true, fps: 23.976, frames: 7, width: 3840, height: 2160 }))
+    r = (await renders.proxies({ pod_id: 'p1', items: [{ dir: SEQ.dir, name: SEQ.name }], width: 960 })).items[0]; expect(r).toMatchObject({ complete: false, fps: 23.976, frames: 7 })
+  })
+})
+
+describe('the source size is the default (4K, no scaling)', () => {
+  it('the argument array without a scale size, for the proxy and the review; the file name carries the size', () => {
+    const p = renders.ffmpegArgs(SEQ, 'source', { outputDir: '/o' }); expect(p[p.indexOf('-vf') + 1]).toBe('scale=out_color_matrix=bt709,format=yuv420p'); expect(p[p.indexOf('-preset') + 1]).toBe('veryfast'); expect(p[p.indexOf('-crf') + 1]).toBe('18'); expect(p.at(-1)).toBe(`/o/.proxies/proxy_v004/shotA/${SEQ.name}.mp4.part`)
+    const r = renders.ffmpegArgs(SEQ, 'source', { outputDir: '/o', quality: 'review', final: '/o/deliver/x.mp4' }); expect(r[r.indexOf('-preset') + 1]).toBe('medium'); expect(r[r.indexOf('-crf') + 1]).toBe('14'); expect(r).toContain('-pix_fmt'); expect(r[r.indexOf('-pix_fmt') + 1]).toBe('yuv420p'); expect(r[r.indexOf('-vf') + 1]).toBe('scale=out_color_matrix=bt709,format=yuv420p')
+    expect(renders.proxyRel(SEQ, 'source')).toBe(`output/.proxies/proxy_v004/shotA/${SEQ.name}.mp4`); expect(renders.proxyRel(SEQ, 1280)).toBe(`output/.proxies/proxy_v004/shotA/${SEQ.name}_1280.mp4`)
+  })
+  it('width omitted means the effective setting (source); the size is read from the first frame\'s DPX header', async () => {
+    const p = await renders.plan({ pod_id: 'p1', sequences: [SEQ] }); expect(p.width).toBe('source'); expect(p.settings).toMatchObject({ proxy_width: 'source', review_width: 'source' }); expect(p.sequences[0].out).toBe(`output/.proxies/proxy_v004/shotA/${SEQ.name}.mp4`); expect(p.sequences[0].source).toEqual({ width: 3840, height: 2160, bits: 10 })
+    expect(p.notes[0]).toMatch(/^slow: expect minutes per 100 frames/); expect(p.sequences[0].estimate).toMatchObject({ frames: 10 }); expect(p.sequences[0].estimate!.note).toMatch(/slow/)
+    const h = renders.parseDpxInfo(dpxHeader({ transfer: 3, colorimetric: 3, width: 4096, height: 2160, bits: 10 }))!; expect(h).toMatchObject({ width: 4096, height: 2160, bits: 10, transfer: 3, colorimetric: 3, packing: 0, descriptor: 50, be: true }); expect(renders.parseDpxInfo(Buffer.from('nope'))).toBeNull()
+    const j = await runJob({ width: undefined }); expect(j.width).toBe('source'); expect(scripts.find((s) => s.includes('nice -n 10'))).toContain("'scale=out_color_matrix=bt709,format=yuv420p'")
+  })
+})
+
+describe('the review kind: the stitched, versioned deliverable', () => {
+  const review = (o: Record<string, unknown> = {}) => runJob({ kind: 'review', approved_by: 'Lucas', width: undefined, codecs: ['h264'], ...o })
+  it('shot id, versions and file names', () => {
+    expect(renders.shotOf('CORROSION-015_MAIN_FINAL', 'x/y')).toBe('corrosion-015'); expect(renders.shotOf('archival-080b_x', 'a')).toBe('archival-080b'); expect(renders.shotOf('weird name', 'Some Dir/Last Seg')).toBe('last-seg')
+    expect(renders.nextVersion([])).toBe(1); expect(renders.nextVersion(['v001', 'v003', 'junk', 'v002'])).toBe(4); expect(renders.versionName(7)).toBe('v007')
+    expect(renders.reviewFile('ARCHIVAL-085_MAIN_FINAL_V03_3840X2160_23.976_PRORES422HQ')).toBe('ARCHIVAL-085_MAIN_FINAL_V03_3840X2160_23.976_PRORES422HQ.mov'); expect(renders.reviewFile('X_1', 'h264')).toBe('X_1.mp4'); expect(renders.reviewRel('archival-085', 12, 'CLIP_A')).toBe('output/deliver/archival-085/v012/CLIP_A.mov')
+    for (const n of [renders.reviewFile('ARCHIVAL-085_A', 'h264'), renders.reviewFile('ARCHIVAL-085_A')]) expect(n).not.toMatch(/[0-9a-f]{16,}|uuid|mono|master/i)
+  })
+  it('needs the name of who says yes (400); a partial is rejected; width defaults to source', async () => {
+    await expect(renders.start({ pod_id: 'p1', sequences: [SEQ], kind: 'review' })).rejects.toThrow('A review video needs the name of who says yes')
+    await expect(renders.start({ pod_id: 'p1', sequences: [SEQ], kind: 'review', approved_by: '  ' })).rejects.toMatchObject({ status: 400 })
+    await expect(renders.start({ pod_id: 'p1', sequences: [SEQ], kind: 'review', approved_by: 'L', allow_partial: true })).rejects.toThrow(/allow_partial is not available for kind review/)
+    await expect(renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review', allow_partial: true })).rejects.toThrow(/only made from a complete sequence/)
+  })
+  it('on the pod: a NEW version folder (mkdir, never overwritten), the 4K h264 argument array, DELIVERY.md and the sidecar written, the whole folder pulled, History with the approver', async () => {
+    pod.versions = ['v001']
+    const j = await review()
+    expect(j).toMatchObject({ kind: 'review', approved_by: 'Lucas', state: 'done', width: 'source' }); expect(j.sequences[0]).toMatchObject({ state: 'pulled', shot: 'archival-085', version: 'v002', out: `output/deliver/archival-085/v002/${SEQ.name}.mp4` })
+    const script = scripts.find((s) => s.includes('nice -n 10'))!
+    expect(script).toContain("mkdir '/workspace/comfy-shared/output/deliver/archival-085/v002' || { echo RENDER-VEXISTS; exit 0; }"); expect(script).toContain('timeout 7200 nice -n 10'); expect(script).toContain("'-crf' '14'"); expect(script).toContain("'-preset' 'medium'"); expect(script).toContain("'scale=out_color_matrix=bt709,format=yuv420p'")
+    expect(script).toContain("ffprobe -v error -count_frames"); expect(script).toContain("-f mp4 -i"); expect(script).not.toMatch(/ -rf |rm -rf/)
+    const md = script.split("<<'RENDER_EOF_1'\n")[1].split('\nRENDER_EOF_1')[0]
+    expect(md).toContain("Ready for Binc's review. Sending to the client is Binc's; this app never sends."); expect(md).toContain('Spec is not set in deliverables.csv; rendered at the source resolution 3840x2160, H.264, 23.976 fps (review of the full sequence).'); expect(md).toContain('for Lucas (the named yes)')
+    expect(md).toContain('colour: DPX header: 3840x2160, 10-bit, packed, descriptor 50, transfer user defined (0)'); expect(md).toContain('colour: conversion told to ffmpeg: no colour transform applied'); expect(md).toContain('@@FRAMES_0@@ of 10 expected'); expect(md).not.toMatch(/proxy-resolution/)
+    expect(pulls[0].req.paths).toEqual([`output/deliver/archival-085/v002/${SEQ.name}.mp4`, `output/deliver/archival-085/v002/${SEQ.name}.mp4.meta.json`, 'output/deliver/archival-085/v002/DELIVERY.md'])
+    expect(emitted).toEqual(['output/deliver/archival-085/v002/'])
+    const h = history.list({ kind: 'job' }).find((e) => e.kind === 'job' && e.job === 'render')!; expect(h).toMatchObject({ state: 'done' }); expect((h as { approved_by?: string }).approved_by).toBe('Lucas'); expect((h as { detail: string }).detail).toMatch(/shot archival-085 v002.*codecs h264/)
+    const meta = JSON.parse(script.split("<<'RENDER_EOF_0'\n")[1].split('\nRENDER_EOF_0')[0].replace(/@@(BYTES|FRAMES|RATE)_\d@@/g, '0').replace(/@@SHA256_\d@@/g, 'x')); expect(meta).toMatchObject({ kind: 'review', shot: 'archival-085', version: 'v002', approved_by: 'Lucas', codec: 'h264', width: 3840, height: 2160, colour: { transform: 'none' } })
+  })
+  it('a race on the version folder bumps to the next version, never reuses one', async () => {
+    let tries = 0; const orig = pod; void orig
+    renders.setDeps({ ssh: async ({ script, onLine }) => { scripts.push(script); if (script.includes('PROBE-DONE')) { onLine('FFP 1'); onLine(`HDR ${hex(dpxHeader())}`); for (const f of range(0, 9)) onLine(`F 1000 1.0 ${SEQ.name}.${String(f).padStart(4, '0')}.dpx`); onLine('PROBE-DONE') } else if (script.startsWith('ls -1')) { /* none */ } else if (script.includes('nice -n 10')) { tries++; if (tries === 1) onLine('RENDER-VEXISTS'); else { onLine('PASS 0'); onLine('RENDER-DONE 0 5 10'); onLine('RENDER-ALL') } } return { code: 0 } } })
+    const j = await review(); expect(tries).toBe(2); expect(j.sequences[0].version).toBe('v002')
+  })
+  it('the decoded frame count must equal the expected: a mismatch fails loudly and delivers nothing', async () => {
+    pod.count = 9; const j = await review(); expect(j.sequences[0].state).toBe('failed'); expect(j.sequences[0].error).toMatch(/The frame count does not match: decoded 9 frames, expected 10\. The file was removed; nothing was delivered\./); expect(pulls).toHaveLength(0)
+  })
+  it('both codecs: h264 then ProRes 422 HQ in the same version folder, master name .mov, ProRes arguments, a note that the app cannot play it', async () => {
+    const j = await review({ codecs: ['h264', 'prores422hq'] }); const script = scripts.find((s) => s.includes('nice -n 10'))!
+    expect((script.match(/^PASS \d$/gm) ?? []).length + (script.match(/echo "PASS \d"/g) ?? []).length).toBeGreaterThanOrEqual(2)
+    expect(script).toContain("'-c:v' 'prores_ks' '-profile:v' '3' '-pix_fmt' 'yuv422p10le' '-vendor' 'apl0'"); expect(script).toContain(`${SEQ.name}.mov.part`); expect(script).toContain("-f mov -i"); expect(script).toContain("'scale=out_color_matrix=bt709,format=yuv422p10le'")
+    expect(j.notes.join(' ')).toMatch(/ProRes .mov cannot be played in this app/); expect(pulls[0].req.paths).toContain(`output/deliver/archival-085/v001/${SEQ.name}.mov`); expect(pulls[0].req.paths).toContain(`output/deliver/archival-085/v001/${SEQ.name}.mov.meta.json`)
+    expect(script).toContain(`${SEQ.name}.mp4`); const md = script.split("<<'RENDER_EOF_2'\n")[1].split('\nRENDER_EOF_2')[0]; expect(md).toContain('H.264 and ProRes 422 HQ'); expect(md).toContain('ProRes 422 HQ (prores_ks profile 3')
+    expect((await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review', codecs: ['prores422hq'] })).notes.join(' ')).toMatch(/ProRes/)
+    await expect(renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review', codecs: ['divx' as never] })).rejects.toThrow(/codecs is a non-empty list/)
+  })
+  it('colour: frames that say log, linear or printing density are refused (stated, never guessed); an unreadable header too; the proxy still plays', async () => {
+    pod.header = dpxHeader({ transfer: 1 }); let j = await review(); expect(j.sequences[0]).toMatchObject({ state: 'failed' }); expect(j.sequences[0].error).toMatch(/printing density in their DPX header.*colour\.md says a conversion is stated, never guessed/)
+    pod.header = dpxHeader({ transfer: 3 }); j = await review(); expect(j.sequences[0].error).toMatch(/logarithmic/); pod.header = dpxHeader({ transfer: 2 }); j = await review(); expect(j.sequences[0].error).toMatch(/linear/)
+    pod.header = Buffer.alloc(820); j = await review(); expect(j.sequences[0].error).toMatch(/header of the first frame could not be read/)
+    pod.header = dpxHeader({ transfer: 1 }); j = await runJob({}); expect(j.sequences[0].state).toBe('pulled')   // a quick proxy is not a review
+    expect((await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review' })).sequences[0].colour_refusal).toMatch(/printing density/)
+    expect(renders.colourLines(renders.parseDpxInfo(dpxHeader({ transfer: 6, colorimetric: 6 })), ['prores422hq']).join('\n')).toMatch(/transfer ITU-R 709-4 \(6\).*no colour transform applied.*10-bit 4:2:2 for ProRes/s)
+  })
+  it('incomplete sequences are refused for a review, always', async () => { pod.frames = [0, 1, 2]; const j = await review(); expect(j.sequences[0].state).toBe('incomplete'); expect(scripts.some((s) => s.includes('nice -n 10'))).toBe(false) })
+  it('on this PC: the same version rules, DELIVERY.md and sidecar with sha256 and the verified count, a never-overwritten version, ffprobe verification', async () => {
+    const dirF = join(shared, 'output', SEQ.dir); mkdirSync(dirF, { recursive: true }); for (let i = 0; i < 10; i++) writeFileSync(join(dirF, `${SEQ.name}.${String(i).padStart(4, '0')}.dpx`), i === 0 ? dpxHeader() : 'x')
+    mkdirSync(join(shared, 'output', 'deliver', 'archival-085', 'v001'), { recursive: true }); writeFileSync(join(shared, 'output', 'deliver', 'archival-085', 'v001', 'keep.txt'), 'old')
+    const { job_id } = await renders.start({ sequences: [SEQ], kind: 'review', approved_by: 'Lucas', where: 'local', codecs: ['h264'] }); await renders.settled(); const j = renders.status(job_id).jobs[0]
+    expect(j.sequences[0]).toMatchObject({ state: 'done', version: 'v002', where: 'local' }); const v2 = join(shared, 'output', 'deliver', 'archival-085', 'v002'), names = await readdir(v2)
+    expect(names.sort()).toEqual([`${SEQ.name}.mp4`, `${SEQ.name}.mp4.meta.json`, 'DELIVERY.md']); expect(existsSync(join(shared, 'output', 'deliver', 'archival-085', 'v001', 'keep.txt'))).toBe(true)
+    const { readFileSync } = await import('node:fs'), { createHash } = await import('node:crypto'), sha = createHash('sha256').update(readFileSync(join(v2, `${SEQ.name}.mp4`))).digest('hex')
+    const md = readFileSync(join(v2, 'DELIVERY.md'), 'utf8'); expect(md).toContain(`sha256 ${sha}`); expect(md).toContain('decoded frame count (ffprobe -count_frames) 10 of 10 expected'); expect(md).toContain('50 bytes'); expect(md).not.toContain('@@')
+    const meta = JSON.parse(readFileSync(join(v2, `${SEQ.name}.mp4.meta.json`), 'utf8')); expect(meta).toMatchObject({ kind: 'review', approved_by: 'Lucas', adapter: 'local', outputs: [{ codec: 'h264', bytes: 50, sha256: sha, frames_decoded: 10 }] }); expect(pulls).toHaveLength(0)
+    const sp = spawned.find((x) => x.cmd.endsWith('ffprobe'))!; expect(sp.args).toContain('-count_frames'); expect(sp.args).toContain('mp4')
+  })
+  it('on this PC a frame-count mismatch removes the files and the empty version folder; nothing is delivered', async () => {
+    const dirF = join(shared, 'output', SEQ.dir); mkdirSync(dirF, { recursive: true }); for (let i = 0; i < 10; i++) writeFileSync(join(dirF, `${SEQ.name}.${String(i).padStart(4, '0')}.dpx`), i === 0 ? dpxHeader() : 'x')
+    localCount = 8; const { job_id } = await renders.start({ sequences: [SEQ], kind: 'review', approved_by: 'Lucas', where: 'local', codecs: ['h264'] }); await renders.settled()
+    expect(renders.status(job_id).jobs[0].sequences[0].error).toMatch(/decoded 8 frames, expected 10/); expect(existsSync(join(shared, 'output', 'deliver', 'archival-085', 'v001'))).toBe(false)
+  })
+  it('never writes under Binc\'s mirror (projects/desktop/): the local adapter refuses it, nothing is created', async () => {
+    const { mirrorDir } = await import('../src/paths.js'); const bad = join(mirrorDir(), 'CANALV2', 'ComfyUI-Shared'); renders.setDeps({ localRoot: () => bad })
+    expect(() => renders.assertNotMirror(join(mirrorDir(), 'x'))).toThrow(/Binc's mirror/); renders.assertNotMirror(join(dir, 'ok'))
+    const l = (await renders.adapterStates()).find((a) => a.id === 'local')!; expect(l.ok).toBe(false); expect(l.reason).toMatch(/inside Binc's mirror/)
+    await expect(renders.start({ sequences: [SEQ], kind: 'review', approved_by: 'L', where: 'local' })).rejects.toThrow(/Binc's mirror/); expect(existsSync(join(bad, 'output'))).toBe(false)
+    expect(await renders.clearLocal()).toMatchObject({ removed: 0 })
+  })
+  it('proxies() lists the review versions of the shot (on the volume and on this PC) with the approver', async () => {
+    renders.setDeps({ deliverFiles: async () => [{ name: `v001/${SEQ.name}.mp4`, bytes: 5000 }, { name: 'v001/DELIVERY.md', bytes: 9 }, { name: `v002/${SEQ.name}.mp4`, bytes: 6000 }] })
+    const v2 = join(shared, 'output', 'deliver', 'archival-085', 'v002'); mkdirSync(v2, { recursive: true }); writeFileSync(join(v2, `${SEQ.name}.mp4`), 'x'); writeFileSync(join(v2, `${SEQ.name}.mp4.meta.json`), JSON.stringify({ approved_by: 'Lucas', rendered_at: '2026-11-19T10:00:00Z' }))
+    const d = (await renders.proxies({ pod_id: 'p1', items: [{ dir: SEQ.dir, name: SEQ.name }] })).items[0].deliverables
+    expect(d).toEqual([{ clip_name: SEQ.name, shot: 'archival-085', version: 'v001', file: `${SEQ.name}.mp4`, files: [`${SEQ.name}.mp4`], exists_local: false, exists_remote: true, bytes: 5000, local_url: '' }, { clip_name: SEQ.name, shot: 'archival-085', version: 'v002', file: `${SEQ.name}.mp4`, files: [`${SEQ.name}.mp4`], exists_local: true, exists_remote: true, bytes: 6000, approved_by: 'Lucas', rendered_at: '2026-11-19T10:00:00Z', local_url: `localfile://d/archival-085/v002/${SEQ.name}.mp4` }])
+  })
+})
+
+
+// ===== conform: clip names, timecode, ProRes default, the cheap-card estimate =====
+/** A DPX header with a television-header time code (BCD, the file's byte order). */
+const dpxWithTc = (tc: number, o: { le?: boolean; width?: number; height?: number } = {}) => { const b = Buffer.alloc(1700); b.write(o.le ? 'XPDS' : 'SDPX', 0); const w = (off: number, v: number) => (o.le ? b.writeUInt32LE(v, off) : b.writeUInt32BE(v, off)); w(772, o.width ?? 3840); w(776, o.height ?? 2160); b.writeUInt8(50, 800); b.writeUInt8(10, 803); w(1664, tc); return b }
+const EDL = { a: 'ARCHIVAL-077_A_FINAL_V03_3840X2160_23.976_PRORES422HQ', b: 'ARCHIVAL-077_B_FINAL_V03_3840X2160_23.976_PRORES422HQ', c: 'ARCHIVAL-077_C_FINAL_V02_1920X1080_23.976_PRORES422HQ' }
+
+describe('clip names (the EDL\'s, so a conform relinks)', () => {
+  it('accepts the 077 EDL names and trims; refuses traversal, slash, NUL, overlong, odd characters and uuid- or hash-looking names', () => {
+    for (const n of Object.values(EDL)) expect(renders.validateClipName(n)).toBe(n); expect(renders.validateClipName('  ARCHIVAL-077_A  ')).toBe('ARCHIVAL-077_A'); expect(renders.validateClipName('A B.1')).toBe('A B.1')
+    for (const bad of ['', '   ', '../x', 'a/b', 'a\\b', 'a\u0000b', 'a\nb', 'x'.repeat(201), 'a;b', "a'b", '.hidden', 'name.', '3f2504e0-4f89-11d3-9a0c-0305e82c3301', 'clip_0123456789abcdef0123', 5 as never]) expect(() => renders.validateClipName(bad), String(bad)).toThrow()
+    expect(renders.validateSequence({ ...SEQ, clip_name: EDL.a }).clip_name).toBe(EDL.a); expect(() => renders.validateSequence({ ...SEQ, clip_name: '../x' })).toThrow(/clip_name/); expect(renders.validateSequence({ ...SEQ }).clip_name).toBeUndefined()
+    expect(renders.clipOf({ name: 'stem' })).toBe('stem'); expect(renders.clipOf({ name: 'stem', clip_name: 'EDL' })).toBe('EDL')
+  })
+  it('outputs carry the clip name: proxy source and downscale, partial, review mov and mp4 (the version is in the folder)', () => {
+    const s = { ...SEQ, clip_name: EDL.a }
+    expect(renders.proxyRel(s, 'source')).toBe(`output/.proxies/proxy_v004/shotA/${EDL.a}.mp4`); expect(renders.proxyRel(s, 1280)).toBe(`output/.proxies/proxy_v004/shotA/${EDL.a}_1280.mp4`); expect(renders.proxyRel(s, 'source', true)).toBe(`output/.proxies/proxy_v004/shotA/${EDL.a}_partial.mp4`)
+    expect(renders.reviewRel('archival-077', 3, EDL.a)).toBe(`output/deliver/archival-077/v003/${EDL.a}.mov`); expect(renders.reviewRel('archival-077', 3, EDL.a, 'h264')).toBe(`output/deliver/archival-077/v003/${EDL.a}.mp4`)
+    expect(renders.shotOf(EDL.a, 'x')).toBe('archival-077'); expect(renders.shotOf(EDL.c, 'x')).toBe('archival-077')
+  })
+})
+
+describe('the start timecode (never invented)', () => {
+  it('BCD decode from the television header, both byte orders; unset or invalid is null', () => {
+    expect(renders.bcdTimecode(0x01000000)).toBe('01:00:00:00'); expect(renders.bcdTimecode(0x00595700)).toBe('00:59:57:00'); expect(renders.bcdTimecode(0x23595923)).toBe('23:59:59:23')
+    for (const bad of [0, 0xffffffff, 0x0a000000, 0x24000000, 0x01600000, 0x01006000, 0x0100000a]) expect(renders.bcdTimecode(bad), bad.toString(16)).toBeNull()
+    expect(renders.parseDpxInfo(dpxWithTc(0x01000000))!.timecode).toBe('01:00:00:00'); expect(renders.parseDpxInfo(dpxWithTc(0x00595700, { le: true }))).toMatchObject({ timecode: '00:59:57:00', be: false })
+    expect(renders.parseDpxInfo(dpxWithTc(0))!.timecode).toBeNull(); expect(renders.parseDpxInfo(dpxHeader())!.timecode).toBeNull()   // a header cut at 820 bytes has no television header
+  })
+  it('-timecode goes into the argument array (ProRes and H.264) when the header has one, and not otherwise', () => {
+    const a = renders.ffmpegArgs(SEQ, 'source', { outputDir: '/o', codec: 'prores422hq', quality: 'review', timecode: '01:00:00:00', final: '/o/x.mov' }); expect(a[a.indexOf('-timecode') + 1]).toBe('01:00:00:00'); expect(a.indexOf('-timecode')).toBeLessThan(a.indexOf('-an'))
+    expect(renders.ffmpegArgs(SEQ, 'source', { outputDir: '/o', timecode: '00:59:57:00' })).toContain('-timecode'); expect(renders.ffmpegArgs(SEQ, 'source', { outputDir: '/o' })).not.toContain('-timecode')
+    expect(renders.ffmpegArgs(SEQ, 'source', { outputDir: '/o', timecode: null })).not.toContain('-timecode')
+  })
+  it('a review on the pod embeds it, and records it (and its source) in the sidecar and DELIVERY.md; without one it says so', async () => {
+    pod.header = dpxWithTc(0x01000000); let j = await runJob({ kind: 'review', approved_by: 'L', width: undefined, codecs: ['prores422hq'] }); expect(j.sequences[0].state).toBe('pulled')
+    let script = scripts.filter((s) => s.includes('nice -n 10')).at(-1)!; expect(script).toContain("'-timecode' '01:00:00:00'")
+    const meta = JSON.parse(script.split("<<'RENDER_EOF_0'\n")[1].split('\nRENDER_EOF_0')[0].replace(/@@(BYTES|FRAMES|RATE)_\d@@/g, '0').replace(/@@SHA256_\d@@/g, 'x')); expect(meta).toMatchObject({ start_timecode: '01:00:00:00', timecode_source: 'DPX television header (SMPTE 268M, byte 1664)', codec: 'prores422hq' })
+    expect(script.split("<<'RENDER_EOF_1'\n")[1]).toContain('Start timecode: 01:00:00:00, read from the DPX television header')
+    pod.header = dpxHeader(); j = await runJob({ kind: 'review', approved_by: 'L', width: undefined, codecs: ['prores422hq'] }); script = scripts.filter((s) => s.includes('nice -n 10')).at(-1)!
+    expect(script).not.toContain("'-timecode'"); expect(script.split("<<'RENDER_EOF_1'\n")[1]).toContain('no timecode in the DPX header; none embedded (never invented)')
+    expect(JSON.parse(script.split("<<'RENDER_EOF_0'\n")[1].split('\nRENDER_EOF_0')[0].replace(/@@(BYTES|FRAMES|RATE)_\d@@/g, '0').replace(/@@SHA256_\d@@/g, 'x'))).toMatchObject({ start_timecode: null, timecode_note: 'no timecode in the DPX header' })
+  })
+})
+
+describe('ProRes 422 HQ is the review default; the proxy stays H.264', () => {
+  it('review with no codecs: one ProRes .mov pass, source size; plan says the proxy is always H.264', async () => {
+    const j = await runJob({ kind: 'review', approved_by: 'L', width: undefined }); const script = scripts.filter((s) => s.includes('nice -n 10')).at(-1)!
+    expect(j.codecs).toEqual(['prores422hq']); expect(script).toContain("'prores_ks'"); expect(script).not.toContain("'libx264'"); expect(j.sequences[0].out).toBe(`output/deliver/archival-085/v001/${SEQ.name}.mov`)
+    expect((await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'proxy' })).notes.join(' ')).toMatch(/always H\.264 \(this app cannot play ProRes\)/); expect(mounts_default()).toEqual(['prores422hq'])
+    const px = await runJob({}); expect(scripts.filter((s) => s.includes('nice -n 10')).at(-1)).toContain("'libx264'"); expect(px.kind).toBe('proxy')
+  })
+})
+const mounts_default = () => ['prores422hq']
+
+describe('conform: three takes of one shot, one v### folder; frames untouched; the 1080p take at its own size', () => {
+  const take = (k: 'a' | 'b' | 'c') => ({ dir: 'rounds/archival-077', name: `ARCHIVAL-077_${k.toUpperCase()}_FRAMES`, clip_name: EDL[k], first: 0, last: 9, frames: 10, pad: 4 })
+  it('077a/b/c in one job: separate clip names in the SAME shot version folder; DELIVERY.md gains a section per clip; the frames and their folders are never written', async () => {
+    renders.setDeps({ ssh: async ({ script, onLine }) => { scripts.push(script)
+      if (script.includes('PROBE-DONE')) { const m = /ARCHIVAL-077_([ABC])_FRAMES/.exec(script)![1]; onLine('FFV ffmpeg 7'); onLine('FFP 1'); onLine(`HDR ${hex(m === 'C' ? dpxWithTc(0x01000000, { width: 1920, height: 1080 }) : dpxWithTc(0x01000000))}`); for (const f of range(0, 9)) onLine(`F 1000 1.0 ARCHIVAL-077_${m}_FRAMES.${String(f).padStart(4, '0')}.dpx`); onLine('PROBE-DONE') }
+      else if (script.startsWith('ls -1')) { /* no versions yet */ } else if (script.includes('nice -n 10')) { onLine('PASS 0'); onLine('RENDER-DONE 0 7 10'); onLine('RENDER-ALL') } return { code: 0 } } })
+    const { job_id } = await renders.start({ pod_id: 'p1', sequences: [take('a'), take('b'), take('c')], kind: 'review', approved_by: 'Lucas' }); await renders.settled(); const j = renders.status(job_id).jobs[0]
+    expect(j.sequences.map((x) => [x.shot, x.version, x.clip_name, x.state])).toEqual([['archival-077', 'v001', EDL.a, 'pulled'], ['archival-077', 'v001', EDL.b, 'pulled'], ['archival-077', 'v001', EDL.c, 'pulled']])
+    const runs = scripts.filter((s) => s.includes('nice -n 10')); expect(runs).toHaveLength(3)
+    expect(runs[0]).toContain("mkdir '/workspace/comfy-shared/output/deliver/archival-077/v001' || { echo RENDER-VEXISTS; exit 0; }"); expect(runs[1]).toContain("mkdir -p '/workspace/comfy-shared/output/deliver/archival-077/v001'"); expect(runs[1]).not.toContain('RENDER-VEXISTS'); expect(runs[2]).not.toContain('RENDER-VEXISTS')
+    expect(runs[0]).toContain(`/v001/${EDL.a}.mov.part`); expect(runs[1]).toContain(`/v001/${EDL.b}.mov.part`); expect(runs[2]).toContain(`/v001/${EDL.c}.mov.part`)
+    expect(runs[0]).toContain('cat > ') ; expect(runs[1]).toMatch(/cat '.*DELIVERY\.md\.tmp' >> '.*DELIVERY\.md'/); expect(runs[0]).not.toMatch(/>> '.*DELIVERY\.md'/)
+    for (const r of runs) { expect(r).not.toMatch(/rm -rf|mv '[^']*\.dpx|> '[^']*\.dpx/); expect(r).toContain('/workspace/comfy-shared/output/rounds/archival-077/ARCHIVAL-077_') }   // frames are only read
+    expect(pulls.map((p) => (p.req.paths as string[])[0])).toEqual([`output/deliver/archival-077/v001/${EDL.a}.mov`, `output/deliver/archival-077/v001/${EDL.b}.mov`, `output/deliver/archival-077/v001/${EDL.c}.mov`])
+    const md = runs[1].split("<<'RENDER_EOF_1'\n")[1]; expect(md).toContain(`Clip name: \`${EDL.b}\``); expect(md).toContain("differs from the frames' stem `ARCHIVAL-077_B_FRAMES`; the frames keep their served names")
+    expect(runs[2].split("<<'RENDER_EOF_1'\n")[1]).toContain('the source resolution 1920x1080')   // the 1080p take is rendered at ITS size
+    expect(runs[2]).toContain("'scale=out_color_matrix=bt709,format=yuv422p10le'"); expect(runs[2]).not.toMatch(/scale=3840|scale=1920/)
+    const plan = await renders.plan({ pod_id: 'p1', sequences: [take('c')] }); expect(plan.sequences[0].source).toEqual({ width: 1920, height: 1080, bits: 10 })
+  })
+  it('the default clip name is the DPX stem; an override is recorded in the sidecar; the plan returns clip_name', async () => {
+    const p = await renders.plan({ pod_id: 'p1', sequences: [SEQ, { ...SEQ, name: 'OTHER_1', clip_name: EDL.a }], kind: 'review' }); expect(p.sequences.map((x) => x.clip_name)).toEqual([SEQ.name, EDL.a]); expect(p.sequences[0].out).toBe(`output/deliver/archival-085/v001/${SEQ.name}.mov`)
+    await runJob({ sequences: [{ ...SEQ, clip_name: EDL.a }], kind: 'review', approved_by: 'L', width: undefined }); const script = scripts.filter((s) => s.includes('nice -n 10')).at(-1)!
+    expect(JSON.parse(script.split("<<'RENDER_EOF_0'\n")[1].split('\nRENDER_EOF_0')[0].replace(/@@(BYTES|FRAMES|RATE)_\d@@/g, '0').replace(/@@SHA256_\d@@/g, 'x'))).toMatchObject({ clip_name: EDL.a, frames_stem: SEQ.name, shot: 'archival-077' })
+  })
+  it('proxies() finds proxies and reviews by clip name and returns clip_name', async () => {
+    const pd = join(shared, 'output', '.proxies', SEQ.dir); mkdirSync(pd, { recursive: true }); writeFileSync(join(pd, `${EDL.a}.mp4`), 'v'); writeFileSync(join(pd, `${EDL.a}_1280.mp4`), 'v')
+    const r = (await renders.proxies({ pod_id: 'p1', items: [{ dir: SEQ.dir, name: 'STEM_X', clip_name: EDL.a }] })).items[0]; expect(r).toMatchObject({ clip_name: EDL.a, exists_local: true, local_url: `localfile://p/proxy_v004/shotA/${EDL.a}.mp4` })
+    const d = join(shared, 'output', 'deliver', 'archival-077', 'v001'); mkdirSync(d, { recursive: true }); writeFileSync(join(d, `${EDL.a}.mov`), 'm'); writeFileSync(join(d, `${EDL.a}.mp4`), 'p'); writeFileSync(join(d, `${EDL.b}.mov`), 'q')
+    const dl = (await renders.proxies({ pod_id: 'p1', items: [{ dir: SEQ.dir, name: 'STEM_X', clip_name: EDL.a }] })).items[0].deliverables; expect(dl).toHaveLength(1); expect(dl[0]).toMatchObject({ clip_name: EDL.a, version: 'v001', file: `${EDL.a}.mp4`, files: [`${EDL.a}.mov`, `${EDL.a}.mp4`], exists_local: true, local_url: `localfile://d/archival-077/v001/${EDL.a}.mp4` })
+  })
+})
+
+describe('a cheap card is enough: the pod\'s CPU, disk and the output estimate in the plan', () => {
+  const planPod = (o: Record<string, unknown> = {}) => renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review', ...o })
+  it('4 cores warns for a source-size review; 16 does not; a downscale proxy does not', async () => {
+    pod.cpu = { cores: 4, memMb: 16000, dfKb: 500 * 1024 * 1024 }; let p = await planPod(); expect(p.pod_cpu).toEqual({ cores: 4, mem_mb: 16000, free_gb: 500 }); expect(p.notes.join(' ')).toContain('This pod has 4 vCPUs: a 4K review will be slow (expect minutes per 100 frames). A pod with more cores or On this PC may be faster.')
+    pod.cpu = { cores: 16, memMb: 64000, dfKb: 500 * 1024 * 1024 }; p = await planPod(); expect(p.pod_cpu!.cores).toBe(16); expect(p.notes.join(' ')).not.toContain('vCPUs')
+    pod.cpu = { cores: 4, memMb: 16000, dfKb: 500 * 1024 * 1024 }; expect((await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'proxy', width: 960 })).notes.join(' ')).not.toContain('vCPUs')
+  })
+  it('a failing or missing probe leaves pod_cpu out, without an error', async () => {
+    pod.cpu = 'fail'; let p = await planPod(); expect('pod_cpu' in p).toBe(false); expect(p.pod_ok).toBe(true); pod.cpu = null; p = await planPod(); expect('pod_cpu' in p).toBe(false)
+    renders.setDeps({ ssh: async ({ script }) => { if (script.includes('NPROC')) return await new Promise(() => undefined); return { code: 0 } } })   // a probe that never answers: the 5 s limit ends it
+    const t0 = Date.now(); const q = await Promise.race([renders.probePod('p1', { host: 'h', port: 22 }), new Promise<'late'>((r) => setTimeout(() => r('late'), 6500))]); expect(q).toBeNull(); expect(Date.now() - t0).toBeLessThan(6400)
+  }, 10_000)
+  it('output estimate arithmetic: ProRes 422 HQ about 5.3 GB per minute at 24 fps at 4K, scaled by pixels; H.264 less', () => {
+    expect(renders.outputGb(1440, 24, ['prores422hq'], 'review', 1)).toBe(5.3); expect(renders.outputGb(2880, 24, ['prores422hq'], 'review', 1)).toBe(10.6); expect(renders.outputGb(1440, 24, ['prores422hq'], 'review', 0.25)).toBe(1.3)
+    expect(renders.outputGb(1440, 24, ['h264'], 'review', 1)).toBe(0.8); expect(renders.outputGb(1440, 24, ['h264'], 'proxy', 1)).toBe(0.4); expect(renders.outputGb(1440, 24, ['h264', 'prores422hq'], 'review', 1)).toBe(6.1); expect(renders.outputGb(0, 24, ['prores422hq'], 'review', 1)).toBe(0)
+  })
+  it('estimate.output_gb per sequence and in total; low disk is a note, never a refusal; a big output mentions the 5 GB sync gate', async () => {
+    const S = { ...SEQ, last: 2879, frames: 2880 }; pod.frames = range(0, 2879)
+    pod.cpu = { cores: 16, memMb: 64000, dfKb: 3 * 1024 * 1024 }
+    const p = await planPod({ sequences: [S] }); expect(p.sequences[0].estimate!.output_gb).toBe(10.6); expect(p.estimate.output_gb).toBe(10.6); expect(p.pod_ok).toBe(true)
+    expect(p.notes.join(' ')).toContain("Only 3 GB are free on the pod's output volume; about 10.6 GB is needed"); expect(p.notes.join(' ')).toContain('About 10.6 GB: a sync of this size asks for approval (Auto sync) or takes a while.')
+    const small = await planPod(); expect(small.notes.join(' ')).not.toContain('sync of this size')
+  })
+  it('on this PC: the local free space is compared with the estimate, as a note', async () => {
+    renders.setDeps({ localFree: async () => 2e9 }); const dirF = join(shared, 'output', SEQ.dir); mkdirSync(dirF, { recursive: true }); for (let i = 0; i < 2880; i++) writeFileSync(join(dirF, `${SEQ.name}.${String(i).padStart(4, '0')}.dpx`), i === 0 ? dpxHeader() : '')
+    const p = await renders.plan({ sequences: [{ ...SEQ, last: 2879, frames: 2880 }], kind: 'review', where: 'local' })
+    expect(p.local_free_gb).toBe(2); expect(p.notes.join(' ')).toContain('Only 2 GB are free on this PC; about 10.6 GB is needed (not refused).'); expect('pod_cpu' in p).toBe(false)
+  })
+  it('the measured encode rate goes into the sidecar and DELIVERY.md (placeholders filled on the pod; locally from the clock)', async () => {
+    await runJob({ kind: 'review', approved_by: 'L', width: undefined, codecs: ['h264'] }); const script = scripts.filter((s) => s.includes('nice -n 10')).at(-1)!
+    expect(script).toContain('RATE_0=$(awk'); expect(script).toContain('"s/@@RATE_0@@/$RATE_0/g"'); expect(script.split("<<'RENDER_EOF_1'\n")[1]).toContain('Measured encode rate: h264 @@RATE_0@@ frames per second'); expect(script).toContain('"render_fps": @@RATE_0@@')
+  })
+})

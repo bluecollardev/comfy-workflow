@@ -85,12 +85,14 @@ function coreEnv() {
   }
   // Clients launch the MCP servers with this very executable as Node (ELECTRON_RUN_AS_NODE=1): no Node install. Packaged: the app; in development: the Electron binary.
   process.env.MCP_EXEC ||= process.execPath
+  process.env.RUNPOD_MANAGER_VERSION ||= app.getVersion()   // the render sidecars record it (docs/ADR-048)
 }
 
 // podfile://<pod>-8188.proxy.runpod.net/view?... : the files of a pod's ComfyUI (the Outputs gallery and viewer). RunPod's proxy answers 403 to a page's own image or video request (the browser marks it cross-site), so the main
 // process fetches them and hands the bytes (with Range, for video) to the page. Only the /view of a RunPod proxy host is fetched.
 // corsEnabled: an <img> or <video> may load a podfile:// address from any page, but fetch() (the DPX viewer reads the bytes with it) is a cross-origin request from the page's own origin (Vite's localhost, or file://) and fails with "Failed to fetch" without it; the answer already carries access-control-allow-origin.
-protocol.registerSchemesAsPrivileged([{ scheme: 'podfile', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, bypassCSP: true } }])
+// ONE call for every custom scheme: Electron keeps only the last registerSchemesAsPrivileged call, so podfile, s3file and localfile are registered together (a third call made s3file requests fail: v1.5.0 gate).
+protocol.registerSchemesAsPrivileged(['podfile', 's3file', 'localfile'].map((scheme) => ({ scheme, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, bypassCSP: true } })))
 function handlePodFiles() {
   protocol.handle('podfile', async (request) => {
     const u = new URL(request.url)
@@ -108,7 +110,6 @@ function handlePodFiles() {
 // s3file://<volume>/<url-encoded key> : one output file straight from a network volume over RunPod's S3 API, with no pod (docs/ADR-045). The core checks the address (only keys under comfy-shared/output/ of a volume the app knows,
 // never `..`: anything else is a 403) and signs a read (SigV4 headers: RunPod's S3 API refuses presigned query URLs) with the app's RunPod S3 keys; this handler fetches it, Range included, and hands the bytes to the page. The keys and the signature stay in this process: they are
 // not in the answer, a header or a log. Only GET and HEAD.
-protocol.registerSchemesAsPrivileged([{ scheme: 's3file', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, bypassCSP: true } }])
 function handleS3Files() {
   protocol.handle('s3file', async (request) => {
     const text = (status, msg) => new Response(msg, { status, headers: { 'content-type': 'text/plain', 'access-control-allow-origin': '*' } })
@@ -127,8 +128,28 @@ function handleS3Files() {
   })
 }
 
+// localfile://p/<url-encoded path under output/.proxies> (or localfile://d/<shot>/v###/<file> under output/deliver) : a rendered proxy (.mp4) cached on this PC, read-only (docs/ADR-048). The core's guard (renders.resolveProxyFile) decides: only a plain .mp4 inside the mapped
+// ComfyUI-Shared output/.proxies/, never `..`, never a symlink out; GET and HEAD, Range included, so a <video> can seek.
+function handleLocalFiles() {
+  protocol.handle('localfile', async (request) => {
+    const text = (status, msg) => new Response(msg, { status, headers: { 'content-type': 'text/plain', 'access-control-allow-origin': '*' } })
+    if (request.method !== 'GET' && request.method !== 'HEAD') return text(405, 'Proxies are read-only.')
+    const core = await coreBridge.loadCore()
+    const u = new URL(request.url), root = u.hostname === 'd' ? core.renders.localDeliverRoot() : core.renders.localProxyRoot()   // d: a review in output/deliver/<shot>/v###/, p: a proxy in output/.proxies/
+    const f = await core.renders.resolveProxyFile(root, u.pathname)
+    if (!f.ok) return text(f.status, f.message)
+    const m = /^bytes=(\d*)-(\d*)$/.exec(request.headers.get('range') || '')
+    let start = 0, end = f.size - 1, status = 200
+    if (m && (m[1] || m[2])) { if (m[1]) { start = Number(m[1]); if (m[2]) end = Math.min(end, Number(m[2])) } else { start = Math.max(0, f.size - Number(m[2])) } status = 206; if (start > end || start >= f.size) return new Response('', { status: 416, headers: { 'content-range': `bytes */${f.size}` } }) }
+    const headers = { 'content-type': 'video/mp4', 'accept-ranges': 'bytes', 'content-length': String(end - start + 1), 'access-control-allow-origin': '*', ...(status === 206 ? { 'content-range': `bytes ${start}-${end}/${f.size}` } : {}) }
+    if (request.method === 'HEAD') return new Response(null, { status, headers })
+    return new Response(require('node:stream').Readable.toWeb(fs.createReadStream(f.path, { start, end })), { status, headers })
+  })
+}
+
 async function boot() {
   handlePodFiles()
+  handleLocalFiles()
   handleS3Files()
   if (process.platform === 'darwin' && !app.isPackaged && exists(ICON)) app.dock.setIcon(nativeImage.createFromPath(ICON))
   coreEnv()

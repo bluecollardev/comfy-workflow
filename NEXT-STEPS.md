@@ -16,10 +16,10 @@
 4. **One codebase, no second runtime**: the Python API retired, the core in
    TypeScript, the merge gate green (`docs/ADR-005`).
 
-## Open from 2026-11-18 (v1.4.3)
+## Open from 2026-11-18 (Render sequences, ADR-048)
 
-0. **Write the tests for the Previews modal** (released untested, Lucas's call for that patch only): update `e2e/outputs-dpx.spec.js` (open `pod-outputs-previews` first; the Generate button is now `pod-outputs-load-previews` inside `pod-outputs-previews-modal`) and add: a batch reaches tiles never scrolled into view, a cached sequence costs no download, the failed count, Stop (scrolling afterwards starts nothing), the batch ending by itself, counts (`pod-outputs-previews-counts`). Run the full gate, then remove this item.
-1. **"Build sequences" option of the Previews modal:** Lucas asked for it beside Load all previews; what it should do was not said (asked, unanswered). Decide and build.
+0. The Render sequences UI (Previews window option, tile badges, the viewer's Proxy | Review player, the configuration section) is built and tested with fakes (`e2e/render-sequences.spec.js`, `e2e/render-config.spec.js`); not yet tried in the real app against the real core: restart first, then render one sequence on the pod and one on this PC and play both. Check that a `<video>` plays a `localfile://` `local_url` in Electron (the protocol is registered in `electron/main.cjs`).
+1. Sequences named `NAME_0001.dpx` or `NAME-0001.dpx` (not `NAME.0001.dpx`) are not offered for rendering (the core reads `NAME.%0Nd.dpx`); the window says how many it skipped.
 
 ## Open from 2026-11-17 (v1.3.1 follow-up)
 
