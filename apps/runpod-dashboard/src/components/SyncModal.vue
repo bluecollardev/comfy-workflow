@@ -38,8 +38,10 @@
             <div v-for="f in st.folders" :key="f.name" class="d-flex align-items-center gap-1 small">
               <input :id="`sync-ex-${st.key}-${f.name}`" type="checkbox" class="form-check-input mt-0" :checked="isOut(st.key, f.name)" :disabled="isStepSaved(st.key, f.name)" data-testid="sync-exclude-folder" :data-step="st.key" :data-name="f.name" @change="tick(st.key, f.name, $event.target.checked)" />
               <label :for="`sync-ex-${st.key}-${f.name}`" class="mb-0 font-monospace">{{ f.name }}</label>
+              <span v-if="f.link" class="text-body-secondary" data-testid="sync-exclude-link" :data-name="f.name" :title="f.target || ''"><i class="fa-solid fa-link me-1"></i><span class="badge text-bg-secondary">{{ $t('sync.linkTag') }}</span><span v-if="f.note" class="ms-1" data-testid="sync-exclude-link-note">{{ f.note }}</span></span>
               <span v-if="isStepSaved(st.key, f.name)" class="badge text-bg-secondary" data-testid="sync-exclude-saved">{{ $t('sync.savedTag') }}</span>
               <template v-if="meas[`${st.key}/${f.name}`]?.busy"><BSpinner small /><BButton variant="link" size="sm" class="p-0" data-testid="sync-measure-cancel" :data-name="f.name" @click="cancelMeasure(st.key, f.name)">{{ $t('sync.measureCancel') }}</BButton></template>
+              <span v-else-if="meas[`${st.key}/${f.name}`]?.link" class="text-body-secondary" data-testid="sync-measure-link" :data-name="f.name">{{ $t('sync.measureLink', { target: meas[`${st.key}/${f.name}`].target || f.target || '' }) }}</span>
               <span v-else-if="meas[`${st.key}/${f.name}`]?.bytes != null" class="text-body-secondary" data-testid="sync-measure-size" :data-name="f.name">{{ formatBytes(meas[`${st.key}/${f.name}`].bytes) }}</span>
               <span v-else-if="meas[`${st.key}/${f.name}`]?.error" class="text-danger" data-testid="sync-measure-error">{{ $t('sync.measureFailed') }}</span>
               <BButton v-else variant="link" size="sm" class="p-0" data-testid="sync-measure" :data-step="st.key" :data-name="f.name" @click="measure(st.key, f.name)">{{ $t('sync.measure') }}</BButton>
@@ -112,6 +114,11 @@
       <BAlert v-if="fullError" :model-value="true" variant="danger" class="small py-2" data-testid="sync-volume-full" :data-code="fullError.code"><div class="fw-semibold"><i class="fa-solid fa-hard-drive me-2"></i>{{ $t(fullError.code === 'disk_full' ? 'sync.diskFullTitle' : 'sync.volumeFullTitle') }}</div><div data-testid="sync-volume-full-text">{{ fullError.text }}</div><div v-if="(fullError.not_done || []).length" class="mt-1" data-testid="sync-not-done">{{ $t('sync.notDone') }} <span v-for="k in fullError.not_done" :key="k" class="font-monospace me-2" data-testid="sync-not-done-step">{{ k }}</span></div></BAlert>
       <div v-if="deleteEvents.length" class="mb-2" data-testid="sync-deletes">
         <div v-for="(e, i) in deleteEvents" :key="i" class="small" :class="e.state === 'failed' ? 'text-danger' : e.state === 'removed' ? 'text-success' : 'text-body-secondary'" data-testid="sync-delete-event" :data-state="e.state"><i class="fa-solid me-1" :class="e.state === 'failed' ? 'fa-circle-xmark' : e.state === 'removed' ? 'fa-trash-can' : 'fa-spinner'"></i>{{ e.state === 'failed' ? $t('sync.deleteFailed', { path: e.path, error: e.text || '' }) : e.state === 'removed' ? (e.bytes == null ? $t('sync.deleteRemovedNoSize', { path: e.path }) : $t('sync.deleteRemoved', { path: e.path, size: formatBytes(e.bytes) })) : $t('sync.deleteRemoving', { path: e.path }) }}</div>
+      </div>
+      <div v-if="symlinks.length" class="mb-2" data-testid="sync-symlinks">
+        <div class="small text-warning" data-testid="sync-symlink-count"><i class="fa-solid fa-link me-1"></i>{{ $t(symlinks.length === 1 ? 'sync.symlinkCountOne' : 'sync.symlinkCountMany', { n: symlinks.length }) }}</div>
+        <template v-if="symlinks.length <= 3"><div v-for="(l, i) in symlinks" :key="i" class="small text-warning" data-testid="sync-symlink">{{ l.text || $t('sync.symlinkRow', { path: l.path, target: l.target }) }}</div></template>
+        <details v-else data-testid="sync-symlink-group"><summary class="small text-warning">{{ $t('sync.linkTag') }} ({{ symlinks.length }})</summary><div v-for="(l, i) in symlinks" :key="i" class="small text-warning" data-testid="sync-symlink">{{ l.text || $t('sync.symlinkRow', { path: l.path, target: l.target }) }}</div></details>
       </div>
       <div v-if="skippedSteps.length" class="mb-2" data-testid="sync-steps">
         <div class="small fw-semibold mb-1">{{ $t('sync.stepsTitle') }}</div>
@@ -233,7 +240,7 @@ let measureSeq = 0
 async function measure(step, name) {
   const k = `${step}/${name}`, id = `m${++measureSeq}-${Date.now()}`
   meas.value = { ...meas.value, [k]: { busy: true, id } }
-  try { const r = await syncAPI.measure({ pod_id: props.pod.id, step, name, id }); if (meas.value[k]?.id === id) meas.value = { ...meas.value, [k]: { bytes: r?.bytes ?? 0 } } }
+  try { const r = await syncAPI.measure({ pod_id: props.pod.id, step, name, id }); if (meas.value[k]?.id === id) meas.value = { ...meas.value, [k]: r?.link ? { link: true, target: r.target || '' } : { bytes: r?.bytes ?? 0 } } }
   catch { if (meas.value[k]?.id === id) { const { [k]: _gone, ...rest } = meas.value; meas.value = { ...rest, ...(meas.value[k]?.cancelled ? {} : { [k]: { error: true } }) } } }
 }
 function cancelMeasure(step, name) { const k = `${step}/${name}`, m = meas.value[k]; if (!m) return; syncAPI.measureCancel(m.id); const { [k]: _gone, ...rest } = meas.value; meas.value = rest }
@@ -266,6 +273,7 @@ const delSrc = computed(() => { const c = shownCounts.value || {}; return c.woul
 const delPreview = computed(() => (Array.isArray(delSrc.value.would_delete) ? delSrc.value.would_delete : null))
 const delTotal = computed(() => (delSrc.value.would_delete_bytes !== undefined ? delSrc.value.would_delete_bytes : delPreview.value && delPreview.value.every((w) => w.bytes != null) ? delPreview.value.reduce((n, w) => n + w.bytes, 0) : null))
 const deleting = computed(() => direction.value === 'push' && delDelete.value && !!delPreview.value?.length)
+const symlinks = ref([])      // `symlink` warnings: a link in a push is copied as a link, not its contents
 const deleteEvents = ref([])   // `delete` events of the run, one per path: removing -> removed or failed
 const started = ref(false)   // a run is showing (in flight or finished): the confirmation gives way to it
 const running = ref(false)
@@ -283,12 +291,17 @@ const fullError = ref(null)    // an error event with code volume_full or disk_f
 const skippedSteps = ref([])   // steps skipped with a warning (their local source is missing), { key, reason }
 const local = ref(fresh())     // the progress state, when the store has none for this pod (a run started elsewhere)
 let n = 0
-function reset() { deleteEvents.value = []; files.value = []; fileCount.value = 0; problems.value = []; lines.value = []; last.value = null; fullError.value = null; skippedSteps.value = []; local.value = fresh(); n = 0 }
+function reset() { symlinks.value = []; deleteEvents.value = []; files.value = []; fileCount.value = 0; problems.value = []; lines.value = []; last.value = null; fullError.value = null; skippedSteps.value = []; local.value = fresh(); n = 0 }
 let scrollQueued = false
 function ingest(ev) {
   if (ev.kind === 'result') { last.value = ev; running.value = false; pods.syncEnded(props.pod.id); return }
   if (ev.kind === 'skipped' || ((ev.kind === 'warning' || ev.kind === 'problem') && (ev.code === 'skipped' || ev.skipped))) {   // a step whose local source is missing: shown grey with its reason, not counted as an error
     skippedSteps.value.push({ key: ev.key || '', reason: ev.reason || ev.text || '' })
+    if (ev.text != null) { lines.value.push({ n: ++n, text: ev.text }); if (lines.value.length > KEEP_LINES) lines.value.shift() }
+    return
+  }
+  if (ev.kind === 'warning' && ev.code === 'symlink') {   // amber, listed and counted; not an error
+    symlinks.value.push({ key: ev.key || '', path: ev.path || '', target: ev.target || '', text: ev.text || '' })
     if (ev.text != null) { lines.value.push({ n: ++n, text: ev.text }); if (lines.value.length > KEEP_LINES) lines.value.shift() }
     return
   }

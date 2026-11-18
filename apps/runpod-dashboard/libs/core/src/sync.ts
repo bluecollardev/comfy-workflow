@@ -147,16 +147,16 @@ export function s3Env(lookup: (name: string) => string = settings.lookup): Recor
   return { AWS_ACCESS_KEY_ID: access, AWS_SECRET_ACCESS_KEY: secret }
 }
 
-export interface S3Options { mountPath?: string; dryRun?: boolean; exclude?: string[] }
+export interface S3Options { mountPath?: string; dryRun?: boolean; exclude?: string[]; /** a push over S3 skips symbolic links (`--no-follow-symlinks`): following one is how a 2.1 TB tree fills a volume; rsync copies a link as a link, so the two transports agree that the contents are not sent */ noFollow?: boolean }
 
 // cp --recursive, not sync: sync struggles past 10,000 files (ADR-007 G), so the push goes folder by folder; a rerun
 // carries on over what is there, files over the part size go up as multipart, and nothing is ever removed.
 function s3Base(volume: VolumeRef, o: S3Options): string[] {
-  return ['aws', 's3', 'cp', '--recursive', '--endpoint-url', s3Endpoint(volume.datacenter), '--region', volume.datacenter, ...(o.dryRun ? ['--dryrun'] : []), ...s3Excludes(), ...s3ExcludesFor(o.exclude)]
+  return ['aws', 's3', 'cp', '--recursive', '--endpoint-url', s3Endpoint(volume.datacenter), '--region', volume.datacenter, ...(o.dryRun ? ['--dryrun'] : []), ...(o.noFollow ? ['--no-follow-symlinks'] : []), ...s3Excludes(), ...s3ExcludesFor(o.exclude)]
 }
 const bucketUrl = (volume: VolumeRef, remote: string, o: S3Options) => `s3://${volume.id}/${s3Key(remote, o.mountPath)}`
 /** Push one folder onto the volume. */
-export const s3Cmd = (local: string, volume: VolumeRef, remote: string, o: S3Options = {}): string[] => [...s3Base(volume, o), local, bucketUrl(volume, remote, o)]
+export const s3Cmd = (local: string, volume: VolumeRef, remote: string, o: S3Options = {}): string[] => [...s3Base(volume, { ...o, noFollow: true }), local, bucketUrl(volume, remote, o)]
 /** Pull one folder off the volume. */
 export const s3PullCmd = (volume: VolumeRef, remote: string, local: string, o: S3Options = {}): string[] => [...s3Base(volume, o), bucketUrl(volume, remote, o), local]
 

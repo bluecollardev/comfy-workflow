@@ -11,7 +11,7 @@
  *
  * Same file formats and the same derivations as the Python module it replaces (docs/ADR-005).
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { bad, CoreError } from './errors.js'
 import { mirrorDir, mountsFile } from './paths.js'
@@ -309,13 +309,25 @@ function mostCommon(values: string[]): string | null {
 
 const entries = (dir: string) => { try { return readdirSync(dir, { withFileTypes: true }) } catch { return [] } }   // unreadable: skipped, never fatal
 
-function walk(dir: string, out: string[] = []): string[] {
+/** A directory entry that is a folder, following a symlink to a folder (stat); a broken link or an unreadable one is not a folder. */
+export const isDirFollow = (parent: string, e: { name: string; isDirectory(): boolean; isSymbolicLink(): boolean }): boolean => {
+  if (e.isDirectory()) return true
+  if (!e.isSymbolicLink()) return false
+  try { return statSync(join(parent, e.name)).isDirectory() } catch { return false }
+}
+const WALK_DEPTH = 12
+/** Every file under a folder, following links to folders safely: depth-bounded and loop-safe (a folder is entered once, by its realpath). */
+function walk(dir: string, out: string[] = [], seen = new Set<string>(), depth = 0): string[] {
+  let real = dir; try { real = realpathSync(dir) } catch { return out }
+  if (seen.has(real) || depth > WALK_DEPTH) return out
+  seen.add(real)
   for (const e of entries(dir)) {
     const p = join(dir, e.name)
-    if (e.isDirectory()) walk(p, out); else out.push(p)
+    if (isDirFollow(dir, e)) walk(p, out, seen, depth + 1); else if (!e.isSymbolicLink() || isFileLink(p)) out.push(p)
   }
   return out
 }
+const isFileLink = (p: string) => { try { return statSync(p).isFile() } catch { return false } }
 
 /** True when a mapped folder points into Binc's mirror, where a run must not write. */
 export function inMirror(local: string): boolean {
@@ -375,9 +387,9 @@ export function parseCsv(text: string): Record<string, string>[] {
 export function declaredPlates(tree: string): Declared | null {
   const found: string[] = []
   if (!isDir(tree)) return null
-  for (const type of entries(tree).filter((e) => e.isDirectory())) {
+  for (const type of entries(tree).filter((e) => isDirFollow(tree, e))) {
     const typeDir = join(tree, type.name)
-    for (const shot of entries(typeDir).filter((e) => e.isDirectory())) {
+    for (const shot of entries(typeDir).filter((e) => isDirFollow(typeDir, e))) {
       const f = join(typeDir, shot.name, '02_SOURCE', 'SOURCES.csv')
       if (!existsSync(f)) continue
       for (const row of parseCsv(readText(f))) {

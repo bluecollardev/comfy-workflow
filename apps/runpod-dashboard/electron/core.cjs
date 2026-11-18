@@ -54,6 +54,7 @@ const TABLE = {
     reset: (c) => c.mounts.payload(c.mounts.reset()),
     env: (c) => c.mounts.envLines(c.mounts.load()),
     dirs: (c, p, hidden) => c.listDirs(p || '', !!hidden),
+    volumes: (c) => c.listVolumes(),   // the volumes mounted on this PC (the folder picker's side list); a mount that does not answer is listed unreadable, never waited for
   },
   pods: {
     dashboard: (c) => c.pods.dashboard(),
@@ -427,7 +428,7 @@ function register() {
       const value = await f(await loadCore(), ...args)
       return { ok: true, value }
     } catch (e) {
-      return { ok: false, error: { status: e.status || 500, message: e.message || String(e), ...(e.code ? { code: e.code } : {}) } }
+      return { ok: false, error: { status: e.status || 500, message: e.message || String(e), ...(e.code ? { code: e.code } : {}), ...(e.hint ? { hint: e.hint } : {}) } }
     }
   })
 }

@@ -350,10 +350,17 @@ export async function mockApi(page, state) {
     }
     if (method === 'GET' && path === '/fs/dirs') {
       const p = query.path || '/Users/lucas'
+      // v1.5.1: state.fsPermission = [paths the app may not read] (403 no_permission with state.fsHint), state.fsLinks = { path: { name: target } } (entries that are links), state.fsReal = { path: real } (a logical path that is a link)
+      if ((state.fsPermission || []).includes(p)) return json({ detail: `Cannot read ${p}: operation not permitted`, code: 'no_permission', ...(state.fsHint === null ? {} : { hint: state.fsHint || 'macOS blocked access: allow RunPod Manager under System Settings > Privacy & Security > Files and Folders.' }) }, 403)
       const names = state.fs[p]
       if (!names) return json({ detail: `not a folder: ${p}` }, 404)
       const parent = p === '/' ? null : p.replace(/\/[^/]+$/, '') || '/'
-      return json({ path: p, parent, home: '/Users/lucas', dirs: names.map((n) => ({ name: n, path: `${p}/${n}` })) })
+      const links = (state.fsLinks || {})[p] || {}
+      return json({ path: p, parent, home: '/Users/lucas', ...((state.fsReal || {})[p] ? { real: state.fsReal[p] } : {}), dirs: names.map((n) => ({ name: n, path: `${p}/${n}`, ...(links[n] ? { link: true, target: links[n] } : {}) })) })
+    }
+    if (method === 'GET' && path === '/fs/volumes') {   // v1.5.1: state.volumes = [{ name, path, link, target?, size_bytes, free_bytes, readable, reason? }]; state.volumesOld answers like a core without the call
+      if (state.volumesOld) return json({ detail: 'no core call mounts.volumes' }, 500)
+      return json(state.volumes || [])
     }
     if (method === 'GET' && path === '/gpus') return json(state.gpus)
     if (method === 'GET' && path === '/datacenters') return json(state.datacenters)

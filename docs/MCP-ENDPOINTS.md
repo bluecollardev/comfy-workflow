@@ -161,7 +161,7 @@ Each tool calls the core function the window's IPC channel calls. `mcp/parity.mj
 | `preview_configuration` | `patch?` | What a pod would get from a configuration without saving it: the env and the links. |  |
 | `reset_configuration` | none | Delete the saved Default Configuration and go back to the defaults (the keys and settings are separate and stay) |  |
 | `get_local_env` | none | The shell lines (export NAME=...) that set this PC up like a pod: the mapped folders as variables, for a terminal or an IDE run configuration |  |
-| `list_dirs` | `path?`, `hidden?` | The folders on this PC under a path (the window's folder picker), for choosing what to map |  |
+| `list_dirs` | `path?`, `hidden?` | The folders on this PC under a path (the window's folder picker), for choosing what to map Keeps the path as you gave it (`real` when it differs); a link to a folder has `link: true` and its `target`, a broken link is hidden; an unreadable folder is an error with a hint. With `volumes: true` it lists the volumes mounted on this PC (`name`, `path`, `link`, `target`, `size_bytes`, `free_bytes`, `readable`; a mount that does not answer within 3 s is listed unreadable) instead. |
 
 #### Keys and settings
 
