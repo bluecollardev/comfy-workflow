@@ -3,6 +3,10 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## v1.4.1 (tag v1.4.1, 2026-11-18)
+
+- **Fix: Import Round's "Number of Pods" was ignored when the dollar cap was off.** The field was only shown, and `max_pods` only sent, when the cost cap was on, so with it off the queue started as many pods as there were shots (about 20 at once on the volume, with ComfyUI answering HTTP 502 on the overloaded or not-yet-ready ones). The field now always shows and its value is always sent; only the cost-cap field depends on the cap. The core's rule that the setting which switches the cap off removes the limit for callers that send no number is unchanged. Test: `e2e/import-multi-card.spec.js` (the pod limit with the cap off).
+
 ## v1.4.0 (tag v1.4.0, 2026-11-18)
 
 - **Auto sync, phase 1 (ADR-046), the engine, the API and the MCP:** a change journal on the volume (`comfy-shared/.journal/`, written by the app's sync, round pulls, model fetches and erases, and by an S3 reconciler that lists `output/` (newest folders), `workflows/` and `node-packs/` every 5 minutes with the pod stopped); `volume_changes`; Auto sync per pod (off by default; Pull on, Push off; a named yes to turn on) that pulls outputs by itself (a run's files at once, others from the feed), additive, a file changed on both sides is reported and skipped, above 5 GB it waits for approval, `sync_parallel` files at a time; Push through a debounced local watcher; Auto sync in the configuration and in Import Round, applied to each pod created; the sync explorer (`syncs.*`, `sync_runs`) with persisted logs; automatic runs labelled in the History. Auto sync never pushes `models/` (Lucas, 2026-11-18: "we already have models baked into app"); approving a big pull does not ask for its own name. Turning Auto sync on pulls what was already in `output/` (a background catch-up, History trigger `auto-sync:enable`); a file modified in the last 5 seconds is waited for. Nothing in the pod image changed. Tests: `libs/core/tests/{journal,changes,autosync*,syncpaths,syncruns}.test.ts`.
