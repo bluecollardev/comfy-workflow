@@ -292,6 +292,7 @@
 
       <fieldset v-if="!forPod && !gated" v-show="show('publishing')" class="cfg-section" data-section="publishing">
         <legend data-testid="section-publishing">{{ $t('publish.tab') }}</legend>
+        <CollapsibleSection v-if="apStore.status?.watching" id="watching" :title="$t('autopublish.watch.title')" testid="autopublish-watching-block"><AutoPublishWatching :status="apStore.status" :skipped="true" compact /></CollapsibleSection>
         <PublishSettings ref="pubRef" />
         <EdlStatus v-if="!forPod" />
         <AutoPublishSettings v-if="cfg.auto_publish" v-model="cfg.auto_publish" :validate="apValidate" @changed="onApChanged" />
@@ -462,6 +463,9 @@ import FolderPicker from './FolderPicker.vue'
 import AdapterManager from './AdapterManager.vue'
 import PublishSettings from './PublishSettings.vue'
 import AutoPublishSettings from './AutoPublishSettings.vue'
+import AutoPublishWatching from './AutoPublishWatching.vue'
+import CollapsibleSection from './CollapsibleSection.vue'
+import { useAutopublishStore } from '../stores/autopublish'
 import EdlStatus from './EdlStatus.vue'
 import { apFill, apIsDefault, settingsProblem as apProblem } from '../utils/autopublish'
 import { useConfirmStore } from '../stores/confirm'
@@ -487,7 +491,7 @@ const saveName = async () => { const n = nameDraft.value.trim(); await podsStore
 watch(() => props.podName, (n) => { nameDraft.value = n })
 
 const toastStore = useToastStore()
-const ui = useUiStore()
+const ui = useUiStore(), apStore = useAutopublishStore()
 const studioStore = useStudioStore()
 const podsStore = usePodsStore()
 const overStudio = ref(false)

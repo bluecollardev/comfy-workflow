@@ -144,6 +144,20 @@ test.describe('Settings > Publishing', () => {
     await s.getByTestId('publish-s3-test').click()
     await expect(s.getByTestId('publish-s3-test-result')).toHaveText('Access Denied')
   })
+  test('the Publishing headings fold like an accordion: every block starts open, a click folds only that block (its fields stay in the form), and the choice is remembered', async ({ page, api }) => {
+    setup(api)
+    let d = await openSettings(page)
+    const blocks = ['publish-s3-block', 'publish-slack-status', 'publish-defaults-block']
+    for (const b of blocks) await expect(d.getByTestId(b)).toHaveAttribute('data-open', 'true')
+    await d.getByTestId('publish-s3-block').getByTestId('collapsible-toggle').click()
+    await expect(d.getByTestId('publish-s3-block')).toHaveAttribute('data-open', 'false'); await expect(d.getByTestId('publish-s3-block').getByTestId('collapsible-body')).toBeHidden()
+    await expect(d.getByTestId('publish-s3-block').getByTestId('collapsible-toggle')).toHaveAttribute('aria-expanded', 'false')
+    await expect(d.getByTestId('publish-defaults-block')).toHaveAttribute('data-open', 'true')   // the others are not touched
+    await expect(d.getByTestId('publish-s3-bucket')).toHaveCount(1)   // folded, not removed: what is typed there is kept and saved
+    await page.reload(); d = await openSettings(page)
+    await expect(d.getByTestId('publish-s3-block')).toHaveAttribute('data-open', 'false')   // remembered
+    await d.getByTestId('publish-s3-block').getByTestId('collapsible-toggle').click(); await expect(d.getByTestId('publish-s3-block')).toHaveAttribute('data-open', 'true')
+  })
   test('Slack is one read-only status line here, with a button to Connect > Slack', async ({ page, api }) => {
     setup(api); api.state.publish.settings.slack.webhook_hint = ''
     const d = await openSettings(page)

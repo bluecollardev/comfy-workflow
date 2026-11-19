@@ -90,8 +90,8 @@
       </div>
       <div v-if="runningScope && runningScope !== genScopeLabel" class="text-warning" data-testid="pod-outputs-generate-scope-running">{{ $t('outputs.generate.running', { scope: runningScope }) }}</div>
     </BAlert>
-    <BTabs content-class="pt-2" data-testid="pod-outputs-generate-tabs" @activate-tab="(id, prev, n) => (genTab = n)">
-      <BTab :title="$t('outputs.generate.tabPreviews')" :active="genTab === 0" data-testid="pod-outputs-tab-previews">
+    <BTabs v-model:index="genTab" content-class="pt-2" data-testid="pod-outputs-generate-tabs">
+      <BTab :title="$t('outputs.generate.tabPreviews')" data-testid="pod-outputs-tab-previews">
       <div class="border rounded p-2 mb-2">
         <div class="fw-semibold">{{ $t('outputs.dpx.loadAllOption') }}</div>
         <div class="small text-body-secondary mb-2">{{ $t('outputs.dpx.loadAllTitle') }}</div>
@@ -106,7 +106,7 @@
         </div>
       </div>
       </BTab>
-      <BTab :title="$t('outputs.generate.tabRender')" :active="genTab === 1" data-testid="pod-outputs-tab-render">
+      <BTab :title="$t('outputs.generate.tabRender')" data-testid="pod-outputs-tab-render">
       <RenderSequences v-model:skip-existing="skipExisting" :pod="pod" :items="genItems" :thumbs="genThumbs" :scope="volumeId || pod.id" :volume-name="volumeName" :skipped="genSkipped" :scope-label="genScopeLabel" @play="previewsOpen = false" @publish="publishOpen = true" />
       </BTab>
     </BTabs>

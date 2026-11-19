@@ -113,10 +113,14 @@ test.describe('Settings > Publishing > Auto-publish', () => {
     expect(calls(api, 'setSettings').at(-1).body).toEqual({ enabled: true, approved_by: 'B', understood: true })
     await expect(d.getByTestId('autopublish-state')).toHaveText('Auto-publish: DRY RUN')
   })
-  test('Turn off now calls off at once with no confirm, cancels what waits, and the block and chip say OFF', async ({ page, api }) => {
+  test('Turn Off calls off at once with no confirm, cancels what waits, says what it stops, and the block and chip say OFF', async ({ page, api }) => {
     on(api); api.state.autopublish = { pending: [entry()] }
     const d = await openBlock(page)
     await expect(page.getByTestId('autopublish-chip')).toBeVisible()
+    await expect(d.getByTestId('autopublish-off')).toHaveText('Turn Off'); await expect(d.getByTestId('autopublish-off-note')).toContainText('generating reviews, S3 uploads and Slack posts')   // says what it applies to
+    { const b = await d.getByTestId('autopublish-off').boundingBox(), n = await d.getByTestId('autopublish-off-note').boundingBox(); expect(n.x).toBeGreaterThan(b.x + b.width - 1); expect(n.y).toBeLessThan(b.y + b.height) }   // the note sits on the SAME ROW as the button, to its right
+    await expect(d.getByTestId('autopublish-existing-slot')).toHaveCount(0)   // no Generate Outputs button in this section
+    await expect(d.getByTestId('autopublish-ready')).toHaveCount(0)   // the state badge in the header is the one badge
     await d.getByTestId('autopublish-off').click()
     await expect.poll(() => calls(api, 'off').length).toBe(1)
     await expect(page.getByTestId('confirm-modal')).toBeHidden()

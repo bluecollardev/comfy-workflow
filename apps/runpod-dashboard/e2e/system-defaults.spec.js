@@ -37,9 +37,10 @@ test.describe('the Generate window starts from the configuration', () => {
   test('skip_existing true starts ticked in both; per-run changes are never saved (no PUT anywhere)', async ({ page, api }) => {
     await open(page, api, { settings: { pull: false, publish: { s3: false, slack: false }, skip_existing: true } })
     const g = await openGen(page)
-    await expect(g.getByTestId('pod-outputs-previews-skip-existing')).toBeChecked(); await expect(g.getByTestId('pod-outputs-render-skip-existing')).toBeChecked()
-    await g.getByTestId('pod-outputs-render-pull').check(); await g.getByTestId('pod-outputs-render-publish-s3').check(); await g.getByTestId('pod-outputs-previews-skip-existing').uncheck()
-    await expect(g.getByTestId('pod-outputs-render-skip-existing')).not.toBeChecked()
+    await expect(g.getByTestId('pod-outputs-render-skip-existing')).toBeChecked(); await g.getByRole('tab', { name: 'Previews' }).click(); await expect(g.getByTestId('pod-outputs-previews-skip-existing')).toBeChecked()
+    await g.getByRole('tab', { name: 'Render Sequences' }).click(); await g.getByTestId('pod-outputs-render-pull').check(); await g.getByTestId('pod-outputs-render-publish-s3').check()
+    await g.getByRole('tab', { name: 'Previews' }).click(); await g.getByTestId('pod-outputs-previews-skip-existing').uncheck()
+    await g.getByRole('tab', { name: 'Render Sequences' }).click(); await expect(g.getByTestId('pod-outputs-render-skip-existing')).not.toBeChecked()
     expect(api.calls.filter((c) => c.method === 'PUT')).toHaveLength(0)
     expect(calls(api, 'PUT', '/mounts')).toHaveLength(0)
   })

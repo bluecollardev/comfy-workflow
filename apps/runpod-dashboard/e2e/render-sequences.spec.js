@@ -68,7 +68,7 @@ test('Render option: the plan line, the defaults, and the plan request (width, p
 test('Render option: wording says Proxy, never calls it final or a delivery file, and the Load all previews option is still there', async ({ page, api }) => {
   await openOutputs(page, api)
   const p = await openPreviews(page)
-  await expect(p.getByTestId('pod-outputs-load-previews')).toBeVisible()
+  await p.getByRole('tab', { name: 'Previews' }).click(); await expect(p.getByTestId('pod-outputs-load-previews')).toBeVisible(); await p.getByRole('tab', { name: 'Render Sequences' }).click()
   const text = (await p.getByTestId('pod-outputs-render').innerText()).replace(t('outputs.render.kindReview'), '').replaceAll(A, '')   // (the clip names are file names)
   expect(text).toMatch(/proxy/i); expect(text).not.toMatch(/final|delivery file|not a deliverable/i)
 })
@@ -454,6 +454,7 @@ test('Clip names: the sequence rows are prefilled with the sequence names; an ed
 test('Clip names: the core\'s rules are checked inline (empty, slash, .., characters, length) and Start waits; a core 400 shows inline', async ({ page, api }) => {
   await openOutputs(page, api)
   const p = await openPreviews(page)
+  await expect(planText(p)).toContainText('3 sequences'); await expect(p.getByTestId('pod-outputs-render-start')).toBeEnabled()   // the form has settled (plan loaded) before anything is typed
   const box = p.getByTestId('pod-outputs-render-clipname').first(), err = p.getByTestId('pod-outputs-render-clipname-error')
   for (const [value, text] of [['', 'A clip name cannot be empty.'], ['a/b', 'A clip name has no slashes or `..`.'], ['a..b', 'A clip name has no slashes or `..`.'], ['a\\b', 'A clip name has no slashes or `..`.'], ['a:b*', 'A clip name uses letters, digits and . _ - or spaces only.'], ['x'.repeat(201), 'A clip name is at most 200 characters.']]) {
     await box.fill(value)
@@ -609,8 +610,8 @@ test('rendering on this PC while previews are being generated shows a warning hi
   const p = await openPreviews(page)
   const hint = p.getByTestId('pod-outputs-render-local-hint')
   await expect(hint).toHaveCount(0)                                                  // no batch yet
-  await p.getByTestId('pod-outputs-load-previews').click()                           // Generate all previews: a running job
-  await p.getByTestId('pod-outputs-render-where').selectOption('local')
+  await p.getByRole('tab', { name: 'Previews' }).click(); await p.getByTestId('pod-outputs-load-previews').click()   // Generate all previews: a running job
+  await p.getByRole('tab', { name: 'Render Sequences' }).click(); await p.getByTestId('pod-outputs-render-where').selectOption('local')
   await expect(hint).toBeVisible()
   await expect(hint).toContainText('Rendering on this PC while previews are being generated slows both')
   await expect(p.getByTestId('pod-outputs-render-start')).not.toBeDisabled()          // a hint only: Start is not blocked by it
@@ -618,8 +619,8 @@ test('rendering on this PC while previews are being generated shows a warning hi
   await expect(hint).toHaveCount(0)                                                  // the pod has its own CPU
   await p.getByTestId('pod-outputs-render-where').selectOption('local')
   await expect(hint).toBeVisible()
-  await p.getByTestId('pod-outputs-stop-previews').click()                           // the batch ends
-  await expect(hint).toHaveCount(0)
+  await p.getByRole('tab', { name: 'Previews' }).click(); await p.getByTestId('pod-outputs-stop-previews').click()   // the batch ends
+  await p.getByRole('tab', { name: 'Render Sequences' }).click(); await expect(hint).toHaveCount(0)
 })
 
 

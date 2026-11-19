@@ -131,8 +131,7 @@ test.describe('All outputs', () => {
     const m = await open(page, api, { allJob: true, allSteps: 3 })
     await page.getByTestId('pod-outputs-previews').click()
     const g = page.getByTestId('pod-outputs-previews-modal')
-    await g.getByTestId('pod-outputs-generate-scope-all-radio').click()
-    await expect(g.getByTestId('generate-counts-loading')).toBeVisible()
+    await expect(g.getByTestId('generate-counts-loading')).toBeVisible()   // Generate follows the Outputs window (All outputs): it is still listing
     await expect(g.getByTestId('pod-outputs-previews-counts')).toContainText('checking… ready · checking… waiting · checking… failed')
     await expect(g.getByTestId('generate-scope-loading')).toBeVisible()
     await expect(g.getByTestId('generate-counts-loading')).toHaveCount(0, { timeout: 10000 })

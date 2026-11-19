@@ -1,7 +1,6 @@
 <template>
-  <div v-if="show" class="border rounded p-3 mb-3" data-testid="settings-autopublish">
-    <div class="fw-semibold mb-1">{{ $t('autopublish.block.title') }}
-      <span class="badge ms-2 fw-normal" :class="model.enabled ? (model.dry_run ? 'text-bg-warning' : 'text-bg-success') : 'text-bg-secondary'" data-testid="autopublish-state">{{ model.enabled ? (model.dry_run ? $t('autopublish.chipDry') : $t('autopublish.chipOn')) : $t('autopublish.block.enabledOff') }}</span></div>
+  <CollapsibleSection v-if="show" id="autopublish" :title="$t('autopublish.block.title')" testid="settings-autopublish">
+    <template #badge><span class="badge fw-normal" :class="model.enabled ? (model.dry_run ? 'text-bg-warning' : 'text-bg-success') : 'text-bg-secondary'" data-testid="autopublish-state">{{ model.enabled ? (model.dry_run ? $t('autopublish.chipDry') : $t('autopublish.chipOn')) : $t('autopublish.block.enabledOff') }}</span></template>
     <div class="small text-body-secondary mb-2" data-testid="autopublish-destination">{{ $t('autopublish.block.uploadsTo', { dest }) }}</div>
     <label class="d-flex align-items-center gap-2 mb-2"><input type="checkbox" class="form-check-input mt-0" role="switch" :checked="model.enabled" data-testid="autopublish-switch" @change="toggle($event)" />{{ $t('autopublish.block.switch') }}</label>
     <label v-if="hasDryFirst" class="d-flex align-items-center gap-2 small mb-2"><input v-model="model.dry_run_first" type="checkbox" class="form-check-input mt-0" data-testid="autopublish-dry-first" />{{ $t('autopublish.block.startDry') }}</label>
@@ -44,7 +43,6 @@
                 <label class="d-flex align-items-center gap-2"><input v-model="model.generate.fallback_local" type="checkbox" class="form-check-input mt-0" data-testid="config-autopublish-generate-fallback" />{{ $t('autopublish.gen.fallback') }}</label>
               </div>
             </template>
-            <div v-if="model.generate.enabled" class="mt-1" data-testid="autopublish-existing-slot"><GenerateExisting /></div>
             <div class="text-body-secondary mt-1" data-testid="config-autopublish-generate-help">{{ $t('autopublish.gen.help') }}</div>
           </div>
         </div>
@@ -99,16 +97,18 @@
             <div v-if="!slackOk.ok" class="text-warning ms-4 d-flex align-items-center gap-2" data-testid="autopublish-target-slack-reason">{{ slackOk.reason }} <BButton v-if="slackOk.connect" size="sm" variant="outline-light" data-testid="autopublish-slack-connect" @click="openConnect">{{ $t('publish.modal.openConnect') }}</BButton></div>
         </div>
       </div>
-      <div class="d-flex align-items-center gap-2 mb-2"><span class="badge" :class="ap.settings?.ready ? 'text-bg-success' : 'text-bg-secondary'" data-testid="autopublish-ready">{{ ap.settings?.ready ? $t('autopublish.block.ready') : $t('autopublish.block.notReady') }}</span><span v-if="ap.settings?.problem && !ap.settings.ready" class="small text-warning" data-testid="autopublish-problem">{{ ap.settings.problem }}</span></div>
-      <BButton variant="danger" size="sm" data-testid="autopublish-off" @click="off"><i class="fa-solid fa-power-off me-1"></i>{{ $t('autopublish.block.off') }}</BButton>
+      <div v-if="ap.settings?.problem && !ap.settings.ready" class="small text-warning mb-2" data-testid="autopublish-problem">{{ ap.settings.problem }}</div>   <!-- no "ready" badge: the header badge already says the state; only a problem is worth a line -->
+      <div class="d-flex align-items-center gap-3">
+        <BButton variant="danger" size="sm" class="flex-shrink-0" data-testid="autopublish-off" @click="off"><i class="fa-solid fa-power-off me-1"></i>{{ $t('autopublish.block.off') }}</BButton>
+        <span class="small text-body-secondary" data-testid="autopublish-off-note">{{ $t('autopublish.block.offNote') }}</span>
+      </div>
     </template>
-    <div v-if="ap.status?.generate?.enabled" class="border rounded p-2 mt-2" data-testid="autopublish-generate-block"><AutoPublishGenerate :status="ap.status" /></div>
-    <div v-if="ap.status?.watching" class="border rounded p-2 mt-2" data-testid="autopublish-watching-block"><AutoPublishWatching :status="ap.status" :skipped="true" /></div>
+    <div v-if="ap.status?.generate?.enabled" class="border rounded p-2 mt-2" data-testid="autopublish-generate-block"><AutoPublishGenerate :status="ap.status" :show-existing="false" /></div>
     <div v-if="problem" class="text-danger small mt-1" data-testid="autopublish-error">{{ $t(problem === 'window' ? 'autopublish.block.windowBad' : problem === 'cap' ? 'autopublish.block.capBad' : problem === 'round' ? 'autopublish.block.roundBad' : problem === 'minutes' ? 'autopublish.sources.minutesBad' : problem === 'spend' ? 'autopublish.gen.spendBad' : problem === 'maxgb' ? 'autopublish.pipe.maxGbBad' : problem === 'settle' ? 'autopublish.gen.settleBad' : problem === 'genmax' ? 'autopublish.gen.maxBad' : problem === 'approver' ? 'autopublish.gen.approverNeeded' : 'autopublish.block.targetsBad') }}</div>
     <div v-if="error" class="text-danger small mt-1" data-testid="autopublish-action-error">{{ error }}</div>
     <div class="small text-body-secondary mt-2" data-testid="autopublish-preview-note">{{ $t('autopublish.block.previewNote') }}</div>
     <div class="small text-body-secondary mt-2" data-testid="autopublish-binc-note">{{ $t('autopublish.block.binc') }}</div>
-  </div>
+  </CollapsibleSection>
 </template>
 
 <script setup>
@@ -116,6 +116,7 @@
  * AutoPublishSettings: the Auto-publish block of Settings > Publishing (docs/ADR-050 amendment). Its values are part of the configuration (`auto_publish`): the window, the cap, the Slack tick and the Dry run tick (ON) are edited here
  * and saved by the window's one Save with the rest. Enabling, going live and Turn off are immediate acts with their own prompt: the core does them, then the window reloads the configuration's value so Save never writes a stale one.
  */
+import CollapsibleSection from './CollapsibleSection.vue'
 import { computed, onMounted, ref } from 'vue'
 import { useAutopublishStore } from '../stores/autopublish'
 import { usePublishStore } from '../stores/publish'
@@ -127,9 +128,7 @@ import { t } from '../i18n'
 import { s3Dest, targetState } from '../utils/publish'
 import { settingsProblem, CAP_START } from '../utils/autopublish'
 import { roundExample } from '../utils/publish'
-import AutoPublishWatching from './AutoPublishWatching.vue'
 import AutoPublishGenerate from './AutoPublishGenerate.vue'
-import GenerateExisting from './GenerateExisting.vue'
 
 const props = defineProps({ modelValue: { type: Object, default: null }, show: { type: Boolean, default: true }, validate: { type: Boolean, default: false } })
 const emit = defineEmits(['changed'])

@@ -1171,6 +1171,7 @@
       "badgeVolume": "RunPod volume"
     },
     "watch": {
+      "title": "What Auto-publish Is Watching",
       "local": "This PC: {root}: {n} reviews",
       "localOff": "This PC: {root}: not watched",
       "volume": "RunPod volume {name}: comfy-shared/output/deliver: {n} reviews",
@@ -1224,7 +1225,8 @@
       "includeDpx": "Include the source DPX frames",
       "previewNote": "Slack posts include links and a preview frame (Connect > Slack).",
       "targetsBad": "At least one of S3 or Slack must be on.",
-      "off": "Turn off now",
+      "off": "Turn Off",
+      "offNote": "Stops all of Auto-publish at once: generating reviews, S3 uploads and Slack posts. Clears the standing approval and cancels everything waiting; an upload already running finishes.",
       "ready": "ready",
       "notReady": "not ready",
       "binc": "Binc agreed to Auto-publish (Lucas, 2026-11-19). Everything it uploads is recorded under the standing approval above.",
@@ -1501,7 +1503,7 @@
       "saveFirst": "Save first",
       "partialSave": "The configuration was saved; publishing settings were not: {reason}",
       "discardConfirm": "Close without saving the publishing changes?",
-      "slackStatus": { "connected": "Slack: connected to {workspace}, {channel}", "notConnected": "Slack: not connected", "open": "Open Connect > Slack" },
+      "slackStatus": { "title": "Slack", "connected": "Slack: connected to {workspace}, {channel}", "notConnected": "Slack: not connected", "open": "Open Connect > Slack" },
       "unknownPlaceholder": "Not a known placeholder: {list}",
       "modal": {
         "title": "Publish",
