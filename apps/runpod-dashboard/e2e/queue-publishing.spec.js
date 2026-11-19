@@ -109,12 +109,13 @@ test.describe('Queue > Publishing', () => {
     await expect(q.getByTestId('publishing-job').first()).toHaveAttribute('data-job', 'run-b'); await expect(q.getByTestId('publishing-job').nth(1)).toHaveAttribute('data-job', 'run-a')
     await expect(card(q, 'old-21')).toBeVisible(); await expect(card(q, 'old-01')).toHaveCount(0)
   })
-  test('Auto-publish jobs (trigger auto-publish) are counted on the badge but not listed here; scans are neither', async ({ page, api }) => {
+  test('Auto-publish jobs (trigger auto-publish) are listed here with their own card and counted on the badge once; scans are neither listed nor counted', async ({ page, api }) => {
     setup(api, [job({ job_id: 'auto-1', trigger: 'auto-publish' }), job({ job_id: 'scan-9', kind: 'scan' }), job({ job_id: 'pub-2' })])
     await page.goto('/')
     await expect(page.getByTestId('queue-badge')).toHaveText('2')
     const q = await openQueue(page)
-    await expect(q.getByTestId('publishing-job')).toHaveCount(1); await expect(card(q, 'pub-2')).toBeVisible(); await expect(card(q, 'auto-1')).toHaveCount(0)
+    await expect(q.getByTestId('publishing-job')).toHaveCount(2); await expect(card(q, 'pub-2')).toBeVisible(); await expect(card(q, 'auto-1')).toBeVisible(); await expect(card(q, 'scan-9')).toHaveCount(0)
+    await expect(card(q, 'auto-1').getByTestId('publishing-job-trigger')).toHaveAttribute('data-trigger', 'auto')   // marked as automatic
   })
   test('Open Publish window opens the Publish window', async ({ page, api }) => {
     setup(api, [job({ state: 'done', files_done: 4 })])

@@ -3,6 +3,12 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## v1.6.4 (tag v1.6.4, 2026-11-19)
+
+- **Publishing can go S3 to S3.** Transfer adapters (`s3.transfer`: Auto, Pod, This PC; ADR-050 amendment). With Auto, a running pod attached to the volume uploads straight from the volume to the Panama bucket at datacenter speed, from presigned upload links made on this PC (no key ever reaches the pod, no link is logged or stored); with no such pod, or for one file that fails, it streams through this PC as before. It never creates, resumes or stops a pod. Each job says "via pod <name>" or "via this PC". Files over 5 GiB go through this PC.
+- **Generations show the real steps.** Auto-generate no longer copies its renders to this PC (Auto-publish reads the volume), the Sync step shows only when a job really syncs, and an automatic review shows a "Publishing to S3: waiting for the window / uploading / uploaded" step that follows its Auto-publish entry.
+- **The Publishing list shows Auto-publish's uploads** as job cards (files, shots, speed, links), not only manual ones.
+
 ## v1.6.3 (tag v1.6.3, 2026-11-19)
 
 **Released with the full gate SKIPPED, on Lucas's explicit say-so** ("don't it's fine, enough testing, release"), recorded with `./start.sh release patch --skip-gate "<why>"` in `.gate/skips.log`. The last full runs: core 1214, MCP 76 and the browser suite 819 passed, with one test per run that failed under load and passes alone (the ffmpeg-missing re-plan race, fixed in the test; the Create Pod "image env lookup" one passes 30 of 30 alone). The real-Electron suite was not run in this last pass. This is the first release with the features ADR-050 and its siblings call "v1.7.0" (Publishing, Auto-publish, the V11 EDL checks, the colour setting); the number is a patch because the rule is patch unless named.

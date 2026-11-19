@@ -44,7 +44,8 @@ export const usePublishStore = defineStore('publish', () => {
   const dismissed = ref(new Set((() => { try { return JSON.parse(localStorage.getItem('runpod-manager.publish-dismissed') || '[]') } catch { return [] } })()))
   const dismiss = (id) => { dismissed.value = new Set([...dismissed.value, id]); try { localStorage.setItem('runpod-manager.publish-dismissed', JSON.stringify([...dismissed.value].slice(-200))) } catch { /* storage blocked */ } }
   const queueJobs = computed(() => {
-    const own = jobs.value.filter((j) => j.trigger !== 'auto-publish' && j.kind !== 'scan' && !dismissed.value.has(j.job_id))
+    // every publish job is listed, Auto-publish's too (its card has the files, the shots, the speed and the links); only the nav badge leaves them out, because it counts the Auto-publish entries itself
+    const own = jobs.value.filter((j) => j.kind !== 'scan' && !dismissed.value.has(j.job_id))
     const when = (j) => String(j.started_at || j.job_id)
     const running = own.filter(publishActive).sort((a, b) => when(b).localeCompare(when(a)))
     return [...running, ...own.filter((j) => !publishActive(j)).sort((a, b) => when(b).localeCompare(when(a))).slice(0, 20)]
