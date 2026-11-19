@@ -76,7 +76,8 @@ export function checkPanama(key: 'bucket' | 'region' | 'profile', v: unknown): s
   const [re, what] = PANAMA_PATTERNS[key]
   return re.test(t) ? null : `Panama ${key}: ${t.slice(0, 80)} is not ${what}`
 }
-const KEYS = ['AGENT_REQUIRE_NAMED_YES', 'AGENT_SPEND_CAP_USD', 'AGENT_SHELL_GUARD', 'PANAMA_S3_BUCKET', 'PANAMA_S3_REGION', 'PANAMA_S3_PROFILE', 'RUNPOD_API_KEY', 'RUNPOD_S3_ACCESS_KEY', 'RUNPOD_S3_SECRET_KEY', 'ANTHROPIC_API_KEY', 'HF_TOKEN', 'PANAMA_CONSOLE_KEY', 'PANAMA_AWS_ACCESS_KEY_ID', 'PANAMA_AWS_SECRET_ACCESS_KEY'] as const   // ANTHROPIC_API_KEY: only for "Write an adapter with Claude" (ADR-008); optional   // the S3 pair: uploads onto a volume with no pod (ADR-007 G)
+export const PUBLISH_SECRETS = ['PUBLISH_S3_ACCESS_KEY_ID', 'PUBLISH_S3_SECRET_ACCESS_KEY', 'PUBLISH_SLACK_WEBHOOK_URL'] as const
+const KEYS = ['PUBLISH_S3_ACCESS_KEY_ID', 'PUBLISH_S3_SECRET_ACCESS_KEY', 'PUBLISH_SLACK_WEBHOOK_URL', 'AGENT_REQUIRE_NAMED_YES', 'AGENT_SPEND_CAP_USD', 'AGENT_SHELL_GUARD', 'PANAMA_S3_BUCKET', 'PANAMA_S3_REGION', 'PANAMA_S3_PROFILE', 'RUNPOD_API_KEY', 'RUNPOD_S3_ACCESS_KEY', 'RUNPOD_S3_SECRET_KEY', 'ANTHROPIC_API_KEY', 'HF_TOKEN', 'PANAMA_CONSOLE_KEY', 'PANAMA_AWS_ACCESS_KEY_ID', 'PANAMA_AWS_SECRET_ACCESS_KEY'] as const   // ANTHROPIC_API_KEY: only for "Write an adapter with Claude" (ADR-008); optional   // the S3 pair: uploads onto a volume with no pod (ADR-007 G)
 
 function readEnvFile(): Record<string, string> {
   const f = file()
@@ -210,6 +211,16 @@ export function set(values: { panama_console_url?: string | null; agent_shell_gu
   }
   return get()
 }
+
+/** The publishing secrets (ADR-050): a string stores one, '' removes it. Only these three names; nothing here is returned or logged. */
+export function writePublishSecrets(values: Partial<Record<(typeof PUBLISH_SECRETS)[number], string>>): void {
+  const updates: Record<string, string> = {}
+  for (const n of PUBLISH_SECRETS) if (values[n] !== undefined) updates[n] = values[n] as string
+  if (!Object.keys(updates).length) return
+  writeEnvFile(updates)
+  for (const [k, v] of Object.entries(updates)) { if (v) process.env[k] = v; else delete process.env[k] }
+}
+export const secretHint = hint
 
 /** Put the stored secrets into this process's environment where it carries none: what the MCP server and the
  *  CLI do at start, so the key the panel saved serves them too, without a shell exporting it. */

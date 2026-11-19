@@ -72,6 +72,7 @@
         </tbody>
       </table>
     </div>
+    <GenerationsPane />
     <SyncExplorer />
   </BModal>
 </template>
@@ -85,14 +86,17 @@ import { useUiStore } from '../stores/ui'
 import { useI18n } from 'vue-i18n'
 import { useConfirmStore } from '../stores/confirm'
 import { useVolumeJobsStore } from '../stores/volumejobs'
+import { useRendersStore } from '../stores/renders'
 import VolumeJobView from './VolumeJobView.vue'
 import SyncExplorer from './SyncExplorer.vue'
+import GenerationsPane from './GenerationsPane.vue'
 import { ucwords } from '../utils/ucwords'
 
 const ui = useUiStore()
 const { t } = useI18n()
 const confirm = useConfirmStore()
 const vjobs = useVolumeJobsStore()
+const renders = useRendersStore()
 const open = computed({ get: () => ui.queueOpen, set: (v) => { ui.queueOpen = v } })
 const view = ref({ imports: [], tasks: [], active: 0 }), error = ref('')
 let timer = null
@@ -128,7 +132,7 @@ async function reattachPod(p) { try { await vjobs.reattach(p.name) } catch (e) {
 async function dropPod(p) { if (await confirm.ask(t('queue.confirmDeletePod', { name: p.name }), { okLabel: t('queue.deletePod') })) { try { await vjobs.dropInterrupted(p.name) } catch (e) { error.value = errorText(e) } } }
 async function act(fn) { try { await fn() } catch (e) { error.value = errorText(e) } await refresh() }
 watch(() => ui.queueVersion, refresh)   // an import was just queued: show it now, not at the next tick
-onMounted(() => { refresh(); timer = setInterval(refresh, 2500); vjobs.watch() })
+onMounted(() => { refresh(); timer = setInterval(refresh, 2500); vjobs.watch(); renders.watch() })
 onBeforeUnmount(() => { clearInterval(timer); vjobs.unwatch() })
 </script>
 

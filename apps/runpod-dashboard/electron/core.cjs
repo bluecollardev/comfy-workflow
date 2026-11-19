@@ -140,6 +140,21 @@ const TABLE = {
     log: (c, runId, o) => c.syncruns.registry.log(String(runId || ''), o || {}),
     watch: (c) => c.autosync.watch(),
   },
+  publish: {   // docs/ADR-050: send finished outputs to S3 and Slack; a person's explicit act (approved_by on every run); secrets never returned
+    settings: (c) => c.publish.settings(),
+    setSettings: (c, input) => c.publish.setSettings(input || {}),
+    test: (c, o) => c.publish.test(o || {}),
+    local: (c, o) => c.publish.local(o || {}),
+    plan: (c, o) => c.publish.plan(o || {}),
+    run: (c, o) => c.publish.run(o || {}),
+    status: (c, jobId) => c.publish.status(jobId || undefined),
+    cancel: (c, jobId) => c.publish.cancel(String(jobId || '')),
+    slack: (c, o) => c.publish.slack(o || {}),
+    volume: (c, o) => c.publish.volume(o || {}),   // one level of the volume's comfy-shared/output/ (S3, read-only), with an `empty` flag per folder
+    volumeSize: (c, o) => c.publish.volumeSize(o || {}),   // files and bytes under one volume folder, on demand, cached 5 minutes
+    volumeSizeCancel: (c, o) => c.publish.volumeSizeCancel(o || {}),
+    backfill: (c, op, o) => { const p = c.publish, x = o || {}; if (op === 'scan') return p.scan(x); if (op === 'inventory') return p.inventory(x.job_id || undefined); if (op === 'plan') return p.backfillPlan(x); if (op === 'run') return p.backfillRun(x); throw Object.assign(new Error('op is scan, inventory, plan or run'), { status: 400 }) },   // ADR-050 Backfill: what the outputs hold, then upload them as they are
+  },
   renders: {   // docs/ADR-048: DPX sequences rendered into mp4 proxies (on the pod, or on this PC), kept on the volume and on this PC
     plan: (c, o) => c.renders.plan(o || {}),
     start: (c, o) => c.renders.start(o || {}),

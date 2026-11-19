@@ -13,7 +13,7 @@ import { historyFile } from './paths.js'
 
 export type PodAction = 'created' | 'started' | 'stopped' | 'recreated' | 'renamed' | 'moved' | 'deleted'
 export interface PodEvent { ts: string; kind: 'pod'; action: PodAction; pod_id: string; name: string; gpu?: string; datacenter?: string; cost_per_hr?: number | null; detail?: string }
-export interface JobEvent { ts: string; kind: 'job'; job: 'pull' | 'remove' | 'browse' | 'erase' | 'clone' | 'fetch' | 'delete-models' | 'sync' | 'run' | 'queue' | 'render'; state: 'done' | 'failed' | 'cancelled' | 'interrupted'; started_at?: string; what: string; pod_id?: string; pod_name?: string; files?: number; bytes?: number; detail?: string; error?: string
+export interface JobEvent { ts: string; kind: 'job'; job: 'pull' | 'remove' | 'browse' | 'erase' | 'clone' | 'fetch' | 'delete-models' | 'sync' | 'run' | 'queue' | 'render' | 'publish'; state: 'done' | 'failed' | 'cancelled' | 'interrupted'; started_at?: string; what: string; pod_id?: string; pod_name?: string; files?: number; bytes?: number; detail?: string; error?: string
   /** What started a sync run (ADR-046): 'auto-sync:output' (a run's files, pulled at once), 'auto-sync:feed' (the change feed), 'auto-sync:reconcile' (found by the reconciler), 'auto-sync:push' (this PC's watcher), 'auto-sync:enable' (the catch-up pull when Auto sync was turned on). Absent: a person pressed Sync. Old entries have none. */
   trigger?: string }
 /** A change to something that is not a pod or a job: a volume made, resized, deleted or made the default; the configuration saved or imported; a shot pack imported; an adapter saved. */

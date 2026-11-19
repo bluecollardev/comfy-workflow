@@ -16,6 +16,18 @@
 4. **One codebase, no second runtime**: the Python API retired, the core in
    TypeScript, the merge gate green (`docs/ADR-005`).
 
+## Open from 2026-11-19 (ADR-051 section 9)
+
+0. **Generations on the Queue:** list the preview batch and the render jobs in the Queue window (a *Generations* section, one `jobs.list()` merging imports, syncs, renders, previews and publishing), count them in the Queue badge, and move the preview batch from the page's `previewBus` into a store-level job so it survives closing the window. Then emit their start, finish, failure and cancel as events (ADR-051).
+
+## Open from 2026-11-19 (ADR-052)
+
+0. **Bug: `volume_erase` over S3 counts deletions that did not happen.** The job reported 44,000 files deleted while `output/` still held all 23,338. Find out whether the counter lies or the delete does not take effect; fix and add a before-and-after count of the target to the job's result. (Direct `aws s3 rm` per folder worked.)
+1. **The pull guard for Binc's mirror:** skip a pull's shot steps (`06_REVIEW`, `07_DELIVER`) when the project folder is inside `projects/desktop/`, with a warning (ADR-052 section 3).
+2. **A Linux (and Windows) build for Binc:** he is on Linux and gets none of the Mac-only releases; he can build (`./start.sh package linux`); decide whether the release publishes them (ADR-052 section 4).
+3. **Import the EDL's clip names** (Tunnel's V11 EDL, CMX3600, 121 events; `EDL-READ.md`): pre-fill each sequence's clip name and flag the open ones (cgi-090 shot 2 V04 to v05, carter-reframe V01 and V02, archival-077 a/b/c) (ADR-052 section 5).
+4. **Events and notifications (ADR-051):** phase 1 once Lucas answers the open decisions.
+
 ## Open from 2026-11-18 (v1.5.2, released untested)
 
 0. **Run the tests the v1.5.2 beach-ball fix shipped without** and fix what they find: `libs/core/tests/symlinks.test.ts` ("listDirs is async, bounded and capped": its first run had 3 test mistakes patched by hand and never re-run), `electron/core.test.mjs` ("mounts.dirs is async and takes a filter"), `mcp/server.test.mjs` ("list_dirs takes a filter and returns total"), `e2e/folder-picker-big.spec.js` (4 tests; fake API `fsTruncated`, `fsTimeout`, `fsDelay` untried). Then the full gate. Also decide the 400 ms budget of `declared()` (it can truncate tree hints on a slow volume) and convert the remaining sync calls on the folder-selection path (`mounts.ts` config read/write, `existsSync`).

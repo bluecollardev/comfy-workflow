@@ -13,7 +13,7 @@
           <i class="fa-solid fa-share-nodes me-1"></i>{{ $t('app.shared') }}
         </BButton>
         <BButton variant="outline-light" size="sm" :title="$t('app.queueTitle')" data-testid="open-queue" @click="ui.queueOpen = true">
-          <i class="fa-solid fa-list-check me-1"></i>{{ $t('app.queue') }}<BBadge v-if="queueCount" variant="primary" class="ms-1" data-testid="queue-badge">{{ queueCount }}</BBadge>
+          <i class="fa-solid fa-list-check me-1"></i>{{ $t('app.queue') }}<BBadge v-if="badgeCount" variant="primary" class="ms-1" data-testid="queue-badge">{{ badgeCount }}</BBadge>
         </BButton>
         <BButton variant="outline-light" size="sm" :title="$t('app.historyTitle')" data-testid="open-history" @click="ui.historyOpen = true">
           <i class="fa-solid fa-clock-rotate-left me-1"></i>{{ $t('app.history') }}
@@ -88,7 +88,7 @@
  *   Stats      – read-only pod counts from the pods store
  *   Dashboard  – create form + pod list, acting through the pods store
  */
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useUiStore } from './stores/ui'
 import { useSettingsStore } from './stores/settings'
 import { syncAPI } from './api/sync'
@@ -105,6 +105,8 @@ import AutoSyncBanner from './components/AutoSyncBanner.vue'
 import { useAutosyncStore } from './stores/autosync'
 import { queueAPI } from './api/queue'
 import { useVolumeJobsStore } from './stores/volumejobs'
+import { useRendersStore } from './stores/renders'
+import { usePreviewsStore } from './stores/previews'
 import { useToastStore } from './stores/toast'
 import { t } from './i18n'
 import { usePodsStore } from './stores/pods'
@@ -148,6 +150,9 @@ async function newInstallation() {
 
 /** How many queued or running tasks: the badge on the Queue button (ADR-038). Asked every 5 seconds; a failure is just no badge. */
 const queueCount = ref(0)
+const rendersStore = useRendersStore(), previewsStore = usePreviewsStore()
+/** The badge: the queue's tasks and volume jobs, plus the running generations (render jobs, a running preview batch). */
+const badgeCount = computed(() => queueCount.value + rendersStore.activeCount + (previewsStore.running ? 1 : 0))
 let queueTimer = null
 const vjobsStore = useVolumeJobsStore()
 /** Queued or running tasks plus the running volume jobs (a download, a delete) and the pods of jobs lost at a restart. */
@@ -162,6 +167,7 @@ onMounted(() => {
 onUnmounted(() => topObserver?.disconnect())
 onMounted(async () => {
   loadQueueCount(); queueTimer = setInterval(loadQueueCount, 5000)
+  rendersStore.watch()   // the render jobs: the Queue's Generations and its badge
   readOAuthResult()
   await pods.load()
   pods.startAutoRefresh()

@@ -24,6 +24,11 @@
         <label class="small mb-0">{{ $t('outputs.render.size') }}
           <select v-model="prefs.width" class="form-select form-select-sm" data-testid="pod-outputs-render-width"><option v-for="o in widthOptions" :key="o.v" :value="o.v">{{ o.label }}</option></select>
         </label>
+        <div v-if="items.length" class="small text-body-secondary w-100 order-last" data-testid="pod-outputs-render-source">
+          <template v-if="planning && !plan">{{ $t('outputs.render.sourceReading') }}</template>
+          <template v-else-if="!srcGroups.length">{{ $t('outputs.render.sourceUnknown') }}</template>
+          <template v-else><div v-for="(l, i) in sourceLines" :key="i" data-testid="pod-outputs-render-source-line">{{ l }}</div></template>
+        </div>
         <div v-if="prefs.width !== 'source'" class="small text-body-secondary w-100 order-last" data-testid="pod-outputs-render-downscale-hint">{{ $t('outputs.render.downscaleHint') }}</div>
         <label class="small mb-0">{{ $t('outputs.render.fps') }}
           <select v-model="prefs.fps" class="form-select form-select-sm" data-testid="pod-outputs-render-fps"><option v-for="f in FPS_CHOICES" :key="f" :value="f">{{ f === 'auto' ? $t('outputs.render.fpsAuto') : `${f} fps` }}</option></select>
@@ -41,6 +46,7 @@
         <div v-if="problem && !problem.blocker" class="text-body-secondary mt-1" data-testid="pod-outputs-render-no-ffmpeg-note">{{ problem.kind === 'broken' ? problem.reason : $t('outputs.render.noFfmpeg.note') }}</div>
       </div>
       <FfmpegAlert v-if="problem && problem.blocker" :problem="problem" :busy="planning" @check="checkAgain" />
+      <label class="d-flex align-items-center gap-2 small mb-1"><input :checked="skipExisting" type="checkbox" class="form-check-input mt-0" :disabled="running" data-testid="pod-outputs-render-skip-existing" @change="emit('update:skipExisting', $event.target.checked)" />{{ $t('outputs.render.skipExisting') }}</label>
       <div v-if="!items.length" class="small text-body-secondary mb-2" data-testid="pod-outputs-render-none">{{ $t('outputs.render.noSequences') }}</div>
       <div v-else class="small mb-2" data-testid="pod-outputs-render-plan" :data-sequences="summary.sequences" :data-frames="summary.frames">
         <template v-if="planning && !plan"><BSpinner small class="me-1" />{{ $t('outputs.render.planning') }}</template>
@@ -68,12 +74,42 @@
           <div v-if="clipProblem(clipOf(i))" class="text-danger" data-testid="pod-outputs-render-clipname-error">{{ $t(`outputs.render.${clipProblem(clipOf(i))}`) }}</div>
         </div>
       </details>
+      <details v-if="colourGs.length" class="small mb-2 border rounded p-2" :open="colourOpen" data-testid="pod-outputs-render-colour" :data-open="colourOpen ? 'true' : 'false'" @toggle="colourOpen = $event.target.open">
+        <summary class="fw-semibold">{{ $t('outputs.render.colourTitle') }}</summary>
+        <div v-for="(g, i) in colourGs" :key="i" class="d-flex align-items-baseline gap-2 flex-wrap mt-1" data-testid="pod-outputs-render-colour-group" :data-verdict="g.verdict">
+          <span class="font-monospace" data-testid="pod-outputs-render-colour-line">{{ colourLine(g) }}</span>
+          <span class="text-body-secondary" data-testid="pod-outputs-render-colour-count">{{ $t(g.count === 1 ? 'outputs.render.colourCount' + 'One' : 'outputs.render.colourCount', { n: g.count }) }}</span>
+          <span class="badge" :class="g.verdict === 'refused' ? 'text-bg-danger' : 'text-bg-success'" data-testid="pod-outputs-render-colour-verdict">{{ g.verdict === 'refused' ? $t('outputs.render.colourRefused', { reason: g.refusal || '' }) : $t('outputs.render.colourAllowed') }}</span>
+        </div>
+        <div v-for="c in convs" :key="c" class="mt-1" data-testid="pod-outputs-render-colour-conversion">{{ $t('outputs.render.colourConversion', { what: c }) }}</div>
+        <div v-if="convs.some(noTransform)" class="text-body-secondary" data-testid="pod-outputs-render-colour-note">{{ $t('outputs.render.colourNoTransform') }}</div>
+        <div class="d-flex gap-2 align-items-center mt-2">
+          <BButton variant="link" size="sm" class="p-0" data-testid="pod-outputs-render-colour-rows-toggle" @click="colourRowsOpen = !colourRowsOpen">{{ colourRowsOpen ? '▾' : '▸' }} {{ $t('outputs.render.colourPerSequence') }} ({{ colourRows.length }})</BButton>
+          <BButton variant="outline-light" size="sm" class="ms-auto" data-testid="pod-outputs-render-colour-copy" @click="copyColour"><i class="fa-regular fa-copy me-1"></i>{{ colourCopied ? $t('outputs.render.colourCopied') : $t('outputs.render.colourCopy') }}</BButton>
+        </div>
+        <div v-if="colourRowsOpen" class="mt-1">
+          <BFormInput v-model="colourFilter" size="sm" class="mb-1" style="max-width: 16rem" :placeholder="$t('outputs.render.colourFilter')" data-testid="pod-outputs-render-colour-filter" autocomplete="off" />
+          <table class="table table-sm mb-0" data-testid="pod-outputs-render-colour-table"><thead><tr><th>{{ $t('outputs.render.colColourName') }}</th><th>{{ $t('outputs.render.colColourSize') }}</th><th>{{ $t('outputs.render.colColourTransfer') }}</th><th>{{ $t('outputs.render.colColourColorimetric') }}</th><th>{{ $t('outputs.render.colColourBits') }}</th><th>{{ $t('outputs.render.colColourTimecode') }}</th><th>{{ $t('outputs.render.colColourVerdict') }}</th></tr></thead>
+            <tbody><tr v-for="s in colourRows" :key="`${s.dir}/${s.name}`" data-testid="pod-outputs-render-colour-row" :data-name="s.name"><td class="font-monospace">{{ s.name }}</td><td>{{ s.colour ? `${s.colour.width} × ${s.colour.height}` : s.source ? `${s.source.width} × ${s.source.height}` : '' }}</td><td>{{ s.colour ? s.colour.transfer_name : $t('outputs.render.colourUnread') }}</td><td>{{ s.colour?.colorimetric_name }}</td><td>{{ s.colour?.bits }}</td><td class="font-monospace">{{ s.colour?.start_timecode }}</td><td :class="s.colour?.verdict === 'refused' ? 'text-danger' : ''">{{ s.colour ? (s.colour.verdict === 'refused' ? s.colour.refusal || 'refused' : 'ok') : '' }}</td></tr></tbody></table>
+        </div>
+      </details>
       <div v-for="(n, i) in estimates" :key="i" class="small text-body-secondary mb-2" data-testid="pod-outputs-render-estimate">{{ n }}</div>
       <div v-if="skipped" class="small text-body-secondary mb-2" data-testid="pod-outputs-render-skipped">{{ $t('outputs.render.skippedNames', { n: skipped }) }}</div>
+      <div v-if="plan && !skipExisting && (isReview || toSkip)" class="small text-warning mb-1" data-testid="pod-outputs-render-redo-note">{{ $t(isReview ? 'outputs.render.newVersions' : 'outputs.render.replaceProxies') }}</div>
+      <div v-if="allSkipped" class="small text-warning mb-1" data-testid="pod-outputs-render-all-skipped">{{ $t('outputs.render.allSkipped') }}</div>
       <div v-for="s in incompleteList" :key="`${s.dir}/${s.name}`" class="small text-warning mb-1" data-testid="pod-outputs-render-incomplete" :data-name="s.name"><i class="fa-solid fa-triangle-exclamation me-1"></i><span class="font-monospace">{{ s.name }}</span>: {{ $t('outputs.render.incomplete', { ranges: missingText(s.missing) }) }}</div>
       <label v-if="summary.incomplete && !isReview" class="d-flex align-items-center gap-2 small mb-2"><input v-model="prefs.allowPartial" type="checkbox" class="form-check-input mt-0" data-testid="pod-outputs-render-allow-partial" />{{ $t('outputs.render.allowPartial') }}</label>
       <div v-for="(w, i) in warnings" :key="i" class="alert alert-warning py-1 px-2 small mb-2" data-testid="pod-outputs-render-warning">{{ w }}</div>
       <label v-if="prefs.where !== 'local'" class="d-flex align-items-center gap-2 small mb-2"><input v-model="prefs.pull" type="checkbox" class="form-check-input mt-0" data-testid="pod-outputs-render-pull" />{{ $t('outputs.render.pull') }}</label>
+      <div v-if="!publishStore.old && publishStore.loaded" class="small mb-2" data-testid="pod-outputs-render-publish">
+        <div v-for="id in ['s3', 'slack']" :key="id" class="mb-1">
+          <label class="d-flex align-items-center gap-2"><input v-model="pub[id]" type="checkbox" class="form-check-input mt-0" :disabled="!pubReady(id).ok || needSync" :data-testid="`pod-outputs-render-publish-${id}`" />{{ $t(id === 's3' ? 'publish.render.s3' : 'publish.render.slack') }}</label>
+          <div v-if="!pubReady(id).ok" class="text-warning ms-4" :data-testid="`pod-outputs-render-publish-${id}-reason`">{{ pubReady(id).reason }} <BButton variant="link" size="sm" class="p-0" :data-testid="`pod-outputs-render-publish-${id}-settings`" @click="id === 'slack' ? openPublishConnect() : openPublishSettings()">{{ $t(id === 'slack' ? 'publish.render.connect' : 'publish.render.settings') }}</BButton></div>
+        </div>
+        <div v-if="needSync" class="text-body-secondary" data-testid="pod-outputs-render-publish-needsync">{{ $t('publish.render.needSync') }}</div>
+        <div v-if="pub.s3" class="text-body-secondary font-monospace" data-testid="pod-outputs-render-publish-plan">{{ $t('publish.render.willPublish', { dest: `${s3Dest(publishStore.settings.s3.bucket, publishStore.settings.s3.prefix)}${isReview ? 'deliver/' : '.proxies/'}…` }) }}</div>
+        <div v-if="publishOn && !isReview" class="mt-1"><label class="mb-0" for="pod-render-approved">{{ $t('outputs.render.approvedBy') }}</label><BFormInput id="pod-render-approved" v-model.trim="approvedBy" size="sm" data-testid="pod-outputs-render-approved-by" /><div v-if="!approvedBy.trim()" class="text-warning" data-testid="pod-outputs-render-publish-approved-hint">{{ $t('publish.render.approvedHint') }}</div></div>
+      </div>
       <div v-if="startError && !problem" class="text-danger small mb-2" data-testid="pod-outputs-render-error">{{ startError }}</div>
       <div class="d-flex gap-2 align-items-center mb-2">
         <BButton variant="primary" size="sm" :disabled="!canStart" :title="$t('outputs.render.startTitle')" data-testid="pod-outputs-render-start" @click="start"><BSpinner v-if="starting" small class="me-1" /><i v-else class="fa-solid fa-film me-1"></i>{{ $t('outputs.render.start') }}</BButton>
@@ -89,6 +125,7 @@
             <span class="font-monospace text-truncate" :title="`${s.dir}/${s.name}`">{{ s.name }}</span><span v-if="s.clip_name && s.clip_name !== s.name" class="font-monospace text-body-secondary" data-testid="pod-outputs-render-seq-clip">→ {{ s.clip_name }}</span>
             <span v-if="s.where" class="badge text-bg-secondary" data-testid="pod-outputs-render-seq-where">{{ $t(`outputs.render.whereBadge.${s.where}`) }}</span>
             <span :class="s.state === 'failed' ? 'text-danger' : 'text-body-secondary'" data-testid="pod-outputs-render-seq-state">{{ $t(`outputs.render.state.${s.state}`) }}<template v-if="s.state === 'rendering' && s.frames_total">{{ ` ${s.frames_done} / ${s.frames_total}` }}</template></span>
+            <span v-if="s.state === 'skipped' && (s.reason || s.skip)" class="text-body-secondary" data-testid="pod-outputs-render-seq-reason">{{ s.reason || s.skip }}</span>
             <span v-if="s.error" class="text-danger" data-testid="pod-outputs-render-seq-error">{{ s.error }}</span>
             <span v-else-if="s.warning" class="text-warning" data-testid="pod-outputs-render-seq-warning">{{ s.warning }}</span>
           </li>
@@ -96,6 +133,7 @@
         <div v-for="r in reviewDone" :key="`${r.s.dir}/${r.s.name}`" class="small d-flex gap-2 align-items-center" data-testid="pod-outputs-render-review-done" :data-shot="r.shot" :data-version="r.version"><span class="text-success">{{ $t('outputs.render.reviewDone', { shot: r.shot, version: v3(r.version), folder: reviewFolder(r.shot, r.version) }) }}</span><BButton variant="outline-light" size="sm" data-testid="pod-outputs-render-review-play" :data-shot="r.shot" @click="playReview(r)"><i class="fa-solid fa-play me-1"></i>{{ $t('outputs.render.reviewPlay') }}</BButton></div>
         <ul v-if="reviewDone.length && reviewDone[0].files.length" class="list-unstyled small mb-1" data-testid="pod-outputs-render-review-files"><li v-for="f in reviewDone[0].files" :key="f.name" class="font-monospace" :data-codec="f.codec">{{ f.name }}<span v-if="!/\.mp4$/i.test(f.name)" class="text-body-secondary font-sans-serif"> · {{ $t('outputs.render.notPlayable') }}</span></li></ul>
         <div v-if="reviewDone.length && reviewDone[0].codecs.length" class="small text-body-secondary" data-testid="pod-outputs-render-review-codecs">{{ $t('outputs.render.codecsLine', { codecs: reviewDone[0].codecs.join(', ') }) }}</div>
+        <div v-if="job.publish" class="small d-flex align-items-center gap-2" data-testid="pod-outputs-render-publish-state" :data-state="job.publish.state">{{ $t('publish.render.summary', { state: job.publish.state }) }}<BButton variant="link" size="sm" class="p-0" data-testid="pod-outputs-render-publish-open" @click="$emit('publish')">{{ $t('publish.render.open') }}</BButton></div>
         <div v-if="finishedJob" class="small" :class="job.state === 'failed' ? 'text-danger' : 'text-success'" data-testid="pod-outputs-render-summary">{{ summaryText }}</div>
       </div>
       <div class="d-flex gap-2 align-items-center flex-wrap pt-2 border-top">
@@ -120,13 +158,25 @@ import { t } from '../i18n'
 import { sizeText } from '../utils/outputs'
 import { rendersAPI } from '../api/renders'
 import FfmpegAlert from './FfmpegAlert.vue'
+import { usePublishStore } from '../stores/publish'
+import { useUiStore } from '../stores/ui'
+import { s3Dest, targetState } from '../utils/publish'
 import { fmtEta } from '../utils/syncs'
-import { WIDTHS, FPS_CHOICES, WHERE_CHOICES, KINDS, clipProblem, outputNames, REVIEW_WIDTH, DEFAULT_WIDTH, APPROVED_KEY, reviewFolder, versionName, fpsFor, missingText, adapterMap, whereState, ffmpegProblem, planSummary, jobPercent, currentSequence, isActive } from '../utils/renders'
+import { sourceGroups, dimsText, scaledHeight, colourGroups, colourLine, conversions, noTransform, refusals, colourText, WIDTHS, FPS_CHOICES, WHERE_CHOICES, KINDS, clipProblem, outputNames, REVIEW_WIDTH, DEFAULT_WIDTH, APPROVED_KEY, reviewFolder, versionName, fpsFor, missingText, adapterMap, whereState, ffmpegProblem, planSummary, jobPercent, currentSequence, isActive } from '../utils/renders'
 
-const props = defineProps({ pod: { type: Object, required: true }, items: { type: Array, default: () => [] }, skipped: { type: Number, default: 0 } })
+const props = defineProps({ skipExisting: { type: Boolean, default: true }, scopeLabel: { type: String, default: '' }, pod: { type: Object, required: true }, items: { type: Array, default: () => [] }, skipped: { type: Number, default: 0 } })
 const renders = useRendersStore(), confirm = useConfirmStore()
 const prefs = renders.prefs
 const isReview = computed(() => prefs.kind === 'review')
+// Publishing when done (never remembered: a send is always per run)
+const publishStore = usePublishStore(), uiStore = useUiStore()
+const pub = reactive({ s3: false, slack: false })
+const pubReady = (id) => targetState(publishStore.settings, id)
+const publishOn = computed(() => pub.s3 || pub.slack)
+const needSync = computed(() => prefs.where !== 'local' && !prefs.pull)   // publishing needs the renders on this PC
+watch(needSync, (n) => { if (n) { pub.s3 = false; pub.slack = false } })
+const openPublishSettings = () => { uiStore.configFocus = 'publishing'; uiStore.configOpen = true }
+const openPublishConnect = () => { uiStore.connectTab = 'slack'; uiStore.connectOpen = true }
 const v3 = (n) => versionName(n).slice(1)
 const approvedBy = ref((() => { try { return localStorage.getItem(APPROVED_KEY) || '' } catch { return '' } })())   // remembered like the other approvals
 watch(approvedBy, (v) => { try { localStorage.setItem(APPROVED_KEY, v.trim()) } catch { /* storage blocked: it lasts this window */ } })
@@ -136,6 +186,22 @@ const src0 = computed(() => plan.value?.sequences?.find((s) => s.source?.width)?
 const widthOptions = computed(() => [{ v: 'source', label: src0.value ? t('outputs.render.sourceResSize', { w: src0.value.width, h: src0.value.height }) : t('outputs.render.sourceRes') }, ...[...WIDTHS].reverse().map((w) => ({ v: w.px, label: t(`outputs.render.${w.id}`) }))])
 const outputGb = computed(() => { const n = (plan.value?.sequences || []).reduce((a, s) => a + (Number(s.estimate?.output_gb) || 0), 0); return n > 0 ? Math.round(n * 10) / 10 : 0 })
 const eta = computed(() => { const j = job.value; return j && j.state === 'rendering' && j.rate_fps > 0 && j.frames_total > j.frames_done ? fmtEta(Math.round((j.frames_total - j.frames_done) / j.rate_fps)) : '' })
+// Source size and colour, read from the headers by the core (a cheap pass over every sequence)
+const srcGroups = computed(() => sourceGroups(plan.value))
+const nSeq = (n) => t(n === 1 ? 'outputs.render.colourCountOne' : 'outputs.render.colourCount', { n })
+const sourceLines = computed(() => srcGroups.value.map((g) => {
+  const many = srcGroups.value.length > 1, w = prefs.width
+  if (w === 'source' || typeof w !== 'number') return many ? `${g.width} × ${g.height}${g.bits ? ` · ${g.bits}-bit` : ''}: ${nSeq(g.count)}` : dimsText(g)
+  const from = `${g.width} × ${g.height}`, to = `${w} × ${scaledHeight(g, w)}`
+  return `${t('outputs.render.downscaleFrom', { from, to })}${many ? ` (${nSeq(g.count)})` : ''}`
+}))
+const colourGs = computed(() => colourGroups(plan.value))
+const convs = computed(() => conversions(plan.value))
+const refusalList = computed(() => refusals(colourGs.value))
+const colourOpen = ref(prefs.kind === 'review'), colourRowsOpen = ref(false), colourFilter = ref(''), colourCopied = ref(false)
+watch(isReview, (r) => { colourOpen.value = r })   // open for a Review, closed for a quick proxy
+const colourRows = computed(() => (plan.value?.sequences || []).filter((s) => (s.colour || s.source) && (!colourFilter.value || s.name.toLowerCase().includes(colourFilter.value.toLowerCase()))))
+async function copyColour() { try { await navigator.clipboard.writeText(colourText(plan.value)); colourCopied.value = true; setTimeout(() => (colourCopied.value = false), 2000) } catch { colourCopied.value = false } }
 const estimates = computed(() => [...new Set((plan.value?.sequences || []).map((s) => s.estimate?.note).filter(Boolean))])
 const settingsNote = ref('')
 const plan = ref(null), planning = ref(false), starting = ref(false), startError = ref(''), startErrObj = ref(null), cleared = ref('')
@@ -155,14 +221,14 @@ async function replan() {
   if (!props.items.length) { plan.value = null; planning.value = false; return }
   planning.value = true
   try {
-    const p = await rendersAPI.plan({ ...podArg(), sequences: sequences.value, width: prefs.width, where: prefs.where, kind: prefs.kind, ...(isReview.value ? { codecs: codecs.value } : {}) })
+    const p = await rendersAPI.plan({ ...podArg(), sequences: sequences.value, width: prefs.width, where: prefs.where, kind: prefs.kind, skip_existing: props.skipExisting, ...(isReview.value ? { codecs: codecs.value } : {}) })
     if (my === planSeq) { plan.value = p; if (p.settings && !seeded) seed(p) }
   } catch (e) { if (my === planSeq) plan.value = { old: false, pod_ok: false, reason: errorText(e), adapters: [], total_frames: 0, sequences: [] } } finally { if (my === planSeq) planning.value = false }
 }
 const later = () => { clearTimeout(timer); timer = setTimeout(replan, 150) }
-watch(() => [prefs.kind, codecs.value.join(), props.items.map((i) => clipOf(i)).join('|'), props.items.map((i) => `${i.dir}/${i.name}:${i.first}-${i.last}:${i.fps}`).join('|'), prefs.width, prefs.fps, prefs.where, props.pod.id, props.pod.status], later)
+watch(() => [props.skipExisting, prefs.kind, codecs.value.join(), props.items.map((i) => clipOf(i)).join('|'), props.items.map((i) => `${i.dir}/${i.name}:${i.first}-${i.last}:${i.fps}`).join('|'), prefs.width, prefs.fps, prefs.where, props.pod.id, props.pod.status], later)
 watch(() => renders.finished, later)
-onMounted(() => { replan(); renders.watch() })
+onMounted(() => { replan(); renders.watch(); publishStore.loadSettings() })
 onBeforeUnmount(() => { clearTimeout(timer); planSeq++ })
 /** The window starts from the settings of the pod's configuration (or the default's) that the core reports with the plan; its own changes are per run and never saved. Once per opening. */
 let seeded = false
@@ -190,13 +256,17 @@ const warnings = computed(() => {
   return out
 })
 const summary = computed(() => planSummary(plan.value))
+/** How many of the plan's sequences already exist (the core's `skip` reason); with Skip existing ticked and none left to do, Start waits. */
+const toSkip = computed(() => plan.value?.totals?.skipped ?? (plan.value?.sequences || []).filter((s) => s.skip).length)
+const allSkipped = computed(() => props.skipExisting && !!plan.value && props.items.length > 0 && !plan.value.old && (plan.value.sequences || []).length > 0 && (plan.value.totals ? plan.value.totals.to_render === 0 : (plan.value.sequences || []).every((s) => s.skip)))
 const incompleteList = computed(() => (plan.value?.sequences || []).filter((s) => s.complete === false || (s.complete === undefined && (Array.isArray(s.gaps) ? s.gaps.length : Number(s.gaps)) > 0)).slice(0, 20))
 const one = (n, k) => t(`outputs.render.${k}${n === 1 ? 'One' : 'Many'}`, { n })
 const planText = computed(() => {
   const s = summary.value, parts = [one(s.sequences, 'sequence'), one(s.frames, 'frame')]
   if (s.pod && s.local) parts.push(t('outputs.render.usingPod', { n: s.pod }), t('outputs.render.usingLocal', { n: s.local }))
   else parts.push(t(s.local ? 'outputs.render.renderedOnLocal' : 'outputs.render.renderedOnPod'))
-  if (s.rendered) parts.push(t('outputs.render.alreadyRendered', { n: s.rendered }))
+  if (plan.value?.totals) parts.push(t(props.skipExisting ? 'outputs.render.toRenderSkip' : 'outputs.render.toRenderAgain', { n: props.skipExisting ? plan.value.totals.to_render : s.sequences, skipped: plan.value.totals.skipped }))
+  else if (s.rendered) parts.push(t('outputs.render.alreadyRendered', { n: s.rendered }))
   if (s.incomplete) parts.push(t('outputs.render.completeCounts', { complete: s.complete, incomplete: s.incomplete }))
   return parts.join(' · ')
 })
@@ -224,15 +294,16 @@ const reviewDone = computed(() => {
   if (!j || j.state !== 'done' || (j.kind || '') !== 'review') return []
   return (j.sequences || []).filter((s) => ['rendered', 'pulled', 'done'].includes(s.state)).map((s) => ({ s, shot: s.shot || j.shot || '', version: s.version ?? j.version ?? 0, files: s.files || j.files || [], codecs: j.codecs || [] }))
 })
-const emit = defineEmits(['play'])
+const emit = defineEmits(['play', 'publish', 'update:skipExisting'])
 function playReview(r) { renders.play = { dir: r.s.dir, name: r.s.name, review: true }; emit('play') }
 
-const canStart = computed(() => !!plan.value && !plan.value.old && props.items.length > 0 && ws.value.ok && !clipBad.value && (!summary.value.incomplete || (prefs.allowPartial && !isReview.value)) && (!isReview.value || (!!approvedBy.value.trim() && codecs.value.length > 0)) && !running.value && !starting.value)
+const canStart = computed(() => !!plan.value && !plan.value.old && props.items.length > 0 && ws.value.ok && !clipBad.value && !allSkipped.value && !(isReview.value && refusalList.value.length) && (!summary.value.incomplete || (prefs.allowPartial && !isReview.value)) && (!isReview.value || (!!approvedBy.value.trim() && codecs.value.length > 0)) && (!publishOn.value || !!approvedBy.value.trim()) && !running.value && !starting.value)
 async function start() {
   starting.value = true; startError.value = ''; startErrObj.value = null
   const fixed = prefs.fps !== 'auto'
   try {
-    await renders.start({ ...podArg(), sequences: sequences.value, width: prefs.width, where: prefs.where, kind: prefs.kind, ...(isReview.value ? { approved_by: approvedBy.value.trim(), codecs: codecs.value } : {}), ...(fixed ? { fps: Number(prefs.fps) } : {}), ...(prefs.where !== 'local' ? { pull: !!prefs.pull } : {}), ...(summary.value.incomplete && prefs.allowPartial && !isReview.value ? { allow_partial: true } : {}) })
+    const started = await renders.start({ ...podArg(), sequences: sequences.value, width: prefs.width, where: prefs.where, kind: prefs.kind, skip_existing: props.skipExisting, ...(isReview.value ? { approved_by: approvedBy.value.trim(), codecs: codecs.value } : publishOn.value ? { approved_by: approvedBy.value.trim() } : {}), ...(publishOn.value ? { publish: { targets: [...(pub.s3 ? ['s3'] : []), ...(pub.slack ? ['slack'] : [])] } } : {}), ...(fixed ? { fps: Number(prefs.fps) } : {}), ...(prefs.where !== 'local' ? { pull: !!prefs.pull } : {}), ...(summary.value.incomplete && prefs.allowPartial && !isReview.value ? { allow_partial: true } : {}) })
+    if (started?.job_id && props.scopeLabel) renders.scopes[started.job_id] = props.scopeLabel   // the job keeps the scope it started with
   } catch (e) { startErrObj.value = e; startError.value = errorText(e) } finally { starting.value = false }
 }
 const stop = () => job.value && renders.cancel(job.value.job_id).catch((e) => { startError.value = errorText(e) })

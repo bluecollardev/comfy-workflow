@@ -78,3 +78,11 @@ manager.
   smaller of the two problems.
 - **Keep FastAPI and only move Electron to spawn it better.** Rejected for the
   same reason: the process is the annoyance, not how it is spawned.
+
+## Amendment 2026-11-19: the gate is enforced at release, and it is the whole gate
+Lucas: "make sure our testing gate is enabled ... make sure you are running the full gate of tests before releasing new version of the app." Until now the gate was a habit: `./start.sh test` ran only the core, IPC, browser and Electron suites (not the MCP or unit tests), nothing recorded that it had passed, and `./start.sh release` did not look. Several v1.5.x patches shipped on targeted runs. Now:
+- **`./start.sh test` is the whole gate:** core (vitest), MCP, IPC table, unit (`dpx:test`), the full browser suite and the real app in no-spend mode (the Electron suite). Stop the app first. On a full pass it records `.gate/last-pass.json` (the time, HEAD, the suites, and a fingerprint of the code the tests exercise: `apps/runpod-dashboard`, `start.sh`, `scripts`, minus what a release itself changes: `package.json`, `package-lock.json`, `build/build-info.json`). On any failure it records nothing and exits 1.
+- **`./start.sh release` checks the record first** (`scripts/gate.mjs check`): it refuses unless a pass exists, is not older than 24 hours, and matches the current code exactly. Changing code after the gate invalidates it; changing docs or the changelog does not. `--dry-run` only reports the gate.
+- **The one way round is explicit and on the record:** `./start.sh release patch --skip-gate "Lucas: no tests for this patch"` writes the reason to `.gate/skips.log` and prints a warning; a skip is also stated in the CHANGELOG entry. Nobody (and no agent) skips without a person saying so for that release.
+- **Tests of the gate itself:** `scripts/gate.test.mjs` (a pass for the same code, through a version bump, invalidated by changed, added or removed code, ignoring docs, the age limit, skips need a reason).
+

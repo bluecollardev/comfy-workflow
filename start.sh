@@ -16,8 +16,8 @@
 #   ./start.sh e2e | e2e-app | e2e-live | core-test | smoke   browser suite; the app in no-spend mode; the live RunPod proof (spends); core suite; headless boot
 #   ./start.sh comfy-image [--remote --wait] [--push <ref>]   build the ComfyUI server image (on GitHub Actions with --remote)
 #   ./start.sh package [mac|win|linux|all] [--comfy <variant>] [--image <ref>]  build the app installers for a comfy-app variant
-#   ./start.sh release patch|minor|major|X.Y.Z [--dry-run] [--no-publish]   version, build the DMG, tag, publish to the downloads repo (docs/ADR-012)
-#   ./start.sh test           the merge gate: core, IPC table, browser suite, the app in no-spend mode
+#   ./start.sh release patch|minor|major|X.Y.Z [--dry-run] [--no-publish] [--skip-gate "why"]   version, build the DMG, tag, publish (docs/ADR-012); REFUSED without a passing ./start.sh test on this code
+#   ./start.sh test           the gate: core, MCP, IPC, unit, browser suite, the real app in no-spend mode; a pass is recorded for release
 #   ./start.sh stop           stop ComfyUI, wherever it was started (background, terminal or IDE)
 #
 # RUNPOD_API_KEY comes from the environment, from .env at the repo root, or from the app's
@@ -158,7 +158,25 @@ case "${1:-help}" in
       all)   npm run build && exec npx electron-builder --mac --win --linux "$out" ;;
     esac ;;
   release)
-    shift; exec scripts/release.sh "$@" ;;
+    # A release needs a passing gate (./start.sh test) recorded for exactly this code (scripts/gate.mjs, docs/ADR-005). The only way round it is
+    # --skip-gate "reason in words", which is written to .gate/skips.log; a dry run only reports the gate.
+    shift
+    skip_reason=""; dry=0; rargs=()
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --skip-gate) skip_reason="${2:-}"; [ -n "$skip_reason" ] || { echo '--skip-gate needs the reason in words, e.g. --skip-gate "Lucas: no tests for this patch"' >&2; exit 2; }; shift 2 ;;
+        --dry-run) dry=1; rargs+=("$1"); shift ;;
+        *) rargs+=("$1"); shift ;;
+      esac
+    done
+    if [ "$dry" = 1 ]; then
+      node scripts/gate.mjs check || echo "(dry run only: a real release would be REFUSED until ./start.sh test passes on this code)"
+    elif [ -n "$skip_reason" ]; then
+      node scripts/gate.mjs skip --reason "$skip_reason"; echo "WARNING: releasing WITHOUT a passing gate: $skip_reason" >&2
+    else
+      node scripts/gate.mjs check || { echo "release refused: run ./start.sh test (the full gate) first, then release again." >&2; exit 1; }
+    fi
+    exec scripts/release.sh ${rargs[@]+"${rargs[@]}"} ;;
   stop)
     # ComfyUI started in the background has a pid file; one started in a terminal or the IDE does not:
     # stop whatever ComfyUI is listening on its port too.
@@ -168,9 +186,15 @@ case "${1:-help}" in
     done
     true ;;
   test)
-    # The merge gate (docs/ADR-005): the core suite, the IPC table, the browser suite and the app itself in no-spend mode; nothing merges red.
+    # The gate (docs/ADR-005, amended 2026-11-19): the core suite, the MCP tools, the IPC table, the unit tests, the browser suite and the app itself
+    # in no-spend mode; nothing merges or releases red. A full pass is recorded (scripts/gate.mjs) and `./start.sh release` requires it for this code.
+    # Stop the app first (the Electron suite opens its own windows).
     shift; ensure_app; ensure_ui; cd "$APP"
-    npm run --silent core:test && npm run --silent ipc:test && npx playwright test && npx playwright test --config playwright.electron.config.js ;;
+    if npm run --silent test && npx playwright test && npx playwright test --config playwright.electron.config.js; then
+      cd "$HERE"; node scripts/gate.mjs write
+    else
+      echo "the gate FAILED: nothing was recorded, a release is refused" >&2; exit 1
+    fi ;;
   help|-h|--help) usage ;;
   *) echo "unknown target: $1" >&2; usage >&2; exit 2 ;;
 esac

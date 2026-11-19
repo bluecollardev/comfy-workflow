@@ -45,7 +45,7 @@ const noFfmpeg = { code: 'no_ffmpeg', ok: false, reason: 'ffmpeg is not installe
 test('Render option: the plan line, the defaults, and the plan request (width, per-sequence fps from the name, where)', async ({ page, api }) => {
   await openOutputs(page, api, { renders: { missing: {}, remote: { [key('seqs/b', B)]: true } } })
   const p = await openPreviews(page)
-  await expect(planText(p)).toHaveText('3 sequences · 9 frames · rendered on the pod · 1 already rendered')
+  await expect(planText(p)).toHaveText('3 sequences · 9 frames · rendered on the pod · 2 to render · 1 already done (skipped)')
   await expect(p.getByTestId('pod-outputs-render-width')).toHaveValue('source')   // IMAX 4K by default
   await expect(p.getByTestId('pod-outputs-render-downscale-hint')).toHaveCount(0)
   await expect(p.getByTestId('pod-outputs-render-fps')).toHaveValue('auto')
@@ -533,4 +533,86 @@ test('switching to Review while its plan is still on the way never prints "undef
   await expect(rows).not.toContainText('undefined')
   const shot = await p.getByTestId('pod-outputs-render-review-shot').first().getAttribute('data-shot')
   expect(shot).toBeTruthy(); expect(shot).not.toBe('undefined')
+})
+
+test('Source size under the Size select: one size, two sizes as lines with counts, the downscale from/to, size not read, and the older core\'s per-sequence fallback', async ({ page, api }) => {
+  await openOutputs(page, api)
+  const p = await openPreviews(page)
+  await expect(p.getByTestId('pod-outputs-render-source-line')).toHaveText(['3840 × 2160, 16-bit'])
+  await p.getByTestId('pod-outputs-render-width').selectOption('1920')
+  await expect(p.getByTestId('pod-outputs-render-source-line')).toHaveText(['from 3840 × 2160 to 1920 × 1080'])
+  await p.getByTestId('pod-outputs-render-width').selectOption('960')
+  await expect(p.getByTestId('pod-outputs-render-source-line')).toHaveText(['from 3840 × 2160 to 960 × 540'])
+  api.state.renders.sources = { [key('seqs/b', B)]: { width: 1920, height: 1080, bits: 10 }, [key('seqs/c', C)]: { width: 1920, height: 1080, bits: 10 } }
+  await p.getByTestId('pod-outputs-render-width').selectOption('source')
+  await p.getByTestId('pod-outputs-render-fps').selectOption('25')   // a new plan
+  await expect(p.getByTestId('pod-outputs-render-source-line')).toHaveText(['3840 × 2160 · 16-bit: 1 sequence', '1920 × 1080 · 10-bit: 2 sequences'])
+  await p.getByTestId('pod-outputs-render-width').selectOption('1280')
+  await expect(p.getByTestId('pod-outputs-render-source-line')).toHaveText(['from 3840 × 2160 to 1280 × 720 (1 sequence)', 'from 1920 × 1080 to 1280 × 720 (2 sequences)'])
+  api.state.renders.noSource = true; api.state.renders.noSummary = true
+  await p.getByTestId('pod-outputs-render-fps').selectOption('30')
+  await expect(p.getByTestId('pod-outputs-render-source')).toHaveText('size not read')
+})
+
+test('Colour block: closed for a quick proxy, open for a Review; the groups, the conversion in plain words, the no-transform note and the verdict', async ({ page, api }) => {
+  await openOutputs(page, api)
+  const p = await openPreviews(page)
+  const c = p.getByTestId('pod-outputs-render-colour')
+  await expect(c).toHaveAttribute('data-open', 'false')
+  await c.locator('summary').click(); await expect(c).toHaveAttribute('data-open', 'true')
+  await expect(c.getByTestId('pod-outputs-render-colour-group')).toHaveCount(1)
+  await expect(c.getByTestId('pod-outputs-render-colour-line')).toHaveText('Transfer: logarithmic · Colorimetric: unspecified video · RGB · 16-bit packed · big-endian')
+  await expect(c.getByTestId('pod-outputs-render-colour-count')).toHaveText('3 sequences'); await expect(c.getByTestId('pod-outputs-render-colour-verdict')).toHaveText('Review allowed')
+  await expect(c.getByTestId('pod-outputs-render-colour-conversion')).toHaveText('Conversion applied: none: a plain scale, no colour transform')
+  await expect(c.getByTestId('pod-outputs-render-colour-note')).toHaveText("The app applies no colour transform; what you see in the proxy is the file's values scaled.")
+  await p.getByTestId('pod-outputs-render-kind-review').check()
+  await expect(c).toHaveAttribute('data-open', 'true')   // open for a Review
+  await p.getByTestId('pod-outputs-render-kind-proxy').check()
+  await expect(c).toHaveAttribute('data-open', 'false')
+  api.state.renders.colours = { [key('seqs/c', C)]: { conversion: 'BT.709 matrix' } }
+  await p.getByTestId('pod-outputs-render-fps').selectOption('25')
+  await c.locator('summary').click()
+  await expect(c.getByTestId('pod-outputs-render-colour-conversion')).toHaveText(['Conversion applied: none: a plain scale, no colour transform', 'Conversion applied: BT.709 matrix'])
+})
+
+test('A refused Review shows the reason and keeps Start off for a Review only; a quick proxy is not stopped by it', async ({ page, api }) => {
+  await openOutputs(page, api, { renders: { refuse: { [key('seqs/b', B)]: 'a linear transfer is not a review source' } } })
+  const p = await openPreviews(page)
+  await p.getByTestId('pod-outputs-render-colour').locator('summary').click()
+  const verdicts = p.getByTestId('pod-outputs-render-colour-verdict')
+  await expect(verdicts).toHaveText(['Review allowed', 'Review refused: a linear transfer is not a review source'])
+  await expect(p.getByTestId('pod-outputs-render-start')).toBeEnabled()   // a proxy plays anything
+  await p.getByTestId('pod-outputs-render-kind-review').check(); await p.getByTestId('pod-outputs-render-approved-by').fill('B')
+  await expect(p.getByTestId('pod-outputs-render-start')).toBeDisabled()
+  await p.getByTestId('pod-outputs-render-kind-proxy').check()
+  await expect(p.getByTestId('pod-outputs-render-start')).toBeEnabled()
+})
+
+test('The per-sequence table (name, size, transfer, colorimetric, bits, start timecode, verdict) with a filter, and Copy as text puts the block on the clipboard', async ({ page, api, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await openOutputs(page, api, { renders: { refuse: { [key('seqs/c', C)]: 'not a review source' }, colours: { [key('seqs/b', B)]: { start_timecode: '02:00:00:00' } } } })
+  const p = await openPreviews(page)
+  await p.getByTestId('pod-outputs-render-colour').locator('summary').click()
+  await p.getByTestId('pod-outputs-render-colour-rows-toggle').click()
+  await expect(p.getByTestId('pod-outputs-render-colour-row')).toHaveCount(3)
+  const rowB = p.locator(`[data-testid="pod-outputs-render-colour-row"][data-name="${B}"]`)
+  await expect(rowB.locator('td')).toHaveText([B, '3840 × 2160', 'logarithmic', 'unspecified video', '16', '02:00:00:00', 'ok'])
+  await expect(p.locator(`[data-testid="pod-outputs-render-colour-row"][data-name="${C}"] td`).last()).toHaveText('not a review source')
+  await p.getByTestId('pod-outputs-render-colour-filter').fill('s2_')
+  await expect(p.getByTestId('pod-outputs-render-colour-row')).toHaveCount(1)
+  await p.getByTestId('pod-outputs-render-colour-copy').click()
+  await expect(p.getByTestId('pod-outputs-render-colour-copy')).toHaveText('Copied')
+  const text = await page.evaluate(() => navigator.clipboard.readText())
+  expect(text.split('\n')).toEqual([
+    '2 sequences: Transfer: logarithmic · Colorimetric: unspecified video · RGB · 16-bit packed · big-endian · 3840 × 2160 · Review allowed',
+    '1 sequence: Transfer: logarithmic · Colorimetric: unspecified video · RGB · 16-bit packed · big-endian · 3840 × 2160 · Review refused: not a review source',
+    'Conversion applied: none: a plain scale, no colour transform'])
+})
+
+test('A core without colour or summaries (older): the colour block is absent, the size comes from each sequence\'s own source, nothing breaks', async ({ page, api }) => {
+  await openOutputs(page, api, { renders: { noColour: true, noSummary: true } })
+  const p = await openPreviews(page)
+  await expect(p.getByTestId('pod-outputs-render-colour')).toHaveCount(0)
+  await expect(p.getByTestId('pod-outputs-render-source-line')).toHaveText(['3840 × 2160, 16-bit'])
+  await expect(p.getByTestId('pod-outputs-render-start')).toBeEnabled()
 })

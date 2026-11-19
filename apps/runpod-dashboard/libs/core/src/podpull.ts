@@ -122,7 +122,7 @@ function volumeJobCapability(): { available: boolean; reason: string } {
 /** `transient`: the call failed because the connection to RunPod's storage did not work (after the retries); `detail`: the first original error line, kept out of what the person sees (it carries the volume id and the prefix). */
 export interface AwsResult { code: number | null; stdout: string; stderr: string; transient?: boolean; detail?: string }
 /** What a call to the `aws` CLI may be held to: how long it may stay silent (the CLI prints each page of a listing as it comes), a way to stop it, and who hears each line. */
-export interface AwsCallOpts { stallMs?: number; signal?: AbortSignal; onLines?: (n: number) => void }
+export interface AwsCallOpts { stallMs?: number; signal?: AbortSignal; onLines?: (n: number) => void; /** every chunk of stdout as it arrives (an upload's `Completed 5 MiB/1 GiB` progress, which ends in \r, not \n) */ onData?: (chunk: string) => void }
 export type AwsRunner = (args: string[], env: Record<string, string>, o?: AwsCallOpts) => Promise<AwsResult>
 /** Exit code of a call that was stopped because it went silent (nothing from RunPod's S3 for `stallMs`). */
 export const AWS_STALLED = 124
@@ -1163,7 +1163,7 @@ const spawnAws: AwsRunner = (args, env, o = {}) => new Promise((res) => {
   const onAbort = () => c.kill('SIGKILL')
   if (o.signal?.aborted) onAbort(); else o.signal?.addEventListener('abort', onAbort, { once: true })
   arm()
-  c.stdout.on('data', (d) => { stdout += d; arm(); if (o.onLines) { lines += String(d).split('\n').length - 1; o.onLines(lines) } }); c.stderr.on('data', (d) => { stderr += d; arm() })
+  c.stdout.on('data', (d) => { stdout += d; arm(); o.onData?.(String(d)); if (o.onLines) { lines += String(d).split('\n').length - 1; o.onLines(lines) } }); c.stderr.on('data', (d) => { stderr += d; arm() })
   c.on('error', (e) => { stop(); res({ code: 127, stdout, stderr: `${stderr}${e.message}` }) })
   c.on('close', (code) => { stop(); res(stalled ? { code: AWS_STALLED, stdout, stderr: `${stderr}no answer for ${Math.round((o.stallMs ?? 0) / 1000)} s`.trim() } : { code, stdout, stderr }) })
 })
@@ -1422,4 +1422,15 @@ export async function placeRound(round: string, o: { pod_id?: string; dry_run?: 
   const r = await place.run(round, { host, port, ssh: opts.ssh ?? runSsh, dry_run: dryRun })
   if (!dryRun) history.record({ kind: 'change', area: 'import', action: 'place', what: round, detail: placeSummary(r) })
   return r
+}
+
+/** Whether a prefix of a volume holds no objects, from a two-key listing (`max-keys 2`: the folder's own marker object may take one) over RunPod's S3 API: true (empty), false (something there), undefined when it cannot be told (an error, the time limit, or the time limit). Read-only. */
+export async function probeEmpty(a: { id: string; secret: string; endpoint: string; bucket: string; region: string }, prefix: string, aws: AwsRunner = defaultAws, ms = 3000): Promise<boolean | undefined> {
+  const ac = new AbortController(), timer = setTimeout(() => ac.abort(), ms)
+  try {
+    const r = await aws(['s3api', 'list-objects-v2', '--bucket', a.bucket, '--prefix', prefix, '--max-keys', '2', '--endpoint-url', a.endpoint, '--region', a.region], { AWS_ACCESS_KEY_ID: a.id, AWS_SECRET_ACCESS_KEY: a.secret }, { signal: ac.signal, stallMs: ms })
+    if (r.code !== 0) return undefined
+    const j = JSON.parse(r.stdout.trim() || '{}') as { Contents?: { Key?: string }[] }, c = (j.Contents ?? []).filter((x) => x.Key !== prefix)
+    return c.length === 0   // two keys are asked for so a folder's own marker object (`name/`) does not hide that the folder holds nothing else
+  } catch { return undefined } finally { clearTimeout(timer) }
 }

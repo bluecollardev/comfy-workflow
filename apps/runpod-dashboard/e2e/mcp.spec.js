@@ -23,7 +23,7 @@ test.describe('Connect: tabs and the shell guard', () => {
     await page.goto('/')
     await page.getByTestId('open-connect').click()
     const dialog = modal(page, t('connect.title'))
-    expect(await dialog.getByRole('tab').allTextContents()).toEqual([t('connect.mcp'), t('connect.repositories')])
+    expect(await dialog.getByRole('tab').allTextContents()).toEqual([t('connect.mcp'), t('connect.slack'), t('connect.repositories')])
     await expect(dialog.getByTestId('connect-mcp')).toBeVisible()                        // the default tab
     await dialog.getByRole('tab', { name: t('connect.repositories') }).click()
     await expect(dialog.getByTestId('connect-accounts')).toBeVisible()

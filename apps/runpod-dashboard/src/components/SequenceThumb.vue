@@ -20,10 +20,12 @@ import { t } from '../i18n'
 import { viewUrl } from '../utils/outputs'
 import { appReader, sharedThumbs, thumbKey } from '../utils/thumbs'
 import { previewBus } from '../utils/thumbsBus'
+import { usePreviewsStore } from '../stores/previews'
 
 const props = defineProps({ tile: { type: Object, required: true }, base: { type: String, default: '' }, scope: { type: String, default: '' }, volumeName: { type: String, default: '' }, offline: { type: Boolean, default: false } })
 const emit = defineEmits(['state'])
 const root = ref(null)
+const previews = usePreviewsStore()
 const state = ref('idle'), url = ref(''), reason = ref('')
 const first = computed(() => props.tile.frames?.[0] || props.tile.file)
 const key = computed(() => thumbKey(props.scope || props.base, first.value))
@@ -56,16 +58,22 @@ function seen(v) {
 }
 onMounted(() => {
   previewBus.counts[state.value]++   // this tile counts toward "Generate all previews"
+  fromBatch()
   if (typeof IntersectionObserver === 'undefined') { seen(true); return }
   io = new IntersectionObserver((es) => { for (const e of es) seen(e.isIntersecting) }, { rootMargin: '200px' })
   io.observe(root.value.parentElement || root.value)
 })
 onBeforeUnmount(() => { io?.disconnect(); if (state.value === 'loading') sharedThumbs().abort(key.value); if (state.value === 'capped') previewBus.capped--; if (previewBus.counts[state.value] > 0) previewBus.counts[state.value]-- })
 watch(usable, (u) => { if (u && visible && ['idle', 'nobase'].includes(state.value)) load(false) })
-watch(() => previewBus.tick, () => {
-  if (state.value === 'capped') load(true)
-  else if (previewBus.batch && usable.value && ['idle', 'error'].includes(state.value)) load(true)   // Generate all: tiles not scrolled to yet and failed ones too (a cached one is a hit with no download)
-})
+watch(() => previewBus.tick, () => { if (state.value === 'capped') load(true) })
+// The preview batch is the app's (stores/previews.js), not the window's: what it found for this sequence is picked up here, now or when the tile appears later (a finished preview is in the cache: no download).
+function fromBatch() {
+  const r = previews.results[key.value]
+  if (!r || !usable.value || !['idle', 'capped', 'error', 'nobase'].includes(state.value)) return
+  if (r.status === 'error') { reason.value = r.code ? t(`outputs.dpx.reason.${r.code}`) : r.reason; setState('error') } else if (['ready', 'empty'].includes(r.status)) load(true)
+}
+watch(() => previews.version, fromBatch)
+watch(() => previewBus.resetTick, () => { if (['ready', 'empty'].includes(state.value)) { url.value = ''; setState('idle') } })   // the preview cache was cleared: this tile has no preview any more
 watch(() => previewBus.stopTick, () => { wanted = false })   // Stop: nothing asked for any more
 </script>
 

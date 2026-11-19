@@ -1,8 +1,9 @@
 <template>
-  <BModal :model-value="ui.connectOpen" :title="$t('connect.title')" size="lg" lazy ok-only :ok-title="$t('connect.done')" ok-variant="outline-light" data-testid="connect-modal" @update:model-value="ui.connectOpen = $event">
+  <BModal :model-value="ui.connectOpen" :title="$t('connect.title')" size="lg" lazy ok-only :ok-title="$t('connect.done')" ok-variant="outline-light" data-testid="connect-modal" @update:model-value="ui.connectOpen = $event" @show="ready = false" @shown="onShown">
     <p class="text-body-secondary small">{{ $t('connect.intro') }}</p>
-    <BTabs lazy content-class="pt-3" @activate-tab="(i) => (ui.connectTab = TABS[i] || 'mcp')">
+    <BTabs lazy content-class="pt-3" @activate-tab="onActivate">
       <BTab :title="$t('connect.mcp')" :active="ui.connectTab === 'mcp'" data-testid="connect-tab-mcp"><McpPane :active="ui.connectOpen && ui.connectTab === 'mcp'" /></BTab>
+      <BTab :title="$t('connect.slack')" :active="ui.connectTab === 'slack'" data-testid="connect-tab-slack"><SlackPane /></BTab>
       <BTab :title="$t('connect.repositories')" :active="ui.connectTab === 'repositories'" data-testid="connect-tab-repositories">
         <h6 class="mb-2" data-testid="connect-accounts-heading">{{ $t('connect.accounts') }}</h6>
         <GitAccountsPane :active="ui.connectOpen && ui.connectTab === 'repositories'" />
@@ -20,11 +21,17 @@
  * then Repositories, which holds the Git accounts (GitHub / GitLab OAuth) on top and the repositories attached to the project below.
  * `ui.connectOpen` opens it on `ui.connectTab`; `ui.accountsOpen` / `ui.repositoriesOpen` are the same flag (the Repositories tab) seen from older callers.
  */
+import { nextTick } from 'vue'
 import { useUiStore } from '../stores/ui'
 import GitAccountsPane from './GitAccountsPane.vue'
 import RepositoriesPane from './RepositoriesPane.vue'
 import McpPane from './McpPane.vue'
+import SlackPane from './SlackPane.vue'
 
 const ui = useUiStore()
-const TABS = ['mcp', 'repositories']
+const TABS = ['mcp', 'slack', 'repositories']
+// The open tab is ui.connectTab (a caller can ask for Connect > Slack); the tabs report their first tab while they mount, which is not a choice, so only what happens after the window is shown counts.
+let ready = false
+function onShown() { nextTick(() => { ready = true }) }
+function onActivate(id, prev, i) { if (ready && TABS[i]) ui.connectTab = TABS[i] }
 </script>

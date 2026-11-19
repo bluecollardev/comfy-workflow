@@ -5,6 +5,7 @@ import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { CoreError } from '../src/errors.js'
 import * as history from '../src/history.js'
+import * as publish from '../src/publish.js'
 import * as renders from '../src/renders.js'
 import { scratch } from './helpers.js'
 
@@ -145,10 +146,11 @@ describe('rendering on the pod', () => {
     const h = history.list({ kind: 'job' }).filter((e) => e.kind === 'job' && e.job === 'render'); expect(h).toHaveLength(1); expect(h[0]).toMatchObject({ state: 'done', files: 1, bytes: 123456, pod_id: 'p1' }); expect((h[0] as { what: string }).what).toMatch(/\(pod\)/)
   })
   it('pull: false pulls nothing and the sequence stays rendered', async () => { const j = await go({ pull: false }); expect(pulls).toHaveLength(0); expect(j.sequences[0].state).toBe('rendered') })
-  it('a proxy that is already there and newer than the last frame is skipped (a re-run does nothing); it is still pulled', async () => {
-    pod.outM = 200; pod.outS = 555; const j = await go()
-    expect(scripts.some((s) => s.includes('nice -n 10'))).toBe(false); expect(j.sequences[0]).toMatchObject({ state: 'pulled', bytes: 555 }); expect(pulls).toHaveLength(1)
-    pod.outM = 50; scripts = []; await go(); expect(scripts.some((s) => s.includes('nice -n 10'))).toBe(true)   // older than the last frame: rendered again
+  it('a proxy that is already there and newer than the last frame is skipped (Skip existing, the default): everything done is a 400; unticked it renders again and the pull REPLACES the local file', async () => {
+    pod.outM = 200; pod.outS = 555
+    await expect(go()).rejects.toMatchObject({ status: 400, message: renders.ALL_DONE }); expect(scripts.some((s) => s.includes('nice -n 10'))).toBe(false); expect(pulls).toHaveLength(0)
+    const j = await go({ skip_existing: false }); expect(scripts.some((s) => s.includes('nice -n 10'))).toBe(true); expect(j.sequences[0].state).toBe('pulled'); expect(pulls[0].req).toMatchObject({ existing: 'replace' })   // a stale local copy is not kept by the same-size rule
+    pod.outM = 50; scripts = []; await go(); expect(scripts.some((s) => s.includes('nice -n 10'))).toBe(true); expect(pulls.at(-1)!.req).toMatchObject({ existing: 'size' })   // older than the last frame: rendered again
   })
   it('gaps are a warning; the contiguous run from first is rendered', async () => {
     pod.frames = [0, 1, 2, 3, 5, 6]; const j = await go({ allow_partial: true }); expect(j.sequences[0].warning).toMatch(/frame numbers? missing/); expect(j.sequences[0].frames_total).toBe(4); expect(j.sequences[0].out).toMatch(/_960_partial\.mp4$/)
@@ -194,7 +196,7 @@ describe('rendering on this PC (the local adapter)', () => {
     frames(10); const { unlinkSync } = await import('node:fs'); unlinkSync(join(shared, 'output', SEQ.dir, `${SEQ.name}.0003.dpx`))
     j = await goLocal({ allow_partial: true }); expect(j.sequences[0].warning).toMatch(/1 frame number missing/); expect(j.sequences[0].frames_total).toBe(3)
   })
-  it('a proxy newer than the last frame is skipped', async () => { frames(10); await goLocal(); spawned.length = 0; const j = await goLocal(); expect(j.sequences[0].state).toBe('skipped'); expect(spawned.some((s) => s.args[0] !== '-version')).toBe(false) })
+  it('a proxy newer than the last frame is skipped: with nothing left to do the start says so (400)', async () => { frames(10); await goLocal(); spawned.length = 0; await expect(goLocal()).rejects.toMatchObject({ status: 400, message: renders.ALL_DONE }); expect(spawned.some((s) => s.args[0] !== '-version')).toBe(false) })
   it('never writes outside .proxies: a crafted sequence is refused before anything is spawned', async () => {
     expect(() => renders.validateSequence({ ...SEQ, dir: 'a/../../etc' })).toThrow(); frames(10)
     const j = await goLocal({ sequences: [{ ...SEQ, name: '..' }] }).catch((e) => e as Error); expect(j).toBeInstanceOf(Error)
@@ -416,8 +418,8 @@ describe('the review kind: the stitched, versioned deliverable', () => {
 
 
 // ===== conform: clip names, timecode, ProRes default, the cheap-card estimate =====
-/** A DPX header with a television-header time code (BCD, the file's byte order). */
-const dpxWithTc = (tc: number, o: { le?: boolean; width?: number; height?: number } = {}) => { const b = Buffer.alloc(1700); b.write(o.le ? 'XPDS' : 'SDPX', 0); const w = (off: number, v: number) => (o.le ? b.writeUInt32LE(v, off) : b.writeUInt32BE(v, off)); w(772, o.width ?? 3840); w(776, o.height ?? 2160); b.writeUInt8(50, 800); b.writeUInt8(10, 803); w(1664, tc); return b }
+/** A DPX header with a television header (image data at 2048) and its time code at 1920 (BCD, the file's byte order). */
+const dpxWithTc = (tc: number, o: { le?: boolean; width?: number; height?: number } = {}) => { const b = Buffer.alloc(2048); b.write(o.le ? 'XPDS' : 'SDPX', 0); const w = (off: number, v: number) => (o.le ? b.writeUInt32LE(v, off) : b.writeUInt32BE(v, off)); w(4, 2048); w(16, 4096); w(772, o.width ?? 3840); w(776, o.height ?? 2160); b.writeUInt8(50, 800); b.writeUInt8(10, 803); w(1920, tc); return b }
 const EDL = { a: 'ARCHIVAL-077_A_FINAL_V03_3840X2160_23.976_PRORES422HQ', b: 'ARCHIVAL-077_B_FINAL_V03_3840X2160_23.976_PRORES422HQ', c: 'ARCHIVAL-077_C_FINAL_V02_1920X1080_23.976_PRORES422HQ' }
 
 describe('clip names (the EDL\'s, so a conform relinks)', () => {
@@ -450,11 +452,11 @@ describe('the start timecode (never invented)', () => {
   it('a review on the pod embeds it, and records it (and its source) in the sidecar and DELIVERY.md; without one it says so', async () => {
     pod.header = dpxWithTc(0x01000000); let j = await runJob({ kind: 'review', approved_by: 'L', width: undefined, codecs: ['prores422hq'] }); expect(j.sequences[0].state).toBe('pulled')
     let script = scripts.filter((s) => s.includes('nice -n 10')).at(-1)!; expect(script).toContain("'-timecode' '01:00:00:00'")
-    const meta = JSON.parse(script.split("<<'RENDER_EOF_0'\n")[1].split('\nRENDER_EOF_0')[0].replace(/@@(BYTES|FRAMES|RATE)_\d@@/g, '0').replace(/@@SHA256_\d@@/g, 'x')); expect(meta).toMatchObject({ start_timecode: '01:00:00:00', timecode_source: 'DPX television header (SMPTE 268M, byte 1664)', codec: 'prores422hq' })
+    const meta = JSON.parse(script.split("<<'RENDER_EOF_0'\n")[1].split('\nRENDER_EOF_0')[0].replace(/@@(BYTES|FRAMES|RATE)_\d@@/g, '0').replace(/@@SHA256_\d@@/g, 'x')); expect(meta).toMatchObject({ start_timecode: '01:00:00:00', timecode_source: 'DPX television header (SMPTE 268M, byte 1920)', codec: 'prores422hq' })
     expect(script.split("<<'RENDER_EOF_1'\n")[1]).toContain('Start timecode: 01:00:00:00, read from the DPX television header')
     pod.header = dpxHeader(); j = await runJob({ kind: 'review', approved_by: 'L', width: undefined, codecs: ['prores422hq'] }); script = scripts.filter((s) => s.includes('nice -n 10')).at(-1)!
-    expect(script).not.toContain("'-timecode'"); expect(script.split("<<'RENDER_EOF_1'\n")[1]).toContain('no timecode in the DPX header; none embedded (never invented)')
-    expect(JSON.parse(script.split("<<'RENDER_EOF_0'\n")[1].split('\nRENDER_EOF_0')[0].replace(/@@(BYTES|FRAMES|RATE)_\d@@/g, '0').replace(/@@SHA256_\d@@/g, 'x'))).toMatchObject({ start_timecode: null, timecode_note: 'no timecode in the DPX header' })
+    expect(script).not.toContain("'-timecode'"); expect(script.split("<<'RENDER_EOF_1'\n")[1]).toContain('no timecode in the DPX header (the file has no television header); none embedded (never invented)')
+    expect(JSON.parse(script.split("<<'RENDER_EOF_0'\n")[1].split('\nRENDER_EOF_0')[0].replace(/@@(BYTES|FRAMES|RATE)_\d@@/g, '0').replace(/@@SHA256_\d@@/g, 'x'))).toMatchObject({ start_timecode: null, timecode_note: 'no timecode in the DPX header (the file has no television header)' })
   })
 })
 
@@ -532,4 +534,86 @@ describe('a cheap card is enough: the pod\'s CPU, disk and the output estimate i
     await runJob({ kind: 'review', approved_by: 'L', width: undefined, codecs: ['h264'] }); const script = scripts.filter((s) => s.includes('nice -n 10')).at(-1)!
     expect(script).toContain('RATE_0=$(awk'); expect(script).toContain('"s/@@RATE_0@@/$RATE_0/g"'); expect(script.split("<<'RENDER_EOF_1'\n")[1]).toContain('Measured encode rate: h264 @@RATE_0@@ frames per second'); expect(script).toContain('"render_fps": @@RATE_0@@')
   })
+})
+
+describe('publish when the render finishes (ADR-050): per run, with the same approver, only from files on this PC', () => {
+  let uploads: string[], posts: number
+  const frames = (n = 10) => { mkdirSync(join(shared, 'output', SEQ.dir), { recursive: true }); for (let i = 0; i < n; i++) writeFileSync(join(shared, 'output', SEQ.dir, `${SEQ.name}.${String(i).padStart(4, '0')}.dpx`), i === 0 ? dpxHeader() : 'x') }
+  beforeEach(async () => {
+    uploads = []; posts = 0; process.env.SETTINGS_ENV_FILE = join(dir, '.env'); process.env.PUBLISH_SLACK_HOST_ALLOW = 'hooks.slack.com'; publish.reset()
+    publish.setDeps({ outputRoot: () => join(shared, 'output'), parallel: () => 2,
+      aws: async (a) => { if (a[1] === 'cp') uploads.push(a[3]); return a[1] === 'presign' ? { code: 0, stdout: 'https://s3.example/x?X-Amz-Signature=1', stderr: '' } : { code: a[1] === 'ls' ? 1 : 0, stdout: '', stderr: '' } },
+      fetch: (async () => { posts++; return new Response('ok') }) as unknown as typeof fetch })
+    await publish.setSettings({ s3: { credentials: 'app', bucket: 'my-internal-bucket', region: 'us-west-2', prefix: 'renders', access_key_id: 'AKIAEXAMPLE12345', secret_access_key: 'secretsecretsecret1234' }, slack: { webhook_url: 'https://hooks.slack.com/services/T/B/XXXXXXXX' } })
+  })
+  afterEach(() => { publish.reset(); delete process.env.PUBLISH_SLACK_HOST_ALLOW; delete process.env.PUBLISH_S3_ACCESS_KEY_ID; delete process.env.PUBLISH_S3_SECRET_ACCESS_KEY; delete process.env.PUBLISH_SLACK_WEBHOOK_URL })
+  it('needs approved_by, also for a proxy, and a configured destination; refuses a bad target list', async () => {
+    frames()
+    await expect(renders.start({ sequences: [SEQ], width: 960, where: 'local', publish: { targets: ['s3'] } })).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/approved_by/) })
+    await expect(renders.start({ sequences: [SEQ], width: 960, where: 'local', approved_by: 'L', publish: { targets: ['ftp' as never] } })).rejects.toMatchObject({ status: 400 })
+    await publish.setSettings({ clear: ['s3_keys'] }); await expect(renders.start({ sequences: [SEQ], width: 960, where: 'local', approved_by: 'L', publish: { targets: ['s3'] } })).rejects.toThrow(/S3 is not configured/)
+  })
+  it('a proxy rendered on this PC is published after it exists, with the job approver, and the job shows the publish state', async () => {
+    frames(); const { job_id } = await renders.start({ sequences: [SEQ], width: 960, where: 'local', approved_by: 'Lucas', publish: { targets: ['s3', 'slack'] } }); await renders.settled(); await publish.settled()
+    const j = job(job_id); expect(j.publish).toMatchObject({ state: 'done' }); expect(j.publish!.job_id).toMatch(/^publish-/)
+    expect(uploads).toEqual([`s3://my-internal-bucket/renders/.proxies/${SEQ.dir}/${SEQ.name}_960.mp4`]); expect(posts).toBe(1)
+    expect(publish.status(j.publish!.job_id).jobs[0].approved_by).toBe('Lucas')
+  })
+  it('a review publishes its whole version folder (movie, DELIVERY.md, sidecar)', async () => {
+    frames(); const { job_id } = await renders.start({ sequences: [SEQ], kind: 'review', approved_by: 'Lucas', where: 'local', codecs: ['h264'], publish: { targets: ['s3'] } }); await renders.settled(); await publish.settled()
+    expect(job(job_id).publish).toMatchObject({ state: 'done' }); expect(uploads.map((u) => u.split('/').pop()).sort()).toEqual(['DELIVERY.md', `${SEQ.name}.mp4`, `${SEQ.name}.mp4.meta.json`].sort())
+    expect(uploads.every((u) => u.startsWith('s3://my-internal-bucket/renders/deliver/archival-085/v001/'))).toBe(true)
+  })
+  it('a render that stayed on the pod (pull off) is never published from here: Pull the renders to this PC first', async () => {
+    const { job_id } = await renders.start({ pod_id: 'p1', sequences: [SEQ], width: 960, where: 'pod', pull: false, approved_by: 'L', publish: { targets: ['s3'] } }); await renders.settled()
+    expect(job(job_id).publish).toMatchObject({ job_id: '', state: 'refused', error: 'Pull the renders to this PC first' }); expect(uploads).toEqual([])
+  })
+  it('a failed render publishes nothing; a run without publish never touches it', async () => {
+    const { job_id } = await renders.start({ sequences: [SEQ], width: 960, where: 'local', approved_by: 'L', publish: { targets: ['s3'] } }); await renders.settled()   // no frames here
+    expect(job(job_id).state).toBe('failed'); expect(job(job_id).publish).toBeUndefined(); expect(uploads).toEqual([])
+    frames(); const b = await renders.start({ sequences: [SEQ], width: 1280, where: 'local' }); await renders.settled(); expect(job(b.job_id).publish).toBeUndefined(); expect(uploads).toEqual([])
+  })
+})
+
+describe('Skip existing (default true; per run, never a stored default)', () => {
+  const SEQ2 = { ...SEQ, name: 'ARCHIVAL-086_MAIN_23.976_PRORES' }
+  const mk = (name: string, n = 10) => { mkdirSync(join(shared, 'output', SEQ.dir), { recursive: true }); for (let i = 0; i < n; i++) writeFileSync(join(shared, 'output', SEQ.dir, `${name}.${String(i).padStart(4, '0')}.dpx`), i === 0 ? dpxHeader() : 'x') }
+  const local = async (o: Record<string, unknown> = {}) => { const { job_id } = await renders.start({ sequences: [SEQ], width: 960, where: 'local', ...o }); await renders.settled(); return job(job_id) }
+  const proxy = (name: string) => join(shared, 'output', '.proxies', SEQ.dir, `${name}_960.mp4`)
+  it('proxy: the plan says what would be skipped and counts it; a job mixes skipped and rendered with the reason, and History counts it', async () => {
+    mk(SEQ.name); mk(SEQ2.name); await local()
+    const p = await renders.plan({ sequences: [SEQ, SEQ2], width: 960, where: 'local' }); expect(p.skip_existing).toBe(true); expect(p.sequences.map((x) => x.skip)).toEqual(['already rendered', null]); expect(p.totals).toEqual({ to_render: 1, skipped: 1 })
+    const off = await renders.plan({ sequences: [SEQ, SEQ2], width: 960, where: 'local', skip_existing: false }); expect(off.skip_existing).toBe(false); expect(off.sequences.map((x) => x.skip)).toEqual([null, null]); expect(off.totals).toEqual({ to_render: 2, skipped: 0 })
+    const j = await local({ sequences: [SEQ, SEQ2] }); expect(j.sequences.map((x) => [x.state, x.reason])).toEqual([['skipped', 'already rendered'], ['done', undefined]]); expect(j.summary).toMatch(/1 rendered, 1 already there/)
+    expect((history.list({ kind: 'job' })[0] as { detail: string }).detail).toMatch(/1 already there/)
+  })
+  it('proxy: everything already rendered is a 400; unticked, it renders again', async () => {
+    mk(SEQ.name); await local(); await expect(local()).rejects.toMatchObject({ status: 400, message: 'Everything in this scope is already rendered: untick Skip existing to render again' })
+    spawned.length = 0; const j = await local({ skip_existing: false }); expect(j.sequences[0].state).toBe('done'); expect(spawned.some((s) => s.args[0] !== '-version')).toBe(true)
+  })
+  it('proxy: re-rendering writes a .part and renames it, so a failed render keeps the old proxy intact', async () => {
+    mk(SEQ.name); await local(); const { statSync, readFileSync } = await import('node:fs'), before = readFileSync(proxy(SEQ.name), 'utf8'), size = statSync(proxy(SEQ.name)).size
+    renders.setDeps({ spawn: async (_c, args) => { if (args[0] === '-version') return { code: 0 }; writeFileSync(args.at(-1)!, 'HALF-WRITTEN-NEW'); return { code: 1 } } })
+    const j = await local({ skip_existing: false }); expect(j.sequences[0].state).toBe('failed'); expect(readFileSync(proxy(SEQ.name), 'utf8')).toBe(before); expect(statSync(proxy(SEQ.name)).size).toBe(size)
+  })
+  it('review: a clip that already has a review version is skipped (no new version); unticked it makes the next one', async () => {
+    mk(SEQ.name); const v1 = join(shared, 'output', 'deliver', 'archival-085', 'v001'); mkdirSync(v1, { recursive: true }); writeFileSync(join(v1, `${SEQ.name}.mov`), 'old')
+    const p = await renders.plan({ sequences: [SEQ], kind: 'review', where: 'local' }); expect(p.sequences[0].skip).toBe('already has review v001'); expect(p.totals).toEqual({ to_render: 0, skipped: 1 })
+    await expect(renders.start({ sequences: [SEQ], kind: 'review', approved_by: 'L', where: 'local', codecs: ['h264'] })).rejects.toMatchObject({ status: 400, message: renders.ALL_DONE })
+    mk(SEQ2.name); const { job_id } = await renders.start({ sequences: [SEQ, SEQ2], kind: 'review', approved_by: 'L', where: 'local', codecs: ['h264'] }); await renders.settled()
+    const j = job(job_id); expect(j.sequences[0]).toMatchObject({ state: 'skipped', reason: 'already has review v001' }); expect(existsSync(join(shared, 'output', 'deliver', 'archival-085', 'v002', `${SEQ.name}.mp4`))).toBe(false)
+    const again = await renders.start({ sequences: [SEQ], kind: 'review', approved_by: 'L', where: 'local', codecs: ['h264'], skip_existing: false }); await renders.settled()
+    expect(job(again.job_id).sequences[0]).toMatchObject({ state: 'done' }); expect(existsSync(join(shared, 'output', 'deliver', 'archival-085', 'v003', `${SEQ.name}.mp4`)) || existsSync(join(shared, 'output', 'deliver', 'archival-085', 'v002', `${SEQ.name}.mp4`))).toBe(true)
+  })
+  it('a review that is on the volume only (S3 listing) also counts', async () => {
+    renders.setDeps({ deliverFiles: async () => [{ name: `v004/${SEQ.name}.mov`, bytes: 9 }, { name: 'v004/DELIVERY.md', bytes: 1 }] })
+    const p = await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review', where: 'local' }); expect(p.sequences[0].skip).toBe('already has review v004')
+  })
+  it('more than 30 sequences (no per-sequence probe): the plan counts what exists on this PC or the volume, and start refuses when all of it is there', async () => {
+    const many = Array.from({ length: 31 }, (_, i) => ({ ...SEQ, name: `ARCHIVAL-${String(200 + i)}_MAIN` }))
+    mkdirSync(join(shared, 'output', '.proxies', SEQ.dir), { recursive: true }); for (const s of many) writeFileSync(proxy(s.name), 'p')
+    const p = await renders.plan({ sequences: many, width: 960, where: 'local' }); expect(p.totals).toEqual({ to_render: 0, skipped: 31 })
+    await expect(renders.start({ sequences: many, width: 960, where: 'local' })).rejects.toMatchObject({ status: 400, message: renders.ALL_DONE })
+  })
+  it('it is not a stored configuration default', () => { expect(Object.keys(renders.effectiveSettings())).not.toContain('skip_existing') })
 })

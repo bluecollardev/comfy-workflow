@@ -8,7 +8,7 @@ export const DEFAULT_WIDTH = 'source'   // the source size (IMAX 4K); 1920, 1280
 export const widthLabel = (w) => (typeof w === 'number' || /^\d+$/.test(String(w)) ? `${w} px` : 'source size')
 export const FPS_CHOICES = ['auto', 23.976, 24, 25, 30]
 export const WHERE_CHOICES = ['auto', 'pod', 'local']
-export const ACTIVE = ['queued', 'rendering', 'pulling']
+export const ACTIVE = ['queued', 'rendering', 'pulling', 'publishing']
 export const KINDS = ['proxy', 'review']
 export const REVIEW_WIDTH = 'source'   // a review video is rendered at the source size (IMAX 4K); the quick proxy is for playing it in the app at 960 to 1920
 export const CODECS = [{ id: 'h264', label: 'outputs.render.codecH264' }, { id: 'prores422hq', label: 'outputs.render.codecProres' }]
@@ -184,4 +184,39 @@ export const allSequencesDone = (job) => !!job?.sequences?.length && job.sequenc
 export function jobFor(jobs, podId) {
   const mine = (jobs || []).filter((j) => !podId || !j.pod_id || j.pod_id === podId)
   return mine.find(isActive) || [...mine].sort((a, b) => String(b.started_at || '').localeCompare(String(a.started_at || '')))[0] || null
+}
+
+// ---- Source size and colour (the Generate window): what the files are, read from their headers by the core ----
+const group = (list, keyOf) => { const m = new Map(); for (const x of list) { const k = keyOf(x); m.set(k, [...(m.get(k) || []), x]) } return [...m.values()] }
+/** The size groups of a plan: the core's `source_summary`, else grouped from the sequences' `source`; [] when nothing was read. */
+export function sourceGroups(plan) {
+  const g = plan?.source_summary?.groups
+  if (Array.isArray(g) && g.length) return g
+  const seqs = (plan?.sequences || []).filter((s) => s.source && s.source.width)
+  return group(seqs, (s) => `${s.source.width}x${s.source.height}x${s.source.bits}`).map((l) => ({ width: l[0].source.width, height: l[0].source.height, bits: l[0].source.bits, count: l.length }))
+}
+/** '3840 × 2160, 16-bit' (or '3840 × 2160' when the depth is unknown). */
+export const dimsText = (g) => `${g.width} × ${g.height}${g.bits ? `, ${g.bits}-bit` : ''}`
+/** The height a downscale to `width` gives (the aspect kept, an even number). */
+export const scaledHeight = (g, width) => Math.max(2, 2 * Math.round((g.height * width) / g.width / 2))
+/** The colour groups of a plan: the core's `colour_summary`, else grouped from the sequences' `colour`; [] when nothing was read (an older core, or unreadable headers). */
+export function colourGroups(plan) {
+  const g = plan?.colour_summary?.groups
+  if (Array.isArray(g) && g.length) return g
+  const seqs = (plan?.sequences || []).filter((s) => s.colour)
+  return group(seqs, (s) => ['transfer_name', 'colorimetric_name', 'descriptor_name', 'bits', 'packing_name', 'width', 'height', 'verdict'].map((k) => s.colour[k]).join('|')).map((l) => { const c = l[0].colour; return { count: l.length, transfer_name: c.transfer_name, colorimetric_name: c.colorimetric_name, descriptor_name: c.descriptor_name, bits: c.bits, packing_name: c.packing_name, endian: c.endian, width: c.width, height: c.height, verdict: c.verdict, refusal: c.refusal } })
+}
+/** 'Transfer: logarithmic · Colorimetric: unspecified video · RGB · 16-bit packed · big-endian' */
+export const colourLine = (g) => [`Transfer: ${g.transfer_name || '?'}`, `Colorimetric: ${g.colorimetric_name || '?'}`, g.descriptor_name, g.bits ? `${g.bits}-bit${g.packing_name ? ` ${g.packing_name}` : ''}` : g.packing_name, g.endian ? `${g.endian}-endian` : ''].filter(Boolean).join(' · ')
+/** The distinct conversions the sequences report (plain words), in order. */
+export const conversions = (plan) => [...new Set((plan?.sequences || []).map((s) => s.colour?.conversion).filter(Boolean))]
+export const noTransform = (c) => /^none\b/i.test(String(c || ''))
+/** Whether a Review is refused: some group has verdict 'refused' (the reasons, once each). */
+export const refusals = (groups) => [...new Set((groups || []).filter((g) => g.verdict === 'refused').map((g) => g.refusal || 'refused'))]
+/** The colour block as plain text for pasting: the groups with counts, the conversion, the verdicts. */
+export function colourText(plan) {
+  const lines = [], gs = colourGroups(plan)
+  for (const g of gs) lines.push(`${g.count} sequence${g.count === 1 ? '' : 's'}: ${colourLine(g)}${g.width ? ` · ${g.width} × ${g.height}` : ''} · ${g.verdict === 'refused' ? `Review refused: ${g.refusal || 'refused'}` : 'Review allowed'}`)
+  for (const c of conversions(plan)) lines.push(`Conversion applied: ${c}`)
+  return lines.join('\n')
 }

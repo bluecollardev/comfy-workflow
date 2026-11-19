@@ -8,6 +8,7 @@
     @update:model-value="forPod ? emit('update:modelValue', $event) : (ui.configOpen = $event)"
     :modal-class="overStudio ? 'over-studio' : ''"
     @show="load"
+    @hide="onHide"
     @shown="focusSection"
   >
     <p class="text-body-secondary small mb-3" :data-testid="forPod ? 'config-modal-pod' : 'config-modal'">{{ forPod ? $t('config.podIntro') : $t('config.intro') }}</p>
@@ -289,6 +290,10 @@
       <BAlert v-if="envLoad.error" :model-value="true" variant="danger" class="small py-1 mt-2" data-testid="cfg-env-error" @update:model-value="envLoad.error = ''">{{ envLoad.error }}</BAlert>
       </fieldset>
 
+      <fieldset v-if="!forPod && !gated" v-show="show('publishing')" class="cfg-section" data-section="publishing">
+        <legend data-testid="section-publishing">{{ $t('publish.tab') }}</legend>
+        <PublishSettings ref="pubRef" />
+      </fieldset>
       <fieldset v-if="!forPod && !gated" v-show="show('adapters')" class="cfg-section" data-section="adapters">
         <legend data-testid="section-adapters">{{ $t('adapters.section') }}</legend>
         <AdapterManager />
@@ -393,9 +398,10 @@
         <BButton variant="primary" size="sm" :disabled="saving" data-testid="config-apply" @click="apply"><BSpinner v-if="saving" small class="me-1" />{{ $t('config.apply') }}</BButton>
       </template>
       <template v-else>
+        <small v-if="pubDirty" class="text-warning" data-testid="config-unsaved">{{ $t('publish.unsaved') }}</small>
         <small class="text-body-secondary me-auto">{{ stored ? $t('config.savedIn', { store }) : $t('config.nothingSaved') }}</small>
         <BButton v-if="!gated" variant="outline-danger" size="sm" :disabled="saving || !stored" data-testid="config-clear" @click="reset">{{ $t('config.clear') }}</BButton>
-        <BButton v-if="!gated" variant="outline-light" size="sm" data-testid="config-close" @click="ui.configOpen = false">{{ $t('config.close') }}</BButton>
+        <BButton v-if="!gated" variant="outline-light" size="sm" data-testid="config-close" @click="closeWindow">{{ $t('config.close') }}</BButton>
         <BButton variant="primary" size="sm" :disabled="saving || (gated && !newKey)" data-testid="config-save" @click="save"><BSpinner v-if="saving" small class="me-1" />{{ gated ? $t('config.saveKey') : $t('config.save') }}</BButton>
       </template>
     </template>
@@ -437,6 +443,8 @@ import { usePanamaStore } from '../stores/panama'
 import { t } from '../i18n'
 import FolderPicker from './FolderPicker.vue'
 import AdapterManager from './AdapterManager.vue'
+import PublishSettings from './PublishSettings.vue'
+import { useConfirmStore } from '../stores/confirm'
 import { parsePatterns, listProblem } from '../utils/syncexclude'
 import { RENDER_DEFAULTS, WIDTH_CHOICES, FPS_CHOICES, renderProblem, renderIsDefault } from '../utils/renders'
 
@@ -538,7 +546,7 @@ const tabList = computed(() => [
   { key: 'volume', label: forPod.value ? t('config.volumePod') : t('config.volume') },
   { key: 'folders', label: t('config.folders') },
   { key: 'environment', label: t('config.environment') },
-  ...(forPod.value ? [] : [{ key: 'adapters', label: t('adapters.section') }]),
+  ...(forPod.value ? [] : [{ key: 'adapters', label: t('adapters.section') }, { key: 'publishing', label: t('publish.tab') }]),
   { key: 'options', label: t('config.options') },
 ])
 /** A section shows when the sections flow (narrow), when only the key is asked for (gated), or when its tab is the open one. */
@@ -791,7 +799,9 @@ async function focusSection() {
     el?.scrollIntoView({ block: 'center' })
     ioFlash.value = true; setTimeout(() => { ioFlash.value = false }, 2000)
   }
+  if (where === 'publishing') { tab.value = 'publishing'; await nextTick(); document.querySelector('[data-testid="section-publishing"]')?.scrollIntoView({ block: 'start' }) }
   if (where === 'adapters') { tab.value = 'adapters'; await nextTick(); document.querySelector('[data-testid="section-adapters"]')?.scrollIntoView({ block: 'start' }) }
+  if (where === 'panama') { tab.value = 'runpod'; await nextTick(); await scrollToField('cfg-panama-access') }
   if (where === 's3') await scrollToField('cfg-s3-access')    // from Browse / Erase / Clone: the RunPod S3 key fields, in view and focused
   if (where === 'claude') await scrollToField('cfg-claude-key')
 }
@@ -807,8 +817,21 @@ async function scrollToField(id) {
   for (const ms of [250, 700, 1500]) setTimeout(() => { if (document.activeElement === input) input.scrollIntoView({ block: 'center' }) }, ms)
 }
 
+const pubRef = ref(null), confirm = useConfirmStore()
+const pubDirty = computed(() => !!pubRef.value?.dirty)
+let forceClose = false
+/** Close, asking first when Publishing has edits nobody saved. */
+async function closeWindow() {
+  if (pubDirty.value && !(await confirm.ask(t('publish.discardConfirm'), { okLabel: t('config.close') }))) return
+  forceClose = true; ui.configOpen = false
+}
+function onHide(ev) {   // the X, Escape or a click outside
+  if (forPod.value || forceClose || !pubDirty.value) { forceClose = false; return }
+  ev.preventDefault(); closeWindow()
+}
 async function save() {
   if (!gated.value && (!autoSyncOk() || !renderOk() || !syncExcludeOk() || !folderExOk())) return
+  if (!gated.value && pubRef.value?.validate()) { tab.value = 'publishing'; return }   // both are checked before anything is written
   saving.value = true; error.value = null
   const wasGated = gated.value
   if (newKey.value) {
@@ -841,10 +864,16 @@ async function save() {
     catch (e) { error.value = e.response?.data?.detail || e.message; saving.value = false; return }
   }
   const r = await mounts.save(body())
-  saving.value = false
-  if (!r.ok) { error.value = mounts.error; return }
+  if (!r.ok) { saving.value = false; error.value = mounts.error; return }
   take(r.value)
   followNoSpend(r.value)
+  // The Publishing section is part of this window: its edits are written by this Save, after the configuration; a failure there is said plainly and the window stays open.
+  if (pubRef.value?.dirty) {
+    const pr = await pubRef.value.save()
+    if (!pr.ok) { saving.value = false; error.value = t('publish.partialSave', { reason: pr.error }); tab.value = 'publishing'; await nextTick(); document.querySelector('[data-testid="publish-field-error"]')?.scrollIntoView({ block: 'center' }); return }
+  }
+  saving.value = false
+  forceClose = true
   ui.configOpen = false
 }
 

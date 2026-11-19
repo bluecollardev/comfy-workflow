@@ -236,6 +236,7 @@ import { runflowsAPI } from '../api/runflows'
 import PodLogs from './PodLogs.vue'
 import RunWorkflowsModal from './RunWorkflowsModal.vue'
 import PodOutputsModal from './PodOutputsModal.vue'
+import { useRendersStore } from '../stores/renders'
 import { historyAPI } from '../api/history'
 import { runsWithOutputs, mergeRuns } from '../utils/outputs'
 import { withTimeout } from '../utils/thumbs'
@@ -384,6 +385,13 @@ onMounted(loadRate)
 watch(() => props.pod.status, loadRate)
 onMounted(loadOutputs)
 watch(() => props.pod.status, loadOutputs)
+// The Queue's Generations asks for this pod's Outputs window (and, for Play, the viewer on a sequence): the gallery that lists it opens it when the window has loaded.
+watch(() => ui.outputsFor, (r) => {
+  if (!r || r.pod_id !== props.pod.id) return
+  showOutputs.value = true
+  if (r.play) setTimeout(() => { useRendersStore().play = r.play }, 600)
+  ui.outputsFor = null
+})
 watch(outputVolumeId, loadOutputs)
 
 async function toggleDetails() {

@@ -58,7 +58,7 @@ test('initialize hands every client the governance instructions', async () => {
 const POOL = ['list_agents', 'get_pool_status', 'governance', 'create_agent', 'stop_agent', 'resume_agent', 'delete_agent', 'health_check_agent', 'get_agent_info', 'submit_job', 'get_job_status']
 const PODS = ['list_pods', 'get_pod', 'create_pod', 'stop_pod', 'resume_pod', 'delete_pod', 'recreate_pod', 'get_history', 'get_spend_history', 'get_comfy_runs', 'list_outputs', 'get_comfy_logs', 'export_history', 'rename_pod', 'set_pod_round', 'set_pod_shot', 'delete_round', 'rename_round', 'set_idle_stop', 'get_logs', 'list_datacenters', 'list_volumes', 'create_volume', 'delete_volume', 'set_default_volume', 'get_configuration', 'sync', 'sync_status', 'adapter_spec', 'adapters_list', 'adapter_save', 'import_plan', 'import_apply', 'get_credits', 'cost_now']
 // The tools the app's other windows added (docs/ADR-028), in the order app-tools.mjs defines them.
-const APP = ['list_gpus', 'get_volume_info', 'get_pod_config', 'set_pod_config', 'set_configuration', 'preview_configuration', 'reset_configuration', 'get_local_env', 'list_dirs', 'get_settings', 'set_settings', 'check_anthropic_key', 'config_export', 'config_import_plan', 'config_import_apply', 'config_undo', 'config_backups', 'resize_volume', 'volume_files', 'volume_erase', 'volume_clone', 'volume_job', 'volume_jobs', 'rate_limit_status', 'agent_guard_status', 'models_search', 'models_files', 'models_fetch', 'models_status', 'models_delete', 'models_wanted', 'models_wanted_add', 'models_wanted_remove', 'models_load_wanted', 'set_shared_volume', 'panama_status', 'list_rounds', 'round_info', 'panama_rounds', 'panama_round_files', 'panama_stage', 'panama_round_size', 'panama_pod_plan', 'panama_pull', 'panama_job', 'panama_cancel', 'panama_remove', 'plan_round_import', 'import_rounds', 'import_round', 'queue_list', 'queue_task', 'list_pod_workflows', 'run_pod_workflows', 'pod_models', 'run_workflows_job', 'panama_place', 'panama_import', 'import_detect', 'package_summary', 'package_tree', 'package_file', 'package_describe', 'adapter_draft', 'adapter_document', 'adapter_problems', 'adapter_manage', 'sync_after', 'image_env', 'image_dockerfile', 'git_accounts', 'repositories', 'remote_mcp', 'mcp_endpoints', 'docs', 'chunk_plan', 'run_shot_chunked', 'chunked_job', 'pod_ram', 'pod_watch', 'pod_retry_options', 'volume_changes', 'auto_sync', 'sync_runs', 'render_sequences', 'sync_folders']
+const APP = ['list_gpus', 'get_volume_info', 'get_pod_config', 'set_pod_config', 'set_configuration', 'preview_configuration', 'reset_configuration', 'get_local_env', 'list_dirs', 'get_settings', 'set_settings', 'check_anthropic_key', 'config_export', 'config_import_plan', 'config_import_apply', 'config_undo', 'config_backups', 'resize_volume', 'volume_files', 'volume_erase', 'volume_clone', 'volume_job', 'volume_jobs', 'rate_limit_status', 'agent_guard_status', 'models_search', 'models_files', 'models_fetch', 'models_status', 'models_delete', 'models_wanted', 'models_wanted_add', 'models_wanted_remove', 'models_load_wanted', 'set_shared_volume', 'panama_status', 'list_rounds', 'round_info', 'panama_rounds', 'panama_round_files', 'panama_stage', 'panama_round_size', 'panama_pod_plan', 'panama_pull', 'panama_job', 'panama_cancel', 'panama_remove', 'plan_round_import', 'import_rounds', 'import_round', 'queue_list', 'queue_task', 'list_pod_workflows', 'run_pod_workflows', 'pod_models', 'run_workflows_job', 'panama_place', 'panama_import', 'import_detect', 'package_summary', 'package_tree', 'package_file', 'package_describe', 'adapter_draft', 'adapter_document', 'adapter_problems', 'adapter_manage', 'sync_after', 'image_env', 'image_dockerfile', 'git_accounts', 'repositories', 'remote_mcp', 'mcp_endpoints', 'docs', 'chunk_plan', 'run_shot_chunked', 'chunked_job', 'pod_ram', 'pod_watch', 'pod_retry_options', 'volume_changes', 'auto_sync', 'sync_runs', 'render_sequences', 'publish', 'sync_folders']
 
 test('an agent writes an adapter and tests it on a real folder; the code stays open to read', async () => {
   const spec = textOf(ok(await call('adapter_spec')))
@@ -603,4 +603,39 @@ test('list_dirs: logical paths, links, volumes (ADR-011)', async () => {
 test('list_dirs takes a filter and returns total (async, capped)', async () => {
   const tl = (await rpc('tools/list')).result.tools; assert.equal(tl.find((t) => t.name === 'list_dirs').inputSchema.properties.filter.type, 'string')
   const r = jsonOf(await call('list_dirs', { filter: 'zzzz-no-such-folder-name' })); assert.deepEqual(r.dirs, []); assert.equal(r.total, 0)
+})
+
+test('publish: the masked settings, plan and the confirm rule (ADR-050)', async () => {
+  const st = jsonOf(ok(await call('publish', { action: 'settings' })))
+  assert.equal(st.s3.ready, false); assert.equal(st.slack.ready, false); assert.equal(st.slack.workspace_name, 'Beinghuman'); assert.match(st.slack.problem, /Incoming Webhook URL for Beinghuman/)
+  assert.ok(!JSON.stringify(st).includes('hooks.slack.com/services'))
+  assert.match(textOf(refused(await call('publish', { action: 'bogus' }))), /action must be/)
+  assert.match(textOf(refused(await call('publish', { action: 'plan', items: ['a.mov'], targets: ['ftp'] }))), /targets is a list/)
+  // run without approved_by or confirm: a plan-only answer, nothing sent (here the plan itself refuses: nothing is configured)
+  const r = await call('publish', { action: 'run', items: ['a.mov'], targets: ['s3'] })
+  assert.ok(/Nothing was sent|not mapped|not configured/.test(textOf(r)))
+  assert.match(textOf(refused(await call('publish', { action: 'cancel' }))), /job_id is needed/)
+  assert.deepEqual(jsonOf(ok(await call('publish', { action: 'status' }))).jobs, [])
+})
+
+test('publish backfill: scan needs valid sources, run needs approved_by and confirm (ADR-050)', async () => {
+  assert.match(textOf(refused(await call('publish', { action: 'backfill', step: 'scan', sources: ['nope'] }))), /sources is a list/)
+  assert.match(textOf(refused(await call('publish', { action: 'backfill', step: 'bogus' }))), /step must be/)
+  assert.match(textOf(refused(await call('publish', { action: 'backfill', step: 'inventory' }))), /No scan has run yet/)
+})
+
+test('render_sequences: skip_existing is accepted and the plan reports the totals (ADR-048)', async () => {
+  const tl = (await rpc('tools/list')).result.tools; assert.ok(tl.find((x) => x.name === 'render_sequences').inputSchema.properties.skip_existing)
+  const seq = { dir: 'a/b', name: 'S_24_x', first: 0, last: 9, frames: 10, pad: 4 }
+  const p = jsonOf(await call('render_sequences', { action: 'plan', pod_id: 'pod-none', sequences: [seq], width: 960, where: 'auto', skip_existing: false }))
+  assert.equal(p.skip_existing, false); assert.deepEqual(p.totals, { to_render: 1, skipped: 0 })
+})
+
+test('publish: items may be a string or { where: "volume", path }; volume and volume_size are actions (ADR-050)', async () => {
+  const tl = (await rpc('tools/list')).result.tools.find((x) => x.name === 'publish')
+  assert.ok(tl.inputSchema.properties.items.items.anyOf.some((a) => a.type === 'object' && a.properties.where)); assert.ok(tl.inputSchema.properties.path)
+  const p = jsonOf(await call('publish', { action: 'plan', items: [{ where: 'volume', path: '../x' }, { where: 'disk', path: 'a' }, 5], targets: ['s3'] }))
+  assert.equal(p.refused.length, 3); assert.match(p.refused[0].reason, /Not a path inside the volume/)
+  assert.match(textOf(refused(await call('publish', { action: 'volume', dir: '../x' }))), /dir is a folder inside the volume/)
+  assert.match(textOf(refused(await call('publish', { action: 'volume_size', path: '' }))), /path is a folder/)
 })

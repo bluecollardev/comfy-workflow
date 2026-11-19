@@ -27,7 +27,7 @@ export interface OutputRun {
 }
 export interface OutputCtx { pod_id?: string; volume_id?: string; shot?: string; round?: string }
 export interface ListOpts extends volumeround.VolumeOpts { prefix?: string }
-export interface OutputListing { source: SourceId; runs: OutputRun[]; /** volume-s3: the folders under `prefix` (names) */ folders: string[]; /** volume-s3: the prefix listed, relative to output/ ('' = the root) */ prefix: string; capped: boolean; total: number; start_note?: string }
+export interface OutputListing { source: SourceId; runs: OutputRun[]; /** volume-s3: the folders under `prefix` (names) */ folders: string[]; /** volume-s3: per folder name, what a one-key probe found (`empty: true` is a shell with no files; absent when unknown). `folders` stays an array of names. */ folder_info?: Record<string, { empty?: boolean }>; /** volume-s3: the prefix listed, relative to output/ ('' = the root) */ prefix: string; capped: boolean; total: number; start_note?: string }
 export interface OutputSource {
   id: SourceId; name: string; hint: string
   available(ctx: OutputCtx, opts?: ListOpts): Promise<{ ok: boolean; reason: string }>
@@ -158,7 +158,14 @@ export const volumeS3: OutputSource = {
       const newest = fs.reduce((m, f) => (f.modified && f.modified > m ? f.modified : m), '')
       return { prompt_id: `volume:${id}:${dir || '.'}`, workflow: null, started_at: newest || null, files: fs, source: 'volume-s3' as const, folder: dir }
     }).sort((a, b) => when(b).localeCompare(when(a)))
-    return { source: 'volume-s3', runs, folders: [...folders].sort(), prefix, capped, total, ...(note ? { start_note: note } : {}) }
+    const names = [...folders].sort(), folder_info: Record<string, { empty?: boolean }> = {}
+    const acc = names.length ? await podpull.s3ReadAccess(id, opts).catch(() => null) : null
+    if (acc && acc.ok) {
+      const todo = names.slice(0, 200), aws = opts.aws ?? podpull.defaultAws
+      let next = 0
+      await Promise.all(Array.from({ length: Math.min(8, todo.length) }, async () => { while (next < todo.length) { const n = todo[next++]; const e = await podpull.probeEmpty(acc, `${base}/${n}/`, aws); folder_info[n] = e === undefined ? {} : { empty: e } } }))
+    }
+    return { source: 'volume-s3', runs, folders: names, folder_info, prefix, capped, total, ...(note ? { start_note: note } : {}) }
   },
   async address(_f, ctx, opts = {}) { const id = await volumeOfCtx(ctx, opts); return id ? `s3file://${id}` : '' },
 }
@@ -183,7 +190,7 @@ export function mergeRuns(groups: Partial<Record<SourceId, OutputRun[]>> | Outpu
   return out.map((r, i) => ({ r, i })).sort((a, b) => (when(a.r) && when(b.r) ? when(b.r).localeCompare(when(a.r)) : when(a.r) ? -1 : when(b.r) ? 1 : a.i - b.i)).map((x) => x.r)
 }
 
-export interface Answer { sources: { id: SourceId; name: string; hint: string; ok: boolean; reason: string }[]; runs: OutputRun[]; folders: string[]; prefix: string; capped: boolean; total: number; volume_id: string; start_note?: string }
+export interface Answer { sources: { id: SourceId; name: string; hint: string; ok: boolean; reason: string }[]; runs: OutputRun[]; folders: string[]; folder_info: Record<string, { empty?: boolean }>; prefix: string; capped: boolean; total: number; volume_id: string; start_note?: string }
 /** What the sources know: every one asked (or just `source`), a failing source reported with its reason and never throwing for the rest. */
 export async function listOutputs(ctx: OutputCtx, o: ListOpts & { source?: string } = {}): Promise<Answer> {
   const want = o.source ? [SOURCES[o.source as SourceId] ?? (() => { throw bad(`Unknown output source: ${o.source}. One of ${PRIORITY.join(', ')}.`) })()] : sources()
@@ -193,7 +200,7 @@ export async function listOutputs(ctx: OutputCtx, o: ListOpts & { source?: strin
     try { const l = await s.list(ctx, o); groups[s.id] = l.runs; if (s.id === 'volume-s3') vol = l; st.push({ id: s.id, name: s.name, hint: s.hint, ok: true, reason: '' }) }
     catch (e) { st.push({ id: s.id, name: s.name, hint: s.hint, ok: false, reason: (e as Error).message }) }
   }
-  return { sources: st, runs: mergeRuns(groups), folders: vol?.folders ?? [], prefix: vol?.prefix ?? '', capped: !!vol?.capped, total: vol?.total ?? 0, volume_id: await volumeOfCtx(ctx, o).catch(() => ''), ...(vol?.start_note ? { start_note: vol.start_note } : {}) }
+  return { sources: st, runs: mergeRuns(groups), folders: vol?.folders ?? [], folder_info: vol?.folder_info ?? {}, prefix: vol?.prefix ?? '', capped: !!vol?.capped, total: vol?.total ?? 0, volume_id: await volumeOfCtx(ctx, o).catch(() => ''), ...(vol?.start_note ? { start_note: vol.start_note } : {}) }
 }
 /** Which sources could answer for this context, with the reason when not (no listing). */
 export async function availability(ctx: OutputCtx, opts: ListOpts = {}) {
