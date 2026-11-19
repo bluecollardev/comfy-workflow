@@ -90,8 +90,13 @@
       </div>
       <div v-if="runningScope && runningScope !== genScopeLabel" class="text-warning" data-testid="pod-outputs-generate-scope-running">{{ $t('outputs.generate.running', { scope: runningScope }) }}</div>
     </BAlert>
-    <BTabs v-model:index="genTab" content-class="pt-2" data-testid="pod-outputs-generate-tabs">
-      <BTab :title="$t('outputs.generate.tabPreviews')" data-testid="pod-outputs-tab-previews">
+    <div data-testid="pod-outputs-generate-tabs">
+    <!-- two plain tabs: both panels stay mounted (only hidden), so nothing typed, ticked or loading is ever rebuilt by switching -->
+    <ul class="nav nav-tabs mb-2" role="tablist">
+      <li class="nav-item" role="presentation"><button type="button" class="nav-link" :class="{ active: genTab === 0 }" role="tab" :aria-selected="genTab === 0 ? 'true' : 'false'" data-testid="pod-outputs-tab-previews-button" @click="genTab = 0">{{ $t('outputs.generate.tabPreviews') }}</button></li>
+      <li class="nav-item" role="presentation"><button type="button" class="nav-link" :class="{ active: genTab === 1 }" role="tab" :aria-selected="genTab === 1 ? 'true' : 'false'" data-testid="pod-outputs-tab-render-button" @click="genTab = 1">{{ $t('outputs.generate.tabRender') }}</button></li>
+    </ul>
+      <div v-show="genTab === 0" role="tabpanel" data-testid="pod-outputs-tab-previews">
       <div class="border rounded p-2 mb-2">
         <div class="fw-semibold">{{ $t('outputs.dpx.loadAllOption') }}</div>
         <div class="small text-body-secondary mb-2">{{ $t('outputs.dpx.loadAllTitle') }}</div>
@@ -105,11 +110,11 @@
           <span v-if="genCounts.failed" class="small text-warning">{{ $t('outputs.dpx.generatingFailed', { n: genCounts.failed }) }}</span>
         </div>
       </div>
-      </BTab>
-      <BTab :title="$t('outputs.generate.tabRender')" data-testid="pod-outputs-tab-render">
+      </div>
+      <div v-show="genTab === 1" role="tabpanel" data-testid="pod-outputs-tab-render">
       <RenderSequences v-model:skip-existing="skipExisting" :pod="pod" :items="genItems" :thumbs="genThumbs" :scope="volumeId || pod.id" :volume-name="volumeName" :skipped="genSkipped" :scope-label="genScopeLabel" @play="previewsOpen = false" @publish="publishOpen = true" />
-      </BTab>
-    </BTabs>
+      </div>
+    </div>
   </BModal>
   <PublishModal v-if="publishOpen" :preselect="vol.prefix ? [] : publishPreselect" :volume-dir="vol.prefix" :volume-name="volumeName || ''" @close="publishOpen = false" />
 </template>
