@@ -16,6 +16,10 @@
 4. **One codebase, no second runtime**: the Python API retired, the core in
    TypeScript, the merge gate green (`docs/ADR-005`).
 
+## Open from 2026-11-19 (ADR-053)
+
+0. **Measure the main thread** with the real app and volume (a backfill scan of `output/`, a reconcile of a large listing, a 20,000-path publish plan, a preview batch and the viewer cache run): the longest stall of each. Then decide (ADR-053): a Web Worker for the DPX decode (cheap, clearly useful), worker threads for the scans that showed up, and the core in a `utilityProcess` only if the numbers or incidents say so.
+
 ## Open from 2026-11-19 (ADR-051 section 9)
 
 0. **Generations on the Queue:** list the preview batch and the render jobs in the Queue window (a *Generations* section, one `jobs.list()` merging imports, syncs, renders, previews and publishing), count them in the Queue badge, and move the preview batch from the page's `previewBus` into a store-level job so it survives closing the window. Then emit their start, finish, failure and cancel as events (ADR-051).

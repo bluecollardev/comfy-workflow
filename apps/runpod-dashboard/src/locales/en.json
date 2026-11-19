@@ -611,6 +611,7 @@
       "codecsLine": "Codecs: {codecs}",
       "reviewShot": "{shot} → v{version}",
       "reviewPlanning": "Planning each shot's next version…",
+      "localWhilePreviews": "Rendering on this PC while previews are being generated slows both: they share this computer's CPU, memory and disk. Rendering on the pod does not.",
       "reviewFolder": "Folder: {folder}",
       "reviewDone": "Review video {shot} v{version}: {folder}",
       "reviewPlay": "Play",
