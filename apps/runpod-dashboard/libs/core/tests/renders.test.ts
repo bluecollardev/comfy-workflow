@@ -25,7 +25,7 @@ const job = (id: string) => renders.status(id).jobs[0]
 
 beforeEach(() => {
   dir = scratch(); shared = join(dir, 'shared'); mkdirSync(join(shared, 'output'), { recursive: true }); process.env.RENDERS_FILE = join(dir, 'renders.json'); process.env.HISTORY_FILE = join(dir, 'h.jsonl')
-  mounts.save({ ...mounts.load(), render: { ...mounts.RENDER_DEFAULT, pull: true } })   // the tests below pull: a stored `pull: true` is kept (the default is off now)
+  mounts.save({ ...mounts.load(), render: { ...mounts.RENDER_DEFAULT, kind: 'proxy', pull: true } })   // the tests below pull: a stored `pull: true` is kept (the default is off now); and render quick proxies (the shipped default kind is review)
   renders.reset(); t = Date.parse('2026-11-19T10:00:00Z'); scripts = []; pulls = []; emitted = []; spawned = []; podOk = true; ffmpegAt = '/opt/homebrew/bin/ffmpeg'; versionExit = 0; versionLine = 'ffmpeg version 9.0.2'; cancelSeen = false
   localCount = 10; pod = { frames: range(0, 9), lastM: 100, outM: 0, outS: 0, failExit: 0, nodir: false, hold: null, header: dpxHeader(), ffprobe: true, count: null, versions: [], vexists: false, cpu: null }
   renders.setDeps({
@@ -379,6 +379,7 @@ describe('the review kind: the stitched, versioned deliverable', () => {
     await expect(renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review', codecs: ['divx' as never] })).rejects.toThrow(/codecs is a non-empty list/)
   })
   it('colour: frames that say log, linear or printing density are refused (stated, never guessed); an unreadable header too; the proxy still plays', async () => {
+    { const m = mounts.load(); mounts.save({ ...m, render: { ...m.render, colour: { mode: 'ask' } } as never }) }   // this is the ask behaviour; the default (known) derives a linear header
     pod.header = dpxHeader({ transfer: 1 }); let j = await review(); expect(j.sequences[0]).toMatchObject({ state: 'skipped' }); expect(j.sequences[0].reason).toMatch(/colour not stated.*the DPX header says printing density.*Set render\.colour\.mode to format or guess, or pass colour_in/)
     pod.header = dpxHeader({ transfer: 3 }); j = await review(); expect(j.sequences[0].reason).toMatch(/logarithmic/); pod.header = dpxHeader({ transfer: 2 }); j = await review(); expect(j.sequences[0].reason).toMatch(/linear/)
     pod.header = Buffer.alloc(820); j = await review(); expect(j.sequences[0].error).toMatch(/header of the first frame could not be read/)
@@ -396,8 +397,16 @@ describe('the review kind: the stitched, versioned deliverable', () => {
   describe('the colour of log and linear frames is a setting (ADR-048)', () => {
     const setColour = (colour: Record<string, unknown>) => { const m = mounts.load(); mounts.save({ ...m, render: { ...m.render, colour } as never }) }
     const lastScript = () => scripts[scripts.length - 1]
-    it('ask (the default): a review is SKIPPED with a warning (job done, not failed); format converts from the configured format; guess converts from the header and says so everywhere; a per-run mode overrides; a stated colour_in still wins', async () => {
+    it('known (the default): a LINEAR header is converted from linear P3-D65 with no setting and no click, the sidecar says it was derived (project default, not stated) and the plan warns; log and printing density are never derived', async () => {
       pod.header = dpxHeader({ transfer: 2 })
+      const pl = await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review' }); expect(pl.settings.colour).toEqual({ mode: 'known' })
+      expect(pl.sequences[0]).toMatchObject({ colour_in: 'linear-p3-d65', colour_source: 'guess', colour_assumption: expect.stringMatching(/linear and generated shots are P3-D65 \(Kyle, 14 Nov\)/) }); expect(pl.sequences[0].flags.map((f) => f.code)).toContain('colour-guessed'); expect(pl.sequences[0].flags.map((f) => f.code)).not.toContain('colour-not-stated')
+      let j = await review(); expect(j.sequences[0].state).toBe('pulled'); expect(lastScript()).toContain('colorchannelmixer=rr=1.2249401'); expect(lastScript()).toMatch(/"stated_by": "project default"/); expect(lastScript()).toMatch(/"guessed": true/); expect(lastScript()).toMatch(/generated shots are P3-D65 \(Kyle, 14 Nov\)/)
+      pod.header = dpxHeader({ transfer: 1 }); j = await review(); expect(j.sequences[0]).toMatchObject({ state: 'skipped', flags: [expect.objectContaining({ code: 'colour-not-stated' })] }); expect(j.sequences[0].reason).toMatch(/render\.colour\.mode known.*printing density/)   // a person states density and log
+      pod.header = dpxHeader({ transfer: 2 }); j = await review({ colour_in: 'linear-rec709' }); expect(lastScript()).not.toContain('colorchannelmixer'); expect(lastScript()).toMatch(/"stated_by": "Lucas"/)   // a stated colour still wins
+    })
+    it('ask: a review is SKIPPED with a warning (job done, not failed); format converts from the configured format; guess converts from the header and says so everywhere; a per-run mode overrides; a stated colour_in still wins', async () => {
+      pod.header = dpxHeader({ transfer: 2 }); setColour({ mode: 'ask' })
       let j = await review(); expect(j.state).toBe('done'); expect(j.sequences[0]).toMatchObject({ state: 'skipped', flags: [expect.objectContaining({ code: 'colour-not-stated', level: 'warn' })] }); expect(j.sequences[0].reason).toMatch(/render\.colour\.mode ask.*linear \(code 2\).*Set render\.colour\.mode to format or guess, or pass colour_in/)
       const pl = await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review' }); expect(pl.sequences[0]).toMatchObject({ skip: 'colour not stated', blocked: false }); expect(pl.sequences[0].flags.find((f) => f.code === 'colour-not-stated')!.level).toBe('warn'); expect(pl.settings.colour).toEqual({ mode: 'ask' })
       setColour({ mode: 'format', format: 'linear-p3-d65' }); j = await review(); expect(j.sequences[0].state).toBe('pulled'); expect(lastScript()).toContain('colorchannelmixer=rr=1.2249401'); expect(lastScript()).toMatch(/"stated_by": "configuration"/); expect(lastScript()).toMatch(/"conversion": "linear-p3-d65"/)
@@ -601,9 +610,16 @@ describe('publish when the render finishes (ADR-050): per run, with the same app
     expect(job(job_id).publish).toMatchObject({ state: 'done' }); expect(uploads.map((u) => u.split('/').pop()).sort()).toEqual(['DELIVERY.md', `${SEQ.name}.mp4`, `${SEQ.name}.mp4.meta.json`].sort())
     expect(uploads.every((u) => u.startsWith('s3://my-internal-bucket/renders/deliver/archival-085/v001/'))).toBe(true)
   })
-  it('a render that stayed on the pod (pull off) is never published from here: Pull the renders to this PC first', async () => {
+  it('a render that stayed on the pod (pull off, Sync off) is published from the VOLUME, streamed through this PC: no "pull first", no local copy', async () => {
+    const asked: string[] = []
+    publish.setDeps({ volumeId: () => 'volx1', volumeAccess: async () => ({ ok: true, id: 'ID', secret: 'SEC', endpoint: 'https://s3api-eu-ro-1.runpod.io', bucket: 'volx1', region: 'eu-ro-1' }), volumeRecord: async () => ({ id: 'volx1', name: 'Shared', datacenter: 'EU-RO-1' }),
+      aws: async (a) => {
+        if (a[1] === 'ls' && /^s3:\/\/volx1\//.test(a[2] ?? '')) { asked.push(a[2]); return a.includes('--recursive') ? { code: 1, stdout: '', stderr: '' } : { code: 0, stdout: `2026-11-19 10:00:00 ${'10'.padStart(10)} ${SEQ.name}_960.mp4`, stderr: '' } }   // the movie is on the volume
+        if (a[1] === 'cp') uploads.push(a[3])
+        return a[1] === 'presign' ? { code: 0, stdout: 'https://s3.example/x?X-Amz-Signature=1', stderr: '' } : { code: a[1] === 'ls' ? 1 : 0, stdout: '', stderr: '' } } })
     const { job_id } = await renders.start({ pod_id: 'p1', sequences: [SEQ], width: 960, where: 'pod', pull: false, approved_by: 'L', publish: { targets: ['s3'] } }); await renders.settled()
-    expect(job(job_id).publish).toMatchObject({ job_id: '', state: 'refused', error: 'Pull the renders to this PC first' }); expect(uploads).toEqual([])
+    const pub = job(job_id).publish; expect(pub?.error ?? '').not.toMatch(/Pull the renders/); expect(pub?.state).not.toBe('refused'); expect(pub?.job_id).toMatch(/^publish-/)   // a publish job was made from the volume item
+    expect(asked.some((p) => p.includes('.proxies'))).toBe(true)
   })
   it('a failed render publishes nothing; a run without publish never touches it', async () => {
     const { job_id } = await renders.start({ sequences: [SEQ], width: 960, where: 'local', approved_by: 'L', publish: { targets: ['s3'] } }); await renders.settled()   // no frames here
@@ -660,7 +676,7 @@ describe('Skip existing (default true; per run, never a stored default)', () => 
 
 describe('a start never publishes by configuration alone', () => {
   it('render.publish pre-ticks only: without an explicit publish field nothing is published; with it, approved_by is still required', async () => {
-    mounts.save({ ...mounts.load(), render: { ...mounts.RENDER_DEFAULT, where: 'local', pull: true, publish: { s3: true, slack: false } } })
+    mounts.save({ ...mounts.load(), render: { ...mounts.RENDER_DEFAULT, kind: 'proxy', where: 'local', pull: true, publish: { s3: true, slack: false } } })
     const frames = () => { mkdirSync(join(shared, 'output', SEQ.dir), { recursive: true }); for (let i = 0; i < 10; i++) writeFileSync(join(shared, 'output', SEQ.dir, `${SEQ.name}.${String(i).padStart(4, '0')}.dpx`), i === 0 ? dpxHeader() : 'x') }
     frames(); const { job_id } = await renders.start({ sequences: [SEQ], width: 960 }); await renders.settled(); expect(job(job_id).publish).toBeUndefined()
     await expect(renders.start({ sequences: [SEQ], width: 1280, publish: { targets: ['s3'] } })).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/approved_by/) })

@@ -4,7 +4,7 @@
     <BAlert v-if="working" :model-value="true" variant="info" class="mb-0 rounded-0 border-start-0 border-end-0 py-2 px-3 small d-flex align-items-center flex-wrap gap-2" data-testid="autopublish-working-banner" :data-state="working.state">
       <BSpinner v-if="working.spin" small class="me-2 flex-shrink-0" data-testid="autopublish-working-spinner" /><i v-else class="fa-solid fa-cloud-arrow-up me-2"></i>
       <span data-testid="autopublish-working-text">{{ working.text }}</span><span v-if="working.more" class="text-body-secondary" data-testid="autopublish-working-more">{{ $t('queue.banner.more', { n: working.more }) }}</span>
-      <BButton variant="link" size="sm" class="p-0 ms-auto" data-testid="autopublish-working-open" @click="openQueue">{{ $t('queue.banner.open') }}</BButton>
+      <BButton variant="link" size="sm" class="p-0 ps-4 ms-auto" data-testid="autopublish-working-open" @click="openQueue">{{ $t('queue.banner.open') }}</BButton>
     </BAlert>
   </div>
 </template>

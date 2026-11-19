@@ -8,7 +8,7 @@ import * as renders from '../src/renders.js'
 import { scratch } from './helpers.js'
 
 // ADR-048 "Settings": the render settings in the configuration (Default and a pod's own), applied by plan and start for every field the request omits.
-const D = { colour: { mode: 'ask' }, where: 'auto', kind: 'proxy', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto', preset: 'none', pull: false, skip_existing: true, publish: { s3: false, slack: false } }
+const D = { colour: { mode: 'known' }, where: 'auto', kind: 'review', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto', preset: 'none', pull: false, skip_existing: true, publish: { s3: true, slack: false } }
 const SEQ = { dir: 'a/b', name: 'ARCHIVAL-085_x_23.976_y', first: 0, last: 9, frames: 10, pad: 4 }
 const put = (p: Partial<mounts.MountsConfig>) => mounts.put({ ...mounts.load(), ...p })
 beforeEach(() => {
@@ -21,7 +21,7 @@ beforeEach(() => {
 afterEach(() => { renders.reset() })
 
 describe('the shape', () => {
-  it('defaults: auto, proxy, source, source, prores, auto, NO pull, skip existing, no publish', () => { expect(mounts.defaults().render).toEqual(D); expect(mounts.normalize({}).render).toEqual(D); expect(mounts.RENDER_DEFAULT).toEqual(D) })
+  it('defaults: auto, review, source, source, prores, auto, NO pull, skip existing, publish to S3 pre-ticked', () => { expect(mounts.defaults().render).toEqual(D); expect(mounts.normalize({}).render).toEqual(D); expect(mounts.RENDER_DEFAULT).toEqual(D) })
   it('normalizes a partial value over the defaults; numeric strings become widths; junk survives to be refused by validate', () => {
     expect(mounts.normalize({ render: { kind: 'review', proxy_width: '1280' as never } as never }).render).toEqual({ ...D, kind: 'review', proxy_width: 1280 })
     expect(mounts.normalize({ render: 'x' as never }).render).toEqual(D)
@@ -59,7 +59,7 @@ describe('export, import, undo', () => {
 describe('a pod\'s own configuration, Recreate, and what plan and start use', () => {
   it('the pod\'s own render settings override the Default Configuration; a pod without them follows the default; local-only uses the default', async () => {
     put({ render: { ...D, kind: 'review', codecs: ['prores422hq'] } as never })
-    const own = mounts.normalize({ ...mounts.load(), render: { ...D, proxy_width: 1280, pull: false } })
+    const own = mounts.normalize({ ...mounts.load(), render: { ...D, kind: 'proxy', proxy_width: 1280, pull: false } })   // the pod's own kind differs from the default's
     const p = await pods.create({ name: 'A', gpu: 'rtx4090', config: own } as never); expect(podconfigs.get(p.id)?.render).toMatchObject({ proxy_width: 1280, pull: false, kind: 'proxy' })
     expect(renders.effectiveSettings(p.id)).toMatchObject({ kind: 'proxy', proxy_width: 1280, pull: false }); expect(renders.effectiveSettings('other-pod')).toMatchObject({ kind: 'review', codecs: ['prores422hq'] }); expect(renders.effectiveSettings()).toMatchObject({ kind: 'review' })
   })
@@ -90,16 +90,16 @@ describe('a pod\'s own configuration, Recreate, and what plan and start use', ()
 })
 
 describe('the preferences of the Generate and Outputs windows (pull, publish, skip_existing, hide_empty_folders)', () => {
-  it('defaults: pull OFF, publish s3 and slack OFF, skip existing ON, hide empty folders ON; a stored pull: true is kept; absent means off', () => {
-    expect(mounts.defaults().render).toMatchObject({ pull: false, skip_existing: true, publish: { s3: false, slack: false } }); expect(mounts.defaults().outputs).toEqual({ hide_empty_folders: true })
+  it('defaults: pull OFF, publish s3 ON (slack OFF), skip existing ON, hide empty folders ON; a stored pull: true is kept; absent means off', () => {
+    expect(mounts.defaults().render).toMatchObject({ pull: false, skip_existing: true, publish: { s3: true, slack: false } }); expect(mounts.defaults().outputs).toEqual({ hide_empty_folders: true })
     expect(mounts.normalize({ render: { pull: true } as never }).render!.pull).toBe(true); expect(mounts.normalize({ render: { kind: 'review' } as never }).render!.pull).toBe(false); expect(mounts.normalize({ outputs: {} as never }).outputs).toEqual({ hide_empty_folders: true })
     put({ render: { ...D, pull: true } }); expect(mounts.load().render!.pull).toBe(true)
   })
-  it('validation: booleans only; Slack needs S3; either needs the renders on this PC (pull on, or where local)', () => {
+  it('validation: booleans only; Slack needs S3; publishing no longer needs Sync (a render that stayed on the pod is published from the volume)', () => {
     const v = (r: Record<string, unknown>) => () => mounts.validate(mounts.normalize({ render: { ...D, ...r } as never }))
     expect(v({ skip_existing: 'yes' })).toThrow(/render\.skip_existing/); expect(mounts.normalize({ render: { ...D, publish: { s3: 'x' } } as never }).render!.publish).toEqual({ s3: false, slack: false })   // junk is not a tick
     expect(v({ pull: true, publish: { s3: false, slack: true } })).toThrow(/Slack announces an upload: turn S3 on/)
-    expect(v({ publish: { s3: true, slack: false } })).toThrow(/Publishing needs the renders on this PC: turn on Sync the renders to this PC/); expect(v({ pull: true, publish: { s3: true, slack: true } })).not.toThrow(); expect(v({ where: 'local', publish: { s3: true, slack: false } })).not.toThrow()
+    expect(v({ publish: { s3: true, slack: false } })).not.toThrow(); expect(v({ pull: true, publish: { s3: true, slack: true } })).not.toThrow(); expect(v({ where: 'local', publish: { s3: true, slack: false } })).not.toThrow()
     expect(() => mounts.validate(mounts.normalize({ outputs: { hide_empty_folders: 'no' } as never }))).toThrow(/outputs\.hide_empty_folders/); expect(mounts.put({ ...mounts.load(), outputs: { hide_empty_folders: false } }).config.outputs).toEqual({ hide_empty_folders: false })
   })
   it('a pod\'s own render block overrides (same merge rules); outputs is stripped from a pod configuration', () => {
@@ -117,7 +117,7 @@ describe('the preferences of the Generate and Outputs windows (pull, publish, sk
     const f = configio.exportConfig({ includeSecrets: false }); expect((f.config as Record<string, unknown>).render).toMatchObject({ pull: true, skip_existing: false, publish: { s3: true, slack: false } }); expect((f.config as Record<string, unknown>).outputs).toEqual({ hide_empty_folders: false })
     mounts.reset(); mounts.save(mounts.defaults()); expect(configio.planImport(f as never).errors).toEqual([]); configio.applyImport(f as never, { sections: ['pod_defaults'] })
     expect(mounts.load().render).toMatchObject({ pull: true, skip_existing: false, publish: { s3: true, slack: false } }); expect(mounts.load().outputs).toEqual({ hide_empty_folders: false })
-    configio.undoImport(); expect(mounts.load().render).toMatchObject({ pull: false, skip_existing: true, publish: { s3: false, slack: false } }); expect(mounts.load().outputs).toEqual({ hide_empty_folders: true })
+    configio.undoImport(); expect(mounts.load().render).toMatchObject({ pull: false, skip_existing: true, publish: { s3: true, slack: false } }); expect(mounts.load().outputs).toEqual({ hide_empty_folders: true })
     put({ outputs: { hide_empty_folders: false } }); expect(mounts.reset().outputs).toEqual({ hide_empty_folders: true })
   })
 })

@@ -47,11 +47,13 @@ test.describe('Queue > Auto-publish with nothing in it', () => {
 })
 
 test.describe('the settings block', () => {
-  test('shows the same summary and counts and a collapsed Skipped (N) list of shot version: reason', async ({ page, api }) => {
+  test('is the first block of the Publishing tab, compact (the counts, not the long summary sentence), with a collapsed Skipped (N) list of shot version: reason', async ({ page, api }) => {
     on(api); api.state.autopublish = { watching: W({ skipped: [{ shot: 'archival-085', version: 3, reason: 'a file is still being written' }, { shot: 'cgi-042', version: 1, reason: 'no approved name' }] }) }
     await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'publishing')
     const b = d.getByTestId('autopublish-watching-block')
-    await expect(b.getByTestId('autopublish-watching-summary')).toHaveText('Watching output/deliver: 6 reviews, none approved yet'); await expect(b.getByTestId('autopublish-watching-counts')).toContainText('6 reviews')
+    await expect(b.getByTestId('collapsible-title').first()).toHaveText('What Auto-publish Is Watching')   // a foldable section, at the TOP of the tab
+    expect(await d.getByTestId('settings-publishing').locator('xpath=preceding::*[@data-testid="autopublish-watching-block"]').count()).toBe(1)
+    await expect(b.getByTestId('autopublish-watching-summary')).toHaveCount(0); await expect(b.getByTestId('autopublish-watching-counts')).toContainText('6 reviews')
     await expect(b.getByTestId('autopublish-skipped')).not.toHaveAttribute('open', ''); await expect(b.getByTestId('autopublish-skipped').locator('summary')).toHaveText('Skipped (2)')
     await b.getByTestId('autopublish-skipped').locator('summary').click()
     await expect(b.getByTestId('autopublish-skipped-row')).toHaveText(['archival-085 v003: a file is still being written', 'cgi-042 v001: no approved name'])

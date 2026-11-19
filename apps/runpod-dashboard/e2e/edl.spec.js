@@ -21,9 +21,14 @@ async function open(page, api, { rows = {}, edl = { loaded: true, elements: ELEM
   await page.context().route('**/view?*', (r) => r.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: px }).catch(() => {}))
   await page.goto('/'); await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
   await expect(page.getByTestId('pod-outputs-modal').locator('[data-testid="outputs-tile"][data-kind="dpx"]')).toHaveCount(2)
-  await page.getByTestId('pod-outputs-previews').click(); const g = page.getByTestId('pod-outputs-previews-modal'); await expect(g.getByTestId('pod-outputs-render')).toBeVisible(); return g
+  await page.getByTestId('pod-outputs-previews').click(); await page.getByTestId('pod-outputs-previews-modal').getByRole('tab', { name: 'Render Sequences' }).click(); const g = page.getByTestId('pod-outputs-previews-modal'); await expect(g.getByTestId('pod-outputs-render')).toBeVisible(); return g
 }
 const row = (g, name) => g.locator(`[data-testid="pod-outputs-render-clip-row"][data-name="${name}"]`)
+/** The colour window of one row (the palette icon): open it, read or set its select, close it. */
+const colourUi = (page, g) => { const m = () => page.getByTestId('clip-colour-modal'), sel = () => m().getByTestId('pod-outputs-render-colour-in')
+  const open = async (name) => { await row(g, name).getByTestId('pod-outputs-render-colour-edit').click(); await expect(m()).toBeVisible() }
+  const close = async () => { await m().getByRole('button', { name: 'Done' }).click(); await expect(m()).toBeHidden() }
+  return { m, sel, open, close, set: async (name, v) => { await open(name); await sel().selectOption(v); await close() } } }
 const flag = (g, name, code) => row(g, name).locator(`[data-testid="edl-flag"][data-code="${code}"]`)
 const openDefault = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'publishing'); return d }
 
@@ -90,11 +95,11 @@ test.describe('Generate (Tunnel proxy): flags, timecode, colour and the clip-nam
   })
   test('Colour: no preselection, four choices, the suggestion hint, Same colour for all fills rows without one, colour-not-set blocks until chosen', async ({ page, api }) => {
     const g = await open(page, api, { requireColour: true, rows: { [B]: { suggested_colour: 'kodak-log' } } })
-    const a = row(g, 'cgi-042_a').getByTestId('pod-outputs-render-colour-in'), b = row(g, 'cgi-043_b').getByTestId('pod-outputs-render-colour-in')
-    await expect(a).toHaveValue(''); await expect(a.locator('option')).toHaveText(['Choose', 'Linear light, P3-D65', 'Linear light, Rec.709', 'P3-D65, gamma 2.6', 'P3-D65, sRGB', 'P3-D65, gamma 2.2', 'Kodak log (no view transform)'])
-    await expect(row(g, 'cgi-043_b').getByTestId('pod-outputs-render-colour-suggested')).toHaveText('Suggested: Kodak log'); await expect(b).toHaveValue('')   // a suggestion, never applied
+    const ui = colourUi(page, g)
+    await ui.open('cgi-042_a'); await expect(ui.sel()).toHaveValue(''); await expect(ui.sel().locator('option')).toHaveText(['Choose', 'Linear light, P3-D65', 'Linear light, Rec.709', 'P3-D65, gamma 2.6', 'P3-D65, sRGB', 'P3-D65, gamma 2.2', 'Kodak log (no view transform)']); await ui.close()
+    await ui.open('cgi-043_b'); await expect(page.getByTestId('pod-outputs-render-colour-suggested')).toHaveText('Suggested: Kodak log'); await expect(ui.sel()).toHaveValue(''); await ui.close()   // a suggestion, never applied
     await expect(flag(g, 'cgi-042_a', 'colour-not-set')).toBeVisible(); await expect(g.getByTestId('pod-outputs-render-start')).toBeDisabled()
-    await a.selectOption('p3-d65-srgb')
+    await ui.set('cgi-042_a', 'p3-d65-srgb')
     await expect(flag(g, 'cgi-042_a', 'colour-not-set')).toHaveCount(0); await expect(flag(g, 'cgi-043_b', 'colour-not-set')).toBeVisible(); await expect(g.getByTestId('pod-outputs-render-start')).toBeEnabled()   // one sequence is ready
     await g.getByTestId('pod-outputs-render-colour-all').selectOption('p3-d65-gamma26')   // rows without their own choice
     await expect(flag(g, 'cgi-043_b', 'colour-not-set')).toHaveCount(0)
@@ -159,12 +164,27 @@ test.describe('stated colour', () => {
   test('frames whose header says linear need the colour stated: the header line, a required select with no preselection, the hint, skipped until stated, and colour_in only for that sequence', async ({ page, api }) => {
     const g = await open(page, api, { preset: 'none', rows: { [A]: { header_transfer: 'linear (code 2)', flags: [{ code: 'colour-not-stated', level: 'block', message: 'State the colour of these frames' }] } } })
     await expect(row(g, 'cgi-042_a').getByTestId('pod-outputs-render-header-transfer')).toHaveText('DPX header says: linear (code 2)')
-    const sel = row(g, 'cgi-042_a').getByTestId('pod-outputs-render-colour-in'); await expect(sel).toHaveValue(''); await expect(sel.locator('option')).toHaveCount(7)
-    await expect(row(g, 'cgi-042_a').getByTestId('pod-outputs-render-colour-hint')).toHaveText('Kyle, 14 Nov: generated shots are P3-D65'); await expect(row(g, 'cgi-042_a').getByTestId('pod-outputs-render-colour-skipped')).toHaveText('will be skipped: colour not stated')
-    await expect(flag(g, 'cgi-042_a', 'colour-not-stated')).toHaveText('State the colour of these frames'); await expect(row(g, 'cgi-043_b').getByTestId('pod-outputs-render-colour-in')).toHaveCount(0)
-    await sel.selectOption('linear-p3-d65'); await expect(row(g, 'cgi-042_a').getByTestId('pod-outputs-render-colour-skipped')).toHaveCount(0)
+    const ui = colourUi(page, g), rc = (n) => row(g, n).getByTestId('pod-outputs-render-row-colour')
+    await expect(rc('cgi-042_a')).toHaveAttribute('data-source', 'none'); await expect(rc('cgi-042_a')).toContainText('not stated')   // said on the row even when not set
+    await ui.open('cgi-042_a'); await expect(ui.sel()).toHaveValue(''); await expect(ui.sel().locator('option')).toHaveCount(7)
+    await expect(ui.m().getByTestId('pod-outputs-render-colour-hint')).toHaveText('Kyle, 14 Nov: generated shots are P3-D65'); await ui.close()
+    await expect(flag(g, 'cgi-042_a', 'colour-not-stated')).toHaveText('State the colour of these frames')
+    await ui.set('cgi-042_a', 'linear-p3-d65'); await expect(rc('cgi-042_a')).toHaveAttribute('data-source', 'own'); await expect(rc('cgi-042_a')).toHaveText('Colour: Linear light, P3-D65 (set for this sequence)')
     await g.getByTestId('pod-outputs-render-start').click(); await expect.poll(() => api.state.renders.started.length).toBe(1)
     const seqs = api.state.renders.started[0].sequences; expect(seqs.find((s) => s.name === 'cgi-042_a').colour_in).toBe('linear-p3-d65'); expect(seqs.find((s) => s.name === 'cgi-043_b')).not.toHaveProperty('colour_in')
+  })
+  test('"Same colour for all" is said on EVERY row ("same colour for all"), a row\'s own choice from its colour window wins, and every sequence is sent with it', async ({ page, api }) => {
+    const lin = { header_transfer: 'linear (code 2)', flags: [{ code: 'colour-not-stated', level: 'warn', message: 'State the colour of these frames' }] }
+    const g = await open(page, api, { preset: 'none', rows: { [A]: lin, [B]: lin } }), ui = colourUi(page, g), rc = (n) => row(g, n).getByTestId('pod-outputs-render-row-colour')
+    await expect(rc('cgi-042_a')).toHaveAttribute('data-source', 'none'); await expect(rc('cgi-043_b')).toHaveAttribute('data-source', 'none')
+    await g.getByTestId('pod-outputs-render-colour-all').selectOption('linear-p3-d65')
+    await expect(rc('cgi-042_a')).toHaveText('Colour: Linear light, P3-D65 (same colour for all)'); await expect(rc('cgi-043_b')).toHaveText('Colour: Linear light, P3-D65 (same colour for all)')
+    await ui.set('cgi-043_b', 'kodak-log')   // its own choice wins over the one for all
+    await g.getByTestId('pod-outputs-render-colour-all').selectOption('linear-rec709')
+    await expect(rc('cgi-042_a')).toContainText('Linear light, Rec.709'); await expect(rc('cgi-043_b')).toHaveText('Colour: Kodak log (set for this sequence)')
+    await ui.open('cgi-042_a'); await expect(ui.sel().locator('option').first()).toHaveText('Same colour for all: Linear light, Rec.709'); await ui.close()
+    await g.getByTestId('pod-outputs-render-start').click(); await expect.poll(() => api.state.renders.started.length).toBe(1)
+    const seqs = api.state.renders.started[0].sequences; expect(seqs.find((x) => x.name === 'cgi-042_a').colour_in).toBe('linear-rec709'); expect(seqs.find((x) => x.name === 'cgi-043_b').colour_in).toBe('kodak-log')
   })
   test('Auto-publish > Generate: the colour of the frames has no default, needs the approver\'s name, and is recorded with it; the Queue lists sequences skipped for it and where the waiting ones are', async ({ page, api }) => {
     api.state.mounts.config.auto_publish = { enabled: true, dry_run: true, window_minutes: 10, daily_cap: null, dry_run_first: true, targets: { s3: true, slack: false, tunnel: false }, standing: { approved_by: 'Brynley', at: '2026-11-19T10:00:00Z' }, generate: { enabled: true, where: 'local', preset: 'review', max_per_day: 20, settle_minutes: 5, fallback_local: false, colour_in: null } }
@@ -175,11 +195,5 @@ test.describe('stated colour', () => {
     await sel.selectOption('p3-d65-gamma26'); const who = d.getByTestId('config-autopublish-generate-colour-approver'); await who.fill(''); await d.getByTestId('config-save').click(); await expect(d.getByTestId('autopublish-error')).toBeVisible(); expect(api.state.mountPuts || []).toHaveLength(0)
     await who.fill('Kyle'); await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
     expect(api.state.mountPuts.at(-1).auto_publish).toMatchObject({ approved_by: 'Kyle', generate: { colour_in: 'p3-d65-gamma26' } })
-  })
-  test('the button and the dialog are called Generate Outputs', async ({ page, api }) => {
-    api.state.mounts.config.auto_publish = { enabled: true, dry_run: true, window_minutes: 10, daily_cap: null, dry_run_first: true, targets: { s3: true, slack: false, tunnel: false }, standing: { approved_by: 'B', at: '2026-11-19T10:00:00Z' }, generate: { enabled: true, where: 'local', preset: 'review', max_per_day: 20, settle_minutes: 5, fallback_local: false } }
-    api.state.autopublish = { generate: { enabled: true, where: 'local', generating: 0, generated_today: 0, max_per_day: 20, failed: [], waiting_to_settle: [], pending_existing: 0 } }
-    await page.goto('/'); await queueTab(page, 'publishing'); const b = page.getByTestId('autopublish-generate-existing'); await expect(b).toHaveText('Generate Outputs'); await b.click()
-    await expect(page.getByTestId('existing-modal')).toContainText('Generate Outputs')
   })
 })

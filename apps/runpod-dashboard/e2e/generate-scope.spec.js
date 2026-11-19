@@ -19,15 +19,16 @@ async function open(page, api, { delay = 0, runs } = {}) {
   return { m: page.getByTestId('pod-outputs-modal'), hits }
 }
 const gen = (page) => page.getByTestId('pod-outputs-previews-modal')
-async function openGenerate(page) { await page.getByTestId('pod-outputs-previews').click(); const g = gen(page); await expect(g.getByTestId('pod-outputs-generate-scope-alert')).toBeVisible(); return g }
+async function openGenerate(page, tab = 'Previews') { await page.getByTestId('pod-outputs-previews').click(); const g = gen(page); await expect(g.getByTestId('pod-outputs-generate-scope-alert')).toBeVisible(); await g.getByRole('tab', { name: tab }).click(); return g }   // two tabs: Previews and Render Sequences (the window opens on the second)
 const closeGenerate = async (page) => { await gen(page).locator('.modal-footer button').click(); await expect(gen(page)).toBeHidden() }
+/** Generate has no scope choice of its own: it uses what the Outputs window has selected. Close Generate, flip the Outputs window's toggle, reopen. */
+const outputsScope = async (page, m, which) => { await closeGenerate(page); await m.getByTestId(`pod-outputs-scope-${which}`).click() }
 async function intoFolder(m, ...names) { for (const n of names) await m.locator(`[data-testid="pod-outputs-folder"][data-name="${n}"]`).click() }
 
-test('at the volume root: This folder is off with the reason, All outputs is chosen with its count, and the alert lists what it covers', async ({ page, api }) => {
+test('at the volume root: Generate covers All outputs, and the alert lists what it covers', async ({ page, api }) => {
   const { m } = await open(page, api)
   const g = await openGenerate(page)
-  await expect(g.getByTestId('pod-outputs-generate-scope-folder')).toBeDisabled(); await expect(g.getByTestId('pod-outputs-generate-scope-reason')).toHaveText('Open a folder first')
-  await expect(g.getByTestId('pod-outputs-generate-scope-all-radio')).toBeChecked(); await expect(g.getByTestId('pod-outputs-generate-scope-all-count')).toHaveText('3 sequences')
+  await expect(g.getByRole('radio')).toHaveCount(0)   // no scope radios: it generates from the previous screen's selection
   const alert = g.getByTestId('pod-outputs-generate-scope-alert')
   await expect(alert).toContainText('Generating for'); await expect(alert.getByTestId('pod-outputs-generate-scope-all')).toHaveText('All outputs loaded in this window')
   await expect(alert.getByTestId('pod-outputs-generate-scope-counts')).toHaveText('3 sequences · 9 frames')
@@ -35,60 +36,51 @@ test('at the volume root: This folder is off with the reason, All outputs is cho
   await expect(alert.getByTestId('generate-scope-folder')).toHaveCount(0)   // collapsed by default
   await alert.getByTestId('pod-outputs-generate-scope-more').click()
   await expect(alert.getByTestId('generate-scope-folder')).toHaveText(['output/proxy_v004/archival-080/a', 'output/proxy_v004/archival-080x/b', 'output/proxy_v005/c'])
-  await expect(g.getByTestId('pod-outputs-generate-scope-note')).toHaveText("All outputs = every run and folder loaded in this window (the pod's runs, saved runs and the volume folder you have open). To include another volume folder, open it first.")
   void m
 })
 
-test('in a folder it defaults to This folder (following the Outputs toggle), with the folder boundary exact, the real path and the right counts; changing it leaves the Outputs toggle alone', async ({ page, api }) => {
+test('with a folder open it generates for THAT folder, with the folder boundary exact, the real path and the right counts; All outputs in the Outputs window widens it', async ({ page, api }) => {
   const { m } = await open(page, api)
   await intoFolder(m, 'proxy_v004', 'archival-080')
-  const g = await openGenerate(page)
-  await expect(g.getByTestId('pod-outputs-generate-scope-folder')).toBeChecked()
-  await expect(g.getByTestId('pod-outputs-generate-scope-folder-count')).toHaveText('1 sequence')   // archival-080x shares the prefix but is a sibling: out
-  await expect(g.getByTestId('pod-outputs-generate-scope-all-count')).toHaveText('3 sequences')
+  let g = await openGenerate(page)
   const alert = g.getByTestId('pod-outputs-generate-scope-alert')
-  await expect(alert.getByTestId('pod-outputs-generate-scope-path')).toHaveText('output/proxy_v004/archival-080'); await expect(alert).toContainText('This folder:')
+  await expect(alert.getByTestId('pod-outputs-generate-scope-path')).toHaveText('output/proxy_v004/archival-080'); await expect(alert).toContainText('This folder:')   // archival-080x shares the prefix but is a sibling: out
   await expect(alert.getByTestId('pod-outputs-generate-scope-counts')).toHaveText('1 sequence · 3 frames')
   await expect(g.getByTestId('pod-outputs-previews-counts')).toHaveText('0 ready · 1 waiting · 0 failed')
-  // All outputs: the alert follows, the previews line widens, the Outputs window's own toggle is untouched
-  await g.getByTestId('pod-outputs-generate-scope-all-radio').check()
-  await expect(alert.getByTestId('pod-outputs-generate-scope-all')).toBeVisible(); await expect(alert.getByTestId('pod-outputs-generate-scope-counts')).toHaveText('3 sequences · 9 frames')
+  await outputsScope(page, m, 'all'); g = await openGenerate(page)
+  await expect(g.getByTestId('pod-outputs-generate-scope-alert').getByTestId('pod-outputs-generate-scope-all')).toBeVisible(); await expect(g.getByTestId('pod-outputs-generate-scope-alert').getByTestId('pod-outputs-generate-scope-counts')).toHaveText('3 sequences · 9 frames')
   await expect(g.getByTestId('pod-outputs-previews-counts')).toHaveText('0 ready · 3 waiting · 0 failed')
   await closeGenerate(page)
-  await expect(m.getByTestId('pod-outputs-scope-folder')).toHaveClass(/active/); await expect(m.getByTestId('pod-outputs-scope-all')).not.toHaveClass(/active/)
-  await expect(m.locator('[data-testid="outputs-tile"][data-kind="dpx"]')).toHaveCount(1)   // the gallery still shows only the folder
+  await expect(m.getByTestId('pod-outputs-scope-all')).toHaveClass(/active/)
+  await expect(m.locator('[data-testid="outputs-tile"][data-kind="dpx"]')).toHaveCount(3)
 })
 
-test('the radio defaults to All outputs when the Outputs window\'s toggle is on All; the Generate window keeps its own choice while the Outputs window is open', async ({ page, api }) => {
+test('Generate follows the Outputs window every time it opens: the folder while the folder is selected, All outputs while All is selected', async ({ page, api }) => {
   const { m } = await open(page, api)
   await intoFolder(m, 'proxy_v004', 'archival-080')
   await m.getByTestId('pod-outputs-scope-all').click()
-  let g = await openGenerate(page)
-  await expect(g.getByTestId('pod-outputs-generate-scope-all-radio')).toBeChecked()
-  await g.getByTestId('pod-outputs-generate-scope-folder').check()   // its own choice
-  await closeGenerate(page)
-  await m.getByTestId('pod-outputs-scope-folder').click()
-  g = await openGenerate(page)
-  await expect(g.getByTestId('pod-outputs-generate-scope-folder')).toBeChecked()
-  await closeGenerate(page)
-  await m.getByTestId('pod-outputs-scope-all').click()
-  g = await openGenerate(page); await expect(g.getByTestId('pod-outputs-generate-scope-folder')).toBeChecked()   // remembered: it no longer follows
+  let g = await openGenerate(page); const alert = () => g.getByTestId('pod-outputs-generate-scope-alert')
+  await expect(alert().getByTestId('pod-outputs-generate-scope-all')).toBeVisible()
+  await outputsScope(page, m, 'folder'); g = await openGenerate(page)
+  await expect(alert().getByTestId('pod-outputs-generate-scope-path')).toHaveText('output/proxy_v004/archival-080')
+  await outputsScope(page, m, 'all'); g = await openGenerate(page)
+  await expect(alert().getByTestId('pod-outputs-generate-scope-all')).toBeVisible()
 })
 
 test('the render plan and start carry only the in-scope sequences; the plan line follows', async ({ page, api }) => {
   const { m } = await open(page, api)
   await intoFolder(m, 'proxy_v004', 'archival-080')
-  const g = await openGenerate(page)
+  let g = await openGenerate(page, 'Render Sequences')
   await expect(g.getByTestId('pod-outputs-render-plan')).toContainText('1 sequence · 3 frames')
-  await expect.poll(() => api.state.renders.planned.at(-1).sequences.map((s) => s.name)).toEqual(['a_proxy'])
-  await g.getByTestId('pod-outputs-generate-scope-all-radio').check()
+  await expect.poll(() => api.state.renders.planned.at(-1).sequences.map((x) => x.name)).toEqual(['a_proxy'])
+  await outputsScope(page, m, 'all'); g = await openGenerate(page, 'Render Sequences')
   await expect(g.getByTestId('pod-outputs-render-plan')).toContainText('3 sequences · 9 frames')
-  await expect.poll(() => api.state.renders.planned.at(-1).sequences.map((s) => s.name)).toEqual(['a_proxy', 'b_proxy', 'c_proxy'])
-  await g.getByTestId('pod-outputs-generate-scope-folder').check()
+  await expect.poll(() => api.state.renders.planned.at(-1).sequences.map((x) => x.name)).toEqual(['a_proxy', 'b_proxy', 'c_proxy'])
+  await outputsScope(page, m, 'folder'); g = await openGenerate(page, 'Render Sequences')
   await expect.poll(() => api.state.renders.planned.at(-1).sequences.length).toBe(1)
   await g.getByTestId('pod-outputs-render-start').click()
   await expect.poll(() => api.state.renders.started.length).toBe(1)
-  expect(api.state.renders.started[0].sequences.map((s) => s.name)).toEqual(['a_proxy'])
+  expect(api.state.renders.started[0].sequences.map((x) => x.name)).toEqual(['a_proxy'])
   await expect(g.getByTestId('pod-outputs-render-clipname')).toHaveCount(1)
 })
 
@@ -123,15 +115,15 @@ test('the preview counts are exact without scrolling: cached previews are ready,
   await expect(g.getByTestId('pod-outputs-load-previews')).toHaveText('Generate all previews (5)')
 })
 
-test('a running batch keeps the scope it started with: the alert says so when the radio differs, and the batch is not stopped by the change', async ({ page, api }) => {
+test('a running batch keeps the scope it started with: the alert says so when the Outputs window has moved to another scope, and the batch is not stopped by the change', async ({ page, api }) => {
   const { m } = await open(page, api, { delay: 700 })
   await intoFolder(m, 'proxy_v004', 'archival-080')
-  const g = await openGenerate(page)
-  await g.getByTestId('pod-outputs-generate-scope-all-radio').check()
+  await m.getByTestId('pod-outputs-scope-all').click()
+  let g = await openGenerate(page)
   await g.getByTestId('pod-outputs-load-previews').click()
   await expect(g.getByTestId('pod-outputs-previews-progress')).toBeVisible()
-  await expect(g.getByTestId('pod-outputs-generate-scope-running')).toHaveCount(0)   // the radio is the same scope
-  await g.getByTestId('pod-outputs-generate-scope-folder').check()
+  await expect(g.getByTestId('pod-outputs-generate-scope-running')).toHaveCount(0)   // the window is on the scope the batch started with
+  await outputsScope(page, m, 'folder'); g = await openGenerate(page)
   await expect(g.getByTestId('pod-outputs-generate-scope-running')).toHaveText('Running job: all outputs')
   await expect(g.getByTestId('pod-outputs-previews-progress')).toBeVisible()
   await g.getByTestId('pod-outputs-stop-previews').click()
@@ -145,20 +137,20 @@ test('an empty scope turns the alert to a warning and switches the Generate cont
   await expect(alert).toHaveAttribute('data-empty', 'true'); await expect(alert).toHaveClass(/alert-warning/)
   await expect(alert.getByTestId('pod-outputs-generate-scope-counts')).toHaveText('No sequences in this folder')
   await expect(g.getByTestId('pod-outputs-load-previews')).toBeDisabled(); await expect(g.getByTestId('pod-outputs-render-start')).toBeDisabled()
-  await g.getByTestId('pod-outputs-generate-scope-all-radio').check()
-  await expect(alert).toHaveAttribute('data-empty', 'false'); await expect(alert).toHaveClass(/alert-info/)
+  await outputsScope(page, m, 'all'); const g2 = await openGenerate(page), alert2 = g2.getByTestId('pod-outputs-generate-scope-alert')
+  await expect(alert2).toHaveAttribute('data-empty', 'false'); await expect(alert2).toHaveClass(/alert-info/)
 })
 
 test('the alert is the first thing in the body, has no dismiss control, is not sticky or floating, and scrolls away with the body (a 520px-high window never has it over the options)', async ({ page, api }) => {
   await page.setViewportSize({ width: 1280, height: 520 })
   const { m } = await open(page, api)
   await intoFolder(m, 'proxy_v004', 'archival-080')
-  const g = await openGenerate(page)
+  const g = await openGenerate(page, 'Render Sequences')
   const alert = g.getByTestId('pod-outputs-generate-scope-alert')
   await expect(alert.locator('.btn-close')).toHaveCount(0)
   expect(await g.locator('.modal-body').evaluate((b, id) => b.firstElementChild.getAttribute('data-testid') === id, 'pod-outputs-generate-scope-alert')).toBe(true)
   expect(['sticky', 'fixed', 'absolute']).not.toContain(await alert.evaluate((e) => getComputedStyle(e).position))
-  const first = await g.getByTestId('pod-outputs-generate-scope').boundingBox(), ab = await alert.boundingBox()
+  const first = await g.getByTestId('pod-outputs-generate-tabs').boundingBox(), ab = await alert.boundingBox()
   expect(ab.y).toBeLessThan(first.y); expect(ab.y + ab.height).toBeLessThanOrEqual(first.y + 1)   // above the first content block, never over it
   await g.getByTestId('pod-outputs-render-clear').scrollIntoViewIfNeeded()
   await g.locator('.modal-body').evaluate((b) => { b.scrollTop = b.scrollHeight })
@@ -243,7 +235,7 @@ test('Render: the checkbox sends skip_existing both ways, the plan line says wha
   api.state.renders = { remote: { 'proxy_v004/archival-080/a/a_proxy': true, 'proxy_v004/archival-080x/b/b_proxy': true } }
   const { m } = await open(page, api)
   void m
-  const g = await openGenerate(page)
+  const g = await openGenerate(page, 'Render Sequences')
   const plan = g.getByTestId('pod-outputs-render-plan')
   await expect(plan).toContainText('1 to render · 2 already done (skipped)')
   await expect.poll(() => api.state.renders.planned.at(-1).skip_existing).toBe(true)
@@ -279,8 +271,7 @@ test('Render: with everything already done and Skip existing ticked, Start is of
 test('Render: a 400 from the core for an all-skipped start shows inline; a Review says what it will version; the Queue card counts the skipped', async ({ page, api }) => {
   api.state.renders = { remote: { 'proxy_v004/archival-080/a/a_proxy': true }, noTotals: true }
   await open(page, api)
-  const g = await openGenerate(page)
-  await g.getByTestId('pod-outputs-generate-scope-folder').count()
+  const g = await openGenerate(page, 'Render Sequences')
   await g.getByTestId('pod-outputs-render-start').click()   // 2 of 3 still to render: starts
   await expect.poll(() => api.state.renders.started.length).toBe(1)
   Object.assign(api.state.renders.jobs[0], { state: 'done', finished_at: 'now' })
@@ -294,14 +285,14 @@ test('the alert is a normal block that scrolls away with the body: one compact s
   const subs = Array.from({ length: 9 }, (_, i) => `p_v005/archival-10${i}/archival-10${i}_b_v005_dpx16`)
   const runs = [{ prompt_id: 'sc000000-2222', workflow: 'rounds/r1/s.json', status: 'success', started_at: '2026-11-19T10:00:00Z', duration_s: 5, cost_estimate: 0, outputs: subs.flatMap((sub, i) => seqFiles(`s${i}_proxy`, sub, 2)) }]
   const { m } = await open(page, api, { runs })
-  const g = await openGenerate(page)
+  const g = await openGenerate(page, 'Render Sequences')
   const alert = g.getByTestId('pod-outputs-generate-scope-alert')
   await expect(alert).toContainText('Generating for'); await expect(alert.getByTestId('pod-outputs-generate-scope-counts')).toContainText('9 sequences'); await expect(alert.getByTestId('pod-outputs-generate-scope-where')).toContainText('ComfyUI-Dev')
   await expect(alert.getByTestId('generate-scope-folder')).toHaveCount(0)   // collapsed by default
   expect(['sticky', 'fixed', 'absolute']).not.toContain(await alert.evaluate((e) => getComputedStyle(e).position))   // not sticky, not floating
   expect((await alert.boundingBox()).height).toBeLessThan(80)   // about three lines at most
   // the options beneath it are visible without scrolling at this height
-  await expect(g.getByTestId('pod-outputs-generate-scope-all-radio')).toBeInViewport(); await expect(g.getByTestId('pod-outputs-previews-skip-existing')).toBeInViewport()
+  await expect(g.getByTestId('pod-outputs-generate-tabs')).toBeInViewport()   // the tabs are beneath the alert, visible without scrolling
   const toggle = alert.getByTestId('pod-outputs-generate-scope-more'); await expect(toggle).toHaveText('Show folders (9)')
   await toggle.click(); const rows = alert.getByTestId('generate-scope-folder')
   await expect(rows).toHaveCount(9); await expect(rows.first()).toHaveText(`output/${subs[0]}`); await expect(rows.first()).toHaveAttribute('title', `output/${subs[0]}`); await expect(toggle).toHaveText('Hide folders')

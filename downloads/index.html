@@ -24,7 +24,14 @@ small,li{color:var(--mut)}
 </div>
 <h2>First time</h2>
 <ul>
-  <li><strong>macOS:</strong> open the DMG, drag the app to Applications, then right-click it, choose Open, then Open again (not signed yet).</li>
+  <li><strong>macOS (Apple Silicon), easiest:</strong> download from Terminal, which macOS does not flag, so there is no warning at all:
+    <pre class="mb-1"><code>curl -L -o ~/Downloads/RunPod-Manager.dmg https://github.com/bluecollardev/downloads/releases/latest/download/RunPod-Manager-mac-arm64.dmg &amp;&amp; open ~/Downloads/RunPod-Manager.dmg</code></pre>
+    then drag the app to Applications.</li>
+  <li><strong>macOS (Apple Silicon), if you downloaded it with the button:</strong> open the DMG and drag the app to Applications. The app is not signed yet, so macOS blocks the first launch (right-click, Open no longer works on macOS 15 and later). Do one of these, once:
+    <ul>
+      <li>In Terminal: <code>xattr -dr com.apple.quarantine "/Applications/RunPod Manager.app"</code>, then open the app.</li>
+      <li>Or open the app, close the warning, then go to <em>System Settings, Privacy &amp; Security</em>, scroll to the message about RunPod Manager and click <em>Open Anyway</em> (it asks for your password).</li>
+    </ul></li>
   <li><strong>Windows:</strong> run the installer; if SmartScreen warns, choose More info, then Run anyway (not signed yet).</li>
   <li><strong>Linux:</strong> make the AppImage executable (<code>chmod +x</code>) and run it, or install the .deb.</li>
   <li>In Default Configuration, enter your RunPod API key.</li>

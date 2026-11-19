@@ -61,8 +61,17 @@ test.describe('Queue > Publishing', () => {
     await expect(c).toHaveAttribute('data-kind', 'backfill'); await expect(c.getByTestId('publishing-job-title')).toHaveText('Backfill: 31 files')
     await expect(c.getByTestId('publish-job-phase')).toBeVisible(); await expect(c.locator('[data-testid="publishing-phase"][data-phase="posting"]')).toHaveCount(0)   // no Slack target, no Slack phase
   })
-  test('a finished job: summary, warnings in amber, the links grouped, the approver; Dismiss removes it and stays removed', async ({ page, api }) => {
-    setup(api, [job({ state: 'done_with_warning', files_done: 4, bytes_done: 4 * GB, rate_bps: 0, current: '', summary: '4 files uploaded, Slack posted', warnings: ['No preview frame: ffmpeg is not installed'], slack: { state: 'sent' }, finished_at: '2026-11-19T10:05:00Z',
+  test('after a restart the stored job keeps no addresses: a folder still links to its console page (never a blank href), a file shows plain text with its copy icon off and says why', async ({ page, api }) => {
+    setup(api, [job({ dest: 's3://bh-bucket/returns/BKK/', state: 'done', files_done: 2, bytes_done: 2 * GB, rate_bps: 0, current: '', summary: '2 files uploaded', finished_at: '2026-11-19T10:05:00Z',
+      links: [{ path: 'returns/BKK/_TEST_2026-11-19/archival-084/', url: '', kind: 'folder' }, { path: 'deliver/a.mov', url: '', expires_at: '2026-11-26T10:00:00Z', kind: 'file' }] })], { linksSupport: true })
+    await page.goto('/'); const q = await openQueue(page); const c = card(q, 'pub-1')
+    const f = c.getByTestId('publish-link-folder'); await expect(f).toHaveText('s3://bh-bucket/returns/BKK/_TEST_2026-11-19/archival-084/')
+    expect(await f.getAttribute('href')).toMatch(/^https:\/\/s3\.console\.aws\.amazon\.com\/s3\/buckets\/bh-bucket\?prefix=returns\/BKK\/_TEST_2026-11-19\/archival-084\/&region=/)
+    const file = c.getByTestId('publish-link-file'); expect(await file.evaluate((e) => e.tagName)).toBe('SPAN'); await expect(c.getByTestId('publish-link-notkept')).toContainText('not kept after a restart')
+    await expect(c.locator('[data-kind="file"]').getByTestId('publish-link-copy')).toBeDisabled(); await expect(c.locator('[data-kind="folder"]').getByTestId('publish-link-copy')).toBeEnabled()
+  })
+  test('a finished job: summary, warnings in amber, the links grouped (a folder shows its full s3 path), the approver; Dismiss removes it and stays removed', async ({ page, api }) => {
+    setup(api, [job({ dest: 's3://bh-bucket/returns/BKK/', state: 'done_with_warning', files_done: 4, bytes_done: 4 * GB, rate_bps: 0, current: '', summary: '4 files uploaded, Slack posted', warnings: ['No preview frame: ffmpeg is not installed'], slack: { state: 'sent' }, finished_at: '2026-11-19T10:05:00Z',
       links: [{ path: 'returns/BKK/', url: 'https://console.aws.amazon.com/s3/x', kind: 'folder' }, { path: 'deliver/a.mov', url: 'https://s3.example/a?sig=1', expires_at: '2026-11-26T10:00:00Z', kind: 'file' }, { path: 'deliver/a_preview.jpg', url: 'https://s3.example/p?sig=1', expires_at: '2026-11-26T10:00:00Z', kind: 'preview' }] })],
       { linksSupport: true })
     await page.goto('/'); const q = await openQueue(page)
@@ -71,6 +80,8 @@ test.describe('Queue > Publishing', () => {
     await expect(c.getByTestId('publish-job-warning')).toHaveText('No preview frame: ffmpeg is not installed'); await expect(c.getByTestId('publish-job-warning')).toHaveClass(/text-warning/)
     await expect(c.getByTestId('publish-links-folder')).toBeVisible(); await expect(c.getByTestId('publish-links-file')).toBeVisible(); await expect(c.getByTestId('publish-links-preview')).toBeVisible()
     await expect(c.locator('[data-testid="publish-link"][data-kind="file"]').getByTestId('publish-link-copy')).toBeVisible()
+    const folder = c.getByTestId('publish-link-folder'); await expect(folder).toHaveText(/^s3:\/\/[^/]+\/returns\/BKK\/$/); await expect(folder).toHaveAttribute('href', 'https://console.aws.amazon.com/s3/x')   // the full s3 path, a link to the folder
+    const file = c.locator('[data-testid="publish-link"][data-kind="file"]').first().getByTestId('publish-link-file'); await expect(file).toHaveText('deliver/a.mov'); await expect(file).toHaveAttribute('href', 'https://s3.example/a?sig=1'); await expect(file).toHaveAttribute('download', '')   // a real link: clicking it downloads the file
     await expect(c.getByTestId('publishing-job-approver')).toHaveText('approved by Brynley')
     await expect(page.getByTestId('queue-badge')).toHaveCount(0)   // finished: not counted
     await c.getByTestId('publishing-job-dismiss').click()

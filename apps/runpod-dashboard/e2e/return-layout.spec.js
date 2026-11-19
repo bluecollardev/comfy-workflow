@@ -96,7 +96,7 @@ test.describe('Generate: the Tunnel proxy preset', () => {
     await page.context().route('**/view?*', (r) => r.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: px }).catch(() => {}))
     await page.goto('/'); await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
     await expect(page.getByTestId('pod-outputs-modal').locator('[data-testid="outputs-tile"][data-kind="dpx"]')).toHaveCount(1)
-    await page.getByTestId('pod-outputs-previews').click(); const g = page.getByTestId('pod-outputs-previews-modal'); await expect(g.getByTestId('pod-outputs-render')).toBeVisible(); return g
+    await page.getByTestId('pod-outputs-previews').click(); await page.getByTestId('pod-outputs-previews-modal').getByRole('tab', { name: 'Render Sequences' }).click(); const g = page.getByTestId('pod-outputs-previews-modal'); await expect(g.getByTestId('pod-outputs-render')).toBeVisible(); return g
   }
   test('Preset Standard / Tunnel proxy (default from the configuration); Tunnel locks the kind, shows the fixed settings and the clip name as the file name, with a start timecode per sequence and where it came from', async ({ page, api }) => {
     const g = await open(page, api, { preset: 'none' }, { rows: { 'seqs/a/s_proxy': { timecode_source: 'DPX header', start_timecode: '01:00:00:00' } } })
@@ -105,7 +105,7 @@ test.describe('Generate: the Tunnel proxy preset', () => {
     await g.getByTestId('pod-outputs-render-preset').selectOption('tunnel')
     await expect(g.getByTestId('pod-outputs-render-kind-review')).toBeDisabled(); await expect(g.getByTestId('pod-outputs-render-kind-proxy')).toBeChecked()
     await expect(g.getByTestId('pod-outputs-render-tunnel-fixed')).toContainText('H.264, 1920 x 1080'); await expect(g.getByTestId('pod-outputs-render-width')).toHaveCount(0); await expect(g.getByTestId('pod-outputs-render-fps')).toHaveCount(0)
-    await expect(g.getByTestId('pod-outputs-render-clipnames')).toHaveAttribute('open', ''); await expect(g.getByTestId('pod-outputs-render-clipnames').locator('summary')).toHaveText('File names and start timecodes')
+    await expect(g.getByTestId('pod-outputs-render-sequences-title')).toHaveText(/^Sequences \(\d+\)$/)
     const tc = g.getByTestId('pod-outputs-render-start-timecode'); await expect(tc).toHaveValue('01:00:00:00', { timeout: 6000 }); await expect(g.getByTestId('pod-outputs-render-timecode-source')).toHaveText('from the DPX header: 01:00:00:00')
     await expect.poll(() => api.state.renders.planned.at(-1).preset).toBe('tunnel')
   })

@@ -68,55 +68,7 @@ test.describe('Queue: hold and release', () => {
   })
 })
 
-test.describe('Generate Outputs', () => {
-  const PREVIEW = (o = {}) => ({ sequences: [{ stem: 'ARCHIVAL-077_A', shot: 'archival-077', clip: 'ARCHIVAL-077_A', frames: 120, bytes: 6e9, source: 'volume', flags: [] }, { stem: 'CGI-042_B', shot: 'cgi-042', clip: 'CGI-042_B', frames: 24, bytes: 1e9, source: 'local', flags: [{ code: 'low-source-resolution', level: 'warn', message: 'x' }] }], skipped: [{ stem: 'ARCHIVAL-102_B', reason: 'Not in the V11 EDL' }], totals: { sequences: 2, frames: 144, bytes: 7e9 }, where: 'local', preset: 'review', max_per_day: 20, today_started: 0, can_start_today: 2, remaining_after_today: 0, pod: null, notes: [], ...o })
-  const openDlg = async (page, api, preview, g = {}) => {
-    on(api, { generate: GEN(g) }); api.state.autopublish = { existing: preview, generate: { enabled: true, where: 'local', generating: 0, generated_today: 0, max_per_day: 20, waiting_to_settle: [], failed: [], pending_existing: 0, existing_started: 0 } }
-    await page.goto('/'); const q = await openQ(page); await q.getByTestId('autopublish-generate-existing').click(); const m = page.getByTestId('existing-modal'); return m
-  }
-  test('the preview: totals, where, preset, today, the list with source badges and flags, the skipped list and the approval note; Start sends confirm and the limit; the result says how many continue tomorrow', async ({ page, api }) => {
-    const m = await openDlg(page, api, PREVIEW({ today_started: 18, can_start_today: 1, remaining_after_today: 1 }))
-    await expect(m.getByTestId('existing-totals')).toHaveText('2 sequences · 144 frames · ~7 GB to read'); await expect(m.getByTestId('existing-where')).toContainText('This PC · Review preset'); await expect(m.getByTestId('existing-today')).toHaveText('Today: 18 of 20, 1 deferred to tomorrow')
-    await expect(m.getByTestId('existing-seq')).toHaveCount(2); await expect(m.locator('[data-testid="existing-seq"][data-stem="ARCHIVAL-077_A"] [data-testid="existing-source"]')).toHaveText('RunPod volume'); await expect(m.locator('[data-testid="existing-seq"][data-stem="CGI-042_B"] [data-testid="existing-flag"]')).toHaveText('low-source-resolution')
-    await m.getByTestId('existing-skipped').locator('summary').click(); await expect(m.getByTestId('existing-skipped-row')).toHaveText('ARCHIVAL-102_B: Not in the V11 EDL'); await expect(m.getByTestId('existing-approval-note')).toHaveText('A review still needs its approval before it is published')
-    await expect(m.getByTestId('existing-start')).toBeEnabled()   // this PC: no name needed
-    await m.getByTestId('existing-start').click()
-    await expect(page.getByTestId('existing-result').first()).toHaveText(/Started 1 renders; 1 continue tomorrow/)
-    expect(api.state.autopublish.calls.filter((c) => c.call === 'generateExisting').at(-1).body).toMatchObject({ confirm: true, limit: 1 })
-  })
-  test('loading, empty, many rows collapsed past 8, and no request on Cancel', async ({ page, api }) => {
-    const many = Array.from({ length: 12 }, (_, i) => ({ stem: `S-${100 + i}_A`, shot: `s-${100 + i}`, frames: 24, bytes: 1e8, source: 'local', flags: [] }))
-    let m = await openDlg(page, api, PREVIEW({ sequences: many, totals: { sequences: 12, frames: 288, bytes: 1.2e9 } }))
-    await expect(m.getByTestId('existing-seq')).toHaveCount(8); await m.getByTestId('existing-more').click(); await expect(m.getByTestId('existing-seq')).toHaveCount(12)
-    await m.getByTestId('existing-cancel').click(); await expect(m).toBeHidden()
-    expect(api.state.autopublish.calls.filter((c) => c.call === 'generateExisting' && !c.body.dry_run)).toHaveLength(0)
-    api.state.autopublish.existing = PREVIEW({ sequences: [], totals: { sequences: 0, frames: 0, bytes: 0 } })
-    await page.getByTestId('autopublish-generate-existing').first().click(); await expect(page.getByTestId('existing-empty')).toBeVisible(); await expect(page.getByTestId('existing-start')).toBeDisabled()
-  })
-  test('on a pod: the name is required (prefilled with the standing approver); no pod running says so with the fallback to this PC; the core\'s 400 and 409 show inline', async ({ page, api }) => {
-    let m = await openDlg(page, api, PREVIEW({ where: 'pod', pod: { id: 'p1', name: 'ComfyUI-Dev', running: true }, estimate_hours: 2.5 }), { where: 'pod' })
-    await expect(m.getByTestId('existing-where')).toContainText('ComfyUI-Dev (running)'); await expect(m.getByTestId('existing-estimate')).toHaveText('About 2.5 hours')
-    await expect(m.getByTestId('existing-approver')).toHaveValue('Brynley'); await page.waitForTimeout(400); await m.getByTestId('existing-approver').fill(''); await expect(m.getByTestId('existing-start')).toBeDisabled(); await expect(m.getByTestId('existing-approver-hint')).toBeVisible()
-    await m.getByTestId('existing-approver').fill('Kyle'); await expect(m.getByTestId('existing-start')).toBeEnabled()
-    api.state.autopublish.existing = PREVIEW({ where: 'pod', pod: { id: 'p1', name: 'ComfyUI-Dev', running: false } })   // gone between the preview and Start
-    await m.getByTestId('existing-start').click(); await expect(m.getByTestId('existing-error')).toHaveText('No pod is running: it never starts one')
-    await m.getByTestId('existing-cancel').click()
-    api.state.autopublish.existing = PREVIEW({ where: 'pod', pod: null })
-    await page.getByTestId('autopublish-generate-existing').first().click()
-    await expect(page.getByTestId('existing-no-pod')).toContainText('No pod is running: it never starts one. Start a pod, or render on this PC'); await expect(page.getByTestId('existing-start')).toBeDisabled()
-    await page.getByTestId('existing-fallback').check(); await expect(page.getByTestId('existing-start')).toBeEnabled()
-  })
-  test('a load error is shown; the Queue says how many existing sequences are still to render; an older core has no button', async ({ page, api }) => {
-    const m = await openDlg(page, api, PREVIEW()); await m.getByTestId('existing-cancel').click()
-    api.state.autopublish.generate.pending_existing = 30
-    await expect(page.getByTestId('autopublish-existing-pending')).toHaveText('30 existing sequences still to render (continuing within the daily limit)', { timeout: 12000 })
-    api.state.autopublish.existingError = 'The volume could not be listed'; await page.getByTestId('autopublish-generate-existing').first().click(); await expect(page.getByTestId('existing-load-error')).toHaveText('The volume could not be listed')
-    on(api, { generate: GEN() }); api.state.autopublish = { generate: { enabled: true, where: 'local', generating: 0, generated_today: 0, max_per_day: 20, waiting_to_settle: [], failed: [] } }   // no pending_existing key: an older core
-    await page.reload(); const q = await openQ(page); await expect(q.getByTestId('autopublish-generate-state')).toBeVisible(); await expect(q.getByTestId('autopublish-generate-existing')).toHaveCount(0)
-  })
-})
-
-test.describe('start a pod, and a review that is optional', () => {
+test.describe('Auto-generate settings', () => {
   test('Start a pod: ticked off by default with Stop when done and the spend limit; ticking asks the name before Save; the Queue says which pod and what it cost', async ({ page, api }) => {
     on(api, { generate: GEN({ start_pod: false, stop_when_done: true, max_spend_usd_per_day: 25 }) })
     let d = await openPub(page)

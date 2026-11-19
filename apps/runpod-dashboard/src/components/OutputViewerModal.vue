@@ -9,7 +9,8 @@
         <div class="viewer-stage text-center position-relative" data-testid="output-viewer-stage" :data-kind="file.kind">
           <img v-if="file.kind === 'image'" :src="url" :alt="file.filename" class="viewer-media" data-testid="output-viewer-image" />
           <video v-else-if="file.kind === 'video'" ref="video" :src="url" autoplay :loop="loop" playsinline class="viewer-media" data-testid="output-viewer-video" :data-time="time.toFixed(3)"
-            @play="playing = true" @pause="playing = false" @loadedmetadata="onMeta" @durationchange="duration = video.duration || 0" @timeupdate="time = video.currentTime" @progress="onProgress" @error="onVideoError" @click="togglePlay"></video>
+            @play="playing = true" @pause="playing = false" @loadedmetadata="onMeta" @durationchange="duration = video.duration || 0" @timeupdate="time = video.currentTime" @progress="onProgress" @error="loading = false; onVideoError()" @click="togglePlay" @loadstart="loading = true" @waiting="loading = true" @canplay="loading = false" @loadeddata="loading = false" @playing="loading = false"></video>
+          <div v-if="loading && !codecFail" class="loading-video" role="status" data-testid="output-viewer-loading"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>{{ $t('outputs.player.loadingVideo') }}</div>
           <audio v-else-if="file.kind === 'audio'" :src="url" controls autoplay class="w-100" data-testid="output-viewer-audio"></audio>
           <div v-else class="text-body-secondary py-5" data-testid="output-viewer-other"><i class="fa-regular fa-file fs-1 d-block mb-2"></i>{{ $t('outputs.noPreview') }}</div>
           <div v-if="file.kind === 'video' && codecFail" class="codec" data-testid="output-viewer-codec">
@@ -57,13 +58,14 @@ const props = defineProps({ file: { type: Object, default: null }, base: { type:
 const emit = defineEmits(['close', 'step'])
 const error = ref('')
 const card = ref(null), video = ref(null)
+const loading = ref(true)   // the video is on its way: say so until it can play
 const playing = ref(false), time = ref(0), duration = ref(0), buffered = ref([]), speed = ref(1), loop = ref(true), muted = ref(false), volume = ref(1), fps = ref(24), codecFail = ref(false)
 const isVideo = () => props.file?.kind === 'video' && video.value
 const url = computed(() => (props.file ? viewUrl(props.base, props.file) : ''))   // what the viewer shows
 const webUrl = computed(() => (props.file ? viewUrl(props.base, props.file, { web: true }) : ''))   // what Open and Download use
 const path = computed(() => (props.file ? [props.file.subfolder, props.file.filename].filter(Boolean).join('/') : ''))
 const hasPrev = computed(() => props.index > 0), hasNext = computed(() => props.index < props.count - 1)
-watch(() => props.file, () => { error.value = ''; codecFail.value = false; playing.value = false; time.value = 0; duration.value = 0; buffered.value = [] })
+watch(() => props.file, () => { error.value = ''; codecFail.value = false; loading.value = true; playing.value = false; time.value = 0; duration.value = 0; buffered.value = [] })
 watch(speed, (v) => { if (video.value) video.value.playbackRate = v })
 watch(muted, (v) => { if (video.value) video.value.muted = v })
 watch(volume, (v) => { if (video.value) video.value.volume = v })
@@ -110,5 +112,6 @@ async function download() {
 .viewer-card { background: #20232a; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 0.5rem; padding: 1rem; max-width: min(96vw, 1400px); max-height: 94vh; overflow: auto; width: 100%; }
 .viewer-stage { background: #14161b; border-radius: 0.375rem; padding: 0.5rem; }
 .viewer-media { max-width: 100%; max-height: 62vh; }
+.loading-video { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(20, 22, 27, 0.72); color: #dee2e6; pointer-events: none; }
 .codec { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 1rem; background: #14161b; }
 </style>

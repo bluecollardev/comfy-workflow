@@ -145,6 +145,15 @@ describe('Auto-publish is a pipeline: no approval record needed (require_approva
     await autopublish.off(); await autopublish.setSettings({ enabled: true, approved_by: 'Lucas', understood: true, require_approval: true }); await autopublish.consider(); expect(await pending()).toEqual([])   // approvals required: none approved, nothing queues
     t += 11_000; expect((await autopublish.statusNow()).watching.summary).toMatch(/none approved yet/); await approve('b-002'); await autopublish.consider(); expect((await pending()).map((e) => e.shot)).toEqual(['b-002'])
   })
+  it('LIVE with require_approval false: the queued volume review uploads when its window ends; the send-time check must not need an approval record (it cancelled as "approval revoked")', async () => {
+    vreview('d-004')
+    await autopublish.setSettings({ enabled: true, approved_by: 'Lucas', understood: true, require_approval: false, sources: { local: false, volume: true }, window_minutes: 0 })
+    await autopublish.setSettings({ dry_run: false, understood: true })
+    await scan(); await autopublish.consider(); await autopublish.tick(); await autopublish.settled()
+    const st = await autopublish.statusNow()
+    expect(st.recent.map((e) => [e.shot, e.state, e.reason])).toEqual([['d-004', 'done', undefined]])
+    expect([...dest.keys()].some((k) => k.includes('d-004'))).toBe(true)
+  })
 })
 
 describe('the version of a volume review is its folder name, never an empty folder', () => {

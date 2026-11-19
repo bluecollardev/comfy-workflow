@@ -649,15 +649,18 @@ const overrides = (v: unknown): Record<string, boolean> => {
   if (typeof v !== 'object' || Array.isArray(v)) throw bad('edl_override maps a sequence stem to true')
   return Object.fromEntries(Object.entries(v as Record<string, unknown>).filter(([, x]) => x === true).map(([k]) => [k, true])) as Record<string, boolean>
 }
-export type ColourMode = 'ask' | 'format' | 'guess'
-const colourModeOf = (v: unknown, st: RenderSettings): ColourMode => { if (v === undefined || v === null || v === '') return st.colour?.mode ?? 'ask'; if (v !== 'ask' && v !== 'format' && v !== 'guess') throw bad('colour_mode is ask, format or guess'); return v }
+export type ColourMode = 'ask' | 'format' | 'guess' | 'known'
+const colourModeOf = (v: unknown, st: RenderSettings): ColourMode => { if (v === undefined || v === null || v === '') return st.colour?.mode ?? 'known'; if (v !== 'ask' && v !== 'format' && v !== 'guess' && v !== 'known') throw bad('colour_mode is ask, format, guess or known'); return v }
+export const KNOWN_LINEAR = 'the DPX header says linear and generated shots are P3-D65 (Kyle, 14 Nov): linear P3-D65 used as the project default; state the colour to override'
 export const COLOUR_HOW = 'Set render.colour.mode to format or guess, or pass colour_in'
 /** The colour of frames whose header says log, linear or printing density and that no person stated (ADR-048, 'the colour of linear and log frames is a setting'): ask = skip with a warning, format = the configured format, guess = from the header (and said so). */
 export function pickColour(mode: ColourMode, set: { format?: string; set_by?: string; set_at?: string }, transfer: number, review: boolean): { colour_in?: tunnelj.ColourIn; by?: string; guessed?: string; skip?: string } {
   const named = `${TRANSFER_NAMES[transfer] ?? transfer} (code ${transfer})`
   if (mode === 'format' && set.format) return { colour_in: set.format as tunnelj.ColourIn, by: 'configuration' }
+  // known (the default): what the project already tells us. A linear DPX is P3-D65 (Kyle, 14 Nov: generated shots are P3-D65), so a linear header is converted from linear P3-D65 and the sidecar says it was derived, not stated. Log and printing density are never derived: a person states those (colour.md).
+  if (mode === 'known' && transfer === 2) return { colour_in: 'linear-p3-d65', by: 'project default', guessed: KNOWN_LINEAR }
   if (mode === 'guess') return transfer === 2 ? { colour_in: 'linear-rec709', by: 'configuration (guess)', guessed: 'linear transfer: Rec.709 primaries assumed, shown with the Rec.709 transfer' } : transfer === 1 ? { colour_in: 'cineon', by: 'configuration (guess)', guessed: 'printing density: the Cineon reference of policy/colour.md (white 685, black 95, gamma 0.6) to display, Rec.709 primaries assumed' } : { colour_in: 'kodak-log', by: 'configuration (guess)', guessed: 'log: no view transform, tagged only (not a viewable picture)' }
-  return review ? { skip: `colour not stated (render.colour.mode ask): the DPX header says ${named}. ${COLOUR_HOW}.` } : {}
+  return review ? { skip: `colour not stated (render.colour.mode ${mode}): the DPX header says ${named}. ${COLOUR_HOW}.` } : {}
 }
 /** One sequence judged against the EDL (ADR-050): the Tunnel preset needs a start timecode, a chosen colour and (with the EDL) a matching frame count; otherwise only a quiet note. */
 const assessSeq = (s: Sequence, headerTc: string | null, tunnel: boolean, ov: Record<string, boolean>): tunnelj.Assessment =>
@@ -695,7 +698,7 @@ export async function plan(o: PlanRequest): Promise<PlanResult> {
     const asm = assessSeq(s, h?.timecode ?? null, tunnel, ov)
     let colourNote: { colour_in?: tunnelj.ColourIn; by?: string; guessed?: string; skip?: string } = {}
     if (!tunnel && !!h && NOT_DISPLAY.includes(h.transfer) && !s.colour_in) {   // a WARNING for everyone, never a failed job; the Tunnel preset stays strict
-      colourNote = pickColour(cmode, st.colour ?? { mode: 'ask' }, h.transfer, kind === 'review')
+      colourNote = pickColour(cmode, st.colour ?? { mode: 'known' }, h.transfer, kind === 'review')
       if (colourNote.skip) asm.flags.push({ code: 'colour-not-stated', level: 'warn', message: colourNote.skip })
       else if (colourNote.guessed) asm.flags.push({ code: 'colour-guessed', level: 'warn', message: `colour guessed from the DPX header: ${colourNote.guessed}` })
     }
@@ -1010,7 +1013,7 @@ export async function start(o: StartRequest): Promise<{ job_id: string }> {
   const view: JobView = { ...(tunnel ? { preset: 'tunnel' as const } : {}), trigger: o.trigger === 'auto-publish' ? 'auto-publish' : 'manual', job_id: id, kind, approved_by: (o.approved_by ?? '').trim(), codecs, notes: [slow(width), ...(codecs.includes('prores422hq') && kind === 'review' ? [PRORES_NOTE] : [])], pod_id: podId, pod_name: podId ? deps.podName(podId) : 'this PC', state: 'queued', started_at: iso(), finished_at: '', width, frames_done: 0,
     frames_total: seqs.reduce((a, s) => a + s.frames, 0) * (kind === 'review' ? codecs.length : 1), rate_fps: 0, current: '',
     sequences: seqs.map((s) => ({ where: chosen, dir: s.dir, name: s.name, clip_name: clipOf(s), state: 'waiting', frames_done: 0, frames_total: s.frames * (kind === 'review' ? codecs.length : 1), out: proxyRel(s, width), bytes: 0, error: '' })), pulled_files: 0, pulled_bytes: 0, error: '', summary: '' }
-  const job: Job = { colourMode: cmode, colourSet: st.colour ?? { mode: 'ask' }, pubIds: [], pubDirs: new Set(), pubErr: '', ...(tunnel ? { preset: 'tunnel' as const } : {}), ov, ...(pre ? { pre } : {}), clipMemo: new Map(), skipExisting: skipWanted, ...(o.publish ? { publish: { targets: [...o.publish.targets], ...(o.publish.message ? { message: o.publish.message } : {}), ...(o.publish.round ? { round: o.publish.round } : {}), ...(o.publish.clip_names ? { clip_names: o.publish.clip_names } : {}), edl_override: { ...ov, ...(o.publish.edl_override ?? {}) } } } : {}), versions: new Map(), view, seqs, kind, codecs, approvedBy: view.approved_by, allowPartial: !!o.allow_partial, pull: o.pull ?? st.pull, fps, auto: want === 'auto', abort: new AbortController(), started: deps.now(), done: Promise.resolve() }
+  const job: Job = { colourMode: cmode, colourSet: st.colour ?? { mode: 'known' }, pubIds: [], pubDirs: new Set(), pubErr: '', ...(tunnel ? { preset: 'tunnel' as const } : {}), ov, ...(pre ? { pre } : {}), clipMemo: new Map(), skipExisting: skipWanted, ...(o.publish ? { publish: { targets: [...o.publish.targets], ...(o.publish.message ? { message: o.publish.message } : {}), ...(o.publish.round ? { round: o.publish.round } : {}), ...(o.publish.clip_names ? { clip_names: o.publish.clip_names } : {}), edl_override: { ...ov, ...(o.publish.edl_override ?? {}) } } } : {}), versions: new Map(), view, seqs, kind, codecs, approvedBy: view.approved_by, allowPartial: !!o.allow_partial, pull: o.pull ?? st.pull, fps, auto: want === 'auto', abort: new AbortController(), started: deps.now(), done: Promise.resolve() }
   jobs.set(id, job)
   { // where it came from, and visible to the other processes while it runs (docs/ADR-050, 'MCP actions are shown in the Queue')
     const who = history.currentOrigin(), origin: jobsregistry.Origin = o.trigger === 'auto-publish' ? 'auto-publish' : who?.source === 'mcp' ? 'mcp' : 'window'
@@ -1113,20 +1116,21 @@ async function run(job: Job): Promise<void> {
   end(job)
 }
 
-/** ADR-050: after the sequences are rendered AND are on this PC, hand their files to publishing with the job's approver. A file that is only on the pod (pull off) is refused, never sent from here. */
+/** ADR-050: after a sequence is rendered, hand its files to publishing with the job's approver. Files on this PC go from here; a render that stayed on the pod (Sync off) is published from the VOLUME, streamed through this PC with no local copy (the same `{ where: 'volume' }` item the Publish window uses), so Sync is not needed to publish. */
 async function publishSeq(job: Job, sv: SeqView, notPulled: boolean): Promise<void> {
   const p = job.publish; if (!p) return
   const v = job.view, strip = (rel: string) => rel.replace(/^output\//, '')
   const note = (error: string) => { v.publish = { job_id: job.pubIds[0] ?? '', job_ids: [...job.pubIds], state: job.pubIds.length ? 'partial' : 'refused', error } }
   try {
-    if (notPulled || sv.state === 'rendered') { job.pubErr ||= 'Pull the renders to this PC first'; return note(job.pubErr) }   // rendered on the pod and not pulled: not here
-    if (!['pulled', 'done', 'skipped'].includes(sv.state)) return
-    const item = job.kind === 'review' ? strip(dirname(sv.out)) : strip(sv.out)
-    if (job.pubDirs.has(item)) return
-    job.pubDirs.add(item)
+    const onVolume = notPulled || sv.state === 'rendered'   // rendered on the pod and not pulled: it is on the volume only
+    if (!onVolume && !['pulled', 'done', 'skipped'].includes(sv.state)) return
+    const rel = job.kind === 'review' ? strip(dirname(sv.out)) : strip(sv.out)
+    if (job.pubDirs.has(rel)) return
+    job.pubDirs.add(rel)
+    const item = onVolume ? { where: 'volume' as const, path: rel } : rel
     const req = { items: [item], targets: p.targets, approved_by: job.approvedBy, ...(p.message ? { message: p.message } : {}), ...(p.round ? { round: p.round } : {}), ...(p.clip_names ? { clip_names: p.clip_names } : {}), ...(p.edl_override && Object.keys(p.edl_override).length ? { edl_override: p.edl_override } : {}), ...(job.seqs.find((q) => q.name === sv.name)?.start_timecode ? { start_timecodes: { [sv.name]: job.seqs.find((q) => q.name === sv.name)!.start_timecode! } } : {}) }
     const pl = await publish.plan(req)
-    if (pl.items.some((i) => i.skip === 'missing')) { job.pubErr ||= 'Pull the renders to this PC first'; return note(job.pubErr) }
+    if (pl.items.some((i) => i.skip === 'missing')) { job.pubErr ||= onVolume ? 'The render was not found on the volume' : 'Pull the renders to this PC first'; return note(job.pubErr) }
     const r = await publish.run({ ...req, trigger: 'render' })
     job.pubIds.push(r.job_id); v.publish = { job_id: job.pubIds[0], job_ids: [...job.pubIds], state: 'queued' }
   } catch (e) { job.pubErr ||= (e as Error).message; note((e as Error).message) }

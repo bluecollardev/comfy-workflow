@@ -214,6 +214,7 @@ Each tool calls the core function the window's IPC channel calls. `mcp/parity.mj
 | `panama_rounds` | `target?` | The delivery rounds in the bucket with what is staged: on this PC (target local) or on the network volume as last seen by a pod (target pod). |  |
 | `panama_stage` | `paths` (absolute folders, .zip files or files) | the new round (name, path, files, bytes, zips extracted) | What a desktop drop on Import Round(s) does: copies into a new staging folder, extracts zips, never overwrites, no spend. |  |
 | `panama_round_files` | `round`, `prefix?`, `limit?` | One round's files in the bucket as a folder tree (read-only), each marked when already on this PC. |  |
+| `panama_bucket_list` | `prefix?` | One level of the BH exchange bucket (what Network Volumes > Explore shows): folders and files directly under the prefix (`""` is the top, e.g. `rounds/`, `returns/BKK/`), each file with bytes and modified; cut at 2000 entries (`truncated`). | Read-only: only lists. No `..`, no leading slash. |
 | `panama_round_size` | `round` | Files and bytes in one round (a listing; a big round takes a few seconds) |  |
 | `panama_pod_plan` | `round` | What a pod download of a round would do before it does it: use a pod of yours or start a short-lived one, its card and price, the volume, the size, the ceiling in minutes |  |
 | `panama_pull` | `round`, `target?`, `approved_by?` | Download a round: to this PC (aws s3 sync, resumable, never deletes) or onto the network volume by a pod. | spend; `approved_by` only when `agent_named_yes_required` is on |

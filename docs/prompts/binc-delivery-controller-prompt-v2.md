@@ -58,7 +58,7 @@ Log every stage entry, exit check (pass or fail, with the evidence) and hand-ove
 
 ## 2. Preflight (do these first, report the results)
 
-1. Manager version. Binc's machine reports 1.5.3. Needed: **1.7.0** (Publishing, Auto-publish, the V11 EDL checks, the colour setting, Generate Outputs, failure details over MCP). Binc is on Linux; build with `./start.sh package linux`. If it is still 1.5.3, state which parts are unavailable (publishing, Slack posting, Queue Generations and Publishing tabs, colour setting, Auto-publish, EDL checks) and use the 1.5.3 subset only: Import Round, Queue, `run_pod_workflows`, `render_sequences`, sync and pull. Do not simulate the missing parts with your own scripts.
+1. Manager version. Binc's machine reports 1.5.3. Needed: **1.6.3 or later** (the release that first has Publishing, Auto-publish, the V11 EDL checks, the colour setting, Generate Outputs, failure details over MCP). Binc is on Linux; build with `./start.sh package linux`. If it is still 1.5.3, state which parts are unavailable (publishing, Slack posting, Queue Generations and Publishing tabs, colour setting, Auto-publish, EDL checks) and use the 1.5.3 subset only: Import Round, Queue, `run_pod_workflows`, `render_sequences`, sync and pull. Do not simulate the missing parts with your own scripts.
 2. The Manager app is running (background work lives inside it; a stdio MCP process keeps its jobs in its own memory). Check the MCP answers: `list_pods`, `queue_list`.
 3. Pods: use only pods attached to volume `a3upg9ey48` (EU-RO-1). A pod on another volume, or whose volume you cannot confirm, is not used. Never create, resume, delete or recreate a pod without Binc's named yes and the cap check.
 4. **Cards.** Run graphs on one of these cards, or on any other card with **48 GB to 96 GB** of VRAM: RTX 6000, RTX 6000 SXM, RTX 6000 PCI, RTX 6000 Ada, RTX A6000, L40, A40, PRO 6000 MIG 48GB, RTX PRO 6000 WK, H100 PCIe, H100 NVL. Check a card's name and VRAM with `list_gpus` (and `list_pods` for a running pod's card) before using it; the window is 48 GB to 96 GB inclusive. A pod with less VRAM (for example RTX 4000 Ada 20 GB or RTX PRO 4500 32 GB) is not used for graph runs, and a card above 96 GB is not used unless Binc says so. If none of the listed cards is available in the volume's datacenter (EU-RO-1), report exactly which were checked and stop: do not substitute a card outside the window and do not move the work to another datacenter or volume. The spend cap still applies to every card.
@@ -108,7 +108,7 @@ Return layout, in the exchange bucket `returns/BKK/<round>/`:
 
 Never deliver: anything not in the V11 EDL (archival-102 main-B), or a sequence whose frame count differs from the EDL cut unless Binc overrides it for that run. Carter-reframe: deliver v02 for both takes. cgi-090 shot 2 waits on Jon. Tunnel cannot pull from S3: Brynley pushes to Signiant after final QC. That step is not yours.
 
-With Manager 1.7.0 this is done by Auto-publish (generate the review, publish to the BH bucket, post to Slack). Keep **Dry run** on until Binc has seen the dry-run summary; turning it off is Binc's act.
+With Manager 1.6.3 or later this is done by Auto-publish (generate the review, publish to the BH bucket, post to Slack). Keep **Dry run** on until Binc has seen the dry-run summary; turning it off is Binc's act.
 
 ## 7. Review and release
 

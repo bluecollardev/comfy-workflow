@@ -3,10 +3,12 @@ import { test, expect, podCard } from './fixtures'
 
 // The Outputs viewer's video player (docs/ADR-037 amendment 2026-11-17): the shared transport bar (Play/Pause on Space, frame step, speed, Loop, timecode) and the message for a codec the engine cannot play.
 const WEBM = fs.readFileSync(new URL('./media/tiny.webm', import.meta.url))   // 2 s, 64x48, 24 fps VP8, made with ffmpeg testsrc
+let delay = 0
 async function open(page, api, name) {
   api.state.history.runs['pod-aaaaaaaa'].unshift({ prompt_id: 'ffffffff-1111-2222', workflow: 'rounds/r1/v/clip.json', status: 'success', started_at: '2026-11-17T10:00:00Z', duration_s: 3, cost_estimate: 0,
     outputs: [{ filename: 'clip.webm', subfolder: 'v', type: 'output' }, { filename: 'broken.mov', subfolder: 'v', type: 'output' }] })
-  await page.context().route('**/view?*', (r) => {   // with Range support, as the pod's ComfyUI has
+  await page.context().route('**/view?*', async (r) => {   // with Range support, as the pod's ComfyUI has; `delay` makes the pod slow to answer
+    if (delay) await new Promise((x) => setTimeout(x, delay))
     const f = decodeURIComponent(/filename=([^&]+)/.exec(r.request().url())[1]), body = f === 'clip.webm' ? WEBM : Buffer.from('this is not a movie, ProRes or otherwise')
     const type = f === 'clip.webm' ? 'video/webm' : 'video/quicktime', range = /bytes=(\d+)-(\d*)/.exec(r.request().headers().range || '')
     const h = { 'access-control-allow-origin': '*', 'accept-ranges': 'bytes' }
@@ -62,4 +64,20 @@ test('video viewer: a file the engine cannot decode shows the codec message with
   await expect(v.getByTestId('output-viewer-codec')).toContainText('DJV')
   await expect(v.getByTestId('output-viewer-download')).toBeVisible()
   await expect(v.getByTestId('output-viewer-tp-play')).toBeDisabled()
+})
+
+test('video viewer: says "Loading video…" while the video is on its way, then shows the player', async ({ page, api }) => {
+  delay = 1500
+  try {
+    const v = await open(page, api, 'clip.webm')
+    await expect(v.getByTestId('output-viewer-loading')).toHaveText('Loading video…')
+    await expect(v.getByTestId('output-viewer-loading')).toBeHidden({ timeout: 10000 })
+    await expect.poll(async () => (await state(v)).ready).toBeGreaterThanOrEqual(2)
+  } finally { delay = 0 }
+})
+
+test('video viewer: a codec the engine cannot play replaces "Loading video…" with its own message', async ({ page, api }) => {
+  const v = await open(page, api, 'broken.mov')
+  await expect(v.getByTestId('output-viewer-codec')).toBeVisible({ timeout: 10000 })
+  await expect(v.getByTestId('output-viewer-loading')).toHaveCount(0)
 })

@@ -22,7 +22,7 @@ import { appReader, sharedThumbs, thumbKey } from '../utils/thumbs'
 import { previewBus } from '../utils/thumbsBus'
 import { usePreviewsStore } from '../stores/previews'
 
-const props = defineProps({ tile: { type: Object, required: true }, base: { type: String, default: '' }, scope: { type: String, default: '' }, volumeName: { type: String, default: '' }, offline: { type: Boolean, default: false } })
+const props = defineProps({ tile: { type: Object, required: true }, base: { type: String, default: '' }, scope: { type: String, default: '' }, volumeName: { type: String, default: '' }, offline: { type: Boolean, default: false }, /** load as soon as it is on screen: no cap, no click (the Generate rows) */ auto: { type: Boolean, default: false } })
 const emit = defineEmits(['state'])
 const root = ref(null)
 const previews = usePreviewsStore()
@@ -53,7 +53,7 @@ async function load(manual = false) {
 }
 function seen(v) {
   visible = v
-  if (v) { if (state.value === 'idle' || state.value === 'nobase') load(wanted || previewBus.loadAll) }
+  if (v) { if (state.value === 'idle' || state.value === 'nobase') load(wanted || previewBus.loadAll || props.auto) }
   else if (state.value === 'loading' && !wanted && !previewBus.loadAll) { sharedThumbs().abort(key.value); setState('idle') }   // only an automatic one is dropped when it scrolls away
 }
 onMounted(() => {
@@ -64,7 +64,7 @@ onMounted(() => {
   io.observe(root.value.parentElement || root.value)
 })
 onBeforeUnmount(() => { io?.disconnect(); if (state.value === 'loading') sharedThumbs().abort(key.value); if (state.value === 'capped') previewBus.capped--; if (previewBus.counts[state.value] > 0) previewBus.counts[state.value]-- })
-watch(usable, (u) => { if (u && visible && ['idle', 'nobase'].includes(state.value)) load(false) })
+watch(usable, (u) => { if (u && visible && ['idle', 'nobase'].includes(state.value)) load(props.auto) })
 watch(() => previewBus.tick, () => { if (state.value === 'capped') load(true) })
 // The preview batch is the app's (stores/previews.js), not the window's: what it found for this sequence is picked up here, now or when the tile appears later (a finished preview is in the cache: no download).
 function fromBatch() {

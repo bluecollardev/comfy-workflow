@@ -18,7 +18,7 @@ async function open(page, api, { settings, mountsRender, outputs, noPlanSettings
   const m = page.getByTestId('pod-outputs-modal'); await expect(m.locator('[data-testid="outputs-tile"][data-kind="dpx"]')).toHaveCount(1)
   return m
 }
-const openGen = async (page) => { await page.getByTestId('pod-outputs-previews').click(); const g = page.getByTestId('pod-outputs-previews-modal'); await expect(g.getByTestId('pod-outputs-render')).toBeVisible(); return g }
+const openGen = async (page) => { await page.getByTestId('pod-outputs-previews').click(); await page.getByTestId('pod-outputs-previews-modal').getByRole('tab', { name: 'Render Sequences' }).click(); const g = page.getByTestId('pod-outputs-previews-modal'); await expect(g.getByTestId('pod-outputs-render')).toBeVisible(); return g }
 
 test.describe('the Generate window starts from the configuration', () => {
   test('Sync, S3 and Slack are unticked unless the configuration says so; Skip existing starts from skip_existing (previews and render share it); older keys fall back', async ({ page, api }) => {
@@ -26,14 +26,21 @@ test.describe('the Generate window starts from the configuration', () => {
     const g = await openGen(page)
     await expect(g.getByTestId('pod-outputs-render-pull')).not.toBeChecked(); await expect(g.getByTestId('pod-outputs-render-publish-s3')).not.toBeChecked(); await expect(g.getByTestId('pod-outputs-render-publish-slack')).not.toBeChecked()
     await expect(g.getByTestId('pod-outputs-previews-skip-existing')).not.toBeChecked(); await expect(g.getByTestId('pod-outputs-render-skip-existing')).not.toBeChecked()
-    await expect(g.getByTestId('pod-outputs-render-publish-needsync')).toBeVisible()   // publishing waits for Sync
+    await expect(g.getByTestId('pod-outputs-render-publish-needsync')).toHaveCount(0)   // publishing no longer waits for Sync: a render left on the pod is published from the volume
+  })
+  test('the shipped defaults: Review video, Publish to S3 ticked, Sync the renders to this PC unticked', async ({ page, api }) => {
+    await open(page, api, { settings: { kind: 'review', pull: false, publish: { s3: true, slack: false }, codecs: ['prores422hq'], skip_existing: true } })
+    const g = await openGen(page)
+    await expect(g.getByTestId('pod-outputs-render-kind-review')).toBeChecked(); await expect(g.getByTestId('pod-outputs-render-kind-proxy')).not.toBeChecked()
+    await expect(g.getByTestId('pod-outputs-render-publish-s3')).toBeChecked(); await expect(g.getByTestId('pod-outputs-render-pull')).not.toBeChecked(); await expect(g.getByTestId('pod-outputs-render-publish-slack')).not.toBeChecked()
   })
   test('skip_existing true starts ticked in both; per-run changes are never saved (no PUT anywhere)', async ({ page, api }) => {
     await open(page, api, { settings: { pull: false, publish: { s3: false, slack: false }, skip_existing: true } })
     const g = await openGen(page)
-    await expect(g.getByTestId('pod-outputs-previews-skip-existing')).toBeChecked(); await expect(g.getByTestId('pod-outputs-render-skip-existing')).toBeChecked()
-    await g.getByTestId('pod-outputs-render-pull').check(); await g.getByTestId('pod-outputs-render-publish-s3').check(); await g.getByTestId('pod-outputs-previews-skip-existing').uncheck()
-    await expect(g.getByTestId('pod-outputs-render-skip-existing')).not.toBeChecked()
+    await expect(g.getByTestId('pod-outputs-render-skip-existing')).toBeChecked(); await g.getByRole('tab', { name: 'Previews' }).click(); await expect(g.getByTestId('pod-outputs-previews-skip-existing')).toBeChecked()
+    await g.getByRole('tab', { name: 'Render Sequences' }).click(); await g.getByTestId('pod-outputs-render-pull').check(); await g.getByTestId('pod-outputs-render-publish-s3').check()
+    await g.getByRole('tab', { name: 'Previews' }).click(); await g.getByTestId('pod-outputs-previews-skip-existing').uncheck()
+    await g.getByRole('tab', { name: 'Render Sequences' }).click(); await expect(g.getByTestId('pod-outputs-render-skip-existing')).not.toBeChecked()
     expect(api.calls.filter((c) => c.method === 'PUT')).toHaveLength(0)
     expect(calls(api, 'PUT', '/mounts')).toHaveLength(0)
   })

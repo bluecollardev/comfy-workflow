@@ -290,6 +290,7 @@ const TABLE = {
     rounds: (c) => c.panama.roundsAsync(),   // not the sync ones: they would hold the main process, and so the window, while aws lists the bucket
     size: (c, round) => c.panama.sizeAsync(round),
     files: (c, round) => c.panama.filesAsync(round),
+    browse: (c, prefix) => c.panama.browse(prefix),   // one level of the bucket, read-only (Network Volumes > Explore)
     stageDrop: (c, paths) => c.panama.stageDrop(paths),
     pull: (c, round) => c.panama.pull(round),
     job: (c, id) => c.panama.job(id),

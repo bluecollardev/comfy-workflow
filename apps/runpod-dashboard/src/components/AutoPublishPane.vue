@@ -28,7 +28,8 @@
 
  <BButton v-if="ap.hasHolds && ['waiting', 'capped'].includes(e.state)" size="sm" variant="outline-light" data-testid="autopublish-hold" @click="hold(e)">{{ $t('autopublish.pane.hold') }}</BButton>
 
-        <BButton v-if="['waiting', 'capped', 'failed'].includes(e.state)" size="sm" variant="outline-light" data-testid="autopublish-publish-now" @click="publishNow(e)">{{ $t('autopublish.pane.publishNow') }}</BButton>
+        <BButton v-if="['uploading', 'posting'].includes(e.state)" size="sm" variant="outline-light" disabled data-testid="autopublish-publishing">{{ $t('autopublish.pane.publishing') }}</BButton>
+        <BButton v-else-if="['waiting', 'capped', 'failed'].includes(e.state)" size="sm" variant="outline-light" :disabled="publishing" :title="publishing ? $t('autopublish.pane.publishBusy') : undefined" data-testid="autopublish-publish-now" @click="publishNow(e)">{{ $t('autopublish.pane.publishNow') }}</BButton>
       </span>
       <div v-if="e.dry_run_plan && dryOpen.has(e.id)" class="w-100 ms-3 text-body-secondary" data-testid="autopublish-dry-plan">
         <div class="font-monospace" data-testid="autopublish-dry-dest">s3://{{ e.dry_run_plan.bucket }}/{{ String(e.dry_run_plan.prefix || '').replace(/^\/+/, '').replace(/\/?$/, '/') }}{{ e.dry_run_plan.round ? `${e.dry_run_plan.round}/` : '' }}</div>
@@ -54,7 +55,7 @@
 
 <script setup>
 /** AutoPublishPane: the Queue's Auto-publish section: what waits (with its live countdown), what would upload in a dry run, what is capped or failed, and what was sent; Cancel and Publish now (which asks for a name). */
-import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useAutopublishStore } from '../stores/autopublish'
 import { useNamePromptStore } from '../stores/nameprompt'
 import { useUiStore } from '../stores/ui'
@@ -67,6 +68,8 @@ import AutoPublishDryRun from './AutoPublishDryRun.vue'
 import { entryLine, secondsUntil, countdownText, targetsText, todayText, versionTag } from '../utils/autopublish'
 
 const ap = useAutopublishStore(), prompt = useNamePromptStore(), ui = useUiStore()
+// One upload at a time: while any entry is uploading or posting, Publish now is off everywhere and the running row says Publishing…
+const publishing = computed(() => ap.pending.some((x) => ['uploading', 'posting'].includes(x.state)))
 const now = ref(Date.now()), actionError = ref({}), root = ref(null)
 const tick = setInterval(() => { now.value = Date.now() }, 1000)   // the countdown moves each second
 onBeforeUnmount(() => { clearInterval(tick); ap.setFast(false) })

@@ -113,10 +113,14 @@ test.describe('Settings > Publishing > Auto-publish', () => {
     expect(calls(api, 'setSettings').at(-1).body).toEqual({ enabled: true, approved_by: 'B', understood: true })
     await expect(d.getByTestId('autopublish-state')).toHaveText('Auto-publish: DRY RUN')
   })
-  test('Turn off now calls off at once with no confirm, cancels what waits, and the block and chip say OFF', async ({ page, api }) => {
+  test('Turn Off calls off at once with no confirm, cancels what waits, says what it stops, and the block and chip say OFF', async ({ page, api }) => {
     on(api); api.state.autopublish = { pending: [entry()] }
     const d = await openBlock(page)
     await expect(page.getByTestId('autopublish-chip')).toBeVisible()
+    await expect(d.getByTestId('autopublish-off')).toHaveText('Turn Off'); await expect(d.getByTestId('autopublish-off-note')).toContainText('generating reviews, S3 uploads and Slack posts')   // says what it applies to
+    { const b = await d.getByTestId('autopublish-off').boundingBox(), n = await d.getByTestId('autopublish-off-note').boundingBox(); expect(n.x).toBeGreaterThan(b.x + b.width - 1); expect(n.y).toBeLessThan(b.y + b.height) }   // the note sits on the SAME ROW as the button, to its right
+    await expect(d.getByTestId('autopublish-existing-slot')).toHaveCount(0)   // no Generate Outputs button in this section
+    await expect(d.getByTestId('autopublish-ready')).toHaveCount(0)   // the state badge in the header is the one badge
     await d.getByTestId('autopublish-off').click()
     await expect.poll(() => calls(api, 'off').length).toBe(1)
     await expect(page.getByTestId('confirm-modal')).toBeHidden()
@@ -274,6 +278,17 @@ test.describe('the Queue: Auto-publish', () => {
     await expect(q.locator('[data-testid="autopublish-recent"][data-id="ap-d"] [data-testid="autopublish-recent-state"]')).toContainText('uploaded')
     await expect(q.locator('[data-testid="autopublish-recent"][data-id="ap-x"] [data-testid="autopublish-recent-state"]')).toHaveText('cancelled')
     await expect(q.getByTestId('autopublish-pane-mode')).toHaveText('dry run'); await expect(q.getByTestId('autopublish-pane-today')).toHaveText('Today: 0 of 5')
+  })
+  test('while an upload runs, its row says Publishing… (disabled) and every Publish Now is disabled; with none running they are enabled', async ({ page, api }) => {
+    on(api); api.state.autopublish = { pending: [entry(), entry({ id: 'ap-f', shot: 'cgi-044', state: 'failed' }), entry({ id: 'ap-u', shot: 'archival-090', state: 'uploading' })] }
+    await page.goto('/')
+    const q = await openQueue(page), row = (id) => q.locator(`[data-testid="autopublish-row"][data-id="${id}"]`)
+    const running = row('ap-u').getByTestId('autopublish-publishing')
+    await expect(running).toHaveText('Publishing…'); await expect(running).toBeDisabled()
+    await expect(row('ap-u').getByTestId('autopublish-publish-now')).toHaveCount(0)
+    for (const id of ['ap-1', 'ap-f']) { const b = row(id).getByTestId('autopublish-publish-now'); await expect(b).toHaveText('Publish Now'); await expect(b).toBeDisabled() }
+    api.state.autopublish = { pending: [entry(), entry({ id: 'ap-f', shot: 'cgi-044', state: 'failed' })] }
+    for (const id of ['ap-1', 'ap-f']) await expect(row(id).getByTestId('autopublish-publish-now')).toBeEnabled({ timeout: 8000 })
   })
   test('Cancel removes the entry (request body {id}); Publish now asks for a name and sends {id, approved_by}', async ({ page, api }) => {
     on(api); api.state.autopublish = { pending: [entry(), entry({ id: 'ap-2', shot: 'cgi-042' })] }

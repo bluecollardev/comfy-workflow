@@ -70,9 +70,23 @@
         </div>
       </div>
       <div v-if="!store.loading && !store.volumes.length" class="list-group-item text-body-secondary" data-testid="volumes-empty">{{ $t('volumes.none') }}</div>
+      <div v-if="bh" class="list-group-item" data-testid="volume-bh">   <!-- the BH exchange bucket: not a RunPod volume, read-only -->
+        <div class="d-flex align-items-start gap-3">
+          <i class="fa-solid fa-bucket fs-5 text-body-secondary mt-1"></i>
+          <div class="flex-grow-1 lh-sm overflow-hidden">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <span class="fw-semibold" data-testid="volume-bh-name">{{ $t('volumes.bhTitle') }}</span>
+              <BBadge :variant="bh.configured ? 'success' : 'warning'" data-testid="volume-bh-keys">{{ bh.configured ? $t('volumes.bhKeysSet', { via: bh.via }) : $t('volumes.bhKeysMissing', { profile: bh.profile }) }}</BBadge>
+            </div>
+            <small class="text-body-secondary d-block" data-testid="volume-bh-facts">{{ $t('volumes.bhFacts', { bucket: bh.bucket, region: bh.region, dest: 'returns/BKK/' }) }}</small>
+          </div>
+          <BButton size="sm" variant="outline-light" class="text-nowrap flex-shrink-0" :disabled="!bh.configured" data-testid="volume-bh-explore" @click="exploring = true"><i class="fa-solid fa-folder-tree me-1"></i>{{ $t('volumes.bhExplore') }}</BButton>
+        </div>
+      </div>
     </div>
 
   </BModal>
+  <BucketExplorerModal :open="exploring" :bucket="bh?.bucket || ''" @close="exploring = false" />
   <VolumeFilesModal :volume="browsing" @close="browsing = null" />
   <CloneVolumeModal :volume="cloning" @close="cloning = null" />
   <EraseVolumeModal :volume="erasing" @close="erasing = null" @erased="store.load()" />
@@ -86,6 +100,8 @@
  */
 import { computed, reactive, ref } from 'vue'
 import VolumeFilesModal from './VolumeFilesModal.vue'
+import BucketExplorerModal from './BucketExplorerModal.vue'
+import { panamaAPI } from '../api/panama'
 import EraseVolumeModal from './EraseVolumeModal.vue'
 import CloneVolumeModal from './CloneVolumeModal.vue'
 import { useUiStore } from '../stores/ui'
@@ -102,11 +118,13 @@ const draft = reactive({ name: '', size_gb: 100, datacenter: '' })
 const resizing = ref(null)
 const browsing = ref(null), erasing = ref(null), cloning = ref(null)   // the volume whose files are open, or whose Erase is
 const resizeTo = ref(0)
+const bh = ref(null), exploring = ref(false)   // the BH exchange bucket's status (keys set or not), and whether its explorer is open
 const dcList = ref([])
 const dcOptions = computed(() => volumeDatacenterOptions(dcList.value, { value: '', text: t('volumes.pickDatacenter') }))
 
 async function open() {
   store.load()
+  panamaAPI.status().then((s) => { bh.value = s }).catch(() => { bh.value = null })   // no entry when the status cannot be read
   try { dcList.value = (await podsAPI.datacenters()).datacenters || [] } catch { /* the menu stays empty; the id can still be typed in Default Configuration */ }
   if (ui.volumeDc) { draft.datacenter = ui.volumeDc; ui.volumeDc = '' }   // chosen on the pod form
 }

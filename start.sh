@@ -12,7 +12,7 @@
 #   ./start.sh chunk plan --first N --last N [--chunk N] [--project P --shot S] | ram --pod-id ID   frame ranges, queue job files, a pod's RAM (docs/CHUNKING.md)
 #   ./start.sh chunk-live   chunked runs and the RAM guard against RunPod: one real pod, tiny frames (spends)
 #   ./start.sh config export [file] [--no-secrets] | import <file> [--sections a,b] [--dry-run] | undo   the Default Configuration as a JSON file, keys and tokens included unless --no-secrets (docs/ADR-023)
-#   ./start.sh mcp            the MCP server over stdio (what Claude Code launches)
+#   ./start.sh mcp            the MCP server over stdio (what Claude Code launches); `mcp --http <port>` serves it on loopback instead, with no Electron app
 #   ./start.sh e2e | e2e-app | e2e-live | core-test | smoke   browser suite; the app in no-spend mode; the live RunPod proof (spends); core suite; headless boot
 #   ./start.sh comfy-image [--remote --wait] [--push <ref>]   build the ComfyUI server image (on GitHub Actions with --remote)
 #   ./start.sh package [mac|win|linux|all] [--comfy <variant>] [--image <ref>]  build the app installers for a comfy-app variant
@@ -40,6 +40,18 @@ ensure_app() {
     [ -d node_modules ] || npm install --no-fund --no-audit
     [ -x node_modules/electron/dist/Electron.app/Contents/MacOS/Electron ] || [ -x node_modules/electron/dist/electron ] || node node_modules/electron/install.js
     [ -f libs/core/dist/index.js ] || [ -n "$(find libs/core/src -newer libs/core/dist/index.js 2>/dev/null | head -1)" ] && { echo "building the core"; npm run --silent core:build; } || true )
+}
+
+# A Mac .app whose signature is not valid on disk is killed by macOS at launch ("code has no resources but signature indicates they must be present"). Refuse to ship one.
+verify_mac_signature() {
+  local root="$1" app bad=0 n=0
+  while IFS= read -r app; do
+    n=$((n+1))
+    if codesign --verify --deep --strict "$app" 2>/tmp/codesign-verify.err; then echo "signature ok: $app" >&2
+    else echo "SIGNATURE INVALID: $app: $(tail -1 /tmp/codesign-verify.err)" >&2; bad=1; fi
+  done < <(find "$root" -maxdepth 3 -name "*.app" -type d 2>/dev/null)
+  [ "$n" -gt 0 ] || { echo "no .app found under $root to verify" >&2; return 1; }
+  [ "$bad" -eq 0 ] || { echo "the Mac build is not shippable: macOS would kill it at launch" >&2; return 1; }
 }
 
 ensure_ui() {  # the built page the desktop target loads
@@ -100,8 +112,9 @@ case "${1:-help}" in
     cd "$APP"; exec node cli/index.mjs config "$@" ;;
   mcp)
     # stdout is the MCP transport: everything the setup prints goes to stderr
-    load_env; ensure_app >&2
-    cd "$APP"; exec node mcp/server.mjs ;;
+    shift; load_env; ensure_app >&2
+    # `./start.sh mcp --http 8765` (or MCP_HTTP_PORT=8765) serves the same tools on http://127.0.0.1:8765/mcp, for a runner that cannot launch the Electron app
+    cd "$APP"; exec node mcp/server.mjs "$@" ;;
   e2e)
     # the browser suite against hot reload (Playwright starts the dev server itself; the API is faked)
     shift; ensure_app; cd "$APP"
@@ -146,16 +159,34 @@ case "${1:-help}" in
     # For a build other Macs open without a warning, sign with a Developer ID Application certificate:
     #   CSC_IDENTITY_AUTO_DISCOVERY=true ./start.sh package mac   (or CSC_NAME="Developer ID Application: ...")
     export CSC_IDENTITY_AUTO_DISCOVERY="${CSC_IDENTITY_AUTO_DISCOVERY:-false}"
+    # A Mac build other people can open without a Gatekeeper block (macOS 15 and later refuse an unsigned app, right-click Open no longer works) must be SIGNED with a
+    # Developer ID Application certificate and NOTARIZED by Apple. When the credentials are in the environment this does both; without them the build is unsigned and says so.
+    #   CSC_NAME="Developer ID Application: Name (TEAMID)"  (or CSC_LINK=<.p12 path/URL> and CSC_KEY_PASSWORD)
+    #   APPLE_ID=<apple id>  APPLE_APP_SPECIFIC_PASSWORD=<app-specific password>  APPLE_TEAM_ID=<team id>
+    sign_args=""
+    if [ "$target" = mac ] || [ "$target" = all ]; then
+      if { [ -n "${CSC_NAME:-}" ] || [ -n "${CSC_LINK:-}" ]; } && [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
+        export CSC_IDENTITY_AUTO_DISCOVERY=true
+        sign_args="--config.mac.hardenedRuntime=true --config.mac.gatekeeperAssess=false --config.mac.entitlements=build/entitlements.mac.plist --config.mac.entitlementsInherit=build/entitlements.mac.plist --config.mac.notarize=true"
+        echo "mac: SIGNING with Developer ID and NOTARIZING with Apple: the DMG opens on any Mac without a Gatekeeper warning" >&2
+      else
+        # Never ship the half-signed bundle electron-builder leaves with signing off (Electron's linker signature on an unsealed .app): macOS kills it at launch with
+        # "code has no resources but signature indicates they must be present" and no Open Anyway can help. An AD-HOC signature seals the whole bundle, so it launches
+        # once the user approves it (Terminal install command, or System Settings > Open Anyway). `./start.sh package` verifies this after the build.
+        sign_args="--config.mac.identity=-"
+        echo "mac: AD-HOC signed build (valid, but not Developer ID): macOS 15+ still asks users to approve it once (the download page says how). To sign and notarize set CSC_NAME (or CSC_LINK + CSC_KEY_PASSWORD), APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID (needs an Apple Developer ID certificate)." >&2
+      fi
+    fi
     mkdir -p build
     printf '{\n  "comfy_variant": "%s",\n  "comfy_image": "%s",\n  "shotpipe_sets": "shared/nodes/sets.json",\n  "built_at": "%s"\n}\n' \
       "$variant" "${image:-comfy-app:$variant}" "$(date -u +%Y-%m-%dT%H:%MZ)" > build/build-info.json
     echo "building the app for comfy-app:$variant (default pod image ${image:-comfy-app:$variant}) -> dist-electron/$variant"
     out="--config.directories.output=dist-electron/$variant"
     case "$target" in
-      mac)   npm run build && exec npx electron-builder --mac "$out" ;;
+      mac)   npm run build && npx electron-builder --mac $sign_args "$out" && verify_mac_signature "dist-electron/$variant" ;;
       win)   npm run build && exec npx electron-builder --win "$out" ;;
       linux) npm run build && exec npx electron-builder --linux "$out" ;;
-      all)   npm run build && exec npx electron-builder --mac --win --linux "$out" ;;
+      all)   npm run build && exec npx electron-builder --mac --win --linux $sign_args "$out" ;;
     esac ;;
   release)
     # A release needs a passing gate (./start.sh test) recorded for exactly this code (scripts/gate.mjs, docs/ADR-005). The only way round it is

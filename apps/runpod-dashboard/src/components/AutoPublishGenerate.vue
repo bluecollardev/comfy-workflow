@@ -6,7 +6,6 @@
     <div v-if="g.pod && g.pod.est_cost_today_usd != null" class="text-body-secondary" data-testid="autopublish-generate-spend">{{ $t('autopublish.gen.spendToday', { usd: Number(g.pod.est_cost_today_usd).toFixed(2) }) }}</div>
     <div v-if="status.nothing_selected" class="text-warning mt-1" data-testid="autopublish-nothing-selected">{{ $t('autopublish.pipe.nothingSelected') }}</div>
     <div v-if="g.pending_existing > 0" class="text-body-secondary mt-1" data-testid="autopublish-existing-pending">{{ $t('autopublish.existing.pending', { n: g.pending_existing }) }}</div>
-    <div class="mt-1"><GenerateExisting /></div>
     <div v-if="waiting.length" class="mt-2" data-testid="autopublish-generate-waiting" :data-open="waitOpen ? 'true' : 'false'">
       <div class="d-flex align-items-center gap-2"><span class="fw-semibold" data-testid="autopublish-generate-waiting-title">{{ $t('autopublish.gen.waitingTitle', { n: waiting.length }) }}</span>
         <BButton variant="link" size="sm" class="p-0 ms-auto" data-testid="autopublish-generate-waiting-toggle" :aria-expanded="waitOpen" @click="waitOpen = !waitOpen">{{ waitOpen ? $t('autopublish.list.collapse') : $t('autopublish.list.expand') }}</BButton></div>
@@ -30,7 +29,6 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { t } from '../i18n'
 import { agoText } from '../utils/autopublish'
-import GenerateExisting from './GenerateExisting.vue'
 
 const props = defineProps({ status: { type: Object, default: null } })
 const g = computed(() => (props.status?.generate?.enabled ? props.status.generate : null))
