@@ -284,7 +284,9 @@ test('ffmpeg missing: auto with the pod ok shows only a quiet note; this PC only
   await expect(p.getByTestId('pod-outputs-render-no-ffmpeg-note')).toContainText('brew install ffmpeg')
   await expect(p.getByTestId('pod-outputs-render-no-ffmpeg')).toHaveCount(0)
   await expect(p.getByTestId('pod-outputs-render-start')).toBeEnabled()
+  const planned0 = api.state.renders.planned.length
   await p.getByTestId('pod-outputs-render-where').selectOption('local')
+  await expect.poll(() => api.state.renders.planned.length).toBeGreaterThan(planned0)   // the window re-plans (debounced) after a change: let that land before anything else is clicked
   const alert = p.getByTestId('pod-outputs-render-no-ffmpeg')
   await expect(alert).toContainText('ffmpeg is missing on this PC'); await expect(alert).toContainText('Homebrew')
   await expect(p.getByTestId('pod-outputs-render-brew-command')).toHaveText('brew install ffmpeg')
@@ -293,8 +295,10 @@ test('ffmpeg missing: auto with the pod ok shows only a quiet note; this PC only
   await expect(p.getByTestId('pod-outputs-render-copy-brew')).toHaveText('Copied')
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('brew install ffmpeg')
   const before = api.state.renders.planned.length
-  api.state.renders.adapters.local = { ok: true }   // after brew install
-  await p.getByTestId('pod-outputs-render-check-again').click()
+  // "after brew install": ffmpeg becomes available only for the re-plan that Check again asks for (flipping it earlier lets any background re-plan clear the alert before the click lands)
+  let installed = false; await page.route('**/renders/plan', async (route) => { if (installed) api.state.renders.adapters.local = { ok: true }; await route.fallback() })
+  const again = p.getByTestId('pod-outputs-render-check-again'); await expect(again).toBeEnabled()
+  installed = true; await again.click()
   await expect(alert).toHaveCount(0)
   expect(api.state.renders.planned.length).toBeGreaterThan(before)
   await expect(p.getByTestId('pod-outputs-render-start')).toBeEnabled()
