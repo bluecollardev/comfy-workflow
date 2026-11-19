@@ -70,6 +70,8 @@ test('jobPercent, currentSequence, jobFor', () => {
 test('review helpers: shot from the name, versions, folder, the latest deliverable, the playable mp4', () => {
   assert.equal(shotOfName(NAME), 'archival-085'); assert.equal(shotOfName('cgi-042b_x'), 'cgi-042b'); assert.equal(shotOfName('proxy'), '')
   assert.equal(versionName(3), 'v003'); assert.equal(reviewFolder('archival-085', 12), 'output/deliver/archival-085/v012/')
+  for (const v of ['v001', 'V001', 'v1', '1', 1]) assert.equal(versionName(v), 'v001')   // a value that already has its v never becomes 'vv001'
+  assert.equal(reviewFolder('archival-077', 'v001'), 'output/deliver/archival-077/v001/')
   const dels = [{ shot: 'archival-085', version: 1, exists_local: true }, { shot: 'ARCHIVAL-085', version: 3, exists_remote: true }, { shot: 'archival-085', version: 4 }, { shot: 'other-1', version: 9, exists_local: true }]
   assert.equal(latestReview(dels, { name: NAME }).version, 3); assert.equal(latestReview(dels, { name: 'zzz' }), null); assert.equal(latestReview([], { name: NAME }), null)
   const d = { file: 'output/deliver/s/v001/s_review_mono_v001.mp4', local_url: 'x://one', files: [{ name: 's_review_mono_v001.mp4', codec: 'h264', local_url: 'x://mp4' }, { name: 's_review_master_v001.mov', codec: 'prores422hq' }] }
@@ -88,7 +90,7 @@ test('outputNames: review is <clip>.mov and/or .mp4; a proxy is <clip>.mp4 at so
   assert.deepEqual(outputNames({ name: 'a' }, { kind: 'proxy', width: 'source' }), ['a.mp4']); assert.deepEqual(outputNames({ name: 'a', clip_name: 'C' }, { kind: 'proxy', width: 1280 }), ['C_1280.mp4'])
 })
 test('render settings: defaults (ProRes, source size), validation, and the untouched object', () => {
-  assert.deepEqual(RENDER_DEFAULTS, { where: 'auto', kind: 'proxy', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto', pull: true })
+  assert.deepEqual(RENDER_DEFAULTS, { where: 'auto', kind: 'proxy', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto', pull: false, publish: { s3: false, slack: false }, skip_existing: true, preset: 'none' })
   assert.equal(renderProblem(RENDER_DEFAULTS), ''); assert.equal(renderProblem(null), ''); assert.equal(renderProblem({ ...RENDER_DEFAULTS, codecs: [] }), 'codecs'); assert.equal(renderProblem({ ...RENDER_DEFAULTS, codecs: ['x'] }), 'codecs')
   assert.equal(renderProblem({ ...RENDER_DEFAULTS, proxy_width: 1000 }), 'width'); assert.equal(renderProblem({ ...RENDER_DEFAULTS, where: 'x' }), 'choice')
   assert.equal(renderIsDefault({}), true); assert.equal(renderIsDefault({ ...RENDER_DEFAULTS }), true); assert.equal(renderIsDefault({ fps: 25 }), false)

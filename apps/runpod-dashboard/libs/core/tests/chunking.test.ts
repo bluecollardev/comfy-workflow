@@ -95,6 +95,7 @@ describe('running in chunks', () => {
     const j = await finish((await chunking.run('pod1', base(c, { ram: ram(40, 91) }))).id)
     expect(j.state).toBe('stopped'); expect(j.ok).toBe(0)
     expect(j.error).toMatch(/RAM guard: the container is at 91%.*chunk 1 of 3 \(frames 1-100\).*from frame 1 with a smaller chunk/)
+    expect(j.chunks[0]).toMatchObject({ retryable: false, recovery: expect.stringMatching(/Memory ran out.*smaller chunk.*Not retried/) }); expect(j.chunks[0].failure_text).toMatch(/^stage: execute\nnode: not obtained.*\nmessage: RAM guard.*\nretryable: no\nrecovery: /s)   // chunked_job: never just 'stopped'
     expect(c.calls.interrupts).toBe(1); expect(c.calls.frees).toBe(1)
     expect(j.chunks.map((x) => x.state)).toEqual(['failed', 'skipped', 'skipped']); expect(j.ram?.peak_pct).toBe(91)
     expect(c.calls.queued).toHaveLength(1)   // chunk 2 never started

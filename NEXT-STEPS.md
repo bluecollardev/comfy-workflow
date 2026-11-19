@@ -16,20 +16,44 @@
 4. **One codebase, no second runtime**: the Python API retired, the core in
    TypeScript, the merge gate green (`docs/ADR-005`).
 
+## Remote Instances (ADR-054, `docs/BRIDGE.md`), started 2026-11-19 on `feature/status-bridge`
+
+Built: `libs/core/src/bridge.ts` (whitelisted snapshot, redactor, freshness, parse) with 9 tests. To build, in order:
+1. **Publisher and reader** over the exchange bucket (`bridge/<name>/status.json`, `events.jsonl`; 30 s timer; refuses when another machine's newer file holds the name). First prove write access to `bridge/` from both machines; the fallback is a bucket Lucas owns.
+2. **Settings and IPC/MCP**: instance name, Share my status (off by default), the list of followed instances (name, bucket, prefix); MCP tools `bridge_status` and `bridge_instances` (read-only).
+3. **Connect > Remote Instances** tab: add, remove, a card each (live / late / offline, pods, Queue counts, Auto-publish, spend, last events).
+4. **Account menu** (the user icon, after the refresh button in `App.vue`): instance name, Share my status, **View** switch (This instance / each remote) swapping the screens to the snapshot, read-only, with a banner and a way back.
+5. Browser and real-Electron tests (fake bucket), then a patch release through the full gate.
+6. Phase 2 (commands, approved in the target's window) only after Phase 1 is in use, with its own ADR amendment.
+
+## Open from 2026-11-19 (v1.7.0, released with the gate skipped)
+
+0. **Verify one live upload end to end.** Auto-publish was in dry run when v1.7.0 was cut. Switch Dry run off (the person's confirmation) with the round `_TEST_{date}` and watch one review through the cancel window to S3 (`returns/BKK/_TEST_<date>/`, with `RETURN-MANIFEST.json` and the sha256 list) and the Slack post; ask Kyle to delete the `_TEST_` folder; only then set the round back to `tunnel-v11_{date}_r01`. Until that has happened, treat the S3 write path, the manifest merge, the streaming from the volume and the Slack message as tested with fakes only. Our key cannot delete from the bucket.
+1. **Run the gate that was skipped:** `./start.sh test` (core, MCP, IPC, unit, the full browser suite, the real-Electron suite) on the v1.7.0 tree, then fix what it finds. The last complete browser run (771) predates the nav badge, the dry-run view, the tab counts and the Generations play button; the real-Electron suite has not run on any of this.
+2. **Auto-generate cannot start a pod yet.** Not built: `auto_publish.generate.start_pod` (use a running pod attached to the volume, else resume a stopped one, else create the cheapest card; never another volume), `stop_when_done` (stop, never delete, a pod the feature started, after 10 idle minutes), and `max_spend_usd_per_day` (default 25, next to Binc's USD 100 cap); turning it on needs the approver's name and an import must never turn it on (ADR-050). Today it renders only on a pod that is already running; with none running it waits. Both running pods had idle stop 0 (never) on 19 Nov.
+3. **`auto_publish.require_review` and `max_gb_per_day`** (publish finished sequences without a review video: the DPX frames and the Tunnel proxy) are not built (ADR-050, "The review video is optional").
+4. **Config export, import, backup and undo of the publishing settings write `publish.json` directly** because `applyImport` is synchronous and `publish.setSettings` is async; make them use the setter so validation and History apply. Export and import carry the non-secret settings and the `needs` list (secrets are never exported).
+5. **Cross-process job visibility is half done.** Running render and publish jobs are shared (`jobs-running.json`, heartbeat, Cancel from the app); volume jobs, syncs, model fetches, imports and the other MCP handlers (`trigger: 'mcp'`) are not wired. A job started over the stdio MCP server or a script is otherwise invisible to the app until it ends.
+6. **The Queue's loose ends:** the Failed and Held Auto-publish lists are not row lists yet; the Working and Finished tables exist on Overview only (the other tabs keep their own lists); the `ModelsModal` template reads an undefined `stop` (a Vue warning on every load); the Save button's check mark was dropped because the window closes on save.
+7. **Graph failures over MCP and a failures log** (being built when this was written; check `docs/` and the History): every graph that fails to load or render is recorded with the shot, graph version, node id and type, the error text, the pod and the recovery action, and `get_comfy_runs`, `get_comfy_logs` and the run tools return those details to an agent. Binc's agents must not wait on a failed graph: a failure is a logged report, then the next job.
+8. **`auto_sync` reads as off after the configuration reset** (a partial `mounts.put` from a script reset parts of the Default Configuration; Auto-publish, the MCP servers, the folders, the volume, the datacenter and the registry login were restored from session records, the image environment list is empty until the image is picked again). Check Auto sync, the import cost cap (50 now) and the default card against what Lucas had. Never save the configuration with a partial object again (use the setters).
+9. **Binc's side.** A Linux (and Windows) build for Binc is still undecided (item "A Linux build" below); `docs/FOR-BINC-AGENTS.md` still says v1.2.8; his agent runs "Pod Manager 1.5.3", which has none of publishing, Slack, the colour setting, Auto-publish or the EDL checks. The exchange bucket shows nothing new in `returns/` since 13 Nov and nothing new in `rounds/` since 17 Nov (checked 19 Nov); a fresh sync of binc-PC (tracker, queue folders, process list, installed Manager version) is needed to see why. The revised delivery prompt is `docs/prompts/binc-delivery-controller-prompt-v2.md` (the original is kept in the same folder).
+10. **Operations, not code:** only cgi-090 shot 2 waits on Jon; carter-reframe is v02 for both takes (Tunnel relinks take 2 from v01); Tunnel cannot pull from S3, so Brynley pushes to Signiant after final QC and the Tunnel target stays disabled; archival-102 main-B is not in V11 and is never delivered; creature-266 breach-alt1's source is 1280x720, flag if the 4K from it is not usable.
+
 ## Open from 2026-11-19 (ADR-053)
 
 0. **Measure the main thread** with the real app and volume (a backfill scan of `output/`, a reconcile of a large listing, a 20,000-path publish plan, a preview batch and the viewer cache run): the longest stall of each. Then decide (ADR-053): a Web Worker for the DPX decode (cheap, clearly useful), worker threads for the scans that showed up, and the core in a `utilityProcess` only if the numbers or incidents say so.
 
 ## Open from 2026-11-19 (ADR-051 section 9)
 
-0. **Generations on the Queue:** list the preview batch and the render jobs in the Queue window (a *Generations* section, one `jobs.list()` merging imports, syncs, renders, previews and publishing), count them in the Queue badge, and move the preview batch from the page's `previewBus` into a store-level job so it survives closing the window. Then emit their start, finish, failure and cancel as events (ADR-051).
+0. **Events for the Queue's jobs:** the Queue tabs, the Working table, the counts and the nav badge are built (v1.6.0 and v1.7.0). What is left is to emit each job's start, finish, failure and cancel as events (ADR-051), and to put one `jobs.list()` behind the tabs instead of each tab's own store.
 
 ## Open from 2026-11-19 (ADR-052)
 
 0. **Bug: `volume_erase` over S3 counts deletions that did not happen.** The job reported 44,000 files deleted while `output/` still held all 23,338. Find out whether the counter lies or the delete does not take effect; fix and add a before-and-after count of the target to the job's result. (Direct `aws s3 rm` per folder worked.)
 1. **The pull guard for Binc's mirror:** skip a pull's shot steps (`06_REVIEW`, `07_DELIVER`) when the project folder is inside `projects/desktop/`, with a warning (ADR-052 section 3).
 2. **A Linux (and Windows) build for Binc:** he is on Linux and gets none of the Mac-only releases; he can build (`./start.sh package linux`); decide whether the release publishes them (ADR-052 section 4).
-3. **Import the EDL's clip names** (Tunnel's V11 EDL, CMX3600, 121 events; `EDL-READ.md`): pre-fill each sequence's clip name and flag the open ones (cgi-090 shot 2 V04 to v05, carter-reframe V01 and V02, archival-077 a/b/c) (ADR-052 section 5).
+3. **Import the EDL's clip names, the last step:** the EDL is parsed and cached (`edl.*`), the clip-name picker, the flags and the EDL status block are built (v1.7.0). Still to do: one click that pre-fills every sequence's clip name from the EDL (exact name first, then shot plus element) and lists the open ones (cgi-090 shot 2, carter-reframe: Kyle chose v02 for both takes on 14 Nov; two `main` elements make it ambiguous; archival-077 a/b/c) (ADR-052 section 5, ADR-050).
 4. **Events and notifications (ADR-051):** phase 1 once Lucas answers the open decisions.
 
 ## Open from 2026-11-18 (v1.5.2, released untested)
@@ -235,3 +259,4 @@ In order:
 - The Bash-side governance hooks listed as open in `shared/governance/README.md`: installs, `./start.sh pod create`, pushes to other remotes.
 - Abstract versus concrete shapes, and the two findings from `check.py` to raise with Binc (above).
 - Run the review on `feature/desktop-app-and-mcp-fixes` against develop, then delete that branch.
+- Follow-ups from the v1.7.0 EDL round (not built): Auto-generate starting or resuming a pod on the Default Configuration volume (`generate.start_pod`, `stop_when_done`, `max_spend_usd_per_day`; ADR-050 "may start a pod"); `auto_publish.require_review` (send DPX/Tunnel proxy with no review video); apply/undo of the publish settings through `publish.setSettings` (today `configio` writes the non-secret `publish.json` itself); `generateExisting` pods that start themselves; ADR-050 "Auto-publish is a pipeline" counts `held`/`eligible` in `status.watching` (only the summary sentence is done).

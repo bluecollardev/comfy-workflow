@@ -4,8 +4,8 @@
     <div v-if="store.old" class="alert alert-info small" data-testid="publish-settings-restart">{{ $t('publish.restart') }}</div>
     <template v-else-if="form">
       <!-- S3 -->
-      <div class="border rounded p-3 mb-3" data-testid="publish-s3-block">
-        <div class="d-flex align-items-center gap-2 mb-2"><span class="fw-semibold">{{ $t('publish.s3.title') }}</span>
+      <CollapsibleSection id="publish-s3" :title="$t('publish.s3.title')" testid="publish-s3-block">
+        <div class="d-flex align-items-center gap-2 mb-2">
           <span class="badge" :class="store.settings.s3.ready ? 'text-bg-success' : 'text-bg-secondary'" data-testid="publish-s3-ready">{{ store.settings.s3.ready ? $t('publish.ready') : $t('publish.notReady') }}</span>
           <span v-if="store.settings.s3.problem && !store.settings.s3.ready" class="small text-warning" data-testid="publish-s3-problem">{{ store.settings.s3.problem }}</span>
           <BButton v-if="store.settings.s3.problem && !store.settings.s3.ready && form.s3.credentials === 'panama'" size="sm" variant="outline-light" data-testid="publish-s3-open-panama" @click="openPanama">{{ $t('publish.s3.openPanama') }}</BButton></div>
@@ -31,15 +31,14 @@
         <div v-if="blockError('s3')" class="text-danger small mt-1" data-testid="publish-error-s3">{{ blockError('s3') }}</div>
         <div class="d-flex align-items-center gap-2 mt-2"><BButton size="sm" variant="outline-light" :disabled="testing === 's3' || dirty" data-testid="publish-s3-test" @click="runTest('s3')"><BSpinner v-if="testing === 's3'" small class="me-1" />{{ $t('publish.s3.test') }}</BButton>
           <span v-if="dirty" class="small text-body-secondary" data-testid="publish-save-first">{{ $t('publish.saveFirst') }}</span><span v-if="results.s3" class="small" :class="results.s3.ok ? 'text-success' : 'text-danger'" data-testid="publish-s3-test-result">{{ results.s3.ok ? $t('publish.s3.testOk', { detail: results.s3.detail }) : results.s3.detail }}</span></div>
-      </div>
+      </CollapsibleSection>
       <!-- Slack is connected in Connect > Slack: here only its state -->
-      <div class="border rounded p-3 mb-3 d-flex align-items-center gap-2 flex-wrap" data-testid="publish-slack-status">
+      <CollapsibleSection id="publish-slack" :title="$t('publish.slackStatus.title')" testid="publish-slack-status"><div class="d-flex align-items-center gap-2 flex-wrap">
         <span :class="store.settings.slack.ready ? 'text-success' : 'text-body-secondary'" data-testid="publish-slack-status-text">{{ store.settings.slack.ready ? $t('publish.slackStatus.connected', { workspace: store.settings.slack.workspace_name || 'Slack', channel: store.settings.slack.channel }) : $t('publish.slackStatus.notConnected') }}</span>
         <BButton size="sm" variant="outline-light" data-testid="publish-slack-open-connect" @click="openConnect">{{ $t('publish.slackStatus.open') }}</BButton>
-      </div>
+      </div></CollapsibleSection>
       <!-- defaults -->
-      <div class="border rounded p-3 mb-3" data-testid="publish-defaults-block">
-        <div class="fw-semibold mb-2">{{ $t('publish.defaults.title') }}</div>
+      <CollapsibleSection id="publish-defaults" :title="$t('publish.defaults.title')" testid="publish-defaults-block">
         <div class="small mb-2"><span class="me-3">{{ $t('publish.defaults.targets') }}</span>
           <label class="me-3"><input v-model="form.defaults.targets" type="checkbox" value="s3" class="form-check-input me-1" data-testid="publish-default-s3" />S3</label>
           <label><input v-model="form.defaults.targets" type="checkbox" value="slack" class="form-check-input me-1" data-testid="publish-default-slack" />Slack</label></div>
@@ -48,7 +47,7 @@
         <div class="form-text" data-testid="publish-placeholders">{{ $t('publish.defaults.placeholders', { list: placeholderList }) }}</div>
         <div v-if="unknown.length" class="text-warning small" data-testid="publish-unknown-placeholder">{{ $t('publish.unknownPlaceholder', { list: unknownList }) }}</div>
         <div v-if="blockError('defaults')" class="text-danger small mt-1" data-testid="publish-error-defaults">{{ blockError('defaults') }}</div>
-      </div>
+      </CollapsibleSection>
       <div v-if="error && !errField" class="small text-danger" data-testid="publish-settings-error">{{ error }}</div>
     </template>
   </div>
@@ -59,6 +58,7 @@
  * PublishSettings: the app-wide Publishing section of Default Configuration (S3 bucket and directory, Slack workspace and webhook, the defaults of a publish). Secrets are write-only:
  * the fields start empty, the saved ones show only as a hint, and an empty field keeps the stored value; Clear removes it. Test buttons check the bucket (read only) and post one Slack test message after a confirm.
  */
+import CollapsibleSection from './CollapsibleSection.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { usePublishStore } from '../stores/publish'
 import { useUiStore } from '../stores/ui'

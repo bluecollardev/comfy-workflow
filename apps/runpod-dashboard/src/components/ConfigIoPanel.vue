@@ -15,6 +15,8 @@
         <div v-else class="text-body-secondary flex-grow-1" data-testid="cfg-io-secrets-off"><i class="fa-solid fa-shield-halved me-1"></i>{{ $t('configio.secretsOff') }}</div>
       </div>
       <div class="text-body-secondary mt-1" data-testid="cfg-io-excluded">{{ $t('configio.excluded') }}</div>
+      <div v-if="needsSupported !== false" class="text-body-secondary small" data-testid="config-export-secrets-note">{{ $t('configio.neverExported') }}</div>
+      <div class="text-body-secondary small" data-testid="cfg-io-autopublish-export-note">{{ $t('autopublish.exportNote') }}</div>
 
       <BAlert v-if="error" :model-value="true" variant="danger" dismissible class="mt-2 mb-0 py-2" data-testid="cfg-io-error" @update:model-value="error = null">{{ error }}</BAlert>
       <BAlert v-if="note" :model-value="true" variant="success" dismissible class="mt-2 mb-0 py-2" data-testid="cfg-io-done" @update:model-value="note = null">{{ note }}</BAlert>
@@ -28,6 +30,7 @@
           <div class="text-body-secondary mb-1" data-testid="cfg-io-source">{{ $t('configio.from', { name: fileName, version: plan.source.app_version || '?', when: plan.source.exported_at ? plan.source.exported_at.slice(0, 10) : '?' }) }}</div>
           <div v-for="(w, n) in plan.warnings" :key="`w${n}`" class="text-warning" data-testid="cfg-io-warning"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ w }}</div>
           <div v-if="!plan.source.secrets_included && plan.source.secrets_set.length" class="text-body-secondary" data-testid="cfg-io-secrets"><i class="fa-solid fa-key me-1"></i>{{ $t('configio.secretsNone', { names: plan.source.secrets_set.join(', ') }) }}</div>
+          <div v-if="planNeeds.length" class="text-warning small" data-testid="config-import-needs"><i class="fa-solid fa-key me-1"></i>{{ $t('configio.needs', { names: planNeeds.join(', ') }) }}</div>
           <div v-for="s in plan.sections" :key="s.key" class="border-top py-2" :data-testid="`cfg-io-row-${s.key}`">
             <div class="d-flex align-items-center gap-2 flex-wrap">
               <BFormCheckbox :model-value="picked.has(s.key)" :disabled="!!s.error" :data-testid="`cfg-io-section-${s.key}`" @update:model-value="toggle(s.key, $event)">{{ s.label }}</BFormCheckbox>
@@ -43,6 +46,7 @@
                 <span v-else class="ms-1" data-testid="cfg-io-secret-error">{{ i.error }}</span>
               </div>
             </div>
+            <div v-if="s.key === 'auto_publish'" class="text-body-secondary ms-4" data-testid="cfg-io-autopublish-row-note">{{ $t('autopublish.importNote') }}</div>
             <div v-if="s.error" class="text-danger ms-4" :data-testid="`cfg-io-error-${s.key}`">{{ s.error }}</div>
             <div v-else-if="s.note" class="text-body-secondary ms-4">{{ s.note }}</div>
             <details v-if="s.changed && s.key !== 'secrets'" class="ms-4">
@@ -68,7 +72,7 @@
  * native Open dialog, asks the core to PLAN the import (nothing is written), shows each section the file carries with what changes, and writes only the sections
  * that are ticked, after a backup, with an Undo. The file carries the keys and tokens unless 'Include keys and tokens' is unticked; the preview shows each only by its last four characters. Without Electron (a browser) the file is a download and an <input type=file>.
  */
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { configioAPI, hasNativeFiles, openTextFile, saveTextFile } from '../api/configio'
 import { useToastStore, errorText } from '../stores/toast'
 import { t } from '../i18n'
@@ -89,6 +93,9 @@ const fileInput = ref(null)
 const root = ref(null)
 
 const show = (v) => JSON.stringify(v, null, 2)
+// What the file cannot carry: the secrets named by the core's `needs` (a core without it says nothing, and the export line is shown until an export or a plan proves it has none)
+const needsSupported = ref(null)
+const planNeeds = computed(() => (Array.isArray(plan.value?.needs) ? plan.value.needs : Array.isArray(plan.value?.source?.needs) ? plan.value.source.needs : []))
 const toggle = (key, on) => { const s = new Set(picked.value); on ? s.add(key) : s.delete(key); picked.value = s }
 const refreshUndo = async () => { try { canUndo.value = (await configioAPI.backups()).length > 0 } catch { canUndo.value = false } }
 
@@ -96,6 +103,7 @@ async function doExport() {
   error.value = null; note.value = null; busy.value = true
   try {
     const data = await configioAPI.export(includeSecrets.value === true)   // an explicit boolean: unticked must never read as "not given"
+    needsSupported.value = Array.isArray(data?.needs)
     const r = await saveTextFile(await configioAPI.suggestedName(), JSON.stringify(data, null, 2) + '\n')
     if (r && !r.canceled) toast.success(t(includeSecrets.value ? 'configio.savedWithKeys' : 'configio.saved', { where: r.path }))
   } catch (e) { error.value = errorText(e) } finally { busy.value = false }
@@ -123,7 +131,7 @@ async function review(name, text) {
   busy.value = true
   try {
     const p = await configioAPI.plan(obj)
-    file.value = obj; plan.value = p
+    file.value = obj; plan.value = p; if (Array.isArray(p?.needs) || Array.isArray(p?.source?.needs)) needsSupported.value = true
     picked.value = new Set(p.ok ? p.sections.filter((s) => s.default_checked).map((s) => s.key) : [])
   } catch (e) { error.value = errorText(e) } finally { busy.value = false }
 }

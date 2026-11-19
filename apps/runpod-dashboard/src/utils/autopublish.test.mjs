@@ -1,0 +1,55 @@
+// Auto-publish helpers (src/utils/autopublish.js). `npm run dpx:test`.
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { versionTag, secondsUntil, countdownText, entryLine, parseReviewPath, settingsProblem, AP_DEFAULTS, apFill, apIsDefault, targetsText, todayText, CAP_START, GEN_DEFAULTS, genIsDefault } from './autopublish.js'
+
+test('versionTag keeps the core\'s folder name: v003 stays v003 (it was read as a number and became v000)', () => { assert.equal(versionTag('v003'), 'v003'); assert.equal(versionTag('v12'), 'v012'); assert.equal(entryLine({ shot: 'archival-084', version: 'v003', files: 5, bytes: 1 }, () => '58.4 MB'), 'archival-084 v003 · 5 files · 58.4 MB') })
+test('versionTag pads to three digits', () => { assert.equal(versionTag(2), 'v002'); assert.equal(versionTag('12'), 'v012'); assert.equal(versionTag(1234), 'v1234'); assert.equal(versionTag(undefined), 'v000') })
+test('secondsUntil: whole seconds left, never negative, null without a time', () => {
+  const now = Date.parse('2026-11-19T10:00:00Z')
+  assert.equal(secondsUntil('2026-11-19T10:09:41Z', now), 581); assert.equal(secondsUntil('2026-11-19T10:00:00.400Z', now), 1); assert.equal(secondsUntil('2026-11-19T09:00:00Z', now), 0); assert.equal(secondsUntil('nope', now), null); assert.equal(secondsUntil(undefined, now), null)
+})
+test('countdownText: m:ss, past an hour keeps counting minutes', () => { assert.equal(countdownText(581), '9:41'); assert.equal(countdownText(0), '0:00'); assert.equal(countdownText(3665), '61:05'); assert.equal(countdownText(null), '') })
+test('entryLine: shot, version, files and size', () => {
+  const size = (n) => `${(n / 1e9).toFixed(1)} GB`
+  assert.equal(entryLine({ shot: 'archival-085', version: 2, files: 3, bytes: 2.1e9 }, size), 'archival-085 v002 · 3 files · 2.1 GB'); assert.equal(entryLine({ shot: 'a', version: 1, files: 1, bytes: 0 }, size), 'a v001 · 1 file · 0.0 GB')
+})
+test('parseReviewPath: only a review version folder under deliver/', () => {
+  assert.deepEqual(parseReviewPath('deliver/archival-085/v003'), { shot: 'archival-085', version: 3 }); assert.deepEqual(parseReviewPath('output/deliver/x/v012/'), { shot: 'x', version: 12 })
+  for (const bad of ['deliver/archival-085', 'deliver/a/v003/a.mp4', '.proxies/a/v001', 'deliver/a/vx', '', null]) assert.equal(parseReviewPath(bad), null, String(bad))
+})
+test('settingsProblem: the window 0 to 120 and the cap 1 to 50, whole numbers', () => {
+  assert.equal(settingsProblem({ window_minutes: 10, daily_cap: 5 }), ''); assert.equal(settingsProblem({ window_minutes: 0, daily_cap: 1 }), ''); assert.equal(settingsProblem({ window_minutes: 120, daily_cap: 50 }), '')
+  assert.equal(settingsProblem({ window_minutes: 121, daily_cap: 5 }), 'window'); assert.equal(settingsProblem({ window_minutes: -1, daily_cap: 5 }), 'window'); assert.equal(settingsProblem({ window_minutes: 1.5, daily_cap: 5 }), 'window'); assert.equal(settingsProblem({ window_minutes: '', daily_cap: 5 }), 'window')
+  assert.equal(settingsProblem({ window_minutes: 10, daily_cap: null }), ''); assert.equal(settingsProblem({ window_minutes: 10 }), ''); assert.equal(settingsProblem({ window_minutes: 10, daily_cap: 0 }), 'cap'); assert.equal(settingsProblem({ window_minutes: 10, daily_cap: 51 }), 'cap')
+})
+
+test('apFill and apIsDefault: the configuration\'s auto_publish with its defaults (S3 on, Slack and Tunnel off), and when it is just the defaults', () => {
+  assert.deepEqual(apFill(undefined), AP_DEFAULTS); assert.deepEqual(apFill({ daily_cap: 9 }), { ...AP_DEFAULTS, daily_cap: 9 }); assert.equal('daily_cap' in apFill(undefined), false)   // no cap key unless the core has one
+  assert.deepEqual(apFill({ targets: { slack: true } }).targets, { s3: true, slack: true, tunnel: false })
+  assert.deepEqual(apFill({ slack: true }).targets, { s3: true, slack: true, tunnel: false }); assert.equal('slack' in apFill({ slack: true }), false)   // an older core's boolean becomes a target
+  assert.equal(apIsDefault(undefined), true); assert.equal(apIsDefault({}), true); assert.equal(apIsDefault({ ...AP_DEFAULTS }), true)
+  assert.equal(apIsDefault({ daily_cap: null }), true); assert.equal(apIsDefault({ daily_cap: 5 }), false); assert.equal(apIsDefault({ enabled: true }), false); assert.equal(apIsDefault({ window_minutes: 11 }), false); assert.equal(apIsDefault({ standing: { approved_by: 'B', at: 'x' } }), false); assert.equal(apIsDefault({ targets: { slack: true } }), false); assert.equal(apIsDefault({ slack: false }), true)
+})
+test('targetsText: S3 + Slack in a fixed order, from an object or a list', () => {
+  assert.equal(targetsText({ s3: true, slack: true, tunnel: false }), 'S3 + Slack'); assert.equal(targetsText(['slack', 's3']), 'S3 + Slack'); assert.equal(targetsText({ s3: true }), 'S3'); assert.equal(targetsText(undefined), ''); assert.equal(targetsText(['tunnel']), 'Tunnel')
+})
+test('settingsProblem: at least one of S3 or Slack when targets are given', () => {
+  assert.equal(settingsProblem({ window_minutes: 10, daily_cap: 5, targets: { s3: false, slack: false, tunnel: false } }), 'targets'); assert.equal(settingsProblem({ window_minutes: 10, daily_cap: 5, targets: { s3: false, slack: true } }), ''); assert.equal(settingsProblem({ window_minutes: 10, daily_cap: 5 }), '')
+})
+
+test('todayText: with a cap and without', () => {
+  const t = (k, p) => ({ 'autopublish.today.noCap': `Today: ${p.count} uploaded`, 'autopublish.today.ofCap': `Today: ${p.count} of ${p.cap}` })[k]
+  assert.equal(todayText({ today: { count: 3 }, daily_cap: 5 }, t), 'Today: 3 of 5'); assert.equal(todayText({ today: { count: 3 }, daily_cap: null }, t), 'Today: 3 uploaded'); assert.equal(todayText({}, t), 'Today: 0 uploaded'); assert.equal(CAP_START, 5)
+})
+
+test('generate: defaults, the untouched object, and the rules (settle 1..120, most per day, the approver for a pod)', () => {
+  assert.deepEqual(GEN_DEFAULTS, { enabled: false, where: 'local', preset: 'review', max_per_day: 20, settle_minutes: 5, fallback_local: false })
+  assert.equal(genIsDefault(undefined), true); assert.equal(genIsDefault({ ...GEN_DEFAULTS }), true); assert.equal(genIsDefault({ enabled: true }), false); assert.equal(apIsDefault({ generate: { ...GEN_DEFAULTS } }), true); assert.equal(apIsDefault({ generate: { enabled: true } }), false)
+  const on = { ...GEN_DEFAULTS, enabled: true }, base = { window_minutes: 10 }
+  assert.equal(settingsProblem({ ...base, generate: on }), ''); assert.equal(settingsProblem({ ...base, generate: { ...on, settle_minutes: 0 } }), 'settle'); assert.equal(settingsProblem({ ...base, generate: { ...on, settle_minutes: 121 } }), 'settle')
+  assert.equal(settingsProblem({ ...base, generate: { ...on, max_per_day: null } }), ''); assert.equal(settingsProblem({ ...base, generate: { ...on, max_per_day: 0 } }), 'genmax')
+  assert.equal(settingsProblem({ ...base, generate: { ...on, where: 'pod' }, approved_by: '' }), 'approver'); assert.equal(settingsProblem({ ...base, generate: { ...on, where: 'pod' }, approved_by: 'B' }), '')
+  assert.equal(settingsProblem({ ...base, generate: { ...GEN_DEFAULTS, where: 'pod' } }), '')   // off: nothing to check
+  assert.equal(apFill({ generate: { enabled: true } }).generate.settle_minutes, 5); assert.equal('generate' in apFill({}), false)
+})

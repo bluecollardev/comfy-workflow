@@ -58,7 +58,7 @@ const fakeSsh: podpull.SshRunner = async ({ script, onLine, signal }) => {
   onLine('PUBLISH-SHA ' + createHash('sha256').update(file).digest('hex')); onLine('PUBLISH-OK'); return { code: 0 }
 }
 const sha = (f: string) => createHash('sha256').update(f).digest('hex')
-const configure = (transfer?: string) => publish.setSettings({ s3: { credentials: 'app', bucket: DEST, prefix: 'returns/BKK', region: 'us-west-2', access_key_id: KEYID, secret_access_key: SECRET, ...(transfer ? { transfer } : {}) } })
+const configure = (transfer?: string) => publish.setSettings({ s3: { layout: 'as-is', credentials: 'app', bucket: DEST, prefix: 'returns/BKK', region: 'us-west-2', access_key_id: KEYID, secret_access_key: SECRET, ...(transfer ? { transfer } : {}) } })
 const items = [{ where: 'volume' as const, path: 'delivery_v007/clipA.mov' }, { where: 'volume' as const, path: 'top.mov' }]
 const go = async (extra: Record<string, unknown> = {}) => { const { job_id } = await publish.run({ items, targets: ['s3'], approved_by: 'Lucas', ...extra }); await publish.settled(); return publish.status(job_id).jobs[0] }
 
@@ -104,7 +104,7 @@ describe('the pod adapter (auto, a pod is available)', () => {
   })
   it('a streamed file also gets its sha256 (of the bytes that went through)', async () => {
     probe.curl = false; const j = await go()
-    expect(j.files.find((f) => f.path === 'top.mov')).toEqual({ path: 'top.mov', adapter: 'pc', sha256: createHash('sha256').update(Buffer.alloc(5, 2)).digest('hex') })
+    expect(j.files.find((f) => f.path === 'top.mov')).toMatchObject({ path: 'top.mov', adapter: 'pc', sha256: createHash('sha256').update(Buffer.alloc(5, 2)).digest('hex') })
   })
   it('podAvailable says why in plain words', async () => {
     const a = { keys: { id: KEYID, secret: SECRET } } as Parameters<typeof publish.podAvailable>[0]

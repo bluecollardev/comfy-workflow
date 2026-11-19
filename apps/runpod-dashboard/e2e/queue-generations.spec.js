@@ -1,4 +1,4 @@
-import { test, expect, podCard, answerConfirm } from './fixtures'
+import { test, expect, podCard, answerConfirm, queueTab } from './fixtures'
 import { makeDpx } from '../src/utils/dpx-fixture.mjs'
 
 // The Queue's Generations section (docs/ADR-051 section 9): render jobs and the preview batch are jobs of the app, shown in the Queue whenever it is opened, with Stop, Play and Dismiss; the nav badge counts them.
@@ -7,7 +7,7 @@ const seqRun = (n, frames = 2) => ({ prompt_id: 'gggggggg-1111', workflow: 'roun
   outputs: Array.from({ length: n }, (_, i) => Array.from({ length: frames }, (_, k) => ({ filename: `s${i + 1}_proxy.${String(k).padStart(4, '0')}.dpx`, subfolder: `seqs/s${i + 1}`, type: 'output' }))).flat() })
 const job = (o = {}) => ({ job_id: 'job-1', pod_id: 'pod-aaaaaaaa', pod_name: 'ComfyUI-Dev', kind: 'proxy', state: 'rendering', started_at: '2026-11-19T10:00:00Z', finished_at: null, width: 'source', frames_done: 140, frames_total: 412, rate_fps: 9.2, current: 's2_proxy.0040.dpx', pulled_files: 0, pulled_bytes: 0, error: '', summary: '',
   sequences: [{ dir: 'seqs/s1', name: 's1_proxy', where: 'pod', state: 'rendered', frames_done: 100, frames_total: 100 }, { dir: 'seqs/s2', name: 's2_proxy', where: 'pod', state: 'rendering', frames_done: 40, frames_total: 200 }, { dir: 'seqs/s3', name: 's3_proxy', where: 'pod', state: 'failed', frames_done: 0, frames_total: 112, error: 'ffmpeg failed (exit 1)' }], ...o })
-const openQueue = async (page) => { await page.getByTestId('open-queue').click(); const q = page.getByTestId('queue-modal'); await expect(q).toBeVisible(); return q }
+const openQueue = async (page) => { await queueTab(page, 'generations'); const q = page.getByTestId('queue-modal'); await expect(q).toBeVisible(); return q }
 const gens = (q) => q.getByTestId('queue-generations')
 
 test('nothing running: the section says so, and the badge is absent', async ({ page, api }) => {
@@ -71,7 +71,7 @@ test('a finished job shows its summary and the files written; Dismiss removes it
   await expect(page.getByTestId('dpx-viewer')).toBeVisible({ timeout: 10000 })
   await page.keyboard.press('Escape'); await expect(page.getByTestId('dpx-viewer')).toHaveCount(0)
   await page.getByTestId('pod-outputs-modal').locator('.btn-close').click(); await expect(page.getByTestId('pod-outputs-modal')).toBeHidden()
-  await page.getByTestId('open-queue').click()
+  await queueTab(page, 'generations')
   await gens(page.getByTestId('queue-modal')).getByTestId('generations-job-dismiss').click()
   await expect(gens(page.getByTestId('queue-modal')).getByTestId('generations-job')).toHaveCount(0)
   expect(api.state.renders.jobs).toHaveLength(1)   // only hidden here: the core's job list is untouched
@@ -91,7 +91,7 @@ test('a job started in the Generate window shows in the Queue opened later, with
   await page.context().route('**/view?*', (r) => r.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: px }))
   await page.goto('/')
   await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
-  await page.getByTestId('pod-outputs-previews').click()
+  await page.getByTestId('pod-outputs-previews').click(); await page.getByTestId('pod-outputs-previews-modal').getByRole('tab', { name: 'Render Sequences' }).click()
   const p = page.getByTestId('pod-outputs-previews-modal')
   await p.getByTestId('pod-outputs-render-start').click()
   await expect.poll(() => api.state.renders.started?.length).toBe(1)
@@ -110,7 +110,7 @@ test('the Previews batch survives closing the Outputs window, shows in Generatio
   await page.addInitScript(() => { try { indexedDB.deleteDatabase('pod-manager-thumbs') } catch { /* none */ } })
   await page.goto('/')
   await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
-  await page.getByTestId('pod-outputs-previews').click()
+  await page.getByTestId('pod-outputs-previews').click(); await page.getByTestId('pod-outputs-previews-modal').getByRole('tab', { name: 'Previews' }).click()
   const pv = page.getByTestId('pod-outputs-previews-modal')
   await pv.getByTestId('pod-outputs-load-previews').click()
   await expect.poll(() => hits).toBeGreaterThan(0)
@@ -135,12 +135,12 @@ test('reopening the Outputs window shows the running batch again (the button is 
   await page.addInitScript(() => { try { indexedDB.deleteDatabase('pod-manager-thumbs') } catch { /* none */ } })
   await page.goto('/')
   await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
-  await page.getByTestId('pod-outputs-previews').click()
+  await page.getByTestId('pod-outputs-previews').click(); await page.getByTestId('pod-outputs-previews-modal').getByRole('tab', { name: 'Previews' }).click()
   await page.getByTestId('pod-outputs-previews-modal').getByTestId('pod-outputs-load-previews').click()
   await page.getByTestId('pod-outputs-previews-modal').locator('.modal-footer button').click(); await page.getByTestId('pod-outputs-modal').locator('.btn-close').click()
   await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
   await expect(page.getByTestId('pod-outputs-previews')).toContainText('Generating')
-  await page.getByTestId('pod-outputs-previews').click()
+  await page.getByTestId('pod-outputs-previews').click(); await page.getByTestId('pod-outputs-previews-modal').getByRole('tab', { name: 'Previews' }).click()
   await expect(page.getByTestId('pod-outputs-previews-modal').getByTestId('pod-outputs-stop-previews')).toBeVisible()
   await expect(page.getByTestId('pod-outputs-previews-modal').getByTestId('pod-outputs-load-previews')).toBeDisabled()
 })
@@ -158,5 +158,38 @@ test('a core without the render calls hides the section quietly', async ({ page,
   await page.goto('/')
   const q = await openQueue(page)
   await expect(q.getByTestId('queue-generations')).toHaveCount(0)
-  await expect(q.getByTestId('queue-syncs')).toBeVisible()   // the rest of the Queue is there
+  await page.getByTestId('queue-tab-syncs').click(); await expect(q.getByTestId('queue-syncs')).toBeVisible()   // the rest of the Queue is there
+})
+
+test('Play is the first, leftmost item of every row, in a slot of the same width; disabled until there is something to play', async ({ page, api }) => {
+  const job = (o) => ({ job_id: 'j', pod_id: 'pod-aaaaaaaa', pod_name: 'ComfyUI-Dev', kind: 'proxy', state: 'rendering', started_at: '2026-11-19T10:00:00Z', finished_at: null, frames_done: 1, frames_total: 5, rate_fps: 1, current: '', pulled_files: 0, pulled_bytes: 0, error: '', summary: '', sequences: [], ...o })
+  api.state.renders = { jobs: [job({ job_id: 'run' }), job({ job_id: 'done', state: 'done', finished_at: 'now', sequences: [{ dir: 'a', name: 'A', where: 'pod', state: 'pulled', frames_done: 5, frames_total: 5 }] }), job({ job_id: 'bad', state: 'failed', error: 'x' })] }
+  await page.goto('/'); await queueTab(page, 'generations')
+  const c = (id) => page.locator(`[data-testid="generations-job"][data-job="${id}"]`)
+  const xs = []
+  for (const id of ['run', 'done', 'bad']) {
+    const first = await c(id).locator('xpath=./div[1]/*[1]').getAttribute('data-testid'); expect(first).toBe('generations-job-play-slot')   // the first child of the header row
+    xs.push((await c(id).getByTestId('generations-job-play-slot').boundingBox()).x)
+  }
+  expect(new Set(xs.map((x) => Math.round(x))).size).toBe(1)   // the columns do not shift
+  await expect(c('done').getByTestId('generations-job-play')).toBeEnabled(); await expect(c('run').getByTestId('generations-job-play-disabled')).toBeDisabled(); await expect(c('bad').getByTestId('generations-job-play-disabled')).toBeDisabled()
+})
+
+test('an automatic review shows the real steps: no Sync step when it stayed on the volume, and a Publishing to S3 step that follows Auto-publish', async ({ page, api }) => {
+  const rv = (o = {}) => job({ job_id: 'auto-1', kind: 'review', state: 'done', trigger: 'auto-publish', pull: false, finished_at: '2026-11-19T10:05:00Z', frames_done: 94, frames_total: 94,
+    sequences: [{ dir: 'mono/a', name: 'archival-080_a_mono', clip_name: 'archival-080_a_mono', where: 'pod', state: 'rendered', shot: 'archival-080', version: 1, frames_done: 94, frames_total: 94 }], ...o })
+  const ap = (state) => ({ id: 'ap-1', shot: 'archival-080', version: 'v001', state, files: 5, bytes: 1e8, due_at: new Date(Date.now() + 300000).toISOString(), targets: ['s3', 'slack'] })
+  api.state.renders = { jobs: [rv()] }; api.state.autopublish = { pending: [ap('waiting')] }
+  await page.goto('/')
+  const q = await openQueue(page), c = gens(q).getByTestId('generations-job')
+  await expect(c.locator('[data-testid="generations-phase"][data-phase="syncing"]')).toHaveCount(0)   // pull false: nothing is copied to this PC
+  await expect(c.locator('[data-testid="generations-phase"][data-phase="rendering"]')).toHaveCount(1)
+  await expect(c.getByTestId('generations-job-autopub')).toHaveText('Publishing to S3: waiting for the window'); await expect(c.getByTestId('generations-job-autopub')).toHaveAttribute('data-state', 'waiting')
+  api.state.autopublish = { pending: [ap('uploading')] }
+  await expect(c.getByTestId('generations-job-autopub')).toHaveText('Publishing to S3: uploading', { timeout: 12000 })
+  api.state.autopublish = { pending: [], recent: [{ ...ap('done') }] }
+  await expect(c.getByTestId('generations-job-autopub')).toHaveText('Publishing to S3: uploaded', { timeout: 12000 })
+  // a job that did pull keeps its Sync step; a manual job has no automatic Publishing step
+  api.state.renders = { jobs: [rv({ job_id: 'man-1', trigger: 'manual', pull: true })] }
+  await expect(c.locator('[data-testid="generations-phase"][data-phase="syncing"]')).toHaveCount(1, { timeout: 12000 }); await expect(c.getByTestId('generations-job-autopub')).toHaveCount(0)
 })

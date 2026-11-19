@@ -1,4 +1,4 @@
-import { test, expect, podCard } from './fixtures'
+import { test, expect, podCard, queueTab } from './fixtures'
 import { t } from './i18n'
 
 // The Sync logs window (from a card's Sync window) and the Sync explorer under the Queue (docs/ADR-046).
@@ -24,7 +24,7 @@ const setSyncs = (api, over) => { api.state.syncs = { active: [], recent: [], lo
 const callsTo = (api, path) => api.calls.filter((c) => c.path === path)
 const openSync = async (page, name = 'ComfyUI-Dev') => { await podCard(page, name).getByTestId('pod-sync').click(); return page.getByTestId('sync-modal') }
 const openLogs = async (page) => { const d = await openSync(page); await d.getByTestId('sync-view-logs').click(); const m = page.getByTestId('sync-logs-modal'); await expect(m).toBeVisible(); return m }
-const openQueue = async (page) => { await page.getByTestId('open-queue').click(); const q = page.getByTestId('queue-modal'); await expect(q).toBeVisible(); return q }
+const openQueue = async (page) => { await queueTab(page, 'syncs'); const q = page.getByTestId('queue-modal'); await expect(q).toBeVisible(); return q }
 const LOGS = { 'run-1': [line('info', 'step output started'), line('warn', 'slow link on output/a.png'), line('error', 'rsync: connection reset on output/b.png'), line('info', 'step output done')], 'run-act': [line('info', 'started'), line('info', 'copied output/r1/frame_0010.png')] }
 
 test.describe('Sync logs', () => {

@@ -17,7 +17,7 @@ export const useRendersStore = defineStore('renders', () => {
   const deliverables = ref([])    // the review videos the core found (per shot and version)
   const play = ref(null)          // { dir, name, review } a window asks the gallery to open in the viewer
   const finished = ref(0)         // counts jobs that ended while the app watched
-  const prefs = reactive({ width: DEFAULT_WIDTH, fps: 'auto', where: 'auto', pull: true, allowPartial: false, kind: 'proxy', h264: false, prores: true })
+  const prefs = reactive({ width: DEFAULT_WIDTH, fps: 'auto', where: 'auto', preset: 'none', pull: true, allowPartial: false, kind: 'proxy', h264: false, prores: true })
   let timer = null, busy = false, activeIds = new Set(), ctx = null, polls = 0
   const errText = (e) => e?.response?.data?.detail || e?.message || String(e)
 

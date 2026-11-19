@@ -25,15 +25,15 @@ export const useToastStore = defineStore('toast', () => {
   }
 
   /** `action` ({ label, run }) makes the toast clickable ("click here to configure"): it stays up longer, and running it dismisses it. */
-  function show(variant, body, title, action = null) {
+  function show(variant, body, title, action = null, ms = 0) {
     const id = nextId++
     toasts.value.push({ id, variant, title, body, action, at: Date.now() })
-    setTimeout(() => dismiss(id), action ? ACTION_HIDE_AFTER_MS : HIDE_AFTER_MS)
+    setTimeout(() => dismiss(id), ms || (action ? ACTION_HIDE_AFTER_MS : HIDE_AFTER_MS))
     return id
   }
 
-  const success = (body, title = t('toast.done')) => show('success', body, title)
-  const error = (body, title = t('toast.failed')) => show('danger', body, title)
+  const success = (body, title = t('toast.done'), ms = 0) => show('success', body, title, null, ms)
+  const error = (body, title = t('toast.failed')) => show('danger', body, title, null, ACTION_HIDE_AFTER_MS)   // a failure stays long enough to read
   const info = (body, title = t('toast.note'), action = null) => show('info', body, title, action)
   const warn = (body, title = t('toast.note'), action = null) => show('warning', body, title, action)
 
@@ -43,10 +43,10 @@ export const useToastStore = defineStore('toast', () => {
    * `{ ok: false, error }`: a void action is still a success. The failure is toasted and
    * passed to `onError` if given, so a view can also show it inline.
    */
-  async function run(label, action, { ok, onError } = {}) {
+  async function run(label, action, { ok, onError, quiet } = {}) {
     try {
       const value = await action()
-      success(ok || t('toast.doneDefault', { label }))
+      if (!quiet) success(ok || t('toast.doneDefault', { label }))
       return { ok: true, value }
     } catch (e) {
       const text = t('toast.failedWith', { label, error: errorText(e) })

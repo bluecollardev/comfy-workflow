@@ -19,6 +19,22 @@ Where the two sets meet, Binc's wins for their material and ours wins for this
 repo's code. Lucas's call on 2026-10-19: Binc's material may be used and
 copied in this (private) repo; the mirror itself is still never written to.
 
+## Our docs for the application
+
+Binc's pages say what an agent may do on the CANALV2 job. How the application
+(RunPod Manager: `apps/runpod-dashboard`) does it is documented in this repo's
+own `docs/`, which are ours and not part of Binc's governance:
+
+- [`docs/runbooks/`](../../docs/runbooks/): running a BH shot on a pod through the `pod-manager` MCP (ADR-034)
+- [`docs/CHUNKING.md`](../../docs/CHUNKING.md): running a long shot in chunks, the ComfyUI memory flags, the RAM guard
+- [`docs/MCP-ENDPOINTS.md`](../../docs/MCP-ENDPOINTS.md): every MCP tool the app serves
+- [`docs/RELEASING.md`](../../docs/RELEASING.md): versions and the downloads page
+- [`docs/ADR-004-where-the-workflows-run.md`](../../docs/ADR-004-where-the-workflows-run.md): which machine runs which graphs
+
+An agent connected over MCP can read the same pages with the `docs` tool (no
+arguments lists them). If one of these ever conflicts with Binc's policy for
+the CANALV2 job, Binc's wins.
+
 ## What is where
 
 | Path | What | Loaded by Claude Code? |

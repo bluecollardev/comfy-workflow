@@ -2,7 +2,8 @@
   <div data-testid="dpx-viewer-rendered">
     <div class="viewer-stage text-center position-relative" data-testid="dpx-viewer-rendered-stage">
       <video ref="video" :src="src" playsinline preload="auto" class="viewer-media" data-testid="dpx-viewer-video" :data-time="time.toFixed(3)" :data-fps="fps" :loop="loop"
-        @play="playing = true" @pause="playing = false" @loadedmetadata="onMeta" @durationchange="duration = video.duration || 0" @timeupdate="time = video.currentTime" @progress="onProgress" @error="failed = true" @click="togglePlay"></video>
+        @play="playing = true" @pause="playing = false" @loadedmetadata="onMeta" @durationchange="duration = video.duration || 0" @timeupdate="time = video.currentTime" @progress="onProgress" @error="failed = true; loading = false" @click="togglePlay" @loadstart="loading = true" @waiting="loading = true" @canplay="loading = false" @loadeddata="loading = false" @playing="loading = false"></video>
+      <div v-if="loading && !failed" class="loading-video" role="status" data-testid="dpx-viewer-rendered-loading"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>{{ $t('outputs.player.loadingVideo') }}</div>
       <div v-if="failed" class="failed" data-testid="dpx-viewer-rendered-error"><div><i class="fa-solid fa-triangle-exclamation fs-3 d-block mb-2 text-warning"></i>{{ $t('outputs.render.videoError') }}</div></div>
     </div>
     <TransportBar tid="dpx-viewer-rendered" :playing="playing" :can-play="!failed" :pos="time" :max="duration" :step="0.01" :buffered="buffered" :label="`${timecode(time, fps)} / ${timecode(duration, fps)}`"
@@ -22,8 +23,9 @@ import TransportBar from './TransportBar.vue'
 const props = defineProps({ src: { type: String, required: true }, fps: { type: Number, default: 24 } })
 defineEmits(['update:fps'])
 const video = ref(null)
+const loading = ref(true)   // the movie is on its way: say so until it can play
 const playing = ref(false), time = ref(0), duration = ref(0), buffered = ref([]), speed = ref(1), loop = ref(true), failed = ref(false)
-watch(() => props.src, () => { failed.value = false; playing.value = false; time.value = 0; duration.value = 0; buffered.value = [] })
+watch(() => props.src, () => { failed.value = false; loading.value = true; playing.value = false; time.value = 0; duration.value = 0; buffered.value = [] })
 watch(speed, (v) => { if (video.value) video.value.playbackRate = v })
 function onMeta() { const v = video.value; if (!v) return; duration.value = v.duration || 0; v.playbackRate = speed.value; if (!v.videoWidth) failed.value = true }
 const onProgress = () => { buffered.value = bufferedFractions(video.value?.buffered, duration.value) }
@@ -47,5 +49,6 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey, true); wind
 <style scoped>
 .viewer-stage { background: #14161b; border-radius: 0.375rem; padding: 0.5rem; min-height: 8rem; }
 .viewer-media { max-width: 100%; max-height: 58vh; }
+.loading-video { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(20, 22, 27, 0.72); color: #dee2e6; pointer-events: none; }
 .failed { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 1rem; background: #14161b; }
 </style>

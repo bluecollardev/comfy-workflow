@@ -58,6 +58,7 @@
             <div v-for="e in shownEntries" :key="e.path" class="list-group-item py-1 d-flex align-items-center gap-2 small flex-wrap" data-testid="publish-entry" :data-path="e.path" :data-dir="e.dir ? 'true' : 'false'">
               <input type="checkbox" class="form-check-input mt-0" :checked="selected.includes(e.path)" data-testid="publish-entry-check" :data-path="e.path" @change="toggle(e.path, $event.target.checked)" />
               <button v-if="e.dir" type="button" class="btn btn-link btn-sm p-0 font-monospace text-start" data-testid="publish-entry-open" @click="go(e.path)"><i class="fa-regular fa-folder me-1"></i>{{ e.name }}</button>
+              <ApproveControl v-if="e.dir && parseReviewPath(e.path)" :shot="parseReviewPath(e.path).shot" :version="parseReviewPath(e.path).version" />
               <span v-else class="font-monospace text-truncate"><i class="fa-regular fa-file me-1"></i>{{ e.name }}</span>
               <span v-if="e.weight" class="badge text-bg-warning" data-testid="publish-entry-weight">{{ $t('publish.modal.weight') }}</span>
               <span v-if="!e.dir" class="ms-auto text-body-secondary">{{ formatBytes(e.bytes) }}</span>
@@ -112,7 +113,7 @@
         </div>
         <div class="fw-semibold small mb-1">{{ $t('publish.modal.plan') }}</div>
         <div v-if="!selected.length" class="small text-body-secondary" data-testid="publish-plan-none">{{ $t('publish.modal.nothing') }}</div>
-        <div v-else-if="planning && !plan" class="small"><BSpinner small class="me-1" />{{ $t('publish.modal.planning') }}</div>
+        <div v-else-if="planning && !plan" class="small"><BSpinner small class="me-2 flex-shrink-0" />{{ $t('publish.modal.planning') }}</div>
         <template v-else-if="plan">
           <div v-for="(b, i) in plan.blockers" :key="i" class="alert alert-danger py-1 px-2 small mb-1" data-testid="publish-blocker">{{ b }}</div>
           <div v-if="plan.s3" class="small font-monospace" data-testid="publish-dest">{{ $t('publish.modal.dest', { dest: plan.s3.dest }) }}<template v-if="store.settings.s3.credentials === 'panama'"> {{ $t('publish.modal.panamaBucket') }}</template></div>
@@ -121,10 +122,12 @@
           <div v-if="plan.refused.length" class="small mt-1" data-testid="publish-refused"><div class="fw-semibold text-warning">{{ $t('publish.modal.refused') }}</div>
             <div v-for="r in plan.refused" :key="r.path" class="text-warning" data-testid="publish-refused-item" :data-path="r.path"><span class="font-monospace">{{ r.path }}</span>: {{ r.reason }}<span v-if="/pull|not on this pc/i.test(r.reason)" class="text-body-secondary" data-testid="publish-not-local"> · {{ $t('publish.modal.notLocal') }}</span></div></div>
         </template>
+        <ReturnLayout v-model:overrides="edlOverrides" v-model:round="round" v-model:clip-names="clipNames" :active="layoutActive" :stems="stems" :plan="plan" :prefix="store.settings.s3.prefix" />
         <div v-if="targets.includes('slack')" class="mt-2">
           <label class="small mb-0" for="pub-message">{{ $t('publish.modal.message') }}</label>
           <textarea id="pub-message" v-model="message" class="form-control form-control-sm font-monospace" rows="3" data-testid="publish-message"></textarea>
           <div v-if="plan?.slack" class="small text-body-secondary mt-1" data-testid="publish-slack-preview"><span class="fw-semibold">{{ $t('publish.modal.preview') }}:</span> {{ plan.slack.preview }}</div>
+          <PreviewFrame v-model="previewRun" :plan="plan" :supported="previewSupported" :volume-source="store.settings.slack?.volume_source === true" :slack-on="true" />
         </div>
         <hr />
         <label class="small mb-0" for="pub-approved">{{ $t('publish.modal.approvedBy') }}</label>
@@ -148,13 +151,19 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { usePublishStore } from '../stores/publish'
 import PublishJob from './PublishJob.vue'
+import PreviewFrame from './PreviewFrame.vue'
+import ReturnLayout from './ReturnLayout.vue'
+import ApproveControl from './ApproveControl.vue'
+import { parseReviewPath } from '../utils/autopublish'
+import { useAutopublishStore } from '../stores/autopublish'
 import PublishBackfill from './PublishBackfill.vue'
 import { useUiStore } from '../stores/ui'
 import { publishAPI, RESTART } from '../api/publish'
 import { errorText } from '../stores/toast'
 import { t } from '../i18n'
 import { formatBytes } from '../sync-progress'
-import { expiryText, publishActive, targetState, channelName, s3Dest, s3Key } from '../utils/publish'
+import { expiryText, publishActive, targetState, channelName, s3Dest, s3Key, roundProblem, dpxStem, blockedRows } from '../utils/publish'
+import { clipProblem } from '../utils/renders'
 
 const props = defineProps({ preselect: { type: Array, default: () => [] }, volumeDir: { type: String, default: '' }, volumeName: { type: String, default: '' } })
 defineEmits(['close'])
@@ -217,6 +226,7 @@ const cancelMeasure = (path) => { const { [path]: _g, ...rest } = vsize.value; v
 const toggle = (path, on) => { selected.value = on ? (selected.value.includes(path) ? selected.value : [...selected.value, path]) : selected.value.filter((p) => p !== path) }
 
 onMounted(async () => {
+  useAutopublishStore().loadReviews()
   await store.loadSettings()
   targets.value = (store.settings.defaults.targets || []).filter((id) => ready(id).ok)
   message.value = store.settings.defaults.message || ''
@@ -228,17 +238,31 @@ const openSettings = () => { ui.configFocus = 'publishing'; ui.configOpen = true
 const openConnect = () => { ui.connectTab = 'slack'; ui.connectOpen = true }
 watch(() => ui.connectOpen, async (open) => { if (!open) { const before = [...targets.value]; await store.loadSettings(); targets.value = before.filter((id) => ready(id).ok) } })   // back from Connect > Slack
 
+// The first-frame preview of the Slack post: the Slack setting is the start, the tick here is this run only (a core without the setting has neither)
+const previewSupported = computed(() => typeof store.settings.slack?.preview_frame === 'boolean')
+const previewRun = ref(store.settings.slack?.preview_frame !== false)
+watch(() => store.settings.slack?.preview_frame, (v) => { previewRun.value = v !== false })
+const previewBody = () => (previewSupported.value && targets.value.includes('slack') ? { preview_frame: previewRun.value } : {})
+// The BKK return layout (a core that reports it): a round name and a clip name per DPX sequence ride the plan and the run
+const round = ref(''), clipNames = ref({}), edlOverrides = ref({})
+const layoutActive = computed(() => (plan.value?.layout || store.settings.s3?.layout) === 'bkk-return')
+const stems = computed(() => [...new Set((plan.value?.items || []).map((i) => dpxStem(i.path)).filter(Boolean))])
+const clipEdits = () => Object.fromEntries(Object.entries(clipNames.value).filter(([s, v]) => stems.value.includes(s) && v && v !== s))
+const clipsBad = computed(() => Object.values(clipNames.value).some((v) => v !== undefined && clipProblem(v)))
+const overrideBody = () => { const o = Object.fromEntries(Object.entries(edlOverrides.value).filter(([, v]) => v)); return Object.keys(o).length ? { edl_override: o } : {} }
+const layoutBody = () => (layoutActive.value ? { round: round.value, ...(Object.keys(clipEdits()).length ? { clip_names: clipEdits() } : {}), ...overrideBody() } : {})
+const layoutOk = computed(() => !layoutActive.value || (!!round.value && !roundProblem(round.value) && !clipsBad.value && !(blockedRows(plan.value, edlOverrides.value).total > 0 && blockedRows(plan.value, edlOverrides.value).blocked === blockedRows(plan.value, edlOverrides.value).total)))
 let planTimer = null, planSeq = 0
 async function replan() {
   const my = ++planSeq
   if (!allSelected.value.length) { plan.value = null; planning.value = false; return }
   planning.value = true
-  try { const p = await publishAPI.plan({ items: itemsOut(), targets: [...targets.value], ...(targets.value.includes('slack') ? { message: message.value } : {}) }); if (my === planSeq) plan.value = p } catch (e) { if (my === planSeq) plan.value = { ok: false, blockers: [errorText(e)], items: [], total_bytes: 0, files: 0, s3: null, slack: null, refused: [] } } finally { if (my === planSeq) planning.value = false }
+  try { const p = await publishAPI.plan({ items: itemsOut(), targets: [...targets.value], ...(targets.value.includes('slack') ? { message: message.value } : {}), ...previewBody(), ...layoutBody() }); if (my === planSeq) plan.value = p } catch (e) { if (my === planSeq) plan.value = { ok: false, blockers: [errorText(e)], items: [], total_bytes: 0, files: 0, s3: null, slack: null, refused: [] } } finally { if (my === planSeq) planning.value = false }
 }
-watch([selected, volSelected, targets, message], () => { clearTimeout(planTimer); planTimer = setTimeout(replan, 300) }, { deep: true })
+watch([selected, volSelected, targets, message, previewRun, round, clipNames, edlOverrides, layoutActive], () => { clearTimeout(planTimer); planTimer = setTimeout(replan, 300) }, { deep: true })
 onBeforeUnmount(() => { clearTimeout(planTimer); planSeq++ })
 
-const canPublish = computed(() => !!plan.value && plan.value.ok && !plan.value.blockers.length && (plan.value.files > 0 || targets.value.includes('slack')) && targets.value.length > 0 && !!approvedBy.value && !active.value)
+const canPublish = computed(() => !!plan.value && plan.value.ok && !plan.value.blockers.length && (plan.value.files > 0 || targets.value.includes('slack')) && targets.value.length > 0 && !!approvedBy.value && !active.value && layoutOk.value)
 const channel = computed(() => plan.value?.slack?.channel ? plan.value.slack.channel : channelName(store.settings.slack.channel))
 const confirmText = computed(() => {
   if (!plan.value || !targets.value.length) return ''
@@ -252,7 +276,7 @@ async function run() {
   runError.value = ''
   try {
     try { localStorage.setItem('runpod-manager.approved-by', approvedBy.value) } catch { /* storage blocked */ }
-    const r = await store.run({ items: itemsOut(), targets: [...targets.value], approved_by: approvedBy.value, ...(targets.value.includes('slack') ? { message: message.value } : {}) })
+    const r = await store.run({ items: itemsOut(), targets: [...targets.value], approved_by: approvedBy.value, ...(targets.value.includes('slack') ? { message: message.value } : {}), ...previewBody(), ...layoutBody() })
     jobId.value = r.job_id
   } catch (e) { runError.value = errorText(e) }
 }

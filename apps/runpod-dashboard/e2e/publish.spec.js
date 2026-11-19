@@ -167,6 +167,20 @@ test.describe('Settings > Publishing', () => {
     await s.getByTestId('publish-s3-test').click()
     await expect(s.getByTestId('publish-s3-test-result')).toHaveText('Access Denied')
   })
+  test('the Publishing headings fold like an accordion: every block starts open, a click folds only that block (its fields stay in the form), and the choice is remembered', async ({ page, api }) => {
+    setup(api)
+    let d = await openSettings(page)
+    const blocks = ['publish-s3-block', 'publish-slack-status', 'publish-defaults-block']
+    for (const b of blocks) await expect(d.getByTestId(b)).toHaveAttribute('data-open', 'true')
+    await d.getByTestId('publish-s3-block').getByTestId('collapsible-toggle').click()
+    await expect(d.getByTestId('publish-s3-block')).toHaveAttribute('data-open', 'false'); await expect(d.getByTestId('publish-s3-block').getByTestId('collapsible-body')).toBeHidden()
+    await expect(d.getByTestId('publish-s3-block').getByTestId('collapsible-toggle')).toHaveAttribute('aria-expanded', 'false')
+    await expect(d.getByTestId('publish-defaults-block')).toHaveAttribute('data-open', 'true')   // the others are not touched
+    await expect(d.getByTestId('publish-s3-bucket')).toHaveCount(1)   // folded, not removed: what is typed there is kept and saved
+    await page.reload(); d = await openSettings(page)
+    await expect(d.getByTestId('publish-s3-block')).toHaveAttribute('data-open', 'false')   // remembered
+    await d.getByTestId('publish-s3-block').getByTestId('collapsible-toggle').click(); await expect(d.getByTestId('publish-s3-block')).toHaveAttribute('data-open', 'true')
+  })
   test('Slack is one read-only status line here, with a button to Connect > Slack', async ({ page, api }) => {
     setup(api); api.state.publish.settings.slack.webhook_hint = ''
     const d = await openSettings(page)
@@ -376,9 +390,11 @@ test.describe('the Publish window', () => {
     Object.assign(j2, { state: 'done_with_warning', files_done: 3, bytes_done: 3e9, summary: '3 files published; Slack failed', links: [{ path: 'deliver/x/a.mp4', url: 'https://bucket.s3.amazonaws.com/deliver/x/a.mp4?sig=1', expires_at: '2026-11-22T10:00:00Z' }], slack: { state: 'failed', error: 'channel_not_found' } })
     await expect(m.getByTestId('publish-job-summary')).toHaveText('3 files published; Slack failed', { timeout: 6000 })
     await expect(m.getByTestId('publish-link-expiry')).toContainText('2026')
+    { const row = m.getByTestId('publish-link').first(), path = await row.locator('span.font-monospace, a.font-monospace').first().boundingBox(), exp = await row.getByTestId('publish-link-expiry').boundingBox(), cp = await row.getByTestId('publish-link-copy').boundingBox(); expect(exp.y).toBeGreaterThanOrEqual(path.y + path.height - 1); expect(cp.y).toBeLessThan(exp.y) }   // "expires …" is on the row BELOW the path; the copy icon stays on the path's row
     await m.getByTestId('publish-link-copy').click()
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('https://bucket.s3.amazonaws.com/deliver/x/a.mp4?sig=1')
-    await expect(m.getByTestId('publish-link-copy')).toHaveText('Copied')
+    await expect(m.getByTestId('publish-link-copy')).toHaveAttribute('data-copied', 'true'); await expect(m.getByTestId('publish-link-copy')).toHaveAttribute('aria-label', 'Copied'); await expect(m.getByTestId('publish-link-copy')).toHaveText('')   // an icon only: no label, no outline
+    await expect(m.getByTestId('publish-link-copy')).toHaveClass(/btn-link/)
     await expect(m.getByTestId('publish-slack-state')).toContainText('Slack failed: channel_not_found')
     await m.getByTestId('publish-slack-repost').click()
     await expect.poll(() => api.state.publish.reposts).toEqual(['pub-2'])
@@ -425,7 +441,7 @@ test.describe('the Render option', () => {
     await page.context().route('**/view?*', (r) => r.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: px2 }))
     await page.goto('/')
     await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
-    await page.getByTestId('pod-outputs-previews').click()
+    await page.getByTestId('pod-outputs-previews').click(); await page.getByTestId('pod-outputs-previews-modal').getByRole('tab', { name: 'Render Sequences' }).click()
     const p = page.getByTestId('pod-outputs-previews-modal')
     await expect(p.getByTestId('pod-outputs-render')).toBeVisible()
     return p
@@ -463,21 +479,21 @@ test.describe('the Render option', () => {
     await expect.poll(() => api.state.renders.started.length).toBe(1)
     expect(api.state.renders.started[0]).not.toHaveProperty('publish')
   })
-  test('publishing needs the renders on this PC: with Sync off the boxes are disabled and say so; On this PC keeps them enabled', async ({ page, api }) => {
+  test('publishing does not need Sync: with Sync off the boxes stay on and enabled (the render is published from the volume); nothing says to turn Sync on', async ({ page, api }) => {
     const p = await openRender(page, api)
     await p.getByTestId('pod-outputs-render-publish-s3').check()
     await p.getByTestId('pod-outputs-render-pull').uncheck()
-    await expect(p.getByTestId('pod-outputs-render-publish-s3')).toBeDisabled(); await expect(p.getByTestId('pod-outputs-render-publish-s3')).not.toBeChecked()   // cleared, not left on
-    await expect(p.getByTestId('pod-outputs-render-publish-needsync')).toHaveText('Publishing needs the renders on this PC: tick Sync the renders to this PC.')
+    await expect(p.getByTestId('pod-outputs-render-publish-s3')).toBeEnabled(); await expect(p.getByTestId('pod-outputs-render-publish-s3')).toBeChecked()   // not cleared
+    await expect(p.getByTestId('pod-outputs-render-publish-needsync')).toHaveCount(0)
     await p.getByTestId('pod-outputs-render-where').selectOption('local')
-    await expect(p.getByTestId('pod-outputs-render-publish-s3')).toBeEnabled(); await expect(p.getByTestId('pod-outputs-render-publish-needsync')).toHaveCount(0)
+    await expect(p.getByTestId('pod-outputs-render-publish-s3')).toBeEnabled()
   })
   test('the choice is never remembered: nothing is saved in the render settings, and a reload starts with both off', async ({ page, api }) => {
     const p = await openRender(page, api)
     await p.getByTestId('pod-outputs-render-publish-s3').check()
     expect(api.calls.filter((c) => c.method === 'PUT' && (c.path === '/mounts' || c.path.endsWith('/config')))).toHaveLength(0)
     expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain('publish')
-    await page.reload(); await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click(); await page.getByTestId('pod-outputs-previews').click()
+    await page.reload(); await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click(); await page.getByTestId('pod-outputs-previews').click(); await page.getByTestId('pod-outputs-previews-modal').getByRole('tab', { name: 'Render Sequences' }).click()
     await expect(page.getByTestId('pod-outputs-previews-modal').getByTestId('pod-outputs-render-publish-s3')).not.toBeChecked()
   })
   test('the job summary shows the publish state with a link that opens the Publish window', async ({ page, api }) => {

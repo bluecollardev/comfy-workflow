@@ -116,7 +116,8 @@ export function governanceRemainingUsd(): number | null {
 // ----- the preflight: the models a round's graphs name, against the volume's model list (read-only) -----
 
 export interface ModelCheck { graph: string; models: string[]; missing: { name: string; node_type: string; reads: string[]; elsewhere: string[] }[]; error?: string }
-export interface Preflight { round: string; volume_id: string; checked: number; total_graphs: number; graphs: ModelCheck[]; missing_total: number; note: string }
+export interface Preflight {
+  /** every missing model and unreadable graph in words: stage, message, the model with where it belongs on the volume, recovery, retryable */ problems: { graph: string; stage: string; node_type: string; message: string; missing_models: { name: string; where_on_volume: string }[]; recovery: string; retryable: boolean }[]; round: string; volume_id: string; checked: number; total_graphs: number; graphs: ModelCheck[]; missing_total: number; note: string }
 
 export interface ModelRef { name: string; node_type: string }
 /** The models folders a loader node reads (ComfyUI's folder_paths). A loader not in the table is checked against every folder: a miss there is a real miss, a hit is not proof the folder is right. */
@@ -162,5 +163,6 @@ export async function preflightRound(volumeId: string, round: string, o: { shots
       graphs.push({ graph: g.path, models: [...new Set(refs.map((r) => r.name))], missing })
     } catch (e) { graphs.push({ graph: g.path, models: [], missing: [], error: (e as Error).message }) }
   }
-  return { round, volume_id: volumeId, checked: graphs.length, total_graphs: info.graphs.length, graphs, missing_total: graphs.reduce((a, g) => a + g.missing.length, 0), note: `Read-only: ${graphs.length} of ${info.graphs.length} graph(s) read from the volume, their model names looked up in comfy-shared/models/. "elsewhere" is a file of the same name in another folder than the loader reads. Nothing was changed, downloaded or substituted: fixing a miss is a separate step with its own named yes.` }
+  const problems = graphs.flatMap((g) => [...g.missing.map((m) => ({ graph: g.graph, stage: 'load' as const, node_type: m.node_type, message: `missing model ${m.name}`, missing_models: [{ name: m.name, where_on_volume: `comfy-shared/${m.reads[0] ?? 'models/'}${m.name}` }], recovery: `Fetch ${m.name} to ${m.reads[0] ?? 'models/'} on the volume${m.elsewhere?.length ? ` (it exists elsewhere on the volume: ${[].concat(m.elsewhere as never).slice(0, 2).join(', ')})` : ''} (models_fetch, or the wanted-models list), then run the graph. Not retried.`, retryable: false })), ...(g.error ? [{ graph: g.graph, stage: 'load' as const, node_type: '', message: g.error, missing_models: [], recovery: 'The graph could not be read over S3: check the volume access, then look again.', retryable: g.error !== 'unreadable over S3' ? false : true }] : [])])
+  return { round, volume_id: volumeId, checked: graphs.length, problems, total_graphs: info.graphs.length, graphs, missing_total: graphs.reduce((a, g) => a + g.missing.length, 0), note: `Read-only: ${graphs.length} of ${info.graphs.length} graph(s) read from the volume, their model names looked up in comfy-shared/models/. "elsewhere" is a file of the same name in another folder than the loader reads. Nothing was changed, downloaded or substituted: fixing a miss is a separate step with its own named yes.` }
 }

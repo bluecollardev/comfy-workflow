@@ -73,7 +73,7 @@
             {{ $t('pod.open') }} <i class="fa-solid fa-arrow-up-right-from-square fa-xs"></i>
           </a>
           <span v-else-if="pod.port_mismatch" class="text-danger" data-testid="pod-port-mismatch">{{ $t('pod.portMismatch') }}</span>
-          <span v-else class="text-warning" data-testid="pod-comfy-starting"><BSpinner small class="me-1" />{{ $t('pod.comfyStarting') }}</span>
+          <span v-else class="text-warning" data-testid="pod-comfy-starting"><BSpinner small class="me-2 flex-shrink-0" />{{ $t('pod.comfyStarting') }}</span>
         </dd>
       </template>
 
@@ -389,6 +389,7 @@ watch(() => props.pod.status, loadOutputs)
 watch(() => ui.outputsFor, (r) => {
   if (!r || r.pod_id !== props.pod.id) return
   showOutputs.value = true
+  if (r.publish) ui.openPublish = true
   if (r.play) setTimeout(() => { useRendersStore().play = r.play }, 600)
   ui.outputsFor = null
 })

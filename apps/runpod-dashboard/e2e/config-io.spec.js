@@ -253,3 +253,35 @@ test.describe('A new installation asks once whether to import a configuration fi
     await expect(page.getByTestId('welcome-modal')).toBeHidden()
   })
 })
+
+// The publishing settings travel in the file (the S3 bucket, prefix, region and layout; the Slack channel and options); the secrets (S3 keys, the Slack webhook) never do, and the import says what must be entered again.
+test.describe('Configuration file: publishing settings and what is never exported', () => {
+  const PUBFILE = (over = {}) => ({ ...good(), publish: { s3: { bucket: 'other-bucket', prefix: 'returns/BKK/', region: 'us-west-2', layout: 'bkk-return' }, slack: { channel: '#other', workspace_name: 'Other', username: 'RunPod Manager', file_links: true, preview_frame: true, per_shot: true } }, needs: ['Slack webhook', 'S3 keys'], ...over })
+  test('the export dialog says secrets are never exported, and the file carries the publish section and the needs list (no key, no webhook)', async ({ page, api }) => {
+    api.state.configioNeeds = true
+    api.state.publish = { settings: { s3: { bucket: 'my-bucket', prefix: 'returns/BKK/', region: 'us-west-2', credentials: 'panama', access_key_hint: '••••1234' }, slack: { channel: '#mine', webhook_hint: '••••9f2k', username: 'RunPod Manager' }, defaults: { targets: [], message: '' } }, tree: {}, there: [], heavy: [], jobs: [] }
+    const dialog = await open(page)
+    await expect(dialog.getByTestId('config-export-secrets-note')).toHaveText('Secrets (S3 keys, the Slack webhook) are never exported.')
+    const [download] = await Promise.all([page.waitForEvent('download'), dialog.getByTestId('cfg-io-export').click()])
+    const saved = JSON.parse(readFileSync(await download.path(), 'utf8'))
+    expect(saved.needs).toEqual(['Slack webhook', 'S3 keys']); expect(saved.publish.s3).toMatchObject({ bucket: 'my-bucket' }); expect(saved.publish.slack).toMatchObject({ channel: '#mine' })
+    expect(JSON.stringify(saved.publish)).not.toContain('9f2k'); expect(JSON.stringify(saved.publish)).not.toContain('1234')
+  })
+  test('the import preview shows the publish section as a changed row, and the notice of what must be entered again; applying writes the settings', async ({ page, api }) => {
+    api.state.publish = { settings: { s3: { bucket: 'my-bucket', prefix: 'x/', region: 'us-west-2', credentials: 'panama' }, slack: { channel: '#mine', username: 'RunPod Manager' }, defaults: { targets: [], message: '' } }, tree: {}, there: [], heavy: [], jobs: [] }
+    const dialog = await open(page)
+    await dialog.getByTestId('cfg-io-file').setInputFiles(file(PUBFILE()))
+    await expect(dialog.getByTestId('cfg-io-row-publish')).toBeVisible(); await expect(dialog.getByTestId('cfg-io-changed-publish')).toHaveText(t('configio.changed'))
+    await expect(dialog.getByTestId('config-import-needs')).toHaveText('These are not in the file and must be entered again in Settings: Slack webhook, S3 keys')
+    await dialog.getByTestId('cfg-io-section-publish').check()
+    await dialog.getByTestId('cfg-io-apply').click()
+    await expect.poll(() => api.state.publish.settings.s3.bucket).toBe('other-bucket'); expect(api.state.publish.settings.slack.channel).toBe('#other')
+  })
+  test('an older core\'s file and plan (no needs, no publish): no notice and no publish row; the export line stays until an export shows the core has none', async ({ page, api }) => {
+    const dialog = await open(page)
+    await dialog.getByTestId('cfg-io-file').setInputFiles(file(good()))
+    await expect(dialog.getByTestId('cfg-io-preview')).toBeVisible(); await expect(dialog.getByTestId('config-import-needs')).toHaveCount(0); await expect(dialog.getByTestId('cfg-io-row-publish')).toHaveCount(0)
+    await Promise.all([page.waitForEvent('download'), dialog.getByTestId('cfg-io-export').click()])
+    await expect(dialog.getByTestId('config-export-secrets-note')).toHaveCount(0)   // that export carried no needs list: an older core says nothing
+  })
+})

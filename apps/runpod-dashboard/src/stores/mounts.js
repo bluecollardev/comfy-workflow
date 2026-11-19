@@ -38,8 +38,9 @@ export const useMountsStore = defineStore('mounts', () => {
     return payload.value
   }
 
-  async function save(body) {
-    const r = await toast.run(t('toast.saveConfig'), () => mountsAPI.save(body), { ok: t('toast.configSaved'), onError: (msg) => (error.value = msg) })
+  /** `quiet`: the caller says what was saved (the sections and the time) after checking it landed. */
+  async function save(body, { quiet = false } = {}) {
+    const r = await toast.run(t('toast.saveConfig'), () => mountsAPI.save(body), { ok: t('toast.configSaved'), quiet, onError: (msg) => (error.value = msg) })
     if (r.ok) payload.value = r.value
     return r
   }

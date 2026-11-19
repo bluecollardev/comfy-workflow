@@ -11,10 +11,12 @@ import type { MountsConfig } from './mounts.js'
 
 type Registry = Record<string, MountsConfig>
 
+/** Auto-publish (ADR-050) and the Outputs window's preferences are app-wide: a pod's own configuration never carries them. */
+const strip = (cfg: MountsConfig): MountsConfig => { const { auto_publish: _a, outputs: _o, edl: _e, ...rest } = cfg; return rest as MountsConfig }
 export function load(): Registry {
   const f = podConfigsFile()
   if (!existsSync(f)) return {}
-  try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return {} }
+  try { const reg = JSON.parse(readFileSync(f, 'utf8')) as Registry; for (const k of Object.keys(reg)) reg[k] = strip(reg[k]); return reg } catch { return {} }
 }
 function save(reg: Registry) {
   const f = podConfigsFile()
@@ -24,5 +26,5 @@ function save(reg: Registry) {
 
 export const get = (podId: string): MountsConfig | null => load()[podId] ?? null
 export const has = (podId: string): boolean => podId in load()
-export function set(podId: string, cfg: MountsConfig): void { const reg = load(); reg[podId] = cfg; save(reg) }
+export function set(podId: string, cfg: MountsConfig): void { const reg = load(); reg[podId] = strip(cfg); save(reg) }
 export function forget(podId: string): void { const reg = load(); if (podId in reg) { delete reg[podId]; save(reg) } }

@@ -12,6 +12,8 @@ const ipc = core && {
   export: (format, what) => core.invoke('history', 'export', [{ format, what }]),
   outputSources: (ctx) => core.invoke('history', 'outputSources', [ctx || {}]),
   listOutputs: (ctx, o) => core.invoke('history', 'listOutputs', [ctx || {}, o || {}]),
+  outputsStatus: (jobId) => core.invoke('history', 'outputsStatus', [jobId]),
+  outputsCancel: (jobId) => core.invoke('history', 'outputsCancel', [jobId]),
   logs: (podId, level, lines) => core.invoke('history', 'logs', [podId, { level: LEVEL[level] || 'all', lines }]),
 }
 const http = {
@@ -24,7 +26,10 @@ const http = {
   /** Which output sources can answer (docs/ADR-045): [{ id, name, hint, ok, reason }]. */
   async outputSources(ctx) { const { data } = await axios.get(`${API_BASE}/history/output-sources`, { params: ctx || {} }); return data },
   /** The output sources merged (or one `source`): { sources, runs, folders, prefix, capped, total, volume_id }; `prefix` browses the volume's comfy-shared/output/. */
-  async listOutputs(ctx, o) { const { data } = await axios.get(`${API_BASE}/history/outputs`, { params: { ...(ctx || {}), source: o?.source, prefix: o?.prefix, fresh: o?.fresh ? 1 : undefined } }); return data },
+  async listOutputs(ctx, o) { const { data } = await axios.get(`${API_BASE}/history/outputs`, { params: { ...(ctx || {}), source: o?.source, prefix: o?.prefix, fresh: o?.fresh ? 1 : undefined, all: o?.all ? 1 : undefined, job: o?.job ? 1 : undefined } }); return data },
+  /** The whole-tree listing as a job (`all` with `job`): { state: 'listing'|'done'|'failed'|'cancelled', files_seen, folders_seen, elapsed_s, result? }. */
+  async outputsStatus(jobId) { const { data } = await axios.get(`${API_BASE}/history/outputs/status`, { params: { job_id: jobId } }); return data },
+  async outputsCancel(jobId) { const { data } = await axios.post(`${API_BASE}/history/outputs/cancel`, { job_id: jobId }); return data },
   /** ComfyUI's own server log of a pod: { entries: [{ ts, level: 'error'|'warning'|'info', text }] (newest last), truncated }. */
   async logs(podId, level, lines) { const { data } = await axios.get(`${API_BASE}/history/logs`, { params: { pod_id: podId, level: LEVEL[level] || 'all', lines } }); return data },
 }

@@ -237,5 +237,7 @@ describe('the models preflight (read-only)', () => {
       { name: 'LTX23_audio_vae_bf16.safetensors', node_type: 'LTXVAudioVAELoader', reads: ['models/checkpoints/'], elsewhere: ['models/vae/LTX23_audio_vae_bf16.safetensors'] },
     ].sort((a, b) => 0))
     expect(calls.every((a) => a[1] === 'ls' || (a[1] === 'cp' && a[3] === '-'))).toBe(true)
+    // the same in words: each missing model with where it belongs on the volume, what to do, never retried
+    expect(r.problems.map((p) => [p.stage, p.retryable, p.missing_models[0].name])).toEqual([['load', false, 'gone.safetensors'], ['load', false, 'LTX23_audio_vae_bf16.safetensors']]); expect(r.problems[0].missing_models[0].where_on_volume).toBe('comfy-shared/models/diffusion_models/gone.safetensors'); expect(r.problems[0].recovery).toMatch(/Fetch gone\.safetensors to models\/diffusion_models\/.*Not retried/); expect(r.problems[1].recovery).toMatch(/exists elsewhere on the volume: models\/vae\/LTX23_audio_vae_bf16\.safetensors/)
   })
 })

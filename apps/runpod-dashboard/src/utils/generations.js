@@ -8,7 +8,9 @@ export const phaseOf = (job) => (job?.state === 'pulling' ? 'syncing' : job?.sta
 /** The chips of a job's phases, in order, with the active one marked: the sync chip only when the job syncs (a pod render), the publish chip only when it publishes. */
 export function phaseChips(job) {
   const chips = [{ id: 'rendering' }]
-  if ((job?.sequences || []).some((s) => s.where === 'pod') || job?.state === 'pulling') chips.push({ id: 'syncing' })
+  // Sync is a step only when the job really copies to this PC (`pull`, said by the core); an older core never said, so it keeps the old rule (any pod render)
+  const podRender = (job?.sequences || []).some((s) => s.where === 'pod'), syncs = job?.pull === undefined ? podRender : (job.pull === true && podRender) || (job.pulled_files || 0) > 0
+  if (syncs || job?.state === 'pulling') chips.push({ id: 'syncing' })
   if (job?.publish || job?.state === 'publishing') chips.push({ id: 'publishing' })
   const now = phaseOf(job)
   return chips.map((c) => ({ ...c, active: c.id === now, done: !!job && !now ? job.state === 'done' : chips.findIndex((x) => x.id === now) > chips.findIndex((x) => x.id === c.id) }))

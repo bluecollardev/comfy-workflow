@@ -57,7 +57,7 @@
           <BFormGroup :label="$t('config.claudeKey')" label-for="cfg-claude-key" data-testid="cfg-claude-group" :description="keyInfo.anthropic_key_set ? $t('config.claudeStored', { hint: keyInfo.anthropic_key_hint }) : $t('config.claudeUnset')">
             <BFormInput id="cfg-claude-key" v-model.trim="newClaude" type="password" autocomplete="off" placeholder="sk-ant-…" class="font-monospace" data-testid="cfg-claude-key" />
             <div v-if="claudeChecking || claudeResult" class="small mt-1" :class="claudeChecking ? 'text-body-secondary' : claudeResult.ok ? 'text-success' : 'text-danger'" data-testid="cfg-claude-result" :data-ok="claudeChecking ? 'checking' : claudeResult.ok ? 'true' : 'false'">
-              <template v-if="claudeChecking"><BSpinner small class="me-1" />{{ $t('config.claudeChecking') }}</template>
+              <template v-if="claudeChecking"><BSpinner small class="me-2 flex-shrink-0" />{{ $t('config.claudeChecking') }}</template>
               <template v-else><i class="fa-solid me-1" :class="claudeResult.ok ? 'fa-circle-check' : 'fa-triangle-exclamation'"></i>{{ claudeResult.ok ? (newClaude ? $t('config.claudeWorksTyped') : $t('config.claudeWorks')) : claudeResult.error }}</template>
             </div>
           </BFormGroup>
@@ -292,7 +292,10 @@
 
       <fieldset v-if="!forPod && !gated" v-show="show('publishing')" class="cfg-section" data-section="publishing">
         <legend data-testid="section-publishing">{{ $t('publish.tab') }}</legend>
+        <CollapsibleSection v-if="apStore.status?.watching" id="watching" :title="$t('autopublish.watch.title')" testid="autopublish-watching-block"><AutoPublishWatching :status="apStore.status" :skipped="true" compact /></CollapsibleSection>
         <PublishSettings ref="pubRef" />
+        <EdlStatus v-if="!forPod" />
+        <AutoPublishSettings v-if="cfg.auto_publish" v-model="cfg.auto_publish" :validate="apValidate" @changed="onApChanged" />
       </fieldset>
       <fieldset v-if="!forPod && !gated" v-show="show('adapters')" class="cfg-section" data-section="adapters">
         <legend data-testid="section-adapters">{{ $t('adapters.section') }}</legend>
@@ -348,6 +351,11 @@
         <BFormCheckbox v-model="syncExcludeDelete" :value="true" :unchecked-value="false" class="small mt-1" data-testid="config-sync-exclude-delete">{{ $t('sync.excludeDeleteConfigLabel') }}</BFormCheckbox>
         <div v-if="syncExcludeError" class="text-danger small mt-1" data-testid="config-sync-exclude-error">{{ syncExcludeError }}</div>
       </div>
+      <div v-if="!forPod && cfg.outputs" class="border rounded p-2 mb-3" data-testid="config-outputs">
+        <div class="fw-semibold mb-1">{{ $t('config.outputsTitle') }}</div>
+        <label class="small"><input v-model="cfg.outputs.hide_empty_folders" type="checkbox" class="form-check-input me-1" data-testid="config-outputs-hide-empty" />{{ $t('config.outputsHideEmpty') }}</label>
+        <div class="form-text" data-testid="config-outputs-help">{{ $t('config.outputsHelp') }}</div>
+      </div>
       <div class="border rounded p-2 mb-3" data-testid="config-render">
         <div class="fw-semibold mb-1">{{ $t('outputs.render.cfg.title') }}</div>
         <div class="d-flex gap-3 flex-wrap align-items-end small mb-2">
@@ -371,9 +379,19 @@
         <div class="d-flex gap-3 flex-wrap small mb-1" data-testid="config-render-codecs">
           <label><input v-model="cfg.render.codecs" type="checkbox" value="h264" class="form-check-input me-1" data-testid="config-render-codec-h264" />{{ $t('outputs.render.cfg.codecH264') }}</label>
           <label><input v-model="cfg.render.codecs" type="checkbox" value="prores422hq" class="form-check-input me-1" data-testid="config-render-codec-prores" />{{ $t('outputs.render.cfg.codecProres') }}</label>
-          <label><input v-model="cfg.render.pull" type="checkbox" class="form-check-input me-1" data-testid="config-render-pull" />{{ $t('outputs.render.cfg.pull') }}</label>
+          <label><input v-model="cfg.render.pull" type="checkbox" class="form-check-input me-1" data-testid="config-render-pull" @change="renderDeps" />{{ $t('outputs.render.cfg.pull') }}</label>
+          <label><input v-model="cfg.render.publish.s3" type="checkbox" class="form-check-input me-1" data-testid="config-render-publish-s3" @change="renderDeps" />{{ $t('outputs.render.cfg.publishS3') }}</label>
+          <label><input v-model="cfg.render.publish.slack" type="checkbox" class="form-check-input me-1" :disabled="!cfg.render.publish.s3" data-testid="config-render-publish-slack" />{{ $t('outputs.render.cfg.publishSlack') }}</label>
+          <label><input v-model="cfg.render.skip_existing" type="checkbox" class="form-check-input me-1" data-testid="config-render-skip-existing" />{{ $t('outputs.render.cfg.skipExisting') }}</label>
+        </div>
+        <div class="d-flex gap-3 flex-wrap align-items-end small mt-2" data-testid="config-render-preset-row">
+          <label class="mb-0">{{ $t('outputs.render.preset') }}
+            <select v-model="cfg.render.preset" class="form-select form-select-sm" data-testid="config-render-preset" @change="renderPresetChanged"><option value="none">{{ $t('outputs.render.presetStandard') }}</option><option value="tunnel">{{ $t('outputs.render.presetTunnel') }}</option></select>
+          </label>
         </div>
         <div class="form-text" data-testid="config-render-help">{{ $t('outputs.render.cfg.help') }}</div>
+        <div class="form-text" data-testid="config-render-pre-help">{{ $t('outputs.render.cfg.preHelp') }}</div>
+        <div class="form-text" data-testid="config-render-skip-help">{{ $t('outputs.render.cfg.skipHelp') }}</div>
         <div v-if="renderError" class="text-danger small mt-1" data-testid="config-render-error">{{ renderError }}</div>
       </div>
       <details class="mb-2">
@@ -444,9 +462,17 @@ import { t } from '../i18n'
 import FolderPicker from './FolderPicker.vue'
 import AdapterManager from './AdapterManager.vue'
 import PublishSettings from './PublishSettings.vue'
+import AutoPublishSettings from './AutoPublishSettings.vue'
+import AutoPublishWatching from './AutoPublishWatching.vue'
+import CollapsibleSection from './CollapsibleSection.vue'
+import { useAutopublishStore } from '../stores/autopublish'
+import EdlStatus from './EdlStatus.vue'
+import { apFill, apIsDefault, settingsProblem as apProblem } from '../utils/autopublish'
 import { useConfirmStore } from '../stores/confirm'
 import { parsePatterns, listProblem } from '../utils/syncexclude'
-import { RENDER_DEFAULTS, WIDTH_CHOICES, FPS_CHOICES, renderProblem, renderIsDefault } from '../utils/renders'
+import { useToastStore } from '../stores/toast'
+import { changedSections, changedKeys, notLanded, clockNow } from '../utils/savefeedback'
+import { RENDER_DEFAULTS, WIDTH_CHOICES, FPS_CHOICES, renderProblem, renderIsDefault, renderBody, renderPublishProblem } from '../utils/renders'
 
 const props = defineProps({
   mode: { type: String, default: 'default' },      // 'default' | 'pod'
@@ -464,7 +490,8 @@ const nameChanged = computed(() => nameDraft.value.trim() !== props.podName && !
 const saveName = async () => { const n = nameDraft.value.trim(); await podsStore.rename(props.podId, n === props.runpodName ? '' : n) }
 watch(() => props.podName, (n) => { nameDraft.value = n })
 
-const ui = useUiStore()
+const toastStore = useToastStore()
+const ui = useUiStore(), apStore = useAutopublishStore()
 const studioStore = useStudioStore()
 const podsStore = usePodsStore()
 const overStudio = ref(false)
@@ -607,13 +634,31 @@ function take(payload) {
     for (const k of Object.keys(own)) { folderExLoaded.add(k); if (!folderEx[k]) folderEx[k] = { text: (own[k] || []).join('\n'), inherit: false } }
     for (const k of Object.keys(folderExError)) delete folderExError[k]
   }
+  { // auto_publish (app-wide: the Default Configuration only): the form's copy, its snapshot for the dirty flag, and whether the core has it at all
+    const has = payload.config.auto_publish !== undefined
+    if (has && !forPod.value) { cfg.value.auto_publish = apFill(payload.config.auto_publish); if (cfg.value.auto_publish.generate) cfg.value.auto_publish.approved_by = payload.config.auto_publish.standing?.approved_by || (() => { try { return localStorage.getItem('runpod-manager.approved-by') || '' } catch { return '' } })(); apSnapshot = JSON.stringify(cfg.value.auto_publish); apLoadedDefault = apIsDefault(payload.config.auto_publish) } else { delete cfg.value.auto_publish; apSnapshot = ''; apLoadedDefault = true }
+    apValidate.value = false
+  }
   syncExcludeDeleteStored = payload.config.sync_exclude_delete !== undefined; syncExcludeDelete.value = !!payload.config.sync_exclude_delete
   renderStored = !!payload.config.render   // an untouched render object is not added to what is saved
-  cfg.value.render = { ...RENDER_DEFAULTS, ...(cfg.value.render || {}), codecs: [...((cfg.value.render || {}).codecs || RENDER_DEFAULTS.codecs)] }
+  renderLoadedKeys = Object.keys(payload.config.render || {})
+  cfg.value.render = { ...RENDER_DEFAULTS, ...(cfg.value.render || {}), codecs: [...((cfg.value.render || {}).codecs || RENDER_DEFAULTS.codecs)], publish: { s3: !!cfg.value.render?.publish?.s3, slack: !!cfg.value.render?.publish?.slack } }
+  // the Outputs window's starting value: the Default Configuration only (a pod's own configuration never has it)
+  outputsStored = !forPod.value && payload.config.outputs !== undefined
+  if (forPod.value) delete cfg.value.outputs; else cfg.value.outputs = { hide_empty_folders: payload.config.outputs?.hide_empty_folders !== false }
   renderError.value = ''
   autoSyncError.value = ''
 }
-let renderStored = false
+let renderStored = false, renderLoadedKeys = [], outputsStored = false
+/** The Tunnel proxy preset is a quick proxy: it takes the kind with it. */
+function renderPresetChanged() { if (cfg.value.render.preset === 'tunnel') cfg.value.render.kind = 'proxy' }
+/** Publishing when done needs the renders on this PC (unless they render here), and Slack needs S3: switched off inline, before any call. */
+function renderDeps() { const p = cfg.value.render.publish; if (!p.s3) p.slack = false }
+let apSnapshot = '', apLoadedDefault = true
+const apValidate = ref(false)
+const apDirty = computed(() => !!cfg.value?.auto_publish && JSON.stringify(cfg.value.auto_publish) !== apSnapshot)
+/** After an immediate act (enable, go live, off) the core changed the configuration's value: read it again so the next Save cannot write a stale one. */
+async function onApChanged() { try { const p = await mountsAPI.get(); if (p?.config?.auto_publish && cfg.value) { cfg.value.auto_publish = apFill(p.config.auto_publish); apSnapshot = JSON.stringify(cfg.value.auto_publish); apLoadedDefault = apIsDefault(p.config.auto_publish) } } catch { /* the window keeps what it has */ } }
 let syncExcludeStored = false, syncExcludeDeleteStored = false, folderExStored = false
 // Exclude by default, per mapped folder (v1.5.0): `folder_excludes` { rowKey: [patterns] }. The Default editor loads and saves its own lists; a pod's editor starts every key inheriting the Default's (placeholder), typing replaces it for that key, Use the Default goes back.
 const folderEx = reactive({}), folderExError = reactive({}), defaultFolderEx = ref({})
@@ -643,9 +688,9 @@ function syncExcludeOk() {
 const renderError = ref('')
 /** Render sequences: at least one codec, known choices; refused here before any call (the core refuses it too). */
 function renderOk() {
-  const p = renderProblem(cfg.value.render)
-  renderError.value = p ? t('outputs.render.cfg.needCodec') : ''
-  return !p
+  const p = renderProblem(cfg.value.render), q = renderPublishProblem(cfg.value.render)
+  renderError.value = p ? t('outputs.render.cfg.needCodec') : q === 'slackNeedsS3' ? t('autopublish.block.slackNeedsS3') : ''
+  return !p && !q
 }
 let autoSyncStored = false
 const autoSyncError = ref('')
@@ -754,13 +799,15 @@ function picked(path) {
   else cfg.value.folders[picker.key] = path
 }
 
+/** The auto_publish object as saved: the approver's name travels only with rendering on a pod (it is the spend's named yes), and only when that is on. */
+function apBody(apv) { const o = { ...apv }; if (!((o.generate?.enabled && (o.generate.where === 'pod' || o.generate.start_pod || o.generate.colour_in)) || o.require_review === false)) delete o.approved_by; return o }
 function body() {
   const env = {}
   for (const r of envRows.value) if (r.key) env[r.key] = r.value
-  const { auto_sync: a, render: r, sync_exclude: _se, sync_exclude_delete: _sd, folder_excludes: _fe, ...rest } = cfg.value
+  const { auto_sync: a, render: r, auto_publish: apv, outputs: outv, sync_exclude: _se, sync_exclude_delete: _sd, folder_excludes: _fe, ...rest } = cfg.value
   const patterns = parsePatterns(syncExcludeText.value)
   const fe = folderExBody()
-  return { ...rest, ...(a.enabled || autoSyncStored ? { auto_sync: { ...a, approved_by: String(a.approved_by || '').trim() } } : {}), ...(patterns.length || syncExcludeStored ? { sync_exclude: patterns } : {}), ...(Object.keys(fe).length || folderExStored ? { folder_excludes: fe } : {}), ...(syncExcludeDelete.value || syncExcludeDeleteStored ? { sync_exclude_delete: !!syncExcludeDelete.value } : {}), ...(r && (renderStored || !renderIsDefault(r)) ? { render: { ...r } } : {}), env }
+  return { ...rest, ...(a.enabled || autoSyncStored ? { auto_sync: { ...a, approved_by: String(a.approved_by || '').trim() } } : {}), ...(patterns.length || syncExcludeStored ? { sync_exclude: patterns } : {}), ...(Object.keys(fe).length || folderExStored ? { folder_excludes: fe } : {}), ...(apv && (apDirty.value || !apLoadedDefault) ? { auto_publish: apBody(apv) } : {}), ...(syncExcludeDelete.value || syncExcludeDeleteStored ? { sync_exclude_delete: !!syncExcludeDelete.value } : {}), ...(r && (renderStored || !renderIsDefault(r)) ? { render: renderBody(r, renderLoadedKeys) } : {}), ...(outv && (outputsStored || outv.hide_empty_folders === false) ? { outputs: { hide_empty_folders: !!outv.hide_empty_folders } } : {}), env }
 }
 
 const localText = computed(() => {
@@ -818,7 +865,7 @@ async function scrollToField(id) {
 }
 
 const pubRef = ref(null), confirm = useConfirmStore()
-const pubDirty = computed(() => !!pubRef.value?.dirty)
+const pubDirty = computed(() => !!pubRef.value?.dirty || apDirty.value)
 let forceClose = false
 /** Close, asking first when Publishing has edits nobody saved. */
 async function closeWindow() {
@@ -831,6 +878,7 @@ function onHide(ev) {   // the X, Escape or a click outside
 }
 async function save() {
   if (!gated.value && (!autoSyncOk() || !renderOk() || !syncExcludeOk() || !folderExOk())) return
+  if (!gated.value && cfg.value?.auto_publish?.enabled && apProblem(cfg.value.auto_publish)) { apValidate.value = true; tab.value = 'publishing'; return }
   if (!gated.value && pubRef.value?.validate()) { tab.value = 'publishing'; return }   // both are checked before anything is written
   saving.value = true; error.value = null
   const wasGated = gated.value
@@ -863,9 +911,20 @@ async function save() {
     try { keyInfo.value = await settingsAPI.set({ hf_token: newHf.value }); newHf.value = '' }
     catch (e) { error.value = e.response?.data?.detail || e.message; saving.value = false; return }
   }
-  const r = await mounts.save(body())
+  const before = JSON.parse(JSON.stringify(mounts.config || {})), sent = body()
+  const r = await mounts.save(sent, { quiet: !forPod.value })
   if (!r.ok) { saving.value = false; error.value = mounts.error; return }
   take(r.value)
+  // Say what was saved and check it landed: ask the core again, and name the sections only when what it holds changed (a failure to land is red, never silent)
+  if (!forPod.value) {
+    const keys = changedKeys(before, sent)
+    let loaded = null
+    try { loaded = (await mounts.load())?.config } catch { loaded = null }
+    const missing = loaded ? notLanded(before, loaded, keys, sent) : []
+    if (missing.length) { error.value = t('config.notLanded', { what: missing.join(', ') }); toastStore.error(error.value, t('toast.failed')) }
+    else toastStore.success(`${t('toast.configSaved')} ${clockNow()}${(() => { const sec = changedSections(before, loaded || sent); return sec.length ? `: ${sec.join(', ')}` : ` · ${t('config.nothingChanged')}` })()}`, t('toast.done'), 10000)
+    if (missing.length) { saving.value = false; return }
+  }
   followNoSpend(r.value)
   // The Publishing section is part of this window: its edits are written by this Save, after the configuration; a failure there is said plainly and the window stays open.
   if (pubRef.value?.dirty) {
@@ -878,6 +937,8 @@ async function save() {
 }
 
 async function reset() {
+  // with Auto-publish ON the reset turns it off: say so first
+  if (cfg.value?.auto_publish?.enabled && !(await confirm.ask(t('autopublish.resetConfirm'), { okLabel: t('config.clear') }))) return
   saving.value = true; error.value = null
   const r = await mounts.reset()
   saving.value = false

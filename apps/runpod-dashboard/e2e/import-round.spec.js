@@ -1,4 +1,4 @@
-import { test, expect, answerConfirm } from './fixtures'
+import { test, expect, answerConfirm, queueTab } from './fixtures'
 
 // Import Round and Queue (docs/ADR-038): a call to action at the right of the top bar; one approval queues a pull and a run per shot; the Queue shows each task with its state and error.
 test('Import Round: three steps - rounds, shots, cards - then Import with the approval in the footer; the Queue shows the tasks', async ({ page, api }) => {
@@ -133,7 +133,7 @@ test('Import Round(s): the Import button is always there; a zip or folder droppe
 
 test('Queue: the latest import is at the top, the oldest at the bottom, and the list scrolls', async ({ page, api }) => {
   api.state.queue = { imports: Array.from({ length: 4 }, (_, n) => ({ id: `imp${n}`, round: `round-${n}`, approved_by: 'L', created_at: `2026-11-09T0${n}:00:00Z`, state: 'done', spent_usd: 0, cap_enabled: true, cost_cap_usd: 10, max_pods: 2, counts: {} })), tasks: Array.from({ length: 4 }, (_, n) => Array.from({ length: 8 }, (_, k) => ({ id: `t${n}-${k}`, import_id: `imp${n}`, round: `round-${n}`, shot: k ? `shot-${k}` : null, kind: k ? 'run' : 'pull', state: 'failed' }))).flat(), active: 0 }
-  await page.goto('/'); await page.getByTestId('open-queue').click()
+  await page.goto('/'); await queueTab(page, 'imports')
   const q = page.getByTestId('queue-modal')
   await expect(q.getByTestId('queue-import').locator('strong').first()).toHaveText('round-3')
   await expect(q.getByTestId('queue-import').locator('strong').last()).toHaveText('round-0')
@@ -144,7 +144,7 @@ test('Queue: the latest import is at the top, the oldest at the bottom, and the 
 
 test('Queue: a task shows its pod, its stage and, opened, what happened and when', async ({ page, api }) => {
   api.state.queue = { imports: [{ id: 'imp1', round: 'round-a', approved_by: 'L', created_at: '2026-11-09T01:00:00Z', state: 'active', spent_usd: 0, cap_enabled: true, cost_cap_usd: 10, max_pods: 2, counts: {} }], tasks: [{ id: 't1', import_id: 'imp1', round: 'round-a', shot: 'cgi-042', kind: 'run', state: 'running', pod_id: 'pod9', pod_name: 'queue-round-a-1', gpu: 'rtxpro6000', card: 'rtxpro6000', started_at: '2026-11-09T01:00:05Z', stage: 'running 1/3 graphs', events: [{ at: '2026-11-09T01:00:05Z', text: 'created pod queue-round-a-1 (rtxpro6000) in round round-a' }, { at: '2026-11-09T01:03:00Z', text: 'pod queue-round-a-1 is ready: running 3 graph(s)' }] }], active: 1 }
-  await page.goto('/'); await page.getByTestId('open-queue').click()
+  await page.goto('/'); await queueTab(page, 'imports')
   const q = page.getByTestId('queue-modal')
   await expect(q.getByTestId('queue-task-stage')).toHaveText('running 1/3 graphs')
   await expect(q.getByTestId('queue-task')).toContainText('pod9')
@@ -218,7 +218,7 @@ test('Import Round(s): Select all ticks every round (and clears them), and Next 
 test('Queue: Purge finished asks first; No keeps everything, Yes removes finished imports and leaves the running one', async ({ page, api }) => {
   const imp = (id, state) => ({ id, round: `round-${id}`, approved_by: 'L', created_at: '2026-11-09T01:00:00Z', state, spent_usd: 0, cap_enabled: true, cost_cap_usd: 10, max_pods: 2, counts: {} })
   api.state.queue = { imports: [imp('a', 'done'), imp('b', 'active')], tasks: [{ id: 't1', import_id: 'a', round: 'round-a', shot: null, kind: 'pull', state: 'done' }, { id: 't2', import_id: 'b', round: 'round-b', shot: 'x', kind: 'run', state: 'running' }], active: 1 }
-  await page.goto('/'); await page.getByTestId('open-queue').click()
+  await page.goto('/'); await queueTab(page, 'imports')
   const q = page.getByTestId('queue-modal')
   await expect(q.getByTestId('queue-import')).toHaveCount(2)
   await q.getByTestId('queue-purge').click()
@@ -262,7 +262,7 @@ test('Queue: Cancel all asks first; No leaves the tasks, Yes cancels the import'
   const calls = []
   await page.route('**/queue/imports/*/cancel', async (r) => { calls.push(r.request().url()); await r.fulfill({ json: {} }) })
   api.state.queue = { imports: [{ id: 'a', round: 'round-a', approved_by: 'L', created_at: '2026-11-09T01:00:00Z', state: 'active', spent_usd: 0, cap_enabled: true, cost_cap_usd: 10, max_pods: 2, counts: {} }], tasks: [{ id: 't1', import_id: 'a', round: 'round-a', shot: 'x', kind: 'run', state: 'running' }, { id: 't2', import_id: 'a', round: 'round-a', shot: 'y', kind: 'run', state: 'waiting' }], active: 2 }
-  await page.goto('/'); await page.getByTestId('open-queue').click()
+  await page.goto('/'); await queueTab(page, 'imports')
   const q = page.getByTestId('queue-modal')
   await q.getByTestId('queue-cancel-import').click()
   expect(await answerConfirm(page, false)).toContain('2 unfinished')   // no

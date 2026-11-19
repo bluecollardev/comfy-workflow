@@ -12,9 +12,14 @@
         <BButton variant="outline-light" size="sm" :title="$t('app.sharedTitle')" :disabled="!settings.ready" data-testid="open-shared" @click="ui.sharedOpen = true">
           <i class="fa-solid fa-share-nodes me-1"></i>{{ $t('app.shared') }}
         </BButton>
-        <BButton variant="outline-light" size="sm" :title="$t('app.queueTitle')" data-testid="open-queue" @click="ui.queueOpen = true">
-          <i class="fa-solid fa-list-check me-1"></i>{{ $t('app.queue') }}<BBadge v-if="badgeCount" variant="primary" class="ms-1" data-testid="queue-badge">{{ badgeCount }}</BBadge>
+        <BButton :variant="badge.tone === 'success' ? 'success' : badge.tone === 'warning' ? 'warning' : 'outline-light'" size="sm" class="position-relative" :class="{ 'queue-pulse': badge.pulse }" :title="badgeTitle || $t('app.queueTitle')" :data-tone="badge.tone" data-testid="open-queue" @click="ui.queueTab = 'overview'; ui.queueOpen = true">
+          <i class="fa-solid fa-list-check me-1"></i>{{ $t('app.queue') }}<!-- the number is a corner overlay, like a notification badge -->
+          <span v-if="badge.show" class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger queue-count" :class="{ 'queue-dot': badge.dot }" :title="badgeTitle" :data-kind="badge.dot ? 'dot' : 'count'" data-testid="queue-badge">{{ badge.dot ? '' : badge.text }}</span>
         </BButton>
+        <span v-if="autopublish.status && !autopublish.old" role="button" tabindex="0" class="badge d-inline-flex align-items-center gap-1 fw-normal" :class="chip.cls" :title="chip.title" data-testid="autopublish-chip" :data-mode="chip.mode" @click="openAutopublish" @keydown.enter="openAutopublish">
+          <i class="fa-solid fa-cloud-arrow-up"></i><span data-testid="autopublish-chip-label">{{ chip.label }}</span>
+          <small v-if="chip.activity" class="fw-normal" data-testid="autopublish-chip-activity">· {{ chip.activity }}</small>
+        </span>
         <BButton variant="outline-light" size="sm" :title="$t('app.historyTitle')" data-testid="open-history" @click="ui.historyOpen = true">
           <i class="fa-solid fa-clock-rotate-left me-1"></i>{{ $t('app.history') }}
         </BButton>
@@ -33,6 +38,7 @@
     <!-- A failed action (Resume with no free GPU on the host, Stop, Delete...) is said right under the nav bar, and stays there while the page scrolls -->
     <BAlert v-if="pods.actionError" :model-value="true" variant="danger" dismissible class="mb-0 rounded-0 border-start-0 border-end-0" data-testid="action-error" @update:model-value="pods.actionError = null">{{ pods.actionError }}</BAlert>
     <AutoSyncBanner />
+    <QueueBanners />
     </div>
 
     <BContainer class="py-4 flex-grow-1 app-content" style="width: 100%; max-width: min(100%, 1680px)">
@@ -70,6 +76,7 @@
     <QueueModal v-if="ui.queueOpen" />
     <ToastHost />
     <ConfirmHost />
+    <NamePromptHost />
     <WelcomeModal />
     <ConfigModal />
   </div>
@@ -102,11 +109,18 @@ import { syncsAPI } from './api/syncs'
 import ConfirmHost from './components/ConfirmHost.vue'
 import RateLimitBanner from './components/RateLimitBanner.vue'
 import AutoSyncBanner from './components/AutoSyncBanner.vue'
+import QueueBanners from './components/QueueBanners.vue'
+import { queueBadge } from './utils/queuebadge'
+import { activityText } from './utils/autopublish'
 import { useAutosyncStore } from './stores/autosync'
 import { queueAPI } from './api/queue'
 import { useVolumeJobsStore } from './stores/volumejobs'
 import { useRendersStore } from './stores/renders'
 import { usePreviewsStore } from './stores/previews'
+import { useAutopublishStore } from './stores/autopublish'
+import { usePublishStore } from './stores/publish'
+import { targetsText, todayText } from './utils/autopublish'
+import NamePromptHost from './components/NamePromptHost.vue'
 import { useToastStore } from './stores/toast'
 import { t } from './i18n'
 import { usePodsStore } from './stores/pods'
@@ -152,7 +166,18 @@ async function newInstallation() {
 const queueCount = ref(0)
 const rendersStore = useRendersStore(), previewsStore = usePreviewsStore()
 /** The badge: the queue's tasks and volume jobs, plus the running generations (render jobs, a running preview batch). */
-const badgeCount = computed(() => queueCount.value + rendersStore.activeCount + (previewsStore.running ? 1 : 0))
+const autopublish = useAutopublishStore(), publishStore = usePublishStore()
+const badge = computed(() => queueBadge({ queueCount: queueCount.value, renderJobs: rendersStore.jobs, previewsRunning: previewsStore.running, publishJobs: publishStore.jobs, entries: autopublish.pending, generate: autopublish.status?.generate, scanning: !!autopublish.status?.watching?.volume?.scanning, autoLive: !!autopublish.status?.enabled && !autopublish.status?.dry_run }))
+/** The tooltip lists the breakdown: '2 generations, 1 upload, 3 waiting'. */
+const badgeTitle = computed(() => badge.value.parts.map((p) => t(`app.badge.${p.key}${p.n === 1 ? 'One' : ''}`, { n: p.n })).join(', ') || (badge.value.scanning ? t('app.badge.scanning') : ''))
+/** ONE clear state, the same words everywhere: Auto-publish: LIVE / DRY RUN / OFF / PAUSED, with what it is doing in small text. */
+const chip = computed(() => {
+  const st = autopublish.status || {}, mode = !st.enabled ? 'off' : st.paused ? 'paused' : st.dry_run ? 'dry' : 'live'
+  const on = st.enabled, where = targetsText(st.targets) || 'S3'
+  const title = !on ? t('autopublish.chip.titleOff') : mode === 'dry' ? t('autopublish.chip.titleDry', { n: st.window_minutes ?? 10 }) : t((st.window_minutes ?? 10) === 0 ? 'autopublish.chip.titleLiveNow' : 'autopublish.chip.titleLive', { where, n: st.window_minutes ?? 10 })
+  return { mode, cls: { live: 'text-bg-success', dry: 'text-bg-warning', off: 'text-bg-secondary', paused: 'text-bg-warning' }[mode], label: t(`autopublish.chip.${mode}`), title, activity: on ? activityText(st, autopublish.pending, publishStore.jobs, Date.now(), t) : '' }
+})
+const openAutopublish = () => { ui.queueFocus = 'autopublish'; ui.queueTab = 'publishing'; ui.queueOpen = true }
 let queueTimer = null
 const vjobsStore = useVolumeJobsStore()
 /** Queued or running tasks plus the running volume jobs (a download, a delete) and the pods of jobs lost at a restart. */
@@ -168,6 +193,8 @@ onUnmounted(() => topObserver?.disconnect())
 onMounted(async () => {
   loadQueueCount(); queueTimer = setInterval(loadQueueCount, 5000)
   rendersStore.watch()   // the render jobs: the Queue's Generations and its badge
+  publishStore.watchAlways()    // Publishing jobs on the Queue and its badge (quiet on a core without it)
+  autopublish.watch()    // Auto-publish: the header chip and the badge (quiet on a core without it)
   readOAuthResult()
   await pods.load()
   pods.startAutoRefresh()
@@ -182,3 +209,11 @@ onMounted(async () => {
 })
 onUnmounted(() => { pods.stopAutoRefresh(); offSync(); clearInterval(queueTimer); useAutosyncStore().stop() })
 </script>
+
+<style>
+/* the nav Queue badge: pulsing while something runs; a small dot when only passive work (waiting entries, a scan) is there */
+@keyframes queue-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+.queue-pulse { animation: queue-pulse 1.4s ease-in-out infinite; }
+.queue-dot { width: 0.7rem; height: 0.7rem; padding: 0; border-radius: 50%; }
+.queue-count { font-size: 0.7rem; min-width: 1.25rem; box-shadow: 0 0 0 2px var(--bs-body-bg, #fff); }   /* high contrast on yellow, green and the neutral button */
+</style>

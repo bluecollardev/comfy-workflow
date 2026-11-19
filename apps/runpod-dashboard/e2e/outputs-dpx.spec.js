@@ -200,7 +200,7 @@ test('DPX: a frame the page cannot reach says so ("Could not reach the pod file"
 const seqRun = (i, n = 3) => ({ prompt_id: `seq${i}0000-1111`, workflow: `rounds/r1/s${i}.json`, status: 'success', started_at: `2026-11-17T${String(10 + i).padStart(2, '0')}:00:00Z`, duration_s: 5, cost_estimate: 0,
   outputs: Array.from({ length: n }, (_, k) => ({ filename: `s${i}_proxy.${String(k).padStart(4, '0')}.dpx`, subfolder: `seqs/s${i}`, type: 'output' })) })
 /** The Previews button opens the Previews window (Load all previews, Render sequences). */
-const openPreviews = async (page) => { await page.getByTestId('pod-outputs-previews').click(); await expect(page.getByTestId('pod-outputs-previews-modal')).toBeVisible() }
+const openPreviews = async (page) => { await page.getByTestId('pod-outputs-previews').click(); await expect(page.getByTestId('pod-outputs-previews-modal')).toBeVisible(); await page.getByTestId('pod-outputs-previews-modal').getByRole('tab', { name: 'Previews' }).click() }   // the Previews tab (the window opens on Render Sequences)
 const flat = () => makeDpx({ width: 16, height: 8, bits: 16, fn: () => 0 })
 
 test('DPX previews: nothing loads by itself, even scrolling; a click loads one tile once; Load all loads the rest one at a time; reopening uses the cache; an empty first frame says so', async ({ page, api }) => {
