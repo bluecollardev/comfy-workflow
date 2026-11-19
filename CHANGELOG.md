@@ -3,6 +3,10 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## v1.6.5 (tag v1.6.5, 2026-11-19)
+
+- **Queue > Publishing is paged.** The job cards show 10 to a page (5, 10 or 25), with Previous, Next and "1–10 of N"; the running ones are always on page 1, a new page size starts at page 1, and a page that empties moves back.
+
 ## v1.6.4 (tag v1.6.4, 2026-11-19)
 
 - **Publishing can go S3 to S3.** Transfer adapters (`s3.transfer`: Auto, Pod, This PC; ADR-050 amendment). With Auto, a running pod attached to the volume uploads straight from the volume to the Panama bucket at datacenter speed, from presigned upload links made on this PC (no key ever reaches the pod, no link is logged or stored); with no such pod, or for one file that fails, it streams through this PC as before. It never creates, resumes or stops a pod. Each job says "via pod <name>" or "via this PC". Files over 5 GiB go through this PC.

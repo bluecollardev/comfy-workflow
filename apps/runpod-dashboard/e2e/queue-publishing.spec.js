@@ -105,6 +105,7 @@ test.describe('Queue > Publishing', () => {
     await page.goto('/')
     await expect(page.getByTestId('queue-badge')).toHaveText('2')
     const q = await openQueue(page)
+    await q.getByTestId('publishing-page-size').selectOption('25')   // 22 cards fit one page of 25
     await expect(q.getByTestId('publishing-job')).toHaveCount(22)   // 2 running + the last 20
     await expect(q.getByTestId('publishing-job').first()).toHaveAttribute('data-job', 'run-b'); await expect(q.getByTestId('publishing-job').nth(1)).toHaveAttribute('data-job', 'run-a')
     await expect(card(q, 'old-21')).toBeVisible(); await expect(card(q, 'old-01')).toHaveCount(0)
@@ -116,6 +117,19 @@ test.describe('Queue > Publishing', () => {
     const q = await openQueue(page)
     await expect(q.getByTestId('publishing-job')).toHaveCount(2); await expect(card(q, 'pub-2')).toBeVisible(); await expect(card(q, 'auto-1')).toBeVisible(); await expect(card(q, 'scan-9')).toHaveCount(0)
     await expect(card(q, 'auto-1').getByTestId('publishing-job-trigger')).toHaveAttribute('data-trigger', 'auto')   // marked as automatic
+  })
+  test('the cards are paged (10 a page, running ones first): Previous and Next, "1–10 of 21", the page size, and a new size starts at page 1', async ({ page, api }) => {
+    const many = Array.from({ length: 22 }, (_, n) => job({ job_id: `old-${String(n + 1).padStart(2, '0')}`, state: 'done', files_done: 2, started_at: `2026-11-18T10:${String(59 - n).padStart(2, '0')}:00Z`, finished_at: '2026-11-18T11:00:00Z' }))
+    setup(api, [job({ job_id: 'running-1', state: 'uploading', started_at: '2026-11-19T10:00:00Z' }), ...many])   // the store keeps the running one and the last 20 finished: 21 cards
+    await page.goto('/'); const q = await openQueue(page)
+    const cards = q.getByTestId('publishing-job'), info = q.getByTestId('publishing-page-info')
+    await expect(cards).toHaveCount(10); await expect(info).toHaveText('1–10 of 21'); await expect(card(q, 'running-1')).toBeVisible()   // the running one is always on page 1
+    await expect(q.getByTestId('publishing-page-prev')).toBeDisabled()
+    await q.getByTestId('publishing-page-next').click(); await expect(info).toHaveText('11–20 of 21'); await expect(card(q, 'running-1')).toHaveCount(0)
+    await q.getByTestId('publishing-page-next').click(); await expect(info).toHaveText('21–21 of 21'); await expect(cards).toHaveCount(1); await expect(q.getByTestId('publishing-page-next')).toBeDisabled()
+    await q.getByTestId('publishing-page-size').selectOption('25'); await expect(info).toHaveText('1–21 of 21'); await expect(cards).toHaveCount(21)   // a new size starts at page 1
+    await expect(q.getByTestId('publishing-page-prev')).toBeDisabled()
+    await q.getByTestId('publishing-page-size').selectOption('5'); await expect(info).toHaveText('1–5 of 21')
   })
   test('Open Publish window opens the Publish window', async ({ page, api }) => {
     setup(api, [job({ state: 'done', files_done: 4 })])
