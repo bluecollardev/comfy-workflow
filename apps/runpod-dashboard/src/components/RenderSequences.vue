@@ -47,7 +47,8 @@
         <template v-else-if="plan">{{ planText }}</template>
       </div>
       <div v-if="isReview && plan && !plan.old" class="small mb-2" data-testid="pod-outputs-render-review-rows">
-        <div v-for="s in plan.sequences" :key="`${s.dir}/${s.name}`" data-testid="pod-outputs-render-review-shot" :data-shot="s.shot" :data-version="s.next_version"><span class="font-monospace">{{ $t('outputs.render.reviewShot', { shot: s.shot, version: v3(s.next_version) }) }}</span> <span class="text-body-secondary">{{ $t('outputs.render.reviewFolder', { folder: reviewFolder(s.shot, s.next_version) }) }}</span></div>
+        <div v-if="planning && reviewRows.length < plan.sequences.length" class="text-body-secondary" data-testid="pod-outputs-render-review-planning"><BSpinner small class="me-1" />{{ $t('outputs.render.reviewPlanning') }}</div>
+        <div v-for="s in reviewRows" :key="`${s.dir}/${s.name}`" data-testid="pod-outputs-render-review-shot" :data-shot="s.shot" :data-version="s.next_version"><span class="font-monospace">{{ $t('outputs.render.reviewShot', { shot: s.shot, version: v3(s.next_version) }) }}</span> <span class="text-body-secondary">{{ $t('outputs.render.reviewFolder', { folder: reviewFolder(s.shot, s.next_version) }) }}</span></div>
       </div>
       <div v-if="plan && !plan.old && items.length" class="small mb-2" data-testid="pod-outputs-render-pod">
         <div v-if="plan.pod_cpu" :class="plan.pod_cpu.cores < 8 ? 'text-warning' : 'text-body-secondary'" data-testid="pod-outputs-render-pod-cpu" :data-warn="plan.pod_cpu.cores < 8 ? 'true' : 'false'">{{ $t('outputs.render.podCpu', { cores: plan.pod_cpu.cores, ram: Math.round((plan.pod_cpu.mem_mb || 0) / 1024), free: Math.round(plan.pod_cpu.free_gb || 0) }) }}</div>
@@ -138,6 +139,8 @@ const eta = computed(() => { const j = job.value; return j && j.state === 'rende
 const estimates = computed(() => [...new Set((plan.value?.sequences || []).map((s) => s.estimate?.note).filter(Boolean))])
 const settingsNote = ref('')
 const plan = ref(null), planning = ref(false), starting = ref(false), startError = ref(''), startErrObj = ref(null), cleared = ref('')
+/** The review rows only for sequences the core has planned as reviews (a shot and a version): while the review plan is still on its way the plan on screen is the quick proxy's, which has neither, and printed 'undefined'. */
+const reviewRows = computed(() => (plan.value?.sequences || []).filter((x) => x.shot && x.next_version != null))
 
 const clipEdits = reactive({})   // `${dir}/${name}` -> an edited clip name (outputs are named with it; the frames are never renamed)
 const clipOf = (i) => clipEdits[`${i.dir}/${i.name}`] ?? i.name

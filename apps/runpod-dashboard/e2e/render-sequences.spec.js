@@ -512,3 +512,25 @@ test('Job: the measured fps and an ETA show while it renders', async ({ page, ap
   await expect(p.getByTestId('pod-outputs-render-eta')).toHaveText('about 30 s left', { timeout: 6000 })
   await expect(p.getByTestId('pod-outputs-render-status')).toContainText('9 fps')
 })
+
+test('switching to Review while its plan is still on the way never prints "undefined": a planning line shows, then each shot with its next version', async ({ page, api }) => {
+  const m = await openOutputs(page, api)
+  void m
+  // hold the review plan back for a moment: the plan on screen is meanwhile the quick proxy's, which has no shot and no version
+  await page.route('**/renders/plan', async (route) => {
+    let kind = ''; try { kind = route.request().postDataJSON()?.kind } catch { /* no body */ }
+    if (kind === 'review') await new Promise((r) => setTimeout(r, 1200))
+    return route.fallback()
+  })
+  const p = await openPreviews(page)
+  await p.getByTestId('pod-outputs-render-kind-review').check()
+  const rows = p.getByTestId('pod-outputs-render-review-rows')
+  await expect(rows.getByTestId('pod-outputs-render-review-planning')).toBeVisible()       // the planning line, not stale rows
+  await expect(rows).not.toContainText('undefined')
+  await expect(p.getByTestId('pod-outputs-render-review-shot')).toHaveCount(0)
+  await expect(p.getByTestId('pod-outputs-render-review-shot').first()).toBeVisible({ timeout: 10000 })   // the plan arrived
+  await expect(rows.getByTestId('pod-outputs-render-review-planning')).toHaveCount(0)
+  await expect(rows).not.toContainText('undefined')
+  const shot = await p.getByTestId('pod-outputs-render-review-shot').first().getAttribute('data-shot')
+  expect(shot).toBeTruthy(); expect(shot).not.toBe('undefined')
+})

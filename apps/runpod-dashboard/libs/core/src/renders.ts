@@ -529,6 +529,9 @@ export async function plan(o: PlanRequest): Promise<PlanResult> {
   void st2
   const vol = o.pod_id ? deps.volumeId(o.pod_id) : '', root = localProxyRoot(o.pod_id ?? ''), out: PlannedSequence[] = []
   const notes = [slow(width), ...(kind === 'proxy' ? ['The quick proxy is always H.264 (this app cannot play ProRes); a review defaults to ProRes 422 HQ, and the .mov is for QuickTime, DJV or the conform.'] : []), ...(kind === 'review' && codecs.includes('prores422hq') ? [PRORES_NOTE] : [])]
+  // one lookup of the existing review versions per SHOT, not per sequence: 46 sequences of a few shots no longer make 46 slow round trips to the pod and to S3
+  const verCache = new Map<string, Promise<string[]>>()
+  const versionsOf = (shot: string): Promise<string[]> => { let p = verCache.get(shot); if (!p) { p = (async () => [...(ad ? await ad.versions(shot).catch(() => []) : []), ...(vol ? await deps.deliverDirs(vol, shot).catch(() => []) : [])])(); verCache.set(shot, p) } return p }
   for (const s of seqs) {
     const file = `${clipOf(s)}${width === 'source' ? '' : `_${width}`}.mp4`
     const remote = vol ? ((await listed(vol, s.dir).catch(() => null))?.some((r) => r.name === file) ?? false) : false
@@ -536,7 +539,7 @@ export async function plan(o: PlanRequest): Promise<PlanResult> {
     const complete = probe ? probe.complete : s.frames === s.last - s.first + 1, partial = !!o.allow_partial && !complete, h = probe?.header ?? null
     const base: PlannedSequence = { ...s, clip_name: clipOf(s), out: proxyRel(s, width, partial), exists_remote: remote, exists_local: root ? await exists(join(root, proxyRel(s, width, partial).slice(`output/${PROXIES}/`.length))) : false, gaps: probe ? probe.gaps : Math.max(0, s.last - s.first + 1 - s.frames), where: chosen ?? 'pod', complete, missing: probe?.missing ?? [], partial,
       source: h ? { width: h.width, height: h.height, bits: h.bits } : null, estimate: { frames: probe ? probe.run : s.frames, note: slow(width), output_gb: outputGb(probe ? probe.run : s.frames, Number(fpsOf(s.name, o.fps ?? s.fps ?? (typeof st.fps === 'number' ? st.fps : undefined))), codecs, kind, width === 'source' ? (h ? (h.width * h.height) / (3840 * 2160) : 1) : (width / 3840) ** 2) } }
-    if (kind === 'review') { const shot = shotOf(clipOf(s), s.dir), existing = [...(ad ? await ad.versions(shot).catch(() => []) : []), ...(vol ? await deps.deliverDirs(vol, shot).catch(() => []) : [])]; const v = nextVersion(existing); out.push({ ...base, shot, next_version: v, out: reviewRel(shot, v, clipOf(s), codecs[0]), exists_remote: false, exists_local: false, colour_refusal: colourRefusal(h) }) }
+    if (kind === 'review') { const shot = shotOf(clipOf(s), s.dir), existing = await versionsOf(shot); const v = nextVersion(existing); out.push({ ...base, shot, next_version: v, out: reviewRel(shot, v, clipOf(s), codecs[0]), exists_remote: false, exists_local: false, colour_refusal: colourRefusal(h) }) }
     else out.push(base)
   }
   const totalGb = Math.round(out.reduce((a, x) => a + (x.estimate?.output_gb ?? 0), 0) * 10) / 10, fullRes = width === 'source' || width === 1920
