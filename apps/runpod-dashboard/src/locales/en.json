@@ -569,6 +569,7 @@
       "mute": "Mute",
       "volume": "Volume",
       "fullscreen": "Fullscreen",
+      "loadingVideo": "Loading video…",
       "codecTitle": "This codec cannot be played in the app",
       "codecNote": "Download the file and open it in DJV (/Applications/djv.app). ProRes and some HEVC .mov files are not decoded by the app's browser engine."
     },
