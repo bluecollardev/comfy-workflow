@@ -402,7 +402,7 @@ test.describe('the Render option', () => {
     await page.context().route('**/view?*', (r) => r.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: px2 }))
     await page.goto('/')
     await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
-    await page.getByTestId('pod-outputs-previews').click()
+    await page.getByTestId('pod-outputs-previews').click(); await page.getByTestId('pod-outputs-previews-modal').getByRole('tab', { name: 'Render Sequences' }).click()
     const p = page.getByTestId('pod-outputs-previews-modal')
     await expect(p.getByTestId('pod-outputs-render')).toBeVisible()
     return p
@@ -440,21 +440,21 @@ test.describe('the Render option', () => {
     await expect.poll(() => api.state.renders.started.length).toBe(1)
     expect(api.state.renders.started[0]).not.toHaveProperty('publish')
   })
-  test('publishing needs the renders on this PC: with Sync off the boxes are disabled and say so; On this PC keeps them enabled', async ({ page, api }) => {
+  test('publishing does not need Sync: with Sync off the boxes stay on and enabled (the render is published from the volume); nothing says to turn Sync on', async ({ page, api }) => {
     const p = await openRender(page, api)
     await p.getByTestId('pod-outputs-render-publish-s3').check()
     await p.getByTestId('pod-outputs-render-pull').uncheck()
-    await expect(p.getByTestId('pod-outputs-render-publish-s3')).toBeDisabled(); await expect(p.getByTestId('pod-outputs-render-publish-s3')).not.toBeChecked()   // cleared, not left on
-    await expect(p.getByTestId('pod-outputs-render-publish-needsync')).toHaveText('Publishing needs the renders on this PC: tick Sync the renders to this PC.')
+    await expect(p.getByTestId('pod-outputs-render-publish-s3')).toBeEnabled(); await expect(p.getByTestId('pod-outputs-render-publish-s3')).toBeChecked()   // not cleared
+    await expect(p.getByTestId('pod-outputs-render-publish-needsync')).toHaveCount(0)
     await p.getByTestId('pod-outputs-render-where').selectOption('local')
-    await expect(p.getByTestId('pod-outputs-render-publish-s3')).toBeEnabled(); await expect(p.getByTestId('pod-outputs-render-publish-needsync')).toHaveCount(0)
+    await expect(p.getByTestId('pod-outputs-render-publish-s3')).toBeEnabled()
   })
   test('the choice is never remembered: nothing is saved in the render settings, and a reload starts with both off', async ({ page, api }) => {
     const p = await openRender(page, api)
     await p.getByTestId('pod-outputs-render-publish-s3').check()
     expect(api.calls.filter((c) => c.method === 'PUT' && (c.path === '/mounts' || c.path.endsWith('/config')))).toHaveLength(0)
     expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain('publish')
-    await page.reload(); await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click(); await page.getByTestId('pod-outputs-previews').click()
+    await page.reload(); await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click(); await page.getByTestId('pod-outputs-previews').click(); await page.getByTestId('pod-outputs-previews-modal').getByRole('tab', { name: 'Render Sequences' }).click()
     await expect(page.getByTestId('pod-outputs-previews-modal').getByTestId('pod-outputs-render-publish-s3')).not.toBeChecked()
   })
   test('the job summary shows the publish state with a link that opens the Publish window', async ({ page, api }) => {

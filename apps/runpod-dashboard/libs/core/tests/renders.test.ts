@@ -25,7 +25,7 @@ const job = (id: string) => renders.status(id).jobs[0]
 
 beforeEach(() => {
   dir = scratch(); shared = join(dir, 'shared'); mkdirSync(join(shared, 'output'), { recursive: true }); process.env.RENDERS_FILE = join(dir, 'renders.json'); process.env.HISTORY_FILE = join(dir, 'h.jsonl')
-  mounts.save({ ...mounts.load(), render: { ...mounts.RENDER_DEFAULT, pull: true } })   // the tests below pull: a stored `pull: true` is kept (the default is off now)
+  mounts.save({ ...mounts.load(), render: { ...mounts.RENDER_DEFAULT, kind: 'proxy', pull: true } })   // the tests below pull: a stored `pull: true` is kept (the default is off now); and render quick proxies (the shipped default kind is review)
   renders.reset(); t = Date.parse('2026-11-19T10:00:00Z'); scripts = []; pulls = []; emitted = []; spawned = []; podOk = true; ffmpegAt = '/opt/homebrew/bin/ffmpeg'; versionExit = 0; versionLine = 'ffmpeg version 9.0.2'; cancelSeen = false
   localCount = 10; pod = { frames: range(0, 9), lastM: 100, outM: 0, outS: 0, failExit: 0, nodir: false, hold: null, header: dpxHeader(), ffprobe: true, count: null, versions: [], vexists: false, cpu: null }
   renders.setDeps({
@@ -610,9 +610,16 @@ describe('publish when the render finishes (ADR-050): per run, with the same app
     expect(job(job_id).publish).toMatchObject({ state: 'done' }); expect(uploads.map((u) => u.split('/').pop()).sort()).toEqual(['DELIVERY.md', `${SEQ.name}.mp4`, `${SEQ.name}.mp4.meta.json`].sort())
     expect(uploads.every((u) => u.startsWith('s3://my-internal-bucket/renders/deliver/archival-085/v001/'))).toBe(true)
   })
-  it('a render that stayed on the pod (pull off) is never published from here: Pull the renders to this PC first', async () => {
+  it('a render that stayed on the pod (pull off, Sync off) is published from the VOLUME, streamed through this PC: no "pull first", no local copy', async () => {
+    const asked: string[] = []
+    publish.setDeps({ volumeId: () => 'volx1', volumeAccess: async () => ({ ok: true, id: 'ID', secret: 'SEC', endpoint: 'https://s3api-eu-ro-1.runpod.io', bucket: 'volx1', region: 'eu-ro-1' }), volumeRecord: async () => ({ id: 'volx1', name: 'Shared', datacenter: 'EU-RO-1' }),
+      aws: async (a) => {
+        if (a[1] === 'ls' && /^s3:\/\/volx1\//.test(a[2] ?? '')) { asked.push(a[2]); return a.includes('--recursive') ? { code: 1, stdout: '', stderr: '' } : { code: 0, stdout: `2026-11-19 10:00:00 ${'10'.padStart(10)} ${SEQ.name}_960.mp4`, stderr: '' } }   // the movie is on the volume
+        if (a[1] === 'cp') uploads.push(a[3])
+        return a[1] === 'presign' ? { code: 0, stdout: 'https://s3.example/x?X-Amz-Signature=1', stderr: '' } : { code: a[1] === 'ls' ? 1 : 0, stdout: '', stderr: '' } } })
     const { job_id } = await renders.start({ pod_id: 'p1', sequences: [SEQ], width: 960, where: 'pod', pull: false, approved_by: 'L', publish: { targets: ['s3'] } }); await renders.settled()
-    expect(job(job_id).publish).toMatchObject({ job_id: '', state: 'refused', error: 'Pull the renders to this PC first' }); expect(uploads).toEqual([])
+    const pub = job(job_id).publish; expect(pub?.error ?? '').not.toMatch(/Pull the renders/); expect(pub?.state).not.toBe('refused'); expect(pub?.job_id).toMatch(/^publish-/)   // a publish job was made from the volume item
+    expect(asked.some((p) => p.includes('.proxies'))).toBe(true)
   })
   it('a failed render publishes nothing; a run without publish never touches it', async () => {
     const { job_id } = await renders.start({ sequences: [SEQ], width: 960, where: 'local', approved_by: 'L', publish: { targets: ['s3'] } }); await renders.settled()   // no frames here
@@ -669,7 +676,7 @@ describe('Skip existing (default true; per run, never a stored default)', () => 
 
 describe('a start never publishes by configuration alone', () => {
   it('render.publish pre-ticks only: without an explicit publish field nothing is published; with it, approved_by is still required', async () => {
-    mounts.save({ ...mounts.load(), render: { ...mounts.RENDER_DEFAULT, where: 'local', pull: true, publish: { s3: true, slack: false } } })
+    mounts.save({ ...mounts.load(), render: { ...mounts.RENDER_DEFAULT, kind: 'proxy', where: 'local', pull: true, publish: { s3: true, slack: false } } })
     const frames = () => { mkdirSync(join(shared, 'output', SEQ.dir), { recursive: true }); for (let i = 0; i < 10; i++) writeFileSync(join(shared, 'output', SEQ.dir, `${SEQ.name}.${String(i).padStart(4, '0')}.dpx`), i === 0 ? dpxHeader() : 'x') }
     frames(); const { job_id } = await renders.start({ sequences: [SEQ], width: 960 }); await renders.settled(); expect(job(job_id).publish).toBeUndefined()
     await expect(renders.start({ sequences: [SEQ], width: 1280, publish: { targets: ['s3'] } })).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/approved_by/) })

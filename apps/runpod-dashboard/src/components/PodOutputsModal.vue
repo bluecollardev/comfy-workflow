@@ -90,27 +90,26 @@
       </div>
       <div v-if="runningScope && runningScope !== genScopeLabel" class="text-warning" data-testid="pod-outputs-generate-scope-running">{{ $t('outputs.generate.running', { scope: runningScope }) }}</div>
     </BAlert>
-    <div class="mb-2 small" role="radiogroup" data-testid="pod-outputs-generate-scope">
-      <div class="fw-semibold">{{ $t('outputs.generate.title') }}</div>
-      <label class="d-flex align-items-center gap-2"><input v-model="genChoiceModel" type="radio" value="folder" class="form-check-input mt-0" :disabled="!vol.prefix" data-testid="pod-outputs-generate-scope-folder" />{{ $t('outputs.generate.folderLabel', { path: vol.prefix ? `output/${vol.prefix}/` : 'output/' }) }} <span class="text-body-secondary" data-testid="pod-outputs-generate-scope-folder-count">{{ vol.prefix ? countText(genCountFolder) : '' }}</span></label>
-      <div v-if="!vol.prefix" class="text-warning ms-4" data-testid="pod-outputs-generate-scope-reason">{{ $t('outputs.generate.needFolder') }}</div>
-      <label class="d-flex align-items-center gap-2"><input v-model="genChoiceModel" type="radio" value="all" class="form-check-input mt-0" data-testid="pod-outputs-generate-scope-all-radio" />{{ $t('outputs.generate.allLabel') }} <span class="text-body-secondary" data-testid="pod-outputs-generate-scope-all-count">{{ countText(genCountAll) }}</span></label>
-      <div class="text-body-secondary" data-testid="pod-outputs-generate-scope-note">{{ $t('outputs.generate.note') }}</div>
-    </div>
-    <div class="border rounded p-2 mb-2">
-      <div class="fw-semibold">{{ $t('outputs.dpx.loadAllOption') }}</div>
-      <div class="small text-body-secondary mb-2">{{ $t('outputs.dpx.loadAllTitle') }}</div>
-      <label class="d-flex align-items-center gap-2 small mb-1" :title="$t('outputs.skipPreviewsHelp')"><input v-model="skipExisting" type="checkbox" class="form-check-input mt-0" :disabled="batchRunning" data-testid="pod-outputs-previews-skip-existing" />{{ $t('outputs.skipExisting') }}</label>
-      <div v-if="!skipExisting" class="small text-warning mb-1" data-testid="pod-outputs-previews-regenerate-help">{{ $t('outputs.regenerateHelp') }}</div>
-      <div class="small mb-2 d-flex align-items-center gap-1" data-testid="pod-outputs-previews-counts" :data-final="countsFinal ? 'true' : 'false'"><BSpinner v-if="!countsFinal || batchRunning" small data-testid="generate-counts-loading" />{{ countsLine }}</div>
-      <div v-if="batchRunning" class="mb-2"><BProgress :value="batchDone" :max="Math.max(1, batchTotal)" animated striped height="0.6rem" :data-percent="Math.round((batchDone / Math.max(1, batchTotal)) * 100)" data-testid="pod-outputs-previews-progress" /></div>
-      <div class="d-flex gap-2 align-items-center">
-        <BButton variant="primary" size="sm" :disabled="batchRunning || genProbing || genTodo === 0" data-testid="pod-outputs-load-previews" @click="generateAll"><BSpinner v-if="batchRunning" small class="me-1" />{{ batchRunning ? $t('outputs.dpx.generating', { done: batchDone, total: batchTotal }) : $t(skipExisting ? 'outputs.dpx.loadAll' : 'outputs.regenerateAll', { n: genTodo }) }}</BButton>
-        <BButton v-if="batchRunning" variant="outline-warning" size="sm" data-testid="pod-outputs-stop-previews" @click="stopGenerate"><i class="fa-solid fa-stop me-1"></i>{{ $t('outputs.dpx.stopGenerate') }}</BButton>
-        <span v-if="genCounts.failed" class="small text-warning">{{ $t('outputs.dpx.generatingFailed', { n: genCounts.failed }) }}</span>
+    <BTabs content-class="pt-2" data-testid="pod-outputs-generate-tabs" @activate-tab="(id, prev, n) => (genTab = n)">
+      <BTab :title="$t('outputs.generate.tabPreviews')" :active="genTab === 0" data-testid="pod-outputs-tab-previews">
+      <div class="border rounded p-2 mb-2">
+        <div class="fw-semibold">{{ $t('outputs.dpx.loadAllOption') }}</div>
+        <div class="small text-body-secondary mb-2">{{ $t('outputs.dpx.loadAllTitle') }}</div>
+        <label class="d-flex align-items-center gap-2 small mb-1" :title="$t('outputs.skipPreviewsHelp')"><input v-model="skipExisting" type="checkbox" class="form-check-input mt-0" :disabled="batchRunning" data-testid="pod-outputs-previews-skip-existing" />{{ $t('outputs.skipExisting') }}</label>
+        <div v-if="!skipExisting" class="small text-warning mb-1" data-testid="pod-outputs-previews-regenerate-help">{{ $t('outputs.regenerateHelp') }}</div>
+        <div class="small mb-2 d-flex align-items-center gap-1" data-testid="pod-outputs-previews-counts" :data-final="countsFinal ? 'true' : 'false'"><BSpinner v-if="!countsFinal || batchRunning" small data-testid="generate-counts-loading" />{{ countsLine }}</div>
+        <div v-if="batchRunning" class="mb-2"><BProgress :value="batchDone" :max="Math.max(1, batchTotal)" animated striped height="0.6rem" :data-percent="Math.round((batchDone / Math.max(1, batchTotal)) * 100)" data-testid="pod-outputs-previews-progress" /></div>
+        <div class="d-flex gap-2 align-items-center">
+          <BButton variant="primary" size="sm" :disabled="batchRunning || genProbing || genTodo === 0" data-testid="pod-outputs-load-previews" @click="generateAll"><BSpinner v-if="batchRunning" small class="me-1" />{{ batchRunning ? $t('outputs.dpx.generating', { done: batchDone, total: batchTotal }) : $t(skipExisting ? 'outputs.dpx.loadAll' : 'outputs.regenerateAll', { n: genTodo }) }}</BButton>
+          <BButton v-if="batchRunning" variant="outline-warning" size="sm" data-testid="pod-outputs-stop-previews" @click="stopGenerate"><i class="fa-solid fa-stop me-1"></i>{{ $t('outputs.dpx.stopGenerate') }}</BButton>
+          <span v-if="genCounts.failed" class="small text-warning">{{ $t('outputs.dpx.generatingFailed', { n: genCounts.failed }) }}</span>
+        </div>
       </div>
-    </div>
-    <RenderSequences v-model:skip-existing="skipExisting" :pod="pod" :items="genItems" :skipped="genSkipped" :scope-label="genScopeLabel" @play="previewsOpen = false" @publish="publishOpen = true" />
+      </BTab>
+      <BTab :title="$t('outputs.generate.tabRender')" :active="genTab === 1" data-testid="pod-outputs-tab-render">
+      <RenderSequences v-model:skip-existing="skipExisting" :pod="pod" :items="genItems" :thumbs="genThumbs" :scope="volumeId || pod.id" :volume-name="volumeName" :skipped="genSkipped" :scope-label="genScopeLabel" @play="previewsOpen = false" @publish="publishOpen = true" />
+      </BTab>
+    </BTabs>
   </BModal>
   <PublishModal v-if="publishOpen" :preselect="vol.prefix ? [] : publishPreselect" :volume-dir="vol.prefix" :volume-name="volumeName || ''" @close="publishOpen = false" />
 </template>
@@ -135,7 +134,7 @@ import { t } from '../i18n'
 import { usePreviewsStore } from '../stores/previews'
 import { previewBus } from '../utils/thumbsBus'
 import { useRendersStore } from '../stores/renders'
-import { sequenceItems, isActive } from '../utils/renders'
+import { sequenceItems, sequenceItem, isActive } from '../utils/renders'
 const folderOf = (p) => p.split('/').slice(0, -1).join('/')
 /** `base`: the web address files are served from (this pod, or another running pod on its volume); '' when none runs: the files are then read from the volume over S3 when its keys are set, else only listed. */
 const props = defineProps({ pod: { type: Object, required: true }, runs: { type: Array, default: () => [] }, base: { type: String, default: '' }, volumeName: { type: String, default: '' }, volumeId: { type: String, default: '' } })
@@ -252,9 +251,8 @@ const batchDone = computed(() => previewsStore.batch?.done || 0)
 const batchTotal = computed(() => previewsStore.batch?.total || 0)
 /** What this window generates for (docs/ADR-051): "This folder" (the volume folder that is open: the runs' files in it or inside it, the same rule as the Outputs window's folder scope) or "All outputs" (every run and folder loaded here).
  * It is this window's own choice (it follows the Outputs window's toggle until chosen) and never changes that toggle; the preview batch and the render plan are for exactly these sequences. */
-const genChoice = ref(null)
-const genEffective = computed(() => ((genChoice.value ?? (scope.value === 'folder' ? 'folder' : 'all')) === 'folder' && vol.prefix ? 'folder' : 'all'))
-const genChoiceModel = computed({ get: () => genEffective.value, set: (v) => { genChoice.value = v; if (v === 'all') ensureAll() } })   // choosing All outputs here lists the whole tree too
+/** What the window generates for: what the Outputs window has selected (the open folder, or All outputs). No second choice to make; the banner above says which. */
+const genEffective = computed(() => (scope.value === 'folder' && vol.prefix ? 'folder' : 'all'))
 const runsFor = (which) => (which === 'folder' && vol.prefix ? mergeWithVolume(shotRuns.value.map((r) => narrowToFolder(r, vol.prefix)).filter((r) => r.files.length), folderSnap.value?.runs || vol.runs) : mergeWithVolume(shotRuns.value, which === 'all' && allSnap.value ? allSnap.value.runs : folderSnap.value?.runs || vol.runs))
 const genRuns = computed(() => runsFor(genEffective.value))
 const dpxTiles = (runs) => runs.flatMap((r) => galleryTiles(r.files).filter((tl) => tl.kind === 'dpx'))
@@ -268,6 +266,7 @@ const genPathShort = computed(() => { const p = genPath.value; return p.length <
 const genCopied = ref(false)
 async function copyGenPath() { try { await navigator.clipboard.writeText(genPath.value); genCopied.value = true; setTimeout(() => (genCopied.value = false), 2000) } catch { genCopied.value = false } }
 const genFolders = computed(() => [...new Set(dpxTiles(genRuns.value).map((tl) => `output/${tl.file.subfolder || ''}`.replace(/\/$/, '')))].sort())
+const genTab = ref(0)   // the tabs of the Generate window: 0 Previews (it opens here), 1 Render Sequences
 const genMore = ref(false)   // the covered folders start collapsed
 const genScopeLabel = computed(() => (genEffective.value === 'folder' ? t('outputs.generate.scopeIn', { path: genPath.value }) : t('outputs.generate.scopeAll')))
 /** The scope a job started here is using, when it differs from the radio. */
@@ -276,6 +275,8 @@ const runningScope = computed(() => (previewsStore.running ? previewsStore.batch
 const genTiles = computed(() => genRuns.value.flatMap((r) => galleryTiles(r.files)))
 const genSeqs = computed(() => sequenceItems(genTiles.value))
 const genItems = computed(() => genSeqs.value.items), genSkipped = computed(() => genSeqs.value.skipped)
+/** `${dir}/${name}` -> the DPX tile of that sequence and the base URL its first frame is read from (the Generate rows show it as a preview). */
+const genThumbs = computed(() => { const m = {}; for (const r of genRuns.value) { const base = baseFor(r); for (const tl of galleryTiles(r.files)) { const it = sequenceItem(tl); if (!it) continue; const k = `${it.dir}/${it.name}`; if (!m[k] || (!m[k].base && base)) m[k] = { tile: tl, base } } } return m })
 // The previews: one item per in-scope sequence; what is in the cache is looked up there (no download, no queue), so the counts are exact without a tile having been on screen.
 const previewItems = computed(() => {
   const items = [], seen = new Set()

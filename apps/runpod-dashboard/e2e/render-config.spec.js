@@ -105,7 +105,7 @@ test.describe('the Render option starts from plan().settings', () => {
     await page.context().route('**/view?*', (r) => r.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: px }))
     await page.goto('/')
     await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
-    await page.getByTestId('pod-outputs-previews').click()
+    await page.getByTestId('pod-outputs-previews').click(); await page.getByTestId('pod-outputs-previews-modal').getByRole('tab', { name: 'Render Sequences' }).click()
     return page.getByTestId('pod-outputs-previews-modal')
   }
   test('a pod\'s own settings prefill every choice, say so, and the run\'s changes are sent but never saved', async ({ page, api }) => {
@@ -129,20 +129,15 @@ test.describe('the Render option starts from plan().settings', () => {
 })
 
 test.describe('Render: Sync, Publish and Skip existing as starting values; Outputs window', () => {
-  test('the dependencies are enforced inline: publishing needs Sync (unless it renders on this PC), Slack needs S3', async ({ page }) => {
+  test('the dependencies are enforced inline: Slack needs S3; publishing does NOT need Sync (a render left on the pod is published from the volume)', async ({ page }) => {
     const d = await openDefault(page)
     const s = d.getByTestId('config-render'); await s.scrollIntoViewIfNeeded()
-    await expect(s.getByTestId('config-render-publish-s3')).toBeDisabled(); await expect(s.getByTestId('config-render-publish-slack')).toBeDisabled()
-    await expect(s.getByTestId('config-render-needsync')).toHaveText('Publishing needs the renders on this PC: turn on Sync the renders to this PC')
-    await s.getByTestId('config-render-pull').check()
+    await expect(s.getByTestId('config-render-needsync')).toHaveCount(0)
     await expect(s.getByTestId('config-render-publish-s3')).toBeEnabled(); await expect(s.getByTestId('config-render-publish-slack')).toBeDisabled()   // Slack needs S3
+    await s.getByTestId('config-render-pull').uncheck()
     await s.getByTestId('config-render-publish-s3').check(); await expect(s.getByTestId('config-render-publish-slack')).toBeEnabled(); await s.getByTestId('config-render-publish-slack').check()
     await s.getByTestId('config-render-publish-s3').uncheck(); await expect(s.getByTestId('config-render-publish-slack')).not.toBeChecked()   // S3 off takes Slack with it
-    await s.getByTestId('config-render-publish-s3').check(); await s.getByTestId('config-render-publish-slack').check()
-    await s.getByTestId('config-render-pull').uncheck()
-    await expect(s.getByTestId('config-render-publish-s3')).not.toBeChecked(); await expect(s.getByTestId('config-render-publish-slack')).not.toBeChecked()   // Sync off switches publishing off
-    await s.getByTestId('config-render-where').selectOption('local')
-    await expect(s.getByTestId('config-render-publish-s3')).toBeEnabled(); await expect(s.getByTestId('config-render-needsync')).toHaveCount(0)   // rendering here: no Sync needed
+    await s.getByTestId('config-render-publish-s3').check(); await expect(s.getByTestId('config-render-pull')).not.toBeChecked(); await expect(s.getByTestId('config-render-publish-s3')).toBeChecked()   // S3 on with Sync off stays on
   })
   test('Save carries pull, publish and skip_existing as render keys; an untouched config sends no render key', async ({ page, api }) => {
     const d = await openDefault(page)

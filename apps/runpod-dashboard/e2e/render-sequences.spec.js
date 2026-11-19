@@ -36,7 +36,7 @@ async function openOutputs(page, api, { seqs = SEQS, renders } = {}) {
   return m
 }
 const previews = (page) => page.getByTestId('pod-outputs-previews-modal')
-async function openPreviews(page) { await page.getByTestId('pod-outputs-previews').click(); const p = previews(page); await expect(p.getByTestId('pod-outputs-render')).toBeVisible(); return p }
+async function openPreviews(page) { await page.getByTestId('pod-outputs-previews').click(); const p = previews(page); await p.getByRole('tab', { name: 'Render Sequences' }).click(); await expect(p.getByTestId('pod-outputs-render')).toBeVisible(); return p }   // the window opens on Previews; the render form is the second tab
 const planText = (p) => p.getByTestId('pod-outputs-render-plan')
 const tile = (m, name) => m.locator(`[data-testid="outputs-tile"][title="${name}.####.dpx"]`)
 const noPod = { pod: { ok: false, reason: 'Start the pod: rendering happens on the pod' }, local: { ok: true } }
@@ -427,24 +427,23 @@ test('Review codecs: ProRes is ticked and H.264 is not by default, the body carr
   await expect(p.getByTestId('pod-outputs-render-codecs')).toHaveCount(0)
 })
 
-test('Clip names: collapsed section prefilled with the sequence names; an edit is sent as clip_name only when it differs; the plan shows the output file names', async ({ page, api }) => {
+test('Clip names: the sequence rows are prefilled with the sequence names; an edit is sent as clip_name only when it differs; the plan shows the output file names', async ({ page, api }) => {
   await openOutputs(page, api)
   const p = await openPreviews(page)
   const sec = p.getByTestId('pod-outputs-render-clipnames')
-  await expect(sec).toHaveJSProperty('open', false)
-  await expect(p.getByTestId('pod-outputs-render-outputs')).toContainText(`${A}.mp4`)   // proxy at source size: <clip>.mp4
-  await sec.locator('summary').click()
+  await expect(sec).toBeVisible()   // one list of rows, always open
+  await expect(sec).toContainText(`${A}.mp4`)   // proxy at source size: <clip>.mp4, on the row
   await expect(sec).toContainText('Outputs are named with the clip name so conform relinks. The frames are never renamed.')
   await expect(p.getByTestId('pod-outputs-render-clipname')).toHaveCount(3)
   await expect(p.getByTestId('pod-outputs-render-clipname').first()).toHaveValue(A)
   await p.getByTestId('pod-outputs-render-clipname').nth(1).fill('ARCHIVAL-077_B')
-  await expect(p.getByTestId('pod-outputs-render-outputs')).toContainText('ARCHIVAL-077_B.mp4')
+  await expect(sec).toContainText('ARCHIVAL-077_B.mp4')
   await p.getByTestId('pod-outputs-render-kind-review').check()
-  await expect(p.getByTestId('pod-outputs-render-outputs')).toContainText('ARCHIVAL-077_B.mov')
-  await expect(p.getByTestId('pod-outputs-render-outputs')).toContainText(`${A}.mov`)
+  await expect(sec).toContainText('ARCHIVAL-077_B.mov')
+  await expect(sec).toContainText(`${A}.mov`)
   await p.getByTestId('pod-outputs-render-kind-proxy').check()
   await p.getByTestId('pod-outputs-render-width').selectOption('1280')
-  await expect(p.getByTestId('pod-outputs-render-outputs')).toContainText(`${A}_1280.mp4`)
+  await expect(sec).toContainText(`${A}_1280.mp4`)
   await p.getByTestId('pod-outputs-render-start').click()
   await expect.poll(() => api.state.renders.started.length).toBe(1)
   const seqs = api.state.renders.started[0].sequences
@@ -455,7 +454,6 @@ test('Clip names: collapsed section prefilled with the sequence names; an edit i
 test('Clip names: the core\'s rules are checked inline (empty, slash, .., characters, length) and Start waits; a core 400 shows inline', async ({ page, api }) => {
   await openOutputs(page, api)
   const p = await openPreviews(page)
-  await p.getByTestId('pod-outputs-render-clipnames').locator('summary').click()
   const box = p.getByTestId('pod-outputs-render-clipname').first(), err = p.getByTestId('pod-outputs-render-clipname-error')
   for (const [value, text] of [['', 'A clip name cannot be empty.'], ['a/b', 'A clip name has no slashes or `..`.'], ['a..b', 'A clip name has no slashes or `..`.'], ['a\\b', 'A clip name has no slashes or `..`.'], ['a:b*', 'A clip name uses letters, digits and . _ - or spaces only.'], ['x'.repeat(201), 'A clip name is at most 200 characters.']]) {
     await box.fill(value)
@@ -524,7 +522,7 @@ test('switching to Review while its plan is still on the way never prints "undef
   })
   const p = await openPreviews(page)
   await p.getByTestId('pod-outputs-render-kind-review').check()
-  const rows = p.getByTestId('pod-outputs-render-review-rows')
+  const rows = p.getByTestId('pod-outputs-render-clipnames')
   await expect(rows.getByTestId('pod-outputs-render-review-planning')).toBeVisible()       // the planning line, not stale rows
   await expect(rows).not.toContainText('undefined')
   await expect(p.getByTestId('pod-outputs-render-review-shot')).toHaveCount(0)
@@ -554,33 +552,25 @@ test('Source size under the Size select: one size, two sizes as lines with count
   await expect(p.getByTestId('pod-outputs-render-source')).toHaveText('size not read')
 })
 
-test('Colour block: closed for a quick proxy, open for a Review; the groups, the conversion in plain words, the no-transform note and the verdict', async ({ page, api }) => {
+test('Colour is on each sequence row (size, transfer, bits), not in a section of its own; the conversion in plain words and the no-transform note show once', async ({ page, api }) => {
   await openOutputs(page, api)
   const p = await openPreviews(page)
-  const c = p.getByTestId('pod-outputs-render-colour')
-  await expect(c).toHaveAttribute('data-open', 'false')
-  await c.locator('summary').click(); await expect(c).toHaveAttribute('data-open', 'true')
-  await expect(c.getByTestId('pod-outputs-render-colour-group')).toHaveCount(1)
-  await expect(c.getByTestId('pod-outputs-render-colour-line')).toHaveText('Transfer: logarithmic · Colorimetric: unspecified video · RGB · 16-bit packed · big-endian')
-  await expect(c.getByTestId('pod-outputs-render-colour-count')).toHaveText('3 sequences'); await expect(c.getByTestId('pod-outputs-render-colour-verdict')).toHaveText('Review allowed')
-  await expect(c.getByTestId('pod-outputs-render-colour-conversion')).toHaveText('Conversion applied: none: a plain scale, no colour transform')
-  await expect(c.getByTestId('pod-outputs-render-colour-note')).toHaveText("The app applies no colour transform; what you see in the proxy is the file's values scaled.")
-  await p.getByTestId('pod-outputs-render-kind-review').check()
-  await expect(c).toHaveAttribute('data-open', 'true')   // open for a Review
-  await p.getByTestId('pod-outputs-render-kind-proxy').check()
-  await expect(c).toHaveAttribute('data-open', 'false')
+  await expect(p.getByTestId('pod-outputs-render-colour')).toHaveCount(0)   // no separate Colour section
+  const rows = p.getByTestId('pod-outputs-render-clip-row'); await expect(rows).toHaveCount(3)
+  for (let n = 0; n < 3; n++) await expect(rows.nth(n).getByTestId('pod-outputs-render-row-source')).toHaveText('3840 × 2160 · logarithmic · 16-bit')
+  await expect(p.getByTestId('pod-outputs-render-colour-conversion')).toHaveText('Conversion applied: none: a plain scale, no colour transform')
+  await expect(p.getByTestId('pod-outputs-render-colour-note')).toHaveText("The app applies no colour transform; what you see in the proxy is the file's values scaled.")
   api.state.renders.colours = { [key('seqs/c', C)]: { conversion: 'BT.709 matrix' } }
   await p.getByTestId('pod-outputs-render-fps').selectOption('25')
-  await c.locator('summary').click()
-  await expect(c.getByTestId('pod-outputs-render-colour-conversion')).toHaveText(['Conversion applied: none: a plain scale, no colour transform', 'Conversion applied: BT.709 matrix'])
+  await expect(p.getByTestId('pod-outputs-render-colour-conversion')).toHaveText(['Conversion applied: none: a plain scale, no colour transform', 'Conversion applied: BT.709 matrix'])
 })
 
 test('A refused Review shows the reason and keeps Start off for a Review only; a quick proxy is not stopped by it', async ({ page, api }) => {
   await openOutputs(page, api, { renders: { refuse: { [key('seqs/b', B)]: 'a linear transfer is not a review source' } } })
   const p = await openPreviews(page)
-  await p.getByTestId('pod-outputs-render-colour').locator('summary').click()
-  const verdicts = p.getByTestId('pod-outputs-render-colour-verdict')
-  await expect(verdicts).toHaveText(['Review allowed', 'Review refused: a linear transfer is not a review source'])
+  const refused = p.getByTestId('pod-outputs-render-row-refused')
+  await expect(refused).toHaveCount(1); await expect(refused).toHaveText('Review refused: a linear transfer is not a review source')   // on the row of the refused sequence only
+  await expect(p.locator(`[data-testid="pod-outputs-render-clip-row"][data-name="${B}"]`).getByTestId('pod-outputs-render-row-refused')).toHaveCount(1)
   await expect(p.getByTestId('pod-outputs-render-start')).toBeEnabled()   // a proxy plays anything
   await p.getByTestId('pod-outputs-render-kind-review').check(); await p.getByTestId('pod-outputs-render-approved-by').fill('B')
   await expect(p.getByTestId('pod-outputs-render-start')).toBeDisabled()
@@ -588,18 +578,13 @@ test('A refused Review shows the reason and keeps Start off for a Review only; a
   await expect(p.getByTestId('pod-outputs-render-start')).toBeEnabled()
 })
 
-test('The per-sequence table (name, size, transfer, colorimetric, bits, start timecode, verdict) with a filter, and Copy as text puts the block on the clipboard', async ({ page, api, context }) => {
+test('Each sequence row carries its size, transfer and bits and a refusal on its own row; Copy as text puts the grouped block on the clipboard', async ({ page, api, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-  await openOutputs(page, api, { renders: { refuse: { [key('seqs/c', C)]: 'not a review source' }, colours: { [key('seqs/b', B)]: { start_timecode: '02:00:00:00' } } } })
+  await openOutputs(page, api, { renders: { refuse: { [key('seqs/c', C)]: 'not a review source' } } })
   const p = await openPreviews(page)
-  await p.getByTestId('pod-outputs-render-colour').locator('summary').click()
-  await p.getByTestId('pod-outputs-render-colour-rows-toggle').click()
-  await expect(p.getByTestId('pod-outputs-render-colour-row')).toHaveCount(3)
-  const rowB = p.locator(`[data-testid="pod-outputs-render-colour-row"][data-name="${B}"]`)
-  await expect(rowB.locator('td')).toHaveText([B, '3840 × 2160', 'logarithmic', 'unspecified video', '16', '02:00:00:00', 'ok'])
-  await expect(p.locator(`[data-testid="pod-outputs-render-colour-row"][data-name="${C}"] td`).last()).toHaveText('not a review source')
-  await p.getByTestId('pod-outputs-render-colour-filter').fill('s2_')
-  await expect(p.getByTestId('pod-outputs-render-colour-row')).toHaveCount(1)
+  const rowOf = (n) => p.locator(`[data-testid="pod-outputs-render-clip-row"][data-name="${n}"]`)
+  await expect(rowOf(B).getByTestId('pod-outputs-render-row-source')).toHaveText('3840 × 2160 · logarithmic · 16-bit')
+  await expect(rowOf(C).getByTestId('pod-outputs-render-row-refused')).toHaveText('Review refused: not a review source'); await expect(rowOf(B).getByTestId('pod-outputs-render-row-refused')).toHaveCount(0)
   await p.getByTestId('pod-outputs-render-colour-copy').click()
   await expect(p.getByTestId('pod-outputs-render-colour-copy')).toHaveText('Copied')
   const text = await page.evaluate(() => navigator.clipboard.readText())
@@ -638,7 +623,7 @@ test('rendering on this PC while previews are being generated shows a warning hi
 })
 
 
-test('Review video: two clips of one shot share a folder and read as ONE line (2 clips) with Play on the left; a version that already has its v is not doubled', async ({ page, api }) => {
+test('Review video: each clip row carries its own review line and Play button (no separate section); a version that already has its v is not doubled', async ({ page, api }) => {
   const B = 'ARCHIVAL-085_B_FINAL_V03_3840X2160_23.976_PRORES422HQ'
   await openOutputs(page, api, { seqs: [[A, 'seqs/a', 3], [B, 'seqs/b', 3]] })
   const p = await openPreviews(page)
@@ -648,11 +633,65 @@ test('Review video: two clips of one shot share a folder and read as ONE line (2
   await expect(p.getByTestId('pod-outputs-render-job')).toBeVisible()
   const j = api.state.renders.jobs[0], files = [{ name: `${A}.mp4`, codec: 'h264', bytes: 10 }]
   Object.assign(j, { state: 'done', finished_at: 'now', summary: '2 review videos written' }); for (const s of j.sequences) Object.assign(s, { state: 'rendered', shot: 'archival-085', version: 'v001', files })
-  const done = p.getByTestId('pod-outputs-render-review-done')
-  await expect(done).toHaveCount(1, { timeout: 6000 })
-  await expect(done).toContainText('Review video archival-085 v001: output/deliver/archival-085/v001/')
-  await expect(done).not.toContainText('vv001')
-  await expect(done.getByTestId('pod-outputs-render-review-clips')).toHaveText('2 clips')
-  const play = await done.getByTestId('pod-outputs-render-review-play').boundingBox(), text = await done.locator('.text-success').boundingBox()
-  expect(play.x).toBeLessThan(text.x)   // Play is on the left
+  const rows = p.getByTestId('pod-outputs-render-clip-row')
+  await expect(rows.first().getByTestId('pod-outputs-render-review-done')).toContainText('Review video archival-085 v001: output/deliver/archival-085/v001/', { timeout: 6000 })
+  await expect(p.getByTestId('pod-outputs-render-review-done')).toHaveCount(2)   // one per row, inside the table
+  await expect(p.getByTestId('pod-outputs-render-review-done').first()).not.toContainText('vv001')
+  for (let n = 0; n < 2; n++) { const play = rows.nth(n).getByTestId('pod-outputs-render-review-play'); await expect(play).toBeEnabled(); await expect(play).toHaveText('Play') }   // an icon AND a text label, in the row's actions
+  await expect(p.getByTestId('pod-outputs-render-seqs')).toHaveCount(0)   // the old separate list is gone
+})
+
+test('Sequences: tick or untick each, All and None act on what the filter shows, paging (10 a page) never loses a tick, and only the ticked ones are generated', async ({ page, api }) => {
+  const many = Array.from({ length: 23 }, (_, n) => [`SEQ-${String(n + 1).padStart(3, '0')}_MAIN_V01_3840X2160_23.976_PRORES422HQ`, `seqs/s${n}`, 3])
+  await openOutputs(page, api, { seqs: many })
+  const p = await openPreviews(page)
+  const rows = p.getByTestId('pod-outputs-render-clip-row'), count = p.getByTestId('pod-outputs-render-selected-count'), info = p.getByTestId('pod-outputs-render-page-info')
+  await expect(p.getByTestId('pod-outputs-render-sequences-title')).toHaveText('Sequences (23)')
+  await expect(rows).toHaveCount(10); await expect(info).toHaveText('1–10 of 23'); await expect(count).toHaveText('23 of 23 selected')
+  await expect(rows.first().getByTestId('pod-outputs-render-thumb')).toBeVisible(); await expect(p.getByTestId('pod-outputs-render-thumb').getByTestId('outputs-dpx-load-preview')).toHaveCount(0)   // previews load by themselves: no click-to-load badge on the rows
+  // untick two on page 1, move to page 3 and back: the ticks stay
+  await rows.nth(0).getByTestId('pod-outputs-render-select').uncheck(); await rows.nth(3).getByTestId('pod-outputs-render-select').uncheck()
+  await expect(count).toHaveText('21 of 23 selected')
+  await p.getByTestId('pod-outputs-render-page-next').click(); await p.getByTestId('pod-outputs-render-page-next').click()
+  await expect(info).toHaveText('21–23 of 23'); await expect(rows).toHaveCount(3)
+  await expect(rows.first().getByTestId('pod-outputs-render-thumb')).toBeVisible(); await expect(p.getByTestId('pod-outputs-render-thumb').getByTestId('outputs-dpx-load-preview')).toHaveCount(0)   // a new page's previews load by themselves too
+  await p.getByTestId('pod-outputs-render-page-prev').click(); await p.getByTestId('pod-outputs-render-page-prev').click()
+  await expect(rows.nth(0).getByTestId('pod-outputs-render-select')).not.toBeChecked(); await expect(rows.nth(3).getByTestId('pod-outputs-render-select')).not.toBeChecked(); await expect(rows.nth(1).getByTestId('pod-outputs-render-select')).toBeChecked()
+  // None on the filtered set only; clearing the filter shows the rest still ticked
+  await p.getByTestId('pod-outputs-render-filter').fill('SEQ-02'); await expect(rows).toHaveCount(4); await expect(info).toHaveCount(0)   // 020 to 023; four rows fit one page, so no pager
+  await p.getByTestId('pod-outputs-render-select-none').click(); await expect(count).toHaveText('17 of 23 selected')
+  await p.getByTestId('pod-outputs-render-filter').fill(''); await expect(count).toHaveText('17 of 23 selected'); await expect(info).toHaveText('1–10 of 23')
+  await p.getByTestId('pod-outputs-render-filter').fill('nomatch'); await expect(p.getByTestId('pod-outputs-render-filter-none')).toBeVisible()
+  await p.getByTestId('pod-outputs-render-filter').fill('')
+  // None everywhere: nothing to generate
+  await p.getByTestId('pod-outputs-render-select-none').click(); await expect(count).toHaveText('0 of 23 selected'); await expect(p.getByTestId('pod-outputs-render-start')).toBeDisabled()
+  await p.getByTestId('pod-outputs-render-select-all').click(); await expect(count).toHaveText('23 of 23 selected')
+  // untick one, start: the request carries the other 22
+  await rows.nth(1).getByTestId('pod-outputs-render-select').uncheck(); await expect(p.getByTestId('pod-outputs-render-start')).toBeEnabled()
+  await p.getByTestId('pod-outputs-render-start').click(); await expect.poll(() => api.state.renders.started.length).toBe(1)
+  const names = api.state.renders.started[0].sequences.map((s) => s.name); expect(names).toHaveLength(22); expect(names).not.toContain('SEQ-002_MAIN_V01_3840X2160_23.976_PRORES422HQ')
+})
+
+test('Each sequence row has a Preview Frames button (icon and label) that opens the frame viewer on that sequence (the source frames to be generated)', async ({ page, api }) => {
+  await openOutputs(page, api)
+  const p = await openPreviews(page)
+  const rows = p.getByTestId('pod-outputs-render-clip-row'); await expect(rows).toHaveCount(3)
+  const name = await rows.nth(1).getAttribute('data-name'), viewer = page.locator('body > [data-testid="dpx-viewer"]')
+  await expect(rows.nth(1).getByTestId('pod-outputs-render-frames-open')).toBeEnabled()
+  await rows.nth(1).getByTestId('pod-outputs-render-frames-open').click()
+  await expect(viewer).toHaveCount(1); await expect(viewer).toContainText(name)   // the viewer names the sequence of THAT row
+  await page.keyboard.press('Escape'); await expect(viewer).toHaveCount(0)
+})
+
+test('Row previews come from the cache: previews the gallery already made are not fetched or decoded again for the rows (nor after a page change)', async ({ page, api }) => {
+  const asked = {}
+  page.on('request', (r) => { const m = /\/view\?.*filename=([^&]+)/.exec(r.url()); const f = m && decodeURIComponent(m[1]); if (f && /\.dpx$/.test(f)) asked[f] = (asked[f] || 0) + 1 })
+  const m = await openOutputs(page, api)
+  for (const t of await m.locator('[data-testid="outputs-tile"][data-kind="dpx"]').all()) { const b = t.getByTestId('outputs-dpx-load-preview'); if (await b.count()) await b.click() }
+  await expect(m.getByTestId('outputs-dpx-thumb')).toHaveCount(3, { timeout: 15000 })   // "Load all previews": all three are made and cached
+  const before = JSON.stringify(asked)
+  const p = await openPreviews(page)
+  for (const r of await p.getByTestId('pod-outputs-render-clip-row').all()) await r.scrollIntoViewIfNeeded()   // previews load when their row is on screen
+  await expect(p.getByTestId('pod-outputs-render-thumb').getByTestId('outputs-dpx-thumb')).toHaveCount(3, { timeout: 15000 })   // the rows show them
+  expect(JSON.stringify(asked)).toBe(before)   // and no frame was requested again
 })

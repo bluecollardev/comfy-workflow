@@ -1116,20 +1116,21 @@ async function run(job: Job): Promise<void> {
   end(job)
 }
 
-/** ADR-050: after the sequences are rendered AND are on this PC, hand their files to publishing with the job's approver. A file that is only on the pod (pull off) is refused, never sent from here. */
+/** ADR-050: after a sequence is rendered, hand its files to publishing with the job's approver. Files on this PC go from here; a render that stayed on the pod (Sync off) is published from the VOLUME, streamed through this PC with no local copy (the same `{ where: 'volume' }` item the Publish window uses), so Sync is not needed to publish. */
 async function publishSeq(job: Job, sv: SeqView, notPulled: boolean): Promise<void> {
   const p = job.publish; if (!p) return
   const v = job.view, strip = (rel: string) => rel.replace(/^output\//, '')
   const note = (error: string) => { v.publish = { job_id: job.pubIds[0] ?? '', job_ids: [...job.pubIds], state: job.pubIds.length ? 'partial' : 'refused', error } }
   try {
-    if (notPulled || sv.state === 'rendered') { job.pubErr ||= 'Pull the renders to this PC first'; return note(job.pubErr) }   // rendered on the pod and not pulled: not here
-    if (!['pulled', 'done', 'skipped'].includes(sv.state)) return
-    const item = job.kind === 'review' ? strip(dirname(sv.out)) : strip(sv.out)
-    if (job.pubDirs.has(item)) return
-    job.pubDirs.add(item)
+    const onVolume = notPulled || sv.state === 'rendered'   // rendered on the pod and not pulled: it is on the volume only
+    if (!onVolume && !['pulled', 'done', 'skipped'].includes(sv.state)) return
+    const rel = job.kind === 'review' ? strip(dirname(sv.out)) : strip(sv.out)
+    if (job.pubDirs.has(rel)) return
+    job.pubDirs.add(rel)
+    const item = onVolume ? { where: 'volume' as const, path: rel } : rel
     const req = { items: [item], targets: p.targets, approved_by: job.approvedBy, ...(p.message ? { message: p.message } : {}), ...(p.round ? { round: p.round } : {}), ...(p.clip_names ? { clip_names: p.clip_names } : {}), ...(p.edl_override && Object.keys(p.edl_override).length ? { edl_override: p.edl_override } : {}), ...(job.seqs.find((q) => q.name === sv.name)?.start_timecode ? { start_timecodes: { [sv.name]: job.seqs.find((q) => q.name === sv.name)!.start_timecode! } } : {}) }
     const pl = await publish.plan(req)
-    if (pl.items.some((i) => i.skip === 'missing')) { job.pubErr ||= 'Pull the renders to this PC first'; return note(job.pubErr) }
+    if (pl.items.some((i) => i.skip === 'missing')) { job.pubErr ||= onVolume ? 'The render was not found on the volume' : 'Pull the renders to this PC first'; return note(job.pubErr) }
     const r = await publish.run({ ...req, trigger: 'render' })
     job.pubIds.push(r.job_id); v.publish = { job_id: job.pubIds[0], job_ids: [...job.pubIds], state: 'queued' }
   } catch (e) { job.pubErr ||= (e as Error).message; note((e as Error).message) }

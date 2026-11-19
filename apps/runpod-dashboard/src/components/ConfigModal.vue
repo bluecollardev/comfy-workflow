@@ -379,8 +379,8 @@
           <label><input v-model="cfg.render.codecs" type="checkbox" value="h264" class="form-check-input me-1" data-testid="config-render-codec-h264" />{{ $t('outputs.render.cfg.codecH264') }}</label>
           <label><input v-model="cfg.render.codecs" type="checkbox" value="prores422hq" class="form-check-input me-1" data-testid="config-render-codec-prores" />{{ $t('outputs.render.cfg.codecProres') }}</label>
           <label><input v-model="cfg.render.pull" type="checkbox" class="form-check-input me-1" data-testid="config-render-pull" @change="renderDeps" />{{ $t('outputs.render.cfg.pull') }}</label>
-          <label><input v-model="cfg.render.publish.s3" type="checkbox" class="form-check-input me-1" :disabled="renderNeedsSync" data-testid="config-render-publish-s3" @change="renderDeps" />{{ $t('outputs.render.cfg.publishS3') }}</label>
-          <label><input v-model="cfg.render.publish.slack" type="checkbox" class="form-check-input me-1" :disabled="!cfg.render.publish.s3 || renderNeedsSync" data-testid="config-render-publish-slack" />{{ $t('outputs.render.cfg.publishSlack') }}</label>
+          <label><input v-model="cfg.render.publish.s3" type="checkbox" class="form-check-input me-1" data-testid="config-render-publish-s3" @change="renderDeps" />{{ $t('outputs.render.cfg.publishS3') }}</label>
+          <label><input v-model="cfg.render.publish.slack" type="checkbox" class="form-check-input me-1" :disabled="!cfg.render.publish.s3" data-testid="config-render-publish-slack" />{{ $t('outputs.render.cfg.publishSlack') }}</label>
           <label><input v-model="cfg.render.skip_existing" type="checkbox" class="form-check-input me-1" data-testid="config-render-skip-existing" />{{ $t('outputs.render.cfg.skipExisting') }}</label>
         </div>
         <div class="d-flex gap-3 flex-wrap align-items-end small mt-2" data-testid="config-render-preset-row">
@@ -388,7 +388,6 @@
             <select v-model="cfg.render.preset" class="form-select form-select-sm" data-testid="config-render-preset" @change="renderPresetChanged"><option value="none">{{ $t('outputs.render.presetStandard') }}</option><option value="tunnel">{{ $t('outputs.render.presetTunnel') }}</option></select>
           </label>
         </div>
-        <div v-if="renderNeedsSync" class="form-text" data-testid="config-render-needsync">{{ $t('outputs.render.cfg.needSync') }}</div>
         <div class="form-text" data-testid="config-render-help">{{ $t('outputs.render.cfg.help') }}</div>
         <div class="form-text" data-testid="config-render-pre-help">{{ $t('outputs.render.cfg.preHelp') }}</div>
         <div class="form-text" data-testid="config-render-skip-help">{{ $t('outputs.render.cfg.skipHelp') }}</div>
@@ -649,9 +648,8 @@ function take(payload) {
 let renderStored = false, renderLoadedKeys = [], outputsStored = false
 /** The Tunnel proxy preset is a quick proxy: it takes the kind with it. */
 function renderPresetChanged() { if (cfg.value.render.preset === 'tunnel') cfg.value.render.kind = 'proxy' }
-const renderNeedsSync = computed(() => cfg.value.render.where !== 'local' && !cfg.value.render.pull)
 /** Publishing when done needs the renders on this PC (unless they render here), and Slack needs S3: switched off inline, before any call. */
-function renderDeps() { const p = cfg.value.render.publish; if (renderNeedsSync.value) { p.s3 = false; p.slack = false } if (!p.s3) p.slack = false }
+function renderDeps() { const p = cfg.value.render.publish; if (!p.s3) p.slack = false }
 let apSnapshot = '', apLoadedDefault = true
 const apValidate = ref(false)
 const apDirty = computed(() => !!cfg.value?.auto_publish && JSON.stringify(cfg.value.auto_publish) !== apSnapshot)
@@ -687,7 +685,7 @@ const renderError = ref('')
 /** Render sequences: at least one codec, known choices; refused here before any call (the core refuses it too). */
 function renderOk() {
   const p = renderProblem(cfg.value.render), q = renderPublishProblem(cfg.value.render)
-  renderError.value = p ? t('outputs.render.cfg.needCodec') : q === 'slackNeedsS3' ? t('autopublish.block.slackNeedsS3') : q === 'needSync' ? t('outputs.render.cfg.needSync') : ''
+  renderError.value = p ? t('outputs.render.cfg.needCodec') : q === 'slackNeedsS3' ? t('autopublish.block.slackNeedsS3') : ''
   return !p && !q
 }
 let autoSyncStored = false

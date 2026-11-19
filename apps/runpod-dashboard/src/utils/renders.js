@@ -63,7 +63,6 @@ export const renderBody = (r, loadedKeys = []) => { const o = renderNorm(r), d =
 export function renderPublishProblem(r) {
   const p = r?.publish || {}
   if (p.slack && !p.s3) return 'slackNeedsS3'
-  if ((p.s3 || p.slack) && r.where !== 'local' && !r.pull) return 'needSync'
   return ''
 }
 /** Why a clip name is refused (the core's rules), or '': not empty, no slashes or `..`, no control characters, letters digits and `._- ` only, at most 200. */

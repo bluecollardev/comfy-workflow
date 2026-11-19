@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdirSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as renders from '../src/renders.js'
+import * as mounts from '../src/mounts.js'
 import { scratch } from './helpers.js'
 
 // ADR-048 "Colour details in the plan": the first 2 KB of every sequence's first frame, decoded. Fakes only: a fake pod (ssh), a scratch folder.
@@ -30,6 +31,7 @@ const writeLocal = (s: renders.Sequence, buf: Buffer) => { const p = join(shared
 
 beforeEach(() => {
   dir = scratch(); shared = join(dir, 'shared'); mkdirSync(join(shared, 'output'), { recursive: true }); process.env.RENDERS_FILE = join(dir, 'renders.json'); process.env.HISTORY_FILE = join(dir, 'h.jsonl')
+  mounts.save({ ...mounts.load(), render: { ...mounts.RENDER_DEFAULT, kind: 'proxy' } })   // these tests plan quick proxies unless they say review
   renders.reset(); t = Date.parse('2026-11-19T10:00:00Z'); sshCalls = []; headers = new Map(); sshFail = false
   renders.setDeps({
     now: () => t, podName: () => 'Pod', volumeId: () => 'volx1', localRoot: () => shared, outputDir: () => '/workspace/comfy-shared/output',

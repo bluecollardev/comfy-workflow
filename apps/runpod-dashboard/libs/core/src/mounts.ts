@@ -106,7 +106,7 @@ export function validateEdl(e: EdlConfig): void {
 /** What a render does with log or linear frames when nobody has stated their colour (ADR-048): `ask` skips them with a warning, `format` converts from `format`, `guess` converts from the DPX header (and says so). The Tunnel preset and a bkk-return publish never guess. */
 export interface RenderColour { mode: 'ask' | 'format' | 'guess' | 'known'; format?: string; /** who and when last set it (kept for the manifest and the sidecar) */ set_by?: string; set_at?: string }
 export interface RenderSettings { /** the colour setting for frames whose header says log, linear or printing density */ colour: RenderColour; where: 'auto' | 'pod' | 'local'; kind: 'proxy' | 'review'; proxy_width: 'source' | 960 | 1280 | 1920; review_width: 'source' | 960 | 1280 | 1920; codecs: ('h264' | 'prores422hq')[]; fps: 'auto' | number; /** a preset: `tunnel` = the Tunnel proxy (H.264, 1920x1080, tagged Rec.709, a start timecode, no burn-ins) */ preset: 'none' | 'tunnel'; /** Sync the renders to this PC when done (default OFF) */ pull: boolean; /** Skip existing: the Generate window starts from it (default ON); a request's own value always wins */ skip_existing: boolean; /** what the Generate window pre-ticks for "Publish to S3 / Post to Slack when done" (default both off): a preference only, a run still needs its own `publish` field and approved_by */ publish: { s3: boolean; slack: boolean } }
-export const RENDER_DEFAULT: RenderSettings = { colour: { mode: 'known' }, where: 'auto', kind: 'proxy', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto', preset: 'none', pull: false, skip_existing: true, publish: { s3: false, slack: false } }
+export const RENDER_DEFAULT: RenderSettings = { colour: { mode: 'known' }, where: 'auto', kind: 'review', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto', preset: 'none', pull: false, skip_existing: true, publish: { s3: true, slack: false } }
 export const RENDER_WIDTHS = ['source', 960, 1280, 1920] as const
 export const RENDER_CODECS = ['h264', 'prores422hq'] as const
 export function normalizeRenderColour(v: unknown): RenderColour {
@@ -122,7 +122,7 @@ export function normalizeRender(v: unknown): RenderSettings {
     preset: (o.preset === undefined ? d.preset : o.preset) as RenderSettings['preset'],
     colour: normalizeRenderColour(o.colour),
     skip_existing: o.skip_existing === undefined ? d.skip_existing : (o.skip_existing as boolean),
-    publish: { s3: (o.publish as Record<string, unknown> | undefined)?.s3 === true, slack: (o.publish as Record<string, unknown> | undefined)?.slack === true },
+    publish: { s3: (o.publish as Record<string, unknown> | undefined)?.s3 === undefined ? d.publish.s3 : (o.publish as Record<string, unknown>).s3 === true, slack: (o.publish as Record<string, unknown> | undefined)?.slack === true },
   }
 }
 export function validateRender(r: RenderSettings): void {
@@ -139,7 +139,6 @@ export function validateRender(r: RenderSettings): void {
   if (typeof r.skip_existing !== 'boolean') throw bad('render.skip_existing is true or false')
   if (!r.publish || typeof r.publish.s3 !== 'boolean' || typeof r.publish.slack !== 'boolean') throw bad('render.publish is { s3, slack }, each true or false')
   if (r.publish.slack && !r.publish.s3) throw bad('Slack announces an upload: turn S3 on')
-  if ((r.publish.s3 || r.publish.slack) && !(r.pull || r.where === 'local')) throw bad('Publishing needs the renders on this PC: turn on Sync the renders to this PC')
 }
 /** Patterns a push leaves out (rsync semantics, relative to each step's local root): a leading `/` anchors to the root, a trailing `/` means folders only, otherwise it matches at any depth. They only ever REMOVE things from a push; nothing on the volume is deleted. */
 export const EXCLUDE_MAX = 100, EXCLUDE_LEN = 200
