@@ -26,8 +26,8 @@ export interface OutputRun {
   folder?: string
 }
 export interface OutputCtx { pod_id?: string; volume_id?: string; shot?: string; round?: string }
-export interface ListOpts extends volumeround.VolumeOpts { prefix?: string }
-export interface OutputListing { source: SourceId; runs: OutputRun[]; /** volume-s3: the folders under `prefix` (names) */ folders: string[]; /** volume-s3: per folder name, what a one-key probe found (`empty: true` is a shell with no files; absent when unknown). `folders` stays an array of names. */ folder_info?: Record<string, { empty?: boolean }>; /** volume-s3: the prefix listed, relative to output/ ('' = the root) */ prefix: string; capped: boolean; total: number; start_note?: string }
+export interface ListOpts extends volumeround.VolumeOpts { prefix?: string; /** volume-s3: the WHOLE comfy-shared/output/ tree in one recursive listing ("All outputs"), see listAll */ all?: boolean; /** with `all`: start the listing as a job and return `{ job_id }` (outputsJob / outputsStatus) */ job?: boolean; /** stops an `all` listing */ signal?: AbortSignal; /** `all`: how many lines the listing has produced so far */ onProgress?: (lines: number) => void }
+export interface OutputListing { source: SourceId; runs: OutputRun[]; /** volume-s3: the folders under `prefix` (names) */ folders: string[]; /** `all`: false when the listing stopped counting at the hard limit (total is then a floor) */ total_exact?: boolean; /** volume-s3: per folder name, what a one-key probe found (`empty: true` is a shell with no files; absent when unknown). `folders` stays an array of names. */ folder_info?: Record<string, { empty?: boolean }>; /** volume-s3: the prefix listed, relative to output/ ('' = the root) */ prefix: string; capped: boolean; total: number; start_note?: string }
 export interface OutputSource {
   id: SourceId; name: string; hint: string
   available(ctx: OutputCtx, opts?: ListOpts): Promise<{ ok: boolean; reason: string }>
@@ -38,6 +38,7 @@ export interface OutputSource {
 
 export const OUTPUT_ROOT = 'comfy-shared/output'
 export const MAX_OBJECTS = 3000
+export const MAX_OBJECTS_ALL = 25_000, HARD_LIMIT = 200_000, ALL_CACHE_MS = 60_000
 export const PRIORITY: SourceId[] = ['pod-history', 'saved', 'volume-s3']
 const listing = (source: SourceId, runs: OutputRun[]): OutputListing => ({ source, runs, folders: [], prefix: '', capped: false, total: runs.length })
 const when = (r: OutputRun) => r.started_at || ''
@@ -119,6 +120,41 @@ async function startPrefix(volumeId: string, ctx: OutputCtx, opts: ListOpts): Pr
   return { prefix: '', note: `No output folder for the shot ${shot}: showing the top level.` }
 }
 
+/** The files of a listing grouped into runs by folder, newest first (what the deep listing and the "all" listing both do). */
+function buildRuns(id: string, shown: { key: string; bytes: number; modified?: string }[]): OutputRun[] {
+  const groups = new Map<string, OutputFile[]>()
+  for (const f of shown) {
+    const dir = dirName(f.key.slice(OUTPUT_ROOT.length + 1))
+    const arr = groups.get(dir) || []; arr.push({ filename: baseName(f.key), subfolder: dir, type: 'output', bytes: f.bytes, ...(f.modified ? { modified: f.modified } : {}) }); groups.set(dir, arr)
+  }
+  return [...groups].map(([dir, fs]) => {
+    fs.sort((a, b) => a.filename.localeCompare(b.filename))
+    const newest = fs.reduce((m, f) => (f.modified && f.modified > m ? f.modified : m), '')
+    return { prompt_id: `volume:${id}:${dir || '.'}`, workflow: null, started_at: newest || null, files: fs, source: 'volume-s3' as const, folder: dir }
+  }).sort((a, b) => when(b).localeCompare(when(a)))
+}
+
+// ----- "All outputs": the whole output/ tree of the volume in one listing -----
+const allCache = new Map<string, { at: number; listing: OutputListing }>(), allRunning = new Map<string, AbortController>()
+/** Every file under comfy-shared/output/ in ONE recursive listing (never one call per folder), parsed in chunks with yields, grouped into runs by folder like the deep listing. At most MAX_OBJECTS_ALL files are materialised; `total` counts what the listing found up to HARD_LIMIT (`total_exact` says if it stopped). Cached 60 s per volume (`fresh` bypasses); a second request for the same volume cancels the one still running; `signal` stops it. folder_info comes free from the listing: every folder found, empty or not. */
+export async function listAll(id: string, opts: ListOpts = {}): Promise<OutputListing> {
+  const nowMs = (opts.now ?? (() => new Date()))().getTime(), hit = allCache.get(id)
+  if (!opts.fresh && hit && nowMs - hit.at < ALL_CACHE_MS) return hit.listing
+  allRunning.get(id)?.abort()
+  const ac = new AbortController(); allRunning.set(id, ac)
+  const stop = () => ac.abort(); opts.signal?.addEventListener('abort', stop, { once: true }); if (opts.signal?.aborted) ac.abort()
+  try {
+    const r = await podpull.listVolumeKeysChunked(id, OUTPUT_ROOT, { signal: ac.signal, ...(opts.onProgress ? { onSeen: opts.onProgress } : {}), keep: MAX_OBJECTS_ALL, hardLimit: HARD_LIMIT }, opts)
+    if (r === null) throw new CoreError(409, (await volumeround.availability(id, opts)).reason || 'This volume cannot be listed over the S3 API.')
+    const runs = buildRuns(id, r.keys), folder_info: Record<string, { empty?: boolean }> = {}
+    for (const [d, n] of r.dirs) folder_info[d] = { empty: n === 0 }
+    const folders = [...r.dirs.keys()].filter((d) => !d.includes('/')).sort()
+    const listing: OutputListing = { source: 'volume-s3', runs, folders, folder_info, prefix: '', capped: r.counted > MAX_OBJECTS_ALL, total: r.counted, total_exact: !r.limited, all: true } as OutputListing
+    allCache.set(id, { at: nowMs, listing }); return listing
+  } finally { opts.signal?.removeEventListener('abort', stop); if (allRunning.get(id) === ac) allRunning.delete(id) }
+}
+export const forgetAll = (): void => { allCache.clear(); for (const c of allRunning.values()) c.abort(); allRunning.clear() }
+
 export const volumeS3: OutputSource = {
   id: 'volume-s3', name: 'Network volume (S3)', hint: 'The files under comfy-shared/output/ on the volume, read over RunPod\'s S3 API with no pod.',
   async available(ctx, opts = {}) {
@@ -132,6 +168,7 @@ export const volumeS3: OutputSource = {
     const av = await volumeS3.available({ ...ctx, volume_id: id }, opts)
     if (!av.ok) throw new CoreError(409, av.reason)
     seenVolumes.add(id)
+    if (opts.all && opts.prefix === undefined) return listAll(id, opts)
     let prefix = '', note: string | undefined
     if (opts.prefix === undefined) ({ prefix, note } = await startPrefix(id, ctx, opts)); else prefix = cleanPrefix(opts.prefix)
     // The root and a top folder are one level (cheap); deeper, everything under the prefix (a shot's folders), capped.
@@ -147,17 +184,8 @@ export const volumeS3: OutputSource = {
       if (r.includes('/')) folders.add(r.split('/')[0])
       files.push({ key: k.key, bytes: k.bytes, modified: k.modified })
     }
-    const total = files.length, capped = total > MAX_OBJECTS, shown = files.slice(0, MAX_OBJECTS)
-    const groups = new Map<string, OutputFile[]>()
-    for (const f of shown) {
-      const dir = dirName(f.key.slice(OUTPUT_ROOT.length + 1))
-      const arr = groups.get(dir) || []; arr.push({ filename: baseName(f.key), subfolder: dir, type: 'output', bytes: f.bytes, ...(f.modified ? { modified: f.modified } : {}) }); groups.set(dir, arr)
-    }
-    const runs: OutputRun[] = [...groups].map(([dir, fs]) => {
-      fs.sort((a, b) => a.filename.localeCompare(b.filename))
-      const newest = fs.reduce((m, f) => (f.modified && f.modified > m ? f.modified : m), '')
-      return { prompt_id: `volume:${id}:${dir || '.'}`, workflow: null, started_at: newest || null, files: fs, source: 'volume-s3' as const, folder: dir }
-    }).sort((a, b) => when(b).localeCompare(when(a)))
+    const total = files.length, capped = total > MAX_OBJECTS
+    const runs = buildRuns(id, files.slice(0, MAX_OBJECTS))
     const names = [...folders].sort(), folder_info: Record<string, { empty?: boolean }> = {}
     const acc = names.length ? await podpull.s3ReadAccess(id, opts).catch(() => null) : null
     if (acc && acc.ok) {
@@ -190,9 +218,10 @@ export function mergeRuns(groups: Partial<Record<SourceId, OutputRun[]>> | Outpu
   return out.map((r, i) => ({ r, i })).sort((a, b) => (when(a.r) && when(b.r) ? when(b.r).localeCompare(when(a.r)) : when(a.r) ? -1 : when(b.r) ? 1 : a.i - b.i)).map((x) => x.r)
 }
 
-export interface Answer { sources: { id: SourceId; name: string; hint: string; ok: boolean; reason: string }[]; runs: OutputRun[]; folders: string[]; folder_info: Record<string, { empty?: boolean }>; prefix: string; capped: boolean; total: number; volume_id: string; start_note?: string }
+export interface Answer { sources: { id: SourceId; name: string; hint: string; ok: boolean; reason: string }[]; runs: OutputRun[]; folders: string[]; folder_info: Record<string, { empty?: boolean }>; prefix: string; capped: boolean; total: number; /** false when an `all` listing stopped counting at the hard limit */ total_exact: boolean; volume_id: string; start_note?: string }
 /** What the sources know: every one asked (or just `source`), a failing source reported with its reason and never throwing for the rest. */
-export async function listOutputs(ctx: OutputCtx, o: ListOpts & { source?: string } = {}): Promise<Answer> {
+export async function listOutputs(ctx: OutputCtx, o: ListOpts & { source?: string } = {}): Promise<Answer | { job_id: string }> {
+  if (o.all && o.job) return startAllJob(ctx, o)
   const want = o.source ? [SOURCES[o.source as SourceId] ?? (() => { throw bad(`Unknown output source: ${o.source}. One of ${PRIORITY.join(', ')}.`) })()] : sources()
   const groups: Partial<Record<SourceId, OutputRun[]>> = {}, st: Answer['sources'] = []
   let vol: OutputListing | null = null
@@ -200,7 +229,7 @@ export async function listOutputs(ctx: OutputCtx, o: ListOpts & { source?: strin
     try { const l = await s.list(ctx, o); groups[s.id] = l.runs; if (s.id === 'volume-s3') vol = l; st.push({ id: s.id, name: s.name, hint: s.hint, ok: true, reason: '' }) }
     catch (e) { st.push({ id: s.id, name: s.name, hint: s.hint, ok: false, reason: (e as Error).message }) }
   }
-  return { sources: st, runs: mergeRuns(groups), folders: vol?.folders ?? [], folder_info: vol?.folder_info ?? {}, prefix: vol?.prefix ?? '', capped: !!vol?.capped, total: vol?.total ?? 0, volume_id: await volumeOfCtx(ctx, o).catch(() => ''), ...(vol?.start_note ? { start_note: vol.start_note } : {}) }
+  return { sources: st, runs: mergeRuns(groups), folders: vol?.folders ?? [], folder_info: vol?.folder_info ?? {}, prefix: vol?.prefix ?? '', capped: !!vol?.capped, total: vol?.total ?? 0, total_exact: vol?.total_exact ?? true, volume_id: await volumeOfCtx(ctx, o).catch(() => ''), ...(vol?.start_note ? { start_note: vol.start_note } : {}) }
 }
 /** Which sources could answer for this context, with the reason when not (no listing). */
 export async function availability(ctx: OutputCtx, opts: ListOpts = {}) {
@@ -242,3 +271,29 @@ export async function signGet(url: string, opts: { client?: volumeround.VolumeOp
   const e = new URL(a.endpoint), range = opts.range && /^bytes=\d*-\d*$/.test(opts.range) ? opts.range : undefined
   return signHeaders({ host: e.host, path: `/${a.bucket}/${g.key}`, accessKey: a.id, secretKey: a.secret, region: a.region, now: opts.now, range })
 }
+
+// ----- the listing as a job (a live count for the window; Stop cancels it) -----
+export interface OutputsJobStatus { state: 'listing' | 'done' | 'failed' | 'cancelled'; /** lines the S3 listing has produced so far */ files_seen: number; /** known when the listing is done (one S3 listing has no folder count while it runs) */ folders_seen: number; elapsed_s: number; result?: Answer; error?: string }
+interface OutputsJob { state: OutputsJobStatus['state']; files_seen: number; folders_seen: number; started: number; ended?: number; result?: Answer; error?: string; ac: AbortController }
+const outJobs = new Map<string, OutputsJob>()
+let outSeq = 0
+function startAllJob(ctx: OutputCtx, o: ListOpts & { source?: string }): { job_id: string } {
+  const id = `outputs-${Date.now().toString(36)}-${(outSeq++).toString(36)}`, ac = new AbortController()
+  for (const j of outJobs.values()) if (j.state === 'listing') j.ac.abort()   // a second request cancels the one still running
+  const job: OutputsJob = { state: 'listing', files_seen: 0, folders_seen: 0, started: Date.now(), ac }
+  outJobs.set(id, job); while (outJobs.size > 10) outJobs.delete(outJobs.keys().next().value as string)
+  void (async () => {
+    try {
+      const { job: _j, ...rest } = o
+      const res = (await listOutputs(ctx, { ...rest, source: rest.source ?? 'volume-s3', signal: ac.signal, onProgress: (n) => { job.files_seen = n } })) as Answer
+      if (ac.signal.aborted) { job.state = 'cancelled'; return }
+      job.result = res; job.files_seen = Math.max(job.files_seen, res.total); job.folders_seen = Object.keys(res.folder_info ?? {}).length || res.folders.length; job.state = 'done'
+    } catch (e) { job.state = ac.signal.aborted || (e as { status?: number }).status === 499 ? 'cancelled' : 'failed'; if (job.state === 'failed') job.error = (e as Error).message } finally { job.ended = Date.now() }
+  })()
+  return { job_id: id }
+}
+export function jobStatus(jobId: string): OutputsJobStatus {
+  const j = outJobs.get(jobId); if (!j) throw new CoreError(404, `No such outputs listing: ${jobId}`)
+  return { state: j.state, files_seen: j.files_seen, folders_seen: j.folders_seen, elapsed_s: Math.round(((j.ended ?? Date.now()) - j.started) / 100) / 10, ...(j.result ? { result: j.result } : {}), ...(j.error ? { error: j.error } : {}) }
+}
+export function jobCancel(jobId: string): OutputsJobStatus { const j = outJobs.get(jobId); if (!j) throw new CoreError(404, `No such outputs listing: ${jobId}`); if (j.state === 'listing') { j.ac.abort(); j.state = 'cancelled'; j.ended = Date.now() } return jobStatus(jobId) }

@@ -17,7 +17,7 @@
     <template v-else>
       <div class="d-flex align-items-center gap-2 mb-2 small flex-wrap" data-testid="volume-files-summary">
         <span class="text-body-secondary">{{ $t('volumes.browseSummary', { size: fmt(total), n: Math.max(0, entries.size - 1) }) }}</span>
-        <span v-if="working" class="text-body-secondary" data-testid="volume-files-working"><BSpinner small class="me-1" />{{ $t('volumes.jobWorking', { state: job?.state || 'creating', pod: job?.pod_name || '' }) }}<span v-if="job?.files" class="ms-2" data-testid="volume-files-progress">{{ $t('volumes.listedSoFar', { n: job.files.toLocaleString() }) }}</span></span>
+        <span v-if="working" class="text-body-secondary" data-testid="volume-files-working"><BSpinner small class="me-2 flex-shrink-0" />{{ $t('volumes.jobWorking', { state: job?.state || 'creating', pod: job?.pod_name || '' }) }}<span v-if="job?.files" class="ms-2" data-testid="volume-files-progress">{{ $t('volumes.listedSoFar', { n: job.files.toLocaleString() }) }}</span></span>
         <BButton size="sm" variant="outline-light" class="py-0 ms-auto" data-testid="volume-files-expand" @click="expandAll"><i class="fa-solid fa-angles-down me-1"></i>{{ $t('volumes.expandAll') }}</BButton>
         <BButton size="sm" variant="outline-light" class="py-0" data-testid="volume-files-collapse" @click="collapsed = new Set(openable)"><i class="fa-solid fa-angles-up me-1"></i>{{ $t('volumes.collapseAll') }}</BButton>
       </div>

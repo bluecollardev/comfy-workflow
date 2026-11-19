@@ -88,7 +88,7 @@ test('outputNames: review is <clip>.mov and/or .mp4; a proxy is <clip>.mp4 at so
   assert.deepEqual(outputNames({ name: 'a' }, { kind: 'proxy', width: 'source' }), ['a.mp4']); assert.deepEqual(outputNames({ name: 'a', clip_name: 'C' }, { kind: 'proxy', width: 1280 }), ['C_1280.mp4'])
 })
 test('render settings: defaults (ProRes, source size), validation, and the untouched object', () => {
-  assert.deepEqual(RENDER_DEFAULTS, { where: 'auto', kind: 'proxy', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto', pull: true })
+  assert.deepEqual(RENDER_DEFAULTS, { where: 'auto', kind: 'proxy', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto', pull: false, publish: { s3: false, slack: false }, skip_existing: true, preset: 'none' })
   assert.equal(renderProblem(RENDER_DEFAULTS), ''); assert.equal(renderProblem(null), ''); assert.equal(renderProblem({ ...RENDER_DEFAULTS, codecs: [] }), 'codecs'); assert.equal(renderProblem({ ...RENDER_DEFAULTS, codecs: ['x'] }), 'codecs')
   assert.equal(renderProblem({ ...RENDER_DEFAULTS, proxy_width: 1000 }), 'width'); assert.equal(renderProblem({ ...RENDER_DEFAULTS, where: 'x' }), 'choice')
   assert.equal(renderIsDefault({}), true); assert.equal(renderIsDefault({ ...RENDER_DEFAULTS }), true); assert.equal(renderIsDefault({ fps: 25 }), false)

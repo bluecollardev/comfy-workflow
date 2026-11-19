@@ -209,7 +209,8 @@ function mountsPayload(state) {
   const links = folders.filter((f) => f.declared).map((f) => ({ path: f.declared.path, target: f.container, required: f.required, mode: f.mode, what: f.what, folder: f.key }))
   const env = Object.fromEntries(folders.filter((f) => f.env_key).map((f) => [f.env_key, f.container]))
   if (links.length) env.COMFY_LINKS = links.map((l) => `${l.path}=${l.target}`).join(';')
-  return { ...state.mounts, config: c, dry_run: !!c.dry_run || !!state.mounts.dryForced, dry_run_forced: !!state.mounts.dryForced, folders, links, require: Object.keys(required).filter((k) => required[k]),
+  const apDefault = { enabled: false, dry_run: true, window_minutes: 10, daily_cap: null, dry_run_first: true, targets: { s3: true, slack: false, tunnel: false } }
+  return { ...state.mounts, config: state.noAutoPublish ? c : { ...c, auto_publish: c.auto_publish || apDefault }, dry_run: !!c.dry_run || !!state.mounts.dryForced, dry_run_forced: !!state.mounts.dryForced, folders, links, require: Object.keys(required).filter((k) => required[k]),
     local_env: Object.fromEntries(folders.filter((f) => f.env_key && f.local).map((f) => [f.env_key, f.local])),
     preview: { env, ...(c.network_volume_id ? { network_volume_id: c.network_volume_id, volume_mount_path: c.mount_path } : {}) } }
 }
@@ -267,7 +268,18 @@ export async function mockApi(page, state) {
     if (method === 'PUT' && path === '/mounts' && asBad(body)) return asNeedsName()
     if (method === 'POST' && path === '/mounts/preview' && asBad(body)) return asNeedsName()
     if ((m = path.match(/^\/pods\/([^/]+)\/config$/)) && method === 'PUT' && asBad(body)) return asNeedsName()
-    if (method === 'PUT' && path === '/mounts') { state.mounts.config = body; state.mounts.stored = true; return json(mountsPayload(state)) }
+    // Auto-publish is part of the Default Configuration (app-wide): a PUT keeps what the page did not send, refuses a Tunnel target and a Slack without S3 (state.noAutoPublish answers like a core without it)
+    if (method === 'PUT' && path === '/mounts' && body?.auto_publish && !state.noAutoPublish) {
+      const t = body.auto_publish.targets || {}
+      if (t.tunnel) return json({ detail: 'Tunnel is not available yet' }, 400)
+      if (t.slack && !t.s3) return json({ detail: 'Slack announces an upload: turn S3 on' }, 400)
+      const dc = body.auto_publish.daily_cap; if (dc !== undefined && dc !== null && !(Number.isInteger(dc) && dc >= 1 && dc <= 50)) return json({ detail: 'daily_cap: a whole number from 1 to 50, or none' }, 400)
+      if (body.auto_publish.enabled && t && !t.s3 && !t.slack) return json({ detail: 'At least one of S3 or Slack must be on' }, 400)
+      const gn = body.auto_publish.generate; if (gn?.enabled && gn.where === 'pod' && !String(body.auto_publish.approved_by || '').trim()) return json({ detail: "Rendering on a pod spends money: put the approver's name" }, 400)
+    }
+    if (method === 'PUT' && path === '/mounts' && state.mountsFail) return json({ detail: state.mountsFail }, 500)   // a save the core refuses
+    if (method === 'PUT' && path === '/mounts' && state.mountsIgnore) return json(mountsPayload(state))   // answers OK but keeps nothing
+    if (method === 'PUT' && path === '/mounts') { const prev = state.mounts.config.auto_publish; (state.mountPuts ||= []).push(JSON.parse(JSON.stringify(body))); state.mounts.config = body; if (prev || body.auto_publish) state.mounts.config.auto_publish = { ...prev, ...(body.auto_publish || {}), ...(prev?.standing ? { standing: prev.standing } : {}) }; state.mounts.stored = true; return json(mountsPayload(state)) }
     if (method === 'POST' && path === '/mounts/preview') return json(mountsPayload({ ...state, mounts: { ...state.mounts, config: { ...state.mounts.config, ...body } } }))
     if (method === 'DELETE' && path === '/mounts') { state.mounts.config = defaultState().mounts.config; state.mounts.stored = false; return json(mountsPayload(state)) }
     // Export and import of the Default Configuration (docs/ADR-023): the same sections as the core, simply computed.
@@ -278,7 +290,7 @@ export async function mockApi(page, state) {
       const last4 = (v) => (v.length >= 8 ? `••••${v.slice(-4)}` : '••••')
       const looksSecret = (n) => /(SECRET|TOKEN|PASSW|CREDENTIAL|PRIVATE|AUTH|API[_-]?KEY|ACCESS[_-]?KEY|(^|_)KEY($|_))/i.test(n)
       const maskEnv = (e) => Object.fromEntries(Object.entries(e || {}).map(([k, v]) => [k, looksSecret(k) ? last4(String(v)) : v]))
-      const SEC = { volume: ['Volume and datacenter', ['network_volume_id', 'mount_path', 'data_center_id'], { account: true }], image: ['Image and registry login', ['image', 'registry_auth_id'], { account: true }], env: ['Environment', ['env'], {}], pod_defaults: ['Pod defaults', ['idle_stop_minutes', 'sync_parallel', 'sync_shared', 'pull_shared', 'apply_by_default', 'pull_any_card', 'required', 'links'], {}], mcp: ['MCP servers', ['mcp_http'], {}], folders: ['Folders', ['folders', 'custom'], { machine: true }] }
+      const SEC = { auto_publish: ['Auto-publish', ['auto_publish'], {}], volume: ['Volume and datacenter', ['network_volume_id', 'mount_path', 'data_center_id'], { account: true }], image: ['Image and registry login', ['image', 'registry_auth_id'], { account: true }], env: ['Environment', ['env'], {}], pod_defaults: ['Pod defaults', ['idle_stop_minutes', 'sync_parallel', 'sync_shared', 'pull_shared', 'apply_by_default', 'pull_any_card', 'required', 'links'], {}], mcp: ['MCP servers', ['mcp_http'], {}], folders: ['Folders', ['folders', 'custom'], { machine: true }] }
       const DEF = { bucket: 'bh-panama-exchange-610140802195', region: 'us-west-2', profile: 'panama' }
       const panamaNow = () => ({ bucket: state.settings.panama_bucket || DEF.bucket, region: state.settings.panama_region || DEF.region, profile: state.settings.panama_profile || DEF.profile })
       const govNow = () => ({ require_named_yes: !!state.settings.agent_named_yes_required, spend_cap_usd: state.settings.agent_spend_cap_usd || 0, shell_guard: !!state.agentguard?.enabled })
@@ -290,7 +302,8 @@ export async function mockApi(page, state) {
         const { dry_run, ...config } = state.mounts.config
         const env = Object.fromEntries(Object.entries(config.env || {}).filter(([k]) => withSecrets || !looksSecret(k)))
         const omitted = withSecrets ? [] : Object.keys(config.env || {}).filter(looksSecret)
-        return json({ format: 'runpod-pod-manager-config', version: 1, exported_at: '2026-11-03T05:00:00.000Z', app_version: '1.0.2', config: { ...config, env }, panama: panamaNow(), governance: govNow(), secrets_included: withSecrets, ...(withSecrets ? { secrets: { settings: { ...cio.secrets }, git_accounts: cio.git.map((a) => ({ ...a })) } } : {}), secrets_set: [...Object.keys(cio.secrets), ...cio.git.map((a) => `git:${a.provider}/${a.username}`)], env_omitted: omitted, not_exported: ['the no-spend switch (dry_run)', 'per-pod configurations'] })
+        const pubEx = () => { const st = (state.publish ||= {}).settings || { s3: {}, slack: {} }; const { access_key_hint: _k, ...s3 } = st.s3 || {}; const { webhook_hint: _w, ...slack } = st.slack || {}; return { s3, slack } }
+        return json({ format: 'runpod-pod-manager-config', version: 1, exported_at: '2026-11-03T05:00:00.000Z', app_version: '1.0.2', ...(state.configioNeeds ? { publish: pubEx(), needs: ['Slack webhook', 'S3 keys'] } : {}), config: { ...config, env }, panama: panamaNow(), governance: govNow(), secrets_included: withSecrets, ...(withSecrets ? { secrets: { settings: { ...cio.secrets }, git_accounts: cio.git.map((a) => ({ ...a })) } } : {}), secrets_set: [...Object.keys(cio.secrets), ...cio.git.map((a) => `git:${a.provider}/${a.username}`)], env_omitted: omitted, not_exported: ['the no-spend switch (dry_run)', 'per-pod configurations'] })
       }
       if (method === 'POST' && path === '/configio/plan') {
         cio.plans++
@@ -303,6 +316,8 @@ export async function mockApi(page, state) {
           const cur = pickF(state.mounts.config, fields), incoming = { ...cur, ...inc }, changed = JSON.stringify(cur) !== JSON.stringify(incoming)
           plan.sections.push({ key, label, changed, current: key === 'env' ? { env: maskEnv(cur.env) } : cur, incoming: key === 'env' ? { env: maskEnv(incoming.env) } : incoming, machine_specific: !!flags.machine, account_specific: !!flags.account, default_checked: changed && !flags.machine, error: null, note: flags.machine ? 'Paths from another machine.' : flags.account ? 'Ids that belong to the exporting RunPod account; they may not exist in yours.' : null })
         }
+        if (f.publish) { const now = (state.publish?.settings ? { s3: { ...state.publish.settings.s3, access_key_hint: undefined }, slack: { ...state.publish.settings.slack, webhook_hint: undefined } } : {}), changed = JSON.stringify(now) !== JSON.stringify({ ...now, ...f.publish }); plan.sections.push({ key: 'publish', label: 'Publishing settings (S3 bucket, prefix, region, layout; Slack channel and options)', changed, current: now, incoming: { ...now, ...f.publish }, machine_specific: false, account_specific: false }) }
+        if (Array.isArray(f.needs)) plan.needs = f.needs
         if (f.governance) { const now = govNow(), incoming = { ...now, ...f.governance }, changed = JSON.stringify(now) !== JSON.stringify(incoming); plan.sections.push({ key: 'governance', label: 'Agent rules and the shell guard (system-wide)', changed, current: now, incoming, machine_specific: false, account_specific: false, default_checked: changed, error: null, note: null }) }
         if (f.panama) { const now = panamaNow(), incoming = { ...now, ...f.panama }, changed = JSON.stringify(now) !== JSON.stringify(incoming); plan.sections.push({ key: 'panama', label: 'Panama bucket, region and profile', changed, current: now, incoming, machine_specific: false, account_specific: false, default_checked: changed, error: null, note: null }) }
         if (f.secrets) {   // the keys and tokens: each named with its last four characters, never the value; a malformed one is named and flagged
@@ -334,8 +349,10 @@ export async function mockApi(page, state) {
             for (const a of body.file.secrets?.git_accounts || []) if (a.token && a.token.length >= 8) { cio.git = [...cio.git.filter((g) => g.id !== a.id), a]; names.push(`git:${a.provider}/${a.username}`) } else cio.skipped.push(`git:${a.provider}/${a.username}`)
             cio.secretsApplied.push(names); continue
           }
+          if (key === 'publish') { const p = body.file.publish || {}; const st = ((state.publish ||= {}).settings ||= { s3: {}, slack: {} }); Object.assign(st.s3, p.s3 || {}); Object.assign(st.slack, p.slack || {}); continue }
           if (key === 'governance') { const g = body.file.governance || {}; state.settings = { ...state.settings, agent_named_yes_required: !!g.require_named_yes, agent_spend_cap_usd: g.spend_cap_usd || 0 }; state.agentguard = { ...(state.agentguard || {}), enabled: !!g.shell_guard, installed: !!g.shell_guard }; continue }
           if (key === 'panama') { const p = body.file.panama || {}; state.settings = { ...state.settings, panama_bucket: p.bucket, panama_region: p.region, panama_profile: p.profile }; continue }
+          if (key === 'auto_publish') { const a = body.file.config.auto_publish || {}; const { standing, ...rest } = a; state.mounts.config.auto_publish = { ...rest, enabled: false, dry_run: true, targets: { ...(rest.targets || { s3: true, slack: false }), tunnel: false } }; continue }   // an import never turns it on and drops the standing approval
           Object.assign(state.mounts.config, pickF(body.file.config || {}, SEC[key][1]))
         }
         state.mounts.stored = true
@@ -403,7 +420,7 @@ export async function mockApi(page, state) {
       state.queue = { imports: body.items.map((i, n) => ({ id: `imp${n + 1}`, round: i.round, approved_by: body.approved_by, state: 'active', spent_usd: 0, cap_enabled: true, cost_cap_usd: body.cost_cap_usd, max_pods: i.max_pods, counts: {} })), tasks: [{ id: 't1', import_id: 'imp1', round: body.items[0].round, shot: null, kind: 'pull', state: 'running', pod_name: 'pull' }, ...body.items[0].shots.map((s, k) => ({ id: `t${k + 2}`, import_id: 'imp1', round: body.items[0].round, shot: s, kind: 'run', state: k ? 'waiting' : 'failed', error: k ? undefined : 'boom (node 4, KSampler)' }))], active: 1 + body.items[0].shots.length }; return json(state.queue.imports) }
     if (method === 'POST' && path === '/queue/import') { state.imported = body; (state.importedAll ||= []).push(body); state.queue = { imports: [{ id: 'imp1', round: body.round, approved_by: body.approved_by, state: 'active', spent_usd: 0, cap_enabled: true, cost_cap_usd: body.cost_cap_usd, max_pods: body.max_pods, counts: {} }], tasks: [{ id: 't1', import_id: 'imp1', round: body.round, shot: null, kind: 'pull', state: 'running', pod_name: 'pull' }, ...body.shots.map((s, i) => ({ id: `t${i + 2}`, import_id: 'imp1', round: body.round, shot: s, kind: 'run', state: i ? 'waiting' : 'failed', error: i ? undefined : 'boom (node 4, KSampler)' }))], active: 1 + body.shots.length }; return json(state.queue.imports[0]) }
     if (method === 'POST' && path === '/queue/purge') { const q = state.queue || { imports: [], tasks: [] }; const live = new Set(q.tasks.filter((t) => ['waiting', 'running', 'held'].includes(t.state)).map((t) => t.import_id)); const gone = q.imports.filter((i) => !live.has(i.id)).map((i) => i.id); state.purged = body; q.imports = q.imports.filter((i) => !gone.includes(i.id)); q.tasks = q.tasks.filter((t) => !gone.includes(t.import_id)); return json({ removed_imports: gone.length }) }
-    if (method === 'GET' && path === '/queue') return json(state.queue || { imports: [], tasks: [], active: 0 })
+    if (method === 'GET' && path === '/queue') { if (state.queueDelayMs) await new Promise((r) => setTimeout(r, state.queueDelayMs)); if (state.queueFail) return json({ detail: state.queueFail }, 500); return json(state.queue || { imports: [], tasks: [], active: 0 }) }   // queueDelayMs / queueFail: a slow or failing Queue
     // Auto sync (ADR-046): state.autosync = { settings: { podId: {...} }, status: { paused, items } }; a test sets progress and finished states there. state.autosyncOld = true answers like a core that predates it.
     if (path.startsWith('/autosync')) {
       const as = (state.autosync ||= { settings: {}, status: { paused: false, items: [] } })
@@ -438,6 +455,29 @@ export async function mockApi(page, state) {
       }
       if (method === 'GET' && path === '/syncs/watch') return json({ paused: false, pull: [], push: [], events: [], ...(sy.watch || {}) })
     }
+    // Graph failures (the core's failures.list): state.failures = [records]; state.noFailures answers like a core without it
+    if (path === '/failures' && method === 'GET') { if (state.noFailures) return json({ detail: 'no core call failures.list' }, 500); return json({ failures: state.failures || [] }) }
+    if (path === '/failures/retry' && method === 'POST') { (state.failureRetries ||= []).push(body.id); const f = (state.failures || []).find((x) => x.id === body.id); if (f) f.attempt = (f.attempt || 1) + 1; return json({ ok: true }) }
+    // The EDL (docs/ADR-050): state.edl = { loaded, source, sha256, events, elements: [{clip, shot, element, ...}], loaded_at, afterLoad: {...status after Load}, loadError }; state.noEdl answers like a core without it
+    if (path.startsWith('/edl/')) {
+      if (state.noEdl) return json({ detail: `no core call edl.${path.slice(5)}` }, 500)
+      const ed = (state.edl ||= { loaded: false, elements: [] })
+      const status = () => ({ loaded: !!ed.loaded, source: ed.source || '', sha256: ed.sha256 || '', events: ed.events ?? 0, elements: (ed.elements || []).length, loaded_at: ed.loaded_at || '', ...(ed.error ? { error: ed.error } : {}) })
+      if (method === 'GET' && path === '/edl/status') return json(status())
+      if (method === 'POST' && path === '/edl/load') {
+        (ed.loads ||= []).push(body)
+        if (ed.loadError) return json({ detail: ed.loadError }, 500)
+        Object.assign(ed, { loaded: true, source: body.source || 'rounds/tunnel-v11-edl-2026-11-18/PANAMA 2026_2.0_v11_110426_COLOR_VFX1.edl', sha256: '7511c0ffee', events: 121, loaded_at: '2026-11-19T10:00:00Z', ...(ed.afterLoad || {}) })
+        return json(status())
+      }
+      if (method === 'GET' && path === '/edl/elements') return json(ed.elements || [])
+      if (method === 'POST' && path === '/edl/lookup') {
+        (ed.lookups ||= []).push(body)
+        const hits = (ed.elements || []).filter((e) => (!body.clip || e.clip === body.clip) && (!body.shot || e.shot === body.shot) && (!body.element || e.element === body.element))
+        if (!hits.length && body.clip) { const sh = (/^([A-Za-z]+-\d+[a-z]?)/i.exec(body.clip) || [, ''])[1].toLowerCase(); hits.push(...(ed.elements || []).filter((e) => e.shot === sh)) }   // no exact clip: the shot's elements are the candidates
+        return json(hits.length === 1 ? { match: body.clip ? 'exact' : 'unique', element: hits[0] } : hits.length ? { match: 'ambiguous', candidates: hits.map((h) => h.clip) } : { match: 'none' })
+      }
+    }
     // Publishing (S3 and Slack): state.publish = { settings, tree: { dir: [entries] }, sizes, there: [paths already on S3], heavy: [paths refused as weights], jobs, puts, tests, planned, runs, reposts }; state.publishOld answers like a core without it.
     if (path.startsWith('/publish/')) {
       if (state.publishOld) return json({ detail: `no core call publish.${path.slice(9)}` }, 500)
@@ -446,8 +486,32 @@ export async function mockApi(page, state) {
       pb.tree ||= {}; pb.there ||= []; pb.heavy ||= []; pb.jobs ||= []
       for (const k of ['puts', 'tests', 'planned', 'runs', 'reposts', 'cancelled']) pb[k] ||= []
       const st = pb.settings
+      if (pb.linksSupport && typeof st.slack.file_links !== 'boolean') Object.assign(st.slack, { file_links: true, folder_link: true, file_link_count: 10 })   // a core with the link settings (default ON, 10 files): state.publish.linksSupport = true
+      const linksPlan = () => (pb.linksSupport ? { links: { folder: st.slack.folder_link !== false, files: st.slack.file_links === false ? 0 : Math.min(st.slack.file_link_count ?? 10, 25), expires_at: '2026-11-26T10:00:00Z' } } : {})
+      if (pb.volumeSourceSupport && typeof st.slack.volume_source !== 'boolean') st.slack.volume_source = true   // a core with the volume source line: state.publish.volumeSourceSupport = true
+      const volLine = (fromVolume) => (pb.volumeSourceSupport && st.slack.volume_source !== false && fromVolume ? ' Source on the volume: comfy-shared · output/archival-085 (and 1 more)' : '')
+      if (pb.previewSupport && typeof st.slack.preview_frame !== 'boolean') st.slack.preview_frame = true   // a core with the first-frame preview: the setting exists (default on); state.publish.previewSupport = true
+      // first frames of up to 3 shots (a video, or the first file of a DPX folder), for the plan of a core with the preview: { slack.preview_frames, previews[] }
+      const previewPlan = (items, body) => {
+        if (!pb.previewSupport) return {}
+        const want = typeof body.preview_frame === 'boolean' ? body.preview_frame : st.slack.preview_frame !== false
+        const seen = new Map()
+        for (const i of items) { if (i.skip && !pb.previewSkipped) continue; const m = /\.(mov|mp4|dpx)$/i.exec(i.path); if (!m) continue; const dir = i.path.replace(/\/[^/]+$/, ''), key = /dpx/i.test(m[1]) ? dir : i.path; if (!seen.has(key)) seen.set(key, i) }
+        const list = want ? [...seen.values()].slice(0, 3).map((i) => { const stem = i.path.split('/').pop().replace(/\.[^.]+$/, '').replace(/\.\d+$/, ''); return { name: `${stem}_preview.jpg`, s3_key: `${String(i.s3_key).replace(/\/[^/]+$/, '')}/${stem}_preview.jpg` } }) : []
+        return { previews: list, preview_frames: list.length, ...(want && !list.length && pb.previewProblem ? { preview_problem: pb.previewProblem } : {}) }
+      }
+      // The BKK return layout (state.publish.layoutSupport = true): s3_key per item as <prefix><round>/<shot>/<clip>/<clip>.<frame>.dpx, <round>/<shot>/<clip>.<ext>, <round>/<shot>/<file>; clip_names renames a DPX stem
+      const shotOf = (stem) => (/^([A-Za-z]+-\d+[a-z]?)/i.exec(stem) || [, 'shot'])[1].toLowerCase()
+      const returnKeys = (items, body) => {
+        for (const it of items) {
+          const file = it.path.split('/').pop(), dpx = /^(.+)\.(\d+)\.dpx$/i.exec(file), pre = `${(st.s3.prefix || '').replace(/\/?$/, '/')}${body.round || '<round>'}/`
+          if (dpx) { const stem = dpx[1], clip = (body.clip_names || {})[stem] || stem; it.s3_key = `${pre}${shotOf(clip)}/${clip}/${clip}.${dpx[2]}.dpx`; if (clip !== stem) it.renamed_from = stem }
+          else if (/\.(mp4|mov)$/i.test(file)) it.s3_key = `${pre}${shotOf(file)}/${file}`
+          else it.s3_key = `${pre}${shotOf(file)}/${file}`
+        }
+      }
       const view = () => {
-        const s3 = { ...st.s3, ready: !!st.s3.bucket && (st.s3.credentials === 'panama' ? pb.panamaKeys !== false : !!st.s3.access_key_hint) }
+        const s3 = { ...(pb.layoutSupport ? { layout: 'bkk-return' } : {}), ...st.s3, ready: !!st.s3.bucket && (st.s3.credentials === 'panama' ? pb.panamaKeys !== false : !!st.s3.access_key_hint) }
         if (!s3.ready) s3.problem = !st.s3.bucket ? 'Enter a bucket' : st.s3.credentials === 'panama' ? 'The Panama exchange keys are not set' : 'Enter the access keys'
         const slack = { ...st.slack, ready: !!st.slack.channel && !!st.slack.webhook_hint }
         if (!slack.ready) slack.problem = !st.slack.webhook_hint ? 'Enter the webhook' : 'Enter a channel'
@@ -464,15 +528,16 @@ export async function mockApi(page, state) {
           pb.bfPlans.push(body)
           const v = view(), blockers = [...(pb.blockers || [])]
           for (const tg of body.targets || []) if (!v[tg].ready) blockers.push(`${tg === 's3' ? 'S3' : 'Slack'} is not ready: ${v[tg].problem}`)
-          const rows = inv.rows.filter((r) => (body.rows || []).includes(r.id)), items = rows.map((r) => ({ path: r.path, bytes: r.bytes, s3_key: `${body.destination_prefix}${r.shot}/${r.name}`, skip: !!r.in_destination }))
+          const rows = inv.rows.filter((r) => (body.rows || []).includes(r.id)), items = rows.map((r) => ({ path: r.path, bytes: r.bytes, s3_key: pb.layoutSupport ? `${body.destination_prefix}${body.round || '<round>'}/${r.shot}/${(body.clip_names || {})[r.name] || r.name}${r.kind === 'dpx' ? '/' : ''}` : `${body.destination_prefix}${r.shot}/${r.name}`, skip: !!r.in_destination }))
           const total = items.filter((i) => !i.skip).reduce((n, i) => n + i.bytes, 0)
-          return json({ ok: !blockers.length && !!items.length, blockers, items, total_bytes: total, files: items.filter((i) => !i.skip).length, refused: [], s3: { dest: `s3://${st.s3.bucket}/${body.destination_prefix}`, count: items.length, new_bytes: total }, slack: (body.targets || []).includes('slack') ? { channel: st.slack.channel, preview: String(body.message || st.defaults.message).replace('{files}', String(items.length)) } : null })
+          return json({ ...(pb.layoutSupport ? { layout: 'bkk-return', round: body.round || '' } : {}), ok: !blockers.length && !!items.length, blockers, items, total_bytes: total, files: items.filter((i) => !i.skip).length, refused: [], s3: { dest: `s3://${st.s3.bucket}/${body.destination_prefix}`, count: items.length, new_bytes: total }, slack: (body.targets || []).includes('slack') ? { channel: st.slack.channel, preview: String(body.message || st.defaults.message).replace('{files}', String(items.length)) + volLine(rows.some((r) => !(r.where || []).includes('pc'))), ...(pb.previewSupport ? (({ previews, ...r }) => r)(previewPlan(items, body)) : {}), ...linksPlan() } : null, ...(pb.previewSupport ? { previews: previewPlan(items, body).previews } : {}) })
         }
         if (path === '/publish/backfill/run') {
           pb.bfRuns.push(body)
           if (!body.approved_by) return json({ detail: 'Publishing needs the name of who says yes (approved_by)' }, 400)
+          if (pb.layoutSupport && !body.round) return json({ detail: 'Publishing to a return needs a round name' }, 400)
           const n = pb.bfRuns.length
-          pb.jobs.push({ job_id: `bf-${n}`, state: 'uploading', phase: 'streaming', targets: body.targets, approved_by: body.approved_by, started_at: `2026-11-19T11:0${n}:00Z`, files_total: (body.rows || []).length, files_done: 0, bytes_total: 5e9, bytes_done: 0, rate_bps: 0, current: '', skipped: 0, links: [], slack: { state: 'skipped' }, summary: '' })
+          pb.jobs.push({ job_id: `bf-${n}`, state: 'uploading', phase: 'streaming', targets: body.targets, approved_by: body.approved_by, started_at: `2026-11-19T11:0${n}:00Z`, ...(pb.runWarnings ? { warnings: pb.runWarnings } : {}), files_total: (body.rows || []).length, files_done: 0, bytes_total: 5e9, bytes_done: 0, rate_bps: 0, current: '', skipped: 0, links: pb.runLinks || [], slack: { state: 'skipped' }, summary: '' })
           return json({ job_id: `bf-${n}` })
         }
       }
@@ -520,21 +585,98 @@ export async function mockApi(page, state) {
           }
         }
         for (const p of (body.items || []).filter((x) => typeof x === 'string')) { if ((pb.heavy || []).includes(p)) { refused.push({ path: p, reason: 'model weights are not published' }); continue } const hit = expand(p); if (!hit.length) { refused.push({ path: p, reason: 'Pull the renders to this PC first' }); continue } for (const e of hit) items.push({ path: e.path, bytes: e.bytes, s3_key: [st.s3.prefix, e.path].filter(Boolean).join('/'), skip: pb.there.includes(e.path) }) }
+        if (pb.layoutSupport) returnKeys(items, body)
         const total = items.filter((i) => !i.skip).reduce((n, i) => n + i.bytes, 0)
-        return json({ streamed_files: streamedFiles, streamed_bytes: streamedBytes, ok: !blockers.length && !!items.length, blockers, items, total_bytes: total, files: items.filter((i) => !i.skip).length, refused,
+        return json({ ...(pb.layoutSupport ? { layout: 'bkk-return', round: body.round || '' } : {}), ...(pb.planSequences ? { sequences: pb.planSequences.map((r) => ({ ...r, flags: (r.flags || []).filter((f) => !(f.code === 'frames-differ-from-edl' && (body.edl_override || {})[r.stem || r.name])) })) } : {}), streamed_files: streamedFiles, streamed_bytes: streamedBytes, ok: !blockers.length && !!items.length, blockers, items, total_bytes: total, files: items.filter((i) => !i.skip).length, refused,
           s3: (body.targets || []).includes('s3') ? { dest: `s3://${st.s3.bucket}/${st.s3.prefix ? st.s3.prefix + '/' : ''}`, count: items.length, new_bytes: total } : null,
-          slack: (body.targets || []).includes('slack') ? { channel: st.slack.channel, preview: String(body.message || st.defaults.message).replace('{files}', String(items.length)).replace('{links}', '<link>').replace('{who}', 'you') } : null })
+          slack: (body.targets || []).includes('slack') ? { channel: st.slack.channel, preview: String(body.message || st.defaults.message).replace('{files}', String(items.length)).replace('{links}', '<link>').replace('{who}', 'you') + volLine(items.some((i) => i.source === 'volume')), ...(pb.previewSupport ? (({ previews, ...r }) => r)(previewPlan(items, body)) : {}), ...linksPlan() } : null, ...(pb.previewSupport ? { previews: previewPlan(items, body).previews } : {}) })
       }
       if (method === 'POST' && path === '/publish/run') {
         pb.runs.push(body)
         if (!body.approved_by) return json({ detail: 'Publishing needs the name of who says yes (approved_by)' }, 400)
+        if (pb.runError) return json({ detail: pb.runError }, 400)
+        if (pb.layoutSupport && !body.round) return json({ detail: 'Publishing to a return needs a round name' }, 400)
+        if (pb.layoutSupport && !/^[A-Za-z0-9._-]{3,100}$/.test(body.round)) return json({ detail: 'round: 3 to 100 letters, digits, dots, dashes or underscores' }, 400)
         const n = pb.runs.length
-        pb.jobs.push({ job_id: `pub-${n}`, state: 'uploading', targets: body.targets, approved_by: body.approved_by, started_at: `2026-11-19T10:0${n}:00Z`, files_total: 3, files_done: 0, bytes_total: 3e9, bytes_done: 0, rate_bps: 0, current: '', skipped: 0, links: [], slack: { state: 'skipped' }, summary: '' })
+        pb.jobs.push({ job_id: `pub-${n}`, state: 'uploading', targets: body.targets, approved_by: body.approved_by, started_at: `2026-11-19T10:0${n}:00Z`, ...(pb.runWarnings ? { warnings: pb.runWarnings } : {}), files_total: 3, files_done: 0, bytes_total: 3e9, bytes_done: 0, rate_bps: 0, current: '', skipped: 0, links: pb.runLinks || [], slack: { state: 'skipped' }, summary: '' })
         return json({ job_id: `pub-${n}` })
       }
       if (method === 'GET' && path === '/publish/status') return json({ jobs: pb.jobs.filter((j) => !query.job_id || j.job_id === query.job_id) })
-      if (method === 'POST' && path === '/publish/cancel') { pb.cancelled.push(body.job_id); const j = pb.jobs.find((x) => x.job_id === body.job_id); if (j) j.state = 'cancelled'; return json(j || {}) }
+      if (method === 'GET' && path === '/publish/rounds') { if (!pb.layoutSupport) return json({ detail: 'no core call publish.rounds' }, 500); return json({ rounds: pb.rounds || [] }) }
+      if (method === 'POST' && path === '/publish/retry') { (pb.retries ||= []).push(body.child_id); for (const j of pb.jobs) for (const c of j.children || []) if (c.id === body.child_id) { c.state = 'queued'; c.error = '' } return json({ ok: true }) }
+      if (method === 'POST' && path === '/publish/cancel') { pb.cancelled.push(body.job_id); const j = pb.jobs.find((x) => x.job_id === body.job_id); if (j) j.state = 'cancelled'; for (const p of pb.jobs) for (const c of p.children || []) if (c.id === body.job_id) c.state = 'cancelled'; return json(j || {}) }
       if (method === 'POST' && path === '/publish/slack') { pb.reposts.push(body.job_id); const j = pb.jobs.find((x) => x.job_id === body.job_id); if (j) j.slack = { state: 'sent' }; return json(j || {}) }
+    }
+    // Auto-publish (docs/ADR-050 amendment): the settings are the Default Configuration's auto_publish; state.autopublish = { pending, recent, reviews, today }; state.noAutoPublish answers like a core without it; every write is recorded in state.autopublish.calls
+    if (path.startsWith('/autopublish/')) {
+      if (state.noAutoPublish) return json({ detail: `no core call autopublish.${path.slice(13)}` }, 500)
+      const ap = (state.autopublish ||= {})
+      ap.pending ||= []; ap.recent ||= []; ap.reviews ||= []; ap.calls ||= []
+      const cfg = (state.mounts.config.auto_publish ||= { enabled: false, dry_run: true, window_minutes: 10, daily_cap: null, dry_run_first: true, targets: { s3: true, slack: false, tunnel: false } })
+      const pubSt = (state.publish ||= {}).settings, slackOk = !!(pubSt?.slack?.channel && pubSt?.slack?.webhook_hint)
+      const s3dest = () => `s3://${pubSt?.s3?.bucket || 'bh-panama-exchange-610140802195'}/${pubSt?.s3?.prefix || 'returns/BKK/'}`
+      const view = () => ({ enabled: cfg.enabled, dry_run: cfg.dry_run, ...('dry_run_first' in cfg ? { dry_run_first: cfg.dry_run_first } : {}), window_minutes: cfg.window_minutes, daily_cap: cfg.daily_cap, targets: cfg.targets, standing: cfg.standing || null, destination: s3dest(), ready: true,
+        target_state: { s3: { ready: true, label: 'S3' }, slack: { ready: slackOk, label: 'Slack', ...(slackOk ? {} : { problem: 'Slack is not connected' }) }, tunnel: { ready: false, problem: 'Tunnel is not available yet', label: 'Tunnel' } } })
+      if (method === 'GET' && path === '/autopublish/status') return json({ enabled: cfg.enabled, dry_run: cfg.dry_run, standing: cfg.standing || null, window_minutes: cfg.window_minutes, daily_cap: cfg.daily_cap, targets: cfg.targets, today: ap.today || { count: 0, left: cfg.daily_cap ?? null }, destination: s3dest(), ...(ap.watching ? { watching: ap.watching } : {}), ...(ap.generate ? { generate: ap.generate } : {}), ...(ap.requireApproval !== undefined ? { require_approval: ap.requireApproval } : {}), ...(ap.nothing_selected ? { nothing_selected: true } : {}), ...(ap.slack_dry_run ? { slack_dry_run: ap.slack_dry_run } : {}), pending: ap.pending, recent: ap.recent })
+      if (method === 'GET' && path === '/autopublish/settings') return json(view())
+      if (method === 'PUT' && path === '/autopublish/settings') {
+        ap.calls.push({ call: 'setSettings', body })
+        if (ap.failNext) { const d = ap.failNext; ap.failNext = null; return json({ detail: d }, 400) }
+        const t = body.targets
+        if (body.daily_cap !== undefined && body.daily_cap !== null && !(Number.isInteger(body.daily_cap) && body.daily_cap >= 1 && body.daily_cap <= 50)) return json({ detail: 'daily_cap: a whole number from 1 to 50, or none' }, 400)
+        if (t?.tunnel) return json({ detail: 'targets.tunnel: Tunnel is not available yet' }, 400)
+        if (body.enabled === true) {
+          if (!String(body.approved_by || '').trim()) return json({ detail: 'approved_by: Auto-publish needs the name of who says yes' }, 400)
+          if (body.understood !== true) return json({ detail: 'understood: tick that you understand what this allows' }, 400)
+          if ('dry_run_first' in cfg && typeof body.dry_run_first === 'boolean') cfg.dry_run_first = body.dry_run_first
+          cfg.enabled = true; cfg.dry_run = 'dry_run_first' in cfg ? cfg.dry_run_first !== false : true; cfg.standing = { approved_by: body.approved_by, at: '2026-11-19T10:00:00Z' }
+        }
+        if (body.dry_run === false) { if (!cfg.enabled || !cfg.standing) return json({ detail: 'Going live needs the standing approval: turn Auto-publish on first' }, 400); if (body.understood !== true) return json({ detail: 'Confirm that the next approved version will really be uploaded' }, 400); cfg.dry_run = false }
+        if (body.dry_run === true) cfg.dry_run = true
+        for (const k of ['window_minutes', 'daily_cap']) if (body[k] !== undefined) cfg[k] = body[k]
+        if (t) cfg.targets = { ...cfg.targets, ...t }
+        return json(view())
+      }
+      if (method === 'GET' && path === '/autopublish/dry-run-report') { if (ap.noDryReport) return json({ detail: 'no core call autopublish.dryRunReport' }, 500); return json({ text: ap.dryReportText || 'Dry run: would upload 1 review video' }) }
+      if (method === 'POST' && path === '/autopublish/scan-volume') {
+        ap.calls.push({ call: 'scanVolume' })
+        if (ap.scanFail) return json({ detail: ap.scanFail }, 500)
+        if (ap.watching?.volume) { ap.watching.volume.scanning = true; setTimeout(() => { Object.assign(ap.watching.volume, { scanning: false, scanned_at: new Date().toISOString(), ...(ap.scanTo || {}) }) }, ap.scanMs ?? 1500) }
+        return json({ ok: true })
+      }
+      // Holds (a core where every eligible review is published; state.autopublish.requireApproval defined): a hold keeps a shot version from ever going; Release lifts it
+      if (method === 'GET' && path === '/autopublish/holds') { if (ap.requireApproval === undefined) return json({ detail: 'no core call autopublish.holds' }, 500); return json({ holds: ap.holds ||= [] }) }
+      if (method === 'POST' && path === '/autopublish/hold') { ap.calls.push({ call: 'hold', body }); (ap.holds ||= []).push({ shot: body.shot, version: body.version }); const p = ap.pending.find((x) => x.shot === body.shot && x.version === body.version); if (p) { ap.pending = ap.pending.filter((x) => x !== p) } return json({ ok: true }) }
+      if (method === 'POST' && path === '/autopublish/release') { ap.calls.push({ call: 'release', body }); ap.holds = (ap.holds || []).filter((h) => !(h.shot === body.shot && h.version === body.version)); return json({ ok: true }) }
+      // Generate Outputs (state.autopublish.existing = the preview; existingError / existingNoPod / existingResult)
+      if (method === 'POST' && path === '/autopublish/generate-existing') {
+        ap.calls.push({ call: 'generateExisting', body })
+        if (ap.existingError && body.dry_run) return json({ detail: ap.existingError }, 500)
+        if (body.dry_run) return json(ap.existing || { sequences: [], skipped: [], totals: { sequences: 0, frames: 0, bytes: 0 }, where: 'local', preset: 'review', max_per_day: 20, today_started: 0, can_start_today: 0, remaining_after_today: 0, pod: null, notes: [] })
+        const pv = ap.existing || {}
+        if (pv.where === 'pod' && !body.approved_by) return json({ detail: "Rendering on a pod spends money: put the approver's name" }, 400)
+        if (pv.where === 'pod' && !pv.pod?.running && body.where !== 'local') return json({ detail: 'No pod is running: it never starts one' }, 409)
+        return json(ap.existingResult || { started: Math.min(body.limit ?? 99, (pv.sequences || []).length), deferred: Math.max(0, (pv.sequences || []).length - (body.limit ?? 99)) })
+      }
+      if (method === 'POST' && path === '/autopublish/off') { ap.calls.push({ call: 'off' }); const n = ap.pending.length; cfg.enabled = false; cfg.standing = null; ap.recent.unshift(...ap.pending.map((p) => ({ ...p, state: 'cancelled' }))); ap.pending = []; return json({ cancelled: n }) }
+      if (method === 'GET' && path === '/autopublish/reviews') return json({ reviews: ap.reviews })
+      if (method === 'GET' && path === '/autopublish/approvals') return json(ap.reviews.filter((r) => r.approved).map((r) => ({ shot: r.shot, version: r.version, ...r.approved })))
+      if (method === 'POST' && path === '/autopublish/approve') {
+        ap.calls.push({ call: 'approve', body })
+        if (!String(body.approved_by || '').trim()) return json({ detail: 'Approving a shot version needs the name of who says yes' }, 400)
+        const r = ap.reviews.find((x) => x.shot === body.shot && Number(x.version) === Number(body.version))
+        if (!r) return json({ detail: 'That review does not exist' }, 404)
+        r.approved = { approved_by: body.approved_by, at: '2026-11-19T10:30:00Z' }; r.state = 'waiting'
+        return json({ ok: true })
+      }
+      if (method === 'POST' && path === '/autopublish/revoke') { ap.calls.push({ call: 'revoke', body }); const r = ap.reviews.find((x) => x.shot === body.shot && Number(x.version) === Number(body.version)); if (r) { r.approved = null; r.state = 'not approved' } return json({ ok: true }) }
+      if (method === 'POST' && path === '/autopublish/cancel') { ap.calls.push({ call: 'cancel', body }); const p = ap.pending.find((x) => x.id === body.id); if (p) { ap.pending = ap.pending.filter((x) => x !== p); ap.recent.unshift({ ...p, state: 'cancelled' }) } return json({ ok: true }) }
+      if (method === 'POST' && path === '/autopublish/publish-now') {
+        ap.calls.push({ call: 'publishNow', body })
+        if (!String(body.approved_by || '').trim()) return json({ detail: 'Publishing needs the name of who says yes (approved_by)' }, 400)
+        const p = ap.pending.find((x) => x.id === body.id); if (p) { p.state = 'uploading'; p.job_id = 'pub-now' }
+        return json({ job_id: 'pub-now' })
+      }
     }
     // Render sequences (docs/ADR-048): state.renders = { adapters: { pod: { ok, reason }, local: { ok, reason, code } }, jobs: [...], proxies: { 'dir/name': {...} }, deliverables: [...], remote: { 'dir/name': true }, local: {...}, missing: { 'dir/name': [{ from, to }] }, nextVersion, startError: { detail, code }, cleared: { removed, bytes } };
     // the fake records `planned`, `started`, `cancelled`, `proxyCalls`, `clearCalls`. A test edits jobs between polls. state.rendersOld = true answers like a core that predates it.
@@ -559,12 +701,21 @@ export async function mockApi(page, state) {
         for (const s of seqs) { const src = s.source; if (src) { const k = `${src.width}x${src.height}x${src.bits}`; sby.set(k, { width: src.width, height: src.height, bits: src.bits, count: (sby.get(k)?.count || 0) + 1 }) } const c = s.colour; if (c) { const k = [c.transfer_name, c.colorimetric_name, c.descriptor_name, c.bits, c.packing_name, c.width, c.height, c.verdict, c.refusal].join('|'); by.set(k, { key: k, count: (by.get(k)?.count || 0) + 1, transfer_name: c.transfer_name, colorimetric_name: c.colorimetric_name, descriptor_name: c.descriptor_name, bits: c.bits, packing_name: c.packing_name, endian: c.endian, width: c.width, height: c.height, verdict: c.verdict, ...(c.refusal ? { refusal: c.refusal } : {}) }) } }
         return { ...(sby.size ? { source_summary: { groups: [...sby.values()] } } : {}), ...(by.size ? { colour_summary: { groups: [...by.values()], uniform: by.size === 1 } } : {}) }
       }
+      // The EDL's per-sequence answers (state.renders.rows = { 'dir/name': { flags, expected_frames, edl_element, timecode_source, start_timecode, suggested_colour } }): an override drops the frame-count flag, a typed timecode wins, requireColour adds colour-not-set to a Tunnel plan without a colour
+      const edlRow = (body, s) => {
+        const r = { ...((rs.rows || {})[key(s)] || {}) }
+        if (!Object.keys(r).length && !rs.requireColour) return {}
+        let flags = (r.flags || []).filter((f) => !(f.code === 'frames-differ-from-edl' && (body.edl_override || {})[s.name]))
+        if (rs.requireColour && body.preset === 'tunnel' && !s.colour_in) flags = [...flags, { code: 'colour-not-set', level: 'block', message: 'Colour not set: choose the input colour' }]
+        if (s.start_timecode) { r.start_timecode = s.start_timecode; r.timecode_source = 'sequence field' }
+        return { ...r, flags }
+      }
       if (path === '/renders/plan') {
         rs.planned.push(body)
         const w = chosen(body.where || 'auto'), seqs = body.sequences || []
         const shotOf = (n) => (/^([A-Za-z]+-\d+[a-z]?)/i.exec(n) || [, n])[1].toLowerCase()
-        const out = ({ ...(rs.podCpu ? { pod_cpu: rs.podCpu } : {}), ...(rs.notes ? { notes: rs.notes } : {}), ...(rs.settings ? { settings: rs.settings, settings_source: rs.settingsSource || 'default' } : {}), pod_ok: !!rs.adapters.pod.ok, ...(w ? {} : { reason: rs.adapters.pod.reason || rs.adapters.local.reason || 'Nothing can render' }), adapters: adapters(), total_frames: seqs.reduce((n, s) => n + s.frames, 0),
-          sequences: seqs.map((s) => ({ ...s, out: `output/.proxies/${s.dir}/${s.name}_${body.width}.mp4`, ...(rs.noSource ? {} : { source: (rs.sources || {})[key(s)] || rs.source || { width: 3840, height: 2160, bits: 16 } }), ...(rs.noColour ? {} : { colour: colourOf(s) }), skip: skipOf(body, s), exists_remote: !!rs.remote[key(s)], exists_local: !!rs.local[key(s)], gaps: (rs.missing[key(s)] || []).reduce((n, r) => n + (r.to - r.from + 1), 0), complete: !(rs.missing[key(s)] || []).length, missing: rs.missing[key(s)] || [], where: w || 'pod', ...(body.kind === 'review' ? { shot: shotOf(s.name), next_version: rs.nextVersion || 1 } : {}), clip_name: s.clip_name || s.name, ...(body.kind === 'review' ? { estimate: { frames: s.frames, note: 'slow: expect minutes per 100 frames', ...(rs.outputGb ? { output_gb: rs.outputGb } : {}) } } : rs.outputGb ? { estimate: { frames: s.frames, output_gb: rs.outputGb } } : {}) })) })
+        const out = ({ ...(rs.planWarnings ? { warnings: rs.planWarnings } : {}), ...(rs.podCpu ? { pod_cpu: rs.podCpu } : {}), ...(rs.notes ? { notes: rs.notes } : {}), ...(rs.settings ? { settings: rs.settings, settings_source: rs.settingsSource || 'default' } : {}), pod_ok: !!rs.adapters.pod.ok, ...(w ? {} : { reason: rs.adapters.pod.reason || rs.adapters.local.reason || 'Nothing can render' }), adapters: adapters(), total_frames: seqs.reduce((n, s) => n + s.frames, 0),
+          sequences: seqs.map((s) => ({ ...s, ...(rs.timecodes ? { timecode_source: rs.timecodes[key(s)] || null } : {}), ...edlRow(body, s), out: `output/.proxies/${s.dir}/${s.name}_${body.width}.mp4`, ...(rs.noSource ? {} : { source: (rs.sources || {})[key(s)] || rs.source || { width: 3840, height: 2160, bits: 16 } }), ...(rs.noColour ? {} : { colour: colourOf(s) }), skip: skipOf(body, s), exists_remote: !!rs.remote[key(s)], exists_local: !!rs.local[key(s)], gaps: (rs.missing[key(s)] || []).reduce((n, r) => n + (r.to - r.from + 1), 0), complete: !(rs.missing[key(s)] || []).length, missing: rs.missing[key(s)] || [], where: w || 'pod', ...(body.kind === 'review' ? { shot: shotOf(s.name), next_version: rs.nextVersion || 1 } : {}), clip_name: s.clip_name || s.name, ...(body.kind === 'review' ? { estimate: { frames: s.frames, note: 'slow: expect minutes per 100 frames', ...(rs.outputGb ? { output_gb: rs.outputGb } : {}) } } : rs.outputGb ? { estimate: { frames: s.frames, output_gb: rs.outputGb } } : {}) })) })
         const nSkipped = out.sequences.filter((x) => x.skip).length
         return json({ ...out, ...(rs.noTotals ? {} : { totals: { to_render: out.sequences.length - nSkipped, skipped: nSkipped } }), ...(rs.noSummary ? {} : summaries(out.sequences)) })
       }
@@ -573,6 +724,8 @@ export async function mockApi(page, state) {
         if (rs.startError) return json(rs.startError, 500)
         if ((body.sequences || []).length && body.sequences.every((s) => skipOf(body, s))) return json({ detail: 'Everything in this scope is already rendered: untick Skip existing to render again' }, 400)
         if (body.kind === 'review' && !body.approved_by) return json({ detail: 'A review video needs the name of who says yes' }, 400)
+        if (body.publish && (body.publish.targets || []).includes('slack') && !(body.publish.targets || []).includes('s3')) return json({ detail: 'Slack announces an upload: turn S3 on' }, 400)
+        if (body.publish && body.where !== 'local' && body.pull === false) return json({ detail: 'Publishing needs the renders on this PC: turn on Sync the renders to this PC' }, 400)
         const n = rs.started.length, w = chosen(body.where || 'auto')
         rs.jobs.push({ job_id: `job-${n}`, pod_id: w === 'local' ? '' : body.pod_id, pod_name: 'ComfyUI-Dev', kind: body.kind || 'proxy', codecs: body.codecs || [], state: 'rendering', started_at: `2026-11-18T10:0${n}:00Z`, finished_at: null, width: body.width, frames_done: 0, frames_total: body.sequences.reduce((a, s) => a + s.frames, 0), rate_fps: 0, current: '', pulled_files: 0, pulled_bytes: 0, error: '', summary: '',
           sequences: body.sequences.map((s) => ({ dir: s.dir, name: s.name, clip_name: s.clip_name || s.name, where: w || 'pod', state: skipOf(body, s) ? 'skipped' : 'waiting', ...(skipOf(body, s) ? { reason: skipOf(body, s) } : {}), frames_done: 0, frames_total: s.frames, out: '', bytes: 0, error: '' })) })
@@ -606,6 +759,17 @@ export async function mockApi(page, state) {
       ;(state.outputCalls ||= []).push({ ...query })
       const s3 = state.s3Outputs
       if (!s3) return json({ sources: [{ id: 'volume-s3', name: 'Network volume (S3)', hint: '', ok: false, reason: 'RUNPOD_S3_ACCESS_KEY and RUNPOD_S3_SECRET_KEY are not set (Default Configuration): without them only a pod could list this volume, and that costs money, so nothing was started.' }], runs: [], folders: [], prefix: '', capped: false, total: 0, volume_id: query.volume_id || '' })
+      // The whole tree (all=1): state.s3Outputs.allJob answers { job_id } and /history/outputs/status steps through allSteps polls of progress (noProgress: none) then the result; allHang never ends, allFail fails, allCap caps the files
+      if (query.all && !s3.noAll) {
+        const files = s3.allCap ? s3.files.slice(0, s3.allCap) : s3.files
+        const groups = new Map()
+        for (const f of files) { const dir = f.key.includes('/') ? f.key.slice(0, f.key.lastIndexOf('/')) : ''; (groups.get(dir) || groups.set(dir, []).get(dir)).push({ filename: f.key.split('/').pop(), subfolder: dir, type: 'output', bytes: f.bytes, modified: f.modified }) }
+        const runs = [...groups].map(([dir, fs]) => ({ prompt_id: `volume:${query.volume_id}:${dir || '.'}`, workflow: null, started_at: fs.map((f) => f.modified).sort().pop() || null, files: fs, source: 'volume-s3', folder: dir }))
+        const result = { sources: [{ id: 'volume-s3', name: 'Network volume (S3)', hint: '', ok: true, reason: '' }], all: true, runs, folders: [...new Set(files.filter((f) => f.key.includes('/')).map((f) => f.key.split('/')[0]))].sort(), prefix: '', capped: !!s3.allCap && s3.files.length > s3.allCap, total: s3.allTotal ?? s3.files.length, volume_id: query.volume_id || '', ...(s3.folderInfo ? { folder_info: s3.folderInfo } : {}) }
+        if (!s3.allJob) { if (s3.allDelayMs) await new Promise((r) => setTimeout(r, s3.allDelayMs)); return json(result) }
+        state.allListing = { polls: 0, result }
+        return json({ job_id: 'olist-1' })
+      }
       let prefix = query.prefix, note
       if (prefix === undefined) {
         prefix = ''
@@ -621,6 +785,16 @@ export async function mockApi(page, state) {
       const runs = [...groups].map(([dir, files]) => ({ prompt_id: `volume:${query.volume_id}:${dir || '.'}`, workflow: null, started_at: files.map((f) => f.modified).sort().pop() || null, files, source: 'volume-s3', folder: dir })).sort((a, b) => String(b.started_at).localeCompare(String(a.started_at)))
       return json({ sources: [{ id: 'volume-s3', name: 'Network volume (S3)', hint: '', ok: true, reason: '' }], runs, folders, prefix, capped: !!s3.capped, total: s3.total ?? direct.length, volume_id: query.volume_id || '', ...(s3.folderInfo ? { folder_info: s3.folderInfo } : {}), ...(note ? { start_note: note } : {}) })
     }
+    if (method === 'GET' && path === '/history/outputs/status') {
+      const s3 = state.s3Outputs, l = state.allListing
+      if (!l) return json({ detail: 'no such listing' }, 404)
+      l.polls++
+      if (s3.allFail) return json({ state: 'failed', error: 'S3 refused the listing (SlowDown)' })
+      if (l.cancelled) return json({ state: 'cancelled' })
+      if (s3.allHang || l.polls <= (s3.allSteps ?? 1)) return json(s3.noProgress ? { state: 'listing', progress_available: false } : { state: 'listing', files_seen: l.polls * 1234, folders_seen: l.polls * 17, elapsed_s: l.polls })
+      return json({ state: 'done', files_seen: l.result.runs.reduce((n, r) => n + r.files.length, 0), folders_seen: l.result.folders.length, elapsed_s: l.polls, result: l.result })
+    }
+    if (method === 'POST' && path === '/history/outputs/cancel') { (state.allCancels ||= []).push(body.job_id); if (state.allListing) state.allListing.cancelled = true; return json({ ok: true }) }
     if (method === 'GET' && path === '/history/runs') { const r = state.history.runs[query.pod_id]; return r ? json(r) : json({ detail: `pod ${query.pod_id} is not running` }, 400) }
     if (method === 'GET' && path === '/credits') return state.credits === null ? json({ detail: 'RunPod did not report the account balance' }, 502) : json(state.credits ?? { balance: 36.42, spend_per_hr: 0.053, spend_limit: 80, hours_left: 687.2, level: 'ok' })
     // Retry Later (ADR-042 section 19): the watches the core keeps; `api.state.watches` is what GET /pod-watches answers, `resumeWhenFree` and `createWhenFree` record the asks
@@ -787,7 +961,7 @@ export async function mockApi(page, state) {
     }
     if ((m = path.match(/^\/pods\/([^/]+)\/config$/)) && method === 'GET') return json(state.podConfigs[m[1]] || null)
     if ((m = path.match(/^\/pods\/([^/]+)\/config$/)) && method === 'PUT') {
-      if (body) state.podConfigs[m[1]] = body; else delete state.podConfigs[m[1]]
+      if (body) { const { outputs: _o, auto_publish: _a, ...own } = body; state.podConfigs[m[1]] = own } else delete state.podConfigs[m[1]]   // app-wide settings are never a pod's own
       const pod = state.pods.find((p) => p.id === m[1]); if (pod) pod.custom_config = !!body
       return json({ pod_id: m[1], custom_config: !!body, config: body || null })
     }
@@ -1086,3 +1260,6 @@ export async function answerConfirm(page, yes = true) {
   await expect(m).toBeHidden()
   return msg
 }
+
+/** Open the Queue window on one of its tabs (overview, imports, syncs, generations, publishing). */
+export async function queueTab(page, tab) { await page.getByTestId('open-queue').click(); await page.getByTestId(`queue-tab-${tab}`).click() }

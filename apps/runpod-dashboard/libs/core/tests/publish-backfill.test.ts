@@ -25,10 +25,12 @@ const fakeAws: podpull.AwsRunner = async (args, env) => {
     const pre = /^s3:\/\/[^/]+\/(.*)$/.exec(args[2])![1], rows = [...bucket].filter(([k]) => k.startsWith(pre)).map(([k, n]) => `2026-11-19 10:00:00 ${String(n).padStart(10)} ${k}`)
     return { code: rows.length ? 0 : 1, stdout: rows.join('\n'), stderr: '' }
   }
+  if (args[1] === 'presign') return { code: 0, stdout: 'https://s3.example/p?X-Amz-Signature=zzz\n', stderr: '' }
   if (args[1] === 'cp') { bucket.set(args[3].replace(/^s3:\/\/[^/]+\//, ''), 1); return { code: 0, stdout: '', stderr: '' } }
   return { code: 2, stdout: '', stderr: 'unexpected' }
 }
 const fakeSpawn = (_cmd: string, args: string[], env: Record<string, string>): ChildProcess => {
+  if (_cmd === '/fake/ffmpeg') { const f = new EventEmitter() as unknown as ChildProcess; Object.assign(f, { stdout: new PassThrough(), stderr: new PassThrough() }); const o = args[args.length - 1]; setImmediate(() => { writeFileSync(o, Buffer.alloc(55, 1)); f.emit('close', 0) }); return f }
   const c = new EventEmitter() as unknown as ChildProcess & { closed?: boolean }
   const rec = { args, env, killed: false, stdin: '' }; spawned.push(rec)
   const so = new PassThrough(), se = new PassThrough(), si = new PassThrough()
@@ -68,7 +70,7 @@ beforeEach(async () => {
   v('comfy-shared/output/deliver/archival-085/v001/clip.mov', 100)   // also on the PC
   for (let i = 1; i <= 2; i++) v(`comfy-shared/output/archival-101_R/archival-101_R.${String(i).padStart(4, '0')}.dpx`, 8)   // only on the volume
   v('comfy-shared/input/pipe_finals/archival-200-final.mov', 12); v('project/90_DELIVERIES/archival-300_review.mov', 16)
-  await publish.setSettings({ slack: { webhook_url: WEBHOOK, channel: '#renders' } })
+  await publish.setSettings({ s3: { layout: 'as-is' }, slack: { webhook_url: WEBHOOK, channel: '#renders' } })
 })
 afterEach(() => { publish.reset(); delete process.env.PUBLISH_SLACK_HOST_ALLOW; for (const k of [...settingsEnv.PUBLISH_SECRETS, 'PANAMA_AWS_ACCESS_KEY_ID', 'PANAMA_AWS_SECRET_ACCESS_KEY']) delete process.env[k] })
 
@@ -146,7 +148,7 @@ describe('run', () => {
     const csv = spawned.find((s) => /_inventory_/.test(s.args[3]))!.stdin
     expect(csv.split('\n')[0]).toBe('shot,name,kind,frames,bytes,modified,where,uploaded'); expect(csv).toContain('archival-101,archival-101_R.####.dpx,dpx-sequence,2,16,'); expect(csv).toContain(',pc+volume,yes'); expect(csv).not.toContain('m.safetensors')
     expect(spawned.indexOf(spawned.find((s) => /_inventory_/.test(s.args[3]))!)).toBe(spawned.length - 1)   // last
-    expect(posts).toHaveLength(1); expect(posts[0].text).toContain('Outputs inventory and upload: 6 shots, 11 files'); expect(posts[0].text).toContain('as they are, naming to be fixed after'); expect(posts[0].text).toContain('Approved by Lucas'); expect(posts[0].text).not.toMatch(/https?:|X-Amz/)
+    expect(posts).toHaveLength(1); expect(posts[0].text).toContain('Outputs inventory and upload: 6 shots, 11 files'); expect(posts[0].text).toContain('as they are, naming to be fixed after'); expect(posts[0].text).toContain('Approved by Lucas'); expect(posts[0].text).toContain('Folder: <https://s3.console.aws.amazon.com/s3/buckets/'); expect(posts[0].text).toContain('expires')
     expect(JSON.stringify(history.list({ limit: 50 }))).not.toMatch(new RegExp(`${PS}|RPSECRET`)); expect(history.list({ limit: 50 }).find((e) => e.kind === 'job' && e.job === 'publish')).toMatchObject({ approved_by: 'Lucas' })
   })
   it('a failed upload ends the job as failed with no Slack post and no inventory file', async () => {
@@ -171,5 +173,23 @@ describe('run', () => {
     const inv = await scanAll(); slackStatus = 500
     const { job_id } = await publish.backfillRun({ job_id: inv.job_id, all: true, targets: ['slack'], approved_by: 'L' }); const j = await finish(job_id)
     expect(j.state).toBe('failed'); expect(spawned).toHaveLength(0)
+  })
+})
+
+describe('Slack extras in the backfill message', () => {
+  it('first-frame previews of the first three clips found on this PC, and the source on the volume for the rows that are there; no link to a published file', async () => {
+    publish.setDeps({ findFfmpeg: async () => '/fake/ffmpeg', volumeRecord: async () => ({ id: 'vol1', name: 'Shared volume', datacenter: 'EU-RO-1' }) })
+    const inv = await scanAll(); const { job_id } = await publish.backfillRun({ job_id: inv.job_id, rows: inv.rows.filter((r) => !r.weight).map((r) => r.id), targets: ['s3', 'slack'], approved_by: 'Lucas' }); const j = await finish(job_id)
+    expect(j.state).toBe('done'); expect(j.previews!.map((p) => p.name)).toEqual(['clip_preview.jpg', 'corrosion-015_L_960_preview.jpg', 'corrosion-015_L_preview.jpg']); expect(j.previews![0].s3_key).toMatch(/^returns\/BKK\/archival-085\/clip_preview\.jpg$/)
+    const blocks = (posts[0] as unknown as { blocks: Record<string, unknown>[] }).blocks, types = blocks.map((b) => b.type)
+    expect(types.filter((t) => t === 'image')).toHaveLength(3); expect(types.slice(-2)).toEqual(['section', 'context'])
+    const src = JSON.stringify(blocks.slice(-2)); expect(src).toContain('Source on the volume:* Shared volume (EU-RO-1)'); expect(src).toContain('comfy-shared/output/archival-101_R/'); expect(src).toContain('+'); expect(src).toContain('--region eu-ro-1'); expect(src).not.toMatch(/RPKEY|RPSECRET/)
+    expect(posts[0].text).toContain('Folder:'); expect(JSON.stringify(history.list({ limit: 50 }))).not.toMatch(/X-Amz|console\.aws/)   // links go to Slack only, never to the History
+  })
+  it('the backfill plan carries the same fields', async () => {
+    publish.setDeps({ findFfmpeg: async () => '/fake/ffmpeg' }); const inv = await scanAll()
+    const p = await publish.backfillPlan({ job_id: inv.job_id, all: true, targets: ['s3', 'slack'], approved_by: 'L' }); expect(p.slack).toMatchObject({ preview_frames: 3, preview_problem: null, volume_source: true }); expect(p.previews).toHaveLength(3); expect(p.slack!.preview).toContain('With a preview of the first frame of clip (and 2 more)'); expect(p.warnings).toEqual([])
+    const off = await publish.backfillPlan({ job_id: inv.job_id, all: true, targets: ['s3', 'slack'], preview_frame: false }); expect(off.slack).toMatchObject({ preview_frames: 0, preview_problem: null })
+    publish.setDeps({ findFfmpeg: async () => null }); expect((await publish.backfillPlan({ job_id: inv.job_id, all: true, targets: ['s3', 'slack'] })).slack!.preview_problem).toMatch(/ffmpeg is not installed/)
   })
 })

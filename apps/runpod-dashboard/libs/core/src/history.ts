@@ -20,11 +20,13 @@ export interface JobEvent { ts: string; kind: 'job'; job: 'pull' | 'remove' | 'b
 export interface ChangeEvent { ts: string; kind: 'change'; area: 'volume' | 'configuration' | 'import' | 'adapter' | 'pod'; action: string; what: string; detail?: string }
 export type HistoryEvent = (PodEvent | JobEvent | ChangeEvent) & Origin
 /** Who did it: `source` is the app's window (default) or an MCP tool call (`tool`, and the `approved_by` of a spend). Taken from the context the caller runs in (`runAs`). */
-export interface Origin { source?: 'app' | 'mcp'; tool?: string; approved_by?: string }
+export interface Origin { source?: 'app' | 'mcp'; tool?: string; approved_by?: string; /** the MCP client's name when the session gave one */ client?: string }
 type Without<T> = T extends unknown ? Omit<T, 'ts'> & { ts?: string } & Origin : never
 
 const origin = new AsyncLocalStorage<Origin>()
 /** Run `fn` as `who`: every event recorded under it (even after an await) carries the source, the tool and the approver. The MCP servers wrap each tool call in this. */
+/** Who the code running now acts for (the MCP wrapper's context), or undefined for the window. */
+export const currentOrigin = (): Origin | undefined => origin.getStore()
 export const runAs = <T>(who: Origin, fn: () => T): T => origin.run(who, fn)
 
 const listeners = new Set<() => void>()

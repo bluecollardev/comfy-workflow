@@ -1,7 +1,7 @@
 // Publishing helpers (src/utils/publish.js): the destination preview, keys, the Slack message, channel names, a target's reason. `npm run dpx:test`.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { s3Dest, s3Key, fillMessage, unknownPlaceholders, channelName, targetState, expiryText, localPath, publishActive, PLACEHOLDERS } from './publish.js'
+import { s3Dest, s3Key, fillMessage, unknownPlaceholders, channelName, targetState, expiryText, localPath, publishActive, PLACEHOLDERS, roundProblem, timecodeProblem, dpxStem, roundExample, roundTemplateProblem } from './publish.js'
 
 test('s3Dest: s3://bucket/prefix/ whatever slashes the fields carry; no bucket is empty', () => {
   assert.equal(s3Dest('beinghuman-deliveries', 'imax/restoration'), 's3://beinghuman-deliveries/imax/restoration/')
@@ -35,4 +35,13 @@ test('localPath cuts output/ and comfy-shared/output/ off a deliverable\'s file'
 test('publishActive: queued, uploading and posting', () => {
   for (const s of ['queued', 'uploading', 'posting']) assert.equal(publishActive({ state: s }), true)
   for (const s of ['done', 'done_with_warning', 'failed', 'cancelled']) assert.equal(publishActive({ state: s }), false); assert.equal(publishActive(null), false)
+})
+test('round names, timecodes, DPX stems and the round template', () => {
+  for (const ok of ['qc_2026-11-02_r01', 'abc', 'a.b-c_d']) assert.equal(roundProblem(ok), '')
+  for (const bad of ['', 'ab', 'a b', 'x/y', 'é1234', 'a'.repeat(101)]) assert.equal(roundProblem(bad), 'round')
+  for (const ok of ['00:00:00:00', '01:00:00:00', '23:59:59:23']) assert.equal(timecodeProblem(ok), '')
+  for (const bad of ['', '0:0:0:0', '00:60:00:00', '00:00:00', '00:00:00;00', 'aa:bb:cc:dd']) assert.equal(timecodeProblem(bad), 'timecode')
+  assert.equal(dpxStem('output/p/a/ARCH_X.0001.dpx'), 'ARCH_X'); assert.equal(dpxStem('a/b.mp4'), ''); assert.equal(dpxStem('x.12.DPX'), 'x')
+  assert.equal(roundExample('tunnel-v11_{date}_r01', new Date('2026-11-19T10:00:00Z')), 'tunnel-v11_2026-11-19_r01')
+  assert.equal(roundTemplateProblem('tunnel-v11_{date}_r01'), ''); assert.equal(roundTemplateProblem('x {date}'), 'round'); assert.equal(roundTemplateProblem('a_{when}'), 'round'); assert.equal(roundTemplateProblem(''), 'round')
 })

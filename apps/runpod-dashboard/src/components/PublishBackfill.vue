@@ -55,7 +55,9 @@
         <div class="small text-body-secondary" data-testid="publish-backfill-asis">{{ $t('publish.backfill.asIs') }}</div>
         <div class="small text-body-secondary" data-testid="publish-backfill-csvline">{{ $t('publish.backfill.csvLine', { date: today }) }}</div>
         <template v-if="slackOn"><textarea v-model="message" class="form-control form-control-sm font-monospace" rows="3" data-testid="publish-backfill-message"></textarea>
-          <div v-if="plan?.slack" class="small text-body-secondary" data-testid="publish-backfill-slack-preview">{{ plan.slack.preview }}</div></template>
+          <div v-if="plan?.slack" class="small text-body-secondary" data-testid="publish-backfill-slack-preview">{{ plan.slack.preview }}</div>
+          <PreviewFrame v-model="previewRun" :plan="plan" :supported="previewSupported" :volume-source="store.settings.slack?.volume_source === true" :slack-on="true" /></template>
+        <ReturnLayout v-model:overrides="edlOverrides" v-model:round="round" v-model:clip-names="clipNames" :active="layoutActive" :stems="stems" :plan="plan" :prefix="prefix" />
         <div v-for="(b, i) in plan?.blockers || []" :key="i" class="alert alert-danger py-1 px-2 small mt-2 mb-0" data-testid="publish-backfill-blocker">{{ b }}</div>
         <div v-if="plan" class="small mt-2" data-testid="publish-backfill-plan">{{ $t('publish.modal.count', { files: plan.files, size: formatBytes(plan.total_bytes) }) }}<span v-if="skipped" data-testid="publish-backfill-skipped"> · {{ $t('publish.modal.skipped', { n: skipped }) }}</span></div>
         <hr />
@@ -67,7 +69,7 @@
         <div v-if="runError" class="text-danger small mt-1" data-testid="publish-backfill-run-error">{{ runError }}</div>
       </BCol>
     </BRow>
-    <PublishJob v-if="job" :job="job" @retry="retry" />
+    <PublishJob v-if="job" :job="job"  @retry="retry" />
   </div>
 </template>
 
@@ -83,8 +85,11 @@ import { errorText } from '../stores/toast'
 import { core } from '../api/bridge'
 import { t } from '../i18n'
 import { formatBytes } from '../sync-progress'
-import { s3Dest, targetState, channelName } from '../utils/publish'
+import { s3Dest, targetState, channelName, roundProblem, blockedRows } from '../utils/publish'
+import { clipProblem } from '../utils/renders'
 import PublishJob from './PublishJob.vue'
+import PreviewFrame from './PreviewFrame.vue'
+import ReturnLayout from './ReturnLayout.vue'
 import { useUiStore } from '../stores/ui'
 
 const SOURCES = [{ id: 'pc:output/', label: 'publish.backfill.srcPcOutput' }, { id: 'volume:output/', label: 'publish.backfill.srcVolOutput' }, { id: 'volume:input/pipe_finals/', label: 'publish.backfill.srcVolFinals' }, { id: 'volume:project/90_DELIVERIES/', label: 'publish.backfill.srcVolDeliveries' }]
@@ -143,13 +148,27 @@ const props = defineProps({ targets: { type: Array, default: () => ['s3'] } })
 defineEmits(['update:targets'])
 const slackOn = computed(() => props.targets.includes('slack'))
 const targets = computed(() => (props.targets.includes('s3') ? props.targets : props.targets))
+// first-frame preview of the Slack post: the Slack setting is the start, the tick is this run only (see PreviewFrame.vue)
+const previewSupported = computed(() => typeof store.settings.slack?.preview_frame === 'boolean')
+const previewRun = ref(store.settings.slack?.preview_frame !== false)
+watch(() => store.settings.slack?.preview_frame, (v) => { previewRun.value = v !== false })
+const previewBody = () => (previewSupported.value && slackOn.value ? { preview_frame: previewRun.value } : {})
+// The BKK return layout (a core that reports it): a round name and a clip name per selected DPX sequence
+const round = ref(''), clipNames = ref({}), edlOverrides = ref({})
+const layoutActive = computed(() => (plan.value?.layout || store.settings.s3?.layout) === 'bkk-return')
+const stems = computed(() => [...new Set(rows.value.filter((r) => isOn(r) && r.kind === 'dpx').map((r) => r.name))])
+const clipEdits = () => Object.fromEntries(Object.entries(clipNames.value).filter(([s, v]) => stems.value.includes(s) && v && v !== s))
+const clipsBad = computed(() => Object.values(clipNames.value).some((v) => v !== undefined && clipProblem(v)))
+const overrideBody = () => { const o = Object.fromEntries(Object.entries(edlOverrides.value).filter(([, v]) => v)); return Object.keys(o).length ? { edl_override: o } : {} }
+const layoutBody = () => (layoutActive.value ? { round: round.value, ...(Object.keys(clipEdits()).length ? { clip_names: clipEdits() } : {}), ...overrideBody() } : {})
+const layoutOk = computed(() => !layoutActive.value || (!!round.value && !roundProblem(round.value) && !clipsBad.value && !(blockedRows(plan.value, edlOverrides.value).total > 0 && blockedRows(plan.value, edlOverrides.value).blocked === blockedRows(plan.value, edlOverrides.value).total)))
 let planTimer = null, planSeq = 0
 async function replan() {
   const my = ++planSeq
   if (!selected.value.length) { plan.value = null; return }
-  try { const p = await publishAPI.backfill.plan({ rows: [...selected.value], targets: targets.value, destination_prefix: prefix.value, ...(slackOn.value ? { message: message.value } : {}) }); if (my === planSeq) plan.value = p } catch (e) { if (my === planSeq) plan.value = { ok: false, blockers: [errorText(e)], items: [], total_bytes: 0, files: 0, s3: null, slack: null, refused: [] } }
+  try { const p = await publishAPI.backfill.plan({ rows: [...selected.value], targets: targets.value, destination_prefix: prefix.value, ...(slackOn.value ? { message: message.value } : {}), ...previewBody(), ...layoutBody() }); if (my === planSeq) plan.value = p } catch (e) { if (my === planSeq) plan.value = { ok: false, blockers: [errorText(e)], items: [], total_bytes: 0, files: 0, s3: null, slack: null, refused: [] } }
 }
-watch([selected, targets, prefix, message], () => { clearTimeout(planTimer); planTimer = setTimeout(replan, 300) }, { deep: true })
+watch([selected, targets, prefix, message, previewRun, round, clipNames, edlOverrides, layoutActive], () => { clearTimeout(planTimer); planTimer = setTimeout(replan, 300) }, { deep: true })
 onBeforeUnmount(() => { clearTimeout(planTimer); planSeq++ })
 const channel = computed(() => plan.value?.slack?.channel || channelName(store.settings.slack.channel))
 const confirmText = computed(() => {
@@ -157,12 +176,12 @@ const confirmText = computed(() => {
   const dest = plan.value.s3?.dest || s3Dest(store.settings.s3.bucket, prefix.value), size = formatBytes(plan.value.total_bytes)
   return slackOn.value ? t('publish.backfill.confirm', { files: plan.value.files, size, volume: volumeCount.value, dest, channel: channel.value }) : t('publish.backfill.confirmNoSlack', { files: plan.value.files, size, volume: volumeCount.value, dest })
 })
-const canPublish = computed(() => !!plan.value && plan.value.ok && !plan.value.blockers.length && !!approvedBy.value && s3ready.value.ok && selected.value.length > 0 && !(job.value && ['queued', 'uploading', 'posting'].includes(job.value.state)))
+const canPublish = computed(() => !!plan.value && plan.value.ok && !plan.value.blockers.length && !!approvedBy.value && s3ready.value.ok && selected.value.length > 0 && layoutOk.value && !(job.value && ['queued', 'uploading', 'posting'].includes(job.value.state)))
 async function run(ids) {
   runError.value = ''
   try {
     try { localStorage.setItem('runpod-manager.approved-by', approvedBy.value) } catch { /* storage blocked */ }
-    const r = await store.runBackfill({ rows: ids || [...selected.value], targets: targets.value, destination_prefix: prefix.value, approved_by: approvedBy.value, ...(slackOn.value ? { message: message.value } : {}) })
+    const r = await store.runBackfill({ rows: ids || [...selected.value], targets: targets.value, destination_prefix: prefix.value, approved_by: approvedBy.value, ...(slackOn.value ? { message: message.value } : {}), ...previewBody(), ...layoutBody() })
     jobId.value = r.job_id
   } catch (e) { runError.value = errorText(e) }
 }

@@ -384,7 +384,7 @@ async function start() {
   const makeVol = !isVolume.value && newVolOk.value ? { name: newVolName.value.trim(), size_gb: newVolSize.value, datacenter: dcChoice.value } : null
   const opts = { run_workflows: isVolume.value ? true : runWorkflows.value, volume_id: isVolume.value ? sourceVolumeId.value : volumeId.value, approved_by: approvedBy.value.trim(), ...autoSyncKey(), ...(isVolume.value ? { source: 'volume' } : {}), ...(capOn ? { cost_cap_usd: costCap.value } : {}) }
   // The Queue opens at once and says it is queueing: reading and planning the rounds takes a while, and the button alone says nothing.
-  ui.queueStartError = ''; ui.queueStarting = todo; open.value = false; ui.queueOpen = true
+  ui.queueStartError = ''; ui.queueStarting = todo; open.value = false; ui.queueTab = 'imports'; ui.queueOpen = true
   try { if (makeVol) { const v = await volumesAPI.create(makeVol); opts.volume_id = v.id }; await queueAPI.importMany(items, opts) } catch (e) { ui.queueStartError = errorText(e) } finally { ui.queueStarting = []; ui.queueVersion++; starting.value = false }
 }
 </script>

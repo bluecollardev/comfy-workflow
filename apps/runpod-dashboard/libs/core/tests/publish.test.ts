@@ -51,11 +51,12 @@ const configure = async (extra: Partial<publish.SettingsInput> = {}) => publish.
   s3: { credentials: 'app', bucket: 'my-internal-bucket', prefix: 'renders', region: 'us-west-2', access_key_id: KEY_ID, secret_access_key: KEY_SECRET, ...extra.s3 }, slack: { webhook_url: WEBHOOK, channel: '#renders', ...extra.slack },
 })
 const finish = async (id: string) => { await publish.settled(); return publish.status(id).jobs[0] }
+const PANAMA_ENV = ['PANAMA_AWS_ACCESS_KEY_ID', 'PANAMA_AWS_SECRET_ACCESS_KEY', 'PANAMA_S3_BUCKET']
 
 beforeEach(() => {
   dir = scratch(); out = join(dir, 'shared', 'output'); mkdirSync(out, { recursive: true })
   process.env.SETTINGS_ENV_FILE = join(dir, '.env'); process.env.PUBLISH_SLACK_HOST_ALLOW = 'hooks.slack.com'
-  for (const k of [...settingsEnv.PUBLISH_SECRETS, 'PANAMA_AWS_ACCESS_KEY_ID', 'PANAMA_AWS_SECRET_ACCESS_KEY', 'PANAMA_S3_BUCKET']) delete process.env[k]
+  for (const k of [...settingsEnv.PUBLISH_SECRETS, ...PANAMA_ENV]) delete process.env[k]
   calls = []; bucket = new Map(); failCp = new Set(); cpGate = null; posts = []; slackStatus = 200; slackThrow = 0; live = 0; maxLive = 0
   publish.reset(); publish.setDeps({ aws: fakeAws, fetch: fakeFetch, outputRoot: () => out, parallel: () => 3 })
 })
@@ -64,14 +65,15 @@ afterEach(() => { publish.reset(); delete process.env.PUBLISH_SLACK_HOST_ALLOW; 
 describe('settings: defaults, validation, masking', () => {
   it('nothing saved: the non-secret defaults appear, nothing is ready, the problems say what to add', async () => {
     const s = await publish.settings()
-    expect(s.slack).toMatchObject({ workspace_name: 'Beinghuman', workspace_url: 'https://beinghuman-hq.slack.com', username: 'RunPod Manager', channel: '', ready: false })
+    expect(s.slack).toMatchObject({ workspace_name: 'Beinghuman', workspace_url: 'https://beinghuman-hq.slack.com', username: 'RunPod Manager', channel: '', ready: false, file_links: true, file_link_count: 10, folder_link: true, preview_frame: true, volume_source: true })
     expect(s.slack.problem).toBe('Add the Incoming Webhook URL for Beinghuman (Slack: Apps > Incoming Webhooks)')
     expect(s.s3).toMatchObject({ bucket: panama.bucket(), region: panama.region(), prefix: 'returns/BKK/', ready: false, credentials: 'panama', presign_hours: 72, note: 'Lucas, 2026-11-19: Panama exchange bucket, returns/BKK/' })
     expect(s.s3.problem).toBe('Add the Panama AWS keys (Settings > Panama) or separate keys')
     process.env.PANAMA_AWS_ACCESS_KEY_ID = KEY_ID; process.env.PANAMA_AWS_SECRET_ACCESS_KEY = KEY_SECRET
     expect((await publish.settings()).s3.ready).toBe(true); expect(JSON.stringify(await publish.settings())).not.toContain(KEY_SECRET)
     await publish.setSettings({ s3: { bucket: 'another-bucket' } }); const o = (await publish.settings()).s3; expect(o.bucket).toBe('another-bucket'); expect(o.note).toBeUndefined()
-    await publish.setSettings({ s3: { bucket: '' } }); expect((await publish.settings()).s3.bucket).toBe(panama.bucket())   // clearing returns to the Panama setting; expect(s.defaults.targets).toEqual([]); expect(s.defaults.message).toContain('{approved_by}')
+    await publish.setSettings({ s3: { bucket: '' } }); expect((await publish.settings()).s3.bucket).toBe(panama.bucket())   // clearing returns to the Panama setting
+    expect(s.defaults.targets).toEqual([]); expect(s.defaults.message).toContain('{approved_by}')
   })
   it('no default contains a webhook, a token or a key (the app ships on a public repository)', () => {
     const all = JSON.stringify(publish.PUBLISH_DEFAULTS)
@@ -91,10 +93,11 @@ describe('settings: defaults, validation, masking', () => {
       [{ s3: { presign_hours: 0 } }, /presign_hours/], [{ s3: { presign_hours: 169 } }, /presign_hours/], [{ s3: { credentials: 'x' } }, /credentials/],
       [{ slack: { webhook_url: 'http://hooks.slack.com/services/x' } }, /webhook_url/], [{ slack: { webhook_url: 'https://evil.example/services/x' } }, /webhook_url/], [{ slack: { channel: 'renders' } }, /slack\.channel/],
       [{ slack: { workspace_url: 'http://x.slack.com' } }, /workspace_url/], [{ slack: { workspace_url: 'https://slack.evil.com' } }, /workspace_url/], [{ slack: { workspace_url: 'https://x.slack.com.evil.com' } }, /workspace_url/],
+      [{ slack: { file_link_count: 0 } }, /file_link_count/], [{ slack: { file_link_count: 26 } }, /file_link_count/], [{ slack: { file_links: 'yes' as never } }, /slack\.file_links/], [{ slack: { folder_link: 1 as never } }, /slack\.folder_link/],
     ]
     for (const [input, re] of cases) await expect(publish.setSettings(input), JSON.stringify(input)).rejects.toMatchObject({ status: 400, message: expect.stringMatching(re) })
     await expect(publish.setSettings({ slack: { workspace_url: 'https://beinghuman-hq.slack.com' }, s3: { prefix: '/x' } })).rejects.toThrow()
-    expect(await publish.setSettings({ s3: { prefix: 'a/b', endpoint: 'https://minio.local/', presign_hours: 168 }, slack: { workspace_url: 'https://x.slack.com/path' } })).toMatchObject({ s3: { prefix: 'a/b/', endpoint: 'https://minio.local', presign_hours: 168 }, slack: { workspace_url: 'https://x.slack.com' } })
+    expect(await publish.setSettings({ s3: { prefix: 'a/b', endpoint: 'https://minio.local/', presign_hours: 168 }, slack: { workspace_url: 'https://x.slack.com/path', file_link_count: 25, file_links: false, folder_link: false } })).toMatchObject({ s3: { prefix: 'a/b/', endpoint: 'https://minio.local', presign_hours: 168 }, slack: { workspace_url: 'https://x.slack.com', file_link_count: 25, file_links: false, folder_link: false } })
   })
   it('secrets are stored in the .env, never returned, a blank keeps the stored one, clear removes it, and nothing is logged with a value', async () => {
     const s = await configure()
@@ -116,8 +119,8 @@ describe('settings: defaults, validation, masking', () => {
     expect(s.s3.ready).toBe(false)
     process.env.PANAMA_AWS_ACCESS_KEY_ID = KEY_ID; process.env.PANAMA_AWS_SECRET_ACCESS_KEY = KEY_SECRET
     s = await publish.settings(); expect(s.s3.ready).toBe(true)
-    write('a.mov'); const { job_id } = await publish.run({ items: ['a.mov'], targets: ['s3'], approved_by: 'L' }); await finish(job_id)
-    const cp = calls.find((c) => c.args[1] === 'cp')!; expect(cp.env).toMatchObject({ AWS_ACCESS_KEY_ID: KEY_ID, AWS_SECRET_ACCESS_KEY: KEY_SECRET }); expect(cp.args[3]).toBe('s3://my-internal-bucket/returns/BKK/a.mov')
+    write('a.mov'); const { job_id } = await publish.run({ items: ['a.mov'], targets: ['s3'], approved_by: 'L', round: 'qc_2026-11-02_r01' }); await finish(job_id)
+    const cp = calls.find((c) => c.args[1] === 'cp')!; expect(cp.env).toMatchObject({ AWS_ACCESS_KEY_ID: KEY_ID, AWS_SECRET_ACCESS_KEY: KEY_SECRET }); expect(cp.args[3]).toBe('s3://my-internal-bucket/returns/BKK/qc_2026-11-02_r01/shot/a.mov')
   })
 })
 
@@ -198,7 +201,7 @@ describe('plan()', () => {
 })
 
 describe('run()', () => {
-  it('needs the name of who says yes, a ready plan, and no weights', async () => {
+  it('needs the approver, a ready plan, and no weights', async () => {
     await configure(); write('a.mov'); write('w.safetensors')
     await expect(publish.run({ items: ['a.mov'], targets: ['s3'] })).rejects.toMatchObject({ status: 400, message: 'Publishing needs the name of who says yes (approved_by)' })
     await expect(publish.run({ items: ['a.mov'], targets: ['s3'], approved_by: '  ' })).rejects.toMatchObject({ status: 400 })

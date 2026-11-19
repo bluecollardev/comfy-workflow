@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { CoreError } from './errors.js'
 import * as history from './history.js'
+import * as failures from './failures.js'
 import * as mounts from './mounts.js'
 import { REPO_ROOT } from './paths.js'
 import * as podpull from './podpull.js'
@@ -98,7 +99,7 @@ export const overLimit = (r: Ram | null, pct: number): boolean => !!r && r.pct >
 
 // ----- 2. running -----
 
-export interface ChunkResult { n: number; first: number; last: number; state: 'pending' | 'running' | 'done' | 'failed' | 'skipped'; prompt_id?: string; seconds?: number; error?: string; outputs?: number; ram_pct?: number }
+export interface ChunkResult { /** the failure in words (stage, node, message, missing models, recovery, retryable) */ failure_text?: string; recovery?: string; retryable?: boolean; n: number; first: number; last: number; state: 'pending' | 'running' | 'done' | 'failed' | 'skipped'; prompt_id?: string; seconds?: number; error?: string; outputs?: number; ram_pct?: number }
 export interface ChunkJob {
   id: string; pod_id: string; pod_name: string; what: string; unit: 'frame' | 'index' | null; chunk: number; ram_guard_pct: number
   state: 'running' | 'done' | 'failed' | 'stopped' | 'cancelled'; started_at: string; finished_at?: string
@@ -206,7 +207,11 @@ export async function run(podId: string, o: ChunkOpts): Promise<ChunkJob> {
           const cancelled = e instanceof CoreError && e.status === 499
           const guard = e instanceof CoreError && e.status === 507
           r.state = cancelled ? 'skipped' : 'failed'
-          if (!cancelled) { r.error = (e as Error).message; j.error = r.error; j.state = guard ? 'stopped' : 'failed' }
+          if (!cancelled) {
+            r.error = (e as Error).message; j.error = r.error; j.state = guard ? 'stopped' : 'failed'
+            const ex = failures.explain(r.error), rec = failures.record({ stage: ex.stage, message: r.error, job_id: j.id, graph: j.what, pod_id: podId, pod_name: j.pod_name, node_id: ex.node_id, node_type: ex.node_type, attempt: 1, quiet: true })
+            r.recovery = rec.recovery; r.retryable = rec.retryable; r.failure_text = failures.describe(rec)
+          }
           r.seconds ??= Math.round((Date.now() - t0) / 100) / 10
           history.record({ kind: 'job', job: 'run', state: cancelled ? 'cancelled' : 'failed', started_at: new Date(t0).toISOString(), what: `${j.what} chunk ${r.n}/${j.chunks.length} (${r.first}-${r.last})`, pod_id: podId, pod_name: podName, ...(r.error ? { error: r.error } : {}), detail: `${r.seconds}s` })
           continue

@@ -19,7 +19,7 @@
           <span v-if="volume" class="d-block small text-body-secondary" data-testid="retry-later-volume">{{ $t('pod.rlVolume', { name: volume.name, dc: volume.datacenter }) }}</span></span>
       </label>
       <div v-if="choice === 'other'" class="mt-2 ms-4">
-        <div v-if="loading" class="small text-body-secondary"><BSpinner small class="me-1" />{{ $t('pod.rlLoading') }}</div>
+        <div v-if="loading" class="small text-body-secondary"><BSpinner small class="me-2 flex-shrink-0" />{{ $t('pod.rlLoading') }}</div>
         <div v-else-if="!cards.length" class="small text-warning" data-testid="retry-later-none">{{ $t('pod.rlNone', { dc: pod.datacenter || '?' }) }}</div>
         <div v-else data-testid="retry-later-gpus">
           <div class="small text-body-secondary mb-1" data-testid="retry-later-order-note">{{ $t('pod.rlOrderNote') }}</div>

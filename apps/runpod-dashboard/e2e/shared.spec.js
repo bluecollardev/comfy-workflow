@@ -1,4 +1,4 @@
-import { test, expect, modal, cfgTab, openVolumes, openModels, answerConfirm } from './fixtures'
+import { test, expect, modal, cfgTab, openVolumes, openModels, answerConfirm, queueTab } from './fixtures'
 import { t } from './i18n'
 
 // Shared (ADR-042 section 9): the nav button opens a chooser with Volumes and Models; the Shared volume is badged and cannot be deleted;
@@ -304,7 +304,7 @@ test.describe('Shared', () => {
     api.state.interrupted = [{ name: 'ComfyUI-Pull-vol-a3upg9ey48-1115', kind: 'fetch', round: 'vol-a3upg9ey48', pod_id: 'p9', volume: 'a3upg9ey48', created_at: '2026-11-15T16:56:04.000Z', approved_by: 'a click in the app window' }]
     await page.goto('/')
     await expect(page.getByTestId('queue-badge')).toHaveText('2')           // the running download and the interrupted pod
-    await page.getByTestId('open-queue').click()
+    await queueTab(page, 'imports')
     const q = page.getByTestId('queue-modal')
     const job = q.getByTestId('queue-volume-job')
     await expect(job).toHaveAttribute('data-kind', 'fetch')
@@ -326,7 +326,7 @@ test.describe('Shared', () => {
       { name: 'ComfyUI-Pull-vol-a3upg9ey48-1116', kind: 'erase', round: 'vol-a3upg9ey48', pod_id: 'p8', volume: 'a3upg9ey48', created_at: '2026-11-15T16:56:04.000Z', approved_by: 'a click in the app window' },
     ]
     await page.goto('/')
-    await page.getByTestId('open-queue').click()
+    await queueTab(page, 'imports')
     const q = page.getByTestId('queue-modal')
     const lost = q.locator('[data-testid="queue-interrupted"][data-name="ComfyUI-Pull-vol-a3upg9ey48-1115"]')
     await expect(lost.getByTestId('queue-interrupted-reattach')).toHaveText('Reattach')

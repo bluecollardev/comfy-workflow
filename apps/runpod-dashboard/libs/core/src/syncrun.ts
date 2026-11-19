@@ -39,8 +39,10 @@ import { CoreError, bad } from './errors.js'
 import * as idle from './idle.js'
 import * as mounts from './mounts.js'
 import * as podconfigs from './podconfigs.js'
+import * as podvolume from './podvolume.js'
 import * as rp from './runpod.js'
 import * as history from './history.js'
+import * as jobsregistry from './jobsregistry.js'
 import * as journal from './journal.js'
 import { registry } from './syncruns.js'
 import * as sync from './sync.js'
@@ -100,7 +102,8 @@ export const TEST_DIR = '80_TEST-BUCKET'
 const configFor = (podId: string) => podconfigs.get(podId) ?? mounts.load()
 
 /** The volume this pod's sync reaches, for the journal: its own configuration's, else the Default Configuration's network or Shared volume. */
-export const volumeIdFor = (podId: string): string => { const c = configFor(podId), d = mounts.load(); return (c.network_volume_id || d.network_volume_id || d.shared_volume_id || '').trim() }
+/** The pod's volume: its own saved configuration, else the volume last seen while it ran (a STOPPED pod has none in the RunPod API), else the Default Configuration's. */
+export const volumeIdFor = (podId: string): string => { const own = podconfigs.get(podId)?.network_volume_id, d = mounts.load(); return (own || podvolume.recall(podId) || d.network_volume_id || d.shared_volume_id || '').trim() }
 
 export const DEFAULT_PARALLEL = 8, MAX_PARALLEL = 32
 /** How many files are copied at once for a `paths` sync (and the auto pull): the pod's own configuration's sync_parallel, else the Default Configuration's, else 8; clamped 1..32. */
@@ -664,14 +667,19 @@ export async function run(request: SyncRequest, send: (e: SyncEvent) => void, si
   const deleted: { path: string; bytes: number }[] = []
   const reg = registry.begin(request)   // the sync explorer and its logs (syncruns.ts): additive, it never changes the events or the History entry
   const seen = (e: SyncEvent) => { if (e.kind === 'step' && e.streams) streams = Math.max(streams, e.streams); else if (e.kind === 'file') moved++; else if (e.kind === 'progress' && e.run_bytes_done !== undefined) movedBytes = Math.max(movedBytes, e.run_bytes_done); else if (e.kind === 'delete' && e.state === 'removed') deleted.push({ path: `${e.key}/${e.path}`, bytes: Number(e.bytes ?? 0) }); reg.event(e); send(e) }
+  // visible to the other processes while it runs (the Queue shows an MCP-started sync), and cancellable from them
+  const ac = new AbortController(), fwd = () => ac.abort(); if (signal.aborted) ac.abort(); else signal.addEventListener('abort', fwd, { once: true })
+  const who = history.currentOrigin(), origin: jobsregistry.Origin = auto ? 'auto-publish' : who?.source === 'mcp' ? 'mcp' : 'window'
+  const stopTrack = jobsregistry.track({ id: `sync-${request.pod_id ?? 'local'}-${Date.parse(started).toString(36)}`, kind: 'sync', trigger: request.trigger ?? 'manual', origin: origin === 'auto-publish' ? 'script' : origin, ...(origin === 'mcp' && who?.client ? { client: who.client } : {}), label: what, started_at: started, view: () => ({ state: 'syncing' }), cancel: () => ac.abort() })
   try {
-    const r = await runSync(request, seen, signal, client, exec)
+    const r = await runSync(request, seen, ac.signal, client, exec); stopTrack(); signal.removeEventListener('abort', fwd)
     reg.end(r, r.message)
     if (request.direction === 'push' && !r.cancelled && !r.failed) journalPush(request)
     // ONE entry per run (a `paths` run is one run, however many files). An automatic run that moved nothing records nothing (no noise).
     if (!(auto && !r.failed && !r.cancelled && moved === 0)) history.record({ kind: 'job', job: 'sync', state: r.cancelled ? 'cancelled' : r.failed ? 'failed' : 'done', started_at: started, what, pod_id: request.pod_id, ...(request.trigger ? { trigger: request.trigger } : {}), ...(request.paths ? runCounts(request, streams) : leftOut(request, deleted)), ...(deleted.length ? { approved_by: (request.approved_by ?? '').trim() } : {}), ...(r.code ? { files: moved, bytes: movedBytes } : {}), ...(r.failed ? { error: r.message ?? `${r.failed} of ${r.steps} folders failed` } : {}) })
     return r
   } catch (e) {
+    stopTrack(); signal.removeEventListener('abort', fwd)
     reg.end(null, (e as Error).message)
     history.record({ kind: 'job', job: 'sync', state: 'failed', started_at: started, what, pod_id: request.pod_id, ...(request.trigger ? { trigger: request.trigger } : {}), ...(request.paths ? { files: request.paths.length } : leftOut(request, deleted)), ...(deleted.length ? { approved_by: (request.approved_by ?? '').trim() } : {}), error: (e as Error).message })
     throw e

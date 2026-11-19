@@ -1,4 +1,4 @@
-import { test, expect, podCard, answerConfirm } from './fixtures'
+import { test, expect, podCard, answerConfirm, queueTab } from './fixtures'
 import { makeDpx } from '../src/utils/dpx-fixture.mjs'
 
 // The Queue's Generations section (docs/ADR-051 section 9): render jobs and the preview batch are jobs of the app, shown in the Queue whenever it is opened, with Stop, Play and Dismiss; the nav badge counts them.
@@ -7,7 +7,7 @@ const seqRun = (n, frames = 2) => ({ prompt_id: 'gggggggg-1111', workflow: 'roun
   outputs: Array.from({ length: n }, (_, i) => Array.from({ length: frames }, (_, k) => ({ filename: `s${i + 1}_proxy.${String(k).padStart(4, '0')}.dpx`, subfolder: `seqs/s${i + 1}`, type: 'output' }))).flat() })
 const job = (o = {}) => ({ job_id: 'job-1', pod_id: 'pod-aaaaaaaa', pod_name: 'ComfyUI-Dev', kind: 'proxy', state: 'rendering', started_at: '2026-11-19T10:00:00Z', finished_at: null, width: 'source', frames_done: 140, frames_total: 412, rate_fps: 9.2, current: 's2_proxy.0040.dpx', pulled_files: 0, pulled_bytes: 0, error: '', summary: '',
   sequences: [{ dir: 'seqs/s1', name: 's1_proxy', where: 'pod', state: 'rendered', frames_done: 100, frames_total: 100 }, { dir: 'seqs/s2', name: 's2_proxy', where: 'pod', state: 'rendering', frames_done: 40, frames_total: 200 }, { dir: 'seqs/s3', name: 's3_proxy', where: 'pod', state: 'failed', frames_done: 0, frames_total: 112, error: 'ffmpeg failed (exit 1)' }], ...o })
-const openQueue = async (page) => { await page.getByTestId('open-queue').click(); const q = page.getByTestId('queue-modal'); await expect(q).toBeVisible(); return q }
+const openQueue = async (page) => { await queueTab(page, 'generations'); const q = page.getByTestId('queue-modal'); await expect(q).toBeVisible(); return q }
 const gens = (q) => q.getByTestId('queue-generations')
 
 test('nothing running: the section says so, and the badge is absent', async ({ page, api }) => {
@@ -71,7 +71,7 @@ test('a finished job shows its summary and the files written; Dismiss removes it
   await expect(page.getByTestId('dpx-viewer')).toBeVisible({ timeout: 10000 })
   await page.keyboard.press('Escape'); await expect(page.getByTestId('dpx-viewer')).toHaveCount(0)
   await page.getByTestId('pod-outputs-modal').locator('.btn-close').click(); await expect(page.getByTestId('pod-outputs-modal')).toBeHidden()
-  await page.getByTestId('open-queue').click()
+  await queueTab(page, 'generations')
   await gens(page.getByTestId('queue-modal')).getByTestId('generations-job-dismiss').click()
   await expect(gens(page.getByTestId('queue-modal')).getByTestId('generations-job')).toHaveCount(0)
   expect(api.state.renders.jobs).toHaveLength(1)   // only hidden here: the core's job list is untouched
@@ -158,5 +158,19 @@ test('a core without the render calls hides the section quietly', async ({ page,
   await page.goto('/')
   const q = await openQueue(page)
   await expect(q.getByTestId('queue-generations')).toHaveCount(0)
-  await expect(q.getByTestId('queue-syncs')).toBeVisible()   // the rest of the Queue is there
+  await page.getByTestId('queue-tab-syncs').click(); await expect(q.getByTestId('queue-syncs')).toBeVisible()   // the rest of the Queue is there
+})
+
+test('Play is the first, leftmost item of every row, in a slot of the same width; disabled until there is something to play', async ({ page, api }) => {
+  const job = (o) => ({ job_id: 'j', pod_id: 'pod-aaaaaaaa', pod_name: 'ComfyUI-Dev', kind: 'proxy', state: 'rendering', started_at: '2026-11-19T10:00:00Z', finished_at: null, frames_done: 1, frames_total: 5, rate_fps: 1, current: '', pulled_files: 0, pulled_bytes: 0, error: '', summary: '', sequences: [], ...o })
+  api.state.renders = { jobs: [job({ job_id: 'run' }), job({ job_id: 'done', state: 'done', finished_at: 'now', sequences: [{ dir: 'a', name: 'A', where: 'pod', state: 'pulled', frames_done: 5, frames_total: 5 }] }), job({ job_id: 'bad', state: 'failed', error: 'x' })] }
+  await page.goto('/'); await queueTab(page, 'generations')
+  const c = (id) => page.locator(`[data-testid="generations-job"][data-job="${id}"]`)
+  const xs = []
+  for (const id of ['run', 'done', 'bad']) {
+    const first = await c(id).locator('xpath=./div[1]/*[1]').getAttribute('data-testid'); expect(first).toBe('generations-job-play-slot')   // the first child of the header row
+    xs.push((await c(id).getByTestId('generations-job-play-slot').boundingBox()).x)
+  }
+  expect(new Set(xs.map((x) => Math.round(x))).size).toBe(1)   // the columns do not shift
+  await expect(c('done').getByTestId('generations-job-play')).toBeEnabled(); await expect(c('run').getByTestId('generations-job-play-disabled')).toBeDisabled(); await expect(c('bad').getByTestId('generations-job-play-disabled')).toBeDisabled()
 })

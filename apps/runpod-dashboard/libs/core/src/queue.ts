@@ -6,6 +6,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { CoreError } from './errors.js'
+import * as failures from './failures.js'
 import * as gpus from './gpus.js'
 import * as history from './history.js'
 import * as autosyncstore from './autosyncstore.js'
@@ -39,7 +40,7 @@ export interface Task {
   card?: string
   /** A pod could not be had because RunPod had no card free: the run waits and asks again (not before `retry_at`), up to MAX_CARD_WAITS times. */
   retry_at?: string; attempts?: number
-  started_at?: string; finished_at?: string; error?: string; detail?: string; held_reason?: string
+  started_at?: string; finished_at?: string; error?: string; /** for a failed task: the failure in structured words (stage, node, message, missing models, recovery, retryable, text) */ failure?: failures.Explained; detail?: string; held_reason?: string
 }
 export interface ImportRec {
   id: string; round: string; approved_by: string; created_at: string; state: 'active' | 'done' | 'cancelled'
@@ -154,7 +155,7 @@ export interface QueueView { imports: (ImportRec & { counts: Record<string, numb
 export function list(): QueueView {
   const q = state()
   const imports = q.imports.map((i) => ({ ...i, counts: q.tasks.filter((t) => t.import_id === i.id).reduce((c, t) => { c[t.state] = (c[t.state] || 0) + 1; return c }, {} as Record<string, number>) }))
-  return { imports, tasks: q.tasks, active: q.tasks.filter((t) => t.state === 'waiting' || t.state === 'running' || t.state === 'held').length }
+  return { imports, tasks: q.tasks.map((t) => (t.error && (t.state === 'failed' || t.state === 'interrupted' || t.state === 'held') ? { ...t, failure: failures.explain(t.error, { stage: t.kind === 'pull' ? 'transfer' : undefined, log_tail: t.events?.slice(-5).map((e) => e.text) }) } : t)), active: q.tasks.filter((t) => t.state === 'waiting' || t.state === 'running' || t.state === 'held').length }
 }
 
 // ----- planning and importing -----
@@ -337,7 +338,7 @@ export const MAX_CARD_WAITS = 30
 const NOT_STARTED = 'Not started: its pull did not finish'
 const ev = (t: Task, text: string) => { (t.events ||= []).push({ at: deps.now().toISOString(), text }); if (t.events.length > 60) t.events.splice(0, t.events.length - 60) }
 const logTask = (t: Task, imp: ImportRec) => history.record({ kind: 'job', job: 'queue', state: t.state === 'done' ? 'done' : t.state === 'cancelled' ? 'cancelled' : 'failed', started_at: t.started_at, what: `${t.round} ${t.kind}${t.shot ? ` ${t.shot}` : ''}`, pod_id: t.pod_id ?? undefined, pod_name: t.pod_name ?? undefined, ...(t.error ? { error: t.error } : {}), detail: `import ${imp.id}; approved by ${imp.approved_by}${t.detail ? `; ${t.detail}` : ''}` })
-const finish = (t: Task, imp: ImportRec, s: 'done' | 'failed' | 'cancelled', error?: string) => { ev(t, error ? `${s}: ${error}` : s); t.stage = undefined; t.state = s; t.finished_at = deps.now().toISOString(); if (error) t.error = error; logTask(t, imp) }
+const finish = (t: Task, imp: ImportRec, s: 'done' | 'failed' | 'cancelled', error?: string) => { ev(t, error ? `${s}: ${error}` : s); t.stage = undefined; t.state = s; t.finished_at = deps.now().toISOString(); if (error) t.error = error; if (s === 'failed' && error) { const ex = failures.explain(error, { stage: t.kind === 'pull' ? 'transfer' : undefined }); failures.record({ stage: ex.stage, message: error, job_id: t.id, round: imp.round ?? '', shot: t.shot ?? '', graph: t.kind === 'run' ? `${t.shot ?? ''} (import task)` : `pull ${imp.round ?? ''}`, pod_id: t.pod_id ?? '', pod_name: t.pod_name ?? '', node_id: ex.node_id, node_type: ex.node_type, quiet: true }) }; logTask(t, imp) }   // every failed import task is in the failures log too
 
 let ticking = false
 /** One scheduler pass: read the running tasks' jobs, start what can start, stop pods the imports no longer need. Never throws. */
