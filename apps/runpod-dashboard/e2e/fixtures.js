@@ -1150,6 +1150,11 @@ export default {
       return json(panamaRoundList().map((r) => ({ source: 'panama-s3', id: r.name, name: r.name, shots: [], staged: r.staged, verified: r.state === 'complete', importable: true, state: r.state, present: r.present, expected: r.expected, missing: r.missing, bytes: r.bytes })))
     }
     if (method === 'POST' && path === '/panama/stage') { state.staged = body.paths; const n = String(body.paths[0]).split('/').pop().replace(/\.zip$/i, ''); return json({ round: n, path: `/staging/${n}`, files: 12, bytes: 4096, extracted: /\.zip$/i.test(body.paths[0]) ? 1 : 0 }) }
+    if (method === 'GET' && path === '/panama/browse') {   // one level of the BH bucket, read-only
+      const T = { '': { f: ['rounds', 'returns'], k: [] }, 'rounds/': { f: ['brynley-comfy-2026-10-23'], k: [] }, 'returns/': { f: ['BKK'], k: [] }, 'returns/BKK/': { f: ['shot-001', 'shot-002'], k: Array.from({ length: 130 }, (_, i) => `take-${String(i).padStart(3, '0')}.mov`) }, 'returns/BKK/shot-001/': { f: [], k: ['v001.exr', 'notes.txt'] } }
+      const dir = T[query.prefix || '']; if (!dir) return json({ detail: `Not a folder in the bucket: ${query.prefix}` }, 400)
+      return json({ bucket: 'bh-panama-exchange-610140802195', prefix: query.prefix || '', folders: dir.f.map((n) => ({ name: n, prefix: `${query.prefix || ''}${n}/` })), files: dir.k.map((n, i) => ({ name: n, key: `${query.prefix || ''}${n}`, bytes: 1000 * (i + 1), modified: '2026-11-18T10:30:00' })), truncated: false })
+    }
     if (method === 'GET' && path === '/panama/files') return json({ round: query.round, files: 4, bytes: 3200, entries: [{ path: '03_INBOX', dir: true, bytes: 3000, files: 2 }, { path: '03_INBOX/ENTRY.md', dir: false, bytes: 1000, local: true }, { path: '03_INBOX/shot-001.exr', dir: false, bytes: 2000, local: false }, { path: 'MANIFEST.json', dir: false, bytes: 200 }, { path: 'README.md', dir: false, bytes: 0 }] })
     if (method === 'GET' && path === '/panama/size') return json({ round: query.round, files: 5701, bytes: 29117613170 })
     if (method === 'DELETE' && path === '/panama/staged') { const pn = (state.panama ||= {}); (pn.deleted ||= []).push(query.round); return json({ round: query.round, freed: 1234567890 }) }

@@ -89,6 +89,49 @@ export function status() {
   return withPod({ configured: has, via: has ? 'aws profile' : 'none', profile: profile(), bucket: bucket(), region: region(), staging: stagingDir(), reason: has ? '' : `No Panama keys: enter them in Default Configuration (or add an AWS profile named "${profile()}").` })
 }
 
+/** One level of the exchange bucket, read-only (the Network Volumes window's "Explore"). */
+export interface BucketFolder { name: string; prefix: string }
+export interface BucketFile { name: string; key: string; bytes: number; modified: string }
+export interface BucketListing { bucket: string; prefix: string; folders: BucketFolder[]; files: BucketFile[]; truncated: boolean }
+export const BROWSE_CAP = 2000
+const BROWSE_PREFIX = /^[\w .+@=,()/-]{0,300}$/
+/** A prefix inside the bucket: '' (the top) or folders like `returns/BKK/`; no `..`, no leading slash. Returned with one trailing slash (or ''). */
+export function browsePrefix(prefix: string): string {
+  const p = String(prefix ?? '')
+  if (!BROWSE_PREFIX.test(p) || p.startsWith('/') || p.split('/').includes('..') || p.includes('//')) throw bad(`Not a folder in the bucket: ${p.slice(0, 80)}`)
+  return p === '' ? '' : p.replace(/\/+$/, '') + '/'
+}
+/** The first line of an aws error with anything key-like removed, never the keys the app holds. */
+function scrub(text: string): string {
+  let t = (text.trim().split('\n')[0] || 'the listing failed').slice(0, 300)
+  const k = appKeys()
+  for (const v of [k?.id, k?.secret]) if (v) t = t.split(v).join('***')
+  return t.replace(/\b(AKIA|ASIA)[A-Z0-9]{12,}\b/g, '***')
+}
+/** Folders and files directly under `prefix` (`aws s3 ls`, one level; only ever a list). `opts.aws` is podpull's runner type (tests inject a fake). */
+export async function browse(prefix: string, opts: { aws?: import('./podpull.js').AwsRunner; cap?: number } = {}): Promise<BucketListing> {
+  const dir = browsePrefix(prefix), cap = opts.cap ?? BROWSE_CAP
+  const k = appKeys()
+  if (!k && !opts.aws) { const s = status(); if (!s.configured) throw bad(s.reason || 'No Panama keys: enter them in Default Configuration.') }
+  const args = ['s3', 'ls', `s3://${bucket()}/${dir}`, ...(k ? [] : ['--profile', profile()]), '--region', region()]
+  const env: Record<string, string> = k ? { AWS_ACCESS_KEY_ID: k.id, AWS_SECRET_ACCESS_KEY: k.secret, AWS_REGION: region() } : {}
+  const run = opts.aws ?? (await import('./podpull.js')).defaultAws
+  let r
+  try { r = await run(args, env, { stallMs: 60_000 }) } catch (e) { throw bad(`The bucket could not be read: ${scrub(String((e as Error).message))}`) }
+  if (r.code !== 0) throw bad(`The bucket could not be read: ${scrub(r.stderr || r.stdout)}`)
+  const folders: BucketFolder[] = [], files: BucketFile[] = []
+  let truncated = false
+  for (const line of r.stdout.split('\n')) {
+    const d = /^\s*PRE\s+(.+)\/\s*$/.exec(line)
+    const f = d ? null : /^(\d{4}-\d\d-\d\d)\s+(\d\d:\d\d:\d\d)\s+(\d+)\s+(.+)$/.exec(line)
+    if (!d && !f) continue
+    if (folders.length + files.length >= cap) { truncated = true; break }
+    if (d) folders.push({ name: d[1], prefix: `${dir}${d[1]}/` })
+    else if (f) files.push({ name: f[4], key: dir + f[4], bytes: Number(f[3]), modified: `${f[1]}T${f[2]}` })
+  }
+  return { bucket: bucket(), prefix: dir, folders, files, truncated }
+}
+
 /** What is on this PC for a round: nothing, some of it, all of it but never checked, or all of it and verified (the done marker). */
 export interface Staged { state: 'none' | 'partial' | 'unverified' | 'complete'; present: number; expected: number | null; missing: number | null }
 export interface Round { name: string; staged: boolean; state: Staged['state']; present: number; expected: number | null; missing: number | null; bytes: number }
