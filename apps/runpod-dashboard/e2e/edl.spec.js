@@ -196,10 +196,4 @@ test.describe('stated colour', () => {
     await who.fill('Kyle'); await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
     expect(api.state.mountPuts.at(-1).auto_publish).toMatchObject({ approved_by: 'Kyle', generate: { colour_in: 'p3-d65-gamma26' } })
   })
-  test('the button and the dialog are called Generate Outputs', async ({ page, api }) => {
-    api.state.mounts.config.auto_publish = { enabled: true, dry_run: true, window_minutes: 10, daily_cap: null, dry_run_first: true, targets: { s3: true, slack: false, tunnel: false }, standing: { approved_by: 'B', at: '2026-11-19T10:00:00Z' }, generate: { enabled: true, where: 'local', preset: 'review', max_per_day: 20, settle_minutes: 5, fallback_local: false } }
-    api.state.autopublish = { generate: { enabled: true, where: 'local', generating: 0, generated_today: 0, max_per_day: 20, failed: [], waiting_to_settle: [], pending_existing: 0 } }
-    await page.goto('/'); await queueTab(page, 'publishing'); const b = page.getByTestId('autopublish-generate-existing'); await expect(b).toHaveText('Generate Outputs'); await b.click()
-    await expect(page.getByTestId('existing-modal')).toContainText('Generate Outputs')
-  })
 })

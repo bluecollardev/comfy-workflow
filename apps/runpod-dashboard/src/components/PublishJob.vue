@@ -33,9 +33,10 @@
       <div v-if="job.error" class="small text-danger" data-testid="publish-job-error">{{ job.error }}</div>
       <div v-if="(job.links || []).length" class="mt-2" data-testid="publish-links"><div v-if="!grouped" class="small fw-semibold">{{ $t('publish.modal.links') }}</div>
         <template v-for="g in groups" :key="g.kind">
-          <div v-if="grouped" class="small fw-semibold" :data-testid="`publish-links-${g.kind}`">{{ $t(`publish.links.group.${g.kind}`) }}</div>
-          <div v-for="l in g.items" :key="l.path + l.url" class="d-flex align-items-center gap-2 small" data-testid="publish-link" :data-path="l.path" :data-kind="g.kind"><span class="font-monospace text-truncate" :title="l.url">{{ l.path }}</span>
-            <BButton size="sm" variant="outline-light" data-testid="publish-link-copy" :data-path="l.path" @click="copy(l)">{{ copiedPath === l.path ? $t('publish.modal.copied') : $t('publish.modal.copy') }}</BButton>
+          <div v-if="grouped" class="small fw-semibold mt-3 mb-1" :data-testid="`publish-links-${g.kind}`">{{ $t(`publish.links.group.${g.kind}`) }}</div>
+          <div v-for="l in g.items" :key="l.path + l.url" class="small py-1" data-testid="publish-link" :data-path="l.path" :data-kind="g.kind"><div class="d-flex align-items-center gap-2"><a v-if="g.kind === 'folder' && folderUrl(l)" :href="folderUrl(l)" target="_blank" rel="noopener noreferrer" class="font-monospace text-truncate" :title="$t('publish.links.openFolder')" data-testid="publish-link-folder">{{ s3Of(l) }}</a><span v-else-if="g.kind === 'folder'" class="font-monospace text-truncate" data-testid="publish-link-folder">{{ s3Of(l) }}</span><a v-else-if="l.url" :href="l.url" target="_blank" rel="noopener noreferrer" download class="font-monospace text-truncate" :title="$t('publish.links.download')" data-testid="publish-link-file">{{ l.path }}</a><span v-else class="font-monospace text-truncate" :title="$t('publish.links.notKept')" data-testid="publish-link-file">{{ l.path }}</span>
+            <BButton size="sm" variant="link" class="p-0 px-1 flex-shrink-0 text-body-secondary copy-icon" :title="copiedPath === l.path ? $t('publish.modal.copied') : $t('publish.modal.copy')" :aria-label="copiedPath === l.path ? $t('publish.modal.copied') : $t('publish.modal.copy')" :disabled="g.kind !== 'folder' && !l.url" data-testid="publish-link-copy" :data-path="l.path" :data-copied="copiedPath === l.path ? 'true' : 'false'" @click="copy(g.kind === 'folder' ? { ...l, url: s3Of(l) } : l)"><i class="fa-regular" :class="copiedPath === l.path ? 'fa-circle-check text-success' : 'fa-copy'"></i></BButton></div>
+            <div v-if="g.kind !== 'folder' && !l.url" class="text-body-secondary" data-testid="publish-link-notkept">{{ $t('publish.links.notKept') }}</div>
             <span v-if="l.expires_at" class="text-body-secondary" data-testid="publish-link-expiry">{{ $t('publish.modal.expires', { when: expiryText(l.expires_at) }) }}</span></div>
         </template></div>
       <div v-if="job.slack && job.slack.state !== 'skipped' || job.slack?.state === 'failed'" class="small mt-1 d-flex align-items-center gap-2" data-testid="publish-slack-state" :data-state="job.slack.state"><span :class="job.slack.state === 'failed' ? 'text-danger' : 'text-success'">{{ $t(`publish.modal.slackState.${job.slack.state}`, { error: job.slack.error || '' }) }}</span>
@@ -56,6 +57,11 @@ const props = defineProps({ job: { type: Object, required: true }, embedded: { t
 const emit = defineEmits(['retry'])
 const store = usePublishStore()
 const copiedPath = ref('')
+/** A folder link is shown, and copied, as the full address `s3://bucket/key/` (the bucket is the job's destination); clicking it opens that folder in the AWS console. */
+const bucketOf = computed(() => /^s3:\/\/([^/]+)\//.exec(props.job.dest || '')?.[1] || '')
+/** The AWS console address of a folder: built from the bucket and region (no secret in it), so it works after a restart too, when the stored job keeps no addresses. */
+const folderUrl = (l) => l.url || (bucketOf.value ? `https://s3.console.aws.amazon.com/s3/buckets/${bucketOf.value}?prefix=${encodeURIComponent(l.path).replace(/%2F/g, '/')}&region=${store.settings?.s3?.region || 'us-west-2'}` : '')
+const s3Of = (l) => (bucketOf.value ? `s3://${bucketOf.value}/${l.path}` : l.path)
 const active = computed(() => publishActive(props.job))
 // Links: a core with the link settings groups them (Folder links, File links, Preview image); kind may be missing: a console.aws.amazon.com address is a folder, a *_preview.jpg a preview. A core without the settings shows one plain list as before.
 const grouped = computed(() => typeof store.settings.slack?.file_links === 'boolean')

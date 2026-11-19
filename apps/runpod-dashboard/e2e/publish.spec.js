@@ -367,9 +367,11 @@ test.describe('the Publish window', () => {
     Object.assign(j2, { state: 'done_with_warning', files_done: 3, bytes_done: 3e9, summary: '3 files published; Slack failed', links: [{ path: 'deliver/x/a.mp4', url: 'https://bucket.s3.amazonaws.com/deliver/x/a.mp4?sig=1', expires_at: '2026-11-22T10:00:00Z' }], slack: { state: 'failed', error: 'channel_not_found' } })
     await expect(m.getByTestId('publish-job-summary')).toHaveText('3 files published; Slack failed', { timeout: 6000 })
     await expect(m.getByTestId('publish-link-expiry')).toContainText('2026')
+    { const row = m.getByTestId('publish-link').first(), path = await row.locator('span.font-monospace, a.font-monospace').first().boundingBox(), exp = await row.getByTestId('publish-link-expiry').boundingBox(), cp = await row.getByTestId('publish-link-copy').boundingBox(); expect(exp.y).toBeGreaterThanOrEqual(path.y + path.height - 1); expect(cp.y).toBeLessThan(exp.y) }   // "expires …" is on the row BELOW the path; the copy icon stays on the path's row
     await m.getByTestId('publish-link-copy').click()
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('https://bucket.s3.amazonaws.com/deliver/x/a.mp4?sig=1')
-    await expect(m.getByTestId('publish-link-copy')).toHaveText('Copied')
+    await expect(m.getByTestId('publish-link-copy')).toHaveAttribute('data-copied', 'true'); await expect(m.getByTestId('publish-link-copy')).toHaveAttribute('aria-label', 'Copied'); await expect(m.getByTestId('publish-link-copy')).toHaveText('')   // an icon only: no label, no outline
+    await expect(m.getByTestId('publish-link-copy')).toHaveClass(/btn-link/)
     await expect(m.getByTestId('publish-slack-state')).toContainText('Slack failed: channel_not_found')
     await m.getByTestId('publish-slack-repost').click()
     await expect.poll(() => api.state.publish.reposts).toEqual(['pub-2'])

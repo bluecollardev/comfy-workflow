@@ -103,7 +103,7 @@
         <span class="small text-body-secondary" data-testid="autopublish-off-note">{{ $t('autopublish.block.offNote') }}</span>
       </div>
     </template>
-    <div v-if="ap.status?.generate?.enabled" class="border rounded p-2 mt-2" data-testid="autopublish-generate-block"><AutoPublishGenerate :status="ap.status" :show-existing="false" /></div>
+    <div v-if="ap.status?.generate?.enabled" class="border rounded p-2 mt-2" data-testid="autopublish-generate-block"><AutoPublishGenerate :status="ap.status" /></div>
     <div v-if="problem" class="text-danger small mt-1" data-testid="autopublish-error">{{ $t(problem === 'window' ? 'autopublish.block.windowBad' : problem === 'cap' ? 'autopublish.block.capBad' : problem === 'round' ? 'autopublish.block.roundBad' : problem === 'minutes' ? 'autopublish.sources.minutesBad' : problem === 'spend' ? 'autopublish.gen.spendBad' : problem === 'maxgb' ? 'autopublish.pipe.maxGbBad' : problem === 'settle' ? 'autopublish.gen.settleBad' : problem === 'genmax' ? 'autopublish.gen.maxBad' : problem === 'approver' ? 'autopublish.gen.approverNeeded' : 'autopublish.block.targetsBad') }}</div>
     <div v-if="error" class="text-danger small mt-1" data-testid="autopublish-action-error">{{ error }}</div>
     <div class="small text-body-secondary mt-2" data-testid="autopublish-preview-note">{{ $t('autopublish.block.previewNote') }}</div>

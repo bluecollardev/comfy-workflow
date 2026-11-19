@@ -455,6 +455,8 @@ test('Clip names: the core\'s rules are checked inline (empty, slash, .., charac
   await openOutputs(page, api)
   const p = await openPreviews(page)
   await expect(planText(p)).toContainText('3 sequences'); await expect(p.getByTestId('pod-outputs-render-start')).toBeEnabled()   // the form has settled (plan loaded) before anything is typed
+  for (const r of await p.getByTestId('pod-outputs-render-clip-row').all()) await r.scrollIntoViewIfNeeded()   // the row previews load when their row is on screen: let them finish before typing (a field emptied while a preview is landing can be re-rendered by the test's own scrolling)
+  await expect(p.getByTestId('pod-outputs-render-thumb').getByTestId('outputs-dpx-thumb')).toHaveCount(3, { timeout: 15000 })
   const box = p.getByTestId('pod-outputs-render-clipname').first(), err = p.getByTestId('pod-outputs-render-clipname-error')
   for (const [value, text] of [['', 'A clip name cannot be empty.'], ['a/b', 'A clip name has no slashes or `..`.'], ['a..b', 'A clip name has no slashes or `..`.'], ['a\\b', 'A clip name has no slashes or `..`.'], ['a:b*', 'A clip name uses letters, digits and . _ - or spaces only.'], ['x'.repeat(201), 'A clip name is at most 200 characters.']]) {
     await box.fill(value)
