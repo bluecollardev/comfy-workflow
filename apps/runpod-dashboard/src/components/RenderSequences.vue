@@ -47,6 +47,7 @@
       </div>
       <FfmpegAlert v-if="problem && problem.blocker" :problem="problem" :busy="planning" @check="checkAgain" />
       <label class="d-flex align-items-center gap-2 small mb-1"><input :checked="skipExisting" type="checkbox" class="form-check-input mt-0" :disabled="running" data-testid="pod-outputs-render-skip-existing" @change="emit('update:skipExisting', $event.target.checked)" />{{ $t('outputs.render.skipExisting') }}</label>
+      <div v-if="localWhilePreviews" class="small text-warning mb-2" data-testid="pod-outputs-render-local-hint"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ $t('outputs.render.localWhilePreviews') }}</div>
       <div v-if="!items.length" class="small text-body-secondary mb-2" data-testid="pod-outputs-render-none">{{ $t('outputs.render.noSequences') }}</div>
       <div v-else class="small mb-2" data-testid="pod-outputs-render-plan" :data-sequences="summary.sequences" :data-frames="summary.frames">
         <template v-if="planning && !plan"><BSpinner small class="me-1" />{{ $t('outputs.render.planning') }}</template>
@@ -152,6 +153,7 @@
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRendersStore } from '../stores/renders'
+import { usePreviewsStore } from '../stores/previews'
 import { useConfirmStore } from '../stores/confirm'
 import { errorText } from '../stores/toast'
 import { t } from '../i18n'
@@ -166,6 +168,9 @@ import { sourceGroups, dimsText, scaledHeight, colourGroups, colourLine, convers
 
 const props = defineProps({ skipExisting: { type: Boolean, default: true }, scopeLabel: { type: String, default: '' }, pod: { type: Object, required: true }, items: { type: Array, default: () => [] }, skipped: { type: Number, default: 0 } })
 const renders = useRendersStore(), confirm = useConfirmStore()
+const previewsJob = usePreviewsStore()
+/** A render on this PC competes with the preview decoding for the same CPU, memory and disk; one on the pod does not (Lucas, 2026-11-19: 'that's if local'). A hint, never a block. */
+const localWhilePreviews = computed(() => previewsJob.running && (prefs.where === 'local' || !!plan.value?.sequences?.some((q) => q.where === 'local')))
 const prefs = renders.prefs
 const isReview = computed(() => prefs.kind === 'review')
 // Publishing when done (never remembered: a send is always per run)

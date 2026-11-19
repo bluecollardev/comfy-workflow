@@ -616,3 +616,24 @@ test('A core without colour or summaries (older): the colour block is absent, th
   await expect(p.getByTestId('pod-outputs-render-source-line')).toHaveText(['3840 × 2160, 16-bit'])
   await expect(p.getByTestId('pod-outputs-render-start')).toBeEnabled()
 })
+
+test('rendering on this PC while previews are being generated shows a warning hint (not a block); the pod and a finished batch show none', async ({ page, api }) => {
+  await openOutputs(page, api)
+  // keep the preview batch running: every frame answers after a pause
+  await page.route('**/view?*', async (route) => { await new Promise((r) => setTimeout(r, 1500)); return route.fallback() })
+  const p = await openPreviews(page)
+  const hint = p.getByTestId('pod-outputs-render-local-hint')
+  await expect(hint).toHaveCount(0)                                                  // no batch yet
+  await p.getByTestId('pod-outputs-load-previews').click()                           // Generate all previews: a running job
+  await p.getByTestId('pod-outputs-render-where').selectOption('local')
+  await expect(hint).toBeVisible()
+  await expect(hint).toContainText('Rendering on this PC while previews are being generated slows both')
+  await expect(p.getByTestId('pod-outputs-render-start')).not.toBeDisabled()          // a hint only: Start is not blocked by it
+  await p.getByTestId('pod-outputs-render-where').selectOption('pod')
+  await expect(hint).toHaveCount(0)                                                  // the pod has its own CPU
+  await p.getByTestId('pod-outputs-render-where').selectOption('local')
+  await expect(hint).toBeVisible()
+  await p.getByTestId('pod-outputs-stop-previews').click()                           // the batch ends
+  await expect(hint).toHaveCount(0)
+})
+

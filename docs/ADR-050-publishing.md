@@ -36,3 +36,31 @@ IPC namespace `publish`: `settings, setSettings, test, local, plan, run, status,
 
 ## Consequences
 Finished work can leave the PC with one named yes and one visible plan, and nothing else can. The cost is that Slack stays off until a person adds a webhook and Binc agrees; S3 works as soon as the Panama keys are set.
+
+## Amendment 2026-11-19: Auto-publish (finished, approved review videos go to the returns folder by themselves)
+Lucas: "can we auto upload to Tunnel?" and, choosing the fully automatic option, "do this". Today every publish is a person's explicit act with a name (above). **Auto-publish** is a standing rule that does the upload when its conditions are met, with no click per run. Because Binc's rules say sending anything to the client is Binc's and agents never send, it is **off by default and needs a named standing approval**, and it is built with guards so that only what a person has approved can leave.
+
+**What it publishes (all must hold):**
+1. a **Review video** (`output/deliver/<shot>/v###/`: the `.mov`/`.mp4` files, `DELIVERY.md` and the sidecars), never a quick proxy, never a partial (`_partial`) or incomplete sequence;
+2. its `DELIVERY.md` and sidecars exist and the colour verdict was `ok` when it was rendered (a review refused for colour never exists);
+3. the files are on this PC (the render's pull finished; a pod-only render is not uploaded until it has been pulled);
+4. **the shot version is marked approved** by a named person (see below);
+5. none of the files is a model weight (always refused), and nothing at the destination has the same size already (the usual skip).
+
+**Approval of a shot version.** A review version is **approved** only by a person: a **Mark approved** action (in the Outputs window's review badge, the Publish window, and the Queue's render card) that records `{ shot, version, approved_by, at }` in `approvals.json` (app config, History `change` entry). It uses the contract's term HUMAN APPROVED (Binc's `hitl-signoff.md`); **Revoke** removes it and cancels a pending auto-publish of that version. A new version (`v002`) is not approved until someone approves it.
+
+**The standing approval.** Turning Auto-publish on in **Settings > Publishing > Auto-publish** requires a name in a field ("Approved by") and a tick "This allows the app to upload approved review videos to <destination> by itself", and records it once (History `change`, shown in the settings as "Approved by <name> on <date>"; turning it off clears it). The ADR records that **Lucas confirms Binc's yes before the first real automatic upload**; until then the setting can be configured and run in **dry-run** only.
+
+**The guards:**
+- **Cancel window:** an eligible version is queued, not sent: it appears on the Queue ("Auto-publish: archival-085 v002 uploads in 9:41", **Cancel** and **Publish now**) and in a banner, and uploads when the window (default 10 minutes, 0 to 120, settable) ends. A Cancel, Revoke or Off before then stops it.
+- **Daily cap:** at most N automatic uploads per day (default 5, set in settings); beyond it versions wait for the next day or for **Publish now** (a person's explicit click, with a name).
+- **Dry-run:** the rule runs, records what it *would* upload (the Queue shows "would upload", History and, if ticked, Slack say so) and sends nothing. The default on first enabling.
+- **Slack:** each automatic upload posts one message (shot, version, files, size, destination, "uploaded automatically under the standing approval of <name>"; no links) to the connected channel, as a normal publish with the Slack target ticked.
+- **Instant off switch:** a chip in the header ("Auto-publish ON") with an **Off** button; Off cancels everything pending and stops the rule at once; the same call over MCP (`publish` action `autopublish_off`).
+- **Audit:** every automatic upload is a History `job: 'publish'` entry with `trigger: 'auto-publish'`, the approver of the shot version, the standing approver, the destination and the counts.
+- **Scope:** only the configured destination (the Panama exchange bucket, `returns/BKK/` by default) and never a different prefix; the rule cannot be pointed elsewhere without turning it off and on again.
+
+**Where it lives:** `libs/core/src/autopublish.ts` (the rule, the approvals store, the pending queue with its timer, the daily counter), hooked where a review job finishes and is pulled (`renders.ts`) and on start (to pick up versions approved while the app was closed), IPC `autopublish.*` and MCP `autopublish` (status, settings get, approvals list and mark/revoke, pending list, cancel, publish now, off); the page: the Settings block, the header chip, the Queue entries, the Mark approved actions. Built on `publish.run` (same plan, same weights refusal, same streaming), so nothing new can leave that a manual publish could not.
+
+**Still open (Lucas, Binc, Kyle):** how Tunnel actually receives (does it pull from `returns/BKK/`, or is there another route?); who approves a shot version (Brynley, Binc?); whether the daily cap and cancel window defaults suit; Binc's standing yes.
+
