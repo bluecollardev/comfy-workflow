@@ -2127,6 +2127,7 @@
     "intro": "MCP hands Claude, Codex or ChatGPT the pods and a ComfyUI. Slack connects the Beinghuman workspace so a publish can post its status. Repositories: Git accounts give the app access to private repositories, and the repositories attached here are what Attach node offers when creating a pod.",
     "accounts": "Accounts",
     "repositories": "Repositories",
+    "instances": "Remote Instances",
     "mcp": "MCP",
     "slack": "Slack"
   },

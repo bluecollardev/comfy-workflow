@@ -16,6 +16,16 @@
 4. **One codebase, no second runtime**: the Python API retired, the core in
    TypeScript, the merge gate green (`docs/ADR-005`).
 
+## Remote Instances (ADR-054, `docs/BRIDGE.md`), started 2026-11-19 on `feature/status-bridge`
+
+Built: `libs/core/src/bridge.ts` (whitelisted snapshot, redactor, freshness, parse) with 9 tests. To build, in order:
+1. **Publisher and reader** over the exchange bucket (`bridge/<name>/status.json`, `events.jsonl`; 30 s timer; refuses when another machine's newer file holds the name). First prove write access to `bridge/` from both machines; the fallback is a bucket Lucas owns.
+2. **Settings and IPC/MCP**: instance name, Share my status (off by default), the list of followed instances (name, bucket, prefix); MCP tools `bridge_status` and `bridge_instances` (read-only).
+3. **Connect > Remote Instances** tab: add, remove, a card each (live / late / offline, pods, Queue counts, Auto-publish, spend, last events).
+4. **Account menu** (the user icon, after the refresh button in `App.vue`): instance name, Share my status, **View** switch (This instance / each remote) swapping the screens to the snapshot, read-only, with a banner and a way back.
+5. Browser and real-Electron tests (fake bucket), then a patch release through the full gate.
+6. Phase 2 (commands, approved in the target's window) only after Phase 1 is in use, with its own ADR amendment.
+
 ## Open from 2026-11-19 (v1.7.0, released with the gate skipped)
 
 0. **Verify one live upload end to end.** Auto-publish was in dry run when v1.7.0 was cut. Switch Dry run off (the person's confirmation) with the round `_TEST_{date}` and watch one review through the cancel window to S3 (`returns/BKK/_TEST_<date>/`, with `RETURN-MANIFEST.json` and the sha256 list) and the Slack post; ask Kyle to delete the `_TEST_` folder; only then set the round back to `tunnel-v11_{date}_r01`. Until that has happened, treat the S3 write path, the manifest merge, the streaming from the volume and the Slack message as tested with fakes only. Our key cannot delete from the bucket.
