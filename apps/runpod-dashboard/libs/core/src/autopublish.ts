@@ -463,7 +463,7 @@ async function upload(e: Entry, s: Stored): Promise<void> {
   if (!e.manual) {
     // re-check everything at the moment of sending
     if (s.enabled !== true || !s.standing) return finish(e, 'cancelled', 'turned off')
-    if (!(await approvalList()).some((a) => a.shot === e.shot && a.version === e.version)) return finish(e, 'cancelled', 'approval revoked')
+    if (!s.require_approval ? false : !(await approvalList()).some((a) => a.shot === e.shot && a.version === e.version)) return finish(e, 'cancelled', 'approval revoked')   // without require_approval the standing approver stands for every eligible review (as in check() and the queueing), so there is no record to look for; the standing approval itself was re-checked on the line above
     if (s.dry_run !== false) { e.state = 'would_upload'; return }
     if (s.daily_cap !== null && count >= s.daily_cap) { e.state = 'capped'; e.reason = 'daily cap reached; it goes next day, or use Publish now'; e.due_at = deps.now() + 5 * 60_000; return }
     const c = await check(e.shot, e.version, { pendingOk: true })
