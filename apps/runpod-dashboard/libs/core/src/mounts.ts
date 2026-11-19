@@ -104,13 +104,13 @@ export function validateEdl(e: EdlConfig): void {
   if ('file' in s) { if (!s.file.startsWith('/')) throw bad('edl.source.file is an absolute path') } else if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(s.bucket) || s.key.startsWith('/') || s.key.split('/').includes('..')) throw bad('edl.source is { bucket, key } (a bucket name and a key with no leading slash and no ..), or { file }')
 }
 /** What a render does with log or linear frames when nobody has stated their colour (ADR-048): `ask` skips them with a warning, `format` converts from `format`, `guess` converts from the DPX header (and says so). The Tunnel preset and a bkk-return publish never guess. */
-export interface RenderColour { mode: 'ask' | 'format' | 'guess'; format?: string; /** who and when last set it (kept for the manifest and the sidecar) */ set_by?: string; set_at?: string }
+export interface RenderColour { mode: 'ask' | 'format' | 'guess' | 'known'; format?: string; /** who and when last set it (kept for the manifest and the sidecar) */ set_by?: string; set_at?: string }
 export interface RenderSettings { /** the colour setting for frames whose header says log, linear or printing density */ colour: RenderColour; where: 'auto' | 'pod' | 'local'; kind: 'proxy' | 'review'; proxy_width: 'source' | 960 | 1280 | 1920; review_width: 'source' | 960 | 1280 | 1920; codecs: ('h264' | 'prores422hq')[]; fps: 'auto' | number; /** a preset: `tunnel` = the Tunnel proxy (H.264, 1920x1080, tagged Rec.709, a start timecode, no burn-ins) */ preset: 'none' | 'tunnel'; /** Sync the renders to this PC when done (default OFF) */ pull: boolean; /** Skip existing: the Generate window starts from it (default ON); a request's own value always wins */ skip_existing: boolean; /** what the Generate window pre-ticks for "Publish to S3 / Post to Slack when done" (default both off): a preference only, a run still needs its own `publish` field and approved_by */ publish: { s3: boolean; slack: boolean } }
-export const RENDER_DEFAULT: RenderSettings = { colour: { mode: 'ask' }, where: 'auto', kind: 'proxy', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto', preset: 'none', pull: false, skip_existing: true, publish: { s3: false, slack: false } }
+export const RENDER_DEFAULT: RenderSettings = { colour: { mode: 'known' }, where: 'auto', kind: 'proxy', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto', preset: 'none', pull: false, skip_existing: true, publish: { s3: false, slack: false } }
 export const RENDER_WIDTHS = ['source', 960, 1280, 1920] as const
 export const RENDER_CODECS = ['h264', 'prores422hq'] as const
 export function normalizeRenderColour(v: unknown): RenderColour {
-  const o = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>, mode = o.mode === 'format' || o.mode === 'guess' ? o.mode : 'ask'
+  const o = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>, mode = o.mode === 'format' || o.mode === 'guess' || o.mode === 'ask' ? o.mode : 'known'   // no setting: the project's known colour (renders.pickColour)
   return { mode, ...(typeof o.format === 'string' && o.format ? { format: o.format } : {}), ...(typeof o.set_by === 'string' && o.set_by ? { set_by: o.set_by.slice(0, 80) } : {}), ...(typeof o.set_at === 'string' && o.set_at ? { set_at: o.set_at.slice(0, 40) } : {}) }
 }
 export function normalizeRender(v: unknown): RenderSettings {
@@ -126,7 +126,7 @@ export function normalizeRender(v: unknown): RenderSettings {
   }
 }
 export function validateRender(r: RenderSettings): void {
-  if (!['ask', 'format', 'guess'].includes(r.colour.mode)) throw bad('render.colour.mode is ask, format or guess')
+  if (!['ask', 'format', 'guess', 'known'].includes(r.colour.mode)) throw bad('render.colour.mode is ask, format, guess or known')
   if (r.colour.mode === 'format' && !(r.colour.format && COLOUR_INS.includes(r.colour.format))) throw bad(`render.colour.format is one of ${COLOUR_INS.join(', ')} when the mode is format`)
   if (r.colour.format !== undefined && !COLOUR_INS.includes(r.colour.format)) throw bad(`render.colour.format is one of ${COLOUR_INS.join(', ')}`)
   if (!['auto', 'pod', 'local'].includes(r.where)) throw bad('render.where is auto, pod or local')
@@ -676,7 +676,7 @@ export function put(data: Partial<MountsConfig>, opts: { quiet?: boolean } = {})
     if (!who) throw bad("Stating the colour of frames is a person's act: put the approver's name (auto_publish.approved_by)")
     history.record({ kind: 'change', area: 'configuration', action: 'auto-generate colour stated', what: 'auto-publish', detail: `frames are ${rawColour}, stated by ${who}`, approved_by: who })
   }
-  { const rc = (data.render as { colour?: unknown } | undefined)?.colour, prev = load().render?.colour ?? { mode: 'ask' }; if (rc !== undefined && JSON.stringify({ mode: normalizeRenderColour(rc).mode, format: normalizeRenderColour(rc).format }) !== JSON.stringify({ mode: prev.mode, format: prev.format })) { const who = typeof (data as { approved_by?: unknown }).approved_by === 'string' && (data as { approved_by: string }).approved_by.trim() ? (data as { approved_by: string }).approved_by.trim().slice(0, 80) : 'unknown', n = normalizeRenderColour(rc); data = { ...data, render: { ...(data.render as object), colour: { ...n, set_by: who, set_at: new Date().toISOString() } } as never }; if (!opts.quiet) history.record({ kind: 'change', area: 'configuration', action: 'render colour setting changed', what: 'render.colour', detail: `mode ${n.mode}${n.format ? ` (${n.format})` : ''}, set by ${who}` }) } }
+  { const rc = (data.render as { colour?: unknown } | undefined)?.colour, prev = load().render?.colour ?? { mode: 'known' }; if (rc !== undefined && JSON.stringify({ mode: normalizeRenderColour(rc).mode, format: normalizeRenderColour(rc).format }) !== JSON.stringify({ mode: prev.mode, format: prev.format })) { const who = typeof (data as { approved_by?: unknown }).approved_by === 'string' && (data as { approved_by: string }).approved_by.trim() ? (data as { approved_by: string }).approved_by.trim().slice(0, 80) : 'unknown', n = normalizeRenderColour(rc); data = { ...data, render: { ...(data.render as object), colour: { ...n, set_by: who, set_at: new Date().toISOString() } } as never }; if (!opts.quiet) history.record({ kind: 'change', area: 'configuration', action: 'render colour setting changed', what: 'render.colour', detail: `mode ${n.mode}${n.format ? ` (${n.format})` : ''}, set by ${who}` }) } }
   const cfg = validate(normalize(data))
   save(cfg)
   if (!opts.quiet) history.record({ kind: 'change', area: 'configuration', action: 'saved', what: 'Default Configuration' })

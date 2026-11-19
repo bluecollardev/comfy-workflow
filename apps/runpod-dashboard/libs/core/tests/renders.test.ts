@@ -379,6 +379,7 @@ describe('the review kind: the stitched, versioned deliverable', () => {
     await expect(renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review', codecs: ['divx' as never] })).rejects.toThrow(/codecs is a non-empty list/)
   })
   it('colour: frames that say log, linear or printing density are refused (stated, never guessed); an unreadable header too; the proxy still plays', async () => {
+    { const m = mounts.load(); mounts.save({ ...m, render: { ...m.render, colour: { mode: 'ask' } } as never }) }   // this is the ask behaviour; the default (known) derives a linear header
     pod.header = dpxHeader({ transfer: 1 }); let j = await review(); expect(j.sequences[0]).toMatchObject({ state: 'skipped' }); expect(j.sequences[0].reason).toMatch(/colour not stated.*the DPX header says printing density.*Set render\.colour\.mode to format or guess, or pass colour_in/)
     pod.header = dpxHeader({ transfer: 3 }); j = await review(); expect(j.sequences[0].reason).toMatch(/logarithmic/); pod.header = dpxHeader({ transfer: 2 }); j = await review(); expect(j.sequences[0].reason).toMatch(/linear/)
     pod.header = Buffer.alloc(820); j = await review(); expect(j.sequences[0].error).toMatch(/header of the first frame could not be read/)
@@ -396,8 +397,16 @@ describe('the review kind: the stitched, versioned deliverable', () => {
   describe('the colour of log and linear frames is a setting (ADR-048)', () => {
     const setColour = (colour: Record<string, unknown>) => { const m = mounts.load(); mounts.save({ ...m, render: { ...m.render, colour } as never }) }
     const lastScript = () => scripts[scripts.length - 1]
-    it('ask (the default): a review is SKIPPED with a warning (job done, not failed); format converts from the configured format; guess converts from the header and says so everywhere; a per-run mode overrides; a stated colour_in still wins', async () => {
+    it('known (the default): a LINEAR header is converted from linear P3-D65 with no setting and no click, the sidecar says it was derived (project default, not stated) and the plan warns; log and printing density are never derived', async () => {
       pod.header = dpxHeader({ transfer: 2 })
+      const pl = await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review' }); expect(pl.settings.colour).toEqual({ mode: 'known' })
+      expect(pl.sequences[0]).toMatchObject({ colour_in: 'linear-p3-d65', colour_source: 'guess', colour_assumption: expect.stringMatching(/linear and generated shots are P3-D65 \(Kyle, 14 Nov\)/) }); expect(pl.sequences[0].flags.map((f) => f.code)).toContain('colour-guessed'); expect(pl.sequences[0].flags.map((f) => f.code)).not.toContain('colour-not-stated')
+      let j = await review(); expect(j.sequences[0].state).toBe('pulled'); expect(lastScript()).toContain('colorchannelmixer=rr=1.2249401'); expect(lastScript()).toMatch(/"stated_by": "project default"/); expect(lastScript()).toMatch(/"guessed": true/); expect(lastScript()).toMatch(/generated shots are P3-D65 \(Kyle, 14 Nov\)/)
+      pod.header = dpxHeader({ transfer: 1 }); j = await review(); expect(j.sequences[0]).toMatchObject({ state: 'skipped', flags: [expect.objectContaining({ code: 'colour-not-stated' })] }); expect(j.sequences[0].reason).toMatch(/render\.colour\.mode known.*printing density/)   // a person states density and log
+      pod.header = dpxHeader({ transfer: 2 }); j = await review({ colour_in: 'linear-rec709' }); expect(lastScript()).not.toContain('colorchannelmixer'); expect(lastScript()).toMatch(/"stated_by": "Lucas"/)   // a stated colour still wins
+    })
+    it('ask: a review is SKIPPED with a warning (job done, not failed); format converts from the configured format; guess converts from the header and says so everywhere; a per-run mode overrides; a stated colour_in still wins', async () => {
+      pod.header = dpxHeader({ transfer: 2 }); setColour({ mode: 'ask' })
       let j = await review(); expect(j.state).toBe('done'); expect(j.sequences[0]).toMatchObject({ state: 'skipped', flags: [expect.objectContaining({ code: 'colour-not-stated', level: 'warn' })] }); expect(j.sequences[0].reason).toMatch(/render\.colour\.mode ask.*linear \(code 2\).*Set render\.colour\.mode to format or guess, or pass colour_in/)
       const pl = await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review' }); expect(pl.sequences[0]).toMatchObject({ skip: 'colour not stated', blocked: false }); expect(pl.sequences[0].flags.find((f) => f.code === 'colour-not-stated')!.level).toBe('warn'); expect(pl.settings.colour).toEqual({ mode: 'ask' })
       setColour({ mode: 'format', format: 'linear-p3-d65' }); j = await review(); expect(j.sequences[0].state).toBe('pulled'); expect(lastScript()).toContain('colorchannelmixer=rr=1.2249401'); expect(lastScript()).toMatch(/"stated_by": "configuration"/); expect(lastScript()).toMatch(/"conversion": "linear-p3-d65"/)

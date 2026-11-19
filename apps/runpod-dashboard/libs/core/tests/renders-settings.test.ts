@@ -8,7 +8,7 @@ import * as renders from '../src/renders.js'
 import { scratch } from './helpers.js'
 
 // ADR-048 "Settings": the render settings in the configuration (Default and a pod's own), applied by plan and start for every field the request omits.
-const D = { colour: { mode: 'ask' }, where: 'auto', kind: 'proxy', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto', preset: 'none', pull: false, skip_existing: true, publish: { s3: false, slack: false } }
+const D = { colour: { mode: 'known' }, where: 'auto', kind: 'proxy', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto', preset: 'none', pull: false, skip_existing: true, publish: { s3: false, slack: false } }
 const SEQ = { dir: 'a/b', name: 'ARCHIVAL-085_x_23.976_y', first: 0, last: 9, frames: 10, pad: 4 }
 const put = (p: Partial<mounts.MountsConfig>) => mounts.put({ ...mounts.load(), ...p })
 beforeEach(() => {
