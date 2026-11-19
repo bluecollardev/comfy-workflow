@@ -174,7 +174,7 @@ export async function pass(g: mounts.AutoGenerateConfig, approver: string, signa
     }
     const useLocal = g.where === 'local' || !podId
     try {
-      const r = await deps.start({ sequences: [{ dir: c.dir, name: c.stem, first: c.first, last: c.last, frames: c.count, pad: c.pad }], kind: g.preset === 'tunnel' ? 'proxy' : 'review', ...(g.preset === 'tunnel' ? { preset: 'tunnel' } : {}), where: useLocal ? 'local' : 'pod', ...(podId && !useLocal ? { pod_id: podId, pull: true } : {}), approved_by: approver, skip_existing: true, ...(g.colour_in ? { colour_in: g.colour_in } : {}), trigger: 'auto-publish' })
+      const r = await deps.start({ sequences: [{ dir: c.dir, name: c.stem, first: c.first, last: c.last, frames: c.count, pad: c.pad }], kind: g.preset === 'tunnel' ? 'proxy' : 'review', ...(g.preset === 'tunnel' ? { preset: 'tunnel' } : {}), where: useLocal ? 'local' : 'pod', ...(podId && !useLocal ? { pod_id: podId, pull: false } : {}), approved_by: approver, skip_existing: true, ...(g.colour_in ? { colour_in: g.colour_in } : {}), trigger: 'auto-publish' })
       active.set(c.key, { job_id: r.job_id, started: now, sig }); startedStems.add(c.stem); started++; count++
       st.pending = (st.pending ?? []).filter((k) => k !== c.key); await writeState({ ...st, day, count, ...(st.pending.length ? {} : { pending: [] }) })
     } catch (e) {
@@ -232,7 +232,7 @@ export async function existing(g: mounts.AutoGenerateConfig, o: { run: boolean; 
   let started = 0; const chosen = ok.slice(0, cap), queue = chosen.slice(0, res.can_start_today ?? chosen.length), deferred = chosen.slice(queue.length)
   for (const x of queue) {
     try {
-      const r = await deps.start({ sequences: [{ dir: x.c.dir, name: x.c.stem, first: x.c.first, last: x.c.last, frames: x.c.count, pad: x.c.pad }], kind: tunnel ? 'proxy' : 'review', ...(tunnel ? { preset: 'tunnel' } : {}), where: useLocal ? 'local' : 'pod', ...(podId && !useLocal ? { pod_id: podId, pull: true } : {}), approved_by: approver, skip_existing: true, ...(g.colour_in ? { colour_in: g.colour_in } : {}), trigger: 'auto-publish' })
+      const r = await deps.start({ sequences: [{ dir: x.c.dir, name: x.c.stem, first: x.c.first, last: x.c.last, frames: x.c.count, pad: x.c.pad }], kind: tunnel ? 'proxy' : 'review', ...(tunnel ? { preset: 'tunnel' } : {}), where: useLocal ? 'local' : 'pod', ...(podId && !useLocal ? { pod_id: podId, pull: false } : {}), approved_by: approver, skip_existing: true, ...(g.colour_in ? { colour_in: g.colour_in } : {}), trigger: 'auto-publish' })
       active.set(x.c.key, { job_id: r.job_id, started: now }); started++
     } catch (e) { if (String((e as Error).message).includes(ALL_DONE)) { done.add(x.c.key); continue }; skipped.push({ stem: x.stem, reason: (e as Error).message.slice(0, 200) }) }
     await yieldLoop()

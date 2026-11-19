@@ -174,3 +174,22 @@ test('Play is the first, leftmost item of every row, in a slot of the same width
   expect(new Set(xs.map((x) => Math.round(x))).size).toBe(1)   // the columns do not shift
   await expect(c('done').getByTestId('generations-job-play')).toBeEnabled(); await expect(c('run').getByTestId('generations-job-play-disabled')).toBeDisabled(); await expect(c('bad').getByTestId('generations-job-play-disabled')).toBeDisabled()
 })
+
+test('an automatic review shows the real steps: no Sync step when it stayed on the volume, and a Publishing to S3 step that follows Auto-publish', async ({ page, api }) => {
+  const rv = (o = {}) => job({ job_id: 'auto-1', kind: 'review', state: 'done', trigger: 'auto-publish', pull: false, finished_at: '2026-11-19T10:05:00Z', frames_done: 94, frames_total: 94,
+    sequences: [{ dir: 'mono/a', name: 'archival-080_a_mono', clip_name: 'archival-080_a_mono', where: 'pod', state: 'rendered', shot: 'archival-080', version: 1, frames_done: 94, frames_total: 94 }], ...o })
+  const ap = (state) => ({ id: 'ap-1', shot: 'archival-080', version: 'v001', state, files: 5, bytes: 1e8, due_at: new Date(Date.now() + 300000).toISOString(), targets: ['s3', 'slack'] })
+  api.state.renders = { jobs: [rv()] }; api.state.autopublish = { pending: [ap('waiting')] }
+  await page.goto('/')
+  const q = await openQueue(page), c = gens(q).getByTestId('generations-job')
+  await expect(c.locator('[data-testid="generations-phase"][data-phase="syncing"]')).toHaveCount(0)   // pull false: nothing is copied to this PC
+  await expect(c.locator('[data-testid="generations-phase"][data-phase="rendering"]')).toHaveCount(1)
+  await expect(c.getByTestId('generations-job-autopub')).toHaveText('Publishing to S3: waiting for the window'); await expect(c.getByTestId('generations-job-autopub')).toHaveAttribute('data-state', 'waiting')
+  api.state.autopublish = { pending: [ap('uploading')] }
+  await expect(c.getByTestId('generations-job-autopub')).toHaveText('Publishing to S3: uploading', { timeout: 12000 })
+  api.state.autopublish = { pending: [], recent: [{ ...ap('done') }] }
+  await expect(c.getByTestId('generations-job-autopub')).toHaveText('Publishing to S3: uploaded', { timeout: 12000 })
+  // a job that did pull keeps its Sync step; a manual job has no automatic Publishing step
+  api.state.renders = { jobs: [rv({ job_id: 'man-1', trigger: 'manual', pull: true })] }
+  await expect(c.locator('[data-testid="generations-phase"][data-phase="syncing"]')).toHaveCount(1, { timeout: 12000 }); await expect(c.getByTestId('generations-job-autopub')).toHaveCount(0)
+})

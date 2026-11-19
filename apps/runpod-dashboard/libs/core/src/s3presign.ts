@@ -1,12 +1,13 @@
 /**
  * AWS Signature Version 4 query authentication (a presigned GET) for an S3-compatible endpoint, in plain Node: no aws CLI, no SDK.
  * Used for RunPod's S3 API (docs/ADR-045): the main process presigns a read of one output file and fetches it, so a pod is not needed.
+ * A PUT presign (UNSIGNED-PAYLOAD, only `host` signed) lets a machine that must not hold the key upload one object with `curl -T` (docs/ADR-050, transfer adapters).
  * Pure: the secret goes in, a URL comes out; nothing is stored or logged here, and the caller must never hand the URL to a page or a log.
  */
 import { createHash, createHmac } from 'node:crypto'
 
 export interface PresignInput {
-  method?: 'GET' | 'HEAD'
+  method?: 'GET' | 'HEAD' | 'PUT'
   /** the host the request goes to (path style: the endpoint's host; virtual-hosted: bucket.host) */
   host: string
   /** the absolute path, not yet encoded, starting with a slash: `/<bucket>/<key>` in path style */
@@ -42,7 +43,8 @@ export function presign(i: PresignInput): string {
   return `${i.scheme ?? 'https'}://${i.host}${path}?${query}&X-Amz-Signature=${sig}`
 }
 
-export interface SignInput extends Omit<PresignInput, 'expires'> {
+export interface SignInput extends Omit<PresignInput, 'expires' | 'method'> {
+  method?: 'GET' | 'HEAD'
   /** a Range header to send (it is signed with the request) */
   range?: string
   /** hex SHA-256 of the body; a GET has none */

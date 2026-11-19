@@ -482,7 +482,7 @@ export async function mockApi(page, state) {
     if (path.startsWith('/publish/')) {
       if (state.publishOld) return json({ detail: `no core call publish.${path.slice(9)}` }, 500)
       const pb = (state.publish ||= {})
-      pb.settings ||= { s3: { bucket: 'bh-panama-exchange-610140802195', prefix: 'returns/BKK/', region: 'us-west-2', endpoint: '', credentials: 'panama', access_key_hint: '', presign_hours: 72, note: 'Lucas, 2026-11-19: Panama exchange bucket, returns/BKK/' }, slack: { workspace_name: 'Beinghuman', workspace_url: 'https://beinghuman-hq.slack.com', channel: '', username: 'RunPod Manager', webhook_hint: '' }, defaults: { targets: ['s3', 'slack'], message: '{shot} {version} is on S3: {links}' } }
+      pb.settings ||= { s3: { bucket: 'bh-panama-exchange-610140802195', prefix: 'returns/BKK/', region: 'us-west-2', endpoint: '', credentials: 'panama', access_key_hint: '', presign_hours: 72, transfer: 'auto', note: 'Lucas, 2026-11-19: Panama exchange bucket, returns/BKK/' }, slack: { workspace_name: 'Beinghuman', workspace_url: 'https://beinghuman-hq.slack.com', channel: '', username: 'RunPod Manager', webhook_hint: '' }, defaults: { targets: ['s3', 'slack'], message: '{shot} {version} is on S3: {links}' } }
       pb.tree ||= {}; pb.there ||= []; pb.heavy ||= []; pb.jobs ||= []
       for (const k of ['puts', 'tests', 'planned', 'runs', 'reposts', 'cancelled']) pb[k] ||= []
       const st = pb.settings

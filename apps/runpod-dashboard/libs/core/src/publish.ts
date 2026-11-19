@@ -15,6 +15,9 @@ import * as failures from './failures.js'
 import * as mounts from './mounts.js'
 import * as panama from './panama.js'
 import * as podpull from './podpull.js'
+import * as rp from './runpod.js'
+import * as sync from './sync.js'
+import { presign } from './s3presign.js'
 import { configDir } from './paths.js'
 import * as settingsEnv from './settings.js'
 import * as layout from './publishlayout.js'
@@ -26,11 +29,16 @@ import * as tunnelj from './tunnel.js'
 export const DEFAULT_MESSAGE = 'Approved by {approved_by} on {date}\n{count} file(s), {size}\nDestination: {dest}\n{files}\n{folders}\n{links}'
 export const DESTINATION_NOTE = 'Lucas, 2026-11-19: Panama exchange bucket, returns/BKK/'
 export const PUBLISH_DEFAULTS = {
-  s3: { bucket: '', prefix: 'returns/BKK/', region: '', endpoint: '', credentials: 'panama' as 'app' | 'panama', presign_hours: 72 },   // the bucket is the Panama exchange bucket's setting (not a second copy here), see effective()
+  s3: { bucket: '', prefix: 'returns/BKK/', region: '', endpoint: '', credentials: 'panama' as 'app' | 'panama', presign_hours: 72, transfer: 'auto' as Transfer },   // the bucket is the Panama exchange bucket's setting (not a second copy here), see effective()
   slack: { channel: '', username: 'RunPod Manager', workspace_name: 'Beinghuman', workspace_url: 'https://beinghuman-hq.slack.com', preview_frame: true, volume_source: true, per_shot: true, file_links: true, file_link_count: 10, folder_link: true },
   defaults: { targets: [] as Target[], message: DEFAULT_MESSAGE },
 }
 export type Target = 's3' | 'slack'
+/** How a file that lives only on the volume reaches the bucket (ADR-050, amendment: transfer adapters): `auto` uses a running pod on the volume when there is one, else this PC; `pod` insists on the pod; `pc` streams through this PC. */
+export type Transfer = 'auto' | 'pod' | 'pc'
+export const TRANSFERS: Transfer[] = ['auto', 'pod', 'pc']
+/** A presigned PUT is good for an hour (it only has to be valid when the upload starts); one is made per file, just before it, and one S3 object takes at most 5 GiB in a single PUT. */
+export const PUT_EXPIRES_S = 3600, PUT_MAX_BYTES = 5 * 1024 ** 3 - 1, PROBE_MS = 20_000
 export const WEIGHT_EXT = ['.safetensors', '.ckpt', '.pt', '.pth', '.bin', '.gguf', '.onnx', '.pkl']
 export const isWeight = (name: string): boolean => WEIGHT_EXT.some((e) => name.toLowerCase().endsWith(e))
 export const WEIGHTS_REASON = `Model weights are never published (${WEIGHT_EXT.join(' ')})`
@@ -41,7 +49,7 @@ const TITLE = '*Published from RunPod Manager*'
 
 interface Stored { s3?: Partial<typeof PUBLISH_DEFAULTS.s3>; slack?: Partial<typeof PUBLISH_DEFAULTS.slack>; defaults?: { targets?: Target[]; message?: string } }
 export interface PublicSettings {
-  s3: { /** where files go under the prefix: as they are, or the BKK return layout (round / shot / clip), default by prefix */ layout: layout.Layout; bucket: string; prefix: string; region: string; endpoint: string; credentials: 'app' | 'panama'; access_key_hint: string; presign_hours: number; ready: boolean; problem?: string; /** documentation, not a gate: who confirmed the default destination */ note?: string; destination_confirmed?: string }
+  s3: { /** where files go under the prefix: as they are, or the BKK return layout (round / shot / clip), default by prefix */ layout: layout.Layout; bucket: string; prefix: string; region: string; endpoint: string; credentials: 'app' | 'panama'; access_key_hint: string; presign_hours: number; transfer: Transfer; ready: boolean; problem?: string; /** documentation, not a gate: who confirmed the default destination */ note?: string; destination_confirmed?: string }
   slack: { channel: string; username: string; workspace_name: string; workspace_url: string; /** post the first frame of what was published as an image (needs ffmpeg and S3) */ preview_frame: boolean; /** say where on the RunPod volume the files came from (never a link to a file, never a key) */ volume_source: boolean; /** one Slack message per shot (default on for the BKK return) or one per run */ per_shot: boolean; /** expiring links to the first `file_link_count` files (default on) */ file_links: boolean; file_link_count: number; /** a link to the destination folder in the AWS console (default on) */ folder_link: boolean; webhook_hint: string; ready: boolean; problem?: string }
   defaults: { targets: Target[]; message: string }
 }
@@ -66,7 +74,12 @@ export interface Deps {
   volumeRecord(id: string): Promise<{ id: string; name: string; datacenter: string } | null>
   /** the pod a render of these files (paths under output/) ran on, for the return manifest; null when unknown */
   podInfo(paths: string[]): Promise<layout.Pod | null>
+  /** a RUNNING pod attached to the volume that the app can reach over SSH, or null. Reads only: nothing here ever creates, resumes or stops a pod. */
+  podOnVolume(volumeId: string): Promise<PodRef | null>
+  /** run a script on a pod over SSH (the script goes on stdin) */
+  ssh: podpull.SshRunner
 }
+export interface PodRef { id: string; name: string; host: string; port: number }
 let ffmpegOverride: (() => Promise<string | null>) | null = null
 /** Tests replace the ffmpeg lookup, so no test ever runs the real one (tests/setup.ts). */
 export const setFfmpegOverride = (f: (() => Promise<string | null>) | null) => { ffmpegOverride = f }
@@ -95,6 +108,17 @@ const defaults = (): Deps => ({
       return volMemo.rows.find((v) => v.id === id) ?? null
     } catch { return null }
   },
+  podOnVolume: async (volumeId) => {
+    try {
+      if (mounts.dryRun(mounts.load())) return null
+      for (const raw of await rp.listPods()) {
+        if ((raw.networkVolumeId || '') !== volumeId || (raw.name || '').startsWith(podpull.POD_PREFIX) || (raw.runtime?.uptimeInSeconds ?? 0) <= 0) continue
+        try { return { id: raw.id, name: raw.name || raw.id, ...sync.sshTarget(raw) } } catch { continue }
+      }
+    } catch { /* RunPod unreachable or no key: no pod */ }
+    return null
+  },
+  ssh: (j) => podpull.runSsh(j),
 })
 let deps: Deps = defaults()
 export const setDeps = (d: Partial<Deps> | null) => { deps = d ? { ...deps, ...d } : defaults() }
@@ -171,14 +195,14 @@ export async function settings(): Promise<PublicSettings> {
   const e = await effective(), sp = s3Problem(e.s3), lp = slackProblem(e.slack)
   const saved = await readJson<Stored>(cfgFile(), {}), usesDefault = e.s3.credentials === 'panama' && !saved.s3?.bucket
   return {
-    s3: { layout: e.s3.layout, bucket: e.s3.bucket, prefix: e.s3.prefix, region: e.s3.region, endpoint: e.s3.endpoint, credentials: e.s3.credentials, access_key_hint: settingsEnv.secretHint(secret('PUBLISH_S3_ACCESS_KEY_ID')), presign_hours: e.s3.presign_hours, ready: !sp, ...(sp ? { problem: sp } : {}), ...(usesDefault ? { note: DESTINATION_NOTE, destination_confirmed: DESTINATION_NOTE } : {}) },
+    s3: { layout: e.s3.layout, bucket: e.s3.bucket, prefix: e.s3.prefix, region: e.s3.region, endpoint: e.s3.endpoint, credentials: e.s3.credentials, access_key_hint: settingsEnv.secretHint(secret('PUBLISH_S3_ACCESS_KEY_ID')), presign_hours: e.s3.presign_hours, transfer: e.s3.transfer, ready: !sp, ...(sp ? { problem: sp } : {}), ...(usesDefault ? { note: DESTINATION_NOTE, destination_confirmed: DESTINATION_NOTE } : {}) },
     slack: { channel: e.slack.channel, username: e.slack.username, workspace_name: e.slack.workspace_name, workspace_url: e.slack.workspace_url, preview_frame: e.slack.preview_frame, volume_source: e.slack.volume_source, per_shot: e.slack.per_shot, file_links: e.slack.file_links, file_link_count: e.slack.file_link_count, folder_link: e.slack.folder_link, webhook_hint: settingsEnv.secretHint(secret('PUBLISH_SLACK_WEBHOOK_URL')), ready: !lp, ...(lp ? { problem: lp } : {}) },
     defaults: e.defaults,
   }
 }
 
 export interface SettingsInput {
-  s3?: { layout?: string; bucket?: string; prefix?: string; region?: string; endpoint?: string; credentials?: string; presign_hours?: number; access_key_id?: string; secret_access_key?: string }
+  s3?: { layout?: string; bucket?: string; prefix?: string; region?: string; endpoint?: string; credentials?: string; presign_hours?: number; transfer?: string; access_key_id?: string; secret_access_key?: string }
   slack?: { channel?: string; username?: string; workspace_name?: string; workspace_url?: string; preview_frame?: boolean; volume_source?: boolean; file_links?: boolean; file_link_count?: number; folder_link?: boolean; per_shot?: boolean; webhook_url?: string }
   defaults?: { targets?: string[]; message?: string }
   clear?: ('s3_keys' | 'slack_webhook')[]
@@ -215,6 +239,11 @@ export async function setSettings(input: SettingsInput): Promise<PublicSettings>
     if (!(typeof h === 'number' && Number.isInteger(h) && h >= 1 && h <= 168)) throw bad('s3.presign_hours is a whole number from 1 to 168 (SigV4 allows 7 days at most)')
     ;(st.s3 ??= {}).presign_hours = h; changedNames.push('s3.presign_hours')
   }
+  if (i.s3?.transfer !== undefined) {
+    if (!TRANSFERS.includes(i.s3.transfer as Transfer)) throw bad("s3.transfer is 'auto', 'pod' or 'pc'")
+    const o = (st.s3 ??= {}); if (i.s3.transfer === 'auto') delete o.transfer; else o.transfer = i.s3.transfer as Transfer
+    changedNames.push('s3.transfer')
+  }
   if (i.defaults?.targets !== undefined) {
     const t = i.defaults.targets
     if (!Array.isArray(t) || t.some((x) => x !== 's3' && x !== 'slack')) throw bad("defaults.targets is a list of 's3' and 'slack'")
@@ -245,21 +274,27 @@ export async function setSettings(input: SettingsInput): Promise<PublicSettings>
 }
 
 // ----- redaction: no secret, and no URL, ever reaches a message, log, History entry or error -----
+/** The presigned PUT URLs of the files under way: a credential, held here only so redact() can strike them from any text, and dropped the moment the file is done. */
+const liveUrls = new Set<string>()
 export function redact(text: string): string {
   let t = String(text)
   for (const n of settingsEnv.PUBLISH_SECRETS) { const v = secret(n); if (v) t = t.split(v).join('•••') }
-  return t.replace(/https?:\/\/\S+/gi, '<url>')
+  const pk = panama.appKeys(); for (const v of [pk?.id, pk?.secret, ...liveUrls]) if (v) t = t.split(v).join('•••')
+  return t.replace(/https?:\/\/\S+/gi, '<url>').replace(/X-Amz-(?:Signature|Credential|Security-Token)=[^&\s"']*/gi, '•••')
 }
 
 // ----- AWS access for the destination -----
-async function s3Access(): Promise<{ env: Record<string, string>; common: string[]; bucket: string; prefix: string; presign_hours: number; region: string; endpoint: string }> {
+interface DestAccess { env: Record<string, string>; common: string[]; bucket: string; prefix: string; presign_hours: number; region: string; endpoint: string; transfer: Transfer; /** the keys a presigned PUT is signed with, here only: null when the AWS CLI uses a profile */ keys: { id: string; secret: string } | null }
+async function s3Access(): Promise<DestAccess> {
   const e = { ...(await effective()).s3 }
   const common = ['--region', e.region, ...(e.endpoint ? ['--endpoint-url', e.endpoint] : [])]
+  const base = { bucket: e.bucket, prefix: e.prefix, presign_hours: e.presign_hours, region: e.region, endpoint: e.endpoint, transfer: e.transfer }
   if (e.credentials === 'panama') {
     const k = panama.appKeys()
-    return { env: k ? { AWS_ACCESS_KEY_ID: k.id, AWS_SECRET_ACCESS_KEY: k.secret, AWS_REGION: e.region } : {}, common: [...common, ...(k ? [] : ['--profile', panama.profile()])], bucket: e.bucket, prefix: e.prefix, presign_hours: e.presign_hours, region: e.region, endpoint: e.endpoint }
+    return { ...base, env: k ? { AWS_ACCESS_KEY_ID: k.id, AWS_SECRET_ACCESS_KEY: k.secret, AWS_REGION: e.region } : {}, common: [...common, ...(k ? [] : ['--profile', panama.profile()])], keys: k }
   }
-  return { env: { AWS_ACCESS_KEY_ID: secret('PUBLISH_S3_ACCESS_KEY_ID'), AWS_SECRET_ACCESS_KEY: secret('PUBLISH_S3_SECRET_ACCESS_KEY'), AWS_REGION: e.region }, common, bucket: e.bucket, prefix: e.prefix, presign_hours: e.presign_hours, region: e.region, endpoint: e.endpoint }
+  const id = secret('PUBLISH_S3_ACCESS_KEY_ID'), sec = secret('PUBLISH_S3_SECRET_ACCESS_KEY')
+  return { ...base, env: { AWS_ACCESS_KEY_ID: id, AWS_SECRET_ACCESS_KEY: sec, AWS_REGION: e.region }, common, keys: id && sec ? { id, secret: sec } : null }
 }
 const awsText = (r: podpull.AwsResult): string => r.transient ? podpull.STORAGE_UNREACHABLE : redact((r.stderr || r.stdout).trim().split('\n').pop() || `aws exited ${r.code}`)
 const timeout = (ms: number) => { const c = new AbortController(); const t = setTimeout(() => c.abort(), ms); return { signal: c.signal, done: () => clearTimeout(t) } }
@@ -734,17 +769,21 @@ export interface JobView {
   /** who started it: the window, an MCP tool call (client name), Auto-publish, the backfill; `external` = another process owns it */ origin?: jobsregistry.Origin; mcp_client?: string; external?: boolean; /** what this is, for the Queue: a publish run (scans and inventories are not in this list) */ kind: 'publish'; /** what started it: a person ('manual'), the backfill, or Auto-publish */ trigger: 'manual' | 'backfill' | 'auto-publish'; /** one child per shot, in the order they run */ children: ChildView[]; /** how many children upload at once */ streams: number; counts: { queued: number; uploading: number; done: number; failed: number; cancelled: number }
   job_id: string; state: JobState; targets: Target[]; approved_by: string; started_at: string; finished_at: string
   files_total: number; files_done: number; bytes_total: number; bytes_done: number; rate_bps: number; current: string; skipped: number; dest: string
+  /** how the files that live on the volume got to the bucket: from a pod on the volume ('pod', with its name) or streamed through this PC ('pc'); `files` says which carried each one (and its sha256) */
+  adapter: 'pod' | 'pc'; pod?: string; pod_files: number; pc_files: number; files: JobFile[]
   /** the BKK return: the shots run with an EDL frame-count override (also in the manifest notes) */ edl_overrides?: { stem: string; frames: number; expected: number }[]; /** the BKK return: the key of the RETURN-MANIFEST.json written for the run */ manifest?: { updated: boolean; shots: number; path: string; error?: string }; /** how many files have a sha256 (the BKK return), and the first thousand of them */ sha256_count?: number; results?: { path: string; bytes: number; sha256: string }[]; /** quiet notes (no preview frame: ffmpeg is not installed) */ warnings?: string[]; /** the preview images uploaded next to the files; never counted in the file totals */ previews?: { name: string; s3_key: string; bytes: number; preview: true }[]; note?: string; links: { path: string; url: string; expires_at: string; /** a file link (expiring), the destination folder (permanent) or a preview image (expiring) */ kind: 'file' | 'folder' | 'preview' }[]; slack: { state: 'skipped' | 'sent' | 'failed'; error?: string }; error?: string; summary: string
 }
+/** how the files that live on the volume got to the bucket: see ADR-050, amendment "transfer adapters" */
+export interface JobFile { path: string; adapter: 'pod' | 'pc'; sha256?: string; shot?: string }
 interface Group { child: ChildView; items: PlanItem[]; send: PlanItem[]; ac: AbortController; info: MsgInfo; lp?: LinkPlan; psrc?: PreviewSrc[]; folders?: string[]; partial: Map<string, number>; doneBytes: number; t0: number }
-interface Job { stopTrack?: () => void; groups: Group[]; streams: number; perShot: boolean; /** the raw trigger (History): auto-publish, auto-publish:manual, render ... */ trig?: string; tag?: string; /** the BKK return: the round, its files and the hashes made while they were read */ ret?: { /** sequence stem or clip -> the notes the manifest carries (EDL override, low resolution, start timecode) */ seq: Map<string, string[]>; round: string; prefix: string; items: PlanItem[]; clipNames: Record<string, string> }; hashes: Map<string, string>; lp?: LinkPlan; psrc?: PreviewSrc[]; volOnly?: boolean; folders?: string[]; prefix?: string; slackText?: string; view: JobView; abort: AbortController; info: MsgInfo; template: string; started: number; done: Promise<void> }
+interface Job { /** the transfer adapter chosen for the volume files (once per job) */ route?: Promise<Route>; stopTrack?: () => void; groups: Group[]; streams: number; perShot: boolean; /** the raw trigger (History): auto-publish, auto-publish:manual, render ... */ trig?: string; tag?: string; /** the BKK return: the round, its files and the hashes made while they were read */ ret?: { /** sequence stem or clip -> the notes the manifest carries (EDL override, low resolution, start timecode) */ seq: Map<string, string[]>; round: string; prefix: string; items: PlanItem[]; clipNames: Record<string, string> }; hashes: Map<string, string>; lp?: LinkPlan; psrc?: PreviewSrc[]; volOnly?: boolean; folders?: string[]; prefix?: string; slackText?: string; view: JobView; abort: AbortController; info: MsgInfo; template: string; started: number; done: Promise<void> }
 const jobs = new Map<string, Job>()
 let finished: (JobView & { info?: MsgInfo; template?: string; slackText?: string })[] = []
 let seq = 0
 let loaded: Promise<void> | null = null
 const iso = () => new Date(deps.now()).toISOString()
 const counts = (kids: ChildView[]): JobView['counts'] => ({ queued: kids.filter((k) => k.state === 'queued').length, uploading: kids.filter((k) => k.state === 'uploading').length, done: kids.filter((k) => k.state === 'done').length, failed: kids.filter((k) => k.state === 'failed').length, cancelled: kids.filter((k) => k.state === 'cancelled').length })
-const copy = (v: JobView): JobView => ({ ...v, children: (v.children ?? []).map((c) => ({ ...c, warnings: [...c.warnings], slack: { ...c.slack } })), counts: counts(v.children ?? []), warnings: [...(v.warnings ?? [])], links: v.links.map((l) => ({ ...l })), slack: { ...v.slack } })
+const copy = (v: JobView): JobView => ({ ...v, children: (v.children ?? []).map((c) => ({ ...c, warnings: [...c.warnings], slack: { ...c.slack } })), counts: counts(v.children ?? []), warnings: [...(v.warnings ?? [])], links: v.links.map((l) => ({ ...l })), slack: { ...v.slack }, files: (v.files ?? []).map((f) => ({ ...f })) })
 const ensureLoaded = (): Promise<void> => (loaded ??= readJson<(JobView & { info?: MsgInfo })[]>(jobsFile(), []).then((j) => { if (Array.isArray(j) && !finished.length) finished = j.slice(0, KEEP_JOBS) }))
 let writing: Promise<void> = Promise.resolve()
 const persist = (): void => { writing = writing.then(() => writeJson(jobsFile(), finished.map((f) => ({ ...f, links: f.links.map((l) => ({ ...l, url: '' })) }))).catch(() => undefined)) }
@@ -841,7 +880,7 @@ export async function run(req: RunRequest): Promise<{ job_id: string }> {
   const send = targets.includes('s3') ? p.items.filter((i) => i.skip === null) : []
   const id = `publish-${deps.now().toString(36)}-${(seq++).toString(36)}`
   const info: MsgInfo = { first: real.slice(0, SLACK_FILES).map((i) => ({ path: i.path, bytes: i.bytes, key: i.s3_key })), count: real.length, bytes: p.total_bytes, dest: p.s3?.dest ?? `s3://${e.s3.bucket || '(not uploaded)'}/${e.s3.prefix}` }
-  const view: JobView = { job_id: id, state: 'queued', targets, approved_by: who, started_at: iso(), finished_at: '', files_total: send.length, files_done: 0, bytes_total: send.reduce((a, i) => a + i.bytes, 0), bytes_done: 0, rate_bps: 0, current: '', skipped: p.items.filter((i) => i.skip === 'same size already there').length, dest: info.dest, links: [], slack: { state: 'skipped' }, summary: '', kind: 'publish', trigger: /^auto-publish/.test(String(req.trigger ?? '')) ? 'auto-publish' : 'manual', children: [], streams: 1, counts: { queued: 0, uploading: 0, done: 0, failed: 0, cancelled: 0 }, ...(req.note ? { note: String(req.note).slice(0, 300) } : {}) }
+  const view: JobView = { job_id: id, state: 'queued', targets, approved_by: who, started_at: iso(), finished_at: '', files_total: send.length, files_done: 0, bytes_total: send.reduce((a, i) => a + i.bytes, 0), bytes_done: 0, rate_bps: 0, current: '', skipped: p.items.filter((i) => i.skip === 'same size already there').length, dest: info.dest, links: [], slack: { state: 'skipped' }, summary: '', adapter: 'pc', pod_files: 0, pc_files: 0, files: [], kind: 'publish', trigger: /^auto-publish/.test(String(req.trigger ?? '')) ? 'auto-publish' : 'manual', children: [], streams: 1, counts: { queued: 0, uploading: 0, done: 0, failed: 0, cancelled: 0 }, ...(req.note ? { note: String(req.note).slice(0, 300) } : {}) }
   const job: Job = { groups: [], streams: 1, perShot: false, ...(req.trigger ? { trig: String(req.trigger).slice(0, 60) } : {}), hashes: new Map(), view, abort: new AbortController(), info, template: req.message?.trim() ? req.message : e.defaults.message, prefix: e.s3.prefix, started: deps.now(), done: Promise.resolve() }
   { const o = (p.sequences ?? []).flatMap((x) => (x.override ? [x.override] : [])); if (o.length) view.edl_overrides = o }
   job.streams = Math.max(1, Math.min(Math.floor(Number(req.streams) || 1), deps.parallel())); view.streams = job.streams; job.perShot = targets.includes('slack') && e.slack.per_shot
@@ -886,12 +925,13 @@ async function uploadGroup(job: Job, g: Group, a: Awaited<ReturnType<typeof s3Ac
     while (!failure && !ac.signal.aborted) {
       const it = volList[nextVol++]; if (!it) return
       c.current = basename(it.path)
-      const s = src as Extract<VolAccess, { ok: true }>, hasher = job.ret ? layout.newHasher() : null
-      const r = await streamCopy({ args: ['s3', 'cp', `s3://${s.bucket}/${it.source_key}`, '-', '--endpoint-url', s.endpoint, '--region', s.region], env: { AWS_ACCESS_KEY_ID: s.id, AWS_SECRET_ACCESS_KEY: s.secret } },
-        { args: ['s3', 'cp', '-', `s3://${a.bucket}/${it.s3_key}`, '--expected-size', String(it.bytes), ...a.common], env: a.env },
-        { signal: ac.signal, stallMs: STALL_MS, onBytes: (n) => { g.partial.set(it.path, Math.min(n, it.bytes)); refresh() }, ...(hasher ? { onChunk: (b: Buffer) => { hasher.update(b) } } : {}) })
+      let r: { ok: boolean; error: string; sha256?: string }
+      try {
+        const route = await (job.route ??= chooseRoute(a, job.view, job.abort.signal))
+        r = await volumeCopy(it, { a, s: src as Extract<VolAccess, { ok: true }>, route, v: job.view, signal: ac.signal, shot: g.child.shot, onBytes: (n) => { g.partial.set(it.path, Math.min(n, it.bytes)); refresh() } })
+      } catch (e) { r = { ok: false, error: redact((e as Error).message) } }
       g.partial.delete(it.path)
-      if (r.ok) { if (hasher) { job.hashes.set(it.s3_key, hasher.digest('hex')); c.sha256++ } g.doneBytes += it.bytes; c.files_done++; refresh() } else if (!ac.signal.aborted) failure = `${basename(it.path)}: ${r.error}`
+      if (r.ok) { if (job.ret && r.sha256) { job.hashes.set(it.s3_key, r.sha256); c.sha256++ } g.doneBytes += it.bytes; c.files_done++; refresh() } else if (!ac.signal.aborted) failure = `${basename(it.path)}: ${r.error}`
     }
   }
   const worker = async () => {
@@ -951,6 +991,7 @@ async function go(job: Job, send: PlanItem[], targets: Target[], nothing: boolea
     const volList = send.filter((i) => i.source === 'volume'), src = volList.length ? await volumeAccess() : null
     if (src && !src.ok) throw new Error(`The volume cannot be read: ${redact(src.reason)}`)
     await pool(job.groups, job.streams, (g) => runGroup(job, g, a, src, targets))
+    settleAdapter(v)
   } else for (const k of kids) k.state = 'done'
   progressOf(job)
   return finishParent(job, a, targets)
@@ -1077,7 +1118,7 @@ function end(job: Job, again = false): void {
   jobs.delete(v.job_id); if (job.groups.length) { retained.set(v.job_id, job); while (retained.size > KEEP_JOBS) retained.delete(retained.keys().next().value as string) }
   finished.unshift({ ...copy(v), info: job.info, template: job.template, ...(job.slackText ? { slackText: job.slackText } : {}) }); finished.length = Math.min(finished.length, KEEP_JOBS)
   history.record({ kind: 'job', job: 'publish', state: v.state === 'cancelled' ? 'cancelled' : v.state === 'failed' ? 'failed' : 'done', started_at: v.started_at, what: `${again ? 'publish message again' : 'publish'} ${v.files_total} file${v.files_total === 1 ? '' : 's'} to ${v.targets.join(' + ')}`, files: v.files_done, bytes: v.bytes_done,
-    detail: `${v.note ? `${v.note}; ` : ''}${v.dest}; ${v.summary}`.slice(0, 600), approved_by: v.approved_by, ...(job.trig ? { trigger: job.trig } : {}), ...(v.error ? { error: redact(v.error) } : {}) })
+    detail: `${v.note ? `${v.note}; ` : ''}${v.dest}; ${v.summary}${v.pod_files + v.pc_files ? `; ${v.pod_files ? `${v.pod_files} via pod ${v.pod ?? ''}`.trim() : ''}${v.pod_files && v.pc_files ? ', ' : ''}${v.pc_files ? `${v.pc_files} via this PC` : ''}` : ''}`.slice(0, 600), approved_by: v.approved_by, ...(job.trig ? { trigger: job.trig } : {}), ...(v.error ? { error: redact(v.error) } : {}) })
   persist()
 }
 
@@ -1349,6 +1390,107 @@ export function inventoryCsv(rows: ScanRow[], state: Map<string, 'yes' | 'no' | 
   return [head, ...rows.map((r) => [r.shot, r.name, r.kind, r.frames, r.bytes, r.modified, r.where.join('+'), state.get(r.id) ?? 'no'].map(csvCell).join(','))].join('\n') + '\n'
 }
 
+// ----- transfer adapters for files that live only on the volume (ADR-050, amendment) -----
+interface Route { mode: Transfer; pod: PodRef | null }
+type SrcOk = Extract<VolAccess, { ok: true }>
+const PROBE = 'command -v curl >/dev/null 2>&1 && echo PROBE-CURL; command -v sha256sum >/dev/null 2>&1 && echo PROBE-SHA; echo PROBE-END'
+const FILE_CAP = 200
+const plain = (t: string): string => redact(t).replace(/\s+/g, ' ').trim().slice(0, 200)
+
+/** Is a pod adapter possible right now? Reads only: a running pod attached to the volume, the keys here to sign with, and a quick probe over SSH for curl and sha256sum. */
+export async function podAvailable(a: DestAccess, signal?: AbortSignal): Promise<{ ok: true; pod: PodRef } | { ok: false; reason: string }> {
+  if (!a.keys) return { ok: false, reason: 'the pod needs a signed upload link, and only S3 keys saved in this app can make one (an AWS profile cannot)' }
+  const vol = deps.volumeId(), pod = vol ? await deps.podOnVolume(vol).catch(() => null) : null
+  if (!pod) return { ok: false, reason: 'no running pod is attached to the volume (this app never starts one for a publish)' }
+  const lines: string[] = [], ac = new AbortController(), t = setTimeout(() => ac.abort(), PROBE_MS), onAbort = () => ac.abort()
+  signal?.addEventListener('abort', onAbort, { once: true })
+  try {
+    const r = await deps.ssh({ host: pod.host, port: pod.port, script: PROBE, signal: ac.signal, onLine: (l) => lines.push(l.trim()) })
+    if (!lines.includes('PROBE-END')) return { ok: false, reason: ac.signal.aborted ? `pod ${pod.name} did not answer over SSH in ${PROBE_MS / 1000} s` : `pod ${pod.name} could not be reached over SSH${r.code ? ` (exit ${r.code})` : ''}` }
+    const missing = [...(lines.includes('PROBE-CURL') ? [] : ['curl']), ...(lines.includes('PROBE-SHA') ? [] : ['sha256sum'])]
+    if (missing.length) return { ok: false, reason: `pod ${pod.name} has no ${missing.join(' or ')}` }
+    return { ok: true, pod }
+  } catch (e) { return { ok: false, reason: `pod ${pod.name} could not be reached over SSH: ${plain((e as Error).message)}` } }
+  finally { clearTimeout(t); signal?.removeEventListener('abort', onAbort) }
+}
+
+/** Pick the adapter for the volume files of a job (once): `pc` is always this PC; `auto` the pod when available; `pod` the pod or a plain-words failure. */
+async function chooseRoute(a: DestAccess, v: JobView, signal: AbortSignal): Promise<Route> {
+  if (a.transfer === 'pc') return { mode: 'pc', pod: null }
+  const r = await podAvailable(a, signal)
+  if (!r.ok) {
+    if (a.transfer === 'pod') throw new Error(`Transfer is set to Pod, but ${r.reason}`)
+    return { mode: 'auto', pod: null }
+  }
+  v.adapter = 'pod'; v.pod = r.pod.name
+  return { mode: a.transfer, pod: r.pod }
+}
+/** After the uploads: what carried the files is what the card says. */
+function settleAdapter(v: JobView): void { v.adapter = v.pod_files > 0 ? 'pod' : 'pc'; if (!v.pod_files) delete v.pod }
+
+/** The signed PUT link for one destination key; short-lived, never stored or logged. */
+function putUrl(a: DestAccess, key: string): string {
+  const bucket = a.bucket
+  let host: string, path: string
+  if (a.endpoint) { host = new URL(a.endpoint).host; path = `/${bucket}/${key}` }
+  else if (!bucket.includes('.')) { host = `${bucket}.s3.${a.region}.amazonaws.com`; path = `/${key}` }
+  else { host = `s3.${a.region}.amazonaws.com`; path = `/${bucket}/${key}` }
+  return presign({ method: 'PUT', host, path, accessKey: a.keys!.id, secretKey: a.keys!.secret, region: a.region, expires: PUT_EXPIRES_S, now: new Date(deps.now()) })
+}
+/** The script one pod runs for one file: its sha256, then `curl -T` to the link. The link goes in a curl config on stdin (-K -), never on a command line, and the script itself travels on ssh's stdin. */
+export function putScript(path: string, url: string): string {
+  if (!/^https:\/\/[\w.-]+(:\d+)?\/[^\s"'`\\$]+$/.test(url)) throw new Error('the signed link looks wrong')
+  const q = (x: string) => `'${x.replace(/'/g, `'\\''`)}'`
+  return ['set -u', 'echo "PUBLISH-PID $$"', `f=${q(path)}`, '[ -f "$f" ] || { echo "PUBLISH-FAIL the file is not on the pod"; exit 66; }',
+    'h=$(sha256sum "$f" | cut -d" " -f1); [ -n "$h" ] || { echo "PUBLISH-FAIL sha256sum failed"; exit 67; }', 'echo "PUBLISH-SHA $h"',
+    'curl -fsS --connect-timeout 30 --speed-limit 1024 --speed-time 120 -o /dev/null -T "$f" -K - <<\'PUBLISH_LINK\'', `url = "${url}"`, 'PUBLISH_LINK',
+    'rc=$?; if [ $rc -eq 0 ]; then echo "PUBLISH-OK"; else echo "PUBLISH-FAIL curl exit $rc"; fi', 'exit $rc', ''].join('\n')
+}
+/** One file from the pod. Cancelling kills the ssh and then its remote processes. */
+async function podPut(pod: PodRef, it: { source_key?: string; path: string; s3_key: string; bytes: number }, a: DestAccess, signal: AbortSignal): Promise<{ ok: boolean; error: string; sha256?: string }> {
+  const key = it.source_key ?? ''
+  if (!key || key.split('/').includes('..')) return { ok: false, error: 'the file has no usable place on the volume' }
+  const url = putUrl(a, it.s3_key); liveUrls.add(url)
+  const lines: string[] = []; let pid = '', sha = '', ok = false, why = ''
+  const ac = new AbortController(), onAbort = () => ac.abort(), limit = 120_000 + (it.bytes / 524_288) * 1000, t = setTimeout(() => { why = 'timed out'; ac.abort() }, limit)
+  if (signal.aborted) ac.abort(); else signal.addEventListener('abort', onAbort, { once: true })
+  try {
+    const r = await deps.ssh({ host: pod.host, port: pod.port, script: putScript(`/workspace/${key}`, url), signal: ac.signal, onLine: (l) => {
+      const m = /^PUBLISH-(PID|SHA|OK|FAIL)\s*(.*)$/.exec(l.trim()); if (!m) { lines.push(l); if (lines.length > 20) lines.shift(); return }
+      if (m[1] === 'PID' && /^\d+$/.test(m[2])) pid = m[2]; else if (m[1] === 'SHA' && /^[0-9a-f]{64}$/.test(m[2])) sha = m[2]; else if (m[1] === 'OK') ok = true; else if (m[1] === 'FAIL') why = m[2]
+    } })
+    if (ac.signal.aborted) { if (pid) await stopRemote(pod, pid); return { ok: false, error: signal.aborted ? 'cancelled' : plain(why || 'timed out') } }
+    if (r.code !== 0 || !ok || !sha) return { ok: false, error: plain(why || (r.code === 255 ? 'the SSH connection to the pod dropped' : lines.at(-1) || `the pod exited ${r.code}`)) }
+    return { ok: true, error: '', sha256: sha }
+  } catch (e) {
+    if (pid) await stopRemote(pod, pid)
+    return { ok: false, error: signal.aborted ? 'cancelled' : plain(why || (e as Error).message) }
+  } finally { clearTimeout(t); signal.removeEventListener('abort', onAbort); liveUrls.delete(url) }
+}
+/** Make sure the remote curl is gone after a cancel or a timeout (the ssh that carried it is already dead). */
+async function stopRemote(pod: PodRef, pid: string): Promise<void> {
+  const ac = new AbortController(), t = setTimeout(() => ac.abort(), 15_000)
+  try { await deps.ssh({ host: pod.host, port: pod.port, script: `pkill -TERM -P ${Number(pid)} 2>/dev/null; kill -TERM ${Number(pid)} 2>/dev/null; echo`, signal: ac.signal, onLine: () => undefined }) } catch { /* the pod is gone: so is the transfer */ } finally { clearTimeout(t) }
+}
+
+/** One volume file to the destination by the chosen adapter, and the record of which one carried it. In `auto`, a pod failure falls back to this PC for that file, once; `pod` does not. */
+async function volumeCopy(it: { path: string; s3_key: string; bytes: number; source_key?: string }, c: { a: DestAccess; s: SrcOk; route: Route; v: JobView; signal: AbortSignal; shot?: string; onBytes: (n: number) => void }): Promise<{ ok: boolean; error: string; sha256?: string }> {
+  const rec = (adapter: 'pod' | 'pc', sha256?: string) => { if (adapter === 'pod') c.v.pod_files++; else c.v.pc_files++; if (c.v.files.length < FILE_CAP) c.v.files.push({ path: it.path, adapter, ...(sha256 ? { sha256 } : {}), ...(c.shot ? { shot: c.shot } : {}) }) }
+  if (c.route.pod && it.bytes <= PUT_MAX_BYTES) {
+    const r = await podPut(c.route.pod, it, c.a, c.signal)
+    if (r.ok) { c.onBytes(it.bytes); rec('pod', r.sha256); return { ok: true, error: '', ...(r.sha256 ? { sha256: r.sha256 } : {}) } }
+    if (c.signal.aborted) return { ok: false, error: 'cancelled' }
+    if (c.route.mode === 'pod') return { ok: false, error: `via pod ${c.route.pod.name}: ${r.error}` }
+  } else if (c.route.pod && c.route.mode === 'pod') return { ok: false, error: 'larger than 5 GiB, which one signed upload cannot carry; set Transfer to Auto or This PC' }
+  const hasher = createHash('sha256')
+  const r = await streamCopy({ args: ['s3', 'cp', `s3://${c.s.bucket}/${it.source_key}`, '-', '--endpoint-url', c.s.endpoint, '--region', c.s.region], env: { AWS_ACCESS_KEY_ID: c.s.id, AWS_SECRET_ACCESS_KEY: c.s.secret } },
+    { args: ['s3', 'cp', '-', `s3://${c.a.bucket}/${it.s3_key}`, '--expected-size', String(it.bytes), ...c.a.common], env: c.a.env },
+    { signal: c.signal, stallMs: STALL_MS, onBytes: c.onBytes, onChunk: (b) => { hasher.update(b) } })
+  const sha256 = r.ok ? hasher.digest('hex') : undefined
+  if (r.ok) rec('pc', sha256)
+  return { ...r, ...(sha256 ? { sha256 } : {}) }
+}
+
 /** Run one streamed copy: `aws s3 cp s3://src/key -` piped into `aws s3 cp - s3://dest/key --expected-size N`. No temp file, nothing buffered: the pipe moves it chunk by chunk. A stall timer per file, not a total. */
 export function streamCopy(a: { args: string[]; env: Record<string, string> }, b: { args: string[]; env: Record<string, string> }, o: { signal?: AbortSignal; stallMs: number; onBytes?: (n: number) => void; /** each chunk of the download as it passes (the sha256 is made here, in the stream) */ onChunk?: (b: Buffer) => void; stdin?: string }): Promise<{ ok: boolean; error: string }> {
   return new Promise((resolve) => {
@@ -1397,7 +1539,7 @@ export async function backfillRun(req: BackfillRequest): Promise<{ job_id: strin
   const send = targets.includes('s3') ? p.items.filter((i) => i.skip === null) : []
   const id = `publish-${deps.now().toString(36)}-${(seq++).toString(36)}`
   const info: MsgInfo = { first: [], count: p.items.length, bytes: p.total_bytes, dest: p.dest }
-  const view: JobView = { job_id: id, state: 'queued', targets, approved_by: who, started_at: iso(), finished_at: '', files_total: send.length, files_done: 0, bytes_total: send.reduce((a, i) => a + i.bytes, 0), bytes_done: 0, rate_bps: 0, current: '', skipped: p.items.filter((i) => i.skip === 'same size already there').length, dest: p.dest, links: [], slack: { state: 'skipped' }, summary: '', kind: 'publish', trigger: 'backfill', children: [], streams: 1, counts: { queued: 0, uploading: 0, done: 0, failed: 0, cancelled: 0 } }
+  const view: JobView = { job_id: id, state: 'queued', targets, approved_by: who, started_at: iso(), finished_at: '', files_total: send.length, files_done: 0, bytes_total: send.reduce((a, i) => a + i.bytes, 0), bytes_done: 0, rate_bps: 0, current: '', skipped: p.items.filter((i) => i.skip === 'same size already there').length, dest: p.dest, links: [], slack: { state: 'skipped' }, summary: '', adapter: 'pc', pod_files: 0, pc_files: 0, files: [], kind: 'publish', trigger: 'backfill', children: [], streams: 1, counts: { queued: 0, uploading: 0, done: 0, failed: 0, cancelled: 0 } }
   const job: Job = { groups: [], streams: 1, perShot: false, trig: 'backfill', hashes: new Map(), view, abort: new AbortController(), info, template: '', prefix: p.prefix, started: deps.now(), done: Promise.resolve() }
   { const by = new Map<string, BackfillItem[]>(); for (const it of p.items) (by.get(it.shot) ?? by.set(it.shot, []).get(it.shot)!).push(it)
     let n = 0; for (const [shot, its] of by) { const gs = its.filter((i) => i.skip === null); view.children.push({ id: `${id}:${n++}`, parent_id: id, shot, clip: shot, state: 'queued', files: gs.length, files_done: 0, bytes: gs.reduce((x, i) => x + i.bytes, 0), bytes_done: 0, rate: 0, current: '', skipped: its.length - gs.length, warnings: [], approved_by: who, slack: { state: 'skipped' }, sha256: 0 }) }
@@ -1431,21 +1573,18 @@ async function goBackfill(job: Job, p: BackfillPlan, send: BackfillItem[], rows:
     const pool = (list: BackfillItem[], n: number, work: (it: BackfillItem) => Promise<void>) => { let next = 0; return Promise.all(Array.from({ length: Math.max(1, Math.min(n, list.length)) }, async () => { while (!failure && !ac.signal.aborted) { const it = list[next++]; if (!it) return; v.current = basename(it.path); await work(it) } })) }
     const src = vol.length ? await deps.volumeAccess(deps.volumeId()) : null
     if (src && !src.ok) throw new Error(`The volume cannot be read: ${redact(src.reason)}`)
+    const route = vol.length ? await chooseRoute(a, v, ac.signal) : null
     await Promise.all([
       pool(pc, deps.parallel(), async (it) => {
         const r = await deps.aws(['s3', 'cp', it.local_path!, `s3://${a.bucket}/${it.s3_key}`, ...a.common], a.env, { signal: ac.signal, stallMs: STALL_MS, onData: (c) => { const n = parseProgress(c); if (n !== null) { partial.set(it.s3_key, Math.min(n, it.bytes)); refresh() } } })
         finishOne(it, r.code === 0, awsText(r))
       }),
       pool(vol, Math.min(deps.parallel(), STREAM_MAX), async (it) => {
-        const s = src as Extract<typeof src, { ok: true }>
-        const r = await streamCopy(
-          { args: ['s3', 'cp', `s3://${s.bucket}/${it.source_key}`, '-', '--endpoint-url', s.endpoint, '--region', s.region], env: { AWS_ACCESS_KEY_ID: s.id, AWS_SECRET_ACCESS_KEY: s.secret } },
-          { args: ['s3', 'cp', '-', `s3://${a.bucket}/${it.s3_key}`, '--expected-size', String(it.bytes), ...a.common], env: a.env },
-          { signal: ac.signal, stallMs: STALL_MS, onBytes: (n) => { partial.set(it.s3_key, Math.min(n, it.bytes)); refresh() } })
+        const r = await volumeCopy({ ...it, source_key: it.source_key }, { a, s: src as Extract<typeof src, { ok: true }>, route: route!, v, signal: ac.signal, shot: it.shot, onBytes: (n) => { partial.set(it.s3_key, Math.min(n, it.bytes)); refresh() } })
         finishOne(it, r.ok, r.error)
       }),
     ])
-    v.current = ''; for (const k of v.children) if (k.state !== 'failed') k.state = ac.signal.aborted ? 'cancelled' : 'done'; v.counts = counts(v.children)
+    v.current = ''; settleAdapter(v); for (const k of v.children) if (k.state !== 'failed') k.state = ac.signal.aborted ? 'cancelled' : 'done'; v.counts = counts(v.children)
     if (ac.signal.aborted) { v.state = 'cancelled'; v.summary = `Cancelled after ${v.files_done} of ${v.files_total} files`; return }
     if (failure) { v.state = 'failed'; v.error = failure; v.summary = `${v.files_done} of ${v.files_total} files uploaded; stopped at an error. Nothing was posted to Slack.`; return }
   }
