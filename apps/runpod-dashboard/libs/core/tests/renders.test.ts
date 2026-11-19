@@ -320,6 +320,16 @@ describe('the source size is the default (4K, no scaling)', () => {
 
 describe('the review kind: the stitched, versioned deliverable', () => {
   const review = (o: Record<string, unknown> = {}) => runJob({ kind: 'review', approved_by: 'Lucas', width: undefined, codecs: ['h264'], ...o })
+  it('plans the next version once per SHOT, not once per sequence (46 sequences made 46 slow round trips and the page showed "undefined" meanwhile)', async () => {
+    let calls = 0
+    renders.setDeps({ deliverDirs: async () => { calls++; return ['v001'] } })
+    const mk = (shot: string, x: string) => ({ ...SEQ, name: `${shot}_${x}_FINAL_V03` })
+    const seqs = [mk('ARCHIVAL-085', 'A'), mk('ARCHIVAL-085', 'B'), mk('ARCHIVAL-085', 'C'), mk('ARCHIVAL-090', 'A'), mk('ARCHIVAL-090', 'B')]
+    const p = await renders.plan({ pod_id: 'p1', sequences: seqs, kind: 'review' })
+    expect(p.sequences.map((x) => x.shot)).toEqual(['archival-085', 'archival-085', 'archival-085', 'archival-090', 'archival-090'])
+    expect(p.sequences.every((x) => x.next_version === 2)).toBe(true)   // v001 exists: the next is v002 for every sequence of the shot
+    expect(calls).toBe(2)                                                // one lookup per shot
+  })
   it('shot id, versions and file names', () => {
     expect(renders.shotOf('CORROSION-015_MAIN_FINAL', 'x/y')).toBe('corrosion-015'); expect(renders.shotOf('archival-080b_x', 'a')).toBe('archival-080b'); expect(renders.shotOf('weird name', 'Some Dir/Last Seg')).toBe('last-seg')
     expect(renders.nextVersion([])).toBe(1); expect(renders.nextVersion(['v001', 'v003', 'junk', 'v002'])).toBe(4); expect(renders.versionName(7)).toBe('v007')

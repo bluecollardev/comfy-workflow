@@ -578,6 +578,7 @@
       "notPlayable": "ProRes: not playable in the app",
       "codecsLine": "Codecs: {codecs}",
       "reviewShot": "{shot} → v{version}",
+      "reviewPlanning": "Planning each shot's next version…",
       "reviewFolder": "Folder: {folder}",
       "reviewDone": "Review video {shot} v{version}: {folder}",
       "reviewPlay": "Play",

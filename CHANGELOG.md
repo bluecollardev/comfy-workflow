@@ -3,6 +3,11 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## v1.5.6 (tag v1.5.6, 2026-11-19)
+
+- **Fix: the Render window printed "→ vundefined Folder: output/deliver/undefined/vundefined/" for every sequence after switching to Review video.** The rows were drawn from the plan on screen, which was still the Quick proxy's (no shot, no version) until the review plan arrived, and with 46 sequences that took a while. Review rows now appear only for sequences the core has planned as reviews, with "Planning each shot's next version…" meanwhile. The core was also slow for that plan: it looked up each sequence's existing review versions on the pod and on S3 one at a time (46 round trips); it now looks up once per shot. Tests: `e2e/render-sequences.spec.js` (fails on the old page, passes now; the fake API now names a shot and version only for review plans, like the core) and `libs/core/tests/renders.test.ts` (one lookup per shot).
+- Tests at release: core 922, MCP 69, IPC 25, unit 76, browser 513. Needs an app restart (the core change).
+
 ## v1.5.5 (tag v1.5.5, 2026-11-19)
 
 - **Outputs window: a file-name filter.** A box at the top of the Outputs window ("Filter by file name") narrows every run (the pod's own, saved and volume runs) to the files whose `subfolder/filename` matches: case-insensitive, every space-separated word must match, runs with no match disappear, and a line says how many files match; **Clear** brings everything back. `filterByName` in `src/utils/outputs.js`.
