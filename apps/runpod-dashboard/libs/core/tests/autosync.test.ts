@@ -16,6 +16,7 @@ import { scratch } from './helpers.js'
 const VOL = 'volx1', POD = 'pod1'
 let dir: string, shared: string, t: number
 let events: { key: string; ev: journal.JournalEvent }[], remote: autosync.Remote[], runs: syncrun.SyncRequest[]
+let feedFail: (() => Error) | null
 let gate: Promise<void> | null, failPaths: Set<string>, runError: string | null, cancelled: boolean
 const T0 = Date.parse('2026-11-18T10:00:00Z')
 
@@ -31,11 +32,11 @@ beforeEach(() => {
   dir = scratch(); shared = join(dir, 'shared'); mkdirSync(join(shared, 'output'), { recursive: true })
   for (const [k, f] of [['AUTOSYNC_FILE', 'autosync.json'], ['AUTOSYNC_STATE_FILE', 'autosync-state.json'], ['AUTOSYNC_MANIFEST_FILE', 'autosync-manifest.json'], ['HISTORY_FILE', 'history.jsonl'], ['POD_NAMES_FILE', 'pod-names.json']]) process.env[k] = join(dir, f)
   const cfg = mounts.defaults(); cfg.folders['comfy-shared'] = shared; cfg.network_volume_id = VOL; mounts.save(cfg)
-  t = T0; events = []; remote = []; runs = []; gate = null; failPaths = new Set(); runError = null; cancelled = false
+  t = T0; feedFail = null; events = []; remote = []; runs = []; gate = null; failPaths = new Set(); runError = null; cancelled = false
   autosync.reset()
   autosync.setDeps({
     now: () => t, volumeOf: async () => VOL, tail: async () => 'k000', reconcile: async () => undefined, parallel: () => 4, podName: () => 'CanalV2-lores',
-    feed: async (_v, since) => { const evs = events.filter((e) => e.key > since); return { volume_id: VOL, cursor: evs.length ? evs[evs.length - 1].key : since, events: evs.map((e) => e.ev), more: false } },
+    feed: async (_v, since) => { if (feedFail) throw feedFail(); const evs = events.filter((e) => e.key > since); return { volume_id: VOL, cursor: evs.length ? evs[evs.length - 1].key : since, events: evs.map((e) => e.ev), more: false } },
     files: async (_v, entries) => remote.filter((r) => entries.some((e) => e.paths?.includes(r.path) || (e.prefix && r.path.startsWith(e.prefix)))),
     localRoot: () => shared,
     run: async (req, send) => {
@@ -319,5 +320,25 @@ describe('push (default off)', () => {
     enable({ push: true }); writeLocal('input/a.png', 5)
     let release!: () => void; gate = new Promise((r) => { release = r }); addEvent({ prefix: 'output/r/' }); remote = [R('output/r/a.dpx')]
     await autosync.tick(); expect(await autosync.pushFiles(POD, ['input/a.png'])).toBe(-1); release(); await autosync.settle()
+  })
+})
+
+describe('transient storage errors (ADR-046)', () => {
+  const unreachable = () => Object.assign(new CoreError(502, "RunPod's storage did not answer (the connection failed). Tried 3 times."), { code: 'storage_unreachable' })
+  it('stays waiting for two failures in a row, one tick apart (not the 5 minute backoff), errors on the third with ONE History line, and resets on a success', async () => {
+    enable(); feedFail = unreachable
+    const lines = () => history.list({}).filter((e) => e.action === 'auto sync cannot reach storage').length
+    await runAll(); expect(item().state).toBe('waiting'); expect(item().summary).toBe("Waiting for RunPod's storage to answer"); expect(item().error).toBe('')
+    t += 30_000; await runAll(); expect(item().state).toBe('waiting')
+    t += 30_000; await runAll(); expect(item().state).toBe('error'); expect(item().error).toContain('did not answer'); expect(item().error).not.toMatch(/https?:/)
+    expect(lines()).toBe(1)
+    feedFail = null; t += 5 * 60_000 + 1; await runAll(); expect(item().state).not.toBe('error')
+    feedFail = unreachable; t += 30_000; await runAll(); expect(item().state).toBe('waiting')   // the count started over
+    expect(lines()).toBe(1)
+  })
+  it('a failure that is not transient is an error at once, with the 5 minute retry', async () => {
+    enable(); feedFail = () => new Error('Access denied')
+    await runAll(); expect(item().state).toBe('error'); expect(item().error).toBe('Access denied')
+    feedFail = null; t += 30_000; await runAll(); expect(item().state).toBe('error')   // still inside the backoff
   })
 })

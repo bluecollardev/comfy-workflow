@@ -12,6 +12,7 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import * as journal from './journal.js'
+import * as podpull from './podpull.js'
 import { volumeSnapshotsFile } from './paths.js'
 
 /** In memory, for the sync explorer: when each volume was last reconciled, and the volume being reconciled right now. */
@@ -57,7 +58,7 @@ export async function listRows(volumeId: string, prefix: string, recursive: bool
   if (!a) throw new Error('This volume cannot be read over the S3 API.')
   const dir = prefix.replace(/\/+$/, '') + '/'
   const r = await journal.awsCall(a, ['s3', 'ls', `s3://${a.bucket}/${dir}`, ...(recursive ? ['--recursive'] : [])], o)
-  if (r.code !== 0) throw new Error(`RunPod's S3 API: ${(r.stderr || r.stdout).trim().split('\n').pop() || `aws exited ${r.code}`}`)
+  if (r.code !== 0) throw podpull.s3Error(r)
   const lines = r.stdout.split('\n'), out: Row[] = []
   for (let i = 0; i < lines.length; i += CHUNK) {
     for (const line of lines.slice(i, i + CHUNK)) {

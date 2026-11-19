@@ -7,12 +7,13 @@ import { mkdtempSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setStopReader } from '../src/outputruns.js'
-import { setAwsOverride } from '../src/podpull.js'
+import { setAwsOverride, setAwsRetrySleep } from '../src/podpull.js'
 import { setRetrySleep } from '../src/runpod.js'
 
 setAwsOverride(async () => ({ code: 127, stdout: '', stderr: 'aws is not run in tests: inject an AwsRunner' }))   // no test ever reaches a real volume
 delete process.env.RUNPOD_API_KEY   // a test that needs a key sets its own; none ever reaches the real RunPod with the developer's
 setRetrySleep(async () => {})   // the RunPod client's wait between network retries is instant in tests
+setAwsRetrySleep(async () => {})   // the wait between aws retries is instant in tests
 setStopReader(async () => null)   // a test that stops a pod never reads a real pod's history first (outputruns.test.ts sets its own)
 
 const dir = mkdtempSync(join(tmpdir(), 'runpod-core-global-'))

@@ -119,7 +119,8 @@ function volumeJobCapability(): { available: boolean; reason: string } {
   return { available: true, reason: '' }
 }
 
-export interface AwsResult { code: number | null; stdout: string; stderr: string }
+/** `transient`: the call failed because the connection to RunPod's storage did not work (after the retries); `detail`: the first original error line, kept out of what the person sees (it carries the volume id and the prefix). */
+export interface AwsResult { code: number | null; stdout: string; stderr: string; transient?: boolean; detail?: string }
 /** What a call to the `aws` CLI may be held to: how long it may stay silent (the CLI prints each page of a listing as it comes), a way to stop it, and who hears each line. */
 export interface AwsCallOpts { stallMs?: number; signal?: AbortSignal; onLines?: (n: number) => void }
 export type AwsRunner = (args: string[], env: Record<string, string>, o?: AwsCallOpts) => Promise<AwsResult>
@@ -933,7 +934,7 @@ async function runS3(i: Internal, opts: Opts) {
     if (i.cancelled) throw new CoreError(499, 'cancelled')
     if (i.abort.signal.aborted) throw new CoreError(504, `RunPod's S3 did not finish in ${Math.round((Date.now() - started) / 1000)} s (the limit is ${Math.round((opts.s3DeadlineMs ?? S3_DEADLINE_MS) / 1000)} s): try again, or list a smaller folder.`)
     if (r.code === AWS_STALLED) throw new CoreError(504, `RunPod's S3 did not answer in ${Math.round(stallMs / 1000)} s (${(r.stderr || '').trim() || 'no output'}): the connection may have dropped; try again.`)
-    if (r.code !== 0) throw new CoreError(502, `RunPod's S3 API: ${(r.stderr || r.stdout).trim().split('\n').pop() || `aws exited ${r.code}`}`)
+    if (r.code !== 0) throw s3Error(r)
     return r.stdout
   }
   const sizes = async (prefix = '') => {   // every object under the prefix ('' = the whole volume): bytes by key; the count so far is the job's `files`
@@ -1120,7 +1121,41 @@ function s3Access(vol: Volume | null): { ok: true; id: string; secret: string; e
 let awsOverride: AwsRunner | null = null
 export const setAwsOverride = (r: AwsRunner | null) => { awsOverride = r }
 export const defaultAws: AwsRunner = (args, env, o) => (awsOverride ?? realAws)(args, env, o)
-const realAws: AwsRunner = (args, env, o = {}) => new Promise((res) => {
+
+// ----- retrying the aws CLI over a flaky connection -----
+/** The connection never reached RunPod (no request was sent): ANY command is safe to retry. */
+export const AWS_CONNECT_RE = /Could not connect to the endpoint URL|EndpointConnectionError|Temporary failure in name resolution|Name or service not known|Connect timeout/i
+/** The connection broke in the middle of a request: only a READ is retried (a half-done write may have happened). */
+export const AWS_MIDREQUEST_RE = /Connection (reset|was closed|aborted)|Read timeout|ReadTimeoutError/i
+export const AWS_RETRY_WAITS = [400, 1200]
+export const STORAGE_UNREACHABLE = "RunPod's storage did not answer (the connection failed). Tried 3 times. Check this PC's connection (if it keeps happening on Wi-Fi, IPv6 may be the cause) and try again."
+let awsSleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms))
+export const setAwsRetrySleep = (f: ((ms: number) => Promise<void>) | null) => { awsSleep = f ?? ((ms) => new Promise((r) => setTimeout(r, ms))) }
+/** A read: a listing, a head, or a download (`s3 cp` FROM s3://): never an `rm`, a `sync` or an upload. */
+export const isAwsRead = (args: string[]): boolean => (args[0] === 's3' && args[1] === 'ls') || (args[0] === 's3api' && /^(list|head|get)-/.test(args[1] ?? '')) || (args[0] === 's3' && args[1] === 'cp' && String(args[2] ?? '').startsWith('s3://'))
+/** The error a failed call shows: RunPod's own words once, or (after the retries) the friendly text with no URL in it. The first original line stays in `detail` on the error. */
+export function s3Error(r: AwsResult): CoreError {
+  if (r.transient) return Object.assign(new CoreError(502, STORAGE_UNREACHABLE, 'storage_unreachable'), r.detail ? { detail: r.detail } : {})
+  return new CoreError(502, `RunPod's S3 API: ${(r.stderr || r.stdout).trim().split('\n').pop() || `aws exited ${r.code}`}`)
+}
+export const isStorageUnreachable = (e: unknown): boolean => (e as { code?: string } | null)?.code === 'storage_unreachable'
+/** Up to 3 tries (0.4 s and 1.2 s apart) for a connection that did not work; each try has its own stall limit (the inner runner's). After the last one the result says `transient` with the friendly text. */
+export function withAwsRetry(inner: AwsRunner): AwsRunner {
+  return async (args, env, o) => {
+    let r = await inner(args, env, o)
+    for (let i = 0; i <= AWS_RETRY_WAITS.length; i++) {
+      if (r.code === 0) return r
+      const text = `${r.stderr}\n${r.stdout}`, connect = AWS_CONNECT_RE.test(text), mid = AWS_MIDREQUEST_RE.test(text) && isAwsRead(args)
+      if (!(connect || mid) || o?.signal?.aborted) return r
+      if (i === AWS_RETRY_WAITS.length) return { ...r, stderr: STORAGE_UNREACHABLE, transient: true, detail: (r.stderr || r.stdout).trim().split('\n')[0].slice(0, 400) }
+      await awsSleep(AWS_RETRY_WAITS[i])
+      r = await inner(args, env, o)
+    }
+    return r
+  }
+}
+const realAws: AwsRunner = withAwsRetry((args, env, o) => spawnAws(args, env, o))
+const spawnAws: AwsRunner = (args, env, o = {}) => new Promise((res) => {
   const c = spawn('aws', args, { env: { ...process.env, ...env, AWS_EC2_METADATA_DISABLED: 'true' } })
   let stdout = '', stderr = '', stalled = false, lines = 0, timer: NodeJS.Timeout | null = null
   const stop = () => { if (timer) clearTimeout(timer); o.signal?.removeEventListener('abort', onAbort) }
@@ -1206,7 +1241,7 @@ export async function modelsOnVolume(volumeId: string, opts: Opts = {}): Promise
   const vol = await volumeOf({ ...opts, volumeId })
   const a = s3Access(vol); if (!a.ok) return null
   const r = await (opts.aws ?? defaultAws)(['s3', 'ls', `s3://${a.bucket}/comfy-shared/models/`, '--recursive', '--endpoint-url', a.endpoint, '--region', a.region], { AWS_ACCESS_KEY_ID: a.id, AWS_SECRET_ACCESS_KEY: a.secret })
-  if (r.code !== 0) throw new CoreError(502, `RunPod's S3 API: ${(r.stderr || r.stdout).trim().split('\n').pop() || `aws exited ${r.code}`}`)
+  if (r.code !== 0) throw s3Error(r)
   const out: { folder: string; name: string; bytes: number }[] = []
   for (const line of r.stdout.split('\n')) {
     const m = /^\S+\s+\S+\s+(\d+)\s+comfy-shared\/models\/([^/]+)\/(.+)$/.exec(line)
@@ -1235,7 +1270,7 @@ export async function listVolumeKeys(volumeId: string, prefix: string, o: { recu
   const a = s3Access(vol); if (!a.ok) return null
   const recursive = o.recursive !== false
   const r = await (opts.aws ?? defaultAws)(['s3', 'ls', `s3://${a.bucket}/${dir}`, ...(recursive ? ['--recursive'] : []), '--endpoint-url', a.endpoint, '--region', a.region], { AWS_ACCESS_KEY_ID: a.id, AWS_SECRET_ACCESS_KEY: a.secret }, { stallMs: opts.s3StallMs ?? S3_STALL_MS })
-  if (r.code !== 0) throw new CoreError(502, `RunPod's S3 API: ${(r.stderr || r.stdout).trim().split('\n').pop() || `aws exited ${r.code}`}`)
+  if (r.code !== 0) throw s3Error(r)
   const out: { key: string; bytes: number; modified?: string }[] = []
   for (const line of r.stdout.split('\n')) {
     const f = /^(\d{4}-\d\d-\d\d)\s+(\d\d:\d\d:\d\d)\s+(\d+)\s+(.+)$/.exec(line)
@@ -1262,7 +1297,7 @@ export async function readVolumeText(volumeId: string, key: string, opts: Opts =
   const vol = await volumeOf({ ...opts, volumeId })
   const a = s3Access(vol); if (!a.ok) return null
   const r = await (opts.aws ?? defaultAws)(['s3', 'cp', `s3://${a.bucket}/${key}`, '-', '--endpoint-url', a.endpoint, '--region', a.region], { AWS_ACCESS_KEY_ID: a.id, AWS_SECRET_ACCESS_KEY: a.secret })
-  if (r.code !== 0) throw new CoreError(502, `RunPod's S3 API: ${(r.stderr || r.stdout).trim().split('\n').pop() || `aws exited ${r.code}`}`)
+  if (r.code !== 0) throw s3Error(r)
   return r.stdout
 }
 

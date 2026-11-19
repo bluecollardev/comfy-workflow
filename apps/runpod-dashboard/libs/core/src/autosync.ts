@@ -25,6 +25,7 @@ import * as changes from './changes.js'
 import * as journal from './journal.js'
 import * as mounts from './mounts.js'
 import * as outputruns from './outputruns.js'
+import * as podpull from './podpull.js'
 import * as podconfigs from './podconfigs.js'
 import * as podnames from './podnames.js'
 import * as pods from './pods.js'
@@ -121,7 +122,7 @@ export const setDeps = (d: Partial<Deps> | null) => { deps = d ? { ...deps, ...d
 // ----- the runtime items (memory) -----
 
 interface Held { files: Remote[]; bytes: number; cursor: string | null; synced: Record<string, store.Synced>; trigger: string; note: string }
-interface Rt { lastEventAt: string; pendingEvents: number; pendingPaths: number; pendingBytes: number; lastPushAt: string; item: Item; busy: boolean; job?: Promise<void>; held?: Held; queued: Map<string, number>; retryAt: number; abort?: AbortController; s3: boolean }
+interface Rt { /** consecutive failures because RunPod's storage did not answer (reset by any success) */ transientFails: number; lastEventAt: string; pendingEvents: number; pendingPaths: number; pendingBytes: number; lastPushAt: string; item: Item; busy: boolean; job?: Promise<void>; held?: Held; queued: Map<string, number>; retryAt: number; abort?: AbortController; s3: boolean }
 const rts = new Map<string, Rt>()
 // ----- the live pod list (names, and pods that are gone) -----
 const live = new Map<string, string>()   // pod id -> its live name; podName() reads it synchronously
@@ -154,7 +155,7 @@ function noteGone(podId: string): void {
 const blank = (podId: string): Item => ({ pod_id: podId, pod_name: deps.podName(podId), volume_id: '', state: 'idle', direction: 'pull', files_done: 0, files_total: 0, bytes_done: 0, bytes_total: 0, rate_bps: 0, current: '', pending_bytes: 0, started_at: '', finished_at: '', summary: '', error: '', conflicts: [], streams: 0 })
 function rtOf(podId: string): Rt {
   let r = rts.get(podId)
-  if (!r) { const item = blank(podId); item.conflicts = store.loadState().conflicts[podId] ?? []; r = { lastEventAt: '', pendingEvents: 0, pendingPaths: 0, pendingBytes: 0, lastPushAt: '', item, busy: false, queued: new Map(), retryAt: 0, s3: false }; rts.set(podId, r) }
+  if (!r) { const item = blank(podId); item.conflicts = store.loadState().conflicts[podId] ?? []; r = { transientFails: 0, lastEventAt: '', pendingEvents: 0, pendingPaths: 0, pendingBytes: 0, lastPushAt: '', item, busy: false, queued: new Map(), retryAt: 0, s3: false }; rts.set(podId, r) }
   return r
 }
 const iso = (ms: number) => new Date(ms).toISOString()
@@ -162,6 +163,18 @@ const fmt = (b: number) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ?
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
 const withDeadline = <T>(p: Promise<T>, ms: number, what: string): Promise<T> => new Promise<T>((res, rej) => { const t = setTimeout(() => rej(new CoreError(504, `${what} did not answer in ${Math.round(ms / 60000)} minutes`)), ms); if (typeof t === 'object' && 'unref' in t) t.unref(); p.then((v) => { clearTimeout(t); res(v) }, (e) => { clearTimeout(t); rej(e) }) })
 
+export const TRANSIENT_LIMIT = 3
+export const WAITING_STORAGE = "Waiting for RunPod's storage to answer"
+const isTransient = (e: unknown): boolean => podpull.isStorageUnreachable(e) || /RunPod's storage did not answer/.test(String((e as { message?: string } | string | null)?.hasOwnProperty?.('message') ? (e as { message: string }).message : e ?? ''))
+/** A failure because the connection to RunPod's storage did not work: the item stays `waiting` and the NEXT 30 s tick tries again (not the 5 minute error backoff); it becomes an error only on the 3rd failure in a row. One History line then, not one per attempt. Returns true when it was absorbed. */
+function transientFail(rt: Rt, podId: string, e: unknown): boolean {
+  if (!isTransient(e)) return false
+  rt.transientFails++
+  if (rt.transientFails === TRANSIENT_LIMIT) history.record({ kind: 'change', area: 'pod', action: 'auto sync cannot reach storage', what: deps.podName(podId), detail: `${TRANSIENT_LIMIT} tries in a row failed${(e as { detail?: string })?.detail ? `: ${(e as { detail: string }).detail}` : ''}` })
+  if (rt.transientFails >= TRANSIENT_LIMIT) return false
+  Object.assign(rt.item, { state: 'waiting', summary: WAITING_STORAGE, error: '' })
+  return true
+}
 function fail(rt: Rt, message: string, current = ''): void {
   const it = rt.item
   it.state = 'error'; it.error = message; it.current = current || it.current; it.finished_at = iso(deps.now()); it.pending_bytes = 0
@@ -254,9 +267,10 @@ async function cycle(podId: string, mode: Mode): Promise<void> {
     const asked = [...rt.queued.keys()].filter((p) => underDirs(p, dirs))
     if (asked.length) entries.push({ paths: asked })
     if (existing) for (const d of dirs) entries.push({ prefix: `${d}/` })   // "Pull existing outputs now": everything the pull folders hold, once
-    if (!entries.length) { await finishPlan(rt, podId, key, cursor, next, [], {}); return }
+    if (!entries.length) { if (rt.transientFails && rt.item.state === 'error') { rt.item.state = 'idle'; rt.item.error = '' }; rt.transientFails = 0; await finishPlan(rt, podId, key, cursor, next, [], {}); return }
     if (rt.item.state !== 'error') rt.item.state = 'waiting'
     let remote = (await withDeadline(deps.files(vol, entries), PLAN_TIMEOUT_MS, 'The volume listing')).filter((r) => underDirs(r.path, dirs))
+    rt.transientFails = 0   // the storage answered
     // queued output paths that were found leave the queue; the rest are tried a few more times (the volume may not list them yet)
     const have = new Set(remote.map((r) => r.path))
     // files modified a moment ago may still be being written: wait for them to be stable
@@ -304,7 +318,7 @@ async function cycle(podId: string, mode: Mode): Promise<void> {
     rt.job = execute(rt, podId, key, held)
     detached = true
   } catch (e) {
-    fail(rt, (e as Error).message)
+    if (!transientFail(rt, podId, e)) fail(rt, (e as Error).message)
   } finally { if (!detached) rt.busy = false }
 }
 
@@ -312,7 +326,7 @@ async function cycle(podId: string, mode: Mode): Promise<void> {
 async function finishPlan(rt: Rt, podId: string, key: string, from: string, to: string, _files: Remote[], synced: Record<string, store.Synced>, _existing = false): Promise<void> {
   if (to !== from) store.updateState((x) => { x.cursors[key] = to })
   if (Object.keys(synced).length) await store.putManifest(podId, synced).catch(() => undefined)
-  if (rt.item.state === 'waiting') rt.item.state = 'idle'
+  if (rt.item.state === 'waiting') { rt.item.state = 'idle'; if (rt.item.summary === WAITING_STORAGE) rt.item.summary = '' }
   if (_existing) { rt.item.summary = 'Already up to date'; rt.item.finished_at = iso(deps.now()); rt.item.state = 'done' }   // the catch-up found nothing to pull: a quiet done
 }
 
@@ -356,13 +370,16 @@ async function execute(rt: Rt, podId: string, cursorKey: string, held: Held): Pr
   await store.putManifest(podId, { ...held.synced, ...landed }).catch(() => undefined)
   const n = total - missing.length
   it.finished_at = iso(deps.now())
-  if (missing.length || thrown) {
+  if ((missing.length || thrown) && transientFail(rt, podId, thrown)) {   // the pull's storage call did not answer: wait, try again at the next tick
+    for (const p of asQueued(files, missing.length ? missing : files.map((f) => f.path))) rt.queued.set(p, 0)
+  } else if (missing.length || thrown) {
     missing.sort()
     const why = thrown || (problems[0] ?? '')
     fail(rt, `${missing.length ? `${plural(missing.length, 'file')} of ${total} did not arrive` : 'The pull failed'}${why ? `: ${why}` : ''}`, missing[0] ?? '')
     it.files_done = Math.max(it.files_done, n); it.summary = n ? `Pulled ${plural(n, 'file')} before it stopped` : ''
     for (const p of asQueued(files, missing)) rt.queued.set(p, 0)
   } else {
+    rt.transientFails = 0
     it.state = 'done'; it.files_done = total; it.bytes_done = Math.max(it.bytes_done, held.bytes); it.current = it.current || ''
     const top = [...new Set(files.map((f) => `${f.path.split('/')[0]}/`))].join(', ')
     it.summary = `Pulled ${plural(total, 'file')} (${fmt(held.bytes)}) to ${top}`

@@ -87,7 +87,7 @@ export async function access(volumeId: string, opts: JournalOpts = {}): Promise<
 }
 export const awsCall = (a: Access, args: string[], opts: JournalOpts, stallMs = podpull.S3_STALL_MS) =>
   (opts.aws ?? podpull.defaultAws)([...args, '--endpoint-url', a.endpoint, '--region', a.region], { AWS_ACCESS_KEY_ID: a.id, AWS_SECRET_ACCESS_KEY: a.secret }, { stallMs })
-const fail = (r: podpull.AwsResult) => new CoreError(502, `RunPod's S3 API: ${(r.stderr || r.stdout).trim().split('\n').pop() || `aws exited ${r.code}`}`)
+const fail = (r: podpull.AwsResult) => podpull.s3Error(r)
 
 // ----- emit -----
 
