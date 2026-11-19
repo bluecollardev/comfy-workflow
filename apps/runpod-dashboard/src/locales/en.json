@@ -1348,6 +1348,8 @@
       "dismiss": "Dismiss",
       "sequences": "Sequences",
       "files": "Files written",
+      "autoPub": "Publishing to S3: {state}",
+      "autoPubState": { "waiting": "waiting for the window", "would_upload": "dry run, nothing sent", "uploading": "uploading", "done": "uploaded", "cancelled": "cancelled", "failed": "failed", "capped": "daily cap reached", "none": "not queued" },
       "publishState": "Publish: {state}",
       "lastLine": "{summary}",
       "stopPreviews": "Stop",

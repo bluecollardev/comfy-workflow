@@ -10,6 +10,14 @@ test('phaseOf: rendering, syncing, publishing, and nothing once it ended', () =>
   assert.equal(phaseOf({ state: 'queued' }), 'rendering'); assert.equal(phaseOf({ state: 'rendering' }), 'rendering'); assert.equal(phaseOf({ state: 'pulling' }), 'syncing'); assert.equal(phaseOf({ state: 'publishing' }), 'publishing')
   for (const s of ['done', 'failed', 'cancelled']) assert.equal(phaseOf({ state: s }), ''); assert.equal(phaseOf(null), '')
 })
+test('phaseChips: Sync is a step only when the job really copies to this PC (the core says `pull`); an older core keeps the old rule', () => {
+  assert.deepEqual(phaseChips({ state: 'done', pull: false, sequences: [{ where: 'pod' }] }).map((c) => c.id), ['rendering'])   // the renders stayed on the volume: no Sync chip
+  assert.deepEqual(phaseChips({ state: 'done', pull: true, sequences: [{ where: 'pod' }] }).map((c) => c.id), ['rendering', 'syncing'])
+  assert.deepEqual(phaseChips({ state: 'done', pull: false, pulled_files: 2, sequences: [{ where: 'pod' }] }).map((c) => c.id), ['rendering', 'syncing'])   // it did pull files
+  assert.deepEqual(phaseChips({ state: 'pulling', pull: false, sequences: [{ where: 'pod' }] }).map((c) => c.id), ['rendering', 'syncing'])
+  assert.deepEqual(phaseChips({ state: 'done', sequences: [{ where: 'pod' }] }).map((c) => c.id), ['rendering', 'syncing'])   // a core that does not say
+})
+
 test('phaseChips: the sync chip for a pod render, the publish chip when it publishes; the active one marked; earlier ones done', () => {
   const pod = { state: 'pulling', sequences: [{ where: 'pod' }], publish: { state: 'queued' } }
   assert.deepEqual(phaseChips(pod).map((c) => [c.id, c.active, c.done]), [['rendering', false, true], ['syncing', true, false], ['publishing', false, false]])

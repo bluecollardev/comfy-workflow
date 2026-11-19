@@ -39,6 +39,7 @@
       <div class="d-flex gap-1 mb-1" data-testid="generations-phases">
         <span v-for="c in phaseChips(j)" :key="c.id" class="badge fw-normal" :class="c.active ? 'text-bg-primary' : c.done ? 'text-bg-success' : 'text-bg-secondary'" data-testid="generations-phase" :data-phase="c.id" :data-active="c.active ? 'true' : 'false'">{{ $t(`queue.gen.phase.${c.id}`) }}</span>
       </div>
+      <div v-if="autoPublishOf(j)" class="mb-1" data-testid="generations-job-autopub" :data-state="autoPublishOf(j)"><span class="badge fw-normal" :class="autoPubClass(autoPublishOf(j))">{{ $t('queue.gen.autoPub', { state: $t(`queue.gen.autoPubState.${autoPublishOf(j)}`) }) }}</span></div>
       <BProgress :value="percentOf(j)" :max="100" height="8px" :animated="active(j)" :striped="active(j)" data-testid="generations-job-bar" :data-percent="percentOf(j)" />
       <div class="text-body-secondary" data-testid="generations-job-numbers">{{ numbers(j) }}</div>
       <div v-if="j.kind === 'review' && j.state === 'done'" class="d-flex gap-2 flex-wrap" data-testid="generations-job-approve"><span v-for="rv in reviewVersions(j)" :key="`${rv.shot}-${rv.version}`" class="d-inline-flex align-items-center gap-1"><span class="font-monospace">{{ rv.shot }} {{ versionTag(rv.version) }}</span><ApproveControl :shot="rv.shot" :version="rv.version" /></span></div>
@@ -114,6 +115,19 @@ function play(j) { const s = firstSeq(j); ui.queueOpen = false; ui.outputsFor = 
 function openOutputs(j) { ui.queueOpen = false; ui.outputsFor = { pod_id: j.pod_id } }
 // the review versions' approvals, asked once for the window and again when a job ends
 const apStore = useAutopublishStore()
+/** What Auto-publish did with the reviews this Auto-generate job made: waiting for its window, uploading, uploaded, cancelled, failed (or not queued): the Publishing to S3 step of an automatic job. */
+const AUTO_RANK = ['uploading', 'waiting', 'would_upload', 'capped', 'failed', 'cancelled', 'done', 'none']
+function autoPublishOf(j) {
+  if (j.trigger !== 'auto-publish' || j.kind !== 'review' || j.state !== 'done') return ''
+  const entries = [...(apStore.pending || []), ...(apStore.recent || [])], states = []
+  for (const rv of reviewVersions(j)) {
+    const e = entries.find((x) => x.shot === rv.shot && versionTag(x.version) === versionTag(rv.version))
+    const done = (apStore.status?.watching?.skipped || []).some((x) => x.shot === rv.shot && versionTag(x.version) === versionTag(rv.version) && /already published/i.test(x.reason || ''))
+    states.push(e ? e.state : done ? 'done' : 'none')
+  }
+  return states.length ? AUTO_RANK.find((r) => states.includes(r)) || 'none' : ''
+}
+const autoPubClass = (st) => (st === 'done' ? 'text-bg-success' : st === 'failed' ? 'text-bg-danger' : st === 'uploading' ? 'text-bg-primary' : st === 'waiting' || st === 'would_upload' ? 'text-bg-warning' : 'text-bg-secondary')
 watch(() => [ui.queueOpen, renders.finished], () => { if (ui.queueOpen) apStore.loadReviews() }, { immediate: true })
 // While the Queue is open the jobs are followed every second
 watch(() => ui.queueOpen, (v) => renders.setFast(v), { immediate: true })
