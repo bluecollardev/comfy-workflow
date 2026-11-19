@@ -1044,6 +1044,7 @@
     "chip": {
       "live": "Auto-publish: LIVE", "dry": "Auto-publish: DRY RUN", "off": "Auto-publish: OFF", "paused": "Auto-publish: PAUSED",
       "titleLive": "Finished review videos are uploaded to {where} automatically, {n} minutes after they appear. Click to open the Queue.",
+      "titleLiveNow": "Finished review videos are uploaded to {where} automatically, as soon as they appear (no cancel window). Click to open the Queue.",
       "titleDry": "Dry run: nothing is sent; it records what it would upload, {n} minutes after reviews appear. Click to open the Queue.",
       "titleOff": "Auto-publish is off. Click to open the Queue.",
       "uploading": "uploading{pct}", "posting": "posting to Slack", "generating": "generating {n}", "waiting": "{n} waiting {t}", "scanning": "scanning volume"
@@ -1186,6 +1187,7 @@
       "off": "Auto-publish is off",
       "openSettings": "Open the settings",
       "live": "LIVE: approved reviews are uploaded ({targets}) after {n} minutes",
+      "liveNow": "LIVE: approved reviews are uploaded ({targets}) as soon as they are ready",
       "dry": "Dry run: nothing is sent",
       "counts": "{reviews} reviews · {approved} approved · {queued} waiting · {today} uploaded today",
       "countsEligible": "{reviews} reviews · {eligible} eligible · {queued} waiting · {held} held · {today} uploaded today",

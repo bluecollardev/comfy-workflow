@@ -174,7 +174,7 @@ const badgeTitle = computed(() => badge.value.parts.map((p) => t(`app.badge.${p.
 const chip = computed(() => {
   const st = autopublish.status || {}, mode = !st.enabled ? 'off' : st.paused ? 'paused' : st.dry_run ? 'dry' : 'live'
   const on = st.enabled, where = targetsText(st.targets) || 'S3'
-  const title = !on ? t('autopublish.chip.titleOff') : mode === 'dry' ? t('autopublish.chip.titleDry', { n: st.window_minutes ?? 10 }) : t('autopublish.chip.titleLive', { where, n: st.window_minutes ?? 10 })
+  const title = !on ? t('autopublish.chip.titleOff') : mode === 'dry' ? t('autopublish.chip.titleDry', { n: st.window_minutes ?? 10 }) : t((st.window_minutes ?? 10) === 0 ? 'autopublish.chip.titleLiveNow' : 'autopublish.chip.titleLive', { where, n: st.window_minutes ?? 10 })
   return { mode, cls: { live: 'text-bg-success', dry: 'text-bg-warning', off: 'text-bg-secondary', paused: 'text-bg-warning' }[mode], label: t(`autopublish.chip.${mode}`), title, activity: on ? activityText(st, autopublish.pending, publishStore.jobs, Date.now(), t) : '' }
 })
 const openAutopublish = () => { ui.queueFocus = 'autopublish'; ui.queueTab = 'publishing'; ui.queueOpen = true }

@@ -2,7 +2,7 @@
   <div v-if="w" class="small" data-testid="autopublish-watching" :data-mode="mode">
     <div v-if="mode === 'off'" class="d-flex align-items-center gap-2 flex-wrap" data-testid="autopublish-watching-mode"><span>{{ $t('autopublish.watch.off') }}</span><BButton variant="link" size="sm" class="p-0" data-testid="autopublish-watching-settings" @click="openSettings">{{ $t('autopublish.watch.openSettings') }}</BButton></div>
     <div v-else class="d-flex align-items-center gap-2 flex-wrap" data-testid="autopublish-watching-mode">
-      <span class="badge fw-normal" :class="mode === 'live' ? 'text-bg-success' : 'text-bg-warning'" data-testid="autopublish-watching-chip">{{ mode === 'live' ? $t('autopublish.watch.live', { targets: targetsText(status.targets), n: status.window_minutes }) : $t('autopublish.watch.dry') }}</span>
+      <span class="badge fw-normal" :class="mode === 'live' ? 'text-bg-success' : 'text-bg-warning'" data-testid="autopublish-watching-chip">{{ mode === 'live' ? $t(status.window_minutes === 0 ? 'autopublish.watch.liveNow' : 'autopublish.watch.live', { targets: targetsText(status.targets), n: status.window_minutes }) : $t('autopublish.watch.dry') }}</span>
     </div>
     <template v-if="places">
       <div class="d-flex align-items-center gap-2 flex-wrap" data-testid="autopublish-watching-local" :data-enabled="w.local.enabled === false ? 'false' : 'true'">

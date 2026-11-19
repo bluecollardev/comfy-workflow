@@ -28,7 +28,7 @@ afterEach(() => { publish.reset(); autopublish.reset(); for (const k of ['POD_MA
 
 describe('the configuration block', () => {
   it('defaults: off, dry run, 10 minutes, no cap, S3 only, no standing approval', () => {
-    expect(mounts.defaults().auto_publish).toEqual({ generate: { enabled: false, where: 'local', preset: 'review', max_per_day: 20, settle_minutes: 5, fallback_local: false, colour_in: null }, sources: { local: true, volume: true }, volume_scan_minutes: 5, round: 'tunnel-v11_{date}_r01', include_dpx: false, require_approval: false, enabled: false, dry_run: true, dry_run_first: true, window_minutes: 10, daily_cap: null, targets: { s3: true, slack: false, tunnel: false } }); expect(ap().standing).toBeUndefined()
+    expect(mounts.defaults().auto_publish).toEqual({ generate: { enabled: false, where: 'local', preset: 'review', max_per_day: 20, settle_minutes: 5, fallback_local: false, colour_in: null }, sources: { local: true, volume: true }, volume_scan_minutes: 5, round: 'tunnel-v11_{date}_r01', include_dpx: false, require_approval: false, enabled: false, dry_run: true, dry_run_first: true, window_minutes: 0, daily_cap: null, targets: { s3: true, slack: false, tunnel: false } }); expect(ap().standing).toBeUndefined()
     expect(mounts.normalize({}).auto_publish!.daily_cap).toBeNull(); expect(mounts.payload(mounts.defaults()).config.auto_publish!.enabled).toBe(false)
   })
   it('validation (400s name the field)', () => {
@@ -71,7 +71,7 @@ describe('autopublish.settings() through the configuration', () => {
     await autopublish.off(); expect(ap()).toMatchObject({ enabled: false }); expect(ap().standing).toBeUndefined(); expect(ap().window_minutes).toBe(7)
   })
   it('a change made in the configuration applies at the next tick, with no restart (the cache follows the file)', async () => {
-    await autopublish.setSettings(ON); expect((await autopublish.settings()).window_minutes).toBe(10)
+    await autopublish.setSettings(ON); expect((await autopublish.settings()).window_minutes).toBe(0)
     const f = join(dir, 'mounts.json'), cfg = JSON.parse(readFileSync(f, 'utf8')); cfg.auto_publish.window_minutes = 45; cfg.auto_publish.targets.slack = true; writeFileSync(f, JSON.stringify(cfg, null, 2) + '\n'); utimesSync(f, new Date(), new Date(Date.now() + 5000))
     expect(await autopublish.settings()).toMatchObject({ window_minutes: 45, targets: { s3: true, slack: true } }); cfg.auto_publish.enabled = false; writeFileSync(f, JSON.stringify(cfg)); utimesSync(f, new Date(), new Date(Date.now() + 9000)); expect((await autopublish.settings()).enabled).toBe(false)
   })

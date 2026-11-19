@@ -146,16 +146,30 @@ case "${1:-help}" in
     # For a build other Macs open without a warning, sign with a Developer ID Application certificate:
     #   CSC_IDENTITY_AUTO_DISCOVERY=true ./start.sh package mac   (or CSC_NAME="Developer ID Application: ...")
     export CSC_IDENTITY_AUTO_DISCOVERY="${CSC_IDENTITY_AUTO_DISCOVERY:-false}"
+    # A Mac build other people can open without a Gatekeeper block (macOS 15 and later refuse an unsigned app, right-click Open no longer works) must be SIGNED with a
+    # Developer ID Application certificate and NOTARIZED by Apple. When the credentials are in the environment this does both; without them the build is unsigned and says so.
+    #   CSC_NAME="Developer ID Application: Name (TEAMID)"  (or CSC_LINK=<.p12 path/URL> and CSC_KEY_PASSWORD)
+    #   APPLE_ID=<apple id>  APPLE_APP_SPECIFIC_PASSWORD=<app-specific password>  APPLE_TEAM_ID=<team id>
+    sign_args=""
+    if [ "$target" = mac ] || [ "$target" = all ]; then
+      if { [ -n "${CSC_NAME:-}" ] || [ -n "${CSC_LINK:-}" ]; } && [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
+        export CSC_IDENTITY_AUTO_DISCOVERY=true
+        sign_args="--config.mac.hardenedRuntime=true --config.mac.gatekeeperAssess=false --config.mac.entitlements=build/entitlements.mac.plist --config.mac.entitlementsInherit=build/entitlements.mac.plist --config.mac.notarize=true"
+        echo "mac: SIGNING with Developer ID and NOTARIZING with Apple: the DMG opens on any Mac without a Gatekeeper warning" >&2
+      else
+        echo "mac: UNSIGNED build. macOS 15+ blocks it on other Macs: users must use the Terminal install command or System Settings > Open Anyway (the download page says so). To sign and notarize set CSC_NAME (or CSC_LINK + CSC_KEY_PASSWORD), APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID (needs an Apple Developer ID certificate)." >&2
+      fi
+    fi
     mkdir -p build
     printf '{\n  "comfy_variant": "%s",\n  "comfy_image": "%s",\n  "shotpipe_sets": "shared/nodes/sets.json",\n  "built_at": "%s"\n}\n' \
       "$variant" "${image:-comfy-app:$variant}" "$(date -u +%Y-%m-%dT%H:%MZ)" > build/build-info.json
     echo "building the app for comfy-app:$variant (default pod image ${image:-comfy-app:$variant}) -> dist-electron/$variant"
     out="--config.directories.output=dist-electron/$variant"
     case "$target" in
-      mac)   npm run build && exec npx electron-builder --mac "$out" ;;
+      mac)   npm run build && exec npx electron-builder --mac $sign_args "$out" ;;
       win)   npm run build && exec npx electron-builder --win "$out" ;;
       linux) npm run build && exec npx electron-builder --linux "$out" ;;
-      all)   npm run build && exec npx electron-builder --mac --win --linux "$out" ;;
+      all)   npm run build && exec npx electron-builder --mac --win --linux $sign_args "$out" ;;
     esac ;;
   release)
     # A release needs a passing gate (./start.sh test) recorded for exactly this code (scripts/gate.mjs, docs/ADR-005). The only way round it is

@@ -68,7 +68,7 @@ afterEach(() => { autopublish.reset(); publish.reset(); delete process.env.PUBLI
 describe('settings (the configuration block) and the standing approval', () => {
   it('defaults: off, dry run, 10 minutes, NO cap (null), S3 only; the destination is read only; target_state explains each target', async () => {
     const s = await autopublish.settings()
-    expect(s).toMatchObject({ enabled: false, dry_run: true, window_minutes: 10, daily_cap: null, standing: null, targets: { s3: true, slack: false, tunnel: false }, destination: `s3://${DEST}/returns/BKK/`, ready: true })
+    expect(s).toMatchObject({ enabled: false, dry_run: true, window_minutes: 0, daily_cap: null, standing: null, targets: { s3: true, slack: false, tunnel: false }, destination: `s3://${DEST}/returns/BKK/`, ready: true })
     expect(s.target_state).toEqual({ s3: { ready: true, label: 'S3' }, slack: { ready: true, label: 'Slack' }, tunnel: { ready: false, problem: 'Tunnel is not available yet', label: 'Tunnel' } })
     await publish.setSettings({ clear: ['slack_webhook'] }); expect((await autopublish.settings()).target_state.slack).toMatchObject({ ready: false, problem: expect.stringMatching(/Incoming Webhook/) })
     await expect(autopublish.setSettings({ destination: 's3://elsewhere/' } as never)).resolves.toMatchObject({ destination: `s3://${DEST}/returns/BKK/` })
@@ -304,7 +304,7 @@ describe('dry run exercises the whole pipeline except the writes (ADR-050)', () 
     denyList = false; review(); await approve(); await autopublish.setSettings({ ...ON, targets: { slack: true } }); await autopublish.consider(); await autopublish.consider()
     const e = (await autopublish.statusNow()).pending[0] as unknown as { dry_run_plan: import('../src/publish.js').DryRunPlan }; expect(e.dry_run_plan).toMatchObject({ bucket: 'my-internal-bucket', total_files: expect.any(Number), access: { ok: true, detail: expect.stringMatching(/can list s3:\/\/my-internal-bucket\/.*: yes; write access is not proven in a dry run/) } })
     expect(e.dry_run_plan.files.length).toBeGreaterThan(0); expect(e.dry_run_plan.files.every((f) => f.action === 'upload' && f.key.startsWith(e.dry_run_plan.prefix))).toBe(true); expect(e.dry_run_plan.manifest_key === null || /RETURN-MANIFEST\.json$/.test(e.dry_run_plan.manifest_key)).toBe(true)
-    expect(writes()).toEqual([]); expect(posts).toHaveLength(1); const text = posts[0].text; expect(text).toMatch(/^\*DRY RUN: nothing was uploaded\*\nWould upload 1 review video \(\d+ files?, .*\) to s3:\/\/my-internal-bucket\/.*after a 10-minute window/); expect(text).toMatch(/S3 access: ok: can list/); expect(text).not.toMatch(/hooks\.slack\.com|AKIA|secretsecret/)
+    expect(writes()).toEqual([]); expect(posts).toHaveLength(1); const text = posts[0].text; expect(text).toMatch(/^\*DRY RUN: nothing was uploaded\*\nWould upload 1 review video \(\d+ files?, .*\) to s3:\/\/my-internal-bucket\/.*right away \(no cancel window\)/); expect(text).toMatch(/S3 access: ok: can list/); expect(text).not.toMatch(/hooks\.slack\.com|AKIA|secretsecret/)
     t += 20 * 60_000; await autopublish.consider(); expect(posts).toHaveLength(1)   // the same set is never posted twice
     const r = await autopublish.dryRunReport(); expect(r.text).toBe(text); expect(r.versions).toBe(1); expect(r.posted_at).not.toBeNull()
   })
