@@ -3,6 +3,12 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## v1.5.5 (tag v1.5.5, 2026-11-19)
+
+- **Outputs window: a file-name filter.** A box at the top of the Outputs window ("Filter by file name") narrows every run (the pod's own, saved and volume runs) to the files whose `subfolder/filename` matches: case-insensitive, every space-separated word must match, runs with no match disappear, and a line says how many files match; **Clear** brings everything back. `filterByName` in `src/utils/outputs.js`.
+- **The Previews button is now **Generate**, and its window is wider** (`xl`), since it holds the preview batch and the render options.
+- Tests at release: unit 76, browser 512 (2 new in `e2e/outputs-name-filter.spec.js`, 1 new unit test). Page-only change: a reload is enough.
+
 ## v1.5.4 (tag v1.5.4, 2026-11-19)
 
 - **Fix: a brief drop of the connection to RunPod's storage no longer shows as a red Auto sync error.** The banner showed `RunPod's S3 API: aws: [ERROR]: Could not connect to the endpoint URL: https://s3api-eu-ro-1.runpod.io/...` on two pods, although the endpoint answered minutes later. The `aws` calls now retry (two more tries, after 0.4 s and 1.2 s): a connect failure is retried for any command (nothing was sent), a break in the middle of a request only for reads and downloads, never for a delete or an upload. After three tries the message reads "RunPod's storage did not answer (the connection failed). Tried 3 times. Check this PC's connection (if it keeps happening on Wi-Fi, IPv6 may be the cause) and try again.", with no long URL (it carried the volume id) and the first original line kept as `detail`. One error builder now serves `podpull.ts`, `journal.ts` and `changes.ts` (no doubled `RunPod's S3 API:` prefix). **Auto sync** stays "Waiting for RunPod's storage to answer" for the first two transient failures and retries at the next 30 s tick (not 5 minutes); only the third in a row turns red (one History line); any success resets it, and a successful feed with nothing to pull now clears an error that used to stay red. Forcing IPv4 was not added (the aws CLI has no documented switch). Likely cause, unproven: the S3 host is behind Cloudflare with AAAA records and the aws CLI does not fall back to IPv4 when this Mac's IPv6 hiccups. `libs/core/src/podpull.ts`, `tests/awsretry.test.ts`, `tests/autosync.test.ts`, ADR-046.
