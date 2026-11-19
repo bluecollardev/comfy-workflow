@@ -16,6 +16,7 @@ let TREE: Record<string, [number, string]>
 let calls: string[][]
 const aws: podpull.AwsRunner = async (args) => {
   calls.push(args)
+  if (args[0] === 's3api') { const pre = args[args.indexOf('--prefix') + 1], keys = Object.keys(TREE).filter((k) => k.startsWith(pre)).slice(0, 2); return { code: 0, stdout: JSON.stringify(keys.length ? { Contents: keys.map((Key) => ({ Key })) } : {}), stderr: '' } }
   const m = /^s3:\/\/([^/]+)\/(.*)$/.exec(args[2]); if (!m || m[1] !== VOL) return { code: 1, stdout: '', stderr: 'NoSuchBucket' }
   const dir = m[2], recursive = args.includes('--recursive')
   const under = Object.entries(TREE).filter(([k]) => k.startsWith(dir))
@@ -44,11 +45,20 @@ beforeEach(() => {
 afterEach(() => { delete process.env.RUNPOD_S3_ACCESS_KEY; delete process.env.RUNPOD_S3_SECRET_KEY })
 
 describe('volume-s3 source', () => {
+  it('folder_info: an `empty` flag per folder from a cheap probe (a shell with only its marker object is empty; unknown stays absent); `folders` stays the names', async () => {
+    TREE[`${O}/shell_v001/`] = [0, '2026-11-18 08:00:00']   // a folder with only its own marker object
+    const l = await outputsources.volumeS3.list({ volume_id: VOL }, { ...opts(), prefix: '' })
+    expect(l.folders).toEqual(['delivery_v003_tests', 'proxy_v004', 'proxy_v005', 'shell_v001']); expect(l.folder_info).toEqual({ delivery_v003_tests: { empty: false }, proxy_v004: { empty: false }, proxy_v005: { empty: false }, shell_v001: { empty: true } })
+    const probes = calls.filter((c) => c[0] === 's3api'); expect(probes).toHaveLength(4); expect(probes[0]).toEqual(expect.arrayContaining(['--max-keys', '2', '--bucket', VOL]))
+    const failing: podpull.AwsRunner = async (args) => (args[0] === 's3api' ? { code: 1, stdout: '', stderr: 'boom' } : aws(args, {}))
+    const u = await outputsources.volumeS3.list({ volume_id: VOL }, { aws: failing, fresh: true, prefix: '' }); expect(u.folder_info).toEqual({ delivery_v003_tests: {}, proxy_v004: {}, proxy_v005: {}, shell_v001: {} })
+    const all = await outputsources.listOutputs({ volume_id: VOL }, { ...opts(), prefix: '', source: 'volume-s3' }); expect(all.folder_info.shell_v001).toEqual({ empty: true }); expect(Array.isArray(all.folders)).toBe(true)
+  })
   it('level 1 lists the top-level folders only, one level (no recursive listing)', async () => {
     const l = await outputsources.volumeS3.list({ volume_id: VOL }, { ...opts(), prefix: '' })
     expect(l.folders).toEqual(['delivery_v003_tests', 'proxy_v004', 'proxy_v005'])
     expect(l.prefix).toBe('')
-    expect(calls).toHaveLength(1); expect(calls[0]).not.toContain('--recursive')
+    const ls = calls.filter((c) => c[0] === 's3'); expect(ls).toHaveLength(1); expect(ls[0]).not.toContain('--recursive')
   })
   it('a shot prefix lists leaf folders as runs: newest LastModified, sizes, DPX frames, sequence tile logic', async () => {
     const l = await outputsources.volumeS3.list({ volume_id: VOL }, { ...opts(), prefix: 'proxy_v004/archival-080' })
@@ -87,12 +97,12 @@ describe('volume-s3 source', () => {
     const cfg = mounts.load(); cfg.shared_volume_id = ''; cfg.network_volume_id = ''; mounts.save(cfg)
     expect((await outputsources.volumeS3.available({}, opts())).reason).toMatch(/No network volume/)
   })
-  it('only ever reads: every aws call is `s3 ls`', async () => {
+  it('only ever reads: every aws call is `s3 ls` or the one-folder `list-objects-v2` probe of the `empty` flag', async () => {
     await outputsources.volumeS3.list({ volume_id: VOL }, { ...opts(), prefix: '' })
     await outputsources.volumeS3.list({ volume_id: VOL }, { ...opts(), prefix: 'proxy_v004/archival-080' })
     await outputsources.volumeS3.list({ volume_id: VOL, shot: 'archival-080' }, opts())
     expect(calls.length).toBeGreaterThan(2)
-    for (const c of calls) { expect(c.slice(0, 2)).toEqual(['s3', 'ls']); expect(c.join(' ')).not.toMatch(/\b(rm|mv|sync|put|mb|rb|delete)\b/) }
+    for (const c of calls) { expect(['s3 ls', 's3api list-objects-v2']).toContain(c.slice(0, 2).join(' ')); expect(c.join(' ')).not.toMatch(/\b(rm|mv|sync|put|mb|rb|delete)\b/) }
   })
   it('rejects a prefix that climbs out', async () => {
     await expect(outputsources.volumeS3.list({ volume_id: VOL }, { ...opts(), prefix: '../workflows' })).rejects.toThrow(/Not a folder/)
@@ -101,7 +111,7 @@ describe('volume-s3 source', () => {
   it('caches a prefix for 90 s', async () => {
     const o = { aws }
     await outputsources.volumeS3.list({ volume_id: VOL }, { ...o, prefix: '' }); await outputsources.volumeS3.list({ volume_id: VOL }, { ...o, prefix: '' })
-    expect(calls).toHaveLength(1)
+    expect(calls.filter((c) => c[0] === 's3')).toHaveLength(1)   // the listing is cached; the empty probes are not
   })
   it('address is the s3file base of the volume', async () => {
     expect(await outputsources.volumeS3.address(null, { volume_id: VOL })).toBe(`s3file://${VOL}`)

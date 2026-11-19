@@ -12,6 +12,13 @@ export const THUMB_WIDTH = 320
  * a stopped pod's saved record or the S3 volume source shares one thumbnail. Size and time are not in the key (a pod's history does not know them); they are kept in the record, and a
  * file whose size is now known and differs from the record's is treated as changed (a miss).
  */
+/** A small concurrency limiter: `run(fn)` starts fn when fewer than `max` are running (122 cache lookups do not open 122 transactions at once). */
+export function createLimiter(max = 8) {
+  let live = 0
+  const waiting = []
+  const next = () => { while (live < max && waiting.length) { const w = waiting.shift(); live++; Promise.resolve().then(w.fn).then(w.res, w.rej).finally(() => { live--; next() }) } }
+  return (fn) => new Promise((res, rej) => { waiting.push({ fn, res, rej }); next() })
+}
 export const thumbKey = (scope, file) => [scope || '', file.subfolder || '', file.filename].join('|')
 export const MAX_THUMBS = 500
 
@@ -92,9 +99,16 @@ export function createThumbs({ cache, produce, concurrency = 1, autoCap = AUTO_C
     }
   }
   return {
-    async request(key, job, { manual = false } = {}) {
+    /** A look at the cache and nothing else: `ready` / `empty` (+ cached: true) on a hit that is not stale (same bytes check as request), else `none`. Never queues, never fetches, never counts against the automatic cap. */
+    async peek(key, job) {
       let hit
       try { hit = await cache.get(key) } catch { hit = undefined }
+      if (hit && !stale(hit, job)) return hit.empty ? { status: 'empty', reason: hit.reason || '', cached: true } : { status: 'ready', url: hit.url, cached: true }
+      return { status: 'none' }
+    },
+    async request(key, job, { manual = false, refresh = false } = {}) {
+      let hit
+      if (!refresh) { try { hit = await cache.get(key) } catch { hit = undefined } }   // refresh: the saved one is not read; the new one replaces it, and a failure leaves the old one where it is
       if (hit && !stale(hit, job)) return hit.empty ? { status: 'empty', reason: hit.reason || '', cached: true } : { status: 'ready', url: hit.url, cached: true }
       const have = jobs.get(key)
       if (have) return have.promise

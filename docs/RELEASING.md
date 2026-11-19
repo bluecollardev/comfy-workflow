@@ -37,3 +37,7 @@ Delivery: [ADR-013](./ADR-013-delivery.md). `RELEASE_PLATFORMS="mac win linux" .
 
 ## Change the download page
 Edit `downloads/index.html` and cut a patch release; the script re-uploads the page each time.
+
+## The gate comes first (2026-11-19)
+Run `./start.sh test` (with the app stopped) on the code you are about to release; it must pass in full (core, MCP, IPC, unit, browser, the real app) and records the pass. `./start.sh release ...` then proceeds; without a current pass for exactly this code it refuses. A deliberate skip is `--skip-gate "reason"` and is recorded in `.gate/skips.log` and in the CHANGELOG entry. See ADR-005 (amendment).
+

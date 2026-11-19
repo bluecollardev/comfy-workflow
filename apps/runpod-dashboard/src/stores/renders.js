@@ -8,7 +8,7 @@ import { DEFAULT_WIDTH, isActive, jobFor, seqKey, latestReview } from '../utils/
  * (never two requests at once; a failed poll keeps what is shown and tries again), so closing the Previews window or the Outputs window loses nothing and reopening shows it.
  * The proxy list is one batched call per window open (loadProxies), asked again when a job finishes.
  */
-export const POLL_MS = 1000
+export const POLL_MS = 1000, IDLE_MS = 5000
 export const useRendersStore = defineStore('renders', () => {
   const jobs = ref([])
   const old = ref(false)          // the core predates Render sequences
@@ -36,12 +36,19 @@ export const useRendersStore = defineStore('renders', () => {
       if (ended) { finished.value++; reloadProxies() }
     } catch (e) { error.value = errText(e) } finally { busy = false }
   }
+  // One loop, never two requests at once and tolerant of errors: every second while a job runs or the Queue window is open (`fast`), every 5 seconds otherwise (the Queue's badge and the windows follow it).
+  // A core without the calls (old) stops it: the Generations section is hidden quietly.
+  const fast = ref(false), dismissed = ref([]), scopes = ref({})   // scopes: job_id -> the Generate scope it started with (this window's own note: 'in output/…' or 'all outputs')
+  let loop = false
   function schedule() {
-    if (timer || !active.value) return
-    timer = setTimeout(async () => { timer = null; await refresh(); schedule() }, POLL_MS)
+    if (timer || old.value) return
+    timer = setTimeout(async () => { timer = null; await refresh(); if (!old.value) schedule() }, active.value || fast.value ? POLL_MS : IDLE_MS)
   }
-  /** Look for jobs (a window opening) and keep polling while one runs. */
-  async function watch() { await refresh(); schedule() }
+  /** Look for jobs (a window opening) and keep following them. */
+  async function watch() { await refresh(); loop = true; schedule() }
+  const setFast = (v) => { fast.value = !!v; if (v && loop && timer) { clearTimeout(timer); timer = null; refresh().finally(schedule) } }
+  const dismiss = (id) => { if (!dismissed.value.includes(id)) dismissed.value = [...dismissed.value, id] }
+  const activeCount = computed(() => jobs.value.filter(isActive).length)
 
   async function start(o) {
     const r = await rendersAPI.start(o)
@@ -72,5 +79,5 @@ export const useRendersStore = defineStore('renders', () => {
     await reloadProxies()
     return r
   }
-  return { jobs, old, error, proxies, finished, prefs, active, jobForPod, refresh, watch, start, cancel, loadProxies, reloadProxies, proxyFor, reviewFor, deliverables, play, clearLocal, polls: () => polls }
+  return { scopes, fast, setFast, dismissed, dismiss, activeCount, jobs, old, error, proxies, finished, prefs, active, jobForPod, refresh, watch, start, cancel, loadProxies, reloadProxies, proxyFor, reviewFor, deliverables, play, clearLocal, polls: () => polls }
 })

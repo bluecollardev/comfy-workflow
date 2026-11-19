@@ -384,7 +384,7 @@ test('Previews window: Generate all reaches tiles that were never scrolled into 
   await expect(p.getByTestId('pod-outputs-previews-progress')).toHaveCount(0, { timeout: 30000 })   // and ends by itself: no Stop needed
   await expect(p.getByTestId('pod-outputs-stop-previews')).toHaveCount(0)
   expect(Object.keys(hits).length).toBeGreaterThanOrEqual(12)   // every sequence was asked for, the last ones never scrolled to
-  await expect(p.getByTestId('pod-outputs-previews-counts')).toHaveText('11 ready · 1 waiting · 1 failed')   // the flat first frame counts as ready; the 500 is failed (and can be tried again)
+  await expect(p.getByTestId('pod-outputs-previews-counts')).toHaveText('11 ready · 0 waiting · 1 failed')   // the flat first frame counts as ready; the 500 is failed (and can be tried again)
   await expect(p.getByTestId('pod-outputs-load-previews')).toBeEnabled()
   await expect(p).toContainText('1 failed')
   void m

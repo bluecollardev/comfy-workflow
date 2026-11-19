@@ -42,3 +42,7 @@ A DPX sequence tile shows the first frame as a small preview. One frame is about
 ## Amendment to ADR-047 (2026-11-18, v1.4.1)
 
 The pod limit ("Number of Pods") is **not** the dollar cap. It was only shown, and only sent, when the cost cap was on, so with the cap off the queue started one pod per shot (about 20 at once, ComfyUI answering HTTP 502 on overloaded or not-yet-ready pods). The field now always shows and its value is always sent; only the cost-cap field depends on the cap. The core's rule is unchanged: the setting that switches the cap off removes the limit for callers that send no number (an agent over MCP).
+
+## Amendment 2026-11-19: the preview batch is a job on the Queue
+**Generate all previews** is a long job, but its state lives in the Outputs window (`previewBus`: counts, the batch flag and the totals), so closing the Outputs window cancels it (`abortAll`) and the Queue does not show it. **Decision (see ADR-051 section 9):** the preview batch becomes a store-level job like the render job (so closing the window does not stop it unless the person presses Stop), and it is listed on the **Queue** (*Generations*): "Previews: 12 of 40, 1 failed", Stop, and when done a summary. Its start and end are events (`preview.batch_done`, with the failed count). The per-tile click-to-load behaviour, the persistent cache and the "scrolling never cancels what you asked for" rule are unchanged.
+

@@ -10,7 +10,7 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { access, appendFile, mkdir, statfs, open, readFile, readdir, realpath, lstat, rename, rm, rmdir, stat, unlink, writeFile } from 'node:fs/promises'
+import { stat as fsStat, access, appendFile, mkdir, statfs, open, readFile, readdir, realpath, lstat, rename, rm, rmdir, stat, unlink, writeFile } from 'node:fs/promises'
 import { createInterface } from 'node:readline'
 import { dirname, join, resolve, sep } from 'node:path'
 import { CoreError, bad } from './errors.js'
@@ -21,6 +21,7 @@ import * as mounts from './mounts.js'
 import * as podconfigs from './podconfigs.js'
 import * as podnames from './podnames.js'
 import * as podpull from './podpull.js'
+import * as publish from './publish.js'
 import { mirrorDir, rendersFile } from './paths.js'
 import * as rp from './runpod.js'
 import * as sync from './sync.js'
@@ -35,11 +36,12 @@ export const MAX_SEQUENCES = 200, KEEP_JOBS = 20, LISTING_MS = 60_000
 export interface Sequence { /** the clip name outputs carry (the EDL's), default the frames' stem; never used for the frames themselves */ clip_name?: string; dir: string; name: string; first: number; last: number; frames: number; pad: number; fps?: number }
 export type Where = 'auto' | 'pod' | 'local'
 export interface Range { from: number; to: number }
-export interface PlannedSequence extends Sequence { clip_name: string; source?: { width: number; height: number; bits: number } | null; estimate?: { frames: number; note: string; output_gb: number }; colour_refusal?: string | null; shot?: string; next_version?: number; out: string; exists_remote: boolean; exists_local: boolean; gaps: number; where: 'pod' | 'local'; complete: boolean; missing: Range[]; partial: boolean }
+export interface PlannedSequence extends Sequence { /** whether this run would skip it (with the given skip_existing): 'already rendered' (a proxy), 'already has review vNNN', else null */ skip?: string | null; /** ADR-048 "Colour details in the plan": the first frame's DPX header, decoded; null when it could not be read */ colour?: ColourDetails | null; clip_name: string; source?: { width: number; height: number; bits: number } | null; estimate?: { frames: number; note: string; output_gb: number }; colour_refusal?: string | null; shot?: string; next_version?: number; out: string; exists_remote: boolean; exists_local: boolean; gaps: number; where: 'pod' | 'local'; complete: boolean; missing: Range[]; partial: boolean }
 export type SeqState = 'waiting' | 'rendering' | 'rendered' | 'pulled' | 'done' | 'failed' | 'skipped' | 'incomplete'
-export interface SeqView { clip_name?: string; outs?: string[]; shot?: string; version?: string; complete?: boolean; partial?: boolean; missing?: Range[]; where: 'pod' | 'local'; dir: string; name: string; state: SeqState; frames_done: number; frames_total: number; out: string; bytes: number; error: string; warning?: string }
+export interface SeqView { /** why a sequence was skipped ('already rendered', 'already has review v002') */ reason?: string; clip_name?: string; outs?: string[]; shot?: string; version?: string; complete?: boolean; partial?: boolean; missing?: Range[]; where: 'pod' | 'local'; dir: string; name: string; state: SeqState; frames_done: number; frames_total: number; out: string; bytes: number; error: string; warning?: string }
 export interface JobView {
   kind: 'proxy' | 'review'; approved_by: string; codecs: string[]; notes: string[]
+  /** ADR-050: the publish run started for this job when it asked for one (`publish` in the start request) */ publish?: { job_id: string; state: string; error?: string }
   job_id: string; pod_id: string; pod_name: string; state: 'queued' | 'rendering' | 'pulling' | 'done' | 'failed' | 'cancelled'; started_at: string; finished_at: string
   width: Width; frames_done: number; frames_total: number; rate_fps: number; current: string; sequences: SeqView[]; pulled_files: number; pulled_bytes: number; error: string; summary: string
 }
@@ -108,23 +110,29 @@ export function ffmpegArgs(s: Sequence, width: Width, o: { fps?: number; outputD
 
 // ----- the DPX header and the colour record (shared/governance/policy/colour.md: stated, never guessed) -----
 
-export interface DpxInfo { width: number; height: number; bits: number; packing: number; descriptor: number; transfer: number; colorimetric: number; be: boolean; /** the start timecode HH:MM:SS:FF from the television header, or null when absent or invalid */ timecode: string | null }
+export interface DpxInfo { width: number; height: number; bits: number; packing: number; descriptor: number; transfer: number; colorimetric: number; be: boolean; /** the start timecode HH:MM:SS:FF (HH:MM:SS;FF when the drop-frame bit is set) from the television header, or null when the file has none, or it is unset or invalid */ timecode: string | null; /** the header field `offset to image data` (bytes 4-8); null when it is not plausible (below 1664, or past the file size field) */ data_offset: number | null; /** the film header (from byte 1664) is in the file only when the image data starts at 1920 or later; the television header (from 1920) only at 2048 or later */ has_film_header: boolean; has_tv_header: boolean; /** the frame rate the header states (television 1940, else film 1724), when present and valid */ frame_rate: number | null }
 /** The header fields that matter, from the first bytes of a frame (SMPTE 268M, the layout src/utils/dpx.js reads): size @772/776, descriptor @800, transfer @801, colorimetric @802, bits @803, packing @804. null when it is not a DPX header. */
-/** The television header's time code (SMPTE 268M, a U32 at byte 1664 in the file's byte order): packed BCD HHMMSSFF. null when it is unset (0 or 0xFFFFFFFF) or not valid BCD (a digit above 9, hours 24 or more, minutes or seconds 60 or more, frames 100 or more). Never invented. */
-export function bcdTimecode(v: number): string | null {
+/** The television header's time code (SMPTE 268M, SMPTE 12M packed BCD HHMMSSFF, a U32 at byte 1920 in the file's byte order, and ONLY where the file has a television header). null when it is unset (0 or 0xFFFFFFFF) or not valid: a digit above 9, hours 24 or more, minutes or seconds 60 or more, frames at or above the frame rate (when it is given; else 100). The frames-tens nibble carries flags: bit 6 is drop-frame (the separator becomes `;`), bit 7 the colour-frame flag. Never invented. */
+export function bcdTimecode(v: number, fps?: number | null): string | null {
   if (v === 0 || v === 0xffffffff) return null
-  const d = Array.from({ length: 8 }, (_, i) => (v >>> (28 - 4 * i)) & 0xf)
+  const d = Array.from({ length: 8 }, (_, i) => (v >>> (28 - 4 * i)) & 0xf), drop = (d[6] & 4) !== 0
+  d[6] &= 3   // the flag bits are not part of the digit
   if (d.some((x) => x > 9)) return null
   const [hh, mm, ss, ff] = [d[0] * 10 + d[1], d[2] * 10 + d[3], d[4] * 10 + d[5], d[6] * 10 + d[7]]
-  if (hh > 23 || mm > 59 || ss > 59) return null
+  if (hh > 23 || mm > 59 || ss > 59 || ff >= (fps && fps >= 1 ? Math.ceil(fps) : 100)) return null
   const p = (n: number) => String(n).padStart(2, '0')
-  return `${p(hh)}:${p(mm)}:${p(ss)}:${p(ff)}`
+  return `${p(hh)}:${p(mm)}:${p(ss)}${drop ? ';' : ':'}${p(ff)}`
 }
 export function parseDpxInfo(buf: Uint8Array): DpxInfo | null {
   if (buf.length < 820) return null
   const magic = String.fromCharCode(buf[0], buf[1], buf[2], buf[3]); if (magic !== 'SDPX' && magic !== 'XPDS') return null
   const le = magic === 'XPDS', dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength)
-  return { width: dv.getUint32(772, le), height: dv.getUint32(776, le), descriptor: dv.getUint8(800), transfer: dv.getUint8(801), colorimetric: dv.getUint8(802), bits: dv.getUint8(803), packing: dv.getUint16(804, le), be: !le, timecode: buf.length >= 1668 ? bcdTimecode(dv.getUint32(1664, le)) : null }
+  // WHERE the image data starts decides which headers exist: a file with its pixels at 1664 has NO film or television header, and the bytes at 1664 and 1920 are PIXELS (a real file from Binc, 2026-11-19)
+  const off = dv.getUint32(4, le), size = dv.getUint32(16, le), okOff = off >= 1664 && (size === 0 || size === 0xffffffff || off <= size) ? off : null
+  const film = okOff !== null && okOff >= 1920 && buf.length >= 1728, tv = okOff !== null && okOff >= 2048 && buf.length >= 1944
+  const rate = (o: number) => { const f = dv.getFloat32(o, le); return Number.isFinite(f) && f >= 1 && f <= 240 ? Math.round(f * 1000) / 1000 : null }
+  const frame_rate = (tv ? rate(1940) : null) ?? (film ? rate(1724) : null)
+  return { width: dv.getUint32(772, le), height: dv.getUint32(776, le), descriptor: dv.getUint8(800), transfer: dv.getUint8(801), colorimetric: dv.getUint8(802), bits: dv.getUint8(803), packing: dv.getUint16(804, le), be: !le, timecode: tv ? bcdTimecode(dv.getUint32(1920, le), frame_rate) : null, data_offset: okOff, has_film_header: film, has_tv_header: tv, frame_rate }
 }
 export const TRANSFER_NAMES: Record<number, string> = { 0: 'user defined', 1: 'printing density', 2: 'linear', 3: 'logarithmic', 4: 'unspecified video', 5: 'SMPTE 240M', 6: 'ITU-R 709-4', 7: 'ITU-R 601-5 system B or G', 8: 'ITU-R 601-5 system M', 9: 'NTSC composite video', 10: 'PAL composite video', 11: 'Z linear', 12: 'Z homogeneous', 13: 'ADX' }
 /** Transfer characteristics that are not display-referred: printing density (Cineon), linear, logarithmic, Z, ADX. A conversion of these must be stated, never guessed. */
@@ -133,7 +141,7 @@ const PACKING = ['packed', 'filled (method A)', 'filled (method B)']
 /** Why a REVIEW is refused on colour grounds, or null. The viewer applies no transform and neither does the proxy; if the header says the frames are log or linear, a review would look wrong, so it is refused. */
 export function colourRefusal(h: DpxInfo | null): string | null {
   if (!h) return "The DPX header of the first frame could not be read, so its colour cannot be stated (shared/governance/policy/colour.md: stated, never guessed). A review video was not made."
-  if (NOT_DISPLAY.includes(h.transfer)) return `The frames say ${TRANSFER_NAMES[h.transfer] ?? h.transfer} in their DPX header, not a display-referred encoding. shared/governance/policy/colour.md says a conversion is stated, never guessed, so this app will not make a review video with a guessed one.`
+  if (NOT_DISPLAY.includes(h.transfer)) return `transfer: ${TRANSFER_NAMES[h.transfer] ?? `unknown (${h.transfer})`} (code ${h.transfer}): the frames say ${TRANSFER_NAMES[h.transfer] ?? `unknown (${h.transfer})`} in their DPX header, not a display-referred encoding. shared/governance/policy/colour.md says a conversion is stated, never guessed, so this app will not make a review video with a guessed one.`
   return null
 }
 /** The `colour:` lines of DELIVERY.md and the sidecar: the header, and exactly what ffmpeg was told. */
@@ -142,6 +150,94 @@ export function colourLines(h: DpxInfo | null, codecs: Codec[]): string[] {
   return [`colour: DPX header: ${h ? `${h.width}x${h.height}, ${h.bits}-bit, ${PACKING[h.packing] ?? `packing ${h.packing}`}, descriptor ${h.descriptor}, transfer ${t(h.transfer)}, colorimetric ${t(h.colorimetric)}` : 'not read'}.`,
     'colour: conversion told to ffmpeg: no colour transform applied (the values are passed through as they are); only the RGB to YUV matrix is BT.709' + (codecs.includes('prores422hq') ? ', 10-bit 4:2:2 for ProRes' : '') + '.',
     'colour: primaries and transfer are not tagged in the file (they are not guessed); the values are as served (policy/colour.md; the in-app viewer applies no transform either).']
+}
+
+// ----- colour details in the plan (ADR-048): the first frame's header of EVERY sequence, read cheaply -----
+
+export const DESCRIPTOR_NAMES: Record<number, string> = { 1: 'R', 2: 'G', 3: 'B', 4: 'A', 6: 'Y (luma)', 7: 'CbCr', 8: 'Z (depth)', 9: 'composite', 50: 'RGB', 51: 'RGBA', 52: 'ABGR', 100: 'CbYCrY (4:2:2)', 101: 'CbYACrYA (4:2:2:4)', 102: 'CbYCr (4:4:4)', 103: 'CbYCrA (4:4:4:4)' }
+export const PACKING_NAMES = ['packed', 'filled A', 'filled B']
+const nameOf = (t: Record<number, string> | string[], n: number): string => (t as Record<number, string>)[n] ?? `unknown (${n})`
+export interface ColourDetails {
+  transfer: number; transfer_name: string; colorimetric: number; colorimetric_name: string; descriptor: number; descriptor_name: string; bits: number; packing: number; packing_name: string; encoding: number; endian: 'big' | 'little'
+  width: number; height: number; pixel_aspect?: string; orientation?: number; start_timecode: string | null; /** why there is none (the file has no television header, or it holds no valid code) */ timecode_note?: string; frame_rate_hint: number | null
+  /** what the render tells ffmpeg about colour */ conversion: string; verdict: 'ok' | 'refused'; refusal?: string
+}
+export const CONVERSION_NOTE = 'none: no colour transform applied (the values pass through as they are, a plain scale when resized); only the RGB to YUV matrix is BT.709'
+/** The header fields as the plan shows them (SMPTE 268M: orientation @768, size @772/776, descriptor @800, transfer @801, colorimetric @802, bits @803, packing @804, encoding @806, pixel aspect @1628, film frame rate @1724, TV frame rate @1940; the film header (1664) and the television header (1920) exist only when the offset to image data, bytes 4-8, is 1920 or 2048 or more). null when the bytes are not a DPX header. A `review` kind may be refused on colour grounds; the quick proxy never is. */
+export function colourDetails(buf: Uint8Array | null | undefined, review: boolean): ColourDetails | null {
+  const h = buf ? parseDpxInfo(buf) : null
+  if (!buf || !h) return null
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength), le = !h.be
+  const u32 = (o: number) => (buf.length >= o + 4 ? dv.getUint32(o, le) : null), f32 = (o: number) => (buf.length >= o + 4 ? dv.getFloat32(o, le) : null)
+    const ah = u32(1628), av = u32(1632)
+  const refusal = review ? colourRefusal(h) : null
+  return {
+    transfer: h.transfer, transfer_name: nameOf(TRANSFER_NAMES, h.transfer), colorimetric: h.colorimetric, colorimetric_name: nameOf(TRANSFER_NAMES, h.colorimetric), descriptor: h.descriptor, descriptor_name: nameOf(DESCRIPTOR_NAMES, h.descriptor),
+    bits: h.bits, packing: h.packing, packing_name: nameOf(PACKING_NAMES, h.packing), encoding: dv.getUint16(806, le), endian: h.be ? 'big' : 'little', width: h.width, height: h.height,
+    ...(ah && av && ah !== 0xffffffff && av !== 0xffffffff ? { pixel_aspect: `${ah}:${av}` } : {}), ...(dv.getUint16(768, le) !== 0xffff ? { orientation: dv.getUint16(768, le) } : {}),
+    start_timecode: h.timecode, frame_rate_hint: h.frame_rate, ...(h.timecode ? {} : { timecode_note: h.data_offset === null ? 'the DPX header gives no valid offset to the image data, so no timecode is read' : h.has_tv_header ? 'the television header has no valid time code' : 'no television header in this file' }), conversion: CONVERSION_NOTE, verdict: refusal ? 'refused' : 'ok', ...(refusal ? { refusal } : {}),
+  }
+}
+export interface ColourGroup { key: string; count: number; transfer_name: string; colorimetric_name: string; descriptor_name: string; bits: number; packing_name: string; width: number; height: number; verdict: 'ok' | 'refused'; refusal?: string }
+export interface ColourSummary { groups: ColourGroup[]; uniform: boolean; /** sequences whose header could not be read */ unreadable: number }
+export function summarize2(seqs: { colour?: ColourDetails | null; source?: { width: number; height: number; bits: number } | null }[]): { colour_summary: ColourSummary; source_summary: { groups: { width: number; height: number; bits: number; count: number }[] } } {
+  const groups = new Map<string, ColourGroup>(), src = new Map<string, { width: number; height: number; bits: number; count: number }>()
+  let unreadable = 0
+  for (const x of seqs) {
+    const c = x.colour
+    if (!c) unreadable++
+    else {
+      const key = [c.transfer, c.colorimetric, c.descriptor, c.bits, c.packing, c.width, c.height, c.verdict].join('/')
+      const g = groups.get(key); if (g) g.count++
+      else groups.set(key, { key, count: 1, transfer_name: c.transfer_name, colorimetric_name: c.colorimetric_name, descriptor_name: c.descriptor_name, bits: c.bits, packing_name: c.packing_name, width: c.width, height: c.height, verdict: c.verdict, ...(c.refusal ? { refusal: c.refusal } : {}) })
+    }
+    if (x.source) { const k = `${x.source.width}x${x.source.height}x${x.source.bits}`; const g = src.get(k); if (g) g.count++; else src.set(k, { ...x.source, count: 1 }) }
+  }
+  const gs = [...groups.values()].sort((a, b) => b.count - a.count)
+  return { colour_summary: { groups: gs, uniform: gs.length <= 1 && unreadable === 0, unreadable }, source_summary: { groups: [...src.values()].sort((a, b) => b.count - a.count) } }
+}
+
+export const HDR_BYTES = 2048, HDR_BATCH = 40, HDR_TTL_MS = 10 * 60_000, HDR_TIMEOUT_MS = 20_000
+const hdrCache = new Map<string, { at: number; size: number; mtime: number; buf: Uint8Array | null }>()
+let hdrLock: Promise<unknown> = Promise.resolve()
+export const forgetHeaders = () => { hdrCache.clear() }
+const firstFrame = (s: Sequence): string => `${s.dir ? `${s.dir}/` : ''}${s.name}.${String(s.first).padStart(s.pad, '0')}.dpx`
+/** The first 2 KB of the first frame of every sequence, best effort (null where it could not be read). On this PC: a stat and a read each, a few at a time. On the pod: ONE ssh call per up to 40 sequences, one call at a time, 20 s each. Cached for 10 minutes (this PC: by path, size and mtime; the pod: by path, since a pod stat would cost the very call it saves). */
+export async function headerPass(where: 'pod' | 'local', podId: string, seqs: Sequence[], target?: { host: string; port: number }): Promise<(Uint8Array | null)[]> {
+  const out: (Uint8Array | null)[] = seqs.map(() => null), now = deps.now()
+  if (where === 'local') {
+    const root = deps.localRoot(podId); if (!root) return out
+    for (let i = 0; i < seqs.length; i += 8) {
+      await Promise.all(seqs.slice(i, i + 8).map(async (s, k) => {
+        const path = join(root, 'output', firstFrame(s)), key = `local:${path}`
+        try {
+          const st = await fsStat(path), hit = hdrCache.get(key)
+          if (hit && now - hit.at < HDR_TTL_MS && hit.size === st.size && hit.mtime === st.mtimeMs) { out[i + k] = hit.buf; return }
+          const buf = await readHead(path, HDR_BYTES); hdrCache.set(key, { at: now, size: st.size, mtime: st.mtimeMs, buf }); out[i + k] = buf
+        } catch { out[i + k] = null }
+      }))
+    }
+    return out
+  }
+  if (!target) return out
+  const outDir = deps.outputDir(podId), need: number[] = []
+  seqs.forEach((s, i) => { const hit = hdrCache.get(`pod:${podId}:${firstFrame(s)}`); if (hit && now - hit.at < HDR_TTL_MS) out[i] = hit.buf; else need.push(i) })
+  for (let b = 0; b < need.length; b += HDR_BATCH) {
+    const batch = need.slice(b, b + HDR_BATCH)
+    const script = ['set -u', ...batch.map((i, k) => { const f = q(`${outDir}/${firstFrame(seqs[i])}`); return `[ -r ${f} ] && echo "HDR ${k} $(head -c ${HDR_BYTES} ${f} | base64 -w0)"` }), 'exit 0'].join('\n')
+    const run = async () => {
+      const ac = new AbortController(), timer = setTimeout(() => ac.abort(), HDR_TIMEOUT_MS)
+      try {
+        await deps.ssh({ host: target.host, port: target.port, script, signal: ac.signal, onLine: (l) => {
+          const m = /^HDR (\d+) ([A-Za-z0-9+/=]+)\s*$/.exec(l); if (!m) return
+          const i = batch[Number(m[1])]; if (i === undefined) return
+          const buf = new Uint8Array(Buffer.from(m[2], 'base64')); out[i] = buf; hdrCache.set(`pod:${podId}:${firstFrame(seqs[i])}`, { at: now, size: 0, mtime: 0, buf })
+        } })
+      } catch { /* best effort: the plan goes on without colour */ } finally { clearTimeout(timer) }
+    }
+    const turn = hdrLock.then(run, run); hdrLock = turn.catch(() => undefined); await turn   // one call at a time, across plans too
+  }
+  return out
 }
 
 const pidFile = (jobId: string, i: number) => `/tmp/render-${jobId.replace(/[^\w-]/g, '_')}-${i}.pid`
@@ -154,7 +250,7 @@ export function probeScript(s: Sequence, width: Width, outputDir: string): strin
   const st = (tag: string, f: string, fmt: string) => `echo "${tag} $(stat -c ${fmt} ${q(f)} 2>/dev/null || echo 0)"`
   return ['set -u', `echo "FFV $(ffmpeg -version 2>&1 | head -1)"`, st('OUTM', `${base}.mp4`, '%Y'), st('OUTS', `${base}.mp4`, '%s'), st('OMETS', `${base}.mp4.meta.json`, '%s'),
     st('POUTM', `${base}_partial.mp4`, '%Y'), st('POUTS', `${base}_partial.mp4`, '%s'), st('PMETS', `${base}_partial.mp4.meta.json`, '%s'),
-    `cd ${q(dir)} 2>/dev/null || { echo PROBE-NODIR; exit 0; }`, `echo "HDR $(od -An -tx1 -v -N 1700 ${q(`${s.name}.${String(s.first).padStart(s.pad, '0')}.dpx`)} 2>/dev/null | tr -d ' \n')"`, `echo "FFP $(command -v ffprobe >/dev/null 2>&1 && echo 1 || echo 0)"`, `find . -maxdepth 1 -type f -name ${q(`${globEscape(s.name)}.*.dpx`)} -printf 'F %s %T@ %f\\n'`, 'echo PROBE-DONE', ''].join('\n')
+    `cd ${q(dir)} 2>/dev/null || { echo PROBE-NODIR; exit 0; }`, `echo "HDR $(od -An -tx1 -v -N 2048 ${q(`${s.name}.${String(s.first).padStart(s.pad, '0')}.dpx`)} 2>/dev/null | tr -d ' \n')"`, `echo "FFP $(command -v ffprobe >/dev/null 2>&1 && echo 1 || echo 0)"`, `find . -maxdepth 1 -type f -name ${q(`${globEscape(s.name)}.*.dpx`)} -printf 'F %s %T@ %f\\n'`, 'echo PROBE-DONE', ''].join('\n')
 }
 export interface Probe {
   nodir: boolean; run: number; gaps: number; complete: boolean
@@ -395,6 +491,7 @@ export async function clearLocal(podId = ''): Promise<{ removed: number; bytes: 
 // ----- the review kind: a versioned, visible deliverable folder (docs/ADR-048 "Governance fit") -----
 
 export type Kind = 'proxy' | 'review'
+export const ALL_DONE = 'Everything in this scope is already rendered: untick Skip existing to render again'
 export const NEEDS_NAME = 'A review video needs the name of who says yes'
 /** The shot id: the lowercased `^[A-Za-z]+-\d+[a-z]?` prefix of the sequence name (corrosion-015), else the last segment of its folder. */
 export const shotOf = (name: string, dir: string): string => {
@@ -422,7 +519,7 @@ export function deliveryMd(o: { clip: string; shot: string; version: number; s: 
     ...(o.codecs.includes('prores422hq') ? [`- ${PRORES_NOTE}`] : []),
     `- Source sequence: \`${o.s.name}\` in \`output/${o.s.dir}\`, frames ${o.s.first} to ${o.s.last} (${frames} frames), served names and numbers unchanged (the frames were only read).`,
     `- Spec is not set in deliverables.csv; rendered at ${size}, ${o.codecs.map((c) => (c === 'h264' ? 'H.264' : 'ProRes 422 HQ')).join(' and ')}, ${o.fps} fps (review of the full sequence).`,
-    `- Start timecode: ${h?.timecode ? `${h.timecode}, read from the DPX television header (SMPTE 268M, byte 1664) and embedded (-timecode)` : 'no timecode in the DPX header; none embedded (never invented)'}.`,
+    `- Start timecode: ${h?.timecode ? `${h.timecode}, read from the DPX television header (SMPTE 268M, byte 1920) and embedded (-timecode)` : `no timecode in the DPX header${h && !h.has_tv_header ? ' (the file has no television header)' : ''}; none embedded (never invented)`}.`,
     `- Tool: ${o.ffv || 'ffmpeg'} (${o.adapter === 'pod' ? 'on the pod' : 'on this PC'}); frames read from ${o.source}.`, '',
     '## What was measured', ...o.codecs.map((c, k) => `- ${reviewFile(o.clip, c)}: decoded frame count (ffprobe -count_frames) @@FRAMES_${k}@@ of ${frames} expected (a mismatch fails the render); ${'@@BYTES_' + k + '@@'} bytes; sha256 @@SHA256_${k}@@`),
     `- Measured encode rate: ${o.codecs.map((c, k) => `${c} @@RATE_${k}@@ frames per second`).join(', ')}.`,
@@ -488,10 +585,10 @@ export function chooseWhere(where: Where, adapters: AdapterState[]): 'pod' | 'lo
 }
 const whereOf = (w: unknown, dflt: Where = 'auto'): Where => { if (w === undefined || w === null || w === '') return dflt; if (w === 'auto' || w === 'pod' || w === 'local') return w; throw bad('where is auto, pod or local') }
 
-export interface PlanRequest { pod_id?: string; sequences: unknown; width?: unknown; where?: Where; kind?: Kind; codecs?: Codec[]; allow_partial?: boolean; fps?: number }
+export interface PlanRequest { /** skip what is already done (default true): a proxy newer than its frames, a clip that already has a review version. Per run only, never a stored default. */ skip_existing?: boolean; pod_id?: string; sequences: unknown; width?: unknown; where?: Where; kind?: Kind; codecs?: Codec[]; allow_partial?: boolean; fps?: number }
 /** What the pod has to render with (DPX decode and ffmpeg are CPU-bound: the GPU is idle, so a cheap card with many vCPUs is enough), and what the output folder has free. */
 export interface PodCpu { cores: number; mem_mb: number; free_gb: number }
-export interface PlanResult { pod_cpu?: PodCpu; local_free_gb?: number; estimate: { output_gb: number; note: string }; pod_ok: boolean; reason?: string; adapters: AdapterState[]; where: 'pod' | 'local' | null; kind: Kind; width: Width; codecs: Codec[]; settings: RenderSettings; settings_source: 'pod' | 'default'; notes: string[]; total_frames: number; sequences: PlannedSequence[] }
+export interface PlanResult { pod_cpu?: PodCpu; local_free_gb?: number; estimate: { output_gb: number; note: string }; pod_ok: boolean; reason?: string; adapters: AdapterState[]; where: 'pod' | 'local' | null; kind: Kind; width: Width; codecs: Codec[]; settings: RenderSettings; settings_source: 'pod' | 'default'; notes: string[]; total_frames: number; sequences: PlannedSequence[]; skip_existing: boolean; totals: { to_render: number; skipped: number }; colour_summary: ColourSummary; source_summary: { groups: { width: number; height: number; bits: number; count: number }[] } }
 /** `nproc`, `free -m` and `df -Pk` of the pod's output folder over SSH: 5 seconds at most, best effort, never throws, absent when it fails. */
 export async function probePod(podId: string, target: { host: string; port: number }): Promise<PodCpu | null> {
   try {
@@ -532,15 +629,17 @@ export async function plan(o: PlanRequest): Promise<PlanResult> {
   // one lookup of the existing review versions per SHOT, not per sequence: 46 sequences of a few shots no longer make 46 slow round trips to the pod and to S3
   const verCache = new Map<string, Promise<string[]>>()
   const versionsOf = (shot: string): Promise<string[]> => { let p = verCache.get(shot); if (!p) { p = (async () => [...(ad ? await ad.versions(shot).catch(() => []) : []), ...(vol ? await deps.deliverDirs(vol, shot).catch(() => []) : [])])(); verCache.set(shot, p) } return p }
-  for (const s of seqs) {
+  const heads = ad && chosen ? await headerPass(chosen, o.pod_id ?? '', seqs, podTarget) : seqs.map(() => null)
+  const skipExisting = o.skip_existing !== false, clipMemo = new Map<string, Promise<{ version: string; clip: string }[]>>()
+  for (const [idx, s] of seqs.entries()) {
     const file = `${clipOf(s)}${width === 'source' ? '' : `_${width}`}.mp4`
     const remote = vol ? ((await listed(vol, s.dir).catch(() => null))?.some((r) => r.name === file) ?? false) : false
     let probe: Probe | null = null; if (ad && seqs.length <= 30) probe = await ad.plan(s, width).catch(() => null)
-    const complete = probe ? probe.complete : s.frames === s.last - s.first + 1, partial = !!o.allow_partial && !complete, h = probe?.header ?? null
+    const complete = probe ? probe.complete : s.frames === s.last - s.first + 1, partial = !!o.allow_partial && !complete, h = probe?.header ?? (heads[idx] ? parseDpxInfo(heads[idx]!) : null), colour = colourDetails(heads[idx], kind === 'review')
     const base: PlannedSequence = { ...s, clip_name: clipOf(s), out: proxyRel(s, width, partial), exists_remote: remote, exists_local: root ? await exists(join(root, proxyRel(s, width, partial).slice(`output/${PROXIES}/`.length))) : false, gaps: probe ? probe.gaps : Math.max(0, s.last - s.first + 1 - s.frames), where: chosen ?? 'pod', complete, missing: probe?.missing ?? [], partial,
-      source: h ? { width: h.width, height: h.height, bits: h.bits } : null, estimate: { frames: probe ? probe.run : s.frames, note: slow(width), output_gb: outputGb(probe ? probe.run : s.frames, Number(fpsOf(s.name, o.fps ?? s.fps ?? (typeof st.fps === 'number' ? st.fps : undefined))), codecs, kind, width === 'source' ? (h ? (h.width * h.height) / (3840 * 2160) : 1) : (width / 3840) ** 2) } }
-    if (kind === 'review') { const shot = shotOf(clipOf(s), s.dir), existing = await versionsOf(shot); const v = nextVersion(existing); out.push({ ...base, shot, next_version: v, out: reviewRel(shot, v, clipOf(s), codecs[0]), exists_remote: false, exists_local: false, colour_refusal: colourRefusal(h) }) }
-    else out.push(base)
+      source: h ? { width: h.width, height: h.height, bits: h.bits } : null, colour, estimate: { frames: probe ? probe.run : s.frames, note: slow(width), output_gb: outputGb(probe ? probe.run : s.frames, Number(fpsOf(s.name, o.fps ?? s.fps ?? (typeof st.fps === 'number' ? st.fps : undefined))), codecs, kind, width === 'source' ? (h ? (h.width * h.height) / (3840 * 2160) : 1) : (width / 3840) ** 2) } }
+    if (kind === 'review') { const shot = shotOf(clipOf(s), s.dir), existing = await versionsOf(shot); const v = nextVersion(existing), have = skipExisting ? await reviewVersionsOf(ad, vol, shot, clipOf(s), clipMemo) : []; out.push({ ...base, skip: have.length ? `already has review ${have[have.length - 1]}` : null, shot, next_version: v, out: reviewRel(shot, v, clipOf(s), codecs[0]), exists_remote: false, exists_local: false, colour_refusal: colourRefusal(h) }) }
+    else out.push({ ...base, skip: skipExisting && (probe ? probe.skip : base.exists_local || base.exists_remote) ? 'already rendered' : null })
   }
   const totalGb = Math.round(out.reduce((a, x) => a + (x.estimate?.output_gb ?? 0), 0) * 10) / 10, fullRes = width === 'source' || width === 1920
   if (pod_cpu && kind === 'review' && fullRes && pod_cpu.cores < 8) notes.push(`This pod has ${pod_cpu.cores} vCPUs: a 4K review will be slow (expect minutes per 100 frames). A pod with more cores or On this PC may be faster.`)
@@ -548,12 +647,22 @@ export async function plan(o: PlanRequest): Promise<PlanResult> {
   if (localFreeB !== null && totalGb > localFreeB / 1e9) notes.push(`Only ${Math.round(localFreeB / 1e8) / 10} GB are free on this PC; about ${totalGb} GB is needed (not refused).`)
   if (chosen === 'pod' && st.pull && totalGb > GATE_GB) notes.push(`About ${totalGb} GB: a sync of this size asks for approval (Auto sync) or takes a while.`)
   const pod = adapters[0]
-  return { ...(pod_cpu ? { pod_cpu } : {}), ...(localFreeB !== null ? { local_free_gb: Math.round(localFreeB / 1e8) / 10 } : {}), estimate: { output_gb: totalGb, note: 'A rough guess (ProRes 422 HQ at 4K is about 5.3 GB per minute of picture at 24 fps); the real size shows when it is done.' }, pod_ok: pod.ok, ...(chosen ? {} : { reason: pod.reason ?? adapters[1].reason }), adapters, where: chosen, kind, width, codecs, settings: st, settings_source: (o.pod_id && podconfigs.get(o.pod_id)?.render) ? 'pod' : 'default', notes, total_frames: seqs.reduce((a, s) => a + s.frames, 0), sequences: out }
+  return { ...(pod_cpu ? { pod_cpu } : {}), ...(localFreeB !== null ? { local_free_gb: Math.round(localFreeB / 1e8) / 10 } : {}), estimate: { output_gb: totalGb, note: 'A rough guess (ProRes 422 HQ at 4K is about 5.3 GB per minute of picture at 24 fps); the real size shows when it is done.' }, pod_ok: pod.ok, ...(chosen ? {} : { reason: pod.reason ?? adapters[1].reason }), adapters, where: chosen, kind, width, codecs, settings: st, settings_source: (o.pod_id && podconfigs.get(o.pod_id)?.render) ? 'pod' : 'default', notes, total_frames: seqs.reduce((a, s) => a + s.frames, 0), sequences: out, skip_existing: skipExisting, totals: { to_render: out.filter((x) => !x.skip).length, skipped: out.filter((x) => x.skip).length }, ...summarize2(out) }
 }
 
 export interface Deliverable { clip_name: string; shot: string; version: string; file: string; files: string[]; exists_local: boolean; exists_remote: boolean; bytes: number; approved_by?: string; rendered_at?: string; local_url: string }
 const readMeta = async (p: string): Promise<Record<string, unknown> | null> => { try { return JSON.parse(await readFile(p, 'utf8')) } catch { return null } }
 const REVIEW_EXT = /\.(mov|mp4)$/i
+
+/** The review versions that already hold this clip, newest last: what the adapter sees (on the pod or on this PC) and what the volume lists. */
+async function reviewVersionsOf(ad: RenderAdapter | null, vol: string, shot: string, clip: string, memo: Map<string, Promise<{ version: string; clip: string }[]>>): Promise<string[]> {
+  let all = memo.get(shot)
+  if (!all) {
+    all = (async () => [...(ad ? await ad.deliveredClips(shot).catch(() => []) : []), ...(vol ? (await deps.deliverFiles(vol, shot).catch(() => [])).flatMap((f) => { const m = /^(v\d{3,})\/(.+)\.(?:mov|mp4)$/.exec(f.name); return m ? [{ version: m[1], clip: m[2] }] : [] }) : [])])()
+    memo.set(shot, all)
+  }
+  return [...new Set((await all).filter((x) => x.clip === clip).map((x) => x.version))].sort()
+}
 
 /** Where each proxy is: on the volume (an S3 listing of its folder by prefix, cached 60 s, works with the pod stopped) and on this PC (a stat); the sidecar says whether it is complete, partial, its fps, frames and real size. `deliverables` lists the review versions of the clip (its files in each `v###` folder). */
 export async function proxies(o: { pod_id?: string; volume_id?: string; items: { dir: string; name: string; clip_name?: string }[]; width?: unknown }): Promise<{ items: (ProxyItem & { clip_name: string; deliverables: Deliverable[] })[] }> {
@@ -602,6 +711,8 @@ export interface RenderOpts {
 export interface RenderResult { out: string; outs: string[]; bytes: number; files: string[] }
 /** A render adapter: `pod` (ffmpeg over SSH on the running pod, then the proxy is pulled) or `local` (ffmpeg on this PC, no pull). Both run the SAME ffmpeg argument arrays. */
 export interface RenderAdapter {
+  /** Every review file under deliver/<shot>/: which version folder holds which clip */
+  deliveredClips(shot: string): Promise<{ version: string; clip: string }[]>
   id: 'pod' | 'local'; needsPull: boolean
   check(): Promise<{ ok: boolean; reason?: string; code?: string; install_hint?: string }>
   plan(seq: Sequence, width: Width): Promise<Probe>
@@ -628,7 +739,7 @@ function sidecars(s: Sequence, o: RenderOpts, adapter: 'pod' | 'local', passes: 
   const metas = rels.map((rel, k) => buildMeta(s, { width: o.width, fps: o.fps, probe: o.probe, partial: o.partial, adapter, args: passes[k].args, version: o.probe.ffmpeg_version, at: o.at, kind: o.kind, extra: {
     ...(review ? { clip_name: o.clip, frames_stem: s.name, shot: o.shot, version: versionName(o.version), approved_by: o.approvedBy, source: o.source, delivery_note: DELIVERY_NOTE, duration_s: Math.round(((s.last - s.first + 1) / fps) * 1000) / 1000, codec: codecs[k],
       outputs: rels.map((r, j) => ({ file: r.slice(r.lastIndexOf('/') + 1), codec: codecs[j], bytes: `@@BYTES_${j}@@`, sha256: `@@SHA256_${j}@@`, frames_decoded: `@@FRAMES_${j}@@`, render_fps: `@@RATE_${j}@@` })) } : {}),
-    start_timecode: h?.timecode ?? null, timecode_source: h?.timecode ? 'DPX television header (SMPTE 268M, byte 1664)' : null, ...(h?.timecode ? {} : { timecode_note: 'no timecode in the DPX header' }),
+    start_timecode: h?.timecode ?? null, timecode_source: h?.timecode ? 'DPX television header (SMPTE 268M, byte 1920)' : null, ...(h?.timecode ? {} : { timecode_note: h && !h.has_tv_header ? 'no timecode in the DPX header (the file has no television header)' : 'no timecode in the DPX header' }),
     colour: { header: h, transform: 'none', lines: colourLines(h, codecs) }, ffmpeg_passes: passes.map((p) => p.args), notes: codecs.includes('prores422hq') ? [PRORES_NOTE] : [] } }))
   return { metas, delivery: review ? deliveryMd({ clip: o.clip, shot: o.shot, version: o.version, s, width: o.width, fps, probe: o.probe, adapter, source: o.source, ffv: o.probe.ffmpeg_version, passes: passes.map((p) => p.args), codecs, approvedBy: o.approvedBy, at: o.at }) : null }
 }
@@ -647,6 +758,11 @@ function podAdapter(podId?: string): RenderAdapter & { target?: { host: string; 
       const t = me.target!, lines: string[] = []
       await deps.ssh({ host: t.host, port: t.port, script: probeScript(s, width, deps.outputDir(podId!)), onLine: (l) => lines.push(l), signal: new AbortController().signal })
       return parseProbe(lines, s)
+    },
+    async deliveredClips(shot) {
+      const t = me.target!, found: { version: string; clip: string }[] = []
+      await deps.ssh({ host: t.host, port: t.port, script: `find ${q(`${deps.outputDir(podId!)}/deliver/${shot}`)} -maxdepth 2 -type f \\( -name '*.mov' -o -name '*.mp4' \\) 2>/dev/null; echo`, onLine: (l) => { const m = /\/(v\d{3,})\/([^/]+)\.(?:mov|mp4)$/.exec(l.trim()); if (m) found.push({ version: m[1], clip: m[2] }) }, signal: new AbortController().signal })
+      return found
     },
     async versions(shot) {
       const t = me.target!, names: string[] = []
@@ -710,6 +826,11 @@ function localAdapter(podId = ''): RenderAdapter {
       const ff = await ffmpegState()
       return buildProbe(frames, odd, s, { outM: o1.m, outS: o1.s, metS: m1.s, poutM: o2.m, poutS: o2.s, pmetS: m2.s, ffv: ff.version ?? '', header, ffprobe: !!(ff.path && (await deps.findFfprobe(ff.path))) })
     },
+    async deliveredClips(shot) {
+      const found: { version: string; clip: string }[] = []
+      try { for (const v of (await deps.readdir(join(outDir()!, 'deliver', shot))).filter((n) => /^v\d{3,}$/.test(n))) { for (const n of await deps.readdir(join(outDir()!, 'deliver', shot, v)).catch(() => [] as string[])) { const m = /^(.+)\.(?:mov|mp4)$/.exec(n); if (m) found.push({ version: v, clip: m[1] }) } } } catch { /* no deliver folder */ }
+      return found
+    },
     async versions(shot) { try { return (await deps.readdir(join(outDir()!, 'deliver', shot))).filter((n) => /^v\d{3,}$/.test(n)) } catch { return [] } },
     async render(s, o) {
       const ff = await ffmpegState(); if (!ff.path) throw new Error(NO_FFMPEG); if (ff.broken) throw new Error(`ffmpeg was found at ${ff.path} but did not run: ${ff.broken}`); const bin = ff.path
@@ -750,7 +871,7 @@ function localAdapter(podId = ''): RenderAdapter {
 
 // ----- jobs -----
 
-interface Job { versions: Map<string, number>; view: JobView; seqs: Sequence[]; kind: Kind; codecs: Codec[]; approvedBy: string; allowPartial: boolean; pull: boolean; fps?: number; auto: boolean; abort: AbortController; started: number; done: Promise<void> }
+interface Job { pre?: Map<number, Probe | null>; clipMemo: Map<string, Promise<{ version: string; clip: string }[]>>; skipExisting: boolean; publish?: { targets: publish.Target[]; message?: string }; versions: Map<string, number>; view: JobView; seqs: Sequence[]; kind: Kind; codecs: Codec[]; approvedBy: string; allowPartial: boolean; pull: boolean; fps?: number; auto: boolean; abort: AbortController; started: number; done: Promise<void> }
 const jobs = new Map<string, Job>()
 let finished: JobView[] = []
 let write: Promise<void> = Promise.resolve()
@@ -768,10 +889,10 @@ const copy = (v: JobView): JobView => ({ ...v, sequences: v.sequences.map((s) =>
 /** The jobs, from memory: running ones first, then the newest finished (kept across a restart). With an id, just that one. */
 export function status(jobId?: string): { jobs: JobView[] } {
   const all = [...[...jobs.values()].map((j) => j.view), ...finished]
-  return { jobs: (jobId ? all.filter((v) => v.job_id === jobId) : all).map(copy) }
+  return { jobs: (jobId ? all.filter((v) => v.job_id === jobId) : all).map(copy).map((v) => { const pj = v.publish?.job_id ? publish.status(v.publish.job_id).jobs[0] : undefined; return pj && v.publish ? { ...v, publish: { ...v.publish, state: pj.state, ...(pj.error ? { error: pj.error } : {}) } } : v }) }
 }
 
-export interface StartRequest extends PlanRequest { pull?: boolean; approved_by?: string }
+export interface StartRequest extends PlanRequest { pull?: boolean; approved_by?: string; /** ADR-050: publish the finished files once they are on this PC. Per run only, never a stored default; needs approved_by (also for a proxy). */ publish?: { targets: publish.Target[]; message?: string } }
 export async function start(o: StartRequest): Promise<{ job_id: string }> {
   const st = effectiveSettings(o.pod_id), kind = kindOf(o.kind, st.kind), seqs = clean(o.sequences), width = widthFor(kind, o.width, st), want = whereOf(o.where, st.where), codecs = kind === 'review' ? codecsOf(o.codecs, st.codecs) : ['h264' as Codec]
   const fps = o.fps ?? (typeof st.fps === 'number' ? st.fps : undefined)
@@ -779,14 +900,39 @@ export async function start(o: StartRequest): Promise<{ job_id: string }> {
     if (!(o.approved_by ?? '').trim()) throw bad(NEEDS_NAME)
     if (o.allow_partial) throw bad('A review video is only made from a complete sequence: allow_partial is not available for kind review')
   }
+  if (o.publish) {
+    if (!(o.approved_by ?? '').trim()) throw bad('Publishing a render needs the name of who says yes (approved_by), also for a proxy')
+    if (!Array.isArray(o.publish.targets) || !o.publish.targets.length || o.publish.targets.some((t) => t !== 's3' && t !== 'slack')) throw bad("publish.targets is a list of 's3' and/or 'slack'")
+    const ps = await publish.settings()
+    const blockers = [...(o.publish.targets.includes('s3') && !ps.s3.ready ? [`S3 is not configured: ${ps.s3.problem}`] : []), ...(o.publish.targets.includes('slack') && !ps.slack.ready ? [`Slack is not configured: ${ps.slack.problem}`] : [])]
+    if (blockers.length) throw bad(`Cannot publish: ${blockers.join('; ')}`)
+  }
   if (want === 'pod' && !o.pod_id) throw bad('Which pod?')
   if (fps !== undefined && !(typeof fps === 'number' && fps >= 1 && fps <= 240)) throw bad('fps is a number from 1 to 240')
   const chosen = chooseWhere(want, await adapterStates(o.pod_id))   // throws with the reason(s)
+  // Skip existing (the default): when everything in the scope is already done, say so now instead of starting a job that does nothing. The probes made here are the job's own (run() does not ask the pod twice).
+  let pre: Map<number, Probe | null> | undefined
+  if (o.skip_existing !== false && seqs.length) {
+    if (seqs.length <= 30) {
+      const ad0 = chosen === 'pod' ? podAdapter(o.pod_id) : localAdapter(o.pod_id ?? ''); await ad0.check(); pre = new Map()
+      const vol0 = o.pod_id ? deps.volumeId(o.pod_id) : '', memo = new Map<string, Promise<{ version: string; clip: string }[]>>()
+      let done = 0
+      for (const [i, s] of seqs.entries()) {
+        const pr = await ad0.plan(s, width).catch(() => null); pre.set(i, pr)
+        if (kind === 'review') { if (pr && !pr.nodir && (await reviewVersionsOf(ad0, vol0, shotOf(clipOf(s), s.dir), clipOf(s), memo)).length) done++ }
+        else if (pr?.skip) done++
+      }
+      if (done === seqs.length) throw bad(ALL_DONE)
+    } else {
+      const pl = await plan({ ...o, skip_existing: true }).catch(() => null)
+      if (pl && pl.totals.to_render === 0) throw bad(ALL_DONE)
+    }
+  }
   const podId = o.pod_id ?? '', id = `render-${deps.now().toString(36)}-${(seq++).toString(36)}`
   const view: JobView = { job_id: id, kind, approved_by: (o.approved_by ?? '').trim(), codecs, notes: [slow(width), ...(codecs.includes('prores422hq') && kind === 'review' ? [PRORES_NOTE] : [])], pod_id: podId, pod_name: podId ? deps.podName(podId) : 'this PC', state: 'queued', started_at: iso(), finished_at: '', width, frames_done: 0,
     frames_total: seqs.reduce((a, s) => a + s.frames, 0) * (kind === 'review' ? codecs.length : 1), rate_fps: 0, current: '',
     sequences: seqs.map((s) => ({ where: chosen, dir: s.dir, name: s.name, clip_name: clipOf(s), state: 'waiting', frames_done: 0, frames_total: s.frames * (kind === 'review' ? codecs.length : 1), out: proxyRel(s, width), bytes: 0, error: '' })), pulled_files: 0, pulled_bytes: 0, error: '', summary: '' }
-  const job: Job = { versions: new Map(), view, seqs, kind, codecs, approvedBy: view.approved_by, allowPartial: !!o.allow_partial, pull: o.pull ?? st.pull, fps, auto: want === 'auto', abort: new AbortController(), started: deps.now(), done: Promise.resolve() }
+  const job: Job = { ...(pre ? { pre } : {}), clipMemo: new Map(), skipExisting: o.skip_existing !== false, ...(o.publish ? { publish: { targets: [...o.publish.targets], ...(o.publish.message ? { message: o.publish.message } : {}) } } : {}), versions: new Map(), view, seqs, kind, codecs, approvedBy: view.approved_by, allowPartial: !!o.allow_partial, pull: o.pull ?? st.pull, fps, auto: want === 'auto', abort: new AbortController(), started: deps.now(), done: Promise.resolve() }
   jobs.set(id, job)
   const key = chosen === 'pod' ? podId : 'local', prev = chain.get(key) ?? Promise.resolve()
   job.done = prev.then(() => run(job)).catch(() => undefined)
@@ -813,7 +959,7 @@ async function run(job: Job): Promise<void> {
     if (ac.signal.aborted) { sv.state = 'failed'; sv.error = 'cancelled'; continue }
     v.current = s.name; sv.state = 'rendering'
     try {
-      let ad = adapters[sv.where], p = await ad.plan(s, v.width)
+      let ad = adapters[sv.where], p = (job.pre?.get(i) ?? null) ?? await ad.plan(s, v.width)
       if (job.auto && sv.where === 'pod' && (p.nodir || p.run === 0) && localOk) {   // the pod cannot read it but this PC has it: render it here
         const lp = await adapters.local.plan(s, v.width)
         if (lp.run > 0) { ad = adapters.local; sv.where = 'local'; p = lp }
@@ -825,11 +971,15 @@ async function run(job: Job): Promise<void> {
         sv.partial = true; sv.out = proxyRel(s, v.width, true)
         sv.warning = `${p.gaps} frame number${p.gaps === 1 ? '' : 's'} missing: rendered the ${p.run} contiguous frames from ${s.first} as a partial`
       }
+      if (review && job.skipExisting) {
+        const have = await reviewVersionsOf(ad, vol, shotOf(clipOf(s), s.dir), clipOf(s), job.clipMemo)
+        if (have.length) { sv.state = 'skipped'; sv.reason = `already has review ${have[have.length - 1]}`; sv.shot = shotOf(clipOf(s), s.dir); sv.frames_done = p.run * passes; v.frames_done += p.run * passes; skippedN++; continue }
+      }
       if (review) { const refusal = colourRefusal(p.header); if (refusal) throw new Error(refusal) }   // colour.md: stated, never guessed
       if (p.odd || p.size_odd) sv.warning = `${sv.warning ? `${sv.warning}; ` : ''}${p.odd ? `${p.odd} file(s) named like the sequence do not fit its pattern` : ''}${p.odd && p.size_odd ? '; ' : ''}${p.size_odd ? `${p.size_odd} frame(s) have an unusual size` : ''}`
       sv.frames_total = p.run * passes
       let last = [0, 0]
-      if (p.skip && !review) { sv.state = 'skipped'; sv.bytes = p.out_bytes; sv.frames_done = p.run; v.frames_done += p.run; skippedN++; if (job.pull && ad.needsPull) await pullOne(job, sv, p.meta_exists ? [sv.out, metaRel(sv.out)] : [sv.out]); continue }
+      if (p.skip && !review && job.skipExisting) { sv.state = 'skipped'; sv.reason = 'already rendered'; sv.bytes = p.out_bytes; sv.frames_done = p.run; v.frames_done += p.run; skippedN++; if (job.pull && ad.needsPull) await pullOne(job, sv, p.meta_exists ? [sv.out, metaRel(sv.out)] : [sv.out]); continue }
       let shot = '', version = 0, createDir = true
       const clip = clipOf(s)
       if (review) {
@@ -858,14 +1008,34 @@ async function run(job: Job): Promise<void> {
   const used = [...new Set(v.sequences.map((s) => s.where))].join('+')
   v.summary = `${job.kind}: ${renderedN} rendered, ${skippedN} already there, ${incompleteN} incomplete, ${failedN} failed (${used}); ${v.pulled_files} file${v.pulled_files === 1 ? '' : 's'} pulled (${v.pulled_bytes} bytes), ${v.width === 'source' ? 'source size' : `width ${v.width}`}${review ? `; approved by ${job.approvedBy}` : ''}`
   const bad = v.sequences.find((s) => (s.state === 'failed' && s.error !== 'cancelled') || s.state === 'incomplete'); if (bad) v.error = bad.error
+  if (job.publish && v.state === 'done') await publishJob(job)
   end(job)
+}
+
+/** ADR-050: after the sequences are rendered AND are on this PC, hand their files to publishing with the job's approver. A file that is only on the pod (pull off) is refused, never sent from here. */
+async function publishJob(job: Job): Promise<void> {
+  const v = job.view, p = job.publish!, items = new Set<string>()
+  const strip = (rel: string) => rel.replace(/^output\//, '')
+  try {
+    for (const s of v.sequences) {
+      if (s.state === 'rendered') throw new Error('Pull the renders to this PC first')   // rendered on the pod and not pulled: not here
+      if (!['pulled', 'done', 'skipped'].includes(s.state)) continue
+      if (job.kind === 'review') items.add(strip(dirname(s.out))); else items.add(strip(s.out))
+    }
+    if (!items.size) throw new Error('Nothing was rendered to publish')
+    const req = { items: [...items], targets: p.targets, approved_by: job.approvedBy, ...(p.message ? { message: p.message } : {}) }
+    const pl = await publish.plan(req)
+    if (pl.items.some((i) => i.skip === 'missing')) throw new Error('Pull the renders to this PC first')
+    const r = await publish.run({ ...req, trigger: 'render' })
+    v.publish = { job_id: r.job_id, state: 'queued' }
+  } catch (e) { v.publish = { job_id: '', state: 'refused', error: (e as Error).message } }
 }
 
 /** Pull a finished proxy (and its sidecar; a review's whole version folder) to this PC with the existing sync: exactly those paths, so they land at the same relative path under the mapped ComfyUI-Shared. */
 async function pullOne(job: Job, sv: SeqView, paths: string[]): Promise<void> {
   const v = job.view; v.state = 'pulling'
   try {
-    const r = await deps.pull({ pod_id: v.pod_id, direction: 'pull', paths, ...(sv.bytes && paths.length === 1 ? { path_sizes: { [sv.out]: sv.bytes } } : {}), existing: 'size', trigger: 'render:pull' }, job.abort.signal)
+    const r = await deps.pull({ pod_id: v.pod_id, direction: 'pull', paths, ...(sv.bytes && paths.length === 1 ? { path_sizes: { [sv.out]: sv.bytes } } : {}), existing: job.skipExisting ? 'size' : 'replace', trigger: 'render:pull' }, job.abort.signal)
     if (r.failed) throw new Error('The pull of the proxy failed')
     sv.state = 'pulled'; v.pulled_files++; v.pulled_bytes += sv.bytes
   } finally { if (v.state === 'pulling') v.state = 'rendering' }
@@ -880,5 +1050,5 @@ function end(job: Job): void {
   void persist()
 }
 /** Forget everything in memory (tests). */
-export function reset(): void { jobs.clear(); finished = []; chain.clear(); cache.clear(); forgetFfmpeg(); setDeps(null) }
+export function reset(): void { hdrCache.clear(); hdrLock = Promise.resolve(); jobs.clear(); finished = []; chain.clear(); cache.clear(); forgetFfmpeg(); setDeps(null) }
 void load()

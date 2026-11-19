@@ -37,7 +37,7 @@ export const rendersAPI = {
   plan: async (o) => {
     const r = (await raw.plan(o)) || {}
     if (r.old) return { old: true, pod_ok: false, reason: RESTART, adapters: [], total_frames: 0, sequences: [] }
-    return { old: false, pod_ok: !!r.pod_ok, reason: r.reason || '', adapters: Array.isArray(r.adapters) ? r.adapters : [], total_frames: r.total_frames ?? 0, sequences: Array.isArray(r.sequences) ? r.sequences : [], pod_cpu: r.pod_cpu || null, notes: Array.isArray(r.notes) ? r.notes : [], settings: r.settings || null, settings_source: r.settings_source || '' }
+    return { old: false, pod_ok: !!r.pod_ok, reason: r.reason || '', adapters: Array.isArray(r.adapters) ? r.adapters : [], total_frames: r.total_frames ?? 0, sequences: Array.isArray(r.sequences) ? r.sequences : [], pod_cpu: r.pod_cpu || null, notes: Array.isArray(r.notes) ? r.notes : [], totals: r.totals || null, source_summary: r.source_summary || null, colour_summary: r.colour_summary || null, settings: r.settings || null, settings_source: r.settings_source || '' }
   },
   start: withCode(async (o) => (await raw.start(o)) || {}),
   status: async (id) => { const r = await raw.status(id); return { old: !!r?.old, jobs: Array.isArray(r?.jobs) ? r.jobs : [] } },

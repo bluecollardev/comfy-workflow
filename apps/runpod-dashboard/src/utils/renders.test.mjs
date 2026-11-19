@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { galleryTiles } from './outputs.js'
-import { parseFrameName, fpsFromName, fpsFor, sequenceItem, sequenceItems, planSummary, adapterMap, whereState, ffmpegProblem, jobPercent, currentSequence, jobFor, missingText, isComplete, shotOfName, versionName, reviewFolder, latestReview, reviewMp4, unplayableFiles, deliverableParts, seqKey, clipProblem, outputNames, renderProblem, renderIsDefault, RENDER_DEFAULTS, widthLabel } from './renders.js'
+import { parseFrameName, fpsFromName, fpsFor, sequenceItem, sequenceItems, planSummary, adapterMap, whereState, ffmpegProblem, jobPercent, currentSequence, jobFor, missingText, isComplete, shotOfName, versionName, reviewFolder, latestReview, reviewMp4, unplayableFiles, deliverableParts, seqKey, clipProblem, outputNames, sourceGroups, dimsText, scaledHeight, colourGroups, colourLine, conversions, noTransform, refusals, colourText, renderProblem, renderIsDefault, RENDER_DEFAULTS, widthLabel } from './renders.js'
 
 const f = (name, sub = 'a/b', type = 'output') => ({ filename: name, subfolder: sub, type })
 const NAME = 'ARCHIVAL-085_MAIN_FINAL_V03_3840X2160_23.976_PRORES422HQ'
@@ -93,4 +93,25 @@ test('render settings: defaults (ProRes, source size), validation, and the untou
   assert.equal(renderProblem({ ...RENDER_DEFAULTS, proxy_width: 1000 }), 'width'); assert.equal(renderProblem({ ...RENDER_DEFAULTS, where: 'x' }), 'choice')
   assert.equal(renderIsDefault({}), true); assert.equal(renderIsDefault({ ...RENDER_DEFAULTS }), true); assert.equal(renderIsDefault({ fps: 25 }), false)
   assert.equal(widthLabel(1280), '1280 px'); assert.equal(widthLabel('source'), 'source size')
+})
+
+const C = (o = {}) => ({ transfer_name: 'logarithmic', colorimetric_name: 'unspecified video', descriptor_name: 'RGB', bits: 16, packing_name: 'packed', endian: 'big', width: 3840, height: 2160, verdict: 'ok', conversion: 'none: a plain scale, no colour transform', ...o })
+test('sourceGroups: the core\'s summary, else grouped from the sequences; nothing read is empty', () => {
+  assert.deepEqual(sourceGroups({ source_summary: { groups: [{ width: 1, height: 2, bits: 8, count: 3 }] } }), [{ width: 1, height: 2, bits: 8, count: 3 }])
+  assert.deepEqual(sourceGroups({ sequences: [{ source: { width: 3840, height: 2160, bits: 16 } }, { source: { width: 3840, height: 2160, bits: 16 } }, { source: { width: 1920, height: 1080, bits: 10 } }, {}] }), [{ width: 3840, height: 2160, bits: 16, count: 2 }, { width: 1920, height: 1080, bits: 10, count: 1 }])
+  assert.deepEqual(sourceGroups({ sequences: [{}] }), []); assert.deepEqual(sourceGroups(null), [])
+})
+test('dimsText and scaledHeight: the size with its depth, and the even height an aspect-keeping downscale gives', () => {
+  assert.equal(dimsText({ width: 3840, height: 2160, bits: 16 }), '3840 × 2160, 16-bit'); assert.equal(dimsText({ width: 10, height: 20 }), '10 × 20')
+  assert.equal(scaledHeight({ width: 3840, height: 2160 }, 1920), 1080); assert.equal(scaledHeight({ width: 4096, height: 1716 }, 1280), 536); assert.equal(scaledHeight({ width: 3840, height: 2160 }, 960), 540)
+})
+test('colourGroups, colourLine, conversions, refusals and colourText', () => {
+  const plan = { sequences: [{ name: 'a', colour: C() }, { name: 'b', colour: C() }, { name: 'c', colour: C({ transfer_name: 'linear', verdict: 'refused', refusal: 'a linear transfer is not a review' }) }, { name: 'd' }] }
+  const gs = colourGroups(plan)
+  assert.equal(gs.length, 2); assert.equal(gs[0].count, 2); assert.equal(gs[1].verdict, 'refused')
+  assert.equal(colourLine(gs[0]), 'Transfer: logarithmic · Colorimetric: unspecified video · RGB · 16-bit packed · big-endian')
+  assert.deepEqual(conversions(plan), ['none: a plain scale, no colour transform']); assert.equal(noTransform('none: a plain scale'), true); assert.equal(noTransform('BT.709 matrix'), false)
+  assert.deepEqual(refusals(gs), ['a linear transfer is not a review']); assert.deepEqual(refusals([]), [])
+  assert.equal(colourText(plan), ['2 sequences: Transfer: logarithmic · Colorimetric: unspecified video · RGB · 16-bit packed · big-endian · 3840 × 2160 · Review allowed', '1 sequence: Transfer: linear · Colorimetric: unspecified video · RGB · 16-bit packed · big-endian · 3840 × 2160 · Review refused: a linear transfer is not a review', 'Conversion applied: none: a plain scale, no colour transform'].join('\n'))
+  assert.deepEqual(colourGroups({ colour_summary: { groups: [{ count: 9, verdict: 'ok' }] } }), [{ count: 9, verdict: 'ok' }]); assert.deepEqual(colourGroups({}), [])
 })

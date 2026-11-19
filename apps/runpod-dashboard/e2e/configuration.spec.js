@@ -355,7 +355,7 @@ test.describe('configuration layout', () => {
     await page.goto('/')
     const dialog = await openConfig(page)
     await expect(dialog.getByTestId('cfg-tabs')).toBeVisible()
-    await expect(dialog.locator('[data-testid^="cfg-tab-"]')).toHaveText([t('config.runpod'), t('config.volume'), t('config.folders'), t('config.environment'), t('adapters.section'), t('config.options')])
+    await expect(dialog.locator('[data-testid^="cfg-tab-"]')).toHaveText([t('config.runpod'), t('config.volume'), t('config.folders'), t('config.environment'), t('adapters.section'), t('publish.tab'), t('config.options')])
     await expect(dialog.getByTestId('section-runpod')).toBeVisible()
     await expect(dialog.getByTestId('section-volume')).toBeHidden()
     await dialog.getByTestId('cfg-tab-folders').click()

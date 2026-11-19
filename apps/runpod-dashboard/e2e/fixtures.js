@@ -438,6 +438,104 @@ export async function mockApi(page, state) {
       }
       if (method === 'GET' && path === '/syncs/watch') return json({ paused: false, pull: [], push: [], events: [], ...(sy.watch || {}) })
     }
+    // Publishing (S3 and Slack): state.publish = { settings, tree: { dir: [entries] }, sizes, there: [paths already on S3], heavy: [paths refused as weights], jobs, puts, tests, planned, runs, reposts }; state.publishOld answers like a core without it.
+    if (path.startsWith('/publish/')) {
+      if (state.publishOld) return json({ detail: `no core call publish.${path.slice(9)}` }, 500)
+      const pb = (state.publish ||= {})
+      pb.settings ||= { s3: { bucket: 'bh-panama-exchange-610140802195', prefix: 'returns/BKK/', region: 'us-west-2', endpoint: '', credentials: 'panama', access_key_hint: '', presign_hours: 72, note: 'Lucas, 2026-11-19: Panama exchange bucket, returns/BKK/' }, slack: { workspace_name: 'Beinghuman', workspace_url: 'https://beinghuman-hq.slack.com', channel: '', username: 'RunPod Manager', webhook_hint: '' }, defaults: { targets: ['s3', 'slack'], message: '{shot} {version} is on S3: {links}' } }
+      pb.tree ||= {}; pb.there ||= []; pb.heavy ||= []; pb.jobs ||= []
+      for (const k of ['puts', 'tests', 'planned', 'runs', 'reposts', 'cancelled']) pb[k] ||= []
+      const st = pb.settings
+      const view = () => {
+        const s3 = { ...st.s3, ready: !!st.s3.bucket && (st.s3.credentials === 'panama' ? pb.panamaKeys !== false : !!st.s3.access_key_hint) }
+        if (!s3.ready) s3.problem = !st.s3.bucket ? 'Enter a bucket' : st.s3.credentials === 'panama' ? 'The Panama exchange keys are not set' : 'Enter the access keys'
+        const slack = { ...st.slack, ready: !!st.slack.channel && !!st.slack.webhook_hint }
+        if (!slack.ready) slack.problem = !st.slack.webhook_hint ? 'Enter the webhook' : 'Enter a channel'
+        return { s3, slack, defaults: st.defaults }
+      }
+      // Scan and backfill: state.publish.inventory = { rows, by_shot, unreadable } (a test sets it), state.publish.scanSteps = how many polls answer 'scanning' first, state.publish.backfillOld answers like a core without it
+      if (path.startsWith('/publish/backfill/')) {
+        if (pb.backfillOld) return json({ detail: `no core call publish.backfill${path.slice(17)}` }, 500)
+        pb.scans ||= []; pb.bfPlans ||= []; pb.bfRuns ||= []
+        const inv = pb.inventory || { rows: [], by_shot: {}, unreadable: [] }
+        if (path === '/publish/backfill/scan') { pb.scans.push(body); pb.scanPolls = 0; return json({ job_id: 'scan-1' }) }
+        if (path === '/publish/backfill/inventory') { pb.scanPolls = (pb.scanPolls || 0) + 1; const busy = pb.scanPolls <= (pb.scanSteps || 0); return json({ state: busy ? 'scanning' : 'done', scanned: pb.scanPolls * 100, rows: busy ? [] : inv.rows, by_shot: inv.by_shot, unreadable: inv.unreadable || [] }) }
+        if (path === '/publish/backfill/plan') {
+          pb.bfPlans.push(body)
+          const v = view(), blockers = [...(pb.blockers || [])]
+          for (const tg of body.targets || []) if (!v[tg].ready) blockers.push(`${tg === 's3' ? 'S3' : 'Slack'} is not ready: ${v[tg].problem}`)
+          const rows = inv.rows.filter((r) => (body.rows || []).includes(r.id)), items = rows.map((r) => ({ path: r.path, bytes: r.bytes, s3_key: `${body.destination_prefix}${r.shot}/${r.name}`, skip: !!r.in_destination }))
+          const total = items.filter((i) => !i.skip).reduce((n, i) => n + i.bytes, 0)
+          return json({ ok: !blockers.length && !!items.length, blockers, items, total_bytes: total, files: items.filter((i) => !i.skip).length, refused: [], s3: { dest: `s3://${st.s3.bucket}/${body.destination_prefix}`, count: items.length, new_bytes: total }, slack: (body.targets || []).includes('slack') ? { channel: st.slack.channel, preview: String(body.message || st.defaults.message).replace('{files}', String(items.length)) } : null })
+        }
+        if (path === '/publish/backfill/run') {
+          pb.bfRuns.push(body)
+          if (!body.approved_by) return json({ detail: 'Publishing needs the name of who says yes (approved_by)' }, 400)
+          const n = pb.bfRuns.length
+          pb.jobs.push({ job_id: `bf-${n}`, state: 'uploading', phase: 'streaming', targets: body.targets, approved_by: body.approved_by, started_at: `2026-11-19T11:0${n}:00Z`, files_total: (body.rows || []).length, files_done: 0, bytes_total: 5e9, bytes_done: 0, rate_bps: 0, current: '', skipped: 0, links: [], slack: { state: 'skipped' }, summary: '' })
+          return json({ job_id: `bf-${n}` })
+        }
+      }
+      // The volume's comfy-shared/output/ as a publish source: state.publish.vtree = { dir: [entries] } (entries as in the local tree, plus empty: true), vsizes = { path: { files, bytes } }, volumeOld answers like a core without it
+      if (path === '/publish/volume' || path === '/publish/volume-size') {
+        if (pb.volumeOld) return json({ detail: `no core call publish.${path === '/publish/volume' ? 'volume' : 'volumeSize'}` }, 500)
+        pb.vtree ||= {}; pb.vsizes ||= {}
+        if (path === '/publish/volume-size') { (pb.vsizeCalls ||= []).push(query.path); if (pb.vsizeMs) await new Promise((r) => setTimeout(r, pb.vsizeMs)); return json(pb.vsizes[query.path] || { files: 0, bytes: 0 }) }
+        const dir = query.dir || ''
+        return json({ dir, parent: dir ? dir.replace(/\/?[^/]+$/, '') : null, entries: pb.vtree[dir] || [] })
+      }
+      if (method === 'GET' && path === '/publish/settings') return json(view())
+      if (method === 'PUT' && path === '/publish/settings') {
+        pb.puts.push(body)
+        if (body.s3 && body.s3.bucket !== undefined && body.s3.bucket !== '' && !/^[a-z0-9][a-z0-9.-]{2,62}$/.test(body.s3.bucket)) return json({ detail: 's3.bucket: a bucket name is 3 to 63 lowercase letters, digits, dots or dashes' }, 400)
+        if (body.slack && body.slack.channel && !/^[#@][\w-]+$/.test(body.slack.channel)) return json({ detail: 'slack.channel: a channel starts with # (for example #deliveries)' }, 400)
+        if (body.slack && body.slack.webhook_url && !/^https:\/\/hooks\.slack\.com\//.test(body.slack.webhook_url)) return json({ detail: 'slack.webhook_url: an Incoming Webhook address starts with https://hooks.slack.com/' }, 400)
+        if (body.s3) { const { access_key_id, secret_access_key, ...rest } = body.s3; Object.assign(st.s3, rest); if (access_key_id) st.s3.access_key_hint = '••••' + String(access_key_id).slice(-4) }
+        if (body.slack) { const { webhook_url, ...rest } = body.slack; Object.assign(st.slack, rest); if (webhook_url) st.slack.webhook_hint = '••••' + String(webhook_url).slice(-4) }
+        if (body.defaults) st.defaults = { ...st.defaults, ...body.defaults }
+        for (const c of body.clear || []) { if (c === 's3_keys') st.s3.access_key_hint = ''; if (c === 'slack_webhook') st.slack.webhook_hint = '' }
+        return json(view())
+      }
+      if (method === 'POST' && path === '/publish/test') { pb.tests.push(body); return json(pb.testResult?.[body.target] || { ok: true, detail: body.target === 's3' ? '3 objects listed' : 'posted to ' + st.slack.channel }) }
+      if (method === 'GET' && path === '/publish/local') {
+        const dir = query.dir || ''
+        if (!pb.tree[dir]) return json({ dir, parent: dir ? dir.replace(/\/?[^/]+$/, '') : null, entries: [] })
+        return json({ dir, parent: dir ? dir.replace(/\/?[^/]+$/, '') : null, entries: pb.tree[dir], ...(pb.truncated ? { truncated: pb.truncated } : {}) })
+      }
+      const vfiles = () => Object.values(pb.vtree || {}).flat().filter((e) => !e.dir)
+      const files = () => Object.values(pb.tree).flat().filter((e) => !e.dir && !e.remote)   // remote: true is a file that is only on the volume (not on this PC)
+      const expand = (p) => { const f = files(); const hit = f.filter((e) => e.path === p || e.path.startsWith(p.replace(/\/$/, '') + '/')); return hit }
+      if (method === 'POST' && path === '/publish/plan') {
+        pb.planned.push(body)
+        const v = view(), blockers = []
+        blockers.push(...(pb.blockers || []))
+        for (const tg of body.targets || []) if (!v[tg].ready) blockers.push(`${tg === 's3' ? 'S3' : 'Slack'} is not ready: ${v[tg].problem}`)
+        const items = [], refused = []
+        let streamedFiles = 0, streamedBytes = 0
+        for (const it of body.items || []) {
+          if (typeof it === 'object' && it.where === 'volume') {
+            const hit = vfiles().filter((e) => e.path === it.path || e.path.startsWith(it.path.replace(/\/$/, '') + '/'))
+            if (!hit.length) { refused.push({ path: it.path, reason: 'Nothing found on the volume' }); continue }
+            for (const e of hit) { items.push({ path: e.path, bytes: e.bytes, s3_key: [st.s3.prefix, e.path].filter(Boolean).join('/'), skip: pb.there.includes(e.path), source: 'volume' }); streamedFiles++; streamedBytes += e.bytes }
+          }
+        }
+        for (const p of (body.items || []).filter((x) => typeof x === 'string')) { if ((pb.heavy || []).includes(p)) { refused.push({ path: p, reason: 'model weights are not published' }); continue } const hit = expand(p); if (!hit.length) { refused.push({ path: p, reason: 'Pull the renders to this PC first' }); continue } for (const e of hit) items.push({ path: e.path, bytes: e.bytes, s3_key: [st.s3.prefix, e.path].filter(Boolean).join('/'), skip: pb.there.includes(e.path) }) }
+        const total = items.filter((i) => !i.skip).reduce((n, i) => n + i.bytes, 0)
+        return json({ streamed_files: streamedFiles, streamed_bytes: streamedBytes, ok: !blockers.length && !!items.length, blockers, items, total_bytes: total, files: items.filter((i) => !i.skip).length, refused,
+          s3: (body.targets || []).includes('s3') ? { dest: `s3://${st.s3.bucket}/${st.s3.prefix ? st.s3.prefix + '/' : ''}`, count: items.length, new_bytes: total } : null,
+          slack: (body.targets || []).includes('slack') ? { channel: st.slack.channel, preview: String(body.message || st.defaults.message).replace('{files}', String(items.length)).replace('{links}', '<link>').replace('{who}', 'you') } : null })
+      }
+      if (method === 'POST' && path === '/publish/run') {
+        pb.runs.push(body)
+        if (!body.approved_by) return json({ detail: 'Publishing needs the name of who says yes (approved_by)' }, 400)
+        const n = pb.runs.length
+        pb.jobs.push({ job_id: `pub-${n}`, state: 'uploading', targets: body.targets, approved_by: body.approved_by, started_at: `2026-11-19T10:0${n}:00Z`, files_total: 3, files_done: 0, bytes_total: 3e9, bytes_done: 0, rate_bps: 0, current: '', skipped: 0, links: [], slack: { state: 'skipped' }, summary: '' })
+        return json({ job_id: `pub-${n}` })
+      }
+      if (method === 'GET' && path === '/publish/status') return json({ jobs: pb.jobs.filter((j) => !query.job_id || j.job_id === query.job_id) })
+      if (method === 'POST' && path === '/publish/cancel') { pb.cancelled.push(body.job_id); const j = pb.jobs.find((x) => x.job_id === body.job_id); if (j) j.state = 'cancelled'; return json(j || {}) }
+      if (method === 'POST' && path === '/publish/slack') { pb.reposts.push(body.job_id); const j = pb.jobs.find((x) => x.job_id === body.job_id); if (j) j.slack = { state: 'sent' }; return json(j || {}) }
+    }
     // Render sequences (docs/ADR-048): state.renders = { adapters: { pod: { ok, reason }, local: { ok, reason, code } }, jobs: [...], proxies: { 'dir/name': {...} }, deliverables: [...], remote: { 'dir/name': true }, local: {...}, missing: { 'dir/name': [{ from, to }] }, nextVersion, startError: { detail, code }, cleared: { removed, bytes } };
     // the fake records `planned`, `started`, `cancelled`, `proxyCalls`, `clearCalls`. A test edits jobs between polls. state.rendersOld = true answers like a core that predates it.
     if (path.startsWith('/renders/')) {
@@ -448,24 +546,36 @@ export async function mockApi(page, state) {
       for (const k of ['planned', 'started', 'cancelled', 'proxyCalls']) rs[k] ||= []
       rs.clearCalls ||= 0
       const key = (s) => `${s.dir || ''}/${s.name}`
+      // Skip existing: a sequence that already has its proxy (remote or local) or, for a review, state.renders.reviewHas[key], is skipped unless the request says skip_existing: false
+      const skipOf = (body, s) => (body.skip_existing === false ? null : body.kind === 'review' ? ((rs.reviewHas || {})[key(s)] ? 'already has review v003' : null) : rs.remote[key(s)] || rs.local[key(s)] ? 'already rendered' : null)
       const chosen = (where) => { const a = rs.adapters; return where === 'pod' ? (a.pod.ok ? 'pod' : null) : where === 'local' ? (a.local.ok ? 'local' : null) : a.pod.ok ? 'pod' : a.local.ok ? 'local' : null }
       const adapters = () => ['pod', 'local'].map((id) => ({ id, ok: !!rs.adapters[id].ok, ...(rs.adapters[id].reason ? { reason: rs.adapters[id].reason } : {}), ...(rs.adapters[id].code ? { code: rs.adapters[id].code } : {}), ...(rs.adapters[id].install_hint ? { install_hint: rs.adapters[id].install_hint } : {}) }))
       const badClip = (seqs) => (seqs || []).map((s) => s.clip_name).find((c) => c !== undefined && (!String(c).trim() || /[/\\]|\.\./.test(c) || !/^[A-Za-z0-9._\- ]+$/.test(c) || c.length > 200))
       if ((path === '/renders/plan' || path === '/renders/start') && badClip(body.sequences) !== undefined) return json({ detail: `clip_name is not a usable file name: ${badClip(body.sequences)}` }, 400)
+      // colour read from the headers (state.renders.colours = { 'dir/name': {...fields} } overrides, refuse = { 'dir/name': 'reason' } marks a sequence refused for a Review, noColour / noSource answer like an older core)
+      const colourOf = (s) => ({ transfer: 3, transfer_name: 'logarithmic', colorimetric: 0, colorimetric_name: 'unspecified video', descriptor: 50, descriptor_name: 'RGB', bits: 16, packing_name: 'packed', encoding: 0, endian: 'big', width: 3840, height: 2160, start_timecode: '01:00:00:00', frame_rate_hint: 23.976, conversion: 'none: a plain scale, no colour transform', verdict: (rs.refuse || {})[key(s)] ? 'refused' : 'ok', ...((rs.refuse || {})[key(s)] ? { refusal: rs.refuse[key(s)] } : {}), ...((rs.colours || {})[key(s)] || {}) })
+      const summaries = (seqs) => {
+        const by = new Map(), sby = new Map()
+        for (const s of seqs) { const src = s.source; if (src) { const k = `${src.width}x${src.height}x${src.bits}`; sby.set(k, { width: src.width, height: src.height, bits: src.bits, count: (sby.get(k)?.count || 0) + 1 }) } const c = s.colour; if (c) { const k = [c.transfer_name, c.colorimetric_name, c.descriptor_name, c.bits, c.packing_name, c.width, c.height, c.verdict, c.refusal].join('|'); by.set(k, { key: k, count: (by.get(k)?.count || 0) + 1, transfer_name: c.transfer_name, colorimetric_name: c.colorimetric_name, descriptor_name: c.descriptor_name, bits: c.bits, packing_name: c.packing_name, endian: c.endian, width: c.width, height: c.height, verdict: c.verdict, ...(c.refusal ? { refusal: c.refusal } : {}) }) } }
+        return { ...(sby.size ? { source_summary: { groups: [...sby.values()] } } : {}), ...(by.size ? { colour_summary: { groups: [...by.values()], uniform: by.size === 1 } } : {}) }
+      }
       if (path === '/renders/plan') {
         rs.planned.push(body)
         const w = chosen(body.where || 'auto'), seqs = body.sequences || []
         const shotOf = (n) => (/^([A-Za-z]+-\d+[a-z]?)/i.exec(n) || [, n])[1].toLowerCase()
-        return json({ ...(rs.podCpu ? { pod_cpu: rs.podCpu } : {}), ...(rs.notes ? { notes: rs.notes } : {}), ...(rs.settings ? { settings: rs.settings, settings_source: rs.settingsSource || 'default' } : {}), pod_ok: !!rs.adapters.pod.ok, ...(w ? {} : { reason: rs.adapters.pod.reason || rs.adapters.local.reason || 'Nothing can render' }), adapters: adapters(), total_frames: seqs.reduce((n, s) => n + s.frames, 0),
-          sequences: seqs.map((s) => ({ ...s, out: `output/.proxies/${s.dir}/${s.name}_${body.width}.mp4`, ...(body.kind !== 'review' ? { source: rs.source || { width: 3840, height: 2160, bits: 10 } } : {}), exists_remote: !!rs.remote[key(s)], exists_local: !!rs.local[key(s)], gaps: (rs.missing[key(s)] || []).reduce((n, r) => n + (r.to - r.from + 1), 0), complete: !(rs.missing[key(s)] || []).length, missing: rs.missing[key(s)] || [], where: w || 'pod', ...(body.kind === 'review' ? { shot: shotOf(s.name), next_version: rs.nextVersion || 1 } : {}), clip_name: s.clip_name || s.name, ...(body.kind === 'review' ? { source: rs.source || { width: 3840, height: 2160, bits: 10 }, estimate: { frames: s.frames, note: 'slow: expect minutes per 100 frames', ...(rs.outputGb ? { output_gb: rs.outputGb } : {}) } } : rs.outputGb ? { estimate: { frames: s.frames, output_gb: rs.outputGb } } : {}) })) })
+        const out = ({ ...(rs.podCpu ? { pod_cpu: rs.podCpu } : {}), ...(rs.notes ? { notes: rs.notes } : {}), ...(rs.settings ? { settings: rs.settings, settings_source: rs.settingsSource || 'default' } : {}), pod_ok: !!rs.adapters.pod.ok, ...(w ? {} : { reason: rs.adapters.pod.reason || rs.adapters.local.reason || 'Nothing can render' }), adapters: adapters(), total_frames: seqs.reduce((n, s) => n + s.frames, 0),
+          sequences: seqs.map((s) => ({ ...s, out: `output/.proxies/${s.dir}/${s.name}_${body.width}.mp4`, ...(rs.noSource ? {} : { source: (rs.sources || {})[key(s)] || rs.source || { width: 3840, height: 2160, bits: 16 } }), ...(rs.noColour ? {} : { colour: colourOf(s) }), skip: skipOf(body, s), exists_remote: !!rs.remote[key(s)], exists_local: !!rs.local[key(s)], gaps: (rs.missing[key(s)] || []).reduce((n, r) => n + (r.to - r.from + 1), 0), complete: !(rs.missing[key(s)] || []).length, missing: rs.missing[key(s)] || [], where: w || 'pod', ...(body.kind === 'review' ? { shot: shotOf(s.name), next_version: rs.nextVersion || 1 } : {}), clip_name: s.clip_name || s.name, ...(body.kind === 'review' ? { estimate: { frames: s.frames, note: 'slow: expect minutes per 100 frames', ...(rs.outputGb ? { output_gb: rs.outputGb } : {}) } } : rs.outputGb ? { estimate: { frames: s.frames, output_gb: rs.outputGb } } : {}) })) })
+        const nSkipped = out.sequences.filter((x) => x.skip).length
+        return json({ ...out, ...(rs.noTotals ? {} : { totals: { to_render: out.sequences.length - nSkipped, skipped: nSkipped } }), ...(rs.noSummary ? {} : summaries(out.sequences)) })
       }
       if (path === '/renders/start') {
         rs.started.push(body)
         if (rs.startError) return json(rs.startError, 500)
+        if ((body.sequences || []).length && body.sequences.every((s) => skipOf(body, s))) return json({ detail: 'Everything in this scope is already rendered: untick Skip existing to render again' }, 400)
         if (body.kind === 'review' && !body.approved_by) return json({ detail: 'A review video needs the name of who says yes' }, 400)
         const n = rs.started.length, w = chosen(body.where || 'auto')
         rs.jobs.push({ job_id: `job-${n}`, pod_id: w === 'local' ? '' : body.pod_id, pod_name: 'ComfyUI-Dev', kind: body.kind || 'proxy', codecs: body.codecs || [], state: 'rendering', started_at: `2026-11-18T10:0${n}:00Z`, finished_at: null, width: body.width, frames_done: 0, frames_total: body.sequences.reduce((a, s) => a + s.frames, 0), rate_fps: 0, current: '', pulled_files: 0, pulled_bytes: 0, error: '', summary: '',
-          sequences: body.sequences.map((s) => ({ dir: s.dir, name: s.name, clip_name: s.clip_name || s.name, where: w || 'pod', state: 'waiting', frames_done: 0, frames_total: s.frames, out: '', bytes: 0, error: '' })) })
+          sequences: body.sequences.map((s) => ({ dir: s.dir, name: s.name, clip_name: s.clip_name || s.name, where: w || 'pod', state: skipOf(body, s) ? 'skipped' : 'waiting', ...(skipOf(body, s) ? { reason: skipOf(body, s) } : {}), frames_done: 0, frames_total: s.frames, out: '', bytes: 0, error: '' })) })
         return json({ job_id: `job-${n}` })
       }
       if (path === '/renders/status') return json({ jobs: rs.jobs.filter((j) => !query.job_id || j.job_id === query.job_id) })
@@ -509,7 +619,7 @@ export async function mockApi(page, state) {
       const groups = new Map()
       for (const f of direct) { const dir = f.key.includes('/') ? f.key.slice(0, f.key.lastIndexOf('/')) : ''; (groups.get(dir) || groups.set(dir, []).get(dir)).push({ filename: f.key.split('/').pop(), subfolder: dir, type: 'output', bytes: f.bytes, modified: f.modified }) }
       const runs = [...groups].map(([dir, files]) => ({ prompt_id: `volume:${query.volume_id}:${dir || '.'}`, workflow: null, started_at: files.map((f) => f.modified).sort().pop() || null, files, source: 'volume-s3', folder: dir })).sort((a, b) => String(b.started_at).localeCompare(String(a.started_at)))
-      return json({ sources: [{ id: 'volume-s3', name: 'Network volume (S3)', hint: '', ok: true, reason: '' }], runs, folders, prefix, capped: !!s3.capped, total: s3.total ?? direct.length, volume_id: query.volume_id || '', ...(note ? { start_note: note } : {}) })
+      return json({ sources: [{ id: 'volume-s3', name: 'Network volume (S3)', hint: '', ok: true, reason: '' }], runs, folders, prefix, capped: !!s3.capped, total: s3.total ?? direct.length, volume_id: query.volume_id || '', ...(s3.folderInfo ? { folder_info: s3.folderInfo } : {}), ...(note ? { start_note: note } : {}) })
     }
     if (method === 'GET' && path === '/history/runs') { const r = state.history.runs[query.pod_id]; return r ? json(r) : json({ detail: `pod ${query.pod_id} is not running` }, 400) }
     if (method === 'GET' && path === '/credits') return state.credits === null ? json({ detail: 'RunPod did not report the account balance' }, 502) : json(state.credits ?? { balance: 36.42, spend_per_hr: 0.053, spend_limit: 80, hours_left: 687.2, level: 'ok' })

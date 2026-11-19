@@ -7,7 +7,7 @@ import { computed, ref, watch } from 'vue'
 // `accountsOpen` / `repositoriesOpen` open it on that tab, so callers read as before.
 export const useUiStore = defineStore('ui', () => {
   const connectOpen = ref(false)
-  const connectTab = ref('mcp')   // 'mcp' | 'repositories' (the Git accounts are on the Repositories tab; the old key 'accounts' is read as that)
+  const connectTab = ref('mcp')   // 'mcp' | 'slack' | 'repositories' (the Git accounts are on the Repositories tab; the old key 'accounts' is read as that)
   const importOpen = ref(false)   // the Import Shot Pack modal (docs/ADR-008), opened by the pod card's primary button
   const importPod = ref(null)     // { id, name } of the pod whose card opened it: where the import is synced afterwards
   const importSource = ref('')    // '' = ask (always), 'folder' or 'panama': the source of Import Shot Pack (docs/ADR-015)
@@ -21,6 +21,7 @@ export const useUiStore = defineStore('ui', () => {
   const modelsOpen = ref(false)    // the Models window: Hugging Face search, load onto the Shared volume
   const importRoundPreset = ref('')   // Import Round opens with this round chosen (re-import)
   const importRoundOpen = ref(false)  // Import Round (ADR-038)
+  const outputsFor = ref(null)        // { pod_id, play? } a window asks the pod's card to open its Outputs window (and the viewer on a sequence)
   const queueOpen = ref(false)        // the Queue window
   const queueStarting = ref([])       // rounds Import Round is queueing right now (the Queue says so while it reads and plans)
   const queueStartError = ref('')     // why the last import could not be queued
@@ -34,5 +35,5 @@ export const useUiStore = defineStore('ui', () => {
   watch(connectTab, (v) => { if (v === 'accounts') connectTab.value = 'repositories' })   // the old key
   const accountsOpen = computed({ get: () => connectOpen.value && connectTab.value === 'repositories', set: (v) => { if (v) connectTab.value = 'repositories'; connectOpen.value = v } })
   const repositoriesOpen = computed({ get: () => connectOpen.value && connectTab.value === 'repositories', set: (v) => { if (v) connectTab.value = 'repositories'; connectOpen.value = v } })
-  return { connectOpen, importOpen, importPod, importSource, importShown, connectTab, accountsOpen, repositoriesOpen, repositoriesVersion, configOpen, welcomeOpen, configFocus, volumesOpen, sharedOpen, modelsOpen, importRoundOpen, importRoundPreset, queueOpen, queueStarting, queueStartError, queueVersion, historyOpen, volumeDc, hints }
+  return { outputsFor, connectOpen, importOpen, importPod, importSource, importShown, connectTab, accountsOpen, repositoriesOpen, repositoriesVersion, configOpen, welcomeOpen, configFocus, volumesOpen, sharedOpen, modelsOpen, importRoundOpen, importRoundPreset, queueOpen, queueStarting, queueStartError, queueVersion, historyOpen, volumeDc, hints }
 })
