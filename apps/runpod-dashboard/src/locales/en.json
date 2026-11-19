@@ -658,6 +658,7 @@
       "reviewFolder": "Folder: {folder}",
       "reviewDone": "Review video {shot} v{version}: {folder}",
       "reviewPlay": "Play",
+      "reviewClips": "{n} clips",
       "badgeReview": "Review v{v}",
       "viewerReviewLocal": "Review v{v} · on this PC",
       "viewerReviewRemote": "Review v{v} · on the volume",

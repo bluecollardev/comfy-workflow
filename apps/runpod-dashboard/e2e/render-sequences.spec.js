@@ -637,3 +637,22 @@ test('rendering on this PC while previews are being generated shows a warning hi
   await expect(hint).toHaveCount(0)
 })
 
+
+test('Review video: two clips of one shot share a folder and read as ONE line (2 clips) with Play on the left; a version that already has its v is not doubled', async ({ page, api }) => {
+  const B = 'ARCHIVAL-085_B_FINAL_V03_3840X2160_23.976_PRORES422HQ'
+  await openOutputs(page, api, { seqs: [[A, 'seqs/a', 3], [B, 'seqs/b', 3]] })
+  const p = await openPreviews(page)
+  await p.getByTestId('pod-outputs-render-kind-review').check(); await p.getByTestId('pod-outputs-render-approved-by').fill('Brynley')
+  await p.getByTestId('pod-outputs-render-codec-h264').check()
+  await p.getByTestId('pod-outputs-render-start').click()
+  await expect(p.getByTestId('pod-outputs-render-job')).toBeVisible()
+  const j = api.state.renders.jobs[0], files = [{ name: `${A}.mp4`, codec: 'h264', bytes: 10 }]
+  Object.assign(j, { state: 'done', finished_at: 'now', summary: '2 review videos written' }); for (const s of j.sequences) Object.assign(s, { state: 'rendered', shot: 'archival-085', version: 'v001', files })
+  const done = p.getByTestId('pod-outputs-render-review-done')
+  await expect(done).toHaveCount(1, { timeout: 6000 })
+  await expect(done).toContainText('Review video archival-085 v001: output/deliver/archival-085/v001/')
+  await expect(done).not.toContainText('vv001')
+  await expect(done.getByTestId('pod-outputs-render-review-clips')).toHaveText('2 clips')
+  const play = await done.getByTestId('pod-outputs-render-review-play').boundingBox(), text = await done.locator('.text-success').boundingBox()
+  expect(play.x).toBeLessThan(text.x)   // Play is on the left
+})

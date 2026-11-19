@@ -17,7 +17,7 @@ export const APPROVED_KEY = 'runpod-manager.approved-by'
 export const shotOfName = (name) => { const m = /^([A-Za-z]+-\d+[a-z]?)/i.exec(String(name || '')); return m ? m[1].toLowerCase() : '' }
 const v3 = (n) => String(n).padStart(3, '0')
 /** A review video's version as the folder names it: 3 -> 'v003'. */
-export const versionName = (n) => `v${v3(n)}`
+export const versionName = (n) => `v${v3(String(n).replace(/^v/i, ''))}`   // 3, '3', 'v003' and 'v3' all name the same folder (a 'v' in the value must not become 'vv003')
 export const reviewFolder = (shot, version) => `output/deliver/${shot}/${versionName(version)}/`
 /** The latest review (highest version) among the core's `deliverables` for the shot of a sequence item, or null. */
 export function latestReview(deliverables, item) {

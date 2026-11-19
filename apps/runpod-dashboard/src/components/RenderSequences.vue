@@ -155,7 +155,7 @@
             <span v-else-if="s.warning" class="text-warning" data-testid="pod-outputs-render-seq-warning">{{ s.warning }}</span>
           </li>
         </ul>
-        <div v-for="r in reviewDone" :key="`${r.s.dir}/${r.s.name}`" class="small d-flex gap-2 align-items-center" data-testid="pod-outputs-render-review-done" :data-shot="r.shot" :data-version="r.version"><span class="text-success">{{ $t('outputs.render.reviewDone', { shot: r.shot, version: v3(r.version), folder: reviewFolder(r.shot, r.version) }) }}</span><BButton variant="outline-light" size="sm" data-testid="pod-outputs-render-review-play" :data-shot="r.shot" @click="playReview(r)"><i class="fa-solid fa-play me-1"></i>{{ $t('outputs.render.reviewPlay') }}</BButton></div>
+        <div v-for="r in reviewDone" :key="r.folder" class="small d-flex gap-2 align-items-center" data-testid="pod-outputs-render-review-done" :data-shot="r.shot" :data-version="r.version" :data-clips="r.clips"><BButton variant="outline-light" size="sm" class="flex-shrink-0" data-testid="pod-outputs-render-review-play" :data-shot="r.shot" @click="playReview(r)"><i class="fa-solid fa-play me-1"></i>{{ $t('outputs.render.reviewPlay') }}</BButton><span class="text-success">{{ $t('outputs.render.reviewDone', { shot: r.shot, version: v3(r.version), folder: r.folder }) }}</span><span v-if="r.clips > 1" class="badge text-bg-secondary fw-normal" data-testid="pod-outputs-render-review-clips">{{ $t('outputs.render.reviewClips', { n: r.clips }) }}</span></div>
         <ul v-if="reviewDone.length && reviewDone[0].files.length" class="list-unstyled small mb-1" data-testid="pod-outputs-render-review-files"><li v-for="f in reviewDone[0].files" :key="f.name" class="font-monospace" :data-codec="f.codec">{{ f.name }}<span v-if="!/\.mp4$/i.test(f.name)" class="text-body-secondary font-sans-serif"> · {{ $t('outputs.render.notPlayable') }}</span></li></ul>
         <div v-if="reviewDone.length && reviewDone[0].codecs.length" class="small text-body-secondary" data-testid="pod-outputs-render-review-codecs">{{ $t('outputs.render.codecsLine', { codecs: reviewDone[0].codecs.join(', ') }) }}</div>
         <div v-if="job.publish" class="small d-flex align-items-center gap-2" data-testid="pod-outputs-render-publish-state" :data-state="job.publish.state">{{ $t('publish.render.summary', { state: job.publish.state }) }}<BButton variant="link" size="sm" class="p-0" data-testid="pod-outputs-render-publish-open" @click="$emit('publish')">{{ $t('publish.render.open') }}</BButton></div>
@@ -374,7 +374,14 @@ const summaryText = computed(() => {
 const reviewDone = computed(() => {
   const j = job.value
   if (!j || j.state !== 'done' || (j.kind || '') !== 'review') return []
-  return (j.sequences || []).filter((s) => ['rendered', 'pulled', 'done'].includes(s.state)).map((s) => ({ s, shot: s.shot || j.shot || '', version: s.version ?? j.version ?? 0, files: s.files || j.files || [], codecs: j.codecs || [] }))
+  // one line per review folder (shot and version): several clips of a shot share its folder, so they are counted, not repeated
+  const groups = new Map()
+  for (const s of (j.sequences || []).filter((x) => ['rendered', 'pulled', 'done'].includes(x.state))) {
+    const shot = s.shot || j.shot || '', version = s.version ?? j.version ?? 0, folder = reviewFolder(shot, version)
+    const g = groups.get(folder)
+    if (g) g.clips++; else groups.set(folder, { s, shot, version, folder, clips: 1, files: s.files || j.files || [], codecs: j.codecs || [] })
+  }
+  return [...groups.values()]
 })
 const emit = defineEmits(['play', 'publish', 'update:skipExisting'])
 function playReview(r) { renders.play = { dir: r.s.dir, name: r.s.name, review: true }; emit('play') }
