@@ -577,7 +577,7 @@ test('render_sequences: plan, errors and status (ADR-048)', async () => {
   assert.match(textOf(refused(await call('render_sequences', { action: 'start', pod_id: 'p', sequences: [seq], kind: 'review', approved_by: 'L', allow_partial: true }))), /allow_partial is not available/)
   const tl = (await rpc('tools/list')).result.tools; assert.ok(tl.find((x) => x.name === 'render_sequences').inputSchema.properties.codecs); for (const n of ['get_configuration', 'set_configuration', 'preview_configuration', 'get_pod_config', 'set_pod_config']) assert.match(tl.find((x) => x.name === n).description, /render \{ where, kind/, n)
   assert.match(textOf(refused(await call('render_sequences', { action: 'plan', pod_id: 'p', sequences: [{ ...seq, dir: '../x' }], width: 960 }))), /Not a folder/)
-  const p = jsonOf(await call('render_sequences', { action: 'plan', pod_id: 'pod-none', sequences: [seq], width: 960, where: 'auto' }))
+  const p = jsonOf(await call('render_sequences', { action: 'plan', pod_id: 'pod-none', sequences: [seq], kind: 'proxy', width: 960, where: 'auto' }))   // the shipped default kind is review; this test is of the quick proxy
   assert.ok(Array.isArray(p.adapters) && p.adapters.length === 2); assert.equal(p.sequences[0].out, "output/.proxies/proxy_v004/shotA/A B's;x_23.976__960.mp4"); assert.equal(p.settings.proxy_width, 'source')
   assert.deepEqual(jsonOf(await call('render_sequences', { action: 'status' })).jobs.filter((j) => j.pod_id === 'zzz'), [])
   assert.match(textOf(refused(await call('render_sequences', { action: 'cancel' }))), /job_id is needed/)
