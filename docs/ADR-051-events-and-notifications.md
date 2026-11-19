@@ -134,3 +134,7 @@ Lucas: "these generations are events too, and they really should be on the queue
 4. **Retention:** the last 500 events or 7 days, whichever is smaller (proposed).
 5. **Money events:** the thresholds for "credits low" and "a pod has run long" (proposed: credits under 24 hours of current spend; a pod running more than 12 hours).
 6. **Per-pod mute:** in phase 1 or later? (Proposed: later.)
+
+### Status 2026-11-19: what section 9 has built
+The Queue window now has the sections **Imports, Syncs, Generations** (render jobs and the preview batch), **Publishing** (manual publishes and backfill uploads) and **Auto-publish** (pending entries with countdowns), and the Queue badge counts the running ones of each. **Not built yet:** the event stream itself (the catalog, the router, the inbox, the notification settings, the channels): each job's start, finish, warning and failure will become events when it is.
+

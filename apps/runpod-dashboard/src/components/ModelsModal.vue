@@ -263,6 +263,8 @@ async function loadMissing() {
   const r = await wantedDo(() => wantedAPI.load(target.value.id), (x) => t('wanted.started', { files: x.files, size: fmt(x.bytes), jobs: x.jobs }))
   if (r) { if (r.warning) wanted.warning = r.warning; vjobs.refresh() }
 }
+/** The window closed: the 6 s re-reads stop (the template's @hidden calls this). */
+function stop() { if (timer) { clearInterval(timer); timer = null } }
 // while the window is open: the job list is polled; while a job runs, what the volume holds and the wanted list's badges are re-read every 6 s (the Downloading badge, the .part sizes), and once more when it ends
 watch(() => ui.modelsOpen, (o) => { if (o) vjobs.watch(); else vjobs.unwatch() }, { immediate: true })
 watch(busy, (b) => {

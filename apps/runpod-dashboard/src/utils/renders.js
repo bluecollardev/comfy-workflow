@@ -8,7 +8,7 @@ export const DEFAULT_WIDTH = 'source'   // the source size (IMAX 4K); 1920, 1280
 export const widthLabel = (w) => (typeof w === 'number' || /^\d+$/.test(String(w)) ? `${w} px` : 'source size')
 export const FPS_CHOICES = ['auto', 23.976, 24, 25, 30]
 export const WHERE_CHOICES = ['auto', 'pod', 'local']
-export const ACTIVE = ['queued', 'rendering', 'pulling', 'publishing']
+export const ACTIVE = ['queued', 'running', 'rendering', 'pulling', 'publishing']
 export const KINDS = ['proxy', 'review']
 export const REVIEW_WIDTH = 'source'   // a review video is rendered at the source size (IMAX 4K); the quick proxy is for playing it in the app at 960 to 1920
 export const CODECS = [{ id: 'h264', label: 'outputs.render.codecH264' }, { id: 'prores422hq', label: 'outputs.render.codecProres' }]
@@ -42,7 +42,10 @@ export function deliverableParts(d) {
   return { subfolder: i < 0 ? '' : rel.slice(0, i), filename: i < 0 ? rel : rel.slice(i + 1) }
 }
 /** The starting choices of the Render sequences window, as a configuration's `render` carries them (a missing key is this). */
-export const RENDER_DEFAULTS = { where: 'auto', kind: 'proxy', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto', pull: true }
+export const RENDER_DEFAULTS = { where: 'auto', kind: 'proxy', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto', pull: false, publish: { s3: false, slack: false }, skip_existing: true, preset: 'none' }
+/** The keys a configuration sends only when it already had them or they changed (an untouched configuration saves exactly as before). */
+export const RENDER_OPTIONAL = ['pull', 'publish', 'skip_existing', 'preset']
+const renderNorm = (r) => { const { start_timecode_default: _gone, ...x } = { ...RENDER_DEFAULTS, ...(r || {}) }; return { ...x, publish: { s3: !!x.publish?.s3, slack: !!x.publish?.slack } } }   // a stored start_timecode_default is ignored and dropped (no default timecode anywhere)
 export const WIDTH_CHOICES = ['source', 1920, 1280, 960]
 /** Why a `render` settings object is refused, or ''. */
 export function renderProblem(r) {
@@ -50,9 +53,19 @@ export function renderProblem(r) {
   if (!Array.isArray(r.codecs) || !r.codecs.length || r.codecs.some((c) => !['h264', 'prores422hq'].includes(c))) return 'codecs'
   if (!['auto', 'pod', 'local'].includes(r.where) || !['proxy', 'review'].includes(r.kind)) return 'choice'
   if (!WIDTH_CHOICES.includes(r.proxy_width) || !WIDTH_CHOICES.includes(r.review_width)) return 'width'
+  if (!['none', 'tunnel'].includes(r.preset ?? 'none')) return 'choice'
   return ''
 }
-export const renderIsDefault = (r) => JSON.stringify({ ...RENDER_DEFAULTS, ...(r || {}) }) === JSON.stringify(RENDER_DEFAULTS)
+export const renderIsDefault = (r) => JSON.stringify(renderNorm(r)) === JSON.stringify(renderNorm({}))
+/** What a configuration sends: the optional keys only when loaded with it or changed from the default. */
+export const renderBody = (r, loadedKeys = []) => { const o = renderNorm(r), d = renderNorm({}); for (const k of RENDER_OPTIONAL) if (!loadedKeys.includes(k) && JSON.stringify(o[k]) === JSON.stringify(d[k])) delete o[k]; return o }
+/** Why the publish-when-done settings are refused (the core's rules), or ''. */
+export function renderPublishProblem(r) {
+  const p = r?.publish || {}
+  if (p.slack && !p.s3) return 'slackNeedsS3'
+  if ((p.s3 || p.slack) && r.where !== 'local' && !r.pull) return 'needSync'
+  return ''
+}
 /** Why a clip name is refused (the core's rules), or '': not empty, no slashes or `..`, no control characters, letters digits and `._- ` only, at most 200. */
 export function clipProblem(name) {
   const s = String(name ?? '')

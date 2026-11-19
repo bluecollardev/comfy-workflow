@@ -5,8 +5,15 @@
     <div v-if="settingsNote" class="small text-body-secondary mb-2" data-testid="pod-outputs-render-settings" :data-source="settingsNote === 'settingsPod' ? 'pod' : 'default'">{{ $t(`outputs.render.${settingsNote}`) }}</div>
     <div v-if="renders.old || plan?.old" class="alert alert-info py-1 px-2 small mb-2" data-testid="pod-outputs-render-restart">{{ $t('outputs.render.restart') }}</div>
     <template v-else>
+      <div v-if="presetSupported" class="small mb-2" data-testid="pod-outputs-render-preset-block">
+        <label class="mb-0">{{ $t('outputs.render.preset') }}
+          <select v-model="prefs.preset" class="form-select form-select-sm" :disabled="running" data-testid="pod-outputs-render-preset"><option value="none">{{ $t('outputs.render.presetStandard') }}</option><option value="tunnel">{{ $t('outputs.render.presetTunnel') }}</option></select>
+        </label>
+        <div v-if="tunnel" class="text-body-secondary mt-1" data-testid="pod-outputs-render-tunnel-fixed">{{ $t('outputs.render.tunnelFixed') }}</div>
+        <div v-for="(w, i) in plan?.warnings || []" :key="i" class="alert alert-warning py-1 px-2 mt-1 mb-0" data-testid="pod-outputs-render-preset-warning"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ w }}</div>
+      </div>
       <div class="small mb-2" role="radiogroup" data-testid="pod-outputs-render-kind">
-        <label v-for="k in KINDS" :key="k" class="d-flex gap-2 align-items-center"><input v-model="prefs.kind" type="radio" class="form-check-input mt-0" :value="k" :data-testid="`pod-outputs-render-kind-${k}`" />{{ $t(k === 'review' ? 'outputs.render.kindReview' : 'outputs.render.kindProxy') }}</label>
+        <label v-for="k in KINDS" :key="k" class="d-flex gap-2 align-items-center"><input v-model="prefs.kind" type="radio" class="form-check-input mt-0" :value="k" :disabled="tunnel" :data-testid="`pod-outputs-render-kind-${k}`" />{{ $t(k === 'review' ? 'outputs.render.kindReview' : 'outputs.render.kindProxy') }}</label>
       </div>
       <div v-if="isReview" class="mb-2">
         <label class="small mb-0 d-block">{{ $t('outputs.render.approvedBy') }}
@@ -21,7 +28,7 @@
         <div class="small text-body-secondary mt-1" data-testid="pod-outputs-render-review-note">{{ $t('outputs.render.reviewNote') }}</div>
       </div>
       <div class="d-flex gap-3 flex-wrap align-items-end mb-2">
-        <label class="small mb-0">{{ $t('outputs.render.size') }}
+        <label v-if="!tunnel" class="small mb-0">{{ $t('outputs.render.size') }}
           <select v-model="prefs.width" class="form-select form-select-sm" data-testid="pod-outputs-render-width"><option v-for="o in widthOptions" :key="o.v" :value="o.v">{{ o.label }}</option></select>
         </label>
         <div v-if="items.length" class="small text-body-secondary w-100 order-last" data-testid="pod-outputs-render-source">
@@ -30,7 +37,7 @@
           <template v-else><div v-for="(l, i) in sourceLines" :key="i" data-testid="pod-outputs-render-source-line">{{ l }}</div></template>
         </div>
         <div v-if="prefs.width !== 'source'" class="small text-body-secondary w-100 order-last" data-testid="pod-outputs-render-downscale-hint">{{ $t('outputs.render.downscaleHint') }}</div>
-        <label class="small mb-0">{{ $t('outputs.render.fps') }}
+        <label v-if="!tunnel" class="small mb-0">{{ $t('outputs.render.fps') }}
           <select v-model="prefs.fps" class="form-select form-select-sm" data-testid="pod-outputs-render-fps"><option v-for="f in FPS_CHOICES" :key="f" :value="f">{{ f === 'auto' ? $t('outputs.render.fpsAuto') : `${f} fps` }}</option></select>
         </label>
         <label class="small mb-0">{{ $t('outputs.render.where') }}
@@ -50,11 +57,11 @@
       <div v-if="localWhilePreviews" class="small text-warning mb-2" data-testid="pod-outputs-render-local-hint"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ $t('outputs.render.localWhilePreviews') }}</div>
       <div v-if="!items.length" class="small text-body-secondary mb-2" data-testid="pod-outputs-render-none">{{ $t('outputs.render.noSequences') }}</div>
       <div v-else class="small mb-2" data-testid="pod-outputs-render-plan" :data-sequences="summary.sequences" :data-frames="summary.frames">
-        <template v-if="planning && !plan"><BSpinner small class="me-1" />{{ $t('outputs.render.planning') }}</template>
+        <template v-if="planning && !plan"><BSpinner small class="me-2 flex-shrink-0" />{{ $t('outputs.render.planning') }}</template>
         <template v-else-if="plan">{{ planText }}</template>
       </div>
       <div v-if="isReview && plan && !plan.old" class="small mb-2" data-testid="pod-outputs-render-review-rows">
-        <div v-if="planning && reviewRows.length < plan.sequences.length" class="text-body-secondary" data-testid="pod-outputs-render-review-planning"><BSpinner small class="me-1" />{{ $t('outputs.render.reviewPlanning') }}</div>
+        <div v-if="planning && reviewRows.length < plan.sequences.length" class="text-body-secondary" data-testid="pod-outputs-render-review-planning"><BSpinner small class="me-2 flex-shrink-0" />{{ $t('outputs.render.reviewPlanning') }}</div>
         <div v-for="s in reviewRows" :key="`${s.dir}/${s.name}`" data-testid="pod-outputs-render-review-shot" :data-shot="s.shot" :data-version="s.next_version"><span class="font-monospace">{{ $t('outputs.render.reviewShot', { shot: s.shot, version: v3(s.next_version) }) }}</span> <span class="text-body-secondary">{{ $t('outputs.render.reviewFolder', { folder: reviewFolder(s.shot, s.next_version) }) }}</span></div>
       </div>
       <div v-if="plan && !plan.old && items.length" class="small mb-2" data-testid="pod-outputs-render-pod">
@@ -67,12 +74,29 @@
         <span class="text-body-secondary">{{ $t('outputs.render.clipOutputs') }}:</span>
         <span v-for="n in outputList" :key="n" class="font-monospace ms-2" data-testid="pod-outputs-render-output-name">{{ n }}</span>
       </div>
-      <details v-if="items.length" class="small mb-2" data-testid="pod-outputs-render-clipnames">
-        <summary>{{ $t('outputs.render.clipNamesTitle') }}</summary>
+      <details v-if="items.length" class="small mb-2" :open="tunnel || anyColourNeeded || undefined" data-testid="pod-outputs-render-clipnames">
+        <summary>{{ $t(tunnel ? 'outputs.render.fileNamesTitle' : 'outputs.render.clipNamesTitle') }}</summary>
         <div class="text-body-secondary my-1">{{ $t('outputs.render.clipNamesNote') }}</div>
-        <div v-for="i in items" :key="`${i.dir}/${i.name}`" class="mb-1">
-          <input type="text" class="form-control form-control-sm font-monospace" :value="clipOf(i)" :aria-label="$t('outputs.render.clipNameFor', { name: i.name })" data-testid="pod-outputs-render-clipname" :data-name="i.name" @input="clipEdits[`${i.dir}/${i.name}`] = $event.target.value" />
+        <div v-if="tunnel || anyColourNeeded" class="d-flex align-items-center gap-2 my-1 flex-wrap"><label class="mb-0" for="col-all">{{ $t('edl.colourAll') }}</label>
+          <select id="col-all" v-model="colourAll" class="form-select form-select-sm" style="width: auto" data-testid="pod-outputs-render-colour-all"><option value="">{{ $t('edl.colourChoose') }}</option><option v-for="c in COLOURS" :key="c" :value="c">{{ $t(`edl.colours.${c}`) }}</option></select></div>
+        <div v-if="edlNeeded && edl.seen && !edl.old && !edl.loaded" class="d-flex align-items-center gap-2 text-warning my-1" data-testid="edl-none-line"><span>{{ $t('edl.noneLine') }}</span><BButton size="sm" variant="outline-primary" :disabled="edl.loading" data-testid="edl-none-load" @click="edl.load()"><BSpinner v-if="edl.loading" small class="me-1" />{{ $t('edl.load') }}</BButton></div>
+        <div v-if="blockedCount" class="text-danger my-1" data-testid="pod-outputs-render-blocked-summary">{{ $t(blockedCount === 1 ? 'edl.blockedOne' : 'edl.blocked', { n: blockedCount }) }}</div>
+        <div v-for="i in items" :key="`${i.dir}/${i.name}`" class="mb-2" data-testid="pod-outputs-render-clip-row" :data-name="i.name" :data-blocked="rowBlocked(i) ? 'true' : 'false'">
+          <input type="text" class="form-control form-control-sm font-monospace" :value="clipOf(i)" :list="edlOn ? `edl-clips-${i.name}` : undefined" :aria-label="$t('outputs.render.clipNameFor', { name: i.name })" data-testid="pod-outputs-render-clipname" :data-name="i.name" @input="clipEdits[`${i.dir}/${i.name}`] = $event.target.value" />
+          <datalist v-if="edlOn" :id="`edl-clips-${i.name}`"><option v-for="e in edl.forShot(shotOfClip(i.name))" :key="e.clip" :value="e.clip" /></datalist>
+          <div v-if="edlOn" class="text-body-secondary" data-testid="pod-outputs-render-clip-match" :data-match="edl.matchOf(clipOf(i))">{{ edl.matchOf(clipOf(i)) === 'match' ? $t('edl.matches') : $t('edl.notIn') }}</div>
           <div v-if="clipProblem(clipOf(i))" class="text-danger" data-testid="pod-outputs-render-clipname-error">{{ $t(`outputs.render.${clipProblem(clipOf(i))}`) }}</div>
+          <div v-if="tunnel" class="d-flex align-items-center gap-2 mt-1 flex-wrap"><label class="mb-0" :for="`tc-${i.name}`">{{ $t('outputs.render.startTimecode') }}</label>
+            <input :id="`tc-${i.name}`" type="text" class="form-control form-control-sm font-monospace" style="width: 8rem" :placeholder="$t('edl.tcPlaceholder')" :value="tcShown(i)" data-testid="pod-outputs-render-start-timecode" :data-name="i.name" @input="tcEdits[`${i.dir}/${i.name}`] = $event.target.value" />
+            <span class="text-body-secondary" data-testid="pod-outputs-render-timecode-source">{{ tcSourceText(i) }}</span></div>
+          <div v-if="tunnel && tcProblemOf(i)" class="text-danger" data-testid="pod-outputs-render-timecode-error">{{ $t('outputs.render.timecodeBad') }}</div>
+          <div v-if="rowOf(i)?.header_transfer" class="text-body-secondary" data-testid="pod-outputs-render-header-transfer">{{ $t('edl.headerSays', { t: rowOf(i).header_transfer }) }}</div>
+          <div v-if="needsColour(i)" class="d-flex align-items-center gap-2 mt-1 flex-wrap"><label class="mb-0" :for="`col-${i.name}`">{{ colourSeen[`${i.dir}/${i.name}`] ? $t('edl.colourState') : $t('edl.colour') }}</label>
+            <select :id="`col-${i.name}`" class="form-select form-select-sm" style="width: auto" :value="colourOf(i)" data-testid="pod-outputs-render-colour-in" :data-name="i.name" @change="colourIn[`${i.dir}/${i.name}`] = $event.target.value"><option value="">{{ $t('edl.colourChoose') }}</option><option v-for="c in COLOURS" :key="c" :value="c">{{ $t(`edl.colours.${c}`) }}</option></select>
+            <span v-if="colourSeen[`${i.dir}/${i.name}`]" class="text-body-secondary" data-testid="pod-outputs-render-colour-hint">{{ $t('edl.colourHint') }}</span>
+            <span v-if="colourSeen[`${i.dir}/${i.name}`] && !effColour(i)" class="text-danger" data-testid="pod-outputs-render-colour-skipped">{{ $t('edl.colourSkipped') }}</span>
+            <span v-if="rowOf(i)?.suggested_colour" class="text-body-secondary" data-testid="pod-outputs-render-colour-suggested">{{ $t('edl.colourSuggested', { name: colourName(rowOf(i).suggested_colour) }) }}</span></div>
+          <SeqFlags v-if="rowOf(i)?.flags?.length" :flags="rowOf(i).flags" :row="rowOf(i)" :stem="i.name" :override="!!edlOverride[i.name]" :candidates="cands[i.name] || []" @update:override="(v) => (edlOverride[i.name] = v)" @pick="(c) => (clipEdits[`${i.dir}/${i.name}`] = c)" />
         </div>
       </details>
       <details v-if="colourGs.length" class="small mb-2 border rounded p-2" :open="colourOpen" data-testid="pod-outputs-render-colour" :data-open="colourOpen ? 'true' : 'false'" @toggle="colourOpen = $event.target.open">
@@ -120,7 +144,7 @@
         <BProgress :value="percent" :max="100" :animated="running" :striped="running" height="0.6rem" :data-percent="percent" data-testid="pod-outputs-render-progress" />
         <div class="small mt-1" data-testid="pod-outputs-render-status">{{ statusText }}</div>
         <div v-if="eta" class="small text-body-secondary" data-testid="pod-outputs-render-eta">{{ $t('outputs.render.eta', { time: eta }) }}</div>
-        <div v-if="job.state === 'pulling'" class="small text-info" data-testid="pod-outputs-render-syncing"><BSpinner small class="me-1" />{{ $t('outputs.render.syncing') }}<template v-if="job.pulled_files"> · {{ $t('outputs.render.syncingDetail', { files: job.pulled_files, size: sizeText(job.pulled_bytes || 0) }) }}</template></div>
+        <div v-if="job.state === 'pulling'" class="small text-info" data-testid="pod-outputs-render-syncing"><BSpinner small class="me-2 flex-shrink-0" />{{ $t('outputs.render.syncing') }}<template v-if="job.pulled_files"> · {{ $t('outputs.render.syncingDetail', { files: job.pulled_files, size: sizeText(job.pulled_bytes || 0) }) }}</template></div>
         <ul class="list-unstyled small mb-1 mt-1 rows" data-testid="pod-outputs-render-seqs">
           <li v-for="(s, i) in job.sequences || []" :key="i" class="d-flex gap-2 align-items-baseline flex-wrap" data-testid="pod-outputs-render-seq" :data-state="s.state" :data-where="s.where || ''" :data-name="s.name">
             <span class="font-monospace text-truncate" :title="`${s.dir}/${s.name}`">{{ s.name }}</span><span v-if="s.clip_name && s.clip_name !== s.name" class="font-monospace text-body-secondary" data-testid="pod-outputs-render-seq-clip">→ {{ s.clip_name }}</span>
@@ -162,7 +186,10 @@ import { rendersAPI } from '../api/renders'
 import FfmpegAlert from './FfmpegAlert.vue'
 import { usePublishStore } from '../stores/publish'
 import { useUiStore } from '../stores/ui'
-import { s3Dest, targetState } from '../utils/publish'
+import { s3Dest, targetState, timecodeProblem } from '../utils/publish'
+import { useEdlStore, shotOfClip } from '../stores/edl'
+import { edlAPI } from '../api/edl'
+import SeqFlags from './SeqFlags.vue'
 import { fmtEta } from '../utils/syncs'
 import { sourceGroups, dimsText, scaledHeight, colourGroups, colourLine, conversions, noTransform, refusals, colourText, WIDTHS, FPS_CHOICES, WHERE_CHOICES, KINDS, clipProblem, outputNames, REVIEW_WIDTH, DEFAULT_WIDTH, APPROVED_KEY, reviewFolder, versionName, fpsFor, missingText, adapterMap, whereState, ffmpegProblem, planSummary, jobPercent, currentSequence, isActive } from '../utils/renders'
 
@@ -180,6 +207,7 @@ const pubReady = (id) => targetState(publishStore.settings, id)
 const publishOn = computed(() => pub.s3 || pub.slack)
 const needSync = computed(() => prefs.where !== 'local' && !prefs.pull)   // publishing needs the renders on this PC
 watch(needSync, (n) => { if (n) { pub.s3 = false; pub.slack = false } })
+watch(() => pub.s3, (v) => { if (!v) pub.slack = false })   // Slack announces an upload: it needs S3
 const openPublishSettings = () => { uiStore.configFocus = 'publishing'; uiStore.configOpen = true }
 const openPublishConnect = () => { uiStore.connectTab = 'slack'; uiStore.connectOpen = true }
 const v3 = (n) => versionName(n).slice(1)
@@ -215,9 +243,52 @@ const reviewRows = computed(() => (plan.value?.sequences || []).filter((x) => x.
 
 const clipEdits = reactive({})   // `${dir}/${name}` -> an edited clip name (outputs are named with it; the frames are never renamed)
 const clipOf = (i) => clipEdits[`${i.dir}/${i.name}`] ?? i.name
-const clipBad = computed(() => props.items.some((i) => clipProblem(clipOf(i))))
+// The Tunnel proxy preset (docs/ADR-050): H.264 1920x1080 proxies named with the clip name, tagged Rec.709, with a start timecode per sequence (the DPX header wins when it has one)
+const presetSupported = computed(() => !!plan.value?.settings && plan.value.settings.preset !== undefined)
+const tunnel = computed(() => presetSupported.value && prefs.preset === 'tunnel')
+const tcEdits = reactive({})
+const rowOf = (i) => (plan.value?.sequences || []).find((s) => s.dir === i.dir && s.name === i.name) || null
+/** The start timecode starts EMPTY: after the plan it shows what the core resolved (the DPX header or the EDL), and typing overrides it. */
+const tcShown = (i) => tcEdits[`${i.dir}/${i.name}`] ?? rowOf(i)?.start_timecode ?? ''
+const tcSourceText = (i) => {
+  const e = tcEdits[`${i.dir}/${i.name}`]
+  if (e) return t('edl.tcField')
+  const r = rowOf(i), src = r?.timecode_source, tc = r?.start_timecode || ''
+  return src === 'EDL' ? t('edl.tcFromEdl', { tc }) : src === 'DPX header' ? t('edl.tcFromHeader', { tc }) : src === 'sequence field' ? t('edl.tcField') : ''
+}
+const tcProblemOf = (i) => { const e = tcEdits[`${i.dir}/${i.name}`]; return e ? timecodeProblem(e) : '' }
+const tcBad = computed(() => tunnel.value && props.items.some((i) => tcProblemOf(i)))
+// The EDL decides what may be delivered: flags per sequence, a colour chosen per sequence (no default), the clip-name picker
+const edl = useEdlStore()
+const edlOn = computed(() => edl.loaded && !edl.old)
+const edlNeeded = computed(() => tunnel.value)
+onMounted(() => edl.ensure())
+const COLOURS = ['linear-p3-d65', 'linear-rec709', 'p3-d65-gamma26', 'p3-d65-srgb', 'p3-d65-gamma22', 'kodak-log']
+// Frames whose header says log or linear (or that the core says have no stated colour) need the colour STATED, for a Review and for the Tunnel preset: no default, remembered for the run once seen
+const colourSeen = reactive({})
+const needsColour = (i) => tunnel.value || !!colourSeen[`${i.dir}/${i.name}`]
+const anyColourNeeded = computed(() => Object.values(colourSeen).some(Boolean))
+function noteColour(p) { for (const r of p?.sequences || []) if ((r.flags || []).some((f) => f.code === 'colour-not-stated') || /log|linear|density/i.test(r.header_transfer || '')) colourSeen[`${r.dir}/${r.name}`] = true }
+const colourIn = reactive({}), colourAll = ref(''), edlOverride = reactive({}), cands = reactive({})
+const colourOf = (i) => colourIn[`${i.dir}/${i.name}`] || ''
+const effColour = (i) => colourOf(i) || colourAll.value
+const colourName = (c) => (c === 'kodak-log' ? 'Kodak log' : t(`edl.colours.${c}`, c))
+const blockedOf = (r) => (r?.flags || []).some((f) => f.level === 'block' && !(f.code === 'frames-differ-from-edl' && edlOverride[r.name]))
+const rowBlocked = (i) => blockedOf(rowOf(i))
+const blockedCount = computed(() => (plan.value?.sequences || []).filter(blockedOf).length)
+const allBlocked = computed(() => !!plan.value?.sequences?.length && blockedCount.value === plan.value.sequences.length)
+const overrideBody = () => { const o = Object.fromEntries(Object.entries(edlOverride).filter(([, v]) => v)); return Object.keys(o).length ? { edl_override: o } : {} }
+async function loadCands(p) {
+  for (const r of p?.sequences || []) {
+    if (!(r.flags || []).some((f) => f.code === 'ambiguous-edl-element') || cands[r.name]) continue
+    cands[r.name] = r.candidates || []
+    if (!cands[r.name].length) { try { const l = await edlAPI.lookup({ clip: r.name }); cands[r.name] = (l.candidates || []).map((c) => (typeof c === 'string' ? c : c.clip)) } catch { cands[r.name] = [] } }
+  }
+}
+watch(tunnel, (on) => { if (on) { prefs.kind = 'proxy'; nextTick(() => { prefs.width = 1920 }) } else prefs.width = DEFAULT_WIDTH })
+const clipBad = computed(() => props.items.some((i) => clipProblem(clipOf(i))) || tcBad.value)
 /** Sent with the sequence only when it differs from the sequence's own name. */
-const sequences = computed(() => props.items.map((i) => ({ ...i, fps: fpsFor(prefs.fps, i.name), ...(clipOf(i) !== i.name ? { clip_name: clipOf(i) } : {}) })))
+const sequences = computed(() => props.items.map((i) => ({ ...i, fps: fpsFor(prefs.fps, i.name), ...(clipOf(i) !== i.name ? { clip_name: clipOf(i) } : {}), ...(tunnel.value && tcEdits[`${i.dir}/${i.name}`] ? { start_timecode: tcEdits[`${i.dir}/${i.name}`] } : {}), ...((tunnel.value || colourSeen[`${i.dir}/${i.name}`]) && effColour(i) ? { colour_in: effColour(i) } : {}) })))
 const outputList = computed(() => (plan.value?.sequences || []).flatMap((s) => outputNames(s, { kind: prefs.kind, codecs: codecs.value, width: prefs.width })))
 const podArg = () => (prefs.where === 'local' ? {} : { pod_id: props.pod.id })
 let planSeq = 0, timer = null
@@ -226,12 +297,12 @@ async function replan() {
   if (!props.items.length) { plan.value = null; planning.value = false; return }
   planning.value = true
   try {
-    const p = await rendersAPI.plan({ ...podArg(), sequences: sequences.value, width: prefs.width, where: prefs.where, kind: prefs.kind, skip_existing: props.skipExisting, ...(isReview.value ? { codecs: codecs.value } : {}) })
-    if (my === planSeq) { plan.value = p; if (p.settings && !seeded) seed(p) }
+    const p = await rendersAPI.plan({ ...podArg(), sequences: sequences.value, width: prefs.width, where: prefs.where, kind: prefs.kind, skip_existing: props.skipExisting, ...(isReview.value ? { codecs: codecs.value } : {}), ...(tunnel.value ? { preset: 'tunnel' } : {}), ...overrideBody() })
+    if (my === planSeq) { plan.value = p; if (p.settings && !seeded) seed(p); loadCands(p); noteColour(p) }
   } catch (e) { if (my === planSeq) plan.value = { old: false, pod_ok: false, reason: errorText(e), adapters: [], total_frames: 0, sequences: [] } } finally { if (my === planSeq) planning.value = false }
 }
 const later = () => { clearTimeout(timer); timer = setTimeout(replan, 150) }
-watch(() => [props.skipExisting, prefs.kind, codecs.value.join(), props.items.map((i) => clipOf(i)).join('|'), props.items.map((i) => `${i.dir}/${i.name}:${i.first}-${i.last}:${i.fps}`).join('|'), prefs.width, prefs.fps, prefs.where, props.pod.id, props.pod.status], later)
+watch(() => [props.skipExisting, prefs.preset, props.items.map((i) => tcEdits[`${i.dir}/${i.name}`] ?? '').join('|'), JSON.stringify(colourIn) + colourAll.value, JSON.stringify(edlOverride), prefs.kind, codecs.value.join(), props.items.map((i) => clipOf(i)).join('|'), props.items.map((i) => `${i.dir}/${i.name}:${i.first}-${i.last}:${i.fps}`).join('|'), prefs.width, prefs.fps, prefs.where, props.pod.id, props.pod.status], later)
 watch(() => renders.finished, later)
 onMounted(() => { replan(); renders.watch(); publishStore.loadSettings() })
 onBeforeUnmount(() => { clearTimeout(timer); planSeq++ })
@@ -241,7 +312,13 @@ async function seed(p) {
   seeded = true
   const s = p.settings, review = s.kind === 'review'
   settingsNote.value = p.settings_source === 'pod' ? 'settingsPod' : 'settingsDefault'
-  prefs.kind = s.kind || 'proxy'; prefs.where = s.where || 'auto'; prefs.fps = s.fps ?? 'auto'; prefs.pull = s.pull !== false
+  prefs.kind = s.kind || 'proxy'; prefs.where = s.where || 'auto'; prefs.fps = s.fps ?? 'auto'
+  // a core with the publish-when-done settings starts the three boxes from the configuration (unticked unless it says so); an older core keeps its old default of Sync ticked
+  const newCore = s.publish !== undefined
+  if (s.preset !== undefined) prefs.preset = s.preset === 'tunnel' ? 'tunnel' : 'none'
+  prefs.pull = newCore ? s.pull === true : s.pull !== false
+  pub.s3 = !!(newCore && s.publish?.s3); pub.slack = !!(newCore && s.publish?.slack && pub.s3)
+  if (typeof s.skip_existing === 'boolean') emit('update:skipExisting', s.skip_existing)   // the Skip existing the configuration starts from (previews and render share it)
   prefs.h264 = (s.codecs || ['h264']).includes('h264'); prefs.prores = (s.codecs || []).includes('prores422hq')
   await nextTick()   // the kind watcher sets the width first; the configured width wins
   prefs.width = (review ? s.review_width : s.proxy_width) ?? 'source'
@@ -302,12 +379,12 @@ const reviewDone = computed(() => {
 const emit = defineEmits(['play', 'publish', 'update:skipExisting'])
 function playReview(r) { renders.play = { dir: r.s.dir, name: r.s.name, review: true }; emit('play') }
 
-const canStart = computed(() => !!plan.value && !plan.value.old && props.items.length > 0 && ws.value.ok && !clipBad.value && !allSkipped.value && !(isReview.value && refusalList.value.length) && (!summary.value.incomplete || (prefs.allowPartial && !isReview.value)) && (!isReview.value || (!!approvedBy.value.trim() && codecs.value.length > 0)) && (!publishOn.value || !!approvedBy.value.trim()) && !running.value && !starting.value)
+const canStart = computed(() => !!plan.value && !allBlocked.value && !plan.value.old && props.items.length > 0 && ws.value.ok && !clipBad.value && !allSkipped.value && !(isReview.value && refusalList.value.length) && (!summary.value.incomplete || (prefs.allowPartial && !isReview.value)) && (!isReview.value || (!!approvedBy.value.trim() && codecs.value.length > 0)) && (!publishOn.value || !!approvedBy.value.trim()) && !running.value && !starting.value)
 async function start() {
   starting.value = true; startError.value = ''; startErrObj.value = null
   const fixed = prefs.fps !== 'auto'
   try {
-    const started = await renders.start({ ...podArg(), sequences: sequences.value, width: prefs.width, where: prefs.where, kind: prefs.kind, skip_existing: props.skipExisting, ...(isReview.value ? { approved_by: approvedBy.value.trim(), codecs: codecs.value } : publishOn.value ? { approved_by: approvedBy.value.trim() } : {}), ...(publishOn.value ? { publish: { targets: [...(pub.s3 ? ['s3'] : []), ...(pub.slack ? ['slack'] : [])] } } : {}), ...(fixed ? { fps: Number(prefs.fps) } : {}), ...(prefs.where !== 'local' ? { pull: !!prefs.pull } : {}), ...(summary.value.incomplete && prefs.allowPartial && !isReview.value ? { allow_partial: true } : {}) })
+    const started = await renders.start({ ...podArg(), sequences: sequences.value, width: prefs.width, where: prefs.where, kind: prefs.kind, skip_existing: props.skipExisting, ...(tunnel.value ? { preset: 'tunnel' } : {}), ...overrideBody(), ...(isReview.value ? { approved_by: approvedBy.value.trim(), codecs: codecs.value } : publishOn.value ? { approved_by: approvedBy.value.trim() } : {}), ...(publishOn.value ? { publish: { targets: [...(pub.s3 ? ['s3'] : []), ...(pub.slack ? ['slack'] : [])] } } : {}), ...(fixed ? { fps: Number(prefs.fps) } : {}), ...(prefs.where !== 'local' ? { pull: !!prefs.pull } : {}), ...(summary.value.incomplete && prefs.allowPartial && !isReview.value ? { allow_partial: true } : {}) })
     if (started?.job_id && props.scopeLabel) renders.scopes[started.job_id] = props.scopeLabel   // the job keeps the scope it started with
   } catch (e) { startErrObj.value = e; startError.value = errorText(e) } finally { starting.value = false }
 }

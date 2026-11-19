@@ -30,3 +30,6 @@ Outputs are named with the clip name (ADR-048) and the person types it for a seq
 - The retries make a flaky link invisible when it recovers and honest when it does not.
 - The deletion rules are a standing instruction, recorded where the next session (or agent) will read them.
 - Items 3 to 5 are open and listed in NEXT-STEPS.
+
+## Shots as child jobs (v1.6.2)
+A publish run is a parent job with one child per shot (ADR-050, "Build notes for v1.6.2"): the Queue shows the parent with its children, each with its own progress, error, retry and cancel, and Auto-publish's own jobs (`trigger: 'auto-publish'`) and Auto-generate's renders (`trigger: 'auto-publish'` on the render job) are listed apart from the ones a person started. With "Sync the renders to this PC when done" and "Publish when done", each rendered sequence is pulled and then published as its own child as soon as ITS pull finishes, without waiting for the other sequences.

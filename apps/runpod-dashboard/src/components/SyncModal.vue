@@ -81,7 +81,7 @@
         </div>
       </div>
       <div v-if="!planError && plan.length" class="small mb-2" data-testid="sync-plan-counts">
-        <template v-if="counts.pending"><BSpinner small class="me-1" />{{ $t('sync.counting') }}</template>
+        <template v-if="counts.pending"><BSpinner small class="me-2 flex-shrink-0" />{{ $t('sync.counting') }}</template>
         <template v-else-if="counts.all.total_files != null">{{ $t(skipping ? 'sync.planCountsWithout' : 'sync.planCounts', { files: fmtN(shownCounts.total_files), bytes: formatBytes(shownCounts.total_bytes) }) }}</template>
         <template v-else>{{ $t('sync.noCount') }}</template>
       </div>

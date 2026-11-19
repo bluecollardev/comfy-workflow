@@ -24,6 +24,7 @@ async function loadCore() {
   const push = () => { if (timer) return; timer = setTimeout(() => { timer = null; for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('core:history', {}) }, 250) }
   core.history.onChange(push)
   core.queue.start()   // ADR-038: the round-import queue runs while the app is open
+  core.autopublish.start().catch(() => undefined)   // ADR-050: Auto-publish (off unless a person turned it on): its scheduler and the 60 s look for approved review videos
   core.autosync.start()   // ADR-046: Auto sync's timer (pulls for pods with it on) and the volume reconciler run while the app is open
   core.pods.startWatches()   // ADR-042 section 19: a pod waiting for a free card is tried again while the app is open
   // Events written by another process (the MCP server of another session, the CLI) arrive through the file.
@@ -96,7 +97,9 @@ const TABLE = {
     export: (c, opts) => c.history.exportHistory({ format: opts && opts.format, what: opts && opts.what }),
     logs: (c, podId, opts) => c.comfyruns.logs(podId, opts || {}),
     outputSources: (c, ctx) => c.outputsources.availability(ctx || {}),   // docs/ADR-045: which output sources can answer now, and why not
-    listOutputs: (c, ctx, o) => c.outputsources.listOutputs(ctx || {}, o || {}),   // all of them merged, or one `source`; `prefix` browses the volume
+    listOutputs: (c, ctx, o) => c.outputsources.listOutputs(ctx || {}, o || {}),   // `all: true` lists the whole volume output/ tree in one listing (ADR-045); with `job: true` it returns { job_id } for outputsStatus
+    outputsStatus: (c, jobId) => c.outputsources.jobStatus(String(jobId || '')),   // { state, files_seen, folders_seen, elapsed_s, result? }
+    outputsCancel: (c, jobId) => c.outputsources.jobCancel(String(jobId || '')),   // all of them merged, or one `source`; `prefix` browses the volume
   },
   ratelimit: {
     status: (c) => c.ratelimit.status(),   // RunPod's request limit: local state, no request to RunPod
@@ -140,6 +143,38 @@ const TABLE = {
     log: (c, runId, o) => c.syncruns.registry.log(String(runId || ''), o || {}),
     watch: (c) => c.autosync.watch(),
   },
+  autopublish: {   // docs/ADR-050 Auto-publish: approved review videos are uploaded by themselves under a standing, named approval; off by default
+    status: (c) => c.autopublish.statusNow(),
+    settings: (c) => c.autopublish.settings(),
+    hold: (c, o) => c.autopublish.hold(o || {}),   // a held shot version is never auto-published until a person releases it
+    release: (c, o) => c.autopublish.release(o || {}),
+    holds: (c) => c.autopublish.holds(),
+    dryRunReport: (c) => c.autopublish.dryRunReport(),   // the text the dry-run Slack summary would post (preview, posts nothing)
+    generateExisting: (c, o) => c.autopublish.generateExisting(o || {}),   // preview without confirm; a confirmed run starts renders (a pod needs a name)
+    setSettings: (c, o) => c.autopublish.setSettings(o || {}),   // on needs approved_by and understood: true; live needs a fresh name
+    off: (c) => c.autopublish.offCount(),
+    reviews: (c) => c.autopublish.reviews(),
+    approvals: (c) => c.autopublish.approvals(),
+    approve: (c, o) => c.autopublish.approve(o || {}),
+    revoke: (c, o) => c.autopublish.revoke(o || {}),
+    cancel: (c, o) => c.autopublish.cancel(o || {}),
+    publishNow: (c, o) => c.autopublish.publishNow(o || {}),
+    scanVolume: (c) => c.autopublish.scanVolume(),   // "Scan now": list the volume's deliver/ (one level at a time) for finished reviews
+  },
+  runningjobs: {   // jobs other processes (the MCP server, a script) are running, from the shared running-jobs file; cancel asks their owner
+    external: (c, o) => ({ jobs: c.jobsregistry.externals(o && o.kind || undefined) }),
+    cancel: (c, id) => c.jobsregistry.requestCancel(String(id || '')).then((found) => ({ ok: found })),
+  },
+  failures: {   // graph failures, logged (failures.jsonl in the config folder); read-only
+    list: (c, o) => c.failures.list(o || {}),
+    retry: (c, id) => c.failures.retry(String(id || '')),   // run a RETRYABLE failed graph again (at most twice); a graph or validation error is never retried
+  },
+  edl: {   // docs/ADR-050: the V11 edit list (CMX3600) decides timecode, frame count and what may be delivered; read-only from the exchange bucket, cached with its sha256
+    load: (c, o) => c.edl.load(o || {}),
+    status: (c) => c.edl.ensure().then(() => c.edl.status()),
+    elements: (c) => c.edl.ensure().then(() => ({ elements: c.edl.elements(), status: c.edl.status() })),
+    lookup: (c, o) => c.edl.ensure().then(() => c.edl.lookup(o || {})),
+  },
   publish: {   // docs/ADR-050: send finished outputs to S3 and Slack; a person's explicit act (approved_by on every run); secrets never returned
     settings: (c) => c.publish.settings(),
     setSettings: (c, input) => c.publish.setSettings(input || {}),
@@ -150,6 +185,8 @@ const TABLE = {
     status: (c, jobId) => c.publish.status(jobId || undefined),
     cancel: (c, jobId) => c.publish.cancel(String(jobId || '')),
     slack: (c, o) => c.publish.slack(o || {}),
+    rounds: (c) => c.publish.rounds(),   // the rounds already in the destination (BKK return), newest name first
+    retry: (c, childId) => c.publish.retry(String((childId && childId.child_id) || childId || '')),   // one failed shot again, alone
     volume: (c, o) => c.publish.volume(o || {}),   // one level of the volume's comfy-shared/output/ (S3, read-only), with an `empty` flag per folder
     volumeSize: (c, o) => c.publish.volumeSize(o || {}),   // files and bytes under one volume folder, on demand, cached 5 minutes
     volumeSizeCancel: (c, o) => c.publish.volumeSizeCancel(o || {}),

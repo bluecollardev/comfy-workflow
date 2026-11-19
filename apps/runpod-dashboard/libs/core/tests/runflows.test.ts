@@ -83,6 +83,52 @@ describe('running', () => {
     await expect(runflows.run('pod1', ['a.txt'], {})).rejects.toThrow(/Not a workflow path/)
   })
 
+  it('a validation rejection (400): stage validate, not retried, the model named; an execution error: stage execute with the node type; a 503 on queue is retryable', async () => {
+    const failures = await import('../src/failures.js')
+    const c = fakeComfy({ reject: { error: { message: 'Prompt outputs failed validation' }, node_errors: { '3': { class_type: 'CheckpointLoaderSimple', errors: [{ message: "Value not in list: ckpt_name: 'flux1-dev.safetensors' not in []" }] } } } })
+    const j = await finish((await runflows.run('pod1', ['rounds/r/a.json'], opts(c))).id); const res = j.results[0]
+    expect(res).toMatchObject({ state: 'failed', node: '3', retryable: false, node_type: 'CheckpointLoaderSimple', missing_models: [{ name: 'flux1-dev.safetensors', where_on_volume: 'comfy-shared/models/checkpoints/flux1-dev.safetensors' }] }); expect(res.recovery).toMatch(/Missing model.*Not retried/)
+    await failures.settled(); const l = (await failures.list({ job_id: j.id })).failures[0]; expect(l).toMatchObject({ stage: 'validate', node_id: '3', graph: 'rounds/r/a.json', pod_id: 'pod1', retryable: false }); expect(l.log_tail.length).toBeGreaterThan(0)
+    const c2 = fakeComfy({ history: { p1: { status: { status_str: 'error', messages: [['execution_error', { exception_message: 'CUDA out of memory', node_id: '4', node_type: 'KSampler' }]] }, outputs: {} } } })
+    const j2 = await finish((await runflows.run('pod1', ['rounds/r/b.json'], opts(c2))).id); await failures.settled(); expect((await failures.list({ job_id: j2.id })).failures[0]).toMatchObject({ stage: 'execute', node_id: '4', node_type: 'KSampler', retryable: false })
+  })
+  /** A ComfyUI whose /prompt answers from a script (status, body) per call, history from a map, and /queue from a function. */
+  const scripted = (answers: { status: number; body?: unknown }[], hist: Record<string, unknown> = {}, queue: () => unknown[] = () => []) => {
+    const calls = { prompts: 0, polls: 0 }
+    const fetchFn = (async (url: string, init?: { method?: string }) => {
+      const u = String(url), json = (status: number, body: unknown) => ({ status, ok: status === 200, json: async () => body })
+      if (u.includes('/api/userdata/')) return json(200, UI)
+      if (u.endsWith('/prompt') && init?.method === 'POST') { const a = answers[Math.min(calls.prompts++, answers.length - 1)]; return a.status === 200 ? json(200, { prompt_id: `p${calls.prompts}` }) : json(a.status, a.body ?? {}) }
+      if (u.includes('/history/')) { calls.polls++; const id = u.split('/history/')[1]; return json(200, hist[id] ? { [id]: hist[id] } : {}) }
+      if (u.endsWith('/queue')) return json(200, { queue_running: queue(), queue_pending: [] })
+      throw new Error('unexpected ' + u)
+    }) as unknown as typeof fetch
+    return { fetchFn, calls }
+  }
+  const OK = { status_str: 'success' }
+  it('fail fast: a validation error fails at once, no polling, and is never retried', async () => {
+    const c = scripted([{ status: 400, body: { error: { message: 'Prompt outputs failed validation' }, node_errors: { '7': { class_type: 'KSampler', errors: [{ message: 'Required input is missing' }] } } } }])
+    const j = await finish((await runflows.run('pod1', ['a/g.json'], opts(c as never, { fetchFn: c.fetchFn, backoffMs: [10, 10] }))).id); expect(j.results[0]).toMatchObject({ state: 'failed', retryable: false }); expect(c.calls.prompts).toBe(1); expect(c.calls.polls).toBe(0)
+  })
+  it('a transient cause (503) is retried after a backoff, AFTER the other graphs, at most twice; the first graph does not block the next', async () => {
+    const c = scripted([{ status: 503 }, { status: 200 }, { status: 503 }, { status: 200 }], { p2: { status: OK, outputs: { '9': {} } }, p4: { status: OK, outputs: { '9': {} } } })
+    const j = await finish((await runflows.run('pod1', ['a/one.json', 'a/two.json'], opts(c as never, { fetchFn: c.fetchFn, backoffMs: [30, 30] }))).id)
+    expect(j.results.map((r) => r.state)).toEqual(['done', 'done']); expect(c.calls.prompts).toBe(4); expect(j).toMatchObject({ ok: 2, failed: 0, state: 'done' }); expect(j.log.some((l) => /Will be tried again.*attempt 2 of 3/.test(l.text))).toBe(true)
+    const c2 = scripted([{ status: 503 }]); const j2 = await finish((await runflows.run('pod1', ['a/one.json'], opts(c2 as never, { fetchFn: c2.fetchFn, backoffMs: [10, 10] }))).id); expect(c2.calls.prompts).toBe(3); expect(j2.results[0]).toMatchObject({ state: 'failed', retryable: true })   // 1 try + 2 retries, then failed
+  })
+  it('three graphs in a row failing for the same cause pause the dispatch ONCE: the rest are skipped and one History line says so', async () => {
+    const bad = { status: 400, body: { error: { message: 'Prompt outputs failed validation' }, node_errors: { '7': { class_type: 'CheckpointLoaderSimple', errors: [{ message: "Value not in list: ckpt_name: 'x.safetensors' not in []" }] } } } }
+    const c = scripted([bad]); const j = await finish((await runflows.run('pod1', ['a/1.json', 'a/2.json', 'a/3.json', 'a/4.json', 'a/5.json'], opts(c as never, { fetchFn: c.fetchFn }))).id)
+    expect(j.results.map((r) => r.state)).toEqual(['failed', 'failed', 'failed', 'skipped', 'skipped']); expect(c.calls.prompts).toBe(3); expect(history.list({ limit: 50 }).filter((e) => e.kind === 'job' && e.what === 'dispatch paused')).toHaveLength(1); expect(j.log.filter((l) => /Dispatch paused/.test(l.text))).toHaveLength(1)
+  })
+  it('a hard time limit (3x the last successful run, else 2 h) and a stall limit (no run and no queue entry for 10 minutes) fail the graph', async () => {
+    runflows.resetDurations()
+    const fast = scripted([{ status: 200 }], { p1: { status: OK, outputs: { '9': {} } } }); await finish((await runflows.run('pod1', ['a/slow.json'], opts(fast as never, { fetchFn: fast.fetchFn }))).id)   // remembers a short duration
+    const hang = scripted([{ status: 200 }], {}, () => [[0, 'p1']]); const j = await finish((await runflows.run('pod1', ['a/slow.json'], opts(hang as never, { fetchFn: hang.fetchFn }))).id)
+    expect(j.results[0].error).toMatch(/Still running after/); expect(j.results[0].retryable).toBe(false)
+    const lost = scripted([{ status: 200 }], {}, () => []); const j2 = await finish((await runflows.run('pod1', ['a/lost.json'], opts(lost as never, { fetchFn: lost.fetchFn, stallMs: 40, graphTimeoutS: 60 }))).id)
+    expect(j2.results[0].error).toMatch(/Stalled: prompt p1 is neither running nor queued/); expect(j2.results[0].stage).toBe('execute')
+  })
   it('converts, queues and waits; an ok run and a failing run are both in the History, the error with its node', async () => {
     const c = fakeComfy({ history: { p1: { status: { status_str: 'success' }, outputs: { '9': {} } }, p2: { status: { status_str: 'error', messages: [['execution_error', { exception_message: 'boom', node_id: '4', node_type: 'KSampler' }]] } } } })
     const j0 = await runflows.run('pod1', ['rounds/r/a.json', 'rounds/r/b.json'], opts(c))

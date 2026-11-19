@@ -18,6 +18,27 @@
             <div class="text-body-secondary mt-1" data-testid="slack-howto-admin">{{ $t('publish.slack.howtoAdmin') }}</div></details>
           <BButton v-if="store.settings.slack.webhook_hint" variant="link" size="sm" class="p-0 text-danger" data-testid="publish-slack-clear" @click="clear">{{ $t('publish.slack.clearWebhook') }}</BButton></BCol>
       </BRow>
+      <div v-if="hasPreview" class="mt-2" data-testid="slack-preview-block">
+        <label class="d-flex align-items-center gap-2 small mb-0"><input v-model="form.preview_frame" type="checkbox" class="form-check-input mt-0" data-testid="slack-preview-frame" />{{ $t('publish.preview.setting') }}</label>
+        <div class="form-text" data-testid="slack-preview-help">{{ $t('publish.preview.help') }}</div>
+      </div>
+      <div v-if="hasVolumeSource" class="mt-2" data-testid="slack-volume-block">
+        <label class="d-flex align-items-center gap-2 small mb-0"><input v-model="form.volume_source" type="checkbox" class="form-check-input mt-0" data-testid="slack-volume-source" />{{ $t('publish.volumeSource.setting') }}</label>
+        <div class="form-text" data-testid="slack-volume-help">{{ $t('publish.volumeSource.help') }}</div>
+      </div>
+      <div v-if="hasPerShot" class="mt-2" data-testid="slack-per-shot-block">
+        <label class="d-flex align-items-center gap-2 small mb-0"><input v-model="form.per_shot" type="checkbox" class="form-check-input mt-0" data-testid="slack-per-shot" />{{ $t('publish.ret.perShot') }}</label>
+        <div class="form-text" data-testid="slack-per-shot-help">{{ $t('publish.ret.perShotHelp') }}</div>
+      </div>
+      <div v-if="hasLinks" class="mt-2 border rounded p-2" data-testid="slack-links">
+        <div class="small fw-semibold">{{ $t('publish.links.title') }}</div>
+        <label class="d-flex align-items-center gap-2 small mb-0"><input v-model="form.folder_link" type="checkbox" class="form-check-input mt-0" data-testid="slack-folder-link" />{{ $t('publish.links.folder') }}</label>
+        <div class="form-text mt-0 ms-4" data-testid="slack-folder-link-help">{{ $t('publish.links.folderHelp') }}</div>
+        <div class="d-flex align-items-center gap-2 flex-wrap mt-1"><label class="d-flex align-items-center gap-2 small mb-0"><input v-model="form.file_links" type="checkbox" class="form-check-input mt-0" data-testid="slack-file-links" />{{ $t('publish.links.files') }}</label>
+          <label class="small mb-0 d-flex align-items-center gap-1">{{ $t('publish.links.firstN') }}<BFormInput v-model.number="form.file_link_count" type="number" min="1" max="25" size="sm" style="width: 5.5rem" :disabled="!form.file_links" data-testid="slack-file-link-count" /></label></div>
+        <div v-if="countBad" class="text-danger small" data-testid="slack-file-link-count-error">{{ $t('publish.links.countBad') }}</div>
+        <div class="form-text mt-0 ms-4" data-testid="slack-file-links-help">{{ $t('publish.links.filesHelp') }}</div>
+      </div>
       <div class="d-flex align-items-center gap-2 mt-2 flex-wrap">
         <BButton variant="primary" size="sm" :disabled="saving" data-testid="publish-slack-save" @click="save()"><BSpinner v-if="saving" small class="me-1" />{{ $t('publish.save') }}</BButton>
         <span v-if="savedFlag" class="small text-success" data-testid="publish-slack-saved">{{ $t('publish.saved') }}</span>
@@ -45,13 +66,19 @@ import { publishAPI } from '../api/publish'
 
 const store = usePublishStore(), confirm = useConfirmStore()
 const form = ref(null), webhook = ref('')
+const hasPerShot = computed(() => typeof store.settings.slack?.per_shot === 'boolean')   // an older core posts one message per publish
+const hasLinks = computed(() => typeof store.settings.slack?.file_links === 'boolean')   // an older core has no link settings
+const countBad = computed(() => hasLinks.value && !!form.value && form.value.file_links && !(Number.isInteger(form.value.file_link_count) && form.value.file_link_count >= 1 && form.value.file_link_count <= 25))
+const hasVolumeSource = computed(() => typeof store.settings.slack?.volume_source === 'boolean')   // an older core has no volume-source setting
+const hasPreview = computed(() => typeof store.settings.slack?.preview_frame === 'boolean')   // an older core has no preview setting
 const saving = ref(false), savedFlag = ref(false), error = ref(''), errField = ref(''), testing = ref(false), result = ref(null)
 /** Edited and not saved: the test acts on the saved settings, so it waits for Save. */
-const dirty = computed(() => { const s = store.settings.slack, f = form.value; return !!f && (!!webhook.value || f.workspace_name !== (s.workspace_name || 'Beinghuman') || f.workspace_url !== (s.workspace_url || 'https://beinghuman-hq.slack.com') || (f.channel || '') !== (s.channel || '') || (f.username || '') !== (s.username || '')) })
-function fill() { const s = store.settings.slack; form.value = { workspace_name: s.workspace_name || 'Beinghuman', workspace_url: s.workspace_url || 'https://beinghuman-hq.slack.com', channel: s.channel || '', username: s.username || '' } }
+const dirty = computed(() => { const s = store.settings.slack, f = form.value; return !!f && (!!webhook.value || f.workspace_name !== (s.workspace_name || 'Beinghuman') || f.workspace_url !== (s.workspace_url || 'https://beinghuman-hq.slack.com') || (f.channel || '') !== (s.channel || '') || (f.username || '') !== (s.username || '') || (hasPreview.value && f.preview_frame !== (s.preview_frame !== false)) || (hasVolumeSource.value && f.volume_source !== (s.volume_source !== false)) || (hasPerShot.value && f.per_shot !== (s.per_shot !== false)) || (hasLinks.value && (f.file_links !== (s.file_links !== false) || f.folder_link !== (s.folder_link !== false) || f.file_link_count !== (s.file_link_count ?? 10)))) })
+function fill() { const s = store.settings.slack; form.value = { workspace_name: s.workspace_name || 'Beinghuman', workspace_url: s.workspace_url || 'https://beinghuman-hq.slack.com', channel: s.channel || '', username: s.username || '', ...(typeof s.preview_frame === 'boolean' ? { preview_frame: s.preview_frame } : {}), ...(typeof s.volume_source === 'boolean' ? { volume_source: s.volume_source } : {}), ...(typeof s.per_shot === 'boolean' ? { per_shot: s.per_shot } : {}), ...(typeof s.file_links === 'boolean' ? { file_links: s.file_links, folder_link: s.folder_link !== false, file_link_count: s.file_link_count ?? 10 } : {}) } }
 onMounted(async () => { await store.loadSettings(); if (!store.old) fill() })
 const fieldError = (f) => (errField.value === `slack.${f}` ? error.value.replace(/^[\w.]+:\s*/, '') : '')
 async function save(extra = {}) {
+  if (countBad.value) return   // the number says why, next to the field
   saving.value = true; savedFlag.value = false; error.value = ''; errField.value = ''
   try { await store.save({ slack: { ...form.value, channel: form.value.channel ? channelName(form.value.channel) : '', ...(webhook.value ? { webhook_url: webhook.value } : {}) }, ...extra }); webhook.value = ''; fill(); savedFlag.value = true } catch (e) { error.value = errorText(e); errField.value = /^([\w]+\.[\w]+):/.exec(error.value)?.[1] || '' } finally { saving.value = false }
 }

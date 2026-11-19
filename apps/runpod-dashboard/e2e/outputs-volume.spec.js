@@ -50,16 +50,19 @@ test('a stopped pod on a volume has an enabled Outputs button; the modal lists t
   await expect(m.getByTestId('pod-outputs-folder')).toHaveCount(3)
 })
 
-test('with a shot on the pod the volume listing starts in output/*/<shot>/', async ({ page, api }) => {
+test('with a shot on the pod the folder scope starts in output/*/<shot>/ (the window itself starts in All outputs, one click away)', async ({ page, api }) => {
   stopAll(api); api.state.history.runs = {}
   const dev = api.state.pods.find((p) => p.name === 'ComfyUI-Dev'); dev.round = 'r1'; dev.shot = 'archival-084'
   api.state.s3Outputs = { files: FILES }
   await page.goto('/')
   await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
   const m = page.getByTestId('pod-outputs-modal')
+  await expect(m.getByTestId('pod-outputs-scope-all')).toHaveClass(/active/)   // All outputs is the default
   await expect(m.getByTestId('pod-outputs-crumb')).toHaveText(['output', 'proxy_v004', 'archival-084'])
+  await expect(m.getByTestId('pod-outputs-run')).toHaveCount(5)   // every folder
+  await m.getByTestId('pod-outputs-scope-folder').click()
   await expect(m.getByTestId('pod-outputs-run')).toHaveCount(1)
-  expect(api.state.outputCalls[0].shot).toBe('archival-084')
+  expect(api.state.outputCalls.find((c) => !c.all).shot).toBe('archival-084')
 })
 
 test('opening a DPX sequence from the volume with the pod stopped reads s3file:// addresses (volume id and a key under comfy-shared/output/)', async ({ page, api }) => {

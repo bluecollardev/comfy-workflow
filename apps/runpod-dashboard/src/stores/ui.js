@@ -22,6 +22,14 @@ export const useUiStore = defineStore('ui', () => {
   const importRoundPreset = ref('')   // Import Round opens with this round chosen (re-import)
   const importRoundOpen = ref(false)  // Import Round (ADR-038)
   const outputsFor = ref(null)        // { pod_id, play? } a window asks the pod's card to open its Outputs window (and the viewer on a sequence)
+  const queueListLoaded = ref(false), queueListError = ref(''), queueRetry = ref(0)   // the Queue window's own first fetch (the banner under the nav bar reads them)
+  const openPublish = ref(false)      // the pod's Outputs window opened by outputsFor opens its Publish window too
+  const QTAB_KEY = 'runpod-manager.queue-tab'
+  const mapTab = (v) => (v === 'autopublish' ? 'publishing' : v || 'overview')   // Auto-publish lives under Publishing: an old remembered value or a deep link maps there
+  const failureFocus = ref('')   // a failed job's link to its failure row
+  const queueTab = ref((() => { try { return mapTab(localStorage.getItem(QTAB_KEY)) } catch { return 'overview' } })())   // the Queue window's tab: remembered; a link names its own
+  watch(queueTab, (v) => { if (v === 'autopublish') { if (queueTab.value !== 'publishing') queueTab.value = 'publishing'; return } try { localStorage.setItem(QTAB_KEY, v) } catch { /* storage blocked */ } })
+  const queueFocus = ref('')          // a section of the Queue to scroll to when it opens ('autopublish')
   const queueOpen = ref(false)        // the Queue window
   const queueStarting = ref([])       // rounds Import Round is queueing right now (the Queue says so while it reads and plans)
   const queueStartError = ref('')     // why the last import could not be queued
@@ -35,5 +43,5 @@ export const useUiStore = defineStore('ui', () => {
   watch(connectTab, (v) => { if (v === 'accounts') connectTab.value = 'repositories' })   // the old key
   const accountsOpen = computed({ get: () => connectOpen.value && connectTab.value === 'repositories', set: (v) => { if (v) connectTab.value = 'repositories'; connectOpen.value = v } })
   const repositoriesOpen = computed({ get: () => connectOpen.value && connectTab.value === 'repositories', set: (v) => { if (v) connectTab.value = 'repositories'; connectOpen.value = v } })
-  return { outputsFor, connectOpen, importOpen, importPod, importSource, importShown, connectTab, accountsOpen, repositoriesOpen, repositoriesVersion, configOpen, welcomeOpen, configFocus, volumesOpen, sharedOpen, modelsOpen, importRoundOpen, importRoundPreset, queueOpen, queueStarting, queueStartError, queueVersion, historyOpen, volumeDc, hints }
+  return { failureFocus, queueTab, queueListLoaded, queueListError, queueRetry, openPublish, queueFocus, outputsFor, connectOpen, importOpen, importPod, importSource, importShown, connectTab, accountsOpen, repositoriesOpen, repositoriesVersion, configOpen, welcomeOpen, configFocus, volumesOpen, sharedOpen, modelsOpen, importRoundOpen, importRoundPreset, queueOpen, queueStarting, queueStartError, queueVersion, historyOpen, volumeDc, hints }
 })

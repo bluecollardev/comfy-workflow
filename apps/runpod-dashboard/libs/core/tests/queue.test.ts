@@ -140,6 +140,8 @@ describe('importing', () => {
     await queue.tick(); w.pull.state = 'done'; await queue.tick(); await queue.tick(); await queue.tick()
     const r = w.runs.get('rj1')!; r.state = 'failed'; r.err = 'CUDA out of memory (node 4, KSampler)'; await queue.tick()
     const t = tasks()[1]; expect(t.state).toBe('failed'); expect(t.error).toMatch(/CUDA out of memory/)
+    const fl = await import('../src/failures.js'); await fl.settled(); expect((await fl.list({ job_id: t.id })).failures[0]).toMatchObject({ job_id: t.id, retryable: false })   // the failed import task is in the failures log too
+    expect(t.failure).toMatchObject({ stage: expect.any(String), retryable: false, recovery: expect.stringMatching(/Not retried/) }); expect(t.failure!.text).toMatch(/^stage: .*\nnode: .*\nmessage: .*CUDA out of memory.*\nretryable: no\nrecovery: /s)   // queue_list: a failed task is never just 'failed'
     expect(history.list({ kind: 'job' }).find((e) => e.kind === 'job' && e.job === 'queue' && e.state === 'failed')).toMatchObject({ error: expect.stringMatching(/CUDA/) })
   })
 

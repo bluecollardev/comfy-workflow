@@ -11,6 +11,7 @@ import * as outputruns from './outputruns.js'
 import * as autosyncstore from './autosyncstore.js'
 import * as mounts from './mounts.js'
 import * as podconfigs from './podconfigs.js'
+import * as podvolume from './podvolume.js'
 import * as podmodels from './podmodels.js'
 import * as podnames from './podnames.js'
 import * as podwatch from './podwatch.js'
@@ -224,7 +225,7 @@ export function toStatus(p: rp.RawPod): PodStatus {
     gpu: p.machine?.gpuDisplayName || String(p.gpuCount ?? '?'), vram: gpus.vram(p.machine?.gpuDisplayName || '') || 24,
     uptime_seconds: uptime, web_ui_url: running ? idle.proxyUrl(p.id, webPortOf(p.ports)) : null,
     ssh_command: `ssh root@${p.id}.proxy.runpod.io`, idle_stop_minutes: idle.entry(p.id)?.minutes ?? 0, comfy_ready: null,
-    custom_config: podconfigs.has(p.id), ...roundOf(p.id), image: p.imageName || undefined, datacenter: p.machine?.dataCenterId || undefined, ...(p.networkVolumeId ? { volume_id: p.networkVolumeId } : {}),
+    custom_config: podconfigs.has(p.id), ...(p.networkVolumeId ? (podvolume.remember(p.id, p.networkVolumeId), {}) : {}), ...roundOf(p.id), image: p.imageName || undefined, datacenter: p.machine?.dataCenterId || undefined, ...(p.networkVolumeId ? { volume_id: p.networkVolumeId } : {}),
     port_mismatch: (p.imageName || '') === PREBUILT_IMAGE && !/3001\/http/.test(p.ports || ''),
     console_url: consoleUrl(p.id), status_text: p.lastStatusChange || p.desiredStatus || '',
   }

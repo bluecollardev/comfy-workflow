@@ -58,7 +58,7 @@ test('initialize hands every client the governance instructions', async () => {
 const POOL = ['list_agents', 'get_pool_status', 'governance', 'create_agent', 'stop_agent', 'resume_agent', 'delete_agent', 'health_check_agent', 'get_agent_info', 'submit_job', 'get_job_status']
 const PODS = ['list_pods', 'get_pod', 'create_pod', 'stop_pod', 'resume_pod', 'delete_pod', 'recreate_pod', 'get_history', 'get_spend_history', 'get_comfy_runs', 'list_outputs', 'get_comfy_logs', 'export_history', 'rename_pod', 'set_pod_round', 'set_pod_shot', 'delete_round', 'rename_round', 'set_idle_stop', 'get_logs', 'list_datacenters', 'list_volumes', 'create_volume', 'delete_volume', 'set_default_volume', 'get_configuration', 'sync', 'sync_status', 'adapter_spec', 'adapters_list', 'adapter_save', 'import_plan', 'import_apply', 'get_credits', 'cost_now']
 // The tools the app's other windows added (docs/ADR-028), in the order app-tools.mjs defines them.
-const APP = ['list_gpus', 'get_volume_info', 'get_pod_config', 'set_pod_config', 'set_configuration', 'preview_configuration', 'reset_configuration', 'get_local_env', 'list_dirs', 'get_settings', 'set_settings', 'check_anthropic_key', 'config_export', 'config_import_plan', 'config_import_apply', 'config_undo', 'config_backups', 'resize_volume', 'volume_files', 'volume_erase', 'volume_clone', 'volume_job', 'volume_jobs', 'rate_limit_status', 'agent_guard_status', 'models_search', 'models_files', 'models_fetch', 'models_status', 'models_delete', 'models_wanted', 'models_wanted_add', 'models_wanted_remove', 'models_load_wanted', 'set_shared_volume', 'panama_status', 'list_rounds', 'round_info', 'panama_rounds', 'panama_round_files', 'panama_stage', 'panama_round_size', 'panama_pod_plan', 'panama_pull', 'panama_job', 'panama_cancel', 'panama_remove', 'plan_round_import', 'import_rounds', 'import_round', 'queue_list', 'queue_task', 'list_pod_workflows', 'run_pod_workflows', 'pod_models', 'run_workflows_job', 'panama_place', 'panama_import', 'import_detect', 'package_summary', 'package_tree', 'package_file', 'package_describe', 'adapter_draft', 'adapter_document', 'adapter_problems', 'adapter_manage', 'sync_after', 'image_env', 'image_dockerfile', 'git_accounts', 'repositories', 'remote_mcp', 'mcp_endpoints', 'docs', 'chunk_plan', 'run_shot_chunked', 'chunked_job', 'pod_ram', 'pod_watch', 'pod_retry_options', 'volume_changes', 'auto_sync', 'sync_runs', 'render_sequences', 'publish', 'sync_folders']
+const APP = ['list_gpus', 'get_volume_info', 'get_pod_config', 'set_pod_config', 'set_configuration', 'preview_configuration', 'reset_configuration', 'get_local_env', 'list_dirs', 'get_settings', 'set_settings', 'check_anthropic_key', 'config_export', 'config_import_plan', 'config_import_apply', 'config_undo', 'config_backups', 'resize_volume', 'volume_files', 'volume_erase', 'volume_clone', 'volume_job', 'volume_jobs', 'rate_limit_status', 'agent_guard_status', 'models_search', 'models_files', 'models_fetch', 'models_status', 'models_delete', 'models_wanted', 'models_wanted_add', 'models_wanted_remove', 'models_load_wanted', 'set_shared_volume', 'panama_status', 'list_rounds', 'round_info', 'panama_rounds', 'panama_round_files', 'panama_stage', 'panama_round_size', 'panama_pod_plan', 'panama_pull', 'panama_job', 'panama_cancel', 'panama_remove', 'plan_round_import', 'import_rounds', 'import_round', 'queue_list', 'queue_task', 'list_pod_workflows', 'run_pod_workflows', 'pod_models', 'run_workflows_job', 'panama_place', 'panama_import', 'import_detect', 'package_summary', 'package_tree', 'package_file', 'package_describe', 'adapter_draft', 'adapter_document', 'adapter_problems', 'adapter_manage', 'sync_after', 'image_env', 'image_dockerfile', 'git_accounts', 'repositories', 'remote_mcp', 'mcp_endpoints', 'docs', 'chunk_plan', 'run_shot_chunked', 'chunked_job', 'pod_ram', 'pod_watch', 'pod_retry_options', 'volume_changes', 'auto_sync', 'sync_runs', 'render_sequences', 'publish', 'running_jobs', 'failures', 'generate_existing', 'edl', 'autopublish', 'sync_folders']
 
 test('an agent writes an adapter and tests it on a real folder; the code stays open to read', async () => {
   const spec = textOf(ok(await call('adapter_spec')))
@@ -609,6 +609,7 @@ test('publish: the masked settings, plan and the confirm rule (ADR-050)', async 
   const st = jsonOf(ok(await call('publish', { action: 'settings' })))
   assert.equal(st.s3.ready, false); assert.equal(st.slack.ready, false); assert.equal(st.slack.workspace_name, 'Beinghuman'); assert.match(st.slack.problem, /Incoming Webhook URL for Beinghuman/)
   assert.ok(!JSON.stringify(st).includes('hooks.slack.com/services'))
+  assert.deepEqual([st.slack.file_links, st.slack.file_link_count, st.slack.folder_link, st.slack.preview_frame, st.slack.volume_source], [true, 10, true, true, true])
   assert.match(textOf(refused(await call('publish', { action: 'bogus' }))), /action must be/)
   assert.match(textOf(refused(await call('publish', { action: 'plan', items: ['a.mov'], targets: ['ftp'] }))), /targets is a list/)
   // run without approved_by or confirm: a plan-only answer, nothing sent (here the plan itself refuses: nothing is configured)
@@ -638,4 +639,34 @@ test('publish: items may be a string or { where: "volume", path }; volume and vo
   assert.equal(p.refused.length, 3); assert.match(p.refused[0].reason, /Not a path inside the volume/)
   assert.match(textOf(refused(await call('publish', { action: 'volume', dir: '../x' }))), /dir is a folder inside the volume/)
   assert.match(textOf(refused(await call('publish', { action: 'volume_size', path: '' }))), /path is a folder/)
+})
+
+test('autopublish: read, cancel and off only; everything that turns it on or sends is a person\'s act (ADR-050)', async () => {
+  const st = jsonOf(ok(await call('autopublish', { action: 'status' })))
+  assert.equal(st.enabled, false); assert.equal(st.daily_cap, null); assert.deepEqual(st.today, { count: 0, left: null }); assert.deepEqual(st.targets, { s3: true, slack: false, tunnel: false }); assert.deepEqual(st.pending, [])
+  const se = jsonOf(ok(await call('autopublish', { action: 'settings' }))); assert.equal(se.target_state.tunnel.ready, false); assert.match(se.target_state.tunnel.problem, /Tunnel is not available yet/)
+  assert.deepEqual(jsonOf(ok(await call('autopublish', { action: 'approvals' }))), []); assert.deepEqual(jsonOf(ok(await call('autopublish', { action: 'reviews' }))).reviews, []); assert.equal(jsonOf(ok(await call('autopublish', { action: 'off' }))).cancelled, 0)
+  for (const [a, re] of [['approve', /Approval is a person's act: use the window/], ['revoke', /Approval is a person's act/], ['enable', /person's act with a name/], ['go_live', /person's act with a name/], ['publish_now', /Publish now is a person's explicit, named click/], ['targets', /Where Auto-publish sends is chosen in the window, by a person/]]) assert.match(textOf(refused(await call('autopublish', { action: a }))), re)
+  assert.match(textOf(refused(await call('autopublish', { action: 'cancel' }))), /id is needed/); assert.match(textOf(refused(await call('autopublish', { action: 'bogus' }))), /action must be/)
+  const r = await call('set_configuration', { patch: { auto_publish: { enabled: true } } }); assert.equal(r.result.isError, true); assert.match(textOf(r), /turned on in the window, by a person/)
+  const t = await call('set_configuration', { patch: { auto_publish: { targets: { slack: true } } } }); assert.match(textOf(t), /Where Auto-publish sends is chosen in the window/)
+  assert.match(textOf(await call('set_configuration', { patch: { auto_publish: { dry_run_first: false } } })), /turned on in the window, by a person/)
+  assert.match(textOf(await call('set_configuration', { patch: { auto_publish: { dry_run: false } } })), /turned on in the window, by a person/)
+  assert.equal(jsonOf(ok(await call('set_configuration', { patch: { auto_publish: { window_minutes: 20, daily_cap: 4 } } }))).saved, true)
+})
+
+test('list_outputs: the All outputs mode is a parameter, and a job can be asked about (ADR-045)', async () => {
+  const props = (await rpc('tools/list')).result.tools.find((x) => x.name === 'list_outputs').inputSchema.properties
+  for (const k of ['all', 'job', 'job_id', 'cancel_job']) assert.ok(props[k], k)
+  assert.match(textOf(refused(await call('list_outputs', { job_id: 'nope' }))), /No such outputs listing/)
+})
+
+test('configuration: render.pull/skip_existing/publish and outputs.hide_empty_folders are plain preferences an agent may change (ADR-048)', async () => {
+  const c = jsonOf(ok(await call('get_configuration', {}))); const cfg = c.configuration ?? c
+  const saved = jsonOf(ok(await call('set_configuration', { patch: { render: { where: 'local', pull: true, skip_existing: false, publish: { s3: true, slack: false } }, outputs: { hide_empty_folders: false } } })))
+  assert.equal(saved.saved, true)
+  const after = jsonOf(ok(await call('preview_configuration', { patch: {} }))); assert.deepEqual(after.config.render.publish, { s3: true, slack: false }); assert.equal(after.config.render.skip_existing, false); assert.equal(after.config.outputs.hide_empty_folders, false)
+  assert.match(textOf(refused(await call('set_configuration', { patch: { render: { publish: { s3: false, slack: true } } } }))), /Slack announces an upload: turn S3 on/)
+  assert.equal(typeof cfg, 'object')
+  await call('reset_configuration', {})
 })

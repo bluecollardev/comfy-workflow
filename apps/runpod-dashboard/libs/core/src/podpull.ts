@@ -25,6 +25,7 @@ import { createInterface } from 'node:readline'
 import { CoreError, bad } from './errors.js'
 import * as dry from './dry.js'
 import * as history from './history.js'
+import * as jobsregistry from './jobsregistry.js'
 import * as gpus from './gpus.js'
 import * as idle from './idle.js'
 import * as mounts from './mounts.js'
@@ -642,6 +643,10 @@ const newJob = (round: string, kind: PodJob['kind'], p: PodPlan, now: Date): Int
   const job: PodJob = { id: `${kind}-${round}-${now.getTime()}`, round, kind, route: p.route, pod_id: p.route === 'active' ? p.pod!.id : null, pod_name: p.route === 'active' ? p.pod!.name : p.route === 's3' ? null : podName(round, now), state: 'creating', files: 0, lines: [], started_at: now.toISOString(), bytes_done: 0, bytes_total: null, rate: null, recent: [] }
   const i: Internal = { job, cancelled: false, abort: new AbortController(), wake: null, seen: new Set(), bad: [], totals: null, outcome: null, plan: p }
   jobs.set(job.id, i)
+  { // visible to the other processes while it runs, and cancellable from them (docs/ADR-050, 'MCP actions are shown in the Queue')
+    const who = history.currentOrigin(), origin: jobsregistry.Origin = who?.source === 'mcp' ? 'mcp' : 'window'
+    jobsregistry.track({ id: job.id, kind: 'volume', trigger: 'manual', origin, ...(origin === 'mcp' && who?.client ? { client: who.client } : {}), label: `${kind} ${round}`, started_at: job.started_at, view: () => ({ state: job.state, terminal: TERMINAL.includes(job.state), progress: { done: job.bytes_done, total: job.bytes_total ?? 0, unit: 'bytes' } }), cancel: () => { try { cancel(job.id) } catch { /* over */ } } })
+  }
   return i
 }
 const sleep = (i: Internal, ms: number) => new Promise<void>((res) => { const t = setTimeout(res, ms); i.wake = () => { clearTimeout(t); res() } })
@@ -1369,7 +1374,8 @@ export function volumeJobs(): { jobs: PodJob[]; interrupted: TempPod[]; running:
   const all = [...jobs.values()].filter((i) => VOLUME_KINDS.includes(i.job.kind)).sort((a, b) => b.job.started_at.localeCompare(a.job.started_at)).slice(0, 30)
   const live = new Set([...jobs.values()].filter((i) => !TERMINAL.includes(i.job.state)).map((i) => i.job.pod_name).filter(Boolean))
   const interrupted = temporaryPods().filter((t) => VOLUME_KINDS.includes(t.kind) && !live.has(t.name))
-  return { jobs: all.map((i) => view(i)), interrupted, running: all.filter((i) => !TERMINAL.includes(i.job.state)).length }
+  const ext = jobsregistry.externals('volume').filter((x) => !jobs.has(x.id)).map((x) => ({ id: x.id, round: '', kind: 'fetch', route: 's3', pod_id: null, pod_name: 'another process', state: x.interrupted ? 'interrupted' : 'pulling', files: 0, lines: [], started_at: x.started_at, bytes_done: x.progress?.done ?? 0, bytes_total: x.progress?.total || null, rate: null, recent: [], error: x.interrupted ? 'The process that was running this job stopped' : undefined, external: true, origin: x.origin, ...(x.mcp_client ? { mcp_client: x.mcp_client } : {}) }) as unknown as PodJob)
+  return { jobs: [...all.map((i) => view(i)), ...ext], interrupted, running: all.filter((i) => !TERMINAL.includes(i.job.state)).length + ext.filter((j) => !TERMINAL.includes(j.state)).length }
 }
 /** Delete the pod of an interrupted volume job and forget it. Only a pod this app made for a volume job (it is in pull-pods.json) and that no running job owns. */
 export async function dropInterrupted(name: string, opts: Opts = {}): Promise<{ deleted: string }> {
@@ -1433,4 +1439,33 @@ export async function probeEmpty(a: { id: string; secret: string; endpoint: stri
     const j = JSON.parse(r.stdout.trim() || '{}') as { Contents?: { Key?: string }[] }, c = (j.Contents ?? []).filter((x) => x.Key !== prefix)
     return c.length === 0   // two keys are asked for so a folder's own marker object (`name/`) does not hide that the folder holds nothing else
   } catch { return undefined } finally { clearTimeout(timer) }
+}
+
+/** A recursive listing of a volume prefix for the "All outputs" mode: ONE `aws s3 ls --recursive`, parsed in chunks of 500 lines with a yield between them (the main process stays free), abortable, with a live count of the lines seen. Only the first `keep` files are returned; the others are counted (up to `hardLimit`) and their folders recorded, so a huge volume is honest without being held in memory. null when the volume cannot be listed over the S3 API. */
+export async function listVolumeKeysChunked(volumeId: string, prefix: string, o: { signal?: AbortSignal; onSeen?: (lines: number) => void; keep?: number; hardLimit?: number } = {}, opts: Opts = {}): Promise<{ keys: { key: string; bytes: number; modified?: string }[]; counted: number; limited: boolean; dirs: Map<string, number> } | null> {
+  volLabel(volumeId)
+  if (!/^[\w .+@=,()/-]{1,300}$/.test(prefix) || prefix.split('/').includes('..') || prefix.startsWith('/')) throw bad(`Not a path inside the volume: ${prefix}`)
+  const dir = prefix.replace(/\/+$/, '') + '/', keep = o.keep ?? 25_000, hardLimit = o.hardLimit ?? 200_000
+  if (mounts.dryRun(mounts.load())) return { keys: [], counted: 0, limited: false, dirs: new Map() }
+  const vol = await volumeOf({ ...opts, volumeId })
+  const a = s3Access(vol); if (!a.ok) return null
+  const r = await (opts.aws ?? defaultAws)(['s3', 'ls', `s3://${a.bucket}/${dir}`, '--recursive', '--endpoint-url', a.endpoint, '--region', a.region], { AWS_ACCESS_KEY_ID: a.id, AWS_SECRET_ACCESS_KEY: a.secret }, { stallMs: opts.s3StallMs ?? S3_STALL_MS, ...(o.signal ? { signal: o.signal } : {}), ...(o.onSeen ? { onLines: o.onSeen } : {}) })
+  if (o.signal?.aborted) throw new CoreError(499, 'The listing was cancelled')
+  if (r.code !== 0) throw s3Error(r)
+  const keys: { key: string; bytes: number; modified?: string }[] = [], dirs = new Map<string, number>()
+  const lines = r.stdout.split('\n'); let counted = 0, limited = false
+  const touch = (rel: string, file: boolean) => { const segs = rel.split('/'); if (!file) segs.pop(); let at = ''; for (let i = 0; i < segs.length - (file ? 1 : 0); i++) { at = at ? `${at}/${segs[i]}` : segs[i]; if (!segs[i]) continue; if (dirs.size < 20_000 || dirs.has(at)) dirs.set(at, (dirs.get(at) ?? 0) + (file ? 1 : 0)) } }
+  for (let i = 0; i < lines.length && !limited; i += 500) {
+    for (const line of lines.slice(i, i + 500)) {
+      const f = /^(\d{4}-\d\d-\d\d)\s+(\d\d:\d\d:\d\d)\s+(\d+)\s+(.+)$/.exec(line); if (!f) continue
+      const key = f[4], rel = key.startsWith(dir) ? key.slice(dir.length) : key
+      if (key.endsWith('/')) { touch(rel, false); continue }   // a folder's own marker object: an empty folder if nothing else is under it
+      if (counted >= hardLimit) { limited = true; break }
+      counted++; touch(rel, true)
+      if (keys.length < keep) keys.push({ key, bytes: Number(f[3]), modified: `${f[1]}T${f[2]}` })
+    }
+    await new Promise<void>((res) => setImmediate(res))
+    if (o.signal?.aborted) throw new CoreError(499, 'The listing was cancelled')
+  }
+  return { keys, counted, limited, dirs }
 }

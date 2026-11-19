@@ -41,25 +41,105 @@ export const normalizeAutoSync = (v: unknown): AutoSyncConfig => {
   return { enabled: o.enabled === true, pull: o.pull === undefined ? true : o.pull === true, push: o.push === true, approved_by: typeof o.approved_by === 'string' ? o.approved_by.trim() : '' }
 }
 /** How DPX sequences are rendered into mp4 for playback and review (docs/ADR-048): where, which kind, the sizes, the codecs, the frame rate, whether the proxies are pulled to this PC. NEVER holds an approver or an allow_partial default: a review needs a named yes on each run, and partial is chosen per run. */
-export interface RenderSettings { where: 'auto' | 'pod' | 'local'; kind: 'proxy' | 'review'; proxy_width: 'source' | 960 | 1280 | 1920; review_width: 'source' | 960 | 1280 | 1920; codecs: ('h264' | 'prores422hq')[]; fps: 'auto' | number; pull: boolean }
-export const RENDER_DEFAULT: RenderSettings = { where: 'auto', kind: 'proxy', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto', pull: true }
+/** Auto-publish (ADR-050): approved review videos go to the publish destination by themselves. APP-WIDE (the Default Configuration only; a pod's own configuration never keeps it). `standing` is the named approval that turned it on: it is only ever created by autopublish.setSettings (a person, in the window) and never travels in an import. */
+export interface AutoPublishTargets { s3: boolean; slack: boolean; tunnel: boolean }
+/** Auto-publish can render the finished sequences itself (ADR-050); `enabled_at` is when it was switched on (nothing older is ever rendered). */
+/** What the DPX frames can be STATED to be (policy/colour.md: stated by a person, never guessed); the proxy or review is a converted Rec.709 view of it (kodak-log: tagged only). */
+export const COLOUR_INS: readonly string[] = ['p3-d65-gamma26', 'p3-d65-srgb', 'p3-d65-gamma22', 'kodak-log', 'linear-p3-d65', 'linear-rec709', 'cineon']
+export interface AutoGenerateConfig { enabled: boolean; where: 'local' | 'pod'; preset: 'review' | 'tunnel'; max_per_day: number | null; settle_minutes: number; fallback_local: boolean; /** what the DPX frames are, STATED by a person (policy/colour.md: never guessed): used for every generated sequence whose header says log or linear; null = such sequences are skipped */ colour_in: string | null; enabled_at?: string }
+export const AUTO_GENERATE_DEFAULT: AutoGenerateConfig = { enabled: false, where: 'local', preset: 'review', max_per_day: 20, settle_minutes: 5, fallback_local: false, colour_in: null }
+export function normalizeAutoGenerate(v: unknown): AutoGenerateConfig {
+  const o = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>, d = AUTO_GENERATE_DEFAULT
+  const cap = o.max_per_day === undefined ? d.max_per_day : typeof o.max_per_day === 'number' && Number.isFinite(o.max_per_day) && o.max_per_day !== 0 ? o.max_per_day : null
+  return { enabled: o.enabled === true, where: (o.where === undefined ? d.where : o.where) as AutoGenerateConfig['where'], preset: (o.preset === undefined ? d.preset : o.preset) as AutoGenerateConfig['preset'], max_per_day: cap, settle_minutes: typeof o.settle_minutes === 'number' && Number.isFinite(o.settle_minutes) ? o.settle_minutes : d.settle_minutes, fallback_local: o.fallback_local === true, colour_in: typeof o.colour_in === 'string' ? o.colour_in : null, ...(typeof o.enabled_at === 'string' && o.enabled === true ? { enabled_at: o.enabled_at } : {}) }
+}
+export function validateAutoGenerate(g: AutoGenerateConfig): void {
+  if (g.where !== 'local' && g.where !== 'pod') throw bad('auto_publish.generate.where is local or pod')
+  if (g.preset !== 'review' && g.preset !== 'tunnel') throw bad('auto_publish.generate.preset is review or tunnel')
+  if (g.max_per_day !== null && !(Number.isInteger(g.max_per_day) && g.max_per_day >= 1 && g.max_per_day <= 500)) throw bad('auto_publish.generate.max_per_day is empty (no limit) or a whole number from 1 to 500')
+  if (g.colour_in !== null && !COLOUR_INS.includes(g.colour_in)) throw bad(`auto_publish.generate.colour_in is empty or one of ${COLOUR_INS.join(', ')}`)
+  if (!(Number.isInteger(g.settle_minutes) && g.settle_minutes >= 1 && g.settle_minutes <= 120)) throw bad('auto_publish.generate.settle_minutes is a whole number of minutes from 1 to 120')
+}
+export interface AutoPublishConfig { /** Auto-generate: render the new finished sequences too (off by default; Default Configuration only) */ generate: AutoGenerateConfig; /** where Auto-publish looks for finished reviews: this PC's output/deliver/ and/or the volume's (Default Configuration only) */ sources: { local: boolean; volume: boolean }; /** how often the volume is listed, in minutes (1 to 120) */ volume_scan_minutes: number; /** the round a shot is published into, `{date}` = the local day: `tunnel-v11_{date}_r01` */ round: string; /** also publish the source DPX frames a review's sidecar names (this PC, else streamed from the volume) */ include_dpx: boolean; /** true = a person must approve each review version first (the old gate); false (the default) = every eligible review goes under the standing approval (Default Configuration only) */ require_approval: boolean; enabled: boolean; dry_run: boolean; /** what turning it on does: start in dry run (true, the default) or go live at once (false); only a preference, window-only like `enabled` */ dry_run_first: boolean; window_minutes: number; /** at most this many automatic uploads a day (1..50); null = no limit (the default) */ daily_cap: number | null; /** where it sends: S3, a Slack announcement of the upload (needs S3), Tunnel (not available yet) */ targets: AutoPublishTargets; standing?: { approved_by: string; at: string } }
+export const AUTO_PUBLISH_DEFAULT: AutoPublishConfig = { generate: { ...AUTO_GENERATE_DEFAULT }, sources: { local: true, volume: true }, volume_scan_minutes: 5, round: 'tunnel-v11_{date}_r01', include_dpx: false, require_approval: false, enabled: false, dry_run: true, dry_run_first: true, window_minutes: 10, daily_cap: null, targets: { s3: true, slack: false, tunnel: false } }
+export function normalizeAutoPublish(v: unknown): AutoPublishConfig {
+  const o = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>, d = AUTO_PUBLISH_DEFAULT
+  const num = (x: unknown, dflt: number) => (typeof x === 'number' && Number.isFinite(x) ? x : dflt)
+  const st = o.standing && typeof o.standing === 'object' ? (o.standing as Record<string, unknown>) : null
+  const standing = st && typeof st.approved_by === 'string' && st.approved_by.trim() && typeof st.at === 'string' ? { approved_by: st.approved_by.trim().slice(0, 80), at: st.at } : undefined
+  const t = (o.targets && typeof o.targets === 'object' ? o.targets : {}) as Record<string, unknown>
+  // an earlier shape (never released) had a boolean `slack`: it maps to targets.slack and is dropped on the next save
+  const targets = { s3: t.s3 === undefined ? true : t.s3 === true, slack: t.slack === undefined ? o.slack === true : t.slack === true, tunnel: t.tunnel === true }
+  const round = typeof o.round === 'string' && o.round.trim() ? o.round.trim() : d.round
+  const so = (o.sources && typeof o.sources === 'object' ? o.sources : {}) as Record<string, unknown>
+  return { generate: normalizeAutoGenerate(o.generate), sources: { local: so.local !== false, volume: so.volume !== false }, volume_scan_minutes: num(o.volume_scan_minutes, d.volume_scan_minutes), round, include_dpx: o.include_dpx === true, require_approval: o.require_approval === true, enabled: o.enabled === true, dry_run: o.dry_run !== false, dry_run_first: o.dry_run_first !== false, window_minutes: num(o.window_minutes, d.window_minutes), daily_cap: typeof o.daily_cap === 'number' && Number.isFinite(o.daily_cap) && o.daily_cap !== 0 ? o.daily_cap : null, targets, ...(standing ? { standing } : {}) }
+}
+export function validateAutoPublish(a: AutoPublishConfig): void {
+  if (!(Number.isInteger(a.window_minutes) && a.window_minutes >= 0 && a.window_minutes <= 120)) throw bad('auto_publish.window_minutes is a whole number of minutes from 0 to 120')
+  if (a.daily_cap !== null && !(Number.isInteger(a.daily_cap) && a.daily_cap >= 1 && a.daily_cap <= 50)) throw bad('auto_publish.daily_cap is empty (no limit) or a whole number from 1 to 50')
+  if (!/^[A-Za-z0-9._{}-]{3,100}$/.test(a.round) || !/^[A-Za-z0-9._-]{3,100}$/.test(a.round.replace(/\{date\}/g, '2026-01-01')) || a.round.includes('..')) throw bad('auto_publish.round is a round name (3 to 100 letters, digits . _ -), with {date} for the day')
+  validateAutoGenerate(a.generate)
+  if (!a.sources.local && !a.sources.volume) throw bad('Choose at least one place to watch')
+  if (!(Number.isInteger(a.volume_scan_minutes) && a.volume_scan_minutes >= 1 && a.volume_scan_minutes <= 120)) throw bad('auto_publish.volume_scan_minutes is a whole number of minutes from 1 to 120')
+  if (a.targets.tunnel) throw bad('auto_publish.targets.tunnel: Tunnel is not available yet')
+  if (a.targets.slack && !a.targets.s3) throw bad('auto_publish.targets.slack: Slack announces an upload: turn S3 on')
+  if (a.enabled && !a.targets.s3 && !a.targets.slack) throw bad('auto_publish.targets: at least one of s3 or slack must be on while Auto-publish is on')
+  if (a.enabled && !a.standing) throw bad('auto_publish.enabled needs a standing approval: Auto-publish is turned on in the window, by a person')
+}
+/** The Outputs window's choices, app-wide (the Default Configuration only; a pod's own configuration never keeps it). */
+export interface OutputsConfig { hide_empty_folders: boolean }
+export const OUTPUTS_DEFAULT: OutputsConfig = { hide_empty_folders: true }
+export const normalizeOutputs = (v: unknown): OutputsConfig => ({ hide_empty_folders: !(v && typeof v === 'object') || (v as Record<string, unknown>).hide_empty_folders === undefined ? OUTPUTS_DEFAULT.hide_empty_folders : ((v as Record<string, unknown>).hide_empty_folders as boolean) })
+export function validateOutputs(o: OutputsConfig): void { if (typeof o.hide_empty_folders !== 'boolean') throw bad('outputs.hide_empty_folders is true or false') }
+/** Where the EDL is read from (ADR-050): null = the V11 path of the Panama exchange bucket. Default Configuration only. */
+export interface EdlConfig { source: { bucket: string; key: string } | { file: string } | null }
+export const EDL_DEFAULT: EdlConfig = { source: null }
+export function normalizeEdl(v: unknown): EdlConfig {
+  const s = (v && typeof v === 'object' ? (v as Record<string, unknown>).source : null) as Record<string, unknown> | null | undefined
+  if (s && typeof s === 'object') { if (typeof s.file === 'string' && s.file.trim()) return { source: { file: s.file.trim() } }; if (typeof s.bucket === 'string' && typeof s.key === 'string' && s.bucket.trim() && s.key.trim()) return { source: { bucket: s.bucket.trim(), key: s.key.trim() } } }
+  return { source: null }
+}
+export function validateEdl(e: EdlConfig): void {
+  const s = e.source; if (!s) return
+  if ('file' in s) { if (!s.file.startsWith('/')) throw bad('edl.source.file is an absolute path') } else if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(s.bucket) || s.key.startsWith('/') || s.key.split('/').includes('..')) throw bad('edl.source is { bucket, key } (a bucket name and a key with no leading slash and no ..), or { file }')
+}
+/** What a render does with log or linear frames when nobody has stated their colour (ADR-048): `ask` skips them with a warning, `format` converts from `format`, `guess` converts from the DPX header (and says so). The Tunnel preset and a bkk-return publish never guess. */
+export interface RenderColour { mode: 'ask' | 'format' | 'guess'; format?: string; /** who and when last set it (kept for the manifest and the sidecar) */ set_by?: string; set_at?: string }
+export interface RenderSettings { /** the colour setting for frames whose header says log, linear or printing density */ colour: RenderColour; where: 'auto' | 'pod' | 'local'; kind: 'proxy' | 'review'; proxy_width: 'source' | 960 | 1280 | 1920; review_width: 'source' | 960 | 1280 | 1920; codecs: ('h264' | 'prores422hq')[]; fps: 'auto' | number; /** a preset: `tunnel` = the Tunnel proxy (H.264, 1920x1080, tagged Rec.709, a start timecode, no burn-ins) */ preset: 'none' | 'tunnel'; /** Sync the renders to this PC when done (default OFF) */ pull: boolean; /** Skip existing: the Generate window starts from it (default ON); a request's own value always wins */ skip_existing: boolean; /** what the Generate window pre-ticks for "Publish to S3 / Post to Slack when done" (default both off): a preference only, a run still needs its own `publish` field and approved_by */ publish: { s3: boolean; slack: boolean } }
+export const RENDER_DEFAULT: RenderSettings = { colour: { mode: 'ask' }, where: 'auto', kind: 'proxy', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto', preset: 'none', pull: false, skip_existing: true, publish: { s3: false, slack: false } }
 export const RENDER_WIDTHS = ['source', 960, 1280, 1920] as const
 export const RENDER_CODECS = ['h264', 'prores422hq'] as const
+export function normalizeRenderColour(v: unknown): RenderColour {
+  const o = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>, mode = o.mode === 'format' || o.mode === 'guess' ? o.mode : 'ask'
+  return { mode, ...(typeof o.format === 'string' && o.format ? { format: o.format } : {}), ...(typeof o.set_by === 'string' && o.set_by ? { set_by: o.set_by.slice(0, 80) } : {}), ...(typeof o.set_at === 'string' && o.set_at ? { set_at: o.set_at.slice(0, 40) } : {}) }
+}
 export function normalizeRender(v: unknown): RenderSettings {
   const o = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>, d = RENDER_DEFAULT
   const width = (x: unknown, dflt: RenderSettings['proxy_width']) => ((RENDER_WIDTHS as readonly unknown[]).includes(x) ? x : (RENDER_WIDTHS as readonly unknown[]).includes(Number(x)) && x !== '' && x !== null ? Number(x) : x === undefined ? dflt : x) as RenderSettings['proxy_width']
   return {
     where: (o.where === undefined ? d.where : o.where) as RenderSettings['where'], kind: (o.kind === undefined ? d.kind : o.kind) as RenderSettings['kind'], proxy_width: width(o.proxy_width, d.proxy_width), review_width: width(o.review_width, d.review_width),
     codecs: (Array.isArray(o.codecs) ? [...new Set(o.codecs as RenderSettings['codecs'])] : [...d.codecs]), fps: (o.fps === undefined ? d.fps : o.fps) as RenderSettings['fps'], pull: o.pull === undefined ? d.pull : (o.pull as boolean),
+    preset: (o.preset === undefined ? d.preset : o.preset) as RenderSettings['preset'],
+    colour: normalizeRenderColour(o.colour),
+    skip_existing: o.skip_existing === undefined ? d.skip_existing : (o.skip_existing as boolean),
+    publish: { s3: (o.publish as Record<string, unknown> | undefined)?.s3 === true, slack: (o.publish as Record<string, unknown> | undefined)?.slack === true },
   }
 }
 export function validateRender(r: RenderSettings): void {
+  if (!['ask', 'format', 'guess'].includes(r.colour.mode)) throw bad('render.colour.mode is ask, format or guess')
+  if (r.colour.mode === 'format' && !(r.colour.format && COLOUR_INS.includes(r.colour.format))) throw bad(`render.colour.format is one of ${COLOUR_INS.join(', ')} when the mode is format`)
+  if (r.colour.format !== undefined && !COLOUR_INS.includes(r.colour.format)) throw bad(`render.colour.format is one of ${COLOUR_INS.join(', ')}`)
   if (!['auto', 'pod', 'local'].includes(r.where)) throw bad('render.where is auto, pod or local')
   if (!['proxy', 'review'].includes(r.kind)) throw bad('render.kind is proxy or review')
   for (const k of ['proxy_width', 'review_width'] as const) if (!(RENDER_WIDTHS as readonly unknown[]).includes(r[k])) throw bad(`render.${k} is source, 960, 1280 or 1920`)
   if (!Array.isArray(r.codecs) || !r.codecs.length || r.codecs.some((c) => !(RENDER_CODECS as readonly string[]).includes(c))) throw bad('render.codecs is a non-empty list of h264, prores422hq')
   if (!(r.fps === 'auto' || (typeof r.fps === 'number' && Number.isFinite(r.fps) && r.fps >= 1 && r.fps <= 240))) throw bad('render.fps is auto or a number from 1 to 240')
   if (typeof r.pull !== 'boolean') throw bad('render.pull is true or false')
+  if (r.preset !== 'none' && r.preset !== 'tunnel') throw bad('render.preset is none or tunnel')
+  if (typeof r.skip_existing !== 'boolean') throw bad('render.skip_existing is true or false')
+  if (!r.publish || typeof r.publish.s3 !== 'boolean' || typeof r.publish.slack !== 'boolean') throw bad('render.publish is { s3, slack }, each true or false')
+  if (r.publish.slack && !r.publish.s3) throw bad('Slack announces an upload: turn S3 on')
+  if ((r.publish.s3 || r.publish.slack) && !(r.pull || r.where === 'local')) throw bad('Publishing needs the renders on this PC: turn on Sync the renders to this PC')
 }
 /** Patterns a push leaves out (rsync semantics, relative to each step's local root): a leading `/` anchors to the root, a trailing `/` means folders only, otherwise it matches at any depth. They only ever REMOVE things from a push; nothing on the volume is deleted. */
 export const EXCLUDE_MAX = 100, EXCLUDE_LEN = 200
@@ -127,6 +207,12 @@ export interface MountsConfig {
   sync_parallel: number      // rsync streams at a time on a push (1..16); the uplink is the limit, streams keep it full across small files
   /** Auto sync for each pod created under this configuration (default off; Pull on, Push off); enabled needs approved_by */
   auto_sync?: AutoSyncConfig
+  /** Auto-publish (ADR-050), app-wide: the Default Configuration only */
+  auto_publish?: AutoPublishConfig
+  /** The Outputs window's preferences (hide empty folders), app-wide */
+  outputs?: OutputsConfig
+  /** Where the V11 edit list is read from (Default Configuration only) */
+  edl?: EdlConfig
   /** Patterns a push leaves out (see validateExcludes); a pod's own configuration may carry its own (it replaces the default's) */
   sync_exclude?: string[]
   /** A push with exclusions also REMOVES what the patterns match on the volume (a targeted, guarded removal, never rsync --delete-excluded); default off; the run still needs a named yes */
@@ -207,6 +293,9 @@ export function defaults(): MountsConfig {
     sync_shared: [...SYNC_SHARED_DEFAULT],
     pull_shared: [...PULL_SHARED_DEFAULT],
     auto_sync: { ...AUTO_SYNC_DEFAULT },
+    auto_publish: { ...AUTO_PUBLISH_DEFAULT },
+    outputs: { ...OUTPUTS_DEFAULT },
+    edl: { ...EDL_DEFAULT },
     render: { ...RENDER_DEFAULT, codecs: [...RENDER_DEFAULT.codecs] },
     sync_exclude: [],
     sync_exclude_delete: false,
@@ -255,6 +344,9 @@ export function normalize(data: Partial<MountsConfig>): MountsConfig {
     import_cost_cap_usd: typeof data.import_cost_cap_usd === 'number' && data.import_cost_cap_usd > 0 ? data.import_cost_cap_usd : 50,
     import_cap_enabled: data.import_cap_enabled !== false,   // absent means the cap is on
     auto_sync: normalizeAutoSync(data.auto_sync),
+    auto_publish: normalizeAutoPublish(data.auto_publish),
+    outputs: normalizeOutputs(data.outputs),
+    edl: normalizeEdl(data.edl),
     render: normalizeRender(data.render),
     sync_exclude: Array.isArray(data.sync_exclude) ? [...new Set(data.sync_exclude.map((x) => (typeof x === 'string' ? x.trim() : x)))].filter((x) => x !== '') as string[] : [],
     sync_exclude_delete: data.sync_exclude_delete === true,
@@ -549,6 +641,9 @@ export function validate(cfg: MountsConfig): MountsConfig {
   if (cfg.idle_stop_minutes < 0) throw bad('idle_stop_minutes is 0 (never) or a number of minutes')
   if (!Number.isInteger(cfg.sync_parallel) || cfg.sync_parallel < 1 || cfg.sync_parallel > 16) throw bad('sync_parallel is a whole number of parallel uploads, 1 to 16')
   if (cfg.render) validateRender(cfg.render)
+  if (cfg.auto_publish) validateAutoPublish(cfg.auto_publish)
+  if (cfg.outputs) validateOutputs(cfg.outputs)
+  if (cfg.edl) validateEdl(cfg.edl)
   validateExcludes(cfg.sync_exclude)
   validateFolderExcludes(cfg.folder_excludes)
   if (cfg.auto_sync?.enabled && !cfg.auto_sync.approved_by.trim()) throw bad('Auto sync needs the name of who says yes')
@@ -568,6 +663,20 @@ export function preview(data: Partial<MountsConfig>) {
 
 /** Save after validating; returns the payload the panel shows. */
 export function put(data: Partial<MountsConfig>, opts: { quiet?: boolean } = {}) {
+  // Auto-generate on a POD spends money: switching it to `pod` in a configuration save needs the approver's name in the same save (`auto_publish.approved_by`, never stored).
+  const raw = data.auto_publish as (Partial<AutoPublishConfig> & { approved_by?: unknown }) | undefined
+  if (!opts.quiet && raw?.generate?.where === 'pod' && load().auto_publish?.generate.where !== 'pod') {
+    const who = typeof raw.approved_by === 'string' ? raw.approved_by.trim().slice(0, 80) : ''
+    if (!who) throw bad("Rendering on a pod spends money: put the approver's name")
+    history.record({ kind: 'change', area: 'configuration', action: 'auto-generate set to render on a pod', what: 'auto-publish', detail: `approved by ${who}`, approved_by: who })
+  }
+  const rawColour = raw?.generate?.colour_in
+  if (!opts.quiet && typeof rawColour === 'string' && rawColour !== (load().auto_publish?.generate.colour_in ?? null)) {   // a person states the colour: the name is needed and recorded
+    const who = typeof raw!.approved_by === 'string' ? raw!.approved_by.trim().slice(0, 80) : ''
+    if (!who) throw bad("Stating the colour of frames is a person's act: put the approver's name (auto_publish.approved_by)")
+    history.record({ kind: 'change', area: 'configuration', action: 'auto-generate colour stated', what: 'auto-publish', detail: `frames are ${rawColour}, stated by ${who}`, approved_by: who })
+  }
+  { const rc = (data.render as { colour?: unknown } | undefined)?.colour, prev = load().render?.colour ?? { mode: 'ask' }; if (rc !== undefined && JSON.stringify({ mode: normalizeRenderColour(rc).mode, format: normalizeRenderColour(rc).format }) !== JSON.stringify({ mode: prev.mode, format: prev.format })) { const who = typeof (data as { approved_by?: unknown }).approved_by === 'string' && (data as { approved_by: string }).approved_by.trim() ? (data as { approved_by: string }).approved_by.trim().slice(0, 80) : 'unknown', n = normalizeRenderColour(rc); data = { ...data, render: { ...(data.render as object), colour: { ...n, set_by: who, set_at: new Date().toISOString() } } as never }; if (!opts.quiet) history.record({ kind: 'change', area: 'configuration', action: 'render colour setting changed', what: 'render.colour', detail: `mode ${n.mode}${n.format ? ` (${n.format})` : ''}, set by ${who}` }) } }
   const cfg = validate(normalize(data))
   save(cfg)
   if (!opts.quiet) history.record({ kind: 'change', area: 'configuration', action: 'saved', what: 'Default Configuration' })

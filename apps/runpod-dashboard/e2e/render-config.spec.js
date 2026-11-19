@@ -20,7 +20,9 @@ test.describe('Default Configuration', () => {
     await expect(s.getByTestId('config-render-review-width')).toHaveValue('source')
     await expect(s.getByTestId('config-render-codec-prores')).toBeChecked(); await expect(s.getByTestId('config-render-codec-h264')).not.toBeChecked()   // ProRes is the default
     await expect(s.getByTestId('config-render-fps')).toHaveValue('auto')
-    await expect(s.getByTestId('config-render-pull')).toBeChecked()
+    await expect(s.getByTestId('config-render-pull')).not.toBeChecked()   // Sync the renders to this PC: unticked by default
+    await expect(s.getByTestId('config-render-publish-s3')).not.toBeChecked(); await expect(s.getByTestId('config-render-publish-slack')).not.toBeChecked(); await expect(s.getByTestId('config-render-skip-existing')).toBeChecked()
+    await expect(s.getByTestId('config-render-pre-help')).toHaveText('These only pre-tick the boxes in the Generate window. Every publish still asks who says yes.'); await expect(s.getByTestId('config-render-skip-help')).toHaveText('Starting values of the Generate window')
     await expect(s.getByTestId('config-render-help')).toHaveText(t('outputs.render.cfg.help'))
     await expect(s.getByTestId('config-render-help')).toContainText('A review video always asks who says yes.')
     await expect(s.getByTestId('config-render-fps').locator('option')).toHaveText(['Auto (from the file name)', '23.976 fps', '24 fps', '25 fps', '30 fps'])
@@ -39,16 +41,16 @@ test.describe('Default Configuration', () => {
     await d.getByTestId('config-render-review-width').selectOption('1920')
     await d.getByTestId('config-render-codec-h264').check()
     await d.getByTestId('config-render-fps').selectOption('23.976')
-    await d.getByTestId('config-render-pull').uncheck()
+    await d.getByTestId('config-render-pull').check()
     await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
-    const want = { where: 'local', kind: 'review', proxy_width: 1280, review_width: 1920, codecs: ['prores422hq', 'h264'], fps: 23.976, pull: false }
+    const want = { where: 'local', kind: 'review', proxy_width: 1280, review_width: 1920, codecs: ['prores422hq', 'h264'], fps: 23.976, pull: true }   // publish and skip_existing were not touched: not sent
     expect(calls(api, 'PUT', '/mounts')[0].body.render).toEqual(want)
     expect(api.state.mounts.config.render).toEqual(want)
     await page.reload(); await page.getByTestId('open-config').click()
     d = modal(page, t('config.title')); await cfgTab(d, 'options')
     await expect(d.getByTestId('config-render-where')).toHaveValue('local'); await expect(d.getByTestId('config-render-kind-review')).toBeChecked()
     await expect(d.getByTestId('config-render-proxy-width')).toHaveValue('1280'); await expect(d.getByTestId('config-render-review-width')).toHaveValue('1920')
-    await expect(d.getByTestId('config-render-codec-h264')).toBeChecked(); await expect(d.getByTestId('config-render-fps')).toHaveValue('23.976'); await expect(d.getByTestId('config-render-pull')).not.toBeChecked()
+    await expect(d.getByTestId('config-render-codec-h264')).toBeChecked(); await expect(d.getByTestId('config-render-fps')).toHaveValue('23.976'); await expect(d.getByTestId('config-render-pull')).toBeChecked()
     const [download] = await Promise.all([page.waitForEvent('download'), d.getByTestId('cfg-io-export').click()])
     expect(JSON.parse(readFileSync(await download.path(), 'utf8')).config.render).toEqual(want)
     await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
@@ -123,5 +125,57 @@ test.describe('the Render option starts from plan().settings', () => {
     await expect(p.getByTestId('pod-outputs-render-settings')).toHaveText('Using the default settings')
     await expect(p.getByTestId('pod-outputs-render-width')).toHaveValue('960'); await expect(p.getByTestId('pod-outputs-render-fps')).toHaveValue('24')
     await expect(p.getByTestId('pod-outputs-render-downscale-hint')).toBeVisible()
+  })
+})
+
+test.describe('Render: Sync, Publish and Skip existing as starting values; Outputs window', () => {
+  test('the dependencies are enforced inline: publishing needs Sync (unless it renders on this PC), Slack needs S3', async ({ page }) => {
+    const d = await openDefault(page)
+    const s = d.getByTestId('config-render'); await s.scrollIntoViewIfNeeded()
+    await expect(s.getByTestId('config-render-publish-s3')).toBeDisabled(); await expect(s.getByTestId('config-render-publish-slack')).toBeDisabled()
+    await expect(s.getByTestId('config-render-needsync')).toHaveText('Publishing needs the renders on this PC: turn on Sync the renders to this PC')
+    await s.getByTestId('config-render-pull').check()
+    await expect(s.getByTestId('config-render-publish-s3')).toBeEnabled(); await expect(s.getByTestId('config-render-publish-slack')).toBeDisabled()   // Slack needs S3
+    await s.getByTestId('config-render-publish-s3').check(); await expect(s.getByTestId('config-render-publish-slack')).toBeEnabled(); await s.getByTestId('config-render-publish-slack').check()
+    await s.getByTestId('config-render-publish-s3').uncheck(); await expect(s.getByTestId('config-render-publish-slack')).not.toBeChecked()   // S3 off takes Slack with it
+    await s.getByTestId('config-render-publish-s3').check(); await s.getByTestId('config-render-publish-slack').check()
+    await s.getByTestId('config-render-pull').uncheck()
+    await expect(s.getByTestId('config-render-publish-s3')).not.toBeChecked(); await expect(s.getByTestId('config-render-publish-slack')).not.toBeChecked()   // Sync off switches publishing off
+    await s.getByTestId('config-render-where').selectOption('local')
+    await expect(s.getByTestId('config-render-publish-s3')).toBeEnabled(); await expect(s.getByTestId('config-render-needsync')).toHaveCount(0)   // rendering here: no Sync needed
+  })
+  test('Save carries pull, publish and skip_existing as render keys; an untouched config sends no render key', async ({ page, api }) => {
+    const d = await openDefault(page)
+    const s = d.getByTestId('config-render'); await s.scrollIntoViewIfNeeded()
+    await s.getByTestId('config-render-pull').check(); await s.getByTestId('config-render-publish-s3').check(); await s.getByTestId('config-render-publish-slack').check(); await s.getByTestId('config-render-skip-existing').uncheck()
+    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    expect(calls(api, 'PUT', '/mounts')[0].body.render).toMatchObject({ pull: true, publish: { s3: true, slack: true }, skip_existing: false })
+    expect(api.state.mounts.config.render.publish).toEqual({ s3: true, slack: true })
+  })
+  test('a configuration with older render keys saves without the new keys until they change', async ({ page, api }) => {
+    api.state.mounts.config.render = { where: 'pod', kind: 'proxy', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto' }
+    const d = await openDefault(page)
+    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    const r = calls(api, 'PUT', '/mounts')[0].body.render
+    expect(r).not.toHaveProperty('pull'); expect(r).not.toHaveProperty('publish'); expect(r).not.toHaveProperty('skip_existing'); expect(r.where).toBe('pod')
+  })
+  test('Default Configuration: the Outputs window section (Hide empty folders by default, ticked, with its help); untouched sends no outputs key; unticking saves it and it loads again', async ({ page, api }) => {
+    let d = await openDefault(page)
+    const o = d.getByTestId('config-outputs'); await o.scrollIntoViewIfNeeded()
+    await expect(o.getByTestId('config-outputs-hide-empty')).toBeChecked(); await expect(o.getByTestId('config-outputs-help')).toHaveText('Starting value of the Outputs window')
+    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    expect(calls(api, 'PUT', '/mounts')[0].body).not.toHaveProperty('outputs')
+    d = await openDefault(page)
+    await d.getByTestId('config-outputs-hide-empty').uncheck(); await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    expect(calls(api, 'PUT', '/mounts').at(-1).body.outputs).toEqual({ hide_empty_folders: false })
+    d = await openDefault(page)
+    await expect(d.getByTestId('config-outputs-hide-empty')).not.toBeChecked()
+    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    expect(calls(api, 'PUT', '/mounts').at(-1).body.outputs).toEqual({ hide_empty_folders: false })   // loaded with it: saved with it
+  })
+  test('a pod\'s own configuration has the render checkboxes (including Skip existing) but no Outputs section', async ({ page }) => {
+    const d = await openPod(page)
+    await expect(d.getByTestId('config-render-skip-existing')).toBeVisible(); await expect(d.getByTestId('config-render-publish-s3')).toBeVisible()
+    await expect(d.getByTestId('config-outputs')).toHaveCount(0)
   })
 })

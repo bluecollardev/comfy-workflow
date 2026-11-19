@@ -1,5 +1,15 @@
 <template>
-  <BModal v-model="open" :title="$t('queue.title')" size="xl" scrollable no-footer data-testid="queue-modal" @hidden="open = false">
+  <BModal v-model="open" lazy :title="$t('queue.title')" size="xl" scrollable no-footer data-testid="queue-modal" @hidden="open = false">
+    <QueueLoadingBanner />
+    <!-- one tab per section, each with the count of its working items; the last tab is remembered (an Open the Queue link names its own) -->
+    <ul class="nav nav-tabs flex-wrap" role="tablist" data-testid="queue-tabs" @keydown="onTabKey">
+      <li v-for="tb in TABS" :key="tb.id" class="nav-item" role="presentation">
+        <button type="button" class="nav-link" :class="{ active: ui.queueTab === tb.id }" role="tab" :aria-selected="ui.queueTab === tb.id ? 'true' : 'false'" :tabindex="ui.queueTab === tb.id ? 0 : -1" :data-testid="`queue-tab-${tb.id}`" @click="goTab(tb.id)">{{ $t(`queue.tab.${tb.id}`) }}<BBadge :variant="tabVariant(tb.id)" class="ms-1" :class="{ 'queue-pulse': tabCounts[tb.id] && tabVariant(tb.id) === 'danger' }" :title="tb.id === 'publishing' && wouldCount ? $t('queue.wouldUploadTip', { n: wouldCount }) : undefined" :data-testid="`queue-tab-${tb.id}-count`" :data-active="tabCounts[tb.id] ? 'true' : 'false'" :data-dry="tb.id === 'publishing' && wouldCount ? 'true' : 'false'">{{ tabCounts[tb.id] || 0 }}</BBadge></button>
+      </li>
+    </ul>
+    <div class="pt-3" role="tabpanel" :data-testid="`queue-pane-${ui.queueTab}`">
+      <template v-if="ui.queueTab === 'overview'"><QueueOverview @go="(id) => (ui.queueTab = id)" /></template>
+        <template v-else-if="ui.queueTab === 'imports'">
     <div v-if="finished.length" class="d-flex justify-content-end mb-2">
       <BButton size="sm" variant="outline-danger" data-testid="queue-purge" @click="purge"><i class="fa-solid fa-broom me-1"></i>{{ $t('queue.purge') }}</BButton>
     </div>
@@ -72,8 +82,11 @@
         </tbody>
       </table>
     </div>
-    <GenerationsPane />
-    <SyncExplorer />
+        </template>
+        <template v-else-if="ui.queueTab === 'syncs'"><SyncExplorer /><div class="text-body-secondary small mt-2" data-testid="queue-empty-syncs">{{ $t('queue.emptyHint.syncs') }}</div></template>
+        <template v-else-if="ui.queueTab === 'generations'"><GenerationsPane /><FailuresPane /><div class="text-body-secondary small" data-testid="queue-empty-generations">{{ $t('queue.emptyHint.generations') }}</div></template>
+        <template v-else-if="ui.queueTab === 'publishing'"><AutoPublishPane ref="apPane" /><PublishingPane /></template>
+    </div>
   </BModal>
 </template>
 
@@ -90,9 +103,43 @@ import { useRendersStore } from '../stores/renders'
 import VolumeJobView from './VolumeJobView.vue'
 import SyncExplorer from './SyncExplorer.vue'
 import GenerationsPane from './GenerationsPane.vue'
+import PublishingPane from './PublishingPane.vue'
+import AutoPublishPane from './AutoPublishPane.vue'
+import QueueOverview from './QueueOverview.vue'
+import FailuresPane from './FailuresPane.vue'
+import { useFailuresStore } from '../stores/failures'
+import QueueLoadingBanner from './QueueLoadingBanner.vue'
+import { useSyncsStore } from '../stores/syncs'
+import { usePublishStore } from '../stores/publish'
+import { useAutopublishStore } from '../stores/autopublish'
+import { usePreviewsStore } from '../stores/previews'
 import { ucwords } from '../utils/ucwords'
 
 const ui = useUiStore()
+const TABS = [{ id: 'overview' }, { id: 'imports' }, { id: 'syncs' }, { id: 'generations' }, { id: 'publishing' }]
+/** One source of truth for the active tab: ui.queueTab, written only by a click or the arrow keys and only when it changes. */
+const goTab = (id) => { if (id && id !== ui.queueTab) ui.queueTab = id }
+function onTabKey(e) {
+  if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+  const i = TABS.findIndex((x) => x.id === ui.queueTab), n = TABS[(i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length]
+  goTab(n.id); e.preventDefault()
+}
+const syncsStore = useSyncsStore(), publishStore = usePublishStore(), apStore = useAutopublishStore(), previewsStore = usePreviewsStore()
+/** The working items of each tab (the badge on its label). */
+/** Auto-publish entries in ANY non-final state belong to the Publishing tab: waiting, uploading, would upload (a dry run), capped. */
+const apEntries = computed(() => apStore.pending.filter((e) => !['done', 'failed', 'cancelled'].includes(e.state)))
+/** The same badge as the nav Queue button: danger above 0 (pulsing), like the nav badge, a legible secondary pill at 0 and for a dry run alone. */
+const tabVariant = (id) => (!tabCounts.value[id] ? 'secondary' : id === 'publishing' && wouldCount.value && wouldCount.value === tabCounts.value.publishing ? 'secondary' : 'danger')
+const wouldCount = computed(() => apEntries.value.filter((e) => e.state === 'would_upload').length)
+const tabCounts = computed(() => {
+  const w = apStore.status
+  const imports = (view.value?.tasks || []).filter((t) => ['waiting', 'running', 'held'].includes(t.state)).length + vjobs.jobs.filter((j) => !['done', 'failed', 'cancelled'].includes(j.state)).length
+  const gens = renders.activeCount + (previewsStore.running ? 1 : 0)
+  const pubs = publishStore.queueJobs.filter((j) => ['queued', 'uploading', 'posting'].includes(j.state)).length + apEntries.value.length + (Array.isArray(w?.generate?.waiting_to_settle) ? w.generate.waiting_to_settle.length : 0)
+  const sy = syncsStore.count
+  const all = imports + gens + pubs + sy
+  return { overview: all, imports, syncs: sy, generations: gens, publishing: pubs }
+})
 const { t } = useI18n()
 const confirm = useConfirmStore()
 const vjobs = useVolumeJobsStore()
@@ -114,7 +161,8 @@ const clock = (iso) => new Date(iso).toLocaleTimeString()
 const mins = (t) => Math.max(1, Math.round((new Date(t.finished_at) - new Date(t.started_at)) / 60000))
 const tasksOf = (imp) => view.value.tasks.filter((t) => t.import_id === imp.id)
 const badge = (s) => ({ done: 'text-bg-success', failed: 'text-bg-danger', running: 'text-bg-primary', waiting: 'text-bg-secondary', held: 'text-bg-warning', cancelled: 'text-bg-dark', interrupted: 'text-bg-warning' }[s] || 'text-bg-secondary')
-async function refresh() { try { view.value = await queueAPI.list(); error.value = '' } catch (e) { error.value = errorText(e) } }
+async function refresh() { try { view.value = await queueAPI.list(); error.value = ''; ui.queueListLoaded = true; ui.queueListError = '' } catch (e) { error.value = errorText(e); ui.queueListError = error.value } }
+watch(() => ui.queueRetry, refresh)
 /** Cancel all asks first: running pulls and runs stop and their pods are deleted. */
 async function cancelAll(imp) {
   const n = tasksOf(imp).filter((x) => ['waiting', 'running', 'held'].includes(x.state)).length
@@ -132,8 +180,11 @@ async function reattachPod(p) { try { await vjobs.reattach(p.name) } catch (e) {
 async function dropPod(p) { if (await confirm.ask(t('queue.confirmDeletePod', { name: p.name }), { okLabel: t('queue.deletePod') })) { try { await vjobs.dropInterrupted(p.name) } catch (e) { error.value = errorText(e) } } }
 async function act(fn) { try { await fn() } catch (e) { error.value = errorText(e) } await refresh() }
 watch(() => ui.queueVersion, refresh)   // an import was just queued: show it now, not at the next tick
-onMounted(() => { refresh(); timer = setInterval(refresh, 2500); vjobs.watch(); renders.watch() })
-onBeforeUnmount(() => { clearInterval(timer); vjobs.unwatch() })
+// the stores behind every tab poll fast while the Queue is open, whichever tab is showing (the tab panes are only mounted when active)
+const failuresStore = useFailuresStore()
+watch(() => ui.queueOpen, (o) => { failuresStore.use(o); apStore.setFast(o); publishStore.setFast(o); renders.setFast(o) }, { immediate: true })
+onMounted(() => { syncsStore.use(); ui.queueListLoaded = false; refresh(); timer = setInterval(refresh, 2500); vjobs.watch(); renders.watch() })
+onBeforeUnmount(() => { syncsStore.release(); clearInterval(timer); vjobs.unwatch() })
 </script>
 
 <style scoped>

@@ -4,6 +4,7 @@
  */
 import { writtenFiles } from './writers.js'
 import { CoreError } from './errors.js'
+import * as failures from './failures.js'
 import * as pods from './pods.js'
 import * as rp from './runpod.js'
 import * as outputruns from './outputruns.js'
@@ -22,6 +23,8 @@ export interface ComfyRun {
   messages: RunMessage[]
   /** For a failed run: where and why it failed, from the execution_error message. */
   error_detail?: ErrorDetail
+  /** For a failed run: the structured failure (stage, node, message, missing models, recovery, retryable) and the same in words (`text`) */
+  failure?: failures.Explained
   /** The workflow this app ran (its Workflows-panel path), when the run was queued by Run: the app tags the prompt's extra_data, and ComfyUI keeps it in its history. Absent for a run started in ComfyUI's own window. */
   workflow?: string
 }
@@ -84,6 +87,7 @@ function fromEntry(id: string, e: Entry): ComfyRun {
   if (errMsg) run.error_detail = errorDetail(errMsg)
   if (errMsg) run.error = String(errMsg.exception_message || 'execution error').trim()
   else if (failed) run.error = 'execution error'
+  if (failed) { const d = run.error_detail; run.failure = failures.explain(`${d?.message ?? run.error ?? 'execution error'}${d?.exception_type ? ` (${d.exception_type})` : ''}`, { stage: 'execute', node_id: d?.node_id ?? '', node_type: d?.node_type ?? '', log_tail: d?.traceback }) }
   return run
 }
 
@@ -126,7 +130,7 @@ export async function runs(podId: string, client?: rp.RunPodClient, fetchFn: typ
 }
 
 export interface LogEntry { ts: string | null; level: 'error' | 'warning' | 'info'; text: string }
-export interface LogsResult { entries: LogEntry[]; truncated: boolean }
+export interface LogsResult { entries: LogEntry[]; truncated: boolean; /** what the error lines say, in words: missing models, out of memory, a failed import... (empty when the log shows no error) */ problems?: { line: string; kind: string; missing_models: failures.MissingModel[]; recovery: string }[] }
 export interface LogsOpts { level?: 'all' | 'warnings' | 'errors'; lines?: number }
 
 const ANSI = /\u001b\[[0-9;]*[A-Za-z]/g
@@ -173,5 +177,10 @@ export async function logs(podId: string, opts: LogsOpts = {}, client?: rp.RunPo
     all.push({ ts: x.ts, level: classify(text, inTb), text })
   }
   const keep = level === 'all' ? all : all.filter((e) => (level === 'errors' ? e.level === 'error' : e.level !== 'info'))
-  return { entries: keep.slice(-n), truncated: keep.length > n }
+  const problems: NonNullable<LogsResult['problems']> = []
+  for (const e of all.filter((x) => x.level === 'error' && !/^\s/.test(x.text)).slice(-20)) {
+    const miss = failures.missingModels(e.text), kind = miss.length ? 'missing model' : /out of memory|oom/i.test(e.text) ? 'out of memory' : /import failed|cannot import|ModuleNotFound|No module named/i.test(e.text) ? 'custom node import failed' : /not found|no such file/i.test(e.text) ? 'file not found' : 'error'
+    problems.push({ line: failures.clean(e.text).slice(0, 300), kind, missing_models: miss, recovery: kind === 'out of memory' ? 'A bigger card or smaller inputs; chunk the shot (run_shot_chunked). Not retried: the same graph would fail the same way.' : kind === 'custom node import failed' ? 'A custom node failed to import: check its requirements on the pod image, or remove the node from the graph.' : miss.length ? failures.classify('validate', e.text).recovery : 'See the line; fix the cause and run again.' })
+  }
+  return { entries: keep.slice(-n), truncated: keep.length > n, problems }
 }

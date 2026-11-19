@@ -126,3 +126,12 @@ describe('comfyruns lists the frames of a writer node that reports a first file 
     ])
   })
 })
+
+describe('a failed run says what failed, where and what to do (get_comfy_runs, get_comfy_logs)', () => {
+  it('a failed run carries failure { stage, node_id, node_type, message, missing_models, recovery, retryable, text }; the log has problems with kind and recovery', async () => {
+    const hist = { p9: { status: { status_str: 'error', messages: [['execution_error', { exception_message: "Value not in list: ckpt_name: 'flux1-dev.safetensors' not in []", node_id: '12', node_type: 'CheckpointLoaderSimple', exception_type: 'ValueError', traceback: ['File "x.py", line 1'] }]] }, outputs: {} } }
+    const runs = await comfyruns.finishedRuns('http://pod', (async () => new Response(JSON.stringify(hist))) as unknown as typeof fetch); const f = runs[0].failure!
+    expect(f).toMatchObject({ stage: 'execute', node_id: '12', node_type: 'CheckpointLoaderSimple', retryable: false, missing_models: [{ name: 'flux1-dev.safetensors', where_on_volume: 'comfy-shared/models/checkpoints/flux1-dev.safetensors' }] }); expect(f.recovery).toMatch(/Fetch it to comfy-shared\/models\/checkpoints\//); expect(f.text).toMatch(/^stage: execute\nnode: 12 \(CheckpointLoaderSimple\)\nmessage: .*\nmissing model: flux1-dev\.safetensors.*\nretryable: no\nrecovery: /)
+    const l = await comfyruns.logs('abc', { level: 'errors' }, client('RUNNING'), logFetch(200, 404)); expect(l.problems!.length).toBeGreaterThan(0); expect(l.problems![0]).toMatchObject({ kind: expect.any(String), recovery: expect.any(String), line: expect.any(String) })
+  })
+})

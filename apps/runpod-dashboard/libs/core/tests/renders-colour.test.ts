@@ -149,3 +149,29 @@ describe('plan: the header pass covers every sequence', () => {
     const gone = await renders.plan({ sequences: [seqN(30)], width: 960, where: 'local' }); expect(gone.sequences[0].colour).toBeNull()
   })
 })
+
+describe('plan().warnings is always there (the Tunnel preset flags a source that is not display-referred; it is tagged, never converted)', () => {
+  it('an array on every plan; the Tunnel preset names a log source; the preset and a plain proxy plan both carry it', async () => {
+    const s = seqN(0); put(s, dpx({ transfer: 3 })); const plain = await renders.plan({ pod_id: 'p1', sequences: [s], width: 960, where: 'pod' }); expect(plain.warnings).toEqual([]); expect(plain.preset).toBe('none')
+    const t = await renders.plan({ pod_id: 'p1', sequences: [s], where: 'pod', preset: 'tunnel' }); expect(t.preset).toBe('tunnel'); expect(t.warnings).toHaveLength(1); expect(t.warnings[0]).toMatch(/logarithmic.*converted from the colour you chose \(not set\)/); expect(t.sequences[0].colour!.conversion).toBe('Rec.709 view converted from the colour you choose (colour_in), not from this header; header transfer: logarithmic')
+    const ok = seqN(1); put(ok, dpx({ transfer: 6, colorimetric: 6 })); expect((await renders.plan({ pod_id: 'p1', sequences: [ok], where: 'pod', preset: 'tunnel' })).warnings).toEqual([])
+  })
+})
+
+describe('the Tunnel preset against the EDL (ADR-050)', () => {
+  const E146 = 'ENHANCE-146_B_FINAL_V01_3840X2160_23.976_PRORES422HQ'
+  it('plan rows carry flags[], expected_frames, edl_element, the resolved start_timecode with its source and suggested_colour; blocked rows are not counted to render; start refuses when none can be taken', async () => {
+    const edl = await import('../src/edl.js'), { join } = await import('node:path'); edl.reset(); await edl.load({ source: { file: join(import.meta.dirname, 'fixtures', 'v11-excerpt.edl') } })
+    try {
+      const a = seqN(0, { name: E146, frames: 260, last: 259, colour_in: 'p3-d65-gamma26' }), b = seqN(1, { name: 'CORROSION-012_MAIN' }), c = seqN(2, { name: E146, dir: 'proxy/shot09', frames: 234, last: 233, colour_in: 'p3-d65-srgb' })
+      for (const x of [a, b, c]) put(x, dpx())
+      const t = await renders.plan({ pod_id: 'p1', sequences: [a, b, c], where: 'pod', preset: 'tunnel' }), [ra, rb, rc] = t.sequences
+      expect(ra).toMatchObject({ start_timecode: '00:00:00:00', timecode_source: 'EDL', expected_frames: 260, blocked: false, flags: [], edl_element: { clip: E146, speeds: [90] } })
+      expect(rb).toMatchObject({ blocked: true, start_timecode: null, suggested_colour: 'kodak-log' }); expect(rb.flags.map((f) => f.code)).toEqual(expect.arrayContaining(['no-start-timecode', 'colour-not-set', 'not-in-edl']))
+      expect(rc.flags).toEqual([{ code: 'frames-differ-from-edl', level: 'block', message: '234 frames, the EDL cut has 260 (speeds 90%): the DPX must carry the retime' }]); expect(t.totals.blocked).toBe(2); expect(t.totals.to_render).toBe(1); expect(t.edl).toMatchObject({ loaded: true })
+      const o = await renders.plan({ pod_id: 'p1', sequences: [c], where: 'pod', preset: 'tunnel', edl_override: { [E146]: true } }); expect(o.sequences[0].blocked).toBe(false)
+      await expect(renders.start({ pod_id: 'p1', sequences: [b], where: 'pod', preset: 'tunnel' })).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/^Refused: CORROSION-012_MAIN: .*Colour not set/) })
+      const plain = await renders.plan({ pod_id: 'p1', sequences: [a], width: 960, where: 'pod' }); expect(plain.sequences[0].flags).toEqual([])   // outside the Tunnel preset the EDL says nothing blocking
+    } finally { edl.reset() }
+  })
+})

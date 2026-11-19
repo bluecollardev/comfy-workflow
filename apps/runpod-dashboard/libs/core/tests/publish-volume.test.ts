@@ -45,7 +45,7 @@ const fakeSpawn = (_c: string, args: string[], env: Record<string, string>): Chi
   else if (args[2] === '-') { si.on('data', () => undefined); si.on('end', () => { dest.set(args[3].replace(/^s3:\/\/[^/]+\//, ''), 1); setImmediate(() => close(0)) }) }
   return c
 }
-const configure = () => publish.setSettings({ s3: { credentials: 'app', bucket: DEST, prefix: 'returns/BKK', region: 'us-west-2', access_key_id: 'AKIAEXAMPLE12345', secret_access_key: 'secretsecretsecret1234' } })
+const configure = () => publish.setSettings({ s3: { layout: 'as-is', credentials: 'app', bucket: DEST, prefix: 'returns/BKK', region: 'us-west-2', access_key_id: 'AKIAEXAMPLE12345', secret_access_key: 'secretsecretsecret1234' } })
 
 beforeEach(async () => {
   dir = scratch(); out = join(dir, 'shared', 'output'); mkdirSync(out, { recursive: true }); process.env.SETTINGS_ENV_FILE = join(dir, '.env')

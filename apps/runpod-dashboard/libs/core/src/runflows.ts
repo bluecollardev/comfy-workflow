@@ -3,8 +3,12 @@
  * The panel holds UI graphs; ComfyUI queues only API graphs, so running converts each one first (see ADR-037).
  */
 import { writtenFiles } from './writers.js'
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { configDir } from './paths.js'
 import { CoreError } from './errors.js'
 import * as history from './history.js'
+import * as failures from './failures.js'
 import * as mounts from './mounts.js'
 import * as pods from './pods.js'
 import * as rp from './runpod.js'
@@ -79,7 +83,7 @@ export const setModels = (podId: string, choice: podmodels.Choice): podmodels.Ch
 
 /** One file a run produced, as ComfyUI's history names it: fetched with GET /view?filename=&subfolder=&type=. `output` is a saved result, `temp` a preview node's file. */
 export interface OutputFile { filename: string; subfolder: string; type: 'output' | 'temp'; kind: 'image' | 'video' | 'audio' | 'other'; node?: string }
-export interface RunResult { /** when this graph started (ISO), for its elapsed time */ started_at?: string; /** the model files the pod's choice put into this graph, and what was left alone */ models?: string[]; path: string; state: 'pending' | 'running' | 'done' | 'failed' | 'skipped'; prompt_id?: string; seconds?: number; error?: string; node?: string; outputs?: number; files?: OutputFile[] }
+export interface RunResult { /** when a transient failure will be tried again */ retry_at?: string; /** the failure in words: stage, node, message, missing models, recovery, retryable (what the MCP shows) */ failure_text?: string; /** what to do about it, whether trying again can help, the model files it is missing and the node's type (from the failures log) */ recovery?: string; retryable?: boolean; missing_models?: failures.MissingModel[]; node_type?: string; /** where it failed (load, validate, queue, execute): kept for the failures log */ stage?: failures.Stage; /** when this graph started (ISO), for its elapsed time */ started_at?: string; /** the model files the pod's choice put into this graph, and what was left alone */ models?: string[]; path: string; state: 'pending' | 'running' | 'done' | 'failed' | 'skipped'; prompt_id?: string; seconds?: number; error?: string; node?: string; outputs?: number; files?: OutputFile[] }
 export interface RunJob {
   id: string; pod_id: string; pod_name: string; /** the pod's ComfyUI address: where each result's files are fetched (GET /view) */ base_url?: string; state: 'running' | 'done' | 'failed' | 'cancelled'; started_at: string; finished_at?: string
   results: RunResult[]; ok: number; failed: number; error?: string
@@ -87,6 +91,9 @@ export interface RunJob {
 }
 export interface LogLine { ts: string; level: 'info' | 'warn' | 'error'; text: string; /** the graph it is about; none for the run as a whole */ path?: string }
 export interface RunOpts {
+  /** waits before the retries of a transient failure (default 5 then 20 minutes); tests pass short ones */ backoffMs?: number[]
+  /** a graph that neither runs nor is in the queue for this long has stalled (default 10 minutes) */ stallMs?: number
+  /** which try this is (1 = the first; a retry of a failure passes the next) */ attempt?: number
   client?: rp.RunPodClient; fetchFn?: typeof fetch
   /** How a UI graph becomes an API graph; default: the pod's own Chromium if the image has it, else Chrome on this PC. Tests inject one. */
   convert?: (graph: unknown, ctx: { base: string; podId: string }) => Promise<Record<string, unknown>>
@@ -179,25 +186,36 @@ export async function apiGraph(podId: string, path: string, base: string, o: Run
   return { api, models }
 }
 
+// ----- how long a graph took last time (its hard time limit is 3x that), kept in the config folder -----
+const durFile = () => join(configDir(), 'graph-durations.json')
+let durations: Map<string, number> | null = null
+async function loadDurations(): Promise<Map<string, number>> { if (durations) return durations; durations = new Map(); try { for (const [k, v] of Object.entries(JSON.parse(await readFile(durFile(), 'utf8')) as Record<string, number>)) if (typeof v === 'number' && v > 0) durations.set(k, v) } catch { /* none yet */ } return durations }
+const graphSeconds = async (path: string): Promise<number | null> => (await loadDurations()).get(path) ?? null
+async function rememberSeconds(path: string, seconds: number): Promise<void> { try { const m = await loadDurations(); m.set(path, Math.max(0.01, seconds)); const f = durFile(), t = `${f}.${process.pid}.tmp`; await mkdir(dirname(f), { recursive: true }); await writeFile(t, JSON.stringify(Object.fromEntries(m))); await rename(t, f) } catch { /* a missing record only makes the limit 2 hours */ } }
+export const resetDurations = (): void => { durations = null }
 async function runOne(i: Internal, r: RunResult, base: string, o: RunOpts, fetchFn: typeof fetch) {
   const signal = i.abort.signal
   const getJson = async (url: string) => { const x = await fetchFn(url, { signal: AbortSignal.timeout(30_000) }); if (x.status !== 200) throw new CoreError(502, `ComfyUI answered HTTP ${x.status} for ${url.replace(base, '')}`); return x.json() }
-  note(i, 'Converting the graph to an API graph', r.path)
+  note(i, 'Converting the graph to an API graph', r.path); r.stage = 'load'
   const { api, models } = await apiGraph(i.job.pod_id, r.path, base, o, fetchFn)
   if (models) { r.models = models; note(i, `Pod models applied: ${models.join('; ')}`, r.path) }
+  r.stage = 'queue'
   const q = await fetchFn(`${base}/prompt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt: api, client_id: 'pod-manager-runflows', extra_data: { pod_manager: { workflow: r.path } } }), signal: AbortSignal.timeout(60_000) })
   const qb = await q.json().catch(() => ({}))
-  if (q.status !== 200) { const d = describeRejection(qb); r.node = d.node; throw new CoreError(400, d.text) }
+  if (q.status !== 200) { const d = describeRejection(qb); r.node = d.node; if (q.status === 400) r.stage = 'validate'; throw new CoreError(q.status === 400 ? 400 : 502, q.status === 400 ? d.text : `ComfyUI answered HTTP ${q.status} for /prompt: ${d.text}`) }   // a 400 names the invalid nodes: the graph is wrong; any other answer is the pod
   r.prompt_id = (qb as { prompt_id: string }).prompt_id
-  note(i, `Queued on the pod as prompt ${r.prompt_id}`, r.path)
-  const t0 = Date.now(), limit = (o.graphTimeoutS ?? 4 * 3600) * 1000
-  let beat = t0
+  note(i, `Queued on the pod as prompt ${r.prompt_id}`, r.path); r.stage = 'execute'
+  const t0 = Date.now(), prev = await graphSeconds(r.path), limit = o.graphTimeoutS !== undefined ? o.graphTimeoutS * 1000 : prev ? Math.max(1000, Math.round(3 * prev * 1000)) : 2 * 3600 * 1000, stallMs = o.stallMs ?? 10 * 60_000   // a hard limit: 3x the last successful run of this graph, else 2 hours
+  let beat = t0, lastAlive = t0
   for (;;) {
     if (signal.aborted) { await fetchFn(`${base}/interrupt`, { method: 'POST' }).catch(() => {}); throw new CoreError(499, 'cancelled') }
     const h = (await getJson(`${base}/history/${r.prompt_id}`)) as Record<string, Parameters<typeof outcomeOf>[0]>
     const out = outcomeOf(h?.[r.prompt_id])
-    if (out) { r.seconds = Math.round((Date.now() - t0) / 100) / 10; r.outputs = out.outputs; r.files = out.files; r.node = out.node; if (out.error) throw new CoreError(500, out.error); try { autosync.notifyOutputs(i.job.pod_id, null, out.files ?? []) } catch { /* Auto sync never fails a run */ }; void outputruns.ctxFor(i.job.pod_id, o.client).then((ctx) => outputruns.record(ctx, [{ prompt_id: r.prompt_id!, status: 'success', workflow: r.path, started_at: new Date(t0).toISOString(), duration_s: r.seconds, outputs: (out.files || []).map((f) => ({ filename: f.filename, subfolder: f.subfolder, type: f.type })) }]))   // saved outputs
+    if (out) { r.seconds = Math.round((Date.now() - t0) / 100) / 10; r.outputs = out.outputs; r.files = out.files; r.node = out.node; if (out.error) throw new CoreError(500, out.error); void rememberSeconds(r.path, r.seconds); try { autosync.notifyOutputs(i.job.pod_id, null, out.files ?? []) } catch { /* Auto sync never fails a run */ }; void outputruns.ctxFor(i.job.pod_id, o.client).then((ctx) => outputruns.record(ctx, [{ prompt_id: r.prompt_id!, status: 'success', workflow: r.path, started_at: new Date(t0).toISOString(), duration_s: r.seconds, outputs: (out.files || []).map((f) => ({ filename: f.filename, subfolder: f.subfolder, type: f.type })) }]))   // saved outputs
     note(i, `Finished in ${r.seconds} s, ${out.outputs} output${out.outputs === 1 ? '' : 's'}`, r.path); return }
+    // a stall: the pod's queue no longer holds the prompt and ComfyUI has no result for it, for ten minutes
+    try { const qq = (await getJson(`${base}/queue`)) as { queue_running?: unknown[][]; queue_pending?: unknown[][] }; const held = [...(qq.queue_running ?? []), ...(qq.queue_pending ?? [])].some((e) => e?.[1] === r.prompt_id); if (held) lastAlive = Date.now() } catch { lastAlive = Date.now() }   // no answer: not proof of a stall
+    if (Date.now() - lastAlive > stallMs) throw new CoreError(504, `Stalled: prompt ${r.prompt_id} is neither running nor queued on the pod and has no result after ${Math.round(stallMs / 60000)} minutes (the pod may have restarted).`)
     if (Date.now() - beat >= 30_000) { beat = Date.now(); note(i, `Still running: ${Math.round((beat - t0) / 1000)} s`, r.path) }
     if (Date.now() - t0 > limit) throw new CoreError(504, `Still running after ${Math.round(limit / 60000)} minutes; it keeps running on the pod (prompt ${r.prompt_id}).`)
     await sleep(o.pollMs ?? 2000, signal)
@@ -235,12 +253,13 @@ export async function run(podId: string, paths: string[], o: RunOpts = {}): Prom
   jobs.set(j.id, i)
   note(i, `Run started: ${paths.length} workflow${paths.length === 1 ? '' : 's'} on ${podName}`)
   void (async () => {
-    let k = 0
-    for (const r of j.results) {
-      k++
-      if (i.abort.signal.aborted) { r.state = 'skipped'; note(i, 'Skipped (cancelled)', r.path, 'warn'); continue }
+    // fail fast and continue (docs/ADR-050): a graph or validation error fails at once and is never retried; a transient cause (pod stopped, network, 5xx) is
+    // retried at most twice, 5 then 20 minutes later, AFTER the other graphs (a failed graph never blocks the next); three graphs in a row failing for the same cause pause the dispatch once.
+    const backoff = o.backoffMs ?? [5 * 60_000, 20 * 60_000], later: { r: RunResult; at: number; attempt: number }[] = []
+    let streak: { sig: string; graphs: string[] } = { sig: '', graphs: [] }, paused = false
+    const exec = async (r: RunResult, label: string, attempt: number): Promise<void> => {
       r.state = 'running'; r.started_at = new Date().toISOString()
-      note(i, `Starting ${k} of ${paths.length}`, r.path)
+      note(i, label, r.path)
       const t0 = Date.now()
       try {
         if (mounts.dryRun(mounts.load())) { await sleep(o.pollMs ?? 300, i.abort.signal); r.state = 'done'; r.seconds = 0.3; r.outputs = 1; r.files = [{ filename: 'simulated_00001_.png', subfolder: '', type: 'output', kind: 'image', node: '9' }] }
@@ -249,10 +268,40 @@ export async function run(podId: string, paths: string[], o: RunOpts = {}): Prom
       } catch (e) {
         const cancelled = e instanceof CoreError && e.status === 499
         r.state = cancelled ? 'skipped' : 'failed'
-        if (!cancelled) { r.error = (e as Error).message; j.failed++; note(i, `Failed${r.node ? ` at node ${r.node}` : ''}: ${r.error}`, r.path, 'error') } else note(i, 'Cancelled: the running graph was interrupted', r.path, 'warn')
+        if (!cancelled) {
+          r.error = (e as Error).message; j.failed++; note(i, `Failed${r.node ? ` at node ${r.node}` : ''}: ${r.error}`, r.path, 'error')
+          const nt = /\(node (\S+), ([^)]+)\)/.exec(r.error) ?? /node (\S+) \(([^)]+)\)/.exec(r.error); const stage = r.stage ?? 'load'
+          const rec = failures.record({ stage, message: r.error, job_id: j.id, graph: r.path, pod_id: podId, pod_name: podName, node_id: r.node ?? nt?.[1] ?? '', node_type: nt?.[2] ?? '', log_tail: j.log.slice(-20).map((l) => l.text), quiet: true, attempt })
+          r.recovery = rec.recovery; r.retryable = rec.retryable; r.missing_models = rec.missing_models; r.node_type = rec.node_type; r.failure_text = failures.describe(rec)
+        } else note(i, 'Cancelled: the running graph was interrupted', r.path, 'warn')
         r.seconds ??= Math.round((Date.now() - t0) / 100) / 10
       }
       try { history.record({ kind: 'job', job: 'run', state: r.state === 'done' ? 'done' : r.state === 'skipped' ? 'cancelled' : 'failed', started_at: new Date(t0).toISOString(), what: r.path, pod_id: podId, pod_name: podName, ...(r.error ? { error: r.error } : {}), detail: `${r.prompt_id ? `prompt ${r.prompt_id}; ` : ''}${r.seconds ?? 0}s${r.node ? `; node ${r.node}` : ''}` }) } catch { /* the History could not be written: the run goes on */ }
+
+      if (r.state === 'done') streak = { sig: '', graphs: [] }
+      else if (r.state === 'failed') {
+        const rec = failures.classify(r.stage ?? 'load', r.error ?? ''), sig = `${r.stage ?? 'load'}:${(r.error ?? '').replace(/\b[0-9a-f]{6,}\b|\d+|node \S+/gi, '#').slice(0, 80)}`
+        if (rec.retryable && attempt <= backoff.length) { r.retry_at = new Date(Date.now() + backoff[attempt - 1]).toISOString(); later.push({ r, at: Date.now() + backoff[attempt - 1], attempt: attempt + 1 }); note(i, `Will be tried again at ${r.retry_at} (attempt ${attempt + 1} of ${backoff.length + 1}): a transient cause`, r.path, 'warn') }
+        streak = streak.sig === sig && !streak.graphs.includes(r.path) ? { sig, graphs: [...streak.graphs, r.path] } : { sig, graphs: [r.path] }
+        if (streak.graphs.length >= 3 && !paused) {
+          paused = true; const why = `Dispatch paused: ${streak.graphs.length} graphs in a row (${streak.graphs.join(', ')}) failed with the same cause: ${(r.error ?? '').slice(0, 200)}`
+          note(i, why, undefined, 'error')
+          try { history.record({ kind: 'job', job: 'run', state: 'failed', what: 'dispatch paused', pod_id: podId, pod_name: podName, error: why.slice(0, 500), detail: 'three graphs failed for the same cause; the rest of this run was not started' }) } catch { /* never breaks a run */ }
+          void (async () => { try { const pub = await import('./publish.js'); await pub.notifySlack(`*RunPod Manager: dispatch paused*\n${why}`) } catch { /* Slack is not connected */ } })()
+        }
+      }
+    }
+    let k = 0
+    for (const r of j.results) {
+      k++
+      if (paused) { r.state = 'skipped'; r.error = 'Not started: dispatch was paused after three graphs failed for the same cause'; note(i, 'Skipped (dispatch paused)', r.path, 'warn'); continue }
+      if (i.abort.signal.aborted) { r.state = 'skipped'; note(i, 'Skipped (cancelled)', r.path, 'warn'); continue }
+      await exec(r, `Starting ${k} of ${paths.length}`, o.attempt ?? 1)
+    }
+    while (later.length && !paused && !i.abort.signal.aborted) {
+      later.sort((a, b) => a.at - b.at); const n = later.shift()!
+      await sleep(Math.max(0, n.at - Date.now()), i.abort.signal); if (i.abort.signal.aborted) break
+      j.failed = Math.max(0, j.failed - 1); n.r.state = 'running'; n.r.error = undefined; delete n.r.retry_at; await exec(n.r, `Trying again (attempt ${n.attempt})`, n.attempt)
     }
     j.state = i.abort.signal.aborted ? 'cancelled' : j.failed && !j.ok ? 'failed' : 'done'
     j.finished_at = new Date().toISOString()

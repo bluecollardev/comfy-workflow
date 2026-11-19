@@ -172,3 +172,52 @@ describe('the s3file guard', () => {
     await expect(outputsources.signGet(U(`${O}/p/f.dpx`))).rejects.toMatchObject({ status: 409 })
   })
 })
+
+describe('All outputs mode (ADR-045): the whole output/ tree in one listing', () => {
+  const one = (id = VOL, o: Record<string, unknown> = {}) => outputsources.listOutputs({ volume_id: id }, { aws, fresh: true, all: true, source: 'volume-s3', ...o }) as Promise<outputsources.Answer>
+  beforeEach(() => {
+    TREE = {}
+    for (let i = 0; i < 16; i++) TREE[`${O}/top${String(i).padStart(2, '0')}/seq/f${i}.dpx`] = [10, '2026-11-17 09:00:00']
+    TREE[`${O}/top00/a/b/c/deep.png`] = [5, '2026-11-18 09:00:00']; TREE[`${O}/root.mov`] = [7, '2026-11-19 09:00:00']
+    TREE[`${O}/shell/`] = [0, '2026-11-18 08:00:00']; TREE[`${O}/top01/emptysub/`] = [0, '2026-11-18 08:00:00']
+    outputsources.forgetAll()
+  })
+  it('returns runs for the root files AND the files of every top folder, nested folders included, in ONE recursive listing; folders are the top-level names; folder_info covers every folder found', async () => {
+    const a = await one()
+    expect(calls.filter((c) => c[0] === 's3')).toHaveLength(1); expect(calls.some((c) => c[0] === 's3api')).toBe(false); expect(calls[0]).toContain('--recursive'); expect(calls[0][2]).toBe(`s3://${VOL}/${O}/`)
+    expect(a.runs.map((r) => r.folder).sort()).toEqual(['', 'top00/a/b/c', ...Array.from({ length: 16 }, (_, i) => `top${String(i).padStart(2, '0')}/seq`)].sort()); expect(a.runs.find((r) => r.folder === '')!.files.map((f) => f.filename)).toEqual(['root.mov'])
+    expect(a.folders).toEqual(['shell', ...Array.from({ length: 16 }, (_, i) => `top${String(i).padStart(2, '0')}`)]); expect(a.total).toBe(18); expect(a.total_exact).toBe(true); expect(a.capped).toBe(false); expect(a.prefix).toBe('')
+    expect(a.folder_info.shell).toEqual({ empty: true }); expect(a.folder_info['top01/emptysub']).toEqual({ empty: true }); expect(a.folder_info.top00).toEqual({ empty: false }); expect(a.folder_info['top00/a/b']).toEqual({ empty: false }); expect(Object.keys(a.folder_info)).toContain('top00/a/b/c')
+  })
+  it('the cap and the total: at most 25,000 files shown, the rest counted; past 200,000 the total stops and says it is a floor', async () => {
+    for (let i = 0; i < 26_000; i++) TREE[`${O}/big/f${String(i).padStart(5, '0')}.png`] = [1, '2026-11-17 09:00:00']
+    let a = await one(); expect(a.capped).toBe(true); expect(a.total).toBe(26_018); expect(a.total_exact).toBe(true); expect(a.runs.reduce((n, r) => n + r.files.length, 0)).toBe(outputsources.MAX_OBJECTS_ALL)
+    expect(a.folders).toContain('big'); for (let i = 26_000; i < 201_000; i++) TREE[`${O}/big2/f${i}.png`] = [1, '2026-11-17 09:00:00']
+    outputsources.forgetAll(); a = await one(); expect(a.total).toBe(outputsources.HARD_LIMIT); expect(a.total_exact).toBe(false); expect(a.runs.reduce((n, r) => n + r.files.length, 0)).toBe(outputsources.MAX_OBJECTS_ALL)
+  }, 60_000)
+  it('parses a 50,000-key listing in chunks that yield: the event loop is never held for long', async () => {
+    for (let i = 0; i < 50_000; i++) TREE[`${O}/lag/d${i % 50}/f${i}.png`] = [1, '2026-11-17 09:00:00']
+    let worst = 0, last = performance.now(); const t = setInterval(() => { const n = performance.now(); worst = Math.max(worst, n - last); last = n }, 1)
+    await one(); clearInterval(t); expect(worst).toBeLessThan(400)
+  }, 60_000)
+  it('is cached for 60 s per volume; a Refresh (fresh) bypasses; the default listing is untouched (one level at the root)', async () => {
+    let t = Date.parse('2026-11-19T10:00:00Z'); const now = () => new Date(t)
+    await one(VOL, { fresh: false, now }); await one(VOL, { fresh: false, now }); expect(calls.filter((c) => c[0] === 's3')).toHaveLength(1)
+    t += 61_000; await one(VOL, { fresh: false, now }); expect(calls.filter((c) => c[0] === 's3')).toHaveLength(2); await one(VOL, { fresh: true, now }); expect(calls.filter((c) => c[0] === 's3')).toHaveLength(3)
+    calls.length = 0; outputsources.forgetAll(); const plain = await outputsources.volumeS3.list({ volume_id: VOL }, { aws, fresh: true, prefix: '' }); expect(plain.folders).toContain('top00'); expect(calls.filter((c) => c[0] === 's3')[0]).not.toContain('--recursive'); expect(plain.runs.map((r) => r.folder)).toEqual(['']); expect((plain as { total_exact?: boolean }).total_exact).toBeUndefined()
+  })
+  it('is abortable: a signal stops it, and a second request for the same volume cancels the first', async () => {
+    const hang: podpull.AwsRunner = async (args, _e, o) => (args[0] === 's3' ? new Promise((res) => o!.signal!.addEventListener('abort', () => res({ code: 130, stdout: '', stderr: '' }))) : aws(args, {}))
+    const ac = new AbortController(); const p = outputsources.volumeS3.list({ volume_id: VOL }, { aws: hang, fresh: true, all: true, signal: ac.signal }); await new Promise((r) => setTimeout(r, 20)); ac.abort(); await expect(p).rejects.toMatchObject({ status: 499 })
+    const first = outputsources.volumeS3.list({ volume_id: VOL }, { aws: hang, fresh: true, all: true }); await new Promise((r) => setTimeout(r, 20)); const second = outputsources.volumeS3.list({ volume_id: VOL }, { aws, fresh: true, all: true })
+    await expect(first).rejects.toMatchObject({ status: 499 }); expect((await second).total).toBe(18)
+  })
+  it('as a job: { job_id }, then a status with a live count and the result; Stop cancels it', async () => {
+    const r = await outputsources.listOutputs({ volume_id: VOL }, { aws, fresh: true, all: true, job: true, source: 'volume-s3' }) as { job_id: string }; expect(r.job_id).toMatch(/^outputs-/)
+    for (let i = 0; i < 100 && outputsources.jobStatus(r.job_id).state === 'listing'; i++) await new Promise((x) => setTimeout(x, 10))
+    const st = outputsources.jobStatus(r.job_id); expect(st).toMatchObject({ state: 'done', files_seen: 18 }); expect(st.folders_seen).toBeGreaterThan(16); expect(st.result!.total).toBe(18); expect(st.result!.folders).toContain('top00'); expect(typeof st.elapsed_s).toBe('number')
+    const hang: podpull.AwsRunner = async (args, _e, o) => (args[0] === 's3' ? new Promise((res) => o!.signal!.addEventListener('abort', () => res({ code: 130, stdout: '', stderr: '' }))) : aws(args, {}))
+    outputsources.forgetAll(); const j = await outputsources.listOutputs({ volume_id: VOL }, { aws: hang, fresh: true, all: true, job: true, source: 'volume-s3' }) as { job_id: string }; await new Promise((x) => setTimeout(x, 20)); expect(outputsources.jobStatus(j.job_id).state).toBe('listing')
+    expect(outputsources.jobCancel(j.job_id).state).toBe('cancelled'); await expect(Promise.resolve().then(() => outputsources.jobStatus('nope'))).rejects.toMatchObject({ status: 404 })
+  })
+})

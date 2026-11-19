@@ -342,3 +342,11 @@ describe('transient storage errors (ADR-046)', () => {
     feedFail = null; t += 30_000; await runAll(); expect(item().state).toBe('error')   // still inside the backoff
   })
 })
+
+describe('a stopped pod has no volume in the RunPod API (its volume is remembered)', () => {
+  const wire = (status: string, vol: string) => autosync.setDeps({ podName: autosync.podNameOf, volumeOf: async () => vol, listPods: async () => [{ id: POD, name: 'CanalV2-sync-RO-cheap-a-alt', status }] })
+  it('a stopped pod with no volume known is INFO ("Stopped: <name>\'s volume is shown when it runs"), not an error; a running pod with none is still the error', async () => {
+    wire('stopped', ''); enable(); await autosync.tick(); expect(item()).toMatchObject({ state: 'idle', error: '' }); expect(item().summary).toBe("Stopped: CanalV2-sync-RO-cheap-a-alt's volume is shown when it runs")
+    autosync.forgetLive(); wire('running', ''); await autosync.tick(); expect(item()).toMatchObject({ state: 'error', error: 'This pod has no network volume to follow: set one in its configuration.' })
+  })
+})

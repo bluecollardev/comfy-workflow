@@ -67,7 +67,7 @@ export interface Deps {
   now(): number
   podName(podId: string): string
   /** The live pod list (id and name), best effort: used for names and to notice a pod that is gone */
-  listPods(): Promise<{ id: string; name: string }[]>
+  listPods(): Promise<{ id: string; name: string; status?: string }[]>
   volumeOf(podId: string): Promise<string>
   feed(volumeId: string, since: string): Promise<journal.Feed>
   tail(volumeId: string): Promise<string>
@@ -100,7 +100,7 @@ async function remoteFiles(volumeId: string, entries: Entry[]): Promise<Remote[]
 const realDeps = (): Deps => ({
   now: () => Date.now(),
   podName: (id) => podNameOf(id),
-  listPods: async () => (await pods.list()).map((p) => ({ id: p.id, name: p.name })),
+  listPods: async () => (await pods.list()).map((p) => ({ id: p.id, name: p.name, status: p.status })),
   volumeOf: async (id) => syncrun.volumeIdFor(id),
   feed: (vol, since) => journal.list({ volume_id: vol, since, limit: journal.MAX_LIMIT }),
   tail: (vol) => journal.tail(vol),
@@ -125,6 +125,7 @@ interface Held { files: Remote[]; bytes: number; cursor: string | null; synced: 
 interface Rt { /** consecutive failures because RunPod's storage did not answer (reset by any success) */ transientFails: number; lastEventAt: string; pendingEvents: number; pendingPaths: number; pendingBytes: number; lastPushAt: string; item: Item; busy: boolean; job?: Promise<void>; held?: Held; queued: Map<string, number>; retryAt: number; abort?: AbortController; s3: boolean }
 const rts = new Map<string, Rt>()
 // ----- the live pod list (names, and pods that are gone) -----
+const liveStatus = new Map<string, string>()
 const live = new Map<string, string>()   // pod id -> its live name; podName() reads it synchronously
 let liveAt = 0, liveTried = 0
 /** The live RunPod name, else the name this app gave the pod, else its id. Synchronous, from memory. */
@@ -138,7 +139,7 @@ async function refreshLive(): Promise<void> {
   liveTried = now
   try {
     const list = await withDeadline(deps.listPods(), 20_000, 'The pod list')
-    live.clear(); for (const p of list) live.set(p.id, p.name)
+    live.clear(); liveStatus.clear(); for (const p of list) { live.set(p.id, p.name); if (p.status) liveStatus.set(p.id, p.status) }
     liveAt = deps.now()
     for (const [id, rt] of rts) rt.item.pod_name = deps.podName(id)
   } catch { /* the list failed: behave as before */ }
@@ -234,7 +235,12 @@ async function cycle(podId: string, mode: Mode): Promise<void> {
   let detached = false
   try {
     const vol = await deps.volumeOf(podId)
-    if (!vol) { fail(rt, 'This pod has no network volume to follow: set one in its configuration.'); return }
+    if (!vol) {
+      const status = liveStatus.get(podId)
+      if (status && status !== 'running') { Object.assign(rt.item, { state: 'idle', error: '', summary: `Stopped: ${deps.podName(podId)}'s volume is shown when it runs` }); return }   // INFO, not an error: RunPod gives no volume for a stopped pod
+      if (!status) { Object.assign(rt.item, { state: 'idle', error: '', summary: `${deps.podName(podId)}'s volume is not known yet (it is shown when the pod runs)` }); return }
+      fail(rt, 'This pod has no network volume to follow: set one in its configuration.'); return
+    }
     rt.item.volume_id = vol; rt.item.pod_name = deps.podName(podId)
     const root = deps.localRoot(podId)
     if (!root) { fail(rt, 'Map ComfyUI-Shared first: set the ComfyUI-Shared folder in Configuration, Folders (Default Configuration or this pod\'s own), so Auto sync knows where to put the files.'); return }

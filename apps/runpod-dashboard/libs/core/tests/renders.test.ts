@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { CoreError } from '../src/errors.js'
 import * as history from '../src/history.js'
 import * as publish from '../src/publish.js'
+import * as mounts from '../src/mounts.js'
 import * as renders from '../src/renders.js'
 import { scratch } from './helpers.js'
 
@@ -24,6 +25,7 @@ const job = (id: string) => renders.status(id).jobs[0]
 
 beforeEach(() => {
   dir = scratch(); shared = join(dir, 'shared'); mkdirSync(join(shared, 'output'), { recursive: true }); process.env.RENDERS_FILE = join(dir, 'renders.json'); process.env.HISTORY_FILE = join(dir, 'h.jsonl')
+  mounts.save({ ...mounts.load(), render: { ...mounts.RENDER_DEFAULT, pull: true } })   // the tests below pull: a stored `pull: true` is kept (the default is off now)
   renders.reset(); t = Date.parse('2026-11-19T10:00:00Z'); scripts = []; pulls = []; emitted = []; spawned = []; podOk = true; ffmpegAt = '/opt/homebrew/bin/ffmpeg'; versionExit = 0; versionLine = 'ffmpeg version 9.0.2'; cancelSeen = false
   localCount = 10; pod = { frames: range(0, 9), lastM: 100, outM: 0, outS: 0, failExit: 0, nodir: false, hold: null, header: dpxHeader(), ffprobe: true, count: null, versions: [], vexists: false, cpu: null }
   renders.setDeps({
@@ -66,7 +68,7 @@ describe('quoting and arguments', () => {
   })
   it('the exact ffmpeg arguments: fps from the name, pad, first, frames, width, .part output', () => {
     expect(renders.ffmpegArgs(SEQ, 1280, { outputDir: '/workspace/comfy-shared/output', frames: 10 })).toEqual(['ffmpeg', '-nostdin', '-y', '-loglevel', 'warning', '-framerate', '24000/1001', '-start_number', '0', '-i', `/workspace/comfy-shared/output/proxy_v004/shotA/${SEQ.name}.%04d.dpx`, '-frames:v', '10',
-      '-vf', 'scale=1280:-2:flags=lanczos:out_color_matrix=bt709,format=yuv420p', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-colorspace', 'bt709', '-movflags', '+faststart', '-an', '-progress', 'pipe:1', `/workspace/comfy-shared/output/.proxies/proxy_v004/shotA/${SEQ.name}_1280.mp4.part`])
+      '-vf', 'scale=1280:-2:flags=lanczos:out_color_matrix=bt709,format=yuv420p', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-colorspace', 'bt709', '-movflags', '+faststart', '-an', '-progress', 'pipe:1', '-f', 'mp4', `/workspace/comfy-shared/output/.proxies/proxy_v004/shotA/${SEQ.name}_1280.mp4.part`])
     const a = renders.ffmpegArgs({ ...SEQ, first: 1001, pad: 6 }, 960, { outputDir: '/o', frames: 5, fps: 25 }); expect(a[a.indexOf('-framerate') + 1]).toBe('25'); expect(a[a.indexOf('-start_number') + 1]).toBe('1001'); expect(a[a.indexOf('-i') + 1]).toMatch(/%06d\.dpx$/)
   })
   it('fps: the request, else _NN.NNN_ in the name (12 to 120), else 24', () => { expect(renders.fpsOf('a_23.976_b')).toBe('23.976'); expect(renders.rationalFps('23.976')).toBe('24000/1001'); expect(renders.rationalFps('29.97')).toBe('30000/1001'); expect(renders.rationalFps('59.94')).toBe('60000/1001'); expect(renders.rationalFps('25')).toBe('25'); expect(renders.rationalFps('12.5')).toBe('12.5'); expect(renders.fpsOf('a_3840X2160_23.976_x')).toBe('23.976'); expect(renders.fpsOf('a_200_b')).toBe('24'); expect(renders.fpsOf('plain')).toBe('24'); expect(renders.fpsOf('a_30_b', 48)).toBe('48') })
@@ -377,12 +379,47 @@ describe('the review kind: the stitched, versioned deliverable', () => {
     await expect(renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review', codecs: ['divx' as never] })).rejects.toThrow(/codecs is a non-empty list/)
   })
   it('colour: frames that say log, linear or printing density are refused (stated, never guessed); an unreadable header too; the proxy still plays', async () => {
-    pod.header = dpxHeader({ transfer: 1 }); let j = await review(); expect(j.sequences[0]).toMatchObject({ state: 'failed' }); expect(j.sequences[0].error).toMatch(/printing density in their DPX header.*colour\.md says a conversion is stated, never guessed/)
-    pod.header = dpxHeader({ transfer: 3 }); j = await review(); expect(j.sequences[0].error).toMatch(/logarithmic/); pod.header = dpxHeader({ transfer: 2 }); j = await review(); expect(j.sequences[0].error).toMatch(/linear/)
+    pod.header = dpxHeader({ transfer: 1 }); let j = await review(); expect(j.sequences[0]).toMatchObject({ state: 'skipped' }); expect(j.sequences[0].reason).toMatch(/colour not stated.*the DPX header says printing density.*Set render\.colour\.mode to format or guess, or pass colour_in/)
+    pod.header = dpxHeader({ transfer: 3 }); j = await review(); expect(j.sequences[0].reason).toMatch(/logarithmic/); pod.header = dpxHeader({ transfer: 2 }); j = await review(); expect(j.sequences[0].reason).toMatch(/linear/)
     pod.header = Buffer.alloc(820); j = await review(); expect(j.sequences[0].error).toMatch(/header of the first frame could not be read/)
     pod.header = dpxHeader({ transfer: 1 }); j = await runJob({}); expect(j.sequences[0].state).toBe('pulled')   // a quick proxy is not a review
+    // a person STATES the colour: the review renders with that conversion, the header is reported next to it; a bad value is a 400; the plan flags what is not stated
+    pod.header = dpxHeader({ transfer: 2 }); const pl = await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review' }); expect(pl.sequences[0]).toMatchObject({ blocked: false, skip: 'colour not stated', header_transfer: 'linear (code 2)' }); expect(pl.sequences[0].flags.filter((f) => f.level === 'warn' && f.code === 'colour-not-stated')).toHaveLength(1)
+    const st = await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review', colour_in: 'linear-p3-d65' }); expect(st.sequences[0].skip).toBeNull(); expect(st.sequences[0].flags.map((f) => f.code)).not.toContain('colour-not-stated')
+    await expect(renders.start({ pod_id: 'p1', sequences: [SEQ], kind: 'review', approved_by: 'Lucas', colour_in: 'rec2020' as never })).rejects.toMatchObject({ status: 400 })
+    j = await review({ colour_in: 'linear-p3-d65' }); expect(j.sequences[0].state).toBe('pulled'); const sc = scripts[scripts.length - 1]; expect(sc).toContain('colorchannelmixer=rr=1.2249401'); expect(sc).toMatch(/"stated_by": "Lucas"/); expect(sc).toMatch(/"header_transfer": "linear \(code 2\)"/); expect(sc).toMatch(/"conversion": "linear-p3-d65"/); expect(sc).toMatch(/STATED by Lucas/)
+    j = await review({ sequences: [{ ...SEQ, colour_in: 'linear-rec709' }] }); expect(j.sequences[0].state).toBe('pulled')   // per sequence
+    pod.header = dpxHeader({ transfer: 1 })
     expect((await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review' })).sequences[0].colour_refusal).toMatch(/printing density/)
     expect(renders.colourLines(renders.parseDpxInfo(dpxHeader({ transfer: 6, colorimetric: 6 })), ['prores422hq']).join('\n')).toMatch(/transfer ITU-R 709-4 \(6\).*no colour transform applied.*10-bit 4:2:2 for ProRes/s)
+  })
+  describe('the colour of log and linear frames is a setting (ADR-048)', () => {
+    const setColour = (colour: Record<string, unknown>) => { const m = mounts.load(); mounts.save({ ...m, render: { ...m.render, colour } as never }) }
+    const lastScript = () => scripts[scripts.length - 1]
+    it('ask (the default): a review is SKIPPED with a warning (job done, not failed); format converts from the configured format; guess converts from the header and says so everywhere; a per-run mode overrides; a stated colour_in still wins', async () => {
+      pod.header = dpxHeader({ transfer: 2 })
+      let j = await review(); expect(j.state).toBe('done'); expect(j.sequences[0]).toMatchObject({ state: 'skipped', flags: [expect.objectContaining({ code: 'colour-not-stated', level: 'warn' })] }); expect(j.sequences[0].reason).toMatch(/render\.colour\.mode ask.*linear \(code 2\).*Set render\.colour\.mode to format or guess, or pass colour_in/)
+      const pl = await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review' }); expect(pl.sequences[0]).toMatchObject({ skip: 'colour not stated', blocked: false }); expect(pl.sequences[0].flags.find((f) => f.code === 'colour-not-stated')!.level).toBe('warn'); expect(pl.settings.colour).toEqual({ mode: 'ask' })
+      setColour({ mode: 'format', format: 'linear-p3-d65' }); j = await review(); expect(j.sequences[0].state).toBe('pulled'); expect(lastScript()).toContain('colorchannelmixer=rr=1.2249401'); expect(lastScript()).toMatch(/"stated_by": "configuration"/); expect(lastScript()).toMatch(/"conversion": "linear-p3-d65"/)
+      j = await review({ colour_in: 'linear-rec709' }); expect(lastScript()).not.toContain('colorchannelmixer'); expect(lastScript()).toMatch(/"stated_by": "Lucas"/)   // a stated colour wins over the configured format
+      setColour({ mode: 'guess' }); j = await review(); expect(j.sequences[0].state).toBe('pulled'); expect(lastScript()).toMatch(/"guessed": true/); expect(lastScript()).toMatch(/"assumption": "linear transfer: Rec\.709 primaries assumed/); expect(lastScript()).toMatch(/colour guessed from the DPX header: linear transfer/); expect(j.warnings!.join(' ')).toMatch(/colour guessed from the DPX header/)
+      pod.header = dpxHeader({ transfer: 1 }); await review(); expect(lastScript()).toContain('pow(10'); expect(lastScript()).toMatch(/Cineon reference/)
+      j = await review({ colour_mode: 'ask' }); expect(j.sequences[0].state).toBe('skipped')   // per run
+      await expect(renders.start({ pod_id: 'p1', sequences: [SEQ], kind: 'review', approved_by: 'Lucas', colour_mode: 'maybe' as never })).rejects.toMatchObject({ status: 400 })
+      setColour({ mode: 'ask' })
+    })
+    it('the setting round-trips through the configuration and a change is a History line naming who; mode format needs a valid format; the Tunnel preset never guesses', async () => {
+      const m = mounts.load(); mounts.put({ ...m, approved_by: 'Lucas', render: { ...m.render, colour: { mode: 'format', format: 'linear-p3-d65' } } } as never); expect(mounts.load().render.colour).toMatchObject({ mode: 'format', format: 'linear-p3-d65', set_by: 'Lucas' })
+      expect(() => mounts.put({ ...m, render: { ...m.render, colour: { mode: 'format' } } } as never)).toThrow(/render\.colour\.format/); expect(() => mounts.put({ ...m, render: { ...m.render, colour: { mode: 'format', format: 'nope' } } } as never)).toThrow(/render\.colour\.format/)
+      expect((await import('../src/history.js')).list({ limit: 20 }).some((e) => e.action === 'render colour setting changed' && /format \(linear-p3-d65\), set by Lucas/.test(String(e.detail)))).toBe(true)
+      setColour({ mode: 'guess' }); const t = await renders.plan({ pod_id: 'p1', sequences: [SEQ], preset: 'tunnel' }); expect(t.sequences[0].flags.map((f) => f.code)).toContain('colour-not-set'); expect(t.sequences[0].blocked).toBe(true)   // strict: guess does not count
+      setColour({ mode: 'format', format: 'linear-p3-d65' }); const f = await renders.plan({ pod_id: 'p1', sequences: [SEQ], preset: 'tunnel' }); expect(f.sequences[0].flags.map((x) => x.code)).not.toContain('colour-not-set'); setColour({ mode: 'ask' })
+    })
+  })
+  it('a failed render says what failed and what to do (render_sequences status): failure { stage, node, message, recovery, retryable, text }', async () => {
+    pod.header = Buffer.alloc(820); const j = await review(); const f = j.sequences[0].failure!
+    expect(j.sequences[0].state).toBe('failed'); expect(f).toMatchObject({ stage: expect.any(String), retryable: expect.any(Boolean), recovery: expect.any(String) }); expect(f.message).toMatch(/header of the first frame could not be read/); expect(f.text).toMatch(/^stage: .*\nnode: not obtained.*\nmessage: .*\nretryable: (yes|no)\nrecovery: /s)
+    expect(j.failure?.text ?? f.text).toMatch(/recovery:/)
   })
   it('incomplete sequences are refused for a review, always', async () => { pod.frames = [0, 1, 2]; const j = await review(); expect(j.sequences[0].state).toBe('incomplete'); expect(scripts.some((s) => s.includes('nice -n 10'))).toBe(false) })
   it('on this PC: the same version rules, DELIVERY.md and sidecar with sha256 and the verified count, a never-overwritten version, ffprobe verification', async () => {
@@ -615,5 +652,35 @@ describe('Skip existing (default true; per run, never a stored default)', () => 
     const p = await renders.plan({ sequences: many, width: 960, where: 'local' }); expect(p.totals).toEqual({ to_render: 0, skipped: 31 })
     await expect(renders.start({ sequences: many, width: 960, where: 'local' })).rejects.toMatchObject({ status: 400, message: renders.ALL_DONE })
   })
-  it('it is not a stored configuration default', () => { expect(Object.keys(renders.effectiveSettings())).not.toContain('skip_existing') })
+  it('the configuration holds the starting value (default true); a request that omits it uses it, an explicit value wins', async () => {
+    expect(renders.effectiveSettings().skip_existing).toBe(true); mounts.save({ ...mounts.load(), render: { ...mounts.load().render!, skip_existing: false } })
+    expect((await renders.plan({ sequences: [SEQ], width: 960, where: 'local' })).skip_existing).toBe(false); expect((await renders.plan({ sequences: [SEQ], width: 960, where: 'local', skip_existing: true })).skip_existing).toBe(true)
+  })
+})
+
+describe('a start never publishes by configuration alone', () => {
+  it('render.publish pre-ticks only: without an explicit publish field nothing is published; with it, approved_by is still required', async () => {
+    mounts.save({ ...mounts.load(), render: { ...mounts.RENDER_DEFAULT, where: 'local', pull: true, publish: { s3: true, slack: false } } })
+    const frames = () => { mkdirSync(join(shared, 'output', SEQ.dir), { recursive: true }); for (let i = 0; i < 10; i++) writeFileSync(join(shared, 'output', SEQ.dir, `${SEQ.name}.${String(i).padStart(4, '0')}.dpx`), i === 0 ? dpxHeader() : 'x') }
+    frames(); const { job_id } = await renders.start({ sequences: [SEQ], width: 960 }); await renders.settled(); expect(job(job_id).publish).toBeUndefined()
+    await expect(renders.start({ sequences: [SEQ], width: 1280, publish: { targets: ['s3'] } })).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/approved_by/) })
+  })
+})
+
+describe('a failed review render leaves no empty version folder (it would eat the number)', () => {
+  it('the pod script removes the version folder it created when ffmpeg fails or the count is wrong, and only that one; a later take of the same shot (createDir false) leaves the folder', () => {
+    const passes = [{ args: ['ffmpeg', '-i', 'in', '/o/deliver/s/v003/s.mov.part'], fmt: 'mov', verify: 10 }] as never
+    const first = renders.renderScript(passes, 'j', 0, [], { versionDir: '/o/deliver/s/v003', createDir: true }), later = renders.renderScript(passes, 'j', 0, [], { versionDir: '/o/deliver/s/v003', createDir: false })
+    expect(first).toMatch(/rm -f '\/o\/deliver\/s\/v003\/s\.mov\.part'; rmdir '\/o\/deliver\/s\/v003' 2>\/dev\/null; echo "RENDER-EXIT \$rc"/); expect(first).toMatch(/rmdir '\/o\/deliver\/s\/v003' 2>\/dev\/null; echo "RENDER-COUNT/)
+    expect(later).not.toContain('rmdir')
+  })
+})
+
+describe('where a render came from (the Queue shows MCP actions)', () => {
+  it('under an MCP tool call: origin mcp + the client name + a History line; from the window: origin window; Auto-publish: auto-publish', async () => {
+    const history = await import('../src/history.js')
+    const j = await history.runAs({ source: 'mcp', tool: 'render_sequences', client: 'claude-code', approved_by: 'Lucas' }, () => runJob({ approved_by: 'Lucas' })); expect(j).toMatchObject({ origin: 'mcp', mcp_client: 'claude-code' })
+    expect(history.list({ limit: 30 }).some((e) => e.kind === 'change' && e.action === 'started by MCP' && /render proxy/.test(e.what) && /claude-code.*Lucas/s.test(String(e.detail)))).toBe(true)
+    expect((await runJob({})).origin).toBe('window'); expect((await runJob({ trigger: 'auto-publish' })).origin).toBe('auto-publish')
+  })
 })
