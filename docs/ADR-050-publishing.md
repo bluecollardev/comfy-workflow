@@ -64,3 +64,21 @@ Lucas: "can we auto upload to Tunnel?" and, choosing the fully automatic option,
 
 **Still open (Lucas, Binc, Kyle):** how Tunnel actually receives (does it pull from `returns/BKK/`, or is there another route?); who approves a shot version (Brynley, Binc?); whether the daily cap and cancel window defaults suit; Binc's standing yes.
 
+
+## Amendment 2026-11-19: transfer adapters (a pod on the volume uploads, S3 to S3)
+
+**Why.** A file that lives only on the RunPod network volume was copied by streaming it through this PC (`aws s3 cp s3://<volume>/... -` piped into `aws s3 cp - s3://<bucket>/...`), about 3 MB/s. RunPod's volume S3 API and AWS are different services, so there is no server-side S3-to-S3 copy. The fast path is a pod in the volume's datacenter, attached to that volume, uploading straight from the mounted volume at datacenter speed.
+
+**Two adapters** (`libs/core/src/publish.ts`):
+- `pc`: today's behaviour, unchanged: the two piped `aws` commands through this PC. It now also hashes the bytes that pass, so the file's sha256 is known.
+- `pod` ("S3 to S3"): a RUNNING pod already attached to the volume runs, over the app's existing pod SSH runner, a script per file: `sha256sum`, then `curl -T <file>` to a presigned PUT URL. The URLs are made on this PC with the destination's keys (`s3presign.ts`, SigV4 query string, method PUT, only `host` signed, unsigned payload), so no secret key ever reaches the pod. One URL per destination key, made just before that file starts, valid for 1 hour (S3 checks the expiry when the request starts, not when it ends). The URL travels in the script on ssh's stdin and reaches curl as a config on stdin (`-K -`), never as a command-line argument.
+
+**Selection.** Setting `s3.transfer` (Settings > Publishing > Defaults, Auto / Pod / This PC): `auto` (default) uses the pod when it is available, else `pc`; `pod` forces the pod and fails the job with a plain-words reason when it is not available; `pc` forces today's path. Available means all of: a pod is running AND attached to the volume (never one of the app's own pull pods) AND the destination keys are S3 keys saved in the app (an AWS profile cannot presign) AND a probe over SSH (20 s) finds `curl` and `sha256sum`. **Nothing here ever creates, resumes or stops a pod**; spending is a person's named yes (Binc's `agent-permissions.md`). The only RunPod call is reading the pod list (a test pins that).
+
+**Fallback.** In `auto`, if the pod fails one file (curl error, timeout, ssh drop) that file goes through `pc`, once, and the next file tries the pod again. In `pod` there is no fallback: the file fails the job, naming the pod. A file over 5 GiB cannot be a single signed PUT: in `auto` it goes through `pc`, in `pod` it fails with that reason. **Cancel** kills the ssh and then runs `pkill -P <pid>; kill <pid>` on the pod (the pid the script reported), and does not fall back.
+
+**Record.** The job has `adapter` (`pod` or `pc`: what carried the volume files; `pc` when none did), `pod` (its name, when used), `pod_files`, `pc_files`, and `files[]` (first 200: `path`, `adapter`, `sha256`, and `shot` for a backfill). The Publish window and the Queue card say "via pod <name>" or "via this PC". History's job line ends with the counts.
+
+**A presigned URL is a credential.** It is never logged, and never in History, an error, the job view or the stored job file: `redact()` strikes the live URLs, any `X-Amz-Signature/Credential` text and the Panama keys from everything the pod says before it is kept (a test makes the pod echo the URL back and scans the view, the job file and History).
+
+**Limits.** Progress for a pod file moves when the file completes (curl runs silent); a pod that stops mid-transfer drops the ssh, which is a failure of that file (so, in `auto`, a retry of it through this PC). Not tested against a real pod or real S3: the tests use fakes for ssh, aws and spawn.

@@ -43,6 +43,7 @@
         <div class="small mb-2"><span class="me-3">{{ $t('publish.defaults.targets') }}</span>
           <label class="me-3"><input v-model="form.defaults.targets" type="checkbox" value="s3" class="form-check-input me-1" data-testid="publish-default-s3" />S3</label>
           <label><input v-model="form.defaults.targets" type="checkbox" value="slack" class="form-check-input me-1" data-testid="publish-default-slack" />Slack</label></div>
+        <BFormGroup :label="$t('publish.defaults.transfer')" label-for="pub-transfer" class="mb-2"><BFormSelect id="pub-transfer" v-model="form.s3.transfer" size="sm" class="w-auto" :options="transferOptions" data-testid="publish-transfer" /><div class="form-text" data-testid="publish-transfer-help">{{ $t('publish.defaults.transferHelp') }}</div></BFormGroup>
         <BFormGroup :label="$t('publish.defaults.message')" label-for="pub-msg"><textarea id="pub-msg" v-model="form.defaults.message" class="form-control form-control-sm font-monospace" rows="3" data-testid="publish-default-message"></textarea></BFormGroup>
         <div class="form-text" data-testid="publish-placeholders">{{ $t('publish.defaults.placeholders', { list: placeholderList }) }}</div>
         <div v-if="unknown.length" class="text-warning small" data-testid="publish-unknown-placeholder">{{ $t('publish.unknownPlaceholder', { list: unknownList }) }}</div>
@@ -82,11 +83,12 @@ const braces = (list) => list.map((p) => '{' + p + '}').join(' ')
 const placeholderList = braces(PLACEHOLDERS)
 const unknownList = computed(() => braces(unknown.value))
 const snapshot = ref('')
+const transferOptions = computed(() => ['auto', 'pod', 'pc'].map((v) => ({ value: v, text: t(`publish.defaults.transferOption.${v}`) })))
 /** Whether anything here differs from what is saved: a changed field or a secret typed. The window's one Save writes it. */
 const dirty = computed(() => !!form.value && (JSON.stringify(form.value) !== snapshot.value || !!secrets.access_key_id || !!secrets.secret_access_key))
 function fill() {
   const s = store.settings
-  form.value = { s3: { bucket: '', prefix: '', region: '', endpoint: '', credentials: 'app', presign_hours: 72, ...pick(s.s3, ['bucket', 'prefix', 'region', 'endpoint', 'credentials', 'presign_hours']) },
+  form.value = { s3: { bucket: '', prefix: '', region: '', endpoint: '', credentials: 'app', presign_hours: 72, transfer: 'auto', ...pick(s.s3, ['bucket', 'prefix', 'region', 'endpoint', 'credentials', 'presign_hours', 'transfer']) },
     defaults: { targets: [...(s.defaults.targets || [])], message: s.defaults.message || '' } }
   snapshot.value = JSON.stringify(form.value)
 }

@@ -1025,7 +1025,10 @@
         "title": "Defaults for a publish",
         "targets": "Publish to",
         "message": "Message",
-        "placeholders": "Placeholders: {list}"
+        "placeholders": "Placeholders: {list}",
+        "transfer": "Transfer from the volume",
+        "transferHelp": "Files that live only on the volume: Auto uploads from a running pod on the volume when there is one (fast), else through this PC. It never starts a pod.",
+        "transferOption": { "auto": "Auto", "pod": "Pod", "pc": "This PC" }
       },
       "save": "Save",
       "saved": "Saved",
@@ -1079,6 +1082,8 @@
         "cancel": "Cancel",
         "progress": "{done} of {total} files · {bytes} of {totalBytes}",
         "rate": "{rate}/s",
+        "viaPod": "via pod {pod}",
+        "viaPc": "via this PC",
         "links": "Links",
         "copy": "Copy",
         "copied": "Copied",
