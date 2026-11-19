@@ -35,6 +35,11 @@
         <div v-if="vol.note" class="text-body-secondary small mt-1" data-testid="pod-outputs-volume-note">{{ vol.note }}</div>
       </div>
     </div>
+    <div class="d-flex align-items-center gap-2 small mb-2" data-testid="pod-outputs-name-filter-row">
+      <BFormInput v-model="nameFilter" size="sm" type="search" :placeholder="$t('outputs.nameFilterPlaceholder')" :aria-label="$t('outputs.nameFilter')" style="max-width: 24rem" data-testid="pod-outputs-name-filter" />
+      <BButton v-if="nameFilter" variant="outline-light" size="sm" data-testid="pod-outputs-name-filter-clear" @click="nameFilter = ''">{{ $t('outputs.nameFilterClear') }}</BButton>
+      <span v-if="nameFilter.trim()" class="text-body-secondary" data-testid="pod-outputs-name-filter-count">{{ $t('outputs.nameFilterCount', { n: matchCount }) }}</span>
+    </div>
     <label v-if="shot" class="d-flex align-items-center gap-2 small mb-3" data-testid="pod-outputs-shot-filter">
       <input v-model="onlyShot" type="checkbox" class="form-check-input mt-0" />{{ $t('outputs.onlyShot', { shot }) }}
       <span v-if="onlyShot && hidden" class="text-body-secondary">{{ $t('outputs.hiddenRuns', { n: hidden }) }}</span>
@@ -55,7 +60,7 @@
       <OutputsGallery :files="r.files" :total-files="r.totalFiles || 0" :base="baseFor(r)" :scope="volumeId || pod.id" :volume-name="volumeName" :offline="!baseFor(r)" :zip-name="`${runName(r) || pod.name}-${idOf(r)}.zip`" :pod-id="pod.id" />
     </div>
   </BModal>
-  <BModal v-model="previewsOpen" :title="$t('outputs.dpx.previewsModalTitle')" size="md" lazy ok-only :ok-title="$t('outputs.dpx.close')" data-testid="pod-outputs-previews-modal">
+  <BModal v-model="previewsOpen" :title="$t('outputs.dpx.previewsModalTitle')" size="xl" lazy ok-only :ok-title="$t('outputs.dpx.close')" data-testid="pod-outputs-previews-modal">
     <div class="border rounded p-2 mb-2">
       <div class="fw-semibold">{{ $t('outputs.dpx.loadAllOption') }}</div>
       <div class="small text-body-secondary mb-2">{{ $t('outputs.dpx.loadAllTitle') }}</div>
@@ -79,7 +84,7 @@ import RenderSequences from './RenderSequences.vue'
 import { core } from '../api/bridge'
 import { historyAPI } from '../api/history'
 import { useUiStore } from '../stores/ui'
-import { viewUrl, galleryTiles, runName, runsForShot, inFolder, narrowToFolder, volumeAsRuns, mergeWithVolume, s3Base, sizeText } from '../utils/outputs'
+import { viewUrl, galleryTiles, runName, runsForShot, inFolder, narrowToFolder, filterByName, volumeAsRuns, mergeWithVolume, s3Base, sizeText } from '../utils/outputs'
 import { errorText } from '../stores/toast'
 import { sharedThumbs, thumbTimeouts, withTimeout } from '../utils/thumbs'
 import { previewBus } from '../utils/thumbsBus'
@@ -143,7 +148,11 @@ const openConfig = () => { ui.configFocus = 's3'; ui.configOpen = true; emit('cl
 const refresh = () => { emit('refresh'); loadVolume(vol.loaded ? vol.prefix : undefined, true) }
 
 /** The runs shown: the pod's and the saved ones, and the volume's folder runs that are not already one of them. */
-const all = computed(() => mergeWithVolume(shown.value, vol.runs))
+const nameFilter = ref('')
+const merged = computed(() => mergeWithVolume(shown.value, vol.runs))
+/** The file-name filter narrows every run (pod, saved and volume) to the files that match, and drops the runs with none. */
+const all = computed(() => (nameFilter.value.trim() ? merged.value.map((r) => filterByName(r, nameFilter.value)).filter((r) => r.files.length) : merged.value))
+const matchCount = computed(() => fileCount(all.value))
 /** Render sequences (docs/ADR-048): the DPX sequences this window lists (folder scope respected) are what the core renders; the proxies' state is asked in ONE batched call per open (and again when a job ends) for the tile badges and the viewer. */
 const renders = useRendersStore()
 const renderTiles = computed(() => all.value.flatMap((r) => galleryTiles(r.files)))

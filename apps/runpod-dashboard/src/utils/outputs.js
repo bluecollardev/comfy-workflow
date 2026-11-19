@@ -90,5 +90,12 @@ export const narrowToFolder = (run, prefix) => {
   const files = (run.files || []).filter((f) => { const s = String(f.subfolder || '').replace(/^\/+|\/+$/g, ''); return s === p || s.startsWith(`${p}/`) })
   return { ...run, files, totalFiles: run.totalFiles ?? (run.files || []).length }
 }
+/** A run narrowed to the files whose name matches a text (Lucas: 'to filter by filename'): case-insensitive, every space-separated word must appear in `subfolder/filename`; an empty text keeps the run as it is. `totalFiles` keeps the count it had so a screen can say '12 of 26'. */
+export const filterByName = (run, text) => {
+  const words = String(text || '').toLowerCase().split(/\s+/).filter(Boolean)
+  if (!words.length || !run) return run
+  const files = (run.files || []).filter((f) => { const hay = `${f.subfolder ? `${f.subfolder}/` : ''}${f.filename || ''}`.toLowerCase(); return words.every((w) => hay.includes(w)) })
+  return { ...run, files, totalFiles: run.totalFiles ?? (run.files || []).length }
+}
 /** A byte count for a run's title. */
 export const sizeText = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${Math.round(n / 1e6)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`)
