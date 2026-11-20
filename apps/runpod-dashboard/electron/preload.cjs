@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('core', {
   // Native Save / Open dialogs for the configuration file (docs/ADR-023): the main process picks the path; the page only sees the text.
   files: {
     saveText: (suggested, text) => ipcRenderer.invoke('core:file:save', String(suggested), String(text)),
+    savePdf: (suggested, html) => ipcRenderer.invoke('core:file:savePdf', String(suggested), String(html)),
     openText: () => ipcRenderer.invoke('core:file:open'),
     // Save one output file of a run (Save As, then the bytes from the pod); the page passes the pod's /view address.
     download: (url, suggested) => ipcRenderer.invoke('core:file:download', String(url), String(suggested || '')),

@@ -1334,6 +1334,9 @@
     }
   },
   "queue": {
+    "export": "Export log",
+    "exportCsv": "CSV",
+    "exportPdf": "PDF",
     "outputsGenerate": "After each pod's workflows: generate the review videos, as {who}",
     "outputsPublish": "After each pod's workflows: generate the review videos and publish them, as {who}",
     "postRendering": "Generating the review videos",
@@ -1837,6 +1840,8 @@
     "mcpServingOff": "{name} is no longer served from the app."
   },
   "history": {
+    "exportLogCsv": "Log as CSV (all events)",
+    "exportLogPdf": "Log as PDF (all events)",
     "autoBadge": "auto",
     "title": "History",
     "done": "Done",

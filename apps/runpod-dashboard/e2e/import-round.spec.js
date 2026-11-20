@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { test, expect, answerConfirm, queueTab } from './fixtures'
 
 // Import Round and Queue (docs/ADR-038): a call to action at the right of the top bar; one approval queues a pull and a run per shot; the Queue shows each task with its state and error.
@@ -303,4 +304,19 @@ test('Import Round: step 1 has a Source dropdown with BH selected, its rounds li
   await expect(dlg.getByTestId('import-round-option').first().locator('input')).toBeChecked()
   expect(asked.some((u) => u.startsWith('/api/library/sources') || u.includes('/library/sources'))).toBe(true)
   expect(asked.some((u) => u.includes('/library/items') && u.includes('source=panama-s3'))).toBe(true)
+})
+
+test('Queue: Export log saves a CSV of the tasks and opens the PDF page', async ({ page, api }) => {
+  api.state.queue = { imports: [{ id: 'a', round: 'round-a', approved_by: 'L', created_at: '2026-11-09T01:00:00Z', state: 'done', spent_usd: 0, cap_enabled: true, cost_cap_usd: 10, max_pods: 2, counts: {} }], tasks: [{ id: 't1', import_id: 'a', round: 'round-a', shot: 'cgi-042', kind: 'run', state: 'done', events: [{ at: '2026-11-09T01:01:00Z', text: 'pod ready' }] }], active: 0 }
+  await page.goto('/'); await queueTab(page, 'imports')
+  const q = page.getByTestId('queue-modal')
+  await q.getByTestId('queue-export').locator('button').first().click()
+  const [dl] = await Promise.all([page.waitForEvent('download'), q.getByTestId('queue-export-csv').click()])
+  expect(dl.suggestedFilename()).toMatch(/^queue-log-\d{4}-\d{2}-\d{2}\.csv$/)
+  const text = readFileSync(await dl.path(), 'utf8')
+  expect(text).toContain('task,')
+  expect(text).toContain('pod ready')
+  await q.getByTestId('queue-export').locator('button').first().click()
+  const [pop] = await Promise.all([page.waitForEvent('popup'), q.getByTestId('queue-export-pdf').click()])
+  await expect(pop.locator('table')).toContainText('cgi-042')
 })

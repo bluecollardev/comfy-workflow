@@ -1,6 +1,13 @@
 <template>
   <BModal v-model="open" lazy :title="$t('queue.title')" size="xl" scrollable no-footer data-testid="queue-modal" @hidden="open = false">
     <QueueLoadingBanner />
+    <div class="d-flex justify-content-end mb-2">
+      <BDropdown size="sm" variant="outline-light" right data-testid="queue-export" :disabled="exporting">
+        <template #button-content><i class="fa-solid fa-file-export me-1"></i>{{ $t('queue.export') }}</template>
+        <BDropdownItem data-testid="queue-export-csv" @click="exportLog('csv')">{{ $t('queue.exportCsv') }}</BDropdownItem>
+        <BDropdownItem data-testid="queue-export-pdf" @click="exportLog('pdf')">{{ $t('queue.exportPdf') }}</BDropdownItem>
+      </BDropdown>
+    </div>
     <!-- one tab per section, each with the count of its working items; the last tab is remembered (an Open the Queue link names its own) -->
     <ul class="nav nav-tabs flex-wrap" role="tablist" data-testid="queue-tabs" @keydown="onTabKey">
       <li v-for="tb in TABS" :key="tb.id" class="nav-item" role="presentation">
@@ -117,6 +124,8 @@ import { usePublishStore } from '../stores/publish'
 import { useAutopublishStore } from '../stores/autopublish'
 import { usePreviewsStore } from '../stores/previews'
 import { ucwords } from '../utils/ucwords'
+import { queueRows, toCsv, toHtml, stamp } from '../utils/logexport'
+import { saveTextFile, savePdfFile } from '../api/configio'
 
 const ui = useUiStore()
 const TABS = [{ id: 'overview' }, { id: 'imports' }, { id: 'syncs' }, { id: 'generations' }, { id: 'publishing' }]
@@ -157,6 +166,16 @@ const finished = computed(() => view.value.imports.filter((i) => !view.value.tas
 async function purge() {
   if (!(await confirm.ask(t('queue.confirmPurge', { n: finished.value.length }), { okLabel: t('queue.purge') }))) return   // the user says yes first
   await act(() => queueAPI.purge({ confirmed: true }))
+}
+/** The whole Queue (tasks and their events, volume jobs, publish and render jobs, graph failures) as one log: CSV or PDF, through the Save dialog. */
+const exporting = ref(false)
+async function exportLog(format) {
+  exporting.value = true; error.value = ''
+  try {
+    const rows = queueRows({ tasks: view.value.tasks, vjobs: vjobs.jobs, publish: publishStore.jobs, renders: renders.jobs, failures: failuresStore.items })
+    const name = `queue-log-${stamp()}.${format}`
+    if (format === 'csv') await saveTextFile(name, toCsv(rows)); else await savePdfFile(name, toHtml('Queue log', rows))
+  } catch (e) { error.value = errorText(e) } finally { exporting.value = false }
 }
 const open_ = ref(new Set())
 const toggleDetails = (id) => { const n = new Set(open_.value); n.has(id) ? n.delete(id) : n.add(id); open_.value = n }

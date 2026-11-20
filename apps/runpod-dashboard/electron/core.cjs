@@ -399,10 +399,24 @@ function register() {
   ipcMain.handle('core:file:save', async (event, suggested, text) => {
     if (typeof text !== 'string' || text.length > MAX_FILE_BYTES) return { ok: false, error: { message: 'There is nothing to save, or it is too large.' } }
     const win = BrowserWindow.fromWebContents(event.sender)
-    const r = await dialog.showSaveDialog(win, { defaultPath: path.join(app.getPath('documents'), path.basename(String(suggested || 'pod-manager-config.json'))), filters: JSON_FILTER })
+    const r = await dialog.showSaveDialog(win, { defaultPath: path.join(app.getPath('documents'), path.basename(String(suggested || 'pod-manager-config.json'))), filters: /\.csv$/i.test(String(suggested)) ? [{ name: 'CSV', extensions: ['csv'] }] : JSON_FILTER })
     if (r.canceled || !r.filePath) return { ok: true, canceled: true }
     // 0600: the file may hold keys and tokens, and the mode option only applies to a file this call creates, so chmod too
     try { await fs.promises.writeFile(r.filePath, text, { encoding: 'utf8', mode: 0o600 }); await fs.promises.chmod(r.filePath, 0o600) } catch (e) { return { ok: false, error: { message: `Could not write ${path.basename(r.filePath)}: ${e.message}` } } }
+    return { ok: true, path: r.filePath }
+  })
+  // A printable page as a PDF (the Queue's and History's log export): a hidden window prints it, the user picks where it goes. Scripts are off and the page is loaded from a data URL.
+  ipcMain.handle('core:file:savePdf', async (event, suggested, html) => {
+    if (typeof html !== 'string' || html.length > 20 * 1024 * 1024) return { ok: false, error: { message: 'There is nothing to save, or it is too large.' } }
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const r = await dialog.showSaveDialog(win, { defaultPath: path.join(app.getPath('documents'), path.basename(String(suggested || 'log.pdf'))), filters: [{ name: 'PDF', extensions: ['pdf'] }] })
+    if (r.canceled || !r.filePath) return { ok: true, canceled: true }
+    const hidden = new BrowserWindow({ show: false, webPreferences: { javascript: false, sandbox: true, contextIsolation: true } })
+    try {
+      await hidden.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
+      const pdf = await hidden.webContents.printToPDF({ landscape: true, printBackground: true, pageSize: 'A4' })
+      await fs.promises.writeFile(r.filePath, pdf)
+    } catch (e) { return { ok: false, error: { message: `Could not write ${path.basename(r.filePath)}: ${e.message}` } } } finally { hidden.destroy() }
     return { ok: true, path: r.filePath }
   })
   ipcMain.handle('core:file:open', async (event) => {
