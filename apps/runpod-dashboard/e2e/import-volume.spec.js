@@ -36,7 +36,9 @@ test('Volume source: locked shots are disabled with a reference-only badge; the 
   await dlg.getByTestId('import-round-next').click()
   // step 3: no pull or download wording, no "run after the pull" tick, the volume is fixed
   await expect(dlg.getByTestId('import-round-inplace')).toBeVisible()
-  await expect(dlg.getByTestId('import-round-run')).toHaveCount(0)
+  const run = dlg.getByTestId('import-round-run')   // a volume round is run in place: Run Workflows is there, ticked and locked, the first of the four
+  await expect(run).toBeVisible(); await expect(run).toBeChecked(); await expect(run).toBeDisabled(); await expect(dlg.getByTestId('import-round-run-hint')).toContainText('run in place')
+  await expect(dlg.getByTestId('import-round-autosync')).toBeVisible(); await expect(dlg.getByTestId('import-round-generate')).toBeVisible()   // the chain below it is offered
   await expect(dlg.getByTestId('import-round-volume')).toHaveCount(0)
   await expect(dlg.getByTestId('import-round-volume-fixed')).toContainText('comfy-workspace')
   await expect(dlg.getByTestId('import-round-vol-estimate')).toContainText('$0.12 for 2 graphs')

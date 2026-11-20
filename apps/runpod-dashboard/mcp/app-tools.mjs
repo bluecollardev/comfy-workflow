@@ -454,9 +454,9 @@ export function appTools({ core, governance, text, json, plain = text }) {
           }
         } catch (e) { return text(e.message, true) }
       } },
-    { name: 'autopublish', description: "Auto-publish (docs/ADR-050): approved, finished review videos are uploaded to the publish destination by themselves under a person's standing approval; off by default, dry-run first, with a cancel window and a daily cap. READ, CANCEL and OFF only: enabling it, going live, approving or revoking a shot version and Publish now are a person's acts in the window (they answer 403 here). action status: { enabled, dry_run, standing, window_minutes, daily_cap, today: { count, left }, destination, pending: [{ id, shot, version, files, bytes, due_at, state, reason? }], recent }. settings: the settings and whether the destination is ready. approvals: [{ shot, version, approved_by, at }]. reviews: the review versions on this PC with their approval and auto-publish state. cancel (id): cancel a waiting entry. off: stop the rule at once and cancel everything pending. scan_volume: list the volume's deliver/ now for finished reviews (read-only; what Auto-publish watches is `sources` in the configuration, `status.watching` says what it sees).",
-      inputSchema: obj({ action: S('status | settings | approvals | reviews | cancel | off | scan_volume'), id: S('cancel: the pending entry id (from status)'), shot: S('hold: the shot'), version: S('hold: the version, like v002') }, ['action']),
-      run: async ({ action, id, shot, version }) => {
+    { name: 'autopublish', description: "Auto-publish (docs/ADR-050): approved, finished review videos are uploaded to the publish destination by themselves under a person's standing approval; off by default, dry-run first, with a cancel window and a daily cap. An agent may READ, CANCEL, switch it OFF, and (since v1.6.8) switch it ON and GO LIVE, always under the NAME of a person: enable and go_live need approved_by (never invented) and understood: true, the same two things the window asks for; enable starts in dry run unless dry_run_first is off, go_live needs the standing approval first. Approving or revoking a shot version, choosing where it sends (targets), releasing a hold and Publish now stay a person's acts in the window (they answer 403 here). action status: { enabled, dry_run, standing, window_minutes, daily_cap, today: { count, left }, destination, pending: [{ id, shot, version, files, bytes, due_at, state, reason? }], recent }. settings: the settings and whether the destination is ready. approvals: [{ shot, version, approved_by, at }]. reviews: the review versions on this PC with their approval and auto-publish state. cancel (id): cancel a waiting entry. off: stop the rule at once and cancel everything pending. scan_volume: list the volume's deliver/ now for finished reviews (read-only; what Auto-publish watches is `sources` in the configuration, `status.watching` says what it sees).",
+      inputSchema: obj({ action: S('status | settings | approvals | reviews | cancel | off | scan_volume | enable | go_live | set_settings'), id: S('cancel: the pending entry id (from status)'), shot: S('hold: the shot'), version: S('hold: the version, like v002'), approved_by: S('enable, go_live, set_settings: the NAME of the person who allows Auto-publish (never guessed or invented); it becomes the standing approval'), understood: { type: 'boolean', description: 'enable, go_live: true when that person has been told that Auto-publish uploads approved review videos by itself under their name (the window asks the same)' }, settings: { type: 'object', description: 'enable, set_settings: window_minutes, daily_cap, include_dpx, require_approval, dry_run_first, round, sources, generate (not targets: where it sends is chosen in the window)' } }, ['action']),
+      run: async ({ action, id, shot, version, approved_by, understood, settings }) => {
         try {
           const a = core.autopublish
           switch (action) {
@@ -473,9 +473,17 @@ export function appTools({ core, governance, text, json, plain = text }) {
             case 'scan_volume': return json(await a.scanVolume())
             case 'approve': case 'revoke': return text("403: Approval is a person's act: use the window", true)
             case 'set_targets': case 'targets': return text('403: Where Auto-publish sends is chosen in the window, by a person', true)
-            case 'enable': case 'set_settings': case 'go_live': return text("403: Turning Auto-publish on, or going live, is a person's act with a name: use the window. An agent can only switch it off.", true)
+            case 'enable': case 'go_live': case 'set_settings': {   // Lucas, 2026-11-20: an agent may switch Auto-publish on and go live, always under the NAME of a person (approved_by) and with `understood: true`, the same two things the window asks for
+              const name = String(approved_by ?? '').trim()
+              if (!name) return text("approved_by is needed: the name of the person who allows Auto-publish (an agent never invents it)", true)
+              const v = settings && typeof settings === 'object' && !Array.isArray(settings) ? { ...settings } : {}
+              if ('targets' in v || 'tunnel' in v) return text('403: Where Auto-publish sends is chosen in the window, by a person', true)
+              if (action === 'enable') v.enabled = true
+              if (action === 'go_live') v.dry_run = false
+              return json(await a.setSettings({ ...v, approved_by: name, understood: understood === true }))
+            }
             case 'publish_now': return text("403: Publish now is a person's explicit, named click: use the window", true)
-            default: return text('action must be status, settings, approvals, reviews, cancel, off or scan_volume', true)
+            default: return text('action must be status, settings, approvals, reviews, cancel, off, scan_volume, enable, go_live or set_settings', true)
           }
         } catch (e) { return text(e.message, true) }
       } },

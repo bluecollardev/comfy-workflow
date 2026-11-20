@@ -97,19 +97,6 @@
         <span v-else class="small text-body-secondary">{{ $t('importRound.chooseCardNone') }}</span>
         <div v-if="allCards.length > 1" class="w-100 small text-body-secondary" data-testid="import-round-same-card-first">{{ $t('importRound.sameCardFirst') }}</div>
       </div>
-      <div v-if="runWorkflows || isVolume" class="small mb-3" data-testid="import-round-autosync-block">
-        <label class="d-flex align-items-center gap-2"><input v-model="autoSync" type="checkbox" class="form-check-input mt-0" data-testid="import-round-autosync" /><i class="fa-solid fa-cloud-arrow-down"></i>{{ $t('importRound.autoSync') }}</label>
-        <label v-if="autoSync" class="d-flex align-items-center gap-2 ps-4 mt-1"><input v-model="autoSyncPush" type="checkbox" class="form-check-input mt-0" data-testid="import-round-autosync-push" />{{ $t('importRound.autoSyncPush') }}</label>
-        <div class="text-body-secondary ps-4" data-testid="import-round-autosync-hint">{{ $t('importRound.autoSyncHint') }}</div>
-        <label class="d-flex align-items-center gap-2 mt-2"><input :checked="generateOutputs" type="checkbox" class="form-check-input mt-0" data-testid="import-round-generate" @change="onGenerate" /><i class="fa-solid fa-film"></i>{{ $t('importRound.generate') }}</label>
-        <div class="text-body-secondary ps-4" data-testid="import-round-generate-hint">{{ $t('importRound.generateHint') }}</div>
-        <template v-if="generateOutputs">
-          <label class="d-flex align-items-center gap-2 mt-2"><input :checked="publishOut" type="checkbox" class="form-check-input mt-0" :disabled="!pubReady.ok" data-testid="import-round-publish" @change="onPublish" /><i class="fa-solid fa-cloud-arrow-up"></i>{{ $t('importRound.publish') }}</label>
-          <div v-if="!pubReady.ok" class="text-warning ps-4" data-testid="import-round-publish-reason"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ $t('importRound.publishNotReady', { reason: pubReady.reason }) }}</div>
-          <div v-else class="text-body-secondary ps-4" data-testid="import-round-publish-hint">{{ $t('importRound.publishHint') }}</div>
-        </template>
-        <div v-if="nameNeeded" class="text-warning mt-2" data-testid="import-round-name-needed"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ $t('importRound.needsName') }}</div>
-      </div>
       <div class="border rounded p-2 small mb-3" data-testid="import-round-estimate">
         <template v-if="isVolume">
           <div data-testid="import-round-inplace">{{ $t('importRound.inPlace') }}</div>
@@ -165,8 +152,23 @@
         <div v-else-if="volumeProblem" class="text-warning w-100" data-testid="import-round-volume-problem"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ volumeProblem }}</div>
         <div v-else-if="volumeId && volumeId !== defaultVolume" class="text-body-secondary w-100" data-testid="import-round-volume-note">{{ $t('importRound.volumeNote') }}</div>
       </div>
-      <label v-if="!isVolume" class="d-flex align-items-center gap-2 small mb-3"><input v-model="runWorkflows" type="checkbox" class="form-check-input mt-0" data-testid="import-round-run" />{{ $t('importRound.runWorkflows') }}</label>
+      <!-- the four options, in order: Run Workflows is the root; Auto Sync To This PC and Generate Outputs need it; Publish needs Generate Outputs (the others appear as the ones above are ticked) -->
+      <label class="d-flex align-items-center gap-2 small mb-1"><input v-model="runWorkflows" type="checkbox" class="form-check-input mt-0" :disabled="isVolume" data-testid="import-round-run" /><i class="fa-solid fa-play"></i>{{ $t('importRound.runWorkflowsLabel') }}</label>
+      <div class="small text-body-secondary mb-3 ps-4" data-testid="import-round-run-hint">{{ $t(isVolume ? 'importRound.runWorkflowsVolume' : 'importRound.runWorkflows') }}</div>
       <div v-if="!runWorkflows && !isVolume" class="small text-body-secondary mb-3" data-testid="import-round-no-cards">{{ $t('importRound.noCards') }}</div>
+      <div v-if="runWorkflows || isVolume" class="small mb-3" data-testid="import-round-autosync-block">
+        <label class="d-flex align-items-center gap-2"><input v-model="autoSync" type="checkbox" class="form-check-input mt-0" data-testid="import-round-autosync" /><i class="fa-solid fa-cloud-arrow-down"></i>{{ $t('importRound.autoSync') }}</label>
+        <label v-if="autoSync" class="d-flex align-items-center gap-2 ps-4 mt-1"><input v-model="autoSyncPush" type="checkbox" class="form-check-input mt-0" data-testid="import-round-autosync-push" />{{ $t('importRound.autoSyncPush') }}</label>
+        <div class="text-body-secondary ps-4" data-testid="import-round-autosync-hint">{{ $t('importRound.autoSyncHint') }}</div>
+        <label class="d-flex align-items-center gap-2 mt-2"><input :checked="generateOutputs" type="checkbox" class="form-check-input mt-0" data-testid="import-round-generate" @change="onGenerate" /><i class="fa-solid fa-film"></i>{{ $t('importRound.generate') }}</label>
+        <div class="text-body-secondary ps-4" data-testid="import-round-generate-hint">{{ $t('importRound.generateHint') }}</div>
+        <template v-if="generateOutputs">
+          <label class="d-flex align-items-center gap-2 mt-2"><input :checked="publishOut" type="checkbox" class="form-check-input mt-0" :disabled="!pubReady.ok" data-testid="import-round-publish" @change="onPublish" /><i class="fa-solid fa-cloud-arrow-up"></i>{{ $t('importRound.publish') }}</label>
+          <div v-if="!pubReady.ok" class="text-warning ps-4" data-testid="import-round-publish-reason"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ $t('importRound.publishNotReady', { reason: pubReady.reason }) }}</div>
+          <div v-else class="text-body-secondary ps-4" data-testid="import-round-publish-hint">{{ $t('importRound.publishHint') }}</div>
+        </template>
+        <div v-if="nameNeeded" class="text-warning mt-2" data-testid="import-round-name-needed"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ $t('importRound.needsName') }}</div>
+      </div>
     </template>
 
     <template #footer>

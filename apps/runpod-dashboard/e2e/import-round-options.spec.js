@@ -44,6 +44,15 @@ test('ticking Run Workflows shows Auto Sync and Generate Outputs; ticking Genera
   await expect(dlg.getByTestId('import-round-autosync-block')).toContainText('Publish')
 })
 
+test('the four options are one group in order, Run Workflows first (labelled Run Workflows), then Auto Sync To This PC, Generate Outputs, Publish', async ({ page, api }) => {
+  const dlg = await toStepThree(page, api, { by: 'Lucas' })
+  await expect(dlg.getByTestId('import-round-run').locator('xpath=ancestor::label')).toContainText('Run Workflows')
+  await dlg.getByTestId('import-round-run').check(); await dlg.getByTestId('import-round-generate').check()
+  const y = async (id) => (await dlg.getByTestId(id).boundingBox()).y
+  const ys = [await y('import-round-run'), await y('import-round-autosync'), await y('import-round-generate'), await y('import-round-publish')]
+  expect(ys).toEqual([...ys].sort((p, q) => p - q))   // top to bottom: Run Workflows, Auto Sync, Generate Outputs, Publish
+  expect(new Set(ys).size).toBe(4)
+})
 test('Publish is disabled with the reason when publishing is not configured', async ({ page, api }) => {
   api.state.publish = { panamaKeys: false }   // S3 has no keys: not ready
   const dlg = await toStepThree(page, api, { by: 'Lucas' })
@@ -140,7 +149,7 @@ test('the plan is asked with the options too, and the summary says what will hap
   await expect(dlg.getByTestId('import-round-generate-line')).toHaveCount(0)
 })
 
-test('a volume source: Run Workflows is forced on (no checkbox) and the chain below it is offered as before', async ({ page, api }) => {
+test('a volume source: Run Workflows is shown ticked and locked (rounds run in place) and the chain below it is offered; the options apply to volume and BH alike', async ({ page, api }) => {
   api.state.sharedVolume = 'vol1'
   await page.goto('/')
   await page.getByTestId('open-import-round').click()
@@ -149,7 +158,7 @@ test('a volume source: Run Workflows is forced on (no checkbox) and the chain be
   await dlg.locator('[data-testid="import-round-option"][data-round="proxy_v005"] input').check()
   await dlg.getByTestId('import-round-next').click()
   await dlg.getByTestId('import-round-next').click()
-  await expect(dlg.getByTestId('import-round-run')).toHaveCount(0)
+  await expect(dlg.getByTestId('import-round-run')).toBeVisible(); await expect(dlg.getByTestId('import-round-run')).toBeChecked(); await expect(dlg.getByTestId('import-round-run')).toBeDisabled()
   await expect(dlg.getByTestId(ids.sync)).toBeVisible(); await expect(dlg.getByTestId(ids.gen)).toBeVisible()
   await expect(dlg.getByTestId(ids.pub)).toHaveCount(0)
   await dlg.getByTestId('import-round-approved-by').fill('Lucas')

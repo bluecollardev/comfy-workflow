@@ -239,7 +239,7 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core),
   const json = (v) => {
     const isObj = v && !Array.isArray(v) && typeof v === 'object'
     const rl = isObj && !('retry_at' in v && 'limited' in v) ? limitNow() : null
-    return text(JSON.stringify(isObj ? { ...v, ...(pool.dryRun() ? { dry_run: true } : {}), ...(rl ? { rate_limited: rl } : {}) } : v, null, 2))
+    return text(JSON.stringify(isObj ? { ...(pool.dryRun() ? { dry_run: true } : {}), ...v, ...(rl ? { rate_limited: rl } : {}) }   /* the no-spend stamp first: a tool's own dry_run (Auto-publish's) must win */ : v, null, 2))
   }
   const round2 = (n) => Math.round(n * 100) / 100
   /** An answer with no no-spend note: for documentation and other things that are not about pods. */

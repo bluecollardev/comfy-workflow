@@ -660,12 +660,23 @@ test('publish: items may be a string or { where: "volume", path }; volume and vo
   assert.match(textOf(refused(await call('publish', { action: 'volume_size', path: '' }))), /path is a folder/)
 })
 
-test('autopublish: read, cancel and off only; everything that turns it on or sends is a person\'s act (ADR-050)', async () => {
+test('autopublish: read, cancel, off, and (v1.6.8) on and go live under a named person; approving, targets and Publish now stay a person\'s act (ADR-050)', async () => {
   const st = jsonOf(ok(await call('autopublish', { action: 'status' })))
   assert.equal(st.enabled, false); assert.equal(st.daily_cap, null); assert.deepEqual(st.today, { count: 0, left: null }); assert.deepEqual(st.targets, { s3: true, slack: false, tunnel: false }); assert.deepEqual(st.pending, [])
   const se = jsonOf(ok(await call('autopublish', { action: 'settings' }))); assert.equal(se.target_state.tunnel.ready, false); assert.match(se.target_state.tunnel.problem, /Tunnel is not available yet/)
   assert.deepEqual(jsonOf(ok(await call('autopublish', { action: 'approvals' }))), []); assert.deepEqual(jsonOf(ok(await call('autopublish', { action: 'reviews' }))).reviews, []); assert.equal(jsonOf(ok(await call('autopublish', { action: 'off' }))).cancelled, 0)
-  for (const [a, re] of [['approve', /Approval is a person's act: use the window/], ['revoke', /Approval is a person's act/], ['enable', /person's act with a name/], ['go_live', /person's act with a name/], ['publish_now', /Publish now is a person's explicit, named click/], ['targets', /Where Auto-publish sends is chosen in the window, by a person/]]) assert.match(textOf(refused(await call('autopublish', { action: a }))), re)
+  for (const [a, re] of [['approve', /Approval is a person's act: use the window/], ['revoke', /Approval is a person's act/], ['publish_now', /Publish now is a person's explicit, named click/], ['targets', /Where Auto-publish sends is chosen in the window, by a person/]]) assert.match(textOf(refused(await call('autopublish', { action: a }))), re)
+  // v1.6.8 (Lucas): an agent may switch Auto-publish on and go live, under a person's NAME and with understood: true
+  assert.match(textOf(refused(await call('autopublish', { action: 'enable' }))), /approved_by is needed/)
+  assert.match(textOf(refused(await call('autopublish', { action: 'enable', approved_by: 'Lucas' }))), /understood must be true/)
+  assert.match(textOf(refused(await call('autopublish', { action: 'enable', approved_by: 'Lucas', understood: true, settings: { targets: { slack: true } } }))), /Where Auto-publish sends is chosen in the window/)
+  assert.match(textOf(refused(await call('autopublish', { action: 'go_live', approved_by: 'Lucas', understood: true }))), /Going live needs the standing approval/)
+  const on = jsonOf(ok(await call('autopublish', { action: 'enable', approved_by: 'Lucas', understood: true, settings: { window_minutes: 0 } })))
+  assert.equal(on.enabled, true, 'on.enabled'); assert.equal(on.dry_run, true, 'on.dry_run'); assert.equal(on.standing.approved_by, 'Lucas', 'on.standing'); assert.equal(on.window_minutes, 0, 'on.window')   // starts in dry run, under the named person
+  assert.match(textOf(refused(await call('autopublish', { action: 'go_live', approved_by: 'Lucas' }))), /Confirm that the next approved version will really be uploaded/)
+  const live = jsonOf(ok(await call('autopublish', { action: 'go_live', approved_by: 'Lucas', understood: true }))); assert.equal(live.dry_run, false, 'live.dry_run'); assert.equal(live.standing.approved_by, 'Lucas', 'live.standing')
+  assert.equal(jsonOf(ok(await call('autopublish', { action: 'set_settings', approved_by: 'Lucas', settings: { dry_run: true } }))).dry_run, true)   // an agent may also go back to dry run
+  assert.equal(jsonOf(ok(await call('autopublish', { action: 'off' }))).cancelled, 0); assert.equal(jsonOf(ok(await call('autopublish', { action: 'status' }))).enabled, false, 'status after off')   // back to off for the rest
   assert.match(textOf(refused(await call('autopublish', { action: 'cancel' }))), /id is needed/); assert.match(textOf(refused(await call('autopublish', { action: 'bogus' }))), /action must be/)
   const r = await call('set_configuration', { patch: { auto_publish: { enabled: true } } }); assert.equal(r.result.isError, true); assert.match(textOf(r), /turned on in the window, by a person/)
   const t = await call('set_configuration', { patch: { auto_publish: { targets: { slack: true } } } }); assert.match(textOf(t), /Where Auto-publish sends is chosen in the window/)
