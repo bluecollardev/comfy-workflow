@@ -10,6 +10,7 @@ completed items move here. Commit hashes are on `develop`.
 - **Prepare For Delivery** in the Outputs window (and MCP `dpx_fix` plan and run): the sequences with their EDL clip name and start timecode, then corrected copies written on the pod, then Publish.
 - **Corrected copies of the DPX** (`dpx_fix`, new `dpxfix.ts`): colour code user-defined instead of linear, per-frame timecode from the EDL start, frame rate, gamma 2.6, frame position, written as copies under `output/_delivery_v11/<clip>/`; originals untouched, headers read back and checked.
 - **Pod logs are kept** (`pod_logs`, new `podlogs.ts`): saved at the end of each run task, before a pod is stopped, before it is deleted and on demand; the pod's logs window lists them, opens them, has Save Logs Now, Delete This Pod's Logs and Purge All Saved Logs (after a yes). Nothing deletes a log by itself.
+- **The application's own log is collected** (`app-logs/<day>.log` in the config folder, `app_logs` MCP tool): the main process's console, unhandled errors, the page's warnings and errors, crashes of a page or a child process; secrets cut out; listed, read and purged (with a yes) from MCP; never deleted by the app.
 - **Retry:** after a restart a failed publish shot is sent again from the request the run kept; a failed generation can be retried; a job from before this shows Retry disabled with the reason; each Retry shows a spinner and a toast (v1.7.0).
 - Tests: `dpxfix`, `podlogs` (core), a no-overwrite and a per-element manifest test (publish-return), saved logs and purge (browser).
 

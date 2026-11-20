@@ -34,5 +34,8 @@ A publish run keeps the request it was asked to do with its record; a render job
 - **A fresh pod's first graph can answer HTTP 502** while ComfyUI starts; the run's own retry waits 5 minutes. The app should wait for ComfyUI to answer before it asks for the graph (not built).
 - **The round's "delivery" graph does not make DPX.** It is a replay that writes MP4 candidates (checked on archival-168, 7 seconds, four `.mp4`). The 16 elements with no DPX need the mono conversion of their ProRes masters, not Run Workflows (open: which graph or tool Binc uses).
 
-## 7. Not built
+## 7. The application's own log is collected (built, Lucas 2026-11-20: "make sure we collect any logging from the application")
+Before, the app kept only `stalls.log` (what froze the window), `history.jsonl`, `failures.jsonl` and the sync logs; what the main process printed (`console.error` of the idle watch, the MCP host, a crash) went to a terminal nobody reads. `electron/app-log.cjs` writes `app-logs/<YYYY-MM-DD>.log` in the config folder, one line each (`time LEVEL text`): every console line of the main process (still printed too), unhandled exceptions and rejections, the page's warnings and errors (`console-message`), a page that failed to load or whose renderer is gone or not responding, a child process that died. Secrets are cut out before a line is written (keys, bearer tokens, a signed link's signature, a Slack webhook), a line is cut at 4,000 characters, a day stops at 50 MB. `libs/core/src/applogs.ts` and the MCP tool `app_logs` list the days, read one (by level, by text, the last N lines) and purge (a person's yes, `confirmed: true`). Nothing deletes an app log by itself. The test suite for it is `electron/app-log.test.cjs` and `libs/core/tests/applogs.test.ts`.
+
+## 8. Not built
 The wait-for-ComfyUI check; the proxy's timecode check; the round-level manifest question; the DPX for the 16 elements; CGI-072 (version mismatch with the PDF).
