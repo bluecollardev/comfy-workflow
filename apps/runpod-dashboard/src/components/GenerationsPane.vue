@@ -16,6 +16,25 @@
         <BButton v-else size="sm" variant="outline-light" class="ms-auto" data-testid="generations-previews-dismiss" @click="previews.dismiss()">{{ $t('queue.gen.dismiss') }}</BButton>
       </div>
       <BProgress :value="previews.batch.done" :max="Math.max(1, previews.batch.total)" height="8px" :animated="previews.running" :striped="previews.running" class="mt-1" data-testid="generations-previews-bar" :data-percent="Math.round((100 * previews.batch.done) / Math.max(1, previews.batch.total))" />
+      <!-- why the failed ones failed: open when the batch just ended with failures, paged like Publishing -->
+      <div v-if="previews.batch.failed > 0" class="mt-2" data-testid="previews-failures">
+        <BButton variant="link" size="sm" class="p-0 text-danger" data-testid="previews-failures-toggle" :aria-expanded="failOpen" @click="failOpen = !failOpen">{{ failOpen ? '▾' : '▸' }} {{ $t('queue.gen.failedPreviews', { n: previews.batch.failed }) }}</BButton>
+        <template v-if="failOpen">
+          <ul class="list-unstyled mb-1 mt-1" data-testid="previews-failures-list">
+            <li v-for="f in failPaged.rows" :key="f.key" class="mb-1" data-testid="previews-failure" :data-name="f.name">
+              <div class="d-flex align-items-center gap-2 flex-wrap"><span class="font-monospace text-truncate" style="max-width: 24rem" :title="f.key" data-testid="previews-failure-name">{{ f.name }}</span><span v-if="f.pod_name" class="text-body-secondary" data-testid="previews-failure-pod">{{ $t('queue.gen.failedPreviewsPod', { pod: f.pod_name }) }}</span></div>
+              <div class="text-danger" data-testid="previews-failure-reason">{{ reasonText(f, $t) }}</div>
+            </li>
+          </ul>
+          <div v-if="previews.batch.failed > previews.batch.failures.length" class="text-body-secondary mb-1" data-testid="previews-failures-capped">{{ $t('queue.gen.failedPreviewsMore', { n: previews.batch.failures.length }) }}</div>
+          <div v-if="previews.batch.failures.length > PAGE_SIZES[0]" class="d-flex align-items-center gap-2 flex-wrap" data-testid="previews-failures-pager">
+            <BButton size="sm" variant="outline-light" :disabled="failPaged.page === 0" data-testid="previews-failures-page-prev" @click="failPage--"><i class="fa-solid fa-chevron-left me-1"></i>{{ $t('queue.gen.prevFail') }}</BButton>
+            <span data-testid="previews-failures-page-info">{{ failPaged.info }}</span>
+            <BButton size="sm" variant="outline-light" :disabled="failPaged.page >= failPaged.count - 1" data-testid="previews-failures-page-next" @click="failPage++">{{ $t('queue.gen.nextFail') }}<i class="fa-solid fa-chevron-right ms-1"></i></BButton>
+            <select v-model.number="failSize" class="form-select form-select-sm ms-auto" style="width: auto" :aria-label="$t('queue.gen.failPageSize')" data-testid="previews-failures-page-size"><option v-for="n in PAGE_SIZES" :key="n" :value="n">{{ $t('queue.gen.failPerPage', { n }) }}</option></select>
+          </div>
+        </template>
+      </div>
     </div>
     <!-- render jobs -->
     <div v-for="j in pagedJobs" :key="j.job_id" class="border rounded p-2 mb-2 small" data-testid="generations-job" :data-job="j.job_id" :data-state="j.state" :data-kind="j.kind || 'proxy'">
@@ -89,7 +108,7 @@ import { versionTag } from '../utils/autopublish'
 import { useAutopublishStore } from '../stores/autopublish'
 import { t } from '../i18n'
 import { isActive, currentSequence } from '../utils/renders'
-import { phaseChips, etaSeconds, etaText, jobTitle, orderJobs, jobFiles, batchLine, percentOf } from '../utils/generations'
+import { phaseChips, etaSeconds, etaText, jobTitle, orderJobs, jobFiles, batchLine, percentOf, reasonText, paged, PAGE_SIZES } from '../utils/generations'
 
 const renders = useRendersStore(), previews = usePreviewsStore(), ui = useUiStore()
 const jobs = computed(() => orderJobs(renders.jobs, renders.dismissed))
@@ -103,6 +122,13 @@ watch(pageSize, () => { page.value = 0 })
 watch(pageCount, (n) => { if (page.value > n - 1) page.value = n - 1 })   // dismissing the last card of a page moves back one page
 const finishedJobs = computed(() => jobs.value.filter((j) => !isActive(j)))
 const failedJobs = computed(() => finishedJobs.value.filter((j) => j.state === 'failed' || j.state === 'cancelled' || j.error))
+// The failed previews of the batch: open when the batch has just ended with failures, paged (5, 10 or 25; a new size starts at page 1)
+const failOpen = ref(!!previews.batch && previews.batch.state !== 'running' && previews.batch.failed > 0), failPage = ref(0), failSize = ref(10)
+const failPaged = computed(() => paged(previews.batch?.failures || [], failPage.value, failSize.value))
+watch(() => previews.batch?.id, () => { failOpen.value = false; failPage.value = 0 })
+watch(() => previews.batch?.state, (s) => { if (s && s !== 'running' && previews.batch.failed > 0) failOpen.value = true })
+watch(failSize, () => { failPage.value = 0 })
+watch(() => failPaged.value.page, (p) => { if (p !== failPage.value) failPage.value = p })
 const openRows = ref(new Set())
 const toggle = (id) => { const n = new Set(openRows.value); n.has(id) ? n.delete(id) : n.add(id); openRows.value = n }
 const adapters = (j) => [...new Set((j.sequences || []).map((s) => s.where).filter(Boolean))]

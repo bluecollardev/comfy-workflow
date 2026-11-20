@@ -17,7 +17,7 @@ export interface JobEvent { ts: string; kind: 'job'; job: 'pull' | 'remove' | 'b
   /** What started a sync run (ADR-046): 'auto-sync:output' (a run's files, pulled at once), 'auto-sync:feed' (the change feed), 'auto-sync:reconcile' (found by the reconciler), 'auto-sync:push' (this PC's watcher), 'auto-sync:enable' (the catch-up pull when Auto sync was turned on). Absent: a person pressed Sync. Old entries have none. */
   trigger?: string }
 /** A change to something that is not a pod or a job: a volume made, resized, deleted or made the default; the configuration saved or imported; a shot pack imported; an adapter saved. */
-export interface ChangeEvent { ts: string; kind: 'change'; area: 'volume' | 'configuration' | 'import' | 'adapter' | 'pod'; action: string; what: string; detail?: string }
+export interface ChangeEvent { ts: string; kind: 'change'; area: 'volume' | 'configuration' | 'import' | 'adapter' | 'pod' | 'outputs'; action: string; what: string; detail?: string }
 export type HistoryEvent = (PodEvent | JobEvent | ChangeEvent) & Origin
 /** Who did it: `source` is the app's window (default) or an MCP tool call (`tool`, and the `approved_by` of a spend). Taken from the context the caller runs in (`runAs`). */
 export interface Origin { source?: 'app' | 'mcp'; tool?: string; approved_by?: string; /** the MCP client's name when the session gave one */ client?: string }
@@ -179,4 +179,15 @@ export function observe(live: LivePod[], now: () => Date = () => new Date()): nu
   }
   for (const [id, s] of state) if (s.known !== 'gone' && !seen.has(id)) rec({ kind: 'pod', action: 'deleted', pod_id: id, name: s.name, detail: 'no longer on the account' })
   return n
+}
+
+// ----- note: a window's own line in the History (the renderer's one narrow way in) -----
+const scrub = (v: unknown, max: number): string => String(v ?? '').replace(/https?:\/\/\S+/gi, '<url>').replace(/\b(?:AKIA|ASIA)[A-Z0-9]{12,}\b/g, '<key>').replace(/\b[A-Za-z0-9+/_=-]{32,}\b/g, '<token>').slice(0, max)
+/** Record a change event from the app's windows: only kind `change` and area `outputs`, strings only, truncated and redacted; anything else is ignored. Returns whether it was recorded. */
+export function note(input: unknown): boolean {
+  const o = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>
+  if (o.kind !== 'change' || o.area !== 'outputs') return false
+  if (typeof o.action !== 'string' || typeof o.what !== 'string' || !o.action || !o.what) return false
+  record({ kind: 'change', area: 'outputs', action: scrub(o.action, 60), what: scrub(o.what, 200), ...(typeof o.detail === 'string' && o.detail ? { detail: scrub(o.detail, 500) } : {}) })
+  return true
 }

@@ -145,6 +145,40 @@ test('reopening the Outputs window shows the running batch again (the button is 
   await expect(page.getByTestId('pod-outputs-previews-modal').getByTestId('pod-outputs-load-previews')).toBeDisabled()
 })
 
+test('failed previews: the batch line lists the failed sequences with their reasons (open when it just ended), paged 5/10/25, and the History gets the first 20 plus one summary', async ({ page, api }) => {
+  api.state.history.runs['pod-aaaaaaaa'] = [seqRun(25, 1)]
+  await page.context().route('**/view?*', (r) => r.fulfill({ status: 500, contentType: 'text/plain', headers: { 'access-control-allow-origin': '*' }, body: 'boom https://pod.example/view?token=secret' }))
+  await page.addInitScript(() => { try { indexedDB.deleteDatabase('pod-manager-thumbs') } catch { /* none */ } })
+  await page.goto('/')
+  await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
+  await page.getByTestId('pod-outputs-previews').click(); await page.getByTestId('pod-outputs-previews-modal').getByRole('tab', { name: 'Previews' }).click()
+  await page.getByTestId('pod-outputs-previews-modal').getByTestId('pod-outputs-load-previews').click()
+  await page.getByTestId('pod-outputs-previews-modal').locator('.modal-footer button').click(); await page.getByTestId('pod-outputs-modal').locator('.btn-close').click()
+  await expect.poll(async () => (api.state.history.notes || []).length, { timeout: 30000 }).toBe(21)
+  const q = await openQueue(page)
+  const b = gens(q).getByTestId('generations-previews')
+  await expect(b).toHaveAttribute('data-state', 'done', { timeout: 20000 })
+  await expect(b.getByTestId('generations-previews-line')).toHaveText('Previews: 25 of 25 · 25 failed')
+  await expect(b.getByTestId('previews-failures-list')).toBeVisible()   // open: it just finished with failures
+  await expect(b.getByTestId('previews-failure')).toHaveCount(10)
+  const first = b.getByTestId('previews-failure').first()
+  await expect(first.getByTestId('previews-failure-name')).toHaveText(/^s\d+_proxy\.#+\.dpx$|^s\d+_proxy\.\d+\.dpx$/)
+  await expect(first.getByTestId('previews-failure-pod')).toHaveText('on ComfyUI-Dev')
+  await expect(first.getByTestId('previews-failure-reason')).not.toBeEmpty()
+  await expect(b).not.toContainText('secret')   // URLs are struck out
+  const info = b.getByTestId('previews-failures-page-info'), prev = b.getByTestId('previews-failures-page-prev'), next = b.getByTestId('previews-failures-page-next'), size = b.getByTestId('previews-failures-page-size')
+  await expect(info).toHaveText('1–10 of 25'); await expect(prev).toBeDisabled()
+  await next.click(); await expect(info).toHaveText('11–20 of 25'); await next.click(); await expect(info).toHaveText('21–25 of 25'); await expect(next).toBeDisabled(); await expect(b.getByTestId('previews-failure')).toHaveCount(5)
+  await size.selectOption('5'); await expect(info).toHaveText('1–5 of 25')   // a new size starts at page 1
+  await size.selectOption('25'); await expect(info).toHaveText('1–25 of 25'); await expect(b.getByTestId('previews-failure')).toHaveCount(25)
+  await b.getByTestId('previews-failures-toggle').click(); await expect(b.getByTestId('previews-failures-list')).toHaveCount(0)
+  // the History: the first 20 one by one, then one summary
+  const notes = api.state.history.notes
+  expect(notes.filter((n) => n.action === 'preview failed')).toHaveLength(20); expect(notes.filter((n) => n.action === 'previews failed')).toHaveLength(1)
+  expect(notes[0]).toMatchObject({ kind: 'change', area: 'outputs', action: 'preview failed' }); expect(notes[0].detail).toContain('ComfyUI-Dev'); expect(JSON.stringify(notes)).not.toContain('secret')
+  expect(notes.at(-1).detail).toMatch(/^25 of 25 previews failed/)
+})
+
 test('the badge adds running generations to what it counted: a render job and a preview batch', async ({ page, api }) => {
   api.state.renders = { jobs: [job(), job({ job_id: 'job-2', state: 'done' })] }
   await page.goto('/')
