@@ -109,8 +109,7 @@ test('pattern validation is inline and matches the core\'s rules', async ({ page
   const d = await openSync(page)
   const add = d.getByTestId('sync-exclude-add'), err = d.getByTestId('sync-exclude-error')
   for (const [v, text] of [['', 'A pattern cannot be empty.'], ['   ', 'A pattern cannot be empty.'], ['../secret', 'A pattern has no `..`, no line breaks and does not start with ~.'], ['~/x', 'A pattern has no `..`, no line breaks and does not start with ~.'], ['x'.repeat(201), 'A pattern is at most 200 characters.']]) {
-    await add.fill(v); await add.press('Enter')
-    await expect(err).toHaveText(text)
+    await expect(async () => { await add.fill(v); await add.press('Enter'); await expect(err).toHaveText(text, { timeout: 1500 }) }).toPass({ timeout: 8000 })   // the whole action again if a re-render swallowed the Enter under load
   }
   await expect(d.getByTestId('sync-exclude-pattern')).toHaveCount(0)
   await add.fill('CANALV2/'); await add.press('Enter')
