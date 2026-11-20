@@ -283,6 +283,7 @@ const TABLE = {
     status: (c, sourceId, opts) => c.library.status(sourceId || undefined, opts || {}),   // can this source be used now, and why not (a volume asks RunPod about its datacenter)
     list: (c, sourceId, opts) => c.library.list(sourceId || undefined, opts || {}),   // opts: { volume_id, fresh }
     round: (c, volumeId, round, opts) => c.library.round(volumeId || undefined, round, opts || {}),   // one round described by the round adapter
+    roundFiles: (c, volumeId, round, shot, opts) => c.library.roundFiles(volumeId || undefined, round, shot || '', opts || {}),   // a round (or one shot) as a read-only file tree, listed by prefix over S3
     preflight: (c, volumeId, round, opts) => c.library.preflight(volumeId || undefined, round, opts || {}),   // one round's models checked against the volume's model list
   },
   panama: {   // docs/ADR-015: the exchange bucket as an import source
