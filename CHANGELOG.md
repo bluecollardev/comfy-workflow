@@ -3,6 +3,15 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## Unreleased, on `develop` (2026-11-20, after v1.7.0)
+
+- **A delivery round is never overwritten** (ADR-055). In a round that is not a `_TEST_` round a file already there with another size is refused (the plan lists it, the run throws), a same-size file is skipped, a manifest that is not ours stays untouched. Only `_TEST_` rounds are written over.
+- **A manifest per element:** `<shot>/<CLIP>_MANIFEST.json` next to each element's files, with the sha256 of every file; the round's `RETURN-MANIFEST.json` still goes up last.
+- **Corrected copies of the DPX** (`dpx_fix`, new `dpxfix.ts`): colour code user-defined instead of linear, per-frame timecode from the EDL start, frame rate, gamma 2.6, frame position, written as copies under `output/_delivery_v11/<clip>/`; originals untouched, headers read back and checked.
+- **Pod logs are kept** (`pod_logs`, new `podlogs.ts`): saved at the end of each run task, before a pod is stopped, before it is deleted and on demand; the pod's logs window lists them, opens them, has Save Logs Now, Delete This Pod's Logs and Purge All Saved Logs (after a yes). Nothing deletes a log by itself.
+- **Retry:** after a restart a failed publish shot is sent again from the request the run kept; a failed generation can be retried; a job from before this shows Retry disabled with the reason; each Retry shows a spinner and a toast (v1.7.0).
+- Tests: `dpxfix`, `podlogs` (core), a no-overwrite and a per-element manifest test (publish-return), saved logs and purge (browser).
+
 ## v1.6.8 (2026-11-20)
 
 - **The converter reads the OCIO record, not the DPX header.** Every sequence written by ComfyUI-OCIO has a colour record next to it, `<dir>/<stem>.json`, and on this project the DPX header is wrong (it says linear while the pixels are Gamma 2.6 P3-D65; Binc's 20 Nov PDF). Reviews and proxies now read the record first (this PC, the pod over ssh, then the volume; 256 KB at most; a missing, unreadable or unknown record is "no record", never an error) and map `colorInteropID` by an explicit table: `g26_p3d65_display` is `p3-d65-gamma26`, `srgb_p3d65_display` is `p3-d65-srgb`, `g22_p3d65_display` is `p3-d65-gamma22`, `lin_p3d65_scene` is `linear-p3-d65`, `lin_rec709_scene` is `linear-rec709`; any other id is never guessed. Precedence: a stated `colour_in` (per sequence or per run), then the record, then `render.colour.mode` (format, ask, guess), then `known`. When the header disagrees the plan row carries `colour_source: ocio-record`, `ocio { colorInteropID, colorspace, gamut, label }`, `header_disagrees` and an info flag `header-disagrees`; the `.meta.json` says `colour_source: 'ocio-record'`, `ocio` and `header_disagrees: true`, and DELIVERY.md says the record was used. A review is not refused on the header when the record resolves. The Tunnel preset stays strict: a record counts as stated; with no record and no statement it still never guesses.

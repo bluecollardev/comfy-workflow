@@ -23,3 +23,6 @@ process.env.POD_MANAGER_CONFIG_DIR = dir
 process.env.CLAUDE_USER_SETTINGS = join(dir, 'claude-settings.json')
 for (const k of ['MOUNTS_FILE', 'HISTORY_FILE', 'SETTINGS_ENV_FILE', 'POD_MANAGER_BACKUPS_DIR', 'GIT_ACCOUNTS_FILE', 'REPOSITORIES_FILE', 'QUEUE_FILE', 'IDLE_FILE', 'VOLUMES_CACHE_FILE', 'OUTPUT_RUNS_FILE']) delete process.env[k]
 ;(globalThis as Record<string, unknown>).__realConfigDir = join(homedir(), '.config', 'runpod-pod-manager')
+
+// the pod logs are kept at the end of a run and before a pod is deleted; the suite never reaches a pod (podlogs.test.ts passes its own deps)
+process.env.POD_LOGS_OFF = '1'
