@@ -27,7 +27,7 @@ Verified frames from the first import (counts match the PDF): archival-087 platf
 
 | Element | Reason |
 |---|---|
-| CGI-072 head, backhalf-b, backhalf-c | The only round holds V03 HEVC 24 fps; the PDF wants V02 ProRes 23.976. Waiting for Binc. |
+| CGI-072 head, backhalf-b, backhalf-c | Not held. The only round we have holds V03 HEVC 24 fps; the PDF lists V02 ProRes 23.976. Rendered from V03 (graphs running), delivered with the difference noted in the manifest. |
 | Anything not in the volume or the staged rounds | Listed here when the imports end (section 4). |
 
 ## 4. Result of the imports
@@ -36,8 +36,8 @@ Still running; the per-element table is filled in as each ends. So far: the fram
 
 ## 4a. The 36 elements
 
-17 delivered (real round, section 1a). Of the other 19: 8 shots' frames exist and wait for the header patch and publish (section 2), the rest are generating or failed, and 3 (CGI-072 head, backhalf-b, backhalf-c) are held for the V02/V03 version question. Detail: [the plan, section 11](CANALV2-TUNNEL-V11-PRODUCTION-PLAN.md).
+17 delivered (real round, section 1a). Of the other 19: 8 shots' frames exist and wait for the header patch and publish (section 2), the rest are generating or failed, and CGI-072 (head, backhalf-b, backhalf-c) is rendering from V03 (the PDF lists V02). Detail: [the plan, section 11](CANALV2-TUNNEL-V11-PRODUCTION-PLAN.md).
 
 ## 5. Not done
 
-The 19 `base_v008` elements are not delivered. Rec.709 convert or tag-only is open (parked by Lucas). Headers of 16 delivered elements not read back. CGI-072 version mismatch (PDF V02 ProRes 23.976 vs round V03 HEVC 24). Known flaw: a retried queue task starts a new pod (NEXT-STEPS).
+The 19 `base_v008` elements are not delivered. Rec.709 is a later generation step (Lucas: convert later). Headers of 16 delivered elements not read back. CGI-072 is rendered from V03, not the PDF's V02. Known flaw: a retried queue task starts a new pod (NEXT-STEPS).
