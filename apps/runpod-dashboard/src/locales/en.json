@@ -1402,7 +1402,7 @@
     },
     "gen": {
       "retrying": "Retrying",
-      "retryFailed": "Retry Failed",
+      "retryFailed": "Could Not Retry",
       "retry": "Retry",
       "playNone": "Nothing to play yet",
       "skippedN": "{n} skipped",
@@ -1499,7 +1499,7 @@
       },
       "ret": {
         "retrying": "Retrying {shots}",
-        "retryFailed": "Retry Failed",
+        "retryFailed": "Could Not Retry",
       "retryShots": "Retry",
         "round": "Round",
         "roundNeeded": "Publishing to a return needs a round name",
@@ -1733,7 +1733,7 @@
         "copyCsv": "Copy Inventory as CSV",
         "saveCsv": "Save Inventory…",
         "csvCopied": "Copied",
-        "retry": "Retry Failed",
+        "retry": "Retry",
         "result": "uploaded {uploaded} · already there {there} · failed {failed}",
         "phase": {
           "scanning": "Scanning",

@@ -216,7 +216,7 @@ test.describe('Queue > Publishing: a publish of several shots', () => {
     await expect(r1.getByTestId('publish-child-shot')).toHaveText('archival-077'); await expect(r1.getByTestId('publish-child-clip')).toHaveText('ARCHIVAL-077_A_V11'); await expect(r1.getByTestId('publish-child-state')).toHaveText('Published'); await expect(r1.getByTestId('publish-child-files')).toHaveText('12 files')
     await expect(r1.getByTestId('publish-child-retry')).toHaveCount(0); await expect(r1.getByTestId('publish-child-cancel')).toHaveCount(0)
     await expect(r2.getByTestId('publish-child-cancel')).toBeVisible(); await expect(r2.getByTestId('publish-child-retry')).toHaveCount(0); await expect(r2.getByTestId('publish-child-rate')).toBeVisible()
-    await expect(r3.getByTestId('publish-child-error')).toHaveText('Access Denied'); await r3.getByTestId('publish-child-retry').click()
+    await expect(r3.getByTestId('publish-child-error')).toHaveText('Access Denied'); await r3.getByTestId('publish-child-retry').click(); await expect(page.getByTestId('toast').first()).toContainText('Retrying cgi-042')
     await expect.poll(() => api.state.publish.retries).toEqual(['c3'])
     await r2.getByTestId('publish-child-cancel').click(); await expect.poll(() => api.state.publish.cancelled).toContain('c2')
     await expect(q.locator('[data-testid="publishing-job"][data-job="pub-1"]').getByTestId('publish-cancel')).toHaveText('Cancel All')

@@ -27,7 +27,7 @@
             <span class="badge" :class="childClass(c.state)" data-testid="publish-child-state">{{ $t(`publish.modal.state.${c.state}`, c.state) }}</span>
             <span data-testid="publish-child-files">{{ $t('publish.ret.childFiles', { n: c.files ?? 0 }) }}</span><span data-testid="publish-child-bytes">{{ formatBytes(c.bytes || 0) }}</span><span v-if="c.rate" class="text-body-secondary" data-testid="publish-child-rate">{{ $t('publish.modal.rate', { rate: formatBytes(c.rate) }) }}</span>
             <span v-if="c.error" class="text-danger" data-testid="publish-child-error"><ErrorText :text="String(c.error)" /></span>
-            <BButton v-if="c.state === 'failed'" size="sm" variant="outline-warning" class="ms-auto" data-testid="publish-child-retry" @click="store.retry(c.id)"><i class="fa-solid fa-rotate me-1"></i>{{ $t('publish.backfill.retry') }}</BButton>
+            <BButton v-if="c.state === 'failed'" size="sm" variant="outline-warning" class="ms-auto" data-testid="publish-child-retry" :disabled="retryingIds.includes(c.id)" @click="retryOne(c)"><BSpinner v-if="retryingIds.includes(c.id)" small class="me-1" /><i v-else class="fa-solid fa-rotate me-1"></i>{{ $t('publish.backfill.retry') }}</BButton>
             <BButton v-if="['queued', 'uploading'].includes(c.state)" size="sm" variant="outline-warning" class="ms-auto" data-testid="publish-child-cancel" @click="store.cancel(c.id)">{{ $t('publish.modal.cancel') }}</BButton>
           </div>
         </div>
@@ -95,6 +95,12 @@ const overridden = computed(() => (Array.isArray(props.job.edl_overrides) ? prop
 const failedKids = computed(() => children.value.filter((c) => c.state === 'failed')), retryingShots = ref(false), retryErr = ref('')
 /** Every failed shot of the job tried again, one after the other (the shots that are done are not sent again). */
 const toast = useToastStore()
+const retryingIds = ref([])
+/** One shot's own Retry: a spinner while it is asked, a toast saying what started or why it could not. */
+async function retryOne(c) {
+  retryingIds.value = [...retryingIds.value, c.id]
+  try { await store.retry(c.id); toast.success(t('publish.ret.retrying', { shots: c.shot })) } catch (e) { toast.error(errorText(e), t('publish.ret.retryFailed')) } finally { retryingIds.value = retryingIds.value.filter((x) => x !== c.id) }
+}
 async function retryShots() {
   retryingShots.value = true; retryErr.value = ''
   const shots = failedKids.value.map((c) => c.shot)
