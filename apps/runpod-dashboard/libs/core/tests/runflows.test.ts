@@ -112,6 +112,15 @@ describe('running', () => {
     const j = await finish((await runflows.run('pod1', ['a/g.json'], opts(c as never, { fetchFn, backoffMs: [10, 10], pollComfyMs: 5 }))).id)
     expect(asked).toBe(3); expect(j.results[0].state).toBe('done'); expect(j.log.some((l) => /still starting/.test(l.text))).toBe(true)
   })
+  it('a conversion that times out while ComfyUI is starting is tried again before the graph is failed; another error is not', async () => {
+    let n = 0; const c = scripted([{ status: 200 }], { p1: { status: OK, outputs: { '9': {} } } })
+    const convert = async () => { n++; if (n < 3) throw new Error('The pod could not convert the graph: Page.wait_for_function: Timeout 60000ms exceeded.'); return { '1': { class_type: 'X', inputs: {} } } }
+    const j = await finish((await runflows.run('pod1', ['a/g.json'], opts(c as never, { fetchFn: c.fetchFn, convert: convert as never, convertWaitMs: 5, backoffMs: [10, 10] }))).id)
+    expect(n).toBe(3); expect(j.results[0].state).toBe('done')
+    let m = 0; const bad = async () => { m++; throw new Error('Unknown node type Foo') }
+    const c2 = scripted([{ status: 200 }]); const j2 = await finish((await runflows.run('pod1', ['a/g.json'], opts(c2 as never, { fetchFn: c2.fetchFn, convert: bad as never, convertWaitMs: 5, backoffMs: [10, 10] }))).id)
+    expect(m).toBe(1); expect(j2.results[0].state).toBe('failed')
+  })
   it('fail fast: a validation error fails at once, no polling, and is never retried', async () => {
     const c = scripted([{ status: 400, body: { error: { message: 'Prompt outputs failed validation' }, node_errors: { '7': { class_type: 'KSampler', errors: [{ message: 'Required input is missing' }] } } } }])
     const j = await finish((await runflows.run('pod1', ['a/g.json'], opts(c as never, { fetchFn: c.fetchFn, backoffMs: [10, 10] }))).id); expect(j.results[0]).toMatchObject({ state: 'failed', retryable: false }); expect(c.calls.prompts).toBe(1); expect(c.calls.polls).toBe(0)

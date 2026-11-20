@@ -92,7 +92,7 @@ export interface RunJob {
 export interface LogLine { ts: string; level: 'info' | 'warn' | 'error'; text: string; /** the graph it is about; none for the run as a whole */ path?: string }
 export interface RunOpts {
   /** waits before the retries of a transient failure (default 5 then 20 minutes); tests pass short ones */ backoffMs?: number[]
-  /** how long to wait for a starting ComfyUI to answer before the first graph (default 5 minutes), and how often to ask (default 5 s) */ waitComfyMs?: number; pollComfyMs?: number
+  /** how long to wait for a starting ComfyUI to answer before the first graph (default 5 minutes), and how often to ask (default 5 s) */ waitComfyMs?: number; pollComfyMs?: number; /** how many times to try the graph conversion (default 4) and the wait between tries (default 20 s) */ convertTries?: number; convertWaitMs?: number
   /** a graph that neither runs nor is in the queue for this long has stalled (default 10 minutes) */ stallMs?: number
   /** which try this is (1 = the first; a retry of a failure passes the next) */ attempt?: number
   client?: rp.RunPodClient; fetchFn?: typeof fetch
@@ -179,7 +179,14 @@ export async function apiGraph(podId: string, path: string, base: string, o: Run
   const getJson = async (url: string) => { const x = await fetchFn(url, { signal: AbortSignal.timeout(30_000) }); if (x.status !== 200) throw new CoreError(502, `ComfyUI answered HTTP ${x.status} for ${url.replace(base, '')}`); return x.json() }
   const ui = await getJson(`${base}/api/userdata/${encodeURIComponent(`workflows/${path}`)}`)
   if (!Array.isArray((ui as { nodes?: unknown }).nodes)) throw new CoreError(422, `${path} is not a UI graph (it has no nodes list).`)
-  const api = await (o.convert ?? defaultConvert)(ui, { base, podId })
+  // a fresh pod's ComfyUI page may need more than the converter's own 60 s to come up (Page.wait_for_function: Timeout): try the conversion again, a few times, before the graph is failed
+  let api: Record<string, unknown> = {}, tries = 0
+  for (;;) {
+    try { api = await (o.convert ?? defaultConvert)(ui, { base, podId }); break } catch (e) {
+      tries++; if (tries >= (o.convertTries ?? 4) || !/wait_for_function|Timeout \d+ms exceeded|net::ERR|Target (page|closed)/i.test((e as Error).message)) throw e
+      await new Promise((r) => setTimeout(r, o.convertWaitMs ?? 20_000))
+    }
+  }
   const chosen = podmodels.apply(api, podmodels.effective(podId))   // the pod's own VAE / diffusion model (ADR-042)
   const models = chosen.applied.length || chosen.skipped.length ? [...chosen.applied.map((a) => `${a.slot}: ${a.to} (was ${a.from || 'unset'})`), ...chosen.skipped] : undefined
   const gate = shots.lockedIn(api, o.projectRoot)
