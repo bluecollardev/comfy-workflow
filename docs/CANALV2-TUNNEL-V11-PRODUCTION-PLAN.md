@@ -182,7 +182,7 @@ Not every element is in the same state, so the delivery is handled by case. **Ru
 
 | Case | Elements | Handling | Status |
 |---|---|---|---|
-| **A. DPX exist, header wrong** | 17: 071, 077 a/b/c, 080 a-e, 083, 084, 085, 093 b, 102, 104 b, 123 c, cgi-042 | Corrected header copies of the frames (`dpx_fix`: colour code user-defined, timecode, frame rate, gamma), the review video, a manifest per element; `_TEST_` round, then the real round. **The frames are not regenerated**: the picture bytes are copied unchanged, only the 2048-byte header differs | **Done 2026-11-21**: all 17 in the real round `tunnel-v11-edl-2026-11-18` (1,770 files, 84.88 GB, S3 only, no Slack), 17 manifests read back from the bucket; headers were checked on the pod at write time (headers read back from the bucket: see section 14) |
+| **A. DPX exist, header wrong** | 17: 071, 077 a/b/c, 080 a-e, 083, 084, 085, 093 b, 102, 104 b, 123 c, cgi-042 | Corrected header copies of the frames (`dpx_fix`: colour code user-defined, timecode, frame rate, gamma), the review video, a manifest per element; `_TEST_` round, then the real round. **The frames are not regenerated**: the picture bytes are copied unchanged, only the 2048-byte header differs | **Done 2026-11-21**: all 17 in the real round `tunnel-v11-edl-2026-11-18` (1,770 files, 84.88 GB, S3 only, no Slack), 17 manifests read back from the bucket; headers were checked on the pod at write time (headers read back from the bucket 2026-11-21: section 14) |
 | **B. Stills** | 080 a-e (PNG, start timecode 01:00:00:00) | As A; the start timecode comes from the EDL | Plan check passed |
 | **C. Low resolution** | 093 b (1618x1080) | As A, with the `low-source-resolution` warning (the PDF says the same) | Plan check passed |
 | **D. No DPX yet, ProRes masters on the volume** | 087 platform and rain, 123 f, 168 a-d, creature-266 dolphin-lowtrack | Convert each master to 16-bit DPX with the stated colour handling (ffmpeg, to build, or Binc's mono pipeline); in the meantime H.264 proxies from the masters can go out marked proxy-only, DPX to follow | Waiting on Lucas and Binc |
@@ -309,6 +309,8 @@ The volume round **`base_v008`** (30 shots, 62 graphs, adapter `brynley-rounds-l
 ## 14. Status 2026-11-21: what is delivered, what is in test, what blocks
 
 **Delivered to the real round (`returns/BKK/tunnel-v11-edl-2026-11-18/`):** the 17 of case A. Job `publish-mwpe8qd6-7`; the round now lists 1,840 files (the extra 70 were already there; nothing was overwritten). Read back from the bucket: 17 per-element manifests, the DPX folders and their counts.
+
+**Headers read back from the bucket (first frame of each of the 17, 2026-11-21):** transfer and colorimetric code 0 (user-defined), frame rate 23.976, gamma 2.60, on all 17. Timecode: 071 00:00:00:12, 123 c 00:00:02:00, 080 a-e 01:00:00:00, the others 00:00:00:00 (as the EDL source-in gave them; 084 and 085 start at 00:00:00:00, not independently checked against the EDL here). Film-header fields (frame position, sequence length, filename) were not read back.
 
 **In a test round only (`_TEST_tunnel-v11-base-v008-2026-11-21`):** the `base_v008` elements whose frames exist and match the PDF count: archival-087 platform (97), 123 a (68) and 123 f (43), 168 a-d (153/139/105/48), photoreal-013 ascent (108) and chasm07 (271). Header-patched with `dpx_fix` first (checked on the pod). Decision (Lucas, 2026-11-21): **everything from `base_v008` stays in `_TEST_` until it is right**; nothing of it goes to the real round yet.
 
