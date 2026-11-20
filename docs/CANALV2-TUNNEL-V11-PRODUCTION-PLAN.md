@@ -174,7 +174,7 @@ The first two plans of this day were pull-only (`imp-mwp4ub0g-0`, `imp-mwp4ub1o-
 
 **Order:** (1) test round with three elements (084 main, 085 main, 123 c); (2) check keys, sizes, names and manifest in the bucket; (3) the other 14 into the test round if the first three are right, or straight to the real round if Lucas says so; (4) the real round `tunnel-v11-edl-2026-11-18`, never overwriting; (5) record in the delivery report.
 
-**Known defects that ship with these DPX (say so when delivering):** the header still says linear (transfer 2) while the pixels are Gamma 2.6 P3-D65 (the PDF itself calls this a bug); no timecode in the header (the EDL start timecode is in the manifest and the sidecars only); the Rec.709 convert-or-tag choice for the proxy is still open.
+**Defects of the DPX as the pipeline writes them, and where each stands (updated 2026-11-20, evening):** (1) the header says linear (transfer/colorimetric 2) while the pixels are Gamma 2.6 P3-D65 (the PDF calls it a bug): **fixed in the tool** (`dpx_fix`: user-defined, as the PDF's corrected CGI-072 files), unit-tested on the byte layout, **not yet applied to any frame we have delivered or checked against a frame of Binc's**; (2) no timecode in the header: **fixed in the tool** (TV header, per frame from the EDL start), same state; (3) the manifest per element: **built**, not yet seen in a delivery; (4) the proxy's timecode and the Rec.709 convert-or-tag choice: **open**. Nothing delivered so far (the test round `_TEST_tunnel-v11-2026-11-20`, the earlier `_TEST_` rounds) has the corrected headers: only the copies written under `output/_delivery_v11/` will.
 
 ## 10. The cases and how each is handled (2026-11-20)
 
