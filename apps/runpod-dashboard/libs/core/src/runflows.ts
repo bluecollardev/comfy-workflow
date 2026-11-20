@@ -19,6 +19,7 @@ import * as outputruns from './outputruns.js'
 import * as autosync from './autosync.js'
 import * as sync from './sync.js'
 import * as ui2api from './ui2api.js'
+import * as cards from './cards.js'
 
 export interface WorkflowFile {
   /** Path under the panel's `workflows/`, e.g. `rounds/brynley-comfy-2026-10-22/cgi-042/cgi-042-common-nodes-v13.json`. */
@@ -83,7 +84,7 @@ export const setModels = (podId: string, choice: podmodels.Choice): podmodels.Ch
 
 /** One file a run produced, as ComfyUI's history names it: fetched with GET /view?filename=&subfolder=&type=. `output` is a saved result, `temp` a preview node's file. */
 export interface OutputFile { filename: string; subfolder: string; type: 'output' | 'temp'; kind: 'image' | 'video' | 'audio' | 'other'; node?: string }
-export interface RunResult { /** when a transient failure will be tried again */ retry_at?: string; /** the failure in words: stage, node, message, missing models, recovery, retryable (what the MCP shows) */ failure_text?: string; /** what to do about it, whether trying again can help, the model files it is missing and the node's type (from the failures log) */ recovery?: string; retryable?: boolean; missing_models?: failures.MissingModel[]; node_type?: string; /** where it failed (load, validate, queue, execute): kept for the failures log */ stage?: failures.Stage; /** when this graph started (ISO), for its elapsed time */ started_at?: string; /** the model files the pod's choice put into this graph, and what was left alone */ models?: string[]; path: string; state: 'pending' | 'running' | 'done' | 'failed' | 'skipped'; prompt_id?: string; seconds?: number; error?: string; node?: string; outputs?: number; files?: OutputFile[] }
+export interface RunResult { /** the pod ran out of memory on this graph (container killed, or a memory error): trying again on the same card cannot help; the queue retries on a bigger one */ oom?: boolean; /** what kind of failure it was: oom, restart, transient, graph */ failure_kind?: string; /** when a transient failure will be tried again */ retry_at?: string; /** the failure in words: stage, node, message, missing models, recovery, retryable (what the MCP shows) */ failure_text?: string; /** what to do about it, whether trying again can help, the model files it is missing and the node's type (from the failures log) */ recovery?: string; retryable?: boolean; missing_models?: failures.MissingModel[]; node_type?: string; /** where it failed (load, validate, queue, execute): kept for the failures log */ stage?: failures.Stage; /** when this graph started (ISO), for its elapsed time */ started_at?: string; /** the model files the pod's choice put into this graph, and what was left alone */ models?: string[]; path: string; state: 'pending' | 'running' | 'done' | 'failed' | 'skipped'; prompt_id?: string; seconds?: number; error?: string; node?: string; outputs?: number; files?: OutputFile[] }
 export interface RunJob {
   id: string; pod_id: string; pod_name: string; /** the pod's ComfyUI address: where each result's files are fetched (GET /view) */ base_url?: string; state: 'running' | 'done' | 'failed' | 'cancelled'; started_at: string; finished_at?: string
   results: RunResult[]; ok: number; failed: number; error?: string
@@ -94,6 +95,8 @@ export interface RunOpts {
   /** waits before the retries of a transient failure (default 5 then 20 minutes); tests pass short ones */ backoffMs?: number[]
   /** how long to wait for a starting ComfyUI to answer before the first graph (default 5 minutes), and how often to ask (default 5 s) */ waitComfyMs?: number; pollComfyMs?: number; /** how many times to try the graph conversion (default 8) and the wait between tries (default 30 s) */ convertTries?: number; convertWaitMs?: number; /** the graph fetch: tries (default 3), the first wait for an answer (default 60 s, longer each try) and the pause between tries (default 10 s) */ fetchTries?: number; fetchTimeoutMs?: number; fetchWaitMs?: number
   /** a graph that neither runs nor is in the queue for this long has stalled (default 10 minutes) */ stallMs?: number
+  /** how long ComfyUI may stay silent (a restart, a busy proxy) while a graph runs before the graph is failed (default 3 minutes): the poll asks again meanwhile */ outageMs?: number
+  /** the pod's own log lines since a time (RunPod's system log: `triggered memory limits (OOM)`), to tell an out-of-memory kill from a plain 5xx; tests inject one */ oomEvidence?: (podId: string, sinceIso: string) => Promise<string[]>
   /** which try this is (1 = the first; a retry of a failure passes the next) */ attempt?: number
   client?: rp.RunPodClient; fetchFn?: typeof fetch
   /** How a UI graph becomes an API graph; default: the pod's own Chromium if the image has it, else Chrome on this PC. Tests inject one. */
@@ -202,6 +205,13 @@ export async function apiGraph(podId: string, path: string, base: string, o: Run
   return { api, models }
 }
 
+/** The pod's own log lines (RunPod's system log and the container's) since `sinceIso`, read for a few seconds: where "triggered memory limits (OOM)" and "exit code 137" show up when the container is killed. Never throws. */
+const defaultEvidence = (client?: rp.RunPodClient) => async (podId: string, sinceIso: string): Promise<string[]> => {
+  const out: string[] = [], since = Date.parse(sinceIso) || 0, ac = new AbortController(), t = setTimeout(() => ac.abort(), 12_000)
+  try { await pods.logs(podId, { tail: 600 }, (e) => { const at = Date.parse(e.ts); if (!Number.isFinite(at) || at >= since - 60_000) out.push(`${e.ts} ${e.line}`) }, ac.signal, client) } catch { /* what arrived is kept */ } finally { clearTimeout(t) }
+  return out
+}
+
 // ----- how long a graph took last time (its hard time limit is 3x that), kept in the config folder -----
 const durFile = () => join(configDir(), 'graph-durations.json')
 let durations: Map<string, number> | null = null
@@ -222,13 +232,26 @@ async function runOne(i: Internal, r: RunResult, base: string, o: RunOpts, fetch
   r.prompt_id = (qb as { prompt_id: string }).prompt_id
   note(i, `Queued on the pod as prompt ${r.prompt_id}`, r.path); r.stage = 'execute'
   const t0 = Date.now(), prev = await graphSeconds(r.path), limit = o.graphTimeoutS !== undefined ? o.graphTimeoutS * 1000 : prev ? Math.max(1000, Math.round(3 * prev * 1000)) : 2 * 3600 * 1000, stallMs = o.stallMs ?? 10 * 60_000   // a hard limit: 3x the last successful run of this graph, else 2 hours
-  let beat = t0, lastAlive = t0
+  let beat = t0, lastAlive = t0, outageAt = 0, wasDown = false
   for (;;) {
     if (signal.aborted) { await fetchFn(`${base}/interrupt`, { method: 'POST' }).catch(() => {}); throw new CoreError(499, 'cancelled') }
-    const h = (await getJson(`${base}/history/${r.prompt_id}`)) as Record<string, Parameters<typeof outcomeOf>[0]>
+    // a heavy graph keeps ComfyUI so busy that a poll can time out, and a crash makes the proxy answer 502 until the container is back: neither is the end of the graph. Ask again for up to `outageMs`.
+    let h: Record<string, Parameters<typeof outcomeOf>[0]> = {}
+    try { h = (await getJson(`${base}/history/${r.prompt_id}`)) as typeof h; if (outageAt) { outageAt = 0; wasDown = true } } catch (e) {
+      if (signal.aborted) throw e
+      outageAt ||= Date.now()
+      if (Date.now() - outageAt > (o.outageMs ?? 180_000)) throw new CoreError(502, `ComfyUI stopped answering for ${Math.round((Date.now() - outageAt) / 1000)} s while the graph ran (${(e as Error).message}); the pod's container was probably killed or restarted (its system log says why).`)
+      if (Date.now() - beat >= 30_000) { beat = Date.now(); note(i, `ComfyUI does not answer (${(e as Error).message}): asking again`, r.path, 'warn') }
+      await sleep(o.pollMs ?? 2000, signal); continue
+    }
     const out = outcomeOf(h?.[r.prompt_id])
     if (out) { r.seconds = Math.round((Date.now() - t0) / 100) / 10; r.outputs = out.outputs; r.files = out.files; r.node = out.node; if (out.error) throw new CoreError(500, out.error); void rememberSeconds(r.path, r.seconds); try { autosync.notifyOutputs(i.job.pod_id, null, out.files ?? []) } catch { /* Auto sync never fails a run */ }; void outputruns.ctxFor(i.job.pod_id, o.client).then((ctx) => outputruns.record(ctx, [{ prompt_id: r.prompt_id!, status: 'success', workflow: r.path, started_at: new Date(t0).toISOString(), duration_s: r.seconds, outputs: (out.files || []).map((f) => ({ filename: f.filename, subfolder: f.subfolder, type: f.type })) }]))   // saved outputs
     note(i, `Finished in ${r.seconds} s, ${out.outputs} output${out.outputs === 1 ? '' : 's'}`, r.path); return }
+    // ComfyUI answered again after a silence and has no record of the prompt: it restarted and the graph is lost (history and queue live in its memory). Say so now, not after ten minutes of stall.
+    if (wasDown) {
+      wasDown = false
+      try { const qq = (await getJson(`${base}/queue`)) as { queue_running?: unknown[][]; queue_pending?: unknown[][] }; const held = [...(qq.queue_running ?? []), ...(qq.queue_pending ?? [])].some((e) => e?.[1] === r.prompt_id); if (!held && !outcomeOf(h?.[r.prompt_id])) throw new CoreError(502, `ComfyUI restarted while the graph ran: prompt ${r.prompt_id} is gone (the pod's container was killed or restarted; its system log says why).`) } catch (e) { if (e instanceof CoreError && /restarted while/.test(e.message)) throw e }
+    }
     // a stall: the pod's queue no longer holds the prompt and ComfyUI has no result for it, for ten minutes
     try { const qq = (await getJson(`${base}/queue`)) as { queue_running?: unknown[][]; queue_pending?: unknown[][] }; const held = [...(qq.queue_running ?? []), ...(qq.queue_pending ?? [])].some((e) => e?.[1] === r.prompt_id); if (held) lastAlive = Date.now() } catch { lastAlive = Date.now() }   // no answer: not proof of a stall
     if (Date.now() - lastAlive > stallMs) throw new CoreError(504, `Stalled: prompt ${r.prompt_id} is neither running nor queued on the pod and has no result after ${Math.round(stallMs / 60000)} minutes (the pod may have restarted).`)
@@ -271,18 +294,22 @@ export async function run(podId: string, paths: string[], o: RunOpts = {}): Prom
   void (async () => {
     // fail fast and continue (docs/ADR-050): a graph or validation error fails at once and is never retried; a transient cause (pod stopped, network, 5xx) is
     // retried at most twice, 5 then 20 minutes later, AFTER the other graphs (a failed graph never blocks the next); three graphs in a row failing for the same cause pause the dispatch once.
-    // a fresh pod's ComfyUI answers 502 (or does not answer) for a minute or two after the pod is "ready": wait for it, up to 5 minutes, instead of failing the first graph with it
-    { const until = Date.now() + (o.waitComfyMs ?? 300_000); let first = true
+    // a fresh pod's ComfyUI answers 502 (or does not answer) for a minute or two after the pod is "ready", and again for a minute after its container was killed and restarted in the middle of a run:
+    // wait for it before EVERY graph (up to 5 minutes each), instead of failing the graph with the proxy's 502
+    const waitComfy = async (): Promise<void> => {
+      const until = Date.now() + (o.waitComfyMs ?? 300_000); let first = true
       for (;;) {
         let down = false
         try { const rs = await fetchFn(`${base}/system_stats`, { signal: AbortSignal.timeout(8_000) }); down = rs.status === 502 || rs.status === 503 || rs.status === 504 } catch { down = false }   // only the proxy's own 502, 503 or 504 means "still starting"; anything else goes on
         if (!down || i.abort.signal.aborted || Date.now() > until) break
-        if (first) { note(i, 'ComfyUI is still starting on the pod: waiting for it to answer'); first = false }
+        if (first) { note(i, 'ComfyUI is not answering on the pod (starting or restarted): waiting for it'); first = false }
         await new Promise((r) => setTimeout(r, o.pollComfyMs ?? 5_000))
-      } }
+      }
+    }
     const backoff = o.backoffMs ?? [5 * 60_000, 20 * 60_000], later: { r: RunResult; at: number; attempt: number }[] = []
     let streak: { sig: string; graphs: string[] } = { sig: '', graphs: [] }, paused = false
     const exec = async (r: RunResult, label: string, attempt: number): Promise<void> => {
+      await waitComfy()
       r.state = 'running'; r.started_at = new Date().toISOString()
       note(i, label, r.path)
       const t0 = Date.now()
@@ -298,6 +325,17 @@ export async function run(podId: string, paths: string[], o: RunOpts = {}): Prom
           const nt = /\(node (\S+), ([^)]+)\)/.exec(r.error) ?? /node (\S+) \(([^)]+)\)/.exec(r.error); const stage = r.stage ?? 'load'
           const rec = failures.record({ stage, message: r.error, job_id: j.id, graph: r.path, pod_id: podId, pod_name: podName, node_id: r.node ?? nt?.[1] ?? '', node_type: nt?.[2] ?? '', log_tail: j.log.slice(-20).map((l) => l.text), quiet: true, attempt })
           r.recovery = rec.recovery; r.retryable = rec.retryable; r.missing_models = rec.missing_models; r.node_type = rec.node_type; r.failure_text = failures.describe(rec)
+          // 5xx, a timeout or a restart on a heavy graph is usually the container being killed for memory: ask the pod's own log, so the failure says so and is not retried on the same card
+          if (/\b5\d\d\b|aborted due to timeout|stopped answering|restarted while|ECONN|fetch failed|out of memory|OutOfMemory|\bOOM\b/i.test(r.error)) {
+            const lines = await (o.oomEvidence ?? defaultEvidence(o.client))(podId, j.started_at).catch(() => [] as string[])
+            const c = cards.classify({ message: r.error, podLog: lines }); r.failure_kind = c.kind
+            if (c.kind === 'oom') {
+              r.oom = true; r.retryable = false
+              r.recovery = `Out of memory (${c.why}). The same card would fail again, so it is not retried here: the queue retries it on a bigger card (cards.escalate).`
+              r.failure_text = `${r.failure_text}\nkind: out of memory\nrecovery: ${r.recovery}`
+              note(i, `Out of memory: ${c.why}`, r.path, 'error')
+            }
+          }
         } else note(i, 'Cancelled: the running graph was interrupted', r.path, 'warn')
         r.seconds ??= Math.round((Date.now() - t0) / 100) / 10
       }
@@ -306,7 +344,7 @@ export async function run(podId: string, paths: string[], o: RunOpts = {}): Prom
       if (r.state === 'done') streak = { sig: '', graphs: [] }
       else if (r.state === 'failed') {
         const rec = failures.classify(r.stage ?? 'load', r.error ?? ''), sig = `${r.stage ?? 'load'}:${(r.error ?? '').replace(/\b[0-9a-f]{6,}\b|\d+|node \S+/gi, '#').slice(0, 80)}`
-        if (rec.retryable && attempt <= backoff.length) { r.retry_at = new Date(Date.now() + backoff[attempt - 1]).toISOString(); later.push({ r, at: Date.now() + backoff[attempt - 1], attempt: attempt + 1 }); note(i, `Will be tried again at ${r.retry_at} (attempt ${attempt + 1} of ${backoff.length + 1}): a transient cause`, r.path, 'warn') }
+        if (rec.retryable && !r.oom && attempt <= backoff.length) { r.retry_at = new Date(Date.now() + backoff[attempt - 1]).toISOString(); later.push({ r, at: Date.now() + backoff[attempt - 1], attempt: attempt + 1 }); note(i, `Will be tried again at ${r.retry_at} (attempt ${attempt + 1} of ${backoff.length + 1}): a transient cause`, r.path, 'warn') }
         streak = streak.sig === sig && !streak.graphs.includes(r.path) ? { sig, graphs: [...streak.graphs, r.path] } : { sig, graphs: [r.path] }
         if (streak.graphs.length >= 3 && !paused) {
           paused = true; const why = `Dispatch paused: ${streak.graphs.length} graphs in a row (${streak.graphs.join(', ')}) failed with the same cause: ${(r.error ?? '').slice(0, 200)}`

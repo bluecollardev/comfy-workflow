@@ -65,7 +65,7 @@ describe('what ComfyUI says, in words', () => {
 
 describe('converting', () => {
   it('the pod script carries the graph as base64 in a temp file, and its answer parses back', () => {
-    const s = ui2api.podScript(UI); expect(s).toContain('/opt/comfy-app/ui2api.py'); expect(s).not.toContain('"nodes"'); expect(s).toContain('PLAYWRIGHT_BROWSERS_PATH'); expect(s).toContain("sed 's/timeout=60000/timeout=240000/g' /opt/comfy-app/ui2api.py"); expect(s).toContain('python3 "$UI2API_PY" "$UI2API_FILE"')   // an ssh session has no image ENV: the browser is in /opt/playwright
+    const s = ui2api.podScript(UI); expect(s).not.toContain('/opt/comfy-app/ui2api.py'); expect(s).not.toContain('"nodes"'); expect(s).toContain('PLAYWRIGHT_BROWSERS_PATH'); expect(s).toContain('UI2API_TIMEOUT_MS'); expect(s).toContain('python3 "$UI2API_PY" "$UI2API_FILE"')   // an ssh session has no image ENV: the browser is in /opt/playwright
     const line = 'UI2API-RESULT\t' + Buffer.from(JSON.stringify(API)).toString('base64')
     expect(ui2api.parsePodOutput(['noise', line])).toEqual(API)
     expect(() => ui2api.parsePodOutput(['UI2API-ERROR\tthe page returned no API graph'])).toThrow(/could not convert the graph: the page returned no API graph/)
@@ -110,7 +110,73 @@ describe('running', () => {
     const c = scripted([{ status: 200 }], { p1: { status: OK, outputs: { '9': {} } } }); let asked = 0
     const fetchFn = (async (url: string, init?: unknown) => { if (String(url).endsWith('/system_stats')) { asked++; return { status: asked < 3 ? 502 : 200, ok: asked >= 3, json: async () => ({}) } } return (c.fetchFn as unknown as (u: string, i?: unknown) => Promise<unknown>)(url, init) }) as unknown as typeof fetch
     const j = await finish((await runflows.run('pod1', ['a/g.json'], opts(c as never, { fetchFn, backoffMs: [10, 10], pollComfyMs: 5 }))).id)
-    expect(asked).toBe(3); expect(j.results[0].state).toBe('done'); expect(j.log.some((l) => /still starting/.test(l.text))).toBe(true)
+    expect(asked).toBe(3); expect(j.results[0].state).toBe('done'); expect(j.log.some((l) => /not answering on the pod/.test(l.text))).toBe(true)
+  })
+  it('ComfyUI is waited for before EVERY graph, so a restart between two graphs does not fail the second', async () => {
+    const c = scripted([{ status: 200 }, { status: 200 }], { p1: { status: OK, outputs: { '9': {} } }, p2: { status: OK, outputs: { '9': {} } } }); let stats = 0, downNow = false
+    const fetchFn = (async (url: string, init?: unknown) => {
+      if (String(url).endsWith('/system_stats')) { stats++; if (stats === 2) downNow = true; if (downNow && stats < 5) return { status: 502, ok: false, json: async () => ({}) }; return { status: 200, ok: true, json: async () => ({}) } }
+      return (c.fetchFn as unknown as (u: string, i?: unknown) => Promise<unknown>)(url as string, init)
+    }) as unknown as typeof fetch
+    const j = await finish((await runflows.run('pod1', ['a/g.json', 'b/h.json'], opts(c as never, { fetchFn, backoffMs: [10, 10], pollComfyMs: 5 }))).id)
+    expect(j.results.map((r) => r.state)).toEqual(['done', 'done']); expect(stats).toBeGreaterThanOrEqual(5)
+  })
+  it('a poll that times out or gets a 502 while a heavy graph runs is asked again; the graph finishes', async () => {
+    const hist = { p1: { status: OK, outputs: { '9': {} } } }; let n = 0
+    const fetchFn = (async (url: string, init?: { method?: string }) => {
+      const u = String(url), json = (status: number, body: unknown) => ({ status, ok: status === 200, json: async () => body })
+      if (u.endsWith('/system_stats')) return json(200, {})
+      if (u.includes('/api/userdata/')) return json(200, UI)
+      if (u.endsWith('/prompt') && init?.method === 'POST') return json(200, { prompt_id: 'p1' })
+      if (u.includes('/history/')) { n++; if (n === 1) throw new DOMException('The operation was aborted due to timeout', 'TimeoutError'); if (n === 2) return json(502, {}); return json(200, { p1: hist.p1 }) }
+      if (u.endsWith('/queue')) return json(200, { queue_running: [[0, 'p1']], queue_pending: [] })
+      throw new Error('unexpected ' + u)
+    }) as unknown as typeof fetch
+    const j = await finish((await runflows.run('pod1', ['a/g.json'], opts({ fetchFn } as never, { fetchFn, pollMs: 5, backoffMs: [10, 10] }))).id)
+    expect(j.results[0].state).toBe('done'); expect(n).toBeGreaterThanOrEqual(3)
+  })
+  it('ComfyUI that comes back without the prompt restarted and lost the graph: it fails at once, and with the pod log saying OOM it is out of memory and not retried', async () => {
+    let polls = 0, prompts = 0
+    const fetchFn = (async (url: string, init?: { method?: string }) => {
+      const u = String(url), json = (status: number, body: unknown) => ({ status, ok: status === 200, json: async () => body })
+      if (u.endsWith('/system_stats')) return json(200, {})
+      if (u.includes('/api/userdata/')) return json(200, UI)
+      if (u.endsWith('/prompt') && init?.method === 'POST') { prompts++; return json(200, { prompt_id: 'p1' }) }
+      if (u.includes('/history/')) { polls++; return polls <= 2 ? json(502, {}) : json(200, {}) }   // the container was killed, then is back with an empty history
+      if (u.endsWith('/queue')) return json(200, { queue_running: [], queue_pending: [] })
+      throw new Error('unexpected ' + u)
+    }) as unknown as typeof fetch
+    const evidence = async () => ['2026-11-20T23:45:02Z system WARN: container is unhealthy: exit code 137: (docker kill?); triggered memory limits (OOM)']
+    const j = await finish((await runflows.run('pod1', ['a/g.json'], opts({ fetchFn } as never, { fetchFn, pollMs: 5, backoffMs: [10, 10], oomEvidence: evidence } as never))).id)
+    const r = j.results[0]
+    expect(r.state).toBe('failed'); expect(r.error).toMatch(/restarted while the graph ran/); expect(r.oom).toBe(true); expect(r.failure_kind).toBe('oom'); expect(r.retryable).toBe(false)
+    expect(r.recovery).toMatch(/bigger card/); expect(prompts).toBe(1)   // not tried again on the same card
+  })
+  it('the same restart with no memory evidence is a transient failure: retried later, not marked out of memory', async () => {
+    let polls = 0, prompts = 0
+    const fetchFn = (async (url: string, init?: { method?: string }) => {
+      const u = String(url), json = (status: number, body: unknown) => ({ status, ok: status === 200, json: async () => body })
+      if (u.endsWith('/system_stats')) return json(200, {})
+      if (u.includes('/api/userdata/')) return json(200, UI)
+      if (u.endsWith('/prompt') && init?.method === 'POST') { prompts++; return json(200, { prompt_id: 'p' + prompts }) }
+      if (u.includes('/history/')) { polls++; const id = u.split('/history/')[1]; if (prompts >= 2) return json(200, { [id]: { status: OK, outputs: { '9': {} } } }); return polls <= 1 ? json(502, {}) : json(200, {}) }
+      if (u.endsWith('/queue')) return json(200, { queue_running: [], queue_pending: [] })
+      throw new Error('unexpected ' + u)
+    }) as unknown as typeof fetch
+    const j = await finish((await runflows.run('pod1', ['a/g.json'], opts({ fetchFn } as never, { fetchFn, pollMs: 5, backoffMs: [10, 10], oomEvidence: async () => [] } as never))).id)
+    expect(j.results[0].state).toBe('done'); expect(j.results[0].oom).toBeUndefined(); expect(prompts).toBe(2)
+  })
+  it('ComfyUI silent for longer than the outage limit fails the graph with a message that says why (container killed or restarted)', async () => {
+    const fetchFn = (async (url: string, init?: { method?: string }) => {
+      const u = String(url), json = (status: number, body: unknown) => ({ status, ok: status === 200, json: async () => body })
+      if (u.endsWith('/system_stats')) return json(200, {})
+      if (u.includes('/api/userdata/')) return json(200, UI)
+      if (u.endsWith('/prompt') && init?.method === 'POST') return json(200, { prompt_id: 'p1' })
+      if (u.includes('/history/')) return json(502, {})
+      throw new Error('unexpected ' + u)
+    }) as unknown as typeof fetch
+    const j = await finish((await runflows.run('pod1', ['a/g.json'], opts({ fetchFn } as never, { fetchFn, pollMs: 5, outageMs: 40, backoffMs: [], oomEvidence: async () => [] } as never))).id)
+    expect(j.results[0].state).toBe('failed'); expect(j.results[0].error).toMatch(/stopped answering for \d+ s while the graph ran/)
   })
   it('a conversion that times out while ComfyUI is starting is tried again before the graph is failed; another error is not', async () => {
     let n = 0; const c = scripted([{ status: 200 }], { p1: { status: OK, outputs: { '9': {} } } })

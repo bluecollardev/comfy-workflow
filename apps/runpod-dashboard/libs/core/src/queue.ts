@@ -9,6 +9,7 @@ import { dirname } from 'node:path'
 import { CoreError } from './errors.js'
 import * as failures from './failures.js'
 import * as gpus from './gpus.js'
+import * as cards from './cards.js'
 import * as history from './history.js'
 import * as autosyncstore from './autosyncstore.js'
 import * as autogenerate from './autogenerate.js'
@@ -44,6 +45,8 @@ export interface Task {
   card?: string
   /** A pod could not be had because RunPod had no card free: the run waits and asks again (not before `retry_at`), up to MAX_CARD_WAITS times. */
   retry_at?: string; attempts?: number
+  /** Out of memory (cards.ts): how many times this task moved to a bigger card (at most MAX_ESCALATIONS) and the cards that ran out, so none is asked again. */
+  escalations?: number; tried_cards?: string[]
   /** Generate Outputs / Publish after this run finished (Import Round options): the render on this pod, then the publish. Absent: not asked for or not reached. */
   post?: PostStep
   started_at?: string; finished_at?: string; error?: string; /** for a failed task: the failure in structured words (stage, node, message, missing models, recovery, retryable, text) */ failure?: failures.Explained; detail?: string; held_reason?: string
@@ -472,10 +475,40 @@ async function follow(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> 
   const hours = (deps.now().getTime() - new Date(t.started_at!).getTime()) / 3_600_000
   imp.spent_usd = Math.round((imp.spent_usd + (t.price ?? imp.price_per_hour ?? 0) * hours) * 100) / 100
   t.detail = `${j.ok} ok, ${j.failed} failed of ${j.results.length}`
+  if (j.state !== 'cancelled' && j.results.some((r) => r.state === 'failed' && r.oom) && await escalateTask(t, imp, j)) return true   // out of memory: on to a bigger card, no person needed
   const firstErr = j.results.find((r) => r.error)
   finish(t, imp, j.state === 'cancelled' ? 'cancelled' : j.failed ? 'failed' : 'done', j.failed ? `${firstErr?.path}: ${firstErr?.error}` : undefined)
   if (t.state === 'done' && imp.generate_outputs) await startOutputs(t, imp)   // the completion hook: Generate Outputs (then Publish) on this pod
   return true
+}
+
+// ----- out of memory: the next card up, on its own (Lucas, 2026-11-21) -----
+/**
+ * A run ended with a graph the pod could not hold (runflows marked it `oom`: the container was killed for memory, or the error says so). The same card would fail again, so the task goes back to waiting with the
+ * next bigger cards (cards.escalate: 32 -> 48 -> 80 -> 96 GB, never B200, B300 or the H200s), for the graphs that did not finish. The small pod is STOPPED, never deleted (its logs and its disk stay).
+ * At most MAX_ESCALATIONS times; then the task fails with the error as before. Returns true when the task was put back. Never throws.
+ */
+async function escalateTask(t: Task, imp: ImportRec, j: runflows.RunJob): Promise<boolean> {
+  try {
+    const n = t.escalations ?? 0
+    const cur = t.card ?? t.gpu ?? null
+    if (n >= cards.MAX_ESCALATIONS) { ev(t, `out of memory on ${cards.nameOf(cur)} after ${n} bigger card${n === 1 ? '' : 's'}: giving up (the limit is ${cards.MAX_ESCALATIONS})`); return false }
+    const tried = [...(t.tried_cards ?? []), ...(cur ? [cur] : [])]
+    const next = cards.escalate(cur, tried)
+    if (!next.length) { ev(t, `out of memory on ${cards.nameOf(cur)}: no bigger card is allowed (B200, B300 and the H200s are excluded)`); return false }
+    const oomRes = j.results.find((r) => r.state === 'failed' && r.oom)
+    const left = j.results.filter((r) => r.state !== 'done').map((r) => r.path)
+    const from = `${cards.nameOf(cur)}${t.pod_name ? ` on ${t.pod_name}` : ''}`
+    if (t.pod_id) { try { await deps.stopPod(t.pod_id); ev(t, `stopped ${t.pod_name ?? t.pod_id} (kept, not deleted: its logs and disk stay)`) } catch (e) { ev(t, `could not stop ${t.pod_name ?? t.pod_id}: ${(e as Error).message}`) } }
+    let price: number | null | undefined
+    try { price = await deps.cardPrice(next[0]) } catch { price = undefined }
+    const text = `out of memory on ${cards.nameOf(cur)}: retried on ${cards.nameOf(next[0])}${next.length > 1 ? ` (or ${next.slice(1, 4).map(cards.nameOf).join(', ')}${next.length > 4 ? ', ...' : ''} if it is not free)` : ''}; ${left.length} graph${left.length === 1 ? '' : 's'} to run again [escalation ${n + 1} of ${cards.MAX_ESCALATIONS}]`
+    ev(t, text)
+    try { history.record({ kind: 'change', area: 'queue', action: 'out of memory: retried on a bigger card', what: `${imp.round}${t.shot ? ` ${t.shot}` : ''}`, detail: `${from}: ${oomRes?.recovery ?? oomRes?.error ?? 'out of memory'} -> ${cards.nameOf(next[0])}` } as never) } catch { /* the History never blocks the queue */ }
+    Object.assign(t, { state: 'waiting', gpus: next, gpu: next[0], card: undefined, price: price ?? t.price, escalations: n + 1, tried_cards: tried, graphs: left, pod_id: null, pod_name: null, job_id: undefined, phase: undefined, error: undefined, detail: undefined, finished_at: undefined, stage: undefined, retry_at: undefined, attempts: undefined })
+    imp.state = 'active'
+    return true
+  } catch (e) { ev(t, `out of memory, but the retry on a bigger card could not be set up: ${(e as Error).message}`); return false }
 }
 
 // ----- Generate Outputs and Publish (Import Round options): after a pod's workflows finish -----
