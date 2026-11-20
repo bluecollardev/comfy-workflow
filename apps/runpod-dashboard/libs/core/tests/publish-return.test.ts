@@ -206,4 +206,17 @@ describe('a failed publish says what failed (publish status)', () => {
     const j = await go(['s100'], { start_timecodes: { 'ARCHIVAL-100_main': '01:00:00:00' } }); const c = j.children[0] as unknown as { failure?: { stage: string; text: string; retryable: boolean } }
     expect(j.state).toBe('failed'); expect(c.failure).toMatchObject({ stage: 'transfer' }); expect(c.failure!.text).toMatch(/^stage: transfer\nnode: not obtained.*\nmessage: .*AccessDenied.*\nretryable: (yes|no)\nrecovery: /s); expect(j.failure?.stage).toBe('transfer')
   })
+  it('status({ summary: true }), what the window polls, leaves out the per-file lists but keeps the counts; the full status (MCP, a job by id) is unchanged', async () => {
+    frames('ARCHIVAL-100_main', 's100', 60)
+    const j = await go(['s100'], { start_timecodes: { 'ARCHIVAL-100_main': '01:00:00:00' } })
+    expect(j.results!.length).toBeGreaterThan(50)
+    const full = publish.status().jobs.find((x) => x.job_id === j.job_id)!, slim = publish.status(undefined, { summary: true }).jobs.find((x) => x.job_id === j.job_id)!
+    expect(slim.files).toEqual([]); expect(slim.results).toBeUndefined()
+    expect(slim.sha256_count).toBe(full.sha256_count); expect(slim.files_total).toBe(full.files_total); expect(slim.state).toBe(full.state); expect(slim.links).toEqual(full.links); expect(slim.children.map((c) => c.state)).toEqual(full.children.map((c) => c.state))
+    expect(publish.status(j.job_id, { summary: true }).jobs[0].results).toEqual(full.results)   // asked for by id: whole
+    expect(publish.status().jobs.find((x) => x.job_id === j.job_id)!.results).toEqual(full.results)
+    const a = JSON.stringify(full).length, b = JSON.stringify(slim).length
+    console.log('publish status of one 60-file job: ' + a + ' bytes full, ' + b + ' bytes summary')
+    expect(b).toBeLessThan(a / 2)
+  })
 })

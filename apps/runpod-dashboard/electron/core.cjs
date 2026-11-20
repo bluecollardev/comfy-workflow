@@ -9,6 +9,10 @@ const fs = require('node:fs')
 const { ipcMain, app, shell, BrowserWindow, dialog } = require('electron')
 const { createSyncJobs } = require('./sync-jobs.cjs')
 const { createMcpHost } = require('./mcp-host.cjs')
+const { createStallMonitor } = require('./stall-monitor.cjs')
+
+// Event-loop stall monitor (docs/TROUBLESHOOTING-BEACH-BALL.md): stalls.log in the config folder names what ran when the window froze.
+const monitor = createStallMonitor({ file: path.join(process.env.POD_MANAGER_CONFIG_DIR || path.join(require('node:os').homedir(), '.config', 'runpod-pod-manager'), 'stalls.log') })
 
 let core = null
 let stopIdle = null
@@ -23,6 +27,7 @@ async function loadCore() {
   let timer = null
   const push = () => { if (timer) return; timer = setTimeout(() => { timer = null; for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('core:history', {}) }, 250) }
   core.history.onChange(push)
+  core.ticks?.setTickHook((name, fn) => monitor.tick(name, fn))   // the core's timers (queue, auto-publish, auto sync, pod watches) are named in stalls.log
   core.queue.start()   // ADR-038: the round-import queue runs while the app is open
   core.autopublish.start().catch(() => undefined)   // ADR-050: Auto-publish (off unless a person turned it on): its scheduler and the 60 s look for approved review videos
   core.autosync.start()   // ADR-046: Auto sync's timer (pulls for pods with it on) and the volume reconciler run while the app is open
@@ -41,7 +46,7 @@ const syncJobs = createSyncJobs({
 // The MCP servers served from this process (Connect › MCP, "Serve from the app"); built on first use, after main.cjs has set MCP_DIR.
 let mcpHost = null
 function host() {
-  if (!mcpHost) mcpHost = createMcpHost({ loadCore: () => loadCore(), syncJobs, mcpDir: process.env.MCP_DIR || path.resolve(__dirname, '..', 'mcp', 'dist'), preferBundle: !!app?.isPackaged })
+  if (!mcpHost) mcpHost = createMcpHost({ loadCore: () => loadCore(), syncJobs, timeTool: (name, fn) => monitor.call(`mcp.${name}`, fn), mcpDir: process.env.MCP_DIR || path.resolve(__dirname, '..', 'mcp', 'dist'), preferBundle: !!app?.isPackaged })
   return mcpHost
 }
 const served = () => (mcpHost ? mcpHost.status() : {})
@@ -182,7 +187,7 @@ const TABLE = {
     local: (c, o) => c.publish.local(o || {}),
     plan: (c, o) => c.publish.plan(o || {}),
     run: (c, o) => c.publish.run(o || {}),
-    status: (c, jobId) => c.publish.status(jobId || undefined),
+    status: (c, jobId) => c.publish.status(jobId || undefined, { summary: true }),   // the window polls this every second: without an id the per-file lists are left out (an id returns the whole job; the MCP tool is unchanged)
     cancel: (c, jobId) => c.publish.cancel(String(jobId || '')),
     slack: (c, o) => c.publish.slack(o || {}),
     rounds: (c) => c.publish.rounds(),   // the rounds already in the destination (BKK return), newest name first
@@ -291,11 +296,11 @@ const TABLE = {
     size: (c, round) => c.panama.sizeAsync(round),
     files: (c, round) => c.panama.filesAsync(round),
     browse: (c, prefix) => c.panama.browse(prefix),   // one level of the bucket, read-only (Network Volumes > Explore)
-    stageDrop: (c, paths) => c.panama.stageDrop(paths),
+    stageDrop: (c, paths) => c.panama.stageDropAsync(paths),   // copied and unzipped off the main loop
     pull: (c, round) => c.panama.pull(round),
     job: (c, id) => c.panama.job(id),
     cancel: (c, id) => c.panama.cancel(id),
-    remove: (c, round) => c.panama.remove(round),
+    remove: (c, round) => c.panama.removeAsync(round),
     // ADR-022: rounds on the network volume, pulled by a pod (libs/core/src/podpull.ts)
     podRounds: (c) => c.podpull.rounds(),
     podPlan: (c, round, route) => c.podpull.plan(round, route ? { route } : {}),
@@ -314,7 +319,7 @@ const TABLE = {
     source: (c, id) => c.imports.source(id),
     save: (c, id, text) => c.imports.save(id, text),
     spec: (c) => c.imports.spec(),
-    draftPreview: (c, dir) => { const { _texts, ...rest } = c.imports.draftPreview(dir); return rest },
+    draftPreview: async (c, dir) => { const { _texts, ...rest } = await c.imports.draftPreviewAsync(dir); return rest },   // walked off the main loop
     draft: (c, dir, opts) => c.imports.draft(dir, opts || {}),
     validateSource: (c, text, id) => c.imports.validateSource(text, id || undefined),
     describe: (c, dir) => c.imports.describe(dir),
@@ -334,7 +339,7 @@ const TABLE = {
     tree: (c, folder) => c.studio.packageTree(folder),
     file: (c, folder, rel) => c.studio.readPackageFile(folder, rel),
     problems: (c, id, folder) => c.studio.problems(id, folder || null),
-    context: (c, folder) => { const { _texts, ...rest } = c.imports.draftPreview(folder); return rest },
+    context: async (c, folder) => { const { _texts, ...rest } = await c.imports.draftPreviewAsync(folder); return rest },
   },
   images: {
     env: (c, params) => c.images.env(params || {}),
@@ -387,6 +392,7 @@ async function fetchable(url, range) {
 }
 
 function register() {
+  monitor.start()
   // The two native file dialogs the configuration export and import use (docs/ADR-023). They only pick one path and move one UTF-8 text file; the page gets the text, never a path to read.
   ipcMain.handle('core:file:save', async (event, suggested, text) => {
     if (typeof text !== 'string' || text.length > MAX_FILE_BYTES) return { ok: false, error: { message: 'There is nothing to save, or it is too large.' } }
@@ -471,14 +477,15 @@ function register() {
   ipcMain.handle('core:sync:start', async (_event, req) => { const r = await syncJobs.start(req); return r.ok ? { ok: true } : { ok: false, running: true } })
   ipcMain.handle('core:sync:cancel', (_event, id) => { syncJobs.cancel(id); return { ok: true } })
   ipcMain.handle('core:sync:state', (_event, id) => syncJobs.state(id))
-  ipcMain.handle('core:sync:count', async (_event, req) => { const c = await loadCore(); return c.syncrun.countFor(req) })   // the listing passes: what the push would send, with and without the renders
-  ipcMain.handle('core:sync:plan', async (_event, req) => { const c = await loadCore(); const [steps, transport] = await Promise.all([Promise.resolve().then(() => c.syncrun.planFor(req)), c.syncrun.transportFor(req.pod_id)]); return { steps, transport, shared: c.syncrun.effectiveShared(req) } })
+  ipcMain.handle('core:sync:count', async (_event, req) => { const c = await loadCore(); return monitor.call('sync.count', () => c.syncrun.countFor(req)) })   // the listing passes: what the push would send, with and without the renders
+  ipcMain.handle('core:sync:plan', async (_event, req) => { const c = await loadCore(); const [steps, transport] = await Promise.all([Promise.resolve().then(() => monitor.call('sync.plan', () => c.syncrun.planFor(req))), c.syncrun.transportFor(req.pod_id)]); return { steps, transport, shared: c.syncrun.effectiveShared(req) } })
 
   ipcMain.handle('core', async (_event, ns, fn, args = []) => {
     try {
       const f = TABLE[ns]?.[fn]
       if (!f) throw Object.assign(new Error(`no core call ${ns}.${fn}`), { status: 404 })
-      const value = await f(await loadCore(), ...args)
+      const c = await loadCore()
+      const value = await monitor.call(`${ns}.${fn}`, () => f(c, ...args))   // times the synchronous part: what blocks the window
       return { ok: true, value }
     } catch (e) {
       return { ok: false, error: { status: e.status || 500, message: e.message || String(e), ...(e.code ? { code: e.code } : {}), ...(e.hint ? { hint: e.hint } : {}) } }
@@ -498,4 +505,4 @@ function stopIdleWatch() { if (stopIdle) stopIdle(); stopIdle = null }
 async function startMcpHost() { await host().apply() }
 async function stopMcpHost() { if (mcpHost) await mcpHost.stop() }
 
-module.exports = { fetchable, register, loadCore, startIdleWatch, stopIdleWatch, startMcpHost, stopMcpHost, syncJobs, TABLE }
+module.exports = { monitor, fetchable, register, loadCore, startIdleWatch, stopIdleWatch, startMcpHost, stopMcpHost, syncJobs, TABLE }

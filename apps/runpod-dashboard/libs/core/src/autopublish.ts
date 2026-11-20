@@ -4,6 +4,7 @@
  * built ON publish.run (same plan, same weights refusal, same streaming), so nothing can leave that a manual publish could not. Everything is async and
  * restart safe: the approvals, the settings and the state (uploaded versions, today's count) are small files written atomically.
  */
+import { timedTick } from './ticks.js'
 import { lstat, mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { bad, CoreError } from './errors.js'
@@ -616,7 +617,7 @@ async function recover(): Promise<void> {
 }
 export async function start(): Promise<void> {
   stop(); await ensureLoaded(); await refreshMemo(); void volumeTick().catch(() => undefined); void consider().catch(() => undefined)
-  timers = [setInterval(() => { void tick().then(refreshMemo).catch(() => undefined) }, TICK_MS), setInterval(() => { void consider().then(() => generatePass()).then(refreshMemo).catch(() => undefined) }, CONSIDER_MS), setInterval(() => { void volumeTick().catch(() => undefined) }, 30_000)]
+  timers = [setInterval(() => { void timedTick('autopublish.tick', () => tick()).then(refreshMemo).catch(() => undefined) }, TICK_MS), setInterval(() => { void timedTick('autopublish.consider', () => consider()).then(() => generatePass()).then(refreshMemo).catch(() => undefined) }, CONSIDER_MS), setInterval(() => { void timedTick('autopublish.volumeTick', () => volumeTick()).catch(() => undefined) }, 30_000)]
   for (const t of timers) t.unref?.()
 }
 export function stop(): void { for (const t of timers) clearInterval(t); timers = [] }

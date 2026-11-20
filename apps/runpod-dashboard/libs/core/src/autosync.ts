@@ -17,6 +17,7 @@
  * every planning call has a deadline and every pull a stall watchdog, so a stuck S3 or SSH call ends as an error item and never holds the controller.
  * Every effect goes through `Deps`, so the tests run it with fakes.
  */
+import { timedTick } from './ticks.js'
 import { stat as fsStat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { CoreError } from './errors.js'
@@ -563,7 +564,7 @@ export function start(everyMs = TICK_MS): void {
     return [...by].map(([volume_id, s]) => ({ volume_id, extra: [...s] }))
   })
   if (timer) return
-  timer = setInterval(() => { void tick() }, everyMs)
+  timer = setInterval(() => { void timedTick('autosync.tick', () => tick()) }, everyMs)
   if (typeof timer === 'object' && 'unref' in timer) timer.unref()
 }
 export function stop(): void { if (timer) { clearInterval(timer); timer = null } changes.stop(); for (const p of pushers.values()) p.watch.close(); pushers.clear() }

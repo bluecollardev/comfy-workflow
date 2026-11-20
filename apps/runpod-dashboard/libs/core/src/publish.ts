@@ -807,10 +807,17 @@ export const validateRound = layout.validateRound, validateClipNames = layout.va
 const who2 = (v: JobView) => v.approved_by
 /** Publish jobs another process owns, from the registry file (`external: true`). */
 const externalViews = (): JobView[] => jobsregistry.externals('publish').filter((x) => !jobs.has(x.id)).map((x) => ({ job_id: x.id, kind: 'publish', trigger: (x.trigger as JobView['trigger']) ?? 'manual', children: [], streams: 1, counts: { queued: 0, uploading: 0, done: 0, failed: 0, cancelled: 0 }, state: (x.interrupted ? 'failed' : x.state) as JobState, targets: [], approved_by: x.approved_by ?? '', started_at: x.started_at, finished_at: x.interrupted ? new Date().toISOString() : '', files_total: x.progress?.total ?? 0, files_done: x.progress?.done ?? 0, bytes_total: 0, bytes_done: 0, rate_bps: 0, current: x.label, skipped: 0, dest: '', links: [], slack: { state: 'skipped' }, summary: x.label, ...(x.interrupted ? { error: 'The process that was running this job stopped: it was interrupted' } : {}), origin: x.origin, ...(x.mcp_client ? { mcp_client: x.mcp_client } : {}), external: true }) as unknown as JobView)
-export function status(jobId?: string): { jobs: JobView[] } {
+/** `summary: true` is what the window polls every second: per job the file list (`files`, one entry per file with its sha256) and `results` (up to 1,000 more) are left out, with `sha256_count` and the counts kept, so a few big jobs are not 350 KB of JSON cloned and serialized each second. A job asked for by id, and every MCP call, is whole. */
+const slim = (v: JobView): JobView => {
+  const n = typeof v.sha256_count === 'number' ? v.sha256_count : ((v.files ?? []).filter((f) => f && f.sha256).length || undefined)
+  const { results: _r, ...rest } = v
+  return { ...rest, files: [], ...(n !== undefined ? { sha256_count: n } : {}) } as JobView
+}
+export function status(jobId?: string, opts: { summary?: boolean } = {}): { jobs: JobView[] } {
   void ensureLoaded()
   const all = [...[...jobs.values()].map((j) => j.view), ...externalViews(), ...finished]
-  return { jobs: (jobId ? all.filter((v) => v.job_id === jobId) : all).map((v) => copy(v)).map((v) => { if ((v.state === 'failed' || v.state === 'done_with_warning') && v.error && !v.failure) v.failure = failures.explain(v.error, { stage: /slack/i.test(v.error) ? 'transfer' : 'transfer' }); for (const c of v.children) if (c.state === 'failed' && c.error && !(c as { failure?: unknown }).failure) (c as { failure?: failures.Explained }).failure = failures.explain(c.error, { stage: 'transfer' }); return v }) }
+  const summary = !!opts.summary && !jobId
+  return { jobs: (jobId ? all.filter((v) => v.job_id === jobId) : all).map((v) => copy(summary ? slim(v) : v)).map((v) => { if ((v.state === 'failed' || v.state === 'done_with_warning') && v.error && !v.failure) v.failure = failures.explain(v.error, { stage: /slack/i.test(v.error) ? 'transfer' : 'transfer' }); for (const c of v.children) if (c.state === 'failed' && c.error && !(c as { failure?: unknown }).failure) (c as { failure?: failures.Explained }).failure = failures.explain(c.error, { stage: 'transfer' }); return v }) }
 }
 export function cancel(id: string): JobView {
   const [parent, idx] = id.includes(':') ? [id.slice(0, id.lastIndexOf(':')), Number(id.slice(id.lastIndexOf(':') + 1))] : [id, -1]

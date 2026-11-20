@@ -73,7 +73,7 @@ export function privateSyncHost(core) {
 
 /** The pod manager's MCP server over `core` (libs/core's exports). `syncHost` runs the syncs: omitted, a private
  *  one (stdio). Returns a fresh SDK Server; call it again for another connection. */
-export function createPodManagerServer({ core, syncHost = privateSyncHost(core) }) {
+export function createPodManagerServer({ core, syncHost = privateSyncHost(core), timeTool = null }) {
   const { comfyruns, governance, gpus, history, imports, mounts, outputs, outputsources, pods, pool, syncrun, volumes } = core
   pods.startWatches?.()   // Retry Later (ADR-042 section 19): a watch this server registers is tried again while it is up (the app does the same; a claim keeps the two apart)
   const LOG_WAIT_MS = Number(process.env.MCP_LOG_WAIT_MS) || LOG_WAIT_MS_DEFAULT   // RunPod's log stream stays open after the backfill; this is how long get_logs listens
@@ -502,7 +502,8 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core) 
         const args = params.arguments || {}
         const client = server.getClientVersion?.()?.name
         const who = { source: 'mcp', tool: params.name, ...(typeof client === 'string' && client ? { client: client.slice(0, 80) } : {}), ...(typeof args.approved_by === 'string' && args.approved_by.trim() ? { approved_by: args.approved_by.trim() } : {}) }
-        return await (history?.runAs ? history.runAs(who, () => handler(args)) : handler(args))   // what the tool records in the history says it came from MCP
+        const run = () => (history?.runAs ? history.runAs(who, () => handler(args)) : handler(args))
+        return await (timeTool ? timeTool(params.name, run) : run())   // the app times the synchronous part of each tool (stalls.log)   // what the tool records in the history says it came from MCP
       } catch (e) {
         const message = e?.message || String(e)
         if (typeof e?.status === 'number') return text(message, true)   // the core's own refusal: "Agent not found: x", "No card available right now: tried ..."

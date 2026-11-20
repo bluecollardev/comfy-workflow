@@ -3,6 +3,7 @@
  * State lives in ~/.config/runpod-pod-manager/queue.json so it survives a restart; a task that was running then is `interrupted` (Retry runs it again). The scheduler is `tick`,
  * run on a timer while the app (or MCP server) is up. Every outside effect goes through `Deps`, so the tests run it with fakes and no pod.
  */
+import { timedTick } from './ticks.js'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { CoreError } from './errors.js'
@@ -509,5 +510,5 @@ export function retryTask(id: string): Task {
 
 let timer: ReturnType<typeof setInterval> | null = null
 /** Run the scheduler every few seconds while this process is up (idempotent). */
-export function start(everyMs = 3000) { if (!timer) { timer = setInterval(() => { void tick() }, everyMs); if (typeof timer === 'object' && 'unref' in timer) timer.unref() } }
+export function start(everyMs = 3000) { if (!timer) { timer = setInterval(() => { void timedTick('queue.tick', () => tick()) }, everyMs); if (typeof timer === 'object' && 'unref' in timer) timer.unref() } }
 export function stop() { if (timer) { clearInterval(timer); timer = null } }
