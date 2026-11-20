@@ -72,3 +72,4 @@ Batch 03 elements with DPX on the volume but no H.264 proxy: 071, 077 c, 080 a-e
 ## 9. Log
 
 - 2026-11-20: planned the 12 proxies (all clean except the colour statement, section 8); found the cause (invalid sidecar JSON), released v1.6.6, measured the 24 clips and 151 GB, wrote this plan. Nothing uploaded.
+- 2026-11-20: decision 1 (Lucas): backfill the `_TEST_` rounds first; the real-round publish with V11 names comes after. Decisions 2-4 and the proxy colour statement still open; nothing uploaded.
