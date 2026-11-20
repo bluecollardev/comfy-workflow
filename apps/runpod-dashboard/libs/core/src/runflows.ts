@@ -92,7 +92,7 @@ export interface RunJob {
 export interface LogLine { ts: string; level: 'info' | 'warn' | 'error'; text: string; /** the graph it is about; none for the run as a whole */ path?: string }
 export interface RunOpts {
   /** waits before the retries of a transient failure (default 5 then 20 minutes); tests pass short ones */ backoffMs?: number[]
-  /** how long to wait for a starting ComfyUI to answer before the first graph (default 5 minutes), and how often to ask (default 5 s) */ waitComfyMs?: number; pollComfyMs?: number; /** how many times to try the graph conversion (default 4) and the wait between tries (default 20 s) */ convertTries?: number; convertWaitMs?: number
+  /** how long to wait for a starting ComfyUI to answer before the first graph (default 5 minutes), and how often to ask (default 5 s) */ waitComfyMs?: number; pollComfyMs?: number; /** how many times to try the graph conversion (default 8) and the wait between tries (default 30 s) */ convertTries?: number; convertWaitMs?: number
   /** a graph that neither runs nor is in the queue for this long has stalled (default 10 minutes) */ stallMs?: number
   /** which try this is (1 = the first; a retry of a failure passes the next) */ attempt?: number
   client?: rp.RunPodClient; fetchFn?: typeof fetch
@@ -183,7 +183,7 @@ export async function apiGraph(podId: string, path: string, base: string, o: Run
   let api: Record<string, unknown> = {}, tries = 0
   for (;;) {
     try { api = await (o.convert ?? defaultConvert)(ui, { base, podId }); break } catch (e) {
-      tries++; if (tries >= (o.convertTries ?? 4) || !/wait_for_function|Timeout \d+ms exceeded|net::ERR|Target (page|closed)/i.test((e as Error).message)) throw e
+      tries++; if (tries >= (o.convertTries ?? 8) || !/wait_for_function|Timeout \d+ms exceeded|net::ERR|Target (page|closed)/i.test((e as Error).message)) throw e
       await new Promise((r) => setTimeout(r, o.convertWaitMs ?? 20_000))
     }
   }
