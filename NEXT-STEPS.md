@@ -65,6 +65,8 @@ Built: `libs/core/src/bridge.ts` (whitelisted snapshot, redactor, freshness, par
 
 ## Open from 2026-11-20 (Tunnel V11 delivery, ADR-055)
 
+- **A retried import task makes a new pod instead of reusing its own** (seen 2026-11-21: 12 duplicate `queue-base_v008` pods and the account's 16-GPU limit reached; runs then failed with "16 are in use"). Make a retry reuse the task's pod when it is still there, and stop a pod no task points to.
+
 - **Deliver what we have:** the 17 elements. Test round `_TEST_tunnel-v11-2026-11-20` has 3 (084 main, 085 main, 123 c; old headers, no per-element manifest). Next: `dpx_fix` them on a pod, publish the corrected copies to a second test round, read the headers back from the bucket, compare a frame with Binc's corrected CGI-072 files, then the other 14, then the real round `tunnel-v11-edl-2026-11-18`, never overwriting. Plan: `docs/CANALV2-TUNNEL-V11-PRODUCTION-PLAN.md` section 9 (on `feature/dpx-backfill-plan`, not merged).
 - **16 elements have no DPX** (087 x2, 123 f, 168 x4, creature-266, photoreal-013 x8) and **3 CGI-072** are held (V03 HEVC 24 fps against the PDF's V02 ProRes 23.976): the round's delivery graph makes MP4 candidates, not DPX. Ask Binc which graph or tool makes the mono DPX from the ProRes masters, or build the ffmpeg conversion (colour handling to decide).
 - **Release the unreleased work** (no-overwrite guard, per-element manifest, `dpx_fix`, pod logs, purge): full gate, then a patch. Auto-publish is live: pick a quiet moment.
