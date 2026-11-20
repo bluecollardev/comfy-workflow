@@ -114,7 +114,7 @@ const renders = useRendersStore(), previews = usePreviewsStore(), ui = useUiStor
 const jobs = computed(() => orderJobs(renders.jobs, renders.dismissed))
 const active = isActive
 // Paging: running jobs come first in the order, so page 1 always shows what is happening now (same pager as Queue > Publishing)
-const PAGE_SIZES = [5, 10, 25], pageSize = ref(10), page = ref(0)
+const pageSize = ref(10), page = ref(0)   // PAGE_SIZES is the shared list from utils/generations
 const pageCount = computed(() => Math.max(1, Math.ceil(jobs.value.length / pageSize.value)))
 const pagedJobs = computed(() => jobs.value.slice(page.value * pageSize.value, (page.value + 1) * pageSize.value))
 const pageInfo = computed(() => (jobs.value.length ? `${page.value * pageSize.value + 1}–${Math.min(jobs.value.length, (page.value + 1) * pageSize.value)} of ${jobs.value.length}` : '0'))
