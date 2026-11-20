@@ -205,49 +205,49 @@ Not every element is in the same state, so the delivery is handled by case. **Ru
 
 | # | Element | Frames (PDF = volume) | Raster | DPX on volume | Review video re-rendered | Corrected DPX copy | In the real round |
 |---|---|---|---|---|---|---|---|
-| 1 | ARCHIVAL-071 main | 227 | 3840x2160 | yes | yes | no | no |
-| 2 | ARCHIVAL-077 a | 80 | 3840x2160 | yes | yes | no | no |
-| 3 | ARCHIVAL-077 b | 69 | 3840x2160 | yes | yes | no | no |
-| 4 | ARCHIVAL-077 c | 74 | 1920x1080 | yes | yes | no | no |
-| 5 | ARCHIVAL-080 a (still) | 94 | 6336x2688 PNG | yes | yes | no | no |
-| 6 | ARCHIVAL-080 b (still) | 60 | 6336x2688 PNG | yes | yes | no | no |
-| 7 | ARCHIVAL-080 c (still) | 90 | 6336x2688 PNG | yes | yes | no | no |
-| 8 | ARCHIVAL-080 d (still) | 83 | 6336x2688 PNG | yes | yes | no | no |
-| 9 | ARCHIVAL-080 e (still) | 44 | 6336x2688 PNG | yes | yes | no | no |
-| 10 | ARCHIVAL-083 main | 98 | 3852x2152 | yes | yes | no | no |
-| 11 | ARCHIVAL-084 main | 39 | 2356x1572 | yes | yes | in progress | no |
-| 12 | ARCHIVAL-085 main | 54 | 3840x2160 | yes | yes | in progress | no |
-| 13 | ARCHIVAL-093 b | 126 | 1618x1080 (low source resolution) | yes | yes | no | no |
-| 14 | ARCHIVAL-102 main | 128 | 3840x2160 | yes | yes | no | no |
-| 15 | ARCHIVAL-104 b | 130 | 3840x2160 | yes | yes | no | no |
-| 16 | ARCHIVAL-123 c | 66 | 3840x2160 | yes | yes | in progress | no |
-| 17 | CGI-042 main | 229 | 3840x2160 | yes | yes | no | no |
+| 1 | ARCHIVAL-071 main | 227 | 3840x2160 | yes | yes | yes | yes |
+| 2 | ARCHIVAL-077 a | 80 | 3840x2160 | yes | yes | yes | yes |
+| 3 | ARCHIVAL-077 b | 69 | 3840x2160 | yes | yes | yes | yes |
+| 4 | ARCHIVAL-077 c | 74 | 1920x1080 | yes | yes | yes | yes |
+| 5 | ARCHIVAL-080 a (still) | 94 | 6336x2688 PNG | yes | yes | yes | yes |
+| 6 | ARCHIVAL-080 b (still) | 60 | 6336x2688 PNG | yes | yes | yes | yes |
+| 7 | ARCHIVAL-080 c (still) | 90 | 6336x2688 PNG | yes | yes | yes | yes |
+| 8 | ARCHIVAL-080 d (still) | 83 | 6336x2688 PNG | yes | yes | yes | yes |
+| 9 | ARCHIVAL-080 e (still) | 44 | 6336x2688 PNG | yes | yes | yes | yes |
+| 10 | ARCHIVAL-083 main | 98 | 3852x2152 | yes | yes | yes | yes |
+| 11 | ARCHIVAL-084 main | 39 | 2356x1572 | yes | yes | yes | yes |
+| 12 | ARCHIVAL-085 main | 54 | 3840x2160 | yes | yes | yes | yes |
+| 13 | ARCHIVAL-093 b | 126 | 1618x1080 (low source resolution) | yes | yes | yes | yes |
+| 14 | ARCHIVAL-102 main | 128 | 3840x2160 | yes | yes | yes | yes |
+| 15 | ARCHIVAL-104 b | 130 | 3840x2160 | yes | yes | yes | yes |
+| 16 | ARCHIVAL-123 c | 66 | 3840x2160 | yes | yes | yes | yes |
+| 17 | CGI-042 main | 229 | 3840x2160 | yes | yes | yes | yes |
 
 ### 11.2 The 19 without delivered DPX
 
 **Updated 2026-11-21:** the route is `base_v008` through Import Round (not ffmpeg), the last column is the state now; everything from `base_v008` stays in `_TEST_tunnel-v11-base-v008-2026-11-21` until it is right (section 14). CGI-072 is not held.
 
-| # | Element | Frames (PDF) | Raster | Source final in | State on the volume | Case | State now (2026-11-21) |
-|---|---|---|---|---|---|---|---|
-| 18 | ARCHIVAL-087 platform | 97 | 3840x2160 | `-11-14` | pulled | D | DPX made (97, count matches); header-patched; in the test round. Blocked in the real round: it already holds 29 files of different size |
-| 19 | ARCHIVAL-087 rain | 96 | 3840x2160 | `-11-14` | pulled | D | Generating (graph in `imp-mwpkxqng-0`) |
-| 20 | ARCHIVAL-123 f | 43 | 3840x2160 | `-10-23` | staged | D | DPX made (43, matches); header-patched; in the test round |
-| 21 | ARCHIVAL-168 a | 153 | 3840x2160 | `-10-29` | pulled | D | DPX made (153, matches); header-patched; test round |
-| 22 | ARCHIVAL-168 b | 139 | 3840x2160 | `-10-29` | pulled | D | DPX made (139, matches); header-patched; test round |
-| 23 | ARCHIVAL-168 c | 105 | 3840x2160 | `-10-29` | pulled | D | DPX made (105, matches); header-patched; test round |
-| 24 | ARCHIVAL-168 d | 48 | 3840x2160 | `-10-29` | pulled | D | DPX made (48, matches); header-patched; test round |
-| 25 | CREATURE-266 dolphin-lowtrack (ALT V01) | 94 | 1920x1080 | `-11-14` | pulled | D | Generating on a 96 GB card (the 32 GB card died mid-graph) |
-| 26 | PHOTOREAL-013 ascent | 108 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | DPX made (108, matches); header-patched; test round |
-| 27 | PHOTOREAL-013 chasm07 | 271 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | DPX made (271, matches); header-patched; test round |
-| 28 | PHOTOREAL-013 f23 | 633 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Generating |
-| 29 | PHOTOREAL-013 hadal | 160 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Generating |
-| 30 | PHOTOREAL-013 landing | 226 | 1920x1080, 24 fps ProRes | `-11-14` | pulled | E | Generating |
-| 31 | PHOTOREAL-013 splash | 96 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Generating |
-| 32 | PHOTOREAL-013 sunlight | 212 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Generating |
-| 33 | PHOTOREAL-013 top (V02) | 209 | 1920x1080, 24 fps ProRes | `-11-14` | pulled | E | Generating |
-| 34 | CGI-072 head | 106 | 1920x1080 V02 ProRes 23.976 | `-10-29` (V03 HEVC 24) | not pulled | F | Generating from V03 (not held) |
-| 35 | CGI-072 backhalf-b | 70 | 1920x1080 V02 ProRes 23.976 | `-10-29` (V03 HEVC 24) | not pulled | F | Generating from V03 (not held) |
-| 36 | CGI-072 backhalf-c | 162 | 1920x1080 V02 ProRes 23.976 | `-10-29` (V03 HEVC 24) | not pulled | F | Generating from V03 (not held) |
+| # | Element | Frames (PDF) | Raster | DPX on volume | Review video | Corrected DPX copy | In the real round | Note |
+|---|---|---|---|---|---|---|---|---|
+| 18 | ARCHIVAL-087 platform | 97 | 3840x2160 | yes | no | yes | no | DPX made (97, count matches); header-patched; in the test round. Blocked in the real round: it already holds 29 files of different size |
+| 19 | ARCHIVAL-087 rain | 96 | 3840x2160 | generating | no | no | no | Generating (graph in `imp-mwpkxqng-0`) |
+| 20 | ARCHIVAL-123 f | 43 | 3840x2160 | yes | no | yes | no | DPX made (43, matches); header-patched; in the test round |
+| 21 | ARCHIVAL-168 a | 153 | 3840x2160 | yes | no | yes | no | DPX made (153, matches); header-patched; test round |
+| 22 | ARCHIVAL-168 b | 139 | 3840x2160 | yes | no | yes | no | DPX made (139, matches); header-patched; test round |
+| 23 | ARCHIVAL-168 c | 105 | 3840x2160 | yes | no | yes | no | DPX made (105, matches); header-patched; test round |
+| 24 | ARCHIVAL-168 d | 48 | 3840x2160 | yes | no | yes | no | DPX made (48, matches); header-patched; test round |
+| 25 | CREATURE-266 dolphin-lowtrack (ALT V01) | 94 | 1920x1080 | generating | no | no | no | Generating on a 96 GB card (the 32 GB card died mid-graph) |
+| 26 | PHOTOREAL-013 ascent | 108 | 1920x1080, 24 fps HEVC | yes | no | yes | no | DPX made (108, matches); header-patched; test round |
+| 27 | PHOTOREAL-013 chasm07 | 271 | 1920x1080, 24 fps HEVC | yes | no | yes | no | DPX made (271, matches); header-patched; test round |
+| 28 | PHOTOREAL-013 f23 | 633 | 1920x1080, 24 fps HEVC | generating | no | no | no | Generating |
+| 29 | PHOTOREAL-013 hadal | 160 | 1920x1080, 24 fps HEVC | generating | no | no | no | Generating |
+| 30 | PHOTOREAL-013 landing | 226 | 1920x1080, 24 fps ProRes | generating | no | no | no | Generating |
+| 31 | PHOTOREAL-013 splash | 96 | 1920x1080, 24 fps HEVC | generating | no | no | no | Generating |
+| 32 | PHOTOREAL-013 sunlight | 212 | 1920x1080, 24 fps HEVC | generating | no | no | no | Generating |
+| 33 | PHOTOREAL-013 top (V02) | 209 | 1920x1080, 24 fps ProRes | generating | no | no | no | Generating |
+| 34 | CGI-072 head | 106 | 1920x1080 V02 ProRes 23.976 | generating | no | no | no | Generating from V03 (not held); raster/version differ from the PDF (V02 ProRes 23.976) |
+| 35 | CGI-072 backhalf-b | 70 | 1920x1080 V02 ProRes 23.976 | generating | no | no | no | Generating from V03 (not held); raster/version differ from the PDF (V02 ProRes 23.976) |
+| 36 | CGI-072 backhalf-c | 162 | 1920x1080 V02 ProRes 23.976 | generating | no | no | no | Generating from V03 (not held); raster/version differ from the PDF (V02 ProRes 23.976) |
 
 ### 11.4 How we get the missing DPX, in plain words
 
