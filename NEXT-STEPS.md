@@ -16,6 +16,44 @@
 4. **One codebase, no second runtime**: the Python API retired, the core in
    TypeScript, the merge gate green (`docs/ADR-005`).
 
+## Open from 2026-11-20 (CANALV2: Tunnel V11 delivery, DPX frames, v1.6.7)
+
+Plans: `docs/CANALV2-DPX-BACKFILL-PLAN.md` (frames of reviews already published), `docs/CANALV2-TUNNEL-V11-PRODUCTION-PLAN.md` (what to import and produce for the 20 Nov PDF).
+
+1. **DPX backfill of the published reviews** (24 clips, about 151 GB, S3 only, into the round of each review, through the pod: about 11-13 MB/s). Needs the app (v1.6.6+) **running** and the pod `eagffo99jjrf1n` running. Resume with `python3 scripts/backfill-dpx/batch.py` (`--group A|B|C`, `--only archival-080`); it is safe to re-run (files already there are skipped). Pause between clips by creating `scripts/backfill-dpx/STOP`. Done at the time of writing:
+   - [x] archival-077_a_mono_v015 (80 f, 4.0 GB, _TEST_2026-11-19)
+   - [x] archival-077_b_mono_v015 (69 f, 3.4 GB, _TEST_2026-11-19)
+   - [x] archival-080_b_mono_v015 (60 f, 3.2 GB, _TEST_2026-11-19)
+   - [x] archival-080_e_mono_v015 (44 f, 2.3 GB, _TEST_2026-11-19)
+   - [x] archival-084_main_mono_v015 (39 f, 1.6 GB, _TEST_2026-11-19)
+   - [x] archival-093_b_mono_v015 (126 f, 5.3 GB, _TEST_2026-11-19)
+   - [x] archival-104_b_mono_v015 (130 f, 6.5 GB, _TEST_2026-11-19)
+   - [x] archival-123_c_mono_v015 (66 f, 3.3 GB, _TEST_2026-11-19)
+   Still to send:
+   - [ ] A: archival-080_a_mono_v015 (94 f, 5.0 GB, _TEST_2026-11-19)
+   - [ ] A: archival-080_c_mono_v015 (90 f, 4.8 GB, _TEST_2026-11-19)
+   - [ ] A: archival-080_d_mono_v015 (83 f, 4.4 GB, _TEST_2026-11-19)
+   - [ ] A: archival-080_a_mono_v017 (94 f, 5.0 GB, _TEST_2026-11-20)
+   - [ ] B: archival-101_a_mono_v015 (89 f, 3.7 GB, _TEST_2026-11-19)
+   - [ ] B: archival-103_main_mono_v015 (96 f, 4.8 GB, _TEST_2026-11-19)
+   - [ ] B: archival-123_a_mono_v015 (68 f, 3.4 GB, _TEST_2026-11-19)
+   - [ ] C: CGI-042B_SINGLE-SPEED-25S_ALT_V01_1982X1046_23.976_PRORES422HQ_mono_v016 (299 f, 15.9 GB, _TEST_2026-11-19)
+   - [ ] C: CREATURE-266_LANDING_FINAL_V03_1920X1080_23.976_PRORES422HQ_mono_v016 (51 f, 2.5 GB, _TEST_2026-11-19)
+   - [ ] C: ENHANCE-146_B_FINAL_V01_3840X2160_23.976_PRORES422HQ_review_v003_rec0118-0142 (25 f, 1.2 GB, _TEST_2026-11-19)
+   - [ ] C: MAP-066_ASSEMBLY_FINAL_V01_1920X1080_23.976_PRORES422HQ_mono_v016 (537 f, 26.7 GB, _TEST_2026-11-19)
+   - [ ] C: PHOTOREAL-013_CHASMFAST07_FINAL_V01_1920X1080_24_HEVC_mono_v016 (101 f, 5.0 GB, _TEST_2026-11-19)
+   - [ ] C: PHOTOREAL-013_FLOORTRACK_FINAL_V01_1926X1076_24_HEVC_mono_v016 (167 f, 8.4 GB, _TEST_2026-11-19)
+   - [ ] C: PHOTOREAL-187_MAIN_FINAL_V03_1920X1080_23.976_PRORES422HQ_mono_v016 (176 f, 8.8 GB, _TEST_2026-11-19)
+   - [ ] C: CGI-090_SHOT1_FINAL_V03_1920X1080_23.976_PRORES422HQ_mono_v016 (345 f, 17.2 GB, _TEST_2026-11-20)
+   - [ ] C: photoreal-013_chasmfastia2_mono_v015 (95 f, 4.7 GB, _TEST_2026-11-20)
+   Non-V11 shots (cgi-042B, map-066, enhance-146, ...) may be held by the EDL check ("not in the EDL"); do not override. Afterwards: list each shot folder in S3 and check the DPX count equals the frames above; **stop the pod** (it bills while it runs).
+2. **The 12 H.264 proxies** for batch 03 elements with DPX on the volume but no .mp4 (071, 077 c, 080 a-e, 083, 085, 093 b, 102, cgi-042 main): planned and clean, **blocked on a colour statement** (`linear-p3-d65` as before, or `p3-d65-gamma26` as the PDF says). Lucas or Binc to state it.
+3. **The 19 missing DPX elements** (batches 01 and 02): import `brynley-comfy-2026-11-14` (whole, 13.9 GB) and the `archival-168` and `cgi-072` shots of `brynley-comfy-2026-10-29`; `archival-123` f is already staged (`-10-23`). Then produce them with the mono graph. **Ask Binc:** where the CGI-072 V02 ProRes finals are (the round has v03 HEVC 24 fps; the PDF says V02 ProRes 23.976), and which graph/version (v015 as for the 17, or v018).
+4. **Publish to the real round** with V11 clip names after Binc confirms the names (the backfill goes to the `_TEST_` rounds first).
+5. **Release v1.6.7** from `release/v1.6.7` (Generations paging, the stall monitor and blocking-scan fixes for Binc's beach ball, Cancel on the right of the publish text, preview failure reasons and Failures paging). Steps: stop the app, `./start.sh test` (full gate, no skip), merge to `develop` with `--no-ff`, `./start.sh release patch`, restart the app, push `develop`, `master` and the tags (v1.6.6 and v1.6.7 are not on origin yet). Then tell Binc to update (he is on v1.6.3).
+6. **Binc's beach ball:** ask for an Activity Monitor sample taken during a lock-up (RunPod Manager > Sample Process), and after he updates, `stalls.log` in the config folder (`docs/TROUBLESHOOTING-BEACH-BALL.md`). His note: it locks once a Claude session detaches; the stateless MCP host showed no obvious cause.
+7. **Tidy:** remove leftover agent worktrees under `.claude/worktrees/` and merged feature branches after the release.
+
 ## Remote Instances (ADR-054, `docs/BRIDGE.md`), started 2026-11-19 on `feature/status-bridge`
 
 Built: `libs/core/src/bridge.ts` (whitelisted snapshot, redactor, freshness, parse) with 9 tests. To build, in order:
