@@ -12,11 +12,11 @@
         </div>
         <BButton v-if="active" size="sm" variant="outline-warning" class="flex-shrink-0 ms-auto" data-testid="publish-cancel" @click="store.cancel(job.job_id)"><i class="fa-solid fa-stop me-1"></i>{{ $t(children.length ? 'publish.ret.cancelAll' : 'publish.modal.cancel') }}</BButton>
       </div>
-      <div v-if="failedKids.length && !active && !failed.length" class="mt-1" data-testid="publish-retry-shots"><BButton size="sm" variant="outline-warning" :disabled="retryingShots" data-testid="publish-retry-all" @click="retryShots"><i class="fa-solid fa-rotate me-1"></i>{{ $t('publish.ret.retryShots', { n: failedKids.length }) }}</BButton><span v-if="retryErr" class="text-danger small ms-2" data-testid="publish-retry-error"><ErrorText :text="retryErr" /></span></div>
+      <div v-if="failedKids.length && !active && !failed.length" class="mt-1" data-testid="publish-retry-shots"><BButton size="sm" variant="outline-warning" :disabled="retryingShots" data-testid="publish-retry-all" @click="retryShots"><BSpinner v-if="retryingShots" small class="me-1" /><i v-else class="fa-solid fa-rotate me-1"></i>{{ $t('publish.ret.retryShots', { n: failedKids.length }) }}</BButton><span v-if="retryErr" class="text-danger small ms-2" data-testid="publish-retry-error"><ErrorText :text="retryErr" /></span></div>
       <div v-if="job.phase"class="small text-info" data-testid="publish-job-phase" :data-phase="job.phase">{{ $t(`publish.backfill.phase.${job.phase}`) }}</div>
       <div v-if="job.uploaded != null || failed.length" class="small" data-testid="publish-job-result">{{ $t('publish.backfill.result', { uploaded: job.uploaded ?? job.files_done ?? 0, there: job.skipped ?? 0, failed: failed.length }) }}</div>
       <div v-for="f in failed" :key="f.path" class="small text-danger" data-testid="publish-job-failed" :data-path="f.path"><span class="font-monospace">{{ f.path }}</span>: <ErrorText :text="String(f.error || '')" /></div>
-      <BButton v-if="failed.length && !active" size="sm" variant="outline-warning" class="mt-1" data-testid="publish-retry-failed" :disabled="retryingShots" @click="retryFailed"><i class="fa-solid fa-rotate me-1"></i>{{ $t('publish.backfill.retry') }}</BButton>
+      <BButton v-if="failed.length && !active" size="sm" variant="outline-warning" class="mt-1" data-testid="publish-retry-failed" :disabled="retryingShots" @click="retryFailed"><BSpinner v-if="retryingShots" small class="me-1" /><i v-else class="fa-solid fa-rotate me-1"></i>{{ $t('publish.backfill.retry') }}</BButton>
       <div v-if="retryErr && failed.length" class="small text-danger" data-testid="publish-retry-error-files"><ErrorText :text="retryErr" /></div>
       <!-- a publish of several shots is a parent job: one row per shot, each with its own state, Retry (failed only) and Cancel -->
       <div v-if="children.length" class="mt-2" data-testid="publish-children" :data-open="childrenOpen ? 'true' : 'false'">
@@ -54,6 +54,7 @@
 
 <script setup>
 import ErrorText from './ErrorText.vue'
+import { useToastStore, errorText } from '../stores/toast'
 /** PublishJob: one publish job (files, bytes, rate, the file under way, Cancel), its result (uploaded, already there, failed with reasons, Retry failed), the links with Copy and expiry, and the Slack state with Re-post. Shared by the Publish and Backfill tabs. */
 import { computed, ref } from 'vue'
 import { t } from '../i18n'
@@ -93,7 +94,12 @@ const verified = computed(() => { const j = props.job; if (typeof j.sha256_count
 const overridden = computed(() => (Array.isArray(props.job.edl_overrides) ? props.job.edl_overrides : []).map((x) => (typeof x === 'string' ? x : x.stem || x.name)).filter(Boolean))
 const failedKids = computed(() => children.value.filter((c) => c.state === 'failed')), retryingShots = ref(false), retryErr = ref('')
 /** Every failed shot of the job tried again, one after the other (the shots that are done are not sent again). */
-async function retryShots() { retryingShots.value = true; retryErr.value = ''; try { for (const c of failedKids.value) await store.retry(c.id) } catch (e) { retryErr.value = e?.response?.data?.detail || e?.message || String(e) } finally { retryingShots.value = false } }
+const toast = useToastStore()
+async function retryShots() {
+  retryingShots.value = true; retryErr.value = ''
+  const shots = failedKids.value.map((c) => c.shot)
+  try { for (const c of failedKids.value) await store.retry(c.id); toast.success(t('publish.ret.retrying', { shots: shots.join(', ') })) } catch (e) { retryErr.value = errorText(e); toast.error(retryErr.value, t('publish.ret.retryFailed')) } finally { retryingShots.value = false }
+}
 /** Retry failed on a card of several shots tries those shots again (the Queue); on a plain job the Publish window's own handler gets the failed files. */
 async function retryFailed() { if (failedKids.value.length) await retryShots(); else emit('retry', failed.value) }
 const failed = computed(() => (Array.isArray(props.job.failed) ? props.job.failed : []))
