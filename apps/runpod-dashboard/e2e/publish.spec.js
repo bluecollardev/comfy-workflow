@@ -381,6 +381,9 @@ test.describe('the Publish window', () => {
     Object.assign(j, { files_done: 1, bytes_done: 1e9, rate_bps: 50e6, current: 'deliver/x/a.mov' })
     await expect(m.getByTestId('publish-progress')).toHaveAttribute('data-percent', '33', { timeout: 6000 })
     await expect(m.getByTestId('publish-job-numbers')).toContainText('1 of 3 files'); await expect(m.getByTestId('publish-job-current')).toHaveText('deliver/x/a.mov')
+    // Cancel sits on the right of the progress text, on the same row
+    const nb = await m.getByTestId('publish-job-numbers').boundingBox(), cb = await m.getByTestId('publish-cancel').boundingBox()
+    expect(cb.x).toBeGreaterThan(nb.x + 50); expect(Math.abs((cb.y + cb.height / 2) - (nb.y + nb.height / 2))).toBeLessThan(40)   // right of the numbers, and level with the text block
     await m.getByTestId('publish-cancel').click()
     await expect.poll(() => api.state.publish.cancelled).toEqual(['pub-1'])
     await expect(m.getByTestId('publish-job')).toHaveAttribute('data-state', 'cancelled', { timeout: 6000 })
