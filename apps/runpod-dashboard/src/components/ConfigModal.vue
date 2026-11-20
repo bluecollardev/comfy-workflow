@@ -366,6 +366,9 @@
             <label class="me-3"><input v-model="cfg.render.kind" type="radio" value="proxy" class="form-check-input me-1" data-testid="config-render-kind-proxy" />{{ $t('outputs.render.cfg.kindProxy') }}</label>
             <label><input v-model="cfg.render.kind" type="radio" value="review" class="form-check-input me-1" data-testid="config-render-kind-review" />{{ $t('outputs.render.cfg.kindReview') }}</label>
           </div>
+          <label class="mb-0" :title="$t('outputs.render.cfg.colourHelp')">{{ $t('outputs.render.cfg.colour') }}
+            <select v-model="renderColour" class="form-select form-select-sm" data-testid="config-render-colour"><option value="">{{ $t('outputs.render.cfg.colourDefault') }}</option><option v-for="c in RENDER_COLOURS" :key="c" :value="c">{{ $t(`edl.colours.${c}`) }}</option></select>
+          </label>
           <label class="mb-0">{{ $t('outputs.render.cfg.proxyWidth') }}
             <select v-model="cfg.render.proxy_width" class="form-select form-select-sm" data-testid="config-render-proxy-width"><option v-for="w in WIDTH_CHOICES" :key="w" :value="w">{{ w === 'source' ? $t('outputs.render.cfg.source') : `${w} px` }}</option></select>
           </label>
@@ -642,7 +645,7 @@ function take(payload) {
   syncExcludeDeleteStored = payload.config.sync_exclude_delete !== undefined; syncExcludeDelete.value = !!payload.config.sync_exclude_delete
   renderStored = !!payload.config.render   // an untouched render object is not added to what is saved
   renderLoadedKeys = Object.keys(payload.config.render || {})
-  cfg.value.render = { ...RENDER_DEFAULTS, ...(cfg.value.render || {}), codecs: [...((cfg.value.render || {}).codecs || RENDER_DEFAULTS.codecs)], publish: { s3: !!cfg.value.render?.publish?.s3, slack: !!cfg.value.render?.publish?.slack } }
+  cfg.value.render = { ...RENDER_DEFAULTS, ...(cfg.value.render || {}), codecs: [...((cfg.value.render || {}).codecs || RENDER_DEFAULTS.codecs)], publish: { s3: !!(cfg.value.render?.publish ?? RENDER_DEFAULTS.publish).s3, slack: !!(cfg.value.render?.publish ?? RENDER_DEFAULTS.publish).slack } }
   // the Outputs window's starting value: the Default Configuration only (a pod's own configuration never has it)
   outputsStored = !forPod.value && payload.config.outputs !== undefined
   if (forPod.value) delete cfg.value.outputs; else cfg.value.outputs = { hide_empty_folders: payload.config.outputs?.hide_empty_folders !== false }
@@ -651,6 +654,12 @@ function take(payload) {
 }
 let renderStored = false, renderLoadedKeys = [], outputsStored = false
 /** The Tunnel proxy preset is a quick proxy: it takes the kind with it. */
+// The colour of the frames when nobody states one: empty is the project default (Gamma 2.6 P3-D65 for a header that says linear; log and printing density are still asked); a colour here is used for every frame whose header says linear or log
+const RENDER_COLOURS = ['p3-d65-gamma26', 'p3-d65-srgb', 'p3-d65-gamma22', 'linear-p3-d65', 'linear-rec709', 'kodak-log']
+const renderColour = computed({
+  get: () => (cfg.value.render.colour?.mode === 'format' && cfg.value.render.colour.format ? cfg.value.render.colour.format : ''),
+  set: (v) => { cfg.value.render.colour = v ? { mode: 'format', format: v, set_by: 'Default Configuration', set_at: new Date().toISOString() } : { mode: 'known' } },
+})
 function renderPresetChanged() { if (cfg.value.render.preset === 'tunnel') cfg.value.render.kind = 'proxy' }
 /** Publishing when done needs the renders on this PC (unless they render here), and Slack needs S3: switched off inline, before any call. */
 function renderDeps() { const p = cfg.value.render.publish; if (!p.s3) p.slack = false }

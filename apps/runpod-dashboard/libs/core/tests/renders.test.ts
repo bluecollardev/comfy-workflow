@@ -399,11 +399,11 @@ describe('the review kind: the stitched, versioned deliverable', () => {
   describe('the colour of log and linear frames is a setting (ADR-048)', () => {
     const setColour = (colour: Record<string, unknown>) => { const m = mounts.load(); mounts.save({ ...m, render: { ...m.render, colour } as never }) }
     const lastScript = () => scripts[scripts.length - 1]
-    it('known (the default): a LINEAR header is converted from linear P3-D65 with no setting and no click, the sidecar says it was derived (project default, not stated) and the plan warns; log and printing density are never derived', async () => {
+    it('known (the default): a LINEAR header is converted from Gamma 2.6 P3-D65 (this project\'s colour, whatever the header says) with no setting and no click, the sidecar says it was derived (project default, not stated) and the plan warns; log and printing density are never derived', async () => {
       pod.header = dpxHeader({ transfer: 2 })
       const pl = await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review' }); expect(pl.settings.colour).toEqual({ mode: 'known' })
-      expect(pl.sequences[0]).toMatchObject({ colour_in: 'linear-p3-d65', colour_source: 'guess', colour_assumption: expect.stringMatching(/linear and generated shots are P3-D65 \(Kyle, 14 Nov\)/) }); expect(pl.sequences[0].flags.map((f) => f.code)).toContain('colour-guessed'); expect(pl.sequences[0].flags.map((f) => f.code)).not.toContain('colour-not-stated')
-      let j = await review(); expect(j.sequences[0].state).toBe('pulled'); expect(lastScript()).toContain('colorchannelmixer=rr=1.2249401'); expect(lastScript()).toMatch(/"stated_by": "project default"/); expect(lastScript()).toMatch(/"guessed": true/); expect(lastScript()).toMatch(/generated shots are P3-D65 \(Kyle, 14 Nov\)/)
+      expect(pl.sequences[0]).toMatchObject({ colour_in: 'p3-d65-gamma26', colour_source: 'guess', colour_assumption: expect.stringMatching(/Gamma 2\.6 P3-D65 used as the project default/) }); expect(pl.sequences[0].flags.map((f) => f.code)).toContain('colour-guessed'); expect(pl.sequences[0].flags.map((f) => f.code)).not.toContain('colour-not-stated')
+      let j = await review(); expect(j.sequences[0].state).toBe('pulled'); expect(lastScript()).toContain('colorchannelmixer=rr=1.2249401'); expect(lastScript()).toMatch(/"stated_by": "project default"/); expect(lastScript()).toMatch(/"guessed": true/); expect(lastScript()).toMatch(/Gamma 2\.6 P3-D65 used as the project default/)
       pod.header = dpxHeader({ transfer: 1 }); j = await review(); expect(j.sequences[0]).toMatchObject({ state: 'skipped', flags: [expect.objectContaining({ code: 'colour-not-stated' })] }); expect(j.sequences[0].reason).toMatch(/render\.colour\.mode known.*printing density/)   // a person states density and log
       pod.header = dpxHeader({ transfer: 2 }); j = await review({ colour_in: 'linear-rec709' }); expect(lastScript()).not.toContain('colorchannelmixer'); expect(lastScript()).toMatch(/"stated_by": "Lucas"/)   // a stated colour still wins
     })
@@ -452,7 +452,7 @@ describe('the review kind: the stitched, versioned deliverable', () => {
     })
     it('no record, an unknown interop id and unreadable JSON all leave the old behaviour (known: a linear header is linear P3-D65, flagged as guessed)', async () => {
       pod.header = dpxHeader({ transfer: 2 })
-      for (const rec of [null, record('g24_rec2020_display'), '{ not json', '']) { pod.record = rec; const x = (await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review' })).sequences[0]; expect(x).toMatchObject({ colour_in: 'linear-p3-d65', colour_source: 'guess' }); expect(x.ocio).toBeUndefined(); expect(x.header_disagrees).toBeUndefined() }
+      for (const rec of [null, record('g24_rec2020_display'), '{ not json', '']) { pod.record = rec; const x = (await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review' })).sequences[0]; expect(x).toMatchObject({ colour_in: 'p3-d65-gamma26', colour_source: 'guess' }); expect(x.ocio).toBeUndefined(); expect(x.header_disagrees).toBeUndefined() }
       pod.record = '{ not json'; const j = await review(); expect(j.sequences[0].state).toBe('pulled'); expect(lastScript()).toContain('colorchannelmixer=rr=1.2249401'); expect(lastScript()).toMatch(/"stated_by": "project default"/); expect(lastScript()).not.toMatch(/ocio-record/)
       setColour({ mode: 'ask' }); pod.record = record('nope'); pod.header = dpxHeader({ transfer: 1 }); expect((await review()).sequences[0].state).toBe('skipped')   // and a log header with no usable record is still refused
     })
@@ -469,7 +469,7 @@ describe('the review kind: the stitched, versioned deliverable', () => {
     })
     it('on this PC the record is read from the sequence folder (<dir>/<stem>.json)', async () => {
       const d = join(shared, 'output', SEQ.dir); mkdirSync(d, { recursive: true }); for (let i = 0; i < 10; i++) writeFileSync(join(d, `${SEQ.name}.${String(i).padStart(4, '0')}.dpx`), i === 0 ? dpxHeader({ transfer: 2 }) : 'x')
-      let x = (await renders.plan({ sequences: [SEQ], kind: 'review', where: 'local' })).sequences[0]; expect(x).toMatchObject({ colour_in: 'linear-p3-d65', colour_source: 'guess' })
+      let x = (await renders.plan({ sequences: [SEQ], kind: 'review', where: 'local' })).sequences[0]; expect(x).toMatchObject({ colour_in: 'p3-d65-gamma26', colour_source: 'guess' })
       writeFileSync(join(d, `${SEQ.name}.json`), G26); x = (await renders.plan({ sequences: [SEQ], kind: 'review', where: 'local' })).sequences[0]; expect(x).toMatchObject({ colour_in: 'p3-d65-gamma26', colour_source: 'ocio-record', header_disagrees: true })
       const { job_id } = await renders.start({ sequences: [SEQ], kind: 'review', approved_by: 'Lucas', where: 'local', codecs: ['h264'] }); await renders.settled()
       const { readFileSync } = await import('node:fs'), v1 = join(shared, 'output', 'deliver', 'archival-085', 'v001'), meta = JSON.parse(readFileSync(join(v1, `${SEQ.name}.mp4.meta.json`), 'utf8'))

@@ -656,14 +656,14 @@ const overrides = (v: unknown): Record<string, boolean> => {
 }
 export type ColourMode = 'ask' | 'format' | 'guess' | 'known'
 const colourModeOf = (v: unknown, st: RenderSettings): ColourMode => { if (v === undefined || v === null || v === '') return st.colour?.mode ?? 'known'; if (v !== 'ask' && v !== 'format' && v !== 'guess' && v !== 'known') throw bad('colour_mode is ask, format, guess or known'); return v }
-export const KNOWN_LINEAR = 'the DPX header says linear and generated shots are P3-D65 (Kyle, 14 Nov): linear P3-D65 used as the project default; state the colour to override'
+export const KNOWN_LINEAR = 'the DPX header says linear but this project\'s frames are Gamma 2.6 P3-D65 (the ComfyUI-OCIO record of every sequence, and the 20 Nov Tunnel PDF): Gamma 2.6 P3-D65 used as the project default; state the colour to override'
 export const COLOUR_HOW = 'Set render.colour.mode to format or guess, or pass colour_in'
 /** The colour of frames whose header says log, linear or printing density and that no person stated (ADR-048, 'the colour of linear and log frames is a setting'): ask = skip with a warning, format = the configured format, guess = from the header (and said so). */
 export function pickColour(mode: ColourMode, set: { format?: string; set_by?: string; set_at?: string }, transfer: number, review: boolean): { colour_in?: tunnelj.ColourIn; by?: string; guessed?: string; skip?: string } {
   const named = `${TRANSFER_NAMES[transfer] ?? transfer} (code ${transfer})`
   if (mode === 'format' && set.format) return { colour_in: set.format as tunnelj.ColourIn, by: 'configuration' }
   // known (the default): what the project already tells us. A linear DPX is P3-D65 (Kyle, 14 Nov: generated shots are P3-D65), so a linear header is converted from linear P3-D65 and the sidecar says it was derived, not stated. Log and printing density are never derived: a person states those (colour.md).
-  if (mode === 'known' && transfer === 2) return { colour_in: 'linear-p3-d65', by: 'project default', guessed: KNOWN_LINEAR }
+  if (mode === 'known' && transfer === 2) return { colour_in: 'p3-d65-gamma26', by: 'project default', guessed: KNOWN_LINEAR }
   if (mode === 'guess') return transfer === 2 ? { colour_in: 'linear-rec709', by: 'configuration (guess)', guessed: 'linear transfer: Rec.709 primaries assumed, shown with the Rec.709 transfer' } : transfer === 1 ? { colour_in: 'cineon', by: 'configuration (guess)', guessed: 'printing density: the Cineon reference of policy/colour.md (white 685, black 95, gamma 0.6) to display, Rec.709 primaries assumed' } : { colour_in: 'kodak-log', by: 'configuration (guess)', guessed: 'log: no view transform, tagged only (not a viewable picture)' }
   return review ? { skip: `colour not stated (render.colour.mode ${mode}): the DPX header says ${named}. ${COLOUR_HOW}.` } : {}
 }
