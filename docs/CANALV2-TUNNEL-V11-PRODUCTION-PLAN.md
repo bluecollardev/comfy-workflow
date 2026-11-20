@@ -159,3 +159,20 @@ The first two plans of this day were pull-only (`imp-mwp4ub0g-0`, `imp-mwp4ub1o-
 
 **Not done:** the DPX header and timecode patch (headers still say linear; no timecode in the header), the real round `tunnel-v11-edl-2026-11-18`, the Rec.709 convert-or-tag decision, stopping the pod.
 
+## 9. Delivery of what we have (decided 2026-11-20: "deliver what we can and have first")
+
+**Scope:** the 17 elements that have DPX on the volume and a corrected review video (section 2). The 16 elements without DPX (087, 123 f, 168, creature-266, photoreal-013) and the 3 CGI-072 elements are not in this delivery: see the report, section 3.
+
+**Rules (Lucas, 2026-11-20):**
+1. **Test first.** A few elements go to a `_TEST_` round first (`_TEST_tunnel-v11-2026-11-20`) with exactly the layout and names the real round will get. They are checked in the bucket before anything goes to the real round.
+2. **Nothing existing in the real `returns/BKK/` is ever overwritten**, in any round that is not a `_TEST_` round. Enforced in the app (v1.7.1): a file already in a non-`_TEST_` round with a different size is refused (the whole run is refused and lists them), a file with the same size is skipped, and a `RETURN-MANIFEST.json` that is not ours is left untouched (the run fails with a 409 after the files are up; nothing is overwritten). Only a `_TEST_` round is written over.
+3. S3 only (no Slack post) until the delivery is checked.
+
+**What each element carries (from the PDF, section 1a):** the frames as `<CLIP>/<CLIP>.0000.dpx` and up, the H.264 proxy `<CLIP>.mp4`, and the manifest. The clip name is the EDL's, e.g. `ARCHIVAL-077_A_FINAL_V03_3840X2160_23.976_PRORES422HQ`; the files on disk keep their own names (`..._mono_v015_NOT_RELEASED`) and are renamed on upload only (`clip_names`). The app writes one `RETURN-MANIFEST.json` for the round (sha256 per file); the PDF shows a manifest per element: to settle with Binc.
+
+**Plan check (read-only, 2026-11-20), all 17 against the real round name:** 1,770 files, 91.1 GB, no blockers, nothing refused, the frame count equal to the EDL for each of the 17. One warning: ARCHIVAL-093 b is `low-source-resolution` (1618x1080, as the PDF says).
+
+**Order:** (1) test round with three elements (084 main, 085 main, 123 c); (2) check keys, sizes, names and manifest in the bucket; (3) the other 14 into the test round if the first three are right, or straight to the real round if Lucas says so; (4) the real round `tunnel-v11-edl-2026-11-18`, never overwriting; (5) record in the delivery report.
+
+**Known defects that ship with these DPX (say so when delivering):** the header still says linear (transfer 2) while the pixels are Gamma 2.6 P3-D65 (the PDF itself calls this a bug); no timecode in the header (the EDL start timecode is in the manifest and the sidecars only); the Rec.709 convert-or-tag choice for the proxy is still open.
+
