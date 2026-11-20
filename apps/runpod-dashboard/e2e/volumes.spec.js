@@ -113,7 +113,7 @@ test.describe('volumes: browse and erase', () => {
     const files = page.getByTestId('volume-files-modal')
     await expect(files.getByTestId('volume-files-plan')).toContainText('RTX 2000 Ada')   // where it runs and the price, before anything starts
     await expect(files.getByTestId('volume-s3-keys-alert')).toContainText('S3')   // this volume could be read through S3: it says so, with the reason, before a pod is started
-    await expect(files.getByTestId('volume-files-start')).toContainText('short pod')   // and the button says a pod is what it starts
+    await expect(files.getByTestId('volume-files-start')).toContainText('Short Pod')   // and the button says a pod is what it starts
     await files.getByTestId('volume-add-s3-keys').click()
     await expect(page.locator('#cfg-s3-access')).toBeVisible()   // Add S3 keys opens Default Configuration at the key fields
     await page.getByTestId('config-close').first().click()

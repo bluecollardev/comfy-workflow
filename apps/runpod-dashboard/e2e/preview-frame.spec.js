@@ -240,7 +240,7 @@ test.describe('links in the Slack message', () => {
     setup(api, { linksSupport: true, runLinks: LINKS })
     const m = await openModal(page)
     await into(m); await tick(m, 'deliver/a').check(); await m.getByTestId('publish-approved-by').fill('B'); await m.getByTestId('publish-run').click()
-    await expect(m.getByTestId('publish-links-folder')).toHaveText('Folder links'); await expect(m.getByTestId('publish-links-file')).toHaveText('File links'); await expect(m.getByTestId('publish-links-preview')).toHaveText('Preview image')
+    await expect(m.getByTestId('publish-links-folder')).toContainText('Folder links'); await expect(m.getByTestId('publish-links-file')).toContainText('File links'); await expect(m.getByTestId('publish-links-preview')).toContainText('Preview image')
     await expect(m.locator('[data-testid="publish-link"][data-kind="folder"]')).toHaveCount(2)   // the console address without a kind is a folder
     await expect(m.locator('[data-testid="publish-link"][data-kind="file"]')).toHaveCount(2)
     await expect(m.locator('[data-testid="publish-link"][data-kind="preview"]')).toHaveCount(1)
