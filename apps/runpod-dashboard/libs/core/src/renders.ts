@@ -356,7 +356,7 @@ export interface Pass { args: string[]; fmt: 'mp4' | 'mov'; verify: number | nul
 export function renderScript(passes: Pass[], jobId: string, index: number, extras: Extra[] = [], o: { versionDir?: string; createDir?: boolean; timeout?: number } = {}): string {
   const pid = pidFile(jobId, index), outs = passes.map((p) => p.args[p.args.length - 1].replace(/\.part$/, ''))
   const heredoc = (e: Extra, n: number) => [`cat > ${q(e.path + '.tmp')} <<'RENDER_EOF_${n}'`, e.content.replace(new RegExp(`^RENDER_EOF_${n}$`, 'gm'), ' RENDER_EOF'), `RENDER_EOF_${n}`,
-    `sed -i ${passes.map((_p, k) => `-e "s/@@SHA256_${k}@@/$SHA_${k}/g" -e "s/@@BYTES_${k}@@/$SZ_${k}/g" -e "s/@@FRAMES_${k}@@/$N_${k}/g" -e "s/@@RATE_${k}@@/$RATE_${k}/g"`).join(' ')} ${q(e.path + '.tmp')} && ${e.append ? `cat ${q(e.path + '.tmp')} >> ${q(e.path)} && rm -f ${q(e.path + '.tmp')}` : `mv ${q(e.path + '.tmp')} ${q(e.path)}`}`]
+    `sed -i ${passes.map((_p, k) => `-e "s/@@SHA256_${k}@@/$SHA_${k}/g" -e "s/@@BYTES_${k}@@/$SZ_${k}/g" -e "s/@@FRAMES_${k}@@/$N_${k}/g" -e "s/@@RATE_${k}@@/\${RATE_${k}:-0}/g"`).join(' ')} ${q(e.path + '.tmp')} && ${e.append ? `cat ${q(e.path + '.tmp')} >> ${q(e.path)} && rm -f ${q(e.path + '.tmp')}` : `mv ${q(e.path + '.tmp')} ${q(e.path)}`}`]
   // a failed review must not leave an EMPTY version folder behind (it would eat the number: v001 and v002 were failed attempts): rmdir removes it only when it is empty
   const rmv = o.versionDir && o.createDir !== false ? `rmdir ${q(o.versionDir)} 2>/dev/null; ` : ''
   const pass = (p: Pass, k: number): string[] => {

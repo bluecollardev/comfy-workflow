@@ -578,7 +578,8 @@ describe('a cheap card is enough: the pod\'s CPU, disk and the output estimate i
   })
   it('the measured encode rate goes into the sidecar and DELIVERY.md (placeholders filled on the pod; locally from the clock)', async () => {
     await runJob({ kind: 'review', approved_by: 'L', width: undefined, codecs: ['h264'] }); const script = scripts.filter((s) => s.includes('nice -n 10')).at(-1)!
-    expect(script).toContain('RATE_0=$(awk'); expect(script).toContain('"s/@@RATE_0@@/$RATE_0/g"'); expect(script.split("<<'RENDER_EOF_1'\n")[1]).toContain('Measured encode rate: h264 @@RATE_0@@ frames per second'); expect(script).toContain('"render_fps": @@RATE_0@@')
+    expect(script).toContain('RATE_0=$(awk'); expect(script).toContain('"s/@@RATE_0@@/${RATE_0:-0}/g"');   // an empty rate (the awk failed) is written as 0, never as nothing: an empty value made the sidecar invalid JSON and Auto-publish dropped the source frames
+     expect(script.split("<<'RENDER_EOF_1'\n")[1]).toContain('Measured encode rate: h264 @@RATE_0@@ frames per second'); expect(script).toContain('"render_fps": @@RATE_0@@')
   })
 })
 
