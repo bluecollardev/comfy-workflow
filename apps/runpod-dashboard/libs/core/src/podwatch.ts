@@ -12,6 +12,7 @@
  *  - Two processes (the app and an MCP server) may both tick: a watch carries a short claim (pid and time) and the other one waits it out.
  * Every effect goes through `Deps`, so the tests run it with fakes and no pod.
  */
+import { timedTick } from './ticks.js'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { CoreError, bad } from './errors.js'
@@ -259,7 +260,7 @@ let timer: ReturnType<typeof setInterval> | null = null
 /** Look for due watches every 15 s while this process is up (idempotent). The app and an MCP server may both run it: a claim keeps them apart. */
 export function start(everyMs = 15_000): void {
   if (timer) return
-  timer = setInterval(() => { void tick() }, everyMs)
+  timer = setInterval(() => { void timedTick('podwatch.tick', () => tick()) }, everyMs)
   if (typeof timer === 'object' && 'unref' in timer) timer.unref()
 }
 export function stop(): void { if (timer) { clearInterval(timer); timer = null } }

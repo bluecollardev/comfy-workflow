@@ -22,7 +22,7 @@ const IDS = Object.keys(FILES)
  * @param {boolean} [o.preferBundle]           use the bundles (packaged) rather than the .mjs sources (a checkout)
  * @param {(msg: string) => void} [o.log]
  */
-function createMcpHost({ loadCore, syncJobs, mcpDir, preferBundle = false, log = (m) => console.error(m) }) {
+function createMcpHost({ loadCore, syncJobs, timeTool, mcpDir, preferBundle = false, log = (m) => console.error(m) }) {
   const running = new Map()       // id -> { port, url, close }
   const errors = new Map()        // id -> message of the last failed start
   const bridgeState = {}          // the bridge's discovered target, kept between requests
@@ -37,7 +37,7 @@ function createMcpHost({ loadCore, syncJobs, mcpDir, preferBundle = false, log =
   async function open(id, port) {
     const [core, mod] = await Promise.all([loadCore(), loadModule(id)])
     const make = id === 'pod-manager'
-      ? () => mod.createPodManagerServer({ core, syncHost: syncJobs })
+      ? () => mod.createPodManagerServer({ core, syncHost: syncJobs, timeTool })
       : () => mod.createComfyBridgeServer({ core, target: process.env.COMFY_URL || '', targetFrom: 'COMFY_URL', project: process.env.PROJECT_ROOT || '', state: bridgeState })
     return mod.startHttp(make, { port, onError: log })
   }
