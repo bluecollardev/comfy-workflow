@@ -7,6 +7,8 @@
         <BDropdownItem data-testid="history-export-json" @click="doExport('json', undefined)">{{ $t('history.exportJson') }}</BDropdownItem>
         <BDropdownItem data-testid="history-export-csv-events" @click="doExport('csv', 'events')">{{ $t('history.exportCsvEvents') }}</BDropdownItem>
         <BDropdownItem data-testid="history-export-csv-spend" @click="doExport('csv', 'spend')">{{ $t('history.exportCsvSpend') }}</BDropdownItem>
+        <BDropdownItem data-testid="history-export-log-csv" @click="exportLog('csv')">{{ $t('history.exportLogCsv') }}</BDropdownItem>
+        <BDropdownItem data-testid="history-export-log-pdf" @click="exportLog('pdf')">{{ $t('history.exportLogPdf') }}</BDropdownItem>
       </BDropdown>
     </div>
     <BAlert v-if="error" :model-value="true" variant="danger" class="mb-3" data-testid="history-error">{{ $t('history.loadError', { error }) }}</BAlert>
@@ -204,7 +206,8 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useUiStore } from '../stores/ui'
 import { usePodsStore } from '../stores/pods'
 import { historyAPI, onHistoryChange } from '../api/history'
-import { saveTextFile } from '../api/configio'
+import { saveTextFile, savePdfFile } from '../api/configio'
+import { historyRows, toCsv, toHtml, stamp } from '../utils/logexport'
 import { detailText, isAuto } from '../utils/syncs'
 import { useToastStore } from '../stores/toast'
 
@@ -320,6 +323,14 @@ const exporting = ref(false)
 async function doExport(format, what) {
   exporting.value = true; error.value = ''
   try { const f = await historyAPI.export(format, what); await saveTextFile(f.name, f.text) } catch (e) { error.value = msg(e) } finally { exporting.value = false }
+}
+/** The events shown, as one log table: CSV or PDF. */
+async function exportLog(format) {
+  exporting.value = true; error.value = ''
+  try {
+    const rows = historyRows(events.value), name = `history-log-${stamp()}.${format}`
+    if (format === 'csv') await saveTextFile(name, toCsv(rows)); else await savePdfFile(name, toHtml('History log', rows))
+  } catch (e) { error.value = msg(e) } finally { exporting.value = false }
 }
 async function loadRuns(quiet = false) {
   if (!quiet) runs.value = null

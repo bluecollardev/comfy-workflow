@@ -25,7 +25,7 @@ export const configioAPI = ipc || http
 /** Save text as a file the user names: the native Save dialog in the app (resolves { path } or { canceled: true }), a download in a browser. */
 export async function saveTextFile(name, text) {
   if (core?.files) return core.files.saveText(name, text)
-  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
+  const url = URL.createObjectURL(new Blob([text], { type: /\.csv$/i.test(name) ? 'text/csv' : 'application/json' }))
   const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
   return { path: name }
@@ -34,3 +34,11 @@ export async function saveTextFile(name, text) {
 /** The native Open dialog (resolves { name, text } or { canceled: true }); in a browser the page uses its own <input type=file> instead (see ConfigIoPanel). */
 export const openTextFile = () => (core?.files ? core.files.openText() : null)
 export const hasNativeFiles = () => !!core?.files
+
+/** A printable page saved as a PDF: the native Save dialog and a hidden print in the app; in a browser the page opens in a new tab to print or save as PDF. */
+export async function savePdfFile(name, html) {
+  if (core?.files?.savePdf) return core.files.savePdf(name, html)
+  const w = window.open('', '_blank')
+  if (w) { w.document.open(); w.document.write(html); w.document.close(); setTimeout(() => { try { w.print() } catch { /* the user prints from the tab */ } }, 300) }
+  return { path: name }
+}
