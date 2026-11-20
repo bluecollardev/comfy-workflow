@@ -300,3 +300,9 @@ Either way, once an element has its frames it is delivered like the 17: correcte
 
 **Decision needed:** none to start (11.5 decided it). Build step 2 next.
 
+## 13. The route for the 19 is `base_v008` through Import Round; the unpack is the fallback (2026-11-21)
+
+The volume round **`base_v008`** (30 shots, 62 graphs, adapter `brynley-rounds-layout`) has a graph for every one of the 19 elements without DPX: archival-087 platform and rain; 123 a, c, f; 168 a to d; creature-266 breach-alt1, dolphin-lowtrack, landing; photoreal-013 (11 graphs, all 8 elements of the PDF among them); cgi-072 head, backhalf-b, backhalf-c. Earlier sections said no graphs existed: that was wrong, only the `mono_v015` to `v018` rounds and `proxy_v005` had been checked. Lucas's route (2026-11-21): **Import Round, Source = Volume, round `base_v008`, Run Workflows and Generate Outputs on, Publish off**, up to 6 pods, each shot on its own pod, any card of 32 to 96 GB, USD 50 cap. Started as `imp-mwp9elrt-0` (26 graphs at about 61 s). What a base graph writes (DPX or not) is to be read from the first one that finishes.
+
+**The ffmpeg unpack (`dpx_make`, ADR-055 section 8) stays as the fallback**, finished and merged on `develop`: it unpacks the EDL source ranges of a master into 16-bit DPX, straight, never into an existing folder, on a pod. Use it for an element whose base graph does not write DPX. Not yet run on a pod. Found while testing against the real EDL: ARCHIVAL-123_F has an empty second range (in and out both 00:00:04:20), now dropped by `from_edl`; its masters in the round are two "mcp-preview-8bit" files (193 and 151 frames), neither obviously the final.
+

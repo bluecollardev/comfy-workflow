@@ -177,7 +177,8 @@ function fromEdl(it: MakeItem, shot: string, element: string): MakeItem {
   const e = m.element
   if (e.speeds.some((v) => v !== 100)) throw bad(`${e.clip} has a retime in the EDL (speeds ${e.speeds.join(', ')}%): it cannot be unpacked straight`)
   const norm = (t: string) => t.replace(/;/g, ':')
-  return { ...it, frames_expected: it.frames_expected ?? e.frames_in_cut, source_ranges: it.source_ranges ?? e.source_ranges.map((x) => ({ in: norm(x.in), out: norm(x.out) })), fps: it.fps ?? edl.FPS }
+  // the EDL has empty ranges (ARCHIVAL-123_F: in and out both 00:00:04:20): they hold no frame and are dropped
+  return { ...it, frames_expected: it.frames_expected ?? e.frames_in_cut, source_ranges: it.source_ranges ?? e.source_ranges.map((x) => ({ in: norm(x.in), out: norm(x.out) })).filter((x) => x.in !== x.out), fps: it.fps ?? edl.FPS }
 }
 function checkItems(items: unknown, round: unknown): { round: string; items: Norm[] } {
   const r = name(round ?? DEFAULT_ROUND, 'round')
