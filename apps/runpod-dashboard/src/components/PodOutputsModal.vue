@@ -6,6 +6,7 @@
         <BButton v-if="all.length > 1" variant="outline-light" size="sm" class="text-nowrap" :disabled="!canZip || zipping || !anyBase" :title="canZip ? '' : $t('outputs.zipApp')" data-testid="pod-outputs-zip-all" @click="zipAll"><BSpinner v-if="zipping" small class="me-1" /><i v-else class="fa-solid fa-file-zipper me-1"></i>{{ $t('outputs.zipAllRuns') }}</BButton>
         <BButton variant="outline-light" size="sm" class="text-nowrap" data-testid="pod-outputs-clear-previews" :title="$t('outputs.dpx.clearCacheTitle')" @click="clearPreviews"><i class="fa-regular fa-trash-can me-1"></i>{{ $t('outputs.dpx.cached', { n: cachedCount }) }} · {{ $t('outputs.dpx.clearCache') }}</BButton>
         <BButton variant="outline-light" size="sm" class="text-nowrap" data-testid="pod-outputs-previews" :title="$t('outputs.dpx.previewsTitle')" @click="previewsOpen = true"><BSpinner v-if="batchRunning || renderJob" small class="me-1" /><i v-else class="fa-regular fa-images me-1"></i>{{ batchRunning ? $t('outputs.dpx.generating', { done: batchDone, total: batchTotal }) : $t('outputs.dpx.previews') }}<span v-if="renderJob" class="ms-1 text-info" data-testid="pod-outputs-render-button-status">· {{ renderJob.state === 'pulling' ? $t('outputs.render.buttonSyncing') : $t('outputs.render.buttonRendering', { done: renderJob.frames_done || 0, total: renderJob.frames_total || 0 }) }}</span></BButton>
+        <BButton v-if="genItems.length && !publishStore.old" variant="outline-light" size="sm" class="text-nowrap" :title="$t('delivery.buttonTitle')" data-testid="pod-outputs-delivery" @click="deliveryOpen = true"><i class="fa-solid fa-clapperboard me-1"></i>{{ $t('delivery.button') }}</BButton>
         <BButton v-if="!publishStore.old" variant="outline-light" size="sm" class="text-nowrap" :title="$t('publish.buttonTitle')" data-testid="pod-outputs-publish" @click="publishOpen = true"><i class="fa-solid fa-cloud-arrow-up me-1"></i>{{ $t('publish.button') }}</BButton>
         <BButton variant="outline-light" size="sm" class="text-nowrap" data-testid="pod-outputs-refresh" @click="refresh"><i class="fa-solid fa-rotate me-1"></i>{{ $t('outputs.refresh') }}</BButton>
       </div>
@@ -116,6 +117,7 @@
       </div>
     </div>
   </BModal>
+  <DeliveryPrepare v-if="deliveryOpen" :items="genItems" :pod="pod" @close="deliveryOpen = false" @publish="deliveryOpen = false; publishOpen = true" />
   <PublishModal v-if="publishOpen" :preselect="vol.prefix ? [] : publishPreselect" :volume-dir="vol.prefix" :volume-name="volumeName || ''" @close="publishOpen = false" />
 </template>
 
@@ -125,6 +127,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch 
 import OutputsGallery from './OutputsGallery.vue'
 import RenderSequences from './RenderSequences.vue'
 import PublishModal from './PublishModal.vue'
+import DeliveryPrepare from './DeliveryPrepare.vue'
 import { usePublishStore } from '../stores/publish'
 import { useAutopublishStore } from '../stores/autopublish'
 import { useMountsStore } from '../stores/mounts'
@@ -145,6 +148,7 @@ const folderOf = (p) => p.split('/').slice(0, -1).join('/')
 /** `base`: the web address files are served from (this pod, or another running pod on its volume); '' when none runs: the files are then read from the volume over S3 when its keys are set, else only listed. */
 const props = defineProps({ pod: { type: Object, required: true }, runs: { type: Array, default: () => [] }, base: { type: String, default: '' }, volumeName: { type: String, default: '' }, volumeId: { type: String, default: '' } })
 const emit = defineEmits(['close', 'refresh'])
+const deliveryOpen = ref(false)
 const ui = useUiStore(), mountsStore = useMountsStore()
 const canZip = !!core?.files?.downloadZip, zipping = ref(false)
 // The pod's Shot (the card's field) narrows the list to that shot's runs; "All Shots", or no shot, shows every run. A checkbox turns it off.
