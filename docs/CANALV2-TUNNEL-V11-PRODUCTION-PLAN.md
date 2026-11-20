@@ -227,22 +227,22 @@ Not every element is in the same state, so the delivery is handled by case. **Ru
 
 | # | Element | Frames (PDF) | Raster | Source final in | State on the volume | Case | Needed |
 |---|---|---|---|---|---|---|---|
-| 18 | ARCHIVAL-087 platform | 97 | 3840x2160 | `-11-14` | pulled | D | DPX from the ProRes master (decision 1); then as A |
-| 19 | ARCHIVAL-087 rain | 96 | 3840x2160 | `-11-14` | pulled | D | DPX from the ProRes master (decision 1); then as A |
-| 20 | ARCHIVAL-123 f | 43 | 3840x2160 | `-10-23` | staged | D | DPX from the ProRes master (decision 1); then as A |
-| 21 | ARCHIVAL-168 a | 153 | 3840x2160 | `-10-29` | pulled | D | DPX from the ProRes master (decision 1); then as A |
-| 22 | ARCHIVAL-168 b | 139 | 3840x2160 | `-10-29` | pulled | D | DPX from the ProRes master (decision 1); then as A |
-| 23 | ARCHIVAL-168 c | 105 | 3840x2160 | `-10-29` | pulled | D | DPX from the ProRes master (decision 1); then as A |
-| 24 | ARCHIVAL-168 d | 48 | 3840x2160 | `-10-29` | pulled | D | DPX from the ProRes master (decision 1); then as A |
-| 25 | CREATURE-266 dolphin-lowtrack (ALT V01) | 94 | 1920x1080 | `-11-14` | pulled | D | DPX from the ProRes master (decision 1); then as A |
-| 26 | PHOTOREAL-013 ascent | 108 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | DPX at 24 fps from the master (decision 1); then as A |
-| 27 | PHOTOREAL-013 chasm07 | 271 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | DPX at 24 fps from the master (decision 1); then as A |
-| 28 | PHOTOREAL-013 f23 | 633 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | DPX at 24 fps from the master (decision 1); then as A |
-| 29 | PHOTOREAL-013 hadal | 160 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | DPX at 24 fps from the master (decision 1); then as A |
-| 30 | PHOTOREAL-013 landing | 226 | 1920x1080, 24 fps ProRes | `-11-14` | pulled | E | DPX at 24 fps from the master (decision 1); then as A |
-| 31 | PHOTOREAL-013 splash | 96 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | DPX at 24 fps from the master (decision 1); then as A |
-| 32 | PHOTOREAL-013 sunlight | 212 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | DPX at 24 fps from the master (decision 1); then as A |
-| 33 | PHOTOREAL-013 top (V02) | 209 | 1920x1080, 24 fps ProRes | `-11-14` | pulled | E | DPX at 24 fps from the master (decision 1); then as A |
+| 18 | ARCHIVAL-087 platform | 97 | 3840x2160 | `-11-14` | pulled | D | Turn the ProRes master into DPX frames (Binc makes the graphs, or we convert it with ffmpeg: decision 1 below); then the same steps as the 17: corrected header, review video, manifest, test round, real round |
+| 19 | ARCHIVAL-087 rain | 96 | 3840x2160 | `-11-14` | pulled | D | Turn the ProRes master into DPX frames (Binc makes the graphs, or we convert it with ffmpeg: decision 1 below); then the same steps as the 17: corrected header, review video, manifest, test round, real round |
+| 20 | ARCHIVAL-123 f | 43 | 3840x2160 | `-10-23` | staged | D | Turn the ProRes master into DPX frames (Binc makes the graphs, or we convert it with ffmpeg: decision 1 below); then the same steps as the 17: corrected header, review video, manifest, test round, real round |
+| 21 | ARCHIVAL-168 a | 153 | 3840x2160 | `-10-29` | pulled | D | Turn the ProRes master into DPX frames (Binc makes the graphs, or we convert it with ffmpeg: decision 1 below); then the same steps as the 17: corrected header, review video, manifest, test round, real round |
+| 22 | ARCHIVAL-168 b | 139 | 3840x2160 | `-10-29` | pulled | D | Turn the ProRes master into DPX frames (Binc makes the graphs, or we convert it with ffmpeg: decision 1 below); then the same steps as the 17: corrected header, review video, manifest, test round, real round |
+| 23 | ARCHIVAL-168 c | 105 | 3840x2160 | `-10-29` | pulled | D | Turn the ProRes master into DPX frames (Binc makes the graphs, or we convert it with ffmpeg: decision 1 below); then the same steps as the 17: corrected header, review video, manifest, test round, real round |
+| 24 | ARCHIVAL-168 d | 48 | 3840x2160 | `-10-29` | pulled | D | Turn the ProRes master into DPX frames (Binc makes the graphs, or we convert it with ffmpeg: decision 1 below); then the same steps as the 17: corrected header, review video, manifest, test round, real round |
+| 25 | CREATURE-266 dolphin-lowtrack (ALT V01) | 94 | 1920x1080 | `-11-14` | pulled | D | Turn the ProRes master into DPX frames (Binc makes the graphs, or we convert it with ffmpeg: decision 1 below); then the same steps as the 17: corrected header, review video, manifest, test round, real round |
+| 26 | PHOTOREAL-013 ascent | 108 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Turn the master into DPX frames at 24 fps (decision 1 below); then the same steps as the 17 |
+| 27 | PHOTOREAL-013 chasm07 | 271 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Turn the master into DPX frames at 24 fps (decision 1 below); then the same steps as the 17 |
+| 28 | PHOTOREAL-013 f23 | 633 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Turn the master into DPX frames at 24 fps (decision 1 below); then the same steps as the 17 |
+| 29 | PHOTOREAL-013 hadal | 160 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Turn the master into DPX frames at 24 fps (decision 1 below); then the same steps as the 17 |
+| 30 | PHOTOREAL-013 landing | 226 | 1920x1080, 24 fps ProRes | `-11-14` | pulled | E | Turn the master into DPX frames at 24 fps (decision 1 below); then the same steps as the 17 |
+| 31 | PHOTOREAL-013 splash | 96 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Turn the master into DPX frames at 24 fps (decision 1 below); then the same steps as the 17 |
+| 32 | PHOTOREAL-013 sunlight | 212 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Turn the master into DPX frames at 24 fps (decision 1 below); then the same steps as the 17 |
+| 33 | PHOTOREAL-013 top (V02) | 209 | 1920x1080, 24 fps ProRes | `-11-14` | pulled | E | Turn the master into DPX frames at 24 fps (decision 1 below); then the same steps as the 17 |
 | 34 | CGI-072 head | 106 | 1920x1080 V02 ProRes 23.976 | `-10-29` (V03 HEVC 24) | not pulled | F | Binc to say which version; then import `-10-29` for it |
 | 35 | CGI-072 backhalf-b | 70 | 1920x1080 V02 ProRes 23.976 | `-10-29` (V03 HEVC 24) | not pulled | F | Binc to say which version; then import `-10-29` for it |
 | 36 | CGI-072 backhalf-c | 162 | 1920x1080 V02 ProRes 23.976 | `-10-29` (V03 HEVC 24) | not pulled | F | Binc to say which version; then import `-10-29` for it |
