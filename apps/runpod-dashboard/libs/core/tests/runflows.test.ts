@@ -121,6 +121,12 @@ describe('running', () => {
     const c2 = scripted([{ status: 200 }]); const j2 = await finish((await runflows.run('pod1', ['a/g.json'], opts(c2 as never, { fetchFn: c2.fetchFn, convert: bad as never, convertWaitMs: 5, backoffMs: [10, 10] }))).id)
     expect(m).toBe(1); expect(j2.results[0].state).toBe('failed')
   })
+  it('a graph fetch that times out while ComfyUI is busy is asked again before the graph is failed', async () => {
+    const c = scripted([{ status: 200 }], { p1: { status: OK, outputs: { '9': {} } } }); let asked = 0
+    const fetchFn = (async (url: string, init?: unknown) => { if (String(url).includes('/api/userdata/') && ++asked < 3) throw new DOMException('The operation was aborted due to timeout', 'TimeoutError'); return (c.fetchFn as unknown as (u: string, i?: unknown) => Promise<unknown>)(url, init) }) as unknown as typeof fetch
+    const j = await finish((await runflows.run('pod1', ['a/g.json'], opts(c as never, { fetchFn, backoffMs: [10, 10], fetchWaitMs: 5 }))).id)
+    expect(asked).toBe(3); expect(j.results[0].state).toBe('done')
+  })
   it('fail fast: a validation error fails at once, no polling, and is never retried', async () => {
     const c = scripted([{ status: 400, body: { error: { message: 'Prompt outputs failed validation' }, node_errors: { '7': { class_type: 'KSampler', errors: [{ message: 'Required input is missing' }] } } } }])
     const j = await finish((await runflows.run('pod1', ['a/g.json'], opts(c as never, { fetchFn: c.fetchFn, backoffMs: [10, 10] }))).id); expect(j.results[0]).toMatchObject({ state: 'failed', retryable: false }); expect(c.calls.prompts).toBe(1); expect(c.calls.polls).toBe(0)

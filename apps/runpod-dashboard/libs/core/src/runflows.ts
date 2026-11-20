@@ -92,7 +92,7 @@ export interface RunJob {
 export interface LogLine { ts: string; level: 'info' | 'warn' | 'error'; text: string; /** the graph it is about; none for the run as a whole */ path?: string }
 export interface RunOpts {
   /** waits before the retries of a transient failure (default 5 then 20 minutes); tests pass short ones */ backoffMs?: number[]
-  /** how long to wait for a starting ComfyUI to answer before the first graph (default 5 minutes), and how often to ask (default 5 s) */ waitComfyMs?: number; pollComfyMs?: number; /** how many times to try the graph conversion (default 8) and the wait between tries (default 30 s) */ convertTries?: number; convertWaitMs?: number
+  /** how long to wait for a starting ComfyUI to answer before the first graph (default 5 minutes), and how often to ask (default 5 s) */ waitComfyMs?: number; pollComfyMs?: number; /** how many times to try the graph conversion (default 8) and the wait between tries (default 30 s) */ convertTries?: number; convertWaitMs?: number; /** the graph fetch: tries (default 3), the first wait for an answer (default 60 s, longer each try) and the pause between tries (default 10 s) */ fetchTries?: number; fetchTimeoutMs?: number; fetchWaitMs?: number
   /** a graph that neither runs nor is in the queue for this long has stalled (default 10 minutes) */ stallMs?: number
   /** which try this is (1 = the first; a retry of a failure passes the next) */ attempt?: number
   client?: rp.RunPodClient; fetchFn?: typeof fetch
@@ -176,7 +176,15 @@ export function outcomeOf(entry: { status?: { status_str?: string; completed?: b
 
 /** A panel graph as an API graph ready to queue: fetched from the pod, converted, the pod's model choice applied, the locked-shot rule checked. */
 export async function apiGraph(podId: string, path: string, base: string, o: RunOpts, fetchFn: typeof fetch): Promise<{ api: Record<string, unknown>; models?: string[] }> {
-  const getJson = async (url: string) => { const x = await fetchFn(url, { signal: AbortSignal.timeout(30_000) }); if (x.status !== 200) throw new CoreError(502, `ComfyUI answered HTTP ${x.status} for ${url.replace(base, '')}`); return x.json() }
+  // a ComfyUI that is busy or still loading can take longer than 30 s to hand over a 40 KB graph: ask again (up to 3 times, the wait growing) before the graph is failed with "The operation was aborted due to timeout"
+  const getJson = async (url: string) => {
+    for (let k = 1; ; k++) {
+      try { const x = await fetchFn(url, { signal: AbortSignal.timeout((o.fetchTimeoutMs ?? 60_000) * k) }); if (x.status !== 200) throw new CoreError(502, `ComfyUI answered HTTP ${x.status} for ${url.replace(base, '')}`); return await x.json() } catch (e) {
+        if (k >= (o.fetchTries ?? 3) || !/aborted|timeout|timed out|fetch failed|ECONN/i.test((e as Error).message)) throw e
+        await new Promise((r) => setTimeout(r, o.fetchWaitMs ?? 10_000))
+      }
+    }
+  }
   const ui = await getJson(`${base}/api/userdata/${encodeURIComponent(`workflows/${path}`)}`)
   if (!Array.isArray((ui as { nodes?: unknown }).nodes)) throw new CoreError(422, `${path} is not a UI graph (it has no nodes list).`)
   // a fresh pod's ComfyUI page may need more than the converter's own 60 s to come up (Page.wait_for_function: Timeout): try the conversion again, a few times, before the graph is failed
