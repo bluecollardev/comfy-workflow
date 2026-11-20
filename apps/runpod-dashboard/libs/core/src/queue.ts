@@ -10,6 +10,7 @@ import * as failures from './failures.js'
 import * as gpus from './gpus.js'
 import * as history from './history.js'
 import * as autosyncstore from './autosyncstore.js'
+import * as autogenerate from './autogenerate.js'
 import * as mounts from './mounts.js'
 import { queueFile } from './paths.js'
 import * as panama from './panama.js'
@@ -17,6 +18,8 @@ import * as podpull from './podpull.js'
 import * as podrounds from './podrounds.js'
 import * as pods from './pods.js'
 import * as rp from './runpod.js'
+import * as renders from './renders.js'
+import * as publish from './publish.js'
 import * as runflows from './runflows.js'
 import * as volumes from './volumes.js'
 import * as volumeround from './volumeround.js'
@@ -40,12 +43,23 @@ export interface Task {
   card?: string
   /** A pod could not be had because RunPod had no card free: the run waits and asks again (not before `retry_at`), up to MAX_CARD_WAITS times. */
   retry_at?: string; attempts?: number
+  /** Generate Outputs / Publish after this run finished (Import Round options): the render on this pod, then the publish. Absent: not asked for or not reached. */
+  post?: PostStep
   started_at?: string; finished_at?: string; error?: string; /** for a failed task: the failure in structured words (stage, node, message, missing models, recovery, retryable, text) */ failure?: failures.Explained; detail?: string; held_reason?: string
 }
+/** What happens on one pod after its run finished, when the import asked for Generate Outputs (and Publish). Failures are here and in the History; they never fail the run. */
+export interface PostStep { state: 'rendering' | 'publishing' | 'done' | 'failed' | 'skipped'; render_job_id?: string; publish_job_ids?: string[]; /** plain words: what happened or why a step could not run */ note?: string; started_at?: string }
+export interface PublishChoice { s3: boolean; slack: boolean }
 export interface ImportRec {
   id: string; round: string; approved_by: string; created_at: string; state: 'active' | 'done' | 'cancelled'
   /** Auto sync for every pod this import CREATES (docs/ADR-046), with this import's approver as the named yes; pods reused from the pool are not changed */
   auto_sync?: { pull: boolean; push: boolean }
+  /** Generate Outputs: when a pod's workflows finish, render the review videos of the new DPX sequences on that pod, under `approved_by` */
+  generate_outputs?: boolean
+  /** Publish: then publish them under `approved_by` (S3, and Slack only when the Default Configuration's render.publish.slack is on); never without generate_outputs */
+  publish?: PublishChoice
+  /** what a step that could not run says, shown on the import's card in the Queue */
+  output_notes?: string[]
   max_pods: number | null; cost_cap_usd: number | null; cap_enabled: boolean
   est_total_usd: number | null; spent_usd: number
   /** The shots this import brings: the pull copies only these (and the round's shared files), the runs are of these */
@@ -85,6 +99,17 @@ export interface Deps {
   /** The History's median seconds per graph (null: none recorded) and what the USD 100 rule leaves (null: no cap set). */
   runSeconds: () => { seconds: number | null; samples: number }
   remainingUsd: () => number | null
+  /** Generate Outputs: the new complete DPX sequences of a shot on the volume since a time (never partial), and what was left out */
+  newSequences: (shot: string, sinceMs: number) => Promise<{ sequences: renders.Sequence[]; skipped: { stem: string; reason: string }[] }>
+  startRender: (req: renders.StartRequest) => Promise<{ job_id: string }>
+  renderJob: (id: string) => renders.JobView | undefined
+  /** Publish: why publishing to these targets cannot run now (null: ready), and the Default Configuration's Slack choice */
+  publishProblem: (t: publish.Target[]) => Promise<string | null>
+  renderSlack: () => boolean
+  /** the Auto-publish round template ({date} filled in) and whether the DPX frames go with the review */
+  publishRound: () => { round: string; include_dpx: boolean }
+  publishRun: (req: publish.RunRequest) => Promise<{ job_id: string }>
+  publishJob: (id: string) => { state: string; error?: string; summary?: string } | undefined
   now: () => Date
 }
 
@@ -127,6 +152,14 @@ const realDeps: Deps = {
   describeVolumeRound: (volumeId, round) => volumeround.describeRound(volumeId, round),
   runSeconds: () => volumeround.medianSecondsPerGraph(),
   remainingUsd: () => volumeround.governanceRemainingUsd(),
+  newSequences: (shot, sinceMs) => autogenerate.newVolumeSequences(shot, sinceMs),
+  startRender: (req) => renders.start(req),
+  renderJob: (id) => renders.status(id).jobs[0],
+  publishProblem: async (t) => { const ps = await publish.settings(); const bad = [...(t.includes('s3') && !ps.s3.ready ? [`S3 is not configured: ${ps.s3.problem}`] : []), ...(t.includes('slack') && !ps.slack.ready ? [`Slack is not configured: ${ps.slack.problem}`] : [])]; return bad.length ? bad.join('; ') : null },
+  renderSlack: () => mounts.load().render?.publish?.slack === true,
+  publishRound: () => { const a = mounts.normalizeAutoPublish(mounts.load().auto_publish), d = deps.now(), p = (n: number) => String(n).padStart(2, '0'); return { round: a.round.replace(/\{date\}/g, `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`), include_dpx: a.include_dpx } },
+  publishRun: (req) => publish.run(req),
+  publishJob: (id) => publish.status(id).jobs[0],
   now: () => new Date(),
 }
 let deps: Deps = realDeps
@@ -162,6 +195,8 @@ export function list(): QueueView {
 export interface ImportPlan {
   round: string; shots: string[]; price_per_hour: number | null; pull_hours: number; est_total_usd: number | null
   max_pods: number | null; cost_cap_usd: number | null; cap_enabled: boolean; over_cap: boolean
+  /** what the import will do after the runs (shown in the plan and the dry run) */
+  generate_outputs?: boolean; publish?: PublishChoice
   /** ADR-044 volume source only: what was assumed, what was refused, and the cap left. */
   source?: 'volume'; volume_id?: string
   graphs?: number; graphs_by_shot?: Record<string, number>; seconds_per_graph?: number; samples?: number
@@ -170,7 +205,7 @@ export interface ImportPlan {
   /** What is left of the caps: the import's cap, and Binc's USD 100 rule (the History's spend against it). */
   remaining_usd?: number | null; assumption?: string; blocked?: string
 }
-export interface ImportOpts { /** true: every pod this import creates pulls its volume's changes to this PC (Auto sync, ADR-046); { pull, push } to choose. Needs approved_by (already required). */ auto_sync?: boolean | { pull?: boolean; push?: boolean }; /** the network volume the pods and the pull use; it becomes the default volume */ volume_id?: string; /** shot -> card (a GPU key); a shot without one takes the pool */ cards?: Record<string, string | string[]>; shots?: string[]; run_workflows?: boolean; max_pods?: number; cost_cap_usd?: number; approved_by?: string
+export interface ImportOpts { /** true: every pod this import creates pulls its volume's changes to this PC (Auto sync, ADR-046); { pull, push } to choose. Needs approved_by (already required). */ auto_sync?: boolean | { pull?: boolean; push?: boolean }; /** the network volume the pods and the pull use; it becomes the default volume */ volume_id?: string; /** shot -> card (a GPU key); a shot without one takes the pool */ cards?: Record<string, string | string[]>; shots?: string[]; run_workflows?: boolean; /** after a pod's workflows finish, render the review videos of the new DPX sequences on that pod (needs run_workflows and approved_by) */ generate_outputs?: boolean; /** then publish them: true = S3 (+ Slack when the Default Configuration's render.publish.slack is on), or { s3, slack }; needs generate_outputs. A person's act: the MCP refuses it */ publish?: boolean | { s3?: boolean; slack?: boolean }; max_pods?: number; cost_cap_usd?: number; approved_by?: string
   /** `volume`: the round already sits on `volume_id` and is run in place (ADR-044). Default: a BH round, pulled first. */ source?: string
   /** Refused on a volume source (guard a): Binc's rule, nothing on the volume is overwritten. Accepted by nothing; named so a caller that sends it gets a clear error. */ replace?: boolean; overwrite?: boolean }
 
@@ -200,6 +235,37 @@ const MOST_EXPENSIVE = 'Where a shot has several cards, the most expensive one i
 const taskCards = (o: ImportOpts, shot: string | null) => { const l = shot ? cardList(o.cards?.[shot]) : []; return l.length ? { gpu: l[0], ...(l.length > 1 ? { gpus: l } : {}) } : {} }
 /** What importing the round would do and cost, before it does anything. */
 export async function planImport(round: string, o: ImportOpts = {}): Promise<ImportPlan> {
+  const out = checkOutputs(o)
+  const p = await planBase(round, o)
+  return { ...p, ...(out.generate_outputs ? { generate_outputs: true } : {}), ...(out.publish ? { publish: out.publish } : {}) }
+}
+
+/** Generate Outputs and Publish: the dependencies, in plain words (Publish needs Generate Outputs, both need Run Workflows). Returns what to store: `publish` resolved to its targets (Slack only with S3). */
+export function checkOutputs(o: Pick<ImportOpts, 'run_workflows' | 'generate_outputs' | 'publish'>): { generate_outputs: boolean; publish?: PublishChoice } {
+  if (o.generate_outputs !== undefined && typeof o.generate_outputs !== 'boolean') throw new CoreError(400, 'generate_outputs is true or false.')
+  const gen = o.generate_outputs === true
+  const pub = o.publish
+  let choice: PublishChoice | undefined
+  if (pub === true) choice = { s3: true, slack: deps.renderSlack() }
+  else if (pub && typeof pub === 'object') {
+    if (pub.s3 === false && pub.slack) throw new CoreError(400, 'Slack only follows an S3 upload: publish to S3 as well, or leave Slack out.')
+    choice = pub.s3 === false && !pub.slack ? undefined : { s3: true, slack: pub.slack === true }
+  } else if (pub !== undefined && pub !== false) throw new CoreError(400, 'publish is true, false or { s3, slack }.')
+  if (gen && o.run_workflows === false) throw new CoreError(400, 'Generate Outputs needs Run Workflows: the outputs are made from what the workflows produce.')
+  if (choice && !gen) throw new CoreError(400, 'Publish needs Generate Outputs (and both need Run Workflows): only the videos this import generates are published.')
+  return { generate_outputs: gen, ...(choice ? { publish: choice } : {}) }
+}
+/** Before anything is queued: the named yes, and the destination ready. */
+async function readyOutputs(o: ImportOpts, by: string): Promise<{ generate_outputs: boolean; publish?: PublishChoice }> {
+  const out = checkOutputs(o)
+  if (out.generate_outputs && !by) throw new CoreError(400, 'Generate Outputs and Publish act under a name: say who approves it (approved_by).')
+  if (out.publish) { const bad = await deps.publishProblem([...(out.publish.s3 ? ['s3' as const] : []), ...(out.publish.slack ? ['slack' as const] : [])]); if (bad) throw new CoreError(400, `Cannot publish: ${bad}`) }
+  return out
+}
+const outputsRec = (out: { generate_outputs: boolean; publish?: PublishChoice }) => ({ ...(out.generate_outputs ? { generate_outputs: true } : {}), ...(out.publish ? { publish: out.publish } : {}) })
+const outputsWords = (out: { generate_outputs: boolean; publish?: PublishChoice }) => (out.generate_outputs ? `; then generate the outputs${out.publish ? ` and publish them to ${out.publish.slack ? 'S3 and Slack' : 'S3'}` : ''}` : '')
+
+async function planBase(round: string, o: ImportOpts = {}): Promise<ImportPlan> {
   if (o.source === 'volume') return planVolumeImport(round, o)
   if (o.source && o.source !== 'panama-s3') throw new CoreError(400, `Unknown source "${o.source}": use panama-s3 (BH) or volume.`)
   checkCards(o)
@@ -263,6 +329,7 @@ async function importVolumeRound(round: string, o: ImportOpts): Promise<ImportRe
   const by = (o.approved_by || '').trim()
   if (!by) throw new CoreError(400, 'An import spends money on pods: say who approves it (approved_by).')
   if (o.run_workflows === false) throw new CoreError(400, 'A volume round is already where the pods mount it: importing it means running its shots, so there is nothing to do without run_workflows.')
+  const out = await readyOutputs(o, by)
   const volumeId = volumeIdOf(o)
   const plan = await planVolumeImport(round, o)
   if (plan.refused?.length) throw new CoreError(403, `Refused: ${plan.blocked}`)   // guard (b)
@@ -273,7 +340,7 @@ async function importVolumeRound(round: string, o: ImportOpts): Promise<ImportRe
   const q = state()
   if (q.imports.some((i) => i.round === round && i.state === 'active')) throw new CoreError(409, `${round} is already being imported: see the queue.`)
   const info = await deps.describeVolumeRound(volumeId, round)
-  const imp: ImportRec = { id: newId('imp'), round, approved_by: by, created_at: deps.now().toISOString(), state: 'active', ...(autoOf(o.auto_sync) ? { auto_sync: autoOf(o.auto_sync) } : {}), max_pods: plan.max_pods, cost_cap_usd: plan.cost_cap_usd, cap_enabled: plan.cap_enabled, est_total_usd: plan.est_total_usd, spent_usd: 0, started_pods: [], shots: [...plan.shots], price_per_hour: plan.price_per_hour,
+  const imp: ImportRec = { id: newId('imp'), round, approved_by: by, created_at: deps.now().toISOString(), state: 'active', ...(autoOf(o.auto_sync) ? { auto_sync: autoOf(o.auto_sync) } : {}), ...outputsRec(out), max_pods: plan.max_pods, cost_cap_usd: plan.cost_cap_usd, cap_enabled: plan.cap_enabled, est_total_usd: plan.est_total_usd, spent_usd: 0, started_pods: [], shots: [...plan.shots], price_per_hour: plan.price_per_hour,
     source: 'volume', volume_id: volumeId, graphs: plan.graphs, seconds_per_graph: plan.seconds_per_graph }
   q.imports.push(imp)
   const prices = await cardPrices(plan.shots, o)
@@ -281,7 +348,7 @@ async function importVolumeRound(round: string, o: ImportOpts): Promise<ImportRe
     const graphs = (info.by_shot[shot] ?? []).filter((g) => !volumeround.isLockedPath(g) && !info.locked.includes(shot))   // paths relative to workflows/, as the pod's panel names them
     q.tasks.push({ id: newId('t'), import_id: imp.id, round, shot, kind: 'run', state: 'waiting', depends_on: [], pod_id: null, pod_name: null, graphs, ...(cardList(o.cards?.[shot]).length ? { ...taskCards(o, shot), price: prices[shot] ?? null } : {}) })
   }
-  history.record({ kind: 'change', area: 'import', action: 'queued a volume round', what: `${round} on ${volumeId}`, detail: `${plan.shots.length} shot(s), ${plan.graphs} graph(s), est $${plan.est_total_usd}; run in place, nothing copied or written`, approved_by: by } as never)
+  history.record({ kind: 'change', area: 'import', action: 'queued a volume round', what: `${round} on ${volumeId}`, detail: `${plan.shots.length} shot(s), ${plan.graphs} graph(s), est $${plan.est_total_usd}; run in place, nothing copied or written${outputsWords(out)}`, approved_by: by } as never)
   save(); start()
   return imp
 }
@@ -297,21 +364,23 @@ export async function importRound(round: string, o: ImportOpts = {}): Promise<Im
   if (o.source === 'volume') return importVolumeRound(round, o)
   const by = (o.approved_by || '').trim()
   if (!by) throw new CoreError(400, 'An import spends money on pods: say who approves it (approved_by).')
+  const out = await readyOutputs(o, by)
   await deps.ensureVolume(o.volume_id)   // before any pod is created: a missing volume fails here, loudly, not in each pull
   const plan = await planImport(round, o)
   if (!plan.shots.length) throw new CoreError(404, `No shots found in ${round}.`)
   const q = state()
   if (q.imports.some((i) => i.round === round && i.state === 'active')) throw new CoreError(409, `${round} is already being imported: see the queue.`)
-  const imp: ImportRec = { id: newId('imp'), round, approved_by: by, created_at: deps.now().toISOString(), state: 'active', ...(autoOf(o.auto_sync) ? { auto_sync: autoOf(o.auto_sync) } : {}), max_pods: plan.max_pods, cost_cap_usd: plan.cost_cap_usd, cap_enabled: plan.cap_enabled, est_total_usd: plan.est_total_usd, spent_usd: 0, started_pods: [], shots: [...plan.shots], price_per_hour: plan.price_per_hour }
+  const imp: ImportRec = { id: newId('imp'), round, approved_by: by, created_at: deps.now().toISOString(), state: 'active', ...(autoOf(o.auto_sync) ? { auto_sync: autoOf(o.auto_sync) } : {}), ...outputsRec(out), max_pods: plan.max_pods, cost_cap_usd: plan.cost_cap_usd, cap_enabled: plan.cap_enabled, est_total_usd: plan.est_total_usd, spent_usd: 0, started_pods: [], shots: [...plan.shots], price_per_hour: plan.price_per_hour }
   const pull: Task = { id: newId('t'), import_id: imp.id, round, shot: null, kind: 'pull', state: 'waiting', depends_on: [], pod_id: null, pod_name: null }
   q.imports.push(imp); q.tasks.push(pull)
   const prices = await cardPrices(plan.shots, o)
   if (o.run_workflows !== false) for (const shot of plan.shots) q.tasks.push({ id: newId('t'), import_id: imp.id, round, shot, kind: 'run', state: 'waiting', depends_on: [pull.id], pod_id: null, pod_name: null, ...(cardList(o.cards?.[shot]).length ? { ...taskCards(o, shot), price: prices[shot] ?? null } : {}) })
+  if (out.generate_outputs) history.record({ kind: 'change', area: 'import', action: 'queued an import with outputs', what: round, detail: `generate the outputs${out.publish ? ` and publish them to ${out.publish.slack ? 'S3 and Slack' : 'S3'}` : ''} after each pod's workflows`, approved_by: by } as never)
   save(); start()
   return imp
 }
 
-export interface RoundItem { auto_sync?: boolean | { pull?: boolean; push?: boolean }; round: string; shots?: string[]; cards?: Record<string, string | string[]>; max_pods?: number }
+export interface RoundItem { generate_outputs?: boolean; publish?: ImportOpts['publish']; auto_sync?: boolean | { pull?: boolean; push?: boolean }; round: string; shots?: string[]; cards?: Record<string, string | string[]>; max_pods?: number }
 /** Several rounds on one approval (the window's and MCP's one path): each round is its own import; `cost_cap_usd` is the TOTAL and is split evenly, so the caps never add up to more.
  *  Every round is planned first, so a bad round or card queues nothing; `max_pods` (per round) may be set per item. */
 export async function importRounds(items: RoundItem[], o: Omit<ImportOpts, 'shots' | 'cards'> = {}): Promise<ImportRec[]> {
@@ -320,10 +389,11 @@ export async function importRounds(items: RoundItem[], o: Omit<ImportOpts, 'shot
   const names = items.map((i) => i.round)
   if (new Set(names).size !== names.length) throw new CoreError(400, 'A round is listed twice.')
   if (o.source === 'volume') refuseOverwrite(o)
+  for (const i of items) await readyOutputs({ ...o, ...(i.generate_outputs !== undefined ? { generate_outputs: i.generate_outputs } : {}), ...(i.publish !== undefined ? { publish: i.publish } : {}) }, (o.approved_by || '').trim())   // fail fast: nothing is queued when one round's options are broken
   await deps.ensureVolume(o.source === 'volume' ? volumeIdOf(o) : o.volume_id)
   o = { ...o, ...(o.source === 'volume' ? { volume_id: volumeIdOf(o) } : { volume_id: undefined }) }   // done once for all the rounds (a volume round keeps its volume: it is where the round sits)
   const each = o.cost_cap_usd != null ? Math.round((o.cost_cap_usd / items.length) * 100) / 100 : undefined
-  const opts = (i: RoundItem): ImportOpts => ({ ...o, ...(i.auto_sync !== undefined ? { auto_sync: i.auto_sync } : {}), shots: i.shots, cards: i.cards, ...(each != null ? { cost_cap_usd: each } : {}), ...(i.max_pods != null ? { max_pods: i.max_pods } : {}) })
+  const opts = (i: RoundItem): ImportOpts => ({ ...o, ...(i.auto_sync !== undefined ? { auto_sync: i.auto_sync } : {}), ...(i.generate_outputs !== undefined ? { generate_outputs: i.generate_outputs } : {}), ...(i.publish !== undefined ? { publish: i.publish } : {}), shots: i.shots, cards: i.cards, ...(each != null ? { cost_cap_usd: each } : {}), ...(i.max_pods != null ? { max_pods: i.max_pods } : {}) })
   for (const i of items) { const p = await planImport(i.round, opts(i)); if (p.refused?.length) throw new CoreError(403, `Refused: ${p.blocked}`); if (p.source === 'volume' && p.over_cap) throw new CoreError(402, `Refused: ${p.blocked}`); if (!p.shots.length) throw new CoreError(404, `No shots found in ${i.round}.`); if (state().imports.some((x) => x.round === i.round && x.state === 'active')) throw new CoreError(409, `${i.round} is already being imported: see the queue.`) }
   const out: ImportRec[] = []
   for (const i of items) out.push(await importRound(i.round, opts(i)))
@@ -351,6 +421,7 @@ export async function tick(): Promise<void> {
       const tasks = q.tasks.filter((t) => t.import_id === imp.id)
       // 1. running tasks: follow their jobs
       for (const t of tasks.filter((x) => x.state === 'running')) { if (await follow(t, imp, tasks)) dirty = true }
+      for (const t of tasks.filter(postLive)) { if (await followPost(t, imp)) dirty = true }   // Generate Outputs / Publish of finished runs
       // 2. waiting tasks whose dependencies are done
       for (const t of tasks.filter((x) => x.state === 'waiting')) {
         const deps_ = t.depends_on.map((id) => q.tasks.find((x) => x.id === id))
@@ -359,7 +430,7 @@ export async function tick(): Promise<void> {
         if (await begin(t, imp, tasks)) dirty = true
       }
       // 3. nothing left: the import is over. The pods it started are LEFT RUNNING (Lucas, 2026-11-15: stopping a pod the moment its run failed threw away a booted card that RunPod would not give back); the idle stop (30 quiet minutes) ends them.
-      if (!tasks.some(live)) {
+      if (!tasks.some(live) && !tasks.some(postLive)) {
         imp.state = tasks.every((t) => t.state === 'cancelled') ? 'cancelled' : 'done'
         imp.started_pods = []; dirty = true
       }
@@ -402,8 +473,88 @@ async function follow(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> 
   t.detail = `${j.ok} ok, ${j.failed} failed of ${j.results.length}`
   const firstErr = j.results.find((r) => r.error)
   finish(t, imp, j.state === 'cancelled' ? 'cancelled' : j.failed ? 'failed' : 'done', j.failed ? `${firstErr?.path}: ${firstErr?.error}` : undefined)
+  if (t.state === 'done' && imp.generate_outputs) await startOutputs(t, imp)   // the completion hook: Generate Outputs (then Publish) on this pod
   return true
 }
+
+// ----- Generate Outputs and Publish (Import Round options): after a pod's workflows finish -----
+/** Slack of the clock for frames written just before the task's own start time stamp (S3 and this PC disagree by seconds). */
+const SINCE_SLACK_MS = 120_000
+const stripOutput = (rel: string) => rel.replace(/^output\//, '')
+/** Say it on the import's card and in the History (area queue), with the pod and the reason. Never throws. */
+function outputNote(t: Task, imp: ImportRec, text: string, failed = false) {
+  const line = `${t.pod_name ?? t.pod_id ?? 'pod'}${t.shot ? ` (${t.shot})` : ''}: ${text}`
+  imp.output_notes = [...(imp.output_notes ?? []), line].slice(-20)
+  if (t.post) t.post.note = text
+  ev(t, text)
+  try { history.record({ kind: 'job', job: 'queue', state: failed ? 'failed' : 'done', what: `${imp.round} outputs${t.shot ? ` ${t.shot}` : ''}`, pod_id: t.pod_id ?? undefined, pod_name: t.pod_name ?? undefined, ...(failed ? { error: text } : {}), detail: `import ${imp.id}; approved by ${imp.approved_by}; ${text}` }) } catch { /* the History never fails an import */ }
+}
+const lockedShot = (shot: string) => volumeround.LOCKED_SHOTS.has(shot) || volumeround.isLockedPath(shot)
+/** The hook: one render job on the pod this run finished on, for the new complete DPX sequences of its shot. A step that cannot run says so on the card; nothing here fails the import. */
+async function startOutputs(t: Task, imp: ImportRec): Promise<void> {
+  if (!t.pod_id || !t.shot) return
+  const post: PostStep = t.post = { state: 'rendering', started_at: deps.now().toISOString() }
+  try {
+    if (lockedShot(t.shot)) { post.state = 'skipped'; return outputNote(t, imp, `${t.shot} is locked: nothing is generated or published for it (Binc's rules)`) }
+    const since = new Date(t.started_at ?? deps.now().toISOString()).getTime() - SINCE_SLACK_MS
+    const found = await deps.newSequences(t.shot, since)
+    const seqs = found.sequences
+    if (!seqs.length) { post.state = 'skipped'; return outputNote(t, imp, `no new finished DPX sequences to generate${found.skipped.length ? ` (${found.skipped.map((x) => `${x.stem}: ${x.reason}`).slice(0, 3).join('; ')})` : ''}`) }
+    // kind, codecs and colour come from the Default Configuration (renders.effectiveSettings); the render stays on this pod, nothing is pulled
+    const r = await deps.startRender({ sequences: seqs, where: 'pod', pod_id: t.pod_id, pull: false, approved_by: imp.approved_by, skip_existing: true })
+    post.render_job_id = r.job_id
+    ev(t, `Generate Outputs started on ${t.pod_name ?? t.pod_id}: ${seqs.length} sequence(s), render ${r.job_id}, named yes: ${imp.approved_by}`)
+    history.record({ kind: 'change', area: 'queue', action: 'import generates outputs', what: `${imp.round} ${t.shot}`, detail: `${seqs.length} sequence(s) on ${t.pod_name ?? t.pod_id}; render ${r.job_id}`, approved_by: imp.approved_by } as never)
+    t.stage = undefined
+  } catch (e) {
+    post.state = post.state === 'skipped' ? 'skipped' : 'failed'
+    if (post.state !== 'skipped') { const m = String((e as Error)?.message ?? e); outputNote(t, imp, /ffmpeg/i.test(m) ? `cannot generate: ${m}` : /^Everything in this scope is already rendered/.test(m) ? 'nothing to generate: the review videos are already there' : `generate failed: ${m}`, !/already rendered/.test(m)); if (/already rendered/.test(m)) post.state = 'skipped' }
+  }
+}
+/** Follow a pod's render (then its publish) until both are over. */
+async function followPost(t: Task, imp: ImportRec): Promise<boolean> {
+  const post = t.post; if (!post) return false
+  let phase: 'generate' | 'publish' = post.state === 'publishing' ? 'publish' : 'generate'
+  try {
+    if (post.state === 'rendering') {
+      const job = post.render_job_id ? deps.renderJob(post.render_job_id) : undefined
+      if (!job) { post.state = 'failed'; outputNote(t, imp, 'generate failed: the render job is gone (the app restarted?)', true); return true }
+      if (['queued', 'rendering', 'pulling'].includes(job.state)) return false
+      if (job.state === 'cancelled') { post.state = 'failed'; outputNote(t, imp, 'generate failed: the render was cancelled', true); return true }
+      if (job.state === 'failed') { post.state = 'failed'; outputNote(t, imp, `generate failed: ${job.error || job.summary || 'the render failed'}`, true); return true }
+      const made = job.sequences.filter((x) => ['rendered', 'pulled', 'done'].includes(x.state))
+      const bad = job.sequences.filter((x) => x.state === 'failed' || x.state === 'incomplete')
+      if (bad.length) outputNote(t, imp, `generate: ${bad.length} sequence(s) not rendered: ${bad.map((x) => `${x.name}: ${x.error || x.state}`).slice(0, 3).join('; ')}`, true)
+      if (!made.length) { post.state = 'skipped'; if (!bad.length) outputNote(t, imp, `nothing new was generated${job.sequences.some((x) => x.reason) ? ` (${job.sequences.map((x) => x.reason).filter(Boolean).slice(0, 2).join('; ')})` : ''}`); return true }
+      if (!imp.publish) { post.state = 'done'; outputNote(t, imp, `generated ${made.length} output(s) on the pod`); return true }
+      // Publish: the finished review files (their version folder, or the proxy file), and the DPX frames when Auto-publish sends them too, from the volume, under the same name
+      if (lockedShot(t.shot ?? '') || made.some((x) => x.shot && lockedShot(x.shot))) { post.state = 'skipped'; outputNote(t, imp, 'publish refused: a locked shot is never published (Binc\'s rules)'); return true }
+      const ap = deps.publishRound(), items: unknown[] = [], clipNames: Record<string, string> = {}
+      for (const x of made) {
+        items.push({ where: 'volume', path: job.kind === 'review' ? stripOutput(x.out.replace(/\/[^/]*$/, '')) : stripOutput(x.out) })
+        if (ap.include_dpx) { items.push({ where: 'volume', path: x.dir, stem: x.name }); if (x.clip_name && x.clip_name !== x.name) clipNames[x.name] = x.clip_name }
+      }
+      phase = 'publish'
+      const targets: publish.Target[] = [...(imp.publish.s3 ? ['s3' as const] : []), ...(imp.publish.slack && imp.publish.s3 ? ['slack' as const] : [])]
+      const r = await deps.publishRun({ items: items as never, round: ap.round, clip_names: clipNames, targets, approved_by: imp.approved_by, trigger: 'import', note: `import ${imp.id}: ${imp.round} ${t.shot ?? ''}; generated and published under the name of ${imp.approved_by}; targets ${targets.join(' + ')}` } as publish.RunRequest)
+      post.state = 'publishing'; post.publish_job_ids = [r.job_id]
+      ev(t, `Publish started: ${made.length} output(s) to ${targets.join(' + ')} in ${ap.round}, named yes: ${imp.approved_by}`)
+      history.record({ kind: 'change', area: 'queue', action: 'import publishes outputs', what: `${imp.round} ${t.shot ?? ''}`, detail: `${made.length} output(s) to ${targets.join(' + ')}, round ${ap.round}; publish ${r.job_id}`, approved_by: imp.approved_by } as never)
+      return true
+    }
+    if (post.state === 'publishing') {
+      const js = (post.publish_job_ids ?? []).map((id) => deps.publishJob(id))
+      if (js.some((j) => j && (j.state === 'queued' || j.state === 'uploading'))) return false
+      const badJ = js.find((j) => !j || j.state === 'failed' || j.state === 'cancelled')
+      if (badJ !== undefined || js.some((j) => !j)) { post.state = 'failed'; outputNote(t, imp, `publish failed: ${badJ?.error || badJ?.summary || 'the publish job is gone'}`, true); return true }
+      post.state = 'done'; outputNote(t, imp, 'generated and published'); return true
+    }
+  } catch (e) {
+    post.state = 'failed'; outputNote(t, imp, `${phase} failed: ${String((e as Error)?.message ?? e)}`, true); return true
+  }
+  return false
+}
+const postLive = (t: Task) => t.post?.state === 'rendering' || t.post?.state === 'publishing'
 
 async function begin(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> {
   if (t.kind === 'pull') {

@@ -3,6 +3,10 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## v1.6.8
+
+- **Import Round: Run Workflows, Auto Sync To This PC, Generate Outputs and Publish.** Step 3's one Auto sync option is now four checkboxes, all off by default: Run Workflows is the root; Auto Sync To This PC and Generate Outputs appear under it, Publish under Generate Outputs (hidden, not disabled, and unticking a parent clears its children). Generate Outputs and Publish act under the name in Approved by (ticking them with it empty is blocked in place); Publish is disabled with the reason when Publish settings are not ready. When a pod's workflows finish, the import renders the review videos of that shot's new, complete DPX sequences on that pod (the Default Configuration's kind, codecs and colour; no new pod, nothing pulled, skip existing), then publishes them to S3 under the same name into the Auto-publish round (Slack only with S3 and when the Default Configuration says so; the DPX frames too when Auto-publish sends them). A locked shot is never generated or published. Failures and steps that cannot run (no ffmpeg, nothing new, publish refused) are on the import's card in the Queue and in the History (area `queue`, with the pod, the reason and the approver) and never fail the import. The MCP tools `plan_round_import`, `import_round` and `import_rounds` take `generate_outputs` and `publish` under a named approver with the same plain 400s; an agent can publish through an import. Run Workflows is now off until ticked (it was on).
+
 ## v1.6.5 (tag v1.6.5, 2026-11-19)
 
 - **Queue > Publishing is paged.** The job cards show 10 to a page (5, 10 or 25), with Previous, Next and "1–10 of N"; the running ones are always on page 1, a new page size starts at page 1, and a page that empties moves back.

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { join } from 'node:path'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import * as history from '../src/history.js'
 import * as mounts from '../src/mounts.js'
 import * as queue from '../src/queue.js'
@@ -19,7 +19,7 @@ const ROUND = 'brynley-comfy-2026-10-22'
 const PLACE = { graphs: [{ shot: 'cgi-042', name: 'a.json', path: '/workspace/comfy-shared/workflows/rounds/r/a.json' }, { shot: 'cgi-043', name: 'b.json', path: '/workspace/comfy-shared/workflows/rounds/r/b.json' }, { shot: 'cgi-044', name: 'c.json', path: '/workspace/comfy-shared/workflows/rounds/r/c.json' }], linked: 9 }
 
 /** A world: three shots, a pool of pods in the given states, a pull job and run jobs the test moves along by hand. */
-function world(pool: { id: string; name: string; state: 'running' | 'starting' | 'off' }[] = [], price = 4) {
+function world(pool: { id: string; name: string; state: 'running' | 'starting' | 'off' }[] = [], price = 4, extra: Partial<queue.Deps> = {}) {
   const w = {
     pods: pool.map((p) => ({ ...p, price: price as number | null })), ready: new Set<string>(pool.filter((p) => p.state === 'running').map((p) => p.id)),
     resumed: [] as string[], created: [] as string[], stopped: [] as string[], runs: new Map<string, { podId: string; paths: string[]; state: 'running' | 'done' | 'failed' | 'cancelled'; err?: string }>(),
@@ -44,6 +44,7 @@ function world(pool: { id: string; name: string; state: 'running' | 'starting' |
     run: async (podId, paths) => { const id = `rj${w.runs.size + 1}`; w.runs.set(id, { podId, paths, state: 'running' }); return { id } },
     runJob: ((id: string) => { const r = w.runs.get(id); return r ? { id, state: r.state, ok: r.state === 'done' ? r.paths.length : 0, failed: r.state === 'failed' ? 1 : 0, results: r.paths.map((p) => ({ path: p, state: r.state === 'failed' ? 'failed' : 'done', error: r.err })) } : null }) as never,
     cancelRun: (id) => { const r = w.runs.get(id); if (r) r.state = 'cancelled' },
+    ...extra,
   })
   return w
 }
@@ -357,5 +358,133 @@ describe('Auto sync for the pods an import creates (docs/ADR-046)', () => {
   it('importRounds: a per-round choice overrides the import-wide one', async () => {
     world([]); const imps = await queue.importRounds([{ round: ROUND, shots: ['cgi-042'], auto_sync: false }, { round: 'other-round', shots: ['cgi-042'] }], { approved_by: 'Lucas', auto_sync: true }).catch(() => null)
     if (imps) { expect(imps[0].auto_sync).toBeUndefined(); expect(imps[1].auto_sync).toEqual({ pull: true, push: false }) }
+  })
+})
+
+// Import Round options: Run Workflows > Generate Outputs > Publish
+describe('Generate Outputs and Publish (Import Round options)', () => {
+  const SEQ = { dir: 'cgi-043', name: 'cgi-043_v1', first: 1, last: 24, frames: 24, pad: 4 }
+  type Fakes = { sequences: any[]; skipped: any[]; renders: any[]; render: { state: string; error?: string; seqs: any[] }; published: any[]; pub: { state: string; error?: string }; problem: string | null; slack: boolean; include_dpx: boolean; startErr?: Error; pubErr?: Error; since: number[] }
+  function fakes(): { f: Fakes; extra: Partial<queue.Deps> } {
+    const f: Fakes = { sequences: [SEQ], skipped: [], renders: [], render: { state: 'rendering', seqs: [{ where: 'pod', dir: 'cgi-043', name: 'cgi-043_v1', clip_name: 'cgi-043_v1', shot: 'cgi-043', version: 'v001', state: 'rendered', out: 'output/deliver/cgi-043/v001/cgi-043_v1.mov' }] }, published: [], pub: { state: 'uploading' }, problem: null, slack: false, include_dpx: false, since: [] }
+    const extra: Partial<queue.Deps> = {
+      newSequences: async (_s, since) => { f.since.push(since); return { sequences: f.sequences, skipped: f.skipped } },
+      startRender: async (req) => { if (f.startErr) throw f.startErr; f.renders.push(req); return { job_id: 'rd1' } },
+      renderJob: (() => ({ job_id: 'rd1', state: f.render.state, error: f.render.error, kind: 'review', summary: '', sequences: f.render.seqs })) as never,
+      publishProblem: async () => f.problem, renderSlack: () => f.slack, publishRound: () => ({ round: 'tunnel-v11_2026-11-20_r01', include_dpx: f.include_dpx }),
+      publishRun: async (req) => { if (f.pubErr) throw f.pubErr; f.published.push(req); return { job_id: 'pb1' } },
+      publishJob: (() => ({ state: f.pub.state, error: f.pub.error })) as never,
+    }
+    return { f, extra }
+  }
+  const OPTS = { approved_by: 'Lucas', shots: ['cgi-043'] }
+  const POOL = [{ id: 'p1', name: 'pool-1', state: 'running' as const }]
+  const finishRun = async (w: ReturnType<typeof world>) => { await queue.tick(); w.pull.state = 'done'; await queue.tick(); await queue.tick(); await queue.tick(); for (const r of w.runs.values()) r.state = 'done'; await queue.tick() }
+  const notes = () => queue.list().imports[0].output_notes?.join(' ') ?? ''
+
+  it('validates every dependency in plain words', async () => {
+    const { extra } = fakes(); world([], 4, extra)
+    await expect(queue.importRound(ROUND, { ...OPTS, run_workflows: false, generate_outputs: true })).rejects.toMatchObject({ status: 400, message: /Generate Outputs needs Run Workflows/ })
+    await expect(queue.importRound(ROUND, { ...OPTS, publish: true })).rejects.toMatchObject({ status: 400, message: /Publish needs Generate Outputs/ })
+    await expect(queue.importRound(ROUND, { ...OPTS, generate_outputs: false, publish: true })).rejects.toMatchObject({ status: 400, message: /Publish needs Generate Outputs/ })
+    await expect(queue.importRound(ROUND, { ...OPTS, generate_outputs: true, publish: { s3: false, slack: true } })).rejects.toMatchObject({ status: 400, message: /Slack only follows an S3 upload/ })
+    await expect(queue.importRound(ROUND, { shots: ['cgi-043'], approved_by: ' ', generate_outputs: true })).rejects.toMatchObject({ status: 400 })
+    await expect(queue.importRound(ROUND, { ...OPTS, generate_outputs: 'yes' as never })).rejects.toMatchObject({ status: 400 })
+    await expect(queue.planImport(ROUND, { shots: ['cgi-043'], publish: true })).rejects.toMatchObject({ status: 400, message: /Publish needs Generate Outputs/ })
+    expect(queue.list().imports).toHaveLength(0)
+  })
+  it('publish needs Publish settings that are ready: a 400 with the reason, nothing queued', async () => {
+    const { f, extra } = fakes(); world([], 4, extra); f.problem = 'S3 is not configured: no bucket'
+    await expect(queue.importRound(ROUND, { ...OPTS, generate_outputs: true, publish: true })).rejects.toMatchObject({ status: 400, message: /Cannot publish: S3 is not configured: no bucket/ })
+    expect(queue.list().imports).toHaveLength(0)
+  })
+  it('importRounds refuses a broken per-round option before queueing anything', async () => {
+    const { extra } = fakes(); world([], 4, extra)
+    await expect(queue.importRounds([{ round: ROUND, shots: ['cgi-043'] }, { round: 'other-round', publish: true }], { approved_by: 'Lucas' })).rejects.toMatchObject({ status: 400, message: /Publish needs Generate Outputs/ })
+    expect(queue.list().imports).toHaveLength(0)
+  })
+  it('shows the options in the plan, resolves Slack (only with S3), and stores them on the import', async () => {
+    const { f, extra } = fakes(); world([], 4, extra); f.slack = true
+    const plan = await queue.planImport(ROUND, { shots: ['cgi-043'], generate_outputs: true, publish: true })
+    expect(plan.generate_outputs).toBe(true); expect(plan.publish).toEqual({ s3: true, slack: true })
+    const none = await queue.planImport(ROUND, { shots: ['cgi-043'] }); expect(none.generate_outputs).toBeUndefined(); expect(none.publish).toBeUndefined()
+    const imp = await queue.importRound(ROUND, { ...OPTS, generate_outputs: true, publish: { slack: false } })
+    expect(imp.generate_outputs).toBe(true); expect(imp.publish).toEqual({ s3: true, slack: false })
+    expect((await queue.planImport('r2', { shots: ['cgi-043'], generate_outputs: true })).publish).toBeUndefined()
+  })
+  it('an import without the options never touches renders or publish', async () => {
+    const { f, extra } = fakes(); const w = world(POOL, 4, extra)
+    await queue.importRound(ROUND, OPTS); await finishRun(w)
+    expect(f.renders).toHaveLength(0); expect(f.published).toHaveLength(0); expect(tasks().find((t) => t.kind === 'run')?.post).toBeUndefined()
+  })
+  it('when the workflows finish: ONE render on that pod under the approver (no pull, skip existing), then publish when it finishes, to the Auto-publish round', async () => {
+    const { f, extra } = fakes(); const w = world(POOL, 4, extra)
+    const imp = await queue.importRound(ROUND, { ...OPTS, generate_outputs: true, publish: true })
+    await finishRun(w)
+    expect(f.renders).toHaveLength(1)
+    expect(f.renders[0]).toMatchObject({ pod_id: 'p1', where: 'pod', pull: false, approved_by: 'Lucas', skip_existing: true, sequences: [SEQ] })
+    expect(f.renders[0].kind).toBeUndefined()   // kind, codecs and colour are the Default Configuration's
+    expect(f.published).toHaveLength(0)         // publish waits for the render
+    expect(queue.list().imports.find((i) => i.id === imp.id)?.state).toBe('active')   // the import stays open while the outputs are made
+    f.render.state = 'done'; await queue.tick()
+    expect(f.published).toHaveLength(1)
+    expect(f.published[0]).toMatchObject({ approved_by: 'Lucas', targets: ['s3'], round: 'tunnel-v11_2026-11-20_r01', items: [{ where: 'volume', path: 'deliver/cgi-043/v001' }] })
+    f.pub.state = 'done'; await queue.tick()
+    expect(tasks().find((t) => t.kind === 'run')?.post?.state).toBe('done')
+    expect(queue.list().imports.find((i) => i.id === imp.id)?.state).toBe('done')
+  })
+  it('Slack only with S3 and only when chosen; include_dpx adds the DPX frames the review came from', async () => {
+    const { f, extra } = fakes(); const w = world(POOL, 4, extra); f.slack = true; f.include_dpx = true
+    await queue.importRound(ROUND, { ...OPTS, generate_outputs: true, publish: true }); await finishRun(w); f.render.state = 'done'; await queue.tick()
+    expect(f.published[0].targets).toEqual(['s3', 'slack'])
+    expect(f.published[0].items).toEqual([{ where: 'volume', path: 'deliver/cgi-043/v001' }, { where: 'volume', path: 'cgi-043', stem: 'cgi-043_v1' }])
+  })
+  it('Generate Outputs alone never publishes', async () => {
+    const { f, extra } = fakes(); const w = world(POOL, 4, extra)
+    const imp = await queue.importRound(ROUND, { ...OPTS, generate_outputs: true }); await finishRun(w); f.render.state = 'done'; await queue.tick()
+    expect(f.renders).toHaveLength(1); expect(f.published).toHaveLength(0); expect(tasks().find((t) => t.kind === 'run')?.post?.state).toBe('done'); expect(queue.list().imports.find((i) => i.id === imp.id)?.state).toBe('done')
+  })
+  it('a failed run starts nothing (never partial)', async () => {
+    const { f, extra } = fakes(); const w = world(POOL, 4, extra)
+    await queue.importRound(ROUND, { ...OPTS, generate_outputs: true, publish: true }); await queue.tick(); w.pull.state = 'done'; await queue.tick(); await queue.tick(); await queue.tick(); for (const r of w.runs.values()) r.state = 'failed'; await queue.tick()
+    expect(f.renders).toHaveLength(0); expect(f.published).toHaveLength(0)
+  })
+  it('a locked shot is never generated or published', async () => {
+    const { f, extra } = fakes(); const w = world(POOL, 4, extra)
+    await queue.importRound(ROUND, { approved_by: 'Lucas', shots: ['cgi-042'], generate_outputs: true, publish: true }); await finishRun(w)
+    expect(f.renders).toHaveLength(0); expect(f.published).toHaveLength(0); expect(notes()).toMatch(/locked/)
+  })
+  it('nothing new: said on the card with the reasons, the import goes on and ends', async () => {
+    const { f, extra } = fakes(); const w = world(POOL, 4, extra); f.sequences = []; f.skipped = [{ stem: 'x', reason: 'incomplete: 2 gaps in the frames' }]
+    await queue.importRound(ROUND, { ...OPTS, generate_outputs: true, publish: true }); await finishRun(w)
+    expect(f.renders).toHaveLength(0); expect(f.published).toHaveLength(0)
+    expect(notes()).toMatch(/no new finished DPX sequences.*incomplete/); expect(queue.list().imports[0].state).toBe('done')
+  })
+  it('a render that cannot start (no ffmpeg) is said on the card and in the History; the run stays done and publish never runs', async () => {
+    const { f, extra } = fakes(); const w = world(POOL, 4, extra); f.startErr = new Error('ffmpeg is not installed on this PC')
+    await queue.importRound(ROUND, { ...OPTS, generate_outputs: true, publish: true }); await finishRun(w)
+    expect(f.published).toHaveLength(0); expect(notes()).toMatch(/pool-1.*cannot generate: ffmpeg is not installed/); expect(queue.list().imports[0].state).toBe('done')
+    expect(tasks().find((t) => t.kind === 'run')?.state).toBe('done')
+    const hist = readFileSync(process.env.HISTORY_FILE!, 'utf8'); expect(hist).toMatch(/ffmpeg is not installed/); expect(hist).toMatch(/pool-1/)
+  })
+  it('a render that fails: no publish, the reason on the card', async () => {
+    const { f, extra } = fakes(); const w = world(POOL, 4, extra); f.render.state = 'failed'; f.render.error = 'Incomplete: gaps'
+    await queue.importRound(ROUND, { ...OPTS, generate_outputs: true, publish: true }); await finishRun(w); await queue.tick()
+    expect(f.published).toHaveLength(0); expect(notes()).toMatch(/generate failed: Incomplete/); expect(queue.list().imports[0].state).toBe('done')
+  })
+  it('a publish that cannot start, or fails: said on the card, the import still ends', async () => {
+    let { f, extra } = fakes(); let w = world(POOL, 4, extra); f.pubErr = new Error('Cannot publish: S3 is not configured')
+    await queue.importRound(ROUND, { ...OPTS, generate_outputs: true, publish: true }); await finishRun(w); f.render.state = 'done'; await queue.tick()
+    expect(notes()).toMatch(/Cannot publish: S3 is not configured/); expect(queue.list().imports[0].state).toBe('done')
+    process.env.QUEUE_FILE = join(dir, 'queue2.json'); queue.forget(); ;({ f, extra } = fakes()); w = world(POOL, 4, extra); f.pub.state = 'failed'; f.pub.error = 'upload broke'
+    await queue.importRound(ROUND, { ...OPTS, generate_outputs: true, publish: true }); await finishRun(w); f.render.state = 'done'; await queue.tick(); await queue.tick()
+    expect(notes()).toMatch(/publish failed: upload broke/); expect(queue.list().imports[0].state).toBe('done')
+    const hist = readFileSync(process.env.HISTORY_FILE!, 'utf8'); expect(hist).toMatch(/"area":"queue"|upload broke/); expect(hist).toMatch(/Lucas/)
+  })
+  it('records each started step in the History with the approver', async () => {
+    const { f, extra } = fakes(); const w = world(POOL, 4, extra)
+    await queue.importRound(ROUND, { ...OPTS, generate_outputs: true, publish: true }); await finishRun(w); f.render.state = 'done'; await queue.tick()
+    const lines = readFileSync(process.env.HISTORY_FILE!, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+    for (const a of ['queued an import with outputs', 'import generates outputs', 'import publishes outputs']) expect(lines.find((l) => l.action === a)).toMatchObject({ approved_by: 'Lucas', area: a === 'queued an import with outputs' ? 'import' : 'queue' })
   })
 })

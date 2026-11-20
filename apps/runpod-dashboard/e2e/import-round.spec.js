@@ -44,7 +44,8 @@ test('Import Round: three steps - rounds, shots, cards - then Import with the ap
   await expect(dlg.getByTestId('import-round-card-row')).toHaveCount(0)   // no per-shot card rows: Choose Card gives every shot its card
   await expect(dlg.getByTestId('import-round-estimate')).toContainText('6.98')
   await expect(dlg.getByTestId('import-round-max-pods')).toHaveValue('1')   // one pod per shot ticked
-  await expect(dlg.getByTestId('import-round-run')).toBeChecked()   // Run each shot's workflows is on step 3
+  await expect(dlg.getByTestId('import-round-run')).not.toBeChecked()   // Run each shot's workflows is on step 3, off until ticked
+  await dlg.getByTestId('import-round-run').check()
   { const y = async (id) => (await dlg.getByTestId(id).boundingBox()).y; const c = await y('import-round-choose-card'), e = await y('import-round-estimate'), v = await y('import-round-volume'); expect(c).toBeLessThan(e); expect(e).toBeLessThan(v); expect(v).toBeLessThan(await y('import-round-run')) }   // the price and caps sit right below Choose Card, above the volume; Run each shot's workflows is the last item
   await dlg.getByTestId('import-round-run').uncheck(); await expect(dlg.getByTestId('import-round-choose-card')).toHaveCount(0)   // off: no cards to choose
   await dlg.getByTestId('import-round-run').check()
@@ -241,6 +242,7 @@ test('Import Round: no volume in the card\'s datacenter - tick Create a new volu
   await dlg.getByTestId('import-round-next').click()
   await dlg.getByTestId('import-round-next').click()
   await dlg.getByTestId('import-round-approved-by').fill('Lucas')
+  await dlg.getByTestId('import-round-run').check()
   await dlg.getByTestId('import-round-choose-card-btn').click()
   await page.getByTestId('choose-card-modal').getByTestId('dc-dc-filter').selectOption('')   // a datacenter with no volume of ours starts hidden: All datacenters
   await page.getByTestId('choose-card-modal').locator('[data-testid="dc-card-row"][data-card="RTX 6000 Ada"] [data-testid="dc-chip"][data-dc="US-KS-2"]').click()
