@@ -6,6 +6,49 @@
 
 36 unique elements, each as: mono left eye, **16-bit DPX, P3-D65 Gamma 2.6, 23.976**, timecode = V11 EDL source-in (the 080 stills start 01:00:00:00), an **H.264 proxy** and a **MANIFEST.json**, frame counts matching the V11 EDL, in the BH `returns/BKK/<round>/<shot>/<clip>/` layout.
 
+## 1a. Output specifications
+
+**Source: Binc's `Tunnel _ Media Shuttle Send 112026.pdf` (20 Nov 2026).** What is quoted is the PDF's own text; the structure comes from its "Contents listing" of the folders sent by Media Shuttle.
+
+**What every element must be** (PDF, page 1): "mono left eye, **16-bit DPX, P3-D65 Gamma 2.6, 23.976**, timecode = V11 EDL source-in (080 stills start 01:00:00:00), **H.264 proxy and MANIFEST.json per element**. Frame counts match the V11 EDL. Spec check of every element: `_records/spec_check_v001.jsonl`." (The photoreal-013 elements are 24 fps in their names and in the delivered folders.)
+
+**Three things per element**, under `returns/BKK/<round>/<shot>/`:
+
+| What | Name and place | Seen in the PDF |
+|---|---|---|
+| H.264 proxy | `<CLIP>.mp4` next to the shot folder's other files | 1.2 to 47 MB each |
+| Manifest | `<CLIP>_MANIFEST.json`, one per element | 6.6 to 83 KB each (so it lists the files, not just the clip) |
+| DPX frames | a folder `<CLIP>/` holding `<CLIP>.0000.dpx` to `<CLIP>.<last>.dpx` | frame numbering starts at **0000**; the last number is frames minus 1 (e.g. 94 frames: `.0000` to `.0093`) |
+
+**The clip name** (the same for the mp4, the manifest, the folder and the frames): `<SHOT>_<ELEMENT>_<FINAL|STILL|ALT>_V<nn>_<width>X<height>_<fps>_<CODEC>`, upper case, for example `ARCHIVAL-077_A_FINAL_V03_3840X2160_23.976_PRORES422HQ`, `ARCHIVAL-080_A_STILL_V01_6336X2688_PNG`, `PHOTOREAL-013_ASCENT_FINAL_V01_1920X1080_24_HEVC`. The raster, fps and codec in the name are those of the **source element** (the V11 EDL clip), not necessarily of the DPX (which are the pipeline's 4K output).
+
+**Layout and round.** The PDF's folders all use the round folder `returns/BKK/tunnel-v11-edl-2026-11-18/` with the shot folders under it (`archival-071/`, `archival-077/`, ...). Three packages are described: batch 03 v002 (1,998 files), photoreal-013 v003 (1,931 files) and first17 v003 (2,794 files); the "all-approved v003" folder holds all 36 together. Our own publishes went to `_TEST_` rounds and the app's default round template is `tunnel-v11_{date}_r01`: **the real publish must use the round name `tunnel-v11-edl-2026-11-18`** (Auto-publish setting `round`, or the Publish window's Round field).
+
+**Per element: frames and rasters from the PDF** (these are the checks after production):
+
+| Element | Frames | Name raster, fps, codec |
+|---|---|---|
+| ARCHIVAL-071 main | 227 | 3840x2160, 23.976, ProRes 422 HQ |
+| ARCHIVAL-077 a, b, c | 80, 69, 74 | 3840x2160 (a, b), 1920x1080 (c), 23.976 |
+| ARCHIVAL-080 a to e (stills) | 94, 60, 90, 83, 44 | 6336x2688 PNG, start TC 01:00:00:00 |
+| ARCHIVAL-083 main | 98 | 3852x2152, 23.976 |
+| ARCHIVAL-084 main | 39 | 2356x1572, 23.976 |
+| ARCHIVAL-085 main | 54 | 3840x2160, 23.976 |
+| ARCHIVAL-087 platform, rain | 97, 96 | 3840x2160, 23.976 |
+| ARCHIVAL-093 b | 126 | 1618x1080, 23.976 |
+| ARCHIVAL-102 main | 128 | 3840x2160, 23.976 |
+| ARCHIVAL-104 b | 130 | 3840x2160, 23.976 |
+| ARCHIVAL-123 c, f | 66, 43 | 3840x2160, 23.976 |
+| ARCHIVAL-168 a, b, c, d | 153, 139, 105, 48 | 3840x2160, 23.976 |
+| CGI-042 main | 229 | 3840x2160, 23.976 |
+| CGI-072 head, backhalf-b, backhalf-c | 106, 70, 162 | 1920x1080, 23.976, **V02**, ProRes 422 HQ |
+| CREATURE-266 dolphin-lowtrack | 94 | 1920x1080, 23.976 (ALT V01) |
+| PHOTOREAL-013 ascent, chasm07, f23, hadal, landing, splash, sunlight, top | 108, 271, 633, 160, 226, 96, 212, 209 | 1920x1080, **24**, HEVC (landing and top: ProRes 422 HQ; top is V02) |
+
+**Known issue in the PDF** (CGI-072 head, backhalf-b, backhalf-c in batches 01, 02, 03 v002, first17 v003 and all-approved v003): the DPX header is tagged linear (transfer/colorimetric 2) while the pixels are P3-D65 Gamma 2.6, and the proxies carry no timecode. Corrected copies: `tunnel_v11_2026-11-20_cgi-072-header-fix_v004` (header colour code user-defined instead of linear, pixels unchanged, proxy timecode added). The same header-vs-pixels disagreement is on **all** our volume DPX (all 45 sequences record Gamma 2.6 P3-D65 in the ComfyUI-OCIO record and say linear in the header), so every element we produce needs the header fixed or a note that the header is wrong; see section 5, item 5.
+
+**More the PDF does not say, from ADR-050 (Kyle, 2026-11-19; secondary, check with Binc):** the proxy is H.264 1920x1080, same name, frame count and start timecode as the DPX, no burn-ins, Rec.709 (H.264 because Tunnel's Avid wants it); the timecode is the *source* timecode (the EDL source-in); finished shots go up one at a time and the round's `RETURN-MANIFEST.json` (schema `bh-return-1`, a sha256 for every uploaded file) is rewritten after each shot.
+
 ## 2. Cross-check against the volume (2026-11-20)
 
 Checked on `a3upg9ey48` (`brynley-rounds-eu-ro-1`, EU-RO-1): the DPX under `comfy-shared/output/mono_v015` to `mono_v018`, and the rounds staged under `comfy-shared/temp/rounds/`.
@@ -45,6 +88,8 @@ Importing is a pod job through the app (Network Volumes > Panama, or `panama_imp
 2. **Which graph produces the DPX?** The 17 on the volume came from the pod's mono run (`mono_v015`; later `mono_v016` to `v018` also exist). The 19 need the same conversion (stereo to the mono left eye, 16-bit DPX, P3-D65 Gamma 2.6, EDL timecode) from the finals above. Lucas to confirm the graph and version (v015 as before, or v018), and that the finals are the stereo packs the graph expects. This is the "production" step and is the costly one.
 3. **Colour statement** for the proxies and the earlier reviews: `linear-p3-d65` (what the app used) or `p3-d65-gamma26` (what the PDF says). See the backfill plan, section 8.
 4. **Frame counts** for the 19 are only checkable after production: the PDF's numbers are the targets (097, 096, 043, 153, 139, 105, 048, 106, 162, 070, 094 and the photoreal-013 set).
+
+5. **The DPX header and the proxy colour (new).** The PDF calls the linear header a bug and ships a corrected copy for CGI-072, so the deliverable headers should not say linear. Our DPX come from the pipeline with that header. Decide with Binc: rewrite the header colour code (pixels untouched, as in `cgi-072-header-fix_v004`) before delivery, or leave it and say so in the manifest. Also: the proxy is "Rec.709" per Kyle; the app's Tunnel preset tags Rec.709 without converting, while the review converter converts from the stated colour (`p3-d65-gamma26`) to Rec.709. Confirm which one the Tunnel proxy should be.
 
 ## 6. Order of work
 
