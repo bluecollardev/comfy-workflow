@@ -25,6 +25,10 @@ See plan section 8: `imp-mwp4yo1w-4` (archival-087, creature-266, photoreal-013)
 
 Per element: frames produced against the PDF count, DPX on the volume, review video made, published or not, and for each element missing from the volume what was missing.
 
+## 4a. The 36 elements
+
+Per element, with the state of each and what is left, see [the plan, section 11](CANALV2-TUNNEL-V11-PRODUCTION-PLAN.md). 17 have DPX and a corrected review video, 16 have no DPX, 3 (CGI-072) are held; none is in the real round yet.
+
 ## 5. Not done
 
 DPX header and timecode patch; the real round `tunnel-v11-edl-2026-11-18` (names to confirm with Binc); Rec.709 convert or tag-only; stopping the pod.

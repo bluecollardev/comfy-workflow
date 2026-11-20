@@ -195,3 +195,69 @@ Not every element is in the same state, so the delivery is handled by case. **Ru
 
 **Pods:** stopped, never deleted; their logs are kept (ADR-055 section 4). The delivery copies run on `vvi0hvuj4v5dsg` (RTX PRO 4000, $0.57/h, created 2026-11-20 because the host of `eagffo99jjrf1n` had no free card; idle stop after 30 minutes).
 
+## 11. The 36 elements, their state, and what is left (2026-11-20, evening)
+
+**Summary.** 36 elements in the PDF. **17 have DPX on the volume** with the exact frame counts and a review video re-rendered in the right colour (cases A to C). **16 have no DPX** (D and E) and **3 are held** (F). **None has gone to the real round yet**; the real round `tunnel-v11-edl-2026-11-18` already exists in the bucket and is never overwritten. Three of the 17 (084 main, 085 main, 123 c) are in the test round `_TEST_tunnel-v11-2026-11-20` with the old header; their corrected copies are being written.
+
+### 11.1 The 17 with DPX (cases A to C)
+
+| # | Element | Frames (PDF = volume) | Raster | DPX on volume | Review video re-rendered | Corrected DPX copy | In the real round |
+|---|---|---|---|---|---|---|---|
+| 1 | ARCHIVAL-071 main | 227 | 3840x2160 | yes | yes | no | no |
+| 2 | ARCHIVAL-077 a | 80 | 3840x2160 | yes | yes | no | no |
+| 3 | ARCHIVAL-077 b | 69 | 3840x2160 | yes | yes | no | no |
+| 4 | ARCHIVAL-077 c | 74 | 1920x1080 | yes | yes | no | no |
+| 5 | ARCHIVAL-080 a (still) | 94 | 6336x2688 PNG | yes | yes | no | no |
+| 6 | ARCHIVAL-080 b (still) | 60 | 6336x2688 PNG | yes | yes | no | no |
+| 7 | ARCHIVAL-080 c (still) | 90 | 6336x2688 PNG | yes | yes | no | no |
+| 8 | ARCHIVAL-080 d (still) | 83 | 6336x2688 PNG | yes | yes | no | no |
+| 9 | ARCHIVAL-080 e (still) | 44 | 6336x2688 PNG | yes | yes | no | no |
+| 10 | ARCHIVAL-083 main | 98 | 3852x2152 | yes | yes | no | no |
+| 11 | ARCHIVAL-084 main | 39 | 2356x1572 | yes | yes | in progress | no |
+| 12 | ARCHIVAL-085 main | 54 | 3840x2160 | yes | yes | in progress | no |
+| 13 | ARCHIVAL-093 b | 126 | 1618x1080 (low source resolution) | yes | yes | no | no |
+| 14 | ARCHIVAL-102 main | 128 | 3840x2160 | yes | yes | no | no |
+| 15 | ARCHIVAL-104 b | 130 | 3840x2160 | yes | yes | no | no |
+| 16 | ARCHIVAL-123 c | 66 | 3840x2160 | yes | yes | in progress | no |
+| 17 | CGI-042 main | 229 | 3840x2160 | yes | yes | no | no |
+
+### 11.2 The 19 without delivered DPX
+
+| # | Element | Frames (PDF) | Raster | Source final in | State on the volume | Case | Needed |
+|---|---|---|---|---|---|---|---|
+| 18 | ARCHIVAL-087 platform | 97 | 3840x2160 | `-11-14` | pulled | D | DPX from the ProRes master (decision 1); then as A |
+| 19 | ARCHIVAL-087 rain | 96 | 3840x2160 | `-11-14` | pulled | D | DPX from the ProRes master (decision 1); then as A |
+| 20 | ARCHIVAL-123 f | 43 | 3840x2160 | `-10-23` | staged | D | DPX from the ProRes master (decision 1); then as A |
+| 21 | ARCHIVAL-168 a | 153 | 3840x2160 | `-10-29` | pulled | D | DPX from the ProRes master (decision 1); then as A |
+| 22 | ARCHIVAL-168 b | 139 | 3840x2160 | `-10-29` | pulled | D | DPX from the ProRes master (decision 1); then as A |
+| 23 | ARCHIVAL-168 c | 105 | 3840x2160 | `-10-29` | pulled | D | DPX from the ProRes master (decision 1); then as A |
+| 24 | ARCHIVAL-168 d | 48 | 3840x2160 | `-10-29` | pulled | D | DPX from the ProRes master (decision 1); then as A |
+| 25 | CREATURE-266 dolphin-lowtrack (ALT V01) | 94 | 1920x1080 | `-11-14` | pulled | D | DPX from the ProRes master (decision 1); then as A |
+| 26 | PHOTOREAL-013 ascent | 108 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | DPX at 24 fps from the master (decision 1); then as A |
+| 27 | PHOTOREAL-013 chasm07 | 271 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | DPX at 24 fps from the master (decision 1); then as A |
+| 28 | PHOTOREAL-013 f23 | 633 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | DPX at 24 fps from the master (decision 1); then as A |
+| 29 | PHOTOREAL-013 hadal | 160 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | DPX at 24 fps from the master (decision 1); then as A |
+| 30 | PHOTOREAL-013 landing | 226 | 1920x1080, 24 fps ProRes | `-11-14` | pulled | E | DPX at 24 fps from the master (decision 1); then as A |
+| 31 | PHOTOREAL-013 splash | 96 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | DPX at 24 fps from the master (decision 1); then as A |
+| 32 | PHOTOREAL-013 sunlight | 212 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | DPX at 24 fps from the master (decision 1); then as A |
+| 33 | PHOTOREAL-013 top (V02) | 209 | 1920x1080, 24 fps ProRes | `-11-14` | pulled | E | DPX at 24 fps from the master (decision 1); then as A |
+| 34 | CGI-072 head | 106 | 1920x1080 V02 ProRes 23.976 | `-10-29` (V03 HEVC 24) | not pulled | F | Binc to say which version; then import `-10-29` for it |
+| 35 | CGI-072 backhalf-b | 70 | 1920x1080 V02 ProRes 23.976 | `-10-29` (V03 HEVC 24) | not pulled | F | Binc to say which version; then import `-10-29` for it |
+| 36 | CGI-072 backhalf-c | 162 | 1920x1080 V02 ProRes 23.976 | `-10-29` (V03 HEVC 24) | not pulled | F | Binc to say which version; then import `-10-29` for it |
+
+### 11.3 What needs to be done, in order
+
+**Ours, now (no one else needed):**
+1. Write the corrected DPX copies for the three test elements on the new pod, publish them to a second test round (`_TEST_tunnel-v11-fixed-2026-11-20`), and read the headers back from the bucket (colour code, timecode, frame rate, gamma, the per-element manifest). **Status: pod starting.**
+2. Compare one corrected frame with a frame from Binc's `cgi-072-header-fix_v004` (colour code and timecode position). If they differ, change the tool and redo step 1.
+3. Corrected copies for the other 14 of the 17 (about 85 GB on the volume), published to the test round, checked by a plan against the real round (no refusals, no collisions).
+4. The 17 to the real round, S3 only, never overwriting; then the Slack post when Lucas says.
+5. Check that the review videos carry the start timecode (the PDF's second defect for CGI-072).
+
+**Needs a decision from Lucas or Binc:**
+1. **How the 16 get their DPX** (D, E): ffmpeg conversion of the ProRes masters by us (the colour handling to confirm with Binc), or Binc's mono pipeline run on the masters. Until then the 16 can only be sent as proxy-only (H.264 from the masters), marked as such.
+2. **CGI-072**: V02 ProRes 23.976 (PDF) or the V03 HEVC 24 fps in the round.
+3. **The DPX colour code** (user-defined, as the corrected CGI-072 files?), the round-level manifest next to the per-element ones, Rec.709 convert or tag for the proxy, and the clip names for the real round (the EDL names are used; Binc confirms).
+
+**To close the job:** stop the pod `vvi0hvuj4v5dsg` (it stops by itself after 30 quiet minutes) and `eagffo99jjrf1n` stays stopped; merge this branch; release the app with the no-overwrite guard, the per-element manifest, `dpx_fix` and the pod logs (full gate); update `docs/CANALV2-TUNNEL-V11-DELIVERY-REPORT-2026-11-20.md` with the final result.
+
