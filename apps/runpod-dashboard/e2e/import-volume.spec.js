@@ -11,7 +11,7 @@ async function openVolume(page, api) {
   return dlg
 }
 
-test('Volume source: a volume chooser (the Shared volume), the rounds with shots and graphs, a folder that is not a round disabled, no Browse (nothing is copied)', async ({ page, api }) => {
+test('Volume source: a volume chooser (the Shared volume), the rounds with shots and graphs, a folder that is not a round disabled, Browse on every round (nothing is copied)', async ({ page, api }) => {
   const dlg = await openVolume(page, api)
   await expect(dlg.getByTestId('import-round-source-volume')).toHaveValue('vol1')   // the Shared volume is the default
   await expect(dlg.getByTestId('import-round-source-volume-note')).toContainText('read-only')
@@ -19,7 +19,7 @@ test('Volume source: a volume chooser (the Shared volume), the rounds with shots
   const r5 = dlg.locator('[data-testid="import-round-option"][data-round="proxy_v005"]')
   await expect(r5.getByTestId('import-round-counts')).toContainText('3 shots · 5 graphs · 1 reference only')
   await expect(dlg.locator('[data-testid="import-round-option"][data-round="canalv2"] input')).toBeDisabled()   // listed, not a round
-  await expect(dlg.getByTestId('import-round-browse')).toHaveCount(0)   // the BH file tree is for BH rounds
+  await expect(dlg.getByTestId('import-round-browse')).toHaveCount(3)   // every round can be inspected, the one that is not a round too
   expect(api.state.libraryCalls.some((c) => c.path === '/library/items' && c.source === 'volume' && c.volume_id === 'vol1')).toBe(true)
 })
 
@@ -86,4 +86,83 @@ test('Volume source: Check models is read-only, per round, on demand, and says w
   await dlg.getByTestId('import-round-source').selectOption('panama-s3')   // BH again: its rounds, unchanged
   await expect(dlg.getByTestId('import-round-option')).toHaveCount(3)
   await expect(dlg.getByTestId('import-round-browse').first()).toBeVisible()
+})
+
+// Browse Files on the volume's rounds: the read-only tree of comfy-shared/output/<round>, listed by prefix over the S3 API (no pod), nothing copied.
+const MOD = '2026-11-18T10:00:00Z'
+const S3 = { keys: true, files: [
+  { key: 'proxy_v005/archival-080/seq/f.0001.dpx', bytes: 2048, modified: MOD },
+  { key: 'proxy_v005/archival-080/seq/f.0002.dpx', bytes: 2048, modified: MOD },
+  { key: 'proxy_v005/archival-080/preview.mp4', bytes: 1048576, modified: MOD },
+  { key: 'proxy_v005/archival-084/f.0001.png', bytes: 500, modified: MOD },
+  { key: 'proxy_v005/notes.txt', bytes: 12, modified: MOD },
+  { key: 'proxy_v004g/archival-080/a.png', bytes: 1, modified: MOD },
+] }
+
+test('Volume source: Browse Files on a round opens the volume tree with sizes and folder totals; nothing is copied', async ({ page, api }) => {
+  api.state.s3Outputs = S3
+  const dlg = await openVolume(page, api)
+  await dlg.locator('[data-testid="import-round-option"][data-round="proxy_v005"]').getByTestId('import-round-browse').click()
+  const m = page.getByTestId('round-files-modal')
+  await expect(m).toContainText('comfy-shared/output/proxy_v005')   // which volume and folder
+  await expect(m).toContainText('comfy-workspace')
+  await expect(m.getByTestId('round-files-summary')).toContainText('5')
+  await expect(m.getByTestId('round-files-where')).toContainText('nothing is copied')
+  const rows = m.getByTestId('round-files-row')
+  await expect(rows.filter({ hasText: 'archival-080' })).toHaveCount(1)
+  await expect(rows.filter({ hasText: 'archival-080' })).toContainText('3')   // the folder's file total
+  await expect(m).toContainText('preview.mp4'); await expect(m).toContainText('notes.txt')
+  await expect(rows.filter({ hasText: 'f.0001.dpx' })).toHaveCount(0)   // deeper folders closed
+  await rows.filter({ hasText: 'seq' }).first().click()
+  await expect(rows.filter({ hasText: 'f.0001.dpx' })).toHaveCount(1)
+  const prefixes = api.state.outputCalls.filter((c) => c.source === 'volume-s3').map((c) => c.prefix)
+  expect(prefixes).toEqual(expect.arrayContaining(['proxy_v005', 'proxy_v005/archival-080', 'proxy_v005/archival-084']))
+  expect(prefixes.every((p) => p && p.startsWith('proxy_v005'))).toBe(true)   // by prefix, never the whole tree
+  expect(api.state.outputCalls.some((c) => c.all)).toBe(false)
+  expect(api.state.volumeImportCalls?.length || 0).toBe(0)   // nothing copied
+  await m.getByText('Close', { exact: true }).click()
+  await expect(m).toBeHidden()
+  await expect(dlg).toBeVisible()
+})
+
+test('Volume source: Browse Files on a shot shows only that shot folder', async ({ page, api }) => {
+  api.state.s3Outputs = S3
+  const dlg = await openVolume(page, api)
+  await dlg.locator('[data-testid="import-round-option"][data-round="proxy_v005"] input').check()
+  await dlg.getByTestId('import-round-next').click()
+  await dlg.getByTestId('import-round-shot').filter({ hasText: 'archival-084' }).getByTestId('import-round-shot-browse').click()
+  const m = page.getByTestId('round-files-modal')
+  await expect(m).toContainText('comfy-shared/output/proxy_v005/archival-084')
+  await expect(m.getByTestId('round-files-row').filter({ hasText: 'f.0001.png' })).toHaveCount(1)
+  await expect(m).not.toContainText('archival-080'); await expect(m).not.toContainText('notes.txt')
+  expect(api.state.outputCalls.filter((c) => c.source === 'volume-s3').map((c) => c.prefix)).toEqual(['proxy_v005/archival-084'])
+  expect(api.state.volumeImportCalls?.length || 0).toBe(0)
+})
+
+test('Volume source: a listing error shows inline in the modal and the window still works', async ({ page, api }) => {
+  api.state.s3Outputs = { ...S3, fail: 'The RunPod S3 keys are not set: nothing was listed.' }
+  const dlg = await openVolume(page, api)
+  await dlg.locator('[data-testid="import-round-option"][data-round="proxy_v005"]').getByTestId('import-round-browse').click()
+  const m = page.getByTestId('round-files-modal')
+  await expect(m.getByTestId('round-files-error')).toContainText('S3 keys are not set')
+  await m.getByText('Close', { exact: true }).click()
+  await expect(m).toBeHidden()
+  await dlg.locator('[data-testid="import-round-option"][data-round="proxy_v005"] input').check()   // still usable
+  await dlg.getByTestId('import-round-next').click()
+  await expect(dlg.getByTestId('import-round-shot')).toHaveCount(2)
+})
+
+test('Volume source: a round on both sources browses the one the Source select is on', async ({ page, api }) => {
+  api.state.s3Outputs = S3
+  const dlg = await openVolume(page, api)
+  await dlg.getByTestId('import-round-source').selectOption('panama-s3')
+  await dlg.getByTestId('import-round-browse').first().click()
+  const m = page.getByTestId('round-files-modal')
+  await expect(m.getByTestId('round-files-row')).toHaveCount(5)   // the BH bucket tree
+  await expect(m).not.toContainText('comfy-shared/output')
+  await m.getByText('Close', { exact: true }).click()
+  await dlg.getByTestId('import-round-source').selectOption('volume')
+  await dlg.getByTestId('import-round-source-volume').selectOption('vol1')
+  await dlg.getByTestId('import-round-browse').first().click()
+  await expect(page.getByTestId('round-files-modal')).toContainText('comfy-shared/output/')
 })

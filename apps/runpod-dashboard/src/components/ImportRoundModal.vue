@@ -44,6 +44,7 @@
             <span v-if="itemOf(r).note" class="text-body-secondary" data-testid="import-round-note">{{ $t('importRound.notRound') }}</span>
             <span v-else class="text-body-secondary text-nowrap" data-testid="import-round-counts">{{ $t('importRound.shotsCount', { n: itemOf(r).shots.length }) }} · {{ $t('importRound.graphsCount', { n: itemOf(r).graphs ?? 0 }) }}<template v-if="itemOf(r).locked?.length"> · {{ $t('importRound.lockedCount', { n: itemOf(r).locked.length }) }}</template></span>
             <BButton v-if="itemOf(r).importable !== false || itemOf(r).shots.length" variant="outline-light" size="sm" class="py-0 text-nowrap" :disabled="checking.has(r)" data-testid="import-round-check-models" @click="checkModels(r)"><i class="fa-solid fa-clipboard-check me-1"></i>{{ $t('importRound.checkModels') }}</BButton>
+            <BButton variant="outline-light" size="sm" class="py-0 text-nowrap" data-testid="import-round-browse" @click="browsing = r"><i class="fa-solid fa-folder-tree me-1"></i>{{ $t('importRound.browse') }}</BButton>
           </template>
           <BButton v-else variant="outline-light" size="sm" class="py-0 text-nowrap" data-testid="import-round-browse" @click="browsing = r"><i class="fa-solid fa-folder-tree me-1"></i>{{ $t('importRound.browse') }}</BButton>
         </div>
@@ -168,7 +169,7 @@
       </div>
     </template>
     <ChooseCardModal :show="cardModal" :list="dcList" :loading="dcLoading" :datacenter="dcChoice" :cards="allCards" :card-label="allCardLabel" :volume-dcs="volumeDcs" :default-dc="isVolume ? (sourceVolume?.datacenter || '') : ''" @close="cardModal = false" @refresh="loadDcs(true)" @update:datacenter="dcChoice = $event" @pick="onPickCard" @auto="clearAllCards" />
-    <RoundFilesModal :round="browsing" :shot="browsingShot" target="local" @close="browsing = ''; browsingShot = ''" />
+    <RoundFilesModal :round="browsing" :shot="browsingShot" target="local" :source="isVolume ? 'volume' : 'bh'" :volume-id="isVolume ? sourceVolumeId : ''" :volume-name="isVolume ? (sourceVolume?.name || '') : ''" @close="browsing = ''; browsingShot = ''" />
   </BModal>
 </template>
 
@@ -340,11 +341,12 @@ async function loadRounds() {
   } catch (e) { error.value = errorText(e) } finally { loadingRounds.value = false }
 }
 function resetPicks() { chosen.value = new Set(); plans.value = new Map(); picked.value = new Map(); estimates.value = new Map(); rowErrors.value = {}; rounds.value = []; models.value = {}; error.value = '' }
+watch([source, sourceVolumeId], () => { browsing.value = ''; browsingShot.value = '' })   // a listing belongs to the source it was opened on
 watch(sourceVolumeId, (now, was) => { if (!isVolume.value || now === was) return; resetPicks(); loadRounds() })
 watch(source, (now, was) => {   // another source: its own rounds, and nothing ticked from the last one
   if (now === was) return
   resetPicks()
-  if (isVolume.value) { runWorkflows.value = true; loadSourceVolumes().then(() => { if (!sourceVolumeId.value) loadRounds() }) }   // the volume's own watcher loads the rounds once one is chosen
+  if (isVolume.value) { runWorkflows.value = true; const had = sourceVolumeId.value; loadSourceVolumes().then(() => { if (!sourceVolumeId.value || sourceVolumeId.value === had) loadRounds() }) }   // the volume's own watcher loads the rounds once a new one is chosen; the same volume as before (back from BH) has no change to watch, so load them here
   else loadRounds()
 })
 onMounted(async () => { loadDcs()

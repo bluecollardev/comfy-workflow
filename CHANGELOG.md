@@ -3,6 +3,10 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## v1.6.8
+
+- **Import Round: Browse Files on volume rounds.** With Source = Volume, every round row (step 1, beside Check Models) and every shot (step 2) has Browse Files, opening the same read-only tree as the BH rounds (folders with totals, files with sizes, the top level open). It lists `comfy-shared/output/<round>` over RunPod's S3 API from this PC (no pod, nothing spent, nothing copied), by prefix and only when clicked: the round's folder one level, then each shot folder (at most 60, 3000 files each); a shot's Browse lists only that shot. The title names the volume and the folder; a failure shows in the modal. The button follows the Source select. Also fixes the round list staying empty when going back to Volume from BH with the same volume.
+
 ## v1.6.5 (tag v1.6.5, 2026-11-19)
 
 - **Queue > Publishing is paged.** The job cards show 10 to a page (5, 10 or 25), with Previous, Next and "1–10 of N"; the running ones are always on page 1, a new page size starts at page 1, and a page that empties moves back.
