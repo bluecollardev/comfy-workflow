@@ -18,7 +18,7 @@
         <span v-for="c in chips(j)" :key="c.id" class="badge fw-normal" :class="c.active ? 'text-bg-primary' : c.done ? 'text-bg-success' : 'text-bg-secondary'" data-testid="publishing-phase" :data-phase="c.id" :data-active="c.active ? 'true' : 'false'">{{ $t(`queue.pub.phase.${c.id}`) }}</span>
       </div>
       <div v-if="j.skipped" class="text-body-secondary" data-testid="publishing-job-skipped">{{ $t('queue.pub.skipped', { n: j.skipped }) }}</div>
-      <PublishJob :job="j" :embedded="true" />
+      <PublishJob :job="j" :embedded="true" @retry="openWindow(j)" />
     </div>
     <div v-if="store.queueJobs.length > PAGE_SIZES[0]" class="d-flex align-items-center gap-2 flex-wrap" data-testid="publishing-pager">
       <BButton size="sm" variant="outline-light" :disabled="page === 0" data-testid="publishing-page-prev" @click="page--"><i class="fa-solid fa-chevron-left me-1"></i>{{ $t('queue.pub.prev') }}</BButton>
