@@ -180,8 +180,8 @@ export async function apiGraph(podId: string, path: string, base: string, o: Run
   const getJson = async (url: string) => {
     for (let k = 1; ; k++) {
       try { const x = await fetchFn(url, { signal: AbortSignal.timeout((o.fetchTimeoutMs ?? 60_000) * k) }); if (x.status !== 200) throw new CoreError(502, `ComfyUI answered HTTP ${x.status} for ${url.replace(base, '')}`); return await x.json() } catch (e) {
-        if (k >= (o.fetchTries ?? 3) || !/aborted|timeout|timed out|fetch failed|ECONN/i.test((e as Error).message)) throw e
-        await new Promise((r) => setTimeout(r, o.fetchWaitMs ?? 10_000))
+        if (k >= (o.fetchTries ?? 6) || !/aborted|timeout|timed out|fetch failed|ECONN|answered HTTP (404|502|503|504)/i.test((e as Error).message)) throw e   // a cold pod answers 502/404 while ComfyUI and its workflow files come up: ask again
+        await new Promise((r) => setTimeout(r, o.fetchWaitMs ?? 20_000))
       }
     }
   }
