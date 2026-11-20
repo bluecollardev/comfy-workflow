@@ -188,6 +188,19 @@ export async function pass(g: mounts.AutoGenerateConfig, approver: string, signa
   if (seenDirty) { seenDirty = false; const live = new Set(cands.map((c) => `${g.where === 'pod' ? 'volume' : 'local'}:${c.key}`)); const st2 = await readState(); await writeState({ ...st2, seen: Object.fromEntries([...seen].filter(([k]) => live.has(k) || !k.startsWith(g.where === 'pod' ? 'volume:' : 'local:')).map(([k, v]) => [k, { sig: v.sig, since: v.changedAt, looks: v.looks }])) }) }
   return { started }
 }
+/** Import Round > Generate Outputs: the NEW, COMPLETE DPX sequences of one shot on the volume (frames written since `sinceMs`). Model weights, sequences with gaps and sequences with no readable modified time are left out, each with its reason (never a partial sequence). Starts nothing. */
+export async function newVolumeSequences(shot: string, sinceMs: number): Promise<{ sequences: { dir: string; name: string; first: number; last: number; frames: number; pad: number }[]; skipped: { stem: string; reason: string }[] }> {
+  const cands = (await scanVolume()) ?? [], sequences: { dir: string; name: string; first: number; last: number; frames: number; pad: number }[] = [], skipped: { stem: string; reason: string }[] = []
+  for (const c of cands) {
+    const name = SHOT.test(c.stem) ? c.stem : SHOT.test(c.dir.split('/').pop() ?? '') ? c.dir.split('/').pop()! : ''
+    if (!name || (name !== shot && !c.dir.split('/').includes(shot) && !c.stem.startsWith(shot))) continue
+    if (c.weights) { skipped.push({ stem: c.stem, reason: 'model weights are never rendered' }); continue }
+    if (!c.oldest || c.oldest < sinceMs) { skipped.push({ stem: c.stem, reason: c.oldest ? 'not new: its frames were there before this run' : 'cannot tell when its frames were written' }); continue }
+    if (c.gaps > 0) { skipped.push({ stem: c.stem, reason: `incomplete: ${c.gaps} gap${c.gaps === 1 ? '' : 's'} in the frames` }); continue }
+    sequences.push({ dir: c.dir, name: c.stem, first: c.first, last: c.last, frames: c.count, pad: c.pad })
+  }
+  return { sequences, skipped }
+}
 /** Stop what was started: the renders still running are cancelled (Off does this). */
 export async function clearPending(): Promise<void> { const st = await readState(); if (st.pending?.length) await writeState({ ...st, pending: [] }); pendingExisting = 0 }
 export function cancelAll(): number { let n = 0; for (const [, a] of active) { try { deps.cancel(a.job_id); n++ } catch { /* gone */ } } active.clear(); return n }

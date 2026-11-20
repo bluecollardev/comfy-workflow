@@ -14,6 +14,7 @@ async function toStep3(page, api, n = 1) {
   for (let i = 0; i < n; i++) await dlg.getByTestId('import-round-option').nth(i).locator('input').check()
   await dlg.getByTestId('import-round-next').click()
   await dlg.getByTestId('import-round-next').click()
+  await dlg.getByTestId('import-round-run').check()   // Run Workflows is off until ticked: the cards are for the runs
   return dlg
 }
 

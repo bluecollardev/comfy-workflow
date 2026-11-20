@@ -689,3 +689,34 @@ test('configuration: render.pull/skip_existing/publish and outputs.hide_empty_fo
   assert.equal(typeof cfg, 'object')
   await call('reset_configuration', {})
 })
+
+test('import tools take generate_outputs and publish (Import Round options): documented, validated like the window, never without a named person; an agent can publish through an import', async () => {
+  const tools = (await rpc('tools/list')).result.tools
+  for (const n of ['plan_round_import', 'import_round', 'import_rounds']) {
+    const p = tools.find((x) => x.name === n).inputSchema.properties
+    assert.ok(p.generate_outputs, n); assert.ok(p.publish, n); assert.match(p.publish.description, /needs generate_outputs/); assert.match(p.publish.description, /locked shot/)
+  }
+  const per = tools.find((x) => x.name === 'import_rounds').inputSchema.properties.rounds.items.properties
+  assert.ok(per.generate_outputs && per.publish)
+  const base = { round: 'proxy_v005', source: 'volume', volume_id: 'vol1' }
+  // the same plain 400s as the window
+  const noGen = await call('plan_round_import', { ...base, publish: true })
+  assert.equal(noGen.result.isError, true); assert.match(textOf(noGen), /Publish needs Generate Outputs/)
+  const noRun = await call('plan_round_import', { ...base, run_workflows: false, generate_outputs: true })
+  assert.equal(noRun.result.isError, true); assert.match(textOf(noRun), /Generate Outputs needs Run Workflows/)
+  const slack = await call('plan_round_import', { ...base, generate_outputs: true, publish: { s3: false, slack: true } })
+  assert.equal(slack.result.isError, true); assert.match(textOf(slack), /Slack only follows an S3 upload/)
+  // a name is needed for the new options (even when the named-yes setting is off); publish itself is not refused (no 403)
+  const noName = await call('import_round', { ...base, generate_outputs: true })
+  assert.equal(noName.result.isError, true); assert.match(textOf(noName), /approved_by/)
+  const noNameMany = await call('import_rounds', { ...base, rounds: [{ round: 'proxy_v005', publish: true }] })
+  assert.equal(noNameMany.result.isError, true); assert.match(textOf(noNameMany), /approved_by/)
+  const dep = await call('import_round', { ...base, publish: true, approved_by: 'Lucas' })
+  assert.equal(dep.result.isError, true); assert.match(textOf(dep), /Publish needs Generate Outputs/); assert.doesNotMatch(textOf(dep), /403|person's act/)
+  // all valid: it gets past the options; the destination is not set up in this test world, so it is a 400 with the reason, and nothing is queued
+  const notReady = await call('import_round', { ...base, generate_outputs: true, publish: true, approved_by: 'Lucas' })
+  assert.equal(notReady.result.isError, true); assert.doesNotMatch(textOf(notReady), /Publish needs|Generate Outputs needs|give approved_by|person's act/)
+  // the plan carries what would be generated and published
+  const ok = await call('plan_round_import', { ...base, generate_outputs: true, publish: true })
+  if (!ok.result.isError) { const pl = JSON.parse(first(ok)); assert.equal(pl.generate_outputs, true); assert.deepEqual(pl.publish, { s3: true, slack: false }) }
+})
