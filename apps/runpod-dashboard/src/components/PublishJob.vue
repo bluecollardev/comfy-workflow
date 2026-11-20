@@ -12,9 +12,10 @@
         </div>
         <BButton v-if="active" size="sm" variant="outline-warning" class="flex-shrink-0 ms-auto" data-testid="publish-cancel" @click="store.cancel(job.job_id)"><i class="fa-solid fa-stop me-1"></i>{{ $t(children.length ? 'publish.ret.cancelAll' : 'publish.modal.cancel') }}</BButton>
       </div>
+      <div v-if="failedKids.length && !active" class="mt-1" data-testid="publish-retry-shots"><BButton size="sm" variant="outline-warning" :disabled="retryingShots" data-testid="publish-retry-all" @click="retryShots"><i class="fa-solid fa-rotate me-1"></i>{{ $t('publish.ret.retryShots', { n: failedKids.length }) }}</BButton><span v-if="retryErr" class="text-danger small ms-2" data-testid="publish-retry-error"><ErrorText :text="retryErr" /></span></div>
       <div v-if="job.phase"class="small text-info" data-testid="publish-job-phase" :data-phase="job.phase">{{ $t(`publish.backfill.phase.${job.phase}`) }}</div>
       <div v-if="job.uploaded != null || failed.length" class="small" data-testid="publish-job-result">{{ $t('publish.backfill.result', { uploaded: job.uploaded ?? job.files_done ?? 0, there: job.skipped ?? 0, failed: failed.length }) }}</div>
-      <div v-for="f in failed" :key="f.path" class="small text-danger" data-testid="publish-job-failed" :data-path="f.path"><span class="font-monospace">{{ f.path }}</span>: {{ f.error }}</div>
+      <div v-for="f in failed" :key="f.path" class="small text-danger" data-testid="publish-job-failed" :data-path="f.path"><span class="font-monospace">{{ f.path }}</span>: <ErrorText :text="String(f.error || '')" /></div>
       <BButton v-if="failed.length && !active" size="sm" variant="outline-warning" class="mt-1" data-testid="publish-retry-failed" @click="emit('retry', failed)"><i class="fa-solid fa-rotate me-1"></i>{{ $t('publish.backfill.retry') }}</BButton>
       <!-- a publish of several shots is a parent job: one row per shot, each with its own state, Retry (failed only) and Cancel -->
       <div v-if="children.length" class="mt-2" data-testid="publish-children" :data-open="childrenOpen ? 'true' : 'false'">
@@ -24,7 +25,7 @@
             <span class="fw-semibold" data-testid="publish-child-shot">{{ c.shot }}</span><span class="font-monospace text-truncate" style="max-width: 16rem" data-testid="publish-child-clip">{{ c.clip }}</span>
             <span class="badge" :class="childClass(c.state)" data-testid="publish-child-state">{{ $t(`publish.modal.state.${c.state}`, c.state) }}</span>
             <span data-testid="publish-child-files">{{ $t('publish.ret.childFiles', { n: c.files ?? 0 }) }}</span><span data-testid="publish-child-bytes">{{ formatBytes(c.bytes || 0) }}</span><span v-if="c.rate" class="text-body-secondary" data-testid="publish-child-rate">{{ $t('publish.modal.rate', { rate: formatBytes(c.rate) }) }}</span>
-            <span v-if="c.error" class="text-danger" data-testid="publish-child-error">{{ c.error }}</span>
+            <span v-if="c.error" class="text-danger" data-testid="publish-child-error"><ErrorText :text="String(c.error)" /></span>
             <BButton v-if="c.state === 'failed'" size="sm" variant="outline-warning" class="ms-auto" data-testid="publish-child-retry" @click="store.retry(c.id)"><i class="fa-solid fa-rotate me-1"></i>{{ $t('publish.backfill.retry') }}</BButton>
             <BButton v-if="['queued', 'uploading'].includes(c.state)" size="sm" variant="outline-warning" class="ms-auto" data-testid="publish-child-cancel" @click="store.cancel(c.id)">{{ $t('publish.modal.cancel') }}</BButton>
           </div>
@@ -36,7 +37,7 @@
       <div v-if="verified != null" class="small text-body-secondary" data-testid="publish-verified">{{ $t('publish.ret.verified', { n: verified }) }}</div>
       <div v-for="(w, i) in job.warnings || []" :key="i" class="small text-warning" data-testid="publish-job-warning">{{ w }}</div>
       <div v-if="job.summary" class="small" data-testid="publish-job-summary">{{ job.summary }}</div>
-      <div v-if="job.error" class="small text-danger" data-testid="publish-job-error">{{ job.error }}</div>
+      <div v-if="job.error" class="small text-danger" data-testid="publish-job-error"><ErrorText :text="String(job.error)" /></div>
       <div v-if="(job.links || []).length" class="mt-2" data-testid="publish-links"><div v-if="!grouped" class="small fw-semibold">{{ $t('publish.modal.links') }}</div>
         <template v-for="g in groups" :key="g.kind">
           <div v-if="grouped" class="small fw-semibold mt-3 mb-1" :data-testid="`publish-links-${g.kind}`">{{ $t(`publish.links.group.${g.kind}`) }}</div>
@@ -51,6 +52,7 @@
 </template>
 
 <script setup>
+import ErrorText from './ErrorText.vue'
 /** PublishJob: one publish job (files, bytes, rate, the file under way, Cancel), its result (uploaded, already there, failed with reasons, Retry failed), the links with Copy and expiry, and the Slack state with Re-post. Shared by the Publish and Backfill tabs. */
 import { computed, ref } from 'vue'
 import { t } from '../i18n'
@@ -84,6 +86,9 @@ const manifestLine = computed(() => { const m = props.job.manifest || {}; return
 /** How many files carry a SHA-256 in the result: `sha256_count`, or the sha256 map, or the files that have one. */
 const verified = computed(() => { const j = props.job; if (typeof j.sha256_count === 'number') return j.sha256_count; if (j.sha256 && typeof j.sha256 === 'object') return Array.isArray(j.sha256) ? j.sha256.length : Object.keys(j.sha256).length; if (Array.isArray(j.files) && j.files.some((f) => f && f.sha256)) return j.files.filter((f) => f.sha256).length; return null })
 const overridden = computed(() => (Array.isArray(props.job.edl_overrides) ? props.job.edl_overrides : []).map((x) => (typeof x === 'string' ? x : x.stem || x.name)).filter(Boolean))
+const failedKids = computed(() => children.value.filter((c) => c.state === 'failed')), retryingShots = ref(false), retryErr = ref('')
+/** Every failed shot of the job tried again, one after the other (the shots that are done are not sent again). */
+async function retryShots() { retryingShots.value = true; retryErr.value = ''; try { for (const c of failedKids.value) await store.retry(c.id) } catch (e) { retryErr.value = e?.response?.data?.detail || e?.message || String(e) } finally { retryingShots.value = false } }
 const failed = computed(() => (Array.isArray(props.job.failed) ? props.job.failed : []))
 const percent = computed(() => { const j = props.job; return j.state === 'done' || j.state === 'done_with_warning' ? 100 : j.bytes_total ? Math.round((100 * (j.bytes_done || 0)) / j.bytes_total) : j.files_total ? Math.round((100 * (j.files_done || 0)) / j.files_total) : 0 })
 async function copy(l) { try { await navigator.clipboard.writeText(l.url); copiedPath.value = l.path; setTimeout(() => { if (copiedPath.value === l.path) copiedPath.value = '' }, 2000) } catch { copiedPath.value = '' } }

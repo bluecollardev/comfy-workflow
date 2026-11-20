@@ -203,6 +203,7 @@ const TABLE = {
     start: (c, o) => c.renders.start(o || {}),
     status: (c, jobId) => c.renders.status(jobId || undefined),
     cancel: (c, jobId) => c.renders.cancel(String(jobId || '')),
+    retry: (c, jobId) => c.renders.retry(String(jobId || '')),
     proxies: (c, o) => c.renders.proxies(o || {}),
     clearLocal: (c) => c.renders.clearLocal(),   // only files inside the mapped local output/.proxies
   },

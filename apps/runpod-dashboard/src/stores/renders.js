@@ -56,6 +56,8 @@ export const useRendersStore = defineStore('renders', () => {
     return r
   }
   async function cancel(jobId) { await rendersAPI.cancel(jobId); await refresh(); schedule() }
+  /** A failed or cancelled job again: its unfinished sequences, the way it started. */
+  async function retry(jobId) { const r = await rendersAPI.retry(jobId); dismiss(jobId); await refresh(); schedule(); return r }
 
   /** One batched call for the tiles of a window; what the core does not list is forgotten. */
   async function loadProxies(o) {
@@ -79,5 +81,5 @@ export const useRendersStore = defineStore('renders', () => {
     await reloadProxies()
     return r
   }
-  return { scopes, fast, setFast, dismissed, dismiss, activeCount, jobs, old, error, proxies, finished, prefs, active, jobForPod, refresh, watch, start, cancel, loadProxies, reloadProxies, proxyFor, reviewFor, deliverables, play, clearLocal, polls: () => polls }
+  return { scopes, fast, setFast, dismissed, dismiss, activeCount, jobs, old, error, proxies, finished, prefs, active, jobForPod, refresh, watch, start, cancel, retry, loadProxies, reloadProxies, proxyFor, reviewFor, deliverables, play, clearLocal, polls: () => polls }
 })

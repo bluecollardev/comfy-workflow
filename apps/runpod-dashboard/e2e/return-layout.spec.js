@@ -178,6 +178,17 @@ test.describe('Queue > Publishing: a publish of several shots', () => {
   const child = (id, shot, state, o = {}) => ({ id, shot, clip: `${shot.toUpperCase()}_A_V11`, state, files: 12, bytes: 3 * GB, rate: 40e6, ...o })
   const parent = (o = {}) => ({ job_id: 'pub-1', state: 'uploading', targets: ['s3'], approved_by: 'Brynley', started_at: '2026-11-19T10:00:00Z', files_total: 36, files_done: 12, bytes_total: 9 * GB, bytes_done: 3 * GB, rate_bps: 40e6, current: '', skipped: 0, links: [], slack: { state: 'skipped' }, summary: '', ...o })
   const openQ = async (page) => { await queueTab(page, 'publishing'); const q = page.getByTestId('queue-modal'); await expect(q.getByTestId('queue-publishing')).toBeVisible(); return q }
+  test('failed shots: a long error opens whole; Retry failed tries each failed shot again', async ({ page, api }) => {
+    const long = `upload failed: ${'y'.repeat(300)} TAIL`
+    setup(api, { jobs: [parent({ state: 'failed', children: [child('c1', 'archival-077', 'done'), child('c2', 'archival-084', 'failed', { error: long, rate: 0 }), child('c3', 'cgi-042', 'failed', { error: 'Access Denied', rate: 0 })] })] })
+    await page.goto('/'); const q = await openQ(page)
+    const r2 = q.locator('[data-testid="publish-child"][data-id="c2"]')
+    await expect(r2.getByTestId('error-text-short')).not.toContainText('TAIL')
+    await r2.getByTestId('error-text-open').click(); await expect(page.getByTestId('error-text-full')).toContainText('TAIL'); await page.getByTestId('error-text-modal').getByRole('button', { name: 'Close', exact: true }).last().click()
+    await expect(q.getByTestId('publish-retry-all')).toContainText('2')
+    await q.getByTestId('publish-retry-all').click()
+    await expect.poll(() => (api.state.publish.retries || []).length).toBe(2)
+  })
   test('a parent card shows its children as rows with state, files, bytes and rate; Retry only on a failed one; Cancel on a running one; Cancel all on the parent', async ({ page, api }) => {
     setup(api, { jobs: [parent({ children: [child('c1', 'archival-077', 'done'), child('c2', 'archival-084', 'uploading'), child('c3', 'cgi-042', 'failed', { error: 'Access Denied', rate: 0 })], manifest: { state: 'pending' } })] })
     await page.goto('/'); const q = await openQ(page)

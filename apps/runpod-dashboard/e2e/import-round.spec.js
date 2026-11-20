@@ -314,7 +314,7 @@ test('Queue: Export log saves a CSV of the tasks and opens the PDF page', async 
   const [dl] = await Promise.all([page.waitForEvent('download'), q.getByTestId('queue-export-csv').click()])
   expect(dl.suggestedFilename()).toMatch(/^queue-log-\d{4}-\d{2}-\d{2}\.csv$/)
   const text = readFileSync(await dl.path(), 'utf8')
-  expect(text).toContain('task,')
+  expect(text).toContain(',task,')
   expect(text).toContain('pod ready')
   await q.getByTestId('queue-export').locator('button').first().click()
   const [pop] = await Promise.all([page.waitForEvent('popup'), q.getByTestId('queue-export-pdf').click()])

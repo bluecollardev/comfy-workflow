@@ -217,6 +217,16 @@ describe('rendering on this PC (the local adapter)', () => {
     const { job_id } = await renders.start({ pod_id: 'p1', sequences: [SEQ], width: 960 }); await renders.settled(); const j = job(job_id)
     expect(j.sequences[0]).toMatchObject({ where: 'local', state: 'done' }); expect(pulls).toHaveLength(0)
   })
+  it('retry: a failed job starts again with the sequences that did not finish; a running or finished one is refused', async () => {
+    pod.nodir = true
+    const { job_id } = await renders.start({ pod_id: 'p1', sequences: [SEQ], width: 960, where: 'pod' }); await renders.settled()
+    expect(job(job_id).state).toBe('failed')
+    pod.nodir = false; frames(10)
+    const r = await renders.retry(job_id); await renders.settled()
+    expect(r.job_id).not.toBe(job_id); expect(job(r.job_id).sequences.map((s) => s.name)).toEqual([SEQ.name])
+    await expect(renders.retry(r.job_id)).rejects.toThrow(/Only a failed or cancelled/)
+    await expect(renders.retry('render-nope')).rejects.toThrow(/No such render job/)
+  })
   it('explicit where pod does not fall back', async () => { frames(10); pod.nodir = true; const { job_id } = await renders.start({ pod_id: 'p1', sequences: [SEQ], width: 960, where: 'pod' }); await renders.settled(); expect(job(job_id).sequences[0]).toMatchObject({ where: 'pod', state: 'failed' }) })
 })
 
