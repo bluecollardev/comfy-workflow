@@ -138,6 +138,7 @@ import { sharedThumbs, thumbTimeouts, withTimeout, thumbKey, appReader, createLi
 import { t } from '../i18n'
 import { usePreviewsStore } from '../stores/previews'
 import { previewBus } from '../utils/thumbsBus'
+import { clearColourCache } from '../utils/ocio'
 import { useRendersStore } from '../stores/renders'
 import { sequenceItems, sequenceItem, isActive } from '../utils/renders'
 const folderOf = (p) => p.split('/').slice(0, -1).join('/')
@@ -337,7 +338,7 @@ const emptyHidden = computed(() => vol.folders.filter((f) => vol.info[f]?.empty)
 const crumbs = computed(() => vol.prefix.split('/').filter(Boolean).map((name, i, a) => ({ name, prefix: a.slice(0, i + 1).join('/') })))
 const s3ok = computed(() => vol.ok)
 const openConfig = () => { ui.configFocus = 's3'; ui.configOpen = true; emit('close') }
-const refresh = () => { emit('refresh'); loadVolume(vol.loaded ? vol.prefix : undefined, true); if (scope.value === 'all') ensureAll(true) }
+const refresh = () => { clearColourCache(); emit('refresh'); loadVolume(vol.loaded ? vol.prefix : undefined, true); if (scope.value === 'all') ensureAll(true) }
 
 /** The runs shown: the pod's and the saved ones, and the volume's folder runs that are not already one of them. */
 const nameFilter = ref('')

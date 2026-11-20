@@ -90,7 +90,7 @@ test('opening a DPX sequence from the volume with the pod stopped reads s3file:/
   await expect(v.getByTestId('dpx-viewer-canvas')).toHaveAttribute('data-drawn', '0')
   await expect(v.getByTestId('dpx-viewer-frame')).toHaveText(/1 \/ 3/)
   await expect(v.getByTestId('dpx-viewer-open')).toHaveCount(0)   // an s3file address has no tab to open in
-  const asked = await page.evaluate(() => window.__s3)
+  const asked = (await page.evaluate(() => window.__s3)).filter((u) => !decodeURIComponent(u).endsWith('.json'))   // the colour record is read too (a small .json for the chips); the frames are what this checks
   expect(asked.length).toBeGreaterThan(0)
   const u = new URL(asked[0])
   expect(u.protocol).toBe('s3file:'); expect(u.host).toBe('vol1')

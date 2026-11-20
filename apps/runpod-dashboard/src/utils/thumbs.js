@@ -92,8 +92,8 @@ export function createThumbs({ cache, produce, concurrency = 1, autoCap = AUTO_C
         if (j.aborted) return j.resolve({ status: 'aborted' })
         const meta = { bytes: j.job?.bytes ?? null, modified: j.job?.modified ?? null }
         if (r && r.empty) { if (r.verdict) { try { await cache.set(j.key, { empty: true, reason: r.reason || '', ...meta }) } catch { /* no storage */ } } return j.resolve({ status: 'empty', reason: r.reason || '' }) }   // a decoded blank frame keeps its verdict; a missing or short file may be fixed, so it is asked again
-        try { await cache.set(j.key, { url: r.url, ...meta }) } catch { /* the tile works without storage */ }
-        j.resolve({ status: 'ready', url: r.url })
+        try { await cache.set(j.key, { url: r.url, ...(r.header ? { header: r.header } : {}), ...meta }) } catch { /* the tile works without storage */ }
+        j.resolve({ status: 'ready', url: r.url, ...(r.header ? { header: r.header } : {}) })
       }).catch((e) => j.resolve(j.aborted || e?.name === 'AbortError' ? { status: 'aborted' } : { status: 'error', reason: e?.message || String(e), ...(e?.code ? { code: e.code } : {}) }))
         .finally(() => { running.delete(j); jobs.delete(j.key); pump() })
     }
@@ -103,13 +103,13 @@ export function createThumbs({ cache, produce, concurrency = 1, autoCap = AUTO_C
     async peek(key, job) {
       let hit
       try { hit = await cache.get(key) } catch { hit = undefined }
-      if (hit && !stale(hit, job)) return hit.empty ? { status: 'empty', reason: hit.reason || '', cached: true } : { status: 'ready', url: hit.url, cached: true }
+      if (hit && !stale(hit, job)) return hit.empty ? { status: 'empty', reason: hit.reason || '', cached: true } : { status: 'ready', url: hit.url, cached: true, ...(hit.header ? { header: hit.header } : {}) }
       return { status: 'none' }
     },
     async request(key, job, { manual = false, refresh = false } = {}) {
       let hit
       if (!refresh) { try { hit = await cache.get(key) } catch { hit = undefined } }   // refresh: the saved one is not read; the new one replaces it, and a failure leaves the old one where it is
-      if (hit && !stale(hit, job)) return hit.empty ? { status: 'empty', reason: hit.reason || '', cached: true } : { status: 'ready', url: hit.url, cached: true }
+      if (hit && !stale(hit, job)) return hit.empty ? { status: 'empty', reason: hit.reason || '', cached: true } : { status: 'ready', url: hit.url, cached: true, ...(hit.header ? { header: hit.header } : {}) }
       const have = jobs.get(key)
       if (have) return have.promise
       if (!manual && autoUsed >= autoCap) return { status: 'capped' }
@@ -165,7 +165,7 @@ export async function produceDpxThumb({ url, fallback }, signal) {
   drawToCanvas(c, frame)
   let url2 = c.toDataURL('image/webp', 0.75)
   if (!url2.startsWith('data:image/webp')) url2 = c.toDataURL('image/jpeg', 0.75)
-  return { url: url2 }
+  return { url: url2, ...(frame.header ? { header: { transfer: frame.header.transfer, colorimetric: frame.header.colorimetric } } : {}) }   // the header's colour fields ride with the preview: the tile's chips need them and a preview is the only thing that downloads a frame
 }
 /** The app's own byte reader for the page's fallback; an answer that is not a file (the running app predates s3file://) is an error, never an empty file. */
 export const appReader = (core) => (core?.files?.read ? async (u) => {
