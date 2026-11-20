@@ -7,6 +7,7 @@ import { API_BASE } from './pods'
 const ipc = core && {
   list: (kind, limit) => core.invoke('history', 'list', [kind, limit]),
   spend: () => core.invoke('history', 'spend'),
+  note: (e) => core.invoke('history', 'note', [e]),
   runs: (podId) => core.invoke('history', 'runs', [podId]),
   saved: (podId, volumeId) => core.invoke('history', 'saved', [{ ...(podId ? { pod_id: podId } : {}), ...(volumeId ? { volume_id: volumeId } : {}) }]),
   export: (format, what) => core.invoke('history', 'export', [{ format, what }]),
@@ -18,6 +19,7 @@ const ipc = core && {
 }
 const http = {
   async list(kind, limit) { const { data } = await axios.get(`${API_BASE}/history`, { params: { kind, limit } }); return data },
+  async note(e) { const { data } = await axios.post(`${API_BASE}/history/note`, e); return data },
   async spend() { const { data } = await axios.get(`${API_BASE}/history/spend`); return data },
   async export(format, what) { const { data } = await axios.get(`${API_BASE}/history/export`, { params: { format, what } }); return data },
   async runs(podId) { const { data } = await axios.get(`${API_BASE}/history/runs`, { params: { pod_id: podId } }); return data },

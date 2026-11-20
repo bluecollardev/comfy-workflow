@@ -84,6 +84,21 @@ describe('history onChange', () => {
   })
 })
 
+describe('history note', () => {
+  it('records only a whitelisted outputs change line, as redacted truncated strings', () => {
+    expect(history.note({ kind: 'change', area: 'outputs', action: 'preview failed', what: 'seq.####.dpx', detail: 'GET https://x.test/view?k=1 failed ' + 'a b '.repeat(300), extra: 'x' })).toBe(true)
+    expect(history.note({ kind: 'pod', area: 'outputs', action: 'a', what: 'b' })).toBe(false)
+    expect(history.note({ kind: 'change', area: 'volume', action: 'a', what: 'b' })).toBe(false)
+    expect(history.note({ kind: 'change', area: 'outputs', action: 5, what: 'b' })).toBe(false)
+    expect(history.note(null)).toBe(false)
+    const e = history.list() as history.ChangeEvent[]
+    expect(e).toHaveLength(1)
+    expect(e[0]).toMatchObject({ kind: 'change', area: 'outputs', action: 'preview failed', what: 'seq.####.dpx' })
+    expect(e[0].detail).toContain('<url>'); expect(e[0].detail!.length).toBeLessThanOrEqual(500)
+    expect(Object.keys(e[0]).sort()).toEqual(['action', 'area', 'detail', 'kind', 'ts', 'what'])
+  })
+})
+
 describe('history origin and changes', () => {
   it('events recorded under runAs say they came from MCP, with the tool and the approver; change events list', async () => {
     await history.runAs({ source: 'mcp', tool: 'create_pod', approved_by: 'Lucas' }, async () => { await Promise.resolve(); history.record({ kind: 'pod', action: 'created', pod_id: 'a', name: 'A' }) })

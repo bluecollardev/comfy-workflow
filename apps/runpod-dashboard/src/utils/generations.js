@@ -47,3 +47,26 @@ export function jobFiles(job) {
 export const batchLine = (b, t) => `${t('queue.gen.previews')}: ${t('queue.gen.ofTotal', { done: b.done, total: b.total })}${b.failed ? ` · ${t('queue.gen.failedN', { n: b.failed })}` : ''}`
 /** A render job's overall percent (a copy of renders.jobPercent for the card, 100 when done). */
 export const percentOf = (job) => (job?.state === 'done' ? 100 : job?.frames_total > 0 ? Math.max(0, Math.min(100, Math.round((100 * (job.frames_done || 0)) / job.frames_total))) : 0)
+
+// ----- failed previews (docs/ADR-051): the reasons kept with the batch, shown in the Queue and noted in the History -----
+export const FAILURES_CAP = 200   // failures kept with a batch
+export const NOTE_FIRST = 20      // failures a batch writes to the History one by one; beyond that, one summary line
+export const PAGE_SIZES = [5, 10, 25]
+/** A reason as free text for the screen and the History: URLs, AWS key ids and long tokens struck out, one line, 300 characters. */
+export const redactReason = (s) => String(s ?? '').replace(/https?:\/\/\S+/gi, '<url>').replace(/\b(?:AKIA|ASIA)[A-Z0-9]{12,}\b/g, '<key>').replace(/\b[A-Za-z0-9+/_=-]{32,}\b/g, '<token>').replace(/\s+/g, ' ').trim().slice(0, 300)
+/** The plain-words reason of a failed preview: the translated one when the result has a `code` (and there is a translation), else the redacted raw reason. */
+export function reasonText(f, t) {
+  if (f?.code) { const k = `outputs.dpx.reason.${f.code}`, s = t(k); if (s && s !== k) return s }
+  return redactReason(f?.reason) || redactReason(f?.code) || '?'
+}
+/** The failure record kept for a failed result: { key, name, pod_name, reason, code, at }. */
+export const failureRecord = (item, r, podName, at = new Date().toISOString()) => ({ key: item.key, name: item.name || String(item.key).split('/').pop(), pod_name: podName || '', reason: redactReason(r?.reason), code: r?.code || '', at })
+/** The History line (for history.note) of a failed preview; `index` is its 0-based place among the batch's failures, and only the first NOTE_FIRST get one. */
+export const historyNote = (f, index) => (index < NOTE_FIRST ? { kind: 'change', area: 'outputs', action: 'preview failed', what: f.name, detail: [f.pod_name, f.reason || f.code].filter(Boolean).join(': ') } : null)
+/** The one summary line for a batch with more failures than NOTE_FIRST, else null. */
+export const summaryNote = (b) => (b && b.failed > NOTE_FIRST ? { kind: 'change', area: 'outputs', action: 'previews failed', what: b.label || 'Previews', detail: `${b.failed} of ${b.done} previews failed; the first ${NOTE_FIRST} are listed above` } : null)
+/** Paging: the rows of a page, the page count, the clamped page and the "1–10 of N" text. */
+export function paged(list, page, size) {
+  const n = list.length, count = Math.max(1, Math.ceil(n / size)), p = Math.max(0, Math.min(page, count - 1))
+  return { rows: list.slice(p * size, (p + 1) * size), count, page: p, info: n ? `${p * size + 1}–${Math.min(n, (p + 1) * size)} of ${n}` : '0' }
+}

@@ -46,3 +46,25 @@ test('batchLine and percentOf', () => {
   assert.equal(batchLine({ done: 12, total: 40, failed: 1 }, t), 'Previews: 12 of 40 · 1 failed'); assert.equal(batchLine({ done: 3, total: 3, failed: 0 }, t), 'Previews: 3 of 3')
   assert.equal(percentOf({ frames_done: 140, frames_total: 412 }), 34); assert.equal(percentOf({ state: 'done' }), 100); assert.equal(percentOf({}), 0)
 })
+
+import { redactReason, reasonText, failureRecord, historyNote, summaryNote, paged, NOTE_FIRST } from './generations.js'
+test('reasonText: the translation of a code, else the raw reason with URLs and keys struck out', () => {
+  const tr = (k) => ({ 'outputs.dpx.reason.timeout': 'The file did not arrive in time' }[k] ?? k)
+  assert.equal(reasonText({ code: 'timeout', reason: 'x' }, tr), 'The file did not arrive in time')
+  assert.equal(reasonText({ code: 'unknown', reason: 'boom' }, tr), 'boom')   // no translation: the raw reason
+  assert.equal(reasonText({ reason: 'GET https://pod.proxy.runpod.net/view?token=abc failed AKIAABCDEFGHIJKLMNOP' }, tr), 'GET <url> failed <key>')
+  assert.equal(reasonText({}, tr), '?'); assert.ok(redactReason('x '.repeat(900)).length <= 300)
+})
+test('failureRecord and the History notes: the first 20 one by one, then one summary', () => {
+  const f = failureRecord({ key: 'v/seqs/a/s.####.dpx', name: 's.####.dpx' }, { reason: 'bad https://x.y/z', code: '' }, 'ComfyUI-Dev', '2026-11-20T10:00:00Z')
+  assert.deepEqual(f, { key: 'v/seqs/a/s.####.dpx', name: 's.####.dpx', pod_name: 'ComfyUI-Dev', reason: 'bad <url>', code: '', at: '2026-11-20T10:00:00Z' })
+  assert.deepEqual(historyNote(f, 0), { kind: 'change', area: 'outputs', action: 'preview failed', what: 's.####.dpx', detail: 'ComfyUI-Dev: bad <url>' })
+  assert.ok(historyNote(f, NOTE_FIRST - 1)); assert.equal(historyNote(f, NOTE_FIRST), null)
+  assert.equal(summaryNote({ failed: 20, done: 20 }), null)
+  assert.equal(summaryNote({ failed: 500, done: 500, label: 'Dev' }).action, 'previews failed')
+})
+test('paged: slice, info, clamped page, empty', () => {
+  const l = Array.from({ length: 23 }, (_, i) => i)
+  assert.deepEqual(paged(l, 0, 10).rows, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]); assert.equal(paged(l, 2, 10).info, '21–23 of 23'); assert.equal(paged(l, 9, 10).page, 2); assert.equal(paged(l, 0, 25).count, 1)
+  assert.deepEqual(paged([], 3, 10), { rows: [], count: 1, page: 0, info: '0' })
+})

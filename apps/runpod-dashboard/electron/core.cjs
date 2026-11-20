@@ -92,6 +92,7 @@ const TABLE = {
   history: {
     list: (c, kind, limit) => c.history.list({ ...(kind ? { kind } : {}), ...(limit ? { limit: Number(limit) } : {}) }),
     spend: (c) => c.history.spend(),
+    note: (c, o) => c.history.note(o),   // a window's own History line (change / outputs only, strings only)
     runs: (c, podId) => c.comfyruns.runs(podId),
     saved: (c, q) => c.outputs.saved(q || {}),
     export: (c, opts) => c.history.exportHistory({ format: opts && opts.format, what: opts && opts.what }),

@@ -292,7 +292,7 @@ const previewItems = computed(() => {
       if (tl.kind !== 'dpx') continue
       const first = tl.frames[0], key = thumbKey(props.volumeId || props.pod.id || base, first)
       if (seen.has(key)) continue
-      seen.add(key); items.push({ key, job: { url: viewUrl(base, first), fallback: appReader(core), bytes: first.bytes ?? null, modified: first.modified ?? null } })
+      seen.add(key); items.push({ key, name: tl.name || first.filename, job: { url: viewUrl(base, first), fallback: appReader(core), bytes: first.bytes ?? null, modified: first.modified ?? null } })
     }
   }
   return items

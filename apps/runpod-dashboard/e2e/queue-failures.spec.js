@@ -19,6 +19,19 @@ test.describe('Queue > Generations > Failures', () => {
     // newest first
     await expect(page.getByTestId('failure-row').first()).toHaveAttribute('data-id', 'f1')
   })
+  test('the rows are paged: 10 a page by default (5, 10 or 25), newest first, a new size starts at page 1, a page that empties moves back', async ({ page, api }) => {
+    api.state.failures = Array.from({ length: 12 }, (_, i) => REC({ id: `f${i + 1}`, shot: `shot-${i + 1}`, time: `2026-11-19T14:${String(59 - i).padStart(2, '0')}:00` }))
+    await page.goto('/'); await queueTab(page, 'generations')
+    const rows = page.getByTestId('failure-row'), info = page.getByTestId('failures-page-info'), next = page.getByTestId('failures-page-next'), prev = page.getByTestId('failures-page-prev'), size = page.getByTestId('failures-page-size')
+    await expect(page.getByTestId('queue-failures').locator('h6')).toHaveText('Failures (12)')
+    await expect(rows).toHaveCount(10); await expect(rows.first()).toHaveAttribute('data-id', 'f1'); await expect(info).toHaveText('1–10 of 12'); await expect(prev).toBeDisabled()
+    await next.click(); await expect(rows).toHaveCount(2); await expect(rows.first()).toHaveAttribute('data-id', 'f11'); await expect(info).toHaveText('11–12 of 12'); await expect(next).toBeDisabled()
+    api.state.failures = api.state.failures.slice(0, 10)   // page 2 empties: back to page 1
+    await expect(rows).toHaveCount(10, { timeout: 12000 }); await expect(info).toHaveText('1–10 of 10')
+    await size.selectOption('5'); await expect(rows).toHaveCount(5); await expect(info).toHaveText('1–5 of 10')
+    await next.click(); await expect(info).toHaveText('6–10 of 10'); await size.selectOption('25'); await expect(info).toHaveText('1–10 of 10'); await expect(rows).toHaveCount(10)
+    api.state.failures = api.state.failures.slice(0, 4); await expect(page.getByTestId('failures-pager')).toHaveCount(0, { timeout: 12000 })   // 5 or fewer: no pager
+  })
   test('Retry only when retryable and it sends the id; Copy puts the whole record on the clipboard as JSON', async ({ page, api }) => {
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write']).catch(() => {})
     api.state.failures = [REC(), REC({ id: 'f2', at: '2026-11-18T09:05:07', retryable: false, attempt: 1 })]

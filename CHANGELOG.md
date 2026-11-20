@@ -3,6 +3,12 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## v1.6.9
+
+- **A failed preview says why, in the Queue.** Under the Previews line of Queue > Generations, a collapsible "Failed previews (N)" list (open when the batch just ended with failures) names each failed sequence, its pod and the reason in plain words (the same sentences the red tile uses, URLs and keys struck out). It is paged like Publishing (5, 10 or 25 a page, Previous, Next, "1–10 of N"). The batch keeps up to 200 failures until it is dismissed.
+- **Preview failures are in the History.** Each failed preview writes a change event (area `outputs`, action `preview failed`, the sequence name, the reason) through a new narrow `history.note` call (change/outputs only, strings only, truncated, redacted). A batch writes the first 20 one by one and then one `previews failed` summary, so a restart no longer loses them.
+- **Queue > Generations > Failures is paged** (10 a page; 5, 10 or 25), newest first as before; opening a failure from a job shows the page it is on.
+
 ## v1.6.5 (tag v1.6.5, 2026-11-19)
 
 - **Queue > Publishing is paged.** The job cards show 10 to a page (5, 10 or 25), with Previous, Next and "1–10 of N"; the running ones are always on page 1, a new page size starts at page 1, and a page that empties moves back.
