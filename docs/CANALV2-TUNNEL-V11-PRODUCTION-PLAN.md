@@ -325,3 +325,9 @@ The volume round **`base_v008`** (30 shots, 62 graphs, adapter `brynley-rounds-l
 **What went wrong and the fix:** the first `base_v008` import failed on cold pods (HTTP 502/404 on the graph fetch, conversion timeouts). The retry covered only timeouts; it now also covers 404/502/503/504 (6 tries, 20 s apart, commit a733759), the conversion script waits 4 minutes, and ComfyUI is waited for before the first graph. A retried queue task still starts a new pod (NEXT-STEPS); duplicates are stopped by hand (stopped, never deleted).
 
 **Parked:** Rec.709 convert or tag (Lucas: later, as its own generation step).
+
+**Stuck, and how it was got around (2026-11-21, ~23:30 UTC):**
+- The queue task for archival-087 sat "running" on a pod that had been stopped (`kwlz8x4p0to1xn`); RunPod would not resume it ("no free GPU on the host", a stopped pod is pinned to its host). Fix: retried the task (new pod). `resume_pod` with `retry_until_free` is the other way.
+- Stopping the "duplicate" pods the retry had made also stopped the runs that were attached to them; the queue marked those tasks failed (archival-123, cgi-072, creature-266, photoreal-013). Do not stop a pod before checking which task owns it (`queue_list` pod_id). Lesson written to NEXT-STEPS.
+- Workaround used: skip the queue and run the remaining graphs directly with `run_pod_workflows` on four warm pods (cgi-072 on one, creature-266 on the 96 GB card, photoreal-013 split in two), which also runs them in parallel; one pod per shot made photoreal-013 (11 graphs) the long pole.
+- Left out on purpose: photoreal-013 `floortrack`, `chasmfast07`, `chasmfastia2` (not among the 36).

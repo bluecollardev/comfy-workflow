@@ -41,3 +41,9 @@ Still running; the per-element table is filled in as each ends. So far: the fram
 ## 5. Not done
 
 The 19 `base_v008` elements are not delivered. Rec.709 is a later generation step (Lucas: convert later). Headers of 16 delivered elements not read back. CGI-072 is rendered from V03, not the PDF's V02. Known flaw: a retried queue task starts a new pod (NEXT-STEPS).
+
+**Stuck, and how it was got around (2026-11-21, ~23:30 UTC):**
+- The queue task for archival-087 sat "running" on a pod that had been stopped (`kwlz8x4p0to1xn`); RunPod would not resume it ("no free GPU on the host", a stopped pod is pinned to its host). Fix: retried the task (new pod). `resume_pod` with `retry_until_free` is the other way.
+- Stopping the "duplicate" pods the retry had made also stopped the runs that were attached to them; the queue marked those tasks failed (archival-123, cgi-072, creature-266, photoreal-013). Do not stop a pod before checking which task owns it (`queue_list` pod_id). Lesson written to NEXT-STEPS.
+- Workaround used: skip the queue and run the remaining graphs directly with `run_pod_workflows` on four warm pods (cgi-072 on one, creature-266 on the 96 GB card, photoreal-013 split in two), which also runs them in parallel; one pod per shot made photoreal-013 (11 graphs) the long pole.
+- Left out on purpose: photoreal-013 `floortrack`, `chasmfast07`, `chasmfastia2` (not among the 36).
