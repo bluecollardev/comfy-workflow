@@ -135,3 +135,27 @@ Importing is a pod job through the app (Network Volumes > Panama, or `panama_imp
 ## 7. Log
 
 - 2026-11-20: cross-checked the PDF against the volume and the Panama rounds: 17 of 36 present, 19 missing; one (123 f) is staged, the rest need two rounds (`-11-14`, and shots of `-10-29`); CGI-072 version mismatch found. Nothing imported or generated.
+- 2026-11-20 (later): executed the plan's section 6 steps 2 and 3 through Import Round, see section 8. The delivery report is [CANALV2-TUNNEL-V11-DELIVERY-REPORT-2026-11-20.md](CANALV2-TUNNEL-V11-DELIVERY-REPORT-2026-11-20.md) (what was generated, what was skipped and why, what is delivered).
+
+## 8. Execution, 2026-11-20
+
+**What the volume holds (checked 2026-11-20, `a3upg9ey48`).** The finished DPX under `comfy-shared/output/`, and one staged round, `brynley-comfy-2026-10-23`, under `comfy-shared/temp/rounds/`. None of the other Brynley rounds exist under `comfy-shared/workflows/<round>/` (the listing of each answers "aws exited 1": no such folder). So the sources for the missing elements come from BH's Panama bucket, not from the volume. A full folder listing of the volume was started and did not finish; only the six rounds were checked.
+
+**Why Run Workflows produces the DPX.** Every shot in these rounds ships with the same graph as archival-085 had in `brynley-comfy-2026-10-23`, the shot that produced one of the 17 DPX sets: `<shot>/comfy/workflows/<shot>-common-nodes-vNN-delivery-<date>.json` plus its `-inputs-manifest.json` (checked for archival-087, photoreal-013, archival-168 and archival-085). The finals themselves are `approved/05-outputs/Approved/master/*.mov` (ProRes 422 HQ, 4K) and `elements/`. The graph is the delivery route; the finals are its inputs. Importing with Run Workflows on runs that graph on a pod.
+
+**Imports queued (Import Round, source BH, Run Workflows on, Generate Outputs on, Publish off, approved by Lucas, up to 5 pods, one shot per pod, USD 50 cap).**
+
+| Import | Round | Shots | Why these |
+|---|---|---|---|
+| `imp-mwp4yo1w-4` | `brynley-comfy-2026-11-14` | archival-087, creature-266, photoreal-013 | 10 of the 19 missing elements (087 x2, creature-266 x1, photoreal-013 x8; some are already in the count) |
+| `imp-mwp4yo38-9` | `brynley-comfy-2026-10-29` | archival-168 | 168 a, b, c, d |
+| `imp-mwp4yo4x-c` | `brynley-comfy-2026-10-23` | archival-123 | 123 f (already staged on the volume; the graph may also make 123 c again, into a new version folder, nothing overwritten) |
+
+The first two plans of this day were pull-only (`imp-mwp4ub0g-0`, `imp-mwp4ub1o-2`); they were cancelled and replaced by the three above so the DPX are produced in the same step. The `-11-14` round also holds archival-080, 083, 084 and 093, already delivered: left out of the import.
+
+**Held back, not imported:** CGI-072 head, backhalf-b, backhalf-c (the round holds V03 HEVC 24 fps; the PDF wants V02 ProRes 23.976; waiting for Binc, section 5 item 1).
+
+**Also done today (details in the report):** colour pipeline fixed (Gamma 2.6 P3-D65 by default, OCIO record read), the 17 reviews re-rendered with that colour, four failed uploads re-sent, DPX backfill 8 of 24 clips, app releases v1.6.6 to v1.7.0.
+
+**Not done:** the DPX header and timecode patch (headers still say linear; no timecode in the header), the real round `tunnel-v11-edl-2026-11-18`, the Rec.709 convert-or-tag decision, stopping the pod.
+
