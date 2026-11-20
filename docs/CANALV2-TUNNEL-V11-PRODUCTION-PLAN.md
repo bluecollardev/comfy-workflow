@@ -279,3 +279,24 @@ Either way, once an element has its frames it is delivered like the 17: correcte
 
 **To close the job:** stop the pod `vvi0hvuj4v5dsg` (it stops by itself after 30 quiet minutes) and `eagffo99jjrf1n` stays stopped; merge this branch; release the app with the no-overwrite guard, the per-element manifest, `dpx_fix` and the pod logs (full gate); update `docs/CANALV2-TUNNEL-V11-DELIVERY-REPORT-2026-11-20.md` with the final result.
 
+## 12. Rendering the 19 elements without DPX: the work plan (2026-11-21)
+
+**Where it was in this plan before:** section 6, steps 3 and 4 (produce the DPX, then render the H.264 proxies "for the 12 of batch 03 plus the 19 new"); section 11.2 (the list of the 19); sections 11.4 and 11.5 (how: unpack the ProRes masters straight, Rec.709 later). It was a description and a decision, **not a work plan with steps and a state**: nothing for the 19 has been started. This section is that plan. The 36 elements need, each: DPX frames, an H.264 review video, and a manifest. The 17 have all three in progress (section 9); the 19 have none of them.
+
+**Per element, the steps (the same for the 16 in cases D and E; the 3 of case F wait for Binc):**
+
+| Step | What | Where it runs | State |
+|---|---|---|---|
+| 1 | Check the master's colour tags and compare one unpacked frame with the approved picture (the assumption in 11.5) | one master per group: 087, 123 f, 168, creature-266, photoreal-013 | not started |
+| 2 | **Unpack the master into DPX**: 16-bit, numbered from 0000, the frame count equal to the PDF, straight (no colour conversion), at 23.976 (24 for photoreal-013) | an ffmpeg step on a pod, writing a new folder under `output/` (`mono_v019`-style round name, never over an existing folder); **to build**: a core module like `dpxfix.ts`, an MCP tool and an Outputs button | **not built** |
+| 3 | Check the frames against the PDF count; the EDL judges each sequence (frame count, timecode) | Prepare For Delivery plan | built, runs once step 2 has output |
+| 4 | **Render the review video** (H.264 and ProRes, the colour stated, the EDL start timecode) from the new DPX | Outputs > Generate (the same as the 17) | built |
+| 5 | Corrected header copies (colour code, timecode, frame rate) | Outputs > Prepare For Delivery | built |
+| 6 | Publish to a `_TEST_` round, check, then the real round (never overwriting) | Publish | built |
+
+**Order and size:** the 16 are 2 (087), 1 (123 f), 4 (168), 1 (creature-266) and 8 (photoreal-013) elements; the frames in the PDF add up to 3,051 (87: 193; 123 f: 43; 168: 445; creature-266: 94; photoreal-013: 1,915; the rest of the 3,051 is checked when the plan runs). Do one shot first, **archival-123 f** (staged, no import needed, 43 frames), through steps 1 to 6 into a `_TEST_` round; then the other 15 one shot at a time, each checked against the PDF count before the next.
+
+**What blocks:** step 2 is not built (about half a day with its tests: the ffmpeg command, the frame numbering, the 16-bit conversion, a read-back of frame count and bit depth); step 1 needs a pod and a few minutes; the **CGI-072 three** wait for Binc's answer on the version. Nothing here needs Binc except the colour check outcome if step 1 shows a master that is not Gamma 2.6 P3-D65.
+
+**Decision needed:** none to start (11.5 decided it). Build step 2 next.
+
