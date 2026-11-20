@@ -193,3 +193,17 @@ test('an automatic review shows the real steps: no Sync step when it stayed on t
   api.state.renders = { jobs: [rv({ job_id: 'man-1', trigger: 'manual', pull: true })] }
   await expect(c.locator('[data-testid="generations-phase"][data-phase="syncing"]')).toHaveCount(1, { timeout: 12000 }); await expect(c.getByTestId('generations-job-autopub')).toHaveCount(0)
 })
+
+test('the cards are paged (10 a page, running ones first): Previous and Next, "1–10 of 21", the page size, and a new size starts at page 1', async ({ page, api }) => {
+  const many = Array.from({ length: 22 }, (_, n) => job({ job_id: `old-${String(n + 1).padStart(2, '0')}`, state: 'done', frames_done: 10, frames_total: 10, started_at: `2026-11-18T10:${String(59 - n).padStart(2, '0')}:00Z`, finished_at: '2026-11-18T11:00:00Z' }))
+  api.state.renders = { jobs: [job({ job_id: 'running-1', started_at: '2026-11-19T10:00:00Z' }), ...many] }   // the running one plus the last 20 finished: 21 cards
+  await page.goto('/'); const q = await openQueue(page)
+  const cards = gens(q).getByTestId('generations-job'), info = gens(q).getByTestId('generations-page-info'), one = (id) => gens(q).locator(`[data-testid="generations-job"][data-job="${id}"]`)
+  await expect(cards).toHaveCount(10); await expect(info).toHaveText('1–10 of 21'); await expect(one('running-1')).toBeVisible()   // the running one is always on page 1
+  await expect(gens(q).getByTestId('generations-page-prev')).toBeDisabled()
+  await gens(q).getByTestId('generations-page-next').click(); await expect(info).toHaveText('11–20 of 21'); await expect(one('running-1')).toHaveCount(0)
+  await gens(q).getByTestId('generations-page-next').click(); await expect(info).toHaveText('21–21 of 21'); await expect(cards).toHaveCount(1); await expect(gens(q).getByTestId('generations-page-next')).toBeDisabled()
+  await gens(q).getByTestId('generations-page-size').selectOption('25'); await expect(info).toHaveText('1–21 of 21'); await expect(cards).toHaveCount(21)
+  await expect(gens(q).getByTestId('generations-page-prev')).toBeDisabled()
+  await gens(q).getByTestId('generations-page-size').selectOption('5'); await expect(info).toHaveText('1–5 of 21')
+})

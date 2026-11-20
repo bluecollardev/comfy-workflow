@@ -3,6 +3,10 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## v1.6.7 (tag v1.6.7, 2026-11-20)
+
+- **Queue > Generations is paged**, like Publishing: 10 cards to a page (5, 10 or 25), Previous, Next and "1–10 of N"; running jobs are always on page 1, a new page size starts at page 1, and a page that empties moves back. Each card keeps its Started / Finished / took line.
+
 ## v1.6.6 (tag v1.6.6, 2026-11-20)
 
 - **Auto-publish now returns the DPX frames again.** The pod sometimes wrote a review sidecar with an empty `render_fps` (the measured rate), which made the whole `.meta.json` invalid JSON; Auto-publish read it as empty, so it never learned which source frames the review came from and uploaded only the .mov, the sidecar and DELIVERY.md, with no message. The render script now writes `0` when the rate is empty; Auto-publish repairs an empty value in a sidecar it reads (so the frames go), and a sidecar that cannot be read at all holds that review with the reason "the sidecar … cannot be read (it is not valid JSON)" instead of uploading it without its frames. Reviews already uploaded stay as they are: publish their frames with Publish Now or the Publish window.

@@ -18,7 +18,7 @@
       <BProgress :value="previews.batch.done" :max="Math.max(1, previews.batch.total)" height="8px" :animated="previews.running" :striped="previews.running" class="mt-1" data-testid="generations-previews-bar" :data-percent="Math.round((100 * previews.batch.done) / Math.max(1, previews.batch.total))" />
     </div>
     <!-- render jobs -->
-    <div v-for="j in jobs" :key="j.job_id" class="border rounded p-2 mb-2 small" data-testid="generations-job" :data-job="j.job_id" :data-state="j.state" :data-kind="j.kind || 'proxy'">
+    <div v-for="j in pagedJobs" :key="j.job_id" class="border rounded p-2 mb-2 small" data-testid="generations-job" :data-job="j.job_id" :data-state="j.state" :data-kind="j.kind || 'proxy'">
       <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
         <!-- Play is always the first, leftmost item, in a slot of its own width (a disabled one of the same size when nothing is playable yet) so the rows line up -->
         <span class="flex-shrink-0 d-inline-flex" style="width: 2rem" data-testid="generations-job-play-slot">
@@ -63,6 +63,12 @@
         </li>
       </ul>
     </div>
+    <div v-if="jobs.length > PAGE_SIZES[0]" class="d-flex align-items-center gap-2 flex-wrap" data-testid="generations-pager">
+      <BButton size="sm" variant="outline-light" :disabled="page === 0" data-testid="generations-page-prev" @click="page--"><i class="fa-solid fa-chevron-left me-1"></i>{{ $t('queue.gen.prev') }}</BButton>
+      <span data-testid="generations-page-info">{{ pageInfo }}</span>
+      <BButton size="sm" variant="outline-light" :disabled="page >= pageCount - 1" data-testid="generations-page-next" @click="page++">{{ $t('queue.gen.next') }}<i class="fa-solid fa-chevron-right ms-1"></i></BButton>
+      <select v-model.number="pageSize" class="form-select form-select-sm ms-auto" style="width: auto" :aria-label="$t('queue.gen.pageSize')" data-testid="generations-page-size"><option v-for="n in PAGE_SIZES" :key="n" :value="n">{{ $t('queue.gen.perPage', { n }) }}</option></select>
+    </div>
   </div>
 </template>
 
@@ -88,6 +94,13 @@ import { phaseChips, etaSeconds, etaText, jobTitle, orderJobs, jobFiles, batchLi
 const renders = useRendersStore(), previews = usePreviewsStore(), ui = useUiStore()
 const jobs = computed(() => orderJobs(renders.jobs, renders.dismissed))
 const active = isActive
+// Paging: running jobs come first in the order, so page 1 always shows what is happening now (same pager as Queue > Publishing)
+const PAGE_SIZES = [5, 10, 25], pageSize = ref(10), page = ref(0)
+const pageCount = computed(() => Math.max(1, Math.ceil(jobs.value.length / pageSize.value)))
+const pagedJobs = computed(() => jobs.value.slice(page.value * pageSize.value, (page.value + 1) * pageSize.value))
+const pageInfo = computed(() => (jobs.value.length ? `${page.value * pageSize.value + 1}–${Math.min(jobs.value.length, (page.value + 1) * pageSize.value)} of ${jobs.value.length}` : '0'))
+watch(pageSize, () => { page.value = 0 })
+watch(pageCount, (n) => { if (page.value > n - 1) page.value = n - 1 })   // dismissing the last card of a page moves back one page
 const finishedJobs = computed(() => jobs.value.filter((j) => !isActive(j)))
 const failedJobs = computed(() => finishedJobs.value.filter((j) => j.state === 'failed' || j.state === 'cancelled' || j.error))
 const openRows = ref(new Set())
