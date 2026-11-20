@@ -66,7 +66,7 @@
       <div v-if="j.current && active(j)" class="font-monospace text-truncate text-body-secondary" data-testid="generations-job-current">{{ j.current }}</div>
       <div v-if="j.publish" class="text-body-secondary" data-testid="generations-job-publish">{{ $t('queue.gen.publishState', { state: j.publish.state }) }}</div>
       <div v-if="j.error" class="text-danger" data-testid="generations-job-error"><ErrorText :text="String(j.error)" /><BButton v-if="failureOf(j)" variant="link" size="sm" class="p-0 ms-2" data-testid="generations-job-failure-link" @click="ui.failureFocus = failureOf(j).id">{{ $t('queue.fail.see') }}</BButton></div>
-      <div v-if="canRetry(j)" class="mb-1"><BButton size="sm" variant="outline-warning" data-testid="generations-job-retry" :disabled="retrying === j.job_id" @click="retryJob(j)"><i class="fa-solid fa-rotate me-1"></i>{{ $t('queue.gen.retry') }}</BButton><span v-if="retryError && retryErrorId === j.job_id" class="text-danger ms-2" data-testid="generations-job-retry-error"><ErrorText :text="retryError" /></span></div>
+      <div v-if="canRetry(j)" class="mb-1"><BButton size="sm" variant="outline-warning" data-testid="generations-job-retry" :disabled="retrying === j.job_id" @click="retryJob(j)"><BSpinner v-if="retrying === j.job_id" small class="me-1" /><i v-else class="fa-solid fa-rotate me-1"></i>{{ $t('queue.gen.retry') }}</BButton><span v-if="retryError && retryErrorId === j.job_id" class="text-danger ms-2" data-testid="generations-job-retry-error"><ErrorText :text="retryError" /></span></div>
       <div v-if="!active(j) && j.summary" class="text-success" data-testid="generations-job-summary">{{ j.summary }}</div>
       <div v-if="!active(j) && files(j).length" class="text-body-secondary" data-testid="generations-job-files"><span class="fw-semibold">{{ $t('queue.gen.files') }}:</span> <span v-for="f in files(j)" :key="f" class="font-monospace me-2">{{ f }}</span></div>
       <div class="mt-1">
@@ -99,7 +99,7 @@
  */
 import { attempt } from '../utils/when'
 import ErrorText from './ErrorText.vue'
-import { errorText } from '../stores/toast'
+import { errorText, useToastStore } from '../stores/toast'
 import { useFailuresStore } from '../stores/failures'
 import { triggerInfo, EXTERNAL_TIP } from '../utils/trigger'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
@@ -126,7 +126,8 @@ watch(pageCount, (n) => { if (page.value > n - 1) page.value = n - 1 })   // dis
 const finishedJobs = computed(() => jobs.value.filter((j) => !isActive(j)))
 const retrying = ref(''), retryError = ref(''), retryErrorId = ref('')
 const canRetry = (j) => (j.state === 'failed' || j.state === 'cancelled') && !active(j) && (j.sequences || []).some((s) => s.state !== 'done' && s.state !== 'skipped')
-async function retryJob(j) { retrying.value = j.job_id; retryError.value = ''; retryErrorId.value = j.job_id; try { await renders.retry(j.job_id) } catch (e) { retryError.value = errorText(e) } finally { retrying.value = '' } }
+const toast = useToastStore()
+async function retryJob(j) { retrying.value = j.job_id; retryError.value = ''; retryErrorId.value = j.job_id; try { await renders.retry(j.job_id); toast.success(t('queue.gen.retrying')) } catch (e) { retryError.value = errorText(e); toast.error(retryError.value, t('queue.gen.retryFailed')) } finally { retrying.value = '' } }
 const failedJobs = computed(() => finishedJobs.value.filter((j) => j.state === 'failed' || j.state === 'cancelled' || j.error))
 // The failed previews of the batch: open when the batch has just ended with failures, paged (5, 10 or 25; a new size starts at page 1)
 const failOpen = ref(!!previews.batch && previews.batch.state !== 'running' && previews.batch.failed > 0), failPage = ref(0), failSize = ref(10)

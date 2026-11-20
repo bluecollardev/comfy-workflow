@@ -188,6 +188,7 @@ test.describe('Queue > Publishing: a publish of several shots', () => {
     await expect(q.getByTestId('publish-retry-all')).toContainText('Retry')
     await q.getByTestId('publish-retry-all').click()
     await expect.poll(() => (api.state.publish.retries || []).length).toBe(2)
+    await expect(page.getByText('Retrying archival-084, cgi-042')).toBeVisible()   // feedback: a toast says what was started
   })
   test('Retry failed on a card with failed files and failed shots tries those shots again (it does something)', async ({ page, api }) => {
     setup(api, { jobs: [parent({ state: 'failed', failed: [{ path: 'a.dpx', error: 'RequestTimeout' }], children: [child('c1', 'archival-123', 'failed', { error: 'x', rate: 0 })] })] })

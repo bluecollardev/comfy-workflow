@@ -1401,6 +1401,8 @@
       "phase": { "uploading": "Uploading", "posting": "Posting to Slack" }
     },
     "gen": {
+      "retrying": "Retrying",
+      "retryFailed": "Retry Failed",
       "retry": "Retry",
       "playNone": "Nothing to play yet",
       "skippedN": "{n} skipped",
@@ -1496,6 +1498,8 @@
         "openFolder": "Open this folder in the AWS console", "download": "Download this file", "notKept": "The signed link is not kept after a restart: publish again to get a new one", "group": { "folder": "Folder links", "file": "File links", "preview": "Preview image" }
       },
       "ret": {
+        "retrying": "Retrying {shots}",
+        "retryFailed": "Retry Failed",
       "retryShots": "Retry",
         "round": "Round",
         "roundNeeded": "Publishing to a return needs a round name",

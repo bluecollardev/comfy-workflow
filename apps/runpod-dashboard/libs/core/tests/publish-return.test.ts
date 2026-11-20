@@ -143,6 +143,18 @@ describe('shots as child jobs', () => {
     expect(k.children[1]).toMatchObject({ skipped: 1, files: 1 }); expect(manifest().items.map((i) => i.shot)).toEqual(['archival-100', 'archival-101'])
     await expect(publish.retry({ child_id: j.children[0].id })).rejects.toMatchObject({ status: 400 }); await expect(publish.retry('nope:1')).rejects.toMatchObject({ status: 404 })
   })
+  it('after a restart a failed shot is sent again as a new job from the request it started with', async () => {
+    process.env.PUBLISH_JOBS_FILE = join(out, 'jobs-restart.json')
+    write('s100/ARCHIVAL-100_main.mp4', 'a'); write('s101/ARCHIVAL-101_main.mp4', 'b'); write('s101/ARCHIVAL-101_main.mp4.meta.json', '{}'); failCp.add('ARCHIVAL-101_main.mp4.meta.json')
+    const j = await go(['s100', 's101']); expect(j.state).toBe('failed'); expect(j.request).toMatchObject({ items: ['s100', 's101'] })
+    const record = JSON.stringify([j]); publish.reset(); publish.setDeps({ aws: fakeAws, fetch: fakeFetch, outputRoot: () => out, parallel: () => 4, spawn: fakeSpawn, now: () => Date.parse('2026-11-19T07:21:31Z'), findFfmpeg: async () => null, podInfo: async () => null })
+    writeFileSync(process.env.PUBLISH_JOBS_FILE as string, record)   // what the app read back from disk: a record, nothing retained
+    failCp.clear(); order.length = 0
+    const r = await publish.retry({ child_id: j.children[1].id }); expect(r.job_id).toBeTruthy()
+    const k = await finish(r.job_id); expect(k.state).toBe('done'); expect(k.children.map((c) => c.shot)).toContain('archival-101'); expect(order.filter((x) => /\.(mp4|json)$/.test(x) && !/RETURN|inventory/.test(x))).toEqual([`${ROOT}archival-101/ARCHIVAL-101_main.mp4.meta.json`])   // only the missing file is sent: the rest is there with the same size
+    await expect(publish.retry({ child_id: j.children[0].id })).rejects.toMatchObject({ status: 400 })
+    delete process.env.PUBLISH_JOBS_FILE
+  })
   it('cancelling a child leaves the others; cancelling the parent cancels every child that is not done', async () => {
     three(); gate.set('ARCHIVAL-100_main', new Promise(() => undefined)); const { job_id } = await publish.run({ items: ['s100', 's101', 's102'], targets: ['s3'], approved_by: 'L', round: ROUND, streams: 3 })
     await new Promise((r) => setTimeout(r, 40)); publish.cancel(`${job_id}:0`); const j = await finish(job_id)

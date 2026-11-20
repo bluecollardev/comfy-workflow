@@ -765,6 +765,7 @@ export interface ChildView {
   error?: string; warnings: string[]; approved_by: string; slack: { state: 'skipped' | 'sent' | 'failed'; error?: string }; /** how many files have a sha256 (the BKK return) */ sha256: number
 }
 export interface JobView {
+  /** what this run was asked to do, kept with the record so a shot that failed can be sent again after a restart */ request?: RunRequest
   /** for a failed job: the failure in words (stage, message, recovery, retryable) */ failure?: failures.Explained
   /** who started it: the window, an MCP tool call (client name), Auto-publish, the backfill; `external` = another process owns it */ origin?: jobsregistry.Origin; mcp_client?: string; external?: boolean; /** what this is, for the Queue: a publish run (scans and inventories are not in this list) */ kind: 'publish'; /** what started it: a person ('manual'), the backfill, or Auto-publish */ trigger: 'manual' | 'backfill' | 'auto-publish'; /** one child per shot, in the order they run */ children: ChildView[]; /** how many children upload at once */ streams: number; counts: { queued: number; uploading: number; done: number; failed: number; cancelled: number }
   job_id: string; state: JobState; targets: Target[]; approved_by: string; started_at: string; finished_at: string
@@ -834,7 +835,16 @@ const retained = new Map<string, Job>()
 /** Try one failed (or cancelled) shot again, alone: what is already in the bucket with the same size is not sent again. */
 export async function retry(o: { child_id?: string } | string): Promise<{ job_id: string; child_id: string }> {
   const id = typeof o === 'string' ? o : String(o?.child_id ?? ''), i = id.lastIndexOf(':'), parent = id.slice(0, i), idx = Number(id.slice(i + 1))
-  const job = retained.get(parent); if (!job || i < 0) throw new CoreError(404, `No such publish shot: ${id}`)
+  const job = retained.get(parent)
+  if (!job && i >= 0) {   // the app was restarted since: the job is only a record, so the shot is sent again as a new job from the request it started with (what is already in the bucket with the same size is not sent again)
+    const old = (await ensureLoaded(), finished).find((x) => x.job_id === parent), kid = old?.children?.[idx]
+    if (!old || !kid) throw new CoreError(404, `No such publish shot: ${id}`)
+    if (kid.state !== 'failed' && kid.state !== 'cancelled') throw bad('Only a failed or cancelled shot can be tried again')
+    const req = old.request; if (!req) throw bad('This job was started by an older version of the app and cannot be tried again: publish the shot again from Outputs')
+    const items = Array.isArray(req.items) ? req.items : [], want = String(kid.shot).toLowerCase(), mine = items.filter((it) => `${it.path} ${it.stem ?? ''}`.toLowerCase().includes(want))
+    const r = await run({ ...req, items: mine.length ? mine : items }); return { job_id: r.job_id, child_id: `${r.job_id}:0` }
+  }
+  if (!job || i < 0) throw new CoreError(404, `No such publish shot: ${id}`)
   const g = job.groups[idx]; if (!g) throw new CoreError(404, `No such shot in ${parent}: ${id}`)
   if (g.child.state !== 'failed' && g.child.state !== 'cancelled') throw bad('Only a failed or cancelled shot can be tried again')
   const a = await s3Access(), there = await listDestination({ ...a, prefix: job.ret ? `${job.ret.prefix}${job.ret.round}/` : a.prefix })
@@ -887,7 +897,7 @@ export async function run(req: RunRequest): Promise<{ job_id: string }> {
   const send = targets.includes('s3') ? p.items.filter((i) => i.skip === null) : []
   const id = `publish-${deps.now().toString(36)}-${(seq++).toString(36)}`
   const info: MsgInfo = { first: real.slice(0, SLACK_FILES).map((i) => ({ path: i.path, bytes: i.bytes, key: i.s3_key })), count: real.length, bytes: p.total_bytes, dest: p.s3?.dest ?? `s3://${e.s3.bucket || '(not uploaded)'}/${e.s3.prefix}` }
-  const view: JobView = { job_id: id, state: 'queued', targets, approved_by: who, started_at: iso(), finished_at: '', files_total: send.length, files_done: 0, bytes_total: send.reduce((a, i) => a + i.bytes, 0), bytes_done: 0, rate_bps: 0, current: '', skipped: p.items.filter((i) => i.skip === 'same size already there').length, dest: info.dest, links: [], slack: { state: 'skipped' }, summary: '', adapter: 'pc', pod_files: 0, pc_files: 0, files: [], kind: 'publish', trigger: /^auto-publish/.test(String(req.trigger ?? '')) ? 'auto-publish' : 'manual', children: [], streams: 1, counts: { queued: 0, uploading: 0, done: 0, failed: 0, cancelled: 0 }, ...(req.note ? { note: String(req.note).slice(0, 300) } : {}) }
+  const view: JobView = { request: { ...req }, job_id: id, state: 'queued', targets, approved_by: who, started_at: iso(), finished_at: '', files_total: send.length, files_done: 0, bytes_total: send.reduce((a, i) => a + i.bytes, 0), bytes_done: 0, rate_bps: 0, current: '', skipped: p.items.filter((i) => i.skip === 'same size already there').length, dest: info.dest, links: [], slack: { state: 'skipped' }, summary: '', adapter: 'pc', pod_files: 0, pc_files: 0, files: [], kind: 'publish', trigger: /^auto-publish/.test(String(req.trigger ?? '')) ? 'auto-publish' : 'manual', children: [], streams: 1, counts: { queued: 0, uploading: 0, done: 0, failed: 0, cancelled: 0 }, ...(req.note ? { note: String(req.note).slice(0, 300) } : {}) }
   const job: Job = { groups: [], streams: 1, perShot: false, ...(req.trigger ? { trig: String(req.trigger).slice(0, 60) } : {}), hashes: new Map(), view, abort: new AbortController(), info, template: req.message?.trim() ? req.message : e.defaults.message, prefix: e.s3.prefix, started: deps.now(), done: Promise.resolve() }
   { const o = (p.sequences ?? []).flatMap((x) => (x.override ? [x.override] : [])); if (o.length) view.edl_overrides = o }
   job.streams = Math.max(1, Math.min(Math.floor(Number(req.streams) || 1), deps.parallel())); view.streams = job.streams; job.perShot = targets.includes('slack') && e.slack.per_shot

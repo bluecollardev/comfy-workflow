@@ -254,4 +254,5 @@ test('a failed generation: a long error is cut with Details that opens the whole
   await page.getByTestId('error-text-modal').getByRole('button', { name: 'Close', exact: true }).last().click()
   await gens(q).getByTestId('generations-job-retry').click()
   await expect.poll(() => api.state.renders.retried || []).toHaveLength(1)
+  await expect(page.getByTestId('toast').first()).toContainText('Retrying')   // feedback: a toast
 })
