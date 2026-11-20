@@ -1,6 +1,6 @@
 <template>
   <div class="mt-1" data-testid="edl-flags" :data-blocked="blocked ? 'true' : 'false'">
-    <div v-for="f in flags" :key="f.code" class="alert py-0 px-2 mb-1" :class="isBlock(f) ? 'alert-danger' : 'alert-warning'" data-testid="edl-flag" :data-code="f.code" :data-level="isBlock(f) ? 'block' : 'warn'">
+    <div v-for="f in flags" :key="f.code" class="alert py-0 px-2 mb-1" :class="isBlock(f) ? 'alert-danger' : f.level === 'info' ? 'alert-info' : 'alert-warning'" data-testid="edl-flag" :data-code="f.code" :data-level="isBlock(f) ? 'block' : f.level === 'info' ? 'info' : 'warn'">
       <span>{{ f.code === 'not-in-edl' ? $t('edl.notInEdl') : f.message }}</span>
       <template v-if="f.code === 'frames-differ-from-edl'">
         <div data-testid="edl-frames-line">{{ $t('edl.frames', { n: row.frames ?? row.frame_count ?? '', m: row.expected_frames ?? '', speed: speedText }) }}</div>
@@ -16,7 +16,7 @@
 </template>
 
 <script setup>
-/** SeqFlags: the EDL's flags of one sequence (docs/ADR-050): block flags in red (the sequence will be skipped), warnings in amber; a frame-count difference says by how much and offers an override for this run; not-in-EDL has none; an ambiguous element offers its candidates. */
+/** SeqFlags: the EDL's flags of one sequence (docs/ADR-050): block flags in red (the sequence will be skipped), warnings in amber, notes (info: the DPX header disagrees with the OCIO record) in blue; a frame-count difference says by how much and offers an override for this run; not-in-EDL has none; an ambiguous element offers its candidates. */
 import { computed } from 'vue'
 import { t } from '../i18n'
 

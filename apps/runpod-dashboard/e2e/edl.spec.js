@@ -173,7 +173,20 @@ test.describe('stated colour', () => {
     await g.getByTestId('pod-outputs-render-start').click(); await expect.poll(() => api.state.renders.started.length).toBe(1)
     const seqs = api.state.renders.started[0].sequences; expect(seqs.find((s) => s.name === 'cgi-042_a').colour_in).toBe('linear-p3-d65'); expect(seqs.find((s) => s.name === 'cgi-043_b')).not.toHaveProperty('colour_in')
   })
-  test('"Same colour for all" is said on EVERY row ("same colour for all"), a row\'s own choice from its colour window wins, and every sequence is sent with it', async ({ page, api }) => {
+  test('an OCIO record is the stated colour: "OCIO record: Gamma 2.6 P3-D65" on the row and in its colour window, an info note that the header disagrees, no colour needed, nothing sent; a choice of the person wins', async ({ page, api }) => {
+    const ocio = { colorInteropID: 'g26_p3d65_display', colorspace: 'Gamma 2.6 P3-D65 - Display', gamut: 'P3-D65', label: 'Gamma 2.6 P3-D65', colour_in: 'p3-d65-gamma26', header_disagrees: true }
+    const lin = { header_transfer: 'linear (code 2)', flags: [{ code: 'colour-not-stated', level: 'warn', message: 'State the colour of these frames' }] }
+    const g = await open(page, api, { preset: 'none', rows: { [A]: { header_transfer: 'linear (code 2)', colour_in: 'p3-d65-gamma26', colour_source: 'ocio-record', ocio, header_disagrees: true, flags: [{ code: 'header-disagrees', level: 'info', message: 'the DPX header says linear; the colour record of ComfyUI-OCIO says Gamma 2.6 P3-D65 (g26_p3d65_display): the record was used, not the header' }] }, [B]: lin } })
+    const ui = colourUi(page, g), rc = (n) => row(g, n).getByTestId('pod-outputs-render-row-colour')
+    await expect(rc('cgi-042_a')).toHaveAttribute('data-source', 'ocio'); await expect(rc('cgi-042_a')).toHaveText('OCIO record: Gamma 2.6 P3-D65')
+    await expect(flag(g, 'cgi-042_a', 'header-disagrees')).toHaveAttribute('data-level', 'info'); await expect(row(g, 'cgi-042_a').getByTestId('edl-skipped')).toHaveCount(0)
+    await expect(rc('cgi-043_b')).toHaveAttribute('data-source', 'none')   // a sequence without a record still needs its colour stated
+    await ui.open('cgi-042_a'); await expect(ui.m().getByTestId('clip-colour-ocio')).toContainText('OCIO record: Gamma 2.6 P3-D65'); await expect(ui.m().getByTestId('clip-colour-ocio-disagrees')).toContainText('header disagrees'); await expect(ui.sel().locator('option').first()).toHaveText('OCIO record: Gamma 2.6 P3-D65'); await ui.close()
+    await g.getByTestId('pod-outputs-render-start').click(); await expect.poll(() => api.state.renders.started.length).toBe(1)
+    expect(api.state.renders.started[0].sequences.find((s) => s.name === 'cgi-042_a')).not.toHaveProperty('colour_in')   // the record is the core's to read, never sent as a statement
+    await ui.set('cgi-042_a', 'kodak-log'); await expect(rc('cgi-042_a')).toHaveAttribute('data-source', 'own'); await expect(rc('cgi-042_a')).toHaveText('Colour: Kodak log (set for this sequence)')
+  })
+  test('\"Same colour for all\" is said on EVERY row ("same colour for all"), a row\'s own choice from its colour window wins, and every sequence is sent with it', async ({ page, api }) => {
     const lin = { header_transfer: 'linear (code 2)', flags: [{ code: 'colour-not-stated', level: 'warn', message: 'State the colour of these frames' }] }
     const g = await open(page, api, { preset: 'none', rows: { [A]: lin, [B]: lin } }), ui = colourUi(page, g), rc = (n) => row(g, n).getByTestId('pod-outputs-render-row-colour')
     await expect(rc('cgi-042_a')).toHaveAttribute('data-source', 'none'); await expect(rc('cgi-043_b')).toHaveAttribute('data-source', 'none')

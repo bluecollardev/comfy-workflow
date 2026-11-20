@@ -12,8 +12,9 @@ import { scratch } from './helpers.js'
 
 // ADR-048: rendered sequences. A fake pod (ssh), a fake ffmpeg (spawn), a fake sync: no pod, no ffmpeg, no aws, no RunPod.
 let dir: string, shared: string, t: number
-let pod: { frames: number[]; lastM: number; outM: number; outS: number; failExit: number; nodir: boolean; hold: Promise<void> | null; header: Buffer; ffprobe: boolean; count: number | null; versions: string[]; vexists: boolean; cpu: { cores: number; memMb: number; dfKb: number } | 'fail' | null }
+let pod: { record?: string | null; frames: number[]; lastM: number; outM: number; outS: number; failExit: number; nodir: boolean; hold: Promise<void> | null; header: Buffer; ffprobe: boolean; count: number | null; versions: string[]; vexists: boolean; cpu: { cores: number; memMb: number; dfKb: number } | 'fail' | null }
 let scripts: string[], pulls: { req: Record<string, unknown> }[], emitted: string[], spawned: { cmd: string; args: string[] }[], podOk: boolean, ffmpegAt: string | null, versionExit: number, versionLine: string
+let volText: string | null = null
 let localCount = 10, cancelSeen: boolean, probeName = 'ARCHIVAL-085_MAIN_23.976_PRORES'
 const SEQ = { dir: 'proxy_v004/shotA', name: 'ARCHIVAL-085_MAIN_23.976_PRORES', first: 0, last: 9, frames: 10, pad: 4 }
 /** A DPX header the way the camera or OCIOWrite makes one: big-endian, 3840x2160, 10-bit RGB packed, with the given transfer. */
@@ -27,12 +28,13 @@ beforeEach(() => {
   dir = scratch(); shared = join(dir, 'shared'); mkdirSync(join(shared, 'output'), { recursive: true }); process.env.RENDERS_FILE = join(dir, 'renders.json'); process.env.HISTORY_FILE = join(dir, 'h.jsonl')
   mounts.save({ ...mounts.load(), render: { ...mounts.RENDER_DEFAULT, kind: 'proxy', pull: true } })   // the tests below pull: a stored `pull: true` is kept (the default is off now); and render quick proxies (the shipped default kind is review)
   renders.reset(); t = Date.parse('2026-11-19T10:00:00Z'); scripts = []; pulls = []; emitted = []; spawned = []; podOk = true; ffmpegAt = '/opt/homebrew/bin/ffmpeg'; versionExit = 0; versionLine = 'ffmpeg version 9.0.2'; cancelSeen = false
-  localCount = 10; pod = { frames: range(0, 9), lastM: 100, outM: 0, outS: 0, failExit: 0, nodir: false, hold: null, header: dpxHeader(), ffprobe: true, count: null, versions: [], vexists: false, cpu: null }
+  localCount = 10; volText = null; pod = { frames: range(0, 9), lastM: 100, outM: 0, outS: 0, failExit: 0, nodir: false, hold: null, header: dpxHeader(), ffprobe: true, count: null, versions: [], vexists: false, cpu: null }
   renders.setDeps({
     now: () => t, podName: () => 'CanalV2', volumeId: () => 'volx1', localRoot: () => shared, outputDir: () => '/workspace/comfy-shared/output',
     target: async () => (podOk ? { host: 'root@1.2.3.4', port: 22 } : { reason: 'Start the pod: rendering happens on the pod' }),
     ssh: async ({ script, onLine, signal }) => {
       scripts.push(script)
+      if (script.includes('base64 < ')) { if (pod.record != null) onLine(`REC 0 ${Buffer.from(pod.record).toString('base64')}`); return { code: 0 } }   // the OCIO record the pod holds next to the sequence
       if (script.includes('NPROC')) { if (pod.cpu === 'fail') throw new Error('ssh: timeout'); if (pod.cpu) { onLine(`NPROC ${pod.cpu.cores}`); onLine(`MEM ${pod.cpu.memMb} ${Math.round(pod.cpu.memMb / 2)}`); onLine(`DF ${pod.cpu.dfKb}`) } return { code: 0 } }
       if (script.includes('PROBE-DONE')) {
         onLine('FFV ffmpeg version 7.1'); onLine(`OUTM ${pod.outM}`); onLine(`OUTS ${pod.outS}`); onLine('OMETS 0'); onLine('POUTM 0'); onLine('POUTS 0'); onLine('PMETS 0')
@@ -54,7 +56,7 @@ beforeEach(() => {
     pull: async (req) => { pulls.push({ req: req as never }); return { steps: 1, failed: 0, warned: 0, cancelled: false } },
     listing: async (_v, d) => (d === 'proxy_v004/shotA' ? [{ name: `${SEQ.name}_960.mp4`, bytes: 777, modified: '2026-11-19T09:00:00' }, { name: `${SEQ.name}_1280.mp4`, bytes: 999, modified: '2026-11-19T09:01:00' }] : []),
     emit: async (_v, prefix) => { emitted.push(prefix) },
-    findFfmpeg: async () => ffmpegAt, findFfprobe: async () => '/fake/ffprobe', deliverDirs: async () => [], deliverFiles: async () => [],
+    findFfmpeg: async () => ffmpegAt, findFfprobe: async () => '/fake/ffprobe', deliverDirs: async () => [], deliverFiles: async () => [], readText: async () => volText,
     spawn: async (cmd, args, onLine) => { spawned.push({ cmd, args }); if (cmd.endsWith('ffprobe')) { onLine(String(localCount)); return { code: 0 } } if (args[0] === '-version') { onLine(versionLine); return { code: versionExit } } const part = args.at(-1)!; mkdirSync(join(part, '..'), { recursive: true }); writeFileSync(part, 'x'.repeat(50)); onLine('frame=4'); onLine('frame=10'); return { code: 0 } },
   })
 })
@@ -144,7 +146,7 @@ describe('rendering on the pod', () => {
     const j = await go()
     expect(j).toMatchObject({ state: 'done', pulled_files: 1, pulled_bytes: 123456, frames_done: 10, frames_total: 10 }); expect(j.sequences[0]).toMatchObject({ state: 'pulled', where: 'pod', bytes: 123456, frames_done: 10 })
     expect(pulls).toHaveLength(1); expect(pulls[0].req).toMatchObject({ pod_id: 'p1', direction: 'pull', paths: [`output/.proxies/proxy_v004/shotA/${SEQ.name}_960.mp4`, `output/.proxies/proxy_v004/shotA/${SEQ.name}_960.mp4.meta.json`], trigger: 'render:pull', existing: 'size' })
-    expect(scripts.filter((s) => s.includes('nice -n 10'))).toHaveLength(1); expect(scripts[1]).toContain("nice -n 10 'ffmpeg' '-nostdin'"); expect(emitted).toEqual(['output/.proxies/proxy_v004/shotA/'])
+    expect(scripts.filter((s) => s.includes('nice -n 10'))).toHaveLength(1); expect(scripts.find((s) => s.includes('nice -n 10'))).toContain("nice -n 10 'ffmpeg' '-nostdin'"); expect(emitted).toEqual(['output/.proxies/proxy_v004/shotA/'])
     const h = history.list({ kind: 'job' }).filter((e) => e.kind === 'job' && e.job === 'render'); expect(h).toHaveLength(1); expect(h[0]).toMatchObject({ state: 'done', files: 1, bytes: 123456, pod_id: 'p1' }); expect((h[0] as { what: string }).what).toMatch(/\(pod\)/)
   })
   it('pull: false pulls nothing and the sequence stays rendered', async () => { const j = await go({ pull: false }); expect(pulls).toHaveLength(0); expect(j.sequences[0].state).toBe('rendered') })
@@ -423,6 +425,70 @@ describe('the review kind: the stitched, versioned deliverable', () => {
       expect((await import('../src/history.js')).list({ limit: 20 }).some((e) => e.action === 'render colour setting changed' && /format \(linear-p3-d65\), set by Lucas/.test(String(e.detail)))).toBe(true)
       setColour({ mode: 'guess' }); const t = await renders.plan({ pod_id: 'p1', sequences: [SEQ], preset: 'tunnel' }); expect(t.sequences[0].flags.map((f) => f.code)).toContain('colour-not-set'); expect(t.sequences[0].blocked).toBe(true)   // strict: guess does not count
       setColour({ mode: 'format', format: 'linear-p3-d65' }); const f = await renders.plan({ pod_id: 'p1', sequences: [SEQ], preset: 'tunnel' }); expect(f.sequences[0].flags.map((x) => x.code)).not.toContain('colour-not-set'); setColour({ mode: 'ask' })
+    })
+  })
+  describe('the OCIO record: what the writer ComfyUI-OCIO says beats the DPX header (ADR-048)', () => {
+    const setColour = (colour: Record<string, unknown>) => { const m = mounts.load(); mounts.save({ ...m, render: { ...m.render, colour } as never }) }
+    const record = (id: string, extra: Record<string, unknown> = {}) => JSON.stringify({ file: 'x.0000.dpx', writer: 'ComfyUI-OCIO', codec: 'dpx 16', attributes: { chromaticities: [0.68, 0.32, 0.265, 0.69, 0.15, 0.06, 0.3127, 0.329], 'com.ocio.gamut': 'P3-D65', colorInteropID: id, 'com.ocio.colorspace': 'Gamma 2.6 P3-D65 - Display', ...extra }, kind: 'sequence', frames: 10 })
+    const G26 = record('g26_p3d65_display'), lastScript = () => scripts[scripts.length - 1]
+    it('the table: Gamma 2.6 P3-D65 is p3-d65-gamma26 and the siblings the converter supports; an unknown id, junk, a huge or an empty record is no record, and never throws', () => {
+      expect(renders.parseOcioRecord(G26)).toMatchObject({ colour_in: 'p3-d65-gamma26', label: 'Gamma 2.6 P3-D65', colorInteropID: 'g26_p3d65_display', colorspace: 'Gamma 2.6 P3-D65 - Display', gamut: 'P3-D65' })
+      for (const [id, c] of [['srgb_p3d65_display', 'p3-d65-srgb'], ['g22_p3d65_display', 'p3-d65-gamma22'], ['lin_p3d65_scene', 'linear-p3-d65'], ['lin_rec709_scene', 'linear-rec709']]) expect(renders.parseOcioRecord(record(id))!.colour_in).toBe(c)
+      for (const bad of [record('g24_rec2020_display'), record('constructor'), '{', '', 'null', '[]', '{"attributes":{}}', '{"attributes":{"colorInteropID":5}}', JSON.stringify({ attributes: { colorInteropID: 'g26_p3d65_display', pad: 'x'.repeat(300_000) } })]) expect(renders.parseOcioRecord(bad)).toBeNull()
+      expect(renders.parseOcioRecord(null)).toBeNull(); expect(renders.parseOcioRecord(undefined)).toBeNull()
+    })
+    it('a record and a linear header: the plan uses the record, says so (source, ocio, header-disagrees at info level), and the review is not refused on the header', async () => {
+      pod.header = dpxHeader({ transfer: 2 }); pod.record = G26
+      const pl = await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review' }), x = pl.sequences[0]
+      expect(x).toMatchObject({ colour_in: 'p3-d65-gamma26', colour_source: 'ocio-record', header_disagrees: true, skip: null, colour_refusal: null, header_transfer: 'linear (code 2)', ocio: { colorInteropID: 'g26_p3d65_display', colorspace: 'Gamma 2.6 P3-D65 - Display', gamut: 'P3-D65', label: 'Gamma 2.6 P3-D65' } })
+      expect(x.flags.find((f) => f.code === 'header-disagrees')).toMatchObject({ level: 'info' }); expect(x.flags.map((f) => f.code)).not.toContain('colour-guessed')
+      const j = await review(); expect(j.sequences[0]).toMatchObject({ state: 'pulled', colour_source: 'ocio-record', header_disagrees: true }); expect(j.sequences[0].flags ?? []).toEqual([]); expect(j.warnings ?? []).toEqual([])
+      expect(lastScript()).toContain('pow(val/maxval,2.6)'); expect(lastScript()).not.toContain('pow(val/maxval,2.2)'); expect(lastScript()).toMatch(/"colour_source": "ocio-record"/); expect(lastScript()).toMatch(/"header_disagrees": true/); expect(lastScript()).toMatch(/"colorInteropID": "g26_p3d65_display"/); expect(lastScript()).toMatch(/"conversion": "p3-d65-gamma26"/); expect(lastScript()).toMatch(/OCIO record: stated by the writer ComfyUI-OCIO/); expect(lastScript()).toMatch(/The DPX header disagrees/)
+    })
+    it('a record and a header that agree: used, but no disagreement is flagged; in the mode ask a record still counts as stated', async () => {
+      setColour({ mode: 'ask' }); pod.header = dpxHeader({ transfer: 2 }); pod.record = record('lin_p3d65_scene')
+      const x = (await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review' })).sequences[0]; expect(x).toMatchObject({ colour_in: 'linear-p3-d65', colour_source: 'ocio-record', skip: null }); expect(x.header_disagrees).toBeUndefined(); expect(x.flags.map((f) => f.code)).not.toContain('header-disagrees')
+      pod.record = G26; expect((await review()).sequences[0].state).toBe('pulled')
+    })
+    it('no record, an unknown interop id and unreadable JSON all leave the old behaviour (known: a linear header is linear P3-D65, flagged as guessed)', async () => {
+      pod.header = dpxHeader({ transfer: 2 })
+      for (const rec of [null, record('g24_rec2020_display'), '{ not json', '']) { pod.record = rec; const x = (await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review' })).sequences[0]; expect(x).toMatchObject({ colour_in: 'linear-p3-d65', colour_source: 'guess' }); expect(x.ocio).toBeUndefined(); expect(x.header_disagrees).toBeUndefined() }
+      pod.record = '{ not json'; const j = await review(); expect(j.sequences[0].state).toBe('pulled'); expect(lastScript()).toContain('colorchannelmixer=rr=1.2249401'); expect(lastScript()).toMatch(/"stated_by": "project default"/); expect(lastScript()).not.toMatch(/ocio-record/)
+      setColour({ mode: 'ask' }); pod.record = record('nope'); pod.header = dpxHeader({ transfer: 1 }); expect((await review()).sequences[0].state).toBe('skipped')   // and a log header with no usable record is still refused
+    })
+    it('an explicit colour_in (per run or per sequence) beats the record; the record is not even consulted for it', async () => {
+      pod.header = dpxHeader({ transfer: 2 }); pod.record = G26
+      const x = (await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review', colour_in: 'linear-rec709' })).sequences[0]; expect(x).toMatchObject({ colour_in: 'linear-rec709' }); expect(x.colour_source).toBeUndefined(); expect(x.ocio).toBeUndefined()
+      scripts.length = 0; let j = await review({ colour_in: 'linear-rec709' }); expect(j.sequences[0].state).toBe('pulled'); expect(lastScript()).toMatch(/"stated_by": "Lucas"/); expect(lastScript()).not.toMatch(/ocio-record/); expect(scripts.some((s) => s.includes('base64 < '))).toBe(false)
+      j = await review({ sequences: [{ ...SEQ, colour_in: 'p3-d65-srgb' }] }); expect(lastScript()).toMatch(/"conversion": "p3-d65-srgb"/); expect(lastScript()).not.toMatch(/ocio-record/)
+    })
+    it('the volume is the last resort: the pod has no record, the volume holds one', async () => {
+      pod.header = dpxHeader({ transfer: 2 }); pod.record = null; volText = G26
+      expect((await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review' })).sequences[0]).toMatchObject({ colour_in: 'p3-d65-gamma26', colour_source: 'ocio-record' })
+      volText = '{ nope'; expect((await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review' })).sequences[0].colour_source).toBe('guess')
+    })
+    it('on this PC the record is read from the sequence folder (<dir>/<stem>.json)', async () => {
+      const d = join(shared, 'output', SEQ.dir); mkdirSync(d, { recursive: true }); for (let i = 0; i < 10; i++) writeFileSync(join(d, `${SEQ.name}.${String(i).padStart(4, '0')}.dpx`), i === 0 ? dpxHeader({ transfer: 2 }) : 'x')
+      let x = (await renders.plan({ sequences: [SEQ], kind: 'review', where: 'local' })).sequences[0]; expect(x).toMatchObject({ colour_in: 'linear-p3-d65', colour_source: 'guess' })
+      writeFileSync(join(d, `${SEQ.name}.json`), G26); x = (await renders.plan({ sequences: [SEQ], kind: 'review', where: 'local' })).sequences[0]; expect(x).toMatchObject({ colour_in: 'p3-d65-gamma26', colour_source: 'ocio-record', header_disagrees: true })
+      const { job_id } = await renders.start({ sequences: [SEQ], kind: 'review', approved_by: 'Lucas', where: 'local', codecs: ['h264'] }); await renders.settled()
+      const { readFileSync } = await import('node:fs'), v1 = join(shared, 'output', 'deliver', 'archival-085', 'v001'), meta = JSON.parse(readFileSync(join(v1, `${SEQ.name}.mp4.meta.json`), 'utf8'))
+      expect(renders.status(job_id).jobs[0].sequences[0]).toMatchObject({ state: 'done', colour_source: 'ocio-record' }); expect(meta.colour_stated).toMatchObject({ colour_source: 'ocio-record', header_disagrees: true, conversion: 'p3-d65-gamma26', ocio: { colorInteropID: 'g26_p3d65_display', colorspace: 'Gamma 2.6 P3-D65 - Display', gamut: 'P3-D65' } })
+      expect(readFileSync(join(v1, 'DELIVERY.md'), 'utf8')).toMatch(/OCIO record: stated by the writer ComfyUI-OCIO.*DPX header disagrees/s)
+      writeFileSync(join(d, `${SEQ.name}.json`), 'x'.repeat(300_000)); expect((await renders.plan({ sequences: [SEQ], kind: 'review', where: 'local' })).sequences[0].colour_source).toBe('guess')   // over 256 KB: no record
+    })
+    it('the Tunnel preset stays strict: a record counts as stated; with no record and no statement it never guesses', async () => {
+      setColour({ mode: 'guess' }); pod.header = dpxHeader({ transfer: 2 }); pod.record = null
+      let t = await renders.plan({ pod_id: 'p1', sequences: [SEQ], preset: 'tunnel' }); expect(t.sequences[0].flags.map((f) => f.code)).toContain('colour-not-set'); expect(t.sequences[0].blocked).toBe(true); expect(t.sequences[0].colour_source).toBeUndefined()
+      pod.record = G26; t = await renders.plan({ pod_id: 'p1', sequences: [SEQ], preset: 'tunnel' }); expect(t.sequences[0]).toMatchObject({ colour_in: 'p3-d65-gamma26', colour_source: 'ocio-record', header_disagrees: true }); expect(t.sequences[0].flags.map((f) => f.code)).not.toContain('colour-not-set'); expect(t.warnings.join(' ')).not.toMatch(/the colour you chose/)
+      pod.record = record('g24_rec2020_display'); t = await renders.plan({ pod_id: 'p1', sequences: [SEQ], preset: 'tunnel' }); expect(t.sequences[0].flags.map((f) => f.code)).toContain('colour-not-set')   // an unknown id is not a statement
+      pod.record = G26; t = await renders.plan({ pod_id: 'p1', sequences: [SEQ], preset: 'tunnel', colour_in: 'linear-rec709' }); expect(t.sequences[0]).toMatchObject({ colour_in: 'linear-rec709' }); expect(t.sequences[0].colour_source).toBeUndefined()   // a person still wins
+    })
+    it('a Tunnel run with a record starts (it is not refused for having no colour) and the sidecar names the record', async () => {
+      setColour({ mode: 'ask' }); pod.header = dpxHeader({ transfer: 2 }); pod.record = G26
+      const j = await runJob({ preset: 'tunnel', approved_by: 'Lucas', sequences: [{ ...SEQ, start_timecode: '01:00:00:00' }] }); expect(j.sequences[0]).toMatchObject({ colour_source: 'ocio-record', header_disagrees: true }); expect(j.sequences[0].state).not.toBe('failed')
+      expect(lastScript()).toMatch(/"colour_in": "p3-d65-gamma26"/); expect(lastScript()).toMatch(/"colour_source": "ocio-record"/)
+      pod.record = null; await expect(renders.start({ pod_id: 'p1', preset: 'tunnel', approved_by: 'Lucas', sequences: [{ ...SEQ, start_timecode: '01:00:00:00' }], width: 960 })).rejects.toMatchObject({ status: 400 })
     })
   })
   it('a failed render says what failed and what to do (render_sequences status): failure { stage, node, message, recovery, retryable, text }', async () => {

@@ -226,3 +226,7 @@ Every failed graph is one record in `failures.jsonl` (stage, node, message, miss
 **A presigned URL is a credential.** It is never logged, and never in History, an error, the job view or the stored job file: `redact()` strikes the live URLs, any `X-Amz-Signature/Credential` text and the Panama keys from everything the pod says before it is kept (a test makes the pod echo the URL back and scans the view, the job file and History).
 
 **Limits.** Progress for a pod file moves when the file completes (curl runs silent); a pod that stops mid-transfer drops the ssh, which is a failure of that file (so, in `auto`, a retry of it through this PC). Not tested against a real pod or real S3: the tests use fakes for ssh, aws and spawn.
+
+## Amendment 2026-11-20: a record counts as stated colour (v1.6.8)
+
+For the Tunnel preset, the colour record ComfyUI-OCIO wrote next to a sequence (see ADR-048, "the OCIO record beats the DPX header") is a stated colour: the writer said it, it is not a guess. A person's `colour_in` still wins; with no record and no statement the preset still never guesses (`colour-not-set` blocks), and an unknown `colorInteropID` is not a statement. The plan row and the sidecar carry `colour_source: ocio-record`, `ocio` and, when the header says something else, `header_disagrees`.

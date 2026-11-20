@@ -668,6 +668,8 @@
       "rowColourAll": "same colour for all",
       "rowColourDefault": "default from the DPX header",
       "rowColourConfig": "from the configuration",
+      "rowColourOcio": "OCIO record: {label}",
+      "ocioWins": "The DPX header disagrees: the record the writer made is used, not the header.",
       "rowColourSkipped": "will be skipped until stated",
       "rowColourNone": "not stated",
       "rowColourPlain": "no conversion, a plain scale",

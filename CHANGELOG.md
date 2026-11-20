@@ -3,6 +3,11 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## v1.6.8 (2026-11-20)
+
+- **The converter reads the OCIO record, not the DPX header.** Every sequence written by ComfyUI-OCIO has a colour record next to it, `<dir>/<stem>.json`, and on this project the DPX header is wrong (it says linear while the pixels are Gamma 2.6 P3-D65; Binc's 20 Nov PDF). Reviews and proxies now read the record first (this PC, the pod over ssh, then the volume; 256 KB at most; a missing, unreadable or unknown record is "no record", never an error) and map `colorInteropID` by an explicit table: `g26_p3d65_display` is `p3-d65-gamma26`, `srgb_p3d65_display` is `p3-d65-srgb`, `g22_p3d65_display` is `p3-d65-gamma22`, `lin_p3d65_scene` is `linear-p3-d65`, `lin_rec709_scene` is `linear-rec709`; any other id is never guessed. Precedence: a stated `colour_in` (per sequence or per run), then the record, then `render.colour.mode` (format, ask, guess), then `known`. When the header disagrees the plan row carries `colour_source: ocio-record`, `ocio { colorInteropID, colorspace, gamut, label }`, `header_disagrees` and an info flag `header-disagrees`; the `.meta.json` says `colour_source: 'ocio-record'`, `ocio` and `header_disagrees: true`, and DELIVERY.md says the record was used. A review is not refused on the header when the record resolves. The Tunnel preset stays strict: a record counts as stated; with no record and no statement it still never guesses.
+- **Generate window.** The row and its colour window say "OCIO record: Gamma 2.6 P3-D65" as the colour's source, a header that disagrees shows as a blue note, and a sequence with a record needs no colour stated. Reviews and proxies made before this release used the header and have the wrong colour: render them again.
+
 ## v1.6.5 (tag v1.6.5, 2026-11-19)
 
 - **Queue > Publishing is paged.** The job cards show 10 to a page (5, 10 or 25), with Previous, Next and "1–10 of N"; the running ones are always on page 1, a new page size starts at page 1, and a page that empties moves back.
