@@ -6,11 +6,13 @@
  * plan and applies it: only inside the source (reads) and ComfyUI-Shared (writes), never deleting,
  * never replacing a different file unless told. The source is never changed.
  */
-import { spawn, spawnSync } from 'node:child_process'
+import { execFile, spawn, spawnSync } from 'node:child_process'
+import { mkdir as mkdirP, readdir as readdirP, rm as rmP, stat as statP, writeFile as writeFileP } from 'node:fs/promises'
 import { copyFileSync, constants, createReadStream, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { basename, dirname, isAbsolute, join, normalize, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { walkFiles } from './asyncfs.js'
 import { bad } from './errors.js'
 import { REPO_ROOT, adaptersDir, importsDir } from './paths.js'
 import * as hist from './history.js'
@@ -374,6 +376,38 @@ export function prepareSource(source: string): string {
   return top.length === 1 && statSync(join(dest, top[0])).isDirectory() ? join(dest, top[0]) : dest
 }
 
+/** `unzip` without holding the process: a multi-gigabyte package takes minutes, and the synchronous one froze the window for all of them. */
+const execAsync = (cmd: string, args: string[], maxBuffer: number) => new Promise<{ status: number | null; error?: Error; stdout: string; stderr: string }>((res) => {
+  execFile(cmd, args, { encoding: 'utf8', maxBuffer }, (error, stdout, stderr) => res({ status: error ? (typeof (error as { code?: unknown }).code === 'number' ? (error as unknown as { code: number }).code : null) : 0, ...(error && typeof (error as { code?: unknown }).code !== 'number' ? { error } : {}), stdout: String(stdout ?? ''), stderr: String(stderr ?? '') }))
+})
+/** `prepareSource`, asynchronously: the same checks, the same folder, the process stays free while the zip is listed and unpacked. */
+export async function prepareSourceAsync(source: string): Promise<string> {
+  if (!source || !isAbsolute(source)) throw bad('the source must be an absolute path')
+  const st = await statP(source).catch(() => null)
+  if (!st || !st.isFile()) return source
+  if (!/\.zip$/i.test(source)) throw bad(`not a folder or a .zip: ${source}`)
+  const dest = join(zipsDir(), `${basename(source, '.zip').replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 60)}-${createHash('sha256').update(`${source}:${st.size}:${st.mtimeMs}`).digest('hex').slice(0, 10)}`)
+  const done = join(dest, '.extracted')
+  if (!(await statP(done).catch(() => null))) {
+    const list = await execAsync('unzip', ['-Z1', source], 256 * 1024 * 1024)
+    if (list.error) throw bad(list.error.message.includes('ENOENT') ? 'unzip is not installed: unzip the package into a folder first, or install it (macOS and Linux have it)' : list.error.message)
+    if (list.status !== 0) throw bad(`could not read ${source} as a zip: ${(list.stderr || list.stdout).trim().split('\n').pop()}`)
+    const names = list.stdout.split('\n').filter(Boolean)
+    if (names.length > ZIP_MAX_ENTRIES) throw bad(`${source} has ${names.length} entries; the limit is ${ZIP_MAX_ENTRIES}`)
+    const unsafe = names.find((n) => !safeZipEntry(n))
+    if (unsafe) throw bad(`${source} has an entry that would unpack outside its folder (${JSON.stringify(unsafe)}); refused`)
+    const sizes = await execAsync('unzip', ['-Zt', source], 16 * 1024 * 1024)
+    const total = Number(/(\d+) bytes uncompressed/.exec(sizes.stdout || '')?.[1] ?? 0)
+    if (total > ZIP_MAX_BYTES) throw bad(`${source} unpacks to ${total} bytes; the limit is ${ZIP_MAX_BYTES}`)
+    await rmP(dest, { recursive: true, force: true }); await mkdirP(dest, { recursive: true })
+    const r = await execAsync('unzip', ['-q', '-o', source, '-d', dest], 64 * 1024 * 1024)
+    if (r.status !== 0 && r.status !== 1) throw bad(`unzip failed on ${source}: ${(r.stderr || r.stdout).trim().split('\n').pop()}`)   // 1 = warnings only
+    await writeFileP(done, new Date().toISOString())
+  }
+  const top = (await readdirP(dest)).filter((n) => n !== '.extracted' && n !== '__MACOSX')
+  return top.length === 1 && (await statP(join(dest, top[0]))).isDirectory() ? join(dest, top[0]) : dest
+}
+
 function existingDir(p: string): string {
   if (!p || !isAbsolute(p)) throw bad('the source folder must be an absolute path')
   if (!existsSync(p) || !statSync(p).isDirectory()) throw bad(`not a folder: ${p}`)
@@ -403,7 +437,15 @@ function scanFolder(root: string) {
 /** What would be sent to the model: folder names with file counts (three levels), a sample of file names, and a few small text files (README, manifest) cut to 12 KB. Never media, never anything else. */
 export function draftPreview(sourceDir: string): DraftPreview & { _texts: { path: string; text: string }[] } {
   const root = existingDir(sourceDir)
-  const files = scanFolder(root)
+  return previewOf(root, scanFolder(root))
+}
+/** The same, but the folder is walked without holding the process (async stats in batches, the loop yielded to): a package of tens of thousands of files no longer freezes the window while it is looked at. */
+export async function draftPreviewAsync(sourceDir: string): Promise<DraftPreview & { _texts: { path: string; text: string }[] }> {
+  const root = existingDir(sourceDir)
+  const walked = await walkFiles(root, { max: MAX_SCAN })
+  return previewOf(root, walked.files.filter((f) => f.bytes !== null).map((f) => ({ path: f.rel, bytes: f.bytes as number })))
+}
+function previewOf(root: string, files: { path: string; bytes: number }[]): DraftPreview & { _texts: { path: string; text: string }[] } {
   const dirs = new Map<string, number>()
   for (const f of files) { const parts = f.path.split('/').slice(0, -1); for (let n = 1; n <= Math.min(3, parts.length); n++) { const k = parts.slice(0, n).join('/'); dirs.set(k, (dirs.get(k) || 0) + 1) } }
   const texts = files.filter((f) => TEXT_NAME.test(f.path) && f.path.split('/').length <= 2 && f.bytes > 0 && f.bytes <= 4 * 1024 * 1024).slice(0, MAX_TEXTS)
@@ -482,7 +524,7 @@ export interface DraftOptions extends AskOptions {
 export async function draft(sourceDir: string | null, opts: DraftOptions = {}): Promise<{ adapter: AdapterInfo; model: string; valid: boolean; errors: string[]; ignored: number }> {
   if (!settings.lookup('ANTHROPIC_API_KEY')) throw bad('No Anthropic API key: set it in Default Configuration, or write the adapter with your own coding agent (adapter_spec)')
   if (!sourceDir && !opts.id) throw bad('an adapter id is needed when no folder is attached')
-  const pv = sourceDir ? draftPreview(sourceDir) : emptyPreview()
+  const pv = sourceDir ? await draftPreviewAsync(sourceDir) : emptyPreview()
   const id = opts.id || `draft-${basename(pv.source).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'folder'}`
   if (!ID.test(id)) throw bad('the adapter id is lowercase letters, digits and dashes (at most 63)')
   const file = join(adaptersDir(), `${id}.mjs`)
@@ -509,7 +551,7 @@ export const DESCRIBE_SYSTEM = 'You write text only, never files or code. You de
 
 /** A short description of the shot pack in this folder, written by Claude from the folder\'s names and its small READMEs and manifests (the same material draftPreview shows; no media). */
 export async function describe(sourceDir: string, opts: AskOptions = {}): Promise<{ description: string; model: string; sent: { files: number; dirs: number; texts: string[] } }> {
-  const pv = draftPreview(sourceDir)
+  const pv = await draftPreviewAsync(sourceDir)
   const { text, model } = await askClaude(DESCRIBE_SYSTEM, folderMaterial(pv), 700, opts)
   const description = text.trim()
   if (!description) throw bad('Claude returned no description')

@@ -10,8 +10,10 @@ import { createHash } from 'node:crypto'
 import { cpSync, createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, normalize, relative } from 'node:path'
+import { cp as cpAsync, mkdir as mkdirAsync, readFile, realpath as realpathAsync, rm as rmAsync, stat as statAsync } from 'node:fs/promises'
+import { walkFiles, yieldLoop } from './asyncfs.js'
 import { bad } from './errors.js'
-import { prepareSource } from './imports.js'
+import { prepareSource, prepareSourceAsync } from './imports.js'
 import * as mounts from './mounts.js'
 import { STAGED_ROUNDS } from './paths.js'
 import * as settings from './settings.js'
@@ -157,11 +159,65 @@ export function rounds(): Round[] {
     .map((name) => { const st = stagedState(name); return { name, staged: st.state === 'complete', ...st, bytes: st.state === 'none' ? 0 : dirBytes(join(stagingDir(), name)) } })
 }
 
+/** What is on this PC for one round, without holding the process: one async walk (state and bytes together), and the answer is kept for ten seconds while the round folder's mtime is unchanged, so a second click does not scan again. */
+const scanCache = new Map<string, { at: number; mtime: number; value: { st: Staged; bytes: number } }>()
+const SCAN_TTL_MS = 10_000
+export const forgetScans = (round?: string): void => { if (round) scanCache.delete(round); else scanCache.clear() }
+async function listedFilesAsync(root: string): Promise<{ files: Map<string, Listed>; kind?: string } | null> {
+  const read = async (p: string) => JSON.parse(await readFile(p, 'utf8'))
+  let m: { files?: Listed[]; shots?: Record<string, unknown>; kind?: string }
+  try { m = await read(join(root, 'MANIFEST.json')) } catch { return null }   // not there yet, or cut short by an interrupted download
+  const files = new Map<string, Listed>()
+  for (const f of (m.files || []) as Listed[]) files.set(normalize(f.path), f)
+  const shots = Object.keys(m.shots || {})
+  for (let i = 0; i < shots.length; i++) {
+    try { for (const f of ((await read(join(root, shots[i], 'MANIFEST.json'))).files || []) as Listed[]) if (!files.has(normalize(f.path))) files.set(normalize(f.path), f) } catch { /* that shot's manifest is not whole yet */ }
+    if (i % 20 === 19) await yieldLoop()
+  }
+  return { files, kind: m.kind }
+}
+export async function stagedScanAsync(round: string): Promise<{ st: Staged; bytes: number }> {
+  const dir = join(stagingDir(), round)
+  let mtime: number
+  try { mtime = (await statAsync(dir)).mtimeMs } catch { return { st: { state: 'none', present: 0, expected: null, missing: null }, bytes: 0 } }
+  const hit = scanCache.get(round)
+  if (hit && hit.mtime === mtime && Date.now() - hit.at < SCAN_TTL_MS) return hit.value
+  const walk = await walkFiles(dir)
+  const sizes = new Map(walk.files.map((f) => [normalize(f.rel), f.bytes]))
+  const bytes = walk.files.reduce((n, f) => n + (f.bytes ?? 0), 0)
+  const count = walk.files.filter((f) => !f.rel.slice(f.rel.lastIndexOf('/') + 1).startsWith('.panama-pull')).length
+  const l = await listedFilesAsync(dir)
+  let st: Staged
+  if (sizes.has('.panama-pull.done')) { const n = l ? l.files.size : count; st = { state: 'complete', present: n, expected: n, missing: 0 } }
+  else if (!l || l.files.size === 0) st = { state: count ? 'partial' : 'none', present: count, expected: null, missing: null }
+  else {
+    let present = 0, i = 0
+    for (const f of l.files.values()) {
+      const known = sizes.get(normalize(f.path))
+      if (known != null) { if (known === f.bytes) present++ }
+      else { try { if ((await statAsync(join(dir, f.path))).size === f.bytes) present++ } catch { /* missing */ } }   // a link or a file the walk did not see
+      if (++i % 500 === 0) await yieldLoop()
+    }
+    const expected = l.files.size
+    st = { state: present === expected ? 'unverified' : 'partial', present, expected, missing: expected - present }
+  }
+  const value = { st, bytes: st.state === 'none' ? 0 : bytes }
+  scanCache.set(round, { at: Date.now(), mtime, value })
+  return value
+}
 export async function roundsAsync(): Promise<Round[]> {
   const r = await runAsync(listCmd())
   if (r.status !== 0) throw bad(`Could not list the bucket: ${(r.stderr || r.stdout).trim().split('\n').pop()}`)
-  return r.stdout.split('\n').map((l) => /^\s*PRE (.+)\/\s*$/.exec(l)?.[1]).filter((n): n is string => !!n && ROUND.test(n))
-    .map((name) => { const st = stagedState(name); return { name, staged: st.state === 'complete', ...st, bytes: st.state === 'none' ? 0 : dirBytes(join(stagingDir(), name)) } })
+  const names = r.stdout.split('\n').map((l) => /^\s*PRE (.+)\/\s*$/.exec(l)?.[1]).filter((n): n is string => !!n && ROUND.test(n))
+  return roundsOf(names)
+}
+/** The rounds' staged state, two at a time, off the main loop. */
+export async function roundsOf(names: string[]): Promise<Round[]> {
+  const out: Round[] = new Array(names.length)
+  let next = 0
+  const worker = async () => { while (next < names.length) { const i = next++; const { st, bytes } = await stagedScanAsync(names[i]); out[i] = { name: names[i], staged: st.state === 'complete', ...st, bytes } } }
+  await Promise.all([worker(), worker()])
+  return out
 }
 /** One recursive listing of a round is slow (seconds for thousands of files) and the plan needs it twice (the shots and the size): share a running one, and keep the answer for a minute. */
 const listings = new Map<string, { at: number; p: Promise<string> }>()
@@ -193,8 +249,13 @@ export async function filesAsync(round: string) {
   if (!ROUND.test(round)) throw bad(`Not a round name: ${round}`)
   const out = await listingOf(round)
   const dir = join(stagingDir(), round)
-  const entries = roundTree(round, out, (p, bytes) => { try { return statSync(join(dir, p)).size === bytes } catch { return false } })
-  return { round, entries, files: entries.filter((e) => !e.dir).length, bytes: entries.filter((e) => !e.dir).reduce((n, e) => n + e.bytes, 0) }
+  const entries = roundTree(round, out)
+  const fileEntries = entries.filter((e) => !e.dir)
+  for (let i = 0; i < fileEntries.length; i += 64) {   // which are already on this PC: async stats, 64 at a time, the loop yielded to between batches
+    await Promise.all(fileEntries.slice(i, i + 64).map(async (e) => { try { e.local = (await statAsync(join(dir, e.path))).size === e.bytes } catch { e.local = false } }))
+    await yieldLoop()
+  }
+  return { round, entries, files: fileEntries.length, bytes: fileEntries.reduce((n, e) => n + e.bytes, 0) }
 }
 
 /** Files and bytes under one round (a listing, so a big round takes a few seconds). */
@@ -279,6 +340,7 @@ const children = new Map<string, ReturnType<typeof spawn>>()
 
 export function pull(round: string): PullJob {
   if (!ROUND.test(round)) throw bad(`Not a round name: ${round}`)
+  scanCache.delete(round)
   const running = [...jobs.values()].find((j) => j.round === round && j.state === 'running')
   if (running) return running
   const dest = join(stagingDir(), round)
@@ -370,8 +432,23 @@ export function remove(round: string): { round: string; freed: number } {
   if (!existsSync(dir)) return { round, freed: 0 }
   const real = realpathSync(dir), realRoot = realpathSync(root)
   if (dirname(real) !== realRoot) throw bad(`Refusing to delete ${dir}: it is not directly inside the staging folder ${root}.`)
+  scanCache.delete(round)
   const freed = dirBytes(real)
   rmSync(real, { recursive: true, force: true })
+  return { round, freed }
+}
+
+/** `remove`, without holding the process: the bytes are counted and the folder deleted by async calls (a round of thousands of files took the window with it). */
+export async function removeAsync(round: string): Promise<{ round: string; freed: number }> {
+  if (!ROUND.test(round)) throw bad(`Not a round name: ${round}`)
+  if ([...jobs.values()].some((j) => j.round === round && ['running', 'verifying'].includes(j.state))) throw bad(`${round} is downloading: cancel it first.`)
+  const root = stagingDir(), dir = join(root, round)
+  if (!(await statAsync(dir).catch(() => null))) return { round, freed: 0 }
+  const real = await realpathAsync(dir), realRoot = await realpathAsync(root)
+  if (dirname(real) !== realRoot) throw bad(`Refusing to delete ${dir}: it is not directly inside the staging folder ${root}.`)
+  scanCache.delete(round)
+  const freed = (await walkFiles(real)).files.reduce((n, f) => n + (f.bytes ?? 0), 0)
+  await rmAsync(real, { recursive: true, force: true })
   return { round, freed }
 }
 
@@ -400,6 +477,35 @@ export function stageDrop(paths: string[], now: Date = new Date()): { round: str
     else cpSync(it.dir, items.length === 1 ? dest : join(dest, it.name), { recursive: true, force: false })   // a single folder's contents are the round; several keep their own folders
   }
   return { round, path: dest, files: countFiles(dest), bytes: dirBytes(dest), extracted }
+}
+
+/** `stageDrop`, without holding the process: the zip is unpacked and the folders copied by async calls (a drop of many gigabytes froze the window for the whole copy), and the result is counted with an async walk. Same names, same refusals. */
+export async function stageDropAsync(paths: string[], now: Date = new Date()): Promise<{ round: string; path: string; files: number; bytes: number; extracted: number }> {
+  const srcs = (Array.isArray(paths) ? paths : []).map(String).filter(Boolean)
+  if (!srcs.length) throw bad('Nothing was dropped.')
+  let extracted = 0
+  const items: { dir: string; name: string; file: boolean }[] = []
+  for (const p of srcs) {
+    if (!isAbsolute(p)) throw bad(`Not an absolute path: ${p}`)
+    const st = await statAsync(p).catch(() => null)
+    if (!st) throw bad(`Not found: ${p}`)
+    if (st.isFile() && /\.zip$/i.test(p)) { extracted++; items.push({ dir: await prepareSourceAsync(p), name: basename(p).replace(/\.zip$/i, ''), file: false }) }
+    else items.push({ dir: p, name: basename(p), file: st.isFile() })
+  }
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const base = (items.length === 1 && !items[0].file ? items[0].name : `dropped-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`).replace(/[^A-Za-z0-9._-]/g, '_').replace(/^[^A-Za-z0-9]+/, '').slice(0, 100) || 'dropped'
+  const root = stagingDir(); await mkdirAsync(root, { recursive: true })
+  let round = base
+  for (let i = 2; await statAsync(join(root, round)).then(() => true, () => false); i++) round = `${base}-${i}`
+  if (!ROUND.test(round)) throw bad(`Not a usable round name: ${round}`)
+  const dest = join(root, round); await mkdirAsync(dest, { recursive: true })
+  for (const it of items) {
+    if (it.file) await cpAsync(it.dir, join(dest, it.name), { force: false })
+    else await cpAsync(it.dir, items.length === 1 ? dest : join(dest, it.name), { recursive: true, force: false })
+  }
+  scanCache.delete(round)
+  const walk = await walkFiles(dest)
+  return { round, path: dest, files: walk.files.filter((f) => !f.rel.slice(f.rel.lastIndexOf('/') + 1).startsWith('.panama-pull')).length, bytes: walk.files.reduce((n, f) => n + (f.bytes ?? 0), 0), extracted }
 }
 
 /** Stop a running download. The files already fetched stay; Download again carries on from them (sync skips what is complete). */
