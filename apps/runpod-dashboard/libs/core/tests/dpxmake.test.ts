@@ -150,6 +150,15 @@ describe('dpxmake: an element is a cut of its master (source ranges)', () => {
     '000003  ARCHIVAL-123_F_FINAL_V01_3840X2160_23.976_PRORES422HQ V     C 00:00:05:00 00:00:06:00 01:00:03:13 01:00:04:13 ', '',
     '000004  ARCHIVAL-087_A_FINAL_V01_3840X2160_23.976_PRORES422HQ V     C 00:00:00:00 00:00:01:00 01:00:04:13 01:00:05:13 ',
     'M2      ARCHIVAL-087_A_FINAL_V01_3840X2160_23.976_PRORES422HQ          012.0 00:00:00:00', ''].join('\n')
+  it('from_edl drops an empty range of the EDL (the real 123_F has one: in and out the same) and keeps the frames of the others', async () => {
+    const d = scratch(); edl.reset()
+    const E = ['TITLE: test', 'FCM: NON-DROP FRAME', '',
+      '000001  ARCHIVAL-168_A_FINAL_V01_3840X2160_23.976_PRORES422HQ V     C 00:00:03:01 00:00:04:20 01:00:00:00 01:00:01:19 ', '',
+      '000002  ARCHIVAL-168_A_FINAL_V01_3840X2160_23.976_PRORES422HQ V     C 00:00:04:20 00:00:04:20 01:00:01:19 01:00:01:19 ', ''].join('\n')
+    writeFileSync(join(d, 'e.edl'), E); await edl.load({ source: { file: join(d, 'e.edl') } })
+    const p = await dpxmake.plan({ items: [{ master: MASTER, shot: 'archival-168', element: 'a', from_edl: true }] })
+    expect(p.rows[0].select).toBe('between(n\\,73\\,115)'); expect(p.rows[0].frames_expected).toBe(43); edl.reset()
+  })
   it('from_edl fills frames, ranges and fps from the loaded EDL, and says to load it when it is not', async () => {
     const d = scratch(); edl.reset()
     await expect(dpxmake.plan({ items: [{ master: MASTER, shot: 'archival-123', element: 'c', from_edl: true }] })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/load it/i) })
