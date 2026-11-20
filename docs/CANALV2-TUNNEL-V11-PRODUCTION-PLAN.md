@@ -225,27 +225,29 @@ Not every element is in the same state, so the delivery is handled by case. **Ru
 
 ### 11.2 The 19 without delivered DPX
 
-| # | Element | Frames (PDF) | Raster | Source final in | State on the volume | Case | Needed |
+**Updated 2026-11-21:** the route is `base_v008` through Import Round (not ffmpeg), the last column is the state now; everything from `base_v008` stays in `_TEST_tunnel-v11-base-v008-2026-11-21` until it is right (section 14). CGI-072 is not held.
+
+| # | Element | Frames (PDF) | Raster | Source final in | State on the volume | Case | State now (2026-11-21) |
 |---|---|---|---|---|---|---|---|
-| 18 | ARCHIVAL-087 platform | 97 | 3840x2160 | `-11-14` | pulled | D | We have the finished video but no DPX frames. Make the frames first (see 11.4), then deliver it like the 17. |
-| 19 | ARCHIVAL-087 rain | 96 | 3840x2160 | `-11-14` | pulled | D | We have the finished video but no DPX frames. Make the frames first (see 11.4), then deliver it like the 17. |
-| 20 | ARCHIVAL-123 f | 43 | 3840x2160 | `-10-23` | staged | D | We have the finished video but no DPX frames. Make the frames first (see 11.4), then deliver it like the 17. |
-| 21 | ARCHIVAL-168 a | 153 | 3840x2160 | `-10-29` | pulled | D | We have the finished video but no DPX frames. Make the frames first (see 11.4), then deliver it like the 17. |
-| 22 | ARCHIVAL-168 b | 139 | 3840x2160 | `-10-29` | pulled | D | We have the finished video but no DPX frames. Make the frames first (see 11.4), then deliver it like the 17. |
-| 23 | ARCHIVAL-168 c | 105 | 3840x2160 | `-10-29` | pulled | D | We have the finished video but no DPX frames. Make the frames first (see 11.4), then deliver it like the 17. |
-| 24 | ARCHIVAL-168 d | 48 | 3840x2160 | `-10-29` | pulled | D | We have the finished video but no DPX frames. Make the frames first (see 11.4), then deliver it like the 17. |
-| 25 | CREATURE-266 dolphin-lowtrack (ALT V01) | 94 | 1920x1080 | `-11-14` | pulled | D | We have the finished video but no DPX frames. Make the frames first (see 11.4), then deliver it like the 17. |
-| 26 | PHOTOREAL-013 ascent | 108 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Same as the others, but the frames are 24 per second, not 23.976 (see 11.4). |
-| 27 | PHOTOREAL-013 chasm07 | 271 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Same as the others, but the frames are 24 per second, not 23.976 (see 11.4). |
-| 28 | PHOTOREAL-013 f23 | 633 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Same as the others, but the frames are 24 per second, not 23.976 (see 11.4). |
-| 29 | PHOTOREAL-013 hadal | 160 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Same as the others, but the frames are 24 per second, not 23.976 (see 11.4). |
-| 30 | PHOTOREAL-013 landing | 226 | 1920x1080, 24 fps ProRes | `-11-14` | pulled | E | Same as the others, but the frames are 24 per second, not 23.976 (see 11.4). |
-| 31 | PHOTOREAL-013 splash | 96 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Same as the others, but the frames are 24 per second, not 23.976 (see 11.4). |
-| 32 | PHOTOREAL-013 sunlight | 212 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Same as the others, but the frames are 24 per second, not 23.976 (see 11.4). |
-| 33 | PHOTOREAL-013 top (V02) | 209 | 1920x1080, 24 fps ProRes | `-11-14` | pulled | E | Same as the others, but the frames are 24 per second, not 23.976 (see 11.4). |
-| 34 | CGI-072 head | 106 | 1920x1080 V02 ProRes 23.976 | `-10-29` (V03 HEVC 24) | not pulled | F | Binc must say which version is wanted before we do anything |
-| 35 | CGI-072 backhalf-b | 70 | 1920x1080 V02 ProRes 23.976 | `-10-29` (V03 HEVC 24) | not pulled | F | Binc must say which version is wanted before we do anything |
-| 36 | CGI-072 backhalf-c | 162 | 1920x1080 V02 ProRes 23.976 | `-10-29` (V03 HEVC 24) | not pulled | F | Binc must say which version is wanted before we do anything |
+| 18 | ARCHIVAL-087 platform | 97 | 3840x2160 | `-11-14` | pulled | D | DPX made (97, count matches); header-patched; in the test round. Blocked in the real round: it already holds 29 files of different size |
+| 19 | ARCHIVAL-087 rain | 96 | 3840x2160 | `-11-14` | pulled | D | Generating (graph in `imp-mwpkxqng-0`) |
+| 20 | ARCHIVAL-123 f | 43 | 3840x2160 | `-10-23` | staged | D | DPX made (43, matches); header-patched; in the test round |
+| 21 | ARCHIVAL-168 a | 153 | 3840x2160 | `-10-29` | pulled | D | DPX made (153, matches); header-patched; test round |
+| 22 | ARCHIVAL-168 b | 139 | 3840x2160 | `-10-29` | pulled | D | DPX made (139, matches); header-patched; test round |
+| 23 | ARCHIVAL-168 c | 105 | 3840x2160 | `-10-29` | pulled | D | DPX made (105, matches); header-patched; test round |
+| 24 | ARCHIVAL-168 d | 48 | 3840x2160 | `-10-29` | pulled | D | DPX made (48, matches); header-patched; test round |
+| 25 | CREATURE-266 dolphin-lowtrack (ALT V01) | 94 | 1920x1080 | `-11-14` | pulled | D | Generating on a 96 GB card (the 32 GB card died mid-graph) |
+| 26 | PHOTOREAL-013 ascent | 108 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | DPX made (108, matches); header-patched; test round |
+| 27 | PHOTOREAL-013 chasm07 | 271 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | DPX made (271, matches); header-patched; test round |
+| 28 | PHOTOREAL-013 f23 | 633 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Generating |
+| 29 | PHOTOREAL-013 hadal | 160 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Generating |
+| 30 | PHOTOREAL-013 landing | 226 | 1920x1080, 24 fps ProRes | `-11-14` | pulled | E | Generating |
+| 31 | PHOTOREAL-013 splash | 96 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Generating |
+| 32 | PHOTOREAL-013 sunlight | 212 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Generating |
+| 33 | PHOTOREAL-013 top (V02) | 209 | 1920x1080, 24 fps ProRes | `-11-14` | pulled | E | Generating |
+| 34 | CGI-072 head | 106 | 1920x1080 V02 ProRes 23.976 | `-10-29` (V03 HEVC 24) | not pulled | F | Generating from V03 (not held) |
+| 35 | CGI-072 backhalf-b | 70 | 1920x1080 V02 ProRes 23.976 | `-10-29` (V03 HEVC 24) | not pulled | F | Generating from V03 (not held) |
+| 36 | CGI-072 backhalf-c | 162 | 1920x1080 V02 ProRes 23.976 | `-10-29` (V03 HEVC 24) | not pulled | F | Generating from V03 (not held) |
 
 ### 11.4 How we get the missing DPX, in plain words
 
