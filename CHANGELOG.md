@@ -3,6 +3,11 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## v1.6.8
+
+- **A stall monitor names what freezes the window (the Mac beach ball).** The main process now times every IPC call, MCP tool call and core timer tick (queue, auto-publish, auto sync, pod watches), and a 100 ms timer notices when the event loop was late by more than 300 ms. Each stall, and any call or tick that blocks for more than 200 ms, is one line in `stalls.log` in the config folder: names and durations only, newest ~500 lines kept ([`docs/TROUBLESHOOTING-BEACH-BALL.md`](docs/TROUBLESHOOTING-BEACH-BALL.md)).
+- **Blocking walks moved off the main loop.** Staged-round scans (`panama.rounds`), a round's file list, dropping a folder or zip onto Rounds, deleting a staged round, and the folder look of the Adapter Studio and "Write adapter" are async with the loop yielded to between batches; the staged-round scan is cached for 10 seconds while the folder is unchanged. `history.record` no longer re-reads the history file on every event, and the Publish status the window polls every second no longer carries every file of every job (MCP and a job asked for by id are unchanged).
+
 ## v1.6.5 (tag v1.6.5, 2026-11-19)
 
 - **Queue > Publishing is paged.** The job cards show 10 to a page (5, 10 or 25), with Previous, Next and "1–10 of N"; the running ones are always on page 1, a new page size starts at page 1, and a page that empties moves back.
