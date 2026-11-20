@@ -23,7 +23,7 @@ import { previewBus } from '../utils/thumbsBus'
 import { usePreviewsStore } from '../stores/previews'
 
 const props = defineProps({ tile: { type: Object, required: true }, base: { type: String, default: '' }, scope: { type: String, default: '' }, volumeName: { type: String, default: '' }, offline: { type: Boolean, default: false }, /** load as soon as it is on screen: no cap, no click (the Generate rows) */ auto: { type: Boolean, default: false } })
-const emit = defineEmits(['state'])
+const emit = defineEmits(['state', 'header'])
 const root = ref(null)
 const previews = usePreviewsStore()
 const state = ref('idle'), url = ref(''), reason = ref('')
@@ -45,7 +45,7 @@ async function load(manual = false) {
   setState('loading')
   const r = await thumbs.request(k, { url: viewUrl(props.base, first.value), fallback: appReader(core), bytes: first.value.bytes ?? null, modified: first.value.modified ?? null }, { manual })
   if (k !== myKey) return
-  if (r.status === 'ready') { url.value = r.url; setState('ready'); previewBus.cacheVer++ }
+  if (r.status === 'ready') { url.value = r.url; setState('ready'); previewBus.cacheVer++; if (r.header) emit('header', r.header) }   // the first frame's colour fields, for the tile's chips
   else if (r.status === 'empty') { reason.value = r.reason; setState('empty') }
   else if (r.status === 'capped') setState('capped')
   else if (r.status === 'error') { reason.value = r.code ? t(`outputs.dpx.reason.${r.code}`) : r.reason; setState('error') }

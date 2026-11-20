@@ -132,3 +132,19 @@ test('loadDpx: 404 is "missing", other statuses say the status, a network failur
     await assert.rejects(loadDpx('x', { fallback: async () => { throw new Error('Could not reach the pod file: ECONNRESET') } }), /ECONNRESET/)
   } finally { globalThis.fetch = real }
 })
+
+test('the header returns the colour fields: transfer, colorimetric, encoding, descriptor, packing, size and the television timecode', () => {
+  for (const le of [false, true]) {
+    const h = parseDpxHeader(makeDpx({ bits: 10, packing: 1, le, transfer: 2, colorimetric: 2, timecode: 0x01020304 }))
+    assert.equal(h.transfer, 2); assert.equal(h.colorimetric, 2); assert.equal(h.encoding, 0); assert.equal(h.descriptorName, 'RGB'); assert.equal(h.packing, 1)
+    assert.equal(h.timecode, '01:02:03:04'); assert.equal(h.width, 16); assert.equal(h.height, 8)
+  }
+  const d = parseDpxHeader(makeDpx({ transfer: 1, colorimetric: 6, timecode: 0x01020344 }))   // printing density, Rec.709; the drop-frame bit makes the separator a semicolon
+  assert.equal(d.transfer, 1); assert.equal(d.colorimetric, 6); assert.equal(d.timecode, '01:02:03;04')
+})
+test('no timecode when the field is unset or not valid; the decoded frame carries its header', () => {
+  assert.equal(parseDpxHeader(makeDpx({ timecode: 0 })).timecode, null)
+  assert.equal(parseDpxHeader(makeDpx({ timecode: 0xffffffff })).timecode, null)
+  assert.equal(parseDpxHeader(makeDpx({ timecode: 0x25000000 })).timecode, null)   // hour 25
+  assert.equal(decodeDpx(makeDpx({ transfer: 2 })).header.transfer, 2)
+})

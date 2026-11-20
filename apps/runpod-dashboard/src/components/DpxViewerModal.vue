@@ -11,6 +11,22 @@
           <BButton v-if="movieSrc" variant="outline-light" size="sm" class="ms-2" data-testid="dpx-viewer-full" :data-mode="rendered ? 'rendered' : 'full'" :title="rendered ? $t('outputs.render.fullTitle') : $t('outputs.render.backToRenderedTitle')" @click="forceFull = !forceFull">{{ rendered ? $t('outputs.render.full') : $t('outputs.render.backToRendered') }}</BButton>
           <button type="button" class="btn-close btn-close-white ms-auto" :aria-label="$t('pod.close')" data-testid="dpx-viewer-close" @click="$emit('close')"></button>
         </div>
+        <div class="small mb-2" data-testid="dpx-viewer-colour">
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <span class="text-body-secondary" data-testid="dpx-viewer-colour-summary">{{ summary }}</span>
+            <span v-if="disagree" class="badge text-bg-warning fw-normal" data-testid="dpx-viewer-colour-disagree">{{ $t('outputs.dpx.colour.disagree') }}</span>
+            <BButton variant="link" size="sm" class="p-0" data-testid="dpx-viewer-colour-toggle" :aria-expanded="colourOpen ? 'true' : 'false'" @click="colourOpen = !colourOpen"><i class="fa-solid me-1" :class="colourOpen ? 'fa-chevron-down' : 'fa-chevron-right'"></i>{{ $t('outputs.dpx.colour.panel') }}</BButton>
+          </div>
+          <div v-if="colourOpen" class="colour-panel mt-1 p-2 rounded" data-testid="dpx-viewer-colour-panel">
+            <div class="fw-semibold" data-testid="dpx-viewer-colour-header-title">{{ $t('outputs.dpx.colour.headerHeading') }}</div>
+            <dl v-if="headerRows.length" class="colour-rows mb-2" data-testid="dpx-viewer-colour-header-rows"><template v-for="r in headerRows" :key="r[0]"><dt>{{ r[0] }}</dt><dd class="mb-0" :data-field="r[2]">{{ r[1] }}</dd></template></dl>
+            <div v-else class="text-body-secondary mb-2" data-testid="dpx-viewer-colour-no-header">{{ $t('outputs.dpx.colour.noHeader') }}</div>
+            <div class="fw-semibold">{{ $t('outputs.dpx.colour.recordHeading') }}</div>
+            <dl v-if="recordRows.length" class="colour-rows mb-2" data-testid="dpx-viewer-colour-record-rows"><template v-for="r in recordRows" :key="r[0]"><dt>{{ r[0] }}</dt><dd class="mb-0" :data-field="r[2]">{{ r[1] }}</dd></template></dl>
+            <div v-else class="text-body-secondary mb-2" data-testid="dpx-viewer-colour-no-record">{{ $t('outputs.dpx.colour.noRecord', { file: recordFile }) }}</div>
+            <div data-testid="dpx-viewer-colour-verdict">{{ record ? $t('outputs.dpx.colour.convertsFrom', { colour: record.colour_in, source: $t('outputs.dpx.colour.sourceRecord') }) : $t('outputs.dpx.colour.convertsNone') }}</div>
+          </div>
+        </div>
         <div v-if="review && !reviewSrc && unplayableFiles(review).length" class="alert alert-info py-1 px-2 small mb-2 d-flex align-items-center gap-2 flex-wrap" data-testid="dpx-viewer-review-mov"><span class="badge text-bg-success">{{ $t('outputs.render.badgeReview', { v: versionName(review.version).slice(1) }) }}</span><span>{{ $t('outputs.render.proresMov') }}</span><span v-for="n in unplayableFiles(review)" :key="n" class="d-inline-flex align-items-center gap-1"><span class="font-monospace" data-testid="dpx-viewer-review-mov-name">{{ n }}</span><BButton v-if="base" variant="outline-light" size="sm" data-testid="dpx-viewer-review-download" @click="downloadReview(n)"><i class="fa-solid fa-download me-1"></i>{{ $t('outputs.render.download') }}</BButton></span></div>
         <div v-if="reviewing && unplayableFiles(review).length" class="small text-body-secondary mb-1" data-testid="dpx-viewer-review-files"><span v-for="n in unplayableFiles(review)" :key="n" class="me-2 font-monospace">{{ n }} · {{ $t('outputs.render.notPlayable') }}</span></div>
         <RenderedPlayer v-if="rendered" :src="movieSrc" :fps="fps" @update:fps="(v) => (fps = v)" />
@@ -59,6 +75,7 @@
           </span>
         </div>
         <div class="text-body-secondary small mt-2" data-testid="dpx-viewer-note">{{ $t('outputs.dpx.note') }}</div>
+        <div class="text-body-secondary small" data-testid="dpx-viewer-colour-note">{{ $t('outputs.dpx.colour.previewNote') }}</div>
         <div v-if="error" class="text-danger small mt-2" data-testid="dpx-viewer-error">{{ error }}</div>
       </div>
     </div>
@@ -68,7 +85,7 @@
 <script setup>
 /**
  * DpxViewerModal: a quick look at a DPX sequence (or one DPX file) from a pod's ComfyUI /view. The bytes are fetched, decoded in the page by utils/dpx.js and drawn on a canvas, with the shared transport bar
- * (scrubber, frame step, Play/Pause on Space at 12/24/25/30 fps, Loop) and the arrow keys. A preview only: display-referred values, not colour-managed; DJV is for real review. Open and Download act on the current frame's file.
+ * (scrubber, frame step, Play/Pause on Space at 12/24/25/30 fps, Loop) and the arrow keys. A preview only: display-referred values, not colour-managed (the Colour panel shows what the header and the OCIO record say); DJV is for real review. Open and Download act on the current frame's file.
  * Frames are ~50 MB each over RunPod's proxy, so playback is not real time from the pod: "Cache sequence" downloads and decodes the frames in order (two requests at most, abortable) into memory (1920 wide RGBA, ~8 MB each, 600 MB at most),
  * and Play starts that by itself. The clock (utils/playback.js) never skips a frame: it holds on the shown one ("Buffering frame n") until the next arrives. Without Play, the next frame is fetched in the background.
  */
@@ -78,6 +95,7 @@ import { viewUrl } from '../utils/outputs'
 import { createFrameLoader, frameCache, drawToCanvas, problemOfError } from '../utils/dpx'
 import { createPlayback } from '../utils/playback'
 import { appReader } from '../utils/thumbs'
+import { loadRecord, loadHeaderColour, recordUrl, stemOf, headerDisagrees, transferName } from '../utils/ocio'
 import { errorText } from '../stores/toast'
 import { t } from '../i18n'
 import TransportBar from './TransportBar.vue'
@@ -147,7 +165,7 @@ const player = createPlayback({ count: 0, fps: 24, loop: true, isCached: (i) => 
 let token = 0, raf = 0
 // Empty frames (all black, one flat value, 0 bytes, truncated, missing), found as frames are loaded or cached: index -> problem.
 let problems = new Map()
-const problemsVer = ref(0), curProblem = ref(null), curStats = ref(null)
+const problemsVer = ref(0), curProblem = ref(null), curStats = ref(null), curHeader = ref(null)
 const problemList = computed(() => { problemsVer.value; return [...problems.keys()].sort((a, b) => a - b).map((i) => ({ i, p: problems.get(i) })) })
 const problemBefore = computed(() => [...problemList.value].reverse().find((x) => x.i < index.value))
 const problemAfter = computed(() => problemList.value.find((x) => x.i > index.value))
@@ -155,8 +173,41 @@ const pct = (v) => `${(v * 100).toFixed(1)}%`
 const statsText = computed(() => { const s = curStats.value; return s ? `min ${s.min.map(pct).join(' ')} · max ${s.max.map(pct).join(' ')} · mean ${s.mean.map(pct).join(' ')} · ${t('outputs.dpx.zeroPixels', { pct: pct(s.zeroFraction) })}` : '' })
 const problemText = (p) => t(`outputs.dpx.problem.${p.kind}`, { have: p.have, need: p.need })
 function noteProblem(i, fr) { if (fr.problem && !problems.has(i)) { problems.set(i, fr.problem); problemsVer.value++ } }
-function notePixels(i, fr) { curProblem.value = fr.problem || null; curStats.value = fr.stats || null; noteProblem(i, fr) }
+function notePixels(i, fr) { curProblem.value = fr.problem || null; curStats.value = fr.stats || null; curHeader.value = fr.header || null; noteProblem(i, fr) }
 watch(() => problemList.value.length, (n) => emit('problems', n))
+
+// Colour (docs/ADR-048, amendment 2026-11-20): the header of the frame on screen next to the ComfyUI-OCIO record of its sequence (<stem>.json in the same folder), both through the file mechanism the frames use.
+const colourOpen = ref(false), record = ref(null), peeked = ref(null)
+const recordFile = computed(() => `${stemOf(file.value.filename)}.json`)
+const colourHeader = computed(() => curHeader.value || (rendered.value ? peeked.value : null))   // while the proxy movie shows, no frame is decoded: its first bytes give the transfer
+watch(() => [props.base, file.value.subfolder, file.value.filename, file.value.type], async () => {
+  const f = file.value, u = f.filename ? recordUrl(props.base, f) : ''
+  record.value = null
+  if (!u) return
+  const r = await loadRecord(u, { fallback: readViaApp }).catch(() => null)
+  if (u === (file.value.filename ? recordUrl(props.base, file.value) : '')) record.value = r
+}, { immediate: true })
+watch([() => file.value.filename, rendered], async () => {
+  peeked.value = null
+  if (!rendered.value || !file.value.filename) return
+  const u = urlOf(file.value), h = await loadHeaderColour(u).catch(() => null)
+  if (u === urlOf(file.value)) peeked.value = h
+}, { immediate: true })
+const summary = computed(() => [record.value ? t('outputs.dpx.colour.summaryRecord', { label: record.value.label }) : null, colourHeader.value ? t('outputs.dpx.colour.summaryHeader', { name: transferName(colourHeader.value.transfer) }) : null].filter(Boolean).join(' · ') || t('outputs.dpx.colour.summaryNone'))
+const disagree = computed(() => headerDisagrees(record.value, colourHeader.value))
+const headerRows = computed(() => {
+  const h = curHeader.value, c = colourHeader.value, L = (k) => t(`outputs.dpx.colour.${k}`)
+  if (!c) return []
+  const rows = [[L('transfer'), `${transferName(c.transfer)} (${c.transfer})`, 'transfer'], [L('colorimetric'), `${transferName(c.colorimetric)} (${c.colorimetric})`, 'colorimetric']]
+  if (h) rows.push([L('descriptor'), h.descriptorName, 'descriptor'], [L('bits'), String(h.bits), 'bits'], [L('packing'), t(`outputs.dpx.colour.packing${h.packing}`), 'packing'], [L('encoding'), t(`outputs.dpx.colour.encoding${h.encoding === 1 ? 1 : 0}`), 'encoding'], [L('size'), `${h.width} x ${h.height}`, 'size'])
+  if (h?.timecode) rows.push([L('timecode'), h.timecode, 'timecode'])
+  return rows
+})
+const recordRows = computed(() => {
+  const r = record.value, L = (k) => t(`outputs.dpx.colour.${k}`)
+  if (!r) return []
+  return [[L('colourSpace'), r.colorspace || r.label, 'colourSpace'], [L('interop'), r.colorInteropID, 'interop'], r.gamut && [L('gamut'), r.gamut, 'gamut'], r.chromaticities && [L('chromaticities'), r.chromaticities, 'chromaticities'], r.writer && [L('writer'), r.writer, 'writer'], r.fps && [L('fps'), String(r.fps), 'fps']].filter(Boolean)
+})
 
 const getFrame = (i) => seq.get(i) || (props.frames[i] ? lru.get(urlOf(props.frames[i])) : undefined)
 function seqStore(i, fr) {
@@ -204,7 +255,7 @@ async function show() {
   if (fgUrl && fgUrl !== url && !bg.has(fgUrl)) loader.abort(fgUrl)   // the frame we left is no longer wanted (unless the cache is fetching it)
   fgUrl = url
   if (hit && canvas.value) { drawNow(hit, i); if (!playing.value && !cacheCtl) prefetch(i + 1); return }
-  progress.value = { got: 0, total: 0 }
+  progress.value = { got: 0, total: 0 }; curHeader.value = null
   loading.value = !hit
   try {
     const fr = hit || await fetchIndex(i, 1, (got, total) => { if (urlOf(file.value) === url) progress.value = { got, total } })
@@ -279,7 +330,7 @@ watch(streams, (v) => {   // more or fewer frames at once: the loader changes it
   if (cacheCtl) { stopCache(); startCache() }
 })
 watch(() => props.frames, (fr) => {
-  pause(); stopCache(); loader.abortAll(); lru = frameCache(6); seq = new Map(); seqBytes = 0; problems = new Map(); problemsVer.value++; curProblem.value = null; curStats.value = null; cachedCount.value = 0; cachedVer.value++; tooLong.value = false; fgUrl = ''; waitLoad = -1
+  pause(); stopCache(); loader.abortAll(); lru = frameCache(6); seq = new Map(); seqBytes = 0; problems = new Map(); problemsVer.value++; curProblem.value = null; curStats.value = null; curHeader.value = null; cachedCount.value = 0; cachedVer.value++; tooLong.value = false; fgUrl = ''; waitLoad = -1
   forceFull.value = false; hintErr.value = null; wantReview.value = props.startReview
   { const nf = fpsFromName(fr[0]?.filename) || 24; fps.value = nf; player.setFps(nf) }   // the sequence's own rate from its name (_23.976_), else 24
   player.setCount(fr.length); player.seek(0); token++; shown.value = false; drawn.value = -1; error.value = ''; loading.value = false
@@ -319,5 +370,8 @@ async function download() {
 .viewer-card { background: #20232a; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 0.5rem; padding: 1rem; max-width: min(96vw, 1400px); max-height: 94vh; overflow: auto; width: 100%; }
 .viewer-stage { background: #14161b; border-radius: 0.375rem; padding: 0.5rem; min-height: 8rem; }
 .viewer-media { max-width: 100%; max-height: 58vh; }
+.colour-panel { background: #14161b; }
+.colour-rows { display: grid; grid-template-columns: max-content 1fr; gap: 0.1rem 0.75rem; margin-top: 0.25rem; }
+.colour-rows dt { font-weight: 400; color: var(--bs-secondary-color); }
 .loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(20, 22, 27, 0.55); }
 </style>
