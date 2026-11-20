@@ -6,7 +6,7 @@
  * ComfyUI's own run history is not kept here: it lives on the pod and is read from it (`runs`).
  * Recording never throws: a history that cannot be written must not stop a pod from starting.
  */
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, writeFileSync } from 'node:fs'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { dirname } from 'node:path'
 import { historyFile } from './paths.js'
@@ -17,7 +17,7 @@ export interface JobEvent { ts: string; kind: 'job'; job: 'pull' | 'remove' | 'b
   /** What started a sync run (ADR-046): 'auto-sync:output' (a run's files, pulled at once), 'auto-sync:feed' (the change feed), 'auto-sync:reconcile' (found by the reconciler), 'auto-sync:push' (this PC's watcher), 'auto-sync:enable' (the catch-up pull when Auto sync was turned on). Absent: a person pressed Sync. Old entries have none. */
   trigger?: string }
 /** A change to something that is not a pod or a job: a volume made, resized, deleted or made the default; the configuration saved or imported; a shot pack imported; an adapter saved. */
-export interface ChangeEvent { ts: string; kind: 'change'; area: 'volume' | 'configuration' | 'import' | 'adapter' | 'pod'; action: string; what: string; detail?: string }
+export interface ChangeEvent { ts: string; kind: 'change'; area: 'volume' | 'configuration' | 'import' | 'adapter' | 'pod' | 'outputs'; action: string; what: string; detail?: string }
 export type HistoryEvent = (PodEvent | JobEvent | ChangeEvent) & Origin
 /** Who did it: `source` is the app's window (default) or an MCP tool call (`tool`, and the `approved_by` of a spend). Taken from the context the caller runs in (`runAs`). */
 export interface Origin { source?: 'app' | 'mcp'; tool?: string; approved_by?: string; /** the MCP client's name when the session gave one */ client?: string }
@@ -47,16 +47,43 @@ export function record(e: Without<HistoryEvent>, now: () => Date = () => new Dat
     changed()
   } catch { /* never in the way */ }
 }
+/** The last ~64 KB of the file as lines (the whole file when it is smaller): enough to find a pod's newest event without reading and parsing all of history on every record. */
+const TAIL_BYTES = 64 * 1024
+function tailLines(f: string): string[] {
+  let fd = -1
+  try {
+    fd = openSync(f, 'r')
+    const size = fstatSync(fd).size, start = Math.max(0, size - TAIL_BYTES), buf = Buffer.alloc(size - start)
+    readSync(fd, buf, 0, buf.length, start)
+    const lines = buf.toString('utf8').split('\n')
+    if (start > 0) lines.shift()   // the first line is cut
+    return lines.filter(Boolean)
+  } catch { return [] } finally { if (fd >= 0) try { closeSync(fd) } catch { /* ignore */ } }
+}
 /** Is the newest event of this pod the same action, within five minutes? (A change seen by `observe` and recorded by the action itself is one event.) */
 function sameAsLast(podId: string, action: string, at: Date): boolean {
-  const last = list({ kind: 'pod', limit: MAX_LINES }).find((x) => x.kind === 'pod' && x.pod_id === podId) as PodEvent | undefined
-  return !!last && last.action === action && Math.abs(at.getTime() - new Date(last.ts).getTime()) < 5 * 60_000
+  const lines = tailLines(historyFile())
+  for (let i = lines.length - 1; i >= 0; i--) {
+    let x: HistoryEvent
+    try { x = JSON.parse(lines[i]) as HistoryEvent } catch { continue }
+    if (x.kind === 'pod' && x.pod_id === podId) { const last = x as PodEvent; return last.action === action && Math.abs(at.getTime() - new Date(last.ts).getTime()) < 5 * 60_000 }
+  }
+  return false
 }
+/** Lines in the file per path, counted once from the file and then in memory: a record no longer re-reads and splits the whole file to know whether to trim. Another process appending only makes the count low, so the trim comes a little later. */
+const lineCounts = new Map<string, number>()
 function trim(f: string) {
   try {
-    const lines = readFileSync(f, 'utf8').split('\n').filter(Boolean)
-    if (lines.length > MAX_LINES * 1.5) writeFileSync(f, lines.slice(-MAX_LINES).join('\n') + '\n')
-  } catch { /* the next write tries again */ }
+    let n = lineCounts.get(f)
+    if (n === undefined) n = readFileSync(f, 'utf8').split('\n').filter(Boolean).length   // once per file per process
+    else n++
+    lineCounts.set(f, n)
+    if (n > MAX_LINES * 1.5) {
+      const lines = readFileSync(f, 'utf8').split('\n').filter(Boolean)
+      if (lines.length > MAX_LINES * 1.5) writeFileSync(f, lines.slice(-MAX_LINES).join('\n') + '\n')
+      lineCounts.set(f, Math.min(lines.length, MAX_LINES))
+    }
+  } catch { lineCounts.delete(f) /* the next write tries again */ }
 }
 
 /** The events, newest first. `kind` narrows to pod or job events; `limit` defaults to 200. */
@@ -152,4 +179,15 @@ export function observe(live: LivePod[], now: () => Date = () => new Date()): nu
   }
   for (const [id, s] of state) if (s.known !== 'gone' && !seen.has(id)) rec({ kind: 'pod', action: 'deleted', pod_id: id, name: s.name, detail: 'no longer on the account' })
   return n
+}
+
+// ----- note: a window's own line in the History (the renderer's one narrow way in) -----
+const scrub = (v: unknown, max: number): string => String(v ?? '').replace(/https?:\/\/\S+/gi, '<url>').replace(/\b(?:AKIA|ASIA)[A-Z0-9]{12,}\b/g, '<key>').replace(/\b[A-Za-z0-9+/_=-]{32,}\b/g, '<token>').slice(0, max)
+/** Record a change event from the app's windows: only kind `change` and area `outputs`, strings only, truncated and redacted; anything else is ignored. Returns whether it was recorded. */
+export function note(input: unknown): boolean {
+  const o = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>
+  if (o.kind !== 'change' || o.area !== 'outputs') return false
+  if (typeof o.action !== 'string' || typeof o.what !== 'string' || !o.action || !o.what) return false
+  record({ kind: 'change', area: 'outputs', action: scrub(o.action, 60), what: scrub(o.what, 200), ...(typeof o.detail === 'string' && o.detail ? { detail: scrub(o.detail, 500) } : {}) })
+  return true
 }

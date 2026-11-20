@@ -2,7 +2,7 @@
   <div v-if="!fl.old && fl.loaded" class="mt-4" data-testid="queue-failures">
     <h6 class="mb-2">{{ $t('queue.fail.title', { n: fl.count }) }}</h6>
     <div v-if="!fl.items.length" class="text-body-secondary small" data-testid="failures-none">{{ $t('queue.fail.none') }}</div>
-    <div v-for="f in fl.items" :key="f.id" class="border rounded p-2 mb-2 small" :class="{ 'border-danger': focus === f.id }" data-testid="failure-row" :data-id="f.id" :data-stage="f.stage">
+    <div v-for="f in pg.rows" :key="f.id" class="border rounded p-2 mb-2 small" :class="{ 'border-danger': focus === f.id }" data-testid="failure-row" :data-id="f.id" :data-stage="f.stage">
       <div class="d-flex align-items-center gap-2 flex-wrap">
         <span class="text-nowrap" data-testid="failure-time" :title="agoShort(f.time)">{{ whenText(f.time) }}</span>
         <strong data-testid="failure-shot">{{ f.shot }}</strong><span class="font-monospace text-truncate" style="max-width: 18rem" :title="f.graph" data-testid="failure-graph">{{ f.graph }}</span><span v-if="f.version !== ''" data-testid="failure-version">v{{ String(f.version).replace(/^v/i, '').padStart(3, '0') }}</span>
@@ -23,6 +23,12 @@
       <div v-if="f.attempt > 1" class="text-body-secondary" data-testid="failure-attempt">{{ $t('queue.fail.attempt', { n: f.attempt }) }}</div>
       <div v-if="errors[f.id]" class="text-danger" data-testid="failure-error">{{ errors[f.id] }}</div>
     </div>
+    <div v-if="fl.items.length > PAGE_SIZES[0]" class="d-flex align-items-center gap-2 flex-wrap" data-testid="failures-pager">
+      <BButton size="sm" variant="outline-light" :disabled="pg.page === 0" data-testid="failures-page-prev" @click="page--"><i class="fa-solid fa-chevron-left me-1"></i>{{ $t('queue.fail.prev') }}</BButton>
+      <span data-testid="failures-page-info">{{ pg.info }}</span>
+      <BButton size="sm" variant="outline-light" :disabled="pg.page >= pg.count - 1" data-testid="failures-page-next" @click="page++">{{ $t('queue.fail.next') }}<i class="fa-solid fa-chevron-right ms-1"></i></BButton>
+      <select v-model.number="pageSize" class="form-select form-select-sm ms-auto" style="width: auto" :aria-label="$t('queue.fail.pageSize')" data-testid="failures-page-size"><option v-for="n in PAGE_SIZES" :key="n" :value="n">{{ $t('queue.fail.perPage', { n }) }}</option></select>
+    </div>
   </div>
 </template>
 
@@ -33,9 +39,17 @@ import { useFailuresStore } from '../stores/failures'
 import { useUiStore } from '../stores/ui'
 import { errorText } from '../stores/toast'
 import { whenText, agoShort } from '../utils/when'
+import { paged, PAGE_SIZES } from '../utils/generations'
 
 const fl = useFailuresStore(), ui = useUiStore()
 const busy = reactive({}), errors = reactive({}), copied = ref('')
+// Paging (5, 10 or 25; 10 by default): newest first as the store gives them; a new size starts at page 1; a page that empties moves back
+const page = ref(0), pageSize = ref(10)
+const pg = computed(() => paged(fl.items, page.value, pageSize.value))
+watch(pageSize, () => { page.value = 0 })
+watch(() => pg.value.page, (p) => { if (p !== page.value) page.value = p })
+// Opening a failure from a job (Queue link) shows the page it is on
+watch(() => ui.failureFocus, (id) => { const i = fl.items.findIndex((x) => x.id === id); if (i >= 0) page.value = Math.floor(i / pageSize.value) }, { immediate: true })
 const focus = computed(() => ui.failureFocus)
 const first = (m) => String(m || '').split('\n')[0]
 async function retry(f) { busy[f.id] = true; errors[f.id] = ''; try { await fl.retry(f.id) } catch (e) { errors[f.id] = errorText(e) } finally { busy[f.id] = false } }

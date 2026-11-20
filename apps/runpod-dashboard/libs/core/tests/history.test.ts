@@ -84,6 +84,21 @@ describe('history onChange', () => {
   })
 })
 
+describe('history note', () => {
+  it('records only a whitelisted outputs change line, as redacted truncated strings', () => {
+    expect(history.note({ kind: 'change', area: 'outputs', action: 'preview failed', what: 'seq.####.dpx', detail: 'GET https://x.test/view?k=1 failed ' + 'a b '.repeat(300), extra: 'x' })).toBe(true)
+    expect(history.note({ kind: 'pod', area: 'outputs', action: 'a', what: 'b' })).toBe(false)
+    expect(history.note({ kind: 'change', area: 'volume', action: 'a', what: 'b' })).toBe(false)
+    expect(history.note({ kind: 'change', area: 'outputs', action: 5, what: 'b' })).toBe(false)
+    expect(history.note(null)).toBe(false)
+    const e = history.list() as history.ChangeEvent[]
+    expect(e).toHaveLength(1)
+    expect(e[0]).toMatchObject({ kind: 'change', area: 'outputs', action: 'preview failed', what: 'seq.####.dpx' })
+    expect(e[0].detail).toContain('<url>'); expect(e[0].detail!.length).toBeLessThanOrEqual(500)
+    expect(Object.keys(e[0]).sort()).toEqual(['action', 'area', 'detail', 'kind', 'ts', 'what'])
+  })
+})
+
 describe('history origin and changes', () => {
   it('events recorded under runAs say they came from MCP, with the tool and the approver; change events list', async () => {
     await history.runAs({ source: 'mcp', tool: 'create_pod', approved_by: 'Lucas' }, async () => { await Promise.resolve(); history.record({ kind: 'pod', action: 'created', pod_id: 'a', name: 'A' }) })
@@ -103,5 +118,32 @@ describe('history origin and changes', () => {
     const ch = history.list({ kind: 'change' }).map((e) => (e as history.ChangeEvent).what)
     expect(ch).toContain('Default Configuration')
     expect(history.list({ kind: 'pod' }).some((e) => (e as history.PodEvent).action === 'recreated')).toBe(true)
+  })
+
+  it('a record does not re-read the file: the line count is kept in memory, the file is trimmed past 1.5 times the limit, and the duplicate check still finds the pod', async () => {
+    const { writeFileSync, readFileSync, appendFileSync } = await import('node:fs')
+    const f = join(dir, 'history.jsonl')
+    const seed = Array.from({ length: 7000 }, (_, i) => JSON.stringify({ kind: 'job', job: 'sync', state: 'done', what: 'x' + i, ts: new Date(Date.UTC(2026, 10, 1, 0, 0, i)).toISOString() })).join('\n') + '\n'
+    writeFileSync(f, seed)
+    history.record({ kind: 'job', job: 'sync', state: 'done', what: 'first' })   // counts the file once
+    // 7,001 lines is under 7,500: nothing trimmed, and a record is only an append
+    appendFileSync(f, '')
+    const t0 = performance.now(); for (let i = 0; i < 300; i++) history.record({ kind: 'job', job: 'sync', state: 'done', what: 'n' + i }); const after = performance.now() - t0
+    // what the old trim did on every record: read the whole file and split it
+    const t1 = performance.now(); for (let i = 0; i < 300; i++) readFileSync(f, 'utf8').split('\n').filter(Boolean); const before = performance.now() - t1
+    console.log('history.record x300 on a 7,000-line file: ' + after.toFixed(0) + ' ms now, ' + before.toFixed(0) + ' ms for the old read-and-split alone')
+    expect(readFileSync(f, 'utf8').split('\n').filter(Boolean).length).toBe(7301)
+    for (let i = 0; i < 300; i++) history.record({ kind: 'job', job: 'sync', state: 'done', what: 'm' + i })   // 7,601 > 7,500: trimmed to the newest 5,000
+    const lines = readFileSync(f, 'utf8').split('\n').filter(Boolean)
+    expect(lines.length).toBeLessThan(5400)
+    expect(JSON.parse(lines[lines.length - 1]).what).toBe('m299')
+    // the duplicate check reads the tail only and still finds the pod's newest event
+    history.record({ kind: 'pod', action: 'stopped', pod_id: 'p1', name: 'P' }, () => new Date('2026-11-04T10:00:00Z'))
+    for (let i = 0; i < 400; i++) history.record({ kind: 'job', job: 'sync', state: 'done', what: 'z' + i })
+    history.record({ kind: 'pod', action: 'stopped', pod_id: 'p1', name: 'P' }, () => new Date('2026-11-04T10:01:00Z'))
+    history.record({ kind: 'pod', action: 'started', pod_id: 'p1', name: 'P' }, () => new Date('2026-11-04T10:02:00Z'))
+    history.record({ kind: 'pod', action: 'started', pod_id: 'p1', name: 'P' }, () => new Date('2026-11-04T10:03:00Z'))
+    const pe = history.list({ kind: 'pod' }).filter((e) => (e as history.PodEvent).pod_id === 'p1').map((e) => (e as history.PodEvent).action)
+    expect(pe).toEqual(['started', 'stopped'])   // the repeated stopped and the repeated started were each one event
   })
 })
