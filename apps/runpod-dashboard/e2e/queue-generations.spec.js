@@ -241,3 +241,17 @@ test('the cards are paged (10 a page, running ones first): Previous and Next, "1
   await expect(gens(q).getByTestId('generations-page-prev')).toBeDisabled()
   await gens(q).getByTestId('generations-page-size').selectOption('5'); await expect(info).toHaveText('1–5 of 21')
 })
+
+test('a failed generation: a long error is cut with Details that opens the whole text; Retry starts its unfinished sequences again', async ({ page, api }) => {
+  const long = `ffmpeg exited 1: ${'x'.repeat(300)} END`
+  api.state.renders = { jobs: [job({ state: 'failed', error: long })] }
+  await page.goto('/')
+  const q = await openQueue(page)
+  const err = gens(q).getByTestId('generations-job-error')
+  await expect(err.getByTestId('error-text-short')).not.toContainText('END')
+  await err.getByTestId('error-text-open').click()
+  await expect(page.getByTestId('error-text-full')).toContainText('END')
+  await page.getByTestId('error-text-modal').getByRole('button', { name: 'Close', exact: true }).last().click()
+  await gens(q).getByTestId('generations-job-retry').click()
+  await expect.poll(() => api.state.renders.retried || []).toHaveLength(1)
+})

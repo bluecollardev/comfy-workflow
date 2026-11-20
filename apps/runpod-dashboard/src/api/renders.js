@@ -17,6 +17,7 @@ const ipc = core && {
   start: guard((o) => core.invoke('renders', 'start', [o]), mustRestart),
   status: guard((id) => core.invoke('renders', 'status', id ? [id] : []), OLD),
   cancel: guard((id) => core.invoke('renders', 'cancel', [id]), mustRestart),
+  retry: guard((id) => core.invoke('renders', 'retry', [id]), mustRestart),
   proxies: guard((o) => core.invoke('renders', 'proxies', [o]), OLD),
   clearLocal: guard(() => core.invoke('renders', 'clearLocal', []), mustRestart),
 }
@@ -25,6 +26,7 @@ const http = {
   start: guard(async (o) => (await axios.post(`${API_BASE}/renders/start`, o)).data, mustRestart),
   status: guard(async (id) => (await axios.get(`${API_BASE}/renders/status`, { params: id ? { job_id: id } : {} })).data, OLD),
   cancel: guard(async (id) => (await axios.post(`${API_BASE}/renders/cancel`, { job_id: id })).data, mustRestart),
+  retry: guard(async (id) => (await axios.post(`${API_BASE}/renders/retry`, { job_id: id })).data, mustRestart),
   proxies: guard(async (o) => (await axios.post(`${API_BASE}/renders/proxies`, o)).data, OLD),
   clearLocal: guard(async () => (await axios.delete(`${API_BASE}/renders/local`)).data, mustRestart),
 }
@@ -42,6 +44,7 @@ export const rendersAPI = {
   start: withCode(async (o) => (await raw.start(o)) || {}),
   status: async (id) => { const r = await raw.status(id); return { old: !!r?.old, jobs: Array.isArray(r?.jobs) ? r.jobs : [] } },
   cancel: withCode(async (id) => (await raw.cancel(id)) || {}),
+  retry: withCode(async (id) => (await raw.retry(id)) || {}),
   proxies: async (o) => { const r = await raw.proxies(o); return { old: !!r?.old, items: Array.isArray(r?.items) ? r.items : [], deliverables: Array.isArray(r?.deliverables) ? r.deliverables : [] } },
   clearLocal: withCode(async () => { const r = (await raw.clearLocal()) || {}; return { removed: r.removed ?? 0, bytes: r.bytes ?? 0 } }),
 }

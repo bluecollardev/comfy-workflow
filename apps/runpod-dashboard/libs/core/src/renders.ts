@@ -47,6 +47,7 @@ export interface PlannedSequence extends Omit<Sequence, 'start_timecode'> { /** 
 export type SeqState = 'waiting' | 'rendering' | 'rendered' | 'pulled' | 'done' | 'failed' | 'skipped' | 'incomplete'
 export interface SeqView { /** the OCIO record this sequence's colour came from (ComfyUI-OCIO), and whether the DPX header disagrees with it */ colour_source?: 'ocio-record'; ocio?: OcioInfo; header_disagrees?: boolean; /** for a failed or incomplete sequence: stage, node, message, recovery, retryable in words (never just the raw error) */ failure?: failures.Explained; /** the flags that refused it, or warned (Tunnel preset) */ flags?: tunnelj.Flag[]; /** where its start timecode came from */ timecode_source?: tunnelj.TimecodeSource | null; start_timecode?: string | null; /** why a sequence was skipped ('already rendered', 'already has review v002') */ reason?: string; clip_name?: string; outs?: string[]; shot?: string; version?: string; complete?: boolean; partial?: boolean; missing?: Range[]; where: 'pod' | 'local'; dir: string; name: string; state: SeqState; frames_done: number; frames_total: number; out: string; bytes: number; error: string; warning?: string }
 export interface JobView {
+  /** the request this job started with, so a failed one can be tried again (`retry`) */ request?: StartRequest
   /** whether this job copies its renders to this PC (Sync); false: they stay on the volume (and are published from there) */ pull?: boolean
   /** for a failed job: the failure in words (what the MCP shows) */ failure?: failures.Explained
   /** who started it: the window, an MCP tool call (with the client's name), Auto-publish; `external` = another process (the MCP server, a script) owns it */ origin?: jobsregistry.Origin; mcp_client?: string; external?: boolean
@@ -1089,6 +1090,7 @@ export async function start(o: StartRequest): Promise<{ job_id: string }> {
     frames_total: seqs.reduce((a, s) => a + s.frames, 0) * (kind === 'review' ? codecs.length : 1), rate_fps: 0, current: '',
     sequences: seqs.map((s) => ({ where: chosen, dir: s.dir, name: s.name, clip_name: clipOf(s), state: 'waiting', frames_done: 0, frames_total: s.frames * (kind === 'review' ? codecs.length : 1), out: proxyRel(s, width), bytes: 0, error: '' })), pulled_files: 0, pulled_bytes: 0, error: '', summary: '' }
   const job: Job = { ...(configured ? { configured } : {}), colourMode: cmode, colourSet: st.colour ?? { mode: 'known' }, pubIds: [], pubDirs: new Set(), pubErr: '', ...(tunnel ? { preset: 'tunnel' as const } : {}), ov, ...(pre ? { pre } : {}), clipMemo: new Map(), skipExisting: skipWanted, ...(o.publish ? { publish: { targets: [...o.publish.targets], ...(o.publish.message ? { message: o.publish.message } : {}), ...(o.publish.round ? { round: o.publish.round } : {}), ...(o.publish.clip_names ? { clip_names: o.publish.clip_names } : {}), edl_override: { ...ov, ...(o.publish.edl_override ?? {}) } } } : {}), versions: new Map(), view, seqs, kind, codecs, approvedBy: view.approved_by, allowPartial: !!o.allow_partial, pull: o.pull ?? st.pull, fps, auto: want === 'auto', abort: new AbortController(), started: deps.now(), done: Promise.resolve() }
+  view.request = { ...o, sequences: seqs }
   jobs.set(id, job)
   { // where it came from, and visible to the other processes while it runs (docs/ADR-050, 'MCP actions are shown in the Queue')
     const who = history.currentOrigin(), origin: jobsregistry.Origin = o.trigger === 'auto-publish' ? 'auto-publish' : who?.source === 'mcp' ? 'mcp' : 'window'
@@ -1100,6 +1102,18 @@ export async function start(o: StartRequest): Promise<{ job_id: string }> {
   job.done = prev.then(() => run(job)).catch(() => undefined)
   chain.set(key, job.done)
   return { job_id: id }
+}
+
+/** Try a failed or cancelled job again: the sequences that did not finish, with the request it started with (what is done is skipped). */
+export async function retry(jobId: string): Promise<{ job_id: string }> {
+  const v = status(jobId).jobs[0] ?? finished.find((x) => x.job_id === jobId)
+  if (!v) throw new CoreError(404, `No such render job: ${jobId}`)
+  if (v.state !== 'failed' && v.state !== 'cancelled') throw bad('Only a failed or cancelled render job can be tried again')
+  const req = v.request; if (!req) throw bad('This job was started by an older version of the app and cannot be retried: start it again from Outputs')
+  const left = new Set(v.sequences.filter((s) => s.state !== 'done' && s.state !== 'skipped').map((s) => `${s.dir}\0${s.name}`))
+  const seqs = (req.sequences as Sequence[]).filter((s) => left.has(`${s.dir}\0${s.name}`))
+  if (!seqs.length) throw bad('Every sequence of this job finished: nothing to try again')
+  return start({ ...req, sequences: seqs, trigger: 'manual' })
 }
 
 export function cancel(jobId: string): JobView {

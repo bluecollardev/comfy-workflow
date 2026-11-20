@@ -733,6 +733,7 @@ export async function mockApi(page, state) {
         return json({ job_id: `job-${n}` })
       }
       if (path === '/renders/status') return json({ jobs: rs.jobs.filter((j) => !query.job_id || j.job_id === query.job_id) })
+      if (path === '/renders/retry') { const j = rs.jobs.find((x) => x.job_id === body.job_id); if (!j) return json({ detail: 'No such render job' }, 404); rs.retried = [...(rs.retried || []), body.job_id]; const n = rs.jobs.length + 1; rs.jobs.push({ ...j, job_id: `job-${n}`, state: 'rendering', error: '', finished_at: null }); return json({ job_id: `job-${n}` }) }
       if (path === '/renders/cancel') { rs.cancelled.push(body.job_id); const j = rs.jobs.find((x) => x.job_id === body.job_id); if (j) { j.state = 'cancelled'; j.finished_at = 'now' } return json(j || {}) }
       if (path === '/renders/proxies') {
         rs.proxyCalls.push(body)

@@ -1333,8 +1333,9 @@
       "already": "approved"
     }
   },
+  "errorText": { "more": "Details", "title": "Error", "close": "Close", "copy": "Copy", "copied": "Copied" },
   "queue": {
-    "export": "Export log",
+    "export": "Export",
     "exportCsv": "CSV",
     "exportPdf": "PDF",
     "outputsGenerate": "After each pod's workflows: generate the review videos, as {who}",
@@ -1400,6 +1401,7 @@
       "phase": { "uploading": "Uploading", "posting": "Posting to Slack" }
     },
     "gen": {
+      "retry": "Retry",
       "playNone": "Nothing to play yet",
       "skippedN": "{n} skipped",
       "title": "Generations",
@@ -1494,6 +1496,7 @@
         "openFolder": "Open this folder in the AWS console", "download": "Download this file", "notKept": "The signed link is not kept after a restart: publish again to get a new one", "group": { "folder": "Folder links", "file": "File links", "preview": "Preview image" }
       },
       "ret": {
+      "retryShots": "Retry failed ({n})",
         "round": "Round",
         "roundNeeded": "Publishing to a return needs a round name",
         "roundBad": "A round name is 3 to 100 letters, digits, dots, dashes or underscores.",
