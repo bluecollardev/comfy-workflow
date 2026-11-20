@@ -208,6 +208,12 @@ test.describe('Queue > Publishing: a publish of several shots', () => {
     await q.getByTestId('publish-links-file-toggle').click()
     await expect(q.locator('[data-testid="publish-link"][data-kind="file"]')).toHaveCount(0)
   })
+  test('a job from an older version cannot be sent again: its Retry buttons stay, disabled, with the reason', async ({ page, api }) => {
+    setup(api, { jobs: [parent({ state: 'failed', retryable: false, failed: [{ path: 'a.dpx', error: 'RequestTimeout' }], children: [child('c1', 'archival-080', 'failed', { error: 'no data for 300 s', rate: 0 })] })] })
+    await page.goto('/'); const q = await openQ(page)
+    for (const id of ['publish-retry-failed', 'publish-child-retry']) { await expect(q.getByTestId(id)).toBeVisible(); await expect(q.getByTestId(id)).toBeDisabled(); await expect(q.getByTestId(id)).toHaveAttribute('title', /older version of the app/) }
+    expect(api.state.publish.retries || []).toHaveLength(0)
+  })
   test('a parent card shows its children as rows with state, files, bytes and rate; Retry only on a failed one; Cancel on a running one; Cancel all on the parent', async ({ page, api }) => {
     setup(api, { jobs: [parent({ children: [child('c1', 'archival-077', 'done'), child('c2', 'archival-084', 'uploading'), child('c3', 'cgi-042', 'failed', { error: 'Access Denied', rate: 0 })], manifest: { state: 'pending' } })] })
     await page.goto('/'); const q = await openQ(page)

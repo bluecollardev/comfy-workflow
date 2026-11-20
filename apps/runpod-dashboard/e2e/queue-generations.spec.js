@@ -256,3 +256,11 @@ test('a failed generation: a long error is cut with Details that opens the whole
   await expect.poll(() => api.state.renders.retried || []).toHaveLength(1)
   await expect(page.getByTestId('toast').first()).toContainText('Retrying')   // feedback: a toast
 })
+
+test('a failed generation from an older version: Retry is shown, disabled, with the reason', async ({ page, api }) => {
+  api.state.renders = { jobs: [job({ state: 'failed', error: 'ffmpeg exited', retryable: false })] }
+  await page.goto('/')
+  const q = await openQueue(page)
+  const b = gens(q).getByTestId('generations-job-retry')
+  await expect(b).toBeVisible(); await expect(b).toBeDisabled(); await expect(b).toHaveAttribute('title', /older version of the app/)
+})

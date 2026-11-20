@@ -12,11 +12,11 @@
         </div>
         <BButton v-if="active" size="sm" variant="outline-warning" class="flex-shrink-0 ms-auto" data-testid="publish-cancel" @click="store.cancel(job.job_id)"><i class="fa-solid fa-stop me-1"></i>{{ $t(children.length ? 'publish.ret.cancelAll' : 'publish.modal.cancel') }}</BButton>
       </div>
-      <div v-if="failedKids.length && !active && !failed.length" class="mt-1" data-testid="publish-retry-shots"><BButton size="sm" variant="outline-warning" :disabled="retryingShots" data-testid="publish-retry-all" @click="retryShots"><BSpinner v-if="retryingShots" small class="me-1" /><i v-else class="fa-solid fa-rotate me-1"></i>{{ $t('publish.ret.retryShots', { n: failedKids.length }) }}</BButton><span v-if="retryErr" class="text-danger small ms-2" data-testid="publish-retry-error"><ErrorText :text="retryErr" /></span></div>
+      <div v-if="failedKids.length && !active && !failed.length" class="mt-1" data-testid="publish-retry-shots"><BButton size="sm" variant="outline-warning"  data-testid="publish-retry-all" :disabled="retryingShots || !canRetry" :title="canRetry ? '' : $t('publish.ret.cannotRetry')" @click="retryShots"><BSpinner v-if="retryingShots" small class="me-1" /><i v-else class="fa-solid fa-rotate me-1"></i>{{ $t('publish.ret.retryShots', { n: failedKids.length }) }}</BButton><span v-if="retryErr" class="text-danger small ms-2" data-testid="publish-retry-error"><ErrorText :text="retryErr" /></span></div>
       <div v-if="job.phase"class="small text-info" data-testid="publish-job-phase" :data-phase="job.phase">{{ $t(`publish.backfill.phase.${job.phase}`) }}</div>
       <div v-if="job.uploaded != null || failed.length" class="small" data-testid="publish-job-result">{{ $t('publish.backfill.result', { uploaded: job.uploaded ?? job.files_done ?? 0, there: job.skipped ?? 0, failed: failed.length }) }}</div>
       <div v-for="f in failed" :key="f.path" class="small text-danger" data-testid="publish-job-failed" :data-path="f.path"><span class="font-monospace">{{ f.path }}</span>: <ErrorText :text="String(f.error || '')" /></div>
-      <BButton v-if="failed.length && !active" size="sm" variant="outline-warning" class="mt-1" data-testid="publish-retry-failed" :disabled="retryingShots" @click="retryFailed"><BSpinner v-if="retryingShots" small class="me-1" /><i v-else class="fa-solid fa-rotate me-1"></i>{{ $t('publish.backfill.retry') }}</BButton>
+      <BButton v-if="failed.length && !active" size="sm" variant="outline-warning" class="mt-1" data-testid="publish-retry-failed" :disabled="retryingShots || !canRetry" :title="canRetry ? '' : $t('publish.ret.cannotRetry')" @click="retryFailed"><BSpinner v-if="retryingShots" small class="me-1" /><i v-else class="fa-solid fa-rotate me-1"></i>{{ $t('publish.backfill.retry') }}</BButton>
       <div v-if="retryErr && failed.length" class="small text-danger" data-testid="publish-retry-error-files"><ErrorText :text="retryErr" /></div>
       <!-- a publish of several shots is a parent job: one row per shot, each with its own state, Retry (failed only) and Cancel -->
       <div v-if="children.length" class="mt-2" data-testid="publish-children" :data-open="childrenOpen ? 'true' : 'false'">
@@ -27,7 +27,7 @@
             <span class="badge" :class="childClass(c.state)" data-testid="publish-child-state">{{ $t(`publish.modal.state.${c.state}`, c.state) }}</span>
             <span data-testid="publish-child-files">{{ $t('publish.ret.childFiles', { n: c.files ?? 0 }) }}</span><span data-testid="publish-child-bytes">{{ formatBytes(c.bytes || 0) }}</span><span v-if="c.rate" class="text-body-secondary" data-testid="publish-child-rate">{{ $t('publish.modal.rate', { rate: formatBytes(c.rate) }) }}</span>
             <span v-if="c.error" class="text-danger" data-testid="publish-child-error"><ErrorText :text="String(c.error)" /></span>
-            <BButton v-if="c.state === 'failed'" size="sm" variant="outline-warning" class="ms-auto" data-testid="publish-child-retry" :disabled="retryingIds.includes(c.id)" @click="retryOne(c)"><BSpinner v-if="retryingIds.includes(c.id)" small class="me-1" /><i v-else class="fa-solid fa-rotate me-1"></i>{{ $t('publish.backfill.retry') }}</BButton>
+            <BButton v-if="c.state === 'failed'" size="sm" variant="outline-warning" class="ms-auto" data-testid="publish-child-retry" :disabled="retryingIds.includes(c.id) || !canRetry" :title="canRetry ? '' : $t('publish.ret.cannotRetry')" @click="retryOne(c)"><BSpinner v-if="retryingIds.includes(c.id)" small class="me-1" /><i v-else class="fa-solid fa-rotate me-1"></i>{{ $t('publish.backfill.retry') }}</BButton>
             <BButton v-if="['queued', 'uploading'].includes(c.state)" size="sm" variant="outline-warning" class="ms-auto" data-testid="publish-child-cancel" @click="store.cancel(c.id)">{{ $t('publish.modal.cancel') }}</BButton>
           </div>
         </div>
@@ -96,6 +96,8 @@ const failedKids = computed(() => children.value.filter((c) => c.state === 'fail
 /** Every failed shot of the job tried again, one after the other (the shots that are done are not sent again). */
 const toast = useToastStore()
 const retryingIds = ref([])
+/** A job from before the app kept each run's request cannot be sent again: its Retry buttons show but are off, with the reason. */
+const canRetry = computed(() => props.job.retryable !== false)
 /** One shot's own Retry: a spinner while it is asked, a toast saying what started or why it could not. */
 async function retryOne(c) {
   retryingIds.value = [...retryingIds.value, c.id]
