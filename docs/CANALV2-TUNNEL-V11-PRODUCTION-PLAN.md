@@ -193,7 +193,7 @@ Not every element is in the same state, so the delivery is handled by case. **Ru
 
 **The mono graphs that make the DPX (checked on the volume, 2026-11-20).** The DPX of the 17 came from per-clip graphs in the volume rounds `mono_v015` (337 graphs, 25 shots), `mono_v016` (131), `mono_v017` (archival-080 only) and `mono_v018` (080, 101), named `<shot>_<element>_<round>_partNN.json` and run from the volume with Import Round (Source = Volume). There are **no mono graphs for the 16 elements without DPX**: the volume's graphs for archival-123 are `a` and `c` (not `f`), for creature-266 `breach-alt1` and `landing` (not `dolphin-lowtrack`), for photoreal-013 `chasmfast07`, `chasmfastia2` and `floortrack` (not ascent, chasm07, f23, hadal, landing, splash, sunlight, top), and there are none at all for archival-087 (only `proxy_v005` graphs) and archival-168. So the missing DPX are not just "workflows not run": **the graphs that would make them do not exist yet.** They have to be made (Binc's side builds these parts from the final) or the conversion has to be done another way.
 
-**Open decisions:** (1) convert the masters ourselves (ffmpeg, colour handling to confirm with Binc) or use Binc's pipeline; (2) whether to send proxy-only deliveries for D and E meanwhile; (3) the CGI-072 version; (4) the DPX colour code (user-defined, as the PDF's corrected CGI-072 files) and the round-level manifest next to the per-element ones.
+**Open decisions:** (1) how the 16 get their DPX: **decided 2026-11-20 to unpack the masters ourselves with ffmpeg, straight, with Rec.709 as a later step (section 11.5)**; Binc's mono graphs remain the alternative; (2) whether to send proxy-only deliveries for D and E meanwhile; (3) the CGI-072 version; (4) the DPX colour code (user-defined, as the PDF's corrected CGI-072 files) and the round-level manifest next to the per-element ones.
 
 **Pods:** stopped, never deleted; their logs are kept (ADR-055 section 4). The delivery copies run on `vvi0hvuj4v5dsg` (RTX PRO 4000, $0.57/h, created 2026-11-20 because the host of `eagffo99jjrf1n` had no free card; idle stop after 30 minutes).
 
@@ -255,6 +255,13 @@ For 16 elements we have the finished video (a ProRes `.mov`, or an `.mp4` for so
 2. **Our way.** We write the unpacking ourselves with ffmpeg on a pod. Quick to build and we need nobody, but the colours must be handled exactly as Binc expects, so Binc has to confirm that first.
 
 Either way, once an element has its frames it is delivered like the 17: corrected header and timecode, review video, manifest, then a test round, then the real round.
+
+### 11.5 Decision (Lucas, 2026-11-20): unpack straight now, Rec.709 as a separate step later
+
+- **The DPX step is a straight unpack.** The ProRes master is unpacked into 16-bit DPX frames with the pixels carried across unchanged; no colour conversion. The frames are labelled as the PDF says (P3-D65, Gamma 2.6): corrected header as in ADR-055 section 3, numbered from 0000, the EDL start timecode, the element's frame rate (23.976, or 24 for photoreal-013).
+- **Rec.709 is a separate, later generation step.** The H.264 proxy is made from the DPX, as the 17 already are (the review/proxy converter reads the DPX and is told the colour of the frames). The open choice (convert to Rec.709, or only tag) therefore concerns the proxy step only and does not hold up the DPX.
+- **The one assumption to check:** that each master really holds Gamma 2.6 P3-D65, as the PDF says for every element. If a master is Rec.709 in fact, its DPX would carry Rec.709 values under a Gamma 2.6 P3-D65 label and the proxy made from it would look wrong. Check before the real round: read the colour tags of one master of each group (087, 123 f, 168, creature-266, photoreal-013) and compare one unpacked frame with the approved picture. No need to wait for Binc for this check.
+- **First run:** `archival-123` f (staged on the volume, no import needed), to a `_TEST_` round, then the others one shot at a time. Built as an ffmpeg step on a pod, written as copies under `output/_delivery_v11/`, never over an existing file.
 
 ### 11.3 What needs to be done, in order
 
