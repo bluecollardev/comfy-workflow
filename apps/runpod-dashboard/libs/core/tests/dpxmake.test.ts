@@ -49,7 +49,7 @@ describe('dpxmake: the script and the results', () => {
     expect(s).toContain('"scale=in_range=$RANGE:out_range=pc:in_color_matrix=$MATRIX,format=rgb48le"')
     expect(s).toContain("nice ffmpeg '-hide_banner' '-loglevel' 'warning' '-nostdin' '-y' '-i' \"$M\" '-vf'")
     expect(s).toContain("'-c:v' 'dpx' '-pix_fmt' 'rgb48le' '-start_number' '0' \"$TMP/$NAME.%04d.dpx\"")
-    expect(s).toContain('ls -A "$OUT"'); expect(s).toContain('mv -T "$TMP" "$OUT"'); expect(s).toContain('-j803')
+    expect(s).toContain('ls -A "$OUT"'); expect(s).toContain('mv "$TMP" "$OUT"'); expect(s).toContain('-j803')
     expect(r.results).toEqual([{ shot: 'archival-077', element: 'a', frames: 5, expected: 5, ok: true, out_dir: 'mono_v019/archival-077/archival-077_a/dpx', colour: { matrix: 'bt709', range: 'tv', tagged: true } }])
     dpxmake.setDeps(null)
   })
@@ -95,4 +95,14 @@ describe('dpxmake: the real ffmpeg arguments', () => {
     const expected = (128 / 255) * 65535   // mid grey 0x80, full range
     for (const ch of [0, 1, 2]) { const v = be ? g.readUInt16BE(off + ch * 2) : g.readUInt16LE(off + ch * 2); expect(Math.abs(v - expected) / 65535).toBeLessThan(0.03) }
   }, 30000)
+  it.skipIf(!hasFfmpeg)('the whole script runs (here with bash standing in for the pod): unpacks, checks, renames into place; a second run is refused and writes nothing', async () => {
+    const d = scratch(), root = join(d, 'comfy-shared'), mdir = join(root, 'temp/rounds/mono_v019/archival-077/approved/05-outputs/Approved/master'); mkdirSync(mdir, { recursive: true })
+    execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=64x48:rate=24', '-frames:v', '5', '-vf', 'scale=out_color_matrix=bt709:out_range=tv,format=yuv422p10le', '-c:v', 'prores_ks', '-profile:v', '3', '-pix_fmt', 'yuv422p10le', '-colorspace', 'bt709', '-color_range', 'tv', join(mdir, 'archival-077_a.mov')])
+    dpxmake.setDeps({ target: async () => ({ host: 'x', port: 22 }), outputDir: () => join(root, 'output'), ssh: async ({ script, onLine }) => { const r = spawnSync('bash', ['-s'], { input: script, encoding: 'utf8' }); for (const l of `${r.stdout}${r.stderr}`.split('\n')) if (l) onLine?.(l); return { code: r.status } } })
+    const first = await dpxmake.run({ ...ok, items: [{ ...ok.items[0], frames_expected: 5 }] })
+    expect(first.results[0]).toMatchObject({ ok: true, frames: 5, colour: { matrix: 'bt709', range: 'tv', tagged: true } })
+    const out = join(root, 'output', first.results[0].out_dir); expect(readdirSync(out).sort()[0]).toBe('archival-077_a_mono_v019_NOT_RELEASED.0000.dpx'); expect(readdirSync(out)).toHaveLength(5); expect(readdirSync(join(root, 'output/mono_v019/archival-077/archival-077_a')).filter((f) => f.startsWith('.dpx_tmp'))).toEqual([])
+    const second = await dpxmake.run(ok); expect(second.results[0].ok).toBe(false); expect(readdirSync(out)).toHaveLength(5)
+    dpxmake.setDeps(null)
+  }, 60000)
 })
