@@ -29,7 +29,7 @@ describe('the guard script', () => {
       const r = run(c); expect(r.status, c).toBe(2); expect(r.stderr, c).toMatch(/^blocked: /)
     }
     expect(run('runpodctl x').stderr).toMatch(/pod-manager MCP/)
-  })
+  }, 30_000)   // it starts a shell per case; under the gate (every test file at once) it took 8.5 s
   it('lets reads and ordinary commands through', () => {
     for (const c of ['./start.sh pod list', 'aws s3 ls s3://bh-panama-exchange-610140802195/', 'cp projects/desktop/CANALV2/a.md /tmp/', 'ls projects/desktop', 'git status', 'npm run core:test']) expect(run(c).status, c).toBe(0)
   })
