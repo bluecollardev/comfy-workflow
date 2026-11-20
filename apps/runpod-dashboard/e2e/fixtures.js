@@ -99,6 +99,8 @@ export function defaultState() {
     fs: { '/Users/lucas': ['ComfyUI-Shared', 'Projects'], '/Users/lucas/Projects': ['CANALV2', 'plates'], '/Users/lucas/Projects/CANALV2': ['00_POLICY', '04_TRACKER'] },
     settings: { runpod_api_key_set: true, runpod_api_key_hint: '••••AAAA', source: '/home/me/.config/runpod-pod-manager/.env', s3_keys_set: false, s3_access_key_hint: '', agent_named_yes_required: false, agent_spend_cap_usd: 0 },   // most specs start with a key; the gate spec clears it
     logs: {},   // pod id -> lines for GET /pods/:id/logs
+    podlogs: [],   // the logs pods left behind: { name, pod_id, bytes, modified, text }
+    podlogSaves: [],
     // The Connect › MCP tab: where the two programs live, what the bridge can point at, and what Check answers per endpoint.
     mcp: {
       dir: '/Users/lucas/Workspaces/comfy_workflow/apps/runpod-dashboard/mcp/dist',
@@ -681,6 +683,10 @@ export async function mockApi(page, state) {
     }
     // Render sequences (docs/ADR-048): state.renders = { adapters: { pod: { ok, reason }, local: { ok, reason, code } }, jobs: [...], proxies: { 'dir/name': {...} }, deliverables: [...], remote: { 'dir/name': true }, local: {...}, missing: { 'dir/name': [{ from, to }] }, nextVersion, startError: { detail, code }, cleared: { removed, bytes } };
     // the fake records `planned`, `started`, `cancelled`, `proxyCalls`, `clearCalls`. A test edits jobs between polls. state.rendersOld = true answers like a core that predates it.
+    if (path === '/podlogs') return json({ dir: '/home/me/.config/runpod-pod-manager/pod-logs', logs: state.podlogs.filter((l) => !query.pod_id || l.pod_id === query.pod_id).map(({ text, ...l }) => l) })
+    if (path === '/podlogs/read') { const l = state.podlogs.find((x) => x.name === query.name); return l ? json({ name: l.name, text: l.text }) : json({ detail: 'No such saved log' }, 404) }
+    if (path === '/podlogs/purge') { const n = state.podlogs.filter((l) => !body.pod_id || l.pod_id === body.pod_id).length; state.podlogs = state.podlogs.filter((l) => body.pod_id && l.pod_id !== body.pod_id); state.podlogPurges = [...(state.podlogPurges || []), body.pod_id || '*']; return json({ deleted: n, bytes: 0 }) }
+  if (path === '/podlogs/save') { state.podlogSaves.push(body.pod_id); const l = { name: `2026-11-20/saved_${body.pod_id}_${state.podlogSaves.length}.log`, pod_id: body.pod_id, bytes: 2048, modified: '2026-11-20T15:48:12.000Z', text: 'pod saved now' }; state.podlogs.unshift(l); return json({ ...l, path: `/home/me/.config/runpod-pod-manager/pod-logs/${l.name}`, lines: 3 }) }
     if (path.startsWith('/renders/')) {
       if (state.rendersOld) return json({ detail: `no core call renders.${path.slice(9)}` }, 500)
       const rs = (state.renders ||= {})

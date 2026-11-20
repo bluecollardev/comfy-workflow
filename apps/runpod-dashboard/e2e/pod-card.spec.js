@@ -72,6 +72,33 @@ test.describe('pod card', () => {
     await expect(page.getByTestId('pod-logs')).toHaveCount(0)
   })
 
+  test('the logs a pod left behind stay in its logs window: listed, opened, and Save Logs Now adds one', async ({ page, api }) => {
+    api.state.podlogs = [{ name: '2026-11-20/ComfyUI-Dev_pod-aaaaaaaa_154812.log', pod_id: 'pod-aaaaaaaa', bytes: 4096, modified: '2026-11-20T15:48:12.000Z', text: 'pod pod-aaaaaaaa\nwhy end of run task\nCUDA out of memory' }, { name: '2026-11-20/other_pod-zzz_1.log', pod_id: 'pod-zzz', bytes: 10, modified: '2026-11-20T10:00:00.000Z', text: 'not this pod' }]
+    await page.goto('/')
+    await podCard(page, 'ComfyUI-Dev').getByTestId('pod-logs-toggle').click()
+    const modal = page.locator('.modal.show', { has: page.getByTestId('pod-logs') })
+    await expect(modal.getByTestId('pod-logs-saved')).toContainText('Saved logs: 1')
+    await modal.getByTestId('pod-logs-saved-pick').selectOption({ index: 1 })
+    await expect(modal.getByTestId('pod-logs-saved-text')).toContainText('CUDA out of memory')
+    await modal.getByTestId('pod-logs-save-now').click()
+    await expect.poll(() => api.state.podlogSaves).toEqual(['pod-aaaaaaaa'])
+    await expect(modal.getByTestId('pod-logs-saved')).toContainText('Saved logs: 2'); await expect(modal.getByTestId('pod-logs-saved-text')).toContainText('pod saved now')
+  })
+
+  test('saved logs can be purged by the person: one pod\'s after a yes, all of them after a yes; a no keeps them', async ({ page, api }) => {
+    api.state.podlogs = [{ name: '2026-11-20/a_pod-aaaaaaaa_1.log', pod_id: 'pod-aaaaaaaa', bytes: 100, modified: '2026-11-20T15:48:12.000Z', text: 'a' }, { name: '2026-11-20/b_pod-zzz_1.log', pod_id: 'pod-zzz', bytes: 100, modified: '2026-11-20T10:00:00.000Z', text: 'b' }]
+    await page.goto('/')
+    await podCard(page, 'ComfyUI-Dev').getByTestId('pod-logs-toggle').click()
+    const modal = page.locator('.modal.show', { has: page.getByTestId('pod-logs') })
+    await expect(modal.getByTestId('pod-logs-saved')).toContainText('Saved logs: 1')
+    await modal.getByTestId('pod-logs-delete-pod').click(); await answerConfirm(page, false)
+    expect(api.state.podlogPurges || []).toHaveLength(0); await expect(modal.getByTestId('pod-logs-saved')).toContainText('Saved logs: 1')
+    await modal.getByTestId('pod-logs-delete-pod').click(); await answerConfirm(page, true)
+    await expect.poll(() => api.state.podlogPurges).toEqual(['pod-aaaaaaaa']); await expect(modal.getByTestId('pod-logs-saved')).toContainText('Saved logs: 0'); expect(api.state.podlogs).toHaveLength(1)   // the other pod's log is still there
+    await modal.getByTestId('pod-logs-purge-all').click(); await answerConfirm(page, true)
+    await expect.poll(() => api.state.podlogPurges).toEqual(['pod-aaaaaaaa', '*']); expect(api.state.podlogs).toHaveLength(0)
+  })
+
   test('when the host has no free GPU, the card says so and Recreate makes the pod on another host', async ({ page, api }) => {
     api.state.failures['POST /pods/pod-bbbbbbbb/resume'] = 'There are not enough free GPUs on the host machine to start this pod.'
     await page.goto('/')

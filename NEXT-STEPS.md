@@ -26,6 +26,16 @@ Built: `libs/core/src/bridge.ts` (whitelisted snapshot, redactor, freshness, par
 5. Browser and real-Electron tests (fake bucket), then a patch release through the full gate.
 6. Phase 2 (commands, approved in the target's window) only after Phase 1 is in use, with its own ADR amendment.
 
+## Open from 2026-11-20 (Tunnel V11 delivery, ADR-055)
+
+- **Deliver what we have:** the 17 elements. Test round `_TEST_tunnel-v11-2026-11-20` has 3 (084 main, 085 main, 123 c; old headers, no per-element manifest). Next: `dpx_fix` them on a pod, publish the corrected copies to a second test round, read the headers back from the bucket, compare a frame with Binc's corrected CGI-072 files, then the other 14, then the real round `tunnel-v11-edl-2026-11-18`, never overwriting. Plan: `docs/CANALV2-TUNNEL-V11-PRODUCTION-PLAN.md` section 9 (on `feature/dpx-backfill-plan`, not merged).
+- **16 elements have no DPX** (087 x2, 123 f, 168 x4, creature-266, photoreal-013 x8) and **3 CGI-072** are held (V03 HEVC 24 fps against the PDF's V02 ProRes 23.976): the round's delivery graph makes MP4 candidates, not DPX. Ask Binc which graph or tool makes the mono DPX from the ProRes masters, or build the ffmpeg conversion (colour handling to decide).
+- **Release the unreleased work** (no-overwrite guard, per-element manifest, `dpx_fix`, pod logs, purge): full gate, then a patch. Auto-publish is live: pick a quiet moment.
+- **Wait for ComfyUI before the first graph of a fresh pod** (HTTP 502 then a 5-minute retry).
+- **Decide with Binc:** the DPX colour code (user-defined as in the PDF?), the round-level `RETURN-MANIFEST.json` next to the per-element ones, Rec.709 convert or tag for the proxy, the proxy timecode.
+- **Stop the pod `eagffo99jjrf1n`** when the delivery is done (resumed for the DPX copies); pods are stopped, never deleted.
+- Push `develop` and the tags from v1.7.0 on.
+
 ## Open from 2026-11-19 (v1.7.0, released with the gate skipped)
 
 0. **Verify one live upload end to end.** Auto-publish was in dry run when v1.7.0 was cut. Switch Dry run off (the person's confirmation) with the round `_TEST_{date}` and watch one review through the cancel window to S3 (`returns/BKK/_TEST_<date>/`, with `RETURN-MANIFEST.json` and the sha256 list) and the Slack post; ask Kyle to delete the `_TEST_` folder; only then set the round back to `tunnel-v11_{date}_r01`. Until that has happened, treat the S3 write path, the manifest merge, the streaming from the volume and the Slack message as tested with fakes only. Our key cannot delete from the bucket.

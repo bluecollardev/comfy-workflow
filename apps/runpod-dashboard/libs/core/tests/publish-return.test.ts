@@ -45,6 +45,7 @@ const fakeSpawn = (_c: string, args: string[]): ChildProcess => {
 const fakeFetch = (async (_u: string, init: { body: string }) => { posts.push(JSON.parse(init.body)); return new Response('ok') }) as unknown as typeof fetch
 const finish = async (id: string) => { await publish.settled(); return publish.status(id).jobs[0] }
 const go = async (items: unknown[], o: Record<string, unknown> = {}) => { const { job_id } = await publish.run({ items, targets: ['s3'], approved_by: 'Lucas', round: ROUND, ...o }); return finish(job_id) }
+const manifestOf = (r: string) => JSON.parse(objs.get(`${PFX}${r}/RETURN-MANIFEST.json`)!) as layout.Manifest
 const manifest = () => JSON.parse(objs.get(`${ROOT}RETURN-MANIFEST.json`)!) as layout.Manifest
 
 beforeEach(async () => {
@@ -108,11 +109,19 @@ describe('a return: sha256, the manifest, the inventory', () => {
     const csv = objs.get(`${ROOT}_inventory_2026-11-19.csv`)!; expect(csv.split('\n')[0]).toBe('shot,name,role,frames,bytes,sha256'); expect(csv).toContain('archival-077,ARCHIVAL-077_A_FINAL_V03.0001.dpx,dpx,3,2054,')
   })
   it('merges with the manifest already in the round: other shots stay, this shot is replaced; a corrupt one is a 409 and nothing is overwritten', async () => {
+    const TR = '_TEST_merge_r01'   // a _TEST_ round may be written over again; any other round never is
     write('a/ARCHIVAL-100_main.mp4', 'one'); write('b/ARCHIVAL-101_main.mp4', 'two')
-    await go(['a']); const first = manifest(); expect(first.items.map((i) => i.shot)).toEqual(['archival-100'])
-    write('b/ARCHIVAL-101_main.mp4', 'twotwo'); await go(['b']); const m = manifest(); expect(m.items.map((i) => i.shot)).toEqual(['archival-100', 'archival-101']); expect(m.items[0].outputs[0].sha256).toBe(sha('one'))
-    write('a/ARCHIVAL-100_main.mp4', 'one-changed'); await go(['a']); const again = manifest(); expect(again.items).toHaveLength(2); expect(again.items.find((i) => i.shot === 'archival-100')!.outputs[0].sha256).toBe(sha('one-changed')); expect(again.items.find((i) => i.shot === 'archival-101')!.outputs[0].sha256).toBe(sha('twotwo'))
-    objs.set(`${ROOT}RETURN-MANIFEST.json`, '{ not json'); const j = await go(['a']); expect(j.state).toBe('failed'); expect(j.error).toMatch(/cannot be read/); expect(j.manifest).toMatchObject({ updated: false, path: `${ROOT}RETURN-MANIFEST.json`, error: expect.stringMatching(/cannot be read/) }); expect(objs.get(`${ROOT}RETURN-MANIFEST.json`)).toBe('{ not json')
+    await go(['a'], { round: TR }); const first = manifestOf(TR); expect(first.items.map((i) => i.shot)).toEqual(['archival-100'])
+    write('b/ARCHIVAL-101_main.mp4', 'twotwo'); await go(['b'], { round: TR }); const m = manifestOf(TR); expect(m.items.map((i) => i.shot)).toEqual(['archival-100', 'archival-101']); expect(m.items[0].outputs[0].sha256).toBe(sha('one'))
+    write('a/ARCHIVAL-100_main.mp4', 'one-changed'); await go(['a'], { round: TR }); const again = manifestOf(TR); expect(again.items).toHaveLength(2); expect(again.items.find((i) => i.shot === 'archival-100')!.outputs[0].sha256).toBe(sha('one-changed')); expect(again.items.find((i) => i.shot === 'archival-101')!.outputs[0].sha256).toBe(sha('twotwo'))
+    objs.set(`${PFX}${TR}/RETURN-MANIFEST.json`, '{ not json'); const j = await go(['a'], { round: TR }); expect(j.state).toBe('failed'); expect(j.error).toMatch(/cannot be read/); expect(j.manifest).toMatchObject({ updated: false, path: `${PFX}${TR}/RETURN-MANIFEST.json`, error: expect.stringMatching(/cannot be read/) }); expect(objs.get(`${PFX}${TR}/RETURN-MANIFEST.json`)).toBe('{ not json')
+  })
+  it('every element gets its own <CLIP>_MANIFEST.json next to its files, with the sha256 of each file; one already in a real round is left alone', async () => {
+    write('s100/ARCHIVAL-100_main.mp4', 'abc'); const j = await go(['s100'], { round: '_TEST_each_r01' }); expect(j.state).toBe('done')
+    const k = `${PFX}_TEST_each_r01/archival-100/ARCHIVAL-100_main_MANIFEST.json`; expect(objs.has(k)).toBe(true)
+    const m = JSON.parse(objs.get(k)!); expect(m).toMatchObject({ schema_version: expect.any(String), round: '_TEST_each_r01', returned_by: 'Lucas', item: { shot: 'archival-100' } }); expect(m.item.outputs[0].sha256).toBe(sha('abc'))
+    write('s101/ARCHIVAL-101_main.mp4', 'xyz'); const real = `${PFX}${ROUND}/archival-101/ARCHIVAL-101_main_MANIFEST.json`; objs.set(real, '{"theirs":1}')
+    const j2 = await go(['s101']); expect(j2.state).toBe('done'); expect(objs.get(real)).toBe('{"theirs":1}')
   })
   it('a failed upload adds nothing to the manifest and the manifest is not written', async () => {
     write('a/ARCHIVAL-100_main.mp4', 'one'); failCp.add('ARCHIVAL-100_main.mp4'); const j = await go(['a']); expect(j.state).toBe('failed'); expect(objs.has(`${ROOT}RETURN-MANIFEST.json`)).toBe(false); expect(j.manifest).toBeUndefined(); expect(j.children[0]).toMatchObject({ state: 'failed', shot: 'archival-100' })
@@ -139,7 +148,7 @@ describe('shots as child jobs', () => {
     write('s100/ARCHIVAL-100_main.mp4', 'a'); write('s101/ARCHIVAL-101_main.mp4', 'b'); write('s101/ARCHIVAL-101_main.mp4.meta.json', '{}'); failCp.add('ARCHIVAL-101_main.mp4.meta.json')
     const j = await go(['s100', 's101']); expect(j.state).toBe('failed'); expect(j.children.map((c) => c.state)).toEqual(['done', 'failed']); expect(j.children[1].error).toMatch(/meta\.json/); expect(manifest().items.map((i) => i.shot)).toEqual(['archival-100'])
     failCp.clear(); order.length = 0; const r = await publish.retry({ child_id: j.children[1].id }); expect(r.child_id).toBe(j.children[1].id); const k = await finish(j.job_id)
-    expect(k.state).toBe('done'); expect(k.children.map((c) => c.state)).toEqual(['done', 'done']); expect(order.filter((x) => /\.(mp4|json)$/.test(x) && !/RETURN|inventory/.test(x))).toEqual([`${ROOT}archival-101/ARCHIVAL-101_main.mp4.meta.json`])   // the mp4 was already there with the same size
+    expect(k.state).toBe('done'); expect(k.children.map((c) => c.state)).toEqual(['done', 'done']); expect(order.filter((x) => /\.(mp4|json)$/.test(x) && !/RETURN|inventory|_MANIFEST/.test(x))).toEqual([`${ROOT}archival-101/ARCHIVAL-101_main.mp4.meta.json`])   // the mp4 was already there with the same size
     expect(k.children[1]).toMatchObject({ skipped: 1, files: 1 }); expect(manifest().items.map((i) => i.shot)).toEqual(['archival-100', 'archival-101'])
     await expect(publish.retry({ child_id: j.children[0].id })).rejects.toMatchObject({ status: 400 }); await expect(publish.retry('nope:1')).rejects.toMatchObject({ status: 404 })
   })
@@ -151,12 +160,25 @@ describe('shots as child jobs', () => {
     writeFileSync(process.env.PUBLISH_JOBS_FILE as string, record)   // what the app read back from disk: a record, nothing retained
     failCp.clear(); order.length = 0
     const r = await publish.retry({ child_id: j.children[1].id }); expect(r.job_id).toBeTruthy()
-    const k = await finish(r.job_id); expect(k.state).toBe('done'); expect(k.children.map((c) => c.shot)).toContain('archival-101'); expect(order.filter((x) => /\.(mp4|json)$/.test(x) && !/RETURN|inventory/.test(x))).toEqual([`${ROOT}archival-101/ARCHIVAL-101_main.mp4.meta.json`])   // only the missing file is sent: the rest is there with the same size
+    const k = await finish(r.job_id); expect(k.state).toBe('done'); expect(k.children.map((c) => c.shot)).toContain('archival-101'); expect(order.filter((x) => /\.(mp4|json)$/.test(x) && !/RETURN|inventory|_MANIFEST/.test(x))).toEqual([`${ROOT}archival-101/ARCHIVAL-101_main.mp4.meta.json`])   // only the missing file is sent: the rest is there with the same size
     await expect(publish.retry({ child_id: j.children[0].id })).rejects.toMatchObject({ status: 400 })
     // a record from before requests were kept: status says it cannot be retried, and a retry says why
     const old = JSON.parse(record); delete old[0].request; writeFileSync(process.env.PUBLISH_JOBS_FILE as string, JSON.stringify(old)); publish.reset(); publish.setDeps({ aws: fakeAws, fetch: fakeFetch, outputRoot: () => out, parallel: () => 4, spawn: fakeSpawn, findFfmpeg: async () => null, podInfo: async () => null })
     publish.status(); await new Promise((r) => setTimeout(r, 30)); expect(publish.status().jobs[0]).toMatchObject({ retryable: false }); await expect(publish.retry({ child_id: j.children[1].id })).rejects.toMatchObject({ status: 400 })
     delete process.env.PUBLISH_JOBS_FILE
+  })
+  it('a round that is not a _TEST_ round is never overwritten: another size is refused, the same size is skipped, a manifest that is not ours is left untouched (409); a _TEST_ round is written over', async () => {
+    const REAL = 'qc_2026-11-19_r01', RR = `${PFX}${REAL}/`
+    write('s100/ARCHIVAL-100_main.mp4', 'abc'); const key = `${RR}archival-100/ARCHIVAL-100_main.mp4`
+    objs.set(key, 'different-size-body')
+    const refused = await publish.plan({ items: ['s100'], targets: ['s3'], round: REAL })
+    expect(refused.ok).toBe(false); expect(refused.refused.map((r) => r.reason).join(' ')).toMatch(/never overwritten/)
+    await expect(publish.run({ items: ['s100'], targets: ['s3'], approved_by: 'L', round: REAL })).rejects.toThrow(/never overwritten/); expect(objs.get(key)).toBe('different-size-body')
+    objs.set(key, 'abc'); objs.set(`${RR}RETURN-MANIFEST.json`, '{"theirs":true}')
+    const same = await publish.plan({ items: ['s100'], targets: ['s3'], round: REAL }); expect(same.ok).toBe(true); expect(same.items.map((i) => i.skip)).toContain('same size already there')
+    write('s101/ARCHIVAL-101_main.mp4', 'new'); const { job_id } = await publish.run({ items: ['s101'], targets: ['s3'], approved_by: 'L', round: REAL }); const j = await finish(job_id)
+    expect(j.state).toBe('failed'); expect(j.error).toMatch(/cannot be read|nothing was overwritten/); expect(objs.get(`${RR}RETURN-MANIFEST.json`)).toBe('{"theirs":true}')
+    objs.set(`${PFX}_TEST_2026-11-20/archival-100/ARCHIVAL-100_main.mp4`, 'old-different-size'); const test = await publish.plan({ items: ['s100'], targets: ['s3'], round: '_TEST_2026-11-20' }); expect(test.ok).toBe(true)
   })
   it('cancelling a child leaves the others; cancelling the parent cancels every child that is not done', async () => {
     three(); gate.set('ARCHIVAL-100_main', new Promise(() => undefined)); const { job_id } = await publish.run({ items: ['s100', 's101', 's102'], targets: ['s3'], approved_by: 'L', round: ROUND, streams: 3 })

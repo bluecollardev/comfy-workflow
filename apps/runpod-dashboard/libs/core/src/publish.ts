@@ -730,6 +730,8 @@ export async function plan(req: PlanRequest): Promise<Plan> {
       await yieldLoop()
     }
     for (const it of items) if (it.skip === null && there.get(it.s3_key) === it.bytes) it.skip = 'same size already there'
+    // a delivery round is never overwritten: a file that is already there with another size is refused (only a _TEST_ round may be written over again)
+    if (roundName && !roundName.startsWith('_TEST_')) for (const it of items) if (it.skip === null && there.has(it.s3_key)) { refused.push({ path: it.path, reason: `Already in ${roundName} with a different size (${there.get(it.s3_key)} bytes there, ${it.bytes} here); a round that is not a _TEST_ round is never overwritten` }); it.skip = 'blocked'; it.reason = 'already there with a different size: not overwritten' }
   }
   const send = items.filter((i) => i.skip === null), real = items.filter((i) => i.skip !== 'missing' && i.skip !== 'weights' && i.skip !== 'blocked')
   const total_bytes = real.reduce((a, i) => a + i.bytes, 0), dest = `s3://${e.s3.bucket || '(bucket)'}/${prefix}`
@@ -1096,10 +1098,16 @@ async function finishReturn(job: Job, g: Group, a: Awaited<ReturnType<typeof s3A
     const existing = await readText(a, manifestKey, signal)
     const merged = layout.mergeManifest(existing, { round: ret.round, returned_by: v.approved_by, now: deps.now(), pod, items: built })
     const old = (await readText(a, csvKey, signal).catch(() => null)) ?? '', kept = old.split('\n').slice(1).filter((l) => l.trim() && !shots.has(l.split(',')[0]))
+    // one manifest per element, next to its files (the PDF: <CLIP>_MANIFEST.json), listing every file with its sha256; one that is already in a round that is not a _TEST_ round is left as it is
+    for (const it of built) {
+      const k = `${root}${it.shot}/${it.input_final.delivered_name}_MANIFEST.json`
+      if (!ret.round.startsWith('_TEST_') && (await readText(a, k, signal).catch(() => null)) != null) continue
+      await putText(a, k, `${JSON.stringify({ schema_version: merged.schema_version, round: merged.round, returned_by: merged.returned_by, returned_at: merged.returned_at, pod: merged.pod, item: it }, null, 2)}\n`, signal)
+    }
     await putText(a, manifestKey, `${JSON.stringify(merged, null, 2)}\n`, signal)
     await putText(a, csvKey, `${[head, ...kept, ...rows].join('\n')}\n`, signal)
   })
-  v.manifest = { updated: true, shots: (v.manifest?.shots ?? 0) + 1, path: manifestKey }; g.child.current = ''
+  v.manifest = { updated: true, shots: (v.manifest?.shots ?? 0) + 1, path: manifestKey };   g.child.current = ''
   v.sha256_count = (v.sha256_count ?? 0) + files.filter((f) => f.sha256 !== 'n/a').length
   v.results = [...(v.results ?? []), ...files.map((f) => ({ path: f.key, bytes: f.bytes, sha256: f.sha256 }))].slice(0, 1000)
 }

@@ -198,6 +198,8 @@ const TABLE = {
     volumeSizeCancel: (c, o) => c.publish.volumeSizeCancel(o || {}),
     backfill: (c, op, o) => { const p = c.publish, x = o || {}; if (op === 'scan') return p.scan(x); if (op === 'inventory') return p.inventory(x.job_id || undefined); if (op === 'plan') return p.backfillPlan(x); if (op === 'run') return p.backfillRun(x); throw Object.assign(new Error('op is scan, inventory, plan or run'), { status: 400 }) },   // ADR-050 Backfill: what the outputs hold, then upload them as they are
   },
+  podlogs: { save: (c, podId, o) => c.podlogs.save(String(podId || ''), o || {}), list: (c, o) => c.podlogs.list(o || {}), read: (c, name, o) => c.podlogs.read(String(name || ''), o || {}), purge: (c, o) => c.podlogs.purge(o || {}) },   // pod logs kept in the config folder, never deleted
+  dpxfix: { run: (c, o) => c.dpxfix.run(o || {}) },   // corrected copies of DPX frames for delivery (Tunnel V11 plan, section 9)
   renders: {   // docs/ADR-048: DPX sequences rendered into mp4 proxies (on the pod, or on this PC), kept on the volume and on this PC
     plan: (c, o) => c.renders.plan(o || {}),
     start: (c, o) => c.renders.start(o || {}),

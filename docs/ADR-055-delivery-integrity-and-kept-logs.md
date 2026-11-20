@@ -1,0 +1,37 @@
+# ADR-055: Delivery integrity and kept logs: the rules from 2026-11-20
+
+**Date:** 2026-11-20
+**Status:** Accepted. Built on `develop` (not yet released); the DPX header correction is built and unit-tested, and still has to be checked on real frames (section 3).
+**Context from:** the Tunnel V11 delivery (the 20 Nov PDF, `docs/CANALV2-TUNNEL-V11-PRODUCTION-PLAN.md` section 9). Lucas: "deliver what we can", "test in `_TEST_` first before sending to the real path", "don't overwrite any existing stuff in the real `returns/BKK/` in any non-test directory", "we cannot have these defects", "don't delete the logs when done for the pods", "if you delete a pod, you lose the history, but in the event that it is stopped you do not". Builds on ADR-050 (publishing), ADR-052 (destructive actions) and ADR-038 (the queue).
+
+## 1. A delivery round is never overwritten (built)
+- In a round whose name does not start with `_TEST_`, a file that is already in the destination **with another size is refused**: the plan lists it under `refused`, the plan is not ok and `run` throws before anything is sent. A file with the same size is skipped, as before. Only a `_TEST_` round may be written over again. (`publish.ts`, after the listing of the destination.)
+- A `RETURN-MANIFEST.json` that is already in a round and is not ours (not the app's schema, or another round's) is left untouched: the run fails with the 409 it already had, after the files are up, and nothing is overwritten. A manifest of the app's own schema is still merged, shot by shot, as ADR-050 says.
+- The per-element manifest (section 2) already in a real round is left as it is.
+- **Test rounds also relax the EDL holds** (an existing behaviour). A delivery therefore goes to a `_TEST_` round first with the same layout and names, is checked in the bucket, and only then goes to the real round.
+- **Why:** a re-published shot with a different file would silently replace what the client already has. The old behaviour was right for a scratch round and wrong for a delivery.
+
+## 2. A manifest per element (built)
+The PDF's contents show `<CLIP>_MANIFEST.json` next to each element (6.6 to 83 KB, so it lists the files). Each element now gets `<shot>/<CLIP>_MANIFEST.json`: the round, who returned it, when, the pod, and the element's item with the sha256 and size of every file. They go up before the round's `RETURN-MANIFEST.json`, which stays last. Still to settle with Binc: whether the round-level manifest is wanted besides.
+
+## 3. Corrected copies of the DPX (built; checked against the spec, not yet against a viewer)
+The frames the pipeline writes tag the picture as linear (transfer and colorimetric 2) while the pixels are Gamma 2.6 P3-D65, and carry no timecode. The PDF calls the linear tag a bug and ships a corrected copy for CGI-072 with "colour code user-defined instead of linear; pixels unchanged". `libs/core/src/dpxfix.ts` (MCP `dpx_fix`, named yes) writes **copies** under `comfy-shared/output/_delivery_v11/<clip>/<clip>.NNNN.dpx` on a pod that has the volume; the originals are never touched. Per frame, in the 2048-byte header only: transfer and colorimetric 0 (user-defined); the TV header's time code (BCD HHMMSSFF, the clip's start timecode plus the frame index) and temporal sampling rate (the frame rate) and gamma (2.6); the film header's frame position, sequence length and frame rate; the image file name. The picture bytes are copied unchanged, the size is checked and every header is read back. Both byte orders are handled.
+- **Open:** "user-defined" is what the PDF says for the CGI-072 fix; if Binc's corrected files carry another code, match them. The offsets follow SMPTE 268M; compare a corrected frame with one of Binc's before the real round.
+- **The H.264 proxy's timecode** is a separate matter (the PDF's second defect for CGI-072); the review videos carry the timecode their render gave them.
+- **Disk:** a corrected copy of a sequence doubles its space on the volume (91 GB for the 17 elements; the volume has 2,500 GB).
+
+## 4. Pod logs are kept (built)
+A pod's logs are lost when the pod is deleted; they stay while it is stopped. `podlogs.ts` writes them to `pod-logs/<day>/<pod name>_<pod id>_<time>.log` in the config folder, never over an older file: at the end of each run task, just before a pod is stopped, just before it is deleted (by anyone), and on demand (MCP `pod_logs`: save, list, read; the pod's logs window has the list, the viewer, Save Logs Now). Each file holds the RunPod container and system log and ComfyUI's server log. **Nothing deletes a log by itself.** A person deletes them: "Delete This Pod's Logs" or "Purge All Saved Logs" (after a yes), or MCP `purge` with `confirmed: true` after asking. The test suite switches the saving off (`POD_LOGS_OFF=1`).
+- **Pods are stopped, not deleted** (Lucas, 2026-11-20: "let them stop", "I want to see what is there"). The five import pods that were deleted that day lost their RunPod history; what they produced is on the volume.
+
+## 5. A job that failed can be retried, and says so (built, v1.7.0)
+A publish run keeps the request it was asked to do with its record; a render job the same. A failed shot of a run from before a restart is sent again as a new job from that request (the files already in the bucket with the same size are skipped); a failed or cancelled render job starts its unfinished sequences again. The status carries `retryable`, never the request. A job from before this was kept shows **Retry** disabled, with the reason, not hidden. Each Retry shows a spinner and a toast.
+
+## 6. Smaller decisions of the day
+- **Every button label is Title Case**; `src/utils/btncase.test.mjs` fails the gate on a multi-word button label that is not. Labels built in script or typed into a template are not covered.
+- **A long error shows as one line with Details** that opens the whole text with Copy; the Queue and History export (CSV or PDF) carries the errors whole.
+- **A fresh pod's first graph can answer HTTP 502** while ComfyUI starts; the run's own retry waits 5 minutes. The app should wait for ComfyUI to answer before it asks for the graph (not built).
+- **The round's "delivery" graph does not make DPX.** It is a replay that writes MP4 candidates (checked on archival-168, 7 seconds, four `.mp4`). The 16 elements with no DPX need the mono conversion of their ProRes masters, not Run Workflows (open: which graph or tool Binc uses).
+
+## 7. Not built
+The wait-for-ComfyUI check; the proxy's timecode check; the round-level manifest question; the DPX for the 16 elements; CGI-072 (version mismatch with the PDF).
