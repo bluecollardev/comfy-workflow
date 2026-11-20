@@ -182,12 +182,12 @@ Not every element is in the same state, so the delivery is handled by case. **Ru
 
 | Case | Elements | Handling | Status |
 |---|---|---|---|
-| **A. DPX exist, header wrong** | 17: 071, 077 a/b/c, 080 a-e, 083, 084, 085, 093 b, 102, 104 b, 123 c, cgi-042 | Corrected header copies of the frames (`dpx_fix`: colour code user-defined, timecode, frame rate, gamma), the review video, a manifest per element; `_TEST_` round, then the real round | Built; the first three (084 main, 085 main, 123 c) are being corrected and published to a second test round |
+| **A. DPX exist, header wrong** | 17: 071, 077 a/b/c, 080 a-e, 083, 084, 085, 093 b, 102, 104 b, 123 c, cgi-042 | Corrected header copies of the frames (`dpx_fix`: colour code user-defined, timecode, frame rate, gamma), the review video, a manifest per element; `_TEST_` round, then the real round. **The frames are not regenerated**: the picture bytes are copied unchanged, only the 2048-byte header differs | **Done 2026-11-21**: all 17 in the real round `tunnel-v11-edl-2026-11-18` (1,770 files, 84.88 GB, S3 only, no Slack), 17 manifests read back from the bucket; headers were checked on the pod at write time (headers read back from the bucket: see section 14) |
 | **B. Stills** | 080 a-e (PNG, start timecode 01:00:00:00) | As A; the start timecode comes from the EDL | Plan check passed |
 | **C. Low resolution** | 093 b (1618x1080) | As A, with the `low-source-resolution` warning (the PDF says the same) | Plan check passed |
 | **D. No DPX yet, ProRes masters on the volume** | 087 platform and rain, 123 f, 168 a-d, creature-266 dolphin-lowtrack | Convert each master to 16-bit DPX with the stated colour handling (ffmpeg, to build, or Binc's mono pipeline); in the meantime H.264 proxies from the masters can go out marked proxy-only, DPX to follow | Waiting on Lucas and Binc |
 | **E. No DPX yet, 24 fps** | photoreal-013, 8 elements (landing and top ProRes, the rest HEVC; top is V02) | As D with the frame rate 24, not 23.976 (the tool takes the rate per element) | Waiting |
-| **F. Version mismatch** | CGI-072 head, backhalf-b, backhalf-c | Held: the round has V03 HEVC at 24 fps, the PDF wants V02 ProRes at 23.976 | Waiting on Binc |
+| **F. Version mismatch** | CGI-072 head, backhalf-b, backhalf-c | Not held: rendered from V03 HEVC 24 fps (the only round we have; the PDF lists V02 ProRes 23.976), difference noted in the manifest | In `base_v008` import |
 
 **What was found on 2026-11-20 that shapes D and E:** the finals are in the pulled rounds (`<shot>/approved/05-outputs/Approved/master/*.mov`, ProRes 422 HQ 4K); the round's own delivery graph (`<shot>-common-nodes-vNN-delivery-<date>.json`) is a replay that writes MP4 candidates under `shots/<shot>/05-outputs/WIP`, not DPX (archival-168: 7 seconds, four `.mp4`). Those candidates are not delivered: they carry the graph's names, were not compared with the approved masters, and have no DPX or manifest. Run Workflows through Import Round therefore does not produce the DPX; the rounds `-11-14` (the whole round), `-10-29` (archival-168) and `-10-23` (archival-123, staged) are pulled and on the volume.
 
@@ -306,3 +306,18 @@ The volume round **`base_v008`** (30 shots, 62 graphs, adapter `brynley-rounds-l
 
 **The ffmpeg unpack (`dpx_make`, ADR-055 section 8) stays as the fallback**, finished and merged on `develop`: it unpacks the EDL source ranges of a master into 16-bit DPX, straight, never into an existing folder, on a pod. Use it for an element whose base graph does not write DPX. Not yet run on a pod. Found while testing against the real EDL: ARCHIVAL-123_F has an empty second range (in and out both 00:00:04:20), now dropped by `from_edl`; its masters in the round are two "mcp-preview-8bit" files (193 and 151 frames), neither obviously the final.
 
+## 14. Status 2026-11-21: what is delivered, what is in test, what blocks
+
+**Delivered to the real round (`returns/BKK/tunnel-v11-edl-2026-11-18/`):** the 17 of case A. Job `publish-mwpe8qd6-7`; the round now lists 1,840 files (the extra 70 were already there; nothing was overwritten). Read back from the bucket: 17 per-element manifests, the DPX folders and their counts.
+
+**In a test round only (`_TEST_tunnel-v11-base-v008-2026-11-21`):** the `base_v008` elements whose frames exist and match the PDF count: archival-087 platform (97), 123 a (68) and 123 f (43), 168 a-d (153/139/105/48), photoreal-013 ascent (108) and chasm07 (271). Header-patched with `dpx_fix` first (checked on the pod). Decision (Lucas, 2026-11-21): **everything from `base_v008` stays in `_TEST_` until it is right**; nothing of it goes to the real round yet.
+
+**Blocker in the real round:** the round already holds archival-087 platform DPX files that differ in size from ours (49,768,448 bytes there, 49,768,064 here, 29 files). The no-overwrite guard refuses them; they need another clip name or round, a decision for Lucas.
+
+**Not in the 36:** photoreal-013 `chasmfast07` and `chasmfastia2` (extra graphs on the volume) are not on the PDF list; they are never published.
+
+**Still generating:** archival-087 (second element), cgi-072 (head, backhalf-b, backhalf-c, from V03), creature-266 (on a 96 GB card; the 32 GB card died mid-graph), photoreal-013 f23, hadal, landing, splash, sunlight, top. Import `imp-mwpkxqng-0`.
+
+**What went wrong and the fix:** the first `base_v008` import failed on cold pods (HTTP 502/404 on the graph fetch, conversion timeouts). The retry covered only timeouts; it now also covers 404/502/503/504 (6 tries, 20 s apart, commit a733759), the conversion script waits 4 minutes, and ComfyUI is waited for before the first graph. A retried queue task still starts a new pod (NEXT-STEPS); duplicates are stopped by hand (stopped, never deleted).
+
+**Parked:** Rec.709 convert or tag (Lucas: later, as its own generation step).
