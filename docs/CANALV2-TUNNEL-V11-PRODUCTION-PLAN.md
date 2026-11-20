@@ -176,3 +176,22 @@ The first two plans of this day were pull-only (`imp-mwp4ub0g-0`, `imp-mwp4ub1o-
 
 **Known defects that ship with these DPX (say so when delivering):** the header still says linear (transfer 2) while the pixels are Gamma 2.6 P3-D65 (the PDF itself calls this a bug); no timecode in the header (the EDL start timecode is in the manifest and the sidecars only); the Rec.709 convert-or-tag choice for the proxy is still open.
 
+## 10. The cases and how each is handled (2026-11-20)
+
+Not every element is in the same state, so the delivery is handled by case. **Rules for every case:** a `_TEST_` round first, checked in the bucket; nothing already in the real `returns/BKK/` is overwritten (ADR-055); no Slack post until Lucas has checked the result; the DPX on the volume are never altered in place, corrected copies go to `output/_delivery_v11/`.
+
+| Case | Elements | Handling | Status |
+|---|---|---|---|
+| **A. DPX exist, header wrong** | 17: 071, 077 a/b/c, 080 a-e, 083, 084, 085, 093 b, 102, 104 b, 123 c, cgi-042 | Corrected header copies of the frames (`dpx_fix`: colour code user-defined, timecode, frame rate, gamma), the review video, a manifest per element; `_TEST_` round, then the real round | Built; the first three (084 main, 085 main, 123 c) are being corrected and published to a second test round |
+| **B. Stills** | 080 a-e (PNG, start timecode 01:00:00:00) | As A; the start timecode comes from the EDL | Plan check passed |
+| **C. Low resolution** | 093 b (1618x1080) | As A, with the `low-source-resolution` warning (the PDF says the same) | Plan check passed |
+| **D. No DPX yet, ProRes masters on the volume** | 087 platform and rain, 123 f, 168 a-d, creature-266 dolphin-lowtrack | Convert each master to 16-bit DPX with the stated colour handling (ffmpeg, to build, or Binc's mono pipeline); in the meantime H.264 proxies from the masters can go out marked proxy-only, DPX to follow | Waiting on Lucas and Binc |
+| **E. No DPX yet, 24 fps** | photoreal-013, 8 elements (landing and top ProRes, the rest HEVC; top is V02) | As D with the frame rate 24, not 23.976 (the tool takes the rate per element) | Waiting |
+| **F. Version mismatch** | CGI-072 head, backhalf-b, backhalf-c | Held: the round has V03 HEVC at 24 fps, the PDF wants V02 ProRes at 23.976 | Waiting on Binc |
+
+**What was found on 2026-11-20 that shapes D and E:** the finals are in the pulled rounds (`<shot>/approved/05-outputs/Approved/master/*.mov`, ProRes 422 HQ 4K); the round's own delivery graph (`<shot>-common-nodes-vNN-delivery-<date>.json`) is a replay that writes MP4 candidates under `shots/<shot>/05-outputs/WIP`, not DPX (archival-168: 7 seconds, four `.mp4`). Those candidates are not delivered: they carry the graph's names, were not compared with the approved masters, and have no DPX or manifest. Run Workflows through Import Round therefore does not produce the DPX; the rounds `-11-14` (the whole round), `-10-29` (archival-168) and `-10-23` (archival-123, staged) are pulled and on the volume.
+
+**Open decisions:** (1) convert the masters ourselves (ffmpeg, colour handling to confirm with Binc) or use Binc's pipeline; (2) whether to send proxy-only deliveries for D and E meanwhile; (3) the CGI-072 version; (4) the DPX colour code (user-defined, as the PDF's corrected CGI-072 files) and the round-level manifest next to the per-element ones.
+
+**Pods:** stopped, never deleted; their logs are kept (ADR-055 section 4). The delivery copies run on `vvi0hvuj4v5dsg` (RTX PRO 4000, $0.57/h, created 2026-11-20 because the host of `eagffo99jjrf1n` had no free card; idle stop after 30 minutes).
+
