@@ -49,6 +49,20 @@
 
 **More the PDF does not say, from ADR-050 (Kyle, 2026-11-19; secondary, check with Binc):** the proxy is H.264 1920x1080, same name, frame count and start timecode as the DPX, no burn-ins, Rec.709 (H.264 because Tunnel's Avid wants it); the timecode is the *source* timecode (the EDL source-in); finished shots go up one at a time and the round's `RETURN-MANIFEST.json` (schema `bh-return-1`, a sha256 for every uploaded file) is rewritten after each shot.
 
+## 1b. Colour: what Rec.709 is, and tag versus convert
+
+**Rec.709** (ITU-R BT.709) is the HD video standard that nearly every screen, player and editing system assumes. It fixes four things: the **primaries** (the red, green and blue that bound the gamut; smaller than P3), the **transfer curve** (how brightness is encoded: about gamma 1/2.2 for capture, shown at about 2.4), the **matrix** (RGB to the YCbCr that H.264 stores) and the **range** (limited: 16 to 235 on 8 bits). Tunnel's Avid wants the H.264 proxy in Rec.709.
+
+**Our DPX are P3-D65, Gamma 2.6**: the same white point (D65) as Rec.709 but a wider gamut and a different curve (the cinema-style display encoding). All 45 sequences on the volume say so in their ComfyUI-OCIO record (`colorInteropID: g26_p3d65_display`, "Gamma 2.6 P3-D65 - Display"), and so does the PDF. Their DPX headers say linear (transfer 2): the header is wrong (section 1a, known issue).
+
+**Two ways to make a Rec.709 proxy from them, and they look different:**
+- **Convert:** undo the Gamma 2.6 curve to linear, map P3 to Rec.709 primaries with a matrix, encode with the Rec.709 curve, tag Rec.709. The picture matches the DPX on a Rec.709 display; very saturated P3 colours that Rec.709 cannot show are clipped.
+- **Tag only:** leave the pixels alone and write "Rec.709" into the metadata. The proxy then shows the P3 Gamma 2.6 pixel values as if they were Rec.709, so it looks a little different from the DPX (colour and contrast), though the colours are "in the file as delivered".
+
+**What the app does today.** The review/proxy converter **converts** from the colour it is told the frames are (the ffmpeg arguments carry a `colorchannelmixer` matrix and the Rec.709 `lutrgb` curve). ADR-050's Tunnel preset (Kyle's spec) says **tag, not a conversion**. Until 2026-11-20 the converter was told `linear-p3-d65` (it trusted the header), so every review and proxy made before then was double-encoded and has the wrong colour. On 2026-11-20 Lucas stated `p3-d65-gamma26` (Default Configuration, `render.colour`, recorded in History) and the phase 1 re-render of the 17 V11 elements uses it; v1.6.8 makes the converter read the ComfyUI-OCIO record instead of guessing from the header (precedence: a stated colour, then the OCIO record, then the configured mode, then `known`).
+
+**Open (to settle with Binc and Kyle, section 5 item 5):** is the Tunnel proxy to be *converted* to Rec.709 (the picture looks like the DPX on a Rec.709 monitor) or only *tagged* (as ADR-050 says)? The PDF does not say. Whichever it is, the Tunnel preset and the review converter must agree, and the proxy's sidecar and manifest should state which was done.
+
 ## 2. Cross-check against the volume (2026-11-20)
 
 Checked on `a3upg9ey48` (`brynley-rounds-eu-ro-1`, EU-RO-1): the DPX under `comfy-shared/output/mono_v015` to `mono_v018`, and the rounds staged under `comfy-shared/temp/rounds/`.
