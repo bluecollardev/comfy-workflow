@@ -231,6 +231,7 @@ async function judge(shot: string, version: string, rawFiles: { name: string; by
   else if (movies.some((m) => !names.has(`${m.name}.meta.json`))) why = 'a sidecar (.meta.json) is missing'
   if (!why) for (const m of movies) {
     const meta = await readMeta(`${m.name}.meta.json`); metas[m.name] = meta
+    if (meta.unreadable === true) { why = `the sidecar ${m.name}.meta.json cannot be read (it is not valid JSON)`; continue }
     const colour = (meta.colour ?? {}) as { verdict?: string }, verdict = (meta.colour_verdict as string | undefined) ?? colour.verdict
     if (verdict === 'refused') { refusedColour = true; why = 'the sidecar says the colour was refused' }
     else if (meta.kind !== undefined && meta.kind !== 'review') why = 'the sidecar says this is not a review video'
@@ -251,6 +252,11 @@ async function lookAt(base: string, shot: string, version: string): Promise<Foun
 }
 
 // ----- the volume: comfy-shared/output/deliver/<shot>/<version>/, listed one level at a time (never the whole tree), on its own slower cycle -----
+/** A sidecar as text. A value the pod left empty (`"render_fps": ` with nothing after it, which made the whole file invalid JSON and silently dropped the source frames) is read as null; text that is still not JSON is `{ unreadable: true }`, which the review is held for with a reason instead of going without its frames. */
+export function parseSidecar(text: string): Record<string, unknown> {
+  for (const t of [text, text.replace(/("(?:[^"\\]|\\.)*"\s*:)\s*(?=[,}\]])/g, '$1 null')]) { try { const j = JSON.parse(t); if (j && typeof j === 'object' && !Array.isArray(j)) return j as Record<string, unknown> } catch { /* try the repair */ } }
+  return { unreadable: true }
+}
 export const VOLUME_MAX_VERSIONS = 500, VOLUME_MAX_OBJECTS = 5000, SIDECAR_MAX = 256 * 1024
 interface VolState { at: number; scanning: boolean; error?: string; id: string; reviews: Found[]; promise?: Promise<void>; ac?: AbortController }
 const vol: VolState = { at: 0, scanning: false, id: '', reviews: [] }
@@ -280,7 +286,7 @@ async function doScanVolume(signal: AbortSignal): Promise<void> {
       if (!ls.files.length) continue   // an EMPTY version folder (a failed render left it) is not a review: neither counted nor listed
       if (objects > VOLUME_MAX_OBJECTS) break outer
       const keyOf2 = new Map(ls.files.map((f) => [f.name, f]))
-      out.push(await judge(shot, v, ls.files.map((f) => ({ name: f.name, bytes: f.bytes })), 'volume', async (name) => { const f = keyOf2.get(name); if (!f || f.bytes > SIDECAR_MAX) return {}; try { return JSON.parse((await publish.volumeReadText(f.key, SIDECAR_MAX, signal)) ?? '{}') as Record<string, unknown> } catch { return {} } }))
+      out.push(await judge(shot, v, ls.files.map((f) => ({ name: f.name, bytes: f.bytes })), 'volume', async (name) => { const f = keyOf2.get(name); if (!f || f.bytes > SIDECAR_MAX) return {}; const text = await publish.volumeReadText(f.key, SIDECAR_MAX, signal).catch(() => null); return text === null ? {} : parseSidecar(text) }))
       await yieldLoop()
     }
   }

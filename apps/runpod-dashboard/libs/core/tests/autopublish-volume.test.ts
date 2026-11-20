@@ -116,6 +116,17 @@ describe('approving, publishing by streaming, and the status', () => {
     expect(spawned.filter((a) => a[3] === '-').length).toBe(6); expect(spawned.filter((a) => a[3] === '-')[0].slice(0, 2)).toEqual(['s3', 'cp']); expect(calls.some((c) => c[1] === 'cp' && c[2] !== undefined && !String(c[2]).startsWith('s3://') && c[3] !== '-' && /v-001/.test(c[3]))).toBe(false)   // nothing was copied from a local file
     expect(bodies.get('renders/deliver/v-001/v001/V-001_MAIN.mov')).toBe('MOVIE'); expect((await autopublish.statusNow()).recent[0]).toMatchObject({ state: 'done', shot: 'v-001' })
   })
+  it('a sidecar the pod left a value empty in (invalid JSON) is repaired, so the source frames still go; one that cannot be read at all holds the review with a reason', async () => {
+    expect(autopublish.parseSidecar('{"a": 1, "outputs": [ {"render_fps": \n  } ], "name": "S"}')).toMatchObject({ a: 1, name: 'S', outputs: [{ render_fps: null }] })
+    expect(autopublish.parseSidecar('not json at all')).toEqual({ unreadable: true })
+    vreview('v-001', 'v001', { meta: { source_dir: 'proxy_v004/x', name: 'STEM_V' } }); volume.set(`${D}v-001/v001/V-001_MAIN.mov.meta.json`, '{"source_dir": "proxy_v004/x", "name": "STEM_V", "outputs": [ {"render_fps": \n  } ]}')
+    for (let i = 1; i <= 3; i++) volume.set(`comfy-shared/output/proxy_v004/x/STEM_V.000${i}.dpx`, `frame${i}`)
+    vreview('b-002'); volume.set(`${D}b-002/v001/B-002_MAIN.mov.meta.json`, 'garbage{')
+    await scan(); await approve('v-001'); await approve('b-002'); await autopublish.setSettings({ ...ON, window_minutes: 0, include_dpx: true }); await autopublish.setSettings({ dry_run: false, understood: true }); await autopublish.consider(); await autopublish.tick(); await autopublish.settled()
+    expect([...dest.keys()].filter((k) => /\.dpx$/.test(k)).sort()).toEqual(['renders/proxy_v004/x/STEM_V.0001.dpx', 'renders/proxy_v004/x/STEM_V.0002.dpx', 'renders/proxy_v004/x/STEM_V.0003.dpx'])   // the frames went although the sidecar had an empty value
+    expect([...dest.keys()].some((k) => /b-002/i.test(k))).toBe(false)   // the unreadable one was not uploaded without its frames
+    expect(JSON.stringify((await autopublish.statusNow()).watching.skipped)).toMatch(/b-002[^]*cannot be read/)
+  })
   it('a volume review needs its approval like any other: scanning more places never uploads more by itself', async () => {
     vreview('n-001'); await autopublish.setSettings({ ...ON, window_minutes: 0 }); await autopublish.setSettings({ dry_run: false, understood: true }); await scan(); await autopublish.consider(); await autopublish.tick(); await autopublish.settled(); expect(dest.size).toBe(0); expect(pend()).toEqual([])
   })
