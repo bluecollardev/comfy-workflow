@@ -1496,7 +1496,7 @@
         "openFolder": "Open this folder in the AWS console", "download": "Download this file", "notKept": "The signed link is not kept after a restart: publish again to get a new one", "group": { "folder": "Folder links", "file": "File links", "preview": "Preview image" }
       },
       "ret": {
-      "retryShots": "Retry failed ({n})",
+      "retryShots": "Retry",
         "round": "Round",
         "roundNeeded": "Publishing to a return needs a round name",
         "roundBad": "A round name is 3 to 100 letters, digits, dots, dashes or underscores.",
