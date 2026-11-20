@@ -57,18 +57,16 @@ const view = (e: Entry) => ({ ...(e.dry_run_plan ? { dry_run_plan: e.dry_run_pla
 const finish = (e: Entry, state: 'done' | 'cancelled', reason?: string) => { e.state = state; if (reason) e.reason = reason; e.finished_at = deps.now(); entries.delete(e.id); recent.unshift(e); recent.length = Math.min(recent.length, KEEP_RECENT) }
 
 /** The settings live in the Default Configuration (mounts.json): read again whenever the file changes (a cheap cache keyed by its mtime and size), so a change made in the configuration window applies at the next tick. */
-let cfgCache: { file: string; mtime: number; size: number; value: Stored } | null = null
 async function stored(): Promise<Stored> {
   const f = mountsFile()
   try {
-    const st = await stat(f)
-    if (cfgCache && cfgCache.file === f && cfgCache.mtime === st.mtimeMs && cfgCache.size === st.size) return cfgCache.value
-    const data = JSON.parse(await readFile(f, 'utf8')) as { auto_publish?: unknown }, value = mounts.normalizeAutoPublish(data.auto_publish)
-    cfgCache = { file: f, mtime: st.mtimeMs, size: st.size, value }; return value
+    // always read the file (a few KB): a cache keyed on its time and size served the old dry_run right after a write (the tool answered "dry run" while the file said live)
+    const data = JSON.parse(await readFile(f, 'utf8')) as { auto_publish?: unknown }
+    return mounts.normalizeAutoPublish(data.auto_publish)
   } catch { return mounts.normalizeAutoPublish(undefined) }
 }
 /** Write through the configuration store (its own file, the other settings untouched). */
-function writeStored(next: Stored): void { const cur = mounts.load(); mounts.save({ ...cur, auto_publish: mounts.normalizeAutoPublish(next) }); cfgCache = null }
+function writeStored(next: Stored): void { const cur = mounts.load(); mounts.save({ ...cur, auto_publish: mounts.normalizeAutoPublish(next) }) }
 async function stateOf(): Promise<StateFile> { return readJson<StateFile>(stateFile(), {}) }
 /** Every change to the state file is read, changed and written inside one lock, so concurrent steps never lose each other's update. */
 let stateLock: Promise<unknown> = Promise.resolve()
@@ -156,7 +154,9 @@ export async function generatePass(): Promise<{ started: number }> {
   return autogenerate.pass(s.generate, s.standing.approved_by)
 }
 /** Instant off: the rule stops, the standing approval is cleared, every pending entry is cancelled. */
+let offGen = 0   // bumped by every off(): a consider() pass that began before it must not add an entry after it (it may have read the settings just before the file was rewritten)
 export async function off(): Promise<number> {
+  offGen++
   const cur = await stored(); let n = autogenerate.cancelAll(); await autogenerate.clearPending()
   for (const e of [...entries.values()]) { if (e.state === 'uploading') continue; finish(e, 'cancelled', 'turned off'); n++ }
   if (cur.enabled || cur.standing) { writeStored({ ...cur, enabled: false, standing: undefined }); history.record({ kind: 'change', area: 'configuration', action: 'auto-publish turned off', what: 'auto-publish', detail: `${n} pending cancelled` }) }
@@ -392,6 +392,7 @@ let considering: Promise<unknown> = Promise.resolve()
 export function consider(): Promise<{ queued: number }> { const run = considering.then(doConsider, doConsider); considering = run.catch(() => undefined); return run }
 async function doConsider(): Promise<{ queued: number }> {
   await ensureLoaded()
+  const gen0 = offGen
   const s = await stored(); if (!(s.enabled === true && s.standing)) return { queued: 0 }
   const dry = s.dry_run !== false, window = (s.window_minutes ?? WINDOW_DEFAULT) * 60_000; let queued = 0
   const ap: Approval[] = s.require_approval ? await approvalList() : (await allReviews()).map((f) => ({ shot: f.shot, version: f.version, approved_by: s.standing!.approved_by, at: iso(deps.now()) }))   // every eligible review under the standing approval, or only the approved ones
@@ -405,6 +406,7 @@ async function doConsider(): Promise<{ queued: number }> {
     const key = keyOf(r.shot, r.version), st = await stateOf()
     const again = await stored(); if (!(again.enabled === true && again.standing)) return { queued }   // turned off while this pass was looking
     const e: Entry = { source: c.found.source, metas: c.found.metas, id: `ap-${deps.now().toString(36)}-${(seq++).toString(36)}`, key, shot: r.shot, version: r.version, files: c.found.files.map((f) => f.name), bytes: c.found.bytes, due_at: deps.now() + (dry ? 0 : window), state: dry ? 'would_upload' : 'waiting', approved_by: r.approved_by, targets: publishTargets(s.targets), attempts: 0 }
+    if (offGen !== gen0) return { queued }   // turned off while this pass was looking: add nothing (no await between this check and the add)
     entries.set(e.id, e); queued++
     if (dry) {
       e.reason = `dry run: nothing is sent${c.warnings?.length ? `; ${c.warnings.join('; ')}` : ''}`
@@ -625,4 +627,4 @@ export const settled = async (): Promise<void> => { for (const e of [...entries.
 /** Called where a review render ends: best effort, never throws, never delays the render. */
 export function considerSoon(): void { try { void consider().then(refreshMemo).catch(() => undefined) } catch { /* never fails a render */ } }
 /** Forget everything in memory (tests). */
-export function reset(): void { edlMemo.clear(); edlHold.clear(); autogenerate.reset(); Object.assign(memo, { generate: { ...mounts.AUTO_GENERATE_DEFAULT } }); watchMemo.at = 0; watchMemo.value = emptyWatching(); vol.ac?.abort(); Object.assign(vol, { at: 0, scanning: false, id: '', reviews: [], promise: undefined, ac: undefined }); delete vol.error; uploadChain = Promise.resolve(); stateLock = Promise.resolve(); considering = Promise.resolve(); cfgCache = null; stop(); entries.clear(); recent = []; seq = 0; loaded = null; inDestination.clear(); Object.assign(memo, { enabled: false, dry_run: true, dry_run_first: true, standing: null, targets: { s3: true, slack: false, tunnel: false }, window_minutes: WINDOW_DEFAULT, daily_cap: null, count: 0, destination: '' }); setDeps(null) }
+export function reset(): void { edlMemo.clear(); edlHold.clear(); autogenerate.reset(); Object.assign(memo, { generate: { ...mounts.AUTO_GENERATE_DEFAULT } }); watchMemo.at = 0; watchMemo.value = emptyWatching(); vol.ac?.abort(); Object.assign(vol, { at: 0, scanning: false, id: '', reviews: [], promise: undefined, ac: undefined }); delete vol.error; uploadChain = Promise.resolve(); stateLock = Promise.resolve(); considering = Promise.resolve(); ; stop(); entries.clear(); recent = []; seq = 0; loaded = null; inDestination.clear(); Object.assign(memo, { enabled: false, dry_run: true, dry_run_first: true, standing: null, targets: { s3: true, slack: false, tunnel: false }, window_minutes: WINDOW_DEFAULT, daily_cap: null, count: 0, destination: '' }); setDeps(null) }

@@ -43,6 +43,9 @@
         <label class="small mb-0">{{ $t('outputs.render.where') }}
           <select v-model="prefs.where" class="form-select form-select-sm" data-testid="pod-outputs-render-where"><option v-for="w in WHERE_CHOICES" :key="w" :value="w" :data-ok="whereOk(w) ? 'true' : 'false'">{{ whereLabel(w) }}</option></select>
         </label>
+        <label class="small mb-0" :title="$t('outputs.render.colourGlobalTitle')">{{ $t('outputs.render.colourGlobal') }}
+          <select id="col-all" :value="colourShown" class="form-select form-select-sm" data-testid="pod-outputs-render-colour-all" :data-uniform="uniformColour || ''" :data-override="colourAll || ''" @change="setColourAll($event.target.value)"><option value="">{{ $t('outputs.render.colourPerSeq') }}</option><option v-for="c in COLOURS" :key="c" :value="c">{{ $t(`edl.colours.${c}`) }}</option></select>
+        </label>
       </div>
       <div class="small mb-2" data-testid="pod-outputs-render-adapters">
         <div v-for="id in ['pod', 'local']" :key="id" class="d-flex align-items-baseline gap-2" data-testid="pod-outputs-render-adapter" :data-id="id" :data-ok="adapters[id].ok ? 'true' : 'false'">
@@ -77,9 +80,7 @@
           <BFormInput v-model="filterText" size="sm" class="ms-auto" style="max-width: 16rem" :placeholder="$t('outputs.render.filterSequences')" data-testid="pod-outputs-render-filter" autocomplete="off" />
         </div>
         <div class="text-body-secondary mb-1">{{ $t('outputs.render.clipNamesNote') }}</div>
-        <div v-if="tunnel || anyColourNeeded" class="d-flex align-items-center gap-2 my-1 flex-wrap"><label class="mb-0" for="col-all">{{ $t('edl.colourAll') }}</label>
-          <select id="col-all" v-model="colourAll" class="form-select form-select-sm" style="width: auto" data-testid="pod-outputs-render-colour-all"><option value="">{{ $t('edl.colourChoose') }}</option><option v-for="c in COLOURS" :key="c" :value="c">{{ $t(`edl.colours.${c}`) }}</option></select>
-          <span v-if="anyColourMissing" class="text-body-secondary" data-testid="pod-outputs-render-colour-hint">{{ $t('edl.colourHint') }}</span></div>
+        <div v-if="(tunnel || anyColourNeeded) && anyColourMissing" class="my-1 text-body-secondary" data-testid="pod-outputs-render-colour-hint">{{ $t('edl.colourHint') }}</div>
         <div v-if="edlNeeded && edl.seen && !edl.old && !edl.loaded" class="d-flex align-items-center gap-2 text-warning my-1" data-testid="edl-none-line"><span>{{ $t('edl.noneLine') }}</span><BButton size="sm" variant="outline-primary" :disabled="edl.loading" data-testid="edl-none-load" @click="edl.load()"><BSpinner v-if="edl.loading" small class="me-1" />{{ $t('edl.noneLoad') }}</BButton></div>
         <div v-if="planning && isReview && reviewRows.length < (plan?.sequences || []).length" class="text-body-secondary" data-testid="pod-outputs-render-review-planning"><BSpinner small class="me-2 flex-shrink-0" />{{ $t('outputs.render.reviewPlanning') }}</div>
         <div v-if="blockedCount" class="text-danger my-1" data-testid="pod-outputs-render-blocked-summary">{{ $t(blockedCount === 1 ? 'edl.blockedOne' : 'edl.blocked', { n: blockedCount }) }}</div>
@@ -99,14 +100,14 @@
           <div v-if="clipProblem(clipOf(i))" class="text-danger" data-testid="pod-outputs-render-clipname-error">{{ $t(`outputs.render.${clipProblem(clipOf(i))}`) }}</div>
           <div class="d-flex align-items-center gap-2 flex-wrap mt-1 text-body-secondary" data-testid="pod-outputs-render-row-facts">
             <span v-if="rowOf(i)?.colour || rowOf(i)?.source" class="font-monospace" data-testid="pod-outputs-render-row-source">{{ rowFacts(rowOf(i)) }}</span>
-            <span v-if="rowColour(i)" :class="rowColour(i).src === 'none' ? 'text-warning' : ''" data-testid="pod-outputs-render-row-colour" :data-source="rowColour(i).src">{{ rowColour(i).how ? $t('outputs.render.rowColour', { name: rowColour(i).name, how: rowColour(i).how }) : $t('outputs.render.rowColourBare', { name: rowColour(i).name }) }}</span>
+            <span v-if="rowColour(i)" :class="rowColour(i).src === 'none' ? 'text-warning' : ''" data-testid="pod-outputs-render-row-colour" :data-source="rowColour(i).src">{{ rowColour(i).text ? rowColour(i).text : rowColour(i).how ? $t('outputs.render.rowColour', { name: rowColour(i).name, how: rowColour(i).how }) : $t('outputs.render.rowColourBare', { name: rowColour(i).name }) }}</span>
             <span v-if="rowOf(i)?.header_transfer" data-testid="pod-outputs-render-header-transfer">{{ $t('edl.headerSays', { t: rowOf(i).header_transfer }) }}</span>
             <span v-if="rowOf(i)?.colour?.verdict === 'refused'" class="badge text-bg-danger fw-normal" data-testid="pod-outputs-render-row-refused">{{ $t('outputs.render.colourRefused', { reason: rowOf(i).colour.refusal || '' }) }}</span>
             <span v-if="isReview && rowOf(i)?.shot && rowOf(i)?.next_version != null" data-testid="pod-outputs-render-review-shot" :data-shot="rowOf(i).shot" :data-version="rowOf(i).next_version" :title="reviewFolder(rowOf(i).shot, rowOf(i).next_version)"><span class="font-monospace">{{ $t('outputs.render.reviewShot', { shot: rowOf(i).shot, version: v3(rowOf(i).next_version) }) }}</span> <span>{{ $t('outputs.render.reviewFolder', { folder: reviewFolder(rowOf(i).shot, rowOf(i).next_version) }) }}</span></span>
           </div>
           <div class="d-flex gap-1 flex-wrap mt-1" data-testid="pod-outputs-render-row-actions">
             <BButton size="sm" variant="outline-light" :disabled="!thumbs[seqKey(i)]" :title="$t('outputs.render.framesOpen')" data-testid="pod-outputs-render-frames-open" :data-name="i.name" @click="framesFor = seqKey(i)"><i class="fa-regular fa-eye me-1"></i>{{ $t('outputs.render.framesOpen') }}</BButton>
-            <BButton size="sm" variant="outline-light" :title="$t('outputs.render.colourEdit')" data-testid="pod-outputs-render-colour-edit" :data-name="i.name" @click="colourFor = seqKey(i)"><i class="fa-solid fa-palette me-1"></i>{{ $t('outputs.render.colourButton') }}</BButton>
+            <BButton size="sm" variant="outline-light" :title="$t('outputs.render.colourEdit')" data-testid="pod-outputs-render-colour-edit" :data-name="i.name" @click="colourFor = seqKey(i)"><i class="fa-solid fa-palette me-1"></i><span data-testid="pod-outputs-render-colour-edit-label">{{ colourButtonLabel(i) }}</span></BButton>
             <BButton v-if="reviewDoneOf(i)" size="sm" variant="outline-light" :title="$t('outputs.render.reviewPlay')" data-testid="pod-outputs-render-review-play" :data-shot="reviewDoneOf(i).shot" @click="playReview(reviewDoneOf(i))"><i class="fa-solid fa-play me-1"></i>{{ $t('outputs.render.reviewPlay') }}</BButton>
             <BButton v-else size="sm" variant="outline-light" disabled data-testid="pod-outputs-render-review-play-disabled"><i class="fa-solid fa-play me-1"></i>{{ $t('outputs.render.reviewPlay') }}</BButton>
           </div>
@@ -139,7 +140,7 @@
       </section>
       <DpxViewerModal :frames="framesTile ? framesTile.tile.frames : []" :base="framesTile ? framesTile.base : ''" :sequence="framesItem" :pod-id="pod.id" @close="framesFor = null" />
       <SelectionSummaryModal :open="summaryOpen" :rows="summaryRows" :total="items.length" @close="summaryOpen = false" />
-      <ClipColourModal :open="!!colourItem" :name="colourItem ? colourItem.name : ''" :header="colourItem ? rowOf(colourItem)?.header_transfer || '' : ''" :model-value="colourItem ? colourOf(colourItem) : ''" :colours="COLOURS" :empty-label="colourEmptyLabel" :assumption="colourItem ? rowOf(colourItem)?.colour_assumption || '' : ''" :suggested="colourItem && rowOf(colourItem)?.suggested_colour ? colourName(rowOf(colourItem).suggested_colour) : ''" @update:model-value="(v) => colourItem && (colourIn[seqKey(colourItem)] = v)" @close="colourFor = null" />
+      <ClipColourModal :open="!!colourItem" :name="colourItem ? colourItem.name : ''" :header="colourItem ? rowOf(colourItem)?.header_transfer || '' : ''" :model-value="colourItem ? colourOf(colourItem) : ''" :colours="COLOURS" :empty-label="colourEmptyLabel" :assumption="colourItem ? rowOf(colourItem)?.colour_assumption || '' : ''" :ocio="colourItem && ocioOf(colourItem) ? t('outputs.render.rowColourOcio', { label: ocioOf(colourItem).label }) : ''" :header-disagrees="!!(colourItem && rowOf(colourItem)?.header_disagrees)" :suggested="colourItem && rowOf(colourItem)?.suggested_colour ? colourName(rowOf(colourItem).suggested_colour) : ''" @update:model-value="(v) => colourItem && (colourIn[seqKey(colourItem)] = v)" @close="colourFor = null" />
       <div v-for="(n, i) in estimates" :key="i" class="small text-body-secondary mb-2" data-testid="pod-outputs-render-estimate">{{ n }}</div>
       <div v-if="skipped" class="small text-body-secondary mb-2" data-testid="pod-outputs-render-skipped">{{ $t('outputs.render.skippedNames', { n: skipped }) }}</div>
       <div v-if="plan && !skipExisting && (isReview || toSkip)" class="small text-warning mb-1" data-testid="pod-outputs-render-redo-note">{{ $t(isReview ? 'outputs.render.newVersions' : 'outputs.render.replaceProxies') }}</div>
@@ -297,25 +298,36 @@ const COLOURS = ['linear-p3-d65', 'linear-rec709', 'p3-d65-gamma26', 'p3-d65-srg
 const colourSeen = reactive({})
 const needsColour = (i) => tunnel.value || !!colourSeen[`${i.dir}/${i.name}`]
 const anyColourNeeded = computed(() => Object.values(colourSeen).some(Boolean))
-function noteColour(p) { for (const r of p?.sequences || []) if ((r.flags || []).some((f) => f.code === 'colour-not-stated') || /log|linear|density/i.test(r.header_transfer || '')) colourSeen[`${r.dir}/${r.name}`] = true }
+function noteColour(p) { for (const r of p?.sequences || []) if (r.colour_source !== 'ocio-record' && ((r.flags || []).some((f) => f.code === 'colour-not-stated') || /log|linear|density/i.test(r.header_transfer || ''))) colourSeen[`${r.dir}/${r.name}`] = true }
 const colourIn = reactive({}), colourAll = ref(''), edlOverride = reactive({}), cands = reactive({})
 const colourOf = (i) => colourIn[`${i.dir}/${i.name}`] || ''
 const effColour = (i) => colourOf(i) || colourAll.value
 /** The colour the core derives when nobody states it (render.colour.mode known): shown as the select's first option, never sent as a statement. */
 /** This sequence's line in the running or finished job: where it ran, its state and frames, a skip reason, an error. */
 const jobSeqOf = (i) => (job.value?.sequences || []).find((q) => q.dir === i.dir && q.name === i.name) || null
+/** The colour record ComfyUI-OCIO wrote next to the sequence, when the plan found a usable one (its own choice and the one for all still win). */
+const ocioOf = (i) => { const r = rowOf(i); return r && r.colour_source === 'ocio-record' && r.ocio ? r.ocio : null }
 const defaultColour = (i) => { const r = rowOf(i); return r && r.colour_source === 'guess' && r.colour_in ? r.colour_in : '' }
 /** What colour this row will be rendered from, and why: its own choice, the one for all, the default derived from the header, the configuration, or no conversion. Always said, set or not. */
 const rowColour = (i) => {
   const own = colourOf(i), all = colourAll.value, def = defaultColour(i), r = rowOf(i)
   if (own) return { name: colourName(own), how: t('outputs.render.rowColourOwn'), src: 'own' }
   if (all) return { name: colourName(all), how: t('outputs.render.rowColourAll'), src: 'all' }
+  if (ocioOf(i)) return { name: colourName(r.colour_in), how: '', src: 'ocio', text: t('outputs.render.rowColourOcio', { label: ocioOf(i).label }) }   // stated by the writer, not guessed
   if (def) return { name: colourName(def), how: t('outputs.render.rowColourDefault'), src: 'default' }
   if (r?.colour_in && r.colour_source === 'configuration') return { name: colourName(r.colour_in), how: t('outputs.render.rowColourConfig'), src: 'configuration' }
   if (needsColour(i)) return { name: t('outputs.render.rowColourNone'), how: t('outputs.render.rowColourSkipped'), src: 'none' }
   const what = r?.colour?.conversion
   return r?.colour ? { name: what ? String(what).replace(/^none:\s*/, '') : t('outputs.render.rowColourPlain'), how: '', src: 'plain' } : null
 }
+// The colour id a row will really use, in the same order as rowColour: its own, the global override, the OCIO record, the default, the configured one
+const rowColourId = (i) => { const r = rowOf(i); return colourOf(i) || colourAll.value || (ocioOf(i) ? r.colour_in : '') || defaultColour(i) || (r?.colour_in && r.colour_source === 'configuration' ? r.colour_in : '') || '' }
+// When every selected sequence ends up with the same colour, the global select shows it by default (nothing is stated by a person: the source of each row stays what it was)
+const uniformColour = computed(() => { const ids = chosen.value.map(rowColourId); return ids.length && ids.every((x) => x && x === ids[0]) ? ids[0] : '' })
+const colourShown = computed(() => colourAll.value || uniformColour.value || '')
+/** The global override replaces the colour of every sequence, including ones set one by one; "Per sequence" goes back to each sequence's record or default. */
+function setColourAll(v) { if (v === colourShown.value) return; colourAll.value = v; if (v) for (const k of Object.keys(colourIn)) delete colourIn[k] }
+const colourButtonLabel = (i) => { const c = rowColour(i); return c && ['own', 'all', 'ocio', 'default', 'configuration'].includes(c.src) ? c.name : t('outputs.render.colourButtonNone') }
 const framesFor = ref(null)   // the seqKey of the sequence whose frames are open in the viewer (the source DPX frames the render will use)
 const framesTile = computed(() => (framesFor.value ? props.thumbs[framesFor.value] || null : null))
 const framesItem = computed(() => props.items.find((i) => seqKey(i) === framesFor.value) || null)
@@ -323,8 +335,8 @@ const summaryOpen = ref(false)
 const summaryRows = computed(() => chosen.value.map((i) => ({ key: seqKey(i), name: i.name, clip: clipOf(i), colour: rowColour(i), edl: edlOn.value ? edl.matchOf(clipOf(i)) : '', outputs: rowOutputs(i) })))
 const colourFor = ref(null)   // the seqKey of the row whose colour window is open
 const colourItem = computed(() => props.items.find((i) => seqKey(i) === colourFor.value) || null)
-const colourEmptyLabel = computed(() => { const i = colourItem.value; if (!i) return ''; if (colourAll.value) return t('edl.colourAllIs', { name: colourName(colourAll.value) }); const d = defaultColour(i); return d ? t('edl.colourDefault', { name: colourName(d) }) : t('edl.colourChoose') })
-const anyColourMissing = computed(() => chosen.value.some((i) => needsColour(i) && !effColour(i) && !defaultColour(i)))
+const colourEmptyLabel = computed(() => { const i = colourItem.value; if (!i) return ''; if (colourAll.value) return t('edl.colourAllIs', { name: colourName(colourAll.value) }); if (ocioOf(i)) return t('outputs.render.rowColourOcio', { label: ocioOf(i).label }); const d = defaultColour(i); return d ? t('edl.colourDefault', { name: colourName(d) }) : t('edl.colourChoose') })
+const anyColourMissing = computed(() => chosen.value.some((i) => needsColour(i) && !effColour(i) && !defaultColour(i) && !ocioOf(i)))
 const rowFacts = (r) => { const c = r.colour, sz = c ? `${c.width} × ${c.height}` : r.source ? `${r.source.width} × ${r.source.height}` : '', bits = c?.bits ?? r.source?.bits; return [sz, c?.transfer_name, bits ? `${bits}-bit` : ''].filter(Boolean).join(' · ') }
 const rowOutputs = (i) => { const r = rowOf(i); return r ? outputNames(r, { kind: prefs.kind, codecs: codecs.value, width: prefs.width }) : [] }
 const colourName = (c) => (c === 'kodak-log' ? 'Kodak log' : t(`edl.colours.${c}`, c))

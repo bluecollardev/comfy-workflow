@@ -24,6 +24,20 @@ export const problemOfError = (err) => (err && PROBLEM_KINDS.includes(err.kind) 
 
 const DESCRIPTORS = { 50: { name: 'RGB', n: 3 }, 51: { name: 'RGBA', n: 4 }, 6: { name: 'luma', n: 1 } }
 
+/** The television header's SMPTE 12M time code (packed BCD HHMMSSFF, U32 @1920), only where the file has a television header (pixels start at 2048 or later); null when unset (0 or 0xFFFFFFFF) or not valid. */
+export function tvTimecode(dv, le, dataOffset, length) {
+  if (dataOffset < 2048 || length < 1924) return null
+  const v = dv.getUint32(1920, le)
+  if (v === 0 || v === 0xffffffff) return null
+  const d = Array.from({ length: 8 }, (_, i) => (v >>> (28 - 4 * i)) & 0xf), drop = (d[6] & 4) !== 0
+  d[6] &= 3
+  if (d.some((x) => x > 9)) return null
+  const [hh, mm, ss, ff] = [d[0] * 10 + d[1], d[2] * 10 + d[3], d[4] * 10 + d[5], d[6] * 10 + d[7]]
+  if (hh > 23 || mm > 59 || ss > 59) return null
+  const p = (n) => String(n).padStart(2, '0')
+  return `${p(hh)}:${p(mm)}:${p(ss)}${drop ? ';' : ':'}${p(ff)}`
+}
+
 /** The fields of the header that decide the layout; throws a clear error for anything this decoder does not read. */
 export function parseDpxHeader(buf) {
   const u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf)
@@ -45,7 +59,8 @@ export function parseDpxHeader(buf) {
   if (packing > 2) throw new Error(`Unsupported DPX: packing ${packing}`)
   if (packing === 0 && (bits === 10 || bits === 12)) throw new Error(`Unsupported DPX: ${bits}-bit with packing 0 (a continuous bit stream); only filled methods A and B are read`)
   const rowBytes = bits === 8 ? width * d.n : bits === 10 ? Math.ceil((width * d.n) / 3) * 4 : width * d.n * 2
-  return { magic, littleEndian: le, width, height, descriptor, descriptorName: d.name, components: d.n, bits, packing, dataOffset, eolPad, rowBytes, stride: rowBytes + eolPad }
+  const encoding = dv.getUint16(806, le)
+  return { magic, littleEndian: le, width, height, descriptor, descriptorName: d.name, components: d.n, bits, packing, encoding, transfer: u8[801], colorimetric: u8[802], timecode: tvTimecode(dv, le, dataOffset, u8.byteLength), dataOffset, eolPad, rowBytes, stride: rowBytes + eolPad }
 }
 
 /** Decode one row's component values (width * components of them, as integers of `bits` bits) into `out`. */

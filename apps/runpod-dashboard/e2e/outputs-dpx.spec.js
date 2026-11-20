@@ -208,7 +208,8 @@ test('DPX previews: nothing loads by itself, even scrolling; a click loads one t
   const hits = {}
   let live = 0, peak = 0
   await page.context().route('**/view?*', async (r) => {
-    const name = decodeURIComponent(/filename=([^&]+)/.exec(r.request().url())[1]); hits[name] = (hits[name] || 0) + 1
+    const name = decodeURIComponent(/filename=([^&]+)/.exec(r.request().url())[1]); if (name.endsWith('.json')) return r.fulfill({ status: 404, headers: { 'access-control-allow-origin': '*' }, body: 'no record' })   // the colour record (a small .json read for the chips) is not a frame: not counted
+    hits[name] = (hits[name] || 0) + 1
     live++; peak = Math.max(peak, live); await new Promise((res) => setTimeout(res, 20)); live--
     const empty = name.startsWith('s2_')
     return r.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: empty ? flat() : dpx(0) })
@@ -321,7 +322,8 @@ test('DPX previews: a preview you asked for is NOT cancelled by scrolling away, 
   api.state.history.runs['pod-aaaaaaaa'] = [{ ...seqRun(1), outputs: Array.from({ length: 30 }, (_, i) => seqRun(i + 1).outputs).flat() }]
   const hits = {}; let aborted = 0
   await page.context().route('**/view?*', async (r) => {
-    const name = decodeURIComponent(/filename=([^&]+)/.exec(r.request().url())[1]); hits[name] = (hits[name] || 0) + 1
+    const name = decodeURIComponent(/filename=([^&]+)/.exec(r.request().url())[1]); if (name.endsWith('.json')) return r.fulfill({ status: 404, headers: { 'access-control-allow-origin': '*' }, body: 'no record' })   // the colour record (a small .json read for the chips) is not a frame: not counted
+    hits[name] = (hits[name] || 0) + 1
     await new Promise((res) => setTimeout(res, 250))   // slow enough that the person scrolls away while it is being made
     const empty = name.startsWith('s2_')
     try { await r.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: empty ? flat() : dpx(0) }) } catch { aborted++ }
@@ -358,7 +360,8 @@ async function previewsPage(page, api, { n = 12, delayMs = 40, fail = () => fals
   api.state.history.runs['pod-aaaaaaaa'] = manySeqs(n)
   const hits = {}
   await page.context().route('**/view?*', async (r) => {
-    const name = decodeURIComponent(/filename=([^&]+)/.exec(r.request().url())[1]); hits[name] = (hits[name] || 0) + 1
+    const name = decodeURIComponent(/filename=([^&]+)/.exec(r.request().url())[1]); if (name.endsWith('.json')) return r.fulfill({ status: 404, headers: { 'access-control-allow-origin': '*' }, body: 'no record' })   // the colour record (a small .json read for the chips) is not a frame: not counted
+    hits[name] = (hits[name] || 0) + 1
     await new Promise((res) => setTimeout(res, delayMs))
     if (fail(name)) return r.fulfill({ status: 500, body: 'boom' }).catch(() => {})
     return r.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: empty(name) ? flat() : dpx(0) }).catch(() => {})

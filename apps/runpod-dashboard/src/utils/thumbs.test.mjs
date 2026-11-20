@@ -116,3 +116,14 @@ test('withTimeout ends a hung call with a timeout code and passes a quick one th
   await assert.rejects(withTimeout(new Promise(() => {}), 20, 'The listing'), (e) => e.code === 'timeout' && /did not answer/.test(e.message))
   assert.equal(await withTimeout(Promise.resolve(7), 20), 7)
 })
+
+test('a preview carries the header colour fields of the first frame, and the cache keeps them (the colour chips of the tile need them)', async () => {
+  let made = 0
+  const t = createThumbs({ autoCap: Infinity, cache: memCache(), produce: async () => { made++; return { url: 'data:x', header: { transfer: 2, colorimetric: 2 } } } })
+  assert.deepEqual(await t.request('k', {}), { status: 'ready', url: 'data:x', header: { transfer: 2, colorimetric: 2 } })
+  assert.deepEqual(await t.request('k', {}), { status: 'ready', url: 'data:x', cached: true, header: { transfer: 2, colorimetric: 2 } })
+  assert.deepEqual(await t.peek('k', {}), { status: 'ready', url: 'data:x', cached: true, header: { transfer: 2, colorimetric: 2 } })
+  assert.equal(made, 1)
+  const plain = createThumbs({ autoCap: Infinity, cache: memCache(), produce: async () => ({ url: 'data:y' }) })
+  assert.deepEqual(await plain.request('k', {}), { status: 'ready', url: 'data:y' })   // no header: no key
+})

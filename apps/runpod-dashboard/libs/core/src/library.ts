@@ -113,5 +113,7 @@ export async function list(sourceId: string = DEFAULT_SOURCE, o: ListOpts = {}):
 
 /** One round of a volume as the round adapter describes it (shots, graphs, locked), from a prefix listing: read-only. Default volume: the Shared one. */
 export const round = (volumeId: string | undefined, name: string, o: Partial<volumeround.VolumeOpts> = {}) => volumeround.describeRound(volumeId || volumeround.defaultVolumeId(), name, o)
+/** A round (or one shot) of comfy-shared/workflows/ as a read-only file tree, listed by prefix: Import Round's Browse Files for a volume round. */
+export const roundFiles = (volumeId: string | undefined, name: string, shot?: string, o: Partial<volumeround.VolumeOpts> = {}) => volumeround.browseRound(volumeId || volumeround.defaultVolumeId(), name, shot || '', o)
 /** The models a volume round's graphs name against the volume's model list (read-only, lazily, per round). */
 export const preflight = (volumeId: string | undefined, name: string, o: { shots?: string[]; max_graphs?: number } & Partial<volumeround.VolumeOpts> = {}) => volumeround.preflightRound(volumeId || volumeround.defaultVolumeId(), name, { shots: o.shots, max_graphs: o.max_graphs }, o)

@@ -42,7 +42,8 @@ export function deliverableParts(d) {
   return { subfolder: i < 0 ? '' : rel.slice(0, i), filename: i < 0 ? rel : rel.slice(i + 1) }
 }
 /** The starting choices of the Render sequences window, as a configuration's `render` carries them (a missing key is this). */
-export const RENDER_DEFAULTS = { where: 'auto', kind: 'proxy', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto', pull: false, publish: { s3: false, slack: false }, skip_existing: true, preset: 'none' }
+// the same as the core's RENDER_DEFAULT (libs/core/src/mounts.ts): Review video first, Sync off, Publish to S3 pre-ticked
+export const RENDER_DEFAULTS = { where: 'auto', kind: 'review', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto', pull: false, publish: { s3: true, slack: false }, skip_existing: true, preset: 'none' }
 /** The keys a configuration sends only when it already had them or they changed (an untouched configuration saves exactly as before). */
 export const RENDER_OPTIONAL = ['pull', 'publish', 'skip_existing', 'preset']
 const renderNorm = (r) => { const { start_timecode_default: _gone, ...x } = { ...RENDER_DEFAULTS, ...(r || {}) }; return { ...x, publish: { s3: !!x.publish?.s3, slack: !!x.publish?.slack } } }   // a stored start_timecode_default is ignored and dropped (no default timecode anywhere)

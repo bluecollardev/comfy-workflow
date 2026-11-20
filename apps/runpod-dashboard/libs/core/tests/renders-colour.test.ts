@@ -45,7 +45,7 @@ beforeEach(() => {
       return { code: 0 }
     },
     pull: async () => ({ steps: 1, failed: 0, warned: 0, cancelled: false }), listing: async () => [], emit: async () => undefined,
-    findFfmpeg: async () => '/opt/homebrew/bin/ffmpeg', findFfprobe: async () => '/fake/ffprobe', deliverDirs: async () => [], deliverFiles: async () => [],
+    findFfmpeg: async () => '/opt/homebrew/bin/ffmpeg', findFfprobe: async () => '/fake/ffprobe', deliverDirs: async () => [], deliverFiles: async () => [], readText: async () => null,
     spawn: async (_c, args, onLine) => { if (args[0] === '-version') onLine('ffmpeg version 9.0'); return { code: 0 } },
   })
 })
@@ -175,5 +175,15 @@ describe('the Tunnel preset against the EDL (ADR-050)', () => {
       await expect(renders.start({ pod_id: 'p1', sequences: [b], where: 'pod', preset: 'tunnel' })).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/^Refused: CORROSION-012_MAIN: .*Colour not set/) })
       const plain = await renders.plan({ pod_id: 'p1', sequences: [a], width: 960, where: 'pod' }); expect(plain.sequences[0].flags).toEqual([])   // outside the Tunnel preset the EDL says nothing blocking
     } finally { edl.reset() }
+  })
+})
+
+describe('the OCIO record and the header verdict (ADR-048)', () => {
+  it('a review whose frames say linear in the header is refused on the header; with a ComfyUI-OCIO record that resolves it is not, and the summary group is ok', async () => {
+    const s = seqN(1); writeLocal(s, dpx({ transfer: 2 }))
+    const plan = () => renders.plan({ sequences: [s], kind: 'review', where: 'local', colour_mode: 'ask' })
+    let x = await plan(); expect(x.sequences[0].colour).toMatchObject({ verdict: 'refused' }); expect(x.sequences[0].colour_refusal).toMatch(/linear/); expect(x.colour_summary.groups[0].verdict).toBe('refused')
+    writeFileSync(join(shared, 'output', s.dir, `${s.name}.json`), JSON.stringify({ attributes: { colorInteropID: 'g26_p3d65_display', 'com.ocio.colorspace': 'Gamma 2.6 P3-D65 - Display', 'com.ocio.gamut': 'P3-D65' } }))
+    x = await plan(); expect(x.sequences[0]).toMatchObject({ colour_source: 'ocio-record', colour_in: 'p3-d65-gamma26', colour_refusal: null, header_disagrees: true, skip: null }); expect(x.sequences[0].colour).toMatchObject({ verdict: 'ok', transfer_name: 'linear' }); expect(x.sequences[0].colour!.conversion).toMatch(/OCIO record \(Gamma 2.6 P3-D65\)/); expect(x.colour_summary.groups.every((g) => g.verdict === 'ok')).toBe(true)
   })
 })

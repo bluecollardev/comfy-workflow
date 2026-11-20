@@ -12,6 +12,7 @@ const { app, BrowserWindow, dialog, shell, nativeImage, protocol } = require('el
 const coreBridge = require('./core.cjs')
 const fs = require('node:fs')
 const os = require('node:os')
+const { once } = require('./once.cjs')
 const path = require('node:path')
 
 const DEV_URL = process.env.VITE_DEV_SERVER_URL
@@ -147,7 +148,9 @@ function handleLocalFiles() {
   })
 }
 
-async function boot() {
+// What may happen once per process: custom protocols, IPC handlers, the core's timers and the MCP host. On macOS closing the window keeps the app running and a click on the Dock icon boots again:
+// the second `protocol.handle('podfile')` threw "Failed to register protocol" and no window opened ("the app isn't loading").
+const setupOnce = once(() => {
   handlePodFiles()
   handleLocalFiles()
   handleS3Files()
@@ -156,6 +159,10 @@ async function boot() {
   coreBridge.register()
   coreBridge.startIdleWatch().catch((e) => console.error(`idle watch: ${e.message}`))
   coreBridge.startMcpHost().catch((e) => console.error(`mcp host: ${e.message}`))   // the endpoints the configuration serves from the app
+})
+
+async function boot() {
+  setupOnce()
   createWindow()
   await win.loadFile(path.join(__dirname, 'loading.html'))
 

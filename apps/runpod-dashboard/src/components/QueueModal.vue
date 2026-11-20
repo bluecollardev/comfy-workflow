@@ -48,6 +48,8 @@
         <span class="small text-body-secondary">{{ $t('queue.approvedBy', { who: imp.approved_by }) }} · {{ $t('queue.spent', { spent: imp.spent_usd, cap: imp.cap_enabled && imp.cost_cap_usd != null ? imp.cost_cap_usd : '∞' }) }} · {{ $t('queue.podLimit', { n: imp.max_pods ?? '∞' }) }}</span>
         <BButton v-if="imp.state === 'active'" size="sm" variant="outline-danger" class="ms-auto" data-testid="queue-cancel-import" @click="cancelAll(imp)">{{ $t('queue.cancelAll') }}</BButton>
       </div>
+      <div v-if="imp.generate_outputs" class="small text-body-secondary mb-1" data-testid="queue-import-outputs"><i class="fa-solid fa-film me-1"></i>{{ $t(imp.publish ? 'queue.outputsPublish' : 'queue.outputsGenerate', { who: imp.approved_by }) }}</div>
+      <div v-for="(n, i) in imp.output_notes || []" :key="i" class="small text-warning mb-1" data-testid="queue-import-output-note"><i class="fa-solid fa-circle-info me-1"></i>{{ n }}</div>
       <table class="table table-sm align-middle mb-0">
         <thead><tr><th>{{ $t('queue.task') }}</th><th>{{ $t('queue.state') }}</th><th>{{ $t('queue.pod') }}</th><th>{{ $t('queue.result') }}</th><th></th></tr></thead>
         <tbody>
@@ -57,6 +59,7 @@
               <td>
                 <span class="badge" :class="badge(t.state)" data-testid="queue-task-state">{{ $t(`queue.state_${t.state}`) }}</span>
                 <div v-if="t.stage" class="small text-body-secondary" data-testid="queue-task-stage">{{ t.stage }}</div>
+                <div v-if="t.post && (t.post.state === 'rendering' || t.post.state === 'publishing')" class="small text-body-secondary" data-testid="queue-task-post">{{ $t(t.post.state === 'rendering' ? 'queue.postRendering' : 'queue.postPublishing') }}</div>
               </td>
               <td class="small">
                 <template v-if="t.pod_id">{{ t.pod_name }}<div class="text-body-secondary font-monospace">{{ t.pod_id }}</div></template>

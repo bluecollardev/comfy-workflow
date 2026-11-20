@@ -409,6 +409,7 @@ export async function mockApi(page, state) {
     }
     if (method === 'POST' && path === '/queue/import-many' && body.source === 'volume') {   // guards (b) and (c) again, as the core answers them
       (state.volumeImportCalls ||= []).push(body)
+      ;(state.importManyBodies ||= []).push(body)
       if (body.items.some((i) => (i.shots || []).includes('cgi-042'))) return json({ detail: 'Refused: cgi-042 is locked (client-approved, or under 04_GRAPH): listed for reference, never run (Binc\'s rules).' }, 403)
       const est = body.items.reduce((a, i) => a + (i.shots || []).length * 0.12, 0) * (state.volumeLib?.priceFactor || 1)
       if (body.cost_cap_usd != null && est > body.cost_cap_usd) return json({ detail: `Refused: the estimate $${est.toFixed(2)} passes the cap $${body.cost_cap_usd}.` }, 402)
@@ -416,7 +417,7 @@ export async function mockApi(page, state) {
       state.queue = { imports: body.items.map((i, n) => ({ id: `imp${n + 1}`, round: i.round, source: 'volume', approved_by: body.approved_by, state: 'active', spent_usd: 0, cap_enabled: true, cost_cap_usd: body.cost_cap_usd, max_pods: i.max_pods, counts: {} })), tasks: body.items.flatMap((i, n) => i.shots.map((s, k) => ({ id: `t${n}-${k}`, import_id: `imp${n + 1}`, round: i.round, shot: s, kind: 'run', state: 'waiting', graphs: [`${i.round}/${s}/${s}__a__${i.round}.json`] }))), active: 1 }
       return json(state.queue.imports)
     }
-    if (method === 'POST' && path === '/queue/import-many') { for (const i of body.items) { const one = { round: i.round, shots: i.shots, cards: i.cards, max_pods: i.max_pods, cost_cap_usd: body.cost_cap_usd == null ? undefined : Math.round(body.cost_cap_usd / body.items.length * 100) / 100, approved_by: body.approved_by, run_workflows: body.run_workflows, volume_id: body.volume_id }; state.imported = one; (state.importedAll ||= []).push(one) }
+    if (method === 'POST' && path === '/queue/import-many') { (state.importManyBodies ||= []).push(body); for (const i of body.items) { const one = { round: i.round, shots: i.shots, cards: i.cards, max_pods: i.max_pods, cost_cap_usd: body.cost_cap_usd == null ? undefined : Math.round(body.cost_cap_usd / body.items.length * 100) / 100, approved_by: body.approved_by, run_workflows: body.run_workflows, volume_id: body.volume_id }; state.imported = one; (state.importedAll ||= []).push(one) }
       state.queue = { imports: body.items.map((i, n) => ({ id: `imp${n + 1}`, round: i.round, approved_by: body.approved_by, state: 'active', spent_usd: 0, cap_enabled: true, cost_cap_usd: body.cost_cap_usd, max_pods: i.max_pods, counts: {} })), tasks: [{ id: 't1', import_id: 'imp1', round: body.items[0].round, shot: null, kind: 'pull', state: 'running', pod_name: 'pull' }, ...body.items[0].shots.map((s, k) => ({ id: `t${k + 2}`, import_id: 'imp1', round: body.items[0].round, shot: s, kind: 'run', state: k ? 'waiting' : 'failed', error: k ? undefined : 'boom (node 4, KSampler)' }))], active: 1 + body.items[0].shots.length }; return json(state.queue.imports) }
     if (method === 'POST' && path === '/queue/import') { state.imported = body; (state.importedAll ||= []).push(body); state.queue = { imports: [{ id: 'imp1', round: body.round, approved_by: body.approved_by, state: 'active', spent_usd: 0, cap_enabled: true, cost_cap_usd: body.cost_cap_usd, max_pods: body.max_pods, counts: {} }], tasks: [{ id: 't1', import_id: 'imp1', round: body.round, shot: null, kind: 'pull', state: 'running', pod_name: 'pull' }, ...body.shots.map((s, i) => ({ id: `t${i + 2}`, import_id: 'imp1', round: body.round, shot: s, kind: 'run', state: i ? 'waiting' : 'failed', error: i ? undefined : 'boom (node 4, KSampler)' }))], active: 1 + body.shots.length }; return json(state.queue.imports[0]) }
     if (method === 'POST' && path === '/queue/purge') { const q = state.queue || { imports: [], tasks: [] }; const live = new Set(q.tasks.filter((t) => ['waiting', 'running', 'held'].includes(t.state)).map((t) => t.import_id)); const gone = q.imports.filter((i) => !live.has(i.id)).map((i) => i.id); state.purged = body; q.imports = q.imports.filter((i) => !gone.includes(i.id)); q.tasks = q.tasks.filter((t) => !gone.includes(t.import_id)); return json({ removed_imports: gone.length }) }
@@ -760,6 +761,7 @@ export async function mockApi(page, state) {
     if (method === 'GET' && path === '/history/outputs') {
       ;(state.outputCalls ||= []).push({ ...query })
       const s3 = state.s3Outputs
+      if (s3?.fail) return json({ error: s3.fail }, 409)   // state.s3Outputs.fail: the listing is refused with this reason
       if (!s3) return json({ sources: [{ id: 'volume-s3', name: 'Network volume (S3)', hint: '', ok: false, reason: 'RUNPOD_S3_ACCESS_KEY and RUNPOD_S3_SECRET_KEY are not set (Default Configuration): without them only a pod could list this volume, and that costs money, so nothing was started.' }], runs: [], folders: [], prefix: '', capped: false, total: 0, volume_id: query.volume_id || '' })
       // The whole tree (all=1): state.s3Outputs.allJob answers { job_id } and /history/outputs/status steps through allSteps polls of progress (noProgress: none) then the result; allHang never ends, allFail fails, allCap caps the files
       if (query.all && !s3.noAll) {
@@ -1134,11 +1136,34 @@ export default {
     const panamaRoundList = () => { const pn = state.panama || {}; const base = pn.rounds || [{ name: 'brynley-comfy-2026-10-23', staged: false, state: 'none', present: 0, expected: null, missing: null, bytes: 0 }, { name: 'brynley-comfy-2026-10-20', staged: false, state: 'partial', present: 391, expected: 1283, missing: 892, bytes: 8100000000 }, { name: 'brynley-inbox-2026-10-28-v001', staged: true, state: 'complete', present: 378, expected: 378, missing: 0, bytes: 623848 }]; return base.map((r) => (pn.deleted || []).includes(r.name) ? { ...r, staged: false, state: 'none', present: 0, expected: null, missing: null, bytes: 0 } : r) }   // one list for /panama/rounds and the library's panama-s3 source
     if (method === 'GET' && path === '/panama/rounds') return json(panamaRoundList())
     // ADR-044: the library. Sources list; every item has the one shape (the BH rounds are the panama-s3 source).
-    if (method === 'GET' && path === '/library/sources') return json([{ id: 'panama-s3', name: 'BH (Panama bucket)', hint: 'The rounds BH delivers to the exchange bucket, downloaded to this PC and checked against their manifest.', available: true, reason: '' }, { id: 'volume', name: 'Volume (rounds already on a network volume)', hint: 'Read-only listing over the S3 API.', available: true, reason: '', needs: 'volume' }])
+    if (method === 'GET' && path === '/library/sources') return json([{ id: 'panama-s3', name: 'BH (Panama bucket)', hint: 'The rounds BH delivers to the exchange bucket, downloaded to this PC and checked against their manifest.', available: true, reason: '' }, { id: 'volume', name: 'Volume (rounds already on a network volume)', hint: 'Read-only listing over the S3 API.', available: !!state.volumeSourceReady, reason: state.volumeSourceReady ? '' : 'RUNPOD_S3_ACCESS_KEY and RUNPOD_S3_SECRET_KEY are not set', needs: 'volume' }])   // state.volumeSourceReady = the S3 keys are set: Import Round then starts on the Volume source
     // ADR-044 step 2: the volume source. state.volumeLib = { status, rounds } overrides what the fake volume holds.
     if (method === 'GET' && path === '/library/status') { (state.libraryCalls ||= []).push({ path, ...query }); return json(state.volumeLib?.status || { available: true, reason: '', volume_id: query.volume_id }) }
     if (method === 'GET' && path === '/library/round') return json({ kind: 'round', round: query.round, shots: ['archival-080', 'archival-084', 'cgi-042'], variants: ['a', 'b'], graphs: [], locked: ['cgi-042'], findings: [] })
+    // A round of comfy-shared/workflows/ as a file tree (Browse Files): state.volumeLib.files = [{ path: '<round>/<shot>/<graph>', bytes }] (default below), .filesFail = a refusal reason, .filesTruncated. Calls in state.roundFilesCalls.
+    if (method === 'GET' && path === '/library/round-files') {
+      (state.roundFilesCalls ||= []).push({ ...query })
+      const lib = state.volumeLib || {}
+      if (lib.filesFail) return json({ error: lib.filesFail }, 502)
+      const all = lib.files || [
+        { path: 'proxy_v005/archival-080/archival-080__a__proxy_v005.json', bytes: 2048 }, { path: 'proxy_v005/archival-080/archival-080__b__proxy_v005.json', bytes: 2048 },
+        { path: 'proxy_v005/archival-080/notes/old/readme.md', bytes: 1048576 }, { path: 'proxy_v005/archival-084/archival-084__main__proxy_v005.json', bytes: 500 }, { path: 'proxy_v005/README.md', bytes: 12 },
+        { path: 'proxy_v004g/archival-080/archival-080__e__proxy_v004g.json', bytes: 1 },
+      ]
+      const pre = query.shot ? `${query.round}/${query.shot}/` : `${query.round}/`
+      const files = all.filter((f) => f.path.startsWith(pre)).map((f) => ({ path: query.shot ? f.path.slice(query.round.length + 1) : f.path.slice(pre.length), bytes: f.bytes })).sort((a, b) => a.path.localeCompare(b.path))
+      const dirs = new Map(), seen = new Set(), entries = []
+      for (const f of files) { const p = f.path.split('/'); for (let i = 1; i < p.length; i++) { const d = p.slice(0, i).join('/'), c = dirs.get(d) || { files: 0, bytes: 0 }; c.files++; c.bytes += f.bytes; dirs.set(d, c) } }
+      for (const f of files) { const p = f.path.split('/'); for (let i = 1; i < p.length; i++) { const d = p.slice(0, i).join('/'); if (!seen.has(d)) { seen.add(d); entries.push({ path: d, dir: true, ...dirs.get(d) }) } } entries.push({ path: f.path, dir: false, bytes: f.bytes }) }
+      return json({ volume_id: query.volume_id, root: `comfy-shared/workflows/${query.round}${query.shot ? `/${query.shot}` : ''}`, entries, files: files.length, bytes: files.reduce((a, f) => a + f.bytes, 0), truncated: !!lib.filesTruncated })
+    }
     if (method === 'POST' && path === '/library/preflight') { (state.libraryCalls ||= []).push({ path, ...body }); return json(state.volumeLib?.preflight || { round: body.round, volume_id: body.volume_id, checked: 4, total_graphs: 5, missing_total: 1, graphs: [{ graph: `${body.round}/archival-080/archival-080__a__${body.round}.json`, models: ['LTX23_audio_vae_bf16.safetensors'], missing: [{ name: 'LTX23_audio_vae_bf16.safetensors', node_type: 'LTXVAudioVAELoader', reads: ['models/checkpoints/'], elsewhere: ['models/vae/LTX23_audio_vae_bf16.safetensors'] }] }], note: 'read-only' }) }
+    // Rounds listing faults: state.libraryItems = { fail: [true, false] } makes call N fail (502 with { error }) when fail[N] is truthy (a string is the reason); delay: [ms, ...] holds call N. Calls counted in state.libraryItems.n.
+    if (method === 'GET' && path === '/library/items' && state.libraryItems) {
+      const li = state.libraryItems, n = li.n = (li.n || 0) + 1, f = (li.fail || [])[n - 1], d = (li.delay || [])[n - 1]
+      if (d) await new Promise((r) => setTimeout(r, d))
+      if (f) return json({ error: typeof f === 'string' ? f : 'aws exited 255: Unable to locate credentials' }, 502)
+    }
     if (method === 'GET' && path === '/library/items' && query.source === 'volume') {
       (state.libraryCalls ||= []).push({ path, ...query })
       return json(state.volumeLib?.rounds || [

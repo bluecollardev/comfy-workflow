@@ -13,7 +13,7 @@ async function open(page, api, { delay = 0, runs } = {}) {
   api.state.s3Outputs = VOL
   await page.addInitScript(() => { window.__e2eOutputsScope = 'folder' })   // these tests are about the folder scope (the window starts in All outputs)
   const hits = { n: 0 }
-  await page.context().route('**/view?*', async (r) => { hits.n++; if (delay) await new Promise((res) => setTimeout(res, delay)); await r.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: px }).catch(() => {}) })
+  await page.context().route('**/view?*', async (r) => { if (r.request().url().includes('.json')) return r.fulfill({ status: 404, headers: { 'access-control-allow-origin': '*' }, body: 'no record' }); hits.n++; if (delay) await new Promise((res) => setTimeout(res, delay)); await r.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: px }).catch(() => {}) })
   await page.goto('/')
   await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
   return { m: page.getByTestId('pod-outputs-modal'), hits }
@@ -199,7 +199,7 @@ test('regenerating replaces the saved preview with the new picture, and a failur
   api.state.s3Outputs = VOL
   await page.addInitScript(() => { window.__e2eOutputsScope = 'folder' })
   let fail = false, hits = 0
-  await page.context().route('**/view?*', (r) => { hits++; if (fail) return r.fulfill({ status: 500, body: 'boom' }); return r.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: makeDpx({ width: 16, height: 8, bits: 16, fn: (x, y, c) => (c === 0 ? 20000 + frames.v * 9000 + x * 300 : 30000 + y * 1000) }) }) })
+  await page.context().route('**/view?*', (r) => { if (r.request().url().includes('.json')) return r.fulfill({ status: 404, headers: { 'access-control-allow-origin': '*' }, body: 'no record' }); hits++; if (fail) return r.fulfill({ status: 500, body: 'boom' }); return r.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: makeDpx({ width: 16, height: 8, bits: 16, fn: (x, y, c) => (c === 0 ? 20000 + frames.v * 9000 + x * 300 : 30000 + y * 1000) }) }) })
   await page.goto('/'); await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
   const m = page.getByTestId('pod-outputs-modal')
   let g = await openGenerate(page)
