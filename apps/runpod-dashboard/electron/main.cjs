@@ -13,6 +13,7 @@ const coreBridge = require('./core.cjs')
 const fs = require('node:fs')
 const os = require('node:os')
 const { once } = require('./once.cjs')
+const { createAppLog } = require('./app-log.cjs')
 const path = require('node:path')
 
 const DEV_URL = process.env.VITE_DEV_SERVER_URL
@@ -45,6 +46,10 @@ function readEnvFile(file) {
   return env
 }
 
+// The application's log (every console line of this process, the page's warnings and errors, crashes), kept in the config folder and never deleted by the app
+const appLog = createAppLog({ dir: path.join(process.env.POD_MANAGER_CONFIG_DIR || path.join(require('node:os').homedir(), '.config', 'runpod-pod-manager'), 'app-logs') })
+appLog.install()
+app.on('child-process-gone', (_e, d) => appLog.write('error', `a ${d?.type} process is gone: ${d?.reason} (exit ${d?.exitCode})`))
 function createWindow() {
   win = new BrowserWindow({
     width: 1280,
@@ -56,6 +61,7 @@ function createWindow() {
     icon: process.platform === 'darwin' ? undefined : ICON,
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, 'preload.cjs') },
   })
+  appLog.watchWindow(win.webContents)
   // target=_blank links (the pod's ComfyUI URL, provider profiles) open in the system browser
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
