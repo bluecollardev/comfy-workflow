@@ -1,0 +1,218 @@
+[
+ {
+  "group": "A",
+  "round": "_TEST_2026-11-19",
+  "shot": "archival-077",
+  "stem": "archival-077_a_mono_v015_NOT_RELEASED",
+  "dir": "mono_v015/archival-077/archival-077_a/dpx",
+  "frames": 80,
+  "bytes": 3981445120
+ },
+ {
+  "group": "A",
+  "round": "_TEST_2026-11-19",
+  "shot": "archival-077",
+  "stem": "archival-077_b_mono_v015_NOT_RELEASED",
+  "dir": "mono_v015/archival-077/archival-077_b/dpx",
+  "frames": 69,
+  "bytes": 3433996416
+ },
+ {
+  "group": "A",
+  "round": "_TEST_2026-11-19",
+  "shot": "archival-080",
+  "stem": "archival-080_a_mono_v015_NOT_RELEASED",
+  "dir": "mono_v015/archival-080/archival-080_a/dpx",
+  "frames": 94,
+  "bytes": 4990067456
+ },
+ {
+  "group": "A",
+  "round": "_TEST_2026-11-19",
+  "shot": "archival-080",
+  "stem": "archival-080_b_mono_v015_NOT_RELEASED",
+  "dir": "mono_v015/archival-080/archival-080_b/dpx",
+  "frames": 60,
+  "bytes": 3185149440
+ },
+ {
+  "group": "A",
+  "round": "_TEST_2026-11-19",
+  "shot": "archival-080",
+  "stem": "archival-080_c_mono_v015_NOT_RELEASED",
+  "dir": "mono_v015/archival-080/archival-080_c/dpx",
+  "frames": 90,
+  "bytes": 4777724160
+ },
+ {
+  "group": "A",
+  "round": "_TEST_2026-11-19",
+  "shot": "archival-080",
+  "stem": "archival-080_d_mono_v015_NOT_RELEASED",
+  "dir": "mono_v015/archival-080/archival-080_d/dpx",
+  "frames": 83,
+  "bytes": 4406123392
+ },
+ {
+  "group": "A",
+  "round": "_TEST_2026-11-19",
+  "shot": "archival-080",
+  "stem": "archival-080_e_mono_v015_NOT_RELEASED",
+  "dir": "mono_v015/archival-080/archival-080_e/dpx",
+  "frames": 44,
+  "bytes": 2335776256
+ },
+ {
+  "group": "A",
+  "round": "_TEST_2026-11-19",
+  "shot": "archival-084",
+  "stem": "archival-084_main_mono_v015_NOT_RELEASED",
+  "dir": "mono_v015/archival-084/archival-084_main/dpx",
+  "frames": 39,
+  "bytes": 1636679616
+ },
+ {
+  "group": "A",
+  "round": "_TEST_2026-11-19",
+  "shot": "archival-093",
+  "stem": "archival-093_b_mono_v015_NOT_RELEASED",
+  "dir": "mono_v015/archival-093/archival-093_b/dpx",
+  "frames": 126,
+  "bytes": 5284468224
+ },
+ {
+  "group": "A",
+  "round": "_TEST_2026-11-19",
+  "shot": "archival-104",
+  "stem": "archival-104_b_mono_v015_NOT_RELEASED",
+  "dir": "mono_v015/archival-104/archival-104_b/dpx",
+  "frames": 130,
+  "bytes": 6469848320
+ },
+ {
+  "group": "A",
+  "round": "_TEST_2026-11-19",
+  "shot": "archival-123",
+  "stem": "archival-123_c_mono_v015_NOT_RELEASED",
+  "dir": "mono_v015/archival-123/archival-123_c/dpx",
+  "frames": 66,
+  "bytes": 3284692224
+ },
+ {
+  "group": "A",
+  "round": "_TEST_2026-11-20",
+  "shot": "archival-080",
+  "stem": "archival-080_a_mono_v017_NOT_RELEASED",
+  "dir": "mono_v017/archival-080/archival-080_a/dpx",
+  "frames": 94,
+  "bytes": 4990067456
+ },
+ {
+  "group": "B",
+  "round": "_TEST_2026-11-19",
+  "shot": "archival-101",
+  "stem": "archival-101_a_mono_v015_NOT_RELEASED",
+  "dir": "mono_v015/archival-101/archival-101_a/dpx",
+  "frames": 89,
+  "bytes": 3737293696
+ },
+ {
+  "group": "B",
+  "round": "_TEST_2026-11-19",
+  "shot": "archival-103",
+  "stem": "archival-103_main_mono_v015_NOT_RELEASED",
+  "dir": "mono_v015/archival-103/archival-103_main/dpx",
+  "frames": 96,
+  "bytes": 4777734144
+ },
+ {
+  "group": "B",
+  "round": "_TEST_2026-11-19",
+  "shot": "archival-123",
+  "stem": "archival-123_a_mono_v015_NOT_RELEASED",
+  "dir": "mono_v015/archival-123/archival-123_a/dpx",
+  "frames": 68,
+  "bytes": 3384228352
+ },
+ {
+  "group": "C",
+  "round": "_TEST_2026-11-19",
+  "shot": "cgi-042",
+  "stem": "CGI-042B_SINGLE-SPEED-25S_ALT_V01_1982X1046_23.976_PRORES422HQ_mono_v016_NOT_RELEASED",
+  "dir": "mono_v016/cgi-042b/cgi-042b_single-speed-25s/dpx",
+  "frames": 299,
+  "bytes": 15857161216
+ },
+ {
+  "group": "C",
+  "round": "_TEST_2026-11-19",
+  "shot": "creature-266",
+  "stem": "CREATURE-266_LANDING_FINAL_V03_1920X1080_23.976_PRORES422HQ_mono_v016_NOT_RELEASED",
+  "dir": "mono_v016/creature-266/creature-266_landing/dpx",
+  "frames": 51,
+  "bytes": 2538171264
+ },
+ {
+  "group": "C",
+  "round": "_TEST_2026-11-19",
+  "shot": "enhance-146",
+  "stem": "ENHANCE-146_B_FINAL_V01_3840X2160_23.976_PRORES422HQ_review_v003_rec0118-0142_NOT_RELEASED",
+  "dir": "retime_review_v003/enhance-146_b/dpx",
+  "frames": 25,
+  "bytes": 1244201600
+ },
+ {
+  "group": "C",
+  "round": "_TEST_2026-11-19",
+  "shot": "map-066",
+  "stem": "MAP-066_ASSEMBLY_FINAL_V01_1920X1080_23.976_PRORES422HQ_mono_v016_NOT_RELEASED",
+  "dir": "mono_v016/map-066/map-066_assembly/dpx",
+  "frames": 537,
+  "bytes": 26725450368
+ },
+ {
+  "group": "C",
+  "round": "_TEST_2026-11-19",
+  "shot": "photoreal-013",
+  "stem": "PHOTOREAL-013_CHASMFAST07_FINAL_V01_1920X1080_24_HEVC_mono_v016_NOT_RELEASED",
+  "dir": "mono_v016/photoreal-013/photoreal-013_chasmfast07/dpx",
+  "frames": 101,
+  "bytes": 5026574464
+ },
+ {
+  "group": "C",
+  "round": "_TEST_2026-11-19",
+  "shot": "photoreal-013",
+  "stem": "PHOTOREAL-013_FLOORTRACK_FINAL_V01_1926X1076_24_HEVC_mono_v016_NOT_RELEASED",
+  "dir": "mono_v016/photoreal-013/photoreal-013_floortrack/dpx",
+  "frames": 167,
+  "bytes": 8367539008
+ },
+ {
+  "group": "C",
+  "round": "_TEST_2026-11-19",
+  "shot": "photoreal-187",
+  "stem": "PHOTOREAL-187_MAIN_FINAL_V03_1920X1080_23.976_PRORES422HQ_mono_v016_NOT_RELEASED",
+  "dir": "mono_v016/photoreal-187/photoreal-187_main/dpx",
+  "frames": 176,
+  "bytes": 8759179264
+ },
+ {
+  "group": "C",
+  "round": "_TEST_2026-11-20",
+  "shot": "cgi-090",
+  "stem": "CGI-090_SHOT1_FINAL_V03_1920X1080_23.976_PRORES422HQ_mono_v016_NOT_RELEASED",
+  "dir": "mono_v016/cgi-090/cgi-090_shot1/dpx",
+  "frames": 345,
+  "bytes": 17169982080
+ },
+ {
+  "group": "C",
+  "round": "_TEST_2026-11-20",
+  "shot": "photoreal-013",
+  "stem": "photoreal-013_chasmfastia2_mono_v015_NOT_RELEASED",
+  "dir": "mono_v015/photoreal-013/photoreal-013_chasmfastia2/dpx",
+  "frames": 95,
+  "bytes": 4727966080
+ }
+]
