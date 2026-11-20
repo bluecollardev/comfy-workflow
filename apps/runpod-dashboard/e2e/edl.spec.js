@@ -101,8 +101,9 @@ test.describe('Generate (Tunnel proxy): flags, timecode, colour and the clip-nam
     await expect(flag(g, 'cgi-042_a', 'colour-not-set')).toBeVisible(); await expect(g.getByTestId('pod-outputs-render-start')).toBeDisabled()
     await ui.set('cgi-042_a', 'p3-d65-srgb')
     await expect(flag(g, 'cgi-042_a', 'colour-not-set')).toHaveCount(0); await expect(flag(g, 'cgi-043_b', 'colour-not-set')).toBeVisible(); await expect(g.getByTestId('pod-outputs-render-start')).toBeEnabled()   // one sequence is ready
-    await g.getByTestId('pod-outputs-render-colour-all').selectOption('p3-d65-gamma26')   // rows without their own choice
-    await expect(flag(g, 'cgi-043_b', 'colour-not-set')).toHaveCount(0)
+    await g.getByTestId('pod-outputs-render-colour-all').selectOption('p3-d65-gamma26')   // the global override replaces every row's colour, the one set by hand too
+    await expect(flag(g, 'cgi-043_b', 'colour-not-set')).toHaveCount(0); await expect(flag(g, 'cgi-042_a', 'colour-not-set')).toHaveCount(0)
+    await ui.set('cgi-042_a', 'p3-d65-srgb')   // a row set after the global one wins again
     await g.getByTestId('pod-outputs-render-start').click(); await expect.poll(() => api.state.renders.started.length).toBe(1)
     const seqs = api.state.renders.started[0].sequences; expect(seqs.find((s) => s.name === 'cgi-042_a').colour_in).toBe('p3-d65-srgb'); expect(seqs.find((s) => s.name === 'cgi-043_b').colour_in).toBe('p3-d65-gamma26')
   })
@@ -192,12 +193,34 @@ test.describe('stated colour', () => {
     await expect(rc('cgi-042_a')).toHaveAttribute('data-source', 'none'); await expect(rc('cgi-043_b')).toHaveAttribute('data-source', 'none')
     await g.getByTestId('pod-outputs-render-colour-all').selectOption('linear-p3-d65')
     await expect(rc('cgi-042_a')).toHaveText('Colour: Linear light, P3-D65 (same colour for all)'); await expect(rc('cgi-043_b')).toHaveText('Colour: Linear light, P3-D65 (same colour for all)')
-    await ui.set('cgi-043_b', 'kodak-log')   // its own choice wins over the one for all
-    await g.getByTestId('pod-outputs-render-colour-all').selectOption('linear-rec709')
+    await g.getByTestId('pod-outputs-render-colour-all').selectOption('linear-rec709')   // replaces every row's colour
+    await expect(rc('cgi-042_a')).toContainText('Linear light, Rec.709'); await expect(rc('cgi-043_b')).toContainText('Linear light, Rec.709')
+    await ui.set('cgi-043_b', 'kodak-log')   // a row's own choice, made after the global one, wins for that row
     await expect(rc('cgi-042_a')).toContainText('Linear light, Rec.709'); await expect(rc('cgi-043_b')).toHaveText('Colour: Kodak log (set for this sequence)')
     await ui.open('cgi-042_a'); await expect(ui.sel().locator('option').first()).toHaveText('Same colour for all: Linear light, Rec.709'); await ui.close()
     await g.getByTestId('pod-outputs-render-start').click(); await expect.poll(() => api.state.renders.started.length).toBe(1)
     const seqs = api.state.renders.started[0].sequences; expect(seqs.find((x) => x.name === 'cgi-042_a').colour_in).toBe('linear-rec709'); expect(seqs.find((x) => x.name === 'cgi-043_b').colour_in).toBe('kodak-log')
+  })
+  test('the global colour sits in the settings row, shows the colour every row resolves to (from the OCIO records) by default, replaces all colours when picked; "Per sequence" goes back; the row button says the current colour', async ({ page, api }) => {
+    const ocio = { colorInteropID: 'g26_p3d65_display', colorspace: 'Gamma 2.6 P3-D65 - Display', gamut: 'P3-D65', label: 'Gamma 2.6 P3-D65', colour_in: 'p3-d65-gamma26', header_disagrees: true }
+    const rec = { header_transfer: 'linear (code 2)', colour_in: 'p3-d65-gamma26', colour_source: 'ocio-record', ocio, header_disagrees: true }
+    const g = await open(page, api, { preset: 'none', rows: { [A]: rec, [B]: rec } }), ui = colourUi(page, g)
+    const all = g.getByTestId('pod-outputs-render-colour-all'), btn = (n) => row(g, n).getByTestId('pod-outputs-render-colour-edit')
+    await expect(all).toBeVisible()   // always there, with Size, Frame rate and Where, not only when a colour is missing
+    await expect(all).toHaveValue('p3-d65-gamma26'); await expect(all).toHaveAttribute('data-uniform', 'p3-d65-gamma26'); await expect(all).toHaveAttribute('data-override', '')   // by default: the colour all rows share, nothing stated by a person
+    await expect(btn('cgi-042_a')).toHaveText('P3-D65, gamma 2.6'); await expect(btn('cgi-043_b')).toHaveText('P3-D65, gamma 2.6')   // the button says the current colour, not "Change Colour"
+    await ui.set('cgi-043_b', 'kodak-log'); await expect(btn('cgi-043_b')).toHaveText('Kodak log'); await expect(all).toHaveValue('')   // rows differ: Per sequence
+    await all.selectOption('linear-rec709')   // replaces every colour, the one set by hand too
+    await expect(btn('cgi-042_a')).toHaveText('Linear light, Rec.709'); await expect(btn('cgi-043_b')).toHaveText('Linear light, Rec.709'); await expect(all).toHaveAttribute('data-override', 'linear-rec709')
+    await all.selectOption('')   // back to what each sequence's record says
+    await expect(all).toHaveValue('p3-d65-gamma26'); await expect(btn('cgi-042_a')).toHaveText('P3-D65, gamma 2.6')
+  })
+  test('a sequence with no colour at all says "Set Colour" on its button, and the global select is on Per sequence while rows differ', async ({ page, api }) => {
+    const ocio = { colorInteropID: 'g26_p3d65_display', colorspace: 'Gamma 2.6 P3-D65 - Display', gamut: 'P3-D65', label: 'Gamma 2.6 P3-D65', colour_in: 'p3-d65-gamma26' }
+    const lin = { header_transfer: 'linear (code 2)', flags: [{ code: 'colour-not-stated', level: 'warn', message: 'State the colour of these frames' }] }
+    const g = await open(page, api, { preset: 'none', rows: { [A]: { colour_in: 'p3-d65-gamma26', colour_source: 'ocio-record', ocio }, [B]: lin } })
+    await expect(row(g, 'cgi-043_b').getByTestId('pod-outputs-render-colour-edit')).toHaveText('Set Colour'); await expect(row(g, 'cgi-042_a').getByTestId('pod-outputs-render-colour-edit')).toHaveText('P3-D65, gamma 2.6')
+    await expect(g.getByTestId('pod-outputs-render-colour-all')).toHaveValue('')
   })
   test('Auto-publish > Generate: the colour of the frames has no default, needs the approver\'s name, and is recorded with it; the Queue lists sequences skipped for it and where the waiting ones are', async ({ page, api }) => {
     api.state.mounts.config.auto_publish = { enabled: true, dry_run: true, window_minutes: 10, daily_cap: null, dry_run_first: true, targets: { s3: true, slack: false, tunnel: false }, standing: { approved_by: 'Brynley', at: '2026-11-19T10:00:00Z' }, generate: { enabled: true, where: 'local', preset: 'review', max_per_day: 20, settle_minutes: 5, fallback_local: false, colour_in: null } }
