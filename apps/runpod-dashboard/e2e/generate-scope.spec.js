@@ -280,7 +280,7 @@ test('Render: a 400 from the core for an all-skipped start shows inline; a Revie
   await expect(page.getByTestId('queue-generations').getByTestId('generations-job-skipped')).toHaveText('1 skipped', { timeout: 8000 })
 })
 
-test('the alert is a normal block that scrolls away with the body: one compact summary row, the folders collapsed behind Show folders (N), at most five rows then its own scroll, and the options stay visible beneath it', async ({ page, api }) => {
+test('the alert is a normal block that scrolls away with the body: one compact summary row, the folders collapsed behind Show Folders (N), at most five rows then its own scroll, and the options stay visible beneath it', async ({ page, api }) => {
   await page.setViewportSize({ width: 1100, height: 700 })
   const subs = Array.from({ length: 9 }, (_, i) => `p_v005/archival-10${i}/archival-10${i}_b_v005_dpx16`)
   const runs = [{ prompt_id: 'sc000000-2222', workflow: 'rounds/r1/s.json', status: 'success', started_at: '2026-11-19T10:00:00Z', duration_s: 5, cost_estimate: 0, outputs: subs.flatMap((sub, i) => seqFiles(`s${i}_proxy`, sub, 2)) }]
@@ -293,9 +293,9 @@ test('the alert is a normal block that scrolls away with the body: one compact s
   expect((await alert.boundingBox()).height).toBeLessThan(80)   // about three lines at most
   // the options beneath it are visible without scrolling at this height
   await expect(g.getByTestId('pod-outputs-generate-tabs')).toBeInViewport()   // the tabs are beneath the alert, visible without scrolling
-  const toggle = alert.getByTestId('pod-outputs-generate-scope-more'); await expect(toggle).toHaveText('Show folders (9)')
+  const toggle = alert.getByTestId('pod-outputs-generate-scope-more'); await expect(toggle).toHaveText('Show Folders (9)')
   await toggle.click(); const rows = alert.getByTestId('generate-scope-folder')
-  await expect(rows).toHaveCount(9); await expect(rows.first()).toHaveText(`output/${subs[0]}`); await expect(rows.first()).toHaveAttribute('title', `output/${subs[0]}`); await expect(toggle).toHaveText('Hide folders')
+  await expect(rows).toHaveCount(9); await expect(rows.first()).toHaveText(`output/${subs[0]}`); await expect(rows.first()).toHaveAttribute('title', `output/${subs[0]}`); await expect(toggle).toHaveText('Hide Folders')
   const box = alert.getByTestId('generate-scope-list'); const d = await box.evaluate((e) => ({ sh: e.scrollHeight, ch: e.clientHeight, oy: getComputedStyle(e).overflowY }))
   expect(d.oy).toBe('auto'); expect(d.sh).toBeGreaterThan(d.ch); expect(d.ch).toBeLessThan(120)   // five rows, then it scrolls inside its box
   // it scrolls away with the content instead of floating over it

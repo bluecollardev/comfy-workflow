@@ -49,7 +49,7 @@ test.describe('Auto-publish is working', () => {
     on(api); api.state.autopublish = { pending: [{ id: 'u', shot: 'archival-085', version: 2, state: 'uploading', due_at: due(0) }, { id: 'w', shot: 'x', version: 1, state: 'waiting', due_at: due(9) }], generate: GEN({ generating: 1, waiting_to_settle: [{ stem: 'A' }] }) }
     api.state.publish = { settings: { s3: { bucket: 'b', prefix: 'p/', region: 'r', credentials: 'app', access_key_hint: '1' }, slack: {}, defaults: { targets: [], message: '' } }, tree: {}, there: [], heavy: [], jobs: [{ job_id: 'a1', trigger: 'auto-publish', state: 'uploading', shot: 'archival-085', bytes_total: 100, bytes_done: 41, files_total: 1, files_done: 0, targets: ['s3'], links: [] }] }
     await page.goto('/'); const b = page.getByTestId('autopublish-working-banner')
-    await expect(b.getByTestId('autopublish-working-text')).toHaveText('Auto-publish: uploading archival-085 to S3 · 41%', { timeout: 8000 }); await expect(b.getByTestId('autopublish-working-more')).toHaveText('+3 more')
+    await expect(b.getByTestId('autopublish-working-text')).toHaveText('Auto-publish: uploading archival-085 to S3 · 41%', { timeout: 8000 }); await expect(b.getByTestId('autopublish-working-more')).toHaveText('+3 More')
     api.state.publish.jobs[0].state = 'posting'; await expect(b.getByTestId('autopublish-working-text')).toHaveText('Auto-publish: posting to Slack', { timeout: 8000 })
   })
   test('hidden when Auto-publish is idle, off, or an older core', async ({ page, api }) => {

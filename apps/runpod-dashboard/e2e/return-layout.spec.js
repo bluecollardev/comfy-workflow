@@ -195,6 +195,18 @@ test.describe('Queue > Publishing: a publish of several shots', () => {
     await q.getByTestId('publish-retry-failed').click()
     await expect.poll(() => (api.state.publish.retries || []).length).toBe(1)
   })
+  test('File links are collapsible: a long list starts closed, the folder links open', async ({ page, api }) => {
+    const links = [{ path: 'archival-080', url: 'https://console.aws.amazon.com/s3/buckets/b?prefix=x/', kind: 'folder' }, ...Array.from({ length: 8 }, (_, i) => ({ path: `f${i}.dpx`, url: `https://s3/f${i}`, kind: 'file' }))]
+    setup(api, { jobs: [parent({ state: 'done', links })] })
+    api.state.publish.settings.slack.file_links = true
+    await page.goto('/'); const q = await openQ(page)
+    await expect(q.locator('[data-testid="publish-link"][data-kind="folder"]')).toHaveCount(1)
+    await expect(q.locator('[data-testid="publish-link"][data-kind="file"]')).toHaveCount(0)
+    await q.getByTestId('publish-links-file-toggle').click()
+    await expect(q.locator('[data-testid="publish-link"][data-kind="file"]')).toHaveCount(8)
+    await q.getByTestId('publish-links-file-toggle').click()
+    await expect(q.locator('[data-testid="publish-link"][data-kind="file"]')).toHaveCount(0)
+  })
   test('a parent card shows its children as rows with state, files, bytes and rate; Retry only on a failed one; Cancel on a running one; Cancel all on the parent', async ({ page, api }) => {
     setup(api, { jobs: [parent({ children: [child('c1', 'archival-077', 'done'), child('c2', 'archival-084', 'uploading'), child('c3', 'cgi-042', 'failed', { error: 'Access Denied', rate: 0 })], manifest: { state: 'pending' } })] })
     await page.goto('/'); const q = await openQ(page)
@@ -206,7 +218,7 @@ test.describe('Queue > Publishing: a publish of several shots', () => {
     await expect(r3.getByTestId('publish-child-error')).toHaveText('Access Denied'); await r3.getByTestId('publish-child-retry').click()
     await expect.poll(() => api.state.publish.retries).toEqual(['c3'])
     await r2.getByTestId('publish-child-cancel').click(); await expect.poll(() => api.state.publish.cancelled).toContain('c2')
-    await expect(q.locator('[data-testid="publishing-job"][data-job="pub-1"]').getByTestId('publish-cancel')).toHaveText('Cancel all')
+    await expect(q.locator('[data-testid="publishing-job"][data-job="pub-1"]').getByTestId('publish-cancel')).toHaveText('Cancel All')
     await expect(q.getByTestId('publish-progress')).toHaveAttribute('data-percent', '33')   // the parent's overall progress
   })
   test('more than 5 children start collapsed; the toggle opens them', async ({ page, api }) => {

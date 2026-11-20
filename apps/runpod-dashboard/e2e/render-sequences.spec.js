@@ -137,7 +137,7 @@ test('Progress: numbers and percent, per-sequence states with the error, a Synci
   await expect(page.getByTestId('pod-outputs-render-button-status')).toHaveText('· Rendering 140 of 412')   // on the Previews button
   Object.assign(j, { state: 'pulling', frames_done: 412, pulled_files: 2, pulled_bytes: 3e6 })
   await expect(p.getByTestId('pod-outputs-render-syncing')).toContainText('Syncing to this PC', { timeout: 6000 })
-  await expect(page.getByTestId('pod-outputs-render-button-status')).toHaveText('· Syncing to this PC')
+  await expect(page.getByTestId('pod-outputs-render-button-status')).toHaveText('· Syncing to This PC')
   Object.assign(j, { state: 'done', finished_at: 'now', summary: '2 sequences rendered, 1 failed; 2 files synced (3 MB)' })
   await expect(p.getByTestId('pod-outputs-render-summary')).toHaveText('2 sequences rendered, 1 failed; 2 files synced (3 MB)', { timeout: 6000 })
   await expect(p.getByTestId('pod-outputs-render-stop')).toHaveCount(0)

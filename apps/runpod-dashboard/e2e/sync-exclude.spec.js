@@ -69,7 +69,7 @@ test('the CANALV2 chip ticks it, the over-capacity alert goes off and the totals
   await expect(startBtn(d)).toBeDisabled()
   const before = await d.getByTestId('sync-plan-counts').innerText()
   const chip = d.getByTestId('sync-exclude-canalv2')
-  await expect(chip).toHaveText('Leave out CANALV2 (usually the largest)')
+  await expect(chip).toHaveText('Leave Out CANALV2 (Usually the Largest)')
   await chip.click()
   await expect(box(d, 'project', 'CANALV2')).toBeChecked()
   await expect(chip).toHaveCount(0)
