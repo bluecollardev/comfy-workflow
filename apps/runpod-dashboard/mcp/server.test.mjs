@@ -3,7 +3,7 @@
 // Run: npm run mcp:test (builds the core first) or node --test mcp/server.test.mjs.
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
@@ -625,6 +625,25 @@ test('publish backfill: scan needs valid sources, run needs approved_by and conf
   assert.match(textOf(refused(await call('publish', { action: 'backfill', step: 'inventory' }))), /No scan has run yet/)
 })
 
+test('render_sequences: the OCIO record beats the DPX header in the plan (ADR-048)', async () => {
+  const seq = { dir: 'ocio_plan/shotA', name: 'ARCHIVAL-090_A_23.976_MONO', first: 0, last: 1, frames: 2, pad: 4 }, d = join(dir, 'shared', 'output', seq.dir)
+  mkdirSync(d, { recursive: true })
+  const h = Buffer.alloc(2048); h.write('SDPX', 0); h.writeUInt32BE(2048, 4); h.writeUInt32BE(1_000_000, 16); h.writeUInt32BE(3840, 772); h.writeUInt32BE(2160, 776); h[800] = 50; h[801] = 2; h[803] = 16   // header: linear
+  for (let i = 0; i < 2; i++) writeFileSync(join(d, `${seq.name}.${String(i).padStart(4, '0')}.dpx`), i === 0 ? h : 'x')
+  const plan = async (extra = {}) => jsonOf(await call('render_sequences', { action: 'plan', sequences: [seq], kind: 'review', where: 'local', colour_mode: 'ask', ...extra }))
+  { const mj = join(dir, 'mounts.json'), cur = JSON.parse(readFileSync(mj, 'utf8')); writeFileSync(mj, JSON.stringify({ ...cur, folders: { ...(cur.folders ?? {}), 'comfy-shared': join(dir, 'shared') } })) }   // earlier tests may have changed the mapping
+  if (!(await plan()).adapters.find((a) => a.id === 'local')?.ok) return   // no local ffmpeg on this machine: the local adapter is not offered   // no local ffmpeg on this machine: the local adapter is not offered
+  let x = (await plan()).sequences[0]; assert.equal(x.colour_source, undefined); assert.equal(x.skip, 'colour not stated')   // no record: the old behaviour
+  writeFileSync(join(d, `${seq.name}.json`), JSON.stringify({ writer: 'ComfyUI-OCIO', attributes: { colorInteropID: 'g26_p3d65_display', 'com.ocio.colorspace': 'Gamma 2.6 P3-D65 - Display', 'com.ocio.gamut': 'P3-D65' } }))
+  x = (await plan()).sequences[0]; assert.equal(x.colour_in, 'p3-d65-gamma26'); assert.equal(x.colour_source, 'ocio-record'); assert.equal(x.header_disagrees, true); assert.equal(x.skip, null); assert.equal(x.colour_refusal, null)
+  assert.equal(x.ocio.colorInteropID, 'g26_p3d65_display'); assert.ok(x.flags.some((f) => f.code === 'header-disagrees' && f.level === 'info'))
+  x = (await plan({ colour_in: 'linear-rec709' })).sequences[0]; assert.equal(x.colour_in, 'linear-rec709'); assert.equal(x.colour_source, undefined)   // a stated colour wins
+  const tl = (await rpc('tools/list')).result.tools; assert.match(tl.find((t) => t.name === 'render_sequences').description, /ocio-record/)
+  const s = jsonOf(await call('render_sequences', { action: 'start', sequences: [seq], kind: 'review', where: 'local', approved_by: 'L', colour_mode: 'ask', codecs: ['h264'] })); assert.match(s.job_id, /^render-/)   // the start is accepted with the record's colour; it runs on this PC's fake-free ffmpeg over two tiny files and fails or finishes on its own
+  let j; for (let i = 0; i < 100; i++) { j = jsonOf(await call('render_sequences', { action: 'status', job_id: s.job_id })).jobs[0]; if (j && !['queued', 'rendering'].includes(j.state)) break; await new Promise((r) => setTimeout(r, 100)) }
+  assert.equal(j.sequences[0].colour_source, 'ocio-record'); assert.equal(j.sequences[0].header_disagrees, true); assert.ok(!(j.sequences[0].error ?? '').match(/colour|header/i), j.sequences[0].error)   // never refused on the header's word
+})
+
 test('render_sequences: skip_existing is accepted and the plan reports the totals (ADR-048)', async () => {
   const tl = (await rpc('tools/list')).result.tools; assert.ok(tl.find((x) => x.name === 'render_sequences').inputSchema.properties.skip_existing)
   const seq = { dir: 'a/b', name: 'S_24_x', first: 0, last: 9, frames: 10, pad: 4 }
@@ -669,4 +688,35 @@ test('configuration: render.pull/skip_existing/publish and outputs.hide_empty_fo
   assert.match(textOf(refused(await call('set_configuration', { patch: { render: { publish: { s3: false, slack: true } } } }))), /Slack announces an upload: turn S3 on/)
   assert.equal(typeof cfg, 'object')
   await call('reset_configuration', {})
+})
+
+test('import tools take generate_outputs and publish (Import Round options): documented, validated like the window, never without a named person; an agent can publish through an import', async () => {
+  const tools = (await rpc('tools/list')).result.tools
+  for (const n of ['plan_round_import', 'import_round', 'import_rounds']) {
+    const p = tools.find((x) => x.name === n).inputSchema.properties
+    assert.ok(p.generate_outputs, n); assert.ok(p.publish, n); assert.match(p.publish.description, /needs generate_outputs/); assert.match(p.publish.description, /locked shot/)
+  }
+  const per = tools.find((x) => x.name === 'import_rounds').inputSchema.properties.rounds.items.properties
+  assert.ok(per.generate_outputs && per.publish)
+  const base = { round: 'proxy_v005', source: 'volume', volume_id: 'vol1' }
+  // the same plain 400s as the window
+  const noGen = await call('plan_round_import', { ...base, publish: true })
+  assert.equal(noGen.result.isError, true); assert.match(textOf(noGen), /Publish needs Generate Outputs/)
+  const noRun = await call('plan_round_import', { ...base, run_workflows: false, generate_outputs: true })
+  assert.equal(noRun.result.isError, true); assert.match(textOf(noRun), /Generate Outputs needs Run Workflows/)
+  const slack = await call('plan_round_import', { ...base, generate_outputs: true, publish: { s3: false, slack: true } })
+  assert.equal(slack.result.isError, true); assert.match(textOf(slack), /Slack only follows an S3 upload/)
+  // a name is needed for the new options (even when the named-yes setting is off); publish itself is not refused (no 403)
+  const noName = await call('import_round', { ...base, generate_outputs: true })
+  assert.equal(noName.result.isError, true); assert.match(textOf(noName), /approved_by/)
+  const noNameMany = await call('import_rounds', { ...base, rounds: [{ round: 'proxy_v005', publish: true }] })
+  assert.equal(noNameMany.result.isError, true); assert.match(textOf(noNameMany), /approved_by/)
+  const dep = await call('import_round', { ...base, publish: true, approved_by: 'Lucas' })
+  assert.equal(dep.result.isError, true); assert.match(textOf(dep), /Publish needs Generate Outputs/); assert.doesNotMatch(textOf(dep), /403|person's act/)
+  // all valid: it gets past the options; the destination is not set up in this test world, so it is a 400 with the reason, and nothing is queued
+  const notReady = await call('import_round', { ...base, generate_outputs: true, publish: true, approved_by: 'Lucas' })
+  assert.equal(notReady.result.isError, true); assert.doesNotMatch(textOf(notReady), /Publish needs|Generate Outputs needs|give approved_by|person's act/)
+  // the plan carries what would be generated and published
+  const ok = await call('plan_round_import', { ...base, generate_outputs: true, publish: true })
+  if (!ok.result.isError) { const pl = JSON.parse(first(ok)); assert.equal(pl.generate_outputs, true); assert.deepEqual(pl.publish, { s3: true, slack: false }) }
 })

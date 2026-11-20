@@ -16,7 +16,7 @@ beforeEach(() => {
   for (const [k, f] of [['HISTORY_FILE', 'h.jsonl'], ['POD_CONFIGS_FILE', 'pc.json'], ['POD_NAMES_FILE', 'pn.json'], ['IDLE_FILE', 'i.json'], ['POD_ROUNDS_FILE', 'pr.json'], ['RENDERS_FILE', 'r.json'], ['AUTOSYNC_FILE', 'as.json'], ['AUTOSYNC_STATE_FILE', 'ass.json']]) process.env[k] = join(d, f)
   process.env.REPOSITORIES_FILE = join(d, 'repositories.json')
   const cfg = mounts.defaults(); cfg.dry_run = true; mounts.save(cfg); renders.reset()
-  renders.setDeps({ target: async () => ({ host: 'root@x', port: 22 }), ssh: async () => ({ code: 0 }), volumeId: () => '', localRoot: () => join(d, 'shared'), findFfmpeg: async () => '/fake/ffmpeg', spawn: async () => ({ code: 0 }), findFfprobe: async () => '/fake/ffprobe', deliverDirs: async () => [], deliverFiles: async () => [], listing: async () => [] })
+  renders.setDeps({ target: async () => ({ host: 'root@x', port: 22 }), ssh: async () => ({ code: 0 }), volumeId: () => '', localRoot: () => join(d, 'shared'), findFfmpeg: async () => '/fake/ffmpeg', spawn: async () => ({ code: 0 }), findFfprobe: async () => '/fake/ffprobe', deliverDirs: async () => [], deliverFiles: async () => [], readText: async () => null, listing: async () => [] })
 })
 afterEach(() => { renders.reset() })
 

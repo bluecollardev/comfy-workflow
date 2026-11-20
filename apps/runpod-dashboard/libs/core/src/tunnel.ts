@@ -5,7 +5,7 @@
  */
 import * as edl from './edl.js'
 
-export type FlagLevel = 'block' | 'warn'
+export type FlagLevel = 'block' | 'warn' | 'info'
 export interface Flag { code: string; level: FlagLevel; message: string }
 export const COLOUR_INS = ['p3-d65-gamma26', 'p3-d65-srgb', 'p3-d65-gamma22', 'kodak-log', 'linear-p3-d65', 'linear-rec709', 'cineon'] as const   // the same list as mounts.COLOUR_INS (the configuration validates against it)
 export type ColourIn = (typeof COLOUR_INS)[number]

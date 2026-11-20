@@ -15,13 +15,14 @@ test.describe('Default Configuration', () => {
     const s = d.getByTestId('config-render')
     await s.scrollIntoViewIfNeeded()
     await expect(s.getByTestId('config-render-where')).toHaveValue('auto')
-    await expect(s.getByTestId('config-render-kind-proxy')).toBeChecked()
+    await expect(s.getByTestId('config-render-kind-review')).toBeChecked(); await expect(s.getByTestId('config-render-kind-proxy')).not.toBeChecked()   // Review video is the default
+    await expect(s.getByTestId('config-render-colour')).toHaveValue(''); await expect(s.getByTestId('config-render-colour').locator('option').first()).toHaveText('Project default: Gamma 2.6 P3-D65')   // nobody has to set the colour
     await expect(s.getByTestId('config-render-proxy-width')).toHaveValue('source')
     await expect(s.getByTestId('config-render-review-width')).toHaveValue('source')
     await expect(s.getByTestId('config-render-codec-prores')).toBeChecked(); await expect(s.getByTestId('config-render-codec-h264')).not.toBeChecked()   // ProRes is the default
     await expect(s.getByTestId('config-render-fps')).toHaveValue('auto')
     await expect(s.getByTestId('config-render-pull')).not.toBeChecked()   // Sync the renders to this PC: unticked by default
-    await expect(s.getByTestId('config-render-publish-s3')).not.toBeChecked(); await expect(s.getByTestId('config-render-publish-slack')).not.toBeChecked(); await expect(s.getByTestId('config-render-skip-existing')).toBeChecked()
+    await expect(s.getByTestId('config-render-publish-s3')).toBeChecked(); await expect(s.getByTestId('config-render-publish-slack')).not.toBeChecked(); await expect(s.getByTestId('config-render-skip-existing')).toBeChecked()   // Publish to S3 is pre-ticked (the core default)
     await expect(s.getByTestId('config-render-pre-help')).toHaveText('These only pre-tick the boxes in the Generate window. Every publish still asks who says yes.'); await expect(s.getByTestId('config-render-skip-help')).toHaveText('Starting values of the Generate window')
     await expect(s.getByTestId('config-render-help')).toHaveText(t('outputs.render.cfg.help'))
     await expect(s.getByTestId('config-render-help')).toContainText('A review video always asks who says yes.')
@@ -133,11 +134,27 @@ test.describe('Render: Sync, Publish and Skip existing as starting values; Outpu
     const d = await openDefault(page)
     const s = d.getByTestId('config-render'); await s.scrollIntoViewIfNeeded()
     await expect(s.getByTestId('config-render-needsync')).toHaveCount(0)
-    await expect(s.getByTestId('config-render-publish-s3')).toBeEnabled(); await expect(s.getByTestId('config-render-publish-slack')).toBeDisabled()   // Slack needs S3
+    await expect(s.getByTestId('config-render-publish-s3')).toBeChecked(); await expect(s.getByTestId('config-render-publish-slack')).toBeEnabled()   // S3 is pre-ticked, so Slack can be
+    await s.getByTestId('config-render-publish-s3').uncheck(); await expect(s.getByTestId('config-render-publish-slack')).toBeDisabled()   // Slack needs S3
     await s.getByTestId('config-render-pull').uncheck()
     await s.getByTestId('config-render-publish-s3').check(); await expect(s.getByTestId('config-render-publish-slack')).toBeEnabled(); await s.getByTestId('config-render-publish-slack').check()
     await s.getByTestId('config-render-publish-s3').uncheck(); await expect(s.getByTestId('config-render-publish-slack')).not.toBeChecked()   // S3 off takes Slack with it
     await s.getByTestId('config-render-publish-s3').check(); await expect(s.getByTestId('config-render-pull')).not.toBeChecked(); await expect(s.getByTestId('config-render-publish-s3')).toBeChecked()   // S3 on with Sync off stays on
+  })
+  test('the colour field: the project default untouched sends nothing; a colour saves as render.colour (format) and the project default goes back to known', async ({ page, api }) => {
+    let d = await openDefault(page)
+    const s = d.getByTestId('config-render'); await s.scrollIntoViewIfNeeded()
+    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    expect(calls(api, 'PUT', '/mounts')[0].body).not.toHaveProperty('render')   // untouched: no render key at all
+    d = await openDefault(page); const s2 = d.getByTestId('config-render'); await s2.scrollIntoViewIfNeeded()
+    await s2.getByTestId('config-render-colour').selectOption('p3-d65-srgb')
+    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    expect(calls(api, 'PUT', '/mounts')[1].body.render.colour).toMatchObject({ mode: 'format', format: 'p3-d65-srgb' })
+    d = await openDefault(page); const s3 = d.getByTestId('config-render'); await s3.scrollIntoViewIfNeeded()
+    await expect(s3.getByTestId('config-render-colour')).toHaveValue('p3-d65-srgb')   // it reloads
+    await s3.getByTestId('config-render-colour').selectOption('')   // back to the project default
+    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    expect(calls(api, 'PUT', '/mounts')[2].body.render.colour).toEqual({ mode: 'known' })
   })
   test('Save carries pull, publish and skip_existing as render keys; an untouched config sends no render key', async ({ page, api }) => {
     const d = await openDefault(page)

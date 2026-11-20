@@ -43,9 +43,9 @@ export const MAX_SEQUENCES = 200, KEEP_JOBS = 20, LISTING_MS = 60_000
 export interface Sequence { /** the start timecode of a Tunnel proxy, HH:MM:SS:FF non-drop (else the DPX header's, else the EDL's source-in; never a default) */ start_timecode?: string; /** what the DPX frames are, for the Tunnel proxy's converted Rec.709 view (no default: chosen per sequence) */ colour_in?: tunnelj.ColourIn; /** the clip name outputs carry (the EDL's), default the frames' stem; never used for the frames themselves */ clip_name?: string; dir: string; name: string; first: number; last: number; frames: number; pad: number; fps?: number }
 export type Where = 'auto' | 'pod' | 'local'
 export interface Range { from: number; to: number }
-export interface PlannedSequence extends Omit<Sequence, 'start_timecode'> { /** where the colour used for this sequence came from when nobody stated it for the run (configuration format or a guess), and the assumption of a guess */ colour_source?: 'configuration' | 'guess'; colour_assumption?: string; /** what the DPX header says about the transfer, reported next to a stated colour (policy/colour.md) */ header_transfer?: string | null; /** the start timecode this sequence would carry (field, DPX header, EDL), null when none: it is flagged */ start_timecode?: string | null; timecode_source?: tunnelj.TimecodeSource | null; /** ADR-050 (EDL): what the plan says about this sequence for the Tunnel preset and the return */ flags?: tunnelj.Flag[]; blocked?: boolean; expected_frames?: number | null; edl_element?: tunnelj.EdlRow | null; edl_match?: tunnelj.Assessment['edl_match']; edl_candidates?: string[]; suggested_colour?: tunnelj.ColourIn | null; /** whether this run would skip it (with the given skip_existing): 'already rendered' (a proxy), 'already has review vNNN', else null */ skip?: string | null; /** ADR-048 "Colour details in the plan": the first frame's DPX header, decoded; null when it could not be read */ colour?: ColourDetails | null; clip_name: string; source?: { width: number; height: number; bits: number } | null; estimate?: { frames: number; note: string; output_gb: number }; colour_refusal?: string | null; shot?: string; next_version?: number; out: string; exists_remote: boolean; exists_local: boolean; gaps: number; where: 'pod' | 'local'; complete: boolean; missing: Range[]; partial: boolean }
+export interface PlannedSequence extends Omit<Sequence, 'start_timecode'> { /** where the colour used for this sequence came from when nobody stated it for the run (configuration format or a guess), and the assumption of a guess */ colour_source?: 'configuration' | 'guess' | 'ocio-record'; colour_assumption?: string; /** ADR-048 'The OCIO record': what the writer ComfyUI-OCIO recorded next to the sequence, and that the DPX header says something else */ ocio?: OcioInfo; header_disagrees?: boolean; /** what the DPX header says about the transfer, reported next to a stated colour (policy/colour.md) */ header_transfer?: string | null; /** the start timecode this sequence would carry (field, DPX header, EDL), null when none: it is flagged */ start_timecode?: string | null; timecode_source?: tunnelj.TimecodeSource | null; /** ADR-050 (EDL): what the plan says about this sequence for the Tunnel preset and the return */ flags?: tunnelj.Flag[]; blocked?: boolean; expected_frames?: number | null; edl_element?: tunnelj.EdlRow | null; edl_match?: tunnelj.Assessment['edl_match']; edl_candidates?: string[]; suggested_colour?: tunnelj.ColourIn | null; /** whether this run would skip it (with the given skip_existing): 'already rendered' (a proxy), 'already has review vNNN', else null */ skip?: string | null; /** ADR-048 "Colour details in the plan": the first frame's DPX header, decoded; null when it could not be read */ colour?: ColourDetails | null; clip_name: string; source?: { width: number; height: number; bits: number } | null; estimate?: { frames: number; note: string; output_gb: number }; colour_refusal?: string | null; shot?: string; next_version?: number; out: string; exists_remote: boolean; exists_local: boolean; gaps: number; where: 'pod' | 'local'; complete: boolean; missing: Range[]; partial: boolean }
 export type SeqState = 'waiting' | 'rendering' | 'rendered' | 'pulled' | 'done' | 'failed' | 'skipped' | 'incomplete'
-export interface SeqView { /** for a failed or incomplete sequence: stage, node, message, recovery, retryable in words (never just the raw error) */ failure?: failures.Explained; /** the flags that refused it, or warned (Tunnel preset) */ flags?: tunnelj.Flag[]; /** where its start timecode came from */ timecode_source?: tunnelj.TimecodeSource | null; start_timecode?: string | null; /** why a sequence was skipped ('already rendered', 'already has review v002') */ reason?: string; clip_name?: string; outs?: string[]; shot?: string; version?: string; complete?: boolean; partial?: boolean; missing?: Range[]; where: 'pod' | 'local'; dir: string; name: string; state: SeqState; frames_done: number; frames_total: number; out: string; bytes: number; error: string; warning?: string }
+export interface SeqView { /** the OCIO record this sequence's colour came from (ComfyUI-OCIO), and whether the DPX header disagrees with it */ colour_source?: 'ocio-record'; ocio?: OcioInfo; header_disagrees?: boolean; /** for a failed or incomplete sequence: stage, node, message, recovery, retryable in words (never just the raw error) */ failure?: failures.Explained; /** the flags that refused it, or warned (Tunnel preset) */ flags?: tunnelj.Flag[]; /** where its start timecode came from */ timecode_source?: tunnelj.TimecodeSource | null; start_timecode?: string | null; /** why a sequence was skipped ('already rendered', 'already has review v002') */ reason?: string; clip_name?: string; outs?: string[]; shot?: string; version?: string; complete?: boolean; partial?: boolean; missing?: Range[]; where: 'pod' | 'local'; dir: string; name: string; state: SeqState; frames_done: number; frames_total: number; out: string; bytes: number; error: string; warning?: string }
 export interface JobView {
   /** whether this job copies its renders to this PC (Sync); false: they stay on the volume (and are published from there) */ pull?: boolean
   /** for a failed job: the failure in words (what the MCP shows) */ failure?: failures.Explained
@@ -172,8 +172,9 @@ export function colourRefusal(h: DpxInfo | null): string | null {
   return null
 }
 /** The `colour:` lines of DELIVERY.md and the sidecar: the header, and exactly what ffmpeg was told. */
-export function colourLines(h: DpxInfo | null, codecs: Codec[], stated?: { conversion: tunnelj.ColourIn; by: string; at: string; guessed?: string }): string[] {
+export function colourLines(h: DpxInfo | null, codecs: Codec[], stated?: { conversion: tunnelj.ColourIn; by: string; at: string; guessed?: string; ocio?: OcioStated }): string[] {
   const t = (n: number) => `${TRANSFER_NAMES[n] ?? 'unknown'} (${n})`
+  if (stated?.ocio) return [`colour: DPX header: ${h ? `${h.width}x${h.height}, ${h.bits}-bit, transfer ${t(h.transfer)}, colorimetric ${t(h.colorimetric)}` : 'not read'}.`, `colour: OCIO record: stated by the writer ComfyUI-OCIO (colorInteropID ${stated.ocio.colorInteropID}${stated.ocio.colorspace ? `, ${stated.ocio.colorspace}` : ''}): the frames are ${stated.conversion}; ${tunnelj.colourNote(stated.conversion)}; limited range, yuv420p/yuv422p10le, tagged bt709.${stated.ocio.header_disagrees ? ' The DPX header disagrees (it says ' + (h ? (TRANSFER_NAMES[h.transfer] ?? 'unknown') : 'something else') + '); the record was used, not the header.' : ''}`]
   if (stated?.guessed) return [`colour: DPX header: ${h ? `${h.width}x${h.height}, ${h.bits}-bit, transfer ${t(h.transfer)}, colorimetric ${t(h.colorimetric)}` : 'not read'}.`, `colour guessed from the DPX header: ${stated.guessed}. Converted as ${stated.conversion} (${tunnelj.colourNote(stated.conversion)}); nobody stated this colour (render.colour.mode guess).`]
   if (stated) return [`colour: DPX header: ${h ? `${h.width}x${h.height}, ${h.bits}-bit, transfer ${t(h.transfer)}, colorimetric ${t(h.colorimetric)}` : 'not read'}.`, `colour: STATED by ${stated.by} at ${stated.at}: the frames are ${stated.conversion}; ${tunnelj.colourNote(stated.conversion)}; limited range, yuv420p/yuv422p10le, tagged bt709 (policy/colour.md: a conversion is stated, never guessed).`]
   return [`colour: DPX header: ${h ? `${h.width}x${h.height}, ${h.bits}-bit, ${PACKING[h.packing] ?? `packing ${h.packing}`}, descriptor ${h.descriptor}, transfer ${t(h.transfer)}, colorimetric ${t(h.colorimetric)}` : 'not read'}.`,
@@ -409,6 +410,8 @@ export interface Deps {
   deliverDirs(volumeId: string, shot: string): Promise<string[]>
   /** Everything under output/deliver/<shot>/ on the volume (name relative to the shot folder, bytes), best effort */
   deliverFiles(volumeId: string, shot: string): Promise<{ name: string; bytes: number }[]>
+  /** A small text file of the volume's output folder (path relative to output/), at most 256 KB, null when absent or unreadable; the OCIO record's last resort. Optional: absent means the volume is not asked. */
+  readText?(volumeId: string, rel: string): Promise<string | null>
 }
 export const FFMPEG_PATHS = ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg']
 export const NO_FFMPEG = 'ffmpeg is not installed on this PC. Install it with Homebrew: brew install ffmpeg (Homebrew itself: https://brew.sh), then try again.'
@@ -464,6 +467,7 @@ const defaults = (): Deps => ({
   emit: (vol, prefix, bytes) => journal.emit(vol, { writer: 'app:render', op: 'created', prefix, files: 1, bytes }),
   deliverDirs: async (vol, shot) => { try { return (await changes.listRows(vol, `comfy-shared/output/deliver/${shot}`, false)).filter((r) => r.key.endsWith('/')).map((r) => r.key.split('/').filter(Boolean).pop()!) } catch { return [] } },
   deliverFiles: async (vol, shot) => { try { const base = `comfy-shared/output/deliver/${shot}/`; return (await changes.listRows(vol, base.replace(/\/$/, ''), true)).filter((r) => !r.key.endsWith('/')).map((r) => ({ name: r.key.slice(base.length), bytes: r.bytes })) } catch { return [] } },
+  readText: async (vol, rel) => { try { return vol ? await publish.volumeReadText(rel, OCIO_MAX_BYTES) : null } catch { return null } },
   findFfmpeg: lookFfmpeg,
   localFree: async (dir) => { try { let d = dir; for (let i = 0; i < 6; i++) { try { const st = await statfs(d); return Number(st.bavail) * Number(st.bsize) } catch { d = dirname(d) } } return null } catch { return null } },
   findFfprobe: async (ff) => { const p = join(dirname(ff), 'ffprobe'); try { await access(p); return p } catch { return null } },
@@ -540,7 +544,7 @@ export const PRORES_NOTE = 'A ProRes .mov cannot be played in this app (play it 
 const CODEC_NAME: Record<Codec, string> = { h264: 'H.264 (libx264, preset medium, crf 14, yuv420p)', prores422hq: 'ProRes 422 HQ (prores_ks profile 3, yuv422p10le, 10-bit 4:2:2)' }
 
 /** DELIVERY.md for a version folder (policy: what changed, what was measured). `@@SHA256_k@@`, `@@BYTES_k@@` and `@@FRAMES_k@@` are filled in once each file exists. */
-export function deliveryMd(o: { clip: string; shot: string; version: number; s: Sequence; width: Width; fps: number; probe: Probe; adapter: 'pod' | 'local'; source: string; ffv: string; passes: string[][]; codecs: Codec[]; approvedBy: string; at: string; stated?: { conversion: tunnelj.ColourIn; by: string; at: string; guessed?: string } }): string {
+export function deliveryMd(o: { clip: string; shot: string; version: number; s: Sequence; width: Width; fps: number; probe: Probe; adapter: 'pod' | 'local'; source: string; ffv: string; passes: string[][]; codecs: Codec[]; approvedBy: string; at: string; stated?: { conversion: tunnelj.ColourIn; by: string; at: string; guessed?: string; ocio?: OcioStated } }): string {
   const frames = o.s.last - o.s.first + 1, dur = Math.round((frames / o.fps) * 1000) / 1000, h = o.probe.header
   const size = o.width === 'source' ? (h ? `the source resolution ${h.width}x${h.height}` : 'the source resolution') : `${o.width} px wide`
   return [`# ${o.shot} ${versionName(o.version)}: review video`, '', DELIVERY_NOTE, '',
@@ -652,17 +656,79 @@ const overrides = (v: unknown): Record<string, boolean> => {
 }
 export type ColourMode = 'ask' | 'format' | 'guess' | 'known'
 const colourModeOf = (v: unknown, st: RenderSettings): ColourMode => { if (v === undefined || v === null || v === '') return st.colour?.mode ?? 'known'; if (v !== 'ask' && v !== 'format' && v !== 'guess' && v !== 'known') throw bad('colour_mode is ask, format, guess or known'); return v }
-export const KNOWN_LINEAR = 'the DPX header says linear and generated shots are P3-D65 (Kyle, 14 Nov): linear P3-D65 used as the project default; state the colour to override'
+export const KNOWN_LINEAR = 'the DPX header says linear but this project\'s frames are Gamma 2.6 P3-D65 (the ComfyUI-OCIO record of every sequence, and the 20 Nov Tunnel PDF): Gamma 2.6 P3-D65 used as the project default; state the colour to override'
 export const COLOUR_HOW = 'Set render.colour.mode to format or guess, or pass colour_in'
 /** The colour of frames whose header says log, linear or printing density and that no person stated (ADR-048, 'the colour of linear and log frames is a setting'): ask = skip with a warning, format = the configured format, guess = from the header (and said so). */
 export function pickColour(mode: ColourMode, set: { format?: string; set_by?: string; set_at?: string }, transfer: number, review: boolean): { colour_in?: tunnelj.ColourIn; by?: string; guessed?: string; skip?: string } {
   const named = `${TRANSFER_NAMES[transfer] ?? transfer} (code ${transfer})`
   if (mode === 'format' && set.format) return { colour_in: set.format as tunnelj.ColourIn, by: 'configuration' }
   // known (the default): what the project already tells us. A linear DPX is P3-D65 (Kyle, 14 Nov: generated shots are P3-D65), so a linear header is converted from linear P3-D65 and the sidecar says it was derived, not stated. Log and printing density are never derived: a person states those (colour.md).
-  if (mode === 'known' && transfer === 2) return { colour_in: 'linear-p3-d65', by: 'project default', guessed: KNOWN_LINEAR }
+  if (mode === 'known' && transfer === 2) return { colour_in: 'p3-d65-gamma26', by: 'project default', guessed: KNOWN_LINEAR }
   if (mode === 'guess') return transfer === 2 ? { colour_in: 'linear-rec709', by: 'configuration (guess)', guessed: 'linear transfer: Rec.709 primaries assumed, shown with the Rec.709 transfer' } : transfer === 1 ? { colour_in: 'cineon', by: 'configuration (guess)', guessed: 'printing density: the Cineon reference of policy/colour.md (white 685, black 95, gamma 0.6) to display, Rec.709 primaries assumed' } : { colour_in: 'kodak-log', by: 'configuration (guess)', guessed: 'log: no view transform, tagged only (not a viewable picture)' }
   return review ? { skip: `colour not stated (render.colour.mode ${mode}): the DPX header says ${named}. ${COLOUR_HOW}.` } : {}
 }
+
+// ----- the OCIO record (ADR-048 "The OCIO record", ADR-050): what the writer says about its own frames -----
+/** The colour precedence, strongest first: (1) a person's `colour_in` (per sequence or per run); (2) the colour record ComfyUI-OCIO wrote next to the sequence, `<dir>/<stem>.json`, stated by the writer and never guessed; (3) the configured render.colour.mode (format, ask, guess); (4) `known` (a linear header is linear P3-D65). The DPX header is NOT consulted when a record resolves: on this project the header is wrong (it says linear while the pixels are Gamma 2.6). The Tunnel preset stays strict: a record counts as stated, with none and no statement it never guesses. */
+export const OCIO_INTEROP: Record<string, { colour_in: tunnelj.ColourIn; label: string; linear: boolean }> = {
+  g26_p3d65_display: { colour_in: 'p3-d65-gamma26', label: 'Gamma 2.6 P3-D65', linear: false },
+  srgb_p3d65_display: { colour_in: 'p3-d65-srgb', label: 'sRGB P3-D65', linear: false },
+  g22_p3d65_display: { colour_in: 'p3-d65-gamma22', label: 'Gamma 2.2 P3-D65', linear: false },
+  lin_p3d65_scene: { colour_in: 'linear-p3-d65', label: 'Linear P3-D65', linear: true },
+  lin_rec709_scene: { colour_in: 'linear-rec709', label: 'Linear Rec.709', linear: true },
+}
+export const OCIO_MAX_BYTES = 256 * 1024
+/** What a usable record says: the converter's colour id, the writer's own words, and the friendly label the window shows. */
+export interface OcioStated { colorInteropID: string; colorspace: string | null; gamut: string | null; header_disagrees?: boolean }
+export interface OcioInfo extends OcioStated { colour_in: tunnelj.ColourIn; label: string }
+/** Parse a record; null (never a throw) when it is not JSON, has no colorInteropID or names one this converter does not know (never guessed). */
+export function parseOcioRecord(text: string | null | undefined): OcioInfo | null {
+  try {
+    if (!text || Buffer.byteLength(text) > OCIO_MAX_BYTES) return null
+    const j = JSON.parse(text), a = j && typeof j === 'object' ? (j as { attributes?: Record<string, unknown> }).attributes : null
+    const id = a && typeof a === 'object' ? a.colorInteropID : null
+    if (typeof id !== 'string' || !Object.prototype.hasOwnProperty.call(OCIO_INTEROP, id)) return null
+    const m = OCIO_INTEROP[id], str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null)
+    return { colour_in: m.colour_in, label: m.label, colorInteropID: id, colorspace: str(a!['com.ocio.colorspace']), gamut: str(a!['com.ocio.gamut']) }
+  } catch { return null }
+}
+/** Does the DPX header contradict the record? A linear record with a header that is not linear, a display record with a header that says linear, log or density. */
+export const headerDisagrees = (rec: OcioInfo, h: DpxInfo | null): boolean => !!h && (OCIO_INTEROP[rec.colorInteropID].linear ? h.transfer !== 2 : NOT_DISPLAY.includes(h.transfer))
+const recordRel = (s: Sequence) => `${s.dir ? `${s.dir}/` : ''}${s.name}.json`
+/** The record of every sequence, best effort (null: none, unreadable, unknown id). Where the frames are (this PC: fs; the pod: one ssh per 40, `base64` through `tr`), then the volume (S3) when that found nothing. At most 256 KB each; never throws. */
+export async function recordPass(where: 'pod' | 'local' | null, podId: string, seqs: Sequence[], target?: { host: string; port: number }): Promise<(OcioInfo | null)[]> {
+  const text: (string | null)[] = seqs.map(() => null)
+  try {
+    if (where === 'local') {
+      const root = deps.localRoot(podId)
+      if (root) await Promise.all(seqs.map(async (s, i) => { try { const f = join(root, 'output', recordRel(s)); if ((await fsStat(f)).size <= OCIO_MAX_BYTES) text[i] = await readFile(f, 'utf8') } catch { /* none */ } }))
+    } else if (where === 'pod' && target) {
+      const outDir = deps.outputDir(podId)
+      for (let b = 0; b < seqs.length; b += HDR_BATCH) {
+        const batch = seqs.slice(b, b + HDR_BATCH)
+        const script = ['set -u', ...batch.map((s, k) => { const f = q(`${outDir}/${recordRel(s)}`); return `[ -r ${f} ] && [ "$(wc -c < ${f})" -le ${OCIO_MAX_BYTES} ] && echo "REC ${k} $(base64 < ${f} | tr -d '\\n')"` }), 'exit 0'].join('\n')
+        const run = async () => {
+          const ac = new AbortController(), timer = setTimeout(() => ac.abort(), HDR_TIMEOUT_MS)
+          try { await deps.ssh({ host: target.host, port: target.port, script, signal: ac.signal, onLine: (l) => { const m = /^REC (\d+) ([A-Za-z0-9+/=]+)\s*$/.exec(l); if (m && batch[Number(m[1])]) text[b + Number(m[1])] = Buffer.from(m[2], 'base64').toString('utf8') } }) } catch { /* best effort */ } finally { clearTimeout(timer) }
+        }
+        const turn = hdrLock.then(run, run); hdrLock = turn.catch(() => undefined); await turn
+      }
+    }
+    const vol = podId ? deps.volumeId(podId) : ''
+    if (deps.readText) await Promise.all(seqs.map(async (s, i) => { if (text[i] === null) { try { text[i] = await deps.readText!(vol, recordRel(s)) } catch { /* none */ } } }))
+  } catch { /* never throws */ }
+  return text.map(parseOcioRecord)
+}
+/** `recordPass` for the sequences nobody stated a colour for (a person's statement is never second-guessed, so its record is not even read); aligned with `seqs`. */
+async function recordsOf(where: 'pod' | 'local' | null, podId: string, seqs: Sequence[], target?: { host: string; port: number }): Promise<(OcioInfo | null)[]> {
+  const idx = seqs.flatMap((s, i) => (s.colour_in ? [] : [i])), got = idx.length ? await recordPass(where, podId, idx.map((i) => seqs[i]), target) : [], out: (OcioInfo | null)[] = seqs.map(() => null)
+  idx.forEach((i, k) => { out[i] = got[k] })
+  return out
+}
+/** The sequence as the colour decision sees it: a person's colour_in, else the OCIO record's, else (Tunnel, mode format) the configured one. */
+const withRecord = (s: Sequence, rec: OcioInfo | null | undefined, configured?: tunnelj.ColourIn): Sequence => (s.colour_in ? s : rec ? { ...s, colour_in: rec.colour_in } : configured ? { ...s, colour_in: configured } : s)
+const headerFlag = (rec: OcioInfo, h: DpxInfo | null): tunnelj.Flag => ({ code: 'header-disagrees', level: 'info', message: `the DPX header says ${h ? (TRANSFER_NAMES[h.transfer] ?? `code ${h.transfer}`) : 'something else'}; the colour record of ComfyUI-OCIO says ${rec.label} (${rec.colorInteropID}): the record was used, not the header` })
+const ocioView = (rec: OcioInfo, dis: boolean): OcioInfo => ({ ...rec, ...(dis ? { header_disagrees: true } : {}) })
 /** One sequence judged against the EDL (ADR-050): the Tunnel preset needs a start timecode, a chosen colour and (with the EDL) a matching frame count; otherwise only a quiet note. */
 const assessSeq = (s: Sequence, headerTc: string | null, tunnel: boolean, ov: Record<string, boolean>): tunnelj.Assessment =>
   tunnelj.assess({ name: s.name, ...(s.clip_name ? { clip_name: s.clip_name } : {}), frames: s.frames, ...(s.start_timecode ? { start_timecode: s.start_timecode } : {}), header_tc: headerTc, colour_in: s.colour_in ?? null, override: !!ov[s.name] || !!ov[clipOf(s)], needColour: tunnel, strict: tunnel })
@@ -671,7 +737,7 @@ const asmFields = (a: tunnelj.Assessment) => ({ flags: a.flags, blocked: a.block
 export async function plan(o: PlanRequest): Promise<PlanResult> {
   await edl.ensure()
   const ov = overrides(o.edl_override)
-  const st = effectiveSettings(o.pod_id), cmode = colourModeOf(o.colour_mode, st), preset = presetOf(o.preset, st), tunnel = preset === 'tunnel', kind: Kind = tunnel ? 'proxy' : kindOf(o.kind, st.kind), seqs = withColour(clean(o.sequences), o.colour_in ?? (preset === 'tunnel' && cmode === 'format' ? st.colour?.format : undefined)), width: Width = tunnel ? 'tunnel' : widthFor(kind, o.width, st), want = whereOf(o.where, st.where), codecs = kind === 'review' ? codecsOf(o.codecs, st.codecs) : ['h264' as Codec]
+  const st = effectiveSettings(o.pod_id), cmode = colourModeOf(o.colour_mode, st), preset = presetOf(o.preset, st), tunnel = preset === 'tunnel', kind: Kind = tunnel ? 'proxy' : kindOf(o.kind, st.kind), configured = (tunnel && cmode === 'format' ? st.colour?.format : undefined) as tunnelj.ColourIn | undefined, seqs = withColour(clean(o.sequences), o.colour_in), width: Width = tunnel ? 'tunnel' : widthFor(kind, o.width, st), want = whereOf(o.where, st.where), codecs = kind === 'review' ? codecsOf(o.codecs, st.codecs) : ['h264' as Codec]
   if (kind === 'review' && o.allow_partial) throw bad('A review video is only made from a complete sequence: allow_partial is not available for kind review')
   if (want === 'pod' && !o.pod_id) throw bad('Which pod?')
   const adapters = await adapterStates(o.pod_id)
@@ -690,22 +756,27 @@ export async function plan(o: PlanRequest): Promise<PlanResult> {
   const verCache = new Map<string, Promise<string[]>>()
   const versionsOf = (shot: string): Promise<string[]> => { let p = verCache.get(shot); if (!p) { p = (async () => [...(ad ? await ad.versions(shot).catch(() => []) : []), ...(vol ? await deps.deliverDirs(vol, shot).catch(() => []) : [])])(); verCache.set(shot, p) } return p }
   const heads = ad && chosen ? await headerPass(chosen, o.pod_id ?? '', seqs, podTarget) : seqs.map(() => null)
+  const recs = await recordsOf(chosen, o.pod_id ?? '', seqs, podTarget)   // ADR-048: what ComfyUI-OCIO recorded next to each sequence
   const skipExisting = (o.skip_existing ?? st.skip_existing) !== false, clipMemo = new Map<string, Promise<{ version: string; clip: string }[]>>()
   for (const [idx, s] of seqs.entries()) {
     const file = `${clipOf(s)}${named(width) ? '' : `_${width}`}.mp4`
     const remote = vol ? ((await listed(vol, s.dir).catch(() => null))?.some((r) => r.name === file) ?? false) : false
     let probe: Probe | null = null; if (ad && seqs.length <= 30) probe = await ad.plan(s, width).catch(() => null)
-    const complete = probe ? probe.complete : s.frames === s.last - s.first + 1, partial = !!o.allow_partial && !complete, h = probe?.header ?? (heads[idx] ? parseDpxInfo(heads[idx]!) : null), colour = colourDetails(heads[idx], kind === 'review', tunnel)
-    const asm = assessSeq(s, h?.timecode ?? null, tunnel, ov)
+    const complete = probe ? probe.complete : s.frames === s.last - s.first + 1, partial = !!o.allow_partial && !complete, h = probe?.header ?? (heads[idx] ? parseDpxInfo(heads[idx]!) : null), colour0 = colourDetails(heads[idx], kind === 'review', tunnel)
+    const rec = recs[idx], dis = !!rec && headerDisagrees(rec, h), se = withRecord(s, rec, configured)
+    const colour = rec && colour0 ? { ...colour0, verdict: 'ok' as const, refusal: undefined, conversion: `Rec.709 view converted from the OCIO record (${rec.label}), not from this header; header transfer: ${colour0.transfer_name}` } : colour0   // a record that resolves is not refused on the header's word
+    if (colour && !colour.refusal) delete colour.refusal
+    const asm = assessSeq(se, h?.timecode ?? null, tunnel, ov)
+    if (rec && dis) asm.flags.push(headerFlag(rec, h))
     let colourNote: { colour_in?: tunnelj.ColourIn; by?: string; guessed?: string; skip?: string } = {}
-    if (!tunnel && !!h && NOT_DISPLAY.includes(h.transfer) && !s.colour_in) {   // a WARNING for everyone, never a failed job; the Tunnel preset stays strict
+    if (!tunnel && !!h && NOT_DISPLAY.includes(h.transfer) && !s.colour_in && !rec) {   // a WARNING for everyone, never a failed job; the Tunnel preset stays strict
       colourNote = pickColour(cmode, st.colour ?? { mode: 'known' }, h.transfer, kind === 'review')
       if (colourNote.skip) asm.flags.push({ code: 'colour-not-stated', level: 'warn', message: colourNote.skip })
       else if (colourNote.guessed) asm.flags.push({ code: 'colour-guessed', level: 'warn', message: `colour guessed from the DPX header: ${colourNote.guessed}` })
     }
-    const base: PlannedSequence = { ...s, ...asmFields(asm), header_transfer: h ? `${TRANSFER_NAMES[h.transfer] ?? 'unknown'} (code ${h.transfer})` : null, ...(colourNote.colour_in ? { colour_in: colourNote.colour_in, colour_source: colourNote.guessed ? 'guess' : 'configuration' } : {}), ...(colourNote.guessed ? { colour_assumption: colourNote.guessed } : {}), clip_name: clipOf(s), out: proxyRel(s, width, partial), exists_remote: remote, exists_local: root ? await exists(join(root, proxyRel(s, width, partial).slice(`output/${PROXIES}/`.length))) : false, gaps: probe ? probe.gaps : Math.max(0, s.last - s.first + 1 - s.frames), where: chosen ?? 'pod', complete, missing: probe?.missing ?? [], partial,
+    const base: PlannedSequence = { ...se, ...asmFields(asm), header_transfer: h ? `${TRANSFER_NAMES[h.transfer] ?? 'unknown'} (code ${h.transfer})` : null, ...(rec ? { colour_in: rec.colour_in, colour_source: 'ocio-record' as const, ocio: ocioView(rec, dis), ...(dis ? { header_disagrees: true } : {}) } : colourNote.colour_in ? { colour_in: colourNote.colour_in, colour_source: colourNote.guessed ? 'guess' as const : 'configuration' as const } : {}), ...(colourNote.guessed ? { colour_assumption: colourNote.guessed } : {}), clip_name: clipOf(s), out: proxyRel(s, width, partial), exists_remote: remote, exists_local: root ? await exists(join(root, proxyRel(s, width, partial).slice(`output/${PROXIES}/`.length))) : false, gaps: probe ? probe.gaps : Math.max(0, s.last - s.first + 1 - s.frames), where: chosen ?? 'pod', complete, missing: probe?.missing ?? [], partial,
       source: h ? { width: h.width, height: h.height, bits: h.bits } : null, colour, estimate: { frames: probe ? probe.run : s.frames, note: slow(width), output_gb: outputGb(probe ? probe.run : s.frames, Number(fpsOf(s.name, o.fps ?? s.fps ?? (typeof st.fps === 'number' ? st.fps : undefined))), codecs, kind, width === 'source' ? (h ? (h.width * h.height) / (3840 * 2160) : 1) : width === 'tunnel' ? (1920 / 3840) ** 2 : (width / 3840) ** 2) } }
-    if (kind === 'review') { const shot = shotOf(clipOf(s), s.dir), existing = await versionsOf(shot); const v = nextVersion(existing), have = skipExisting ? await reviewVersionsOf(ad, vol, shot, clipOf(s), clipMemo) : []; out.push({ ...base, skip: have.length ? `already has review ${have[have.length - 1]}` : colourNote.skip ? 'colour not stated' : null, shot, next_version: v, out: reviewRel(shot, v, clipOf(s), codecs[0]), exists_remote: false, exists_local: false, colour_refusal: colourRefusal(h) }) }
+    if (kind === 'review') { const shot = shotOf(clipOf(s), s.dir), existing = await versionsOf(shot); const v = nextVersion(existing), have = skipExisting ? await reviewVersionsOf(ad, vol, shot, clipOf(s), clipMemo) : []; out.push({ ...base, skip: have.length ? `already has review ${have[have.length - 1]}` : colourNote.skip ? 'colour not stated' : null, shot, next_version: v, out: reviewRel(shot, v, clipOf(s), codecs[0]), exists_remote: false, exists_local: false, colour_refusal: rec ? null : colourRefusal(h) }) }
     else out.push({ ...base, skip: asm.blocked ? null : skipExisting && (probe ? probe.skip : base.exists_local || base.exists_remote) ? 'already rendered' : null })
   }
   const totalGb = Math.round(out.reduce((a, x) => a + (x.estimate?.output_gb ?? 0), 0) * 10) / 10, fullRes = width === 'source' || width === 1920
@@ -714,7 +785,7 @@ export async function plan(o: PlanRequest): Promise<PlanResult> {
   if (localFreeB !== null && totalGb > localFreeB / 1e9) notes.push(`Only ${Math.round(localFreeB / 1e8) / 10} GB are free on this PC; about ${totalGb} GB is needed (not refused).`)
   if (chosen === 'pod' && st.pull && totalGb > GATE_GB) notes.push(`About ${totalGb} GB: a sync of this size asks for approval (Auto sync) or takes a while.`)
   const pod = adapters[0]
-  const tunnelWarnings = tunnel ? out.flatMap((x) => (x.colour && NOT_DISPLAY.includes(x.colour.transfer) && x.colour_in !== 'kodak-log' ? [`${x.clip_name}: the DPX header says ${x.colour.transfer_name}; the Tunnel proxy is converted from the colour you chose (${x.colour_in ?? 'not set'}), not from the header: check that choice`] : x.colour === null ? [`${x.clip_name}: the DPX header could not be read, so its colour is not stated`] : [])) : []
+  const tunnelWarnings = tunnel ? out.flatMap((x) => (x.colour && x.colour_source !== 'ocio-record' && NOT_DISPLAY.includes(x.colour.transfer) && x.colour_in !== 'kodak-log' ? [`${x.clip_name}: the DPX header says ${x.colour.transfer_name}; the Tunnel proxy is converted from the colour you chose (${x.colour_in ?? 'not set'}), not from the header: check that choice`] : x.colour === null ? [`${x.clip_name}: the DPX header could not be read, so its colour is not stated`] : [])) : []
   return { warnings: tunnelWarnings, preset: preset as 'none' | 'tunnel', ...(pod_cpu ? { pod_cpu } : {}), ...(localFreeB !== null ? { local_free_gb: Math.round(localFreeB / 1e8) / 10 } : {}), estimate: { output_gb: totalGb, note: 'A rough guess (ProRes 422 HQ at 4K is about 5.3 GB per minute of picture at 24 fps); the real size shows when it is done.' }, pod_ok: pod.ok, ...(chosen ? {} : { reason: pod.reason ?? adapters[1].reason }), adapters, where: chosen, kind, width, codecs, settings: st, settings_source: (o.pod_id && podconfigs.get(o.pod_id)?.render) ? 'pod' : 'default', notes, total_frames: seqs.reduce((a, s) => a + s.frames, 0), sequences: out, skip_existing: skipExisting, totals: { to_render: out.filter((x) => !x.skip && !x.blocked).length, skipped: out.filter((x) => x.skip).length, ...(out.some((x) => x.blocked) ? { blocked: out.filter((x) => x.blocked).length } : {}) }, edl: edl.status(), ...summarize2(out) }
 }
 
@@ -773,7 +844,7 @@ export async function proxies(o: { pod_id?: string; volume_id?: string; items: {
 
 export interface RenderOpts {
   width: Width; fps?: number; frames: number; jobId: string; index: number; signal: AbortSignal; onProgress: (frame: number, pass: number) => void
-  probe: Probe; partial: boolean; /** a person's stated colour for these frames (review or Tunnel): who, when, and what the DPX header said */ stated?: { by: string; at: string; header_transfer: string | null; guessed?: string; set_by?: string; set_at?: string }; kind: Kind; codecs: Codec[]; shot: string; version: number; approvedBy: string; source: string; at: string
+  probe: Probe; partial: boolean; /** a person's stated colour for these frames (review or Tunnel): who, when, and what the DPX header said */ stated?: { by: string; at: string; header_transfer: string | null; guessed?: string; set_by?: string; set_at?: string; ocio?: OcioStated }; kind: Kind; codecs: Codec[]; shot: string; version: number; approvedBy: string; source: string; at: string
   /** the Tunnel preset, and the start timecode it carries with where it came from */ preset?: 'tunnel'; tc?: { value: string | null; source: tunnelj.TimecodeSource | null }; colour_in?: tunnelj.ColourIn | null; /** what the manifest's notes carry (EDL override, low resolution) and the EDL element the frames were matched to */ notes?: string[]; edl?: { element: tunnelj.EdlRow | null; sha256: string | null; expected_frames: number | null }
   /** the clip name the files carry; whether this clip creates the version folder (the first of its shot in the job) or adds to it */ clip: string; createDir: boolean
 }
@@ -805,13 +876,13 @@ function passesOf(s: Sequence, o: RenderOpts, outputDir: string): { passes: Pass
 /** What a render writes next to its videos: a sidecar per file, and for a review DELIVERY.md. */
 function sidecars(s: Sequence, o: RenderOpts, adapter: 'pod' | 'local', passes: Pass[], rels: string[]): { metas: Record<string, unknown>[]; delivery: string | null } {
   const review = isReview(o), fps = Number(fpsOf(s.name, o.fps ?? s.fps)), codecs: Codec[] = review ? o.codecs : ['h264'], h = o.probe.header
-  const statedBlock = o.stated && o.colour_in ? { ...(o.stated.guessed ? { guessed: true, assumption: o.stated.guessed } : {}), ...(o.stated.set_by ? { set_by: o.stated.set_by, set_at: o.stated.set_at } : {}), stated_by: o.stated.by, header_transfer: h ? `${TRANSFER_NAMES[h.transfer] ?? 'unknown'} (code ${h.transfer})` : 'not read', conversion: o.colour_in, stated_at: o.stated.at } : null
+  const statedBlock = o.stated && o.colour_in ? { ...(o.stated.guessed ? { guessed: true, assumption: o.stated.guessed } : {}), ...(o.stated.set_by ? { set_by: o.stated.set_by, set_at: o.stated.set_at } : {}), ...(o.stated.ocio ? { colour_source: 'ocio-record', ocio: { colorInteropID: o.stated.ocio.colorInteropID, colorspace: o.stated.ocio.colorspace, gamut: o.stated.ocio.gamut }, ...(o.stated.ocio.header_disagrees ? { header_disagrees: true } : {}) } : {}), stated_by: o.stated.by, header_transfer: h ? `${TRANSFER_NAMES[h.transfer] ?? 'unknown'} (code ${h.transfer})` : 'not read', conversion: o.colour_in, stated_at: o.stated.at } : null
   const metas = rels.map((rel, k) => buildMeta(s, { width: o.width, fps: o.fps, probe: o.probe, partial: o.partial, adapter, args: passes[k].args, version: o.probe.ffmpeg_version, at: o.at, kind: o.kind, extra: {
     ...(review ? { clip_name: o.clip, frames_stem: s.name, shot: o.shot, version: versionName(o.version), approved_by: o.approvedBy, source: o.source, delivery_note: DELIVERY_NOTE, duration_s: Math.round(((s.last - s.first + 1) / fps) * 1000) / 1000, codec: codecs[k],
       outputs: rels.map((r, j) => ({ file: r.slice(r.lastIndexOf('/') + 1), codec: codecs[j], bytes: `@@BYTES_${j}@@`, sha256: `@@SHA256_${j}@@`, frames_decoded: `@@FRAMES_${j}@@`, render_fps: `@@RATE_${j}@@` })) } : {}),
     ...(o.preset === 'tunnel' ? { preset: 'tunnel', start_timecode: o.tc?.value ?? null, timecode_source: o.tc?.source ?? null, colour_in: o.colour_in ?? null, ...(o.colour_in ? { colour_block: tunnelj.colourBlock(o.colour_in), colour_record: tunnelj.colourNote(o.colour_in) } : {}), header_transfer: h ? (TRANSFER_NAMES[h.transfer] ?? `unknown (${h.transfer})`) : 'not read', ...(o.edl ? { edl: { element: o.edl.element?.clip ?? null, speeds: o.edl.element?.speeds ?? null, expected_frames: o.edl.expected_frames, sha256: o.edl.sha256 } } : {}), ...(o.notes?.length ? { manifest_notes: o.notes } : {}) } : { start_timecode: h?.timecode ?? null, timecode_source: h?.timecode ? 'DPX television header (SMPTE 268M, byte 1920)' : null }), ...(h?.timecode ? {} : { timecode_note: h && !h.has_tv_header ? 'no timecode in the DPX header (the file has no television header)' : 'no timecode in the DPX header' }),
-    ...(o.stated && o.colour_in ? { colour_stated: statedBlock } : {}), colour: { header: h, transform: o.colour_in ? tunnelj.colourNote(o.colour_in) : 'none', lines: colourLines(h, codecs, o.stated && o.colour_in ? { conversion: o.colour_in, by: o.stated.by, at: o.stated.at, ...(o.stated.guessed ? { guessed: o.stated.guessed } : {}) } : undefined), ...(statedBlock ? statedBlock : {}) }, ffmpeg_passes: passes.map((p) => p.args), notes: codecs.includes('prores422hq') ? [PRORES_NOTE] : [] } }))
-  return { metas, delivery: review ? deliveryMd({ clip: o.clip, shot: o.shot, version: o.version, s, width: o.width, fps, probe: o.probe, adapter, source: o.source, ffv: o.probe.ffmpeg_version, passes: passes.map((p) => p.args), codecs, approvedBy: o.approvedBy, at: o.at, ...(o.stated && o.colour_in ? { stated: { conversion: o.colour_in, by: o.stated.by, at: o.stated.at, ...(o.stated.guessed ? { guessed: o.stated.guessed } : {}) } } : {}) }) : null }
+    ...(o.stated && o.colour_in ? { colour_stated: statedBlock } : {}), colour: { header: h, transform: o.colour_in ? tunnelj.colourNote(o.colour_in) : 'none', lines: colourLines(h, codecs, o.stated && o.colour_in ? { conversion: o.colour_in, by: o.stated.by, at: o.stated.at, ...(o.stated.guessed ? { guessed: o.stated.guessed } : {}), ...(o.stated.ocio ? { ocio: o.stated.ocio } : {}) } : undefined), ...(statedBlock ? statedBlock : {}) }, ffmpeg_passes: passes.map((p) => p.args), notes: codecs.includes('prores422hq') ? [PRORES_NOTE] : [] } }))
+  return { metas, delivery: review ? deliveryMd({ clip: o.clip, shot: o.shot, version: o.version, s, width: o.width, fps, probe: o.probe, adapter, source: o.source, ffv: o.probe.ffmpeg_version, passes: passes.map((p) => p.args), codecs, approvedBy: o.approvedBy, at: o.at, ...(o.stated && o.colour_in ? { stated: { conversion: o.colour_in, by: o.stated.by, at: o.stated.at, ...(o.stated.guessed ? { guessed: o.stated.guessed } : {}), ...(o.stated.ocio ? { ocio: o.stated.ocio } : {}) } } : {}) }) : null }
 }
 const metaText = (m: Record<string, unknown>) => JSON.stringify(m, null, 1).replace(/"(@@(?:BYTES|FRAMES|RATE)_\d+@@)"/g, '$1')
 
@@ -941,7 +1012,7 @@ function localAdapter(podId = ''): RenderAdapter {
 
 // ----- jobs -----
 
-interface Job { stopTrack?: () => void; colourMode: ColourMode; colourSet: { format?: string; set_by?: string; set_at?: string }; pubIds: string[]; pubDirs: Set<string>; pubErr: string; preset?: 'tunnel'; ov: Record<string, boolean>; pre?: Map<number, Probe | null>; clipMemo: Map<string, Promise<{ version: string; clip: string }[]>>; skipExisting: boolean; publish?: { targets: publish.Target[]; message?: string; round?: string; clip_names?: Record<string, string>; edl_override?: Record<string, boolean> }; versions: Map<string, number>; view: JobView; seqs: Sequence[]; kind: Kind; codecs: Codec[]; approvedBy: string; allowPartial: boolean; pull: boolean; fps?: number; auto: boolean; abort: AbortController; started: number; done: Promise<void> }
+interface Job { stopTrack?: () => void; /** Tunnel preset with render.colour.mode format: the configured colour, weaker than an OCIO record */ configured?: tunnelj.ColourIn; colourMode: ColourMode; colourSet: { format?: string; set_by?: string; set_at?: string }; pubIds: string[]; pubDirs: Set<string>; pubErr: string; preset?: 'tunnel'; ov: Record<string, boolean>; pre?: Map<number, Probe | null>; clipMemo: Map<string, Promise<{ version: string; clip: string }[]>>; skipExisting: boolean; publish?: { targets: publish.Target[]; message?: string; round?: string; clip_names?: Record<string, string>; edl_override?: Record<string, boolean> }; versions: Map<string, number>; view: JobView; seqs: Sequence[]; kind: Kind; codecs: Codec[]; approvedBy: string; allowPartial: boolean; pull: boolean; fps?: number; auto: boolean; abort: AbortController; started: number; done: Promise<void> }
 const jobs = new Map<string, Job>()
 let finished: JobView[] = []
 let write: Promise<void> = Promise.resolve()
@@ -970,7 +1041,7 @@ export interface StartRequest extends PlanRequest { /** what started it: a perso
 export async function start(o: StartRequest): Promise<{ job_id: string }> {
   await edl.ensure()
   const ov = overrides(o.edl_override)
-  const st = effectiveSettings(o.pod_id), cmode = colourModeOf(o.colour_mode, st), preset = presetOf(o.preset, st), tunnel = preset === 'tunnel', kind: Kind = tunnel ? 'proxy' : kindOf(o.kind, st.kind), seqs = withColour(clean(o.sequences), o.colour_in ?? (preset === 'tunnel' && cmode === 'format' ? st.colour?.format : undefined)), width: Width = tunnel ? 'tunnel' : widthFor(kind, o.width, st), want = whereOf(o.where, st.where), codecs = kind === 'review' ? codecsOf(o.codecs, st.codecs) : ['h264' as Codec]
+  const st = effectiveSettings(o.pod_id), cmode = colourModeOf(o.colour_mode, st), preset = presetOf(o.preset, st), tunnel = preset === 'tunnel', kind: Kind = tunnel ? 'proxy' : kindOf(o.kind, st.kind), configured = (tunnel && cmode === 'format' ? st.colour?.format : undefined) as tunnelj.ColourIn | undefined, seqs = withColour(clean(o.sequences), o.colour_in), width: Width = tunnel ? 'tunnel' : widthFor(kind, o.width, st), want = whereOf(o.where, st.where), codecs = kind === 'review' ? codecsOf(o.codecs, st.codecs) : ['h264' as Codec]
   const fps = o.fps ?? (typeof st.fps === 'number' ? st.fps : undefined)
   if (kind === 'review') {
     if (!(o.approved_by ?? '').trim()) throw bad(NEEDS_NAME)
@@ -985,8 +1056,11 @@ export async function start(o: StartRequest): Promise<{ job_id: string }> {
     if (ps.s3.layout === 'bkk-return' && o.publish.targets.includes('s3')) { publish.validateRound(o.publish.round); publish.validateClipNames(o.publish.clip_names) }   // the BKK return needs its round before anything is rendered
   }
   if (tunnel) {   // ADR-050: a sequence the Tunnel preset cannot take is refused (the others go on); when none can be taken the run is a 400. The timecode may still come from the DPX header, so it is judged at render time.
-    const open = seqs.filter((s) => !assessSeq(s, null, true, ov).flags.some((f) => f.level === 'block' && f.code !== 'no-start-timecode'))
-    if (!open.length) throw bad(`Refused: ${seqs.slice(0, 3).map((s) => `${clipOf(s)}: ${tunnelj.blockReasons(assessSeq(s, null, true, ov))}`).join(' | ')}${seqs.length > 3 ? ` (and ${seqs.length - 3} more)` : ''}`)
+    let recs0: (OcioInfo | null)[] = seqs.map(() => null)   // a record counts as a stated colour (ADR-050), so it is looked for before a sequence is refused for having none
+    if (seqs.some((s) => !s.colour_in)) { try { const w = chooseWhere(want, await adapterStates(o.pod_id)), pa = w === 'pod' ? podAdapter(o.pod_id) : null; if (pa) await pa.check(); recs0 = await recordsOf(w, o.pod_id ?? '', seqs, pa?.target) } catch { /* no record */ } }
+    const judged = seqs.map((s, i) => withRecord(s, recs0[i], configured))
+    const open = judged.filter((s) => !assessSeq(s, null, true, ov).flags.some((f) => f.level === 'block' && f.code !== 'no-start-timecode'))
+    if (!open.length) throw bad(`Refused: ${judged.slice(0, 3).map((s) => `${clipOf(s)}: ${tunnelj.blockReasons(assessSeq(s, null, true, ov))}`).join(' | ')}${seqs.length > 3 ? ` (and ${seqs.length - 3} more)` : ''}`)
   }
   if (want === 'pod' && !o.pod_id) throw bad('Which pod?')
   if (fps !== undefined && !(typeof fps === 'number' && fps >= 1 && fps <= 240)) throw bad('fps is a number from 1 to 240')
@@ -1014,7 +1088,7 @@ export async function start(o: StartRequest): Promise<{ job_id: string }> {
   const view: JobView = { ...(tunnel ? { preset: 'tunnel' as const } : {}), trigger: o.trigger === 'auto-publish' ? 'auto-publish' : 'manual', job_id: id, pull: !!(o.pull ?? st.pull), kind, approved_by: (o.approved_by ?? '').trim(), codecs, notes: [slow(width), ...(codecs.includes('prores422hq') && kind === 'review' ? [PRORES_NOTE] : [])], pod_id: podId, pod_name: podId ? deps.podName(podId) : 'this PC', state: 'queued', started_at: iso(), finished_at: '', width, frames_done: 0,
     frames_total: seqs.reduce((a, s) => a + s.frames, 0) * (kind === 'review' ? codecs.length : 1), rate_fps: 0, current: '',
     sequences: seqs.map((s) => ({ where: chosen, dir: s.dir, name: s.name, clip_name: clipOf(s), state: 'waiting', frames_done: 0, frames_total: s.frames * (kind === 'review' ? codecs.length : 1), out: proxyRel(s, width), bytes: 0, error: '' })), pulled_files: 0, pulled_bytes: 0, error: '', summary: '' }
-  const job: Job = { colourMode: cmode, colourSet: st.colour ?? { mode: 'known' }, pubIds: [], pubDirs: new Set(), pubErr: '', ...(tunnel ? { preset: 'tunnel' as const } : {}), ov, ...(pre ? { pre } : {}), clipMemo: new Map(), skipExisting: skipWanted, ...(o.publish ? { publish: { targets: [...o.publish.targets], ...(o.publish.message ? { message: o.publish.message } : {}), ...(o.publish.round ? { round: o.publish.round } : {}), ...(o.publish.clip_names ? { clip_names: o.publish.clip_names } : {}), edl_override: { ...ov, ...(o.publish.edl_override ?? {}) } } } : {}), versions: new Map(), view, seqs, kind, codecs, approvedBy: view.approved_by, allowPartial: !!o.allow_partial, pull: o.pull ?? st.pull, fps, auto: want === 'auto', abort: new AbortController(), started: deps.now(), done: Promise.resolve() }
+  const job: Job = { ...(configured ? { configured } : {}), colourMode: cmode, colourSet: st.colour ?? { mode: 'known' }, pubIds: [], pubDirs: new Set(), pubErr: '', ...(tunnel ? { preset: 'tunnel' as const } : {}), ov, ...(pre ? { pre } : {}), clipMemo: new Map(), skipExisting: skipWanted, ...(o.publish ? { publish: { targets: [...o.publish.targets], ...(o.publish.message ? { message: o.publish.message } : {}), ...(o.publish.round ? { round: o.publish.round } : {}), ...(o.publish.clip_names ? { clip_names: o.publish.clip_names } : {}), edl_override: { ...ov, ...(o.publish.edl_override ?? {}) } } } : {}), versions: new Map(), view, seqs, kind, codecs, approvedBy: view.approved_by, allowPartial: !!o.allow_partial, pull: o.pull ?? st.pull, fps, auto: want === 'auto', abort: new AbortController(), started: deps.now(), done: Promise.resolve() }
   jobs.set(id, job)
   { // where it came from, and visible to the other processes while it runs (docs/ADR-050, 'MCP actions are shown in the Queue')
     const who = history.currentOrigin(), origin: jobsregistry.Origin = o.trigger === 'auto-publish' ? 'auto-publish' : who?.source === 'mcp' ? 'mcp' : 'window'
@@ -1054,9 +1128,11 @@ async function run(job: Job): Promise<void> {
       }
       if (p.nodir || p.run === 0) throw new Error(ad.id === 'local' ? NO_FRAMES : p.nodir ? `The folder ${s.dir || 'output'} is not on the pod's output folder` : `The first frame (${String(s.first).padStart(s.pad, '0')}) is not on the pod`)
       sv.complete = p.complete; sv.missing = p.missing
+      const rec = s.colour_in ? null : (await recordsOf(ad.id, v.pod_id, [s], ad.id === 'pod' ? adapters.pod.target : undefined))[0] ?? null, dis = !!rec && headerDisagrees(rec, p.header), se = withRecord(s, rec, job.configured)
+      if (rec) { sv.colour_source = 'ocio-record'; sv.ocio = ocioView(rec, dis); if (dis) sv.header_disagrees = true }
       let asm: tunnelj.Assessment | null = null
       if (job.preset === 'tunnel') {   // ADR-050: no start timecode, no colour, a frame count that differs from the EDL, not in the EDL: this sequence is refused, the others go on
-        asm = assessSeq(s, p.header?.timecode ?? null, true, job.ov); sv.flags = asm.flags; sv.start_timecode = asm.start_timecode; sv.timecode_source = asm.timecode_source
+        asm = assessSeq(se, p.header?.timecode ?? null, true, job.ov); if (rec && dis) asm.flags.push(headerFlag(rec, p.header)); sv.flags = asm.flags; sv.start_timecode = asm.start_timecode; sv.timecode_source = asm.timecode_source
         if (asm.blocked) throw new Error(`Refused: ${tunnelj.blockReasons(asm)}`)
         if (asm.overridden) v.edl_overrides = [...(v.edl_overrides ?? []), asm.overridden]
       }
@@ -1069,13 +1145,13 @@ async function run(job: Job): Promise<void> {
         const have = await reviewVersionsOf(ad, vol, shotOf(clipOf(s), s.dir), clipOf(s), job.clipMemo)
         if (have.length) { sv.state = 'skipped'; sv.reason = `already has review ${have[have.length - 1]}`; sv.shot = shotOf(clipOf(s), s.dir); sv.frames_done = p.run * passes; v.frames_done += p.run * passes; skippedN++; continue }
       }
-      let eff: tunnelj.ColourIn | undefined = s.colour_in, how: ReturnType<typeof pickColour> | undefined
+      let eff: tunnelj.ColourIn | undefined = s.colour_in ?? rec?.colour_in, how: ReturnType<typeof pickColour> | undefined
       if (!asm && !eff && p.header && NOT_DISPLAY.includes(p.header.transfer)) {   // log, linear or printing density that nobody stated: the colour setting decides (a WARNING, never a failed job)
         how = pickColour(job.colourMode, job.colourSet, p.header.transfer, review)
         if (how.skip) { sv.state = 'skipped'; sv.reason = how.skip; sv.warning = how.skip; sv.flags = [{ code: 'colour-not-stated', level: 'warn', message: how.skip }]; sv.frames_done = p.run * passes; v.frames_done += p.run * passes; skippedN++; continue }
         if (how.colour_in) { eff = how.colour_in; if (how.guessed) v.warnings = [...new Set([...(v.warnings ?? []), `${clipOf(s)}: colour guessed from the DPX header: ${how.guessed}`])] }
       }
-      if (review) { const refusal = colourRefusal(p.header); if (refusal && !(eff && p.header)) throw new Error(refusal) }   // colour.md: stated, never guessed; a person's stated colour_in lets a log or linear sequence through, with the header reported next to it
+      if (review) { const refusal = colourRefusal(p.header); if (refusal && !(eff && (p.header || rec))) throw new Error(refusal) }   // colour.md: stated, never guessed; a person's stated colour_in lets a log or linear sequence through, with the header reported next to it
       if (p.odd || p.size_odd) sv.warning = `${sv.warning ? `${sv.warning}; ` : ''}${p.odd ? `${p.odd} file(s) named like the sequence do not fit its pattern` : ''}${p.odd && p.size_odd ? '; ' : ''}${p.size_odd ? `${p.size_odd} frame(s) have an unusual size` : ''}`
       sv.frames_total = p.run * passes
       let last = [0, 0]
@@ -1092,9 +1168,9 @@ async function run(job: Job): Promise<void> {
         if (review) { sv.version = versionName(version); sv.out = reviewRel(shot, version, clip, job.codecs[0]) }
         try {
           const tc = asm ? { value: asm.start_timecode, source: asm.timecode_source } : undefined
-          if (asm && p.header && NOT_DISPLAY.includes(p.header.transfer) && asm.colour_in !== 'kodak-log') v.warnings = [...new Set([...(v.warnings ?? []), `${clipOf(s)}: the DPX header says ${TRANSFER_NAMES[p.header.transfer] ?? p.header.transfer}; the proxy is converted from the colour you chose (${asm.colour_in}), not from the header`])]
+          if (asm && !rec && p.header && NOT_DISPLAY.includes(p.header.transfer) && asm.colour_in !== 'kodak-log') v.warnings = [...new Set([...(v.warnings ?? []), `${clipOf(s)}: the DPX header says ${TRANSFER_NAMES[p.header.transfer] ?? p.header.transfer}; the proxy is converted from the colour you chose (${asm.colour_in}), not from the header`])]
           if (asm?.colour_in === 'kodak-log') v.warnings = [...new Set([...(v.warnings ?? []), `${clipOf(s)}: Kodak log: log, not a viewable picture (tagged Rec.709, no view transform)`])]
-          r = await ad.render(s, { ...(!asm && eff ? { colour_in: eff } : {}), ...(how?.colour_in ? { stated: { by: how.by!, ...(how.guessed ? { guessed: how.guessed } : { set_by: job.colourSet.set_by ?? 'unknown', set_at: job.colourSet.set_at ?? '' }), at: iso(), header_transfer: p.header ? `${TRANSFER_NAMES[p.header.transfer] ?? 'unknown'} (code ${p.header.transfer})` : null } } : {}), ...(!how && s.colour_in && job.approvedBy ? { stated: { by: job.approvedBy, at: iso(), header_transfer: p.header ? `${TRANSFER_NAMES[p.header.transfer] ?? 'unknown'} (code ${p.header.transfer})` : null } } : {}), ...(asm ? { preset: 'tunnel' as const, tc, colour_in: asm.colour_in, notes: asm.notes, edl: { element: asm.edl_element, expected_frames: asm.expected_frames, sha256: edl.status().sha256 } } : {}), width: v.width, fps: job.fps, frames: p.run, jobId: v.job_id, index: i, signal: ac.signal, probe: p, partial: !p.complete, kind: job.kind, codecs: job.codecs, shot, version, clip, createDir, approvedBy: job.approvedBy, at: iso(), source: ad.id === 'pod' ? `the pod ${v.pod_name} (${v.pod_id})` : 'this PC (local ComfyUI-Shared output)',
+          r = await ad.render(s, { ...(!asm && eff ? { colour_in: eff } : {}), ...(rec ? { stated: { by: 'the OCIO record (stated by the writer ComfyUI-OCIO)', at: iso(), header_transfer: p.header ? `${TRANSFER_NAMES[p.header.transfer] ?? 'unknown'} (code ${p.header.transfer})` : null, ocio: ocioView(rec, dis) } } : {}), ...(!rec && how?.colour_in ? { stated: { by: how.by!, ...(how.guessed ? { guessed: how.guessed } : { set_by: job.colourSet.set_by ?? 'unknown', set_at: job.colourSet.set_at ?? '' }), at: iso(), header_transfer: p.header ? `${TRANSFER_NAMES[p.header.transfer] ?? 'unknown'} (code ${p.header.transfer})` : null } } : {}), ...(!how && !rec && s.colour_in && job.approvedBy ? { stated: { by: job.approvedBy, at: iso(), header_transfer: p.header ? `${TRANSFER_NAMES[p.header.transfer] ?? 'unknown'} (code ${p.header.transfer})` : null } } : {}), ...(asm ? { preset: 'tunnel' as const, tc, colour_in: asm.colour_in, notes: asm.notes, edl: { element: asm.edl_element, expected_frames: asm.expected_frames, sha256: edl.status().sha256 } } : {}), width: v.width, fps: job.fps, frames: p.run, jobId: v.job_id, index: i, signal: ac.signal, probe: p, partial: !p.complete, kind: job.kind, codecs: job.codecs, shot, version, clip, createDir, approvedBy: job.approvedBy, at: iso(), source: ad.id === 'pod' ? `the pod ${v.pod_name} (${v.pod_id})` : 'this PC (local ComfyUI-Shared output)',
             onProgress: (frame, pass) => { const f = Math.min(frame, p.run); v.frames_done += f - (last[pass] ?? 0); last[pass] = f; sv.frames_done = Math.min(sv.frames_total, (sv.frames_done ?? 0) + 0); sv.frames_done = last.reduce((a, b) => a + b, 0); const sec = (deps.now() - job.started) / 1000; v.rate_fps = sec > 0 ? Math.round((v.frames_done / sec) * 10) / 10 : 0 } })
         } catch (e) { if (e instanceof VersionExists && review && createDir) { version++; last = [0, 0]; continue } throw e }   // someone took that version: the next one, never the same
       }

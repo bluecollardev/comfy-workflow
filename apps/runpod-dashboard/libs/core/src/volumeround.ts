@@ -13,6 +13,7 @@ import * as history from './history.js'
 import * as imports from './imports.js'
 import * as mounts from './mounts.js'
 import * as podpull from './podpull.js'
+import * as settings from './settings.js'
 
 export const WORKFLOWS_KEY = 'comfy-shared/workflows'
 /** Binc's rules: client-approved shots are never edited or run by us. The adapter says the same; this is the core's own copy, so a replaced adapter cannot unlock one. */
@@ -83,6 +84,38 @@ export async function roundFolders(volumeId: string, opts: VolumeOpts = {}): Pro
   const keys = await podpull.listVolumeKeys(volumeId, WORKFLOWS_KEY, { recursive: false }, opts)
   if (keys === null) throw new CoreError(409, (await availability(volumeId, opts)).reason)
   return keys.filter((k) => k.key.endsWith('/')).map((k) => k.key.slice(WORKFLOWS_KEY.length + 1).replace(/\/$/, '')).filter((n) => /^[A-Za-z0-9][\w.-]{0,80}$/.test(n)).sort()
+}
+
+// ----- browsing a round's files (Import Round > Browse Files) -----
+
+export const BROWSE_MAX_FILES = 3000
+const redactS3 = (t: string): string => { let x = String(t); for (const n of ['RUNPOD_S3_ACCESS_KEY', 'RUNPOD_S3_SECRET_KEY']) { const v = settings.lookup(n); if (v) x = x.split(v).join('•••') } return x.replace(/https?:\/\/\S+/gi, '<url>') }
+export interface BrowseEntry { path: string; dir: boolean; bytes: number; files?: number }
+/** A round of comfy-shared/workflows/ (or one of its shots) as a read-only tree: folders with their file and byte totals, files with sizes, paths relative to the round folder.
+ *  One recursive prefix listing of that round (or shot) only, never the volume; at most BROWSE_MAX_FILES files are shown (`truncated` says when more exist). A prefix with nothing in it
+ *  is an empty tree, not an error (`aws s3 ls` exits 1 with no message for it); a real failure keeps RunPod's own first line, with the S3 keys and any URL struck out. */
+export async function browseRound(volumeId: string, round: string, shot = '', opts: VolumeOpts = {}): Promise<{ volume_id: string; root: string; entries: BrowseEntry[]; files: number; bytes: number; truncated: boolean }> {
+  roundName(round); if (shot) roundName(shot)
+  const root = `${WORKFLOWS_KEY}/${round}${shot ? `/${shot}` : ''}`
+  let keys: { key: string; bytes: number }[] | null
+  try { keys = await podpull.listVolumeKeys(volumeId, `${root}/`, { recursive: true }, opts) } catch (e) {
+    const m = (e as Error).message || ''
+    if (/^RunPod's S3 API: aws exited 1$/.test(m)) keys = []   // nothing under that prefix
+    else throw new CoreError((e as { status?: number }).status ?? 502, redactS3(m))
+  }
+  if (keys === null) throw new CoreError(409, redactS3((await availability(volumeId, opts)).reason || 'This volume cannot be listed over the S3 API.'))
+  const base = shot ? `${root.slice(0, root.length - shot.length)}` : `${root}/`   // paths are relative to the round (a shot's start with its name)
+  const all = keys.filter((k) => k.key.startsWith(`${root}/`) && !k.key.endsWith('/')).map((k) => ({ path: k.key.slice(base.length), bytes: k.bytes }))
+  const truncated = all.length > BROWSE_MAX_FILES, files = all.slice(0, BROWSE_MAX_FILES).sort((a, b) => a.path.localeCompare(b.path))
+  const dirs = new Map<string, { files: number; bytes: number }>()
+  for (const f of files) { const p = f.path.split('/'); for (let i = 1; i < p.length; i++) { const d = p.slice(0, i).join('/'), c = dirs.get(d) || { files: 0, bytes: 0 }; c.files++; c.bytes += f.bytes; dirs.set(d, c) } }
+  const seen = new Set<string>(), entries: BrowseEntry[] = []
+  for (const f of files) {
+    const p = f.path.split('/')
+    for (let i = 1; i < p.length; i++) { const d = p.slice(0, i).join('/'); if (!seen.has(d)) { seen.add(d); entries.push({ path: d, dir: true, bytes: dirs.get(d)!.bytes, files: dirs.get(d)!.files }) } }
+    entries.push({ path: f.path, dir: false, bytes: f.bytes })
+  }
+  return { volume_id: volumeId, root, entries, files: files.length, bytes: files.reduce((a, f) => a + f.bytes, 0), truncated }
 }
 
 // ----- the cost of running graphs (guard c) -----

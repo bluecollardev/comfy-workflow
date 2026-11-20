@@ -12,6 +12,7 @@ async function toStep3(page, n = 1) {
   for (let i = 0; i < n; i++) await dlg.getByTestId('import-round-option').nth(i).locator('input').check()
   await dlg.getByTestId('import-round-next').click()
   await dlg.getByTestId('import-round-next').click()
+  await dlg.getByTestId('import-round-run').check()   // Auto sync is offered once Run Workflows is ticked
   await dlg.getByTestId('import-round-volume').selectOption('vol1')
   return dlg
 }

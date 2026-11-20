@@ -44,6 +44,7 @@
             <span v-if="itemOf(r).note" class="text-body-secondary" data-testid="import-round-note">{{ $t('importRound.notRound') }}</span>
             <span v-else class="text-body-secondary text-nowrap" data-testid="import-round-counts">{{ $t('importRound.shotsCount', { n: itemOf(r).shots.length }) }} · {{ $t('importRound.graphsCount', { n: itemOf(r).graphs ?? 0 }) }}<template v-if="itemOf(r).locked?.length"> · {{ $t('importRound.lockedCount', { n: itemOf(r).locked.length }) }}</template></span>
             <BButton v-if="itemOf(r).importable !== false || itemOf(r).shots.length" variant="outline-light" size="sm" class="py-0 text-nowrap" :disabled="checking.has(r)" data-testid="import-round-check-models" @click="checkModels(r)"><i class="fa-solid fa-clipboard-check me-1"></i>{{ $t('importRound.checkModels') }}</BButton>
+            <BButton variant="outline-light" size="sm" class="py-0 text-nowrap" data-testid="import-round-browse" @click="browsing = r"><i class="fa-solid fa-folder-tree me-1"></i>{{ $t('importRound.browse') }}</BButton>
           </template>
           <BButton v-else variant="outline-light" size="sm" class="py-0 text-nowrap" data-testid="import-round-browse" @click="browsing = r"><i class="fa-solid fa-folder-tree me-1"></i>{{ $t('importRound.browse') }}</BButton>
         </div>
@@ -57,7 +58,11 @@
         </div>
         <div v-if="rowErrors[r]" class="small text-danger pb-1 ps-4" data-testid="import-round-row-error" :data-round="r">{{ rowErrors[r] }}</div>
         </template>
-        <div v-if="!roundNamesList.length && !loadingRounds" class="small text-body-secondary">{{ isVolume ? $t('importRound.noRoundsVolume') : $t('importRound.noRounds') }}</div>
+        <div v-if="roundsError && !loadingRounds" class="alert alert-danger small py-2 d-flex align-items-center gap-2 flex-wrap" data-testid="import-round-rounds-error">
+          <span class="flex-grow-1" data-testid="import-round-rounds-error-text">{{ $t('importRound.listFailed', { reason: roundsError }) }}</span>
+          <BButton variant="outline-light" size="sm" class="text-nowrap" :disabled="loadingRounds" data-testid="import-round-rounds-retry" @click="loadRounds()"><i class="fa-solid fa-rotate-right me-1"></i>{{ $t('importRound.retry') }}</BButton>
+        </div>
+        <div v-else-if="!roundNamesList.length && !loadingRounds" class="small text-body-secondary">{{ isVolume ? $t('importRound.noRoundsVolume') : $t('importRound.noRounds') }}</div>
       </div>
     </template>
 
@@ -93,9 +98,17 @@
         <div v-if="allCards.length > 1" class="w-100 small text-body-secondary" data-testid="import-round-same-card-first">{{ $t('importRound.sameCardFirst') }}</div>
       </div>
       <div v-if="runWorkflows || isVolume" class="small mb-3" data-testid="import-round-autosync-block">
-        <label class="d-flex align-items-center gap-2"><input v-model="autoSync" type="checkbox" class="form-check-input mt-0" data-testid="import-round-autosync" />{{ $t('importRound.autoSync') }}</label>
+        <label class="d-flex align-items-center gap-2"><input v-model="autoSync" type="checkbox" class="form-check-input mt-0" data-testid="import-round-autosync" /><i class="fa-solid fa-cloud-arrow-down"></i>{{ $t('importRound.autoSync') }}</label>
         <label v-if="autoSync" class="d-flex align-items-center gap-2 ps-4 mt-1"><input v-model="autoSyncPush" type="checkbox" class="form-check-input mt-0" data-testid="import-round-autosync-push" />{{ $t('importRound.autoSyncPush') }}</label>
         <div class="text-body-secondary ps-4" data-testid="import-round-autosync-hint">{{ $t('importRound.autoSyncHint') }}</div>
+        <label class="d-flex align-items-center gap-2 mt-2"><input :checked="generateOutputs" type="checkbox" class="form-check-input mt-0" data-testid="import-round-generate" @change="onGenerate" /><i class="fa-solid fa-film"></i>{{ $t('importRound.generate') }}</label>
+        <div class="text-body-secondary ps-4" data-testid="import-round-generate-hint">{{ $t('importRound.generateHint') }}</div>
+        <template v-if="generateOutputs">
+          <label class="d-flex align-items-center gap-2 mt-2"><input :checked="publishOut" type="checkbox" class="form-check-input mt-0" :disabled="!pubReady.ok" data-testid="import-round-publish" @change="onPublish" /><i class="fa-solid fa-cloud-arrow-up"></i>{{ $t('importRound.publish') }}</label>
+          <div v-if="!pubReady.ok" class="text-warning ps-4" data-testid="import-round-publish-reason"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ $t('importRound.publishNotReady', { reason: pubReady.reason }) }}</div>
+          <div v-else class="text-body-secondary ps-4" data-testid="import-round-publish-hint">{{ $t('importRound.publishHint') }}</div>
+        </template>
+        <div v-if="nameNeeded" class="text-warning mt-2" data-testid="import-round-name-needed"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ $t('importRound.needsName') }}</div>
       </div>
       <div class="border rounded p-2 small mb-3" data-testid="import-round-estimate">
         <template v-if="isVolume">
@@ -110,6 +123,8 @@
         <div>{{ $t('importRound.estimate', { usd: estimate }) }}</div>
         </template>
         <div v-if="autoSync" data-testid="import-round-autosync-line">{{ $t(autoSyncPush ? 'importRound.autoSyncLinePush' : 'importRound.autoSyncLine') }}</div>
+        <div v-if="generateOutputs" data-testid="import-round-generate-line">{{ $t('importRound.generateLine') }}</div>
+        <div v-if="publishOut" data-testid="import-round-publish-line">{{ $t('importRound.publishLine', { by: approvedBy.trim() || '?' }) }}</div>
         <div class="d-flex align-items-center gap-2 mt-2 flex-wrap">
           <label class="mb-0" for="ir-pods">{{ $t(plans.size > 1 ? 'importRound.maxPodsEach' : 'importRound.maxPods') }}</label>
           <BFormInput id="ir-pods" v-model.number="maxPods" type="number" min="1" max="20" size="sm" style="width: 5rem" data-testid="import-round-max-pods" @input="podsEdited = true" />
@@ -168,7 +183,7 @@
       </div>
     </template>
     <ChooseCardModal :show="cardModal" :list="dcList" :loading="dcLoading" :datacenter="dcChoice" :cards="allCards" :card-label="allCardLabel" :volume-dcs="volumeDcs" :default-dc="isVolume ? (sourceVolume?.datacenter || '') : ''" @close="cardModal = false" @refresh="loadDcs(true)" @update:datacenter="dcChoice = $event" @pick="onPickCard" @auto="clearAllCards" />
-    <RoundFilesModal :round="browsing" :shot="browsingShot" target="local" @close="browsing = ''; browsingShot = ''" />
+    <RoundFilesModal :round="browsing" :shot="browsingShot" target="local" :source="isVolume ? 'volume' : 'bh'" :volume-id="isVolume ? sourceVolumeId : ''" :volume-name="isVolume ? (sourceVolume?.name || '') : ''" @close="browsing = ''; browsingShot = ''" />
   </BModal>
 </template>
 
@@ -177,7 +192,7 @@
  * Import Round(s) (ADR-038): tick one or more rounds, see their shots, the pods and the estimate with the caps, approve once. Starting queues, for each round, a pull and one run per shot; pool pods take them (see the Queue).
  * Each round is its own import in the queue; the dollar cap entered is the total and is split evenly between the rounds, so the sum never passes it.
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { panamaAPI } from '../api/panama'
 import { libraryAPI } from '../api/library'
 import { queueAPI } from '../api/queue'
@@ -190,10 +205,12 @@ import RoundFilesModal from './RoundFilesModal.vue'
 import ChooseCardModal from './ChooseCardModal.vue'
 import StepperNav from './StepperNav.vue'
 import { useImportsStore } from '../stores/imports'
+import { usePublishStore } from '../stores/publish'
+import { targetState } from '../utils/publish'
 
 const ui = useUiStore()
 const open = computed({ get: () => ui.importRoundOpen, set: (v) => { ui.importRoundOpen = v } })
-const rounds = ref([]), chosen = ref(new Set()), plans = ref(new Map()), picked = ref(new Map()), runWorkflows = ref(true)
+const rounds = ref([]), chosen = ref(new Set()), plans = ref(new Map()), picked = ref(new Map()), runWorkflows = ref(false)
 const dragOver = ref(false), staging = ref(false), dropped = ref([])
 const imports = useImportsStore()
 /** Files, folders and zips dragged from the desktop: copied (a zip extracted) into a new round folder on this PC. Needs the app for the real paths. */
@@ -219,7 +236,7 @@ const cardsFor = (r) => Object.fromEntries([...(picked.value.get(r) || [])].filt
 const estimates = ref(new Map())   // round -> the plan for the shots and cards chosen (its estimate)
 async function replan() {
   const m = new Map()
-  try { for (const r of plans.value.keys()) m.set(r, await queueAPI.plan(r, { shots: [...(picked.value.get(r) || [])], cards: cardsFor(r), run_workflows: runWorkflows.value, ...autoSyncKey(), ...volumeOpts(), ...(isVolume.value && first.value.cap_enabled ? { cost_cap_usd: Math.round(costCap.value / Math.max(1, plans.value.size) * 100) / 100 } : {}) })) } catch (e) { error.value = errorText(e) }
+  try { for (const r of plans.value.keys()) m.set(r, await queueAPI.plan(r, { shots: [...(picked.value.get(r) || [])], cards: cardsFor(r), run_workflows: runWorkflows.value, ...autoSyncKey(), ...outputsKey(), ...volumeOpts(), ...(isVolume.value && first.value.cap_enabled ? { cost_cap_usd: Math.round(costCap.value / Math.max(1, plans.value.size) * 100) / 100 } : {}) })) } catch (e) { error.value = errorText(e) }
   estimates.value = m
 }
 const canNext = computed(() => (step.value === 1 ? chosen.value.size > 0 : totalShots.value > 0 && !loadingPlan.value))
@@ -280,11 +297,22 @@ const podsEdited = ref(false)   // until the pod limit is typed, it follows the 
 const autoSync = ref(false), autoSyncPush = ref(false)   // Auto sync (ADR-046): pods this import creates get it; the key is sent only when ticked
 const autoSyncOpt = computed(() => (autoSync.value ? (autoSyncPush.value ? { pull: true, push: true } : true) : undefined))
 const autoSyncKey = () => (autoSyncOpt.value === undefined ? {} : { auto_sync: autoSyncOpt.value })
+// Run Workflows > Generate Outputs > Publish: each child shows only under its parent, and unticking a parent clears its children
+const generateOutputs = ref(false), publishOut = ref(false), nameNeeded = ref(false)
+const publishStore = usePublishStore(), pubReady = computed(() => targetState(publishStore.settings, 's3'))
+const outputsKey = () => ({ ...(generateOutputs.value ? { generate_outputs: true } : {}), ...(publishOut.value ? { publish: true } : {}) })
+watch(runWorkflows, (on) => { if (!on && !isVolume.value) { autoSync.value = false; autoSyncPush.value = false; generateOutputs.value = false } })
+watch(generateOutputs, (on) => { if (!on) publishOut.value = false })
+/** Ticking either needs the name in Approved by first (they act under it): blocked in place, with the message. */
+function tick(ev, ref_) { if (ev.target.checked && !approvedBy.value.trim()) { ev.target.checked = false; nameNeeded.value = true; return } nameNeeded.value = false; ref_.value = ev.target.checked }
+const onGenerate = (ev) => tick(ev, generateOutputs), onPublish = (ev) => tick(ev, publishOut)
+onMounted(() => { publishStore.loadSettings() })
 const maxPods = ref(2), costCap = ref(50), approvedBy = ref(''), error = ref(''), starting = ref(false)
-watch([cards, picked, runWorkflows, costCap, autoSyncOpt], () => { if (step.value === 3) replan() }, { deep: true })
+watch([cards, picked, runWorkflows, costCap, autoSyncOpt, generateOutputs, publishOut], () => { if (step.value === 3) replan() }, { deep: true })
 const pending = ref(new Set())   // rounds whose plan is still being read (a big round takes seconds): step 2 can be opened meanwhile
 const loadingPlan = computed(() => pending.value.size > 0)
 try { approvedBy.value = localStorage.getItem('runpod-manager.approved-by') || '' } catch { /* storage blocked */ }
+watch(() => approvedBy.value.trim(), (n) => { if (n) nameNeeded.value = false })
 
 const roundNamesList = computed(() => { const n = rounds.value.map((r) => r.name); for (const c of chosen.value) if (!n.includes(c)) n.push(c); return n })
 const first = computed(() => [...plans.value.values()][0] || {})
@@ -326,31 +354,45 @@ async function checkModels(r) {
 }
 const sourceOptions = computed(() => (sources.value.length ? sources.value : [{ id: 'panama-s3', name: t('importRound.sourceBH') }]).map((s) => ({ value: s.id, text: s.name })))
 const sourceInfo = computed(() => sources.value.find((s) => s.id === source.value) || null)
+let roundsSeq = 0   // a late answer from an earlier try (or another source or volume) never overwrites a newer one
+const roundsError = ref('')   // why the last rounds listing failed; Retry runs it again
 async function loadRounds() {
-  const mine = source.value + '|' + sourceVolumeId.value
-  loadingRounds.value = true
+  const mine = source.value + '|' + sourceVolumeId.value, seq = ++roundsSeq
+  const current = () => seq === roundsSeq && mine === source.value + '|' + sourceVolumeId.value
+  loadingRounds.value = true; roundsError.value = ''
   try {
     if (isVolume.value) {
       if (!sourceVolumeId.value) { rounds.value = []; return }
-      sourceStatus.value = await libraryAPI.status(source.value, { volume_id: sourceVolumeId.value })
+      const st = await libraryAPI.status(source.value, { volume_id: sourceVolumeId.value })
+      if (!current()) return
+      sourceStatus.value = st
       if (!sourceStatus.value.available) { rounds.value = []; return }   // no S3 keys or no S3 API there: say why, start no pod
     }
     const r = await libraryAPI.list(source.value, isVolume.value ? { volume_id: sourceVolumeId.value } : undefined)
-    if (mine === source.value + '|' + sourceVolumeId.value) rounds.value = Array.isArray(r) ? r : r.rounds || []
-  } catch (e) { error.value = errorText(e) } finally { loadingRounds.value = false }
+    if (current()) rounds.value = Array.isArray(r) ? r : r.rounds || []
+  } catch (e) { if (current()) { rounds.value = []; roundsError.value = e?.response?.data?.error || errorText(e) } } finally { if (seq === roundsSeq) loadingRounds.value = false }
 }
-function resetPicks() { chosen.value = new Set(); plans.value = new Map(); picked.value = new Map(); estimates.value = new Map(); rowErrors.value = {}; rounds.value = []; models.value = {}; error.value = '' }
+function resetPicks() { chosen.value = new Set(); plans.value = new Map(); picked.value = new Map(); estimates.value = new Map(); rowErrors.value = {}; rounds.value = []; models.value = {}; error.value = ''; roundsError.value = ''; roundsSeq++; loadingRounds.value = false }
+watch([source, sourceVolumeId], () => { browsing.value = ''; browsingShot.value = '' })   // a listing belongs to the source it was opened on
 watch(sourceVolumeId, (now, was) => { if (!isVolume.value || now === was) return; resetPicks(); loadRounds() })
+let seeding = true, presetOpen = false   // seeding: the first choice of Source is made once, before any rounds load; presetOpen: opened by a re-import (its round is a BH one: it keeps its source)
 watch(source, (now, was) => {   // another source: its own rounds, and nothing ticked from the last one
-  if (now === was) return
+  if (now === was || seeding) return
   resetPicks()
-  if (isVolume.value) { runWorkflows.value = true; loadSourceVolumes().then(() => { if (!sourceVolumeId.value) loadRounds() }) }   // the volume's own watcher loads the rounds once one is chosen
+  if (isVolume.value) { runWorkflows.value = true; const had = sourceVolumeId.value; loadSourceVolumes().then(() => { if (!sourceVolumeId.value || sourceVolumeId.value === had) loadRounds() }) }   // the volume's own watcher loads the rounds once a new one is chosen; the same volume as before (back from BH) has no change to watch, so load them here
   else loadRounds()
 })
 onMounted(async () => { loadDcs()
   try { sources.value = (await libraryAPI.sources()) || [] } catch { sources.value = [] }   // the list is only for the dropdown: rounds still load without it
+  // The default Source: the volume when it can be used (the RunPod S3 keys are set and a volume can be chosen, the Shared one first); else the BH bucket as before. Decided here, before the first rounds load.
+  const vol = sources.value.find((s) => s.needs === 'volume' && s.available)
+  if (vol && !presetOpen) {
+    await loadSourceVolumes()
+    if (sourceVolumeId.value) { source.value = vol.id; runWorkflows.value = true; await nextTick() }
+  }
+  seeding = false
   await loadRounds() })
-watch(() => ui.importRoundOpen, (o) => { if (o) step.value = 1; if (o && ui.importRoundPreset) { toggleRound(ui.importRoundPreset, true); ui.importRoundPreset = '' } }, { immediate: true })   // re-import: the round is already ticked
+watch(() => ui.importRoundOpen, (o) => { if (o) step.value = 1; if (o && ui.importRoundPreset) { presetOpen = true; toggleRound(ui.importRoundPreset, true); ui.importRoundPreset = '' } }, { immediate: true })   // re-import: the round is already ticked
 const followPods = () => { if (!podsEdited.value) maxPods.value = Math.min(20, Math.max(1, ...[...plans.value.keys()].map(shotCount))) }
 /** Select all: every round that can be ticked (one refused for having no shots stays out); unticking clears them all. */
 const selectable = computed(() => roundNamesList.value.filter((r) => !rowErrors.value[r]))
@@ -382,7 +424,7 @@ async function start() {
   const capOn = first.value.cap_enabled
   const items = todo.map((r) => ({ round: r, shots: [...picked.value.get(r)], cards: cardsFor(r), ...autoSyncKey(), max_pods: todo.length > 1 && !podsEdited.value ? shotCount(r) : Math.min(20, Math.max(1, Math.round(Number(maxPods.value)) || 1)) }))   // always sent: the pod limit is not the dollar cap (with the cap off it was dropped and the queue started as many pods as it liked)
   const makeVol = !isVolume.value && newVolOk.value ? { name: newVolName.value.trim(), size_gb: newVolSize.value, datacenter: dcChoice.value } : null
-  const opts = { run_workflows: isVolume.value ? true : runWorkflows.value, volume_id: isVolume.value ? sourceVolumeId.value : volumeId.value, approved_by: approvedBy.value.trim(), ...autoSyncKey(), ...(isVolume.value ? { source: 'volume' } : {}), ...(capOn ? { cost_cap_usd: costCap.value } : {}) }
+  const opts = { run_workflows: isVolume.value ? true : runWorkflows.value, volume_id: isVolume.value ? sourceVolumeId.value : volumeId.value, approved_by: approvedBy.value.trim(), ...autoSyncKey(), ...outputsKey(), ...(isVolume.value ? { source: 'volume' } : {}), ...(capOn ? { cost_cap_usd: costCap.value } : {}) }
   // The Queue opens at once and says it is queueing: reading and planning the rounds takes a while, and the button alone says nothing.
   ui.queueStartError = ''; ui.queueStarting = todo; open.value = false; ui.queueTab = 'imports'; ui.queueOpen = true
   try { if (makeVol) { const v = await volumesAPI.create(makeVol); opts.volume_id = v.id }; await queueAPI.importMany(items, opts) } catch (e) { ui.queueStartError = errorText(e) } finally { ui.queueStarting = []; ui.queueVersion++; starting.value = false }

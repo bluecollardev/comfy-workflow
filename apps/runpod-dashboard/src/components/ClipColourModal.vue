@@ -1,6 +1,7 @@
 <template>
   <BModal :model-value="open" :title="$t('outputs.render.colourModalTitle', { name })" lazy ok-only :ok-title="$t('outputs.render.colourDone')" ok-variant="outline-light" data-testid="clip-colour-modal" @update:model-value="(v) => { if (!v) $emit('close') }">
     <div v-if="header" class="small text-body-secondary mb-2" data-testid="clip-colour-header">{{ $t('edl.headerSays', { t: header }) }}</div>
+    <div v-if="ocio" class="small mb-2" data-testid="clip-colour-ocio">{{ ocio }}<span v-if="headerDisagrees" class="text-body-secondary" data-testid="clip-colour-ocio-disagrees"> {{ $t('outputs.render.ocioWins') }}</span></div>
     <label class="small mb-1 d-block" for="clip-colour-select">{{ $t('edl.colour') }}</label>
     <select id="clip-colour-select" class="form-select form-select-sm" :value="modelValue" data-testid="pod-outputs-render-colour-in" :data-name="name" @change="$emit('update:modelValue', $event.target.value)">
       <option value="">{{ emptyLabel }}</option>
@@ -18,6 +19,6 @@
  * ClipColourModal: the colour of ONE sequence's frames. Its own choice wins over "Same colour for all", which wins over the default the core derives from the DPX header;
  * the first option says which of those applies when the choice is empty. Opened by the palette icon on a Generate row.
  */
-defineProps({ open: { type: Boolean, default: false }, name: { type: String, default: '' }, header: { type: String, default: '' }, modelValue: { type: String, default: '' }, colours: { type: Array, default: () => [] }, emptyLabel: { type: String, default: '' }, assumption: { type: String, default: '' }, suggested: { type: String, default: '' } })
+defineProps({ open: { type: Boolean, default: false }, name: { type: String, default: '' }, header: { type: String, default: '' }, modelValue: { type: String, default: '' }, colours: { type: Array, default: () => [] }, emptyLabel: { type: String, default: '' }, assumption: { type: String, default: '' }, ocio: { type: String, default: '' }, headerDisagrees: { type: Boolean, default: false }, suggested: { type: String, default: '' } })
 defineEmits(['update:modelValue', 'close'])
 </script>
