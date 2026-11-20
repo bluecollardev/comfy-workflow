@@ -26,8 +26,8 @@ def main() -> int:
             browser = p.chromium.launch(args=["--no-sandbox"])
             try:
                 page = browser.new_page()
-                page.goto(url, wait_until="domcontentloaded", timeout=60000)
-                page.wait_for_function(PAGE_READY, timeout=60000)
+                page.goto(url, wait_until="domcontentloaded", timeout=int(os.environ.get("UI2API_TIMEOUT_MS", "240000")))
+                page.wait_for_function(PAGE_READY, timeout=int(os.environ.get("UI2API_TIMEOUT_MS", "240000")))
                 out = page.evaluate(PAGE_CONVERT, graph)
             finally:
                 browser.close()
