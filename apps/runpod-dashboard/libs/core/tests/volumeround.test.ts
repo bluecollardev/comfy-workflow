@@ -43,6 +43,44 @@ beforeEach(() => {
 })
 afterEach(() => { delete process.env.RUNPOD_S3_ACCESS_KEY; delete process.env.RUNPOD_S3_SECRET_KEY; queue.stop(); queue.reset(); queue.forget() })
 
+describe('browsing a round (Browse Files): a read-only tree by prefix', () => {
+  const runner = (files: Record<string, string[]>, fail?: { code: number; stderr: string }): podpull.AwsRunner => async (args) => {
+    calls.push(args)
+    if (fail) return { code: fail.code, stdout: '', stderr: fail.stderr }
+    const hit = Object.keys(files).find((p) => args[2] === `s3://${VOL}/${p}/`)
+    if (!hit) return { code: 1, stdout: '', stderr: '' }   // aws s3 ls on a prefix with nothing in it: exit 1, no message
+    return { code: 0, stdout: files[hit].map((k) => ROW(k, k.endsWith('.md') ? 2000 : 100)).join('\n'), stderr: '' }
+  }
+  it('lists a round: folders with totals, files with sizes, paths relative to the round, one recursive prefix call under comfy-shared/workflows/', async () => {
+    const t = await volumeround.browseRound(VOL, 'proxy_v005', '', { aws: runner({ [`${W}/proxy_v005`]: LISTING.proxy_v005.concat([`${W}/proxy_v005/README.md`]) }) })
+    expect(t).toMatchObject({ root: `${W}/proxy_v005`, files: 7, truncated: false })
+    expect(t.entries.find((e) => e.path === 'archival-080')).toMatchObject({ dir: true, files: 3, bytes: 300 })
+    expect(t.entries.find((e) => e.path === 'README.md')).toMatchObject({ dir: false, bytes: 2000 })
+    expect(t.entries.map((e) => e.path)).toContain('enhance-141/04_GRAPH/enhance-141__a__proxy_v005.json')
+    expect(calls).toHaveLength(1); expect(calls[0][2]).toBe(`s3://${VOL}/${W}/proxy_v005/`); expect(calls[0]).toContain('--recursive')
+  })
+  it('lists one shot: only its folder, paths start with the shot', async () => {
+    const t = await volumeround.browseRound(VOL, 'proxy_v005', 'archival-080', { aws: runner({ [`${W}/proxy_v005/archival-080`]: LISTING.proxy_v005.filter((k) => k.includes('/archival-080/')) }) })
+    expect(t.root).toBe(`${W}/proxy_v005/archival-080`); expect(t.files).toBe(3)
+    expect(t.entries[0]).toMatchObject({ path: 'archival-080', dir: true, files: 3 })
+    expect(t.entries.every((e) => e.path.startsWith('archival-080'))).toBe(true)
+  })
+  it('a prefix with nothing in it is an empty tree, not an error', async () => {
+    await expect(volumeround.browseRound(VOL, 'base_v008', '', { aws: runner({}) })).resolves.toMatchObject({ entries: [], files: 0, bytes: 0, truncated: false })
+  })
+  it('stops at 3000 files and says so', async () => {
+    const many = Array.from({ length: 3050 }, (_, i) => `${W}/big/s/f${String(i).padStart(5, '0')}.json`)
+    const t = await volumeround.browseRound(VOL, 'big', '', { aws: runner({ [`${W}/big`]: many }) })
+    expect(t.truncated).toBe(true); expect(t.files).toBe(3000)
+  })
+  it('a real failure keeps RunPod\'s first line, with no key or URL in it; a bad name is refused before any call', async () => {
+    const err = await volumeround.browseRound(VOL, 'r', '', { aws: runner({}, { code: 255, stderr: 'An error occurred (AccessDenied) for user_x with rps_y at https://s3api-eu-ro-1.runpod.io/abc?X-Amz-Signature=zz' }) }).catch((e) => e as Error)
+    expect((err as Error).message).toMatch(/AccessDenied/); expect((err as Error).message).not.toMatch(/user_x|rps_y|https?:/)
+    await expect(volumeround.browseRound(VOL, '../x', '', { aws: runner({}) })).rejects.toThrow(/Not a round folder/)
+    expect(calls).toHaveLength(1)
+  })
+})
+
 describe('the round adapter (describe)', () => {
   it('is a built-in round adapter with a documentation header', async () => {
     const row = (await imports.list()).find((r) => r.id === 'brynley-rounds-layout')

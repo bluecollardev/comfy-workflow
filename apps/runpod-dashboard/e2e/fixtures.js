@@ -1133,11 +1133,34 @@ export default {
     const panamaRoundList = () => { const pn = state.panama || {}; const base = pn.rounds || [{ name: 'brynley-comfy-2026-10-23', staged: false, state: 'none', present: 0, expected: null, missing: null, bytes: 0 }, { name: 'brynley-comfy-2026-10-20', staged: false, state: 'partial', present: 391, expected: 1283, missing: 892, bytes: 8100000000 }, { name: 'brynley-inbox-2026-10-28-v001', staged: true, state: 'complete', present: 378, expected: 378, missing: 0, bytes: 623848 }]; return base.map((r) => (pn.deleted || []).includes(r.name) ? { ...r, staged: false, state: 'none', present: 0, expected: null, missing: null, bytes: 0 } : r) }   // one list for /panama/rounds and the library's panama-s3 source
     if (method === 'GET' && path === '/panama/rounds') return json(panamaRoundList())
     // ADR-044: the library. Sources list; every item has the one shape (the BH rounds are the panama-s3 source).
-    if (method === 'GET' && path === '/library/sources') return json([{ id: 'panama-s3', name: 'BH (Panama bucket)', hint: 'The rounds BH delivers to the exchange bucket, downloaded to this PC and checked against their manifest.', available: true, reason: '' }, { id: 'volume', name: 'Volume (rounds already on a network volume)', hint: 'Read-only listing over the S3 API.', available: true, reason: '', needs: 'volume' }])
+    if (method === 'GET' && path === '/library/sources') return json([{ id: 'panama-s3', name: 'BH (Panama bucket)', hint: 'The rounds BH delivers to the exchange bucket, downloaded to this PC and checked against their manifest.', available: true, reason: '' }, { id: 'volume', name: 'Volume (rounds already on a network volume)', hint: 'Read-only listing over the S3 API.', available: !!state.volumeSourceReady, reason: state.volumeSourceReady ? '' : 'RUNPOD_S3_ACCESS_KEY and RUNPOD_S3_SECRET_KEY are not set', needs: 'volume' }])   // state.volumeSourceReady = the S3 keys are set: Import Round then starts on the Volume source
     // ADR-044 step 2: the volume source. state.volumeLib = { status, rounds } overrides what the fake volume holds.
     if (method === 'GET' && path === '/library/status') { (state.libraryCalls ||= []).push({ path, ...query }); return json(state.volumeLib?.status || { available: true, reason: '', volume_id: query.volume_id }) }
     if (method === 'GET' && path === '/library/round') return json({ kind: 'round', round: query.round, shots: ['archival-080', 'archival-084', 'cgi-042'], variants: ['a', 'b'], graphs: [], locked: ['cgi-042'], findings: [] })
+    // A round of comfy-shared/workflows/ as a file tree (Browse Files): state.volumeLib.files = [{ path: '<round>/<shot>/<graph>', bytes }] (default below), .filesFail = a refusal reason, .filesTruncated. Calls in state.roundFilesCalls.
+    if (method === 'GET' && path === '/library/round-files') {
+      (state.roundFilesCalls ||= []).push({ ...query })
+      const lib = state.volumeLib || {}
+      if (lib.filesFail) return json({ error: lib.filesFail }, 502)
+      const all = lib.files || [
+        { path: 'proxy_v005/archival-080/archival-080__a__proxy_v005.json', bytes: 2048 }, { path: 'proxy_v005/archival-080/archival-080__b__proxy_v005.json', bytes: 2048 },
+        { path: 'proxy_v005/archival-080/notes/old/readme.md', bytes: 1048576 }, { path: 'proxy_v005/archival-084/archival-084__main__proxy_v005.json', bytes: 500 }, { path: 'proxy_v005/README.md', bytes: 12 },
+        { path: 'proxy_v004g/archival-080/archival-080__e__proxy_v004g.json', bytes: 1 },
+      ]
+      const pre = query.shot ? `${query.round}/${query.shot}/` : `${query.round}/`
+      const files = all.filter((f) => f.path.startsWith(pre)).map((f) => ({ path: query.shot ? f.path.slice(query.round.length + 1) : f.path.slice(pre.length), bytes: f.bytes })).sort((a, b) => a.path.localeCompare(b.path))
+      const dirs = new Map(), seen = new Set(), entries = []
+      for (const f of files) { const p = f.path.split('/'); for (let i = 1; i < p.length; i++) { const d = p.slice(0, i).join('/'), c = dirs.get(d) || { files: 0, bytes: 0 }; c.files++; c.bytes += f.bytes; dirs.set(d, c) } }
+      for (const f of files) { const p = f.path.split('/'); for (let i = 1; i < p.length; i++) { const d = p.slice(0, i).join('/'); if (!seen.has(d)) { seen.add(d); entries.push({ path: d, dir: true, ...dirs.get(d) }) } } entries.push({ path: f.path, dir: false, bytes: f.bytes }) }
+      return json({ volume_id: query.volume_id, root: `comfy-shared/workflows/${query.round}${query.shot ? `/${query.shot}` : ''}`, entries, files: files.length, bytes: files.reduce((a, f) => a + f.bytes, 0), truncated: !!lib.filesTruncated })
+    }
     if (method === 'POST' && path === '/library/preflight') { (state.libraryCalls ||= []).push({ path, ...body }); return json(state.volumeLib?.preflight || { round: body.round, volume_id: body.volume_id, checked: 4, total_graphs: 5, missing_total: 1, graphs: [{ graph: `${body.round}/archival-080/archival-080__a__${body.round}.json`, models: ['LTX23_audio_vae_bf16.safetensors'], missing: [{ name: 'LTX23_audio_vae_bf16.safetensors', node_type: 'LTXVAudioVAELoader', reads: ['models/checkpoints/'], elsewhere: ['models/vae/LTX23_audio_vae_bf16.safetensors'] }] }], note: 'read-only' }) }
+    // Rounds listing faults: state.libraryItems = { fail: [true, false] } makes call N fail (502 with { error }) when fail[N] is truthy (a string is the reason); delay: [ms, ...] holds call N. Calls counted in state.libraryItems.n.
+    if (method === 'GET' && path === '/library/items' && state.libraryItems) {
+      const li = state.libraryItems, n = li.n = (li.n || 0) + 1, f = (li.fail || [])[n - 1], d = (li.delay || [])[n - 1]
+      if (d) await new Promise((r) => setTimeout(r, d))
+      if (f) return json({ error: typeof f === 'string' ? f : 'aws exited 255: Unable to locate credentials' }, 502)
+    }
     if (method === 'GET' && path === '/library/items' && query.source === 'volume') {
       (state.libraryCalls ||= []).push({ path, ...query })
       return json(state.volumeLib?.rounds || [

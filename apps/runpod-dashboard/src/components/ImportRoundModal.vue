@@ -58,7 +58,11 @@
         </div>
         <div v-if="rowErrors[r]" class="small text-danger pb-1 ps-4" data-testid="import-round-row-error" :data-round="r">{{ rowErrors[r] }}</div>
         </template>
-        <div v-if="!roundNamesList.length && !loadingRounds" class="small text-body-secondary">{{ isVolume ? $t('importRound.noRoundsVolume') : $t('importRound.noRounds') }}</div>
+        <div v-if="roundsError && !loadingRounds" class="alert alert-danger small py-2 d-flex align-items-center gap-2 flex-wrap" data-testid="import-round-rounds-error">
+          <span class="flex-grow-1" data-testid="import-round-rounds-error-text">{{ $t('importRound.listFailed', { reason: roundsError }) }}</span>
+          <BButton variant="outline-light" size="sm" class="text-nowrap" :disabled="loadingRounds" data-testid="import-round-rounds-retry" @click="loadRounds()"><i class="fa-solid fa-rotate-right me-1"></i>{{ $t('importRound.retry') }}</BButton>
+        </div>
+        <div v-else-if="!roundNamesList.length && !loadingRounds" class="small text-body-secondary">{{ isVolume ? $t('importRound.noRoundsVolume') : $t('importRound.noRounds') }}</div>
       </div>
     </template>
 
@@ -178,7 +182,7 @@
  * Import Round(s) (ADR-038): tick one or more rounds, see their shots, the pods and the estimate with the caps, approve once. Starting queues, for each round, a pull and one run per shot; pool pods take them (see the Queue).
  * Each round is its own import in the queue; the dollar cap entered is the total and is split evenly between the rounds, so the sum never passes it.
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { panamaAPI } from '../api/panama'
 import { libraryAPI } from '../api/library'
 import { queueAPI } from '../api/queue'
@@ -327,32 +331,45 @@ async function checkModels(r) {
 }
 const sourceOptions = computed(() => (sources.value.length ? sources.value : [{ id: 'panama-s3', name: t('importRound.sourceBH') }]).map((s) => ({ value: s.id, text: s.name })))
 const sourceInfo = computed(() => sources.value.find((s) => s.id === source.value) || null)
+let roundsSeq = 0   // a late answer from an earlier try (or another source or volume) never overwrites a newer one
+const roundsError = ref('')   // why the last rounds listing failed; Retry runs it again
 async function loadRounds() {
-  const mine = source.value + '|' + sourceVolumeId.value
-  loadingRounds.value = true
+  const mine = source.value + '|' + sourceVolumeId.value, seq = ++roundsSeq
+  const current = () => seq === roundsSeq && mine === source.value + '|' + sourceVolumeId.value
+  loadingRounds.value = true; roundsError.value = ''
   try {
     if (isVolume.value) {
       if (!sourceVolumeId.value) { rounds.value = []; return }
-      sourceStatus.value = await libraryAPI.status(source.value, { volume_id: sourceVolumeId.value })
+      const st = await libraryAPI.status(source.value, { volume_id: sourceVolumeId.value })
+      if (!current()) return
+      sourceStatus.value = st
       if (!sourceStatus.value.available) { rounds.value = []; return }   // no S3 keys or no S3 API there: say why, start no pod
     }
     const r = await libraryAPI.list(source.value, isVolume.value ? { volume_id: sourceVolumeId.value } : undefined)
-    if (mine === source.value + '|' + sourceVolumeId.value) rounds.value = Array.isArray(r) ? r : r.rounds || []
-  } catch (e) { error.value = errorText(e) } finally { loadingRounds.value = false }
+    if (current()) rounds.value = Array.isArray(r) ? r : r.rounds || []
+  } catch (e) { if (current()) { rounds.value = []; roundsError.value = e?.response?.data?.error || errorText(e) } } finally { if (seq === roundsSeq) loadingRounds.value = false }
 }
-function resetPicks() { chosen.value = new Set(); plans.value = new Map(); picked.value = new Map(); estimates.value = new Map(); rowErrors.value = {}; rounds.value = []; models.value = {}; error.value = '' }
+function resetPicks() { chosen.value = new Set(); plans.value = new Map(); picked.value = new Map(); estimates.value = new Map(); rowErrors.value = {}; rounds.value = []; models.value = {}; error.value = ''; roundsError.value = ''; roundsSeq++; loadingRounds.value = false }
 watch([source, sourceVolumeId], () => { browsing.value = ''; browsingShot.value = '' })   // a listing belongs to the source it was opened on
 watch(sourceVolumeId, (now, was) => { if (!isVolume.value || now === was) return; resetPicks(); loadRounds() })
+let seeding = true, presetOpen = false   // seeding: the first choice of Source is made once, before any rounds load; presetOpen: opened by a re-import (its round is a BH one: it keeps its source)
 watch(source, (now, was) => {   // another source: its own rounds, and nothing ticked from the last one
-  if (now === was) return
+  if (now === was || seeding) return
   resetPicks()
   if (isVolume.value) { runWorkflows.value = true; const had = sourceVolumeId.value; loadSourceVolumes().then(() => { if (!sourceVolumeId.value || sourceVolumeId.value === had) loadRounds() }) }   // the volume's own watcher loads the rounds once a new one is chosen; the same volume as before (back from BH) has no change to watch, so load them here
   else loadRounds()
 })
 onMounted(async () => { loadDcs()
   try { sources.value = (await libraryAPI.sources()) || [] } catch { sources.value = [] }   // the list is only for the dropdown: rounds still load without it
+  // The default Source: the volume when it can be used (the RunPod S3 keys are set and a volume can be chosen, the Shared one first); else the BH bucket as before. Decided here, before the first rounds load.
+  const vol = sources.value.find((s) => s.needs === 'volume' && s.available)
+  if (vol && !presetOpen) {
+    await loadSourceVolumes()
+    if (sourceVolumeId.value) { source.value = vol.id; runWorkflows.value = true; await nextTick() }
+  }
+  seeding = false
   await loadRounds() })
-watch(() => ui.importRoundOpen, (o) => { if (o) step.value = 1; if (o && ui.importRoundPreset) { toggleRound(ui.importRoundPreset, true); ui.importRoundPreset = '' } }, { immediate: true })   // re-import: the round is already ticked
+watch(() => ui.importRoundOpen, (o) => { if (o) step.value = 1; if (o && ui.importRoundPreset) { presetOpen = true; toggleRound(ui.importRoundPreset, true); ui.importRoundPreset = '' } }, { immediate: true })   // re-import: the round is already ticked
 const followPods = () => { if (!podsEdited.value) maxPods.value = Math.min(20, Math.max(1, ...[...plans.value.keys()].map(shotCount))) }
 /** Select all: every round that can be ticked (one refused for having no shots stays out); unticking clears them all. */
 const selectable = computed(() => roundNamesList.value.filter((r) => !rowErrors.value[r]))
