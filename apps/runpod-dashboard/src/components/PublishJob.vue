@@ -12,11 +12,12 @@
         </div>
         <BButton v-if="active" size="sm" variant="outline-warning" class="flex-shrink-0 ms-auto" data-testid="publish-cancel" @click="store.cancel(job.job_id)"><i class="fa-solid fa-stop me-1"></i>{{ $t(children.length ? 'publish.ret.cancelAll' : 'publish.modal.cancel') }}</BButton>
       </div>
-      <div v-if="failedKids.length && !active" class="mt-1" data-testid="publish-retry-shots"><BButton size="sm" variant="outline-warning" :disabled="retryingShots" data-testid="publish-retry-all" @click="retryShots"><i class="fa-solid fa-rotate me-1"></i>{{ $t('publish.ret.retryShots', { n: failedKids.length }) }}</BButton><span v-if="retryErr" class="text-danger small ms-2" data-testid="publish-retry-error"><ErrorText :text="retryErr" /></span></div>
+      <div v-if="failedKids.length && !active && !failed.length" class="mt-1" data-testid="publish-retry-shots"><BButton size="sm" variant="outline-warning" :disabled="retryingShots" data-testid="publish-retry-all" @click="retryShots"><i class="fa-solid fa-rotate me-1"></i>{{ $t('publish.ret.retryShots', { n: failedKids.length }) }}</BButton><span v-if="retryErr" class="text-danger small ms-2" data-testid="publish-retry-error"><ErrorText :text="retryErr" /></span></div>
       <div v-if="job.phase"class="small text-info" data-testid="publish-job-phase" :data-phase="job.phase">{{ $t(`publish.backfill.phase.${job.phase}`) }}</div>
       <div v-if="job.uploaded != null || failed.length" class="small" data-testid="publish-job-result">{{ $t('publish.backfill.result', { uploaded: job.uploaded ?? job.files_done ?? 0, there: job.skipped ?? 0, failed: failed.length }) }}</div>
       <div v-for="f in failed" :key="f.path" class="small text-danger" data-testid="publish-job-failed" :data-path="f.path"><span class="font-monospace">{{ f.path }}</span>: <ErrorText :text="String(f.error || '')" /></div>
-      <BButton v-if="failed.length && !active" size="sm" variant="outline-warning" class="mt-1" data-testid="publish-retry-failed" @click="emit('retry', failed)"><i class="fa-solid fa-rotate me-1"></i>{{ $t('publish.backfill.retry') }}</BButton>
+      <BButton v-if="failed.length && !active" size="sm" variant="outline-warning" class="mt-1" data-testid="publish-retry-failed" :disabled="retryingShots" @click="retryFailed"><i class="fa-solid fa-rotate me-1"></i>{{ $t('publish.backfill.retry') }}</BButton>
+      <div v-if="retryErr && failed.length" class="small text-danger" data-testid="publish-retry-error-files"><ErrorText :text="retryErr" /></div>
       <!-- a publish of several shots is a parent job: one row per shot, each with its own state, Retry (failed only) and Cancel -->
       <div v-if="children.length" class="mt-2" data-testid="publish-children" :data-open="childrenOpen ? 'true' : 'false'">
         <BButton variant="link" size="sm" class="p-0" data-testid="publish-children-toggle" :aria-expanded="childrenOpen" @click="childrenOpen = !childrenOpen">{{ childrenOpen ? '▾' : '▸' }} {{ $t('publish.ret.children', { n: children.length }) }}</BButton>
@@ -89,6 +90,8 @@ const overridden = computed(() => (Array.isArray(props.job.edl_overrides) ? prop
 const failedKids = computed(() => children.value.filter((c) => c.state === 'failed')), retryingShots = ref(false), retryErr = ref('')
 /** Every failed shot of the job tried again, one after the other (the shots that are done are not sent again). */
 async function retryShots() { retryingShots.value = true; retryErr.value = ''; try { for (const c of failedKids.value) await store.retry(c.id) } catch (e) { retryErr.value = e?.response?.data?.detail || e?.message || String(e) } finally { retryingShots.value = false } }
+/** Retry failed on a card of several shots tries those shots again (the Queue); on a plain job the Publish window's own handler gets the failed files. */
+async function retryFailed() { if (failedKids.value.length) await retryShots(); else emit('retry', failed.value) }
 const failed = computed(() => (Array.isArray(props.job.failed) ? props.job.failed : []))
 const percent = computed(() => { const j = props.job; return j.state === 'done' || j.state === 'done_with_warning' ? 100 : j.bytes_total ? Math.round((100 * (j.bytes_done || 0)) / j.bytes_total) : j.files_total ? Math.round((100 * (j.files_done || 0)) / j.files_total) : 0 })
 async function copy(l) { try { await navigator.clipboard.writeText(l.url); copiedPath.value = l.path; setTimeout(() => { if (copiedPath.value === l.path) copiedPath.value = '' }, 2000) } catch { copiedPath.value = '' } }

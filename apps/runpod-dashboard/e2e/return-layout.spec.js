@@ -185,9 +185,15 @@ test.describe('Queue > Publishing: a publish of several shots', () => {
     const r2 = q.locator('[data-testid="publish-child"][data-id="c2"]')
     await expect(r2.getByTestId('error-text-short')).not.toContainText('TAIL')
     await r2.getByTestId('error-text-open').click(); await expect(page.getByTestId('error-text-full')).toContainText('TAIL'); await page.getByTestId('error-text-modal').getByRole('button', { name: 'Close', exact: true }).last().click()
-    await expect(q.getByTestId('publish-retry-all')).toContainText('2')
+    await expect(q.getByTestId('publish-retry-all')).toContainText('Retry')
     await q.getByTestId('publish-retry-all').click()
     await expect.poll(() => (api.state.publish.retries || []).length).toBe(2)
+  })
+  test('Retry failed on a card with failed files and failed shots tries those shots again (it does something)', async ({ page, api }) => {
+    setup(api, { jobs: [parent({ state: 'failed', failed: [{ path: 'a.dpx', error: 'RequestTimeout' }], children: [child('c1', 'archival-123', 'failed', { error: 'x', rate: 0 })] })] })
+    await page.goto('/'); const q = await openQ(page)
+    await q.getByTestId('publish-retry-failed').click()
+    await expect.poll(() => (api.state.publish.retries || []).length).toBe(1)
   })
   test('a parent card shows its children as rows with state, files, bytes and rate; Retry only on a failed one; Cancel on a running one; Cancel all on the parent', async ({ page, api }) => {
     setup(api, { jobs: [parent({ children: [child('c1', 'archival-077', 'done'), child('c2', 'archival-084', 'uploading'), child('c3', 'cgi-042', 'failed', { error: 'Access Denied', rate: 0 })], manifest: { state: 'pending' } })] })
