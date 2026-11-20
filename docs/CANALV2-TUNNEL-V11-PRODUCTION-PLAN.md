@@ -227,25 +227,34 @@ Not every element is in the same state, so the delivery is handled by case. **Ru
 
 | # | Element | Frames (PDF) | Raster | Source final in | State on the volume | Case | Needed |
 |---|---|---|---|---|---|---|---|
-| 18 | ARCHIVAL-087 platform | 97 | 3840x2160 | `-11-14` | pulled | D | Turn the ProRes master into DPX frames (Binc makes the graphs, or we convert it with ffmpeg: decision 1 below); then the same steps as the 17: corrected header, review video, manifest, test round, real round |
-| 19 | ARCHIVAL-087 rain | 96 | 3840x2160 | `-11-14` | pulled | D | Turn the ProRes master into DPX frames (Binc makes the graphs, or we convert it with ffmpeg: decision 1 below); then the same steps as the 17: corrected header, review video, manifest, test round, real round |
-| 20 | ARCHIVAL-123 f | 43 | 3840x2160 | `-10-23` | staged | D | Turn the ProRes master into DPX frames (Binc makes the graphs, or we convert it with ffmpeg: decision 1 below); then the same steps as the 17: corrected header, review video, manifest, test round, real round |
-| 21 | ARCHIVAL-168 a | 153 | 3840x2160 | `-10-29` | pulled | D | Turn the ProRes master into DPX frames (Binc makes the graphs, or we convert it with ffmpeg: decision 1 below); then the same steps as the 17: corrected header, review video, manifest, test round, real round |
-| 22 | ARCHIVAL-168 b | 139 | 3840x2160 | `-10-29` | pulled | D | Turn the ProRes master into DPX frames (Binc makes the graphs, or we convert it with ffmpeg: decision 1 below); then the same steps as the 17: corrected header, review video, manifest, test round, real round |
-| 23 | ARCHIVAL-168 c | 105 | 3840x2160 | `-10-29` | pulled | D | Turn the ProRes master into DPX frames (Binc makes the graphs, or we convert it with ffmpeg: decision 1 below); then the same steps as the 17: corrected header, review video, manifest, test round, real round |
-| 24 | ARCHIVAL-168 d | 48 | 3840x2160 | `-10-29` | pulled | D | Turn the ProRes master into DPX frames (Binc makes the graphs, or we convert it with ffmpeg: decision 1 below); then the same steps as the 17: corrected header, review video, manifest, test round, real round |
-| 25 | CREATURE-266 dolphin-lowtrack (ALT V01) | 94 | 1920x1080 | `-11-14` | pulled | D | Turn the ProRes master into DPX frames (Binc makes the graphs, or we convert it with ffmpeg: decision 1 below); then the same steps as the 17: corrected header, review video, manifest, test round, real round |
-| 26 | PHOTOREAL-013 ascent | 108 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Turn the master into DPX frames at 24 fps (decision 1 below); then the same steps as the 17 |
-| 27 | PHOTOREAL-013 chasm07 | 271 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Turn the master into DPX frames at 24 fps (decision 1 below); then the same steps as the 17 |
-| 28 | PHOTOREAL-013 f23 | 633 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Turn the master into DPX frames at 24 fps (decision 1 below); then the same steps as the 17 |
-| 29 | PHOTOREAL-013 hadal | 160 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Turn the master into DPX frames at 24 fps (decision 1 below); then the same steps as the 17 |
-| 30 | PHOTOREAL-013 landing | 226 | 1920x1080, 24 fps ProRes | `-11-14` | pulled | E | Turn the master into DPX frames at 24 fps (decision 1 below); then the same steps as the 17 |
-| 31 | PHOTOREAL-013 splash | 96 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Turn the master into DPX frames at 24 fps (decision 1 below); then the same steps as the 17 |
-| 32 | PHOTOREAL-013 sunlight | 212 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Turn the master into DPX frames at 24 fps (decision 1 below); then the same steps as the 17 |
-| 33 | PHOTOREAL-013 top (V02) | 209 | 1920x1080, 24 fps ProRes | `-11-14` | pulled | E | Turn the master into DPX frames at 24 fps (decision 1 below); then the same steps as the 17 |
-| 34 | CGI-072 head | 106 | 1920x1080 V02 ProRes 23.976 | `-10-29` (V03 HEVC 24) | not pulled | F | Binc to say which version; then import `-10-29` for it |
-| 35 | CGI-072 backhalf-b | 70 | 1920x1080 V02 ProRes 23.976 | `-10-29` (V03 HEVC 24) | not pulled | F | Binc to say which version; then import `-10-29` for it |
-| 36 | CGI-072 backhalf-c | 162 | 1920x1080 V02 ProRes 23.976 | `-10-29` (V03 HEVC 24) | not pulled | F | Binc to say which version; then import `-10-29` for it |
+| 18 | ARCHIVAL-087 platform | 97 | 3840x2160 | `-11-14` | pulled | D | We have the finished video but no DPX frames. Make the frames first (see 11.4), then deliver it like the 17. |
+| 19 | ARCHIVAL-087 rain | 96 | 3840x2160 | `-11-14` | pulled | D | We have the finished video but no DPX frames. Make the frames first (see 11.4), then deliver it like the 17. |
+| 20 | ARCHIVAL-123 f | 43 | 3840x2160 | `-10-23` | staged | D | We have the finished video but no DPX frames. Make the frames first (see 11.4), then deliver it like the 17. |
+| 21 | ARCHIVAL-168 a | 153 | 3840x2160 | `-10-29` | pulled | D | We have the finished video but no DPX frames. Make the frames first (see 11.4), then deliver it like the 17. |
+| 22 | ARCHIVAL-168 b | 139 | 3840x2160 | `-10-29` | pulled | D | We have the finished video but no DPX frames. Make the frames first (see 11.4), then deliver it like the 17. |
+| 23 | ARCHIVAL-168 c | 105 | 3840x2160 | `-10-29` | pulled | D | We have the finished video but no DPX frames. Make the frames first (see 11.4), then deliver it like the 17. |
+| 24 | ARCHIVAL-168 d | 48 | 3840x2160 | `-10-29` | pulled | D | We have the finished video but no DPX frames. Make the frames first (see 11.4), then deliver it like the 17. |
+| 25 | CREATURE-266 dolphin-lowtrack (ALT V01) | 94 | 1920x1080 | `-11-14` | pulled | D | We have the finished video but no DPX frames. Make the frames first (see 11.4), then deliver it like the 17. |
+| 26 | PHOTOREAL-013 ascent | 108 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Same as the others, but the frames are 24 per second, not 23.976 (see 11.4). |
+| 27 | PHOTOREAL-013 chasm07 | 271 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Same as the others, but the frames are 24 per second, not 23.976 (see 11.4). |
+| 28 | PHOTOREAL-013 f23 | 633 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Same as the others, but the frames are 24 per second, not 23.976 (see 11.4). |
+| 29 | PHOTOREAL-013 hadal | 160 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Same as the others, but the frames are 24 per second, not 23.976 (see 11.4). |
+| 30 | PHOTOREAL-013 landing | 226 | 1920x1080, 24 fps ProRes | `-11-14` | pulled | E | Same as the others, but the frames are 24 per second, not 23.976 (see 11.4). |
+| 31 | PHOTOREAL-013 splash | 96 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Same as the others, but the frames are 24 per second, not 23.976 (see 11.4). |
+| 32 | PHOTOREAL-013 sunlight | 212 | 1920x1080, 24 fps HEVC | `-11-14` | pulled | E | Same as the others, but the frames are 24 per second, not 23.976 (see 11.4). |
+| 33 | PHOTOREAL-013 top (V02) | 209 | 1920x1080, 24 fps ProRes | `-11-14` | pulled | E | Same as the others, but the frames are 24 per second, not 23.976 (see 11.4). |
+| 34 | CGI-072 head | 106 | 1920x1080 V02 ProRes 23.976 | `-10-29` (V03 HEVC 24) | not pulled | F | Binc must say which version is wanted before we do anything |
+| 35 | CGI-072 backhalf-b | 70 | 1920x1080 V02 ProRes 23.976 | `-10-29` (V03 HEVC 24) | not pulled | F | Binc must say which version is wanted before we do anything |
+| 36 | CGI-072 backhalf-c | 162 | 1920x1080 V02 ProRes 23.976 | `-10-29` (V03 HEVC 24) | not pulled | F | Binc must say which version is wanted before we do anything |
+
+### 11.4 How we get the missing DPX, in plain words
+
+For 16 elements we have the finished video (a ProRes `.mov`, or an `.mp4` for some photoreal ones) but not the DPX frames the PDF asks for. A DPX is one picture file per frame, so the video has to be unpacked into frames and saved in the delivery format (16-bit, Gamma 2.6 P3-D65, numbered from 0000). There are two ways:
+
+1. **Binc's way.** Binc's side writes a small "mono" graph for each element (like the ones that made the 17) and puts them on the volume. We run them from Import Round (Source = Volume, Run Workflows). Same method as the 17, so same result, but it waits for Binc.
+2. **Our way.** We write the unpacking ourselves with ffmpeg on a pod. Quick to build and we need nobody, but the colours must be handled exactly as Binc expects, so Binc has to confirm that first.
+
+Either way, once an element has its frames it is delivered like the 17: corrected header and timecode, review video, manifest, then a test round, then the real round.
 
 ### 11.3 What needs to be done, in order
 
