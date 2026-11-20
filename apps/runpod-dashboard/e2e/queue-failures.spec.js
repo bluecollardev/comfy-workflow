@@ -1,7 +1,7 @@
 import { test, expect, queueTab } from './fixtures'
 
 // The Queue's Failures list (Generations tab): one row per failed graph run with its stage, node, message, missing models, recovery and retries; Retry only when retryable; Copy as JSON; links from failed jobs; hidden on an older core.
-const REC = (o = {}) => ({ id: 'f1', time: '2026-11-19T14:26:15', job_id: 'job-x', round: 'r1', shot: 'depth-182', graph: 'graphs/depth_main_v015.json', graph_version: '015', pod_id: 'pod-aaaaaaaa', pod_name: 'ComfyUI-Dev', gpu: 'RTX 4090', stage: 'execute', node_id: '47', node_type: 'KSampler', message: 'CUDA out of memory while sampling\nTried to allocate 2.5 GiB', log_tail: ['line 1', 'line 2', 'OutOfMemoryError'], missing_models: [], recovery: 'Use a pod with 48 GB or lower the batch size', retryable: true, attempt: 2, ...o })   // the core's record (libs/core/src/failures.ts)
+const REC = (o = {}) => ({ id: 'f1', time: `${new Date().toLocaleDateString('sv')}T14:26:15`, job_id: 'job-x', round: 'r1', shot: 'depth-182', graph: 'graphs/depth_main_v015.json', graph_version: '015', pod_id: 'pod-aaaaaaaa', pod_name: 'ComfyUI-Dev', gpu: 'RTX 4090', stage: 'execute', node_id: '47', node_type: 'KSampler', message: 'CUDA out of memory while sampling\nTried to allocate 2.5 GiB', log_tail: ['line 1', 'line 2', 'OutOfMemoryError'], missing_models: [], recovery: 'Use a pod with 48 GB or lower the batch size', retryable: true, attempt: 2, ...o })   // the core's record (libs/core/src/failures.ts)
 
 test.describe('Queue > Generations > Failures', () => {
   test('a row: time, shot, graph and version, stage chip, node, the first line of the message (the rest and the log tail expand), missing models with where they exist, the recovery, retries', async ({ page, api }) => {
