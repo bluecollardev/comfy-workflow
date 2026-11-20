@@ -482,6 +482,7 @@ export async function mockApi(page, state) {
       }
     }
     // Publishing (S3 and Slack): state.publish = { settings, tree: { dir: [entries] }, sizes, there: [paths already on S3], heavy: [paths refused as weights], jobs, puts, tests, planned, runs, reposts }; state.publishOld answers like a core without it.
+    if (method === 'POST' && path === '/dpxfix/run') { (state.dpxfixRuns ||= []).push(body); return json({ out_root: '/workspace/comfy-shared/output/_delivery_v11', results: body.items.map((i) => ({ clip: i.clip, frames: 10, out_dir: `_delivery_v11/${i.clip}`, ok: !(state.dpxfixFail || []).includes(i.clip), ...((state.dpxfixFail || []).includes(i.clip) ? { error: 'ERR short file' } : {}) })) }) }
     if (path.startsWith('/publish/')) {
       if (state.publishOld) return json({ detail: `no core call publish.${path.slice(9)}` }, 500)
       const pb = (state.publish ||= {})

@@ -54,4 +54,9 @@ describe('dpxfix: corrected copies of the DPX frames', () => {
     expect(seen).toHaveLength(2); expect(seen[0]).toContain("'/workspace/comfy-shared/output/mono_v015/a/a_x/dpx' '/workspace/comfy-shared/output/_delivery_v11/A' 'A' '01:00:00:00' '23.976'")
     expect(r.results.map((x) => [x.clip, x.ok, x.out_dir])).toEqual([['A', true, '_delivery_v11/A'], ['B', false, '_delivery_v11/B']]); dpxfix.setDeps(null)
   })
+  it('plan refuses an empty list and a folder that is not plain, before it asks anything', async () => {
+    await expect(dpxfix.plan({ items: [] })).rejects.toMatchObject({ status: 400 })
+    await expect(dpxfix.plan({ items: [{ src_dir: '../etc' }] })).rejects.toMatchObject({ status: 400 })
+    await expect(dpxfix.plan({ items: [{ src_dir: '/abs/path' }] })).rejects.toMatchObject({ status: 400 })
+  })
 })

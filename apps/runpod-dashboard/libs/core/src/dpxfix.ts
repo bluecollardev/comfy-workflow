@@ -13,6 +13,7 @@ import * as history from './history.js'
 import * as mounts from './mounts.js'
 import * as podconfigs from './podconfigs.js'
 import * as podpull from './podpull.js'
+import * as publish from './publish.js'
 import * as rp from './runpod.js'
 import * as sync from './sync.js'
 
@@ -113,4 +114,19 @@ export async function run(o: { pod_id?: string; items?: FixItem[]; approved_by?:
   }
   history.record({ kind: 'change', area: 'outputs', action: 'DPX copies with corrected headers', what: `${results.filter((r) => r.ok).length} of ${results.length} clips`, detail: `approved by ${who}; written under output/${OUT_DIR}/ on the volume; the original frames are not touched` })
   return { results, out_root: `${root}/${OUT_DIR}` }
+}
+
+export interface PlanRow { src_dir: string; stem: string; /** the clip name the EDL gives it, '' when it is not in the EDL */ clip: string; frames: number; expected_frames: number | null; start_timecode: string; timecode_source: string | null; fps: number; ok: boolean; why: string }
+/** What each sequence would be delivered as: the clip name and the start timecode from the EDL, the frame rate from the name, and whether the EDL holds it back. Read-only: nothing is written. */
+export async function plan(o: { items?: { src_dir?: string; stem?: string }[] } = {}): Promise<{ rows: PlanRow[] }> {
+  const items = Array.isArray(o.items) ? o.items : []; if (!items.length) throw bad('Give at least one sequence in items ({ src_dir, stem? }: the frames folder under output/ on the volume)')
+  const norm = items.map((i) => { const d = rel(i.src_dir, 'src_dir'); return { src_dir: d, stem: String(i.stem ?? '').trim() } })
+  const p = await publish.plan({ items: norm.map((i) => ({ where: 'volume', path: i.src_dir, ...(i.stem ? { stem: i.stem } : {}) })), targets: ['s3'], round: '_TEST_plan' } as never)
+  const by = new Map((p.sequences ?? []).map((s) => [s.stem, s]))
+  const rows: PlanRow[] = norm.map((i) => {
+    const s = (i.stem ? by.get(i.stem) : undefined) ?? [...by.values()].find((x) => i.src_dir.includes(x.stem.split('_mono')[0].toLowerCase()) || x.stem === i.src_dir.split('/').slice(-2)[0])
+    const clip = s?.edl_element?.clip ?? ''
+    return { src_dir: i.src_dir, stem: s?.stem ?? i.stem, clip, frames: s?.frames ?? 0, expected_frames: s?.expected_frames ?? null, start_timecode: s?.start_timecode ?? '00:00:00:00', timecode_source: s?.timecode_source ?? null, fps: /_24_/.test(clip) ? 24 : 23.976, ok: !!clip && !s?.blocked, why: !clip ? 'not in the EDL' : s?.blocked ? (s.reason ?? 'held back by the EDL check') : '' }
+  })
+  return { rows }
 }

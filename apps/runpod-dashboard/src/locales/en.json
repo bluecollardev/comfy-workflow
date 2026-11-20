@@ -1855,6 +1855,28 @@
     "mcpServing": "{name} is served from the app at {url}.",
     "mcpServingOff": "{name} is no longer served from the app."
   },
+  "delivery": {
+    "button": "Prepare For Delivery",
+    "buttonTitle": "Write corrected copies of the DPX sequences for delivery: the colour code, the timecode and the frame rate in each header",
+    "title": "Prepare For Delivery",
+    "intro": "Each DPX sequence is copied to the volume under output/_delivery_v11/<clip name>/ with its header corrected: the colour code user-defined instead of linear, the timecode from the EDL, the frame rate and gamma 2.6. The pictures are copied unchanged and the original frames are never touched. Then Publish sends the copies.",
+    "planning": "Reading the EDL for each sequence",
+    "none": "There are no DPX sequences in this view.",
+    "clip": "Delivered as",
+    "frames": "Frames",
+    "timecode": "Start timecode",
+    "fps": "Frame rate",
+    "state": "State",
+    "notInEdl": "Not in the EDL: not prepared",
+    "state_idle": "Not written",
+    "state_running": "Writing",
+    "state_ok": "Written and checked",
+    "state_failed": "Failed",
+    "run": "Write {n} Corrected Copies",
+    "podOff": "Start the pod first: the copies are written on it",
+    "openPublish": "Open The Publish Window",
+    "where": "The copies are in {dir}. In the Publish window choose the _delivery_v11 folders on the volume."
+  },
   "history": {
     "exportLogCsv": "Log as CSV (All Events)",
     "exportLogPdf": "Log as PDF (All Events)",

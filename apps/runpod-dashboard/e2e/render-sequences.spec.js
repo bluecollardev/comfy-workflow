@@ -702,3 +702,23 @@ test('Row previews come from the cache: previews the gallery already made are no
   await expect(p.getByTestId('pod-outputs-render-thumb').getByTestId('outputs-dpx-thumb')).toHaveCount(3, { timeout: 15000 })   // the rows show them
   expect(JSON.stringify(asked)).toBe(before)   // and no frame was requested again
 })
+
+test('Prepare For Delivery: the sequences with the EDL name and timecode, written as corrected copies on the pod; one not in the EDL is not offered; then Publish opens', async ({ page, api }) => {
+  api.state.publish = { settings: { s3: { bucket: 'b', prefix: 'p', region: 'eu-west-1', endpoint: '', credentials: 'app', access_key_hint: '••••1234', presign_hours: 72 }, slack: { workspace_name: 'W', workspace_url: 'https://w.slack.com', channel: '#c', username: 'U', webhook_hint: '••••9f2k' }, defaults: { targets: ['s3'], message: '' } }, tree: { '': [] }, there: [], heavy: [], planSequences: [
+    { stem: A, clip: A, shot: 'archival-085', frames: 3, expected_frames: 3, start_timecode: '00:00:02:00', timecode_source: 'EDL', edl_element: { clip: A }, flags: [], blocked: false },
+    { stem: B, clip: B, shot: 's2', frames: 3, expected_frames: null, start_timecode: '00:00:00:00', timecode_source: 'EDL', edl_element: null, flags: [{ code: 'not-in-edl', level: 'block' }], blocked: true, reason: 'not in the EDL' },
+  ] }
+  const m = await openOutputs(page, api)
+  await m.getByTestId('pod-outputs-delivery').click()
+  const d = page.getByTestId('delivery-modal'); await expect(d.getByTestId('delivery-row')).toHaveCount(3)
+  const a = d.locator('[data-testid="delivery-row"]', { hasText: A })
+  await expect(a).toContainText('00:00:02:00'); await expect(a.getByTestId('delivery-pick')).toBeChecked(); await expect(a.getByTestId('delivery-fps')).toHaveValue('23.976')
+  const b = d.locator('[data-testid="delivery-row"]', { hasText: B }); await expect(b.getByTestId('delivery-not-in-edl')).toBeVisible(); await expect(b.getByTestId('delivery-pick')).toBeDisabled()
+  await expect(d.getByTestId('delivery-run')).toBeDisabled()   // a name says yes first
+  await d.getByTestId('delivery-approved-by').fill('Lucas')
+  await expect(d.getByTestId('delivery-run')).toContainText('Write 1 Corrected Copies'); await d.getByTestId('delivery-run').click()
+  await expect(a.getByTestId('delivery-state')).toContainText('Written and checked')
+  expect(api.state.dpxfixRuns).toEqual([{ pod_id: 'pod-aaaaaaaa', approved_by: 'Lucas', items: [{ src_dir: 'seqs/a', clip: A, start_timecode: '00:00:02:00', fps: 23.976 }] }])
+  await expect(d.getByTestId('delivery-where')).toContainText('_delivery_v11')
+  await d.getByTestId('delivery-open-publish').click(); await expect(page.getByTestId('publish-modal')).toBeVisible()
+})
