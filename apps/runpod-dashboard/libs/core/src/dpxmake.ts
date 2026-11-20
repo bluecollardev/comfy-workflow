@@ -105,7 +105,7 @@ MAGIC=$(head -c 4 "$TMP/$NAME.0000.dpx")
 echo "CHECK $NAME bits=$BITS magic=$MAGIC"
 if [ "$BITS" != 16 ]; then echo "ERR not 16-bit (byte 803 is $BITS); not put in place"; exit 3; fi
 if [ -d "$OUT" ]; then rmdir "$OUT" || { echo "ERR $OUT is not empty; nothing written"; exit 2; }; fi
-mv -T "$TMP" "$OUT"
+mv "$TMP" "$OUT"   # $OUT is absent here (an empty one was just removed), so a plain rename: works on Linux and macOS
 trap - EXIT
 echo "DONE $NAME $N"
 `
