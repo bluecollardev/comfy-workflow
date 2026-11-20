@@ -106,6 +106,12 @@ describe('running', () => {
     return { fetchFn, calls }
   }
   const OK = { status_str: 'success' }
+  it('a starting ComfyUI (the proxy answers 502 for /system_stats) is waited for before the first graph, not failed with it', async () => {
+    const c = scripted([{ status: 200 }], { p1: { status: OK, outputs: { '9': {} } } }); let asked = 0
+    const fetchFn = (async (url: string, init?: unknown) => { if (String(url).endsWith('/system_stats')) { asked++; return { status: asked < 3 ? 502 : 200, ok: asked >= 3, json: async () => ({}) } } return (c.fetchFn as unknown as (u: string, i?: unknown) => Promise<unknown>)(url, init) }) as unknown as typeof fetch
+    const j = await finish((await runflows.run('pod1', ['a/g.json'], opts(c as never, { fetchFn, backoffMs: [10, 10], pollComfyMs: 5 }))).id)
+    expect(asked).toBe(3); expect(j.results[0].state).toBe('done'); expect(j.log.some((l) => /still starting/.test(l.text))).toBe(true)
+  })
   it('fail fast: a validation error fails at once, no polling, and is never retried', async () => {
     const c = scripted([{ status: 400, body: { error: { message: 'Prompt outputs failed validation' }, node_errors: { '7': { class_type: 'KSampler', errors: [{ message: 'Required input is missing' }] } } } }])
     const j = await finish((await runflows.run('pod1', ['a/g.json'], opts(c as never, { fetchFn: c.fetchFn, backoffMs: [10, 10] }))).id); expect(j.results[0]).toMatchObject({ state: 'failed', retryable: false }); expect(c.calls.prompts).toBe(1); expect(c.calls.polls).toBe(0)
