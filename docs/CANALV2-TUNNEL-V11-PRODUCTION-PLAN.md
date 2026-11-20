@@ -331,3 +331,33 @@ The volume round **`base_v008`** (30 shots, 62 graphs, adapter `brynley-rounds-l
 - Stopping the "duplicate" pods the retry had made also stopped the runs that were attached to them; the queue marked those tasks failed (archival-123, cgi-072, creature-266, photoreal-013). Do not stop a pod before checking which task owns it (`queue_list` pod_id). Lesson written to NEXT-STEPS.
 - Workaround used: skip the queue and run the remaining graphs directly with `run_pod_workflows` on four warm pods (cgi-072 on one, creature-266 on the 96 GB card, photoreal-013 split in two), which also runs them in parallel; one pod per shot made photoreal-013 (11 graphs) the long pole.
 - Left out on purpose: photoreal-013 `floortrack`, `chasmfast07`, `chasmfastia2` (not among the 36).
+
+<!-- run-status:start -->
+### Run status of the 19 (2026-11-20 23:35 UTC)
+
+Frames produced (DPX in `delivery_v008/<clip>/`) against the PDF count. 9 of 19 match; a mismatch or an error is shown, never hidden.
+
+| Element | PDF frames | Produced | Check | Run | Error |
+|---|---|---|---|---|---|
+| ARCHIVAL-087 PLATFORM | 97 | 97 | OK | queue |  |
+| ARCHIVAL-087 RAIN | 96 | - | no frames yet | queue |  |
+| ARCHIVAL-123 F | 43 | 43 | OK | done |  |
+| ARCHIVAL-168 A | 153 | 153 | OK | not started |  |
+| ARCHIVAL-168 B | 139 | 139 | OK | not started |  |
+| ARCHIVAL-168 C | 105 | 105 | OK | not started |  |
+| ARCHIVAL-168 D | 48 | 48 | OK | not started |  |
+| CREATURE-266 DOLPHIN-LOWTRACK | 94 | 94 | OK | done |  |
+| PHOTOREAL-013 ASCENT | 108 | 108 | OK | failed | ComfyUI answered HTTP 502 for /history/9fadaa0b-3da2-4c44-b57c-e6d97fb72f77 |
+| PHOTOREAL-013 CHASM07 | 271 | 271 | OK | failed | ComfyUI answered HTTP 502 for /history/8932f3cf-e4ce-4a65-9927-26eff519d875 |
+| PHOTOREAL-013 F23 | 633 | - | no frames yet | pending |  |
+| PHOTOREAL-013 HADAL | 160 | - | no frames yet | pending |  |
+| PHOTOREAL-013 LANDING | 226 | - | no frames yet | pending |  |
+| PHOTOREAL-013 SPLASH | 96 | - | no frames yet | pending |  |
+| PHOTOREAL-013 SUNLIGHT | 212 | - | no frames yet | pending |  |
+| PHOTOREAL-013 TOP | 209 | - | no frames yet | pending |  |
+| CGI-072 HEAD | 106 | - | no frames yet | failed | The operation was aborted due to timeout |
+| CGI-072 BACKHALF-B | 70 | - | no frames yet | failed | The operation was aborted due to timeout |
+| CGI-072 BACKHALF-C | 162 | - | no frames yet | running |  |
+
+The Run column is the last state a pod's run reported for that graph, so a graph can show an error from an earlier attempt while its frames are complete (ascent, chasm07: a ComfyUI 502 on /history in one run; the frames on the volume match the PDF counts). cgi-072: two graphs timed out on the pod (`The operation was aborted due to timeout`), one is running. The frame count is the check that counts.
+<!-- run-status:end -->
