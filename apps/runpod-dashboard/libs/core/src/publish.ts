@@ -765,7 +765,7 @@ export interface ChildView {
   error?: string; warnings: string[]; approved_by: string; slack: { state: 'skipped' | 'sent' | 'failed'; error?: string }; /** how many files have a sha256 (the BKK return) */ sha256: number
 }
 export interface JobView {
-  /** what this run was asked to do, kept with the record so a shot that failed can be sent again after a restart */ request?: RunRequest
+  /** what this run was asked to do, kept with the record so a shot that failed can be sent again after a restart (never in status: `retryable` says it is there) */ request?: RunRequest; retryable?: boolean
   /** for a failed job: the failure in words (stage, message, recovery, retryable) */ failure?: failures.Explained
   /** who started it: the window, an MCP tool call (client name), Auto-publish, the backfill; `external` = another process owns it */ origin?: jobsregistry.Origin; mcp_client?: string; external?: boolean; /** what this is, for the Queue: a publish run (scans and inventories are not in this list) */ kind: 'publish'; /** what started it: a person ('manual'), the backfill, or Auto-publish */ trigger: 'manual' | 'backfill' | 'auto-publish'; /** one child per shot, in the order they run */ children: ChildView[]; /** how many children upload at once */ streams: number; counts: { queued: number; uploading: number; done: number; failed: number; cancelled: number }
   job_id: string; state: JobState; targets: Target[]; approved_by: string; started_at: string; finished_at: string
@@ -818,7 +818,7 @@ export function status(jobId?: string, opts: { summary?: boolean } = {}): { jobs
   void ensureLoaded()
   const all = [...[...jobs.values()].map((j) => j.view), ...externalViews(), ...finished]
   const summary = !!opts.summary && !jobId
-  return { jobs: (jobId ? all.filter((v) => v.job_id === jobId) : all).map((v) => copy(summary ? slim(v) : v)).map((v) => { if ((v.state === 'failed' || v.state === 'done_with_warning') && v.error && !v.failure) v.failure = failures.explain(v.error, { stage: /slack/i.test(v.error) ? 'transfer' : 'transfer' }); for (const c of v.children) if (c.state === 'failed' && c.error && !(c as { failure?: unknown }).failure) (c as { failure?: failures.Explained }).failure = failures.explain(c.error, { stage: 'transfer' }); return v }) }
+  return { jobs: (jobId ? all.filter((v) => v.job_id === jobId) : all).map((v) => copy(summary ? slim(v) : v)).map((v) => { if ((v.state === 'failed' || v.state === 'done_with_warning') && v.error && !v.failure) v.failure = failures.explain(v.error, { stage: /slack/i.test(v.error) ? 'transfer' : 'transfer' }); for (const c of v.children) if (c.state === 'failed' && c.error && !(c as { failure?: unknown }).failure) (c as { failure?: failures.Explained }).failure = failures.explain(c.error, { stage: 'transfer' }); const { request, ...rest } = v; return { ...rest, retryable: !!request } }) }   // the request stays in the record; the page is told only whether a shot can be sent again
 }
 export function cancel(id: string): JobView {
   const [parent, idx] = id.includes(':') ? [id.slice(0, id.lastIndexOf(':')), Number(id.slice(id.lastIndexOf(':') + 1))] : [id, -1]

@@ -1402,6 +1402,7 @@
     },
     "gen": {
       "retrying": "Retrying",
+      "cannotRetry": "This was started by an older version of the app, which did not keep what it was asked to do, so it cannot be tried again. Render it again from Outputs.",
       "retryFailed": "Could Not Retry",
       "retry": "Retry",
       "playNone": "Nothing to play yet",
@@ -1499,6 +1500,7 @@
       },
       "ret": {
         "retrying": "Retrying {shots}",
+        "cannotRetry": "This was started by an older version of the app, which did not keep what it was asked to do, so it cannot be sent again. Publish the shot again from Outputs.",
         "retryFailed": "Could Not Retry",
       "retryShots": "Retry",
         "round": "Round",
