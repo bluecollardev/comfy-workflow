@@ -59,6 +59,22 @@
 - **Convert:** undo the Gamma 2.6 curve to linear, map P3 to Rec.709 primaries with a matrix, encode with the Rec.709 curve, tag Rec.709. The picture matches the DPX on a Rec.709 display; very saturated P3 colours that Rec.709 cannot show are clipped.
 - **Tag only:** leave the pixels alone and write "Rec.709" into the metadata. The proxy then shows the P3 Gamma 2.6 pixel values as if they were Rec.709, so it looks a little different from the DPX (colour and contrast), though the colours are "in the file as delivered".
 
+**The differences, side by side**
+
+| | Our DPX (P3-D65, Gamma 2.6) | Rec.709 proxy (H.264) |
+|---|---|---|
+| Primaries (gamut) | DCI-P3: wider, more saturated reds and greens | Rec.709: narrower; P3 colours outside it are clipped |
+| White point | D65 (0.3127, 0.3290) | D65: the same, so no white shift |
+| Transfer curve | Pure power, gamma 2.6 (cinema display) | The Rec.709 curve (linear toe, then about 1/2.2); shown on a monitor at about 2.4 |
+| Bit depth and format | 16-bit RGB, full range, one file per frame | 8-bit YUV 4:2:0 (yuv420p), limited range (16 to 235), H.264 |
+| Matrix | none (RGB) | BT.709 RGB to YCbCr |
+| Where it is used | Grading and delivery to the colourist | The offline edit in Avid, playback, review |
+
+**What each choice does to the picture**
+- **Convert (P3 Gamma 2.6 to Rec.709):** on a Rec.709 monitor the proxy looks like the DPX does on a P3 grading display, apart from the clipped extreme colours.
+- **Tag only:** the pixel values stay as they are, so contrast and saturation shift a little (Gamma 2.6 values read with the Rec.709 curve look slightly different, and P3 colours look a bit less saturated). The tag claims Rec.709, so a player makes no correction.
+- **Today's wrong proxies** (header trusted, `linear-p3-d65`): the Gamma 2.6 values were treated as linear and encoded again, so they look too bright and flat. This is the only case that is plainly wrong, not a choice.
+
 **What the app does today.** The review/proxy converter **converts** from the colour it is told the frames are (the ffmpeg arguments carry a `colorchannelmixer` matrix and the Rec.709 `lutrgb` curve). ADR-050's Tunnel preset (Kyle's spec) says **tag, not a conversion**. Until 2026-11-20 the converter was told `linear-p3-d65` (it trusted the header), so every review and proxy made before then was double-encoded and has the wrong colour. On 2026-11-20 Lucas stated `p3-d65-gamma26` (Default Configuration, `render.colour`, recorded in History) and the phase 1 re-render of the 17 V11 elements uses it; v1.6.8 makes the converter read the ComfyUI-OCIO record instead of guessing from the header (precedence: a stated colour, then the OCIO record, then the configured mode, then `known`).
 
 **Open (to settle with Binc and Kyle, section 5 item 5):** is the Tunnel proxy to be *converted* to Rec.709 (the picture looks like the DPX on a Rec.709 monitor) or only *tagged* (as ADR-050 says)? The PDF does not say. Whichever it is, the Tunnel preset and the review converter must agree, and the proxy's sidecar and manifest should state which was done.
