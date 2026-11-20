@@ -154,7 +154,9 @@ export async function generatePass(): Promise<{ started: number }> {
   return autogenerate.pass(s.generate, s.standing.approved_by)
 }
 /** Instant off: the rule stops, the standing approval is cleared, every pending entry is cancelled. */
+let offGen = 0   // bumped by every off(): a consider() pass that began before it must not add an entry after it (it may have read the settings just before the file was rewritten)
 export async function off(): Promise<number> {
+  offGen++
   const cur = await stored(); let n = autogenerate.cancelAll(); await autogenerate.clearPending()
   for (const e of [...entries.values()]) { if (e.state === 'uploading') continue; finish(e, 'cancelled', 'turned off'); n++ }
   if (cur.enabled || cur.standing) { writeStored({ ...cur, enabled: false, standing: undefined }); history.record({ kind: 'change', area: 'configuration', action: 'auto-publish turned off', what: 'auto-publish', detail: `${n} pending cancelled` }) }
@@ -390,6 +392,7 @@ let considering: Promise<unknown> = Promise.resolve()
 export function consider(): Promise<{ queued: number }> { const run = considering.then(doConsider, doConsider); considering = run.catch(() => undefined); return run }
 async function doConsider(): Promise<{ queued: number }> {
   await ensureLoaded()
+  const gen0 = offGen
   const s = await stored(); if (!(s.enabled === true && s.standing)) return { queued: 0 }
   const dry = s.dry_run !== false, window = (s.window_minutes ?? WINDOW_DEFAULT) * 60_000; let queued = 0
   const ap: Approval[] = s.require_approval ? await approvalList() : (await allReviews()).map((f) => ({ shot: f.shot, version: f.version, approved_by: s.standing!.approved_by, at: iso(deps.now()) }))   // every eligible review under the standing approval, or only the approved ones
@@ -403,6 +406,7 @@ async function doConsider(): Promise<{ queued: number }> {
     const key = keyOf(r.shot, r.version), st = await stateOf()
     const again = await stored(); if (!(again.enabled === true && again.standing)) return { queued }   // turned off while this pass was looking
     const e: Entry = { source: c.found.source, metas: c.found.metas, id: `ap-${deps.now().toString(36)}-${(seq++).toString(36)}`, key, shot: r.shot, version: r.version, files: c.found.files.map((f) => f.name), bytes: c.found.bytes, due_at: deps.now() + (dry ? 0 : window), state: dry ? 'would_upload' : 'waiting', approved_by: r.approved_by, targets: publishTargets(s.targets), attempts: 0 }
+    if (offGen !== gen0) return { queued }   // turned off while this pass was looking: add nothing (no await between this check and the add)
     entries.set(e.id, e); queued++
     if (dry) {
       e.reason = `dry run: nothing is sent${c.warnings?.length ? `; ${c.warnings.join('; ')}` : ''}`

@@ -20,6 +20,7 @@ completed items move here. Commit hashes are on `develop`.
 - **An agent may switch Auto-publish on and go live** (Lucas, 2026-11-20), always under a person's NAME: the MCP `autopublish` tool takes `enable`, `go_live` and `set_settings` with `approved_by` (never invented) and `understood: true`, the same two things the window asks for. Enabling starts in dry run unless dry_run_first is off; going live needs the standing approval first. Approving a shot version, choosing where it sends (targets), releasing a hold and Publish now stay a person's acts in the window.
 - **Run Workflows is the first of the four import options** (Run Workflows, Auto Sync To This PC, Generate Outputs, Publish) in step 3, for BH and for Volume rounds alike; for a volume round it is shown ticked and locked (those rounds run in place) instead of being missing.
 - **Fix: in no-spend mode every MCP reply was stamped `dry_run: true`, overwriting a tool's own field** (Auto-publish said "dry run" after going live). A tool's own `dry_run` now wins. Auto-publish settings are also read from the file every time (a cache keyed on its time and size could serve the old value after a write).
+- **Fix: turning Auto-publish off could leave one entry waiting.** A pass that had read the settings just before the off could still add its entry after the off had cancelled everything; the pass now checks a turn-off counter right before adding.
 
 ## v1.6.7 (tag v1.6.7, 2026-11-20)
 
