@@ -26,24 +26,26 @@
 
 **Per element: frames and rasters from the PDF** (these are the checks after production):
 
-| Element | Frames | Name raster, fps, codec |
-|---|---|---|
-| ARCHIVAL-071 main | 227 | 3840x2160, 23.976, ProRes 422 HQ |
-| ARCHIVAL-077 a, b, c | 80, 69, 74 | 3840x2160 (a, b), 1920x1080 (c), 23.976 |
-| ARCHIVAL-080 a to e (stills) | 94, 60, 90, 83, 44 | 6336x2688 PNG, start TC 01:00:00:00 |
-| ARCHIVAL-083 main | 98 | 3852x2152, 23.976 |
-| ARCHIVAL-084 main | 39 | 2356x1572, 23.976 |
-| ARCHIVAL-085 main | 54 | 3840x2160, 23.976 |
-| ARCHIVAL-087 platform, rain | 97, 96 | 3840x2160, 23.976 |
-| ARCHIVAL-093 b | 126 | 1618x1080, 23.976 |
-| ARCHIVAL-102 main | 128 | 3840x2160, 23.976 |
-| ARCHIVAL-104 b | 130 | 3840x2160, 23.976 |
-| ARCHIVAL-123 c, f | 66, 43 | 3840x2160, 23.976 |
-| ARCHIVAL-168 a, b, c, d | 153, 139, 105, 48 | 3840x2160, 23.976 |
-| CGI-042 main | 229 | 3840x2160, 23.976 |
-| CGI-072 head, backhalf-b, backhalf-c | 106, 70, 162 | 1920x1080, 23.976, **V02**, ProRes 422 HQ |
-| CREATURE-266 dolphin-lowtrack | 94 | 1920x1080, 23.976 (ALT V01) |
-| PHOTOREAL-013 ascent, chasm07, f23, hadal, landing, splash, sunlight, top | 108, 271, 633, 160, 226, 96, 212, 209 | 1920x1080, **24**, HEVC (landing and top: ProRes 422 HQ; top is V02) |
+| Element | Frames | Name raster, fps, codec | Colour of the DPX |
+|---|---|---|---|
+| ARCHIVAL-071 main | 227 | 3840x2160, 23.976, ProRes 422 HQ | Gamma 2.6 P3-D65 (OCIO record) |
+| ARCHIVAL-077 a, b, c | 80, 69, 74 | 3840x2160 (a, b), 1920x1080 (c), 23.976 | Gamma 2.6 P3-D65 (OCIO record) |
+| ARCHIVAL-080 a to e (stills) | 94, 60, 90, 83, 44 | 6336x2688 PNG, start TC 01:00:00:00 | Gamma 2.6 P3-D65 (OCIO record) |
+| ARCHIVAL-083 main | 98 | 3852x2152, 23.976 | Gamma 2.6 P3-D65 (OCIO record) |
+| ARCHIVAL-084 main | 39 | 2356x1572, 23.976 | Gamma 2.6 P3-D65 (OCIO record) |
+| ARCHIVAL-085 main | 54 | 3840x2160, 23.976 | Gamma 2.6 P3-D65 (OCIO record) |
+| ARCHIVAL-087 platform, rain | 97, 96 | 3840x2160, 23.976 | Gamma 2.6 P3-D65 (PDF; no record yet) |
+| ARCHIVAL-093 b | 126 | 1618x1080, 23.976 | Gamma 2.6 P3-D65 (OCIO record) |
+| ARCHIVAL-102 main | 128 | 3840x2160, 23.976 | Gamma 2.6 P3-D65 (OCIO record) |
+| ARCHIVAL-104 b | 130 | 3840x2160, 23.976 | Gamma 2.6 P3-D65 (OCIO record) |
+| ARCHIVAL-123 c, f | 66, 43 | 3840x2160, 23.976 | c: Gamma 2.6 P3-D65 (OCIO record); f: Gamma 2.6 P3-D65 (PDF; no record yet) |
+| ARCHIVAL-168 a, b, c, d | 153, 139, 105, 48 | 3840x2160, 23.976 | Gamma 2.6 P3-D65 (PDF; no record yet) |
+| CGI-042 main | 229 | 3840x2160, 23.976 | Gamma 2.6 P3-D65 (OCIO record) |
+| CGI-072 head, backhalf-b, backhalf-c | 106, 70, 162 | 1920x1080, 23.976, **V02**, ProRes 422 HQ | Gamma 2.6 P3-D65 (PDF; no record yet) |
+| CREATURE-266 dolphin-lowtrack | 94 | 1920x1080, 23.976 (ALT V01) | Gamma 2.6 P3-D65 (PDF; no record yet) |
+| PHOTOREAL-013 ascent, chasm07, f23, hadal, landing, splash, sunlight, top | 108, 271, 633, 160, 226, 96, 212, 209 | 1920x1080, **24**, HEVC (landing and top: ProRes 422 HQ; top is V02) | Gamma 2.6 P3-D65 (PDF; no record yet) |
+
+**Colour, every element:** P3-D65, Gamma 2.6 (PDF page 1). For the 17 elements already on the volume this is confirmed by each sequence's ComfyUI-OCIO record (`colorInteropID: g26_p3d65_display`; all 45 sequences on the volume carry it), while their DPX headers say linear (the known header bug). The 19 not yet produced are expected to carry the same record; check it after production (the Outputs window shows it per sequence from v1.6.8). **Proxies:** Rec.709 (H.264, limited range), made from the stated colour `p3-d65-gamma26`; the 17 on the volume were re-rendered with it on 2026-11-20 (new versions, both ProRes and H.264, each sidecar records `p3-d65-gamma26` and the Rec.709 curve). Convert or tag-only for the Tunnel proxy is still to be settled (section 1b).
 
 **Known issue in the PDF** (CGI-072 head, backhalf-b, backhalf-c in batches 01, 02, 03 v002, first17 v003 and all-approved v003): the DPX header is tagged linear (transfer/colorimetric 2) while the pixels are P3-D65 Gamma 2.6, and the proxies carry no timecode. Corrected copies: `tunnel_v11_2026-11-20_cgi-072-header-fix_v004` (header colour code user-defined instead of linear, pixels unchanged, proxy timecode added). The same header-vs-pixels disagreement is on **all** our volume DPX (all 45 sequences record Gamma 2.6 P3-D65 in the ComfyUI-OCIO record and say linear in the header), so every element we produce needs the header fixed or a note that the header is wrong; see section 5, item 5.
 
