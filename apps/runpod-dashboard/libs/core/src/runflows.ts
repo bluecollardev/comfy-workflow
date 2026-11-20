@@ -92,6 +92,7 @@ export interface RunJob {
 export interface LogLine { ts: string; level: 'info' | 'warn' | 'error'; text: string; /** the graph it is about; none for the run as a whole */ path?: string }
 export interface RunOpts {
   /** waits before the retries of a transient failure (default 5 then 20 minutes); tests pass short ones */ backoffMs?: number[]
+  /** how long to wait for a starting ComfyUI to answer before the first graph (default 5 minutes), and how often to ask (default 5 s) */ waitComfyMs?: number; pollComfyMs?: number
   /** a graph that neither runs nor is in the queue for this long has stalled (default 10 minutes) */ stallMs?: number
   /** which try this is (1 = the first; a retry of a failure passes the next) */ attempt?: number
   client?: rp.RunPodClient; fetchFn?: typeof fetch
@@ -255,6 +256,15 @@ export async function run(podId: string, paths: string[], o: RunOpts = {}): Prom
   void (async () => {
     // fail fast and continue (docs/ADR-050): a graph or validation error fails at once and is never retried; a transient cause (pod stopped, network, 5xx) is
     // retried at most twice, 5 then 20 minutes later, AFTER the other graphs (a failed graph never blocks the next); three graphs in a row failing for the same cause pause the dispatch once.
+    // a fresh pod's ComfyUI answers 502 (or does not answer) for a minute or two after the pod is "ready": wait for it, up to 5 minutes, instead of failing the first graph with it
+    { const until = Date.now() + (o.waitComfyMs ?? 300_000); let first = true
+      for (;;) {
+        let down = false
+        try { const rs = await fetchFn(`${base}/system_stats`, { signal: AbortSignal.timeout(8_000) }); down = rs.status === 502 || rs.status === 503 || rs.status === 504 } catch { down = false }   // only the proxy's own 502, 503 or 504 means "still starting"; anything else goes on
+        if (!down || i.abort.signal.aborted || Date.now() > until) break
+        if (first) { note(i, 'ComfyUI is still starting on the pod: waiting for it to answer'); first = false }
+        await new Promise((r) => setTimeout(r, o.pollComfyMs ?? 5_000))
+      } }
     const backoff = o.backoffMs ?? [5 * 60_000, 20 * 60_000], later: { r: RunResult; at: number; attempt: number }[] = []
     let streak: { sig: string; graphs: string[] } = { sig: '', graphs: [] }, paused = false
     const exec = async (r: RunResult, label: string, attempt: number): Promise<void> => {
