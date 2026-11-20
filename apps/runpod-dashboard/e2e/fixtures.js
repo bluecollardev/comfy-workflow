@@ -758,6 +758,7 @@ export async function mockApi(page, state) {
     if (method === 'GET' && path === '/history/outputs') {
       ;(state.outputCalls ||= []).push({ ...query })
       const s3 = state.s3Outputs
+      if (s3?.fail) return json({ error: s3.fail }, 409)   // state.s3Outputs.fail: the listing is refused with this reason
       if (!s3) return json({ sources: [{ id: 'volume-s3', name: 'Network volume (S3)', hint: '', ok: false, reason: 'RUNPOD_S3_ACCESS_KEY and RUNPOD_S3_SECRET_KEY are not set (Default Configuration): without them only a pod could list this volume, and that costs money, so nothing was started.' }], runs: [], folders: [], prefix: '', capped: false, total: 0, volume_id: query.volume_id || '' })
       // The whole tree (all=1): state.s3Outputs.allJob answers { job_id } and /history/outputs/status steps through allSteps polls of progress (noProgress: none) then the result; allHang never ends, allFail fails, allCap caps the files
       if (query.all && !s3.noAll) {
