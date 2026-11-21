@@ -26,6 +26,13 @@ A graph is never started whole on a pod without an answer to "will it fit". In o
 - **A test says so.** A run with no options on a graph it has not seen must be probed and chunked (unit test with fakes); a build that makes chunking opt-in again fails it.
 - **Status:** being built on `feature/chunked-graph-runs`; not in the running app until merged and the app restarted.
 
+## 2b. Proposed extension (Lucas, 2026-11-21: "chunking is good, but ideally if we can cache to a secondary volume, on the same datacenter"): spill and checkpoint to disk
+Chunking keeps each frame batch small. Disk would let the pipeline keep **no** whole-clip batch in RAM and survive a kill. Three layers, in order of cost:
+1. **Chunking** (section 2 and 2a): no new storage.
+2. **Stage checkpoints on the existing network volume.** Each stage writes its result as an image sequence (e.g. `comfy-shared/cache/<graph>/<stage>/`) and the next stage reads it in frame windows; a run killed in stage N resumes from stage N-1's files instead of from frame 0. Needs graph nodes that read and write sequences in windows; the chunk planner already narrows OCIORead and OCIOWrite windows, so the pattern exists for the first and last stage.
+3. **Scratch on a bigger container disk** (`create_pod` takes `disk_gb`, default 20): local, so likely faster than the network volume; persists across stop and resume, lost on delete; pinned to the host. A **second network volume** must be in the same datacenter as the first (EU-RO-1 for `a3upg9ey48`; `create_volume`) and costs about USD 0.06 per GB per month at the current rate (2,500 GB = USD 145/month); it only helps if the shared volume turns out too slow.
+**Not known, measure first:** read and write throughput of the network volume under load (4K DPX frames are about 50 MB each; a stage of 633 frames is about 31 GB), and whether swap or zram can be enabled inside these containers (assumed no). The probe of section 2.1 is where the measurement belongs.
+
 ## 3. What does not change
 - A pod is stopped, not deleted (ADR-055); logs are kept. Deleting old pods is a person's act, after their logs are in the log document (`pod-logs/POD-LOGS-<date>.md`).
 - Delivery rules of ADR-055 stand: base_v008 output goes to a `_TEST_` round first; a real round is never overwritten.
