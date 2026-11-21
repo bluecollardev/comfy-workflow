@@ -96,7 +96,7 @@ async function adopt(d: Deps, rec: chunkrecord.ChunkRunRecord): Promise<Report> 
   // 3. the rest of the run, the interrupted graph first, resumed
   const paths = rec.job_paths.slice(rec.index)
   let job: { id: string }
-  try { job = await d.run(rec.pod_id, paths, { ...(d.runOpts ?? {}), meta: rec.meta, resume: { [rec.path]: { cp: rec.checkpoint!, from: rec.id } } }) } catch (e) { return interrupted(rec, `the run could not be started again: ${(e as Error).message}`) }
+  try { job = await d.run(rec.pod_id, paths, { ...(d.runOpts ?? {}), meta: rec.meta, ...(rec.ranges ? { ranges: rec.ranges } : {}), resume: { [rec.path]: { cp: rec.checkpoint!, from: rec.id } } }) } catch (e) { return interrupted(rec, `the run could not be started again: ${(e as Error).message}`) }
   const done = Object.values(rec.checkpoint!.states).filter((s) => s.state === 'done').length, total = rec.checkpoint!.plan.length
   const text = `re-attached after restart: ${rec.path}, chunk ${Math.min(total, done + 1)} of ${total} (${done} done)`
   say(rec, text)
