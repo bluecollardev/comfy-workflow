@@ -28,7 +28,14 @@
       </dd>
 
       <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.gpu') }}</dt>
-      <dd class="col-8 mb-0">{{ pod.gpu }}<span v-if="pod.vram" class="text-body-secondary"> · {{ pod.vram }} GB</span></dd>
+      <dd class="col-8 mb-0" data-testid="pod-gpu">{{ gpuText.name }}<span v-if="gpuText.vram" class="text-body-secondary"> · {{ gpuText.vram }}</span></dd>
+
+      <template v-if="ramText">   <!-- the container's own memory (cgroup), only when known -->
+        <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.ram') }}</dt>
+        <dd class="col-8 mb-0" data-testid="pod-ram" :data-warn="ramText.warn || null" :class="{ 'text-warning': ramText.warn }" :title="$t('pod.ramTitle')">
+          {{ ramText.used != null && ramText.pct != null ? $t('pod.ramUsed', { used: ramText.used, limit: ramText.limit, pct: ramText.pct }) : $t('pod.ramLimit', { limit: ramText.limit }) }}
+        </dd>
+      </template>
 
       <dt class="col-4 text-body-secondary fw-normal">{{ $t('pod.statusLabel') }}</dt>
       <dd class="col-8 mb-0">
@@ -253,6 +260,7 @@ import { useConfirmStore } from '../stores/confirm'
 import { useVolumesStore } from '../stores/volumes'
 import { usePodWatchStore } from '../stores/podwatch'
 import { barValue, detailParts, fresh } from '../sync-progress'
+import { gpuLine, ramLine } from '../utils/podcard'
 const props = defineProps({
   pod: { type: Object, required: true },
   busy: { type: Boolean, default: false },
@@ -260,6 +268,8 @@ const props = defineProps({
   rounds: { type: Array, default: () => [] },   // the rounds a pod can be dropped into (ADR-039)
 })
 const emit = defineEmits(['stop', 'resume', 'delete', 'rename', 'round', 'shot', 'dragstart', 'dragend'])
+const gpuText = computed(() => gpuLine(props.pod))
+const ramText = computed(() => (props.pod.status === 'running' ? ramLine(props.pod) : null))
 /** The grip starts the drag; the whole card is the picture that follows the pointer. */
 const onHandleDragStart = (e) => { const card = e.target.closest('[data-testid="pod-card"]'); if (card && e.dataTransfer?.setDragImage) e.dataTransfer.setDragImage(card, 24, 24); emit('dragstart', e) }
 /** The choices: the known rounds, plus the pod's own when it is not among them. */
