@@ -43,6 +43,8 @@
           <label class="me-3"><input v-model="form.defaults.targets" type="checkbox" value="s3" class="form-check-input me-1" data-testid="publish-default-s3" />S3</label>
           <label><input v-model="form.defaults.targets" type="checkbox" value="slack" class="form-check-input me-1" data-testid="publish-default-slack" />Slack</label></div>
         <BFormGroup :label="$t('publish.defaults.transfer')" label-for="pub-transfer" class="mb-2"><BFormSelect id="pub-transfer" v-model="form.s3.transfer" size="sm" class="w-auto" :options="transferOptions" data-testid="publish-transfer" /><div class="form-text" data-testid="publish-transfer-help">{{ $t('publish.defaults.transferHelp') }}</div></BFormGroup>
+        <BFormGroup :label="$t('publish.defaults.transferPods')" label-for="pub-transfer-pods" class="mb-2"><BFormInput id="pub-transfer-pods" v-model="podsText" size="sm" :placeholder="$t('publish.defaults.transferPodsPlaceholder')" data-testid="publish-transfer-pods" /><div class="form-text">{{ $t('publish.defaults.transferPodsHelp') }}</div></BFormGroup>
+        <BFormGroup :label="$t('publish.defaults.parallelPods')" label-for="pub-parallel-pods" class="mb-2"><BFormInput id="pub-parallel-pods" v-model.number="form.s3.parallel_pods" type="number" min="1" max="6" size="sm" style="width: 6rem" data-testid="publish-parallel-pods" /><div class="form-text">{{ $t('publish.defaults.parallelPodsHelp') }}</div></BFormGroup>
         <BFormGroup :label="$t('publish.defaults.message')" label-for="pub-msg"><textarea id="pub-msg" v-model="form.defaults.message" class="form-control form-control-sm font-monospace" rows="3" data-testid="publish-default-message"></textarea></BFormGroup>
         <div class="form-text" data-testid="publish-placeholders">{{ $t('publish.defaults.placeholders', { list: placeholderList }) }}</div>
         <div v-if="unknown.length" class="text-warning small" data-testid="publish-unknown-placeholder">{{ $t('publish.unknownPlaceholder', { list: unknownList }) }}</div>
@@ -83,12 +85,14 @@ const braces = (list) => list.map((p) => '{' + p + '}').join(' ')
 const placeholderList = braces(PLACEHOLDERS)
 const unknownList = computed(() => braces(unknown.value))
 const snapshot = ref('')
+/** The pod list as one line of ids, separated by commas or spaces (empty: any running pod on the volume). */
+const podsText = computed({ get: () => (form.value?.s3.transfer_pods || []).join(', '), set: (t) => { form.value.s3.transfer_pods = String(t).split(/[\s,]+/).filter(Boolean) } })
 const transferOptions = computed(() => ['auto', 'pod', 'pc'].map((v) => ({ value: v, text: t(`publish.defaults.transferOption.${v}`) })))
 /** Whether anything here differs from what is saved: a changed field or a secret typed. The window's one Save writes it. */
 const dirty = computed(() => !!form.value && (JSON.stringify(form.value) !== snapshot.value || !!secrets.access_key_id || !!secrets.secret_access_key))
 function fill() {
   const s = store.settings
-  form.value = { s3: { bucket: '', prefix: '', region: '', endpoint: '', credentials: 'app', presign_hours: 72, transfer: 'auto', ...pick(s.s3, ['bucket', 'prefix', 'region', 'endpoint', 'credentials', 'presign_hours', 'transfer']) },
+  form.value = { s3: { bucket: '', prefix: '', region: '', endpoint: '', credentials: 'app', presign_hours: 72, transfer: 'auto', transfer_pods: [], parallel_pods: 2, ...pick(s.s3, ['bucket', 'prefix', 'region', 'endpoint', 'credentials', 'presign_hours', 'transfer', 'transfer_pods', 'parallel_pods']) },
     defaults: { targets: [...(s.defaults.targets || [])], message: s.defaults.message || '' } }
   snapshot.value = JSON.stringify(form.value)
 }

@@ -110,6 +110,15 @@ test.describe('Settings > Publishing', () => {
     expect(calls(api, 'PUT', '/publish/settings').at(-1).body.s3.transfer).toBe('pod')
     const d2 = await reopen(page); await expect(d2.getByTestId('publish-transfer')).toHaveValue('pod')
   })
+  test('Pods for uploads (a list of ids) and Pods at once (1 to 6) sit under Transfer, default empty and 2, and save with the window', async ({ page, api }) => {
+    const d = await openSettings(page)
+    const pods = d.getByTestId('settings-publishing').getByTestId('publish-transfer-pods'), n = d.getByTestId('settings-publishing').getByTestId('publish-parallel-pods')
+    await expect(pods).toHaveValue(''); await expect(n).toHaveValue('2')
+    await pods.fill('idle002, idle003  render01'); await n.fill('3'); await expect(d.getByTestId('config-unsaved')).toBeVisible()
+    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    const body = calls(api, 'PUT', '/publish/settings').at(-1).body.s3
+    expect(body.transfer_pods).toEqual(['idle002', 'idle003', 'render01']); expect(body.parallel_pods).toBe(3)
+  })
   test('the Publish window says how the files travel: via pod <name> or via this PC', async ({ page, api }) => {
     setup(api)
     const m = await openModal(page)
