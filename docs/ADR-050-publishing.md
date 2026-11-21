@@ -244,3 +244,17 @@ For the Tunnel preset, the colour record ComfyUI-OCIO wrote next to a sequence (
 **Progress for other processes.** The heartbeat in `jobs-running.json` now carries `transfer`: bytes done and in all, the rate, the file being sent, files already there and the pod names (numbers and short names only, cleaned by `jobsregistry.cleanTransfer`; never a key, link or path outside the job). The app's view of an external publish job reads them, so the Queue shows real bytes and a rate for a job started anywhere.
 
 **Not done.** Not run against a real pod. The load check reads ComfyUI's `/queue` through the public proxy; a pod whose proxy does not answer counts as unknown, not busy. A job does not move files between pods when one pod is slower than the other (each shot stays on its pod).
+
+## Amendment 2026-11-21: scope, only elements of the EDL (Lucas: "this is why we need auto publish")
+
+**Why.** Auto-generate and Auto-publish watch the whole volume. On 21 November the dry-run list held work that is not among the 36 (assembly `NOT_RELEASED` runs, map-066, chasmfastia2, cgi-072 v001 and v002, mono_v018 sequences), and only a person can hold or approve in the window; going live would have sent them to the real round and Slack (issue 11 of `docs/CANALV2-TUNNEL-V11-ISSUES-2026-11-21.md`).
+
+**The setting.** `auto_publish.scope`: `edl` (the default, also for older configurations and for any bad value) or `all` (the old behaviour). It is part of the Default Configuration (`mounts.ts`, validated, carried by export and import, checked by the import shape check), set over MCP (`autopublish set_settings { scope }`) and in the Auto-publish settings (select **Scope**: `Only EDL Elements` / `Everything`, with an explanation).
+
+**The rule** (the same judge for both, `edl.lookup`: the exact clip name, else the shot and element the name carries; `ARCHIVAL-080_ASSEMBLY_01112706_…` is archival-080 / assembly, which the EDL does not list):
+- **Auto-generate** renders a sequence only if its stem resolves to an element of the loaded EDL. Anything else goes to the `Not Generated` list with the reason `not in the EDL` (code `not-in-edl`).
+- **Auto-publish** queues a review only if one of its movie files resolves to an element of the loaded EDL (a review with no movie file falls back to its shot). Anything else is not queued and is listed under `Skipped` with the reason `not in the EDL`. A person's own Publish Now (`manual`) is not limited by the scope.
+- **No EDL loaded** with `scope: edl`: nothing is generated or queued, never everything: the reason is `no EDL loaded` (code `no-edl`), `status().watching.scope_warning` says so and the window shows it in warning colour. The scope is judged again on every pass, so loading the EDL (or setting `all`) clears the entries at once.
+- `status().watching.scope` carries the setting; the Import Round > Generate Outputs path (a person chooses the sequences) is not scoped.
+
+**Not done.** The element key of a review is read from its movie names only (not from the sidecar's sequence list); a review whose movie carries no shot and element name falls back to its shot folder. `all` is one click away in the window: it is a setting, not a lock.

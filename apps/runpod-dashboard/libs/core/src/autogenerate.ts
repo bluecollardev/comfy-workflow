@@ -21,6 +21,7 @@ const NOT_DISPLAY = [1, 2, 3, 11, 12, 13]   // printing density, linear, log...:
 const INCOMPLETE = /^Incomplete|are missing \(\d+ gaps?\)/
 export const BACKOFF_MIN = [5, 20]   // a real failure is retried after 5 minutes, then after 20, then it is listed
 const NEEDS_COLOUR = /State the colour of these frames|Colour not set/
+export const NOT_IN_EDL_REASON = 'not in the EDL', NOT_IN_EDL_CODE = 'not-in-edl', NO_EDL_REASON = 'no EDL loaded', NO_EDL_CODE = 'no-edl'
 export const COLOUR_SKIP = 'colour not stated: set it in Auto-publish > Generate'
 export const ALL_DONE = 'Everything in this scope is already rendered'
 const DPX_FRAME = /^(.*?)([._-]?)(\d+)\.dpx$/i, SHOT = /^[A-Za-z]+-\d+/
@@ -132,7 +133,7 @@ let waitingToSettle: GenerateStatus['waiting_to_settle'] = [], seenDirty = false
 export const status = (g: mounts.AutoGenerateConfig): GenerateStatus => ({ enabled: g.enabled, where: g.where, preset: g.preset, enabled_at: g.enabled_at ?? null, generating: active.size, waiting_to_settle: waitingToSettle, skipped: [...skippedList].map(([k, v]) => ({ stem: k.split('/').pop() ?? k, reason: v.reason, code: v.code })), generated_today: generatedToday, running: [...active].map(([key, a]) => ({ stem: key.split('/').pop() ?? key, key, job_id: a.job_id, started_at: new Date(a.started).toISOString() })), generated: startedList.map((x) => ({ stem: x.key.split('/').pop() ?? x.key, key: x.key, at: x.at, job_id: x.job_id, state: active.has(x.key) ? 'rendering' as const : failedList.has(x.key) ? 'failed' as const : done.has(x.key) ? 'done' as const : retryAt.has(x.key) ? 'retrying' as const : 'started' as const })), max_per_day: g.max_per_day, failed: [...failedList].map(([k, reason]) => ({ stem: k.split('/').pop() ?? k, reason })), ...(waitingForPod ? { waiting_for_pod: true } : {}), pending_existing: pendingExisting, existing_started: existingStarted })
 
 /** One pass: look at the places, track which sequences have settled, and start a render for each new finished one (within the day's cap, on this PC or on a pod that is already running). `approver` is the standing approver (the render's `approved_by`). */
-export async function pass(g: mounts.AutoGenerateConfig, approver: string, signal?: AbortSignal): Promise<{ started: number }> {
+export async function pass(g: mounts.AutoGenerateConfig, approver: string, signal?: AbortSignal, scope: 'edl' | 'all' = 'all'): Promise<{ started: number }> {
   const now = deps.now(), day = localDay(now)
   const st = await readState(); generatedToday = st.day === day ? st.count ?? 0 : 0; lastDay = day
   if (st.day === day) { if (!startedList.length && st.started?.length) startedList = st.started.slice(-500) } else startedList = []
@@ -147,6 +148,8 @@ export async function pass(g: mounts.AutoGenerateConfig, approver: string, signa
     else if (NEEDS_COLOUR.test(s.error ?? '')) skippedList.set(key, { reason: COLOUR_SKIP, code: 'colour-not-stated' })   // a person has to state it: never retried in a loop
     else { const n = (attempts.get(key) ?? 0) + 1; attempts.set(key, n); if (n > RETRIES) failedList.set(key, s.error || `the render ${s.state}`); else retryAt.set(key, now + (BACKOFF_MIN[n - 1] ?? 20) * 60_000) }
   }
+  for (const [k, v] of [...skippedList]) if (v.code === NOT_IN_EDL_CODE || v.code === NO_EDL_CODE) skippedList.delete(k)   // the scope is judged again on every pass: a loaded EDL or a changed setting clears these
+  if (scope === 'edl') await edl.ensure()
   waitingToSettle = []; waitingForPod = false; pendingExisting = (st.pending ?? []).length; existingStarted = st.existing_started ?? 0
   if (!g.enabled || !g.enabled_at || !approver) return { started: 0 }
   const enabledAt = Date.parse(g.enabled_at), root = deps.outputRoot()
@@ -158,6 +161,10 @@ export async function pass(g: mounts.AutoGenerateConfig, approver: string, signa
     if (c.weights || !c.oldest || (c.oldest <= enabledAt && !(st.pending ?? []).includes(c.key)) || done.has(c.key) || failedList.has(c.key) || skippedList.has(c.key) || active.has(c.key)) continue   // before the option was switched on: never backfilled
     const shotName = SHOT.test(c.stem) ? c.stem : SHOT.test(c.dir.split('/').pop() ?? '') ? c.dir.split('/').pop()! : ''
     if (!shotName) continue
+    if (scope === 'edl') {   // only elements of the loaded EDL are rendered; with none loaded nothing is (ADR-050 amendment, scope)
+      if (!edl.isLoaded()) { skippedList.set(c.key, { reason: NO_EDL_REASON, code: NO_EDL_CODE }); continue }
+      if (edl.lookup({ clip: c.stem }).match === 'not-in-edl') { skippedList.set(c.key, { reason: NOT_IN_EDL_REASON, code: NOT_IN_EDL_CODE }); continue }
+    }
     const source: 'local' | 'volume' = g.where === 'pod' ? 'volume' : 'local', sk = `${source}:${c.key}`, sig = `${c.count}:${c.newest}`, rec = seen.get(sk), row = (since: number, frames: number, looks: number, changing: boolean) => ({ stem: c.stem, shot: shotName, since: new Date(since).toISOString(), source, frames, seen: looks, ...(changing ? { changing: true } : {}) })
     if (!rec || rec.sig !== sig) { seen.set(sk, { sig, changedAt: now, looks: 1 }); seenDirty = true; waitingToSettle.push(row(now, c.count, 1, !!rec)); continue }   // first look, or the frames changed: the wait starts again
     rec.looks++; seenDirty = true

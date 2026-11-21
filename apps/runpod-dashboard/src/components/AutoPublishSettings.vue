@@ -71,6 +71,8 @@
             <label class="mb-0 d-block">{{ $t('autopublish.block.round') }}<BFormInput v-model.trim="model.round" size="sm" class="font-monospace" style="max-width: 24rem" data-testid="config-autopublish-round" /></label>
             <div class="text-body-secondary" data-testid="config-autopublish-round-example">{{ $t('autopublish.block.roundExample', { example: roundExample(model.round) }) }}</div>
             <label class="d-flex align-items-center gap-2 mt-1"><input v-model="model.include_dpx" type="checkbox" class="form-check-input mt-0" data-testid="config-autopublish-include-dpx" />{{ $t('autopublish.block.includeDpx') }}</label>
+            <label class="d-flex align-items-center gap-2 mt-1">{{ $t('autopublish.block.scope') }}<BFormSelect v-model="model.scope" size="sm" :options="scopeOptions" style="max-width: 16rem" :title="$t('autopublish.block.scopeHelp')" data-testid="config-autopublish-scope" /></label>
+            <div class="text-body-secondary" data-testid="config-autopublish-scope-help">{{ $t('autopublish.block.scopeHelp') }}</div>
           </div>
           <div v-if="hasReview" class="mt-1" data-testid="autopublish-review-block">
       <label class="d-flex align-items-center gap-2"><input v-model="model.require_review" type="checkbox" class="form-check-input mt-0" data-testid="config-autopublish-require-review" />{{ $t('autopublish.pipe.requireReview') }}</label>
@@ -128,6 +130,7 @@ import { t } from '../i18n'
 import { s3Dest, targetState } from '../utils/publish'
 import { settingsProblem, CAP_START } from '../utils/autopublish'
 import { roundExample } from '../utils/publish'
+const scopeOptions = computed(() => [{ value: 'edl', text: t('autopublish.block.scopeEdl') }, { value: 'all', text: t('autopublish.block.scopeAll') }])
 import AutoPublishGenerate from './AutoPublishGenerate.vue'
 
 const props = defineProps({ modelValue: { type: Object, default: null }, show: { type: Boolean, default: true }, validate: { type: Boolean, default: false } })

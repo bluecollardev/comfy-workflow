@@ -39,8 +39,9 @@ export function outputsTarget(row, { review = null, pods = [], volumeId = '' } =
   return { ok: true, pod_id: pod.id, folder: reviewFolder(shot, version) }
 }
 /** Why the footer Save must wait: the cancel window is a whole number of minutes from 0 to 120, the daily cap a whole number from 1 to 100, or 0 / empty for no limit; '' when fine. */
-export function settingsProblem({ window_minutes, daily_cap, targets, round, sources, volume_scan_minutes, generate, approved_by, require_review, max_gb_per_day }) {
+export function settingsProblem({ window_minutes, daily_cap, targets, round, sources, volume_scan_minutes, generate, approved_by, require_review, max_gb_per_day, scope }) {
   const w = Number(window_minutes), c = Number(daily_cap)
+  if (scope !== undefined && scope !== 'edl' && scope !== 'all') return 'scope'
   if (window_minutes === '' || !Number.isInteger(w) || w < 0 || w > WINDOW_MAX) return 'window'
   if (daily_cap !== null && daily_cap !== undefined && daily_cap !== '' && Number(daily_cap) !== 0 && (!Number.isInteger(c) || c < 1 || c > CAP_MAX)) return 'cap'
   if (targets && !targets.s3 && !targets.slack) return 'targets'
@@ -68,14 +69,14 @@ export const LIVE_STATES = ['waiting', 'uploading']
 export const AP_TARGETS = { s3: true, slack: false, tunnel: false }
 /** The daily cap is optional and OFF by default: `daily_cap` null (or missing, on an older core) is no limit; a number is 1 to 100 (0 is no limit too). When ticked in the window it starts at CAP_START. */
 export const CAP_START = 5
-export const AP_DEFAULTS = { enabled: false, dry_run: true, window_minutes: 10, targets: { ...AP_TARGETS } }
+export const AP_DEFAULTS = { enabled: false, dry_run: true, window_minutes: 10, scope: 'edl', targets: { ...AP_TARGETS } }
 /** A copy of a configuration's `auto_publish` with the defaults filled in; a core that has only the old `slack` boolean becomes targets (S3 plus Slack when it was on). */
 export function apFill(o) {
   const { slack, targets, ...rest } = o || {}
   return { ...AP_DEFAULTS, ...rest, ...(rest.generate ? { generate: { ...GEN_DEFAULTS, ...rest.generate } } : {}), targets: { ...AP_TARGETS, ...(targets || (slack != null ? { slack: !!slack } : {})) } }
 }
 /** Whether it is exactly the defaults (nothing on, no standing approval): then an untouched configuration need not carry it. */
-export const apIsDefault = (o) => { const a = apFill(o); return !a.standing && JSON.stringify(a.targets) === JSON.stringify(AP_TARGETS) && a.daily_cap == null && (a.dry_run_first ?? true) === true && (a.include_dpx ?? false) === false && (a.round ?? AP_ROUND) === AP_ROUND && (a.require_approval ?? false) === false && (a.require_review ?? true) === true && (a.max_gb_per_day ?? null) === null && genIsDefault(a.generate) && (a.sources?.local ?? true) === true && (a.sources?.volume ?? true) === true && (a.volume_scan_minutes ?? 5) === 5 && ['enabled', 'dry_run', 'window_minutes'].every((k) => a[k] === AP_DEFAULTS[k]) }
+export const apIsDefault = (o) => { const a = apFill(o); return !a.standing && JSON.stringify(a.targets) === JSON.stringify(AP_TARGETS) && a.daily_cap == null && (a.dry_run_first ?? true) === true && (a.include_dpx ?? false) === false && (a.scope ?? 'edl') === 'edl' && (a.round ?? AP_ROUND) === AP_ROUND && (a.require_approval ?? false) === false && (a.require_review ?? true) === true && (a.max_gb_per_day ?? null) === null && genIsDefault(a.generate) && (a.sources?.local ?? true) === true && (a.sources?.volume ?? true) === true && (a.volume_scan_minutes ?? 5) === 5 && ['enabled', 'dry_run', 'window_minutes'].every((k) => a[k] === AP_DEFAULTS[k]) }
 /** 'Today: 3 of 5' with a cap, 'Today: 3 uploaded' without one; the cap line 'No daily limit'. */
 export function todayText(status, t) {
   const count = status?.today?.count ?? 0, cap = status?.daily_cap

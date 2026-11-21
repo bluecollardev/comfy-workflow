@@ -78,3 +78,8 @@ test('folderOf: the dir of an Auto-generate key, "" for a key without one; outpu
   assert.deepEqual(outputsTarget({ folder: 'delivery_v008/X', files: 1 }, { pods: PODS, volumeId: 'v1' }), { ok: true, pod_id: 'p-run', folder: 'delivery_v008/X' })
   assert.equal(outputsTarget({ folder: '', files: 1 }, { pods: PODS, volumeId: 'v1' }).reason, 'nofolder'); assert.equal(outputsTarget({ folder: 'x', files: 0 }, { pods: PODS, volumeId: 'v1' }).reason, 'nothing'); assert.equal(outputsTarget({ folder: 'x', files: 1 }, { pods: [], volumeId: 'v1' }).reason, 'nopod')
 })
+test('settingsProblem: the scope is edl or all (a missing one is fine: an older core), anything else is a problem; apFill and apIsDefault know it', () => {
+  assert.equal(settingsProblem({ window_minutes: 10, scope: 'edl' }), ''); assert.equal(settingsProblem({ window_minutes: 10, scope: 'all' }), ''); assert.equal(settingsProblem({ window_minutes: 10 }), '')
+  assert.equal(settingsProblem({ window_minutes: 10, scope: 'everything' }), 'scope'); assert.equal(settingsProblem({ window_minutes: 10, scope: '' }), 'scope')
+  assert.equal(apFill({}).scope, 'edl'); assert.equal(apFill({ scope: 'all' }).scope, 'all'); assert.equal(apIsDefault({}), true); assert.equal(apIsDefault({ scope: 'all' }), false)
+})

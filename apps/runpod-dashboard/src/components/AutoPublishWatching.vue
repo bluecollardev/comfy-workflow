@@ -21,6 +21,7 @@
     </template>
     <div v-if="status.require_approval !== undefined" class="text-body-secondary" data-testid="autopublish-publishing-line">{{ $t(status.require_approval ? 'autopublish.pipe.statusApproved' : 'autopublish.pipe.statusAll') }}</div>
     <div v-if="w.summary && !compact" data-testid="autopublish-watching-summary">{{ w.summary }}</div>
+    <div v-if="w.scope_warning" class="text-warning" data-testid="autopublish-scope-warning">{{ w.scope_warning }}</div>
     <div class="text-body-secondary" data-testid="autopublish-watching-counts">{{ placeLabel ? `${placeLabel}: ` : '' }}{{ countsLine }}</div>
     <div v-if="rootPath && !places" class="text-body-secondary text-break" data-testid="autopublish-watching-root-line">{{ $t('autopublish.watch.thisPcFolder') }} <span class="font-monospace" data-testid="autopublish-watching-root">{{ rootPath }}</span><span v-if="rootMissing" class="text-warning"> ({{ $t('autopublish.watch.missing') }})</span></div>
     <details v-if="skipped && (w.skipped || []).length" class="mt-1" data-testid="autopublish-skipped"><summary>{{ $t('autopublish.watch.skipped', { n: w.skipped.length }) }}</summary>
