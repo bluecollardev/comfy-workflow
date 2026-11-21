@@ -70,7 +70,7 @@
         <span v-if="r.source === 'volume'" class="text-body-secondary ms-auto" data-testid="pod-outputs-volume-run">{{ $t('outputs.volumeRun', { when: r.started_at ? new Date(r.started_at).toLocaleString() : '?', files: r.files.length, size: sizeText(r.files.reduce((n, f) => n + (f.bytes || 0), 0)) }) }}</span>
         <span v-else class="text-body-secondary ms-auto">{{ $t('outputs.run', { when: new Date(r.started_at).toLocaleString(), s: r.duration_s ?? '?' }) }} · <span class="font-monospace">{{ r.prompt_id.slice(0, 8) }}</span></span>
       </div>
-      <OutputsGallery :files="r.files" :total-files="r.totalFiles || 0" :base="baseFor(r)" :scope="volumeId || pod.id" :volume-name="volumeName" :offline="!baseFor(r)" :zip-name="`${runName(r) || pod.name}-${idOf(r)}.zip`" :pod-id="pod.id" />
+      <OutputsGallery :files="r.files" :total-files="r.totalFiles || 0" :base="baseFor(r)" :scope="volumeId || pod.id" :volume-name="volumeName" :offline="!baseFor(r)" :zip-name="`${runName(r) || pod.name}-${idOf(r)}.zip`" :pod-id="pod.id" :pod-running="podRunning" />
     </div>
   </BModal>
   <BModal v-model="previewsOpen" :title="$t('outputs.dpx.previewsModalTitle')" size="xl" scrollable lazy ok-only :ok-title="$t('outputs.dpx.close')" data-testid="pod-outputs-previews-modal">
@@ -106,13 +106,24 @@
     </ul>
       <div v-show="genTab === 0" role="tabpanel" data-testid="pod-outputs-tab-previews">
       <div class="border rounded p-2 mb-2">
-        <div class="fw-semibold">{{ $t('outputs.dpx.loadAllOption') }}</div>
-        <div class="small text-body-secondary mb-2">{{ $t('outputs.dpx.loadAllTitle') }}</div>
+        <div class="d-flex gap-2 mb-2" role="group" :aria-label="$t('outputs.frames.modeLabel')" data-testid="pod-outputs-preview-mode" :data-mode="fpState.mode">
+          <BButton size="sm" :variant="fpState.mode === 'sequence' ? 'primary' : 'outline-secondary'" :aria-pressed="fpState.mode === 'sequence' ? 'true' : 'false'" :disabled="batchRunning || jobRunning()" data-testid="pod-outputs-mode-sequence" @click="setMode('sequence')">{{ $t('outputs.frames.modeSequence') }}</BButton>
+          <BButton size="sm" :variant="fpState.mode === 'frame' ? 'primary' : 'outline-secondary'" :aria-pressed="fpState.mode === 'frame' ? 'true' : 'false'" :disabled="batchRunning || jobRunning()" data-testid="pod-outputs-mode-frame" @click="setMode('frame')">{{ $t('outputs.frames.modeFrame') }}</BButton>
+        </div>
+        <div class="fw-semibold" data-testid="pod-outputs-previews-option">{{ $t(fpState.mode === 'frame' ? 'outputs.frames.loadAllOption' : 'outputs.dpx.loadAllOption') }}</div>
+        <div class="small text-body-secondary mb-2" data-testid="pod-outputs-previews-note">{{ $t(fpState.mode === 'frame' ? 'outputs.frames.loadAllTitle' : 'outputs.dpx.loadAllTitle') }}</div>
         <label class="d-flex align-items-center gap-2 small mb-1" :title="$t('outputs.skipPreviewsHelp')"><input v-model="skipExisting" type="checkbox" class="form-check-input mt-0" :disabled="batchRunning" data-testid="pod-outputs-previews-skip-existing" />{{ $t('outputs.skipExisting') }}</label>
         <div v-if="!skipExisting" class="small text-warning mb-1" data-testid="pod-outputs-previews-regenerate-help">{{ $t('outputs.regenerateHelp') }}</div>
-        <div class="small mb-2 d-flex align-items-center gap-1" data-testid="pod-outputs-previews-counts" :data-final="countsFinal ? 'true' : 'false'"><BSpinner v-if="!countsFinal || batchRunning" small data-testid="generate-counts-loading" />{{ countsLine }}</div>
-        <div v-if="batchRunning" class="mb-2"><BProgress :value="batchDone" :max="Math.max(1, batchTotal)" animated striped height="0.6rem" :data-percent="Math.round((batchDone / Math.max(1, batchTotal)) * 100)" data-testid="pod-outputs-previews-progress" /></div>
-        <div class="d-flex gap-2 align-items-center">
+        <div class="small mb-2 d-flex align-items-center gap-1" data-testid="pod-outputs-previews-counts" :data-final="(fpState.mode === 'frame' ? frameCountsFinal : countsFinal) ? 'true' : 'false'" :data-mode="fpState.mode"><BSpinner v-if="fpState.mode === 'frame' ? (!frameCountsFinal || jobRunning()) : (!countsFinal || batchRunning)" small data-testid="generate-counts-loading" />{{ fpState.mode === 'frame' ? frameCountsLine : countsLine }}</div>
+        <div v-if="fpState.mode === 'frame' && jobRunning()" class="mb-2"><BProgress :value="jobDone()" :max="Math.max(1, fpState.job.total || 1)" animated striped height="0.6rem" :data-percent="Math.round((jobDone() / Math.max(1, fpState.job.total || 1)) * 100)" data-testid="pod-outputs-frames-progress" /></div>
+        <div v-if="fpState.mode === 'frame' && fpState.error" class="small text-warning mb-2" data-testid="pod-outputs-frames-error">{{ fpState.error }}</div>
+        <div v-if="fpState.mode === 'sequence' && batchRunning" class="mb-2"><BProgress :value="batchDone" :max="Math.max(1, batchTotal)" animated striped height="0.6rem" :data-percent="Math.round((batchDone / Math.max(1, batchTotal)) * 100)" data-testid="pod-outputs-previews-progress" /></div>
+        <div v-if="fpState.mode === 'frame'" class="d-flex gap-2 align-items-center" data-testid="pod-outputs-frame-actions">
+          <BButton variant="primary" size="sm" :disabled="!podRunning || jobRunning() || !frameCountsFinal || frameTodo === 0" :title="podRunning ? '' : $t('outputs.frames.podOff')" data-testid="pod-outputs-load-frame-previews" @click="generateFrames"><BSpinner v-if="jobRunning()" small class="me-1" />{{ jobRunning() ? $t('outputs.frames.generating', { done: jobDone().toLocaleString(), total: (fpState.job.total || 0).toLocaleString() }) : $t(skipExisting ? 'outputs.frames.loadAll' : 'outputs.frames.regenerateAll', { n: frameTodo.toLocaleString() }) }}</BButton>
+          <BButton v-if="jobRunning()" variant="outline-warning" size="sm" data-testid="pod-outputs-stop-frame-previews" @click="stopJob()"><i class="fa-solid fa-stop me-1"></i>{{ $t('outputs.dpx.stopGenerate') }}</BButton>
+          <span v-if="frameFailedCount" class="small text-warning" data-testid="pod-outputs-frames-failed">{{ $t('outputs.frames.failedFrames', { n: frameFailedCount.toLocaleString() }) }}</span>
+        </div>
+        <div v-else class="d-flex gap-2 align-items-center">
           <BButton variant="primary" size="sm" :disabled="batchRunning || genProbing || genTodo === 0" data-testid="pod-outputs-load-previews" @click="generateAll"><BSpinner v-if="batchRunning" small class="me-1" />{{ batchRunning ? $t('outputs.dpx.generating', { done: batchDone, total: batchTotal }) : $t(skipExisting ? 'outputs.dpx.loadAll' : 'outputs.regenerateAll', { n: genTodo }) }}</BButton>
           <BButton v-if="batchRunning" variant="outline-warning" size="sm" data-testid="pod-outputs-stop-previews" @click="stopGenerate"><i class="fa-solid fa-stop me-1"></i>{{ $t('outputs.dpx.stopGenerate') }}</BButton>
           <span v-if="genCounts.failed" class="small text-warning">{{ $t('outputs.dpx.generatingFailed', { n: genCounts.failed }) }}</span>
@@ -132,6 +143,7 @@
 /** PodOutputsModal: every file the pod's finished runs produced (from ComfyUI's history), run by run, in the reusable OutputsGallery (viewer, download). With a network volume it also browses the volume's comfy-shared/output/ by folder over RunPod's S3 API, no pod needed (docs/ADR-045). */
 import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import OutputsGallery from './OutputsGallery.vue'
+import { fpState, setMode, startJob, stopJob, refreshListing, jobRunning, jobDone } from '../utils/framejob'
 import RenderSequences from './RenderSequences.vue'
 import PublishModal from './PublishModal.vue'
 import DeliveryPrepare from './DeliveryPrepare.vue'
@@ -339,6 +351,27 @@ async function generateAll() {
   previewsStore.start(todo, props.pod.name, genScopeLabel.value, !skipExisting.value)
 }
 function stopGenerate() { previewsStore.stop() }
+// Frame Previews mode: ONE pod job writes a small JPEG per frame for every in-scope sequence (utils/framejob.js); nothing large is read to this PC. The counts are frames, from one listing of the pod.
+const podRunning = computed(() => props.pod.status === 'running')
+const frameSeqs = computed(() => {
+  const seen = new Map()
+  for (const tl of dpxTiles(genRuns.value)) { const src = tl.file.subfolder || ''; if (!seen.has(src)) seen.set(src, { src_dir: src, frames: tl.frames.length, stem: (tl.frames[0]?.filename || '').replace(/\.\d+\.dpx$/i, '') }) }
+  return [...seen.values()]
+})
+const frameTotal = computed(() => frameSeqs.value.reduce((n, q) => n + q.frames, 0))
+const frameReady = computed(() => frameSeqs.value.reduce((n, q) => n + Math.min(fpState.listing[q.src_dir]?.count || 0, q.frames), 0))
+const frameFailedCount = computed(() => { const j = fpState.job; if (!j) return 0; const mine = new Set(frameSeqs.value.map((q) => q.src_dir)); return (j.failed || []).filter((f) => mine.has(f.src_dir)).length })
+const frameWaiting = computed(() => Math.max(0, frameTotal.value - frameReady.value - frameFailedCount.value))
+const frameListing = ref(false)
+const frameCountsFinal = computed(() => !listingBusy.value && !frameListing.value && (!podRunning.value || frameSeqs.value.every((q) => fpState.listing[q.src_dir])))
+const frameCountsLine = computed(() => { const ph = t('outputs.generate.checkingShort'); const f = frameCountsFinal.value || !podRunning.value; return t('outputs.frames.counts', { ready: f ? frameReady.value.toLocaleString() : ph, waiting: f ? frameWaiting.value.toLocaleString() : ph, failed: f ? frameFailedCount.value.toLocaleString() : ph }) })
+const frameTodo = computed(() => (skipExisting.value ? frameWaiting.value + frameFailedCount.value : frameTotal.value))
+watch([() => fpState.mode, frameSeqs, podRunning, () => previewsOpen.value], async () => {
+  if (fpState.mode !== 'frame' || !previewsOpen.value || !podRunning.value || !frameSeqs.value.length) return
+  frameListing.value = true
+  try { await refreshListing(props.pod.id, frameSeqs.value.map((q) => q.src_dir), false) } finally { frameListing.value = false }
+}, { immediate: true })
+function generateFrames() { startJob({ podId: props.pod.id, items: frameSeqs.value.map((q) => ({ src_dir: q.src_dir, frames: q.frames, stem: q.stem })), skipExisting: skipExisting.value }) }
 async function clearPreviews() { try { await sharedThumbs().clear(); previewsStore.clearResults(); probeGen++; for (const k of Object.keys(probeMap)) delete probeMap[k]; previewBus.resetTick++; probe(previewItems.value) } finally { cachedCount.value = 0 } }
 const volumeId_ = computed(() => props.volumeId)
 const go = (prefix) => { if (allActive.value || (scope.value === 'all' && volAll.running)) setScope('folder'); return loadVolume(prefix) }
