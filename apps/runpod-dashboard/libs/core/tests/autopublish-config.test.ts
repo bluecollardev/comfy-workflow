@@ -28,7 +28,7 @@ afterEach(() => { publish.reset(); autopublish.reset(); for (const k of ['POD_MA
 
 describe('the configuration block', () => {
   it('defaults: off, dry run, 10 minutes, no cap, S3 only, no standing approval', () => {
-    expect(mounts.defaults().auto_publish).toEqual({ generate: { enabled: false, where: 'local', preset: 'review', max_per_day: 20, settle_minutes: 5, fallback_local: false, colour_in: null }, sources: { local: true, volume: true }, volume_scan_minutes: 5, round: 'tunnel-v11_{date}_r01', include_dpx: false, require_approval: false, enabled: false, dry_run: true, dry_run_first: true, window_minutes: 0, daily_cap: null, targets: { s3: true, slack: false, tunnel: false } }); expect(ap().standing).toBeUndefined()
+    expect(mounts.defaults().auto_publish).toEqual({ generate: { enabled: false, where: 'local', preset: 'review', max_per_day: 20, settle_minutes: 5, fallback_local: false, colour_in: null }, sources: { local: true, volume: true }, volume_scan_minutes: 5, round: 'tunnel-v11_{date}_r01', include_dpx: false, fix_dpx: true, require_approval: false, enabled: false, dry_run: true, dry_run_first: true, window_minutes: 0, daily_cap: null, targets: { s3: true, slack: false, tunnel: false } }); expect(ap().standing).toBeUndefined()
     expect(mounts.normalize({}).auto_publish!.daily_cap).toBeNull(); expect(mounts.payload(mounts.defaults()).config.auto_publish!.enabled).toBe(false)
   })
   it('validation (400s name the field)', () => {
@@ -108,5 +108,26 @@ describe('MCP: a configuration put never turns Auto-publish on or changes where 
     expect(() => mergeConfig(cur(), { auto_publish: { standing: { approved_by: 'X', at: 'y' } } })).toThrow(/turned on in the window/); expect(() => mergeConfig(cur(), { auto_publish: { dry_run_first: false } })).toThrow(/turned on in the window/); expect(() => mergeConfig(cur(), { auto_publish: { dry_run_first: true } })).not.toThrow()
     expect(mergeConfig(cur(), { auto_publish: { window_minutes: 25, daily_cap: 9, enabled: false, dry_run: true } }).auto_publish).toMatchObject({ window_minutes: 25, daily_cap: 9, enabled: false })
     expect(() => mergeConfig(cur(), { auto_publish: { targets: { s3: true, slack: false, tunnel: false } } })).not.toThrow()   // the same values: nothing changes
+  })
+})
+
+describe('fix_dpx (ADR-057 decision 7)', () => {
+  it('is on by default, a boolean in the configuration, and an old file without it loads with it on', () => {
+    expect(mounts.defaults().auto_publish!.fix_dpx).toBe(true); expect(mounts.normalize({}).auto_publish!.fix_dpx).toBe(true)
+    expect(mounts.normalize({ auto_publish: { include_dpx: true } as never }).auto_publish).toMatchObject({ include_dpx: true, fix_dpx: true })
+    expect(mounts.normalize({ auto_publish: { fix_dpx: false } as never }).auto_publish!.fix_dpx).toBe(false)
+    expect(mounts.put({ ...mounts.load(), auto_publish: { fix_dpx: false } as never }).config.auto_publish!.fix_dpx).toBe(false)
+  })
+  it('export carries it, import applies it, and a bad value is refused by the file check', async () => {
+    await autopublish.setSettings({ fix_dpx: false }); const f = configio.exportConfig({ includeSecrets: false })
+    expect((f.config as Record<string, unknown>).auto_publish).toMatchObject({ fix_dpx: false })
+    await autopublish.setSettings({ fix_dpx: true }); expect(ap().fix_dpx).toBe(true)
+    configio.applyImport(f as never, { sections: ['pod_defaults'] }); expect(ap().fix_dpx).toBe(false)
+    expect(configio.planImport(file({ auto_publish: { fix_dpx: 'no' } })).errors.join()).toMatch(/auto_publish is/)
+    expect(configio.planImport(file({ auto_publish: { fix_dpx: true } })).errors.join()).not.toMatch(/auto_publish is/)
+  })
+  it('the settings call keeps it when other settings change', async () => {
+    await autopublish.setSettings({ fix_dpx: false }); await autopublish.setSettings({ window_minutes: 5 }); expect((await autopublish.settings()).fix_dpx).toBe(false)
+    expect(ap().fix_dpx).toBe(false)
   })
 })

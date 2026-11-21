@@ -153,8 +153,8 @@ test.describe('the configuration editors', () => {
     await expect(d.getByTestId('config-autopublish-round')).toHaveValue('tunnel-v11_{date}_r01'); await expect(d.getByTestId('config-autopublish-round-example')).toHaveText(`For example today: tunnel-v11_${today}_r01`)
     await expect(d.getByTestId('config-autopublish-include-dpx')).not.toBeChecked()
     await d.getByTestId('config-autopublish-round').fill('bad name {date}'); await d.getByTestId('config-save').click(); await expect(d.getByTestId('autopublish-error')).toContainText('round name template')
-    await d.getByTestId('config-autopublish-round').fill('qc_{date}_r02'); await d.getByTestId('config-autopublish-include-dpx').check(); await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
-    expect(api.state.mounts.config.auto_publish).toMatchObject({ round: 'qc_{date}_r02', include_dpx: true })
+    await d.getByTestId('config-autopublish-round').fill('qc_{date}_r02'); await d.getByTestId('config-autopublish-include-dpx').check(); await expect(d.getByTestId('config-autopublish-fix-dpx')).toBeChecked(); await expect(d.getByTestId('config-autopublish-fix-dpx-note')).toContainText('corrected copy'); await d.getByTestId('config-autopublish-fix-dpx').uncheck(); await expect(d.getByTestId('config-autopublish-fix-dpx-note')).toContainText('no DPX frames are uploaded'); await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    expect(api.state.mounts.config.auto_publish).toMatchObject({ round: 'qc_{date}_r02', include_dpx: true, fix_dpx: false })   // ADR-057 decision 7: Fix DPX Before Upload is on until a person turns it off
   })
   test('older Auto-publish settings (no round) show no template', async ({ page, api }) => {
     api.state.mounts.config.auto_publish = { enabled: true, dry_run: true, window_minutes: 10, daily_cap: null, dry_run_first: true, targets: { s3: true, slack: false, tunnel: false }, standing: { approved_by: 'B', at: '2026-11-19T10:00:00Z' } }

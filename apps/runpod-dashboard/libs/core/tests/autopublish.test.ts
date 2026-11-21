@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import * as autopublish from '../src/autopublish.js'
 import * as history from '../src/history.js'
 import * as mounts from '../src/mounts.js'
+import * as dpxprep from '../src/dpxprep.js'
 import * as publish from '../src/publish.js'
 import * as settingsEnv from '../src/settings.js'
 import type * as podpull from '../src/podpull.js'
@@ -63,7 +64,7 @@ beforeEach(async () => {
   publish.setDeps({ aws: fakeAws, fetch: fakeFetch, outputRoot: () => out, parallel: () => 4, now: clock, spawn: genericSpawn }); autopublish.setDeps({ now: clock, outputRoot: () => out })
   await publish.setSettings({ s3: { layout: 'as-is', credentials: 'app', bucket: DEST, prefix: 'returns/BKK', region: 'us-west-2', access_key_id: KEY_ID, secret_access_key: KEY_SECRET }, slack: { webhook_url: WEBHOOK } })
 })
-afterEach(() => { autopublish.reset(); publish.reset(); delete process.env.PUBLISH_SLACK_HOST_ALLOW; for (const k of settingsEnv.PUBLISH_SECRETS) delete process.env[k] })
+afterEach(() => { autopublish.reset(); dpxprep.reset(); publish.reset(); delete process.env.PUBLISH_SLACK_HOST_ALLOW; for (const k of settingsEnv.PUBLISH_SECRETS) delete process.env[k] })
 
 describe('settings (the configuration block) and the standing approval', () => {
   it('defaults: off, dry run, 10 minutes, NO cap (null), S3 only; the destination is read only; target_state explains each target', async () => {
@@ -242,6 +243,14 @@ describe('the BKK return: round template, include_dpx, the manifest growing shot
   const dpx = (stem: string, dirRel: string, n: number) => { for (let i = 1; i <= n; i++) write(`${dirRel}/${stem}.${String(i).padStart(4, '0')}.dpx`, 20, Buffer.concat([dpxHead(), Buffer.from(`frame${i}`)])) }
   const reviewWith = (shot: string, clip: string, stem: string) => { const d = `deliver/${shot}/v001`; write(`${d}/${clip}.mov`, 100); write(`${d}/${clip}.mov.meta.json`, 0, JSON.stringify({ kind: 'review', source_dir: 'proxy_v004/x', name: stem, first: 1, last: 3 })); write(`${d}/DELIVERY.md`, 20) }
   it('publishes into the round from the template ({date}), shot by shot, and the manifest merges; with include_dpx the frames the sidecar names go too under the clip name', async () => {
+    // the fix is faked (ssh to a pod): the corrected copy is written on this PC, the plan says what each sequence is
+    const clipOf: Record<string, string> = { STEM_A: 'ARCHIVAL-085_MAIN', STEM_B: 'ARCHIVAL-086_MAIN' }
+    dpxprep.setDeps({
+      plan: async (a) => ({ rows: a.items!.map((i) => ({ src_dir: i.src_dir ?? '', stem: i.stem ?? '', clip: clipOf[i.stem ?? ''], frames: 3, expected_frames: null, start_timecode: '01:00:00:00', timecode_source: 'EDL', fps: 23.976, ok: true, why: '' })), settings: {} as never }),
+      run: async (a) => { for (const i of a.items!) for (let n = 1; n <= 3; n++) write(`_delivery_v11/${i.clip}/${i.clip}.000${n}.dpx`, 20, Buffer.concat([dpxHead(), Buffer.from(`frame${n}`)])); return { results: a.items!.map((i) => ({ clip: i.clip, frames: 3, out_dir: `_delivery_v11/${i.clip}`, ok: true })), out_root: '', settings: {} as never } },
+      pods: async () => [{ id: 'p1', name: 'pod' }],
+      items: async (_d, stem) => [1, 2, 3].map((n) => `_delivery_v11/${stem}/${stem}.000${n}.dpx`),
+    })
     await publish.setSettings({ s3: { layout: 'bkk-return' } }); dpx('STEM_A', 'proxy_v004/x', 4); reviewWith('archival-085', 'ARCHIVAL-085_MAIN', 'STEM_A'); reviewWith('archival-086', 'ARCHIVAL-086_MAIN', 'STEM_B'); dpx('STEM_B', 'proxy_v004/x', 3)
     await approve('archival-085'); await approve('archival-086'); await live({ window_minutes: 0, include_dpx: true })
     expect((await autopublish.settings())).toMatchObject({ round: 'tunnel-v11_{date}_r01', include_dpx: true }); await autopublish.consider(); await autopublish.tick(); await autopublish.settled()
