@@ -10,6 +10,7 @@
 - The per-element manifest (section 2) already in a real round is left as it is.
 - **Test rounds also relax the EDL holds** (an existing behaviour). A delivery therefore goes to a `_TEST_` round first with the same layout and names, is checked in the bucket, and only then goes to the real round.
 - **Why:** a re-published shot with a different file would silently replace what the client already has. The old behaviour was right for a scratch round and wrong for a delivery.
+- **Amendment 2026-11-21 (Lucas: "delete your stupid safety shit", "i said publish"):** a run may now pass `allow_overwrite: true` (plan and run; the MCP `publish` tool takes it) to write over a file already in a non-`_TEST_` round with another size. It is **off by default** and the refusal stays the rule; a run still needs `approved_by` and `confirm`, and the request, with the flag, is kept in the job record. First used on 2026-11-21 for 11 elements whose round already held 8 to 29 sample frames each (384 bytes different from the corrected frames): the samples were replaced by the full corrected sequences.
 
 ## 2. A manifest per element (built)
 The PDF's contents show `<CLIP>_MANIFEST.json` next to each element (6.6 to 83 KB, so it lists the files). Each element now gets `<shot>/<CLIP>_MANIFEST.json`: the round, who returned it, when, the pod, and the element's item with the sha256 and size of every file. They go up before the round's `RETURN-MANIFEST.json`, which stays last. Still to settle with Binc: whether the round-level manifest is wanted besides.
