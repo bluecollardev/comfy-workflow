@@ -482,6 +482,40 @@ export async function mockApi(page, state) {
       }
     }
     // Publishing (S3 and Slack): state.publish = { settings, tree: { dir: [entries] }, sizes, there: [paths already on S3], heavy: [paths refused as weights], jobs, puts, tests, planned, runs, reposts }; state.publishOld answers like a core without it.
+    // Frame previews (a pod job): start makes a job that is done on the second status call; list answers what the jobs wrote; state.fp = { jobs, written: { src_dir: [jpg names] }, starts, lists, fail: { src_dir: [frame numbers] } }
+    if (method === 'POST' && path.startsWith('/framepreviews/')) {
+      const fp = (state.fp ||= { jobs: {}, written: {}, starts: [], lists: [], fail: {} }), op = path.slice(15)
+      if (op === 'start') {
+        if (state.fpPodOff) return json({ detail: 'Start the pod: the previews are made on the pod' }, 409)
+        fp.starts.push(body); const id = `framepreviews-${fp.starts.length}`, items = body.items || []
+        fp.jobs[id] = { id, pod_id: body.pod_id, items, tone: body.tone || 'gamma26', skip_existing: body.skip_existing !== false, state: 'running', started_at: new Date().toISOString(), done: 0, skipped: 0, failed: [], total: items.reduce((n, i) => n + (i.frames || 0), 0), current: items[0]?.src_dir || '', polls: 0 }
+        return json(fp.jobs[id])
+      }
+      if (op === 'status') {
+        const j = fp.jobs[body.job_id]; if (!j) return json(null)
+        if (j.state === 'running' && ++j.polls >= 2 && !state.fpHold) {
+          for (const it of j.items) {
+            const bad = fp.fail[it.src_dir] || [], had = new Set(fp.written[it.src_dir] || []), names = []
+            for (let n = 0; n < (it.frames || 0); n++) {
+              const stem = `${it.stem || 'x'}.${String(n).padStart(4, '0')}`
+              if (bad.includes(n)) { j.failed.push({ src_dir: it.src_dir, frame: `${stem}.jpg`, reason: 'not a DPX' }); continue }
+              if (had.has(`${stem}.jpg`) && j.skip_existing) j.skipped++; else j.done++
+              names.push(`${stem}.jpg`)
+            }
+            fp.written[it.src_dir] = names
+          }
+          j.state = 'done'
+        }
+        return json(j)
+      }
+      if (op === 'cancel') { const j = fp.jobs[body.job_id]; if (j) j.state = 'cancelled'; return json({ ok: !!j, state: j?.state }) }
+      if (op === 'list') {
+        if (state.fpPodOff) return json({ detail: 'Start the pod: the previews are made on the pod' }, 409)
+        fp.lists.push(body); const previews = {}, subfolders = {}
+        for (const it of body.items || []) { const names = fp.written[it.src_dir] || []; previews[it.src_dir] = { count: names.length, ...(body.names ? { names } : {}) }; subfolders[it.src_dir] = `.previews/${it.src_dir}` }
+        return json({ previews, subfolders })
+      }
+    }
     if (method === 'POST' && path === '/dpxfix/run') { (state.dpxfixRuns ||= []).push(body); return json({ out_root: '/workspace/comfy-shared/output/_delivery_v11', results: body.items.map((i) => ({ clip: i.clip, frames: 10, out_dir: `_delivery_v11/${i.clip}`, ok: !(state.dpxfixFail || []).includes(i.clip), ...((state.dpxfixFail || []).includes(i.clip) ? { error: 'ERR short file' } : {}) })) }) }
     if (path.startsWith('/publish/')) {
       if (state.publishOld) return json({ detail: `no core call publish.${path.slice(9)}` }, 500)

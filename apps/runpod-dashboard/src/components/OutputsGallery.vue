@@ -50,7 +50,11 @@
         <i class="fa-solid fa-film"></i>
         <span class="headname" :title="t.name || t.file.filename" data-testid="outputs-seq-name">{{ shortName(t.name || t.file.filename) }}</span>
         <span class="badge text-bg-secondary headcount" data-testid="outputs-seq-headcount">{{ t.frames.length }}</span>
-        <span v-if="isExpanded(t) && framePrev[t.key]" class="small text-body-secondary" data-testid="outputs-seq-preview-count">{{ $t('outputs.dpx.framePreviews', { n: framePrev[t.key].size, total: t.frames.length }) }}</span>
+        <span v-if="isExpanded(t)" class="small text-body-secondary" data-testid="outputs-seq-preview-count">{{ $t('outputs.dpx.framePreviews', { n: previewCount(t), total: t.frames.length }) }}</span>
+        <span v-if="inJob(srcOf(t))" class="small text-info" data-testid="outputs-seq-job-progress">{{ $t('outputs.frames.progress', { done: jobDone(), total: fpState.job.total || t.frames.length }) }}</span>
+        <span v-if="isExpanded(t) && fpState.error" class="small text-warning" data-testid="outputs-seq-job-error">{{ fpState.error }}</span>
+        <BButton v-if="isExpanded(t) && !inJob(srcOf(t))" variant="outline-light" size="sm" class="headbtn" :disabled="!canJob || jobRunning()" :title="jobReason" data-testid="outputs-seq-load-frames" @click="loadFrames(t)"><i class="fa-solid fa-images me-1"></i>{{ $t('outputs.frames.load') }}</BButton>
+        <BButton v-if="inJob(srcOf(t))" variant="outline-warning" size="sm" class="headbtn" data-testid="outputs-seq-stop-frames" @click="stopJob()"><i class="fa-solid fa-stop me-1"></i>{{ $t('outputs.frames.stop') }}</BButton>
         <BButton variant="outline-light" size="sm" class="headbtn" :aria-expanded="isExpanded(t) ? 'true' : 'false'" data-testid="outputs-seq-toggle" @click="toggleSeq(t)"><i class="fa-solid me-1" :class="isExpanded(t) ? 'fa-chevron-up' : 'fa-chevron-down'"></i>{{ isExpanded(t) ? $t('outputs.dpx.collapse') : $t('outputs.dpx.expand') }}</BButton>
       </div>
       <button type="button" class="tile" data-testid="outputs-tile" :disabled="offline" :data-offline="offline ? 'true' : undefined" :data-kind="t.kind" :data-type="t.file.type" :data-frames="t.frames ? t.frames.length : undefined" :title="t.name || t.file.filename" @click="open(t)">
@@ -68,7 +72,7 @@
         <div v-if="isExpanded(t)" class="frames" data-testid="outputs-seq-frames" :data-shown="shownFrames(t).length">
           <div class="small text-body-secondary mb-1" data-testid="outputs-seq-frames-count">{{ $t('outputs.dpx.framesShown', { shown: shownFrames(t).length, total: t.frames.length }) }}</div>
           <div class="framelist">
-            <button v-for="(f, i) in shownFrames(t)" :key="f.filename" type="button" class="frame" data-testid="outputs-seq-frame" :disabled="offline" :title="f.filename" @click="openAt(t, i)"><img v-if="framePrev[t.key] && framePrev[t.key].get(f.filename)" :src="framePrev[t.key].get(f.filename)" alt="" class="fthumb" loading="lazy" decoding="async" data-testid="outputs-seq-frame-thumb" /><span>{{ frameNo(f) }}</span><span v-if="f.bytes != null" class="text-body-secondary">{{ sizeText(f.bytes) }}</span></button>
+            <button v-for="(f, i) in shownFrames(t)" :key="f.filename" type="button" class="frame" :class="{ hasprev: !!frameImg(t, f) }" data-testid="outputs-seq-frame" :disabled="offline" :title="f.filename" @click="openAt(t, i)"><img v-if="frameImg(t, f)" :src="frameImg(t, f)" alt="" class="fthumb" loading="lazy" decoding="async" data-testid="outputs-seq-frame-thumb" /><span class="frameline"><span>{{ frameNo(f) }}</span><i v-if="frameFailed(t, f)" class="fa-solid fa-triangle-exclamation text-warning" :title="frameFailed(t, f)" data-testid="outputs-seq-frame-warn"></i><span v-if="f.bytes != null" class="text-body-secondary">{{ sizeText(f.bytes) }}</span></span></button>
           </div>
           <PageSentinel :more="shownFrames(t).length < t.frames.length" :shown="shownFrames(t).length" @more="showMore(t)" />
           <div v-if="shownFrames(t).length < t.frames.length" class="d-flex gap-2 mt-2">
@@ -95,6 +99,7 @@ import { viewUrl, galleryTiles, sizeText, isDpx } from '../utils/outputs'
 import { isExpanded, toggleSeq, setAll, shownFrames, showMore, showAll, groupView, groupExpanded, toggleGroup, shownFiles, groupMore, groupShowAll, setShowTemp, HAS_IO } from '../utils/dpxcollapse'
 import { isTemp, groupTiles, tempGroup, shortName } from '../utils/videogroups'
 import { availableFrames } from '../utils/framepreviews'
+import { fpState, startJob, stopJob, refreshListing, previewUrl, jpgName, inJob, jobRunning, jobDone, failedOf, failReason } from '../utils/framejob'
 import { previewBus } from '../utils/thumbsBus'
 import LazyMedia from './LazyMedia.vue'
 import PageSentinel from './PageSentinel.vue'
@@ -110,7 +115,7 @@ import ApproveControl from './ApproveControl.vue'
 import { useRendersStore } from '../stores/renders'
 import { sequenceItem } from '../utils/renders'
 
-const props = defineProps({ files: { type: Array, default: () => [] }, totalFiles: { type: Number, default: 0 }, base: { type: String, default: '' }, zipName: { type: String, default: 'outputs.zip' }, hideZip: { type: Boolean, default: false }, scope: { type: String, default: '' }, volumeName: { type: String, default: '' }, offline: { type: Boolean, default: false }, podId: { type: String, default: '' } })   // offline: no pod serves the files (a saved run): tiles list the names, nothing opens
+const props = defineProps({ podRunning: { type: Boolean, default: false }, files: { type: Array, default: () => [] }, totalFiles: { type: Number, default: 0 }, base: { type: String, default: '' }, zipName: { type: String, default: 'outputs.zip' }, hideZip: { type: Boolean, default: false }, scope: { type: String, default: '' }, volumeName: { type: String, default: '' }, offline: { type: Boolean, default: false }, podId: { type: String, default: '' } })   // offline: no pod serves the files (a saved run): tiles list the names, nothing opens
 const canZip = !!core?.files?.downloadZip
 const renders = useRendersStore()
 /** The rendered movie of a DPX sequence tile (docs/ADR-048), from the store's one batched list: on this PC, else ready on the volume, else none. */
@@ -141,8 +146,24 @@ async function ensurePrev(t) {
   prevMark[t.key] = mark
   framePrev[t.key] = await availableFrames(props.scope || props.base, t.frames)
 }
+// Frame previews are a pod job (utils/framejob.js, libs/core/src/framepreviews.ts): one small JPEG per frame, made where the files are. The rows read those JPEGs through /view and count them from one listing.
+const srcOf = (t) => t.frames[0]?.subfolder || ''
+const canJob = computed(() => !!props.podId && props.podRunning && !props.offline)
+const jobReason = computed(() => (!props.podId ? t('outputs.frames.noPod') : !props.podRunning ? t('outputs.frames.podOff') : props.offline ? t('outputs.frames.offline') : ''))
+const jpgNames = (t) => fpState.listing[srcOf(t)]?.names || null
+const frameImg = (t, f) => framePrev[t.key]?.get(f.filename) || (jpgNames(t)?.has(jpgName(f.filename)) ? previewUrl(props.base, f) : '')
+const previewCount = (t) => t.frames.reduce((n, f) => n + (frameImg(t, f) ? 1 : 0), 0)
+const frameFailed = (t, f) => (failedOf(srcOf(t)).has(jpgName(f.filename)) ? failReason(srcOf(t), jpgName(f.filename)) : '')
+const stemOf = (t) => (t.frames[0]?.filename || '').replace(/\.\d+\.dpx$/i, '')
+function loadFrames(t) { startJob({ podId: props.podId, items: [{ src_dir: srcOf(t), frames: t.frames.length, stem: stemOf(t) }], skipExisting: true }) }
+const listMark = {}
+async function ensureListing(t) {
+  if (!canJob.value || listMark[t.key]) return
+  listMark[t.key] = true
+  await refreshListing(props.podId, [srcOf(t)], true)
+}
 const tiles = computed(() => { const ts = groupTiles(galleryTiles(realFiles.value)); const tg = groupView.showTemp ? tempGroup(tempFiles.value) : null; return tg ? [...ts, tg] : ts })
-watchEffect(() => { for (const t of tiles.value) if (t.kind === 'dpx' && t.frames.length > 1 && isExpanded(t)) ensurePrev(t) })
+watchEffect(() => { for (const t of tiles.value) if (t.kind === 'dpx' && t.frames.length > 1 && isExpanded(t)) { ensurePrev(t); ensureListing(t) } })
 const viewable = computed(() => displayFiles.value.filter((f) => !isDpx(f.filename)))
 const isGroup = (t) => t.kind === 'fgroup' || t.kind === 'tempgroup'
 const groupCount = computed(() => tiles.value.filter(isGroup).length)
@@ -198,6 +219,10 @@ watch(() => props.files, () => { current.value = null; dpx.value = null; problem
 .framelist { display: grid; grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); gap: 0.25rem; }
 .frame { display: flex; justify-content: space-between; gap: 0.4rem; padding: 0.15rem 0.4rem; font-size: 0.72rem; background: #20232a; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 0.25rem; color: inherit; cursor: pointer; }
 .fthumb { width: 2.8rem; height: 1.6rem; object-fit: cover; border-radius: 0.15rem; flex: 0 0 auto; }
+.frame.hasprev { flex-direction: column; align-items: stretch; }
+.frame.hasprev .fthumb { width: 100%; height: auto; aspect-ratio: 16 / 9; }
+.frameline { display: flex; justify-content: space-between; align-items: center; gap: 0.4rem; }
+.head .headbtn + .headbtn { margin-left: 0; }
 .frame:hover:not(:disabled) { border-color: #508cff; }
 .tile { position: relative; display: flex; flex-direction: column; gap: 0.25rem; padding: 0.25rem; background: #20232a; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 0.375rem; color: inherit; text-align: left; cursor: pointer; }
 .tile:disabled { cursor: default; opacity: 0.8; }

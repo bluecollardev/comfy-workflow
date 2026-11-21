@@ -202,6 +202,7 @@ const TABLE = {
   podlogs: { save: (c, podId, o) => c.podlogs.save(String(podId || ''), o || {}), list: (c, o) => c.podlogs.list(o || {}), read: (c, name, o) => c.podlogs.read(String(name || ''), o || {}), purge: (c, o) => c.podlogs.purge(o || {}) },   // pod logs kept in the config folder, never deleted
   dpxfix: { run: (c, o) => c.dpxfix.run(o || {}), plan: (c, o) => c.dpxfix.plan(o || {}) },   // corrected copies of DPX frames for delivery (Tunnel V11 plan, section 9)
   dpxmake: { run: (c, o) => c.dpxmake.run(o || {}), plan: (c, o) => c.dpxmake.plan(o || {}) },   // unpack a master video into a 16-bit DPX sequence on the pod (Tunnel V11 plan, section 12 step 2)
+  framepreviews: { start: (c, o) => c.framepreviews.start(o || {}), status: (c, o) => c.framepreviews.status(o || {}), cancel: (c, o) => c.framepreviews.cancel(o || {}), list: (c, o) => c.framepreviews.list(o || {}) },   // frame previews of DPX sequences, made on the pod as small JPEGs (a job)
   renders: {   // docs/ADR-048: DPX sequences rendered into mp4 proxies (on the pod, or on this PC), kept on the volume and on this PC
     plan: (c, o) => c.renders.plan(o || {}),
     start: (c, o) => c.renders.start(o || {}),
