@@ -14,12 +14,14 @@ import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/p
 import { dirname, join } from 'node:path'
 import { configDir } from './paths.js'
 import type { Checkpoint } from './autochunk.js'
+import type { FrameRange } from './graphchunks.js'
 
 export const HEARTBEAT_MS = 15_000, STALE_MS = 60_000
 export interface Meta { task_id?: string; import_id?: string; client?: string }
 export interface ChunkRunRecord {
   version: 1; id: string; job_id: string; pod_id: string; pod_name: string; base_url: string
   /** the graph this record is about, the graphs of its whole run, and where in them it is (the rest of the run follows it) */ path: string; job_paths: string[]; index: number
+  /** graph path -> the frame range this run was limited to (ADR-056, ranges): the graphs after the interrupted one keep theirs when the run is adopted */ ranges?: Record<string, FrameRange>
   meta?: Meta; started_at: string; heartbeat_at: string; owner: { pid: number; host: string }
   state: 'running' | 'failed'; error?: string; adopted_from?: string; checkpoint?: Checkpoint
 }
@@ -57,9 +59,9 @@ export const isLive = (id: string): boolean => live.has(id)
 
 export interface Writer { id: string; update(cp: Checkpoint): Promise<void>; beat(): Promise<void>; finish(): Promise<void>; fail(error: string): Promise<void> }
 /** Start the record of a run. `adoptedFrom` names the record this run continues (it is removed once the new one exists). */
-export async function begin(o: { job_id: string; index: number; pod_id: string; pod_name: string; base_url: string; path: string; job_paths: string[]; meta?: Meta; started_at?: string; adopted_from?: string }): Promise<Writer> {
+export async function begin(o: { job_id: string; index: number; pod_id: string; pod_name: string; base_url: string; path: string; job_paths: string[]; ranges?: Record<string, FrameRange>; meta?: Meta; started_at?: string; adopted_from?: string }): Promise<Writer> {
   const id = safe(`${o.job_id}__${o.index}`)
-  const rec: ChunkRunRecord = { version: 1, id, job_id: o.job_id, pod_id: o.pod_id, pod_name: o.pod_name, base_url: o.base_url, path: o.path, job_paths: o.job_paths, index: o.index, ...(o.meta ? { meta: o.meta } : {}), started_at: o.started_at ?? iso(deps.now()), heartbeat_at: iso(deps.now()), owner: { pid: deps.pid(), host: deps.host() }, state: 'running', ...(o.adopted_from ? { adopted_from: o.adopted_from } : {}) }
+  const rec: ChunkRunRecord = { version: 1, id, job_id: o.job_id, pod_id: o.pod_id, pod_name: o.pod_name, base_url: o.base_url, path: o.path, job_paths: o.job_paths, index: o.index, ...(o.ranges && Object.keys(o.ranges).length ? { ranges: o.ranges } : {}), ...(o.meta ? { meta: o.meta } : {}), started_at: o.started_at ?? iso(deps.now()), heartbeat_at: iso(deps.now()), owner: { pid: deps.pid(), host: deps.host() }, state: 'running', ...(o.adopted_from ? { adopted_from: o.adopted_from } : {}) }
   live.add(id)
   let chain: Promise<void> = Promise.resolve(), over = false
   const save = (): Promise<void> => { chain = chain.then(async () => { if (over) return; rec.heartbeat_at = iso(deps.now()); await write(rec) }).catch(() => undefined); return chain }

@@ -115,6 +115,7 @@ export interface RunOpts {
   /** ADR-056: chunked, RAM-guarded runs are the default for every graph; 'off' runs it the old way (whole, no guard). Absent: the setting (on unless chunked_runs is switched off). */ chunking?: 'on' | 'off'
   /** the container's RAM now; default: its cgroup over SSH, else ComfyUI's system_stats. Tests inject one. */ ram?: (podId: string) => Promise<autochunk.RamNow | null>
   /** who asked (the queue task and import), kept in a chunked run's record so a re-attached run can be linked to its task again (ADR-056, "Re-attach after a restart") */ meta?: chunkrecord.Meta
+  /** graph path -> the frame range to run (source frame numbers of the graph's window, inclusive): only those frames, numbered as a whole run would number them, so several runs on several pods can fill one folder (ADR-056, "Ranges and splitting one element across pods"). Needs chunking; a range outside the graph's window fails that graph with 422. */ ranges?: Record<string, { first: number; last: number }>
   /** graph path -> the plan of a chunked run that another process started and left (see reattach.ts): continue it instead of starting over */ resume?: Record<string, { cp: autochunk.Checkpoint; from: string }>
 }
 interface Internal { job: RunJob; abort: AbortController }
@@ -296,7 +297,7 @@ async function runChunked(i: Internal, r: RunResult, base: string, o: RunOpts, f
   const sleeper = (ms: number) => sleep(ms, signal)
   // the record another process can adopt this run from after a restart: written after every change of the plan, kept alive by a heartbeat, removed when the run ends
   const results = i.job.results, resume = o.resume?.[r.path]
-  const rec = await chunkrecord.begin({ job_id: i.job.id, index: Math.max(0, results.indexOf(r)), pod_id: podId, pod_name: i.job.pod_name, base_url: base, path: r.path, job_paths: results.map((x) => x.path), meta: o.meta, adopted_from: resume?.from })
+  const rec = await chunkrecord.begin({ job_id: i.job.id, index: Math.max(0, results.indexOf(r)), pod_id: podId, pod_name: i.job.pod_name, base_url: base, path: r.path, job_paths: results.map((x) => x.path), ranges: o.ranges, meta: o.meta, adopted_from: resume?.from })
   const hb = setInterval(() => { void rec.beat() }, chunkrecord.HEARTBEAT_MS); hb.unref?.()
   if (resume?.from) await chunkrecord.remove(resume.from)   // this run has its own record now: the one it continues is closed (and its adoption lock with it)
   // visible to the other processes (running_jobs, the Queue): the chunk progress of this graph; `terminal` ends it
@@ -304,7 +305,7 @@ async function runChunked(i: Internal, r: RunResult, base: string, o: RunOpts, f
   const stopTrack = jobsregistry.track({ id: rec.id, kind: 'render', trigger: 'manual', origin: o.meta?.client ? 'mcp' : 'window', ...(o.meta?.client ? { client: o.meta.client } : {}), label: `chunked run ${r.path}${resume ? ' (re-attached)' : ''}`, started_at: i.job.started_at,
     view: () => ({ state: prog.over ? 'done' : 'running', terminal: prog.over, progress: { done: prog.done, total: prog.total, unit: 'chunks' } }), cancel: () => { i.abort.abort() } })
   const ctx: autochunk.RunCtx = {
-    path: r.path, ui, api, say, sleep: sleeper, pollMs: o.pollMs === undefined ? undefined : o.pollMs,
+    path: r.path, ui, api, say, sleep: sleeper, range: o.ranges?.[r.path], pollMs: o.pollMs === undefined ? undefined : o.pollMs,
     checkpoint: (cp) => { prog.total = cp.plan.length; prog.done = Object.values(cp.states).filter((s) => s.state === 'done').length; return rec.update(cp) }, resume: resume?.cp,
     // a prompt another process submitted: watched like one of ours, but `wasDown` makes the first look check that the pod still has it (a restarted ComfyUI forgets it: submitted again at once, not after ten minutes)
     adopt: (id) => { watch.set(id, { outageAt: 0, wasDown: true, lastAlive: Date.now(), startedAt: Date.now() }) },
@@ -370,10 +371,24 @@ async function defaultConvert(graph: unknown, ctx: { base: string; podId: string
   return ui2api.browserConverter(ctx.base, { timeoutMs: 240_000 })(graph)
 }
 
+/** A range belongs to one of the chosen graphs, is two whole frame numbers (first <= last), and needs chunking on (a whole-graph run cannot honour it): refused at once, before a pod is touched. */
+export function checkRanges(paths: string[], o: Pick<RunOpts, 'ranges' | 'chunking'>): void {
+  const ranges = o.ranges
+  if (!ranges || !Object.keys(ranges).length) return
+  if (o.chunking === 'off' || (o.chunking === undefined && !settings.chunkedRuns())) throw new CoreError(400, 'A frame range needs chunked runs (the setting is off, or chunking is off for this run).')
+  for (const [p, r] of Object.entries(ranges)) {
+    if (!paths.includes(p)) throw new CoreError(400, `range given for ${p}, which is not one of the graphs to run`)
+    const a = Number(r?.first), b = Number(r?.last)
+    if (!Number.isInteger(a) || !Number.isInteger(b) || a < 1) throw new CoreError(400, `range for ${p} needs whole frame numbers from 1 (first ${JSON.stringify(r?.first)}, last ${JSON.stringify(r?.last)})`)
+    if (a > b) throw new CoreError(400, `range for ${p}: first (${a}) is after last (${b})`)
+  }
+}
+
 /** Start running the chosen graphs, one after another, on a running pod. Returns the job at once; poll it with `job`. Every graph's outcome (and every error) is written to the History. */
 export async function run(podId: string, paths: string[], o: RunOpts = {}): Promise<RunJob> {
   if (!paths.length) throw new CoreError(400, 'Choose at least one workflow to run.')
   for (const p of paths) if (!isGraphPath(p) || p.includes('..') || p.startsWith('/')) throw new CoreError(400, `Not a workflow path: ${p}`)
+  checkRanges(paths, o)
   const fetchFn = o.fetchFn ?? fetch
   let base = 'http://simulated', podName = 'simulated'
   if (!mounts.dryRun(mounts.load())) {

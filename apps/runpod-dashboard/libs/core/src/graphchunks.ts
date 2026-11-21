@@ -10,6 +10,8 @@
  *  - `narrowGraph`       a narrowed COPY of a UI graph (the original on the volume is never edited); `narrowApi` the same for an API graph.
  *  - `checkCoverage`, `checkWritten`   the merge check: no gap, no repeat.
  *  - `runChunks`         the live RAM guard: interrupt at the guard, resubmit the chunk as two smaller ones.
+ *  - `checkRange`, `planRange`, `splitRanges`   a run may be limited to a frame RANGE of the graph's window (ADR-056, "Ranges and splitting one element across pods"): numbering stays absolute and the
+ *                        pad is clamped by the graph's whole window, so ranges rendered by different runs into one folder never overlap and meet exactly as one run would have written them.
  * Pure over injected deps: no pod is touched here.
  */
 import { CoreError } from './errors.js'
@@ -51,6 +53,52 @@ export function planGraphChunks(win: Pick<GraphWindow, 'first' | 'last' | 'start
   for (let a = win.first; a <= win.last; a += chunk) {
     const b = Math.min(a + chunk - 1, win.last)
     out.push({ n: out.length + 1, first: a, last: b, readFirst: Math.max(win.first, a - pad), readLast: Math.min(win.last, b + pad), startNumber: win.startNumber + (a - win.first) })
+  }
+  return out
+}
+
+/** A frame range of a graph's window: source frame numbers, inclusive, the same numbers the planner and OCIORead use. */
+export interface FrameRange { first: number; last: number }
+/** The range is whole frame numbers inside the graph's window, first <= last; throws 400 (not a number or reversed) or 422 (outside the window). Returns it normalised. */
+export function checkRange(win: Pick<GraphWindow, 'first' | 'last'>, range: FrameRange): FrameRange {
+  const a = Number(range?.first), b = Number(range?.last)
+  if (!Number.isInteger(a) || !Number.isInteger(b)) throw new CoreError(400, `range needs whole frame numbers (first ${JSON.stringify(range?.first)}, last ${JSON.stringify(range?.last)})`)
+  if (a > b) throw new CoreError(400, `range first (${a}) is after its last (${b})`)
+  if (a < win.first || b > win.last) throw new CoreError(422, `range ${a}-${b} is outside the graph's frame window ${win.first}-${win.last}`)
+  return { first: a, last: b }
+}
+/**
+ * Chunks over a RANGE of the graph's window. `win` is always the graph's WHOLE window: the numbering of the written files is absolute (the file number of frame f is win.startNumber + (f - win.first), as in a single run)
+ * and the pad is clamped by the whole window, not by the range, so a chunk at a range edge reads the neighbouring range's frames as context exactly as it would inside one run and the seam matches.
+ * No range: the whole window (the same chunks planGraphChunks makes).
+ */
+export function planRange(win: Pick<GraphWindow, 'first' | 'last' | 'startNumber'>, range: FrameRange | undefined, chunk = DEFAULT_CHUNK_FRAMES, pad = DEFAULT_PAD): GraphChunk[] {
+  if (!Number.isInteger(chunk) || chunk < 1) throw new CoreError(400, 'chunk must be a whole number of frames, 1 or more')
+  if (!Number.isInteger(pad) || pad < 0) throw new CoreError(400, 'pad must be a whole number of frames, 0 or more')
+  const r = range ? checkRange(win, range) : { first: win.first, last: win.last }
+  const out: GraphChunk[] = []
+  for (let a = r.first; a <= r.last; a += chunk) {
+    const b = Math.min(a + chunk - 1, r.last)
+    out.push({ n: out.length + 1, first: a, last: b, readFirst: Math.max(win.first, a - pad), readLast: Math.min(win.last, b + pad), startNumber: win.startNumber + (a - win.first) })
+  }
+  return out
+}
+/**
+ * `parts` contiguous ranges that cover the graph's window exactly once, every boundary on a `unit`-frame boundary counted from the window's first frame (the chunk size, so the ranges' chunks line up with a single run's).
+ * Units are shared out as evenly as they go (the first ranges get the extra one); never more ranges than units. A window shorter than one unit is one range.
+ */
+export function splitRanges(win: Pick<GraphWindow, 'first' | 'last'>, parts: number, unit = DEFAULT_CHUNK_FRAMES): FrameRange[] {
+  if (!Number.isInteger(parts) || parts < 1) throw new CoreError(400, 'parts must be a whole number, 1 or more')
+  if (!Number.isInteger(unit) || unit < 1) throw new CoreError(400, 'unit must be a whole number of frames, 1 or more')
+  const total = win.last - win.first + 1
+  if (!(total >= 1)) throw new CoreError(422, `the window ${win.first}-${win.last} has no frames`)
+  const units = Math.ceil(total / unit), n = Math.min(parts, units), base = Math.floor(units / n), extra = units % n
+  const out: FrameRange[] = []
+  let u = 0
+  for (let i = 0; i < n; i++) {
+    const take = base + (i < extra ? 1 : 0)
+    out.push({ first: win.first + u * unit, last: Math.min(win.last, win.first + (u + take) * unit - 1) })
+    u += take
   }
   return out
 }
