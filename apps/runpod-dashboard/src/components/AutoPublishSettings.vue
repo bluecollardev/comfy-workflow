@@ -71,6 +71,8 @@
             <label class="mb-0 d-block">{{ $t('autopublish.block.round') }}<BFormInput v-model.trim="model.round" size="sm" class="font-monospace" style="max-width: 24rem" data-testid="config-autopublish-round" /></label>
             <div class="text-body-secondary" data-testid="config-autopublish-round-example">{{ $t('autopublish.block.roundExample', { example: roundExample(model.round) }) }}</div>
             <label class="d-flex align-items-center gap-2 mt-1"><input v-model="model.include_dpx" type="checkbox" class="form-check-input mt-0" data-testid="config-autopublish-include-dpx" />{{ $t('autopublish.block.includeDpx') }}</label>
+            <label class="d-flex align-items-center gap-2 mt-1">{{ $t('autopublish.block.scope') }}<BFormSelect v-model="model.scope" size="sm" :options="scopeOptions" style="max-width: 16rem" :title="$t('autopublish.block.scopeHelp')" data-testid="config-autopublish-scope" /></label>
+            <div class="text-body-secondary" data-testid="config-autopublish-scope-help">{{ $t('autopublish.block.scopeHelp') }}</div>
             <label v-if="model.include_dpx" class="d-flex align-items-center gap-2 mt-1 ms-4"><input :checked="model.fix_dpx !== false" @change="model.fix_dpx = $event.target.checked" type="checkbox" class="form-check-input mt-0" data-testid="config-autopublish-fix-dpx" />{{ $t('autopublish.block.fixDpx') }}</label>
             <div v-if="model.include_dpx" class="form-text ms-4" data-testid="config-autopublish-fix-dpx-note">{{ model.fix_dpx !== false ? $t('autopublish.block.fixDpxOn') : $t('autopublish.block.fixDpxOff') }}</div>
           </div>
@@ -130,6 +132,7 @@ import { t } from '../i18n'
 import { s3Dest, targetState } from '../utils/publish'
 import { settingsProblem, CAP_START } from '../utils/autopublish'
 import { roundExample } from '../utils/publish'
+const scopeOptions = computed(() => [{ value: 'edl', text: t('autopublish.block.scopeEdl') }, { value: 'all', text: t('autopublish.block.scopeAll') }])
 import AutoPublishGenerate from './AutoPublishGenerate.vue'
 
 const props = defineProps({ modelValue: { type: Object, default: null }, show: { type: Boolean, default: true }, validate: { type: Boolean, default: false } })

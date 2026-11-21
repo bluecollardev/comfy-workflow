@@ -5,6 +5,7 @@ import type { ChildProcess } from 'node:child_process'
 import { mkdirSync, readFileSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as autopublish from '../src/autopublish.js'
+import * as edl from '../src/edl.js'
 import * as history from '../src/history.js'
 import * as mounts from '../src/mounts.js'
 import * as dpxprep from '../src/dpxprep.js'
@@ -63,6 +64,7 @@ beforeEach(async () => {
   publish.reset(); autopublish.reset()
   publish.setDeps({ aws: fakeAws, fetch: fakeFetch, outputRoot: () => out, parallel: () => 4, now: clock, spawn: genericSpawn }); autopublish.setDeps({ now: clock, outputRoot: () => out })
   await publish.setSettings({ s3: { layout: 'as-is', credentials: 'app', bucket: DEST, prefix: 'returns/BKK', region: 'us-west-2', access_key_id: KEY_ID, secret_access_key: KEY_SECRET }, slack: { webhook_url: WEBHOOK } })
+  await autopublish.setSettings({ scope: 'all' })   // these tests are about the pipeline, not the scope (autopublish-scope.test.ts)
 })
 afterEach(() => { autopublish.reset(); dpxprep.reset(); publish.reset(); delete process.env.PUBLISH_SLACK_HOST_ALLOW; for (const k of settingsEnv.PUBLISH_SECRETS) delete process.env[k] })
 
@@ -279,6 +281,19 @@ describe('what Auto-publish is watching (status().watching)', () => {
     await autopublish.setSettings({ window_minutes: 0 }); t += 11 * MIN; await autopublish.tick(); await autopublish.settled(); w = await watch(); expect(w).toMatchObject({ approved: 1, queued: 0, uploaded_today: 1, summary: 'All 1 approved review is already published' })
     expect(w.skipped.map((x) => [x.version, x.reason])).toContainEqual(['v001', 'already published'])
     expect(w.uploaded).toEqual([{ shot: 'archival-085', version: 'v001', at: expect.any(String) }])   // what was sent today, for the Queue's list (additive)
+  })
+  it('the scope: only EDL elements are queued; an off-list review is skipped with the reason; no EDL loaded queues nothing; scope all is as before', async () => {
+    edl.reset(); mkdirSync(join(out, 'deliver'), { recursive: true })
+    review('archival-085', 'v001'); review('archival-080', 'v001', { clip: 'ARCHIVAL-080_ASSEMBLY_01112706_NAME-PLACEHOLDER_v024_NOT_RELEASED' })
+    await approve('archival-085'); await approve('archival-080'); await autopublish.setSettings({ scope: 'edl' })
+    let w = await watch(); expect(w.scope).toBe('edl'); expect(w.scope_warning).toMatch(/No EDL is loaded/); expect(w.eligible).toBe(0); expect(w.skipped.map((x) => x.reason)).toEqual(['no EDL loaded', 'no EDL loaded'])
+    await live({ window_minutes: 10 }); await autopublish.consider(); expect((await watch()).queued).toBe(0)   // with no EDL nothing is queued, never everything
+    const file = join(dir, 'x.edl'); writeFileSync(file, ['TITLE: T', 'FCM: NON-DROP FRAME', '', '001  ARCHIVAL-085_MAIN_FINAL_V01_3840X2160_23.976_PRORES422HQ V     C        00:00:00:00 00:00:02:00 01:00:00:00 01:00:02:00'].join('\n'))
+    await edl.load({ source: { file } })
+    w = await watch(); expect(w.scope_warning).toBeUndefined(); expect(w.eligible).toBe(1); expect(w.skipped.find((x) => x.shot === 'archival-080')?.reason).toBe('not in the EDL')
+    await autopublish.consider(); w = await watch(); expect(w.queued).toBe(1)   // the in-EDL review only
+    await autopublish.setSettings({ scope: 'all' }); await autopublish.consider(); expect((await watch()).queued).toBe(2)   // as before
+    edl.reset()
   })
   it('the reasons a review is not going out: no sidecar, DELIVERY.md, partial, colour refused, a weight, not a review video, already at the destination; at most 50', async () => {
     review('a-001', 'v001', { noSidecar: true }); review('a-002', 'v001', { partial: true }); review('a-003', 'v001', { colour: 'refused' }); review('a-004', 'v001', { noDelivery: true }); review('a-005', 'v001', { weights: true })

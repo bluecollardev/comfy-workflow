@@ -28,7 +28,7 @@ afterEach(() => { publish.reset(); autopublish.reset(); for (const k of ['POD_MA
 
 describe('the configuration block', () => {
   it('defaults: off, dry run, 10 minutes, no cap, S3 only, no standing approval', () => {
-    expect(mounts.defaults().auto_publish).toEqual({ generate: { enabled: false, where: 'local', preset: 'review', max_per_day: 20, settle_minutes: 5, fallback_local: false, colour_in: null }, sources: { local: true, volume: true }, volume_scan_minutes: 5, round: 'tunnel-v11_{date}_r01', include_dpx: false, fix_dpx: true, require_approval: false, enabled: false, dry_run: true, dry_run_first: true, window_minutes: 0, daily_cap: null, targets: { s3: true, slack: false, tunnel: false } }); expect(ap().standing).toBeUndefined()
+    expect(mounts.defaults().auto_publish).toEqual({ generate: { enabled: false, where: 'local', preset: 'review', max_per_day: 20, settle_minutes: 5, fallback_local: false, colour_in: null }, sources: { local: true, volume: true }, volume_scan_minutes: 5, round: 'tunnel-v11_{date}_r01', include_dpx: false, fix_dpx: true, scope: 'edl', require_approval: false, enabled: false, dry_run: true, dry_run_first: true, window_minutes: 0, daily_cap: null, targets: { s3: true, slack: false, tunnel: false } }); expect(ap().standing).toBeUndefined()
     expect(mounts.normalize({}).auto_publish!.daily_cap).toBeNull(); expect(mounts.payload(mounts.defaults()).config.auto_publish!.enabled).toBe(false)
   })
   it('validation (400s name the field)', () => {

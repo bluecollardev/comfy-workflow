@@ -76,6 +76,7 @@ beforeEach(async () => {
     volumeAccess: async () => ({ ok: true, id: 'RPKEY', secret: 'RPSECRET', endpoint: 'https://s3api-eu-ro-1.runpod.io', bucket: VOLB, region: 'EU-RO-1' }) })
   autopublish.setDeps({ now: clock, outputRoot: () => out })
   await publish.setSettings({ s3: { layout: 'as-is', credentials: 'app', bucket: 'my-bucket', prefix: 'renders', region: 'us-west-2', access_key_id: 'AKIAEXAMPLEKEY1234', secret_access_key: 'secretsecretsecret1234' }, slack: { preview_frame: false, volume_source: false, file_links: false, folder_link: false } })
+  await autopublish.setSettings({ scope: 'all' })   // these tests are about the pipeline, not the scope (autopublish-scope.test.ts)
 })
 afterEach(() => { autopublish.reset(); dpxprep.reset(); publish.reset(); delete process.env.PUBLISH_SLACK_HOST_ALLOW; for (const k of settingsEnv.PUBLISH_SECRETS) delete process.env[k] })
 

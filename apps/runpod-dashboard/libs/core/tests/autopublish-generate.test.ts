@@ -33,7 +33,7 @@ beforeEach(async () => {
   autogenerate.setDeps({ now: clock, outputRoot: () => out, runningPod: async () => pod, volumeListing: async () => volRuns,
     start: async (req) => { if (startError) throw new Error(startError); reqs.push(req); const id = `render-${seq++}`; jobState.set(id, { state: 'rendering' }); return { job_id: id } },
     status: (id) => jobState.get(id), cancel: (id) => { cancelled.push(id) } })
-  await autopublish.setSettings({ enabled: true, approved_by: 'Lucas', understood: true })
+  await autopublish.setSettings({ enabled: true, approved_by: 'Lucas', understood: true, scope: 'all' })
 })
 afterEach(() => { autopublish.reset(); publish.reset(); for (const k of settingsEnv.PUBLISH_SECRETS) delete process.env[k] })
 

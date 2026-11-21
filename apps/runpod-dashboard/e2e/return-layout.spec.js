@@ -156,6 +156,14 @@ test.describe('the configuration editors', () => {
     await d.getByTestId('config-autopublish-round').fill('qc_{date}_r02'); await d.getByTestId('config-autopublish-include-dpx').check(); await expect(d.getByTestId('config-autopublish-fix-dpx')).toBeChecked(); await expect(d.getByTestId('config-autopublish-fix-dpx-note')).toContainText('corrected copy'); await d.getByTestId('config-autopublish-fix-dpx').uncheck(); await expect(d.getByTestId('config-autopublish-fix-dpx-note')).toContainText('no DPX frames are uploaded'); await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
     expect(api.state.mounts.config.auto_publish).toMatchObject({ round: 'qc_{date}_r02', include_dpx: true, fix_dpx: false })   // ADR-057 decision 7: Fix DPX Before Upload is on until a person turns it off
   })
+  test('Auto-publish: the Scope select (Only EDL Elements by default, Everything), saved with the rest', async ({ page, api }) => {
+    api.state.mounts.config.auto_publish = { enabled: true, dry_run: true, window_minutes: 10, daily_cap: null, dry_run_first: true, targets: { s3: true, slack: false, tunnel: false }, round: 'tunnel-v11_{date}_r01', include_dpx: false, standing: { approved_by: 'B', at: '2026-11-19T10:00:00Z' } }
+    await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'publishing')
+    const sel = d.getByTestId('config-autopublish-scope')
+    await expect(sel).toHaveValue('edl'); await expect(sel.locator('option')).toHaveText(['Only EDL Elements', 'Everything']); await expect(d.getByTestId('config-autopublish-scope-help')).toContainText('nothing is generated or queued')
+    await sel.selectOption('all'); await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    expect(api.state.mounts.config.auto_publish).toMatchObject({ scope: 'all' })
+  })
   test('older Auto-publish settings (no round) show no template', async ({ page, api }) => {
     api.state.mounts.config.auto_publish = { enabled: true, dry_run: true, window_minutes: 10, daily_cap: null, dry_run_first: true, targets: { s3: true, slack: false, tunnel: false }, standing: { approved_by: 'B', at: '2026-11-19T10:00:00Z' } }
     await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'publishing')

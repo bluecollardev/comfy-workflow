@@ -10,6 +10,7 @@ import { dirname, join } from 'node:path'
 import { bad, CoreError } from './errors.js'
 import * as autogenerate from './autogenerate.js'
 import * as dpxprep from './dpxprep.js'
+import * as edl from './edl.js'
 import * as history from './history.js'
 import * as mounts from './mounts.js'
 import { configDir, mountsFile } from './paths.js'
@@ -39,7 +40,7 @@ type Stored = mounts.AutoPublishConfig
 export type Targets = mounts.AutoPublishTargets
 interface StateFile { /** the last dry-run Slack summary: the set it described and when */ dryslack?: { sig: string; at: number }; uploaded?: Record<string, { at: string; job_id?: string; manual?: boolean; already?: boolean }>; day?: string; count?: number; cancelled?: string[]; /** shot/version keys a person holds back: never auto-published until released */ held?: string[]; inflight?: Record<string, string>; would?: Record<string, string> }
 export interface TargetState { ready: boolean; problem?: string; label: string }
-export interface Settings { /** Auto-generate: render the new finished sequences too (off by default) */ generate: mounts.AutoGenerateConfig; /** where Auto-publish looks (this PC and/or the volume) and how often the volume is listed */ sources: { local: boolean; volume: boolean }; volume_scan_minutes: number; /** the round a shot is published into (`{date}` = the local day) */ round: string; include_dpx: boolean; /** with include_dpx: the corrected copy is made (dpx_fix) and uploaded; off: no DPX at all */ fix_dpx: boolean; /** each review version needs a person's approval (true), or every eligible review goes under the standing approval (false, the default) */ require_approval: boolean; enabled: boolean; dry_run: boolean; dry_run_first: boolean; window_minutes: number; daily_cap: number | null; targets: Targets; target_state: { s3: TargetState; slack: TargetState; tunnel: TargetState }; standing: Standing | null; destination: string; ready: boolean; problem?: string }
+export interface Settings { /** Auto-generate: render the new finished sequences too (off by default) */ generate: mounts.AutoGenerateConfig; /** where Auto-publish looks (this PC and/or the volume) and how often the volume is listed */ sources: { local: boolean; volume: boolean }; volume_scan_minutes: number; /** the round a shot is published into (`{date}` = the local day) */ round: string; include_dpx: boolean; /** with include_dpx: the corrected copy is made (dpx_fix) and uploaded; off: no DPX at all */ fix_dpx: boolean; /** `edl` (the default): only elements of the loaded EDL are generated and published, the rest is skipped with the reason; `all`: everything found */ scope: 'edl' | 'all'; /** each review version needs a person's approval (true), or every eligible review goes under the standing approval (false, the default) */ require_approval: boolean; enabled: boolean; dry_run: boolean; dry_run_first: boolean; window_minutes: number; daily_cap: number | null; targets: Targets; target_state: { s3: TargetState; slack: TargetState; tunnel: TargetState }; standing: Standing | null; destination: string; ready: boolean; problem?: string }
 
 const clean = (v: unknown): string => String(v ?? '').replace(/[{}\r\n]/g, ' ').trim().slice(0, 80)
 const keyOf = (shot: string, version: string) => `${shot}/${version}`
@@ -79,11 +80,11 @@ async function approvalList(): Promise<Approval[]> { const a = await readJson<{ 
 export async function settings(): Promise<Settings> {
   const s = await stored(), ps = await publish.settings()
   const problem = ps.s3.ready ? undefined : ps.s3.problem
-  return { generate: { ...s.generate }, sources: { ...s.sources }, volume_scan_minutes: s.volume_scan_minutes, round: s.round, include_dpx: s.include_dpx, fix_dpx: s.fix_dpx !== false, require_approval: s.require_approval === true, enabled: s.enabled === true && !!s.standing, dry_run: s.dry_run !== false, dry_run_first: s.dry_run_first !== false, window_minutes: s.window_minutes, daily_cap: s.daily_cap, targets: { ...s.targets }, standing: s.standing ?? null,
+  return { generate: { ...s.generate }, sources: { ...s.sources }, volume_scan_minutes: s.volume_scan_minutes, round: s.round, include_dpx: s.include_dpx, fix_dpx: s.fix_dpx !== false, scope: s.scope, require_approval: s.require_approval === true, enabled: s.enabled === true && !!s.standing, dry_run: s.dry_run !== false, dry_run_first: s.dry_run_first !== false, window_minutes: s.window_minutes, daily_cap: s.daily_cap, targets: { ...s.targets }, standing: s.standing ?? null,
     target_state: { s3: { ready: ps.s3.ready, ...(ps.s3.problem ? { problem: ps.s3.problem } : {}), label: 'S3' }, slack: { ready: ps.slack.ready, ...(ps.slack.problem ? { problem: ps.slack.problem } : {}), label: 'Slack' }, tunnel: { ready: false, problem: 'Tunnel is not available yet', label: 'Tunnel' } },
     destination: `s3://${ps.s3.bucket}/${ps.s3.prefix}`, ready: ps.s3.ready, ...(problem ? { problem } : {}) }
 }
-export interface SettingsInput { generate?: Partial<mounts.AutoGenerateConfig>; sources?: { local?: boolean; volume?: boolean }; volume_scan_minutes?: number; round?: string; include_dpx?: boolean; fix_dpx?: boolean; /** true: each review version needs a person's approval; false (default): every eligible review goes */ require_approval?: boolean; enabled?: boolean; dry_run?: boolean; /** what turning it on does: dry run first (default) or live at once */ dry_run_first?: boolean; window_minutes?: number; /** 1..50, or null / 0 for no limit */ daily_cap?: number | null; targets?: Partial<Targets>; approved_by?: string; understood?: boolean }
+export interface SettingsInput { generate?: Partial<mounts.AutoGenerateConfig>; sources?: { local?: boolean; volume?: boolean }; volume_scan_minutes?: number; round?: string; include_dpx?: boolean; fix_dpx?: boolean; /** `edl` (default) or `all`: which sequences and reviews are touched */ scope?: 'edl' | 'all'; /** true: each review version needs a person's approval; false (default): every eligible review goes */ require_approval?: boolean; enabled?: boolean; dry_run?: boolean; /** what turning it on does: dry run first (default) or live at once */ dry_run_first?: boolean; window_minutes?: number; /** 1..50, or null / 0 for no limit */ daily_cap?: number | null; targets?: Partial<Targets>; approved_by?: string; understood?: boolean }
 /** Save. Turning ON needs a name AND `understood: true`, and starts in dry-run unless it was already live; going live needs the standing approval and a fresh name in the same call. The destination is never set here. */
 export async function setSettings(input: SettingsInput): Promise<Settings> {
   const i = input ?? {}, cur = await stored(), was = cur.enabled === true && !!cur.standing, name = clean(i.approved_by)
@@ -115,6 +116,7 @@ export async function setSettings(input: SettingsInput): Promise<Settings> {
   if (i.require_approval !== undefined) { if (typeof i.require_approval !== 'boolean') throw bad('require_approval is true or false'); next.require_approval = i.require_approval; notes.push(`require_approval (${i.require_approval})`) }
   if (i.fix_dpx !== undefined) { if (typeof i.fix_dpx !== 'boolean') throw bad('fix_dpx is true or false'); next.fix_dpx = i.fix_dpx; notes.push(`fix_dpx (${i.fix_dpx})`) }
   if (i.include_dpx !== undefined) { if (typeof i.include_dpx !== 'boolean') throw bad('include_dpx is true or false'); next.include_dpx = i.include_dpx; notes.push(`include_dpx (${i.include_dpx})`) }
+  if (i.scope !== undefined) { if (i.scope !== 'edl' && i.scope !== 'all') throw bad("scope is 'edl' (only elements of the loaded EDL) or 'all'"); next.scope = i.scope; notes.push(`scope (${i.scope === 'edl' ? 'only EDL elements' : 'everything'})`) }
   if (i.dry_run !== undefined && typeof i.dry_run !== 'boolean') throw bad('dry_run is true or false')
   if (i.enabled !== undefined && typeof i.enabled !== 'boolean') throw bad('enabled is true or false')
   if (i.dry_run_first !== undefined) { if (typeof i.dry_run_first !== 'boolean') throw bad('dry_run_first is true or false'); next.dry_run_first = i.dry_run_first; notes.push(`dry_run_first (${i.dry_run_first})`) }
@@ -153,7 +155,7 @@ export async function generatePass(): Promise<{ started: number }> {
   const s = await stored()
   if (!(s.enabled === true && s.standing) || !s.generate.enabled) { await autogenerate.pass({ ...s.generate, enabled: false }, ''); return { started: 0 } }
   if (!s.generate.enabled_at) { writeStored({ ...s, generate: { ...s.generate, enabled_at: iso(deps.now()) } }); return { started: 0 } }   // the first look sets the baseline: nothing older is rendered
-  return autogenerate.pass(s.generate, s.standing.approved_by)
+  return autogenerate.pass(s.generate, s.standing.approved_by, undefined, s.scope)
 }
 /** Instant off: the rule stops, the standing approval is cleared, every pending entry is cancelled. */
 let offGen = 0   // bumped by every off(): a consider() pass that began before it must not add an entry after it (it may have read the settings just before the file was rewritten)
@@ -341,6 +343,17 @@ export async function reviews(): Promise<{ reviews: ReviewRow[] }> {
 }
 
 // ----- the rule -----
+/** The scope rule (ADR-050 amendment, 2026-11-21): with `scope: 'edl'` only a review whose element is in the loaded EDL is queued. The element comes from the movie names of the review (`edl.lookup` tries the exact clip name, then the shot and element the name carries: `ARCHIVAL-080_ASSEMBLY_...` is archival-080 / assembly, which the EDL does not list). With no EDL loaded nothing is queued ('no EDL loaded'), never everything. '' = in scope. */
+export const NOT_IN_EDL = 'not in the EDL', NO_EDL = 'no EDL loaded'
+const SCOPE_MOVIE = /\.(mov|mp4|m4v|mxf|webm|avi|mkv)$/i
+export async function scopeReason(scope: 'edl' | 'all', f: { shot: string; files: { name: string }[] }): Promise<string> {
+  if (scope !== 'edl') return ''
+  await edl.ensure(); if (!edl.isLoaded()) return NO_EDL
+  const names = f.files.map((x) => x.name).filter((n) => SCOPE_MOVIE.test(n))
+  for (const n of names) if (edl.lookup({ clip: n }).match !== 'not-in-edl') return ''
+  if (!names.length && edl.lookup({ shot: f.shot }).match !== 'not-in-edl') return ''
+  return NOT_IN_EDL
+}
 type Check = { ok: true; found: Found; approved: Approval; /** visible warnings (a waived EDL check in a test round) */ warnings?: string[] } | { ok: false; reason: string; inDest?: boolean }
 async function check(shot: string, version: string, o: { pendingOk?: boolean; manual?: boolean } = {}): Promise<Check> {
   const s = await stored(), key = keyOf(shot, version)
@@ -348,6 +361,7 @@ async function check(shot: string, version: string, o: { pendingOk?: boolean; ma
   if (!o.manual && !(s.enabled === true && s.standing)) return { ok: false, reason: 'Auto-publish is not on (no standing approval)' }
   const f = await resolve(shot, version); if (!f) return { ok: false, reason: deps.outputRoot() || s.sources.volume ? 'the review version is not on this PC or in the last volume scan' : 'The ComfyUI-Shared folder is not mapped on this PC' }
   if (!f.complete) return { ok: false, reason: f.why ?? 'the review is not complete' }
+  if (!o.manual) { const sr = await scopeReason(s.scope, f); if (sr) return { ok: false, reason: sr } }   // a person's own Publish Now is not limited by the scope
   const a = (await approvalList()).find((x) => x.shot === shot && x.version === version) ?? (!s.require_approval && s.standing ? { shot, version, approved_by: s.standing.approved_by, at: iso(deps.now()) } : undefined)   // without require_approval the standing approver stands for every eligible review
   if (!a && !o.manual) return { ok: false, reason: 'this version is not approved' }
   const st = await stateOf()
@@ -532,7 +546,7 @@ async function markUploaded(e: Entry, job_id: string | undefined, counted: boole
 }
 
 // ----- status and the person's actions -----
-export interface Watching { local: { enabled: boolean; root: string | null; root_exists: boolean; reviews: number }; volume: { enabled: boolean; id: string; reviews: number; scanned_at: string | null; scanning: boolean; error?: string }; /** this PC's folder (kept from the first version of this field) and the totals over the places watched */ root: string | null; root_exists: boolean; shots: number; reviews: number; approved: number; eligible: number; queued: number; uploaded_today: number; /** what was uploaded today: the review, when, and whether a person pressed Publish now (additive) */ uploaded?: { shot: string; version: string; at: string; manual?: boolean; already?: boolean }[]; skipped: { shot: string; version: string; reason: string }[]; summary: string }
+export interface Watching { local: { enabled: boolean; root: string | null; root_exists: boolean; reviews: number }; volume: { enabled: boolean; id: string; reviews: number; scanned_at: string | null; scanning: boolean; error?: string }; /** this PC's folder (kept from the first version of this field) and the totals over the places watched */ root: string | null; root_exists: boolean; shots: number; reviews: number; approved: number; eligible: number; queued: number; uploaded_today: number; /** what was uploaded today: the review, when, and whether a person pressed Publish now (additive) */ uploaded?: { shot: string; version: string; at: string; manual?: boolean; already?: boolean }[]; skipped: { shot: string; version: string; reason: string }[]; /** the scope in force and, with `edl` and no EDL loaded, why nothing is generated or queued */ scope: 'edl' | 'all'; scope_warning?: string; summary: string }
 export function status(): { generate: autogenerate.GenerateStatus; watching: Watching; enabled: boolean; dry_run: boolean; dry_run_first: boolean; standing: Standing | null; window_minutes: number; daily_cap: number | null; targets: Targets; today: { count: number; left: number | null }; destination: string; /** the DPX of an upload: included or not, fixed first (ADR-057 decision 7) or off, and how many sequences are being corrected now */ dpx: { include: boolean; fix: boolean; mode: string; fixing: number }; pending: ReturnType<typeof view>[]; recent: ReturnType<typeof view>[] } {
   void ensureLoaded()
   const m = memo
@@ -545,7 +559,7 @@ async function refreshMemo(): Promise<void> {
   Object.assign(memo, { generate: s.generate, enabled: s.enabled, dry_run: s.dry_run, dry_run_first: s.dry_run_first, standing: s.standing, targets: s.targets, window_minutes: s.window_minutes, daily_cap: s.daily_cap, include_dpx: s.include_dpx, fix_dpx: s.fix_dpx !== false, destination: s.destination, count: st.day === localDay(deps.now()) ? st.count ?? 0 : 0 })
 }
 /** What Auto-publish is looking at, in one sentence, and why each review it saw is not going out. It reads this PC's deliver/ only (volume-side scanning is a later decision). Cached for 10 s so the window's polling is never a listing storm. */
-const emptyWatching = (): Watching => ({ local: { enabled: true, root: null, root_exists: false, reviews: 0 }, volume: { enabled: true, id: '', reviews: 0, scanned_at: null, scanning: false }, root: null, root_exists: false, shots: 0, reviews: 0, approved: 0, eligible: 0, queued: 0, uploaded_today: 0, skipped: [], summary: '' })
+const emptyWatching = (): Watching => ({ local: { enabled: true, root: null, root_exists: false, reviews: 0 }, volume: { enabled: true, id: '', reviews: 0, scanned_at: null, scanning: false }, root: null, root_exists: false, shots: 0, reviews: 0, approved: 0, eligible: 0, queued: 0, uploaded_today: 0, skipped: [], scope: 'edl', summary: '' })
 const watchMemo: { at: number; value: Watching } = { at: 0, value: emptyWatching() }
 async function computeWatching(): Promise<Watching> {
   const cfg = await stored(), root = deps.outputRoot(), exists = async (p: string) => { try { return (await stat(p)).isDirectory() } catch { return false } }
@@ -554,6 +568,7 @@ async function computeWatching(): Promise<Watching> {
   w.root_exists = !!root && (await exists(root)); w.local.root_exists = w.root_exists
   const hasDeliver = !!root && (await exists(join(root, 'deliver')))
   const st = await stateOf(), ap = await approvalList(), found = await allReviews(), pend = new Set([...entries.values()].map((e) => e.key))
+  await edl.ensure(); w.scope = cfg.scope; if (cfg.scope === 'edl' && !edl.isLoaded()) w.scope_warning = 'No EDL is loaded: with Only EDL Elements nothing is generated or queued until it is (load it in the EDL panel, or set Scope to Everything).'
   w.local.reviews = found.filter((f) => f.source === 'local').length; w.volume.reviews = cfg.sources.volume ? vol.reviews.length : 0
   w.uploaded_today = st.day === localDay(deps.now()) ? st.count ?? 0 : 0
   w.uploaded = Object.entries(st.uploaded ?? {}).filter(([, u]) => u.at && localDay(Date.parse(u.at)) === localDay(deps.now())).map(([k, u]) => { const i = k.lastIndexOf('/'); return { shot: k.slice(0, i), version: k.slice(i + 1), at: u.at, ...(u.manual ? { manual: true } : {}), ...(u.already ? { already: true } : {}) } }).sort((a, b) => a.at.localeCompare(b.at)).slice(-200); w.shots = new Set(found.map((f) => f.shot)).size; w.reviews = found.length
@@ -561,7 +576,8 @@ async function computeWatching(): Promise<Watching> {
   for (const f of found) {
     const key = keyOf(f.shot, f.version), approved = !cfg.require_approval ? f.complete : ap.some((a) => a.shot === f.shot && a.version === f.version), uploaded = !!st.uploaded?.[key]
     if (approved) w.approved++
-    const reason = uploaded ? 'already published' : edlHold.get(key) && !pend.has(key) ? edlHold.get(key) : inDestination.get(key) ? 'already at the destination' : !f.complete ? f.why ?? 'not complete' : !approved ? 'not approved' : st.held?.includes(key) ? 'held by a person' : st.cancelled?.includes(key) ? 'cancelled by a person' : ''
+    const sr = uploaded ? '' : await scopeReason(cfg.scope, f)
+    const reason = uploaded ? 'already published' : sr ? sr : edlHold.get(key) && !pend.has(key) ? edlHold.get(key) : inDestination.get(key) ? 'already at the destination' : !f.complete ? f.why ?? 'not complete' : !approved ? 'not approved' : st.held?.includes(key) ? 'held by a person' : st.cancelled?.includes(key) ? 'cancelled by a person' : ''
     if (approved && uploaded) published++
     if (!reason) { if (!pend.has(key)) w.eligible++ } else if (w.skipped.length < 50) w.skipped.push({ shot: f.shot, version: f.version, reason })
   }
@@ -577,6 +593,7 @@ async function computeWatching(): Promise<Watching> {
   else if (w.approved === 0) w.summary = `Watching ${root}: ${plural(n, 'review')} found, ${tail}`
   else w.summary = w.approved > 0 && published >= w.approved && !w.queued ? `All ${w.approved} approved review${w.approved === 1 ? ' is' : 's are'} already published` : tail.charAt(0).toUpperCase() === tail.charAt(0) ? tail : tail
   const gs = autogenerate.status(cfg.generate)
+  if (cfg.scope === 'edl') w.summary += w.scope_warning ? ' Scope: only EDL elements, but no EDL is loaded, so nothing is generated or queued.' : ' Scope: only EDL elements.'
   if (cfg.generate.enabled) w.summary += ` Auto-generate is on (${cfg.generate.where}${cfg.generate.preset === 'tunnel' ? ', Tunnel proxy' : ''}): ${gs.waiting_to_settle.length} waiting to settle, ${gs.generating} rendering${gs.waiting_for_pod ? ', waiting for a running pod' : ''}, ${gs.generated_today} started today.`
   return w
 }
