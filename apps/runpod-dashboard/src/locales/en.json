@@ -1223,6 +1223,27 @@
       "more": "Show {n} More",
       "fewer": "Show Fewer"
     },
+    "lists": {
+      "running": "Rendering Now ({n})",
+      "generated": "Generated Today ({n})",
+      "notGenerated": "Not Generated ({n})",
+      "uploaded": "Uploaded Today ({n})",
+      "skipped": "Skipped ({n})",
+      "pending": "Pending Uploads ({n})",
+      "recent": "Recent ({n})",
+      "all": "Show All",
+      "shown": "{shown} of {total}",
+      "manual": "published by a person",
+      "already": "already at the destination",
+      "state": {
+        "rendering": "rendering",
+        "done": "rendered",
+        "failed": "failed",
+        "retrying": "retrying",
+        "started": "started",
+        "uploaded": "uploaded"
+      }
+    },
     "dry": {
       "title": "Dry run summary",
       "line": "Would upload {n} review videos ({files} files, {size}) to {dest} after a {n_min}-minute window",

@@ -72,3 +72,9 @@ test('outputsTarget: a held row has no file count of its own, so the review\'s f
   assert.equal(outputsTarget({ shot: 'x', version: 1 }, { review: { files: [] }, pods: PODS, volumeId: 'v1' }).reason, 'nothing')
   assert.equal(outputsTarget({ shot: 'x', version: 1 }, { pods: PODS, volumeId: 'v1' }).reason, 'nothing')
 })
+import { folderOf } from './autopublish.js'
+test('folderOf: the dir of an Auto-generate key, "" for a key without one; outputsTarget with a render\'s own folder needs a pod and files', () => {
+  assert.equal(folderOf('delivery_v008/CGI-072_HEAD/CGI-072_HEAD'), 'delivery_v008/CGI-072_HEAD'); assert.equal(folderOf('STEM'), ''); assert.equal(folderOf(''), '')
+  assert.deepEqual(outputsTarget({ folder: 'delivery_v008/X', files: 1 }, { pods: PODS, volumeId: 'v1' }), { ok: true, pod_id: 'p-run', folder: 'delivery_v008/X' })
+  assert.equal(outputsTarget({ folder: '', files: 1 }, { pods: PODS, volumeId: 'v1' }).reason, 'nofolder'); assert.equal(outputsTarget({ folder: 'x', files: 0 }, { pods: PODS, volumeId: 'v1' }).reason, 'nothing'); assert.equal(outputsTarget({ folder: 'x', files: 1 }, { pods: [], volumeId: 'v1' }).reason, 'nopod')
+})

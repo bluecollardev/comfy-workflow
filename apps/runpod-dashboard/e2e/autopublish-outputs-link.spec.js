@@ -35,6 +35,7 @@ test.describe('Auto-publish rows: View In Outputs', () => {
   test('the recent and held lists carry the link too (a failed row with no files is disabled)', async ({ page, api }) => {
     on(api, { require_approval: true }); api.state.autopublish = { pending: [], recent: [{ id: 'r1', shot: 'archival-085', version: 2, files: 3, bytes: 1e6, state: 'done', done_at: new Date().toISOString() }, { id: 'r2', shot: 'archival-086', version: 1, files: 0, bytes: 0, state: 'failed', reason: 'x' }] }
     await page.goto('/'); await queueTab(page, 'publishing')
+    await page.getByTestId('autopublish-recent-toggle').click()   // Recent starts collapsed
     const recent = page.getByTestId('autopublish-recent')
     await expect(recent.getByTestId('autopublish-view-outputs')).toHaveCount(2)
     await expect(recent.nth(1).getByTestId('autopublish-view-outputs')).toBeDisabled()

@@ -67,7 +67,7 @@ let deps: Deps = defaults()
 export const setDeps = (d: Partial<Deps> | null) => { deps = d ? { ...deps, ...d } : defaults() }
 
 const stateFile = () => join(configDir(), 'autogenerate-state.json')
-interface GState { day?: string; count?: number; /** sequence keys left over from a Generate-for-what-is-there run (the daily allowance carries them on) */ pending?: string[]; existing_started?: number; /** settle tracking, kept across passes and restarts: `<source>:<dir>/<stem>` -> what was last seen and since when */ seen?: Record<string, { sig: string; since: number; looks: number }>; /** sequences whose frames have gaps: not started again until the frame count or newest time changes (and settles) */ incomplete?: Record<string, { sig: string; reason: string }> }
+interface GState { day?: string; count?: number; /** the renders started today: key, when and the job (the Queue's Auto-publish section lists them) */ started?: { key: string; at: string; job_id: string }[]; /** sequence keys left over from a Generate-for-what-is-there run (the daily allowance carries them on) */ pending?: string[]; existing_started?: number; /** settle tracking, kept across passes and restarts: `<source>:<dir>/<stem>` -> what was last seen and since when */ seen?: Record<string, { sig: string; since: number; looks: number }>; /** sequences whose frames have gaps: not started again until the frame count or newest time changes (and settles) */ incomplete?: Record<string, { sig: string; reason: string }> }
 async function readState(): Promise<GState> { try { return JSON.parse(await readFile(stateFile(), 'utf8')) } catch { return {} } }
 async function writeState(v: unknown): Promise<void> { await mkdir(dirname(stateFile()), { recursive: true }); const tmp = `${stateFile()}.${process.pid}.tmp`; await writeFile(tmp, JSON.stringify(v), { mode: 0o600 }); await rename(tmp, stateFile()) }
 const localDay = (ms: number): string => { const d = new Date(ms), p = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` }
@@ -76,6 +76,8 @@ interface Seen { sig: string; changedAt: number; looks: number }
 let hydrated = false
 const seen = new Map<string, Seen>(), incompleteList = new Map<string, { sig: string; reason: string }>(), retryAt = new Map<string, number>(), active = new Map<string, { job_id: string; started: number; sig?: string }>(), attempts = new Map<string, number>(), done = new Set<string>(), failedList = new Map<string, string>(), skippedList = new Map<string, { reason: string; code: string }>()
 let generatedToday = 0, lastDay = '', pendingExisting = 0, existingStarted = 0
+let startedList: { key: string; at: string; job_id: string }[] = []   // the renders started today (kept in the state file, reset with the day)
+const noteStarted = (key: string, job_id: string, at: number): void => { startedList = [...startedList.filter((x) => x.key !== key), { key, at: new Date(at).toISOString(), job_id }].slice(-500) }
 const yieldLoop = () => new Promise<void>((r) => setImmediate(r))
 
 /** The finished-looking sequences under this PC's output/ (never deliver/, .proxies, hidden folders, symlinks, a models folder or projects/desktop). Two stats per sequence (first and last frame), not one per frame. */
@@ -125,14 +127,15 @@ async function scanVolume(): Promise<Candidate[] | null> {
   return out
 }
 
-export interface GenerateStatus { enabled: boolean; where: 'local' | 'pod'; preset: 'review' | 'tunnel'; enabled_at: string | null; generating: number; waiting_to_settle: { stem: string; shot: string; since: string; source: 'local' | 'volume'; /** the frame count now, how many looks saw it unchanged, and whether it changed on the last look */ frames: number; seen: number; changing?: boolean; /** why it is not started although the frames settled (incomplete) */ reason?: string }[]; /** sequences left alone for a stated reason (not failures): code 'colour-not-stated' */ skipped: { stem: string; reason: string; code: string }[]; generated_today: number; max_per_day: number | null; failed: { stem: string; reason: string }[]; waiting_for_pod?: boolean; /** Generate for what is already there: the sequences still waiting for the daily allowance, and how many it has started */ pending_existing?: number; existing_started?: number }
+export interface GenerateStatus { enabled: boolean; where: 'local' | 'pod'; preset: 'review' | 'tunnel'; enabled_at: string | null; generating: number; waiting_to_settle: { stem: string; shot: string; since: string; source: 'local' | 'volume'; /** the frame count now, how many looks saw it unchanged, and whether it changed on the last look */ frames: number; seen: number; changing?: boolean; /** why it is not started although the frames settled (incomplete) */ reason?: string }[]; /** sequences left alone for a stated reason (not failures): code 'colour-not-stated' */ skipped: { stem: string; reason: string; code: string }[]; generated_today: number; max_per_day: number | null; failed: { stem: string; reason: string }[]; /** what is rendering now: the sequence, when it started and the job (additive) */ running?: { stem: string; key: string; job_id: string; started_at: string }[]; /** the renders started today, newest last, with where each stands now (additive) */ generated?: { stem: string; key: string; at: string; job_id: string; state: 'rendering' | 'done' | 'failed' | 'retrying' | 'started' }[]; waiting_for_pod?: boolean; /** Generate for what is already there: the sequences still waiting for the daily allowance, and how many it has started */ pending_existing?: number; existing_started?: number }
 let waitingToSettle: GenerateStatus['waiting_to_settle'] = [], seenDirty = false, waitingForPod = false
-export const status = (g: mounts.AutoGenerateConfig): GenerateStatus => ({ enabled: g.enabled, where: g.where, preset: g.preset, enabled_at: g.enabled_at ?? null, generating: active.size, waiting_to_settle: waitingToSettle, skipped: [...skippedList].map(([k, v]) => ({ stem: k.split('/').pop() ?? k, reason: v.reason, code: v.code })), generated_today: generatedToday, max_per_day: g.max_per_day, failed: [...failedList].map(([k, reason]) => ({ stem: k.split('/').pop() ?? k, reason })), ...(waitingForPod ? { waiting_for_pod: true } : {}), pending_existing: pendingExisting, existing_started: existingStarted })
+export const status = (g: mounts.AutoGenerateConfig): GenerateStatus => ({ enabled: g.enabled, where: g.where, preset: g.preset, enabled_at: g.enabled_at ?? null, generating: active.size, waiting_to_settle: waitingToSettle, skipped: [...skippedList].map(([k, v]) => ({ stem: k.split('/').pop() ?? k, reason: v.reason, code: v.code })), generated_today: generatedToday, running: [...active].map(([key, a]) => ({ stem: key.split('/').pop() ?? key, key, job_id: a.job_id, started_at: new Date(a.started).toISOString() })), generated: startedList.map((x) => ({ stem: x.key.split('/').pop() ?? x.key, key: x.key, at: x.at, job_id: x.job_id, state: active.has(x.key) ? 'rendering' as const : failedList.has(x.key) ? 'failed' as const : done.has(x.key) ? 'done' as const : retryAt.has(x.key) ? 'retrying' as const : 'started' as const })), max_per_day: g.max_per_day, failed: [...failedList].map(([k, reason]) => ({ stem: k.split('/').pop() ?? k, reason })), ...(waitingForPod ? { waiting_for_pod: true } : {}), pending_existing: pendingExisting, existing_started: existingStarted })
 
 /** One pass: look at the places, track which sequences have settled, and start a render for each new finished one (within the day's cap, on this PC or on a pod that is already running). `approver` is the standing approver (the render's `approved_by`). */
 export async function pass(g: mounts.AutoGenerateConfig, approver: string, signal?: AbortSignal): Promise<{ started: number }> {
   const now = deps.now(), day = localDay(now)
   const st = await readState(); generatedToday = st.day === day ? st.count ?? 0 : 0; lastDay = day
+  if (st.day === day) { if (!startedList.length && st.started?.length) startedList = st.started.slice(-500) } else startedList = []
   if (!hydrated) { hydrated = true; for (const [k, v] of Object.entries(st.seen ?? {})) if (!seen.has(k)) seen.set(k, { sig: v.sig, changedAt: v.since, looks: v.looks }); for (const [k, v] of Object.entries(st.incomplete ?? {})) if (!incompleteList.has(k)) incompleteList.set(k, v) }   // what was seen before a restart is not forgotten
   // what is running: finished jobs leave the list, failed ones are tried again at most twice
   for (const [key, a] of [...active]) {
@@ -175,8 +178,8 @@ export async function pass(g: mounts.AutoGenerateConfig, approver: string, signa
     const useLocal = g.where === 'local' || !podId
     try {
       const r = await deps.start({ sequences: [{ dir: c.dir, name: c.stem, first: c.first, last: c.last, frames: c.count, pad: c.pad }], kind: g.preset === 'tunnel' ? 'proxy' : 'review', ...(g.preset === 'tunnel' ? { preset: 'tunnel' } : {}), where: useLocal ? 'local' : 'pod', ...(podId && !useLocal ? { pod_id: podId, pull: false } : {}), approved_by: approver, skip_existing: true, ...(g.colour_in ? { colour_in: g.colour_in } : {}), trigger: 'auto-publish' })
-      active.set(c.key, { job_id: r.job_id, started: now, sig }); startedStems.add(c.stem); started++; count++
-      st.pending = (st.pending ?? []).filter((k) => k !== c.key); await writeState({ ...st, day, count, ...(st.pending.length ? {} : { pending: [] }) })
+      active.set(c.key, { job_id: r.job_id, started: now, sig }); noteStarted(c.key, r.job_id, now); startedStems.add(c.stem); started++; count++
+      st.pending = (st.pending ?? []).filter((k) => k !== c.key); await writeState({ ...st, day, count, started: startedList, ...(st.pending.length ? {} : { pending: [] }) })
     } catch (e) {
       if (String((e as Error).message).includes(ALL_DONE)) { done.add(c.key); continue }   // already has its review: nothing to do
       if (NEEDS_COLOUR.test((e as Error).message)) { skippedList.set(c.key, { reason: COLOUR_SKIP, code: 'colour-not-stated' }); continue }
@@ -204,7 +207,7 @@ export async function newVolumeSequences(shot: string, sinceMs: number): Promise
 /** Stop what was started: the renders still running are cancelled (Off does this). */
 export async function clearPending(): Promise<void> { const st = await readState(); if (st.pending?.length) await writeState({ ...st, pending: [] }); pendingExisting = 0 }
 export function cancelAll(): number { let n = 0; for (const [, a] of active) { try { deps.cancel(a.job_id); n++ } catch { /* gone */ } } active.clear(); return n }
-export function reset(): void { incompleteList.clear(); retryAt.clear(); hydrated = false; seenDirty = false; seen.clear(); active.clear(); attempts.clear(); done.clear(); failedList.clear(); skippedList.clear(); waitingToSettle = []; waitingForPod = false; generatedToday = 0; lastDay = ''; setDeps(null) }
+export function reset(): void { startedList = []; incompleteList.clear(); retryAt.clear(); hydrated = false; seenDirty = false; seen.clear(); active.clear(); attempts.clear(); done.clear(); failedList.clear(); skippedList.clear(); waitingToSettle = []; waitingForPod = false; generatedToday = 0; lastDay = ''; setDeps(null) }
 void lastDay
 
 // ----- Generate for what is already there: a one-time, confirmed action (ADR-050) -----
@@ -246,11 +249,11 @@ export async function existing(g: mounts.AutoGenerateConfig, o: { run: boolean; 
   for (const x of queue) {
     try {
       const r = await deps.start({ sequences: [{ dir: x.c.dir, name: x.c.stem, first: x.c.first, last: x.c.last, frames: x.c.count, pad: x.c.pad }], kind: tunnel ? 'proxy' : 'review', ...(tunnel ? { preset: 'tunnel' } : {}), where: useLocal ? 'local' : 'pod', ...(podId && !useLocal ? { pod_id: podId, pull: false } : {}), approved_by: approver, skip_existing: true, ...(g.colour_in ? { colour_in: g.colour_in } : {}), trigger: 'auto-publish' })
-      active.set(x.c.key, { job_id: r.job_id, started: now }); started++
+      active.set(x.c.key, { job_id: r.job_id, started: now }); noteStarted(x.c.key, r.job_id, now); started++
     } catch (e) { if (String((e as Error).message).includes(ALL_DONE)) { done.add(x.c.key); continue }; skipped.push({ stem: x.stem, reason: (e as Error).message.slice(0, 200) }) }
     await yieldLoop()
   }
-  await writeState({ ...st, day, count: today + started, pending: [...new Set([...(st.pending ?? []), ...deferred.map((d) => d.c.key)])], existing_started: (st.existing_started ?? 0) + started })
+  await writeState({ ...st, day, count: today + started, started: startedList, pending: [...new Set([...(st.pending ?? []), ...deferred.map((d) => d.c.key)])], existing_started: (st.existing_started ?? 0) + started })
   pendingExisting = new Set([...(st.pending ?? []), ...deferred.map((d) => d.c.key)]).size; existingStarted = (st.existing_started ?? 0) + started
   history.record({ kind: 'change', area: 'configuration', action: 'generate for what is already there', what: `${started} started, ${deferred.length} deferred`, detail: `${g.where}, ${g.preset}`, approved_by: approver })
   return { ...res, dry_run: false, started, deferred: deferred.length }

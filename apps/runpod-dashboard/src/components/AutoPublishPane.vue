@@ -7,8 +7,10 @@
     <div v-if="ap.status.generate?.enabled" class="border rounded p-2 mb-2" data-testid="queue-autopublish-generate"><AutoPublishGenerate :status="ap.status" /></div>
     <div v-if="!ap.pending.length && !ap.recent.length && ap.status.watching" class="border rounded p-2" data-testid="queue-autopublish-watching"><AutoPublishWatching :status="ap.status" /></div>
     <div v-else-if="!ap.pending.length && !ap.recent.length" class="text-body-secondary small" data-testid="autopublish-none">{{ $t('autopublish.pane.none') }}</div>
+    <AutoPublishLists />
     <AutoPublishDryRun />
-    <div v-for="e in ap.pending" :key="e.id" class="border rounded p-2 mb-2 small d-flex align-items-center gap-2 flex-wrap" :class="{ 'text-body-secondary': e.state === 'would_upload' }" data-testid="autopublish-row" :data-id="e.id" :data-state="e.state">
+    <div v-if="ap.pending.length" class="d-flex align-items-center gap-2 small mt-2 mb-1" data-testid="autopublish-pending-head" :data-open="pendingOpen ? 'true' : 'false'" :data-count="ap.pending.length"><span class="fw-semibold" data-testid="autopublish-pending-title">{{ $t('autopublish.lists.pending', { n: ap.pending.length }) }}</span><BButton variant="link" size="sm" class="p-0 ms-auto" :aria-expanded="pendingOpen ? 'true' : 'false'" data-testid="autopublish-pending-toggle" @click="pendingOpen = !pendingOpen">{{ pendingOpen ? $t('autopublish.list.collapse') : $t('autopublish.list.expand') }}</BButton></div>
+    <div v-for="e in ap.pending" :key="e.id" class="border rounded p-2 mb-2 small d-flex align-items-center gap-2 flex-wrap" :class="{ 'text-body-secondary': e.state === 'would_upload', 'd-none': !pendingOpen }" data-testid="autopublish-row" :data-id="e.id" :data-state="e.state">
       <strong data-testid="autopublish-row-line">{{ entryLine(e, formatBytes) }}</strong>
       <span class="badge text-bg-secondary fw-normal" title="auto-publish" data-testid="autopublish-row-trigger">{{ $t('queue.trigger.auto') }}</span>
       <span v-if="e.source" class="badge text-bg-info fw-normal" data-testid="autopublish-source-badge" :data-source="e.source">{{ $t(e.source === 'volume' ? 'autopublish.sources.badgeVolume' : 'autopublish.sources.badgeLocal') }}</span>
@@ -46,8 +48,8 @@
         <AutoPublishOutputsLink :row="h" />
         <BButton size="sm" variant="outline-light" class="py-0" data-testid="autopublish-release" @click="release(h)">{{ $t('autopublish.pane.release') }}</BButton></div></details>
     <template v-if="ap.recent.length">
-      <div class="small fw-semibold mb-1 mt-2">{{ $t('autopublish.pane.recent') }}</div>
-      <div v-for="e in ap.recent" :key="e.id" class="small d-flex align-items-center gap-2 flex-wrap mb-1" :class="e.state === 'failed' ? 'text-danger' : 'text-body-secondary'" data-testid="autopublish-recent" :data-id="e.id" :data-state="e.state">
+      <div class="d-flex align-items-center gap-2 small mt-2 mb-1" data-testid="autopublish-recent-head" :data-open="recentOpen ? 'true' : 'false'" :data-count="ap.recent.length"><span class="fw-semibold" data-testid="autopublish-recent-title">{{ $t('autopublish.lists.recent', { n: ap.recent.length }) }}</span><BButton variant="link" size="sm" class="p-0 ms-auto" :aria-expanded="recentOpen ? 'true' : 'false'" data-testid="autopublish-recent-toggle" @click="recentOpen = !recentOpen">{{ recentOpen ? $t('autopublish.list.collapse') : $t('autopublish.list.expand') }}</BButton></div>
+      <div v-for="e in ap.recent" :key="e.id" class="small d-flex align-items-center gap-2 flex-wrap mb-1" :class="[e.state === 'failed' ? 'text-danger' : 'text-body-secondary', { 'd-none': !recentOpen }]" data-testid="autopublish-recent" :data-id="e.id" :data-state="e.state">
         <span>{{ entryLine(e, formatBytes) }}</span>
         <AutoPublishOutputsLink :row="e" />
         <span data-testid="autopublish-recent-state">{{ e.state === 'done' ? $t('autopublish.pane.done', { when: when(e) }) : e.state === 'failed' ? $t('autopublish.pane.failed', { reason: e.reason || '' }) : e.state === 'cancelled' ? $t('autopublish.pane.cancelled') : e.state === 'would_upload' ? $t('autopublish.pane.wouldUpload') : e.state }}</span>
@@ -69,6 +71,7 @@ import AutoPublishWatching from './AutoPublishWatching.vue'
 import AutoPublishGenerate from './AutoPublishGenerate.vue'
 import AutoPublishDryRun from './AutoPublishDryRun.vue'
 import AutoPublishOutputsLink from './AutoPublishOutputsLink.vue'
+import AutoPublishLists from './AutoPublishLists.vue'
 import { entryLine, secondsUntil, countdownText, targetsText, todayText, versionTag } from '../utils/autopublish'
 
 const ap = useAutopublishStore(), prompt = useNamePromptStore(), ui = useUiStore()
@@ -80,6 +83,7 @@ onBeforeUnmount(() => { clearInterval(tick); ap.setFast(false) })
 watch(() => ui.queueOpen, (v) => ap.setFast(v), { immediate: true })
 // the header chip opens the Queue on this section
 watch(() => [ui.queueOpen, ui.queueFocus], async ([o, f]) => { if (o && f === 'autopublish') { await nextTick(); setTimeout(() => root.value?.scrollIntoView({ block: 'start' }), 150); ui.queueFocus = '' } }, { immediate: true })
+const pendingOpen = ref(true), recentOpen = ref(false)   // Pending Uploads start open and Recent collapsed (what was sent today is in Uploaded Today)
 const dryOpen = ref(new Set())
 const toggleDry = (id) => { const n = new Set(dryOpen.value); if (n.has(id)) n.delete(id); else n.add(id); dryOpen.value = n }
 const countdown = (e) => countdownText(secondsUntil(e.due_at, now.value))
