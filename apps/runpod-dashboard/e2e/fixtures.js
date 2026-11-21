@@ -488,11 +488,12 @@ export async function mockApi(page, state) {
       if (op === 'start') {
         if (state.fpPodOff) return json({ detail: 'Start the pod: the previews are made on the pod' }, 409)
         fp.starts.push(body); const id = `framepreviews-${fp.starts.length}`, items = body.items || []
-        fp.jobs[id] = { id, pod_id: body.pod_id, items, tone: body.tone || 'gamma26', skip_existing: body.skip_existing !== false, state: 'running', started_at: new Date().toISOString(), done: 0, skipped: 0, failed: [], total: items.reduce((n, i) => n + (i.frames || 0), 0), current: items[0]?.src_dir || '', polls: 0 }
+        fp.jobs[id] = { id, pod_id: body.pod_id, items, tone: body.tone || 'gamma26', skip_existing: body.skip_existing !== false, state: 'running', started_at: new Date().toISOString(), done: 0, skipped: 0, failed: [], total: items.reduce((n, i) => n + (i.frames || 0), 0), current: items[0]?.src_dir || '', polls: 0, done_dirs: [], ...(body.relaunch_of ? { relaunch_of: body.relaunch_of } : {}), willFail: !!state.fpFailFirst && fp.starts.length === 1 }
         return json(fp.jobs[id])
       }
       if (op === 'status') {
         const j = fp.jobs[body.job_id]; if (!j) return json(null)
+        if (j.state === 'running' && j.willFail && j.polls >= 1 && !state.fpHold) { j.state = 'failed'; j.error = `the script ended with code 255 on ${j.items[0]?.src_dir}`; return json(j) }   // a pod that went away: nothing finished
         if (j.state === 'running' && ++j.polls >= 2 && !state.fpHold) {
           for (const it of j.items) {
             const bad = fp.fail[it.src_dir] || [], had = new Set(fp.written[it.src_dir] || []), names = []
@@ -503,16 +504,26 @@ export async function mockApi(page, state) {
               names.push(`${stem}.jpg`)
             }
             fp.written[it.src_dir] = names
+            ;(fp.thumbs ||= {})[it.src_dir] = [...names]   // the script writes a thumbnail beside every preview, also for frames that already had their JPEG
           }
-          j.state = 'done'
+          j.state = 'done'; j.done_dirs = j.items.map((i) => i.src_dir)
         }
         return json(j)
+      }
+      if (op === 'relaunch') {
+        const old = fp.jobs[body.job_id]; if (!old) return json({ detail: `No frame-previews job ${body.job_id}` }, 404)
+        ;(fp.relaunches ||= []).push(body)
+        if (state.fpNeedsPod) return json({ ok: false, needs_pod: { stopped: [{ id: 'pod-bbbbbbbb', name: 'ComfyUI-Landing' }], hint: 'No pod is running on this volume: resume one' } })
+        const items = old.items.filter((i) => !(old.done_dirs || []).includes(i.src_dir)); if (!items.length) return json({ ok: true, nothing_to_do: true })
+        const id = `framepreviews-${Object.keys(fp.jobs).length + 1}`
+        fp.jobs[id] = { id, pod_id: old.pod_id, items, tone: old.tone, skip_existing: true, state: 'running', started_at: new Date().toISOString(), done: 0, skipped: 0, failed: [], total: items.reduce((n, i) => n + (i.frames || 0), 0), current: items[0]?.src_dir || '', polls: 0, done_dirs: [], relaunch_of: old.id }
+        return json({ ok: true, job: fp.jobs[id] })
       }
       if (op === 'cancel') { const j = fp.jobs[body.job_id]; if (j) j.state = 'cancelled'; return json({ ok: !!j, state: j?.state }) }
       if (op === 'list') {
         if (state.fpPodOff) return json({ detail: 'Start the pod: the previews are made on the pod' }, 409)
         fp.lists.push(body); const previews = {}, subfolders = {}
-        for (const it of body.items || []) { const names = fp.written[it.src_dir] || []; previews[it.src_dir] = { count: names.length, ...(body.names ? { names } : {}) }; subfolders[it.src_dir] = `.previews/${it.src_dir}` }
+        for (const it of body.items || []) { const names = fp.written[it.src_dir] || []; previews[it.src_dir] = { count: names.length, ...(body.names ? { names, thumbs: (fp.thumbs || {})[it.src_dir] || [], posters: (fp.posters || {})[it.src_dir] || [] } : {}) }; subfolders[it.src_dir] = `.previews/${it.src_dir}` }
         return json({ previews, subfolders })
       }
     }

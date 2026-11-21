@@ -18,7 +18,8 @@ async function open(page, api, name) {
   })
   await page.goto('/')
   await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
-  await page.getByTestId('pod-outputs-modal').locator(`[title="${name}"]:is([data-testid="outputs-tile"], [data-testid="outputs-group-row"])`).click()
+  // the name opens the viewer; a click on a video's picture plays it inline since the thumbnails change (a poster, no player until play: outputs-frame-previews.spec.js)
+  await page.getByTestId('pod-outputs-modal').locator(`[title="${name}"]:is([data-testid="outputs-tile"], [data-testid="outputs-group-row"])`).locator('.gname, [data-testid="outputs-tile-name"]').first().click()
   return page.getByTestId('output-viewer')
 }
 const vid = (v) => v.getByTestId('output-viewer-video')

@@ -6,13 +6,17 @@ import { viewUrl } from './outputs'
 // choice (Sequence Previews, today's first-frame thumbnails read to this PC; Frame Previews, the pod job), the one running job, and what the pod says exists.
 const KEY = 'pod-manager-preview-mode'
 const readMode = () => { try { return sessionStorage.getItem(KEY) === 'frame' ? 'frame' : 'sequence' } catch { return 'sequence' } }
-export const fpState = reactive({ mode: readMode(), job: null, /** src_dir -> { count, names: Set<string> | null } */ listing: {}, error: '', listed: 0 })
+export const fpState = reactive({ mode: readMode(), job: null, /** the core's answer when no pod runs for a relaunch: { stopped: [{ id, name }], hint } */ needsPod: null, /** src_dir -> { count, names: Set<string> | null } */ listing: {}, error: '', listed: 0 })
 export const setMode = (m) => { fpState.mode = m === 'frame' ? 'frame' : 'sequence'; try { sessionStorage.setItem(KEY, fpState.mode) } catch { /* the choice lasts as long as the page */ } }
 
 export const jpgName = (dpxName) => String(dpxName).replace(/\.dpx$/i, '') + '.jpg'
 /** The folder of a sequence's previews under output/ (the core's rule: a mirror tree, never inside the frame folder). */
 export const previewFolder = (srcDir) => `.previews/${String(srcDir || '').replace(/\/+$/, '')}`
 /** The address of one frame's JPEG: the same /view address as any output file. */
+/** The address of one frame's THUMBNAIL (160 px, a few KB, under <previews>/thumbs/): what the strips and the frame grid load; the 320 px JPEG stays the fallback until the thumbnail exists. */
+export const thumbUrl = (base, frame) => viewUrl(base, { filename: jpgName(frame.filename), subfolder: `${previewFolder(frame.subfolder)}/thumbs`, type: frame.type || 'output' })
+/** The first-frame POSTER of a video file (320 px JPEG, `<video name>.jpg` under <previews>/posters/), made on the pod by the same job: what a video tile shows until play is clicked. */
+export const posterUrl = (base, file) => viewUrl(base, { filename: `${file.filename}.jpg`, subfolder: `${previewFolder(file.subfolder)}/posters`, type: file.type || 'output' })
 export const previewUrl = (base, frame) => viewUrl(base, { filename: jpgName(frame.filename), subfolder: previewFolder(frame.subfolder), type: frame.type || 'output' })
 
 const pollMs = () => globalThis.__FP_POLL_MS__ ?? 1500
@@ -33,7 +37,7 @@ export async function refreshListing(podId, srcDirs, names = false) {
   const dirs = [...new Set(srcDirs.filter(Boolean))]; if (!podId || !dirs.length) return
   try {
     const r = await framePreviewsAPI.list({ pod_id: podId, items: dirs.map((d) => ({ src_dir: d })), names })
-    for (const d of dirs) { const p = r?.previews?.[d] || { count: 0 }; fpState.listing[d] = { count: p.count || 0, names: p.names ? new Set(p.names) : fpState.listing[d]?.names || null } }
+    for (const d of dirs) { const p = r?.previews?.[d] || { count: 0 }; fpState.listing[d] = { count: p.count || 0, names: p.names ? new Set(p.names) : fpState.listing[d]?.names || null, thumbs: p.thumbs ? new Set(p.thumbs) : fpState.listing[d]?.thumbs || null, posters: p.posters ? new Set(p.posters) : fpState.listing[d]?.posters || null } }
     fpState.error = ''; fpState.listed++
   } catch (e) { fpState.error = message(e) }
 }
@@ -88,3 +92,25 @@ export async function stopJob() {
   if (timer) { clearTimeout(timer); timer = null }
   await refreshListing(j.pod_id, (j.items || []).map((i) => i.src_dir), true)
 }
+
+/** A job that stopped (failed, cancelled, or done with folders that did not finish or frames that failed) can be run again. */
+export const canRelaunch = () => {
+  const j = fpState.job; if (!j || j.state === 'running') return false
+  return j.state !== 'done' || (j.failed?.length || 0) > 0 || (j.items || []).some((i) => !(j.done_dirs || []).includes(i.src_dir))
+}
+/** Run the stopped job again: the same folders minus the finished ones, finished frames skipped, no pod is started (the core answers `needs_pod` and the window offers Resume Pod). */
+export async function relaunchJob() {
+  const j = fpState.job; if (!j || j.state === 'running') return null
+  fpState.error = ''; fpState.needsPod = null
+  try {
+    const r = await framePreviewsAPI.relaunch({ job_id: j.id })
+    if (r?.needs_pod) { fpState.needsPod = r.needs_pod; return null }
+    if (r?.nothing_to_do) { fpState.error = ''; await refreshListing(j.pod_id, (j.items || []).map((i) => i.src_dir), true); return null }
+    fpState.job = r.job
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(poll, pollMs())
+    return r.job
+  } catch (e) { fpState.error = message(e); return null }
+}
+/** Remove the finished or failed job from the window (the window's own record; the JPEGs on the pod stay). */
+export function removeJob() { const j = fpState.job; if (!j || j.state === 'running') return; fpState.job = null; fpState.needsPod = null; fpState.error = '' }

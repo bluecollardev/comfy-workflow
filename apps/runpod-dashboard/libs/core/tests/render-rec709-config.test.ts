@@ -19,7 +19,7 @@ beforeEach(() => {
 afterEach(() => { for (const k of ENVS) delete process.env[k] })
 
 describe('render.rec709: normalize and validate', () => {
-  it('is ON by default (today's behaviour), and so is a configuration file written before the setting existed', () => {
+  it("is ON by default (today's behaviour), and so is a configuration file written before the setting existed", () => {
     expect(mounts.RENDER_DEFAULT.rec709).toBe(true)
     expect(mounts.normalizeRender(undefined).rec709).toBe(true)
     expect(mounts.normalizeRender({ rec709: false }).rec709).toBe(false)

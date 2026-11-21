@@ -23,7 +23,7 @@
           <BButton variant="outline-light" size="sm" class="headbtn" :aria-expanded="groupExpanded(t) ? 'true' : 'false'" data-testid="outputs-group-toggle" @click="toggleGroup(t)"><i class="fa-solid me-1" :class="groupOpen(t) ? 'fa-chevron-up' : 'fa-chevron-down'"></i>{{ groupOpen(t) ? $t('outputs.dpx.collapse') : $t('outputs.dpx.expand') }}</BButton>
         </div>
         <div v-if="!groupExpanded(t)" class="tile grouptile" data-testid="outputs-group-preview" @click="toggleGroup(t)">
-          <LazyMedia v-if="!offline && hasPreview(t) && t.main" :kind="t.cat" :src="viewUrl(base, t.main, t.cat === 'image' ? { thumb: true } : undefined)" :alt="t.main.filename" />
+          <LazyMedia v-if="!offline && hasPreview(t) && t.main" :kind="t.cat" :src="viewUrl(base, t.main, t.cat === 'image' ? { thumb: true } : undefined)" :poster="posterOf(t.main)" :alt="t.main.filename" />
           <span v-else class="thumb d-flex align-items-center justify-content-center text-body-secondary" data-testid="outputs-group-icon"><i class="fa-solid fs-3" :class="groupIcon(t)"></i></span>
           <span v-if="t.main" class="cap" :title="t.main.filename" data-testid="outputs-group-main-name">{{ $t('outputs.group.main') }}: {{ shortName(t.main.filename) }}</span>
           <span v-if="t.versions && t.versions[0] !== t.versions[1]" class="cap" data-testid="outputs-group-versions">{{ $t('outputs.group.versionRange', { a: String(t.versions[0]).padStart(3, '0'), b: String(t.versions[1]).padStart(3, '0') }) }}</span>
@@ -32,7 +32,7 @@
           <div class="small text-body-secondary mb-1" data-testid="outputs-group-shown">{{ $t('outputs.group.shown', { shown: shownFiles(t).length, total: t.files.length }) }}</div>
           <div class="rowlist" :class="{ media: hasPreview(t) }">
             <button v-for="f in shownFiles(t)" :key="`${f.subfolder}/${f.filename}`" type="button" class="grow" data-testid="outputs-group-row" :data-main="f === t.main ? 'true' : undefined" :disabled="offline" :title="f.filename" @click="openFile(f)">
-              <LazyMedia v-if="hasPreview(t) && !offline" :kind="f.kind" :src="viewUrl(base, f, f.kind === 'image' ? { thumb: true } : undefined)" :alt="f.filename" />
+              <LazyMedia v-if="hasPreview(t) && !offline" :kind="f.kind" :src="viewUrl(base, f, f.kind === 'image' ? { thumb: true } : undefined)" :poster="posterOf(f)" :alt="f.filename" />
               <span class="gname" :title="f.filename">{{ shortName(f.filename) }}</span>
               <span v-if="f === t.main" class="badge text-bg-primary" data-testid="outputs-group-main">{{ $t('outputs.group.main') }}</span>
               <span v-if="f.bytes != null" class="text-body-secondary">{{ sizeText(f.bytes) }}</span>
@@ -60,8 +60,8 @@
       <button type="button" class="tile" data-testid="outputs-tile" :disabled="offline" :data-offline="offline ? 'true' : undefined" :data-kind="t.kind" :data-type="t.file.type" :data-frames="t.frames ? t.frames.length : undefined" :title="t.name || t.file.filename" @click="open(t)">
         <span v-if="offline && t.kind !== 'dpx'" class="thumb d-flex align-items-center justify-content-center text-body-secondary" data-testid="outputs-offline-thumb"><i class="fa-solid fs-3" :class="{ image: 'fa-image', video: 'fa-film', audio: 'fa-music' }[t.kind] || 'fa-file'"></i></span>
         <LazyMedia v-else-if="t.kind === 'image'" kind="image" :src="viewUrl(base, t.file, { thumb: true })" :alt="t.file.filename" />
-        <LazyMedia v-else-if="t.kind === 'video'" kind="video" :src="viewUrl(base, t.file)" />
-        <span v-else-if="t.kind === 'dpx'" class="thumb d-flex flex-column align-items-center justify-content-center text-body-secondary position-relative" data-testid="outputs-dpx-placeholder"><SequenceThumb :tile="t" :base="base" :scope="scope" :volume-name="volumeName" :offline="offline" @state="(s) => (thumbState[t.key] = s)" @header="(h) => (thumbHeader[t.key] = h)" /><i v-if="!['ready', 'empty'].includes(thumbState[t.key])" class="fa-solid fa-film fs-3"></i><span class="small mt-1 dpxbadge" :class="{ over: thumbState[t.key] === 'ready' }" data-testid="outputs-dpx-badge">{{ t.frames.length > 1 ? $t('outputs.dpx.badge', { n: t.frames.length }) : 'DPX' }}</span><span v-if="problemCounts[t.key]" class="small text-warning" data-testid="outputs-dpx-problems">{{ $t('outputs.dpx.problemsOf', { n: problemCounts[t.key], total: t.frames.length }) }}</span><span v-if="proxyOf(t) || reviewOf(t)" class="rbadges"><span v-if="reviewOf(t)" class="badge text-bg-success" data-testid="outputs-dpx-review" :data-version="reviewOf(t).version">{{ $t('outputs.render.badgeReview', { v: String(reviewOf(t).version).padStart(3, '0') }) }}</span><ApproveControl v-if="reviewOf(t)" :shot="reviewOf(t).shot" :version="reviewOf(t).version" /><span v-if="proxyOf(t)" class="badge" :class="proxyOf(t).exists_local ? 'text-bg-success' : 'text-bg-info'" data-testid="outputs-dpx-rendered" :data-where="proxyOf(t).exists_local ? 'local' : 'remote'" :title="proxyOf(t).exists_local ? $t('outputs.render.badgeLocalTitle') : $t('outputs.render.badgeRemoteTitle')">{{ proxyOf(t).exists_local ? $t('outputs.render.badgeLocal') : $t('outputs.render.badgeRemote') }}</span><span v-if="proxyOf(t)?.partial" class="badge text-bg-warning" data-testid="outputs-dpx-partial">{{ $t('outputs.render.badgePartial') }}</span></span></span>
+        <LazyMedia v-else-if="t.kind === 'video'" kind="video" :src="viewUrl(base, t.file)" :poster="posterOf(t.file)" />
+        <span v-else-if="t.kind === 'dpx'" class="thumb d-flex flex-column align-items-center justify-content-center text-body-secondary position-relative" data-testid="outputs-dpx-placeholder"><SequenceThumb :tile="t" :quick="quickOf(t)" :base="base" :scope="scope" :volume-name="volumeName" :offline="offline" @state="(s) => (thumbState[t.key] = s)" @header="(h) => (thumbHeader[t.key] = h)" /><i v-if="!['ready', 'empty'].includes(thumbState[t.key])" class="fa-solid fa-film fs-3"></i><span class="small mt-1 dpxbadge" :class="{ over: thumbState[t.key] === 'ready' }" data-testid="outputs-dpx-badge">{{ t.frames.length > 1 ? $t('outputs.dpx.badge', { n: t.frames.length }) : 'DPX' }}</span><span v-if="problemCounts[t.key]" class="small text-warning" data-testid="outputs-dpx-problems">{{ $t('outputs.dpx.problemsOf', { n: problemCounts[t.key], total: t.frames.length }) }}</span><span v-if="proxyOf(t) || reviewOf(t)" class="rbadges"><span v-if="reviewOf(t)" class="badge text-bg-success" data-testid="outputs-dpx-review" :data-version="reviewOf(t).version">{{ $t('outputs.render.badgeReview', { v: String(reviewOf(t).version).padStart(3, '0') }) }}</span><ApproveControl v-if="reviewOf(t)" :shot="reviewOf(t).shot" :version="reviewOf(t).version" /><span v-if="proxyOf(t)" class="badge" :class="proxyOf(t).exists_local ? 'text-bg-success' : 'text-bg-info'" data-testid="outputs-dpx-rendered" :data-where="proxyOf(t).exists_local ? 'local' : 'remote'" :title="proxyOf(t).exists_local ? $t('outputs.render.badgeLocalTitle') : $t('outputs.render.badgeRemoteTitle')">{{ proxyOf(t).exists_local ? $t('outputs.render.badgeLocal') : $t('outputs.render.badgeRemote') }}</span><span v-if="proxyOf(t)?.partial" class="badge text-bg-warning" data-testid="outputs-dpx-partial">{{ $t('outputs.render.badgePartial') }}</span></span></span>
         <span v-else class="thumb d-flex align-items-center justify-content-center text-body-secondary"><i class="fa-solid fs-3" :class="t.kind === 'audio' ? 'fa-music' : 'fa-file'"></i></span>
         <span class="cap" :title="t.name || t.file.filename" data-testid="outputs-tile-name">{{ shortName(t.name || t.file.filename) }}</span>
         <SequenceColour v-if="t.kind === 'dpx'" :tile="t" :base="base" :offline="offline" :header="thumbHeader[t.key] || null" />
@@ -112,7 +112,7 @@ import { isExpanded, toggleSeq, setAll, shownFrames, showMore, showAll, groupVie
 import { isTemp, groupTiles, tempGroup, shortName } from '../utils/videogroups'
 import { availableFrames } from '../utils/framepreviews'
 import { previewed } from '../utils/filmstrip'
-import { fpState, startJob, stopJob, queueListing, previewUrl, jpgName, inJob, jobRunning, jobDone, failedOf, failReason } from '../utils/framejob'
+import { fpState, startJob, stopJob, queueListing, previewUrl, thumbUrl, posterUrl, jpgName, inJob, jobRunning, jobDone, failedOf, failReason } from '../utils/framejob'
 import { previewBus } from '../utils/thumbsBus'
 import LazyMedia from './LazyMedia.vue'
 import PageSentinel from './PageSentinel.vue'
@@ -174,7 +174,13 @@ const srcOf = (t) => t.frames[0]?.subfolder || ''
 const canJob = computed(() => !!props.podId && props.podRunning && !props.offline)
 const jobReason = computed(() => (!props.podId ? t('outputs.frames.noPod') : !props.podRunning ? t('outputs.frames.podOff') : props.offline ? t('outputs.frames.offline') : ''))
 const jpgNames = (t) => fpState.listing[srcOf(t)]?.names || null
-const frameImg = (t, f) => framePrev[t.key]?.get(f.filename) || (jpgNames(t)?.has(jpgName(f.filename)) ? previewUrl(props.base, f) : '')
+const jpgThumbs = (t) => fpState.listing[srcOf(t)]?.thumbs || null
+// The strip and the frame grid are 112 px wide: they load the 160 px THUMBNAIL (a few KB) when the pod has one, else the 320 px JPEG (about 30 KB); the cache's own entry (a decoded DPX) wins as before.
+const frameImg = (t, f) => framePrev[t.key]?.get(f.filename) || (jpgNames(t)?.has(jpgName(f.filename)) ? (jpgThumbs(t)?.has(jpgName(f.filename)) ? thumbUrl(props.base, f) : previewUrl(props.base, f)) : '')
+/** The first frame's JPEG (320 px) for the tile, shown at once instead of waiting for a click that reads a 50 MB DPX; the decoded preview still replaces it (and brings the colour chips). */
+/** A video's first-frame poster when the pod has made it (listed under posters/ of its folder), else '' (the tile shows a film icon; no <video> loads until play is clicked). */
+const posterOf = (f) => (fpState.listing[f.subfolder || '']?.posters?.has(`${f.filename}.jpg`) ? posterUrl(props.base, f) : '')
+const quickOf = (t) => (t.frames?.[0] && jpgNames(t)?.has(jpgName(t.frames[0].filename)) ? previewUrl(props.base, t.frames[0]) : '')
 const previewCount = (t) => t.frames.reduce((n, f) => n + (frameImg(t, f) ? 1 : 0), 0)
 const frameFailed = (t, f) => (failedOf(srcOf(t)).has(jpgName(f.filename)) ? failReason(srcOf(t), jpgName(f.filename)) : '')
 const stemOf = (t) => (t.frames[0]?.filename || '').replace(/\.\d+\.dpx$/i, '')
@@ -186,7 +192,7 @@ const tiles = computed(() => { const ts = groupTiles(galleryTiles(realFiles.valu
 watchEffect(() => {
   const seqs = tiles.value.filter(isSeq)
   for (const t of seqs) ensurePrev(t)
-  if (canJob.value) queueListing(props.podId, seqs.map(srcOf))
+  if (canJob.value) queueListing(props.podId, [...seqs.map(srcOf), ...new Set(realFiles.value.filter((f) => f.kind === 'video' && f.type !== 'temp' && f.subfolder).map((f) => f.subfolder))])   // the folders of videos too: which posters exist
 })
 /** The frames of a sequence that have a preview (the first frame is the tile beside the strip), for the strip to sample; reads fpState.listing and framePrev so it follows both. */
 const stripItems = (t) => previewed(t.frames, (f) => frameImg(t, f)).map((p) => ({ index: p.index, no: frameNo(p.frame), name: p.frame.filename, src: p.src }))

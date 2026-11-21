@@ -717,6 +717,11 @@
       "label": "Frames across the sequence",
       "frame": "Frame {n}"
     },
+    "errors": {
+      "title": "Generation Errors ({n})",
+      "kind": { "frames": "Frame Previews", "frame": "Frame", "sequence": "Preview", "graph": "Render" }
+    },
+    "video": { "play": "Play Video" },
     "frames": {
       "modeLabel": "Preview mode",
       "modeSequence": "Sequence Previews",
@@ -733,6 +738,14 @@
       "progress": "making previews {done} of {total}",
       "noPod": "No pod is attached to this volume",
       "podOff": "Start the pod: the previews are made on the pod",
+      "relaunch": "Relaunch",
+      "relaunchTitle": "Runs the folders that did not finish again: finished frames are skipped, nothing is made twice, and no pod is started for you",
+      "remove": "Remove",
+      "removeTitle": "Removes this job from the window; the previews already on the pod stay",
+      "needsPod": "No pod is running: Resume A Pod first",
+      "needsPodNone": "No pod is running on this volume: start one from its card, then relaunch",
+      "resumePod": "Resume Pod",
+      "resumeConfirm": "Resume {name}? It bills while it runs. Relaunch the previews after it is up.",
       "offline": "This sequence cannot be reached right now"
     },
     "skipExisting": "Skip existing",
@@ -1463,6 +1476,7 @@
       "cancelled": "cancelled",
       "done": "uploaded {when}",
       "cancel": "Cancel",
+      "remove": "Remove",
       "publishNow": "Publish Now",
       "publishing": "Publishing…",
       "publishBusy": "An upload is running; wait for it to finish",
