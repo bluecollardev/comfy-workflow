@@ -51,12 +51,12 @@
       <span v-if="onlyShot && hidden" class="text-body-secondary">{{ $t('outputs.hiddenRuns', { n: hidden }) }}</span>
     </label>
     <div v-if="!all.length && !vol.loading" class="text-body-secondary small" data-testid="pod-outputs-empty">{{ vol.ok ? $t('outputs.volumeNoRuns') : $t(onlyShot && runs.length ? 'outputs.noRunsShot' : 'outputs.noRuns', { shot }) }}</div>
-    <div v-if="all.length > PAGE_SIZES[0]" class="d-flex align-items-center flex-wrap gap-2 mb-3 small" data-testid="outputs-pager">
+    <div v-if="all.length > PAGE_SIZES[0]" class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3 small" data-testid="outputs-pager">
       <BButton size="sm" variant="outline-light" :disabled="runsPage.cur <= 1" data-testid="outputs-pager-prev" @click="runPaging.page = runsPage.cur - 1">{{ $t('outputs.pager.previous') }}</BButton>
       <span data-testid="outputs-pager-page">{{ $t('outputs.pager.page', { x: runsPage.cur, y: runsPage.pages }) }}</span>
       <BButton size="sm" variant="outline-light" :disabled="runsPage.cur >= runsPage.pages" data-testid="outputs-pager-next" @click="runPaging.page = runsPage.cur + 1">{{ $t('outputs.pager.next') }}</BButton>
-      <label class="d-flex align-items-center gap-1 ms-2">{{ $t('outputs.pager.perPage') }}<select v-model.number="runPaging.size" class="form-select form-select-sm w-auto" data-testid="outputs-pager-size"><option v-for="n in PAGE_SIZES" :key="n" :value="n">{{ n }}</option></select></label>
-      <span class="text-body-secondary ms-auto" data-testid="outputs-pager-shown">{{ $t('outputs.pager.shown', { shown: runsPage.rows.length, total: runsPage.total }) }}</span>
+      <label class="d-flex align-items-center gap-1">{{ $t('outputs.pager.perPage') }}<select v-model.number="runPaging.size" class="form-select form-select-sm w-auto" data-testid="outputs-pager-size"><option v-for="n in PAGE_SIZES" :key="n" :value="n">{{ n }}</option></select></label>
+      <span class="text-body-secondary" data-testid="outputs-pager-shown">{{ $t('outputs.pager.shown', { shown: runsPage.rows.length, total: runsPage.total }) }}</span>
     </div>
     <div v-for="r in runsPage.rows" :key="r.prompt_id" class="mb-4" data-testid="pod-outputs-run" :data-prompt="r.prompt_id" :data-source="r.source || 'pod'">
       <div class="d-flex align-items-baseline gap-2 flex-wrap mb-2 small" data-testid="pod-outputs-run-title">
