@@ -97,7 +97,7 @@ export function hashFile(path: string, signal?: AbortSignal): Promise<string> {
 export const newHasher = () => createHash('sha256')
 
 // ----- the manifest -----
-export interface MediaInfo { /** the Tunnel proxy's colour block (working space, transfer, how the proxy was made) */ colour?: { working_space: string; transfer: string; proxy: string }; /** what the proxy's sidecar adds to the item's notes (EDL override, low resolution, start timecode) */ notes?: string[]; width?: number; height?: number; fps?: string; frames?: number; codec?: string; bit_depth?: number; working_space?: string }
+export interface MediaInfo { /** what the review's .meta.json records of its colour and rate (feeds the manifest's issues; not written to the outputs) */ review?: ReviewFacts;/** the Tunnel proxy's colour block (working space, transfer, how the proxy was made) */ colour?: { working_space: string; transfer: string; proxy: string }; /** what the proxy's sidecar adds to the item's notes (EDL override, low resolution, start timecode) */ notes?: string[]; width?: number; height?: number; fps?: string; frames?: number; codec?: string; bit_depth?: number; working_space?: string }
 export interface ManifestFile { /** per sequence notes from the plan (the EDL override, the low resolution, the start timecode and where it came from) */ notes?: string[]; key: string; shot: string; clip: string; stem: string; role: Role; sha256: string; bytes: number; media?: MediaInfo; renamed_from?: string }
 export interface Pod { provider: string; pod_id: string; gpu: string; hours: number; cost_usd: number; paid_by: string; provider_api_calls: number | string }
 export const NO_POD: Pod = { provider: 'n/a', pod_id: 'n/a', gpu: 'n/a', hours: 0.0, cost_usd: 0.0, paid_by: 'n/a', provider_api_calls: 'n/a' }
@@ -122,6 +122,65 @@ export function buildItems(files: ManifestFile[], rootKey: string): ManifestItem
     return { shot: g.shot, element: g.element, input_final: { delivered_name: delivered, sha256: digest }, graph: graph ? { name: basename(graph.key), sha256: graph.sha256, returned_path: rel(graph.key) } : { name: 'n/a', sha256: 'n/a', returned_path: 'n/a' }, outputs,
       measures: { kind: dpx.length ? 'FINAL delivery' : 'proxy', frames: dpx.length || main?.media?.frames || 0, notes: [...(renamed ? [`delivered as ${renamed.clip}; on disk ${renamed.stem}`] : []), ...new Set(g.files.flatMap((f) => [...(f.notes ?? []), ...(f.media?.notes ?? [])]))].join('; ') } }
   })
+}
+/** A problem a reader of one element's manifest should know about (ADR-055 section 10). Derived from what is in the item, never guessed: an empty list means none of these was found, not that the element was checked by a person. */
+export type IssueCode = 'no-dpx' | 'no-review-video' | 'no-h264' | 'no-frames' | 'frame-count-mismatch' | 'colour-unstated' | 'header-disagrees-record' | 'review-colour-differs' | 'review-fps-differs' | 'stray-files'
+export interface Issue { code: IssueCode; severity: 'warning' | 'info'; text: string }
+/** What a review video's `.meta.json` records about its colour and rate (read in publish's mediaOf). An absent field is unknown, never assumed. */
+export interface ReviewFacts { colour_in?: string; colour_source?: string; header_disagrees?: boolean; ocio_label?: string; header_label?: string; fps?: string }
+export interface IssueFacts {
+  /** the frame count of this element's EDL cut (null or absent: no EDL, or no match) */ expected_frames?: number | null
+  /** the review videos of the element */ reviews?: ReviewFacts[]
+  /** the colour statement in force for this publish (the request's colour_in), to compare with what each review was made under */ current_colour_in?: string
+  /** files in the element's frame folder on the bucket that are not this element's own frames: name and size */ strays?: { name: string; bytes: number }[]
+}
+const rateOf = (clip: string): string | null => { const m = /_(\d+(?:\.\d+)?)_(?:PRORES|HEVC|H264|DNX)/i.exec(clip); return m ? m[1] : null }
+const sameRate = (a: string, b: string): boolean => Math.abs(Number(a) - Number(b)) < 0.01
+export function issuesOf(item: ManifestItem, facts: IssueFacts = {}): Issue[] {
+  const has = (r: Role) => item.outputs.some((o) => o.role === r), out: Issue[] = [], dpx = has('dpx')
+  if (!dpx) out.push({ code: 'no-dpx', severity: 'warning', text: 'This element has no DPX frames in the delivery (a proxy only).' })
+  else if (!item.measures.frames) out.push({ code: 'no-frames', severity: 'warning', text: 'The DPX frame count is zero.' })
+  if (!has('review') && !has('proxy-h264')) out.push({ code: 'no-review-video', severity: dpx ? 'warning' : 'info', text: 'No review video (ProRes or H.264) was delivered with this element.' })
+  else if (!has('proxy-h264')) out.push({ code: 'no-h264', severity: 'info', text: 'A ProRes review video was delivered but no H.264 proxy.' })
+  if (dpx && item.measures.frames && typeof facts.expected_frames === 'number' && item.measures.frames !== facts.expected_frames)
+    out.push({ code: 'frame-count-mismatch', severity: 'warning', text: `${item.measures.frames} DPX frames were delivered; the EDL cut has ${facts.expected_frames} (${item.measures.frames > facts.expected_frames ? '+' : ''}${item.measures.frames - facts.expected_frames}).` })
+  const reviews = facts.reviews ?? [], clipRate = rateOf(item.input_final.delivered_name)
+  if (reviews.length && !reviews.some((r) => r.colour_in || r.colour_source)) out.push({ code: 'colour-unstated', severity: 'info', text: 'The review video records no colour statement (no colour_in or colour source in its .meta.json), so what it was converted from is not stated.' })
+  const dis = reviews.find((r) => r.header_disagrees)
+  if (dis) out.push({ code: 'header-disagrees-record', severity: 'warning', text: `The DPX header says ${dis.header_label ?? 'something else'}; the colour record of ComfyUI-OCIO says ${dis.ocio_label ?? 'something else'}. The review video was made from the record.` })
+  const other = reviews.find((r) => r.colour_in && facts.current_colour_in && r.colour_in !== facts.current_colour_in)
+  if (other) out.push({ code: 'review-colour-differs', severity: 'warning', text: `The review video was made under "${other.colour_in}"; the colour stated for this publish is "${facts.current_colour_in}".` })
+  const fr = reviews.find((r) => r.fps && clipRate && !sameRate(r.fps, clipRate))
+  if (fr) out.push({ code: 'review-fps-differs', severity: 'warning', text: `The review video is ${fr.fps} fps; the delivered name says ${clipRate}.` })
+  if (facts.strays?.length) out.push({ code: 'stray-files', severity: 'warning', text: `${facts.strays.length} file${facts.strays.length === 1 ? '' : 's'} in this element's frame folder ${facts.strays.length === 1 ? 'is' : 'are'} not part of it (${facts.strays.slice(0, 3).map((x) => `${x.name} ${x.bytes} bytes`).join(', ')}${facts.strays.length > 3 ? ', ...' : ''}).` })
+  return out
+}
+/** The DPX files in one element's frame folder that are not its own frames. `listing` is the round's recursive listing (key -> bytes), `rootKey` the round's key prefix; the element's folders are those of its DPX outputs. */
+export function straysOf(item: ManifestItem, listing: Map<string, number>, rootKey: string): { name: string; bytes: number }[] {
+  const own = new Set(item.outputs.map((o) => o.path)), dirs = new Set(item.outputs.filter((o) => o.role === 'dpx').map((o) => posix.dirname(o.path))), out: { name: string; bytes: number }[] = []
+  for (const [k, bytes] of listing) { const rel = k.startsWith(rootKey) ? k.slice(rootKey.length) : k; if (dirs.has(posix.dirname(rel)) && !own.has(rel) && /\.dpx$/i.test(rel)) out.push({ name: posix.basename(rel), bytes }) }
+  return out.sort((x, y) => x.name.localeCompare(y.name))
+}
+/** A graph that failed, in the fields of the `failures` tool (stage, node, message, recovery), for an element that has no frames. */
+export interface FailureFacts { stage: string; node: string | null; message: string; recovery: string; retryable: boolean; attempts: number; at: string; pod?: string; job_id?: string }
+export interface RoundIssue { shot: string; element: string; code: 'not-generated'; severity: 'warning'; text: string; failure: FailureFacts | null }
+export interface FailureIn { shot: string; element?: string; graph?: string; stage: string; node: string | null; message: string; recovery: string; retryable: boolean; retries: number; at: string; pod?: string; job_id?: string }
+/** The shot and element a graph path names: `base_v008/photoreal-013/photoreal-013__f23__base_v008.json` is photoreal-013 and F23 (the failures log records graphs, mostly with no shot of their own). */
+export function graphElement(graph: string): { shot: string; element: string } | null {
+  const m = /([A-Za-z]+-\d+[a-z]?)__([^_/]+(?:_[^_/]+)*?)__/.exec(graph.split('/').pop() ?? graph)
+  if (!m) return null
+  const e = m[2]; return { shot: m[1].toLowerCase(), element: /^main$/i.test(e) ? 'main' : e.toUpperCase() }
+}
+/** The elements that were expected but have no delivered item: one entry each, with the latest failure recorded for it (null: none on record). Round level, because an element with no frames has no manifest of its own. `failures` newest first. */
+export function roundIssuesOf(expected: { shot: string; element: string }[], delivered: Pick<ManifestItem, 'shot' | 'element'>[], failures: FailureIn[]): RoundIssue[] {
+  const have = new Set(delivered.map((d) => `${d.shot}|${d.element}`.toLowerCase())), out: RoundIssue[] = []
+  for (const e of expected) {
+    if (have.has(`${e.shot}|${e.element}`.toLowerCase())) continue
+    const f = failures.find((x) => x.shot === e.shot && (x.element ? x.element.toLowerCase() === e.element.toLowerCase() : !!x.graph && x.graph.toLowerCase().includes(e.element.toLowerCase())))
+    out.push({ shot: e.shot, element: e.element, code: 'not-generated', severity: 'warning', failure: f ? { stage: f.stage, node: f.node, message: f.message, recovery: f.recovery, retryable: f.retryable, attempts: f.retries + 1, at: f.at, ...(f.pod ? { pod: f.pod } : {}), ...(f.job_id ? { job_id: f.job_id } : {}) } : null,
+      text: f ? `No frames were generated. The last failure was at stage ${f.stage}${f.node ? `, node ${f.node}` : ''}: ${f.message} Recovery: ${f.recovery}` : 'No frames were generated and no failure is on record for it.' })
+  }
+  return out.sort((x, y) => x.shot.localeCompare(y.shot) || x.element.localeCompare(y.element))
 }
 /** The manifest of this run merged into the one already in the round: the other shots' items stay, this run's shots are replaced. A manifest that cannot be read is a 409, never overwritten. */
 export function mergeManifest(existing: string | null, o: { round: string; returned_by: string; now: number; pod: Pod; items: ManifestItem[] }): Manifest {

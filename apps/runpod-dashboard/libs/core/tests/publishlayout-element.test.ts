@@ -25,3 +25,17 @@ describe('mergeManifest keeps the other elements of a shot', () => {
     expect(third.items).toHaveLength(3)   // C replaced in place, F and RAIN kept
   })
 })
+
+describe('issuesOf: the issues section of an element manifest', () => {
+  const item = (roles: string[], frames = 10) => ({ shot: 's', element: 'A', input_final: { delivered_name: 'x', sha256: 'x' }, graph: { name: 'n/a', sha256: 'n/a', returned_path: 'n/a' }, outputs: roles.map((role) => ({ path: `p.${role}`, role, sha256: 'x', bytes: 1 })), measures: { kind: 'FINAL delivery', frames, notes: '' } }) as never
+  it('is empty for DPX with a review and an H.264', () => { expect(layout.issuesOf(item(['dpx', 'review', 'proxy-h264']))).toEqual([]) })
+  it('warns when DPX has no review video at all', () => {
+    const i = layout.issuesOf(item(['dpx']))
+    expect(i.map((x) => `${x.code}:${x.severity}`)).toEqual(['no-review-video:warning'])
+  })
+  it('notes a ProRes without an H.264', () => { expect(layout.issuesOf(item(['dpx', 'review'])).map((x) => x.code)).toEqual(['no-h264']) })
+  it('warns when there are no DPX frames, or a zero count', () => {
+    expect(layout.issuesOf(item(['proxy-h264'])).map((x) => x.code)).toEqual(['no-dpx'])
+    expect(layout.issuesOf(item(['dpx', 'review', 'proxy-h264'], 0)).map((x) => x.code)).toEqual(['no-frames'])
+  })
+})
