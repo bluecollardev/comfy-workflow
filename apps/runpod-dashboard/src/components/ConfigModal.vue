@@ -400,6 +400,7 @@
           <label><input v-model="cfg.render.publish.s3" type="checkbox" class="form-check-input me-1" data-testid="config-render-publish-s3" @change="renderDeps" />{{ $t('outputs.render.cfg.publishS3') }}</label>
           <label><input v-model="cfg.render.publish.slack" type="checkbox" class="form-check-input me-1" :disabled="!cfg.render.publish.s3" data-testid="config-render-publish-slack" />{{ $t('outputs.render.cfg.publishSlack') }}</label>
           <label><input v-model="cfg.render.skip_existing" type="checkbox" class="form-check-input me-1" data-testid="config-render-skip-existing" />{{ $t('outputs.render.cfg.skipExisting') }}</label>
+          <label :title="$t('outputs.render.cfg.convertRec709Tip')"><input v-model="cfg.render.rec709" type="checkbox" class="form-check-input me-1" data-testid="config-render-rec709" />{{ $t('outputs.render.cfg.convertRec709') }}</label>
         </div>
         <div class="d-flex gap-3 flex-wrap align-items-end small mt-2" data-testid="config-render-preset-row">
           <label class="mb-0">{{ $t('outputs.render.preset') }}

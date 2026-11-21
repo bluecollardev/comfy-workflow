@@ -8,7 +8,7 @@ import * as renders from '../src/renders.js'
 import { scratch } from './helpers.js'
 
 // ADR-048 "Settings": the render settings in the configuration (Default and a pod's own), applied by plan and start for every field the request omits.
-const D = { colour: { mode: 'known' }, where: 'auto', kind: 'review', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto', preset: 'none', pull: false, skip_existing: true, publish: { s3: true, slack: false } }
+const D = { colour: { mode: 'known' }, where: 'auto', kind: 'review', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto', preset: 'none', pull: false, skip_existing: true, rec709: false, publish: { s3: true, slack: false } }
 const SEQ = { dir: 'a/b', name: 'ARCHIVAL-085_x_23.976_y', first: 0, last: 9, frames: 10, pad: 4 }
 const put = (p: Partial<mounts.MountsConfig>) => mounts.put({ ...mounts.load(), ...p })
 beforeEach(() => {
@@ -38,7 +38,7 @@ describe('the shape', () => {
   })
   it('no approver and no allow_partial are ever stored: unknown keys are dropped, and the export check refuses them', () => {
     const r = put({ render: { ...D, approved_by: 'Lucas', allow_partial: true } as never }).config.render as Record<string, unknown>
-    expect('approved_by' in r).toBe(false); expect('allow_partial' in r).toBe(false); expect(Object.keys(r).sort()).toEqual(['codecs', 'colour', 'fps', 'kind', 'preset', 'proxy_width', 'publish', 'pull', 'review_width', 'skip_existing',  'where'])
+    expect('approved_by' in r).toBe(false); expect('allow_partial' in r).toBe(false); expect(Object.keys(r).sort()).toEqual(['codecs', 'colour', 'fps', 'kind', 'preset', 'proxy_width', 'publish', 'pull', 'rec709', 'review_width', 'skip_existing',  'where'])
     expect(configio.planImport({ ...configio.exportConfig({ includeSecrets: false }), config: { ...(configio.exportConfig({ includeSecrets: false }).config as object), render: { ...D, approved_by: 'x' } } } as never).errors.join('\n')).toMatch(/no approver, no allow_partial/)
   })
   it('reset puts the defaults back; preview shows the value', () => { put({ render: { ...D, kind: 'review' } }); expect(mounts.reset().render).toEqual(D); expect(mounts.preview({ render: { ...D, pull: false } as never }).config.render?.pull).toBe(false); expect(() => mounts.preview({ render: { ...D, codecs: [] } as never })).toThrow() })

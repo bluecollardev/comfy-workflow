@@ -63,6 +63,8 @@ export interface ImportRec {
   auto_sync?: { pull: boolean; push: boolean }
   /** Generate Outputs: when a pod's workflows finish, render the review videos of the new DPX sequences on that pod, under `approved_by` */
   generate_outputs?: boolean
+  /** Convert To Rec.709: the review and proxy videos this import generates are converted from the frames' stated colour (Gamma 2.6 P3-D65) to a Rec.709 view; off (the default) keeps the frames' signal and only states it. Needs generate_outputs. */
+  convert_rec709?: boolean
   /** Publish: then publish them under `approved_by` (S3, and Slack only when the Default Configuration's render.publish.slack is on); never without generate_outputs */
   publish?: PublishChoice
   /** what a step that could not run says, shown on the import's card in the Queue */
@@ -203,7 +205,7 @@ export interface ImportPlan {
   round: string; shots: string[]; price_per_hour: number | null; pull_hours: number; est_total_usd: number | null
   max_pods: number | null; cost_cap_usd: number | null; cap_enabled: boolean; over_cap: boolean
   /** what the import will do after the runs (shown in the plan and the dry run) */
-  generate_outputs?: boolean; publish?: PublishChoice
+  generate_outputs?: boolean; publish?: PublishChoice; convert_rec709?: boolean
   /** ADR-044 volume source only: what was assumed, what was refused, and the cap left. */
   source?: 'volume'; volume_id?: string
   graphs?: number; graphs_by_shot?: Record<string, number>; seconds_per_graph?: number; samples?: number
@@ -212,7 +214,7 @@ export interface ImportPlan {
   /** What is left of the caps: the import's cap, and Binc's USD 100 rule (the History's spend against it). */
   remaining_usd?: number | null; assumption?: string; blocked?: string
 }
-export interface ImportOpts { /** true: every pod this import creates pulls its volume's changes to this PC (Auto sync, ADR-046); { pull, push } to choose. Needs approved_by (already required). */ auto_sync?: boolean | { pull?: boolean; push?: boolean }; /** the network volume the pods and the pull use; it becomes the default volume */ volume_id?: string; /** shot -> card (a GPU key); a shot without one takes the pool */ cards?: Record<string, string | string[]>; shots?: string[]; run_workflows?: boolean; /** after a pod's workflows finish, render the review videos of the new DPX sequences on that pod (needs run_workflows and approved_by) */ generate_outputs?: boolean; /** then publish them: true = S3 (+ Slack when the Default Configuration's render.publish.slack is on), or { s3, slack }; needs generate_outputs. A person's act: the MCP refuses it */ publish?: boolean | { s3?: boolean; slack?: boolean }; max_pods?: number; cost_cap_usd?: number; approved_by?: string
+export interface ImportOpts { /** true: every pod this import creates pulls its volume's changes to this PC (Auto sync, ADR-046); { pull, push } to choose. Needs approved_by (already required). */ auto_sync?: boolean | { pull?: boolean; push?: boolean }; /** the network volume the pods and the pull use; it becomes the default volume */ volume_id?: string; /** shot -> card (a GPU key); a shot without one takes the pool */ cards?: Record<string, string | string[]>; shots?: string[]; run_workflows?: boolean; /** after a pod's workflows finish, render the review videos of the new DPX sequences on that pod (needs run_workflows and approved_by) */ generate_outputs?: boolean; /** convert the generated review and proxy videos to Rec.709 (default off: the frames' signal is kept and stated); needs generate_outputs */ convert_rec709?: boolean; /** then publish them: true = S3 (+ Slack when the Default Configuration's render.publish.slack is on), or { s3, slack }; needs generate_outputs. A person's act: the MCP refuses it */ publish?: boolean | { s3?: boolean; slack?: boolean }; max_pods?: number; cost_cap_usd?: number; approved_by?: string
   /** `volume`: the round already sits on `volume_id` and is run in place (ADR-044). Default: a BH round, pulled first. */ source?: string
   /** Refused on a volume source (guard a): Binc's rule, nothing on the volume is overwritten. Accepted by nothing; named so a caller that sends it gets a clear error. */ replace?: boolean; overwrite?: boolean }
 
@@ -244,13 +246,15 @@ const taskCards = (o: ImportOpts, shot: string | null) => { const l = shot ? car
 export async function planImport(round: string, o: ImportOpts = {}): Promise<ImportPlan> {
   const out = checkOutputs(o)
   const p = await planBase(round, o)
-  return { ...p, ...(out.generate_outputs ? { generate_outputs: true } : {}), ...(out.publish ? { publish: out.publish } : {}) }
+  return { ...p, ...(out.generate_outputs ? { generate_outputs: true } : {}), ...(out.publish ? { publish: out.publish } : {}), ...(out.convert_rec709 ? { convert_rec709: true } : {}) }
 }
 
 /** Generate Outputs and Publish: the dependencies, in plain words (Publish needs Generate Outputs, both need Run Workflows). Returns what to store: `publish` resolved to its targets (Slack only with S3). */
-export function checkOutputs(o: Pick<ImportOpts, 'run_workflows' | 'generate_outputs' | 'publish'>): { generate_outputs: boolean; publish?: PublishChoice } {
+export type OutputsChoice = { generate_outputs: boolean; publish?: PublishChoice; convert_rec709?: boolean }
+export function checkOutputs(o: Pick<ImportOpts, 'run_workflows' | 'generate_outputs' | 'publish' | 'convert_rec709'>): OutputsChoice {
   if (o.generate_outputs !== undefined && typeof o.generate_outputs !== 'boolean') throw new CoreError(400, 'generate_outputs is true or false.')
-  const gen = o.generate_outputs === true
+  if (o.convert_rec709 !== undefined && typeof o.convert_rec709 !== 'boolean') throw new CoreError(400, 'convert_rec709 is true or false.')
+  const gen = o.generate_outputs === true, rec709 = o.convert_rec709 === true
   const pub = o.publish
   let choice: PublishChoice | undefined
   if (pub === true) choice = { s3: true, slack: deps.renderSlack() }
@@ -260,17 +264,18 @@ export function checkOutputs(o: Pick<ImportOpts, 'run_workflows' | 'generate_out
   } else if (pub !== undefined && pub !== false) throw new CoreError(400, 'publish is true, false or { s3, slack }.')
   if (gen && o.run_workflows === false) throw new CoreError(400, 'Generate Outputs needs Run Workflows: the outputs are made from what the workflows produce.')
   if (choice && !gen) throw new CoreError(400, 'Publish needs Generate Outputs (and both need Run Workflows): only the videos this import generates are published.')
-  return { generate_outputs: gen, ...(choice ? { publish: choice } : {}) }
+  if (rec709 && !gen) throw new CoreError(400, 'Convert To Rec.709 needs Generate Outputs: it is how the generated videos treat colour.')
+  return { generate_outputs: gen, ...(choice ? { publish: choice } : {}), ...(rec709 ? { convert_rec709: true } : {}) }
 }
 /** Before anything is queued: the named yes, and the destination ready. */
-async function readyOutputs(o: ImportOpts, by: string): Promise<{ generate_outputs: boolean; publish?: PublishChoice }> {
+async function readyOutputs(o: ImportOpts, by: string): Promise<OutputsChoice> {
   const out = checkOutputs(o)
   if (out.generate_outputs && !by) throw new CoreError(400, 'Generate Outputs and Publish act under a name: say who approves it (approved_by).')
   if (out.publish) { const bad = await deps.publishProblem([...(out.publish.s3 ? ['s3' as const] : []), ...(out.publish.slack ? ['slack' as const] : [])]); if (bad) throw new CoreError(400, `Cannot publish: ${bad}`) }
   return out
 }
-const outputsRec = (out: { generate_outputs: boolean; publish?: PublishChoice }) => ({ ...(out.generate_outputs ? { generate_outputs: true } : {}), ...(out.publish ? { publish: out.publish } : {}) })
-const outputsWords = (out: { generate_outputs: boolean; publish?: PublishChoice }) => (out.generate_outputs ? `; then generate the outputs${out.publish ? ` and publish them to ${out.publish.slack ? 'S3 and Slack' : 'S3'}` : ''}` : '')
+const outputsRec = (out: OutputsChoice) => ({ ...(out.generate_outputs ? { generate_outputs: true } : {}), ...(out.publish ? { publish: out.publish } : {}), ...(out.convert_rec709 ? { convert_rec709: true } : {}) })
+const outputsWords = (out: OutputsChoice) => (out.generate_outputs ? `; then generate the outputs${out.convert_rec709 ? ' (converted to Rec.709)' : ''}${out.publish ? ` and publish them to ${out.publish.slack ? 'S3 and Slack' : 'S3'}` : ''}` : '')
 
 async function planBase(round: string, o: ImportOpts = {}): Promise<ImportPlan> {
   if (o.source === 'volume') return planVolumeImport(round, o)
@@ -382,12 +387,12 @@ export async function importRound(round: string, o: ImportOpts = {}): Promise<Im
   q.imports.push(imp); q.tasks.push(pull)
   const prices = await cardPrices(plan.shots, o)
   if (o.run_workflows !== false) for (const shot of plan.shots) q.tasks.push({ id: newId('t'), import_id: imp.id, round, shot, kind: 'run', state: 'waiting', depends_on: [pull.id], pod_id: null, pod_name: null, ...(cardList(o.cards?.[shot]).length ? { ...taskCards(o, shot), price: prices[shot] ?? null } : {}) })
-  if (out.generate_outputs) history.record({ kind: 'change', area: 'import', action: 'queued an import with outputs', what: round, detail: `generate the outputs${out.publish ? ` and publish them to ${out.publish.slack ? 'S3 and Slack' : 'S3'}` : ''} after each pod's workflows`, approved_by: by } as never)
+  if (out.generate_outputs) history.record({ kind: 'change', area: 'import', action: 'queued an import with outputs', what: round, detail: `generate the outputs${out.convert_rec709 ? ' (converted to Rec.709)' : ' (the frames\' signal kept and stated)'}${out.publish ? ` and publish them to ${out.publish.slack ? 'S3 and Slack' : 'S3'}` : ''} after each pod's workflows`, approved_by: by } as never)
   save(); start()
   return imp
 }
 
-export interface RoundItem { generate_outputs?: boolean; publish?: ImportOpts['publish']; auto_sync?: boolean | { pull?: boolean; push?: boolean }; round: string; shots?: string[]; cards?: Record<string, string | string[]>; max_pods?: number }
+export interface RoundItem { generate_outputs?: boolean; convert_rec709?: boolean; publish?: ImportOpts['publish']; auto_sync?: boolean | { pull?: boolean; push?: boolean }; round: string; shots?: string[]; cards?: Record<string, string | string[]>; max_pods?: number }
 /** Several rounds on one approval (the window's and MCP's one path): each round is its own import; `cost_cap_usd` is the TOTAL and is split evenly, so the caps never add up to more.
  *  Every round is planned first, so a bad round or card queues nothing; `max_pods` (per round) may be set per item. */
 export async function importRounds(items: RoundItem[], o: Omit<ImportOpts, 'shots' | 'cards'> = {}): Promise<ImportRec[]> {
@@ -396,11 +401,11 @@ export async function importRounds(items: RoundItem[], o: Omit<ImportOpts, 'shot
   const names = items.map((i) => i.round)
   if (new Set(names).size !== names.length) throw new CoreError(400, 'A round is listed twice.')
   if (o.source === 'volume') refuseOverwrite(o)
-  for (const i of items) await readyOutputs({ ...o, ...(i.generate_outputs !== undefined ? { generate_outputs: i.generate_outputs } : {}), ...(i.publish !== undefined ? { publish: i.publish } : {}) }, (o.approved_by || '').trim())   // fail fast: nothing is queued when one round's options are broken
+  for (const i of items) await readyOutputs({ ...o, ...(i.generate_outputs !== undefined ? { generate_outputs: i.generate_outputs } : {}), ...(i.convert_rec709 !== undefined ? { convert_rec709: i.convert_rec709 } : {}), ...(i.publish !== undefined ? { publish: i.publish } : {}) }, (o.approved_by || '').trim())   // fail fast: nothing is queued when one round's options are broken
   await deps.ensureVolume(o.source === 'volume' ? volumeIdOf(o) : o.volume_id)
   o = { ...o, ...(o.source === 'volume' ? { volume_id: volumeIdOf(o) } : { volume_id: undefined }) }   // done once for all the rounds (a volume round keeps its volume: it is where the round sits)
   const each = o.cost_cap_usd != null ? Math.round((o.cost_cap_usd / items.length) * 100) / 100 : undefined
-  const opts = (i: RoundItem): ImportOpts => ({ ...o, ...(i.auto_sync !== undefined ? { auto_sync: i.auto_sync } : {}), ...(i.generate_outputs !== undefined ? { generate_outputs: i.generate_outputs } : {}), ...(i.publish !== undefined ? { publish: i.publish } : {}), shots: i.shots, cards: i.cards, ...(each != null ? { cost_cap_usd: each } : {}), ...(i.max_pods != null ? { max_pods: i.max_pods } : {}) })
+  const opts = (i: RoundItem): ImportOpts => ({ ...o, ...(i.auto_sync !== undefined ? { auto_sync: i.auto_sync } : {}), ...(i.generate_outputs !== undefined ? { generate_outputs: i.generate_outputs } : {}), ...(i.convert_rec709 !== undefined ? { convert_rec709: i.convert_rec709 } : {}), ...(i.publish !== undefined ? { publish: i.publish } : {}), shots: i.shots, cards: i.cards, ...(each != null ? { cost_cap_usd: each } : {}), ...(i.max_pods != null ? { max_pods: i.max_pods } : {}) })
   for (const i of items) { const p = await planImport(i.round, opts(i)); if (p.refused?.length) throw new CoreError(403, `Refused: ${p.blocked}`); if (p.source === 'volume' && p.over_cap) throw new CoreError(402, `Refused: ${p.blocked}`); if (!p.shots.length) throw new CoreError(404, `No shots found in ${i.round}.`); if (state().imports.some((x) => x.round === i.round && x.state === 'active')) throw new CoreError(409, `${i.round} is already being imported: see the queue.`) }
   const out: ImportRec[] = []
   for (const i of items) out.push(await importRound(i.round, opts(i)))
@@ -552,8 +557,8 @@ async function startOutputs(t: Task, imp: ImportRec): Promise<void> {
     const found = await deps.newSequences(t.shot, since)
     const seqs = found.sequences
     if (!seqs.length) { post.state = 'skipped'; return outputNote(t, imp, `no new finished DPX sequences to generate${found.skipped.length ? ` (${found.skipped.map((x) => `${x.stem}: ${x.reason}`).slice(0, 3).join('; ')})` : ''}`) }
-    // kind, codecs and colour come from the Default Configuration (renders.effectiveSettings); the render stays on this pod, nothing is pulled
-    const r = await deps.startRender({ sequences: seqs, where: 'pod', pod_id: t.pod_id, pull: false, approved_by: imp.approved_by, skip_existing: true })
+    // kind, codecs and colour come from the Default Configuration (renders.effectiveSettings), Convert To Rec.709 from this import (its `convert_rec709`, else off); the render stays on this pod, nothing is pulled
+    const r = await deps.startRender({ sequences: seqs, where: 'pod', pod_id: t.pod_id, pull: false, approved_by: imp.approved_by, skip_existing: true, rec709: imp.convert_rec709 === true })
     post.render_job_id = r.job_id
     ev(t, `Generate Outputs started on ${t.pod_name ?? t.pod_id}: ${seqs.length} sequence(s), render ${r.job_id}, named yes: ${imp.approved_by}`)
     history.record({ kind: 'change', area: 'queue', action: 'import generates outputs', what: `${imp.round} ${t.shot}`, detail: `${seqs.length} sequence(s) on ${t.pod_name ?? t.pod_id}; render ${r.job_id}`, approved_by: imp.approved_by } as never)

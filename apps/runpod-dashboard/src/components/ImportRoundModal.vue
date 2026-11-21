@@ -111,6 +111,7 @@
         </template>
         <div v-if="autoSync" data-testid="import-round-autosync-line">{{ $t(autoSyncPush ? 'importRound.autoSyncLinePush' : 'importRound.autoSyncLine') }}</div>
         <div v-if="generateOutputs" data-testid="import-round-generate-line">{{ $t('importRound.generateLine') }}</div>
+        <div v-if="generateOutputs && convertRec709" data-testid="import-round-rec709-line">{{ $t('importRound.convertRec709Line') }}</div>
         <div v-if="publishOut" data-testid="import-round-publish-line">{{ $t('importRound.publishLine', { by: approvedBy.trim() || '?' }) }}</div>
         <div class="d-flex align-items-center gap-2 mt-2 flex-wrap">
           <label class="mb-0" for="ir-pods">{{ $t(plans.size > 1 ? 'importRound.maxPodsEach' : 'importRound.maxPods') }}</label>
@@ -163,6 +164,8 @@
         <label class="d-flex align-items-center gap-2 mt-2"><input :checked="generateOutputs" type="checkbox" class="form-check-input mt-0" data-testid="import-round-generate" @change="onGenerate" /><i class="fa-solid fa-film"></i>{{ $t('importRound.generate') }}</label>
         <div class="text-body-secondary ps-4" data-testid="import-round-generate-hint">{{ $t('importRound.generateHint') }}</div>
         <template v-if="generateOutputs">
+          <label class="d-flex align-items-center gap-2 mt-2" :title="$t('importRound.convertRec709Tooltip')"><input :checked="convertRec709" type="checkbox" class="form-check-input mt-0" data-testid="import-round-rec709" @change="onRec709" /><i class="fa-solid fa-circle-half-stroke"></i>{{ $t('importRound.convertRec709') }}</label>
+          <div class="text-body-secondary ps-4" data-testid="import-round-rec709-hint">{{ $t('importRound.convertRec709Hint') }}</div>
           <label class="d-flex align-items-center gap-2 mt-2"><input :checked="publishOut" type="checkbox" class="form-check-input mt-0" :disabled="!pubReady.ok" data-testid="import-round-publish" @change="onPublish" /><i class="fa-solid fa-cloud-arrow-up"></i>{{ $t('importRound.publish') }}</label>
           <div v-if="!pubReady.ok" class="text-warning ps-4" data-testid="import-round-publish-reason"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ $t('importRound.publishNotReady', { reason: pubReady.reason }) }}</div>
           <div v-else class="text-body-secondary ps-4" data-testid="import-round-publish-hint">{{ $t('importRound.publishHint') }}</div>
@@ -300,17 +303,17 @@ const autoSync = ref(false), autoSyncPush = ref(false)   // Auto sync (ADR-046):
 const autoSyncOpt = computed(() => (autoSync.value ? (autoSyncPush.value ? { pull: true, push: true } : true) : undefined))
 const autoSyncKey = () => (autoSyncOpt.value === undefined ? {} : { auto_sync: autoSyncOpt.value })
 // Run Workflows > Generate Outputs > Publish: each child shows only under its parent, and unticking a parent clears its children
-const generateOutputs = ref(false), publishOut = ref(false), nameNeeded = ref(false)
+const generateOutputs = ref(false), publishOut = ref(false), convertRec709 = ref(false), nameNeeded = ref(false)
 const publishStore = usePublishStore(), pubReady = computed(() => targetState(publishStore.settings, 's3'))
-const outputsKey = () => ({ ...(generateOutputs.value ? { generate_outputs: true } : {}), ...(publishOut.value ? { publish: true } : {}) })
+const outputsKey = () => ({ ...(generateOutputs.value ? { generate_outputs: true } : {}), ...(generateOutputs.value && convertRec709.value ? { convert_rec709: true } : {}), ...(publishOut.value ? { publish: true } : {}) })
 watch(runWorkflows, (on) => { if (!on && !isVolume.value) { autoSync.value = false; autoSyncPush.value = false; generateOutputs.value = false } })
-watch(generateOutputs, (on) => { if (!on) publishOut.value = false })
+watch(generateOutputs, (on) => { if (!on) { publishOut.value = false; convertRec709.value = false } })
 /** Ticking either needs the name in Approved by first (they act under it): blocked in place, with the message. */
 function tick(ev, ref_) { if (ev.target.checked && !approvedBy.value.trim()) { ev.target.checked = false; nameNeeded.value = true; return } nameNeeded.value = false; ref_.value = ev.target.checked }
-const onGenerate = (ev) => tick(ev, generateOutputs), onPublish = (ev) => tick(ev, publishOut)
+const onGenerate = (ev) => tick(ev, generateOutputs), onPublish = (ev) => tick(ev, publishOut), onRec709 = (ev) => { convertRec709.value = ev.target.checked }
 onMounted(() => { publishStore.loadSettings() })
 const maxPods = ref(2), costCap = ref(50), approvedBy = ref(''), error = ref(''), starting = ref(false)
-watch([cards, picked, runWorkflows, costCap, autoSyncOpt, generateOutputs, publishOut], () => { if (step.value === 3) replan() }, { deep: true })
+watch([cards, picked, runWorkflows, costCap, autoSyncOpt, generateOutputs, publishOut, convertRec709], () => { if (step.value === 3) replan() }, { deep: true })
 const pending = ref(new Set())   // rounds whose plan is still being read (a big round takes seconds): step 2 can be opened meanwhile
 const loadingPlan = computed(() => pending.value.size > 0)
 try { approvedBy.value = localStorage.getItem('runpod-manager.approved-by') || '' } catch { /* storage blocked */ }

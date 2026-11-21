@@ -975,6 +975,8 @@
         "publishS3": "Publish to S3 when done",
         "publishSlack": "Post to Slack when done",
         "skipExisting": "Skip existing by default",
+        "convertRec709": "Convert To Rec.709",
+        "convertRec709Tip": "Off (default): review and proxy videos keep the frames' signal (Gamma 2.6 P3-D65) and say so in the sidecar and DELIVERY.md. On: they are converted to a Rec.709 view. Auto-generate and Generate Outputs use this unless an import or a request says otherwise. The Tunnel preset always converts.",
         "preHelp": "These only pre-tick the boxes in the Generate window. Every publish still asks who says yes.",
         "skipHelp": "Starting values of the Generate window",
         "needCodec": "Render sequences: tick at least one codec."
@@ -1127,6 +1129,10 @@
     "generate": "Generate Outputs",
     "generateHint": "When a pod's workflows finish, the review videos of its new finished DPX sequences are made on that pod (settings from the Default Configuration). Uses the name in Approved by.",
     "generateLine": "Then generate the review videos on each pod",
+    "convertRec709": "Convert To Rec.709",
+    "convertRec709Hint": "Off: the videos keep the frames' signal (Gamma 2.6 P3-D65) and say so in their sidecar and DELIVERY.md. On: they are converted to a Rec.709 view.",
+    "convertRec709Tooltip": "Tag or convert. Off (default): the review and proxy videos are NOT converted; they keep the frames' signal and the sidecar and DELIVERY.md state it (the frames' colour is Gamma 2.6 P3-D65). On: they are converted from Gamma 2.6 P3-D65 to a Rec.709 view (BT.709 primaries and transfer) and the files say converted: p3-d65-gamma26 -> rec709. The DPX frames are never touched. The Tunnel preset always converts.",
+    "convertRec709Line": "Review videos converted to Rec.709 (frames: Gamma 2.6 P3-D65)",
     "publish": "Publish",
     "publishHint": "Then the finished videos go to S3 (and Slack when the Default Configuration says so). Uses the name in Approved by.",
     "publishNotReady": "Publishing is not set up yet: {reason}",
@@ -1468,6 +1474,7 @@
   },
   "errorText": { "more": "Details", "title": "Error", "close": "Close", "copy": "Copy", "copied": "Copied" },
   "queue": {
+    "convertRec709": "Converted to Rec.709",
     "export": "Export",
     "exportCsv": "CSV",
     "exportPdf": "PDF",

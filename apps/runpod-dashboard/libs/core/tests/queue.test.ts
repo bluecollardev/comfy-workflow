@@ -404,6 +404,21 @@ describe('Generate Outputs and Publish (Import Round options)', () => {
     await expect(queue.importRounds([{ round: ROUND, shots: ['cgi-043'] }, { round: 'other-round', publish: true }], { approved_by: 'Lucas' })).rejects.toMatchObject({ status: 400, message: /Publish needs Generate Outputs/ })
     expect(queue.list().imports).toHaveLength(0)
   })
+  it('Convert To Rec.709: needs Generate Outputs, is validated, shows in the plan, is stored on the import and reaches the render; off by default (rec709: false)', async () => {
+    const { f, extra } = fakes(); const w = world(POOL, 4, extra)
+    await expect(queue.planImport(ROUND, { shots: ['cgi-043'], convert_rec709: true })).rejects.toMatchObject({ status: 400, message: /Convert To Rec\.709 needs Generate Outputs/ })
+    await expect(queue.importRound(ROUND, { ...OPTS, generate_outputs: true, convert_rec709: 'yes' as never })).rejects.toMatchObject({ status: 400, message: /convert_rec709 is true or false/ })
+    expect(queue.list().imports).toHaveLength(0)
+    expect((await queue.planImport(ROUND, { shots: ['cgi-043'], generate_outputs: true, convert_rec709: true })).convert_rec709).toBe(true)
+    expect((await queue.planImport(ROUND, { shots: ['cgi-043'], generate_outputs: true })).convert_rec709).toBeUndefined()
+    const imp = await queue.importRound(ROUND, { ...OPTS, generate_outputs: true, convert_rec709: true }); expect(imp.convert_rec709).toBe(true)
+    await finishRun(w); expect(f.renders).toHaveLength(1); expect(f.renders[0]).toMatchObject({ rec709: true })
+  })
+  it('without Convert To Rec.709 the import asks the render to keep the signal (rec709: false) and stores nothing', async () => {
+    const { f, extra } = fakes(); const w = world(POOL, 4, extra)
+    const imp = await queue.importRound(ROUND, { ...OPTS, generate_outputs: true }); expect(imp.convert_rec709).toBeUndefined()
+    await finishRun(w); expect(f.renders).toHaveLength(1); expect(f.renders[0]).toMatchObject({ rec709: false })
+  })
   it('shows the options in the plan, resolves Slack (only with S3), and stores them on the import', async () => {
     const { f, extra } = fakes(); world([], 4, extra); f.slack = true
     const plan = await queue.planImport(ROUND, { shots: ['cgi-043'], generate_outputs: true, publish: true })
