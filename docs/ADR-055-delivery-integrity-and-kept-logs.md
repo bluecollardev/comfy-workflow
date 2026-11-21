@@ -48,3 +48,11 @@ For the 16 elements that exist only as a finished video, `libs/core/src/dpxmake.
 
 ## 9. Not built
 The wait-for-ComfyUI check; the proxy's timecode check; the round-level manifest question; the Outputs window button and a run on a pod for the DPX unpack of the 16 elements (section 8); CGI-072 (version mismatch with the PDF).
+
+## 9. Issues found in the delivery on 2026-11-21 (from the verified stage matrix, `docs/CANALV2-TUNNEL-V11-DELIVERY-REPORT-2026-11-20.md` section 1)
+- **The review videos in the real round are the first pass:** made from the old frames (header said linear, no start timecode) at 24 fps. The corrected pass (23.976 fps, from the fixed frames) exists only as ProRes in test rounds, and none of the 11 base_v008 elements has an H.264. Which colour statement is right (Lucas restated it as "linear P3-D65" at 17:53 UTC on 11-20) is not settled. Not fixed.
+- **Auto-publish posted to Slack 55 times** (not the 16 first reported), 9 of them with frames that still carried the old header, and items that are not among the 36. It had a standing approval and Slack on; it is now off. Rule for next time: Auto-publish never has Slack on during a delivery, and a standing approval does not cover review videos of unfinished elements.
+- **The real round held 53 stray sample frames** (8 each, 13 for 087 platform) uploaded on 11-20 with no job of ours on record, 384 bytes different from the corrected frames; they blocked 5 of the 11 elements until the overwrite switch (amendment in section 1) was used.
+- **Half-finished uploads sit in `_TEST_2026-11-21`** (080 e, 168 b, chasm07 one file cut short, chasmfastia2); a failed upload leaves partial folders behind. Test round only.
+- **The transfer pod is picked once, at the start of a publish job:** a job started while pod X ran kept using X after it was stopped, and every transfer stalled ("no data for 300 s"); with no pod running the transfer falls back to streaming through the Mac at about 4.7 MB/s. A retry reuses the stale pod. Fix to build: pick the pod at each transfer, and say which route a job uses. Worked around by cancelling and restarting the job with a running pod (37 MB/s).
+- **`publish run` can take over 5 minutes to return** (it plans every file first); a caller with a 5-minute timeout believes it failed.
