@@ -103,6 +103,46 @@ export function validateEdl(e: EdlConfig): void {
   const s = e.source; if (!s) return
   if ('file' in s) { if (!s.file.startsWith('/')) throw bad('edl.source.file is an absolute path') } else if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(s.bucket) || s.key.startsWith('/') || s.key.split('/').includes('..')) throw bad('edl.source is { bucket, key } (a bucket name and a key with no leading slash and no ..), or { file }')
 }
+/**
+ * Prepare For Delivery (ADR-055 section 12): the defaults of the corrected DPX copies (`dpx_fix`, the Outputs window's Prepare For Delivery). Default Configuration only, exported and imported
+ * with the other settings. The clip name and the start timecode come from the EDL (the `edl` block says where it is read from), the rest is here. A person's yes (`approved_by`) is NOT part of it.
+ * An older configuration without the block loads with the defaults below.
+ */
+export interface DeliveryPrepareConfig {
+  /** the folder under the volume's output/ the corrected copies are written to (a plain folder name) */ out_dir: string
+  /** the DPX transfer and colorimetric code the copies carry: user-defined (0, the PDF) or linear (2, what the pipeline wrote) */ colour_code: 'user-defined' | 'linear'
+  /** the gamma written to the TV information header */ gamma: number
+  /** where the frame rate comes from: the clip name (24 for a `_24_` clip, else `fps`) or always `fps` */ fps_source: 'clip-name' | 'fixed'
+  /** the frame rate for a clip whose name does not say, or for every clip when fps_source is fixed */ fps: number
+  /** where the start timecode comes from: the EDL, or 00:00:00:00 for every clip */ timecode_source: 'edl' | 'zero'
+  /** set the film header's frame position, sequence length and frame rate (the PDF), or leave them as the pipeline wrote them */ frame_position: 'set' | 'keep'
+  /** a copy that already exists is kept (true) or written again (false); the original frames are never touched either way */ skip_existing: boolean
+}
+export const DELIVERY_PREPARE_DEFAULT: DeliveryPrepareConfig = { out_dir: '_delivery_v11', colour_code: 'user-defined', gamma: 2.6, fps_source: 'clip-name', fps: 23.976, timecode_source: 'edl', frame_position: 'set', skip_existing: false }
+export function normalizeDeliveryPrepare(v: unknown): DeliveryPrepareConfig {
+  const o = (v && typeof v === 'object' && !Array.isArray(v) ? v : {}) as Record<string, unknown>, d = DELIVERY_PREPARE_DEFAULT
+  const num = (x: unknown, def: number) => (typeof x === 'number' && Number.isFinite(x) ? x : def)
+  return {
+    out_dir: typeof o.out_dir === 'string' && o.out_dir.trim() ? o.out_dir.trim() : d.out_dir,
+    colour_code: o.colour_code === 'linear' ? 'linear' : o.colour_code === 'user-defined' ? 'user-defined' : (typeof o.colour_code === 'string' ? (o.colour_code as never) : d.colour_code),
+    gamma: num(o.gamma, d.gamma),
+    fps_source: o.fps_source === 'fixed' ? 'fixed' : o.fps_source === 'clip-name' || o.fps_source === undefined ? 'clip-name' : (o.fps_source as never),
+    fps: num(o.fps, d.fps),
+    timecode_source: o.timecode_source === 'zero' ? 'zero' : o.timecode_source === 'edl' || o.timecode_source === undefined ? 'edl' : (o.timecode_source as never),
+    frame_position: o.frame_position === 'keep' ? 'keep' : o.frame_position === 'set' || o.frame_position === undefined ? 'set' : (o.frame_position as never),
+    skip_existing: o.skip_existing === true,
+  }
+}
+export function validateDeliveryPrepare(c: DeliveryPrepareConfig): void {
+  if (!/^[A-Za-z0-9._-]{1,60}$/.test(c.out_dir) || c.out_dir === '.' || c.out_dir === '..' || c.out_dir.includes('..')) throw bad('delivery_prepare.out_dir is one plain folder name (letters, digits . _ -, at most 60) under the volume\'s output/')
+  if (c.colour_code !== 'user-defined' && c.colour_code !== 'linear') throw bad('delivery_prepare.colour_code is user-defined or linear')
+  if (!(c.gamma >= 0.1 && c.gamma <= 10)) throw bad('delivery_prepare.gamma is a number from 0.1 to 10')
+  if (c.fps_source !== 'clip-name' && c.fps_source !== 'fixed') throw bad('delivery_prepare.fps_source is clip-name or fixed')
+  if (!(c.fps >= 1 && c.fps <= 120)) throw bad('delivery_prepare.fps is a frame rate from 1 to 120')
+  if (c.timecode_source !== 'edl' && c.timecode_source !== 'zero') throw bad('delivery_prepare.timecode_source is edl or zero')
+  if (c.frame_position !== 'set' && c.frame_position !== 'keep') throw bad('delivery_prepare.frame_position is set or keep')
+  if (typeof c.skip_existing !== 'boolean') throw bad('delivery_prepare.skip_existing is true or false')
+}
 /** What a render does with log or linear frames when nobody has stated their colour (ADR-048): `ask` skips them with a warning, `format` converts from `format`, `guess` converts from the DPX header (and says so). The Tunnel preset and a bkk-return publish never guess. */
 export interface RenderColour { mode: 'ask' | 'format' | 'guess' | 'known'; format?: string; /** who and when last set it (kept for the manifest and the sidecar) */ set_by?: string; set_at?: string }
 export interface RenderSettings { /** the colour setting for frames whose header says log, linear or printing density */ colour: RenderColour; where: 'auto' | 'pod' | 'local'; kind: 'proxy' | 'review'; proxy_width: 'source' | 960 | 1280 | 1920; review_width: 'source' | 960 | 1280 | 1920; codecs: ('h264' | 'prores422hq')[]; fps: 'auto' | number; /** a preset: `tunnel` = the Tunnel proxy (H.264, 1920x1080, tagged Rec.709, a start timecode, no burn-ins) */ preset: 'none' | 'tunnel'; /** Sync the renders to this PC when done (default OFF) */ pull: boolean; /** Skip existing: the Generate window starts from it (default ON); a request's own value always wins */ skip_existing: boolean; /** what the Generate window pre-ticks for "Publish to S3 / Post to Slack when done" (default both off): a preference only, a run still needs its own `publish` field and approved_by */ publish: { s3: boolean; slack: boolean } }
@@ -212,6 +252,8 @@ export interface MountsConfig {
   outputs?: OutputsConfig
   /** Where the V11 edit list is read from (Default Configuration only) */
   edl?: EdlConfig
+  /** Prepare For Delivery defaults (the corrected DPX copies); Default Configuration only, exported and imported, no approval in it */
+  delivery_prepare?: DeliveryPrepareConfig
   /** Patterns a push leaves out (see validateExcludes); a pod's own configuration may carry its own (it replaces the default's) */
   sync_exclude?: string[]
   /** A push with exclusions also REMOVES what the patterns match on the volume (a targeted, guarded removal, never rsync --delete-excluded); default off; the run still needs a named yes */
@@ -295,6 +337,7 @@ export function defaults(): MountsConfig {
     auto_publish: { ...AUTO_PUBLISH_DEFAULT },
     outputs: { ...OUTPUTS_DEFAULT },
     edl: { ...EDL_DEFAULT },
+    delivery_prepare: { ...DELIVERY_PREPARE_DEFAULT },
     render: { ...RENDER_DEFAULT, codecs: [...RENDER_DEFAULT.codecs] },
     sync_exclude: [],
     sync_exclude_delete: false,
@@ -346,6 +389,7 @@ export function normalize(data: Partial<MountsConfig>): MountsConfig {
     auto_publish: normalizeAutoPublish(data.auto_publish),
     outputs: normalizeOutputs(data.outputs),
     edl: normalizeEdl(data.edl),
+    delivery_prepare: normalizeDeliveryPrepare(data.delivery_prepare),
     render: normalizeRender(data.render),
     sync_exclude: Array.isArray(data.sync_exclude) ? [...new Set(data.sync_exclude.map((x) => (typeof x === 'string' ? x.trim() : x)))].filter((x) => x !== '') as string[] : [],
     sync_exclude_delete: data.sync_exclude_delete === true,
@@ -643,6 +687,7 @@ export function validate(cfg: MountsConfig): MountsConfig {
   if (cfg.auto_publish) validateAutoPublish(cfg.auto_publish)
   if (cfg.outputs) validateOutputs(cfg.outputs)
   if (cfg.edl) validateEdl(cfg.edl)
+  if (cfg.delivery_prepare) validateDeliveryPrepare(cfg.delivery_prepare)
   validateExcludes(cfg.sync_exclude)
   validateFolderExcludes(cfg.folder_excludes)
   if (cfg.auto_sync?.enabled && !cfg.auto_sync.approved_by.trim()) throw bad('Auto sync needs the name of who says yes')
