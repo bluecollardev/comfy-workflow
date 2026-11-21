@@ -63,6 +63,38 @@ Built: `libs/core/src/bridge.ts` (whitelisted snapshot, redactor, freshness, par
 5. Browser and real-Electron tests (fake bucket), then a patch release through the full gate.
 6. Phase 2 (commands, approved in the target's window) only after Phase 1 is in use, with its own ADR amendment.
 
+## Left to do after v1.7.3 (2026-11-21, evening; everything still open from this session)
+**DO NEXT (first thing in the next release)**
+- [ ] **Fix the Queue loading banner** (Lucas, 2026-11-21: "note to do this next"). The text "Still loading the queue (the RunPod volume is slow to answer)…" spins forever because `QueueLoadingBanner.vue` counts the Auto-publish volume scan as loading (`loading` includes `ap.status.watching.volume.scanning`) and that scan has stayed `scanning: true` since the 19:19 restart (`scanned_at` 12:41 UTC, status answers instantly, so the Queue data itself is fine). Two fixes: (1) the banner must wait only for the data the Queue needs (the list, the publish settings), never for a background scan; (2) find why the scan loop does not finish or reset the flag (issue 15; the volume listing may be timing out and leaving `scanning` set). Add a spec: scan running forever must not show the banner; a real list failure still shows the error with Retry.
+
+**Release and restart**
+- [ ] **Idle watch stops a pod during a Frame Previews job** (found in the queue log, 2026-11-21): the landing pod went down at 13:23:10 UTC with no recorded stop from us and the previews job died with code 255 on `ARCHIVAL-168_A`; the idle watch (20 minutes on that pod) does not count a frame-previews job as activity (not verified). Make the idle watch hold a pod while a previews/volume job runs; then the 102 render folders can be done in one run.
+- [ ] Push the release commit and tag (`git push origin develop --tags`; the release script tags but does not push) and confirm the Releases page and the downloads page show v1.7.3.
+- [ ] Restart the app onto v1.7.3 (only after the running Frame Previews job ends; a restart drops its record). Live then: manifest_check / manifest_rebuild, Purge Dry Runs and Restore Dismissed, frame-previews Relaunch, the Outputs-modal thumbnails, video posters and Generation Errors, the 8 px gap under progress bars, `Remove` instead of `Cancel` on finished rows (partly; see below).
+- [ ] The gate on v1.7.3 had the browser suite not rerun in full after the video-viewer spec fix and Electron on the build from just before it; run `./start.sh test` for the next release. Known flake: `outputs-collapse.spec.js:105` (362-frame paging). `publish-backfill` never reproduced.
+
+**Previews and thumbnails**
+- [ ] Frame previews: 1,540 of 1,548 made for the 30 corrected-copy clips (8 frames missing; `ARCHIVAL-168_A` stopped with code 255); the 102 render folders (about 13,800 frames) are not done. Run Load Frame Previews with Skip Existing on a pod, then Relaunch.
+- [ ] Make Lucas's thumbnails (160 px tier) and video posters for everything that already has previews: Load Frame Previews with Skip Existing ticked, after the restart (a pod is needed: resume the landing pod or the cheapest card, about USD 1; the posters need ffmpeg on the pod).
+- [ ] `feature/auto-previews` (cdd4571, not merged, not gated): automatic previews job after outputs, creates or resumes the cheapest pod within USD 1.00 an hour and USD 3 a day, stops it when done. Before it is live: add `vlvrtpnig8rkoh` and other sessions' pods to `exclude_pod_ids`; plug the thumbnails/posters tier into `registerTier`; hook Auto-generate's review videos; run the gate; merge (light conflict with the thumbnails code in `framepreviews.ts` and `en.json`).
+- [ ] Outputs-modal follow-ups dropped to keep the change small: disk cache, a `Make Thumbnails` button and MCP action, contact sheets, pooling for `s3file://` volumes with no pod, thumbnails/posters in the other views (main Outputs window, Generate lists, Queue review rows, Pending Uploads); Load Frame Previews stays disabled when only posters are missing; the 30-minute preview cache can show a stale image after a regeneration with Skip Existing off.
+- [ ] Frame-previews jobs are not shown in the Queue (only in the Generate window); records last until a restart (a relaunch afterwards answers not found).
+
+**Auto-publish**
+- [ ] Purge the dry runs (14 pending entries, one already cancelled: archival-087 v002; the entries are older versions and items outside the 36: archival-101 v002, cgi-072 v001 v002 v004, depth-121 v001, map-066 v002, photoreal-013 v007 to v009 and v013 to v018). Purge keeps them out only while in dry run; going live ignores the dismissed set, so decide each one (cancel, hold or approve) before going live.
+- [ ] Go live, scoped (`scope: edl`, `fix_dpx` on, `include_dpx` back on, S3 + Slack, cap, window): only on Lucas's go-ahead after the pending list is reviewed; then watch the first uploads and Slack posts.
+- [ ] A button to clear the dry-run summary (all and individually): built as Purge Dry Runs (all) and `Remove` per entry; the History's dry-run rows and the dry-run summary lines are not cleared by it (it keeps History): decide whether to add that.
+
+**Delivery (Tunnel V11, 35 of 36 in the round)**
+- [ ] f23 (633 frames): tomorrow, `run_split` on three 2x pods (about 2 hours, about USD 8 to 13), `dpx_fix`, parallel upload, manifest; estimate in `docs/CANALV2-TUNNEL-V11-TIMING.md`.
+- [ ] Issue 27: 9 frames (6 top, 3 sunlight) have `sha256: n/a` in their manifests (skipped files are not hashed); fix in code (hash skipped files or let `manifest_rebuild` fill them in), then run `manifest_check` on the round.
+- [ ] Issue 28: the DPX TV-header bytes (interlace, field number, video signal) hold non-zero values from the encoder in every frame; ask Binc whether his tools read them.
+- [ ] `ISSUES.json` content decision, the raster question (3840x2160 against 1920X1080 names), the CGI-072 source (V03 HEVC at 24 fps against V02 ProRes 23.976), and the spend against Binc's USD 100 cap (Lucas to agree a figure with Binc).
+- [ ] Review videos for the 18 elements without them and redo the 17 first-pass ones; H.264 handling (Convert To Rec.709 option is built, default on).
+- [ ] Tell the other session not to resubmit sunlight; stop `landing` pod `h563hjyoacn5p0` when its previews work ends (the app stops pods it started; check `list_pods`).
+- [ ] Panama bucket as a source for Sync's pull on Binc's computer (and as the default?): not built; write the ADR first (today Sync moves files between this Mac and the volume; bucket to volume is `panama_pull` through a pod, ADR-015).
+- [ ] Spend and pods: three render pods and the uploader are stopped (about USD 4, 4 and 3.6 for top, landing and sunlight); logs are in `POD-LOGS-2026-11-21.md`.
+
 ## Open from 2026-11-21 (evening): the Tunnel V11 issue register
 
 Full table with status, why it matters and the next step: [`docs/CANALV2-TUNNEL-V11-ISSUES-2026-11-21.md`](docs/CANALV2-TUNNEL-V11-ISSUES-2026-11-21.md). State at 19:57: 35 of 35 targeted elements in the real round (f23 tomorrow); at 18:35 it was 32 of 35 with top, landing and sunlight rendering (ETA 19:06 to 19:23), f23 deferred. Decisions: [ADR-057](docs/ADR-057-parallel-renders-and-uploads-in-the-app.md).
