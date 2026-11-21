@@ -263,35 +263,50 @@ export function parseSidecar(text: string): Record<string, unknown> {
   return { unreadable: true }
 }
 export const VOLUME_MAX_VERSIONS = 500, VOLUME_MAX_OBJECTS = 5000, SIDECAR_MAX = 256 * 1024
-interface VolState { at: number; scanning: boolean; error?: string; id: string; reviews: Found[]; promise?: Promise<void>; ac?: AbortController }
-const vol: VolState = { at: 0, scanning: false, id: '', reviews: [] }
-/** List the volume's reviews now ("Scan now"): one scan at a time (a second call waits for the one running), shot folders, then version folders, then the files of each version, capped at 500 versions and 5,000 objects, chunked with yields, abortable; each sidecar is read as a small object (at most 256 KB) and judged by the SAME checks as a local review. A volume that cannot be listed is reported in the status and never breaks the local tick. */
+interface VolState { at: number; okAt: number; startedAt: number; run: number; scanning: boolean; error?: string; scanError?: { reason: string; at: string }; id: string; reviews: Found[]; promise?: Promise<void>; ac?: AbortController }
+const vol: VolState = { at: 0, okAt: 0, startedAt: 0, run: 0, scanning: false, id: '', reviews: [] }
+/** A listing that hangs must not hold "scanning" for ever (the Queue banner never ended, 2026-11-21): each listing is given `listMs`, a whole scan `scanMs`, and a scan that ignores its abort is given up `graceMs` later. The last good result is kept. */
+export const volumeScanLimits = { listMs: 60_000, scanMs: 5 * 60_000, graceMs: 5_000 }
+const span = (ms: number) => (ms >= 60_000 ? `${Math.round(ms / 60_000)} minute${ms >= 90_000 ? 's' : ''}` : `${+(ms / 1000).toFixed(2)} seconds`)
+const limited = async <T>(signal: AbortSignal, fn: (s: AbortSignal) => Promise<T>): Promise<T> => {
+  const s = AbortSignal.any([signal, AbortSignal.timeout(volumeScanLimits.listMs)])
+  try { return await fn(s) } catch (e) { if (!signal.aborted && s.aborted) throw new CoreError(504, `Listing the volume took longer than ${span(volumeScanLimits.listMs)} and was stopped`); throw e }
+}
+/** List the volume's reviews now ("Scan now"): one scan at a time (a second call waits for the one running), shot folders, then version folders, then the files of each version, capped at 500 versions and 5,000 objects, chunked with yields, abortable; each listing is limited to `listMs` and the scan to `scanMs` (then it is stopped, `scan_error` says why and the last good result stays); each sidecar is read as a small object (at most 256 KB) and judged by the SAME checks as a local review. A volume that cannot be listed is reported in the status and never breaks the local tick. */
 export async function scanVolume(): Promise<{ scanned: boolean; reviews: number; error?: string; scanned_at: string | null }> {
-  const s = await stored()
-  if (!s.sources.volume) return { scanned: false, reviews: vol.reviews.length, scanned_at: vol.at ? iso(vol.at) : null, error: 'The volume is not one of the places Auto-publish watches' }
+  const s = await stored(), last = () => (vol.okAt ? iso(vol.okAt) : null)
+  if (!s.sources.volume) return { scanned: false, reviews: vol.reviews.length, scanned_at: last(), error: 'The volume is not one of the places Auto-publish watches' }
+  if (vol.promise && vol.startedAt && deps.now() - vol.startedAt > 2 * volumeScanLimits.scanMs) { vol.ac?.abort(); vol.promise = undefined; vol.scanning = false }   // a scan that outlived every limit is given up; its late finish does not touch the state of the next one
   if (!vol.promise) {
-    const ac = new AbortController(); vol.ac = ac; vol.scanning = true
-    vol.promise = doScanVolume(ac.signal).then(() => { delete vol.error }, (e) => { vol.error = publish.redact((e as Error).message).slice(0, 300) }).finally(() => { vol.scanning = false; vol.at = deps.now(); vol.promise = undefined; vol.ac = undefined; watchMemo.at = 0 })
+    const ac = new AbortController(), run = ++vol.run; vol.ac = ac; vol.scanning = true; vol.startedAt = deps.now()
+    let timedOut = false
+    const timer = setTimeout(() => { timedOut = true; ac.abort() }, volumeScanLimits.scanMs); timer.unref?.()
+    const guard = new Promise<never>((_, rej) => { ac.signal.addEventListener('abort', () => { const g = setTimeout(() => rej(new CoreError(499, 'The volume scan was cancelled')), volumeScanLimits.graceMs); g.unref?.() }, { once: true }) }); guard.catch(() => undefined)
+    vol.promise = Promise.race([doScanVolume(ac.signal), guard]).then(() => { if (vol.run !== run) return; vol.okAt = deps.now(); delete vol.error; delete vol.scanError }, (e) => {
+      if (vol.run !== run) return
+      const reason = timedOut ? `The volume scan took longer than ${span(volumeScanLimits.scanMs)} and was stopped${vol.okAt ? `; the last scan (${vol.reviews.length} reviews) is kept` : ''}` : publish.redact((e as Error).message).slice(0, 300)
+      vol.error = reason; vol.scanError = { reason, at: iso(deps.now()) }
+    }).finally(() => { clearTimeout(timer); if (vol.run !== run) return; vol.scanning = false; vol.at = deps.now(); vol.startedAt = 0; vol.promise = undefined; vol.ac = undefined; watchMemo.at = 0 })
   }
   await vol.promise
   void consider().catch(() => undefined)
-  return { scanned: !vol.error, reviews: vol.reviews.length, scanned_at: iso(vol.at), ...(vol.error ? { error: vol.error } : {}) }
+  return { scanned: !vol.error, reviews: vol.reviews.length, scanned_at: last(), ...(vol.error ? { error: vol.error } : {}) }
 }
 async function doScanVolume(signal: AbortSignal): Promise<void> {
   vol.id = publish.volumeIdNow()
   const out: Found[] = [], yieldLoop = () => new Promise<void>((res) => setImmediate(res))
-  const shots = (await publish.volumeBrowse('deliver', signal)).dirs.filter((d) => SHOT_RE.test(d)).sort()
+  const shots = (await limited(signal, (x) => publish.volumeBrowse('deliver', x))).dirs.filter((d) => SHOT_RE.test(d)).sort()
   let versions = 0, objects = 0
   outer: for (const shot of shots) {
-    const vs = (await publish.volumeBrowse(`deliver/${shot}`, signal)).dirs.filter((d) => VERSION_RE.test(d)).sort()
+    const vs = (await limited(signal, (x) => publish.volumeBrowse(`deliver/${shot}`, x))).dirs.filter((d) => VERSION_RE.test(d)).sort()
     for (const v of vs) {
       if (signal.aborted) throw new CoreError(499, 'The volume scan was cancelled')
       if (++versions > VOLUME_MAX_VERSIONS) break outer
-      const ls = await publish.volumeBrowse(`deliver/${shot}/${v}`, signal); objects += ls.files.length
+      const ls = await limited(signal, (x) => publish.volumeBrowse(`deliver/${shot}/${v}`, x)); objects += ls.files.length
       if (!ls.files.length) continue   // an EMPTY version folder (a failed render left it) is not a review: neither counted nor listed
       if (objects > VOLUME_MAX_OBJECTS) break outer
       const keyOf2 = new Map(ls.files.map((f) => [f.name, f]))
-      out.push(await judge(shot, v, ls.files.map((f) => ({ name: f.name, bytes: f.bytes })), 'volume', async (name) => { const f = keyOf2.get(name); if (!f || f.bytes > SIDECAR_MAX) return {}; const text = await publish.volumeReadText(f.key, SIDECAR_MAX, signal).catch(() => null); return text === null ? {} : parseSidecar(text) }))
+      out.push(await judge(shot, v, ls.files.map((f) => ({ name: f.name, bytes: f.bytes })), 'volume', async (name) => { const f = keyOf2.get(name); if (!f || f.bytes > SIDECAR_MAX) return {}; const text = await limited(signal, (x) => publish.volumeReadText(f.key, SIDECAR_MAX, x)).catch(() => null); return text === null ? {} : parseSidecar(text) }))
       await yieldLoop()
     }
   }
@@ -548,7 +563,7 @@ async function markUploaded(e: Entry, job_id: string | undefined, counted: boole
 }
 
 // ----- status and the person's actions -----
-export interface Watching { local: { enabled: boolean; root: string | null; root_exists: boolean; reviews: number }; volume: { enabled: boolean; id: string; reviews: number; scanned_at: string | null; scanning: boolean; error?: string }; /** this PC's folder (kept from the first version of this field) and the totals over the places watched */ root: string | null; root_exists: boolean; shots: number; reviews: number; approved: number; eligible: number; queued: number; uploaded_today: number; /** what was uploaded today: the review, when, and whether a person pressed Publish now (additive) */ uploaded?: { shot: string; version: string; at: string; manual?: boolean; already?: boolean }[]; skipped: { shot: string; version: string; reason: string }[]; /** how many dry-run entries a person dismissed (Purge Dry Runs) and that stay out of the list until restored */ dismissed?: number; /** the scope in force and, with `edl` and no EDL loaded, why nothing is generated or queued */ scope: 'edl' | 'all'; scope_warning?: string; summary: string }
+export interface Watching { local: { enabled: boolean; root: string | null; root_exists: boolean; reviews: number }; volume: { enabled: boolean; id: string; reviews: number; scanned_at: string | null; scanning: boolean; /** when the running scan began (null when idle) */ scan_started_at: string | null; error?: string; /** why the last scan failed or was stopped; the last good result stays listed (`scanned_at` is that result's time) */ scan_error?: { reason: string; at: string } }; /** this PC's folder (kept from the first version of this field) and the totals over the places watched */ root: string | null; root_exists: boolean; shots: number; reviews: number; approved: number; eligible: number; queued: number; uploaded_today: number; /** what was uploaded today: the review, when, and whether a person pressed Publish now (additive) */ uploaded?: { shot: string; version: string; at: string; manual?: boolean; already?: boolean }[]; skipped: { shot: string; version: string; reason: string }[]; /** how many dry-run entries a person dismissed (Purge Dry Runs) and that stay out of the list until restored */ dismissed?: number; /** the scope in force and, with `edl` and no EDL loaded, why nothing is generated or queued */ scope: 'edl' | 'all'; scope_warning?: string; summary: string }
 export function status(): { generate: autogenerate.GenerateStatus; watching: Watching; enabled: boolean; dry_run: boolean; dry_run_first: boolean; standing: Standing | null; window_minutes: number; daily_cap: number | null; targets: Targets; today: { count: number; left: number | null }; destination: string; /** the DPX of an upload: included or not, fixed first (ADR-057 decision 7) or off, and how many sequences are being corrected now */ dpx: { include: boolean; fix: boolean; mode: string; fixing: number }; pending: ReturnType<typeof view>[]; recent: ReturnType<typeof view>[] } {
   void ensureLoaded()
   const m = memo
@@ -561,12 +576,12 @@ async function refreshMemo(): Promise<void> {
   Object.assign(memo, { generate: s.generate, enabled: s.enabled, dry_run: s.dry_run, dry_run_first: s.dry_run_first, standing: s.standing, targets: s.targets, window_minutes: s.window_minutes, daily_cap: s.daily_cap, include_dpx: s.include_dpx, fix_dpx: s.fix_dpx !== false, destination: s.destination, count: st.day === localDay(deps.now()) ? st.count ?? 0 : 0 })
 }
 /** What Auto-publish is looking at, in one sentence, and why each review it saw is not going out. It reads this PC's deliver/ only (volume-side scanning is a later decision). Cached for 10 s so the window's polling is never a listing storm. */
-const emptyWatching = (): Watching => ({ local: { enabled: true, root: null, root_exists: false, reviews: 0 }, volume: { enabled: true, id: '', reviews: 0, scanned_at: null, scanning: false }, root: null, root_exists: false, shots: 0, reviews: 0, approved: 0, eligible: 0, queued: 0, uploaded_today: 0, skipped: [], scope: 'edl', summary: '' })
+const emptyWatching = (): Watching => ({ local: { enabled: true, root: null, root_exists: false, reviews: 0 }, volume: { enabled: true, id: '', reviews: 0, scanned_at: null, scanning: false, scan_started_at: null }, root: null, root_exists: false, shots: 0, reviews: 0, approved: 0, eligible: 0, queued: 0, uploaded_today: 0, skipped: [], scope: 'edl', summary: '' })
 const watchMemo: { at: number; value: Watching } = { at: 0, value: emptyWatching() }
 async function computeWatching(): Promise<Watching> {
   const cfg = await stored(), root = deps.outputRoot(), exists = async (p: string) => { try { return (await stat(p)).isDirectory() } catch { return false } }
   const w = emptyWatching(); w.queued = entries.size; w.root = root; w.local.enabled = cfg.sources.local; w.local.root = root; w.volume.enabled = cfg.sources.volume
-  w.volume.id = vol.id || (cfg.sources.volume ? publish.volumeIdNow() : ''); w.volume.scanned_at = vol.at ? iso(vol.at) : null; w.volume.scanning = vol.scanning; if (vol.error) w.volume.error = vol.error
+  w.volume.id = vol.id || (cfg.sources.volume ? publish.volumeIdNow() : ''); w.volume.scanned_at = vol.okAt ? iso(vol.okAt) : null; w.volume.scanning = vol.scanning; w.volume.scan_started_at = vol.scanning && vol.startedAt ? iso(vol.startedAt) : null; if (vol.error) w.volume.error = vol.error; if (vol.scanError) w.volume.scan_error = vol.scanError
   w.root_exists = !!root && (await exists(root)); w.local.root_exists = w.root_exists
   const hasDeliver = !!root && (await exists(join(root, 'deliver')))
   const st = await stateOf(), ap = await approvalList(), found = await allReviews(), pend = new Set([...entries.values()].map((e) => e.key))
@@ -704,4 +719,4 @@ export const settled = async (): Promise<void> => { for (const e of [...entries.
 /** Called where a review render ends: best effort, never throws, never delays the render. */
 export function considerSoon(): void { try { void consider().then(refreshMemo).catch(() => undefined) } catch { /* never fails a render */ } }
 /** Forget everything in memory (tests). */
-export function reset(): void { edlMemo.clear(); edlHold.clear(); dpxMemo.clear(); dpxFailUntil.clear(); dpxprep.reset(); autogenerate.reset(); Object.assign(memo, { generate: { ...mounts.AUTO_GENERATE_DEFAULT } }); watchMemo.at = 0; watchMemo.value = emptyWatching(); vol.ac?.abort(); Object.assign(vol, { at: 0, scanning: false, id: '', reviews: [], promise: undefined, ac: undefined }); delete vol.error; uploadChain = Promise.resolve(); stateLock = Promise.resolve(); considering = Promise.resolve(); ; stop(); entries.clear(); recent = []; seq = 0; loaded = null; inDestination.clear(); Object.assign(memo, { enabled: false, dry_run: true, dry_run_first: true, standing: null, targets: { s3: true, slack: false, tunnel: false }, window_minutes: WINDOW_DEFAULT, daily_cap: null, count: 0, destination: '' }); setDeps(null) }
+export function reset(): void { edlMemo.clear(); edlHold.clear(); dpxMemo.clear(); dpxFailUntil.clear(); dpxprep.reset(); autogenerate.reset(); Object.assign(memo, { generate: { ...mounts.AUTO_GENERATE_DEFAULT } }); watchMemo.at = 0; watchMemo.value = emptyWatching(); vol.ac?.abort(); Object.assign(vol, { at: 0, okAt: 0, startedAt: 0, scanning: false, id: '', reviews: [], promise: undefined, ac: undefined }); delete vol.scanError; delete vol.error; uploadChain = Promise.resolve(); stateLock = Promise.resolve(); considering = Promise.resolve(); ; stop(); entries.clear(); recent = []; seq = 0; loaded = null; inDestination.clear(); Object.assign(memo, { enabled: false, dry_run: true, dry_run_first: true, standing: null, targets: { s3: true, slack: false, tunnel: false }, window_minutes: WINDOW_DEFAULT, daily_cap: null, count: 0, destination: '' }); setDeps(null) }

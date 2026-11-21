@@ -14,10 +14,11 @@
         <span class="badge text-bg-info fw-normal" data-testid="autopublish-place-volume">{{ $t('autopublish.sources.badgeVolume') }}</span>
         <span v-if="w.volume.enabled === false" class="text-body-secondary">{{ $t('autopublish.watch.volumeOff', { name: volumeName }) }}</span>
         <span v-else>{{ $t('autopublish.watch.volume', { name: volumeName, n: w.volume.reviews ?? 0 }) }}<template v-if="w.volume.scanned_at"> · {{ $t('autopublish.watch.scanned', { when: ago(w.volume.scanned_at) }) }}</template></span>
-        <BSpinner v-if="scanning" small data-testid="autopublish-scanning" />
-        <BButton size="sm" variant="outline-light" class="py-0" :disabled="scanning || w.volume.enabled === false" data-testid="autopublish-scan-now" @click="scan">{{ $t('autopublish.watch.scanNow') }}</BButton>
+        <BSpinner v-if="scanState.state === 'scanning' || localScanning" small data-testid="autopublish-scanning" />
+        <span v-else-if="scanState.state === 'slow'" class="text-body-secondary" data-testid="autopublish-scan-slow">{{ $t('autopublish.watch.scanSlow', { n: scanState.minutes }) }}</span>
+        <BButton size="sm" variant="outline-light" class="py-0" :disabled="localScanning || scanState.state === 'scanning' || w.volume.enabled === false" data-testid="autopublish-scan-now" @click="scan">{{ $t(scanState.state === 'error' ? 'autopublish.watch.scanRetry' : 'autopublish.watch.scanNow') }}</BButton>
       </div>
-      <div v-if="w.volume.error || scanError" class="text-danger" data-testid="autopublish-volume-error">{{ w.volume.error || scanError }}</div>
+      <div v-if="scanState.state === 'error' || scanError" class="text-danger" data-testid="autopublish-volume-error">{{ scanError || scanState.error }}<span v-if="!scanError && scanState.last" class="text-body-secondary ms-1" data-testid="autopublish-scan-kept">({{ $t('autopublish.watch.keptResult', { when: ago(scanState.last) }) }})</span></div>
     </template>
     <div v-if="status.require_approval !== undefined" class="text-body-secondary" data-testid="autopublish-publishing-line">{{ $t(status.require_approval ? 'autopublish.pipe.statusApproved' : 'autopublish.pipe.statusAll') }}</div>
     <div v-if="w.summary && !compact" data-testid="autopublish-watching-summary">{{ w.summary }}</div>
@@ -36,7 +37,7 @@ import { useAutopublishStore } from '../stores/autopublish'
 import { errorText } from '../stores/toast'
 import { t } from '../i18n'
 import { useUiStore } from '../stores/ui'
-import { targetsText, agoText, versionTag } from '../utils/autopublish'
+import { targetsText, agoText, versionTag, volumeScan } from '../utils/autopublish'
 import { whenText } from '../utils/when'
 
 const props = defineProps({ status: { type: Object, default: null }, skipped: { type: Boolean, default: false }, /** the Default Configuration's copy: no long summary sentence (the counts line and the Auto-generate block say it) */ compact: { type: Boolean, default: false } })
@@ -57,7 +58,7 @@ const rootPath = computed(() => (places.value ? w.value.local.root : w.value?.ro
 const rootMissing = computed(() => (places.value ? w.value.local.root_exists === false && w.value.local.enabled !== false : w.value?.root_exists === false))
 const now = ref(Date.now())
 const ago = (iso) => agoText(iso, t, now.value)
-const scanning = computed(() => localScanning.value || !!w.value?.volume?.scanning)
+const scanState = computed(() => volumeScan(w.value?.volume, now.value))   // idle | scanning (first 90 s) | slow (background, no spinner) | error
 const localScanning = ref(false), scanError = ref('')
 async function scan() { scanError.value = ''; localScanning.value = true; try { await ap.scanVolume() } catch (e) { scanError.value = errorText(e) } finally { localScanning.value = false } }
 const timer = setInterval(() => { now.value = Date.now() }, 30000)

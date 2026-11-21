@@ -19,7 +19,7 @@ let slowTimer = null
 onMounted(() => { if (!pub.loaded) pub.loadSettings() })   // the Publishing tab may not be open: the banner asks for what it waits on
 onBeforeUnmount(() => clearTimeout(slowTimer))
 const error = computed(() => ui.queueListError || (!ap.old && ap.error) || (!pub.old && pub.error) || '')
-const loading = computed(() => !error.value && (!ui.queueListLoaded || (!ap.old && !ap.status) || (!pub.old && !pub.loaded) || !!ap.status?.watching?.volume?.scanning))
+const loading = computed(() => !error.value && (!ui.queueListLoaded || (!ap.old && !ap.status) || (!pub.old && !pub.loaded)))   // only the data the Queue needs: never the background volume scan (it made the banner spin for ever, 2026-11-21)
 watch(loading, (l) => { clearTimeout(slowTimer); slow.value = false; if (l) slowTimer = setTimeout(() => { slow.value = true }, 5000) }, { immediate: true })
 const queueBanner = computed(() => (error.value ? { error: error.value } : loading.value ? { slow: slow.value } : null))
 function retry() { ui.queueListError = ''; ui.queueRetry++; ap.error = ''; pub.error = ''; ap.refresh(); pub.loadSettings(); pub.refresh() }

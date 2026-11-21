@@ -120,7 +120,7 @@ import { useRunJobsStore } from './stores/runjobs'
 import { usePreviewsStore } from './stores/previews'
 import { useAutopublishStore } from './stores/autopublish'
 import { usePublishStore } from './stores/publish'
-import { targetsText, todayText } from './utils/autopublish'
+import { targetsText, todayText, volumeScan } from './utils/autopublish'
 import NamePromptHost from './components/NamePromptHost.vue'
 import { useToastStore } from './stores/toast'
 import { t } from './i18n'
@@ -168,7 +168,7 @@ const queueCount = ref(0)
 const rendersStore = useRendersStore(), previewsStore = usePreviewsStore(), runJobsStore = useRunJobsStore()
 /** The badge: the queue's tasks and volume jobs, plus the running generations (render jobs, a running preview batch). */
 const autopublish = useAutopublishStore(), publishStore = usePublishStore()
-const badge = computed(() => queueBadge({ queueCount: queueCount.value, renderJobs: rendersStore.jobs, runJobs: runJobsStore.jobs, previewsRunning: previewsStore.running, publishJobs: publishStore.jobs, entries: autopublish.pending, generate: autopublish.status?.generate, scanning: !!autopublish.status?.watching?.volume?.scanning, autoLive: !!autopublish.status?.enabled && !autopublish.status?.dry_run }))
+const badge = computed(() => queueBadge({ queueCount: queueCount.value, renderJobs: rendersStore.jobs, runJobs: runJobsStore.jobs, previewsRunning: previewsStore.running, publishJobs: publishStore.jobs, entries: autopublish.pending, generate: autopublish.status?.generate, scanning: volumeScan(autopublish.status?.watching?.volume).state === 'scanning', autoLive: !!autopublish.status?.enabled && !autopublish.status?.dry_run }))
 /** The tooltip lists the breakdown: '2 generations, 1 upload, 3 waiting'. */
 const badgeTitle = computed(() => badge.value.parts.map((p) => t(`app.badge.${p.key}${p.n === 1 ? 'One' : ''}`, { n: p.n })).join(', ') || (badge.value.scanning ? t('app.badge.scanning') : ''))
 /** ONE clear state, the same words everywhere: Auto-publish: LIVE / DRY RUN / OFF / PAUSED, with what it is doing in small text. */

@@ -690,7 +690,7 @@ export async function mockApi(page, state) {
       if (method === 'POST' && path === '/autopublish/scan-volume') {
         ap.calls.push({ call: 'scanVolume' })
         if (ap.scanFail) return json({ detail: ap.scanFail }, 500)
-        if (ap.watching?.volume) { ap.watching.volume.scanning = true; setTimeout(() => { Object.assign(ap.watching.volume, { scanning: false, scanned_at: new Date().toISOString(), ...(ap.scanTo || {}) }) }, ap.scanMs ?? 1500) }
+        if (ap.watching?.volume) { ap.watching.volume.scanning = true; ap.watching.volume.scan_started_at = new Date().toISOString(); setTimeout(() => { Object.assign(ap.watching.volume, { scanning: false, scan_started_at: null, scanned_at: new Date().toISOString(), ...(ap.scanTo || {}) }) }, ap.scanMs ?? 1500) }
         return json({ ok: true })
       }
       // Holds (a core where every eligible review is published; state.autopublish.requireApproval defined): a hold keeps a shot version from ever going; Release lifts it
