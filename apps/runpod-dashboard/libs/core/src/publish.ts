@@ -1119,6 +1119,24 @@ async function putText(a: Awaited<ReturnType<typeof s3Access>>, key: string, tex
 const retLocks = new Map<string, Promise<unknown>>()
 /** One writer at a time per round: children of any run that publish into the same round never overwrite each other's items (read, merge, write inside the lock). */
 function withRetLock<T>(key: string, fn: () => Promise<T>): Promise<T> { const prev = retLocks.get(key) ?? Promise.resolve(), run = prev.then(fn, fn); retLocks.set(key, run.catch(() => undefined)); return run }
+/** The round's own S3 reads and writes for manifestcheck.ts (ADR-055 section 14): the same access, listing, text read/put and per-round lock as a publish, so a repair cannot interleave with one. */
+export interface RoundIo {
+  bucket: string; root: string; now: () => number; signal: AbortSignal
+  list(): Promise<Map<string, number>>; read(key: string): Promise<string | null>; put(key: string, text: string): Promise<void>
+  lock<T>(fn: () => Promise<T>): Promise<T>
+  /** a publish job under way that targets this round */ publishing(): boolean
+}
+export async function roundIo(round: string): Promise<RoundIo> {
+  const e = await effective(), p = s3Problem(e.s3); if (p) throw bad(`S3 is not configured: ${p}`)
+  const name = layout.validateRound(round), a = await s3Access(), root = `${a.prefix}${name}/`, signal = new AbortController().signal
+  return {
+    bucket: a.bucket, root, now: () => deps.now(), signal,
+    list: () => listDestination({ ...a, prefix: root }),
+    read: (k) => readText(a, k, signal), put: (k, t) => putText(a, k, t, signal),
+    lock: (fn) => withRetLock(`${a.bucket}/${root}`, fn),
+    publishing: () => [...jobs.values()].some((j) => j.ret && j.ret.round === name && `${j.ret.prefix}${j.ret.round}/` === root),
+  }
+}
 /** After one shot's files are up: sha256 for each, its items merged into the round's RETURN-MANIFEST.json, and the round's inventory rewritten. A manifest already there that cannot be read is a 409. */
 async function finishReturn(job: Job, g: Group, a: Awaited<ReturnType<typeof s3Access>>, signal: AbortSignal): Promise<void> {
   const ret = job.ret!, v = job.view, base = deps.outputRoot(), R = await import('./renders.js'), root = `${ret.prefix}${ret.round}/`, items = g.items
