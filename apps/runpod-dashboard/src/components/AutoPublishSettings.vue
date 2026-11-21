@@ -55,7 +55,7 @@
             <label class="mb-0">{{ $t('autopublish.block.window') }}<BFormInput v-model.number="model.window_minutes" type="number" min="0" max="120" size="sm" style="width: 8rem" data-testid="autopublish-window" /></label>
             <div v-if="hasCap" class="d-flex align-items-end gap-2">
               <label class="d-flex align-items-center gap-2 mb-1"><input type="checkbox" class="form-check-input mt-0" :checked="capOn" data-testid="autopublish-cap-on" @change="setCap($event.target.checked)" />{{ $t('autopublish.block.capOn') }}</label>
-              <label v-if="capOn" class="mb-0">{{ $t('autopublish.block.cap') }}<BFormInput v-model.number="model.daily_cap" type="number" min="1" max="50" size="sm" style="width: 8rem" data-testid="autopublish-cap" /></label>
+              <label v-if="capOn" class="mb-0">{{ $t('autopublish.block.cap') }}<BFormInput v-model.number="model.daily_cap" type="number" min="0" max="100" size="sm" style="width: 8rem" data-testid="autopublish-cap" /></label>
               <span v-else class="small text-body-secondary mb-1" data-testid="autopublish-no-limit">{{ $t('autopublish.block.noLimit') }}</span>
             </div>
           </div>

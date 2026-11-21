@@ -18,10 +18,10 @@ test('parseReviewPath: only a review version folder under deliver/', () => {
   assert.deepEqual(parseReviewPath('deliver/archival-085/v003'), { shot: 'archival-085', version: 3 }); assert.deepEqual(parseReviewPath('output/deliver/x/v012/'), { shot: 'x', version: 12 })
   for (const bad of ['deliver/archival-085', 'deliver/a/v003/a.mp4', '.proxies/a/v001', 'deliver/a/vx', '', null]) assert.equal(parseReviewPath(bad), null, String(bad))
 })
-test('settingsProblem: the window 0 to 120 and the cap 1 to 50, whole numbers', () => {
-  assert.equal(settingsProblem({ window_minutes: 10, daily_cap: 5 }), ''); assert.equal(settingsProblem({ window_minutes: 0, daily_cap: 1 }), ''); assert.equal(settingsProblem({ window_minutes: 120, daily_cap: 50 }), '')
+test('settingsProblem: the window 0 to 120 and the cap 1 to 100 (0 or empty is no limit), whole numbers', () => {
+  assert.equal(settingsProblem({ window_minutes: 10, daily_cap: 5 }), ''); assert.equal(settingsProblem({ window_minutes: 0, daily_cap: 1 }), ''); assert.equal(settingsProblem({ window_minutes: 120, daily_cap: 100 }), '')
   assert.equal(settingsProblem({ window_minutes: 121, daily_cap: 5 }), 'window'); assert.equal(settingsProblem({ window_minutes: -1, daily_cap: 5 }), 'window'); assert.equal(settingsProblem({ window_minutes: 1.5, daily_cap: 5 }), 'window'); assert.equal(settingsProblem({ window_minutes: '', daily_cap: 5 }), 'window')
-  assert.equal(settingsProblem({ window_minutes: 10, daily_cap: null }), ''); assert.equal(settingsProblem({ window_minutes: 10 }), ''); assert.equal(settingsProblem({ window_minutes: 10, daily_cap: 0 }), 'cap'); assert.equal(settingsProblem({ window_minutes: 10, daily_cap: 51 }), 'cap')
+  assert.equal(settingsProblem({ window_minutes: 10, daily_cap: null }), ''); assert.equal(settingsProblem({ window_minutes: 10 }), ''); assert.equal(settingsProblem({ window_minutes: 10, daily_cap: 0 }), ''); assert.equal(settingsProblem({ window_minutes: 10, daily_cap: 101 }), 'cap')
 })
 
 test('apFill and apIsDefault: the configuration\'s auto_publish with its defaults (S3 on, Slack and Tunnel off), and when it is just the defaults', () => {

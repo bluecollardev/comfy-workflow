@@ -138,7 +138,7 @@ test.describe('Settings > Publishing > Auto-publish', () => {
     await d.getByTestId('autopublish-window').fill('20'); await d.getByTestId('autopublish-cap-on').check(); await d.getByTestId('autopublish-cap').fill('7')
     await expect(d.getByTestId('config-unsaved')).toBeVisible()
     await d.getByTestId('autopublish-cap').fill('99'); await d.getByTestId('config-save').click()
-    await expect(d.getByTestId('autopublish-error')).toHaveText('The daily cap is a whole number from 1 to 50.'); expect(api.state.mountPuts).toHaveLength(1)
+    await expect(d.getByTestId('autopublish-error')).toHaveText('The daily cap is a whole number from 1 to 100, or 0 for no limit.'); expect(api.state.mountPuts).toHaveLength(1)
     await d.getByTestId('autopublish-cap').fill('7'); await d.getByTestId('autopublish-window').fill('130'); await d.getByTestId('config-save').click()
     await expect(d.getByTestId('autopublish-error')).toHaveText('The cancel window is a whole number of minutes from 0 to 120.')
     await d.getByTestId('autopublish-window').fill('20'); await d.getByTestId('config-save').click(); await expect(d).toBeHidden()

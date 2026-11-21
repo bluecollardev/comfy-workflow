@@ -88,7 +88,7 @@ export async function setSettings(input: SettingsInput): Promise<Settings> {
   const i = input ?? {}, cur = await stored(), was = cur.enabled === true && !!cur.standing, name = clean(i.approved_by)
   const next: Stored = { ...cur, targets: { ...cur.targets }, sources: { ...cur.sources }, generate: { ...cur.generate } }, notes: string[] = []
   if (i.window_minutes !== undefined) { if (!(Number.isInteger(i.window_minutes) && i.window_minutes >= 0 && i.window_minutes <= 120)) throw bad('window_minutes is a whole number of minutes from 0 to 120'); next.window_minutes = i.window_minutes; notes.push('window_minutes') }
-  if (i.daily_cap !== undefined) { const c = i.daily_cap === 0 ? null : i.daily_cap; if (c !== null && !(Number.isInteger(c) && c >= 1 && c <= 50)) throw bad('daily_cap is empty (no limit) or a whole number from 1 to 50'); next.daily_cap = c; notes.push(`daily_cap (${c === null ? 'no limit' : c})`) }
+  if (i.daily_cap !== undefined) { const c = i.daily_cap === 0 ? null : i.daily_cap; if (c !== null && !(Number.isInteger(c) && c >= 1 && c <= 100)) throw bad('daily_cap is empty or 0 (no limit) or a whole number from 1 to 100'); next.daily_cap = c; notes.push(`daily_cap (${c === null ? 'no limit' : c})`) }
   if (i.targets !== undefined) {
     if (!i.targets || typeof i.targets !== 'object') throw bad('targets is { s3, slack }')
     for (const k of ['s3', 'slack', 'tunnel'] as const) { const v = (i.targets as Record<string, unknown>)[k]; if (v === undefined) continue; if (typeof v !== 'boolean') throw bad(`targets.${k} is true or false`); next.targets[k] = v }

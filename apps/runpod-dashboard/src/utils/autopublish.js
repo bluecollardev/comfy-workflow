@@ -1,6 +1,6 @@
 import { roundTemplateProblem } from './publish.js'
 /** Auto-publish (docs/ADR-050 amendment), pure helpers: the countdown, an entry's line, a review version from its folder, the validation of the settings. `npm run dpx:test`. */
-export const WINDOW_MAX = 120, CAP_MAX = 50
+export const WINDOW_MAX = 120, CAP_MAX = 100
 /** 'v002' from 2. */
 // a review version is the folder name ('v003', as the core sends it) or a number; never read 'v003' as a number (that made every version 'v000')
 export const versionTag = (v) => { const t = String(v ?? '').trim().replace(/^v/i, ''); return `v${(/^\d+$/.test(t) ? t : String(Number(t) || 0)).padStart(3, '0')}` }
@@ -30,11 +30,11 @@ export function outputsTarget(row, { review = null, pods = [], volumeId = '' } =
   if (!pod) return { ok: false, reason: 'nopod' }
   return { ok: true, pod_id: pod.id, folder: reviewFolder(shot, version) }
 }
-/** Why the footer Save must wait: the cancel window is a whole number of minutes from 0 to 120, the daily cap a whole number from 1 to 50; '' when fine. */
+/** Why the footer Save must wait: the cancel window is a whole number of minutes from 0 to 120, the daily cap a whole number from 1 to 100, or 0 / empty for no limit; '' when fine. */
 export function settingsProblem({ window_minutes, daily_cap, targets, round, sources, volume_scan_minutes, generate, approved_by, require_review, max_gb_per_day }) {
   const w = Number(window_minutes), c = Number(daily_cap)
   if (window_minutes === '' || !Number.isInteger(w) || w < 0 || w > WINDOW_MAX) return 'window'
-  if (daily_cap !== null && daily_cap !== undefined && (daily_cap === '' || !Number.isInteger(c) || c < 1 || c > CAP_MAX)) return 'cap'
+  if (daily_cap !== null && daily_cap !== undefined && daily_cap !== '' && Number(daily_cap) !== 0 && (!Number.isInteger(c) || c < 1 || c > CAP_MAX)) return 'cap'
   if (targets && !targets.s3 && !targets.slack) return 'targets'
   if (round !== undefined && roundTemplateProblem(round)) return 'round'
   if (sources && !sources.local && !sources.volume) return 'sources'
@@ -58,7 +58,7 @@ export const genIsDefault = (g) => { const d = { ...GEN_DEFAULTS }; for (const k
 export const LIVE_STATES = ['waiting', 'uploading']
 /** The defaults of the configuration's `auto_publish`: where it publishes is a group of targets (Tunnel is not available yet and can never be on). */
 export const AP_TARGETS = { s3: true, slack: false, tunnel: false }
-/** The daily cap is optional and OFF by default: `daily_cap` null (or missing, on an older core) is no limit; a number is 1 to 50. When ticked in the window it starts at CAP_START. */
+/** The daily cap is optional and OFF by default: `daily_cap` null (or missing, on an older core) is no limit; a number is 1 to 100 (0 is no limit too). When ticked in the window it starts at CAP_START. */
 export const CAP_START = 5
 export const AP_DEFAULTS = { enabled: false, dry_run: true, window_minutes: 10, targets: { ...AP_TARGETS } }
 /** A copy of a configuration's `auto_publish` with the defaults filled in; a core that has only the old `slack` boolean becomes targets (S3 plus Slack when it was on). */
