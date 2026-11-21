@@ -335,8 +335,7 @@ describe('the source size is the default (4K, no scaling)', () => {
 })
 
 describe('the review kind: the stitched, versioned deliverable', () => {
-  // these tests judge the converted Rec.709 view of a stated colour: Convert To Rec.709 is on (it is off by default, see the Convert To Rec.709 block below)
-  const review = (o: Record<string, unknown> = {}) => runJob({ kind: 'review', approved_by: 'Lucas', width: undefined, codecs: ['h264'], rec709: true, ...o })
+  const review = (o: Record<string, unknown> = {}) => runJob({ kind: 'review', approved_by: 'Lucas', width: undefined, codecs: ['h264'], ...o })
   it('plans the next version once per SHOT, not once per sequence (46 sequences made 46 slow round trips and the page showed "undefined" meanwhile)', async () => {
     let calls = 0
     renders.setDeps({ deliverDirs: async () => { calls++; return ['v001'] } })
@@ -407,7 +406,7 @@ describe('the review kind: the stitched, versioned deliverable', () => {
     expect((await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review' })).sequences[0].colour_refusal).toMatch(/printing density/)
     expect(renders.colourLines(renders.parseDpxInfo(dpxHeader({ transfer: 6, colorimetric: 6 })), ['prores422hq']).join('\n')).toMatch(/transfer ITU-R 709-4 \(6\).*no colour transform applied.*10-bit 4:2:2 for ProRes/s)
   })
-  describe('Convert To Rec.709 (off keeps the frames\' signal and states it; on converts; the Tunnel preset always converts)', () => {
+  describe('Convert To Rec.709 (default ON = today: converts when the colour is known; off is tag only: the frames\' signal kept and stated; the Tunnel preset always converts)', () => {
     const lastScript = () => scripts[scripts.length - 1]
     it('OFF: a stated colour is NOT converted: no colour filters, no Rec.709 primaries or transfer tags, the sidecar says kept and converted no, DELIVERY.md says NOT converted', async () => {
       pod.header = dpxHeader({ transfer: 2 })
@@ -418,22 +417,22 @@ describe('the review kind: the stitched, versioned deliverable', () => {
       expect(sc).toMatch(/NOT converted to Rec\.709/); expect(sc).toMatch(/converted: no \(p3-d65-gamma26 kept as it is; Convert To Rec\.709 is off\)/)
       expect(sc).toMatch(/"stated_by": "Lucas"/)   // the statement of the colour is still recorded
     })
-    it('ON: the review is converted from Gamma 2.6 P3-D65 to a Rec.709 view and the files say converted: p3-d65-gamma26 -> rec709', async () => {
+    it('ON (the default): the review is converted from Gamma 2.6 P3-D65 to a Rec.709 view and the files say converted: p3-d65-gamma26 -> rec709', async () => {
       pod.header = dpxHeader({ transfer: 2 })
-      const j = await review({ colour_in: 'p3-d65-gamma26', rec709: true }); expect(j.sequences[0].state).toBe('pulled')
+      const j = await review({ colour_in: 'p3-d65-gamma26' }); expect(j.sequences[0].state).toBe('pulled')   // no rec709 given: the default is ON
       const sc = lastScript()
       expect(sc).toContain('colorchannelmixer=rr=1.2249401'); expect(sc).toContain('pow(val/maxval,2.6)'); expect(sc).toMatch(/color_primaries bt709/)
       expect(sc).toMatch(/"converted": "p3-d65-gamma26 -> rec709"/); expect(sc).toMatch(/"rec709": true/); expect(sc).toMatch(/converted: p3-d65-gamma26 -> rec709/)
     })
-    it('the configuration decides when the request is silent (render.rec709, default off), a request wins over it, a bad value is a 400, and the plan carries the value; the Tunnel preset always converts', async () => {
+    it('the configuration decides when the request is silent (render.rec709, default on), a request wins over it, a bad value is a 400, and the plan carries the value; the Tunnel preset always converts', async () => {
       pod.header = dpxHeader({ transfer: 2 })
-      expect(mounts.load().render.rec709).toBe(false)
-      expect((await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review', colour_in: 'p3-d65-gamma26' })).rec709).toBe(false)
-      { const m = mounts.load(); mounts.save({ ...m, render: { ...m.render, rec709: true } as never }) }
+      expect(mounts.load().render.rec709).toBe(true)
       expect((await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review', colour_in: 'p3-d65-gamma26' })).rec709).toBe(true)
-      await review({ colour_in: 'p3-d65-gamma26', rec709: undefined }); expect(lastScript()).toContain('colorchannelmixer=rr=1.2249401')   // silent request: the configuration's ON
-      await review({ colour_in: 'p3-d65-gamma26', rec709: false }); expect(lastScript()).not.toContain('colorchannelmixer')   // the request's OFF wins
       { const m = mounts.load(); mounts.save({ ...m, render: { ...m.render, rec709: false } as never }) }
+      expect((await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review', colour_in: 'p3-d65-gamma26' })).rec709).toBe(false)
+      await review({ colour_in: 'p3-d65-gamma26', rec709: undefined }); expect(lastScript()).not.toContain('colorchannelmixer')   // silent request: the configuration's OFF
+      await review({ colour_in: 'p3-d65-gamma26', rec709: true }); expect(lastScript()).toContain('colorchannelmixer=rr=1.2249401')   // the request's ON wins
+      { const m = mounts.load(); mounts.save({ ...m, render: { ...m.render, rec709: true } as never }) }
       await expect(renders.start({ pod_id: 'p1', sequences: [SEQ], kind: 'review', approved_by: 'Lucas', colour_in: 'p3-d65-gamma26', rec709: 'yes' as never })).rejects.toMatchObject({ status: 400, message: /rec709 is true or false/ })
       expect((await renders.plan({ pod_id: 'p1', sequences: [SEQ], preset: 'tunnel', colour_in: 'p3-d65-gamma26' })).rec709).toBe(true)
     })
@@ -519,7 +518,7 @@ describe('the review kind: the stitched, versioned deliverable', () => {
       const d = join(shared, 'output', SEQ.dir); mkdirSync(d, { recursive: true }); for (let i = 0; i < 10; i++) writeFileSync(join(d, `${SEQ.name}.${String(i).padStart(4, '0')}.dpx`), i === 0 ? dpxHeader({ transfer: 2 }) : 'x')
       let x = (await renders.plan({ sequences: [SEQ], kind: 'review', where: 'local' })).sequences[0]; expect(x).toMatchObject({ colour_in: 'p3-d65-gamma26', colour_source: 'guess' })
       writeFileSync(join(d, `${SEQ.name}.json`), G26); x = (await renders.plan({ sequences: [SEQ], kind: 'review', where: 'local' })).sequences[0]; expect(x).toMatchObject({ colour_in: 'p3-d65-gamma26', colour_source: 'ocio-record', header_disagrees: true })
-      const { job_id } = await renders.start({ sequences: [SEQ], kind: 'review', approved_by: 'Lucas', where: 'local', codecs: ['h264'], rec709: true }); await renders.settled()
+      const { job_id } = await renders.start({ sequences: [SEQ], kind: 'review', approved_by: 'Lucas', where: 'local', codecs: ['h264'] }); await renders.settled()
       const { readFileSync } = await import('node:fs'), v1 = join(shared, 'output', 'deliver', 'archival-085', 'v001'), meta = JSON.parse(readFileSync(join(v1, `${SEQ.name}.mp4.meta.json`), 'utf8'))
       expect(renders.status(job_id).jobs[0].sequences[0]).toMatchObject({ state: 'done', colour_source: 'ocio-record' }); expect(meta.colour_stated).toMatchObject({ colour_source: 'ocio-record', header_disagrees: true, conversion: 'p3-d65-gamma26', ocio: { colorInteropID: 'g26_p3d65_display', colorspace: 'Gamma 2.6 P3-D65 - Display', gamut: 'P3-D65' } })
       expect(readFileSync(join(v1, 'DELIVERY.md'), 'utf8')).toMatch(/OCIO record: stated by the writer ComfyUI-OCIO.*DPX header disagrees/s)
@@ -548,7 +547,7 @@ describe('the review kind: the stitched, versioned deliverable', () => {
   it('on this PC: the same version rules, DELIVERY.md and sidecar with sha256 and the verified count, a never-overwritten version, ffprobe verification', async () => {
     const dirF = join(shared, 'output', SEQ.dir); mkdirSync(dirF, { recursive: true }); for (let i = 0; i < 10; i++) writeFileSync(join(dirF, `${SEQ.name}.${String(i).padStart(4, '0')}.dpx`), i === 0 ? dpxHeader() : 'x')
     mkdirSync(join(shared, 'output', 'deliver', 'archival-085', 'v001'), { recursive: true }); writeFileSync(join(shared, 'output', 'deliver', 'archival-085', 'v001', 'keep.txt'), 'old')
-    const { job_id } = await renders.start({ sequences: [SEQ], kind: 'review', approved_by: 'Lucas', where: 'local', codecs: ['h264'], rec709: true }); await renders.settled(); const j = renders.status(job_id).jobs[0]
+    const { job_id } = await renders.start({ sequences: [SEQ], kind: 'review', approved_by: 'Lucas', where: 'local', codecs: ['h264'] }); await renders.settled(); const j = renders.status(job_id).jobs[0]
     expect(j.sequences[0]).toMatchObject({ state: 'done', version: 'v002', where: 'local' }); const v2 = join(shared, 'output', 'deliver', 'archival-085', 'v002'), names = await readdir(v2)
     expect(names.sort()).toEqual([`${SEQ.name}.mp4`, `${SEQ.name}.mp4.meta.json`, 'DELIVERY.md']); expect(existsSync(join(shared, 'output', 'deliver', 'archival-085', 'v001', 'keep.txt'))).toBe(true)
     const { readFileSync } = await import('node:fs'), { createHash } = await import('node:crypto'), sha = createHash('sha256').update(readFileSync(join(v2, `${SEQ.name}.mp4`))).digest('hex')
@@ -558,7 +557,7 @@ describe('the review kind: the stitched, versioned deliverable', () => {
   })
   it('on this PC a frame-count mismatch removes the files and the empty version folder; nothing is delivered', async () => {
     const dirF = join(shared, 'output', SEQ.dir); mkdirSync(dirF, { recursive: true }); for (let i = 0; i < 10; i++) writeFileSync(join(dirF, `${SEQ.name}.${String(i).padStart(4, '0')}.dpx`), i === 0 ? dpxHeader() : 'x')
-    localCount = 8; const { job_id } = await renders.start({ sequences: [SEQ], kind: 'review', approved_by: 'Lucas', where: 'local', codecs: ['h264'], rec709: true }); await renders.settled()
+    localCount = 8; const { job_id } = await renders.start({ sequences: [SEQ], kind: 'review', approved_by: 'Lucas', where: 'local', codecs: ['h264'] }); await renders.settled()
     expect(renders.status(job_id).jobs[0].sequences[0].error).toMatch(/decoded 8 frames, expected 10/); expect(existsSync(join(shared, 'output', 'deliver', 'archival-085', 'v001'))).toBe(false)
   })
   it('never writes under Binc\'s mirror (projects/desktop/): the local adapter refuses it, nothing is created', async () => {

@@ -178,35 +178,38 @@ test('the Queue card of an import says what it does after the runs and why a ste
   await expect(q.getByTestId('queue-import-output-note')).toContainText('ffmpeg is not installed')
 })
 
-// Convert To Rec.709 (ADR-057 / the H.264 handling): an option of the Generate Outputs chain, off by default (the videos keep the frames' signal, Gamma 2.6 P3-D65, and say so).
-test('Convert To Rec.709: shown with Generate Outputs, off by default, cleared with it, sent with the plan and the import, said in the summary', async ({ page, api }) => {
+// Convert To Rec.709: an option of the Generate Outputs chain, ticked by default (today's behaviour: converted when the colour is known); unticked is tag only (the frames' signal, Gamma 2.6 P3-D65, kept and stated).
+test('Convert To Rec.709: shown with Generate Outputs, ticked by default and sends nothing, unticked sends convert_rec709 false, cleared with its parent', async ({ page, api }) => {
   const dlg = await toStepThree(page, api, { by: 'Lucas' })
   await dlg.getByTestId('import-round-run').check()
   await expect(dlg.getByTestId('import-round-rec709')).toHaveCount(0)   // hidden until Generate Outputs is ticked
   await dlg.getByTestId(ids.gen).check()
   const box = dlg.getByTestId('import-round-rec709')
-  await expect(box).toBeVisible(); await expect(box).not.toBeChecked()
-  await expect(dlg.getByTestId('import-round-rec709-hint')).toContainText('Off: the videos keep the frames')
-  await expect(box.locator('xpath=ancestor::label')).toHaveAttribute('title', /Gamma 2\.6 P3-D65.*Rec\.709.*DPX frames are never touched/s)
+  await expect(box).toBeVisible(); await expect(box).toBeChecked()
+  await expect(dlg.getByTestId('import-round-rec709-hint')).toContainText('Unticked: tag only')
+  await expect(box.locator('xpath=ancestor::label')).toHaveAttribute('title', /Ticked \(default.*Gamma 2\.6 P3-D65.*Rec\.709.*tag only.*DPX frames are never touched/s)
   await expect(dlg.getByTestId('import-round-rec709-line')).toHaveCount(0)
-  await box.check()
-  await expect(dlg.getByTestId('import-round-rec709-line')).toContainText('converted to Rec.709')
-  await expect.poll(() => api.state.planCalls.at(-1)).toMatchObject({ run_workflows: true, generate_outputs: true, convert_rec709: true })
+  await expect.poll(() => api.state.planCalls.at(-1)).toMatchObject({ run_workflows: true, generate_outputs: true })
+  expect(api.state.planCalls.at(-1)).not.toHaveProperty('convert_rec709')
+  await box.uncheck()
+  await expect(dlg.getByTestId('import-round-rec709-line')).toContainText('tag only')
+  await expect.poll(() => api.state.planCalls.at(-1)).toMatchObject({ generate_outputs: true, convert_rec709: false })
   await dlg.getByTestId(ids.gen).uncheck()   // unticking the parent clears the child
   await expect(box).toHaveCount(0); await expect(dlg.getByTestId('import-round-rec709-line')).toHaveCount(0)
   await expect.poll(() => api.state.planCalls.at(-1)).not.toHaveProperty('convert_rec709')
-  await dlg.getByTestId(ids.gen).check(); await expect(dlg.getByTestId('import-round-rec709')).not.toBeChecked()   // it came back off
-  await dlg.getByTestId('import-round-rec709').check()
+  await dlg.getByTestId(ids.gen).check(); await expect(dlg.getByTestId('import-round-rec709')).toBeChecked()   // it came back ticked
+  await dlg.getByTestId('import-round-rec709').uncheck()
   const body = await start(dlg, api, 1)
-  expect(body).toMatchObject({ run_workflows: true, generate_outputs: true, convert_rec709: true, approved_by: 'Lucas' })
+  expect(body).toMatchObject({ run_workflows: true, generate_outputs: true, convert_rec709: false, approved_by: 'Lucas' })
 })
 
-test('Convert To Rec.709 off: the request carries no convert_rec709, and the Queue card of an import shows it only when it is on', async ({ page, api }) => {
+test('Convert To Rec.709 ticked: the request carries no convert_rec709, and the Queue card says Converted to Rec.709 or Tag only', async ({ page, api }) => {
   const dlg = await toStepThree(page, api, { by: 'Lucas' })
   await dlg.getByTestId('import-round-run').check(); await dlg.getByTestId(ids.gen).check()
   const body = await start(dlg, api, 1); expect(body).toMatchObject({ generate_outputs: true }); expect(body).not.toHaveProperty('convert_rec709')
-  api.state.queue = { imports: [{ id: 'imp1', round: 'r1', approved_by: 'Lucas', state: 'active', spent_usd: 0, cap_enabled: true, cost_cap_usd: 50, max_pods: 1, counts: {}, generate_outputs: true, convert_rec709: true }, { id: 'imp2', round: 'r2', approved_by: 'Lucas', state: 'active', spent_usd: 0, cap_enabled: true, cost_cap_usd: 50, max_pods: 1, counts: {}, generate_outputs: true }], tasks: [], active: 2 }
+  api.state.queue = { imports: [{ id: 'imp1', round: 'r1', approved_by: 'Lucas', state: 'active', spent_usd: 0, cap_enabled: true, cost_cap_usd: 50, max_pods: 1, counts: {}, generate_outputs: true, convert_rec709: true }, { id: 'imp2', round: 'r2', approved_by: 'Lucas', state: 'active', spent_usd: 0, cap_enabled: true, cost_cap_usd: 50, max_pods: 1, counts: {}, generate_outputs: true, convert_rec709: false }], tasks: [], active: 2 }
   await page.goto('/'); await queueTab(page, 'imports')
-  await expect(page.getByTestId('queue-modal').getByTestId('queue-import-rec709')).toHaveCount(1)
-  await expect(page.getByTestId('queue-modal').getByTestId('queue-import-rec709')).toContainText('Converted to Rec.709')
+  const rows = page.getByTestId('queue-modal').getByTestId('queue-import-rec709')
+  await expect(rows).toHaveCount(2)
+  await expect(rows.nth(0)).toContainText('Converted to Rec.709'); await expect(rows.nth(1)).toContainText('Tag only')
 })

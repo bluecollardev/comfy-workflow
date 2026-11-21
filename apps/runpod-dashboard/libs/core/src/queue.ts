@@ -246,7 +246,7 @@ const taskCards = (o: ImportOpts, shot: string | null) => { const l = shot ? car
 export async function planImport(round: string, o: ImportOpts = {}): Promise<ImportPlan> {
   const out = checkOutputs(o)
   const p = await planBase(round, o)
-  return { ...p, ...(out.generate_outputs ? { generate_outputs: true } : {}), ...(out.publish ? { publish: out.publish } : {}), ...(out.convert_rec709 ? { convert_rec709: true } : {}) }
+  return { ...p, ...(out.generate_outputs ? { generate_outputs: true } : {}), ...(out.publish ? { publish: out.publish } : {}), ...(out.generate_outputs && out.convert_rec709 !== undefined ? { convert_rec709: out.convert_rec709 } : {}) }
 }
 
 /** Generate Outputs and Publish: the dependencies, in plain words (Publish needs Generate Outputs, both need Run Workflows). Returns what to store: `publish` resolved to its targets (Slack only with S3). */
@@ -254,7 +254,7 @@ export type OutputsChoice = { generate_outputs: boolean; publish?: PublishChoice
 export function checkOutputs(o: Pick<ImportOpts, 'run_workflows' | 'generate_outputs' | 'publish' | 'convert_rec709'>): OutputsChoice {
   if (o.generate_outputs !== undefined && typeof o.generate_outputs !== 'boolean') throw new CoreError(400, 'generate_outputs is true or false.')
   if (o.convert_rec709 !== undefined && typeof o.convert_rec709 !== 'boolean') throw new CoreError(400, 'convert_rec709 is true or false.')
-  const gen = o.generate_outputs === true, rec709 = o.convert_rec709 === true
+  const gen = o.generate_outputs === true
   const pub = o.publish
   let choice: PublishChoice | undefined
   if (pub === true) choice = { s3: true, slack: deps.renderSlack() }
@@ -264,8 +264,8 @@ export function checkOutputs(o: Pick<ImportOpts, 'run_workflows' | 'generate_out
   } else if (pub !== undefined && pub !== false) throw new CoreError(400, 'publish is true, false or { s3, slack }.')
   if (gen && o.run_workflows === false) throw new CoreError(400, 'Generate Outputs needs Run Workflows: the outputs are made from what the workflows produce.')
   if (choice && !gen) throw new CoreError(400, 'Publish needs Generate Outputs (and both need Run Workflows): only the videos this import generates are published.')
-  if (rec709 && !gen) throw new CoreError(400, 'Convert To Rec.709 needs Generate Outputs: it is how the generated videos treat colour.')
-  return { generate_outputs: gen, ...(choice ? { publish: choice } : {}), ...(rec709 ? { convert_rec709: true } : {}) }
+  if (o.convert_rec709 === true && !gen) throw new CoreError(400, 'Convert To Rec.709 needs Generate Outputs: it is how the generated videos treat colour.')
+  return { generate_outputs: gen, ...(choice ? { publish: choice } : {}), ...(gen ? { convert_rec709: o.convert_rec709 ?? mounts.load().render?.rec709 !== false } : {}) }
 }
 /** Before anything is queued: the named yes, and the destination ready. */
 async function readyOutputs(o: ImportOpts, by: string): Promise<OutputsChoice> {
@@ -274,8 +274,8 @@ async function readyOutputs(o: ImportOpts, by: string): Promise<OutputsChoice> {
   if (out.publish) { const bad = await deps.publishProblem([...(out.publish.s3 ? ['s3' as const] : []), ...(out.publish.slack ? ['slack' as const] : [])]); if (bad) throw new CoreError(400, `Cannot publish: ${bad}`) }
   return out
 }
-const outputsRec = (out: OutputsChoice) => ({ ...(out.generate_outputs ? { generate_outputs: true } : {}), ...(out.publish ? { publish: out.publish } : {}), ...(out.convert_rec709 ? { convert_rec709: true } : {}) })
-const outputsWords = (out: OutputsChoice) => (out.generate_outputs ? `; then generate the outputs${out.convert_rec709 ? ' (converted to Rec.709)' : ''}${out.publish ? ` and publish them to ${out.publish.slack ? 'S3 and Slack' : 'S3'}` : ''}` : '')
+const outputsRec = (out: OutputsChoice) => ({ ...(out.generate_outputs ? { generate_outputs: true } : {}), ...(out.publish ? { publish: out.publish } : {}), ...(out.generate_outputs && out.convert_rec709 !== undefined ? { convert_rec709: out.convert_rec709 } : {}) })
+const outputsWords = (out: OutputsChoice) => (out.generate_outputs ? `; then generate the outputs${out.convert_rec709 === false ? ' (tag only: the frames\' signal kept)' : ' (converted to Rec.709)'}${out.publish ? ` and publish them to ${out.publish.slack ? 'S3 and Slack' : 'S3'}` : ''}` : '')
 
 async function planBase(round: string, o: ImportOpts = {}): Promise<ImportPlan> {
   if (o.source === 'volume') return planVolumeImport(round, o)
@@ -387,7 +387,7 @@ export async function importRound(round: string, o: ImportOpts = {}): Promise<Im
   q.imports.push(imp); q.tasks.push(pull)
   const prices = await cardPrices(plan.shots, o)
   if (o.run_workflows !== false) for (const shot of plan.shots) q.tasks.push({ id: newId('t'), import_id: imp.id, round, shot, kind: 'run', state: 'waiting', depends_on: [pull.id], pod_id: null, pod_name: null, ...(cardList(o.cards?.[shot]).length ? { ...taskCards(o, shot), price: prices[shot] ?? null } : {}) })
-  if (out.generate_outputs) history.record({ kind: 'change', area: 'import', action: 'queued an import with outputs', what: round, detail: `generate the outputs${out.convert_rec709 ? ' (converted to Rec.709)' : ' (the frames\' signal kept and stated)'}${out.publish ? ` and publish them to ${out.publish.slack ? 'S3 and Slack' : 'S3'}` : ''} after each pod's workflows`, approved_by: by } as never)
+  if (out.generate_outputs) history.record({ kind: 'change', area: 'import', action: 'queued an import with outputs', what: round, detail: `generate the outputs${out.convert_rec709 === false ? ' (tag only: the frames\' signal kept and stated)' : ' (converted to Rec.709)'}${out.publish ? ` and publish them to ${out.publish.slack ? 'S3 and Slack' : 'S3'}` : ''} after each pod's workflows`, approved_by: by } as never)
   save(); start()
   return imp
 }
@@ -557,8 +557,8 @@ async function startOutputs(t: Task, imp: ImportRec): Promise<void> {
     const found = await deps.newSequences(t.shot, since)
     const seqs = found.sequences
     if (!seqs.length) { post.state = 'skipped'; return outputNote(t, imp, `no new finished DPX sequences to generate${found.skipped.length ? ` (${found.skipped.map((x) => `${x.stem}: ${x.reason}`).slice(0, 3).join('; ')})` : ''}`) }
-    // kind, codecs and colour come from the Default Configuration (renders.effectiveSettings), Convert To Rec.709 from this import (its `convert_rec709`, else off); the render stays on this pod, nothing is pulled
-    const r = await deps.startRender({ sequences: seqs, where: 'pod', pod_id: t.pod_id, pull: false, approved_by: imp.approved_by, skip_existing: true, rec709: imp.convert_rec709 === true })
+    // kind, codecs and colour come from the Default Configuration (renders.effectiveSettings), Convert To Rec.709 from this import (its `convert_rec709`, else the configuration's); the render stays on this pod, nothing is pulled
+    const r = await deps.startRender({ sequences: seqs, where: 'pod', pod_id: t.pod_id, pull: false, approved_by: imp.approved_by, skip_existing: true, ...(imp.convert_rec709 !== undefined ? { rec709: imp.convert_rec709 } : {}) })
     post.render_job_id = r.job_id
     ev(t, `Generate Outputs started on ${t.pod_name ?? t.pod_id}: ${seqs.length} sequence(s), render ${r.job_id}, named yes: ${imp.approved_by}`)
     history.record({ kind: 'change', area: 'queue', action: 'import generates outputs', what: `${imp.round} ${t.shot}`, detail: `${seqs.length} sequence(s) on ${t.pod_name ?? t.pod_id}; render ${r.job_id}`, approved_by: imp.approved_by } as never)

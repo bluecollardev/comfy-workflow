@@ -19,42 +19,42 @@ beforeEach(() => {
 afterEach(() => { for (const k of ENVS) delete process.env[k] })
 
 describe('render.rec709: normalize and validate', () => {
-  it('is off by default, and so is a configuration file written before the setting existed', () => {
-    expect(mounts.RENDER_DEFAULT.rec709).toBe(false)
-    expect(mounts.normalizeRender(undefined).rec709).toBe(false)
-    expect(mounts.normalizeRender({ rec709: true }).rec709).toBe(true)
+  it('is ON by default (today's behaviour), and so is a configuration file written before the setting existed', () => {
+    expect(mounts.RENDER_DEFAULT.rec709).toBe(true)
+    expect(mounts.normalizeRender(undefined).rec709).toBe(true)
+    expect(mounts.normalizeRender({ rec709: false }).rec709).toBe(false)
     const old = JSON.parse(readFileSync(process.env.MOUNTS_FILE!, 'utf8')); delete old.render.rec709; writeFileSync(process.env.MOUNTS_FILE!, JSON.stringify(old))
-    expect(rec()).toBe(false); expect(() => mounts.validate(mounts.normalize(old))).not.toThrow()
+    expect(rec()).toBe(true); expect(() => mounts.validate(mounts.normalize(old))).not.toThrow()
   })
   it('refuses a value that is not true or false', () => {
     expect(() => mounts.put({ ...mounts.load(), render: { ...mounts.load().render, rec709: 'yes' as never } }, { quiet: true })).toThrow(/render\.rec709 is true or false/)
-    expect(rec()).toBe(false)
+    expect(rec()).toBe(true)
   })
   it('a save and a load keep it, and saving the rest of the render block does not reset it', () => {
-    mounts.put({ ...mounts.load(), render: { ...mounts.load().render, rec709: true } }, { quiet: true }); expect(rec()).toBe(true)
-    const m = mounts.load(); mounts.put({ ...m, render: { ...m.render, pull: true } }, { quiet: true }); expect(rec()).toBe(true)
+    mounts.put({ ...mounts.load(), render: { ...mounts.load().render, rec709: false } }, { quiet: true }); expect(rec()).toBe(false)
+    const m = mounts.load(); mounts.put({ ...m, render: { ...m.render, pull: true } }, { quiet: true }); expect(rec()).toBe(false)
   })
 })
 
 describe('render.rec709: export, import, undo and the pod\'s own configuration', () => {
   it('is in the export (the Render block), and a file with a non-boolean is refused by the plan', () => {
-    mounts.put({ ...mounts.load(), render: { ...mounts.load().render, rec709: true } }, { quiet: true })
+    mounts.put({ ...mounts.load(), render: { ...mounts.load().render, rec709: false } }, { quiet: true })
     const f = configio.exportConfig({ appVersion: '9.9.9', now: new Date('2026-11-21T05:00:00Z') })
-    expect(((f.config as Record<string, unknown>).render as Record<string, unknown>).rec709).toBe(true)
+    expect(((f.config as Record<string, unknown>).render as Record<string, unknown>).rec709).toBe(false)
     const bad = configio.planImport({ format: configio.FORMAT, version: 1, config: { render: { rec709: 'yes' } } })
     expect(bad.ok === false || bad.sections.some((s) => s.error)).toBe(true)
     expect(() => configio.applyImport({ format: configio.FORMAT, version: 1, config: { render: { rec709: 'yes' } } }, { sections: ['pod_defaults'] })).toThrow()
   })
   it('import writes it, a backup is made and Undo puts the previous value back', () => {
-    expect(rec()).toBe(false)
-    const file = { format: configio.FORMAT, version: 1, config: { render: { ...mounts.RENDER_DEFAULT, rec709: true } } }
+    expect(rec()).toBe(true)
+    const file = { format: configio.FORMAT, version: 1, config: { render: { ...mounts.RENDER_DEFAULT, rec709: false } } }
     const r = configio.applyImport(file, { sections: ['pod_defaults'] }); expect(r.applied).toEqual(['pod_defaults'])
-    expect(rec()).toBe(true); expect(configio.listBackups()).toHaveLength(1)
-    configio.undoImport(); expect(rec()).toBe(false)
+    expect(rec()).toBe(false); expect(configio.listBackups()).toHaveLength(1)
+    configio.undoImport(); expect(rec()).toBe(true)
   })
-  it('a pod\'s own configuration carries it (render is part of it), and falls back to off when the pod has none', () => {
-    const own = podconfigs.normalize ? podconfigs.normalize({ render: { ...mounts.RENDER_DEFAULT, rec709: true } } as never) : null
-    if (own) expect((own as { render?: { rec709?: boolean } }).render?.rec709).toBe(true)
-    expect(mounts.normalizeRender({}).rec709).toBe(false)
+  it('a pod\'s own configuration carries it (render is part of it), and falls back to on when the pod has none', () => {
+    const own = podconfigs.normalize ? podconfigs.normalize({ render: { ...mounts.RENDER_DEFAULT, rec709: false } } as never) : null
+    if (own) expect((own as { render?: { rec709?: boolean } }).render?.rec709).toBe(false)
+    expect(mounts.normalizeRender({}).rec709).toBe(true)
   })
 })

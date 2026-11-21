@@ -111,7 +111,7 @@
         </template>
         <div v-if="autoSync" data-testid="import-round-autosync-line">{{ $t(autoSyncPush ? 'importRound.autoSyncLinePush' : 'importRound.autoSyncLine') }}</div>
         <div v-if="generateOutputs" data-testid="import-round-generate-line">{{ $t('importRound.generateLine') }}</div>
-        <div v-if="generateOutputs && convertRec709" data-testid="import-round-rec709-line">{{ $t('importRound.convertRec709Line') }}</div>
+        <div v-if="generateOutputs && !convertRec709" data-testid="import-round-rec709-line">{{ $t('importRound.convertRec709Line') }}</div>
         <div v-if="publishOut" data-testid="import-round-publish-line">{{ $t('importRound.publishLine', { by: approvedBy.trim() || '?' }) }}</div>
         <div class="d-flex align-items-center gap-2 mt-2 flex-wrap">
           <label class="mb-0" for="ir-pods">{{ $t(plans.size > 1 ? 'importRound.maxPodsEach' : 'importRound.maxPods') }}</label>
@@ -303,11 +303,11 @@ const autoSync = ref(false), autoSyncPush = ref(false)   // Auto sync (ADR-046):
 const autoSyncOpt = computed(() => (autoSync.value ? (autoSyncPush.value ? { pull: true, push: true } : true) : undefined))
 const autoSyncKey = () => (autoSyncOpt.value === undefined ? {} : { auto_sync: autoSyncOpt.value })
 // Run Workflows > Generate Outputs > Publish: each child shows only under its parent, and unticking a parent clears its children
-const generateOutputs = ref(false), publishOut = ref(false), convertRec709 = ref(false), nameNeeded = ref(false)
+const generateOutputs = ref(false), publishOut = ref(false), convertRec709 = ref(true), nameNeeded = ref(false)
 const publishStore = usePublishStore(), pubReady = computed(() => targetState(publishStore.settings, 's3'))
-const outputsKey = () => ({ ...(generateOutputs.value ? { generate_outputs: true } : {}), ...(generateOutputs.value && convertRec709.value ? { convert_rec709: true } : {}), ...(publishOut.value ? { publish: true } : {}) })
+const outputsKey = () => ({ ...(generateOutputs.value ? { generate_outputs: true } : {}), ...(generateOutputs.value && !convertRec709.value ? { convert_rec709: false } : {}), ...(publishOut.value ? { publish: true } : {}) })
 watch(runWorkflows, (on) => { if (!on && !isVolume.value) { autoSync.value = false; autoSyncPush.value = false; generateOutputs.value = false } })
-watch(generateOutputs, (on) => { if (!on) { publishOut.value = false; convertRec709.value = false } })
+watch(generateOutputs, (on) => { if (!on) { publishOut.value = false; convertRec709.value = true } })
 /** Ticking either needs the name in Approved by first (they act under it): blocked in place, with the message. */
 function tick(ev, ref_) { if (ev.target.checked && !approvedBy.value.trim()) { ev.target.checked = false; nameNeeded.value = true; return } nameNeeded.value = false; ref_.value = ev.target.checked }
 const onGenerate = (ev) => tick(ev, generateOutputs), onPublish = (ev) => tick(ev, publishOut), onRec709 = (ev) => { convertRec709.value = ev.target.checked }
