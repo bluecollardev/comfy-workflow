@@ -356,6 +356,20 @@
         <label class="small"><input v-model="cfg.outputs.hide_empty_folders" type="checkbox" class="form-check-input me-1" data-testid="config-outputs-hide-empty" />{{ $t('config.outputsHideEmpty') }}</label>
         <div class="form-text" data-testid="config-outputs-help">{{ $t('config.outputsHelp') }}</div>
       </div>
+      <div v-if="!forPod && cfg.delivery_prepare" class="border rounded p-2 mb-3" data-testid="config-delivery">
+        <div class="fw-semibold mb-1">{{ $t('config.delivery.title') }}</div>
+        <div class="form-text mb-2" data-testid="config-delivery-help">{{ $t('config.delivery.help') }}</div>
+        <div class="row g-2 small">
+          <label class="col-sm-6">{{ $t('config.delivery.outDir') }}<input v-model="cfg.delivery_prepare.out_dir" type="text" class="form-control form-control-sm font-monospace" autocomplete="off" data-testid="config-delivery-out-dir" /></label>
+          <label class="col-sm-3">{{ $t('config.delivery.colourCode') }}<select v-model="cfg.delivery_prepare.colour_code" class="form-select form-select-sm" data-testid="config-delivery-colour-code"><option v-for="c in COLOUR_CODES" :key="c" :value="c">{{ $t(`config.delivery.colour_${c}`) }}</option></select></label>
+          <label class="col-sm-3">{{ $t('config.delivery.gamma') }}<input v-model.number="cfg.delivery_prepare.gamma" type="number" min="0.1" max="10" step="0.1" class="form-control form-control-sm" data-testid="config-delivery-gamma" /></label>
+          <label class="col-sm-3">{{ $t('config.delivery.fpsSource') }}<select v-model="cfg.delivery_prepare.fps_source" class="form-select form-select-sm" data-testid="config-delivery-fps-source"><option v-for="c in FPS_SOURCES" :key="c" :value="c">{{ $t(`config.delivery.fps_${c}`) }}</option></select></label>
+          <label class="col-sm-3">{{ $t('config.delivery.fps') }}<input v-model.number="cfg.delivery_prepare.fps" type="number" min="1" max="120" step="0.001" class="form-control form-control-sm" data-testid="config-delivery-fps" /></label>
+          <label class="col-sm-3">{{ $t('config.delivery.tcSource') }}<select v-model="cfg.delivery_prepare.timecode_source" class="form-select form-select-sm" data-testid="config-delivery-tc-source"><option v-for="c in TC_SOURCES" :key="c" :value="c">{{ $t(`config.delivery.tc_${c}`) }}</option></select></label>
+          <label class="col-sm-3">{{ $t('config.delivery.framePosition') }}<select v-model="cfg.delivery_prepare.frame_position" class="form-select form-select-sm" data-testid="config-delivery-frame-position"><option v-for="c in FRAME_POSITIONS" :key="c" :value="c">{{ $t(`config.delivery.pos_${c}`) }}</option></select></label>
+        </div>
+        <label class="small mt-2"><input v-model="cfg.delivery_prepare.skip_existing" type="checkbox" class="form-check-input me-1" data-testid="config-delivery-skip-existing" />{{ $t('config.delivery.skipExisting') }}</label>
+      </div>
       <div class="border rounded p-2 mb-3" data-testid="config-render">
         <div class="fw-semibold mb-1">{{ $t('outputs.render.cfg.title') }}</div>
         <div class="d-flex gap-3 flex-wrap align-items-end small mb-2">
@@ -476,6 +490,7 @@ import { parsePatterns, listProblem } from '../utils/syncexclude'
 import { useToastStore } from '../stores/toast'
 import { changedSections, changedKeys, notLanded, clockNow } from '../utils/savefeedback'
 import { RENDER_DEFAULTS, WIDTH_CHOICES, FPS_CHOICES, renderProblem, renderIsDefault, renderBody, renderPublishProblem } from '../utils/renders'
+import { COLOUR_CODES, FPS_SOURCES, TC_SOURCES, FRAME_POSITIONS, deliveryFill, deliveryIsDefault, deliveryBody } from '../utils/deliveryprepare'
 
 const props = defineProps({
   mode: { type: String, default: 'default' },      // 'default' | 'pod'
@@ -649,10 +664,13 @@ function take(payload) {
   // the Outputs window's starting value: the Default Configuration only (a pod's own configuration never has it)
   outputsStored = !forPod.value && payload.config.outputs !== undefined
   if (forPod.value) delete cfg.value.outputs; else cfg.value.outputs = { hide_empty_folders: payload.config.outputs?.hide_empty_folders !== false }
+  // Prepare For Delivery's defaults (ADR-055 section 12): the Default Configuration only, exported and imported with it
+  deliveryStored = !forPod.value && payload.config.delivery_prepare !== undefined
+  if (forPod.value) delete cfg.value.delivery_prepare; else cfg.value.delivery_prepare = deliveryFill(payload.config.delivery_prepare)
   renderError.value = ''
   autoSyncError.value = ''
 }
-let renderStored = false, renderLoadedKeys = [], outputsStored = false
+let renderStored = false, renderLoadedKeys = [], outputsStored = false, deliveryStored = false
 /** The Tunnel proxy preset is a quick proxy: it takes the kind with it. */
 // The colour of the frames when nobody states one: empty is the project default (Gamma 2.6 P3-D65 for a header that says linear; log and printing density are still asked); a colour here is used for every frame whose header says linear or log
 const RENDER_COLOURS = ['p3-d65-gamma26', 'p3-d65-srgb', 'p3-d65-gamma22', 'linear-p3-d65', 'linear-rec709', 'kodak-log']
@@ -813,10 +831,10 @@ function apBody(apv) { const o = { ...apv }; if (!((o.generate?.enabled && (o.ge
 function body() {
   const env = {}
   for (const r of envRows.value) if (r.key) env[r.key] = r.value
-  const { auto_sync: a, render: r, auto_publish: apv, outputs: outv, sync_exclude: _se, sync_exclude_delete: _sd, folder_excludes: _fe, ...rest } = cfg.value
+  const { auto_sync: a, render: r, auto_publish: apv, outputs: outv, delivery_prepare: dpv, sync_exclude: _se, sync_exclude_delete: _sd, folder_excludes: _fe, ...rest } = cfg.value
   const patterns = parsePatterns(syncExcludeText.value)
   const fe = folderExBody()
-  return { ...rest, ...(a.enabled || autoSyncStored ? { auto_sync: { ...a, approved_by: String(a.approved_by || '').trim() } } : {}), ...(patterns.length || syncExcludeStored ? { sync_exclude: patterns } : {}), ...(Object.keys(fe).length || folderExStored ? { folder_excludes: fe } : {}), ...(apv && (apDirty.value || !apLoadedDefault) ? { auto_publish: apBody(apv) } : {}), ...(syncExcludeDelete.value || syncExcludeDeleteStored ? { sync_exclude_delete: !!syncExcludeDelete.value } : {}), ...(r && (renderStored || !renderIsDefault(r)) ? { render: renderBody(r, renderLoadedKeys) } : {}), ...(outv && (outputsStored || outv.hide_empty_folders === false) ? { outputs: { hide_empty_folders: !!outv.hide_empty_folders } } : {}), env }
+  return { ...rest, ...(a.enabled || autoSyncStored ? { auto_sync: { ...a, approved_by: String(a.approved_by || '').trim() } } : {}), ...(patterns.length || syncExcludeStored ? { sync_exclude: patterns } : {}), ...(Object.keys(fe).length || folderExStored ? { folder_excludes: fe } : {}), ...(apv && (apDirty.value || !apLoadedDefault) ? { auto_publish: apBody(apv) } : {}), ...(syncExcludeDelete.value || syncExcludeDeleteStored ? { sync_exclude_delete: !!syncExcludeDelete.value } : {}), ...(r && (renderStored || !renderIsDefault(r)) ? { render: renderBody(r, renderLoadedKeys) } : {}), ...(outv && (outputsStored || outv.hide_empty_folders === false) ? { outputs: { hide_empty_folders: !!outv.hide_empty_folders } } : {}), ...(dpv && (deliveryStored || !deliveryIsDefault(dpv)) ? { delivery_prepare: deliveryBody(dpv) } : {}), env }
 }
 
 const localText = computed(() => {

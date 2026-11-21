@@ -701,6 +701,17 @@ test('configuration: render.pull/skip_existing/publish and outputs.hide_empty_fo
   await call('reset_configuration', {})
 })
 
+test('configuration: delivery_prepare (the Prepare For Delivery defaults, ADR-055 section 12) merges field by field, survives another change, is validated, and dpx_fix says so', async () => {
+  const before = jsonOf(ok(await call('preview_configuration', { patch: {} }))); assert.equal(before.config.delivery_prepare.out_dir, '_delivery_v11'); assert.equal(before.config.delivery_prepare.gamma, 2.6)
+  assert.equal(jsonOf(ok(await call('set_configuration', { patch: { delivery_prepare: { gamma: 2.4, skip_existing: true } } }))).saved, true)
+  await call('set_configuration', { patch: { idle_stop_minutes: 12 } })   // another setting changes: the block is kept
+  const after = jsonOf(ok(await call('preview_configuration', { patch: {} }))).config.delivery_prepare
+  assert.deepEqual([after.gamma, after.skip_existing, after.out_dir, after.colour_code], [2.4, true, '_delivery_v11', 'user-defined'])
+  assert.match(textOf(refused(await call('set_configuration', { patch: { delivery_prepare: { out_dir: '../x' } } }))), /delivery_prepare\.out_dir/)
+  const tool = (await rpc('tools/list')).result.tools.find((t) => t.name === 'dpx_fix'); assert.match(tool.description, /delivery_prepare/)
+  await call('reset_configuration', {})
+})
+
 test('import tools take generate_outputs and publish (Import Round options): documented, validated like the window, never without a named person; an agent can publish through an import', async () => {
   const tools = (await rpc('tools/list')).result.tools
   for (const n of ['plan_round_import', 'import_round', 'import_rounds']) {

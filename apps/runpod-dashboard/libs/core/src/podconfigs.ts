@@ -12,7 +12,7 @@ import type { MountsConfig } from './mounts.js'
 type Registry = Record<string, MountsConfig>
 
 /** Auto-publish (ADR-050) and the Outputs window's preferences are app-wide: a pod's own configuration never carries them. */
-const strip = (cfg: MountsConfig): MountsConfig => { const { auto_publish: _a, outputs: _o, edl: _e, ...rest } = cfg; return rest as MountsConfig }
+const strip = (cfg: MountsConfig): MountsConfig => { const { auto_publish: _a, outputs: _o, edl: _e, delivery_prepare: _d, ...rest } = cfg; return rest as MountsConfig }
 export function load(): Registry {
   const f = podConfigsFile()
   if (!existsSync(f)) return {}

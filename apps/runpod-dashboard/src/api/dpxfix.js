@@ -6,4 +6,4 @@ import { API_BASE } from './pods'
 const raw = core
   ? { run: (o) => core.invoke('dpxfix', 'run', [o]) }
   : { run: async (o) => (await axios.post(`${API_BASE}/dpxfix/run`, o)).data }
-export const dpxfixAPI = { run: async (o) => { const r = (await raw.run(o)) || {}; return { results: Array.isArray(r.results) ? r.results : [], out_root: r.out_root || '' } } }
+export const dpxfixAPI = { run: async (o) => { const r = (await raw.run(o)) || {}; return { results: Array.isArray(r.results) ? r.results : [], out_root: r.out_root || '', settings: r.settings || null } } }

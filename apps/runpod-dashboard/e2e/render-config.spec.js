@@ -185,6 +185,23 @@ test.describe('Render: Sync, Publish and Skip existing as starting values; Outpu
     await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
     expect(calls(api, 'PUT', '/mounts').at(-1).body.outputs).toEqual({ hide_empty_folders: false })   // loaded with it: saved with it
   })
+  test('Default Configuration: the Prepare For Delivery section (ADR-055 section 12): the defaults show, untouched sends no delivery_prepare key, a change saves the whole block and loads again; a pod\'s own configuration has none', async ({ page, api }) => {
+    let d = await openDefault(page)
+    const b = d.getByTestId('config-delivery'); await b.scrollIntoViewIfNeeded()
+    await expect(b.getByTestId('config-delivery-out-dir')).toHaveValue('_delivery_v11'); await expect(b.getByTestId('config-delivery-gamma')).toHaveValue('2.6')
+    await expect(b.getByTestId('config-delivery-colour-code')).toHaveValue('user-defined'); await expect(b.getByTestId('config-delivery-tc-source')).toHaveValue('edl'); await expect(b.getByTestId('config-delivery-skip-existing')).not.toBeChecked()
+    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    expect(calls(api, 'PUT', '/mounts')[0].body).not.toHaveProperty('delivery_prepare')
+    d = await openDefault(page)
+    await d.getByTestId('config-delivery-gamma').fill('2.4'); await d.getByTestId('config-delivery-out-dir').fill('handover_a'); await d.getByTestId('config-delivery-skip-existing').check()
+    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    expect(calls(api, 'PUT', '/mounts').at(-1).body.delivery_prepare).toEqual({ out_dir: 'handover_a', colour_code: 'user-defined', gamma: 2.4, fps_source: 'clip-name', fps: 23.976, timecode_source: 'edl', frame_position: 'set', skip_existing: true })
+    d = await openDefault(page)
+    await expect(d.getByTestId('config-delivery-gamma')).toHaveValue('2.4'); await expect(d.getByTestId('config-delivery-out-dir')).toHaveValue('handover_a'); await expect(d.getByTestId('config-delivery-skip-existing')).toBeChecked()
+    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    expect(calls(api, 'PUT', '/mounts').at(-1).body.delivery_prepare.gamma).toBe(2.4)   // loaded with it: saved with it
+    const p = await openPod(page); await expect(p.getByTestId('config-delivery')).toHaveCount(0)
+  })
   test('a pod\'s own configuration has the render checkboxes (including Skip existing) but no Outputs section', async ({ page }) => {
     const d = await openPod(page)
     await expect(d.getByTestId('config-render-skip-existing')).toBeVisible(); await expect(d.getByTestId('config-render-publish-s3')).toBeVisible()
