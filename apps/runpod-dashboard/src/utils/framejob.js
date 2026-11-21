@@ -38,6 +38,25 @@ export async function refreshListing(podId, srcDirs, names = false) {
   } catch (e) { fpState.error = message(e) }
 }
 
+const REFRESH_MS = () => globalThis.__FP_REFRESH_MS__ ?? 3000
+let lastRefresh = 0
+// One SSH listing for every gallery that asks within a moment (a page of runs mounts many galleries at once); a folder already listed with its names is not asked again.
+const asked = new Map()   // podId -> Set<src_dir>
+let flushTimer = null
+export function queueListing(podId, srcDirs) {
+  if (!podId) return
+  const set = asked.get(podId) || new Set()
+  for (const d of srcDirs) if (d && !fpState.listing[d]?.names) set.add(d)
+  if (!set.size) return
+  asked.set(podId, set)
+  if (!flushTimer) flushTimer = setTimeout(flush, 200)
+}
+async function flush() {
+  flushTimer = null
+  const todo = [...asked.entries()]; asked.clear()
+  for (const [podId, set] of todo) { const dirs = [...set]; for (let i = 0; i < dirs.length; i += 40) await refreshListing(podId, dirs.slice(i, i + 40), true) }
+}
+
 async function poll() {
   timer = null
   const j = fpState.job; if (!j || j.state !== 'running') return
@@ -45,7 +64,10 @@ async function poll() {
     const s = await framePreviewsAPI.status({ job_id: j.id })
     if (s) fpState.job = { ...j, ...s }
   } catch (e) { fpState.error = message(e) }
-  if (fpState.job?.state === 'running') timer = setTimeout(poll, pollMs())
+  if (fpState.job?.state === 'running') {
+    if (Date.now() - lastRefresh >= REFRESH_MS()) { lastRefresh = Date.now(); await refreshListing(fpState.job.pod_id, (fpState.job.items || []).map((i) => i.src_dir), true) }   // the strips fill in while the job runs
+    timer = setTimeout(poll, pollMs())
+  }
   else if (fpState.job) await refreshListing(fpState.job.pod_id, (fpState.job.items || []).map((i) => i.src_dir), true)   // the pod says what it wrote
 }
 /** Start the job: `items` are { src_dir, frames } for every sequence it covers. One job at a time. */

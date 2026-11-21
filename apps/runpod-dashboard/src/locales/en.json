@@ -689,6 +689,10 @@
       "showAll": "Show all {n} folders",
       "showFewer": "Show fewer"
     },
+    "strip": {
+      "label": "Frames across the sequence",
+      "frame": "Frame {n}"
+    },
     "frames": {
       "modeLabel": "Preview mode",
       "modeSequence": "Sequence Previews",
