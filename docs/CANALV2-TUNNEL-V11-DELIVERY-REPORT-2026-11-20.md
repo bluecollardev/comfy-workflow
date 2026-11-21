@@ -26,6 +26,9 @@
 **Housekeeping**
 - Every pod's saved log is in one document with a contents list per pod and per run (`~/.config/runpod-pod-manager/pod-logs/POD-LOGS-2026-11-21.md`); 36 old stopped pods with saved logs were deleted; pods are otherwise stopped, never deleted; ADR-055, ADR-056, the production plan and this report are kept up to date.
 
+
+**Memory limits and every failure's error:** [CANALV2-TUNNEL-V11-RUN-FAILURES-2026-11-21.md](CANALV2-TUNNEL-V11-RUN-FAILURES-2026-11-21.md) (which runs pushed the limits, the RAM limit of each pod, the errors of the 8 graphs).
+
 ## 1. The 36 elements at a glance
 
 | State | Count | Elements |
