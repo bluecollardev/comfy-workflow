@@ -14,6 +14,15 @@ export type Origin = 'window' | 'mcp' | 'auto-publish' | 'backfill' | 'script'
 export interface RunningJob {
   id: string; kind: 'render' | 'publish' | 'volume' | 'sync' | 'other'; pid: number; host: string; trigger: string; origin: Origin; mcp_client?: string
   started_at: string; heartbeat_at: string; state: string; progress?: { done: number; total: number; unit?: string }; label: string; approved_by?: string; cancel_requested?: boolean
+  /** how far a transfer is, for the other processes' Queue: bytes done and in all, a rate, the file being sent, files already there, the pods carrying it (names only, never a key or a link) */
+  transfer?: Transfer
+}
+export interface Transfer { bytes_done: number; bytes_total: number; rate_bps: number; current?: string; skipped?: number; pods?: string[] }
+/** What a heartbeat may carry of a transfer: numbers and short names, nothing else. */
+export function cleanTransfer(t: Transfer | undefined): Transfer | undefined {
+  if (!t) return undefined
+  const n = (x: unknown): number => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? Math.round(x) : 0)
+  return { bytes_done: n(t.bytes_done), bytes_total: n(t.bytes_total), rate_bps: n(t.rate_bps), ...(t.current ? { current: String(t.current).slice(0, 120) } : {}), ...(t.skipped ? { skipped: n(t.skipped) } : {}), ...(t.pods?.length ? { pods: t.pods.slice(0, 8).map((x) => String(x).slice(0, 80)) } : {}) }
 }
 export interface External extends RunningJob { external: true; interrupted?: boolean }
 export interface Deps { now(): number; pid(): number; alive(pid: number): boolean; /** how often a running job writes its heartbeat (and how often the file is re-read) */ heartbeatMs: number }
@@ -35,9 +44,9 @@ function mutate(fn: (jobs: Record<string, RunningJob>) => void): Promise<void> {
 interface Tracked { stop: () => void }
 const tracked = new Map<string, Tracked>()
 /** Start publishing a job of this process. `view()` is read at each heartbeat; `cancel` is called when another process asked for it. Returns `stop`. */
-export function track(o: { id: string; kind: RunningJob['kind']; trigger: string; origin: Origin; client?: string; label: string; approved_by?: string; started_at?: string; view: () => { state: string; /** the job is over: stop publishing it */ terminal?: boolean; progress?: RunningJob['progress'] }; cancel: () => void }): () => void {
+export function track(o: { id: string; kind: RunningJob['kind']; trigger: string; origin: Origin; client?: string; label: string; approved_by?: string; started_at?: string; view: () => { state: string; /** the job is over: stop publishing it */ terminal?: boolean; progress?: RunningJob['progress']; transfer?: Transfer }; cancel: () => void }): () => void {
   const ownerPid = deps.pid()
-  const entry = (): RunningJob => { const v = o.view(); return { id: o.id, kind: o.kind, pid: ownerPid, host: hostname(), trigger: o.trigger, origin: o.origin, ...(o.client ? { mcp_client: o.client } : {}), started_at: o.started_at ?? iso(deps.now()), heartbeat_at: iso(deps.now()), state: v.state, ...(v.progress ? { progress: v.progress } : {}), label: o.label, ...(o.approved_by ? { approved_by: o.approved_by } : {}) } }
+  const entry = (): RunningJob => { const v = o.view(); return { id: o.id, kind: o.kind, pid: ownerPid, host: hostname(), trigger: o.trigger, origin: o.origin, ...(o.client ? { mcp_client: o.client } : {}), started_at: o.started_at ?? iso(deps.now()), heartbeat_at: iso(deps.now()), state: v.state, ...(v.progress ? { progress: v.progress } : {}), ...(v.transfer ? { transfer: cleanTransfer(v.transfer) } : {}), label: o.label, ...(o.approved_by ? { approved_by: o.approved_by } : {}) } }
   let stopped = false, busy = false
   const beat = async () => {
     if (stopped || busy) return; busy = true

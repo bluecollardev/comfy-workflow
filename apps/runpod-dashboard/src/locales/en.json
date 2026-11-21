@@ -1667,7 +1667,12 @@
         "placeholders": "Placeholders: {list}",
         "transfer": "Transfer from the volume",
         "transferHelp": "Files that live only on the volume: Auto uploads from a running pod on the volume when there is one (fast), else through this PC. It never starts a pod.",
-        "transferOption": { "auto": "Auto", "pod": "Pod", "pc": "This PC" }
+        "transferOption": { "auto": "Auto", "pod": "Pod", "pc": "This PC" },
+        "transferPods": "Pods for uploads",
+        "transferPodsPlaceholder": "pod ids, separated by commas (empty: any running pod)",
+        "transferPodsHelp": "Only these pods carry uploads from the volume. Empty: the running pods of the volume, best first: one with no ComfyUI prompt running or waiting, then the least RAM in use, then the most GPUs. A pod that is rendering is last.",
+        "parallelPods": "Pods at once",
+        "parallelPodsHelp": "How many pods one publish spreads its shots over (1 to 6). 1 uploads from one pod at a time."
       },
       "save": "Save",
       "saved": "Saved",
