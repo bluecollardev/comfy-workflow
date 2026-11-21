@@ -77,7 +77,7 @@ export function checkPanama(key: 'bucket' | 'region' | 'profile', v: unknown): s
   return re.test(t) ? null : `Panama ${key}: ${t.slice(0, 80)} is not ${what}`
 }
 export const PUBLISH_SECRETS = ['PUBLISH_S3_ACCESS_KEY_ID', 'PUBLISH_S3_SECRET_ACCESS_KEY', 'PUBLISH_SLACK_WEBHOOK_URL'] as const
-const KEYS = ['PUBLISH_S3_ACCESS_KEY_ID', 'PUBLISH_S3_SECRET_ACCESS_KEY', 'PUBLISH_SLACK_WEBHOOK_URL', 'AGENT_REQUIRE_NAMED_YES', 'AGENT_SPEND_CAP_USD', 'AGENT_SHELL_GUARD', 'PANAMA_S3_BUCKET', 'PANAMA_S3_REGION', 'PANAMA_S3_PROFILE', 'RUNPOD_API_KEY', 'RUNPOD_S3_ACCESS_KEY', 'RUNPOD_S3_SECRET_KEY', 'ANTHROPIC_API_KEY', 'HF_TOKEN', 'PANAMA_CONSOLE_KEY', 'PANAMA_AWS_ACCESS_KEY_ID', 'PANAMA_AWS_SECRET_ACCESS_KEY'] as const   // ANTHROPIC_API_KEY: only for "Write an adapter with Claude" (ADR-008); optional   // the S3 pair: uploads onto a volume with no pod (ADR-007 G)
+const KEYS = ['PUBLISH_S3_ACCESS_KEY_ID', 'PUBLISH_S3_SECRET_ACCESS_KEY', 'PUBLISH_SLACK_WEBHOOK_URL', 'AGENT_REQUIRE_NAMED_YES', 'AGENT_SPEND_CAP_USD', 'AGENT_SHELL_GUARD', 'CHUNKED_RUNS', 'PANAMA_S3_BUCKET', 'PANAMA_S3_REGION', 'PANAMA_S3_PROFILE', 'RUNPOD_API_KEY', 'RUNPOD_S3_ACCESS_KEY', 'RUNPOD_S3_SECRET_KEY', 'ANTHROPIC_API_KEY', 'HF_TOKEN', 'PANAMA_CONSOLE_KEY', 'PANAMA_AWS_ACCESS_KEY_ID', 'PANAMA_AWS_SECRET_ACCESS_KEY'] as const   // ANTHROPIC_API_KEY: only for "Write an adapter with Claude" (ADR-008); optional   // the S3 pair: uploads onto a volume with no pod (ADR-007 G)
 
 function readEnvFile(): Record<string, string> {
   const f = file()
@@ -105,6 +105,9 @@ function writeEnvFile(values: Record<string, string>) {
   for (const [k, v] of Object.entries(values)) if (!done.has(k)) out.push(`${k}=${v}`)
   writeFileSync(f, out.join('\n').replace(/\n*$/, '\n'), { mode: 0o600 })
 }
+
+/** Chunked, RAM-guarded graph runs (ADR-056): ON unless CHUNKED_RUNS is 0 / off / false. The only switch; a run's own `chunking: 'off'` beats it. */
+export const chunkedRuns = (): boolean => !/^(0|off|false)$/i.test(lookup('CHUNKED_RUNS').trim())
 
 /** The agent rules, system-wide (ADR-042): the name behind a spending tool's yes (Binc's policy for the CANALV2 job, off in RunPod Manager unless switched on) and the ceiling advertised to agents. Stored as AGENT_REQUIRE_NAMED_YES (1 or absent) and AGENT_SPEND_CAP_USD in the settings file. */
 export function agentRules(): { require_named_yes: boolean; spend_cap_usd: number; shell_guard: boolean } {
@@ -136,11 +139,11 @@ export function get() {
   const eff = (name: string, d: string) => process.env[name] || stored[name] || d
   const panamaCfg = { panama_bucket: eff('PANAMA_S3_BUCKET', PANAMA_DEFAULTS.bucket), panama_region: eff('PANAMA_S3_REGION', PANAMA_DEFAULTS.region), panama_profile: eff('PANAMA_S3_PROFILE', PANAMA_DEFAULTS.profile), panama_defaults: { ...PANAMA_DEFAULTS } }
   const rules = agentRules()
-  return { hf_token_set: !!hfToken, hf_token_hint: hint(hfToken), agent_shell_guard: rules.shell_guard, agent_named_yes_required: rules.require_named_yes, agent_spend_cap_usd: rules.spend_cap_usd, ...panamaCfg, panama_aws_keys_set: !!(awsId && awsSecret), panama_aws_access_key_hint: hint(awsId), panama_console_key_set: !!panama, panama_console_key_hint: hint(panama), anthropic_key_set: !!claude, anthropic_key_hint: hint(claude), s3_keys_set: !!s3, s3_access_key_hint: hint(process.env.RUNPOD_S3_ACCESS_KEY || stored.RUNPOD_S3_ACCESS_KEY || ''), runpod_api_key_set: !!key, runpod_api_key_hint: hint(key), source: process.env.RUNPOD_API_KEY && !stored.RUNPOD_API_KEY ? 'environment' : stored.RUNPOD_API_KEY ? file() : 'none' }
+  return { hf_token_set: !!hfToken, hf_token_hint: hint(hfToken), agent_shell_guard: rules.shell_guard, chunked_runs: chunkedRuns(), agent_named_yes_required: rules.require_named_yes, agent_spend_cap_usd: rules.spend_cap_usd, ...panamaCfg, panama_aws_keys_set: !!(awsId && awsSecret), panama_aws_access_key_hint: hint(awsId), panama_console_key_set: !!panama, panama_console_key_hint: hint(panama), anthropic_key_set: !!claude, anthropic_key_hint: hint(claude), s3_keys_set: !!s3, s3_access_key_hint: hint(process.env.RUNPOD_S3_ACCESS_KEY || stored.RUNPOD_S3_ACCESS_KEY || ''), runpod_api_key_set: !!key, runpod_api_key_hint: hint(key), source: process.env.RUNPOD_API_KEY && !stored.RUNPOD_API_KEY ? 'environment' : stored.RUNPOD_API_KEY ? file() : 'none' }
 }
 
 /** Store a secret. An empty value leaves the stored one alone; `null` removes it. */
-export function set(values: { panama_console_url?: string | null; agent_shell_guard?: boolean | null; agent_named_yes_required?: boolean | null; agent_spend_cap_usd?: number | null; panama_bucket?: string | null; panama_region?: string | null; panama_profile?: string | null; anthropic_api_key?: string | null; hf_token?: string | null; runpod_api_key?: string | null; runpod_s3_access_key?: string | null; runpod_s3_secret_key?: string | null; panama_console_key?: string | null; panama_aws_access_key?: string | null; panama_aws_secret_key?: string | null }) {
+export function set(values: { panama_console_url?: string | null; agent_shell_guard?: boolean | null; chunked_runs?: boolean | null; agent_named_yes_required?: boolean | null; agent_spend_cap_usd?: number | null; panama_bucket?: string | null; panama_region?: string | null; panama_profile?: string | null; anthropic_api_key?: string | null; hf_token?: string | null; runpod_api_key?: string | null; runpod_s3_access_key?: string | null; runpod_s3_secret_key?: string | null; panama_console_key?: string | null; panama_aws_access_key?: string | null; panama_aws_secret_key?: string | null }) {
   const updates: Record<string, string> = {}
   // The bucket, region and profile: ordinary settings, not secrets. A value equal to the built-in default (or empty, or null) removes the override.
   for (const [field, key, name] of [['panama_bucket', 'bucket', 'PANAMA_S3_BUCKET'], ['panama_region', 'region', 'PANAMA_S3_REGION'], ['panama_profile', 'profile', 'PANAMA_S3_PROFILE']] as const) {
@@ -198,6 +201,7 @@ export function set(values: { panama_console_url?: string | null; agent_shell_gu
     if (values.agent_shell_guard) agentguard.install(); else agentguard.uninstall()
     updates.AGENT_SHELL_GUARD = values.agent_shell_guard ? '1' : ''
   }
+  if (values.chunked_runs !== undefined) { if (values.chunked_runs !== null && typeof values.chunked_runs !== 'boolean') throw bad('chunked_runs is true or false'); updates.CHUNKED_RUNS = values.chunked_runs === false ? '0' : '' }
   // The agent rules (system-wide): ordinary settings. Off / 0 removes the entry.
   if (values.agent_named_yes_required !== undefined) { if (values.agent_named_yes_required !== null && typeof values.agent_named_yes_required !== 'boolean') throw bad('agent_named_yes_required is true or false'); updates.AGENT_REQUIRE_NAMED_YES = values.agent_named_yes_required ? '1' : '' }
   if (values.agent_spend_cap_usd !== undefined) {

@@ -35,7 +35,7 @@ function world(pool: { id: string; name: string; state: 'running' | 'starting' |
     ensureVolume: async (id) => { (w.vols ||= []).push(id ?? null) },
     cardPrice: async (g) => ({ rtx5090: 2, a40: 0.5, rtx4090: 1 } as Record<string, number>)[g] ?? null,
     now: () => new Date((w as any).clock ?? Date.now()),
-    createPod: async (name, round, gpu) => { const fm = (w as any).freeLeft as Record<string, number> | undefined; (w as any).asked = [...((w as any).asked ?? []), gpu]; if (fm && gpu && gpu in fm) { if (fm[gpu] <= 0) throw new CoreError(502, `No card available right now: tried ${gpu} on SECURE`, 'no_card'); fm[gpu]-- } if ((w as any).transient) throw new CoreError(502, 'RunPod 500'); if ((w as any).noCard) throw new Error('No card available right now: tried rtxpro6000 on SECURE'); (w.gpuOf ||= {})[`new${w.created.length + 1}`] = gpu; const id = `new${w.created.length + 1}`; w.created.push(id); (w.rounds ||= {})[id] = round; w.pods.push({ id, name, state: 'running', price }); w.ready.add(id); return { id, name } },
+    createPod: async (name, round, gpu, gpuCount) => { (w as any).counts = [...((w as any).counts ?? []), gpuCount ?? 1]; const fm = (w as any).freeLeft as Record<string, number> | undefined; (w as any).asked = [...((w as any).asked ?? []), gpu]; if (fm && gpu && gpu in fm) { if (fm[gpu] <= 0) throw new CoreError(502, `No card available right now: tried ${gpu} on SECURE`, 'no_card'); fm[gpu]-- } if ((w as any).transient) throw new CoreError(502, 'RunPod 500'); if ((w as any).noCard) throw new Error('No card available right now: tried rtxpro6000 on SECURE'); (w.gpuOf ||= {})[`new${w.created.length + 1}`] = gpu; const id = `new${w.created.length + 1}`; w.created.push(id); (w.rounds ||= {})[id] = round; w.pods.push({ id, name, state: 'running', price }); w.ready.add(id); return { id, name } },
     assignShot: (id, round, shot) => { (w.shotOf ||= {})[id] = `${round}/${shot}` },
     stopPod: async (id) => { w.stopped.push(id) },
     autoSync: (id: string, by: string, a: { pull: boolean; push: boolean }) => { ((w as any).auto ||= []).push({ id, by, a }); return true },
@@ -511,33 +511,31 @@ describe('out of memory: the next card up, on its own', () => {
   const go = async (ticks = 8) => { for (let k = 0; k < ticks; k++) await queue.tick() }
   const evs = () => (tasks().find((x) => x.kind === 'run')?.events ?? []).map((e) => e.text)
 
-  it('a graph that ran out of memory goes back to waiting with the next bigger cards; the small pod is stopped, not deleted; the retry runs only what did not finish', async () => {
+  it('a graph that ran out of memory goes back to waiting with MORE GPUs of the same card (RAM comes with the GPU count); the small pod is stopped, not deleted; the retry runs only what did not finish', async () => {
     const w = oomWorld(['oom', 'ok'])
     await queue.importRound(ROUND, { approved_by: 'Lucas', shots: ['cgi-042'], cards: { 'cgi-042': 'rtxpro4500' } })
     await go(); w.pull.state = 'done'; await go(10)
     const t = tasks().find((x) => x.kind === 'run')!
-    expect(t.escalations).toBe(1); expect(t.tried_cards).toEqual(['rtxpro4500']); expect(t.state).toBe('done')   // the second run (on the bigger card) finished
-    const asked = (w as any).asked as string[]
-    expect(asked[0]).toBe('rtxpro4500'); expect(asked[1]).toBe('rtxpro5000')   // the next tier, its first card
+    expect(t.escalations).toBe(1); expect(t.tried_cards).toEqual(['rtxpro4500']); expect(t.state).toBe('done'); expect(t.gpu_count).toBe(2)
+    expect((w as any).asked).toEqual(['rtxpro4500', 'rtxpro4500']); expect((w as any).counts).toEqual([1, 2])
     expect(w.stopped.length).toBe(1)   // the small pod was stopped; the fake has no delete at all
-    expect(evs().join(' | ')).toMatch(/out of memory on RTX PRO 4500 \(32 GB\): retried on RTX PRO 5000 \(48 GB\)/)
+    expect(evs().join(' | ')).toMatch(/out of memory on RTX PRO 4500 \(32 GB\): .*2 GPUs of the same card/)
     expect((w as any).ran.map((r: { paths: string[] }) => r.paths.length)).toEqual([1, 1])
-    expect(history.list({ kind: 'change' }).some((e) => (e as { action?: string }).action === 'out of memory: retried on a bigger card')).toBe(true)
+    expect(history.list({ kind: 'change' }).some((e) => (e as { action?: string }).action === 'out of memory: retried with more RAM')).toBe(true)
   })
-  it('it climbs 32 -> 48 -> 80 -> 96 GB, and after three escalations the task fails with its error', async () => {
+  it('it climbs 1x -> 2x -> 4x GPUs, then a card with more RAM per GPU, and after three escalations the task fails with its error', async () => {
     const w = oomWorld(['oom', 'oom', 'oom', 'oom'])
     await queue.importRound(ROUND, { approved_by: 'Lucas', shots: ['cgi-042'], cards: { 'cgi-042': 'rtxpro4500' } })
     await go(); w.pull.state = 'done'; await go(40)
     const t = tasks().find((x) => x.kind === 'run')!
     expect(t.state).toBe('failed'); expect(t.escalations).toBe(3); expect(t.error).toMatch(/502|memory/)
-    const asked = ((w as any).asked as string[]).filter((g, k, a) => a.indexOf(g) === k)
-    expect(asked.map((g) => cards.gbOf(g))).toEqual([32, 48, 80, 96])   // the ladder in order, each size once
+    expect((w as any).asked).toEqual(['rtxpro4500', 'rtxpro4500', 'rtxpro4500', 'rtxpro6000']); expect((w as any).counts).toEqual([1, 2, 4, 1])
     expect(evs().join(' | ')).toMatch(/giving up \(the limit is 3\)/)
     expect(w.stopped.length).toBe(3)   // each pod that was too small and was left for a bigger one was stopped; the last one, where the task gave up, is left to the idle stop like any failed run
   })
-  it('on the biggest allowed card there is nowhere to go: the task fails at once and says why', async () => {
+  it('a card whose RAM is not known falls back to the VRAM ladder, and with nothing bigger the task fails at once and says why', async () => {
     const w = oomWorld(['oom'])
-    await queue.importRound(ROUND, { approved_by: 'Lucas', shots: ['cgi-042'], cards: { 'cgi-042': 'rtxpro6000' } })
+    await queue.importRound(ROUND, { approved_by: 'Lucas', shots: ['cgi-042'], cards: { 'cgi-042': 'rtxpro6000q' } })
     await go(); w.pull.state = 'done'; await go(10)
     const t = tasks().find((x) => x.kind === 'run')!
     expect(t.state).toBe('failed'); expect(t.escalations ?? 0).toBe(0); expect(evs().join(' | ')).toMatch(/no bigger card is allowed/)

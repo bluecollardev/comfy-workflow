@@ -21,6 +21,8 @@ import * as sync from './sync.js'
 import * as ui2api from './ui2api.js'
 import * as cards from './cards.js'
 import * as idle from './idle.js'
+import * as autochunk from './autochunk.js'
+import * as settings from './settings.js'
 
 export interface WorkflowFile {
   /** Path under the panel's `workflows/`, e.g. `rounds/brynley-comfy-2026-10-22/cgi-042/cgi-042-common-nodes-v13.json`. */
@@ -108,6 +110,8 @@ export interface RunOpts {
   graphTimeoutS?: number
   pollMs?: number
   approvedBy?: string
+  /** ADR-056: chunked, RAM-guarded runs are the default for every graph; 'off' runs it the old way (whole, no guard). Absent: the setting (on unless chunked_runs is switched off). */ chunking?: 'on' | 'off'
+  /** the container's RAM now; default: its cgroup over SSH, else ComfyUI's system_stats. Tests inject one. */ ram?: (podId: string) => Promise<autochunk.RamNow | null>
 }
 interface Internal { job: RunJob; abort: AbortController }
 const jobs = new Map<string, Internal>()
@@ -180,7 +184,7 @@ export function outcomeOf(entry: { status?: { status_str?: string; completed?: b
 }
 
 /** A panel graph as an API graph ready to queue: fetched from the pod, converted, the pod's model choice applied, the locked-shot rule checked. */
-export async function apiGraph(podId: string, path: string, base: string, o: RunOpts, fetchFn: typeof fetch): Promise<{ api: Record<string, unknown>; models?: string[] }> {
+export async function apiGraph(podId: string, path: string, base: string, o: RunOpts, fetchFn: typeof fetch): Promise<{ api: Record<string, unknown>; models?: string[]; ui: unknown }> {
   // a ComfyUI that is busy or still loading can take longer than 30 s to hand over a 40 KB graph: ask again (up to 3 times, the wait growing) before the graph is failed with "The operation was aborted due to timeout"
   const getJson = async (url: string) => {
     for (let k = 1; ; k++) {
@@ -204,7 +208,7 @@ export async function apiGraph(podId: string, path: string, base: string, o: Run
   const models = chosen.applied.length || chosen.skipped.length ? [...chosen.applied.map((a) => `${a.slot}: ${a.to} (was ${a.from || 'unset'})`), ...chosen.skipped] : undefined
   const gate = shots.lockedIn(api, o.projectRoot)
   if (gate.locked.length) throw new CoreError(403, `Refused: the graph names locked shot${gate.locked.length === 1 ? '' : 's'} ${gate.locked.join(', ')}; client-approved shots are never run by us.`)
-  return { api, models }
+  return { api, models, ui }
 }
 
 /** The pod's own log lines (RunPod's system log and the container's) since `sinceIso`, read for a few seconds: where "triggered memory limits (OOM)" and "exit code 137" show up when the container is killed. Never throws. */
@@ -225,8 +229,9 @@ async function runOne(i: Internal, r: RunResult, base: string, o: RunOpts, fetch
   const signal = i.abort.signal
   const getJson = async (url: string) => { const x = await fetchFn(url, { signal: AbortSignal.timeout(30_000) }); if (x.status !== 200) throw new CoreError(502, `ComfyUI answered HTTP ${x.status} for ${url.replace(base, '')}`); return x.json() }
   note(i, 'Converting the graph to an API graph', r.path); r.stage = 'load'
-  const { api, models } = await apiGraph(i.job.pod_id, r.path, base, o, fetchFn)
+  const { api, models, ui } = await apiGraph(i.job.pod_id, r.path, base, o, fetchFn)
   if (models) { r.models = models; note(i, `Pod models applied: ${models.join('; ')}`, r.path) }
+  if ((o.chunking ?? (settings.chunkedRuns() ? 'on' : 'off')) === 'on') return runChunked(i, r, base, o, fetchFn, api, ui)   // the default path (ADR-056)
   r.stage = 'queue'
   const q = await fetchFn(`${base}/prompt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt: api, client_id: 'pod-manager-runflows', extra_data: { pod_manager: { workflow: r.path } } }), signal: AbortSignal.timeout(60_000) })
   const qb = await q.json().catch(() => ({}))
@@ -261,6 +266,70 @@ async function runOne(i: Internal, r: RunResult, base: string, o: RunOpts, fetch
     if (Date.now() - t0 > limit) throw new CoreError(504, `Still running after ${Math.round(limit / 60000)} minutes; it keeps running on the pod (prompt ${r.prompt_id}).`)
     await sleep(o.pollMs ?? 2000, signal)
   }
+}
+
+/** The container's RAM: its cgroup over SSH (the real limit), else what ComfyUI reports (on these pods the same figure). Null when neither answers: the guard is then off and the run says so. */
+async function readContainerRam(podId: string, base: string, fetchFn: typeof fetch): Promise<autochunk.RamNow | null> {
+  try { const r = await (await import('./chunking.js')).readRam(podId); if (r) return { used: r.used, limit: r.limit, pct: r.pct } } catch { /* fall through */ }
+  try { const s = ((await (await fetchFn(`${base}/system_stats`, { signal: AbortSignal.timeout(40_000) })).json()) as { system?: { ram_total?: number; ram_free?: number } }).system; if (s?.ram_total) { const used = s.ram_total - (s.ram_free ?? 0); return { used, limit: s.ram_total, pct: Math.round(used / s.ram_total * 1000) / 10 } } } catch { /* unreadable */ }
+  return null
+}
+
+/**
+ * One graph through the default path: autochunk.runGraph probes, plans, chunks, guards and merge-checks it. This only supplies what a pod run needs: queueing a prompt, watching it through a restart or an outage
+ * (the same tolerance as a whole run), the container's RAM, and the words for the task's events and the History.
+ */
+async function runChunked(i: Internal, r: RunResult, base: string, o: RunOpts, fetchFn: typeof fetch, api: Record<string, unknown>, ui: unknown) {
+  const signal = i.abort.signal, podId = i.job.pod_id
+  const getJson = async (url: string) => { const x = await fetchFn(url, { signal: AbortSignal.timeout(30_000) }); if (x.status !== 200) throw new CoreError(502, `ComfyUI answered HTTP ${x.status} for ${url.replace(base, '')}`); return x.json() }
+  const outageMs = o.outageMs ?? 180_000, stallMs = o.stallMs ?? 10 * 60_000
+  const watch = new Map<string, { outageAt: number; wasDown: boolean; lastAlive: number; startedAt: number }>()
+  const prev = await graphSeconds(r.path)
+  const limitMs = o.graphTimeoutS !== undefined ? o.graphTimeoutS * 1000 : prev ? Math.max(1000, Math.round(3 * prev * 1000)) : 2 * 3600 * 1000   // per prompt (one chunk, never longer than the whole graph took): 3x the last run of this graph, else 2 hours
+  const files: OutputFile[] = []; let outputs = 0
+  const t0 = Date.now()
+  const say = (text: string) => { note(i, text, r.path); try { history.record({ kind: 'change', area: 'queue', action: 'chunked run', what: r.path, detail: text, pod_id: podId } as never) } catch { /* the History never blocks a run */ } }
+  const sleeper = (ms: number) => sleep(ms, signal)
+  const ctx: autochunk.RunCtx = {
+    path: r.path, ui, api, say, sleep: sleeper, pollMs: o.pollMs === undefined ? undefined : o.pollMs,
+    submit: async (a) => {
+      r.stage = 'queue'
+      const q = await fetchFn(`${base}/prompt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt: a, client_id: 'pod-manager-runflows', extra_data: { pod_manager: { workflow: r.path } } }), signal: AbortSignal.timeout(60_000) })
+      const qb = await q.json().catch(() => ({}))
+      if (q.status !== 200) { const d = describeRejection(qb); r.node = d.node; if (q.status === 400) r.stage = 'validate'; throw new CoreError(q.status === 400 ? 400 : 502, q.status === 400 ? d.text : `ComfyUI answered HTTP ${q.status} for /prompt: ${d.text}`) }
+      r.prompt_id = (qb as { prompt_id: string }).prompt_id; r.stage = 'execute'
+      note(i, `Queued on the pod as prompt ${r.prompt_id}`, r.path)
+      watch.set(r.prompt_id, { outageAt: 0, wasDown: false, lastAlive: Date.now(), startedAt: Date.now() })
+      return r.prompt_id
+    },
+    outcome: async (id) => {
+      if (signal.aborted) { await fetchFn(`${base}/interrupt`, { method: 'POST' }).catch(() => {}); throw new CoreError(499, 'cancelled') }
+      const w = watch.get(id)!
+      let h: Record<string, Parameters<typeof outcomeOf>[0]> = {}
+      try { h = (await getJson(`${base}/history/${id}`)) as typeof h; if (w.outageAt) { w.outageAt = 0; w.wasDown = true } } catch (e) {
+        w.outageAt ||= Date.now()
+        if (Date.now() - w.outageAt > outageMs) return { error: `ComfyUI stopped answering for ${Math.round((Date.now() - w.outageAt) / 1000)} s while the graph ran (${(e as Error).message}); the pod's container was probably killed or restarted (its system log says why).` }
+        return null
+      }
+      const out = outcomeOf(h?.[id])
+      if (out) { if (out.error) { r.node = out.node; return { error: out.error } } outputs += out.outputs; files.push(...(out.files ?? [])); r.node = out.node; return 'done' }
+      const held = async () => { try { const qq = (await getJson(`${base}/queue`)) as { queue_running?: unknown[][]; queue_pending?: unknown[][] }; return [...(qq.queue_running ?? []), ...(qq.queue_pending ?? [])].some((e) => e?.[1] === id) } catch { return null } }
+      if (w.wasDown) { w.wasDown = false; if ((await held()) === false) return { error: `ComfyUI restarted while the graph ran: prompt ${id} is gone (the pod's container was killed or restarted; its system log says why).` } }
+      const h2 = await held(); if (h2 !== false) w.lastAlive = Date.now()
+      if (Date.now() - w.startedAt > limitMs) return { error: `Still running after ${Math.round(limitMs / 60000)} minutes; it keeps running on the pod (prompt ${id}).` }
+      if (Date.now() - w.lastAlive > stallMs) return { error: `Stalled: prompt ${id} is neither running nor queued on the pod and has no result after ${Math.round(stallMs / 60000)} minutes (the pod may have restarted).` }
+      return null
+    },
+    ram: async () => (o.ram ?? ((p) => readContainerRam(p, base, fetchFn)))(podId),
+    interrupt: async () => { await fetchFn(`${base}/interrupt`, { method: 'POST', signal: AbortSignal.timeout(30_000) }).catch(() => {}) },
+    free: async () => { await fetchFn(`${base}/free`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ unload_models: true, free_memory: true }), signal: AbortSignal.timeout(30_000) }).catch(() => {}) },
+  }
+  const sum = await autochunk.runGraph(ctx)
+  r.seconds = Math.round((Date.now() - t0) / 100) / 10; r.outputs = outputs; r.files = files
+  void rememberSeconds(r.path, r.seconds)
+  try { autosync.notifyOutputs(podId, null, files) } catch { /* Auto sync never fails a run */ }
+  void outputruns.ctxFor(podId, o.client).then((c2) => outputruns.record(c2, [{ prompt_id: r.prompt_id!, status: 'success', workflow: r.path, started_at: new Date(t0).toISOString(), duration_s: r.seconds, outputs: files.map((f) => ({ filename: f.filename, subfolder: f.subfolder, type: f.type })) }]))
+  note(i, `Finished in ${r.seconds} s (${sum.text}), ${outputs} output${outputs === 1 ? '' : 's'}`, r.path)
 }
 
 /** Convert on the pod when its image has ui2api (a headless Chromium on the pod), else with Chrome on this PC. Replaced in tests. */
@@ -329,12 +398,12 @@ export async function run(podId: string, paths: string[], o: RunOpts = {}): Prom
           const rec = failures.record({ stage, message: r.error, job_id: j.id, graph: r.path, pod_id: podId, pod_name: podName, node_id: r.node ?? nt?.[1] ?? '', node_type: nt?.[2] ?? '', log_tail: j.log.slice(-20).map((l) => l.text), quiet: true, attempt })
           r.recovery = rec.recovery; r.retryable = rec.retryable; r.missing_models = rec.missing_models; r.node_type = rec.node_type; r.failure_text = failures.describe(rec)
           // 5xx, a timeout or a restart on a heavy graph is usually the container being killed for memory: ask the pod's own log, so the failure says so and is not retried on the same card
-          if (/\b5\d\d\b|aborted due to timeout|stopped answering|restarted while|ECONN|fetch failed|out of memory|OutOfMemory|\bOOM\b/i.test(r.error)) {
+          if (/\b5\d\d\b|aborted due to timeout|stopped answering|restarted while|ECONN|fetch failed|out of memory|OutOfMemory|\bOOM\b|RAM guard/i.test(r.error)) {
             const lines = await (o.oomEvidence ?? defaultEvidence(o.client))(podId, j.started_at).catch(() => [] as string[])
             const c = cards.classify({ message: r.error, podLog: lines }); r.failure_kind = c.kind
             if (c.kind === 'oom') {
               r.oom = true; r.retryable = false
-              r.recovery = `Out of memory (${c.why}). The same card would fail again, so it is not retried here: the queue retries it on a bigger card (cards.escalate).`
+              r.recovery = `Out of memory (${c.why}). The same card would fail again, so it is not retried here: the queue retries it with more RAM: more GPUs of the same card, then a card with more RAM per GPU (cards.escalateRam).`
               r.failure_text = `${r.failure_text}\nkind: out of memory\nrecovery: ${r.recovery}`
               note(i, `Out of memory: ${c.why}`, r.path, 'error')
             }
