@@ -12,6 +12,7 @@ export const PAGE_MEDIA = 48    // rows listed per page in a group with previews
 export const HAS_IO = typeof IntersectionObserver !== 'undefined'
 const KEY = 'outputs.dpx.mode'
 const TEMP_KEY = 'outputs.temp.show'
+const INCOMPLETE_KEY = 'outputs.incomplete.show'
 
 /** Whether a sequence of `frames` frames is expanded, given the mode ('auto' | 'expanded' | 'collapsed') and its own override (true | false | undefined). A person's click on one sequence wins over the mode. */
 export const expandedOf = (mode, override, frames) => (typeof override === 'boolean' ? override : mode === 'expanded' ? true : mode === 'collapsed' ? false : frames <= AUTO_MAX)
@@ -23,14 +24,19 @@ const writeMode = (m) => { try { if (m === 'auto') globalThis.localStorage?.remo
 const readTemp = () => { try { return globalThis.localStorage?.getItem(TEMP_KEY) === '1' } catch { return false } }
 const writeTemp = (on) => { try { if (on) globalThis.localStorage?.setItem(TEMP_KEY, '1'); else globalThis.localStorage?.removeItem(TEMP_KEY) } catch { /* the choice just lasts this window */ } }
 
+const readIncomplete = () => { try { return globalThis.localStorage?.getItem(INCOMPLETE_KEY) === '1' } catch { return false } }
+const writeIncomplete = (on) => { try { if (on) globalThis.localStorage?.setItem(INCOMPLETE_KEY, '1'); else globalThis.localStorage?.removeItem(INCOMPLETE_KEY) } catch { /* the choice just lasts this window */ } }
+
 export const dpxView = reactive({ mode: readMode(), override: {}, pages: {}, all: {} })
 export const isExpanded = (tile) => expandedOf(dpxView.mode, dpxView.override[tile.key], tile.frames?.length || 0)
 export const toggleSeq = (tile) => { dpxView.override[tile.key] = !isExpanded(tile) }
 /** Video, image, audio and temp-file groups share the mode and the Collapse All / Expand All buttons; each has its own override, page and Show All by key. `showTemp`: ComfyUI's temp files are hidden unless it is on. */
-export const groupView = reactive({ override: {}, pages: {}, all: {}, showTemp: readTemp() })
+export const groupView = reactive({ override: {}, pages: {}, all: {}, showTemp: readTemp(), showIncomplete: readIncomplete() })
 /** Collapse All / Expand All: the mode for every sequence and every group; every single choice, page and Show All is forgotten. */
 export const setAll = (mode) => { dpxView.mode = mode; dpxView.override = {}; dpxView.pages = {}; dpxView.all = {}; groupView.override = {}; groupView.pages = {}; groupView.all = {}; writeMode(mode) }
 export const setShowTemp = (on) => { groupView.showTemp = !!on; writeTemp(!!on) }
+/** Incomplete sequences (short of the EDL's cut, utils/incomplete.js) are hidden unless Show Incomplete is on; display only. */
+export const setShowIncomplete = (on) => { groupView.showIncomplete = !!on; writeIncomplete(!!on) }
 
 export const pageOf = (tile) => dpxView.pages[tile.key] || 1
 export const shownFrames = (tile) => { const f = tile.frames || []; return dpxView.all[tile.key] ? f : f.slice(0, pageOf(tile) * PAGE) }

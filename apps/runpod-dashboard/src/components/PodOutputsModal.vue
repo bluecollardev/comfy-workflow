@@ -46,6 +46,8 @@
         <BFormInput v-model="nameFilter" size="sm" type="search" :placeholder="$t('outputs.nameFilterPlaceholder')" :aria-label="$t('outputs.nameFilter')" style="max-width: 24rem" data-testid="pod-outputs-name-filter" />
         <BButton v-if="nameFilter" variant="outline-light" size="sm" data-testid="pod-outputs-name-filter-clear" @click="nameFilter = ''">{{ $t('outputs.nameFilterClear') }}</BButton>
         <span v-if="nameFilter.trim()" class="text-body-secondary" data-testid="pod-outputs-name-filter-count">{{ $t('outputs.nameFilterCount', { n: matchCount }) }}</span>
+        <BButton v-if="incompleteTotal" variant="outline-light" size="sm" :aria-pressed="groupView.showIncomplete ? 'true' : 'false'" :title="$t('outputs.incomplete.title')" data-testid="outputs-incomplete-show" @click="setShowIncomplete(!groupView.showIncomplete)"><i class="fa-solid me-1" :class="groupView.showIncomplete ? 'fa-eye-slash' : 'fa-eye'"></i>{{ groupView.showIncomplete ? $t('outputs.incomplete.hide', { n: incompleteTotal }) : $t('outputs.incomplete.show', { n: incompleteTotal }) }}</BButton>
+        <span v-if="hiddenRuns" class="text-body-secondary" data-testid="outputs-incomplete-hidden">{{ $t('outputs.incomplete.hiddenRuns', { n: hiddenRuns }) }}</span>
       </div>
       <div v-if="all.length > PAGE_SIZES[0]" class="d-flex align-items-center justify-content-end flex-wrap gap-3" data-testid="outputs-pager">
         <div class="d-flex align-items-center gap-2" data-testid="outputs-pager-nav">
@@ -70,13 +72,18 @@
         <template v-else-if="r.workflow"><span class="fw-semibold font-monospace" data-testid="pod-outputs-workflow" :title="r.workflow">{{ runName(r) }}</span><span class="text-body-secondary font-monospace" :title="r.workflow">{{ folderOf(r.workflow) }}</span></template>
         <template v-else-if="r.guess"><span class="fw-semibold font-monospace" data-testid="pod-outputs-workflow" :title="$t('outputs.guessTitle')">≈ {{ r.guess }}</span><span class="text-body-secondary">{{ $t('outputs.guessed') }}</span></template>
         <span v-else class="fw-semibold text-body-secondary" data-testid="pod-outputs-workflow">{{ $t('outputs.unnamed') }}</span>
+        <span v-if="r.chunk_count > 1" class="badge text-bg-info" data-testid="pod-outputs-chunks" :data-chunks="r.chunk_count" :title="$t('outputs.chunkBadgeTitle')">{{ $t('outputs.chunkBadge', { n: r.chunk_count }) }}</span>
+        <BButton v-if="r.chunk_count > 1" variant="link" size="sm" class="p-0" :aria-expanded="chunksOpen[r.prompt_id] ? 'true' : 'false'" data-testid="pod-outputs-chunks-toggle" @click="chunksOpen[r.prompt_id] = !chunksOpen[r.prompt_id]">{{ chunksOpen[r.prompt_id] ? $t('outputs.chunkHide') : $t('outputs.chunkShow') }}</BButton>
         <span v-if="r.saved" class="badge text-bg-secondary" data-testid="pod-outputs-saved" :title="$t('outputs.savedTitle')">{{ $t('outputs.saved') }}</span>
         <span v-if="r.source === 'volume'" class="badge text-bg-info" data-testid="pod-outputs-source" data-source="volume" :title="$t('outputs.sourceVolumeTitle')">{{ $t('outputs.sourceVolume') }}</span>
         <span v-else-if="r.source === 'pod'" class="badge text-bg-success" data-testid="pod-outputs-source" data-source="pod" :title="$t('outputs.sourcePodTitle')">{{ $t('outputs.sourcePod') }}</span>
         <span v-if="r.source === 'volume'" class="text-body-secondary ms-auto" data-testid="pod-outputs-volume-run">{{ $t('outputs.volumeRun', { when: r.started_at ? new Date(r.started_at).toLocaleString() : '?', files: r.files.length, size: sizeText(r.files.reduce((n, f) => n + (f.bytes || 0), 0)) }) }}</span>
         <span v-else class="text-body-secondary ms-auto">{{ $t('outputs.run', { when: new Date(r.started_at).toLocaleString(), s: r.duration_s ?? '?' }) }} · <span class="font-monospace">{{ r.prompt_id.slice(0, 8) }}</span></span>
       </div>
-      <OutputsGallery :files="r.files" :total-files="r.totalFiles || 0" :base="baseFor(r)" :scope="volumeId || pod.id" :volume-name="volumeName" :offline="!baseFor(r)" :zip-name="`${runName(r) || pod.name}-${idOf(r)}.zip`" :pod-id="pod.id" :pod-running="podRunning" />
+      <div v-if="r.chunk_count > 1 && chunksOpen[r.prompt_id]" class="small text-body-secondary mb-2" data-testid="pod-outputs-chunk-list">
+        <div v-for="c in r.chunks" :key="c.prompt_id" class="font-monospace" data-testid="pod-outputs-chunk-row" :data-prompt="c.prompt_id">{{ c.prompt_id.slice(0, 8) }} · {{ $t('outputs.chunkRow', { when: c.started_at ? new Date(c.started_at).toLocaleString() : '?', s: c.duration_s ?? '?', files: c.files.length }) }}</div>
+      </div>
+      <OutputsGallery hide-incomplete :files="r.files" :total-files="r.totalFiles || 0" :base="baseFor(r)" :scope="volumeId || pod.id" :volume-name="volumeName" :offline="!baseFor(r)" :zip-name="`${runName(r) || pod.name}-${idOf(r)}.zip`" :pod-id="pod.id" :pod-running="podRunning" />
     </div>
   </BModal>
   <BModal v-model="previewsOpen" :title="$t('outputs.dpx.previewsModalTitle')" size="xl" scrollable lazy ok-only :ok-title="$t('outputs.dpx.close')" data-testid="pod-outputs-previews-modal">
@@ -147,7 +154,8 @@
 
 <script setup>
 /** PodOutputsModal: every file the pod's finished runs produced (from ComfyUI's history), run by run, in the reusable OutputsGallery (viewer, download). With a network volume it also browses the volume's comfy-shared/output/ by folder over RunPod's S3 API, no pod needed (docs/ADR-045). */
-import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, provide, reactive, ref, shallowRef, watch, watchEffect } from 'vue'
+import { mergeChunkRuns, frameUnions } from '../utils/chunkruns'
 import OutputsGallery from './OutputsGallery.vue'
 import { fpState, setMode, startJob, stopJob, refreshListing, jobRunning, jobDone } from '../utils/framejob'
 import RenderSequences from './RenderSequences.vue'
@@ -161,7 +169,10 @@ import { core } from '../api/bridge'
 import { historyAPI } from '../api/history'
 import { useUiStore } from '../stores/ui'
 import { PAGE_SIZES, runPaging, pageOfRuns, resetRunPage } from '../utils/runpaging'
-import { groupView } from '../utils/dpxcollapse'
+import { groupView, setShowIncomplete } from '../utils/dpxcollapse'
+import { runContent, tileName } from '../utils/incomplete'
+import { ensureMatch, expectedFramesOf } from '../utils/edlexpect'
+import { galleryTiles as tilesOf } from '../utils/outputs'
 import { viewUrl, galleryTiles, runName, runsForShot, inFolder, narrowToFolder, filterByName, volumeAsRuns, mergeWithVolume, s3Base, sizeText } from '../utils/outputs'
 import { errorText } from '../stores/toast'
 import { sharedThumbs, thumbTimeouts, withTimeout, thumbKey, appReader, createLimiter } from '../utils/thumbs'
@@ -396,7 +407,19 @@ const refresh = () => { clearColourCache(); emit('refresh'); loadVolume(vol.load
 const nameFilter = ref('')
 const merged = computed(() => mergeWithVolume(shown.value, vol.runs))
 /** The file-name filter narrows every run (pod, saved and volume) to the files that match, and drops the runs with none. */
-const all = computed(() => (nameFilter.value.trim() ? merged.value.map((r) => filterByName(r, nameFilter.value)).filter((r) => r.files.length) : merged.value))
+const all = computed(() => (nameFilter.value.trim() ? visibleRuns.value.map((r) => filterByName(r, nameFilter.value)).filter((r) => r.files.length) : visibleRuns.value))
+/** Incomplete sequences (short of the EDL's cut by the union of frames over every run listed, utils/incomplete.js) are hidden unless Show Incomplete is on, and counted apart; a run whose only visible content is incomplete sequences leaves the list (a muted "N hidden" says so). Display only: nothing is deleted or moved. */
+const runContents = computed(() => new Map(chunked.value.map((r) => [r.prompt_id, runContent(r, frameUnionsMap.value, expectedFramesOf, groupView.showTemp)])))
+const incompleteTotal = computed(() => [...runContents.value.values()].reduce((n, c) => n + c.incomplete, 0))
+const hiddenRuns = computed(() => (groupView.showIncomplete ? 0 : [...runContents.value.values()].filter((c) => c.onlyIncomplete).length))
+const visibleRuns = computed(() => (groupView.showIncomplete ? chunked.value : chunked.value.filter((r) => !runContents.value.get(r.prompt_id)?.onlyIncomplete)))
+/** The chunk runs of one graph that write DPX into the same folders are ONE row (a probe plus its chunks, ADR-056): the union of their files, their total time, the chunks listed when asked. */
+const chunked = computed(() => mergeChunkRuns(merged.value))
+/** Every sequence's frame numbers over ALL the runs listed (not just the page, the filter or the row): the EDL frame check counts these, so a run holding only some chunks is not red. */
+const frameUnionsMap = computed(() => frameUnions(merged.value))
+provide('frameUnions', frameUnionsMap)
+watchEffect(() => { for (const r of chunked.value) for (const t of tilesOf((r.files || []).filter((f) => f.type !== 'temp'))) if (t.kind === 'dpx') ensureMatch(tileName(t)) })   // the EDL's answer for every sequence in the window, once per clip name
+const chunksOpen = reactive({})   // merged run (its prompt_id) -> whether its chunk runs are listed
 /** The list of runs and folders is paged (Previous / Next, 25, 50 or 100 a page): only the current page renders galleries, previews or media. The page goes back to 1 when the scope, the folder, the name filter, the shot filter or Show Temp Files changes. */
 const runsPage = computed(() => pageOfRuns(all.value))
 watch([scope, () => vol.prefix, nameFilter, onlyShot, () => groupView.showTemp, () => runPaging.size], resetRunPage)
