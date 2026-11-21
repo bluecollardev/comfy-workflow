@@ -150,7 +150,7 @@ describe('running', () => {
     const j = await finish((await runflows.run('pod1', ['a/g.json'], opts({ fetchFn } as never, { fetchFn, pollMs: 5, backoffMs: [10, 10], oomEvidence: evidence } as never))).id)
     const r = j.results[0]
     expect(r.state).toBe('failed'); expect(r.error).toMatch(/restarted while the graph ran/); expect(r.oom).toBe(true); expect(r.failure_kind).toBe('oom'); expect(r.retryable).toBe(false)
-    expect(r.recovery).toMatch(/bigger card/); expect(prompts).toBe(1)   // not tried again on the same card
+    expect(r.recovery).toMatch(/more RAM/); expect(prompts).toBe(1)   // not tried again on the same card
   })
   it('the same restart with no memory evidence is a transient failure: retried later, not marked out of memory', async () => {
     let polls = 0, prompts = 0

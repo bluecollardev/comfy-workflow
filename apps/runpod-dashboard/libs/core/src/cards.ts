@@ -21,6 +21,7 @@ export const LADDER: { gb: number; cards: string[] }[] = [
 ]
 export const MAX_ESCALATIONS = 3
 
+export const keyOf = (k: string): string | null => knownKey(k)
 const knownKey = (k: string): string | null => {
   if (k in GPUS) return k
   for (const [key, g] of Object.entries(GPUS)) if (k === g.id || k === g.name) return key

@@ -47,6 +47,7 @@ export interface Task {
   retry_at?: string; attempts?: number
   /** Out of memory (cards.ts): how many times this task moved to a bigger card (at most MAX_ESCALATIONS) and the cards that ran out, so none is asked again. */
   escalations?: number; tried_cards?: string[]
+  /** GPUs on the pod this task asks for (ADR-056: RAM comes with the GPU count); absent = 1 */ gpu_count?: number
   /** The pod this task ran on before a person retried it: the retry takes it again (restarted if stopped) when it has the card the task wants, instead of paying for a second pod. */
   reuse_pod?: string
   /** Generate Outputs / Publish after this run finished (Import Round options): the render on this pod, then the publish. Absent: not asked for or not reached. */
@@ -84,7 +85,7 @@ export interface Deps {
   volumePods: () => Promise<VolPod[]>
   podReady: (id: string) => Promise<{ ready: boolean; price: number | null }>
   resumePod: (id: string) => Promise<void>
-  createPod: (name: string, round: string, gpu?: string) => Promise<{ id: string; name: string }>
+  createPod: (name: string, round: string, gpu?: string, gpuCount?: number) => Promise<{ id: string; name: string }>
   /** Turn Auto sync on for a pod this import created (ADR-046); true when it was switched on */
   autoSync: (podId: string, approvedBy: string, a: { pull: boolean; push: boolean }) => boolean
   cardPrice: (gpu: string) => Promise<number | null>
@@ -137,7 +138,7 @@ const realDeps: Deps = {
   podReady: async (id) => { const p = await pods.get(id); const raw = await rp.getPod(id); return { ready: p.status === 'running' && !!p.web_ui_url && p.comfy_ready !== false, price: raw?.costPerHr ?? null } },
   resumePod: async (id) => { await pods.resume(id) },
   autoSync: (podId, by, a) => autosyncstore.applyFromConfig(podId, { enabled: true, pull: a.pull, push: a.push, approved_by: by }, 'import'),
-  createPod: async (name, round, gpu) => { const p = await pods.create({ name, gpu: gpu || poolGpu(), apply_mounts: true, round }); return { id: p.id, name: p.name } },
+  createPod: async (name, round, gpu, gpuCount) => { const p = await pods.create({ name, gpu: gpu || poolGpu(), ...(gpuCount && gpuCount > 1 ? { gpu_count: gpuCount } : {}), apply_mounts: true, round }); return { id: p.id, name: p.name } },
   assignShot: (podId, round, shot) => { if (podrounds.get(podId) !== round) podrounds.set(podId, round); podrounds.setShot(podId, shot) },
   ensureVolume: async (id) => {
     const want = (id || mounts.load().network_volume_id || '').trim()
@@ -496,6 +497,21 @@ async function escalateTask(t: Task, imp: ImportRec, j: runflows.RunJob): Promis
     const cur = t.card ?? t.gpu ?? null
     if (n >= cards.MAX_ESCALATIONS) { ev(t, `out of memory on ${cards.nameOf(cur)} after ${n} bigger card${n === 1 ? '' : 's'}: giving up (the limit is ${cards.MAX_ESCALATIONS})`); return false }
     const tried = [...(t.tried_cards ?? []), ...(cur ? [cur] : [])]
+    // ADR-056 2.4: out of memory is a RAM problem, and RAM comes with the GPU count: first more GPUs of the same card (1 -> 2 -> 4; the runs already chunk smaller by themselves),
+    // then a card with more RAM per GPU. The VRAM ladder below is only for a card whose RAM is not known.
+    const ramStep = cur && cards.RAM_GIB_PER_GPU[cards.keyOf(cur) ?? ''] ? cards.escalateRam({ card: cur, gpuCount: t.gpu_count ?? 1, chunk: 1 }) : null
+    if (ramStep) {
+      const left = j.results.filter((r) => r.state !== 'done').map((r) => r.path)
+      if (t.pod_id) { try { await deps.stopPod(t.pod_id); ev(t, `stopped ${t.pod_name ?? t.pod_id} (kept, not deleted: its logs and disk stay)`) } catch (e) { ev(t, `could not stop ${t.pod_name ?? t.pod_id}: ${(e as Error).message}`) } }
+      let price: number | null | undefined
+      try { price = await deps.cardPrice(ramStep.card!) } catch { price = undefined }
+      const text = `out of memory on ${t.gpu_count && t.gpu_count > 1 ? `${t.gpu_count}x ` : ''}${cards.nameOf(cur)}: ${ramStep.why}; ${left.length} graph${left.length === 1 ? '' : 's'} to run again [escalation ${n + 1} of ${cards.MAX_ESCALATIONS}]`
+      ev(t, text)
+      try { history.record({ kind: 'change', area: 'queue', action: 'out of memory: retried with more RAM', what: `${imp.round}${t.shot ? ` ${t.shot}` : ''}`, detail: text } as never) } catch { /* the History never blocks the queue */ }
+      Object.assign(t, { state: 'waiting', gpus: [ramStep.card!], gpu: ramStep.card, gpu_count: ramStep.gpuCount, card: undefined, price: price ?? t.price, escalations: n + 1, tried_cards: tried, graphs: left, pod_id: null, pod_name: null, job_id: undefined, phase: undefined, error: undefined, detail: undefined, finished_at: undefined, stage: undefined, retry_at: undefined, attempts: undefined })
+      imp.state = 'active'
+      return true
+    }
     const next = cards.escalate(cur, tried)
     if (!next.length) { ev(t, `out of memory on ${cards.nameOf(cur)}: no bigger card is allowed (B200, B300 and the H200s are excluded)`); return false }
     const oomRes = j.results.find((r) => r.state === 'failed' && r.oom)
@@ -627,13 +643,13 @@ async function begin(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> {
       const order = t.gpus?.length ? t.gpus : [t.gpu]   // [undefined]: the pool's default card
       let c: { id: string; name: string } | undefined, got: string | undefined, noCard: unknown
       for (const g of order) {
-        try { c = await deps.createPod(`queue-${imp.round}-${tasks.filter((x) => x.pod_id).length + 1}`.slice(0, 60), imp.round, g); got = g || poolGpu(); break } catch (e) {
+        try { c = await deps.createPod(`queue-${imp.round}-${tasks.filter((x) => x.pod_id).length + 1}`.slice(0, 60), imp.round, g, t.gpu_count); got = g || poolGpu(); break } catch (e) {
           if ((e as { code?: string })?.code !== 'no_card' || order.length === 1) throw e
           noCard = e; ev(t, `no ${g} free: trying the next card`)
         }
       }
       if (!c) throw noCard
-      podId = c.id; podName = c.name; t.card = got; imp.started_pods.push(c.id); ev(t, `created pod ${c.name} (${got}) in round ${imp.round}`)
+      podId = c.id; podName = c.name; t.card = got; imp.started_pods.push(c.id); ev(t, `created pod ${c.name} (${t.gpu_count && t.gpu_count > 1 ? `${t.gpu_count}x ` : ''}${got}) in round ${imp.round}`)
       if (imp.auto_sync) { try { if (deps.autoSync(c.id, imp.approved_by, imp.auto_sync)) ev(t, 'Auto sync on for this pod (pull' + (imp.auto_sync.push ? ' and push' : '') + `), named yes: ${imp.approved_by}`) } catch { /* never fails a run */ } }
     }
     if (t.shot) { try { deps.assignShot(podId, imp.round, t.shot); ev(t, `pod card: round ${imp.round}, shot ${t.shot}`) } catch { /* the card label is ours only: never fail a run over it */ } }
