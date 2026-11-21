@@ -273,9 +273,10 @@ async function defaultConvert(graph: unknown, ctx: { base: string; podId: string
     if (lines.some((l) => l.startsWith('UI2API-'))) return ui2api.parsePodOutput(lines)
     throw new CoreError(501, `The pod has no ui2api (exit ${code}).`)   // an older image: fall back below
   } catch (e) {
-    if (e instanceof CoreError && e.status === 502) throw e   // the pod ran it and the graph failed to convert: that is the answer
+    // the pod ran its converter and it failed (its page not ready in time, 2026-11-21: 'Timeout 60000ms' on freshly started pods): ask Chrome on this PC, which waits as long as the pod's page needs, before giving up; the pod's own answer is the one reported
+    if (e instanceof CoreError && e.status === 502) { try { return await ui2api.browserConverter(ctx.base, { timeoutMs: 240_000 })(graph) } catch { throw e } }
   }
-  return ui2api.browserConverter(ctx.base)(graph)
+  return ui2api.browserConverter(ctx.base, { timeoutMs: 240_000 })(graph)
 }
 
 /** Start running the chosen graphs, one after another, on a running pod. Returns the job at once; poll it with `job`. Every graph's outcome (and every error) is written to the History. */
