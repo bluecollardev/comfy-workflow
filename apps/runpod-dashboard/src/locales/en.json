@@ -70,6 +70,10 @@
   },
   "pod": {
     "gpu": "GPU",
+    "ram": "RAM",
+    "ramLimit": "{limit} GB",
+    "ramUsed": "{used} / {limit} GB ({pct}%)",
+    "ramTitle": "The container's memory limit and use, read from its cgroup (not the host's)",
     "uptime": "Uptime",
     "comfyui": "ComfyUI",
     "open": "Open",

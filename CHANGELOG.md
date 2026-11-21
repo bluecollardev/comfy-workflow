@@ -5,6 +5,8 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased, on `develop` (2026-11-20, after v1.7.0)
 
+- **The pod card shows what the pod is** (`libs/core/src/pods.ts`, `podram.ts`, `PodCard.vue`, `utils/podcard.js`): `RTX PRO 4500 x2 · 64 GB VRAM` for more than one card (`gpu_count`, `vram_total`; `vram` stays per card), and `RAM 116 GB` / `used / limit GB (pct%)` from the container's cgroup (`ram_gb`, `ram_source: cgroup`), warning from 85%, left out when unknown. Read in the background, at most once a minute per running pod. `list_pods` and `get_pod` carry the same fields.
+
 - **Out of memory moves to a bigger card by itself** (`libs/core/src/cards.ts`, `queue.ts`). A graph the pod could not hold (RunPod's system log says `triggered memory limits (OOM)` / exit code 137, or the error says so) puts its task back to waiting on the next bigger cards, 32 -> 48 -> 80 -> 96 GB, never B200, B300 or the H200s, for the graphs that did not finish; at most 3 times; the small pod is stopped, never deleted; every step is a task event and a History line.
 - **A run no longer fails a graph for a slow or restarting ComfyUI:** ComfyUI is waited for before every graph, the history poll is asked again through an outage of up to 3 minutes, a restart that lost the prompt fails at once with that message, and the graph conversion uses the app's own script with a 240 s wait instead of the image's copy.
 - **A retried import task takes its own pod again** (restarted if stopped) instead of making a second one; the idle stop leaves a pod alone while a run is on it.

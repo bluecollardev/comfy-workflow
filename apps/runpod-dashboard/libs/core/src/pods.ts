@@ -19,6 +19,7 @@ import * as podrounds from './podrounds.js'
 import * as history from './history.js'
 import * as rp from './runpod.js'
 import * as rl from './ratelimit.js'
+import * as podram from './podram.js'
 import * as dry from './dry.js'
 
 export const PREBUILT_IMAGE = 'ashleykza/comfyui:latest'   // the stock image: no packs, ignores COMFY_LINKS
@@ -49,7 +50,11 @@ export interface CreatePodRequest {
   config?: Partial<mounts.MountsConfig> | null   // this pod's own configuration (the Default Configuration's shape); null = the default
 }
 export interface PodStatus {
-  id: string; name: string; status: 'running' | 'stopped' | 'starting'; gpu: string; vram: number
+  id: string; name: string; status: 'running' | 'stopped' | 'starting'; gpu: string; vram: number   // vram: per card
+  gpu_count?: number        // RunPod's own count for the pod (gpuCount)
+  vram_total?: number       // vram x gpu_count
+  ram_gb?: number; ram_used_gb?: number; ram_pct?: number   // the container's memory limit and use; present only when known (podram.ts)
+  ram_source?: 'cgroup'     // where ram_gb comes from: the container's cgroup over SSH
   uptime_seconds: number | null; web_ui_url: string | null; ssh_command: string; idle_stop_minutes: number
   console_url?: string; status_text?: string; comfy_ready?: boolean | null   // null = not probed
   custom_config?: boolean   // created with its own configuration, kept for Recreate
@@ -220,9 +225,10 @@ export function toStatus(p: rp.RawPod): PodStatus {
   const uptime = p.runtime?.uptimeInSeconds ?? p.uptimeSeconds ?? null
   const running = uptime != null && uptime > 0
   const wanted = (p.desiredStatus || '').toUpperCase() === 'RUNNING'
+  const perCard = gpus.vram(p.machine?.gpuDisplayName || '') || 24, count = p.gpuCount && p.gpuCount > 0 ? p.gpuCount : 1
   return {
     id: p.id, name: podnames.get(p.id) || p.name || 'Unknown', ...(podnames.get(p.id) && p.name ? { runpod_name: p.name } : {}), status: running ? 'running' : wanted ? 'starting' : 'stopped',
-    gpu: p.machine?.gpuDisplayName || String(p.gpuCount ?? '?'), vram: gpus.vram(p.machine?.gpuDisplayName || '') || 24,
+    gpu: p.machine?.gpuDisplayName || String(p.gpuCount ?? '?'), vram: perCard, gpu_count: count, vram_total: perCard * count,
     uptime_seconds: uptime, web_ui_url: running ? idle.proxyUrl(p.id, webPortOf(p.ports)) : null,
     ssh_command: `ssh root@${p.id}.proxy.runpod.io`, idle_stop_minutes: idle.entry(p.id)?.minutes ?? 0, comfy_ready: null,
     custom_config: podconfigs.has(p.id), ...(p.networkVolumeId ? (podvolume.remember(p.id, p.networkVolumeId), {}) : {}), ...roundOf(p.id), image: p.imageName || undefined, datacenter: p.machine?.dataCenterId || undefined, ...(p.networkVolumeId ? { volume_id: p.networkVolumeId } : {}),
@@ -246,6 +252,11 @@ export const list = async (client?: rp.RunPodClient): Promise<PodStatus[]> => {
   const pods = raws.map(toStatus)
   try { history.observe(raws.map((r, i) => ({ id: r.id, name: pods[i].name, status: pods[i].status, gpu: r.machine?.gpuDisplayName, datacenter: r.machine?.dataCenterId, cost_per_hr: r.costPerHr ?? null }))) } catch { /* the list never waits on the history */ }
   await Promise.all(pods.map(async (p) => { if (p.status === 'running' && p.web_ui_url) p.comfy_ready = await comfyReady(p.web_ui_url, client?.fetchFn || fetch) }))
+  for (const p of pods) {   // the container's memory: cached, read in the background, never waited for (podram.ts)
+    if (p.status !== 'running') { podram.forget(p.id); continue }
+    const r = podram.peek(p.id)
+    if (r) Object.assign(p, r)
+  }
   return pods
 }
 
@@ -253,13 +264,15 @@ export async function get(podId: string, client?: rp.RunPodClient): Promise<PodS
   if (isDry()) { const p = dry.list().find((x) => x.id === podId); if (!p) throw new CoreError(404, `Pod ${podId} not found`); return { ...p, name: podnames.get(p.id) || p.name, ...roundOf(p.id) } }
   const p = await rp.getPod(podId, client)
   if (!p) throw new CoreError(404, `Pod ${podId} not found`)
-  return toStatus(p)
+  const s = toStatus(p)
+  if (s.status === 'running') { const r = podram.peek(s.id); if (r) Object.assign(s, r) } else podram.forget(s.id)
+  return s
 }
 
 export function stats(pods: PodStatus[]) {
   return {
     total_pods: pods.length, running_pods: pods.filter((p) => p.status === 'running').length,
-    stopped_pods: pods.filter((p) => p.status === 'stopped').length, total_vram: pods.reduce((s, p) => s + (p.vram || 0), 0),
+    stopped_pods: pods.filter((p) => p.status === 'stopped').length, total_vram: pods.reduce((s, p) => s + (p.vram_total ?? p.vram ?? 0), 0),
   }
 }
 

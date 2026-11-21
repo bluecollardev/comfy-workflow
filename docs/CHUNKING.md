@@ -92,7 +92,10 @@ with `chunked_job` (`cancel: true` interrupts the running chunk and skips the re
 **3. The RAM guard: `pod_ram`, `ram_guard_pct`**
 
 The guard reads the **container's** memory from its cgroup over SSH (cgroup v2 `memory.current` / `memory.max`, else v1).
-It does not use ComfyUI's `/system_stats` or psutil, which report the host's RAM, not the container's limit. While a chunk
+It does not use ComfyUI's `/system_stats` or psutil, which report the host's RAM, not the container's limit. The pod card
+shows the same figure (`ram_gb`, `ram_source: cgroup`, `core/src/podram.ts`), read in the background at most once a minute
+per running pod (five minutes after a failure) and left out when unknown. RunPod's `memoryInGb` is not shown as the limit:
+it was never checked against the observed 57.7 / 116.4 / 87.5 GiB. While a chunk
 runs it is read every 10 s. Past `ram_guard_pct` (default **85**):
 
 1. the chunk is interrupted and ComfyUI is told to free memory;

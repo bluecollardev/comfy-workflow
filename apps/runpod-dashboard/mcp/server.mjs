@@ -135,8 +135,8 @@ export function createPodManagerServer({ core, syncHost = privateSyncHost(core),
 
   /** The same calls the dashboard's cards and the Configuration panel make (docs/MCP-ENDPOINTS.md, "Pods and the rest of the app"). */
   const POD_TOOLS = [
-    { name: 'list_pods', description: 'Every pod as the dashboard shows it: id, name, status, card, ComfyUI URL (and whether it answers), idle stop, and its own configuration when it has one', inputSchema: { type: 'object', properties: {} } },
-    { name: 'get_pod', description: "One pod with RunPod's details: price per hour, cloud, datacenter, image, disks, status text, and its own configuration", inputSchema: { type: 'object', properties: { pod_id: podId }, required: ['pod_id'] } },
+    { name: 'list_pods', description: "Every pod as the dashboard shows it: id, name, status, card (gpu, gpu_count, vram per card, vram_total), the container's memory once read (ram_gb limit, ram_used_gb, ram_pct, ram_source 'cgroup'; absent when unknown, never a guess), ComfyUI URL (and whether it answers), idle stop, and its own configuration when it has one", inputSchema: { type: 'object', properties: {} } },
+    { name: 'get_pod', description: "One pod with RunPod's details (gpu_count, vram_total and, once read, ram_gb/ram_used_gb/ram_pct from the container's cgroup): price per hour, cloud, datacenter, image, disks, status text, and its own configuration", inputSchema: { type: 'object', properties: { pod_id: podId }, required: ['pod_id'] } },
     {
       name: 'create_pod',
       description: `Create a pod the way the dashboard's form does, with the Default Configuration (or a per-pod one) applied. Spends money. approved_by, the person behind the yes, is needed only when the named-yes setting is on. "No card available" lists what was tried.`,
