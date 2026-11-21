@@ -47,12 +47,16 @@
         <BButton v-if="nameFilter" variant="outline-light" size="sm" data-testid="pod-outputs-name-filter-clear" @click="nameFilter = ''">{{ $t('outputs.nameFilterClear') }}</BButton>
         <span v-if="nameFilter.trim()" class="text-body-secondary" data-testid="pod-outputs-name-filter-count">{{ $t('outputs.nameFilterCount', { n: matchCount }) }}</span>
       </div>
-      <div v-if="all.length > PAGE_SIZES[0]" class="d-flex align-items-center justify-content-between flex-wrap gap-3 flex-grow-1" data-testid="outputs-pager">
-        <BButton size="sm" variant="outline-light" :disabled="runsPage.cur <= 1" data-testid="outputs-pager-prev" @click="runPaging.page = runsPage.cur - 1">{{ $t('outputs.pager.previous') }}</BButton>
-        <span data-testid="outputs-pager-page">{{ $t('outputs.pager.page', { x: runsPage.cur, y: runsPage.pages }) }}</span>
-        <BButton size="sm" variant="outline-light" :disabled="runsPage.cur >= runsPage.pages" data-testid="outputs-pager-next" @click="runPaging.page = runsPage.cur + 1">{{ $t('outputs.pager.next') }}</BButton>
-        <label class="d-flex align-items-center gap-1">{{ $t('outputs.pager.perPage') }}<select v-model.number="runPaging.size" class="form-select form-select-sm w-auto" data-testid="outputs-pager-size"><option v-for="n in PAGE_SIZES" :key="n" :value="n">{{ n }}</option></select></label>
-        <span class="text-body-secondary" data-testid="outputs-pager-shown">{{ $t('outputs.pager.shown', { shown: runsPage.rows.length, total: runsPage.total }) }}</span>
+      <div v-if="all.length > PAGE_SIZES[0]" class="d-flex align-items-center justify-content-end flex-wrap gap-3" data-testid="outputs-pager">
+        <div class="d-flex align-items-center gap-2" data-testid="outputs-pager-nav">
+          <BButton size="sm" variant="outline-light" :disabled="runsPage.cur <= 1" data-testid="outputs-pager-prev" @click="runPaging.page = runsPage.cur - 1">{{ $t('outputs.pager.previous') }}</BButton>
+          <span data-testid="outputs-pager-page">{{ $t('outputs.pager.page', { x: runsPage.cur, y: runsPage.pages }) }}</span>
+          <BButton size="sm" variant="outline-light" :disabled="runsPage.cur >= runsPage.pages" data-testid="outputs-pager-next" @click="runPaging.page = runsPage.cur + 1">{{ $t('outputs.pager.next') }}</BButton>
+        </div>
+        <div class="d-flex align-items-center gap-3" data-testid="outputs-pager-meta">
+          <label class="d-flex align-items-center gap-1">{{ $t('outputs.pager.perPage') }}<select v-model.number="runPaging.size" class="form-select form-select-sm w-auto" data-testid="outputs-pager-size"><option v-for="n in PAGE_SIZES" :key="n" :value="n">{{ n }}</option></select></label>
+          <span class="text-body-secondary" data-testid="outputs-pager-shown">{{ $t('outputs.pager.shown', { shown: runsPage.rows.length, total: runsPage.total }) }}</span>
+        </div>
       </div>
     </div>
     <label v-if="shot" class="d-flex align-items-center gap-2 small mb-3" data-testid="pod-outputs-shot-filter">
