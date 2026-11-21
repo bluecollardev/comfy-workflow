@@ -5,6 +5,7 @@ import { ref } from 'vue'
  * A small prompt for a NAME (a named yes), optionally with one tick to understand something, over the whole app (NamePromptHost.vue):
  * `await ask({ title, message, okLabel, checkbox, danger, submit })` -> { name, checked } or null on Cancel. The name is remembered like the other approvals.
  * `extra: { label, value, note(on), okLabel(on), danger(on) }` adds a second tick (inside the dialog) whose state is passed to `submit` and returned as `extra`; `note`, `okLabel` and `danger` may follow it.
+ * `name` is the name offered when none is remembered yet (e.g. the standing approval's person).
  * `submit({ name, checked, extra })` may be given: it runs on OK and returns '' to close or an error text to show inline and keep the prompt open (the core's 400s).
  */
 export const NAME_KEY = 'runpod-manager.approved-by'
@@ -14,7 +15,7 @@ export const useNamePromptStore = defineStore('nameprompt', () => {
   function ask(o = {}) {
     if (resolver) resolver(null)
     opts.value = o; checked.value = false; extra.value = !!o.extra?.value; error.value = ''; busy.value = false
-    try { name.value = localStorage.getItem(NAME_KEY) || '' } catch { name.value = '' }
+    try { name.value = localStorage.getItem(NAME_KEY) || o.name || '' } catch { name.value = o.name || '' }
     if (o.fresh) name.value = ''   // going live asks for a fresh name: the remembered one is not offered
     open.value = true
     return new Promise((r) => { resolver = r })

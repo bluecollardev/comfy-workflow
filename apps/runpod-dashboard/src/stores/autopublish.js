@@ -51,5 +51,6 @@ export const useAutopublishStore = defineStore('autopublish', () => {
   const dryRunReport = () => autopublishAPI.dryRunReport()
   async function scanVolume() { const r = await autopublishAPI.scanVolume(); await refresh(); schedule(); return r }
   async function publishNow(id, approved_by) { await autopublishAPI.publishNow({ id, approved_by }); await refresh(); schedule() }
-  return { dryRunReport, holds, hasHolds, loadHolds, hold, release, requireApproval, generateExisting, scanVolume, status, settings, reviews, old, error, fast, enabled, pending, recent, activeCount, refresh, watch, setFast, loadSettings, loadReviews, reviewFor, setSettings, off, approve, revoke, cancel, publishNow }
+  async function publishAllDry(approved_by) { const r = await autopublishAPI.publishAllDry({ approved_by }); await refresh(); schedule(); return r }
+  return { dryRunReport, holds, hasHolds, loadHolds, hold, release, requireApproval, generateExisting, scanVolume, status, settings, reviews, old, error, fast, enabled, pending, recent, activeCount, refresh, watch, setFast, loadSettings, loadReviews, reviewFor, setSettings, off, approve, revoke, cancel, publishNow, publishAllDry }
 })

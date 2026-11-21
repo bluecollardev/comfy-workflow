@@ -712,8 +712,16 @@ export async function mockApi(page, state) {
       if (method === 'POST' && path === '/autopublish/publish-now') {
         ap.calls.push({ call: 'publishNow', body })
         if (!String(body.approved_by || '').trim()) return json({ detail: 'Publishing needs the name of who says yes (approved_by)' }, 400)
-        const p = ap.pending.find((x) => x.id === body.id); if (p) { p.state = 'uploading'; p.job_id = 'pub-now' }
+        const p = ap.pending.find((x) => x.id === body.id); if (p && p.state === 'would_upload' && ap.capSpent) return json({ detail: 'The daily cap is spent (5 a day): raise it in the settings or publish tomorrow' }, 400)
+        if (p) { p.state = 'uploading'; p.job_id = 'pub-now' }
         return json({ job_id: 'pub-now' })
+      }
+      if (method === 'POST' && path === '/autopublish/publish-all-dry') {
+        ap.calls.push({ call: 'publishAllDry', body })
+        if (!String(body.approved_by || '').trim()) return json({ detail: 'Publishing needs the name of who says yes (approved_by)' }, 400)
+        const list = ap.pending.filter((x) => x.state === 'would_upload'), started = [], refused = []
+        for (const p of list) { if (ap.capSpent || (ap.allowOnly !== undefined && started.length >= ap.allowOnly)) refused.push({ id: p.id, shot: p.shot, version: p.version, reason: 'The daily cap is spent (5 a day): raise it in the settings or publish tomorrow' }); else { p.state = 'uploading'; p.job_id = 'pub-all'; started.push(p.id) } }
+        return json({ started, refused })
       }
     }
     // Render sequences (docs/ADR-048): state.renders = { adapters: { pod: { ok, reason }, local: { ok, reason, code } }, jobs: [...], proxies: { 'dir/name': {...} }, deliverables: [...], remote: { 'dir/name': true }, local: {...}, missing: { 'dir/name': [{ from, to }] }, nextVersion, startError: { detail, code }, cleared: { removed, bytes } };

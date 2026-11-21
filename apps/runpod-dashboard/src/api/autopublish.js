@@ -21,6 +21,7 @@ const ipc = core && {
   revoke: guard((o) => core.invoke('autopublish', 'revoke', [o]), mustRestart),
   cancel: guard((o) => core.invoke('autopublish', 'cancel', [o]), mustRestart),
   publishNow: guard((o) => core.invoke('autopublish', 'publishNow', [o]), mustRestart),
+  publishAllDry: guard((o) => core.invoke('autopublish', 'publishAllDry', [o]), mustRestart),
   scanVolume: guard(() => core.invoke('autopublish', 'scanVolume', []), mustRestart),
   dryRunReport: guard(() => core.invoke('autopublish', 'dryRunReport', []), { old: true }),
   hold: guard((o) => core.invoke('autopublish', 'hold', [o]), mustRestart),
@@ -39,6 +40,7 @@ const http = {
   revoke: guard(async (o) => (await axios.post(`${API_BASE}/autopublish/revoke`, o)).data, mustRestart),
   cancel: guard(async (o) => (await axios.post(`${API_BASE}/autopublish/cancel`, o)).data, mustRestart),
   publishNow: guard(async (o) => (await axios.post(`${API_BASE}/autopublish/publish-now`, o)).data, mustRestart),
+  publishAllDry: guard(async (o) => (await axios.post(`${API_BASE}/autopublish/publish-all-dry`, o)).data, mustRestart),
   scanVolume: guard(async () => (await axios.post(`${API_BASE}/autopublish/scan-volume`, {})).data, mustRestart),
   dryRunReport: guard(async () => (await axios.get(`${API_BASE}/autopublish/dry-run-report`)).data, { old: true }),
   hold: guard(async (o) => (await axios.post(`${API_BASE}/autopublish/hold`, o)).data, mustRestart),
@@ -60,6 +62,8 @@ export const autopublishAPI = {
   revoke: async (o) => (await raw.revoke(o)) || {},
   cancel: async (o) => (await raw.cancel(o)) || {},
   publishNow: async (o) => (await raw.publishNow(o)) || {},
+  /** Publish every dry-run entry for real, one at a time, under a named yes (Queue > Publishing). */
+  publishAllDry: async (o) => (await raw.publishAllDry(o)) || {},
   /** Scan now: list the volume's deliver/ at once (the core runs it on its own slower cycle too). */
   scanVolume: async () => (await raw.scanVolume()) || {},
   /** The Slack summary of a dry run as text (what the dry-run post says). */

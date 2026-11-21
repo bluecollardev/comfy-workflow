@@ -49,7 +49,7 @@ const iso = (ms: number) => new Date(ms).toISOString()
 
 // ----- the pending entries (memory) -----
 export type EntryState = 'waiting' | 'uploading' | 'would_upload' | 'capped' | 'failed' | 'cancelled' | 'done'
-interface Entry { /** where the review was found */ source: 'local' | 'volume'; metas?: Found['metas']; id: string; key: string; shot: string; version: string; files: string[]; bytes: number; due_at: number; state: EntryState; reason?: string; job_id?: string; approved_by: string; targets: string[]; attempts: number; retry_at?: number; finished_at?: number; /** a dry run: the exact keys, the manifest and inventory keys and the access check; nothing is written */ dry_run_plan?: publish.DryRunPlan; manual?: boolean; reason_who?: string; queued?: boolean; run?: Promise<void> }
+interface Entry { /** where the review was found */ source: 'local' | 'volume'; metas?: Found['metas']; id: string; key: string; shot: string; version: string; files: string[]; bytes: number; due_at: number; state: EntryState; reason?: string; job_id?: string; approved_by: string; targets: string[]; attempts: number; retry_at?: number; finished_at?: number; /** a dry run: the exact keys, the manifest and inventory keys and the access check; nothing is written */ dry_run_plan?: publish.DryRunPlan; manual?: boolean; reason_who?: string; /** a dry-run entry a person published for real: it counts against the daily cap like an automatic upload */ counted?: boolean; queued?: boolean; run?: Promise<void> }
 const entries = new Map<string, Entry>()
 let recent: Entry[] = [], seq = 0, loaded: Promise<void> | null = null
 const inDestination = new Map<string, boolean>()
@@ -525,7 +525,7 @@ async function upload(e: Entry, s: Stored): Promise<void> {
     })
     e.job_id = job_id; await publish.settled()
     const j = publish.status(job_id).jobs[0]
-    if (j && (j.state === 'done' || j.state === 'done_with_warning')) { await markUploaded(e, job_id, !e.manual); if (j.state === 'done_with_warning') e.reason = 'files uploaded; the Slack message failed'; return finish(e, 'done', e.reason) }
+    if (j && (j.state === 'done' || j.state === 'done_with_warning')) { await markUploaded(e, job_id, !e.manual || e.counted === true); if (j.state === 'done_with_warning') e.reason = 'files uploaded; the Slack message failed'; return finish(e, 'done', e.reason) }
     throw new Error(j?.error ?? j?.summary ?? 'the upload did not finish')
   } catch (err) {
     e.attempts++; e.state = 'failed'; e.reason = publish.redact((err as Error).message).slice(0, 300); e.retry_at = deps.now() + RETRY_MS
@@ -607,14 +607,38 @@ export async function cancel(o: { id?: string }): Promise<{ id: string; state: E
   history.record({ kind: 'change', area: 'configuration', action: 'auto-publish cancelled', what: `${e.shot} ${e.version}`, detail: 'not retried until revoked and approved again, or published now' })
   return { id: e.id, state: e.state }
 }
+/** Uploads of dry-run entries a person has published for real that have not finished: they are not in the state file's count yet. */
+const countedInFlight = (): number => [...entries.values()].filter((x) => x.counted === true && (x.state === 'uploading' || x.queued === true)).length
+async function capLeftNow(s: Stored): Promise<number> {
+  if (s.daily_cap === null) return Number.POSITIVE_INFINITY
+  const st = await stateOf(), count = st.day === localDay(deps.now()) ? st.count ?? 0 : 0
+  return Math.max(0, s.daily_cap - count - countedInFlight())
+}
 export async function publishNow(o: { id?: string; approved_by?: string }): Promise<{ id: string; started: boolean }> {
   const who = clean(o?.approved_by); if (!who) throw bad(NEEDS_NAME_NOW)
   const e = entries.get(String(o?.id ?? '')); if (!e) throw new CoreError(404, `No such pending auto-publish: ${o?.id}`)
   if (e.state === 'uploading') throw bad('That upload has already started')
-  const s = await stored(); e.manual = true; e.reason_who = who
-  const c = await check(e.shot, e.version, { pendingOk: true, manual: true }); if (!c.ok && !c.inDest) { e.manual = false; throw bad(`Cannot publish: ${c.reason}`) }
+  const s = await stored(), wasDry = e.state === 'would_upload'
+  // a dry-run entry published for real is what Auto-publish would have sent: it counts against the daily cap and is refused when the cap is spent (Publish now on a waiting or capped entry stays the person's way past the cap)
+  if (wasDry && (await capLeftNow(s)) <= 0) throw bad(`The daily cap is spent (${s.daily_cap} a day): raise it in the settings or publish tomorrow`)
+  e.manual = true; e.reason_who = who; e.counted = wasDry
+  const c = await check(e.shot, e.version, { pendingOk: true, manual: true }); if (!c.ok && !c.inDest) { e.manual = false; e.counted = false; throw bad(`Cannot publish: ${c.reason}`) }
+  history.record({ kind: 'change', area: 'configuration', action: wasDry ? 'auto-publish dry run published for real' : 'auto-publish published now', what: `${e.shot} ${e.version}`, detail: `by ${who}; ${e.files.length} files (${publish.fmtSize(e.bytes)})` })
   e.run = queueUpload(e, s)
   return { id: e.id, started: true }
+}
+/** Publish every dry-run entry for real, one at a time (the upload chain keeps them in order), after one confirmation: it stops at the daily cap and says which entries it refused and why. */
+export async function publishAllDry(o: { approved_by?: string }): Promise<{ started: string[]; refused: { id: string; shot: string; version: string; reason: string }[]; stopped?: string }> {
+  const who = clean(o?.approved_by); if (!who) throw bad(NEEDS_NAME_NOW)
+  const list = [...entries.values()].filter((x) => x.state === 'would_upload').sort((a, b) => a.key.localeCompare(b.key))
+  const started: string[] = [], refused: { id: string; shot: string; version: string; reason: string }[] = []; let stopped: string | undefined
+  for (const e of list) {
+    try { await publishNow({ id: e.id, approved_by: who }); started.push(e.id) } catch (x) {
+      const reason = (x as Error).message; refused.push({ id: e.id, shot: e.shot, version: e.version, reason })
+      if (/daily cap is spent/.test(reason)) { stopped = reason; for (const r of list.slice(list.indexOf(e) + 1)) refused.push({ id: r.id, shot: r.shot, version: r.version, reason }); break }
+    }
+  }
+  return { started, refused, ...(stopped ? { stopped } : {}) }
 }
 
 // ----- life cycle -----

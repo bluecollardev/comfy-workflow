@@ -181,6 +181,39 @@ describe('the cancel window, dry run and the upload', () => {
     expect(history.list({ limit: 20 }).filter((e) => e.kind === 'change' && e.action === 'auto-publish would upload')).toHaveLength(1)
     await autopublish.setSettings({ dry_run: false, understood: true }); expect(pend()[0].state).toBe('waiting')
   })
+  it('a dry-run entry published for real uploads that entry only, counts against the daily cap, stays in dry run for the rest, is refused without a name and cannot go twice', async () => {
+    review('archival-100', 'v001', { clip: 'CLIP0' }); await approve('archival-100'); review('archival-101', 'v001', { clip: 'CLIP1' }); await approve('archival-101')
+    await autopublish.setSettings({ ...ON, daily_cap: 5 }); await autopublish.consider()
+    expect(pend().map((p) => p.state)).toEqual(['would_upload', 'would_upload'])
+    const one = pend().find((p) => p.shot === 'archival-100')!, other = pend().find((p) => p.shot === 'archival-101')!
+    await expect(autopublish.publishNow({ id: one.id, approved_by: '' })).rejects.toMatchObject({ status: 400 })
+    expect(calls.some((c) => c.args[1] === 'cp')).toBe(false)   // refused: nothing went
+    await autopublish.publishNow({ id: one.id, approved_by: 'Lucas' }); await autopublish.settled()
+    const st = await statusNow()
+    expect(calls.some((c) => c.args[1] === 'cp')).toBe(true); expect(st.today).toEqual({ count: 1, left: 4 })   // counted, unlike a plain Publish now
+    expect(st.recent[0]).toMatchObject({ shot: 'archival-100', state: 'done' }); expect(pend().find((p) => p.shot === 'archival-101')).toMatchObject({ id: other.id, state: 'would_upload' })   // the rest stays dry
+    expect(history.list({ limit: 40 }).some((e) => e.kind === 'change' && e.action === 'auto-publish dry run published for real' && e.what === 'archival-100 v001')).toBe(true)
+    await expect(autopublish.publishNow({ id: one.id, approved_by: 'Lucas' })).rejects.toMatchObject({ status: 404 })   // not offered twice
+  })
+  it('publishing a dry-run entry for real is refused with the cap reason when the daily cap is spent; a review that cannot go is refused with its reason', async () => {
+    review('archival-100', 'v001', { clip: 'CLIP0' }); await approve('archival-100'); review('archival-101', 'v001', { clip: 'CLIP1' }); await approve('archival-101')
+    await autopublish.setSettings({ ...ON, daily_cap: 1 }); await autopublish.consider()
+    const [a, b] = pend().map((p) => p.id)
+    await autopublish.publishNow({ id: a, approved_by: 'Lucas' }); await autopublish.settled()
+    await expect(autopublish.publishNow({ id: b, approved_by: 'Lucas' })).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/daily cap is spent \(1 a day\)/) })
+    expect(pend().find((p) => p.id === b)).toMatchObject({ state: 'would_upload' }); expect((await statusNow()).today.count).toBe(1)
+    await autopublish.hold({ shot: 'archival-101', version: 'v001' })
+    await expect(autopublish.publishNow({ id: b, approved_by: 'Lucas' })).rejects.toMatchObject({ status: 404 })   // a held review leaves the pending list: there is nothing to publish for real
+  })
+  it('Publish All For Real sends every dry-run entry one at a time, stops at the daily cap and lists what it refused; it needs a name', async () => {
+    for (const n of ['100', '101', '102']) { review(`archival-${n}`, 'v001', { clip: `CLIP${n}` }); await approve(`archival-${n}`) }
+    await autopublish.setSettings({ ...ON, daily_cap: 2 }); await autopublish.consider()
+    expect(pend()).toHaveLength(3)
+    await expect(autopublish.publishAllDry({ approved_by: '' })).rejects.toMatchObject({ status: 400 })
+    const r = await autopublish.publishAllDry({ approved_by: 'Lucas' }); await autopublish.settled()
+    expect(r.started).toHaveLength(2); expect(r.refused).toEqual([expect.objectContaining({ shot: 'archival-102', reason: expect.stringMatching(/daily cap is spent/) })]); expect(r.stopped).toMatch(/daily cap is spent/)
+    const st = await statusNow(); expect(st.today).toEqual({ count: 2, left: 0 }); expect(st.recent.filter((x) => x.state === 'done')).toHaveLength(2); expect(pend()).toEqual([expect.objectContaining({ shot: 'archival-102', state: 'would_upload' })])
+  })
   it('the automatic post carries the first-frame preview too (an image block), still no link to the published files and still the standing approval text', async () => {
     const spawnFfmpeg = (cmd: string, args: string[]): ChildProcess => { if (cmd !== '/fake/ffmpeg') return genericSpawn(cmd, args); const c = new EventEmitter() as unknown as ChildProcess; Object.assign(c, { stdout: new PassThrough(), stderr: new PassThrough() }); const o = args[args.length - 1]; setImmediate(() => { writeFileSync(o, Buffer.alloc(77, 1)); c.emit('close', 0) }); return c }
     publish.setDeps({ findFfmpeg: async () => '/fake/ffmpeg', spawn: spawnFfmpeg })
