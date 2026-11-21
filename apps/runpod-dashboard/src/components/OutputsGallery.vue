@@ -6,8 +6,9 @@
       <BButton variant="outline-light" size="sm" class="ms-auto" :disabled="!canZip || zipping || offline" :title="canZip ? '' : $t('outputs.zipApp')" data-testid="outputs-zip" @click="zip"><BSpinner v-if="zipping" small class="me-1" /><i v-else class="fa-solid fa-file-zipper me-1"></i>{{ $t('outputs.zip') }}</BButton>
       <span v-if="zipNote" class="text-body-secondary" data-testid="outputs-zip-note">{{ zipNote }}</span>
     </div>
-    <div v-if="seqCount || groupCount || tempCount" class="d-flex align-items-center flex-wrap gap-2 mb-2 small" data-testid="outputs-seq-toolbar">
+    <div v-if="seqCount || groupCount || tempCount || dataFiles.length" class="d-flex align-items-center flex-wrap gap-2 mb-2 small" data-testid="outputs-seq-toolbar">
       <span v-if="seqCount" class="text-body-secondary" data-testid="outputs-seq-count">{{ $t('outputs.dpx.sequencesCount', { n: seqCount, open: openCount }) }}</span>
+      <BButton v-if="dataFiles.length && !seqCount" variant="outline-light" size="sm" :disabled="offline" data-testid="outputs-data-button" @click="dataOpen = true"><i class="fa-solid fa-file-lines me-1"></i>{{ dataLabel }}</BButton>
       <span v-if="groupCount" class="text-body-secondary" data-testid="outputs-group-count">{{ $t('outputs.group.groupsCount', { n: groupCount, open: groupOpenCount }) }}</span>
       <span class="ms-auto"></span>
       <BButton v-if="tempCount" variant="outline-light" size="sm" :aria-pressed="groupView.showTemp ? 'true' : 'false'" data-testid="outputs-temp-toggle" @click="setShowTemp(!groupView.showTemp)"><i class="fa-solid me-1" :class="groupView.showTemp ? 'fa-eye-slash' : 'fa-eye'"></i>{{ groupView.showTemp ? $t('outputs.group.hideTemp') : $t('outputs.group.showTemp') }} <span class="text-body-secondary">({{ tempCount }})</span></BButton>
@@ -26,7 +27,7 @@
         <template v-if="!groupExpanded(t) && !offline && hasPreview(t) && t.main">
         <div class="gstrip" data-testid="outputs-group-preview" :data-shown="stripFiles(t).length" :data-more="moreCount(t)" :style="{ gridTemplateColumns: `repeat(${galleryCols}, minmax(0, 1fr))` }">
           <button v-for="f in stripFiles(t)" :key="`${f.subfolder}/${f.filename}`" type="button" class="tile" :title="f.filename" data-testid="outputs-group-tile" @click="openFile(f)">
-            <LazyMedia :kind="t.cat" :src="viewUrl(base, f, t.cat === 'image' ? { thumb: true } : undefined)" :poster="posterOf(f)" :alt="f.filename" />
+            <LazyMedia :kind="t.cat" :src="viewUrl(base, f, t.cat === 'image' ? { thumb: true } : undefined)" :poster="posterOf(f)" :bytes="f.bytes" :alt="f.filename" />
             <span class="cap" :title="f.filename" :data-testid="f === t.main ? 'outputs-group-main-name' : undefined">{{ f === t.main ? `${$t('outputs.group.main')}: ` : '' }}{{ shortName(f.filename) }}</span>
           </button>
           <button v-if="moreCount(t) > 0" type="button" class="tile moretile" data-testid="outputs-group-more-tile" @click="toggleGroup(t)">{{ $t('outputs.group.moreTile', { n: moreCount(t) }) }}</button>
@@ -34,7 +35,7 @@
         <span v-if="t.versions && t.versions[0] !== t.versions[1]" class="cap" data-testid="outputs-group-versions">{{ $t('outputs.group.versionRange', { a: String(t.versions[0]).padStart(3, '0'), b: String(t.versions[1]).padStart(3, '0') }) }}</span>
         </template>
         <div v-else-if="!groupExpanded(t)" class="tile grouptile" data-testid="outputs-group-preview" @click="toggleGroup(t)">
-          <LazyMedia v-if="!offline && hasPreview(t) && t.main" :kind="t.cat" :src="viewUrl(base, t.main, t.cat === 'image' ? { thumb: true } : undefined)" :poster="posterOf(t.main)" :alt="t.main.filename" />
+          <LazyMedia v-if="!offline && hasPreview(t) && t.main" :kind="t.cat" :src="viewUrl(base, t.main, t.cat === 'image' ? { thumb: true } : undefined)" :poster="posterOf(t.main)" :bytes="t.main.bytes" :alt="t.main.filename" />
           <span v-else class="thumb d-flex align-items-center justify-content-center text-body-secondary" data-testid="outputs-group-icon"><i class="fa-solid fs-3" :class="groupIcon(t)"></i></span>
           <span v-if="t.main" class="cap" :title="t.main.filename" data-testid="outputs-group-main-name">{{ $t('outputs.group.main') }}: {{ shortName(t.main.filename) }}</span>
           <span v-if="t.versions && t.versions[0] !== t.versions[1]" class="cap" data-testid="outputs-group-versions">{{ $t('outputs.group.versionRange', { a: String(t.versions[0]).padStart(3, '0'), b: String(t.versions[1]).padStart(3, '0') }) }}</span>
@@ -43,7 +44,7 @@
           <div class="small text-body-secondary mb-1" data-testid="outputs-group-shown">{{ $t('outputs.group.shown', { shown: shownFiles(t).length, total: t.files.length }) }}</div>
           <div class="rowlist" :class="{ media: hasPreview(t) }">
             <button v-for="f in shownFiles(t)" :key="`${f.subfolder}/${f.filename}`" type="button" class="grow" data-testid="outputs-group-row" :data-main="f === t.main ? 'true' : undefined" :disabled="offline" :title="f.filename" @click="openFile(f)">
-              <LazyMedia v-if="hasPreview(t) && !offline" :kind="f.kind" :src="viewUrl(base, f, f.kind === 'image' ? { thumb: true } : undefined)" :poster="posterOf(f)" :alt="f.filename" />
+              <LazyMedia v-if="hasPreview(t) && !offline" :kind="f.kind" :src="viewUrl(base, f, f.kind === 'image' ? { thumb: true } : undefined)" :poster="posterOf(f)" :bytes="f.bytes" :alt="f.filename" />
               <span class="gname" :title="f.filename">{{ shortName(f.filename) }}</span>
               <span v-if="f === t.main" class="badge text-bg-primary" data-testid="outputs-group-main">{{ $t('outputs.group.main') }}</span>
               <span v-if="f.bytes != null" class="text-body-secondary">{{ sizeText(f.bytes) }}</span>
@@ -70,8 +71,8 @@
       </div>
       <button type="button" class="tile" data-testid="outputs-tile" :disabled="offline" :data-offline="offline ? 'true' : undefined" :data-kind="t.kind" :data-type="t.file.type" :data-frames="t.frames ? t.frames.length : undefined" :title="t.name || t.file.filename" @click="open(t)">
         <span v-if="offline && t.kind !== 'dpx'" class="thumb d-flex align-items-center justify-content-center text-body-secondary" data-testid="outputs-offline-thumb"><i class="fa-solid fs-3" :class="{ image: 'fa-image', video: 'fa-film', audio: 'fa-music' }[t.kind] || 'fa-file'"></i></span>
-        <LazyMedia v-else-if="t.kind === 'image'" kind="image" :src="viewUrl(base, t.file, { thumb: true })" :alt="t.file.filename" />
-        <LazyMedia v-else-if="t.kind === 'video'" kind="video" :src="viewUrl(base, t.file)" :poster="posterOf(t.file)" />
+        <LazyMedia v-else-if="t.kind === 'image'" kind="image" :src="viewUrl(base, t.file, { thumb: true })" :bytes="t.file.bytes" :alt="t.file.filename" />
+        <LazyMedia v-else-if="t.kind === 'video'" kind="video" :src="viewUrl(base, t.file)" :poster="posterOf(t.file)" :bytes="t.file.bytes" />
         <span v-else-if="t.kind === 'dpx'" class="thumb d-flex flex-column align-items-center justify-content-center text-body-secondary position-relative" data-testid="outputs-dpx-placeholder"><SequenceThumb :tile="t" :quick="quickOf(t)" :base="base" :scope="scope" :volume-name="volumeName" :offline="offline" @state="(s) => (thumbState[t.key] = s)" @header="(h) => (thumbHeader[t.key] = h)" /><i v-if="!['ready', 'empty'].includes(thumbState[t.key])" class="fa-solid fa-film fs-3"></i><span class="small mt-1 dpxbadge" :class="{ over: thumbState[t.key] === 'ready' }" data-testid="outputs-dpx-badge">{{ t.frames.length > 1 ? $t('outputs.dpx.badge', { n: t.frames.length }) : 'DPX' }}</span><span v-if="problemCounts[t.key]" class="small text-warning" data-testid="outputs-dpx-problems">{{ $t('outputs.dpx.problemsOf', { n: problemCounts[t.key], total: t.frames.length }) }}</span><span v-if="proxyOf(t) || reviewOf(t)" class="rbadges"><span v-if="reviewOf(t)" class="badge text-bg-success" data-testid="outputs-dpx-review" :data-version="reviewOf(t).version">{{ $t('outputs.render.badgeReview', { v: String(reviewOf(t).version).padStart(3, '0') }) }}</span><ApproveControl v-if="reviewOf(t)" :shot="reviewOf(t).shot" :version="reviewOf(t).version" /><span v-if="proxyOf(t)" class="badge" :class="proxyOf(t).exists_local ? 'text-bg-success' : 'text-bg-info'" data-testid="outputs-dpx-rendered" :data-where="proxyOf(t).exists_local ? 'local' : 'remote'" :title="proxyOf(t).exists_local ? $t('outputs.render.badgeLocalTitle') : $t('outputs.render.badgeRemoteTitle')">{{ proxyOf(t).exists_local ? $t('outputs.render.badgeLocal') : $t('outputs.render.badgeRemote') }}</span><span v-if="proxyOf(t)?.partial" class="badge text-bg-warning" data-testid="outputs-dpx-partial">{{ $t('outputs.render.badgePartial') }}</span></span></span>
         <span v-else class="thumb d-flex align-items-center justify-content-center text-body-secondary"><i class="fa-solid fs-3" :class="t.kind === 'audio' ? 'fa-music' : 'fa-file'"></i></span>
         <span class="cap" :title="t.name || t.file.filename" data-testid="outputs-tile-name">{{ shortName(t.name || t.file.filename) }}</span>
@@ -80,11 +81,15 @@
         <span v-if="t.file.type === 'temp'" class="badge text-bg-secondary tag">{{ $t('outputs.type.temp') }}</span>
       </button>
       <!-- beside the sequence's first-frame tile: the MAIN VIDEO of the videos group (the one it marks Main), first-frame thumbnail in its own ratio, a click opens the modal player; none when the group has no main video -->
-      <button v-if="t.kind === 'dpx' && t.frames.length > 1 && mainVideos.get(t.key)" type="button" class="tile mainvideo" :disabled="offline" :title="mainVideos.get(t.key).filename" data-testid="outputs-main-video" @click="openFile(mainVideos.get(t.key))">
-        <LazyMedia kind="video" :src="viewUrl(base, mainVideos.get(t.key))" :poster="posterOf(mainVideos.get(t.key))" />
+      <div v-if="t.kind === 'dpx' && t.frames.length > 1 && (mainVideos.get(t.key) || showDataHere(t))" class="seqside" data-testid="outputs-seq-side">
+      <button v-if="mainVideos.get(t.key)" type="button" class="tile mainvideo" :disabled="offline" :title="mainVideos.get(t.key).filename" data-testid="outputs-main-video" @click="openFile(mainVideos.get(t.key))">
+        <LazyMedia kind="video" :src="viewUrl(base, mainVideos.get(t.key))" :poster="posterOf(mainVideos.get(t.key))" :bytes="mainVideos.get(t.key).bytes" />
         <span class="cap fw-semibold" data-testid="outputs-main-video-label">{{ $t('outputs.video.mainVideo') }}</span>
         <span class="cap" :title="mainVideos.get(t.key).filename" data-testid="outputs-main-video-name">{{ shortName(mainVideos.get(t.key).filename) }}</span>
       </button>
+      <!-- the run's data files (usually one json) are a button right of the Main Video tile (or of the sequence tile), not a group; a click opens a popup with the file's text -->
+      <BButton v-if="showDataHere(t)" variant="outline-light" size="sm" class="databtn" :disabled="offline" data-testid="outputs-data-button" @click="dataOpen = true"><i class="fa-solid fa-file-lines me-1"></i>{{ dataLabel }}</BButton>
+      </div>
       <SequenceStrip v-if="t.kind === 'dpx' && t.frames.length > 1 && stripItems(t).length" class="seqstrip" :items="stripItems(t)" :disabled="offline" @open="(i) => openAt(t, i)" />
       <template v-if="t.kind === 'dpx' && t.frames.length > 1">
         <div v-if="isExpanded(t)" class="frames" data-testid="outputs-seq-frames" :data-shown="shownFrames(t).length">
@@ -111,6 +116,7 @@
       </div>
       <OutputsGallery v-if="incOpen" :files="incompleteFiles" :base="base" :scope="scope" :volume-name="volumeName" :offline="offline" :pod-id="podId" :pod-running="podRunning" hide-zip incomplete-list />
     </div>
+    <DataFileModal :files="dataOpen ? dataFiles : []" :base="base" @close="dataOpen = false" />
     <OutputViewerModal :file="viewable[current] || null" :base="base" :index="current ?? 0" :count="viewable.length" @close="current = null" @step="(d) => (current = Math.min(viewable.length - 1, Math.max(0, current + d)))" />
     <DpxViewerModal :frames="dpx ? dpx.frames : []" :base="base" :proxy="dpx ? proxyOf(dpx) : null" :review="dpx ? reviewOf(dpx) : null" :start-review="dpxReview" :start-index="dpxStart" :sequence="dpx ? sequenceItem(dpx) : null" :pod-id="podId" @close="dpx = null" @problems="(n) => n && dpx && (problemCounts[dpx.key] = n)" />
   </div>
@@ -126,7 +132,7 @@ import { ensureMatch, expectedFramesOf } from '../utils/edlexpect'
 import { incompleteOf, tileName } from '../utils/incomplete'
 import { viewUrl, galleryTiles, sizeText, isDpx } from '../utils/outputs'
 import { isExpanded, toggleSeq, setAll, shownFrames, showMore, showAll, groupView, groupExpanded, toggleGroup, shownFiles, groupMore, groupShowAll, setShowTemp, HAS_IO } from '../utils/dpxcollapse'
-import { isTemp, groupTiles, tempGroup, shortName } from '../utils/videogroups'
+import { isTemp, groupTiles, tempGroup, shortName, dataFilesOf } from '../utils/videogroups'
 import { availableFrames } from '../utils/framepreviews'
 import { previewed } from '../utils/filmstrip'
 import { fpState, startJob, stopJob, queueListing, previewUrl, thumbUrl, posterUrl, jpgName, inJob, jobRunning, jobDone, failedOf, failReason } from '../utils/framejob'
@@ -138,6 +144,7 @@ import { core } from '../api/bridge'
 import { errorText } from '../stores/toast'
 import { t } from '../i18n'
 import OutputViewerModal from './OutputViewerModal.vue'
+import DataFileModal from './DataFileModal.vue'
 import DpxViewerModal from './DpxViewerModal.vue'
 import SequenceThumb from './SequenceThumb.vue'
 import SequenceColour from './SequenceColour.vue'
@@ -253,6 +260,12 @@ const openFile = (f) => { if (!props.offline) current.value = viewable.value.ind
 const current = ref(null), dpx = ref(null), dpxReview = ref(false), dpxStart = ref(0)
 /** The sequences in this list (a single DPX file is not a sequence to collapse), and how many are open now. */
 const seqCount = computed(() => tiles.value.filter((t) => t.kind === 'dpx' && t.frames.length > 1).length)
+/** The run's data files (usually one json): a `Data File` button in the main row (right of the Main Video tile, or of the sequence tile), once per run, and a popup with the text (Lucas, 2026-11-21). No data file, no button. */
+const dataFiles = computed(() => dataFilesOf(galleryTiles(realFiles.value)))
+const dataOpen = ref(false)
+const firstSeqKey = computed(() => (tiles.value.find((t) => t.kind === 'dpx' && t.frames.length > 1) || {}).key)
+const showDataHere = (t) => dataFiles.value.length > 0 && t.key === firstSeqKey.value
+const dataLabel = computed(() => (dataFiles.value.length > 1 ? t('outputs.data.buttonMany', { n: dataFiles.value.length }) : t('outputs.data.button')))
 const openCount = computed(() => tiles.value.filter((t) => t.kind === 'dpx' && t.frames.length > 1 && isExpanded(t)).length)
 const frameNo = (f) => /(\d+)\.dpx$/i.exec(f.filename)?.[1] ?? f.filename
 /** A frame of an expanded sequence opens the quick-look viewer on that frame. */
@@ -281,8 +294,11 @@ watch(() => props.files, () => { current.value = null; dpx.value = null; problem
 .cell.seq { display: grid; grid-template-columns: 9.5rem auto minmax(0, 1fr); column-gap: 0.5rem; row-gap: 0.25rem; align-items: start; }
 .cell.seq > .head, .cell.seq > .frames { grid-column: 1 / -1; }
 /* the Main Video tile sits beside the sequence tile (column 2, as tall as the row, the picture 9.5rem high with its own width), the filmstrip keeps column 3 */
-.cell.seq > .mainvideo { grid-column: 2; width: auto; max-width: 22rem; align-self: stretch; }
-.cell.seq > .mainvideo :deep(.vposter) { height: 9.5rem; }
+/* column 2 holds the Main Video tile and, to its right on the same row, the Data File button (vertically centred on the tiles) */
+.cell.seq > .seqside { grid-column: 2; display: flex; align-items: flex-start; gap: 0.5rem; min-width: 0; }
+.seqside .mainvideo { width: auto; max-width: 22rem; align-self: stretch; }
+.seqside .mainvideo :deep(.vposter) { height: 9.5rem; }
+.seqside .databtn { align-self: center; white-space: nowrap; }
 .cell.seq > .seqstrip { grid-column: 3; }
 /* a collapsed group with previews: one full row of tiles, the last being '+N more' */
 .gstrip { display: grid; gap: 0.5rem; align-items: start; }

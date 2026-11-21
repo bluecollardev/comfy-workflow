@@ -27,7 +27,7 @@ export const runName = (r) => (r.workflow ? r.workflow.split('/').pop().replace(
 export function runsWithOutputs(runs) {
   return (runs || []).filter((r) => r.status === 'success').map((r) => ({
     prompt_id: r.prompt_id, started_at: r.started_at, duration_s: r.duration_s, workflow: r.workflow || '', guess: r.workflow ? '' : guessOf(r.outputs),
-    files: (r.outputs || []).filter((o) => o.type === 'output' || o.type === 'temp').map((o) => ({ filename: o.filename, subfolder: o.subfolder || '', type: o.type, kind: kindOf(o.filename) }))
+    files: (r.outputs || []).filter((o) => o.type === 'output' || o.type === 'temp').map((o) => ({ filename: o.filename, subfolder: o.subfolder || '', type: o.type, kind: kindOf(o.filename), ...(o.bytes != null ? { bytes: o.bytes } : {}) }))
       .sort((a, b) => Number(a.type === 'temp') - Number(b.type === 'temp')),
   })).filter((r) => r.files.length)
 }

@@ -26,8 +26,9 @@ test('Outputs: a DPX sequence is one tile with a frame count; the viewer decodes
   await expect(tile).toHaveCount(1)
   await expect(tile.getByTestId('outputs-dpx-badge')).toHaveText('DPX · 3 frames')
   await expect(tile).toHaveAttribute('data-frames', '3')
-  await expect(m.locator('[data-testid="outputs-group-row"][title$=".json"]')).toHaveCount(1)   // the sidecar is a row of the Data group, the png a row of the Images group
-  await expect(tiles).toHaveCount(4 /* dpx, json, png, plate of the older run */)
+  await expect(m.locator('[data-testid="outputs-group-row"][title$=".json"]')).toHaveCount(0)   // the sidecar is not a row any more: the run has a Data File button and a popup
+  await expect(m.getByTestId('outputs-data-button').first()).toHaveText('Data File')
+  await expect(tiles).toHaveCount(3 /* dpx, png, plate of the older run */)
   await tile.getByTestId('outputs-dpx-load-preview').click()   // previews load on a click (nothing loads by itself)
   await expect(tile.getByTestId('outputs-dpx-thumb')).toBeVisible()   // the first frame is the tile's preview (docs/ADR-045)
   expect([...new Set(asked.filter((n) => n.endsWith('.dpx')))]).toEqual([frameName(0)])   // never all the frames for a tile: the first only
