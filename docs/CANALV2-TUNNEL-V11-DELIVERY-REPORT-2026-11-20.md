@@ -1,13 +1,18 @@
 # CANALV2 Tunnel V11: delivery report
 
-**Where every one of the 36 elements stands, and what is wrong.** (Section "UPDATE 2026-11-21, 14:05 UTC" below overrides the older statements about the 11.) Checked on 2026-11-21 (afternoon, Bangkok time; the records below are in UTC). Every number in this part was read again from the bucket and the volume for this report. Where I could not read something it says UNVERIFIED.
+**Where every one of the 36 elements stands, and what is wrong.** (Section "UPDATE 2026-11-21, 14:05 Bangkok (07:05 UTC)" below overrides the older statements about the 11.) Checked on 2026-11-21 (afternoon, Bangkok time; the records below are in UTC). Every number in this part was read again from the bucket and the volume for this report. Where I could not read something it says UNVERIFIED.
 
-## UPDATE 2026-11-21, 14:05 UTC (21:05 Bangkok): the 11 are in the real round
+## UPDATE 2026-11-21, 14:05 Bangkok (07:05 UTC): the 11 are in the real round
 
 **28 of the 36 are now in `returns/BKK/tunnel-v11-edl-2026-11-18`.** The 11 that were held (archival-087 platform and rain, 123 f, 168 a-d, creature-266 dolphin-lowtrack, photoreal-013 ascent, chasm07, splash) were uploaded on Lucas's instruction (job `publish-mwq19u7u-3`: 1,153 files, 57.4 GB, S3 and one Slack note, switch `allow_overwrite` on): the 53 stray sample frames that blocked them were written over by the full corrected sequences.
 - **Read back from the bucket afterwards:** every one of the 11 has the right number of DPX frames (97, 96, 43, 153, 139, 105, 48, 94, 108, 271, 96 = the PDF counts) and a correct first-frame header (colour code 0, 23.976 or 24 fps, gamma 2.60).
-- **Manifests: done and read back (14:15 UTC).** Every one of the 12 elements put in this session (the 11 and archival-123 c) has its own `<CLIP>_MANIFEST.json` in its shot folder, and each lists only its own frames (97, 96, 66, 43, 153, 139, 105, 48, 94, 108, 271, 96: all equal to the PDF counts). `RETURN-MANIFEST.json` has **28 items, one per delivered element**. Two bugs were found and fixed on the way (commits 54bfddf and 19dc14e): the manifest was skipped when one already sat in a real round, and the element name was read as a single letter, so PLATFORM, RAIN, ASCENT, CHASM07 and SPLASH were lumped into one "main" per shot (the first pass wrote bundled manifests: archival-087 listed 193 frames, photoreal-013 475). The three stale bundled `main` items were removed from `RETURN-MANIFEST.json` (original kept as `RETURN-MANIFEST.backup-before-fix.json` in the working folder).
+- **Manifests: done and read back (14:15 Bangkok (07:15 UTC)).** Every one of the 12 elements put in this session (the 11 and archival-123 c) has its own `<CLIP>_MANIFEST.json` in its shot folder, and each lists only its own frames (97, 96, 66, 43, 153, 139, 105, 48, 94, 108, 271, 96: all equal to the PDF counts). `RETURN-MANIFEST.json` has **28 items, one per delivered element**. Two bugs were found and fixed on the way (commits 54bfddf and 19dc14e): the manifest was skipped when one already sat in a real round, and the element name was read as a single letter, so PLATFORM, RAIN, ASCENT, CHASM07 and SPLASH were lumped into one "main" per shot (the first pass wrote bundled manifests: archival-087 listed 193 frames, photoreal-013 475). The three stale bundled `main` items were removed from `RETURN-MANIFEST.json` (original kept as `RETURN-MANIFEST.backup-before-fix.json` in the working folder).
 - **Still not right:** (b) **no review video (ProRes or H.264) was sent for these 11**: the folders hold frames only; (c) the review videos of the 17 are still the first pass (section 1, bullet 3); (d) **8 elements are still not generated** (hadal, sunlight, top, landing, f23, cgi-072 head, backhalf-b, backhalf-c).
+- **The 28 delivered elements, by name (the 17 first, then the 11).** Real round `returns/BKK/tunnel-v11-edl-2026-11-18`; each has its own `_MANIFEST.json` there, checked in the bucket listing of 2026-11-21 (all 28 manifests present).
+  - **17 delivered earlier (job `publish-mwpe8qd6-7`, review videos are the first pass):** archival-071 main; 077 a, b, c; 080 a, b, c, d, e (stills); 083 main; 084 main; 085 main; 093 b; 102 main; 104 b; 123 c; cgi-042 main.
+  - **11 delivered 2026-11-21 (job `publish-mwq19u7u-3`, frames and manifest only, no review video):** archival-087 platform, rain; 123 f; 168 a, b, c, d; creature-266 dolphin-lowtrack; photoreal-013 ascent, chasm07, splash.
+  - **Not delivered, 8:** photoreal-013 f23, hadal, landing, sunlight, top; cgi-072 head, backhalf-b, backhalf-c.
+- **Time labels:** the times in this report's update sections were first written as UTC but are Bangkok time (UTC+7); they are corrected above.
 - **Slack:** one note was posted with the upload (what was added, what is missing and why, our failures).
 - **Where the rows below say "In the real round: no" for these 11, read this update: they are in.** The table is updated for the 11 rows.
 
@@ -58,20 +63,20 @@ Stages in order: generated, header fixed, review video, test round, real round, 
 | 15 | ARCHIVAL-104 b | 130 | yes: 130 = PDF | yes | yes: ProRes + H.264 v002 (first pass); newer ProRes only v003 | yes: several, see note A | yes | yes: v003 | yes | real-round videos are the first pass (see bullet 3 in What is wrong) |
 | 16 | ARCHIVAL-123 c | 66 | yes: 66 = PDF | yes | yes: ProRes + H.264 v003 (first pass); newer ProRes only v004 | yes: several, see note A | yes | yes: v004 | yes | its newer ProRes is in the 2026-11-20 test round, not 2026-11-21 |
 | 17 | CGI-042 main | 229 | yes: 229 = PDF | yes | yes: ProRes + H.264 v002 (first pass); newer ProRes only v003 | yes: several, see note A | yes | yes: v003 | yes | real-round videos are the first pass (see bullet 3 in What is wrong) |
-| 18 | ARCHIVAL-087 platform | 97 | yes: 97 = PDF | yes | ProRes only v001 (no H.264) | yes: base_v008 round, and 2026-11-21 round (unfixed header) | yes (2026-11-21 14:05 UTC; sample frames overwritten) | yes: v001 (its frames were the unfixed ones) | yes: frames = PDF and header correct, read from the bucket 14:10 UTC; manifest and review video not sent | real round holds 13 stray frames of 97, size differs: refused; the posted frames have the old header |
-| 19 | ARCHIVAL-087 rain | 96 | yes: 96 = PDF | yes | ProRes only v002 (made 07:18 UTC today; its source frames UNVERIFIED) | yes: base_v008 round only | yes (2026-11-21 14:05 UTC; sample frames overwritten) | no | yes: frames = PDF and header correct, read from the bucket 14:10 UTC; manifest and review video not sent | no review video was ever posted; no real-round clash found |
-| 20 | ARCHIVAL-123 f | 43 | yes: 43 = PDF | yes | ProRes only v006 (from the fixed frames) | yes: base_v008 round, and 2026-11-21 round (fixed) | yes (2026-11-21 14:05 UTC; sample frames overwritten) | yes: v006 | yes: frames = PDF and header correct, read from the bucket 14:10 UTC; manifest and review video not sent | 8 stray frames of 43 in the real round, size differs: refused |
-| 21 | ARCHIVAL-168 a | 153 | yes: 153 = PDF | yes | ProRes only v002 (no H.264) | yes: base_v008 round, and 2026-11-21 round (unfixed header) | yes (2026-11-21 14:05 UTC; sample frames overwritten) | yes: v002 (the frames posted were the unfixed ones) | yes: frames = PDF and header correct, read from the bucket 14:10 UTC; manifest and review video not sent | 8 stray frames of 153 in the real round, size differs: refused; the posted frames have the old header |
-| 22 | ARCHIVAL-168 b | 139 | yes: 139 = PDF | yes | ProRes only v001 (no H.264) | yes: base_v008 round; 2026-11-21 round holds only 13 of 139 frames | yes (2026-11-21 14:05 UTC; sample frames overwritten) | no: upload stopped, no post on record | yes: frames = PDF and header correct, read from the bucket 14:10 UTC; manifest and review video not sent | the 2026-11-21 copy is a 13-frame partial with no manifest |
-| 23 | ARCHIVAL-168 c | 105 | yes: 105 = PDF | yes | ProRes only v003 (no H.264) | yes: base_v008 round, and 2026-11-21 round (unfixed header) | yes (2026-11-21 14:05 UTC; sample frames overwritten) | yes: v003 (unfixed frames) | yes: frames = PDF and header correct, read from the bucket 14:10 UTC; manifest and review video not sent | the posted frames have the old header |
-| 24 | ARCHIVAL-168 d | 48 | yes: 48 = PDF | yes | ProRes only v004 (no H.264) | yes: base_v008 round, and 2026-11-21 round (unfixed header) | yes (2026-11-21 14:05 UTC; sample frames overwritten) | yes: v004 (unfixed frames) | yes: frames = PDF and header correct, read from the bucket 14:10 UTC; manifest and review video not sent | the posted frames have the old header |
-| 25 | CREATURE-266 dolphin-lowtrack | 94 | yes: 94 = PDF | yes | ProRes only v002 (no H.264) | yes: base_v008 round, and 2026-11-21 round (unfixed header) | yes (2026-11-21 14:05 UTC; sample frames overwritten) | yes: v002 (unfixed frames) | yes: frames = PDF and header correct, read from the bucket 14:10 UTC; manifest and review video not sent | 8 stray frames of 94 in the real round, size differs: refused; the posted frames have the old header |
-| 26 | PHOTOREAL-013 ascent | 108 | yes: 108 = PDF | yes | ProRes only v004 (no H.264) | yes: base_v008 round, and 2026-11-21 round (unfixed header) | yes (2026-11-21 14:05 UTC; sample frames overwritten) | yes: v004 (unfixed frames) | yes: frames = PDF and header correct, read from the bucket 14:10 UTC; manifest and review video not sent | 8 stray frames of 108 in the real round, size differs: refused; the posted frames have the old header |
-| 27 | PHOTOREAL-013 chasm07 | 271 | yes: 271 = PDF | yes | ProRes only v005 (1.03 GB, no H.264) | yes: base_v008 round (271, no manifest); 2026-11-21 round holds only 67 of 271 frames | yes (2026-11-21 14:05 UTC; sample frames overwritten) | no: upload stopped, no post on record | yes: frames = PDF and header correct, read from the bucket 14:10 UTC; manifest and review video not sent | no manifest in the base_v008 round; one of the 67 frames in the 2026-11-21 round is cut short (7,077,888 bytes) |
+| 18 | ARCHIVAL-087 platform | 97 | yes: 97 = PDF | yes | ProRes only v001 (no H.264) | yes: base_v008 round, and 2026-11-21 round (unfixed header) | yes (2026-11-21 14:05 Bangkok (07:05 UTC); sample frames overwritten) | yes: v001 (its frames were the unfixed ones) | yes: frames = PDF and header correct, read from the bucket 14:10 UTC; manifest and review video not sent | real round holds 13 stray frames of 97, size differs: refused; the posted frames have the old header |
+| 19 | ARCHIVAL-087 rain | 96 | yes: 96 = PDF | yes | ProRes only v002 (made 07:18 UTC today; its source frames UNVERIFIED) | yes: base_v008 round only | yes (2026-11-21 14:05 Bangkok (07:05 UTC); sample frames overwritten) | no | yes: frames = PDF and header correct, read from the bucket 14:10 UTC; manifest and review video not sent | no review video was ever posted; no real-round clash found |
+| 20 | ARCHIVAL-123 f | 43 | yes: 43 = PDF | yes | ProRes only v006 (from the fixed frames) | yes: base_v008 round, and 2026-11-21 round (fixed) | yes (2026-11-21 14:05 Bangkok (07:05 UTC); sample frames overwritten) | yes: v006 | yes: frames = PDF and header correct, read from the bucket 14:10 UTC; manifest and review video not sent | 8 stray frames of 43 in the real round, size differs: refused |
+| 21 | ARCHIVAL-168 a | 153 | yes: 153 = PDF | yes | ProRes only v002 (no H.264) | yes: base_v008 round, and 2026-11-21 round (unfixed header) | yes (2026-11-21 14:05 Bangkok (07:05 UTC); sample frames overwritten) | yes: v002 (the frames posted were the unfixed ones) | yes: frames = PDF and header correct, read from the bucket 14:10 UTC; manifest and review video not sent | 8 stray frames of 153 in the real round, size differs: refused; the posted frames have the old header |
+| 22 | ARCHIVAL-168 b | 139 | yes: 139 = PDF | yes | ProRes only v001 (no H.264) | yes: base_v008 round; 2026-11-21 round holds only 13 of 139 frames | yes (2026-11-21 14:05 Bangkok (07:05 UTC); sample frames overwritten) | no: upload stopped, no post on record | yes: frames = PDF and header correct, read from the bucket 14:10 UTC; manifest and review video not sent | the 2026-11-21 copy is a 13-frame partial with no manifest |
+| 23 | ARCHIVAL-168 c | 105 | yes: 105 = PDF | yes | ProRes only v003 (no H.264) | yes: base_v008 round, and 2026-11-21 round (unfixed header) | yes (2026-11-21 14:05 Bangkok (07:05 UTC); sample frames overwritten) | yes: v003 (unfixed frames) | yes: frames = PDF and header correct, read from the bucket 14:10 UTC; manifest and review video not sent | the posted frames have the old header |
+| 24 | ARCHIVAL-168 d | 48 | yes: 48 = PDF | yes | ProRes only v004 (no H.264) | yes: base_v008 round, and 2026-11-21 round (unfixed header) | yes (2026-11-21 14:05 Bangkok (07:05 UTC); sample frames overwritten) | yes: v004 (unfixed frames) | yes: frames = PDF and header correct, read from the bucket 14:10 UTC; manifest and review video not sent | the posted frames have the old header |
+| 25 | CREATURE-266 dolphin-lowtrack | 94 | yes: 94 = PDF | yes | ProRes only v002 (no H.264) | yes: base_v008 round, and 2026-11-21 round (unfixed header) | yes (2026-11-21 14:05 Bangkok (07:05 UTC); sample frames overwritten) | yes: v002 (unfixed frames) | yes: frames = PDF and header correct, read from the bucket 14:10 UTC; manifest and review video not sent | 8 stray frames of 94 in the real round, size differs: refused; the posted frames have the old header |
+| 26 | PHOTOREAL-013 ascent | 108 | yes: 108 = PDF | yes | ProRes only v004 (no H.264) | yes: base_v008 round, and 2026-11-21 round (unfixed header) | yes (2026-11-21 14:05 Bangkok (07:05 UTC); sample frames overwritten) | yes: v004 (unfixed frames) | yes: frames = PDF and header correct, read from the bucket 14:10 UTC; manifest and review video not sent | 8 stray frames of 108 in the real round, size differs: refused; the posted frames have the old header |
+| 27 | PHOTOREAL-013 chasm07 | 271 | yes: 271 = PDF | yes | ProRes only v005 (1.03 GB, no H.264) | yes: base_v008 round (271, no manifest); 2026-11-21 round holds only 67 of 271 frames | yes (2026-11-21 14:05 Bangkok (07:05 UTC); sample frames overwritten) | no: upload stopped, no post on record | yes: frames = PDF and header correct, read from the bucket 14:10 UTC; manifest and review video not sent | no manifest in the base_v008 round; one of the 67 frames in the 2026-11-21 round is cut short (7,077,888 bytes) |
 | 28 | PHOTOREAL-013 f23 | 633 | no: 0 of 633 | no (no frames) | no | no | no | no | no | killed for memory on a 232.8 GiB pod, RAM went 40 GiB to the limit in about a minute; 5 failed attempts |
 | 29 | PHOTOREAL-013 hadal | 160 | no: 0 of 160 | no (no frames) | no | no | no | no | no | killed for memory at 76 of 87.5 GiB after 22 minutes; 8 failed attempts; test on a 116 GiB pod unfinished at last report |
 | 30 | PHOTOREAL-013 landing | 226 | no: 0 of 226 | no (no frames) | no | no | no | no | no | killed for memory on a 57.7 GiB pod; 7 failed attempts |
-| 31 | PHOTOREAL-013 splash | 96 | yes: 96 = PDF | yes | ProRes only v008 (made 07:27 UTC today; its source frames UNVERIFIED) | yes: base_v008 round only | yes (2026-11-21 14:05 UTC; sample frames overwritten) | no | yes: frames = PDF and header correct, read from the bucket 14:10 UTC; manifest and review video not sent | review video made but never published or posted |
+| 31 | PHOTOREAL-013 splash | 96 | yes: 96 = PDF | yes | ProRes only v008 (made 07:27 UTC today; its source frames UNVERIFIED) | yes: base_v008 round only | yes (2026-11-21 14:05 Bangkok (07:05 UTC); sample frames overwritten) | no | yes: frames = PDF and header correct, read from the bucket 14:10 UTC; manifest and review video not sent | review video made but never published or posted |
 | 32 | PHOTOREAL-013 sunlight | 212 | no: 0 of 212 | no (no frames) | no | no | no | no | no | killed for memory on a 57.7 GiB pod; 4 failed attempts |
 | 33 | PHOTOREAL-013 top | 209 | no: 0 of 209 | no (no frames) | no | no | no | no | no | killed for memory on a 57.7 GiB pod; 6 failed attempts |
 | 34 | CGI-072 head | 106 | no: 0 of 106 | no (no frames) | no | no | no | no | no | killed for memory at 55.2 of 57.7 GiB after 31 minutes; 15 failed attempts; renders from V03, not held |
@@ -150,15 +155,50 @@ Kept from the first version of this report and corrected where the new checks sh
 
 **Memory limits and every failure's error:** [Appendix A](#appendix-a-which-runs-pushed-the-memory-limits-and-the-error-of-every-failure-2026-11-21) at the end of this report.
 
-### D1. The 36 elements at a glance
+### D1. The 36 elements at a glance (updated 2026-11-21, Bangkok time, after the 11 were published)
 
 | State | Count | Elements |
 |---|---|---|
-| **Delivered**, real round `returns/BKK/tunnel-v11-edl-2026-11-18` | 17 | archival-071, 077 a/b/c, 080 a-e, 083, 084, 085, 093 b, 102, 104 b, 123 c, cgi-042 |
-| **Made and checked, in the test round only** (`_TEST_tunnel-v11-base-v008-2026-11-21`) | 11 | archival-087 platform and rain, 123 f, 168 a/b/c/d, creature-266 dolphin-lowtrack, photoreal-013 ascent, chasm07, splash |
+| **Delivered**, real round `returns/BKK/tunnel-v11-edl-2026-11-18`, earlier (review videos are the first pass) | 17 | archival-071 main; 077 a, b, c; 080 a, b, c, d, e; 083 main; 084 main; 085 main; 093 b; 102 main; 104 b; 123 c; cgi-042 main |
+| **Delivered** to the real round on 2026-11-21 (frames and manifest, no review video) | 11 | archival-087 platform, rain; 123 f; 168 a, b, c, d; creature-266 dolphin-lowtrack; photoreal-013 ascent, chasm07, splash |
 | **Not generated** | 8 | photoreal-013 hadal, sunlight, top, landing, f23; cgi-072 head, backhalf-b, backhalf-c |
 
-All destinations are S3 only: `s3://bh-panama-exchange-610140802195/returns/BKK/`. The real round and the base_v008 test round were S3 only. Auto-publish posted 55 times to Slack in test rounds (section 1, bullet 4); it is now off.
+**The 28 delivered, one line each** (frames = the PDF count, read back from the bucket):
+
+| # | Element | Frames | Delivered |
+|---|---|---|---|
+| 1 | ARCHIVAL-071 main | 227 | earlier |
+| 2 | ARCHIVAL-077 a | 80 | earlier |
+| 3 | ARCHIVAL-077 b | 69 | earlier |
+| 4 | ARCHIVAL-077 c | 74 | earlier |
+| 5 | ARCHIVAL-080 a (still) | 94 | earlier |
+| 6 | ARCHIVAL-080 b (still) | 60 | earlier |
+| 7 | ARCHIVAL-080 c (still) | 90 | earlier |
+| 8 | ARCHIVAL-080 d (still) | 83 | earlier |
+| 9 | ARCHIVAL-080 e (still) | 44 | earlier |
+| 10 | ARCHIVAL-083 main | 98 | earlier |
+| 11 | ARCHIVAL-084 main | 39 | earlier |
+| 12 | ARCHIVAL-085 main | 54 | earlier |
+| 13 | ARCHIVAL-093 b | 126 | earlier |
+| 14 | ARCHIVAL-102 main | 128 | earlier |
+| 15 | ARCHIVAL-104 b | 130 | earlier |
+| 16 | ARCHIVAL-123 c | 66 | earlier |
+| 17 | CGI-042 main | 229 | earlier |
+| 18 | ARCHIVAL-087 platform | 97 | 2026-11-21 |
+| 19 | ARCHIVAL-087 rain | 96 | 2026-11-21 |
+| 20 | ARCHIVAL-123 f | 43 | 2026-11-21 |
+| 21 | ARCHIVAL-168 a | 153 | 2026-11-21 |
+| 22 | ARCHIVAL-168 b | 139 | 2026-11-21 |
+| 23 | ARCHIVAL-168 c | 105 | 2026-11-21 |
+| 24 | ARCHIVAL-168 d | 48 | 2026-11-21 |
+| 25 | CREATURE-266 dolphin-lowtrack | 94 | 2026-11-21 |
+| 26 | PHOTOREAL-013 ascent | 108 | 2026-11-21 |
+| 27 | PHOTOREAL-013 chasm07 | 271 | 2026-11-21 |
+| 28 | PHOTOREAL-013 splash | 96 | 2026-11-21 |
+
+**The 8 not delivered:** PHOTOREAL-013 f23 (633), hadal (160), landing (226), sunlight (212), top (209); CGI-072 head (106), backhalf-b (70), backhalf-c (162).
+
+All destinations are S3 only: `s3://bh-panama-exchange-610140802195/returns/BKK/`. Auto-publish posted 55 times to Slack in test rounds (section 1, bullet 4); it is now off. D3 below is kept for history: its 11 are now in the real round.
 
 ### D2. Delivered: the real round
 - Publish job `publish-mwpe8qd6-7`: **1,770 files, 84.88 GB, 17 elements in 11 shots**, `RETURN-MANIFEST.json` updated. The round lists 1,840 files; the 70 extra were already there and were not touched. Nothing in the round was overwritten.
