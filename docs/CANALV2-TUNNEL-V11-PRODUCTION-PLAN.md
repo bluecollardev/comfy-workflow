@@ -203,55 +203,57 @@ Not every element is in the same state, so the delivery is handled by case. **Ru
 
 ## 11. The 36 elements, their state, and what is left (2026-11-20, evening)
 
-**Summary.** 36 elements in the PDF. **17 have DPX on the volume** with the exact frame counts and a review video re-rendered in the right colour (cases A to C). **16 have no DPX** (D and E) and **3 are held** (F). **None has gone to the real round yet**; the real round `tunnel-v11-edl-2026-11-18` already exists in the bucket and is never overwritten. Three of the 17 (084 main, 085 main, 123 c) are in the test round `_TEST_tunnel-v11-2026-11-20` with the old header; their corrected copies are being written.
+**Summary.** 36 elements in the PDF. **17 have DPX on the volume** with the exact frame counts and a review video re-rendered in the right colour (cases A to C). **16 have no DPX** (D and E) and **3 are held** (F). **Update 2026-11-21: 17 are in the real round** `tunnel-v11-edl-2026-11-18` (never overwritten), 11 are made and held in a test round, 8 do not exist (memory kills). The real round also holds 53 stray frames of elements we have not delivered, which block 5 of the 11 (delivery report, section 1). The tables below were corrected on 2026-11-21 from the bucket and the volume.
 
 ### 11.1 The 17 with DPX (cases A to C)
 
-| # | Element | Frames (PDF = volume) | Raster | DPX on volume | Review video re-rendered | Corrected DPX copy | In the real round |
-|---|---|---|---|---|---|---|---|
-| 1 | ARCHIVAL-071 main | 227 | 3840x2160 | yes | yes | yes | yes |
-| 2 | ARCHIVAL-077 a | 80 | 3840x2160 | yes | yes | yes | yes |
-| 3 | ARCHIVAL-077 b | 69 | 3840x2160 | yes | yes | yes | yes |
-| 4 | ARCHIVAL-077 c | 74 | 1920x1080 | yes | yes | yes | yes |
-| 5 | ARCHIVAL-080 a (still) | 94 | 6336x2688 PNG | yes | yes | yes | yes |
-| 6 | ARCHIVAL-080 b (still) | 60 | 6336x2688 PNG | yes | yes | yes | yes |
-| 7 | ARCHIVAL-080 c (still) | 90 | 6336x2688 PNG | yes | yes | yes | yes |
-| 8 | ARCHIVAL-080 d (still) | 83 | 6336x2688 PNG | yes | yes | yes | yes |
-| 9 | ARCHIVAL-080 e (still) | 44 | 6336x2688 PNG | yes | yes | yes | yes |
-| 10 | ARCHIVAL-083 main | 98 | 3852x2152 | yes | yes | yes | yes |
-| 11 | ARCHIVAL-084 main | 39 | 2356x1572 | yes | yes | yes | yes |
-| 12 | ARCHIVAL-085 main | 54 | 3840x2160 | yes | yes | yes | yes |
-| 13 | ARCHIVAL-093 b | 126 | 1618x1080 (low source resolution) | yes | yes | yes | yes |
-| 14 | ARCHIVAL-102 main | 128 | 3840x2160 | yes | yes | yes | yes |
-| 15 | ARCHIVAL-104 b | 130 | 3840x2160 | yes | yes | yes | yes |
-| 16 | ARCHIVAL-123 c | 66 | 3840x2160 | yes | yes | yes | yes |
-| 17 | CGI-042 main | 229 | 3840x2160 | yes | yes | yes | yes |
+| # | Element | Frames (PDF = bucket) | Raster | DPX on volume | Review video in the real round | Newer review video (not in the real round) | Corrected DPX copy | In the real round | Posted to Slack (test rounds) |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | ARCHIVAL-071 main | 227 | 3840x2160 | yes | ProRes + H.264 v001 (first pass: old frames, 24 fps, no start timecode) | ProRes only v002 (23.976 fps) | yes | yes | yes (v002) |
+| 2 | ARCHIVAL-077 a | 80 | 3840x2160 | yes | ProRes + H.264 v002 (first pass: old frames, 24 fps, no start timecode) | ProRes only v003 (23.976 fps) | yes | yes | yes (v003) |
+| 3 | ARCHIVAL-077 b | 69 | 3840x2160 | yes | ProRes + H.264 v002 (first pass: old frames, 24 fps, no start timecode) | ProRes only v005 (23.976 fps) | yes | yes | yes (v005) |
+| 4 | ARCHIVAL-077 c | 74 | 1920x1080 | yes | ProRes + H.264 v002 (first pass: old frames, 24 fps, no start timecode) | ProRes only v004 (23.976 fps) | yes | yes | yes (v004) |
+| 5 | ARCHIVAL-080 a (still) | 94 | 6336x2688 PNG | yes | ProRes + H.264 v008 (first pass: old frames, 24 fps, no start timecode) | ProRes only v010 (23.976 fps) | yes | yes | yes (v010) |
+| 6 | ARCHIVAL-080 b (still) | 60 | 6336x2688 PNG | yes | ProRes + H.264 v008 (first pass: old frames, 24 fps, no start timecode) | ProRes only v013 (23.976 fps) | yes | yes | yes (v013) |
+| 7 | ARCHIVAL-080 c (still) | 90 | 6336x2688 PNG | yes | ProRes + H.264 v008 (first pass: old frames, 24 fps, no start timecode) | ProRes only v011 (23.976 fps) | yes | yes | yes (v011) |
+| 8 | ARCHIVAL-080 d (still) | 83 | 6336x2688 PNG | yes | ProRes + H.264 v008 (first pass: old frames, 24 fps, no start timecode) | ProRes only v012 (23.976 fps) | yes | yes | yes (v012) |
+| 9 | ARCHIVAL-080 e (still) | 44 | 6336x2688 PNG | yes | ProRes + H.264 v008 (first pass: old frames, 24 fps, no start timecode) | ProRes only v009 (23.976 fps) | yes | yes | no: upload stopped at 9 of 44 frames |
+| 10 | ARCHIVAL-083 main | 98 | 3852x2152 | yes | ProRes + H.264 v001 (first pass: old frames, 24 fps, no start timecode) | ProRes only v002 (23.976 fps) | yes | yes | yes (v002) |
+| 11 | ARCHIVAL-084 main | 39 | 2356x1572 | yes | ProRes + H.264 v004 (first pass: old frames, 24 fps, no start timecode) | ProRes only v005 (23.976 fps) | yes | yes | yes (v005) |
+| 12 | ARCHIVAL-085 main | 54 | 3840x2160 | yes | ProRes + H.264 v001 (first pass: old frames, 24 fps, no start timecode) | ProRes only v002 (23.976 fps) | yes | yes | yes (v002) |
+| 13 | ARCHIVAL-093 b | 126 | 1618x1080 (low source resolution) | yes | ProRes + H.264 v002 (first pass: old frames, 24 fps, no start timecode) | ProRes only v003 (23.976 fps) | yes | yes | yes (v003) |
+| 14 | ARCHIVAL-102 main | 128 | 3840x2160 | yes | ProRes + H.264 v001 (first pass: old frames, 24 fps, no start timecode) | ProRes only v002 (23.976 fps) | yes | yes | yes (v002) |
+| 15 | ARCHIVAL-104 b | 130 | 3840x2160 | yes | ProRes + H.264 v002 (first pass: old frames, 24 fps, no start timecode) | ProRes only v003 (23.976 fps) | yes | yes | yes (v003) |
+| 16 | ARCHIVAL-123 c | 66 | 3840x2160 | yes | ProRes + H.264 v003 (first pass: old frames, 24 fps, no start timecode) | ProRes only v004 (23.976 fps) | yes | yes | yes (v004) |
+| 17 | CGI-042 main | 229 | 3840x2160 | yes | ProRes + H.264 v002 (first pass: old frames, 24 fps, no start timecode) | ProRes only v003 (23.976 fps) | yes | yes | yes (v003) |
+
+Read back from the bucket on 2026-11-21 (see the stage matrix in the delivery report, section 3): frame counts equal the PDF, headers correct, a manifest per element. The review video that is in the real round is the first pass; the newer ProRes exists only in test rounds and the colour statement differs between the two (delivery report, section 1, bullet 3).
 
 ### 11.2 The 19 without delivered DPX
 
-**Updated 2026-11-21:** the route is `base_v008` through Import Round (not ffmpeg), the last column is the state now; everything from `base_v008` stays in `_TEST_tunnel-v11-base-v008-2026-11-21` until it is right (section 14). CGI-072 is not held.
+**Updated 2026-11-21 (afternoon, checked against the bucket and the volume; the full matrix is in the delivery report, section 3):** the route is `base_v008` through Import Round (not ffmpeg), the last columns are the state now; everything from `base_v008` stays in `_TEST_tunnel-v11-base-v008-2026-11-21` until it is right (section 14). CGI-072 is not held.
 
-| # | Element | Frames (PDF) | Raster | DPX on volume | Review video | Corrected DPX copy | In the real round | Note |
-|---|---|---|---|---|---|---|---|---|
-| 18 | ARCHIVAL-087 platform | 97 | 3840x2160 | yes | no | yes | no | Made, matches the PDF count, header-patched, in the test round; blocked in the real round: 29 files there differ in size |
-| 19 | ARCHIVAL-087 rain | 96 | 3840x2160 | yes | no | yes | no | Made, matches the PDF count, header-patched, in the test round |
-| 20 | ARCHIVAL-123 f | 43 | 3840x2160 | yes | no | yes | no | Made, matches the PDF count, header-patched, in the test round |
-| 21 | ARCHIVAL-168 a | 153 | 3840x2160 | yes | no | yes | no | Made, matches the PDF count, header-patched, in the test round |
-| 22 | ARCHIVAL-168 b | 139 | 3840x2160 | yes | no | yes | no | Made, matches the PDF count, header-patched, in the test round |
-| 23 | ARCHIVAL-168 c | 105 | 3840x2160 | yes | no | yes | no | Made, matches the PDF count, header-patched, in the test round |
-| 24 | ARCHIVAL-168 d | 48 | 3840x2160 | yes | no | yes | no | Made, matches the PDF count, header-patched, in the test round |
-| 25 | CREATURE-266 dolphin-lowtrack (ALT V01) | 94 | 1920x1080 | yes | no | yes | no | Made, matches the PDF count, header-patched, in the test round |
-| 26 | PHOTOREAL-013 ascent | 108 | 1920x1080, 24 fps HEVC | yes | no | yes | no | Made, matches the PDF count, header-patched, in the test round |
-| 27 | PHOTOREAL-013 chasm07 | 271 | 1920x1080, 24 fps HEVC | yes | no | yes | no | Made, matches the PDF count, header-patched, in the test round |
-| 28 | PHOTOREAL-013 f23 | 633 | 1920x1080, 24 fps HEVC | no | no | no | no | Not generated: killed for memory (plan section 15); needs chunked runs (ADR-056) |
-| 29 | PHOTOREAL-013 hadal | 160 | 1920x1080, 24 fps HEVC | no | no | no | no | Not generated: killed for memory (plan section 15); needs chunked runs (ADR-056) |
-| 30 | PHOTOREAL-013 landing | 226 | 1920x1080, 24 fps ProRes | no | no | no | no | Not generated: killed for memory (plan section 15); needs chunked runs (ADR-056) |
-| 31 | PHOTOREAL-013 splash | 96 | 1920x1080, 24 fps HEVC | yes | no | yes | no | Made, matches the PDF count, header-patched, in the test round |
-| 32 | PHOTOREAL-013 sunlight | 212 | 1920x1080, 24 fps HEVC | no | no | no | no | Not generated: killed for memory (plan section 15); needs chunked runs (ADR-056) |
-| 33 | PHOTOREAL-013 top (V02) | 209 | 1920x1080, 24 fps ProRes | no | no | no | no | Not generated: killed for memory (plan section 15); needs chunked runs (ADR-056) |
-| 34 | CGI-072 head | 106 | 1920x1080 V02 ProRes 23.976 | no | no | no | no | Not generated: killed for memory (plan section 15); needs chunked runs (ADR-056) |
-| 35 | CGI-072 backhalf-b | 70 | 1920x1080 V02 ProRes 23.976 | no | no | no | no | Not generated: killed for memory (plan section 15); needs chunked runs (ADR-056) |
-| 36 | CGI-072 backhalf-c | 162 | 1920x1080 V02 ProRes 23.976 | no | no | no | no | Not generated: killed for memory (plan section 15); needs chunked runs (ADR-056) |
+| # | Element | Frames (PDF) | Raster | DPX on volume | Review video on the volume (never H.264) | Corrected DPX copy | In a test round | In the real round | Note |
+|---|---|---|---|---|---|---|---|---|---|
+| 18 | ARCHIVAL-087 platform | 97 | 3840x2160 | yes | ProRes only v001 | yes | yes (base_v008 round) | no | Made, matches the PDF count, header correct (read from the bucket), in the test round; real round blocked: 13 stray frames of another size are there |
+| 19 | ARCHIVAL-087 rain | 96 | 3840x2160 | yes | ProRes only v002 | yes | yes (base_v008 round) | no | Made, matches the PDF count, header correct, in the test round; ProRes review video made today, never published |
+| 20 | ARCHIVAL-123 f | 43 | 3840x2160 | yes | ProRes only v006 | yes | yes (base_v008 round) | no | Made, matches the PDF count, header correct, in the test round; real round blocked: 8 stray frames of another size |
+| 21 | ARCHIVAL-168 a | 153 | 3840x2160 | yes | ProRes only v002 | yes | yes (base_v008 round) | no | Made, matches the PDF count, header correct, in the test round; real round blocked: 8 stray frames of another size |
+| 22 | ARCHIVAL-168 b | 139 | 3840x2160 | yes | ProRes only v001 | yes | yes (base_v008 round) | no | Made, matches the PDF count, header correct, in the test round; a 13-frame partial copy sits in `_TEST_2026-11-21` |
+| 23 | ARCHIVAL-168 c | 105 | 3840x2160 | yes | ProRes only v003 | yes | yes (base_v008 round) | no | Made, matches the PDF count, header correct, in the test round |
+| 24 | ARCHIVAL-168 d | 48 | 3840x2160 | yes | ProRes only v004 | yes | yes (base_v008 round) | no | Made, matches the PDF count, header correct, in the test round |
+| 25 | CREATURE-266 dolphin-lowtrack (ALT V01) | 94 | 1920x1080 | yes | ProRes only v002 | yes | yes (base_v008 round) | no | Made, matches the PDF count, header correct, in the test round; real round blocked: 8 stray frames of another size |
+| 26 | PHOTOREAL-013 ascent | 108 | 1920x1080, 24 fps HEVC | yes | ProRes only v004 | yes | yes (base_v008 round) | no | Made, matches the PDF count, header correct, in the test round; real round blocked: 8 stray frames of another size |
+| 27 | PHOTOREAL-013 chasm07 | 271 | 1920x1080, 24 fps HEVC | yes | ProRes only v005 | yes | yes (base_v008 round) | no | Made, matches the PDF count, header correct, in the test round; no manifest there; a 67-frame partial copy in `_TEST_2026-11-21` |
+| 28 | PHOTOREAL-013 f23 | 633 | 1920x1080, 24 fps HEVC | no | no | no | no | no | Not generated: killed for memory (plan section 15, report Appendix A); needs chunked runs (ADR-056) |
+| 29 | PHOTOREAL-013 hadal | 160 | 1920x1080, 24 fps HEVC | no | no | no | no | no | Not generated: killed for memory (plan section 15, report Appendix A); needs chunked runs (ADR-056) |
+| 30 | PHOTOREAL-013 landing | 226 | 1920x1080, 24 fps ProRes | no | no | no | no | no | Not generated: killed for memory (plan section 15, report Appendix A); needs chunked runs (ADR-056) |
+| 31 | PHOTOREAL-013 splash | 96 | 1920x1080, 24 fps HEVC | yes | ProRes only v008 | yes | yes (base_v008 round) | no | Made, matches the PDF count, header correct, in the test round; ProRes review video made today, never published |
+| 32 | PHOTOREAL-013 sunlight | 212 | 1920x1080, 24 fps HEVC | no | no | no | no | no | Not generated: killed for memory (plan section 15, report Appendix A); needs chunked runs (ADR-056) |
+| 33 | PHOTOREAL-013 top (V02) | 209 | 1920x1080, 24 fps ProRes | no | no | no | no | no | Not generated: killed for memory (plan section 15, report Appendix A); needs chunked runs (ADR-056) |
+| 34 | CGI-072 head | 106 | 1920x1080 V02 ProRes 23.976 | no | no | no | no | no | Not generated: killed for memory (plan section 15, report Appendix A); needs chunked runs (ADR-056) |
+| 35 | CGI-072 backhalf-b | 70 | 1920x1080 V02 ProRes 23.976 | no | no | no | no | no | Not generated: killed for memory (plan section 15, report Appendix A); needs chunked runs (ADR-056) (8 stray frames of another size are in the real round, not ours) |
+| 36 | CGI-072 backhalf-c | 162 | 1920x1080 V02 ProRes 23.976 | no | no | no | no | no | Not generated: killed for memory (plan section 15, report Appendix A); needs chunked runs (ADR-056) |
 
 ### 11.4 How we get the missing DPX, in plain words
 
@@ -320,7 +322,7 @@ The volume round **`base_v008`** (30 shots, 62 graphs, adapter `brynley-rounds-l
 
 **In a test round only (`_TEST_tunnel-v11-base-v008-2026-11-21`):** the `base_v008` elements whose frames exist and match the PDF count: archival-087 platform (97), 123 a (68) and 123 f (43), 168 a-d (153/139/105/48), photoreal-013 ascent (108) and chasm07 (271). Header-patched with `dpx_fix` first (checked on the pod). Decision (Lucas, 2026-11-21): **everything from `base_v008` stays in `_TEST_` until it is right**; nothing of it goes to the real round yet.
 
-**Blocker in the real round:** the round already holds archival-087 platform DPX files that differ in size from ours (49,768,448 bytes there, 49,768,064 here, 29 files). The no-overwrite guard refuses them; they need another clip name or round, a decision for Lucas.
+**Blocker in the real round:** the round already holds stray DPX files that differ in size from ours (49,768,448 bytes there, 49,768,064 here): 13 of archival-087 platform and 8 each of 123 f, 168 a, dolphin-lowtrack, ascent (and 8 of cgi-072 backhalf-b); 53 files, uploaded 2026-11-20 07:33 to 08:40 UTC, origin unknown (checked 2026-11-21). So 5 of the 11 are blocked, not only platform. The no-overwrite guard refuses them; they need another clip name or round, a decision for Lucas.
 
 **Not in the 36:** photoreal-013 `chasmfast07` and `chasmfastia2` (extra graphs on the volume) are not on the PDF list; they are never published.
 
@@ -380,7 +382,7 @@ Not verified on a real pod: all of it is unit-tested with fakes; nothing was run
 **Memory limits and every failure's error:** [Appendix A of the delivery report](CANALV2-TUNNEL-V11-DELIVERY-REPORT-2026-11-20.md#appendix-a-which-runs-pushed-the-memory-limits-and-the-error-of-every-failure-2026-11-21) (which runs pushed the limits, the RAM limit of each pod, the errors of the 8 graphs).
 
 
-**Delivered and verified:** 17 of 36 in the real round `returns/BKK/tunnel-v11-edl-2026-11-18` (1,770 files; manifests and first-frame headers read back from the bucket). **Frames made, matching the PDF counts, in the test round `_TEST_tunnel-v11-base-v008-2026-11-21` only (decision Lucas: nothing from base_v008 goes to the real round until it is right):** 11 of the 19: archival-087 platform (97) and rain (96), 123 f (43), 168 a/b/c/d (153/139/105/48), creature-266 dolphin-lowtrack (94), photoreal-013 ascent (108), chasm07 (271) and splash (96). **Not generated, 8 of 36:** photoreal-013 hadal, sunlight, top, landing, f23; cgi-072 head, backhalf-b, backhalf-c (cgi-072 renders from V03, not held). No review video exists yet for the 11; none of their headers has been read back from the bucket.
+**Delivered and verified:** 17 of 36 in the real round `returns/BKK/tunnel-v11-edl-2026-11-18` (1,770 files; manifests and first-frame headers read back from the bucket). **Frames made, matching the PDF counts, in the test round `_TEST_tunnel-v11-base-v008-2026-11-21` only (decision Lucas: nothing from base_v008 goes to the real round until it is right):** 11 of the 19: archival-087 platform (97) and rain (96), 123 f (43), 168 a/b/c/d (153/139/105/48), creature-266 dolphin-lowtrack (94), photoreal-013 ascent (108), chasm07 (271) and splash (96). **Not generated, 8 of 36:** photoreal-013 hadal, sunlight, top, landing, f23; cgi-072 head, backhalf-b, backhalf-c (cgi-072 renders from V03, not held). Checked again 2026-11-21 afternoon: all 11 have a ProRes review video on the volume and none has an H.264; the headers of all 11 were read back from the bucket and are correct. The full per-element stage matrix is in the delivery report, section 3.
 
 **Why the 8 fail (run notes, in the order they were found):**
 1. *Conversion timeout.* The pod's own converter failed with `Page.wait_for_function: Timeout 60000ms`. ComfyUI's page takes 80 to 160 s to become ready on a fresh pod, and the pod path kept failing at 60 s even after the 240 s fixes were merged (cause of the 60 s not found; the Mac-side fallback also did not help inside the app). Worked around by running the graphs from this Mac with one Chrome page per pod (`rungraphs.mjs`: fetch the UI graph, convert with ComfyUI's own frontend, POST /prompt, poll /history).
@@ -391,7 +393,7 @@ Not verified on a real pod: all of it is unit-tested with fakes; nothing was run
 6. *Escalation to a bigger card* (merged, `cards.ts`) cannot fix this class: it climbs VRAM (32 to 96 GB) and the 96 GB card has less RAM per GB of VRAM than the 4x 4500 pod. It should escalate GPU count for RAM (see NEXT-STEPS).
 
 **Other happenings today:**
-- *Auto-publish* had Slack on and posted about 16 review videos (S3 + Slack, round `_TEST_2026-11-21`), including items not on the 36 list (photoreal-013 chasmfast07, creature-266 landing and breach). It is now **off** (turned off by Claude, 2026-11-21); re-enable only with Lucas's say, S3 only until checked. The Slack posts cannot be deleted from here.
+- *Auto-publish* had Slack on and posted 55 times to Slack (23 into round `_TEST_2026-11-21`; 21 on 11-19 and 28 on 11-20 UTC), including items not on the 36 list (photoreal-013 chasmfast07, creature-266 landing, archival-123 a and others; breach-alt1 has no trace, delivery report section 4). It is now **off** (turned off by Claude, 2026-11-21); re-enable only with Lucas's say, S3 only until checked. The Slack posts cannot be deleted from here.
 - *Pods not ours:* `vlvrtpnig8rkoh` (CanalV2-fix-v020-a, RTX PRO 6000, running, $2.69/h) and `medb5fr68r9la5` (CanalV2-fix-v020-b, stopped) were created at 00:46 UTC by something outside these runs. Not touched.
 - *Pod logs saved* in one document with a contents list per pod and per run: `~/.config/runpod-pod-manager/pod-logs/POD-LOGS-2026-11-21.md` (38 pods, 5.2 MB; not redacted, do not publish). 26 pods have no saved log (stopped before the app saved them; RunPod does not serve a stopped pod's log). After the document was written, 36 old stopped pods with saved logs were deleted at Lucas's instruction (volume untouched); the 26 without a log, the two live RAM-test pods and the two foreign pods were kept.
 - *Pod card* now shows GPU count, total VRAM and container RAM (branch `feature/pod-card-gpu-count-ram`, merged to develop, not yet in the running app). The Outputs cards show a red `Frames N / M` badge when a sequence's count differs from the EDL.
