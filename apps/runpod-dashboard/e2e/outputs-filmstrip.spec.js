@@ -36,9 +36,9 @@ test('Twenty frames with previews: the collapsed row shows the fitted number of 
   await expect(strip).toBeVisible()
   await expect(modal.getByTestId('outputs-tile')).toBeVisible()                       // the first-frame tile stays at the left
   await expect(modal.getByTestId('outputs-seq-frames')).toHaveCount(0)                // collapsed: the strip is the point, the list below is not there
-  const fit = Number(await strip.getAttribute('data-fit'))
-  expect(fit).toBeGreaterThanOrEqual(1); expect(fit).toBeLessThanOrEqual(12)
-  const want = Math.min(fit, N - 1)                                                   // 19 frames have a preview besides the first
+  const fit = Number(await strip.getAttribute('data-fit'))                            // slots: two rows of columns
+  expect(fit).toBeGreaterThanOrEqual(2); expect(fit).toBeLessThanOrEqual(48)
+  const want = N - 1 <= fit ? N - 1 : fit - 1                                         // 19 frames have a preview besides the first; with more than the slots the last slot is '+N More'
   await expect(modal.getByTestId('outputs-seq-strip-frame')).toHaveCount(want)
   const ix = await indexes(modal)
   expect([...ix].sort((a, b) => a - b)).toEqual(ix)                                   // in order
@@ -62,7 +62,33 @@ test('The strip follows the row width: a narrower window shows fewer frames, a w
   await page.setViewportSize({ width: 760, height: 800 })
   await expect.poll(async () => Number(await strip.getAttribute('data-fit'))).toBeLessThan(wide)
   const narrow = Number(await strip.getAttribute('data-fit'))
-  await expect(modal.getByTestId('outputs-seq-strip-frame')).toHaveCount(Math.min(narrow, N - 1))
+  await expect(modal.getByTestId('outputs-seq-strip-frame')).toHaveCount(N - 1 <= narrow ? N - 1 : narrow - 1)   // the slots minus the '+N More' one
+})
+
+// Lucas, 2026-11-21: "you can also show two rows of dpx previews": below the main row, two FULL rows of evenly sampled frame previews, the last slot of the second row '+N More' (expands the sequence), each with its
+// frame number, a click opens the viewer at that frame; a sequence with no previews draws nothing extra.
+test('Two rows of previews below the main row, the last slot "+N More" expanding the sequence; each thumbnail opens the viewer at its frame', async ({ page, api }) => {
+  await page.setViewportSize({ width: 900, height: 800 })   // narrow enough that 19 previews overflow two rows
+  const { modal } = await setup(page, api, Array.from({ length: N }, (_, i) => i))
+  const strip = modal.getByTestId('outputs-seq-strip')
+  await expect(strip).toBeVisible()
+  await expect(strip).toHaveAttribute('data-rows', '2')
+  const cols = Number(await strip.getAttribute('data-cols'))
+  expect(cols).toBeGreaterThanOrEqual(2); expect(cols * 2).toBeLessThan(N - 1)             // 19 previews do not fit two rows here
+  const frames = modal.getByTestId('outputs-seq-strip-frame')
+  await expect(frames).toHaveCount(cols * 2 - 1)                                          // two full rows minus the '+N More' slot
+  const more = modal.getByTestId('outputs-seq-strip-more')
+  await expect(more).toHaveText(`+${N - 1 - (cols * 2 - 1)} More`)
+  const ys = new Set((await frames.evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)))))
+  expect(ys.size).toBe(2)                                                                  // exactly two rows of frames (the '+N More' tile closes the second)
+  const main = await modal.getByTestId('outputs-tile').first().boundingBox(), first = await frames.first().boundingBox()
+  expect(first.y).toBeGreaterThan(main.y + main.height - 2)                                // below the main row
+  await frames.nth(2).click()                                                              // a thumbnail opens the viewer at its frame
+  const ix = await indexes(modal)
+  await expect(page.getByTestId('dpx-viewer-frame')).toHaveText(new RegExp(`${ix[2] + 1} / ${N}`))
+  await page.keyboard.press('Escape')
+  await more.click()                                                                       // '+N More' expands the sequence
+  await expect(modal.getByTestId('outputs-seq-frames')).toBeVisible()
 })
 
 test('Only frames that have a preview are shown: three previews, three thumbnails, in order; no placeholders', async ({ page, api }) => {

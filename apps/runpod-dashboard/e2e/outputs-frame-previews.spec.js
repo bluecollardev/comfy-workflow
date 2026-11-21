@@ -1,5 +1,6 @@
 import { test, expect, podCard } from './fixtures'
 import fs from 'node:fs'
+import zlib from 'node:zlib'
 import { makeDpx } from '../src/utils/dpx-fixture.mjs'
 const WEBM = fs.readFileSync(new URL('./media/tiny.webm', import.meta.url))   // 2 s, 64x48, 24 fps VP8
 
@@ -427,3 +428,81 @@ test('No Data File button when the run has no data file', async ({ page, api }) 
   await expect(modal.getByTestId('outputs-main-video')).toBeVisible()
   await expect(modal.getByTestId('outputs-data-button')).toHaveCount(0)
 })
+
+// Lucas, 2026-11-21: the `Data File` button was "too tiny and doesn't work for me": it is a TILE now, like the old data-file tile (the filled file icon centred in a dark box), as tall as the sequence and Main Video
+// pictures, about 9.5rem wide, a label under it, the whole tile the click target (mouse, Enter, Space).
+test('The Data File is a tile right of the Main Video: filled file icon, the pictures share one height, a real mouse click by coordinates opens the popup, Enter and Space do too', async ({ page, api }) => {
+  api.state.fp = NOFP()
+  const DATA = { filename: 'run_meta.json', subfolder: 'assembly_v024/movie', type: 'output', bytes: 61 }
+  const custom = async (f, r) => (f === 'run_meta.json' ? (await r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: '{"graph":"base_v008","frames":212}' }), true) : false)
+  const { modal } = await setup(page, api, [CLIP, DATA], { custom })
+  const tile = modal.getByTestId('outputs-data-button')
+  await expect(tile).toBeVisible()
+  await expect(tile.getByTestId('outputs-data-icon').locator('i.fa-solid.fa-file')).toBeVisible()   // the filled file icon
+  await expect(tile.getByTestId('outputs-data-label')).toHaveText('Data File')
+  const seqPic = await modal.getByTestId('outputs-dpx-placeholder').first().boundingBox(), icon = await tile.getByTestId('outputs-data-icon').boundingBox(), vid = await modal.getByTestId('outputs-main-video').getByTestId('outputs-video-poster').boundingBox()
+  expect(Math.abs(icon.height - seqPic.height)).toBeLessThan(1); expect(Math.abs(vid.height - seqPic.height)).toBeLessThan(1)   // one picture height across the row
+  const tb = await tile.boundingBox()
+  expect(tb.width).toBeGreaterThan(130); expect(tb.width).toBeLessThan(175)                       // about the old tile (9.5rem)
+  await expect(tile).toHaveCSS('cursor', 'pointer')
+  await page.mouse.click(tb.x + tb.width / 2, tb.y + tb.height / 2)                                // a real click at the tile's centre: nothing sits on top of it
+  const pop = page.getByTestId('datafile-modal')
+  await expect(pop).toBeVisible(); await expect(pop.getByTestId('datafile-text')).toContainText('"frames": 212')
+  await page.keyboard.press('Escape'); await expect(pop).toHaveCount(0)
+  await tile.focus(); await page.keyboard.press('Enter')
+  await expect(pop).toBeVisible(); await page.keyboard.press('Escape'); await expect(pop).toHaveCount(0)
+  await tile.focus(); await page.keyboard.press('Space')
+  await expect(pop).toBeVisible(); await page.keyboard.press('Escape')
+})
+
+test('A slow data file ends in an error with Retry, never an endless spinner', async ({ page, api }) => {
+  api.state.fp = NOFP()
+  await page.addInitScript(() => { globalThis.__DATA_TIMEOUT_MS__ = 600 })
+  let hits = 0
+  const custom = async (f, r) => {
+    if (f !== 'slow.json') return false
+    hits++
+    if (hits === 1) { await new Promise((res) => setTimeout(res, 3000)); await r.abort().catch(() => {}); return true }
+    await r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: '{"ok":1}' }); return true
+  }
+  const { modal } = await setup(page, api, [CLIP, { filename: 'slow.json', subfolder: 'assembly_v024/movie', type: 'output' }], { custom })
+  await modal.getByTestId('outputs-data-button').click()
+  const pop = page.getByTestId('datafile-modal')
+  await expect(pop.getByTestId('datafile-error')).toContainText('did not arrive in time', { timeout: 10000 })
+  await pop.getByTestId('datafile-retry').click()
+  await expect(pop.getByTestId('datafile-text')).toContainText('"ok": 1')
+})
+
+// Lucas, 2026-11-21: "main video should match aspect video for preview, you made it skinnier": the picture box of a video takes the video's OWN aspect ratio (width = height x ratio), so a 16:9 poster is a
+// 16:9 box, a 4:3 one 4:3, a portrait one 9:16; the Main Video tile's picture is as tall as the sequence tile's picture. PNGs of the wanted sizes are served as the pod's poster JPEGs (the page decodes by content).
+const crcT = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0 } return t })()
+const crc32 = (b) => { let c = 0xffffffff; for (const x of b) c = crcT[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0 }
+const pngChunk = (type, data) => { const l = Buffer.alloc(4); l.writeUInt32BE(data.length); const td = Buffer.concat([Buffer.from(type), data]), c = Buffer.alloc(4); c.writeUInt32BE(crc32(td)); return Buffer.concat([l, td, c]) }
+const png = (w, h) => {   // a flat grey RGB PNG of w x h
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2
+  const raw = Buffer.alloc((w * 3 + 1) * h, 0x70); for (let y = 0; y < h; y++) raw[y * (w * 3 + 1)] = 0
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), pngChunk('IHDR', ihdr), pngChunk('IDAT', zlib.deflateSync(raw)), pngChunk('IEND', Buffer.alloc(0))])
+}
+const MV = { filename: 'main_one.mp4', subfolder: 'assembly_v024/movie', type: 'output' }
+async function ratioRun(page, api, w, h) {
+  api.state.fp = { jobs: {}, written: {}, thumbs: {}, posters: { [MV.subfolder]: [`${MV.filename}.jpg`] }, starts: [], lists: [], fail: {} }
+  const body = png(w, h)
+  const custom = async (f, r) => (f === `${MV.filename}.jpg` ? (await r.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body }), true) : false)
+  const { modal } = await setup(page, api, [MV], { custom })
+  const main = modal.getByTestId('outputs-main-video')
+  await expect(main).toBeVisible()
+  const poster = main.getByTestId('outputs-video-poster')
+  await expect(poster).toHaveAttribute('data-poster', 'yes', { timeout: 15000 })
+  await expect.poll(async () => poster.getAttribute('data-ratio'), { timeout: 15000 }).toBe((w / h).toFixed(3))   // the poster's natural size is known
+  return { modal, main, poster }
+}
+for (const [name, w, h] of [['16:9', 320, 180], ['4:3', 320, 240], ['portrait 9:16', 180, 320]]) {
+  test(`Main Video tile: a ${name} poster gives a picture box of that ratio, as tall as the sequence tile's picture`, async ({ page, api }) => {
+    const { modal, main, poster } = await ratioRun(page, api, w, h)
+    const b = await poster.boundingBox(), tile = await main.boundingBox()
+    expect(Math.abs(b.width / b.height / (w / h) - 1)).toBeLessThan(0.01)   // the video's own ratio, not squeezed to its caption (it was a 142 x 152 box for 16:9)
+    const seqPic = await modal.getByTestId('outputs-dpx-placeholder').first().boundingBox()
+    expect(Math.abs(b.height - seqPic.height)).toBeLessThan(1)               // as tall as the sequence tile's picture
+    expect(tile.width).toBeGreaterThanOrEqual(b.width)                        // the tile holds the whole picture: nothing is clipped
+  })
+}

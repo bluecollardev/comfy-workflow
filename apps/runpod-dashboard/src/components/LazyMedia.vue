@@ -3,7 +3,7 @@
     <!-- a video is a still (its poster JPEG, else its first frame captured in the page) in a box of the VIDEO'S OWN ASPECT RATIO (16:9 until known); a click on it is the PARENT's click (the tile or row opens the
          modal viewer): no player lives in the tile. Order of what it shows: poster, captured frame, shimmer while it is on its way, and the film icon ONLY after a definite failure. No corner button: with a
          real picture a play glyph shows in the CENTRE on hover or focus only. -->
-    <span v-if="kind === 'video'" class="thumb vposter" role="img" :style="{ aspectRatio: String(ratio) }" :data-ratio="ratio.toFixed(3)" :title="vTitle" :aria-label="$t('outputs.video.play')" data-testid="outputs-video-poster" :data-poster="poster && !posterBad ? 'yes' : shot ? 'frame' : failed ? 'no' : 'pending'">
+    <span v-if="kind === 'video'" class="thumb vposter" role="img" :style="boxStyle" :data-ratio="ratio.toFixed(3)" :title="vTitle" :aria-label="$t('outputs.video.play')" data-testid="outputs-video-poster" :data-poster="poster && !posterBad ? 'yes' : shot ? 'frame' : failed ? 'no' : 'pending'">
       <img v-if="poster && near && !posterBad" :src="poster" alt="" class="vimg" loading="lazy" decoding="async" data-testid="outputs-video-poster-img" @load="onImg" @error="onPosterError" />
       <img v-else-if="shot" :src="shot" alt="" class="vimg" decoding="async" data-testid="outputs-video-frame-img" />
       <span v-else-if="failed" class="vfallback" data-testid="outputs-video-fallback">
@@ -39,9 +39,20 @@ import { firstFrame, retryFirstFrame } from '../utils/videothumb'
 /** An image bigger than this shows its icon with a tooltip instead of loading (a 40 MB PNG is not a thumbnail). */
 const IMAGE_MAX_BYTES = 25 * 1024 * 1024
 
-const props = defineProps({ kind: { type: String, required: true }, src: { type: String, required: true }, alt: { type: String, default: '' }, /** the first frame's JPEG for a video (utils/framejob.js posterUrl), when the pod has made it */ poster: { type: String, default: '' }, /** the file's size when the listing knows it (an image over IMAGE_MAX_BYTES is not loaded) */ bytes: { type: Number, default: null } })
+const props = defineProps({ kind: { type: String, required: true }, src: { type: String, required: true }, alt: { type: String, default: '' }, /** the first frame's JPEG for a video (utils/framejob.js posterUrl), when the pod has made it */ poster: { type: String, default: '' }, /** the file's size when the listing knows it (an image over IMAGE_MAX_BYTES is not loaded) */ bytes: { type: Number, default: null },
+  /** a video's picture box: 'width' = the cell's width and the height follows the ratio (a grid tile); 'height' = the row's picture height (`--picH`, the sequence tile's) and the width follows the ratio (the Main Video tile) */ fit: { type: String, default: 'width' } })
 const root = ref(null), near = ref(false), shot = ref(''), failed = ref(false), reason = ref(''), retried = ref(false), posterBad = ref(false), ratio = ref(16 / 9)
 const imgReady = ref(false), imgFailed = ref(false)
+/** A video's picture box is the video's OWN aspect ratio, exactly (Lucas, 2026-11-21: "main video should match aspect video for preview, you made it skinnier"). It used to be `width: auto` inside a block, which
+ *  stretched to whatever the caption made the tile (142 px for a 16:9 video: a near-square box with the picture letterboxed), so the width is explicit now: height x ratio (the Main Video tile), or the cell's width with the height
+ *  from the ratio (a grid tile, never taller than GRID_MAX_H: then it is narrower and centred, the ratio kept). 16:9 only until the poster's or the capture's natural size is known. */
+const GRID_MAX_H = '12rem'
+const boxStyle = computed(() => {
+  const r = ratio.value.toFixed(5)
+  return props.fit === 'height'
+    ? { aspectRatio: r, height: 'var(--picH, 6.5rem)', width: `calc(var(--picH, 6.5rem) * ${r})`, maxWidth: 'none', flex: '0 0 auto' }
+    : { aspectRatio: r, height: 'auto', width: `min(100%, calc(${GRID_MAX_H} * ${r}))`, marginInline: 'auto' }
+})
 const tooBig = computed(() => props.kind === 'image' && props.bytes != null && props.bytes > IMAGE_MAX_BYTES)
 const vTitle = computed(() => (failed.value ? (reason.value === 'timeout' ? t('outputs.video.timedOut') : t('outputs.video.noPreview')) : t('outputs.video.play')))
 const iTitle = computed(() => (tooBig.value ? t('outputs.image.tooLarge') : imgFailed.value ? t('outputs.image.noPreview') : ''))
@@ -70,8 +81,8 @@ onBeforeUnmount(() => { gone = true; clearTimeout(wait); io?.disconnect() })
 <style scoped>
 .lm { display: block; }
 .thumb { width: 100%; height: 6.5rem; object-fit: cover; border-radius: 0.25rem; background: #14161b; }
-/* a video: the tile's fixed height, the width follows the video's ratio (never wider than the cell), the picture contained, no letterbox bars of a fixed 16:9 box */
-.vposter { position: relative; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; overflow: hidden; cursor: pointer; width: auto; max-width: 100%; }
+/* a video: the box takes the video's own ratio (explicit width and height from `boxStyle`), the picture contained (no crop, no stretch) */
+.vposter { position: relative; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; overflow: hidden; cursor: pointer; }
 .vimg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .vfallback { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
 /* the only mark on a tile with a real picture: a play glyph in the CENTRE, on hover or keyboard focus of the tile (the tile itself is the parent button) */
