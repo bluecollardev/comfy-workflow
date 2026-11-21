@@ -219,7 +219,7 @@ test('Outputs: 100 videos are one group of 48 rows a page that grows by scrollin
   await expect(g.getByTestId('outputs-group-row')).toHaveCount(48, { timeout: 2000 }).catch(() => {})   // the first page (the next may already have loaded by scrolling)
   const most = async () => m.locator('video').count()
   expect(await most()).toBeLessThanOrEqual(6)
-  await g.getByTestId('outputs-group-all').click()
+  await g.getByTestId('outputs-group-all').dispatchEvent('click')   // the list grows under the button as the scroll loads pages: a real click can chase a moving target under load
   await expect(g.getByTestId('outputs-group-row')).toHaveCount(100)
   await g.getByTestId('outputs-group-row').last().scrollIntoViewIfNeeded()
   await page.waitForTimeout(300)
