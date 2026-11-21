@@ -6,10 +6,10 @@
 
 - **Delivered (17):** in `returns/BKK/tunnel-v11-edl-2026-11-18`, with corrected headers and timecode, review videos and manifests. I read them back from the bucket and they are right.
 - **Ready, waiting for your word (11):** archival-087 platform and rain, 123 f, 168 a-d, creature-266 dolphin-lowtrack, photoreal-013 ascent, chasm07, splash. Frame counts match the PDF exactly. Still missing for these: a review video each, and a check of their headers in the bucket. One problem: archival-087 platform clashes with 29 differently sized files already in the real round, so it can't go there as it is.
-- **Not done (8):** photoreal-013 hadal, sunlight, top, landing, f23, and cgi-072 head, backhalf-b, backhalf-c. Their graphs run out of memory on RunPod and get killed (RunPod's own log says so). A bigger card doesn't help; more system RAM only helps the small ones. The real fix is to run each graph in pieces of about 50 frames, and that isn't built yet. A test on a 116 GB-RAM pod (hadal) has been running 40 minutes and hasn't died yet.
+- **Not done (8):** photoreal-013 hadal, sunlight, top, landing, f23, and cgi-072 head, backhalf-b, backhalf-c. Their graphs run out of memory on RunPod and get killed (RunPod's own log says so). A bigger card doesn't help; more system RAM only helps the small ones. The real fix is to run each graph in pieces of about 50 frames, and that isn't built yet. A test on a 116 GB-RAM pod (hadal) has been running over 30 minutes and hasn't died yet.
 
 **What I need from you**
-1. **Build the chunked runs?** (about a day of work including tests; it is the only way to get the last 8). Or deliver 28 and list the 8 as not generated.
+1. **Build the chunked runs?** (I can't give a firm time: it depends on whether the graphs accept a frame window, which I haven't confirmed; it is the only way to get the last 8). Or deliver 28 and list the 8 as not generated.
 2. **Move the 11 to the real round?** Which ones, and what to do about the archival-087 platform clash.
 3. Whether Auto-publish may come back on. It's off because it posted about 16 review videos to Slack on its own, including items not on the list.
 
