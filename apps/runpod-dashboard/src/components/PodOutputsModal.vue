@@ -16,6 +16,21 @@
       <span data-testid="pod-outputs-volume-error">{{ vol.restart ? $t('outputs.dpx.reason.restart') : vol.keysMissing ? $t('outputs.s3Keys') : $t('outputs.volumeError', { reason: vol.reason }) }}</span>
       <BButton v-if="vol.keysMissing" variant="outline-primary" size="sm" data-testid="pod-outputs-open-config" @click="openConfig">{{ $t('outputs.s3KeysButton') }}</BButton>
     </div>
+    <!-- What failed to generate for this pod (the Frame Previews job's error and failed frames, failed preview sequences, the graph failures log): collapsed, absent when there is nothing -->
+    <details v-if="genErrors.length" class="mb-3 px-3 py-2 rounded border border-warning-subtle" data-testid="pod-outputs-generation-errors">
+      <summary class="small fw-semibold" role="button" data-testid="pod-outputs-generation-errors-summary"><i class="fa-solid fa-triangle-exclamation text-warning me-1"></i>{{ $t('outputs.errors.title', { n: genErrors.length }) }}</summary>
+      <div v-if="canRelaunch() && (fpState.job?.pod_id === pod.id)" class="d-flex align-items-center gap-2 flex-wrap my-2">
+        <BButton variant="outline-primary" size="sm" :title="$t('outputs.frames.relaunchTitle')" data-testid="pod-outputs-errors-relaunch" @click="relaunchJob()"><i class="fa-solid fa-rotate-right me-1"></i>{{ $t('outputs.frames.relaunch') }}</BButton>
+        <span v-if="fpState.needsPod" class="small text-warning" data-testid="pod-outputs-errors-needs-pod">{{ $t('outputs.frames.needsPodNone') }}</span>
+      </div>
+      <table class="table table-sm table-borderless small mb-0 align-middle"><tbody>
+        <tr v-for="e in genErrors" :key="e.id" data-testid="pod-outputs-generation-error">
+          <td class="text-break"><span class="badge text-bg-secondary me-1">{{ $t(`outputs.errors.kind.${e.kind}`) }}</span><span class="font-monospace">{{ e.what }}</span></td>
+          <td class="text-break text-body-secondary">{{ e.reason }}</td>
+          <td class="text-nowrap text-body-secondary">{{ e.time }}</td>
+        </tr>
+      </tbody></table>
+    </details>
     <div v-if="volumeId && (vol.ok || vol.loading)" class="mb-3" data-testid="pod-outputs-volume">
       <nav class="d-flex align-items-center gap-1 flex-wrap small mb-1" :class="{ 'opacity-50': allActive }" :title="allActive ? $t('outputs.all.crumbNote') : ''" :aria-label="$t('outputs.volumeBreadcrumb')" data-testid="pod-outputs-breadcrumb">
         <i class="fa-solid fa-hard-drive text-body-secondary me-1"></i>
@@ -167,6 +182,7 @@ import OutputsGallery from './OutputsGallery.vue'
 import { fpState, setMode, startJob, stopJob, refreshListing, jobRunning, jobDone, canRelaunch, relaunchJob, removeJob } from '../utils/framejob'
 import { usePodsStore } from '../stores/pods'
 import RenderSequences from './RenderSequences.vue'
+import { failuresAPI } from '../api/failures'
 import PublishModal from './PublishModal.vue'
 import DeliveryPrepare from './DeliveryPrepare.vue'
 import { usePublishStore } from '../stores/publish'
@@ -300,6 +316,18 @@ onMounted(countCached)
 watch(() => previewBus.cacheVer, countCached)
 /** Sequences still without a preview (not yet made, waiting for a click, or failed): what "Generate all previews" will work through, one at a time; one already in the cache is a hit and costs no download. */
 const previewsOpen = ref(false)
+/** Generation Errors (N): the Frame Previews job's error and failed frames (utils/framejob.js), the preview batch's failed sequences, and this pod's graph failures (failures.list). Nothing new is stored. */
+const graphFails = ref([])
+onMounted(async () => { try { const r = await failuresAPI.list(); graphFails.value = r.old ? [] : r.items } catch { graphFails.value = [] } })
+const when = (v) => { const d = v ? new Date(v) : null; return !d || Number.isNaN(d.getTime()) ? '' : d.toLocaleString() }
+const genErrors = computed(() => {
+  const out = [], j = fpState.job && fpState.job.pod_id === props.pod.id ? fpState.job : null
+  if (j?.error) out.push({ id: `job|${j.id}`, kind: 'frames', what: j.current || j.items?.[0]?.src_dir || '', reason: j.error, time: when(j.finished_at || j.started_at) })
+  for (const f of j?.failed || []) out.push({ id: `fr|${j.id}|${f.src_dir}|${f.frame}`, kind: 'frame', what: `${f.src_dir}/${f.frame}`, reason: f.reason, time: when(j.finished_at || j.started_at) })
+  for (const [k, r] of Object.entries(previewsStore.results || {})) if (r?.status === 'error') out.push({ id: `pv|${k}`, kind: 'sequence', what: k.split('|').filter(Boolean).slice(1).join('/') || k, reason: r.reason || '', time: '' })
+  for (const f of graphFails.value) if (f.pod_id === props.pod.id) out.push({ id: `gf|${f.id}`, kind: 'graph', what: [f.shot, f.graph].filter(Boolean).join(' / '), reason: f.message || f.error || '', time: when(f.time) })
+  return out
+})
 // The batch is the app's job (stores/previews.js): it goes on when this window is closed and shows in the Queue's Generations.
 const previewsStore = usePreviewsStore()
 const batchRunning = computed(() => previewsStore.running)
@@ -398,7 +426,9 @@ watch([() => fpState.mode, frameSeqs, podRunning, () => previewsOpen.value], asy
 }, { immediate: true })
 /** Resume Pod: the existing resume (it bills), after a confirm; then Relaunch is clicked by the person. Relaunch itself never resumes a pod. */
 async function resumeForPreviews(p) { if (!window.confirm(t('outputs.frames.resumeConfirm', { name: p.name }))) return; const r = await podsStore.resume(p.id); if (r?.ok) fpState.needsPod = null }
-function generateFrames() { startJob({ podId: props.pod.id, items: frameSeqs.value.map((q) => ({ src_dir: q.src_dir, frames: q.frames, stem: q.stem })), skipExisting: skipExisting.value }) }
+/** The folders of videos in scope: the same job makes each video's first-frame poster there (item kind 'posters', ffmpeg on the pod), so a video tile shows an image and loads no player until play is clicked. */
+const videoDirs = computed(() => [...new Set(genRuns.value.flatMap((r) => r.files || []).filter((f) => f.kind === 'video' && f.type !== 'temp' && f.subfolder).map((f) => f.subfolder))])
+function generateFrames() { startJob({ podId: props.pod.id, items: [...frameSeqs.value.map((q) => ({ src_dir: q.src_dir, frames: q.frames, stem: q.stem })), ...videoDirs.value.map((d) => ({ src_dir: d, kind: 'posters' }))], skipExisting: skipExisting.value }) }
 async function clearPreviews() { try { await sharedThumbs().clear(); previewsStore.clearResults(); probeGen++; for (const k of Object.keys(probeMap)) delete probeMap[k]; previewBus.resetTick++; probe(previewItems.value) } finally { cachedCount.value = 0 } }
 const volumeId_ = computed(() => props.volumeId)
 const go = (prefix) => { if (allActive.value || (scope.value === 'all' && volAll.running)) setScope('folder'); return loadVolume(prefix) }

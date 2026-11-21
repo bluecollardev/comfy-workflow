@@ -13,6 +13,7 @@ const coreBridge = require('./core.cjs')
 const fs = require('node:fs')
 const os = require('node:os')
 const { once } = require('./once.cjs')
+const { createPreviewCache, isPreviewSearch } = require('./previewcache.cjs')
 const { createAppLog } = require('./app-log.cjs')
 const path = require('node:path')
 
@@ -100,11 +101,22 @@ function coreEnv() {
 // corsEnabled: an <img> or <video> may load a podfile:// address from any page, but fetch() (the DPX viewer reads the bytes with it) is a cross-origin request from the page's own origin (Vite's localhost, or file://) and fails with "Failed to fetch" without it; the answer already carries access-control-allow-origin.
 // ONE call for every custom scheme: Electron keeps only the last registerSchemesAsPrivileged call, so podfile, s3file and localfile are registered together (a third call made s3file requests fail: v1.5.0 gate).
 protocol.registerSchemesAsPrivileged(['podfile', 's3file', 'localfile'].map((scheme) => ({ scheme, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, bypassCSP: true } })))
+let previewCache = null   // the pod's preview JPEGs: memory cache, one fetch per address, at most 8 at a time (electron/previewcache.cjs, ADR-055 section 15)
+const previews = () => (previewCache ||= createPreviewCache())
 function handlePodFiles() {
   protocol.handle('podfile', async (request) => {
     const u = new URL(request.url)
     if (!/^[a-z0-9]+-\d+\.proxy\.runpod\.net$/i.test(u.hostname) || u.pathname !== '/view') return new Response('Only the /view of a pod\'s ComfyUI is served here.', { status: 403 })
     const range = request.headers.get('range')
+    if (!range && request.method === 'GET' && isPreviewSearch(u.search)) {   // a preview JPEG or thumbnail: from the cache when it is there, else one pooled fetch that fills it
+      try {
+        const r = await previews().get(`${u.hostname}${u.search}`, async () => {
+          const f = await fetch(`https://${u.hostname}/view${u.search}`, { signal: AbortSignal.timeout(60_000) })
+          return { status: f.status, type: f.headers.get('content-type') || '', body: Buffer.from(await f.arrayBuffer()) }
+        })
+        return new Response(r.body, { status: r.status, headers: { 'content-type': r.type || 'image/jpeg', 'access-control-allow-origin': '*', ...(r.status === 200 ? { 'cache-control': 'private, max-age=3600' } : {}) } })
+      } catch (e) { return new Response(`The pod did not answer: ${e.message}`, { status: 502 }) }
+    }
     try {
       const r = await fetch(`https://${u.hostname}/view${u.search}`, { headers: range ? { range } : {}, signal: AbortSignal.timeout(10 * 60_000) })
       // content-length is not forwarded: fetch has already decoded the body (a gzipped one would then be cut short at the encoded length); the page reads it to the end. A partial answer keeps its content-range.

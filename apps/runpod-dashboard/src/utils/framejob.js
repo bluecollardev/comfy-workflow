@@ -13,6 +13,10 @@ export const jpgName = (dpxName) => String(dpxName).replace(/\.dpx$/i, '') + '.j
 /** The folder of a sequence's previews under output/ (the core's rule: a mirror tree, never inside the frame folder). */
 export const previewFolder = (srcDir) => `.previews/${String(srcDir || '').replace(/\/+$/, '')}`
 /** The address of one frame's JPEG: the same /view address as any output file. */
+/** The address of one frame's THUMBNAIL (160 px, a few KB, under <previews>/thumbs/): what the strips and the frame grid load; the 320 px JPEG stays the fallback until the thumbnail exists. */
+export const thumbUrl = (base, frame) => viewUrl(base, { filename: jpgName(frame.filename), subfolder: `${previewFolder(frame.subfolder)}/thumbs`, type: frame.type || 'output' })
+/** The first-frame POSTER of a video file (320 px JPEG, `<video name>.jpg` under <previews>/posters/), made on the pod by the same job: what a video tile shows until play is clicked. */
+export const posterUrl = (base, file) => viewUrl(base, { filename: `${file.filename}.jpg`, subfolder: `${previewFolder(file.subfolder)}/posters`, type: file.type || 'output' })
 export const previewUrl = (base, frame) => viewUrl(base, { filename: jpgName(frame.filename), subfolder: previewFolder(frame.subfolder), type: frame.type || 'output' })
 
 const pollMs = () => globalThis.__FP_POLL_MS__ ?? 1500
@@ -33,7 +37,7 @@ export async function refreshListing(podId, srcDirs, names = false) {
   const dirs = [...new Set(srcDirs.filter(Boolean))]; if (!podId || !dirs.length) return
   try {
     const r = await framePreviewsAPI.list({ pod_id: podId, items: dirs.map((d) => ({ src_dir: d })), names })
-    for (const d of dirs) { const p = r?.previews?.[d] || { count: 0 }; fpState.listing[d] = { count: p.count || 0, names: p.names ? new Set(p.names) : fpState.listing[d]?.names || null } }
+    for (const d of dirs) { const p = r?.previews?.[d] || { count: 0 }; fpState.listing[d] = { count: p.count || 0, names: p.names ? new Set(p.names) : fpState.listing[d]?.names || null, thumbs: p.thumbs ? new Set(p.thumbs) : fpState.listing[d]?.thumbs || null, posters: p.posters ? new Set(p.posters) : fpState.listing[d]?.posters || null } }
     fpState.error = ''; fpState.listed++
   } catch (e) { fpState.error = message(e) }
 }

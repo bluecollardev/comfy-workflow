@@ -21,7 +21,7 @@ import * as rp from './runpod.js'
 import * as sync from './sync.js'
 
 export const PREVIEW_DIR = '.previews'
-export interface Item { /** the sequence's folder under the volume's output/ (the frames' `subfolder`) */ src_dir: string; /** how many frames it has, when the caller knows (progress totals) */ frames?: number }
+export interface Item { /** the sequence's folder under the volume's output/ (the frames' `subfolder`) */ src_dir: string; /** how many frames it has, when the caller knows (progress totals) */ frames?: number; /** 'posters': src_dir is a folder of VIDEOS and the job makes each one's first-frame poster instead of frame previews */ kind?: 'posters' }
 export interface Failure { src_dir: string; frame: string; reason: string }
 export interface Job {
   id: string; pod_id: string; items: Item[]; tone: string; skip_existing: boolean; state: 'running' | 'done' | 'failed' | 'cancelled'; started_at: string; finished_at?: string
@@ -78,7 +78,22 @@ files = sorted(glob.glob(os.path.join(src, '*.dpx')))
 n = len(files)
 if not n: print('ERR no frames in ' + src); sys.exit(2)
 os.makedirs(out, exist_ok=True)
+tdir = os.path.join(out, 'thumbs')   # the thumbnail tier (160 px wide, about 5 KB): the Outputs strips and grids load these; a failure here never fails a frame
+try: os.makedirs(tdir, exist_ok=True)
+except Exception: tdir = None
 print('TOTAL %d' % n, flush=True)
+def thumb(jpg, name):
+    if not tdir: return
+    dst = os.path.join(tdir, name)
+    try:
+        if os.path.exists(dst) and os.path.getsize(dst) > 0: return
+        im = Image.open(jpg).convert('RGB')
+        im = im.resize((160, max(1, round(im.height * 160 / im.width))), Image.BILINEAR)
+        tmp = dst + '.part'
+        im.save(tmp, format='JPEG', quality=72)
+        os.replace(tmp, dst)
+    except Exception:
+        pass
 def decode(path):
     with open(path, 'rb') as f: h = f.read(2048)
     if h[0:4] not in (b'SDPX', b'XPDS'): raise ValueError('not a DPX')
@@ -109,11 +124,14 @@ def one(f):
     name = os.path.basename(f)[:-4] + '.jpg'
     dst = os.path.join(out, name)
     try:
-        if skip and os.path.exists(dst) and os.path.getsize(dst) > 0: return ('SKIP', name, '')
+        if skip and os.path.exists(dst) and os.path.getsize(dst) > 0:
+            thumb(dst, name)   # a frame that already has its JPEG only gets the missing thumbnail (no DPX read)
+            return ('SKIP', name, '')
         img = decode(f)
         tmp = dst + '.part'
         img.save(tmp, format='JPEG', quality=80)
         os.replace(tmp, dst)
+        thumb(dst, name)
         return ('OK', name, '')
     except Exception as ex:
         return ('FAIL', name, str(ex).replace('\n', ' ')[:150])
@@ -128,6 +146,36 @@ print('DONE ok=%d skipped=%d failed=%d' % (ok, sk, fl), flush=True)
 sys.exit(0)
 `
 
+/** The python for a folder of VIDEOS: the first frame of each (ffmpeg, which every pod image has) as a 320 px JPEG under <previews>/posters/<video name>.jpg; same arguments and progress lines as PYTHON. */
+export const POSTER_PY = String.raw`
+import os, sys, glob, shutil, subprocess
+src, out = sys.argv[1], sys.argv[2]
+skip = len(sys.argv) < 5 or sys.argv[4] != '0'
+ff = shutil.which('ffmpeg')
+if not ff: print('ERR ffmpeg is needed on the pod'); sys.exit(4)
+vids = sorted(f for f in glob.glob(os.path.join(src, '*')) if f.lower().endswith(('.mp4', '.mov', '.webm', '.m4v', '.mkv')))
+n = len(vids)
+if not n: print('ERR no videos in ' + src); sys.exit(2)
+os.makedirs(out, exist_ok=True)
+print('TOTAL %d' % n, flush=True)
+ok = sk = fl = 0
+for i, f in enumerate(vids):
+    name = os.path.basename(f) + '.jpg'
+    dst = os.path.join(out, name)
+    if skip and os.path.exists(dst) and os.path.getsize(dst) > 0: sk += 1
+    else:
+        tmp = dst + '.part.jpg'
+        try:
+            r = subprocess.run([ff, '-v', 'error', '-y', '-i', f, '-frames:v', '1', '-vf', 'scale=320:-2', '-q:v', '5', tmp], capture_output=True, text=True, timeout=60)
+            if r.returncode == 0 and os.path.exists(tmp) and os.path.getsize(tmp) > 0: os.replace(tmp, dst); ok += 1
+            else: fl += 1; print('FAIL %s %s' % (name, (r.stderr or 'ffmpeg failed').replace('\n', ' ')[:150]), flush=True)
+        except Exception as e:
+            fl += 1; print('FAIL %s %s' % (name, str(e).replace('\n', ' ')[:150]), flush=True)
+    if i % 5 == 4 or i == n - 1: print('PREV %d/%d ok=%d skipped=%d failed=%d' % (i + 1, n, ok, sk, fl), flush=True)
+print('DONE ok=%d skipped=%d failed=%d' % (ok, sk, fl), flush=True)
+sys.exit(0)
+`
+
 const jobs = new Map<string, Job>(), ctrls = new Map<string, AbortController>(), stops = new Map<string, () => void>()
 let seq = 0
 const copy = (j: Job): Job => ({ ...j, items: j.items.map((i) => ({ ...i })), failed: [...j.failed], done_dirs: [...j.done_dirs] })
@@ -136,7 +184,7 @@ const TERMINAL = ['done', 'failed', 'cancelled']
 /** Start a job: one or more sequence folders on a running pod. Returns at once with the job; progress through `status`. */
 export async function start(o: { pod_id?: string; items?: Partial<Item>[]; tone?: string; /** false: make every JPEG again (Skip Existing unticked) */ skip_existing?: boolean; /** the job this one runs again (relaunch) */ relaunch_of?: string; onLine?: (l: string) => void }): Promise<Job> {
   const podId = String(o.pod_id ?? '').trim(); if (!podId) throw bad('Give the pod (pod_id): the previews are made on a pod that has the volume')
-  const items = (Array.isArray(o.items) ? o.items : []).map((i) => ({ src_dir: rel(i.src_dir), ...(Number.isFinite(i.frames) ? { frames: Number(i.frames) } : {}) }))
+  const items = (Array.isArray(o.items) ? o.items : []).map((i) => ({ src_dir: rel(i.src_dir), ...(Number.isFinite(i.frames) ? { frames: Number(i.frames) } : {}), ...(i.kind === 'posters' ? { kind: 'posters' as const } : {}) }))
   if (!items.length) throw bad('Give at least one sequence in items ({ src_dir, frames? })')
   const tone = String(o.tone ?? 'gamma26'); if (!TONES.includes(tone)) throw bad(`tone is one of ${TONES.join(', ')}`)
   const t = await deps.target(podId); if ('reason' in t) throw new CoreError(409, t.reason)
@@ -155,7 +203,7 @@ export async function start(o: { pod_id?: string; items?: Partial<Item>[]; tone?
         const errBefore = job.error
         const known = it.frames ?? 0
         let okSeen = 0, skSeen = 0
-        const script = `set -e\npython3 - '${root}/${it.src_dir}' '${root}/${previewSubfolder(it.src_dir)}' '${tone}' '${o.skip_existing === false ? 0 : 1}' <<'PY'\n${PYTHON}\nPY\n`
+        const script = `set -e\npython3 - '${root}/${it.src_dir}' '${root}/${previewSubfolder(it.src_dir)}${it.kind === 'posters' ? '/posters' : ''}' '${tone}' '${o.skip_existing === false ? 0 : 1}' <<'PY'\n${it.kind === 'posters' ? POSTER_PY : PYTHON}\nPY\n`
         const r = await deps.ssh({ host: t.host, port: t.port, script, signal: ac.signal, onLine: (l) => {
           o.onLine?.(l)
           let m: RegExpExecArray | null
@@ -223,20 +271,22 @@ export async function relaunch(o: { job_id?: string; pod_id?: string; exclude_po
   return { ok: true, job }
 }
 
-export interface Listing { [src_dir: string]: { count: number; names?: string[] } }
+export interface Listing { [src_dir: string]: { count: number; names?: string[]; /** the JPEG names that also have a thumbnail under thumbs/ (with `names`) */ thumbs?: string[]; /** the video file names (with their extension, `.jpg` added) that have a poster under posters/ (with `names`) */ posters?: string[] } }
 /** What previews exist, from ONE ssh listing for all the folders: the count per folder (and the JPEG names when `names`). A pod that is not running answers 409 and the caller shows nothing. */
 export async function list(o: { pod_id?: string; items?: Partial<Item>[]; names?: boolean }): Promise<{ previews: Listing; subfolders: Record<string, string> }> {
   const podId = String(o.pod_id ?? '').trim(); if (!podId) throw bad('Give the pod (pod_id)')
   const items = (Array.isArray(o.items) ? o.items : []).map((i) => rel(i.src_dir)); if (!items.length) throw bad('Give at least one sequence in items')
   const t = await deps.target(podId); if ('reason' in t) throw new CoreError(409, t.reason)
   const root = deps.outputDir(podId)
-  const body = items.map((d) => `echo "DIR ${d}"; ls -1 '${root}/${previewSubfolder(d)}' 2>/dev/null | grep -E '\\.jpg$' | ${o.names ? 'sed "s/^/NAME /"' : 'wc -l | sed "s/^/COUNT /"'} || true`).join('\n')
+  const body = items.map((d) => `echo "DIR ${d}"; ls -1 '${root}/${previewSubfolder(d)}' 2>/dev/null | grep -E '\\.jpg$' | ${o.names ? 'sed "s/^/NAME /"' : 'wc -l | sed "s/^/COUNT /"'} || true${o.names ? `; ls -1 '${root}/${previewSubfolder(d)}/thumbs' 2>/dev/null | grep -E '\\.jpg$' | sed "s/^/THUMB /" || true; ls -1 '${root}/${previewSubfolder(d)}/posters' 2>/dev/null | grep -E '\\.jpg$' | sed "s/^/POSTER /" || true` : ''}`).join('\n')
   const out: Listing = {}; let cur = ''
   await deps.ssh({ host: t.host, port: t.port, script: `${body}\n`, signal: new AbortController().signal, onLine: (l) => {
     let m: RegExpExecArray | null
-    if ((m = /^DIR (.+)$/.exec(l))) { cur = m[1]; out[cur] = { count: 0, ...(o.names ? { names: [] } : {}) } }
+    if ((m = /^DIR (.+)$/.exec(l))) { cur = m[1]; out[cur] = { count: 0, ...(o.names ? { names: [], thumbs: [] } : {}) } }
     else if (cur && (m = /^COUNT\s+(\d+)/.exec(l))) out[cur].count = Number(m[1])
     else if (cur && (m = /^NAME (.+)$/.exec(l))) { out[cur].names!.push(m[1]); out[cur].count++ }
+    else if (cur && o.names && (m = /^THUMB (.+)$/.exec(l))) (out[cur].thumbs ||= []).push(m[1])
+    else if (cur && o.names && (m = /^POSTER (.+)$/.exec(l))) (out[cur].posters ||= []).push(m[1])
   } })
   return { previews: out, subfolders: Object.fromEntries(items.map((d) => [d, previewSubfolder(d)])) }
 }

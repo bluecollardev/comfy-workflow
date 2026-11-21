@@ -11,20 +11,20 @@ const tinyDpx = () => makeDpx({ width: 16, height: 8, bits: 16, fn: (x, y, c) =>
 // a 1x1 JPEG
 const JPG = Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=', 'base64')
 
-async function setup(page, api) {
-  const outputs = []
+async function setup(page, api, extra = []) {
+  const outputs = [...extra]
   for (let n = 0; n < N; n++) outputs.push({ filename: `${NAME}.${String(n).padStart(4, '0')}.dpx`, subfolder: SUB, type: 'output' })
   api.state.history.runs['pod-aaaaaaaa'] = [{ prompt_id: 'dddddddd-1111-2222', workflow: 'x.json', status: 'success', started_at: '2026-11-21T14:39:00Z', duration_s: 10, outputs }]
-  const asked = [], jpgs = []
+  const asked = [], jpgs = [], jpgSubs = []
   await page.context().route('**/view?*', (r) => {
     const f = decodeURIComponent(/filename=([^&]+)/.exec(r.request().url())[1])
-    if (/\.jpg$/.test(f)) { jpgs.push(f); return r.fulfill({ status: 200, contentType: 'image/jpeg', headers: { 'access-control-allow-origin': '*' }, body: JPG }) }
+    if (/\.jpg$/.test(f)) { jpgs.push(f); jpgSubs.push(decodeURIComponent(/subfolder=([^&]*)/.exec(r.request().url())?.[1] || '')); return r.fulfill({ status: 200, contentType: 'image/jpeg', headers: { 'access-control-allow-origin': '*' }, body: JPG }) }
     asked.push(f)
     return r.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: tinyDpx() })
   })
   await page.goto('/')
   await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
-  return { asked, jpgs, modal: page.getByTestId('pod-outputs-modal') }
+  return { asked, jpgs, jpgSubs, modal: page.getByTestId('pod-outputs-modal') }
 }
 
 test('An expanded sequence says how many frames show previews, and the preview shows on that row only', async ({ page, api }) => {
@@ -150,4 +150,86 @@ test('A failed Frame Previews job can be relaunched: same folders, finished fram
   await expect(relaunch).toHaveCount(0)
   await g.getByTestId('pod-outputs-remove-frame-job').click()
   await expect(g.getByTestId('pod-outputs-remove-frame-job')).toHaveCount(0)
+})
+
+const allNames = () => Array.from({ length: N }, (_, n) => `${NAME}.${String(n).padStart(4, '0')}.jpg`)
+
+test('Thumbnails first (Lucas, 2026-11-21: "I want the load for these previews faster"): with thumbnails on the pod the strip and the grid load the small ones, the tile shows the first frame\'s JPEG at once, and no DPX is read', async ({ page, api }) => {
+  api.state.fp = { jobs: {}, written: { [SUB]: allNames() }, thumbs: { [SUB]: allNames() }, starts: [], lists: [], fail: {} }
+  const { asked, jpgs, jpgSubs, modal } = await setup(page, api)
+  await expect(modal.getByTestId('outputs-seq-strip')).toBeVisible()
+  await expect(modal.getByTestId('outputs-seq-strip-frame').first()).toBeVisible()
+  await expect(modal.getByTestId('outputs-dpx-quick')).toBeVisible()   // the first frame's 320 px JPEG, no click, no 50 MB frame
+  await modal.getByTestId('outputs-seq-toggle').click()
+  await expect(modal.getByTestId('outputs-seq-frame-thumb')).toHaveCount(N - 0, { timeout: 10000 })
+  const thumbReqs = jpgSubs.filter((s) => /\/thumbs$/.test(s)), bigReqs = jpgSubs.filter((s) => !/\/thumbs$/.test(s))
+  expect(thumbReqs.length).toBeGreaterThanOrEqual(N)
+  expect(bigReqs.length).toBeLessThanOrEqual(2)   // only the tile's first frame (and at most one repeat) uses the 320 px image
+  expect(new Set(jpgs).size).toBeLessThanOrEqual(N)
+  expect(asked.filter((f) => /\.dpx$/.test(f))).toEqual([])
+})
+
+test('Without thumbnails the strip falls back to the 320 px JPEGs (nothing breaks before thumbnails exist)', async ({ page, api }) => {
+  api.state.fp = { jobs: {}, written: { [SUB]: allNames() }, thumbs: {}, starts: [], lists: [], fail: {} }
+  const { jpgSubs, modal } = await setup(page, api)
+  await expect(modal.getByTestId('outputs-seq-strip')).toBeVisible()
+  await expect(modal.getByTestId('outputs-seq-strip-frame').first()).toBeVisible()
+  expect(jpgSubs.filter((s) => /\/thumbs$/.test(s))).toEqual([])   // nothing to load but the fallback
+  expect(jpgSubs.length).toBeGreaterThan(0)
+})
+
+const VIDEO = { filename: 'review_final.mp4', subfolder: 'assembly_v024/review025_parts', type: 'output' }
+
+test('Video tiles show the first-frame poster and load no player until play is clicked; with no poster they show a film icon and still load nothing', async ({ page, api }) => {
+  api.state.fp = { jobs: {}, written: {}, thumbs: {}, posters: { [VIDEO.subfolder]: [`${VIDEO.filename}.jpg`] }, starts: [], lists: [], fail: {} }
+  const { asked, jpgSubs, modal } = await setup(page, api, [VIDEO])
+  const poster = modal.getByTestId('outputs-video-poster').first()
+  await expect(poster).toBeVisible(); await expect(poster).toHaveAttribute('data-poster', 'yes')
+  await expect(modal.getByTestId('outputs-video-poster-img').first()).toBeVisible()
+  expect(jpgSubs.some((s) => /\.previews\/assembly_v024\/review025_parts\/posters$/.test(s))).toBe(true)   // the small poster JPEG was read
+  await expect(modal.getByTestId('outputs-video-player')).toHaveCount(0)   // no <video> exists yet
+  expect(asked).not.toContain(VIDEO.filename)   // and the video file itself was not requested
+  await poster.click()   // play: now the player is made, with preload none
+  const player = modal.getByTestId('outputs-video-player').first()
+  await expect(player).toBeVisible(); await expect(player).toHaveAttribute('preload', 'none'); await expect(player).toHaveAttribute('src', /review_final\.mp4/)
+})
+
+test('A video with no poster yet shows the film icon (no player, no request for the file) and the Load Frame Previews job asks the pod for its poster', async ({ page, api }) => {
+  api.state.fp = { jobs: {}, written: {}, thumbs: {}, posters: {}, starts: [], lists: [], fail: {} }
+  const { asked, modal } = await setup(page, api, [VIDEO])
+  await page.evaluate(() => { globalThis.__FP_POLL_MS__ = 50 })
+  await expect(modal.getByTestId('outputs-video-poster').first()).toHaveAttribute('data-poster', 'no')
+  await expect(modal.getByTestId('outputs-video-poster-img')).toHaveCount(0); await expect(modal.getByTestId('outputs-video-player')).toHaveCount(0)
+  expect(asked).not.toContain(VIDEO.filename)
+  await page.getByTestId('pod-outputs-previews').click()
+  const g = page.getByTestId('pod-outputs-previews-modal')
+  await g.getByTestId('pod-outputs-mode-frame').click()
+  await g.getByTestId('pod-outputs-load-frame-previews').click()
+  await expect.poll(() => api.state.fp.starts.length).toBe(1)
+  const items = api.state.fp.starts[0].items
+  expect(items.find((i) => i.src_dir === VIDEO.subfolder)).toEqual({ src_dir: VIDEO.subfolder, kind: 'posters' })   // the same job, one item per video folder
+  expect(items.find((i) => i.src_dir === SUB).kind).toBeUndefined()
+})
+
+test('Generation Errors: hidden when nothing failed; after a failed Frame Previews job it shows collapsed with the folder, the reason and the time, and Relaunch runs the job again', async ({ page, api }) => {
+  const { modal } = await setup(page, api)
+  await expect(modal.getByTestId('pod-outputs-generation-errors')).toHaveCount(0)
+  api.state.fpFailFirst = true
+  await page.evaluate(() => { globalThis.__FP_POLL_MS__ = 50 })
+  await page.getByTestId('pod-outputs-previews').click()
+  const g = page.getByTestId('pod-outputs-previews-modal')
+  await g.getByTestId('pod-outputs-mode-frame').click()
+  await g.getByTestId('pod-outputs-load-frame-previews').click()
+  await expect(g.getByTestId('pod-outputs-relaunch-frame-previews')).toBeVisible({ timeout: 15000 })
+  await g.getByRole('button', { name: 'Close', exact: true }).last().click()
+  const errs = modal.getByTestId('pod-outputs-generation-errors')
+  await expect(errs).toBeVisible(); await expect(errs).toHaveJSProperty('open', false)   // collapsed by default
+  await expect(modal.getByTestId('pod-outputs-generation-errors-summary')).toContainText('Generation Errors (1)')
+  await modal.getByTestId('pod-outputs-generation-errors-summary').click()
+  const row = modal.getByTestId('pod-outputs-generation-error').first()
+  await expect(row).toContainText('the script ended with code 255'); await expect(row).toContainText(SUB)
+  await expect(row).toContainText(/\d/)   // the time
+  await modal.getByTestId('pod-outputs-errors-relaunch').click()
+  await expect.poll(() => (api.state.fp.relaunches || []).length).toBe(1)
+  await expect(modal.getByTestId('pod-outputs-generation-errors')).toHaveCount(0, { timeout: 15000 })   // the relaunch finished: nothing left to show
 })
