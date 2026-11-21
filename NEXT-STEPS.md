@@ -63,17 +63,45 @@ Built: `libs/core/src/bridge.ts` (whitelisted snapshot, redactor, freshness, par
 5. Browser and real-Electron tests (fake bucket), then a patch release through the full gate.
 6. Phase 2 (commands, approved in the target's window) only after Phase 1 is in use, with its own ADR amendment.
 
+## Open from 2026-11-21 (evening): the Tunnel V11 issue register
+
+Full table with status, why it matters and the next step: [`docs/CANALV2-TUNNEL-V11-ISSUES-2026-11-21.md`](docs/CANALV2-TUNNEL-V11-ISSUES-2026-11-21.md). State at 19:57: 35 of 35 targeted elements in the real round (f23 tomorrow); at 18:35 it was 32 of 35 with top, landing and sunlight rendering (ETA 19:06 to 19:23), f23 deferred. Decisions: [ADR-057](docs/ADR-057-parallel-renders-and-uploads-in-the-app.md).
+
+**Needs Lucas or Binc**
+- [ ] **Colour statement for the review videos** (Gamma 2.6 P3-D65 against linear P3-D65), then the review videos: 15 delivered elements have none (3 more coming), the 17 first-delivery ones are first pass (24 fps, no start timecode). (issues 1 to 3)
+- [ ] **Ask Binc:** the raster (delivered 3840x2160, names say 1920X1080); CGI-072 rendered from the V03 HEVC 24 fps, the PDF says V02 ProRes 23.976. (4, 5)
+- [ ] **`ISSUES.json`:** list only the real gaps of the 36, or leave it (10 stale `not-generated` entries, five not among the 36). (6)
+- [ ] **f23** (633 frames): **tomorrow, 22 Nov** (Lucas, 18:45: "we will do that tomorrow"; no restart tonight): restart the app, then `run_split` (three ranges on three 2x pods, about 2 hours), `dpx_fix`, parallel pod upload. Mind the 16-GPU limit: stop the finished render pods first. (9)
+- [ ] **Spend:** USD 546.31 estimated since 4 Nov (all projects) against Binc's USD 100 cap; agree a figure with Binc. (22)
+
+**Before Auto-publish goes live**
+- [ ] Review the pending list and cancel or exclude everything that is not one of the 36 (map-066, chasmfastia2, cgi-072 v001/v002, photoreal-013 v007 to v009, archival-087 v002, the assembly `NOT_RELEASED` runs); only a person can hold or approve in the window. (11)
+- [ ] **dpx_fix wired in so Auto-publish never uploads unfixed DPX** (being built: `feature/dpx-fix-in-pipeline`, issue 12 and 19). Until it is live keep `include_dpx` off.
+- [ ] Keep Auto-generate and the preview batch off pods that have a render queue. (13)
+
+**After the renders finish (about 19:25)**
+- [x] Upload top, landing and sunlight in parallel, verify manifests and `RETURN-MANIFEST.json` = 35: **done 19:50** (plan section 33). Still open: stop landing and sunlight (logs saved; top stopped by the system 19:55); fix 6 + 3 manifest sha256 `n/a` (register 27).
+- [x] **App restarted 19:19** onto the merged code (frames badge fix, `Show Incomplete`, re-attach, parallel uploads, `dpx_fix` in Auto-publish, scope `edl`, Rec.709 option, Deliver). The next restart (with f23 tomorrow) loads `manifest_check`/`manifest_rebuild`, Purge Dry Runs and the progress-bar padding.
+- [ ] Re-publish backhalf-b's element manifest so it carries the `issues` section (7). Head's and hadal's headers read back from the bucket: **done 19:55** (8).
+- [ ] **Run the full gate** (`./start.sh test`) and fix `publish-backfill` ("needs the approver…" times out at 5 s), then release the next patch. About ten merges since v1.7.2 were not gated. (21)
+
+**App and tools (open)**
+- [ ] Generate window counters stuck on `checking…` (91 folders, 26 failed previews) and the Auto-publish banner always `scanning volume`. (15)
+- [ ] Do not restart the tool server during an upload (the job record is wiped). (20)
+- [ ] Tell the other Claude session not to resubmit sunlight on `8eyco022cqbswy`; never start a run on a pod whose queue shows another client; `vlvrtpnig8rkoh` is foreign. (23)
+- [ ] Next image build: add SageAttention and Flash Attention for SeedVR2 (likely faster, not measured); the LTXVideo import failure is harmless. (24)
+
 ## Open from 2026-11-20 (Tunnel V11 delivery, ADR-055)
 
 - **A retried import task takes its own pod again (fixed 2026-11-21 for a person's Retry; two things are still open).** `queue.retryTask` now remembers the pod (`reuse_pod`) and `begin` takes it again when nobody else holds it and it has the card the task wants (a stopped one is restarted; if its host has no free card a new pod is created and the event says so). Still open: (1) **stopping a pod fails the task attached to it** (the run job dies with the container; the queue marks the task failed): stop a pod only after `queue_list` shows which task owns it; a guard that refuses `stop_pod` on a pod with a running task is not built. (2) A task whose pod was **stopped by RunPod or the idle watch while the task shows running** stays running until the app is restarted or someone retries it (the run job's poll gives up, the queue does not look at the pod). Original text: (seen 2026-11-21: 12 duplicate `queue-base_v008` pods and the account's 16-GPU limit reached; runs then failed with "16 are in use"). Make a retry reuse the task's pod when it is still there, and stop a pod no task points to.
 
-- **Deliver what we have:** the 17 elements. Test round `_TEST_tunnel-v11-2026-11-20` has 3 (084 main, 085 main, 123 c; old headers, no per-element manifest). Next: `dpx_fix` them on a pod, publish the corrected copies to a second test round, read the headers back from the bucket, compare a frame with Binc's corrected CGI-072 files, then the other 14, then the real round `tunnel-v11-edl-2026-11-18`, never overwriting. Plan: `docs/CANALV2-TUNNEL-V11-PRODUCTION-PLAN.md` section 9 (on `feature/dpx-backfill-plan`, not merged).
-- **16 elements have no DPX** (087 x2, 123 f, 168 x4, creature-266, photoreal-013 x8) and **3 CGI-072** are held (V03 HEVC 24 fps against the PDF's V02 ProRes 23.976): the round's delivery graph makes MP4 candidates, not DPX. Ask Binc which graph or tool makes the mono DPX from the ProRes masters, or build the ffmpeg conversion (colour handling to decide).
-- **Release the unreleased work** (no-overwrite guard, per-element manifest, `dpx_fix`, pod logs, purge): full gate, then a patch. Auto-publish is live: pick a quiet moment.
+- ~~(superseded 2026-11-21 evening: 31 of 36 are in the real round; see the delivery report)~~ - **Deliver what we have:** the 17 elements. Test round `_TEST_tunnel-v11-2026-11-20` has 3 (084 main, 085 main, 123 c; old headers, no per-element manifest). Next: `dpx_fix` them on a pod, publish the corrected copies to a second test round, read the headers back from the bucket, compare a frame with Binc's corrected CGI-072 files, then the other 14, then the real round `tunnel-v11-edl-2026-11-18`, never overwriting. Plan: `docs/CANALV2-TUNNEL-V11-PRODUCTION-PLAN.md` section 9 (on `feature/dpx-backfill-plan`, not merged).
+- ~~(superseded 2026-11-21: the elements were rendered through chunked runs; head, hadal, backhalf-b delivered, backhalf-c upload queued, landing/top/sunlight rendering, f23 deferred)~~ - **16 elements have no DPX** (087 x2, 123 f, 168 x4, creature-266, photoreal-013 x8) and **3 CGI-072** are held (V03 HEVC 24 fps against the PDF's V02 ProRes 23.976): the round's delivery graph makes MP4 candidates, not DPX. Ask Binc which graph or tool makes the mono DPX from the ProRes masters, or build the ffmpeg conversion (colour handling to decide).
+- ~~(done: v1.7.2 released through the full gate on 2026-11-21; the merges after it are ungated, run `./start.sh test` before the next release)~~ - **Release the unreleased work** (no-overwrite guard, per-element manifest, `dpx_fix`, pod logs, purge): full gate, then a patch. Auto-publish is live: pick a quiet moment.
 - ~~Wait for ComfyUI before the first graph of a fresh pod~~ built 2026-11-21 (unreleased).
 - **Decide with Binc:** the DPX colour code (user-defined as in the PDF?), the round-level `RETURN-MANIFEST.json` next to the per-element ones, Rec.709 convert or tag for the proxy, the proxy timecode.
-- **Stop the pod `eagffo99jjrf1n`** when the delivery is done (resumed for the DPX copies); pods are stopped, never deleted.
-- Push `develop` and the tags from v1.7.0 on.
+- ~~(that pod was deleted after its log was saved; stop our render pods when the renders end, logs first)~~ - **Stop the pod `eagffo99jjrf1n`** when the delivery is done (resumed for the DPX copies); pods are stopped, never deleted.
+- ~~(pushed up to v1.7.2; the merges after the release are not pushed)~~ - Push `develop` and the tags from v1.7.0 on.
 
 ## Open from 2026-11-19 (v1.7.0, released with the gate skipped)
 
