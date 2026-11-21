@@ -1,5 +1,6 @@
 <template>
   <div v-if="!renders.old" class="mb-4" data-testid="queue-generations">
+    <RunJobsSection />
     <div class="d-flex align-items-center gap-2 mb-2"><h6 class="mb-0">{{ $t('queue.gen.title') }}</h6>
       <span class="ms-auto d-inline-flex gap-2">
         <BButton v-if="failedJobs.length" size="sm" variant="outline-light" data-testid="generations-dismiss-failed" @click="failedJobs.forEach((j) => renders.dismiss(j.job_id))">{{ $t('queue.dismissFailed', { n: failedJobs.length }) }}</BButton>
@@ -120,6 +121,7 @@ import { useRendersStore } from '../stores/renders'
 import { usePreviewsStore } from '../stores/previews'
 import { useUiStore } from '../stores/ui'
 import ApproveControl from './ApproveControl.vue'
+import RunJobsSection from './RunJobsSection.vue'
 import { versionTag } from '../utils/autopublish'
 import { useAutopublishStore } from '../stores/autopublish'
 import { t } from '../i18n'

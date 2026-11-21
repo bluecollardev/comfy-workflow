@@ -403,6 +403,8 @@ watch(() => ui.outputsFor, (r) => {
   if (r.play) setTimeout(() => { useRendersStore().play = r.play }, 600)
   ui.outputsFor = null
 })
+// The Queue's Generations asks for this pod's Run Workflows window (the Open of a render run).
+watch(() => ui.runFlowsFor, (r) => { if (!r || r.pod_id !== props.pod.id) return; showRunFlows.value = true; ui.runFlowsFor = null })
 watch(outputVolumeId, loadOutputs)
 
 async function toggleDetails() {

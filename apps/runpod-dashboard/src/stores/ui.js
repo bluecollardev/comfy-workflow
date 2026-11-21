@@ -21,6 +21,7 @@ export const useUiStore = defineStore('ui', () => {
   const modelsOpen = ref(false)    // the Models window: Hugging Face search, load onto the Shared volume
   const importRoundPreset = ref('')   // Import Round opens with this round chosen (re-import)
   const importRoundOpen = ref(false)  // Import Round (ADR-038)
+  const runFlowsFor = ref(null)       // { pod_id } the Queue asks the pod's card to open its Run Workflows window (a render run's Open)
   const outputsFor = ref(null)        // { pod_id, play? } a window asks the pod's card to open its Outputs window (and the viewer on a sequence)
   const queueListLoaded = ref(false), queueListError = ref(''), queueRetry = ref(0)   // the Queue window's own first fetch (the banner under the nav bar reads them)
   const openPublish = ref(false)      // the pod's Outputs window opened by outputsFor opens its Publish window too
@@ -44,5 +45,5 @@ export const useUiStore = defineStore('ui', () => {
   watch(connectTab, (v) => { if (v === 'accounts') connectTab.value = 'repositories' })   // the old key
   const accountsOpen = computed({ get: () => connectOpen.value && connectTab.value === 'repositories', set: (v) => { if (v) connectTab.value = 'repositories'; connectOpen.value = v } })
   const repositoriesOpen = computed({ get: () => connectOpen.value && connectTab.value === 'repositories', set: (v) => { if (v) connectTab.value = 'repositories'; connectOpen.value = v } })
-  return { failureFocus, queueTab, queueListLoaded, queueListError, queueRetry, openPublish, openFolder, queueFocus, outputsFor, connectOpen, importOpen, importPod, importSource, importShown, connectTab, accountsOpen, repositoriesOpen, repositoriesVersion, configOpen, welcomeOpen, configFocus, volumesOpen, sharedOpen, modelsOpen, importRoundOpen, importRoundPreset, queueOpen, queueStarting, queueStartError, queueVersion, historyOpen, volumeDc, hints }
+  return { failureFocus, queueTab, queueListLoaded, queueListError, queueRetry, openPublish, openFolder, queueFocus, outputsFor, runFlowsFor, connectOpen, importOpen, importPod, importSource, importShown, connectTab, accountsOpen, repositoriesOpen, repositoriesVersion, configOpen, welcomeOpen, configFocus, volumesOpen, sharedOpen, modelsOpen, importRoundOpen, importRoundPreset, queueOpen, queueStarting, queueStartError, queueVersion, historyOpen, volumeDc, hints }
 })

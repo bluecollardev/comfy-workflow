@@ -15,6 +15,7 @@ import { dirname, join } from 'node:path'
 import { configDir } from './paths.js'
 import type { Checkpoint } from './autochunk.js'
 import type { FrameRange } from './graphchunks.js'
+import { cleanLive, type Live } from './jobsregistry.js'
 
 export const HEARTBEAT_MS = 15_000, STALE_MS = 60_000
 export interface Meta { task_id?: string; import_id?: string; client?: string }
@@ -24,6 +25,7 @@ export interface ChunkRunRecord {
   /** graph path -> the frame range this run was limited to (ADR-056, ranges): the graphs after the interrupted one keep theirs when the run is adopted */ ranges?: Record<string, FrameRange>
   meta?: Meta; started_at: string; heartbeat_at: string; owner: { pid: number; host: string }
   state: 'running' | 'failed'; error?: string; adopted_from?: string; checkpoint?: Checkpoint
+  /** ComfyUI's own progress on the pod (websocket events) at the last write: node, step, percent; for the other processes' Queue */ live?: Live
 }
 export interface Deps { now(): number; pid(): number; host(): string; alive(pid: number): boolean }
 const defaults = (): Deps => ({ now: () => Date.now(), pid: () => process.pid, host: () => hostname(), alive: (pid) => { try { process.kill(pid, 0); return true } catch (e) { return (e as NodeJS.ErrnoException).code === 'EPERM' } } })
@@ -57,7 +59,7 @@ export async function remove(id: string): Promise<void> { await rm(fileOf(id), {
 const live = new Set<string>()
 export const isLive = (id: string): boolean => live.has(id)
 
-export interface Writer { id: string; update(cp: Checkpoint): Promise<void>; beat(): Promise<void>; finish(): Promise<void>; fail(error: string): Promise<void> }
+export interface Writer { id: string; update(cp: Checkpoint): Promise<void>; /** keep the latest live progress for the next write (it does not write by itself) */ setLive(l: Live | undefined): void; beat(): Promise<void>; finish(): Promise<void>; fail(error: string): Promise<void> }
 /** Start the record of a run. `adoptedFrom` names the record this run continues (it is removed once the new one exists). */
 export async function begin(o: { job_id: string; index: number; pod_id: string; pod_name: string; base_url: string; path: string; job_paths: string[]; ranges?: Record<string, FrameRange>; meta?: Meta; started_at?: string; adopted_from?: string }): Promise<Writer> {
   const id = safe(`${o.job_id}__${o.index}`)
@@ -69,6 +71,7 @@ export async function begin(o: { job_id: string; index: number; pod_id: string; 
   return {
     id,
     update: (cp) => { rec.checkpoint = cp; return save() },
+    setLive: (l) => { rec.live = cleanLive(l) },
     beat: () => save(),
     finish: async () => { over = true; live.delete(id); await chain; await remove(id) },
     fail: async (error) => { await chain; over = true; live.delete(id); rec.state = 'failed'; rec.error = error.slice(0, 500); rec.heartbeat_at = iso(deps.now()); await write(rec).catch(() => undefined) },

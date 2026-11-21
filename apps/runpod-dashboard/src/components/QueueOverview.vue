@@ -35,6 +35,9 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { useSyncsStore } from '../stores/syncs'
 import { useRendersStore } from '../stores/renders'
+import { useRunJobsStore } from '../stores/runjobs'
+import { useConfirmStore } from '../stores/confirm'
+import { podLabel, genLine, framesText, percentOf, rateText, etaText } from '../utils/runjobs'
 import { usePreviewsStore } from '../stores/previews'
 import { usePublishStore } from '../stores/publish'
 import { useAutopublishStore } from '../stores/autopublish'
@@ -49,7 +52,7 @@ import { formatBytes } from '../sync-progress'
 import { t } from '../i18n'
 
 defineEmits(['go'])
-const failures = useFailuresStore(), syncs = useSyncsStore(), renders = useRendersStore(), previews = usePreviewsStore(), pub = usePublishStore(), ap = useAutopublishStore(), vjobs = useVolumeJobsStore()
+const failures = useFailuresStore(), syncs = useSyncsStore(), renders = useRendersStore(), runjobs = useRunJobsStore(), confirm = useConfirmStore(), previews = usePreviewsStore(), pub = usePublishStore(), ap = useAutopublishStore(), vjobs = useVolumeJobsStore()
 const now = ref(Date.now())
 const tick = setInterval(() => { now.value = Date.now() }, 1000)
 onBeforeUnmount(() => clearInterval(tick))
@@ -61,6 +64,8 @@ const base = (o) => ({ started: whenText(o.at, new Date(now.value)), ago: agoSho
 const rows = computed(() => {
   const out = []
   for (const s of syncs.active || []) out.push(base({ key: `s-${s.run_id}`, tab: 'syncs', kind: 'sync', id: s.run_id, label: t(s.direction === 'pull' ? 'queue.kind.pull' : 'queue.kind.push'), trigger: trig(s), ...tmeta(s), state: s.state || 'running', stateText: s.state || 'running', chip: 'text-bg-primary', at: s.started_at, progress: s.files_total ? `${s.files_done || 0} of ${s.files_total} files${s.bytes_total ? ` · ${formatBytes(s.bytes_done || 0)} of ${formatBytes(s.bytes_total)}` : ''}${rate(s.rate_bps)}` : '', percent: pct(s.bytes_done ?? s.files_done, s.bytes_total ?? s.files_total), step: s.current_files?.[0]?.path || '', running: true }))
+  // the render runs (graph generations) of the app and of other processes: element, pod, chunk and frames, ComfyUI's step
+  for (const j of runjobs.jobs || []) if (j.state === 'running') out.push(base({ key: `g-${j.job_id}`, tab: 'generations', kind: 'generation', id: j.job_id, label: `${t('queue.kind.generation')}: ${j.element}`, trigger: j.external ? (j.client || t('queue.run.external')) : trig('manual'), trigKey: j.external ? 'mcp' : 'manual', trigTitle: j.external ? t('queue.run.externalTip') : '', external: !!j.external, state: 'running', stateText: 'running', chip: 'text-bg-primary', running: true, at: j.started_at, progress: [framesText(j), genLine(j)].filter(Boolean).join(' · '), percent: percentOf(j), step: [podLabel(j), rateText(j), etaText(j)].filter(Boolean).join(' · '), cancel: async () => { if (await confirm.ask(t('queue.run.confirmCancel', { element: j.element, pod: podLabel(j) }), { okLabel: t('queue.cancel') })) await runjobs.cancel(j) } }))
   for (const j of renders.jobs || []) if (isActive(j)) out.push(base({ key: `r-${j.job_id}`, tab: 'generations', kind: 'render', id: j.job_id, label: t(j.kind === 'review' ? 'queue.kind.review' : 'queue.kind.proxy'), trigger: trig(j), ...tmeta(j), state: j.state, stateText: j.state, chip: j.state === 'queued' ? 'text-bg-secondary' : 'text-bg-primary', at: j.started_at, progress: j.frames_total ? t('queue.progress.frames', { done: j.frames_done || 0, total: j.frames_total, pct: pct(j.frames_done, j.frames_total) }) : '', percent: pct(j.frames_done, j.frames_total), step: j.current || j.summary || '', running: j.state !== 'queued', cancel: () => renders.cancel(j.job_id) }))
   if (previews.running && previews.batch) out.push(base({ key: 'pv', tab: 'generations', kind: 'previews', id: previews.batch.id || 'previews', label: t('queue.kind.previews'), trigger: trig('manual'), state: 'running', stateText: 'running', chip: 'text-bg-primary', at: previews.batch.started_at, progress: t('queue.progress.items', { done: previews.batch.done, total: previews.batch.total }), percent: pct(previews.batch.done, previews.batch.total), step: previews.batch.label || '', running: true, cancel: () => previews.stop() }))
   for (const j of pub.jobs || []) {

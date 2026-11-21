@@ -271,7 +271,8 @@ const TABLE = {
     setModels: (c, podId, choice) => c.runflows.setModels(podId, choice || {}),
     job: (c, id) => c.runflows.job(id),
     latest: (c, podId) => c.runflows.latest(podId),
-    cancel: (c, id) => c.runflows.cancel(id),
+    cancel: async (c, id) => (c.runflows.job(id) ? c.runflows.cancel(id) : c.runflows.cancelAny(id)),   // a run of this process, else another process's (through the registry)
+    jobs: (c) => ({ jobs: c.runflows.jobsList() }),   // the render runs of the app and of other processes, for the Queue's Generations
   },
   agentguard: {   // docs/ADR-042 section 10: the Bash guard for agents, in the user's Claude Code settings
     status: (c) => c.agentguard.status(),

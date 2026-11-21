@@ -24,6 +24,7 @@ import * as idle from './idle.js'
 import * as autochunk from './autochunk.js'
 import * as chunkrecord from './chunkrecord.js'
 import * as jobsregistry from './jobsregistry.js'
+import * as livecomfy from './livecomfy.js'
 import * as settings from './settings.js'
 
 export interface WorkflowFile {
@@ -116,9 +117,12 @@ export interface RunOpts {
   /** the container's RAM now; default: its cgroup over SSH, else ComfyUI's system_stats. Tests inject one. */ ram?: (podId: string) => Promise<autochunk.RamNow | null>
   /** who asked (the queue task and import), kept in a chunked run's record so a re-attached run can be linked to its task again (ADR-056, "Re-attach after a restart") */ meta?: chunkrecord.Meta
   /** graph path -> the frame range to run (source frame numbers of the graph's window, inclusive): only those frames, numbered as a whole run would number them, so several runs on several pods can fill one folder (ADR-056, "Ranges and splitting one element across pods"). Needs chunking; a range outside the graph's window fails that graph with 422. */ ranges?: Record<string, { first: number; last: number }>
+  /** the websocket to ComfyUI for live progress (tests give a fake; default: the runtime's WebSocket) */ wsFactory?: (url: string) => livecomfy.WsLike
   /** graph path -> the plan of a chunked run that another process started and left (see reattach.ts): continue it instead of starting over */ resume?: Record<string, { cp: autochunk.Checkpoint; from: string }>
 }
-interface Internal { job: RunJob; abort: AbortController }
+/** What a chunked run knows about itself for the Queue: the element, frames done and in all, chunk k of n, an average rate and ETA, and ComfyUI's own step events (livecomfy). */
+export interface RunProgress { element: string; frames_done: number; frames_total: number; chunk: number; chunks: number; rate_spf?: number; eta?: string; live?: jobsregistry.Live; started_at: string }
+interface Internal { job: RunJob; abort: AbortController; prog?: Record<string, RunProgress> }
 const jobs = new Map<string, Internal>()
 idle.addBusyCheck((podId) => [...jobs.values()].some((i) => i.job.pod_id === podId && i.job.state === 'running'))   // a pod with a run on it is working, whether or not ComfyUI answers the idle probe in time
 const view = (i: Internal): RunJob => JSON.parse(JSON.stringify(i.job))
@@ -126,6 +130,46 @@ const LOG_MAX = 500
 function note(i: Internal, text: string, path?: string, level: LogLine['level'] = 'info') {
   const log = i.job.log; log.push({ ts: new Date().toISOString(), level, text, ...(path ? { path } : {}) })
   if (log.length > LOG_MAX) log.splice(0, log.length - LOG_MAX)
+}
+/** `cgi-072__backhalf-b__base_v008.json` -> `cgi-072 backhalf-b`: the shot and the element a graph renders. */
+export function elementOf(path: string): string {
+  const base = path.slice(path.lastIndexOf('/') + 1).replace(/\.json$/i, '')
+  const parts = base.split('__')
+  return parts.length >= 2 ? `${parts[0]} ${parts[1]}` : base
+}
+/** Frames done, frames in all, chunk k of n, an average rate and an ETA from a run's checkpoint. */
+export function progressOf(pg: RunProgress, cp: autochunk.Checkpoint, t0: number, nowMs: number = Date.now()): void {
+  const first = cp.range?.first ?? cp.win.first, last = cp.range?.last ?? cp.win.last
+  pg.frames_total = Math.max(0, last - first + 1)
+  let done = 0
+  for (const [k, v] of Object.entries(cp.states)) { if (v.state !== 'done') continue; const m = /^(\d+)-(\d+)$/.exec(k); if (m) done += Number(m[2]) - Number(m[1]) + 1 }
+  pg.frames_done = Math.min(pg.frames_total, done)
+  pg.chunks = cp.plan.length; pg.chunk = Math.min(pg.chunks, Object.values(cp.states).filter((s) => s.state === 'done').length + 1)
+  const secs = (nowMs - t0) / 1000
+  if (pg.frames_done > 0 && secs > 0) { pg.rate_spf = Math.round((10 * secs) / pg.frames_done) / 10; pg.eta = new Date(nowMs + (pg.frames_total - pg.frames_done) * (secs / pg.frames_done) * 1000).toISOString() } else { delete pg.rate_spf; delete pg.eta }
+}
+/** One line per render run for the Queue (Generations): the app's own runs (started through its window, its queue or its MCP endpoint) and those of another process (the tool server, a script) from the shared registry. */
+export interface RunJobRow {
+  job_id: string; pod_id: string; pod_name: string; element: string; path: string; state: 'running' | 'done' | 'failed' | 'cancelled' | 'interrupted'; started_at: string; finished_at?: string
+  external: boolean; origin?: string; client?: string; frames_done?: number; frames_total?: number; chunk?: number; chunks?: number; rate_spf?: number; eta?: string; live?: jobsregistry.Live; error?: string; seconds?: number
+}
+export function jobsList(limit = 30): RunJobRow[] {
+  const rows: RunJobRow[] = []
+  const own = new Set<string>()
+  for (const i of jobs.values()) {
+    const j = i.job; own.add(j.id)
+    const run = j.results.find((x) => i.prog?.[x.path] && j.state === 'running' && x.stage !== undefined && !x.error && !x.files) ?? j.results.find((x) => i.prog?.[x.path]) ?? j.results[0]
+    const pg = run ? i.prog?.[run.path] : undefined
+    rows.push({ job_id: j.id, pod_id: j.pod_id, pod_name: j.pod_name, element: pg?.element ?? (run ? elementOf(run.path) : ''), path: run?.path ?? '', state: j.state, started_at: j.started_at, ...(j.finished_at ? { finished_at: j.finished_at } : {}), external: false,
+      ...(pg ? { frames_done: pg.frames_done, frames_total: pg.frames_total, chunk: pg.chunk, chunks: pg.chunks, ...(pg.rate_spf !== undefined ? { rate_spf: pg.rate_spf } : {}), ...(pg.eta ? { eta: pg.eta } : {}), ...(pg.live ? { live: pg.live } : {}) } : {}), ...(j.error ? { error: j.error } : {}), ...(run?.seconds ? { seconds: run.seconds } : {}) })
+  }
+  for (const x of jobsregistry.externals('render')) {
+    if (!x.label.startsWith('chunked run') || own.has(x.id)) continue
+    const r = x.run
+    rows.push({ job_id: x.id, pod_id: r?.pod_id ?? '', pod_name: r?.pod_name ?? '', element: r?.element ?? elementOf(x.label.replace(/^chunked run /, '')), path: r?.path ?? '', state: (x.interrupted ? 'interrupted' : x.state === 'done' ? 'done' : 'running'), started_at: x.started_at, external: true, origin: x.origin, ...(x.mcp_client ? { client: x.mcp_client } : {}),
+      ...(r ? { frames_done: r.frames_done, frames_total: r.frames_total, chunk: r.chunk, chunks: r.chunks, ...(r.rate_spf !== undefined ? { rate_spf: r.rate_spf } : {}) } : {}), ...(x.live ? { live: x.live } : {}) })
+  }
+  return rows.sort((a, b) => (b.state === 'running' ? 1 : 0) - (a.state === 'running' ? 1 : 0) || b.started_at.localeCompare(a.started_at)).slice(0, limit)
 }
 export function job(id: string): RunJob | null { const i = jobs.get(id); return i ? view(i) : null }
 /** The pod's current run: the one still running, else the newest. Lets the window find its run again after it was closed (the jobs live here, in the core, not in the window). */
@@ -136,6 +180,11 @@ export function latest(podId: string): RunJob | null {
     if (!best || (i.job.state === 'running') > (best.job.state === 'running') || ((i.job.state === 'running') === (best.job.state === 'running') && i.job.started_at >= best.job.started_at)) best = i
   }
   return best ? view(best) : null
+}
+/** Cancel a run of another process (the tool server, a script): its owner is asked through the shared registry and acts on its next heartbeat. `own: false` says it was not ours. */
+export async function cancelAny(id: string): Promise<{ ok: boolean; own: boolean }> {
+  if (jobs.has(id)) { cancel(id); return { ok: true, own: true } }
+  return { ok: await jobsregistry.requestCancel(id), own: false }
 }
 export function cancel(id: string): RunJob {
   const i = jobs.get(id); if (!i) throw new CoreError(404, `No such run: ${id}`)
@@ -302,15 +351,19 @@ async function runChunked(i: Internal, r: RunResult, base: string, o: RunOpts, f
   if (resume?.from) await chunkrecord.remove(resume.from)   // this run has its own record now: the one it continues is closed (and its adoption lock with it)
   // visible to the other processes (running_jobs, the Queue): the chunk progress of this graph; `terminal` ends it
   const prog = { done: 0, total: 0, over: false }
+  const pg: RunProgress = { element: elementOf(r.path), frames_done: 0, frames_total: 0, chunk: 0, chunks: 0, started_at: new Date(t0).toISOString() }
+  ;(i.prog ??= {})[r.path] = pg
+  // ComfyUI's own events for this client id (step k of n inside a node): quiet when the pod's proxy has no socket, the run is polled as before
+  const lv = livecomfy.start({ baseUrl: base, clientId: 'pod-manager-runflows', wsFactory: o.wsFactory, onLive: (l) => { pg.live = l; rec.setLive(l) } })
   const stopTrack = jobsregistry.track({ id: rec.id, kind: 'render', trigger: 'manual', origin: o.meta?.client ? 'mcp' : 'window', ...(o.meta?.client ? { client: o.meta.client } : {}), label: `chunked run ${r.path}${resume ? ' (re-attached)' : ''}`, started_at: i.job.started_at,
-    view: () => ({ state: prog.over ? 'done' : 'running', terminal: prog.over, progress: { done: prog.done, total: prog.total, unit: 'chunks' } }), cancel: () => { i.abort.abort() } })
+    view: () => ({ state: prog.over ? 'done' : 'running', terminal: prog.over, progress: { done: prog.done, total: prog.total, unit: 'chunks' }, live: pg.live, run: { pod_id: podId, pod_name: i.job.pod_name, element: pg.element, path: r.path, frames_done: pg.frames_done, frames_total: pg.frames_total, chunk: pg.chunk, chunks: pg.chunks, rate_spf: pg.rate_spf } }), cancel: () => { i.abort.abort() } })
   const ctx: autochunk.RunCtx = {
     path: r.path, ui, api, say, sleep: sleeper, range: o.ranges?.[r.path], pollMs: o.pollMs === undefined ? undefined : o.pollMs,
-    checkpoint: (cp) => { prog.total = cp.plan.length; prog.done = Object.values(cp.states).filter((s) => s.state === 'done').length; return rec.update(cp) }, resume: resume?.cp,
+    checkpoint: (cp) => { prog.total = cp.plan.length; prog.done = Object.values(cp.states).filter((s) => s.state === 'done').length; progressOf(pg, cp, t0); return rec.update(cp) }, resume: resume?.cp,
     // a prompt another process submitted: watched like one of ours, but `wasDown` makes the first look check that the pod still has it (a restarted ComfyUI forgets it: submitted again at once, not after ten minutes)
     adopt: (id) => { watch.set(id, { outageAt: 0, wasDown: true, lastAlive: Date.now(), startedAt: Date.now() }) },
     submit: async (a) => {
-      r.stage = 'queue'
+      r.stage = 'queue'; lv.setGraph(a)
       const q = await fetchFn(`${base}/prompt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt: a, client_id: 'pod-manager-runflows', extra_data: { pod_manager: { workflow: r.path } } }), signal: AbortSignal.timeout(60_000) })
       const qb = await q.json().catch(() => ({}))
       if (q.status !== 200) { const d = describeRejection(qb); r.node = d.node; if (q.status === 400) r.stage = 'validate'; throw new CoreError(q.status === 400 ? 400 : 502, q.status === 400 ? d.text : `ComfyUI answered HTTP ${q.status} for /prompt: ${d.text}`) }
@@ -343,11 +396,11 @@ async function runChunked(i: Internal, r: RunResult, base: string, o: RunOpts, f
   }
   let sum: autochunk.RunSummary
   try { sum = await autochunk.runGraph(ctx) } catch (e) {
-    clearInterval(hb); prog.over = true; stopTrack()
+    clearInterval(hb); prog.over = true; stopTrack(); lv.close()
     if (signal.aborted || (e instanceof CoreError && e.status === 499)) await rec.finish(); else await rec.fail((e as Error).message)   // cancelled: nothing to adopt; failed: kept for diagnosis, never adopted
     throw e
   }
-  clearInterval(hb); prog.over = true; stopTrack(); await rec.finish()
+  clearInterval(hb); prog.over = true; stopTrack(); lv.close(); await rec.finish()
   r.seconds = Math.round((Date.now() - t0) / 100) / 10; r.outputs = outputs; r.files = files
   void rememberSeconds(r.path, r.seconds)
   try { autosync.notifyOutputs(podId, null, files) } catch { /* Auto sync never fails a run */ }

@@ -1520,7 +1520,8 @@
     "dismissFailed": "Dismiss Failed ({n})",
     "col": { "started": "Started", "id": "Id", "kind": "Kind", "trigger": "Trigger", "state": "State", "progress": "Progress", "step": "Now", "open": "Open" },
     "trigger": { "auto": "auto", "manual": "manual" },
-    "kind": { "push": "Push", "pull": "Pull", "review": "Review", "proxy": "Proxy", "previews": "Previews", "publish": "Publish", "backfill": "Backfill", "autopublish": "Auto-publish", "autogenerate": "Auto-generate" },
+    "run": { "title": "Graph Generations ({n} running)", "pod": "Pod", "element": "Element", "noLive": "no live progress", "waiting": "waiting for the next step", "external": "outside the app", "externalTip": "Started by another process (the tool server or a script): shown from the shared running-jobs record; Cancel asks its owner.", "confirmCancel": "Cancel the generation of {element} on {pod}? The chunk running on the pod is interrupted; the frames already written stay." },
+    "kind": { "generation": "Generation", "push": "Push", "pull": "Pull", "review": "Review", "proxy": "Proxy", "previews": "Previews", "publish": "Publish", "backfill": "Backfill", "autopublish": "Auto-publish", "autogenerate": "Auto-generate" },
     "progress": { "frames": "{done} of {total} frames · {pct}%", "items": "{done} of {total} previews", "reviews": "{n} review(s) rendering", "settling": "{n} waiting for frames to settle" },
     "step": { "window": "waiting for the window", "uploading": "uploading" },
     "banner": {
