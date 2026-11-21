@@ -516,6 +516,13 @@
     "next": "Next",
     "dpx": {
       "badge": "DPX · {n} frames",
+      "sequencesCount": "{n} sequence(s), {open} open",
+      "collapse": "Collapse",
+      "expand": "Expand",
+      "collapseAll": "Collapse All",
+      "expandAll": "Expand All",
+      "showMore": "Show More",
+      "framesShown": "{shown} of {total} frames",
       "colour": {
         "headerIs": "Header: {name}",
         "headerSays": "Header says {name}",

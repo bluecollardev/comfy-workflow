@@ -6,11 +6,17 @@
       <BButton variant="outline-light" size="sm" class="ms-auto" :disabled="!canZip || zipping || offline" :title="canZip ? '' : $t('outputs.zipApp')" data-testid="outputs-zip" @click="zip"><BSpinner v-if="zipping" small class="me-1" /><i v-else class="fa-solid fa-file-zipper me-1"></i>{{ $t('outputs.zip') }}</BButton>
       <span v-if="zipNote" class="text-body-secondary" data-testid="outputs-zip-note">{{ zipNote }}</span>
     </div>
+    <div v-if="seqCount" class="d-flex align-items-center gap-2 mb-2 small" data-testid="outputs-seq-toolbar">
+      <span class="text-body-secondary" data-testid="outputs-seq-count">{{ $t('outputs.dpx.sequencesCount', { n: seqCount, open: openCount }) }}</span>
+      <BButton variant="outline-light" size="sm" class="ms-auto" data-testid="outputs-collapse-all" @click="setAll('collapsed')"><i class="fa-solid fa-compress me-1"></i>{{ $t('outputs.dpx.collapseAll') }}</BButton>
+      <BButton variant="outline-light" size="sm" data-testid="outputs-expand-all" @click="setAll('expanded')"><i class="fa-solid fa-expand me-1"></i>{{ $t('outputs.dpx.expandAll') }}</BButton>
+    </div>
     <div v-if="files.length" class="gallery">
-      <button v-for="t in tiles" :key="t.key" type="button" class="tile" data-testid="outputs-tile" :disabled="offline" :data-offline="offline ? 'true' : undefined" :data-kind="t.kind" :data-type="t.file.type" :data-frames="t.frames ? t.frames.length : undefined" :title="t.name || t.file.filename" @click="open(t)">
+      <div v-for="t in tiles" :key="t.key" class="cell" :class="{ wide: t.kind === 'dpx' && isExpanded(t) }" data-testid="outputs-cell">
+      <button type="button" class="tile" data-testid="outputs-tile" :disabled="offline" :data-offline="offline ? 'true' : undefined" :data-kind="t.kind" :data-type="t.file.type" :data-frames="t.frames ? t.frames.length : undefined" :title="t.name || t.file.filename" @click="open(t)">
         <span v-if="offline && t.kind !== 'dpx'" class="thumb d-flex align-items-center justify-content-center text-body-secondary" data-testid="outputs-offline-thumb"><i class="fa-solid fs-3" :class="{ image: 'fa-image', video: 'fa-film', audio: 'fa-music' }[t.kind] || 'fa-file'"></i></span>
-        <img v-else-if="t.kind === 'image'" :src="viewUrl(base, t.file, { thumb: true })" :alt="t.file.filename" loading="lazy" class="thumb" />
-        <video v-else-if="t.kind === 'video'" :src="viewUrl(base, t.file)" preload="metadata" muted class="thumb"></video>
+        <LazyMedia v-else-if="t.kind === 'image'" kind="image" :src="viewUrl(base, t.file, { thumb: true })" :alt="t.file.filename" />
+        <LazyMedia v-else-if="t.kind === 'video'" kind="video" :src="viewUrl(base, t.file)" />
         <span v-else-if="t.kind === 'dpx'" class="thumb d-flex flex-column align-items-center justify-content-center text-body-secondary position-relative" data-testid="outputs-dpx-placeholder"><SequenceThumb :tile="t" :base="base" :scope="scope" :volume-name="volumeName" :offline="offline" @state="(s) => (thumbState[t.key] = s)" @header="(h) => (thumbHeader[t.key] = h)" /><i v-if="!['ready', 'empty'].includes(thumbState[t.key])" class="fa-solid fa-film fs-3"></i><span class="small mt-1 dpxbadge" :class="{ over: thumbState[t.key] === 'ready' }" data-testid="outputs-dpx-badge">{{ t.frames.length > 1 ? $t('outputs.dpx.badge', { n: t.frames.length }) : 'DPX' }}</span><span v-if="problemCounts[t.key]" class="small text-warning" data-testid="outputs-dpx-problems">{{ $t('outputs.dpx.problemsOf', { n: problemCounts[t.key], total: t.frames.length }) }}</span><span v-if="proxyOf(t) || reviewOf(t)" class="rbadges"><span v-if="reviewOf(t)" class="badge text-bg-success" data-testid="outputs-dpx-review" :data-version="reviewOf(t).version">{{ $t('outputs.render.badgeReview', { v: String(reviewOf(t).version).padStart(3, '0') }) }}</span><ApproveControl v-if="reviewOf(t)" :shot="reviewOf(t).shot" :version="reviewOf(t).version" /><span v-if="proxyOf(t)" class="badge" :class="proxyOf(t).exists_local ? 'text-bg-success' : 'text-bg-info'" data-testid="outputs-dpx-rendered" :data-where="proxyOf(t).exists_local ? 'local' : 'remote'" :title="proxyOf(t).exists_local ? $t('outputs.render.badgeLocalTitle') : $t('outputs.render.badgeRemoteTitle')">{{ proxyOf(t).exists_local ? $t('outputs.render.badgeLocal') : $t('outputs.render.badgeRemote') }}</span><span v-if="proxyOf(t)?.partial" class="badge text-bg-warning" data-testid="outputs-dpx-partial">{{ $t('outputs.render.badgePartial') }}</span></span></span>
         <span v-else class="thumb d-flex align-items-center justify-content-center text-body-secondary"><i class="fa-solid fs-3" :class="t.kind === 'audio' ? 'fa-music' : 'fa-file'"></i></span>
         <span class="cap text-truncate">{{ t.name || t.file.filename }}</span>
@@ -18,9 +24,20 @@
         <SequenceFrames v-if="t.kind === 'dpx'" :tile="t" />
         <span v-if="t.file.type === 'temp'" class="badge text-bg-secondary tag">{{ $t('outputs.type.temp') }}</span>
       </button>
+      <template v-if="t.kind === 'dpx' && t.frames.length > 1">
+        <BButton variant="outline-light" size="sm" class="seqtoggle" :aria-expanded="isExpanded(t) ? 'true' : 'false'" data-testid="outputs-seq-toggle" @click="toggleSeq(t)"><i class="fa-solid me-1" :class="isExpanded(t) ? 'fa-chevron-up' : 'fa-chevron-down'"></i>{{ isExpanded(t) ? $t('outputs.dpx.collapse') : $t('outputs.dpx.expand') }}</BButton>
+        <div v-if="isExpanded(t)" class="frames" data-testid="outputs-seq-frames" :data-shown="shownFrames(t).length">
+          <div class="small text-body-secondary mb-1" data-testid="outputs-seq-frames-count">{{ $t('outputs.dpx.framesShown', { shown: shownFrames(t).length, total: t.frames.length }) }}</div>
+          <div class="framelist">
+            <button v-for="(f, i) in shownFrames(t)" :key="f.filename" type="button" class="frame" data-testid="outputs-seq-frame" :disabled="offline" :title="f.filename" @click="openAt(t, i)"><span>{{ frameNo(f) }}</span><span v-if="f.bytes != null" class="text-body-secondary">{{ sizeText(f.bytes) }}</span></button>
+          </div>
+          <BButton v-if="shownFrames(t).length < t.frames.length" variant="outline-light" size="sm" class="mt-2" data-testid="outputs-seq-more" @click="showMore(t)">{{ $t('outputs.dpx.showMore') }}</BButton>
+        </div>
+      </template>
+      </div>
     </div>
     <OutputViewerModal :file="viewable[current] || null" :base="base" :index="current ?? 0" :count="viewable.length" @close="current = null" @step="(d) => (current = Math.min(viewable.length - 1, Math.max(0, current + d)))" />
-    <DpxViewerModal :frames="dpx ? dpx.frames : []" :base="base" :proxy="dpx ? proxyOf(dpx) : null" :review="dpx ? reviewOf(dpx) : null" :start-review="dpxReview" :sequence="dpx ? sequenceItem(dpx) : null" :pod-id="podId" @close="dpx = null" @problems="(n) => n && dpx && (problemCounts[dpx.key] = n)" />
+    <DpxViewerModal :frames="dpx ? dpx.frames : []" :base="base" :proxy="dpx ? proxyOf(dpx) : null" :review="dpx ? reviewOf(dpx) : null" :start-review="dpxReview" :start-index="dpxStart" :sequence="dpx ? sequenceItem(dpx) : null" :pod-id="podId" @close="dpx = null" @problems="(n) => n && dpx && (problemCounts[dpx.key] = n)" />
   </div>
 </template>
 
@@ -30,7 +47,9 @@
  * Reusable: it only needs the pod's web address (`base`) and the list; a click opens the viewer (large, Previous/Next, Open, Download). A DPX sequence is one tile (frame count) opening the DPX quick-look viewer.
  */
 import { computed, ref, watch } from 'vue'
-import { viewUrl, galleryTiles } from '../utils/outputs'
+import { viewUrl, galleryTiles, sizeText } from '../utils/outputs'
+import { isExpanded, toggleSeq, setAll, shownFrames, showMore } from '../utils/dpxcollapse'
+import LazyMedia from './LazyMedia.vue'
 import { core } from '../api/bridge'
 import { errorText } from '../stores/toast'
 import { t } from '../i18n'
@@ -60,7 +79,13 @@ async function zip() {
 /** The tiles: a DPX sequence is one tile (the browser cannot decode DPX; DpxViewerModal does, frame by frame). The other viewer steps through the files that are not DPX. */
 const tiles = computed(() => galleryTiles(props.files))
 const viewable = computed(() => tiles.value.filter((t) => t.kind !== 'dpx').map((t) => t.file))
-const current = ref(null), dpx = ref(null), dpxReview = ref(false)
+const current = ref(null), dpx = ref(null), dpxReview = ref(false), dpxStart = ref(0)
+/** The sequences in this list (a single DPX file is not a sequence to collapse), and how many are open now. */
+const seqCount = computed(() => tiles.value.filter((t) => t.kind === 'dpx' && t.frames.length > 1).length)
+const openCount = computed(() => tiles.value.filter((t) => t.kind === 'dpx' && t.frames.length > 1 && isExpanded(t)).length)
+const frameNo = (f) => /(\d+)\.dpx$/i.exec(f.filename)?.[1] ?? f.filename
+/** A frame of an expanded sequence opens the quick-look viewer on that frame. */
+const openAt = (t, i) => { if (props.offline) return; dpxReview.value = false; dpxStart.value = i; dpx.value = t }
 const reviewOf = (t) => { const it = sequenceItem(t); const d = it && renders.reviewFor(it); return d && (d.exists_local || d.exists_remote) ? d : null }
 // "Play" on a finished review job (the Previews window) asks the store; the gallery that lists the sequence opens its viewer on the review video.
 watch(() => renders.play, (p) => {
@@ -71,12 +96,21 @@ watch(() => renders.play, (p) => {
 const thumbHeader = ref({})   // DPX tile key -> the first frame's header colour fields, once its preview has decoded it (the chips show them)
 const thumbState = ref({})   // DPX tile key -> its preview's state (ready and empty replace the film icon)
 const problemCounts = ref({})   // DPX tile key -> how many of its frames were found empty (once the viewer has loaded or cached them)
-const open = (t) => { if (props.offline) return; if (t.kind === 'dpx') { dpxReview.value = false; dpx.value = t } else current.value = viewable.value.indexOf(t.file) }
+const open = (t) => { if (props.offline) return; if (t.kind === 'dpx') { dpxReview.value = false; dpxStart.value = 0; dpx.value = t } else current.value = viewable.value.indexOf(t.file) }
 watch(() => props.files, () => { current.value = null; dpx.value = null; problemCounts.value = {} })
 </script>
 
 <style scoped>
 .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); gap: 0.5rem; }
+.cell { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+.cell.wide { grid-column: 1 / -1; }
+.cell .tile { width: 100%; }
+.cell.wide .tile { max-width: 9.5rem; }
+.seqtoggle { align-self: flex-start; }
+.frames { padding: 0.4rem; background: #1a1d23; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 0.375rem; }
+.framelist { display: grid; grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); gap: 0.25rem; }
+.frame { display: flex; justify-content: space-between; gap: 0.4rem; padding: 0.15rem 0.4rem; font-size: 0.72rem; background: #20232a; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 0.25rem; color: inherit; cursor: pointer; }
+.frame:hover:not(:disabled) { border-color: #508cff; }
 .tile { position: relative; display: flex; flex-direction: column; gap: 0.25rem; padding: 0.25rem; background: #20232a; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 0.375rem; color: inherit; text-align: left; cursor: pointer; }
 .tile:disabled { cursor: default; opacity: 0.8; }
 .tile:hover:not(:disabled) { border-color: #508cff; }

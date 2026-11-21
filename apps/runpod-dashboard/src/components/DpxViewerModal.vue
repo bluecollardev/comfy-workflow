@@ -104,7 +104,7 @@ import FfmpegAlert from './FfmpegAlert.vue'
 import { useRendersStore } from '../stores/renders'
 import { fpsFromName, fpsFor, ffmpegProblem, jobPercent, isActive, deliverableParts, versionName, reviewMp4, unplayableFiles, widthLabel } from '../utils/renders'
 
-const props = defineProps({ frames: { type: Array, default: () => [] }, base: { type: String, default: '' }, proxy: { type: Object, default: null }, review: { type: Object, default: null }, startReview: { type: Boolean, default: false }, sequence: { type: Object, default: null }, podId: { type: String, default: '' } })
+const props = defineProps({ frames: { type: Array, default: () => [] }, base: { type: String, default: '' }, proxy: { type: Object, default: null }, review: { type: Object, default: null }, startReview: { type: Boolean, default: false }, startIndex: { type: Number, default: 0 }, sequence: { type: Object, default: null }, podId: { type: String, default: '' } })
 const emit = defineEmits(['close', 'problems'])
 const CACHE_BYTES = 600 * 1048576
 /** How many frames are fetched at once while buffering (Lucas: 'can we buffer multiple frames at once?'): each is ~50 MB in flight, so 4 by default; the person can change it and it is remembered. */
@@ -333,8 +333,9 @@ watch(() => props.frames, (fr) => {
   pause(); stopCache(); loader.abortAll(); lru = frameCache(6); seq = new Map(); seqBytes = 0; problems = new Map(); problemsVer.value++; curProblem.value = null; curStats.value = null; curHeader.value = null; cachedCount.value = 0; cachedVer.value++; tooLong.value = false; fgUrl = ''; waitLoad = -1
   forceFull.value = false; hintErr.value = null; wantReview.value = props.startReview
   { const nf = fpsFromName(fr[0]?.filename) || 24; fps.value = nf; player.setFps(nf) }   // the sequence's own rate from its name (_23.976_), else 24
-  player.setCount(fr.length); player.seek(0); token++; shown.value = false; drawn.value = -1; error.value = ''; loading.value = false
-  if (index.value !== 0) index.value = 0; else if (fr.length) show()
+  const st = fr.length ? Math.min(Math.max(0, props.startIndex || 0), fr.length - 1) : 0   // a frame picked in an expanded sequence opens on that frame
+  player.setCount(fr.length); player.seek(st); token++; shown.value = false; drawn.value = -1; error.value = ''; loading.value = false
+  if (index.value !== st) index.value = st; else if (fr.length) show()
 }, { immediate: true })
 
 /** Esc closes the viewer (not the window under it); Space plays and pauses; the arrow keys step (and pause). */
