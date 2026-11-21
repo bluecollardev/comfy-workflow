@@ -147,8 +147,8 @@ export function validateDeliveryPrepare(c: DeliveryPrepareConfig): void {
 }
 /** What a render does with log or linear frames when nobody has stated their colour (ADR-048): `ask` skips them with a warning, `format` converts from `format`, `guess` converts from the DPX header (and says so). The Tunnel preset and a bkk-return publish never guess. */
 export interface RenderColour { mode: 'ask' | 'format' | 'guess' | 'known'; format?: string; /** who and when last set it (kept for the manifest and the sidecar) */ set_by?: string; set_at?: string }
-export interface RenderSettings { /** the colour setting for frames whose header says log, linear or printing density */ colour: RenderColour; where: 'auto' | 'pod' | 'local'; kind: 'proxy' | 'review'; proxy_width: 'source' | 960 | 1280 | 1920; review_width: 'source' | 960 | 1280 | 1920; codecs: ('h264' | 'prores422hq')[]; fps: 'auto' | number; /** a preset: `tunnel` = the Tunnel proxy (H.264, 1920x1080, tagged Rec.709, a start timecode, no burn-ins) */ preset: 'none' | 'tunnel'; /** Sync the renders to this PC when done (default OFF) */ pull: boolean; /** Skip existing: the Generate window starts from it (default ON); a request's own value always wins */ skip_existing: boolean; /** what the Generate window pre-ticks for "Publish to S3 / Post to Slack when done" (default both off): a preference only, a run still needs its own `publish` field and approved_by */ publish: { s3: boolean; slack: boolean } }
-export const RENDER_DEFAULT: RenderSettings = { colour: { mode: 'known' }, where: 'auto', kind: 'review', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto', preset: 'none', pull: false, skip_existing: true, publish: { s3: true, slack: false } }
+export interface RenderSettings { /** the colour setting for frames whose header says log, linear or printing density */ colour: RenderColour; where: 'auto' | 'pod' | 'local'; kind: 'proxy' | 'review'; proxy_width: 'source' | 960 | 1280 | 1920; review_width: 'source' | 960 | 1280 | 1920; codecs: ('h264' | 'prores422hq')[]; fps: 'auto' | number; /** a preset: `tunnel` = the Tunnel proxy (H.264, 1920x1080, tagged Rec.709, a start timecode, no burn-ins) */ preset: 'none' | 'tunnel'; /** Convert To Rec.709 (default OFF): when ON the review and proxy videos are converted from the frames' stated colour (Gamma 2.6 P3-D65) to a Rec.709 view; OFF keeps the frames' signal and only states it in the sidecar and DELIVERY.md. The Tunnel preset always converts. A request or an import's own value wins. */ rec709: boolean; /** Sync the renders to this PC when done (default OFF) */ pull: boolean; /** Skip existing: the Generate window starts from it (default ON); a request's own value always wins */ skip_existing: boolean; /** what the Generate window pre-ticks for "Publish to S3 / Post to Slack when done" (default both off): a preference only, a run still needs its own `publish` field and approved_by */ publish: { s3: boolean; slack: boolean } }
+export const RENDER_DEFAULT: RenderSettings = { colour: { mode: 'known' }, where: 'auto', kind: 'review', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto', preset: 'none', rec709: true, pull: false, skip_existing: true, publish: { s3: true, slack: false } }
 export const RENDER_WIDTHS = ['source', 960, 1280, 1920] as const
 export const RENDER_CODECS = ['h264', 'prores422hq'] as const
 export function normalizeRenderColour(v: unknown): RenderColour {
@@ -162,6 +162,7 @@ export function normalizeRender(v: unknown): RenderSettings {
     where: (o.where === undefined ? d.where : o.where) as RenderSettings['where'], kind: (o.kind === undefined ? d.kind : o.kind) as RenderSettings['kind'], proxy_width: width(o.proxy_width, d.proxy_width), review_width: width(o.review_width, d.review_width),
     codecs: (Array.isArray(o.codecs) ? [...new Set(o.codecs as RenderSettings['codecs'])] : [...d.codecs]), fps: (o.fps === undefined ? d.fps : o.fps) as RenderSettings['fps'], pull: o.pull === undefined ? d.pull : (o.pull as boolean),
     preset: (o.preset === undefined ? d.preset : o.preset) as RenderSettings['preset'],
+    rec709: o.rec709 === undefined ? d.rec709 : (o.rec709 as boolean),
     colour: normalizeRenderColour(o.colour),
     skip_existing: o.skip_existing === undefined ? d.skip_existing : (o.skip_existing as boolean),
     publish: { s3: (o.publish as Record<string, unknown> | undefined)?.s3 === undefined ? d.publish.s3 : (o.publish as Record<string, unknown>).s3 === true, slack: (o.publish as Record<string, unknown> | undefined)?.slack === true },
@@ -179,6 +180,7 @@ export function validateRender(r: RenderSettings): void {
   if (typeof r.pull !== 'boolean') throw bad('render.pull is true or false')
   if (r.preset !== 'none' && r.preset !== 'tunnel') throw bad('render.preset is none or tunnel')
   if (typeof r.skip_existing !== 'boolean') throw bad('render.skip_existing is true or false')
+  if (typeof r.rec709 !== 'boolean') throw bad('render.rec709 is true or false')
   if (!r.publish || typeof r.publish.s3 !== 'boolean' || typeof r.publish.slack !== 'boolean') throw bad('render.publish is { s3, slack }, each true or false')
   if (r.publish.slack && !r.publish.s3) throw bad('Slack announces an upload: turn S3 on')
 }

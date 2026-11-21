@@ -406,6 +406,43 @@ describe('the review kind: the stitched, versioned deliverable', () => {
     expect((await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review' })).sequences[0].colour_refusal).toMatch(/printing density/)
     expect(renders.colourLines(renders.parseDpxInfo(dpxHeader({ transfer: 6, colorimetric: 6 })), ['prores422hq']).join('\n')).toMatch(/transfer ITU-R 709-4 \(6\).*no colour transform applied.*10-bit 4:2:2 for ProRes/s)
   })
+  describe('Convert To Rec.709 (default ON = today: converts when the colour is known; off is tag only: the frames\' signal kept and stated; the Tunnel preset always converts)', () => {
+    const lastScript = () => scripts[scripts.length - 1]
+    it('OFF: a stated colour is NOT converted: no colour filters, no Rec.709 primaries or transfer tags, the sidecar says kept and converted no, DELIVERY.md says NOT converted', async () => {
+      pod.header = dpxHeader({ transfer: 2 })
+      const j = await review({ colour_in: 'p3-d65-gamma26', rec709: false }); expect(j.sequences[0].state).toBe('pulled')
+      const sc = lastScript()
+      expect(sc).not.toContain('colorchannelmixer'); expect(sc).not.toContain('lutrgb'); expect(sc).not.toMatch(/color_primaries bt709/)
+      expect(sc).toMatch(/"converted": "no"/); expect(sc).toMatch(/"rec709": false/); expect(sc).toMatch(/kept: p3-d65-gamma26 \(not converted to Rec\.709\)/)
+      expect(sc).toMatch(/NOT converted to Rec\.709/); expect(sc).toMatch(/converted: no \(p3-d65-gamma26 kept as it is; Convert To Rec\.709 is off\)/)
+      expect(sc).toMatch(/"stated_by": "Lucas"/)   // the statement of the colour is still recorded
+    })
+    it('ON (the default): the review is converted from Gamma 2.6 P3-D65 to a Rec.709 view and the files say converted: p3-d65-gamma26 -> rec709', async () => {
+      pod.header = dpxHeader({ transfer: 2 })
+      const j = await review({ colour_in: 'p3-d65-gamma26' }); expect(j.sequences[0].state).toBe('pulled')   // no rec709 given: the default is ON
+      const sc = lastScript()
+      expect(sc).toContain('colorchannelmixer=rr=1.2249401'); expect(sc).toContain('pow(val/maxval,2.6)'); expect(sc).toMatch(/color_primaries bt709/)
+      expect(sc).toMatch(/"converted": "p3-d65-gamma26 -> rec709"/); expect(sc).toMatch(/"rec709": true/); expect(sc).toMatch(/converted: p3-d65-gamma26 -> rec709/)
+    })
+    it('the configuration decides when the request is silent (render.rec709, default on), a request wins over it, a bad value is a 400, and the plan carries the value; the Tunnel preset always converts', async () => {
+      pod.header = dpxHeader({ transfer: 2 })
+      expect(mounts.load().render.rec709).toBe(true)
+      expect((await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review', colour_in: 'p3-d65-gamma26' })).rec709).toBe(true)
+      { const m = mounts.load(); mounts.save({ ...m, render: { ...m.render, rec709: false } as never }) }
+      expect((await renders.plan({ pod_id: 'p1', sequences: [SEQ], kind: 'review', colour_in: 'p3-d65-gamma26' })).rec709).toBe(false)
+      await review({ colour_in: 'p3-d65-gamma26', rec709: undefined }); expect(lastScript()).not.toContain('colorchannelmixer')   // silent request: the configuration's OFF
+      await review({ colour_in: 'p3-d65-gamma26', rec709: true }); expect(lastScript()).toContain('colorchannelmixer=rr=1.2249401')   // the request's ON wins
+      { const m = mounts.load(); mounts.save({ ...m, render: { ...m.render, rec709: true } as never }) }
+      await expect(renders.start({ pod_id: 'p1', sequences: [SEQ], kind: 'review', approved_by: 'Lucas', colour_in: 'p3-d65-gamma26', rec709: 'yes' as never })).rejects.toMatchObject({ status: 400, message: /rec709 is true or false/ })
+      expect((await renders.plan({ pod_id: 'p1', sequences: [SEQ], preset: 'tunnel', colour_in: 'p3-d65-gamma26' })).rec709).toBe(true)
+    })
+    it('the colour lines: converted adds the converted line, kept replaces the conversion claims, an unstated colour is as before', () => {
+      const h = renders.parseDpxInfo(dpxHeader({ transfer: 2 })), st = { conversion: 'p3-d65-gamma26' as const, by: 'Lucas', at: '2026-11-21T00:00:00.000Z' }
+      const on = renders.colourLines(h, ['prores422hq'], st, true).join('\n'); expect(on).toMatch(/converted Rec\.709 view/); expect(on).toMatch(/converted: p3-d65-gamma26 -> rec709$/)
+      const off = renders.colourLines(h, ['prores422hq'], st, false).join('\n'); expect(off).not.toMatch(/converted Rec\.709 view/); expect(off).toMatch(/NOT converted to Rec\.709/); expect(off).toMatch(/converted: no/); expect(off).toMatch(/10-bit 4:2:2 for ProRes/)
+      expect(renders.colourLines(h, ['h264']).join('\n')).toMatch(/no colour transform applied/)
+    })
+  })
   describe('the colour of log and linear frames is a setting (ADR-048)', () => {
     const setColour = (colour: Record<string, unknown>) => { const m = mounts.load(); mounts.save({ ...m, render: { ...m.render, colour } as never }) }
     const lastScript = () => scripts[scripts.length - 1]
