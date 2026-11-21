@@ -14,7 +14,7 @@
       <BButton v-if="seqCount || groupCount" variant="outline-light" size="sm" data-testid="outputs-collapse-all" @click="setAll('collapsed')"><i class="fa-solid fa-compress me-1"></i>{{ $t('outputs.dpx.collapseAll') }}</BButton>
       <BButton v-if="seqCount || groupCount" variant="outline-light" size="sm" data-testid="outputs-expand-all" @click="setAll('expanded')"><i class="fa-solid fa-expand me-1"></i>{{ $t('outputs.dpx.expandAll') }}</BButton>
     </div>
-    <div v-if="files.length" class="gallery">
+    <div v-if="files.length" ref="galleryEl" class="gallery">
       <div v-for="t in tiles" :key="t.key" class="cell" :class="{ wide: (t.kind === 'dpx' && t.frames.length > 1) || isGroup(t), seq: t.kind === 'dpx' && t.frames.length > 1 }" data-testid="outputs-cell">
       <div v-if="isGroup(t)" class="group" data-testid="outputs-group" :data-kind="t.kind" :data-cat="t.cat || 'temp'" :data-count="t.count" :data-expanded="groupExpanded(t) ? 'true' : 'false'">
         <div class="head" data-testid="outputs-group-head">
@@ -22,7 +22,18 @@
           <span class="headname" :title="groupLabel(t)" data-testid="outputs-group-label">{{ groupLabel(t) }}</span>
           <BButton variant="outline-light" size="sm" class="headbtn" :aria-expanded="groupExpanded(t) ? 'true' : 'false'" data-testid="outputs-group-toggle" @click="toggleGroup(t)"><i class="fa-solid me-1" :class="groupOpen(t) ? 'fa-chevron-up' : 'fa-chevron-down'"></i>{{ groupOpen(t) ? $t('outputs.dpx.collapse') : $t('outputs.dpx.expand') }}</BButton>
         </div>
-        <div v-if="!groupExpanded(t)" class="tile grouptile" data-testid="outputs-group-preview" @click="toggleGroup(t)">
+        <!-- collapsed, with previews: one full ROW of tiles (Main first, then the rest in order; the last slot is '+N more' = Expand when there are more than a row), each opening the viewer; the first frames are captured lazily, only for the visible tiles -->
+        <template v-if="!groupExpanded(t) && !offline && hasPreview(t) && t.main">
+        <div class="gstrip" data-testid="outputs-group-preview" :data-shown="stripFiles(t).length" :data-more="moreCount(t)" :style="{ gridTemplateColumns: `repeat(${galleryCols}, minmax(0, 1fr))` }">
+          <button v-for="f in stripFiles(t)" :key="`${f.subfolder}/${f.filename}`" type="button" class="tile" :title="f.filename" data-testid="outputs-group-tile" @click="openFile(f)">
+            <LazyMedia :kind="t.cat" :src="viewUrl(base, f, t.cat === 'image' ? { thumb: true } : undefined)" :poster="posterOf(f)" :alt="f.filename" />
+            <span class="cap" :title="f.filename" :data-testid="f === t.main ? 'outputs-group-main-name' : undefined">{{ f === t.main ? `${$t('outputs.group.main')}: ` : '' }}{{ shortName(f.filename) }}</span>
+          </button>
+          <button v-if="moreCount(t) > 0" type="button" class="tile moretile" data-testid="outputs-group-more-tile" @click="toggleGroup(t)">{{ $t('outputs.group.moreTile', { n: moreCount(t) }) }}</button>
+        </div>
+        <span v-if="t.versions && t.versions[0] !== t.versions[1]" class="cap" data-testid="outputs-group-versions">{{ $t('outputs.group.versionRange', { a: String(t.versions[0]).padStart(3, '0'), b: String(t.versions[1]).padStart(3, '0') }) }}</span>
+        </template>
+        <div v-else-if="!groupExpanded(t)" class="tile grouptile" data-testid="outputs-group-preview" @click="toggleGroup(t)">
           <LazyMedia v-if="!offline && hasPreview(t) && t.main" :kind="t.cat" :src="viewUrl(base, t.main, t.cat === 'image' ? { thumb: true } : undefined)" :poster="posterOf(t.main)" :alt="t.main.filename" />
           <span v-else class="thumb d-flex align-items-center justify-content-center text-body-secondary" data-testid="outputs-group-icon"><i class="fa-solid fs-3" :class="groupIcon(t)"></i></span>
           <span v-if="t.main" class="cap" :title="t.main.filename" data-testid="outputs-group-main-name">{{ $t('outputs.group.main') }}: {{ shortName(t.main.filename) }}</span>
@@ -68,7 +79,13 @@
         <SequenceFrames v-if="t.kind === 'dpx'" :tile="t" :neutral="incompleteList" />
         <span v-if="t.file.type === 'temp'" class="badge text-bg-secondary tag">{{ $t('outputs.type.temp') }}</span>
       </button>
-      <SequenceStrip v-if="t.kind === 'dpx' && t.frames.length > 1 && stripItems(t).length" :items="stripItems(t)" :disabled="offline" @open="(i) => openAt(t, i)" />
+      <!-- beside the sequence's first-frame tile: the MAIN VIDEO of the videos group (the one it marks Main), first-frame thumbnail in its own ratio, a click opens the modal player; none when the group has no main video -->
+      <button v-if="t.kind === 'dpx' && t.frames.length > 1 && mainVideos.get(t.key)" type="button" class="tile mainvideo" :disabled="offline" :title="mainVideos.get(t.key).filename" data-testid="outputs-main-video" @click="openFile(mainVideos.get(t.key))">
+        <LazyMedia kind="video" :src="viewUrl(base, mainVideos.get(t.key))" :poster="posterOf(mainVideos.get(t.key))" />
+        <span class="cap fw-semibold" data-testid="outputs-main-video-label">{{ $t('outputs.video.mainVideo') }}</span>
+        <span class="cap" :title="mainVideos.get(t.key).filename" data-testid="outputs-main-video-name">{{ shortName(mainVideos.get(t.key).filename) }}</span>
+      </button>
+      <SequenceStrip v-if="t.kind === 'dpx' && t.frames.length > 1 && stripItems(t).length" class="seqstrip" :items="stripItems(t)" :disabled="offline" @open="(i) => openAt(t, i)" />
       <template v-if="t.kind === 'dpx' && t.frames.length > 1">
         <div v-if="isExpanded(t)" class="frames" data-testid="outputs-seq-frames" :data-shown="shownFrames(t).length">
           <div class="small text-body-secondary mb-1" data-testid="outputs-seq-frames-count">{{ $t('outputs.dpx.framesShown', { shown: shownFrames(t).length, total: t.frames.length }) }}</div>
@@ -104,7 +121,7 @@
  * OutputsGallery: the files a run produced (OutputFile: filename, subfolder, type output|temp, kind image|video|audio|other) as a grid of thumbnails read from the pod's ComfyUI /view.
  * Reusable: it only needs the pod's web address (`base`) and the list; a click opens the viewer (large, Previous/Next, Open, Download). A DPX sequence is one tile (frame count) opening the DPX quick-look viewer.
  */
-import { computed, inject, reactive, ref, watch, watchEffect } from 'vue'
+import { computed, inject, onBeforeUnmount, reactive, ref, watch, watchEffect } from 'vue'
 import { ensureMatch, expectedFramesOf } from '../utils/edlexpect'
 import { incompleteOf, tileName } from '../utils/incomplete'
 import { viewUrl, galleryTiles, sizeText, isDpx } from '../utils/outputs'
@@ -178,7 +195,7 @@ const jpgThumbs = (t) => fpState.listing[srcOf(t)]?.thumbs || null
 // The strip and the frame grid are 112 px wide: they load the 160 px THUMBNAIL (a few KB) when the pod has one, else the 320 px JPEG (about 30 KB); the cache's own entry (a decoded DPX) wins as before.
 const frameImg = (t, f) => framePrev[t.key]?.get(f.filename) || (jpgNames(t)?.has(jpgName(f.filename)) ? (jpgThumbs(t)?.has(jpgName(f.filename)) ? thumbUrl(props.base, f) : previewUrl(props.base, f)) : '')
 /** The first frame's JPEG (320 px) for the tile, shown at once instead of waiting for a click that reads a 50 MB DPX; the decoded preview still replaces it (and brings the colour chips). */
-/** A video's first-frame poster when the pod has made it (listed under posters/ of its folder), else '' (the tile shows a film icon; no <video> loads until play is clicked). */
+/** A video's first-frame poster when the pod has made it (listed under posters/ of its folder), else '' (the tile then captures the video's first frame in the page, utils/videothumb.js, or shows a film icon; no <video> lives in a tile, a click opens the modal viewer). */
 const posterOf = (f) => (fpState.listing[f.subfolder || '']?.posters?.has(`${f.filename}.jpg`) ? posterUrl(props.base, f) : '')
 const quickOf = (t) => (t.frames?.[0] && jpgNames(t)?.has(jpgName(t.frames[0].filename)) ? previewUrl(props.base, t.frames[0]) : '')
 const previewCount = (t) => t.frames.reduce((n, f) => n + (frameImg(t, f) ? 1 : 0), 0)
@@ -199,9 +216,36 @@ const stripItems = (t) => previewed(t.frames, (f) => frameImg(t, f)).map((p) => 
 const viewable = computed(() => displayFiles.value.filter((f) => !isDpx(f.filename)))
 const isGroup = (t) => t.kind === 'fgroup' || t.kind === 'tempgroup'
 const groupCount = computed(() => tiles.value.filter(isGroup).length)
+/** The main video shown beside a sequence: the file the Videos group marks Main. With one such group it is that one; with several, the group whose folder shares the most path segments with the sequence's folder
+ *  (none when nothing is shared); a sequence with no main video beside it shows nothing. A Map: sequence tile key -> file. Its picture is the same address as the group's tile, so the capture is shared. */
+const mainVideos = computed(() => {
+  const groups = tiles.value.filter((g) => g.kind === 'fgroup' && g.cat === 'video' && g.main), out = new Map()
+  const shared = (a = '', b = '') => { const x = a.split('/'), y = b.split('/'); let n = 0; while (n < x.length && n < y.length && x[n] && x[n] === y[n]) n++; return n }
+  for (const t of tiles.value) {
+    if (t.kind !== 'dpx' || t.frames.length < 2 || !groups.length) continue
+    if (groups.length === 1) { out.set(t.key, groups[0].main); continue }
+    let best = null, score = 0
+    for (const g of groups) { const s = shared(g.main.subfolder, t.file.subfolder); if (s > score) { best = g; score = s } }
+    if (best) out.set(t.key, best.main)
+  }
+  return out
+})
 const groupOpenCount = computed(() => tiles.value.filter((t) => isGroup(t) && groupExpanded(t)).length)
 const groupOpen = groupExpanded
 /** A group whose rows carry a preview (one lazy thumbnail or player each, under the player cap): Videos and Images. */
+/** How many tiles fit in one row of the grid (9.5rem tiles, 0.5rem gap), from the gallery's own width (a ResizeObserver): a collapsed group shows one full row, the last slot being '+N more' when there are more. */
+const galleryEl = ref(null), galleryCols = ref(6)
+let ro = null
+function measureCols() {
+  const el = galleryEl.value
+  if (!el || !el.clientWidth) return
+  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+  galleryCols.value = Math.max(2, Math.floor((el.clientWidth + 0.5 * rem) / (10 * rem)))
+}
+watch(galleryEl, (el) => { ro?.disconnect(); ro = null; if (el) { measureCols(); if (typeof ResizeObserver !== 'undefined') { ro = new ResizeObserver(measureCols); ro.observe(el) } } }, { flush: 'post' })
+onBeforeUnmount(() => ro?.disconnect())
+const stripFiles = (t) => (t.files.length > galleryCols.value ? t.files.slice(0, galleryCols.value - 1) : t.files)
+const moreCount = (t) => (t.files.length > galleryCols.value ? t.files.length - (galleryCols.value - 1) : 0)
 const hasPreview = (t) => t.kind === 'fgroup' && (t.cat === 'video' || t.cat === 'image')
 const groupIcon = (t) => (t.kind === 'tempgroup' ? 'fa-hourglass-half' : { video: 'fa-film', image: 'fa-image', audio: 'fa-music', data: 'fa-file-lines' }[t.cat] || 'fa-file')
 const groupLabel = (g) => `${t(`outputs.group.label.${g.kind === 'tempgroup' ? 'temp' : g.cat}.${g.count === 1 ? 'one' : 'other'}`, { n: g.count })}${g.bytes ? ` · ${sizeText(g.bytes)}` : ''}`
@@ -234,8 +278,16 @@ watch(() => props.files, () => { current.value = null; dpx.value = null; problem
 .cell .tile { width: 100%; }
 .cell.wide .tile { max-width: 9.5rem; }
 /* a sequence row: header across, the first-frame tile at the left, the filmstrip filling the rest of the row, the expanded frame list across below */
-.cell.seq { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr); column-gap: 0.5rem; row-gap: 0.25rem; align-items: start; }
+.cell.seq { display: grid; grid-template-columns: 9.5rem auto minmax(0, 1fr); column-gap: 0.5rem; row-gap: 0.25rem; align-items: start; }
 .cell.seq > .head, .cell.seq > .frames { grid-column: 1 / -1; }
+/* the Main Video tile sits beside the sequence tile (column 2, as tall as the row, the picture 9.5rem high with its own width), the filmstrip keeps column 3 */
+.cell.seq > .mainvideo { grid-column: 2; width: auto; max-width: 22rem; align-self: stretch; }
+.cell.seq > .mainvideo :deep(.vposter) { height: 9.5rem; }
+.cell.seq > .seqstrip { grid-column: 3; }
+/* a collapsed group with previews: one full row of tiles, the last being '+N more' */
+.gstrip { display: grid; gap: 0.5rem; align-items: start; }
+.gstrip .tile { width: 100%; min-width: 0; }
+.moretile { align-items: center; justify-content: center; min-height: 6.5rem; font-weight: 600; color: var(--bs-secondary-color); }
 .head { display: flex; align-items: center; gap: 0.4rem; min-width: 0; padding: 0.15rem 0.1rem; font-size: 0.78rem; }
 .headname { flex: 1 1 auto; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
 .headcount { font-weight: 400; }

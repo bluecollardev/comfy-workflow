@@ -106,9 +106,9 @@ test('a video from the volume plays through an s3file:// source with no pod', as
   await m.locator('[data-testid="pod-outputs-folder"][data-name="proxy_v004"]').click()
   await m.locator('[data-testid="pod-outputs-folder"][data-name="archival-080"]').click()
   await m.locator('[data-testid="outputs-group-row"][title="clip.mp4"]').scrollIntoViewIfNeeded()   // thumbnails and players are made only near the viewport
-  await expect(m.locator('video')).toHaveCount(0)   // a video tile loads no player until play is clicked (it shows its poster or a film icon)
-  await m.getByTestId('outputs-video-poster').first().click()
-  const video = m.locator('video').first()
+  await expect(m.locator('video')).toHaveCount(0)   // a video tile holds no player (it shows its poster, its captured first frame or a film icon)
+  await m.getByTestId('outputs-video-poster').first().click()   // the click opens the modal viewer, which plays the volume file
+  const video = page.getByTestId('output-viewer-video')
   await expect(video).toHaveAttribute('src', `s3file://vol1/${encodeURIComponent('comfy-shared/output/proxy_v004/archival-080/clip/clip.mp4')}`)
 })
 

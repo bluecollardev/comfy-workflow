@@ -543,6 +543,7 @@
     },
     "group": {
       "groupsCount": "{n} group(s), {open} open",
+      "moreTile": "+{n} More",
       "main": "Main",
       "showAll": "Show All",
       "showTemp": "Show Temp Files",
@@ -721,7 +722,7 @@
       "title": "Generation Errors ({n})",
       "kind": { "frames": "Frame Previews", "frame": "Frame", "sequence": "Preview", "graph": "Render" }
     },
-    "video": { "play": "Play Video" },
+    "video": { "play": "Play Video", "mainVideo": "Main Video", "noPreview": "Preview not available in this player" },
     "frames": {
       "modeLabel": "Preview mode",
       "modeSequence": "Sequence Previews",

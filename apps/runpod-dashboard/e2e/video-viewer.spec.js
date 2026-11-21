@@ -4,7 +4,7 @@ import { test, expect, podCard } from './fixtures'
 // The Outputs viewer's video player (docs/ADR-037 amendment 2026-11-17): the shared transport bar (Play/Pause on Space, frame step, speed, Loop, timecode) and the message for a codec the engine cannot play.
 const WEBM = fs.readFileSync(new URL('./media/tiny.webm', import.meta.url))   // 2 s, 64x48, 24 fps VP8, made with ffmpeg testsrc
 let delay = 0
-async function open(page, api, name) {
+async function open(page, api, name, how = 'picture') {
   api.state.history.runs['pod-aaaaaaaa'].unshift({ prompt_id: 'ffffffff-1111-2222', workflow: 'rounds/r1/v/clip.json', status: 'success', started_at: '2026-11-17T10:00:00Z', duration_s: 3, cost_estimate: 0,
     outputs: [{ filename: 'clip.webm', subfolder: 'v', type: 'output' }, { filename: 'broken.mov', subfolder: 'v', type: 'output' }] })
   await page.context().route('**/view?*', async (r) => {   // with Range support, as the pod's ComfyUI has; `delay` makes the pod slow to answer
@@ -18,8 +18,9 @@ async function open(page, api, name) {
   })
   await page.goto('/')
   await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
-  // the name opens the viewer; a click on a video's picture plays it inline since the thumbnails change (a poster, no player until play: outputs-frame-previews.spec.js)
-  await page.getByTestId('pod-outputs-modal').locator(`[title="${name}"]:is([data-testid="outputs-tile"], [data-testid="outputs-group-row"])`).locator('.gname, [data-testid="outputs-tile-name"]').first().click()
+  // a click on a video's picture opens the modal viewer (Lucas, 2026-11-21: "clicking the video should open up the modal player"); the name opens it too (the last test)
+  const row = page.getByTestId('pod-outputs-modal').locator(`[title="${name}"]:is([data-testid="outputs-tile"], [data-testid="outputs-group-row"])`)
+  if (how === 'name') await row.locator('.gname, [data-testid="outputs-tile-name"]').first().click(); else await row.getByTestId('outputs-video-poster').first().click()
   return page.getByTestId('output-viewer')
 }
 const vid = (v) => v.getByTestId('output-viewer-video')
@@ -81,4 +82,13 @@ test('video viewer: a codec the engine cannot play replaces "Loading video…" w
   const v = await open(page, api, 'broken.mov')
   await expect(v.getByTestId('output-viewer-codec')).toBeVisible({ timeout: 10000 })
   await expect(v.getByTestId('output-viewer-loading')).toHaveCount(0)
+})
+
+test('video tile: clicking the picture opens the modal viewer (no player inside the tile), and so does the name', async ({ page, api }) => {
+  const v = await open(page, api, 'clip.webm')   // the picture
+  await expect(v).toBeVisible(); await expect(v.getByTestId('output-viewer-video')).toHaveAttribute('src', /clip\.webm/)
+  await expect(page.getByTestId('pod-outputs-modal').getByTestId('outputs-video-player')).toHaveCount(0)   // no inline player exists
+  await page.keyboard.press('Escape'); await expect(v).toHaveCount(0)
+  const byName = await open(page, api, 'clip.webm', 'name')   // the name
+  await expect(byName).toBeVisible()
 })
