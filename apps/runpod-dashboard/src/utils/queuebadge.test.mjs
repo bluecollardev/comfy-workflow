@@ -21,6 +21,11 @@ test('queueBadge: tone: green only while Auto-publish is live and something work
   assert.equal(queueBadge({}).tone, 'none'); assert.equal(queueBadge({}).show, false)
   const s = queueBadge({ scanning: true }); assert.equal(s.dot, true); assert.equal(s.show, true); assert.equal(s.pulse, true); assert.equal(s.total, 0)
 })
+test('queueBadge: a running frame-previews job counts as a preview (with the review previews batch), a finished one does not', () => {
+  const b = queueBadge({ previewJobs: [{ state: 'running' }, { state: 'running' }, { state: 'done' }, { state: 'failed' }], previewsRunning: true })
+  assert.equal(b.total, 3); assert.deepEqual(b.parts, [{ key: 'previews', n: 3 }])
+  assert.equal(queueBadge({ previewJobs: [{ state: 'done' }] }).show, false); assert.equal(queueBadge({ previewJobs: null }).total, 0)
+})
 test('queueBadge: missing fields do not break it; 99+', () => {
   for (const x of [undefined, {}, { renderJobs: null, publishJobs: undefined, entries: null, generate: {} }]) { const b = queueBadge(x); assert.equal(b.show, false); assert.equal(b.total, 0) }
   assert.equal(queueBadge({ queueCount: 150 }).text, '99+'); assert.equal(queueBadge({ generate: { generating: [{}, {}] } }).total, 2)

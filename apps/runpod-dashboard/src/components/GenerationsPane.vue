@@ -1,14 +1,20 @@
 <template>
   <div v-if="!renders.old" class="mb-4" data-testid="queue-generations">
-    <RunJobsSection />
+    <!-- the filter: All, Renders (graph runs and proxies), Previews (frame previews, thumbnails, posters, review previews), Review Videos -->
+    <div class="d-flex align-items-center gap-2 mb-2 flex-wrap" role="group" :aria-label="$t('queue.gen.filter.label')" data-testid="generations-filter">
+      <BButton v-for="f in FILTERS" :key="f" size="sm" :variant="genFilter === f ? 'light' : 'outline-light'" :aria-pressed="genFilter === f" :data-testid="`generations-filter-${f}`" @click="genFilter = f">{{ $t(`queue.gen.filter.${f}`) }}</BButton>
+    </div>
+    <RunJobsSection v-if="show('renders')" />
+    <PreviewJobsSection v-if="show('previews')" />
     <div class="d-flex align-items-center gap-2 mb-2"><h6 class="mb-0">{{ $t('queue.gen.title') }}</h6>
       <span class="ms-auto d-inline-flex gap-2">
         <BButton v-if="failedJobs.length" size="sm" variant="outline-light" data-testid="generations-dismiss-failed" @click="failedJobs.forEach((j) => renders.dismiss(j.job_id))">{{ $t('queue.dismissFailed', { n: failedJobs.length }) }}</BButton>
         <BButton v-if="finishedJobs.length" size="sm" variant="outline-light" data-testid="generations-dismiss-all" @click="finishedJobs.forEach((j) => renders.dismiss(j.job_id))">{{ $t('queue.dismissAll', { n: finishedJobs.length }) }}</BButton></span></div>
-    <div v-if="!jobs.length && !previews.batch" class="text-body-secondary small" data-testid="generations-none">{{ $t('queue.gen.none') }}</div>
-    <!-- the Previews batch -->
-    <div v-if="previews.batch" class="border rounded p-2 mb-2 small" data-testid="generations-previews" :data-state="previews.batch.state">
+    <div v-if="!jobsF.length && !(previews.batch && show('previews'))" class="text-body-secondary small" data-testid="generations-none">{{ $t('queue.gen.none') }}</div>
+    <!-- the Previews batch: the review videos' previews (a different thing from the Frame Previews jobs above) -->
+    <div v-if="previews.batch && show('previews')" class="border rounded p-2 mb-2 small" data-testid="generations-previews" :data-state="previews.batch.state">
       <div class="d-flex align-items-center gap-2 flex-wrap">
+        <span class="badge text-bg-secondary fw-normal" data-testid="generations-previews-label">{{ $t('queue.gen.reviewPreviews') }}</span>
         <strong data-testid="generations-previews-line">{{ batchLine(previews.batch, $t) }}</strong>
         <span v-if="previews.batch.label" class="text-body-secondary">{{ previews.batch.label }}</span>
         <span v-if="previews.batch.retry_of" class="badge text-bg-secondary fw-normal" data-testid="generations-previews-retry-of">{{ $t('queue.gen.retryOf', { n: previews.batch.retry_of }) }}</span>
@@ -59,7 +65,7 @@
           <BButton v-else size="sm" variant="outline-light" class="px-2" disabled :title="$t('queue.gen.playNone')" :aria-label="$t('queue.gen.play')" data-testid="generations-job-play-disabled"><i class="fa-solid fa-play"></i></BButton>
         </span>
         <strong data-testid="generations-job-title">{{ jobTitle(j, $t) }}{{ renders.scopes[j.job_id] ? ` · ${renders.scopes[j.job_id]}` : '' }}</strong>
-        <span class="badge text-bg-secondary" data-testid="generations-job-kind">{{ $t(j.kind === 'review' ? 'queue.gen.review' : 'queue.gen.proxy') }}</span>
+        <span class="badge text-bg-secondary" data-testid="generations-job-kind">{{ $t(j.kind === 'review' ? 'queue.gen.reviewVideo' : 'queue.gen.proxy') }}</span>
         <span v-for="w in adapters(j)" :key="w" class="badge text-bg-dark" data-testid="generations-job-where">{{ $t(`outputs.render.whereBadge.${w}`) }}</span>
         <span v-if="j.trigger === 'auto-publish'" class="badge text-bg-info fw-normal" data-testid="generations-job-auto">{{ $t('autopublish.gen.badge') }}</span>
         <span class="badge fw-normal" :class="triggerInfo(j).key === 'mcp' ? 'text-bg-info' : 'text-bg-secondary'" :title="triggerInfo(j).title" data-testid="generations-job-trigger" :data-trigger="triggerInfo(j).key">{{ triggerInfo(j).label }}</span><span v-if="triggerInfo(j).external" class="badge text-bg-warning fw-normal" :title="EXTERNAL_TIP" data-testid="generations-job-external">{{ $t('queue.external') }}</span>
@@ -97,7 +103,7 @@
         </li>
       </ul>
     </div>
-    <div v-if="jobs.length > PAGE_SIZES[0]" class="d-flex align-items-center gap-2 flex-wrap" data-testid="generations-pager">
+    <div v-if="jobsF.length > PAGE_SIZES[0]" class="d-flex align-items-center gap-2 flex-wrap" data-testid="generations-pager">
       <BButton size="sm" variant="outline-light" :disabled="page === 0" data-testid="generations-page-prev" @click="page--"><i class="fa-solid fa-chevron-left me-1"></i>{{ $t('queue.gen.prev') }}</BButton>
       <span data-testid="generations-page-info">{{ pageInfo }}</span>
       <BButton size="sm" variant="outline-light" :disabled="page >= pageCount - 1" data-testid="generations-page-next" @click="page++">{{ $t('queue.gen.next') }}<i class="fa-solid fa-chevron-right ms-1"></i></BButton>
@@ -122,6 +128,7 @@ import { usePreviewsStore } from '../stores/previews'
 import { useUiStore } from '../stores/ui'
 import ApproveControl from './ApproveControl.vue'
 import RunJobsSection from './RunJobsSection.vue'
+import PreviewJobsSection from './PreviewJobsSection.vue'
 import { versionTag } from '../utils/autopublish'
 import { useAutopublishStore } from '../stores/autopublish'
 import { t } from '../i18n'
@@ -138,13 +145,19 @@ async function copyFailures() {
   try { await navigator.clipboard.writeText(text); useToastStore().success(t('queue.gen.copiedFailures')) } catch { /* no clipboard here: nothing to do */ }
 }
 const jobs = computed(() => orderJobs(renders.jobs, renders.dismissed))
+// The filter (Lucas, 2026-11-21: group the preview-type work): All, Renders (graph runs and proxy renders), Previews (frame previews, thumbnails, posters, the review videos' previews), Review Videos (review generations)
+const FILTERS = ['all', 'renders', 'previews', 'review']
+const genFilter = ref('all')
+const show = (what) => genFilter.value === 'all' || genFilter.value === what
+const jobsF = computed(() => jobs.value.filter((j) => genFilter.value === 'all' || (genFilter.value === 'review' ? j.kind === 'review' : genFilter.value === 'renders' && j.kind !== 'review')))
 const active = isActive
 // Paging: running jobs come first in the order, so page 1 always shows what is happening now (same pager as Queue > Publishing)
 const pageSize = ref(10), page = ref(0)   // PAGE_SIZES is the shared list from utils/generations
-const pageCount = computed(() => Math.max(1, Math.ceil(jobs.value.length / pageSize.value)))
-const pagedJobs = computed(() => jobs.value.slice(page.value * pageSize.value, (page.value + 1) * pageSize.value))
-const pageInfo = computed(() => (jobs.value.length ? `${page.value * pageSize.value + 1}–${Math.min(jobs.value.length, (page.value + 1) * pageSize.value)} of ${jobs.value.length}` : '0'))
+const pageCount = computed(() => Math.max(1, Math.ceil(jobsF.value.length / pageSize.value)))
+const pagedJobs = computed(() => jobsF.value.slice(page.value * pageSize.value, (page.value + 1) * pageSize.value))
+const pageInfo = computed(() => (jobsF.value.length ? `${page.value * pageSize.value + 1}–${Math.min(jobsF.value.length, (page.value + 1) * pageSize.value)} of ${jobsF.value.length}` : '0'))
 watch(pageSize, () => { page.value = 0 })
+watch(genFilter, () => { page.value = 0 })
 watch(pageCount, (n) => { if (page.value > n - 1) page.value = n - 1 })   // dismissing the last card of a page moves back one page
 const finishedJobs = computed(() => jobs.value.filter((j) => !isActive(j)))
 const retrying = ref(''), retryError = ref(''), retryErrorId = ref('')

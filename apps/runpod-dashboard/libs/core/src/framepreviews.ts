@@ -31,6 +31,10 @@ export interface Job {
   done_dirs: string[]
   /** the job this one is the relaunch of */
   relaunch_of?: string
+  /** who asked for it: a person or an agent ('manual'), or the automatic previews after new outputs ('automatic', set by that feature): the Queue labels the row 'Auto Previews' */
+  trigger?: 'manual' | 'automatic'
+  /** the counters per KIND, for the Queue's rows (the totals above add them together): frames = 320 px JPEGs (written or already there), thumbnails = the 160 px tier (present / newly made this run), posters = video first frames */
+  frames_total: number; frames_done: number; /** of those, the JPEGs made by this run (the rest were already there) */ frames_written: number; thumbs_done: number; thumbs_made: number; posters_total: number; posters_done: number; posters_failed: number
 }
 export interface PodInfo { id: string; name: string; running: boolean; volume: string | null }
 export interface Deps {
@@ -82,18 +86,19 @@ tdir = os.path.join(out, 'thumbs')   # the thumbnail tier (160 px wide, about 5 
 try: os.makedirs(tdir, exist_ok=True)
 except Exception: tdir = None
 print('TOTAL %d' % n, flush=True)
-def thumb(jpg, name):
-    if not tdir: return
+def thumb(jpg, name):   # 0: no thumbnail, 1: it was already there, 2: made now
+    if not tdir: return 0
     dst = os.path.join(tdir, name)
     try:
-        if os.path.exists(dst) and os.path.getsize(dst) > 0: return
+        if os.path.exists(dst) and os.path.getsize(dst) > 0: return 1
         im = Image.open(jpg).convert('RGB')
         im = im.resize((160, max(1, round(im.height * 160 / im.width))), Image.BILINEAR)
         tmp = dst + '.part'
         im.save(tmp, format='JPEG', quality=72)
         os.replace(tmp, dst)
+        return 2
     except Exception:
-        pass
+        return 0
 def decode(path):
     with open(path, 'rb') as f: h = f.read(2048)
     if h[0:4] not in (b'SDPX', b'XPDS'): raise ValueError('not a DPX')
@@ -125,24 +130,24 @@ def one(f):
     dst = os.path.join(out, name)
     try:
         if skip and os.path.exists(dst) and os.path.getsize(dst) > 0:
-            thumb(dst, name)   # a frame that already has its JPEG only gets the missing thumbnail (no DPX read)
-            return ('SKIP', name, '')
+            return ('SKIP', name, '', thumb(dst, name))   # a frame that already has its JPEG only gets the missing thumbnail (no DPX read)
         img = decode(f)
         tmp = dst + '.part'
         img.save(tmp, format='JPEG', quality=80)
         os.replace(tmp, dst)
-        thumb(dst, name)
-        return ('OK', name, '')
+        return ('OK', name, '', thumb(dst, name))
     except Exception as ex:
-        return ('FAIL', name, str(ex).replace('\n', ' ')[:150])
-ok = sk = fl = 0
+        return ('FAIL', name, str(ex).replace('\n', ' ')[:150], 0)
+ok = sk = fl = tp = tm = 0
 with ThreadPoolExecutor(max_workers=2) as pool:
-    for i, (st, name, why) in enumerate(pool.map(one, files)):
+    for i, (st, name, why, tt) in enumerate(pool.map(one, files)):
         if st == 'OK': ok += 1
         elif st == 'SKIP': sk += 1
         else: fl += 1; print('FAIL %s %s' % (name, why), flush=True)
-        if i % 5 == 4 or i == n - 1: print('PREV %d/%d ok=%d skipped=%d failed=%d' % (i + 1, n, ok, sk, fl), flush=True)
-print('DONE ok=%d skipped=%d failed=%d' % (ok, sk, fl), flush=True)
+        if tt: tp += 1
+        if tt == 2: tm += 1
+        if i % 5 == 4 or i == n - 1: print('PREV %d/%d ok=%d skipped=%d failed=%d thumbs=%d tmade=%d' % (i + 1, n, ok, sk, fl, tp, tm), flush=True)
+print('DONE ok=%d skipped=%d failed=%d thumbs=%d tmade=%d' % (ok, sk, fl, tp, tm), flush=True)
 sys.exit(0)
 `
 
@@ -182,7 +187,7 @@ const copy = (j: Job): Job => ({ ...j, items: j.items.map((i) => ({ ...i })), fa
 const TERMINAL = ['done', 'failed', 'cancelled']
 
 /** Start a job: one or more sequence folders on a running pod. Returns at once with the job; progress through `status`. */
-export async function start(o: { pod_id?: string; items?: Partial<Item>[]; tone?: string; /** false: make every JPEG again (Skip Existing unticked) */ skip_existing?: boolean; /** the job this one runs again (relaunch) */ relaunch_of?: string; onLine?: (l: string) => void }): Promise<Job> {
+export async function start(o: { pod_id?: string; items?: Partial<Item>[]; tone?: string; /** false: make every JPEG again (Skip Existing unticked) */ skip_existing?: boolean; /** the job this one runs again (relaunch) */ relaunch_of?: string; /** 'automatic': started by the automatic previews after new outputs (the Queue labels it 'Auto Previews') */ trigger?: 'manual' | 'automatic'; onLine?: (l: string) => void }): Promise<Job> {
   const podId = String(o.pod_id ?? '').trim(); if (!podId) throw bad('Give the pod (pod_id): the previews are made on a pod that has the volume')
   const items = (Array.isArray(o.items) ? o.items : []).map((i) => ({ src_dir: rel(i.src_dir), ...(Number.isFinite(i.frames) ? { frames: Number(i.frames) } : {}), ...(i.kind === 'posters' ? { kind: 'posters' as const } : {}) }))
   if (!items.length) throw bad('Give at least one sequence in items ({ src_dir, frames? })')
@@ -190,11 +195,12 @@ export async function start(o: { pod_id?: string; items?: Partial<Item>[]; tone?
   const t = await deps.target(podId); if ('reason' in t) throw new CoreError(409, t.reason)
   const root = deps.outputDir(podId)
   const id = `framepreviews-${Date.now()}-${++seq}`
-  const job: Job = { id, pod_id: podId, items, tone, skip_existing: o.skip_existing !== false, state: 'running', started_at: new Date().toISOString(), done: 0, skipped: 0, failed: [], total: items.reduce((s, i) => s + (i.frames ?? 0), 0), current: '', done_dirs: [], ...(o.relaunch_of ? { relaunch_of: o.relaunch_of } : {}) }
+  const job: Job = { id, pod_id: podId, items, tone, skip_existing: o.skip_existing !== false, state: 'running', started_at: new Date().toISOString(), done: 0, skipped: 0, failed: [], total: items.reduce((s, i) => s + (i.frames ?? 0), 0), current: '', done_dirs: [], ...(o.relaunch_of ? { relaunch_of: o.relaunch_of } : {}), trigger: o.trigger === 'automatic' ? 'automatic' : 'manual',
+    frames_total: items.filter((i) => i.kind !== 'posters').reduce((s, i) => s + (i.frames ?? 0), 0), frames_done: 0, frames_written: 0, thumbs_done: 0, thumbs_made: 0, posters_total: items.filter((i) => i.kind === 'posters').reduce((s, i) => s + (i.frames ?? 0), 0), posters_done: 0, posters_failed: 0 }
   jobs.set(id, job)
   const ac = new AbortController(); ctrls.set(id, ac)
   const who = history.currentOrigin(), origin: jobsregistry.Origin = who?.source === 'mcp' ? 'mcp' : 'window'
-  stops.set(id, jobsregistry.track({ id, kind: 'volume', trigger: 'manual', origin, ...(origin === 'mcp' && who?.client ? { client: who.client } : {}), label: `frame previews ${items.length === 1 ? items[0].src_dir : `${items.length} sequences`}`, started_at: job.started_at, view: () => ({ state: job.state, terminal: TERMINAL.includes(job.state), progress: { done: job.done + job.skipped + job.failed.length, total: job.total, unit: 'frames' } }), cancel: () => ac.abort() }))
+  stops.set(id, jobsregistry.track({ id, kind: 'volume', trigger: job.trigger ?? 'manual', origin, ...(origin === 'mcp' && who?.client ? { client: who.client } : {}), label: `frame previews ${items.length === 1 ? items[0].src_dir : `${items.length} sequences`}`, started_at: job.started_at, view: () => ({ state: job.state, terminal: TERMINAL.includes(job.state), progress: { done: job.done + job.skipped + job.failed.length, total: job.total, unit: 'frames' }, previews: { pod_id: job.pod_id, frames_done: job.frames_done, frames_total: job.frames_total, thumbs_done: job.thumbs_done, posters_done: job.posters_done, posters_total: job.posters_total, failed: job.failed.length, current: job.current } }), cancel: () => ac.abort() }))
   void (async () => {
     try {
       for (const it of items) {
@@ -202,14 +208,20 @@ export async function start(o: { pod_id?: string; items?: Partial<Item>[]; tone?
         job.current = it.src_dir
         const errBefore = job.error
         const known = it.frames ?? 0
-        let okSeen = 0, skSeen = 0
+        let okSeen = 0, skSeen = 0, thSeen = 0, tmSeen = 0
+        const isPoster = it.kind === 'posters'
         const script = `set -e\npython3 - '${root}/${it.src_dir}' '${root}/${previewSubfolder(it.src_dir)}${it.kind === 'posters' ? '/posters' : ''}' '${tone}' '${o.skip_existing === false ? 0 : 1}' <<'PY'\n${it.kind === 'posters' ? POSTER_PY : PYTHON}\nPY\n`
         const r = await deps.ssh({ host: t.host, port: t.port, script, signal: ac.signal, onLine: (l) => {
           o.onLine?.(l)
           let m: RegExpExecArray | null
-          if ((m = /^TOTAL (\d+)/.exec(l))) { job.total += Number(m[1]) - known }   // the script's count replaces the caller's guess (0 when the caller gave none)
-          else if ((m = /^PREV (\d+)\/(\d+) ok=(\d+) skipped=(\d+) failed=(\d+)/.exec(l))) { const ok = Number(m[3]), sk = Number(m[4]); job.done += ok - okSeen; job.skipped += sk - skSeen; okSeen = ok; skSeen = sk }
-          else if ((m = /^FAIL (\S+) (.*)$/.exec(l))) job.failed.push({ src_dir: it.src_dir, frame: m[1], reason: m[2] })
+          if ((m = /^TOTAL (\d+)/.exec(l))) { const d = Number(m[1]) - known; job.total += d; if (isPoster) job.posters_total += d; else job.frames_total += d }   // the script's count replaces the caller's guess (0 when the caller gave none)
+          else if ((m = /^PREV (\d+)\/(\d+) ok=(\d+) skipped=(\d+) failed=(\d+)(?: thumbs=(\d+) tmade=(\d+))?/.exec(l))) {
+            const ok = Number(m[3]), sk = Number(m[4]); job.done += ok - okSeen; job.skipped += sk - skSeen
+            if (isPoster) job.posters_done += ok - okSeen + sk - skSeen
+            else { job.frames_done += ok - okSeen + sk - skSeen; job.frames_written += ok - okSeen; const th = Number(m[6] ?? 0), tm = Number(m[7] ?? 0); job.thumbs_done += th - thSeen; job.thumbs_made += tm - tmSeen; thSeen = th; tmSeen = tm }
+            okSeen = ok; skSeen = sk
+          }
+          else if ((m = /^FAIL (\S+) (.*)$/.exec(l))) { job.failed.push({ src_dir: it.src_dir, frame: m[1], reason: m[2] }); if (isPoster) job.posters_failed++ }
           else if (/^ERR /.test(l)) job.error = l.slice(4, 200)
         } })
         if (r.code !== 0 && !ac.signal.aborted && !job.error) job.error = `the script ended with code ${r.code} on ${it.src_dir}`
@@ -235,6 +247,40 @@ export function cancel(o: { job_id?: string }): { ok: boolean; state?: string } 
   if (!j) return { ok: false }
   if (ac) ac.abort()
   return { ok: true, state: j.state }
+}
+
+/** Stop a job of this process, or ask the owner of a job another process runs (the tool server, a script) through the shared registry: it acts on its next heartbeat. `own: false` says it was not ours. */
+export async function cancelAny(o: { job_id?: string }): Promise<{ ok: boolean; own: boolean; state?: string }> {
+  const id = String(o.job_id ?? '')
+  if (jobs.has(id)) return { ...cancel(o), own: true }
+  return { ok: await jobsregistry.requestCancel(id), own: false }
+}
+
+/** One line per frame-previews job for the Queue's Generations (Lucas, 2026-11-21: "i should see previews jobs in queue no? generations tab?"): this process's jobs, and the jobs of another process (the tool server, a script) from the shared registry. */
+export interface PreviewJobRow {
+  job_id: string; pod_id: string; state: 'running' | 'done' | 'failed' | 'cancelled' | 'interrupted'; started_at: string; finished_at?: string
+  external: boolean; origin?: string; client?: string; trigger: string
+  /** how many sequence folders / video folders the job covers, and the one it is on */ items: number; current: string; error?: string; relaunch_of?: string
+  /** a person can run it again (own job, stopped, with folders that did not finish or frames that failed) */ relaunchable: boolean
+  /** the counters per kind: frames (320 px JPEGs), thumbnails (160 px), posters (video first frames) */
+  frames_total: number; frames_done: number; frames_written: number; thumbs_done: number; thumbs_made: number; posters_total: number; posters_done: number; posters_failed: number
+  /** frames that failed to decode (the reasons are in `status`) */ failed: number
+}
+export function jobsList(limit = 30): PreviewJobRow[] {
+  const rows: PreviewJobRow[] = []
+  for (const j of jobs.values()) {
+    const unfinished = j.items.some((i) => !j.done_dirs.includes(i.src_dir))
+    rows.push({ job_id: j.id, pod_id: j.pod_id, state: j.state, started_at: j.started_at, ...(j.finished_at ? { finished_at: j.finished_at } : {}), external: false, trigger: j.trigger ?? 'manual', items: j.items.length, current: j.current,
+      ...(j.error ? { error: j.error } : {}), ...(j.relaunch_of ? { relaunch_of: j.relaunch_of } : {}), relaunchable: j.state !== 'running' && (j.state !== 'done' || j.failed.length > 0 || unfinished),
+      frames_total: j.frames_total, frames_done: j.frames_done, frames_written: j.frames_written, thumbs_done: j.thumbs_done, thumbs_made: j.thumbs_made, posters_total: j.posters_total, posters_done: j.posters_done, posters_failed: j.posters_failed, failed: j.failed.length })
+  }
+  for (const x of jobsregistry.externals('volume')) {
+    if (!x.label.startsWith('frame previews') || jobs.has(x.id)) continue
+    const p = x.previews
+    rows.push({ job_id: x.id, pod_id: p?.pod_id ?? '', state: x.interrupted ? 'interrupted' : x.state === 'done' ? 'done' : 'running', started_at: x.started_at, external: true, origin: x.origin, ...(x.mcp_client ? { client: x.mcp_client } : {}), trigger: x.trigger || 'manual', items: 0,
+      current: p?.current ?? '', relaunchable: false, frames_total: p?.frames_total ?? x.progress?.total ?? 0, frames_done: p?.frames_done ?? x.progress?.done ?? 0, frames_written: 0, thumbs_done: p?.thumbs_done ?? 0, thumbs_made: 0, posters_total: p?.posters_total ?? 0, posters_done: p?.posters_done ?? 0, posters_failed: 0, failed: p?.failed ?? 0 })
+  }
+  return rows.sort((a, b) => (b.state === 'running' ? 1 : 0) - (a.state === 'running' ? 1 : 0) || b.started_at.localeCompare(a.started_at)).slice(0, limit)
 }
 
 export interface RelaunchAnswer {
@@ -267,7 +313,7 @@ export async function relaunch(o: { job_id?: string; pod_id?: string; exclude_po
     const stopped = pods.filter((p) => !p.running && fits(p)).map((p) => ({ id: p.id, name: p.name }))
     return { ok: false, needs_pod: { stopped, hint: `No pod is running on this volume: resume one${stopped.length ? ` (${stopped.map((p) => p.name).join(', ')})` : ''}, it bills while it runs, then relaunch. Relaunch never resumes a pod itself` } }
   }
-  const job = await start({ pod_id: pick.id, items, tone: old.tone, skip_existing: true, relaunch_of: old.id })
+  const job = await start({ pod_id: pick.id, items, tone: old.tone, skip_existing: true, relaunch_of: old.id, trigger: old.trigger })
   return { ok: true, job }
 }
 

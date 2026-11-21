@@ -18,6 +18,7 @@ export interface RunningJob {
   transfer?: Transfer
   /** what ComfyUI on the pod says it is doing right now (its websocket events): node, step, percent; small, no secrets */ live?: Live
   /** a render run's own facts for the other processes' Queue: the pod, the element, frames done and in all, chunk k of n, the current frame range */ run?: RunFacts
+  /** a frame-previews job's counters per kind (frames, thumbnails, posters) for the other processes' Queue */ previews?: PreviewFacts
 }
 export interface Live { state: 'live' | 'waiting' | 'none'; node?: string; node_class?: string; node_title?: string; step?: number; max?: number; percent?: number; prompt_id?: string; started_at?: string; ts: number; queue_remaining?: number; reason?: string }
 export interface RunFacts { pod_id: string; pod_name: string; element: string; path: string; frames_done?: number; frames_total?: number; chunk?: number; chunks?: number; rate_spf?: number }
@@ -33,6 +34,13 @@ export function cleanRun(r: RunFacts | undefined): RunFacts | undefined {
   if (!r) return undefined
   const n = (x: unknown): number | undefined => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? Math.round(x * 10) / 10 : undefined)
   return { pod_id: String(r.pod_id || '').slice(0, 40), pod_name: String(r.pod_name || '').slice(0, 80), element: String(r.element || '').slice(0, 120), path: String(r.path || '').slice(0, 200), ...(n(r.frames_done) !== undefined ? { frames_done: n(r.frames_done) } : {}), ...(n(r.frames_total) !== undefined ? { frames_total: n(r.frames_total) } : {}), ...(n(r.chunk) !== undefined ? { chunk: n(r.chunk) } : {}), ...(n(r.chunks) !== undefined ? { chunks: n(r.chunks) } : {}), ...(n(r.rate_spf) !== undefined ? { rate_spf: n(r.rate_spf) } : {}) }
+}
+/** A frame-previews job's own counters, for the Queue of another process: how many frames (320 px JPEGs), thumbnails (160 px) and posters (video first frames) are there, of how many. */
+export interface PreviewFacts { pod_id: string; frames_done: number; frames_total: number; thumbs_done: number; posters_done: number; posters_total: number; failed: number; current?: string }
+export function cleanPreviews(p: PreviewFacts | undefined): PreviewFacts | undefined {
+  if (!p) return undefined
+  const n = (x: unknown): number => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? Math.round(x) : 0)
+  return { pod_id: String(p.pod_id || '').slice(0, 40), frames_done: n(p.frames_done), frames_total: n(p.frames_total), thumbs_done: n(p.thumbs_done), posters_done: n(p.posters_done), posters_total: n(p.posters_total), failed: n(p.failed), ...(p.current ? { current: String(p.current).slice(0, 160) } : {}) }
 }
 export interface Transfer { bytes_done: number; bytes_total: number; rate_bps: number; current?: string; skipped?: number; pods?: string[] }
 /** What a heartbeat may carry of a transfer: numbers and short names, nothing else. */
@@ -61,9 +69,9 @@ function mutate(fn: (jobs: Record<string, RunningJob>) => void): Promise<void> {
 interface Tracked { stop: () => void }
 const tracked = new Map<string, Tracked>()
 /** Start publishing a job of this process. `view()` is read at each heartbeat; `cancel` is called when another process asked for it. Returns `stop`. */
-export function track(o: { id: string; kind: RunningJob['kind']; trigger: string; origin: Origin; client?: string; label: string; approved_by?: string; started_at?: string; view: () => { state: string; /** the job is over: stop publishing it */ terminal?: boolean; progress?: RunningJob['progress']; transfer?: Transfer; live?: Live; run?: RunFacts }; cancel: () => void }): () => void {
+export function track(o: { id: string; kind: RunningJob['kind']; trigger: string; origin: Origin; client?: string; label: string; approved_by?: string; started_at?: string; view: () => { state: string; /** the job is over: stop publishing it */ terminal?: boolean; progress?: RunningJob['progress']; transfer?: Transfer; live?: Live; run?: RunFacts; previews?: PreviewFacts }; cancel: () => void }): () => void {
   const ownerPid = deps.pid()
-  const entry = (): RunningJob => { const v = o.view(); return { id: o.id, kind: o.kind, pid: ownerPid, host: hostname(), trigger: o.trigger, origin: o.origin, ...(o.client ? { mcp_client: o.client } : {}), started_at: o.started_at ?? iso(deps.now()), heartbeat_at: iso(deps.now()), state: v.state, ...(v.progress ? { progress: v.progress } : {}), ...(v.transfer ? { transfer: cleanTransfer(v.transfer) } : {}), ...(v.live ? { live: cleanLive(v.live) } : {}), ...(v.run ? { run: cleanRun(v.run) } : {}), label: o.label, ...(o.approved_by ? { approved_by: o.approved_by } : {}) } }
+  const entry = (): RunningJob => { const v = o.view(); return { id: o.id, kind: o.kind, pid: ownerPid, host: hostname(), trigger: o.trigger, origin: o.origin, ...(o.client ? { mcp_client: o.client } : {}), started_at: o.started_at ?? iso(deps.now()), heartbeat_at: iso(deps.now()), state: v.state, ...(v.progress ? { progress: v.progress } : {}), ...(v.transfer ? { transfer: cleanTransfer(v.transfer) } : {}), ...(v.live ? { live: cleanLive(v.live) } : {}), ...(v.run ? { run: cleanRun(v.run) } : {}), ...(v.previews ? { previews: cleanPreviews(v.previews) } : {}), label: o.label, ...(o.approved_by ? { approved_by: o.approved_by } : {}) } }
   let stopped = false, busy = false
   const beat = async () => {
     if (stopped || busy) return; busy = true

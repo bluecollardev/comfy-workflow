@@ -511,7 +511,8 @@ export async function mockApi(page, state) {
         return json(j)
       }
       if (op === 'relaunch') {
-        const old = fp.jobs[body.job_id]; if (!old) return json({ detail: `No frame-previews job ${body.job_id}` }, 404)
+        const row = (state.fpJobRows || []).find((r) => r.job_id === body.job_id)   // a Queue row a test made up: its job is a one-folder job that did not finish
+        const old = fp.jobs[body.job_id] || (row && { id: row.job_id, pod_id: row.pod_id, items: [{ src_dir: 'base_v008/photoreal-013/sunlight', frames: row.frames_total }], tone: 'gamma26', done_dirs: [] }); if (!old) return json({ detail: `No frame-previews job ${body.job_id}` }, 404)
         ;(fp.relaunches ||= []).push(body)
         if (state.fpNeedsPod) return json({ ok: false, needs_pod: { stopped: [{ id: 'pod-bbbbbbbb', name: 'ComfyUI-Landing' }], hint: 'No pod is running on this volume: resume one' } })
         const items = old.items.filter((i) => !(old.done_dirs || []).includes(i.src_dir)); if (!items.length) return json({ ok: true, nothing_to_do: true })
@@ -520,6 +521,18 @@ export async function mockApi(page, state) {
         return json({ ok: true, job: fp.jobs[id] })
       }
       if (op === 'cancel') { const j = fp.jobs[body.job_id]; if (j) j.state = 'cancelled'; return json({ ok: !!j, state: j?.state }) }
+      // the Queue's rows (libs/core framepreviews.jobsList): a test sets state.fpJobRows (the rows as the core sends them) or the rows are made from the jobs the fake has; state.fpJobsOld answers like a core without the call
+      if (op === 'jobs') {
+        if (state.fpJobsOld) return json({ detail: 'no core call framepreviews.jobs' }, 500)
+        if (state.fpJobRows) return json({ jobs: state.fpJobRows })
+        return json({ jobs: Object.values(fp.jobs).map((j) => ({ job_id: j.id, pod_id: j.pod_id, state: j.state, started_at: j.started_at, ...(j.finished_at ? { finished_at: j.finished_at } : {}), external: false, trigger: j.trigger || 'manual', items: j.items.length, current: j.current, ...(j.error ? { error: j.error } : {}), ...(j.relaunch_of ? { relaunch_of: j.relaunch_of } : {}), relaunchable: j.state !== 'running' && (j.state !== 'done' || (j.failed || []).length > 0 || j.items.some((i) => !(j.done_dirs || []).includes(i.src_dir))), frames_total: j.total, frames_done: j.done + j.skipped, frames_written: j.done, thumbs_done: j.state === 'done' ? j.done + j.skipped : 0, thumbs_made: j.state === 'done' ? j.done : 0, posters_total: 0, posters_done: 0, posters_failed: 0, failed: (j.failed || []).length })) })
+      }
+      if (op === 'cancelAny') {
+        const row = (state.fpJobRows || []).find((r) => r.job_id === body.job_id)
+        if (row) { row.state = 'cancelled'; (fp.cancelAny ||= []).push(body.job_id); return json({ ok: true, own: !row.external }) }
+        const j = fp.jobs[body.job_id]; if (j) j.state = 'cancelled'
+        return json({ ok: !!j, own: true, state: j?.state })
+      }
       if (op === 'list') {
         if (state.fpPodOff) return json({ detail: 'Start the pod: the previews are made on the pod' }, 409)
         fp.lists.push(body); const previews = {}, subfolders = {}
