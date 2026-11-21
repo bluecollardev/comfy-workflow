@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import * as history from '../src/history.js'
 import * as mounts from '../src/mounts.js'
 import * as queue from '../src/queue.js'
+import * as cards from '../src/cards.js'
 import { CoreError } from '../src/errors.js'
 import { scratch } from './helpers.js'
 
@@ -486,5 +487,86 @@ describe('Generate Outputs and Publish (Import Round options)', () => {
     await queue.importRound(ROUND, { ...OPTS, generate_outputs: true, publish: true }); await finishRun(w); f.render.state = 'done'; await queue.tick()
     const lines = readFileSync(process.env.HISTORY_FILE!, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
     for (const a of ['queued an import with outputs', 'import generates outputs', 'import publishes outputs']) expect(lines.find((l) => l.action === a)).toMatchObject({ approved_by: 'Lucas', area: a === 'queued an import with outputs' ? 'import' : 'queue' })
+  })
+})
+
+describe('out of memory: the next card up, on its own', () => {
+  type R = { path: string; state: string; error?: string; oom?: boolean; recovery?: string }
+  /** a world whose runs fail the way the script says: per run, `oom` (a graph the pod could not hold), `graph` (a validation error) or `ok` */
+  const oomWorld = (script: ('oom' | 'graph' | 'ok')[], extra: Partial<queue.Deps> = {}) => {
+    let n = 0
+    const w: ReturnType<typeof world> = world([], 4, {
+      run: async (podId: string, paths: string[]) => { const id = `rj${++n}`; w.runs.set(id, { podId, paths, state: 'running' }); (w as any).ran = [...((w as any).ran ?? []), { id, podId, paths }]; return { id } },
+      runJob: ((id: string) => {
+        const r = w.runs.get(id); if (!r) return null
+        const how = script[Number(id.slice(2)) - 1] ?? 'ok'
+        if (r.state === 'running') r.state = how === 'ok' ? 'done' : 'failed'
+        const results: R[] = r.paths.map((p, k) => how === 'ok' ? { path: p, state: 'done' } : k === 0 ? { path: p, state: 'failed', error: how === 'oom' ? 'ComfyUI answered HTTP 502 for /history/x' : 'Prompt outputs failed validation', ...(how === 'oom' ? { oom: true, recovery: 'Out of memory (the pod log says: triggered memory limits (OOM))' } : {}) } : { path: p, state: 'skipped', error: 'Not started: dispatch was paused' })
+        return { id, state: r.state, ok: how === 'ok' ? r.paths.length : 0, failed: how === 'ok' ? 0 : 1, results }
+      }) as never,
+      ...extra,
+    })
+    return w
+  }
+  const go = async (ticks = 8) => { for (let k = 0; k < ticks; k++) await queue.tick() }
+  const evs = () => (tasks().find((x) => x.kind === 'run')?.events ?? []).map((e) => e.text)
+
+  it('a graph that ran out of memory goes back to waiting with the next bigger cards; the small pod is stopped, not deleted; the retry runs only what did not finish', async () => {
+    const w = oomWorld(['oom', 'ok'])
+    await queue.importRound(ROUND, { approved_by: 'Lucas', shots: ['cgi-042'], cards: { 'cgi-042': 'rtxpro4500' } })
+    await go(); w.pull.state = 'done'; await go(10)
+    const t = tasks().find((x) => x.kind === 'run')!
+    expect(t.escalations).toBe(1); expect(t.tried_cards).toEqual(['rtxpro4500']); expect(t.state).toBe('done')   // the second run (on the bigger card) finished
+    const asked = (w as any).asked as string[]
+    expect(asked[0]).toBe('rtxpro4500'); expect(asked[1]).toBe('rtxpro5000')   // the next tier, its first card
+    expect(w.stopped.length).toBe(1)   // the small pod was stopped; the fake has no delete at all
+    expect(evs().join(' | ')).toMatch(/out of memory on RTX PRO 4500 \(32 GB\): retried on RTX PRO 5000 \(48 GB\)/)
+    expect((w as any).ran.map((r: { paths: string[] }) => r.paths.length)).toEqual([1, 1])
+    expect(history.list({ kind: 'change' }).some((e) => (e as { action?: string }).action === 'out of memory: retried on a bigger card')).toBe(true)
+  })
+  it('it climbs 32 -> 48 -> 80 -> 96 GB, and after three escalations the task fails with its error', async () => {
+    const w = oomWorld(['oom', 'oom', 'oom', 'oom'])
+    await queue.importRound(ROUND, { approved_by: 'Lucas', shots: ['cgi-042'], cards: { 'cgi-042': 'rtxpro4500' } })
+    await go(); w.pull.state = 'done'; await go(40)
+    const t = tasks().find((x) => x.kind === 'run')!
+    expect(t.state).toBe('failed'); expect(t.escalations).toBe(3); expect(t.error).toMatch(/502|memory/)
+    const asked = ((w as any).asked as string[]).filter((g, k, a) => a.indexOf(g) === k)
+    expect(asked.map((g) => cards.gbOf(g))).toEqual([32, 48, 80, 96])   // the ladder in order, each size once
+    expect(evs().join(' | ')).toMatch(/giving up \(the limit is 3\)/)
+    expect(w.stopped.length).toBe(3)   // each pod that was too small and was left for a bigger one was stopped; the last one, where the task gave up, is left to the idle stop like any failed run
+  })
+  it('on the biggest allowed card there is nowhere to go: the task fails at once and says why', async () => {
+    const w = oomWorld(['oom'])
+    await queue.importRound(ROUND, { approved_by: 'Lucas', shots: ['cgi-042'], cards: { 'cgi-042': 'rtxpro6000' } })
+    await go(); w.pull.state = 'done'; await go(10)
+    const t = tasks().find((x) => x.kind === 'run')!
+    expect(t.state).toBe('failed'); expect(t.escalations ?? 0).toBe(0); expect(evs().join(' | ')).toMatch(/no bigger card is allowed/)
+  })
+  it('a graph error is not an out-of-memory error: no bigger card is asked for', async () => {
+    const w = oomWorld(['graph'])
+    await queue.importRound(ROUND, { approved_by: 'Lucas', shots: ['cgi-042'], cards: { 'cgi-042': 'rtxpro4500' } })
+    await go(); w.pull.state = 'done'; await go(10)
+    const t = tasks().find((x) => x.kind === 'run')!
+    expect(t.state).toBe('failed'); expect(t.escalations).toBeUndefined(); expect((w as any).asked).toEqual(['rtxpro4500'])
+  })
+  it('a retried task takes its own pod again instead of a second one (same card), and a stopped one is restarted', async () => {
+    const w = oomWorld(['graph', 'ok'], { volumePods: async () => w.pods.map((p) => ({ id: p.id, name: p.name, state: p.state, price: p.price, gpu: 'RTX PRO 4500' })) })
+    await queue.importRound(ROUND, { approved_by: 'Lucas', shots: ['cgi-042'], cards: { 'cgi-042': 'rtxpro4500' } })
+    await go(); w.pull.state = 'done'; await go(10)
+    const t0 = tasks().find((x) => x.kind === 'run')!; expect(t0.state).toBe('failed'); expect(w.created).toEqual(['new1'])
+    w.pods.find((p) => p.id === 'new1')!.state = 'off'; w.ready.delete('new1')   // the pod was stopped meanwhile (an idle stop, or by hand)
+    queue.retryTask(t0.id); await go(10)
+    const t1 = tasks().find((x) => x.kind === 'run')!
+    expect(t1.state).toBe('done'); expect(w.created).toEqual(['new1']); expect(w.resumed).toContain('new1')   // one pod only, restarted
+    expect(evs().join(' | ')).toMatch(/restarted .* for the retry \(the same pod, not a second one\)/)
+  })
+  it('a retry whose old pod cannot be restarted (its host has no free card) creates a new pod and says so', async () => {
+    const w = oomWorld(['graph', 'ok'], { volumePods: async () => w.pods.map((p) => ({ id: p.id, name: p.name, state: p.state, price: p.price, gpu: 'RTX PRO 4500' })), resumePod: async () => { throw new CoreError(409, 'There are not enough free GPUs on the host machine to start this pod.') } })
+    await queue.importRound(ROUND, { approved_by: 'Lucas', shots: ['cgi-042'], cards: { 'cgi-042': 'rtxpro4500' } })
+    await go(); w.pull.state = 'done'; await go(10)
+    const t0 = tasks().find((x) => x.kind === 'run')!; w.pods.find((p) => p.id === 'new1')!.state = 'off'
+    queue.retryTask(t0.id); await go(10)
+    expect(tasks().find((x) => x.kind === 'run')!.state).toBe('done'); expect(w.created).toEqual(['new1', 'new2'])
+    expect(evs().join(' | ')).toMatch(/could not restart .*: a new pod instead/)
   })
 })

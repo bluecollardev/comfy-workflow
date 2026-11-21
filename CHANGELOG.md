@@ -5,6 +5,9 @@ completed items move here. Commit hashes are on `develop`.
 
 ## Unreleased, on `develop` (2026-11-20, after v1.7.0)
 
+- **Out of memory moves to a bigger card by itself** (`libs/core/src/cards.ts`, `queue.ts`). A graph the pod could not hold (RunPod's system log says `triggered memory limits (OOM)` / exit code 137, or the error says so) puts its task back to waiting on the next bigger cards, 32 -> 48 -> 80 -> 96 GB, never B200, B300 or the H200s, for the graphs that did not finish; at most 3 times; the small pod is stopped, never deleted; every step is a task event and a History line.
+- **A run no longer fails a graph for a slow or restarting ComfyUI:** ComfyUI is waited for before every graph, the history poll is asked again through an outage of up to 3 minutes, a restart that lost the prompt fails at once with that message, and the graph conversion uses the app's own script with a 240 s wait instead of the image's copy.
+- **A retried import task takes its own pod again** (restarted if stopped) instead of making a second one; the idle stop leaves a pod alone while a run is on it.
 - **A delivery round is never overwritten** (ADR-055). In a round that is not a `_TEST_` round a file already there with another size is refused (the plan lists it, the run throws), a same-size file is skipped, a manifest that is not ours stays untouched. Only `_TEST_` rounds are written over.
 - **A manifest per element:** `<shot>/<CLIP>_MANIFEST.json` next to each element's files, with the sha256 of every file; the round's `RETURN-MANIFEST.json` still goes up last.
 - **The pod's graph conversion waits 4 minutes, not 60 seconds, for ComfyUI's page.** The image's `ui2api.py` hard-codes 60 s, which a pod loading many nodes exceeds (`Page.wait_for_function: Timeout`, the commonest failure of the base_v008 runs); the app now runs a copy of it with the two timeouts at 240 s, and the repo's script reads `UI2API_TIMEOUT_MS` (default 240 s) for the next image.

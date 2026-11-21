@@ -34,7 +34,7 @@ export function missingModels(text: string): MissingModel[] {
   for (const m of String(text).matchAll(re)) { const folder = FOLDER[(m[1] ?? '').toLowerCase()] ?? 'models'; if (!out.some((x) => x.name === m[2])) out.push({ name: m[2], where_on_volume: `comfy-shared/models/${folder}/${m[2]}` }) }
   return out
 }
-const TRANSIENT = /\b(5\d\d)\b|ECONN|ETIMEDOUT|EAI_AGAIN|fetch failed|socket hang up|network|timed? ?out|not running|stopped|pod .* gone|503|502|504|unreachable/i
+const TRANSIENT = /\b(5\d\d)\b|restarted while|stopped answering|ECONN|ETIMEDOUT|EAI_AGAIN|fetch failed|socket hang up|network|timed? ?out|not running|stopped|pod .* gone|503|502|504|unreachable/i
 /** Which part of the run failed, whether trying again can help, and what to do: derived from the message and where it happened. */
 export function classify(stage: Stage, message: string): { retryable: boolean; recovery: string } {
   const miss = missingModels(message)

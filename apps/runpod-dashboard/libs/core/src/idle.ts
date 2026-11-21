@@ -74,6 +74,12 @@ export function decide(e: IdleEntry, p: ProbeResult, now: Date, uptimeS: number 
   return [out, quietS >= e.minutes * 60]
 }
 
+/** Other parts of the core that know a pod is working even when ComfyUI does not answer the probe (a run of graphs is on it, a queue task is attached to it). A pod any of them calls busy is never idle-stopped:
+ *  a heavy graph can keep ComfyUI from answering /queue in 8 seconds, and an unreachable pod counts as quiet. */
+const busyChecks: ((podId: string) => boolean)[] = []
+export const addBusyCheck = (f: (podId: string) => boolean): void => { if (!busyChecks.includes(f)) busyChecks.push(f) }
+const knownBusy = (podId: string): boolean => busyChecks.some((f) => { try { return f(podId) } catch { return false } })
+
 export type Running = Set<string> | Map<string, number | null>   // ids, or ids with RunPod's uptime in seconds
 
 /** One pass over the registry. `running` lists the pods RunPod says are running (with uptime when known); `stop` stops one. */
@@ -86,7 +92,8 @@ export async function sweep(running: () => Promise<Running> | Running, stop: (id
   for (const podId of Object.keys(reg)) {
     if (!live.has(podId)) continue   // stopped or gone: keep the entry in case it is resumed
     const uptime = live instanceof Map ? live.get(podId) ?? null : null
-    const [e, stopNow] = decide(reg[podId], await probeFn(podId), now, uptime)
+    const probed = await probeFn(podId)
+    const [e, stopNow] = decide(reg[podId], knownBusy(podId) ? { ...probed, busy: true } : probed, now, uptime)
     reg[podId] = e
     if (stopNow) {
       try { await stop(podId); stopped.push(podId); delete reg[podId] } catch (err) { console.error(`idle stop of ${podId} failed: ${(err as Error).message}`) }
