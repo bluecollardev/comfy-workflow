@@ -75,5 +75,13 @@ export function groupTiles(tiles, isEdlName) {
   return out
 }
 
+/** A file name shortened in the MIDDLE (Lucas, 2026-11-21: every tile read `ARCHIVAL-071_ASSEMBLY_…`): the start and the distinguishing end are kept, e.g. `ARCHIVAL-071_ASSE…rt09c02_v003.png`; the full name goes in the title tooltip. */
+export function shortName(name, max = 34, tail = 16) {
+  const s = String(name || '')
+  if (s.length <= max) return s
+  const t = Math.min(tail, max - 2)
+  return `${s.slice(0, max - t - 1)}…${s.slice(s.length - t)}`
+}
+
 /** The temp files as one group tile (collapsed by default), or null when there are none. */
 export const tempGroup = (files) => (files && files.length ? { key: 'tempgroup', kind: 'tempgroup', files, count: files.length, bytes: sizeOf(files) } : null)

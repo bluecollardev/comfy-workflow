@@ -1,6 +1,6 @@
 import { test, expect, podCard } from './fixtures'
 import { makeDpx } from '../src/utils/dpx-fixture.mjs'
-import { mainVideoOf, versionOf, isTemp, groupTiles, GROUP_MAX } from '../src/utils/videogroups.js'
+import { mainVideoOf, versionOf, isTemp, groupTiles, shortName, GROUP_MAX } from '../src/utils/videogroups.js'
 
 // Lucas, 2026-11-21: the Outputs entry `v11_assembly_master_v024_review025_part32c06_depth-182` (assembly_v024/review025_parts/split_cap120, pod CanalV2-fix-v020-a) is ONE run of 362 files: "this is a lot to preview at once".
 // A DPX sequence collapses to its one tile; files of one type in a folder are ONE group (Videos with a Main video, Images, Audio, Data, Other) and every group expands; ComfyUI's temp files are hidden unless
@@ -166,7 +166,7 @@ test('Outputs: a mixed folder shows one group per type (collapsed above 4), the 
   await expect(group('video').getByTestId('outputs-group-label')).toHaveText(/^12 Videos/)
   await expect(group('image').getByTestId('outputs-group-label')).toHaveText(/^30 Images/)
   await expect(group('data').getByTestId('outputs-group-label')).toHaveText(/^5 Data Files/)
-  await expect(group('video').getByTestId('outputs-group-main-name')).toContainText('ARCHIVAL-071_MAIN_FINAL_V02')   // the delivered clip is the Main video, not the highest vNN
+  await expect(group('video').getByTestId('outputs-group-main-name')).toHaveAttribute('title', /^ARCHIVAL-071_MAIN_FINAL_V02/)   // the delivered clip is the Main video, not the highest vNN
   await expect(m.getByTestId('outputs-seq-count')).toHaveText('2 sequence(s), 0 open')
   // temp files: hidden, not counted, nothing fetched for them
   await expect(m.locator('[data-testid="outputs-group"][data-kind="tempgroup"]')).toHaveCount(0)
@@ -193,7 +193,7 @@ test('Outputs: expanding the Videos group lists the Main video first with a Main
   await expect(rows).toHaveCount(12)                                                      // 12 fit in a page of 48
   await expect(rows.first()).toHaveAttribute('data-main', 'true')
   await expect(rows.first().getByTestId('outputs-group-main')).toHaveText('Main')
-  await expect(rows.first()).toContainText('ARCHIVAL-071_MAIN_FINAL_V02')
+  await expect(rows.first()).toHaveAttribute('title', /^ARCHIVAL-071_MAIN_FINAL_V02/)   // the name is shortened in the middle; the title has it whole
   await expect(video.getByTestId('outputs-group-shown')).toHaveText('12 of 12')
   await expect(video.getByTestId('outputs-group-all')).toHaveCount(0)
   expect(await m.locator('video').count()).toBeLessThanOrEqual(6)
@@ -264,4 +264,30 @@ test('Outputs: the list of runs is paged: 25 a page, Next goes to page 2, 100 a 
   await expect(m.getByTestId('outputs-pager-next')).toBeDisabled()
   const scope = m.getByTestId('pod-outputs-scope-all')
   if (await scope.count()) { await m.getByTestId('pod-outputs-scope-folder').click().catch(() => {}); await scope.click().catch(() => {}); await expect(m.getByTestId('outputs-pager-page')).toHaveText(/Page 1 of/) }
+})
+
+test('Names are shortened in the MIDDLE so tiles stay distinguishable; the full name is in the tooltip', async ({ page, api }) => {
+  const long = (v) => `ARCHIVAL-071_ASSEMBLY_part09c02_v00${v}.png`
+  expect(shortName(long(3))).toMatch(/^ARCHIVAL-071_ASSE….*_v003\.png$/)
+  expect(shortName(long(3)).length).toBeLessThanOrEqual(34)
+  expect(shortName(long(3))).not.toBe(shortName(long(4)))                                 // the end tells them apart
+  expect(shortName('short.png')).toBe('short.png')
+  const outputs = [1, 2, 3].map((v) => ({ filename: long(v), subfolder: SUB, type: 'output' }))
+  const m = await open(page, api, run('34343434-0000-1111', outputs), [])
+  const rows = m.getByTestId('outputs-group-row')
+  await expect(rows).toHaveCount(3)
+  await expect(rows.nth(0).locator('.gname')).toHaveAttribute('title', /^ARCHIVAL-071_ASSEMBLY_part09c02_v00\d\.png$/)
+  await expect(rows.nth(0).locator('.gname')).toContainText('…')
+})
+
+test('A DPX sequence has a header row on its own tile (name, frame count, Expand/Collapse); a group has the same header row', async ({ page, api }) => {
+  const m = await open(page, api, bigRun(), [])
+  const heads = m.getByTestId('outputs-seq-head')
+  await expect(heads).toHaveCount(3)
+  await expect(heads.first().getByTestId('outputs-seq-headcount')).toHaveText('120')
+  await expect(heads.first().getByTestId('outputs-seq-name')).toHaveAttribute('title', /_depth-182\.#+\.dpx$/)
+  await expect(heads.first().getByTestId('outputs-seq-toggle')).toBeVisible()           // the control is in the header, not below the grid row
+  await expect(m.getByTestId('outputs-group-head').getByTestId('outputs-group-toggle')).toBeVisible()
+  await heads.first().getByTestId('outputs-seq-toggle').click()
+  await expect(m.getByTestId('outputs-seq-frames')).toHaveCount(1)
 })

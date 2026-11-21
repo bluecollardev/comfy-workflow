@@ -17,19 +17,23 @@
     <div v-if="files.length" class="gallery">
       <div v-for="t in tiles" :key="t.key" class="cell" :class="{ wide: (t.kind === 'dpx' && isExpanded(t)) || (isGroup(t) && groupExpanded(t)) }" data-testid="outputs-cell">
       <div v-if="isGroup(t)" class="group" data-testid="outputs-group" :data-kind="t.kind" :data-cat="t.cat || 'temp'" :data-count="t.count" :data-expanded="groupExpanded(t) ? 'true' : 'false'">
-        <button type="button" class="tile grouptile" :aria-expanded="groupExpanded(t) ? 'true' : 'false'" :title="t.names || ''" data-testid="outputs-group-toggle" @click="toggleGroup(t)">
-          <LazyMedia v-if="!offline && !groupExpanded(t) && hasPreview(t) && t.main" :kind="t.cat" :src="viewUrl(base, t.main, t.cat === 'image' ? { thumb: true } : undefined)" :alt="t.main.filename" />
+        <div class="head" data-testid="outputs-group-head">
+          <i class="fa-solid" :class="groupIcon(t)"></i>
+          <span class="headname text-truncate" :title="groupLabel(t)" data-testid="outputs-group-label">{{ groupLabel(t) }}</span>
+          <BButton variant="outline-light" size="sm" class="headbtn" :aria-expanded="groupExpanded(t) ? 'true' : 'false'" data-testid="outputs-group-toggle" @click="toggleGroup(t)"><i class="fa-solid me-1" :class="groupOpen(t) ? 'fa-chevron-up' : 'fa-chevron-down'"></i>{{ groupOpen(t) ? $t('outputs.dpx.collapse') : $t('outputs.dpx.expand') }}</BButton>
+        </div>
+        <div v-if="!groupExpanded(t)" class="tile grouptile" data-testid="outputs-group-preview" @click="toggleGroup(t)">
+          <LazyMedia v-if="!offline && hasPreview(t) && t.main" :kind="t.cat" :src="viewUrl(base, t.main, t.cat === 'image' ? { thumb: true } : undefined)" :alt="t.main.filename" />
           <span v-else class="thumb d-flex align-items-center justify-content-center text-body-secondary" data-testid="outputs-group-icon"><i class="fa-solid fs-3" :class="groupIcon(t)"></i></span>
-          <span class="cap text-truncate" data-testid="outputs-group-label"><i class="fa-solid me-1" :class="groupOpen(t) ? 'fa-chevron-up' : 'fa-chevron-down'"></i>{{ groupLabel(t) }}</span>
-          <span v-if="t.main" class="cap text-truncate" data-testid="outputs-group-main-name">{{ $t('outputs.group.main') }}: {{ t.main.filename }}</span>
+          <span v-if="t.main" class="cap" :title="t.main.filename" data-testid="outputs-group-main-name">{{ $t('outputs.group.main') }}: {{ shortName(t.main.filename) }}</span>
           <span v-if="t.versions && t.versions[0] !== t.versions[1]" class="cap" data-testid="outputs-group-versions">{{ $t('outputs.group.versionRange', { a: String(t.versions[0]).padStart(3, '0'), b: String(t.versions[1]).padStart(3, '0') }) }}</span>
-        </button>
+        </div>
         <div v-if="groupExpanded(t)" class="grouprows" data-testid="outputs-group-rows" :data-shown="shownFiles(t).length">
           <div class="small text-body-secondary mb-1" data-testid="outputs-group-shown">{{ $t('outputs.group.shown', { shown: shownFiles(t).length, total: t.files.length }) }}</div>
           <div class="rowlist" :class="{ media: hasPreview(t) }">
             <button v-for="f in shownFiles(t)" :key="`${f.subfolder}/${f.filename}`" type="button" class="grow" data-testid="outputs-group-row" :data-main="f === t.main ? 'true' : undefined" :disabled="offline" :title="f.filename" @click="openFile(f)">
               <LazyMedia v-if="hasPreview(t) && !offline" :kind="f.kind" :src="viewUrl(base, f, f.kind === 'image' ? { thumb: true } : undefined)" :alt="f.filename" />
-              <span class="gname text-truncate">{{ f.filename }}</span>
+              <span class="gname" :title="f.filename">{{ shortName(f.filename) }}</span>
               <span v-if="f === t.main" class="badge text-bg-primary" data-testid="outputs-group-main">{{ $t('outputs.group.main') }}</span>
               <span v-if="f.bytes != null" class="text-body-secondary">{{ sizeText(f.bytes) }}</span>
             </button>
@@ -42,19 +46,24 @@
         </div>
       </div>
       <template v-else>
+      <div v-if="t.kind === 'dpx' && t.frames.length > 1" class="head" data-testid="outputs-seq-head">
+        <i class="fa-solid fa-film"></i>
+        <span class="headname text-truncate" :title="t.name || t.file.filename" data-testid="outputs-seq-name">{{ shortName(t.name || t.file.filename) }}</span>
+        <span class="badge text-bg-secondary headcount" data-testid="outputs-seq-headcount">{{ t.frames.length }}</span>
+        <BButton variant="outline-light" size="sm" class="headbtn" :aria-expanded="isExpanded(t) ? 'true' : 'false'" data-testid="outputs-seq-toggle" @click="toggleSeq(t)"><i class="fa-solid me-1" :class="isExpanded(t) ? 'fa-chevron-up' : 'fa-chevron-down'"></i>{{ isExpanded(t) ? $t('outputs.dpx.collapse') : $t('outputs.dpx.expand') }}</BButton>
+      </div>
       <button type="button" class="tile" data-testid="outputs-tile" :disabled="offline" :data-offline="offline ? 'true' : undefined" :data-kind="t.kind" :data-type="t.file.type" :data-frames="t.frames ? t.frames.length : undefined" :title="t.name || t.file.filename" @click="open(t)">
         <span v-if="offline && t.kind !== 'dpx'" class="thumb d-flex align-items-center justify-content-center text-body-secondary" data-testid="outputs-offline-thumb"><i class="fa-solid fs-3" :class="{ image: 'fa-image', video: 'fa-film', audio: 'fa-music' }[t.kind] || 'fa-file'"></i></span>
         <LazyMedia v-else-if="t.kind === 'image'" kind="image" :src="viewUrl(base, t.file, { thumb: true })" :alt="t.file.filename" />
         <LazyMedia v-else-if="t.kind === 'video'" kind="video" :src="viewUrl(base, t.file)" />
         <span v-else-if="t.kind === 'dpx'" class="thumb d-flex flex-column align-items-center justify-content-center text-body-secondary position-relative" data-testid="outputs-dpx-placeholder"><SequenceThumb :tile="t" :base="base" :scope="scope" :volume-name="volumeName" :offline="offline" @state="(s) => (thumbState[t.key] = s)" @header="(h) => (thumbHeader[t.key] = h)" /><i v-if="!['ready', 'empty'].includes(thumbState[t.key])" class="fa-solid fa-film fs-3"></i><span class="small mt-1 dpxbadge" :class="{ over: thumbState[t.key] === 'ready' }" data-testid="outputs-dpx-badge">{{ t.frames.length > 1 ? $t('outputs.dpx.badge', { n: t.frames.length }) : 'DPX' }}</span><span v-if="problemCounts[t.key]" class="small text-warning" data-testid="outputs-dpx-problems">{{ $t('outputs.dpx.problemsOf', { n: problemCounts[t.key], total: t.frames.length }) }}</span><span v-if="proxyOf(t) || reviewOf(t)" class="rbadges"><span v-if="reviewOf(t)" class="badge text-bg-success" data-testid="outputs-dpx-review" :data-version="reviewOf(t).version">{{ $t('outputs.render.badgeReview', { v: String(reviewOf(t).version).padStart(3, '0') }) }}</span><ApproveControl v-if="reviewOf(t)" :shot="reviewOf(t).shot" :version="reviewOf(t).version" /><span v-if="proxyOf(t)" class="badge" :class="proxyOf(t).exists_local ? 'text-bg-success' : 'text-bg-info'" data-testid="outputs-dpx-rendered" :data-where="proxyOf(t).exists_local ? 'local' : 'remote'" :title="proxyOf(t).exists_local ? $t('outputs.render.badgeLocalTitle') : $t('outputs.render.badgeRemoteTitle')">{{ proxyOf(t).exists_local ? $t('outputs.render.badgeLocal') : $t('outputs.render.badgeRemote') }}</span><span v-if="proxyOf(t)?.partial" class="badge text-bg-warning" data-testid="outputs-dpx-partial">{{ $t('outputs.render.badgePartial') }}</span></span></span>
         <span v-else class="thumb d-flex align-items-center justify-content-center text-body-secondary"><i class="fa-solid fs-3" :class="t.kind === 'audio' ? 'fa-music' : 'fa-file'"></i></span>
-        <span class="cap text-truncate">{{ t.name || t.file.filename }}</span>
+        <span class="cap" :title="t.name || t.file.filename" data-testid="outputs-tile-name">{{ shortName(t.name || t.file.filename) }}</span>
         <SequenceColour v-if="t.kind === 'dpx'" :tile="t" :base="base" :offline="offline" :header="thumbHeader[t.key] || null" />
         <SequenceFrames v-if="t.kind === 'dpx'" :tile="t" />
         <span v-if="t.file.type === 'temp'" class="badge text-bg-secondary tag">{{ $t('outputs.type.temp') }}</span>
       </button>
       <template v-if="t.kind === 'dpx' && t.frames.length > 1">
-        <BButton variant="outline-light" size="sm" class="seqtoggle" :aria-expanded="isExpanded(t) ? 'true' : 'false'" data-testid="outputs-seq-toggle" @click="toggleSeq(t)"><i class="fa-solid me-1" :class="isExpanded(t) ? 'fa-chevron-up' : 'fa-chevron-down'"></i>{{ isExpanded(t) ? $t('outputs.dpx.collapse') : $t('outputs.dpx.expand') }}</BButton>
         <div v-if="isExpanded(t)" class="frames" data-testid="outputs-seq-frames" :data-shown="shownFrames(t).length">
           <div class="small text-body-secondary mb-1" data-testid="outputs-seq-frames-count">{{ $t('outputs.dpx.framesShown', { shown: shownFrames(t).length, total: t.frames.length }) }}</div>
           <div class="framelist">
@@ -83,7 +92,7 @@
 import { computed, ref, watch } from 'vue'
 import { viewUrl, galleryTiles, sizeText, isDpx } from '../utils/outputs'
 import { isExpanded, toggleSeq, setAll, shownFrames, showMore, showAll, groupView, groupExpanded, toggleGroup, shownFiles, groupMore, groupShowAll, setShowTemp, HAS_IO } from '../utils/dpxcollapse'
-import { isTemp, groupTiles, tempGroup } from '../utils/videogroups'
+import { isTemp, groupTiles, tempGroup, shortName } from '../utils/videogroups'
 import LazyMedia from './LazyMedia.vue'
 import PageSentinel from './PageSentinel.vue'
 import { core } from '../api/bridge'
@@ -159,7 +168,11 @@ watch(() => props.files, () => { current.value = null; dpx.value = null; problem
 .cell.wide { grid-column: 1 / -1; }
 .cell .tile { width: 100%; }
 .cell.wide .tile { max-width: 9.5rem; }
-.seqtoggle { align-self: flex-start; }
+.head { display: flex; align-items: center; gap: 0.4rem; min-width: 0; padding: 0.15rem 0.1rem; font-size: 0.78rem; }
+.headname { flex: 1 1 auto; min-width: 0; font-weight: 600; }
+.headcount { font-weight: 400; }
+.headbtn { flex: 0 0 auto; }
+.cap { overflow-wrap: anywhere; }
 .group { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
 .grouptile { width: 100%; }
 .cell.wide .grouptile { max-width: 14rem; }
