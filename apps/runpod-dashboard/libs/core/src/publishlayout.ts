@@ -72,7 +72,12 @@ export function layoutKey(o: { prefix: string; round: string; path: string; clip
   return { key: `${root}${shot}/${file}`, shot, clip, stem, role, ...(file !== name ? { renamed_from: name } : {}) }
 }
 /** The take of a clip name: `ARCHIVAL-077_A_FINAL_V03_...` is A, anything else main. */
-export const elementOf = (clip: string): string => { const m = /^[A-Za-z]+-\d+[a-z]?_([A-Za-z])_/.exec(clip); return m ? m[1].toUpperCase() : 'main' }
+/** The element of a clip name: the part between the shot and FINAL/STILL/ALT (`ARCHIVAL-087_RAIN_FINAL_V01_...` -> RAIN, `ARCHIVAL-077_A_FINAL_...` -> A). MAIN stays 'main' (as before). Until 2026-11-21 only a single letter was an element, so PLATFORM, RAIN, ASCENT, CHASM07... all became 'main' and one shot's elements shared one manifest. */
+export const elementOf = (clip: string): string => {
+  const m = /^[A-Za-z]+-\d+[a-z]?_(.+?)_(?:FINAL|STILL|ALT)(?:_|$)/i.exec(clip) ?? /^[A-Za-z]+-\d+[a-z]?_([A-Za-z])_/.exec(clip)
+  if (!m) return 'main'
+  const e = m[1]; return /^main$/i.test(e) ? 'main' : e.toUpperCase()
+}
 
 /** An ISO time with the local UTC offset, like 2026-11-19T14:21:31+07:00. */
 export function isoWithOffset(ms: number): string {
@@ -125,7 +130,8 @@ export function mergeManifest(existing: string | null, o: { round: string; retur
     try { old = JSON.parse(existing) as Manifest } catch { throw new CoreError(409, `The RETURN-MANIFEST.json already in round ${o.round} cannot be read (it is not valid JSON): nothing was overwritten. Fix or remove it on the bucket first.`) }
     if (!old || old.schema_version !== SCHEMA || !Array.isArray(old.items) || (old.round !== undefined && old.round !== o.round)) throw new CoreError(409, `The RETURN-MANIFEST.json already in round ${o.round} is not a ${SCHEMA} manifest for this round: nothing was overwritten.`)
   }
-  const shots = new Set(o.items.map((i) => i.shot)), kept = (old?.items ?? []).filter((i) => !shots.has(i.shot))
+  // this run's elements replace their own entries only (shot + element): publishing 123 f must not drop the 123 c entry that an earlier run put in (until 2026-11-21 the whole shot was replaced)
+  const mine = new Set(o.items.map((i) => `${i.shot}|${i.element}`)), kept = (old?.items ?? []).filter((i) => !mine.has(`${i.shot}|${i.element}`))
   const pod = o.pod.pod_id === 'n/a' && old?.pod && old.pod.pod_id !== 'n/a' ? old.pod : o.pod
   return { schema_version: SCHEMA, round: o.round, returned_by: o.returned_by, returned_at: isoWithOffset(o.now), pod, items: [...kept, ...o.items].sort((a, b) => a.shot.localeCompare(b.shot) || a.element.localeCompare(b.element)) }
 }
