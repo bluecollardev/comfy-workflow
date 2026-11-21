@@ -24,5 +24,5 @@ describe('the converter script the pod runs', () => {
     const src = out.slice(out.indexOf('#!/usr/bin/env python3'), i), graph = out.slice(i + '---GRAPH---\n'.length)
     expect(src.trim()).toBe(ui2api.UI2API_PY.trim())
     expect(JSON.parse(Buffer.from(graph.replace(/\s+/g, ''), 'base64').toString())).toEqual({ nodes: [{ id: 1 }], links: [] })
-  })
+  }, 30_000)   // it spawns bash and a stand-in python3 synchronously: 40 to 320 ms alone, but a loaded machine stalled it past the 5 s default once in a full run
 })
