@@ -19,7 +19,7 @@ import { useUiStore } from '../stores/ui'
 import { useAutopublishStore } from '../stores/autopublish'
 import { usePublishStore } from '../stores/publish'
 import { publishActive } from '../utils/publish'
-import { countdownText, secondsUntil } from '../utils/autopublish'
+import { countdownText, secondsUntil, volumeScan } from '../utils/autopublish'
 import { t } from '../i18n'
 
 const ui = useUiStore(), ap = useAutopublishStore(), pub = usePublishStore()
@@ -44,7 +44,7 @@ const working = computed(() => {
   if (waiting.length) { const secs = Math.min(...waiting.map((e) => secondsUntil(e.due_at, now.value))); states.push({ state: 'window', spin: false, text: t('queue.banner.window', { n: waiting.length, t: countdownText(secs) }) }) }
   const settling = Array.isArray(g?.waiting_to_settle) ? g.waiting_to_settle.length : 0
   if (settling) states.push({ state: 'settling', spin: false, text: t('queue.banner.settling', { n: settling }) })
-  if (s.watching?.volume?.scanning || s.watching?.local?.scanning) states.push({ state: 'scanning', spin: true, text: t('queue.banner.scanning') })
+  if (volumeScan(s.watching?.volume, now.value).state === 'scanning' || s.watching?.local?.scanning) states.push({ state: 'scanning', spin: true, text: t('queue.banner.scanning') })
   return states.length ? { ...states[0], more: states.length - 1 } : null
 })
 function openQueue() { ui.queueFocus = 'autopublish'; ui.queueTab = 'publishing'; ui.queueOpen = true }

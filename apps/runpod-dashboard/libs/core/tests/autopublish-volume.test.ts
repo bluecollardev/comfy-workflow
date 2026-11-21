@@ -24,7 +24,7 @@ import { scratch } from './helpers.js'
 // ADR-050 "Auto-publish sources: this PC and/or the volume". Fakes only: a volume tree in a map, a fake aws, fake processes.
 vi.setConfig({ testTimeout: 30_000 })
 const VOLB = 'vol1', D = 'comfy-shared/output/deliver/', MIN = 60_000
-let dir: string, out: string, t: number, volume: Map<string, string>, dest: Map<string, number>, bodies: Map<string, string>, calls: string[][], spawned: string[][], volFail: boolean, hang: boolean
+let dir: string, out: string, t: number, volume: Map<string, string>, dest: Map<string, number>, bodies: Map<string, string>, calls: string[][], spawned: string[][], volFail: boolean, hang: boolean | 'never'
 const clock = () => t
 const write = (rel: string, body = 'x') => { const p = join(out, rel); mkdirSync(join(p, '..'), { recursive: true }); writeFileSync(p, body) }
 const sidecar = (o: Record<string, unknown> = {}) => JSON.stringify({ kind: 'review', ...o })
@@ -41,7 +41,7 @@ const fakeAws: podpull.AwsRunner = async (args, _e, o) => {
   const m = /^s3:\/\/([^/]+)\/(.*)$/.exec(args[2] ?? '')
   if (args[1] === 'ls' && m) {
     const store = m[1] === VOLB ? volume : new Map([...dest].map(([k, n]) => [k, 'x'.repeat(n)])), pre = m[2], rec = args.includes('--recursive')
-    if (m[1] === VOLB) { if (hang) return new Promise((res) => o?.signal?.addEventListener('abort', () => res({ code: 130, stdout: '', stderr: '' }))); if (volFail) return { code: 1, stdout: '', stderr: 'An error occurred (503) when calling the ListObjectsV2 operation: Service Unavailable' } }
+    if (m[1] === VOLB) { if (hang === 'never') return new Promise(() => undefined); if (hang) return new Promise((res) => o?.signal?.addEventListener('abort', () => res({ code: 130, stdout: '', stderr: '' }))); if (volFail) return { code: 1, stdout: '', stderr: 'An error occurred (503) when calling the ListObjectsV2 operation: Service Unavailable' } }
     const under = [...store].filter(([k]) => k.startsWith(pre)).sort(), pres = new Set<string>(), files: string[] = []
     for (const [k, b] of under) { const r = k.slice(pre.length); if (!rec && r.includes('/')) pres.add(`${r.split('/')[0]}/`); else files.push(row(rec ? k : r, Buffer.byteLength(b))) }
     return { code: pres.size || files.length ? 0 : 1, stdout: [...[...pres].map((x) => `                           PRE ${x}`), ...files].join('\n'), stderr: '' }
@@ -78,7 +78,7 @@ beforeEach(async () => {
   await publish.setSettings({ s3: { layout: 'as-is', credentials: 'app', bucket: 'my-bucket', prefix: 'renders', region: 'us-west-2', access_key_id: 'AKIAEXAMPLEKEY1234', secret_access_key: 'secretsecretsecret1234' }, slack: { preview_frame: false, volume_source: false, file_links: false, folder_link: false } })
   await autopublish.setSettings({ scope: 'all' })   // these tests are about the pipeline, not the scope (autopublish-scope.test.ts)
 })
-afterEach(() => { autopublish.reset(); dpxprep.reset(); publish.reset(); delete process.env.PUBLISH_SLACK_HOST_ALLOW; for (const k of settingsEnv.PUBLISH_SECRETS) delete process.env[k] })
+afterEach(() => { Object.assign(autopublish.volumeScanLimits, { listMs: 60_000, scanMs: 5 * 60_000, graceMs: 5_000 }); autopublish.reset(); dpxprep.reset(); publish.reset(); delete process.env.PUBLISH_SLACK_HOST_ALLOW; for (const k of settingsEnv.PUBLISH_SECRETS) delete process.env[k] })
 
 describe('the sources and the scan', () => {
   it('both places by default; both off is a 400; each can be turned off alone', async () => {
@@ -105,6 +105,21 @@ describe('the sources and the scan', () => {
     await scan(); clearInterval(tm); expect((await reviews()).length).toBe(autopublish.VOLUME_MAX_VERSIONS); expect(worst).toBeLessThan(500)
     volume.clear(); for (let i = 0; i < 5100; i++) volume.set(`${D}d-001/v001/f${i}.txt`, 'x'); vreview('d-002'); await scan(); expect((await reviews()).length).toBe(0)   // the object cap stopped the scan inside the first version
     volume.clear(); vreview('e-001'); calls.length = 0; hang = true; const p = autopublish.scanVolume(); const q = autopublish.scanVolume(); await new Promise((r) => setTimeout(r, 20)); autopublish.cancelVolumeScan(); const [a, b] = await Promise.all([p, q]); expect(a.scanned).toBe(false); expect(b.error).toMatch(/cancelled/); expect(calls.filter((c) => c[1] === 'ls').length).toBeLessThan(10)
+  })
+  it('a listing that hangs is stopped: the scan fails with a reason, scanning is reset, the failed scan does not move scanned_at, and the next scan works', async () => {
+    vreview('a-001'); Object.assign(autopublish.volumeScanLimits, { listMs: 50 }); hang = true
+    const r = await scan(); expect(r.scanned).toBe(false); expect(r.error).toMatch(/Listing the volume took longer than 0\.05 seconds/); expect(r.scanned_at).toBeNull()
+    let w = (await autopublish.statusNow()).watching.volume; expect(w).toMatchObject({ scanning: false, scan_started_at: null, scanned_at: null }); expect(w.scan_error?.reason).toMatch(/took longer/); expect(typeof w.scan_error?.at).toBe('string')
+    hang = false; t += MIN; Object.assign(autopublish.volumeScanLimits, { listMs: 60_000 }); expect(await scan()).toMatchObject({ scanned: true, reviews: 1 })
+    w = (await autopublish.statusNow()).watching.volume; expect(w.scan_error).toBeUndefined(); expect(w.error).toBeUndefined(); expect(w.scanned_at).not.toBeNull(); expect(w.scanning).toBe(false)
+  })
+  it('a scan over its whole limit is stopped and the last good result stays listed; one that ignores its abort is given up after the grace time', async () => {
+    vreview('a-001'); await scan(); expect((await reviews()).length).toBe(1); const good = (await autopublish.statusNow()).watching.volume.scanned_at; expect(good).not.toBeNull()
+    t += MIN; Object.assign(autopublish.volumeScanLimits, { scanMs: 50, graceMs: 30 }); hang = true
+    const r = await scan(); expect(r.scanned).toBe(false); expect(r.error).toMatch(/took longer than 0\.05 seconds and was stopped; the last scan \(1 reviews\) is kept/); expect(r.scanned_at).toBe(good); expect((await reviews()).length).toBe(1)
+    hang = 'never'; t += MIN; const t0 = Date.now(); const q = await scan(); expect(Date.now() - t0).toBeLessThan(2000); expect(q.scanned).toBe(false)   // nothing ever answers the listing and the abort is ignored: given up
+    expect((await autopublish.statusNow()).watching.volume).toMatchObject({ scanning: false, scan_started_at: null }); hang = false; t += MIN; Object.assign(autopublish.volumeScanLimits, { scanMs: 5 * MIN })
+    expect(await scan()).toMatchObject({ scanned: true, reviews: 1 })
   })
   it('the scan timer: volume_scan_minutes apart, only when Auto-publish is on and the volume is watched; Scan now runs at once; the listing is cached between scans', async () => {
     vreview('t-001'); expect(await autopublish.volumeTick()).toBe(false)   // Auto-publish is off

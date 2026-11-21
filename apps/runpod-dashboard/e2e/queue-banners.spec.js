@@ -22,10 +22,17 @@ test.describe('Loading the queue', () => {
     const b = page.getByTestId('queue-loading-banner'); await expect(b.getByTestId('queue-loading-text')).toContainText('The queue could not load: '); await expect(b).toHaveAttribute('data-state', 'error')
     api.state.queueFail = ''; await b.getByTestId('queue-loading-retry').click(); await expect(b).toHaveCount(0, { timeout: 8000 })
   })
-  test('a fast Queue never shows it for long; the volume scan keeps it up', async ({ page, api }) => {
-    on(api); api.state.autopublish = { watching: { ...W(), local: { enabled: true, root: '/x', root_exists: true, reviews: 0 }, volume: { enabled: true, id: 'v', reviews: 0, scanning: true } } }
-    await page.goto('/'); await page.getByTestId('open-queue').click(); await expect(page.getByTestId('queue-loading-banner')).toBeVisible()
-    api.state.autopublish.watching.volume.scanning = false; await expect(page.getByTestId('queue-loading-banner')).toHaveCount(0, { timeout: 8000 })
+  test('a volume scan that runs for ever never keeps the loading banner or the Auto-publish line up (the Queue data is what it waits for)', async ({ page, api }) => {
+    const ago = (min) => new Date(Date.now() - min * 60000).toISOString()
+    on(api); api.state.autopublish = { watching: { ...W(), local: { enabled: true, root: '/x', root_exists: true, reviews: 0 }, volume: { enabled: true, id: 'v', reviews: 94, scanning: true, scan_started_at: ago(40), scanned_at: ago(70) } } }
+    await page.goto('/'); await page.getByTestId('open-queue').click()
+    await expect(page.getByTestId('queue-modal')).toBeVisible(); await expect(page.getByTestId('queue-loading-banner')).toHaveCount(0, { timeout: 8000 })   // scanning for 40 minutes: a background job, not a loading state
+    await expect(page.getByTestId('autopublish-working-banner')).toHaveCount(0)
+  })
+  test('a fresh scan (under 90 s) shows the Auto-publish line, which goes away when it ends', async ({ page, api }) => {
+    on(api); api.state.autopublish = { watching: { ...W(), local: { enabled: true, root: '/x', root_exists: true, reviews: 0 }, volume: { enabled: true, id: 'v', reviews: 0, scanning: true, scan_started_at: new Date().toISOString() } } }
+    await page.goto('/'); await expect(page.getByTestId('autopublish-working-banner')).toContainText('scanning the RunPod volume')
+    api.state.autopublish.watching.volume.scanning = false; api.state.autopublish.watching.volume.scan_started_at = null; await expect(page.getByTestId('autopublish-working-banner')).toHaveCount(0, { timeout: 20000 })   // the status is polled every 10 s when nothing is busy
   })
 })
 
@@ -35,11 +42,11 @@ test.describe('Auto-publish is working', () => {
     ['generating', { generate: GEN({ generating: 2, pod: { name: 'ComfyUI-Dev', state: 'running', case: 'running' }, current: 'CGI-042_A' }) }, /Auto-publish: generating 2 review\(s\) on ComfyUI-Dev… · CGI-042_A/],
     ['window', { pending: [{ id: 'w', shot: 'cgi-042', version: 1, state: 'waiting', due_at: due(9) }] }, /Auto-publish: 1 review\(s\) will upload in 9:/],
     ['settling', { generate: GEN({ waiting_to_settle: [{ stem: 'A' }, { stem: 'B' }, { stem: 'C' }] }) }, /Auto-publish: 3 sequences waiting for frames to settle/],
-    ['scanning', { watching: { ...W(), local: { enabled: true, reviews: 0 }, volume: { enabled: true, reviews: 0, scanning: true } } }, /Auto-publish: scanning the RunPod volume for reviews…/],
+    ['scanning', { watching: { ...W(), local: { enabled: true, reviews: 0 }, volume: { enabled: true, reviews: 0, scanning: true, scan_started_at: '__NOW__' } } }, /Auto-publish: scanning the RunPod volume for reviews…/],
   ]
   for (const [name, st, re] of states) {
     test(`${name}: one line on any screen, and it opens the Queue's Auto-publish section`, async ({ page, api }) => {
-      on(api); api.state.autopublish = st
+      on(api); api.state.autopublish = JSON.parse(JSON.stringify(st).replace('__NOW__', new Date().toISOString()))
       await page.goto('/'); const b = page.getByTestId('autopublish-working-banner')
       await expect(b).toBeVisible(); await expect(b.getByTestId('autopublish-working-text')).toHaveText(re); await expect(b).toHaveAttribute('data-state', name)
       await b.getByTestId('autopublish-working-open').click(); await expect(page.getByTestId('queue-modal')).toBeVisible(); await expect(page.getByTestId('queue-autopublish')).toBeVisible()

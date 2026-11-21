@@ -130,6 +130,17 @@ test.describe('Auto-publish sources: what is watched', () => {
     await expect.poll(() => api.state.autopublish.calls.filter((c) => c.call === 'scanVolume').length).toBe(1)
     await expect(q.getByTestId('autopublish-watching-volume')).toContainText('comfy-shared/output/deliver: 20 reviews', { timeout: 8000 }); await expect(q.getByTestId('autopublish-scanning')).toHaveCount(0); await expect(q.getByTestId('autopublish-watching-volume')).toContainText('scanned just now')
   })
+  test('a scan that runs for ever shows no spinner after 90 seconds (a background note instead); a failed scan says why, keeps the earlier result and offers Retry Scan', async ({ page, api }) => {
+    const ago = (min) => new Date(Date.now() - min * 60000).toISOString()
+    withSources(api); api.state.autopublish = { watching: PLACES({ volume: { enabled: true, id: 'vol123', reviews: 94, scanning: true, scan_started_at: ago(40), scanned_at: ago(70) } }), scanMs: 1500 }
+    await page.goto('/'); const q = await openQ(page)
+    await expect(q.getByTestId('autopublish-scanning')).toHaveCount(0); await expect(q.getByTestId('autopublish-scan-slow')).toContainText('still listing the volume (40 min, in the background)')
+    await expect(q.getByTestId('autopublish-watching-volume')).toContainText(/94 reviews · scanned 1 hours? ago/); await expect(q.getByTestId('autopublish-scan-now')).toBeEnabled()
+    api.state.autopublish.watching.volume = { enabled: true, id: 'vol123', reviews: 94, scanning: false, scan_started_at: null, scanned_at: ago(70), scan_error: { reason: 'The volume scan took longer than 5 minutes and was stopped; the last scan (94 reviews) is kept', at: ago(1) } }
+    await expect(q.getByTestId('autopublish-volume-error')).toContainText('took longer than 5 minutes and was stopped', { timeout: 8000 }); await expect(q.getByTestId('autopublish-scan-kept')).toContainText(/the earlier result, scanned 1 hours? ago, stays listed/)
+    await expect(q.getByTestId('autopublish-scan-slow')).toHaveCount(0); await expect(q.getByTestId('autopublish-scan-now')).toHaveText('Retry Scan')
+    await q.getByTestId('autopublish-scan-now').click(); await expect.poll(() => api.state.autopublish.calls.filter((c) => c.call === 'scanVolume').length).toBe(1)
+  })
   test('a volume error is shown inline without hiding the local line; a failed Scan now says why', async ({ page, api }) => {
     withSources(api); api.state.autopublish = { watching: PLACES({ volume: { enabled: true, id: 'vol123', reviews: 0, scanning: false, error: 'S3 keys are not set' } }), scanFail: 'The volume scan could not start' }
     await page.goto('/'); const q = await openQ(page)

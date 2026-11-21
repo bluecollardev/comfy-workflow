@@ -83,3 +83,16 @@ test('settingsProblem: the scope is edl or all (a missing one is fine: an older 
   assert.equal(settingsProblem({ window_minutes: 10, scope: 'everything' }), 'scope'); assert.equal(settingsProblem({ window_minutes: 10, scope: '' }), 'scope')
   assert.equal(apFill({}).scope, 'edl'); assert.equal(apFill({ scope: 'all' }).scope, 'all'); assert.equal(apIsDefault({}), true); assert.equal(apIsDefault({ scope: 'all' }), false)
 })
+
+import { volumeScan, SCAN_SHORT_MS } from './autopublish.js'
+test('volumeScan: scanning only for the first 90 s, then slow (background, no spinner); an error says why; idle otherwise; never an endless scanning state', () => {
+  const now = Date.parse('2026-11-21T20:00:00Z'), at = (ms) => new Date(now - ms).toISOString()
+  assert.equal(volumeScan({ scanning: true, scan_started_at: at(10_000) }, now).state, 'scanning')
+  assert.equal(volumeScan({ scanning: true, scan_started_at: at(SCAN_SHORT_MS) }, now).state, 'scanning')
+  assert.equal(volumeScan({ scanning: true, scan_started_at: at(SCAN_SHORT_MS + 1000) }, now).state, 'slow')
+  assert.equal(volumeScan({ scanning: true, scan_started_at: at(40 * 60_000) }, now).minutes, 40)
+  assert.equal(volumeScan({ scanning: true }, now).state, 'slow')   // a scan that does not say when it began is never shown as a spinner
+  const e = volumeScan({ scanning: false, scanned_at: at(70 * 60_000), scan_error: { reason: 'took longer', at: at(60_000) } }, now); assert.equal(e.state, 'error'); assert.equal(e.error, 'took longer'); assert.equal(e.last, at(70 * 60_000))
+  assert.equal(volumeScan({ scanning: false, error: 'S3 keys are not set' }, now).state, 'error')   // the older field
+  assert.equal(volumeScan({ scanning: false, scanned_at: at(1000) }, now).state, 'idle'); assert.equal(volumeScan(undefined, now).state, 'idle')
+})

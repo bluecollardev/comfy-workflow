@@ -1,6 +1,16 @@
 import { roundTemplateProblem } from './publish.js'
 /** Auto-publish (docs/ADR-050 amendment), pure helpers: the countdown, an entry's line, a review version from its folder, the validation of the settings. `npm run dpx:test`. */
 export const WINDOW_MAX = 120, CAP_MAX = 100
+/** A volume scan is shown as "scanning" only for its first `SCAN_SHORT_MS`; a longer one is a background job (state 'slow': no spinner, no banner) and a failed one is 'error' (with its reason and a Retry). Never an endless spinner (Lucas, 2026-11-21). */
+export const SCAN_SHORT_MS = 90_000
+/** @returns {{ state: 'idle'|'scanning'|'slow'|'error', last: string|null, error: string, startedAt: string|null, minutes: number }} from `status.watching.volume` and `now` (ms). */
+export function volumeScan(volume, now = Date.now()) {
+  const v = volume && typeof volume === 'object' ? volume : {}, started = Date.parse(v.scan_started_at || ''), age = Number.isFinite(started) ? Math.max(0, now - started) : Infinity
+  const base = { last: v.scanned_at || null, error: v.scan_error?.reason || v.error || '', startedAt: v.scan_started_at || null, minutes: Number.isFinite(age) ? Math.max(1, Math.round(age / 60_000)) : 0 }
+  if (v.scanning) return { state: age <= SCAN_SHORT_MS ? 'scanning' : 'slow', ...base }
+  if (base.error) return { state: 'error', ...base }
+  return { state: 'idle', ...base }
+}
 /** 'v002' from 2. */
 // a review version is the folder name ('v003', as the core sends it) or a number; never read 'v003' as a number (that made every version 'v000')
 export const versionTag = (v) => { const t = String(v ?? '').trim().replace(/^v/i, ''); return `v${(/^\d+$/.test(t) ? t : String(Number(t) || 0)).padStart(3, '0')}` }
@@ -98,7 +108,7 @@ export function activityText(status, pending = [], publishJobs = [], now = Date.
   if (g?.enabled && n > 0) return t('autopublish.chip.generating', { n })
   const waiting = (pending || []).filter((e) => e.state === 'waiting')
   if (waiting.length) return t('autopublish.chip.waiting', { n: waiting.length, t: countdownText(Math.min(...waiting.map((e) => secondsUntil(e.due_at, now)))) })
-  if (status?.watching?.volume?.scanning || status?.watching?.local?.scanning) return t('autopublish.chip.scanning')
+  if (volumeScan(status?.watching?.volume, now).state === 'scanning' || status?.watching?.local?.scanning) return t('autopublish.chip.scanning')
   return ''
 }
 /** 'S3 + Slack' from targets as an object ({ s3: true, ... }) or a list (['s3', 'slack']). */
