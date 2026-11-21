@@ -1,0 +1,96 @@
+# Frame previews still to make (cancelled 2026-11-21 15:16 UTC / 22:16 Bangkok)
+
+Lucas: "you can wrap the dpx previews". Two jobs were cancelled on the previews pod `vbx6cq7htxkpx4` (frames already written stay). The lists below are what was not reached; run them with `frame_previews start` (skip_existing true: finished frames and thumbnails are skipped) or the Queue's Relaunch while the app that owns the job stays up; a restart loses the job record, so use these lists then. Folders that hold no DPX (the log says `no frames in ...`) cost nothing and make nothing.
+
+## Job a: the `_delivery_v11` clips (5 of 30 not finished; the first 25 were done)
+
+- `_delivery_v11/PHOTOREAL-013_CHASM07_FINAL_V01_1920X1080_24_HEVC`
+- `_delivery_v11/PHOTOREAL-013_CHASMFAST07_FINAL_V01_1920X1080_24_HEVC`
+- `_delivery_v11/PHOTOREAL-013_CHASMFASTIA2_FINAL_V01_1920X1080_24_HEVC`
+- `_delivery_v11/PHOTOREAL-013_HADAL_FINAL_V01_1920X1080_24_HEVC`
+- `_delivery_v11/PHOTOREAL-013_SPLASH_FINAL_V01_1920X1080_24_HEVC`
+
+## Job b: render folders (82 of 102 not finished, starting at the one it was on; the first 20 were done)
+
+- `delivery_v008/ARCHIVAL-123_A_FINAL_V01_3840X2160_23.976_PRORES422HQ`
+- `delivery_v008/ARCHIVAL-123_C_FINAL_V01_3840X2160_23.976_PRORES422HQ`
+- `delivery_v008/ARCHIVAL-123_F_FINAL_V01_3840X2160_23.976_PRORES422HQ`
+- `delivery_v008/ARCHIVAL-168_A_FINAL_V01_3840X2160_23.976_PRORES422HQ`
+- `delivery_v008/ARCHIVAL-168_B_FINAL_V01_3840X2160_23.976_PRORES422HQ`
+- `delivery_v008/ARCHIVAL-168_C_FINAL_V01_3840X2160_23.976_PRORES422HQ`
+- `delivery_v008/ARCHIVAL-168_D_FINAL_V01_3840X2160_23.976_PRORES422HQ`
+- `delivery_v008/CGI-072_BACKHALF-B_FINAL_V02_1920X1080_23.976_PRORES422HQ`
+- `delivery_v008/CGI-072_BACKHALF-C_FINAL_V02_1920X1080_23.976_PRORES422HQ`
+- `delivery_v008/CGI-072_HEAD_FINAL_V02_1920X1080_23.976_PRORES422HQ`
+- `delivery_v008/CREATURE-266_DOLPHIN-LOWTRACK_ALT_V01_1920X1080_23.976_PRORES422HQ`
+- `delivery_v008/CREATURE-266_LANDING_FINAL_V03_1920X1080_23.976_PRORES422HQ`
+- `delivery_v008/PHOTOREAL-013_ASCENT_FINAL_V01_1920X1080_24_HEVC`
+- `delivery_v008/PHOTOREAL-013_CHASM07_FINAL_V01_1920X1080_24_HEVC`
+- `delivery_v008/PHOTOREAL-013_CHASMFAST07_FINAL_V01_1920X1080_24_HEVC`
+- `delivery_v008/PHOTOREAL-013_CHASMFASTIA2_FINAL_V01_1920X1080_24_HEVC`
+- `delivery_v008/PHOTOREAL-013_HADAL_FINAL_V01_1920X1080_24_HEVC`
+- `delivery_v008/PHOTOREAL-013_LANDING_FINAL_V01_1920X1080_24_PRORES422HQ`
+- `delivery_v008/PHOTOREAL-013_SPLASH_FINAL_V01_1920X1080_24_HEVC`
+- `delivery_v008/PHOTOREAL-013_SUNLIGHT_FINAL_V01_1920X1080_24_HEVC`
+- `delivery_v008/PHOTOREAL-013_TOP_FINAL_V02_1920X1080_24_PRORES422HQ`
+- `mono_v015/archival-077/archival-077_c/dpx`
+- `mono_v015/archival-080/archival-080_a/dpx`
+- `mono_v015/archival-080/archival-080_d/dpx`
+- `mono_v015/archival-083/archival-083_main/dpx`
+- `mono_v015/archival-084/archival-084_main/dpx`
+- `mono_v015/archival-085/archival-085_main/dpx`
+- `mono_v015/archival-093/archival-093_b/dpx`
+- `mono_v015/archival-102/archival-102_main-B/dpx`
+- `mono_v015/archival-102/archival-102_main/dpx`
+- `mono_v015/archival-104/archival-104_b/dpx`
+- `mono_v015/archival-123/archival-123_a/dpx`
+- `mono_v015/archival-123/archival-123_c/dpx`
+- `mono_v015/carter-reframe/carter-reframe_main-take1/dpx`
+- `mono_v015/carter-reframe/carter-reframe_main-take2/dpx`
+- `mono_v015/cgi-042/cgi-042_main/dpx`
+- `mono_v015/cgi-090/cgi-090_shot1/dpx`
+- `mono_v015/cgi-090/cgi-090_shot2/dpx`
+- `mono_v015/creature-266/creature-266_breach-alt1/dpx`
+- `mono_v015/depth-121/depth-121_alt1-extend-14s/dpx`
+- `mono_v015/depth-182/depth-182_main/dpx`
+- `mono_v015/enhance-141/enhance-141_main/dpx`
+- `mono_v015/enhance-146/enhance-146_b/dpx`
+- `mono_v015/enhance-231/enhance-231_main/dpx`
+- `mono_v015/map-066/map-066_assembly/dpx`
+- `mono_v015/photoreal-013/photoreal-013_chasmfastia2/dpx`
+- `mono_v016/cgi-042b/cgi-042b_single-speed-25s/dpx`
+- `mono_v016/cgi-090/cgi-090_shot1/dpx`
+- `mono_v016/creature-266/creature-266_landing/dpx`
+- `mono_v016/map-066/map-066_assembly/dpx`
+- `mono_v016/photoreal-013/photoreal-013_chasmfast07/dpx`
+- `mono_v016/photoreal-187/photoreal-187_main/dpx`
+- `mono_v016/stevens-river/stevens-river_oner-t03/dpx`
+- `mono_v018/archival-080/archival-080_a/dpx`
+- `mono_v018/archival-080/archival-080_b/dpx`
+- `mono_v019/archival-101/archival-101_a/dpx`
+- `mono_v020/cgi-042b/cgi-042b_single-speed-25s/dpx`
+- `proxy025_v022/photoreal-013/photoreal-013_landing/dpx`
+- `proxy025_v022b/photoreal-013/photoreal-013_top/dpx`
+- `proxy_v005b/archival-087/archival-087_platform_v005b_dpx16`
+- `proxy_v005b/archival-087/archival-087_rain_v005b_dpx16`
+- `proxy_v005b/archival-102/archival-102_main-B_v005b_dpx16`
+- `proxy_v005b/archival-102/archival-102_main_v005b_dpx16`
+- `proxy_v005b/cgi-042b/cgi-042b_single-speed-25s_v005b_dpx16`
+- `proxy_v005b/cgi-090/cgi-090_shot1_v005b_dpx16`
+- `proxy_v005b/cgi-090/cgi-090_shot2_v005b_dpx16`
+- `proxy_v005b/creature-266/creature-266_breach-alt1_v005b_dpx16`
+- `proxy_v005b/creature-266/creature-266_dolphin-lowtrack_v005b_dpx16`
+- `proxy_v005b/creature-266/creature-266_landing_v005b_dpx16`
+- `proxy_v005b/depth-121/depth-121_alt1-extend-14s_v005b_dpx16`
+- `proxy_v005b/depth-182/depth-182_main_v005b_dpx16`
+- `proxy_v005b/enhance-231/enhance-231_main_v005b_dpx16`
+- `proxy_v005b/map-066/map-066_assembly_v005b_dpx16`
+- `proxy_v005b/map-081/map-081_assembly_v005b_dpx16`
+- `proxy_v005b/photoreal-013/photoreal-013_ascent_v005b_dpx16`
+- `proxy_v005b/photoreal-013/photoreal-013_chasm07_v005b_dpx16`
+- `proxy_v005b/photoreal-013/photoreal-013_chasmfast07_v005b_dpx16`
+- `proxy_v005b/photoreal-013/photoreal-013_chasmfastia2_v005b_dpx16`
+- `proxy_v005b/photoreal-013/photoreal-013_f23_v005b_dpx16`
+- `proxy_v005b/photoreal-013/photoreal-013_floortrack_v005b_dpx16`
+- `proxy_v005b/photoreal-013/photoreal-013_hadal_v005b_dpx16`
+- `proxy_v005b/photoreal-013/photoreal-013_top_v005b_dpx16`
