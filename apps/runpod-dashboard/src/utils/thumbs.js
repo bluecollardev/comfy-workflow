@@ -38,6 +38,8 @@ export function createStore(backend, { cap = MAX_THUMBS, now = () => Date.now() 
       if (all.length > cap) { const drop = [...all].sort((a, b) => a.at - b.at).slice(0, all.length - cap); for (const d of drop) await safe(() => backend.del(d.key)); n = cap }
     },
     async count() { n = (await safe(() => backend.all(), [])).length; return n },
+    /** Every key in the cache from the one index read (no image is read): which previews exist, cheaply. */
+    async keys() { return (await safe(() => backend.all(), [])).map((r) => r.key) },
     async clear() { await safe(() => backend.clear()); n = 0 },
   }
 }
@@ -124,6 +126,8 @@ export function createThumbs({ cache, produce, concurrency = 1, autoCap = AUTO_C
     abortAll() { for (const k of [...jobs.keys()]) this.abort(k) },
     /** A modal opens: the automatic cap starts again. */
     reset() { autoUsed = 0 },
+    /** A Set of the keys that have a record (a finished preview or an empty verdict): one index read, nothing fetched. */
+    async keys() { try { return new Set((await cache.keys?.()) ?? []) } catch { return new Set() } },
     count: () => cache.count?.() ?? 0,
     clear: () => cache.clear?.(),
     get autoUsed() { return autoUsed },
