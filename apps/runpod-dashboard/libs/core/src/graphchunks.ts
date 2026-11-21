@@ -118,6 +118,13 @@ export function chunkFor(ramBytes: number, perFrameBytes: number, baseBytes = 0,
   return Math.max(MIN_CHUNK_FRAMES, Math.min(max, read - 2 * pad))
 }
 
+/** The key of a chunk in a persisted run: the frames it writes (a chunk and its halves never share one). */
+export const chunkKey = (c: Pick<GraphChunk, 'first' | 'last'>): string => `${c.first}-${c.last}`
+/** What happened to one chunk, for the re-attach record (ADR-056, "Re-attach after a restart"). */
+export interface ChunkEvent { type: 'submit' | 'done' | 'split' | 'failed'; chunk: GraphChunk; promptId?: string; halves?: GraphChunk[]; error?: string }
+/** What a run adopted after a restart already knows: chunks that finished, prompts still on the pod (key -> prompt id), and chunks that were split (key -> their halves). */
+export interface ResumeState { done: Set<string>; running: Map<string, string>; split: Map<string, GraphChunk[]> }
+
 export interface RunDeps {
   /** The API graph for a chunk (convert the narrowed UI copy, or narrowApi). */ build: (c: GraphChunk) => Promise<Record<string, unknown>>
   submit: (api: Record<string, unknown>) => Promise<string>
@@ -125,6 +132,8 @@ export interface RunDeps {
   /** Container RAM percent, null when it cannot be read (the guard is then off). */ ram: () => Promise<number | null>
   interrupt: () => Promise<void>; free: () => Promise<void>
   sleep: (ms: number) => Promise<void>
+  /** told at each step of a chunk (the re-attach record keeps them) */ onEvent?: (e: ChunkEvent) => void
+  /** a prompt that was submitted before a restart is about to be waited for (register it for the outcome poll) */ adopt?: (promptId: string) => void
 }
 export interface ChunkRun { chunk: GraphChunk; state: 'done' | 'failed' | 'split'; peakPct?: number; error?: string; promptId?: string; seconds?: number }
 /**
@@ -132,19 +141,25 @@ export interface ChunkRun { chunk: GraphChunk; state: 'done' | 'failed' | 'split
  * free memory, and the chunk's frames are resubmitted as two halves (never below MIN_CHUNK_FRAMES: then it fails with 507). A failed chunk stops the run.
  * The returned list holds every attempt, including the 'split' ones; `final` are the chunks that completed, which checkCoverage accepts.
  */
-export async function runChunks(deps: RunDeps, chunks: GraphChunk[], o: { guardPct?: number; pollMs?: number; pad?: number; win: Pick<GraphWindow, 'first' | 'last'> }): Promise<{ attempts: ChunkRun[]; final: GraphChunk[]; ok: boolean }> {
+export async function runChunks(deps: RunDeps, chunks: GraphChunk[], o: { guardPct?: number; pollMs?: number; pad?: number; win: Pick<GraphWindow, 'first' | 'last'>; /** an adopted run: skip what is done, wait for what is on the pod */ resume?: ResumeState }): Promise<{ attempts: ChunkRun[]; final: GraphChunk[]; ok: boolean }> {
   const guard = o.guardPct ?? GUARD_PCT, poll = o.pollMs ?? 2000, pad = o.pad ?? DEFAULT_PAD
   const queue = [...chunks], attempts: ChunkRun[] = [], final: GraphChunk[] = []
   while (queue.length) {
     const c = queue.shift()!
+    const key = chunkKey(c), rs = o.resume
+    if (rs?.done.has(key)) { attempts.push({ chunk: c, state: 'done' }); final.push(c); continue }   // finished before the restart: never run again
+    const kids = rs?.split.get(key)
+    if (kids?.length) { attempts.push({ chunk: c, state: 'split', error: 'split before the restart' }); queue.unshift(...kids); continue }
     const t0 = Date.now(), run: ChunkRun = { chunk: c, state: 'failed' }
     attempts.push(run)
     try {
-      run.promptId = await deps.submit(await deps.build(c))
+      const known = rs?.running.get(key)
+      if (known) { rs!.running.delete(key); deps.adopt?.(known); run.promptId = known }   // still on the pod: wait for it, do not submit it again
+      else { run.promptId = await deps.submit(await deps.build(c)); deps.onEvent?.({ type: 'submit', chunk: c, promptId: run.promptId }) }
       let peak = 0
       for (;;) {
         const out = await deps.outcome(run.promptId)
-        if (out === 'done') { run.state = 'done'; break }
+        if (out === 'done') { run.state = 'done'; deps.onEvent?.({ type: 'done', chunk: c, promptId: run.promptId }); break }
         if (out) throw new CoreError(500, out.error)
         const pct = await deps.ram()
         if (pct != null) {
@@ -156,7 +171,7 @@ export async function runChunks(deps: RunDeps, chunks: GraphChunk[], o: { guardP
             const mid = c.first + Math.floor(size / 2) - 1
             const halves = planGraphChunks({ first: c.first, last: c.last, startNumber: c.startNumber }, mid - c.first + 1, 0).map((h, i) => ({ ...h, n: c.n * 10 + i + 1, readFirst: Math.max(o.win.first, h.first - pad), readLast: Math.min(o.win.last, h.last + pad) }))
             run.state = 'split'; run.error = `RAM ${pct}% at the guard: resubmitted as ${halves.map((h) => `${h.first}-${h.last}`).join(' and ')}`
-            queue.unshift(...halves)
+            queue.unshift(...halves); deps.onEvent?.({ type: 'split', chunk: c, promptId: run.promptId, halves })
             break
           }
         }
@@ -165,7 +180,7 @@ export async function runChunks(deps: RunDeps, chunks: GraphChunk[], o: { guardP
       run.seconds = Math.round((Date.now() - t0) / 100) / 10
       if (run.state === 'done') final.push(c)
     } catch (e) {
-      run.state = 'failed'; run.error = (e as Error).message
+      run.state = 'failed'; run.error = (e as Error).message; deps.onEvent?.({ type: 'failed', chunk: c, promptId: run.promptId, error: run.error })
       return { attempts, final, ok: false }
     }
   }

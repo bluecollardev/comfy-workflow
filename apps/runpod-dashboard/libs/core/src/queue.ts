@@ -98,7 +98,7 @@ export interface Deps {
   pull: (round: string, shots?: string[]) => Promise<{ id: string }>
   pullJob: (id: string) => ReturnType<typeof podpull.job>
   cancelPull: (id: string) => void
-  run: (podId: string, paths: string[]) => Promise<{ id: string }>
+  run: (podId: string, paths: string[], o?: runflows.RunOpts) => Promise<{ id: string }>
   runJob: (id: string) => runflows.RunJob | null
   cancelRun: (id: string) => void
   /** ADR-044: what a round on a volume holds (shots, graphs as the Workflows panel names them, the locked shots), read-only over S3. */
@@ -153,7 +153,7 @@ const realDeps: Deps = {
   pull: async (round, shots) => podpull.pull(round, shots?.length ? { shots } : {}),
   pullJob: (id) => podpull.job(id),
   cancelPull: (id) => { try { podpull.cancel(id) } catch { /* already over */ } },
-  run: async (podId, paths) => runflows.run(podId, paths),
+  run: async (podId, paths, o) => runflows.run(podId, paths, o),
   runJob: (id) => runflows.job(id),
   cancelRun: (id) => { try { runflows.cancel(id) } catch { /* already over */ } },
   describeVolumeRound: (volumeId, round) => volumeround.describeRound(volumeId, round),
@@ -452,7 +452,7 @@ async function follow(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> 
     if (!r.ready) { if (t.stage !== 'waiting for the pod to come up') { t.stage = 'waiting for the pod to come up'; return true } return false }
     if (!t.graphs?.length) { t.detail = 'no graphs for this shot in the round'; ev(t, 'no graphs for this shot in the round'); finish(t, imp, 'done'); return true }
     ev(t, `pod ${t.pod_name} is ready: running ${t.graphs.length} graph(s)`)
-    t.job_id = (await deps.run(t.pod_id!, t.graphs)).id; t.phase = 'job'; t.stage = `running 0/${t.graphs.length} graphs`; return true
+    t.job_id = (await deps.run(t.pod_id!, t.graphs, { meta: { task_id: t.id, import_id: t.import_id } })).id; t.phase = 'job'; t.stage = `running 0/${t.graphs.length} graphs`; return true
   }
   if (t.kind === 'pull') {
     const j = t.job_id ? deps.pullJob(t.job_id) : null
@@ -717,6 +717,20 @@ export function retryTask(id: string): Task {
   if (t.kind === 'pull') for (const r of state().tasks) if (r.import_id === t.import_id && r.kind === 'run' && r.state === 'failed' && (!!r.error?.startsWith(NOT_STARTED) || r.error === 'Its pull did not finish.')) Object.assign(r, { state: 'waiting', error: undefined, finished_at: undefined, events: [...(r.events ?? []), { at: deps.now().toISOString(), text: 'its pull was retried: waiting for it again' }] })
   const imp = state().imports.find((i) => i.id === t.import_id)!; imp.state = 'active'
   save(); start(); return t
+}
+
+/**
+ * A chunked run that another process left on the pod was adopted (reattach.ts): its task, which the load turned into `interrupted`, is running again on the new run job.
+ * Only a run task that is `interrupted` (or still `running` on that old job) is taken back; anything else (a person already retried it) is left alone. Returns whether it was linked.
+ */
+export function reattachTask(taskId: string, oldJobId: string, newJobId: string, text: string): boolean {
+  const t = state().tasks.find((x) => x.id === taskId)
+  if (!t || t.kind !== 'run' || (t.state !== 'interrupted' && !(t.state === 'running' && t.job_id === oldJobId))) return false
+  if (t.job_id && t.job_id !== oldJobId) return false
+  Object.assign(t, { state: 'running', error: undefined, detail: undefined, job_id: newJobId, phase: 'job', finished_at: undefined, stage: 'running 0 graphs (re-attached)' })
+  ev(t, text)
+  const imp = state().imports.find((i) => i.id === t.import_id); if (imp && imp.state !== 'cancelled') imp.state = 'active'
+  save(); start(); return true
 }
 
 let timer: ReturnType<typeof setInterval> | null = null

@@ -126,7 +126,7 @@ describe('the default path: a graph run with no options', () => {
 describe('the entry points', () => {
   it('run_pod_workflows, the queue\'s run tasks and Import Round all reach the default path through runflows.run; there is no other way to queue a graph', () => {
     const src = (f: string) => readFileSync(join(__dirname, '..', 'src', f), 'utf8')
-    expect(src('queue.ts')).toMatch(/run: async \(podId, paths\) => runflows\.run\(podId, paths\)/)          // the queue and Import Round
+    expect(src('queue.ts')).toMatch(/run: async \(podId, paths, o\) => runflows\.run\(podId, paths, o\)/)          // the queue and Import Round
     expect(readFileSync(join(__dirname, '..', '..', '..', 'mcp', 'app-tools.mjs'), 'utf8')).toMatch(/runflows\.run\(args\.pod_id/)   // run_pod_workflows
     expect(readFileSync(join(__dirname, '..', '..', '..', 'electron', 'core.cjs'), 'utf8')).toMatch(/c\.runflows\.run\(podId, paths/)   // the window
     const rf = src('runflows.ts')

@@ -22,6 +22,8 @@ import * as ui2api from './ui2api.js'
 import * as cards from './cards.js'
 import * as idle from './idle.js'
 import * as autochunk from './autochunk.js'
+import * as chunkrecord from './chunkrecord.js'
+import * as jobsregistry from './jobsregistry.js'
 import * as settings from './settings.js'
 
 export interface WorkflowFile {
@@ -112,6 +114,8 @@ export interface RunOpts {
   approvedBy?: string
   /** ADR-056: chunked, RAM-guarded runs are the default for every graph; 'off' runs it the old way (whole, no guard). Absent: the setting (on unless chunked_runs is switched off). */ chunking?: 'on' | 'off'
   /** the container's RAM now; default: its cgroup over SSH, else ComfyUI's system_stats. Tests inject one. */ ram?: (podId: string) => Promise<autochunk.RamNow | null>
+  /** who asked (the queue task and import), kept in a chunked run's record so a re-attached run can be linked to its task again (ADR-056, "Re-attach after a restart") */ meta?: chunkrecord.Meta
+  /** graph path -> the plan of a chunked run that another process started and left (see reattach.ts): continue it instead of starting over */ resume?: Record<string, { cp: autochunk.Checkpoint; from: string }>
 }
 interface Internal { job: RunJob; abort: AbortController }
 const jobs = new Map<string, Internal>()
@@ -290,8 +294,20 @@ async function runChunked(i: Internal, r: RunResult, base: string, o: RunOpts, f
   const t0 = Date.now()
   const say = (text: string) => { note(i, text, r.path); try { history.record({ kind: 'change', area: 'queue', action: 'chunked run', what: r.path, detail: text, pod_id: podId } as never) } catch { /* the History never blocks a run */ } }
   const sleeper = (ms: number) => sleep(ms, signal)
+  // the record another process can adopt this run from after a restart: written after every change of the plan, kept alive by a heartbeat, removed when the run ends
+  const results = i.job.results, resume = o.resume?.[r.path]
+  const rec = await chunkrecord.begin({ job_id: i.job.id, index: Math.max(0, results.indexOf(r)), pod_id: podId, pod_name: i.job.pod_name, base_url: base, path: r.path, job_paths: results.map((x) => x.path), meta: o.meta, adopted_from: resume?.from })
+  const hb = setInterval(() => { void rec.beat() }, chunkrecord.HEARTBEAT_MS); hb.unref?.()
+  if (resume?.from) await chunkrecord.remove(resume.from)   // this run has its own record now: the one it continues is closed (and its adoption lock with it)
+  // visible to the other processes (running_jobs, the Queue): the chunk progress of this graph; `terminal` ends it
+  const prog = { done: 0, total: 0, over: false }
+  const stopTrack = jobsregistry.track({ id: rec.id, kind: 'render', trigger: 'manual', origin: o.meta?.client ? 'mcp' : 'window', ...(o.meta?.client ? { client: o.meta.client } : {}), label: `chunked run ${r.path}${resume ? ' (re-attached)' : ''}`, started_at: i.job.started_at,
+    view: () => ({ state: prog.over ? 'done' : 'running', terminal: prog.over, progress: { done: prog.done, total: prog.total, unit: 'chunks' } }), cancel: () => { i.abort.abort() } })
   const ctx: autochunk.RunCtx = {
     path: r.path, ui, api, say, sleep: sleeper, pollMs: o.pollMs === undefined ? undefined : o.pollMs,
+    checkpoint: (cp) => { prog.total = cp.plan.length; prog.done = Object.values(cp.states).filter((s) => s.state === 'done').length; return rec.update(cp) }, resume: resume?.cp,
+    // a prompt another process submitted: watched like one of ours, but `wasDown` makes the first look check that the pod still has it (a restarted ComfyUI forgets it: submitted again at once, not after ten minutes)
+    adopt: (id) => { watch.set(id, { outageAt: 0, wasDown: true, lastAlive: Date.now(), startedAt: Date.now() }) },
     submit: async (a) => {
       r.stage = 'queue'
       const q = await fetchFn(`${base}/prompt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt: a, client_id: 'pod-manager-runflows', extra_data: { pod_manager: { workflow: r.path } } }), signal: AbortSignal.timeout(60_000) })
@@ -324,7 +340,13 @@ async function runChunked(i: Internal, r: RunResult, base: string, o: RunOpts, f
     interrupt: async () => { await fetchFn(`${base}/interrupt`, { method: 'POST', signal: AbortSignal.timeout(30_000) }).catch(() => {}) },
     free: async () => { await fetchFn(`${base}/free`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ unload_models: true, free_memory: true }), signal: AbortSignal.timeout(30_000) }).catch(() => {}) },
   }
-  const sum = await autochunk.runGraph(ctx)
+  let sum: autochunk.RunSummary
+  try { sum = await autochunk.runGraph(ctx) } catch (e) {
+    clearInterval(hb); prog.over = true; stopTrack()
+    if (signal.aborted || (e instanceof CoreError && e.status === 499)) await rec.finish(); else await rec.fail((e as Error).message)   // cancelled: nothing to adopt; failed: kept for diagnosis, never adopted
+    throw e
+  }
+  clearInterval(hb); prog.over = true; stopTrack(); await rec.finish()
   r.seconds = Math.round((Date.now() - t0) / 100) / 10; r.outputs = outputs; r.files = files
   void rememberSeconds(r.path, r.seconds)
   try { autosync.notifyOutputs(podId, null, files) } catch { /* Auto sync never fails a run */ }
