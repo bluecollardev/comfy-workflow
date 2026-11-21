@@ -38,7 +38,7 @@ export interface Approval { shot: string; version: string; approved_by: string; 
 export interface Standing { approved_by: string; at: string }
 type Stored = mounts.AutoPublishConfig
 export type Targets = mounts.AutoPublishTargets
-interface StateFile { /** the last dry-run Slack summary: the set it described and when */ dryslack?: { sig: string; at: number }; uploaded?: Record<string, { at: string; job_id?: string; manual?: boolean; already?: boolean }>; day?: string; count?: number; cancelled?: string[]; /** shot/version keys a person holds back: never auto-published until released */ held?: string[]; inflight?: Record<string, string>; would?: Record<string, string> }
+interface StateFile { /** the last dry-run Slack summary: the set it described and when */ dryslack?: { sig: string; at: number }; uploaded?: Record<string, { at: string; job_id?: string; manual?: boolean; already?: boolean }>; day?: string; count?: number; cancelled?: string[]; /** shot/version keys a person holds back: never auto-published until released */ held?: string[]; inflight?: Record<string, string>; would?: Record<string, string>; /** dry-run entries a person dismissed from Pending Uploads (key -> when): not queued again while Auto-publish is in a dry run, until restored */ purged?: Record<string, string> }
 export interface TargetState { ready: boolean; problem?: string; label: string }
 export interface Settings { /** Auto-generate: render the new finished sequences too (off by default) */ generate: mounts.AutoGenerateConfig; /** where Auto-publish looks (this PC and/or the volume) and how often the volume is listed */ sources: { local: boolean; volume: boolean }; volume_scan_minutes: number; /** the round a shot is published into (`{date}` = the local day) */ round: string; include_dpx: boolean; /** with include_dpx: the corrected copy is made (dpx_fix) and uploaded; off: no DPX at all */ fix_dpx: boolean; /** `edl` (the default): only elements of the loaded EDL are generated and published, the rest is skipped with the reason; `all`: everything found */ scope: 'edl' | 'all'; /** each review version needs a person's approval (true), or every eligible review goes under the standing approval (false, the default) */ require_approval: boolean; enabled: boolean; dry_run: boolean; dry_run_first: boolean; window_minutes: number; daily_cap: number | null; targets: Targets; target_state: { s3: TargetState; slack: TargetState; tunnel: TargetState }; standing: Standing | null; destination: string; ready: boolean; problem?: string }
 
@@ -421,7 +421,9 @@ async function doConsider(): Promise<{ queued: number }> {
   const dry = s.dry_run !== false, window = (s.window_minutes ?? WINDOW_DEFAULT) * 60_000; let queued = 0
   const ap: Approval[] = s.require_approval ? await approvalList() : (await allReviews()).map((f) => ({ shot: f.shot, version: f.version, approved_by: s.standing!.approved_by, at: iso(deps.now()) }))   // every eligible review under the standing approval, or only the approved ones
   if (!dry) for (const e of entries.values()) if (e.state === 'would_upload') { e.state = 'waiting'; e.due_at = deps.now() + window; delete e.reason }   // it went live: the cancel window starts now
+  const dismissed = dry ? (await stateOf()).purged ?? {} : {}   // a dry run skips what a person dismissed (Purge Dry Runs); going live looks at everything again
   for (const r of ap) {
+    if (dismissed[keyOf(r.shot, r.version)]) continue
     const c = await check(r.shot, r.version)
     if (!c.ok) {
       if (c.inDest && c.reason === 'already at the destination') { await mutate((s2) => { s2.uploaded = { ...(s2.uploaded ?? {}), [keyOf(r.shot, r.version)]: { at: iso(deps.now()), already: true } as never } }) }
@@ -546,7 +548,7 @@ async function markUploaded(e: Entry, job_id: string | undefined, counted: boole
 }
 
 // ----- status and the person's actions -----
-export interface Watching { local: { enabled: boolean; root: string | null; root_exists: boolean; reviews: number }; volume: { enabled: boolean; id: string; reviews: number; scanned_at: string | null; scanning: boolean; error?: string }; /** this PC's folder (kept from the first version of this field) and the totals over the places watched */ root: string | null; root_exists: boolean; shots: number; reviews: number; approved: number; eligible: number; queued: number; uploaded_today: number; /** what was uploaded today: the review, when, and whether a person pressed Publish now (additive) */ uploaded?: { shot: string; version: string; at: string; manual?: boolean; already?: boolean }[]; skipped: { shot: string; version: string; reason: string }[]; /** the scope in force and, with `edl` and no EDL loaded, why nothing is generated or queued */ scope: 'edl' | 'all'; scope_warning?: string; summary: string }
+export interface Watching { local: { enabled: boolean; root: string | null; root_exists: boolean; reviews: number }; volume: { enabled: boolean; id: string; reviews: number; scanned_at: string | null; scanning: boolean; error?: string }; /** this PC's folder (kept from the first version of this field) and the totals over the places watched */ root: string | null; root_exists: boolean; shots: number; reviews: number; approved: number; eligible: number; queued: number; uploaded_today: number; /** what was uploaded today: the review, when, and whether a person pressed Publish now (additive) */ uploaded?: { shot: string; version: string; at: string; manual?: boolean; already?: boolean }[]; skipped: { shot: string; version: string; reason: string }[]; /** how many dry-run entries a person dismissed (Purge Dry Runs) and that stay out of the list until restored */ dismissed?: number; /** the scope in force and, with `edl` and no EDL loaded, why nothing is generated or queued */ scope: 'edl' | 'all'; scope_warning?: string; summary: string }
 export function status(): { generate: autogenerate.GenerateStatus; watching: Watching; enabled: boolean; dry_run: boolean; dry_run_first: boolean; standing: Standing | null; window_minutes: number; daily_cap: number | null; targets: Targets; today: { count: number; left: number | null }; destination: string; /** the DPX of an upload: included or not, fixed first (ADR-057 decision 7) or off, and how many sequences are being corrected now */ dpx: { include: boolean; fix: boolean; mode: string; fixing: number }; pending: ReturnType<typeof view>[]; recent: ReturnType<typeof view>[] } {
   void ensureLoaded()
   const m = memo
@@ -571,13 +573,14 @@ async function computeWatching(): Promise<Watching> {
   await edl.ensure(); w.scope = cfg.scope; if (cfg.scope === 'edl' && !edl.isLoaded()) w.scope_warning = 'No EDL is loaded: with Only EDL Elements nothing is generated or queued until it is (load it in the EDL panel, or set Scope to Everything).'
   w.local.reviews = found.filter((f) => f.source === 'local').length; w.volume.reviews = cfg.sources.volume ? vol.reviews.length : 0
   w.uploaded_today = st.day === localDay(deps.now()) ? st.count ?? 0 : 0
+  w.dismissed = Object.keys(st.purged ?? {}).length
   w.uploaded = Object.entries(st.uploaded ?? {}).filter(([, u]) => u.at && localDay(Date.parse(u.at)) === localDay(deps.now())).map(([k, u]) => { const i = k.lastIndexOf('/'); return { shot: k.slice(0, i), version: k.slice(i + 1), at: u.at, ...(u.manual ? { manual: true } : {}), ...(u.already ? { already: true } : {}) } }).sort((a, b) => a.at.localeCompare(b.at)).slice(-200); w.shots = new Set(found.map((f) => f.shot)).size; w.reviews = found.length
   let published = 0
   for (const f of found) {
     const key = keyOf(f.shot, f.version), approved = !cfg.require_approval ? f.complete : ap.some((a) => a.shot === f.shot && a.version === f.version), uploaded = !!st.uploaded?.[key]
     if (approved) w.approved++
     const sr = uploaded ? '' : await scopeReason(cfg.scope, f)
-    const reason = uploaded ? 'already published' : sr ? sr : edlHold.get(key) && !pend.has(key) ? edlHold.get(key) : inDestination.get(key) ? 'already at the destination' : !f.complete ? f.why ?? 'not complete' : !approved ? 'not approved' : st.held?.includes(key) ? 'held by a person' : st.cancelled?.includes(key) ? 'cancelled by a person' : ''
+    const reason = uploaded ? 'already published' : sr ? sr : edlHold.get(key) && !pend.has(key) ? edlHold.get(key) : inDestination.get(key) ? 'already at the destination' : !f.complete ? f.why ?? 'not complete' : !approved ? 'not approved' : cfg.dry_run !== false && st.purged?.[key] ? 'dismissed from the dry run (Restore Dismissed brings it back)' : st.held?.includes(key) ? 'held by a person' : st.cancelled?.includes(key) ? 'cancelled by a person' : ''
     if (approved && uploaded) published++
     if (!reason) { if (!pend.has(key)) w.eligible++ } else if (w.skipped.length < 50) w.skipped.push({ shot: f.shot, version: f.version, reason })
   }
@@ -639,6 +642,40 @@ export async function publishAllDry(o: { approved_by?: string }): Promise<{ star
     }
   }
   return { started, refused, ...(stopped ? { stopped } : {}) }
+}
+
+/** Purge Dry Runs (a person's act in the window; the MCP may plan, or run with a name and `understood: true`): the dry-run entries leave Pending Uploads and stay out while Auto-publish is in a dry run (the dismissed set, restored by `restoreDryRuns`; going live looks at everything again).
+ *  It removes only this app's own dry-run bookkeeping in memory and the dismissed mark in the state file. It never deletes a file on the volume or in the bucket, never touches a real (waiting, uploading, capped, failed) entry or a running upload, and by default keeps the entries a person approved one by one (with `require_approval`); a hold already took its entry out of the list and stays. History rows are kept (the audit log): one row says what was purged. */
+export interface PurgeBrief { id: string; shot: string; version: string }
+export interface PurgeResult { plan: boolean; purged: number; would_purge: number; entries: PurgeBrief[]; kept_approved: PurgeBrief[]; dismissed: number; note: string }
+const PURGE_NOTE = 'Nothing is deleted from the volume, this PC or the bucket: only the dry-run list entries are dismissed (Restore Dismissed brings them back); History keeps its rows.'
+export async function purgeDryRuns(o: { approved_by?: unknown; understood?: unknown; include_approved?: unknown } = {}): Promise<PurgeResult> {
+  await ensureLoaded()
+  const s = await stored(), people = s.require_approval ? await approvalList() : []
+  const brief = (e: Entry): PurgeBrief => ({ id: e.id, shot: e.shot, version: e.version })
+  const dry = [...entries.values()].filter((e) => e.state === 'would_upload' && !e.queued && !e.run && !e.manual && !e.counted)
+  const byPerson = (e: Entry) => people.some((a) => a.shot === e.shot && a.version === e.version)
+  const include = o?.include_approved === true, go = dry.filter((e) => include || !byPerson(e)), keep = dry.filter((e) => !include && byPerson(e))
+  const dismissedNow = Object.keys((await stateOf()).purged ?? {}).length
+  const plan = { entries: go.map(brief), kept_approved: keep.map(brief), note: PURGE_NOTE }
+  if (o?.understood !== true) return { plan: true, purged: 0, would_purge: go.length, dismissed: dismissedNow, ...plan }
+  const who = clean(o?.approved_by); if (!who) throw bad('Purging needs the name of who says yes (approved_by)')
+  const at = iso(deps.now()), gone = go.filter((e) => entries.get(e.id) === e && e.state === 'would_upload' && !e.queued && !e.run)   // read again: nothing changed under the confirm
+  for (const e of gone) entries.delete(e.id)
+  watchMemo.at = 0   // the next status counts the dismissed ones
+  await mutate((st) => { st.purged = { ...(st.purged ?? {}), ...Object.fromEntries(gone.map((e) => [e.key, at])) } })
+  if (gone.length) history.record({ kind: 'change', area: 'configuration', action: 'auto-publish dry runs purged', what: 'auto-publish', detail: `${gone.length} dry-run entries dismissed by ${who}${keep.length ? `; ${keep.length} approved by a person kept` : ''}; nothing deleted from disk or the bucket` })
+  return { plan: false, purged: gone.length, would_purge: gone.length, dismissed: dismissedNow + gone.length, ...plan, entries: gone.map(brief) }
+}
+/** Bring back what Purge Dry Runs dismissed: the next look at the finished reviews queues them again. */
+export async function restoreDryRuns(): Promise<{ restored: number }> {
+  await ensureLoaded()
+  let n = 0
+  await mutate((st) => { n = Object.keys(st.purged ?? {}).length; delete st.purged })
+  watchMemo.at = 0
+  if (n) history.record({ kind: 'change', area: 'configuration', action: 'auto-publish dismissed dry runs restored', what: 'auto-publish', detail: `${n} dismissed dry-run entries brought back` })
+  void consider().catch(() => undefined)
+  return { restored: n }
 }
 
 // ----- life cycle -----

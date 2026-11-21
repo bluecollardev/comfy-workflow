@@ -655,7 +655,7 @@ export async function mockApi(page, state) {
       const s3dest = () => `s3://${pubSt?.s3?.bucket || 'bh-panama-exchange-610140802195'}/${pubSt?.s3?.prefix || 'returns/BKK/'}`
       const view = () => ({ enabled: cfg.enabled, dry_run: cfg.dry_run, ...('dry_run_first' in cfg ? { dry_run_first: cfg.dry_run_first } : {}), window_minutes: cfg.window_minutes, daily_cap: cfg.daily_cap, targets: cfg.targets, standing: cfg.standing || null, destination: s3dest(), ready: true,
         target_state: { s3: { ready: true, label: 'S3' }, slack: { ready: slackOk, label: 'Slack', ...(slackOk ? {} : { problem: 'Slack is not connected' }) }, tunnel: { ready: false, problem: 'Tunnel is not available yet', label: 'Tunnel' } } })
-      if (method === 'GET' && path === '/autopublish/status') return json({ enabled: cfg.enabled, dry_run: cfg.dry_run, standing: cfg.standing || null, window_minutes: cfg.window_minutes, daily_cap: cfg.daily_cap, targets: cfg.targets, today: ap.today || { count: 0, left: cfg.daily_cap ?? null }, destination: s3dest(), ...(ap.watching ? { watching: ap.watching } : {}), ...(ap.generate ? { generate: ap.generate } : {}), ...(ap.requireApproval !== undefined ? { require_approval: ap.requireApproval } : {}), ...(ap.nothing_selected ? { nothing_selected: true } : {}), ...(ap.slack_dry_run ? { slack_dry_run: ap.slack_dry_run } : {}), pending: ap.pending, recent: ap.recent })
+      if (method === 'GET' && path === '/autopublish/status') return json({ enabled: cfg.enabled, dry_run: cfg.dry_run, standing: cfg.standing || null, window_minutes: cfg.window_minutes, daily_cap: cfg.daily_cap, targets: cfg.targets, today: ap.today || { count: 0, left: cfg.daily_cap ?? null }, destination: s3dest(), ...(ap.watching ? { watching: { ...ap.watching, ...(ap.dismissed ? { dismissed: ap.dismissed } : {}) } } : {}), ...(ap.generate ? { generate: ap.generate } : {}), ...(ap.requireApproval !== undefined ? { require_approval: ap.requireApproval } : {}), ...(ap.nothing_selected ? { nothing_selected: true } : {}), ...(ap.slack_dry_run ? { slack_dry_run: ap.slack_dry_run } : {}), pending: ap.pending, recent: ap.recent })
       if (method === 'GET' && path === '/autopublish/settings') return json(view())
       if (method === 'PUT' && path === '/autopublish/settings') {
         ap.calls.push({ call: 'setSettings', body })
@@ -716,6 +716,17 @@ export async function mockApi(page, state) {
         if (p) { p.state = 'uploading'; p.job_id = 'pub-now' }
         return json({ job_id: 'pub-now' })
       }
+      // Purge Dry Runs (plan without understood; a run with a name): only would_upload entries go; an entry with by_person (approved one by one) stays unless include_approved
+      if (method === 'POST' && path === '/autopublish/purge-dry-runs') {
+        ap.calls.push({ call: 'purgeDryRuns', body })
+        const dry = ap.pending.filter((x) => x.state === 'would_upload'), go = dry.filter((x) => body.include_approved === true || !x.by_person), keep = dry.filter((x) => !go.includes(x)), brief = (x) => ({ id: x.id, shot: x.shot, version: x.version })
+        const out = { entries: go.map(brief), kept_approved: keep.map(brief), note: 'Nothing is deleted from the volume, this PC or the bucket: only the dry-run list entries are dismissed.' }
+        if (body.understood !== true) return json({ plan: true, purged: 0, would_purge: go.length, dismissed: ap.dismissed || 0, ...out })
+        if (!String(body.approved_by || '').trim()) return json({ detail: 'Purging needs the name of who says yes (approved_by)' }, 400)
+        ap.pending = ap.pending.filter((x) => !go.includes(x)); ap.dismissed = (ap.dismissed || 0) + go.length
+        return json({ plan: false, purged: go.length, would_purge: go.length, dismissed: ap.dismissed, ...out })
+      }
+      if (method === 'POST' && path === '/autopublish/restore-dry-runs') { ap.calls.push({ call: 'restoreDryRuns' }); const n = ap.dismissed || 0; ap.dismissed = 0; return json({ restored: n }) }
       if (method === 'POST' && path === '/autopublish/publish-all-dry') {
         ap.calls.push({ call: 'publishAllDry', body })
         if (!String(body.approved_by || '').trim()) return json({ detail: 'Publishing needs the name of who says yes (approved_by)' }, 400)

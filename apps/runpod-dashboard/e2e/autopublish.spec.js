@@ -355,6 +355,25 @@ test.describe('the Queue: Auto-publish', () => {
     expect(calls(api, 'publishAllDry').at(-1).body).toEqual({ approved_by: 'Lucas' })
     await expect(q.getByTestId('autopublish-dryrun-error')).toContainText('cgi-043'); await expect(q.getByTestId('autopublish-dryrun-error')).toContainText('daily cap is spent')
   })
+  test('Purge Dry Runs: the button is in Pending Uploads, a plan then one confirmation names the count and that nothing is deleted, Cancel keeps the list, OK clears only the dry-run entries and keeps a real one', async ({ page, api }) => {
+    on(api)
+    api.state.autopublish = { watching: { root: '/o', root_exists: true, shots: 3, reviews: 3, approved: 3, eligible: 0, queued: 3, uploaded_today: 0, skipped: [], summary: 'Watching /o' }, pending: [entry({ id: 'ap-a', shot: 'cgi-041', version: 1, state: 'would_upload' }), entry({ id: 'ap-b', shot: 'cgi-042', version: 1, state: 'would_upload' }), entry({ id: 'ap-c', shot: 'cgi-043', version: 1, state: 'waiting' })] }
+    await page.goto('/')
+    const q = await openQueue(page), btn = q.getByTestId('autopublish-purge')
+    await expect(btn).toHaveText('Purge Dry Runs'); await expect(q.getByTestId('autopublish-pending-title')).toHaveText('Pending Uploads (3)')
+    await btn.click()
+    const cancelMsg = await answerConfirm(page, false)   // Cancel: the list stays
+    expect(cancelMsg).toContain('Purge 2 dry-run entries'); expect(cancelMsg).toContain('Nothing is deleted from the volume, this PC or the bucket')
+    expect(calls(api, 'purgeDryRuns').map((c) => c.body)).toEqual([{}])   // only the plan was asked
+    await expect(q.getByTestId('autopublish-row')).toHaveCount(3)
+    await btn.click(); await answerConfirm(page, true)
+    await expect.poll(() => calls(api, 'purgeDryRuns').length).toBe(3)
+    expect(calls(api, 'purgeDryRuns').at(-1).body).toEqual({ approved_by: 'Brynley', understood: true })
+    await expect(q.getByTestId('autopublish-row')).toHaveCount(1); await expect(q.getByTestId('autopublish-row').first()).toHaveAttribute('data-id', 'ap-c')   // the real (waiting) entry stays
+    await expect(btn).toHaveCount(0); await expect(q.getByTestId('autopublish-restore')).toHaveText('Restore Dismissed (2)')
+    await q.getByTestId('autopublish-restore').click(); await expect.poll(() => calls(api, 'restoreDryRuns').length).toBe(1)
+    await expect(q.getByTestId('autopublish-restore')).toHaveCount(0)
+  })
   test('the section is absent when the core has no Auto-publish; a configuration with it OFF shows an empty state', async ({ page, api }) => {
     await page.goto('/')
     const q = await openQueue(page)
