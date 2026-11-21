@@ -15,7 +15,7 @@
       <BButton v-if="seqCount || groupCount" variant="outline-light" size="sm" data-testid="outputs-expand-all" @click="setAll('expanded')"><i class="fa-solid fa-expand me-1"></i>{{ $t('outputs.dpx.expandAll') }}</BButton>
     </div>
     <div v-if="files.length" class="gallery">
-      <div v-for="t in tiles" :key="t.key" class="cell" :class="{ wide: (t.kind === 'dpx' && t.frames.length > 1) || isGroup(t) }" data-testid="outputs-cell">
+      <div v-for="t in tiles" :key="t.key" class="cell" :class="{ wide: (t.kind === 'dpx' && t.frames.length > 1) || isGroup(t), seq: t.kind === 'dpx' && t.frames.length > 1 }" data-testid="outputs-cell">
       <div v-if="isGroup(t)" class="group" data-testid="outputs-group" :data-kind="t.kind" :data-cat="t.cat || 'temp'" :data-count="t.count" :data-expanded="groupExpanded(t) ? 'true' : 'false'">
         <div class="head" data-testid="outputs-group-head">
           <i class="fa-solid" :class="groupIcon(t)"></i>
@@ -68,6 +68,7 @@
         <SequenceFrames v-if="t.kind === 'dpx'" :tile="t" />
         <span v-if="t.file.type === 'temp'" class="badge text-bg-secondary tag">{{ $t('outputs.type.temp') }}</span>
       </button>
+      <SequenceStrip v-if="t.kind === 'dpx' && t.frames.length > 1 && stripItems(t).length" :items="stripItems(t)" :disabled="offline" @open="(i) => openAt(t, i)" />
       <template v-if="t.kind === 'dpx' && t.frames.length > 1">
         <div v-if="isExpanded(t)" class="frames" data-testid="outputs-seq-frames" :data-shown="shownFrames(t).length">
           <div class="small text-body-secondary mb-1" data-testid="outputs-seq-frames-count">{{ $t('outputs.dpx.framesShown', { shown: shownFrames(t).length, total: t.frames.length }) }}</div>
@@ -99,10 +100,12 @@ import { viewUrl, galleryTiles, sizeText, isDpx } from '../utils/outputs'
 import { isExpanded, toggleSeq, setAll, shownFrames, showMore, showAll, groupView, groupExpanded, toggleGroup, shownFiles, groupMore, groupShowAll, setShowTemp, HAS_IO } from '../utils/dpxcollapse'
 import { isTemp, groupTiles, tempGroup, shortName } from '../utils/videogroups'
 import { availableFrames } from '../utils/framepreviews'
-import { fpState, startJob, stopJob, refreshListing, previewUrl, jpgName, inJob, jobRunning, jobDone, failedOf, failReason } from '../utils/framejob'
+import { previewed } from '../utils/filmstrip'
+import { fpState, startJob, stopJob, queueListing, previewUrl, jpgName, inJob, jobRunning, jobDone, failedOf, failReason } from '../utils/framejob'
 import { previewBus } from '../utils/thumbsBus'
 import LazyMedia from './LazyMedia.vue'
 import PageSentinel from './PageSentinel.vue'
+import SequenceStrip from './SequenceStrip.vue'
 import { core } from '../api/bridge'
 import { errorText } from '../stores/toast'
 import { t } from '../i18n'
@@ -156,14 +159,17 @@ const previewCount = (t) => t.frames.reduce((n, f) => n + (frameImg(t, f) ? 1 : 
 const frameFailed = (t, f) => (failedOf(srcOf(t)).has(jpgName(f.filename)) ? failReason(srcOf(t), jpgName(f.filename)) : '')
 const stemOf = (t) => (t.frames[0]?.filename || '').replace(/\.\d+\.dpx$/i, '')
 function loadFrames(t) { startJob({ podId: props.podId, items: [{ src_dir: srcOf(t), frames: t.frames.length, stem: stemOf(t) }], skipExisting: true }) }
-const listMark = {}
-async function ensureListing(t) {
-  if (!canJob.value || listMark[t.key]) return
-  listMark[t.key] = true
-  await refreshListing(props.podId, [srcOf(t)], true)
-}
+const isSeq = (t) => t.kind === 'dpx' && t.frames.length > 1
 const tiles = computed(() => { const ts = groupTiles(galleryTiles(realFiles.value)); const tg = groupView.showTemp ? tempGroup(tempFiles.value) : null; return tg ? [...ts, tg] : ts })
-watchEffect(() => { for (const t of tiles.value) if (t.kind === 'dpx' && t.frames.length > 1 && isExpanded(t)) { ensurePrev(t); ensureListing(t) } })
+// Every sequence row (collapsed or not) shows the frames that have a preview beside its first frame: the pod's JPEGs are listed in ONE batched call for all the sequences of this list (and for
+// every gallery asking at the same moment, utils/framejob.js queueListing), the cache is read locally; nothing is fetched or generated here.
+watchEffect(() => {
+  const seqs = tiles.value.filter(isSeq)
+  for (const t of seqs) ensurePrev(t)
+  if (canJob.value) queueListing(props.podId, seqs.map(srcOf))
+})
+/** The frames of a sequence that have a preview (the first frame is the tile beside the strip), for the strip to sample; reads fpState.listing and framePrev so it follows both. */
+const stripItems = (t) => previewed(t.frames, (f) => frameImg(t, f)).map((p) => ({ index: p.index, no: frameNo(p.frame), name: p.frame.filename, src: p.src }))
 const viewable = computed(() => displayFiles.value.filter((f) => !isDpx(f.filename)))
 const isGroup = (t) => t.kind === 'fgroup' || t.kind === 'tempgroup'
 const groupCount = computed(() => tiles.value.filter(isGroup).length)
@@ -201,6 +207,9 @@ watch(() => props.files, () => { current.value = null; dpx.value = null; problem
 .cell.wide { grid-column: 1 / -1; }
 .cell .tile { width: 100%; }
 .cell.wide .tile { max-width: 9.5rem; }
+/* a sequence row: header across, the first-frame tile at the left, the filmstrip filling the rest of the row, the expanded frame list across below */
+.cell.seq { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr); column-gap: 0.5rem; row-gap: 0.25rem; align-items: start; }
+.cell.seq > .head, .cell.seq > .frames { grid-column: 1 / -1; }
 .head { display: flex; align-items: center; gap: 0.4rem; min-width: 0; padding: 0.15rem 0.1rem; font-size: 0.78rem; }
 .headname { flex: 1 1 auto; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
 .headcount { font-weight: 400; }
