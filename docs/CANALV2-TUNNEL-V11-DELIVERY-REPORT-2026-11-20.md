@@ -2,6 +2,30 @@
 
 **Status as of 2026-11-21, about 13:00 local: in progress.** 17 of the 36 elements are delivered to the real round. 11 more are made and checked and wait in a test round. 8 are not generated yet (memory, section 4). **Plan:** [CANALV2-TUNNEL-V11-PRODUCTION-PLAN.md](CANALV2-TUNNEL-V11-PRODUCTION-PLAN.md) (sections 14 and 15 carry the run notes). **Rule:** we deliver what we can and have first; nothing from the new generation goes to the real round until Lucas says so.
 
+## Status tables (kept up to date in the production plan)
+- [The 17 with DPX: state of each (plan 11.1)](CANALV2-TUNNEL-V11-PRODUCTION-PLAN.md#111-the-17-with-dpx-cases-a-to-c)
+- [The 19 without delivered DPX: state of each, same columns (plan 11.2)](CANALV2-TUNNEL-V11-PRODUCTION-PLAN.md#112-the-19-without-delivered-dpx)
+- [Run status of the 19: PDF frames against frames produced, errors (plan)](CANALV2-TUNNEL-V11-PRODUCTION-PLAN.md#run-status-of-the-19-2026-11-21-1300-local)
+- [What is delivered, in test, and what blocks (plan 14)](CANALV2-TUNNEL-V11-PRODUCTION-PLAN.md#14-status-2026-11-21-what-is-delivered-what-is-in-test-what-blocks)
+- [Run notes: why the 8 fail, what was tried, pods and logs (plan 15)](CANALV2-TUNNEL-V11-PRODUCTION-PLAN.md#15-run-notes-and-status-2026-11-21-midday)
+- [The rules and the process for memory-safe runs (ADR-056)](ADR-056-memory-safe-graph-runs.md); [delivery integrity and kept logs (ADR-055)](ADR-055-delivery-integrity-and-kept-logs.md)
+
+## What was done (2026-11-20 to 2026-11-21)
+**Delivery**
+- 17 elements delivered to the real round `tunnel-v11-edl-2026-11-18`: corrected DPX (header and timecode patched), review video, a manifest per element, `RETURN-MANIFEST.json`; checked first in a `_TEST_` round; nothing overwritten; read back from the bucket.
+- The 17 review videos re-rendered with Gamma 2.6 P3-D65; four failed uploads re-sent; DPX backfill of already-published reviews (8 of 24 clips) done and paused.
+- 11 more elements generated with the `base_v008` graphs through Import Round, checked against the PDF frame counts (all match), header-patched, uploaded to the test round.
+
+**Tools built** (in the app, on develop; tests green): Prepare For Delivery and the MCP tools `dpx_fix` and `dpx_make`; no-overwrite guard and per-element manifests; Queue and History export to CSV and PDF with whole errors; Retry buttons that work; Title Case button labels with a guard test; kept pod logs and app logs (never auto-deleted); wait for ComfyUI before every graph; graph fetch and poll retries; out-of-memory classification and card escalation (to be replaced by chunking); pod reuse on retry; the pod card shows GPU count, total VRAM and container RAM; a red frames badge on Outputs cards whose count differs from the EDL. Releases v1.6.9, v1.6.10, v1.7.0, v1.7.1 (later changes unreleased).
+
+**Findings**
+- The failures of the last 8 graphs were memory kills (exit 137), not cold-pod trouble; RAM comes with the GPU count (57.7, 116.4, 232.8 GiB for 1, 2, 4 RTX PRO 4500); the fix is chunked runs ([ADR-056](ADR-056-memory-safe-graph-runs.md)).
+- ComfyUI's page takes 80 to 160 s to be ready on a fresh pod, which is why a 60 s conversion wait failed.
+- Auto-publish had Slack on and posted review videos; it is now off.
+
+**Housekeeping**
+- Every pod's saved log is in one document with a contents list per pod and per run (`~/.config/runpod-pod-manager/pod-logs/POD-LOGS-2026-11-21.md`); 36 old stopped pods with saved logs were deleted; pods are otherwise stopped, never deleted; ADR-055, ADR-056, the production plan and this report are kept up to date.
+
 ## 1. The 36 elements at a glance
 
 | State | Count | Elements |

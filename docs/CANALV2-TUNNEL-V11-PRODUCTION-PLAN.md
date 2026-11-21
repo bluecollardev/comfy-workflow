@@ -233,25 +233,25 @@ Not every element is in the same state, so the delivery is handled by case. **Ru
 
 | # | Element | Frames (PDF) | Raster | DPX on volume | Review video | Corrected DPX copy | In the real round | Note |
 |---|---|---|---|---|---|---|---|---|
-| 18 | ARCHIVAL-087 platform | 97 | 3840x2160 | yes | no | yes | no | DPX made (97, count matches); header-patched; in the test round. Blocked in the real round: it already holds 29 files of different size |
-| 19 | ARCHIVAL-087 rain | 96 | 3840x2160 | generating | no | no | no | Generating (graph in `imp-mwpkxqng-0`) |
-| 20 | ARCHIVAL-123 f | 43 | 3840x2160 | yes | no | yes | no | DPX made (43, matches); header-patched; in the test round |
-| 21 | ARCHIVAL-168 a | 153 | 3840x2160 | yes | no | yes | no | DPX made (153, matches); header-patched; test round |
-| 22 | ARCHIVAL-168 b | 139 | 3840x2160 | yes | no | yes | no | DPX made (139, matches); header-patched; test round |
-| 23 | ARCHIVAL-168 c | 105 | 3840x2160 | yes | no | yes | no | DPX made (105, matches); header-patched; test round |
-| 24 | ARCHIVAL-168 d | 48 | 3840x2160 | yes | no | yes | no | DPX made (48, matches); header-patched; test round |
-| 25 | CREATURE-266 dolphin-lowtrack (ALT V01) | 94 | 1920x1080 | generating | no | no | no | Generating on a 96 GB card (the 32 GB card died mid-graph) |
-| 26 | PHOTOREAL-013 ascent | 108 | 1920x1080, 24 fps HEVC | yes | no | yes | no | DPX made (108, matches); header-patched; test round |
-| 27 | PHOTOREAL-013 chasm07 | 271 | 1920x1080, 24 fps HEVC | yes | no | yes | no | DPX made (271, matches); header-patched; test round |
-| 28 | PHOTOREAL-013 f23 | 633 | 1920x1080, 24 fps HEVC | generating | no | no | no | Generating |
-| 29 | PHOTOREAL-013 hadal | 160 | 1920x1080, 24 fps HEVC | generating | no | no | no | Generating |
-| 30 | PHOTOREAL-013 landing | 226 | 1920x1080, 24 fps ProRes | generating | no | no | no | Generating |
-| 31 | PHOTOREAL-013 splash | 96 | 1920x1080, 24 fps HEVC | generating | no | no | no | Generating |
-| 32 | PHOTOREAL-013 sunlight | 212 | 1920x1080, 24 fps HEVC | generating | no | no | no | Generating |
-| 33 | PHOTOREAL-013 top (V02) | 209 | 1920x1080, 24 fps ProRes | generating | no | no | no | Generating |
-| 34 | CGI-072 head | 106 | 1920x1080 V02 ProRes 23.976 | generating | no | no | no | Generating from V03 (not held); raster/version differ from the PDF (V02 ProRes 23.976) |
-| 35 | CGI-072 backhalf-b | 70 | 1920x1080 V02 ProRes 23.976 | generating | no | no | no | Generating from V03 (not held); raster/version differ from the PDF (V02 ProRes 23.976) |
-| 36 | CGI-072 backhalf-c | 162 | 1920x1080 V02 ProRes 23.976 | generating | no | no | no | Generating from V03 (not held); raster/version differ from the PDF (V02 ProRes 23.976) |
+| 18 | ARCHIVAL-087 platform | 97 | 3840x2160 | yes | no | yes | no | Made, matches the PDF count, header-patched, in the test round; blocked in the real round: 29 files there differ in size |
+| 19 | ARCHIVAL-087 rain | 96 | 3840x2160 | yes | no | yes | no | Made, matches the PDF count, header-patched, in the test round |
+| 20 | ARCHIVAL-123 f | 43 | 3840x2160 | yes | no | yes | no | Made, matches the PDF count, header-patched, in the test round |
+| 21 | ARCHIVAL-168 a | 153 | 3840x2160 | yes | no | yes | no | Made, matches the PDF count, header-patched, in the test round |
+| 22 | ARCHIVAL-168 b | 139 | 3840x2160 | yes | no | yes | no | Made, matches the PDF count, header-patched, in the test round |
+| 23 | ARCHIVAL-168 c | 105 | 3840x2160 | yes | no | yes | no | Made, matches the PDF count, header-patched, in the test round |
+| 24 | ARCHIVAL-168 d | 48 | 3840x2160 | yes | no | yes | no | Made, matches the PDF count, header-patched, in the test round |
+| 25 | CREATURE-266 dolphin-lowtrack (ALT V01) | 94 | 1920x1080 | yes | no | yes | no | Made, matches the PDF count, header-patched, in the test round |
+| 26 | PHOTOREAL-013 ascent | 108 | 1920x1080, 24 fps HEVC | yes | no | yes | no | Made, matches the PDF count, header-patched, in the test round |
+| 27 | PHOTOREAL-013 chasm07 | 271 | 1920x1080, 24 fps HEVC | yes | no | yes | no | Made, matches the PDF count, header-patched, in the test round |
+| 28 | PHOTOREAL-013 f23 | 633 | 1920x1080, 24 fps HEVC | no | no | no | no | Not generated: killed for memory (plan section 15); needs chunked runs (ADR-056) |
+| 29 | PHOTOREAL-013 hadal | 160 | 1920x1080, 24 fps HEVC | no | no | no | no | Not generated: killed for memory (plan section 15); needs chunked runs (ADR-056) |
+| 30 | PHOTOREAL-013 landing | 226 | 1920x1080, 24 fps ProRes | no | no | no | no | Not generated: killed for memory (plan section 15); needs chunked runs (ADR-056) |
+| 31 | PHOTOREAL-013 splash | 96 | 1920x1080, 24 fps HEVC | yes | no | yes | no | Made, matches the PDF count, header-patched, in the test round |
+| 32 | PHOTOREAL-013 sunlight | 212 | 1920x1080, 24 fps HEVC | no | no | no | no | Not generated: killed for memory (plan section 15); needs chunked runs (ADR-056) |
+| 33 | PHOTOREAL-013 top (V02) | 209 | 1920x1080, 24 fps ProRes | no | no | no | no | Not generated: killed for memory (plan section 15); needs chunked runs (ADR-056) |
+| 34 | CGI-072 head | 106 | 1920x1080 V02 ProRes 23.976 | no | no | no | no | Not generated: killed for memory (plan section 15); needs chunked runs (ADR-056) |
+| 35 | CGI-072 backhalf-b | 70 | 1920x1080 V02 ProRes 23.976 | no | no | no | no | Not generated: killed for memory (plan section 15); needs chunked runs (ADR-056) |
+| 36 | CGI-072 backhalf-c | 162 | 1920x1080 V02 ProRes 23.976 | no | no | no | no | Not generated: killed for memory (plan section 15); needs chunked runs (ADR-056) |
 
 ### 11.4 How we get the missing DPX, in plain words
 
@@ -337,33 +337,31 @@ The volume round **`base_v008`** (30 shots, 62 graphs, adapter `brynley-rounds-l
 - Left out on purpose: photoreal-013 `floortrack`, `chasmfast07`, `chasmfastia2` (not among the 36).
 
 <!-- run-status:start -->
-### Run status of the 19 (2026-11-20 23:35 UTC)
+### Run status of the 19 (2026-11-21, 13:00 local)
 
-Frames produced (DPX in `delivery_v008/<clip>/`) against the PDF count. 9 of 19 match; a mismatch or an error is shown, never hidden.
+Frames produced (DPX in `delivery_v008/<clip>/` on the volume) against the PDF count. **11 of 19 match; 8 not generated.** A mismatch or an error is shown, never hidden. No frame-count mismatch so far.
 
 | Element | PDF frames | Produced | Check | Run | Error |
 |---|---|---|---|---|---|
-| ARCHIVAL-087 PLATFORM | 97 | 97 | OK | queue |  |
-| ARCHIVAL-087 RAIN | 96 | - | no frames yet | queue |  |
-| ARCHIVAL-123 F | 43 | 43 | OK | done |  |
-| ARCHIVAL-168 A | 153 | 153 | OK | not started |  |
-| ARCHIVAL-168 B | 139 | 139 | OK | not started |  |
-| ARCHIVAL-168 C | 105 | 105 | OK | not started |  |
-| ARCHIVAL-168 D | 48 | 48 | OK | not started |  |
-| CREATURE-266 DOLPHIN-LOWTRACK | 94 | 94 | OK | done |  |
-| PHOTOREAL-013 ASCENT | 108 | 108 | OK | failed | ComfyUI answered HTTP 502 for /history/9fadaa0b-3da2-4c44-b57c-e6d97fb72f77 |
-| PHOTOREAL-013 CHASM07 | 271 | 271 | OK | failed | ComfyUI answered HTTP 502 for /history/8932f3cf-e4ce-4a65-9927-26eff519d875 |
-| PHOTOREAL-013 F23 | 633 | - | no frames yet | pending |  |
-| PHOTOREAL-013 HADAL | 160 | - | no frames yet | pending |  |
-| PHOTOREAL-013 LANDING | 226 | - | no frames yet | pending |  |
-| PHOTOREAL-013 SPLASH | 96 | - | no frames yet | pending |  |
-| PHOTOREAL-013 SUNLIGHT | 212 | - | no frames yet | pending |  |
-| PHOTOREAL-013 TOP | 209 | - | no frames yet | pending |  |
-| CGI-072 HEAD | 106 | - | no frames yet | failed | The operation was aborted due to timeout |
-| CGI-072 BACKHALF-B | 70 | - | no frames yet | failed | The operation was aborted due to timeout |
-| CGI-072 BACKHALF-C | 162 | - | no frames yet | running |  |
-
-The Run column is the last state a pod's run reported for that graph, so a graph can show an error from an earlier attempt while its frames are complete (ascent, chasm07: a ComfyUI 502 on /history in one run; the frames on the volume match the PDF counts). cgi-072: two graphs timed out on the pod (`The operation was aborted due to timeout`), one is running. The frame count is the check that counts.
+| ARCHIVAL-087 platform | 97 | 97 | OK | done, in the test round |  |
+| ARCHIVAL-087 rain | 96 | 96 | OK | done, in the test round |  |
+| ARCHIVAL-123 f | 43 | 43 | OK | done, in the test round |  |
+| ARCHIVAL-168 a | 153 | 153 | OK | done, in the test round |  |
+| ARCHIVAL-168 b | 139 | 139 | OK | done, in the test round |  |
+| ARCHIVAL-168 c | 105 | 105 | OK | done, in the test round |  |
+| ARCHIVAL-168 d | 48 | 48 | OK | done, in the test round |  |
+| CREATURE-266 dolphin-lowtrack | 94 | 94 | OK | done, in the test round |  |
+| PHOTOREAL-013 ascent | 108 | 108 | OK | done, in the test round |  |
+| PHOTOREAL-013 chasm07 | 271 | 271 | OK | done, in the test round |  |
+| PHOTOREAL-013 splash | 96 | 96 | OK | done, in the test round |  |
+| PHOTOREAL-013 hadal | 160 | - | no frames | failed | killed for memory (exit 137) after 22 min on a 96 GB card |
+| PHOTOREAL-013 sunlight | 212 | - | no frames | failed | killed for memory on a 32 GB card |
+| PHOTOREAL-013 top | 209 | - | no frames | failed | killed for memory on a 32 GB card |
+| PHOTOREAL-013 landing | 226 | - | no frames | failed | killed for memory on a 32 GB card |
+| PHOTOREAL-013 f23 | 633 | - | no frames | failed | killed for memory on a 4x pod (233 GiB): RAM 40 to over 232 GiB in about a minute |
+| CGI-072 head | 106 | - | no frames | failed | killed for memory on a 32 GB card |
+| CGI-072 backhalf-b | 70 | - | no frames | not completed | conversion timeout, then its pods died or were stopped before it ran |
+| CGI-072 backhalf-c | 162 | - | no frames | not completed | 502 (container killed), then not run again |
 <!-- run-status:end -->
 
 **Review of the base_v008 failures (2026-11-21, branch `fix/base-v008-failures`).** Causes and fixes:
