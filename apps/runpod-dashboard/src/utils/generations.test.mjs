@@ -68,3 +68,26 @@ test('paged: slice, info, clamped page, empty', () => {
   assert.deepEqual(paged(l, 0, 10).rows, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]); assert.equal(paged(l, 2, 10).info, '21–23 of 23'); assert.equal(paged(l, 9, 10).page, 2); assert.equal(paged(l, 0, 25).count, 1)
   assert.deepEqual(paged([], 3, 10), { rows: [], count: 1, page: 0, info: '0' })
 })
+
+// ----- retry of a finished preview batch -----
+import { retrySelection, retryBlock, groupFailures, failuresText } from './generations.js'
+test('retrySelection: exactly the failed ones, in the batch order, without duplicates; a key the batch no longer holds is left out', () => {
+  const all = ['a', 'b', 'c', 'd', 'e'].map((k) => ({ key: k, job: { k } }))
+  assert.deepEqual(retrySelection(all, ['d', 'b', 'zz', 'b']).map((i) => i.key), ['b', 'd'])
+  assert.deepEqual(retrySelection(all, []), []); assert.deepEqual(retrySelection(null, ['a']), [])
+})
+test('retryBlock: running first, then nothing failed, no pod, a pod that is not running; else usable', () => {
+  const ok = { running: false, failedCount: 3, podId: 'p1', pod: { id: 'p1', status: 'running' } }
+  assert.equal(retryBlock(ok), '')
+  assert.equal(retryBlock({ ...ok, running: true }), 'retryBlockedRunning'); assert.equal(retryBlock({ ...ok, failedCount: 0 }), 'retryBlockedNone')
+  assert.equal(retryBlock({ ...ok, podId: '' }), 'retryBlockedNoPod'); assert.equal(retryBlock({ ...ok, pod: undefined }), 'retryBlockedNoPod')
+  assert.equal(retryBlock({ ...ok, pod: { id: 'p1', status: 'stopped' } }), 'retryBlockedStopped')
+})
+test('groupFailures: by reason, the biggest group first, the first names only; failuresText has the line, one row per failure and the capped note', () => {
+  const f = (name, code) => ({ name, code, reason: code, pod_name: 'P' })
+  const list = [f('a', 'timeout'), f('b', 'timeout'), f('c', 'other'), f('d', 'timeout'), f('e', 'timeout')]
+  const g = groupFailures(list, (x) => x.code, 3)
+  assert.deepEqual(g.map((x) => [x.text, x.n, x.names.length]), [['timeout', 4, 3], ['other', 1, 1]])
+  const txt = failuresText({ failures: list, failed: 7 }, (x) => x.code, 'Previews: 10 of 10 · 7 failed')
+  assert.equal(txt.split('\n')[0], 'Previews: 10 of 10 · 7 failed'); assert.equal(txt.split('\n').length, 1 + 5 + 1); assert.match(txt, /\(\+2 more, in the History\)/)
+})

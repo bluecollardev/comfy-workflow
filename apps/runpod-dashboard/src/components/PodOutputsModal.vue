@@ -365,7 +365,7 @@ const genTodo = computed(() => (skipExisting.value ? genCounts.value.waiting + g
 async function generateAll() {
   await probe(previewItems.value)
   const todo = skipExisting.value ? previewItems.value.filter((i) => probeMap[i.key] !== 'ready' && !['ready', 'empty'].includes(previewsStore.results[i.key]?.status)) : [...previewItems.value]   // ticked: a cached one is never asked for again; unticked: every one is read again and replaces its saved preview
-  previewsStore.start(todo, props.pod.name, genScopeLabel.value, !skipExisting.value)
+  previewsStore.start(todo, props.pod.name, genScopeLabel.value, !skipExisting.value, props.pod.id)
 }
 function stopGenerate() { previewsStore.stop() }
 // Frame Previews mode: ONE pod job writes a small JPEG per frame for every in-scope sequence (utils/framejob.js); nothing large is read to this PC. The counts are frames, from one listing of the pod.
