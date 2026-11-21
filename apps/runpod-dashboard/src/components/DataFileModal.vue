@@ -35,6 +35,10 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { viewUrl, sizeText } from '../utils/outputs'
 import { PREVIEW_MAX, isTextName, readText, pretty } from '../utils/datafile'
 import { errorText } from '../stores/toast'
+import { t } from '../i18n'
+
+/** How long a data file may take before the popup gives up with a Retry (a few KB over a slow link: 1 to 14 s to the first byte was measured). */
+const DATA_TIMEOUT_MS = globalThis.__DATA_TIMEOUT_MS__ || 45000
 
 const props = defineProps({ files: { type: Array, default: () => [] }, base: { type: String, default: '' } })
 const emit = defineEmits(['close'])
@@ -48,16 +52,18 @@ async function load() {
   const mine = ++seq
   error.value = ''; text.value = ''; truncated.value = false; copied.value = false
   if (!isTextName(f.filename)) { state.value = 'binary'; return }   // an unknown type: name, size and Download only
+  if (!props.base) { error.value = t('outputs.data.needsPod'); state.value = 'error'; return }   // no pod and no S3 route for this run: say so (the tile is never silently dead)
   state.value = 'loading'
+  const ac = new AbortController(), timer = setTimeout(() => ac.abort(), DATA_TIMEOUT_MS)   // a slow link must end in an error with Retry, not an endless spinner
   try {
-    const res = await fetch(viewUrl(props.base, f), { headers: { range: `bytes=0-${PREVIEW_MAX - 1}` } })
+    const res = await fetch(viewUrl(props.base, f), { headers: { range: `bytes=0-${PREVIEW_MAX - 1}` }, signal: ac.signal })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const r = await readText(res)
     if (mine !== seq) return
     if (r.binary) { state.value = 'binary'; return }
     const total = Number((/\/(\d+)$/.exec(res.headers.get('content-range') || '') || [])[1] || 0)
     text.value = r.text; truncated.value = r.truncated || total > PREVIEW_MAX; state.value = 'text'
-  } catch (e) { if (mine === seq) { error.value = errorText(e); state.value = 'error' } }
+  } catch (e) { if (mine === seq) { error.value = ac.signal.aborted ? t('outputs.data.timedOut') : errorText(e); state.value = 'error' } } finally { clearTimeout(timer) }
 }
 const select = (i) => { index.value = i; load() }
 async function copy() { try { await navigator.clipboard.writeText(shown.value); copied.value = true; setTimeout(() => { copied.value = false }, 1500) } catch { /* the clipboard may be blocked: nothing to do */ } }

@@ -8,7 +8,7 @@
     </div>
     <div v-if="seqCount || groupCount || tempCount || dataFiles.length" class="d-flex align-items-center flex-wrap gap-2 mb-2 small" data-testid="outputs-seq-toolbar">
       <span v-if="seqCount" class="text-body-secondary" data-testid="outputs-seq-count">{{ $t('outputs.dpx.sequencesCount', { n: seqCount, open: openCount }) }}</span>
-      <BButton v-if="dataFiles.length && !seqCount" variant="outline-light" size="sm" :disabled="offline" data-testid="outputs-data-button" @click="dataOpen = true"><i class="fa-solid fa-file-lines me-1"></i>{{ dataLabel }}</BButton>
+      <BButton v-if="dataFiles.length && !seqCount" variant="outline-light" size="sm" data-testid="outputs-data-button" @click="dataOpen = true"><i class="fa-solid fa-file-lines me-1"></i>{{ dataLabel }}</BButton>
       <span v-if="groupCount" class="text-body-secondary" data-testid="outputs-group-count">{{ $t('outputs.group.groupsCount', { n: groupCount, open: groupOpenCount }) }}</span>
       <span class="ms-auto"></span>
       <BButton v-if="tempCount" variant="outline-light" size="sm" :aria-pressed="groupView.showTemp ? 'true' : 'false'" data-testid="outputs-temp-toggle" @click="setShowTemp(!groupView.showTemp)"><i class="fa-solid me-1" :class="groupView.showTemp ? 'fa-eye-slash' : 'fa-eye'"></i>{{ groupView.showTemp ? $t('outputs.group.hideTemp') : $t('outputs.group.showTemp') }} <span class="text-body-secondary">({{ tempCount }})</span></BButton>
@@ -83,14 +83,17 @@
       <!-- beside the sequence's first-frame tile: the MAIN VIDEO of the videos group (the one it marks Main), first-frame thumbnail in its own ratio, a click opens the modal player; none when the group has no main video -->
       <div v-if="t.kind === 'dpx' && t.frames.length > 1 && (mainVideos.get(t.key) || showDataHere(t))" class="seqside" data-testid="outputs-seq-side">
       <button v-if="mainVideos.get(t.key)" type="button" class="tile mainvideo" :disabled="offline" :title="mainVideos.get(t.key).filename" data-testid="outputs-main-video" @click="openFile(mainVideos.get(t.key))">
-        <LazyMedia kind="video" :src="viewUrl(base, mainVideos.get(t.key))" :poster="posterOf(mainVideos.get(t.key))" :bytes="mainVideos.get(t.key).bytes" />
+        <LazyMedia kind="video" fit="height" :src="viewUrl(base, mainVideos.get(t.key))" :poster="posterOf(mainVideos.get(t.key))" :bytes="mainVideos.get(t.key).bytes" />
         <span class="cap fw-semibold" data-testid="outputs-main-video-label">{{ $t('outputs.video.mainVideo') }}</span>
         <span class="cap" :title="mainVideos.get(t.key).filename" data-testid="outputs-main-video-name">{{ shortName(mainVideos.get(t.key).filename) }}</span>
       </button>
-      <!-- the run's data files (usually one json) are a button right of the Main Video tile (or of the sequence tile), not a group; a click opens a popup with the file's text -->
-      <BButton v-if="showDataHere(t)" variant="outline-light" size="sm" class="databtn" :disabled="offline" data-testid="outputs-data-button" @click="dataOpen = true"><i class="fa-solid fa-file-lines me-1"></i>{{ dataLabel }}</BButton>
+      <!-- the run's data files (usually one json) are ONE tile right of the Main Video tile (or of the sequence tile), as tall as they are, not a group: the whole tile is the click target (Enter and Space too) and opens a popup with the file's text -->
+      <button v-if="showDataHere(t)" type="button" class="tile datatile" :title="dataLabel" data-testid="outputs-data-button" @click="dataOpen = true">
+        <span class="thumb dthumb d-flex align-items-center justify-content-center text-body-secondary" data-testid="outputs-data-icon"><i class="fa-solid fa-file fs-1"></i></span>
+        <span class="cap fw-semibold" data-testid="outputs-data-label">{{ dataLabel }}</span>
+      </button>
       </div>
-      <SequenceStrip v-if="t.kind === 'dpx' && t.frames.length > 1 && stripItems(t).length" class="seqstrip" :items="stripItems(t)" :disabled="offline" @open="(i) => openAt(t, i)" />
+      <SequenceStrip v-if="t.kind === 'dpx' && t.frames.length > 1 && stripItems(t).length" class="seqstrip" :rows="isExpanded(t) ? 1 : 2" :total="t.frames.length" :items="stripItems(t)" :disabled="offline" @open="(i) => openAt(t, i)" @more="toggleSeq(t)" />
       <template v-if="t.kind === 'dpx' && t.frames.length > 1">
         <div v-if="isExpanded(t)" class="frames" data-testid="outputs-seq-frames" :data-shown="shownFrames(t).length">
           <div class="small text-body-secondary mb-1" data-testid="outputs-seq-frames-count">{{ $t('outputs.dpx.framesShown', { shown: shownFrames(t).length, total: t.frames.length }) }}</div>
@@ -296,10 +299,14 @@ watch(() => props.files, () => { current.value = null; dpx.value = null; problem
 /* the Main Video tile sits beside the sequence tile (column 2, as tall as the row, the picture 9.5rem high with its own width), the filmstrip keeps column 3 */
 /* column 2 holds the Main Video tile and, to its right on the same row, the Data File button (vertically centred on the tiles) */
 .cell.seq > .seqside { grid-column: 2; display: flex; align-items: flex-start; gap: 0.5rem; min-width: 0; }
-.seqside .mainvideo { width: auto; max-width: 22rem; align-self: stretch; }
-.seqside .mainvideo :deep(.vposter) { height: 9.5rem; }
-.seqside .databtn { align-self: center; white-space: nowrap; }
-.cell.seq > .seqstrip { grid-column: 3; }
+/* the pictures of the main row share ONE height (`--picH`, the sequence tile's 6.5rem picture): the Main Video's width follows its own ratio (never squeezed to its caption), the Data File tile is a 9.5rem tile of that height */
+.cell.seq { --picH: 6.5rem; }
+/* (`.cell.wide .tile { max-width: 9.5rem }` above capped this tile at 152 px, which is what made the Main Video's picture a skinny box: the selector here must outrank it) */
+.cell.wide .seqside .mainvideo { width: min-content; min-width: 7rem; max-width: none; flex: 0 0 auto; align-self: flex-start; }
+.cell.wide .seqside .datatile { width: 9.5rem; flex: 0 0 auto; align-self: flex-start; }
+.dthumb { height: var(--picH, 6.5rem); }
+/* the previews of the sequence: two full rows below the main row */
+.cell.seq > .seqstrip { grid-column: 1 / -1; }
 /* a collapsed group with previews: one full row of tiles, the last being '+N more' */
 .gstrip { display: grid; gap: 0.5rem; align-items: start; }
 .gstrip .tile { width: 100%; min-width: 0; }

@@ -30,6 +30,21 @@ test('a stopped pod with saved runs has an enabled Outputs button; with no runni
   await expect(page.getByTestId('output-viewer')).toHaveCount(0)
 })
 
+test('a run with a data file on a stopped pod: the Data File button is NOT dead; it opens the popup and says why the file cannot be read (no pod, no S3 route)', async ({ page, api }) => {
+  stopDev(api); onVolume(api)
+  api.state.history.saved = [saved('aaaa1111-0000', { files: [{ filename: 'run_meta.json', subfolder: 'archival-080', type: 'output' }, { filename: 'aaaa1111-0000_00001_.png', subfolder: 'archival-080', type: 'output' }] })]
+  await page.goto('/')
+  await podCard(page, 'ComfyUI-Batch').getByTestId('pod-outputs').click()
+  const m = page.getByTestId('pod-outputs-modal')
+  await expect(m.getByTestId('pod-outputs-offline')).toBeVisible()
+  const btn = m.getByTestId('outputs-data-button')
+  await expect(btn).toBeEnabled()                                  // it used to be greyed out whenever the run had no pod to read from
+  await btn.click()
+  const pop = page.getByTestId('datafile-modal')
+  await expect(pop.getByTestId('datafile-error')).toContainText('Start a pod on the volume')
+  await page.keyboard.press('Escape')
+})
+
 test('a pod on the same volume lists the volume\'s saved runs (by volume, not only by pod)', async ({ page, api }) => {
   onVolume(api)
   api.state.history.saved = [saved('cccc3333-0000', { pod_id: 'pod-gone', pod_name: 'Deleted-pod' })]   // made by a pod that no longer exists

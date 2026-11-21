@@ -716,7 +716,9 @@
     },
     "strip": {
       "label": "Frames across the sequence",
-      "frame": "Frame {n}"
+      "frame": "Frame {n}",
+      "more": "+{n} More",
+      "moreTitle": "Show every frame of the sequence"
     },
     "errors": {
       "title": "Generation Errors ({n})",
@@ -726,7 +728,7 @@
     "image": { "tooLarge": "Too large to preview", "noPreview": "The image could not be loaded" },
     "data": {
       "button": "Data File", "buttonMany": "Data Files ({n})", "loading": "Loading the file…", "retry": "Retry", "copy": "Copy", "copied": "Copied", "download": "Download",
-      "binary": "No text preview for this kind of file: name and size are shown, use Download.", "truncated": "Showing the first 1 MB"
+      "binary": "No text preview for this kind of file: name and size are shown, use Download.", "truncated": "Showing the first 1 MB", "timedOut": "The file did not arrive in time (slow link). Use Retry.", "needsPod": "This file is read through a running pod or the volume's S3 route, and neither is available for this run. Start a pod on the volume and open it again."
     },
     "frames": {
       "modeLabel": "Preview mode",
