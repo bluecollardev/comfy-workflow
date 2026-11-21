@@ -18,7 +18,7 @@
       <span data-testid="autopublish-row-state">
         <template v-if="e.state === 'waiting'">{{ $t('autopublish.pane.uploadsIn', { t: countdown(e) }) }}</template>
         <template v-else-if="e.state === 'uploading'"><BSpinner small class="me-2 flex-shrink-0" />{{ $t('autopublish.pane.uploading') }}</template>
-        <template v-else-if="e.state === 'would_upload'">{{ $t('autopublish.pane.wouldUpload') }}<template v-if="e.targets"> → {{ targetsText(e.targets) }}</template></template>
+        <template v-else-if="e.state === 'would_upload'"></template>
         <template v-else-if="e.state === 'capped'">{{ $t('autopublish.pane.capped') }}</template>
         <template v-else-if="e.state === 'failed'"><span class="text-danger">{{ $t('autopublish.pane.failed', { reason: e.reason || '' }) }}</span></template>
         <template v-else>{{ e.state }}</template>
@@ -27,6 +27,7 @@
         <AutoPublishOutputsLink :row="e" />
         <BButton v-if="e.dry_run_plan" variant="link" size="sm" class="p-0 text-nowrap" :aria-expanded="dryOpen.has(e.id)" data-testid="autopublish-dry-toggle" @click="toggleDry(e.id)">{{ dryOpen.has(e.id) ? '▾' : '▸' }} {{ $t('autopublish.dry.s3') }}</BButton>
 
+        <BButton v-if="e.state === 'would_upload'" size="sm" variant="outline-primary" :disabled="!!realBlocked(e)" :title="realBlocked(e) || $t('autopublish.pane.publishRealTip')" data-testid="autopublish-deliver" @click="deliver(e)">{{ $t('autopublish.pane.publishReal') }}</BButton>
         <BButton v-if="['waiting', 'capped', 'would_upload'].includes(e.state)" size="sm" variant="outline-warning" data-testid="autopublish-cancel" @click="cancel(e)">{{ $t('autopublish.pane.cancel') }}</BButton>
 
  <BButton v-if="ap.hasHolds && ['waiting', 'capped'].includes(e.state)" size="sm" variant="outline-light" data-testid="autopublish-hold" @click="hold(e)">{{ $t('autopublish.pane.hold') }}</BButton>
@@ -91,6 +92,24 @@ const when = (e) => { const d = new Date(e.done_at || e.finished_at || e.at || e
 async function hold(e) { actionError.value = { ...actionError.value, [e.id]: '' }; try { await ap.hold(e.shot, e.version) } catch (x) { actionError.value = { ...actionError.value, [e.id]: errorText(x) } } }
 async function release(h) { try { await ap.release(h.shot, h.version) } catch (x) { void x } }
 async function cancel(e) { actionError.value = { ...actionError.value, [e.id]: '' }; try { await ap.cancel(e.id) } catch (x) { actionError.value = { ...actionError.value, [e.id]: errorText(x) } } }
+const sameVersion = (a, b) => String(a).replace(/\D/g, '') === String(b).replace(/\D/g, '')
+/** Why a dry-run row's Deliver is off ('' when it can go): a hold, the daily cap, a destination that is not ready, or the same shot and version already going. */
+function realBlocked(e) {
+  const st = ap.status || {}
+  if (e.reason && /held|not in the EDL|dpx fix/i.test(e.reason)) return e.reason
+  if (publishing.value) return t('autopublish.pane.publishBusy')
+  if (st.today && st.today.left === 0) return t('autopublish.pane.realCapSpent', { cap: st.daily_cap })
+  const s3 = ap.settings?.target_state?.s3
+  if (ap.settings && (ap.settings.ready === false || s3?.ready === false)) return t('autopublish.pane.realNotReady', { why: s3?.problem || '' })
+  if (ap.pending.some((x) => x.id !== e.id && x.shot === e.shot && sameVersion(x.version, e.version) && ['uploading', 'posting'].includes(x.state))) return t('autopublish.pane.realAlready')
+  if ((st.watching?.uploaded || []).some((u) => u.shot === e.shot && sameVersion(u.version, e.version))) return t('autopublish.pane.realAlready')
+  return ''
+}
+async function deliver(e) {
+  const st = ap.status || {}, p = e.dry_run_plan || {}
+  const message = t('autopublish.pane.publishRealMessage', { shot: e.shot, version: versionTag(e.version), files: e.files ?? 0, size: formatBytes(e.bytes || 0), round: p.round || ap.settings?.round || '', targets: targetsText(e.targets || st.targets || {}), left: st.today?.left ?? t('autopublish.pane.capNone') })
+  await prompt.ask({ title: t('autopublish.pane.publishRealTitle'), message, okLabel: t('autopublish.pane.publishReal'), name: st.standing?.approved_by || '', submit: async ({ name }) => { try { await ap.publishNow(e.id, name); return '' } catch (x) { return errorText(x) } } })
+}
 async function publishNow(e) {
   await prompt.ask({ title: t('autopublish.pane.publishNowTitle'), message: `${t('autopublish.pane.publishNowMessage')} ${entryLine(e, formatBytes)}`, okLabel: t('autopublish.pane.publishNow'), submit: async ({ name }) => { try { await ap.publishNow(e.id, name); return '' } catch (x) { return errorText(x) } } })
 }

@@ -33,7 +33,7 @@ test.describe('Dry run: S3 and Slack', () => {
     const row = (id) => page.locator(`[data-testid="autopublish-row"][data-id="${id}"]`)
     await expect(row('d1').getByTestId('autopublish-dry-plan')).toHaveCount(0)
     const order = await row('d1').getByTestId('autopublish-row-actions').locator('xpath=./*').evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')))
-    expect(order.slice(0, 3)).toEqual(['autopublish-outputs-wrap', 'autopublish-dry-toggle', 'autopublish-cancel'])   // View In Outputs, then the S3 dry run link, Cancel after it
+    expect(order.slice(0, 4)).toEqual(['autopublish-outputs-wrap', 'autopublish-dry-toggle', 'autopublish-deliver', 'autopublish-cancel'])   // View In Outputs, then the S3 dry run link, Deliver, Cancel after it
     await row('d1').getByTestId('autopublish-dry-toggle').click()
     const d = row('d1').getByTestId('autopublish-dry-plan')
     await expect(d.getByTestId('autopublish-dry-dest')).toHaveText('s3://bh-panama-exchange/returns/BKK/tunnel-v11_2026-11-19_r01/')

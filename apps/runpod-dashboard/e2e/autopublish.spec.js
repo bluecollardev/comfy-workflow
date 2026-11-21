@@ -270,7 +270,7 @@ test.describe('the Queue: Auto-publish', () => {
     expect(secs(later)).toBeLessThan(secs(first))
     await expect(row.getByTestId('autopublish-row-targets')).toHaveText('S3')
     const would = q.locator('[data-testid="autopublish-row"][data-id="ap-w"]')
-    await expect(would).toHaveClass(/text-body-secondary/); await expect(would.getByTestId('autopublish-row-state')).toHaveText('would upload (dry run) → S3 + Slack')
+    await expect(would).toHaveClass(/text-body-secondary/); await expect(would.getByTestId('autopublish-row-state')).toHaveText(''); await expect(would).not.toContainText('would upload (dry run)')   // the dry-run text is gone from the row (the Overview keeps the badge)
     await expect(q.locator('[data-testid="autopublish-row"][data-id="ap-c"] [data-testid="autopublish-row-state"]')).toHaveText('daily cap reached, tries tomorrow')
     await expect(q.locator('[data-testid="autopublish-row"][data-id="ap-f"] [data-testid="autopublish-row-state"]')).toHaveText('failed: Access Denied')
     await expect(q.locator('[data-testid="autopublish-row"][data-id="ap-u"] [data-testid="autopublish-row-state"]')).toContainText('uploading')
@@ -304,6 +304,56 @@ test.describe('the Queue: Auto-publish', () => {
     await p.getByTestId('name-prompt-input').fill('Brynley'); await p.getByTestId('name-prompt-ok').click(); await expect(p).toBeHidden()
     expect(calls(api, 'publishNow').at(-1).body).toEqual({ id: 'ap-2', approved_by: 'Brynley' })
     await expect(q.locator('[data-testid="autopublish-row"][data-id="ap-2"] [data-testid="autopublish-row-state"]')).toContainText('uploading', { timeout: 6000 })
+  })
+  test('a dry-run row has Deliver next to Cancel: the confirm shows what is delivered and where, then {id, approved_by} is sent and the row uploads', async ({ page, api }) => {
+    on(api, { daily_cap: 5 }); api.state.autopublish = { today: { count: 2, left: 3 }, pending: [entry({ id: 'ap-w', shot: 'cgi-042', version: 1, state: 'would_upload', targets: ['s3', 'slack'], dry_run_plan: { bucket: 'bh-panama-exchange-610140802195', prefix: 'returns/BKK/', round: 'tunnel-v11-edl-2026-11-18', total_files: 3, total_bytes: 3e8, files: [] } }), entry({ id: 'ap-x', shot: 'cgi-043', version: 1, state: 'would_upload' })] }
+    await page.goto('/')
+    const q = await openQueue(page), row = (id) => q.locator(`[data-testid="autopublish-row"][data-id="${id}"]`)
+    const real = row('ap-w').getByTestId('autopublish-deliver')
+    await expect(real).toHaveText('Deliver'); await expect(real).toBeEnabled(); await expect(row('ap-w').getByTestId('autopublish-cancel')).toBeVisible()
+    await expect(row('ap-w').getByTestId('autopublish-publish-now')).toHaveCount(0)
+    await real.click()
+    const p = prompt(page)
+    await expect(p).toContainText('cgi-042'); await expect(p).toContainText('tunnel-v11-edl-2026-11-18'); await expect(p).toContainText('S3 + Slack'); await expect(p).toContainText('Daily cap left today: 3')
+    await expect(p.getByTestId('name-prompt-input')).toHaveValue('Brynley')   // the standing approval's person is offered
+    await expect(p).toContainText('the delivery round tunnel-v11-edl-2026-11-18'); await expect(p).toContainText('It goes out for real')
+    await p.getByTestId('name-prompt-input').fill('Lucas'); await p.getByTestId('name-prompt-ok').click(); await expect(p).toBeHidden()
+    expect(calls(api, 'publishNow').at(-1).body).toEqual({ id: 'ap-w', approved_by: 'Lucas' })
+    await expect(row('ap-w').getByTestId('autopublish-row-state')).toContainText('uploading', { timeout: 6000 })
+    await expect(row('ap-w').getByTestId('autopublish-deliver')).toHaveCount(0)   // it is not offered twice
+    await expect(row('ap-x').getByTestId('autopublish-deliver')).toBeDisabled()   // one upload at a time: the other waits until this one is done
+  })
+  test('Deliver needs a name: with none remembered or offered the confirm button stays off until one is typed', async ({ page, api }) => {
+    on(api, { standing: null }); api.state.autopublish = { today: { count: 0, left: null }, pending: [entry({ id: 'ap-w', shot: 'cgi-042', version: 1, state: 'would_upload' })] }
+    await page.goto('/')
+    const q = await openQueue(page); await q.locator('[data-testid="autopublish-row"][data-id="ap-w"]').getByTestId('autopublish-deliver').click()
+    const p = prompt(page); await expect(p.getByTestId('name-prompt-input')).toHaveValue(''); await expect(p.getByTestId('name-prompt-ok')).toBeDisabled(); await expect(p.getByTestId('name-prompt-ok')).toHaveText('Deliver'); await expect(p).toContainText('Daily cap left today: no cap')
+    await p.getByTestId('name-prompt-input').fill('Lucas'); await expect(p.getByTestId('name-prompt-ok')).toBeEnabled()
+  })
+  test('Deliver is off, with the reason as its tooltip, when the daily cap is spent', async ({ page, api }) => {
+    on(api, { daily_cap: 5 }); api.state.autopublish = { today: { count: 5, left: 0 }, pending: [entry({ id: 'ap-w', shot: 'cgi-042', version: 1, state: 'would_upload', dry_run_plan: { bucket: 'b', prefix: 'returns/BKK/', round: 'r1', total_files: 3, total_bytes: 3e8, files: [] } })] }
+    await page.goto('/')
+    const q = await openQueue(page), real = q.locator('[data-testid="autopublish-row"][data-id="ap-w"]').getByTestId('autopublish-deliver')
+    await expect(real).toBeDisabled(); await expect(real).toHaveAttribute('title', /daily cap is spent \(5 a day\)/)
+    await expect(q.getByTestId('autopublish-dryrun-deliver-all')).toBeDisabled()
+  })
+  test('Deliver is off for a row the scope or the dpx fix holds, showing that reason', async ({ page, api }) => {
+    on(api); api.state.autopublish = { pending: [entry({ id: 'ap-h', shot: 'cgi-042', version: 1, state: 'would_upload', reason: 'held back: dpx fix: frame count 60 of 70' })] }
+    await page.goto('/')
+    const q = await openQueue(page), real = q.locator('[data-testid="autopublish-row"][data-id="ap-h"]').getByTestId('autopublish-deliver')
+    await expect(real).toBeDisabled(); await expect(real).toHaveAttribute('title', 'held back: dpx fix: frame count 60 of 70')
+  })
+  test('Deliver All: one confirmation with the count and size, then every dry-run entry goes; the daily cap stops it and the refused ones are listed', async ({ page, api }) => {
+    on(api, { daily_cap: 5 }); api.state.autopublish = { today: { count: 3, left: 2 }, allowOnly: 2, pending: [entry({ id: 'ap-a', shot: 'cgi-041', version: 1, state: 'would_upload', dry_run_plan: { bucket: 'b', prefix: 'returns/BKK/', round: 'r1', total_files: 3, total_bytes: 3e8, files: [] } }), entry({ id: 'ap-b', shot: 'cgi-042', version: 1, state: 'would_upload', dry_run_plan: { bucket: 'b', prefix: 'returns/BKK/', round: 'r1', total_files: 3, total_bytes: 3e8, files: [] } }), entry({ id: 'ap-c', shot: 'cgi-043', version: 1, state: 'would_upload', dry_run_plan: { bucket: 'b', prefix: 'returns/BKK/', round: 'r1', total_files: 3, total_bytes: 3e8, files: [] } })] }
+    await page.goto('/')
+    const q = await openQueue(page), all = q.getByTestId('autopublish-dryrun-deliver-all')
+    await expect(all).toHaveText('Deliver All'); await expect(all).toBeEnabled()
+    await all.click()
+    const p = prompt(page)
+    await expect(p).toContainText('3 dry-run review(s)'); await expect(p).toContainText('Daily cap left today: 2')
+    await p.getByTestId('name-prompt-input').fill('Lucas'); await p.getByTestId('name-prompt-ok').click(); await expect(p).toBeHidden()
+    expect(calls(api, 'publishAllDry').at(-1).body).toEqual({ approved_by: 'Lucas' })
+    await expect(q.getByTestId('autopublish-dryrun-error')).toContainText('cgi-043'); await expect(q.getByTestId('autopublish-dryrun-error')).toContainText('daily cap is spent')
   })
   test('the section is absent when the core has no Auto-publish; a configuration with it OFF shows an empty state', async ({ page, api }) => {
     await page.goto('/')
