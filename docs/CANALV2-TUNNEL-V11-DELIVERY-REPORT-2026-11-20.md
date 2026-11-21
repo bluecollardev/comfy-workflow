@@ -1,6 +1,22 @@
 # CANALV2 Tunnel V11: delivery report
 
-**Status as of 2026-11-21, about 13:00 local: in progress.** 17 of the 36 elements are delivered to the real round. 11 more are made and checked and wait in a test round. 8 are not generated yet (memory, section 4). **Plan:** [CANALV2-TUNNEL-V11-PRODUCTION-PLAN.md](CANALV2-TUNNEL-V11-PRODUCTION-PLAN.md) (sections 14 and 15 carry the run notes). **Rule:** we deliver what we can and have first; nothing from the new generation goes to the real round until Lucas says so.
+## Read this first (2026-11-21, about 13:00 local)
+
+**Bottom line:** 28 of the 36 elements are done. 17 are delivered to Binc's real round. 11 more are finished and checked but held in a test round, as you asked. **8 are not done** and cannot be done as things stand.
+
+- **Delivered (17):** in `returns/BKK/tunnel-v11-edl-2026-11-18`, with corrected headers and timecode, review videos and manifests. I read them back from the bucket and they are right.
+- **Ready, waiting for your word (11):** archival-087 platform and rain, 123 f, 168 a-d, creature-266 dolphin-lowtrack, photoreal-013 ascent, chasm07, splash. Frame counts match the PDF exactly. Still missing for these: a review video each, and a check of their headers in the bucket. One problem: archival-087 platform clashes with 29 differently sized files already in the real round, so it can't go there as it is.
+- **Not done (8):** photoreal-013 hadal, sunlight, top, landing, f23, and cgi-072 head, backhalf-b, backhalf-c. Their graphs run out of memory on RunPod and get killed (RunPod's own log says so). A bigger card doesn't help; more system RAM only helps the small ones. The real fix is to run each graph in pieces of about 50 frames, and that isn't built yet. A test on a 116 GB-RAM pod (hadal) has been running 40 minutes and hasn't died yet.
+
+**What I need from you**
+1. **Build the chunked runs?** (about a day of work including tests; it is the only way to get the last 8). Or deliver 28 and list the 8 as not generated.
+2. **Move the 11 to the real round?** Which ones, and what to do about the archival-087 platform clash.
+3. Whether Auto-publish may come back on. It's off because it posted about 16 review videos to Slack on its own, including items not on the list.
+
+**Money running now:** two pods, about $4.10/hour (2× RTX PRO 4500 and a pod that isn't ours at $2.69/h). I stop mine when the last test ends.
+
+Everything below is the detail behind this summary. Appendix A has the memory evidence and every error.
+
 
 ## Status tables (kept up to date in the production plan)
 - [The 17 with DPX: state of each (plan 11.1)](CANALV2-TUNNEL-V11-PRODUCTION-PLAN.md#111-the-17-with-dpx-cases-a-to-c)
