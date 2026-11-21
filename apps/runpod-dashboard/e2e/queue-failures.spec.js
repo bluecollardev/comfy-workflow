@@ -42,6 +42,34 @@ test.describe('Queue > Generations > Failures', () => {
     await page.locator('[data-testid="failure-row"][data-id="f1"]').getByTestId('failure-copy').click()
     const j = JSON.parse(await page.evaluate(() => navigator.clipboard.readText())); expect(j).toMatchObject({ id: 'f1', shot: 'depth-182', stage: 'execute', node_id: '47', node_type: 'KSampler', graph_version: '015' })
   })
+  test('Dismiss hides one failure and the count follows; Dismiss All asks first (Cancel keeps all, OK hides what is shown); Show Dismissed lists them with Restore and Restore All; a new failure still shows; the Overview counts only the shown ones', async ({ page, api }) => {
+    api.state.failures = [REC(), REC({ id: 'f2', time: '2026-11-19T09:05:07', shot: 'cgi-042' }), REC({ id: 'f3', time: '2026-11-19T08:05:07', shot: 'map-066' })]
+    await page.goto('/'); await queueTab(page, 'generations')
+    const head = page.getByTestId('queue-failures').locator('h6').first(), rows = page.getByTestId('failure-row')
+    await expect(head).toHaveText('Failures (3)'); await expect(page.getByTestId('failures-show-dismissed')).toHaveCount(0)   // nothing dismissed: no toggle
+    await page.locator('[data-testid="failure-row"][data-id="f2"]').getByTestId('failure-dismiss').click()
+    await expect(head).toHaveText('Failures (2)'); await expect(rows).toHaveCount(2); await expect(page.locator('[data-testid="failure-row"][data-id="f2"]')).toHaveCount(0)
+    expect(api.state.failureDismisses).toEqual([{ ids: ['f2'] }])   // by id, never 'everything from now on'
+    await expect(page.getByTestId('failures-show-dismissed')).toHaveText('Show Dismissed (1)')
+    // Dismiss All: the confirm names the count and says nothing is deleted; Cancel changes nothing
+    await page.getByTestId('failures-dismiss-all').click()
+    await expect(page.getByTestId('confirm-message')).toContainText('Hide 2 failures from the Queue'); await expect(page.getByTestId('confirm-message')).toContainText('Nothing is deleted'); await expect(page.getByTestId('confirm-message')).toContainText('failures log file')
+    await page.getByTestId('confirm-cancel').click(); await expect(head).toHaveText('Failures (2)'); expect(api.state.failureDismisses).toHaveLength(1)
+    await page.getByTestId('failures-dismiss-all').click(); await page.getByTestId('confirm-ok').click()
+    await expect(head).toHaveText('Failures (0)'); await expect(rows).toHaveCount(0); await expect(page.getByTestId('failures-none')).toBeVisible(); await expect(page.getByTestId('failures-show-dismissed')).toHaveText('Show Dismissed (3)')
+    expect(api.state.failureDismisses[1]).toEqual({ all: true })
+    // a NEW failure shows even after Dismiss All
+    api.state.failures.unshift(REC({ id: 'f4', time: '2026-11-19T15:00:00', shot: 'new-1' })); await expect(rows).toHaveCount(1, { timeout: 12000 }); await expect(head).toHaveText('Failures (1)')
+    await page.getByTestId('queue-tab-overview').click(); await expect(page.getByTestId('queue-overview-failures')).toHaveText(/1 graph failures/)   // the Overview counts only the shown ones
+    await page.getByTestId('queue-tab-generations').click()
+    // Show Dismissed: each with Restore; Restore puts it back; Restore All the rest
+    await page.getByTestId('failures-show-dismissed').click(); await expect(page.getByTestId('failure-dismissed-row')).toHaveCount(3); await expect(page.getByTestId('failures-dismissed').locator('h6')).toHaveText('Dismissed (3)')
+    await page.locator('[data-testid="failure-dismissed-row"][data-id="f3"]').getByTestId('failure-restore').click()
+    await expect(page.getByTestId('failure-dismissed-row')).toHaveCount(2); await expect(head).toHaveText('Failures (2)'); expect(api.state.failureRestores[0]).toEqual({ ids: ['f3'] })
+    await page.getByTestId('failures-restore-all').click(); await expect(page.getByTestId('failure-dismissed-row')).toHaveCount(0); await expect(head).toHaveText('Failures (4)'); await expect(page.getByTestId('failures-dismissed-none')).toBeVisible()
+    await expect(page.getByTestId('failures-show-dismissed')).toHaveText('Show Dismissed (0)')   // the toggle stays while it is open, so the list can be closed
+    await page.getByTestId('failures-show-dismissed').click(); await expect(page.getByTestId('failures-dismissed')).toHaveCount(0); await expect(page.getByTestId('failures-show-dismissed')).toHaveCount(0)
+  })
   test('empty state; a failed job links to its failure row; the Overview shows the count; an older core hides all of it', async ({ page, api }) => {
     await page.goto('/'); await queueTab(page, 'generations'); await expect(page.getByTestId('failures-none')).toHaveText('No graph failures')
     api.state.failures = [REC()]

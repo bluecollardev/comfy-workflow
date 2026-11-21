@@ -1,6 +1,13 @@
 <template>
   <div v-if="!fl.old && fl.loaded" class="mt-4" data-testid="queue-failures">
-    <h6 class="mb-2">{{ $t('queue.fail.title', { n: fl.count }) }}</h6>
+    <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+      <h6 class="mb-0">{{ $t('queue.fail.title', { n: fl.count }) }}</h6>
+      <span class="ms-auto d-inline-flex gap-2">
+        <BButton v-if="fl.items.length" size="sm" variant="outline-light" :disabled="bulk" data-testid="failures-dismiss-all" @click="dismissAll">{{ $t('queue.fail.dismissAll') }}</BButton>
+        <BButton v-if="fl.dismissedCount || fl.showDismissed" size="sm" variant="outline-secondary" :pressed="fl.showDismissed" data-testid="failures-show-dismissed" @click="fl.toggleDismissed()">{{ $t('queue.fail.showDismissed', { n: fl.dismissedCount }) }}</BButton>
+      </span>
+    </div>
+    <div v-if="bulkError" class="text-danger small mb-2" data-testid="failures-bulk-error">{{ bulkError }}</div>
     <div v-if="!fl.items.length" class="text-body-secondary small" data-testid="failures-none">{{ $t('queue.fail.none') }}</div>
     <div v-for="f in pg.rows" :key="f.id" class="border rounded p-2 mb-2 small" :class="{ 'border-danger': focus === f.id }" data-testid="failure-row" :data-id="f.id" :data-stage="f.stage">
       <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -11,6 +18,7 @@
         <span class="ms-auto d-inline-flex gap-2">
           <BButton v-if="f.retryable" size="sm" variant="outline-warning" :disabled="busy[f.id]" data-testid="failure-retry" @click="retry(f)"><BSpinner v-if="busy[f.id]" small class="me-2" />{{ $t('queue.fail.retry') }}</BButton>
           <BButton size="sm" variant="outline-light" data-testid="failure-copy" @click="copy(f)">{{ copied === f.id ? $t('queue.fail.copied') : $t('queue.fail.copy') }}</BButton>
+          <BButton size="sm" variant="outline-secondary" :disabled="busy[f.id]" data-testid="failure-dismiss" @click="dismiss(f)">{{ $t('queue.fail.dismiss') }}</BButton>
         </span>
       </div>
       <div class="text-danger mt-1" data-testid="failure-message">{{ first(f.message) }}</div>
@@ -29,20 +37,49 @@
       <BButton size="sm" variant="outline-light" :disabled="pg.page >= pg.count - 1" data-testid="failures-page-next" @click="page++">{{ $t('queue.fail.next') }}<i class="fa-solid fa-chevron-right ms-1"></i></BButton>
       <select v-model.number="pageSize" class="form-select form-select-sm ms-auto" style="width: auto" :aria-label="$t('queue.fail.pageSize')" data-testid="failures-page-size"><option v-for="n in PAGE_SIZES" :key="n" :value="n">{{ $t('queue.fail.perPage', { n }) }}</option></select>
     </div>
+    <div v-if="fl.showDismissed" class="mt-3" data-testid="failures-dismissed">
+      <div class="d-flex align-items-center gap-2 mb-2"><h6 class="mb-0 text-body-secondary">{{ $t('queue.fail.dismissedTitle', { n: fl.dismissedItems.length }) }}</h6>
+        <BButton v-if="fl.dismissedItems.length" size="sm" variant="outline-light" class="ms-auto" :disabled="bulk" data-testid="failures-restore-all" @click="restoreAll">{{ $t('queue.fail.restoreAll') }}</BButton></div>
+      <div v-if="!fl.dismissedItems.length" class="text-body-secondary small" data-testid="failures-dismissed-none">{{ $t('queue.fail.dismissedNone') }}</div>
+      <div v-for="f in fl.dismissedItems" :key="f.id" class="border rounded p-2 mb-2 small text-body-secondary" data-testid="failure-dismissed-row" :data-id="f.id">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          <span class="text-nowrap" :title="agoShort(f.time)">{{ whenText(f.time) }}</span><strong>{{ f.shot }}</strong><span class="font-monospace text-truncate" style="max-width: 18rem" :title="f.graph">{{ f.graph }}</span>
+          <span class="badge text-bg-secondary fw-normal">{{ f.stage }}</span>
+          <BButton size="sm" variant="outline-light" class="ms-auto" :disabled="busy[f.id]" data-testid="failure-restore" @click="restoreOne(f)">{{ $t('queue.fail.restore') }}</BButton>
+        </div>
+        <div class="mt-1">{{ first(f.message) }}</div>
+        <div v-if="errors[f.id]" class="text-danger" data-testid="failure-error">{{ errors[f.id] }}</div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 /** FailuresPane: the Queue's Failures list (Generations tab): one row per failed graph run, newest first, like the Finished lists; Retry only when the core says it is retryable; Copy puts the whole record on the clipboard as JSON. */
 import { computed, reactive, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useFailuresStore } from '../stores/failures'
+import { useConfirmStore } from '../stores/confirm'
 import { useUiStore } from '../stores/ui'
 import { errorText } from '../stores/toast'
 import { whenText, agoShort } from '../utils/when'
 import { paged, PAGE_SIZES } from '../utils/generations'
 
-const fl = useFailuresStore(), ui = useUiStore()
-const busy = reactive({}), errors = reactive({}), copied = ref('')
+const fl = useFailuresStore(), ui = useUiStore(), confirm = useConfirmStore(), { t } = useI18n()
+const busy = reactive({}), errors = reactive({}), copied = ref(''), bulk = ref(false), bulkError = ref('')
+/** Dismiss hides a failure from the Queue by id (failures.jsonl is not changed); Dismiss All asks first and says how many; Restore brings them back. */
+async function dismiss(f) { busy[f.id] = true; errors[f.id] = ''; try { await fl.dismiss([f.id]) } catch (e) { errors[f.id] = errorText(e) } finally { busy[f.id] = false } }
+async function restoreOne(f) { busy[f.id] = true; errors[f.id] = ''; try { await fl.restore([f.id]) } catch (e) { errors[f.id] = errorText(e) } finally { busy[f.id] = false } }
+async function dismissAll() {
+  bulk.value = true; bulkError.value = ''
+  try {
+    const plan = await fl.planAll(false)
+    if (!plan?.count) return
+    if (!(await confirm.ask(t('queue.fail.dismissAllMessage', { n: plan.count }), { title: t('queue.fail.dismissAllTitle'), okLabel: t('queue.fail.dismissAll'), danger: false }))) return
+    await fl.dismissAll()
+  } catch (e) { bulkError.value = errorText(e) } finally { bulk.value = false }
+}
+async function restoreAll() { bulk.value = true; bulkError.value = ''; try { await fl.restoreAll() } catch (e) { bulkError.value = errorText(e) } finally { bulk.value = false } }
 // Paging (5, 10 or 25; 10 by default): newest first as the store gives them; a new size starts at page 1; a page that empties moves back
 const page = ref(0), pageSize = ref(10)
 const pg = computed(() => paged(fl.items, page.value, pageSize.value))
