@@ -15,6 +15,7 @@
         <span v-else class="thumb d-flex align-items-center justify-content-center text-body-secondary"><i class="fa-solid fs-3" :class="t.kind === 'audio' ? 'fa-music' : 'fa-file'"></i></span>
         <span class="cap text-truncate">{{ t.name || t.file.filename }}</span>
         <SequenceColour v-if="t.kind === 'dpx'" :tile="t" :base="base" :offline="offline" :header="thumbHeader[t.key] || null" />
+        <SequenceFrames v-if="t.kind === 'dpx'" :tile="t" />
         <span v-if="t.file.type === 'temp'" class="badge text-bg-secondary tag">{{ $t('outputs.type.temp') }}</span>
       </button>
     </div>
@@ -37,6 +38,7 @@ import OutputViewerModal from './OutputViewerModal.vue'
 import DpxViewerModal from './DpxViewerModal.vue'
 import SequenceThumb from './SequenceThumb.vue'
 import SequenceColour from './SequenceColour.vue'
+import SequenceFrames from './SequenceFrames.vue'
 import ApproveControl from './ApproveControl.vue'
 import { useRendersStore } from '../stores/renders'
 import { sequenceItem } from '../utils/renders'

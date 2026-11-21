@@ -516,6 +516,8 @@
         "headerIs": "Header: {name}",
         "headerSays": "Header says {name}",
         "chipRecordTitle": "The colour space the writer recorded next to this sequence (ComfyUI-OCIO). The app converts from this.",
+        "framesBadge": "Frames {frames} / {expected}",
+        "framesTitle": "This sequence has {frames} frames; the V11 EDL expects {expected} for this element. Do not deliver it until the difference is explained.",
         "chipHeaderTitle": "What the DPX header of the first frame says. Not the same as the record: the header is not used when a record exists.",
         "chipHeaderOnlyTitle": "What the DPX header of the first frame says. There is no OCIO record next to this sequence.",
         "panel": "Colour",
