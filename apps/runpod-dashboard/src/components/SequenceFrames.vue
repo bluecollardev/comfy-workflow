@@ -10,7 +10,7 @@ import { frameCheck } from '../utils/framecount'
 const props = defineProps({ tile: { type: Object, required: true } })
 const match = ref(null)
 const cache = new Map()
-const name = computed(() => String(props.tile.name || props.tile.file?.filename || '').replace(/\.\d+\.dpx$/i, ''))
+const name = computed(() => String(props.tile.name || props.tile.file?.filename || '').replace(/\.(\d+|#+)\.dpx$/i, ''))
 const chk = computed(() => frameCheck(match.value, props.tile.frames?.length || 0))
 watch(name, async (n) => {
   if (!n) { match.value = null; return }
