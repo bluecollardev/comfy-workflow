@@ -50,7 +50,7 @@ test.describe('the nav Queue button', () => {
   test('waiting entries count (a yellow button); a volume scan alone is a pulsing dot; idle: no badge; a core with fields missing does not break it', async ({ page, api }) => {
     on(api); api.state.autopublish = { pending: [{ id: 'w', shot: 'b', version: 1, state: 'waiting', due_at: new Date(Date.now() + 600000).toISOString() }] }
     await page.goto('/'); await expect(badge(page)).toHaveText('1'); await expect(badge(page)).toHaveAttribute('data-kind', 'count'); await expect(page.getByTestId('open-queue')).toHaveAttribute('data-tone', 'warning')
-    api.state.autopublish = { watching: { root: '/x', root_exists: true, reviews: 0, approved: 0, eligible: 0, queued: 0, uploaded_today: 0, skipped: [], summary: '', local: { enabled: true, reviews: 0 }, volume: { enabled: true, reviews: 0, scanning: true } } }
+    api.state.autopublish = { watching: { root: '/x', root_exists: true, reviews: 0, approved: 0, eligible: 0, queued: 0, uploaded_today: 0, skipped: [], summary: '', local: { enabled: true, reviews: 0 }, volume: { enabled: true, reviews: 0, scanning: true, scan_started_at: new Date().toISOString() } } }   // a scan that has just started (one running for over 90 s is a background job and no longer a dot: fix/autopublish-scan-banner)
     await expect(badge(page)).toHaveAttribute('data-kind', 'dot', { timeout: 12000 }); await expect(page.getByTestId('open-queue')).toHaveClass(/queue-pulse/); await expect(page.getByTestId('open-queue')).toHaveAttribute('title', 'scanning the RunPod volume')
     api.state.autopublish = {}; api.state.noAutoPublish = true; await page.reload(); await page.waitForTimeout(800); await expect(badge(page)).toHaveCount(0)
   })

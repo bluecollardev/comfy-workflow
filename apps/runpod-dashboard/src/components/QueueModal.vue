@@ -112,6 +112,7 @@ import { useConfirmStore } from '../stores/confirm'
 import { useVolumeJobsStore } from '../stores/volumejobs'
 import { useRendersStore } from '../stores/renders'
 import { useRunJobsStore } from '../stores/runjobs'
+import { usePreviewJobsStore } from '../stores/previewjobs'
 import VolumeJobView from './VolumeJobView.vue'
 import SyncExplorer from './SyncExplorer.vue'
 import GenerationsPane from './GenerationsPane.vue'
@@ -148,7 +149,7 @@ const wouldCount = computed(() => apEntries.value.filter((e) => e.state === 'wou
 const tabCounts = computed(() => {
   const w = apStore.status
   const imports = (view.value?.tasks || []).filter((t) => ['waiting', 'running', 'held'].includes(t.state)).length + vjobs.jobs.filter((j) => !['done', 'failed', 'cancelled'].includes(j.state)).length
-  const gens = renders.activeCount + runjobs.activeCount + (previewsStore.running ? 1 : 0)
+  const gens = renders.activeCount + runjobs.activeCount + pjobs.activeCount + (previewsStore.running ? 1 : 0)
   const pubs = publishStore.queueJobs.filter((j) => ['queued', 'uploading', 'posting'].includes(j.state)).length + apEntries.value.length + (Array.isArray(w?.generate?.waiting_to_settle) ? w.generate.waiting_to_settle.length : 0)
   const sy = syncsStore.count
   const all = imports + gens + pubs + sy
@@ -159,6 +160,7 @@ const confirm = useConfirmStore()
 const vjobs = useVolumeJobsStore()
 const renders = useRendersStore()
 const runjobs = useRunJobsStore()
+const pjobs = usePreviewJobsStore()
 const open = computed({ get: () => ui.queueOpen, set: (v) => { ui.queueOpen = v } })
 const view = ref({ imports: [], tasks: [], active: 0 }), error = ref('')
 let timer = null
@@ -208,8 +210,8 @@ async function act(fn) { try { await fn() } catch (e) { error.value = errorText(
 watch(() => ui.queueVersion, refresh)   // an import was just queued: show it now, not at the next tick
 // the stores behind every tab poll fast while the Queue is open, whichever tab is showing (the tab panes are only mounted when active)
 const failuresStore = useFailuresStore()
-watch(() => ui.queueOpen, (o) => { failuresStore.use(o); apStore.setFast(o); publishStore.setFast(o); renders.setFast(o); runjobs.setFast(o) }, { immediate: true })
-onMounted(() => { syncsStore.use(); ui.queueListLoaded = false; refresh(); timer = setInterval(refresh, 2500); vjobs.watch(); renders.watch(); runjobs.watch() })
+watch(() => ui.queueOpen, (o) => { failuresStore.use(o); apStore.setFast(o); publishStore.setFast(o); renders.setFast(o); runjobs.setFast(o); pjobs.setFast(o) }, { immediate: true })
+onMounted(() => { syncsStore.use(); ui.queueListLoaded = false; refresh(); timer = setInterval(refresh, 2500); vjobs.watch(); renders.watch(); runjobs.watch(); pjobs.watch() })
 onBeforeUnmount(() => { syncsStore.release(); clearInterval(timer); vjobs.unwatch() })
 </script>
 

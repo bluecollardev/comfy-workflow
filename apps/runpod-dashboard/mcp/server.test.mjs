@@ -704,6 +704,10 @@ test('autopublish: read, cancel, off, and (v1.6.8) on and go live under a named 
   // Frame previews relaunch: the action is in the schema, an unknown job is refused with the reason, and the tool says it never resumes a pod
   const fpSchema = (await rpc('tools/list')).result.tools.find((x) => x.name === 'frame_previews'); assert.match(fpSchema.inputSchema.properties.action.description, /relaunch/); assert.ok(fpSchema.inputSchema.properties.exclude_pod_ids); assert.match(fpSchema.description, /NEVER resumes or creates a pod/)
   assert.match(textOf(refused(await call('frame_previews', { action: 'relaunch', job_id: 'framepreviews-nope' }))), /No frame-previews job/)
+  // the Queue's rows: `jobs` is an action (the same rows the Generations tab shows, with the counters per kind), and cancel reaches another process's job
+  assert.match(fpSchema.inputSchema.properties.action.description, /jobs/); assert.match(fpSchema.description, /thumbs_done/); assert.match(fpSchema.description, /posters_total/); assert.match(fpSchema.description, /another process/)
+  assert.match(textOf(await call('frame_previews', { action: 'jobs' })), /"jobs": \[/)
+  assert.match(textOf(await call('frame_previews', { action: 'cancel', job_id: 'framepreviews-nope' })), /"ok": false[\s\S]*"own": false/)
   assert.match(textOf(refused(await call('autopublish', { action: 'cancel' }))), /id is needed/); assert.match(textOf(refused(await call('autopublish', { action: 'bogus' }))), /action must be/)
   const r = await call('set_configuration', { patch: { auto_publish: { enabled: true } } }); assert.equal(r.result.isError, true); assert.match(textOf(r), /turned on in the window, by a person/)
   const t = await call('set_configuration', { patch: { auto_publish: { targets: { slack: true } } } }); assert.match(textOf(t), /Where Auto-publish sends is chosen in the window/)

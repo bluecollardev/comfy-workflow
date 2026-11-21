@@ -10,4 +10,8 @@ export const framePreviewsAPI = {
   cancel: (o) => call('cancel', o),
   relaunch: (o) => call('relaunch', o),
   list: (o) => call('list', o),
+  /** One row per job for the Queue (this process's and the other processes'). */
+  jobs: (o) => call('jobs', o),
+  /** Stop a job of this process, or ask another process's owner through the shared record. */
+  cancelAny: (o) => call('cancelAny', o),
 }

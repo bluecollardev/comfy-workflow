@@ -212,7 +212,7 @@ const TABLE = {
   manifestcheck: { check: (c, o) => c.manifestcheck.check(o || {}), plan: (c, o) => c.manifestcheck.plan(o || {}), run: (c, o) => c.manifestcheck.run(o || {}) },   // RETURN-MANIFEST.json checked and rebuilt from the element manifests (ADR-055 section 14)
   dpxmake: { run: (c, o) => c.dpxmake.run(o || {}), plan: (c, o) => c.dpxmake.plan(o || {}) },   // unpack a master video into a 16-bit DPX sequence on the pod (Tunnel V11 plan, section 12 step 2)
   runsplit: { plan: (c, o) => c.runsplit.plan(o || {}), start: (c, o) => c.runsplit.start(o || {}), status: (c, o) => c.runsplit.status((o || {}).job_id), cancel: (c, o) => c.runsplit.cancel((o || {}).job_id) },
-  framepreviews: { start: (c, o) => c.framepreviews.start(o || {}), status: (c, o) => c.framepreviews.status(o || {}), cancel: (c, o) => c.framepreviews.cancel(o || {}), relaunch: (c, o) => c.framepreviews.relaunch(o || {}), list: (c, o) => c.framepreviews.list(o || {}) },   // frame previews of DPX sequences, made on the pod as small JPEGs (a job)
+  framepreviews: { start: (c, o) => c.framepreviews.start(o || {}), status: (c, o) => c.framepreviews.status(o || {}), cancel: (c, o) => c.framepreviews.cancel(o || {}), relaunch: (c, o) => c.framepreviews.relaunch(o || {}), list: (c, o) => c.framepreviews.list(o || {}), jobs: (c, o) => c.framepreviews.jobsList((o || {}).limit), cancelAny: (c, o) => c.framepreviews.cancelAny(o || {}) },   // frame previews of DPX sequences, made on the pod as small JPEGs (a job)
   renders: {   // docs/ADR-048: DPX sequences rendered into mp4 proxies (on the pod, or on this PC), kept on the volume and on this PC
     plan: (c, o) => c.renders.plan(o || {}),
     start: (c, o) => c.renders.start(o || {}),
