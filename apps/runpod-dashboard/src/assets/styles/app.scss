@@ -115,3 +115,10 @@ $enable-shadows: false;
 /* a wrapper that carries a tooltip for a button that may be disabled (a disabled button gets no pointer events of its own) */
 .tipwrap { display: inline-block; }
 .tipwrap > :disabled { pointer-events: none; }
+
+/* Progress bars: a little room below, so a bar never sits on the text or the Cancel button under it (Lucas, 2026-11-21: "pops right on top
+   of the cancel button, touching its border"). One rule for every bar. A bar beside a label or a percent in a flex row keeps no margin
+   (it is centred with it), a bar in a table cell gets a small one, and the spacing utilities (mb-1, mb-2) on a bar still win (!important). */
+.progress { margin-bottom: 0.4rem; }
+.d-flex > .progress { margin-bottom: 0; }
+td .progress { margin-bottom: 0.15rem; }

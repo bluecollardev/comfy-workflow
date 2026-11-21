@@ -2,7 +2,7 @@
     <div :class="embedded ? 'mt-1' : 'border rounded p-2 mt-3'" data-testid="publish-job" :data-state="job.state" :data-job="job.job_id">
       <div v-if="when.started" class="small text-body-secondary" data-testid="publish-job-when" :title="when.ago"><span data-testid="publish-job-started">{{ when.started }}</span><template v-if="when.finished"> · <span data-testid="publish-job-finished">{{ when.finished }}</span></template></div>
       <div class="fw-semibold small" data-testid="publish-job-state">{{ $t(`publish.modal.state.${job.state}`) }}</div>
-      <BProgress :value="percent" :max="100" :animated="active" :striped="active" height="0.6rem" :data-percent="percent" data-testid="publish-progress" />
+      <BProgress :value="percent" :max="100" :animated="active" :striped="active" height="0.6rem" class="mb-2" :data-percent="percent" data-testid="publish-progress" />
       <!-- the progress text on the left, Cancel (All) on the right of it, on the same row -->
       <div class="d-flex align-items-start gap-3" data-testid="publish-job-progress-row">
         <div class="flex-grow-1" style="min-width: 0">
