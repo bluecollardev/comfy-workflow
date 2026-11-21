@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, reactive, ref } from 'vue'
 import { sharedThumbs } from '../utils/thumbs'
 import { previewBus } from '../utils/thumbsBus'
-import { FAILURES_CAP, failureRecord, historyNote, summaryNote } from '../utils/generations'
+import { FAILURES_CAP, failureRecord, historyNote, summaryNote, retrySelection } from '../utils/generations'
 import { historyAPI } from '../api/history'
 
 /**
@@ -14,14 +14,17 @@ export const usePreviewsStore = defineStore('previews', () => {
   const results = reactive({})      // thumb key -> { status, reason?, code? }: what the batch found for it
   const version = ref(0)            // bumped for each finished item, so tiles look again
   let stopFlag = false, current = '', seq = 0
+  let heldItems = []                // the items of the last batch (key + job), kept so Retry Failed can ask again for exactly the failed ones
   const running = computed(() => batch.value?.state === 'running')
 
-  async function start(items, label = '', scope = '', refresh = false) {
+  /** `podId` is the pod the batch reads from (Retry Failed checks it is running); `retryOf` is the id of the batch a retry continues (the results of the ones that worked are kept then). */
+  async function start(items, label = '', scope = '', refresh = false, podId = '', retryOf = 0) {
     if (running.value || !items.length) return
-    for (const k of Object.keys(results)) delete results[k]
+    if (!retryOf) for (const k of Object.keys(results)) delete results[k]
     stopFlag = false
     const id = ++seq
-    batch.value = { id, state: 'running', label, scope, total: items.length, done: 0, failed: 0, failures: [], started_at: new Date().toISOString(), finished_at: '' }
+    heldItems = items
+    batch.value = { id, state: 'running', label, scope, refresh, pod_id: podId || '', retry_of: retryOf || 0, total: items.length, done: 0, failed: 0, failures: [], failed_keys: [], started_at: new Date().toISOString(), finished_at: '' }
     const thumbs = sharedThumbs()
     for (const it of items) {
       if (stopFlag) break
@@ -34,6 +37,7 @@ export const usePreviewsStore = defineStore('previews', () => {
       results[it.key] = r
       batch.value.done++
       if (r.status === 'error') {
+        batch.value.failed_keys.push(it.key)   // every failed key is kept (the failures list is capped, this is what Retry Failed asks for)
         const f = failureRecord(it, r, label), index = batch.value.failed++   // the History gets the first 20 one by one, then one summary at the end
         if (batch.value.failures.length < FAILURES_CAP) batch.value.failures.push(f)
         const n = historyNote(f, index); if (n) writeNote(n)
@@ -50,7 +54,16 @@ export const usePreviewsStore = defineStore('previews', () => {
     if (current) sharedThumbs().abort(current)
     batch.value.state = 'cancelled'; batch.value.finished_at = new Date().toISOString()
   }
+  /** Ask again for exactly the items that failed, on the same pod and with the same Skip Existing, as a new batch linked to this one. Nothing while a batch runs or when nothing failed. */
+  function retryFailed() {
+    const b = batch.value
+    if (running.value || !b || !b.failed_keys?.length) return false
+    const items = retrySelection(heldItems, b.failed_keys)
+    if (!items.length) return false
+    start(items, b.label, b.scope, b.refresh === true, b.pod_id, b.id)
+    return true
+  }
   const clearResults = () => { for (const k of Object.keys(results)) delete results[k]; version.value++ }
   const dismiss = () => { if (!running.value) batch.value = null }
-  return { batch, results, version, running, start, stop, clearResults, dismiss }
+  return { batch, results, version, running, start, stop, retryFailed, clearResults, dismiss }
 })

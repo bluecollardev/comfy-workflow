@@ -70,3 +70,32 @@ export function paged(list, page, size) {
   const n = list.length, count = Math.max(1, Math.ceil(n / size)), p = Math.max(0, Math.min(page, count - 1))
   return { rows: list.slice(p * size, (p + 1) * size), count, page: p, info: n ? `${p * size + 1}–${Math.min(n, (p + 1) * size)} of ${n}` : '0' }
 }
+
+// ----- retry of a finished preview batch (Lucas, 2026-11-21: "in queue allow retry of Previews: 45 of 45 · 36 failed") -----
+/** The items to ask for again: exactly the ones that failed, in the order the batch worked through them (`all` order), without duplicates; a key the batch no longer holds is left out. */
+export function retrySelection(all, failedKeys) {
+  const want = new Set(failedKeys || []), seen = new Set(), out = []
+  for (const it of all || []) { if (want.has(it.key) && !seen.has(it.key)) { seen.add(it.key); out.push(it) } }
+  return out
+}
+/** Why Retry Failed is off, as an i18n key under queue.gen ('' when it can be used): a batch is running, nothing failed, no pod is known, or its pod is not running. `pod` is the pod row from the pods store (or undefined). */
+export function retryBlock({ running, failedCount, podId, pod }) {
+  if (running) return 'retryBlockedRunning'
+  if (!failedCount) return 'retryBlockedNone'
+  if (!podId) return 'retryBlockedNoPod'
+  if (!pod) return 'retryBlockedNoPod'
+  if (pod.status !== 'running') return 'retryBlockedStopped'
+  return ''
+}
+/** The failures grouped by their plain-words reason, biggest group first: [{ text, n, names: first `max` names }]. `reasonOf(f)` gives the text (reasonText with the translator). */
+export function groupFailures(failures, reasonOf, max = 3) {
+  const by = new Map()
+  for (const f of failures || []) { const text = reasonOf(f); const g = by.get(text) || { text, n: 0, names: [] }; g.n++; if (g.names.length < max) g.names.push(f.name); by.set(text, g) }
+  return [...by.values()].sort((a, b) => b.n - a.n)
+}
+/** The text `Copy Failures` puts on the clipboard: the batch line, then one line per failure (name, pod, reason); redacted already. */
+export function failuresText(batch, reasonOf, line) {
+  const rows = (batch?.failures || []).map((f) => [f.name, f.pod_name, reasonOf(f)].filter(Boolean).join(' | '))
+  const more = batch && batch.failed > rows.length ? [`(+${batch.failed - rows.length} more, in the History)`] : []
+  return [line, ...rows, ...more].join('\n')
+}

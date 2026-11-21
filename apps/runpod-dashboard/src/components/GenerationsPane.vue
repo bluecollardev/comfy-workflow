@@ -10,12 +10,25 @@
       <div class="d-flex align-items-center gap-2 flex-wrap">
         <strong data-testid="generations-previews-line">{{ batchLine(previews.batch, $t) }}</strong>
         <span v-if="previews.batch.label" class="text-body-secondary">{{ previews.batch.label }}</span>
+        <span v-if="previews.batch.retry_of" class="badge text-bg-secondary fw-normal" data-testid="generations-previews-retry-of">{{ $t('queue.gen.retryOf', { n: previews.batch.retry_of }) }}</span>
         <BSpinner v-if="previews.running" small />
         <span v-else class="badge text-bg-secondary" data-testid="generations-previews-state">{{ $t(previews.batch.state === 'done' ? 'queue.gen.previewsDone' : 'queue.gen.previewsStopped') }}</span>
         <BButton v-if="previews.running" size="sm" variant="outline-warning" class="ms-auto" data-testid="generations-previews-stop" @click="previews.stop()"><i class="fa-solid fa-stop me-1"></i>{{ $t('queue.gen.stop') }}</BButton>
         <BButton v-else size="sm" variant="outline-light" class="ms-auto" data-testid="generations-previews-dismiss" @click="previews.dismiss()">{{ $t('queue.gen.dismiss') }}</BButton>
       </div>
       <BProgress :value="previews.batch.done" :max="Math.max(1, previews.batch.total)" height="8px" :animated="previews.running" :striped="previews.running" class="mt-1" data-testid="generations-previews-bar" :data-percent="Math.round((100 * previews.batch.done) / Math.max(1, previews.batch.total))" />
+      <!-- a finished batch with failures: the reasons grouped, Retry Failed (only the failed ones, same pod) and Copy Failures -->
+      <div v-if="!previews.running && previews.batch.failed > 0" class="mt-2" data-testid="previews-failure-summary">
+        <div v-for="g in failGroups" :key="g.text" class="d-flex align-items-baseline gap-2 flex-wrap" data-testid="previews-failure-group" :data-count="g.n">
+          <span class="text-danger" data-testid="previews-failure-group-text">{{ g.text }}: {{ g.n }}</span>
+          <span class="font-monospace text-body-secondary text-truncate" style="max-width: 30rem" data-testid="previews-failure-group-names">{{ g.names.join(', ') }}{{ g.n > g.names.length ? ', …' : '' }}</span>
+        </div>
+        <div class="d-flex align-items-center gap-2 flex-wrap mt-1">
+          <BButton size="sm" variant="outline-warning" :disabled="!!retryReason" :title="retryReason ? $t(`queue.gen.${retryReason}`) : $t('queue.gen.retryFailedTip', { n: previews.batch.failed_keys?.length || 0 })" data-testid="previews-retry-failed" @click="previews.retryFailed()"><i class="fa-solid fa-rotate-right me-1"></i>{{ $t('queue.gen.retryFailed') }} ({{ previews.batch.failed_keys?.length || 0 }})</BButton>
+          <span v-if="retryReason" class="text-body-secondary" data-testid="previews-retry-failed-why">{{ $t(`queue.gen.${retryReason}`) }}</span>
+          <BButton size="sm" variant="link" class="p-0" data-testid="previews-copy-failures" @click="copyFailures">{{ $t('queue.gen.copyFailures') }}</BButton>
+        </div>
+      </div>
       <!-- why the failed ones failed: open when the batch just ended with failures, paged like Publishing -->
       <div v-if="previews.batch.failed > 0" class="mt-2" data-testid="previews-failures">
         <BButton variant="link" size="sm" class="p-0 text-danger" data-testid="previews-failures-toggle" :aria-expanded="failOpen" @click="failOpen = !failOpen">{{ failOpen ? '▾' : '▸' }} {{ $t('queue.gen.failedPreviews', { n: previews.batch.failed }) }}</BButton>
@@ -111,9 +124,17 @@ import { versionTag } from '../utils/autopublish'
 import { useAutopublishStore } from '../stores/autopublish'
 import { t } from '../i18n'
 import { isActive, currentSequence } from '../utils/renders'
-import { phaseChips, etaSeconds, etaText, jobTitle, orderJobs, jobFiles, batchLine, percentOf, reasonText, paged, PAGE_SIZES } from '../utils/generations'
+import { phaseChips, etaSeconds, etaText, jobTitle, orderJobs, jobFiles, batchLine, percentOf, reasonText, paged, PAGE_SIZES, retryBlock, groupFailures, failuresText } from '../utils/generations'
+import { usePodsStore } from '../stores/pods'
 
-const renders = useRendersStore(), previews = usePreviewsStore(), ui = useUiStore()
+const renders = useRendersStore(), previews = usePreviewsStore(), ui = useUiStore(), podsStore = usePodsStore()
+// Retry Failed: why it is off ('' when it can be used), the reasons of the failures grouped, and Copy Failures (the batch line and one line per failure)
+const retryReason = computed(() => { const b = previews.batch; return retryBlock({ running: previews.running, failedCount: b?.failed_keys?.length || 0, podId: b?.pod_id, pod: (podsStore.pods || []).find((p) => p.id === b?.pod_id) }) })
+const failGroups = computed(() => groupFailures(previews.batch?.failures, (f) => reasonText(f, t)))
+async function copyFailures() {
+  const text = failuresText(previews.batch, (f) => reasonText(f, t), batchLine(previews.batch, t))
+  try { await navigator.clipboard.writeText(text); useToastStore().success(t('queue.gen.copiedFailures')) } catch { /* no clipboard here: nothing to do */ }
+}
 const jobs = computed(() => orderJobs(renders.jobs, renders.dismissed))
 const active = isActive
 // Paging: running jobs come first in the order, so page 1 always shows what is happening now (same pager as Queue > Publishing)
