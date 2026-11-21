@@ -19,6 +19,13 @@ A graph is never started whole on a pod without an answer to "will it fit". In o
 4. **Grow RAM with the GPU count, not the VRAM.** RunPod sets no RAM; it comes with the card and scales with the GPU count: 1x RTX PRO 4500 = 57.7 GiB, 2x = 116.4 GiB, 4x = 232.8 GiB ($0.72, $1.44, $2.88/h). When chunks of the smallest sensible size still do not fit, the next step is more GPUs on the same card, not a bigger card. The extra GPUs sit idle; the pod pays for the RAM.
 5. **Say so.** The pod card shows the GPU count, the total VRAM and the container RAM (built), so a person sees what a pod is. A task's events and the History say what was decided ("probe: 1.9 GiB per frame; 160 frames need 304 GiB, chunk 50 on a 116 GiB pod").
 
+## 2a. Decision (Lucas, 2026-11-21: "we built chunking, why didn't this happen automatically", "make sure it's automatic"): it is automatic, nobody asks for it
+- **Why the earlier chunking did not help.** The app already had run-level chunking (`chunk_plan`, `run_shot_chunked`, `chunked_job`) and a RAM guard. Both were **opt-in tools**: a person or an agent had to choose them for a shot, and the guard only watched chunked jobs. `run_pod_workflows`, the queue's run tasks and Import Round ran a graph whole, so the 8 elements that needed chunking never met it. A safety that must be remembered is not a safety.
+- **The rule.** Every graph run, through every entry point (queue run task, Import Round, `run_pod_workflows`, the Run Workflows window), goes through the same step: probe an unknown graph, plan, chunk or run whole, guard live, escalate, check the merged range. Nothing in the steps of section 2 is a tool a person has to call. The only switch is an opt-out (`chunking: 'off'` in the run options and a setting), default on, and a run that uses it says so in its events.
+- **What it does not guess.** A graph whose frame window the planner cannot find (no window widgets on the read and write nodes) runs whole with the live RAM guard only, and says so in the task events and the History; the app never splits a graph it does not understand.
+- **A test says so.** A run with no options on a graph it has not seen must be probed and chunked (unit test with fakes); a build that makes chunking opt-in again fails it.
+- **Status:** being built on `feature/chunked-graph-runs`; not in the running app until merged and the app restarted.
+
 ## 3. What does not change
 - A pod is stopped, not deleted (ADR-055); logs are kept. Deleting old pods is a person's act, after their logs are in the log document (`pod-logs/POD-LOGS-<date>.md`).
 - Delivery rules of ADR-055 stand: base_v008 output goes to a `_TEST_` round first; a real round is never overwritten.
