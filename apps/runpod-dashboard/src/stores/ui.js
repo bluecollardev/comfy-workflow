@@ -24,6 +24,7 @@ export const useUiStore = defineStore('ui', () => {
   const outputsFor = ref(null)        // { pod_id, play? } a window asks the pod's card to open its Outputs window (and the viewer on a sequence)
   const queueListLoaded = ref(false), queueListError = ref(''), queueRetry = ref(0)   // the Queue window's own first fetch (the banner under the nav bar reads them)
   const openPublish = ref(false)      // the pod's Outputs window opened by outputsFor opens its Publish window too
+  const openFolder = ref('')          // the pod's Outputs window opened by outputsFor starts in this volume folder (deliver/<shot>/<vNNN>) in its folder scope; an Auto-publish row's View In Outputs sets it
   const QTAB_KEY = 'runpod-manager.queue-tab'
   const mapTab = (v) => (v === 'autopublish' ? 'publishing' : v || 'overview')   // Auto-publish lives under Publishing: an old remembered value or a deep link maps there
   const failureFocus = ref('')   // a failed job's link to its failure row
@@ -43,5 +44,5 @@ export const useUiStore = defineStore('ui', () => {
   watch(connectTab, (v) => { if (v === 'accounts') connectTab.value = 'repositories' })   // the old key
   const accountsOpen = computed({ get: () => connectOpen.value && connectTab.value === 'repositories', set: (v) => { if (v) connectTab.value = 'repositories'; connectOpen.value = v } })
   const repositoriesOpen = computed({ get: () => connectOpen.value && connectTab.value === 'repositories', set: (v) => { if (v) connectTab.value = 'repositories'; connectOpen.value = v } })
-  return { failureFocus, queueTab, queueListLoaded, queueListError, queueRetry, openPublish, queueFocus, outputsFor, connectOpen, importOpen, importPod, importSource, importShown, connectTab, accountsOpen, repositoriesOpen, repositoriesVersion, configOpen, welcomeOpen, configFocus, volumesOpen, sharedOpen, modelsOpen, importRoundOpen, importRoundPreset, queueOpen, queueStarting, queueStartError, queueVersion, historyOpen, volumeDc, hints }
+  return { failureFocus, queueTab, queueListLoaded, queueListError, queueRetry, openPublish, openFolder, queueFocus, outputsFor, connectOpen, importOpen, importPod, importSource, importShown, connectTab, accountsOpen, repositoriesOpen, repositoriesVersion, configOpen, welcomeOpen, configFocus, volumesOpen, sharedOpen, modelsOpen, importRoundOpen, importRoundPreset, queueOpen, queueStarting, queueStartError, queueVersion, historyOpen, volumeDc, hints }
 })

@@ -12,6 +12,24 @@ export const countdownText = (sec) => (sec == null ? '' : `${Math.floor(sec / 60
 export const entryLine = (e, size) => `${e.shot} ${versionTag(e.version)} · ${e.files} ${Number(e.files) === 1 ? 'file' : 'files'} · ${size(e.bytes || 0)}`
 /** The shot and version of a review folder under deliver/: `deliver/archival-085/v003` -> { shot, version: 3 }; null for anything else (a file, another folder, a proxy). */
 export function parseReviewPath(path) { const m = /^(?:output\/)?deliver\/([^/]+)\/v(\d+)\/?$/.exec(String(path || '')); return m ? { shot: m[1], version: Number(m[2]) } : null }
+/** The review folder of a row, relative to the volume's output/ folder (what the Outputs window's folder listing takes): `deliver/archival-085/v002` from shot 'archival-085' and version 2 or 'v002'. */
+export const reviewFolder = (shot, version) => `deliver/${shot}/${versionTag(version)}`
+/**
+ * Where "View In Outputs" on an Auto-publish row goes, or why it cannot: { ok: true, pod_id, folder }, or { ok: false, reason } with reason
+ * 'nofolder' (no shot or version to name a folder), 'nothing' (no files: the review is not generated yet) or 'nopod' (no pod is attached to the volume, so there is no Outputs window to open it in).
+ * "Generated" means the row's review has files: the row's own count, else the review's file list (a held row has none of its own). The folder is deliver/<shot>/<vNNN> on the volume,
+ * whether Auto-publish found the review on the volume or on this PC (a PC copy is the synced volume folder). The window opens on a pod attached to the volume: a running one first, else any (the volume listing needs no running pod).
+ */
+export function outputsTarget(row, { review = null, pods = [], volumeId = '' } = {}) {
+  const shot = String(row?.shot || '').trim(), version = row?.version
+  if (!shot || version === undefined || version === null || version === '') return { ok: false, reason: 'nofolder' }
+  const files = row?.files != null ? Number(row.files) : Array.isArray(review?.files) ? review.files.length : 0
+  if (!(files > 0)) return { ok: false, reason: 'nothing' }
+  const onVolume = (pods || []).filter((p) => p && p.id && (!volumeId || p.volume_id === volumeId))
+  const pod = onVolume.find((p) => p.status === 'running') || onVolume[0]
+  if (!pod) return { ok: false, reason: 'nopod' }
+  return { ok: true, pod_id: pod.id, folder: reviewFolder(shot, version) }
+}
 /** Why the footer Save must wait: the cancel window is a whole number of minutes from 0 to 120, the daily cap a whole number from 1 to 50; '' when fine. */
 export function settingsProblem({ window_minutes, daily_cap, targets, round, sources, volume_scan_minutes, generate, approved_by, require_review, max_gb_per_day }) {
   const w = Number(window_minutes), c = Number(daily_cap)

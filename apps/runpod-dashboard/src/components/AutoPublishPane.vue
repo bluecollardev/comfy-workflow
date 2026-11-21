@@ -22,6 +22,7 @@
         <template v-else>{{ e.state }}</template>
       </span>
       <span class="ms-auto d-flex align-items-center gap-2" data-testid="autopublish-row-actions">
+        <AutoPublishOutputsLink :row="e" />
         <BButton v-if="e.dry_run_plan" variant="link" size="sm" class="p-0 text-nowrap" :aria-expanded="dryOpen.has(e.id)" data-testid="autopublish-dry-toggle" @click="toggleDry(e.id)">{{ dryOpen.has(e.id) ? '▾' : '▸' }} {{ $t('autopublish.dry.s3') }}</BButton>
 
         <BButton v-if="['waiting', 'capped', 'would_upload'].includes(e.state)" size="sm" variant="outline-warning" data-testid="autopublish-cancel" @click="cancel(e)">{{ $t('autopublish.pane.cancel') }}</BButton>
@@ -42,11 +43,13 @@
     </div>
     <details v-if="ap.holds.length" class="small mt-2" data-testid="autopublish-held"><summary>{{ $t('autopublish.pane.held', { n: ap.holds.length }) }}</summary>
       <div v-for="h in ap.holds" :key="`${h.shot}-${h.version}`" class="d-flex align-items-center gap-2 py-1" data-testid="autopublish-held-row" :data-shot="h.shot" :data-version="h.version"><span>{{ h.shot }} {{ versionTag(h.version) }}</span>
+        <AutoPublishOutputsLink :row="h" />
         <BButton size="sm" variant="outline-light" class="py-0" data-testid="autopublish-release" @click="release(h)">{{ $t('autopublish.pane.release') }}</BButton></div></details>
     <template v-if="ap.recent.length">
       <div class="small fw-semibold mb-1 mt-2">{{ $t('autopublish.pane.recent') }}</div>
       <div v-for="e in ap.recent" :key="e.id" class="small d-flex align-items-center gap-2 flex-wrap mb-1" :class="e.state === 'failed' ? 'text-danger' : 'text-body-secondary'" data-testid="autopublish-recent" :data-id="e.id" :data-state="e.state">
         <span>{{ entryLine(e, formatBytes) }}</span>
+        <AutoPublishOutputsLink :row="e" />
         <span data-testid="autopublish-recent-state">{{ e.state === 'done' ? $t('autopublish.pane.done', { when: when(e) }) : e.state === 'failed' ? $t('autopublish.pane.failed', { reason: e.reason || '' }) : e.state === 'cancelled' ? $t('autopublish.pane.cancelled') : e.state === 'would_upload' ? $t('autopublish.pane.wouldUpload') : e.state }}</span>
       </div>
     </template>
@@ -65,6 +68,7 @@ import { formatBytes } from '../sync-progress'
 import AutoPublishWatching from './AutoPublishWatching.vue'
 import AutoPublishGenerate from './AutoPublishGenerate.vue'
 import AutoPublishDryRun from './AutoPublishDryRun.vue'
+import AutoPublishOutputsLink from './AutoPublishOutputsLink.vue'
 import { entryLine, secondsUntil, countdownText, targetsText, todayText, versionTag } from '../utils/autopublish'
 
 const ap = useAutopublishStore(), prompt = useNamePromptStore(), ui = useUiStore()

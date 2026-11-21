@@ -155,7 +155,7 @@ const canZip = !!core?.files?.downloadZip, zipping = ref(false)
 const shot = computed(() => (props.pod.shot && props.pod.shot !== 'All Shots' ? props.pod.shot : ''))
 const onlyShot = ref(true)
 // The folder chosen in the volume browser narrows the pod's own and the saved runs too (Lucas: 'an option to view all or just in the folder selection'): scope 'folder' keeps the runs with files in it, 'all' shows every run of the pod and the volume folder listed.
-const scope = ref((typeof window !== 'undefined' && window.__e2eOutputsScope) || 'all')   // (a browser test seam starts in the folder scope)  // All outputs is the starting scope (the whole tree, one listing); 'Just in the folder I pick' is one click away, from the cache
+const scope = ref((typeof window !== 'undefined' && window.__e2eOutputsScope) || (ui.openFolder ? 'folder' : 'all'))   // (a browser test seam starts in the folder scope)  // All outputs is the starting scope (the whole tree, one listing); 'Just in the folder I pick' is one click away, from the cache
 const inScope = (rs) => (scope.value === 'folder' && vol.prefix ? rs.map((r) => narrowToFolder(r, vol.prefix)).filter((r) => r.files.length) : rs)
 const shotRuns = computed(() => (shot.value && onlyShot.value ? runsForShot(props.runs, shot.value) : props.runs))
 const shown = computed(() => inScope(shotRuns.value))
@@ -245,7 +245,7 @@ function setScope(v) {
 onMounted(async () => {
   if (!mountsStore.config) { await mountsStore.load(); if (!hideTouched) { hideEmpty.value = mountsStore.config?.outputs?.hide_empty_folders !== false; hideTouched = false } if (!skipTouched) { skipExisting.value = mountsStore.config?.render?.skip_existing !== false; skipTouched = false } }
 })
-onMounted(() => { sharedThumbs().reset(); previewBus.capped = 0; previewBus.loadAll = false; loadVolume(undefined); if (scope.value === 'all') ensureAll() })   // the automatic preview cap starts again for each open
+onMounted(() => { sharedThumbs().reset(); previewBus.capped = 0; previewBus.loadAll = false; loadVolume(ui.openFolder || undefined); if (scope.value === 'all') ensureAll() })   // the automatic preview cap starts again for each open
 onBeforeUnmount(() => { allToken++; if (!previewsStore.running) sharedThumbs().abortAll(); previewBus.capped = 0; previewBus.loadAll = false })   // a running batch is the app's job: closing the window does not stop it
 /** The preview cache (IndexedDB): how many are kept, and a Clear that only means they are downloaded again. */
 const cachedCount = ref(0)
@@ -353,7 +353,7 @@ const matchCount = computed(() => fileCount(all.value))
 /** Render sequences (docs/ADR-048): the DPX sequences this window lists (folder scope respected) are what the core renders; the proxies' state is asked in ONE batched call per open (and again when a job ends) for the tile badges and the viewer. */
 const renders = useRendersStore()
 const publishStore = usePublishStore(), publishOpen = ref(false), apStore = useAutopublishStore()
-onMounted(() => { publishStore.loadSettings(); apStore.loadReviews(); if (ui.openPublish) { ui.openPublish = false; publishOpen.value = true } })   // the Queue's Publishing section asks for the Publish window
+onMounted(() => { ui.openFolder = ''; publishStore.loadSettings(); apStore.loadReviews(); if (ui.openPublish) { ui.openPublish = false; publishOpen.value = true } })   // the Queue's Publishing section asks for the Publish window
 watch(() => renders.finished, () => apStore.loadReviews())   // a render job ended: its review may exist now
 /** The Publish window opens with the review and proxy files of the sequences listed here already ticked (the ones that are on this PC). */
 const publishPreselect = computed(() => {
