@@ -547,6 +547,7 @@
       "expandAll": "Expand All",
       "showMore": "Show More",
       "framesShown": "{shown} of {total} frames",
+      "framePreviews": "{n} of {total} frames show previews",
       "colour": {
         "headerIs": "Header: {name}",
         "headerSays": "Header says {name}",

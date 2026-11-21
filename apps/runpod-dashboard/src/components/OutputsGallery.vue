@@ -50,6 +50,7 @@
         <i class="fa-solid fa-film"></i>
         <span class="headname" :title="t.name || t.file.filename" data-testid="outputs-seq-name">{{ shortName(t.name || t.file.filename) }}</span>
         <span class="badge text-bg-secondary headcount" data-testid="outputs-seq-headcount">{{ t.frames.length }}</span>
+        <span v-if="isExpanded(t) && framePrev[t.key]" class="small text-body-secondary" data-testid="outputs-seq-preview-count">{{ $t('outputs.dpx.framePreviews', { n: framePrev[t.key].size, total: t.frames.length }) }}</span>
         <BButton variant="outline-light" size="sm" class="headbtn" :aria-expanded="isExpanded(t) ? 'true' : 'false'" data-testid="outputs-seq-toggle" @click="toggleSeq(t)"><i class="fa-solid me-1" :class="isExpanded(t) ? 'fa-chevron-up' : 'fa-chevron-down'"></i>{{ isExpanded(t) ? $t('outputs.dpx.collapse') : $t('outputs.dpx.expand') }}</BButton>
       </div>
       <button type="button" class="tile" data-testid="outputs-tile" :disabled="offline" :data-offline="offline ? 'true' : undefined" :data-kind="t.kind" :data-type="t.file.type" :data-frames="t.frames ? t.frames.length : undefined" :title="t.name || t.file.filename" @click="open(t)">
@@ -67,7 +68,7 @@
         <div v-if="isExpanded(t)" class="frames" data-testid="outputs-seq-frames" :data-shown="shownFrames(t).length">
           <div class="small text-body-secondary mb-1" data-testid="outputs-seq-frames-count">{{ $t('outputs.dpx.framesShown', { shown: shownFrames(t).length, total: t.frames.length }) }}</div>
           <div class="framelist">
-            <button v-for="(f, i) in shownFrames(t)" :key="f.filename" type="button" class="frame" data-testid="outputs-seq-frame" :disabled="offline" :title="f.filename" @click="openAt(t, i)"><span>{{ frameNo(f) }}</span><span v-if="f.bytes != null" class="text-body-secondary">{{ sizeText(f.bytes) }}</span></button>
+            <button v-for="(f, i) in shownFrames(t)" :key="f.filename" type="button" class="frame" data-testid="outputs-seq-frame" :disabled="offline" :title="f.filename" @click="openAt(t, i)"><img v-if="framePrev[t.key] && framePrev[t.key].get(f.filename)" :src="framePrev[t.key].get(f.filename)" alt="" class="fthumb" loading="lazy" decoding="async" data-testid="outputs-seq-frame-thumb" /><span>{{ frameNo(f) }}</span><span v-if="f.bytes != null" class="text-body-secondary">{{ sizeText(f.bytes) }}</span></button>
           </div>
           <PageSentinel :more="shownFrames(t).length < t.frames.length" :shown="shownFrames(t).length" @more="showMore(t)" />
           <div v-if="shownFrames(t).length < t.frames.length" class="d-flex gap-2 mt-2">
@@ -89,10 +90,12 @@
  * OutputsGallery: the files a run produced (OutputFile: filename, subfolder, type output|temp, kind image|video|audio|other) as a grid of thumbnails read from the pod's ComfyUI /view.
  * Reusable: it only needs the pod's web address (`base`) and the list; a click opens the viewer (large, Previous/Next, Open, Download). A DPX sequence is one tile (frame count) opening the DPX quick-look viewer.
  */
-import { computed, ref, watch } from 'vue'
+import { computed, reactive, ref, watch, watchEffect } from 'vue'
 import { viewUrl, galleryTiles, sizeText, isDpx } from '../utils/outputs'
 import { isExpanded, toggleSeq, setAll, shownFrames, showMore, showAll, groupView, groupExpanded, toggleGroup, shownFiles, groupMore, groupShowAll, setShowTemp, HAS_IO } from '../utils/dpxcollapse'
 import { isTemp, groupTiles, tempGroup, shortName } from '../utils/videogroups'
+import { availableFrames } from '../utils/framepreviews'
+import { previewBus } from '../utils/thumbsBus'
 import LazyMedia from './LazyMedia.vue'
 import PageSentinel from './PageSentinel.vue'
 import { core } from '../api/bridge'
@@ -130,7 +133,16 @@ const tempCount = computed(() => tempFiles.value.length)
 const shownCount = computed(() => displayFiles.value.length)
 const totalShown = computed(() => Math.max(shownCount.value, (props.totalFiles || 0) - (groupView.showTemp ? 0 : tempCount.value)))
 /** Within a folder the files of one type are ONE group (Videos with a Main video, Images, Audio, Data, Other), each expandable; the shown temp files are their own last group. DPX sequences stay sequences. */
+// The frame previews that exist in the app's cache for each EXPANDED sequence (never generated here): one batched cache read per sequence, redone when a preview is made.
+const framePrev = reactive({}), prevMark = {}
+async function ensurePrev(t) {
+  const mark = String(previewBus.cacheVer)
+  if (prevMark[t.key] === mark) return
+  prevMark[t.key] = mark
+  framePrev[t.key] = await availableFrames(props.scope || props.base, t.frames)
+}
 const tiles = computed(() => { const ts = groupTiles(galleryTiles(realFiles.value)); const tg = groupView.showTemp ? tempGroup(tempFiles.value) : null; return tg ? [...ts, tg] : ts })
+watchEffect(() => { for (const t of tiles.value) if (t.kind === 'dpx' && t.frames.length > 1 && isExpanded(t)) ensurePrev(t) })
 const viewable = computed(() => displayFiles.value.filter((f) => !isDpx(f.filename)))
 const isGroup = (t) => t.kind === 'fgroup' || t.kind === 'tempgroup'
 const groupCount = computed(() => tiles.value.filter(isGroup).length)
@@ -185,6 +197,7 @@ watch(() => props.files, () => { current.value = null; dpx.value = null; problem
 .frames { padding: 0.4rem; background: #1a1d23; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 0.375rem; }
 .framelist { display: grid; grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); gap: 0.25rem; }
 .frame { display: flex; justify-content: space-between; gap: 0.4rem; padding: 0.15rem 0.4rem; font-size: 0.72rem; background: #20232a; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 0.25rem; color: inherit; cursor: pointer; }
+.fthumb { width: 2.8rem; height: 1.6rem; object-fit: cover; border-radius: 0.15rem; flex: 0 0 auto; }
 .frame:hover:not(:disabled) { border-color: #508cff; }
 .tile { position: relative; display: flex; flex-direction: column; gap: 0.25rem; padding: 0.25rem; background: #20232a; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 0.375rem; color: inherit; text-align: left; cursor: pointer; }
 .tile:disabled { cursor: default; opacity: 0.8; }
