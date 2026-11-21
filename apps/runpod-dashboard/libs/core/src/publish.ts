@@ -1098,10 +1098,14 @@ async function finishReturn(job: Job, g: Group, a: Awaited<ReturnType<typeof s3A
     const existing = await readText(a, manifestKey, signal)
     const merged = layout.mergeManifest(existing, { round: ret.round, returned_by: v.approved_by, now: deps.now(), pod, items: built })
     const old = (await readText(a, csvKey, signal).catch(() => null)) ?? '', kept = old.split('\n').slice(1).filter((l) => l.trim() && !shots.has(l.split(',')[0]))
-    // one manifest per element, next to its files (the PDF: <CLIP>_MANIFEST.json), listing every file with its sha256; one that is already in a round that is not a _TEST_ round is left as it is
+    // one manifest per element, next to its files (the PDF: <CLIP>_MANIFEST.json), listing every file with its sha256: written on EVERY publish of the element (Lucas, 2026-11-21: "manifest should be generated on publish"). One that is already in a round that is not a _TEST_ round is replaced when it is ours (it carries our schema_version: it described an earlier publish of this element) or when the run has allow_overwrite; a manifest that is not ours is left as it is
+    const overwrite = (v as { request?: { allow_overwrite?: boolean } }).request?.allow_overwrite === true
     for (const it of built) {
       const k = `${root}${it.shot}/${it.input_final.delivered_name}_MANIFEST.json`
-      if (!ret.round.startsWith('_TEST_') && (await readText(a, k, signal).catch(() => null)) != null) continue
+      if (!ret.round.startsWith('_TEST_') && !overwrite) {
+        const there = await readText(a, k, signal).catch(() => null)
+        if (there != null) { let ours = false; try { ours = typeof (JSON.parse(there) as { schema_version?: unknown }).schema_version !== 'undefined' } catch { /* not JSON: not ours */ } if (!ours) continue }
+      }
       await putText(a, k, `${JSON.stringify({ schema_version: merged.schema_version, round: merged.round, returned_by: merged.returned_by, returned_at: merged.returned_at, pod: merged.pod, item: it }, null, 2)}\n`, signal)
     }
     await putText(a, manifestKey, `${JSON.stringify(merged, null, 2)}\n`, signal)

@@ -123,6 +123,14 @@ describe('a return: sha256, the manifest, the inventory', () => {
     write('s101/ARCHIVAL-101_main.mp4', 'xyz'); const real = `${PFX}${ROUND}/archival-101/ARCHIVAL-101_main_MANIFEST.json`; objs.set(real, '{"theirs":1}')
     const j2 = await go(['s101']); expect(j2.state).toBe('done'); expect(objs.get(real)).toBe('{"theirs":1}')
   })
+  it('an element manifest is written on every publish: one of ours in a real round is replaced, one that is not ours is left, unless the run has allow_overwrite', async () => {
+    write('s102/ARCHIVAL-102_main.mp4', 'v1'); const real = `${PFX}${ROUND}/archival-102/ARCHIVAL-102_main_MANIFEST.json`
+    expect((await go(['s102'])).state).toBe('done'); const first = JSON.parse(objs.get(real)!); expect(first.item.outputs[0].sha256).toBe(sha('v1'))
+    write('s102/ARCHIVAL-102_main.mp4', 'v2 longer'); const j2 = await go(['s102'], { allow_overwrite: true }); expect(j2.state).toBe('done')
+    expect(JSON.parse(objs.get(real)!).item.outputs[0].sha256).toBe(sha('v2 longer'))   // ours (schema_version) and allow_overwrite: replaced with the new file's hash
+    objs.set(real, '{"theirs":1}'); write('s102/ARCHIVAL-102_main.mp4', 'v2 longer'); expect((await go(['s102'])).state).toBe('done'); expect(objs.get(real)).toBe('{"theirs":1}')   // not ours, no allow_overwrite: left
+    expect((await go(['s102'], { allow_overwrite: true })).state).toBe('done'); expect(JSON.parse(objs.get(real)!)).toMatchObject({ schema_version: expect.any(String) })   // not ours but allow_overwrite: replaced
+  })
   it('a failed upload adds nothing to the manifest and the manifest is not written', async () => {
     write('a/ARCHIVAL-100_main.mp4', 'one'); failCp.add('ARCHIVAL-100_main.mp4'); const j = await go(['a']); expect(j.state).toBe('failed'); expect(objs.has(`${ROOT}RETURN-MANIFEST.json`)).toBe(false); expect(j.manifest).toBeUndefined(); expect(j.children[0]).toMatchObject({ state: 'failed', shot: 'archival-100' })
   })
