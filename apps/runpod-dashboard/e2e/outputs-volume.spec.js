@@ -1,4 +1,4 @@
-import { test, expect, podCard } from './fixtures'
+import { test, expect, podCard, fileTiles } from './fixtures'
 import { makeDpx } from '../src/utils/dpx-fixture.mjs'
 
 // The Outputs button of a STOPPED pod (docs/ADR-045): never greyed out because the pod is stopped. With a network volume the volume-s3 source lists comfy-shared/output/ by folder
@@ -40,9 +40,9 @@ test('a stopped pod on a volume has an enabled Outputs button; the modal lists t
   await expect(runs.first()).toHaveAttribute('data-source', 'volume')
   await expect(runs.first().getByTestId('pod-outputs-source')).toHaveText('volume')
   await expect(runs.first().getByTestId('pod-outputs-folder-name')).toHaveText('archival-080_a_v004_dpx16')   // newest LastModified first
-  await expect(runs.first().getByTestId('outputs-tile')).toHaveCount(2)   // the DPX sequence is ONE tile, plus its json sidecar
+  await expect(fileTiles(runs.first())).toHaveCount(2)   // the DPX sequence is ONE tile, plus its json sidecar
   await expect(runs.first().locator('[data-testid="outputs-tile"][data-kind="dpx"]')).toHaveAttribute('data-frames', '3')
-  await expect(runs.first().getByTestId('outputs-tile').first()).toBeEnabled()   // viewable with no pod
+  await expect(fileTiles(runs.first()).first()).toBeEnabled()   // viewable with no pod
   // breadcrumb back to the root
   await m.locator('[data-testid="pod-outputs-crumb"][data-prefix="proxy_v004"]').click()
   await expect(m.getByTestId('pod-outputs-folder')).toHaveText(['archival-080', 'archival-084'])
@@ -105,6 +105,7 @@ test('a video from the volume plays through an s3file:// source with no pod', as
   const m = page.getByTestId('pod-outputs-modal')
   await m.locator('[data-testid="pod-outputs-folder"][data-name="proxy_v004"]').click()
   await m.locator('[data-testid="pod-outputs-folder"][data-name="archival-080"]').click()
+  await m.locator('[data-testid="outputs-group-row"][title="clip.mp4"]').scrollIntoViewIfNeeded()   // thumbnails and players are made only near the viewport
   const video = m.locator('video').first()
   await expect(video).toHaveAttribute('src', `s3file://vol1/${encodeURIComponent('comfy-shared/output/proxy_v004/archival-080/clip/clip.mp4')}`)
 })

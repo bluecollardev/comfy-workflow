@@ -694,7 +694,7 @@ test('Row previews come from the cache: previews the gallery already made are no
   const asked = {}
   page.on('request', (r) => { const m = /\/view\?.*filename=([^&]+)/.exec(r.url()); const f = m && decodeURIComponent(m[1]); if (f && /\.dpx$/.test(f)) asked[f] = (asked[f] || 0) + 1 })
   const m = await openOutputs(page, api)
-  for (const t of await m.locator('[data-testid="outputs-tile"][data-kind="dpx"]').all()) { const b = t.getByTestId('outputs-dpx-load-preview'); if (await b.count()) await b.click() }
+  for (const t of await m.locator('[data-testid="outputs-tile"][data-kind="dpx"]').all()) { await t.scrollIntoViewIfNeeded(); const b = t.getByTestId('outputs-dpx-load-preview'); if (await b.count()) { await b.click(); await expect(t.getByTestId('outputs-dpx-thumb')).toBeVisible({ timeout: 15000 }) } }   // each tile is on screen while its preview is made (the sequences' frame lists are open now, so the tiles are no longer all in view)
   await expect(m.getByTestId('outputs-dpx-thumb')).toHaveCount(3, { timeout: 15000 })   // "Load all previews": all three are made and cached
   const before = JSON.stringify(asked)
   const p = await openPreviews(page)

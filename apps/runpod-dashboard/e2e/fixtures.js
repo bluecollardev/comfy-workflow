@@ -1337,3 +1337,8 @@ export async function answerConfirm(page, yes = true) {
 
 /** Open the Queue window on one of its tabs (overview, imports, syncs, generations, publishing). */
 export async function queueTab(page, tab) { await page.getByTestId('open-queue').click(); await page.getByTestId(`queue-tab-${tab}`).click() }
+
+/** The files of the Outputs gallery as a test sees them: a DPX sequence is a tile, every other file is a row of its type group (docs: Outputs grouping). */
+export const fileTiles = (scope) => scope.locator('[data-testid="outputs-tile"], [data-testid="outputs-group-row"]')
+/** Expand every sequence and group of the gallery (the groups of more than four files start collapsed). */
+export async function expandAll(scope) { const b = scope.getByTestId('outputs-expand-all'); if (await b.count()) await b.first().click() }

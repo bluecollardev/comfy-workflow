@@ -20,6 +20,7 @@ test.describe('Auto-publish rows: View In Outputs', () => {
   })
   test('a row with files is enabled when a pod is on the volume and opens that pod\'s Outputs window in the review folder (folder scope); with no pod on the volume it is disabled with the reason', async ({ page, api }) => {
     on(api); api.state.autopublish = { pending: [entry()] }
+    api.state.s3Outputs = { files: [{ key: 'deliver/archival-087/v002/ARCHIVAL-087_RAIN.mov', bytes: 1000, modified: '2026-11-21T00:00:00Z' }] }   // the volume listing the Outputs window opens on
     await page.goto('/'); await queueTab(page, 'publishing')
     const link = page.getByTestId('autopublish-row').first().getByTestId('autopublish-view-outputs')
     if (await link.isDisabled()) {

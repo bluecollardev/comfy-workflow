@@ -1,4 +1,4 @@
-import { test, expect, podCard } from './fixtures'
+import { test, expect, podCard, fileTiles } from './fixtures'
 import { makeDpx } from '../src/utils/dpx-fixture.mjs'
 
 // The Outputs gallery shows a DPX sequence (what OCIOWrite writes) as ONE tile and opens a quick-look viewer that decodes the frames in the page (src/utils/dpx.js; docs/ADR-037 amendment 2026-11-17).
@@ -20,13 +20,13 @@ test('Outputs: a DPX sequence is one tile with a frame count; the viewer decodes
   await page.goto('/')
   await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
   const m = page.getByTestId('pod-outputs-modal')
-  const tiles = m.getByTestId('outputs-tile')
+  const tiles = fileTiles(m)
   await expect(tiles.filter({ has: page.getByTestId('outputs-dpx-placeholder') })).toHaveCount(1)   // three frames, one tile
   const tile = m.locator('[data-testid="outputs-tile"][data-kind="dpx"]')
   await expect(tile).toHaveCount(1)
   await expect(tile.getByTestId('outputs-dpx-badge')).toHaveText('DPX · 3 frames')
   await expect(tile).toHaveAttribute('data-frames', '3')
-  await expect(tiles.filter({ hasText: '.json' })).toHaveCount(1)   // the sidecar and the png keep their own tiles
+  await expect(m.locator('[data-testid="outputs-group-row"][title$=".json"]')).toHaveCount(1)   // the sidecar is a row of the Data group, the png a row of the Images group
   await expect(tiles).toHaveCount(4 /* dpx, json, png, plate of the older run */)
   await tile.getByTestId('outputs-dpx-load-preview').click()   // previews load on a click (nothing loads by itself)
   await expect(tile.getByTestId('outputs-dpx-thumb')).toBeVisible()   // the first frame is the tile's preview (docs/ADR-045)

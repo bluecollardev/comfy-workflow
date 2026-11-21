@@ -1,4 +1,4 @@
-import { test, expect, podCard } from './fixtures'
+import { test, expect, podCard, fileTiles } from './fixtures'
 import { t } from './i18n'
 import { makeDpx } from '../src/utils/dpx-fixture.mjs'
 
@@ -31,7 +31,7 @@ async function setup(page, api, { asked = [] } = {}) {
 }
 /** Nothing downloads by itself: a frame's header is known once its preview was made, so the chips of a sequence get their header chip after Load preview. */
 const preview = async (tile) => { await tile.getByTestId('outputs-dpx-load-preview').click(); await expect(tile.getByTestId('outputs-dpx-thumb')).toBeVisible() }
-const tileOf = (m, stem) => m.locator('[data-testid="outputs-tile"][data-kind="dpx"]').filter({ hasText: stem })
+const tileOf = (m, stem) => m.locator(`[data-testid="outputs-tile"][data-kind="dpx"][title*="${stem}"]`)
 
 test('Outputs: a sequence with a record shows its colour space and an amber chip when the header says linear; with no record the header\'s own words in grey; an unreadable record shows nothing', async ({ page, api }) => {
   const asked = []
@@ -56,7 +56,7 @@ test('Outputs: a sequence with a record shows its colour space and an amber chip
   const bad = tileOf(m, STEMS.bad)
   await expect(bad.getByTestId('outputs-dpx-colour-header')).toHaveText(t('outputs.dpx.colour.headerIs', { name: 'linear' }))
   await expect(bad.getByTestId('outputs-dpx-colour-record')).toHaveCount(0)
-  await expect(m.getByTestId('outputs-tile')).toHaveCount(3 + 1 /* the older run's plate */)
+  await expect(fileTiles(m)).toHaveCount(3 + 1 /* the older run's plate */)
 
   // the record is read once per sequence, and only the first frame of each sequence was downloaded (for its preview)
   expect(asked.filter((n) => n === `${STEMS.rec}.json`).length).toBe(1)

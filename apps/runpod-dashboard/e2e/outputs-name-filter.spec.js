@@ -1,4 +1,4 @@
-import { test, expect, podCard } from './fixtures'
+import { test, expect, podCard, fileTiles } from './fixtures'
 
 // Outputs window: a text filter by file name (Lucas, 2026-11-19: 'to filter by filename'), and the Generate button (was Previews) opening a wider modal.
 const run = (id, files, extra = {}) => ({ prompt_id: id, workflow: 'rounds/r1/archival-080/stereo.json', started_at: '2026-11-16T09:00:00Z', duration_s: 120, pod_id: 'pod-bbbbbbbb', pod_name: 'ComfyUI-Batch', volume_id: 'vol1', datacenter: 'EU-RO-1', recorded_at: '2026-11-16T09:02:00Z', files, ...extra })
@@ -20,20 +20,20 @@ test('typing a file name narrows every run to the files that match, drops runs w
     run('r1', [png('archival-080_a_00001_.png'), png('archival-080_b_00001_.png'), png('cgi-042_main_00001_.png')]),
     run('r2', [png('enhance-141_00001_.png')], { started_at: '2026-11-16T10:00:00Z' }),
   ])
-  await expect(m.getByTestId('outputs-tile')).toHaveCount(4)
+  await expect(fileTiles(m)).toHaveCount(4)
   const f = m.getByTestId('pod-outputs-name-filter')
   await f.fill('ARCHIVAL')                                               // case-insensitive
-  await expect(m.getByTestId('outputs-tile')).toHaveCount(2)
+  await expect(fileTiles(m)).toHaveCount(2)
   await expect(m.getByTestId('pod-outputs-run')).toHaveCount(1)          // r2 has no match: its run is dropped
   await expect(m.getByTestId('pod-outputs-name-filter-count')).toContainText('2')
   await f.fill('archival b')                                             // every word must match
-  await expect(m.getByTestId('outputs-tile')).toHaveCount(1)
+  await expect(fileTiles(m)).toHaveCount(1)
   await f.fill('zzz-nothing')
-  await expect(m.getByTestId('outputs-tile')).toHaveCount(0)
+  await expect(fileTiles(m)).toHaveCount(0)
   await expect(m.getByTestId('pod-outputs-name-filter-count')).toContainText('0')
   await m.getByTestId('pod-outputs-name-filter-clear').click()
   await expect(f).toHaveValue('')
-  await expect(m.getByTestId('outputs-tile')).toHaveCount(4)
+  await expect(fileTiles(m)).toHaveCount(4)
   await expect(m.getByTestId('pod-outputs-name-filter-count')).toHaveCount(0)
 })
 

@@ -1,4 +1,4 @@
-import { test, expect, podCard } from './fixtures'
+import { test, expect, podCard, fileTiles } from './fixtures'
 import { t } from './i18n'
 
 // Saved outputs (docs/ADR-037 amendment 2026-11-17): a pod's runs outlive the pod. The core keeps a record of the files each run wrote
@@ -22,11 +22,11 @@ test('a stopped pod with saved runs has an enabled Outputs button; with no runni
   await expect(m.getByTestId('pod-outputs-workflow').first()).toHaveText('stereo')
   await expect(m.getByTestId('pod-outputs-offline')).toContainText(t('outputs.startPod', { volume: 'comfy-workspace' }))
   await expect(m.getByTestId('pod-outputs-offline')).toContainText('comfy-workspace')
-  await expect(m.getByTestId('outputs-tile')).toHaveCount(4)
-  await expect(m.getByTestId('outputs-tile').first()).toBeDisabled()   // no preview, open or download
+  await expect(fileTiles(m)).toHaveCount(4)
+  await expect(fileTiles(m).first()).toBeDisabled()   // no preview, open or download
   await expect(m.getByTestId('outputs-zip').first()).toBeDisabled()
   await expect(m.locator('img')).toHaveCount(0)   // nothing asked a pod for a file
-  await m.getByTestId('outputs-tile').first().click({ force: true })
+  await fileTiles(m).first().click({ force: true })
   await expect(page.getByTestId('output-viewer')).toHaveCount(0)
 })
 
@@ -49,7 +49,7 @@ test('a stopped pod uses another running pod on the same volume as the address o
   await expect(m.getByTestId('pod-outputs-saved')).toHaveCount(1)
   const img = m.locator('img').first()
   await expect(img).toHaveAttribute('src', /^https:\/\/pod-a\.proxy\.runpod\.io:8188\/view\?filename=dddd4444-0000_00001_\.png&subfolder=archival-080&type=output/)
-  await expect(m.getByTestId('outputs-tile').first()).toBeEnabled()
+  await expect(fileTiles(m).first()).toBeEnabled()
 })
 
 test('a live run replaces its saved copy (same prompt_id) and loses the saved badge', async ({ page, api }) => {
@@ -59,6 +59,6 @@ test('a live run replaces its saved copy (same prompt_id) and loses the saved ba
   const m = page.getByTestId('pod-outputs-modal')
   await expect(m.getByTestId('pod-outputs-run')).toHaveCount(2)
   await expect(m.locator('[data-prompt="abcdef12-3456-7890"]').getByTestId('pod-outputs-saved')).toHaveCount(0)   // live wins
-  await expect(m.locator('[data-prompt="abcdef12-3456-7890"]').getByTestId('outputs-tile')).toHaveCount(1)   // the live run's own file list, not the two saved ones
+  await expect(fileTiles(m.locator('[data-prompt="abcdef12-3456-7890"]'))).toHaveCount(1)   // the live run's own file list, not the two saved ones
   await expect(m.locator('[data-prompt="eeee5555-0000"]').getByTestId('pod-outputs-saved')).toHaveCount(1)
 })

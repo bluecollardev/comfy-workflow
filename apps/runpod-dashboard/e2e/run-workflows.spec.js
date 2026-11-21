@@ -1,4 +1,4 @@
-import { test, expect, podCard } from './fixtures'
+import { test, expect, podCard, fileTiles } from './fixtures'
 import { t } from './i18n'
 
 // Run workflows (docs/ADR-037): a button on a running pod's card opens a modal listing the pod's graphs by folder, all ticked; the user picks, runs, and sees each graph's result with its error.
@@ -36,11 +36,12 @@ test('Run workflows: step 2 shows what the successful runs produced; a tile open
   await dlg.getByTestId('runflows-run').click()
   await expect(dlg.getByTestId('runflows-outputs')).toHaveCount(1)   // it moves to Outputs by itself: one workflow succeeded, one failed
   await expect(dlg.getByTestId('runflows-outputs-failed')).toContainText('1')
-  await expect(dlg.getByTestId('outputs-tile')).toHaveCount(3)
+  await expect(fileTiles(dlg)).toHaveCount(2)   // the saved results; the ComfyUI temp preview is hidden until Show Temp Files
   await expect(dlg.getByTestId('outputs-zip')).toContainText('zip')   // Download all (zip): the app saves it; in a browser the button says so and is off
   await expect(dlg.getByTestId('outputs-zip')).toBeDisabled()
-  await expect(dlg.locator('[data-testid="outputs-tile"][data-type="temp"]')).toHaveCount(1)   // a preview is marked and listed after the saved results
-  await dlg.getByTestId('outputs-tile').first().click()
+  await dlg.getByTestId('outputs-temp-toggle').click()   // the preview is shown on request, as its own group after the saved results
+  await expect(dlg.locator('[data-testid="outputs-group"][data-cat="temp"]')).toHaveCount(1)
+  await dlg.locator('[data-testid="outputs-group-row"][title="result_00001_.png"]').click()
   const viewer = page.getByTestId('output-viewer')
   await expect(viewer.getByTestId('output-viewer-image')).toBeVisible()
   await expect(viewer.getByTestId('output-viewer-image')).toHaveAttribute('src', /pod-a\.test\/view\?filename=result_00001_\.png&subfolder=r1&type=output/)
@@ -70,13 +71,13 @@ test('pod card: Import, Run and Outputs sit on one row; Outputs is disabled unti
   await dev.getByTestId('pod-outputs').click()
   const m = page.getByTestId('pod-outputs-modal')
   await expect(m.getByTestId('pod-outputs-run')).toHaveCount(2)   // the failed run has no files and is not listed
-  await expect(m.getByTestId('outputs-tile')).toHaveCount(2)
+  await expect(fileTiles(m)).toHaveCount(2)
   const bar = await m.getByTestId('pod-outputs-toolbar').boundingBox(), refresh = await m.getByTestId('pod-outputs-refresh').boundingBox()
   expect(refresh.x + refresh.width).toBeGreaterThan(bar.x + bar.width - 4)   // Refresh sits at the right edge of the toolbar
   await expect(m.getByTestId('pod-outputs-workflow').first()).toHaveText('other')   // newest first (11:20), then stereo (11:00)
   await expect(m.getByTestId('pod-outputs-workflow').nth(1)).toHaveText('stereo')   // each run names the workflow it came from, with its folder beside it
   await expect(m.getByTestId('pod-outputs-run-title').nth(1)).toContainText('rounds/r1/cgi-042')
-  await m.getByTestId('outputs-tile').first().click()
+  await fileTiles(m).first().click()
   await expect(page.getByTestId('output-viewer').getByTestId('output-viewer-image')).toBeVisible()
   await page.keyboard.press('Escape'); await page.keyboard.press('Escape')
   await expect(podCard(page, 'ComfyUI-Test').getByTestId('pod-outputs')).toBeEnabled()   // starting, no history, but on the network volume: its outputs can be listed over S3 (docs/ADR-045)

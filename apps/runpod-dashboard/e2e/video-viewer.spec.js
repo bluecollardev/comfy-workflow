@@ -18,7 +18,7 @@ async function open(page, api, name) {
   })
   await page.goto('/')
   await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
-  await page.getByTestId('pod-outputs-modal').locator(`[data-testid="outputs-tile"][title="${name}"]`).click()
+  await page.getByTestId('pod-outputs-modal').locator(`[title="${name}"]:is([data-testid="outputs-tile"], [data-testid="outputs-group-row"])`).click()
   return page.getByTestId('output-viewer')
 }
 const vid = (v) => v.getByTestId('output-viewer-video')
