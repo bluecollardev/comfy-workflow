@@ -104,6 +104,7 @@
 /** The Queue (ADR-038): every import's tasks with their state, pod and error; Cancel, Retry, Cancel all. Refreshes by itself while open. */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { queueAPI } from '../api/queue'
+import { failuresAPI } from '../api/failures'
 import { errorText } from '../stores/toast'
 import { useUiStore } from '../stores/ui'
 import { useI18n } from 'vue-i18n'
@@ -174,7 +175,8 @@ const exporting = ref(false)
 async function exportLog(format) {
   exporting.value = true; error.value = ''
   try {
-    const rows = queueRows({ tasks: view.value.tasks, vjobs: vjobs.jobs, publish: publishStore.jobs, renders: renders.jobs, failures: failuresStore.items })
+    const everyFailure = failuresStore.dismissedCount ? await failuresAPI.list({ limit: 500, dismissed: 'all' }).then((r) => (r.old ? failuresStore.items : r.items)).catch(() => failuresStore.items) : failuresStore.items   // the export keeps the dismissed ones: dismissing only hides them from the Queue
+    const rows = queueRows({ tasks: view.value.tasks, vjobs: vjobs.jobs, publish: publishStore.jobs, renders: renders.jobs, failures: everyFailure })
     const name = `queue-log-${stamp()}.${format}`
     if (format === 'csv') await saveTextFile(name, toCsv(rows)); else await savePdfFile(name, toHtml('Queue log', rows))
   } catch (e) { error.value = errorText(e) } finally { exporting.value = false }

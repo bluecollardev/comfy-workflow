@@ -65,19 +65,71 @@ export function record(i: RecordInput): FailureRecord {
   return r
 }
 export const settled = (): Promise<void> => writing
-/** The records, newest first; `since` is an ISO time; `shot` and `job_id` filter; reads at most the last 4 MB of the file. */
-export async function list(o: { limit?: number; since?: string; shot?: string; job_id?: string } = {}): Promise<{ failures: FailureRecord[]; file: string }> {
+// ----- dismissing (Lucas: 'Failures (50) in queue have ability to dismiss') -----
+// failures.jsonl is the audit record and is never edited or deleted here. A dismissed failure is only an id in failures-dismissed.json (next to it), hidden from the Queue
+// until restored; dismissing is by id, so a NEW failure always shows, even after Dismiss All. The file is rewritten whole (temp file, rename), one change at a time.
+export const MAX_DISMISSED = 5000
+const dfile = () => join(configDir(), 'failures-dismissed.json')
+let dwriting: Promise<void> = Promise.resolve()
+async function readDismissed(): Promise<string[]> {
+  try { const j = JSON.parse(await readFile(dfile(), 'utf8')); return Array.isArray(j?.ids) ? j.ids.filter((x: unknown): x is string => typeof x === 'string') : [] } catch { return [] }
+}
+async function writeDismissed(ids: string[]): Promise<void> {
+  const f = dfile(), tmp = `${f}.${process.pid}.tmp`
+  await mkdir(dirname(f), { recursive: true })
+  await writeFile(tmp, `${JSON.stringify({ ids: ids.slice(-MAX_DISMISSED), at: new Date(clock()).toISOString() }, null, 2)}\n`, { mode: 0o600 })
+  await rename(tmp, f)
+}
+/** Change the dismissed set after the changes before it: `fn` gets the current ids and returns the next ones and what to answer. */
+function changeDismissed<T>(fn: (cur: string[]) => { next: string[]; out: T }): Promise<T> {
+  const run = dwriting.then(async () => { const { next, out } = fn(await readDismissed()); await writeDismissed(next); return out })
+  dwriting = run.then(() => undefined, () => undefined)
+  return run
+}
+export type DismissedFilter = 'hide' | 'only' | 'all'
+export type ListedFailure = FailureRecord & { dismissed: boolean }
+/** The records, newest first; `since` is an ISO time; `shot` and `job_id` filter; reads at most the last 4 MB of the file. `dismissed`: 'hide' (default: the Queue's view), 'only' or 'all'; each record carries `dismissed`, and `dismissed_count` counts the dismissed ones among those read. */
+export async function list(o: { limit?: number; since?: string; shot?: string; job_id?: string; dismissed?: DismissedFilter } = {}): Promise<{ failures: ListedFailure[]; file: string; dismissed_count: number }> {
   await writing
-  const lim = Math.max(1, Math.min(500, Math.floor(Number(o.limit) || 50)))
+  await dwriting
+  const lim = Math.max(1, Math.min(500, Math.floor(Number(o.limit) || 50))), mode: DismissedFilter = o.dismissed === 'only' || o.dismissed === 'all' ? o.dismissed : 'hide'
+  const gone = new Set(await readDismissed())
   let text = ''; try { const t = await readFile(file(), 'utf8'); text = t.length > MAX_READ ? t.slice(-MAX_READ) : t } catch { /* none yet */ }
-  const out: FailureRecord[] = []
+  const out: ListedFailure[] = []
+  let dismissedCount = 0
   for (const l of text.split('\n').reverse()) {
     if (!l.trim()) continue
     let r: FailureRecord; try { r = JSON.parse(l) } catch { continue }
     if (o.since && r.time < o.since) continue; if (o.shot && r.shot !== o.shot) continue; if (o.job_id && r.job_id !== o.job_id) continue
-    out.push(r); if (out.length >= lim) break
+    const d = gone.has(r.id); if (d) dismissedCount++
+    if ((mode === 'hide' && d) || (mode === 'only' && !d)) continue
+    if (out.length < lim) out.push({ ...r, dismissed: d })
   }
-  return { failures: out, file: file() }
+  return { failures: out, file: file(), dismissed_count: dismissedCount }
+}
+export interface DismissPlan { count: number; ids: string[]; all: boolean }
+async function target(o: { ids?: string[]; all?: boolean }, restoring: boolean): Promise<DismissPlan> {
+  if (o.all) { const r = await list({ limit: 500, dismissed: restoring ? 'only' : 'hide' }); return { count: r.failures.length, ids: r.failures.map((f) => f.id), all: true } }
+  const ids = [...new Set((o.ids ?? []).map((x) => String(x)).filter(Boolean))]
+  if (!ids.length) throw new CoreError(400, 'Give the failure ids (ids) or all: true.')
+  if (ids.length > MAX_DISMISSED) throw new CoreError(400, `At most ${MAX_DISMISSED} ids at once.`)
+  return { count: ids.length, ids, all: false }
+}
+/** What a dismiss (or, with restore: true, a restore) would do, nothing written: how many failures it covers. */
+export const plan = (o: { ids?: string[]; all?: boolean; restore?: boolean }): Promise<DismissPlan> => target(o, !!o.restore)
+/** Hide failures from the Queue by id (or every one shown now). Nothing in failures.jsonl changes; a History line says how many. */
+export async function dismiss(o: { ids?: string[]; all?: boolean }): Promise<{ dismissed: number; total_dismissed: number }> {
+  const p = await target(o, false)
+  const r = await changeDismissed((cur) => { const have = new Set(cur), add = p.ids.filter((x) => !have.has(x)); return { next: [...cur, ...add], out: { dismissed: add.length, total_dismissed: cur.length + add.length } } })
+  if (r.dismissed) history.record({ kind: 'change', area: 'configuration', action: 'failures dismissed', what: `${r.dismissed} graph failure${r.dismissed === 1 ? '' : 's'} dismissed`, detail: `${p.all ? 'all shown' : 'by id'}; failures.jsonl unchanged; restore with the failures tool` })
+  return r
+}
+/** Show dismissed failures in the Queue again (by id, or every dismissed one). */
+export async function restore(o: { ids?: string[]; all?: boolean }): Promise<{ restored: number; total_dismissed: number }> {
+  const ids = o.all ? null : (await target(o, true)).ids
+  const r = await changeDismissed((cur) => { const drop = ids ? new Set(ids) : null, next = drop ? cur.filter((x) => !drop.has(x)) : [], n = cur.length - next.length; return { next, out: { restored: n, total_dismissed: next.length } } })
+  if (r.restored) history.record({ kind: 'change', area: 'configuration', action: 'failures restored', what: `${r.restored} graph failure${r.restored === 1 ? '' : 's'} shown again`, detail: o.all ? 'all dismissed' : 'by id' })
+  return r
 }
 export interface Explained { stage: Stage; node_id: string; node_type: string; message: string; missing_models: MissingModel[]; recovery: string; retryable: boolean; text: string }
 /**

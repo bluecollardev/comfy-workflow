@@ -459,7 +459,15 @@ export async function mockApi(page, state) {
       if (method === 'GET' && path === '/syncs/watch') return json({ paused: false, pull: [], push: [], events: [], ...(sy.watch || {}) })
     }
     // Graph failures (the core's failures.list): state.failures = [records]; state.noFailures answers like a core without it
-    if (path === '/failures' && method === 'GET') { if (state.noFailures) return json({ detail: 'no core call failures.list' }, 500); return json({ failures: state.failures || [] }) }
+    // state.failures records may carry `dismissed: true` (hidden from the Queue by id; the core keeps failures.jsonl as it is): list ?dismissed=hide|only|all, plan/dismiss/restore take { ids } or { all: true }
+    if (path === '/failures' && method === 'GET') {
+      if (state.noFailures) return json({ detail: 'no core call failures.list' }, 500)
+      const all = Array.isArray(state.failures) ? state.failures : [], mode = query.dismissed || 'hide'   // the default state is {}
+      return json({ failures: all.filter((f) => mode === 'all' || (mode === 'only') === !!f.dismissed), dismissed_count: all.filter((f) => f.dismissed).length })
+    }
+    if (path === '/failures/plan' && method === 'POST') { const all = Array.isArray(state.failures) ? state.failures : [], pick = body.all ? all.filter((f) => !!f.dismissed === !!body.restore) : all.filter((f) => (body.ids || []).includes(f.id)); (state.failurePlans ||= []).push(body); return json({ count: body.all ? pick.length : (body.ids || []).length, ids: pick.map((f) => f.id), all: !!body.all }) }
+    if (path === '/failures/dismiss' && method === 'POST') { (state.failureDismisses ||= []).push(body); const all = Array.isArray(state.failures) ? state.failures : []; let n = 0; for (const f of all) if (!f.dismissed && (body.all || (body.ids || []).includes(f.id))) { f.dismissed = true; n++ } return json({ dismissed: n, total_dismissed: all.filter((f) => f.dismissed).length }) }
+    if (path === '/failures/restore' && method === 'POST') { (state.failureRestores ||= []).push(body); const all = Array.isArray(state.failures) ? state.failures : []; let n = 0; for (const f of all) if (f.dismissed && (body.all || (body.ids || []).includes(f.id))) { f.dismissed = false; n++ } return json({ restored: n, total_dismissed: all.filter((f) => f.dismissed).length }) }
     if (path === '/failures/retry' && method === 'POST') { (state.failureRetries ||= []).push(body.id); const f = (state.failures || []).find((x) => x.id === body.id); if (f) f.attempt = (f.attempt || 1) + 1; return json({ ok: true }) }
     // The EDL (docs/ADR-050): state.edl = { loaded, source, sha256, events, elements: [{clip, shot, element, ...}], loaded_at, afterLoad: {...status after Load}, loadError }; state.noEdl answers like a core without it
     if (path.startsWith('/edl/')) {

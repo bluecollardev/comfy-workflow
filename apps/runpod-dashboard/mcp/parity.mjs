@@ -21,7 +21,7 @@ export const PARITY = {
   'autopublish.publishAllDry': "window: Deliver (one dry-run entry) and Deliver All is a person's explicit, named click",
   'autopublish.purgeDryRuns': 'autopublish', 'autopublish.restoreDryRuns': 'autopublish',
   'runningjobs.external': 'running_jobs', 'runningjobs.cancel': "window: cancelling a job another process owns is a person's act (it is a request that process picks up)",
-  'failures.list': 'failures', 'failures.retry': "window: retrying a failed graph runs it on a pod that is billing; a person presses Retry (run_pod_workflows is the MCP way)",
+  'failures.list': 'failures', 'failures.plan': 'failures', 'failures.dismiss': 'failures', 'failures.restore': 'failures', 'failures.retry': "window: retrying a failed graph runs it on a pod that is billing; a person presses Retry (run_pod_workflows is the MCP way)",
   'edl.load': 'edl', 'edl.status': 'edl', 'edl.elements': 'edl', 'edl.lookup': 'edl',
   'publish.settings': 'publish', 'publish.local': 'publish', 'publish.plan': 'publish', 'publish.run': 'publish', 'publish.status': 'publish', 'publish.cancel': 'publish', 'publish.slack': 'publish', 'publish.backfill': 'publish', 'publish.volume': 'publish', 'publish.rounds': 'publish', 'publish.retry': 'publish', 'publish.volumeSize': 'publish', 'publish.volumeSizeCancel': 'window: stops a measure the picker started; the MCP call returns when the listing is done',
   'publish.setSettings': 'window: where files go and which webhook posts is entered by a person in Settings; an agent never sets a destination (docs/ADR-050)',

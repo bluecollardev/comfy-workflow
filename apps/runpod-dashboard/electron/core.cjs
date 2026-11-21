@@ -176,9 +176,12 @@ const TABLE = {
     external: (c, o) => ({ jobs: c.jobsregistry.externals(o && o.kind || undefined) }),
     cancel: (c, id) => c.jobsregistry.requestCancel(String(id || '')).then((found) => ({ ok: found })),
   },
-  failures: {   // graph failures, logged (failures.jsonl in the config folder); read-only
-    list: (c, o) => c.failures.list(o || {}),
+  failures: {   // graph failures, logged (failures.jsonl in the config folder: the audit record, never edited here)
+    list: (c, o) => c.failures.list(o || {}),   // { dismissed: 'hide' (default) | 'only' | 'all', limit, since, shot, job_id }
     retry: (c, id) => c.failures.retry(String(id || '')),   // run a RETRYABLE failed graph again (at most twice); a graph or validation error is never retried
+    plan: (c, o) => c.failures.plan(o || {}),   // how many a dismiss or restore would cover (nothing written)
+    dismiss: (c, o) => c.failures.dismiss(o || {}),   // hide by id (or all shown) from the Queue: an id in failures-dismissed.json, the log is untouched
+    restore: (c, o) => c.failures.restore(o || {}),   // show them again (ids or all)
   },
   edl: {   // docs/ADR-050: the V11 edit list (CMX3600) decides timecode, frame count and what may be delivered; read-only from the exchange bucket, cached with its sha256
     load: (c, o) => c.edl.load(o || {}),

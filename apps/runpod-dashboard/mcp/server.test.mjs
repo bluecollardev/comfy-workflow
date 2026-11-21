@@ -692,6 +692,15 @@ test('autopublish: read, cancel, off, and (v1.6.8) on and go live under a named 
   const pr = jsonOf(ok(await call('autopublish', { action: 'purge_dry_runs', approved_by: 'Lucas', understood: true }))); assert.equal(pr.plan, false); assert.equal(pr.purged, 0)
   assert.equal(jsonOf(ok(await call('autopublish', { action: 'restore_dry_runs' }))).restored, 0)
   const tp = (await rpc('tools/list')).result.tools.find((x) => x.name === 'autopublish').inputSchema.properties; assert.ok(tp.include_approved); assert.match(tp.action.description, /purge_dry_runs/)
+  // Failures: dismiss and restore are plan-then-run (a person's name and understood: true), list takes the dismissed filter, nothing here touches failures.jsonl
+  const fs1 = (await rpc('tools/list')).result.tools.find((x) => x.name === 'failures'); assert.match(fs1.inputSchema.properties.action.description, /dismiss/); assert.ok(fs1.inputSchema.properties.ids); assert.ok(fs1.inputSchema.properties.dismissed); assert.match(fs1.description, /never edits or deletes it/)
+  const fp = jsonOf(ok(await call('failures', { action: 'dismiss', ids: ['f-x1', 'f-x2'] }))); assert.equal(fp.plan, true); assert.equal(fp.count, 2); assert.match(fp.note, /Nothing was changed/)
+  assert.match(textOf(refused(await call('failures', { action: 'dismiss', ids: ['f-x1'], understood: true }))), /approved_by is needed/)
+  assert.match(textOf(refused(await call('failures', { action: 'dismiss' }))), /Give the failure ids/)
+  assert.match(textOf(refused(await call('failures', { action: 'purge' }))), /action must be list, dismiss or restore/)
+  assert.equal(jsonOf(ok(await call('failures', { action: 'dismiss', ids: ['f-x1'], approved_by: 'Lucas', understood: true }))).dismissed, 1)
+  assert.equal(jsonOf(ok(await call('failures', { action: 'list', dismissed: 'all' }))).dismissed_count, 0)   // the id is in no log line, so the count of dismissed log records stays 0
+  assert.equal(jsonOf(ok(await call('failures', { action: 'restore', ids: ['f-x1'], approved_by: 'Lucas', understood: true }))).restored, 1)
   // Frame previews relaunch: the action is in the schema, an unknown job is refused with the reason, and the tool says it never resumes a pod
   const fpSchema = (await rpc('tools/list')).result.tools.find((x) => x.name === 'frame_previews'); assert.match(fpSchema.inputSchema.properties.action.description, /relaunch/); assert.ok(fpSchema.inputSchema.properties.exclude_pod_ids); assert.match(fpSchema.description, /NEVER resumes or creates a pod/)
   assert.match(textOf(refused(await call('frame_previews', { action: 'relaunch', job_id: 'framepreviews-nope' }))), /No frame-previews job/)
