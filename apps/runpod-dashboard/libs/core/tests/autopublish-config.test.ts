@@ -33,7 +33,7 @@ describe('the configuration block', () => {
   })
   it('validation (400s name the field)', () => {
     const put = (a: Record<string, unknown>) => () => mounts.put({ ...mounts.load(), auto_publish: a as never })
-    expect(put({ window_minutes: 121 })).toThrow(/auto_publish\.window_minutes/); expect(put({ window_minutes: -1 })).toThrow(/window_minutes/); expect(put({ daily_cap: 51 })).toThrow(/auto_publish\.daily_cap/); expect(put({ daily_cap: 2.5 })).toThrow(/daily_cap/)
+    expect(put({ window_minutes: 121 })).toThrow(/auto_publish\.window_minutes/); expect(put({ window_minutes: -1 })).toThrow(/window_minutes/); expect(put({ daily_cap: 101 })).toThrow(/auto_publish\.daily_cap/); expect(put({ daily_cap: 2.5 })).toThrow(/daily_cap/)
     expect(put({ targets: { tunnel: true } })).toThrow(/Tunnel is not available yet/); expect(put({ targets: { s3: false, slack: true } })).toThrow(/turn S3 on/)
     expect(put({ enabled: true, standing: { approved_by: 'L', at: 'x' }, targets: { s3: false, slack: false } })).toThrow(/at least one of s3 or slack/); expect(put({ enabled: true })).toThrow(/standing approval/)
     expect(mounts.put({ ...mounts.load(), auto_publish: { window_minutes: 0, daily_cap: 50, targets: { s3: true, slack: true } } as never }).config.auto_publish).toMatchObject({ window_minutes: 0, daily_cap: 50, targets: { s3: true, slack: true, tunnel: false } })

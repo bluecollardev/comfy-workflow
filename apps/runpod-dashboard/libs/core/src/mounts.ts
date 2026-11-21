@@ -76,7 +76,7 @@ export function normalizeAutoPublish(v: unknown): AutoPublishConfig {
 }
 export function validateAutoPublish(a: AutoPublishConfig): void {
   if (!(Number.isInteger(a.window_minutes) && a.window_minutes >= 0 && a.window_minutes <= 120)) throw bad('auto_publish.window_minutes is a whole number of minutes from 0 to 120')
-  if (a.daily_cap !== null && !(Number.isInteger(a.daily_cap) && a.daily_cap >= 1 && a.daily_cap <= 50)) throw bad('auto_publish.daily_cap is empty (no limit) or a whole number from 1 to 50')
+  if (a.daily_cap !== null && !(Number.isInteger(a.daily_cap) && a.daily_cap >= 1 && a.daily_cap <= 100)) throw bad('auto_publish.daily_cap is empty or 0 (no limit) or a whole number from 1 to 100')
   if (!/^[A-Za-z0-9._{}-]{3,100}$/.test(a.round) || !/^[A-Za-z0-9._-]{3,100}$/.test(a.round.replace(/\{date\}/g, '2026-01-01')) || a.round.includes('..')) throw bad('auto_publish.round is a round name (3 to 100 letters, digits . _ -), with {date} for the day')
   validateAutoGenerate(a.generate)
   if (!a.sources.local && !a.sources.volume) throw bad('Choose at least one place to watch')

@@ -1341,7 +1341,7 @@
       "enableLiveOk": "Enable and go live",
       "liveOk": "Go live",
       "window": "Cancel window (minutes, 0 to 120)",
-      "cap": "Uploads a day (1 to 50)",
+      "cap": "Uploads a day (1 to 100; 0 or empty for no limit)",
       "capOn": "Limit uploads per day",
       "noLimit": "No daily limit",
       "publishTo": "Publish to",
@@ -1360,7 +1360,7 @@
       "notReady": "not ready",
       "binc": "Binc agreed to Auto-publish (Lucas, 2026-11-19). Everything it uploads is recorded under the standing approval above.",
       "windowBad": "The cancel window is a whole number of minutes from 0 to 120.",
-      "capBad": "The daily cap is a whole number from 1 to 50.",
+      "capBad": "The daily cap is a whole number from 1 to 100, or 0 for no limit.",
       "unsaved": "unsaved",
       "enabledOn": "ON",
       "enabledOff": "off"
