@@ -29,6 +29,8 @@ async function loadCore() {
   core.history.onChange(push)
   core.ticks?.setTickHook((name, fn) => monitor.tick(name, fn))   // the core's timers (queue, auto-publish, auto sync, pod watches) are named in stalls.log
   core.queue.start()   // ADR-038: the round-import queue runs while the app is open
+  // ADR-056, "Re-attach after a restart": chunked runs another process left on a pod are continued here (only the app adopts; the MCP server and the CLI never do)
+  core.reattach?.adoptAll().then((rs) => { for (const r of rs) if (r.outcome !== 'skipped') console.log(`re-attach: ${r.outcome}: ${r.path || r.id}: ${r.reason}`) }).catch((e) => console.error(`re-attach failed: ${e.message}`))
   core.autopublish.start().catch(() => undefined)   // ADR-050: Auto-publish (off unless a person turned it on): its scheduler and the 60 s look for approved review videos
   core.autosync.start()   // ADR-046: Auto sync's timer (pulls for pods with it on) and the volume reconciler run while the app is open
   core.pods.startWatches()   // ADR-042 section 19: a pod waiting for a free card is tried again while the app is open

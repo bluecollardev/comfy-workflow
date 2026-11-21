@@ -47,6 +47,28 @@ export interface RunCtx {
   interrupt: () => Promise<void>; free: () => Promise<void>; sleep: (ms: number) => Promise<void>
   /** a line for the task's events and the History */ say: (text: string) => void
   guardPct?: number; targetPct?: number; pad?: number; maxChunk?: number; pollMs?: number
+  /** called after every change of the plan or of a chunk, with a copy the caller may keep (the re-attach record) */ checkpoint?: (cp: Checkpoint) => void | Promise<void>
+  /** an adopted run (another process started it and is gone): continue this plan instead of probing and planning */ resume?: Checkpoint
+  /** a prompt submitted before the restart is about to be waited for: register it for `outcome` */ adopt?: (promptId: string) => void
+}
+
+/** One chunk of a persisted run. `running` has the prompt id the pod was given; `split` has the halves that replaced it. */
+export interface CpState { state: 'running' | 'done' | 'split' | 'failed'; prompt_id?: string; halves?: gc.GraphChunk[]; error?: string }
+/**
+ * What a chunked run needs to be continued by another process after a restart (ADR-056, "Re-attach after a restart"): the plan and what each chunk has done. Small, no secrets;
+ * the API graph is not kept (it is converted again from the graph on the pod) and neither are the files (the next outcome call finds them in ComfyUI's history).
+ * `phase` is `probe` while the first ten frames run (the RAM per frame is not known yet), `main` after.
+ */
+export interface Checkpoint {
+  version: 1; phase: 'probe' | 'main'
+  win: { first: number; last: number; startNumber: number; sourceStart: number }
+  pad: number; guardPct: number; targetPct: number; maxChunk: number; size: number
+  plan: gc.GraphChunk[]; states: Record<string, CpState>
+}
+export const resumeStateOf = (cp: Checkpoint): gc.ResumeState => {
+  const rs: gc.ResumeState = { done: new Set(), running: new Map(), split: new Map() }
+  for (const [k, v] of Object.entries(cp.states)) { if (v.state === 'done') rs.done.add(k); else if (v.state === 'running' && v.prompt_id) rs.running.set(k, v.prompt_id); else if (v.state === 'split' && v.halves?.length) rs.split.set(k, v.halves) }
+  return rs
 }
 export interface RunSummary { mode: 'whole' | 'chunked' | 'guard-only'; chunks: number; attempts: number; text: string }
 
@@ -80,20 +102,51 @@ export async function runGraph(c: RunCtx): Promise<RunSummary> {
   let rec = await memoryOf(c.path)
   const sample = { idle: first?.used ?? 0, peak: 0 }
   const track = async (): Promise<number | null> => { const r = await c.ram(); if (r) sample.peak = Math.max(sample.peak, r.used); return r ? r.pct : null }
-  const run = (chunks: gc.GraphChunk[]) => gc.runChunks({
+  // what a process that adopts this run after a restart needs (ADR-056, "Re-attach after a restart"): the plan and each chunk's state, handed to c.checkpoint after every change
+  const cp: Checkpoint = c.resume ? JSON.parse(JSON.stringify(c.resume)) : { version: 1, phase: 'probe', win: { first: win.first, last: win.last, startNumber: win.startNumber, sourceStart }, pad, guardPct: guard, targetPct: target, maxChunk, size: 0, plan: [], states: {} }
+  const emit = async () => { if (c.checkpoint) { try { await c.checkpoint(JSON.parse(JSON.stringify(cp))) } catch { /* the record is best effort: it never stops a run */ } } }
+  const onEvent = (e: gc.ChunkEvent) => {
+    const k = gc.chunkKey(e.chunk)
+    cp.states[k] = e.type === 'submit' ? { state: 'running', prompt_id: e.promptId } : e.type === 'done' ? { state: 'done', prompt_id: e.promptId } : e.type === 'split' ? { state: 'split', halves: e.halves } : { state: 'failed', prompt_id: e.promptId, error: e.error }
+    void emit()
+  }
+  const run = (chunks: gc.GraphChunk[], resume?: gc.ResumeState) => gc.runChunks({
     build: async (ch) => gc.narrowApi(c.api, ch, sourceStart), submit: c.submit, outcome: c.outcome, ram: track,
-    interrupt: c.interrupt, free: c.free, sleep: c.sleep,
-  }, chunks, { guardPct: guard, pad, pollMs: c.pollMs ?? 10_000, win })
+    interrupt: c.interrupt, free: c.free, sleep: c.sleep, onEvent, adopt: c.adopt,
+  }, chunks, { guardPct: guard, pad, pollMs: c.pollMs ?? 10_000, win, resume })
   const done: gc.GraphChunk[] = []; let attempts = 0
-  const step = async (chunks: gc.GraphChunk[]) => { const out = await run(chunks); attempts += out.attempts.length; for (const a of out.attempts) if (a.state === 'split') c.say(`chunking: ${a.error}`); if (!out.ok) throw new CoreError(/RAM guard/.test(out.attempts.at(-1)?.error ?? '') ? 507 : 500, out.attempts.at(-1)?.error ?? 'a chunk failed'); done.push(...out.final) }
-  let from = win.first
+  const step = async (chunks: gc.GraphChunk[], resume?: gc.ResumeState) => { const out = await run(chunks, resume); attempts += out.attempts.length; for (const a of out.attempts) if (a.state === 'split') c.say(`chunking: ${a.error}`); if (!out.ok) throw new CoreError(/RAM guard/.test(out.attempts.at(-1)?.error ?? '') ? 507 : 500, out.attempts.at(-1)?.error ?? 'a chunk failed'); done.push(...out.final) }
+  let from = win.first, probePlan: gc.GraphChunk[] = [], resumedProbe = false
+  const finish = async (): Promise<RunSummary> => {
+    gc.checkCoverage(done, win.first, win.last)
+    const text = `frames ${win.first}-${win.last} in ${done.length} chunk${done.length === 1 ? '' : 's'}, no gap, no repeat`
+    c.say(`chunking: ${text}`)
+    return { mode: done.length === 1 ? 'whole' : 'chunked', chunks: done.length, attempts, text }
+  }
 
+  // 0. an adopted run: another process started it and is gone. Its prompts are still on the pod: finished ones are counted, running ones are waited for, gone ones are submitted again (once).
+  if (c.resume) {
+    const rs = resumeStateOf(cp)
+    c.say(`chunking: re-attached after a restart (${cp.phase} phase): ${rs.done.size} chunk${rs.done.size === 1 ? '' : 's'} done, ${rs.running.size} on the pod, ${cp.plan.length} in the plan`)
+    for (const v of Object.values(cp.states)) if (v.state === 'done' && v.prompt_id) { c.adopt?.(v.prompt_id); try { await c.outcome(v.prompt_id) } catch { /* only so its files reach the History */ } }
+    for (const [k, id] of [...rs.running]) {
+      c.adopt?.(id)
+      const out = await c.outcome(id)
+      if (out === 'done') { rs.running.delete(k); rs.done.add(k); cp.states[k] = { state: 'done', prompt_id: id }; c.say(`chunking: chunk ${k}: prompt ${id} finished while nobody was watching`) }
+      else if (out) { rs.running.delete(k); delete cp.states[k]; c.say(`chunking: chunk ${k}: prompt ${id} is gone or failed (${out.error.slice(0, 120)}): submitted again, once`) }
+    }
+    await emit()
+    if (cp.phase === 'main') { await step(cp.plan, rs); return finish() }
+    probePlan = cp.plan; await step(probePlan, rs)   // the probe chunk: its frames are real, so it is finished (or waited for) like any other
+    from = probePlan[0].last + 1; resumedProbe = true; rec = null
+    c.say('chunking: the probe was cut short by the restart, so its RAM figure is lost; the rest is planned in smaller chunks with the guard on')
   // 1. the probe: only a graph that is big enough to matter and has no record yet
-  if (!rec && win.count > NO_PROBE_UNDER) {
+  } else if (!rec && win.count > NO_PROBE_UNDER) {
     if (!ramBytes) { c.say('chunking: the container RAM cannot be read here, so the graph is not probed; running it in default chunks without a RAM guard') }
     else {
       const probe = gc.planGraphChunks({ first: win.first, last: win.first + PROBE_FRAMES - 1, startNumber: win.startNumber }, PROBE_FRAMES, pad).map((p) => ({ ...p, readLast: Math.min(win.last, p.last + pad) }))
       c.say(`chunking: new graph, probing frames ${win.first}-${win.first + PROBE_FRAMES - 1} with the container RAM sampled (${(ramBytes / GIB).toFixed(1)} GiB limit)`)
+      probePlan = probe; cp.phase = 'probe'; cp.plan = probe; await emit()
       sample.peak = 0; await step(probe)
       const readFrames = probe[0].readLast - probe[0].readFirst + 1
       const perFrame = Math.max(0.01, (sample.peak - sample.idle) / GIB / readFrames)
@@ -105,7 +158,7 @@ export async function runGraph(c: RunCtx): Promise<RunSummary> {
 
   // 2. the plan
   const rest = { first: from, last: win.last, startNumber: win.startNumber + (from - win.first) }
-  let size = maxChunk
+  let size = resumedProbe ? Math.min(maxChunk, 20) : maxChunk
   if (rec && ramBytes) {
     const perFrame = rec.per_frame_gib * GIB
     const whole = perFrame * (win.last - from + 1)
@@ -117,13 +170,11 @@ export async function runGraph(c: RunCtx): Promise<RunSummary> {
     // the remainder: the first window keeps reading the probe's last frames as context only when there is a probe before it
     const chunks = gc.planGraphChunks(rest, size, pad).map((ch) => ({ ...ch, readFirst: Math.max(win.first, ch.first - pad) }))
     c.say(`chunking: ${chunks.length} chunk${chunks.length === 1 ? '' : 's'} for frames ${rest.first}-${rest.last}`)
+    cp.phase = 'main'; cp.size = size; cp.plan = [...probePlan, ...chunks]; await emit()
     await step(chunks)
   }
   // a guard split means the estimate was too low: remember a bigger one so the next run starts smaller
   if (rec && ramBytes && attempts > Math.ceil((win.last - win.first + 1) / size) + (done.length ? 0 : 1) && done.length > 0) { rec.per_frame_gib = Math.round(rec.per_frame_gib * 1.5 * 1000) / 1000; await remember(c.path, rec) }
   // 3. the merge check
-  gc.checkCoverage(done, win.first, win.last)
-  const text = `frames ${win.first}-${win.last} in ${done.length} chunk${done.length === 1 ? '' : 's'}, no gap, no repeat`
-  c.say(`chunking: ${text}`)
-  return { mode: done.length === 1 ? 'whole' : 'chunked', chunks: done.length, attempts, text }
+  return finish()
 }
