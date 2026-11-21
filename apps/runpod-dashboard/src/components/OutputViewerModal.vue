@@ -10,9 +10,9 @@
           <img v-if="file.kind === 'image'" :src="url" :alt="file.filename" class="viewer-media" data-testid="output-viewer-image" />
           <video v-else-if="file.kind === 'video'" ref="video" :src="url" autoplay :loop="loop" playsinline class="viewer-media" data-testid="output-viewer-video" :data-time="time.toFixed(3)"
             @play="playing = true" @pause="playing = false" @loadedmetadata="onMeta" @durationchange="duration = video.duration || 0" @timeupdate="time = video.currentTime" @progress="onProgress" @error="loading = false; onVideoError()" @click="togglePlay" @loadstart="loading = true" @waiting="loading = true" @canplay="loading = false" @loadeddata="loading = false" @playing="loading = false"></video>
-          <div v-if="loading && !codecFail" class="loading-video" role="status" data-testid="output-viewer-loading"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>{{ $t('outputs.player.loadingVideo') }}</div>
           <audio v-else-if="file.kind === 'audio'" :src="url" controls autoplay class="w-100" data-testid="output-viewer-audio"></audio>
           <div v-else class="text-body-secondary py-5" data-testid="output-viewer-other"><i class="fa-regular fa-file fs-1 d-block mb-2"></i>{{ $t('outputs.noPreview') }}</div>
+          <div v-if="file.kind === 'video' && loading && !codecFail" class="loading-video" role="status" data-testid="output-viewer-loading"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>{{ $t('outputs.player.loadingVideo') }}</div>
           <div v-if="file.kind === 'video' && codecFail" class="codec" data-testid="output-viewer-codec">
             <div>
               <i class="fa-solid fa-triangle-exclamation fs-3 d-block mb-2 text-warning"></i>
