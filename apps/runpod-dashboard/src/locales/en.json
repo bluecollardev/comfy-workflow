@@ -573,6 +573,10 @@
         "headerSays": "Header says {name}",
         "chipRecordTitle": "The colour space the writer recorded next to this sequence (ComfyUI-OCIO). The app converts from this.",
         "framesBadge": "Frames {frames} / {expected}",
+        "framesGaps": "Gaps in frames {first}-{last}",
+        "framesGapsTitle": "The frame numbers of this sequence, over every run listed here, run from {first} to {last} but are not continuous: some frames are missing. Do not deliver it until the gap is explained.",
+        "framesPart": "part of {total}",
+        "framesPartTitle": "This run wrote frames {range} of a sequence of {total} frames. A long graph is rendered as a probe and several chunks, each its own run, all into the same folder; the runs listed here together hold {total} frames.",
         "framesTitle": "This sequence has {frames} frames; the V11 EDL expects {expected} for this element. Do not deliver it until the difference is explained.",
         "chipHeaderTitle": "What the DPX header of the first frame says. Not the same as the record: the header is not used when a record exists.",
         "chipHeaderOnlyTitle": "What the DPX header of the first frame says. There is no OCIO record next to this sequence.",
@@ -996,6 +1000,19 @@
     "loading": "Reading the pod's runs…",
     "noRuns": "No finished runs with output files on this pod yet (ComfyUI forgets its history when the pod is recreated).",
     "run": "{when} · {s} s",
+    "chunkBadge": "{n} chunks",
+    "chunkBadgeTitle": "A long graph is rendered as a probe and several chunks, each its own run, into the same folder. They are listed here as one run: its files are all the chunks' files and its time is their total.",
+    "chunkShow": "Show Chunk Runs",
+    "chunkHide": "Hide Chunk Runs",
+    "chunkRow": "{when} · {s} s · {files} file(s)",
+    "incomplete": {
+      "show": "Show Incomplete ({n})",
+      "hide": "Hide Incomplete ({n})",
+      "title": "Incomplete sequences have fewer frames, over every run listed here, than the V11 EDL's cut for their element (a probe, a cut-off chunk set, a partial render). They are hidden by default. Display only: nothing is deleted or moved.",
+      "group": "{n} Incomplete Sequences",
+      "hiddenRuns": "{n} hidden",
+      "chipTitle": "Incomplete: {frames} frames of the {expected} the V11 EDL's cut has for this element. Not deliverable as it is."
+    },
     "refresh": "Refresh"
   },
   "runflows": {

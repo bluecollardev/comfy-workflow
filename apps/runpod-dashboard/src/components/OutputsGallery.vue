@@ -65,7 +65,7 @@
         <span v-else class="thumb d-flex align-items-center justify-content-center text-body-secondary"><i class="fa-solid fs-3" :class="t.kind === 'audio' ? 'fa-music' : 'fa-file'"></i></span>
         <span class="cap" :title="t.name || t.file.filename" data-testid="outputs-tile-name">{{ shortName(t.name || t.file.filename) }}</span>
         <SequenceColour v-if="t.kind === 'dpx'" :tile="t" :base="base" :offline="offline" :header="thumbHeader[t.key] || null" />
-        <SequenceFrames v-if="t.kind === 'dpx'" :tile="t" />
+        <SequenceFrames v-if="t.kind === 'dpx'" :tile="t" :neutral="incompleteList" />
         <span v-if="t.file.type === 'temp'" class="badge text-bg-secondary tag">{{ $t('outputs.type.temp') }}</span>
       </button>
       <SequenceStrip v-if="t.kind === 'dpx' && t.frames.length > 1 && stripItems(t).length" :items="stripItems(t)" :disabled="offline" @open="(i) => openAt(t, i)" />
@@ -85,6 +85,15 @@
       </template>
       </div>
     </div>
+    <!-- Incomplete sequences (short of the EDL's cut, utils/incomplete.js) are hidden unless Show Incomplete is on; then they sit here, in their own collapsed group at the bottom of the run. Display only. -->
+    <div v-if="hideIncomplete && incompleteTiles.length && groupView.showIncomplete" class="group mt-3" data-testid="outputs-incomplete-group" :data-count="incompleteTiles.length" :data-expanded="incOpen ? 'true' : 'false'">
+      <div class="head" data-testid="outputs-incomplete-head">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <span class="headname" data-testid="outputs-incomplete-label">{{ $t('outputs.incomplete.group', { n: incompleteTiles.length }) }}</span>
+        <BButton variant="outline-light" size="sm" class="headbtn" :aria-expanded="incOpen ? 'true' : 'false'" data-testid="outputs-incomplete-toggle" @click="incOpen = !incOpen"><i class="fa-solid me-1" :class="incOpen ? 'fa-chevron-up' : 'fa-chevron-down'"></i>{{ incOpen ? $t('outputs.dpx.collapse') : $t('outputs.dpx.expand') }}</BButton>
+      </div>
+      <OutputsGallery v-if="incOpen" :files="incompleteFiles" :base="base" :scope="scope" :volume-name="volumeName" :offline="offline" :pod-id="podId" :pod-running="podRunning" hide-zip incomplete-list />
+    </div>
     <OutputViewerModal :file="viewable[current] || null" :base="base" :index="current ?? 0" :count="viewable.length" @close="current = null" @step="(d) => (current = Math.min(viewable.length - 1, Math.max(0, current + d)))" />
     <DpxViewerModal :frames="dpx ? dpx.frames : []" :base="base" :proxy="dpx ? proxyOf(dpx) : null" :review="dpx ? reviewOf(dpx) : null" :start-review="dpxReview" :start-index="dpxStart" :sequence="dpx ? sequenceItem(dpx) : null" :pod-id="podId" @close="dpx = null" @problems="(n) => n && dpx && (problemCounts[dpx.key] = n)" />
   </div>
@@ -95,7 +104,9 @@
  * OutputsGallery: the files a run produced (OutputFile: filename, subfolder, type output|temp, kind image|video|audio|other) as a grid of thumbnails read from the pod's ComfyUI /view.
  * Reusable: it only needs the pod's web address (`base`) and the list; a click opens the viewer (large, Previous/Next, Open, Download). A DPX sequence is one tile (frame count) opening the DPX quick-look viewer.
  */
-import { computed, reactive, ref, watch, watchEffect } from 'vue'
+import { computed, inject, reactive, ref, watch, watchEffect } from 'vue'
+import { ensureMatch, expectedFramesOf } from '../utils/edlexpect'
+import { incompleteOf, tileName } from '../utils/incomplete'
 import { viewUrl, galleryTiles, sizeText, isDpx } from '../utils/outputs'
 import { isExpanded, toggleSeq, setAll, shownFrames, showMore, showAll, groupView, groupExpanded, toggleGroup, shownFiles, groupMore, groupShowAll, setShowTemp, HAS_IO } from '../utils/dpxcollapse'
 import { isTemp, groupTiles, tempGroup, shortName } from '../utils/videogroups'
@@ -118,7 +129,7 @@ import ApproveControl from './ApproveControl.vue'
 import { useRendersStore } from '../stores/renders'
 import { sequenceItem } from '../utils/renders'
 
-const props = defineProps({ podRunning: { type: Boolean, default: false }, files: { type: Array, default: () => [] }, totalFiles: { type: Number, default: 0 }, base: { type: String, default: '' }, zipName: { type: String, default: 'outputs.zip' }, hideZip: { type: Boolean, default: false }, scope: { type: String, default: '' }, volumeName: { type: String, default: '' }, offline: { type: Boolean, default: false }, podId: { type: String, default: '' } })   // offline: no pod serves the files (a saved run): tiles list the names, nothing opens
+const props = defineProps({ podRunning: { type: Boolean, default: false }, files: { type: Array, default: () => [] }, totalFiles: { type: Number, default: 0 }, base: { type: String, default: '' }, zipName: { type: String, default: 'outputs.zip' }, hideZip: { type: Boolean, default: false }, hideIncomplete: { type: Boolean, default: false }, incompleteList: { type: Boolean, default: false }, scope: { type: String, default: '' }, volumeName: { type: String, default: '' }, offline: { type: Boolean, default: false }, podId: { type: String, default: '' } })   // offline: no pod serves the files (a saved run): tiles list the names, nothing opens
 const canZip = !!core?.files?.downloadZip
 const renders = useRendersStore()
 /** The rendered movie of a DPX sequence tile (docs/ADR-048), from the store's one batched list: on this PC, else ready on the volume, else none. */
@@ -136,7 +147,16 @@ async function zip() {
 const tempFiles = computed(() => props.files.filter(isTemp))
 const realFiles = computed(() => props.files.filter((f) => !isTemp(f)))
 /** ComfyUI's temp previews are hidden unless Show Temp Files is on: not counted, not listed, never probed, no preview made. Display only, nothing is deleted. */
-const displayFiles = computed(() => (groupView.showTemp ? props.files : realFiles.value))
+/** Incomplete sequences (utils/incomplete.js): short of the EDL's cut by the union of the frames over every run listed (injected by the window). Only with `hideIncomplete`; they leave the grid (and the counts) and, when Show Incomplete is on, are listed in their own group below. */
+const unions = inject('frameUnions', null)
+const incOpen = ref(false)
+const seqTiles = computed(() => galleryTiles(realFiles.value).filter((t) => t.kind === 'dpx'))
+watchEffect(() => { if (props.hideIncomplete) for (const t of seqTiles.value) ensureMatch(tileName(t)) })
+const incompleteTiles = computed(() => (props.hideIncomplete ? seqTiles.value.filter((t) => incompleteOf(t, unions?.value, expectedFramesOf(tileName(t)))) : []))
+const incompleteKeys = computed(() => new Set(incompleteTiles.value.map((t) => t.key)))
+const incompleteFiles = computed(() => incompleteTiles.value.flatMap((t) => t.frames))
+const incompleteSet = computed(() => new Set(incompleteFiles.value))
+const displayFiles = computed(() => (incompleteSet.value.size ? (groupView.showTemp ? props.files : realFiles.value).filter((f) => !incompleteSet.value.has(f)) : groupView.showTemp ? props.files : realFiles.value))
 const tempCount = computed(() => tempFiles.value.length)
 const shownCount = computed(() => displayFiles.value.length)
 const totalShown = computed(() => Math.max(shownCount.value, (props.totalFiles || 0) - (groupView.showTemp ? 0 : tempCount.value)))
@@ -160,7 +180,7 @@ const frameFailed = (t, f) => (failedOf(srcOf(t)).has(jpgName(f.filename)) ? fai
 const stemOf = (t) => (t.frames[0]?.filename || '').replace(/\.\d+\.dpx$/i, '')
 function loadFrames(t) { startJob({ podId: props.podId, items: [{ src_dir: srcOf(t), frames: t.frames.length, stem: stemOf(t) }], skipExisting: true }) }
 const isSeq = (t) => t.kind === 'dpx' && t.frames.length > 1
-const tiles = computed(() => { const ts = groupTiles(galleryTiles(realFiles.value)); const tg = groupView.showTemp ? tempGroup(tempFiles.value) : null; return tg ? [...ts, tg] : ts })
+const tiles = computed(() => { const ts = groupTiles(galleryTiles(realFiles.value).filter((t) => !(t.kind === 'dpx' && incompleteKeys.value.has(t.key)))); const tg = groupView.showTemp ? tempGroup(tempFiles.value) : null; return tg ? [...ts, tg] : ts })
 // Every sequence row (collapsed or not) shows the frames that have a preview beside its first frame: the pod's JPEGs are listed in ONE batched call for all the sequences of this list (and for
 // every gallery asking at the same moment, utils/framejob.js queueListing), the cache is read locally; nothing is fetched or generated here.
 watchEffect(() => {
