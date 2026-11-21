@@ -157,7 +157,11 @@ The first two plans of this day were pull-only (`imp-mwp4ub0g-0`, `imp-mwp4ub1o-
 
 **Also done today (details in the report):** colour pipeline fixed (Gamma 2.6 P3-D65 by default, OCIO record read), the 17 reviews re-rendered with that colour, four failed uploads re-sent, DPX backfill 8 of 24 clips, app releases v1.6.6 to v1.7.0.
 
-**Not done:** the DPX header and timecode patch (headers still say linear; no timecode in the header), the real round `tunnel-v11-edl-2026-11-18`, the Rec.709 convert-or-tag decision, stopping the pod.
+**Status of that list (updated 2026-11-21; the list above it was written on 2026-11-20):**
+- **DPX header and timecode patch: done.** `dpx_fix` makes corrected copies (colour code user-defined, timecode from the EDL, frame rate, gamma 2.6, frame position); every header is read back on the pod after writing. For the 17 elements in the real round the first-frame headers were also read back from the bucket (transfer and colorimetric 0, 23.976, gamma 2.60, timecodes as the EDL gives them). For the 11 `base_v008` elements the patch is done on the pod and checked there; their headers have not been read back from the bucket yet.
+- **The real round `tunnel-v11-edl-2026-11-18`: done for the 17** (1,770 files, 84.88 GB). The `base_v008` elements stay in a `_TEST_` round until Lucas says otherwise.
+- **Rec.709 convert-or-tag: still open, parked** (Lucas: Rec.709 later, as its own generation step).
+- **Stopping the pods: done.** Pods are stopped, not deleted; old stopped pods whose logs are saved were deleted on 2026-11-21 at Lucas's instruction.
 
 ## 9. Delivery of what we have (decided 2026-11-20: "deliver what we can and have first")
 
