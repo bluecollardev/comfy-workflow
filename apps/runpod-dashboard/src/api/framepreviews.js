@@ -8,5 +8,6 @@ export const framePreviewsAPI = {
   start: (o) => call('start', o),
   status: (o) => call('status', o),
   cancel: (o) => call('cancel', o),
+  relaunch: (o) => call('relaunch', o),
   list: (o) => call('list', o),
 }

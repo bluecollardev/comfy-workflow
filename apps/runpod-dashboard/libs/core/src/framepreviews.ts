@@ -27,11 +27,18 @@ export interface Job {
   id: string; pod_id: string; items: Item[]; tone: string; skip_existing: boolean; state: 'running' | 'done' | 'failed' | 'cancelled'; started_at: string; finished_at?: string
   /** frames written, skipped (already had a JPEG) and failed so far; `total` is the known frame count */
   done: number; skipped: number; failed: Failure[]; total: number; current: string; error?: string
+  /** the sequence folders the script finished without an error (a folder that ended early is NOT here: a relaunch runs it again, skipping the frames that have a JPEG) */
+  done_dirs: string[]
+  /** the job this one is the relaunch of */
+  relaunch_of?: string
 }
+export interface PodInfo { id: string; name: string; running: boolean; volume: string | null }
 export interface Deps {
   target(podId: string): Promise<{ host: string; port: number } | { reason: string }>
   ssh: podpull.SshRunner
   outputDir(podId: string): string
+  /** every pod of the account with whether it runs and which network volume it has (relaunch picks among them; it never starts one) */
+  pods(): Promise<PodInfo[]>
 }
 const cfgOf = (podId: string) => podconfigs.get(podId) ?? mounts.load()
 const defaults = (): Deps => ({
@@ -41,6 +48,7 @@ const defaults = (): Deps => ({
     try { return sync.sshTarget(raw) } catch { return { reason: 'The pod has no SSH' } }
   },
   ssh: podpull.runSsh,
+  pods: async () => (await rp.listPods()).map((p) => ({ id: p.id, name: p.name || p.id, running: (p.runtime?.uptimeInSeconds ?? 0) > 0 && (!p.desiredStatus || p.desiredStatus === 'RUNNING'), volume: p.networkVolumeId ?? null })),
   outputDir: (podId) => `${(mounts.folderRows(cfgOf(podId)).find((r) => r.key === 'comfy-shared')?.container || '/workspace/comfy-shared/').replace(/\/+$/, '')}/output`,
 })
 let deps: Deps = defaults()
@@ -122,11 +130,11 @@ sys.exit(0)
 
 const jobs = new Map<string, Job>(), ctrls = new Map<string, AbortController>(), stops = new Map<string, () => void>()
 let seq = 0
-const copy = (j: Job): Job => ({ ...j, items: j.items.map((i) => ({ ...i })), failed: [...j.failed] })
+const copy = (j: Job): Job => ({ ...j, items: j.items.map((i) => ({ ...i })), failed: [...j.failed], done_dirs: [...j.done_dirs] })
 const TERMINAL = ['done', 'failed', 'cancelled']
 
 /** Start a job: one or more sequence folders on a running pod. Returns at once with the job; progress through `status`. */
-export async function start(o: { pod_id?: string; items?: Partial<Item>[]; tone?: string; /** false: make every JPEG again (Skip Existing unticked) */ skip_existing?: boolean; onLine?: (l: string) => void }): Promise<Job> {
+export async function start(o: { pod_id?: string; items?: Partial<Item>[]; tone?: string; /** false: make every JPEG again (Skip Existing unticked) */ skip_existing?: boolean; /** the job this one runs again (relaunch) */ relaunch_of?: string; onLine?: (l: string) => void }): Promise<Job> {
   const podId = String(o.pod_id ?? '').trim(); if (!podId) throw bad('Give the pod (pod_id): the previews are made on a pod that has the volume')
   const items = (Array.isArray(o.items) ? o.items : []).map((i) => ({ src_dir: rel(i.src_dir), ...(Number.isFinite(i.frames) ? { frames: Number(i.frames) } : {}) }))
   if (!items.length) throw bad('Give at least one sequence in items ({ src_dir, frames? })')
@@ -134,7 +142,7 @@ export async function start(o: { pod_id?: string; items?: Partial<Item>[]; tone?
   const t = await deps.target(podId); if ('reason' in t) throw new CoreError(409, t.reason)
   const root = deps.outputDir(podId)
   const id = `framepreviews-${Date.now()}-${++seq}`
-  const job: Job = { id, pod_id: podId, items, tone, skip_existing: o.skip_existing !== false, state: 'running', started_at: new Date().toISOString(), done: 0, skipped: 0, failed: [], total: items.reduce((s, i) => s + (i.frames ?? 0), 0), current: '' }
+  const job: Job = { id, pod_id: podId, items, tone, skip_existing: o.skip_existing !== false, state: 'running', started_at: new Date().toISOString(), done: 0, skipped: 0, failed: [], total: items.reduce((s, i) => s + (i.frames ?? 0), 0), current: '', done_dirs: [], ...(o.relaunch_of ? { relaunch_of: o.relaunch_of } : {}) }
   jobs.set(id, job)
   const ac = new AbortController(); ctrls.set(id, ac)
   const who = history.currentOrigin(), origin: jobsregistry.Origin = who?.source === 'mcp' ? 'mcp' : 'window'
@@ -144,6 +152,7 @@ export async function start(o: { pod_id?: string; items?: Partial<Item>[]; tone?
       for (const it of items) {
         if (ac.signal.aborted) break
         job.current = it.src_dir
+        const errBefore = job.error
         const known = it.frames ?? 0
         let okSeen = 0, skSeen = 0
         const script = `set -e\npython3 - '${root}/${it.src_dir}' '${root}/${previewSubfolder(it.src_dir)}' '${tone}' '${o.skip_existing === false ? 0 : 1}' <<'PY'\n${PYTHON}\nPY\n`
@@ -156,6 +165,7 @@ export async function start(o: { pod_id?: string; items?: Partial<Item>[]; tone?
           else if (/^ERR /.test(l)) job.error = l.slice(4, 200)
         } })
         if (r.code !== 0 && !ac.signal.aborted && !job.error) job.error = `the script ended with code ${r.code} on ${it.src_dir}`
+        if (r.code === 0 && !ac.signal.aborted && job.error === errBefore) job.done_dirs.push(it.src_dir)   // finished cleanly: a relaunch leaves it out
       }
       job.state = ac.signal.aborted ? 'cancelled' : job.error && !job.done && !job.skipped ? 'failed' : 'done'
     } catch (e) { job.state = ac.signal.aborted ? 'cancelled' : 'failed'; job.error = (e as Error).message.slice(0, 200) }
@@ -177,6 +187,40 @@ export function cancel(o: { job_id?: string }): { ok: boolean; state?: string } 
   if (!j) return { ok: false }
   if (ac) ac.abort()
   return { ok: true, state: j.state }
+}
+
+export interface RelaunchAnswer {
+  ok: boolean
+  /** the new job */ job?: Job
+  /** every folder of the old job had finished: nothing to run */ nothing_to_do?: boolean
+  /** no pod of ours is running on the volume: the pods that are stopped (a person resumes one; relaunch never does) */ needs_pod?: { stopped: { id: string; name: string }[]; hint: string }
+}
+/**
+ * Run a job again (Lucas, 2026-11-21: "have a way to relaunch this"): the SAME folders minus the ones that finished, skip_existing always true (a frame that has a JPEG is never made again), tone as before.
+ * The pod: the explicit `pod_id` (must be running), else the old job's pod when it runs, else the first running pod that has the same network volume, never one in `exclude_pod_ids`.
+ * It NEVER resumes or creates a pod (that spends and stays a person's act): with none running it answers `needs_pod` and names the stopped ones. A job still running cannot be relaunched.
+ */
+export async function relaunch(o: { job_id?: string; pod_id?: string; exclude_pod_ids?: string[] }): Promise<RelaunchAnswer> {
+  const old = jobs.get(String(o.job_id ?? '')); if (!old) throw new CoreError(404, `No frame-previews job ${String(o.job_id ?? '')}: it is only known until the app restarts`)
+  if (old.state === 'running') throw new CoreError(409, 'That job is still running: cancel it first, or wait')
+  const done = new Set(old.done_dirs), items = old.items.filter((i) => !done.has(i.src_dir))
+  if (!items.length) return { ok: true, nothing_to_do: true }
+  const excl = new Set((o.exclude_pod_ids ?? []).map(String)), pods = await deps.pods(), volume = pods.find((p) => p.id === old.pod_id)?.volume ?? null
+  const fits = (p: PodInfo) => !excl.has(p.id) && (!volume || p.volume === volume)
+  let pick: PodInfo | undefined
+  const asked = String(o.pod_id ?? '').trim()
+  if (asked) {
+    const p = pods.find((x) => x.id === asked)
+    if (!p || excl.has(asked)) throw new CoreError(409, `Pod ${asked} is not available for this relaunch`)
+    if (!p.running) return { ok: false, needs_pod: { stopped: [{ id: p.id, name: p.name }], hint: `Pod ${p.name} is stopped: resume it (a person's act, it bills), then relaunch` } }
+    pick = p
+  } else pick = pods.find((p) => p.id === old.pod_id && p.running && fits(p)) ?? pods.find((p) => p.running && fits(p))
+  if (!pick) {
+    const stopped = pods.filter((p) => !p.running && fits(p)).map((p) => ({ id: p.id, name: p.name }))
+    return { ok: false, needs_pod: { stopped, hint: `No pod is running on this volume: resume one${stopped.length ? ` (${stopped.map((p) => p.name).join(', ')})` : ''}, it bills while it runs, then relaunch. Relaunch never resumes a pod itself` } }
+  }
+  const job = await start({ pod_id: pick.id, items, tone: old.tone, skip_existing: true, relaunch_of: old.id })
+  return { ok: true, job }
 }
 
 export interface Listing { [src_dir: string]: { count: number; names?: string[] } }

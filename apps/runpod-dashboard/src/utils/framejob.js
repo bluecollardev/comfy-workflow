@@ -6,7 +6,7 @@ import { viewUrl } from './outputs'
 // choice (Sequence Previews, today's first-frame thumbnails read to this PC; Frame Previews, the pod job), the one running job, and what the pod says exists.
 const KEY = 'pod-manager-preview-mode'
 const readMode = () => { try { return sessionStorage.getItem(KEY) === 'frame' ? 'frame' : 'sequence' } catch { return 'sequence' } }
-export const fpState = reactive({ mode: readMode(), job: null, /** src_dir -> { count, names: Set<string> | null } */ listing: {}, error: '', listed: 0 })
+export const fpState = reactive({ mode: readMode(), job: null, /** the core's answer when no pod runs for a relaunch: { stopped: [{ id, name }], hint } */ needsPod: null, /** src_dir -> { count, names: Set<string> | null } */ listing: {}, error: '', listed: 0 })
 export const setMode = (m) => { fpState.mode = m === 'frame' ? 'frame' : 'sequence'; try { sessionStorage.setItem(KEY, fpState.mode) } catch { /* the choice lasts as long as the page */ } }
 
 export const jpgName = (dpxName) => String(dpxName).replace(/\.dpx$/i, '') + '.jpg'
@@ -88,3 +88,25 @@ export async function stopJob() {
   if (timer) { clearTimeout(timer); timer = null }
   await refreshListing(j.pod_id, (j.items || []).map((i) => i.src_dir), true)
 }
+
+/** A job that stopped (failed, cancelled, or done with folders that did not finish or frames that failed) can be run again. */
+export const canRelaunch = () => {
+  const j = fpState.job; if (!j || j.state === 'running') return false
+  return j.state !== 'done' || (j.failed?.length || 0) > 0 || (j.items || []).some((i) => !(j.done_dirs || []).includes(i.src_dir))
+}
+/** Run the stopped job again: the same folders minus the finished ones, finished frames skipped, no pod is started (the core answers `needs_pod` and the window offers Resume Pod). */
+export async function relaunchJob() {
+  const j = fpState.job; if (!j || j.state === 'running') return null
+  fpState.error = ''; fpState.needsPod = null
+  try {
+    const r = await framePreviewsAPI.relaunch({ job_id: j.id })
+    if (r?.needs_pod) { fpState.needsPod = r.needs_pod; return null }
+    if (r?.nothing_to_do) { fpState.error = ''; await refreshListing(j.pod_id, (j.items || []).map((i) => i.src_dir), true); return null }
+    fpState.job = r.job
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(poll, pollMs())
+    return r.job
+  } catch (e) { fpState.error = message(e); return null }
+}
+/** Remove the finished or failed job from the window (the window's own record; the JPEGs on the pod stay). */
+export function removeJob() { const j = fpState.job; if (!j || j.state === 'running') return; fpState.job = null; fpState.needsPod = null; fpState.error = '' }

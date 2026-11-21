@@ -29,7 +29,7 @@
         <BButton v-if="e.dry_run_plan" variant="link" size="sm" class="p-0 text-nowrap" :aria-expanded="dryOpen.has(e.id)" data-testid="autopublish-dry-toggle" @click="toggleDry(e.id)">{{ dryOpen.has(e.id) ? '▾' : '▸' }} {{ $t('autopublish.dry.s3') }}</BButton>
 
         <BButton v-if="e.state === 'would_upload'" size="sm" variant="outline-primary" :disabled="!!realBlocked(e)" :title="realBlocked(e) || $t('autopublish.pane.publishRealTip')" data-testid="autopublish-deliver" @click="deliver(e)">{{ $t('autopublish.pane.publishReal') }}</BButton>
-        <BButton v-if="['waiting', 'capped', 'would_upload'].includes(e.state)" size="sm" variant="outline-warning" data-testid="autopublish-cancel" @click="cancel(e)">{{ $t('autopublish.pane.cancel') }}</BButton>
+        <BButton v-if="['waiting', 'capped', 'would_upload'].includes(e.state)" size="sm" variant="outline-warning" data-testid="autopublish-cancel" @click="cancel(e)">{{ $t(e.state === 'would_upload' ? 'autopublish.pane.remove' : 'autopublish.pane.cancel') }}</BButton>
 
  <BButton v-if="ap.hasHolds && ['waiting', 'capped'].includes(e.state)" size="sm" variant="outline-light" data-testid="autopublish-hold" @click="hold(e)">{{ $t('autopublish.pane.hold') }}</BButton>
 

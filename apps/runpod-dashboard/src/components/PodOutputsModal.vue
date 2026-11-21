@@ -131,9 +131,16 @@
         <div v-if="fpState.mode === 'frame' && jobRunning()" class="mb-2"><BProgress :value="jobDone()" :max="Math.max(1, fpState.job.total || 1)" animated striped height="0.6rem" :data-percent="Math.round((jobDone() / Math.max(1, fpState.job.total || 1)) * 100)" data-testid="pod-outputs-frames-progress" /></div>
         <div v-if="fpState.mode === 'frame' && fpState.error" class="small text-warning mb-2" data-testid="pod-outputs-frames-error">{{ fpState.error }}</div>
         <div v-if="fpState.mode === 'sequence' && batchRunning" class="mb-2"><BProgress :value="batchDone" :max="Math.max(1, batchTotal)" animated striped height="0.6rem" :data-percent="Math.round((batchDone / Math.max(1, batchTotal)) * 100)" data-testid="pod-outputs-previews-progress" /></div>
+        <div v-if="fpState.mode === 'frame' && fpState.needsPod" class="small text-warning mt-2" data-testid="pod-outputs-frames-needs-pod">
+          <div class="fw-semibold">{{ $t('outputs.frames.needsPod') }}</div>
+          <div v-if="!fpState.needsPod.stopped.length">{{ $t('outputs.frames.needsPodNone') }}</div>
+          <div v-for="p in fpState.needsPod.stopped" :key="p.id" class="d-flex align-items-center gap-2 mt-1" data-testid="pod-outputs-needs-pod-row"><span>{{ p.name }}</span><BButton variant="outline-warning" size="sm" data-testid="pod-outputs-resume-pod" @click="resumeForPreviews(p)">{{ $t('outputs.frames.resumePod') }}</BButton></div>
+        </div>
         <div v-if="fpState.mode === 'frame'" class="d-flex gap-2 align-items-center" data-testid="pod-outputs-frame-actions">
           <BButton variant="primary" size="sm" :disabled="!podRunning || jobRunning() || !frameCountsFinal || frameTodo === 0" :title="podRunning ? '' : $t('outputs.frames.podOff')" data-testid="pod-outputs-load-frame-previews" @click="generateFrames"><BSpinner v-if="jobRunning()" small class="me-1" />{{ jobRunning() ? $t('outputs.frames.generating', { done: jobDone().toLocaleString(), total: (fpState.job.total || 0).toLocaleString() }) : $t(skipExisting ? 'outputs.frames.loadAll' : 'outputs.frames.regenerateAll', { n: frameTodo.toLocaleString() }) }}</BButton>
           <BButton v-if="jobRunning()" variant="outline-warning" size="sm" data-testid="pod-outputs-stop-frame-previews" @click="stopJob()"><i class="fa-solid fa-stop me-1"></i>{{ $t('outputs.dpx.stopGenerate') }}</BButton>
+          <BButton v-if="canRelaunch()" variant="outline-primary" size="sm" :title="$t('outputs.frames.relaunchTitle')" data-testid="pod-outputs-relaunch-frame-previews" @click="relaunchJob()"><i class="fa-solid fa-rotate-right me-1"></i>{{ $t('outputs.frames.relaunch') }}</BButton>
+          <BButton v-if="fpState.job && !jobRunning()" variant="outline-secondary" size="sm" :title="$t('outputs.frames.removeTitle')" data-testid="pod-outputs-remove-frame-job" @click="removeJob()">{{ $t('outputs.frames.remove') }}</BButton>
           <span v-if="frameFailedCount" class="small text-warning" data-testid="pod-outputs-frames-failed">{{ $t('outputs.frames.failedFrames', { n: frameFailedCount.toLocaleString() }) }}</span>
         </div>
         <div v-else class="d-flex gap-2 align-items-center">
@@ -157,7 +164,8 @@
 import { computed, onBeforeUnmount, onMounted, provide, reactive, ref, shallowRef, watch, watchEffect } from 'vue'
 import { mergeChunkRuns, frameUnions } from '../utils/chunkruns'
 import OutputsGallery from './OutputsGallery.vue'
-import { fpState, setMode, startJob, stopJob, refreshListing, jobRunning, jobDone } from '../utils/framejob'
+import { fpState, setMode, startJob, stopJob, refreshListing, jobRunning, jobDone, canRelaunch, relaunchJob, removeJob } from '../utils/framejob'
+import { usePodsStore } from '../stores/pods'
 import RenderSequences from './RenderSequences.vue'
 import PublishModal from './PublishModal.vue'
 import DeliveryPrepare from './DeliveryPrepare.vue'
@@ -187,7 +195,7 @@ const folderOf = (p) => p.split('/').slice(0, -1).join('/')
 const props = defineProps({ pod: { type: Object, required: true }, runs: { type: Array, default: () => [] }, base: { type: String, default: '' }, volumeName: { type: String, default: '' }, volumeId: { type: String, default: '' } })
 const emit = defineEmits(['close', 'refresh'])
 const deliveryOpen = ref(false)
-const ui = useUiStore(), mountsStore = useMountsStore()
+const ui = useUiStore(), mountsStore = useMountsStore(), podsStore = usePodsStore()
 const canZip = !!core?.files?.downloadZip, zipping = ref(false)
 // The pod's Shot (the card's field) narrows the list to that shot's runs; "All Shots", or no shot, shows every run. A checkbox turns it off.
 const shot = computed(() => (props.pod.shot && props.pod.shot !== 'All Shots' ? props.pod.shot : ''))
@@ -388,6 +396,8 @@ watch([() => fpState.mode, frameSeqs, podRunning, () => previewsOpen.value], asy
   frameListing.value = true
   try { await refreshListing(props.pod.id, frameSeqs.value.map((q) => q.src_dir), false) } finally { frameListing.value = false }
 }, { immediate: true })
+/** Resume Pod: the existing resume (it bills), after a confirm; then Relaunch is clicked by the person. Relaunch itself never resumes a pod. */
+async function resumeForPreviews(p) { if (!window.confirm(t('outputs.frames.resumeConfirm', { name: p.name }))) return; const r = await podsStore.resume(p.id); if (r?.ok) fpState.needsPod = null }
 function generateFrames() { startJob({ podId: props.pod.id, items: frameSeqs.value.map((q) => ({ src_dir: q.src_dir, frames: q.frames, stem: q.stem })), skipExisting: skipExisting.value }) }
 async function clearPreviews() { try { await sharedThumbs().clear(); previewsStore.clearResults(); probeGen++; for (const k of Object.keys(probeMap)) delete probeMap[k]; previewBus.resetTick++; probe(previewItems.value) } finally { cachedCount.value = 0 } }
 const volumeId_ = computed(() => props.volumeId)
