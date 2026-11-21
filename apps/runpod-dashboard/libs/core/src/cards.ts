@@ -68,3 +68,25 @@ export function classify(e: Evidence): { kind: FailureKind; why: string } {
   if (TRANSIENT_TEXT.test(msg)) return { kind: 'transient', why: 'the pod or the network did not answer' }
   return { kind: 'graph', why: 'not a pod problem' }
 }
+
+// ----- RAM, not VRAM (ADR-056 section 2.4) -----
+/**
+ * Container RAM comes with the GPU count and the host, not the VRAM: 1x RTX PRO 4500 = 57.7 GiB, 2x = 116.4, 4x = 232.8; 1x RTX PRO 6000 = 87.5; 1x RTX PRO 6000 WK = 262.6 (observed, EU-RO-1, 2026-11-21).
+ * Per GPU. A card not listed is not chosen by the RAM escalation.
+ */
+export const RAM_GIB_PER_GPU: Record<string, number> = { rtxpro4500: 58, rtxpro6000: 87.5, rtxpro6000wk: 262.6 }
+export const GPU_COUNTS = [1, 2, 4]
+export interface RamStep { kind: 'chunk' | 'gpus' | 'card'; chunk?: number; card?: string; gpuCount?: number; why: string }
+/**
+ * The next step after a chunk that did not fit its pod (the guard tripped at its smallest, or the container was killed), in ADR-056's order:
+ * a smaller chunk while it is above twice `minChunk`, then more GPUs of the same card (1 -> 2 -> 4: the extra GPUs idle, the pod pays for the RAM), then a card with more RAM per GPU.
+ * Null when nothing is left (the task fails with its error). Never B200, B300 or the H200s.
+ */
+export function escalateRam(cur: { card: string; gpuCount: number; chunk: number }, minChunk = 5): RamStep | null {
+  const key = knownKey(cur.card) ?? cur.card
+  if (cur.chunk > minChunk * 2) { const chunk = Math.max(minChunk, Math.floor(cur.chunk / 2)); return { kind: 'chunk', chunk, why: `chunks of ${cur.chunk} frames did not fit: ${chunk}` } }
+  const more = GPU_COUNTS.find((n) => n > cur.gpuCount)
+  if (more && key in RAM_GIB_PER_GPU) return { kind: 'gpus', card: key, gpuCount: more, why: `${cur.chunk}-frame chunks still did not fit ${cur.gpuCount}x ${nameOf(key)}: ${more} GPUs of the same card (RAM comes with the GPU count)` }
+  const next = Object.keys(RAM_GIB_PER_GPU).filter((c) => !EXCLUDED.has(c) && RAM_GIB_PER_GPU[c] > (RAM_GIB_PER_GPU[key] ?? 0)).sort((a, b) => RAM_GIB_PER_GPU[a] - RAM_GIB_PER_GPU[b])[0]
+  return next ? { kind: 'card', card: next, gpuCount: 1, why: `${cur.gpuCount}x ${nameOf(key)} is out of GPU steps: ${nameOf(next)}, which has more RAM per GPU` } : null
+}
