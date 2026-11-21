@@ -1106,7 +1106,7 @@ async function finishReturn(job: Job, g: Group, a: Awaited<ReturnType<typeof s3A
         const there = await readText(a, k, signal).catch(() => null)
         if (there != null) { let ours = false; try { ours = typeof (JSON.parse(there) as { schema_version?: unknown }).schema_version !== 'undefined' } catch { /* not JSON: not ours */ } if (!ours) continue }
       }
-      await putText(a, k, `${JSON.stringify({ schema_version: merged.schema_version, round: merged.round, returned_by: merged.returned_by, returned_at: merged.returned_at, pod: merged.pod, item: it }, null, 2)}\n`, signal)
+      await putText(a, k, `${JSON.stringify({ schema_version: merged.schema_version, round: merged.round, returned_by: merged.returned_by, returned_at: merged.returned_at, pod: merged.pod, item: it, issues: layout.issuesOf(it) }, null, 2)}\n`, signal)
     }
     await putText(a, manifestKey, `${JSON.stringify(merged, null, 2)}\n`, signal)
     await putText(a, csvKey, `${[head, ...kept, ...rows].join('\n')}\n`, signal)

@@ -123,6 +123,16 @@ export function buildItems(files: ManifestFile[], rootKey: string): ManifestItem
       measures: { kind: dpx.length ? 'FINAL delivery' : 'proxy', frames: dpx.length || main?.media?.frames || 0, notes: [...(renamed ? [`delivered as ${renamed.clip}; on disk ${renamed.stem}`] : []), ...new Set(g.files.flatMap((f) => [...(f.notes ?? []), ...(f.media?.notes ?? [])]))].join('; ') } }
   })
 }
+/** A problem a reader of one element's manifest should know about (ADR-055 section 10). Derived from what is in the item, never guessed: an empty list means none of these was found, not that the element was checked by a person. */
+export interface Issue { code: 'no-dpx' | 'no-review-video' | 'no-h264' | 'no-frames'; severity: 'warning' | 'info'; text: string }
+export function issuesOf(item: ManifestItem): Issue[] {
+  const has = (r: Role) => item.outputs.some((o) => o.role === r), out: Issue[] = [], dpx = has('dpx')
+  if (!dpx) out.push({ code: 'no-dpx', severity: 'warning', text: 'This element has no DPX frames in the delivery (a proxy only).' })
+  else if (!item.measures.frames) out.push({ code: 'no-frames', severity: 'warning', text: 'The DPX frame count is zero.' })
+  if (!has('review') && !has('proxy-h264')) out.push({ code: 'no-review-video', severity: dpx ? 'warning' : 'info', text: 'No review video (ProRes or H.264) was delivered with this element.' })
+  else if (!has('proxy-h264')) out.push({ code: 'no-h264', severity: 'info', text: 'A ProRes review video was delivered but no H.264 proxy.' })
+  return out
+}
 /** The manifest of this run merged into the one already in the round: the other shots' items stay, this run's shots are replaced. A manifest that cannot be read is a 409, never overwritten. */
 export function mergeManifest(existing: string | null, o: { round: string; returned_by: string; now: number; pod: Pod; items: ManifestItem[] }): Manifest {
   let old: Manifest | null = null
