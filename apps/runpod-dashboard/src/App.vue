@@ -116,6 +116,7 @@ import { useAutosyncStore } from './stores/autosync'
 import { queueAPI } from './api/queue'
 import { useVolumeJobsStore } from './stores/volumejobs'
 import { useRendersStore } from './stores/renders'
+import { useRunJobsStore } from './stores/runjobs'
 import { usePreviewsStore } from './stores/previews'
 import { useAutopublishStore } from './stores/autopublish'
 import { usePublishStore } from './stores/publish'
@@ -164,10 +165,10 @@ async function newInstallation() {
 
 /** How many queued or running tasks: the badge on the Queue button (ADR-038). Asked every 5 seconds; a failure is just no badge. */
 const queueCount = ref(0)
-const rendersStore = useRendersStore(), previewsStore = usePreviewsStore()
+const rendersStore = useRendersStore(), previewsStore = usePreviewsStore(), runJobsStore = useRunJobsStore()
 /** The badge: the queue's tasks and volume jobs, plus the running generations (render jobs, a running preview batch). */
 const autopublish = useAutopublishStore(), publishStore = usePublishStore()
-const badge = computed(() => queueBadge({ queueCount: queueCount.value, renderJobs: rendersStore.jobs, previewsRunning: previewsStore.running, publishJobs: publishStore.jobs, entries: autopublish.pending, generate: autopublish.status?.generate, scanning: !!autopublish.status?.watching?.volume?.scanning, autoLive: !!autopublish.status?.enabled && !autopublish.status?.dry_run }))
+const badge = computed(() => queueBadge({ queueCount: queueCount.value, renderJobs: rendersStore.jobs, runJobs: runJobsStore.jobs, previewsRunning: previewsStore.running, publishJobs: publishStore.jobs, entries: autopublish.pending, generate: autopublish.status?.generate, scanning: !!autopublish.status?.watching?.volume?.scanning, autoLive: !!autopublish.status?.enabled && !autopublish.status?.dry_run }))
 /** The tooltip lists the breakdown: '2 generations, 1 upload, 3 waiting'. */
 const badgeTitle = computed(() => badge.value.parts.map((p) => t(`app.badge.${p.key}${p.n === 1 ? 'One' : ''}`, { n: p.n })).join(', ') || (badge.value.scanning ? t('app.badge.scanning') : ''))
 /** ONE clear state, the same words everywhere: Auto-publish: LIVE / DRY RUN / OFF / PAUSED, with what it is doing in small text. */
@@ -193,6 +194,7 @@ onUnmounted(() => topObserver?.disconnect())
 onMounted(async () => {
   loadQueueCount(); queueTimer = setInterval(loadQueueCount, 5000)
   rendersStore.watch()   // the render jobs: the Queue's Generations and its badge
+  runJobsStore.watch()   // the render runs (graph generations) of the app and of other processes
   publishStore.watchAlways()    // Publishing jobs on the Queue and its badge (quiet on a core without it)
   autopublish.watch()    // Auto-publish: the header chip and the badge (quiet on a core without it)
   readOAuthResult()

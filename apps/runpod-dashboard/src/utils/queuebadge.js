@@ -8,7 +8,7 @@ import { publishActive } from './publish.js'
  * @param {{ queueCount?: number, renderJobs?: any[], previewsRunning?: boolean, publishJobs?: any[], entries?: any[], generate?: any, scanning?: boolean, autoLive?: boolean }} i
  * @returns {{ total: number, active: number, waiting: number, scanning: boolean, show: boolean, dot: boolean, pulse: boolean, tone: 'none'|'warning'|'success', text: string, parts: { key: string, n: number }[] }}
  */
-export function queueBadge({ queueCount = 0, renderJobs = [], previewsRunning = false, publishJobs = [], entries = [], generate = null, scanning = false, autoLive = false } = {}) {
+export function queueBadge({ queueCount = 0, renderJobs = [], runJobs = [], previewsRunning = false, publishJobs = [], entries = [], generate = null, scanning = false, autoLive = false } = {}) {
   const gens = (Array.isArray(renderJobs) ? renderJobs : []).filter(isActive)
   const autoGens = gens.filter((j) => j.trigger === 'auto-publish').length
   const pubs = (Array.isArray(publishJobs) ? publishJobs : []).filter((j) => j && !j.parent_id && j.kind !== 'scan' && publishActive(j))
@@ -19,7 +19,7 @@ export function queueBadge({ queueCount = 0, renderJobs = [], previewsRunning = 
   const settling = Array.isArray(generate?.waiting_to_settle) ? generate.waiting_to_settle.length : 0
   const parts = [
     { key: 'imports', n: Number(queueCount) || 0 },
-    { key: 'generations', n: gens.length },
+    { key: 'generations', n: gens.length + (Array.isArray(runJobs) ? runJobs : []).filter((j) => j?.state === 'running').length },   // a render run (graph generation) is a generation too
     { key: 'previews', n: previewsRunning ? 1 : 0 },
     { key: 'uploads', n: pubs.length + Math.max(0, uploadingEntries - autoPubs) },   // an upload entry is its publish job: counted once
     { key: 'autogen', n: Math.max(0, generating - autoGens) },   // the render itself is a Generations job: counted once
