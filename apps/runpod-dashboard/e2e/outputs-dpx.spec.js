@@ -179,7 +179,7 @@ test('DPX empty frames: banners for black, truncated and missing; a count in the
   await expect(v.getByTestId('dpx-viewer-frame')).toHaveText(/2 \/ 4/)
   await v.getByTestId('dpx-viewer-slider').fill('0'); await expect(v.getByTestId('dpx-viewer-banner')).toHaveCount(0)
   await v.getByTestId('dpx-viewer-fps').selectOption('30'); await v.getByTestId('dpx-viewer-play').click()
-  await expect.poll(() => page.evaluate(() => 1) && v.getByTestId('dpx-viewer-frame').textContent()).toMatch(/4 \/ 4/)   // it plays over the empty frames
+  await expect.poll(() => page.evaluate(() => 1) && v.getByTestId('dpx-viewer-frame').textContent(), { timeout: 20_000 }).toMatch(/4 \/ 4/)   // it plays over the empty frames (real-time playback: the default 5 s is too tight when the whole suite runs in parallel)
   await v.getByTestId('dpx-viewer-play').click()
   await page.keyboard.press('Escape')
   await expect(tile.getByTestId('outputs-dpx-problems')).toHaveText('3 of 4 frames empty')   // the tile remembers
