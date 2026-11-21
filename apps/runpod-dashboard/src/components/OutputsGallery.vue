@@ -15,11 +15,11 @@
       <BButton v-if="seqCount || groupCount" variant="outline-light" size="sm" data-testid="outputs-expand-all" @click="setAll('expanded')"><i class="fa-solid fa-expand me-1"></i>{{ $t('outputs.dpx.expandAll') }}</BButton>
     </div>
     <div v-if="files.length" class="gallery">
-      <div v-for="t in tiles" :key="t.key" class="cell" :class="{ wide: (t.kind === 'dpx' && isExpanded(t)) || (isGroup(t) && groupExpanded(t)) }" data-testid="outputs-cell">
+      <div v-for="t in tiles" :key="t.key" class="cell" :class="{ wide: (t.kind === 'dpx' && t.frames.length > 1) || isGroup(t) }" data-testid="outputs-cell">
       <div v-if="isGroup(t)" class="group" data-testid="outputs-group" :data-kind="t.kind" :data-cat="t.cat || 'temp'" :data-count="t.count" :data-expanded="groupExpanded(t) ? 'true' : 'false'">
         <div class="head" data-testid="outputs-group-head">
           <i class="fa-solid" :class="groupIcon(t)"></i>
-          <span class="headname text-truncate" :title="groupLabel(t)" data-testid="outputs-group-label">{{ groupLabel(t) }}</span>
+          <span class="headname" :title="groupLabel(t)" data-testid="outputs-group-label">{{ groupLabel(t) }}</span>
           <BButton variant="outline-light" size="sm" class="headbtn" :aria-expanded="groupExpanded(t) ? 'true' : 'false'" data-testid="outputs-group-toggle" @click="toggleGroup(t)"><i class="fa-solid me-1" :class="groupOpen(t) ? 'fa-chevron-up' : 'fa-chevron-down'"></i>{{ groupOpen(t) ? $t('outputs.dpx.collapse') : $t('outputs.dpx.expand') }}</BButton>
         </div>
         <div v-if="!groupExpanded(t)" class="tile grouptile" data-testid="outputs-group-preview" @click="toggleGroup(t)">
@@ -48,7 +48,7 @@
       <template v-else>
       <div v-if="t.kind === 'dpx' && t.frames.length > 1" class="head" data-testid="outputs-seq-head">
         <i class="fa-solid fa-film"></i>
-        <span class="headname text-truncate" :title="t.name || t.file.filename" data-testid="outputs-seq-name">{{ shortName(t.name || t.file.filename) }}</span>
+        <span class="headname" :title="t.name || t.file.filename" data-testid="outputs-seq-name">{{ shortName(t.name || t.file.filename) }}</span>
         <span class="badge text-bg-secondary headcount" data-testid="outputs-seq-headcount">{{ t.frames.length }}</span>
         <BButton variant="outline-light" size="sm" class="headbtn" :aria-expanded="isExpanded(t) ? 'true' : 'false'" data-testid="outputs-seq-toggle" @click="toggleSeq(t)"><i class="fa-solid me-1" :class="isExpanded(t) ? 'fa-chevron-up' : 'fa-chevron-down'"></i>{{ isExpanded(t) ? $t('outputs.dpx.collapse') : $t('outputs.dpx.expand') }}</BButton>
       </div>
@@ -169,9 +169,9 @@ watch(() => props.files, () => { current.value = null; dpx.value = null; problem
 .cell .tile { width: 100%; }
 .cell.wide .tile { max-width: 9.5rem; }
 .head { display: flex; align-items: center; gap: 0.4rem; min-width: 0; padding: 0.15rem 0.1rem; font-size: 0.78rem; }
-.headname { flex: 1 1 auto; min-width: 0; font-weight: 600; }
+.headname { flex: 1 1 auto; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
 .headcount { font-weight: 400; }
-.headbtn { flex: 0 0 auto; }
+.headbtn { flex: 0 0 auto; margin-left: auto; }
 .cap { overflow-wrap: anywhere; }
 .group { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
 .grouptile { width: 100%; }
