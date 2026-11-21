@@ -110,6 +110,7 @@ test.describe('the Sync window', () => {
   test('the per-folder saved patterns are not re-sent: exclude carries only this run\'s own', async ({ page }) => {
     const d = await openSync(page)
     await d.getByTestId('sync-exclude-add').fill('old/'); await d.getByTestId('sync-exclude-add').press('Enter')
+    await expect(d.getByTestId('sync-exclude-patterns')).toContainText('old/')   // the pattern is in the run before Start: under a loaded machine the click came first and the run went out with none
     await startBtn(d).click()
     await expect.poll(() => page.evaluate(() => window.__started)).toBeTruthy()
     expect(await page.evaluate(() => window.__started.exclude)).toEqual(['old/'])
