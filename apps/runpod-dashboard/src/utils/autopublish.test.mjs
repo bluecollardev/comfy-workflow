@@ -53,3 +53,22 @@ test('generate: defaults, the untouched object, and the rules (settle 1..120, mo
   assert.equal(settingsProblem({ ...base, generate: { ...GEN_DEFAULTS, where: 'pod' } }), '')   // off: nothing to check
   assert.equal(apFill({ generate: { enabled: true } }).generate.settle_minutes, 5); assert.equal('generate' in apFill({}), false)
 })
+
+// View In Outputs on an Auto-publish row (outputsTarget): enabled only when the review has files, a folder can be named and a pod is on the volume.
+import { outputsTarget, reviewFolder } from './autopublish.js'
+const PODS = [{ id: 'p-stopped', status: 'stopped', volume_id: 'v1' }, { id: 'p-run', status: 'running', volume_id: 'v1' }, { id: 'p-other', status: 'running', volume_id: 'v2' }]
+test('reviewFolder is deliver/<shot>/<vNNN> from a number or a folder name', () => { assert.equal(reviewFolder('archival-087', 2), 'deliver/archival-087/v002'); assert.equal(reviewFolder('archival-087', 'v002'), 'deliver/archival-087/v002') })
+test('outputsTarget: files and a pod on the volume give the folder and the running pod first; zero files or a failed row with none is "nothing"; no shot or version is "nofolder"; no pod on the volume is "nopod"', () => {
+  assert.deepEqual(outputsTarget({ shot: 'archival-087', version: 2, files: 3 }, { pods: PODS, volumeId: 'v1' }), { ok: true, pod_id: 'p-run', folder: 'deliver/archival-087/v002' })
+  assert.deepEqual(outputsTarget({ shot: 'archival-087', version: 2, files: 0 }, { pods: PODS, volumeId: 'v1' }), { ok: false, reason: 'nothing' })
+  assert.deepEqual(outputsTarget({ shot: 'x', version: 1, state: 'failed' }, { pods: PODS, volumeId: 'v1' }), { ok: false, reason: 'nothing' })
+  assert.deepEqual(outputsTarget({ shot: '', version: 2, files: 3 }, { pods: PODS, volumeId: 'v1' }), { ok: false, reason: 'nofolder' })
+  assert.deepEqual(outputsTarget({ shot: 'x', files: 3 }, { pods: PODS, volumeId: 'v1' }), { ok: false, reason: 'nofolder' })
+  assert.deepEqual(outputsTarget({ shot: 'x', version: 1, files: 3 }, { pods: PODS, volumeId: 'v9' }), { ok: false, reason: 'nopod' })
+  assert.equal(outputsTarget({ shot: 'x', version: 1, files: 3 }, { pods: [{ id: 'a', status: 'stopped', volume_id: 'v1' }], volumeId: 'v1' }).pod_id, 'a')   // a stopped pod is enough: the volume listing needs no running pod
+})
+test('outputsTarget: a held row has no file count of its own, so the review\'s file list decides', () => {
+  assert.equal(outputsTarget({ shot: 'x', version: 1 }, { review: { files: [{ name: 'a.mov' }] }, pods: PODS, volumeId: 'v1' }).ok, true)
+  assert.equal(outputsTarget({ shot: 'x', version: 1 }, { review: { files: [] }, pods: PODS, volumeId: 'v1' }).reason, 'nothing')
+  assert.equal(outputsTarget({ shot: 'x', version: 1 }, { pods: PODS, volumeId: 'v1' }).reason, 'nothing')
+})
