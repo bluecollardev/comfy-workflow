@@ -269,6 +269,7 @@ describe('what Auto-publish is watching (status().watching)', () => {
     await live({ window_minutes: 10 }); await autopublish.consider(); w = await watch(); expect(w).toMatchObject({ approved: 1, queued: 1, eligible: 0, summary: '1 approved, 1 waiting for their window' })
     await autopublish.setSettings({ window_minutes: 0 }); t += 11 * MIN; await autopublish.tick(); await autopublish.settled(); w = await watch(); expect(w).toMatchObject({ approved: 1, queued: 0, uploaded_today: 1, summary: 'All 1 approved review is already published' })
     expect(w.skipped.map((x) => [x.version, x.reason])).toContainEqual(['v001', 'already published'])
+    expect(w.uploaded).toEqual([{ shot: 'archival-085', version: 'v001', at: expect.any(String) }])   // what was sent today, for the Queue's list (additive)
   })
   it('the reasons a review is not going out: no sidecar, DELIVERY.md, partial, colour refused, a weight, not a review video, already at the destination; at most 50', async () => {
     review('a-001', 'v001', { noSidecar: true }); review('a-002', 'v001', { partial: true }); review('a-003', 'v001', { colour: 'refused' }); review('a-004', 'v001', { noDelivery: true }); review('a-005', 'v001', { weights: true })

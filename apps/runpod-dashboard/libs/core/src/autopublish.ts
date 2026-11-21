@@ -36,7 +36,7 @@ export interface Approval { shot: string; version: string; approved_by: string; 
 export interface Standing { approved_by: string; at: string }
 type Stored = mounts.AutoPublishConfig
 export type Targets = mounts.AutoPublishTargets
-interface StateFile { /** the last dry-run Slack summary: the set it described and when */ dryslack?: { sig: string; at: number }; uploaded?: Record<string, { at: string; job_id?: string; manual?: boolean }>; day?: string; count?: number; cancelled?: string[]; /** shot/version keys a person holds back: never auto-published until released */ held?: string[]; inflight?: Record<string, string>; would?: Record<string, string> }
+interface StateFile { /** the last dry-run Slack summary: the set it described and when */ dryslack?: { sig: string; at: number }; uploaded?: Record<string, { at: string; job_id?: string; manual?: boolean; already?: boolean }>; day?: string; count?: number; cancelled?: string[]; /** shot/version keys a person holds back: never auto-published until released */ held?: string[]; inflight?: Record<string, string>; would?: Record<string, string> }
 export interface TargetState { ready: boolean; problem?: string; label: string }
 export interface Settings { /** Auto-generate: render the new finished sequences too (off by default) */ generate: mounts.AutoGenerateConfig; /** where Auto-publish looks (this PC and/or the volume) and how often the volume is listed */ sources: { local: boolean; volume: boolean }; volume_scan_minutes: number; /** the round a shot is published into (`{date}` = the local day) */ round: string; include_dpx: boolean; /** each review version needs a person's approval (true), or every eligible review goes under the standing approval (false, the default) */ require_approval: boolean; enabled: boolean; dry_run: boolean; dry_run_first: boolean; window_minutes: number; daily_cap: number | null; targets: Targets; target_state: { s3: TargetState; slack: TargetState; tunnel: TargetState }; standing: Standing | null; destination: string; ready: boolean; problem?: string }
 
@@ -534,7 +534,7 @@ async function markUploaded(e: Entry, job_id: string | undefined, counted: boole
 }
 
 // ----- status and the person's actions -----
-export interface Watching { local: { enabled: boolean; root: string | null; root_exists: boolean; reviews: number }; volume: { enabled: boolean; id: string; reviews: number; scanned_at: string | null; scanning: boolean; error?: string }; /** this PC's folder (kept from the first version of this field) and the totals over the places watched */ root: string | null; root_exists: boolean; shots: number; reviews: number; approved: number; eligible: number; queued: number; uploaded_today: number; skipped: { shot: string; version: string; reason: string }[]; summary: string }
+export interface Watching { local: { enabled: boolean; root: string | null; root_exists: boolean; reviews: number }; volume: { enabled: boolean; id: string; reviews: number; scanned_at: string | null; scanning: boolean; error?: string }; /** this PC's folder (kept from the first version of this field) and the totals over the places watched */ root: string | null; root_exists: boolean; shots: number; reviews: number; approved: number; eligible: number; queued: number; uploaded_today: number; /** what was uploaded today: the review, when, and whether a person pressed Publish now (additive) */ uploaded?: { shot: string; version: string; at: string; manual?: boolean; already?: boolean }[]; skipped: { shot: string; version: string; reason: string }[]; summary: string }
 export function status(): { generate: autogenerate.GenerateStatus; watching: Watching; enabled: boolean; dry_run: boolean; dry_run_first: boolean; standing: Standing | null; window_minutes: number; daily_cap: number | null; targets: Targets; today: { count: number; left: number | null }; destination: string; pending: ReturnType<typeof view>[]; recent: ReturnType<typeof view>[] } {
   void ensureLoaded()
   const m = memo
@@ -557,7 +557,8 @@ async function computeWatching(): Promise<Watching> {
   const hasDeliver = !!root && (await exists(join(root, 'deliver')))
   const st = await stateOf(), ap = await approvalList(), found = await allReviews(), pend = new Set([...entries.values()].map((e) => e.key))
   w.local.reviews = found.filter((f) => f.source === 'local').length; w.volume.reviews = cfg.sources.volume ? vol.reviews.length : 0
-  w.uploaded_today = st.day === localDay(deps.now()) ? st.count ?? 0 : 0; w.shots = new Set(found.map((f) => f.shot)).size; w.reviews = found.length
+  w.uploaded_today = st.day === localDay(deps.now()) ? st.count ?? 0 : 0
+  w.uploaded = Object.entries(st.uploaded ?? {}).filter(([, u]) => u.at && localDay(Date.parse(u.at)) === localDay(deps.now())).map(([k, u]) => { const i = k.lastIndexOf('/'); return { shot: k.slice(0, i), version: k.slice(i + 1), at: u.at, ...(u.manual ? { manual: true } : {}), ...(u.already ? { already: true } : {}) } }).sort((a, b) => a.at.localeCompare(b.at)).slice(-200); w.shots = new Set(found.map((f) => f.shot)).size; w.reviews = found.length
   let published = 0
   for (const f of found) {
     const key = keyOf(f.shot, f.version), approved = !cfg.require_approval ? f.complete : ap.some((a) => a.shot === f.shot && a.version === f.version), uploaded = !!st.uploaded?.[key]

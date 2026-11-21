@@ -37,6 +37,23 @@ beforeEach(async () => {
 })
 afterEach(() => { autopublish.reset(); publish.reset(); for (const k of settingsEnv.PUBLISH_SECRETS) delete process.env[k] })
 
+describe('the status lists (additive: running, generated; watching.uploaded)', () => {
+  it('lists what is rendering and every render started today with where it stands, resets with the day, and survives the state file', async () => {
+    await gen({ settle_minutes: 1 }); t += MIN; frames('proxy_v004/new', 'ARCHIVAL-085_MAIN', 5, t); frames('proxy_v004/new2', 'ARCHIVAL-086_MAIN', 4, t)
+    expect(await pass()).toBe(0); t += 2 * MIN; expect(await pass()).toBe(2)
+    let st = await status()
+    expect(st.running?.map((r) => r.stem).sort()).toEqual(['ARCHIVAL-085_MAIN', 'ARCHIVAL-086_MAIN']); expect(st.running?.[0]).toMatchObject({ job_id: expect.stringMatching(/^render-/), started_at: new Date(t).toISOString() })
+    expect(st.generated?.map((g) => [g.stem, g.state]).sort()).toEqual([['ARCHIVAL-085_MAIN', 'rendering'], ['ARCHIVAL-086_MAIN', 'rendering']]); expect(st.generated_today).toBe(2)
+    jobState.set('render-0', { state: 'done' }); jobState.set('render-1', { state: 'failed', error: 'boom' }); await pass(); st = await status()
+    expect(st.running).toEqual([])
+    expect(new Set(st.generated!.map((g) => g.state))).toEqual(new Set(['done', 'retrying']))   // a failed render waits for its retry
+    autogenerate.reset(); autogenerate.setDeps({ now: clock, outputRoot: () => out, runningPod: async () => pod, volumeListing: async () => volRuns, start: async (req) => { reqs.push(req); const id = `render-${seq++}`; jobState.set(id, { state: 'rendering' }); return { job_id: id } }, status: (id) => jobState.get(id), cancel: (id) => { cancelled.push(id) } })   // a restart: the memory is gone, the fakes are put back
+    st = await status(); expect(st.generated).toEqual([])   // memory is gone ...
+    await autopublish.generatePass(); st = await status(); expect(st.generated?.length).toBe(2)   // ... the state file brings today's list back
+    t = Date.parse('2026-11-20T09:00:00'); await pass(); st = await status(); expect(st.generated).toEqual([]); expect(st.generated_today).toBe(0)   // a new day starts empty
+  })
+})
+
 describe('settings', () => {
   it('off by default; the settings are validated; a pod needs the approver\'s name; the baseline is recorded when it is switched on', async () => {
     expect((await autopublish.settings()).generate).toEqual({ enabled: false, where: 'local', preset: 'review', max_per_day: 20, settle_minutes: 5, fallback_local: false, colour_in: null }); expect(await pass()).toBe(0)

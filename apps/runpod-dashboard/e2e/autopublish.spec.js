@@ -137,7 +137,7 @@ test.describe('Settings > Publishing > Auto-publish', () => {
     await expect(d.getByTestId('config-unsaved')).toHaveCount(0)
     await d.getByTestId('autopublish-window').fill('20'); await d.getByTestId('autopublish-cap-on').check(); await d.getByTestId('autopublish-cap').fill('7')
     await expect(d.getByTestId('config-unsaved')).toBeVisible()
-    await d.getByTestId('autopublish-cap').fill('99'); await d.getByTestId('config-save').click()
+    await d.getByTestId('autopublish-cap').fill('101'); await d.getByTestId('config-save').click()
     await expect(d.getByTestId('autopublish-error')).toHaveText('The daily cap is a whole number from 1 to 100, or 0 for no limit.'); expect(api.state.mountPuts).toHaveLength(1)
     await d.getByTestId('autopublish-cap').fill('7'); await d.getByTestId('autopublish-window').fill('130'); await d.getByTestId('config-save').click()
     await expect(d.getByTestId('autopublish-error')).toHaveText('The cancel window is a whole number of minutes from 0 to 120.')
@@ -275,6 +275,7 @@ test.describe('the Queue: Auto-publish', () => {
     await expect(q.locator('[data-testid="autopublish-row"][data-id="ap-f"] [data-testid="autopublish-row-state"]')).toHaveText('failed: Access Denied')
     await expect(q.locator('[data-testid="autopublish-row"][data-id="ap-u"] [data-testid="autopublish-row-state"]')).toContainText('uploading')
     await expect(q.locator('[data-testid="autopublish-row"][data-id="ap-u"] [data-testid="autopublish-cancel"]')).toHaveCount(0)   // it is on its way
+    await q.getByTestId('autopublish-recent-toggle').click()   // Recent starts collapsed (its count is in the title)
     await expect(q.locator('[data-testid="autopublish-recent"][data-id="ap-d"] [data-testid="autopublish-recent-state"]')).toContainText('uploaded')
     await expect(q.locator('[data-testid="autopublish-recent"][data-id="ap-x"] [data-testid="autopublish-recent-state"]')).toHaveText('cancelled')
     await expect(q.getByTestId('autopublish-pane-mode')).toHaveText('dry run'); await expect(q.getByTestId('autopublish-pane-today')).toHaveText('Today: 0 of 5')

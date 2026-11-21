@@ -12,6 +12,8 @@ export const countdownText = (sec) => (sec == null ? '' : `${Math.floor(sec / 60
 export const entryLine = (e, size) => `${e.shot} ${versionTag(e.version)} · ${e.files} ${Number(e.files) === 1 ? 'file' : 'files'} · ${size(e.bytes || 0)}`
 /** The shot and version of a review folder under deliver/: `deliver/archival-085/v003` -> { shot, version: 3 }; null for anything else (a file, another folder, a proxy). */
 export function parseReviewPath(path) { const m = /^(?:output\/)?deliver\/([^/]+)\/v(\d+)\/?$/.exec(String(path || '')); return m ? { shot: m[1], version: Number(m[2]) } : null }
+/** The folder of an Auto-generate key `<dir>/<stem>`: the dir, relative to the volume's output/ folder; '' when the key has no folder. */
+export const folderOf = (key) => { const k = String(key || ''), i = k.lastIndexOf('/'); return i > 0 ? k.slice(0, i) : '' }
 /** The review folder of a row, relative to the volume's output/ folder (what the Outputs window's folder listing takes): `deliver/archival-085/v002` from shot 'archival-085' and version 2 or 'v002'. */
 export const reviewFolder = (shot, version) => `deliver/${shot}/${versionTag(version)}`
 /**
@@ -21,6 +23,12 @@ export const reviewFolder = (shot, version) => `deliver/${shot}/${versionTag(ver
  * whether Auto-publish found the review on the volume or on this PC (a PC copy is the synced volume folder). The window opens on a pod attached to the volume: a running one first, else any (the volume listing needs no running pod).
  */
 export function outputsTarget(row, { review = null, pods = [], volumeId = '' } = {}) {
+  if (row && typeof row.folder === 'string') {   // an Auto-generate row has a render's own folder, not a shot and version
+    if (!row.folder) return { ok: false, reason: 'nofolder' }
+    if (row.files === 0) return { ok: false, reason: 'nothing' }
+    const attached = (pods || []).filter((p) => p && p.id && (!volumeId || p.volume_id === volumeId)), host = attached.find((p) => p.status === 'running') || attached[0]
+    return host ? { ok: true, pod_id: host.id, folder: row.folder } : { ok: false, reason: 'nopod' }
+  }
   const shot = String(row?.shot || '').trim(), version = row?.version
   if (!shot || version === undefined || version === null || version === '') return { ok: false, reason: 'nofolder' }
   const files = row?.files != null ? Number(row.files) : Array.isArray(review?.files) ? review.files.length : 0
