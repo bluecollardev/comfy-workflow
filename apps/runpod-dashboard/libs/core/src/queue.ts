@@ -47,6 +47,8 @@ export interface Task {
   retry_at?: string; attempts?: number
   /** Out of memory (cards.ts): how many times this task moved to a bigger card (at most MAX_ESCALATIONS) and the cards that ran out, so none is asked again. */
   escalations?: number; tried_cards?: string[]
+  /** The pod this task ran on before a person retried it: the retry takes it again (restarted if stopped) when it has the card the task wants, instead of paying for a second pod. */
+  reuse_pod?: string
   /** Generate Outputs / Publish after this run finished (Import Round options): the render on this pod, then the publish. Absent: not asked for or not reached. */
   post?: PostStep
   started_at?: string; finished_at?: string; error?: string; /** for a failed task: the failure in structured words (stage, node, message, missing models, recovery, retryable, text) */ failure?: failures.Explained; detail?: string; held_reason?: string
@@ -607,7 +609,15 @@ async function begin(t: Task, imp: ImportRec, tasks: Task[]): Promise<boolean> {
   try {
     const busy = new Set(q().tasks.filter((x) => x.state === 'running' && x.pod_id).map((x) => x.pod_id))
     const pool = (await deps.volumePods()).filter((p) => !busy.has(p.id))
-    const pick = (t.gpus?.length || t.gpu) ? undefined : pool.find((p) => p.state === 'running') ?? pool.find((p) => p.state === 'starting') ?? pool.find((p) => p.state === 'off')
+    let pick = (t.gpus?.length || t.gpu) ? undefined : pool.find((p) => p.state === 'running') ?? pool.find((p) => p.state === 'starting') ?? pool.find((p) => p.state === 'off')
+    if (!pick && t.reuse_pod) {   // a retry: the pod this task had, when nobody else holds it and it is the card the task wants
+      const old = pool.find((p) => p.id === t.reuse_pod), want = t.gpus?.[0] ?? t.gpu, same = !!old && (!want || !old.gpu || cards.gbOf(old.gpu) === cards.gbOf(want) && cards.nameOf(old.gpu).startsWith(cards.nameOf(want).split(' (')[0]))
+      t.reuse_pod = undefined
+      if (old && same) {
+        if (old.state === 'off') { try { await deps.resumePod(old.id); imp.started_pods.push(old.id); ev(t, `restarted ${old.name} for the retry (the same pod, not a second one)`); pick = { ...old, state: 'running' } } catch (e) { ev(t, `could not restart ${old.name} (${(e as Error).message.slice(0, 120)}): a new pod instead`) } }
+        else pick = old
+      }
+    }
     let podId: string, podName: string
     if (pick) {
       podId = pick.id; podName = pick.name; if (pick.gpu) t.card = pick.gpu   // the card the reused pod really has
@@ -685,7 +695,8 @@ export function setImportLimits(id: string, o: { max_pods?: number | null; cost_
 export function retryTask(id: string): Task {
   const t = state().tasks.find((x) => x.id === id); if (!t) throw new CoreError(404, `No such task: ${id}`)
   if (live(t) && t.state !== 'held' && t.state !== 'interrupted') throw new CoreError(409, `Task ${id} is ${t.state}: nothing to retry.`)
-  Object.assign(t, { state: 'waiting', error: undefined, detail: undefined, held_reason: undefined, job_id: undefined, phase: undefined, pod_id: null, pod_name: null, finished_at: undefined })
+  const before = t.kind === 'run' && t.pod_id ? t.pod_id : undefined   // the retry asks for this pod first (begin), so a retry does not leave a second pod billing next to the first
+  Object.assign(t, { state: 'waiting', error: undefined, detail: undefined, held_reason: undefined, job_id: undefined, phase: undefined, pod_id: null, pod_name: null, finished_at: undefined, reuse_pod: before })
   // retrying a pull also puts back the runs that failed only because it did not finish
   if (t.kind === 'pull') for (const r of state().tasks) if (r.import_id === t.import_id && r.kind === 'run' && r.state === 'failed' && (!!r.error?.startsWith(NOT_STARTED) || r.error === 'Its pull did not finish.')) Object.assign(r, { state: 'waiting', error: undefined, finished_at: undefined, events: [...(r.events ?? []), { at: deps.now().toISOString(), text: 'its pull was retried: waiting for it again' }] })
   const imp = state().imports.find((i) => i.id === t.import_id)!; imp.state = 'active'

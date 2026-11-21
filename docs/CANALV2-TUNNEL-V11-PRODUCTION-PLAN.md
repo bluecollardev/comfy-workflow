@@ -361,3 +361,13 @@ Frames produced (DPX in `delivery_v008/<clip>/`) against the PDF count. 9 of 19 
 
 The Run column is the last state a pod's run reported for that graph, so a graph can show an error from an earlier attempt while its frames are complete (ascent, chasm07: a ComfyUI 502 on /history in one run; the frames on the volume match the PDF counts). cgi-072: two graphs timed out on the pod (`The operation was aborted due to timeout`), one is running. The frame count is the check that counts.
 <!-- run-status:end -->
+
+**Review of the base_v008 failures (2026-11-21, branch `fix/base-v008-failures`).** Causes and fixes:
+- *`Page.wait_for_function: Timeout 60000ms`* (conversion, stage load): the pod ran the image's own `ui2api.py` through a `sed`; whatever the reason it did not take effect on those pods. The app now sends its own converter script (240 s) so nothing depends on the image's copy; a test fails if the app's copy and `apps/comfy-app/docker/ui2api.py` differ.
+- *`HTTP 502 for /history/<id>`* (execute): the pod's container was killed for memory (RunPod's system log: `exit code 137 ... triggered memory limits (OOM)`, also on the 96 GB card), ComfyUI restarted with an empty history. The run now keeps asking through an outage of up to 3 minutes, fails at once with "ComfyUI restarted while the graph ran" when ComfyUI is back without the prompt, reads the pod's log to tell out of memory from a plain 5xx, and does not retry an out-of-memory graph on the same card.
+- *`The operation was aborted due to timeout`* (execute, load): a single 30 s poll on a busy ComfyUI ended the graph; the poll is now retried (see above). The load-stage graph fetch also retries 404/502/503/504.
+- *`502 for /api/userdata/workflows...`* right after a crash: ComfyUI is now waited for before **every** graph, not only the first.
+- **Out of memory moves to a bigger card by itself** (`cards.ts`, `queue.ts`): the task goes back to waiting with the next bigger cards (32 -> 48 -> 80 -> 96 GB, never B200, B300, H200), only the graphs that did not finish, at most 3 times; the small pod is stopped, not deleted; each step is a task event and a History line.
+- A retried task takes its own pod again; the idle stop no longer stops a pod while a run is on it.
+Not verified on a real pod: all of it is unit-tested with fakes; nothing was run against RunPod. The app must be restarted for it to apply.
+

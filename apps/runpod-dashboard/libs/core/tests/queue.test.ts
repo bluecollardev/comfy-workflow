@@ -493,7 +493,7 @@ describe('Generate Outputs and Publish (Import Round options)', () => {
 describe('out of memory: the next card up, on its own', () => {
   type R = { path: string; state: string; error?: string; oom?: boolean; recovery?: string }
   /** a world whose runs fail the way the script says: per run, `oom` (a graph the pod could not hold), `graph` (a validation error) or `ok` */
-  const oomWorld = (script: ('oom' | 'graph' | 'ok')[]) => {
+  const oomWorld = (script: ('oom' | 'graph' | 'ok')[], extra: Partial<queue.Deps> = {}) => {
     let n = 0
     const w: ReturnType<typeof world> = world([], 4, {
       run: async (podId: string, paths: string[]) => { const id = `rj${++n}`; w.runs.set(id, { podId, paths, state: 'running' }); (w as any).ran = [...((w as any).ran ?? []), { id, podId, paths }]; return { id } },
@@ -504,6 +504,7 @@ describe('out of memory: the next card up, on its own', () => {
         const results: R[] = r.paths.map((p, k) => how === 'ok' ? { path: p, state: 'done' } : k === 0 ? { path: p, state: 'failed', error: how === 'oom' ? 'ComfyUI answered HTTP 502 for /history/x' : 'Prompt outputs failed validation', ...(how === 'oom' ? { oom: true, recovery: 'Out of memory (the pod log says: triggered memory limits (OOM))' } : {}) } : { path: p, state: 'skipped', error: 'Not started: dispatch was paused' })
         return { id, state: r.state, ok: how === 'ok' ? r.paths.length : 0, failed: how === 'ok' ? 0 : 1, results }
       }) as never,
+      ...extra,
     })
     return w
   }
@@ -547,5 +548,25 @@ describe('out of memory: the next card up, on its own', () => {
     await go(); w.pull.state = 'done'; await go(10)
     const t = tasks().find((x) => x.kind === 'run')!
     expect(t.state).toBe('failed'); expect(t.escalations).toBeUndefined(); expect((w as any).asked).toEqual(['rtxpro4500'])
+  })
+  it('a retried task takes its own pod again instead of a second one (same card), and a stopped one is restarted', async () => {
+    const w = oomWorld(['graph', 'ok'], { volumePods: async () => w.pods.map((p) => ({ id: p.id, name: p.name, state: p.state, price: p.price, gpu: 'RTX PRO 4500' })) })
+    await queue.importRound(ROUND, { approved_by: 'Lucas', shots: ['cgi-042'], cards: { 'cgi-042': 'rtxpro4500' } })
+    await go(); w.pull.state = 'done'; await go(10)
+    const t0 = tasks().find((x) => x.kind === 'run')!; expect(t0.state).toBe('failed'); expect(w.created).toEqual(['new1'])
+    w.pods.find((p) => p.id === 'new1')!.state = 'off'; w.ready.delete('new1')   // the pod was stopped meanwhile (an idle stop, or by hand)
+    queue.retryTask(t0.id); await go(10)
+    const t1 = tasks().find((x) => x.kind === 'run')!
+    expect(t1.state).toBe('done'); expect(w.created).toEqual(['new1']); expect(w.resumed).toContain('new1')   // one pod only, restarted
+    expect(evs().join(' | ')).toMatch(/restarted .* for the retry \(the same pod, not a second one\)/)
+  })
+  it('a retry whose old pod cannot be restarted (its host has no free card) creates a new pod and says so', async () => {
+    const w = oomWorld(['graph', 'ok'], { volumePods: async () => w.pods.map((p) => ({ id: p.id, name: p.name, state: p.state, price: p.price, gpu: 'RTX PRO 4500' })), resumePod: async () => { throw new CoreError(409, 'There are not enough free GPUs on the host machine to start this pod.') } })
+    await queue.importRound(ROUND, { approved_by: 'Lucas', shots: ['cgi-042'], cards: { 'cgi-042': 'rtxpro4500' } })
+    await go(); w.pull.state = 'done'; await go(10)
+    const t0 = tasks().find((x) => x.kind === 'run')!; w.pods.find((p) => p.id === 'new1')!.state = 'off'
+    queue.retryTask(t0.id); await go(10)
+    expect(tasks().find((x) => x.kind === 'run')!.state).toBe('done'); expect(w.created).toEqual(['new1', 'new2'])
+    expect(evs().join(' | ')).toMatch(/could not restart .*: a new pod instead/)
   })
 })

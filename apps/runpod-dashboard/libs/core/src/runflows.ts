@@ -20,6 +20,7 @@ import * as autosync from './autosync.js'
 import * as sync from './sync.js'
 import * as ui2api from './ui2api.js'
 import * as cards from './cards.js'
+import * as idle from './idle.js'
 
 export interface WorkflowFile {
   /** Path under the panel's `workflows/`, e.g. `rounds/brynley-comfy-2026-10-22/cgi-042/cgi-042-common-nodes-v13.json`. */
@@ -110,6 +111,7 @@ export interface RunOpts {
 }
 interface Internal { job: RunJob; abort: AbortController }
 const jobs = new Map<string, Internal>()
+idle.addBusyCheck((podId) => [...jobs.values()].some((i) => i.job.pod_id === podId && i.job.state === 'running'))   // a pod with a run on it is working, whether or not ComfyUI answers the idle probe in time
 const view = (i: Internal): RunJob => JSON.parse(JSON.stringify(i.job))
 const LOG_MAX = 500
 function note(i: Internal, text: string, path?: string, level: LogLine['level'] = 'info') {

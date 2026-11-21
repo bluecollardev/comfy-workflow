@@ -35,4 +35,13 @@ describe('idle', () => {
     idle.forget('p2'); expect(idle.entry('p2')).toBeUndefined()
     expect(idle.proxyUrl('abc')).toBe('https://abc-8188.proxy.runpod.net')
   })
+  it('a pod that something else knows is busy (a run of graphs) is not stopped even when the probe cannot reach ComfyUI', async () => {
+    idle.register('pb', 1, new Date(Date.now() - 3_600_000))
+    const stopped: string[] = []; let busy = true; idle.addBusyCheck((id) => id === 'pb' && busy)
+    const unreachable = async () => ({ busy: false, last_prompt: null, reachable: false })
+    expect(await idle.sweep(() => new Map([['pb', 7200]]), (id) => { stopped.push(id) }, unreachable)).toEqual([]); expect(stopped).toEqual([])
+    busy = false   // the run is over: the quiet time counts from now, not from the old registration
+    expect(await idle.sweep(() => new Map([['pb', 7200]]), (id) => { stopped.push(id) }, unreachable)).toEqual([])
+    expect(idle.entry('pb')?.last_activity).toBeTruthy()
+  })
 })
