@@ -1394,6 +1394,7 @@
       "scanNow": "Scan Now",
       "scanRetry": "Retry Scan",
       "scanSlow": "still listing the volume ({n} min, in the background)",
+      "scanProgress": "listing {done} of {total} shots ({versions} versions read)",
       "keptResult": "the earlier result, scanned {when}, stays listed",
       "justNow": "just now",
       "minutesAgo": "{n} minutes ago",

@@ -16,6 +16,7 @@
         <span v-else>{{ $t('autopublish.watch.volume', { name: volumeName, n: w.volume.reviews ?? 0 }) }}<template v-if="w.volume.scanned_at"> · {{ $t('autopublish.watch.scanned', { when: ago(w.volume.scanned_at) }) }}</template></span>
         <BSpinner v-if="scanState.state === 'scanning' || localScanning" small data-testid="autopublish-scanning" />
         <span v-else-if="scanState.state === 'slow'" class="text-body-secondary" data-testid="autopublish-scan-slow">{{ $t('autopublish.watch.scanSlow', { n: scanState.minutes }) }}</span>
+        <span v-if="scanState.progress" class="text-body-secondary" data-testid="autopublish-scan-progress">{{ $t('autopublish.watch.scanProgress', { done: scanState.progress.shotsDone, total: scanState.progress.shotsTotal, versions: scanState.progress.versionsDone }) }}</span>
         <BButton size="sm" variant="outline-light" class="py-0" :disabled="localScanning || scanState.state === 'scanning' || w.volume.enabled === false" data-testid="autopublish-scan-now" @click="scan">{{ $t(scanState.state === 'error' ? 'autopublish.watch.scanRetry' : 'autopublish.watch.scanNow') }}</BButton>
       </div>
       <div v-if="scanState.state === 'error' || scanError" class="text-danger" data-testid="autopublish-volume-error">{{ scanError || scanState.error }}<span v-if="!scanError && scanState.last" class="text-body-secondary ms-1" data-testid="autopublish-scan-kept">({{ $t('autopublish.watch.keptResult', { when: ago(scanState.last) }) }})</span></div>

@@ -670,6 +670,7 @@ test('publish: items may be a string or { where: "volume", path }; volume and vo
 
 test('autopublish: read, cancel, off, and (v1.6.8) on and go live under a named person; approving, targets and Publish now stay a person\'s act (ADR-050)', async () => {
   const st = jsonOf(ok(await call('autopublish', { action: 'status' })))
+  assert.equal(st.watching.volume.scan_progress, null); assert.equal(st.watching.volume.scanning, false);   // the scan's own progress is part of the status (null when idle)
   assert.equal(st.enabled, false); assert.equal(st.daily_cap, null); assert.deepEqual(st.today, { count: 0, left: null }); assert.deepEqual(st.targets, { s3: true, slack: false, tunnel: false }); assert.deepEqual(st.pending, [])
   const se = jsonOf(ok(await call('autopublish', { action: 'settings' }))); assert.equal(se.target_state.tunnel.ready, false); assert.match(se.target_state.tunnel.problem, /Tunnel is not available yet/)
   assert.deepEqual(jsonOf(ok(await call('autopublish', { action: 'approvals' }))), []); assert.deepEqual(jsonOf(ok(await call('autopublish', { action: 'reviews' }))).reviews, []); assert.equal(jsonOf(ok(await call('autopublish', { action: 'off' }))).cancelled, 0)

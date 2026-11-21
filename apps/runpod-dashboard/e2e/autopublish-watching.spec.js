@@ -141,6 +141,14 @@ test.describe('Auto-publish sources: what is watched', () => {
     await expect(q.getByTestId('autopublish-scan-slow')).toHaveCount(0); await expect(q.getByTestId('autopublish-scan-now')).toHaveText('Retry Scan')
     await q.getByTestId('autopublish-scan-now').click(); await expect.poll(() => api.state.autopublish.calls.filter((c) => c.call === 'scanVolume').length).toBe(1)
   })
+  test('a running scan says how far it is (listing 12 of 25 shots) and nothing once it is idle', async ({ page, api }) => {
+    const ago = (min) => new Date(Date.now() - min * 60000).toISOString()
+    withSources(api); api.state.autopublish = { watching: PLACES({ volume: { enabled: true, id: 'vol123', reviews: 94, scanning: true, scan_started_at: ago(0.2), scanned_at: ago(70), scan_progress: { shots_done: 12, shots_total: 25, versions_done: 31 } } }), scanMs: 1500 }
+    await page.goto('/'); const q = await openQ(page)
+    await expect(q.getByTestId('autopublish-scan-progress')).toHaveText('listing 12 of 25 shots (31 versions read)')
+    api.state.autopublish.watching.volume = { enabled: true, id: 'vol123', reviews: 94, scanning: false, scan_started_at: null, scan_progress: null, scanned_at: ago(0.1) }
+    await expect(q.getByTestId('autopublish-scan-progress')).toHaveCount(0, { timeout: 8000 })
+  })
   test('a volume error is shown inline without hiding the local line; a failed Scan now says why', async ({ page, api }) => {
     withSources(api); api.state.autopublish = { watching: PLACES({ volume: { enabled: true, id: 'vol123', reviews: 0, scanning: false, error: 'S3 keys are not set' } }), scanFail: 'The volume scan could not start' }
     await page.goto('/'); const q = await openQ(page)

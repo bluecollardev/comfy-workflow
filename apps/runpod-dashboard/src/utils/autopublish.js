@@ -3,10 +3,11 @@ import { roundTemplateProblem } from './publish.js'
 export const WINDOW_MAX = 120, CAP_MAX = 100
 /** A volume scan is shown as "scanning" only for its first `SCAN_SHORT_MS`; a longer one is a background job (state 'slow': no spinner, no banner) and a failed one is 'error' (with its reason and a Retry). Never an endless spinner (Lucas, 2026-11-21). */
 export const SCAN_SHORT_MS = 90_000
-/** @returns {{ state: 'idle'|'scanning'|'slow'|'error', last: string|null, error: string, startedAt: string|null, minutes: number }} from `status.watching.volume` and `now` (ms). */
+/** @returns {{ state: 'idle'|'scanning'|'slow'|'error', last: string|null, error: string, startedAt: string|null, minutes: number, progress: { shotsDone: number, shotsTotal: number, versionsDone: number }|null }} from `status.watching.volume` and `now` (ms). */
 export function volumeScan(volume, now = Date.now()) {
   const v = volume && typeof volume === 'object' ? volume : {}, started = Date.parse(v.scan_started_at || ''), age = Number.isFinite(started) ? Math.max(0, now - started) : Infinity
-  const base = { last: v.scanned_at || null, error: v.scan_error?.reason || v.error || '', startedAt: v.scan_started_at || null, minutes: Number.isFinite(age) ? Math.max(1, Math.round(age / 60_000)) : 0 }
+  const pr = v.scanning && v.scan_progress && Number(v.scan_progress.shots_total) > 0 ? { shotsDone: Number(v.scan_progress.shots_done) || 0, shotsTotal: Number(v.scan_progress.shots_total), versionsDone: Number(v.scan_progress.versions_done) || 0 } : null
+  const base = { last: v.scanned_at || null, error: v.scan_error?.reason || v.error || '', startedAt: v.scan_started_at || null, minutes: Number.isFinite(age) ? Math.max(1, Math.round(age / 60_000)) : 0, progress: pr }
   if (v.scanning) return { state: age <= SCAN_SHORT_MS ? 'scanning' : 'slow', ...base }
   if (base.error) return { state: 'error', ...base }
   return { state: 'idle', ...base }
