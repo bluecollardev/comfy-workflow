@@ -30,6 +30,15 @@ describe('issuesOf with facts: frame count, colour, rate and stray files', () =>
   })
 })
 
+describe('graphElement: the shot and element a failed graph names', () => {
+  it('reads them from the graph path', () => {
+    expect(layout.graphElement('base_v008/photoreal-013/photoreal-013__f23__base_v008.json')).toEqual({ shot: 'photoreal-013', element: 'F23' })
+    expect(layout.graphElement('base_v008/cgi-072/cgi-072__backhalf-b__base_v008.json')).toEqual({ shot: 'cgi-072', element: 'BACKHALF-B' })
+    expect(layout.graphElement('base_v008/archival-123/archival-123__f__base_v008.json')).toEqual({ shot: 'archival-123', element: 'F' })
+    expect(layout.graphElement('archival-087 (import task)')).toBeNull()
+  })
+})
+
 describe('roundIssuesOf: elements with no frames, with the failure on record', () => {
   const fail = { shot: 'photoreal-013', element: 'F23', graph: 'photoreal-013_f23', stage: 'execute', node: '14 (VAEDecodeTiled)', message: 'exit code 137: out of memory', recovery: 'Memory ran out: use a smaller chunk.', retryable: false, retries: 4, at: '2026-11-21T05:34:58Z', pod: 'p1' }
   it('lists an expected element that was not delivered, with the failure fields', () => {

@@ -165,6 +165,12 @@ export function straysOf(item: ManifestItem, listing: Map<string, number>, rootK
 export interface FailureFacts { stage: string; node: string | null; message: string; recovery: string; retryable: boolean; attempts: number; at: string; pod?: string; job_id?: string }
 export interface RoundIssue { shot: string; element: string; code: 'not-generated'; severity: 'warning'; text: string; failure: FailureFacts | null }
 export interface FailureIn { shot: string; element?: string; graph?: string; stage: string; node: string | null; message: string; recovery: string; retryable: boolean; retries: number; at: string; pod?: string; job_id?: string }
+/** The shot and element a graph path names: `base_v008/photoreal-013/photoreal-013__f23__base_v008.json` is photoreal-013 and F23 (the failures log records graphs, mostly with no shot of their own). */
+export function graphElement(graph: string): { shot: string; element: string } | null {
+  const m = /([A-Za-z]+-\d+[a-z]?)__([^_/]+(?:_[^_/]+)*?)__/.exec(graph.split('/').pop() ?? graph)
+  if (!m) return null
+  const e = m[2]; return { shot: m[1].toLowerCase(), element: /^main$/i.test(e) ? 'main' : e.toUpperCase() }
+}
 /** The elements that were expected but have no delivered item: one entry each, with the latest failure recorded for it (null: none on record). Round level, because an element with no frames has no manifest of its own. `failures` newest first. */
 export function roundIssuesOf(expected: { shot: string; element: string }[], delivered: Pick<ManifestItem, 'shot' | 'element'>[], failures: FailureIn[]): RoundIssue[] {
   const have = new Set(delivered.map((d) => `${d.shot}|${d.element}`.toLowerCase())), out: RoundIssue[] = []

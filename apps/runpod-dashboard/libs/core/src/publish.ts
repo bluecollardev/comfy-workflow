@@ -1123,10 +1123,11 @@ async function finishReturn(job: Job, g: Group, a: Awaited<ReturnType<typeof s3A
     try {
       const failed = (await failures.list({ limit: 500 })).failures, roundShots = new Set(merged.items.map((i) => i.shot.toLowerCase())), expected = new Map<string, { shot: string; element: string }>(), fin: layout.FailureIn[] = []
       for (const f of failed) {
-        const m = edl.isLoaded() && f.graph ? edl.matchSequence({ name: f.graph }) : null
-        if (!m || (m.match !== 'exact' && m.match !== 'shot-element') || !roundShots.has(m.element.shot.toLowerCase())) continue
-        const el = m.element.element.toUpperCase() === 'MAIN' ? 'main' : m.element.element.toUpperCase()
-        expected.set(`${m.element.shot}|${el}`.toLowerCase(), { shot: m.element.shot, element: el }); fin.push({ shot: m.element.shot, element: el, graph: f.graph, stage: f.stage, node: f.node, message: f.message, recovery: f.recovery, retryable: f.retryable, retries: f.retries, at: f.at, ...(f.pod_id ? { pod: f.pod_id } : {}), job_id: f.job_id })
+        const ge = f.graph ? layout.graphElement(f.graph) : null
+        if (!ge || !roundShots.has(ge.shot)) continue
+        const known = !edl.isLoaded() || edl.lookup({ shot: ge.shot, element: ge.element.toLowerCase() }).match !== 'not-in-edl'   // a graph that is not an element of the EDL is not an expected delivery
+        if (!known) continue
+        expected.set(`${ge.shot}|${ge.element}`.toLowerCase(), ge); fin.push({ ...ge, graph: f.graph, stage: f.stage, node: f.node, message: f.message, recovery: f.recovery, retryable: f.retryable, retries: f.retries, at: f.at, ...(f.pod_id ? { pod: f.pod_id } : {}), job_id: f.job_id })
       }
       const issues = layout.roundIssuesOf([...expected.values()], merged.items, fin), ik = `${root}ISSUES.json`, there = await readText(a, ik, signal).catch(() => null)
       let ours = there === null; if (!ours) { try { ours = (JSON.parse(there!) as { schema?: unknown }).schema === 'bh-issues-1' } catch { /* not ours */ } }
