@@ -504,6 +504,7 @@ export async function mockApi(page, state) {
               names.push(`${stem}.jpg`)
             }
             fp.written[it.src_dir] = names
+            ;(fp.thumbs ||= {})[it.src_dir] = [...names]   // the script writes a thumbnail beside every preview, also for frames that already had their JPEG
           }
           j.state = 'done'; j.done_dirs = j.items.map((i) => i.src_dir)
         }
@@ -522,7 +523,7 @@ export async function mockApi(page, state) {
       if (op === 'list') {
         if (state.fpPodOff) return json({ detail: 'Start the pod: the previews are made on the pod' }, 409)
         fp.lists.push(body); const previews = {}, subfolders = {}
-        for (const it of body.items || []) { const names = fp.written[it.src_dir] || []; previews[it.src_dir] = { count: names.length, ...(body.names ? { names } : {}) }; subfolders[it.src_dir] = `.previews/${it.src_dir}` }
+        for (const it of body.items || []) { const names = fp.written[it.src_dir] || []; previews[it.src_dir] = { count: names.length, ...(body.names ? { names, thumbs: (fp.thumbs || {})[it.src_dir] || [], posters: (fp.posters || {})[it.src_dir] || [] } : {}) }; subfolders[it.src_dir] = `.previews/${it.src_dir}` }
         return json({ previews, subfolders })
       }
     }

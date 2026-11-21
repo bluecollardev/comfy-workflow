@@ -717,6 +717,11 @@
       "label": "Frames across the sequence",
       "frame": "Frame {n}"
     },
+    "errors": {
+      "title": "Generation Errors ({n})",
+      "kind": { "frames": "Frame Previews", "frame": "Frame", "sequence": "Preview", "graph": "Render" }
+    },
+    "video": { "play": "Play Video" },
     "frames": {
       "modeLabel": "Preview mode",
       "modeSequence": "Sequence Previews",

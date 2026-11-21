@@ -1,6 +1,7 @@
 <template>
   <span ref="root" class="preview" :data-state="state">
     <img v-if="state === 'ready'" :src="url" alt="" class="pimg" data-testid="outputs-dpx-thumb" />
+    <img v-else-if="quick && state !== 'empty'" :src="quick" alt="" class="pimg" loading="lazy" decoding="async" data-testid="outputs-dpx-quick" />
     <span v-else-if="state === 'empty'" class="badge text-bg-warning pbadge" data-testid="outputs-dpx-thumb-empty" :title="reason">{{ $t('outputs.dpx.emptyFrame') }}</span>
     <BSpinner v-else-if="state === 'loading'" small class="pspin" data-testid="outputs-dpx-thumb-loading" />
     <span v-else-if="state === 'capped'" role="button" tabindex="0" class="badge text-bg-secondary pbtn" data-testid="outputs-dpx-load-preview" :title="$t('outputs.dpx.loadPreviewTitle')" @click.stop="load(true)" @keydown.enter.stop.prevent="load(true)"><i class="fa-regular fa-image me-1"></i>{{ $t('outputs.dpx.loadPreview') }}</span>
@@ -22,7 +23,7 @@ import { appReader, sharedThumbs, thumbKey } from '../utils/thumbs'
 import { previewBus } from '../utils/thumbsBus'
 import { usePreviewsStore } from '../stores/previews'
 
-const props = defineProps({ tile: { type: Object, required: true }, base: { type: String, default: '' }, scope: { type: String, default: '' }, volumeName: { type: String, default: '' }, offline: { type: Boolean, default: false }, /** load as soon as it is on screen: no cap, no click (the Generate rows) */ auto: { type: Boolean, default: false } })
+const props = defineProps({ tile: { type: Object, required: true }, /** the first frame's 320 px JPEG made on the pod (Frame Previews): shown at once, replaced by the decoded preview when that is loaded */ quick: { type: String, default: '' }, base: { type: String, default: '' }, scope: { type: String, default: '' }, volumeName: { type: String, default: '' }, offline: { type: Boolean, default: false }, /** load as soon as it is on screen: no cap, no click (the Generate rows) */ auto: { type: Boolean, default: false } })
 const emit = defineEmits(['state', 'header'])
 const root = ref(null)
 const previews = usePreviewsStore()
