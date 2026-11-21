@@ -1057,7 +1057,9 @@ async function mediaOf(it: PlanItem, ki: layout.KeyInfo, base: string | null, co
     const meta = base && it.source !== 'volume' ? await readJson<Record<string, unknown>>(join(base, `${it.path}.meta.json`), {}) : {}
     const num = (k: string) => (typeof meta[k] === 'number' ? (meta[k] as number) : undefined)
     const fps = typeof meta.fps === 'number' ? R.rationalFps(String(meta.fps)) : R.rationalFps(R.fpsOf(ki.stem)), outs = Array.isArray(meta.outputs) ? (meta.outputs as { codec?: string }[]) : []
-    return { ...(num('width') ? { width: num('width') } : {}), ...(num('height') ? { height: num('height') } : {}), fps, ...(num('frames') !== undefined ? { frames: num('frames') } : {}), codec: outs[0]?.codec === 'prores422hq' || /\.mov$/i.test(it.path) ? 'prores422hq' : 'h264', bit_depth: /\.mov$/i.test(it.path) ? 10 : 8, working_space: meta.preset === 'tunnel' ? (meta.colour_block ? (meta.colour_block as { working_space: string }).working_space : 'Rec.709 tagged') : 'n/a', ...(meta.colour_block ? { colour: meta.colour_block as { working_space: string; transfer: string; proxy: string } } : {}), ...(Array.isArray(meta.manifest_notes) ? { notes: (meta.manifest_notes as unknown[]).map(String) } : {}) }
+    const str = (k: string) => (typeof meta[k] === 'string' && meta[k] ? (meta[k] as string) : undefined), ocio = meta.ocio as { label?: unknown } | undefined
+    const review: layout.ReviewFacts = { ...(str('colour_in') ? { colour_in: str('colour_in') } : {}), ...(str('colour_source') ? { colour_source: str('colour_source') } : {}), ...(meta.header_disagrees === true ? { header_disagrees: true } : {}), ...(typeof ocio?.label === 'string' ? { ocio_label: ocio.label } : {}), ...(typeof meta.fps === 'number' ? { fps: String(meta.fps) } : {}) }
+    return { review, ...(num('width') ? { width: num('width') } : {}), ...(num('height') ? { height: num('height') } : {}), fps, ...(num('frames') !== undefined ? { frames: num('frames') } : {}), codec: outs[0]?.codec === 'prores422hq' || /\.mov$/i.test(it.path) ? 'prores422hq' : 'h264', bit_depth: /\.mov$/i.test(it.path) ? 10 : 8, working_space: meta.preset === 'tunnel' ? (meta.colour_block ? (meta.colour_block as { working_space: string }).working_space : 'Rec.709 tagged') : 'n/a', ...(meta.colour_block ? { colour: meta.colour_block as { working_space: string; transfer: string; proxy: string } } : {}), ...(Array.isArray(meta.manifest_notes) ? { notes: (meta.manifest_notes as unknown[]).map(String) } : {}) }
   }
   return undefined
 }
@@ -1100,15 +1102,37 @@ async function finishReturn(job: Job, g: Group, a: Awaited<ReturnType<typeof s3A
     const old = (await readText(a, csvKey, signal).catch(() => null)) ?? '', kept = old.split('\n').slice(1).filter((l) => l.trim() && !shots.has(l.split(',')[0]))
     // one manifest per element, next to its files (the PDF: <CLIP>_MANIFEST.json), listing every file with its sha256: written on EVERY publish of the element (Lucas, 2026-11-21: "manifest should be generated on publish"). One that is already in a round that is not a _TEST_ round is replaced when it is ours (it carries our schema_version: it described an earlier publish of this element) or when the run has allow_overwrite; a manifest that is not ours is left as it is
     const overwrite = (v as { request?: { allow_overwrite?: boolean } }).request?.allow_overwrite === true
+    // facts for each element's `issues` (ADR-055 section 10): the review videos' own .meta.json, the EDL cut, and the round's listing (read-only) for files that are not the element's own. A fact that cannot be read is left out, never guessed.
+    const roundListing = await listDestination({ ...a, prefix: root }).catch(() => null)
+    const factsOf = (it: layout.ManifestItem): layout.IssueFacts => {
+      const reviews = files.filter((f) => f.shot === it.shot && layout.elementOf(f.clip) === it.element && (f.role === 'review' || f.role === 'proxy-h264') && f.media?.review).map((f) => f.media!.review!)
+      const m = edl.isLoaded() ? edl.matchSequence({ name: it.input_final.delivered_name }) : null
+      const strays = roundListing ? layout.straysOf(it, roundListing, root) : []
+      return { ...(m && (m.match === 'exact' || m.match === 'shot-element') ? { expected_frames: m.element.frames_in_cut } : {}), reviews, strays }
+    }
     for (const it of built) {
       const k = `${root}${it.shot}/${it.input_final.delivered_name}_MANIFEST.json`
       if (!ret.round.startsWith('_TEST_') && !overwrite) {
         const there = await readText(a, k, signal).catch(() => null)
         if (there != null) { let ours = false; try { ours = typeof (JSON.parse(there) as { schema_version?: unknown }).schema_version !== 'undefined' } catch { /* not JSON: not ours */ } if (!ours) continue }
       }
-      await putText(a, k, `${JSON.stringify({ schema_version: merged.schema_version, round: merged.round, returned_by: merged.returned_by, returned_at: merged.returned_at, pod: merged.pod, item: it, issues: layout.issuesOf(it) }, null, 2)}\n`, signal)
+      await putText(a, k, `${JSON.stringify({ schema_version: merged.schema_version, round: merged.round, returned_by: merged.returned_by, returned_at: merged.returned_at, pod: merged.pod, item: it, issues: layout.issuesOf(it, factsOf(it)) }, null, 2)}\n`, signal)
     }
     await putText(a, manifestKey, `${JSON.stringify(merged, null, 2)}\n`, signal)
+    // ISSUES.json beside RETURN-MANIFEST.json (not a field in it: bh-return-1 is Binc's schema and mergeManifest refuses a round whose manifest it does not recognise): the elements of this round's shots that have no frames, each with the last failure recorded for it. An element with no frames has no manifest of its own. Ours is replaced; one that is not ours is left alone.
+    try {
+      const failed = (await failures.list({ limit: 500 })).failures, roundShots = new Set(merged.items.map((i) => i.shot.toLowerCase())), expected = new Map<string, { shot: string; element: string }>(), fin: layout.FailureIn[] = []
+      for (const f of failed) {
+        const m = edl.isLoaded() && f.graph ? edl.matchSequence({ name: f.graph }) : null
+        if (!m || (m.match !== 'exact' && m.match !== 'shot-element') || !roundShots.has(m.element.shot.toLowerCase())) continue
+        const el = m.element.element.toUpperCase() === 'MAIN' ? 'main' : m.element.element.toUpperCase()
+        expected.set(`${m.element.shot}|${el}`.toLowerCase(), { shot: m.element.shot, element: el }); fin.push({ shot: m.element.shot, element: el, graph: f.graph, stage: f.stage, node: f.node, message: f.message, recovery: f.recovery, retryable: f.retryable, retries: f.retries, at: f.at, ...(f.pod_id ? { pod: f.pod_id } : {}), job_id: f.job_id })
+      }
+      const issues = layout.roundIssuesOf([...expected.values()], merged.items, fin), ik = `${root}ISSUES.json`, there = await readText(a, ik, signal).catch(() => null)
+      let ours = there === null; if (!ours) { try { ours = (JSON.parse(there!) as { schema?: unknown }).schema === 'bh-issues-1' } catch { /* not ours */ } }
+      // an element delivered since is dropped from our list; none to say and no file: nothing is written
+      if (ours && (issues.length || there !== null)) await putText(a, ik, `${JSON.stringify({ schema: 'bh-issues-1', round: merged.round, generated_at: merged.returned_at, issues }, null, 2)}\n`, signal)
+    } catch { /* the issues list is advice: a failure to build it never fails a publish */ }
     await putText(a, csvKey, `${[head, ...kept, ...rows].join('\n')}\n`, signal)
   })
   v.manifest = { updated: true, shots: (v.manifest?.shots ?? 0) + 1, path: manifestKey };   g.child.current = ''
