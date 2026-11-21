@@ -683,6 +683,9 @@ test('autopublish: read, cancel, off, and (v1.6.8) on and go live under a named 
   const pr = jsonOf(ok(await call('autopublish', { action: 'purge_dry_runs', approved_by: 'Lucas', understood: true }))); assert.equal(pr.plan, false); assert.equal(pr.purged, 0)
   assert.equal(jsonOf(ok(await call('autopublish', { action: 'restore_dry_runs' }))).restored, 0)
   const tp = (await rpc('tools/list')).result.tools.find((x) => x.name === 'autopublish').inputSchema.properties; assert.ok(tp.include_approved); assert.match(tp.action.description, /purge_dry_runs/)
+  // Frame previews relaunch: the action is in the schema, an unknown job is refused with the reason, and the tool says it never resumes a pod
+  const fpSchema = (await rpc('tools/list')).result.tools.find((x) => x.name === 'frame_previews'); assert.match(fpSchema.inputSchema.properties.action.description, /relaunch/); assert.ok(fpSchema.inputSchema.properties.exclude_pod_ids); assert.match(fpSchema.description, /NEVER resumes or creates a pod/)
+  assert.match(textOf(refused(await call('frame_previews', { action: 'relaunch', job_id: 'framepreviews-nope' }))), /No frame-previews job/)
   assert.match(textOf(refused(await call('autopublish', { action: 'cancel' }))), /id is needed/); assert.match(textOf(refused(await call('autopublish', { action: 'bogus' }))), /action must be/)
   const r = await call('set_configuration', { patch: { auto_publish: { enabled: true } } }); assert.equal(r.result.isError, true); assert.match(textOf(r), /turned on in the window, by a person/)
   const t = await call('set_configuration', { patch: { auto_publish: { targets: { slack: true } } } }); assert.match(textOf(t), /Where Auto-publish sends is chosen in the window/)

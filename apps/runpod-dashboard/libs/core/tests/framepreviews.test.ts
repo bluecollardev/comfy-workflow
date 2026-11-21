@@ -93,3 +93,78 @@ describe('framepreviews: frame previews made where the files are', () => {
     } finally { fp.setDeps(null) }
   })
 })
+
+describe('framepreviews: relaunch', () => {
+  const wait = async (id: string) => { for (let i = 0; i < 100 && (fp.status({ job_id: id }) as fp.Job).state === 'running'; i++) await new Promise((r) => setTimeout(r, 15)); return fp.status({ job_id: id }) as fp.Job }
+  const pods = (over: Record<string, Partial<fp.PodInfo>> = {}): fp.PodInfo[] => [
+    { id: 'p1', name: 'Landing', running: false, volume: 'v1', ...over.p1 }, { id: 'p2', name: 'Top', running: true, volume: 'v1', ...over.p2 },
+    { id: 'foreign', name: 'Foreign', running: true, volume: 'v1', ...over.foreign }, { id: 'other', name: 'Other volume', running: true, volume: 'v9', ...over.other },
+  ]
+  /** a pod where the script dies with 255 on seqB, so the first job fails after seqA finished */
+  const fakeSsh = (calls: { pod: string; script: string }[], failOn = 'seqB') => ({
+    target: async (id: string) => ({ host: id, port: 22 }), outputDir: () => '/o',
+    ssh: async ({ host, script, onLine }: { host: string; script: string; onLine: (l: string) => void }) => {
+      calls.push({ pod: host, script })
+      if (failOn && script.includes(failOn)) return { code: 255 }
+      onLine('TOTAL 4'); onLine('PREV 4/4 ok=4 skipped=0 failed=0'); onLine('DONE ok=4 skipped=0 failed=0'); return { code: 0 }
+    },
+  })
+  it('runs the folders that did not finish, with Skip Existing on and the same tone, and leaves out the folders that finished', async () => {
+    const calls: { pod: string; script: string }[] = []
+    fp.setDeps({ ...fakeSsh(calls), pods: async () => pods({ p1: { running: true } }) })
+    try {
+      const j = await wait((await fp.start({ pod_id: 'p1', items: [{ src_dir: 'a/seqA', frames: 4 }, { src_dir: 'a/seqB', frames: 4 }, { src_dir: 'a/seqC', frames: 4 }], tone: 'linear', skip_existing: false })).id)
+      expect(j.done_dirs).toEqual(['a/seqA', 'a/seqC'])   // A and C ran clean; B ended with code 255
+      expect(j.state).toBe('done'); expect(j.error).toMatch(/code 255 on a\/seqB/)
+      calls.length = 0
+      fp.setDeps({ ...fakeSsh(calls, ''), pods: async () => pods({ p1: { running: true } }) })
+      const r = await fp.relaunch({ job_id: j.id })
+      expect(r.ok).toBe(true); expect(r.job!.relaunch_of).toBe(j.id); expect(r.job!.items.map((i) => i.src_dir)).toEqual(['a/seqB'])
+      expect(r.job!.skip_existing).toBe(true); expect(r.job!.tone).toBe('linear'); expect(r.job!.pod_id).toBe('p1')   // the old job's pod, it runs
+      const done = await wait(r.job!.id)
+      expect(done.state).toBe('done'); expect(done.done_dirs).toEqual(['a/seqB'])
+      expect(calls.length).toBe(1); expect(calls[0].script).toContain("'linear' '1'")   // never makes a finished frame again
+      expect((await fp.relaunch({ job_id: done.id })).nothing_to_do).toBe(true)   // everything finished: nothing to run
+    } finally { fp.setDeps(null) }
+  })
+  it('picks a running pod on the same volume when the old pod is stopped, never an excluded one or one on another volume', async () => {
+    const calls: { pod: string; script: string }[] = []
+    fp.setDeps({ ...fakeSsh(calls), pods: async () => pods({ p1: { running: true } }) })
+    try {
+      const j = await wait((await fp.start({ pod_id: 'p1', items: [{ src_dir: 'a/seqB' }] })).id)
+      expect(j.done_dirs).toEqual([])
+      fp.setDeps({ ...fakeSsh(calls, ''), pods: async () => pods() })   // p1 is stopped now
+      const r = await fp.relaunch({ job_id: j.id, exclude_pod_ids: ['foreign'] })
+      expect(r.job!.pod_id).toBe('p2')   // not p1 (stopped), not foreign (excluded), not other (another volume)
+      await wait(r.job!.id)
+      const r2 = await fp.relaunch({ job_id: j.id, pod_id: 'foreign', exclude_pod_ids: ['foreign'] }).catch((e) => e)
+      expect(r2.status).toBe(409)   // an excluded pod cannot be asked for either
+      const r3 = await fp.relaunch({ job_id: j.id, pod_id: 'other' })
+      expect(r3.job!.pod_id).toBe('other'); await wait(r3.job!.id)   // a person's explicit running pod is used
+    } finally { fp.setDeps(null) }
+  })
+  it('answers needs_pod, naming the stopped pods, when none is running, and never starts or resumes one', async () => {
+    const calls: { pod: string; script: string }[] = []
+    fp.setDeps({ ...fakeSsh(calls), pods: async () => pods({ p1: { running: true } }) })
+    try {
+      const j = await wait((await fp.start({ pod_id: 'p1', items: [{ src_dir: 'a/seqB' }] })).id)
+      let resumed = 0
+      fp.setDeps({ ...fakeSsh(calls, ''), pods: async () => pods({ p2: { running: false }, foreign: { running: false }, other: { running: false } }) })
+      const before = calls.length
+      const r = await fp.relaunch({ job_id: j.id, exclude_pod_ids: ['foreign'] })
+      expect(r.ok).toBe(false); expect(r.job).toBeUndefined()
+      expect(r.needs_pod!.stopped.map((p) => p.id).sort()).toEqual(['p1', 'p2'])   // same volume, not the excluded one, not the other volume
+      expect(r.needs_pod!.hint).toMatch(/never resumes a pod/); expect(calls.length).toBe(before); expect(resumed).toBe(0)
+      const named = await fp.relaunch({ job_id: j.id, pod_id: 'p2' }); expect(named.needs_pod!.stopped).toEqual([{ id: 'p2', name: 'Top' }])
+    } finally { fp.setDeps(null) }
+  })
+  it('refuses a job that is still running and a job it does not know', async () => {
+    fp.setDeps({ target: async () => ({ host: 'h', port: 22 }), outputDir: () => '/o', pods: async () => pods(), ssh: async ({ signal }) => { await new Promise((res) => signal.addEventListener('abort', () => res(null))); return { code: 0 } } })
+    try {
+      const j = await fp.start({ pod_id: 'p2', items: [{ src_dir: 'a/seqSlow' }] })
+      await expect(fp.relaunch({ job_id: j.id })).rejects.toMatchObject({ status: 409 })
+      fp.cancel({ job_id: j.id }); await wait(j.id)
+      await expect(fp.relaunch({ job_id: 'framepreviews-nope' })).rejects.toMatchObject({ status: 404 })
+    } finally { fp.setDeps(null) }
+  })
+})

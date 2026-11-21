@@ -113,3 +113,41 @@ test('The Generate window has a mode choice: Sequence Previews as before, Frame 
   await page.getByTestId('pod-outputs-previews-modal').getByTestId('pod-outputs-mode-sequence').click()
   await expect(page.getByTestId('pod-outputs-previews-modal').getByTestId('pod-outputs-load-previews')).toBeVisible()
 })
+
+test('A failed Frame Previews job can be relaunched: same folders, finished frames skipped, no pod started; with no pod running the window says Resume A Pod first; Remove clears the job', async ({ page, api }) => {
+  await setup(page, api)
+  api.state.fpFailFirst = true
+  await page.evaluate(() => { globalThis.__FP_POLL_MS__ = 50 })
+  await page.getByTestId('pod-outputs-previews').click()
+  const g = page.getByTestId('pod-outputs-previews-modal')
+  await g.getByTestId('pod-outputs-mode-frame').click()
+  await expect(g.getByTestId('pod-outputs-relaunch-frame-previews')).toHaveCount(0)   // nothing has run yet
+  await g.getByTestId('pod-outputs-load-frame-previews').click()
+  // the job fails (the pod went away): Relaunch and Remove appear, with what Relaunch does in the tooltip
+  const relaunch = g.getByTestId('pod-outputs-relaunch-frame-previews')
+  await expect(relaunch).toBeVisible({ timeout: 15000 })
+  await expect(relaunch).toHaveText('Relaunch'); await expect(relaunch).toHaveAttribute('title', /finished frames are skipped.*no pod is started for you/)
+  await expect(g.getByTestId('pod-outputs-remove-frame-job')).toHaveText('Remove')
+  // no pod running: the answer names the stopped pod; a pod is never started by Relaunch; Resume Pod asks first
+  api.state.fpNeedsPod = true
+  await relaunch.click()
+  const needs = g.getByTestId('pod-outputs-frames-needs-pod')
+  await expect(needs).toContainText('No pod is running: Resume A Pod first'); await expect(needs).toContainText('ComfyUI-Landing')
+  expect(api.state.fp.starts.length).toBe(1)   // nothing new was started
+  let asked = ''
+  page.once('dialog', async (d) => { asked = d.message(); await d.dismiss() })
+  await g.getByTestId('pod-outputs-resume-pod').click()
+  await expect.poll(() => asked).toContain('ComfyUI-Landing'); await expect(needs).toBeVisible()   // dismissed: still waiting
+  // a pod is running now: Relaunch runs the same folders again as a new job (the old one is its relaunch_of) and the previews fill in
+  api.state.fpNeedsPod = false
+  await relaunch.click()
+  await expect(g.getByTestId('pod-outputs-previews-counts')).toHaveText(`${N} ready · 0 waiting · 0 failed frames`, { timeout: 15000 })
+  expect(api.state.fp.relaunches.length).toBe(2); expect(api.state.fp.relaunches[1].job_id).toBe('framepreviews-1')
+  const again = Object.values(api.state.fp.jobs).find((j) => j.relaunch_of === 'framepreviews-1')
+  expect(again.items.map((i) => i.src_dir)).toEqual([SUB]); expect(again.skip_existing).toBe(true)
+  await expect(g.getByTestId('pod-outputs-needs-pod-row')).toHaveCount(0)
+  // a finished job offers no Relaunch; Remove clears it from the window
+  await expect(relaunch).toHaveCount(0)
+  await g.getByTestId('pod-outputs-remove-frame-job').click()
+  await expect(g.getByTestId('pod-outputs-remove-frame-job')).toHaveCount(0)
+})

@@ -295,6 +295,7 @@ test.describe('the Queue: Auto-publish', () => {
     on(api); api.state.autopublish = { pending: [entry(), entry({ id: 'ap-2', shot: 'cgi-042' })] }
     await page.goto('/')
     const q = await openQueue(page)
+    await expect(q.locator('[data-testid="autopublish-row"][data-id="ap-1"] [data-testid="autopublish-cancel"]')).toHaveText('Cancel')   // a waiting entry is still cancelled
     await q.locator('[data-testid="autopublish-row"][data-id="ap-1"] [data-testid="autopublish-cancel"]').click()
     await expect.poll(() => calls(api, 'cancel').map((c) => c.body)).toEqual([{ id: 'ap-1' }])
     await expect(q.locator('[data-testid="autopublish-row"][data-id="ap-1"]')).toHaveCount(0, { timeout: 6000 })
@@ -310,7 +311,7 @@ test.describe('the Queue: Auto-publish', () => {
     await page.goto('/')
     const q = await openQueue(page), row = (id) => q.locator(`[data-testid="autopublish-row"][data-id="${id}"]`)
     const real = row('ap-w').getByTestId('autopublish-deliver')
-    await expect(real).toHaveText('Deliver'); await expect(real).toBeEnabled(); await expect(row('ap-w').getByTestId('autopublish-cancel')).toBeVisible()
+    await expect(real).toHaveText('Deliver'); await expect(real).toBeEnabled(); await expect(row('ap-w').getByTestId('autopublish-cancel')).toHaveText('Remove')   // a dry-run entry is removed, not cancelled (Lucas: cancel when done can be swapped for remove)
     await expect(row('ap-w').getByTestId('autopublish-publish-now')).toHaveCount(0)
     await real.click()
     const p = prompt(page)
