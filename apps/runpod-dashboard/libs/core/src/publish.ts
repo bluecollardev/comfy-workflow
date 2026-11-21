@@ -1549,6 +1549,15 @@ export async function podsAvailable(a: DestAccess, signal?: AbortSignal, opts?: 
   return { ok: true, pods: rankPods(good, load).slice(0, k) }
 }
 
+/** The running pods of the volume, best first for a job that needs ONE pod (an idle one before one that is rendering, then fewer publish jobs of this process, lower RAM use, more GPUs). Reads only: no keys, no SSH probe, nothing is started. `exclude` leaves pods out. */
+export async function rankedPodsOnVolume(opts?: { exclude?: string[] }): Promise<PodRef[]> {
+  const vol = deps.volumeId(); let all = vol ? await deps.podsOnVolume(vol).catch(() => [] as PodRef[]) : []
+  const left = new Set(opts?.exclude ?? []); all = all.filter((p) => !left.has(p.id))
+  const load = new Map<string, { busy: boolean } | null>()
+  if (all.length > 1) await Promise.all(all.map(async (p) => { load.set(p.id, await deps.podLoad(p).catch(() => null)) }))
+  return rankPods(all, load)
+}
+
 /** Pick the adapter for the volume files of a job (once): `pc` is always this PC; `auto` the pods when available; `pod` the pods or a plain-words failure. */
 async function chooseRoute(a: DestAccess, v: JobView, signal: AbortSignal, opts?: PodOpts): Promise<Route> {
   if (a.transfer === 'pc') return { mode: 'pc', pod: null, pods: [], bad: new Set(), rr: 0 }

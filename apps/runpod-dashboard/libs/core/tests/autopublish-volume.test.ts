@@ -6,6 +6,17 @@ import { PassThrough } from 'node:stream'
 import type { ChildProcess } from 'node:child_process'
 import * as autopublish from '../src/autopublish.js'
 import * as publish from '../src/publish.js'
+import * as dpxprep from '../src/dpxprep.js'
+/** The fix itself (ssh to a pod) is faked: the plan says what the sequence is, the run copies the frames into the corrected folder of the fake volume (ADR-057 decision 7). */
+let fixRuns = 0
+const fakeFix = (clip: string, srcDir: string, stem: string, o: { expected?: number | null; ok?: boolean; why?: string; runFails?: boolean } = {}) => {
+  const src = () => [...volume.keys()].filter((k) => k.startsWith(`comfy-shared/output/${srcDir}/${stem}.`))
+  dpxprep.setDeps({
+    plan: async (a) => ({ rows: a.items!.map((i) => ({ src_dir: i.src_dir ?? '', stem: i.stem ?? '', clip, frames: src().length, expected_frames: o.expected ?? null, start_timecode: '01:00:00:00', timecode_source: 'EDL', fps: 23.976, ok: o.ok !== false, why: o.why ?? '' })), settings: {} as never }),
+    run: async (a) => { fixRuns++; if (o.runFails) throw new Error('ssh dropped'); for (const k of src()) volume.set(`comfy-shared/output/_delivery_v11/${clip}/${clip}${k.slice(k.lastIndexOf('.', k.length - 5))}`, volume.get(k)!); return { results: a.items!.map((i) => ({ clip: i.clip, frames: src().length, out_dir: `_delivery_v11/${i.clip}`, ok: true })), out_root: '', settings: {} as never } },
+    pods: async () => [{ id: 'p1', name: 'pod' }],
+  })
+}
 import * as settingsEnv from '../src/settings.js'
 import type * as podpull from '../src/podpull.js'
 import { scratch } from './helpers.js'
@@ -60,13 +71,13 @@ beforeEach(async () => {
   dir = scratch(); out = join(dir, 'shared', 'output'); mkdirSync(out, { recursive: true }); process.env.SETTINGS_ENV_FILE = join(dir, '.env'); process.env.PUBLISH_SLACK_HOST_ALLOW = 'hooks.slack.com'
   for (const k of settingsEnv.PUBLISH_SECRETS) delete process.env[k]
   volume = new Map(); dest = new Map(); bodies = new Map(); calls = []; spawned = []; volFail = false; hang = false; t = Date.parse('2026-11-19T10:00:00')
-  publish.reset(); autopublish.reset()
+  publish.reset(); autopublish.reset(); dpxprep.reset(); fixRuns = 0
   publish.setDeps({ aws: fakeAws, fetch: fakeFetch, outputRoot: () => out, parallel: () => 4, now: clock, spawn: fakeSpawn, volumeId: () => VOLB, findFfmpeg: async () => null, podInfo: async () => null,
     volumeAccess: async () => ({ ok: true, id: 'RPKEY', secret: 'RPSECRET', endpoint: 'https://s3api-eu-ro-1.runpod.io', bucket: VOLB, region: 'EU-RO-1' }) })
   autopublish.setDeps({ now: clock, outputRoot: () => out })
   await publish.setSettings({ s3: { layout: 'as-is', credentials: 'app', bucket: 'my-bucket', prefix: 'renders', region: 'us-west-2', access_key_id: 'AKIAEXAMPLEKEY1234', secret_access_key: 'secretsecretsecret1234' }, slack: { preview_frame: false, volume_source: false, file_links: false, folder_link: false } })
 })
-afterEach(() => { autopublish.reset(); publish.reset(); delete process.env.PUBLISH_SLACK_HOST_ALLOW; for (const k of settingsEnv.PUBLISH_SECRETS) delete process.env[k] })
+afterEach(() => { autopublish.reset(); dpxprep.reset(); publish.reset(); delete process.env.PUBLISH_SLACK_HOST_ALLOW; for (const k of settingsEnv.PUBLISH_SECRETS) delete process.env[k] })
 
 describe('the sources and the scan', () => {
   it('both places by default; both off is a 400; each can be turned off alone', async () => {
@@ -110,9 +121,9 @@ describe('approving, publishing by streaming, and the status', () => {
     await autopublish.setSettings({ sources: { volume: false } }); await expect(approve('y-001')).rejects.toMatchObject({ status: 404, message: 'There is no review y-001 v001 on this PC' })
   })
   it('a volume review is streamed volume -> bucket (two piped processes, no download), and with include_dpx so are the source frames the sidecar names', async () => {
-    vreview('v-001', 'v001', { meta: { source_dir: 'proxy_v004/x', name: 'STEM_V' } }); for (let i = 1; i <= 3; i++) volume.set(`comfy-shared/output/proxy_v004/x/STEM_V.000${i}.dpx`, `frame${i}`); volume.set('comfy-shared/output/proxy_v004/x/OTHER.0001.dpx', 'no')
+    vreview('v-001', 'v001', { meta: { source_dir: 'proxy_v004/x', name: 'STEM_V' } }); for (let i = 1; i <= 3; i++) volume.set(`comfy-shared/output/proxy_v004/x/STEM_V.000${i}.dpx`, `frame${i}`); volume.set('comfy-shared/output/proxy_v004/x/OTHER.0001.dpx', 'no'); fakeFix('STEM_V', 'proxy_v004/x', 'STEM_V')
     await scan(); await approve('v-001'); await autopublish.setSettings({ ...ON, window_minutes: 0, include_dpx: true }); await autopublish.setSettings({ dry_run: false, understood: true }); await autopublish.consider(); await autopublish.tick(); await autopublish.settled()
-    expect([...dest.keys()].sort()).toEqual(['renders/deliver/v-001/v001/V-001_MAIN.mov', 'renders/deliver/v-001/v001/V-001_MAIN.mov.meta.json', 'renders/deliver/v-001/v001/DELIVERY.md', 'renders/proxy_v004/x/STEM_V.0001.dpx', 'renders/proxy_v004/x/STEM_V.0002.dpx', 'renders/proxy_v004/x/STEM_V.0003.dpx'].sort())
+    expect([...dest.keys()].sort()).toEqual(['renders/deliver/v-001/v001/V-001_MAIN.mov', 'renders/deliver/v-001/v001/V-001_MAIN.mov.meta.json', 'renders/deliver/v-001/v001/DELIVERY.md', 'renders/_delivery_v11/STEM_V/STEM_V.0001.dpx', 'renders/_delivery_v11/STEM_V/STEM_V.0002.dpx', 'renders/_delivery_v11/STEM_V/STEM_V.0003.dpx'].sort())   // the corrected copies, never the original frames of proxy_v004/x
     expect(spawned.filter((a) => a[3] === '-').length).toBe(6); expect(spawned.filter((a) => a[3] === '-')[0].slice(0, 2)).toEqual(['s3', 'cp']); expect(calls.some((c) => c[1] === 'cp' && c[2] !== undefined && !String(c[2]).startsWith('s3://') && c[3] !== '-' && /v-001/.test(c[3]))).toBe(false)   // nothing was copied from a local file
     expect(bodies.get('renders/deliver/v-001/v001/V-001_MAIN.mov')).toBe('MOVIE'); expect((await autopublish.statusNow()).recent[0]).toMatchObject({ state: 'done', shot: 'v-001' })
   })
@@ -121,9 +132,9 @@ describe('approving, publishing by streaming, and the status', () => {
     expect(autopublish.parseSidecar('not json at all')).toEqual({ unreadable: true })
     vreview('v-001', 'v001', { meta: { source_dir: 'proxy_v004/x', name: 'STEM_V' } }); volume.set(`${D}v-001/v001/V-001_MAIN.mov.meta.json`, '{"source_dir": "proxy_v004/x", "name": "STEM_V", "outputs": [ {"render_fps": \n  } ]}')
     for (let i = 1; i <= 3; i++) volume.set(`comfy-shared/output/proxy_v004/x/STEM_V.000${i}.dpx`, `frame${i}`)
-    vreview('b-002'); volume.set(`${D}b-002/v001/B-002_MAIN.mov.meta.json`, 'garbage{')
+    fakeFix('STEM_V', 'proxy_v004/x', 'STEM_V'); vreview('b-002'); volume.set(`${D}b-002/v001/B-002_MAIN.mov.meta.json`, 'garbage{')
     await scan(); await approve('v-001'); await approve('b-002'); await autopublish.setSettings({ ...ON, window_minutes: 0, include_dpx: true }); await autopublish.setSettings({ dry_run: false, understood: true }); await autopublish.consider(); await autopublish.tick(); await autopublish.settled()
-    expect([...dest.keys()].filter((k) => /\.dpx$/.test(k)).sort()).toEqual(['renders/proxy_v004/x/STEM_V.0001.dpx', 'renders/proxy_v004/x/STEM_V.0002.dpx', 'renders/proxy_v004/x/STEM_V.0003.dpx'])   // the frames went although the sidecar had an empty value
+    expect([...dest.keys()].filter((k) => /\.dpx$/.test(k)).sort()).toEqual(['renders/_delivery_v11/STEM_V/STEM_V.0001.dpx', 'renders/_delivery_v11/STEM_V/STEM_V.0002.dpx', 'renders/_delivery_v11/STEM_V/STEM_V.0003.dpx'])   // the corrected frames went although the sidecar had an empty value
     expect([...dest.keys()].some((k) => /b-002/i.test(k))).toBe(false)   // the unreadable one was not uploaded without its frames
     expect(JSON.stringify((await autopublish.statusNow()).watching.skipped)).toMatch(/b-002[^]*cannot be read/)
   })
@@ -187,7 +198,7 @@ describe('the EDL judges a return in a dry run as in a live one; a _TEST_ round 
     await autopublish.setSettings({ enabled: true, approved_by: 'Lucas', understood: true, require_approval: false, include_dpx: true, round, sources: { local: false, volume: true } }); await scan()
   }
   it('a real round: frames-differ blocks even in a dry run (skipped with the reason, never "would upload"); a _TEST_ round shows the waiver as a warning and queues', async () => {
-    await setup('qc_{date}_r01'); await autopublish.consider(); let st = await autopublish.statusNow(); expect(st.pending).toEqual([]); expect(st.watching.skipped).toEqual([expect.objectContaining({ shot: 'archival-080', version: 'v001', reason: expect.stringMatching(/held back by the EDL.*3 frames, the EDL cut has 94/) })])
+    await setup('qc_{date}_r01'); await autopublish.consider(); let st = await autopublish.statusNow(); expect(st.pending).toEqual([]); expect(st.watching.skipped).toEqual([expect.objectContaining({ shot: 'archival-080', version: 'v001', reason: expect.stringMatching(/held back: dpx fix: .*frame count 3 of 94/) })])
     await autopublish.off(); await autopublish.setSettings({ enabled: true, approved_by: 'Lucas', understood: true, round: '_TEST_{date}' }); t += 6 * MIN; await autopublish.consider(); st = await autopublish.statusNow()
     expect(st.pending.map((e) => [e.version, e.state, e.reason])).toEqual([['v001', 'would_upload', expect.stringMatching(/EDL frame count not checked in a test round: 3 frames, the cut has 94/)]])
   })
@@ -196,5 +207,45 @@ describe('the EDL judges a return in a dry run as in a live one; a _TEST_ round 
     const p = await pubs.plan({ items: [{ where: 'volume', path: 'proxy_v004/x', stem: STEM }], targets: ['s3'], round: '_TEST_r1' }); expect(p.sequences![0]).toMatchObject({ blocked: false, notes: expect.arrayContaining(['EDL check waived: test round']) }); expect(p.sequences![0].flags.find((f) => f.code === 'frames-differ-from-edl')).toMatchObject({ level: 'warn' })
     volume.set('comfy-shared/output/proxy_v004/y/ARCHIVAL-102_MAIN-B_FINAL_V01.0001.dpx', 'a'); const n = await pubs.plan({ items: [{ where: 'volume', path: 'proxy_v004/y', stem: 'ARCHIVAL-102_MAIN-B_FINAL_V01' }], targets: ['s3'], round: '_TEST_r1', start_timecodes: { 'ARCHIVAL-102_MAIN-B_FINAL_V01': '01:00:00:00' } }); expect(n.sequences![0].blocked).toBe(true); expect(n.sequences![0].flags.map((f) => f.code)).toContain('not-in-edl')
     const r = await pubs.plan({ items: [{ where: 'volume', path: 'proxy_v004/x', stem: STEM }], targets: ['s3'], round: 'tunnel-v11_test' }); expect(r.sequences![0].blocked).toBe(true)
+  })
+})
+
+describe('Auto-publish uploads the corrected copies of the DPX (ADR-057 decision 7, issue 12)', () => {
+  const live = async (o: Record<string, unknown> = {}) => {
+    vreview('v-001', 'v001', { meta: { source_dir: 'proxy_v004/x', name: 'STEM_V' } }); for (let i = 1; i <= 3; i++) volume.set(`comfy-shared/output/proxy_v004/x/STEM_V.000${i}.dpx`, `frame${i}`)
+    await scan(); await approve('v-001'); await autopublish.setSettings({ ...ON, window_minutes: 0, include_dpx: true, ...o }); await autopublish.setSettings({ dry_run: false, understood: true })
+    await autopublish.consider(); await autopublish.tick(); await autopublish.settled()
+  }
+  const dpxKeys = () => [...dest.keys()].filter((k) => /\.dpx$/.test(k)).sort()
+  it('the upload carries the corrected copy under _delivery_v11, never the original frames', async () => {
+    fakeFix('STEM_V', 'proxy_v004/x', 'STEM_V'); await live()
+    expect(dpxKeys()).toEqual([1, 2, 3].map((n) => `renders/_delivery_v11/STEM_V/STEM_V.000${n}.dpx`)); expect(dpxKeys().some((k) => /proxy_v004/.test(k))).toBe(false); expect(fixRuns).toBe(1)
+    expect((await autopublish.statusNow()).recent[0]).toMatchObject({ state: 'done', shot: 'v-001' })
+  })
+  it('a plan that carries a flag holds the whole review back with the reason: nothing is uploaded and it is listed as skipped', async () => {
+    fakeFix('STEM_V', 'proxy_v004/x', 'STEM_V', { expected: 5 }); await live()
+    expect(dest.size).toBe(0); expect(fixRuns).toBe(0)   // nothing written, nothing uploaded, not even the video
+    expect(JSON.stringify((await autopublish.statusNow()).watching.skipped)).toMatch(/v-001[^]*held back: dpx fix: STEM_V: frame count 3 of 5/)
+  })
+  it('a fix that fails at upload holds the review (no video, no frames) and is not tried again for ten minutes', async () => {
+    fakeFix('STEM_V', 'proxy_v004/x', 'STEM_V', { runFails: true }); await live()
+    expect(dest.size).toBe(0); expect(fixRuns).toBe(1); expect((await autopublish.statusNow()).recent[0]).toMatchObject({ shot: 'v-001', state: 'cancelled', reason: expect.stringMatching(/held back: dpx fix: .*ssh dropped/) })
+    await autopublish.consider(); await autopublish.tick(); await autopublish.settled(); expect(fixRuns).toBe(1)   // held for ten minutes
+    t += 11 * MIN; await autopublish.consider(); await autopublish.tick(); await autopublish.settled(); expect(fixRuns).toBe(2)
+  })
+  it('a sequence that is not in the EDL goes as a video only, with the reason', async () => {
+    dpxprep.setDeps({ plan: async (a) => ({ rows: a.items!.map((i) => ({ src_dir: i.src_dir ?? '', stem: i.stem ?? '', clip: '', frames: 3, expected_frames: null, start_timecode: '00:00:00:00', timecode_source: null, fps: 23.976, ok: false, why: 'not in the EDL' })), settings: {} as never }), pods: async () => [{ id: 'p1', name: 'pod' }] })
+    await live(); expect(dpxKeys()).toEqual([]); expect([...dest.keys()].some((k) => /V-001_MAIN\.mov$/.test(k))).toBe(true); expect(fixRuns).toBe(0)
+    expect((await autopublish.statusNow()).recent[0]).toMatchObject({ state: 'done', reason: expect.stringMatching(/video only for: STEM_V: not in the EDL/) })
+  })
+  it('fix_dpx off: the DPX are never included (the review video only), the fix never runs and the status says so', async () => {
+    fakeFix('STEM_V', 'proxy_v004/x', 'STEM_V'); await live({ fix_dpx: false })
+    expect(dpxKeys()).toEqual([]); expect(fixRuns).toBe(0); expect([...dest.keys()].some((k) => /V-001_MAIN\.mov$/.test(k))).toBe(true)
+    expect(autopublish.status().dpx).toMatchObject({ include: true, fix: false, fixing: 0, mode: expect.stringMatching(/off: fix_dpx is off.*no DPX/) })
+  })
+  it('fix_dpx is a boolean, on by default, in the settings and the status; include_dpx off behaves as before', async () => {
+    expect((await autopublish.settings()).fix_dpx).toBe(true); await expect(autopublish.setSettings({ fix_dpx: 'no' as never })).rejects.toMatchObject({ status: 400 })
+    expect((await autopublish.setSettings({ fix_dpx: false })).fix_dpx).toBe(false); await autopublish.statusNow(); expect(autopublish.status().dpx).toMatchObject({ include: false, fix: false, mode: 'not included' })
+    expect((await autopublish.setSettings({ fix_dpx: true })).fix_dpx).toBe(true)
   })
 })

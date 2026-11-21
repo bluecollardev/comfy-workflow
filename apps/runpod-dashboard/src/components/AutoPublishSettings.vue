@@ -71,6 +71,8 @@
             <label class="mb-0 d-block">{{ $t('autopublish.block.round') }}<BFormInput v-model.trim="model.round" size="sm" class="font-monospace" style="max-width: 24rem" data-testid="config-autopublish-round" /></label>
             <div class="text-body-secondary" data-testid="config-autopublish-round-example">{{ $t('autopublish.block.roundExample', { example: roundExample(model.round) }) }}</div>
             <label class="d-flex align-items-center gap-2 mt-1"><input v-model="model.include_dpx" type="checkbox" class="form-check-input mt-0" data-testid="config-autopublish-include-dpx" />{{ $t('autopublish.block.includeDpx') }}</label>
+            <label v-if="model.include_dpx" class="d-flex align-items-center gap-2 mt-1 ms-4"><input :checked="model.fix_dpx !== false" @change="model.fix_dpx = $event.target.checked" type="checkbox" class="form-check-input mt-0" data-testid="config-autopublish-fix-dpx" />{{ $t('autopublish.block.fixDpx') }}</label>
+            <div v-if="model.include_dpx" class="form-text ms-4" data-testid="config-autopublish-fix-dpx-note">{{ model.fix_dpx !== false ? $t('autopublish.block.fixDpxOn') : $t('autopublish.block.fixDpxOff') }}</div>
           </div>
           <div v-if="hasReview" class="mt-1" data-testid="autopublish-review-block">
       <label class="d-flex align-items-center gap-2"><input v-model="model.require_review" type="checkbox" class="form-check-input mt-0" data-testid="config-autopublish-require-review" />{{ $t('autopublish.pipe.requireReview') }}</label>

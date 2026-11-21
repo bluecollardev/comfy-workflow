@@ -9,6 +9,7 @@ import { lstat, mkdir, readdir, readFile, rename, stat, writeFile } from 'node:f
 import { dirname, join } from 'node:path'
 import { bad, CoreError } from './errors.js'
 import * as autogenerate from './autogenerate.js'
+import * as dpxprep from './dpxprep.js'
 import * as history from './history.js'
 import * as mounts from './mounts.js'
 import { configDir, mountsFile } from './paths.js'
@@ -38,7 +39,7 @@ type Stored = mounts.AutoPublishConfig
 export type Targets = mounts.AutoPublishTargets
 interface StateFile { /** the last dry-run Slack summary: the set it described and when */ dryslack?: { sig: string; at: number }; uploaded?: Record<string, { at: string; job_id?: string; manual?: boolean; already?: boolean }>; day?: string; count?: number; cancelled?: string[]; /** shot/version keys a person holds back: never auto-published until released */ held?: string[]; inflight?: Record<string, string>; would?: Record<string, string> }
 export interface TargetState { ready: boolean; problem?: string; label: string }
-export interface Settings { /** Auto-generate: render the new finished sequences too (off by default) */ generate: mounts.AutoGenerateConfig; /** where Auto-publish looks (this PC and/or the volume) and how often the volume is listed */ sources: { local: boolean; volume: boolean }; volume_scan_minutes: number; /** the round a shot is published into (`{date}` = the local day) */ round: string; include_dpx: boolean; /** each review version needs a person's approval (true), or every eligible review goes under the standing approval (false, the default) */ require_approval: boolean; enabled: boolean; dry_run: boolean; dry_run_first: boolean; window_minutes: number; daily_cap: number | null; targets: Targets; target_state: { s3: TargetState; slack: TargetState; tunnel: TargetState }; standing: Standing | null; destination: string; ready: boolean; problem?: string }
+export interface Settings { /** Auto-generate: render the new finished sequences too (off by default) */ generate: mounts.AutoGenerateConfig; /** where Auto-publish looks (this PC and/or the volume) and how often the volume is listed */ sources: { local: boolean; volume: boolean }; volume_scan_minutes: number; /** the round a shot is published into (`{date}` = the local day) */ round: string; include_dpx: boolean; /** with include_dpx: the corrected copy is made (dpx_fix) and uploaded; off: no DPX at all */ fix_dpx: boolean; /** each review version needs a person's approval (true), or every eligible review goes under the standing approval (false, the default) */ require_approval: boolean; enabled: boolean; dry_run: boolean; dry_run_first: boolean; window_minutes: number; daily_cap: number | null; targets: Targets; target_state: { s3: TargetState; slack: TargetState; tunnel: TargetState }; standing: Standing | null; destination: string; ready: boolean; problem?: string }
 
 const clean = (v: unknown): string => String(v ?? '').replace(/[{}\r\n]/g, ' ').trim().slice(0, 80)
 const keyOf = (shot: string, version: string) => `${shot}/${version}`
@@ -78,11 +79,11 @@ async function approvalList(): Promise<Approval[]> { const a = await readJson<{ 
 export async function settings(): Promise<Settings> {
   const s = await stored(), ps = await publish.settings()
   const problem = ps.s3.ready ? undefined : ps.s3.problem
-  return { generate: { ...s.generate }, sources: { ...s.sources }, volume_scan_minutes: s.volume_scan_minutes, round: s.round, include_dpx: s.include_dpx, require_approval: s.require_approval === true, enabled: s.enabled === true && !!s.standing, dry_run: s.dry_run !== false, dry_run_first: s.dry_run_first !== false, window_minutes: s.window_minutes, daily_cap: s.daily_cap, targets: { ...s.targets }, standing: s.standing ?? null,
+  return { generate: { ...s.generate }, sources: { ...s.sources }, volume_scan_minutes: s.volume_scan_minutes, round: s.round, include_dpx: s.include_dpx, fix_dpx: s.fix_dpx !== false, require_approval: s.require_approval === true, enabled: s.enabled === true && !!s.standing, dry_run: s.dry_run !== false, dry_run_first: s.dry_run_first !== false, window_minutes: s.window_minutes, daily_cap: s.daily_cap, targets: { ...s.targets }, standing: s.standing ?? null,
     target_state: { s3: { ready: ps.s3.ready, ...(ps.s3.problem ? { problem: ps.s3.problem } : {}), label: 'S3' }, slack: { ready: ps.slack.ready, ...(ps.slack.problem ? { problem: ps.slack.problem } : {}), label: 'Slack' }, tunnel: { ready: false, problem: 'Tunnel is not available yet', label: 'Tunnel' } },
     destination: `s3://${ps.s3.bucket}/${ps.s3.prefix}`, ready: ps.s3.ready, ...(problem ? { problem } : {}) }
 }
-export interface SettingsInput { generate?: Partial<mounts.AutoGenerateConfig>; sources?: { local?: boolean; volume?: boolean }; volume_scan_minutes?: number; round?: string; include_dpx?: boolean; /** true: each review version needs a person's approval; false (default): every eligible review goes */ require_approval?: boolean; enabled?: boolean; dry_run?: boolean; /** what turning it on does: dry run first (default) or live at once */ dry_run_first?: boolean; window_minutes?: number; /** 1..50, or null / 0 for no limit */ daily_cap?: number | null; targets?: Partial<Targets>; approved_by?: string; understood?: boolean }
+export interface SettingsInput { generate?: Partial<mounts.AutoGenerateConfig>; sources?: { local?: boolean; volume?: boolean }; volume_scan_minutes?: number; round?: string; include_dpx?: boolean; fix_dpx?: boolean; /** true: each review version needs a person's approval; false (default): every eligible review goes */ require_approval?: boolean; enabled?: boolean; dry_run?: boolean; /** what turning it on does: dry run first (default) or live at once */ dry_run_first?: boolean; window_minutes?: number; /** 1..50, or null / 0 for no limit */ daily_cap?: number | null; targets?: Partial<Targets>; approved_by?: string; understood?: boolean }
 /** Save. Turning ON needs a name AND `understood: true`, and starts in dry-run unless it was already live; going live needs the standing approval and a fresh name in the same call. The destination is never set here. */
 export async function setSettings(input: SettingsInput): Promise<Settings> {
   const i = input ?? {}, cur = await stored(), was = cur.enabled === true && !!cur.standing, name = clean(i.approved_by)
@@ -112,6 +113,7 @@ export async function setSettings(input: SettingsInput): Promise<Settings> {
   if (i.volume_scan_minutes !== undefined) { const n = i.volume_scan_minutes; if (!(Number.isInteger(n) && n >= 1 && n <= 120)) throw bad('volume_scan_minutes is a whole number of minutes from 1 to 120'); next.volume_scan_minutes = n; notes.push('volume_scan_minutes') }
   if (i.round !== undefined) { next.round = String(i.round).trim() || mounts.AUTO_PUBLISH_DEFAULT.round; notes.push('round') }
   if (i.require_approval !== undefined) { if (typeof i.require_approval !== 'boolean') throw bad('require_approval is true or false'); next.require_approval = i.require_approval; notes.push(`require_approval (${i.require_approval})`) }
+  if (i.fix_dpx !== undefined) { if (typeof i.fix_dpx !== 'boolean') throw bad('fix_dpx is true or false'); next.fix_dpx = i.fix_dpx; notes.push(`fix_dpx (${i.fix_dpx})`) }
   if (i.include_dpx !== undefined) { if (typeof i.include_dpx !== 'boolean') throw bad('include_dpx is true or false'); next.include_dpx = i.include_dpx; notes.push(`include_dpx (${i.include_dpx})`) }
   if (i.dry_run !== undefined && typeof i.dry_run !== 'boolean') throw bad('dry_run is true or false')
   if (i.enabled !== undefined && typeof i.enabled !== 'boolean') throw bad('enabled is true or false')
@@ -361,30 +363,38 @@ async function check(shot: string, version: string, o: { pendingOk?: boolean; ma
   if (pl.items.length && pl.items.every((i) => i.skip === 'same size already there')) { inDestination.set(key, true); return { ok: false, reason: 'already at the destination', inDest: true } }
   inDestination.set(key, false)
   // the EDL judges the sequences a return would carry, in a dry run as well as live (the same blockers); a test round waives only the frame count
-  const edlv = s.include_dpx ? await edlCheck(f, s.round.replace(/\{date\}/g, localDay(deps.now())), key) : { held: '', warnings: [] as string[] }
+  const edlv = dpxOn(s) ? await dpxCheck(f, key, s.round.replace(/\{date\}/g, localDay(deps.now()))) : { held: '', warnings: [] as string[] }   // ADR-057 decision 7: the DPX that go are the corrected copies, so this is the plan of the fix (the EDL's flags), not of the original frames
   if (edlv.held) return { ok: false, reason: edlv.held }
   return { ok: true, found: f, approved: a ?? { shot, version, approved_by: '', at: '' }, ...(edlv.warnings.length ? { warnings: edlv.warnings } : {}) }
 }
 /** The files of a review as publish items: paths under this PC's output/, or `{ where: 'volume' }` for a review found on the volume (streamed, never downloaded). */
 const reviewItems = (f: Pick<Found, 'shot' | 'version' | 'files' | 'source'>): unknown[] => f.files.map((x) => (f.source === 'volume' ? { where: 'volume', path: `deliver/${f.shot}/${f.version}/${x.name}` } : `deliver/${f.shot}/${f.version}/${x.name}`))
-/** What the EDL says about the DPX sequences this review would carry (publish.plan's `sequences`), kept five minutes per version: a version with nothing sendable is held back with the reasons; the rest are warnings. */
-const edlHold = new Map<string, string>(), edlMemo = new Map<string, { at: number; value: { held: string; warnings: string[] } }>()
-async function edlCheck(f: Found, round: string, key: string): Promise<{ held: string; warnings: string[] }> {
-  const memoKey = `${key}|${round}|${f.files.map((x) => x.name).join(',')}`, hit = edlMemo.get(memoKey)
+/** DPX frames go with a review only when they are included AND the automatic fix is on (`fix_dpx`, default on): the upload carries the corrected copies; with the fix off there are no DPX at all. */
+const dpxOn = (s: { include_dpx: boolean; fix_dpx?: boolean }): boolean => s.include_dpx === true && s.fix_dpx !== false
+/** The sequences a review's sidecars name (source_dir, name): what `dpxprep` fixes. */
+async function seqsOf(e: Pick<Entry, 'source' | 'shot' | 'version' | 'files' | 'metas'>): Promise<dpxprep.SeqRef[]> {
+  const base = deps.outputRoot(), out: dpxprep.SeqRef[] = []
+  for (const f of e.files.filter((x) => MOVIE.test(x))) {
+    const meta = (e.source === 'volume' ? e.metas?.[f] : base ? await readJson<Record<string, unknown>>(join(base, 'deliver', e.shot, e.version, `${f}.meta.json`), {}) : undefined) as { source_dir?: string; name?: string } | undefined
+    if (meta && typeof meta.name === 'string' && typeof meta.source_dir === 'string') out.push({ source_dir: meta.source_dir, name: meta.name })
+  }
+  return out
+}
+const dpxMemo = new Map<string, { at: number; value: { held: string; warnings: string[] } }>(), dpxFailUntil = new Map<string, { until: number; why: string }>()
+/** The plan of the fix for a review (nothing is written): the flags hold the review back with their reason, kept five minutes per version; a fix that failed at upload holds it for ten minutes. */
+async function dpxCheck(f: Found, key: string, round: string): Promise<{ held: string; warnings: string[] }> {
+  const fail = dpxFailUntil.get(key); if (fail && fail.until > deps.now()) { edlHold.set(key, fail.why); return { held: fail.why, warnings: [] } }
+  const memoKey = `${key}|${f.files.map((x) => x.name).join(',')}`, hit = dpxMemo.get(memoKey)
   if (hit && deps.now() - hit.at < 5 * 60_000) return hit.value
   let value = { held: '', warnings: [] as string[] }
   try {
-    const cn: Record<string, string> = {}, dpx = await dpxItemsFor({ shot: f.shot, version: f.version, source: f.source, files: f.files.map((x) => x.name), metas: f.metas } as Entry, cn)
-    if (dpx.length) {
-      const pl = await publish.plan({ items: [...reviewItems(f), ...dpx], clip_names: cn, targets: ['s3'], round }), seqs = pl.sequences ?? [], held = seqs.filter((x) => x.blocked)
-      const sendable = pl.items.some((i) => (i.skip === null || i.skip === 'same size already there') && /\.(mov|mp4|dpx)$/i.test(i.s3_key))   // the review movie or a frame still goes
-      if (held.length && !sendable) value = { held: `held back by the EDL: ${held.map((x) => `${x.clip}: ${x.reason}`).join(' | ').slice(0, 300)}`, warnings: [] }
-      else value = { held: '', warnings: [...new Set([...held.map((x) => `${x.clip}: ${x.reason} (this sequence is held back)`), ...seqs.flatMap((x) => x.flags.filter((fl) => fl.level === 'warn' && fl.code !== 'no-edl').map((fl) => `${x.clip}: ${fl.message}`))])].slice(0, 5) }
-    }
+    const pr = await dpxprep.prepare({ seqs: await seqsOf({ source: f.source, shot: f.shot, version: f.version, files: f.files.map((x) => x.name), metas: f.metas }), approvedBy: '', dry: true, testRound: /^_TEST_/.test(round) })
+    value = pr.held ? { held: `held back: ${pr.held}`, warnings: [] } : { held: '', warnings: [...pr.skipped, ...pr.notes].slice(0, 5) }
   } catch { /* the plan could not be made: the other checks stand */ }
-  edlMemo.set(memoKey, { at: deps.now(), value }); if (value.held) edlHold.set(key, value.held); else edlHold.delete(key)
+  dpxMemo.set(memoKey, { at: deps.now(), value }); if (value.held) edlHold.set(key, value.held); else edlHold.delete(key)
   return value
 }
+const edlHold = new Map<string, string>(), edlMemo = new Map<string, { at: number; value: { held: string; warnings: string[] } }>()   // why a review is held back (shown in Skipped); edlMemo is kept for reset()
 export const eligibility = check
 
 /** Look for review versions that are ready: queue each (dry-run: record `would_upload`). Runs when a render ends, at start, on an approval and every 60 s. */
@@ -415,7 +425,7 @@ async function doConsider(): Promise<{ queued: number }> {
         history.record({ kind: 'change', area: 'configuration', action: 'auto-publish would upload', what: `${r.shot} ${r.version}`, detail: `dry run: ${e.files.length} files (${publish.fmtSize(e.bytes)})${c.warnings?.length ? `, ${c.warnings.join('; ')}` : ''}, approved by ${r.approved_by}; would use ${publishTargets(s.targets).join(' + ')}; nothing was sent`, approved_by: s.standing.approved_by })
       }
       try {   // the whole pipeline except the writes: the exact keys, the manifest, the access check
-        const cn: Record<string, string> = {}, items = [...reviewItems({ shot: e.shot, version: e.version, source: e.source, files: e.files.map((name) => ({ name, bytes: 0 })) }), ...(s.include_dpx ? await dpxItemsFor(e, cn) : [])]
+        const cn: Record<string, string> = {}, items = [...reviewItems({ shot: e.shot, version: e.version, source: e.source, files: e.files.map((name) => ({ name, bytes: 0 })) }), ...(dpxOn(s) ? (await dpxprep.prepare({ seqs: await seqsOf(e), approvedBy: '', dry: true, testRound: /^_TEST_/.test(s.round) })).items : [])]
         e.dry_run_plan = await publish.dryRun({ items, round: s.round.replace(/\{date\}/g, localDay(deps.now())), clip_names: cn })
       } catch (err) { e.reason = `${e.reason}; the dry-run plan could not be made: ${publish.redact((err as Error).message).slice(0, 160)}` }
     }
@@ -483,9 +493,11 @@ async function upload(e: Entry, s: Stored): Promise<void> {
   const standing = s.standing?.approved_by ?? '', who = e.manual ? e.reason_who ?? standing : standing
   try {
     const round = s.round.replace(/\{date\}/g, localDay(deps.now())), clipNames: Record<string, string> = {}, items: unknown[] = reviewItems({ shot: e.shot, version: e.version, source: e.source, files: e.files.map((name) => ({ name, bytes: 0 })) })
-    if (s.include_dpx) items.push(...(await dpxItemsFor(e, clipNames)))
-    if (s.include_dpx) {   // ADR-050: a sequence the EDL does not allow (not in the V11 EDL, no start timecode, a frame count that differs) is held back with its reason; with nothing left to send the upload is skipped
-      const pl0 = await publish.plan({ items, round, clip_names: clipNames, targets: publishTargets(s.targets) }), held = (pl0.sequences ?? []).filter((x) => x.blocked)
+    if (dpxOn(s)) {   // ADR-057 decision 7: the corrected copy is made first and is what goes; a flagged plan, a failed fix or no approver holds the whole review back
+      const pr = await dpxprep.prepare({ seqs: await seqsOf(e), approvedBy: standing || who, dry: false, testRound: /^_TEST_/.test(round) })
+      if (pr.held) { const why = `held back: ${pr.held}`; dpxFailUntil.set(e.key, { until: deps.now() + 10 * 60_000, why }); edlHold.set(e.key, why); await mutate((st2) => { if (st2.inflight) delete st2.inflight[e.key] }); return finish(e, 'cancelled', why) }
+      items.push(...pr.items); if (pr.skipped.length) e.reason = `video only for: ${pr.skipped.join('; ')}`.slice(0, 300)
+      const pl0 = await publish.plan({ items, round, clip_names: clipNames, targets: publishTargets(s.targets) }), held = (pl0.sequences ?? []).filter((x) => x.blocked)   // ADR-050: what the EDL does not allow is still held back with its reason
       if (held.length) {
         const why = held.map((x) => `${x.clip}: ${x.reason}`).join(' | ').slice(0, 300)
         if (!pl0.items.some((i) => i.skip === null || i.skip === 'same size already there')) return finish(e, 'cancelled', `skipped: ${why}`)
@@ -507,20 +519,6 @@ async function upload(e: Entry, s: Stored): Promise<void> {
     history.record({ kind: 'change', area: 'configuration', action: 'auto-publish failed', what: `${e.shot} ${e.version}`, detail: `attempt ${e.attempts}: ${e.reason}${e.attempts <= MAX_RETRIES ? '; tries again in 10 minutes' : '; gave up'}` })
   }
 }
-/** The source DPX frames a review's sidecar names (source_dir, name, first, last): the frames on this PC, else the sequence folder on the volume (streamed). The sequence is delivered under the review's clip name. */
-async function dpxItemsFor(e: Entry, clipNames: Record<string, string>): Promise<unknown[]> {
-  const base = deps.outputRoot(), out: unknown[] = []
-  for (const f of e.files.filter((x) => /\.(mov|mp4)$/i.test(x))) {
-    const meta = (e.source === 'volume' ? e.metas?.[f] : base ? await readJson<Record<string, unknown>>(join(base, 'deliver', e.shot, e.version, `${f}.meta.json`), {}) : undefined) as { source_dir?: string; name?: string; first?: number; last?: number } | undefined
-    if (!meta || typeof meta.name !== 'string' || typeof meta.source_dir !== 'string') continue
-    const clip = f.replace(/\.(mov|mp4)$/i, ''); if (clip !== meta.name) clipNames[meta.name] = clip
-    if (e.source === 'volume') { out.push({ where: 'volume', path: meta.source_dir, stem: meta.name }); continue }   // streamed from the volume like the review
-    const re = new RegExp(`^${meta.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.(\\d+)\\.dpx$`), first = meta.first ?? 0, last = meta.last ?? Number.MAX_SAFE_INTEGER
-    const names = base ? await readdir(join(base, meta.source_dir)).catch(() => [] as string[]) : [], local = names.filter((n) => { const m = re.exec(n); return !!m && Number(m[1]) >= first && Number(m[1]) <= last }).sort()
-    if (local.length) out.push(...local.map((n) => `${meta.source_dir}/${n}`)); else out.push({ where: 'volume', path: meta.source_dir, stem: meta.name })
-  }
-  return out
-}
 async function markUploaded(e: Entry, job_id: string | undefined, counted: boolean): Promise<void> {
   const day = localDay(deps.now())
   await mutate((st) => {
@@ -535,16 +533,16 @@ async function markUploaded(e: Entry, job_id: string | undefined, counted: boole
 
 // ----- status and the person's actions -----
 export interface Watching { local: { enabled: boolean; root: string | null; root_exists: boolean; reviews: number }; volume: { enabled: boolean; id: string; reviews: number; scanned_at: string | null; scanning: boolean; error?: string }; /** this PC's folder (kept from the first version of this field) and the totals over the places watched */ root: string | null; root_exists: boolean; shots: number; reviews: number; approved: number; eligible: number; queued: number; uploaded_today: number; /** what was uploaded today: the review, when, and whether a person pressed Publish now (additive) */ uploaded?: { shot: string; version: string; at: string; manual?: boolean; already?: boolean }[]; skipped: { shot: string; version: string; reason: string }[]; summary: string }
-export function status(): { generate: autogenerate.GenerateStatus; watching: Watching; enabled: boolean; dry_run: boolean; dry_run_first: boolean; standing: Standing | null; window_minutes: number; daily_cap: number | null; targets: Targets; today: { count: number; left: number | null }; destination: string; pending: ReturnType<typeof view>[]; recent: ReturnType<typeof view>[] } {
+export function status(): { generate: autogenerate.GenerateStatus; watching: Watching; enabled: boolean; dry_run: boolean; dry_run_first: boolean; standing: Standing | null; window_minutes: number; daily_cap: number | null; targets: Targets; today: { count: number; left: number | null }; destination: string; /** the DPX of an upload: included or not, fixed first (ADR-057 decision 7) or off, and how many sequences are being corrected now */ dpx: { include: boolean; fix: boolean; mode: string; fixing: number }; pending: ReturnType<typeof view>[]; recent: ReturnType<typeof view>[] } {
   void ensureLoaded()
   const m = memo
-  return { generate: autogenerate.status(memo.generate), watching: watchMemo.value, enabled: m.enabled, dry_run: m.dry_run, dry_run_first: m.dry_run_first, standing: m.standing, window_minutes: m.window_minutes, daily_cap: m.daily_cap, targets: { ...m.targets }, today: { count: m.count, left: m.daily_cap === null ? null : Math.max(0, m.daily_cap - m.count) }, destination: m.destination, pending: [...entries.values()].map((e) => ({ ...view(e), targets: publishTargets(m.targets) })), recent: recent.map(view) }
+  return { generate: autogenerate.status(memo.generate), watching: watchMemo.value, enabled: m.enabled, dry_run: m.dry_run, dry_run_first: m.dry_run_first, standing: m.standing, window_minutes: m.window_minutes, daily_cap: m.daily_cap, targets: { ...m.targets }, today: { count: m.count, left: m.daily_cap === null ? null : Math.max(0, m.daily_cap - m.count) }, destination: m.destination, dpx: { include: m.include_dpx, fix: m.fix_dpx, mode: !m.include_dpx ? 'not included' : m.fix_dpx ? 'corrected copies (dpx_fix first)' : 'off: fix_dpx is off, so no DPX frames are uploaded (the review video only)', fixing: dpxprep.fixingCount() }, pending: [...entries.values()].map((e) => ({ ...view(e), targets: publishTargets(m.targets) })), recent: recent.map(view) }
 }
 /** The settings and today's count as the status answers them, from memory (refreshed on every change and every tick). */
-const memo = { generate: { ...mounts.AUTO_GENERATE_DEFAULT } as mounts.AutoGenerateConfig, enabled: false, dry_run: true, dry_run_first: true, standing: null as Standing | null, targets: { s3: true, slack: false, tunnel: false } as Targets, window_minutes: WINDOW_DEFAULT, daily_cap: null as number | null, count: 0, destination: '' }
+const memo = { generate: { ...mounts.AUTO_GENERATE_DEFAULT } as mounts.AutoGenerateConfig, enabled: false, dry_run: true, dry_run_first: true, standing: null as Standing | null, targets: { s3: true, slack: false, tunnel: false } as Targets, window_minutes: WINDOW_DEFAULT, daily_cap: null as number | null, include_dpx: false, fix_dpx: true, count: 0, destination: '' }
 async function refreshMemo(): Promise<void> {
   const s = await settings(), st = await stateOf()
-  Object.assign(memo, { generate: s.generate, enabled: s.enabled, dry_run: s.dry_run, dry_run_first: s.dry_run_first, standing: s.standing, targets: s.targets, window_minutes: s.window_minutes, daily_cap: s.daily_cap, destination: s.destination, count: st.day === localDay(deps.now()) ? st.count ?? 0 : 0 })
+  Object.assign(memo, { generate: s.generate, enabled: s.enabled, dry_run: s.dry_run, dry_run_first: s.dry_run_first, standing: s.standing, targets: s.targets, window_minutes: s.window_minutes, daily_cap: s.daily_cap, include_dpx: s.include_dpx, fix_dpx: s.fix_dpx !== false, destination: s.destination, count: st.day === localDay(deps.now()) ? st.count ?? 0 : 0 })
 }
 /** What Auto-publish is looking at, in one sentence, and why each review it saw is not going out. It reads this PC's deliver/ only (volume-side scanning is a later decision). Cached for 10 s so the window's polling is never a listing storm. */
 const emptyWatching = (): Watching => ({ local: { enabled: true, root: null, root_exists: false, reviews: 0 }, volume: { enabled: true, id: '', reviews: 0, scanned_at: null, scanning: false }, root: null, root_exists: false, shots: 0, reviews: 0, approved: 0, eligible: 0, queued: 0, uploaded_today: 0, skipped: [], summary: '' })
@@ -628,4 +626,4 @@ export const settled = async (): Promise<void> => { for (const e of [...entries.
 /** Called where a review render ends: best effort, never throws, never delays the render. */
 export function considerSoon(): void { try { void consider().then(refreshMemo).catch(() => undefined) } catch { /* never fails a render */ } }
 /** Forget everything in memory (tests). */
-export function reset(): void { edlMemo.clear(); edlHold.clear(); autogenerate.reset(); Object.assign(memo, { generate: { ...mounts.AUTO_GENERATE_DEFAULT } }); watchMemo.at = 0; watchMemo.value = emptyWatching(); vol.ac?.abort(); Object.assign(vol, { at: 0, scanning: false, id: '', reviews: [], promise: undefined, ac: undefined }); delete vol.error; uploadChain = Promise.resolve(); stateLock = Promise.resolve(); considering = Promise.resolve(); ; stop(); entries.clear(); recent = []; seq = 0; loaded = null; inDestination.clear(); Object.assign(memo, { enabled: false, dry_run: true, dry_run_first: true, standing: null, targets: { s3: true, slack: false, tunnel: false }, window_minutes: WINDOW_DEFAULT, daily_cap: null, count: 0, destination: '' }); setDeps(null) }
+export function reset(): void { edlMemo.clear(); edlHold.clear(); dpxMemo.clear(); dpxFailUntil.clear(); dpxprep.reset(); autogenerate.reset(); Object.assign(memo, { generate: { ...mounts.AUTO_GENERATE_DEFAULT } }); watchMemo.at = 0; watchMemo.value = emptyWatching(); vol.ac?.abort(); Object.assign(vol, { at: 0, scanning: false, id: '', reviews: [], promise: undefined, ac: undefined }); delete vol.error; uploadChain = Promise.resolve(); stateLock = Promise.resolve(); considering = Promise.resolve(); ; stop(); entries.clear(); recent = []; seq = 0; loaded = null; inDestination.clear(); Object.assign(memo, { enabled: false, dry_run: true, dry_run_first: true, standing: null, targets: { s3: true, slack: false, tunnel: false }, window_minutes: WINDOW_DEFAULT, daily_cap: null, count: 0, destination: '' }); setDeps(null) }
