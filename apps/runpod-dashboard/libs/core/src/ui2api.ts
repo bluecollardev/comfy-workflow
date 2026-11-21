@@ -45,7 +45,7 @@ export const UI2API_PY: string = "#!/usr/bin/env python3\n\"\"\"Convert one Comf
 export function podScript(graph: unknown): string {
   const payload = Buffer.from(JSON.stringify(graph)).toString('base64').replace(/(.{76})/g, '$1\n')
   return ['set -eu', 'export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-/opt/playwright}"   # an ssh session does not carry the image\'s ENV: the browser is in /opt/playwright, not /root/.cache',
-    'export UI2API_TIMEOUT_MS="${UI2API_TIMEOUT_MS:-240000}"   # a pod that is still loading its nodes can need minutes for ComfyUI\'s page',
+    'export UI2API_TIMEOUT_MS=240000   # forced, not a default: a pod whose environment already carries 60000 would keep the 60 s wait; a pod that is still loading its nodes can need minutes for ComfyUI\'s page',
     'UI2API_FILE="$(mktemp)"; UI2API_PY="$(mktemp)"; trap \'rm -f "$UI2API_FILE" "$UI2API_PY"\' EXIT',
     `cat > "$UI2API_FILE" <<'UI2API_B64'`, payload, 'UI2API_B64',
     `cat > "$UI2API_PY" <<'UI2API_PYSRC'`, UI2API_PY.replace(/\n$/, ''), 'UI2API_PYSRC',
