@@ -514,6 +514,30 @@
     "download": "Download",
     "prev": "Previous",
     "next": "Next",
+    "pager": {
+      "previous": "Previous",
+      "next": "Next",
+      "page": "Page {x} of {y}",
+      "perPage": "Per page",
+      "shown": "{shown} of {total}"
+    },
+    "group": {
+      "groupsCount": "{n} group(s), {open} open",
+      "main": "Main",
+      "showAll": "Show All",
+      "showTemp": "Show Temp Files",
+      "hideTemp": "Hide Temp Files",
+      "shown": "{shown} of {total}",
+      "versionRange": "v{a} to v{b}",
+      "label": {
+        "video": { "one": "{n} Video", "other": "{n} Videos" },
+        "image": { "one": "{n} Image", "other": "{n} Images" },
+        "audio": { "one": "{n} Audio File", "other": "{n} Audio Files" },
+        "data": { "one": "{n} Data File", "other": "{n} Data Files" },
+        "other": { "one": "{n} Other File", "other": "{n} Other Files" },
+        "temp": { "one": "{n} Temp File", "other": "{n} Temp Files" }
+      }
+    },
     "dpx": {
       "badge": "DPX · {n} frames",
       "sequencesCount": "{n} sequence(s), {open} open",

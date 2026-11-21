@@ -2,17 +2,46 @@
   <div data-testid="outputs-gallery">
     <div v-if="!files.length" class="text-body-secondary small" data-testid="outputs-empty">{{ $t('outputs.none') }}</div>
     <div v-if="files.length && !hideZip" class="d-flex align-items-center gap-2 mb-2 small">
-      <span class="text-body-secondary" data-testid="outputs-files-count">{{ totalFiles > files.length ? $t('outputs.filesOf', { n: files.length, total: totalFiles }) : $t('outputs.filesCount', { n: files.length }) }}</span>
+      <span class="text-body-secondary" data-testid="outputs-files-count">{{ totalShown > shownCount ? $t('outputs.filesOf', { n: shownCount, total: totalShown }) : $t('outputs.filesCount', { n: shownCount }) }}</span>
       <BButton variant="outline-light" size="sm" class="ms-auto" :disabled="!canZip || zipping || offline" :title="canZip ? '' : $t('outputs.zipApp')" data-testid="outputs-zip" @click="zip"><BSpinner v-if="zipping" small class="me-1" /><i v-else class="fa-solid fa-file-zipper me-1"></i>{{ $t('outputs.zip') }}</BButton>
       <span v-if="zipNote" class="text-body-secondary" data-testid="outputs-zip-note">{{ zipNote }}</span>
     </div>
-    <div v-if="seqCount" class="d-flex align-items-center gap-2 mb-2 small" data-testid="outputs-seq-toolbar">
-      <span class="text-body-secondary" data-testid="outputs-seq-count">{{ $t('outputs.dpx.sequencesCount', { n: seqCount, open: openCount }) }}</span>
-      <BButton variant="outline-light" size="sm" class="ms-auto" data-testid="outputs-collapse-all" @click="setAll('collapsed')"><i class="fa-solid fa-compress me-1"></i>{{ $t('outputs.dpx.collapseAll') }}</BButton>
-      <BButton variant="outline-light" size="sm" data-testid="outputs-expand-all" @click="setAll('expanded')"><i class="fa-solid fa-expand me-1"></i>{{ $t('outputs.dpx.expandAll') }}</BButton>
+    <div v-if="seqCount || groupCount || tempCount" class="d-flex align-items-center flex-wrap gap-2 mb-2 small" data-testid="outputs-seq-toolbar">
+      <span v-if="seqCount" class="text-body-secondary" data-testid="outputs-seq-count">{{ $t('outputs.dpx.sequencesCount', { n: seqCount, open: openCount }) }}</span>
+      <span v-if="groupCount" class="text-body-secondary" data-testid="outputs-group-count">{{ $t('outputs.group.groupsCount', { n: groupCount, open: groupOpenCount }) }}</span>
+      <span class="ms-auto"></span>
+      <BButton v-if="tempCount" variant="outline-light" size="sm" :aria-pressed="groupView.showTemp ? 'true' : 'false'" data-testid="outputs-temp-toggle" @click="setShowTemp(!groupView.showTemp)"><i class="fa-solid me-1" :class="groupView.showTemp ? 'fa-eye-slash' : 'fa-eye'"></i>{{ groupView.showTemp ? $t('outputs.group.hideTemp') : $t('outputs.group.showTemp') }} <span class="text-body-secondary">({{ tempCount }})</span></BButton>
+      <BButton v-if="seqCount || groupCount" variant="outline-light" size="sm" data-testid="outputs-collapse-all" @click="setAll('collapsed')"><i class="fa-solid fa-compress me-1"></i>{{ $t('outputs.dpx.collapseAll') }}</BButton>
+      <BButton v-if="seqCount || groupCount" variant="outline-light" size="sm" data-testid="outputs-expand-all" @click="setAll('expanded')"><i class="fa-solid fa-expand me-1"></i>{{ $t('outputs.dpx.expandAll') }}</BButton>
     </div>
     <div v-if="files.length" class="gallery">
-      <div v-for="t in tiles" :key="t.key" class="cell" :class="{ wide: t.kind === 'dpx' && isExpanded(t) }" data-testid="outputs-cell">
+      <div v-for="t in tiles" :key="t.key" class="cell" :class="{ wide: (t.kind === 'dpx' && isExpanded(t)) || (isGroup(t) && groupExpanded(t)) }" data-testid="outputs-cell">
+      <div v-if="isGroup(t)" class="group" data-testid="outputs-group" :data-kind="t.kind" :data-cat="t.cat || 'temp'" :data-count="t.count" :data-expanded="groupExpanded(t) ? 'true' : 'false'">
+        <button type="button" class="tile grouptile" :aria-expanded="groupExpanded(t) ? 'true' : 'false'" :title="t.names || ''" data-testid="outputs-group-toggle" @click="toggleGroup(t)">
+          <LazyMedia v-if="!offline && !groupExpanded(t) && hasPreview(t) && t.main" :kind="t.cat" :src="viewUrl(base, t.main, t.cat === 'image' ? { thumb: true } : undefined)" :alt="t.main.filename" />
+          <span v-else class="thumb d-flex align-items-center justify-content-center text-body-secondary" data-testid="outputs-group-icon"><i class="fa-solid fs-3" :class="groupIcon(t)"></i></span>
+          <span class="cap text-truncate" data-testid="outputs-group-label"><i class="fa-solid me-1" :class="groupOpen(t) ? 'fa-chevron-up' : 'fa-chevron-down'"></i>{{ groupLabel(t) }}</span>
+          <span v-if="t.main" class="cap text-truncate" data-testid="outputs-group-main-name">{{ $t('outputs.group.main') }}: {{ t.main.filename }}</span>
+          <span v-if="t.versions && t.versions[0] !== t.versions[1]" class="cap" data-testid="outputs-group-versions">{{ $t('outputs.group.versionRange', { a: String(t.versions[0]).padStart(3, '0'), b: String(t.versions[1]).padStart(3, '0') }) }}</span>
+        </button>
+        <div v-if="groupExpanded(t)" class="grouprows" data-testid="outputs-group-rows" :data-shown="shownFiles(t).length">
+          <div class="small text-body-secondary mb-1" data-testid="outputs-group-shown">{{ $t('outputs.group.shown', { shown: shownFiles(t).length, total: t.files.length }) }}</div>
+          <div class="rowlist" :class="{ media: hasPreview(t) }">
+            <button v-for="f in shownFiles(t)" :key="`${f.subfolder}/${f.filename}`" type="button" class="grow" data-testid="outputs-group-row" :data-main="f === t.main ? 'true' : undefined" :disabled="offline" :title="f.filename" @click="openFile(f)">
+              <LazyMedia v-if="hasPreview(t) && !offline" :kind="f.kind" :src="viewUrl(base, f, f.kind === 'image' ? { thumb: true } : undefined)" :alt="f.filename" />
+              <span class="gname text-truncate">{{ f.filename }}</span>
+              <span v-if="f === t.main" class="badge text-bg-primary" data-testid="outputs-group-main">{{ $t('outputs.group.main') }}</span>
+              <span v-if="f.bytes != null" class="text-body-secondary">{{ sizeText(f.bytes) }}</span>
+            </button>
+          </div>
+          <PageSentinel :more="shownFiles(t).length < t.files.length" :shown="shownFiles(t).length" @more="groupMore(t)" />
+          <div v-if="shownFiles(t).length < t.files.length" class="d-flex gap-2 mt-2">
+            <BButton v-if="!HAS_IO" variant="outline-light" size="sm" data-testid="outputs-group-more" @click="groupMore(t)">{{ $t('outputs.dpx.showMore') }}</BButton>
+            <BButton variant="outline-light" size="sm" data-testid="outputs-group-all" @click="groupShowAll(t)">{{ $t('outputs.group.showAll') }}</BButton>
+          </div>
+        </div>
+      </div>
+      <template v-else>
       <button type="button" class="tile" data-testid="outputs-tile" :disabled="offline" :data-offline="offline ? 'true' : undefined" :data-kind="t.kind" :data-type="t.file.type" :data-frames="t.frames ? t.frames.length : undefined" :title="t.name || t.file.filename" @click="open(t)">
         <span v-if="offline && t.kind !== 'dpx'" class="thumb d-flex align-items-center justify-content-center text-body-secondary" data-testid="outputs-offline-thumb"><i class="fa-solid fs-3" :class="{ image: 'fa-image', video: 'fa-film', audio: 'fa-music' }[t.kind] || 'fa-file'"></i></span>
         <LazyMedia v-else-if="t.kind === 'image'" kind="image" :src="viewUrl(base, t.file, { thumb: true })" :alt="t.file.filename" />
@@ -31,8 +60,13 @@
           <div class="framelist">
             <button v-for="(f, i) in shownFrames(t)" :key="f.filename" type="button" class="frame" data-testid="outputs-seq-frame" :disabled="offline" :title="f.filename" @click="openAt(t, i)"><span>{{ frameNo(f) }}</span><span v-if="f.bytes != null" class="text-body-secondary">{{ sizeText(f.bytes) }}</span></button>
           </div>
-          <BButton v-if="shownFrames(t).length < t.frames.length" variant="outline-light" size="sm" class="mt-2" data-testid="outputs-seq-more" @click="showMore(t)">{{ $t('outputs.dpx.showMore') }}</BButton>
+          <PageSentinel :more="shownFrames(t).length < t.frames.length" :shown="shownFrames(t).length" @more="showMore(t)" />
+          <div v-if="shownFrames(t).length < t.frames.length" class="d-flex gap-2 mt-2">
+            <BButton v-if="!HAS_IO" variant="outline-light" size="sm" data-testid="outputs-seq-more" @click="showMore(t)">{{ $t('outputs.dpx.showMore') }}</BButton>
+            <BButton variant="outline-light" size="sm" data-testid="outputs-seq-all" @click="showAll(t)">{{ $t('outputs.group.showAll') }}</BButton>
+          </div>
         </div>
+      </template>
       </template>
       </div>
     </div>
@@ -47,9 +81,11 @@
  * Reusable: it only needs the pod's web address (`base`) and the list; a click opens the viewer (large, Previous/Next, Open, Download). A DPX sequence is one tile (frame count) opening the DPX quick-look viewer.
  */
 import { computed, ref, watch } from 'vue'
-import { viewUrl, galleryTiles, sizeText } from '../utils/outputs'
-import { isExpanded, toggleSeq, setAll, shownFrames, showMore } from '../utils/dpxcollapse'
+import { viewUrl, galleryTiles, sizeText, isDpx } from '../utils/outputs'
+import { isExpanded, toggleSeq, setAll, shownFrames, showMore, showAll, groupView, groupExpanded, toggleGroup, shownFiles, groupMore, groupShowAll, setShowTemp, HAS_IO } from '../utils/dpxcollapse'
+import { isTemp, groupTiles, tempGroup } from '../utils/videogroups'
 import LazyMedia from './LazyMedia.vue'
+import PageSentinel from './PageSentinel.vue'
 import { core } from '../api/bridge'
 import { errorText } from '../stores/toast'
 import { t } from '../i18n'
@@ -72,13 +108,30 @@ const zipping = ref(false), zipNote = ref('')
 async function zip() {
   zipping.value = true; zipNote.value = ''
   try {
-    const r = await core.files.downloadZip(props.files.map((f) => ({ url: viewUrl(props.base, f, { web: true }), name: [f.subfolder, f.filename].filter(Boolean).join('/') })), props.zipName)
+    const r = await core.files.downloadZip(displayFiles.value.map((f) => ({ url: viewUrl(props.base, f, { web: true }), name: [f.subfolder, f.filename].filter(Boolean).join('/') })), props.zipName)
     if (!r.canceled) zipNote.value = t('outputs.zipDone', { n: r.files })
   } catch (e) { zipNote.value = errorText(e) } finally { zipping.value = false }
 }
 /** The tiles: a DPX sequence is one tile (the browser cannot decode DPX; DpxViewerModal does, frame by frame). The other viewer steps through the files that are not DPX. */
-const tiles = computed(() => galleryTiles(props.files))
-const viewable = computed(() => tiles.value.filter((t) => t.kind !== 'dpx').map((t) => t.file))
+const tempFiles = computed(() => props.files.filter(isTemp))
+const realFiles = computed(() => props.files.filter((f) => !isTemp(f)))
+/** ComfyUI's temp previews are hidden unless Show Temp Files is on: not counted, not listed, never probed, no preview made. Display only, nothing is deleted. */
+const displayFiles = computed(() => (groupView.showTemp ? props.files : realFiles.value))
+const tempCount = computed(() => tempFiles.value.length)
+const shownCount = computed(() => displayFiles.value.length)
+const totalShown = computed(() => Math.max(shownCount.value, (props.totalFiles || 0) - (groupView.showTemp ? 0 : tempCount.value)))
+/** Within a folder the files of one type are ONE group (Videos with a Main video, Images, Audio, Data, Other), each expandable; the shown temp files are their own last group. DPX sequences stay sequences. */
+const tiles = computed(() => { const ts = groupTiles(galleryTiles(realFiles.value)); const tg = groupView.showTemp ? tempGroup(tempFiles.value) : null; return tg ? [...ts, tg] : ts })
+const viewable = computed(() => displayFiles.value.filter((f) => !isDpx(f.filename)))
+const isGroup = (t) => t.kind === 'fgroup' || t.kind === 'tempgroup'
+const groupCount = computed(() => tiles.value.filter(isGroup).length)
+const groupOpenCount = computed(() => tiles.value.filter((t) => isGroup(t) && groupExpanded(t)).length)
+const groupOpen = groupExpanded
+/** A group whose rows carry a preview (one lazy thumbnail or player each, under the player cap): Videos and Images. */
+const hasPreview = (t) => t.kind === 'fgroup' && (t.cat === 'video' || t.cat === 'image')
+const groupIcon = (t) => (t.kind === 'tempgroup' ? 'fa-hourglass-half' : { video: 'fa-film', image: 'fa-image', audio: 'fa-music', data: 'fa-file-lines' }[t.cat] || 'fa-file')
+const groupLabel = (g) => `${t(`outputs.group.label.${g.kind === 'tempgroup' ? 'temp' : g.cat}.${g.count === 1 ? 'one' : 'other'}`, { n: g.count })}${g.bytes ? ` · ${sizeText(g.bytes)}` : ''}`
+const openFile = (f) => { if (!props.offline) current.value = viewable.value.indexOf(f) }
 const current = ref(null), dpx = ref(null), dpxReview = ref(false), dpxStart = ref(0)
 /** The sequences in this list (a single DPX file is not a sequence to collapse), and how many are open now. */
 const seqCount = computed(() => tiles.value.filter((t) => t.kind === 'dpx' && t.frames.length > 1).length)
@@ -107,6 +160,15 @@ watch(() => props.files, () => { current.value = null; dpx.value = null; problem
 .cell .tile { width: 100%; }
 .cell.wide .tile { max-width: 9.5rem; }
 .seqtoggle { align-self: flex-start; }
+.group { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+.grouptile { width: 100%; }
+.cell.wide .grouptile { max-width: 14rem; }
+.grouprows { padding: 0.4rem; background: #1a1d23; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 0.375rem; }
+.rowlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: 0.25rem; }
+.rowlist.media { grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); }
+.grow { display: flex; flex-direction: column; gap: 0.15rem; padding: 0.25rem 0.4rem; font-size: 0.72rem; text-align: left; background: #20232a; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 0.25rem; color: inherit; cursor: pointer; min-width: 0; }
+.grow:hover:not(:disabled) { border-color: #508cff; }
+.gname { min-width: 0; }
 .frames { padding: 0.4rem; background: #1a1d23; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 0.375rem; }
 .framelist { display: grid; grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); gap: 0.25rem; }
 .frame { display: flex; justify-content: space-between; gap: 0.4rem; padding: 0.15rem 0.4rem; font-size: 0.72rem; background: #20232a; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 0.25rem; color: inherit; cursor: pointer; }

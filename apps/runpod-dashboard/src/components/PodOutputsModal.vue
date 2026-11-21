@@ -51,7 +51,14 @@
       <span v-if="onlyShot && hidden" class="text-body-secondary">{{ $t('outputs.hiddenRuns', { n: hidden }) }}</span>
     </label>
     <div v-if="!all.length && !vol.loading" class="text-body-secondary small" data-testid="pod-outputs-empty">{{ vol.ok ? $t('outputs.volumeNoRuns') : $t(onlyShot && runs.length ? 'outputs.noRunsShot' : 'outputs.noRuns', { shot }) }}</div>
-    <div v-for="r in all" :key="r.prompt_id" class="mb-4" data-testid="pod-outputs-run" :data-prompt="r.prompt_id" :data-source="r.source || 'pod'">
+    <div v-if="all.length > PAGE_SIZES[0]" class="d-flex align-items-center flex-wrap gap-2 mb-3 small" data-testid="outputs-pager">
+      <BButton size="sm" variant="outline-light" :disabled="runsPage.cur <= 1" data-testid="outputs-pager-prev" @click="runPaging.page = runsPage.cur - 1">{{ $t('outputs.pager.previous') }}</BButton>
+      <span data-testid="outputs-pager-page">{{ $t('outputs.pager.page', { x: runsPage.cur, y: runsPage.pages }) }}</span>
+      <BButton size="sm" variant="outline-light" :disabled="runsPage.cur >= runsPage.pages" data-testid="outputs-pager-next" @click="runPaging.page = runsPage.cur + 1">{{ $t('outputs.pager.next') }}</BButton>
+      <label class="d-flex align-items-center gap-1 ms-2">{{ $t('outputs.pager.perPage') }}<select v-model.number="runPaging.size" class="form-select form-select-sm w-auto" data-testid="outputs-pager-size"><option v-for="n in PAGE_SIZES" :key="n" :value="n">{{ n }}</option></select></label>
+      <span class="text-body-secondary ms-auto" data-testid="outputs-pager-shown">{{ $t('outputs.pager.shown', { shown: runsPage.rows.length, total: runsPage.total }) }}</span>
+    </div>
+    <div v-for="r in runsPage.rows" :key="r.prompt_id" class="mb-4" data-testid="pod-outputs-run" :data-prompt="r.prompt_id" :data-source="r.source || 'pod'">
       <div class="d-flex align-items-baseline gap-2 flex-wrap mb-2 small" data-testid="pod-outputs-run-title">
         <template v-if="r.source === 'volume'"><span class="fw-semibold font-monospace" data-testid="pod-outputs-folder-name" :title="`output/${r.folder}`">{{ r.folder.split('/').pop() || $t('outputs.volumeRoot') }}</span><span class="text-body-secondary font-monospace">{{ r.folder.split('/').slice(0, -1).join('/') }}</span></template>
         <template v-else-if="r.workflow"><span class="fw-semibold font-monospace" data-testid="pod-outputs-workflow" :title="r.workflow">{{ runName(r) }}</span><span class="text-body-secondary font-monospace" :title="r.workflow">{{ folderOf(r.workflow) }}</span></template>
@@ -135,6 +142,8 @@ import { localPath } from '../utils/publish'
 import { core } from '../api/bridge'
 import { historyAPI } from '../api/history'
 import { useUiStore } from '../stores/ui'
+import { PAGE_SIZES, runPaging, pageOfRuns, resetRunPage } from '../utils/runpaging'
+import { groupView } from '../utils/dpxcollapse'
 import { viewUrl, galleryTiles, runName, runsForShot, inFolder, narrowToFolder, filterByName, volumeAsRuns, mergeWithVolume, s3Base, sizeText } from '../utils/outputs'
 import { errorText } from '../stores/toast'
 import { sharedThumbs, thumbTimeouts, withTimeout, thumbKey, appReader, createLimiter } from '../utils/thumbs'
@@ -349,6 +358,9 @@ const nameFilter = ref('')
 const merged = computed(() => mergeWithVolume(shown.value, vol.runs))
 /** The file-name filter narrows every run (pod, saved and volume) to the files that match, and drops the runs with none. */
 const all = computed(() => (nameFilter.value.trim() ? merged.value.map((r) => filterByName(r, nameFilter.value)).filter((r) => r.files.length) : merged.value))
+/** The list of runs and folders is paged (Previous / Next, 25, 50 or 100 a page): only the current page renders galleries, previews or media. The page goes back to 1 when the scope, the folder, the name filter, the shot filter or Show Temp Files changes. */
+const runsPage = computed(() => pageOfRuns(all.value))
+watch([scope, () => vol.prefix, nameFilter, onlyShot, () => groupView.showTemp, () => runPaging.size], resetRunPage)
 const matchCount = computed(() => fileCount(all.value))
 /** Render sequences (docs/ADR-048): the DPX sequences this window lists (folder scope respected) are what the core renders; the proxies' state is asked in ONE batched call per open (and again when a job ends) for the tile badges and the viewer. */
 const renders = useRendersStore()
