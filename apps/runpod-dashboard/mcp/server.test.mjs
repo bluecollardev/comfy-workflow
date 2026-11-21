@@ -161,6 +161,14 @@ const refused = (r) => { assert.equal(r.error, undefined); assert.equal(r.result
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 let pod
 
+test('run_workflows_job with neither id nor pod_id lists the render runs (the Queue\'s Generations), and an unknown id is still refused', async () => {
+  const all = await call('run_workflows_job')
+  assert.equal(all.error, undefined); assert.notEqual(all.result.isError, true)
+  assert.match(textOf(all), /"jobs": \[\]/)   // no run yet; a no-spend note follows the JSON, so the text is matched, not parsed
+  const one = await call('run_workflows_job', { id: 'no-such-run' })
+  assert.equal(one.result.isError, true); assert.match(textOf(one), /No such run/)
+})
+
 test('create_pod without approved_by is refused and makes no pod', async () => {
   assert.deepEqual(jsonOf(ok(await call('list_pods'))), [])
   const r = refused(await call('create_pod', { name: 'ComfyUI-Test', gpu: 'a40' }))

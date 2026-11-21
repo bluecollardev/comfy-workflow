@@ -22,7 +22,7 @@
     "core:test": "vitest run --config libs/core/vitest.config.ts",
     "mcp": "node mcp/server.mjs",
     "mcp:bridge": "node mcp/comfy-bridge.mjs",
-    "mcp:test": "npm run core:build && npm run mcp:bundle && node --test mcp/server.test.mjs mcp/comfy-bridge.test.mjs mcp/bundle.test.mjs mcp/host.test.mjs",
+    "mcp:test": "npm run core:build && npm run mcp:bundle && node --test mcp/server.test.mjs mcp/comfy-bridge.test.mjs mcp/bundle.test.mjs mcp/host.test.mjs mcp/parity.test.mjs",
     "test": "npm run core:test && npm run mcp:test && npm run ipc:test && npm run dpx:test",
     "electron:build:mac": "npm run build && electron-builder --mac",
     "electron:build:win": "npm run build && electron-builder --win",
