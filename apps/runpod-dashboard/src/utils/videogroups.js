@@ -39,6 +39,8 @@ const DATA_EXT = /\.(json|md|csv|txt|log|yaml|yml|xml)$/i
 /** The group a file belongs to: videos, images, audio, data (json, md, csv, txt, log ...) or other. DPX frames are not here: they are sequences. */
 export const catOf = (t) => (t.kind === 'video' ? 'video' : t.kind === 'image' ? 'image' : t.kind === 'audio' ? 'audio' : DATA_EXT.test(String(t.file?.filename || '')) ? 'data' : 'other')
 
+/** The order of the groups in a run, after its DPX sequences: Videos, Images, Audio, Data, Other (Lucas, 2026-11-21). */
+export const GROUP_ORDER = ['video', 'image', 'audio', 'other']
 const sizeOf = (list) => list.reduce((n, f) => n + (Number(f.bytes) || 0), 0)
 /** The one representative of a group: the Main video for Videos, the newest image (else the first) for Images, the first audio file; none for Data and Other (an icon). */
 function representative(cat, files, isEdlName) {
@@ -53,27 +55,35 @@ function representative(cat, files, isEdlName) {
  * DPX sequences stay sequences. `files` of a group list the representative first (the Main video), then the rest.
  */
 export function groupTiles(tiles, isEdlName) {
+  // Videos, Images, Audio and Other are grouped per folder (type + subfolder). DATA files are NOT a group: they are a `Data File` button in the run's main row and a popup (Lucas, 2026-11-21: "it's always 1 data
+  // file so have this be a modal popup"); `dataFilesOf` lists them. The order does not depend on where a file sits in the listing: the DPX sequences first (their own order), then Videos, Images, Audio, Other.
+  const keyOf = (t) => `${t.file.type}/${t.file.subfolder || ''}/${catOf(t)}`
   const byKey = new Map()
   for (const t of tiles) {
-    if (t.kind === 'dpx') continue
-    const cat = catOf(t), k = `${t.file.type}/${t.file.subfolder || ''}/${cat}`
+    if (t.kind === 'dpx' || catOf(t) === 'data') continue
+    const cat = catOf(t), k = keyOf(t)
     if (!byKey.has(k)) byKey.set(k, { cat, tiles: [] })
     byKey.get(k).tiles.push(t)
   }
-  const out = [], done = new Set()
+  const seqs = [], groups = [], done = new Set()
   for (const t of tiles) {
-    const k = t.kind === 'dpx' ? null : `${t.file.type}/${t.file.subfolder || ''}/${catOf(t)}`
-    if (!k) { out.push(t); continue }
+    if (t.kind === 'dpx') { seqs.push(t); continue }
+    if (catOf(t) === 'data') continue
+    const k = keyOf(t)
     if (done.has(k)) continue
     done.add(k)
     const { cat, tiles: ts } = byKey.get(k)
     const files = ts.map((x) => x.file)
     const { main, rest, how } = representative(cat, files, isEdlName)
     const versions = cat === 'video' ? files.map((f) => versionOf(f.filename)).filter((v) => v != null) : []
-    out.push({ key: `fgroup:${k}`, kind: 'fgroup', cat, file: main || files[0], main, how, files: main ? [main, ...rest] : rest, bytes: sizeOf(files), count: files.length, versions: versions.length ? [Math.min(...versions), Math.max(...versions)] : null })
+    groups.push({ key: `fgroup:${k}`, kind: 'fgroup', cat, file: main || files[0], main, how, files: main ? [main, ...rest] : rest, bytes: sizeOf(files), count: files.length, versions: versions.length ? [Math.min(...versions), Math.max(...versions)] : null })
   }
-  return out
+  const rank = (g) => { const i = GROUP_ORDER.indexOf(g.cat); return i < 0 ? GROUP_ORDER.length : i }
+  return [...seqs, ...groups.map((g, i) => ({ g, i })).sort((a, b) => rank(a.g) - rank(b.g) || a.i - b.i).map((x) => x.g)]
 }
+
+/** The data files of a run (json, md, csv, txt, log ...), in listing order: the files behind the `Data File` button. DPX frames and media are not here. */
+export const dataFilesOf = (tiles) => tiles.filter((t) => t.kind !== 'dpx' && catOf(t) === 'data').map((t) => t.file)
 
 /** A file name shortened in the MIDDLE (Lucas, 2026-11-21: every tile read `ARCHIVAL-071_ASSEMBLY_…`): the start and the distinguishing end are kept, e.g. `ARCHIVAL-071_ASSE…rt09c02_v003.png`; the full name goes in the title tooltip. */
 export function shortName(name, max = 34, tail = 16) {

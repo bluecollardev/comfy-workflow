@@ -13,15 +13,20 @@ const tinyDpx = () => makeDpx({ width: 16, height: 8, bits: 16, fn: (x, y, c) =>
 // a 1x1 JPEG
 const JPG = Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=', 'base64')
 
-async function setup(page, api, extra = []) {
+async function setup(page, api, extra = [], opts = {}) {
   const outputs = [...extra]
+  if (opts.timeoutMs) await page.addInitScript((ms) => { globalThis.__VT_TIMEOUT_MS__ = ms }, opts.timeoutMs)   // a short capture limit for the time-out spec
   for (let n = 0; n < N; n++) outputs.push({ filename: `${NAME}.${String(n).padStart(4, '0')}.dpx`, subfolder: SUB, type: 'output' })
   api.state.history.runs['pod-aaaaaaaa'] = [{ prompt_id: 'dddddddd-1111-2222', workflow: 'x.json', status: 'success', started_at: '2026-11-21T14:39:00Z', duration_s: 10, outputs }]
   const asked = [], jpgs = [], jpgSubs = [], webmReqs = []
-  await page.context().route('**/view?*', (r) => {
+  await page.context().route('**/view?*', async (r) => {
     const f = decodeURIComponent(/filename=([^&]+)/.exec(r.request().url())[1])
+    if (opts.custom && await opts.custom(f, r)) return   // a spec's own answer for one file
+    if (/^ok_.*\.(png|webp)$/.test(f)) return r.fulfill({ status: 200, contentType: 'image/jpeg', headers: { 'access-control-allow-origin': '*' }, body: JPG })   // a real image the page can show
+    if (/^bad_.*\.(png|webp)$/.test(f)) return r.fulfill({ status: 404, contentType: 'text/plain', headers: { 'access-control-allow-origin': '*' }, body: 'no' })
     if (/\.webm$/.test(f)) {   // a real (tiny, VP8) video the page can decode, served with Range as the pod does
       webmReqs.push(f)
+      if (opts.slowMs) await new Promise((res) => setTimeout(res, opts.slowMs))   // a slow link
       const range = /bytes=(\d+)-(\d*)/.exec(r.request().headers().range || ''), h = { 'access-control-allow-origin': '*', 'accept-ranges': 'bytes' }
       if (!range) return r.fulfill({ status: 200, contentType: 'video/webm', headers: h, body: WEBM })
       const a = Number(range[1]), b = range[2] ? Math.min(Number(range[2]), WEBM.length - 1) : WEBM.length - 1
@@ -172,7 +177,7 @@ test('Thumbnails first (Lucas, 2026-11-21: "I want the load for these previews f
   await modal.getByTestId('outputs-seq-toggle').click()
   await expect(modal.getByTestId('outputs-seq-frame-thumb')).toHaveCount(N - 0, { timeout: 10000 })
   const thumbReqs = jpgSubs.filter((s) => /\/thumbs$/.test(s)), bigReqs = jpgSubs.filter((s) => !/\/thumbs$/.test(s))
-  expect(thumbReqs.length).toBeGreaterThanOrEqual(N)
+  await expect.poll(() => jpgSubs.filter((s) => /\/thumbs$/.test(s)).length, { timeout: 10000 }).toBeGreaterThanOrEqual(N)   // the route handler answers asynchronously: wait for all N, never count at one instant
   expect(bigReqs.length).toBeLessThanOrEqual(2)   // only the tile's first frame (and at most one repeat) uses the 320 px image
   expect(new Set(jpgs).size).toBeLessThanOrEqual(N)
   expect(asked.filter((f) => /\.dpx$/.test(f))).toEqual([])
@@ -303,4 +308,122 @@ test('Generation Errors: hidden when nothing failed; after a failed Frame Previe
   await modal.getByTestId('pod-outputs-errors-relaunch').click()
   await expect.poll(() => (api.state.fp.relaunches || []).length).toBe(1)
   await expect(modal.getByTestId('pod-outputs-generation-errors')).toHaveCount(0, { timeout: 15000 })   // the relaunch finished: nothing left to show
+})
+
+// Lucas, 2026-11-21: "main video should have a preview instead of a black box", "the icon should be a fallback", "do same for images", "we don't need the play button too, the icon is enough", and the run's data
+// files as a `Data File` button and popup. A video tile shows its poster, else its captured first frame, else a shimmer while it is on its way; the film icon only after a definite failure; no corner button.
+const CLIP = { filename: 'clip_a.webm', subfolder: 'assembly_v024/movie', type: 'output' }
+const NOFP = () => ({ jobs: {}, written: {}, thumbs: {}, posters: {}, starts: [], lists: [], fail: {} })
+
+test('A video tile with a real picture has no corner play button: a centred play glyph shows on hover only, and there is no film icon at rest', async ({ page, api }) => {
+  api.state.fp = NOFP()
+  const { modal } = await setup(page, api, [CLIP])
+  const tile = modal.getByTestId('outputs-video-poster').first()
+  await expect(tile).toHaveAttribute('data-poster', 'frame', { timeout: 20000 })
+  await expect(tile.locator('.fa-circle-play')).toHaveCount(0)            // the corner button is gone
+  await expect(tile.getByTestId('outputs-video-fallback')).toHaveCount(0) // no icon with a real picture
+  const glyph = tile.locator('.vhover')
+  await expect(glyph).toHaveCSS('opacity', '0')                            // at rest: nothing on the picture
+  await tile.hover()
+  await expect(glyph).toHaveCSS('opacity', '1')                            // hover: the centred play glyph
+  const t = await tile.boundingBox(), g = await glyph.boundingBox()
+  expect(Math.abs(g.x + g.width / 2 - (t.x + t.width / 2))).toBeLessThan(3); expect(Math.abs(g.y + g.height / 2 - (t.y + t.height / 2))).toBeLessThan(3)
+})
+
+test('While a capture is on its way the tile shows a shimmer, never the film icon; the frame replaces it', async ({ page, api }) => {
+  api.state.fp = NOFP()
+  const { modal } = await setup(page, api, [CLIP], { slowMs: 2500 })
+  const tile = modal.getByTestId('outputs-video-poster').first()
+  await expect(tile).toHaveAttribute('data-poster', 'pending')
+  await expect(tile.getByTestId('outputs-video-loading')).toBeVisible()
+  await expect(tile.getByTestId('outputs-video-fallback')).toHaveCount(0)
+  await expect(tile).toHaveAttribute('data-poster', 'frame', { timeout: 20000 })
+  await expect(tile.getByTestId('outputs-video-loading')).toHaveCount(0)
+})
+
+test('A capture that times out shows the film icon with a retry glyph (not the tile): one retry re-queues it, a second time-out leaves the icon without a retry; the tile still opens the player', async ({ page, api }) => {
+  api.state.fp = NOFP()
+  const { modal, webmReqs } = await setup(page, api, [CLIP], { slowMs: 3000, timeoutMs: 400 })
+  const tile = modal.getByTestId('outputs-video-poster').first()
+  await expect(tile).toHaveAttribute('data-poster', 'no', { timeout: 15000 })
+  await expect(tile).toHaveAttribute('title', 'Preview timed out: Retry')
+  await expect(tile.getByTestId('outputs-video-fallback')).toBeVisible()
+  const retry = tile.getByTestId('outputs-video-retry')
+  await expect(retry).toBeVisible(); await expect(retry).toHaveAttribute('aria-label', 'Retry Preview')
+  const before = webmReqs.length
+  await retry.click()
+  await expect(page.getByTestId('output-viewer')).toHaveCount(0)           // the retry glyph is not the tile's click
+  await expect.poll(() => webmReqs.length, { timeout: 10000 }).toBeGreaterThan(before)   // re-queued
+  await expect(tile).toHaveAttribute('data-poster', 'no', { timeout: 15000 })
+  await expect(tile.getByTestId('outputs-video-retry')).toHaveCount(0)      // one retry only
+  await tile.click()
+  await expect(page.getByTestId('output-viewer')).toBeVisible()             // the tile itself opens the modal player
+})
+
+test('Image tiles show the image itself (shimmer until it loads) and fall back to the image icon on an error; an image over 25 MB shows the icon with a tooltip and is never requested', async ({ page, api }) => {
+  api.state.fp = NOFP()
+  const imgs = [
+    { filename: 'ok_a.png', subfolder: 'stills', type: 'output' },
+    { filename: 'bad_b.png', subfolder: 'stills', type: 'output' },
+    { filename: 'big_c.png', subfolder: 'stills', type: 'output', bytes: 30 * 1024 * 1024 },
+  ]
+  const { asked, modal } = await setup(page, api, imgs)
+  const box = (n) => modal.getByTestId('outputs-image-box').nth(n)
+  await expect(modal.getByTestId('outputs-image-box')).toHaveCount(3)
+  await expect(box(0)).toHaveAttribute('data-state', 'ready', { timeout: 15000 })     // ok_a.png: a real thumbnail
+  await expect(box(0).getByTestId('outputs-image-thumb')).toBeVisible()
+  await expect(box(1)).toHaveAttribute('data-state', 'failed', { timeout: 15000 })    // bad_b.png: 404 -> the icon
+  await expect(box(1).getByTestId('outputs-image-fallback')).toBeVisible()
+  await expect(box(2)).toHaveAttribute('data-state', 'toobig')                         // big_c.png: over 25 MB -> icon + tooltip
+  await expect(box(2)).toHaveAttribute('title', 'Too large to preview')
+  expect(asked.filter((f) => f === 'big_c.png')).toEqual([])                          // never requested
+})
+
+test('Data files are one `Data File` button right of the Main Video tile (no Data File group in the body); a click opens a popup with the pretty-printed JSON, Copy and Download; Esc closes only the popup', async ({ page, api }) => {
+  api.state.fp = NOFP()
+  const DATA = { filename: 'run_meta.json', subfolder: 'assembly_v024/movie', type: 'output', bytes: 61 }
+  const custom = async (f, r) => (f === 'run_meta.json' ? (await r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: '{"graph":"base_v008","frames":212,"nested":{"a":[1,2]}}' }), true) : false)
+  const { modal } = await setup(page, api, [CLIP, DATA], { custom })
+  await expect(modal.locator('[data-testid="outputs-group"][data-cat="data"]')).toHaveCount(0)   // no Data File group
+  const btn = modal.getByTestId('outputs-data-button')
+  await expect(btn).toHaveText('Data File')
+  const main = modal.getByTestId('outputs-main-video'), a = await main.boundingBox(), b = await btn.boundingBox()
+  expect(b.x).toBeGreaterThan(a.x + a.width - 2)                                    // directly to the RIGHT of the Main Video tile
+  expect(Math.abs((b.y + b.height / 2) - (a.y + a.height / 2))).toBeLessThan(a.height / 2)   // on the same row, vertically within the tile
+  await btn.click()
+  const pop = page.getByTestId('datafile-modal')
+  await expect(pop).toBeVisible()
+  await expect(pop.getByTestId('datafile-title')).toHaveText('run_meta.json')
+  await expect(pop.getByTestId('datafile-text')).toContainText('"frames": 212')      // pretty-printed (two-space indent), not the one-line original
+  await expect(pop.getByTestId('datafile-copy')).toBeVisible(); await expect(pop.getByTestId('datafile-download')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(pop).toHaveCount(0)
+  await expect(modal.getByTestId('outputs-gallery')).toBeVisible()                   // Esc closed the popup only
+})
+
+test('An error loading a data file shows the reason with Retry; a name with no text type is not a data file', async ({ page, api }) => {
+  api.state.fp = NOFP()
+  let hits = 0
+  const custom = async (f, r) => {
+    if (f !== 'flaky.json') return false
+    hits++
+    await (hits === 1 ? r.fulfill({ status: 500, contentType: 'text/plain', headers: { 'access-control-allow-origin': '*' }, body: 'x' }) : r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: '{"ok":true}' }))
+    return true
+  }
+  const { modal } = await setup(page, api, [CLIP, { filename: 'flaky.json', subfolder: 'assembly_v024/movie', type: 'output' }, { filename: 'blob.bin', subfolder: 'assembly_v024/movie', type: 'output', bytes: 2048 }], { custom })
+  const btn = modal.getByTestId('outputs-data-button')
+  await expect(btn).toHaveText('Data File')                                         // blob.bin has no data extension: only flaky.json counts
+  await btn.click()
+  const pop = page.getByTestId('datafile-modal')
+  await expect(pop.getByTestId('datafile-error')).toBeVisible({ timeout: 10000 })
+  await pop.getByTestId('datafile-retry').click()
+  await expect(pop.getByTestId('datafile-text')).toContainText('"ok": true')
+  await page.keyboard.press('Escape')
+})
+
+test('No Data File button when the run has no data file', async ({ page, api }) => {
+  api.state.fp = NOFP()
+  const { modal } = await setup(page, api, [CLIP])
+  await expect(modal.getByTestId('outputs-main-video')).toBeVisible()
+  await expect(modal.getByTestId('outputs-data-button')).toHaveCount(0)
 })

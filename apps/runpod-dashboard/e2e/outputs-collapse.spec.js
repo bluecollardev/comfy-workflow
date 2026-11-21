@@ -1,6 +1,6 @@
 import { test, expect, podCard } from './fixtures'
 import { makeDpx } from '../src/utils/dpx-fixture.mjs'
-import { mainVideoOf, versionOf, isTemp, groupTiles, shortName, GROUP_MAX } from '../src/utils/videogroups.js'
+import { mainVideoOf, versionOf, isTemp, groupTiles, shortName, dataFilesOf, GROUP_MAX } from '../src/utils/videogroups.js'
 
 // Lucas, 2026-11-21: the Outputs entry `v11_assembly_master_v024_review025_part32c06_depth-182` (assembly_v024/review025_parts/split_cap120, pod CanalV2-fix-v020-a) is ONE run of 362 files: "this is a lot to preview at once".
 // A DPX sequence collapses to its one tile; files of one type in a folder are ONE group (Videos with a Main video, Images, Audio, Data, Other) and every group expands; ComfyUI's temp files are hidden unless
@@ -58,8 +58,16 @@ test('Temp files: output type temp, a temp folder, and the ComfyUI_temp_ names',
 test('Every file type of a folder is one group, whatever its size; a group of 4 or fewer is expanded by default', () => {
   const tiles = ['a.mp4', 'b.mp4', 'c.png', 'd.json'].map((n) => ({ key: n, kind: n.endsWith('.mp4') ? 'video' : n.endsWith('.png') ? 'image' : 'other', file: F(n) }))
   const g = groupTiles(tiles)
-  expect(g.map((t) => [t.kind, t.cat, t.count])).toEqual([['fgroup', 'video', 2], ['fgroup', 'image', 1], ['fgroup', 'data', 1]])
+  expect(g.map((t) => [t.kind, t.cat, t.count])).toEqual([['fgroup', 'video', 2], ['fgroup', 'image', 1]])   // data files are not a group: a Data File button and a popup
+  expect(dataFilesOf(tiles).map((f) => f.filename)).toEqual(['d.json'])
   expect(GROUP_MAX).toBe(4)
+})
+test('The order of a run is fixed: sequences, Videos, Images, Audio, Other; data files, wherever the listing has them, are never a group', () => {
+  const mk = (n, kind) => ({ key: n, kind, file: F(n) })
+  const tiles = [mk('a.json', 'other'), mk('x.png', 'image'), mk('v1.mp4', 'video'), mk('b.json', 'other'), mk('s.wav', 'audio'), mk('z.bin', 'other'), mk('v2.mp4', 'video')]
+  expect(groupTiles(tiles).map((t) => t.cat)).toEqual(['video', 'image', 'audio', 'other'])
+  expect(groupTiles([...tiles].reverse()).map((t) => t.cat)).toEqual(['video', 'image', 'audio', 'other'])   // independent of where the files were found
+  expect(dataFilesOf(tiles).map((f) => f.filename)).toEqual(['a.json', 'b.json'])
 })
 
 // ---- the gallery ----
@@ -162,10 +170,10 @@ test('Outputs: a mixed folder shows one group per type (collapsed above 4), the 
   const group = (cat) => m.locator(`[data-testid="outputs-group"][data-cat="${cat}"]`)
   await expect(group('video')).toHaveAttribute('data-expanded', 'false')
   await expect(group('image')).toHaveAttribute('data-expanded', 'false')
-  await expect(group('data')).toHaveAttribute('data-expanded', 'false')
+  await expect(group('data')).toHaveCount(0)   // the 5 data files are a button in the main row, not a group
+  await expect(m.getByTestId('outputs-data-button')).toHaveText('Data Files (5)')
   await expect(group('video').getByTestId('outputs-group-label')).toHaveText(/^12 Videos/)
   await expect(group('image').getByTestId('outputs-group-label')).toHaveText(/^30 Images/)
-  await expect(group('data').getByTestId('outputs-group-label')).toHaveText(/^5 Data Files/)
   await expect(group('video').getByTestId('outputs-group-main-name')).toHaveAttribute('title', /^ARCHIVAL-071_MAIN_FINAL_V02/)   // the delivered clip is the Main video, not the highest vNN
   await expect(m.getByTestId('outputs-seq-count')).toHaveText('2 sequence(s), 0 open')
   // temp files: hidden, not counted, nothing fetched for them
@@ -197,9 +205,13 @@ test('Outputs: expanding the Videos group lists the Main video first with a Main
   await expect(video.getByTestId('outputs-group-shown')).toHaveText('12 of 12')
   await expect(video.getByTestId('outputs-group-all')).toHaveCount(0)
   expect(await m.locator('video').count()).toBeLessThanOrEqual(6)
-  // the 30 images: expanding lists them (a page is 48), the data group (5) lists its 5 rows with no preview
-  await m.locator('[data-testid="outputs-group"][data-cat="data"]').getByTestId('outputs-group-toggle').click()
-  await expect(m.locator('[data-testid="outputs-group"][data-cat="data"]').getByTestId('outputs-group-row')).toHaveCount(5)
+  // the 5 data files: one button opens one popup that lists them (no group, no rows in the body); Escape closes the popup and leaves the pod modal open
+  await m.getByTestId('outputs-data-button').click()
+  await expect(page.getByTestId('datafile-modal')).toBeVisible()
+  await expect(page.getByTestId('datafile-item')).toHaveCount(5)
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('datafile-modal')).toHaveCount(0)
+  await expect(m.getByTestId('outputs-gallery')).toBeVisible()
   await video.getByTestId('outputs-group-toggle').click()
   await expect(video).toHaveAttribute('data-expanded', 'false')
   await m.getByTestId('outputs-expand-all').click()

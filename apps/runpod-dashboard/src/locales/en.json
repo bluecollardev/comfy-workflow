@@ -722,7 +722,12 @@
       "title": "Generation Errors ({n})",
       "kind": { "frames": "Frame Previews", "frame": "Frame", "sequence": "Preview", "graph": "Render" }
     },
-    "video": { "play": "Play Video", "mainVideo": "Main Video", "noPreview": "Preview not available in this player" },
+    "video": { "play": "Play Video", "mainVideo": "Main Video", "noPreview": "Preview not available in this player", "timedOut": "Preview timed out: Retry", "retry": "Retry Preview" },
+    "image": { "tooLarge": "Too large to preview", "noPreview": "The image could not be loaded" },
+    "data": {
+      "button": "Data File", "buttonMany": "Data Files ({n})", "loading": "Loading the file…", "retry": "Retry", "copy": "Copy", "copied": "Copied", "download": "Download",
+      "binary": "No text preview for this kind of file: name and size are shown, use Download.", "truncated": "Showing the first 1 MB"
+    },
     "frames": {
       "modeLabel": "Preview mode",
       "modeSequence": "Sequence Previews",

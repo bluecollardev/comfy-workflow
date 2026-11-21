@@ -40,7 +40,8 @@ test('a stopped pod on a volume has an enabled Outputs button; the modal lists t
   await expect(runs.first()).toHaveAttribute('data-source', 'volume')
   await expect(runs.first().getByTestId('pod-outputs-source')).toHaveText('volume')
   await expect(runs.first().getByTestId('pod-outputs-folder-name')).toHaveText('archival-080_a_v004_dpx16')   // newest LastModified first
-  await expect(fileTiles(runs.first())).toHaveCount(2)   // the DPX sequence is ONE tile, plus its json sidecar
+  await expect(fileTiles(runs.first())).toHaveCount(1)   // the DPX sequence is ONE tile; its json sidecar is the run's Data File button, not a tile
+  await expect(runs.first().getByTestId('outputs-data-button')).toHaveText('Data File')
   await expect(runs.first().locator('[data-testid="outputs-tile"][data-kind="dpx"]')).toHaveAttribute('data-frames', '3')
   await expect(fileTiles(runs.first()).first()).toBeEnabled()   // viewable with no pod
   // breadcrumb back to the root
