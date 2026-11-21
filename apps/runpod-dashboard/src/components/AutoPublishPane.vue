@@ -9,7 +9,8 @@
     <div v-else-if="!ap.pending.length && !ap.recent.length" class="text-body-secondary small" data-testid="autopublish-none">{{ $t('autopublish.pane.none') }}</div>
     <AutoPublishLists />
     <AutoPublishDryRun />
-    <div v-if="ap.pending.length" class="d-flex align-items-center gap-2 small mt-2 mb-1" data-testid="autopublish-pending-head" :data-open="pendingOpen ? 'true' : 'false'" :data-count="ap.pending.length"><span class="fw-semibold" data-testid="autopublish-pending-title">{{ $t('autopublish.lists.pending', { n: ap.pending.length }) }}</span><BButton variant="link" size="sm" class="p-0 ms-auto" :aria-expanded="pendingOpen ? 'true' : 'false'" data-testid="autopublish-pending-toggle" @click="pendingOpen = !pendingOpen">{{ pendingOpen ? $t('autopublish.list.collapse') : $t('autopublish.list.expand') }}</BButton></div>
+    <div v-if="ap.pending.length || dismissed" class="d-flex align-items-center gap-2 small mt-2 mb-1" data-testid="autopublish-pending-head" :data-open="pendingOpen ? 'true' : 'false'" :data-count="ap.pending.length"><span class="fw-semibold" data-testid="autopublish-pending-title">{{ $t('autopublish.lists.pending', { n: ap.pending.length }) }}</span><span class="ms-auto d-flex align-items-center gap-2"><BButton v-if="dryCount" size="sm" variant="outline-warning" :disabled="purging" :title="$t('autopublish.pane.purgeTip')" data-testid="autopublish-purge" @click="purge">{{ $t('autopublish.pane.purge') }}</BButton><BButton v-if="dismissed" size="sm" variant="outline-light" :title="$t('autopublish.pane.restoreTip')" data-testid="autopublish-restore" @click="restore">{{ $t('autopublish.pane.restore', { n: dismissed }) }}</BButton><BButton variant="link" size="sm" class="p-0" :aria-expanded="pendingOpen ? 'true' : 'false'" data-testid="autopublish-pending-toggle" @click="pendingOpen = !pendingOpen">{{ pendingOpen ? $t('autopublish.list.collapse') : $t('autopublish.list.expand') }}</BButton></span></div>
+    <div v-if="actionError.purge" class="small text-danger mb-1" data-testid="autopublish-purge-error">{{ actionError.purge }}</div>
     <div v-for="e in ap.pending" :key="e.id" class="border rounded p-2 mb-2 small d-flex align-items-center gap-2 flex-wrap" :class="{ 'text-body-secondary': e.state === 'would_upload', 'd-none': !pendingOpen }" data-testid="autopublish-row" :data-id="e.id" :data-state="e.state">
       <strong data-testid="autopublish-row-line">{{ entryLine(e, formatBytes) }}</strong>
       <span class="badge text-bg-secondary fw-normal" title="auto-publish" data-testid="autopublish-row-trigger">{{ $t('queue.trigger.auto') }}</span>
@@ -64,6 +65,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useAutopublishStore } from '../stores/autopublish'
 import { useNamePromptStore } from '../stores/nameprompt'
+import { useConfirmStore } from '../stores/confirm'
 import { useUiStore } from '../stores/ui'
 import { errorText } from '../stores/toast'
 import { t } from '../i18n'
@@ -75,7 +77,7 @@ import AutoPublishOutputsLink from './AutoPublishOutputsLink.vue'
 import AutoPublishLists from './AutoPublishLists.vue'
 import { entryLine, secondsUntil, countdownText, targetsText, todayText, versionTag } from '../utils/autopublish'
 
-const ap = useAutopublishStore(), prompt = useNamePromptStore(), ui = useUiStore()
+const ap = useAutopublishStore(), prompt = useNamePromptStore(), ui = useUiStore(), confirm = useConfirmStore()
 // One upload at a time: while any entry is uploading or posting, Publish now is off everywhere and the running row says Publishing…
 const publishing = computed(() => ap.pending.some((x) => ['uploading', 'posting'].includes(x.state)))
 const now = ref(Date.now()), actionError = ref({}), root = ref(null)
@@ -92,6 +94,21 @@ const when = (e) => { const d = new Date(e.done_at || e.finished_at || e.at || e
 async function hold(e) { actionError.value = { ...actionError.value, [e.id]: '' }; try { await ap.hold(e.shot, e.version) } catch (x) { actionError.value = { ...actionError.value, [e.id]: errorText(x) } } }
 async function release(h) { try { await ap.release(h.shot, h.version) } catch (x) { void x } }
 async function cancel(e) { actionError.value = { ...actionError.value, [e.id]: '' }; try { await ap.cancel(e.id) } catch (x) { actionError.value = { ...actionError.value, [e.id]: errorText(x) } } }
+const dryCount = computed(() => ap.pending.filter((e) => e.state === 'would_upload').length)
+const dismissed = computed(() => ap.status?.watching?.dismissed || 0)
+const purging = ref(false)
+/** Purge Dry Runs: the core's plan says how many go and how many a person approved one by one stay; one confirmation, then the run. Nothing is deleted from disk or the bucket. */
+async function purge() {
+  purging.value = true
+  try {
+    const plan = await ap.purgeDryRuns({})
+    if (!plan?.would_purge) { actionError.value = { ...actionError.value, purge: t('autopublish.pane.purgeNone') }; return }
+    const message = t('autopublish.pane.purgeMessage', { n: plan.would_purge }) + (plan.kept_approved?.length ? t('autopublish.pane.purgeKept', { kept: plan.kept_approved.length }) : '')
+    if (!(await confirm.ask(message, { title: t('autopublish.pane.purgeTitle'), okLabel: t('autopublish.pane.purge'), danger: false }))) return
+    await ap.purgeDryRuns({ approved_by: ap.status?.standing?.approved_by || 'the window', understood: true })
+  } catch (x) { actionError.value = { ...actionError.value, purge: errorText(x) } } finally { purging.value = false }
+}
+async function restore() { try { await ap.restoreDryRuns() } catch (x) { actionError.value = { ...actionError.value, purge: errorText(x) } } }
 const sameVersion = (a, b) => String(a).replace(/\D/g, '') === String(b).replace(/\D/g, '')
 /** Why a dry-run row's Deliver is off ('' when it can go): a hold, the daily cap, a destination that is not ready, or the same shot and version already going. */
 function realBlocked(e) {

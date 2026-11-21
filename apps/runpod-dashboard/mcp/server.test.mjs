@@ -677,6 +677,12 @@ test('autopublish: read, cancel, off, and (v1.6.8) on and go live under a named 
   const live = jsonOf(ok(await call('autopublish', { action: 'go_live', approved_by: 'Lucas', understood: true }))); assert.equal(live.dry_run, false, 'live.dry_run'); assert.equal(live.standing.approved_by, 'Lucas', 'live.standing')
   assert.equal(jsonOf(ok(await call('autopublish', { action: 'set_settings', approved_by: 'Lucas', settings: { dry_run: true } }))).dry_run, true)   // an agent may also go back to dry run
   assert.equal(jsonOf(ok(await call('autopublish', { action: 'off' }))).cancelled, 0); assert.equal(jsonOf(ok(await call('autopublish', { action: 'status' }))).enabled, false, 'status after off')   // back to off for the rest
+  // Purge Dry Runs: without understood it is a plan that writes nothing; a run needs a person's name; restore brings the dismissed ones back
+  const pp = jsonOf(ok(await call('autopublish', { action: 'purge_dry_runs' }))); assert.equal(pp.plan, true); assert.equal(pp.purged, 0); assert.equal(pp.would_purge, 0); assert.match(pp.note, /Nothing is deleted/)
+  assert.match(textOf(refused(await call('autopublish', { action: 'purge_dry_runs', understood: true }))), /approved_by is needed/)
+  const pr = jsonOf(ok(await call('autopublish', { action: 'purge_dry_runs', approved_by: 'Lucas', understood: true }))); assert.equal(pr.plan, false); assert.equal(pr.purged, 0)
+  assert.equal(jsonOf(ok(await call('autopublish', { action: 'restore_dry_runs' }))).restored, 0)
+  const tp = (await rpc('tools/list')).result.tools.find((x) => x.name === 'autopublish').inputSchema.properties; assert.ok(tp.include_approved); assert.match(tp.action.description, /purge_dry_runs/)
   assert.match(textOf(refused(await call('autopublish', { action: 'cancel' }))), /id is needed/); assert.match(textOf(refused(await call('autopublish', { action: 'bogus' }))), /action must be/)
   const r = await call('set_configuration', { patch: { auto_publish: { enabled: true } } }); assert.equal(r.result.isError, true); assert.match(textOf(r), /turned on in the window, by a person/)
   const t = await call('set_configuration', { patch: { auto_publish: { targets: { slack: true } } } }); assert.match(textOf(t), /Where Auto-publish sends is chosen in the window/)

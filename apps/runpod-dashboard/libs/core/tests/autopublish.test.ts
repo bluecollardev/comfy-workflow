@@ -214,6 +214,35 @@ describe('the cancel window, dry run and the upload', () => {
     expect(r.started).toHaveLength(2); expect(r.refused).toEqual([expect.objectContaining({ shot: 'archival-102', reason: expect.stringMatching(/daily cap is spent/) })]); expect(r.stopped).toMatch(/daily cap is spent/)
     const st = await statusNow(); expect(st.today).toEqual({ count: 2, left: 0 }); expect(st.recent.filter((x) => x.state === 'done')).toHaveLength(2); expect(pend()).toEqual([expect.objectContaining({ shot: 'archival-102', state: 'would_upload' })])
   })
+  it('Purge Dry Runs: a plan writes nothing; a run needs a name and understood, dismisses only the dry-run entries, deletes no file and keeps History, and they stay out of a dry run until restored', async () => {
+    for (const n of ['100', '101', '102']) review(`archival-${n}`, 'v001', { clip: `CLIP${n}` })
+    await autopublish.setSettings({ ...ON, require_approval: false }); await autopublish.consider()
+    expect(pend()).toHaveLength(3)
+    const plan = await autopublish.purgeDryRuns({})
+    expect(plan).toMatchObject({ plan: true, purged: 0, would_purge: 3, kept_approved: [] }); expect(plan.note).toMatch(/Nothing is deleted/); expect(pend()).toHaveLength(3)
+    await expect(autopublish.purgeDryRuns({ understood: true })).rejects.toMatchObject({ status: 400 })
+    expect(pend()).toHaveLength(3)
+    const bucket = dest.size, awsCalls = calls.length
+    const r = await autopublish.purgeDryRuns({ approved_by: 'Lucas', understood: true })
+    expect(r).toMatchObject({ plan: false, purged: 3, dismissed: 3 }); expect(r.entries.map((x) => x.shot).sort()).toEqual(['archival-100', 'archival-101', 'archival-102']); expect(pend()).toEqual([])
+    expect(dest.size).toBe(bucket); expect(calls.length).toBe(awsCalls)   // nothing reached the bucket
+    expect(readFileSync(join(out, 'deliver/archival-100/v001/CLIP100.mov')).length).toBe(100)   // nothing on disk went
+    expect(history50()).toContain('auto-publish dry runs purged'); expect(history50()).toContain('nothing deleted from disk or the bucket')
+    await autopublish.consider(); expect(pend()).toEqual([])   // dismissed: not queued again in a dry run
+    const w = (await statusNow()).watching; expect(w.dismissed).toBe(3); expect(w.skipped.map((x) => x.reason).join('|')).toMatch(/dismissed from the dry run/)
+    expect(await autopublish.restoreDryRuns()).toEqual({ restored: 3 }); await autopublish.consider()
+    expect(pend()).toHaveLength(3); expect((await statusNow()).watching.dismissed).toBe(0)
+  })
+  it('Purge Dry Runs keeps what a person approved one by one (unless included), never touches a real entry, and going live looks at the dismissed ones again', async () => {
+    review('archival-100', 'v001', { clip: 'CLIP100' }); review('archival-101', 'v001', { clip: 'CLIP101' }); await approve('archival-100'); await approve('archival-101')
+    await autopublish.setSettings(ON); await autopublish.consider(); expect(pend()).toHaveLength(2)
+    const plan = await autopublish.purgeDryRuns({}); expect(plan).toMatchObject({ would_purge: 0 }); expect(plan.kept_approved).toHaveLength(2)
+    expect(await autopublish.purgeDryRuns({ approved_by: 'Lucas', understood: true })).toMatchObject({ purged: 0 }); expect(pend()).toHaveLength(2)
+    expect(await autopublish.purgeDryRuns({ approved_by: 'Lucas', understood: true, include_approved: true })).toMatchObject({ purged: 2 }); expect(pend()).toEqual([])
+    await autopublish.setSettings({ dry_run: false, understood: true, window_minutes: 10 }); await autopublish.consider()
+    expect(pend()).toEqual([expect.objectContaining({ shot: 'archival-100', state: 'waiting' }), expect.objectContaining({ shot: 'archival-101', state: 'waiting' })])   // live: the dismissed set is ignored
+    expect(await autopublish.purgeDryRuns({ approved_by: 'Lucas', understood: true, include_approved: true })).toMatchObject({ purged: 0 }); expect(pend()).toHaveLength(2)   // a real, waiting entry is never purged
+  })
   it('the automatic post carries the first-frame preview too (an image block), still no link to the published files and still the standing approval text', async () => {
     const spawnFfmpeg = (cmd: string, args: string[]): ChildProcess => { if (cmd !== '/fake/ffmpeg') return genericSpawn(cmd, args); const c = new EventEmitter() as unknown as ChildProcess; Object.assign(c, { stdout: new PassThrough(), stderr: new PassThrough() }); const o = args[args.length - 1]; setImmediate(() => { writeFileSync(o, Buffer.alloc(77, 1)); c.emit('close', 0) }); return c }
     publish.setDeps({ findFfmpeg: async () => '/fake/ffmpeg', spawn: spawnFfmpeg })

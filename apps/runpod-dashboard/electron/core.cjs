@@ -168,6 +168,8 @@ const TABLE = {
     cancel: (c, o) => c.autopublish.cancel(o || {}),
     publishNow: (c, o) => c.autopublish.publishNow(o || {}),
     publishAllDry: (c, o) => c.autopublish.publishAllDry(o || {}),
+    purgeDryRuns: (c, o) => c.autopublish.purgeDryRuns(o || {}),
+    restoreDryRuns: (c) => c.autopublish.restoreDryRuns(),
     scanVolume: (c) => c.autopublish.scanVolume(),   // "Scan now": list the volume's deliver/ (one level at a time) for finished reviews
   },
   runningjobs: {   // jobs other processes (the MCP server, a script) are running, from the shared running-jobs file; cancel asks their owner

@@ -19,6 +19,7 @@ export const PARITY = {
   'autopublish.revoke': "window: revoking an approval is a person's act",
   'autopublish.publishNow': "window: Publish now is a person's explicit, named click",
   'autopublish.publishAllDry': "window: Deliver (one dry-run entry) and Deliver All is a person's explicit, named click",
+  'autopublish.purgeDryRuns': 'autopublish', 'autopublish.restoreDryRuns': 'autopublish',
   'runningjobs.external': 'running_jobs', 'runningjobs.cancel': "window: cancelling a job another process owns is a person's act (it is a request that process picks up)",
   'failures.list': 'failures', 'failures.retry': "window: retrying a failed graph runs it on a pod that is billing; a person presses Retry (run_pod_workflows is the MCP way)",
   'edl.load': 'edl', 'edl.status': 'edl', 'edl.elements': 'edl', 'edl.lookup': 'edl',
