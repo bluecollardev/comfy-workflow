@@ -377,7 +377,7 @@ Not verified on a real pod: all of it is unit-tested with fakes; nothing was run
 
 ## 15. Run notes and status, 2026-11-21 (midday)
 
-**Memory limits and every failure's error:** [CANALV2-TUNNEL-V11-RUN-FAILURES-2026-11-21.md](CANALV2-TUNNEL-V11-RUN-FAILURES-2026-11-21.md) (which runs pushed the limits, the RAM limit of each pod, the errors of the 8 graphs).
+**Memory limits and every failure's error:** [Appendix A of the delivery report](CANALV2-TUNNEL-V11-DELIVERY-REPORT-2026-11-20.md#appendix-a-which-runs-pushed-the-memory-limits-and-the-error-of-every-failure-2026-11-21) (which runs pushed the limits, the RAM limit of each pod, the errors of the 8 graphs).
 
 
 **Delivered and verified:** 17 of 36 in the real round `returns/BKK/tunnel-v11-edl-2026-11-18` (1,770 files; manifests and first-frame headers read back from the bucket). **Frames made, matching the PDF counts, in the test round `_TEST_tunnel-v11-base-v008-2026-11-21` only (decision Lucas: nothing from base_v008 goes to the real round until it is right):** 11 of the 19: archival-087 platform (97) and rain (96), 123 f (43), 168 a/b/c/d (153/139/105/48), creature-266 dolphin-lowtrack (94), photoreal-013 ascent (108), chasm07 (271) and splash (96). **Not generated, 8 of 36:** photoreal-013 hadal, sunlight, top, landing, f23; cgi-072 head, backhalf-b, backhalf-c (cgi-072 renders from V03, not held). No review video exists yet for the 11; none of their headers has been read back from the bucket.
