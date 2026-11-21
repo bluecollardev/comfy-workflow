@@ -96,3 +96,10 @@ test('volumeScan: scanning only for the first 90 s, then slow (background, no sp
   assert.equal(volumeScan({ scanning: false, error: 'S3 keys are not set' }, now).state, 'error')   // the older field
   assert.equal(volumeScan({ scanning: false, scanned_at: at(1000) }, now).state, 'idle'); assert.equal(volumeScan(undefined, now).state, 'idle')
 })
+test('volumeScan: the progress of a running scan (shots listed, versions read) is passed on; idle and unfinished totals give none', () => {
+  const now = Date.parse('2026-11-21T20:00:00Z'), at = (ms) => new Date(now - ms).toISOString()
+  assert.deepEqual(volumeScan({ scanning: true, scan_started_at: at(5000), scan_progress: { shots_done: 12, shots_total: 25, versions_done: 31 } }, now).progress, { shotsDone: 12, shotsTotal: 25, versionsDone: 31 })
+  assert.equal(volumeScan({ scanning: true, scan_started_at: at(5000), scan_progress: { shots_done: 0, shots_total: 0, versions_done: 0 } }, now).progress, null)   // the shot folders are not listed yet
+  assert.equal(volumeScan({ scanning: false, scanned_at: at(1000), scan_progress: { shots_done: 25, shots_total: 25, versions_done: 90 } }, now).progress, null)   // idle: nothing to show
+  assert.equal(volumeScan(undefined, now).progress, null)
+})

@@ -834,15 +834,18 @@ export const settled = async (): Promise<void> => { for (const j of jobs.values(
 
 /** The volume's id (the Shared, else the default one), and a one-level listing under comfy-shared/output/ (read-only, abortable), for Auto-publish's volume scan. */
 export const volumeIdNow = (): string => deps.volumeId()
-export async function volumeBrowse(rel: string, signal?: AbortSignal): Promise<{ dirs: string[]; files: { name: string; bytes: number; key: string }[] }> {
+export async function volumeBrowse(rel: string, signal?: AbortSignal): Promise<{ dirs: string[]; files: { name: string; bytes: number; key: string; /** the listing's own time of the object (UTC, second resolution): with the size it tells the volume scan a folder has not changed */ modified: string }[] }> {
   const a = await volumeAccess(); if (!a.ok) throw new CoreError(503, a.reason)
   const prefix = `${VOLUME_OUTPUT}${rel.replace(/^\/+/, '').replace(/\/*$/, '/')}`, ls = await volLs(a, prefix, false, signal)
-  return { dirs: ls.dirs, files: ls.files.map((f) => ({ name: f.key.slice(prefix.length), bytes: f.bytes, key: f.key.slice(VOLUME_OUTPUT.length) })) }
+  return { dirs: ls.dirs, files: ls.files.map((f) => ({ name: f.key.slice(prefix.length), bytes: f.bytes, key: f.key.slice(VOLUME_OUTPUT.length), modified: f.modified })) }
 }
+/** RunPod's S3 API saying "slow down" (HTTP 429/503, SlowDown): the volume scan backs off and uses fewer requests at once instead of reading this as a missing file. */
+const S3_THROTTLE = /SlowDown|reduce your request rate|too many requests|service unavailable|throttl|\b(429|503)\b/i
 /** A small object of the volume (at most `max` bytes), read through `aws s3 cp ... -`. */
 export async function volumeReadText(relKey: string, max = 256 * 1024, signal?: AbortSignal): Promise<string | null> {
   const a = await volumeAccess(); if (!a.ok) throw new CoreError(503, a.reason)
   const r = await deps.aws(['s3', 'cp', `s3://${a.bucket}/${VOLUME_OUTPUT}${relKey}`, '-', '--endpoint-url', a.endpoint, '--region', a.region], { AWS_ACCESS_KEY_ID: a.id, AWS_SECRET_ACCESS_KEY: a.secret }, { ...(signal ? { signal } : {}), stallMs: 30_000 })
+  if (r.code !== 0 && !signal?.aborted && S3_THROTTLE.test(r.stderr || '')) throw new CoreError(429, 'RunPod\'s S3 API is limiting requests (SlowDown)')
   return r.code === 0 && Buffer.byteLength(r.stdout) <= max ? r.stdout : null
 }
 export const validateRound = layout.validateRound, validateClipNames = layout.validateClipNames
