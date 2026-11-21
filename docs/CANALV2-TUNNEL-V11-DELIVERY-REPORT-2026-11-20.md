@@ -18,6 +18,47 @@
 Everything below is the detail behind this summary. Appendix A has the memory evidence and every error.
 
 
+## All 36 elements, one line each (2026-11-21, about 13:00 local)
+
+| # | Element | PDF frames | State | One line |
+|---|---|---|---|---|
+| 1 | ARCHIVAL-071 main | 227 | **DELIVERED (real round)** | 227 DPX frames, header read back from the bucket OK (timecode 00:00:00:12), manifest and review video there |
+| 2 | ARCHIVAL-077 a | 80 | **DELIVERED (real round)** | 80 DPX frames, header read back from the bucket OK (timecode 00:00:00:00), manifest and review video there |
+| 3 | ARCHIVAL-077 b | 69 | **DELIVERED (real round)** | 69 DPX frames, header read back from the bucket OK (timecode 00:00:00:00), manifest and review video there |
+| 4 | ARCHIVAL-077 c | 74 | **DELIVERED (real round)** | 74 DPX frames, header read back from the bucket OK (timecode 00:00:00:00), manifest and review video there |
+| 5 | ARCHIVAL-080 a (still) | 94 | **DELIVERED (real round)** | 94 DPX frames, header read back from the bucket OK (timecode 01:00:00:00), manifest and review video there |
+| 6 | ARCHIVAL-080 b (still) | 60 | **DELIVERED (real round)** | 60 DPX frames, header read back from the bucket OK (timecode 01:00:00:00), manifest and review video there |
+| 7 | ARCHIVAL-080 c (still) | 90 | **DELIVERED (real round)** | 90 DPX frames, header read back from the bucket OK (timecode 01:00:00:00), manifest and review video there |
+| 8 | ARCHIVAL-080 d (still) | 83 | **DELIVERED (real round)** | 83 DPX frames, header read back from the bucket OK (timecode 01:00:00:00), manifest and review video there |
+| 9 | ARCHIVAL-080 e (still) | 44 | **DELIVERED (real round)** | 44 DPX frames, header read back from the bucket OK (timecode 01:00:00:00), manifest and review video there |
+| 10 | ARCHIVAL-083 main | 98 | **DELIVERED (real round)** | 98 DPX frames, header read back from the bucket OK (timecode 00:00:00:00), manifest and review video there |
+| 11 | ARCHIVAL-084 main | 39 | **DELIVERED (real round)** | 39 DPX frames, header read back OK (timecode 00:00:00:00, not checked against the EDL separately), manifest and review video there |
+| 12 | ARCHIVAL-085 main | 54 | **DELIVERED (real round)** | 54 DPX frames, header read back OK (timecode 00:00:00:00, not checked against the EDL separately), manifest and review video there |
+| 13 | ARCHIVAL-093 b (low resolution, as the PDF) | 126 | **DELIVERED (real round)** | 126 DPX frames, header read back from the bucket OK (timecode 00:00:00:00), manifest and review video there |
+| 14 | ARCHIVAL-102 main | 128 | **DELIVERED (real round)** | 128 DPX frames, header read back from the bucket OK (timecode 00:00:00:00), manifest and review video there |
+| 15 | ARCHIVAL-104 b | 130 | **DELIVERED (real round)** | 130 DPX frames, header read back from the bucket OK (timecode 00:00:00:00), manifest and review video there |
+| 16 | ARCHIVAL-123 c | 66 | **DELIVERED (real round)** | 66 DPX frames, header read back from the bucket OK (timecode 00:00:02:00), manifest and review video there |
+| 17 | CGI-042 main | 229 | **DELIVERED (real round)** | 229 DPX frames, header read back from the bucket OK (timecode 00:00:00:00), manifest and review video there |
+| 18 | ARCHIVAL-087 platform | 97 | **MADE, in test round only** | 97 frames, matches the PDF count; header patched and checked on the pod; no review video yet; header not yet read back from the bucket; BLOCKED for the real round: 29 files of it already there have a different size |
+| 19 | ARCHIVAL-087 rain | 96 | **MADE, in test round only** | 96 frames, matches the PDF count; header patched and checked on the pod; no review video yet; header not yet read back from the bucket |
+| 20 | ARCHIVAL-123 f | 43 | **MADE, in test round only** | 43 frames, matches the PDF count; header patched and checked on the pod; no review video yet; header not yet read back from the bucket |
+| 21 | ARCHIVAL-168 a | 153 | **MADE, in test round only** | 153 frames, matches the PDF count; header patched and checked on the pod; no review video yet; header not yet read back from the bucket |
+| 22 | ARCHIVAL-168 b | 139 | **MADE, in test round only** | 139 frames, matches the PDF count; header patched and checked on the pod; no review video yet; header not yet read back from the bucket |
+| 23 | ARCHIVAL-168 c | 105 | **MADE, in test round only** | 105 frames, matches the PDF count; header patched and checked on the pod; no review video yet; header not yet read back from the bucket |
+| 24 | ARCHIVAL-168 d | 48 | **MADE, in test round only** | 48 frames, matches the PDF count; header patched and checked on the pod; no review video yet; header not yet read back from the bucket |
+| 25 | CREATURE-266 dolphin-lowtrack | 94 | **MADE, in test round only** | 94 frames, matches the PDF count; header patched and checked on the pod; no review video yet; header not yet read back from the bucket |
+| 26 | PHOTOREAL-013 ascent | 108 | **MADE, in test round only** | 108 frames, matches the PDF count; header patched and checked on the pod; no review video yet; header not yet read back from the bucket |
+| 27 | PHOTOREAL-013 chasm07 | 271 | **MADE, in test round only** | 271 frames, matches the PDF count; header patched and checked on the pod; no review video yet; header not yet read back from the bucket |
+| 28 | PHOTOREAL-013 f23 | 633 | **NOT DONE** | killed for memory 3 times (5 failed attempts); on a 232.8 GiB pod RAM went from 40 GiB to the limit in about a minute |
+| 29 | PHOTOREAL-013 hadal | 160 | **NOT DONE** | killed for memory 3 times (8 failed attempts), once at 76 of 87.5 GiB after 22 minutes; a test on a 116.4 GiB pod has run over 30 minutes without dying yet |
+| 30 | PHOTOREAL-013 landing | 226 | **NOT DONE** | killed for memory on a 57.7 GiB pod (7 failed attempts) |
+| 31 | PHOTOREAL-013 splash | 96 | **MADE, in test round only** | 96 frames, matches the PDF count; header patched and checked on the pod; no review video yet; header not yet read back from the bucket |
+| 32 | PHOTOREAL-013 sunlight | 212 | **NOT DONE** | killed for memory on a 57.7 GiB pod (4 failed attempts) |
+| 33 | PHOTOREAL-013 top (V02) | 209 | **NOT DONE** | killed for memory on a 57.7 GiB pod (6 failed attempts) |
+| 34 | CGI-072 head | 106 | **NOT DONE** | killed for memory at 55.2 of 57.7 GiB after 31 minutes (15 failed attempts); renders from V03, not held for anyone |
+| 35 | CGI-072 backhalf-b | 70 | **NOT DONE** | never completed: conversion timeouts and pod restarts (16 failed attempts) |
+| 36 | CGI-072 backhalf-c | 162 | **NOT DONE** | never completed: conversion timeouts and a kill (15 failed attempts) |
+
 ## Status tables (kept up to date in the production plan)
 - [The 17 with DPX: state of each (plan 11.1)](CANALV2-TUNNEL-V11-PRODUCTION-PLAN.md#111-the-17-with-dpx-cases-a-to-c)
 - [The 19 without delivered DPX: state of each, same columns (plan 11.2)](CANALV2-TUNNEL-V11-PRODUCTION-PLAN.md#112-the-19-without-delivered-dpx)
