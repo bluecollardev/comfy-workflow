@@ -16,10 +16,11 @@
       <BButton v-if="seqCount || groupCount" variant="outline-light" size="sm" data-testid="outputs-expand-all" @click="setAll('expanded')"><i class="fa-solid fa-expand me-1"></i>{{ $t('outputs.dpx.expandAll') }}</BButton>
     </div>
     <div v-if="files.length" ref="galleryEl" class="gallery" :class="{ eyegrid: tiles.some((x) => x.eye) }">
-      <div v-for="t in tiles" :key="t.key" class="cell" :class="{ wide: (t.kind === 'dpx' && t.frames.length > 1) || isGroup(t), seq: t.kind === 'dpx' && t.frames.length > 1, eyeempty: t.kind === 'eyeslot', eyecard: t.kind === 'eyecard' }" :data-testid="t.kind === 'eyeslot' ? 'outputs-eye-slot' : t.kind === 'eyecard' ? 'outputs-eye-card' : 'outputs-cell'" :data-eye="t.kind === 'dpx' ? undefined : t.eye" :data-role="t.eye">
+      <div v-for="t in tiles" :key="t.key" class="cell" :class="{ wide: (t.kind === 'dpx' && t.frames.length > 1) || isGroup(t), seq: t.kind === 'dpx' && t.frames.length > 1, eyeempty: t.kind === 'eyeslot', eyecard: t.kind === 'eyecard' || t.kind === 'eyeframe' }" :data-testid="t.kind === 'eyeslot' ? 'outputs-eye-slot' : t.kind === 'eyecard' ? 'outputs-eye-card' : t.kind === 'eyeframe' ? 'outputs-eye-frame' : 'outputs-cell'" :data-eye="t.kind === 'dpx' ? undefined : t.eye" :data-role="t.eye">
       <!-- ADR-058: a slot (Overall, Left Eye, Right Eye) with no sequence: shown so a missing right eye is visible; not an error, never counted, never blocks Publish -->
-      <div v-if="t.kind === 'eyecard'" class="eyecardbody"><div class="head"><i class="fa-solid fa-film"></i><span class="headname">{{ $t(`outputs.eye.${t.eye}`) }}</span><span class="small text-body-secondary">{{ $t('outputs.dpx.badge', { n: t.slot.frames.length }) }}</span></div><button type="button" class="eyeph filled" data-testid="outputs-eye-picture" :disabled="offline" :title="t.slot.name || t.slot.file.filename" @click="openAt(t.slot, 0)"><img v-if="frameImg(t.slot, t.slot.frames[0])" :src="frameImg(t.slot, t.slot.frames[0])" alt="" /><i v-else class="fa-solid fa-film"></i></button></div>
-      <div v-else-if="t.kind === 'eyeslot'" data-testid="outputs-eye-empty"><div class="head"><i class="fa-solid fa-film"></i><span class="headname">{{ $t(`outputs.eye.${t.eye}`) }}</span><span class="small text-body-secondary" :title="t.stem">{{ $t('outputs.eye.empty') }}</span></div><div class="eyeph" data-testid="outputs-eye-placeholder"><i class="fa-solid fa-image"></i><span class="small">{{ $t('outputs.eye.empty') }}</span></div></div>
+      <div v-if="t.kind === 'eyeframe'" class="eyecardbody"><div class="eyeph filled" :class="{ dashed: !t.slot }" data-testid="outputs-eye-frame-picture" :data-state="t.slot ? 'filled' : 'empty'" :title="t.slot ? (t.slot.name || t.slot.file.filename) : $t('outputs.eye.empty')" @click="t.slot && openAt(t.slot, 0)"><template v-if="t.slot"><img v-if="frameImg(t.slot, t.slot.frames[0])" :src="frameImg(t.slot, t.slot.frames[0])" alt="" /><template v-else><SequenceThumb :tile="t.slot" :quick="quickOf(t.slot)" :base="base" :scope="scope" :volume-name="volumeName" :offline="offline" @state="(s) => (thumbState[t.slot.key] = s)" @header="(h) => (thumbHeader[t.slot.key] = h)" /><i v-if="!['ready', 'empty'].includes(thumbState[t.slot.key])" class="fa-solid fa-film"></i></template></template><template v-else><i class="fa-solid fa-image"></i><span class="small">{{ $t('outputs.eye.empty') }}</span></template></div></div>
+      <div v-else-if="t.kind === 'eyecard'" class="eyecardbody"><div class="head"><i class="fa-solid fa-film"></i><span class="headname">{{ $t(`outputs.eye.${t.eye}`) }}</span><span class="small text-body-secondary">{{ $t('outputs.dpx.badge', { n: t.slot.frames.length }) }}</span></div><button v-if="videoOfSlot(t)" type="button" class="eyeph filled video" data-testid="outputs-eye-video" :disabled="offline" :title="videoOfSlot(t).filename" @click="openFile(videoOfSlot(t))"><LazyMedia kind="video" :src="viewUrl(base, videoOfSlot(t))" :poster="posterOf(videoOfSlot(t))" :bytes="videoOfSlot(t).bytes" /></button><div v-else class="eyeph" data-testid="outputs-eye-novideo"><i class="fa-solid fa-film"></i><span class="small">{{ $t('outputs.eye.noVideo') }}</span></div></div>
+      <div v-else-if="t.kind === 'eyeslot'" data-testid="outputs-eye-empty"><div class="head"><i class="fa-solid fa-film"></i><span class="headname">{{ $t(`outputs.eye.${t.eye}`) }}</span><span v-if="!videoOfSlot(t)" class="small text-body-secondary" :title="t.stem">{{ $t('outputs.eye.empty') }}</span></div><button v-if="videoOfSlot(t)" type="button" class="eyeph filled video" data-testid="outputs-eye-video" :disabled="offline" :title="videoOfSlot(t).filename" @click="openFile(videoOfSlot(t))"><LazyMedia kind="video" :src="viewUrl(base, videoOfSlot(t))" :poster="posterOf(videoOfSlot(t))" :bytes="videoOfSlot(t).bytes" /></button><div v-else class="eyeph" data-testid="outputs-eye-placeholder"><i class="fa-solid fa-image"></i><span class="small">{{ $t('outputs.eye.empty') }}</span></div></div>
       <div v-else-if="isGroup(t)" class="group" data-testid="outputs-group" :data-kind="t.kind" :data-cat="t.cat || 'temp'" :data-count="t.count" :data-expanded="groupExpanded(t) ? 'true' : 'false'">
         <div class="head" data-testid="outputs-group-head">
           <i class="fa-solid" :class="groupIcon(t)"></i>
@@ -140,7 +141,7 @@ import { incompleteOf, tileName } from '../utils/incomplete'
 import { viewUrl, galleryTiles, sizeText, isDpx } from '../utils/outputs'
 import { isExpanded, toggleSeq, setAll, shownFrames, showMore, showAll, groupView, groupExpanded, toggleGroup, shownFiles, groupMore, groupShowAll, setShowTemp, HAS_IO } from '../utils/dpxcollapse'
 import { isTemp, groupTiles, tempGroup, shortName, dataFilesOf } from '../utils/videogroups'
-import { withEyeSlots } from '../utils/eyeroles'
+import { withEyeSlots, eyeRoleOf, slotStemOf } from '../utils/eyeroles'
 import { availableFrames } from '../utils/framepreviews'
 import { previewed } from '../utils/filmstrip'
 import { fpState, startJob, stopJob, queueListing, previewUrl, thumbUrl, posterUrl, jpgName, inJob, jobRunning, jobDone, failedOf, failReason } from '../utils/framejob'
@@ -233,6 +234,12 @@ const isGroup = (t) => t.kind === 'fgroup' || t.kind === 'tempgroup'
 const groupCount = computed(() => tiles.value.filter(isGroup).length)
 /** The main video shown beside a sequence: the file the Videos group marks Main. With one such group it is that one; with several, the group whose folder shares the most path segments with the sequence's folder
  *  (none when nothing is shared); a sequence with no main video beside it shows nothing. A Map: sequence tile key -> file. Its picture is the same address as the group's tile, so the capture is shared. */
+/** The video of one slot (ADR-058): a video file whose name carries the slot's role and the element's stem (same folder first); the Left Eye falls back to the main video beside its sequence. */
+const videoOfSlot = (t) => {
+  const stem = slotStemOf(t.slot ? (t.slot.name || t.slot.file.filename) : t.stem)
+  const vids = realFiles.value.filter((f) => f.kind === 'video' && eyeRoleOf(f.filename) === t.eye && slotStemOf(f.filename) === stem)
+  return vids.find((f) => (f.subfolder || '') === (t.sub || '')) || vids[0] || (t.eye === 'left' && t.slot ? mainVideos.value.get(t.slot.key) : null) || null
+}
 const mainVideos = computed(() => {
   const groups = tiles.value.filter((g) => g.kind === 'fgroup' && g.cat === 'video' && g.main), out = new Map()
   const shared = (a = '', b = '') => { const x = a.split('/'), y = b.split('/'); let n = 0; while (n < x.length && n < y.length && x[n] && x[n] === y[n]) n++; return n }
@@ -307,7 +314,9 @@ watch(() => props.files, () => { current.value = null; dpx.value = null; problem
 .gallery.eyegrid .cell.eyeempty { opacity: 0.7; }
 .gallery.eyegrid .cell[data-role="overall"] { grid-column-start: 1; }
 .gallery.eyegrid .eyeph { width: 100%; }
-.eyeph.filled { padding: 0; overflow: hidden; border-style: solid; background: #20232a; cursor: pointer; }
+.eyeph.filled { position: relative; padding: 0; overflow: hidden; border-style: solid; background: #20232a; cursor: pointer; }
+.eyeph.filled.video { display: block; position: relative; }
+.eyeph.filled.dashed { border-style: dashed; background: transparent; cursor: default; opacity: 0.7; flex-direction: column; }
 .eyeph.filled img { width: 100%; height: 100%; object-fit: cover; }
 .eyeph.filled .fa-film { font-size: 1.6rem; }
 .eyeph { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.25rem; width: 220px; aspect-ratio: 16 / 9; margin-top: 0.35rem; border: 1px dashed var(--bs-border-color); border-radius: 0.25rem; color: var(--bs-secondary-color); }

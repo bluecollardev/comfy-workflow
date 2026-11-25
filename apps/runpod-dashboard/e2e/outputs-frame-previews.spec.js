@@ -506,3 +506,13 @@ for (const [name, w, h] of [['16:9', 320, 180], ['4:3', 320, 240], ['portrait 9:
     expect(tile.width).toBeGreaterThanOrEqual(b.width)                        // the tile holds the whole picture: nothing is clipped
   })
 }
+
+test('With Show Stereoscopic Outputs on, the Left Eye card plays the main video instead of a still', async ({ page, api }) => {
+  await page.addInitScript(() => { try { localStorage.setItem('outputs.showStereo', 'true') } catch {} })
+  api.state.fp = { jobs: {}, written: {}, thumbs: {}, posters: {}, starts: [], lists: [], fail: {} }
+  const { modal } = await setup(page, api, CLIPS)
+  const card = modal.locator('[data-testid="outputs-eye-card"][data-role="left"]')
+  await expect(card).toBeVisible()
+  await expect(card.getByTestId('outputs-eye-video')).toBeVisible()
+  await expect(card.getByTestId('outputs-eye-picture')).toHaveCount(0)
+})

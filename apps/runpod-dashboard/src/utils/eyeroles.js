@@ -38,10 +38,14 @@ export function withEyeSlots(tiles) {
     const filled = []
     for (const role of EYE_ORDER) {
       const have = els.get(k).filter((x) => x.eye === role)
-      if (have.length) { out.push({ key: `eyecard:${k}:${role}`, kind: 'eyecard', eye: role, slot: have[0], stem: k.split('\u0000')[1] }); filled.push(...have) }
-      else out.push({ key: `eyeslot:${k}:${role}`, kind: 'eyeslot', eye: role, stem: k.split('\u0000')[1] })
+      if (have.length) { out.push({ key: `eyecard:${k}:${role}`, kind: 'eyecard', eye: role, sub: k.split('\u0000')[0], slot: have[0], stem: k.split('\u0000')[1] }); filled.push(...have) }
+      else out.push({ key: `eyeslot:${k}:${role}`, kind: 'eyeslot', eye: role, sub: k.split('\u0000')[0], stem: k.split('\u0000')[1] })
     }
+    for (const role of EYE_ORDER) out.push({ key: `eyeframe:${k}:${role}`, kind: 'eyeframe', eye: role, slot: (els.get(k).filter((x) => x.eye === role))[0] || null, stem: k.split('\u0000')[1] })   // row two: the DPX previews
     out.push(...filled)
   }
   return out
 }
+
+/** A name's element stem for matching a video to a slot: the role token, the frame pattern and the extension dropped, lower case (`clip_v008_R.mp4` and `clip_v008_R.####.dpx` both give `clip_v008`). */
+export const slotStemOf = (name) => eyeStemOf(String(name || '')).replace(/\.(?:#+|\d+)\.dpx$/i, '').replace(/\.[a-z0-9]{2,5}$/i, '').toLowerCase()

@@ -79,3 +79,17 @@ test('Row one holds the four pictures; the sequences (tile, previews, Load Frame
   expect(new Set(cards).size).toBe(1)
   for (const t of tile) expect(t).toBeGreaterThanOrEqual(cards[0])
 })
+
+test('Every slot plays its own video: Overall, Left Eye, Right Eye and Side By Side, matched by the role in the name', async ({ page, api }) => {
+  const vid = (n) => ({ filename: n, subfolder: SUB, type: 'output' })
+  const m = await open(page, api, [...seq('clip_v008_R'), ...seq('clip_v008_L'), ...seq('clip_v008_PACK'), ...seq('clip_v008_SBS'), vid('clip_v008_R.mp4'), vid('clip_v008_L.mp4'), vid('clip_v008_PACK.mp4'), vid('clip_v008_SBS.mp4')])
+  await expect(m.getByTestId('outputs-eye-video')).toHaveCount(4)
+  await expect(m.getByTestId('outputs-eye-picture')).toHaveCount(0)
+})
+
+test('A right-eye video with no right-eye frames still shows in its slot', async ({ page, api }) => {
+  const m = await open(page, api, [...seq('clip_v008_L'), { filename: 'clip_v008_R.mp4', subfolder: SUB, type: 'output' }])
+  const right = m.locator('[data-role="right"]')
+  await expect(right.getByTestId('outputs-eye-video')).toHaveCount(1)
+  await expect(right).not.toContainText('Not Generated')
+})
