@@ -67,7 +67,7 @@ export const previewSubfolder = (srcDir: string) => `${PREVIEW_DIR}/${rel(srcDir
 /** The JPEG's file name for a DPX frame's file name. */
 export const jpgName = (dpxName: string) => dpxName.replace(/\.dpx$/i, '') + '.jpg'
 
-/** The python that does one folder: pure numpy and Pillow, two threads. Arguments: the frames folder, the previews folder, the tone, and 0 to make every JPEG again (default: frames that have one are skipped). */
+/** The python that does one folder: pure numpy and Pillow, one thread per core (at most 12). Arguments: the frames folder, the previews folder, the tone, and 0 to make every JPEG again (default: frames that have one are skipped). */
 export const PYTHON = String.raw`
 import os, sys, glob, struct
 from concurrent.futures import ThreadPoolExecutor
@@ -138,8 +138,13 @@ def one(f):
         return ('OK', name, '', thumb(dst, name))
     except Exception as ex:
         return ('FAIL', name, str(ex).replace('\n', ' ')[:150], 0)
+# Parallel decode (Lucas, 2026-11-25: 'parallel processing'): one worker per core, at most 12 (a 4K frame is ~50 MB in memory while it is read), PREVIEW_WORKERS overrides it. numpy and Pillow release the GIL, so threads use the cores.
+try: workers = int(os.environ.get('PREVIEW_WORKERS', '0'))
+except Exception: workers = 0
+if workers < 1: workers = max(2, min(12, os.cpu_count() or 2))
+print('WORKERS %d' % workers, flush=True)
 ok = sk = fl = tp = tm = 0
-with ThreadPoolExecutor(max_workers=2) as pool:
+with ThreadPoolExecutor(max_workers=workers) as pool:
     for i, (st, name, why, tt) in enumerate(pool.map(one, files)):
         if st == 'OK': ok += 1
         elif st == 'SKIP': sk += 1

@@ -468,6 +468,8 @@ watchEffect(() => { for (const r of chunked.value) for (const t of tilesOf((r.fi
 const chunksOpen = reactive({})   // merged run (its prompt_id) -> whether its chunk runs are listed
 /** The list of runs and folders is paged (Previous / Next, 25, 50 or 100 a page): only the current page renders galleries, previews or media. The page goes back to 1 when the scope, the folder, the name filter, the shot filter or Show Temp Files changes. */
 const runsPage = computed(() => pageOfRuns(all.value))
+// Preview images are fetched as many at once as there are elements on a page (the main process's pool; a browser run has no such pool)
+watch(() => runPaging.size, (n) => { try { window.core?.previews?.setConcurrency?.(n) } catch { /* no bridge */ } }, { immediate: true })
 watch([scope, () => vol.prefix, nameFilter, onlyShot, () => groupView.showTemp, () => runPaging.size], resetRunPage)
 const matchCount = computed(() => fileCount(all.value))
 /** Render sequences (docs/ADR-048): the DPX sequences this window lists (folder scope respected) are what the core renders; the proxies' state is asked in ONE batched call per open (and again when a job ends) for the tile badges and the viewer. */

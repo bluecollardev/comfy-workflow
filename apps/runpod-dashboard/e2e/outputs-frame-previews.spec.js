@@ -172,10 +172,10 @@ const allNames = () => Array.from({ length: N }, (_, n) => `${NAME}.${String(n).
 test('Thumbnails first (Lucas, 2026-11-21: "I want the load for these previews faster"): with thumbnails on the pod the strip and the grid load the small ones, the tile shows the first frame\'s JPEG at once, and no DPX is read', async ({ page, api }) => {
   api.state.fp = { jobs: {}, written: { [SUB]: allNames() }, thumbs: { [SUB]: allNames() }, starts: [], lists: [], fail: {} }
   const { asked, jpgs, jpgSubs, modal } = await setup(page, api)
-  await expect(modal.getByTestId('outputs-seq-strip')).toBeVisible()
-  await expect(modal.getByTestId('outputs-seq-strip-frame').first()).toBeVisible()
   await expect(modal.getByTestId('outputs-dpx-quick')).toBeVisible()   // the first frame's 320 px JPEG, no click, no 50 MB frame
+  await expect(modal.getByTestId('outputs-seq-strip')).toHaveCount(0)   // the strip waits for Expand
   await modal.getByTestId('outputs-seq-toggle').click()
+  await expect(modal.getByTestId('outputs-seq-strip-frame').first()).toBeVisible()
   await expect(modal.getByTestId('outputs-seq-frame-thumb')).toHaveCount(N - 0, { timeout: 10000 })
   const thumbReqs = jpgSubs.filter((s) => /\/thumbs$/.test(s)), bigReqs = jpgSubs.filter((s) => !/\/thumbs$/.test(s))
   await expect.poll(() => jpgSubs.filter((s) => /\/thumbs$/.test(s)).length, { timeout: 10000 }).toBeGreaterThanOrEqual(N)   // the route handler answers asynchronously: wait for all N, never count at one instant
@@ -187,10 +187,11 @@ test('Thumbnails first (Lucas, 2026-11-21: "I want the load for these previews f
 test('Without thumbnails the strip falls back to the 320 px JPEGs (nothing breaks before thumbnails exist)', async ({ page, api }) => {
   api.state.fp = { jobs: {}, written: { [SUB]: allNames() }, thumbs: {}, starts: [], lists: [], fail: {} }
   const { jpgSubs, modal } = await setup(page, api)
+  await modal.getByTestId('outputs-seq-toggle').click()
   await expect(modal.getByTestId('outputs-seq-strip')).toBeVisible()
   await expect(modal.getByTestId('outputs-seq-strip-frame').first()).toBeVisible()
   expect(jpgSubs.filter((s) => /\/thumbs$/.test(s))).toEqual([])   // nothing to load but the fallback
-  expect(jpgSubs.length).toBeGreaterThan(0)
+  await expect.poll(() => jpgSubs.length).toBeGreaterThan(0)
 })
 
 const VIDEO = { filename: 'review_final.mp4', subfolder: 'assembly_v024/review025_parts', type: 'output' }
@@ -507,12 +508,12 @@ for (const [name, w, h] of [['16:9', 320, 180], ['4:3', 320, 240], ['portrait 9:
   })
 }
 
-test('With Show Stereoscopic Outputs on, the Left Eye card plays the main video instead of a still', async ({ page, api }) => {
+test('With Show Stereoscopic Outputs on, the Overall card plays the main video (not repeated beside the sequence) and the Left Eye card, with no video of its own, says No Video', async ({ page, api }) => {
   await page.addInitScript(() => { try { localStorage.setItem('outputs.showStereo', 'true') } catch {} })
   api.state.fp = { jobs: {}, written: {}, thumbs: {}, posters: {}, starts: [], lists: [], fail: {} }
   const { modal } = await setup(page, api, CLIPS)
-  const card = modal.locator('[data-testid="outputs-eye-card"][data-role="left"]')
-  await expect(card).toBeVisible()
-  await expect(card.getByTestId('outputs-eye-video')).toBeVisible()
-  await expect(card.getByTestId('outputs-eye-picture')).toHaveCount(0)
+  const overall = modal.locator('[data-testid="outputs-eye-slot"][data-role="overall"]')   // no Overall frames: the empty slot plays the main video
+  await expect(overall).toBeVisible()
+  await expect(overall.getByTestId('outputs-eye-video')).toBeVisible()
+  await expect(modal.locator('[data-testid="outputs-eye-card"][data-role="left"]')).toContainText('No Video')
 })

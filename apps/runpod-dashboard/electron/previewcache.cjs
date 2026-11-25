@@ -9,6 +9,8 @@ const isPreviewSearch = (search) => { try { return /^\.previews\//.test(new URL(
 function createPreviewCache({ concurrency = 8, items = 1500, ttlMs = 30 * 60e3, now = () => Date.now() } = {}) {
   const mem = new Map(), inflight = new Map(), waiting = []
   let live = 0
+  const clamp = (n) => Math.max(1, Math.min(64, Math.floor(Number(n)) || 8))
+  concurrency = clamp(concurrency)
   const stat = { hits: 0, fetched: 0, deduped: 0, max_live: 0 }
   const pump = () => {
     while (live < concurrency && waiting.length) {
@@ -19,6 +21,9 @@ function createPreviewCache({ concurrency = 8, items = 1500, ttlMs = 30 * 60e3, 
   const run = (fn) => new Promise((res, rej) => { waiting.push({ fn, res, rej }); pump() })
   return {
     stat,
+    /** How many fetches run at once (1..64); the Outputs window sets it to its page size. A larger number starts waiting fetches at once. */
+    setConcurrency(n) { concurrency = clamp(n); pump() },
+    get concurrency() { return concurrency },
     clear() { mem.clear() },
     /** `fetcher()` -> { status, type, body: Buffer }, called only on a miss, through the pool, once per key at a time. */
     async get(key, fetcher) {

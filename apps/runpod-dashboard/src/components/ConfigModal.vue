@@ -17,6 +17,14 @@
 
     <template v-else-if="cfg">
       <ConfigIoPanel v-if="!forPod" :flash="ioFlash" @applied="afterImport" />
+      <details class="mb-2">
+        <summary class="small text-body-secondary">{{ $t('config.previewLocal') }}</summary>
+        <pre class="small bg-body-tertiary rounded p-2 mt-2 mb-0" style="white-space: pre-wrap">{{ localText }}</pre>
+      </details>
+      <details class="mb-3">
+        <summary class="small text-body-secondary" data-testid="preview-pod-toggle">{{ $t('config.previewPod') }}</summary>
+        <pre class="small bg-body-tertiary rounded p-2 mt-2 mb-0" style="white-space: pre-wrap" data-testid="preview-pod">{{ previewText }}</pre>
+      </details>
       <!-- The pod's name, above the tabs: a name in this app only (RunPod keeps its own) -->
       <BFormGroup v-if="forPod && podId" :label="$t('config.podNameLabel')" label-for="cfg-pod-name" :description="$t('config.podNameHelp', { name: runpodName || podName })" class="mb-3">
         <div class="input-group input-group-sm">
@@ -68,40 +76,6 @@
             <div class="form-text">{{ $t('config.hfHelp') }} <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener">huggingface.co/settings/tokens</a></div>
           </BFormGroup>
         </BCol>
-        <BCol v-if="!gated" md="12"><hr class="my-1" /><div class="small fw-semibold" data-testid="cfg-panama-title">{{ $t('config.panamaTitle') }}</div><div class="form-text mt-0">{{ $t('config.panamaHelp') }}</div></BCol>
-        <BCol v-if="!gated" md="6">
-          <BFormGroup :label="$t('config.panamaAccess')" label-for="cfg-panama-access" data-testid="cfg-panama-group" :description="keyInfo.panama_aws_keys_set ? $t('config.panamaStored', { hint: keyInfo.panama_aws_access_key_hint }) : $t('config.panamaUnset')">
-            <BFormInput id="cfg-panama-access" v-model.trim="newPanama.access" autocomplete="off" placeholder="AKIA…" class="font-monospace" data-testid="cfg-panama-access" />
-          </BFormGroup>
-        </BCol>
-        <BCol v-if="!gated" md="6">
-          <BFormGroup :label="$t('config.panamaSecret')" label-for="cfg-panama-secret">
-            <BFormInput id="cfg-panama-secret" v-model.trim="newPanama.secret" type="password" autocomplete="off" class="font-monospace" data-testid="cfg-panama-secret" />
-          </BFormGroup>
-        </BCol>
-        <BCol v-if="!gated" md="5">
-          <BFormGroup :label="$t('config.panamaBucket')" label-for="cfg-panama-bucket" :description="$t('config.panamaBucketHelp')">
-            <div class="d-flex gap-1"><BFormInput id="cfg-panama-bucket" v-model.trim="panamaCfg.bucket" autocomplete="off" class="font-monospace" data-testid="cfg-panama-bucket" />
-              <BButton size="sm" variant="outline-light" class="text-nowrap" :disabled="panamaCfg.bucket === panamaDefaults.bucket" :title="$t('config.panamaReset')" data-testid="cfg-panama-bucket-reset" @click="panamaCfg.bucket = panamaDefaults.bucket"><i class="fa-solid fa-rotate-left"></i></BButton></div>
-          </BFormGroup>
-        </BCol>
-        <BCol v-if="!gated" md="3">
-          <BFormGroup :label="$t('config.panamaRegion')" label-for="cfg-panama-region">
-            <div class="d-flex gap-1"><BFormInput id="cfg-panama-region" v-model.trim="panamaCfg.region" autocomplete="off" class="font-monospace" data-testid="cfg-panama-region" />
-              <BButton size="sm" variant="outline-light" :disabled="panamaCfg.region === panamaDefaults.region" :title="$t('config.panamaReset')" data-testid="cfg-panama-region-reset" @click="panamaCfg.region = panamaDefaults.region"><i class="fa-solid fa-rotate-left"></i></BButton></div>
-          </BFormGroup>
-        </BCol>
-        <BCol v-if="!gated" md="4">
-          <BFormGroup :label="$t('config.panamaProfile')" label-for="cfg-panama-profile" :description="$t('config.panamaProfileHelp')">
-            <div class="d-flex gap-1"><BFormInput id="cfg-panama-profile" v-model.trim="panamaCfg.profile" autocomplete="off" class="font-monospace" data-testid="cfg-panama-profile" />
-              <BButton size="sm" variant="outline-light" :disabled="panamaCfg.profile === panamaDefaults.profile" :title="$t('config.panamaReset')" data-testid="cfg-panama-profile-reset" @click="panamaCfg.profile = panamaDefaults.profile"><i class="fa-solid fa-rotate-left"></i></BButton></div>
-          </BFormGroup>
-        </BCol>
-        <BCol v-if="!gated" md="12">
-          <BFormGroup :label="$t('config.panamaPull')" label-for="cfg-panama-pull" :description="$t('config.panamaPullHelp')">
-            <BFormInput id="cfg-panama-pull" v-model.trim="pullSetting" autocomplete="off" placeholder="bh-panama-exchange-610140802195/rounds/<round>=/workspace/comfy-shared/input/<round>" class="font-monospace" data-testid="cfg-panama-pull" />
-          </BFormGroup>
-        </BCol>
         <BCol v-if="!gated" md="12"><hr class="my-1" /><div class="small fw-semibold" data-testid="cfg-agent-title">{{ $t('config.agentTitle') }}</div><div class="form-text mt-0">{{ $t('config.agentHelp') }}</div></BCol>
         <BCol v-if="!gated" md="7">
           <BFormCheckbox v-model="agentRules.namedYes" switch data-testid="cfg-agent-named-yes">{{ $t('config.agentNamedYes') }}</BFormCheckbox>
@@ -121,9 +95,21 @@
       <BAlert :model-value="true" variant="info" class="small py-2 mb-3"><i class="fa-solid fa-circle-info me-2"></i>{{ forPod ? $t('config.volumePodHint') : $t('config.volumeHint') }}</BAlert>
       <BRow class="g-3">
         <BCol cols="12">
-          <BFormGroup :label="$t('config.datacenter')" label-for="cfg-dc" :description="$t('config.datacenterHelp')">
-            <DatacenterTable testid="cfg-dc" :list="dcList" :model-value="cfg.data_center_id" :any-label="$t('config.datacenterAny')" @update:model-value="cfg.data_center_id = $event" />
-          </BFormGroup>
+          <!-- The default configuration: the datacenter and the cards go together, chosen in the same window as Import Round's step 3 (Choose Card) -->
+          <div class="border rounded p-2" data-testid="cfg-cards-block">
+            <div class="fw-semibold mb-1">{{ $t('config.cardsTitle') }}</div>
+            <div class="d-flex align-items-center gap-2 flex-wrap mb-1" data-testid="cfg-cards-default-row">
+              <BButton :variant="chosenCards.length ? 'outline-success' : 'outline-light'" size="sm" data-testid="cfg-choose-card-btn" @click="cardModal = 'default'"><i class="fa-solid fa-microchip me-1"></i>{{ $t('config.cardsSelect') }}</BButton>
+              <span class="small" data-testid="cfg-cards-dc"><span class="text-body-secondary">{{ $t('config.cardsDcLabel') }}</span> <strong>{{ cfg.data_center_id || $t('config.datacenterAny') }}</strong></span>
+              <span class="small" data-testid="cfg-cards-chosen"><span class="text-body-secondary">{{ $t('config.cardsLabel') }}</span> <strong>{{ chosenCards.length ? chosenCards.map(cardName).join(', ') : $t('config.cardsStock') }}</strong></span>
+            </div>
+            <div class="form-text mb-2" data-testid="cfg-cards-help">{{ $t('config.cardsHelp') }}</div>
+            <div class="d-flex align-items-center gap-2 flex-wrap mb-1" data-testid="cfg-cards-stock-row">
+              <BButton :variant="stockCards.length ? 'outline-success' : 'outline-light'" size="sm" data-testid="cfg-choose-stock-btn" @click="cardModal = 'stock'"><i class="fa-solid fa-microchip me-1"></i>{{ $t('config.cardsSelect') }}</BButton>
+              <span class="small" data-testid="cfg-cards-stock"><span class="text-body-secondary">{{ $t('config.cardsStockLabel') }}</span> <strong>{{ stockCards.length ? stockCards.map(cardName).join(', ') : $t('config.cardsStockBuiltin') }}</strong></span>
+            </div>
+            <div class="form-text" data-testid="cfg-cards-stock-help">{{ $t('config.cardsStockHelp') }}</div>
+          </div>
         </BCol>
         <BCol md="8">
           <BFormGroup :label="$t('config.volumeId')" label-for="cfg-volume" :description="$t('config.volumeIdHelp')">
@@ -177,6 +163,28 @@
           </BFormGroup>
         </BCol>
       </BRow>
+      <BFormCheckbox v-if="!forPod" v-model="cfg.apply_by_default" :value="true" :unchecked-value="false" switch class="mb-2" data-testid="cfg-apply-default">
+        {{ $t('config.applyDefault') }} <span class="text-body-secondary">{{ $t('config.applyDefaultHint') }}</span>
+      </BFormCheckbox>
+      <BFormCheckbox v-if="!forPod" v-model="cfg.pull_any_card" :value="true" :unchecked-value="false" switch class="mb-2" data-testid="cfg-pull-any-card">
+        {{ $t('config.pullAnyCard') }} <span class="text-body-secondary">{{ $t('config.pullAnyCardHint') }}</span>
+      </BFormCheckbox>
+      <div v-if="!forPod" class="mb-2" data-testid="cfg-import-row">
+        <BFormCheckbox v-model="cfg.import_cap_enabled" :value="true" :unchecked-value="false" switch class="mb-1" data-testid="cfg-import-cap-enabled">
+          {{ $t('config.importCap') }} <span class="text-body-secondary">{{ $t('config.importCapHint') }}</span>
+        </BFormCheckbox>
+        <div v-if="cfg.import_cap_enabled" class="d-flex align-items-center gap-2 small ms-4">
+          <label class="mb-0" for="cfg-import-pods">{{ $t('importRound.maxPods') }}</label>
+          <BFormInput id="cfg-import-pods" v-model.number="cfg.import_max_pods" type="number" min="1" max="20" size="sm" style="width: 5rem" data-testid="cfg-import-max-pods" />
+          <label class="mb-0 ms-2" for="cfg-import-cap">{{ $t('importRound.costCap') }}</label>
+          <BFormInput id="cfg-import-cap" v-model.number="cfg.import_cost_cap_usd" type="number" min="1" size="sm" style="width: 6rem" data-testid="cfg-import-cost-cap" />
+        </div>
+      </div>
+      <BFormCheckbox v-if="!forPod" v-model="cfg.dry_run" switch class="mb-1" :disabled="dryForced" data-testid="cfg-dry-run">
+        {{ $t('config.dryRun') }} <span class="text-body-secondary">{{ $t('config.dryRunHint') }}</span>
+      </BFormCheckbox>
+      <div v-if="!forPod && dryForced" class="small text-warning mb-3" data-testid="cfg-dry-forced"><i class="fa-solid fa-lock me-1"></i>{{ $t('config.dryForced') }}</div>
+      <div v-else-if="!forPod" class="mb-2"></div>
       </fieldset>
 
       <fieldset v-show="show('folders')" class="cfg-section" data-section="folders">
@@ -254,6 +262,26 @@
           </div>
         </div>
       </div>
+      <div class="border rounded p-2 mb-3" data-testid="config-autosync">
+        <BFormCheckbox v-model="cfg.auto_sync.enabled" :value="true" :unchecked-value="false" data-testid="config-autosync-enabled">{{ $t('autosync.configLabel') }}</BFormCheckbox>
+        <div v-if="cfg.auto_sync.enabled" class="ps-4 small" data-testid="config-autosync-options">
+          <BFormCheckbox v-model="cfg.auto_sync.pull" :value="true" :unchecked-value="false" data-testid="config-autosync-pull">{{ $t('autosync.pull') }}</BFormCheckbox>
+          <BFormCheckbox v-model="cfg.auto_sync.push" :value="true" :unchecked-value="false" data-testid="config-autosync-push">{{ $t('autosync.push') }}</BFormCheckbox>
+          <div class="d-flex align-items-center gap-2 mt-1">
+            <label class="mb-0" for="cfg-autosync-by">{{ $t('autosync.approvedBy') }}</label>
+            <BFormInput id="cfg-autosync-by" v-model="cfg.auto_sync.approved_by" size="sm" style="width: 16rem" :placeholder="$t('autosync.approvedByPlaceholder')" data-testid="config-autosync-approved-by" />
+          </div>
+        </div>
+        <div class="form-text mt-1" data-testid="config-autosync-help">{{ $t('autosync.configHelp') }}</div>
+        <div v-if="autoSyncError" class="text-danger small mt-1" data-testid="config-autosync-error">{{ autoSyncError }}</div>
+      </div>
+      <div class="border rounded p-2 mb-3" data-testid="config-sync-exclude-block">
+        <label class="fw-semibold mb-1" for="cfg-sync-exclude">{{ $t('sync.excludeConfigLabel') }}</label>
+        <textarea id="cfg-sync-exclude" v-model="syncExcludeText" class="form-control form-control-sm font-monospace" rows="3" placeholder="CANALV2/" data-testid="config-sync-exclude"></textarea>
+        <div class="form-text" data-testid="config-sync-exclude-help">{{ $t('sync.excludeConfigHelp') }}</div>
+        <BFormCheckbox v-model="syncExcludeDelete" :value="true" :unchecked-value="false" class="small mt-1" data-testid="config-sync-exclude-delete">{{ $t('sync.excludeDeleteConfigLabel') }}</BFormCheckbox>
+        <div v-if="syncExcludeError" class="text-danger small mt-1" data-testid="config-sync-exclude-error">{{ syncExcludeError }}</div>
+      </div>
       </fieldset>
 
       <fieldset v-show="show('environment')" class="cfg-section" data-section="environment">
@@ -293,77 +321,64 @@
       <fieldset v-if="!forPod && !gated" v-show="show('publishing')" class="cfg-section" data-section="publishing">
         <legend data-testid="section-publishing">{{ $t('publish.tab') }}</legend>
         <CollapsibleSection v-if="apStore.status?.watching" id="watching" :title="$t('autopublish.watch.title')" testid="autopublish-watching-block"><AutoPublishWatching :status="apStore.status" :skipped="true" compact /></CollapsibleSection>
-        <PublishSettings ref="pubRef" />
+        <PublishSettings ref="pubRef" part="rest" :render="cfg.render" />
+        <div :id="`${slotId}-pub`"></div>   <!-- Outputs window, Prepare For Delivery and Render sequences land here (below) -->
         <EdlStatus v-if="!forPod" />
         <AutoPublishSettings v-if="cfg.auto_publish" v-model="cfg.auto_publish" :validate="apValidate" @changed="onApChanged" />
+      </fieldset>
+      <fieldset v-if="!forPod && !gated" v-show="show('storage')" class="cfg-section" data-section="storage">
+        <legend data-testid="section-storage">{{ $t('storage.tab') }}</legend>
+        <StorageAdapters ref="storageRef">
+          <template #publish><PublishSettings ref="pubS3Ref" part="s3" /></template>
+          <template #panama><BRow class="g-2">
+        <BCol v-if="!gated" md="12"><div class="small fw-semibold" data-testid="cfg-panama-title">{{ $t('config.panamaTitle') }}</div><div class="form-text mt-0">{{ $t('config.panamaHelp') }}</div></BCol>
+        <BCol v-if="!gated" md="6">
+          <BFormGroup :label="$t('config.panamaAccess')" label-for="cfg-panama-access" data-testid="cfg-panama-group" :description="keyInfo.panama_aws_keys_set ? $t('config.panamaStored', { hint: keyInfo.panama_aws_access_key_hint }) : $t('config.panamaUnset')">
+            <BFormInput id="cfg-panama-access" v-model.trim="newPanama.access" autocomplete="off" placeholder="AKIA…" class="font-monospace" data-testid="cfg-panama-access" />
+          </BFormGroup>
+        </BCol>
+        <BCol v-if="!gated" md="6">
+          <BFormGroup :label="$t('config.panamaSecret')" label-for="cfg-panama-secret">
+            <BFormInput id="cfg-panama-secret" v-model.trim="newPanama.secret" type="password" autocomplete="off" class="font-monospace" data-testid="cfg-panama-secret" />
+          </BFormGroup>
+        </BCol>
+        <BCol v-if="!gated" md="5">
+          <BFormGroup :label="$t('config.panamaBucket')" label-for="cfg-panama-bucket" :description="$t('config.panamaBucketHelp')">
+            <div class="d-flex gap-1"><BFormInput id="cfg-panama-bucket" v-model.trim="panamaCfg.bucket" autocomplete="off" class="font-monospace" data-testid="cfg-panama-bucket" />
+              <BButton size="sm" variant="outline-light" class="text-nowrap" :disabled="panamaCfg.bucket === panamaDefaults.bucket" :title="$t('config.panamaReset')" data-testid="cfg-panama-bucket-reset" @click="panamaCfg.bucket = panamaDefaults.bucket"><i class="fa-solid fa-rotate-left"></i></BButton></div>
+          </BFormGroup>
+        </BCol>
+        <BCol v-if="!gated" md="3">
+          <BFormGroup :label="$t('config.panamaRegion')" label-for="cfg-panama-region">
+            <div class="d-flex gap-1"><BFormInput id="cfg-panama-region" v-model.trim="panamaCfg.region" autocomplete="off" class="font-monospace" data-testid="cfg-panama-region" />
+              <BButton size="sm" variant="outline-light" :disabled="panamaCfg.region === panamaDefaults.region" :title="$t('config.panamaReset')" data-testid="cfg-panama-region-reset" @click="panamaCfg.region = panamaDefaults.region"><i class="fa-solid fa-rotate-left"></i></BButton></div>
+          </BFormGroup>
+        </BCol>
+        <BCol v-if="!gated" md="4">
+          <BFormGroup :label="$t('config.panamaProfile')" label-for="cfg-panama-profile" :description="$t('config.panamaProfileHelp')">
+            <div class="d-flex gap-1"><BFormInput id="cfg-panama-profile" v-model.trim="panamaCfg.profile" autocomplete="off" class="font-monospace" data-testid="cfg-panama-profile" />
+              <BButton size="sm" variant="outline-light" :disabled="panamaCfg.profile === panamaDefaults.profile" :title="$t('config.panamaReset')" data-testid="cfg-panama-profile-reset" @click="panamaCfg.profile = panamaDefaults.profile"><i class="fa-solid fa-rotate-left"></i></BButton></div>
+          </BFormGroup>
+        </BCol>
+        <BCol v-if="!gated" md="12">
+          <BFormGroup :label="$t('config.panamaPull')" label-for="cfg-panama-pull" :description="$t('config.panamaPullHelp')">
+            <BFormInput id="cfg-panama-pull" v-model.trim="pullSetting" autocomplete="off" placeholder="bh-panama-exchange-610140802195/rounds/<round>=/workspace/comfy-shared/input/<round>" class="font-monospace" data-testid="cfg-panama-pull" />
+          </BFormGroup>
+        </BCol>
+          </BRow></template>
+        </StorageAdapters>
       </fieldset>
       <fieldset v-if="!forPod && !gated" v-show="show('adapters')" class="cfg-section" data-section="adapters">
         <legend data-testid="section-adapters">{{ $t('adapters.section') }}</legend>
         <AdapterManager />
       </fieldset>
-      <fieldset v-show="show('options')" class="cfg-section" data-section="options">
-        <legend>{{ $t('config.options') }}</legend>
-      <BFormCheckbox v-if="!forPod" v-model="cfg.apply_by_default" :value="true" :unchecked-value="false" switch class="mb-2" data-testid="cfg-apply-default">
-        {{ $t('config.applyDefault') }} <span class="text-body-secondary">{{ $t('config.applyDefaultHint') }}</span>
-      </BFormCheckbox>
-      <BFormCheckbox v-if="!forPod" v-model="cfg.pull_any_card" :value="true" :unchecked-value="false" switch class="mb-2" data-testid="cfg-pull-any-card">
-        {{ $t('config.pullAnyCard') }} <span class="text-body-secondary">{{ $t('config.pullAnyCardHint') }}</span>
-      </BFormCheckbox>
-      <div v-if="!forPod" class="mb-2 d-flex align-items-center gap-2 flex-wrap" data-testid="cfg-default-gpu-row">
-        <label class="mb-0" for="cfg-default-gpu">{{ $t('config.defaultGpu') }}</label>
-        <BFormSelect id="cfg-default-gpu" v-model="cfg.default_gpu" :options="gpuChoices" size="sm" style="width: 22rem" data-testid="cfg-default-gpu" />
-        <span class="small text-body-secondary">{{ $t('config.defaultGpuHint') }}</span>
-      </div>
-      <div v-if="!forPod" class="mb-2" data-testid="cfg-auto-cards">
-        <div class="mb-1">{{ $t('config.autoCards') }} <span class="small text-body-secondary">{{ $t('config.autoCardsHint') }}</span></div>
-        <div class="d-flex flex-wrap gap-3 small ms-2">
-          <label v-for="c in autoCardChoices" :key="c.value" class="d-flex align-items-center gap-1" :data-testid="`cfg-auto-card-${c.value}`">
-            <input type="checkbox" class="form-check-input mt-0" :checked="autoCardsSel.includes(c.value)" :data-testid="`cfg-auto-card-box-${c.value}`" @change="toggleAutoCard(c.value, $event.target.checked)" />
-            {{ c.text }}
-          </label>
-        </div>
-        <div class="d-flex align-items-center gap-2 small mt-1 ms-2">
-          <span :data-testid="'cfg-auto-cards-state'" class="text-body-secondary">{{ cfg.auto_cards?.length ? $t('config.autoCardsCustom', { n: cfg.auto_cards.length }) : $t('config.autoCardsStock') }}</span>
-          <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="!cfg.auto_cards?.length" data-testid="cfg-auto-cards-reset" @click="cfg.auto_cards = []">{{ $t('config.autoCardsReset') }}</button>
-        </div>
-      </div>
-      <div v-if="!forPod" class="mb-2" data-testid="cfg-import-row">
-        <BFormCheckbox v-model="cfg.import_cap_enabled" :value="true" :unchecked-value="false" switch class="mb-1" data-testid="cfg-import-cap-enabled">
-          {{ $t('config.importCap') }} <span class="text-body-secondary">{{ $t('config.importCapHint') }}</span>
-        </BFormCheckbox>
-        <div v-if="cfg.import_cap_enabled" class="d-flex align-items-center gap-2 small ms-4">
-          <label class="mb-0" for="cfg-import-pods">{{ $t('importRound.maxPods') }}</label>
-          <BFormInput id="cfg-import-pods" v-model.number="cfg.import_max_pods" type="number" min="1" max="20" size="sm" style="width: 5rem" data-testid="cfg-import-max-pods" />
-          <label class="mb-0 ms-2" for="cfg-import-cap">{{ $t('importRound.costCap') }}</label>
-          <BFormInput id="cfg-import-cap" v-model.number="cfg.import_cost_cap_usd" type="number" min="1" size="sm" style="width: 6rem" data-testid="cfg-import-cost-cap" />
-        </div>
-      </div>
-      <BFormCheckbox v-if="!forPod" v-model="cfg.dry_run" switch class="mb-1" :disabled="dryForced" data-testid="cfg-dry-run">
-        {{ $t('config.dryRun') }} <span class="text-body-secondary">{{ $t('config.dryRunHint') }}</span>
-      </BFormCheckbox>
-      <div v-if="!forPod && dryForced" class="small text-warning mb-3" data-testid="cfg-dry-forced"><i class="fa-solid fa-lock me-1"></i>{{ $t('config.dryForced') }}</div>
-      <div v-else-if="!forPod" class="mb-2"></div>
+      <fieldset v-if="forPod" v-show="show('options')" class="cfg-section" data-section="options">
+        <legend>{{ $t('publish.tab') }}</legend>
 
-      <div class="border rounded p-2 mb-3" data-testid="config-autosync">
-        <BFormCheckbox v-model="cfg.auto_sync.enabled" :value="true" :unchecked-value="false" data-testid="config-autosync-enabled">{{ $t('autosync.configLabel') }}</BFormCheckbox>
-        <div v-if="cfg.auto_sync.enabled" class="ps-4 small" data-testid="config-autosync-options">
-          <BFormCheckbox v-model="cfg.auto_sync.pull" :value="true" :unchecked-value="false" data-testid="config-autosync-pull">{{ $t('autosync.pull') }}</BFormCheckbox>
-          <BFormCheckbox v-model="cfg.auto_sync.push" :value="true" :unchecked-value="false" data-testid="config-autosync-push">{{ $t('autosync.push') }}</BFormCheckbox>
-          <div class="d-flex align-items-center gap-2 mt-1">
-            <label class="mb-0" for="cfg-autosync-by">{{ $t('autosync.approvedBy') }}</label>
-            <BFormInput id="cfg-autosync-by" v-model="cfg.auto_sync.approved_by" size="sm" style="width: 16rem" :placeholder="$t('autosync.approvedByPlaceholder')" data-testid="config-autosync-approved-by" />
-          </div>
-        </div>
-        <div class="form-text mt-1" data-testid="config-autosync-help">{{ $t('autosync.configHelp') }}</div>
-        <div v-if="autoSyncError" class="text-danger small mt-1" data-testid="config-autosync-error">{{ autoSyncError }}</div>
-      </div>
-      <div class="border rounded p-2 mb-3" data-testid="config-sync-exclude-block">
-        <label class="fw-semibold mb-1" for="cfg-sync-exclude">{{ $t('sync.excludeConfigLabel') }}</label>
-        <textarea id="cfg-sync-exclude" v-model="syncExcludeText" class="form-control form-control-sm font-monospace" rows="3" placeholder="CANALV2/" data-testid="config-sync-exclude"></textarea>
-        <div class="form-text" data-testid="config-sync-exclude-help">{{ $t('sync.excludeConfigHelp') }}</div>
-        <BFormCheckbox v-model="syncExcludeDelete" :value="true" :unchecked-value="false" class="small mt-1" data-testid="config-sync-exclude-delete">{{ $t('sync.excludeDeleteConfigLabel') }}</BFormCheckbox>
-        <div v-if="syncExcludeError" class="text-danger small mt-1" data-testid="config-sync-exclude-error">{{ syncExcludeError }}</div>
-      </div>
+      <div v-if="forPod" :id="`${slotId}-opt`"></div>   <!-- per-pod configuration: the render choices stay here (a pod has no Publishing tab) -->
+      </fieldset>
+      <ChooseCardModal :show="!!cardModal" :list="dcList" :loading="dcLoading" :datacenter="cfg.data_center_id || ''" :cards="cardModal === 'stock' ? stockCards : chosenCards" :card-label="(cardModal === 'stock' ? stockCards : chosenCards).map(cardName).join(', ')" :volume-dcs="volumeDcs" :default-dc="cfg.data_center_id || ''" @close="cardModal = ''" @refresh="loadDatacenters(true)" @update:datacenter="onCardDc" @pick="onPickCard" @auto="onCardAuto" />
+      <Teleport defer :to="`#${slotId}-${forPod ? 'opt' : 'pub'}`">
       <div v-if="!forPod && cfg.outputs" class="border rounded p-2 mb-3" data-testid="config-outputs">
         <div class="fw-semibold mb-1">{{ $t('config.outputsTitle') }}</div>
         <label class="small"><input v-model="cfg.outputs.hide_empty_folders" type="checkbox" class="form-check-input me-1" data-testid="config-outputs-hide-empty" />{{ $t('config.outputsHideEmpty') }}</label>
@@ -409,9 +424,11 @@
         <div class="d-flex gap-3 flex-wrap small mb-1" data-testid="config-render-codecs">
           <label><input v-model="cfg.render.codecs" type="checkbox" value="h264" class="form-check-input me-1" data-testid="config-render-codec-h264" />{{ $t('outputs.render.cfg.codecH264') }}</label>
           <label><input v-model="cfg.render.codecs" type="checkbox" value="prores422hq" class="form-check-input me-1" data-testid="config-render-codec-prores" />{{ $t('outputs.render.cfg.codecProres') }}</label>
-          <label><input v-model="cfg.render.pull" type="checkbox" class="form-check-input me-1" data-testid="config-render-pull" @change="renderDeps" />{{ $t('outputs.render.cfg.pull') }}</label>
-          <label><input v-model="cfg.render.publish.s3" type="checkbox" class="form-check-input me-1" data-testid="config-render-publish-s3" @change="renderDeps" />{{ $t('outputs.render.cfg.publishS3') }}</label>
-          <label><input v-model="cfg.render.publish.slack" type="checkbox" class="form-check-input me-1" :disabled="!cfg.render.publish.s3" data-testid="config-render-publish-slack" />{{ $t('outputs.render.cfg.publishSlack') }}</label>
+          <template v-if="forPod">   <!-- a pod's own configuration has no Publishing tab: the three "when done" boxes stay here; the default configuration has them in Publishing > defaults -->
+            <label><input v-model="cfg.render.pull" type="checkbox" class="form-check-input me-1" data-testid="config-render-pull" />{{ $t('outputs.render.cfg.pull') }}</label>
+            <label><input v-model="cfg.render.publish.s3" type="checkbox" class="form-check-input me-1" data-testid="config-render-publish-s3" @change="renderDeps" />{{ $t('outputs.render.cfg.publishS3') }}</label>
+            <label><input v-model="cfg.render.publish.slack" type="checkbox" class="form-check-input me-1" :disabled="!cfg.render.publish.s3" data-testid="config-render-publish-slack" />{{ $t('outputs.render.cfg.publishSlack') }}</label>
+          </template>
           <label><input v-model="cfg.render.skip_existing" type="checkbox" class="form-check-input me-1" data-testid="config-render-skip-existing" />{{ $t('outputs.render.cfg.skipExisting') }}</label>
           <label :title="$t('outputs.render.cfg.convertRec709Tip')"><input v-model="cfg.render.rec709" type="checkbox" class="form-check-input me-1" data-testid="config-render-rec709" />{{ $t('outputs.render.cfg.convertRec709') }}</label>
         </div>
@@ -425,15 +442,7 @@
         <div class="form-text" data-testid="config-render-skip-help">{{ $t('outputs.render.cfg.skipHelp') }}</div>
         <div v-if="renderError" class="text-danger small mt-1" data-testid="config-render-error">{{ renderError }}</div>
       </div>
-      <details class="mb-2">
-        <summary class="small text-body-secondary">{{ $t('config.previewLocal') }}</summary>
-        <pre class="small bg-body-tertiary rounded p-2 mt-2 mb-0" style="white-space: pre-wrap">{{ localText }}</pre>
-      </details>
-      <details class="mb-3">
-        <summary class="small text-body-secondary" data-testid="preview-pod-toggle">{{ $t('config.previewPod') }}</summary>
-        <pre class="small bg-body-tertiary rounded p-2 mt-2 mb-0" style="white-space: pre-wrap" data-testid="preview-pod">{{ previewText }}</pre>
-      </details>
-      </fieldset>
+      </Teleport>
 
       <BAlert :model-value="!!error" variant="danger" class="mt-2 mb-0" data-testid="config-error">{{ error }}</BAlert>
       </template>
@@ -462,6 +471,7 @@
 <script setup>
 import { podsAPI } from '../api/pods'
 import DatacenterTable from './DatacenterTable.vue'
+import ChooseCardModal from './ChooseCardModal.vue'
 import DockerfileModal from './DockerfileModal.vue'
 import ConfigIoPanel from './ConfigIoPanel.vue'
 import { volumesAPI } from '../api/volumes'
@@ -492,6 +502,7 @@ import { usePanamaStore } from '../stores/panama'
 import { t } from '../i18n'
 import FolderPicker from './FolderPicker.vue'
 import AdapterManager from './AdapterManager.vue'
+import StorageAdapters from './StorageAdapters.vue'
 import PublishSettings from './PublishSettings.vue'
 import AutoPublishSettings from './AutoPublishSettings.vue'
 import AutoPublishWatching from './AutoPublishWatching.vue'
@@ -602,11 +613,11 @@ onBeforeUnmount(() => wideQuery?.removeEventListener('change', onWide))
 const tab = ref(props.mode === 'pod' ? 'volume' : 'runpod')
 const tabList = computed(() => [
   ...(forPod.value ? [] : [{ key: 'runpod', label: t('config.runpod') }]),
-  { key: 'volume', label: forPod.value ? t('config.volumePod') : t('config.volume') },
+  { key: 'volume', label: t('config.volumePod') },   // the same tab name in the default configuration and in a pod's
   { key: 'folders', label: t('config.folders') },
   { key: 'environment', label: t('config.environment') },
-  ...(forPod.value ? [] : [{ key: 'adapters', label: t('adapters.section') }, { key: 'publishing', label: t('publish.tab') }]),
-  { key: 'options', label: t('config.options') },
+  ...(forPod.value ? [] : [{ key: 'storage', label: t('storage.tab') }, { key: 'adapters', label: t('adapters.section') }, { key: 'publishing', label: t('publish.tab') }]),
+  ...(forPod.value ? [{ key: 'options', label: t('publish.tab') }] : []),   // a pod's own configuration: the render and when-done choices, so it is called Publishing like the default's tab
 ])
 /** A section shows when the sections flow (narrow), when only the key is asked for (gated), or when its tab is the open one. */
 const show = (key) => !wide.value || gated.value || tab.value === key
@@ -776,23 +787,37 @@ async function loadVolume() {
 
 /** The card table for the default-card select: the menu's names, with auto as the cheapest card in stock. */
 const gpuChoices = ref([{ value: 'rtxpro6000', text: 'RTX PRO 6000 (96 GB)' }, { value: 'auto', text: 'Cheapest card in stock (16-24 GB)' }])
-/** The cards `auto` tries (Cheapest in Stock): the menu's cards, ticked from the saved list or, while none is saved, from the built-in stock list. Ticking exactly the stock list saves the empty list (= stock). */
-const autoCardChoices = computed(() => gpuChoices.value.filter((c) => c.value !== 'auto').map((c) => ({ ...c, text: String(c.text).split(' · ')[0] })))
-const stockAutoKeys = computed(() => gpuChoices.value.filter((c) => c.value !== 'auto' && c.auto).map((c) => c.value))
-const autoCardsSel = computed(() => (cfg.value?.auto_cards?.length ? cfg.value.auto_cards : stockAutoKeys.value))
-function toggleAutoCard(key, on) {
-  const cur = new Set(autoCardsSel.value)
-  on ? cur.add(key) : cur.delete(key)
-  const next = autoCardChoices.value.map((c) => c.value).filter((k) => cur.has(k))
-  const same = next.length === stockAutoKeys.value.length && next.every((k) => stockAutoKeys.value.includes(k))
-  cfg.value.auto_cards = same ? [] : next
+/** The datacenter and the cards of a new pod, chosen in Choose Card (the Import Round window): the cards are ranked in the order they were clicked, all at the datacenter. One card is the default card; several make the default `auto` with that list as the cards `auto` tries; none is Cheapest in Stock with the built-in stock list. */
+const cardModal = ref(''), dcLoading = ref(false)   // '' closed, 'default' the datacenter and the default card, 'stock' the cards Cheapest in Stock tries (system jobs)
+const cardName = (c) => `${c.name}${c.vram ? ` ${c.vram} GB` : ''}`
+const cardOf = (key) => { for (const d of dcList.value) { const c = (d.cards || []).find((x) => x.key === key); if (c) return { key, name: c.name, vram: c.vram || 0 } }; const g = gpuChoices.value.find((x) => x.value === key); const m = /^(.*?)\s*\((\d+)\s*GB\)\s*$/.exec(String(g?.text || key)); return { key, name: m ? m[1] : String(g?.text || key), vram: m ? Number(m[2]) : 0 } }
+/** The default card (one card, or Cheapest in Stock = `auto`) and, apart, the cards `auto` tries: the system jobs (frame previews, pulls, renders) and a default of Cheapest in Stock pick from that list; none chosen is the built-in stock list. */
+const chosenCards = computed(() => { const c = cfg.value; return c && c.default_gpu && c.default_gpu !== 'auto' ? [cardOf(c.default_gpu)] : [] })
+const stockCards = computed(() => (cfg.value?.auto_cards || []).map(cardOf))
+const onCardDc = (dc) => { if (cardModal.value === 'default') cfg.value.data_center_id = dc || '' }   // the stock list belongs to no datacenter
+/** A click on a card at a datacenter. Default: that card at that datacenter (a second click on it goes back to Cheapest in Stock). Stock: the card is added to or taken off the list, wherever it was clicked. The window stays open until Done. */
+function onPickCard({ dc, card }) {
+  const c = cfg.value
+  if (cardModal.value === 'stock') {
+    if (!card) return
+    const cur = c.auto_cards || []
+    c.auto_cards = cur.includes(card.key) ? cur.filter((k) => k !== card.key) : [...cur, card.key]
+    return
+  }
+  if (dc) c.data_center_id = dc
+  if (!card) return
+  c.default_gpu = c.default_gpu === card.key ? 'auto' : card.key
 }
+/** Auto in the window: the default is Cheapest in Stock, or the stock list goes back to the built-in one. */
+function onCardAuto() { if (cardModal.value === 'stock') cfg.value.auto_cards = []; else cfg.value.default_gpu = 'auto' }
 async function loadGpuChoices() {
   try { const g = await podsAPI.gpus(); if (g.gpus?.length) gpuChoices.value = g.gpus.map((x) => ({ value: x.value, auto: x.auto !== false, text: String(x.text).split(' · ')[0] })) } catch { /* the short menu stays */ }
 }
-async function loadDatacenters() {
-  try { dcList.value = (await podsAPI.datacenters()).datacenters || [] } catch { /* the saved id stays selectable */ }
+async function loadDatacenters(fresh = false) {
+  dcLoading.value = true
+  try { dcList.value = (await podsAPI.datacenters(fresh)).datacenters || [] } catch { /* the saved id stays selectable */ } finally { dcLoading.value = false }
 }
+const volumeDcs = computed(() => [...new Set(allVolumes.value.map((v) => v.datacenter).filter(Boolean))].sort())
 
 async function load() {
   overStudio.value = studioStore.open   // opened from inside the Adapter Studio (the Claude key): it must sit above it
@@ -900,14 +925,14 @@ async function focusSection() {
   }
   if (where === 'publishing') { tab.value = 'publishing'; await nextTick(); document.querySelector('[data-testid="section-publishing"]')?.scrollIntoView({ block: 'start' }) }
   if (where === 'adapters') { tab.value = 'adapters'; await nextTick(); document.querySelector('[data-testid="section-adapters"]')?.scrollIntoView({ block: 'start' }) }
-  if (where === 'panama') { tab.value = 'runpod'; await nextTick(); await scrollToField('cfg-panama-access') }
+  if (where === 'panama') { tab.value = 'storage'; await nextTick(); await scrollToField('cfg-panama-access', 'storage') }
   if (where === 's3') await scrollToField('cfg-s3-access')    // from Browse / Erase / Clone: the RunPod S3 key fields, in view and focused
   if (where === 'claude') await scrollToField('cfg-claude-key')
 }
 /** Open on a field: wait for it (the body loads first), centre it and focus it, then centre it again once the lists
  *  that load beside it (volumes, datacenters, cards) have settled the layout; a single scroll right away ended up out of view. */
-async function scrollToField(id) {
-  tab.value = 'runpod'
+async function scrollToField(id, where = 'runpod') {
+  tab.value = where
   let input = null
   for (let i = 0; i < 30 && !input; i++) { await nextTick(); input = document.getElementById(id); if (!input) await new Promise((r) => setTimeout(r, 100)) }
   if (!input) return
@@ -916,8 +941,9 @@ async function scrollToField(id) {
   for (const ms of [250, 700, 1500]) setTimeout(() => { if (document.activeElement === input) input.scrollIntoView({ block: 'center' }) }, ms)
 }
 
-const pubRef = ref(null), confirm = useConfirmStore()
-const pubDirty = computed(() => !!pubRef.value?.dirty || apDirty.value)
+const slotId = `cfg-slot-${Math.random().toString(36).slice(2, 8)}`   // where Teleport puts the Outputs / Delivery / Render blocks: Publishing, or Options for a pod's own configuration
+const pubRef = ref(null), pubS3Ref = ref(null), storageRef = ref(null), confirm = useConfirmStore()
+const pubDirty = computed(() => !!pubRef.value?.dirty || !!pubS3Ref.value?.dirty || apDirty.value)
 let forceClose = false
 /** Close, asking first when Publishing has edits nobody saved. */
 async function closeWindow() {
@@ -931,6 +957,7 @@ function onHide(ev) {   // the X, Escape or a click outside
 async function save() {
   if (!gated.value && (!autoSyncOk() || !renderOk() || !syncExcludeOk() || !folderExOk())) return
   if (!gated.value && cfg.value?.auto_publish?.enabled && apProblem(cfg.value.auto_publish)) { apValidate.value = true; tab.value = 'publishing'; return }
+  if (!gated.value && pubS3Ref.value?.validate()) { tab.value = 'storage'; return }   // the destination's form is the publish-s3 card in the Storage tab (docs/ADR-063)
   if (!gated.value && pubRef.value?.validate()) { tab.value = 'publishing'; return }   // both are checked before anything is written
   saving.value = true; error.value = null
   const wasGated = gated.value
@@ -982,6 +1009,10 @@ async function save() {
   if (pubRef.value?.dirty) {
     const pr = await pubRef.value.save()
     if (!pr.ok) { saving.value = false; error.value = t('publish.partialSave', { reason: pr.error }); tab.value = 'publishing'; await nextTick(); document.querySelector('[data-testid="publish-field-error"]')?.scrollIntoView({ block: 'center' }); return }
+  }
+  if (pubS3Ref.value?.dirty) {
+    const pr = await pubS3Ref.value.save()
+    if (!pr.ok) { saving.value = false; error.value = t('publish.partialSave', { reason: pr.error }); tab.value = 'storage'; await nextTick(); document.querySelector('[data-testid="publish-field-error"]')?.scrollIntoView({ block: 'center' }); return }
   }
   saving.value = false
   forceClose = true

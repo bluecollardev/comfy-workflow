@@ -176,8 +176,8 @@ test('the saved default is overridden by the pod\'s own configuration', async ({
 })
 
 test.describe('Configuration: remove left-out folders', () => {
-  const openDefault = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'options'); return d }
-  const openPod = async (page) => { await page.goto('/'); await podCard(page, 'ComfyUI-Dev').getByTestId('pod-config').click(); const d = modal(page, t('config.podTitle', { name: 'ComfyUI-Dev' })); await cfgTab(d, 'options'); return d }
+  const openDefault = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'folders'); return d }
+  const openPod = async (page) => { await page.goto('/'); await podCard(page, 'ComfyUI-Dev').getByTestId('pod-config').click(); const d = modal(page, t('config.podTitle', { name: 'ComfyUI-Dev' })); await cfgTab(d, 'folders'); return d }
   test('unticked and untouched: no key is saved; ticked saves true, reloads ticked, and unticking a stored one saves false', async ({ page, api }) => {
     let d = await openDefault(page)
     await expect(d.getByTestId('config-sync-exclude-delete')).not.toBeChecked()
@@ -188,7 +188,7 @@ test.describe('Configuration: remove left-out folders', () => {
     await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
     expect(calls(api, 'PUT', '/mounts')[1].body.sync_exclude_delete).toBe(true)
     await page.reload(); await page.getByTestId('open-config').click()
-    d = modal(page, t('config.title')); await cfgTab(d, 'options')
+    d = modal(page, t('config.title')); await cfgTab(d, 'folders')
     await expect(d.getByTestId('config-sync-exclude-delete')).toBeChecked()
     await d.getByTestId('config-sync-exclude-delete').uncheck()
     await d.getByTestId('config-save').click(); await expect(d).toBeHidden()

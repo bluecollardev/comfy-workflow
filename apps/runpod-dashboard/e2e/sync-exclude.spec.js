@@ -175,8 +175,8 @@ test('a core without sync.folders (older) hides the section quietly: no error, t
 })
 
 test.describe('Configuration: Sync: leave out', () => {
-  const openDefault = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'options'); return d }
-  const openPod = async (page) => { await page.goto('/'); await podCard(page, 'ComfyUI-Dev').getByTestId('pod-config').click(); const d = modal(page, t('config.podTitle', { name: 'ComfyUI-Dev' })); await cfgTab(d, 'options'); return d }
+  const openDefault = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'folders'); return d }
+  const openPod = async (page) => { await page.goto('/'); await podCard(page, 'ComfyUI-Dev').getByTestId('pod-config').click(); const d = modal(page, t('config.podTitle', { name: 'ComfyUI-Dev' })); await cfgTab(d, 'folders'); return d }
   test('the textarea loads with the help line; an untouched config saves with no sync_exclude', async ({ page, api }) => {
     const d = await openDefault(page)
     await expect(d.getByTestId('config-sync-exclude')).toHaveValue('')
@@ -190,7 +190,7 @@ test.describe('Configuration: Sync: leave out', () => {
     await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
     expect(calls(api, 'PUT', '/mounts')[0].body.sync_exclude).toEqual(['CANALV2/', '*.tmp'])
     await page.reload(); await page.getByTestId('open-config').click()
-    d = modal(page, t('config.title')); await cfgTab(d, 'options')
+    d = modal(page, t('config.title')); await cfgTab(d, 'folders')
     await expect(d.getByTestId('config-sync-exclude')).toHaveValue('CANALV2/\n*.tmp')
     await d.getByTestId('config-sync-exclude').fill('')
     await d.getByTestId('config-save').click(); await expect(d).toBeHidden()

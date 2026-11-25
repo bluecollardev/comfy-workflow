@@ -1,10 +1,10 @@
 <template>
-  <div data-testid="settings-publishing">
-    <BAlert :model-value="true" variant="info" class="small py-2 mb-3" data-testid="publish-settings-note"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('publish.note') }}</BAlert>
-    <div v-if="store.old" class="alert alert-info small" data-testid="publish-settings-restart">{{ $t('publish.restart') }}</div>
+  <div :data-testid="part === 's3' ? 'settings-publish-destination' : 'settings-publishing'">
+    <BAlert v-if="part !== 's3'" :model-value="true" variant="info" class="small py-2 mb-3" data-testid="publish-settings-note"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('publish.note') }}</BAlert>
+    <div v-if="store.old && part !== 's3'" class="alert alert-info small" data-testid="publish-settings-restart">{{ $t('publish.restart') }}</div>
     <template v-else-if="form">
-      <!-- S3 -->
-      <CollapsibleSection id="publish-s3" :title="$t('publish.s3.title')" testid="publish-s3-block">
+      <!-- the destination's form: shown inside Publishing > Storage as the publish-s3 card (docs/ADR-063) -->
+      <CollapsibleSection v-if="part === 's3'" id="publish-s3" :title="$t('publish.s3.title')" testid="publish-s3-block">
         <div class="d-flex align-items-center gap-2 mb-2">
           <span class="badge" :class="store.settings.s3.ready ? 'text-bg-success' : 'text-bg-secondary'" data-testid="publish-s3-ready">{{ store.settings.s3.ready ? $t('publish.ready') : $t('publish.notReady') }}</span>
           <span v-if="store.settings.s3.problem && !store.settings.s3.ready" class="small text-warning" data-testid="publish-s3-problem">{{ store.settings.s3.problem }}</span>
@@ -33,15 +33,17 @@
           <span v-if="dirty" class="small text-body-secondary" data-testid="publish-save-first">{{ $t('publish.saveFirst') }}</span><span v-if="results.s3" class="small" :class="results.s3.ok ? 'text-success' : 'text-danger'" data-testid="publish-s3-test-result">{{ results.s3.ok ? $t('publish.s3.testOk', { detail: results.s3.detail }) : results.s3.detail }}</span></div>
       </CollapsibleSection>
       <!-- Slack is connected in Connect > Slack: here only its state -->
-      <CollapsibleSection id="publish-slack" :title="$t('publish.slackStatus.title')" testid="publish-slack-status"><div class="d-flex align-items-center gap-2 flex-wrap">
+      <CollapsibleSection v-if="part !== 's3'" id="publish-slack" :title="$t('publish.slackStatus.title')" testid="publish-slack-status"><div class="d-flex align-items-center gap-2 flex-wrap">
         <span :class="store.settings.slack.ready ? 'text-success' : 'text-body-secondary'" data-testid="publish-slack-status-text">{{ store.settings.slack.ready ? $t('publish.slackStatus.connected', { workspace: store.settings.slack.workspace_name || 'Slack', channel: store.settings.slack.channel }) : $t('publish.slackStatus.notConnected') }}</span>
         <BButton size="sm" variant="outline-light" data-testid="publish-slack-open-connect" @click="openConnect">{{ $t('publish.slackStatus.open') }}</BButton>
       </div></CollapsibleSection>
       <!-- defaults -->
-      <CollapsibleSection id="publish-defaults" :title="$t('publish.defaults.title')" testid="publish-defaults-block">
+      <CollapsibleSection v-if="part !== 's3'" id="publish-defaults" :title="$t('publish.defaults.title')" testid="publish-defaults-block">
         <div class="small mb-2"><span class="me-3">{{ $t('publish.defaults.targets') }}</span>
-          <label class="me-3"><input v-model="form.defaults.targets" type="checkbox" value="s3" class="form-check-input me-1" data-testid="publish-default-s3" />S3</label>
-          <label><input v-model="form.defaults.targets" type="checkbox" value="slack" class="form-check-input me-1" data-testid="publish-default-slack" />Slack</label></div>
+          <label class="me-3" :title="$t('outputs.render.cfg.publishS3')"><input v-model="form.defaults.targets" type="checkbox" value="s3" class="form-check-input me-1" data-testid="publish-default-s3" @change="mirrorTargets" />S3</label>
+          <label :title="$t('outputs.render.cfg.publishSlack')"><input v-model="form.defaults.targets" type="checkbox" value="slack" class="form-check-input me-1" data-testid="publish-default-slack" @change="mirrorTargets" />Slack</label></div>
+        <div v-if="render" class="small mb-2"><label><input v-model="render.pull" type="checkbox" class="form-check-input me-1" data-testid="config-render-pull" />{{ $t('outputs.render.cfg.pull') }}</label></div>
+        <div v-if="render" class="form-text mb-2" data-testid="publish-targets-help">{{ $t('publish.defaults.targetsHelp') }}</div>
         <BFormGroup :label="$t('publish.defaults.transfer')" label-for="pub-transfer" class="mb-2"><BFormSelect id="pub-transfer" v-model="form.s3.transfer" size="sm" class="w-auto" :options="transferOptions" data-testid="publish-transfer" /><div class="form-text" data-testid="publish-transfer-help">{{ $t('publish.defaults.transferHelp') }}</div></BFormGroup>
         <BFormGroup :label="$t('publish.defaults.transferPods')" label-for="pub-transfer-pods" class="mb-2"><BFormInput id="pub-transfer-pods" v-model="podsText" size="sm" :placeholder="$t('publish.defaults.transferPodsPlaceholder')" data-testid="publish-transfer-pods" /><div class="form-text">{{ $t('publish.defaults.transferPodsHelp') }}</div></BFormGroup>
         <BFormGroup :label="$t('publish.defaults.parallelPods')" label-for="pub-parallel-pods" class="mb-2"><BFormInput id="pub-parallel-pods" v-model.number="form.s3.parallel_pods" type="number" min="1" max="6" size="sm" style="width: 6rem" data-testid="publish-parallel-pods" /><div class="form-text">{{ $t('publish.defaults.parallelPodsHelp') }}</div></BFormGroup>
@@ -70,6 +72,7 @@ import { t } from '../i18n'
 import { PLACEHOLDERS, s3Dest, unknownPlaceholders } from '../utils/publish'
 import { publishAPI } from '../api/publish'
 
+const props = defineProps({ /** 's3': the destination's form (shown in Adapters > Storage); 'rest': Slack, targets, transfer and the message (Publishing) */ part: { type: String, default: 'rest' }, /** the configuration's render block: the S3 / Slack boxes are also its "publish when done" defaults, and Sync the renders is its pull */ render: { type: Object, default: null } })
 const store = usePublishStore(), confirm = useConfirmStore()
 const form = ref(null)
 const secrets = reactive({ access_key_id: '', secret_access_key: '' })
@@ -89,12 +92,20 @@ const snapshot = ref('')
 const podsText = computed({ get: () => (form.value?.s3.transfer_pods || []).join(', '), set: (t) => { form.value.s3.transfer_pods = String(t).split(/[\s,]+/).filter(Boolean) } })
 const transferOptions = computed(() => ['auto', 'pod', 'pc'].map((v) => ({ value: v, text: t(`publish.defaults.transferOption.${v}`) })))
 /** Whether anything here differs from what is saved: a changed field or a secret typed. The window's one Save writes it. */
-const dirty = computed(() => !!form.value && (JSON.stringify(form.value) !== snapshot.value || !!secrets.access_key_id || !!secrets.secret_access_key))
+const XFER = ['transfer', 'transfer_pods', 'parallel_pods']
+const mine = (f) => (props.part === 's3' ? { s3: Object.fromEntries(Object.entries(f.s3).filter(([k]) => !XFER.includes(k))) } : { s3: Object.fromEntries(Object.entries(f.s3).filter(([k]) => XFER.includes(k))), defaults: f.defaults })
+const dirty = computed(() => !!form.value && (JSON.stringify(mine(form.value)) !== snapshot.value || (props.part === 's3' && (!!secrets.access_key_id || !!secrets.secret_access_key))))
+/** One pair of boxes is both the publish defaults and the Render sequences defaults (Slack needs S3 there): a change writes both. */
+function mirrorTargets() {
+  const r = props.render; if (!r?.publish) return
+  const t = form.value.defaults.targets
+  r.publish.s3 = t.includes('s3'); r.publish.slack = t.includes('s3') && t.includes('slack')
+}
 function fill() {
   const s = store.settings
   form.value = { s3: { bucket: '', prefix: '', region: '', endpoint: '', credentials: 'app', presign_hours: 72, transfer: 'auto', transfer_pods: [], parallel_pods: 2, ...pick(s.s3, ['bucket', 'prefix', 'region', 'endpoint', 'credentials', 'presign_hours', 'transfer', 'transfer_pods', 'parallel_pods']) },
     defaults: { targets: [...(s.defaults.targets || [])], message: s.defaults.message || '' } }
-  snapshot.value = JSON.stringify(form.value)
+  snapshot.value = JSON.stringify(mine(form.value))
 }
 const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o && o[k] !== undefined && o[k] !== null).map((k) => [k, o[k]]))
 onMounted(async () => { await store.loadSettings(); if (!store.old) fill() })
@@ -103,14 +114,13 @@ const fieldError = (block, field) => (errField.value === `${block}.${field}` ? e
 const blockError = (block) => (errField.value && errField.value.startsWith(`${block}.`) && !['s3.bucket', 's3.prefix', 's3.presign_hours', 'slack.channel', 'slack.webhook_url'].includes(errField.value) ? error.value : '')
 function body(extra = {}) {
   const f = form.value
-  return {
-    s3: { ...f.s3, ...(secrets.access_key_id ? { access_key_id: secrets.access_key_id } : {}), ...(secrets.secret_access_key ? { secret_access_key: secrets.secret_access_key } : {}) },
-    defaults: { targets: [...f.defaults.targets], message: f.defaults.message },
-    ...extra,
-  }
+  const m = mine(f)
+  if (props.part === 's3') return { s3: { ...m.s3, ...(secrets.access_key_id ? { access_key_id: secrets.access_key_id } : {}), ...(secrets.secret_access_key ? { secret_access_key: secrets.secret_access_key } : {}) }, ...extra }
+  return { s3: m.s3, defaults: { targets: [...f.defaults.targets], message: f.defaults.message }, ...extra }
 }
 /** Client-side checks before anything is written; '' when fine. */
 function validate() {
+  if (props.part !== 's3') return ''
   const h = form.value?.s3.presign_hours
   if (h !== undefined && h !== null && h !== '' && !(Number.isInteger(Number(h)) && Number(h) >= 1)) { errField.value = 's3.presign_hours'; error.value = 's3.presign_hours: whole hours, at least 1'; return error.value }
   return ''

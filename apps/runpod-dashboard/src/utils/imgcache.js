@@ -84,17 +84,25 @@ let shared = null
 export const sharedImages = () => (shared ||= createImageCache(idbImageBackend()))
 
 // A bounded number of fetches at once, and one fetch for the same address however many tiles ask.
+/** Pod preview JPEGs are tiny (a few KB), so their fetches are latency-bound: 16 at once (Lucas, 2026-11-25: faster). */
+const FETCHES = 16
 const live = new Map()
 let running = 0
 const waiting = []
-const pump = () => { while (running < 6 && waiting.length) { const w = waiting.shift(); running++; w().finally(() => { running--; pump() }) } }
-const limited = (fn) => new Promise((res, rej) => { waiting.push(() => fn().then(res, rej)); pump() })
+const pump = () => { while (running < FETCHES && waiting.length) { const w = waiting.shift(); running++; w().finally(() => { running--; pump() }) } }
+// `order` (a page position, smaller = nearer the top-left) puts a fetch ahead of later-placed ones, so the pictures load top to bottom; none goes last, in arrival order. A short settle lets a burst of tiles queue before the first starts.
+const limited = (fn, order = null) => new Promise((res, rej) => {
+  const w = Object.assign(() => fn().then(res, rej), { order: typeof order === 'number' ? order : Infinity })
+  let i = waiting.length; while (i > 0 && waiting[i - 1].order > w.order) i--
+  waiting.splice(i, 0, w); clearTimeout(timer); timer = setTimeout(pump, 25)
+})
+let timer = null
 
 /**
  * The picture at `url` as a Blob: from the cache with no request, else fetched once (through `fallback`, the app's own reader, when the page cannot fetch the address) and kept. Resolves `null` when it cannot be
  * had (the caller then lets the <img> load the address itself, exactly as before). `stamp` is the file's size and time when the caller knows them: a different one is a miss.
  */
-export function loadImage(url, { stamp = '', fallback, cache = sharedImages() } = {}) {
+export function loadImage(url, { stamp = '', fallback, cache = sharedImages(), order = null } = {}) {
   const id = imageKey(url) + (stamp ? `#${stamp}` : '')
   const have = live.get(id); if (have) return have
   const p = (async () => {
@@ -110,7 +118,7 @@ export function loadImage(url, { stamp = '', fallback, cache = sharedImages() } 
       if (!blob) return null
       if (/^image\//.test(blob.type)) await cache.set(imageKey(url), blob, stamp)
       return blob
-    })
+    }, order)
   })().finally(() => live.delete(id))
   live.set(id, p)
   return p

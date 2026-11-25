@@ -44,7 +44,10 @@ export function withEyeSlots(tiles) {
       else out.push({ key: `eyeslot:${k}:${role}`, kind: 'eyeslot', eye: role, mainKey, sub: k.split('\u0000')[0], stem: k.split('\u0000')[1] })
     }
     out.push({ key: `eyehead:dpx:${k}`, kind: 'eyehead', head: 'dpx' })
-    for (const role of EYE_ORDER) out.push({ key: `eyeframe:${k}:${role}`, kind: 'eyeframe', eye: role, slot: (els.get(k).filter((x) => x.eye === role))[0] || null, stem: k.split('\u0000')[1] })   // row two: the DPX previews
+    // row two: the DPX frame previews, four columns. One filled slot (a mono delivery): its frames 1, 5, 10 and 15 fill the four columns. Several filled slots (stereo): one column per slot, the first frame each.
+    const filledRoles = EYE_ORDER.filter((role) => els.get(k).some((x) => x.eye === role))
+    if (filledRoles.length === 1) out.push({ key: `eyeframe:${k}:${filledRoles[0]}`, kind: 'eyeframe', eye: filledRoles[0], slot: els.get(k).filter((x) => x.eye === filledRoles[0])[0], stem: k.split('\u0000')[1], span: true })
+    else for (const role of EYE_ORDER) out.push({ key: `eyeframe:${k}:${role}`, kind: 'eyeframe', eye: role, slot: (els.get(k).filter((x) => x.eye === role))[0] || null, stem: k.split('\u0000')[1], compact: true })
     for (const f of filled) out.push({ key: `eyehead:all:${f.key}`, kind: 'eyehead', head: 'all', name: f.name || f.file.filename }, f)
   }
   return out

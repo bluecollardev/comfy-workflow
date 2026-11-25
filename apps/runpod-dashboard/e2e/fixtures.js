@@ -489,6 +489,40 @@ export async function mockApi(page, state) {
         return json(hits.length === 1 ? { match: body.clip ? 'exact' : 'unique', element: hits[0] } : hits.length ? { match: 'ambiguous', candidates: hits.map((h) => h.clip) } : { match: 'none' })
       }
     }
+    // Storage adapters (docs/ADR-063): state.storage = { adapters: [{ id, name, kind, enabled, bucket, region, prefix, endpoint, key_hint }], old, tests: { id: { ok, detail } } }; calls land in state.storage.calls.
+    if (path === '/storage' || path.startsWith('/storage/')) {
+      const sg = (state.storage ||= {}); sg.calls ||= []
+      if (sg.old) return json({ detail: 'no core call storage.list' }, 500)
+      const v = state.publish?.settings?.s3 || { bucket: 'bh-panama-exchange-610140802195', prefix: 'returns/BKK/', region: 'us-west-2', endpoint: '', ready: true }
+      sg.adapters ||= [
+        { id: 'publish-s3', name: 'Publish destination (S3)', builtin: true, kind: 'publish', enabled: true, endpoint: v.endpoint || '', region: v.region || '', bucket: v.bucket || '', prefix: v.prefix || '', ready: !!v.ready, key_hint: '', edit: 'publish' },
+        { id: 'panama-s3', name: 'Panama BH exchange (S3)', builtin: true, kind: 'panama', enabled: true, endpoint: '', region: 'us-west-2', bucket: 'bh-panama-exchange-610140802195', prefix: 'rounds/', ready: true, key_hint: '', edit: 'panama' },
+        { id: 'wasabi', name: 'Wasabi', builtin: true, kind: 'wasabi', enabled: false, endpoint: 'https://s3.wasabisys.com', region: 'us-east-1', bucket: '', prefix: '', ready: false, problem: 'Add a bucket', key_hint: '' },
+      ]
+      const ad = sg.adapters, one = (id) => ad.find((a) => a.id === id)
+      const ready = (a) => { a.ready = !!(a.bucket && a.region && (a.key_hint || a.kind === 'publish' || a.kind === 'panama')); if (a.ready) delete a.problem; else a.problem = !a.bucket ? 'Add a bucket' : 'Add the access key and secret key' }
+      if (method === 'GET' && path === '/storage') return json({ adapters: ad })
+      if (method === 'PUT' && path === '/storage') {
+        sg.calls.push({ save: { ...body, access_key_id: body.access_key_id ? '•' : undefined, secret_access_key: body.secret_access_key ? '•' : undefined } })
+        let a = body.id && one(body.id)
+        if (!a) { const slug = String(body.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); if (!slug) return json({ detail: 'name needs letters or digits' }, 400); a = { id: slug, name: body.name, builtin: false, kind: 'custom', enabled: false, endpoint: '', region: '', bucket: '', prefix: '', ready: false, key_hint: '' }; ad.push(a) }
+        for (const k of ['endpoint', 'region', 'bucket', 'prefix']) if (body[k] !== undefined) a[k] = body[k]
+        if (a.kind === 'wasabi' && !a.endpoint) a.endpoint = 'https://s3.wasabisys.com'
+        if (body.access_key_id) a.key_hint = '…' + String(body.access_key_id).slice(-4)
+        ready(a); return json({ adapters: ad })
+      }
+      const m = /^\/storage\/([^/]+)(?:\/(enable|disable|test))?$/.exec(path)
+      if (m) {
+        const a = one(decodeURIComponent(m[1])); if (!a) return json({ detail: `no storage adapter ${m[1]}` }, 400)
+        if (method === 'DELETE') { sg.calls.push({ remove: a.id }); sg.adapters = ad.filter((x) => x !== a); return json({ adapters: sg.adapters }) }
+        if (m[2] === 'test') { sg.calls.push({ test: a.id }); return json((sg.tests || {})[a.id] || { ok: true, detail: `${a.bucket || 'bucket'} answered` }) }
+        if (m[2] === 'enable' || m[2] === 'disable') {
+          sg.calls.push({ [m[2]]: a.id })
+          if (m[2] === 'enable' && a.kind !== 'publish' && a.kind !== 'panama') { ready(a); if (!a.ready) return json({ detail: `${a.name} cannot be switched on: ${a.problem}` }, 400) }
+          a.enabled = m[2] === 'enable'; return json({ adapters: ad })
+        }
+      }
+    }
     // Publishing (S3 and Slack): state.publish = { settings, tree: { dir: [entries] }, sizes, there: [paths already on S3], heavy: [paths refused as weights], jobs, puts, tests, planned, runs, reposts }; state.publishOld answers like a core without it.
     // Frame previews (a pod job): start makes a job that is done on the second status call; list answers what the jobs wrote; state.fp = { jobs, written: { src_dir: [jpg names] }, starts, lists, fail: { src_dir: [frame numbers] } }
     if (method === 'POST' && path.startsWith('/framepreviews/')) {
@@ -1334,6 +1368,7 @@ export const test = base.extend({
   // auto: every test is mocked, even ones that never touch `api`, so no spec can reach the real backend.
   api: [
     async ({ page }, use) => {
+      await page.addInitScript(() => { window.__AUTO_CAP__ = 0; window.__THUMB_CONCURRENCY__ = 1 })   // the older specs run click-only (the app now loads DPX previews by itself, e2e/outputs-autoload.spec.js)
       await page.addInitScript(() => { try { localStorage.setItem('outputs.showStereo', 'false') } catch {} })   // the four-slot Outputs layout is narrow: only its own specs turn it on
       const state = defaultState()
       const calls = await mockApi(page, state)

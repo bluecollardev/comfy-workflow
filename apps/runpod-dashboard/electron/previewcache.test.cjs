@@ -44,3 +44,15 @@ test('an entry is trusted only for the limit, and the cache keeps at most `items
   for (let i = 0; i < 6; i++) await c.get(`x${i}`, f)
   const before = calls; await c.get('x0', f); assert.equal(calls, before + 1)   // the oldest was dropped
 })
+
+test('setConcurrency changes how many fetches run at once and starts waiting ones', async () => {
+  const { createPreviewCache } = require('./previewcache.cjs')
+  const c = createPreviewCache({ concurrency: 2 })
+  let live = 0, peak = 0; const gates = []
+  const slow = () => new Promise((res) => { live++; peak = Math.max(peak, live); gates.push(() => { live--; res({ status: 200, type: 'image/jpeg', body: Buffer.from('x') }) }) })
+  const ps = Array.from({ length: 10 }, (_, i) => c.get('k' + i, slow))
+  await new Promise((r) => setTimeout(r, 10)); assert.equal(live, 2)
+  c.setConcurrency(10); await new Promise((r) => setTimeout(r, 10)); assert.equal(live, 10)
+  c.setConcurrency(1); assert.equal(c.concurrency, 1)
+  gates.splice(0).forEach((g) => g()); await Promise.all(ps.slice(0, 10)).catch(() => {})
+})

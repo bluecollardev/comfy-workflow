@@ -36,6 +36,10 @@ contextBridge.exposeInMainWorld('core', {
     // The real path of a file or folder dropped from the desktop (the page only gets a File object).
     pathFor: (file) => { try { return webUtils.getPathForFile(file) } catch { return '' } },
   },
+  previews: {
+    // How many preview images the main process fetches at once (the Outputs window sets it to its page size).
+    setConcurrency: (n) => ipcRenderer.invoke('core:previews:concurrency', Number(n)),
+  },
   async invoke(ns, fn, args = []) {
     // Plain data only crosses the bridge: Vue's reactive proxies cannot be structured-cloned.
     let plain

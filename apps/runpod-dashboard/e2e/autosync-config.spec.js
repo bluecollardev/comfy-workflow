@@ -87,7 +87,7 @@ test.describe('Import Round step 3', () => {
 })
 
 test.describe('Default Configuration', () => {
-  const open = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'options'); return d }
+  const open = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'folders'); return d }
 
   test('the section loads unticked with the defaults and its help line', async ({ page }) => {
     const dlg = await open(page)
@@ -116,7 +116,7 @@ test.describe('Default Configuration', () => {
     await page.reload()
     await page.getByTestId('open-config').click()
     dlg = modal(page, t('config.title'))
-    await cfgTab(dlg, 'options')
+    await cfgTab(dlg, 'folders')
     await expect(dlg.getByTestId('config-autosync-enabled')).toBeChecked()
     await expect(dlg.getByTestId('config-autosync-push')).toBeChecked()
     await expect(dlg.getByTestId('config-autosync-approved-by')).toHaveValue('Lucas')
@@ -160,7 +160,7 @@ test.describe('a pod\'s own configuration', () => {
     await page.goto('/')
     await podCard(page, 'ComfyUI-Dev').getByTestId('pod-config').click()
     let panel = modal(page, t('config.podTitle', { name: 'ComfyUI-Dev' }))
-    await cfgTab(panel, 'options')
+    await cfgTab(panel, 'folders')
     await expect(panel.getByTestId('config-autosync-enabled')).not.toBeChecked()
     await panel.getByTestId('config-autosync-enabled').check()
     await panel.getByTestId('config-apply').click()
@@ -176,7 +176,7 @@ test.describe('a pod\'s own configuration', () => {
     await page.reload()
     await podCard(page, 'ComfyUI-Dev').getByTestId('pod-config').click()
     panel = modal(page, t('config.podTitle', { name: 'ComfyUI-Dev' }))
-    await cfgTab(panel, 'options')
+    await cfgTab(panel, 'folders')
     await expect(panel.getByTestId('config-autosync-enabled')).toBeChecked()
     await expect(panel.getByTestId('config-autosync-approved-by')).toHaveValue('Lucas')
     await panel.getByTestId('config-autosync-enabled').uncheck()
@@ -190,7 +190,7 @@ test.describe('a pod\'s own configuration', () => {
     await page.goto('/')
     await podCard(page, 'ComfyUI-Dev').getByTestId('pod-config').click()
     const panel = modal(page, t('config.podTitle', { name: 'ComfyUI-Dev' }))
-    await cfgTab(panel, 'options')
+    await cfgTab(panel, 'folders')
     await expect(panel.getByTestId('config-autosync-enabled')).toBeChecked()   // started from the default, like every other field
     await expect(panel.getByTestId('config-autosync-help')).toHaveText(t('autosync.configHelp'))
   })

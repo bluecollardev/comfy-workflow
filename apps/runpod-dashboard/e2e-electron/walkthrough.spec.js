@@ -93,7 +93,7 @@ test.describe('setup walkthrough: a new user, a new app', () => {
     const { page } = ctx
     await page.getByTestId('open-config').click()
     const modal = configModal(page)
-    await modal.getByTestId('cfg-tab-options').click()
+    await modal.getByTestId('cfg-tab-volume').click()
     await modal.getByTestId('cfg-dry-run').check()
     await shot('08-no-spend-switch')
     await modal.getByTestId('config-save').click()

@@ -253,19 +253,19 @@ test('Outputs: 4 files of a type are a group expanded by default; one file is st
   await expect(img).toHaveAttribute('data-expanded', 'false')
 })
 
-test('Outputs: the list of runs is paged: 25 a page, Next goes to page 2, 100 a page shows 100, a scope change goes back to page 1', async ({ page, api }) => {
+test('Outputs: the list of runs is paged: 10 a page by default, Next goes to page 2, 100 a page shows 100, a scope change goes back to page 1', async ({ page, api }) => {
   const runs = Array.from({ length: 120 }, (_, i) => run(`aaaaaaaa-${String(i).padStart(4, '0')}-0000`, [{ filename: `r${i}_00001_.png`, subfolder: '', type: 'output' }], { started_at: `2026-11-21T${String(10 + Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}:00Z` }))
   const m = await open(page, api, runs, [])
   const rows = m.getByTestId('pod-outputs-run')
   await expect(m.getByTestId('outputs-pager')).toBeVisible()
-  await expect(rows).toHaveCount(25)
-  await expect(m.getByTestId('outputs-pager-page')).toHaveText('Page 1 of 5')
-  await expect(m.getByTestId('outputs-pager-shown')).toHaveText('25 of 120')
+  await expect(rows).toHaveCount(10)
+  await expect(m.getByTestId('outputs-pager-page')).toHaveText('Page 1 of 12')
+  await expect(m.getByTestId('outputs-pager-shown')).toHaveText('10 of 120')
   await expect(m.getByTestId('outputs-pager-prev')).toBeDisabled()
   const firstOnPage1 = await rows.first().getAttribute('data-prompt')
   await m.getByTestId('outputs-pager-next').click()
-  await expect(m.getByTestId('outputs-pager-page')).toHaveText('Page 2 of 5')
-  await expect(rows).toHaveCount(25)
+  await expect(m.getByTestId('outputs-pager-page')).toHaveText('Page 2 of 12')
+  await expect(rows).toHaveCount(10)
   expect(await rows.first().getAttribute('data-prompt')).not.toBe(firstOnPage1)
   await m.getByTestId('outputs-pager-size').selectOption('100')
   await expect(m.getByTestId('outputs-pager-page')).toHaveText('Page 1 of 2')            // a new page size goes back to page 1

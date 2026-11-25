@@ -17,6 +17,7 @@ import { prepareSource, prepareSourceAsync } from './imports.js'
 import * as mounts from './mounts.js'
 import { STAGED_ROUNDS } from './paths.js'
 import * as settings from './settings.js'
+import { assertPanamaOn } from './storage.js'
 
 const val = (name: string, fallback: string) => settings.lookup(name) || fallback
 export const profile = () => val('PANAMA_S3_PROFILE', settings.PANAMA_DEFAULTS.profile)
@@ -34,7 +35,7 @@ const ROUND = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/   // one folder name under ro
 
 /** The keys the app holds (Default Configuration) win; with none, the AWS profile named `panama` on this PC is the fallback. */
 export const appKeys = () => { const id = settings.lookup('PANAMA_AWS_ACCESS_KEY_ID'), secret = settings.lookup('PANAMA_AWS_SECRET_ACCESS_KEY'); return id && secret ? { id, secret } : null }
-const aws = (args: string[]) => [...(appKeys() ? [] : ['--profile', profile()]), '--region', region(), ...args]
+const aws = (args: string[]) => { assertPanamaOn(); return [...(appKeys() ? [] : ['--profile', profile()]), '--region', region(), ...args] }   // the Panama S3 adapter (docs/ADR-063) can be switched off: nothing here touches the bucket then
 /** The environment an aws call runs in: the app's keys in the standard variables, never on the command line. */
 export const awsEnv = (): NodeJS.ProcessEnv => {
   const k = appKeys()

@@ -8,7 +8,7 @@ test('Pull pods may use any free card: on by default, switch it off, save, and t
   await page.goto('/')
   await page.getByTestId('open-config').click()
   const dialog = configModal(page)
-  await cfgTab(dialog, 'options')
+  await cfgTab(dialog, 'volume')
   const sw = dialog.getByTestId('cfg-pull-any-card')
   await expect(sw).toBeChecked()
   await expect(dialog.getByText(t('config.pullAnyCard'))).toBeVisible()
@@ -20,6 +20,6 @@ test('Pull pods may use any free card: on by default, switch it off, save, and t
   expect(puts.length).toBeGreaterThan(0)
   expect(puts[puts.length - 1].body).toMatchObject({ pull_any_card: false, apply_by_default: false })   // an explicit false, not a missing key (a missing key means 'on')
   await page.getByTestId('open-config').click()
-  await cfgTab(configModal(page), 'options')
+  await cfgTab(configModal(page), 'volume')
   await expect(configModal(page).getByTestId('cfg-pull-any-card')).not.toBeChecked()   // kept
 })
