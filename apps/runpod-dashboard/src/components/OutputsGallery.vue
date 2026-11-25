@@ -16,8 +16,10 @@
       <BButton v-if="seqCount || groupCount" variant="outline-light" size="sm" data-testid="outputs-expand-all" @click="setAll('expanded')"><i class="fa-solid fa-expand me-1"></i>{{ $t('outputs.dpx.expandAll') }}</BButton>
     </div>
     <div v-if="files.length" ref="galleryEl" class="gallery">
-      <div v-for="t in tiles" :key="t.key" class="cell" :class="{ wide: (t.kind === 'dpx' && t.frames.length > 1) || isGroup(t), seq: t.kind === 'dpx' && t.frames.length > 1 }" data-testid="outputs-cell">
-      <div v-if="isGroup(t)" class="group" data-testid="outputs-group" :data-kind="t.kind" :data-cat="t.cat || 'temp'" :data-count="t.count" :data-expanded="groupExpanded(t) ? 'true' : 'false'">
+      <div v-for="t in tiles" :key="t.key" class="cell" :class="{ wide: (t.kind === 'dpx' && t.frames.length > 1) || isGroup(t), seq: t.kind === 'dpx' && t.frames.length > 1, eyeempty: t.kind === 'eyeslot' }" :data-testid="t.kind === 'eyeslot' ? 'outputs-eye-slot' : 'outputs-cell'" :data-eye="t.eye">
+      <!-- ADR-058: a slot (Overall, Left Eye, Right Eye) with no sequence: shown so a missing right eye is visible; not an error, never counted, never blocks Publish -->
+      <div v-if="t.kind === 'eyeslot'" class="head" data-testid="outputs-eye-empty"><i class="fa-solid fa-film"></i><span class="headname">{{ $t(`outputs.eye.${t.eye}`) }}</span><span class="small text-body-secondary" :title="t.stem">{{ $t('outputs.eye.empty') }}</span></div>
+      <div v-else-if="isGroup(t)" class="group" data-testid="outputs-group" :data-kind="t.kind" :data-cat="t.cat || 'temp'" :data-count="t.count" :data-expanded="groupExpanded(t) ? 'true' : 'false'">
         <div class="head" data-testid="outputs-group-head">
           <i class="fa-solid" :class="groupIcon(t)"></i>
           <span class="headname" :title="groupLabel(t)" data-testid="outputs-group-label">{{ groupLabel(t) }}</span>
@@ -61,6 +63,7 @@
       <div v-if="t.kind === 'dpx' && t.frames.length > 1" class="head" data-testid="outputs-seq-head">
         <i class="fa-solid fa-film"></i>
         <span class="headname" :title="t.name || t.file.filename" data-testid="outputs-seq-name">{{ shortName(t.name || t.file.filename) }}</span>
+        <span class="badge text-bg-info" data-testid="outputs-eye-role" :data-eye="t.eye">{{ $t(`outputs.eye.${t.eye}`) }}</span>
         <span class="badge text-bg-secondary headcount" data-testid="outputs-seq-headcount">{{ t.frames.length }}</span>
         <span v-if="isExpanded(t)" class="small text-body-secondary" data-testid="outputs-seq-preview-count">{{ $t('outputs.dpx.framePreviews', { n: previewCount(t), total: t.frames.length }) }}</span>
         <span v-if="inJob(srcOf(t))" class="small text-info" data-testid="outputs-seq-job-progress">{{ $t('outputs.frames.progress', { done: jobDone(), total: fpState.job.total || t.frames.length }) }}</span>
@@ -136,6 +139,7 @@ import { incompleteOf, tileName } from '../utils/incomplete'
 import { viewUrl, galleryTiles, sizeText, isDpx } from '../utils/outputs'
 import { isExpanded, toggleSeq, setAll, shownFrames, showMore, showAll, groupView, groupExpanded, toggleGroup, shownFiles, groupMore, groupShowAll, setShowTemp, HAS_IO } from '../utils/dpxcollapse'
 import { isTemp, groupTiles, tempGroup, shortName, dataFilesOf } from '../utils/videogroups'
+import { withEyeSlots } from '../utils/eyeroles'
 import { availableFrames } from '../utils/framepreviews'
 import { previewed } from '../utils/filmstrip'
 import { fpState, startJob, stopJob, queueListing, previewUrl, thumbUrl, posterUrl, jpgName, inJob, jobRunning, jobDone, failedOf, failReason } from '../utils/framejob'
@@ -213,7 +217,7 @@ const frameFailed = (t, f) => (failedOf(srcOf(t)).has(jpgName(f.filename)) ? fai
 const stemOf = (t) => (t.frames[0]?.filename || '').replace(/\.\d+\.dpx$/i, '')
 function loadFrames(t) { startJob({ podId: props.podId, items: [{ src_dir: srcOf(t), frames: t.frames.length, stem: stemOf(t) }], skipExisting: true }) }
 const isSeq = (t) => t.kind === 'dpx' && t.frames.length > 1
-const tiles = computed(() => { const ts = groupTiles(galleryTiles(realFiles.value).filter((t) => !(t.kind === 'dpx' && incompleteKeys.value.has(t.key)))); const tg = groupView.showTemp ? tempGroup(tempFiles.value) : null; return tg ? [...ts, tg] : ts })
+const tiles = computed(() => { const ts = withEyeSlots(groupTiles(galleryTiles(realFiles.value).filter((t) => !(t.kind === 'dpx' && incompleteKeys.value.has(t.key))))); const tg = groupView.showTemp ? tempGroup(tempFiles.value) : null; return tg ? [...ts, tg] : ts })
 // Every sequence row (collapsed or not) shows the frames that have a preview beside its first frame: the pod's JPEGs are listed in ONE batched call for all the sequences of this list (and for
 // every gallery asking at the same moment, utils/framejob.js queueListing), the cache is read locally; nothing is fetched or generated here.
 watchEffect(() => {
@@ -295,6 +299,7 @@ watch(() => props.files, () => { current.value = null; dpx.value = null; problem
 .cell.wide .tile { max-width: 9.5rem; }
 /* a sequence row: header across, the first-frame tile at the left, the filmstrip filling the rest of the row, the expanded frame list across below */
 .cell.seq { display: grid; grid-template-columns: 9.5rem auto minmax(0, 1fr); column-gap: 0.5rem; row-gap: 0.25rem; align-items: start; }
+.cell.eyeempty { grid-column: 1 / -1; opacity: 0.7; }
 .cell.seq > .head, .cell.seq > .frames { grid-column: 1 / -1; }
 /* the Main Video tile sits beside the sequence tile (column 2, as tall as the row, the picture 9.5rem high with its own width), the filmstrip keeps column 3 */
 /* column 2 holds the Main Video tile and, to its right on the same row, the Data File button (vertically centred on the tiles) */
