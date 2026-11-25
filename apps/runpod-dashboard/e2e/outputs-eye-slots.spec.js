@@ -41,6 +41,10 @@ test('A stereo element shows four filled slots in the order Overall, Left Eye, R
   await expect(m.getByTestId('outputs-eye-slot')).toHaveCount(0)
   await expect(m.locator('[data-testid="outputs-tile"][data-kind="dpx"]')).toHaveCount(4)
   await expect(m.getByTestId('outputs-seq-toggle')).toHaveCount(4)   // each slot collapses and expands on its own, as a sequence does today
+  // all four slots of the element sit on one row
+  const tops = await m.locator('[data-testid="outputs-cell"][data-eye]').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)))
+  expect(tops).toHaveLength(4)
+  expect(new Set(tops).size).toBe(1)
 })
 
 test('A right eye alone leaves Overall and Left Eye empty', async ({ page, api }) => {

@@ -15,7 +15,7 @@
       <BButton v-if="seqCount || groupCount" variant="outline-light" size="sm" data-testid="outputs-collapse-all" @click="setAll('collapsed')"><i class="fa-solid fa-compress me-1"></i>{{ $t('outputs.dpx.collapseAll') }}</BButton>
       <BButton v-if="seqCount || groupCount" variant="outline-light" size="sm" data-testid="outputs-expand-all" @click="setAll('expanded')"><i class="fa-solid fa-expand me-1"></i>{{ $t('outputs.dpx.expandAll') }}</BButton>
     </div>
-    <div v-if="files.length" ref="galleryEl" class="gallery">
+    <div v-if="files.length" ref="galleryEl" class="gallery" :class="{ eyegrid: tiles.some((x) => x.eye) }">
       <div v-for="t in tiles" :key="t.key" class="cell" :class="{ wide: (t.kind === 'dpx' && t.frames.length > 1) || isGroup(t), seq: t.kind === 'dpx' && t.frames.length > 1, eyeempty: t.kind === 'eyeslot' }" :data-testid="t.kind === 'eyeslot' ? 'outputs-eye-slot' : 'outputs-cell'" :data-eye="t.eye">
       <!-- ADR-058: a slot (Overall, Left Eye, Right Eye) with no sequence: shown so a missing right eye is visible; not an error, never counted, never blocks Publish -->
       <div v-if="t.kind === 'eyeslot'" data-testid="outputs-eye-empty"><div class="head"><i class="fa-solid fa-film"></i><span class="headname">{{ $t(`outputs.eye.${t.eye}`) }}</span><span class="small text-body-secondary" :title="t.stem">{{ $t('outputs.eye.empty') }}</span></div><div class="eyeph" data-testid="outputs-eye-placeholder"><i class="fa-solid fa-image"></i><span class="small">{{ $t('outputs.eye.empty') }}</span></div></div>
@@ -300,6 +300,14 @@ watch(() => props.files, () => { current.value = null; dpx.value = null; problem
 /* a sequence row: header across, the first-frame tile at the left, the filmstrip filling the rest of the row, the expanded frame list across below */
 .cell.seq { display: grid; grid-template-columns: 9.5rem auto minmax(0, 1fr); column-gap: 0.5rem; row-gap: 0.25rem; align-items: start; }
 .cell.eyeempty { grid-column: 1 / -1; opacity: 0.7; }
+/* ADR-058: with the eye slots on, the four slots of an element (Overall, Left Eye, Right Eye, Side By Side) sit on ONE row: a four column grid, each slot one column, Overall always starting a row */
+.gallery.eyegrid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.gallery.eyegrid .cell[data-eye] { grid-column: auto; }
+.gallery.eyegrid .cell[data-eye="overall"] { grid-column-start: 1; }
+.gallery.eyegrid .cell.seq[data-eye] { grid-template-columns: minmax(0, 1fr); }
+.gallery.eyegrid .cell.seq[data-eye] > * { grid-column: 1 / -1; }
+.gallery.eyegrid .cell.wide:not([data-eye]) { grid-column: 1 / -1; }
+.gallery.eyegrid .eyeph { width: 100%; }
 .eyeph { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.25rem; width: 220px; aspect-ratio: 16 / 9; margin-top: 0.35rem; border: 1px dashed var(--bs-border-color); border-radius: 0.25rem; color: var(--bs-secondary-color); }
 .eyeph .fa-image { font-size: 1.6rem; }
 .cell.seq > .head, .cell.seq > .frames { grid-column: 1 / -1; }
