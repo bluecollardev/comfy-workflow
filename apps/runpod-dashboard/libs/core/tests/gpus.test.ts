@@ -26,6 +26,6 @@ describe('gpus', () => {
     expect(runpodId('a4000')).toBe('NVIDIA RTX A4000'); expect(runpodId('NVIDIA GeForce RTX 4090')).toBe('NVIDIA GeForce RTX 4090')
     expect(vram('a4000')).toBe(16); expect(autoCards().every((g) => g.vram <= 48)).toBe(true); expect(vram('a40')).toBe(48)
     expect(() => runpodId('mi300x')).toThrow()
-    expect(menu()[0].value).toBe('auto'); expect(menu().find((m) => m.value === 'rtx4090')).toEqual({ value: 'rtx4090', text: 'RTX 4090 (24 GB)' })
+    expect(menu()[0].value).toBe('auto'); expect(menu().find((m) => m.value === 'rtx4090')).toEqual({ value: 'rtx4090', auto: true, text: 'RTX 4090 (24 GB)' })
   })
 })

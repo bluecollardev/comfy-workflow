@@ -314,6 +314,19 @@
         <BFormSelect id="cfg-default-gpu" v-model="cfg.default_gpu" :options="gpuChoices" size="sm" style="width: 22rem" data-testid="cfg-default-gpu" />
         <span class="small text-body-secondary">{{ $t('config.defaultGpuHint') }}</span>
       </div>
+      <div v-if="!forPod" class="mb-2" data-testid="cfg-auto-cards">
+        <div class="mb-1">{{ $t('config.autoCards') }} <span class="small text-body-secondary">{{ $t('config.autoCardsHint') }}</span></div>
+        <div class="d-flex flex-wrap gap-3 small ms-2">
+          <label v-for="c in autoCardChoices" :key="c.value" class="d-flex align-items-center gap-1" :data-testid="`cfg-auto-card-${c.value}`">
+            <input type="checkbox" class="form-check-input mt-0" :checked="autoCardsSel.includes(c.value)" :data-testid="`cfg-auto-card-box-${c.value}`" @change="toggleAutoCard(c.value, $event.target.checked)" />
+            {{ c.text }}
+          </label>
+        </div>
+        <div class="d-flex align-items-center gap-2 small mt-1 ms-2">
+          <span :data-testid="'cfg-auto-cards-state'" class="text-body-secondary">{{ cfg.auto_cards?.length ? $t('config.autoCardsCustom', { n: cfg.auto_cards.length }) : $t('config.autoCardsStock') }}</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="!cfg.auto_cards?.length" data-testid="cfg-auto-cards-reset" @click="cfg.auto_cards = []">{{ $t('config.autoCardsReset') }}</button>
+        </div>
+      </div>
       <div v-if="!forPod" class="mb-2" data-testid="cfg-import-row">
         <BFormCheckbox v-model="cfg.import_cap_enabled" :value="true" :unchecked-value="false" switch class="mb-1" data-testid="cfg-import-cap-enabled">
           {{ $t('config.importCap') }} <span class="text-body-secondary">{{ $t('config.importCapHint') }}</span>
@@ -763,8 +776,19 @@ async function loadVolume() {
 
 /** The card table for the default-card select: the menu's names, with auto as the cheapest card in stock. */
 const gpuChoices = ref([{ value: 'rtxpro6000', text: 'RTX PRO 6000 (96 GB)' }, { value: 'auto', text: 'Cheapest card in stock (16-24 GB)' }])
+/** The cards `auto` tries (Cheapest in Stock): the menu's cards, ticked from the saved list or, while none is saved, from the built-in stock list. Ticking exactly the stock list saves the empty list (= stock). */
+const autoCardChoices = computed(() => gpuChoices.value.filter((c) => c.value !== 'auto').map((c) => ({ ...c, text: String(c.text).split(' · ')[0] })))
+const stockAutoKeys = computed(() => gpuChoices.value.filter((c) => c.value !== 'auto' && c.auto).map((c) => c.value))
+const autoCardsSel = computed(() => (cfg.value?.auto_cards?.length ? cfg.value.auto_cards : stockAutoKeys.value))
+function toggleAutoCard(key, on) {
+  const cur = new Set(autoCardsSel.value)
+  on ? cur.add(key) : cur.delete(key)
+  const next = autoCardChoices.value.map((c) => c.value).filter((k) => cur.has(k))
+  const same = next.length === stockAutoKeys.value.length && next.every((k) => stockAutoKeys.value.includes(k))
+  cfg.value.auto_cards = same ? [] : next
+}
 async function loadGpuChoices() {
-  try { const g = await podsAPI.gpus(); if (g.gpus?.length) gpuChoices.value = g.gpus.map((x) => ({ value: x.value, text: String(x.text).split(' · ')[0] })) } catch { /* the short menu stays */ }
+  try { const g = await podsAPI.gpus(); if (g.gpus?.length) gpuChoices.value = g.gpus.map((x) => ({ value: x.value, auto: x.auto !== false, text: String(x.text).split(' · ')[0] })) } catch { /* the short menu stays */ }
 }
 async function loadDatacenters() {
   try { dcList.value = (await podsAPI.datacenters()).datacenters || [] } catch { /* the saved id stays selectable */ }

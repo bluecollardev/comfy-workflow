@@ -244,7 +244,7 @@ export async function plan(round: string, opts: Opts = {}): Promise<PodPlan> {
   // so the price the user confirms is the price the pod pays. `auto` would take the table's preferred (biggest) card instead.
   let gpu = 'auto', price: number | null = null, gpuTypeId: string | undefined
   try {
-    const table = new Set(gpus.autoCards().map((g) => g.id))   // not the explicit-only big cards (ADR-026)
+    const table = new Set(mounts.autoCards().map((g) => g.id))   // not the explicit-only big cards (ADR-026)
     const anyCard = cfg.pull_any_card !== false   // the root setting (Default Configuration): off = only the table's cards, as before ADR-024
     const free = (volume?.datacenter ? await rp.freeCardsIn(volume.datacenter, opts.client) : []).filter((c) => anyCard || table.has(c.id))
     const pick = free[0]   // freeCardsIn is sorted by price
@@ -826,7 +826,7 @@ async function createTempPod(p: PodPlan, base: Record<string, unknown>, opts: Op
       if (!/No card available/.test((e as Error).message)) throw e
       if (next) tried.add(next)
       const dc = p.volume?.datacenter
-      const more = dc ? (await rp.freeCardsIn(dc, opts.client).catch(() => [])).filter((c) => !tried.has(c.id) && (cfg.pull_any_card !== false || gpus.autoCards().some((g) => g.id === c.id))) : []
+      const more = dc ? (await rp.freeCardsIn(dc, opts.client).catch(() => [])).filter((c) => !tried.has(c.id) && (cfg.pull_any_card !== false || mounts.autoCards().some((g) => g.id === c.id))) : []
       if (!more.length && !next) throw e   // 'auto' failed as well: nothing is free
       next = more[0]?.id   // undefined: the app's own choice, once
       if (!next && attempt > 0 && tried.size > 0 && !more.length) { try { created = await pods.create({ ...base, gpu: 'auto' } as never, opts.client) } catch { throw e } }
