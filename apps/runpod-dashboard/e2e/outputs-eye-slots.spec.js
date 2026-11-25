@@ -108,6 +108,7 @@ test('Row two repeats the four slots as DPX previews, below the video row and ab
   await expect(frames.nth(0)).toHaveAttribute('data-role', 'overall')
   await expect(frames.nth(0).getByTestId('outputs-eye-frame-picture')).toHaveAttribute('data-state', 'filled')
   await expect(frames.nth(2).getByTestId('outputs-eye-frame-picture')).toHaveAttribute('data-state', 'empty')
+})
 
 // ADR-059 decisions 2-4: row two shows the First Frame (default) or the Fifth Frame of each sequence; remembered per viewer.
 const mode = (m) => m.getByTestId('outputs-eye-frame-mode')
