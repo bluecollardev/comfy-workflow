@@ -1,11 +1,11 @@
-// ADR-058: the page's mirror of libs/core/src/eyeroles.ts (a core test keeps the table and answers equal). Each DPX sequence in the Outputs gallery fills one of three slots (Overall, Left Eye, Right Eye); empty ones show "Not rendered yet".
-export const EYE_ORDER = ['overall', 'left', 'right']
-export const EYE_TOKENS = { left: ['LEFT', 'L', 'LE'], right: ['RIGHT', 'R', 'RE'], overall: ['OVERALL', 'STEREO', 'SBS', 'PACK'] }
+// ADR-058: the page's mirror of libs/core/src/eyeroles.ts (a core test keeps the table and answers equal). Each DPX sequence in the Outputs gallery fills one of four slots (Overall, Left Eye, Right Eye, Side By Side); empty ones show "Not rendered yet".
+export const EYE_ORDER = ['overall', 'left', 'right', 'sbs']
+export const EYE_TOKENS = { left: ['LEFT', 'L', 'LE'], right: ['RIGHT', 'R', 'RE'], overall: ['OVERALL', 'STEREO', 'PACK', 'COMBINED'], sbs: ['SBS', 'SIDEBYSIDE', 'LR'] }
 const SPLIT = /[._\-\s/\\]+/
 const ALL = Object.values(EYE_TOKENS).flat()
 export function eyeRoleOf(name) {
   const toks = String(name || '').toUpperCase().split(SPLIT)
-  for (const role of ['overall', 'left', 'right']) if (toks.some((t) => EYE_TOKENS[role].includes(t))) return role
+  for (const role of ['sbs', 'overall', 'left', 'right']) if (toks.some((t) => EYE_TOKENS[role].includes(t))) return role
   return 'left'
 }
 export function eyeStemOf(name) {
@@ -17,7 +17,7 @@ export function eyeStemOf(name) {
   }
   return out.join('')
 }
-/** The tiles with each sequence (a DPX tile of more than one frame) tagged with its role, and every element's missing slots added as `eyeslot` placeholders, in Overall, Left Eye, Right Eye order where the element's first sequence sits. */
+/** The tiles with each sequence (a DPX tile of more than one frame) tagged with its role, and every element's missing slots added as `eyeslot` placeholders, in Overall, Left Eye, Right Eye, Side By Side order where the element's first sequence sits. */
 export function withEyeSlots(tiles) {
   const isSeq = (t) => t.kind === 'dpx' && t.frames?.length > 1
   const elOf = (t) => `${t.file.subfolder || ''}\u0000${eyeStemOf(t.name || t.file.filename)}`

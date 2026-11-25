@@ -7,7 +7,8 @@ describe('eye roles (ADR-058)', () => {
   it('reads the role from a whole token', () => {
     for (const n of ['clip_LEFT.0001.dpx', 'clip_L.0001.dpx', 'clip.L.0001.dpx', 'clip_LE', 'clip-left']) expect(eyeRoleOf(n)).toBe('left')
     for (const n of ['clip_RIGHT.0001.dpx', 'clip_R', 'clip.R.0001.dpx', 'clip_RE', 'clip_right']) expect(eyeRoleOf(n)).toBe('right')
-    for (const n of ['clip_OVERALL', 'clip_STEREO.0001.dpx', 'clip_sbs', 'clip_PACK']) expect(eyeRoleOf(n)).toBe('overall')
+    for (const n of ['clip_OVERALL', 'clip_STEREO.0001.dpx', 'clip_COMBINED', 'clip_PACK']) expect(eyeRoleOf(n)).toBe('overall')
+    for (const n of ['clip_sbs', 'clip_SIDEBYSIDE.0001.dpx', 'clip_LR']) expect(eyeRoleOf(n)).toBe('sbs')
   })
   it('a name with no token is the left eye; a token inside a word is not a token', () => {
     expect(eyeRoleOf('delivery_v008_clip.0001.dpx')).toBe('left')
@@ -15,7 +16,7 @@ describe('eye roles (ADR-058)', () => {
     expect(eyeRoleOf('PACKAGE_x')).toBe('left')
     expect(eyeRoleOf('leftover_r2')).toBe('left')
   })
-  it('overall wins over a left or right token', () => { expect(eyeRoleOf('clip_SBS_L')).toBe('overall') })
+  it('side by side wins over overall, overall over a left or right token', () => { expect(eyeRoleOf('clip_SBS_L')).toBe('sbs'); expect(eyeRoleOf('clip_PACK_L')).toBe('overall') })
   it('the stem drops the token so the three slots share it', () => {
     expect(eyeStemOf('clip_v8_L')).toBe('clip_v8')
     expect(eyeStemOf('clip_v8_R')).toBe('clip_v8')

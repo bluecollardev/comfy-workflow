@@ -724,7 +724,7 @@
       "title": "Generation Errors ({n})",
       "kind": { "frames": "Frame Previews", "frame": "Frame", "sequence": "Preview", "graph": "Render" }
     },
-    "eye": { "overall": "Overall", "left": "Left Eye", "right": "Right Eye", "empty": "Not rendered yet" },
+    "eye": { "overall": "Overall", "left": "Left Eye", "right": "Right Eye", "sbs": "Side By Side", "empty": "Not Generated" },
     "video": { "play": "Play Video", "mainVideo": "Main Video", "noPreview": "Preview not available in this player", "timedOut": "Preview timed out: Retry", "retry": "Retry Preview" },
     "image": { "tooLarge": "Too large to preview", "noPreview": "The image could not be loaded" },
     "data": {
@@ -762,6 +762,7 @@
     "regenerateAll": "Regenerate all previews ({n})",
     "regenerateHelp": "about 50 MB read for each, including ones already saved",
     "hideEmpty": "Hide empty folders",
+    "showStereo": "Show Stereoscopic Outputs",
     "emptyHidden": "{n} empty folders hidden",
     "emptyTag": "(empty)",
     "render": {

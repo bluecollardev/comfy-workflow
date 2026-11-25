@@ -18,7 +18,7 @@
     <div v-if="files.length" ref="galleryEl" class="gallery">
       <div v-for="t in tiles" :key="t.key" class="cell" :class="{ wide: (t.kind === 'dpx' && t.frames.length > 1) || isGroup(t), seq: t.kind === 'dpx' && t.frames.length > 1, eyeempty: t.kind === 'eyeslot' }" :data-testid="t.kind === 'eyeslot' ? 'outputs-eye-slot' : 'outputs-cell'" :data-eye="t.eye">
       <!-- ADR-058: a slot (Overall, Left Eye, Right Eye) with no sequence: shown so a missing right eye is visible; not an error, never counted, never blocks Publish -->
-      <div v-if="t.kind === 'eyeslot'" class="head" data-testid="outputs-eye-empty"><i class="fa-solid fa-film"></i><span class="headname">{{ $t(`outputs.eye.${t.eye}`) }}</span><span class="small text-body-secondary" :title="t.stem">{{ $t('outputs.eye.empty') }}</span></div>
+      <div v-if="t.kind === 'eyeslot'" data-testid="outputs-eye-empty"><div class="head"><i class="fa-solid fa-film"></i><span class="headname">{{ $t(`outputs.eye.${t.eye}`) }}</span><span class="small text-body-secondary" :title="t.stem">{{ $t('outputs.eye.empty') }}</span></div><div class="eyeph" data-testid="outputs-eye-placeholder"><i class="fa-solid fa-image"></i><span class="small">{{ $t('outputs.eye.empty') }}</span></div></div>
       <div v-else-if="isGroup(t)" class="group" data-testid="outputs-group" :data-kind="t.kind" :data-cat="t.cat || 'temp'" :data-count="t.count" :data-expanded="groupExpanded(t) ? 'true' : 'false'">
         <div class="head" data-testid="outputs-group-head">
           <i class="fa-solid" :class="groupIcon(t)"></i>
@@ -63,7 +63,7 @@
       <div v-if="t.kind === 'dpx' && t.frames.length > 1" class="head" data-testid="outputs-seq-head">
         <i class="fa-solid fa-film"></i>
         <span class="headname" :title="t.name || t.file.filename" data-testid="outputs-seq-name">{{ shortName(t.name || t.file.filename) }}</span>
-        <span class="badge text-bg-info" data-testid="outputs-eye-role" :data-eye="t.eye">{{ $t(`outputs.eye.${t.eye}`) }}</span>
+        <span v-if="t.eye" class="badge text-bg-info" data-testid="outputs-eye-role" :data-eye="t.eye">{{ $t(`outputs.eye.${t.eye}`) }}</span>
         <span class="badge text-bg-secondary headcount" data-testid="outputs-seq-headcount">{{ t.frames.length }}</span>
         <span v-if="isExpanded(t)" class="small text-body-secondary" data-testid="outputs-seq-preview-count">{{ $t('outputs.dpx.framePreviews', { n: previewCount(t), total: t.frames.length }) }}</span>
         <span v-if="inJob(srcOf(t))" class="small text-info" data-testid="outputs-seq-job-progress">{{ $t('outputs.frames.progress', { done: jobDone(), total: fpState.job.total || t.frames.length }) }}</span>
@@ -160,7 +160,7 @@ import ApproveControl from './ApproveControl.vue'
 import { useRendersStore } from '../stores/renders'
 import { sequenceItem } from '../utils/renders'
 
-const props = defineProps({ podRunning: { type: Boolean, default: false }, files: { type: Array, default: () => [] }, totalFiles: { type: Number, default: 0 }, base: { type: String, default: '' }, zipName: { type: String, default: 'outputs.zip' }, hideZip: { type: Boolean, default: false }, hideIncomplete: { type: Boolean, default: false }, incompleteList: { type: Boolean, default: false }, scope: { type: String, default: '' }, volumeName: { type: String, default: '' }, offline: { type: Boolean, default: false }, podId: { type: String, default: '' } })   // offline: no pod serves the files (a saved run): tiles list the names, nothing opens
+const props = defineProps({ podRunning: { type: Boolean, default: false }, files: { type: Array, default: () => [] }, totalFiles: { type: Number, default: 0 }, base: { type: String, default: '' }, zipName: { type: String, default: 'outputs.zip' }, hideZip: { type: Boolean, default: false }, hideIncomplete: { type: Boolean, default: false }, incompleteList: { type: Boolean, default: false }, scope: { type: String, default: '' }, volumeName: { type: String, default: '' }, offline: { type: Boolean, default: false }, podId: { type: String, default: '' }, stereo: { type: Boolean, default: true } })   // offline: no pod serves the files (a saved run): tiles list the names, nothing opens
 const canZip = !!core?.files?.downloadZip
 const renders = useRendersStore()
 /** The rendered movie of a DPX sequence tile (docs/ADR-048), from the store's one batched list: on this PC, else ready on the volume, else none. */
@@ -217,7 +217,7 @@ const frameFailed = (t, f) => (failedOf(srcOf(t)).has(jpgName(f.filename)) ? fai
 const stemOf = (t) => (t.frames[0]?.filename || '').replace(/\.\d+\.dpx$/i, '')
 function loadFrames(t) { startJob({ podId: props.podId, items: [{ src_dir: srcOf(t), frames: t.frames.length, stem: stemOf(t) }], skipExisting: true }) }
 const isSeq = (t) => t.kind === 'dpx' && t.frames.length > 1
-const tiles = computed(() => { const ts = withEyeSlots(groupTiles(galleryTiles(realFiles.value).filter((t) => !(t.kind === 'dpx' && incompleteKeys.value.has(t.key))))); const tg = groupView.showTemp ? tempGroup(tempFiles.value) : null; return tg ? [...ts, tg] : ts })
+const tiles = computed(() => { const base = groupTiles(galleryTiles(realFiles.value).filter((t) => !(t.kind === 'dpx' && incompleteKeys.value.has(t.key)))); const ts = props.stereo ? withEyeSlots(base) : base; const tg = groupView.showTemp ? tempGroup(tempFiles.value) : null; return tg ? [...ts, tg] : ts })
 // Every sequence row (collapsed or not) shows the frames that have a preview beside its first frame: the pod's JPEGs are listed in ONE batched call for all the sequences of this list (and for
 // every gallery asking at the same moment, utils/framejob.js queueListing), the cache is read locally; nothing is fetched or generated here.
 watchEffect(() => {
@@ -300,6 +300,8 @@ watch(() => props.files, () => { current.value = null; dpx.value = null; problem
 /* a sequence row: header across, the first-frame tile at the left, the filmstrip filling the rest of the row, the expanded frame list across below */
 .cell.seq { display: grid; grid-template-columns: 9.5rem auto minmax(0, 1fr); column-gap: 0.5rem; row-gap: 0.25rem; align-items: start; }
 .cell.eyeempty { grid-column: 1 / -1; opacity: 0.7; }
+.eyeph { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.25rem; width: 220px; aspect-ratio: 16 / 9; margin-top: 0.35rem; border: 1px dashed var(--bs-border-color); border-radius: 0.25rem; color: var(--bs-secondary-color); }
+.eyeph .fa-image { font-size: 1.6rem; }
 .cell.seq > .head, .cell.seq > .frames { grid-column: 1 / -1; }
 /* the Main Video tile sits beside the sequence tile (column 2, as tall as the row, the picture 9.5rem high with its own width), the filmstrip keeps column 3 */
 /* column 2 holds the Main Video tile and, to its right on the same row, the Data File button (vertically centred on the tiles) */

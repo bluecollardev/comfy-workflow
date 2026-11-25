@@ -31,6 +31,7 @@
         </tr>
       </tbody></table>
     </details>
+    <div v-if="!(volumeId && (vol.ok || vol.loading))" class="d-flex align-items-center gap-3 small mb-1" data-testid="pod-outputs-stereo-toggle-row"><label class="mb-0"><input v-model="showStereo" type="checkbox" class="form-check-input me-1" data-testid="pod-outputs-show-stereo" />{{ $t('outputs.showStereo') }}</label></div>
     <div v-if="volumeId && (vol.ok || vol.loading)" class="mb-3" data-testid="pod-outputs-volume">
       <nav class="d-flex align-items-center gap-1 flex-wrap small mb-1" :class="{ 'opacity-50': allActive }" :title="allActive ? $t('outputs.all.crumbNote') : ''" :aria-label="$t('outputs.volumeBreadcrumb')" data-testid="pod-outputs-breadcrumb">
         <i class="fa-solid fa-hard-drive text-body-secondary me-1"></i>
@@ -50,6 +51,7 @@
       <div v-else-if="scope === 'all' && volAll.error" class="alert alert-warning py-1 px-2 small d-flex align-items-center gap-2 mb-1" data-testid="pod-outputs-all-error"><span data-testid="pod-outputs-all-error-text">{{ volAll.error }}</span><BButton size="sm" variant="outline-primary" data-testid="pod-outputs-all-retry" @click="ensureAll(true)">{{ $t('outputs.all.retry') }}</BButton></div>
       <div v-if="vol.loading" class="text-body-secondary small" data-testid="pod-outputs-volume-loading"><BSpinner small class="me-2" />{{ $t('outputs.volumeLoading', { path: `output/${vol.prefix}`.replace(/\/$/, '') }) }}</div>
       <div v-else>
+        <div class="d-flex align-items-center gap-3 small mb-1" data-testid="pod-outputs-stereo-toggle-row"><label class="mb-0"><input v-model="showStereo" type="checkbox" class="form-check-input me-1" data-testid="pod-outputs-show-stereo" />{{ $t('outputs.showStereo') }}</label></div>
         <div class="d-flex align-items-center gap-3 small mb-1" data-testid="pod-outputs-empty-toggle-row"><label class="mb-0"><input v-model="hideEmpty" type="checkbox" class="form-check-input me-1" data-testid="pod-outputs-hide-empty" />{{ $t('outputs.hideEmpty') }}</label><span v-if="hideEmpty && emptyHidden" class="text-body-secondary" data-testid="pod-outputs-empty-hidden">{{ $t('outputs.emptyHidden', { n: emptyHidden }) }}</span></div>
         <div class="d-flex gap-1 flex-wrap" data-testid="pod-outputs-folders"><BButton v-for="f in shownFolders" :key="f" variant="outline-light" size="sm" data-testid="pod-outputs-folder" :data-name="f" :data-empty="vol.info[f]?.empty ? 'true' : 'false'" :class="{ 'opacity-50': vol.info[f]?.empty }" @click="go(vol.prefix ? `${vol.prefix}/${f}` : f)"><i class="fa-regular fa-folder me-1"></i>{{ f }}<span v-if="vol.info[f]?.empty" class="ms-1 text-body-secondary" data-testid="pod-outputs-folder-empty">{{ $t('outputs.emptyTag') }}</span></BButton></div>
         <div v-if="vol.capped" class="text-warning small mt-1" data-testid="pod-outputs-capped">{{ allActive ? $t('outputs.all.capped', { n: vol.shownCount.toLocaleString('en-US'), total: vol.total.toLocaleString('en-US') }) : $t('outputs.volumeCapped', { n: vol.shownCount, total: vol.total }) }}</div>
@@ -98,7 +100,7 @@
       <div v-if="r.chunk_count > 1 && chunksOpen[r.prompt_id]" class="small text-body-secondary mb-2" data-testid="pod-outputs-chunk-list">
         <div v-for="c in r.chunks" :key="c.prompt_id" class="font-monospace" data-testid="pod-outputs-chunk-row" :data-prompt="c.prompt_id">{{ c.prompt_id.slice(0, 8) }} · {{ $t('outputs.chunkRow', { when: c.started_at ? new Date(c.started_at).toLocaleString() : '?', s: c.duration_s ?? '?', files: c.files.length }) }}</div>
       </div>
-      <OutputsGallery hide-incomplete :files="r.files" :total-files="r.totalFiles || 0" :base="baseFor(r)" :scope="volumeId || pod.id" :volume-name="volumeName" :offline="!baseFor(r)" :zip-name="`${runName(r) || pod.name}-${idOf(r)}.zip`" :pod-id="pod.id" :pod-running="podRunning" />
+      <OutputsGallery hide-incomplete :stereo="showStereo" :files="r.files" :total-files="r.totalFiles || 0" :base="baseFor(r)" :scope="volumeId || pod.id" :volume-name="volumeName" :offline="!baseFor(r)" :zip-name="`${runName(r) || pod.name}-${idOf(r)}.zip`" :pod-id="pod.id" :pod-running="podRunning" />
     </div>
   </BModal>
   <BModal v-model="previewsOpen" :title="$t('outputs.dpx.previewsModalTitle')" size="xl" scrollable lazy ok-only :ok-title="$t('outputs.dpx.close')" data-testid="pod-outputs-previews-modal">
@@ -434,6 +436,7 @@ const volumeId_ = computed(() => props.volumeId)
 const go = (prefix) => { if (allActive.value || (scope.value === 'all' && volAll.running)) setScope('folder'); return loadVolume(prefix) }
 /** Folders the volume says are empty (folder_info): greyed with (empty), and hidden by default. */
 let hideTouched = false
+const showStereo = ref(true)   // ADR-058: the Overall / Left Eye / Right Eye slots of a sequence; off shows the sequences as before
 const hideEmpty = ref(mountsStore.config?.outputs?.hide_empty_folders !== false)   // the Default Configuration's starting value (true when it has none); changes stay with this window
 watch(hideEmpty, () => { hideTouched = true })
 const shownFolders = computed(() => (hideEmpty.value ? vol.folders.filter((f) => !vol.info[f]?.empty) : vol.folders))
