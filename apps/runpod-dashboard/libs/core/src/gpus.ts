@@ -84,4 +84,4 @@ export function vram(key: string): number {
   return OTHER_VRAM[key] ?? 0
 }
 
-export const menu = () => [{ value: AUTO, text: 'Cheapest card in stock (16-48 GB)' }, ...Object.entries(GPUS).map(([value, g]) => ({ value, text: `${g.name} (${g.vram} GB)${g.explicit ? ' · pick by name' : ''}${g.cuda === 13 ? ' · CUDA 13 image' : ''}` }))]
+export const menu = () => [{ value: AUTO, text: 'Cheapest card in stock (16-48 GB)' }, ...Object.entries(GPUS).map(([value, g]) => ({ value, auto: !g.explicit, text: `${g.name} (${g.vram} GB)${g.explicit ? ' · pick by name' : ''}${g.cuda === 13 ? ' · CUDA 13 image' : ''}` }))]
