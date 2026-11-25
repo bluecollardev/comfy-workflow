@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import * as mounts from '../src/mounts.js'
+import * as gpus from '../src/gpus.js'
 import * as idle from '../src/idle.js'
 import * as pods from '../src/pods.js'
 import * as rp from '../src/runpod.js'
@@ -272,5 +273,19 @@ describe('against RunPod', () => {
     await expect(rp.stopPod('x', { fetchFn })).rejects.toThrow(/no longer any instances/)
     delete process.env.RUNPOD_API_KEY
     await expect(rp.listPods({ fetchFn })).rejects.toThrow(/RUNPOD_API_KEY/)
+  })
+})
+
+describe('the default card as a ranked list (docs/ADR-063)', () => {
+  const base = () => ({ ...mounts.load(), image: 'ghcr.io/example/comfy-app:v26', default_gpu: 'rtx4090' } as mounts.MountsConfig)
+  it('two or more default_cards with no card named: auto over those cards, in that order, and the first one decides the image', () => {
+    const p = pods.plan({ name: 't', apply_mounts: false }, { ...base(), default_cards: ['rtx5090', 'rtx4090'] })
+    expect(p.input.gpuTypeId).toBe('auto'); expect(p.ranked).toEqual([gpus.runpodId('rtx5090'), gpus.runpodId('rtx4090')])
+    expect(p.input.imageName).toMatch(/-cu13$/)   // the first ranked card is a Blackwell card
+  })
+  it('a card named by the caller wins, and one default card (or none) is just default_gpu', () => {
+    expect(pods.plan({ name: 't', gpu: 'h100', apply_mounts: false }, { ...base(), default_cards: ['rtx5090', 'rtx4090'] }).ranked).toEqual([])
+    const one = pods.plan({ name: 't', apply_mounts: false }, { ...base(), default_cards: ['rtx4090'] })
+    expect(one.ranked).toEqual([]); expect(one.input.gpuTypeId).not.toBe('auto')
   })
 })

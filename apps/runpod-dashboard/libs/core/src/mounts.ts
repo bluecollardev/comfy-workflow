@@ -237,6 +237,8 @@ export interface MountsConfig {
   default_gpu: string
   /** The cards `auto` (Cheapest in Stock) tries, as keys of the card table, in the order they are tried when none has a stock answer. Empty: the built-in stock list (gpus.autoCards: the table without the explicit-only big cards). */
   auto_cards: string[]
+  /** The default card as a ranked list (docs/ADR-063): two or more keys of the card table, tried in this order at the configured datacenter when a pod is made with no card named (`default_gpu` is the first of them). Empty: `default_gpu` alone. */
+  default_cards: string[]
   /** Round import (ADR-038): how many pool pods one import may run at once, the dollar cap on one import's estimate, and whether those two limits apply at all (the governance cap does not depend on this). */
   import_max_pods: number
   import_cost_cap_usd: number
@@ -329,6 +331,7 @@ export function defaults(): MountsConfig {
     pull_any_card: true,
     default_gpu: 'rtxpro6000',
     auto_cards: [],
+    default_cards: [],
     import_max_pods: 2,
     import_cost_cap_usd: 50,
     import_cap_enabled: true,
@@ -390,6 +393,7 @@ export function normalize(data: Partial<MountsConfig>): MountsConfig {
     pull_any_card: data.pull_any_card !== false,   // absent means on
     default_gpu: typeof data.default_gpu === 'string' && data.default_gpu.trim() ? data.default_gpu.trim() : d.default_gpu,   // absent or empty: the default; an unknown card is refused by validate
     auto_cards: Array.isArray(data.auto_cards) ? [...new Set(data.auto_cards.filter((x): x is string => typeof x === 'string').map((x) => x.trim()).filter(Boolean))] : [],   // unknown keys are refused by validate
+    default_cards: Array.isArray(data.default_cards) ? [...new Set(data.default_cards.filter((x): x is string => typeof x === 'string').map((x) => x.trim()).filter(Boolean))] : [],
     import_max_pods: Number.isInteger(data.import_max_pods) && (data.import_max_pods as number) >= 1 && (data.import_max_pods as number) <= 20 ? data.import_max_pods as number : 2,
     import_cost_cap_usd: typeof data.import_cost_cap_usd === 'number' && data.import_cost_cap_usd > 0 ? data.import_cost_cap_usd : 50,
     import_cap_enabled: data.import_cap_enabled !== false,   // absent means the cap is on
@@ -695,6 +699,7 @@ export function validate(cfg: MountsConfig): MountsConfig {
   linksEnv(allLinks(cfg))
   if (cfg.default_gpu !== gpus.AUTO && !(cfg.default_gpu in gpus.GPUS)) throw bad(`default_gpu is auto or one of ${Object.keys(gpus.GPUS).join(', ')}, not ${JSON.stringify(cfg.default_gpu)}`)
   { const unknown = cfg.auto_cards.filter((k) => !(k in gpus.GPUS)); if (unknown.length) throw bad(`auto_cards are keys of the card table (${Object.keys(gpus.GPUS).join(', ')}), not ${unknown.map((k) => JSON.stringify(k)).join(', ')}`) }
+  { const unknown = cfg.default_cards.filter((k) => !(k in gpus.GPUS)); if (unknown.length) throw bad(`default_cards are keys of the card table (${Object.keys(gpus.GPUS).join(', ')}), not ${unknown.map((k) => JSON.stringify(k)).join(', ')}`) }
   if (cfg.idle_stop_minutes < 0) throw bad('idle_stop_minutes is 0 (never) or a number of minutes')
   if (!Number.isInteger(cfg.sync_parallel) || cfg.sync_parallel < 1 || cfg.sync_parallel > 16) throw bad('sync_parallel is a whole number of parallel uploads, 1 to 16')
   if (cfg.render) validateRender(cfg.render)

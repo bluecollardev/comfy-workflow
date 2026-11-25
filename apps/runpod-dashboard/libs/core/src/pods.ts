@@ -79,7 +79,7 @@ export function resolveImage(choice: string | undefined, cfg: mounts.MountsConfi
 }
 
 /** What the API sends RunPod for a request, with the mount configuration applied. Pure, so it is testable. */
-export function plan(req: CreatePodRequest, cfg: mounts.MountsConfig, credentialsEnv: Record<string, string> = {}): { input: rp.CreatePodInput; idleMinutes: number } {
+export function plan(req: CreatePodRequest, cfg: mounts.MountsConfig, credentialsEnv: Record<string, string> = {}): { input: rp.CreatePodInput; idleMinutes: number; ranked: string[] } {
   const env: Record<string, string> = { ...(req.env_vars || {}) }
   for (const [k, v] of Object.entries(req.build_args || {})) if (!(k in env)) env[k] = v   // ARG overrides reach the pod as env; explicit env wins
   if (req.pip_requirements) env.CUSTOM_PIP_REQUIREMENTS = req.pip_requirements
@@ -105,7 +105,9 @@ export function plan(req: CreatePodRequest, cfg: mounts.MountsConfig, credential
   // The image's credential is the image's, not the mounts': a pod made without the mount configuration (another region, no volume) still pulls a private image (ADR-026: it did not, and RunPod exited it with "unauthorized").
   if (cfg.registry_auth_id) volume.containerRegistryAuthId = cfg.registry_auth_id
   if (!volume.networkVolumeId && req.data_center_id) volume.dataCenterId = req.data_center_id
-  const gpuKey = req.gpu || cfg.default_gpu || gpus.DEFAULT_GPU   // the system-wide default card when the caller names none (an explicit card always wins)
+  // The default card: with none named and a ranked list of two or more (default_cards) the pod tries those cards in that order; otherwise default_gpu (an explicit card always wins)
+  const rankedKeys = !req.gpu && req.gpu_type_id === undefined && (cfg.default_cards?.length ?? 0) > 1 ? cfg.default_cards : []
+  const gpuKey = rankedKeys.length ? gpus.AUTO : (req.gpu || cfg.default_gpu || gpus.DEFAULT_GPU)
   let gpuTypeId: string
   if (req.gpu_type_id !== undefined) {
     if (!/^NVIDIA [A-Za-z0-9 ._()-]{2,80}$/.test(req.gpu_type_id)) throw bad(`Not a RunPod GPU type id: ${req.gpu_type_id}`)
@@ -113,7 +115,7 @@ export function plan(req: CreatePodRequest, cfg: mounts.MountsConfig, credential
   } else if (gpuKey === gpus.AUTO) gpuTypeId = gpus.AUTO   // resolved against stock at creation
   else { try { gpuTypeId = gpus.runpodId(gpuKey) } catch (e) { throw bad((e as Error).message) } }
   // Our image on the CUDA the card needs (ADR-030): a Blackwell card boots the `-cu13` tag, on a host whose driver offers CUDA 13.
-  const imageName = req.cuda_match === false ? resolveImage(req.image, cfg) : gpus.imageFor(resolveImage(req.image, cfg), gpuTypeId === gpus.AUTO ? gpuKey : gpuTypeId)
+  const imageName = req.cuda_match === false ? resolveImage(req.image, cfg) : gpus.imageFor(resolveImage(req.image, cfg), gpuTypeId === gpus.AUTO ? (rankedKeys[0] || gpuKey) : gpuTypeId)
   const idleMinutes = req.idle_stop_minutes == null ? cfg.idle_stop_minutes : req.idle_stop_minutes
   return {
     input: {
@@ -124,6 +126,7 @@ export function plan(req: CreatePodRequest, cfg: mounts.MountsConfig, credential
       ...(imageName.endsWith('-cu13') ? { allowedCudaVersions: gpus.CUDA13_HOSTS } : {}),
     },
     idleMinutes,
+    ranked: rankedKeys.map((k) => gpus.runpodId(k)),
   }
 }
 
@@ -150,7 +153,7 @@ export async function create(req: CreatePodRequest, client?: rp.RunPodClient, cr
   if (!req.name?.trim()) throw bad('A pod needs a name')
   if (req.round && (req.round.length > 120 || /[\\/]/.test(req.round))) throw bad('A round name is at most 120 characters and has no slash')   // before anything is spent
   const { cfg, own } = effectiveConfig(req)
-  const { input, idleMinutes } = plan(req, cfg, credentialsEnv)
+  const { input, idleMinutes, ranked } = plan(req, cfg, credentialsEnv)
   if (mounts.dryRun(cfg)) {
     const p = dry.create({ name: req.name, gpu: req.gpu, gpu_count: input.gpuCount, image: input.imageName, idle_stop_minutes: idleMinutes > 0 ? idleMinutes : 0 })
     if (own) podconfigs.set(p.id, cfg)
@@ -159,7 +162,7 @@ export async function create(req: CreatePodRequest, client?: rp.RunPodClient, cr
     history.record({ kind: 'pod', action: 'created', pod_id: p.id, name: req.name, gpu: p.gpu, cost_per_hr: 0, ...(rd || note ? { detail: [note, rd ? `in round ${rd}` : ''].filter(Boolean).join('; ') } : {}) })
     return { ...p, custom_config: own, ...roundOf(p.id) }
   }
-  const { pod, gpuId } = await deployWithFallback(input, client)
+  const { pod, gpuId } = await deployWithFallback(input, client, ranked)
   if (idleMinutes > 0) idle.register(pod.id, idleMinutes)
   if (own) podconfigs.set(pod.id, cfg)
   autosyncstore.applyFromConfig(pod.id, cfg.auto_sync)   // Auto sync from the configuration (ADR-046), best effort
@@ -198,8 +201,8 @@ export async function candidates(gpuTypeId: string, client?: rp.RunPodClient, da
 }
 
 /** Deploy on the first card RunPod will give; a "no instances" answer moves to the next card, then to the other cloud. */
-async function deployWithFallback(input: rp.CreatePodInput, client?: rp.RunPodClient): Promise<{ pod: { id: string }; gpuId: string }> {
-  const cards = await candidates(input.gpuTypeId, client, input.dataCenterId)
+async function deployWithFallback(input: rp.CreatePodInput, client?: rp.RunPodClient, ranked: string[] = []): Promise<{ pod: { id: string }; gpuId: string }> {
+  const cards = ranked.length ? ranked : await candidates(input.gpuTypeId, client, input.dataCenterId)   // a ranked default list is tried in the person's order (a no-stock answer moves to the next card)
   const clouds: rp.CreatePodInput['cloudType'][] = input.gpuTypeId === gpus.AUTO && !input.networkVolumeId ? [input.cloudType, input.cloudType === 'SECURE' ? 'COMMUNITY' : 'SECURE'] : [input.cloudType]
   let last: Error | null = null
   for (const cloudType of clouds) {

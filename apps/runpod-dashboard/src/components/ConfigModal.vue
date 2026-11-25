@@ -97,12 +97,14 @@
         <BCol cols="12">
           <!-- The default configuration: the datacenter and the cards go together, chosen in the same window as Import Round's step 3 (Choose Card) -->
           <div class="border rounded p-2" data-testid="cfg-cards-block">
-            <div class="fw-semibold mb-2">{{ $t('config.cardsTitle') }}</div>
+            <div class="d-flex align-items-center gap-3 flex-wrap mb-2">
+              <span class="fw-semibold">{{ $t('config.cardsTitle') }}</span>
+              <span class="small" data-testid="cfg-cards-dc"><span class="text-body-secondary">{{ $t('config.cardsDcLabel') }}</span> <strong>{{ cfg.data_center_id || $t('config.datacenterAny') }}</strong></span>
+            </div>
             <div class="border rounded p-2 mb-2" data-testid="cfg-cards-default-row">
               <div class="small fw-semibold mb-1">{{ $t('config.cardsDefaultTitle') }}</div>
               <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
                 <BButton :variant="chosenCards.length ? 'outline-success' : 'outline-light'" size="sm" data-testid="cfg-choose-card-btn" @click="cardModal = 'default'"><i class="fa-solid fa-microchip me-1"></i>{{ $t('config.cardsSelectDefault') }}</BButton>
-                <span class="small" data-testid="cfg-cards-dc"><span class="text-body-secondary">{{ $t('config.cardsDcLabel') }}</span> <strong>{{ cfg.data_center_id || $t('config.datacenterAny') }}</strong></span>
                 <span class="small" data-testid="cfg-cards-chosen"><span class="text-body-secondary">{{ $t('config.cardsLabel') }}</span> <strong>{{ chosenCards.length ? chosenCards.map(cardName).join(', ') : $t('config.cardsStock') }}</strong></span>
               </div>
               <div class="form-text" data-testid="cfg-cards-help">{{ $t('config.cardsHelp') }}</div>
@@ -798,24 +800,39 @@ const cardModal = ref(''), dcLoading = ref(false)   // '' closed, 'default' the 
 const cardName = (c) => `${c.name}${c.vram ? ` ${c.vram} GB` : ''}`
 const cardOf = (key) => { for (const d of dcList.value) { const c = (d.cards || []).find((x) => x.key === key); if (c) return { key, name: c.name, vram: c.vram || 0 } }; const g = gpuChoices.value.find((x) => x.value === key); const m = /^(.*?)\s*\((\d+)\s*GB\)\s*$/.exec(String(g?.text || key)); return { key, name: m ? m[1] : String(g?.text || key), vram: m ? Number(m[2]) : 0 } }
 /** The default card (one card, or Cheapest in Stock = `auto`) and, apart, the cards `auto` tries: the system jobs (frame previews, pulls, renders) and a default of Cheapest in Stock pick from that list; none chosen is the built-in stock list. */
-const chosenCards = computed(() => { const c = cfg.value; return c && c.default_gpu && c.default_gpu !== 'auto' ? [cardOf(c.default_gpu)] : [] })
+const chosenCards = computed(() => { const c = cfg.value; if (!c) return []; if (c.default_cards?.length) return c.default_cards.map(cardOf); return c.default_gpu && c.default_gpu !== 'auto' ? [cardOf(c.default_gpu)] : [] })
 const stockCards = computed(() => (cfg.value?.auto_cards || []).map(cardOf))
-const onCardDc = (dc) => { if (cardModal.value === 'default') cfg.value.data_center_id = dc || '' }   // the stock list belongs to no datacenter
-/** A click on a card at a datacenter. Default: that card at that datacenter (a second click on it goes back to Cheapest in Stock). Stock: the card is added to or taken off the list, wherever it was clicked. The window stays open until Done. */
-function onPickCard({ dc, card }) {
+/** The default cards are a ranked list at the datacenter: one card is `default_gpu`; two or more are `default_cards` (the first free one is used) with `default_gpu` the first of them; none is Cheapest in Stock. */
+function writeDefaultCards(keys) {
   const c = cfg.value
-  if (cardModal.value === 'stock') {
-    if (!card) return
-    const cur = c.auto_cards || []
-    c.auto_cards = cur.includes(card.key) ? cur.filter((k) => k !== card.key) : [...cur, card.key]
-    return
-  }
-  if (dc) c.data_center_id = dc
+  if (!keys.length) { c.default_gpu = 'auto'; c.default_cards = [] }
+  else if (keys.length === 1) { c.default_gpu = keys[0]; c.default_cards = [] }
+  else { c.default_gpu = keys[0]; c.default_cards = [...keys] }
+}
+/** The datacenter is ONE choice for both lists: moving it keeps only the cards that datacenter offers (when the list of datacenters says what it offers). */
+function setCardDc(dc) {
+  const c = cfg.value; if (!dc) { c.data_center_id = ''; return }
+  c.data_center_id = dc
+  const here = dcList.value.find((d) => d.value === dc)
+  if (!here?.cards?.length) return
+  const ok = new Set(here.cards.map((x) => x.key))
+  writeDefaultCards(chosenCards.value.map((x) => x.key).filter((k) => ok.has(k)))
+  c.auto_cards = (c.auto_cards || []).filter((k) => ok.has(k))
+}
+const onCardDc = (dc) => setCardDc(dc)
+/** A click on a card at a datacenter, in either window: the same datacenter adds the card to the list or takes it off; another datacenter becomes THE datacenter, the other list keeps what it offers, and this list starts with that card. The window stays open until Done. */
+function onPickCard({ dc, card }) {
+  const c = cfg.value, stock = cardModal.value === 'stock'
+  const was = c.data_center_id || ''
+  if (dc && dc !== was) setCardDc(dc)
   if (!card) return
-  c.default_gpu = c.default_gpu === card.key ? 'auto' : card.key
+  const cur = (stock ? c.auto_cards || [] : chosenCards.value.map((x) => x.key))
+  const moved = !!dc && !!was && dc !== was
+  const next = moved ? [card.key] : cur.includes(card.key) ? cur.filter((k) => k !== card.key) : [...cur, card.key]
+  if (stock) c.auto_cards = next; else writeDefaultCards(next)
 }
 /** Auto in the window: the default is Cheapest in Stock, or the stock list goes back to the built-in one. */
-function onCardAuto() { if (cardModal.value === 'stock') cfg.value.auto_cards = []; else cfg.value.default_gpu = 'auto' }
+function onCardAuto() { if (cardModal.value === 'stock') cfg.value.auto_cards = []; else writeDefaultCards([]) }
 async function loadGpuChoices() {
   try { const g = await podsAPI.gpus(); if (g.gpus?.length) gpuChoices.value = g.gpus.map((x) => ({ value: x.value, auto: x.auto !== false, text: String(x.text).split(' · ')[0] })) } catch { /* the short menu stays */ }
 }

@@ -29,7 +29,7 @@ export const SECTIONS: Record<SectionKey, SectionDef> = {
   volume: { label: 'Volume and datacenter', fields: ['network_volume_id', 'mount_path', 'data_center_id', 'shared_volume_id'], account: true },
   image: { label: 'Image and registry login', fields: ['image', 'registry_auth_id'], account: true },
   env: { label: 'Environment', fields: ['env'] },
-  pod_defaults: { label: 'Pod defaults', fields: ['idle_stop_minutes', 'models', 'sync_parallel', 'sync_shared', 'pull_shared', 'auto_sync', 'auto_publish', 'outputs', 'edl', 'delivery_prepare', 'render', 'sync_exclude', 'sync_exclude_delete', 'folder_excludes', 'apply_by_default', 'pull_any_card', 'default_gpu', 'auto_cards', 'import_max_pods', 'import_cost_cap_usd', 'import_cap_enabled', 'required', 'links'] },
+  pod_defaults: { label: 'Pod defaults', fields: ['idle_stop_minutes', 'models', 'sync_parallel', 'sync_shared', 'pull_shared', 'auto_sync', 'auto_publish', 'outputs', 'edl', 'delivery_prepare', 'render', 'sync_exclude', 'sync_exclude_delete', 'folder_excludes', 'apply_by_default', 'pull_any_card', 'default_gpu', 'default_cards', 'auto_cards', 'import_max_pods', 'import_cost_cap_usd', 'import_cap_enabled', 'required', 'links'] },
   mcp: { label: 'MCP servers', fields: ['mcp_http'] },
   mcp_connections: { label: 'MCP connections (the console this app uses)', fields: [] },
   repositories: { label: 'Repositories and accounts', fields: [] },
@@ -155,6 +155,7 @@ const checkType = (key: string, v: unknown): string | null => {
     case 'apply_by_default':
     case 'pull_any_card': return typeof v === 'boolean' ? null : `${key} must be true or false`
     case 'default_gpu': return str(v) && (v === 'auto' || (v as string) in gpus.GPUS) ? null : `${key} must be auto or a card of the table`
+    case 'default_cards':
     case 'auto_cards': return strArr(v) && (v as string[]).every((k) => k in gpus.GPUS) ? null : `${key} must be a list of cards of the table`
     case 'import_max_pods': return Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 20 ? null : `${key} must be a whole number from 1 to 20`
     case 'import_cost_cap_usd': return typeof v === 'number' && v > 0 ? null : `${key} must be a number above 0`
