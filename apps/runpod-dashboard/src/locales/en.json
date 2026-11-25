@@ -725,7 +725,7 @@
       "kind": { "frames": "Frame Previews", "frame": "Frame", "sequence": "Preview", "graph": "Render" }
     },
     "eye": { "overall": "Overall", "left": "Left Eye", "right": "Right Eye", "sbs": "Side By Side", "empty": "Not Generated",
-      "noVideo": "No Video" },
+      "noVideo": "No Video", "frameMode": "DPX Preview Frame", "firstFrame": "First Frame", "fifthFrame": "Fifth Frame", "loadPreviews": "Load Frame Previews" },
     "video": { "play": "Play Video", "mainVideo": "Main Video", "noPreview": "Preview not available in this player", "timedOut": "Preview timed out: Retry", "retry": "Retry Preview" },
     "image": { "tooLarge": "Too large to preview", "noPreview": "The image could not be loaded" },
     "data": {

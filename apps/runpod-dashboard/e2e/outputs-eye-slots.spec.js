@@ -93,3 +93,44 @@ test('A right-eye video with no right-eye frames still shows in its slot', async
   await expect(right.getByTestId('outputs-eye-video')).toHaveCount(1)
   await expect(right).not.toContainText('Not Generated')
 })
+
+// ADR-059 decisions 2-4: row two shows the First Frame (default) or the Fifth Frame of each sequence; remembered per viewer.
+const mode = (m) => m.getByTestId('outputs-eye-frame-mode')
+const pic = (m) => m.locator('[data-role="left"][data-testid="outputs-eye-frame"]').getByTestId('outputs-eye-frame-picture')
+
+test('Frame mode: First Frame is the default and the picture opens the viewer at frame 1', async ({ page, api }) => {
+  const m = await open(page, api, seq('clip_v008', 8))
+  await expect(mode(m).getByTestId('outputs-eye-frame-mode-first')).toHaveAttribute('aria-pressed', 'true')
+  await expect(mode(m).getByTestId('outputs-eye-frame-mode-fifth')).toHaveAttribute('aria-pressed', 'false')
+  await expect(mode(m).getByTestId('outputs-eye-frame-mode-first')).toHaveText('First Frame')
+  await expect(mode(m).getByTestId('outputs-eye-frame-mode-fifth')).toHaveText('Fifth Frame')
+  await expect(m.getByTestId('outputs-eye-frame-load')).toHaveCount(0)
+  await pic(m).click()
+  await expect(page.getByTestId('dpx-viewer-frame')).toHaveText(/^Frame 1 \/ 8/)
+})
+
+test('Frame mode: Fifth Frame swaps the picture for Load Frame Previews (no preview yet) and opens the viewer at frame 5', async ({ page, api }) => {
+  const m = await open(page, api, seq('clip_v008', 8))
+  await mode(m).getByTestId('outputs-eye-frame-mode-fifth').click()
+  await expect(mode(m).getByTestId('outputs-eye-frame-mode-fifth')).toHaveAttribute('aria-pressed', 'true')
+  await expect(pic(m).getByTestId('outputs-eye-frame-load')).toHaveText('Load Frame Previews')
+  await pic(m).click()
+  await expect(page.getByTestId('dpx-viewer-frame')).toHaveText(/^Frame 5 \/ 8/)
+})
+
+test('Frame mode: fewer than five frames shows the last frame', async ({ page, api }) => {
+  const m = await open(page, api, seq('clip_v008', 3))
+  await mode(m).getByTestId('outputs-eye-frame-mode-fifth').click()
+  await pic(m).click()
+  await expect(page.getByTestId('dpx-viewer-frame')).toHaveText(/^Frame 3 \/ 3/)
+})
+
+test('Frame mode: the choice is remembered across a reload', async ({ page, api }) => {
+  const m = await open(page, api, seq('clip_v008', 8))
+  await mode(m).getByTestId('outputs-eye-frame-mode-fifth').click()
+  await page.reload()
+  await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
+  const m2 = page.getByTestId('pod-outputs-modal')
+  await expect(mode(m2).getByTestId('outputs-eye-frame-mode-fifth')).toHaveAttribute('aria-pressed', 'true')
+  await expect(pic(m2).getByTestId('outputs-eye-frame-load')).toBeVisible()
+})
