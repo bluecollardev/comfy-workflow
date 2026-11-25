@@ -25,7 +25,6 @@ export function withEyeSlots(tiles) {
   for (const t of tiles) if (isSeq(t)) {
     t.eye = eyeRoleOf(t.name || t.file.filename)
     const k = elOf(t)
-    t.el = k
     if (!els.has(k)) els.set(k, [])
     els.get(k).push(t)
   }
@@ -35,11 +34,14 @@ export function withEyeSlots(tiles) {
     const k = elOf(t)
     if (done.has(k)) continue
     done.add(k)
+    // row one: the four slots (a picture, or the Not Generated placeholder); the filled sequences follow as full-width rows (their tile, data file, previews and buttons)
+    const filled = []
     for (const role of EYE_ORDER) {
       const have = els.get(k).filter((x) => x.eye === role)
-      if (have.length) out.push(...have)
-      else out.push({ key: `eyeslot:${k}:${role}`, kind: 'eyeslot', el: k, eye: role, stem: k.split('\u0000')[1] })
+      if (have.length) { out.push({ key: `eyecard:${k}:${role}`, kind: 'eyecard', eye: role, slot: have[0], stem: k.split('\u0000')[1] }); filled.push(...have) }
+      else out.push({ key: `eyeslot:${k}:${role}`, kind: 'eyeslot', eye: role, stem: k.split('\u0000')[1] })
     }
+    out.push(...filled)
   }
   return out
 }

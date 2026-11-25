@@ -42,8 +42,8 @@ test('A stereo element shows four filled slots in the order Overall, Left Eye, R
   await expect(m.getByTestId('outputs-eye-slot')).toHaveCount(0)
   await expect(m.locator('[data-testid="outputs-tile"][data-kind="dpx"]')).toHaveCount(4)
   await expect(m.getByTestId('outputs-seq-toggle')).toHaveCount(4)   // each slot collapses and expands on its own, as a sequence does today
-  // all four slots of the element sit on one row
-  const tops = await m.locator('[data-testid="outputs-cell"][data-eye]').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)))
+  // the four slots' pictures sit on one row
+  const tops = await m.locator('[data-testid="outputs-eye-card"]').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)))
   expect(tops).toHaveLength(4)
   expect(new Set(tops).size).toBe(1)
 })
@@ -72,11 +72,10 @@ test('Show Stereoscopic Outputs sits above Hide Empty Folders and turns the eye 
   await expect(m.getByTestId('outputs-eye-slot')).toHaveCount(3)
 })
 
-test('The four slots are on the first row; their previews, Load Frame Previews and expand/collapse are on the row below', async ({ page, api }) => {
+test('Row one holds the four pictures; the sequences (tile, previews, Load Frame Previews, expand/collapse) follow below at full width', async ({ page, api }) => {
   const m = await open(page, api, [...seq('clip_v008_R'), ...seq('clip_v008_L'), ...seq('clip_v008_PACK'), ...seq('clip_v008_SBS')])
+  const cards = await m.getByTestId('outputs-eye-card').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().bottom)))
   const tile = await m.locator('[data-testid="outputs-tile"][data-kind="dpx"]').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)))
-  const tog = await m.locator('.sqbot').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)))
-  expect(new Set(tile).size).toBe(1)
-  expect(new Set(tog).size).toBe(1)
-  expect(tog[0]).toBeGreaterThan(tile[0])
+  expect(new Set(cards).size).toBe(1)
+  for (const t of tile) expect(t).toBeGreaterThanOrEqual(cards[0])
 })

@@ -16,9 +16,10 @@
       <BButton v-if="seqCount || groupCount" variant="outline-light" size="sm" data-testid="outputs-expand-all" @click="setAll('expanded')"><i class="fa-solid fa-expand me-1"></i>{{ $t('outputs.dpx.expandAll') }}</BButton>
     </div>
     <div v-if="files.length" ref="galleryEl" class="gallery" :class="{ eyegrid: tiles.some((x) => x.eye) }">
-      <div v-for="t in tiles" :key="t.key" class="cell" :class="{ wide: (t.kind === 'dpx' && t.frames.length > 1) || isGroup(t), seq: t.kind === 'dpx' && t.frames.length > 1, eyeempty: t.kind === 'eyeslot' }" :data-testid="t.kind === 'eyeslot' ? 'outputs-eye-slot' : 'outputs-cell'" :data-eye="t.eye" :style="t.kind === 'eyeslot' || !t.eye ? eyeStyle(t, 0) : undefined">
+      <div v-for="t in tiles" :key="t.key" class="cell" :class="{ wide: (t.kind === 'dpx' && t.frames.length > 1) || isGroup(t), seq: t.kind === 'dpx' && t.frames.length > 1, eyeempty: t.kind === 'eyeslot', eyecard: t.kind === 'eyecard' }" :data-testid="t.kind === 'eyeslot' ? 'outputs-eye-slot' : t.kind === 'eyecard' ? 'outputs-eye-card' : 'outputs-cell'" :data-eye="t.kind === 'dpx' ? undefined : t.eye" :data-role="t.eye">
       <!-- ADR-058: a slot (Overall, Left Eye, Right Eye) with no sequence: shown so a missing right eye is visible; not an error, never counted, never blocks Publish -->
-      <div v-if="t.kind === 'eyeslot'" data-testid="outputs-eye-empty"><div class="head"><i class="fa-solid fa-film"></i><span class="headname">{{ $t(`outputs.eye.${t.eye}`) }}</span><span class="small text-body-secondary" :title="t.stem">{{ $t('outputs.eye.empty') }}</span></div><div class="eyeph" data-testid="outputs-eye-placeholder"><i class="fa-solid fa-image"></i><span class="small">{{ $t('outputs.eye.empty') }}</span></div></div>
+      <div v-if="t.kind === 'eyecard'" class="eyecardbody"><div class="head"><i class="fa-solid fa-film"></i><span class="headname">{{ $t(`outputs.eye.${t.eye}`) }}</span><span class="small text-body-secondary">{{ $t('outputs.dpx.badge', { n: t.slot.frames.length }) }}</span></div><button type="button" class="eyeph filled" data-testid="outputs-eye-picture" :disabled="offline" :title="t.slot.name || t.slot.file.filename" @click="openAt(t.slot, 0)"><img v-if="frameImg(t.slot, t.slot.frames[0])" :src="frameImg(t.slot, t.slot.frames[0])" alt="" /><i v-else class="fa-solid fa-film"></i></button></div>
+      <div v-else-if="t.kind === 'eyeslot'" data-testid="outputs-eye-empty"><div class="head"><i class="fa-solid fa-film"></i><span class="headname">{{ $t(`outputs.eye.${t.eye}`) }}</span><span class="small text-body-secondary" :title="t.stem">{{ $t('outputs.eye.empty') }}</span></div><div class="eyeph" data-testid="outputs-eye-placeholder"><i class="fa-solid fa-image"></i><span class="small">{{ $t('outputs.eye.empty') }}</span></div></div>
       <div v-else-if="isGroup(t)" class="group" data-testid="outputs-group" :data-kind="t.kind" :data-cat="t.cat || 'temp'" :data-count="t.count" :data-expanded="groupExpanded(t) ? 'true' : 'false'">
         <div class="head" data-testid="outputs-group-head">
           <i class="fa-solid" :class="groupIcon(t)"></i>
@@ -60,7 +61,18 @@
         </div>
       </div>
       <template v-else>
-      <div class="sqtop" :data-eye="t.eye" :style="eyeStyle(t, 0)">
+      <div v-if="t.kind === 'dpx' && t.frames.length > 1" class="head" data-testid="outputs-seq-head">
+        <i class="fa-solid fa-film"></i>
+        <span class="headname" :title="t.name || t.file.filename" data-testid="outputs-seq-name">{{ shortName(t.name || t.file.filename) }}</span>
+        <span v-if="t.eye" class="badge text-bg-info" data-testid="outputs-eye-role" :data-eye="t.eye">{{ $t(`outputs.eye.${t.eye}`) }}</span>
+        <span class="badge text-bg-secondary headcount" data-testid="outputs-seq-headcount">{{ t.frames.length }}</span>
+        <span v-if="isExpanded(t)" class="small text-body-secondary" data-testid="outputs-seq-preview-count">{{ $t('outputs.dpx.framePreviews', { n: previewCount(t), total: t.frames.length }) }}</span>
+        <span v-if="inJob(srcOf(t))" class="small text-info" data-testid="outputs-seq-job-progress">{{ $t('outputs.frames.progress', { done: jobDone(), total: fpState.job.total || t.frames.length }) }}</span>
+        <span v-if="isExpanded(t) && fpState.error" class="small text-warning" data-testid="outputs-seq-job-error">{{ fpState.error }}</span>
+        <BButton v-if="isExpanded(t) && !inJob(srcOf(t))" variant="outline-light" size="sm" class="headbtn" :disabled="!canJob || jobRunning()" :title="jobReason" data-testid="outputs-seq-load-frames" @click="loadFrames(t)"><i class="fa-solid fa-images me-1"></i>{{ $t('outputs.frames.load') }}</BButton>
+        <BButton v-if="inJob(srcOf(t))" variant="outline-warning" size="sm" class="headbtn" data-testid="outputs-seq-stop-frames" @click="stopJob()"><i class="fa-solid fa-stop me-1"></i>{{ $t('outputs.frames.stop') }}</BButton>
+        <BButton variant="outline-light" size="sm" class="headbtn" :aria-expanded="isExpanded(t) ? 'true' : 'false'" data-testid="outputs-seq-toggle" @click="toggleSeq(t)"><i class="fa-solid me-1" :class="isExpanded(t) ? 'fa-chevron-up' : 'fa-chevron-down'"></i>{{ isExpanded(t) ? $t('outputs.dpx.collapse') : $t('outputs.dpx.expand') }}</BButton>
+      </div>
       <button type="button" class="tile" data-testid="outputs-tile" :disabled="offline" :data-offline="offline ? 'true' : undefined" :data-kind="t.kind" :data-type="t.file.type" :data-frames="t.frames ? t.frames.length : undefined" :title="t.name || t.file.filename" @click="open(t)">
         <span v-if="offline && t.kind !== 'dpx'" class="thumb d-flex align-items-center justify-content-center text-body-secondary" data-testid="outputs-offline-thumb"><i class="fa-solid fs-3" :class="{ image: 'fa-image', video: 'fa-film', audio: 'fa-music' }[t.kind] || 'fa-file'"></i></span>
         <LazyMedia v-else-if="t.kind === 'image'" kind="image" :src="viewUrl(base, t.file, { thumb: true })" :bytes="t.file.bytes" :alt="t.file.filename" />
@@ -85,20 +97,6 @@
         <span class="cap fw-semibold" data-testid="outputs-data-label">{{ dataLabel }}</span>
       </button>
       </div>
-      </div>
-      <div class="sqbot" :data-eye="t.eye" :style="eyeStyle(t, 5)">
-      <div v-if="t.kind === 'dpx' && t.frames.length > 1" class="head" data-testid="outputs-seq-head">
-        <i class="fa-solid fa-film"></i>
-        <span class="headname" :title="t.name || t.file.filename" data-testid="outputs-seq-name">{{ shortName(t.name || t.file.filename) }}</span>
-        <span v-if="t.eye" class="badge text-bg-info" data-testid="outputs-eye-role" :data-eye="t.eye">{{ $t(`outputs.eye.${t.eye}`) }}</span>
-        <span class="badge text-bg-secondary headcount" data-testid="outputs-seq-headcount">{{ t.frames.length }}</span>
-        <span v-if="isExpanded(t)" class="small text-body-secondary" data-testid="outputs-seq-preview-count">{{ $t('outputs.dpx.framePreviews', { n: previewCount(t), total: t.frames.length }) }}</span>
-        <span v-if="inJob(srcOf(t))" class="small text-info" data-testid="outputs-seq-job-progress">{{ $t('outputs.frames.progress', { done: jobDone(), total: fpState.job.total || t.frames.length }) }}</span>
-        <span v-if="isExpanded(t) && fpState.error" class="small text-warning" data-testid="outputs-seq-job-error">{{ fpState.error }}</span>
-        <BButton v-if="isExpanded(t) && !inJob(srcOf(t))" variant="outline-light" size="sm" class="headbtn" :disabled="!canJob || jobRunning()" :title="jobReason" data-testid="outputs-seq-load-frames" @click="loadFrames(t)"><i class="fa-solid fa-images me-1"></i>{{ $t('outputs.frames.load') }}</BButton>
-        <BButton v-if="inJob(srcOf(t))" variant="outline-warning" size="sm" class="headbtn" data-testid="outputs-seq-stop-frames" @click="stopJob()"><i class="fa-solid fa-stop me-1"></i>{{ $t('outputs.frames.stop') }}</BButton>
-        <BButton variant="outline-light" size="sm" class="headbtn" :aria-expanded="isExpanded(t) ? 'true' : 'false'" data-testid="outputs-seq-toggle" @click="toggleSeq(t)"><i class="fa-solid me-1" :class="isExpanded(t) ? 'fa-chevron-up' : 'fa-chevron-down'"></i>{{ isExpanded(t) ? $t('outputs.dpx.collapse') : $t('outputs.dpx.expand') }}</BButton>
-      </div>
       <SequenceStrip v-if="t.kind === 'dpx' && t.frames.length > 1 && stripItems(t).length" class="seqstrip" :rows="isExpanded(t) ? 1 : 2" :total="t.frames.length" :items="stripItems(t)" :disabled="offline" @open="(i) => openAt(t, i)" @more="toggleSeq(t)" />
       <template v-if="t.kind === 'dpx' && t.frames.length > 1">
         <div v-if="isExpanded(t)" class="frames" data-testid="outputs-seq-frames" :data-shown="shownFrames(t).length">
@@ -113,8 +111,6 @@
           </div>
         </div>
       </template>
-      </div>
-      <!--sqbot-end-->
       </template>
       </div>
     </div>
@@ -222,8 +218,6 @@ const frameFailed = (t, f) => (failedOf(srcOf(t)).has(jpgName(f.filename)) ? fai
 const stemOf = (t) => (t.frames[0]?.filename || '').replace(/\.\d+\.dpx$/i, '')
 function loadFrames(t) { startJob({ podId: props.podId, items: [{ src_dir: srcOf(t), frames: t.frames.length, stem: stemOf(t) }], skipExisting: true }) }
 const isSeq = (t) => t.kind === 'dpx' && t.frames.length > 1
-/** ADR-058 layout: the grid `order` of a tile, so the four slots of an element share one row and their frames the row below (the element's first slot sets the place; `part` 5 is the lower row). */
-function eyeStyle(t, part) { if (!tiles.value.some((x) => x.eye)) return undefined; const idx = tiles.value.findIndex((x) => (t.el && x.el === t.el) || x.key === t.key); return { order: Math.max(0, idx) * 10 + part } }
 const tiles = computed(() => { const base = groupTiles(galleryTiles(realFiles.value).filter((t) => !(t.kind === 'dpx' && incompleteKeys.value.has(t.key)))); const ts = props.stereo ? withEyeSlots(base) : base; const tg = groupView.showTemp ? tempGroup(tempFiles.value) : null; return tg ? [...ts, tg] : ts })
 // Every sequence row (collapsed or not) shows the frames that have a preview beside its first frame: the pod's JPEGs are listed in ONE batched call for all the sequences of this list (and for
 // every gallery asking at the same moment, utils/framejob.js queueListing), the cache is read locally; nothing is fetched or generated here.
@@ -309,20 +303,19 @@ watch(() => props.files, () => { current.value = null; dpx.value = null; problem
 .cell.eyeempty { grid-column: 1 / -1; opacity: 0.7; }
 /* ADR-058: with the eye slots on, the four slots of an element (Overall, Left Eye, Right Eye, Side By Side) sit on ONE row: a four column grid, each slot one column, Overall always starting a row */
 .gallery.eyegrid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.sqtop, .sqbot { display: contents; }
-.cell.seq .sqbot > .head { order: -1; }
-.gallery.eyegrid .cell[data-eye] { grid-column: auto; }
-.gallery.eyegrid .cell.seq[data-eye] { display: contents; }
-.gallery.eyegrid .sqtop, .gallery.eyegrid .sqbot { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; align-self: start; }
-.gallery.eyegrid [data-eye="overall"] { grid-column: 1; } .gallery.eyegrid [data-eye="left"] { grid-column: 2; } .gallery.eyegrid [data-eye="right"] { grid-column: 3; } .gallery.eyegrid [data-eye="sbs"] { grid-column: 4; }
-.gallery.eyegrid .cell.wide:not([data-eye]) { grid-column: 1 / -1; }
+.gallery.eyegrid .cell.eyeempty, .gallery.eyegrid .cell.eyecard { grid-column: auto; opacity: 1; }
+.gallery.eyegrid .cell.eyeempty { opacity: 0.7; }
+.gallery.eyegrid .cell[data-role="overall"] { grid-column-start: 1; }
 .gallery.eyegrid .eyeph { width: 100%; }
+.eyeph.filled { padding: 0; overflow: hidden; border-style: solid; background: #20232a; cursor: pointer; }
+.eyeph.filled img { width: 100%; height: 100%; object-fit: cover; }
+.eyeph.filled .fa-film { font-size: 1.6rem; }
 .eyeph { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.25rem; width: 220px; aspect-ratio: 16 / 9; margin-top: 0.35rem; border: 1px dashed var(--bs-border-color); border-radius: 0.25rem; color: var(--bs-secondary-color); }
 .eyeph .fa-image { font-size: 1.6rem; }
-.cell.seq .head, .cell.seq .frames { grid-column: 1 / -1; }
+.cell.seq > .head, .cell.seq > .frames { grid-column: 1 / -1; }
 /* the Main Video tile sits beside the sequence tile (column 2, as tall as the row, the picture 9.5rem high with its own width), the filmstrip keeps column 3 */
 /* column 2 holds the Main Video tile and, to its right on the same row, the Data File button (vertically centred on the tiles) */
-.cell.seq .seqside { grid-column: 2; display: flex; align-items: flex-start; gap: 0.5rem; min-width: 0; }
+.cell.seq > .seqside { grid-column: 2; display: flex; align-items: flex-start; gap: 0.5rem; min-width: 0; }
 /* the pictures of the main row share ONE height (`--picH`, the sequence tile's 6.5rem picture): the Main Video's width follows its own ratio (never squeezed to its caption), the Data File tile is a 9.5rem tile of that height */
 .cell.seq { --picH: 6.5rem; }
 /* (`.cell.wide .tile { max-width: 9.5rem }` above capped this tile at 152 px, which is what made the Main Video's picture a skinny box: the selector here must outrank it) */
@@ -330,7 +323,7 @@ watch(() => props.files, () => { current.value = null; dpx.value = null; problem
 .cell.wide .seqside .datatile { width: 9.5rem; flex: 0 0 auto; align-self: flex-start; }
 .dthumb { height: var(--picH, 6.5rem); }
 /* the previews of the sequence: two full rows below the main row */
-.cell.seq .seqstrip { grid-column: 1 / -1; }
+.cell.seq > .seqstrip { grid-column: 1 / -1; }
 /* a collapsed group with previews: one full row of tiles, the last being '+N more' */
 .gstrip { display: grid; gap: 0.5rem; align-items: start; }
 .gstrip .tile { width: 100%; min-width: 0; }
