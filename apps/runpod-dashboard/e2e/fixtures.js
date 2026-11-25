@@ -1334,6 +1334,7 @@ export const test = base.extend({
   // auto: every test is mocked, even ones that never touch `api`, so no spec can reach the real backend.
   api: [
     async ({ page }, use) => {
+      await page.addInitScript(() => { window.__AUTO_CAP__ = 0; window.__THUMB_CONCURRENCY__ = 1 })   // the older specs run click-only (the app now loads DPX previews by itself, e2e/outputs-autoload.spec.js)
       await page.addInitScript(() => { try { localStorage.setItem('outputs.showStereo', 'false') } catch {} })   // the four-slot Outputs layout is narrow: only its own specs turn it on
       const state = defaultState()
       const calls = await mockApi(page, state)

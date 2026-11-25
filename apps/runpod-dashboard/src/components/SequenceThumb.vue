@@ -45,7 +45,7 @@ async function load(manual = false) {
   if (manual) wanted = true
   const thumbs = sharedThumbs(), k = myKey = key.value
   setState('loading')
-  const r = await thumbs.request(k, { url: viewUrl(props.base, first.value), fallback: appReader(core), bytes: first.value.bytes ?? null, modified: first.value.modified ?? null }, { manual, order: elementOrder(root.value?.parentElement || root.value) })
+  const r = await thumbs.request(k, { url: viewUrl(props.base, first.value), fallback: appReader(core), bytes: first.value.bytes ?? null, modified: first.value.modified ?? null }, { manual, order: elementOrder(root.value) })
   if (k !== myKey) return
   if (r.status === 'ready') { url.value = r.url; setState('ready'); previewBus.cacheVer++; if (r.header) emit('header', r.header) }   // the first frame's colour fields, for the tile's chips
   else if (r.status === 'empty') { reason.value = r.reason; setState('empty') }

@@ -110,45 +110,33 @@ test('Row two repeats the four slots as DPX previews, below the video row and ab
   await expect(frames.nth(2).getByTestId('outputs-eye-frame-picture')).toHaveAttribute('data-state', 'empty')
 })
 
-// ADR-059 decisions 2-4: row two shows the First Frame (default) or the Fifth Frame of each sequence; remembered per viewer.
-const mode = (m) => m.getByTestId('outputs-eye-frame-mode')
-const pic = (m) => m.locator('[data-role="left"][data-testid="outputs-eye-frame"]').getByTestId('outputs-eye-frame-picture')
+// Row two shows frames 5, 10, 15 and 20 of each sequence (every fifth, at most four); fewer than five frames shows the last (Lucas, 2026-11-25).
+const pics = (m) => m.locator('[data-role="left"][data-testid="outputs-eye-frame"]').getByTestId('outputs-eye-frame-picture')
 
-test('Frame mode: First Frame is the default and the picture opens the viewer at frame 1', async ({ page, api }) => {
-  const m = await open(page, api, seq('clip_v008', 8))
-  await expect(mode(m).getByTestId('outputs-eye-frame-mode-first')).toHaveAttribute('aria-pressed', 'true')
-  await expect(mode(m).getByTestId('outputs-eye-frame-mode-fifth')).toHaveAttribute('aria-pressed', 'false')
-  await expect(mode(m).getByTestId('outputs-eye-frame-mode-first')).toHaveText('First Frame')
-  await expect(mode(m).getByTestId('outputs-eye-frame-mode-fifth')).toHaveText('Fifth Frame')
-  await expect(m.getByTestId('outputs-eye-frame-load')).toHaveCount(0)
-  await pic(m).click()
-  await expect(page.getByTestId('dpx-viewer-frame')).toHaveText(/^Frame 1 \/ 8/)
+test('Row two: a sequence shows frames 5, 10, 15 and 20 (every fifth, at most four) and no First / Fifth switch', async ({ page, api }) => {
+  const m = await open(page, api, seq('clip_v008', 40))
+  await expect(pics(m)).toHaveCount(4)
+  await expect(page.getByTestId('outputs-eye-frame-mode')).toHaveCount(0)
+  const tops = await pics(m).evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)))
+  expect(new Set(tops).size).toBe(1)   // one row, not stacked
+  await expect(pics(m).nth(3).locator('.eyeframeno')).toHaveText('20')
+  await pics(m).nth(1).click()
+  await expect(page.getByTestId('dpx-viewer-frame')).toHaveText(/^Frame 10 \/ 40/)
 })
 
-test('Frame mode: Fifth Frame swaps the picture for Load Frame Previews (no preview yet) and opens the viewer at frame 5', async ({ page, api }) => {
+test('Row two: 8 frames show frame 5 only, with Load Frame Previews until the pod has made it', async ({ page, api }) => {
   const m = await open(page, api, seq('clip_v008', 8))
-  await mode(m).getByTestId('outputs-eye-frame-mode-fifth').click()
-  await expect(mode(m).getByTestId('outputs-eye-frame-mode-fifth')).toHaveAttribute('aria-pressed', 'true')
-  await expect(pic(m).getByTestId('outputs-eye-frame-load')).toHaveText('Load Frame Previews')
-  await pic(m).click()
+  await expect(pics(m)).toHaveCount(1)
+  await expect(pics(m).getByTestId('outputs-eye-frame-load')).toHaveText('Load Frame Previews')
+  await pics(m).click()
   await expect(page.getByTestId('dpx-viewer-frame')).toHaveText(/^Frame 5 \/ 8/)
 })
 
-test('Frame mode: fewer than five frames shows the last frame', async ({ page, api }) => {
+test('Row two: fewer than five frames show the last frame', async ({ page, api }) => {
   const m = await open(page, api, seq('clip_v008', 3))
-  await mode(m).getByTestId('outputs-eye-frame-mode-fifth').click()
-  await pic(m).click()
+  await expect(pics(m)).toHaveCount(1)
+  await pics(m).click()
   await expect(page.getByTestId('dpx-viewer-frame')).toHaveText(/^Frame 3 \/ 3/)
-})
-
-test('Frame mode: the choice is remembered across a reload', async ({ page, api }) => {
-  const m = await open(page, api, seq('clip_v008', 8))
-  await mode(m).getByTestId('outputs-eye-frame-mode-fifth').click()
-  await page.reload()
-  await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
-  const m2 = page.getByTestId('pod-outputs-modal')
-  await expect(mode(m2).getByTestId('outputs-eye-frame-mode-fifth')).toHaveAttribute('aria-pressed', 'true')
-  await expect(pic(m2).getByTestId('outputs-eye-frame-load')).toBeVisible()
 })
 
 test('Each row has a heading (Video Outputs, DPX Frame Outputs, All Frames for the sequence) and the main video is not repeated beside the sequence', async ({ page, api }) => {
@@ -156,7 +144,6 @@ test('Each row has a heading (Video Outputs, DPX Frame Outputs, All Frames for t
   const h = m.getByTestId('outputs-eye-heading')
   await expect(h.nth(0)).toHaveText('Video Outputs')
   await expect(h.nth(1)).toContainText('DPX Frame Outputs')
-  await expect(h.nth(1).getByTestId('outputs-eye-frame-mode')).toBeVisible()   // the First Frame / Fifth Frame switch sits on the DPX row
   await expect(h.nth(2)).toContainText('All Frames for clip_v008_L')
   await expect(m.getByTestId('outputs-main-video')).toHaveCount(0)
 })

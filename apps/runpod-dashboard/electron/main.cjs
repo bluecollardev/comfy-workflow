@@ -8,7 +8,7 @@
 // Settings (RUNPOD_API_KEY, GITHUB_CLIENT_ID, …) come from ~/.config/runpod-pod-manager/.env
 // (and <repo>/.env in development).
 
-const { app, BrowserWindow, dialog, shell, nativeImage, protocol } = require('electron')
+const { app, BrowserWindow, dialog, shell, nativeImage, protocol, ipcMain } = require('electron')
 const coreBridge = require('./core.cjs')
 const fs = require('node:fs')
 const os = require('node:os')
@@ -103,6 +103,7 @@ function coreEnv() {
 protocol.registerSchemesAsPrivileged(['podfile', 's3file', 'localfile'].map((scheme) => ({ scheme, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, bypassCSP: true } })))
 let previewCache = null   // the pod's preview JPEGs: memory cache, one fetch per address, at most 8 at a time (electron/previewcache.cjs, ADR-055 section 15)
 const previews = () => (previewCache ||= createPreviewCache())
+ipcMain.handle('core:previews:concurrency', (_e, n) => { previews().setConcurrency(n); return previews().concurrency })   // the Outputs window: as many at once as elements per page
 function handlePodFiles() {
   protocol.handle('podfile', async (request) => {
     const u = new URL(request.url)

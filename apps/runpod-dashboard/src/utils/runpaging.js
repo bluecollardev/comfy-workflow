@@ -2,8 +2,8 @@
 // A list of runs never renders more than one page; rows outside the page create no gallery, preview, probe or media. The page and the page size last as long as the app window (module state).
 import { reactive } from 'vue'
 
-export const PAGE_SIZES = [25, 50, 100]
-export const runPaging = reactive({ page: 1, size: PAGE_SIZES[0] })
+export const PAGE_SIZES = [10, 25, 50, 100]
+export const runPaging = reactive({ page: 1, size: 25 })
 
 /** The page numbers and the slice for a list of `total` rows: `page` is kept inside 1..pages. */
 export function pageOfRuns(rows, page = runPaging.page, size = runPaging.size) {

@@ -3,8 +3,10 @@
 // thumbnail is fetched once ever (volume + folder + first file, whatever address served it). Everything here is pure (the cache and the producer are passed in) except `idbBackend` and `produceDpxThumb`.
 import { DpxError, drawToCanvas, loadDpx, problemOfError } from './dpx.js'
 
-/** How many tiles may load by themselves per modal open: NONE (Lucas, 2026-11-17, after trying automatic loading: 'let's click the button, this causes too much loading'). A preview already in the cache still shows at once with no fetch; every other tile waits for a click on its Load preview button (or Load all previews in the modal header). A number or Infinity turns automatic loading back on. */
-export const AUTO_CAP = 0
+/** How many tiles may load by themselves per modal open: all of them (Lucas, 2026-11-25: 'auto load', the first frame preloaded; this was 0 from 2026-11-17, 'this causes too much loading'). Still bounded by the page: only tiles on screen ask, one at a time, top to bottom (`enqueue`), a tile that scrolls away is cancelled, and a preview already in the cache shows at once with no fetch. A number turns the cap back on; 0 is click-only. */
+export const AUTO_CAP = Infinity
+/** DPX frames decoded at once (Lucas, 2026-11-25: 'this needs to be much faster to load'): each is ~50 MB in memory while it decodes, so four (about 200 MB), still taken top to bottom. A test sets `window.__THUMB_CONCURRENCY__`. */
+export const THUMB_CONCURRENCY = 4
 export const THUMB_WIDTH = 320
 
 /**
@@ -97,7 +99,7 @@ export function elementOrder(el) {
   const r = el.getBoundingClientRect(), b = p && p !== document.body ? p.getBoundingClientRect() : { top: 0, left: 0 }, st = p && p !== document.body ? p.scrollTop : (window.scrollY || 0)
   return Math.round(r.top - b.top + st) * 100000 + Math.max(0, Math.round(r.left - b.left))
 }
-export function createThumbs({ cache, produce, concurrency = 1, autoCap = AUTO_CAP }) {
+export function createThumbs({ cache, produce, concurrency = 1, autoCap = AUTO_CAP, settleMs = 0 }) {
   const queue = [], running = new Set(), jobs = new Map()
   let autoUsed = 0
   const pump = () => {
@@ -114,6 +116,14 @@ export function createThumbs({ cache, produce, concurrency = 1, autoCap = AUTO_C
       }).catch((e) => j.resolve(j.aborted || e?.name === 'AbortError' ? { status: 'aborted' } : { status: 'error', reason: e?.message || String(e), ...(e?.code ? { code: e.code } : {}) }))
         .finally(() => { running.delete(j); jobs.delete(j.key); pump() })
     }
+  }
+  // Tiles arrive from the cache lookup in whatever order IndexedDB answers: with `settleMs` the queue waits that long after the last arrival (at most 4x) so it can be sorted by page position before the first job starts.
+  let settle = null, settleFrom = 0
+  const kick = () => {
+    if (!settleMs) return pump()
+    const t0 = settleFrom ||= Date.now()
+    clearTimeout(settle)
+    settle = setTimeout(() => { settle = null; settleFrom = 0; pump() }, Math.max(0, Math.min(settleMs, t0 + settleMs * 4 - Date.now())))
   }
   return {
     /** A look at the cache and nothing else: `ready` / `empty` (+ cached: true) on a hit that is not stale (same bytes check as request), else `none`. Never queues, never fetches, never counts against the automatic cap. */
@@ -133,7 +143,7 @@ export function createThumbs({ cache, produce, concurrency = 1, autoCap = AUTO_C
       if (!manual) autoUsed++
       const j = { key, job, order, ctrl: new AbortController(), aborted: false }
       j.promise = new Promise((res) => { j.resolve = res })
-      jobs.set(key, j); enqueue(queue, j); pump()
+      jobs.set(key, j); enqueue(queue, j); kick()
       return j.promise
     },
     /** Stop one sequence's preview (queued or running): the tile scrolled away. A cap slot it took is given back. */
@@ -196,4 +206,4 @@ export const appReader = (core) => (core?.files?.read ? async (u) => {
 
 let shared = null
 /** The one controller every gallery shares (the cap is per modal open: the Outputs modal calls reset()). */
-export const sharedThumbs = () => (shared ||= createThumbs({ cache: createStore(idbBackend()), produce: produceDpxThumb }))
+export const sharedThumbs = () => (shared ||= createThumbs({ cache: createStore(idbBackend()), produce: produceDpxThumb, settleMs: 40, autoCap: globalThis.__AUTO_CAP__ ?? AUTO_CAP, concurrency: globalThis.__THUMB_CONCURRENCY__ ?? THUMB_CONCURRENCY }))

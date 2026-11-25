@@ -28,11 +28,11 @@ test('with a cap set (autoCap: 6) only the first 6 automatic requests load; the 
   assert.equal((await t.request('k7', {}, { manual: true })).status, 'ready'); assert.equal(fetched, 7)
   t.reset(); assert.equal((await t.request('k6', {})).status, 'ready')
 })
-test('by default nothing loads by itself: a cached tile shows at once, any other waits for a click, and a click loads it', async () => {
+test('with autoCap 0 nothing loads by itself: a cached tile shows at once, any other waits for a click, and a click loads it', async () => {
   let fetched = 0
   const cache = memCache(); await cache.set('k-cached', { url: 'data:cached' })
-  const t = createThumbs({ cache, produce: async () => { fetched++; return { url: 'data:x' } } })
-  assert.equal(AUTO_CAP, 0)
+  const t = createThumbs({ cache, autoCap: 0, produce: async () => { fetched++; return { url: 'data:x' } } })
+  assert.equal(AUTO_CAP, Infinity)   // the default since 2026-11-25: tiles load by themselves
   const hit = await t.request('k-cached', { url: 'u' })
   assert.deepEqual([hit.status, hit.cached], ['ready', true]); assert.equal(fetched, 0)   // the cache is free
   const rs = await Promise.all(Array.from({ length: 5 }, (_, i) => t.request(`k${i}`, { url: `u${i}` })))
@@ -134,4 +134,14 @@ test('queued previews run by page position (top, then left), not by arrival; uno
   const all = [t.request('first', { n: 'first' }, { order: 0 }), t.request('c', { n: 'c' }, { order: 300 }), t.request('none', { n: 'none' }), t.request('a', { n: 'a' }, { order: 100 }), t.request('b', { n: 'b' }, { order: 200 })]
   await new Promise((r) => setTimeout(r, 5)); g.go(); await Promise.all(all)
   assert.deepEqual(ran, ['first', 'a', 'b', 'c', 'none'])
+})
+
+test('with a settle delay the queue is sorted before the first job starts: a nearer-the-top tile that arrives later still runs first', async () => {
+  const ran = []
+  const t = createThumbs({ autoCap: Infinity, settleMs: 30, cache: memCache(), produce: async (j) => { ran.push(j.n); return { url: 'data:x' } } })
+  const a = t.request('low', { n: 'low' }, { order: 500 })
+  await new Promise((r) => setTimeout(r, 8))
+  const b = t.request('top', { n: 'top' }, { order: 10 })
+  await Promise.all([a, b])
+  assert.deepEqual(ran, ['top', 'low'])
 })
