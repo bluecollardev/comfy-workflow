@@ -201,6 +201,7 @@ import { ensureMatch, expectedFramesOf } from '../utils/edlexpect'
 import { galleryTiles as tilesOf } from '../utils/outputs'
 import { viewUrl, galleryTiles, runName, runsForShot, inFolder, narrowToFolder, filterByName, volumeAsRuns, mergeWithVolume, s3Base, sizeText } from '../utils/outputs'
 import { errorText } from '../stores/toast'
+import { sharedImages } from '../utils/imgcache'
 import { sharedThumbs, thumbTimeouts, withTimeout, thumbKey, appReader, createLimiter } from '../utils/thumbs'
 import { t } from '../i18n'
 import { usePreviewsStore } from '../stores/previews'
@@ -431,7 +432,7 @@ async function resumeForPreviews(p) { if (!window.confirm(t('outputs.frames.resu
 /** The folders of videos in scope: the same job makes each video's first-frame poster there (item kind 'posters', ffmpeg on the pod), so a video tile shows an image and loads no player until play is clicked. */
 const videoDirs = computed(() => [...new Set(genRuns.value.flatMap((r) => r.files || []).filter((f) => f.kind === 'video' && f.type !== 'temp' && f.subfolder).map((f) => f.subfolder))])
 function generateFrames() { startJob({ podId: props.pod.id, items: [...frameSeqs.value.map((q) => ({ src_dir: q.src_dir, frames: q.frames, stem: q.stem })), ...videoDirs.value.map((d) => ({ src_dir: d, kind: 'posters' }))], skipExisting: skipExisting.value }) }
-async function clearPreviews() { try { await sharedThumbs().clear(); previewsStore.clearResults(); probeGen++; for (const k of Object.keys(probeMap)) delete probeMap[k]; previewBus.resetTick++; probe(previewItems.value) } finally { cachedCount.value = 0 } }
+async function clearPreviews() { try { await sharedThumbs().clear(); await sharedImages().clear(); previewsStore.clearResults(); probeGen++; for (const k of Object.keys(probeMap)) delete probeMap[k]; previewBus.resetTick++; probe(previewItems.value) } finally { cachedCount.value = 0 } }
 const volumeId_ = computed(() => props.volumeId)
 const go = (prefix) => { if (allActive.value || (scope.value === 'all' && volAll.running)) setScope('folder'); return loadVolume(prefix) }
 /** Folders the volume says are empty (folder_info): greyed with (empty), and hidden by default. */

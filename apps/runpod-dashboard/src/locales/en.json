@@ -629,7 +629,7 @@
       },
       "cached": "{n} previews cached",
       "clearCache": "Clear Preview Cache",
-      "clearCacheTitle": "Forget the saved previews (the newest 500 are kept). They are downloaded again when needed.",
+      "clearCacheTitle": "Forget every saved preview: the first-frame previews (the newest 500 are kept) and the small pictures of frame previews, posters and thumbnails (up to 300 MB, kept across a refresh or restart). They are downloaded again when needed.",
       "loadPreview": "Load preview",
       "loadPreviewTitle": "Read the first frame of this sequence (about 50 MB) to show a preview",
       "loadAll": "Generate all previews ({n})",

@@ -4,7 +4,7 @@
          modal viewer): no player lives in the tile. Order of what it shows: poster, captured frame, shimmer while it is on its way, and the film icon ONLY after a definite failure. No corner button: with a
          real picture a play glyph shows in the CENTRE on hover or focus only. -->
     <span v-if="kind === 'video'" class="thumb vposter" role="img" :style="boxStyle" :data-ratio="ratio.toFixed(3)" :title="vTitle" :aria-label="$t('outputs.video.play')" data-testid="outputs-video-poster" :data-poster="poster && !posterBad ? 'yes' : shot ? 'frame' : failed ? 'no' : 'pending'">
-      <img v-if="poster && near && !posterBad" :src="poster" alt="" class="vimg" loading="lazy" decoding="async" data-testid="outputs-video-poster-img" @load="onImg" @error="onPosterError" />
+      <CachedImg v-if="poster && near && !posterBad" :src="poster" alt="" class="vimg" loading="lazy" decoding="async" data-testid="outputs-video-poster-img" @load="onImg" @error="onPosterError" />
       <img v-else-if="shot" :src="shot" alt="" class="vimg" decoding="async" data-testid="outputs-video-frame-img" />
       <span v-else-if="failed" class="vfallback" data-testid="outputs-video-fallback">
         <i class="fa-solid fa-film fs-3 text-body-secondary"></i>
@@ -15,7 +15,7 @@
     </span>
     <!-- an image: its own thumbnail (the file loaded lazily and scaled by CSS) with the shimmer until it has loaded; the image icon ONLY when it cannot load or is too big to be worth loading -->
     <span v-else-if="kind === 'image'" class="thumb imgbox" :title="iTitle" data-testid="outputs-image-box" :data-state="tooBig ? 'toobig' : imgFailed ? 'failed' : imgReady ? 'ready' : 'pending'">
-      <img v-if="near && !tooBig" :src="src" :alt="alt" class="iimg" :class="{ ready: imgReady }" loading="lazy" decoding="async" data-testid="outputs-image-thumb" @load="imgReady = true" @error="imgFailed = true" />
+      <CachedImg v-if="near && !tooBig" :src="src" :alt="alt" class="iimg" :class="{ ready: imgReady }" loading="lazy" decoding="async" data-testid="outputs-image-thumb" @load="imgReady = true" @error="imgFailed = true" />
       <span v-if="tooBig || imgFailed" class="vfallback" data-testid="outputs-image-fallback"><i class="fa-solid fa-image fs-3 text-body-secondary"></i></span>
       <span v-else-if="!imgReady" class="shimmer" data-testid="outputs-media-idle"></span>
     </span>
@@ -34,6 +34,7 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { t } from '../i18n'
+import CachedImg from './CachedImg.vue'
 import { firstFrame, retryFirstFrame } from '../utils/videothumb'
 
 /** An image bigger than this shows its icon with a tooltip instead of loading (a 40 MB PNG is not a thumbnail). */

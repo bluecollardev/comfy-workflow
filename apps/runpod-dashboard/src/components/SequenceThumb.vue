@@ -1,7 +1,7 @@
 <template>
   <span ref="root" class="preview" :data-state="state">
     <img v-if="state === 'ready'" :src="url" alt="" class="pimg" data-testid="outputs-dpx-thumb" />
-    <img v-else-if="quick && state !== 'empty'" :src="quick" alt="" class="pimg" loading="lazy" decoding="async" data-testid="outputs-dpx-quick" />
+    <CachedImg v-else-if="quick && state !== 'empty'" :src="quick" alt="" class="pimg" loading="lazy" decoding="async" data-testid="outputs-dpx-quick" />
     <span v-else-if="state === 'empty'" class="badge text-bg-warning pbadge" data-testid="outputs-dpx-thumb-empty" :title="reason">{{ $t('outputs.dpx.emptyFrame') }}</span>
     <BSpinner v-else-if="state === 'loading'" small class="pspin" data-testid="outputs-dpx-thumb-loading" />
     <span v-else-if="state === 'capped'" role="button" tabindex="0" class="badge text-bg-secondary pbtn" data-testid="outputs-dpx-load-preview" :title="$t('outputs.dpx.loadPreviewTitle')" @click.stop="load(true)" @keydown.enter.stop.prevent="load(true)"><i class="fa-regular fa-image me-1"></i>{{ $t('outputs.dpx.loadPreview') }}</span>
@@ -16,6 +16,7 @@
  * the first few per modal automatically and the others on a click; a finished preview comes from IndexedDB with no network. With no base to fetch from it shows nothing (the tile keeps its icon).
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import CachedImg from './CachedImg.vue'
 import { core } from '../api/bridge'
 import { t } from '../i18n'
 import { viewUrl } from '../utils/outputs'

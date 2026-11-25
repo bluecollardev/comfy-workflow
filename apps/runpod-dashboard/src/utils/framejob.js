@@ -1,6 +1,7 @@
 import { reactive } from 'vue'
 import { framePreviewsAPI } from '../api/framepreviews'
 import { viewUrl } from './outputs'
+import { sharedImages } from './imgcache'
 
 // Frame previews are a JOB on the pod (libs/core/src/framepreviews.ts): one small JPEG per DPX frame under output/.previews/<the sequence's folder>/. This is the window's side of it: the mode
 // choice (Sequence Previews, today's first-frame thumbnails read to this PC; Frame Previews, the pod job), the one running job, and what the pod says exists.
@@ -72,7 +73,8 @@ async function poll() {
     if (Date.now() - lastRefresh >= REFRESH_MS()) { lastRefresh = Date.now(); await refreshListing(fpState.job.pod_id, (fpState.job.items || []).map((i) => i.src_dir), true) }   // the strips fill in while the job runs
     timer = setTimeout(poll, pollMs())
   }
-  else if (fpState.job) await refreshListing(fpState.job.pod_id, (fpState.job.items || []).map((i) => i.src_dir), true)   // the pod says what it wrote
+  else if (fpState.job) { if (fpState.job.skip_existing === false) for (const i of fpState.job.items || []) sharedImages().forget(encodeURIComponent(previewFolder(i.src_dir)))   // rewritten JPEGs: the saved ones are stale
+    await refreshListing(fpState.job.pod_id, (fpState.job.items || []).map((i) => i.src_dir), true) }   // the pod says what it wrote
 }
 /** Start the job: `items` are { src_dir, frames } for every sequence it covers. One job at a time. */
 export async function startJob({ podId, items, skipExisting = true, tone }) {
