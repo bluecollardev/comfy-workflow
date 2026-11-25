@@ -368,7 +368,7 @@
         <AdapterManager />
       </fieldset>
       <fieldset v-if="forPod" v-show="show('options')" class="cfg-section" data-section="options">
-        <legend>{{ $t('config.options') }}</legend>
+        <legend>{{ $t('publish.tab') }}</legend>
 
       <div v-if="forPod" :id="`${slotId}-opt`"></div>   <!-- per-pod configuration: the render choices stay here (a pod has no Publishing tab) -->
       </fieldset>
@@ -612,7 +612,7 @@ const tabList = computed(() => [
   { key: 'folders', label: t('config.folders') },
   { key: 'environment', label: t('config.environment') },
   ...(forPod.value ? [] : [{ key: 'storage', label: t('storage.tab') }, { key: 'adapters', label: t('adapters.section') }, { key: 'publishing', label: t('publish.tab') }]),
-  ...(forPod.value ? [{ key: 'options', label: t('config.options') }] : []),
+  ...(forPod.value ? [{ key: 'options', label: t('publish.tab') }] : []),   // a pod's own configuration: the render and when-done choices, so it is called Publishing like the default's tab
 ])
 /** A section shows when the sections flow (narrow), when only the key is asked for (gated), or when its tab is the open one. */
 const show = (key) => !wide.value || gated.value || tab.value === key
