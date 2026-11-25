@@ -155,7 +155,8 @@ test('Each row has a heading (Video Outputs, DPX Frame Outputs, All Frames for t
   const m = await open(page, api, [...seq('clip_v008_L'), { filename: 'clip_v008_L.mp4', subfolder: SUB, type: 'output' }])
   const h = m.getByTestId('outputs-eye-heading')
   await expect(h.nth(0)).toHaveText('Video Outputs')
-  await expect(h.nth(1)).toHaveText('DPX Frame Outputs')
+  await expect(h.nth(1)).toContainText('DPX Frame Outputs')
+  await expect(h.nth(1).getByTestId('outputs-eye-frame-mode')).toBeVisible()   // the First Frame / Fifth Frame switch sits on the DPX row
   await expect(h.nth(2)).toContainText('All Frames for clip_v008_L')
   await expect(m.getByTestId('outputs-main-video')).toHaveCount(0)
 })
