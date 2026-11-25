@@ -19,7 +19,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { core } from '../api/bridge'
 import { t } from '../i18n'
 import { viewUrl } from '../utils/outputs'
-import { appReader, sharedThumbs, thumbKey } from '../utils/thumbs'
+import { appReader, elementOrder, sharedThumbs, thumbKey } from '../utils/thumbs'
 import { previewBus } from '../utils/thumbsBus'
 import { usePreviewsStore } from '../stores/previews'
 
@@ -44,7 +44,7 @@ async function load(manual = false) {
   if (manual) wanted = true
   const thumbs = sharedThumbs(), k = myKey = key.value
   setState('loading')
-  const r = await thumbs.request(k, { url: viewUrl(props.base, first.value), fallback: appReader(core), bytes: first.value.bytes ?? null, modified: first.value.modified ?? null }, { manual })
+  const r = await thumbs.request(k, { url: viewUrl(props.base, first.value), fallback: appReader(core), bytes: first.value.bytes ?? null, modified: first.value.modified ?? null }, { manual, order: elementOrder(root.value?.parentElement || root.value) })
   if (k !== myKey) return
   if (r.status === 'ready') { url.value = r.url; setState('ready'); previewBus.cacheVer++; if (r.header) emit('header', r.header) }   // the first frame's colour fields, for the tile's chips
   else if (r.status === 'empty') { reason.value = r.reason; setState('empty') }
