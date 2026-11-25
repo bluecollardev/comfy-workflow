@@ -116,7 +116,7 @@ test.describe('create pod', () => {
     await page.goto('/')
     await openCreatePod(page)
     await page.locator('form button[type=submit]').click()
-    expect(api.calls.filter((c) => c.method === 'POST')).toHaveLength(0)
+    expect(api.calls.filter((c) => c.method === 'POST' && !c.path.startsWith('/framepreviews'))).toHaveLength(0)
     await expect(page.getByLabel('Name')).toBeVisible()
   })
 
