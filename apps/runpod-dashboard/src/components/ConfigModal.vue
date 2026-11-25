@@ -608,7 +608,7 @@ onBeforeUnmount(() => wideQuery?.removeEventListener('change', onWide))
 const tab = ref(props.mode === 'pod' ? 'volume' : 'runpod')
 const tabList = computed(() => [
   ...(forPod.value ? [] : [{ key: 'runpod', label: t('config.runpod') }]),
-  { key: 'volume', label: forPod.value ? t('config.volumePod') : t('config.volume') },
+  { key: 'volume', label: t('config.volumePod') },   // the same tab name in the default configuration and in a pod's
   { key: 'folders', label: t('config.folders') },
   { key: 'environment', label: t('config.environment') },
   ...(forPod.value ? [] : [{ key: 'storage', label: t('storage.tab') }, { key: 'adapters', label: t('adapters.section') }, { key: 'publishing', label: t('publish.tab') }]),
