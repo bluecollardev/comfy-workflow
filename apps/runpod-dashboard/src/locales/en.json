@@ -310,7 +310,7 @@
     "idleHelp": "Stop a pod after this long with nothing queued. 0 = never.",
     "syncParallel": "Parallel uploads",
     "syncParallelHelp": "rsync streams at a time on a push, 1 to 16: one per top-level folder. The uplink is the limit; streams keep it full across thousands of small files.",
-    "folders": "Folders on this PC",
+    "folders": "Folders",
     "foldersHint": "The three every run uses, then any of your own; the exact links a pod makes are in the pod preview below. Mode {mode} (COMFY_MODE); {rule}",
     "ruleProd": "every folder is required in prod",
     "ruleEnv": "required folders set by COMFY_REQUIRE",

@@ -94,8 +94,7 @@ test.describe('configuration', () => {
     const note = folderRow(dialog, 'project').getByTestId('folder-note')
     await expect(note).toHaveText(t('config.linkedFrom', { source: "the tree's job files" }))
     await expect(note).not.toContainText('/home/binc')
-    await cfgTab(dialog, 'options')
-    await dialog.getByTestId('preview-pod-toggle').click()
+    await dialog.getByTestId('preview-pod-toggle').click()   // under the Configuration file panel, above the tabs
     await expect(dialog.getByTestId('preview-pod')).toContainText('COMFY_LINKS=/home/binc/CANALV2_r3/CANALV2=/workspace/project')
   })
 
@@ -234,7 +233,7 @@ test.describe('no-spend mode', () => {
     await page.goto('/')
     await expect(page.getByTestId('no-spend-badge')).toHaveCount(0)
     let dialog = await openConfig(page)
-    await cfgTab(dialog, 'options')
+    await cfgTab(dialog, 'volume')
     await dialog.getByTestId('cfg-dry-run').check()
     await dialog.getByTestId('config-save').click()
     const put = api.calls.find((c) => c.method === 'PUT' && c.path === '/mounts')
@@ -244,7 +243,7 @@ test.describe('no-spend mode', () => {
     const dashboards = api.calls.filter((c) => c.path === '/dashboard').length
     expect(dashboards).toBeGreaterThanOrEqual(2)
     dialog = await openConfig(page)
-    await cfgTab(dialog, 'options')
+    await cfgTab(dialog, 'volume')
     await expect(dialog.getByTestId('cfg-dry-run')).toBeChecked()
     await dialog.getByTestId('cfg-dry-run').uncheck()
     await dialog.getByTestId('config-save').click()
@@ -265,7 +264,7 @@ test.describe('no-spend mode', () => {
     await page.goto('/')
     await expect(page.getByTestId('no-spend-badge')).toBeVisible()
     const dialog = await openConfig(page)
-    await cfgTab(dialog, 'options')
+    await cfgTab(dialog, 'volume')
     await expect(dialog.getByTestId('cfg-dry-run')).toBeDisabled()
     await expect(dialog.getByTestId('cfg-dry-forced')).toContainText('RUNPOD_DRY_RUN=1')
     await dialog.getByTestId('config-save').click()
@@ -355,7 +354,7 @@ test.describe('configuration layout', () => {
     await page.goto('/')
     const dialog = await openConfig(page)
     await expect(dialog.getByTestId('cfg-tabs')).toBeVisible()
-    await expect(dialog.locator('[data-testid^="cfg-tab-"]')).toHaveText([t('config.runpod'), t('config.volume'), t('config.folders'), t('config.environment'), t('adapters.section'), t('publish.tab'), t('config.options')])
+    await expect(dialog.locator('[data-testid^="cfg-tab-"]')).toHaveText([t('config.runpod'), t('config.volume'), t('config.folders'), t('config.environment'), t('adapters.section'), t('publish.tab')])   // Options is only a pod's own configuration now; the previews sit under the Configuration file panel
     await expect(dialog.getByTestId('section-runpod')).toBeVisible()
     await expect(dialog.getByTestId('section-volume')).toBeHidden()
     await dialog.getByTestId('cfg-tab-folders').click()

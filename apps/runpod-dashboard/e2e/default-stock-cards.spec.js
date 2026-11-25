@@ -8,7 +8,7 @@ test('Stock default cards: pre-filled with the stock list, a change saves auto_c
   await page.goto('/')
   await page.getByTestId('open-config').click()
   const dialog = configModal(page)
-  await cfgTab(dialog, 'options')
+  await cfgTab(dialog, 'volume')
   await expect(dialog.getByText(t('config.autoCards'))).toBeVisible()
   await expect(dialog.getByTestId('cfg-auto-cards-state')).toHaveText(t('config.autoCardsStock'))
   await expect(dialog.getByTestId('cfg-auto-card-box-rtx4090')).toBeChecked()      // a stock card
@@ -24,7 +24,7 @@ test('Stock default cards: pre-filled with the stock list, a change saves auto_c
   expect(puts[puts.length - 1].body.auto_cards).toEqual(['rtx4090', 'rtxpro6000'])
 
   await page.getByTestId('open-config').click()
-  await cfgTab(configModal(page), 'options')
+  await cfgTab(configModal(page), 'volume')
   await configModal(page).getByTestId('cfg-auto-cards-reset').click()
   await expect(configModal(page).getByTestId('cfg-auto-card-box-a4000')).toBeChecked()
   await expect(configModal(page).getByTestId('cfg-auto-card-box-rtxpro6000')).not.toBeChecked()

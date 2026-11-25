@@ -6,7 +6,7 @@ import { makeDpx } from '../src/utils/dpx-fixture.mjs'
 // Render sequences settings in the configuration (docs/ADR-048): the Default Configuration and a pod's own configuration carry an optional `render`; the Render option of the Previews window starts from plan().settings.
 const calls = (api, method, path) => api.calls.filter((c) => c.method === method && c.path === path)
 const DEFAULTS = { where: 'auto', kind: 'proxy', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto', pull: true }
-const openDefault = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'options'); return d }
+const openDefault = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'publishing'); return d }   // Outputs window, Prepare For Delivery and Render sequences are in Publishing; a pod's own configuration keeps the render choices under Options
 const openPod = async (page) => { await page.goto('/'); await podCard(page, 'ComfyUI-Dev').getByTestId('pod-config').click(); const d = modal(page, t('config.podTitle', { name: 'ComfyUI-Dev' })); await cfgTab(d, 'options'); return d }
 
 test.describe('Default Configuration', () => {
@@ -48,7 +48,7 @@ test.describe('Default Configuration', () => {
     expect(calls(api, 'PUT', '/mounts')[0].body.render).toEqual(want)
     expect(api.state.mounts.config.render).toEqual(want)
     await page.reload(); await page.getByTestId('open-config').click()
-    d = modal(page, t('config.title')); await cfgTab(d, 'options')
+    d = modal(page, t('config.title')); await cfgTab(d, 'publishing')
     await expect(d.getByTestId('config-render-where')).toHaveValue('local'); await expect(d.getByTestId('config-render-kind-review')).toBeChecked()
     await expect(d.getByTestId('config-render-proxy-width')).toHaveValue('1280'); await expect(d.getByTestId('config-render-review-width')).toHaveValue('1920')
     await expect(d.getByTestId('config-render-codec-h264')).toBeChecked(); await expect(d.getByTestId('config-render-fps')).toHaveValue('23.976'); await expect(d.getByTestId('config-render-pull')).toBeChecked()

@@ -8,7 +8,7 @@ test('Default card: pick the RTX PRO 6000, save, and the configuration carries d
   await page.goto('/')
   await page.getByTestId('open-config').click()
   const dialog = configModal(page)
-  await cfgTab(dialog, 'options')
+  await cfgTab(dialog, 'volume')
   const sel = dialog.getByTestId('cfg-default-gpu')
   await expect(sel).toBeVisible()
   await expect(dialog.getByText(t('config.defaultGpu'))).toBeVisible()
@@ -18,7 +18,7 @@ test('Default card: pick the RTX PRO 6000, save, and the configuration carries d
   const puts = api.calls.filter((c) => c.method === 'PUT' && c.path === '/mounts')
   expect(puts[puts.length - 1].body).toMatchObject({ default_gpu: 'rtxpro6000' })
   await page.getByTestId('open-config').click()
-  await cfgTab(configModal(page), 'options')
+  await cfgTab(configModal(page), 'volume')
   await expect(configModal(page).getByTestId('cfg-default-gpu')).toHaveValue('rtxpro6000')   // kept
   await configModal(page).getByTestId('config-save').click()
   await openCreatePod(page)

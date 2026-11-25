@@ -132,7 +132,7 @@ test.describe('Generate: the Tunnel proxy preset', () => {
 })
 
 test.describe('the configuration editors', () => {
-  const openDefault = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'options'); return d }
+  const openDefault = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'publishing'); return d }   // Render sequences is in Publishing now
   test('Render: Preset; there is no default start timecode field; Save carries the preset, an untouched config sends none; a stored start_timecode_default is dropped', async ({ page, api }) => {
     let d = await openDefault(page)
     const s = d.getByTestId('config-render'); await s.scrollIntoViewIfNeeded()

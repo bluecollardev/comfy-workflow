@@ -2,7 +2,7 @@ import { test, expect, modal, cfgTab } from './fixtures'
 import { t } from './i18n'
 
 // Every save says what happened: the time and the sections that changed after the core was asked again; a failure is red and stays; a save the core answered but did not keep is not called saved.
-const open = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'options'); return d }
+const open = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'publishing'); return d }   // Render sequences is in Publishing now
 const toast = (page) => page.locator('.toast')
 
 test.describe('Save feedback', () => {
