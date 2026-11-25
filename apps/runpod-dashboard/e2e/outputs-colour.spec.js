@@ -30,7 +30,7 @@ async function setup(page, api, { asked = [] } = {}) {
   return page.getByTestId('pod-outputs-modal')
 }
 /** Nothing downloads by itself: a frame's header is known once its preview was made, so the chips of a sequence get their header chip after Load preview. */
-const preview = async (tile) => { await tile.getByTestId('outputs-dpx-load-preview').click(); await expect(tile.getByTestId('outputs-dpx-thumb')).toBeVisible() }
+const preview = async (tile) => { await tile.scrollIntoViewIfNeeded(); await tile.getByTestId('outputs-dpx-load-preview').click(); await expect(tile.getByTestId('outputs-dpx-thumb')).toBeVisible() }
 const tileOf = (m, stem) => m.locator(`[data-testid="outputs-tile"][data-kind="dpx"][title*="${stem}"]`)
 
 test('Outputs: a sequence with a record shows its colour space and an amber chip when the header says linear; with no record the header\'s own words in grey; an unreadable record shows nothing', async ({ page, api }) => {
