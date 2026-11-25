@@ -23,9 +23,9 @@
         <div class="small text-body-secondary mb-2">{{ $t('storage.publishHint') }}</div>
         <slot name="publish"></slot>
       </div>
-      <div v-else-if="a.kind === 'panama'" class="mt-2 d-flex align-items-center gap-2 flex-wrap" data-testid="storage-panama-body">
-        <span class="small text-body-secondary">{{ $t('storage.panamaHint') }}</span>
-        <BButton size="sm" variant="outline-light" class="text-nowrap" data-testid="storage-edit-panama" @click="editPanama"><i class="fa-solid fa-pen me-1"></i>{{ $t('storage.editPanama') }}</BButton>
+      <div v-else-if="a.kind === 'panama'" class="mt-2" data-testid="storage-panama-body">
+        <div class="small text-body-secondary mb-2">{{ $t('storage.panamaHint') }}</div>
+        <slot name="panama"></slot>
       </div>
       <div v-else class="mt-2" :data-testid="`storage-body-${a.id}`">
         <div v-if="a.kind === 'wasabi'" class="small text-body-secondary mb-2">{{ $t('storage.wasabiHint') }}</div>
@@ -70,16 +70,15 @@
 <script setup>
 /**
  * StorageAdapters — Default Configuration > Adapters > Storage (docs/ADR-063): every S3-compatible storage with its on/off switch. The publish destination's form is the
- * `publish` slot (it keeps saving with the window's one Save), Panama's values stay in the Panama settings (a link), Wasabi and the ones you add are edited here.
+ * `publish` slot (it keeps saving with the window's one Save), Panama's form (the BH bucket keys, bucket, region, profile and pull on start) is the `panama` slot, Wasabi and the ones you add are edited here.
  */
 import { onMounted, reactive, ref } from 'vue'
 import { storageAPI, RESTART } from '../api/storage'
-import { useUiStore } from '../stores/ui'
 import { useConfirmStore } from '../stores/confirm'
 import { errorText } from '../stores/toast'
 import { t } from '../i18n'
 
-const ui = useUiStore(), confirm = useConfirmStore()
+const confirm = useConfirmStore()
 const adapters = ref([]), old = ref(false), error = ref(''), busy = ref(''), testing = ref(''), adding = ref(false)
 const restart = RESTART, gen = ref(0)   // a refused switch re-draws the checkbox so it shows what is saved
 const forms = reactive({}), results = reactive({})
@@ -118,5 +117,4 @@ async function create() {
   error.value = ''
   try { const r = await storageAPI.save({ ...draft }); adding.value = false; fill(r.adapters) } catch (e) { error.value = errorText(e) }
 }
-const editPanama = () => { ui.configFocus = 'panama'; ui.configOpen = true }
 </script>

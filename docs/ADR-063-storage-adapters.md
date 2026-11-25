@@ -4,7 +4,7 @@ Status: accepted, 2026-11-25. Lucas: "we have import adapters, but i think we ne
 
 ## Decision
 
-Default Configuration has an **Adapters** tab (it was "Import Adapters") with the import adapters (ADR-008, ADR-009: JavaScript files that map a package folder onto ComfyUI-Shared, unchanged). The **storage** adapters are the Storage group at the top of the **Publishing** tab (Lucas, 2026-11-25: "move these all to publishing"):
+Default Configuration has an **Adapters** tab (it was "Import Adapters") with the import adapters (ADR-008, ADR-009: JavaScript files that map a package folder onto ComfyUI-Shared, unchanged). The **storage** adapters have a **Storage tab** of their own (Lucas, 2026-11-25: "let's make a dedicated storage tab for all this", after "move these all to publishing"):
 
 - **Storage**: an adapter there is not code. It is one S3-compatible storage, a record of: id, name, endpoint (blank = AWS), region, bucket, directory (prefix), access key and secret key, and an `enabled` switch. Everything runs through the one `aws` runner, with `--endpoint-url` when an endpoint is set.
 
@@ -33,7 +33,7 @@ A publish uploads to `publish-s3` first, as before, and that result decides the 
 
 ### Where the values are edited
 
-The S3 block that was in Publishing (bucket, directory, region, link lifetime, endpoint, credentials, Test) is now the form inside the `publish-s3` card of the Storage group, with the same fields and test ids; Panama's card links to the Panama settings; Wasabi and your own are edited in their cards. Below the cards Publishing keeps what is about the act of publishing (Slack, which targets are on, the transfer route, the message). The window's one Save writes both.
+One tab, one card each. The S3 block that was in Publishing (bucket, directory, region, link lifetime, endpoint, credentials, Test) is the form inside the `publish-s3` card, with the same fields and test ids. The "Panama bucket (BH)" section that was under RunPod (access key, secret, bucket, region, AWS profile, Pull on pod start) is the form inside the `panama-s3` card, same fields and test ids, next to its on/off switch. Wasabi and your own are edited in their cards. Publishing keeps what is about the act of publishing (Slack, which targets are on, the transfer route, the message); Adapters keeps the import adapters. Also moved the same day: Outputs window, Prepare For Delivery and Render sequences to Publishing; Auto sync and Sync leave-out to Folders; the pod options (apply by default, default card, stock cards, import cap, no-spend) under Pod Configuration; the two "as saved" previews under the Configuration file panel; "Folders on this PC" is "Folders". The window's one Save writes all of it.
 
 ## Why
 
@@ -46,4 +46,4 @@ Three places held the same parameters under different names (the Publishing S3 b
 
 ## Tests
 
-`libs/core/src/storage.test.ts` (the record, the Wasabi endpoint, redaction, enable/disable, the Panama gate, the mirror loop with a fake `aws`); `e2e/storage-adapters.spec.js` (Adapters keeps the import adapters; Publishing has the Storage group, the three cards, enable/disable, Add Storage).
+`libs/core/src/storage.test.ts` (the record, the Wasabi endpoint, redaction, enable/disable, the Panama gate, the mirror loop with a fake `aws`); `e2e/storage-adapters.spec.js` (the Storage tab, Adapters keeps the import adapters, Publishing has no cards, the three cards with the Panama and publish forms, enable/disable, Add Storage).

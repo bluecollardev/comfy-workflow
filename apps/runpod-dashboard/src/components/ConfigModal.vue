@@ -76,40 +76,6 @@
             <div class="form-text">{{ $t('config.hfHelp') }} <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener">huggingface.co/settings/tokens</a></div>
           </BFormGroup>
         </BCol>
-        <BCol v-if="!gated" md="12"><hr class="my-1" /><div class="small fw-semibold" data-testid="cfg-panama-title">{{ $t('config.panamaTitle') }}</div><div class="form-text mt-0">{{ $t('config.panamaHelp') }}</div></BCol>
-        <BCol v-if="!gated" md="6">
-          <BFormGroup :label="$t('config.panamaAccess')" label-for="cfg-panama-access" data-testid="cfg-panama-group" :description="keyInfo.panama_aws_keys_set ? $t('config.panamaStored', { hint: keyInfo.panama_aws_access_key_hint }) : $t('config.panamaUnset')">
-            <BFormInput id="cfg-panama-access" v-model.trim="newPanama.access" autocomplete="off" placeholder="AKIA…" class="font-monospace" data-testid="cfg-panama-access" />
-          </BFormGroup>
-        </BCol>
-        <BCol v-if="!gated" md="6">
-          <BFormGroup :label="$t('config.panamaSecret')" label-for="cfg-panama-secret">
-            <BFormInput id="cfg-panama-secret" v-model.trim="newPanama.secret" type="password" autocomplete="off" class="font-monospace" data-testid="cfg-panama-secret" />
-          </BFormGroup>
-        </BCol>
-        <BCol v-if="!gated" md="5">
-          <BFormGroup :label="$t('config.panamaBucket')" label-for="cfg-panama-bucket" :description="$t('config.panamaBucketHelp')">
-            <div class="d-flex gap-1"><BFormInput id="cfg-panama-bucket" v-model.trim="panamaCfg.bucket" autocomplete="off" class="font-monospace" data-testid="cfg-panama-bucket" />
-              <BButton size="sm" variant="outline-light" class="text-nowrap" :disabled="panamaCfg.bucket === panamaDefaults.bucket" :title="$t('config.panamaReset')" data-testid="cfg-panama-bucket-reset" @click="panamaCfg.bucket = panamaDefaults.bucket"><i class="fa-solid fa-rotate-left"></i></BButton></div>
-          </BFormGroup>
-        </BCol>
-        <BCol v-if="!gated" md="3">
-          <BFormGroup :label="$t('config.panamaRegion')" label-for="cfg-panama-region">
-            <div class="d-flex gap-1"><BFormInput id="cfg-panama-region" v-model.trim="panamaCfg.region" autocomplete="off" class="font-monospace" data-testid="cfg-panama-region" />
-              <BButton size="sm" variant="outline-light" :disabled="panamaCfg.region === panamaDefaults.region" :title="$t('config.panamaReset')" data-testid="cfg-panama-region-reset" @click="panamaCfg.region = panamaDefaults.region"><i class="fa-solid fa-rotate-left"></i></BButton></div>
-          </BFormGroup>
-        </BCol>
-        <BCol v-if="!gated" md="4">
-          <BFormGroup :label="$t('config.panamaProfile')" label-for="cfg-panama-profile" :description="$t('config.panamaProfileHelp')">
-            <div class="d-flex gap-1"><BFormInput id="cfg-panama-profile" v-model.trim="panamaCfg.profile" autocomplete="off" class="font-monospace" data-testid="cfg-panama-profile" />
-              <BButton size="sm" variant="outline-light" :disabled="panamaCfg.profile === panamaDefaults.profile" :title="$t('config.panamaReset')" data-testid="cfg-panama-profile-reset" @click="panamaCfg.profile = panamaDefaults.profile"><i class="fa-solid fa-rotate-left"></i></BButton></div>
-          </BFormGroup>
-        </BCol>
-        <BCol v-if="!gated" md="12">
-          <BFormGroup :label="$t('config.panamaPull')" label-for="cfg-panama-pull" :description="$t('config.panamaPullHelp')">
-            <BFormInput id="cfg-panama-pull" v-model.trim="pullSetting" autocomplete="off" placeholder="bh-panama-exchange-610140802195/rounds/<round>=/workspace/comfy-shared/input/<round>" class="font-monospace" data-testid="cfg-panama-pull" />
-          </BFormGroup>
-        </BCol>
         <BCol v-if="!gated" md="12"><hr class="my-1" /><div class="small fw-semibold" data-testid="cfg-agent-title">{{ $t('config.agentTitle') }}</div><div class="form-text mt-0">{{ $t('config.agentHelp') }}</div></BCol>
         <BCol v-if="!gated" md="7">
           <BFormCheckbox v-model="agentRules.namedYes" switch data-testid="cfg-agent-named-yes">{{ $t('config.agentNamedYes') }}</BFormCheckbox>
@@ -361,13 +327,52 @@
       <fieldset v-if="!forPod && !gated" v-show="show('publishing')" class="cfg-section" data-section="publishing">
         <legend data-testid="section-publishing">{{ $t('publish.tab') }}</legend>
         <CollapsibleSection v-if="apStore.status?.watching" id="watching" :title="$t('autopublish.watch.title')" testid="autopublish-watching-block"><AutoPublishWatching :status="apStore.status" :skipped="true" compact /></CollapsibleSection>
-        <div class="small fw-semibold mb-1" data-testid="publish-group-storage">{{ $t('adapters.storageGroup') }}</div>
-        <StorageAdapters ref="storageRef"><template #publish><PublishSettings ref="pubS3Ref" part="s3" /></template></StorageAdapters>
-        <hr class="my-3" />
         <PublishSettings ref="pubRef" part="rest" />
         <div :id="`${slotId}-pub`"></div>   <!-- Outputs window, Prepare For Delivery and Render sequences land here (below) -->
         <EdlStatus v-if="!forPod" />
         <AutoPublishSettings v-if="cfg.auto_publish" v-model="cfg.auto_publish" :validate="apValidate" @changed="onApChanged" />
+      </fieldset>
+      <fieldset v-if="!forPod && !gated" v-show="show('storage')" class="cfg-section" data-section="storage">
+        <legend data-testid="section-storage">{{ $t('storage.tab') }}</legend>
+        <StorageAdapters ref="storageRef">
+          <template #publish><PublishSettings ref="pubS3Ref" part="s3" /></template>
+          <template #panama><BRow class="g-2">
+        <BCol v-if="!gated" md="12"><div class="small fw-semibold" data-testid="cfg-panama-title">{{ $t('config.panamaTitle') }}</div><div class="form-text mt-0">{{ $t('config.panamaHelp') }}</div></BCol>
+        <BCol v-if="!gated" md="6">
+          <BFormGroup :label="$t('config.panamaAccess')" label-for="cfg-panama-access" data-testid="cfg-panama-group" :description="keyInfo.panama_aws_keys_set ? $t('config.panamaStored', { hint: keyInfo.panama_aws_access_key_hint }) : $t('config.panamaUnset')">
+            <BFormInput id="cfg-panama-access" v-model.trim="newPanama.access" autocomplete="off" placeholder="AKIA…" class="font-monospace" data-testid="cfg-panama-access" />
+          </BFormGroup>
+        </BCol>
+        <BCol v-if="!gated" md="6">
+          <BFormGroup :label="$t('config.panamaSecret')" label-for="cfg-panama-secret">
+            <BFormInput id="cfg-panama-secret" v-model.trim="newPanama.secret" type="password" autocomplete="off" class="font-monospace" data-testid="cfg-panama-secret" />
+          </BFormGroup>
+        </BCol>
+        <BCol v-if="!gated" md="5">
+          <BFormGroup :label="$t('config.panamaBucket')" label-for="cfg-panama-bucket" :description="$t('config.panamaBucketHelp')">
+            <div class="d-flex gap-1"><BFormInput id="cfg-panama-bucket" v-model.trim="panamaCfg.bucket" autocomplete="off" class="font-monospace" data-testid="cfg-panama-bucket" />
+              <BButton size="sm" variant="outline-light" class="text-nowrap" :disabled="panamaCfg.bucket === panamaDefaults.bucket" :title="$t('config.panamaReset')" data-testid="cfg-panama-bucket-reset" @click="panamaCfg.bucket = panamaDefaults.bucket"><i class="fa-solid fa-rotate-left"></i></BButton></div>
+          </BFormGroup>
+        </BCol>
+        <BCol v-if="!gated" md="3">
+          <BFormGroup :label="$t('config.panamaRegion')" label-for="cfg-panama-region">
+            <div class="d-flex gap-1"><BFormInput id="cfg-panama-region" v-model.trim="panamaCfg.region" autocomplete="off" class="font-monospace" data-testid="cfg-panama-region" />
+              <BButton size="sm" variant="outline-light" :disabled="panamaCfg.region === panamaDefaults.region" :title="$t('config.panamaReset')" data-testid="cfg-panama-region-reset" @click="panamaCfg.region = panamaDefaults.region"><i class="fa-solid fa-rotate-left"></i></BButton></div>
+          </BFormGroup>
+        </BCol>
+        <BCol v-if="!gated" md="4">
+          <BFormGroup :label="$t('config.panamaProfile')" label-for="cfg-panama-profile" :description="$t('config.panamaProfileHelp')">
+            <div class="d-flex gap-1"><BFormInput id="cfg-panama-profile" v-model.trim="panamaCfg.profile" autocomplete="off" class="font-monospace" data-testid="cfg-panama-profile" />
+              <BButton size="sm" variant="outline-light" :disabled="panamaCfg.profile === panamaDefaults.profile" :title="$t('config.panamaReset')" data-testid="cfg-panama-profile-reset" @click="panamaCfg.profile = panamaDefaults.profile"><i class="fa-solid fa-rotate-left"></i></BButton></div>
+          </BFormGroup>
+        </BCol>
+        <BCol v-if="!gated" md="12">
+          <BFormGroup :label="$t('config.panamaPull')" label-for="cfg-panama-pull" :description="$t('config.panamaPullHelp')">
+            <BFormInput id="cfg-panama-pull" v-model.trim="pullSetting" autocomplete="off" placeholder="bh-panama-exchange-610140802195/rounds/<round>=/workspace/comfy-shared/input/<round>" class="font-monospace" data-testid="cfg-panama-pull" />
+          </BFormGroup>
+        </BCol>
+          </BRow></template>
+        </StorageAdapters>
       </fieldset>
       <fieldset v-if="!forPod && !gated" v-show="show('adapters')" class="cfg-section" data-section="adapters">
         <legend data-testid="section-adapters">{{ $t('adapters.section') }}</legend>
@@ -613,7 +618,7 @@ const tabList = computed(() => [
   { key: 'volume', label: forPod.value ? t('config.volumePod') : t('config.volume') },
   { key: 'folders', label: t('config.folders') },
   { key: 'environment', label: t('config.environment') },
-  ...(forPod.value ? [] : [{ key: 'adapters', label: t('adapters.section') }, { key: 'publishing', label: t('publish.tab') }]),
+  ...(forPod.value ? [] : [{ key: 'storage', label: t('storage.tab') }, { key: 'adapters', label: t('adapters.section') }, { key: 'publishing', label: t('publish.tab') }]),
   ...(forPod.value ? [{ key: 'options', label: t('config.options') }] : []),
 ])
 /** A section shows when the sections flow (narrow), when only the key is asked for (gated), or when its tab is the open one. */
@@ -908,14 +913,14 @@ async function focusSection() {
   }
   if (where === 'publishing') { tab.value = 'publishing'; await nextTick(); document.querySelector('[data-testid="section-publishing"]')?.scrollIntoView({ block: 'start' }) }
   if (where === 'adapters') { tab.value = 'adapters'; await nextTick(); document.querySelector('[data-testid="section-adapters"]')?.scrollIntoView({ block: 'start' }) }
-  if (where === 'panama') { tab.value = 'runpod'; await nextTick(); await scrollToField('cfg-panama-access') }
+  if (where === 'panama') { tab.value = 'storage'; await nextTick(); await scrollToField('cfg-panama-access', 'storage') }
   if (where === 's3') await scrollToField('cfg-s3-access')    // from Browse / Erase / Clone: the RunPod S3 key fields, in view and focused
   if (where === 'claude') await scrollToField('cfg-claude-key')
 }
 /** Open on a field: wait for it (the body loads first), centre it and focus it, then centre it again once the lists
  *  that load beside it (volumes, datacenters, cards) have settled the layout; a single scroll right away ended up out of view. */
-async function scrollToField(id) {
-  tab.value = 'runpod'
+async function scrollToField(id, where = 'runpod') {
+  tab.value = where
   let input = null
   for (let i = 0; i < 30 && !input; i++) { await nextTick(); input = document.getElementById(id); if (!input) await new Promise((r) => setTimeout(r, 100)) }
   if (!input) return
@@ -940,7 +945,7 @@ function onHide(ev) {   // the X, Escape or a click outside
 async function save() {
   if (!gated.value && (!autoSyncOk() || !renderOk() || !syncExcludeOk() || !folderExOk())) return
   if (!gated.value && cfg.value?.auto_publish?.enabled && apProblem(cfg.value.auto_publish)) { apValidate.value = true; tab.value = 'publishing'; return }
-  if (!gated.value && pubS3Ref.value?.validate()) { tab.value = 'publishing'; return }   // the destination's form is in Publishing > Storage (docs/ADR-063)
+  if (!gated.value && pubS3Ref.value?.validate()) { tab.value = 'storage'; return }   // the destination's form is the publish-s3 card in the Storage tab (docs/ADR-063)
   if (!gated.value && pubRef.value?.validate()) { tab.value = 'publishing'; return }   // both are checked before anything is written
   saving.value = true; error.value = null
   const wasGated = gated.value
@@ -995,7 +1000,7 @@ async function save() {
   }
   if (pubS3Ref.value?.dirty) {
     const pr = await pubS3Ref.value.save()
-    if (!pr.ok) { saving.value = false; error.value = t('publish.partialSave', { reason: pr.error }); tab.value = 'publishing'; await nextTick(); document.querySelector('[data-testid="publish-field-error"]')?.scrollIntoView({ block: 'center' }); return }
+    if (!pr.ok) { saving.value = false; error.value = t('publish.partialSave', { reason: pr.error }); tab.value = 'storage'; await nextTick(); document.querySelector('[data-testid="publish-field-error"]')?.scrollIntoView({ block: 'center' }); return }
   }
   saving.value = false
   forceClose = true
