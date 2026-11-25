@@ -436,7 +436,9 @@ const volumeId_ = computed(() => props.volumeId)
 const go = (prefix) => { if (allActive.value || (scope.value === 'all' && volAll.running)) setScope('folder'); return loadVolume(prefix) }
 /** Folders the volume says are empty (folder_info): greyed with (empty), and hidden by default. */
 let hideTouched = false
-const showStereo = ref(true)   // ADR-058: the Overall / Left Eye / Right Eye slots of a sequence; off shows the sequences as before
+const STEREO_KEY = 'outputs.showStereo'
+const showStereo = ref((() => { try { return localStorage.getItem(STEREO_KEY) !== 'false' } catch { return true } })())   // remembered per viewer; ADR-058: the Overall / Left Eye / Right Eye slots of a sequence; off shows the sequences as before
+watch(showStereo, (v) => { try { localStorage.setItem(STEREO_KEY, String(v)) } catch { /* storage blocked */ } })
 const hideEmpty = ref(mountsStore.config?.outputs?.hide_empty_folders !== false)   // the Default Configuration's starting value (true when it has none); changes stay with this window
 watch(hideEmpty, () => { hideTouched = true })
 const shownFolders = computed(() => (hideEmpty.value ? vol.folders.filter((f) => !vol.info[f]?.empty) : vol.folders))

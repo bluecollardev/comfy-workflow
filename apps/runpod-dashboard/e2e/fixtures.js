@@ -1334,6 +1334,7 @@ export const test = base.extend({
   // auto: every test is mocked, even ones that never touch `api`, so no spec can reach the real backend.
   api: [
     async ({ page }, use) => {
+      await page.addInitScript(() => { try { localStorage.setItem('outputs.showStereo', 'false') } catch {} })   // the four-slot Outputs layout is narrow: only its own specs turn it on
       const state = defaultState()
       const calls = await mockApi(page, state)
       await use({ state, calls })

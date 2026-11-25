@@ -25,6 +25,7 @@ export function withEyeSlots(tiles) {
   for (const t of tiles) if (isSeq(t)) {
     t.eye = eyeRoleOf(t.name || t.file.filename)
     const k = elOf(t)
+    t.el = k
     if (!els.has(k)) els.set(k, [])
     els.get(k).push(t)
   }
@@ -37,7 +38,7 @@ export function withEyeSlots(tiles) {
     for (const role of EYE_ORDER) {
       const have = els.get(k).filter((x) => x.eye === role)
       if (have.length) out.push(...have)
-      else out.push({ key: `eyeslot:${k}:${role}`, kind: 'eyeslot', eye: role, stem: k.split('\u0000')[1] })
+      else out.push({ key: `eyeslot:${k}:${role}`, kind: 'eyeslot', el: k, eye: role, stem: k.split('\u0000')[1] })
     }
   }
   return out

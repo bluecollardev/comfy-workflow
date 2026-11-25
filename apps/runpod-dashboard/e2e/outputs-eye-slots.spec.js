@@ -11,6 +11,7 @@ const run = (outputs) => ({ prompt_id: 'eeeeeeee-1111-2222', workflow: 'x.json',
 async function open(page, api, outputs) {
   api.state.history.runs['pod-aaaaaaaa'] = [run(outputs)]
   await page.context().route('**/view?*', (r) => r.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: tinyDpx() }))
+  await page.addInitScript(() => { try { localStorage.setItem('outputs.showStereo', 'true') } catch {} })
   await page.goto('/')
   await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click()
   return page.getByTestId('pod-outputs-modal')
@@ -69,4 +70,13 @@ test('Show Stereoscopic Outputs sits above Hide Empty Folders and turns the eye 
   await expect(m.locator('[data-testid="outputs-tile"][data-kind="dpx"]')).toHaveCount(1)
   await box.check()
   await expect(m.getByTestId('outputs-eye-slot')).toHaveCount(3)
+})
+
+test('The four slots are on the first row; their previews, Load Frame Previews and expand/collapse are on the row below', async ({ page, api }) => {
+  const m = await open(page, api, [...seq('clip_v008_R'), ...seq('clip_v008_L'), ...seq('clip_v008_PACK'), ...seq('clip_v008_SBS')])
+  const tile = await m.locator('[data-testid="outputs-tile"][data-kind="dpx"]').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)))
+  const tog = await m.locator('.sqbot').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)))
+  expect(new Set(tile).size).toBe(1)
+  expect(new Set(tog).size).toBe(1)
+  expect(tog[0]).toBeGreaterThan(tile[0])
 })
