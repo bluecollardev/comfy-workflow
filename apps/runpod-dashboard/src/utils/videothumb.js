@@ -5,6 +5,7 @@
  * is kept in memory by address so a second open costs nothing, and a capture that does not finish in 60 s (`reason: 'timeout'`, the tile offers one retry), or whose codec the page cannot decode (HEVC, ProRes: `reason: 'error'`), ends as '' with
  * no automatic retry. `stats` is exposed for the specs (window.__videoThumb).
  */
+import { imageKey, sharedImages } from './imgcache'
 export const MAX_AT_ONCE = 2, TIMEOUT_MS = 60000, WIDTH = 320
 /** The capture time limit: 60 s (Lucas's link gave 1 to 14 s to the first byte and about 25 KB/s; an 8 MB mp4 with its index at the end needs a minute). The specs lower it through window.__videoThumbLimits.timeoutMs. */
 export const limits = { timeoutMs: TIMEOUT_MS }
@@ -43,11 +44,25 @@ function grab(src) {
   })
 }
 
+// The captured frame survives a refresh or restart (docs/ADR-060): the small JPEG is kept under the video's address (without the host), its size beside it; a hit costs no <video> at all.
+const frameKey = (src) => `frame|${imageKey(src)}`
+async function fromStore(src) {
+  try {
+    const b = await sharedImages().get(frameKey(src)); if (!b) return null
+    const url = await new Promise((res, rej) => { const f = new FileReader(); f.onload = () => res(String(f.result)); f.onerror = rej; f.readAsDataURL(b) })
+    const [w, h] = String(b.stamp || '0x0').split('x').map(Number)
+    return { url, w: w || 0, h: h || 0, reason: '', saved: true }
+  } catch { return null }
+}
+async function keep(src, r) {
+  try { const blob = await (await fetch(r.url)).blob(); await sharedImages().set(frameKey(src), blob, `${r.w}x${r.h}`) } catch { /* no storage: the capture is still shown */ }
+}
+
 function pump() {
   while (stats.active < MAX_AT_ONCE && waiting.length) {
     const { src, resolve } = waiting.shift()
     stats.active++; stats.max = Math.max(stats.max, stats.active); stats.started++
-    grab(src).then((r) => { done.set(src, r); if (!r.url) stats.failed++; resolve(r) }).finally(() => { stats.active--; inflight.delete(src); pump() })
+    fromStore(src).then((hit) => hit || grab(src)).then((r) => { done.set(src, r); if (!r.url) stats.failed++; else if (!r.saved) keep(src, r); resolve(r) }).finally(() => { stats.active--; inflight.delete(src); pump() })
   }
 }
 

@@ -104,7 +104,7 @@
         <div v-if="isExpanded(t)" class="frames" data-testid="outputs-seq-frames" :data-shown="shownFrames(t).length">
           <div class="small text-body-secondary mb-1" data-testid="outputs-seq-frames-count">{{ $t('outputs.dpx.framesShown', { shown: shownFrames(t).length, total: t.frames.length }) }}</div>
           <div class="framelist">
-            <button v-for="(f, i) in shownFrames(t)" :key="f.filename" type="button" class="frame" :class="{ hasprev: !!frameImg(t, f) }" data-testid="outputs-seq-frame" :disabled="offline" :title="f.filename" @click="openAt(t, i)"><img v-if="frameImg(t, f)" :src="frameImg(t, f)" alt="" class="fthumb" loading="lazy" decoding="async" data-testid="outputs-seq-frame-thumb" /><span class="frameline"><span>{{ frameNo(f) }}</span><i v-if="frameFailed(t, f)" class="fa-solid fa-triangle-exclamation text-warning" :title="frameFailed(t, f)" data-testid="outputs-seq-frame-warn"></i><span v-if="f.bytes != null" class="text-body-secondary">{{ sizeText(f.bytes) }}</span></span></button>
+            <button v-for="(f, i) in shownFrames(t)" :key="f.filename" type="button" class="frame" :class="{ hasprev: !!frameImg(t, f) }" data-testid="outputs-seq-frame" :disabled="offline" :title="f.filename" @click="openAt(t, i)"><CachedImg v-if="frameImg(t, f)" :src="frameImg(t, f)" alt="" class="fthumb" loading="lazy" decoding="async" data-testid="outputs-seq-frame-thumb" /><span class="frameline"><span>{{ frameNo(f) }}</span><i v-if="frameFailed(t, f)" class="fa-solid fa-triangle-exclamation text-warning" :title="frameFailed(t, f)" data-testid="outputs-seq-frame-warn"></i><span v-if="f.bytes != null" class="text-body-secondary">{{ sizeText(f.bytes) }}</span></span></button>
           </div>
           <PageSentinel :more="shownFrames(t).length < t.frames.length" :shown="shownFrames(t).length" @more="showMore(t)" />
           <div v-if="shownFrames(t).length < t.frames.length" class="d-flex gap-2 mt-2">
@@ -143,6 +143,7 @@ import { viewUrl, galleryTiles, sizeText, isDpx } from '../utils/outputs'
 import { isExpanded, toggleSeq, setAll, shownFrames, showMore, showAll, groupView, groupExpanded, toggleGroup, shownFiles, groupMore, groupShowAll, setShowTemp, HAS_IO } from '../utils/dpxcollapse'
 import { isTemp, groupTiles, tempGroup, shortName, dataFilesOf } from '../utils/videogroups'
 import { withEyeSlots, eyeRoleOf, slotStemOf } from '../utils/eyeroles'
+import CachedImg from './CachedImg.vue'
 import { availableFrames } from '../utils/framepreviews'
 import { previewed } from '../utils/filmstrip'
 import { fpState, startJob, stopJob, queueListing, previewUrl, thumbUrl, posterUrl, jpgName, inJob, jobRunning, jobDone, failedOf, failReason } from '../utils/framejob'

@@ -1,7 +1,7 @@
 <template>
   <div ref="root" class="strip" :class="{ grid: rows > 1 }" :style="rows > 1 ? { gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` } : undefined" role="group" :aria-label="$t('outputs.strip.label')" data-testid="outputs-seq-strip" :data-count="shown.length" :data-fit="fit" :data-cols="cols" :data-rows="rows" :data-more="more">
     <button v-for="s in shown" :key="s.index" type="button" class="sf" :disabled="disabled" :title="`${$t('outputs.strip.frame', { n: s.no })} · ${s.name}`" data-testid="outputs-seq-strip-frame" :data-index="s.index" @click="$emit('open', s.index)">
-      <img :src="s.src" alt="" class="sfimg" loading="lazy" decoding="async" @load="onImg" />
+      <CachedImg :src="s.src" alt="" class="sfimg" loading="lazy" decoding="async" @load="onImg" />
       <span class="sfno">{{ s.no }}</span>
     </button>
     <button v-if="more > 0" type="button" class="sf sfmore" :disabled="disabled" :title="$t('outputs.strip.moreTitle')" data-testid="outputs-seq-strip-more" @click="$emit('more')">{{ $t('outputs.strip.more', { n: more }) }}</button>
@@ -16,6 +16,7 @@
  * image has loaded). It makes no request of its own: the images are tiny and mount lazily, and only the slots' worth of them exist at a time. No previews, no strip: nothing extra is drawn.
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import CachedImg from './CachedImg.vue'
 import { fitCount, pickSamples } from '../utils/filmstrip'
 
 const props = defineProps({
