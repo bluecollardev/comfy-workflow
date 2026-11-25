@@ -2611,15 +2611,10 @@
     "panamaHint": "The bucket rounds are pulled from. While it is off, listing, browsing and pulling rounds are refused.",
     "editPanama": "Edit Panama Settings",
     "wasabiHint": "Wasabi is S3 compatible: add the bucket and keys, test, then switch it on. Publishing then copies each file there too.",
-    "none": "No storage of your own yet.",
-    "editInAdapters": "Edit In Adapters",
-    "publishSummary": "The destination is set in Adapters: {dest}",
-    "mirrorNote": "Also copied to: {names}",
-    "mirrorNone": "No other storage is on. Switch one in Adapters on to copy there too."
+    "none": "No storage of your own yet."
   },
   "adapters": {
     "section": "Adapters",
-    "importGroup": "Import",
     "storageGroup": "Storage",
     "hint": "An adapter is a small JavaScript file that maps a package folder onto ComfyUI-Shared. Edit opens it in the Adapter Studio, built-ins included (editing a built-in makes an override; Reset undoes it). Duplicate copies one under a new id. There is no approval step; an adapter only ever runs fenced, with read access to the folder it is given and no write access.",
     "count": "{n} adapters",

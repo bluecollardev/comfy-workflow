@@ -1,5 +1,4 @@
 import axios from 'axios'
-import { ref } from 'vue'
 import { core } from './bridge'
 import { API_BASE } from './pods'
 
@@ -27,13 +26,10 @@ const http = {
   test: guard(async (id) => (await axios.post(`${API_BASE}/storage/${encodeURIComponent(id)}/test`)).data, mustRestart),
 }
 const raw = ipc || http
-/** The names of the storages (other than the publish destination and Panama) that are on: Publishing says it also copies there. Every answer here refreshes it. */
-export const mirrorNames = ref([])
-const seen = (adapters) => { mirrorNames.value = adapters.filter((a) => a.enabled && a.kind !== 'publish' && a.kind !== 'panama').map((a) => a.name); return adapters }
 export const storageAPI = {
-  list: async () => { const r = (await raw.list()) || {}; return { old: !!r.old, adapters: seen(Array.isArray(r.adapters) ? r.adapters : []) } },
-  save: async (o) => { const r = (await raw.save(o)) || {}; return { old: false, adapters: seen(r.adapters || []) } },
-  setEnabled: async (id, on) => { const r = (await raw.setEnabled(id, on)) || {}; return { old: false, adapters: seen(r.adapters || []) } },
-  remove: async (id) => { const r = (await raw.remove(id)) || {}; return { old: false, adapters: seen(r.adapters || []) } },
+  list: async () => { const r = (await raw.list()) || {}; return { old: !!r.old, adapters: (Array.isArray(r.adapters) ? r.adapters : []) } },
+  save: async (o) => { const r = (await raw.save(o)) || {}; return { old: false, adapters: (r.adapters || []) } },
+  setEnabled: async (id, on) => { const r = (await raw.setEnabled(id, on)) || {}; return { old: false, adapters: (r.adapters || []) } },
+  remove: async (id) => { const r = (await raw.remove(id)) || {}; return { old: false, adapters: (r.adapters || []) } },
   test: async (id) => (await raw.test(id)) || { ok: false, detail: '' },
 }

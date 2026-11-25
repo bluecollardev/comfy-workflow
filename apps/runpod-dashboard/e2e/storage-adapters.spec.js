@@ -3,28 +3,21 @@ import { t } from './i18n'
 
 // Storage adapters (docs/ADR-063): Default Configuration > Adapters has an Import group and a Storage group. A storage adapter is one S3-compatible storage with an on/off switch.
 // Built in: the publish destination (its form moved here from Publishing), Panama, and Wasabi. The core is faked (state.storage in e2e/fixtures.js).
-const open = async (page, tab = 'adapters') => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, tab); return d }
+const open = async (page, tab = 'publishing') => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, tab); return d }
 const card = (d, id) => d.locator(`[data-testid="storage-card"][data-id="${id}"]`)
 const calls = (api, k) => (api.state.storage?.calls || []).filter((c) => k in c).map((c) => c[k])
 
-test('The tab is called Adapters and has an Import group and a Storage group; the storage list is the publish destination, Panama and Wasabi', async ({ page }) => {
-  const d = await open(page)
-  await expect(d.getByTestId('section-adapters')).toHaveText('Adapters')
-  await expect(d.getByTestId('adapters-group-import')).toHaveText('Import'); await expect(d.getByTestId('adapters-group-storage')).toHaveText('Storage')
+test('Adapters keeps the import adapters; Publishing starts with a Storage group of the publish destination, Panama and Wasabi', async ({ page }) => {
+  const d = await open(page, 'adapters')
+  await expect(d.getByTestId('section-adapters')).toHaveText('Adapters'); await expect(d.getByTestId('adapter-manager')).toBeVisible(); await expect(d.getByTestId('storage-card').first()).toBeHidden()   // the storage cards are on the Publishing tab
+  await cfgTab(d, 'publishing')
+  await expect(d.getByTestId('publish-group-storage')).toHaveText('Storage')
   await expect(d.getByTestId('storage-card')).toHaveCount(3)
   await expect(d.getByTestId('storage-card').evaluateAll((els) => els.map((e) => e.dataset.id))).resolves.toEqual(['publish-s3', 'panama-s3', 'wasabi'])
   await expect(card(d, 'publish-s3')).toHaveAttribute('data-enabled', 'true'); await expect(card(d, 'panama-s3')).toHaveAttribute('data-enabled', 'true'); await expect(card(d, 'wasabi')).toHaveAttribute('data-enabled', 'false')
   await expect(card(d, 'wasabi').getByTestId('storage-ready')).toHaveText('not ready')
-})
-
-test('The publish destination form lives in the Storage group, and Publishing keeps a summary with Edit In Adapters', async ({ page }) => {
-  const d = await open(page)
-  await expect(card(d, 'publish-s3').getByTestId('publish-s3-bucket')).toHaveValue('bh-panama-exchange-610140802195')
-  await cfgTab(d, 'publishing')
-  await expect(d.getByTestId('publish-s3-summary')).toContainText('s3://bh-panama-exchange-610140802195/returns/BKK/')
-  await expect(d.getByTestId('publish-mirror-note')).toHaveText(t('storage.mirrorNone'))
-  await d.getByTestId('publish-edit-in-adapters').click()
-  await expect(d.getByTestId('storage-publish-body')).toBeVisible()
+  await expect(card(d, 'publish-s3').getByTestId('publish-s3-bucket')).toHaveValue('bh-panama-exchange-610140802195')   // the destination's form is its card
+  await expect(d.getByTestId('settings-publishing').getByTestId('publish-default-message')).toBeVisible()   // targets and the message follow the cards
 })
 
 test('Wasabi: add the bucket and keys, test, then switch it on; it cannot be switched on before', async ({ page, api }) => {
@@ -41,8 +34,6 @@ test('Wasabi: add the bucket and keys, test, then switch it on; it cannot be swi
   await w.getByTestId('storage-test').click(); await expect(w.getByTestId('storage-test-result')).toHaveText('OK: bh-wasabi answered')
   await w.getByTestId('storage-enabled').click({ force: true })
   await expect(w).toHaveAttribute('data-enabled', 'true'); expect(calls(api, 'enable')).toEqual(['wasabi', 'wasabi'])   // the first click was refused: no bucket, no keys
-  await cfgTab(d, 'publishing')
-  await expect(d.getByTestId('publish-mirror-note')).toHaveText('Also copied to: Wasabi')   // publishing copies to every storage that is on
 })
 
 test('Add Storage makes your own S3-compatible adapter, and Delete removes it after a confirm', async ({ page, api }) => {

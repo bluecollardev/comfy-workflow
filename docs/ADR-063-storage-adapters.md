@@ -4,10 +4,9 @@ Status: accepted, 2026-11-25. Lucas: "we have import adapters, but i think we ne
 
 ## Decision
 
-Default Configuration has an **Adapters** tab (it was "Import Adapters") with two groups:
+Default Configuration has an **Adapters** tab (it was "Import Adapters") with the import adapters (ADR-008, ADR-009: JavaScript files that map a package folder onto ComfyUI-Shared, unchanged). The **storage** adapters are the Storage group at the top of the **Publishing** tab (Lucas, 2026-11-25: "move these all to publishing"):
 
-- **Import** (ADR-008, ADR-009): JavaScript files that map a package folder onto ComfyUI-Shared. Unchanged.
-- **Storage**: an adapter here is not code. It is one S3-compatible storage, a record of: id, name, endpoint (blank = AWS), region, bucket, directory (prefix), access key and secret key, and an `enabled` switch. Everything runs through the one `aws` runner, with `--endpoint-url` when an endpoint is set.
+- **Storage**: an adapter there is not code. It is one S3-compatible storage, a record of: id, name, endpoint (blank = AWS), region, bucket, directory (prefix), access key and secret key, and an `enabled` switch. Everything runs through the one `aws` runner, with `--endpoint-url` when an endpoint is set.
 
 ### The built-in storage adapters
 
@@ -34,7 +33,7 @@ A publish uploads to `publish-s3` first, as before, and that result decides the 
 
 ### Where the values are edited
 
-The S3 block that was in Publishing (bucket, directory, region, link lifetime, endpoint, credentials, Test) moves to **Adapters > Storage**, as the `publish-s3` card, with the same fields and test ids. Publishing keeps what is about the act of publishing (Slack, which targets are on, the transfer route, the message) and shows the destination as a summary with **Edit in Adapters**, a link to that tab. The window's one Save writes both.
+The S3 block that was in Publishing (bucket, directory, region, link lifetime, endpoint, credentials, Test) is now the form inside the `publish-s3` card of the Storage group, with the same fields and test ids; Panama's card links to the Panama settings; Wasabi and your own are edited in their cards. Below the cards Publishing keeps what is about the act of publishing (Slack, which targets are on, the transfer route, the message). The window's one Save writes both.
 
 ## Why
 
@@ -47,4 +46,4 @@ Three places held the same parameters under different names (the Publishing S3 b
 
 ## Tests
 
-`libs/core/src/storage.test.ts` (the record, the Wasabi endpoint, redaction, enable/disable, the Panama gate, the mirror loop with a fake `aws`); `e2e/storage-adapters.spec.js` (the tab and group names, the three cards, enable/disable, Add Storage, Edit in Adapters from Publishing); the Publishing specs now open the Adapters tab for the S3 fields.
+`libs/core/src/storage.test.ts` (the record, the Wasabi endpoint, redaction, enable/disable, the Panama gate, the mirror loop with a fake `aws`); `e2e/storage-adapters.spec.js` (Adapters keeps the import adapters; Publishing has the Storage group, the three cards, enable/disable, Add Storage).
