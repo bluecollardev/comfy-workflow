@@ -293,13 +293,17 @@
       <fieldset v-if="!forPod && !gated" v-show="show('publishing')" class="cfg-section" data-section="publishing">
         <legend data-testid="section-publishing">{{ $t('publish.tab') }}</legend>
         <CollapsibleSection v-if="apStore.status?.watching" id="watching" :title="$t('autopublish.watch.title')" testid="autopublish-watching-block"><AutoPublishWatching :status="apStore.status" :skipped="true" compact /></CollapsibleSection>
-        <PublishSettings ref="pubRef" />
+        <PublishSettings ref="pubRef" part="rest" />
         <EdlStatus v-if="!forPod" />
         <AutoPublishSettings v-if="cfg.auto_publish" v-model="cfg.auto_publish" :validate="apValidate" @changed="onApChanged" />
       </fieldset>
       <fieldset v-if="!forPod && !gated" v-show="show('adapters')" class="cfg-section" data-section="adapters">
         <legend data-testid="section-adapters">{{ $t('adapters.section') }}</legend>
+        <div class="small fw-semibold mb-1" data-testid="adapters-group-import">{{ $t('adapters.importGroup') }}</div>
         <AdapterManager />
+        <hr class="my-3" />
+        <div class="small fw-semibold mb-1" data-testid="adapters-group-storage">{{ $t('adapters.storageGroup') }}</div>
+        <StorageAdapters ref="storageRef"><template #publish><PublishSettings ref="pubS3Ref" part="s3" /></template></StorageAdapters>
       </fieldset>
       <fieldset v-show="show('options')" class="cfg-section" data-section="options">
         <legend>{{ $t('config.options') }}</legend>
@@ -492,6 +496,7 @@ import { usePanamaStore } from '../stores/panama'
 import { t } from '../i18n'
 import FolderPicker from './FolderPicker.vue'
 import AdapterManager from './AdapterManager.vue'
+import StorageAdapters from './StorageAdapters.vue'
 import PublishSettings from './PublishSettings.vue'
 import AutoPublishSettings from './AutoPublishSettings.vue'
 import AutoPublishWatching from './AutoPublishWatching.vue'
@@ -916,8 +921,8 @@ async function scrollToField(id) {
   for (const ms of [250, 700, 1500]) setTimeout(() => { if (document.activeElement === input) input.scrollIntoView({ block: 'center' }) }, ms)
 }
 
-const pubRef = ref(null), confirm = useConfirmStore()
-const pubDirty = computed(() => !!pubRef.value?.dirty || apDirty.value)
+const pubRef = ref(null), pubS3Ref = ref(null), storageRef = ref(null), confirm = useConfirmStore()
+const pubDirty = computed(() => !!pubRef.value?.dirty || !!pubS3Ref.value?.dirty || apDirty.value)
 let forceClose = false
 /** Close, asking first when Publishing has edits nobody saved. */
 async function closeWindow() {
@@ -931,6 +936,7 @@ function onHide(ev) {   // the X, Escape or a click outside
 async function save() {
   if (!gated.value && (!autoSyncOk() || !renderOk() || !syncExcludeOk() || !folderExOk())) return
   if (!gated.value && cfg.value?.auto_publish?.enabled && apProblem(cfg.value.auto_publish)) { apValidate.value = true; tab.value = 'publishing'; return }
+  if (!gated.value && pubS3Ref.value?.validate()) { tab.value = 'adapters'; return }   // the destination's form is in Adapters (docs/ADR-063)
   if (!gated.value && pubRef.value?.validate()) { tab.value = 'publishing'; return }   // both are checked before anything is written
   saving.value = true; error.value = null
   const wasGated = gated.value
@@ -982,6 +988,10 @@ async function save() {
   if (pubRef.value?.dirty) {
     const pr = await pubRef.value.save()
     if (!pr.ok) { saving.value = false; error.value = t('publish.partialSave', { reason: pr.error }); tab.value = 'publishing'; await nextTick(); document.querySelector('[data-testid="publish-field-error"]')?.scrollIntoView({ block: 'center' }); return }
+  }
+  if (pubS3Ref.value?.dirty) {
+    const pr = await pubS3Ref.value.save()
+    if (!pr.ok) { saving.value = false; error.value = t('publish.partialSave', { reason: pr.error }); tab.value = 'adapters'; await nextTick(); document.querySelector('[data-testid="publish-field-error"]')?.scrollIntoView({ block: 'center' }); return }
   }
   saving.value = false
   forceClose = true

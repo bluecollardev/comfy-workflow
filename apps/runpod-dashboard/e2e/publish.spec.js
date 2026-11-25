@@ -21,27 +21,34 @@ const openModal = async (page) => { await page.goto('/'); await podCard(page, 'C
 const tick = (m, p) => m.locator(`[data-testid="publish-entry-check"][data-path="${p}"]`)
 const openSettings = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'publishing'); return d }
 
+const openAdapters = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'adapters'); return d }   // the S3 destination's form is in Adapters > Storage (docs/ADR-063)
+const dest = (d) => d.getByTestId('settings-publish-destination')
+
 const openConnectSlack = async (page) => { await page.goto('/'); await page.getByTestId('open-connect').click(); const d = modal(page, t('connect.title')); await d.getByRole('tab', { name: t('connect.slack') }).click(); await expect(d.getByTestId('slack-pane')).toBeVisible(); return d }
 
 test.describe('Settings > Publishing', () => {
   test('the S3 block opens with the Panama exchange bucket, returns/BKK/ and the Panama credentials already set, with the core\'s note', async ({ page, api }) => {
-    const d = await openSettings(page)
-    const s = d.getByTestId('settings-publishing')
-    await expect(s.getByTestId('publish-settings-note')).toHaveText('Nothing is configured until you enter it. Publishing always asks who says yes.')
+    const d = await openAdapters(page)
+    const s = dest(d)
     await expect(s.getByTestId('publish-s3-bucket')).toHaveValue('bh-panama-exchange-610140802195'); await expect(s.getByTestId('publish-s3-prefix')).toHaveValue('returns/BKK/'); await expect(s.getByTestId('publish-s3-region')).toHaveValue('us-west-2')
     await expect(s.getByTestId('publish-s3-preview')).toHaveText('Files go to s3://bh-panama-exchange-610140802195/returns/BKK/')
     await expect(s.getByTestId('publish-s3-cred-panama')).toBeChecked(); await expect(s.getByTestId('publish-s3-access-key')).toHaveCount(0)
     await expect(s.getByTestId('publish-s3-note')).toHaveText('Lucas, 2026-11-19: Panama exchange bucket, returns/BKK/')
     await expect(s.getByTestId('publish-s3-ready')).toHaveText('ready')
-    await expect(s.getByTestId('publish-default-s3')).toBeChecked(); await expect(s.getByTestId('publish-default-message')).toHaveValue('{shot} {version} is on S3: {links}')
-    await expect(s.getByTestId('publish-placeholders')).toContainText('{shot} {version} {files} {size} {links} {dest} {who} {channel}')
+    await cfgTab(d, 'publishing')   // Publishing keeps the targets, the message and a summary of the destination with a link to Adapters
+    const s2 = d.getByTestId('settings-publishing')
+    await expect(s2.getByTestId('publish-settings-note')).toHaveText('Nothing is configured until you enter it. Publishing always asks who says yes.')
+    await expect(s2.getByTestId('publish-s3-summary')).toContainText('s3://bh-panama-exchange-610140802195/returns/BKK/')
+    await expect(s2.getByTestId('publish-s3-bucket')).toHaveCount(0)   // the form moved
+    await expect(s2.getByTestId('publish-default-s3')).toBeChecked(); const s3x = s2; await expect(s3x.getByTestId('publish-default-message')).toHaveValue('{shot} {version} is on S3: {links}')
+    await expect(s3x.getByTestId('publish-placeholders')).toContainText('{shot} {version} {files} {size} {links} {dest} {who} {channel}')
     await expect(d.getByText('Check the bucket with Kyle')).toHaveCount(0)
   })
   const footerSave = async (d) => { await d.getByTestId('config-save').click(); await expect(d).toBeHidden() }
-  const reopen = async (page) => { await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'publishing'); return d }
+  const reopen = async (page, tab = 'adapters') => { await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, tab); return d }
   test('there is no Save of its own: the window\'s Save writes the configuration and then the publishing edits, and only changed secrets are sent', async ({ page, api }) => {
-    let d = await openSettings(page)
-    let s = d.getByTestId('settings-publishing')
+    let d = await openAdapters(page)
+    let s = dest(d)
     await expect(s.getByTestId('publish-settings-save')).toHaveCount(0)
     await expect(d.getByTestId('config-unsaved')).toHaveCount(0)
     await s.getByTestId('publish-s3-cred-app').check()
@@ -54,7 +61,7 @@ test.describe('Settings > Publishing', () => {
     expect(calls(api, 'PUT', '/mounts')).toHaveLength(1)
     const put = calls(api, 'PUT', '/publish/settings')[0].body
     expect(put.s3).toMatchObject({ bucket: 'beinghuman-deliveries', access_key_id: 'AKIAEXAMPLE1234', secret_access_key: 'secretsecretsecret', credentials: 'app', presign_hours: 72 }); expect(put).not.toHaveProperty('slack')
-    d = await reopen(page); s = d.getByTestId('settings-publishing')
+    d = await reopen(page); s = dest(d)
     await expect(s.getByTestId('publish-s3-bucket')).toHaveValue('beinghuman-deliveries'); await expect(s.getByTestId('publish-s3-access-key')).toHaveValue(''); await expect(s.getByTestId('publish-s3-access-key')).toHaveAttribute('placeholder', 'saved ••••1234')   // never shown again
     await expect(s.getByTestId('publish-s3-ready')).toHaveText('ready'); await expect(d.getByTestId('config-unsaved')).toHaveCount(0)
     await s.getByTestId('publish-s3-region').fill('eu-west-1')
@@ -71,16 +78,16 @@ test.describe('Settings > Publishing', () => {
   })
   test('Clear keys is an action of its own (it writes now, after a confirm)', async ({ page, api }) => {
     setup(api)
-    const d = await openSettings(page)
-    const s = d.getByTestId('settings-publishing')
+    const d = await openAdapters(page)
+    const s = dest(d)
     await s.getByTestId('publish-s3-clear').click(); await answerConfirm(page, true)
     await expect.poll(() => api.state.publish.settings.s3.access_key_hint).toBe('')
     expect(calls(api, 'PUT', '/publish/settings').at(-1).body.clear).toEqual(['s3_keys'])
     await expect(s.getByTestId('publish-s3-ready')).toHaveText('not ready'); await expect(d.getByTestId('config-unsaved')).toHaveCount(0)
   })
   test('a failure from the core names the field, keeps the window open and says the configuration was saved but publishing was not', async ({ page, api }) => {
-    const d = await openSettings(page)
-    const s = d.getByTestId('settings-publishing')
+    const d = await openAdapters(page)
+    const s = dest(d)
     await s.getByTestId('publish-s3-bucket').fill('Bad_Bucket')
     await d.getByTestId('config-save').click()
     await expect(d.getByTestId('config-error')).toContainText('The configuration was saved; publishing settings were not: a bucket name is 3 to 63 lowercase letters, digits, dots or dashes')
@@ -132,7 +139,7 @@ test.describe('Settings > Publishing', () => {
     await expect(m.getByTestId('publish-job-via')).toHaveText('via this PC', { timeout: 6000 })
   })
   test('closing with unsaved publishing edits asks first; No keeps the window and the edits, Yes closes', async ({ page, api }) => {
-    const d = await openSettings(page)
+    const d = await openAdapters(page)
     await d.getByTestId('publish-s3-prefix').fill('elsewhere/')
     await d.getByTestId('config-close').click()
     expect(await answerConfirm(page, false)).toBe('Close without saving the publishing changes?')
@@ -141,7 +148,7 @@ test.describe('Settings > Publishing', () => {
     await answerConfirm(page, false); await expect(d).toBeVisible()
     await d.getByTestId('config-close').click(); await answerConfirm(page, true)
     await expect(d).toBeHidden(); expect(calls(api, 'PUT', '/publish/settings')).toHaveLength(0)
-    await page.getByTestId('open-config').click(); const d2 = modal(page, t('config.title')); await cfgTab(d2, 'publishing'); await expect(d2.getByTestId('publish-s3-prefix')).toHaveValue('returns/BKK/')   // the edit was dropped
+    await page.getByTestId('open-config').click(); const d2 = modal(page, t('config.title')); await cfgTab(d2, 'adapters'); await expect(d2.getByTestId('publish-s3-prefix')).toHaveValue('returns/BKK/')   // the edit was dropped
   })
   test('closing without publishing edits does not ask', async ({ page }) => {
     const d = await openSettings(page)
@@ -150,8 +157,8 @@ test.describe('Settings > Publishing', () => {
   })
   test('the Test button waits for Save while the section has edits (it tests the saved settings)', async ({ page, api }) => {
     setup(api)
-    const d = await openSettings(page)
-    const s = d.getByTestId('settings-publishing')
+    const d = await openAdapters(page)
+    const s = dest(d)
     await expect(s.getByTestId('publish-s3-test')).toBeEnabled(); await expect(s.getByTestId('publish-save-first')).toHaveCount(0)
     await s.getByTestId('publish-s3-prefix').fill('x/')
     await expect(s.getByTestId('publish-s3-test')).toBeDisabled(); await expect(s.getByTestId('publish-save-first')).toHaveText('Save first')
@@ -160,15 +167,15 @@ test.describe('Settings > Publishing', () => {
   })
   test('the Panama keys missing: the problem shows with a button to the Panama settings', async ({ page, api }) => {
     setup(api, { panamaKeys: false }); api.state.publish.settings.s3 = { ...api.state.publish.settings.s3, bucket: 'bh-panama-exchange-610140802195', prefix: 'returns/BKK/', credentials: 'panama', access_key_hint: '' }
-    const d = await openSettings(page)
-    const s = d.getByTestId('settings-publishing')
+    const d = await openAdapters(page)
+    const s = dest(d)
     await expect(s.getByTestId('publish-s3-ready')).toHaveText('not ready'); await expect(s.getByTestId('publish-s3-problem')).toHaveText('The Panama exchange keys are not set')
     await s.getByTestId('publish-s3-open-panama').click()
     await expect(d.getByTestId('cfg-panama-title')).toBeVisible()
   })
   test('Check the bucket is read only and shows the answer', async ({ page, api }) => {
-    const d = await openSettings(page)
-    const s = d.getByTestId('settings-publishing')
+    const d = await openAdapters(page)
+    const s = dest(d)
     await s.getByTestId('publish-s3-test').click()
     await expect(s.getByTestId('publish-s3-test-result')).toHaveText('The bucket answered: 3 objects listed')
     expect(api.state.publish.tests).toEqual([{ target: 's3' }])
@@ -178,17 +185,20 @@ test.describe('Settings > Publishing', () => {
   })
   test('the Publishing headings fold like an accordion: every block starts open, a click folds only that block (its fields stay in the form), and the choice is remembered', async ({ page, api }) => {
     setup(api)
-    let d = await openSettings(page)
-    const blocks = ['publish-s3-block', 'publish-slack-status', 'publish-defaults-block']
-    for (const b of blocks) await expect(d.getByTestId(b)).toHaveAttribute('data-open', 'true')
+    let d = await openAdapters(page)
+    await expect(d.getByTestId('publish-s3-block')).toHaveAttribute('data-open', 'true')
     await d.getByTestId('publish-s3-block').getByTestId('collapsible-toggle').click()
     await expect(d.getByTestId('publish-s3-block')).toHaveAttribute('data-open', 'false'); await expect(d.getByTestId('publish-s3-block').getByTestId('collapsible-body')).toBeHidden()
     await expect(d.getByTestId('publish-s3-block').getByTestId('collapsible-toggle')).toHaveAttribute('aria-expanded', 'false')
-    await expect(d.getByTestId('publish-defaults-block')).toHaveAttribute('data-open', 'true')   // the others are not touched
     await expect(d.getByTestId('publish-s3-bucket')).toHaveCount(1)   // folded, not removed: what is typed there is kept and saved
-    await page.reload(); d = await openSettings(page)
+    await cfgTab(d, 'publishing')
+    for (const b of ['publish-destination-block', 'publish-slack-status', 'publish-defaults-block']) await expect(d.getByTestId(b)).toHaveAttribute('data-open', 'true')   // the others are not touched
+    await d.getByTestId('publish-defaults-block').getByTestId('collapsible-toggle').click(); await expect(d.getByTestId('publish-defaults-block')).toHaveAttribute('data-open', 'false')
+    await page.reload(); d = await openAdapters(page)
     await expect(d.getByTestId('publish-s3-block')).toHaveAttribute('data-open', 'false')   // remembered
     await d.getByTestId('publish-s3-block').getByTestId('collapsible-toggle').click(); await expect(d.getByTestId('publish-s3-block')).toHaveAttribute('data-open', 'true')
+    await cfgTab(d, 'publishing'); await expect(d.getByTestId('publish-defaults-block')).toHaveAttribute('data-open', 'false')
+    await d.getByTestId('publish-defaults-block').getByTestId('collapsible-toggle').click()
   })
   test('Slack is one read-only status line here, with a button to Connect > Slack', async ({ page, api }) => {
     setup(api); api.state.publish.settings.slack.webhook_hint = ''

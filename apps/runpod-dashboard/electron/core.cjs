@@ -151,6 +151,13 @@ const TABLE = {
     log: (c, runId, o) => c.syncruns.registry.log(String(runId || ''), o || {}),
     watch: (c) => c.autosync.watch(),
   },
+  storage: {   // docs/ADR-063 Storage adapters: S3-compatible places files go to (publish mirrors) and come from; Wasabi and your own are records, never code
+    list: (c) => c.storage.list(),
+    save: (c, o) => c.storage.save(o || {}),   // a destination and its keys are entered by a person in the window
+    setEnabled: (c, id, on) => c.storage.setEnabled(String(id || ''), !!on),
+    remove: (c, id) => c.storage.remove(String(id || '')),
+    test: (c, id) => c.storage.test(String(id || '')),
+  },
   autopublish: {   // docs/ADR-050 Auto-publish: approved review videos are uploaded by themselves under a standing, named approval; off by default
     status: (c) => c.autopublish.statusNow(),
     settings: (c) => c.autopublish.settings(),

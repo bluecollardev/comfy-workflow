@@ -23,6 +23,7 @@ import { configDir } from './paths.js'
 import * as settingsEnv from './settings.js'
 import * as layout from './publishlayout.js'
 import * as syncrun from './syncrun.js'
+import * as storage from './storage.js'
 import * as edl from './edl.js'
 import * as tunnelj from './tunnel.js'
 
@@ -984,6 +985,9 @@ async function uploadGroup(job: Job, g: Group, a: Awaited<ReturnType<typeof s3Ac
   const c = g.child, ac = g.ac; let failure = '', next = 0, nextVol = 0
   const refresh = () => { c.bytes_done = [...g.partial.values()].reduce((x, y) => x + y, 0) + g.doneBytes; const s = (deps.now() - g.t0) / 1000; c.rate = s > 0 ? Math.round(c.bytes_done / s) : 0; progressOf(job) }
   const pcList = g.send.filter((i) => i.source !== 'volume'), volList = g.send.filter((i) => i.source === 'volume')
+  const mirrors = storage.mirrors()   // the other enabled storage adapters (docs/ADR-063): a copy of each file this PC sends; a failed copy is a warning, never a failed job
+  const warnJob = (m: string) => { job.view.warnings = [...new Set([...(job.view.warnings ?? []), m])] }
+  if (mirrors.length && volList.length) warnJob(`${mirrors.map((m) => m.name).join(', ')}: files that are only on the volume are not copied (this version mirrors what is sent from this PC)`)
   const streamWorker = async () => {   // volume files: two piped aws commands, nothing is kept on this PC
     while (!failure && !ac.signal.aborted) {
       const fileNo = nextVol, it = volList[nextVol++]; if (!it) return
@@ -1007,7 +1011,10 @@ async function uploadGroup(job: Job, g: Group, a: Awaited<ReturnType<typeof s3Ac
         onData: (d) => { const n = parseProgress(d); if (n !== null) { g.partial.set(it.path, Math.min(n, it.bytes)); refresh() } },
       })
       g.partial.delete(it.path); const sha = hp ? await hp : null
-      if (r.code === 0) { if (sha) { job.hashes.set(it.s3_key, sha); c.sha256++ } g.doneBytes += it.bytes; c.files_done++; refresh() }
+      if (r.code === 0) {
+        if (sha) { job.hashes.set(it.s3_key, sha); c.sha256++ } g.doneBytes += it.bytes; c.files_done++; refresh()
+        for (const m of mirrors) { const why = await storage.mirrorCopy(m, join(root(), it.path), it.s3_key, ac.signal).catch((e) => redact((e as Error).message)); if (why && !ac.signal.aborted) warnJob(`${m.name}: ${basename(it.path)}: ${why}`) }
+      }
       else if (!ac.signal.aborted) failure = `${basename(it.path)}: ${awsText(r)}`
     }
   }
