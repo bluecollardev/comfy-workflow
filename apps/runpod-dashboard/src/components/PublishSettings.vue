@@ -40,8 +40,10 @@
       <!-- defaults -->
       <CollapsibleSection v-if="part !== 's3'" id="publish-defaults" :title="$t('publish.defaults.title')" testid="publish-defaults-block">
         <div class="small mb-2"><span class="me-3">{{ $t('publish.defaults.targets') }}</span>
-          <label class="me-3"><input v-model="form.defaults.targets" type="checkbox" value="s3" class="form-check-input me-1" data-testid="publish-default-s3" />S3</label>
-          <label><input v-model="form.defaults.targets" type="checkbox" value="slack" class="form-check-input me-1" data-testid="publish-default-slack" />Slack</label></div>
+          <label class="me-3" :title="$t('outputs.render.cfg.publishS3')"><input v-model="form.defaults.targets" type="checkbox" value="s3" class="form-check-input me-1" data-testid="publish-default-s3" @change="mirrorTargets" />S3</label>
+          <label :title="$t('outputs.render.cfg.publishSlack')"><input v-model="form.defaults.targets" type="checkbox" value="slack" class="form-check-input me-1" data-testid="publish-default-slack" @change="mirrorTargets" />Slack</label></div>
+        <div v-if="render" class="small mb-2"><label><input v-model="render.pull" type="checkbox" class="form-check-input me-1" data-testid="config-render-pull" />{{ $t('outputs.render.cfg.pull') }}</label></div>
+        <div v-if="render" class="form-text mb-2" data-testid="publish-targets-help">{{ $t('publish.defaults.targetsHelp') }}</div>
         <BFormGroup :label="$t('publish.defaults.transfer')" label-for="pub-transfer" class="mb-2"><BFormSelect id="pub-transfer" v-model="form.s3.transfer" size="sm" class="w-auto" :options="transferOptions" data-testid="publish-transfer" /><div class="form-text" data-testid="publish-transfer-help">{{ $t('publish.defaults.transferHelp') }}</div></BFormGroup>
         <BFormGroup :label="$t('publish.defaults.transferPods')" label-for="pub-transfer-pods" class="mb-2"><BFormInput id="pub-transfer-pods" v-model="podsText" size="sm" :placeholder="$t('publish.defaults.transferPodsPlaceholder')" data-testid="publish-transfer-pods" /><div class="form-text">{{ $t('publish.defaults.transferPodsHelp') }}</div></BFormGroup>
         <BFormGroup :label="$t('publish.defaults.parallelPods')" label-for="pub-parallel-pods" class="mb-2"><BFormInput id="pub-parallel-pods" v-model.number="form.s3.parallel_pods" type="number" min="1" max="6" size="sm" style="width: 6rem" data-testid="publish-parallel-pods" /><div class="form-text">{{ $t('publish.defaults.parallelPodsHelp') }}</div></BFormGroup>
@@ -70,7 +72,7 @@ import { t } from '../i18n'
 import { PLACEHOLDERS, s3Dest, unknownPlaceholders } from '../utils/publish'
 import { publishAPI } from '../api/publish'
 
-const props = defineProps({ /** 's3': the destination's form (shown in Adapters > Storage); 'rest': Slack, targets, transfer and the message (Publishing) */ part: { type: String, default: 'rest' } })
+const props = defineProps({ /** 's3': the destination's form (shown in Adapters > Storage); 'rest': Slack, targets, transfer and the message (Publishing) */ part: { type: String, default: 'rest' }, /** the configuration's render block: the S3 / Slack boxes are also its "publish when done" defaults, and Sync the renders is its pull */ render: { type: Object, default: null } })
 const store = usePublishStore(), confirm = useConfirmStore()
 const form = ref(null)
 const secrets = reactive({ access_key_id: '', secret_access_key: '' })
@@ -93,6 +95,12 @@ const transferOptions = computed(() => ['auto', 'pod', 'pc'].map((v) => ({ value
 const XFER = ['transfer', 'transfer_pods', 'parallel_pods']
 const mine = (f) => (props.part === 's3' ? { s3: Object.fromEntries(Object.entries(f.s3).filter(([k]) => !XFER.includes(k))) } : { s3: Object.fromEntries(Object.entries(f.s3).filter(([k]) => XFER.includes(k))), defaults: f.defaults })
 const dirty = computed(() => !!form.value && (JSON.stringify(mine(form.value)) !== snapshot.value || (props.part === 's3' && (!!secrets.access_key_id || !!secrets.secret_access_key))))
+/** One pair of boxes is both the publish defaults and the Render sequences defaults (Slack needs S3 there): a change writes both. */
+function mirrorTargets() {
+  const r = props.render; if (!r?.publish) return
+  const t = form.value.defaults.targets
+  r.publish.s3 = t.includes('s3'); r.publish.slack = t.includes('s3') && t.includes('slack')
+}
 function fill() {
   const s = store.settings
   form.value = { s3: { bucket: '', prefix: '', region: '', endpoint: '', credentials: 'app', presign_hours: 72, transfer: 'auto', transfer_pods: [], parallel_pods: 2, ...pick(s.s3, ['bucket', 'prefix', 'region', 'endpoint', 'credentials', 'presign_hours', 'transfer', 'transfer_pods', 'parallel_pods']) },

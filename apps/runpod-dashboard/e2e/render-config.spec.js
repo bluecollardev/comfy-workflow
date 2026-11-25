@@ -21,8 +21,8 @@ test.describe('Default Configuration', () => {
     await expect(s.getByTestId('config-render-review-width')).toHaveValue('source')
     await expect(s.getByTestId('config-render-codec-prores')).toBeChecked(); await expect(s.getByTestId('config-render-codec-h264')).not.toBeChecked()   // ProRes is the default
     await expect(s.getByTestId('config-render-fps')).toHaveValue('auto')
-    await expect(s.getByTestId('config-render-pull')).not.toBeChecked()   // Sync the renders to this PC: unticked by default
-    await expect(s.getByTestId('config-render-publish-s3')).toBeChecked(); await expect(s.getByTestId('config-render-publish-slack')).not.toBeChecked(); await expect(s.getByTestId('config-render-skip-existing')).toBeChecked()   // Publish to S3 is pre-ticked (the core default)
+    await expect(d.getByTestId('config-render-pull')).not.toBeChecked()   // Sync the renders to this PC: unticked by default; it is under Publishing > defaults for a publish now
+    await expect(d.getByTestId('publish-default-s3')).toBeChecked(); await expect(s.getByTestId('config-render-skip-existing')).toBeChecked()   // the S3 / Slack boxes are one pair under the defaults for a publish (also the Render defaults)
     await expect(s.getByTestId('config-render-pre-help')).toHaveText('These only pre-tick the boxes in the Generate window. Every publish still asks who says yes.'); await expect(s.getByTestId('config-render-skip-help')).toHaveText('Starting values of the Generate window')
     await expect(s.getByTestId('config-render-help')).toHaveText(t('outputs.render.cfg.help'))
     await expect(s.getByTestId('config-render-help')).toContainText('A review video always asks who says yes.')
@@ -130,16 +130,16 @@ test.describe('the Render option starts from plan().settings', () => {
 })
 
 test.describe('Render: Sync, Publish and Skip existing as starting values; Outputs window', () => {
-  test('the dependencies are enforced inline: Slack needs S3; publishing does NOT need Sync (a render left on the pod is published from the volume)', async ({ page }) => {
+  test('one pair of S3 / Slack boxes is both the publish defaults and the Render defaults; Slack needs S3 there; publishing does NOT need Sync', async ({ page, api }) => {
     const d = await openDefault(page)
-    const s = d.getByTestId('config-render'); await s.scrollIntoViewIfNeeded()
-    await expect(s.getByTestId('config-render-needsync')).toHaveCount(0)
-    await expect(s.getByTestId('config-render-publish-s3')).toBeChecked(); await expect(s.getByTestId('config-render-publish-slack')).toBeEnabled()   // S3 is pre-ticked, so Slack can be
-    await s.getByTestId('config-render-publish-s3').uncheck(); await expect(s.getByTestId('config-render-publish-slack')).toBeDisabled()   // Slack needs S3
-    await s.getByTestId('config-render-pull').uncheck()
-    await s.getByTestId('config-render-publish-s3').check(); await expect(s.getByTestId('config-render-publish-slack')).toBeEnabled(); await s.getByTestId('config-render-publish-slack').check()
-    await s.getByTestId('config-render-publish-s3').uncheck(); await expect(s.getByTestId('config-render-publish-slack')).not.toBeChecked()   // S3 off takes Slack with it
-    await s.getByTestId('config-render-publish-s3').check(); await expect(s.getByTestId('config-render-pull')).not.toBeChecked(); await expect(s.getByTestId('config-render-publish-s3')).toBeChecked()   // S3 on with Sync off stays on
+    await expect(d.getByTestId('config-render').getByTestId('config-render-publish-s3')).toHaveCount(0)   // the duplicates are gone from the Render sequences block
+    await expect(d.getByTestId('config-render').getByTestId('config-render-pull')).toHaveCount(0)
+    await expect(d.getByTestId('config-render-needsync')).toHaveCount(0)
+    await expect(d.getByTestId('publish-default-s3')).toBeChecked()
+    await d.getByTestId('publish-default-slack').check(); await d.getByTestId('publish-default-s3').uncheck()   // Slack without S3 cannot be a Render default
+    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    expect(calls(api, 'PUT', '/mounts')[0].body.render).toMatchObject({ publish: { s3: false, slack: false } })
+    expect(calls(api, 'PUT', '/publish/settings').at(-1).body.defaults.targets).toEqual(['slack'])   // the publish default keeps what was ticked
   })
   test('the colour field: the project default untouched sends nothing; a colour saves as render.colour (format) and the project default goes back to known', async ({ page, api }) => {
     let d = await openDefault(page)
@@ -159,7 +159,7 @@ test.describe('Render: Sync, Publish and Skip existing as starting values; Outpu
   test('Save carries pull, publish and skip_existing as render keys; an untouched config sends no render key', async ({ page, api }) => {
     const d = await openDefault(page)
     const s = d.getByTestId('config-render'); await s.scrollIntoViewIfNeeded()
-    await s.getByTestId('config-render-pull').check(); await s.getByTestId('config-render-publish-s3').check(); await s.getByTestId('config-render-publish-slack').check(); await s.getByTestId('config-render-skip-existing').uncheck()
+    await d.getByTestId('config-render-pull').check(); await d.getByTestId('publish-default-slack').uncheck(); await d.getByTestId('publish-default-slack').check(); await s.getByTestId('config-render-skip-existing').uncheck()   // a change of the pair writes both the publish default and the render default
     await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
     expect(calls(api, 'PUT', '/mounts')[0].body.render).toMatchObject({ pull: true, publish: { s3: true, slack: true }, skip_existing: false })
     expect(api.state.mounts.config.render.publish).toEqual({ s3: true, slack: true })
