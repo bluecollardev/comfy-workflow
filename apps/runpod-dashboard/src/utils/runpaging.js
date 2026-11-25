@@ -3,7 +3,7 @@
 import { reactive } from 'vue'
 
 export const PAGE_SIZES = [10, 25, 50, 100]
-export const runPaging = reactive({ page: 1, size: 25 })
+export const runPaging = reactive({ page: 1, size: 10 })   // 10 a page by default (Lucas, 2026-11-25: 'default per page to 10, not 25')
 
 /** The page numbers and the slice for a list of `total` rows: `page` is kept inside 1..pages. */
 export function pageOfRuns(rows, page = runPaging.page, size = runPaging.size) {

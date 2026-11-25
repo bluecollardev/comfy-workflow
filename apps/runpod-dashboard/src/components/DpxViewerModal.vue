@@ -121,7 +121,7 @@ const proxySrc = computed(() => {
   const p = props.proxy
   if (!p) return ''
   if (p.exists_local && p.local_url) return p.local_url
-  if (p.exists_remote && p.remote_ready !== false && props.base && props.sequence) return viewUrl(props.base, { filename: `${props.sequence.name}_${p.width}${p.partial ? '_partial' : ''}.mp4`, subfolder: `.proxies${props.sequence.dir ? `/${props.sequence.dir}` : ''}`, type: 'output' })
+  if (p.exists_remote && p.remote_ready !== false && props.base && props.sequence) return viewUrl(props.base, { filename: `${props.sequence.name}${p.width ? `_${p.width}` : ''}${p.partial ? '_partial' : ''}.mp4`, subfolder: `.proxies${props.sequence.dir ? `/${props.sequence.dir}` : ''}`, type: 'output' })
   return ''
 })
 /** The latest review video (the deliverable, output/deliver/<shot>/v###/): on this PC through its local_url, else from the volume or pod. A switch Proxy | Review v### plays either. */

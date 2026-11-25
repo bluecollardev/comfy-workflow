@@ -110,33 +110,33 @@ test('Row two repeats the four slots as DPX previews, below the video row and ab
   await expect(frames.nth(2).getByTestId('outputs-eye-frame-picture')).toHaveAttribute('data-state', 'empty')
 })
 
-// Row two shows frames 5, 10, 15 and 20 of each sequence (every fifth, at most four); fewer than five frames shows the last (Lucas, 2026-11-25).
+// Row two shows frames 1, 5, 10 and 15 of a sequence in four columns; with several slots filled each tile shows frame 1 only (Lucas, 2026-11-25).
 const pics = (m) => m.locator('[data-role="left"][data-testid="outputs-eye-frame"]').getByTestId('outputs-eye-frame-picture')
 
-test('Row two: a sequence shows frames 5, 10, 15 and 20 (every fifth, at most four) and no First / Fifth switch', async ({ page, api }) => {
+test('Row two: a sequence shows frames 1, 5, 10 and 15 in one row of four columns and no First / Fifth switch', async ({ page, api }) => {
   const m = await open(page, api, seq('clip_v008', 40))
   await expect(pics(m)).toHaveCount(4)
   await expect(page.getByTestId('outputs-eye-frame-mode')).toHaveCount(0)
   const tops = await pics(m).evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)))
   expect(new Set(tops).size).toBe(1)   // one row, not stacked
-  await expect(pics(m).nth(3).locator('.eyeframeno')).toHaveText('20')
+  await expect(pics(m).nth(3).locator('.eyeframeno')).toHaveText('15')
   await pics(m).nth(1).click()
-  await expect(page.getByTestId('dpx-viewer-frame')).toHaveText(/^Frame 10 \/ 40/)
+  await expect(page.getByTestId('dpx-viewer-frame')).toHaveText(/^Frame 5 \/ 40/)
 })
 
-test('Row two: 8 frames show frame 5 only, with Load Frame Previews until the pod has made it', async ({ page, api }) => {
+test('Row two: 8 frames show frames 1 and 5, with Load Frame Previews on the one the pod has not made', async ({ page, api }) => {
   const m = await open(page, api, seq('clip_v008', 8))
-  await expect(pics(m)).toHaveCount(1)
-  await expect(pics(m).getByTestId('outputs-eye-frame-load')).toHaveText('Load Frame Previews')
-  await pics(m).click()
+  await expect(pics(m)).toHaveCount(2)
+  await expect(pics(m).nth(1).getByTestId('outputs-eye-frame-load')).toHaveText('Load Frame Previews')
+  await pics(m).nth(1).click()
   await expect(page.getByTestId('dpx-viewer-frame')).toHaveText(/^Frame 5 \/ 8/)
 })
 
-test('Row two: fewer than five frames show the last frame', async ({ page, api }) => {
+test('Row two: fewer than five frames show frame 1 only', async ({ page, api }) => {
   const m = await open(page, api, seq('clip_v008', 3))
   await expect(pics(m)).toHaveCount(1)
   await pics(m).click()
-  await expect(page.getByTestId('dpx-viewer-frame')).toHaveText(/^Frame 3 \/ 3/)
+  await expect(page.getByTestId('dpx-viewer-frame')).toHaveText(/^Frame 1 \/ 3/)
 })
 
 test('Each row has a heading (Video Outputs, DPX Frame Outputs, All Frames for the sequence) and the main video is not repeated beside the sequence', async ({ page, api }) => {
