@@ -33,13 +33,15 @@ test('One card at a datacenter: the datacenter and default_gpu save together, an
   await expect(page.getByTestId('pod-gpu-chosen')).toHaveAttribute('data-value', 'rtx4090')
 })
 
-test('Several cards at one datacenter: default_gpu is auto and auto_cards is the list in click order', async ({ page, api }) => {
+test('The cards Cheapest in Stock tries are their own selection: Select Card(s) adds and removes cards wherever they are clicked, and auto_cards saves; the default card is not touched', async ({ page, api }) => {
   const d = await open(page)
-  await d.getByTestId('cfg-choose-card-btn').click()
+  await expect(d.getByTestId('cfg-cards-stock')).toContainText(t('config.cardsStockBuiltin'))
+  await d.getByTestId('cfg-choose-stock-btn').click()
   await page.getByTestId('choose-card-modal').getByTestId('dc-dc-filter').selectOption('')
-  await chip(page, 'RTX 4090', 'EU-RO-1').click(); await chip(page, 'RTX 4000 Ada', 'EU-RO-1').click()
+  await chip(page, 'RTX 4090', 'EU-RO-1').click(); await chip(page, 'RTX 4000 Ada', 'EU-RO-1').click(); await chip(page, 'A40', 'CA-MTL-1').click()
   await page.getByTestId('choose-card-modal').getByRole('button', { name: 'Use these cards' }).click()
-  await expect(d.getByTestId('cfg-cards-chosen')).toContainText('RTX 4090 24 GB, RTX 4000 Ada 20 GB')
+  await expect(d.getByTestId('cfg-cards-stock')).toContainText('RTX 4090 24 GB, RTX 4000 Ada 20 GB, A40 48 GB')
+  await expect(d.getByTestId('cfg-cards-dc')).toContainText(t('config.datacenterAny'))   // the stock list belongs to no datacenter
   await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
-  expect(lastPut(api)).toMatchObject({ default_gpu: 'auto', auto_cards: ['rtx4090', 'rtx4000ada'] })
+  expect(lastPut(api)).toMatchObject({ auto_cards: ['rtx4090', 'rtx4000ada', 'a40'] })
 })

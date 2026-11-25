@@ -98,12 +98,17 @@
           <!-- The default configuration: the datacenter and the cards go together, chosen in the same window as Import Round's step 3 (Choose Card) -->
           <div class="border rounded p-2" data-testid="cfg-cards-block">
             <div class="fw-semibold mb-1">{{ $t('config.cardsTitle') }}</div>
-            <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
-              <BButton :variant="chosenCards.length ? 'outline-success' : 'outline-light'" size="sm" data-testid="cfg-choose-card-btn" @click="cardModal = true"><i class="fa-solid fa-microchip me-1"></i>{{ $t('config.cardsSelect') }}</BButton>
+            <div class="d-flex align-items-center gap-2 flex-wrap mb-1" data-testid="cfg-cards-default-row">
+              <BButton :variant="chosenCards.length ? 'outline-success' : 'outline-light'" size="sm" data-testid="cfg-choose-card-btn" @click="cardModal = 'default'"><i class="fa-solid fa-microchip me-1"></i>{{ $t('config.cardsSelect') }}</BButton>
               <span class="small" data-testid="cfg-cards-dc"><span class="text-body-secondary">{{ $t('config.cardsDcLabel') }}</span> <strong>{{ cfg.data_center_id || $t('config.datacenterAny') }}</strong></span>
               <span class="small" data-testid="cfg-cards-chosen"><span class="text-body-secondary">{{ $t('config.cardsLabel') }}</span> <strong>{{ chosenCards.length ? chosenCards.map(cardName).join(', ') : $t('config.cardsStock') }}</strong></span>
             </div>
-            <div class="form-text" data-testid="cfg-cards-help">{{ $t('config.cardsHelp') }}</div>
+            <div class="form-text mb-2" data-testid="cfg-cards-help">{{ $t('config.cardsHelp') }}</div>
+            <div class="d-flex align-items-center gap-2 flex-wrap mb-1" data-testid="cfg-cards-stock-row">
+              <BButton :variant="stockCards.length ? 'outline-success' : 'outline-light'" size="sm" data-testid="cfg-choose-stock-btn" @click="cardModal = 'stock'"><i class="fa-solid fa-microchip me-1"></i>{{ $t('config.cardsSelect') }}</BButton>
+              <span class="small" data-testid="cfg-cards-stock"><span class="text-body-secondary">{{ $t('config.cardsStockLabel') }}</span> <strong>{{ stockCards.length ? stockCards.map(cardName).join(', ') : $t('config.cardsStockBuiltin') }}</strong></span>
+            </div>
+            <div class="form-text" data-testid="cfg-cards-stock-help">{{ $t('config.cardsStockHelp') }}</div>
           </div>
         </BCol>
         <BCol md="8">
@@ -372,7 +377,7 @@
 
       <div v-if="forPod" :id="`${slotId}-opt`"></div>   <!-- per-pod configuration: the render choices stay here (a pod has no Publishing tab) -->
       </fieldset>
-      <ChooseCardModal :show="cardModal" :list="dcList" :loading="dcLoading" :datacenter="cfg.data_center_id || ''" :cards="chosenCards" :card-label="chosenCards.map(cardName).join(', ')" :volume-dcs="volumeDcs" :default-dc="cfg.data_center_id || ''" @close="cardModal = false" @refresh="loadDatacenters(true)" @update:datacenter="onCardDc" @pick="onPickCard" @auto="writeCards([])" />
+      <ChooseCardModal :show="!!cardModal" :list="dcList" :loading="dcLoading" :datacenter="cfg.data_center_id || ''" :cards="cardModal === 'stock' ? stockCards : chosenCards" :card-label="(cardModal === 'stock' ? stockCards : chosenCards).map(cardName).join(', ')" :volume-dcs="volumeDcs" :default-dc="cfg.data_center_id || ''" @close="cardModal = ''" @refresh="loadDatacenters(true)" @update:datacenter="onCardDc" @pick="onPickCard" @auto="onCardAuto" />
       <Teleport defer :to="`#${slotId}-${forPod ? 'opt' : 'pub'}`">
       <div v-if="!forPod && cfg.outputs" class="border rounded p-2 mb-3" data-testid="config-outputs">
         <div class="fw-semibold mb-1">{{ $t('config.outputsTitle') }}</div>
@@ -783,29 +788,28 @@ async function loadVolume() {
 /** The card table for the default-card select: the menu's names, with auto as the cheapest card in stock. */
 const gpuChoices = ref([{ value: 'rtxpro6000', text: 'RTX PRO 6000 (96 GB)' }, { value: 'auto', text: 'Cheapest card in stock (16-24 GB)' }])
 /** The datacenter and the cards of a new pod, chosen in Choose Card (the Import Round window): the cards are ranked in the order they were clicked, all at the datacenter. One card is the default card; several make the default `auto` with that list as the cards `auto` tries; none is Cheapest in Stock with the built-in stock list. */
-const cardModal = ref(false), dcLoading = ref(false), cardsDc = ref('')
+const cardModal = ref(''), dcLoading = ref(false)   // '' closed, 'default' the datacenter and the default card, 'stock' the cards Cheapest in Stock tries (system jobs)
 const cardName = (c) => `${c.name}${c.vram ? ` ${c.vram} GB` : ''}`
 const cardOf = (key) => { for (const d of dcList.value) { const c = (d.cards || []).find((x) => x.key === key); if (c) return { key, name: c.name, vram: c.vram || 0 } }; const g = gpuChoices.value.find((x) => x.value === key); const m = /^(.*?)\s*\((\d+)\s*GB\)\s*$/.exec(String(g?.text || key)); return { key, name: m ? m[1] : String(g?.text || key), vram: m ? Number(m[2]) : 0 } }
-const chosenCards = computed(() => { const c = cfg.value; if (!c) return []; const keys = c.default_gpu === 'auto' || !c.default_gpu ? (c.auto_cards || []) : [c.default_gpu]; return keys.map(cardOf) })
-function writeCards(keys) {
-  const c = cfg.value
-  if (!keys.length) { c.default_gpu = 'auto'; c.auto_cards = []; cardsDc.value = '' }
-  else if (keys.length === 1) { c.default_gpu = keys[0]; c.auto_cards = [] }
-  else { c.default_gpu = 'auto'; c.auto_cards = [...keys] }
-}
-watch(cardModal, (o) => { if (o && !cardsDc.value && chosenCards.value.length) cardsDc.value = cfg.value.data_center_id || '' })   // the saved cards belong to the saved datacenter (the table moves the datacenter before it reports a click)
-const onCardDc = (dc) => { cfg.value.data_center_id = dc || '' }
-/** A click on a card at a datacenter: the same datacenter toggles it in the ranked list, another datacenter starts a new list (a pod is pinned to one datacenter). The window stays open until Done. */
+/** The default card (one card, or Cheapest in Stock = `auto`) and, apart, the cards `auto` tries: the system jobs (frame previews, pulls, renders) and a default of Cheapest in Stock pick from that list; none chosen is the built-in stock list. */
+const chosenCards = computed(() => { const c = cfg.value; return c && c.default_gpu && c.default_gpu !== 'auto' ? [cardOf(c.default_gpu)] : [] })
+const stockCards = computed(() => (cfg.value?.auto_cards || []).map(cardOf))
+const onCardDc = (dc) => { if (cardModal.value === 'default') cfg.value.data_center_id = dc || '' }   // the stock list belongs to no datacenter
+/** A click on a card at a datacenter. Default: that card at that datacenter (a second click on it goes back to Cheapest in Stock). Stock: the card is added to or taken off the list, wherever it was clicked. The window stays open until Done. */
 function onPickCard({ dc, card }) {
-  if (dc) cfg.value.data_center_id = dc
+  const c = cfg.value
+  if (cardModal.value === 'stock') {
+    if (!card) return
+    const cur = c.auto_cards || []
+    c.auto_cards = cur.includes(card.key) ? cur.filter((k) => k !== card.key) : [...cur, card.key]
+    return
+  }
+  if (dc) c.data_center_id = dc
   if (!card) return
-  const cur = chosenCards.value.map((x) => x.key)
-  const here = cardsDc.value || (cur.length ? cfg.value.data_center_id : '')
-  const same = !cur.length || !dc || dc === here
-  const next = same ? (cur.includes(card.key) ? cur.filter((k) => k !== card.key) : [...cur, card.key]) : [card.key]
-  cardsDc.value = next.length ? (dc || here) : ''
-  writeCards(next)
+  c.default_gpu = c.default_gpu === card.key ? 'auto' : card.key
 }
+/** Auto in the window: the default is Cheapest in Stock, or the stock list goes back to the built-in one. */
+function onCardAuto() { if (cardModal.value === 'stock') cfg.value.auto_cards = []; else cfg.value.default_gpu = 'auto' }
 async function loadGpuChoices() {
   try { const g = await podsAPI.gpus(); if (g.gpus?.length) gpuChoices.value = g.gpus.map((x) => ({ value: x.value, auto: x.auto !== false, text: String(x.text).split(' · ')[0] })) } catch { /* the short menu stays */ }
 }
