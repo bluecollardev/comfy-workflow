@@ -150,3 +150,12 @@ test('Frame mode: the choice is remembered across a reload', async ({ page, api 
   await expect(mode(m2).getByTestId('outputs-eye-frame-mode-fifth')).toHaveAttribute('aria-pressed', 'true')
   await expect(pic(m2).getByTestId('outputs-eye-frame-load')).toBeVisible()
 })
+
+test('Each row has a heading (Video Outputs, DPX Frame Outputs, All Frames for the sequence) and the main video is not repeated beside the sequence', async ({ page, api }) => {
+  const m = await open(page, api, [...seq('clip_v008_L'), { filename: 'clip_v008_L.mp4', subfolder: SUB, type: 'output' }])
+  const h = m.getByTestId('outputs-eye-heading')
+  await expect(h.nth(0)).toHaveText('Video Outputs')
+  await expect(h.nth(1)).toHaveText('DPX Frame Outputs')
+  await expect(h.nth(2)).toContainText('All Frames for clip_v008_L')
+  await expect(m.getByTestId('outputs-main-video')).toHaveCount(0)
+})

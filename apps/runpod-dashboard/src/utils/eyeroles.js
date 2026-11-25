@@ -36,13 +36,16 @@ export function withEyeSlots(tiles) {
     done.add(k)
     // row one: the four slots (a picture, or the Not Generated placeholder); the filled sequences follow as full-width rows (their tile, data file, previews and buttons)
     const filled = []
+    const sub = k.split('\u0000')[0], mainKey = els.get(k)[0].key
+    out.push({ key: `eyehead:video:${k}`, kind: 'eyehead', head: 'video' })
     for (const role of EYE_ORDER) {
       const have = els.get(k).filter((x) => x.eye === role)
-      if (have.length) { out.push({ key: `eyecard:${k}:${role}`, kind: 'eyecard', eye: role, sub: k.split('\u0000')[0], slot: have[0], stem: k.split('\u0000')[1] }); filled.push(...have) }
-      else out.push({ key: `eyeslot:${k}:${role}`, kind: 'eyeslot', eye: role, sub: k.split('\u0000')[0], stem: k.split('\u0000')[1] })
+      if (have.length) { out.push({ key: `eyecard:${k}:${role}`, kind: 'eyecard', eye: role, sub: k.split('\u0000')[0], slot: have[0], mainKey, stem: k.split('\u0000')[1] }); filled.push(...have) }
+      else out.push({ key: `eyeslot:${k}:${role}`, kind: 'eyeslot', eye: role, mainKey, sub: k.split('\u0000')[0], stem: k.split('\u0000')[1] })
     }
+    out.push({ key: `eyehead:dpx:${k}`, kind: 'eyehead', head: 'dpx' })
     for (const role of EYE_ORDER) out.push({ key: `eyeframe:${k}:${role}`, kind: 'eyeframe', eye: role, slot: (els.get(k).filter((x) => x.eye === role))[0] || null, stem: k.split('\u0000')[1] })   // row two: the DPX previews
-    out.push(...filled)
+    for (const f of filled) out.push({ key: `eyehead:all:${f.key}`, kind: 'eyehead', head: 'all', name: f.name || f.file.filename }, f)
   }
   return out
 }
