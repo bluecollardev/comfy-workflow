@@ -724,6 +724,7 @@
       "title": "Generation Errors ({n})",
       "kind": { "frames": "Frame Previews", "frame": "Frame", "sequence": "Preview", "graph": "Render" }
     },
+    "eye": { "overall": "Overall", "left": "Left Eye", "right": "Right Eye", "empty": "Not rendered yet" },
     "video": { "play": "Play Video", "mainVideo": "Main Video", "noPreview": "Preview not available in this player", "timedOut": "Preview timed out: Retry", "retry": "Retry Preview" },
     "image": { "tooLarge": "Too large to preview", "noPreview": "The image could not be loaded" },
     "data": {
