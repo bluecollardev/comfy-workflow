@@ -8,10 +8,10 @@ const lastPut = (api) => api.calls.filter((c) => c.method === 'PUT' && c.path ==
 const open = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = configModal(page); await cfgTab(d, 'volume'); return d }
 const chip = (page, card, dc) => page.getByTestId('choose-card-modal').locator(`[data-testid="dc-card-row"][data-card="${card}"] [data-testid="dc-chip"][data-dc="${dc}"]`)
 
-test('The datacenter and the cards are one block with a Choose Card button; the old datacenter table, Default card select and Stock cards list are gone', async ({ page }) => {
+test('The datacenter and the cards are one block with a Select Card(s) button; the old datacenter table, Default card select and Stock cards list are gone', async ({ page }) => {
   const d = await open(page)
   const b = d.getByTestId('cfg-cards-block')
-  await expect(b).toContainText(t('config.cardsTitle')); await expect(b.getByTestId('cfg-choose-card-btn')).toHaveText(/Choose Card/)
+  await expect(b).toContainText(t('config.cardsTitle')); await expect(b.getByTestId('cfg-choose-card-btn')).toHaveText(/Select Card\(s\)/)
   await expect(b.getByTestId('cfg-cards-dc')).toContainText(t('config.datacenterAny')); await expect(b.getByTestId('cfg-cards-chosen')).toContainText(t('config.cardsStock'))
   await expect(d.getByTestId('cfg-default-gpu')).toHaveCount(0); await expect(d.getByTestId('cfg-auto-cards')).toHaveCount(0); await expect(d.getByTestId('cfg-dc')).toHaveCount(0)
 })

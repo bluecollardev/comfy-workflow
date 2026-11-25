@@ -95,14 +95,11 @@
       <BAlert :model-value="true" variant="info" class="small py-2 mb-3"><i class="fa-solid fa-circle-info me-2"></i>{{ forPod ? $t('config.volumePodHint') : $t('config.volumeHint') }}</BAlert>
       <BRow class="g-3">
         <BCol cols="12">
-          <BFormGroup v-if="forPod" :label="$t('config.datacenter')" label-for="cfg-dc" :description="$t('config.datacenterHelp')">
-            <DatacenterTable testid="cfg-dc" :list="dcList" :model-value="cfg.data_center_id" :any-label="$t('config.datacenterAny')" @update:model-value="cfg.data_center_id = $event" />
-          </BFormGroup>
           <!-- The default configuration: the datacenter and the cards go together, chosen in the same window as Import Round's step 3 (Choose Card) -->
-          <div v-else class="border rounded p-2" data-testid="cfg-cards-block">
+          <div class="border rounded p-2" data-testid="cfg-cards-block">
             <div class="fw-semibold mb-1">{{ $t('config.cardsTitle') }}</div>
             <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
-              <BButton :variant="chosenCards.length ? 'outline-success' : 'outline-light'" size="sm" data-testid="cfg-choose-card-btn" @click="cardModal = true"><i class="fa-solid fa-microchip me-1"></i>{{ $t('importRound.cardAll') }}</BButton>
+              <BButton :variant="chosenCards.length ? 'outline-success' : 'outline-light'" size="sm" data-testid="cfg-choose-card-btn" @click="cardModal = true"><i class="fa-solid fa-microchip me-1"></i>{{ $t('config.cardsSelect') }}</BButton>
               <span class="small" data-testid="cfg-cards-dc"><span class="text-body-secondary">{{ $t('config.cardsDcLabel') }}</span> <strong>{{ cfg.data_center_id || $t('config.datacenterAny') }}</strong></span>
               <span class="small" data-testid="cfg-cards-chosen"><span class="text-body-secondary">{{ $t('config.cardsLabel') }}</span> <strong>{{ chosenCards.length ? chosenCards.map(cardName).join(', ') : $t('config.cardsStock') }}</strong></span>
             </div>
@@ -375,7 +372,7 @@
 
       <div v-if="forPod" :id="`${slotId}-opt`"></div>   <!-- per-pod configuration: the render choices stay here (a pod has no Publishing tab) -->
       </fieldset>
-      <ChooseCardModal v-if="!forPod" :show="cardModal" :list="dcList" :loading="dcLoading" :datacenter="cfg.data_center_id || ''" :cards="chosenCards" :card-label="chosenCards.map(cardName).join(', ')" :volume-dcs="volumeDcs" :default-dc="cfg.data_center_id || ''" @close="cardModal = false" @refresh="loadDatacenters(true)" @update:datacenter="onCardDc" @pick="onPickCard" @auto="writeCards([])" />
+      <ChooseCardModal :show="cardModal" :list="dcList" :loading="dcLoading" :datacenter="cfg.data_center_id || ''" :cards="chosenCards" :card-label="chosenCards.map(cardName).join(', ')" :volume-dcs="volumeDcs" :default-dc="cfg.data_center_id || ''" @close="cardModal = false" @refresh="loadDatacenters(true)" @update:datacenter="onCardDc" @pick="onPickCard" @auto="writeCards([])" />
       <Teleport defer :to="`#${slotId}-${forPod ? 'opt' : 'pub'}`">
       <div v-if="!forPod && cfg.outputs" class="border rounded p-2 mb-3" data-testid="config-outputs">
         <div class="fw-semibold mb-1">{{ $t('config.outputsTitle') }}</div>
