@@ -127,3 +127,11 @@ test('a preview carries the header colour fields of the first frame, and the cac
   const plain = createThumbs({ autoCap: Infinity, cache: memCache(), produce: async () => ({ url: 'data:y' }) })
   assert.deepEqual(await plain.request('k', {}), { status: 'ready', url: 'data:y' })   // no header: no key
 })
+
+test('queued previews run by page position (top, then left), not by arrival; unordered ones go last', async () => {
+  const g = gate(), ran = []
+  const t = createThumbs({ autoCap: Infinity, cache: memCache(), produce: async (j) => { ran.push(j.n); await g.p; return { url: 'data:x' } } })
+  const all = [t.request('first', { n: 'first' }, { order: 0 }), t.request('c', { n: 'c' }, { order: 300 }), t.request('none', { n: 'none' }), t.request('a', { n: 'a' }, { order: 100 }), t.request('b', { n: 'b' }, { order: 200 })]
+  await new Promise((r) => setTimeout(r, 5)); g.go(); await Promise.all(all)
+  assert.deepEqual(ran, ['first', 'a', 'b', 'c', 'none'])
+})

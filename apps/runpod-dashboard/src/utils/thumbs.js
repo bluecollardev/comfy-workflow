@@ -82,6 +82,21 @@ export function idbBackend(dbName = 'pod-manager-thumbs') {
  * The preview controller. `produce(job, signal)` fetches and decodes one thumbnail: resolve `{ url }`, or `{ empty: true, reason }` for an empty first frame (never cached), or throw.
  * `request(key, job, { manual })` answers `{ status }`: `ready` (+ url; from the cache with no fetch, or produced), `empty`, `error` (+ reason), `capped` (an automatic request beyond the cap: show Load preview), `aborted`.
  */
+/** Put a job in the queue by its page position (`order`, smaller = nearer the top-left), after any earlier job with the same or a smaller order; jobs with no order go last, in arrival order. Previews load top to bottom (Lucas, 2026-11-25). */
+export function enqueue(queue, j) {
+  const o = (x) => (typeof x.order === 'number' ? x.order : Infinity)
+  let i = queue.length
+  while (i > 0 && o(queue[i - 1]) > o(j)) i--
+  queue.splice(i, 0, j)
+}
+/** A tile's page position as one number: its top then its left within the nearest scrolling ancestor (scroll offset included), so it does not change as the list scrolls. */
+export function elementOrder(el) {
+  if (!el?.getBoundingClientRect) return null
+  let p = el.parentElement
+  while (p && p !== document.body && !/(auto|scroll)/.test(getComputedStyle(p).overflowY)) p = p.parentElement
+  const r = el.getBoundingClientRect(), b = p && p !== document.body ? p.getBoundingClientRect() : { top: 0, left: 0 }, st = p && p !== document.body ? p.scrollTop : (window.scrollY || 0)
+  return Math.round(r.top - b.top + st) * 100000 + Math.max(0, Math.round(r.left - b.left))
+}
 export function createThumbs({ cache, produce, concurrency = 1, autoCap = AUTO_CAP }) {
   const queue = [], running = new Set(), jobs = new Map()
   let autoUsed = 0
@@ -108,7 +123,7 @@ export function createThumbs({ cache, produce, concurrency = 1, autoCap = AUTO_C
       if (hit && !stale(hit, job)) return hit.empty ? { status: 'empty', reason: hit.reason || '', cached: true } : { status: 'ready', url: hit.url, cached: true, ...(hit.header ? { header: hit.header } : {}) }
       return { status: 'none' }
     },
-    async request(key, job, { manual = false, refresh = false } = {}) {
+    async request(key, job, { manual = false, refresh = false, order = null } = {}) {
       let hit
       if (!refresh) { try { hit = await cache.get(key) } catch { hit = undefined } }   // refresh: the saved one is not read; the new one replaces it, and a failure leaves the old one where it is
       if (hit && !stale(hit, job)) return hit.empty ? { status: 'empty', reason: hit.reason || '', cached: true } : { status: 'ready', url: hit.url, cached: true, ...(hit.header ? { header: hit.header } : {}) }
@@ -116,9 +131,9 @@ export function createThumbs({ cache, produce, concurrency = 1, autoCap = AUTO_C
       if (have) return have.promise
       if (!manual && autoUsed >= autoCap) return { status: 'capped' }
       if (!manual) autoUsed++
-      const j = { key, job, ctrl: new AbortController(), aborted: false }
+      const j = { key, job, order, ctrl: new AbortController(), aborted: false }
       j.promise = new Promise((res) => { j.resolve = res })
-      jobs.set(key, j); queue.push(j); pump()
+      jobs.set(key, j); enqueue(queue, j); pump()
       return j.promise
     },
     /** Stop one sequence's preview (queued or running): the tile scrolled away. A cap slot it took is given back. */
