@@ -97,18 +97,24 @@
         <BCol cols="12">
           <!-- The default configuration: the datacenter and the cards go together, chosen in the same window as Import Round's step 3 (Choose Card) -->
           <div class="border rounded p-2" data-testid="cfg-cards-block">
-            <div class="fw-semibold mb-1">{{ $t('config.cardsTitle') }}</div>
-            <div class="d-flex align-items-center gap-2 flex-wrap mb-1" data-testid="cfg-cards-default-row">
-              <BButton :variant="chosenCards.length ? 'outline-success' : 'outline-light'" size="sm" data-testid="cfg-choose-card-btn" @click="cardModal = 'default'"><i class="fa-solid fa-microchip me-1"></i>{{ $t('config.cardsSelect') }}</BButton>
-              <span class="small" data-testid="cfg-cards-dc"><span class="text-body-secondary">{{ $t('config.cardsDcLabel') }}</span> <strong>{{ cfg.data_center_id || $t('config.datacenterAny') }}</strong></span>
-              <span class="small" data-testid="cfg-cards-chosen"><span class="text-body-secondary">{{ $t('config.cardsLabel') }}</span> <strong>{{ chosenCards.length ? chosenCards.map(cardName).join(', ') : $t('config.cardsStock') }}</strong></span>
+            <div class="fw-semibold mb-2">{{ $t('config.cardsTitle') }}</div>
+            <div class="border rounded p-2 mb-2" data-testid="cfg-cards-default-row">
+              <div class="small fw-semibold mb-1">{{ $t('config.cardsDefaultTitle') }}</div>
+              <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+                <BButton :variant="chosenCards.length ? 'outline-success' : 'outline-light'" size="sm" data-testid="cfg-choose-card-btn" @click="cardModal = 'default'"><i class="fa-solid fa-microchip me-1"></i>{{ $t('config.cardsSelectDefault') }}</BButton>
+                <span class="small" data-testid="cfg-cards-dc"><span class="text-body-secondary">{{ $t('config.cardsDcLabel') }}</span> <strong>{{ cfg.data_center_id || $t('config.datacenterAny') }}</strong></span>
+                <span class="small" data-testid="cfg-cards-chosen"><span class="text-body-secondary">{{ $t('config.cardsLabel') }}</span> <strong>{{ chosenCards.length ? chosenCards.map(cardName).join(', ') : $t('config.cardsStock') }}</strong></span>
+              </div>
+              <div class="form-text" data-testid="cfg-cards-help">{{ $t('config.cardsHelp') }}</div>
             </div>
-            <div class="form-text mb-2" data-testid="cfg-cards-help">{{ $t('config.cardsHelp') }}</div>
-            <div class="d-flex align-items-center gap-2 flex-wrap mb-1" data-testid="cfg-cards-stock-row">
-              <BButton :variant="stockCards.length ? 'outline-success' : 'outline-light'" size="sm" data-testid="cfg-choose-stock-btn" @click="cardModal = 'stock'"><i class="fa-solid fa-microchip me-1"></i>{{ $t('config.cardsSelect') }}</BButton>
-              <span class="small" data-testid="cfg-cards-stock"><span class="text-body-secondary">{{ $t('config.cardsStockLabel') }}</span> <strong>{{ stockCards.length ? stockCards.map(cardName).join(', ') : $t('config.cardsStockBuiltin') }}</strong></span>
+            <div class="border rounded p-2" data-testid="cfg-cards-stock-row">
+              <div class="small fw-semibold mb-1">{{ $t('config.cardsStockTitle') }}</div>
+              <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+                <BButton :variant="stockCards.length ? 'outline-success' : 'outline-light'" size="sm" data-testid="cfg-choose-stock-btn" @click="cardModal = 'stock'"><i class="fa-solid fa-microchip me-1"></i>{{ $t('config.cardsSelectStock') }}</BButton>
+                <span class="small" data-testid="cfg-cards-stock"><span class="text-body-secondary">{{ $t('config.cardsStockLabel') }}</span> <strong>{{ stockCards.length ? stockCards.map(cardName).join(', ') : $t('config.cardsStockBuiltin') }}</strong></span>
+              </div>
+              <div class="form-text" data-testid="cfg-cards-stock-help">{{ $t('config.cardsStockHelp') }}</div>
             </div>
-            <div class="form-text" data-testid="cfg-cards-stock-help">{{ $t('config.cardsStockHelp') }}</div>
           </div>
         </BCol>
         <BCol md="8">
@@ -377,7 +383,7 @@
 
       <div v-if="forPod" :id="`${slotId}-opt`"></div>   <!-- per-pod configuration: the render choices stay here (a pod has no Publishing tab) -->
       </fieldset>
-      <ChooseCardModal :show="!!cardModal" :list="dcList" :loading="dcLoading" :datacenter="cfg.data_center_id || ''" :cards="cardModal === 'stock' ? stockCards : chosenCards" :card-label="(cardModal === 'stock' ? stockCards : chosenCards).map(cardName).join(', ')" :volume-dcs="volumeDcs" :default-dc="cfg.data_center_id || ''" @close="cardModal = ''" @refresh="loadDatacenters(true)" @update:datacenter="onCardDc" @pick="onPickCard" @auto="onCardAuto" />
+      <ChooseCardModal :show="!!cardModal" :title="cardModal === 'stock' ? $t('config.cardsStockModal') : $t('config.cardsDefaultModal')" :help="cardModal === 'stock' ? $t('config.cardsStockModalHelp') : $t('config.cardsDefaultModalHelp')" :list="dcList" :loading="dcLoading" :datacenter="cfg.data_center_id || ''" :cards="cardModal === 'stock' ? stockCards : chosenCards" :card-label="(cardModal === 'stock' ? stockCards : chosenCards).map(cardName).join(', ')" :volume-dcs="volumeDcs" :default-dc="cfg.data_center_id || ''" @close="cardModal = ''" @refresh="loadDatacenters(true)" @update:datacenter="onCardDc" @pick="onPickCard" @auto="onCardAuto" />
       <Teleport defer :to="`#${slotId}-${forPod ? 'opt' : 'pub'}`">
       <div v-if="!forPod && cfg.outputs" class="border rounded p-2 mb-3" data-testid="config-outputs">
         <div class="fw-semibold mb-1">{{ $t('config.outputsTitle') }}</div>
