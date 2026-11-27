@@ -820,7 +820,7 @@ export interface JobView {
 /** how the files that live on the volume got to the bucket: see ADR-050, amendment "transfer adapters" */
 export interface JobFile { path: string; adapter: 'pod' | 'pc'; sha256?: string; shot?: string }
 interface Group { child: ChildView; items: PlanItem[]; send: PlanItem[]; ac: AbortController; info: MsgInfo; lp?: LinkPlan; psrc?: PreviewSrc[]; folders?: string[]; partial: Map<string, number>; doneBytes: number; t0: number }
-interface Job { /** the transfer adapter chosen for the volume files (once per job) */ route?: Promise<Route>; /** which pods the person asked for, and which to leave out */ podOpts?: PodOpts; stopTrack?: () => void; groups: Group[]; streams: number; perShot: boolean; /** the raw trigger (History): auto-publish, auto-publish:manual, render ... */ trig?: string; tag?: string; /** the BKK return: the round, its files and the hashes made while they were read */ ret?: { /** sequence stem or clip -> the notes the manifest carries (EDL override, low resolution, start timecode) */ seq: Map<string, string[]>; round: string; prefix: string; items: PlanItem[]; clipNames: Record<string, string> }; hashes: Map<string, string>; lp?: LinkPlan; psrc?: PreviewSrc[]; volOnly?: boolean; folders?: string[]; prefix?: string; slackText?: string; view: JobView; abort: AbortController; info: MsgInfo; template: string; started: number; done: Promise<void> }
+interface Job { /** files this PC sent (storage events, docs/ADR-064) */ sentLocal?: { abs: string; key: string }[]; /** the transfer adapter chosen for the volume files (once per job) */ route?: Promise<Route>; /** which pods the person asked for, and which to leave out */ podOpts?: PodOpts; stopTrack?: () => void; groups: Group[]; streams: number; perShot: boolean; /** the raw trigger (History): auto-publish, auto-publish:manual, render ... */ trig?: string; tag?: string; /** the BKK return: the round, its files and the hashes made while they were read */ ret?: { /** sequence stem or clip -> the notes the manifest carries (EDL override, low resolution, start timecode) */ seq: Map<string, string[]>; round: string; prefix: string; items: PlanItem[]; clipNames: Record<string, string> }; hashes: Map<string, string>; lp?: LinkPlan; psrc?: PreviewSrc[]; volOnly?: boolean; folders?: string[]; prefix?: string; slackText?: string; view: JobView; abort: AbortController; info: MsgInfo; template: string; started: number; done: Promise<void> }
 const jobs = new Map<string, Job>()
 let finished: (JobView & { info?: MsgInfo; template?: string; slackText?: string })[] = []
 let seq = 0
@@ -985,6 +985,7 @@ async function uploadGroup(job: Job, g: Group, a: Awaited<ReturnType<typeof s3Ac
   const c = g.child, ac = g.ac; let failure = '', next = 0, nextVol = 0
   const refresh = () => { c.bytes_done = [...g.partial.values()].reduce((x, y) => x + y, 0) + g.doneBytes; const s = (deps.now() - g.t0) / 1000; c.rate = s > 0 ? Math.round(c.bytes_done / s) : 0; progressOf(job) }
   const pcList = g.send.filter((i) => i.source !== 'volume'), volList = g.send.filter((i) => i.source === 'volume')
+  const sentLocal: { abs: string; key: string }[] = job.sentLocal ??= []
   const mirrors = storage.mirrors()   // the other enabled storage adapters (docs/ADR-063): a copy of each file this PC sends; a failed copy is a warning, never a failed job
   const warnJob = (m: string) => { job.view.warnings = [...new Set([...(job.view.warnings ?? []), m])] }
   if (mirrors.length && volList.length) warnJob(`${mirrors.map((m) => m.name).join(', ')}: files that are only on the volume are not copied (this version mirrors what is sent from this PC)`)
@@ -1013,6 +1014,7 @@ async function uploadGroup(job: Job, g: Group, a: Awaited<ReturnType<typeof s3Ac
       g.partial.delete(it.path); const sha = hp ? await hp : null
       if (r.code === 0) {
         if (sha) { job.hashes.set(it.s3_key, sha); c.sha256++ } g.doneBytes += it.bytes; c.files_done++; refresh()
+        sentLocal.push({ abs: join(root(), it.path), key: it.s3_key })
         for (const m of mirrors) { const why = await storage.mirrorCopy(m, join(root(), it.path), it.s3_key, ac.signal).catch((e) => redact((e as Error).message)); if (why && !ac.signal.aborted) warnJob(`${m.name}: ${basename(it.path)}: ${why}`) }
       }
       else if (!ac.signal.aborted) failure = `${basename(it.path)}: ${awsText(r)}`
@@ -1092,6 +1094,10 @@ async function finishParent(job: Job, a: Awaited<ReturnType<typeof s3Access>> | 
   const up = a ? `${v.files_done} file${v.files_done === 1 ? '' : 's'} uploaded${v.skipped ? `, ${v.skipped} already there` : ''} (${fmtSize(v.bytes_done)}) to ${v.dest}${kids.length > 1 ? ` in ${kids.length} shots` : ''}${cancelled.length ? `; ${cancelled.length} shot${cancelled.length === 1 ? '' : 's'} cancelled` : ''}` : ''
   if (v.slack.state === 'failed') { v.state = a ? 'done_with_warning' : 'failed'; v.error = v.slack.error; v.summary = `${up}${up ? '. ' : ''}${a ? 'The files are up, but the Slack message failed: ' : 'The Slack message failed: '}${v.slack.error}. It can be sent again.` }
   else { v.state = cancelled.length ? 'done_with_warning' : 'done'; v.summary = `${up}${up && v.slack.state === 'sent' ? '; ' : ''}${v.slack.state === 'sent' ? 'posted to Slack' : ''}` }
+  if ((v.state === 'done' || v.state === 'done_with_warning') && job.sentLocal?.length && storage.forEvent('published').length) {   // docs/ADR-064: after the job, what this PC sent also goes to the adapters that listen to Published
+    const w = await storage.uploadOn('published', job.sentLocal, ac.signal).catch(() => [] as string[])
+    if (w.length) job.view.warnings = [...new Set([...(job.view.warnings ?? []), ...w.slice(0, 5)])]
+  }
 }
 
 // ----- the BKK return: sha256 of every file, RETURN-MANIFEST.json (bh-return-1) merged into the round, and the round's inventory -----

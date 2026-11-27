@@ -21,7 +21,7 @@ const openModal = async (page) => { await page.goto('/'); await podCard(page, 'C
 const tick = (m, p) => m.locator(`[data-testid="publish-entry-check"][data-path="${p}"]`)
 const openSettings = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'publishing'); return d }
 
-const openAdapters = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'storage'); return d }   // the S3 destination's form is the publish-s3 card in the Storage tab (docs/ADR-063)
+const openAdapters = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'storage'); await d.getByTestId('storage-same-bucket').uncheck(); return d }   // the destination's own fields (docs/ADR-065: ticked, it follows the Panama bucket and shows none). The S3 destination's form is the publish-s3 card in the Storage tab (docs/ADR-063)
 const dest = (d) => d.getByTestId('settings-publish-destination')
 
 const openConnectSlack = async (page) => { await page.goto('/'); await page.getByTestId('open-connect').click(); const d = modal(page, t('connect.title')); await d.getByRole('tab', { name: t('connect.slack') }).click(); await expect(d.getByTestId('slack-pane')).toBeVisible(); return d }

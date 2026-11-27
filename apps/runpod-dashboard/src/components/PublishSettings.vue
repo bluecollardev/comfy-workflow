@@ -11,10 +11,10 @@
           <BButton v-if="store.settings.s3.problem && !store.settings.s3.ready && form.s3.credentials === 'panama'" size="sm" variant="outline-light" data-testid="publish-s3-open-panama" @click="openPanama">{{ $t('publish.s3.openPanama') }}</BButton></div>
         <div v-if="store.settings.s3.note" class="small text-body-secondary mb-2" data-testid="publish-s3-note">{{ store.settings.s3.note }}</div>
         <BRow class="g-2">
-          <BCol md="6"><BFormGroup :label="$t('publish.s3.bucket')" label-for="pub-bucket"><BFormInput id="pub-bucket" v-model.trim="form.s3.bucket" size="sm" class="font-monospace" data-testid="publish-s3-bucket" /><div v-if="fieldError('s3', 'bucket')" class="text-danger small" data-testid="publish-field-error" data-field="s3.bucket">{{ fieldError('s3', 'bucket') }}</div></BFormGroup></BCol>
+          <BCol v-if="!follow" md="6"><BFormGroup :label="$t('publish.s3.bucket')" label-for="pub-bucket"><BFormInput id="pub-bucket" v-model.trim="form.s3.bucket" size="sm" class="font-monospace" data-testid="publish-s3-bucket" /><div v-if="fieldError('s3', 'bucket')" class="text-danger small" data-testid="publish-field-error" data-field="s3.bucket">{{ fieldError('s3', 'bucket') }}</div></BFormGroup></BCol>
           <BCol md="6"><BFormGroup :label="$t('publish.s3.prefix')" label-for="pub-prefix"><BFormInput id="pub-prefix" v-model.trim="form.s3.prefix" size="sm" class="font-monospace" data-testid="publish-s3-prefix" /><div v-if="fieldError('s3', 'prefix')" class="text-danger small" data-testid="publish-field-error" data-field="s3.prefix">{{ fieldError('s3', 'prefix') }}</div></BFormGroup></BCol>
           <BCol md="12"><div class="small text-body-secondary font-monospace" data-testid="publish-s3-preview">{{ dest ? $t('publish.s3.preview', { dest }) : '' }}</div></BCol>
-          <BCol md="4"><BFormGroup :label="$t('publish.s3.region')" label-for="pub-region"><BFormInput id="pub-region" v-model.trim="form.s3.region" size="sm" class="font-monospace" data-testid="publish-s3-region" /></BFormGroup></BCol>
+          <BCol v-if="!follow" md="4"><BFormGroup :label="$t('publish.s3.region')" label-for="pub-region"><BFormInput id="pub-region" v-model.trim="form.s3.region" size="sm" class="font-monospace" data-testid="publish-s3-region" /></BFormGroup></BCol>
           <BCol md="4"><BFormGroup :label="$t('publish.s3.presign')" label-for="pub-presign"><BFormInput id="pub-presign" v-model.number="form.s3.presign_hours" type="number" min="1" size="sm" data-testid="publish-s3-presign" /><div v-if="fieldError('s3', 'presign_hours')" class="text-danger small" data-testid="publish-field-error" data-field="s3.presign_hours">{{ fieldError('s3', 'presign_hours') }}</div></BFormGroup></BCol>
           <BCol md="12"><details><summary class="small text-body-secondary">{{ $t('publish.s3.advanced') }}</summary><BFormGroup :label="$t('publish.s3.endpoint')" label-for="pub-endpoint" class="mt-1"><BFormInput id="pub-endpoint" v-model.trim="form.s3.endpoint" size="sm" class="font-monospace" placeholder="https://" data-testid="publish-s3-endpoint" /></BFormGroup></details></BCol>
           <BCol md="12">
@@ -72,7 +72,7 @@ import { t } from '../i18n'
 import { PLACEHOLDERS, s3Dest, unknownPlaceholders } from '../utils/publish'
 import { publishAPI } from '../api/publish'
 
-const props = defineProps({ /** 's3': the destination's form (shown in Adapters > Storage); 'rest': Slack, targets, transfer and the message (Publishing) */ part: { type: String, default: 'rest' }, /** the configuration's render block: the S3 / Slack boxes are also its "publish when done" defaults, and Sync the renders is its pull */ render: { type: Object, default: null } })
+const props = defineProps({ /** the Panama card's bucket and region while the destination is the same bucket and keys (docs/ADR-065): the destination then follows them and shows neither field (its keys stay its own choice) */ follow: { type: Object, default: null }, /** 's3': the destination's form (shown in Adapters > Storage); 'rest': Slack, targets, transfer and the message (Publishing) */ part: { type: String, default: 'rest' }, /** the configuration's render block: the S3 / Slack boxes are also its "publish when done" defaults, and Sync the renders is its pull */ render: { type: Object, default: null } })
 const store = usePublishStore(), confirm = useConfirmStore()
 const form = ref(null)
 const secrets = reactive({ access_key_id: '', secret_access_key: '' })
@@ -94,7 +94,7 @@ const transferOptions = computed(() => ['auto', 'pod', 'pc'].map((v) => ({ value
 /** Whether anything here differs from what is saved: a changed field or a secret typed. The window's one Save writes it. */
 const XFER = ['transfer', 'transfer_pods', 'parallel_pods']
 const mine = (f) => (props.part === 's3' ? { s3: Object.fromEntries(Object.entries(f.s3).filter(([k]) => !XFER.includes(k))) } : { s3: Object.fromEntries(Object.entries(f.s3).filter(([k]) => XFER.includes(k))), defaults: f.defaults })
-const dirty = computed(() => !!form.value && (JSON.stringify(mine(form.value)) !== snapshot.value || (props.part === 's3' && (!!secrets.access_key_id || !!secrets.secret_access_key))))
+const dirty = computed(() => !!form.value && ((props.part === 's3' && !!props.follow && (form.value.s3.bucket !== props.follow.bucket || form.value.s3.region !== props.follow.region )) || JSON.stringify(mine(form.value)) !== snapshot.value || (props.part === 's3' && (!!secrets.access_key_id || !!secrets.secret_access_key))))
 /** One pair of boxes is both the publish defaults and the Render sequences defaults (Slack needs S3 there): a change writes both. */
 function mirrorTargets() {
   const r = props.render; if (!r?.publish) return
@@ -115,6 +115,7 @@ const blockError = (block) => (errField.value && errField.value.startsWith(`${bl
 function body(extra = {}) {
   const f = form.value
   const m = mine(f)
+  if (props.part === 's3' && props.follow) m.s3 = { ...m.s3, bucket: props.follow.bucket, region: props.follow.region }
   if (props.part === 's3') return { s3: { ...m.s3, ...(secrets.access_key_id ? { access_key_id: secrets.access_key_id } : {}), ...(secrets.secret_access_key ? { secret_access_key: secrets.secret_access_key } : {}) }, ...extra }
   return { s3: m.s3, defaults: { targets: [...f.defaults.targets], message: f.defaults.message }, ...extra }
 }

@@ -15,6 +15,7 @@ import * as history from './history.js'
 import * as mounts from './mounts.js'
 import { configDir, mountsFile } from './paths.js'
 import * as publish from './publish.js'
+import * as storage from './storage.js'
 
 export const WINDOW_DEFAULT = 10, RETRY_MS = 10 * 60_000, MAX_RETRIES = 2, TICK_MS = 5000, CONSIDER_MS = 60_000, MAX_REVIEWS = 2000, KEEP_RECENT = 20
 export const NEEDS_NAME_APPROVE = 'Approving a shot version needs the name of who says yes'
@@ -187,7 +188,17 @@ export async function approve(o: { shot?: unknown; version?: unknown; approved_b
   await writeJson(approvalsFile(), { approvals: [...all, a] })
   history.record({ kind: 'change', area: 'configuration', action: 'review version approved', what: `${shot} ${version}`, detail: `marked approved by ${who}`, approved_by: who })
   void consider().catch(() => undefined)
+  void approvedUpload(shot, version, found)
   return a
+}
+/** docs/ADR-064: an approved version's files that are on this PC go to the storage adapters that listen to Approved. The Panama destination is Auto-publish, not this. Best effort. */
+async function approvedUpload(shot: string, version: string, found: Found): Promise<void> {
+  try {
+    if (found.source !== 'local' || !storage.forEvent('approved').length) { if (found.source !== 'local' && storage.forEvent('approved').length) history.record({ kind: 'change', area: 'configuration', action: 'storage upload on approved', what: `${shot} ${version}`, detail: 'not uploaded: the review is only on the volume (ADR-064)' }); return }
+    const base = deps.outputRoot(); if (!base) return
+    const warns = await storage.uploadOn('approved', found.files.map((f) => ({ abs: join(base, 'deliver', shot, version, f.name), key: `deliver/${shot}/${version}/${f.name}` })))
+    if (warns.length) history.record({ kind: 'change', area: 'configuration', action: 'storage upload on approved', what: `${shot} ${version}`, detail: warns.slice(0, 5).join('; ') })
+  } catch { /* never fails an approval */ }
 }
 export async function revoke(o: { shot?: unknown; version?: unknown }): Promise<{ revoked: boolean; cancelled: number }> {
   const { shot, version } = checkShotVersion(o?.shot, o?.version), key = keyOf(shot, version)

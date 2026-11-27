@@ -495,18 +495,21 @@ export async function mockApi(page, state) {
       if (sg.old) return json({ detail: 'no core call storage.list' }, 500)
       const v = state.publish?.settings?.s3 || { bucket: 'bh-panama-exchange-610140802195', prefix: 'returns/BKK/', region: 'us-west-2', endpoint: '', ready: true }
       sg.adapters ||= [
-        { id: 'publish-s3', name: 'Publish destination (S3)', builtin: true, kind: 'publish', enabled: true, endpoint: v.endpoint || '', region: v.region || '', bucket: v.bucket || '', prefix: v.prefix || '', ready: !!v.ready, key_hint: '', edit: 'publish' },
+        { id: 'publish-s3', name: 'Panama BH (S3)', builtin: true, kind: 'publish', enabled: true, endpoint: v.endpoint || '', region: v.region || '', bucket: v.bucket || '', prefix: v.prefix || '', ready: !!v.ready, key_hint: '', edit: 'publish' },
         { id: 'panama-s3', name: 'Panama BH exchange (S3)', builtin: true, kind: 'panama', enabled: true, endpoint: '', region: 'us-west-2', bucket: 'bh-panama-exchange-610140802195', prefix: 'rounds/', ready: true, key_hint: '', edit: 'panama' },
         { id: 'wasabi', name: 'Wasabi', builtin: true, kind: 'wasabi', enabled: false, endpoint: 'https://s3.wasabisys.com', region: 'us-east-1', bucket: '', prefix: '', ready: false, problem: 'Add a bucket', key_hint: '' },
       ]
       const ad = sg.adapters, one = (id) => ad.find((a) => a.id === id)
       const ready = (a) => { a.ready = !!(a.bucket && a.region && (a.key_hint || a.kind === 'publish' || a.kind === 'panama')); if (a.ready) delete a.problem; else a.problem = !a.bucket ? 'Add a bucket' : 'Add the access key and secret key' }
       if (method === 'GET' && path === '/storage') return json({ adapters: ad })
+      if (method === 'PUT' && path === '/storage/order') { sg.calls.push({ order: body.order }); const o = body.order || []; ad.sort((x, y) => (o.includes(x.id) ? o.indexOf(x.id) : 99) - (o.includes(y.id) ? o.indexOf(y.id) : 99)); return json({ adapters: ad }) }
       if (method === 'PUT' && path === '/storage') {
         sg.calls.push({ save: { ...body, access_key_id: body.access_key_id ? '•' : undefined, secret_access_key: body.secret_access_key ? '•' : undefined } })
         let a = body.id && one(body.id)
         if (!a) { const slug = String(body.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); if (!slug) return json({ detail: 'name needs letters or digits' }, 400); a = { id: slug, name: body.name, builtin: false, kind: 'custom', enabled: false, endpoint: '', region: '', bucket: '', prefix: '', ready: false, key_hint: '' }; ad.push(a) }
         for (const k of ['endpoint', 'region', 'bucket', 'prefix']) if (body[k] !== undefined) a[k] = body[k]
+        if (body.events !== undefined) a.events = body.events
+        if (body.name !== undefined && body.id) a.name = String(body.name).trim() || a.name
         if (a.kind === 'wasabi' && !a.endpoint) a.endpoint = 'https://s3.wasabisys.com'
         if (body.access_key_id) a.key_hint = '…' + String(body.access_key_id).slice(-4)
         ready(a); return json({ adapters: ad })

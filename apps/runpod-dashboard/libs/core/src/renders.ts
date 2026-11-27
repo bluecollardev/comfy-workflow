@@ -25,6 +25,7 @@ import * as podnames from './podnames.js'
 import * as podpull from './podpull.js'
 import * as autopublish from './autopublish.js'
 import * as publish from './publish.js'
+import * as storage from './storage.js'
 import { mirrorDir, rendersFile } from './paths.js'
 import * as rp from './runpod.js'
 import * as sync from './sync.js'
@@ -1206,6 +1207,7 @@ async function run(job: Job): Promise<void> {
       if (ad.id === 'pod' && vol) void deps.emit(vol, review ? `output/deliver/${shot}/${versionName(version)}/` : `output/${PROXIES}/${s.dir ? `${s.dir}/` : ''}`, r.bytes).catch(() => undefined)   // one journal batch event per sequence, best effort
       if (ad.needsPull && job.pull) await pullOne(job, sv, r.files)
       else if (!ad.needsPull) sv.state = 'done'   // a local render has no pull: rendered, then done
+      await storageEvent(job, [sv], 'generating')
       await publishSeq(job, sv, ad.needsPull && !job.pull)   // this sequence's publish starts as soon as ITS files are here, not when the others are
     } catch (e) { sv.state = 'failed'; sv.error = (e as Error).message; failedN++ }
   }
@@ -1215,6 +1217,7 @@ async function run(job: Job): Promise<void> {
   v.summary = `${job.kind}: ${renderedN} rendered, ${skippedN} already there, ${incompleteN} incomplete, ${failedN} failed (${used}); ${v.pulled_files} file${v.pulled_files === 1 ? '' : 's'} pulled (${v.pulled_bytes} bytes), ${v.width === 'source' ? 'source size' : `width ${v.width}`}${review ? `; approved by ${job.approvedBy}` : ''}`
   const bad = v.sequences.find((s) => (s.state === 'failed' && s.error !== 'cancelled') || s.state === 'incomplete'); if (bad) v.error = bad.error
   if (job.publish && !job.pubIds.length && !job.pubErr && v.state === 'done') v.publish = { job_id: '', job_ids: [], state: 'refused', error: 'Nothing was rendered to publish' }
+  if (v.state === 'done') await storageEvent(job, v.sequences, 'generated')
   if (job.kind === 'review' && v.state === 'done') { try { autopublish.considerSoon() } catch { /* Auto-publish never fails a render */ } }   // ADR-050: an approved, finished review may go on its way
   end(job)
 }
@@ -1247,6 +1250,26 @@ async function pullOne(job: Job, sv: SeqView, paths: string[]): Promise<void> {
     if (r.failed) throw new Error('The pull of the proxy failed')
     sv.state = 'pulled'; v.pulled_files++; v.pulled_bytes += sv.bytes
   } finally { if (v.state === 'pulling') v.state = 'rendering' }
+}
+
+/** docs/ADR-064: files of a sequence that are on this PC go to the storage adapters that listen to this event. Never streams from the volume; a sequence that stayed on the pod is one History line. Best effort: never fails a render. */
+async function storageEvent(job: Job, seqs: SeqView[], ev: 'generating' | 'generated'): Promise<void> {
+  try {
+    if (!storage.forEvent(ev).length) return
+    const root = publish.localOutputRoot(); if (!root) return
+    const strip = (rel: string) => rel.replace(/^output\//, ''), files: { abs: string; key: string }[] = []
+    let onPod = 0
+    for (const sv of seqs) {
+      if (!['pulled', 'done', 'skipped'].includes(sv.state)) { if (sv.state === 'rendered') onPod++; continue }
+      const rel = strip(job.kind === 'review' ? dirname(sv.out) : sv.out), abs = join(root, rel)
+      const st = await fsStat(abs).catch(() => null); if (!st) continue
+      if (!st.isDirectory()) { files.push({ abs, key: rel }); continue }
+      for (const d of await readdir(abs, { withFileTypes: true }).catch(() => [])) if (d.isFile()) files.push({ abs: join(abs, d.name), key: `${rel}/${d.name}` })
+    }
+    if (onPod) history.record({ kind: 'change', area: 'configuration', action: `storage upload on ${ev}`, what: `${onPod} sequence(s) stayed on the pod`, detail: 'not uploaded: only files on this PC are sent (ADR-064)' })
+    const warns = await storage.uploadOn(ev, files, job.abort.signal)
+    if (warns.length) history.record({ kind: 'change', area: 'configuration', action: `storage upload on ${ev}`, what: 'warnings', detail: warns.slice(0, 5).join('; ') })
+  } catch { /* a storage copy never fails a render */ }
 }
 
 function end(job: Job): void {

@@ -77,4 +77,38 @@ describe('storage adapters', () => {
     storage.setAws(async () => ({ code: 255, stdout: '', stderr: 'AccessDenied' }))
     expect(await storage.test('wasabi')).toEqual({ ok: false, detail: 'AccessDenied' })
   })
+  // docs/ADR-064: events
+  it('events are saved, validated, and an old record listens to publishing only', async () => {
+    await storage.save({ id: 'wasabi', bucket: 'b-bucket', region: 'us-east-1', ...KEY, enabled: true })
+    expect((await storage.list()).adapters.find((a) => a.id === 'wasabi')!.events).toEqual(['publishing'])
+    await storage.save({ id: 'wasabi', events: ['generated', 'approved'] })
+    expect((await storage.list()).adapters.find((a) => a.id === 'wasabi')!.events).toEqual(['generated', 'approved'])
+    await expect(storage.save({ id: 'wasabi', events: ['nope'] })).rejects.toThrow(/events are some of/)
+    await storage.save({ id: 'wasabi', events: [] })
+    expect(storage.forEvent('generated')).toEqual([]); expect(storage.mirrors()).toEqual([])
+  })
+  it('uploadOn sends to the adapters that listen, skips weights and a same-size file already there, and a failure is a warning', async () => {
+    const { writeFileSync } = await import('node:fs')
+    await storage.save({ id: 'wasabi', bucket: 'b-bucket', region: 'us-east-1', ...KEY, enabled: true, events: ['generated'] })
+    const a = join(dir, 'a.mov'), w = join(dir, 'w.safetensors'), c = join(dir, 'c.mov'); writeFileSync(a, 'abc'); writeFileSync(w, 'x'); writeFileSync(c, 'abcd')
+    const calls: string[] = []
+    storage.setAws(async (args) => {
+      calls.push(args.slice(0, 3).join(' '))
+      if (args[1] === 'ls') return { code: 0, stdout: args[2].endsWith('/a.mov') ? '2026-01-01 00:00:00          3 a.mov\n' : '', stderr: '' } as never
+      return { code: args[2] === c ? 1 : 0, stdout: '', stderr: args[2] === c ? 'denied' : '' } as never
+    })
+    const warns = await storage.uploadOn('generated', [{ abs: a, key: 'x/a.mov' }, { abs: w, key: 'x/w.safetensors' }, { abs: c, key: 'x/c.mov' }])
+    expect(calls.some((x) => x.includes('w.safetensors'))).toBe(false)
+    expect(calls.filter((x) => x.startsWith('s3 cp')).length).toBe(1)   // a.mov was already there; the weight never goes; c.mov tried
+    expect(warns).toHaveLength(1); expect(warns[0]).toMatch(/c\.mov/)
+    expect(await storage.uploadOn('approved', [{ abs: a, key: 'x/a.mov' }])).toEqual([])
+  })
+  it('any storage can be given a title, the built-ins too; an empty one puts the default back', async () => {
+    await storage.save({ id: 'publish-s3', name: 'Panama BH' }); await storage.save({ id: 'wasabi', name: 'Long-term' })
+    let l = (await storage.list()).adapters
+    expect(l.find((a) => a.id === 'publish-s3')!.name).toBe('Panama BH'); expect(l.find((a) => a.id === 'wasabi')!.name).toBe('Long-term')
+    await storage.save({ id: 'publish-s3', name: '' })
+    l = (await storage.list()).adapters; expect(l.find((a) => a.id === 'publish-s3')!.name).toBe('Panama BH (S3)')
+    await expect(storage.save({ id: 'panama-s3', name: 'x'.repeat(61) })).rejects.toThrow(/1 to 60/)
+  })
 })

@@ -486,15 +486,16 @@ export function appTools({ core, governance, text, json, plain = text }) {
         } catch (e) { return text(e.message, true) }
       } },
     { name: 'storage_adapters', description: "Storage adapters (docs/ADR-063): S3-compatible storages (the publish destination, the Panama BH bucket, Wasabi, your own). list shows each with its switch and whether it is ready (never a key); enable / disable switch one on or off (publishing copies each file to every enabled one; Panama commands refuse while it is off); test reads the bucket. Entering a destination or keys is the window's.",
-      inputSchema: obj({ action: S('list | enable | disable | test', { enum: ['list', 'enable', 'disable', 'test'] }), id: S('Adapter id: publish-s3, panama-s3, wasabi or one you added') }, ['action']),
-      run: async ({ action, id }) => {
+      inputSchema: obj({ action: S('list | enable | disable | test | events', { enum: ['list', 'enable', 'disable', 'test', 'events'] }), events: { type: 'array', items: { type: 'string', enum: ['generating', 'generated', 'approved', 'publishing', 'published'] }, description: 'for events: the moments this adapter uploads on (docs/ADR-064); an empty list means none' }, id: S('Adapter id: publish-s3, panama-s3, wasabi or one you added') }, ['action']),
+      run: async ({ action, id, events }) => {
         try {
           const st = core.storage
           switch (action) {
             case 'list': return json(await st.list())
             case 'enable': case 'disable': if (!id) return text('id is needed (list shows the ids)', true); return json(await st.setEnabled(String(id), action === 'enable'))
             case 'test': if (!id) return text('id is needed (list shows the ids)', true); return json(await st.test(String(id)))
-            default: return text('action is list, enable, disable or test', true)
+            case 'events': if (!id) return text('id is needed (list shows the ids)', true); if (!Array.isArray(events)) return text('events is a list: generating, generated, approved, publishing, published', true); return json(await st.save({ id: String(id), events }))
+            default: return text('action is list, enable, disable, test or events', true)
           }
         } catch (e) { return text(e.message, true) }
       } },

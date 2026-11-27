@@ -156,6 +156,7 @@ const TABLE = {
     save: (c, o) => c.storage.save(o || {}),   // a destination and its keys are entered by a person in the window
     setEnabled: (c, id, on) => c.storage.setEnabled(String(id || ''), !!on),
     remove: (c, id) => c.storage.remove(String(id || '')),
+    reorder: (c, ids) => c.storage.reorder(ids),
     test: (c, id) => c.storage.test(String(id || '')),
   },
   autopublish: {   // docs/ADR-050 Auto-publish: approved review videos are uploaded by themselves under a standing, named approval; off by default

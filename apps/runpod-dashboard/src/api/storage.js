@@ -17,6 +17,7 @@ const ipc = core && {
   setEnabled: guard((id, on) => core.invoke('storage', 'setEnabled', [id, !!on]), mustRestart),
   remove: guard((id) => core.invoke('storage', 'remove', [id]), mustRestart),
   test: guard((id) => core.invoke('storage', 'test', [id]), mustRestart),
+  reorder: guard((ids) => core.invoke('storage', 'reorder', [ids]), mustRestart),
 }
 const http = {
   list: guard(async () => (await axios.get(`${API_BASE}/storage`)).data, OLD),
@@ -24,6 +25,7 @@ const http = {
   setEnabled: guard(async (id, on) => (await axios.post(`${API_BASE}/storage/${encodeURIComponent(id)}/${on ? 'enable' : 'disable'}`)).data, mustRestart),
   remove: guard(async (id) => (await axios.delete(`${API_BASE}/storage/${encodeURIComponent(id)}`)).data, mustRestart),
   test: guard(async (id) => (await axios.post(`${API_BASE}/storage/${encodeURIComponent(id)}/test`)).data, mustRestart),
+  reorder: guard(async (ids) => (await axios.put(`${API_BASE}/storage/order`, { order: ids })).data, mustRestart),
 }
 const raw = ipc || http
 export const storageAPI = {
@@ -32,4 +34,5 @@ export const storageAPI = {
   setEnabled: async (id, on) => { const r = (await raw.setEnabled(id, on)) || {}; return { old: false, adapters: (r.adapters || []) } },
   remove: async (id) => { const r = (await raw.remove(id)) || {}; return { old: false, adapters: (r.adapters || []) } },
   test: async (id) => (await raw.test(id)) || { ok: false, detail: '' },
+  reorder: async (ids) => { const r = (await raw.reorder(ids)) || {}; return { old: false, adapters: (r.adapters || []) } },
 }

@@ -337,7 +337,10 @@
       <fieldset v-if="!forPod && !gated" v-show="show('storage')" class="cfg-section" data-section="storage">
         <legend data-testid="section-storage">{{ $t('storage.tab') }}</legend>
         <StorageAdapters ref="storageRef">
-          <template #publish><PublishSettings ref="pubS3Ref" part="s3" /></template>
+          <template #publish>
+            <label class="small d-flex align-items-center gap-2 mb-2"><input v-model="sameBucket" type="checkbox" class="form-check-input mt-0" data-testid="storage-same-bucket" />{{ $t('storage.sameBucket') }}</label>
+            <PublishSettings ref="pubS3Ref" part="s3" :follow="sameBucket ? { bucket: panamaCfg.bucket, region: panamaCfg.region } : null" />
+          </template>
           <template #panama><BRow class="g-2">
         <BCol v-if="!gated" md="12"><div class="small fw-semibold" data-testid="cfg-panama-title">{{ $t('config.panamaTitle') }}</div><div class="form-text mt-0">{{ $t('config.panamaHelp') }}</div></BCol>
         <BCol v-if="!gated" md="6">
@@ -362,6 +365,8 @@
               <BButton size="sm" variant="outline-light" :disabled="panamaCfg.region === panamaDefaults.region" :title="$t('config.panamaReset')" data-testid="cfg-panama-region-reset" @click="panamaCfg.region = panamaDefaults.region"><i class="fa-solid fa-rotate-left"></i></BButton></div>
           </BFormGroup>
         </BCol>
+          </BRow></template>
+          <template #panama-pull><BRow class="g-2">
         <BCol v-if="!gated" md="4">
           <BFormGroup :label="$t('config.panamaProfile')" label-for="cfg-panama-profile" :description="$t('config.panamaProfileHelp')">
             <div class="d-flex gap-1"><BFormInput id="cfg-panama-profile" v-model.trim="panamaCfg.profile" autocomplete="off" class="font-monospace" data-testid="cfg-panama-profile" />
@@ -516,6 +521,7 @@ import AutoPublishSettings from './AutoPublishSettings.vue'
 import AutoPublishWatching from './AutoPublishWatching.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import { useAutopublishStore } from '../stores/autopublish'
+import { usePublishStore } from '../stores/publish'
 import EdlStatus from './EdlStatus.vue'
 import { apFill, apIsDefault, settingsProblem as apProblem } from '../utils/autopublish'
 import { useConfirmStore } from '../stores/confirm'
@@ -637,6 +643,13 @@ const newS3 = reactive({ access: '', secret: '' })
 /** The bucket, region and profile, prefilled with what is in force (the built-in defaults unless overridden); a value equal to its default is not stored. */
 const panamaDefaults = computed(() => keyInfo.value.panama_defaults || { bucket: 'bh-panama-exchange-610140802195', region: 'us-west-2', profile: 'panama' })
 const panamaCfg = reactive({ bucket: '', region: '', profile: '' })
+/** docs/ADR-065: the publish destination is the Panama bucket with the same keys (shown as one thing); off when it was set to something else */
+const sameBucket = ref(true), sameSet = ref(false)
+const pubStoreForSame = usePublishStore()
+watch([() => pubStoreForSame.settings?.s3, () => panamaCfg.bucket, () => panamaCfg.region], ([s3]) => {   // once, when both are loaded: the same bucket and region read as one
+  if (sameSet.value || !s3?.bucket || !panamaCfg.bucket) return   // the store starts with an empty destination: wait for the real one
+  sameSet.value = true; sameBucket.value = s3.bucket === panamaCfg.bucket && s3.region === panamaCfg.region
+}, { immediate: true })
 watch(keyInfo, (k) => { panamaCfg.bucket = k.panama_bucket || panamaDefaults.value.bucket; panamaCfg.region = k.panama_region || panamaDefaults.value.region; panamaCfg.profile = k.panama_profile || panamaDefaults.value.profile }, { immediate: true })
 const panamaCfgChanged = () => { const k = keyInfo.value; return panamaCfg.bucket !== (k.panama_bucket || panamaDefaults.value.bucket) || panamaCfg.region !== (k.panama_region || panamaDefaults.value.region) || panamaCfg.profile !== (k.panama_profile || panamaDefaults.value.profile) }
 /** The agent rules: one setting for the whole app (a system setting like the Panama bucket), never part of a pod's configuration. */
