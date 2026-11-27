@@ -3,6 +3,11 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## v1.7.7 (2026-11-27)
+
+- **feat(storage): events per storage, one Panama card, titles, order, Add Storage on top** (ADR-064, ADR-065; full gate passed: core, MCP, IPC, unit, 988 browser, 36 Electron). Each storage has Upload On switches (Generating, Generated, Approved, Publishing, Published; the MCP `storage_adapters` tool has `events`); the publish destination and the Panama exchange are one card with the bucket, region and keys once and a switch per role; every storage can be renamed and dragged into order; Add Storage opens at the top, offers a Wasabi bucket or S3, and the new one is first.
+- **Not finished, said plainly:** the event uploads in this version send files that are on this PC. Lucas's intent is pod to Wasabi for long-term storage (nothing through this PC); that route is decided in ADR-064 and was not built in this release. Also open: `libs/core/tests/publish.test.ts` fails on `setPodCapability is not a function` (it failed before this work and is not in the gate), and a real drag with the mouse is untested (the drop handler is tested by events).
+
 ## v1.7.6 (2026-11-25)
 
 - **feat(config): the default cards are a ranked list, the Cheapest in Stock cards are their own list, and both sit at one datacenter** (ADR-063; full gate passed on the first run, no retries). Default Configuration and a pod's own configuration have a "Datacenter and Card" block: the shared datacenter, Select Default Cards (several, tried in order: a new pod takes the first one RunPod has free; one card is `default_gpu`, several are `default_cards` with `default_gpu` the first) and Select Stock Cards (the cards Cheapest in Stock tries, used by the system jobs; none is the built-in list). Both open the Import Round Choose Card window; a card at another datacenter moves the datacenter and the other list keeps what that datacenter offers. A pod's Options tab is Publishing and the tab names match the default configuration's. Core: `default_cards` in the configuration (validated, in the export), `plan()` returns `ranked`, pod creation tries it in order (a no-stock answer moves to the next card; core `pods` 2 new tests). Not run against a real pod yet.
