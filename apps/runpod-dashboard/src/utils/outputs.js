@@ -5,6 +5,8 @@ export const s3Base = (volumeId) => (volumeId ? `s3file://${volumeId}` : '')
 /** `web: true` is the https address (Open in a tab, Download); otherwise, in the app, the podfile:// address the main process serves (RunPod's proxy refuses a page's own request for these files with a 403). `thumb` asks ComfyUI for a small WebP of an image (the 4K frames are several MB). */
 export const viewUrl = (base, f, o = {}) => {
   let b = String(base || '').replace(/\/$/, '')
+  if (/^localfile:\/\/o$/i.test(b)) return `${b}/${[f.subfolder, f.filename].filter(Boolean).join('/').split('/').map(encodeURIComponent).join('/')}`   // a file of this PC's output folder
+  if (/^s3file:\/\/storage\./i.test(b)) return `${b}/${encodeURIComponent([f.subfolder, f.filename].filter(Boolean).join('/'))}`   // a storage's (Wasabi, S3) object: the key as it is in the bucket
   if (/^s3file:\/\//i.test(b)) return `${b}/${encodeURIComponent(`${OUTPUT_ROOT}/${[f.subfolder, f.filename].filter(Boolean).join('/')}`)}`   // a network volume's file with no pod (docs/ADR-045): the key under comfy-shared/output/, served by the main process
   if (!o.web && typeof window !== 'undefined' && window.core) b = b.replace(/^https:\/\//, 'podfile://')
   return `${b}/view?filename=${encodeURIComponent(f.filename)}&subfolder=${encodeURIComponent(f.subfolder || '')}&type=${encodeURIComponent(f.type || 'output')}${o.thumb ? '&preview=webp;70' : ''}`

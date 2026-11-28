@@ -1,4 +1,4 @@
-import { test, expect, modal, cfgTab, queueTab } from './fixtures'
+import { test, expect, openAutopublish, modal, cfgTab, queueTab, openPublishing } from './fixtures'
 import { t } from './i18n'
 
 // "I have Auto-publish on but I don't see anything in the Queue": the Queue section and the settings block say what Auto-publish is watching (the core's `watching`).
@@ -47,11 +47,11 @@ test.describe('Queue > Auto-publish with nothing in it', () => {
 })
 
 test.describe('the settings block', () => {
-  test('is the first block of the Publishing tab, compact (the counts, not the long summary sentence), with a collapsed Skipped (N) list of shot version: reason', async ({ page, api }) => {
+  test('sits at the top of the Auto-publish section on the BH row, compact (the counts, not the long summary sentence), with a collapsed Skipped (N) list of shot version: reason', async ({ page, api }) => {
     on(api); api.state.autopublish = { watching: W({ skipped: [{ shot: 'archival-085', version: 3, reason: 'a file is still being written' }, { shot: 'cgi-042', version: 1, reason: 'no approved name' }] }) }
-    await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'publishing')
+    const d = await openPublishing(page)
     const b = d.getByTestId('autopublish-watching-block')
-    await expect(b.getByTestId('collapsible-title').first()).toHaveText('What Auto-publish Is Watching')   // a foldable section, at the TOP of the tab
+    await expect(d.getByTestId('settings-autopublish').getByTestId('autopublish-watching-block')).toBeVisible()   // one section, not two
     expect(await d.getByTestId('settings-publishing').locator('xpath=preceding::*[@data-testid="autopublish-watching-block"]').count()).toBe(1)
     await expect(b.getByTestId('autopublish-watching-summary')).toHaveCount(0); await expect(b.getByTestId('autopublish-watching-counts')).toContainText('6 reviews')
     await expect(b.getByTestId('autopublish-skipped')).not.toHaveAttribute('open', ''); await expect(b.getByTestId('autopublish-skipped').locator('summary')).toHaveText('Skipped (2)')
@@ -60,10 +60,10 @@ test.describe('the settings block', () => {
   })
   test('no skipped: no list; an older core: no block', async ({ page, api }) => {
     on(api); api.state.autopublish = { watching: W() }
-    await page.goto('/'); await page.getByTestId('open-config').click(); let d = modal(page, t('config.title')); await cfgTab(d, 'publishing')
+    let d = await openPublishing(page)
     await expect(d.getByTestId('autopublish-watching-block')).toBeVisible(); await expect(d.getByTestId('autopublish-skipped')).toHaveCount(0)
-    api.state.autopublish = {}; await page.reload(); await page.getByTestId('open-config').click(); d = modal(page, t('config.title')); await cfgTab(d, 'publishing')
-    await expect(d.getByTestId('settings-autopublish')).toBeVisible(); await expect(d.getByTestId('autopublish-watching-block')).toHaveCount(0)
+    api.state.autopublish = {}; d = await openPublishing(page)
+    await expect(d.getByTestId('settings-publishing')).toBeVisible(); await expect(d.getByTestId('autopublish-watching-block')).toHaveCount(0)
   })
 })
 
@@ -71,7 +71,7 @@ test.describe('the settings block', () => {
 const PLACES = (o = {}) => ({ root: '/Users/lucas/comfy/output/deliver', approved: 0, eligible: 0, queued: 0, uploaded_today: 0, skipped: [], summary: 'Watching this PC (0 reviews) and the volume (12 reviews): none approved yet',
   local: { enabled: true, root: '/Users/lucas/comfy/output/deliver', root_exists: true, reviews: 0 }, volume: { enabled: true, id: 'vol123', reviews: 12, scanned_at: new Date(Date.now() - 120000).toISOString(), scanning: false }, ...o })
 const withSources = (api, o = {}) => on(api, { sources: { local: true, volume: true }, volume_scan_minutes: 5, ...o })
-const openPub = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'publishing'); return d }
+const openPub = async (page) => { const d = await openAutopublish(page); return d }
 
 test.describe('Auto-publish sources: the configuration', () => {
   test('Watch these places: both ticked and 5 minutes by default with the help; unticking the last one is blocked inline; minutes are 1 to 120', async ({ page, api }) => {
@@ -86,17 +86,17 @@ test.describe('Auto-publish sources: the configuration', () => {
     await b.getByTestId('config-autopublish-source-local').uncheck(); await b.getByTestId('config-autopublish-source-local').check()
     await b.getByTestId('config-autopublish-source-volume').uncheck(); await expect(b.getByTestId('config-autopublish-volume-minutes')).toBeDisabled()
     await b.getByTestId('config-autopublish-source-volume').check()
-    for (const bad of ['0', '121', '']) { await b.getByTestId('config-autopublish-volume-minutes').fill(bad); await d.getByTestId('config-save').click(); await expect(d.getByTestId('autopublish-error')).toHaveText('The volume is checked every 1 to 120 minutes.') }
+    for (const bad of ['0', '121', '']) { await b.getByTestId('config-autopublish-volume-minutes').fill(bad); await page.getByTestId('volumes-save').click(); await expect(d.getByTestId('autopublish-error')).toHaveText('The volume is checked every 1 to 120 minutes.') }
     expect(api.state.mountPuts || []).toHaveLength(0)
   })
   test('Save carries sources and the minutes; an untouched configuration sends no auto_publish key', async ({ page, api }) => {
     api.state.mounts.config.auto_publish = undefined
     let d = await openPub(page)
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
-    expect(api.state.mountPuts[0]).not.toHaveProperty('auto_publish')
+    await expect(page.getByTestId('volumes-save')).toBeDisabled()   // untouched: nothing to save
+    expect(api.state.mountPuts || []).toHaveLength(0)
     withSources(api)
     d = await openPub(page)
-    await d.getByTestId('config-autopublish-source-local').uncheck(); await d.getByTestId('config-autopublish-volume-minutes').fill('15'); await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    await d.getByTestId('config-autopublish-source-local').uncheck(); await d.getByTestId('config-autopublish-volume-minutes').fill('15'); await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
     expect(api.state.mounts.config.auto_publish).toMatchObject({ sources: { local: false, volume: true }, volume_scan_minutes: 15 })
   })
   test('an older core (no sources): no Watch these places', async ({ page, api }) => {
@@ -181,7 +181,7 @@ test.describe('Auto-publish generates the outputs: the configuration', () => {
     await expect(g.getByTestId('config-autopublish-generate-where')).toHaveValue('local'); await expect(g.getByTestId('config-autopublish-generate-preset')).toHaveValue('review'); await expect(g.getByTestId('config-autopublish-generate-max')).toHaveValue('20'); await expect(g.getByTestId('config-autopublish-generate-settle')).toHaveValue('5')
     await expect(g.getByTestId('autopublish-generate-pod')).toHaveCount(0)
     await g.getByTestId('config-autopublish-generate-preset').selectOption('tunnel'); await g.getByTestId('config-autopublish-generate-max').fill(''); await g.getByTestId('config-autopublish-generate-settle').fill('12')
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
     const ap = api.state.mountPuts.at(-1).auto_publish
     expect(ap.generate).toEqual({ enabled: true, where: 'local', preset: 'tunnel', max_per_day: null, settle_minutes: 12, fallback_local: false }); expect(ap).not.toHaveProperty('approved_by')
   })
@@ -191,17 +191,17 @@ test.describe('Auto-publish generates the outputs: the configuration', () => {
     await d.getByTestId('config-autopublish-generate').check(); await d.getByTestId('config-autopublish-generate-where').selectOption('pod')
     await expect(d.getByTestId('autopublish-generate-pod-warning')).toHaveText('Spends money on a pod that is already running. Nothing is started for you.')
     const who = d.getByTestId('config-autopublish-generate-approver'); await expect(who).toHaveValue('B')   // the standing approver, offered
-    await who.fill(''); await d.getByTestId('config-save').click()
+    await who.fill(''); await page.getByTestId('volumes-save').click()
     await expect(d.getByTestId('autopublish-error')).toHaveText("Rendering on a pod spends money: put the approver's name"); expect(api.state.mountPuts || []).toHaveLength(0)
-    await who.fill('Kyle'); await d.getByTestId('config-autopublish-generate-fallback').check(); await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    await who.fill('Kyle'); await d.getByTestId('config-autopublish-generate-fallback').check(); await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
     expect(api.state.mountPuts.at(-1).auto_publish).toMatchObject({ approved_by: 'Kyle', generate: { enabled: true, where: 'pod', fallback_local: true } })
     d = await openPub(page); await expect(d.getByTestId('config-autopublish-generate')).toBeChecked(); await expect(d.getByTestId('config-autopublish-generate-where')).toHaveValue('pod')
   })
   test('the settle minutes (1 to 120) and Most per day are checked inline', async ({ page, api }) => {
     withGen(api, { enabled: true })
     const d = await openPub(page)
-    for (const bad of ['0', '121']) { await d.getByTestId('config-autopublish-generate-settle').fill(bad); await d.getByTestId('config-save').click(); await expect(d.getByTestId('autopublish-error')).toHaveText('Frames settle after 1 to 120 minutes.') }
-    await d.getByTestId('config-autopublish-generate-settle').fill('5'); await d.getByTestId('config-autopublish-generate-max').fill('0'); await d.getByTestId('config-save').click()
+    for (const bad of ['0', '121']) { await d.getByTestId('config-autopublish-generate-settle').fill(bad); await page.getByTestId('volumes-save').click(); await expect(d.getByTestId('autopublish-error')).toHaveText('Frames settle after 1 to 120 minutes.') }
+    await d.getByTestId('config-autopublish-generate-settle').fill('5'); await d.getByTestId('config-autopublish-generate-max').fill('0'); await page.getByTestId('volumes-save').click()
     await expect(d.getByTestId('autopublish-error')).toContainText('Most per day'); expect(api.state.mountPuts || []).toHaveLength(0)
   })
   test('an older core (no generate): no group; a pod\'s own configuration never has it', async ({ page, api }) => {
@@ -226,7 +226,7 @@ test.describe('Auto-publish generates the outputs: what it is doing', () => {
     await expect(b.getByTestId('autopublish-generate-failed')).not.toHaveAttribute('open', ''); await expect(b.getByTestId('autopublish-generate-failed').locator('summary')).toHaveText('Failed (1)')
     await b.getByTestId('autopublish-generate-failed').locator('summary').click(); await expect(b.getByTestId('autopublish-generate-failed-row')).toHaveText('failedMAP-066_A: ffmpeg exited 1')
     await page.keyboard.press('Escape')
-    await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'publishing')
+    const d = await openAutopublish(page, { fresh: false })
     await expect(d.getByTestId('autopublish-generate-block').getByTestId('autopublish-generate-line')).toContainText('1 running')
   })
   test('on a pod, with no cap: the chip says the pod and the line has no "of"', async ({ page, api }) => {

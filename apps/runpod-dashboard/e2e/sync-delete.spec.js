@@ -1,4 +1,4 @@
-import { test, expect, podCard, modal, cfgTab } from './fixtures'
+import { test, expect, podCard, modal, cfgTab, openVolumeSync } from './fixtures'
 import { formatBytes } from '../src/sync-progress'
 import { t } from './i18n'
 
@@ -33,7 +33,7 @@ async function openSync(page, { onVolume = [{ step: 'project', path: '/workspace
     }
   }, { onVolume, send, free, capacity, old, nothing, saved })
   await page.goto('/')
-  await podCard(page, 'ComfyUI-Dev').getByTestId('pod-sync').click()
+  await openVolumeSync(page)
   const d = page.getByTestId('sync-modal')
   await expect(d.getByTestId('sync-plan-counts')).toContainText('files')
   return d

@@ -1,4 +1,4 @@
-import { test, expect, podCard, modal, cfgTab, queueTab } from './fixtures'
+import { test, expect, podCard, modal, cfgTab, queueTab, openPublishing, openAutopublish } from './fixtures'
 import { makeDpx } from '../src/utils/dpx-fixture.mjs'
 import { t } from './i18n'
 
@@ -132,41 +132,41 @@ test.describe('Generate: the Tunnel proxy preset', () => {
 })
 
 test.describe('the configuration editors', () => {
-  const openDefault = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'publishing'); return d }   // Render sequences is in Publishing now
+  const openDefault = (page) => openPublishing(page)
   test('Render: Preset; there is no default start timecode field; Save carries the preset, an untouched config sends none; a stored start_timecode_default is dropped', async ({ page, api }) => {
     let d = await openDefault(page)
     const s = d.getByTestId('config-render'); await s.scrollIntoViewIfNeeded()
     await expect(s.getByTestId('config-render-preset')).toHaveValue('none'); await expect(s.getByTestId('config-render-start-timecode')).toHaveCount(0)
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
-    expect(api.calls.filter((c) => c.method === 'PUT' && c.path === '/mounts')[0].body).not.toHaveProperty('render')
+    await expect(page.getByTestId('volumes-save')).toBeDisabled()
+    expect(api.calls.filter((c) => c.method === 'PUT' && c.path === '/mounts')).toHaveLength(0)
     api.state.mounts.config.render = { where: 'pod', kind: 'proxy', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto', start_timecode_default: '00:00:00:00' }
     d = await openDefault(page); await d.getByTestId('config-render-preset').selectOption('tunnel')
     await expect(d.getByTestId('config-render-kind-proxy')).toBeChecked()
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
     expect(api.state.mounts.config.render).toMatchObject({ preset: 'tunnel', kind: 'proxy' }); expect(api.state.mounts.config.render).not.toHaveProperty('start_timecode_default')
     d = await openDefault(page); await expect(d.getByTestId('config-render-preset')).toHaveValue('tunnel')
   })
   test('Auto-publish: the Round name template (with today\'s example) and Include the source DPX frames; saved with the rest; an older core without them shows neither', async ({ page, api }) => {
     api.state.mounts.config.auto_publish = { enabled: true, dry_run: true, window_minutes: 10, daily_cap: null, dry_run_first: true, targets: { s3: true, slack: false, tunnel: false }, round: 'tunnel-v11_{date}_r01', include_dpx: false, standing: { approved_by: 'B', at: '2026-11-19T10:00:00Z' } }
-    await page.goto('/'); await page.getByTestId('open-config').click(); let d = modal(page, t('config.title')); await cfgTab(d, 'publishing')
+    let d = await openAutopublish(page)
     const today = new Date().toISOString().slice(0, 10)
     await expect(d.getByTestId('config-autopublish-round')).toHaveValue('tunnel-v11_{date}_r01'); await expect(d.getByTestId('config-autopublish-round-example')).toHaveText(`For example today: tunnel-v11_${today}_r01`)
     await expect(d.getByTestId('config-autopublish-include-dpx')).not.toBeChecked()
-    await d.getByTestId('config-autopublish-round').fill('bad name {date}'); await d.getByTestId('config-save').click(); await expect(d.getByTestId('autopublish-error')).toContainText('round name template')
-    await d.getByTestId('config-autopublish-round').fill('qc_{date}_r02'); await d.getByTestId('config-autopublish-include-dpx').check(); await expect(d.getByTestId('config-autopublish-fix-dpx')).toBeChecked(); await expect(d.getByTestId('config-autopublish-fix-dpx-note')).toContainText('corrected copy'); await d.getByTestId('config-autopublish-fix-dpx').uncheck(); await expect(d.getByTestId('config-autopublish-fix-dpx-note')).toContainText('no DPX frames are uploaded'); await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    await d.getByTestId('config-autopublish-round').fill('bad name {date}'); await page.getByTestId('volumes-save').click(); await expect(d.getByTestId('autopublish-error')).toContainText('round name template')
+    await d.getByTestId('config-autopublish-round').fill('qc_{date}_r02'); await d.getByTestId('config-autopublish-include-dpx').check(); await expect(d.getByTestId('config-autopublish-fix-dpx')).toBeChecked(); await expect(d.getByTestId('config-autopublish-fix-dpx-note')).toContainText('corrected copy'); await d.getByTestId('config-autopublish-fix-dpx').uncheck(); await expect(d.getByTestId('config-autopublish-fix-dpx-note')).toContainText('no DPX frames are uploaded'); await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
     expect(api.state.mounts.config.auto_publish).toMatchObject({ round: 'qc_{date}_r02', include_dpx: true, fix_dpx: false })   // ADR-057 decision 7: Fix DPX Before Upload is on until a person turns it off
   })
   test('Auto-publish: the Scope select (Only EDL Elements by default, Everything), saved with the rest', async ({ page, api }) => {
     api.state.mounts.config.auto_publish = { enabled: true, dry_run: true, window_minutes: 10, daily_cap: null, dry_run_first: true, targets: { s3: true, slack: false, tunnel: false }, round: 'tunnel-v11_{date}_r01', include_dpx: false, standing: { approved_by: 'B', at: '2026-11-19T10:00:00Z' } }
-    await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'publishing')
+    const d = await openAutopublish(page)
     const sel = d.getByTestId('config-autopublish-scope')
     await expect(sel).toHaveValue('edl'); await expect(sel.locator('option')).toHaveText(['Only EDL Elements', 'Everything']); await expect(d.getByTestId('config-autopublish-scope-help')).toContainText('nothing is generated or queued')
-    await sel.selectOption('all'); await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    await sel.selectOption('all'); await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
     expect(api.state.mounts.config.auto_publish).toMatchObject({ scope: 'all' })
   })
   test('older Auto-publish settings (no round) show no template', async ({ page, api }) => {
     api.state.mounts.config.auto_publish = { enabled: true, dry_run: true, window_minutes: 10, daily_cap: null, dry_run_first: true, targets: { s3: true, slack: false, tunnel: false }, standing: { approved_by: 'B', at: '2026-11-19T10:00:00Z' } }
-    await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'publishing')
+    const d = await openAutopublish(page)
     await expect(d.getByTestId('autopublish-window')).toBeVisible(); await expect(d.getByTestId('config-autopublish-round')).toHaveCount(0); await expect(d.getByTestId('config-autopublish-include-dpx')).toHaveCount(0)
   })
   test('Slack: One message per shot (ticked by default with the core), saved with the pane; an older core shows none', async ({ page, api }) => {

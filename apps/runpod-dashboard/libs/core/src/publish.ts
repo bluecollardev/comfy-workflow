@@ -24,6 +24,7 @@ import * as settingsEnv from './settings.js'
 import * as layout from './publishlayout.js'
 import * as syncrun from './syncrun.js'
 import * as storage from './storage.js'
+import * as syncrules from './syncrules.js'
 import * as edl from './edl.js'
 import * as tunnelj from './tunnel.js'
 
@@ -69,7 +70,8 @@ export interface Deps {
   parallel(): number
   /** the volume the backfill scans (the Shared volume, else the network volume) */
   volumeId(): string
-  volumeKeys(volumeId: string, prefix: string): Promise<{ key: string; bytes: number; modified?: string }[] | null>
+  /** `o` (a volume sync's plan, ADR-066): abortable, and reports the lines seen so far; without it the plain listing is used */
+  volumeKeys(volumeId: string, prefix: string, o?: { signal?: AbortSignal; onSeen?: (lines: number) => void }): Promise<{ key: string; bytes: number; modified?: string }[] | null>
   volumeAccess(volumeId: string): Promise<{ ok: true; id: string; secret: string; endpoint: string; bucket: string; region: string } | { ok: false; reason: string }>
   /** start a process (the two ends of a streamed copy); tests give fakes */
   spawn(cmd: string, args: string[], env: Record<string, string>): ChildProcess
@@ -83,6 +85,8 @@ export interface Deps {
   podOnVolume(volumeId: string): Promise<PodRef | null>
   /** every RUNNING pod attached to the volume that the app can reach over SSH, in RunPod's order (reads only). Tests that give only `podOnVolume` get a one-pod list from it. */
   podsOnVolume(volumeId: string): Promise<PodRef[]>
+  /** every RUNNING pod the app can reach over SSH, on any volume or none (a bucket to bucket copy only needs a pod's internet). Reads only. */
+  podsAny(): Promise<PodRef[]>
   /** is ComfyUI on this pod rendering or has a prompt waiting? null when it did not answer in a few seconds (unknown). Read only: GET /queue. */
   podLoad(pod: PodRef): Promise<{ busy: boolean } | null>
   /** run a script on a pod over SSH (the script goes on stdin) */
@@ -96,12 +100,12 @@ let ffmpegOverride: (() => Promise<string | null>) | null = null
 export const setFfmpegOverride = (f: (() => Promise<string | null>) | null) => { ffmpegOverride = f }
 const LOAD_MS = 4000
 /** Every running pod on the volume the app can reach, in RunPod's order. Reads only: nothing here ever creates, resumes or stops a pod. */
-async function runningPods(volumeId: string): Promise<PodRef[]> {
+async function runningPods(volumeId: string | null): Promise<PodRef[]> {
   const out: PodRef[] = []
   try {
     if (mounts.dryRun(mounts.load())) return out
     for (const raw of await rp.listPods()) {
-      if ((raw.networkVolumeId || '') !== volumeId || (raw.name || '').startsWith(podpull.POD_PREFIX) || (raw.runtime?.uptimeInSeconds ?? 0) <= 0) continue
+      if ((volumeId !== null && (raw.networkVolumeId || '') !== volumeId) || (raw.name || '').startsWith(podpull.POD_PREFIX) || (raw.runtime?.uptimeInSeconds ?? 0) <= 0) continue
       try { const g = Number((raw as { gpuCount?: number; machine?: { gpuCount?: number } }).gpuCount ?? (raw as { machine?: { gpuCount?: number } }).machine?.gpuCount); out.push({ id: raw.id, name: raw.name || raw.id, ...sync.sshTarget(raw), ...(Number.isFinite(g) && g > 0 ? { gpus: g } : {}) }) } catch { continue }
     }
   } catch { /* RunPod unreachable or no key: no pod */ }
@@ -115,7 +119,7 @@ const defaults = (): Deps => ({
   outputRoot: () => { const r = mounts.folderRows(mounts.load()).find((x) => x.key === 'comfy-shared')?.local; return r ? join(r, 'output') : null },
   parallel: () => syncrun.parallelFor(''),
   volumeId: () => { const c = mounts.load(); return (c.shared_volume_id || c.network_volume_id || '').trim() },
-  volumeKeys: (v, prefix) => podpull.listVolumeKeys(v, prefix, { recursive: true }),
+  volumeKeys: (v, prefix, o) => o ? podpull.listVolumeKeysChunked(v, prefix, { ...o, keep: 5_000_000, hardLimit: 5_000_000 }).then((r) => (r ? r.keys : null)) : podpull.listVolumeKeys(v, prefix, { recursive: true }),
   volumeAccess: (v) => podpull.s3ReadAccess(v),
   spawn: (cmd, args, env) => nodeSpawn(cmd, args, { env: { ...process.env, ...env, AWS_EC2_METADATA_DISABLED: 'true' }, stdio: ['pipe', 'pipe', 'pipe'] }),
   findFfmpeg: () => (ffmpegOverride ?? (async () => (await (await import('./renders.js')).ffmpegState()).path))(),
@@ -134,6 +138,7 @@ const defaults = (): Deps => ({
   },
   podOnVolume: async (volumeId) => (await runningPods(volumeId))[0] ?? null,
   podsOnVolume: (volumeId) => runningPods(volumeId),
+  podsAny: () => runningPods(null),
   podLoad: async (pod) => {
     try {
       if (mounts.dryRun(mounts.load())) return null
@@ -146,6 +151,13 @@ const defaults = (): Deps => ({
   ssh: (j) => podpull.runSsh(j),
 })
 let deps: Deps = defaults()
+/** For the volume sync (docs/ADR-066): the same volume listing and running-pod lookup the publisher uses (and tests fake). */
+export const listVolume = (volumeId: string, prefix: string, o?: { signal?: AbortSignal; onSeen?: (lines: number) => void }) => deps.volumeKeys(volumeId, prefix, o)
+/** For the source sync (docs/ADR-067): the keys, endpoint, bucket and region of RunPod's S3 API for a volume (never returned to a window). */
+export const volumeS3Access = (volumeId: string) => deps.volumeAccess(volumeId)
+export const runningPodsOn = (volumeId: string): Promise<PodRef[]> => deps.podsOnVolume(volumeId)
+/** For the bucket to bucket sync (docs/ADR-067 amendment): every running pod with SSH, on any volume. */
+export const runningPodsAny = (): Promise<PodRef[]> => deps.podsAny()
 export const setDeps = (d: Partial<Deps> | null) => {
   if (!d) { deps = defaults(); return }
   const one = d.podOnVolume, list = d.podsOnVolume ?? (one ? async (v: string): Promise<PodRef[]> => { const p = await one(v); return p ? [p] : [] } : undefined)
@@ -210,7 +222,7 @@ async function effective(): Promise<{ s3: typeof PUBLISH_DEFAULTS.s3 & { credent
   }
 }
 const s3Problem = (c: Awaited<ReturnType<typeof effective>>['s3']): string | undefined => {
-  if (!c.bucket) return 'Add the bucket (Settings > Publishing)'
+  if (!c.bucket) return 'Add the bucket (Default Configuration > Storage)'
   if (!c.region && c.credentials !== 'panama') return 'Add the bucket\'s region, like us-west-2'
   if (c.credentials === 'app' && !(secret('PUBLISH_S3_ACCESS_KEY_ID') && secret('PUBLISH_S3_SECRET_ACCESS_KEY'))) return 'Add the S3 access key id and secret key'
   if (c.credentials === 'panama' && !panama.appKeys()) return 'Add the Panama AWS keys (Settings > Panama) or separate keys'
@@ -820,7 +832,7 @@ export interface JobView {
 /** how the files that live on the volume got to the bucket: see ADR-050, amendment "transfer adapters" */
 export interface JobFile { path: string; adapter: 'pod' | 'pc'; sha256?: string; shot?: string }
 interface Group { child: ChildView; items: PlanItem[]; send: PlanItem[]; ac: AbortController; info: MsgInfo; lp?: LinkPlan; psrc?: PreviewSrc[]; folders?: string[]; partial: Map<string, number>; doneBytes: number; t0: number }
-interface Job { /** files this PC sent (storage events, docs/ADR-064) */ sentLocal?: { abs: string; key: string }[]; /** the transfer adapter chosen for the volume files (once per job) */ route?: Promise<Route>; /** which pods the person asked for, and which to leave out */ podOpts?: PodOpts; stopTrack?: () => void; groups: Group[]; streams: number; perShot: boolean; /** the raw trigger (History): auto-publish, auto-publish:manual, render ... */ trig?: string; tag?: string; /** the BKK return: the round, its files and the hashes made while they were read */ ret?: { /** sequence stem or clip -> the notes the manifest carries (EDL override, low resolution, start timecode) */ seq: Map<string, string[]>; round: string; prefix: string; items: PlanItem[]; clipNames: Record<string, string> }; hashes: Map<string, string>; lp?: LinkPlan; psrc?: PreviewSrc[]; volOnly?: boolean; folders?: string[]; prefix?: string; slackText?: string; view: JobView; abort: AbortController; info: MsgInfo; template: string; started: number; done: Promise<void> }
+interface Job { /** files this PC sent (storage events, docs/ADR-064) */ sentLocal?: { abs: string; key: string }[]; /** the volume keys this job published (docs/ADR-072) */ sentVolume?: string[]; /** the same files with their sizes, for the storages */ volumeFiles?: { source_key: string; key: string; bytes: number }[]; /** the transfer adapter chosen for the volume files (once per job) */ route?: Promise<Route>; /** which pods the person asked for, and which to leave out */ podOpts?: PodOpts; stopTrack?: () => void; groups: Group[]; streams: number; perShot: boolean; /** the raw trigger (History): auto-publish, auto-publish:manual, render ... */ trig?: string; tag?: string; /** the BKK return: the round, its files and the hashes made while they were read */ ret?: { /** sequence stem or clip -> the notes the manifest carries (EDL override, low resolution, start timecode) */ seq: Map<string, string[]>; round: string; prefix: string; items: PlanItem[]; clipNames: Record<string, string> }; hashes: Map<string, string>; lp?: LinkPlan; psrc?: PreviewSrc[]; volOnly?: boolean; folders?: string[]; prefix?: string; slackText?: string; view: JobView; abort: AbortController; info: MsgInfo; template: string; started: number; done: Promise<void> }
 const jobs = new Map<string, Job>()
 let finished: (JobView & { info?: MsgInfo; template?: string; slackText?: string })[] = []
 let seq = 0
@@ -835,6 +847,7 @@ export const settled = async (): Promise<void> => { for (const j of jobs.values(
 
 /** The volume's id (the Shared, else the default one), and a one-level listing under comfy-shared/output/ (read-only, abortable), for Auto-publish's volume scan. */
 export const volumeIdNow = (): string => deps.volumeId()
+const localVolumeId = (): string | undefined => { try { return deps.volumeId() || undefined } catch { return undefined } }   // the mapped shared volume, for the sync rules (docs/ADR-069); none = the '*' rules
 export async function volumeBrowse(rel: string, signal?: AbortSignal): Promise<{ dirs: string[]; files: { name: string; bytes: number; key: string; /** the listing's own time of the object (UTC, second resolution): with the size it tells the volume scan a folder has not changed */ modified: string }[] }> {
   const a = await volumeAccess(); if (!a.ok) throw new CoreError(503, a.reason)
   const prefix = `${VOLUME_OUTPUT}${rel.replace(/^\/+/, '').replace(/\/*$/, '/')}`, ls = await volLs(a, prefix, false, signal)
@@ -986,9 +999,10 @@ async function uploadGroup(job: Job, g: Group, a: Awaited<ReturnType<typeof s3Ac
   const refresh = () => { c.bytes_done = [...g.partial.values()].reduce((x, y) => x + y, 0) + g.doneBytes; const s = (deps.now() - g.t0) / 1000; c.rate = s > 0 ? Math.round(c.bytes_done / s) : 0; progressOf(job) }
   const pcList = g.send.filter((i) => i.source !== 'volume'), volList = g.send.filter((i) => i.source === 'volume')
   const sentLocal: { abs: string; key: string }[] = job.sentLocal ??= []
-  const mirrors = storage.mirrors()   // the other enabled storage adapters (docs/ADR-063): a copy of each file this PC sends; a failed copy is a warning, never a failed job
-  const warnJob = (m: string) => { job.view.warnings = [...new Set([...(job.view.warnings ?? []), m])] }
-  if (mirrors.length && volList.length) warnJob(`${mirrors.map((m) => m.name).join(', ')}: files that are only on the volume are not copied (this version mirrors what is sent from this PC)`)
+  for (const it of g.send) if (it.source === 'volume' && it.source_key) {
+    (job.sentVolume ??= []).push(it.source_key)
+    ;(job.volumeFiles ??= []).push({ source_key: it.source_key, key: it.source_key.replace(/^comfy-shared\/(output\/)?/, ''), bytes: it.bytes })   // the volume's own layout, as for Generated and Approved
+  }
   const streamWorker = async () => {   // volume files: two piped aws commands, nothing is kept on this PC
     while (!failure && !ac.signal.aborted) {
       const fileNo = nextVol, it = volList[nextVol++]; if (!it) return
@@ -1015,7 +1029,6 @@ async function uploadGroup(job: Job, g: Group, a: Awaited<ReturnType<typeof s3Ac
       if (r.code === 0) {
         if (sha) { job.hashes.set(it.s3_key, sha); c.sha256++ } g.doneBytes += it.bytes; c.files_done++; refresh()
         sentLocal.push({ abs: join(root(), it.path), key: it.s3_key })
-        for (const m of mirrors) { const why = await storage.mirrorCopy(m, join(root(), it.path), it.s3_key, ac.signal).catch((e) => redact((e as Error).message)); if (why && !ac.signal.aborted) warnJob(`${m.name}: ${basename(it.path)}: ${why}`) }
       }
       else if (!ac.signal.aborted) failure = `${basename(it.path)}: ${awsText(r)}`
     }
@@ -1094,8 +1107,13 @@ async function finishParent(job: Job, a: Awaited<ReturnType<typeof s3Access>> | 
   const up = a ? `${v.files_done} file${v.files_done === 1 ? '' : 's'} uploaded${v.skipped ? `, ${v.skipped} already there` : ''} (${fmtSize(v.bytes_done)}) to ${v.dest}${kids.length > 1 ? ` in ${kids.length} shots` : ''}${cancelled.length ? `; ${cancelled.length} shot${cancelled.length === 1 ? '' : 's'} cancelled` : ''}` : ''
   if (v.slack.state === 'failed') { v.state = a ? 'done_with_warning' : 'failed'; v.error = v.slack.error; v.summary = `${up}${up ? '. ' : ''}${a ? 'The files are up, but the Slack message failed: ' : 'The Slack message failed: '}${v.slack.error}. It can be sent again.` }
   else { v.state = cancelled.length ? 'done_with_warning' : 'done'; v.summary = `${up}${up && v.slack.state === 'sent' ? '; ' : ''}${v.slack.state === 'sent' ? 'posted to Slack' : ''}` }
-  if ((v.state === 'done' || v.state === 'done_with_warning') && job.sentLocal?.length && storage.forEvent('published').length) {   // docs/ADR-064: after the job, what this PC sent also goes to the adapters that listen to Published
-    const w = await storage.uploadOn('published', job.sentLocal, ac.signal).catch(() => [] as string[])
+  if ((v.state === 'done' || v.state === 'done_with_warning') && job.sentVolume?.length && syncrules.wantsLocal('published', localVolumeId())) void import('./localcopy.js').then((m) => m.onEvent('published', localVolumeId(), job.sentVolume!.map((k) => posix.dirname(k)))).catch(() => undefined)   // docs/ADR-072: what was published from the volume
+  const vid = localVolumeId()
+  if ((v.state === 'done' || v.state === 'done_with_warning') && vid && job.volumeFiles?.length && storage.forEvent('published', vid).length) {   // volume files go to the storages too; its own Queue job, the publish does not wait
+    void storage.uploadFromVolume('published', vid, job.volumeFiles).catch(() => undefined)
+  }
+  if ((v.state === 'done' || v.state === 'done_with_warning') && job.sentLocal?.length && storage.forEvent('published', localVolumeId()).length) {   // docs/ADR-064: after the job, what this PC sent also goes to the adapters that listen to Published
+    const w = await storage.uploadOn('published', job.sentLocal, ac.signal, localVolumeId()).catch(() => [] as string[])
     if (w.length) job.view.warnings = [...new Set([...(job.view.warnings ?? []), ...w.slice(0, 5)])]
   }
 }
@@ -1659,6 +1677,40 @@ async function podPut(pod: PodRef, it: { source_key?: string; path: string; s3_k
     if (pid) await stopRemote(pod, pid)
     return { ok: false, error: signal.aborted ? 'cancelled' : plain(why || (e as Error).message) }
   } finally { clearTimeout(t); signal.removeEventListener('abort', onAbort); liveUrls.delete(url) }
+}
+/** docs/ADR-064: one file from a pod to a storage adapter's bucket by a signed link, nothing through this PC. `key` is the full key (the adapter's directory included). */
+export async function podPutTo(pod: PodRef, sourceKey: string, bytes: number, dest: { bucket: string; endpoint: string; region: string; keys: { id: string; secret: string } }, key: string, signal: AbortSignal): Promise<{ ok: boolean; error: string }> {
+  const r = await podPut(pod, { source_key: sourceKey, path: sourceKey, s3_key: key, bytes }, { bucket: dest.bucket, endpoint: dest.endpoint, region: dest.region, keys: dest.keys } as unknown as DestAccess, signal)
+  return { ok: r.ok, error: r.error }
+}
+/** docs/ADR-067 amendment (bucket to bucket): run one streaming script on a pod and read the same PUBLISH-PID / PUBLISH-OK / PUBLISH-FAIL markers `putScript` prints. The script (which holds the signed links) goes on ssh's stdin and is never logged or returned; any text that comes back is redacted. Cancelling kills the ssh and then the remote processes. */
+export async function podStream(pod: PodRef, script: string, bytes: number, signal: AbortSignal, secrets: string[] = []): Promise<{ ok: boolean; error: string }> {
+  const lines: string[] = []; let pid = '', ok = false, why = ''
+  const clean = (t: string): string => { let s = plain(t); for (const v of secrets) if (v) s = s.split(v).join('•••'); return s }
+  const ac = new AbortController(), onAbort = () => ac.abort(), limit = 120_000 + (bytes / 524_288) * 1000, t = setTimeout(() => { why = 'timed out'; ac.abort() }, limit)
+  if (signal.aborted) ac.abort(); else signal.addEventListener('abort', onAbort, { once: true })
+  try {
+    const r = await deps.ssh({ host: pod.host, port: pod.port, script, signal: ac.signal, onLine: (l) => {
+      const m = /^PUBLISH-(PID|OK|FAIL)\s*(.*)$/.exec(l.trim()); if (!m) { lines.push(l); if (lines.length > 20) lines.shift(); return }
+      if (m[1] === 'PID' && /^\d+$/.test(m[2])) pid = m[2]; else if (m[1] === 'OK') ok = true; else if (m[1] === 'FAIL') why = m[2]
+    } })
+    if (ac.signal.aborted) { if (pid) await stopRemote(pod, pid); return { ok: false, error: signal.aborted ? 'cancelled' : clean(why || 'timed out') } }
+    if (r.code !== 0 || !ok) return { ok: false, error: clean(why || (r.code === 255 ? 'the SSH connection to the pod dropped' : lines.at(-1) || `the pod exited ${r.code}`)) }
+    return { ok: true, error: '' }
+  } catch (e) {
+    if (pid) await stopRemote(pod, pid)
+    return { ok: false, error: signal.aborted ? 'cancelled' : clean(why || (e as Error).message) }
+  } finally { clearTimeout(t); signal.removeEventListener('abort', onAbort) }
+}
+/** The files directly in one folder of the pod's volume (key under /workspace): name and size. [] when the folder is not there. */
+export async function podFiles(pod: PodRef, dirKey: string, signal?: AbortSignal): Promise<{ name: string; bytes: number }[]> {
+  if (!dirKey || dirKey.split('/').includes('..') || /["'`$\\\n]/.test(dirKey)) return []
+  const out: { name: string; bytes: number }[] = [], ac = new AbortController(), t = setTimeout(() => ac.abort(), 30_000), onAbort = () => ac.abort()
+  signal?.addEventListener('abort', onAbort, { once: true })
+  try {
+    await deps.ssh({ host: pod.host, port: pod.port, script: `cd "/workspace/${dirKey}" 2>/dev/null && find . -maxdepth 1 -type f -printf 'PODFILE\t%s\t%f\n'; echo`, signal: ac.signal, onLine: (l) => { const m = /^PODFILE\t(\d+)\t(.+)$/.exec(l.trim()); if (m) out.push({ name: m[2], bytes: Number(m[1]) }) } })
+  } catch { /* the pod did not answer: nothing listed */ } finally { clearTimeout(t); signal?.removeEventListener('abort', onAbort) }
+  return out
 }
 /** Make sure the remote curl is gone after a cancel or a timeout (the ssh that carried it is already dead). */
 async function stopRemote(pod: PodRef, pid: string): Promise<void> {

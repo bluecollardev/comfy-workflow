@@ -1,4 +1,4 @@
-import { test, expect, podCard, modal, cfgTab, answerConfirm, queueTab } from './fixtures'
+import { test, expect, openAutopublish, podCard, modal, cfgTab, answerConfirm, queueTab } from './fixtures'
 import { formatBytes } from '../src/sync-progress'
 import { t } from './i18n'
 
@@ -6,7 +6,7 @@ import { t } from './i18n'
 const DEST = 's3://bh-panama-exchange-610140802195/returns/BKK/'
 const calls = (api, name) => (api.state.autopublish?.calls || []).filter((c) => c.call === name)
 const slackOn = (api) => { api.state.publish = { settings: { s3: { bucket: 'bh-panama-exchange-610140802195', prefix: 'returns/BKK/', region: 'us-west-2', endpoint: '', credentials: 'panama', access_key_hint: '', presign_hours: 72 }, slack: { workspace_name: 'Beinghuman', workspace_url: 'https://beinghuman-hq.slack.com', channel: '#deliveries', username: 'RunPod Manager', webhook_hint: '••••9f2k' }, defaults: { targets: ['s3'], message: '{shot}' } } } }
-const openBlock = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'publishing'); await expect(d.getByTestId('settings-autopublish')).toBeVisible(); return d }
+const openBlock = async (page) => { const d = await openAutopublish(page); await expect(d.getByTestId('settings-autopublish')).toBeVisible(); return d }
 const prompt = (page) => page.getByTestId('name-prompt')
 const on = (api, o = {}) => { api.state.mounts.config.auto_publish = { enabled: true, dry_run: true, window_minutes: 10, daily_cap: null, dry_run_first: true, targets: { s3: true, slack: false, tunnel: false }, standing: { approved_by: 'Brynley', at: '2026-11-19T10:00:00Z' }, ...o } }
 const inMinutes = (m, s = 0) => new Date(Date.now() + m * 60000 + s * 1000).toISOString()
@@ -59,14 +59,14 @@ test.describe('Settings > Publishing > Auto-publish', () => {
     const before = calls(api, 'setSettings').length
     await b.getByTestId('autopublish-dry-run').click()   // back to a dry run: edited here, saved with the window
     await expect(b.getByTestId('autopublish-dry-run')).toBeChecked(); expect(calls(api, 'setSettings')).toHaveLength(before)
-    await expect(d.getByTestId('config-unsaved')).toBeVisible()
+    await expect(page.getByTestId('volumes-save')).toBeEnabled()
   })
   test('the core\'s two 400 texts for going live show inline', async ({ page, api }) => {
     on(api, { standing: null })
     const d = await openBlock(page)
     await d.getByTestId('autopublish-dry-run').click(); await answerConfirm(page, true)
     await expect(d.getByTestId('autopublish-action-error')).toContainText('Going live needs the standing approval: turn Auto-publish on first')
-    on(api); await page.reload(); const d2 = await (async () => { await page.getByTestId('open-config').click(); const x = modal(page, t('config.title')); await cfgTab(x, 'publishing'); return x })()
+    on(api); await page.reload(); const d2 = await (async () => { const x = await openAutopublish(page, { fresh: false }); return x })()
     const r = await page.evaluate(async () => { const x = await fetch('http://localhost:8000/api/autopublish/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dry_run: false }) }); return { status: x.status, body: await x.json() } })
     expect(r.status).toBe(400); expect(r.body.detail).toBe('Confirm that the next approved version will really be uploaded')
     await expect(d2.getByTestId('autopublish-dry-run')).toBeChecked()
@@ -74,11 +74,10 @@ test.describe('Settings > Publishing > Auto-publish', () => {
   test('Start in dry run when turned on: ticked by default, rides the footer Save, an untouched config sends no key', async ({ page, api }) => {
     let d = await openBlock(page)
     await expect(d.getByTestId('autopublish-dry-first')).toBeChecked()
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
-    expect(api.state.mountPuts[0]).not.toHaveProperty('auto_publish')
+    await expect(page.getByTestId('volumes-save')).toBeDisabled(); expect(api.state.mountPuts || []).toHaveLength(0)   // untouched: nothing to save, nothing sent
     d = await openBlock(page)
-    await d.getByTestId('autopublish-dry-first').uncheck(); await expect(d.getByTestId('config-unsaved')).toBeVisible()
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    await d.getByTestId('autopublish-dry-first').uncheck(); await expect(page.getByTestId('volumes-save')).toBeEnabled()
+    await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
     expect(api.state.mountPuts.at(-1).auto_publish.dry_run_first).toBe(false); expect(api.state.mounts.config.auto_publish.dry_run_first).toBe(false)
   })
   test('the enable dialog shows the choice as a line and a tick: dry by default; unticked it says LIVE at once and the button is a red Enable and go live; the call carries dry_run_first and the state follows', async ({ page, api }) => {
@@ -130,18 +129,17 @@ test.describe('Settings > Publishing > Auto-publish', () => {
   })
   test('the footer Save carries window, cap and targets as auto_publish; an untouched configuration sends no such key; the window shows an unsaved flag; bad numbers wait', async ({ page, api }) => {
     let d = await openBlock(page)
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
-    expect(api.state.mountPuts[0]).not.toHaveProperty('auto_publish')   // untouched: saves exactly as before
+    await expect(page.getByTestId('volumes-save')).toBeDisabled(); expect(api.state.mountPuts || []).toHaveLength(0)   // untouched: nothing to save, nothing sent
     on(api)
     d = await openBlock(page)
-    await expect(d.getByTestId('config-unsaved')).toHaveCount(0)
+    await expect(page.getByTestId('volumes-save')).toBeDisabled()
     await d.getByTestId('autopublish-window').fill('20'); await d.getByTestId('autopublish-cap-on').check(); await d.getByTestId('autopublish-cap').fill('7')
-    await expect(d.getByTestId('config-unsaved')).toBeVisible()
-    await d.getByTestId('autopublish-cap').fill('101'); await d.getByTestId('config-save').click()
-    await expect(d.getByTestId('autopublish-error')).toHaveText('The daily cap is a whole number from 1 to 100, or 0 for no limit.'); expect(api.state.mountPuts).toHaveLength(1)
-    await d.getByTestId('autopublish-cap').fill('7'); await d.getByTestId('autopublish-window').fill('130'); await d.getByTestId('config-save').click()
+    await expect(page.getByTestId('volumes-save')).toBeEnabled()
+    await d.getByTestId('autopublish-cap').fill('101'); await page.getByTestId('volumes-save').click()
+    await expect(d.getByTestId('autopublish-error')).toHaveText('The daily cap is a whole number from 1 to 100, or 0 for no limit.'); expect(api.state.mountPuts || []).toHaveLength(0)
+    await d.getByTestId('autopublish-cap').fill('7'); await d.getByTestId('autopublish-window').fill('130'); await page.getByTestId('volumes-save').click()
     await expect(d.getByTestId('autopublish-error')).toHaveText('The cancel window is a whole number of minutes from 0 to 120.')
-    await d.getByTestId('autopublish-window').fill('20'); await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    await d.getByTestId('autopublish-window').fill('20'); await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
     expect(api.state.mountPuts.at(-1).auto_publish).toMatchObject({ window_minutes: 20, daily_cap: 7, enabled: true, targets: { s3: true, slack: false, tunnel: false } })
     expect(api.state.mounts.config.auto_publish).toMatchObject({ window_minutes: 20, daily_cap: 7 })
   })
@@ -153,11 +151,11 @@ test.describe('Settings > Publishing > Auto-publish', () => {
     await b.getByTestId('autopublish-cap-on').check()
     await expect(b.getByTestId('autopublish-cap')).toHaveValue('5'); await expect(b.getByTestId('autopublish-no-limit')).toHaveCount(0)
     await b.getByTestId('autopublish-cap').fill('8')
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
     expect(api.state.mountPuts.at(-1).auto_publish.daily_cap).toBe(8)
     d = await openBlock(page)
     await expect(d.getByTestId('autopublish-cap-on')).toBeChecked(); await expect(d.getByTestId('autopublish-cap')).toHaveValue('8')
-    await d.getByTestId('autopublish-cap-on').uncheck(); await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    await d.getByTestId('autopublish-cap-on').uncheck(); await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
     expect(api.state.mountPuts.at(-1).auto_publish.daily_cap).toBeNull()
   })
   test('the status text with and without a cap: the Queue header says Today: 3 uploaded, or Today: 3 of 5; a capped row only exists with a cap', async ({ page, api }) => {
@@ -181,9 +179,9 @@ test.describe('Settings > Publishing > Auto-publish', () => {
     await d.getByTestId('autopublish-switch').click()
     await prompt(page).getByTestId('name-prompt-input').fill('Brynley'); await prompt(page).getByTestId('autopublish-understood').check(); await prompt(page).getByTestId('name-prompt-ok').click()
     await expect(d.getByTestId('autopublish-state')).toHaveText('Auto-publish: DRY RUN')
-    await expect(d.getByTestId('config-unsaved')).toHaveCount(0)   // the enable is not an unsaved edit
+    await expect(page.getByTestId('volumes-save')).toBeDisabled()   // the enable is not an unsaved edit
     await d.getByTestId('autopublish-cap-on').check(); await d.getByTestId('autopublish-cap').fill('9')
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
     expect(api.state.mounts.config.auto_publish).toMatchObject({ enabled: true, daily_cap: 9, standing: { approved_by: 'Brynley' } })
     expect(api.state.mountPuts.at(-1).auto_publish.enabled).toBe(true)
   })
@@ -200,7 +198,7 @@ test.describe('Settings > Publishing > Auto-publish', () => {
     await expect(g.getByTestId('autopublish-target-tunnel').locator('xpath=ancestor::label')).toHaveAttribute('title', 'Tunnel will be added when its delivery route is known')
     // no S3, no Slack: not allowed
     await g.getByTestId('autopublish-target-s3').uncheck()
-    await d.getByTestId('config-save').click()
+    await page.getByTestId('volumes-save').click()
     await expect(d.getByTestId('autopublish-error')).toHaveText('At least one of S3 or Slack must be on.'); expect(api.state.mountPuts || []).toHaveLength(0)
   })
   test('with Slack connected it can be ticked and rides the Save; with S3 off it is disabled with "Slack announces an upload: turn S3 on"', async ({ page, api }) => {
@@ -211,7 +209,7 @@ test.describe('Settings > Publishing > Auto-publish', () => {
     await g.getByTestId('autopublish-target-s3').uncheck()
     await expect(g.getByTestId('autopublish-target-slack')).toBeDisabled(); await expect(g.getByTestId('autopublish-target-slack-reason')).toHaveText('Slack announces an upload: turn S3 on')
     await g.getByTestId('autopublish-target-s3').check()
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
     expect(api.state.mountPuts.at(-1).auto_publish.targets).toEqual({ s3: true, slack: true, tunnel: false })
   })
   test('Tunnel can never be on: a forced request is refused with the core\'s text', async ({ page, api }) => {
@@ -458,8 +456,8 @@ test.describe('Mark approved', () => {
     await expect(tile(page).getByTestId('outputs-dpx-review')).toBeVisible()
     await expect(page.getByTestId('autopublish-control')).toHaveCount(0); await expect(page.getByTestId('autopublish-chip')).toHaveCount(0)
     await page.getByTestId('pod-outputs-modal').locator('.btn-close').click()
-    await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'publishing')
-    await expect(d.getByTestId('settings-publishing')).toBeVisible(); await expect(d.getByTestId('settings-autopublish')).toHaveCount(0)
+    const d = await openAutopublish(page, { fresh: false })
+    await expect(d.getByTestId('bh-publishing')).toBeVisible(); await expect(d.getByTestId('settings-autopublish')).toHaveCount(0); await expect(d.getByTestId('bh-autopublish-options')).toHaveCount(0)
     expect(await page.content()).not.toContain('hooks.slack.com/services')
   })
 })

@@ -70,6 +70,7 @@
     <AdapterStudio />
     <SharedModal />
     <VolumesModal />
+    <SyncModal v-if="ui.syncFor" :model-value="true" :volume-id="ui.syncFor.volumeId" :volume-name="ui.syncFor.volumeName" :source="ui.syncFor.source || null" @update:model-value="ui.syncFor = null" />
     <ModelsModal />
     <HistoryModal />
     <ImportRoundModal v-if="ui.importRoundOpen" />
@@ -100,6 +101,7 @@ import { useUiStore } from './stores/ui'
 import { useSettingsStore } from './stores/settings'
 import { syncAPI } from './api/sync'
 import VolumesModal from './components/VolumesModal.vue'
+import SyncModal from './components/SyncModal.vue'
 import SharedModal from './components/SharedModal.vue'
 import ModelsModal from './components/ModelsModal.vue'
 import HistoryModal from './components/HistoryModal.vue'

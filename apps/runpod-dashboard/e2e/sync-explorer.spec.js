@@ -1,4 +1,4 @@
-import { test, expect, podCard, queueTab } from './fixtures'
+import { test, expect, podCard, queueTab, openVolumeSync } from './fixtures'
 import { t } from './i18n'
 
 // The Sync logs window (from a card's Sync window) and the Sync explorer under the Queue (docs/ADR-046).
@@ -22,18 +22,18 @@ const watchState = () => ({
 })
 const setSyncs = (api, over) => { api.state.syncs = { active: [], recent: [], logs: {}, watch: { paused: false, pull: [], push: [], events: [] }, ...(api.state.syncs || {}), ...over } }
 const callsTo = (api, path) => api.calls.filter((c) => c.path === path)
-const openSync = async (page, name = 'ComfyUI-Dev') => { await podCard(page, name).getByTestId('pod-sync').click(); return page.getByTestId('sync-modal') }
+const openSync = async (page) => openVolumeSync(page)
 const openLogs = async (page) => { const d = await openSync(page); await d.getByTestId('sync-view-logs').click(); const m = page.getByTestId('sync-logs-modal'); await expect(m).toBeVisible(); return m }
 const openQueue = async (page) => { await queueTab(page, 'syncs'); const q = page.getByTestId('queue-modal'); await expect(q).toBeVisible(); return q }
 const LOGS = { 'run-1': [line('info', 'step output started'), line('warn', 'slow link on output/a.png'), line('error', 'rsync: connection reset on output/b.png'), line('info', 'step output done')], 'run-act': [line('info', 'started'), line('info', 'copied output/r1/frame_0010.png')] }
 
 test.describe('Sync logs', () => {
-  test('the Sync window has View sync logs, the existing flow and Auto sync section stay', async ({ page, api }) => {
+  test('the Sync window has View sync logs, the existing flow stays (Auto sync moved to the volume rows)', async ({ page, api }) => {
     setSyncs(api, {})
     await page.goto('/')
     const d = await openSync(page)
     await expect(d.getByTestId('sync-view-logs')).toHaveText(t('syncs.viewLogs'))
-    await expect(d.getByTestId('sync-autosync-section')).toBeVisible()
+    await expect(d.getByTestId('sync-autosync-section')).toHaveCount(0)
     await expect(d.getByTestId('sync-unavailable')).toBeVisible()   // a browser has no sync transport: the window says so as before
   })
 

@@ -1,4 +1,4 @@
-import { test, expect, modal, cfgTab, answerConfirm } from './fixtures'
+import { test, expect, modal, cfgTab, answerConfirm, openPublishing } from './fixtures'
 import { t } from './i18n'
 
 // Storage adapters (docs/ADR-063): Default Configuration > Adapters has an Import group and a Storage group. A storage adapter is one S3-compatible storage with an on/off switch.
@@ -7,10 +7,10 @@ const open = async (page, tab = 'storage') => { await page.goto('/'); await page
 const card = (d, id) => d.locator(`[data-testid="storage-card"][data-id="${id}"]`)
 const calls = (api, k) => (api.state.storage?.calls || []).filter((c) => k in c).map((c) => c[k])
 
-test('Storage is a tab of its own with the publish destination, Panama and Wasabi; Adapters keeps the import adapters; Publishing has no cards', async ({ page }) => {
+test('Storage is a tab of its own with the publish destination, Panama and Wasabi; Adapters keeps the import adapters; there is no Publishing tab', async ({ page }) => {
   const d = await open(page, 'adapters')
   await expect(d.getByTestId('section-adapters')).toHaveText('Adapters'); await expect(d.getByTestId('adapter-manager')).toBeVisible(); await expect(d.getByTestId('storage-card').first()).toBeHidden()
-  await cfgTab(d, 'publishing'); await expect(d.getByTestId('storage-card').first()).toBeHidden(); await expect(d.getByTestId('settings-publishing').getByTestId('publish-default-message')).toBeVisible()
+  await expect(d.getByTestId('cfg-tabs').getByRole('tab', { name: 'Publishing' })).toHaveCount(0)   // Publishing is on the BH row in Network Volumes
   await cfgTab(d, 'storage')
   await expect(d.getByTestId('section-storage')).toHaveText('Storage')
   await expect(d.getByTestId('storage-card')).toHaveCount(2)   // the Panama exchange is a role of the publish card
@@ -63,18 +63,13 @@ test('An older core says to restart', async ({ page, api }) => {
   await expect(d.getByTestId('storage-restart')).toHaveText('Restart the app to use Storage adapters')
 })
 
-// docs/ADR-064: the events each storage uploads on, and the order of the cards.
-test('Wasabi has five event switches that save as they are clicked; the publish destination has the Approved switch', async ({ page, api }) => {
-  const d = await open(page), w = card(d, 'wasabi')
-  for (const ev of ['generating', 'generated', 'approved', 'publishing', 'published']) await expect(w.getByTestId(`storage-event-${ev}`)).toBeVisible()
-  await w.getByTestId('storage-event-generated').click({ force: true })
-  await expect.poll(() => calls(api, 'save').at(-1)?.events).toEqual(['generated'])
-  await w.getByTestId('storage-event-approved').click({ force: true })
-  await expect.poll(() => calls(api, 'save').at(-1)?.events).toEqual(['generated', 'approved'])
-  await expect(card(d, 'publish-s3').getByTestId('storage-event-approved')).toBeVisible()   // Approved on the Panama bucket is Auto-publish
-  await expect(card(d, 'publish-s3').getByTestId('storage-event-publishing')).toBeDisabled()
-  await card(d, 'publish-s3').getByTestId('storage-event-generated').click({ force: true })
-  await expect.poll(() => calls(api, 'save').at(-1)).toMatchObject({ id: 'publish-s3', events: ['generated'] })
+// docs/ADR-064: the events moved to Network Volumes > Sync Rules (e2e/volumes-sync-rules.spec.js); this tab keeps the order of the cards.
+test('the Storage tab has no Upload On block and no event switches (they are Sync Rules in Network Volumes)', async ({ page }) => {
+  const d = await open(page)
+  await expect(d.getByTestId('storage-card').first()).toBeVisible()
+  await expect(d.getByTestId('storage-events')).toHaveCount(0); await expect(d.locator('[data-testid^="storage-event-"]')).toHaveCount(0)
+  await expect(d.getByTestId('storage-publish-events')).toHaveCount(0); await expect(d).not.toContainText('Upload On')
+  await expect(card(d, 'wasabi').getByTestId('storage-default')).toBeVisible()   // the rest of the card stays
 })
 
 test('the cards are dragged into order with the handle, and the order is saved', async ({ page, api }) => {
@@ -118,4 +113,16 @@ test('the bucket and region are shown once: the destination follows them while "
   await expect(c.getByTestId('cfg-panama-bucket')).toHaveCount(1); await expect(c.getByTestId('publish-s3-bucket')).toHaveCount(0); await expect(c.getByTestId('publish-s3-region')).toHaveCount(0)
   await c.getByTestId('storage-same-bucket').uncheck()
   await expect(c.getByTestId('publish-s3-bucket')).toBeVisible()   // untick: the destination has its own
+})
+
+test('one storage is the default: a switch on the card, a badge, one at a time; the BH cards have none', async ({ page, api }) => {
+  const d = await open(page), w = card(d, 'wasabi')
+  await expect(card(d, 'publish-s3').getByTestId('storage-default')).toHaveCount(0)
+  await expect(w.getByTestId('storage-default-badge')).toHaveCount(0)
+  await w.getByTestId('storage-default').click({ force: true })
+  await expect.poll(() => calls(api, 'default').at(-1)).toBe('wasabi')
+  await expect(w.getByTestId('storage-default-badge')).toHaveText('Default')
+  await w.getByTestId('storage-default').click({ force: true })
+  await expect.poll(() => calls(api, 'default').at(-1)).toBe('')
+  await expect(w.getByTestId('storage-default-badge')).toHaveCount(0)
 })

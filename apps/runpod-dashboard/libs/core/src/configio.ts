@@ -5,28 +5,31 @@
  * validate, save). By default (Lucas, 2026-11-03: "export adds tokens", "import reads") it also carries the keys and tokens (a `secrets` block: the RunPod,
  * S3, exchange-bucket, console and Anthropic keys and the git accounts' tokens, and the environment variables named like secrets), so one file sets up a whole
  * new computer; the export can leave them out. Nothing secret is ever shown: a plan masks every value to its last four characters, and no error, warning or
- * log line carries one. Not exported at all: the no-spend switch (`dry_run`), per-pod configurations, adapters and the attached repositories.
- * Before an import writes anything the current configuration AND its secrets are copied to <config dir>/backups (dir 0700, files 0600), newest ten kept,
+ * log line carries one. The storages (Wasabi and your own: records, Default Storage, card order, titles of the BH buckets; their keys ride in `secrets.storages`), the sync rules and the volumes' Auto sync entries (they ARRIVE OFF: turning one on needs a named yes on that machine) travel as sections of their own, and the Volumes list order in the volume section (docs/ADR-070). Not exported at all: the no-spend switch (`dry_run`), per-pod configurations, adapter code you wrote (*.mjs) and which pod a repository is cloned onto.
+ * Before an import writes anything the current configuration AND its secrets (and storage-adapters.json, sync-rules.json, autosync.json) are copied to <config dir>/backups (dir 0700, files 0600), newest ten kept,
  * and `undoImport` puts them back.
  */
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { bad } from './errors.js'
 import * as git from './git.js'
 import * as history from './history.js'
 import * as mounts from './mounts.js'
-import { APP_DIR, backupsDir, configDir } from './paths.js'
+import { APP_DIR, autosyncFile, backupsDir, configDir } from './paths.js'
 import * as settings from './settings.js'
+import * as storage from './storage.js'
+import * as syncrules from './syncrules.js'
+import * as autosyncstore from './autosyncstore.js'
 
 export const FORMAT = 'runpod-pod-manager-config'
 export const VERSION = 1
 export const MAX_BYTES = 2 * 1024 * 1024   // a configuration is a few KB; refuse anything near this as "not a configuration"
 export const KEEP_BACKUPS = 10
 
-export type SectionKey = 'volume' | 'image' | 'env' | 'pod_defaults' | 'mcp' | 'mcp_connections' | 'repositories' | 'wanted_models' | 'folders' | 'panama' | 'publish' | 'governance' | 'secrets'
+export type SectionKey = 'volume' | 'image' | 'env' | 'pod_defaults' | 'mcp' | 'mcp_connections' | 'repositories' | 'wanted_models' | 'folders' | 'panama' | 'publish' | 'governance' | 'storages' | 'sync_rules' | 'auto_sync_volumes' | 'secrets'
 interface SectionDef { label: string; fields: (keyof mounts.MountsConfig)[]; machine?: boolean; account?: boolean }
 export const SECTIONS: Record<SectionKey, SectionDef> = {
-  volume: { label: 'Volume and datacenter', fields: ['network_volume_id', 'mount_path', 'data_center_id', 'shared_volume_id'], account: true },
+  volume: { label: 'Volume and datacenter', fields: ['network_volume_id', 'mount_path', 'data_center_id', 'shared_volume_id', 'volume_order'], account: true },
   image: { label: 'Image and registry login', fields: ['image', 'registry_auth_id'], account: true },
   env: { label: 'Environment', fields: ['env'] },
   pod_defaults: { label: 'Pod defaults', fields: ['idle_stop_minutes', 'models', 'sync_parallel', 'sync_shared', 'pull_shared', 'auto_sync', 'auto_publish', 'outputs', 'edl', 'delivery_prepare', 'render', 'sync_exclude', 'sync_exclude_delete', 'folder_excludes', 'apply_by_default', 'pull_any_card', 'default_gpu', 'default_cards', 'auto_cards', 'import_max_pods', 'import_cost_cap_usd', 'import_cap_enabled', 'required', 'links'] },
@@ -38,13 +41,16 @@ export const SECTIONS: Record<SectionKey, SectionDef> = {
   panama: { label: 'Panama bucket, region and profile', fields: [] },
   publish: { label: 'Publishing (S3 destination and Slack settings, no keys, no webhook)', fields: [] },
   governance: { label: 'Agent rules (system-wide)', fields: [] },
+  storages: { label: 'Storages (Wasabi and your own: records, default, order, titles; keys travel in Keys and tokens)', fields: [] },
+  sync_rules: { label: 'Sync rules (which storages each volume sends to)', fields: [] },
+  auto_sync_volumes: { label: 'Auto sync of volumes (arrives OFF: turning it on needs a named yes)', fields: [] },
   secrets: { label: 'Keys and tokens', fields: [] },
 }
 export const SECTION_KEYS = Object.keys(SECTIONS) as SectionKey[]
-const CONFIG_KEYS = new Set<string>(['auto_publish', 'outputs', 'edl', 'delivery_prepare', 'folders', 'custom', 'network_volume_id', 'shared_volume_id', 'mount_path', 'data_center_id', 'links', 'env', 'apply_by_default', 'pull_any_card', 'default_gpu', 'auto_cards', 'import_max_pods', 'import_cost_cap_usd', 'import_cap_enabled', 'required', 'image', 'registry_auth_id', 'idle_stop_minutes', 'models', 'wanted_models', 'pull_shared', 'sync_shared', 'sync_parallel', 'auto_sync', 'render', 'sync_exclude', 'sync_exclude_delete', 'folder_excludes', 'dry_run', 'mcp_http'])
-const TOP_KEYS = new Set(['format', 'version', 'exported_at', 'app_version', 'config', 'panama', 'publish', 'needs', 'governance', 'mcp_connections', 'repositories', 'secrets_included', 'secrets', 'secrets_set', 'env_omitted', 'not_exported'])
+const CONFIG_KEYS = new Set<string>(['auto_publish', 'outputs', 'edl', 'delivery_prepare', 'folders', 'custom', 'network_volume_id', 'shared_volume_id', 'volume_order', 'mount_path', 'data_center_id', 'links', 'env', 'apply_by_default', 'pull_any_card', 'default_gpu', 'auto_cards', 'import_max_pods', 'import_cost_cap_usd', 'import_cap_enabled', 'required', 'image', 'registry_auth_id', 'idle_stop_minutes', 'models', 'wanted_models', 'pull_shared', 'sync_shared', 'sync_parallel', 'auto_sync', 'render', 'sync_exclude', 'sync_exclude_delete', 'folder_excludes', 'dry_run', 'mcp_http'])
+const TOP_KEYS = new Set(['format', 'version', 'exported_at', 'app_version', 'config', 'panama', 'publish', 'needs', 'governance', 'mcp_connections', 'repositories', 'storages', 'sync_rules', 'auto_sync_volumes', 'secrets_included', 'secrets', 'secrets_set', 'env_omitted', 'not_exported'])
 /** Listed in every export, so a reader knows what to set up again by hand. */
-export const NOT_EXPORTED = ['the no-spend switch (dry_run)', 'per-pod configurations', 'per-pod model choices (a pod id means nothing on another machine; the defaults travel)', 'adapters you wrote', 'which pod a repository is cloned onto (pod ids are not portable; the repository list itself travels)']
+export const NOT_EXPORTED = ['the no-spend switch (dry_run)', 'per-pod configurations', 'per-pod model choices (a pod id means nothing on another machine; the defaults travel)', 'adapter code you wrote (*.mjs; storage adapters travel as the storages section)', 'which pod a repository is cloned onto (pod ids are not portable; the repository list itself travels)']
 /** An environment variable name that looks like it holds a secret: with the keys included it travels in config.env like any other; without them it is left out. */
 export const looksSecret = (name: string) => /(SECRET|TOKEN|PASSW|CREDENTIAL|PRIVATE|AUTH|API[_-]?KEY|ACCESS[_-]?KEY|(^|_)KEY($|_))/i.test(name)
 
@@ -112,10 +118,11 @@ const panamaNow = () => { const g = settings.get(); return { bucket: g.panama_bu
 const pick = (cfg: mounts.MountsConfig, fields: (keyof mounts.MountsConfig)[]) => Object.fromEntries(fields.map((f) => [f, cfg[f]]))
 const short = (s: unknown, n = 60) => String(s).slice(0, n)
 
-export interface SecretsBlock { settings: Record<string, string>; git_accounts: git.Account[] }
+export interface SecretsBlock { settings: Record<string, string>; git_accounts: git.Account[]; /** the keys of Wasabi and your own storages, by storage id */ storages?: Record<string, storage.KeyPair> }
 export interface ConfigFile {
   format: typeof FORMAT; version: number; exported_at: string; app_version: string
   config: Record<string, unknown>; panama: { bucket: string; region: string; profile: string }; /** the non-secret publishing settings */ publish?: PublishSection; /** the publishing secrets set on this machine and NOT in this file (names only) */ needs?: string[]; governance?: Rules; mcp_connections?: ConnSection; repositories?: RepoSection
+  /** Wasabi and your own storages, without keys (docs/ADR-070) */ storages?: storage.PortableStorages; /** the whole sync-rules.json */ sync_rules?: { rules: Record<string, syncrules.RuleSet> }; /** the volumes' Auto sync entries; they import OFF */ auto_sync_volumes?: Record<string, autosyncstore.Settings>
   secrets_included: boolean; secrets?: SecretsBlock
   secrets_set: string[]; env_omitted: string[]; not_exported: string[]
 }
@@ -134,13 +141,14 @@ export function exportConfig(opts: { appVersion?: string; now?: Date; includeSec
   const { dry_run: _dry, ...cfg } = mounts.load()
   const env: Record<string, string> = {}, omitted: string[] = []
   for (const [k, v] of Object.entries(cfg.env)) { if (!withSecrets && looksSecret(k)) omitted.push(k); else env[k] = String(v) }
-  const values = settings.secretValues(), accounts = git.load()
+  const values = settings.secretValues(), accounts = git.load(), storageKeys = storage.exportKeys()
   const file: ConfigFile = {
     format: FORMAT, version: VERSION, exported_at: (opts.now ?? new Date()).toISOString(), app_version: opts.appVersion || appVersion(),
     config: { ...cfg, env, ...(cfg.auto_publish?.standing ? { auto_publish: { ...cfg.auto_publish, standing_informational: true } } : {}) }, panama: panamaNow(), publish: publishNow(), needs: Object.entries(publishSecretsSet()).filter(([, set]) => set).map(([n]) => n), governance: rulesNow(), mcp_connections: connNow(), repositories: reposNow(), secrets_included: withSecrets,
-    secrets_set: [...Object.keys(values), ...accounts.map((a) => `git:${a.provider}/${a.username}`)], env_omitted: omitted, not_exported: [...NOT_EXPORTED],
+    storages: storage.portable(), sync_rules: syncrules.exportRules(), auto_sync_volumes: autosyncstore.volumeEntries(),
+    secrets_set: [...Object.keys(values), ...accounts.map((a) => `git:${a.provider}/${a.username}`), ...(withSecrets ? Object.keys(storageKeys).map((id) => `storage:${id}`) : [])], env_omitted: omitted, not_exported: [...NOT_EXPORTED],
   }
-  if (withSecrets) file.secrets = { settings: values as Record<string, string>, git_accounts: accounts }
+  if (withSecrets) file.secrets = { settings: values as Record<string, string>, git_accounts: accounts, ...(Object.keys(storageKeys).length ? { storages: storageKeys } : {}) }
   return file
 }
 
@@ -176,6 +184,7 @@ const checkType = (key: string, v: unknown): string | null => {
     case 'delivery_prepare': return isObj(v) && !('approved_by' in v) && (v.out_dir === undefined || typeof v.out_dir === 'string') && (v.colour_code === undefined || typeof v.colour_code === 'string') && ['gamma', 'fps'].every((k) => v[k] === undefined || typeof v[k] === 'number') && ['fps_source', 'timecode_source', 'frame_position'].every((k) => v[k] === undefined || typeof v[k] === 'string') && (v.skip_existing === undefined || typeof v.skip_existing === 'boolean') ? null : 'delivery_prepare is { out_dir, colour_code, gamma, fps_source, fps, timecode_source, frame_position, skip_existing } (no approved_by: a person\'s yes is never imported)'
     case 'outputs': return isObj(v) && Object.values(v).every((x) => typeof x === 'boolean') ? null : 'outputs is { hide_empty_folders }'
     case 'render': return isObj(v) && !('approved_by' in v) && !('allow_partial' in v) && (v.rec709 === undefined || typeof v.rec709 === 'boolean') && (v.publish === undefined || (isObj(v.publish) && Object.values(v.publish).every((x) => typeof x === 'boolean'))) ? null : 'render is { where, kind, proxy_width, review_width, codecs, fps, rec709, pull, skip_existing, publish: { s3, slack } } (no approver, no allow_partial)'
+    case 'volume_order': return Array.isArray(v) && v.length <= mounts.MAX_VOLUME_ORDER && v.every((x) => typeof x === 'string' && mounts.ORDER_ID.test(x)) && new Set(v).size === v.length ? null : "volume_order must be a list of row ids (volume ids, storage ids, 'local', 'bh'), each once, at most 300"
     case 'mcp_http': return isObj(v) && Object.values(v).every(isObj) ? null : 'mcp_http must map each server to its settings'
     default: return null
   }
@@ -193,7 +202,9 @@ export interface ImportPlan {
   source: { app_version: string | null; exported_at: string | null; secrets_included: boolean; secrets_set: string[]; env_omitted: string[] }
 }
 /** What apply writes for the keys and tokens: only the entries that passed their checks. Held inside this module; never part of a plan. */
-interface ParsedSecrets { settings: Record<string, string>; git: git.Account[]; skipped: string[] }
+interface ParsedSecrets { settings: Record<string, string>; git: git.Account[]; storages: Record<string, storage.KeyPair>; skipped: string[] }
+/** What apply re-reads from the file for the sections that are not mounts fields. */
+interface Extra { storages?: storage.PortableStorages; rulesRaw?: unknown; volumes?: Record<string, autosyncstore.Settings> }
 
 const checkAccount = (a: Record<string, unknown>): { account: git.Account | null; label: string; error: string | null } => {
   const provider = typeof a.provider === 'string' ? a.provider : '', username = typeof a.username === 'string' ? a.username : ''
@@ -212,9 +223,10 @@ const checkAccount = (a: Record<string, unknown>): { account: git.Account | null
 }
 
 /** The plan with REAL values, for `applyImport` only. `planImport` is this with every secret masked. */
-function buildPlan(file: unknown): { plan: ImportPlan; secrets: ParsedSecrets | null } {
+function buildPlan(file: unknown): { plan: ImportPlan; secrets: ParsedSecrets | null; extra: Extra } {
   const plan: ImportPlan = { ok: false, errors: [], warnings: [], sections: [], source: { app_version: null, exported_at: null, secrets_included: false, secrets_set: [], env_omitted: [] } }
-  const out = (secrets: ParsedSecrets | null = null) => ({ plan, secrets })
+  const extra: Extra = {}
+  const out = (secrets: ParsedSecrets | null = null) => ({ plan, secrets, extra })
   const fail = (m: string) => { plan.errors.push(m); return out() }
   let size = 0
   try { size = JSON.stringify(file)?.length ?? 0 } catch { return fail('That is not a configuration file.') }
@@ -249,7 +261,7 @@ function buildPlan(file: unknown): { plan: ImportPlan; secrets: ParsedSecrets | 
   if (file.secrets !== undefined) {
     if (!isObj(file.secrets)) plan.errors.push('"secrets" must be an object.')
     else {
-      secrets = { settings: {}, git: [], skipped: [] }
+      secrets = { settings: {}, git: [], storages: {}, skipped: [] }
       const cur = settings.secretValues()
       const given = file.secrets.settings
       if (given !== undefined && !isObj(given)) plan.errors.push('"secrets.settings" must map key names to values.')
@@ -260,6 +272,17 @@ function buildPlan(file: unknown): { plan: ImportPlan; secrets: ParsedSecrets | 
         const v = (value as string).trim()
         secrets.settings[name] = v
         items.push({ name, hint: maskSecret(v), changed: cur[name as settings.SecretName] !== v, error: null })
+      }
+      const sk = file.secrets.storages
+      if (sk !== undefined && !isObj(sk)) plan.errors.push('"secrets.storages" must map storage ids to keys.')
+      const haveKeys = storage.exportKeys()
+      for (const [id, k] of Object.entries(isObj(sk) ? sk : {})) {
+        const name = `storage:${short(id, 40)}`
+        const err = !/^[a-z0-9][a-z0-9-]{1,30}$/.test(id) ? 'not a storage id' : storage.checkKeyPair(k)
+        if (err) { items.push({ name, hint: '', changed: false, error: err }); secrets.skipped.push(name); continue }
+        const kp = k as storage.KeyPair, pair = { access_key_id: kp.access_key_id.trim(), secret_access_key: kp.secret_access_key.trim() }
+        secrets.storages[id] = pair
+        items.push({ name, hint: maskSecret(pair.access_key_id), changed: haveKeys[id]?.access_key_id !== pair.access_key_id || haveKeys[id]?.secret_access_key !== pair.secret_access_key, error: null })
       }
       const accts = file.secrets.git_accounts
       if (accts !== undefined && !Array.isArray(accts)) plan.errors.push('"secrets.git_accounts" must be a list.')
@@ -285,7 +308,7 @@ function buildPlan(file: unknown): { plan: ImportPlan; secrets: ParsedSecrets | 
       const changed = ok.some((i) => i.changed)
       const hints = (xs: SecretItem[]) => Object.fromEntries(xs.map((i) => [i.name, i.hint]))
       const now = settings.secretValues()
-      const currentHints = Object.fromEntries([...Object.entries(now).map(([n, v]) => [n, maskSecret(v as string)]), ...git.load().map((a) => [`git:${a.provider}/${a.username}`, maskSecret(a.token)])])
+      const currentHints = Object.fromEntries([...Object.entries(now).map(([n, v]) => [n, maskSecret(v as string)]), ...Object.entries(storage.exportKeys()).map(([id, k]) => [`storage:${id}`, maskSecret(k.access_key_id)]), ...git.load().map((a) => [`git:${a.provider}/${a.username}`, maskSecret(a.token)])])
       plan.sections.push({
         key, label: def.label, changed, current: currentHints, incoming: hints(ok), machine_specific: false, account_specific: false, default_checked: changed && !!ok.length,
         error: ok.length ? null : `None of the keys and tokens in the file can be imported (${bads.map((b) => b.name).join(', ')}).`,
@@ -323,6 +346,36 @@ function buildPlan(file: unknown): { plan: ImportPlan; secrets: ParsedSecrets | 
       const incoming: RepoSection = { accounts: accts, repositories: list }
       const noteParts = [...(missing.length ? [`Token missing for ${missing.join(', ')}: the account is listed, not connected, until its token is imported (Keys and tokens) or you connect it again.`] : []), ...(bad.length ? [`Not imported: ${bad.join('; ')}.`] : [])]
       plan.sections.push({ key, label: def.label, changed: list.some((r) => !now.repositories.some((x) => x.url === r.url && x.branch === r.branch)) || accts.some((a) => !now.accounts.some((x) => x.id === a.id)), current: now, incoming, machine_specific: false, account_specific: false, default_checked: true, error: null, note: noteParts.join(' ') || null })
+      continue
+    }
+    if (key === 'storages') {
+      if (file.storages === undefined) continue
+      const now = storage.portable(), c = storage.checkPortable(file.storages)
+      if (c.error) { plan.sections.push({ key, label: def.label, changed: false, current: now, incoming: c.value, machine_specific: false, account_specific: false, default_checked: false, error: c.error, note: null }); continue }
+      extra.storages = c.value
+      const r = storage.importStorages(c.value, secrets?.storages ?? {}, { dryRun: true })
+      plan.warnings.push(...r.warnings)
+      plan.sections.push({ key, label: def.label, changed: !same(now, r.incoming), current: now, incoming: r.incoming, machine_specific: false, account_specific: false, default_checked: !same(now, r.incoming), error: null, note: 'No keys here: a storage that is on stays on only when its keys are present after the import (they come with Keys and tokens), else it arrives off.' })
+      continue
+    }
+    if (key === 'sync_rules') {
+      if (file.sync_rules === undefined) continue
+      const fileIds = new Set<string>(isObj(file.storages) ? storage.checkPortable(file.storages).value.adapters.map((a) => a.id) : []), local = new Set(storage.realIds())
+      const c = syncrules.checkExport(file.sync_rules, (id) => local.has(id) || fileIds.has(id)), now = syncrules.exportRules()
+      if (c.error) { plan.sections.push({ key, label: def.label, changed: false, current: now, incoming: c.value, machine_specific: false, account_specific: false, default_checked: false, error: c.error, note: null }); continue }
+      extra.rulesRaw = file.sync_rules
+      plan.warnings.push(...c.warnings)
+      plan.sections.push({ key, label: def.label, changed: !same(now, c.value), current: now, incoming: c.value, machine_specific: false, account_specific: false, default_checked: !same(now, c.value), error: null, note: 'Replaces this machine\'s rules. A rule for a volume that is not on this account is kept; a rule naming a storage that is neither in the file nor here is dropped (see the warnings).' })
+      continue
+    }
+    if (key === 'auto_sync_volumes') {
+      if (file.auto_sync_volumes === undefined) continue
+      const now = autosyncstore.volumeEntries(), c = autosyncstore.checkVolumeEntries(file.auto_sync_volumes)
+      if (c.error) { plan.sections.push({ key, label: def.label, changed: false, current: now, incoming: c.value, machine_specific: false, account_specific: false, default_checked: false, error: c.error, note: null }); continue }
+      extra.volumes = c.value
+      const nowOn = Object.entries(now).filter(([id, e]) => e.enabled && id in c.value).map(([id]) => id)
+      plan.sections.push({ key, label: def.label, changed: !same(Object.fromEntries(Object.keys(c.value).map((id) => [id, now[id]])), c.value), current: now, incoming: c.value, machine_specific: false, account_specific: false, default_checked: !same(Object.fromEntries(Object.keys(c.value).map((id) => [id, now[id]])), c.value),
+        error: null, note: ['Every volume arrives OFF: turning Auto sync on needs a named yes on this machine (the name shown is information only).', c.wasOn.length ? `On in the file: ${c.wasOn.join(', ')}.` : '', nowOn.length ? `Turned OFF here by this import: ${nowOn.join(', ')}.` : ''].filter(Boolean).join(' ') })
       continue
     }
     if (key === 'governance') {
@@ -385,10 +438,13 @@ export function planImport(file: unknown): ImportPlan {
 // ----- applying, backing up, undoing -----
 
 interface Backup {
-  at: string; /** the non-secret publishing settings as they were (never a key or a webhook) */ publish?: PublishSection; mounts: mounts.MountsConfig; panama: { bucket: string; region: string; profile: string }; governance?: Rules; console_url?: string; repositories?: repos.Repository[]
+  at: string; /** which of storage-adapters.json, sync-rules.json and autosync.json existed (their copies sit beside this file, 0600) */ files?: Record<BackupFile, boolean>; /** the non-secret publishing settings as they were (never a key or a webhook) */ publish?: PublishSection; mounts: mounts.MountsConfig; panama: { bucket: string; region: string; profile: string }; governance?: Rules; console_url?: string; repositories?: repos.Repository[]
   /** The keys and tokens as they were (so Undo restores them too). Absent in a backup made before the export carried keys. */
   secrets?: { settings: Partial<Record<settings.SecretName, string>>; git_accounts: git.Account[] }
 }
+const BACKUP_FILES = { storage_adapters: ['storage-adapters', storage.storageFile], sync_rules: ['sync-rules', syncrules.rulesFile], autosync: ['autosync', autosyncFile] } as const
+type BackupFile = keyof typeof BACKUP_FILES
+const companion = (kind: BackupFile, at: string) => join(backupsDir(), `${BACKUP_FILES[kind][0]}-${at}.json`)
 export interface BackupInfo { file: string; name: string; at: string }
 const stamp = (d = new Date()) => d.toISOString().replace(/[:.]/g, '-')
 
@@ -404,10 +460,12 @@ function writeBackup(now = new Date()): string {
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   chmodSync(dir, 0o700)   // the mode option only applies to a folder this call creates
   const file = join(dir, `mounts-${stamp(now)}.json`)
-  const b: Backup = { at: now.toISOString(), publish: publishNow(), mounts: mounts.load(), panama: panamaNow(), governance: rulesNow(), console_url: remote.url(), repositories: repos.load(), secrets: { settings: settings.storedSecretValues(), git_accounts: git.load() } }
+  const files = {} as Record<BackupFile, boolean>
+  for (const k of Object.keys(BACKUP_FILES) as BackupFile[]) { const src = BACKUP_FILES[k][1](); files[k] = existsSync(src); if (files[k]) { const dst = companion(k, stamp(now)); copyFileSync(src, dst); chmodSync(dst, 0o600) } }
+  const b: Backup = { at: now.toISOString(), files, publish: publishNow(), mounts: mounts.load(), panama: panamaNow(), governance: rulesNow(), console_url: remote.url(), repositories: repos.load(), secrets: { settings: settings.storedSecretValues(), git_accounts: git.load() } }
   writeFileSync(file, JSON.stringify(b, null, 2) + '\n', { mode: 0o600 })
   chmodSync(file, 0o600)
-  for (const old of listBackups().slice(KEEP_BACKUPS)) { try { unlinkSync(old.file) } catch { /* a backup that cannot be pruned stays */ } }
+  for (const old of listBackups().slice(KEEP_BACKUPS)) { try { unlinkSync(old.file) } catch { /* a backup that cannot be pruned stays */ } for (const k of Object.keys(BACKUP_FILES) as BackupFile[]) { try { unlinkSync(companion(k, old.at)) } catch { /* none */ } } }
   return file
 }
 
@@ -416,7 +474,7 @@ const setPanama = (p: { bucket: string; region: string; profile: string }) => se
 
 /** Write the checked sections. Everything is validated first; the current configuration and keys are backed up; then it is saved through `mounts.put`, `settings.set` and the git store. */
 export function applyImport(file: unknown, opts: { sections: string[]; now?: Date }) {
-  const { plan, secrets } = buildPlan(file)
+  const { plan, secrets, extra } = buildPlan(file)
   if (!plan.ok) throw bad(plan.errors.join(' '))
   const wanted = [...new Set(opts.sections)]
   const unknown = wanted.filter((s) => !SECTION_KEYS.includes(s as SectionKey))
@@ -429,7 +487,7 @@ export function applyImport(file: unknown, opts: { sections: string[]; now?: Dat
   const current = mounts.load()
   const next: Record<string, unknown> = { ...current }
   for (const s of chosen) {
-    if (s.key === 'publish' || s.key === 'panama' || s.key === 'governance' || s.key === 'mcp_connections' || s.key === 'repositories' || s.key === 'secrets') continue
+    if (s.key === 'publish' || s.key === 'panama' || s.key === 'governance' || s.key === 'mcp_connections' || s.key === 'repositories' || s.key === 'secrets' || s.key === 'storages' || s.key === 'sync_rules' || s.key === 'auto_sync_volumes') continue
     for (const [f, v] of Object.entries(s.incoming as Record<string, unknown>)) next[f] = v
   }
   const cfg = mounts.validate(mounts.normalize(next as Partial<mounts.MountsConfig>))   // the panel's own check, on the merged result
@@ -438,6 +496,7 @@ export function applyImport(file: unknown, opts: { sections: string[]; now?: Dat
   const withSecrets = chosen.some((s) => s.key === 'secrets') && secrets
   const backup = writeBackup(opts.now)
   const payload = mounts.put(cfg, { quiet: true })
+  const warnings = [...plan.warnings], skippedKeys: string[] = []
   history.record({ kind: 'change', area: 'configuration', action: 'imported from a file', what: chosen.map((s) => s.label).join(', ') })   // the section names only, never a value
   if (panama) setPanama(panama.incoming as { bucket: string; region: string; profile: string })
   const pub = chosen.find((s) => s.key === 'publish'); if (pub) writePublish({ ...publishNow(), ...(pub.incoming as PublishSection) })   // the non-secret settings only; the keys and the webhook are untouched
@@ -450,6 +509,19 @@ export function applyImport(file: unknown, opts: { sections: string[]; now?: Dat
     for (const r of (repoSec.incoming as RepoSection).repositories) if (!next.some((x) => x.url === r.url && x.branch === r.branch)) next.push(r)
     repos.save(next)
   }
+  const keysFromFile = withSecrets ? secrets.storages : {}
+  if (chosen.some((s) => s.key === 'storages') && extra.storages) {
+    warnings.length = 0; warnings.push(...plan.warnings.filter((w) => !/^Storage ".*" arrives off|^The Default Storage|^Not in the order/.test(w)))   // re-said below from what was really written
+    const r = storage.importStorages(extra.storages, keysFromFile); warnings.push(...r.warnings)
+    const inFile = new Set(extra.storages.adapters.map((a) => a.id)), rest = Object.fromEntries(Object.entries(keysFromFile).filter(([id]) => !inFile.has(id)))
+    if (Object.keys(rest).length) skippedKeys.push(...storage.setKeys(rest).map((id) => `storage:${id}`))
+  } else if (Object.keys(keysFromFile).length) skippedKeys.push(...storage.setKeys(keysFromFile).map((id) => `storage:${id}`))
+  if (skippedKeys.length) warnings.push(`Keys not imported, no such storage here: ${skippedKeys.join(', ')}.`)
+  if (chosen.some((s) => s.key === 'sync_rules') && extra.rulesRaw !== undefined) {
+    const ids = new Set([...storage.realIds()]), c = syncrules.checkExport(extra.rulesRaw, (id) => ids.has(id))   // after the storages above: only what exists now
+    warnings.push(...c.warnings.filter((w) => !plan.warnings.includes(w))); syncrules.replaceAll(c.value.rules)
+  }
+  if (chosen.some((s) => s.key === 'auto_sync_volumes') && extra.volumes) autosyncstore.importVolumeEntries(extra.volumes)
   if (withSecrets) {
     if (Object.keys(secrets.settings).length) settings.setSecrets(secrets.settings as Partial<Record<settings.SecretName, string>>)
     if (secrets.git.length) {
@@ -458,7 +530,7 @@ export function applyImport(file: unknown, opts: { sections: string[]; now?: Dat
       git.save([...byId.values()])
     }
   }
-  return { payload, backup, needs: publishNeeds(), applied: chosen.map((s) => s.key), skipped: withSecrets ? secrets.skipped : [], settings: settings.get() }
+  return { payload, backup, needs: publishNeeds(), applied: chosen.map((s) => s.key), skipped: [...(withSecrets ? secrets.skipped : []), ...skippedKeys], warnings, settings: settings.get() }
 }
 
 /** Put back the configuration, the exchange-bucket settings and the keys and tokens as they were before the last import, and drop that backup so a second undo goes one step further. */
@@ -475,6 +547,15 @@ export function undoImport() {
   if (b.console_url) settings.set({ panama_console_url: b.console_url })
   if (b.repositories) repos.save(b.repositories)
   if (b.secrets) { settings.restoreSecrets(b.secrets.settings); git.save(b.secrets.git_accounts) }
+  if (b.files) {
+    for (const k of Object.keys(BACKUP_FILES) as BackupFile[]) {
+      const dst = BACKUP_FILES[k][1](), src = companion(k, last.at)
+      try {
+        if (b.files[k] && existsSync(src)) { mkdirSync(join(dst, '..'), { recursive: true }); copyFileSync(src, dst); chmodSync(dst, 0o600) } else if (!b.files[k] && existsSync(dst)) unlinkSync(dst)
+        if (existsSync(src)) unlinkSync(src)
+      } catch { /* a file that cannot be restored stays as it is */ }
+    }
+  }
   try { unlinkSync(last.file) } catch { /* it stays; harmless */ }
   return { payload, restored: last.name, settings: settings.get() }
 }

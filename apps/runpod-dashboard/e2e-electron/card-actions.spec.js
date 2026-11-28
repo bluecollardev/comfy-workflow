@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { launchApp, openCreatePod, podCard, toast } from './app.js'
+import { launchApp, openCreatePod, podCard, toast, openSimVolumeSync, closeWindows, SIM_VOLUME } from './app.js'
 import { t } from '../e2e/i18n.js'
 import { answerConfirm } from '../e2e/fixtures.js'
 import { mkdirSync } from 'node:fs'
@@ -107,8 +107,8 @@ test.describe('card actions over IPC', () => {
     await dialog.getByTestId('config-save').click()
     await expect(dialog).toBeHidden()
     const card = podCard(page, 'Sim-Card')
-    await card.getByTestId('pod-sync').click()
-    const sync = page.locator('.modal.show', { hasText: t('sync.title', { name: 'Sim-Card' }) })
+    await openSimVolumeSync(page, configDir, 'Sim-Card')
+    const sync = page.locator('.modal.show', { hasText: t('sync.title', { name: SIM_VOLUME.name }) })
     await expect(sync.getByTestId('sync-confirm')).toContainText(t('sync.confirm'))
     await expect(sync.getByTestId('sync-step')).toHaveCount(1)                       // this pod has its own configuration (no project mapped there): the repo's workflows only
     await expect(sync.getByTestId('sync-transport')).toContainText('no-spend mode')
@@ -124,8 +124,8 @@ test.describe('card actions over IPC', () => {
     await expect(sync.getByTestId('sync-counts')).toContainText(t('sync.countSkipped', { n: 0 }))             // beside copied and errors; the simulated copy finds nothing already there
     await sync.locator('.btn-close').click()
     await expect(sync).toBeHidden()
-    await expect(card.getByTestId('pod-progress-label')).not.toContainText(t('sync.countFiles', { n: 3 }).split(' ')[1])   // the run ended: no sync bar (a boot bar may show, the pod was just recreated)
-    await expect(card.getByTestId('pod-sync')).toBeEnabled()
+    await expect(card.getByTestId('pod-progress-label').filter({ hasText: t('sync.countFiles', { n: 3 }).split(' ')[1] })).toHaveCount(0)   // the run ended: no sync bar (a boot bar may show, the pod was just recreated)
+    await closeWindows(page)
   })
 
   // Lucas, 2026-10-21, a real push of three folders: "after the first folder (1/3) the whole thing seems to restart".
@@ -136,6 +136,7 @@ test.describe('card actions over IPC', () => {
     const shared = join(configDir, 'comfy-shared'); mkdirSync(shared, { recursive: true })
     await page.getByTestId('open-config').click()
     const dialog = page.locator('.modal.show', { has: page.getByTestId('config-modal') })
+    await dialog.getByTestId('cfg-tab-folders').click()
     await dialog.getByTestId('folder-row-project').getByTestId('folder-local').fill(configDir)
     await dialog.getByTestId('folder-row-comfy-shared').getByTestId('folder-local').fill(shared)   // the plan: project, comfy-shared, workflows
     await dialog.getByTestId('config-save').click()
@@ -146,8 +147,8 @@ test.describe('card actions over IPC', () => {
     await page.getByTestId('pod-submit').click()
     await expect(toast(page).filter({ hasText: t('toast.podCreated', { name: 'Sim-Sync' }) })).toBeVisible()
     const card = podCard(page, 'Sim-Sync')
-    await card.getByTestId('pod-sync').click()
-    const sync = page.locator('.modal.show', { hasText: t('sync.title', { name: 'Sim-Sync' }) })
+    await openSimVolumeSync(page, configDir, 'Sim-Sync')
+    const sync = page.locator('.modal.show', { hasText: t('sync.title', { name: SIM_VOLUME.name }) })
     await expect(sync.getByTestId('sync-step')).toHaveCount(3)
     await expect(sync.getByTestId('sync-skip-renders')).toBeChecked()                                     // the shots' renders stay home unless asked
     // which ComfyUI-Shared folders this run carries: the configuration's choice (input, models, workflows; not output) until changed here
@@ -217,7 +218,8 @@ test.describe('card actions over IPC', () => {
     expect(trace.at(-1).counts).toContain(t('sync.countFiles', { n: 8 }))
     await sync.locator('.btn-close').click()
     await expect(sync).toBeHidden()
-    await expect(card.getByTestId('pod-progress-label')).not.toContainText('files')
+    await expect(card.getByTestId('pod-progress-label').filter({ hasText: 'files' })).toHaveCount(0)
+    await closeWindows(page)
   })
 
   test('the Dockerfile modal answers over IPC: the repo source and the config, with the menu', async () => {

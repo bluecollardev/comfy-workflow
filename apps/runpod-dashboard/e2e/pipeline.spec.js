@@ -1,10 +1,10 @@
-import { test, expect, modal, cfgTab, queueTab } from './fixtures'
+import { test, expect, openAutopublish, modal, cfgTab, queueTab } from './fixtures'
 import { t } from './i18n'
 
 // Auto-publish as a pipeline (docs/ADR-050, 1.7.0): generate, publish to the BH S3 bucket, post to Slack; no approval per version unless required; holds; generate for what is already there; start a pod; a review optional.
 const GEN = (o = {}) => ({ enabled: true, where: 'local', preset: 'review', max_per_day: 20, settle_minutes: 5, fallback_local: false, ...o })
 const on = (api, o = {}) => { api.state.mounts.config.auto_publish = { enabled: true, dry_run: true, window_minutes: 10, daily_cap: null, dry_run_first: true, targets: { s3: true, slack: false, tunnel: false }, standing: { approved_by: 'Brynley', at: '2026-11-19T10:00:00Z' }, ...o } }
-const openPub = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'publishing'); return d }
+const openPub = async (page) => { const d = await openAutopublish(page); return d }
 const openQ = async (page) => { await queueTab(page, 'publishing'); const q = page.getByTestId('queue-modal'); await expect(q.getByTestId('queue-autopublish')).toBeVisible(); return q }
 const due = () => new Date(Date.now() + 580000).toISOString()
 const entry = (o = {}) => ({ id: 'ap-1', shot: 'archival-085', version: 2, files: 3, bytes: 2e9, due_at: due(), state: 'waiting', approved_by: 'Brynley', targets: ['s3'], ...o })
@@ -16,7 +16,7 @@ test.describe('the pipeline block', () => {
     const cards = ['autopublish-step-generate', 'autopublish-step-publish', 'autopublish-step-slack']
     const ys = []; for (const c of cards) { await expect(d.getByTestId(c)).toBeVisible(); ys.push((await d.getByTestId(c).boundingBox()).y) }
     expect(ys[0]).toBeLessThan(ys[1]); expect(ys[1]).toBeLessThan(ys[2]); await expect(d.getByTestId('autopublish-arrow')).toHaveCount(2)
-    await expect(d.getByTestId('autopublish-step-generate')).toContainText('1 Generate the reviews'); await expect(d.getByTestId('autopublish-step-publish')).toContainText('2 Publish to the BH S3 bucket'); await expect(d.getByTestId('autopublish-step-slack')).toContainText('3 Post to Slack')
+    await expect(d.getByTestId('autopublish-step-generate')).toContainText('1 Generate The Reviews'); await expect(d.getByTestId('autopublish-step-publish')).toContainText('2 Publish To The BH S3 Bucket'); await expect(d.getByTestId('autopublish-step-slack')).toContainText('3 Post To Slack')
     await expect(d.getByTestId('autopublish-destination-readonly')).toContainText('s3://bh-panama-exchange-610140802195/returns/BKK/tunnel-v11_{date}_r01/'); await expect(d.getByTestId('autopublish-destination-readonly')).not.toHaveAttribute('contenteditable')
     await expect(d.getByTestId('autopublish-standing')).toHaveText('Running under the standing approval of Brynley, 19 Nov 2026'); await expect(d.getByTestId('autopublish-switch')).toHaveCount(1)
     await expect(d.getByTestId('autopublish-step-publish').getByTestId('autopublish-target-s3')).toBeVisible(); await expect(d.getByTestId('autopublish-step-slack').getByTestId('autopublish-target-slack')).toBeVisible()
@@ -26,9 +26,8 @@ test.describe('the pipeline block', () => {
     let d = await openPub(page)
     await expect(d.getByTestId('config-autopublish-publish-all')).toBeChecked(); await expect(d.getByTestId('config-autopublish-publish-approved')).not.toBeChecked()
     await expect(d.getByTestId('config-autopublish-publish-all-help')).toHaveText('Every finished review is published automatically under the standing approval; Hold keeps one back.'); await expect(d.getByTestId('config-autopublish-publish-approved-help')).toHaveText('Only reviews someone approved are published; the Approve buttons show.')
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()   // loaded with the key: it is saved with it
-    expect(api.state.mountPuts.at(-1).auto_publish.require_approval).toBe(false)
-    d = await openPub(page); await d.getByTestId('config-autopublish-publish-approved').check(); await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    await expect(page.getByTestId('volumes-save')).toBeDisabled()   // untouched: nothing to save
+    d = await openPub(page); await d.getByTestId('config-autopublish-publish-approved').check(); await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
     expect(api.state.mounts.config.auto_publish.require_approval).toBe(true)
     on(api, { enabled: false, require_approval: true, standing: null }); d = await openPub(page); await d.getByTestId('autopublish-switch').click()
     await expect(page.getByTestId('name-prompt-message')).toContainText('Publishing: approved review videos only')
@@ -75,8 +74,8 @@ test.describe('Auto-generate settings', () => {
     const sp = d.getByTestId('config-autopublish-generate-start-pod'); await expect(sp).not.toBeChecked(); await expect(d.getByTestId('config-autopublish-generate-max-spend')).toHaveCount(0)
     await sp.check(); await expect(d.getByTestId('config-autopublish-generate-stop-when-done')).toBeChecked(); await expect(d.getByTestId('config-autopublish-generate-max-spend')).toHaveValue('25'); await expect(d.getByTestId('autopublish-generate-startpod-warning')).toHaveText('Spends money.')
     const who = d.getByTestId('config-autopublish-generate-start-approver'); await expect(who).toHaveValue('Brynley'); await who.fill('')
-    await d.getByTestId('config-save').click(); await expect(d.getByTestId('autopublish-error')).toBeVisible(); expect(api.state.mountPuts || []).toHaveLength(0)
-    await who.fill('Kyle'); await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    await page.getByTestId('volumes-save').click(); await expect(d.getByTestId('autopublish-error')).toBeVisible(); expect(api.state.mountPuts || []).toHaveLength(0)
+    await who.fill('Kyle'); await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
     expect(api.state.mountPuts.at(-1).auto_publish).toMatchObject({ approved_by: 'Kyle', generate: { start_pod: true, stop_when_done: true, max_spend_usd_per_day: 25 } })
     const POD = (o) => ({ enabled: true, where: 'pod', generating: 1, generated_today: 1, max_per_day: 20, waiting_to_settle: [], failed: [], pod: { name: 'ComfyUI-Dev', state: 'running', case: 'running', price_per_hour: 0.5, est_cost_today_usd: 1.2, ...o } })
     for (const [pod, text] of [[{}, 'Using ComfyUI-Dev (running)'], [{ state: 'exited', case: 'resume' }, 'Resuming ComfyUI-Dev for rendering'], [{ case: 'create', card: 'RTX 4090', state: 'creating' }, 'Creating a render pod (RTX 4090, $0.5/h)'], [{ state: 'stopped', started_by_feature: true }, 'Stopped: batch done']]) {
@@ -90,8 +89,8 @@ test.describe('Auto-generate settings', () => {
     let d = await openPub(page)
     await expect(d.getByTestId('config-autopublish-require-review')).toBeChecked(); await expect(d.getByTestId('config-autopublish-require-review-help')).toHaveText('Off: finished sequences are published without a review video (the DPX frames and/or the Tunnel proxy).')
     await d.getByTestId('config-autopublish-max-gb').fill('50'); await d.getByTestId('config-autopublish-require-review').uncheck()
-    const who = d.getByTestId('config-autopublish-require-review-approver'); await who.fill(''); await d.getByTestId('config-save').click(); await expect(d.getByTestId('autopublish-error')).toBeVisible()
-    await who.fill('Kyle'); await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    const who = d.getByTestId('config-autopublish-require-review-approver'); await who.fill(''); await page.getByTestId('volumes-save').click(); await expect(d.getByTestId('autopublish-error')).toBeVisible()
+    await who.fill('Kyle'); await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
     expect(api.state.mountPuts.at(-1).auto_publish).toMatchObject({ require_review: false, max_gb_per_day: 50, approved_by: 'Kyle' })
     api.state.autopublish = { generate: { enabled: true, where: 'local', generating: 0, generated_today: 0, max_per_day: 20, waiting_to_settle: [], failed: [] }, nothingSelected: true }
     api.state.mounts.config.auto_publish.generate = GEN(); api.state.autopublish.nothing_selected = true

@@ -5,7 +5,7 @@
         <BButton v-if="failedJobs.length" size="sm" variant="outline-light" data-testid="publishing-dismiss-failed" @click="failedJobs.forEach((j) => store.dismiss(j.job_id))">{{ $t('queue.dismissFailed', { n: failedJobs.length }) }}</BButton>
         <BButton v-if="finishedJobs.length" size="sm" variant="outline-light" data-testid="publishing-dismiss-all" @click="finishedJobs.forEach((j) => store.dismiss(j.job_id))">{{ $t('queue.dismissAll', { n: finishedJobs.length }) }}</BButton></span></div>
     <div v-if="!store.queueJobs.length" class="text-body-secondary small" data-testid="publishing-none">{{ $t('queue.pub.none') }}</div>
-    <div v-for="j in pagedJobs" :key="j.job_id" class="border rounded p-2 mb-2 small" data-testid="publishing-job" :data-job="j.job_id" :data-state="j.state" :data-kind="isBackfill(j) ? 'backfill' : 'manual'">
+    <div v-for="j in pagedJobs" :key="j.job_id" class="border rounded p-2 mb-2 small" :class="{ 'publishing-focus': j.job_id === focused }" data-testid="publishing-job" :data-job="j.job_id" :data-state="j.state" :data-kind="isBackfill(j) ? 'backfill' : 'manual'">
       <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
         <strong data-testid="publishing-job-title">{{ title(j) }}</strong>
         <span v-for="tg in j.targets || []" :key="tg" class="badge text-bg-dark" data-testid="publishing-job-target">{{ tg === 's3' ? 'S3' : tg === 'slack' ? 'Slack' : tg }}</span>
@@ -35,7 +35,7 @@
  * Each card reuses PublishJob (progress, numbers, Cancel, Slack state with Re-post, warnings, summary, grouped links) under its own header: title, targets, approver, phases, Open Publish window, Dismiss (local only).
  * Auto-publish's uploads are listed too, 10 cards to a page (5, 10 or 25). The store polls every second while this window is open or a job runs. Hidden on a core without Publishing.
  */
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { usePublishStore } from '../stores/publish'
 import { usePodsStore } from '../stores/pods'
 import { useUiStore } from '../stores/ui'
@@ -68,7 +68,23 @@ function openWindow(j) {
   if (!pod) return
   ui.queueOpen = false; ui.outputsFor = { pod_id: pod.id, publish: true }
 }
+// A publish just started elsewhere (queueFocus 'publish:<id>'): turn to its page, scroll to its card and mark it for a few seconds.
+const focused = ref('')
+let focusTimer = null
+watch(() => [ui.queueOpen, ui.queueFocus, store.queueJobs.length], async ([open, f]) => {
+  if (!open || !String(f).startsWith('publish:')) return
+  const id = String(f).slice('publish:'.length), i = store.queueJobs.findIndex((j) => j.job_id === id)
+  if (i < 0) return   // not listed yet: the next refresh brings it
+  ui.queueFocus = ''; page.value = Math.floor(i / pageSize.value); focused.value = id
+  await nextTick()
+  setTimeout(() => document.querySelector(`[data-testid="publishing-job"][data-job="${id}"]`)?.scrollIntoView({ block: 'center' }), 200)   // after the window's own opening
+  clearTimeout(focusTimer); focusTimer = setTimeout(() => { focused.value = '' }, 6000)
+}, { immediate: true })
 watch(() => ui.queueOpen, (open) => store.setFast(open), { immediate: true })
 onMounted(() => store.loadSettings())
-onBeforeUnmount(() => store.setFast(false))
+onBeforeUnmount(() => { store.setFast(false); clearTimeout(focusTimer) })
 </script>
+
+<style scoped>
+.publishing-focus { box-shadow: 0 0 0 2px var(--bs-primary); }
+</style>

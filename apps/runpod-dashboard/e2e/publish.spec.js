@@ -1,4 +1,4 @@
-import { test, expect, podCard, modal, cfgTab, answerConfirm } from './fixtures'
+import { test, expect, podCard, modal, cfgTab, answerConfirm, openPublishing } from './fixtures'
 import { formatBytes } from '../src/sync-progress'
 import { makeDpx } from '../src/utils/dpx-fixture.mjs'
 import { t } from './i18n'
@@ -19,7 +19,7 @@ const TREE = {
 const setup = (api, o = {}) => { api.state.publish = { settings: JSON.parse(JSON.stringify(CONFIGURED)), tree: JSON.parse(JSON.stringify(TREE)), there: [], heavy: ['cgi-042/weights.safetensors'], ...o } }
 const openModal = async (page) => { await page.goto('/'); await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click(); await page.getByTestId('pod-outputs-publish').click(); const m = page.getByTestId('publish-modal'); await expect(m).toBeVisible(); await m.getByTestId('publish-source-local').click(); await expect(m.getByTestId('publish-entry').first()).toBeVisible(); return m }   // the Source opens on the Volume (default); most tests work with the Local PC tree, so they switch to it
 const tick = (m, p) => m.locator(`[data-testid="publish-entry-check"][data-path="${p}"]`)
-const openSettings = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'publishing'); return d }
+const openSettings = (page) => openPublishing(page)
 
 const openAdapters = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'storage'); await d.getByTestId('storage-same-bucket').uncheck(); return d }   // the destination's own fields (docs/ADR-065: ticked, it follows the Panama bucket and shows none). The S3 destination's form is the publish-s3 card in the Storage tab (docs/ADR-063)
 const dest = (d) => d.getByTestId('settings-publish-destination')
@@ -35,12 +35,12 @@ test.describe('Settings > Publishing', () => {
     await expect(s.getByTestId('publish-s3-cred-panama')).toBeChecked(); await expect(s.getByTestId('publish-s3-access-key')).toHaveCount(0)
     await expect(s.getByTestId('publish-s3-note')).toHaveText('Lucas, 2026-11-19: Panama exchange bucket, returns/BKK/')
     await expect(s.getByTestId('publish-s3-ready')).toHaveText('ready')
-    await cfgTab(d, 'publishing'); const s2 = d.getByTestId('settings-publishing')   // Publishing keeps the targets and the message; the destination form is in the Storage tab
+    const s2 = (await (async () => { await page.goto('/'); return openPublishing(page, { fresh: false }) })()).getByTestId('settings-publishing')   // Publishing keeps the targets and the message; the destination form is in the Storage tab
     await expect(s2.getByTestId('publish-settings-note')).toHaveText('Nothing is configured until you enter it. Publishing always asks who says yes.')
     await expect(s2.getByTestId('publish-s3-bucket')).toHaveCount(0)   // the form is in the publish-s3 card, not in this block
     await expect(s2.getByTestId('publish-default-s3')).toBeChecked(); const s3x = s2; await expect(s3x.getByTestId('publish-default-message')).toHaveValue('{shot} {version} is on S3: {links}')
     await expect(s3x.getByTestId('publish-placeholders')).toContainText('{shot} {version} {files} {size} {links} {dest} {who} {channel}')
-    await expect(d.getByText('Check the bucket with Kyle')).toHaveCount(0)
+    await expect(page.getByText('Check the bucket with Kyle')).toHaveCount(0)
   })
   const footerSave = async (d) => { await d.getByTestId('config-save').click(); await expect(d).toBeHidden() }
   const reopen = async (page, tab = 'storage') => { await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, tab); return d }
@@ -69,7 +69,7 @@ test.describe('Settings > Publishing', () => {
     expect(api.state.publish.settings.s3.access_key_hint).toBe('••••1234')
   })
   test('an untouched Publishing section is not written when the window is saved', async ({ page, api }) => {
-    const d = await openSettings(page)
+    const d = await openAdapters(page)
     await d.getByTestId('cfg-tab-runpod').click().catch(() => {})
     await footerSave(d)
     expect(calls(api, 'PUT', '/publish/settings')).toHaveLength(0)
@@ -101,7 +101,7 @@ test.describe('Settings > Publishing', () => {
     await s.getByTestId('publish-default-slack').uncheck(); await s.getByTestId('publish-default-message').fill('{shot} {nope}')
     await expect(s.getByTestId('publish-unknown-placeholder')).toHaveText('Not a known placeholder: {nope}')
     await s.getByTestId('publish-default-message').fill('{shot} done {links}')
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
     expect(calls(api, 'PUT', '/publish/settings').at(-1).body.defaults).toEqual({ targets: ['s3'], message: '{shot} done {links}' })
   })
   test('the Transfer select (Auto / Pod / This PC) sits in the defaults, shows the saved value, and saves with the window', async ({ page, api }) => {
@@ -110,17 +110,17 @@ test.describe('Settings > Publishing', () => {
     await expect(sel).toHaveValue('auto'); await expect(sel.locator('option')).toHaveText(['Auto', 'Pod', 'This PC'])
     await expect(d.getByTestId('settings-publishing').getByTestId('publish-defaults-block').getByTestId('publish-transfer')).toBeVisible()
     await expect(d.getByTestId('publish-transfer-help')).toContainText('never starts a pod')
-    await sel.selectOption('pod'); await expect(d.getByTestId('config-unsaved')).toBeVisible()
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    await sel.selectOption('pod'); await expect(page.getByTestId('volumes-unsaved')).toBeVisible()
+    await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
     expect(calls(api, 'PUT', '/publish/settings').at(-1).body.s3.transfer).toBe('pod')
-    const d2 = await reopen(page); await expect(d2.getByTestId('publish-transfer')).toHaveValue('pod')
+    const d2 = await openSettings(page); await expect(d2.getByTestId('publish-transfer')).toHaveValue('pod')
   })
   test('Pods for uploads (a list of ids) and Pods at once (1 to 6) sit under Transfer, default empty and 2, and save with the window', async ({ page, api }) => {
     const d = await openSettings(page)
     const pods = d.getByTestId('settings-publishing').getByTestId('publish-transfer-pods'), n = d.getByTestId('settings-publishing').getByTestId('publish-parallel-pods')
     await expect(pods).toHaveValue(''); await expect(n).toHaveValue('2')
-    await pods.fill('idle002, idle003  render01'); await n.fill('3'); await expect(d.getByTestId('config-unsaved')).toBeVisible()
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    await pods.fill('idle002, idle003  render01'); await n.fill('3'); await expect(page.getByTestId('volumes-unsaved')).toBeVisible()
+    await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
     const body = calls(api, 'PUT', '/publish/settings').at(-1).body.s3
     expect(body.transfer_pods).toEqual(['idle002', 'idle003', 'render01']); expect(body.parallel_pods).toBe(3)
   })
@@ -129,12 +129,14 @@ test.describe('Settings > Publishing', () => {
     const m = await openModal(page)
     await tick(m, 'notes.txt').check(); await m.getByTestId('publish-approved-by').fill('Brynley')
     await expect(m.getByTestId('publish-run')).toBeEnabled(); await m.getByTestId('publish-run').click()
-    await expect(m.getByTestId('publish-job')).toBeVisible()
-    await expect(m.getByTestId('publish-job-via')).toHaveCount(0)   // a core that does not say, says nothing
+    const jc = page.getByTestId('queue-modal').locator('[data-testid="publishing-job"]').first()   // publishing closes the window: the job is its Queue card
+    await expect(page.getByTestId('publish-modal')).toHaveCount(0)
+    await expect(jc.getByTestId('publish-job')).toBeVisible()
+    await expect(jc.getByTestId('publish-job-via')).toHaveCount(0)   // a core that does not say, says nothing
     Object.assign(api.state.publish.jobs[0], { adapter: 'pod', pod: 'ComfyUI-Dev', pod_files: 2, pc_files: 0 })
-    await expect(m.getByTestId('publish-job-via')).toHaveText('via pod ComfyUI-Dev', { timeout: 6000 })
+    await expect(jc.getByTestId('publish-job-via')).toHaveText('via pod ComfyUI-Dev', { timeout: 6000 })
     Object.assign(api.state.publish.jobs[0], { adapter: 'pc', pod: undefined })
-    await expect(m.getByTestId('publish-job-via')).toHaveText('via this PC', { timeout: 6000 })
+    await expect(jc.getByTestId('publish-job-via')).toHaveText('via this PC', { timeout: 6000 })
   })
   test('closing with unsaved publishing edits asks first; No keeps the window and the edits, Yes closes', async ({ page, api }) => {
     const d = await openAdapters(page)
@@ -149,7 +151,7 @@ test.describe('Settings > Publishing', () => {
     await page.getByTestId('open-config').click(); const d2 = modal(page, t('config.title')); await cfgTab(d2, 'storage'); await expect(d2.getByTestId('publish-s3-prefix')).toHaveValue('returns/BKK/')   // the edit was dropped
   })
   test('closing without publishing edits does not ask', async ({ page }) => {
-    const d = await openSettings(page)
+    const d = await openAdapters(page)
     await d.getByTestId('config-close').click()
     await expect(d).toBeHidden()
   })
@@ -189,7 +191,7 @@ test.describe('Settings > Publishing', () => {
     await expect(d.getByTestId('publish-s3-block')).toHaveAttribute('data-open', 'false'); await expect(d.getByTestId('publish-s3-block').getByTestId('collapsible-body')).toBeHidden()
     await expect(d.getByTestId('publish-s3-block').getByTestId('collapsible-toggle')).toHaveAttribute('aria-expanded', 'false')
     await expect(d.getByTestId('publish-s3-bucket')).toHaveCount(1)   // folded, not removed: what is typed there is kept and saved
-    await cfgTab(d, 'publishing')
+    d = await openPublishing(page)
     for (const b of ['publish-slack-status', 'publish-defaults-block']) await expect(d.getByTestId(b)).toHaveAttribute('data-open', 'true')   // the others are not touched
     await page.reload(); d = await openAdapters(page)
     await expect(d.getByTestId('publish-s3-block')).toHaveAttribute('data-open', 'false')   // remembered
@@ -327,7 +329,7 @@ test.describe('the Publish window', () => {
     await page.getByTestId('connect-modal').locator('.btn-close').click()
     setup(api); api.state.publish.settings.s3.bucket = ''
     await m.getByTestId('publish-edit-settings').click()
-    await expect(modal(page, t('config.title')).getByTestId('settings-publishing')).toBeVisible()   // S3 stays in Settings
+    await expect(page.getByTestId('volume-bh').getByTestId('settings-publishing')).toBeVisible()   // S3 stays in Settings
   })
   test('the plan shows the destination, files and size, what is already there (same size) skipped, weights refused, and blockers', async ({ page, api }) => {
     setup(api, { there: ['deliver/archival-085/v003/a.mp4'] })
@@ -390,41 +392,45 @@ test.describe('the Publish window', () => {
     const m = await openModal(page)
     await tick(m, 'notes.txt').check(); await m.getByTestId('publish-approved-by').fill('Brynley')
     await expect(m.getByTestId('publish-run')).toBeEnabled(); await m.getByTestId('publish-run').click()
-    await expect(m.getByTestId('publish-job')).toBeVisible()
+    const jc = page.getByTestId('queue-modal').locator('[data-testid="publishing-job"]').first()   // publishing closes the window: the job is its Queue card
+    await expect(page.getByTestId('publish-modal')).toHaveCount(0)
+    await expect(jc.getByTestId('publish-job')).toBeVisible()
     const j = api.state.publish.jobs[0]
     Object.assign(j, { files_done: 1, bytes_done: 1e9, rate_bps: 50e6, current: 'deliver/x/a.mov' })
-    await expect(m.getByTestId('publish-progress')).toHaveAttribute('data-percent', '33', { timeout: 6000 })
-    await expect(m.getByTestId('publish-job-numbers')).toContainText('1 of 3 files'); await expect(m.getByTestId('publish-job-current')).toHaveText('deliver/x/a.mov')
+    await expect(jc.getByTestId('publish-progress')).toHaveAttribute('data-percent', '33', { timeout: 6000 })
+    await expect(jc.getByTestId('publish-job-numbers')).toContainText('1 of 3 files'); await expect(jc.getByTestId('publish-job-current')).toHaveText('deliver/x/a.mov')
     // Cancel sits on the right of the progress text, on the same row
-    const nb = await m.getByTestId('publish-job-numbers').boundingBox(), cb = await m.getByTestId('publish-cancel').boundingBox()
+    const nb = await jc.getByTestId('publish-job-numbers').boundingBox(), cb = await jc.getByTestId('publish-cancel').boundingBox()
     expect(cb.x).toBeGreaterThan(nb.x + 50); expect(Math.abs((cb.y + cb.height / 2) - (nb.y + nb.height / 2))).toBeLessThan(40)   // right of the numbers, and level with the text block
-    await m.getByTestId('publish-cancel').click()
+    await jc.getByTestId('publish-cancel').click()
     await expect.poll(() => api.state.publish.cancelled).toEqual(['pub-1'])
-    await expect(m.getByTestId('publish-job')).toHaveAttribute('data-state', 'cancelled', { timeout: 6000 })
-    await m.getByTestId('publish-run').click()
+    await expect(jc.getByTestId('publish-job')).toHaveAttribute('data-state', 'cancelled', { timeout: 6000 })
+    await openModal(page); await tick(m, 'notes.txt').check(); await m.getByTestId('publish-approved-by').fill('Brynley')
+    await expect(m.getByTestId('publish-run')).toBeEnabled(); await m.getByTestId('publish-run').click()
     await expect.poll(() => api.state.publish.jobs.length).toBe(2)
+    const jc2 = page.getByTestId('queue-modal').locator('[data-testid="publishing-job"][data-job="pub-2"]')
     const j2 = api.state.publish.jobs[1]
     Object.assign(j2, { state: 'done_with_warning', files_done: 3, bytes_done: 3e9, summary: '3 files published; Slack failed', links: [{ path: 'deliver/x/a.mp4', url: 'https://bucket.s3.amazonaws.com/deliver/x/a.mp4?sig=1', expires_at: '2026-11-22T10:00:00Z' }], slack: { state: 'failed', error: 'channel_not_found' } })
-    await expect(m.getByTestId('publish-job-summary')).toHaveText('3 files published; Slack failed', { timeout: 6000 })
-    await expect(m.getByTestId('publish-link-expiry')).toContainText('2026')
-    { const row = m.getByTestId('publish-link').first(), path = await row.locator('span.font-monospace, a.font-monospace').first().boundingBox(), exp = await row.getByTestId('publish-link-expiry').boundingBox(), cp = await row.getByTestId('publish-link-copy').boundingBox(); expect(exp.y).toBeGreaterThanOrEqual(path.y + path.height - 1); expect(cp.y).toBeLessThan(exp.y) }   // "expires …" is on the row BELOW the path; the copy icon stays on the path's row
-    await m.getByTestId('publish-link-copy').click()
+    await expect(jc2.getByTestId('publish-job-summary')).toHaveText('3 files published; Slack failed', { timeout: 6000 })
+    await expect(jc2.getByTestId('publish-link-expiry')).toContainText('2026')
+    { const row = jc2.getByTestId('publish-link').first(), path = await row.locator('span.font-monospace, a.font-monospace').first().boundingBox(), exp = await row.getByTestId('publish-link-expiry').boundingBox(), cp = await row.getByTestId('publish-link-copy').boundingBox(); expect(exp.y).toBeGreaterThanOrEqual(path.y + path.height - 1); expect(cp.y).toBeLessThan(exp.y) }   // "expires …" is on the row BELOW the path; the copy icon stays on the path's row
+    await jc2.getByTestId('publish-link-copy').click()
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('https://bucket.s3.amazonaws.com/deliver/x/a.mp4?sig=1')
-    await expect(m.getByTestId('publish-link-copy')).toHaveAttribute('data-copied', 'true'); await expect(m.getByTestId('publish-link-copy')).toHaveAttribute('aria-label', 'Copied'); await expect(m.getByTestId('publish-link-copy')).toHaveText('')   // an icon only: no label, no outline
-    await expect(m.getByTestId('publish-link-copy')).toHaveClass(/btn-link/)
-    await expect(m.getByTestId('publish-slack-state')).toContainText('Slack failed: channel_not_found')
-    await m.getByTestId('publish-slack-repost').click()
+    await expect(jc2.getByTestId('publish-link-copy')).toHaveAttribute('data-copied', 'true'); await expect(jc2.getByTestId('publish-link-copy')).toHaveAttribute('aria-label', 'Copied'); await expect(jc2.getByTestId('publish-link-copy')).toHaveText('')   // an icon only: no label, no outline
+    await expect(jc2.getByTestId('publish-link-copy')).toHaveClass(/btn-link/)
+    await expect(jc2.getByTestId('publish-slack-state')).toContainText('Slack failed: channel_not_found')
+    await jc2.getByTestId('publish-slack-repost').click()
     await expect.poll(() => api.state.publish.reposts).toEqual(['pub-2'])
-    await expect(m.getByTestId('publish-slack-state')).toContainText('Slack: posted', { timeout: 6000 })
-    await expect(m.getByTestId('publish-slack-repost')).toHaveCount(0)
+    await expect(jc2.getByTestId('publish-slack-state')).toContainText('Slack: posted', { timeout: 6000 })
+    await expect(jc2.getByTestId('publish-slack-repost')).toHaveCount(0)
   })
   test('Edit publishing settings opens the same section from inside the window, and a change to Connect > Slack is picked up when it closes', async ({ page, api }) => {
     setup(api); api.state.publish.settings.slack.webhook_hint = ''
     const m = await openModal(page)
     await expect(m.getByTestId('publish-target-slack-check')).toBeDisabled()
     await m.getByTestId('publish-edit-settings').click()
-    await expect(modal(page, t('config.title')).getByTestId('settings-publishing')).toBeVisible()
-    await modal(page, t('config.title')).locator('.btn-close').click()
+    await expect(page.getByTestId('volume-bh').getByTestId('settings-publishing')).toBeVisible()
+    await modal(page, t('volumes.title')).locator('.btn-close').click()
     await m.getByTestId('publish-target-slack-settings').click()
     const d = modal(page, t('connect.title'))
     await expect(d.getByTestId('publish-slack-webhook')).toBeVisible()
@@ -720,7 +726,7 @@ test.describe('the Publish window: one Destination block, the Sources line and w
     await m.getByTestId('publish-tab-backfill').click()
     await expect(m.getByTestId('publish-destination').getByTestId('publish-target-slack-settings')).toHaveText('Open Connect > Slack')
     await m.getByTestId('publish-target-s3-settings').click()
-    await expect(modal(page, t('config.title')).getByTestId('settings-publishing')).toBeVisible()
+    await expect(page.getByTestId('volume-bh').getByTestId('settings-publishing')).toBeVisible()
   })
   test('the Destination stays on screen while the window scrolls', async ({ page, api }) => {
     await page.setViewportSize({ width: 1280, height: 560 })

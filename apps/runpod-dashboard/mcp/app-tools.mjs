@@ -90,7 +90,7 @@ export function appTools({ core, governance, text, json, plain = text }) {
       } },
     { name: 'check_anthropic_key', description: 'Whether the Anthropic key (the one saved, or one passed to try) is accepted; used by the adapter drafting and describing tools', inputSchema: obj({ key: S('A key to try without saving it') }),
       run: async ({ key }) => json(await settings.checkAnthropic(key || null)) },
-    { name: 'config_export', description: 'The Default Configuration as the JSON the window exports (folders, volume, image, env, adapters list, ...). Keys and tokens are left out unless a file path is given: then the whole file, secrets included, is written there (mode 600) and not returned',
+    { name: 'config_export', description: 'The Default Configuration as the JSON the window exports (folders, volume, image, env, adapters list, ...). Sections: volume (with the Volumes row order), image, env, pod defaults, MCP, repositories, wanted models, folders, Panama, publishing, agent rules, storages (no keys), sync rules, auto sync of volumes (imports OFF). Keys and tokens (storage keys included) are left out unless a file path is given: then the whole file, secrets included, is written there (mode 600) and not returned',
       inputSchema: obj({ file: S('Absolute path to write; with it, secrets are included'), include_secrets: B('With file: leave them out when false (default true)') }),
       run: async ({ file, include_secrets }) => {
         if (!file) return json({ file: null, suggested_name: configio.suggestedName(), config: configio.exportConfig({ includeSecrets: false }) })
@@ -98,7 +98,7 @@ export function appTools({ core, governance, text, json, plain = text }) {
         writeFileSync(file, JSON.stringify(configio.exportConfig({ includeSecrets: include_secrets !== false }), null, 2) + '\n', { mode: 0o600 })
         return json({ file, secrets_included: include_secrets !== false })
       } },
-    { name: 'config_import_plan', description: 'What importing a configuration file would change, section by section (nothing is written): the folders (paths from another machine are flagged), the pod defaults, the keys (names and last four characters only)', inputSchema: obj({ file: S('Absolute path of the JSON file') }, ['file']),
+    { name: 'config_import_plan', description: 'What importing a configuration file would change, section by section (nothing is written): the folders (paths from another machine are flagged), the pod defaults, the volume order, the storages (no keys), the sync rules (a rule naming an unknown storage is dropped with a warning), the auto sync entries of the volumes (they arrive OFF), the keys (names and last four characters only)', inputSchema: obj({ file: S('Absolute path of the JSON file') }, ['file']),
       run: async ({ file }) => json(configio.planImport(readJsonFile(file))) },
     { name: 'config_import_apply', description: 'Import a configuration file: backs up first, then applies the sections named (default: the ones the plan ticks). dry_run defaults to true and only plans', inputSchema: obj({ file: S('Absolute path of the JSON file'), sections: { type: 'array', items: { type: 'string' }, description: 'Section keys from config_import_plan; omit for the ticked ones' }, dry_run: B('default true') }, ['file']),
       run: async ({ file, sections, dry_run = true }) => {
@@ -160,6 +160,9 @@ export function appTools({ core, governance, text, json, plain = text }) {
       run: async (args) => { const refusal = yes(args, 'models_load_wanted'); if (refusal) return text(refusal, true); try { console.error(`models_load_wanted ${args.volume_id || '(shared)'}`); return json(await wantedmodels.loadMissing(args.volume_id || '', { approved_by: args.approved_by })) } catch (e) { return text(e.message, true) } } },
     { name: 'set_shared_volume', description: 'Choose the volume that holds the shared models: it is marked Shared in the Volumes list and cannot be deleted (delete_volume refuses it). An empty volume_id clears it. Our side only, no spend', inputSchema: obj({ volume_id: S('A volume ID (list_volumes); empty clears') }, []),
       run: async ({ volume_id }) => { try { return json(await volumes.setShared(volume_id || '')) } catch (e) { return text(e.message, true) } } },
+
+    { name: 'volume_order', description: "The order of the Network Volumes rows (docs/ADR-070): action get (default) returns the ids; set saves ids (volume ids, storage ids like wasabi, and the fixed keys local and bh; each once, at most 300) and returns them. It travels in config_export / config_import_apply (section volume). Our side only, no spend", inputSchema: obj({ action: { type: 'string', enum: ['get', 'set'], description: 'get (default) or set' }, ids: { type: 'array', items: { type: 'string' }, description: 'For set: the row ids in order' } }),
+      run: async ({ action, ids }) => { try { return json(action === 'set' ? mounts.setVolumeOrder(ids) : mounts.getVolumeOrder()) } catch (e) { return text(e.message, true) } } },
 
     // ---------- Panama / BH ----------
     { name: 'panama_status', description: 'Is the BH exchange bucket reachable: the bucket, region, how it is read (the keys in the app or an AWS profile), where rounds are staged on this PC, and whether Pod mode is available', inputSchema: obj(), run: async () => json(panama.status()) },
@@ -348,21 +351,25 @@ export function appTools({ core, governance, text, json, plain = text }) {
       run: async ({ volume_id, since, prefix, limit }) => {
         try { return json(await core.journal.list({ volume_id: String(volume_id || mounts.load().shared_volume_id || mounts.load().network_volume_id || ''), since, prefix, limit })) } catch (e) { return text(e.message, true) }
       } },
-    { name: 'auto_sync', description: "Auto sync (docs/ADR-046): a pod pulls its volume's changes (ComfyUI's outputs first) to this PC by itself, and optionally pushes this PC's changes up. action get (pod_id): { enabled, pull, push, approved_by, approved_at } (defaults: off; Pull on, Push off). action set (pod_id, enabled, pull, push, approved_by): enabled: true REQUIRES approved_by, the name of who says yes (it moves data between machines and keeps doing so; recorded in the History); off needs nothing. action status: { paused, items: [{ pod_id, pod_name, state (idle | waiting | syncing | needs_approval | error | done), direction, files_done, files_total, bytes_done, bytes_total, rate_bps, streams, current, pending_bytes, summary, error, conflicts: [{ path, reason }] }] } as this process knows it (the app's own MCP shares the app's state; a stdio server does not run the timer). action pause (on: true | false): stop starting new auto pulls and pushes (a running one finishes). action sync_now (pod_id): reconcile the volume and pull for that pod now. action approve (pod_id, yes): a pull above 5 GB waits in needs_approval; yes pulls it, no skips it. action dismiss (pod_id): clear an error or a finished item. Additive and never deleting; a file changed on both sides is reported and skipped, never overwritten; the project tree and plates are never included.",
-      inputSchema: obj({ action: S('get | set | status | pause | sync_now | approve | dismiss'), pod_id: S('The pod'), enabled: B('set: turn Auto sync on (needs approved_by) or off'), pull: B('set: pull the volume\'s changes to this PC (default on)'), push: B('set: push this PC\'s changes to the volume (default off)'), approved_by: S('set with enabled: true: the name of who says yes'), on: B('pause: true pauses, false resumes'), yes: B('approve: true pulls, false skips') }, ['action']),
-      run: async ({ action, pod_id, enabled, pull, push, approved_by, on, yes }) => {
+    { name: 'auto_sync', description: "Auto sync (docs/ADR-046): a pod pulls its volume's changes (ComfyUI's outputs first) to this PC by itself, and optionally pushes this PC's changes up. action get (pod_id): { enabled, pull, push, approved_by, approved_at } (defaults: off; Pull on, Push off). action set (pod_id, enabled, pull, push, approved_by): enabled: true REQUIRES approved_by, the name of who says yes (it moves data between machines and keeps doing so; recorded in the History); off needs nothing. action get_volume (volume_id) / set_volume (volume_id, enabled, pull, push, approved_by): the same settings kept PER VOLUME (enabled: true needs approved_by); a pod follows its own entry when that is on, else its volume's when that is on (get_volume also lists the items of the pods on it). action status: { paused, items: [{ pod_id, pod_name, volume_id, via (pod | volume), state (idle | waiting | syncing | needs_approval | error | done), direction, files_done, files_total, bytes_done, bytes_total, rate_bps, streams, current, pending_bytes, summary, error, conflicts: [{ path, reason }] }] } as this process knows it (the app's own MCP shares the app's state; a stdio server does not run the timer). action pause (on: true | false): stop starting new auto pulls and pushes (a running one finishes). action sync_now (pod_id): reconcile the volume and pull for that pod now. action approve (pod_id, yes): a pull above 5 GB waits in needs_approval; yes pulls it, no skips it. action dismiss (pod_id): clear an error or a finished item. Additive and never deleting; a file changed on both sides is reported and skipped, never overwritten; the project tree and plates are never included.",
+      inputSchema: obj({ action: S('get | set | status | pause | sync_now | approve | dismiss | get_volume | set_volume'), pod_id: S('The pod'), volume_id: S('get_volume / set_volume: the volume'), enabled: B('set: turn Auto sync on (needs approved_by) or off'), pull: B('set: pull the volume\'s changes to this PC (default on)'), push: B('set: push this PC\'s changes to the volume (default off)'), approved_by: S('set with enabled: true: the name of who says yes'), on: B('pause: true pauses, false resumes'), yes: B('approve: true pulls, false skips') }, ['action']),
+      run: async ({ action, pod_id, volume_id, enabled, pull, push, approved_by, on, yes }) => {
         try {
           const a = core.autosync
+          const needVol = () => { if (!volume_id) throw Object.assign(new Error('volume_id is needed'), { status: 400 }); return String(volume_id) }
+          const patch = { ...(enabled !== undefined ? { enabled } : {}), ...(pull !== undefined ? { pull } : {}), ...(push !== undefined ? { push } : {}), ...(approved_by !== undefined ? { approved_by } : {}) }
           const need = () => { if (!pod_id) throw Object.assign(new Error('pod_id is needed'), { status: 400 }); return String(pod_id) }
           switch (action) {
             case 'get': return json(a.get(need()))
             case 'set': return json(a.set(need(), { ...(enabled !== undefined ? { enabled } : {}), ...(pull !== undefined ? { pull } : {}), ...(push !== undefined ? { push } : {}), ...(approved_by !== undefined ? { approved_by } : {}) }))
             case 'status': return json(a.status())
+            case 'get_volume': return json({ ...a.getVolumeSettings(needVol()), volume_id: String(volume_id), items: a.volumeStatus(String(volume_id)).items })
+            case 'set_volume': return json(a.setVolumeSettings(needVol(), patch))
             case 'pause': return json(a.pause(on !== false))
             case 'sync_now': return json(await a.syncNow(need()))
             case 'approve': return json(await a.approve(need(), yes === true))
             case 'dismiss': return json(a.dismiss(need()))
-            default: return text("action must be get, set, status, pause, sync_now, approve or dismiss", true)
+            default: return text("action must be get, set, status, pause, sync_now, approve, dismiss, get_volume or set_volume", true)
           }
         } catch (e) { return text(e.message, true) }
       } },
@@ -485,17 +492,104 @@ export function appTools({ core, governance, text, json, plain = text }) {
           }
         } catch (e) { return text(e.message, true) }
       } },
-    { name: 'storage_adapters', description: "Storage adapters (docs/ADR-063): S3-compatible storages (the publish destination, the Panama BH bucket, Wasabi, your own). list shows each with its switch and whether it is ready (never a key); enable / disable switch one on or off (publishing copies each file to every enabled one; Panama commands refuse while it is off); test reads the bucket. Entering a destination or keys is the window's.",
-      inputSchema: obj({ action: S('list | enable | disable | test | events', { enum: ['list', 'enable', 'disable', 'test', 'events'] }), events: { type: 'array', items: { type: 'string', enum: ['generating', 'generated', 'approved', 'publishing', 'published'] }, description: 'for events: the moments this adapter uploads on (docs/ADR-064); an empty list means none' }, id: S('Adapter id: publish-s3, panama-s3, wasabi or one you added') }, ['action']),
-      run: async ({ action, id, events }) => {
+    { name: 'storage_adapters', description: "Storage adapters (docs/ADR-063): S3-compatible storages (the publish destination, the Panama BH bucket, Wasabi, your own). list shows each with its switch and whether it is ready (never a key); enable / disable switch one on or off (publishing copies each file to every enabled one; Panama commands refuse while it is off); test reads the bucket; browse lists one folder of its bucket (read-only: folders, and files with bytes and modified). Entering a destination or keys is the window's.",
+      inputSchema: obj({ action: S('list | enable | disable | test | events | browse | usage | default | uploads | cancel_upload', { enum: ['list', 'enable', 'disable', 'test', 'events', 'browse', 'usage', 'default', 'uploads', 'cancel_upload'] }), prefix: S('for browse: the folder in the bucket (\'\' is the top; e.g. returns/BKK/)'), events: { type: 'array', items: { type: 'string', enum: ['generated', 'approved', 'published'] }, description: 'for events: the moments this adapter uploads on (docs/ADR-064); an empty list means none' }, id: S('Adapter id: publish-s3, panama-s3, wasabi or one you added') }, ['action']),
+      run: async ({ action, id, events, prefix }) => {
         try {
           const st = core.storage
           switch (action) {
             case 'list': return json(await st.list())
             case 'enable': case 'disable': if (!id) return text('id is needed (list shows the ids)', true); return json(await st.setEnabled(String(id), action === 'enable'))
             case 'test': if (!id) return text('id is needed (list shows the ids)', true); return json(await st.test(String(id)))
-            case 'events': if (!id) return text('id is needed (list shows the ids)', true); if (!Array.isArray(events)) return text('events is a list: generating, generated, approved, publishing, published', true); return json(await st.save({ id: String(id), events }))
-            default: return text('action is list, enable, disable, test or events', true)
+            case 'uploads': return json(core.storage.uploadJobs(id ? String(id) : undefined))   // the Upload On jobs: running first, then the newest finished (id here is a job id)
+            case 'cancel_upload': if (!id) return text('id is the upload job id (uploads lists them)', true); return json(core.storage.cancelUpload(String(id)))
+            case 'default': return json(await core.storage.setDefault(id ? String(id) : ''))   // id makes that storage the default (Wasabi or your own); no id clears it
+            case 'usage': if (!id) return text('id is needed (list shows the ids)', true); return json(core.storageusage.usage(String(id)))   // the bucket's size, listed in the background: call again until state is done
+            case 'browse': if (!id) return text('id is needed (list shows the ids)', true); return json(await core.storagebrowse.browse(String(id), String(prefix ?? '')))
+            case 'events': if (!id) return text('id is needed (list shows the ids)', true); if (!Array.isArray(events)) return text('events is a list: generated, approved, published', true); return json(await st.save({ id: String(id), events }))
+            default: return text('action is list, enable, disable, test, events or browse', true)
+          }
+        } catch (e) { return text(e.message, true) }
+      } },
+    { name: 'sync_rules', description: "Configure Sync (docs/ADR-069): for each volume and event (generated, approved, published), which destinations receive the files: storages and This PC. volume_id '*' is the rule for all volumes (it applies to a volume with no rule of its own for that event). get returns one volume's rules (with `inherited` flags); all returns every rule; set replaces one event's destinations (an empty list = send nowhere for that volume). Destinations are { type: 'storage', id } (Wasabi or your own; never the BH bucket) and { type: 'local' } (This PC: the app brings the event's folder down to the mapped ComfyUI-Shared, so it must be running when the event happens; docs/ADR-072). A storage id as volume_id with { type: 'local' } makes This PC pull from that storage what the app puts there on that event. A volume as a destination is not built yet. No rule, no copy.",
+      inputSchema: obj({ action: S('get | set | all', { enum: ['get', 'set', 'all'] }), volume_id: S("get, set: the network volume id, or '*' for all volumes"), event: S('set: generated | approved | published', { enum: ['generated', 'approved', 'published'] }), destinations: { type: 'array', description: "set: the full list for this event, e.g. [{ type: 'storage', id: 'wasabi' }]", items: { type: 'object', properties: { type: { type: 'string', enum: ['storage', 'local'] }, id: { type: 'string', description: 'storage only' } }, required: ['type'] } } }, ['action']),
+      run: async ({ action, volume_id, event, destinations }) => {
+        try {
+          const sr = core.syncrules
+          switch (action) {
+            case 'get': return json(sr.get(String(volume_id || '*')))
+            case 'all': return json(sr.all())
+            case 'set': if (!event) return text('event is needed (generated, approved or published)', true); return json(sr.set(String(volume_id || '*'), String(event), destinations ?? []))
+            default: return text('action must be get, set or all', true)
+          }
+        } catch (e) { return text(e.message, true) }
+      } },
+    { name: 'volume_sync', description: "Sync a network volume's outputs to a storage (docs/ADR-066: Wasabi or your own; never the publish destination). Two steps. plan (volume_id, storage_id; optional prefix under /workspace, default comfy-shared/output/, skip_folders, pod_id) lists the volume over RunPod's S3 API (no pod, no cost; big folders take minutes) and the storage, and returns a plan_id; poll plan_status for files_so_far and then the plan (files, bytes, to_copy, already_there, too_big, excluded_weights, folders, the pod and its cost_per_hr, estimate usd, can_start, reason). start (plan_id) copies from that plan: a RUNNING pod on the volume uploads its own files by signed links (nothing passes through this PC; the app never starts a pod; it never deletes; weights are never sent; a file already there at the same size is skipped; a file over 5 GB is a warning). Start spends the pod's hourly price, so an MCP start is allowed only with approved_by (the person who said yes; never guessed). status (job_id optional) lists jobs, cancel (job_id, or plan_id for a plan still listing) stops one, retry (job_id) re-sends only the failed files. No key or link is ever returned.",
+      inputSchema: obj({ action: S('plan | plan_status | start | status | cancel | retry', { enum: ['plan', 'plan_status', 'start', 'status', 'cancel', 'retry'] }), volume_id: S('plan: the network volume id (list_volumes)'), storage_id: S('plan: the storage id (storage_adapters list): wasabi or one you added'), prefix: S('plan: the folder under /workspace to sync (default comfy-shared/output/)'), skip_folders: { type: 'array', items: { type: 'string' }, description: 'plan: top-level folder names under the prefix to leave out (e.g. .previews, _TEST_x)' }, pod_id: S('plan: a running pod on the volume to use (default: the first running one)'), plan_id: S('plan_status, start, cancel: the id plan returned'), job_id: S('status, cancel, retry: the id start returned'), approved_by: S('start: who said yes to this spend (required for an MCP start)') }, ['action']),
+      run: async ({ action, volume_id, storage_id, prefix, skip_folders, pod_id, plan_id, job_id, approved_by }) => {
+        try {
+          const vs = core.volumesync
+          switch (action) {
+            case 'plan': return json(await vs.plan({ volume_id, storage_id, ...(prefix ? { prefix } : {}), ...(skip_folders ? { skip_folders } : {}), ...(pod_id ? { pod_id } : {}) }))
+            case 'plan_status': if (!plan_id) return text('plan_id is needed', true); return json(await vs.planStatus(String(plan_id)))
+            case 'start': {
+              if (!plan_id) return text('plan_id is needed', true)
+              const who = String(approved_by ?? '').trim()
+              if (!who) return text('Refused: a volume sync runs a pod and spends its hourly price, so an MCP start needs approved_by, the person who said yes. Do not guess a name.', true)
+              const refusal = yes({ approved_by: who }, 'volume_sync start'); if (refusal) return text(refusal, true)
+              console.error(`volume_sync start ${plan_id} approved by ${who}`)
+              return json({ ...(await vs.start({ plan_id: String(plan_id), approved_by: who })), approved_by: who })
+            }
+            case 'status': return json(await vs.status(job_id ? String(job_id) : undefined))
+            case 'cancel': if (job_id) return json(await vs.cancel(String(job_id))); if (plan_id) return json(await vs.cancelPlan(String(plan_id))); return text('job_id (or plan_id) is needed', true)
+            case 'retry': if (!job_id) return text('job_id is needed', true); return json(await vs.retry(String(job_id)))
+            default: return text('action is plan, plan_status, start, status, cancel or retry', true)
+          }
+        } catch (e) { return text(e.message, true) }
+      } },
+    { name: 'source_sync', description: "Download to THIS PC from a network volume or a storage (docs/ADR-067; Wasabi or your own; no pod, nothing is spent but this PC's bandwidth). Two steps. plan (source: { type: 'volume', volume_id } or { type: 'storage', storage_id }, where storage_id may also be 'panama-s3' (the BH exchange bucket, read with the Panama keys or AWS profile; refused when the Panama switch is off; whole bucket by default; never a target); optional prefix, skip_folders, dest_dir) lists the source (a volume over RunPod's S3 API; a storage under its directory) and this PC's folder, and returns a plan_id; poll plan_status for files_so_far and then the plan (dest, files, bytes, to_copy, already_there, conflicts, unsafe, excluded_weights, folders with their reasons, free_bytes, can_start, reason). A VOLUME with no prefix takes the three mapped folders comfy-shared/, project/ and plates/ into the folders mapped on this PC (a folder not mapped here is skipped with the reason); a prefix of one folder (comfy-shared/output/) takes just it, and dest_dir may then name another local folder. A STORAGE goes to dest_dir, else the mapped ComfyUI-Shared output folder (refused when none is mapped). Nothing local is deleted or overwritten: a file of the same size is skipped, a file of another size is a conflict and is left alone, weights are never downloaded, a download is written to a temp name and renamed. start (plan_id) downloads from that plan (3 at a time); an MCP start needs approved_by, the person who said yes (never guessed). status (job_id optional), cancel (job_id, or plan_id for a plan still listing), retry (job_id) re-downloads only the failed files. No key or link is ever returned.",
+      inputSchema: obj({ action: S('plan | plan_status | start | status | cancel | retry', { enum: ['plan', 'plan_status', 'start', 'status', 'cancel', 'retry'] }), source: { type: 'object', description: "plan: { type: 'volume', volume_id } or { type: 'storage', storage_id }", properties: { type: { type: 'string', enum: ['volume', 'storage'] }, volume_id: { type: 'string' }, storage_id: { type: 'string' } }, required: ['type'] }, prefix: S('plan: a folder in the source (volume: under /workspace; storage: under its directory); default: a volume takes comfy-shared/, project/ and plates/, a storage everything'), skip_folders: { type: 'array', items: { type: 'string' }, description: 'plan: folder names (or paths under the prefix) to leave out' }, dest_dir: S('plan: a full local folder path (a storage: default the mapped ComfyUI-Shared output; a volume: only with a prefix)'), plan_id: S('plan_status, start, cancel: the id plan returned'), job_id: S('status, cancel, retry: the id start returned'), approved_by: S('start: who said yes to this download (required for an MCP start)') }, ['action']),
+      run: async ({ action, source, prefix, skip_folders, dest_dir, plan_id, job_id, approved_by }) => {
+        try {
+          const ss = core.sourcesync
+          switch (action) {
+            case 'plan': return json(await ss.plan({ source, ...(prefix ? { prefix } : {}), ...(skip_folders ? { skip_folders } : {}), ...(dest_dir ? { dest_dir } : {}) }))
+            case 'plan_status': if (!plan_id) return text('plan_id is needed', true); return json(await ss.planStatus(String(plan_id)))
+            case 'start': {
+              if (!plan_id) return text('plan_id is needed', true)
+              const who = String(approved_by ?? '').trim()
+              if (!who) return text('Refused: a source sync writes many files onto this PC, so an MCP start needs approved_by, the person who said yes. Do not guess a name.', true)
+              const refusal = yes({ approved_by: who }, 'source_sync start'); if (refusal) return text(refusal, true)
+              console.error(`source_sync start ${plan_id} approved by ${who}`)
+              return json({ ...(await ss.start({ plan_id: String(plan_id), approved_by: who })), approved_by: who })
+            }
+            case 'status': return json(await ss.status(job_id ? String(job_id) : undefined))
+            case 'cancel': if (job_id) return json(await ss.cancel(String(job_id))); if (plan_id) return json(await ss.cancelPlan(String(plan_id))); return text('job_id (or plan_id) is needed', true)
+            case 'retry': if (!job_id) return text('job_id is needed', true); return json(await ss.retry(String(job_id)))
+            default: return text('action is plan, plan_status, start, status, cancel or retry', true)
+          }
+        } catch (e) { return text(e.message, true) }
+      } },
+    { name: 'bucket_sync', description: "Copy bucket to bucket THROUGH A RUNNING POD (docs/ADR-067 amendment). From a network volume (over RunPod's S3 API), a storage, or the BH exchange bucket ('panama-s3', a source only: reading needs the Panama keys saved in the app and the Panama switch on) TO a storage (Wasabi or your own; never the BH bucket, never the same storage). Two steps. plan (source: { type: 'volume', volume_id } or { type: 'storage', storage_id }; target: { storage_id }; optional prefix, skip_folders, run_on: { pod_id }) lists the source and the target and returns a plan_id; poll plan_status for files_so_far and then the plan (source, target, files, bytes, to_copy, already_there, too_big, excluded_weights, folders, pod, pods, estimate in hours and USD, can_start, reason). A volume with no prefix is read under comfy-shared/output/; a storage or the BH bucket whole. Any running pod with SSH carries it (it only needs internet; the app never starts one: no pod means can_start false, 'Needs a running pod to carry it'). The app signs a GET link for each source object and a PUT link for the target object; the pod streams one into the other, nothing touches its disk or this PC. Nothing is deleted, a file already at the target at the same size is skipped, weights never go, a file over 5 GB is a named warning, one failed file is a warning and 5 in a row stop the job. start (plan_id) needs approved_by, the person who said yes (never guessed), because it spends pod time. status (job_id optional), cancel (job_id, or plan_id for a plan still listing), retry (job_id) sends only the failed files. No key or link is ever returned.",
+      inputSchema: obj({ action: S('plan | plan_status | start | status | cancel | retry', { enum: ['plan', 'plan_status', 'start', 'status', 'cancel', 'retry'] }), source: { type: 'object', description: "plan: { type: 'volume', volume_id } or { type: 'storage', storage_id } (storage_id 'panama-s3' is the BH exchange bucket)", properties: { type: { type: 'string', enum: ['volume', 'storage'] }, volume_id: { type: 'string' }, storage_id: { type: 'string' } }, required: ['type'] }, target: { type: 'object', description: "plan: { storage_id } of a real storage (Wasabi or your own; never panama-s3 or publish-s3)", properties: { storage_id: { type: 'string' } }, required: ['storage_id'] }, prefix: S('plan: a folder in the source (volume: under /workspace, default comfy-shared/output/; storage or BH: under its directory, default everything)'), skip_folders: { type: 'array', items: { type: 'string' }, description: 'plan: top-level folder names to leave out' }, run_on: { type: 'object', description: 'plan: the pod to carry it (default: the first running pod with SSH)', properties: { pod_id: { type: 'string' } } }, plan_id: S('plan_status, start, cancel: the id plan returned'), job_id: S('status, cancel, retry: the id start returned'), approved_by: S('start: who said yes to this copy (required for an MCP start)') }, ['action']),
+      run: async ({ action, source, target, prefix, skip_folders, run_on, plan_id, job_id, approved_by }) => {
+        try {
+          const bs = core.bucketsync
+          switch (action) {
+            case 'plan': return json(await bs.plan({ source, target, ...(prefix ? { prefix } : {}), ...(skip_folders ? { skip_folders } : {}), ...(run_on ? { run_on } : {}) }))
+            case 'plan_status': if (!plan_id) return text('plan_id is needed', true); return json(await bs.planStatus(String(plan_id)))
+            case 'start': {
+              if (!plan_id) return text('plan_id is needed', true)
+              const who = String(approved_by ?? '').trim()
+              if (!who) return text('Refused: a bucket sync spends pod time and writes many files to a storage, so an MCP start needs approved_by, the person who said yes. Do not guess a name.', true)
+              const refusal = yes({ approved_by: who }, 'bucket_sync start'); if (refusal) return text(refusal, true)
+              console.error(`bucket_sync start ${plan_id} approved by ${who}`)
+              return json({ ...(await bs.start({ plan_id: String(plan_id), approved_by: who })), approved_by: who })
+            }
+            case 'status': return json(await bs.status(job_id ? String(job_id) : undefined))
+            case 'cancel': if (job_id) return json(await bs.cancel(String(job_id))); if (plan_id) return json(await bs.cancelPlan(String(plan_id))); return text('job_id (or plan_id) is needed', true)
+            case 'retry': if (!job_id) return text('job_id is needed', true); return json(await bs.retry(String(job_id)))
+            default: return text('action is plan, plan_status, start, status, cancel or retry', true)
           }
         } catch (e) { return text(e.message, true) }
       } },

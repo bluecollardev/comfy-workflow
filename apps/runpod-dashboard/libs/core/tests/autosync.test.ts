@@ -149,7 +149,7 @@ describe('the controller state machine', () => {
   it('the status has the contract shape', () => {
     enable(); const s = autosync.status()
     expect(Object.keys(s).sort()).toEqual(['items', 'paused'])
-    expect(Object.keys(s.items[0]).sort()).toEqual(['bytes_done', 'bytes_total', 'conflicts', 'current', 'direction', 'error', 'files_done', 'files_total', 'finished_at', 'pending_bytes', 'pod_id', 'pod_name', 'rate_bps', 'started_at', 'state', 'streams', 'summary', 'volume_id'])
+    expect(Object.keys(s.items[0]).sort()).toEqual(['bytes_done', 'bytes_total', 'conflicts', 'current', 'direction', 'error', 'files_done', 'files_total', 'finished_at', 'pending_bytes', 'pod_id', 'pod_name', 'rate_bps', 'started_at', 'state', 'streams', 'summary', 'via', 'volume_id'])
   })
 })
 

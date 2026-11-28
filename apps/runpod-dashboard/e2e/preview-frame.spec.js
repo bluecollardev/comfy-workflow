@@ -1,4 +1,4 @@
-import { test, expect, podCard, modal } from './fixtures'
+import { test, expect, podCard, modal, openPublishing } from './fixtures'
 import { t } from './i18n'
 
 // Slack posts carry the first frame of up to 3 shots (slack.preview_frame) and where the files were on the volume (slack.volume_source), v1.6.2. The core is faked (state.publish.previewSupport / volumeSourceSupport).
@@ -42,8 +42,8 @@ test.describe('Connect > Slack: the preview frame and the volume source', () => 
     expect(api.state.publish.puts[0].slack).not.toHaveProperty('preview_frame'); expect(api.state.publish.puts[0].slack).not.toHaveProperty('volume_source')
   })
   test('the Auto-publish block says Slack posts include links and a preview frame', async ({ page, api }) => {
-    setup(api)
-    await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await d.getByRole('tab', { name: t('publish.tab') }).click()
+    setup(api); api.state.panama = { configured: true }
+    const d = await openPublishing(page)   // Auto-publish is on the BH row in Network Volumes, under Publishing
     await expect(d.getByTestId('autopublish-preview-note')).toHaveText('Slack posts include links and a preview frame (Connect > Slack).')
   })
 })
@@ -107,9 +107,11 @@ test.describe('the Publish window: the preview frame', () => {
     const m = await openModal(page)
     await into(m)
     await tick(m, 'deliver/a').check(); await m.getByTestId('publish-approved-by').fill('B'); await m.getByTestId('publish-run').click()
-    const w = m.getByTestId('publish-job-warning')
+    const jc = page.getByTestId('queue-modal').locator('[data-testid="publishing-job"]').first()   // publishing closes the window: the job is its Queue card
+    await expect(page.getByTestId('publish-modal')).toHaveCount(0)
+    const w = jc.getByTestId('publish-job-warning')
     await expect(w).toHaveText('No preview frame: ffmpeg is not installed'); await expect(w).toHaveClass(/text-warning/)
-    await expect(m.getByTestId('publish-job')).not.toHaveAttribute('data-state', 'failed')
+    await expect(jc.getByTestId('publish-job')).not.toHaveAttribute('data-state', 'failed')
   })
 })
 
@@ -240,18 +242,22 @@ test.describe('links in the Slack message', () => {
     setup(api, { linksSupport: true, runLinks: LINKS })
     const m = await openModal(page)
     await into(m); await tick(m, 'deliver/a').check(); await m.getByTestId('publish-approved-by').fill('B'); await m.getByTestId('publish-run').click()
-    await expect(m.getByTestId('publish-links-folder')).toContainText('Folder links'); await expect(m.getByTestId('publish-links-file')).toContainText('File links'); await expect(m.getByTestId('publish-links-preview')).toContainText('Preview image')
-    await expect(m.locator('[data-testid="publish-link"][data-kind="folder"]')).toHaveCount(2)   // the console address without a kind is a folder
-    await expect(m.locator('[data-testid="publish-link"][data-kind="file"]')).toHaveCount(2)
-    await expect(m.locator('[data-testid="publish-link"][data-kind="preview"]')).toHaveCount(1)
-    await expect(m.locator('[data-testid="publish-link"][data-kind="file"]').first().getByTestId('publish-link-copy')).toBeVisible()
-    await expect(m.locator('[data-testid="publish-link"][data-kind="file"]').first().getByTestId('publish-link-expiry')).toContainText('2026')
+    const jc = page.getByTestId('queue-modal').locator('[data-testid="publishing-job"]').first()   // publishing closes the window: the job is its Queue card
+    await expect(page.getByTestId('publish-modal')).toHaveCount(0)
+    await expect(jc.getByTestId('publish-links-folder')).toContainText('Folder links'); await expect(jc.getByTestId('publish-links-file')).toContainText('File links'); await expect(jc.getByTestId('publish-links-preview')).toContainText('Preview image')
+    await expect(jc.locator('[data-testid="publish-link"][data-kind="folder"]')).toHaveCount(2)   // the console address without a kind is a folder
+    await expect(jc.locator('[data-testid="publish-link"][data-kind="file"]')).toHaveCount(2)
+    await expect(jc.locator('[data-testid="publish-link"][data-kind="preview"]')).toHaveCount(1)
+    await expect(jc.locator('[data-testid="publish-link"][data-kind="file"]').first().getByTestId('publish-link-copy')).toBeVisible()
+    await expect(jc.locator('[data-testid="publish-link"][data-kind="file"]').first().getByTestId('publish-link-expiry')).toContainText('2026')
   })
   test('a core without the settings shows the one list as before', async ({ page, api }) => {
     setup(api, { runLinks: LINKS.slice(1, 3) })
     const m = await openModal(page)
     await into(m); await tick(m, 'deliver/a').check(); await m.getByTestId('publish-approved-by').fill('B'); await m.getByTestId('publish-run').click()
-    await expect(m.getByTestId('publish-link')).toHaveCount(2); await expect(m.getByTestId('publish-links-file')).toHaveCount(0)
+    const jc = page.getByTestId('queue-modal').locator('[data-testid="publishing-job"]').first()   // publishing closes the window: the job is its Queue card
+    await expect(page.getByTestId('publish-modal')).toHaveCount(0)
+    await expect(jc.getByTestId('publish-link')).toHaveCount(2); await expect(jc.getByTestId('publish-links-file')).toHaveCount(0)
   })
   test('Backfill: the same plan line, and its result groups the folder links too', async ({ page, api }) => {
     const INV = { rows: [{ id: 'r1', shot: 's', name: 'a.mov', kind: 'review', frames: 0, bytes: GB, where: ['pc'], in_destination: false, source: 'pc:output/', path: 'deliver/a/a.mov', weight: false }], by_shot: { s: 1 }, unreadable: [] }

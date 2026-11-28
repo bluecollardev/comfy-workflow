@@ -1,4 +1,4 @@
-import { test, expect, podCard, modal, cfgTab, queueTab } from './fixtures'
+import { test, expect, podCard, modal, cfgTab, queueTab, openAutopublish, openPublishing } from './fixtures'
 import { makeDpx } from '../src/utils/dpx-fixture.mjs'
 import { t } from './i18n'
 
@@ -30,7 +30,7 @@ const colourUi = (page, g) => { const m = () => page.getByTestId('clip-colour-mo
   const close = async () => { await m().getByRole('button', { name: 'Done' }).click(); await expect(m()).toBeHidden() }
   return { m, sel, open, close, set: async (name, v) => { await open(name); await sel().selectOption(v); await close() } } }
 const flag = (g, name, code) => row(g, name).locator(`[data-testid="edl-flag"][data-code="${code}"]`)
-const openDefault = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'publishing'); return d }
+const openDefault = (page) => openPublishing(page)
 
 test.describe('the EDL status', () => {
   test('not loaded: says so; Load the V11 EDL loads it and shows events, elements, sha256 and the date; a source under Advanced rides the call', async ({ page, api }) => {
@@ -145,9 +145,12 @@ test.describe('Publish (bkk-return)', () => {
     await expect(m.locator('[data-testid="publish-flagged-row"][data-stem="ENH-146_B"] [data-testid="edl-frames-line"]')).toHaveText('234 frames · EDL cut 260 frames (speed 90%)')
     await m.getByTestId('edl-override-ENH-146_B').check(); await expect(m.getByTestId('publish-blocked-summary')).toHaveText('1 sequence blocked'); await expect(m.getByTestId('publish-run')).toBeEnabled()
     await expect.poll(() => api.state.publish.planned.at(-1).edl_override).toEqual({ 'ENH-146_B': true })
-    await m.getByTestId('publish-run').click(); await expect.poll(() => api.state.publish.runs.length).toBe(1); expect(api.state.publish.runs[0].edl_override).toEqual({ 'ENH-146_B': true })
+    await m.getByTestId('publish-run').click()
+    const jc = page.getByTestId('queue-modal').locator('[data-testid="publishing-job"]').first()   // publishing closes the window: the job is its Queue card
+    await expect(page.getByTestId('publish-modal')).toHaveCount(0)
+    await expect.poll(() => api.state.publish.runs.length).toBe(1); expect(api.state.publish.runs[0].edl_override).toEqual({ 'ENH-146_B': true })
     api.state.publish.jobs[0].edl_overrides = ['ENH-146_B']; api.state.publish.jobs[0].state = 'done'
-    await expect(m.getByTestId('publish-edl-override')).toHaveText('EDL override recorded: ENH-146_B', { timeout: 6000 })
+    await expect(jc.getByTestId('publish-edl-override')).toHaveText('EDL override recorded: ENH-146_B', { timeout: 6000 })
   })
   test('the notice when no EDL is loaded, with a Load button; the clip-name picker with the match state', async ({ page, api }) => {
     const m = await openPub(page, api, { edl: { loaded: false, elements: ELEMENTS } })
@@ -225,11 +228,11 @@ test.describe('stated colour', () => {
   test('Auto-publish > Generate: the colour of the frames has no default, needs the approver\'s name, and is recorded with it; the Queue lists sequences skipped for it and where the waiting ones are', async ({ page, api }) => {
     api.state.mounts.config.auto_publish = { enabled: true, dry_run: true, window_minutes: 10, daily_cap: null, dry_run_first: true, targets: { s3: true, slack: false, tunnel: false }, standing: { approved_by: 'Brynley', at: '2026-11-19T10:00:00Z' }, generate: { enabled: true, where: 'local', preset: 'review', max_per_day: 20, settle_minutes: 5, fallback_local: false, colour_in: null } }
     api.state.autopublish = { generate: { enabled: true, where: 'local', generating: 0, generated_today: 0, max_per_day: 20, failed: [], skipped: [{ stem: 'MAP-066_A', reason: 'colour not stated' }], waiting_to_settle: [{ stem: 'CGI-042_A', source: 'volume', since: new Date(Date.now() - 120000).toISOString() }] } }
-    const d = await openDefault(page)
+    const d = await openAutopublish(page)
     const sel = d.getByTestId('config-autopublish-generate-colour'); await expect(sel).toHaveValue(''); await expect(d.getByTestId('config-autopublish-generate-colour-help')).toHaveText('You are stating this conversion; it is recorded with your name.')
     await expect(d.getByTestId('autopublish-generate-waiting-title')).toHaveText('Waiting for frames to settle (1)'); await expect(d.getByTestId('autopublish-generate-waiting-place')).toHaveText('RunPod volume'); await expect(d.getByTestId('autopublish-generate-colour-skipped')).toContainText('colour not stated: set it in Auto-publish > Generate')
-    await sel.selectOption('p3-d65-gamma26'); const who = d.getByTestId('config-autopublish-generate-colour-approver'); await who.fill(''); await d.getByTestId('config-save').click(); await expect(d.getByTestId('autopublish-error')).toBeVisible(); expect(api.state.mountPuts || []).toHaveLength(0)
-    await who.fill('Kyle'); await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    await sel.selectOption('p3-d65-gamma26'); const who = d.getByTestId('config-autopublish-generate-colour-approver'); await who.fill(''); await page.getByTestId('volumes-save').click(); await expect(d.getByTestId('autopublish-error')).toBeVisible(); expect(api.state.mountPuts || []).toHaveLength(0)
+    await who.fill('Kyle'); await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
     expect(api.state.mountPuts.at(-1).auto_publish).toMatchObject({ approved_by: 'Kyle', generate: { colour_in: 'p3-d65-gamma26' } })
   })
 })

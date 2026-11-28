@@ -1,4 +1,4 @@
-import { test, expect, podCard, modal, cfgTab } from './fixtures'
+import { test, expect, podCard, modal, cfgTab, openVolumeSync } from './fixtures'
 import { formatBytes } from '../src/sync-progress'
 import { t } from './i18n'
 
@@ -28,7 +28,7 @@ async function openSync(page, { folders = FOLDERS, noFolders = false, measureMs 
     if (!noFolders) window.__e2eSync.folders = async () => ({ steps: Object.entries(sizes).map(([key, fs]) => ({ key, local: `/Users/me/${key}`, folders: Object.keys(fs).sort().map((name) => ({ name, bytes: null })) })) })
   }, { folders, noFolders, measureMs })
   await page.goto('/')
-  await podCard(page, 'ComfyUI-Dev').getByTestId('pod-sync').click()
+  await openVolumeSync(page)
   const d = page.getByTestId('sync-modal')
   await expect(d.getByTestId('sync-plan-counts')).toContainText('files')
   return d

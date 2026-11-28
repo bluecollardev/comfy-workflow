@@ -8,12 +8,13 @@ import { t } from './i18n'
 const configModal = (page) => page.locator('.modal.show', { has: page.getByTestId('config-modal') })
 
 test.describe('Shared', () => {
-  test('the button says Shared and opens a chooser: Volumes opens the volumes window, Models its own', async ({ page }) => {
+  test('the button says Storage and the chooser is titled Shared Storage: Volumes opens the volumes window, Models its own', async ({ page }) => {
     await page.goto('/')
     await expect(page.getByTestId('open-shared')).toContainText(t('app.shared'))
     await page.getByTestId('open-shared').click()
     const chooser = page.getByTestId('shared-modal')
     await expect(chooser).toBeVisible()
+    await expect(chooser).toContainText(t('shared.title'))
     await expect(chooser.getByTestId('shared-volumes')).toContainText(t('shared.volumes'))
     await expect(chooser.getByTestId('shared-models')).toContainText(t('shared.models'))
     await chooser.getByTestId('shared-volumes').click()

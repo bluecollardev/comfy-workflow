@@ -12,6 +12,7 @@ const guard = (fn, fallback) => async (...a) => { try { return await fn(...a) } 
 const mustRestart = () => { throw new Error(RESTART) }
 const withDefaults = (s) => ({ ...DEFAULTS, ...(s || {}) })
 const empty = () => ({ paused: false, items: [] })
+const VOLUME_OLD = { enabled: false, pull: true, push: false, approved_by: '' }   // a core without volume-level Auto sync: off, nothing syncing
 
 const ipc = core && {
   get: guard((podId) => core.invoke('autosync', 'get', [podId]), DEFAULTS),
@@ -21,6 +22,9 @@ const ipc = core && {
   syncNow: guard((podId) => core.invoke('autosync', 'syncNow', [podId]), mustRestart),
   approve: guard((podId, yes) => core.invoke('autosync', 'approve', [podId, !!yes]), mustRestart),
   dismiss: guard((podId) => core.invoke('autosync', 'dismiss', [podId]), mustRestart),
+  getVolume: guard((id) => core.invoke('autosync', 'getVolume', [id]), VOLUME_OLD),
+  setVolume: guard((id, s) => core.invoke('autosync', 'setVolume', [id, s]), mustRestart),
+  volumeStatus: guard((id) => core.invoke('autosync', 'volumeStatus', [id]), empty),
 }
 const http = {
   get: guard(async (podId) => (await axios.get(`${API_BASE}/autosync`, { params: { pod_id: podId } })).data, DEFAULTS),
@@ -30,6 +34,9 @@ const http = {
   syncNow: guard(async (podId) => (await axios.post(`${API_BASE}/autosync/sync-now`, { pod_id: podId })).data, mustRestart),
   approve: guard(async (podId, yes) => (await axios.post(`${API_BASE}/autosync/approve`, { pod_id: podId, yes: !!yes })).data, mustRestart),
   dismiss: guard(async (podId) => (await axios.post(`${API_BASE}/autosync/dismiss`, { pod_id: podId })).data, mustRestart),
+  getVolume: guard(async (id) => (await axios.get(`${API_BASE}/autosync/volume`, { params: { volume_id: id } })).data, VOLUME_OLD),
+  setVolume: guard(async (id, s) => (await axios.put(`${API_BASE}/autosync/volume`, { volume_id: id, ...s })).data, mustRestart),
+  volumeStatus: guard(async (id) => (await axios.get(`${API_BASE}/autosync/volume/status`, { params: { volume_id: id } })).data, empty),
 }
 const raw = ipc || http
 /** Answers are normalised: settings always have every field, status always has a list. */
@@ -41,4 +48,9 @@ export const autosyncAPI = {
   syncNow: (podId) => raw.syncNow(podId),
   approve: (podId, yes) => raw.approve(podId, yes),
   dismiss: (podId) => raw.dismiss(podId),
+  // Volume-level Auto sync (docs/ADR-068): one switch per network volume, for every pod on it. Assumed core contract: getVolume(id) -> { enabled, pull, push, approved_by, approved_at? };
+  // setVolume(id, { enabled?, pull?, push?, approved_by? }) -> the saved settings (400 with the message when the name is missing); volumeStatus(id) -> { items: [...] } (its pods' status items).
+  getVolume: async (id) => withDefaults(await raw.getVolume(id)),
+  setVolume: async (id, settings) => withDefaults(await raw.setVolume(id, settings)),
+  volumeStatus: async (id) => { const s = (await raw.volumeStatus(id)) || {}; return { items: Array.isArray(s.items) ? s.items : [] } },
 }

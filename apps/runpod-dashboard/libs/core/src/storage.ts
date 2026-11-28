@@ -5,31 +5,35 @@
  * to every other enabled adapter. Keys live in storage-adapters.json (mode 0600) and are never returned, logged or put in an error: a hint only.
  */
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { stat } from 'node:fs/promises'
+import { mkdtemp, rm, stat } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { bad } from './errors.js'
 import * as history from './history.js'
 import * as panama from './panama.js'
 import * as podpull from './podpull.js'
 import * as publish from './publish.js'
+import * as syncrules from './syncrules.js'
+import * as uploads from './storageuploads.js'
 import { configDir } from './paths.js'
 
 export const PUBLISH_ID = 'publish-s3', PANAMA_ID = 'panama-s3', WASABI_ID = 'wasabi'
 export const BUILTIN_IDS = [PUBLISH_ID, PANAMA_ID, WASABI_ID]
 const RESERVED = new Set(BUILTIN_IDS)
-export interface Rec { id: string; name: string; endpoint: string; region: string; bucket: string; prefix: string; enabled: boolean; access_key_id: string; secret_access_key: string; /** the moments it receives files (docs/ADR-064); missing = ['publishing'], what adapters did before events */ events?: string[] }
-export const EVENTS = ['generating', 'generated', 'approved', 'publishing', 'published'] as const
+export interface Rec { /** LEGACY (docs/ADR-064/068): migrated once into sync-rules.json (docs/ADR-069), then ignored by sending; kept valid, never read by forEvent */ volumes?: string[]; id: string; name: string; endpoint: string; region: string; bucket: string; prefix: string; enabled: boolean; access_key_id: string; secret_access_key: string; /** LEGACY: see `volumes`; sending is driven by syncrules (docs/ADR-069) */ events?: string[] }
+/** The moments that send files to a storage (docs/ADR-064). 'generating' and 'publishing' were removed by Lucas (2026-11-28): Generated is the one for renders, Published the one after a publish; a stored old name is ignored. */
+export const EVENTS = ['generated', 'approved', 'published'] as const
 export type Event = (typeof EVENTS)[number]
-const eventsOf = (r: Rec): string[] => (Array.isArray(r.events) ? r.events.filter((e) => (EVENTS as readonly string[]).includes(e)) : ['publishing'])
-interface Store { flags: Record<string, { enabled: boolean; events?: string[]; name?: string }>; adapters: Rec[]; /** the order the cards are shown in (ids; Lucas drags them), docs/ADR-064 */ order?: string[] }
-export interface View { id: string; name: string; builtin: boolean; kind: 'publish' | 'panama' | 'wasabi' | 'custom'; enabled: boolean; endpoint: string; region: string; bucket: string; prefix: string; ready: boolean; problem?: string; key_hint: string; /** the events it uploads on (ADR-064) */ events: string[]; /** where the values are edited when not here */ edit?: 'publish' | 'panama' }
+const eventsOf = (r: Rec): string[] => (Array.isArray(r.events) ? r.events.filter((e) => (EVENTS as readonly string[]).includes(e)) : [])
+export interface Store { flags: Record<string, { enabled: boolean; events?: string[]; name?: string }>; adapters: Rec[]; /** the default storage (id): what a picker offers first (docs/ADR-067) */ default?: string; /** the order the cards are shown in (ids; Lucas drags them), docs/ADR-064 */ order?: string[] }
+export interface View { /** the volumes this storage receives from on an event; empty or missing = every volume (docs/ADR-068) */ volumes?: string[]; /** the default storage (one at a time) */ default?: boolean; id: string; name: string; builtin: boolean; kind: 'publish' | 'panama' | 'wasabi' | 'custom'; enabled: boolean; endpoint: string; region: string; bucket: string; prefix: string; ready: boolean; problem?: string; key_hint: string; /** the events it uploads on (ADR-064) */ events: string[]; /** where the values are edited when not here */ edit?: 'publish' | 'panama' }
 
-const file = () => process.env.STORAGE_ADAPTERS_FILE || join(configDir(), 'storage-adapters.json')
+export const storageFile = () => process.env.STORAGE_ADAPTERS_FILE || join(configDir(), 'storage-adapters.json')
 function read(): Store {
-  try { const j = JSON.parse(readFileSync(file(), 'utf8')); return { flags: j?.flags && typeof j.flags === 'object' ? j.flags : {}, adapters: Array.isArray(j?.adapters) ? j.adapters : [], order: Array.isArray(j?.order) ? j.order.filter((x: unknown) => typeof x === 'string') : [] } } catch { return { flags: {}, adapters: [] } }
+  try { const j = JSON.parse(readFileSync(storageFile(), 'utf8')); return { flags: j?.flags && typeof j.flags === 'object' ? j.flags : {}, adapters: Array.isArray(j?.adapters) ? j.adapters : [], order: Array.isArray(j?.order) ? j.order.filter((x: unknown) => typeof x === 'string') : [], default: typeof j?.default === 'string' ? j.default : undefined } } catch { return { flags: {}, adapters: [] } }
 }
 function write(s: Store): void {
-  const f = file(); mkdirSync(dirname(f), { recursive: true })
+  const f = storageFile(); mkdirSync(dirname(f), { recursive: true })
   const tmp = `${f}.${process.pid}.tmp`; writeFileSync(tmp, JSON.stringify(s, null, 1), { mode: 0o600 }); renameSync(tmp, f)
 }
 
@@ -53,7 +57,7 @@ export function assertPanamaOn(): void { if (!isEnabled(PANAMA_ID)) throw bad('T
 const problemOf = (r: Rec): string | undefined => !r.bucket ? 'Add a bucket' : !r.region ? 'Add a region' : !(r.access_key_id && r.secret_access_key) ? 'Add the access key and secret key' : undefined
 function viewOf(r: Rec, enabled: boolean): View {
   const p = problemOf(r)
-  return { id: r.id, name: r.name, builtin: r.id === WASABI_ID, kind: r.id === WASABI_ID ? 'wasabi' : 'custom', enabled, endpoint: endpointOf(r), region: r.region, bucket: r.bucket, prefix: r.prefix, ready: !p, ...(p ? { problem: p } : {}), key_hint: hint(r.access_key_id), events: eventsOf(r) }
+  return { id: r.id, name: r.name, builtin: r.id === WASABI_ID, kind: r.id === WASABI_ID ? 'wasabi' : 'custom', enabled, endpoint: endpointOf(r), region: r.region, bucket: r.bucket, prefix: r.prefix, ready: !p, ...(p ? { problem: p } : {}), key_hint: hint(r.access_key_id), events: eventsOf(r), volumes: [...(r.volumes ?? [])] }
 }
 export async function list(): Promise<{ adapters: View[] }> {
   const s = read(), out: View[] = []
@@ -65,7 +69,18 @@ export async function list(): Promise<{ adapters: View[] }> {
   out.push(viewOf(wasabi, !!wasabi.enabled))
   for (const r of s.adapters) if (r.id !== WASABI_ID) out.push(viewOf(r, !!r.enabled))
   const o = s.order ?? [], at = (id: string) => { const i = o.indexOf(id); return i < 0 ? o.length : i }
+  const def = s.default && out.some((v) => v.id === s.default && v.kind !== 'panama' && v.kind !== 'publish') ? s.default : ''
+  for (const v of out) if (v.id === def) v.default = true
   return { adapters: out.map((v, i) => ({ v, i })).sort((a, b) => at(a.v.id) - at(b.v.id) || a.i - b.i).map((x) => x.v) }
+}
+/** Make one storage the default (a picker offers it first: the Sync window, docs/ADR-067); '' clears it. The publish destination and the Panama exchange cannot be the default: they are not storages in that sense. */
+export async function setDefault(id: unknown): Promise<{ adapters: View[] }> {
+  const s = read()
+  if (id === '' || id === null || id === undefined) { delete s.default; write(s); return list() }
+  if (typeof id !== 'string' || id === PUBLISH_ID || id === PANAMA_ID || !recOf(s, id)) throw bad('the default is Wasabi or a storage of your own')
+  s.default = id; write(s)
+  history.record({ kind: 'change', area: 'configuration', action: 'default storage set', what: id, detail: '' })
+  return list()
 }
 /** Save the order the cards are shown in. Unknown ids are dropped; a storage not named goes last, in its usual place. */
 export async function reorder(ids: unknown): Promise<{ adapters: View[] }> {
@@ -76,7 +91,7 @@ export async function reorder(ids: unknown): Promise<{ adapters: View[] }> {
 }
 
 const ID = /^[a-z0-9][a-z0-9-]{1,30}$/
-export interface SaveInput { id?: string; name?: string; endpoint?: string; region?: string; bucket?: string; prefix?: string; enabled?: boolean; access_key_id?: string; secret_access_key?: string; events?: string[] }
+export interface SaveInput { id?: string; name?: string; endpoint?: string; region?: string; bucket?: string; prefix?: string; enabled?: boolean; access_key_id?: string; secret_access_key?: string; events?: string[]; volumes?: string[] }
 const checkEvents = (v: unknown): string[] => { if (!Array.isArray(v) || v.some((e) => !(EVENTS as readonly string[]).includes(e as string))) throw bad(`events are some of: ${EVENTS.join(', ')}`); return EVENTS.filter((e) => (v as string[]).includes(e)) }
 const clean = (i: SaveInput, base: Rec): Rec => {
   const r: Rec = { ...base }
@@ -94,6 +109,7 @@ const clean = (i: SaveInput, base: Rec): Rec => {
   }
   if (i.enabled !== undefined) r.enabled = !!i.enabled
   if (i.events !== undefined) r.events = checkEvents(i.events)
+  if (i.volumes !== undefined) { if (!Array.isArray(i.volumes) || i.volumes.length > 50 || i.volumes.some((v) => typeof v !== 'string' || !/^[A-Za-z0-9_-]{3,64}$/.test(v))) throw bad('volumes is a list of volume ids (up to 50); empty means every volume'); r.volumes = [...new Set(i.volumes)] }
   const idv = i.access_key_id, sec = i.secret_access_key
   if (idv) { if (typeof idv !== 'string' || /\s/.test(idv.trim()) || idv.trim().length < 8 || idv.trim().length > 128) throw bad('access_key_id looks wrong (8 to 128 characters, no spaces)'); r.access_key_id = idv.trim() }
   if (sec) { if (typeof sec !== 'string' || /\s/.test(sec.trim()) || sec.trim().length < 16 || sec.trim().length > 256) throw bad('secret_access_key looks wrong (16 to 256 characters, no spaces)'); r.secret_access_key = sec.trim() }
@@ -139,31 +155,75 @@ export async function setEnabled(id: string, enabled: boolean): Promise<{ adapte
 export async function remove(id: string): Promise<{ adapters: View[] }> {
   if (id === PUBLISH_ID || id === PANAMA_ID) throw bad(`${id} is built in: switch it off instead`)
   const s = read(); if (!s.adapters.some((a) => a.id === id)) throw bad(`no storage adapter ${id}`)
+  if (s.default === id) throw bad('The default storage cannot be deleted: make another storage the default first (its contents can still be erased)')   // Lucas, 2026-11-28
+  syncrules.removeStorage(id)   // migrates first when needed, then drops it from every rule
   s.adapters = s.adapters.filter((a) => a.id !== id); write(s)
   history.record({ kind: 'change', area: 'configuration', action: 'storage adapter removed', what: id, detail: '' })
   return list()
 }
 
 // ----- using one -----
-export interface Access { id: string; name: string; bucket: string; prefix: string; env: Record<string, string>; common: string[] }
-const accessOf = (r: Rec): Access => { const ep = endpointOf(r); return { id: r.id, name: r.name, bucket: r.bucket, prefix: r.prefix, env: { AWS_ACCESS_KEY_ID: r.access_key_id, AWS_SECRET_ACCESS_KEY: r.secret_access_key, AWS_REGION: r.region }, common: ['--region', r.region, ...(ep ? ['--endpoint-url', ep] : [])] } }
+export interface Access { id: string; name: string; bucket: string; prefix: string; env: Record<string, string>; common: string[]; /** for a pod's signed link (docs/ADR-064) */ endpoint: string; region: string; keys: { id: string; secret: string } }
+const accessOf = (r: Rec): Access => { const ep = endpointOf(r); return { id: r.id, name: r.name, bucket: r.bucket, prefix: r.prefix, endpoint: ep, region: r.region, keys: { id: r.access_key_id, secret: r.secret_access_key }, env: { AWS_ACCESS_KEY_ID: r.access_key_id, AWS_SECRET_ACCESS_KEY: r.secret_access_key, AWS_REGION: r.region }, common: ['--region', r.region, ...(ep ? ['--endpoint-url', ep] : [])] } }
+/** docs/ADR-066: the access (keys, endpoint, region, bucket, directory) of a storage by id, switched on or off. Wasabi and your own only: the publish destination and the Panama exchange are not storages in this sense. Throws a plain refusal; the keys go only to the caller's signing and are never returned to a window. */
+export function storageAccess(id: string): Access {
+  if (id === PUBLISH_ID || id === PANAMA_ID) throw bad('The publish destination and the Panama exchange cannot be the target of a volume sync: choose Wasabi or a storage of your own')
+  const r = recOf(read(), id); if (!r) throw bad(`no storage ${id}`)
+  const p = problemOf(r); if (p) throw bad(`${r.name} is not ready: ${p}`)
+  return accessOf(r)
+}
+/** docs/ADR-067 amendment: how the BH exchange bucket (the Panama bucket, `panama-s3`; `publish-s3` is the same bucket) is READ as a source: the app keys (Default Configuration) or the AWS profile, exactly as storageusage.accessFor does. Never a target. `keys` is null when only the AWS profile exists (a signed link cannot be made then). Refuses when the Panama switch is off. */
+export interface PanamaAccess { id: string; name: string; bucket: string; prefix: string; env: Record<string, string>; common: string[]; endpoint: string; region: string; keys: { id: string; secret: string } | null }
+export function panamaAccess(): PanamaAccess {
+  assertPanamaOn()
+  const k = panama.appKeys(), name = read().flags[PANAMA_ID]?.name || 'Panama BH exchange (S3)'
+  return { id: PANAMA_ID, name, bucket: panama.bucket(), prefix: '', endpoint: '', region: panama.region(), keys: k, env: k ? { AWS_ACCESS_KEY_ID: k.id, AWS_SECRET_ACCESS_KEY: k.secret, AWS_REGION: panama.region() } : {}, common: [...(k ? [] : ['--profile', panama.profile()]), '--region', panama.region()] }
+}
+/** `publish-s3` and `panama-s3` are the one BH bucket. */
+export const isBh = (id: string): boolean => id === PUBLISH_ID || id === PANAMA_ID
 /** The adapters a publish mirrors to: enabled and complete, never `publish-s3` itself (that one is the destination) and never the Panama bucket. */
-export function mirrors(): Access[] { return forEvent('publishing') }
-/** The adapters that take files on this event (ADR-064): enabled, complete and with the event ticked. */
-export function forEvent(ev: Event): Access[] { return read().adapters.filter((r) => r.enabled && !problemOf(r) && eventsOf(r).includes(ev)).map(accessOf) }
+/** The storages that take files on this event for this volume (docs/ADR-069): the ones the rules name for (volume, event) if that volume has a list for the event (empty = nowhere), else for ('*', event); enabled and complete only. No volume id: the '*' rules only. The old `events`/`volumes` fields of a record are ignored here once the rules exist (they are migrated once, syncrules.ts). */
+export function forEvent(ev: Event, volumeId?: string | null): Access[] {
+  const s = read(), out: Access[] = []
+  for (const id of syncrules.storageIdsFor(ev, volumeId)) { const r = id === PUBLISH_ID || id === PANAMA_ID ? undefined : recOf(s, id); if (r && r.enabled && !problemOf(r)) out.push(accessOf(r)) }
+  return out
+}
+/** For syncrules: a storage that can be a destination (Wasabi or your own; never the BH bucket). */
+export const isRealStorage = (id: string): boolean => id !== PUBLISH_ID && id !== PANAMA_ID && !!recOf(read(), id)
+/** For syncrules' one-time migration: each real storage's old events and volumes (docs/ADR-064/068), only those with an event that sends. */
+export function legacyEventRecords(): { id: string; events: Event[]; volumes: string[] }[] {
+  const s = read(), all = [recOf(s, WASABI_ID)!, ...s.adapters.filter((a) => a.id !== WASABI_ID)]
+  return all.map((r) => ({ id: r.id, events: eventsOf(r) as Event[], volumes: [...(r.volumes ?? [])] })).filter((r) => r.events.length)
+}
 /** True when the bucket already has this key at the file's size (a file sent on two events goes once). A failed look is "no": the copy decides. */
-async function thereSame(m: Access, abs: string, key: string): Promise<boolean> {
-  try { const [st, r] = [await stat(abs), await runAws(['s3', 'ls', `s3://${m.bucket}/${m.prefix}${key}`, ...m.common], m.env, { stallMs: 15_000 })]; const sz = r.code === 0 ? Number(r.stdout.trim().split(/\s+/)[2]) : NaN; return sz === st.size } catch { return false }
+async function thereSameBytes(m: Access, bytes: number, key: string): Promise<boolean> {
+  try { const r = await runAws(['s3', 'ls', `s3://${m.bucket}/${m.prefix}${key}`, ...m.common], m.env, { stallMs: 15_000 }); const sz = r.code === 0 ? Number(r.stdout.trim().split(/\s+/)[2]) : NaN; return sz === bytes } catch { return false }
+}
+async function thereSame(m: Access, abs: string, key: string): Promise<boolean> { try { return await thereSameBytes(m, (await stat(abs)).size, key) } catch { return false } }
+/** docs/ADR-072: what has just reached a storage also comes down when This PC pulls from it. Best effort, and loaded only when asked for (an import cycle otherwise). */
+function pullBack(ev: Event, storageId: string, keys: string[]): void {
+  if (keys.length && syncrules.storageWantsLocal(ev, storageId)) void import('./localcopy.js').then((c) => c.fromStorage(ev, storageId, keys)).catch(() => undefined)
 }
 /** Upload files on an event to every adapter that listens; weights never go. Returns warnings (a failed copy is one, never an error). */
-export async function uploadOn(ev: Event, files: { abs: string; key: string }[], signal?: AbortSignal): Promise<string[]> {
-  const out: string[] = [], list = forEvent(ev); if (!list.length) return out
+export async function uploadOn(ev: Event, files: { abs: string; key: string }[], signal?: AbortSignal, volumeId?: string | null): Promise<string[]> {
+  const out: string[] = [], list = forEvent(ev, volumeId); if (!list.length) return out
   const ok = files.filter((f) => !publish.isWeight(f.abs))
-  for (const m of list) {
-    let sent = 0
-    for (const f of ok) { if (await thereSame(m, f.abs, f.key)) { sent++; continue }; const why = await mirrorCopy(m, f.abs, f.key, signal).catch((e) => publish.redact((e as Error).message)); if (why) { if (!signal?.aborted) out.push(`${m.name}: ${f.key.split('/').pop()}: ${why}`) } else sent++ }
-    history.record({ kind: 'change', area: 'configuration', action: `storage upload on ${ev}`, what: m.name, detail: `${sent} of ${ok.length} file(s)` })
-  }
+  const sizes = await Promise.all(ok.map((f) => stat(f.abs).then((x) => x.size).catch(() => 0)))
+  const job = uploads.open({ event: ev, targets: list.map((m) => m.name), source: 'pc', files_total: ok.length * list.length, bytes_total: sizes.reduce((a, b) => a + b, 0) * list.length, signal })
+  try {
+    for (const m of list) {
+      let sent = 0
+      const there: string[] = []
+      for (let i = 0; i < ok.length && !job.signal.aborted; i++) {
+        const f = ok[i]; job.current(f.key)
+        if (await thereSame(m, f.abs, f.key)) { sent++; there.push(f.key); job.file('skipped', 0); continue }
+        const why = await mirrorCopy(m, f.abs, f.key, job.signal).catch((e) => publish.redact((e as Error).message))
+        if (why) { if (!job.signal.aborted) { const w = `${m.name}: ${f.key.split('/').pop()}: ${why}`; out.push(w); job.warn(w); job.file('failed', 0) } } else { sent++; there.push(f.key); job.file('sent', sizes[i]) }
+      }
+      history.record({ kind: 'change', area: 'configuration', action: `storage upload on ${ev}`, what: m.name, detail: `${sent} of ${ok.length} file(s)` })
+      pullBack(ev, m.id, there)
+    }
+  } finally { job.end() }
   return out
 }
 
@@ -171,6 +231,8 @@ type Aws = podpull.AwsRunner
 let awsFn: Aws | null = null
 export const setAws = (f: Aws | null) => { awsFn = f }
 const runAws: Aws = (a, e, o) => (awsFn ?? podpull.defaultAws)(a, e, o)
+/** The runner storage commands use (tests inject a fake with setAws). */
+export const aws: Aws = runAws
 const text = (r: podpull.AwsResult): string => publish.redact((r.stderr || r.stdout).trim().split('\n').pop() || `aws exited ${r.code}`)
 /** Copy one local file to a mirror below its directory. '' when it went, else the reason (redacted). */
 export async function mirrorCopy(m: Access, localPath: string, key: string, signal?: AbortSignal): Promise<string> {
@@ -190,3 +252,167 @@ export async function test(id: string): Promise<{ ok: boolean; detail: string }>
   const m = accessOf(r), ls = await runAws(['s3', 'ls', `s3://${m.bucket}/${m.prefix}`, ...m.common], m.env, { stallMs: 15_000 })
   return ls.code === 0 || (ls.code === 1 && !ls.stdout.trim() && !ls.stderr.trim()) ? { ok: true, detail: `${m.bucket} answered` } : { ok: false, detail: text(ls) }
 }
+
+/** docs/ADR-064: the POD sends its own files to every adapter that listens to this event: a signed link per file, `curl -T` on the pod, nothing through this PC. A file over 5 GB is a warning (one PUT is the limit); a file already there at the same size is skipped. Returns warnings. */
+export interface PodFile { /** the key under /workspace on the pod */ source_key: string; /** the key below the adapter's directory */ key: string; bytes: number }
+export async function uploadFromPod(ev: Event, pod: publish.PodRef, files: PodFile[], signal?: AbortSignal, volumeId?: string | null): Promise<string[]> {
+  const out: string[] = [], list = forEvent(ev, volumeId); if (!list.length) return out
+  const ok = files.filter((f) => !publish.isWeight(f.source_key))
+  const job = uploads.open({ event: ev, targets: list.map((m) => m.name), source: 'pod', source_name: pod.name, files_total: ok.length * list.length, bytes_total: ok.reduce((a, f) => a + (f.bytes > publish.PUT_MAX_BYTES ? 0 : f.bytes), 0) * list.length, signal })
+  try {
+    for (const m of list) {
+      let sent = 0, skipped = 0
+      const there: string[] = []
+      for (const f of ok) {
+        if (job.signal.aborted) break
+        const name = f.key.split('/').pop() ?? f.key; job.current(f.key)
+        if (f.bytes > publish.PUT_MAX_BYTES) { const w = `${m.name}: ${name}: over 5 GB, not uploaded (multipart is a later step)`; out.push(w); job.warn(w); job.file('failed', 0); continue }
+        if (await thereSameBytes(m, f.bytes, f.key)) { skipped++; there.push(f.key); job.file('skipped', 0); continue }
+        const r = await publish.podPutTo(pod, f.source_key, f.bytes, m, `${m.prefix}${f.key}`, job.signal).catch((e) => ({ ok: false, error: publish.redact((e as Error).message) }))
+        if (r.ok) { sent++; there.push(f.key); job.file('sent', f.bytes) } else if (!job.signal.aborted) { const w = `${m.name}: ${name}: ${publish.redact(r.error)}`; out.push(w); job.warn(w); job.file('failed', 0) }
+      }
+      history.record({ kind: 'change', area: 'configuration', action: `storage upload on ${ev}`, what: `${m.name} from pod ${pod.name}`, detail: `${sent} sent, ${skipped} already there, of ${ok.length} file(s)` })
+      pullBack(ev, m.id, there)
+    }
+  } finally { job.end() }
+  return out
+}
+
+/** Files that are only on the network volume go to every adapter that listens to this event, with no pod: each is read once over the volume's S3 API into a temporary file
+ * on this PC, copied on, and removed. Skips and warnings as for the other uploads. */
+export async function uploadFromVolume(ev: Event, volumeId: string, files: PodFile[], signal?: AbortSignal): Promise<string[]> {
+  const out: string[] = [], list = forEvent(ev, volumeId); if (!list.length) return out
+  const ok = files.filter((f) => !publish.isWeight(f.source_key)); if (!ok.length) return out
+  const v = await publish.volumeS3Access(volumeId)
+  if (!v.ok) return [`the volume cannot be read: ${v.reason}`]
+  const venv = { AWS_ACCESS_KEY_ID: v.id, AWS_SECRET_ACCESS_KEY: v.secret, AWS_REGION: v.region }
+  const job = uploads.open({ event: ev, targets: list.map((m) => m.name), source: 'volume', source_name: volumeId, files_total: ok.length * list.length, bytes_total: ok.reduce((a, f) => a + f.bytes, 0) * list.length, signal })
+  const dir = await mkdtemp(join(tmpdir(), 'storage-relay-'))
+  const sent = new Map(list.map((m) => [m.id, { name: m.name, sent: 0, there: [] as string[] }]))
+  try {
+    for (const f of ok) {
+      if (job.signal.aborted) break
+      const name = f.key.split('/').pop() ?? f.key, need: Access[] = []
+      job.current(f.key)
+      for (const m of list) { if (await thereSameBytes(m, f.bytes, f.key)) { sent.get(m.id)!.there.push(f.key); job.file('skipped', 0) } else need.push(m) }
+      if (!need.length) continue
+      const tmp = join(dir, 'file')
+      const got = await runAws(['s3', 'cp', `s3://${v.bucket}/${f.source_key}`, tmp, '--region', v.region, '--endpoint-url', v.endpoint], venv, { signal: job.signal, stallMs: 300_000 })
+      for (const m of need) {
+        const why = got.code !== 0 ? `not read from the volume: ${text(got)}` : await mirrorCopy(m, tmp, f.key, job.signal).catch((e) => publish.redact((e as Error).message))
+        if (why) { if (!job.signal.aborted) { const w = `${m.name}: ${name}: ${why}`; out.push(w); job.warn(w); job.file('failed', 0) } } else { const s = sent.get(m.id)!; s.sent++; s.there.push(f.key); job.file('sent', f.bytes) }
+      }
+      await rm(tmp, { force: true })
+    }
+    for (const [id, s] of sent) {
+      history.record({ kind: 'change', area: 'configuration', action: `storage upload on ${ev}`, what: `${s.name} from the volume`, detail: `${s.sent} sent, ${s.there.length - s.sent} already there, of ${ok.length} file(s)` })
+      pullBack(ev, id, s.there)
+    }
+  } finally { await rm(dir, { recursive: true, force: true }); job.end() }
+  return out
+}
+
+/** The Upload On jobs for the Queue: running first, then the newest finished (docs/ADR-064). */
+export const uploadJobs = uploads.status
+export const cancelUpload = uploads.cancel
+
+
+// ----- travelling in a configuration file (docs/ADR-023, ADR-070): the records WITHOUT keys; the keys go in the file's `secrets` block -----
+export const TITLE_IDS = [PUBLISH_ID, PANAMA_ID] as const
+export interface PortableRec { id: string; name: string; endpoint: string; region: string; bucket: string; prefix: string; enabled: boolean }
+export interface PortableStorages { adapters: PortableRec[]; /** the Default Storage id; '' = none */ default: string; /** the order the cards are shown in (ids) */ order: string[]; /** the titles of publish-s3 and panama-s3 (only the ones that were renamed) */ titles: Partial<Record<'publish-s3' | 'panama-s3', string>> }
+export type KeyPair = { access_key_id: string; secret_access_key: string }
+const portableOf = (s: Store): PortableStorages => ({
+  adapters: s.adapters.map((r) => ({ id: r.id, name: r.name, endpoint: r.endpoint, region: r.region, bucket: r.bucket, prefix: r.prefix, enabled: !!r.enabled })),
+  default: s.default && s.adapters.some((a) => a.id === s.default) ? s.default : '',
+  order: [...(s.order ?? [])],
+  titles: Object.fromEntries(TITLE_IDS.filter((id) => s.flags[id]?.name).map((id) => [id, s.flags[id].name as string])),
+})
+/** The storages as they travel: no keys. */
+export const portable = (): PortableStorages => portableOf(read())
+/** The keys of the storages that have both, by id, for the export's `secrets` block. Never returned to a window. */
+export function exportKeys(): Record<string, KeyPair> {
+  return Object.fromEntries(read().adapters.filter((r) => r.access_key_id && r.secret_access_key).map((r) => [r.id, { access_key_id: r.access_key_id, secret_access_key: r.secret_access_key }]))
+}
+/** The ids of the storages here (Wasabi is always one). */
+export const realIds = (): string[] => { const s = read(); return [...new Set([WASABI_ID, ...s.adapters.map((a) => a.id)])] }
+/** Whether a pair of keys looks right (same rules as a save). Null when fine; the message never carries a value. */
+export function checkKeyPair(k: unknown): string | null {
+  if (!k || typeof k !== 'object') return 'the keys are { access_key_id, secret_access_key }'
+  const { access_key_id: a, secret_access_key: b } = k as Record<string, unknown>
+  if (typeof a !== 'string' || /\s/.test(a.trim()) || a.trim().length < 8 || a.trim().length > 128) return 'access_key_id looks wrong (8 to 128 characters, no spaces)'
+  if (typeof b !== 'string' || /\s/.test(b.trim()) || b.trim().length < 16 || b.trim().length > 256) return 'secret_access_key looks wrong (16 to 256 characters, no spaces)'
+  return null
+}
+/** A storages section from a file, checked like a save: a bad value is an error that names the storage and the field. Unknown fields are ignored. */
+export function checkPortable(v: unknown): { value: PortableStorages; error: string | null } {
+  const out: PortableStorages = { adapters: [], default: '', order: [], titles: {} }
+  const fail = (m: string) => ({ value: out, error: m })
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return fail('storages is an object')
+  const o = v as Record<string, unknown>
+  if (o.adapters !== undefined && !Array.isArray(o.adapters)) return fail('storages.adapters is a list')
+  for (const [i, raw] of ((o.adapters ?? []) as unknown[]).entries()) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return fail(`storages.adapters[${i}] is an object`)
+    const r = raw as Record<string, unknown>, id = r.id
+    if (typeof id !== 'string' || !(id === WASABI_ID || (ID.test(id) && !RESERVED.has(id)))) return fail(`storages.adapters[${i}].id is "wasabi" or lower case letters, digits and hyphens (not a built-in name)`)
+    if (out.adapters.some((a) => a.id === id)) return fail(`storages.adapters: ${id} is listed twice`)
+    if (typeof r.enabled !== 'boolean') return fail(`storages.adapters[${id}].enabled is true or false`)
+    try {
+      const c = clean({ name: r.name as string, endpoint: (r.endpoint ?? '') as string, region: (r.region ?? '') as string, bucket: (r.bucket ?? '') as string, prefix: (r.prefix ?? '') as string }, { id, name: id, endpoint: '', region: '', bucket: '', prefix: '', enabled: false, access_key_id: '', secret_access_key: '' })
+      out.adapters.push({ id, name: c.name, endpoint: c.endpoint, region: c.region, bucket: c.bucket, prefix: c.prefix, enabled: r.enabled })
+    } catch (e) { return fail(`storages.adapters[${id}]: ${(e as Error).message}`) }
+  }
+  if (o.default !== undefined && o.default !== '' && o.default !== null) { if (typeof o.default !== 'string' || !(o.default === WASABI_ID || ID.test(o.default))) return fail('storages.default is a storage id'); out.default = o.default }
+  if (o.order !== undefined) { if (!Array.isArray(o.order) || o.order.some((x) => typeof x !== 'string' || x.length > 64)) return fail('storages.order is a list of storage ids'); out.order = [...new Set(o.order as string[])].slice(0, 100) }
+  if (o.titles !== undefined) {
+    if (!o.titles || typeof o.titles !== 'object' || Array.isArray(o.titles)) return fail('storages.titles maps publish-s3 and panama-s3 to a title')
+    for (const [id, t] of Object.entries(o.titles as Record<string, unknown>)) {
+      if (!(TITLE_IDS as readonly string[]).includes(id)) continue
+      if (typeof t !== 'string' || t.trim().length > 60) return fail(`storages.titles.${id} is a title of at most 60 characters`)
+      if (t.trim()) out.titles[id as 'publish-s3' | 'panama-s3'] = t.trim()
+    }
+  }
+  return { value: out, error: null }
+}
+/**
+ * Merge a checked storages section into what is here (what is here stays; the file's values win per storage) and, unless `dryRun`, write it (0600). `keys` are the
+ * keys that will exist after the import: a storage that is `enabled` stays on only when it is complete with them, else it arrives off and a warning names it.
+ * The Default Storage and the order keep only ids that exist after the merge. Returns what the file would hold (no keys) and the warnings.
+ */
+export function importStorages(p: PortableStorages, keys: Record<string, KeyPair>, opts: { dryRun?: boolean } = {}): { incoming: PortableStorages; warnings: string[] } {
+  const s = read(), warnings: string[] = []
+  const have = new Map(s.adapters.map((a) => [a.id, a]))
+  for (const r of p.adapters) {
+    const base = have.get(r.id) ?? (r.id === WASABI_ID ? { ...WASABI_DEFAULT } : { id: r.id, name: r.name, endpoint: '', region: '', bucket: '', prefix: '', enabled: false, access_key_id: '', secret_access_key: '' })
+    const next: Rec = { ...base, name: r.name, endpoint: r.endpoint, region: r.region, bucket: r.bucket, prefix: r.prefix }
+    const k = keys[r.id]; if (k && !checkKeyPair(k)) { next.access_key_id = k.access_key_id.trim(); next.secret_access_key = k.secret_access_key.trim() }
+    next.enabled = r.enabled
+    const problem = r.enabled ? problemOf(next) : undefined
+    if (problem) { next.enabled = false; warnings.push(`Storage "${r.name}" arrives off: ${problem.toLowerCase()} (import the Keys and tokens with it, or add them here).`) }
+    have.set(r.id, next)
+  }
+  const flags = { ...s.flags }
+  for (const id of TITLE_IDS) if (p.titles[id]) flags[id] = { ...(flags[id] ?? { enabled: true }), name: p.titles[id] }
+  const exists = (id: string) => id === WASABI_ID || have.has(id)
+  let def = s.default
+  if (p.default) { if (exists(p.default)) def = p.default; else warnings.push(`The Default Storage "${p.default}" is not in the file or on this machine: the default is unchanged.`) }
+  const known = new Set<string>([...BUILTIN_IDS, ...have.keys()])
+  const order = p.order.length ? p.order.filter((id) => known.has(id)) : [...(s.order ?? [])]
+  const dropped = p.order.filter((id) => !known.has(id)); if (dropped.length) warnings.push(`Not in the order, no such storage: ${dropped.slice(0, 10).join(', ')}.`)
+  const next: Store = { flags, adapters: [...have.values()], order, ...(def ? { default: def } : {}) }
+  if (!opts.dryRun) write(next)
+  return { incoming: portableOf(next), warnings }
+}
+/** Put the keys of an import onto storages that exist here (Wasabi always does); returns the ids it had no record for. Writes nothing when none applies. */
+export function setKeys(keys: Record<string, KeyPair>): string[] {
+  const s = read(), skipped: string[] = []; let changed = false
+  for (const [id, k] of Object.entries(keys)) {
+    const r = id === WASABI_ID ? recOf(s, id) : s.adapters.find((a) => a.id === id)
+    if (!r || checkKeyPair(k)) { skipped.push(id); continue }
+    s.adapters = [...s.adapters.filter((a) => a.id !== id), { ...r, access_key_id: k.access_key_id.trim(), secret_access_key: k.secret_access_key.trim() }]; changed = true
+  }
+  if (changed) write(s)
+  return skipped
+}
+/** Hints (last four characters of the access key id) of every storage's keys here, for a preview. */
+export const keyHints = (): Record<string, string> => Object.fromEntries(read().adapters.filter((r) => r.access_key_id).map((r) => [r.id, hint(r.access_key_id)]))

@@ -813,4 +813,22 @@ describe('where a render came from (the Queue shows MCP actions)', () => {
     expect(history.list({ limit: 30 }).some((e) => e.kind === 'change' && e.action === 'started by MCP' && /render proxy/.test(e.what) && /claude-code.*Lucas/s.test(String(e.detail)))).toBe(true)
     expect((await runJob({})).origin).toBe('window'); expect((await runJob({ trigger: 'auto-publish' })).origin).toBe('auto-publish')
   })
+
+  // docs/ADR-064: Generated on a render that ran on a pod is sent BY THE POD to the storage that listens, with nothing pulled to this PC
+  it('Generated: a proxy rendered on the pod (not pulled) is put to the storage by the pod, through a signed link', async () => {
+    const storage = await import('../src/storage.js')
+    process.env.STORAGE_ADAPTERS_FILE = join(dir, 'storage-adapters.json')
+    await storage.save({ id: 'wasabi', bucket: 'bincvfx', region: 'ap-southeast-1', ...{ access_key_id: 'WASABIKEY12345678', secret_access_key: 'wasabisecretwasabisecret1234' }, enabled: true })
+    const syncrules = await import('../src/syncrules.js'); process.env.SYNC_RULES_FILE = join(dir, 'sync-rules.json'); syncrules.set('*', 'generated', [{ type: 'storage', id: 'wasabi' }])
+    storage.setAws(async () => ({ code: 1, stdout: '', stderr: '' }) as never)
+    const put: string[] = []
+    publish.setDeps({ ssh: (async (o: { script: string; onLine: (l: string) => void }) => { put.push(o.script); o.onLine(`PUBLISH-SHA ${'b'.repeat(64)}`); o.onLine('PUBLISH-OK'); return { code: 0 } }) as never })
+    try {
+      const { job_id } = await renders.start({ pod_id: 'p1', sequences: [SEQ], width: 960, where: 'pod', pull: false })
+      await until(() => job(job_id).state === 'done' && history.list({ limit: 20 }).some((e) => /storage upload on generated/.test(e.action ?? '')))
+      expect(put.length).toBeGreaterThan(0)
+      expect(put[0]).toContain(`/workspace/comfy-shared/output/.proxies/proxy_v004/shotA/${SEQ.name}_960.mp4`); expect(put[0]).toContain('s3.ap-southeast-1.wasabisys.com/bincvfx/.proxies/proxy_v004/shotA/')
+      expect(put[0]).not.toContain('wasabisecret')
+    } finally { publish.setDeps(null); storage.setAws(null); delete process.env.STORAGE_ADAPTERS_FILE; delete process.env.SYNC_RULES_FILE }
+  })
 })

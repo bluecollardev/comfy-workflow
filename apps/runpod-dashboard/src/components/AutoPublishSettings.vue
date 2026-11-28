@@ -2,6 +2,7 @@
   <CollapsibleSection v-if="show" id="autopublish" :title="$t('autopublish.block.title')" testid="settings-autopublish">
     <template #badge><span class="badge fw-normal" :class="model.enabled ? (model.dry_run ? 'text-bg-warning' : 'text-bg-success') : 'text-bg-secondary'" data-testid="autopublish-state">{{ model.enabled ? (model.dry_run ? $t('autopublish.chipDry') : $t('autopublish.chipOn')) : $t('autopublish.block.enabledOff') }}</span></template>
     <div class="small text-body-secondary mb-2" data-testid="autopublish-destination">{{ $t('autopublish.block.uploadsTo', { dest }) }}</div>
+    <div v-if="ap.status?.watching" class="border rounded p-2 mb-2" data-testid="autopublish-watching-block"><AutoPublishWatching :status="ap.status" :skipped="true" compact /></div>
     <label class="d-flex align-items-center gap-2 mb-2"><input type="checkbox" class="form-check-input mt-0" role="switch" :checked="model.enabled" data-testid="autopublish-switch" @change="toggle($event)" />{{ $t('autopublish.block.switch') }}</label>
     <label v-if="hasDryFirst" class="d-flex align-items-center gap-2 small mb-2"><input v-model="model.dry_run_first" type="checkbox" class="form-check-input mt-0" data-testid="autopublish-dry-first" />{{ $t('autopublish.block.startDry') }}</label>
     <template v-if="model.enabled">
@@ -26,7 +27,7 @@
             <label class="mb-0">{{ $t('autopublish.gen.colour') }}
               <select :value="model.generate.colour_in || ''" class="form-select form-select-sm" style="width: auto" data-testid="config-autopublish-generate-colour" @change="model.generate.colour_in = $event.target.value || null"><option value="">{{ $t('edl.colourChoose') }}</option><option v-for="c in COLOURS" :key="c" :value="c">{{ $t(`edl.colours.${c}`) }}</option></select></label>
             <div class="text-body-secondary" data-testid="config-autopublish-generate-colour-help">{{ $t('autopublish.gen.colourHelp') }}</div>
-            <label v-if="model.generate.colour_in" class="mb-0 d-block">{{ $t('autopublish.gen.approver') }}<BFormInput v-model.trim="model.approved_by" size="sm" style="max-width: 16rem" autocomplete="off" data-testid="config-autopublish-generate-colour-approver" /></label>
+            <label v-if="model.generate.colour_in && model.generate.where !== 'pod'" class="mb-0 d-block">{{ $t('autopublish.gen.approver') }}<BFormInput v-model.trim="model.approved_by" size="sm" style="max-width: 16rem" autocomplete="off" data-testid="config-autopublish-generate-colour-approver" /></label>
           </div>
           <div v-if="'start_pod' in model.generate" class="mt-1" data-testid="autopublish-generate-startpod">
             <label class="d-flex align-items-center gap-2"><input v-model="model.generate.start_pod" type="checkbox" class="form-check-input mt-0" data-testid="config-autopublish-generate-start-pod" />{{ $t('autopublish.gen.startPod') }}</label>
@@ -34,7 +35,7 @@
               <div class="text-warning" data-testid="autopublish-generate-startpod-warning">{{ $t('autopublish.gen.spendsMoney') }}</div>
               <label class="d-flex align-items-center gap-2"><input v-model="model.generate.stop_when_done" type="checkbox" class="form-check-input mt-0" data-testid="config-autopublish-generate-stop-when-done" />{{ $t('autopublish.gen.stopWhenDone') }}</label>
               <label class="mb-0">{{ $t('autopublish.gen.maxSpend') }}<BFormInput v-model.number="model.generate.max_spend_usd_per_day" type="number" min="1" size="sm" style="width: 7rem" data-testid="config-autopublish-generate-max-spend" /></label>
-              <label v-if="model.generate.where !== 'pod'" class="mb-0 d-block">{{ $t('autopublish.gen.approver') }}<BFormInput v-model.trim="model.approved_by" size="sm" style="max-width: 16rem" autocomplete="off" data-testid="config-autopublish-generate-start-approver" /></label>
+              <label v-if="model.generate.where !== 'pod' && !model.generate.colour_in" class="mb-0 d-block">{{ $t('autopublish.gen.approver') }}<BFormInput v-model.trim="model.approved_by" size="sm" style="max-width: 16rem" autocomplete="off" data-testid="config-autopublish-generate-start-approver" /></label>
             </template>
           </div>
           <div v-if="model.generate.where === 'pod'" class="mt-1" data-testid="autopublish-generate-pod">
@@ -63,6 +64,7 @@
             <div class="fw-semibold">{{ $t('autopublish.sources.title') }}</div>
             <label class="d-flex align-items-center gap-2"><input type="checkbox" class="form-check-input mt-0" :checked="model.sources.local" data-testid="config-autopublish-source-local" @change="setSource('local', $event)" />{{ $t('autopublish.sources.local') }}</label>
             <label class="d-flex align-items-center gap-2"><input type="checkbox" class="form-check-input mt-0" :checked="model.sources.volume" data-testid="config-autopublish-source-volume" @change="setSource('volume', $event)" />{{ $t('autopublish.sources.volume') }}</label>
+            <label class="d-flex align-items-center gap-2 text-body-secondary" data-testid="autopublish-source-wasabi"><input type="checkbox" class="form-check-input mt-0" disabled />{{ $t('autopublish.sources.wasabi') }} <span class="badge text-bg-secondary fw-normal">{{ $t('syncTargets.notBuilt') }}</span></label>
             <label class="mb-0 mt-1">{{ $t('autopublish.sources.minutes') }}<BFormInput v-model.number="model.volume_scan_minutes" type="number" min="1" max="120" size="sm" style="width: 8rem" :disabled="!model.sources.volume" data-testid="config-autopublish-volume-minutes" /></label>
             <div v-if="sourcesError" class="text-danger" data-testid="config-autopublish-sources-error">{{ $t('autopublish.sources.atLeastOne') }}</div>
             <div class="text-body-secondary" data-testid="config-autopublish-sources-help">{{ $t('autopublish.sources.help') }}</div>
@@ -81,7 +83,7 @@
       <div class="text-body-secondary" data-testid="config-autopublish-require-review-help">{{ $t('autopublish.pipe.reviewHelp') }}</div>
       <template v-if="model.require_review === false">
         <div v-if="ap.status?.watching?.without_review" class="text-warning" data-testid="autopublish-without-review-preview">{{ $t('autopublish.pipe.withoutReview', { n: ap.status.watching.without_review.sequences ?? 0, gb: Math.round((ap.status.watching.without_review.bytes ?? 0) / 1e8) / 10 }) }}</div>
-        <label class="mb-0 d-block">{{ $t('autopublish.gen.approver') }}<BFormInput v-model.trim="model.approved_by" size="sm" style="max-width: 16rem" autocomplete="off" data-testid="config-autopublish-require-review-approver" /></label>
+        <label v-if="!generateAsksName" class="mb-0 d-block">{{ $t('autopublish.gen.approver') }}<BFormInput v-model.trim="model.approved_by" size="sm" style="max-width: 16rem" autocomplete="off" data-testid="config-autopublish-require-review-approver" /></label>
       </template>
       <label v-if="'max_gb_per_day' in model" class="mb-0 d-block mt-1">{{ $t('autopublish.pipe.maxGb') }}<BFormInput :model-value="model.max_gb_per_day ?? ''" type="number" min="1" size="sm" style="width: 8rem" :placeholder="$t('autopublish.gen.noLimit')" data-testid="config-autopublish-max-gb" @update:model-value="(v) => (model.max_gb_per_day = v === '' || v === null ? null : Number(v))" /></label>
     </div>
@@ -134,6 +136,7 @@ import { settingsProblem, CAP_START } from '../utils/autopublish'
 import { roundExample } from '../utils/publish'
 const scopeOptions = computed(() => [{ value: 'edl', text: t('autopublish.block.scopeEdl') }, { value: 'all', text: t('autopublish.block.scopeAll') }])
 import AutoPublishGenerate from './AutoPublishGenerate.vue'
+import AutoPublishWatching from './AutoPublishWatching.vue'
 
 const props = defineProps({ modelValue: { type: Object, default: null }, show: { type: Boolean, default: true }, validate: { type: Boolean, default: false } })
 const emit = defineEmits(['changed'])
@@ -142,6 +145,8 @@ const confirm = useConfirmStore()
 const ap = useAutopublishStore(), pub = usePublishStore(), prompt = useNamePromptStore(), ui = useUiStore()
 const error = ref('')
 const hasGenerate = computed(() => !!props.modelValue && !!props.modelValue.generate)   // a core that cannot render by itself has no group
+/** The generate step already shows the one Approved by box (every box is the same `approved_by`). */
+const generateAsksName = computed(() => { const g = props.modelValue?.generate; return !!(props.modelValue?.enabled && g?.enabled && (g.where === 'pod' || g.colour_in || g.start_pod)) })
 const setMax = (v) => { props.modelValue.generate.max_per_day = v === '' || v === null ? null : Number(v) }
 const COLOURS = ['linear-p3-d65', 'linear-rec709', 'p3-d65-gamma26', 'p3-d65-srgb', 'p3-d65-gamma22', 'kodak-log']
 const hasReview = computed(() => !!props.modelValue && 'require_review' in props.modelValue)   // a core where a review video is always required has no switch

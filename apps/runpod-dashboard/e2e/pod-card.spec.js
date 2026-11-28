@@ -1,4 +1,4 @@
-import { test, expect, podCard, answerConfirm } from './fixtures'
+import { test, expect, podCard, answerConfirm, openVolumeSync } from './fixtures'
 import { t } from './i18n'
 
 // What a card tells about its pod beyond the buttons: the id that matches the RunPod console, the
@@ -176,13 +176,14 @@ test.describe('pod card', () => {
     await expect(dialog.getByTestId('import-pane')).toBeVisible()
   })
 
-  test('the Config button is short, and Sync in a plain browser says it runs in the app', async ({ page }) => {
+  test('the Config button is short, the card has no Sync button, and Sync on a volume in a plain browser says it runs in the app', async ({ page }) => {
     await page.goto('/')
     const card = podCard(page, 'ComfyUI-Dev')
     await expect(card.getByTestId('pod-config')).toHaveText(t('pod.config'))
     await expect(card.getByTestId('pod-config')).toHaveAttribute('title', /^Config: /)   // the tooltip explains it
-    await card.getByTestId('pod-sync').click()
-    const dialog = page.locator('.modal.show', { hasText: t('sync.title', { name: 'ComfyUI-Dev' }) })
+    await expect(card.getByTestId('pod-sync')).toHaveCount(0)
+    await openVolumeSync(page)
+    const dialog = page.locator('.modal.show', { hasText: t('sync.title', { name: 'comfy-workspace' }) })
     await expect(dialog.getByTestId('sync-unavailable')).toContainText(t('sync.unavailable'))
   })
 
@@ -356,7 +357,7 @@ test('a pod card has its edit button at the right of the heading row and, right 
   await expect(podCard(page, 'ComfyUI-Batch').getByTestId('pod-status-dot')).toHaveClass(/bg-danger/)
 })
 
-test('the Config, Sync, Details and Logs buttons are the same width with equal gaps, filling the row', async ({ page }) => {
+test('the Config, Details and Logs buttons (three big ones) are the same width with equal gaps, filling the row', async ({ page }) => {
   await page.goto('/')
   const m = await podCard(page, 'ComfyUI-Dev').locator('.card-actions').evaluate((el) => { const p = el.getBoundingClientRect(), bs = [...el.children].map((b) => b.getBoundingClientRect()); return { w: bs.map((b) => b.width), gaps: bs.slice(1).map((b, i) => b.left - bs[i].right), edges: [bs[0].left - p.left, p.right - bs[bs.length - 1].right] } })
   expect(Math.max(...m.w) - Math.min(...m.w)).toBeLessThan(1)

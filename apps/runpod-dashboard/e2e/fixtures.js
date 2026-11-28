@@ -219,6 +219,88 @@ function mountsPayload(state) {
 
 const filterRepos = (repos, q) => (q ? repos.filter((r) => r.name.toLowerCase().includes(q.toLowerCase())) : repos)
 
+
+// Sync To Storage (volumesync, docs/ADR-066), Download To This PC (sourcesync, docs/ADR-067) and bucket to bucket through a pod (bucketsync: state.bucketsync, keys `<type>:<source id>><target id>`, pod from run_on unless state.bucketsync.pod = null). state.volumesync / state.sourcesync = { old, calls: [], listingPolls (default 1), planFail: { id: message }, plans: { id: partial plan merged over the default },
+//   scripts: { id: { hold: stays running, fail: ends failed with 2 failed files, warn: ends done_with_warning } }, folders, pod (volumesync: { id, name, cost_per_hr } or null), dest (sourcesync) }. `id` is the storage id (volumesync) or `volume:<id>` / `storage:<id>` (sourcesync).
+// A job moves one step per status call: the first shows half done, the second the end.
+function fakeSync(ns, state, method, path, body, query) {
+  const sy = (state[ns] ||= {}); sy.calls ||= []; sy.plansById ||= {}; sy.jobsById ||= {}; sy.seq ||= 0
+  if (sy.old) return [500, { detail: `no core call ${ns}.plan` }]
+  const vs = ns === 'volumesync', bs = ns === 'bucketsync', rest = path.slice(ns.length + 2)
+  const nm = (id) => (state.storage?.adapters || []).find((x) => x.id === id)?.name || id
+  const srcId = (r) => (r.source.type === 'volume' ? r.source.volume_id : r.source.storage_id)
+  const idOf = (req) => (vs ? req.storage_id : bs ? `${req.source.type}:${srcId(req)}>${req.target.storage_id}` : `${req.source.type}:${req.source.type === 'volume' ? req.source.volume_id : req.source.storage_id}`)
+  const MISSING = [404, { detail: 'No such plan (a plan is kept for an hour): plan again' }]
+  if (method === 'POST' && rest === 'plan') {
+    const id = idOf(body); sy.calls.push({ plan: body })
+    if ((sy.planFail || {})[id]) return [400, { detail: sy.planFail[id] }]
+    const pid = `${ns}-plan-${++sy.seq}`; sy.plansById[pid] = { id: pid, req: body, key: id, polls: 0 }
+    return [200, { plan_id: pid }]
+  }
+  let m
+  if ((m = /^plan\/([^/]+)(\/cancel)?$/.exec(rest))) {
+    const rec = sy.plansById[decodeURIComponent(m[1])]; if (!rec) return MISSING
+    if (m[2]) { sy.calls.push({ cancelPlan: rec.id }); rec.cancelled = true; return [200, { state: 'cancelled', files_so_far: 0 }] }
+    if (rec.cancelled) return [200, { state: 'cancelled', files_so_far: 0 }]
+    if ((sy.planError || {})[rec.key]) return [200, { state: 'failed', files_so_far: 0, error: sy.planError[rec.key] }]
+    if (++rec.polls <= (sy.listingPolls ?? 1)) return [200, { state: 'listing', files_so_far: rec.polls * 1500 }]
+    const skip = new Set(rec.req.skip_folders || [])
+    const F = sy.folders?.[rec.key] || (vs || bs
+      ? [{ name: '.previews', files: 10, bytes: 1e8 }, { name: '_TEST_A', files: 5, bytes: 2e8 }, { name: 'shot-001', files: 100, bytes: 5e9 }, { name: 'shot-002', files: 60, bytes: 3e9 }]
+      : rec.req.source.type === 'volume'
+        ? [{ name: 'comfy-shared', files: 50, bytes: 4e9, dir: '/Users/me/ComfyUI-Shared' }, { name: 'project', files: 30, bytes: 2e9, dir: '/Users/me/project' }, { name: 'plates', files: 30, bytes: 9e9, reason: 'not mapped on this PC', unmapped: true }]
+        : [{ name: 'renders', files: 80, bytes: 6e9 }, { name: 'plates', files: 40, bytes: 7e9 }])
+    const folders = F.map((f) => ({ name: f.name, files: f.files, bytes: f.bytes, skipped: skip.has(f.name) || !!f.unmapped, ...(f.reason ? { reason: f.reason } : {}), ...(f.dir ? { dir: f.dir } : {}) }))
+    const kept = folders.filter((f) => !f.skipped), files = kept.reduce((a, f) => a + f.files, 0), bytes = kept.reduce((a, f) => a + f.bytes, 0)
+    const there = { files: Math.min(20, files), bytes: Math.min(1e9, bytes) }, copy = { files: files - there.files, bytes: bytes - there.bytes }
+    const o = (sy.plans || {})[rec.key] || {}
+    let plan
+    if (bs) {   // bucketsync (ADR-067 amendment): plan against run_on's pod; state.bucketsync.pod = null: no pod
+      const rp = (state.pods || []).find((x) => x.id === rec.req.run_on?.pod_id), pod = sy.pod === undefined ? (rp ? { id: rp.id, name: rp.name, cost_per_hr: 0.69 } : null) : sy.pod
+      const hours = Math.round(copy.bytes / 11e6 / 36) / 100, sid = srcId(rec.req), tid = rec.req.target.storage_id
+      plan = { plan_id: rec.id, source: { type: rec.req.source.type, id: sid, name: nm(sid) }, target: { storage_id: tid, name: nm(tid) }, prefix: '', files, bytes, to_copy: copy, already_there: there, too_big: { files: 1, names: ['huge-0001.exr'] }, excluded_weights: 3, folders, pod, estimate: { hours, usd: Math.round(hours * (pod?.cost_per_hr || 0) * 100) / 100, rate_mb_s: 11 }, can_start: !!pod, ...(pod ? {} : { reason: 'The pod that carries the files is not running.' }) }
+    } else if (vs) {
+      const pod = sy.pod === undefined ? { id: 'pod-aaaaaaaa', name: 'ComfyUI-Dev', cost_per_hr: 0.69 } : sy.pod
+      const hours = Math.round(copy.bytes / 11e6 / 36) / 100
+      plan = { plan_id: rec.id, volume_id: rec.req.volume_id, storage_id: rec.req.storage_id, storage: { name: rec.req.storage_id, bucket: 'b', prefix: '', region: 'r' }, prefix: 'comfy-shared/output/', files, bytes, to_copy: copy, already_there: there, too_big: { files: 1, names: ['huge-0001.exr'] }, excluded_weights: 3, folders, pod, estimate: { hours, usd: Math.round(hours * (pod?.cost_per_hr || 0) * 100) / 100, rate_mb_s: 11 }, can_start: !!pod, ...(pod ? {} : { reason: 'No pod is running on this volume. Resume one (the app never starts a pod for this), then Start.' }) }
+    } else {
+      const vol = rec.req.source.type === 'volume'
+      plan = { plan_id: rec.id, source: { type: rec.req.source.type, id: vol ? rec.req.source.volume_id : rec.req.source.storage_id, name: vol ? rec.req.source.volume_id : rec.req.source.storage_id }, prefix: '', dest: vol ? { dir: '', dirs: folders.filter((f) => f.dir).map((f) => ({ name: f.name, dir: f.dir })) } : { dir: rec.req.dest_dir || sy.dest || '/Users/me/ComfyUI-Shared/output' }, files, bytes, to_copy: copy, already_there: there, conflicts: { files: 2, names: ['a.exr', 'b.exr'] }, unsafe: { files: 0, names: [] }, excluded_weights: 2, folders, free_bytes: 5e11, can_start: true }
+    }
+    Object.assign(plan, o)
+    return [200, { state: 'done', files_so_far: files, plan }]
+  }
+  if (method === 'POST' && rest === 'start') {
+    const rec = sy.plansById[body.plan_id]; if (!rec) return MISSING
+    sy.calls.push({ start: body.plan_id, key: rec.key })
+    const jid = `${vs ? 'vs' : bs ? 'bs' : 'ss'}-${++sy.seq}`
+    sy.jobsById[jid] = { job_id: jid, key: rec.key, polls: 0, req: rec.req, retry: false }
+    return [200, { job_id: jid }]
+  }
+  const view = (j) => {
+    const sc = (sy.scripts || {})[j.key] || {}, hold = sc.hold && !j.cancelled, total = j.retry ? 2 : 100, name = j.key.replace(/^(volume|storage):/, '').replace(/>.*$/, '')
+    const last = !hold && j.polls >= 2, bad = last && sc.fail && !j.retry, done = last ? (bad ? total - 2 : total) : j.polls >= 1 ? Math.floor(total / 2) : 0
+    const state = j.cancelled ? 'cancelled' : !last ? (vs || bs ? 'uploading' : 'downloading') : bad ? 'failed' : sc.warn && !j.retry ? 'done_with_warning' : 'done'
+    return { job_id: j.job_id, kind: vs ? 'volume-sync' : bs ? 'bucket-sync' : 'source-sync', state, ...(bs ? { source: { type: j.req.source.type, id: name, name: nm(name) }, target: { storage_id: j.req.target.storage_id, name: nm(j.req.target.storage_id) } } : vs ? { volume_id: j.req.volume_id, storage_id: j.req.storage_id, storage_name: name } : { source: { type: j.req.source.type, id: name, name }, dest_dir: '/Users/me/ComfyUI-Shared' }), started_at: '2026-11-28T10:00:00Z',
+      files_total: total, files_done: done, files_skipped: j.retry ? 0 : 5, files_failed: bad ? 2 : 0, bytes_total: total * 1e7, bytes_done: done * 1e7, rate: done ? 11e6 : 0, current: last || j.cancelled ? '' : 'shot-001/frame_0007.exr', warnings: bad ? ['frame_0003.exr: connection reset', 'frame_0004.exr: connection reset'] : sc.warn && last ? ['a.exr: a different size is already here, left alone'] : [], ...(bad ? { error: 'Two files failed' } : {}) }
+  }
+  if (method === 'GET' && rest === 'status') {
+    const all = Object.values(sy.jobsById).reverse()
+    const adv = query.job_id ? all.filter((j) => j.job_id === query.job_id) : all
+    if (query.job_id && !adv.length) return [404, { detail: `No such job: ${query.job_id}` }]
+    for (const j of adv) j.polls++
+    return [200, { jobs: adv.map(view) }]
+  }
+  if ((m = /^job\/([^/]+)\/(cancel|retry)$/.exec(rest))) {
+    const j = sy.jobsById[decodeURIComponent(m[1])]; if (!j) return [404, { detail: 'No such job' }]
+    if (m[2] === 'cancel') { sy.calls.push({ cancel: j.job_id }); j.cancelled = true; return [200, view(j)] }
+    sy.calls.push({ retry: j.job_id })
+    const jid = `${vs ? 'vs' : bs ? 'bs' : 'ss'}-${++sy.seq}`; sy.jobsById[jid] = { job_id: jid, key: j.key, polls: 0, req: j.req, retry: true }
+    return [200, { job_id: jid }]
+  }
+  return [404, { detail: `no such ${ns} call` }]
+}
+
 export async function mockApi(page, state) {
   const calls = []
   // Origin-scoped: a bare "**/api/**" would also swallow Vite's /src/api/*.js module requests.
@@ -384,7 +466,7 @@ export async function mockApi(page, state) {
     }
     if (method === 'GET' && path === '/fs/volumes') {   // v1.5.1: state.volumes = [{ name, path, link, target?, size_bytes, free_bytes, readable, reason? }]; state.volumesOld answers like a core without the call
       if (state.volumesOld) return json({ detail: 'no core call mounts.volumes' }, 500)
-      return json(state.volumes || [])
+      return json(state.fsVolumes || state.volumes || [])   // state.fsVolumes: the mounted disks (state.volumes is also the RunPod volumes map)
     }
     if (method === 'GET' && path === '/gpus') return json(state.gpus)
     if (method === 'GET' && path === '/datacenters') return json(state.datacenters)
@@ -395,7 +477,7 @@ export async function mockApi(page, state) {
       if (image.includes('missing')) return json({ ...base, built: null, error: 'manifest unknown', env: [], ports: [], entrypoint: [], labels: {}, created: null, source: null, source_path: null, source_kind: null, source_note: 'No source repository is known for this image: it has no org.opencontainers.image.source label and is not in the known list.' })
       return json({ ...base, built: '# Reconstructed from ' + image + '\nRUN git clone comfy\nCOPY packs /opt/ComfyUI/custom_nodes/' })
     }
-    if ((m = path.match(/^\/volumes\/([^/]+)$/)) && method === 'GET' && !['job', 'jobs', 'erasable'].includes(m[1])) { const v = state.volumes[m[1]]; return v ? json(v) : json({ detail: `no network volume ${m[1]}` }, 404) }
+    if ((m = path.match(/^\/volumes\/([^/]+)$/)) && method === 'GET' && !['job', 'jobs', 'erasable', 'order'].includes(m[1])) { const v = state.volumes[m[1]]; return v ? json(v) : json({ detail: `no network volume ${m[1]}` }, 404) }
     if (method === 'POST' && path === '/queue/plan' && body.source === 'volume') {   // the core's volume plan: locked shots left out (refused when asked for), 2 graphs a shot, $0.06 a graph, the cap checked
       (state.planCalls ||= []).push(body)
       const all = { proxy_v005: ['archival-080', 'archival-084', 'cgi-042'], proxy_v004g: ['archival-080'] }[body.round] || []
@@ -429,6 +511,17 @@ export async function mockApi(page, state) {
       const as = (state.autosync ||= { settings: {}, status: { paused: false, items: [] } })
       if (state.autosyncOld) return json({ detail: `no core call autosync.${path.slice(10) || 'get'}` }, 500)
       const DEF = { enabled: false, pull: true, push: false, approved_by: '' }
+      // volume-level Auto sync (ADR-068): state.autosync.volumes = { volumeId: settings }, state.autosync.volumeItems = { volumeId: [status items] }
+      if (path === '/autosync/volume' || path === '/autosync/volume/status') {
+        as.volumes ||= {}
+        if (method === 'GET' && path === '/autosync/volume') return json({ ...DEF, ...(as.volumes[query.volume_id] || {}) })
+        if (method === 'GET') return json({ items: (as.volumeItems || {})[query.volume_id] || [] })
+        if (body.enabled && !String(body.approved_by || '').trim() && !String((as.volumes[body.volume_id] || {}).approved_by || '').trim()) return json({ detail: 'Auto sync needs the name of who says yes' }, 400)
+        const { volume_id, ...rest } = body
+        as.volumes[volume_id] = { ...DEF, ...(as.volumes[volume_id] || {}), ...rest, ...(rest.enabled ? { approved_at: '2026-11-18T10:00:00Z' } : {}) }
+        ;(as.volumeCalls ||= []).push({ volume_id, ...rest })
+        return json(as.volumes[volume_id])
+      }
       if (method === 'GET' && path === '/autosync') return json({ ...DEF, ...(as.settings[query.pod_id] || {}) })
       if (method === 'PUT' && path === '/autosync') {
         if (body.enabled && !String(body.approved_by || '').trim()) return json({ detail: 'Auto sync needs the name of who says yes' }, 400)
@@ -490,6 +583,33 @@ export async function mockApi(page, state) {
       }
     }
     // Storage adapters (docs/ADR-063): state.storage = { adapters: [{ id, name, kind, enabled, bucket, region, prefix, endpoint, key_hint }], old, tests: { id: { ok, detail } } }; calls land in state.storage.calls.
+    // The Outputs window's Local source: state.localOutputs.trees[prefix] = { folders: [names], files: [{ name, bytes, modified }] }; state.localOutputs.fail refuses with that reason
+    if (method === 'GET' && path === '/local-outputs/browse') {
+      const lo = (state.localOutputs ||= {}); (lo.calls ||= []).push(query.prefix || '')
+      if (lo.fail) return json({ detail: lo.fail }, 400)
+      const T = lo.trees || { '': { folders: ['proxy_v004', 'deliver'], files: [{ name: 'notes.txt', bytes: 120, modified: '2026-11-20T10:00:00' }] }, 'deliver/': { folders: [], files: [{ name: 'clip.mov', bytes: 5242880, modified: '2026-11-21T09:00:00' }, { name: 'clip.mp4', bytes: 1048576, modified: '2026-11-21T09:01:00' }] }, 'proxy_v004/': { folders: [], files: [] } }
+      const d = T[query.prefix || '']; if (!d) return json({ detail: `Not a folder of the local output: ${query.prefix}` }, 400)
+      return json({ prefix: query.prefix || '', folders: d.folders, files: d.files, truncated: false })
+    }
+    // Configure Sync rules (ADR-069): state.syncrules = { rules: { '<volume id | *>': { generated: [Dest], approved: [Dest], published: [Dest] } }, calls: [], old }
+    if (path === '/syncrules' || path === '/syncrules/all') {
+      const sr = (state.syncrules ||= {}); sr.rules ||= {}; sr.calls ||= []
+      if (sr.old) return json({ detail: 'no core call syncrules.get' }, 500)
+      const shape = (v) => ({ volume_id: v, rules: { generated: [], approved: [], published: [], ...(sr.rules[v] || {}) }, ...(v !== '*' && !sr.rules[v] ? { inherited: { generated: !!(sr.rules['*']?.generated || []).length, approved: !!(sr.rules['*']?.approved || []).length, published: !!(sr.rules['*']?.published || []).length } } : {}) })
+      if (method === 'GET' && path === '/syncrules/all') return json({ rules: sr.rules })
+      if (method === 'GET') return json(shape(query.volume_id))
+      if (method === 'PUT') {
+        if (!['generated', 'approved', 'published'].includes(body.event)) return json({ detail: 'events are some of: generated, approved, published' }, 400)
+        if (sr.refuse) return json({ detail: sr.refuse }, 400)
+        const bad = (body.destinations || []).find((d) => d.type !== 'storage' && d.type !== 'local')
+        if (bad) return json({ detail: 'Not built yet' }, 400)
+        const seen = new Set(), list = (body.destinations || []).filter((d) => !seen.has(d.id || d.type) && seen.add(d.id || d.type))
+        sr.calls.push({ set: body.volume_id, event: body.event, destinations: list })
+        sr.rules[body.volume_id] = { generated: [], approved: [], published: [], ...(sr.rules[body.volume_id] || {}), [body.event]: list }
+        return json(shape(body.volume_id))
+      }
+    }
+    if (path.startsWith('/volumesync/') || path.startsWith('/sourcesync/') || path.startsWith('/bucketsync/')) { const ns = path.slice(1, path.indexOf('/', 1)), [st, data] = fakeSync(ns, state, method, path, body, query); return json(data, st) }
     if (path === '/storage' || path.startsWith('/storage/')) {
       const sg = (state.storage ||= {}); sg.calls ||= []
       if (sg.old) return json({ detail: 'no core call storage.list' }, 500)
@@ -502,6 +622,18 @@ export async function mockApi(page, state) {
       const ad = sg.adapters, one = (id) => ad.find((a) => a.id === id)
       const ready = (a) => { a.ready = !!(a.bucket && a.region && (a.key_hint || a.kind === 'publish' || a.kind === 'panama')); if (a.ready) delete a.problem; else a.problem = !a.bucket ? 'Add a bucket' : 'Add the access key and secret key' }
       if (method === 'GET' && path === '/storage') return json({ adapters: ad })
+      const bm = /^\/storage\/([^/]+)\/browse$/.exec(path)   // one level of a storage's bucket, read-only: state.storage.trees[id][prefix] = { folders: [names], files: [{ name, bytes, modified }] }
+      if (bm && method === 'GET') {
+        const a = one(decodeURIComponent(bm[1])); if (!a) return json({ detail: `no storage adapter ${bm[1]}` }, 400)
+        const pre = query.prefix || ''; sg.calls.push({ browse: a.id, prefix: pre })
+        if (!a.ready) return json({ detail: a.problem || 'Add a bucket, a region and keys first' }, 400)
+        const T = (sg.trees || {})[a.id] || { '': { folders: ['renders', 'plates'], files: [{ name: 'readme.txt', bytes: 2048, modified: '2026-11-20T10:30:00' }] }, 'renders/': { folders: ['shot-001'], files: [{ name: 'a.mov', bytes: 5242880, modified: '2026-11-21T09:00:00' }] }, 'renders/shot-001/': { folders: [], files: [{ name: 'frame-0001.exr', bytes: 1048576, modified: '2026-11-21T09:05:00' }] }, 'plates/': { folders: [], files: [] } }
+        const d = T[pre]; if (!d) return json({ detail: `Not a folder in the bucket: ${pre}` }, 400)
+        return json({ id: a.id, bucket: a.bucket, prefix: pre, folders: d.folders, files: d.files, truncated: false })
+      }
+      if (method === 'GET' && path === '/storage/uploads') return json({ jobs: sg.uploads || [] })
+      { const mu = /^\/storage\/uploads\/([^/]+)\/cancel$/.exec(path); if (method === 'POST' && mu) { sg.calls.push({ cancelUpload: decodeURIComponent(mu[1]) }); const j = (sg.uploads || []).find((x) => x.job_id === decodeURIComponent(mu[1])); if (j) j.state = 'cancelled'; return json(j || {}) } }
+      if (method === 'PUT' && path === '/storage/default') { sg.calls.push({ default: body.id }); for (const a of ad) { if (a.kind === 'wasabi' || a.kind === 'custom') a.default = !!body.id && a.id === body.id }; return json({ adapters: ad }) }
       if (method === 'PUT' && path === '/storage/order') { sg.calls.push({ order: body.order }); const o = body.order || []; ad.sort((x, y) => (o.includes(x.id) ? o.indexOf(x.id) : 99) - (o.includes(y.id) ? o.indexOf(y.id) : 99)); return json({ adapters: ad }) }
       if (method === 'PUT' && path === '/storage') {
         sg.calls.push({ save: { ...body, access_key_id: body.access_key_id ? '•' : undefined, secret_access_key: body.secret_access_key ? '•' : undefined } })
@@ -509,10 +641,20 @@ export async function mockApi(page, state) {
         if (!a) { const slug = String(body.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); if (!slug) return json({ detail: 'name needs letters or digits' }, 400); a = { id: slug, name: body.name, builtin: false, kind: 'custom', enabled: false, endpoint: '', region: '', bucket: '', prefix: '', ready: false, key_hint: '' }; ad.push(a) }
         for (const k of ['endpoint', 'region', 'bucket', 'prefix']) if (body[k] !== undefined) a[k] = body[k]
         if (body.events !== undefined) a.events = body.events
+        if (body.volumes !== undefined) a.volumes = body.volumes   // [] = every volume
         if (body.name !== undefined && body.id) a.name = String(body.name).trim() || a.name
         if (a.kind === 'wasabi' && !a.endpoint) a.endpoint = 'https://s3.wasabisys.com'
         if (body.access_key_id) a.key_hint = '…' + String(body.access_key_id).slice(-4)
         ready(a); return json({ adapters: ad })
+      }
+      const um = /^\/storage\/([^/]+)\/usage$/.exec(path)   // what the bucket holds: state.storage.usage[id] = { bytes, objects, price_per_tb_month, listingPolls (answers 'listing' that many times first), error (state failed) }
+      if (um && method === 'GET') {
+        const a = one(decodeURIComponent(um[1])); if (!a) return json({ detail: `no storage adapter ${um[1]}` }, 400)
+        const u = (sg.usage || {})[a.id] || {}, polls = ((sg.usagePolls ||= {})[a.id] = (sg.usagePolls[a.id] || 0) + 1)
+        sg.calls.push({ usage: a.id })
+        if (u.error) return json({ state: 'failed', error: u.error, bytes: 0, objects: 0, as_of: '', price_per_tb_month: null })
+        if (polls <= (u.listingPolls || 0)) return json({ state: 'listing', objects_so_far: polls * 5000, bytes: 0, objects: 0, as_of: '', price_per_tb_month: null })
+        return json({ state: 'done', bytes: u.bytes ?? 3.2e11, objects: u.objects ?? 1200, as_of: '2026-11-28T09:30:00Z', price_per_tb_month: u.price_per_tb_month !== undefined ? u.price_per_tb_month : (a.kind === 'wasabi' ? 7.99 : null) })
       }
       const m = /^\/storage\/([^/]+)(?:\/(enable|disable|test))?$/.exec(path)
       if (m) {
@@ -960,6 +1102,12 @@ export async function mockApi(page, state) {
     }
     // RunPod's request limit (ADR-042 section 18): the core's local state, and a volume list RunPod refuses to give while it limits
     if (method === 'GET' && path === '/ratelimit') return json(state.ratelimit || { limited: false, window: null, retry_at: null, since: null, stale_age_s: null, message: null })
+    // Volume row order (stored in the configuration): state.volumeOrder = ['id', ...]; state.volumeOrderOld answers like a core without it; state.volumeOrderCalls records the writes
+    if (path === '/volumes/order') {
+      if (state.volumeOrderOld) return json({ detail: `no core call volumes.${method === 'GET' ? 'getOrder' : 'setOrder'}` }, 500)
+      if (method === 'PUT') { state.volumeOrder = [...(body.order || [])]; (state.volumeOrderCalls ||= []).push(state.volumeOrder) }
+      return json(state.volumeOrder || [])
+    }
     if (method === 'GET' && path === '/volumes' && state.volumesFail) return json({ detail: 'RunPod answered 429 listing network volumes: rate limit exceeded for the hour window' }, 502)
     if (method === 'GET' && path === '/volumes') return json(Object.values(state.volumes).map((v) => ({ ...v, is_default: v.id === state.mounts.config.network_volume_id, is_shared: !!state.sharedVolume && v.id === state.sharedVolume })))
     // the Shared volume (ADR-042 section 9): the one the models live on; it cannot be deleted while it is Shared
@@ -1410,6 +1558,30 @@ export const modal = (page, text) => page.locator('.modal.show', { hasText: text
 export async function openVolumes(page) {
   await page.getByTestId('open-shared').click()
   await page.getByTestId('shared-volumes').click()
+}
+/** The Sync window is a network volume's: Shared, Volumes, then that volume row's Sync button (the volume's pod, when one runs on it, is the From). Returns the window. */
+export async function openVolumeSync(page, volumeId = 'vol1') {
+  await openVolumes(page)
+  await page.locator(`[data-testid="volume"][data-id="${volumeId}"]`).getByTestId('volume-sync-btn').click()
+  return page.getByTestId('sync-modal')
+}
+/** Auto-publish settings live on the BH exchange bucket row (Network Volumes > BH row > Publishing), not in the Default Configuration: opens them and returns the BH row. */
+export async function openAutopublish(page, { fresh = true } = {}) {
+  if (fresh) await page.goto('/')
+  await openVolumes(page)
+  const bh = page.getByTestId('volume-bh')
+  const section = bh.getByTestId('bh-publishing')
+  if ((await section.getAttribute('data-open')) !== 'true') await section.getByTestId('collapsible-toggle').first().click()
+  return bh
+}
+/** Publishing lives on the BH exchange bucket row (Network Volumes > BH row > Publishing), not in the Default Configuration: opens it and returns the BH row. */
+export async function openPublishing(page, { fresh = true } = {}) {
+  if (fresh) await page.goto('/')
+  await openVolumes(page)
+  const bh = page.getByTestId('volume-bh')
+  const section = bh.getByTestId('bh-publishing')
+  if ((await section.getAttribute('data-open')) !== 'true') await section.getByTestId('collapsible-toggle').first().click()
+  return bh
 }
 /** The Shared button, then its Models card. */
 export async function openModels(page) {

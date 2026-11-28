@@ -86,54 +86,13 @@ test.describe('Import Round step 3', () => {
   })
 })
 
+// Auto sync is set on the volume rows now (e2e/autosync.spec.js); a configuration only keeps what is stored in it.
 test.describe('Default Configuration', () => {
   const open = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'folders'); return d }
 
-  test('the section loads unticked with the defaults and its help line', async ({ page }) => {
+  test('has no Auto sync block (it lives on the volume rows)', async ({ page }) => {
     const dlg = await open(page)
-    const sec = dlg.getByTestId('config-autosync')
-    await sec.scrollIntoViewIfNeeded()
-    await expect(sec.getByTestId('config-autosync-enabled')).not.toBeChecked()
-    await expect(sec.getByTestId('config-autosync-help')).toHaveText(t('autosync.configHelp'))
-    await sec.getByTestId('config-autosync-enabled').check()
-    await expect(sec.getByTestId('config-autosync-pull')).toBeChecked()
-    await expect(sec.getByTestId('config-autosync-push')).not.toBeChecked()
-  })
-
-  test('saving ticked with no name is refused inline before any call; with a name it saves and reloads ticked; unticking saves off', async ({ page, api }) => {
-    await page.addInitScript(() => { if (!sessionStorage.getItem('cleared')) { localStorage.removeItem('runpod-manager.approved-by'); sessionStorage.setItem('cleared', '1') } })
-    let dlg = await open(page)
-    await dlg.getByTestId('config-autosync-enabled').check()
-    await dlg.getByTestId('config-save').click()
-    await expect(dlg.getByTestId('config-autosync-error')).toHaveText(t('autosync.needName'))
-    expect(calls(api, 'PUT', '/mounts')).toHaveLength(0)
-    await dlg.getByTestId('config-autosync-approved-by').fill('Lucas')
-    await dlg.getByTestId('config-autosync-push').check()
-    await dlg.getByTestId('config-save').click()
-    await expect(dlg).toBeHidden()
-    expect(calls(api, 'PUT', '/mounts')[0].body.auto_sync).toEqual({ enabled: true, pull: true, push: true, approved_by: 'Lucas' })
-    expect(await page.evaluate(() => localStorage.getItem('runpod-manager.approved-by'))).toBe('Lucas')
-    await page.reload()
-    await page.getByTestId('open-config').click()
-    dlg = modal(page, t('config.title'))
-    await cfgTab(dlg, 'folders')
-    await expect(dlg.getByTestId('config-autosync-enabled')).toBeChecked()
-    await expect(dlg.getByTestId('config-autosync-push')).toBeChecked()
-    await expect(dlg.getByTestId('config-autosync-approved-by')).toHaveValue('Lucas')
-    await dlg.getByTestId('config-autosync-enabled').uncheck()
-    await dlg.getByTestId('config-save').click()
-    await expect(dlg).toBeHidden()
-    expect(calls(api, 'PUT', '/mounts').at(-1).body.auto_sync.enabled).toBe(false)
-    expect(api.state.mounts.config.auto_sync.enabled).toBe(false)
-  })
-
-  test('a 400 from the core is shown', async ({ page, api }) => {
-    const dlg = await open(page)
-    await dlg.getByTestId('config-autosync-enabled').check()
-    await dlg.getByTestId('config-autosync-approved-by').fill('x')
-    await page.route('**/mounts', (r) => (r.request().method() === 'PUT' ? r.fulfill({ status: 400, json: { detail: 'Auto sync needs the name of who says yes' } }) : r.fallback()))
-    await dlg.getByTestId('config-save').click()
-    await expect(dlg.getByTestId('config-error')).toContainText('Auto sync needs the name')
+    await expect(dlg.getByTestId('config-autosync')).toHaveCount(0); await expect(dlg.locator('[data-testid^="config-autosync"]')).toHaveCount(0)
   })
 
   test('an untouched Default Configuration does not add the object to what is saved', async ({ page, api }) => {
@@ -143,55 +102,25 @@ test.describe('Default Configuration', () => {
     expect(calls(api, 'PUT', '/mounts')[0].body).not.toHaveProperty('auto_sync')
   })
 
-  test('a stored value loads and the exported file carries it', async ({ page, api }) => {
+  test('a stored value is kept as it is when saved and the exported file carries it', async ({ page, api }) => {
     api.state.mounts.config.auto_sync = { enabled: true, pull: true, push: false, approved_by: 'Brynley' }
     const dlg = await open(page)
-    await expect(dlg.getByTestId('config-autosync-enabled')).toBeChecked()
-    await expect(dlg.getByTestId('config-autosync-approved-by')).toHaveValue('Brynley')
+    await expect(dlg.getByTestId('config-autosync-enabled')).toHaveCount(0)
     const [download] = await Promise.all([page.waitForEvent('download'), dlg.getByTestId('cfg-io-export').click()])
     const exp = JSON.parse(readFileSync(await download.path(), 'utf8'))
     expect(exp.config.auto_sync).toEqual({ enabled: true, pull: true, push: false, approved_by: 'Brynley' })
+    await dlg.getByTestId('config-save').click()
+    await expect(dlg).toBeHidden()
+    expect(calls(api, 'PUT', '/mounts')[0].body.auto_sync).toEqual({ enabled: true, pull: true, push: false, approved_by: 'Brynley' })
   })
 })
 
 test.describe('a pod\'s own configuration', () => {
-  test('carries the section: refused with no name, saved with one, kept when reopened', async ({ page, api }) => {
-    await page.addInitScript(() => { if (!sessionStorage.getItem('cleared')) { localStorage.removeItem('runpod-manager.approved-by'); sessionStorage.setItem('cleared', '1') } })
-    await page.goto('/')
-    await podCard(page, 'ComfyUI-Dev').getByTestId('pod-config').click()
-    let panel = modal(page, t('config.podTitle', { name: 'ComfyUI-Dev' }))
-    await cfgTab(panel, 'folders')
-    await expect(panel.getByTestId('config-autosync-enabled')).not.toBeChecked()
-    await panel.getByTestId('config-autosync-enabled').check()
-    await panel.getByTestId('config-apply').click()
-    await expect(panel.getByTestId('config-autosync-error')).toHaveText(t('autosync.needName'))
-    expect(calls(api, 'PUT', '/pods/pod-aaaaaaaa/config')).toHaveLength(0)
-    expect(calls(api, 'POST', '/mounts/preview').every((c) => !c.body.auto_sync?.enabled)).toBe(true)
-    await panel.getByTestId('config-autosync-approved-by').fill('Lucas')
-    await panel.getByTestId('config-apply').click()
-    await expect(panel).toBeHidden()
-    expect(calls(api, 'POST', '/mounts/preview').at(-1).body.auto_sync).toMatchObject({ enabled: true, approved_by: 'Lucas' })
-    expect(api.state.podConfigs['pod-aaaaaaaa'].auto_sync).toEqual({ enabled: true, pull: true, push: false, approved_by: 'Lucas' })
-    // a Recreate-style reload keeps it
-    await page.reload()
-    await podCard(page, 'ComfyUI-Dev').getByTestId('pod-config').click()
-    panel = modal(page, t('config.podTitle', { name: 'ComfyUI-Dev' }))
-    await cfgTab(panel, 'folders')
-    await expect(panel.getByTestId('config-autosync-enabled')).toBeChecked()
-    await expect(panel.getByTestId('config-autosync-approved-by')).toHaveValue('Lucas')
-    await panel.getByTestId('config-autosync-enabled').uncheck()
-    await panel.getByTestId('config-apply').click()
-    await expect(panel).toBeHidden()
-    expect(api.state.podConfigs['pod-aaaaaaaa'].auto_sync.enabled).toBe(false)
-  })
-
-  test('the Default Configuration alone does not turn the pod section on', async ({ page, api }) => {
-    api.state.mounts.config.auto_sync = { enabled: true, pull: true, push: false, approved_by: 'Brynley' }
+  test('has no Auto sync block either', async ({ page }) => {
     await page.goto('/')
     await podCard(page, 'ComfyUI-Dev').getByTestId('pod-config').click()
     const panel = modal(page, t('config.podTitle', { name: 'ComfyUI-Dev' }))
     await cfgTab(panel, 'folders')
-    await expect(panel.getByTestId('config-autosync-enabled')).toBeChecked()   // started from the default, like every other field
-    await expect(panel.getByTestId('config-autosync-help')).toHaveText(t('autosync.configHelp'))
+    await expect(panel.locator('[data-testid^="config-autosync"]')).toHaveCount(0)
   })
 })

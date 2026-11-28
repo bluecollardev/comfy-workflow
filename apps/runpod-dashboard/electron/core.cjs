@@ -119,6 +119,8 @@ const TABLE = {
     remove: (c, id) => c.volumes.remove(id),
     useAsDefault: (c, id) => c.volumes.useAsDefault(id),
     setShared: (c, id) => c.volumes.setShared(id || ''),
+    getOrder: (c) => c.mounts.getVolumeOrder(),   // the Network Volumes rows' order: volume ids, storage ids, 'local', 'bh' (docs/ADR-070); a plain read of the configuration
+    setOrder: (c, ids) => c.mounts.setVolumeOrder(ids),   // saves only this field
     plan: (c, id) => c.podpull.volumePlan(id),   // what a browse or erase on this volume would run on and cost
     browse: (c, id, path) => c.podpull.browseVolume(id, path ? { path } : {}),
     erase: (c, id, keys, o) => c.podpull.eraseVolume(id, keys || [], o || {}),
@@ -135,6 +137,9 @@ const TABLE = {
     get: (c, podId) => c.autosync.get(podId),
     set: (c, podId, settings) => c.autosync.set(podId, settings || {}),   // enabled: true needs approved_by (a named yes)
     status: (c) => c.autosync.status(),
+    getVolume: (c, volumeId) => c.autosync.getVolumeSettings(volumeId),   // per volume: a pod follows its volume's Auto sync unless its own is on
+    setVolume: (c, volumeId, settings) => c.autosync.setVolumeSettings(volumeId, settings || {}),   // enabled: true needs approved_by
+    volumeStatus: (c, volumeId) => c.autosync.volumeStatus(volumeId),
     pause: (c, on) => c.autosync.pause(!!on),
     syncNow: (c, podId) => c.autosync.syncNow(podId),
     approve: (c, podId, yes) => c.autosync.approve(podId, yes === true),
@@ -151,13 +156,53 @@ const TABLE = {
     log: (c, runId, o) => c.syncruns.registry.log(String(runId || ''), o || {}),
     watch: (c) => c.autosync.watch(),
   },
+  localoutputs: {   // the Outputs window's Local source: this PC's ComfyUI-Shared/output/, one folder at a time, read-only
+    browse: (c, prefix) => c.localoutputs.browse(String(prefix ?? '')),
+  },
   storage: {   // docs/ADR-063 Storage adapters: S3-compatible places files go to (publish mirrors) and come from; Wasabi and your own are records, never code
     list: (c) => c.storage.list(),
     save: (c, o) => c.storage.save(o || {}),   // a destination and its keys are entered by a person in the window
     setEnabled: (c, id, on) => c.storage.setEnabled(String(id || ''), !!on),
     remove: (c, id) => c.storage.remove(String(id || '')),
     reorder: (c, ids) => c.storage.reorder(ids),
+    setDefault: (c, id) => c.storage.setDefault(id),
     test: (c, id) => c.storage.test(String(id || '')),
+    uploads: (c, id) => c.storage.uploadJobs(id ? String(id) : undefined),   // the Upload On jobs (running, then newest finished) for the Queue
+    cancelUpload: (c, id) => c.storage.cancelUpload(String(id || '')),
+    usage: (c, id) => c.storageusage.usage(String(id || '')),   // the bucket's size, listed in the background (poll it); read-only
+    browse: (c, id, prefix) => c.storagebrowse.browse(String(id || ''), String(prefix ?? '')),   // one level of the bucket, read-only (Network Volumes > Storage > Explore)
+  },
+  syncrules: {   // docs/ADR-069 Configure Sync: for each (volume, event), send to which storages; '*' = all volumes
+    get: (c, volumeId) => c.syncrules.get(String(volumeId || '*')),
+    set: (c, volumeId, event, destinations) => c.syncrules.set(String(volumeId || '*'), String(event || ''), destinations),
+    all: (c) => c.syncrules.all(),
+  },
+  volumesync: {   // docs/ADR-066 Sync To Storage: a pod on the volume uploads its files to a storage by signed links; Plan first (no pod, no cost), then Start
+    plan: (c, req) => c.volumesync.plan(req || {}),
+    planStatus: (c, id) => c.volumesync.planStatus(String(id || '')),
+    cancelPlan: (c, id) => c.volumesync.cancelPlan(String(id || '')),
+    start: (c, req) => c.volumesync.start(req || {}),
+    status: (c, id) => c.volumesync.status(id ? String(id) : undefined),
+    cancel: (c, id) => c.volumesync.cancel(String(id || '')),
+    retry: (c, id) => c.volumesync.retry(String(id || '')),
+  },
+  sourcesync: {   // docs/ADR-067 downloads to this PC from a volume or a storage; Plan first, then Start
+    plan: (c, req) => c.sourcesync.plan(req || {}),
+    planStatus: (c, id) => c.sourcesync.planStatus(String(id || '')),
+    cancelPlan: (c, id) => c.sourcesync.cancelPlan(String(id || '')),
+    start: (c, req) => c.sourcesync.start(req || {}),
+    status: (c, id) => c.sourcesync.status(id ? String(id) : undefined),
+    cancel: (c, id) => c.sourcesync.cancel(String(id || '')),
+    retry: (c, id) => c.sourcesync.retry(String(id || '')),
+  },
+  bucketsync: {   // docs/ADR-067 amendment: bucket to bucket through a running pod; Plan first, then Start
+    plan: (c, req) => c.bucketsync.plan(req || {}),
+    planStatus: (c, id) => c.bucketsync.planStatus(String(id || '')),
+    cancelPlan: (c, id) => c.bucketsync.cancelPlan(String(id || '')),
+    start: (c, req) => c.bucketsync.start(req || {}),
+    status: (c, id) => c.bucketsync.status(id ? String(id) : undefined),
+    cancel: (c, id) => c.bucketsync.cancel(String(id || '')),
+    retry: (c, id) => c.bucketsync.retry(String(id || '')),
   },
   autopublish: {   // docs/ADR-050 Auto-publish: approved review videos are uploaded by themselves under a standing, named approval; off by default
     status: (c) => c.autopublish.statusNow(),
@@ -411,6 +456,9 @@ function podViewUrl(url) {
 
 /** An address the main process may fetch: a pod's /view, or (s3file://) a signed read of one output file of a known volume. Returns { url, headers? } or { status, message }; the signature headers never leave the main process. */
 async function fetchable(url, range) {
+  if (/^s3file:\/\/storage\./i.test(String(url))) {   // a storage's object (Wasabi, S3, the BH bucket): signed here with that storage's keys
+    try { return await (await loadCore()).storagebrowse.signGet(String(url), { range }) } catch (e) { return { status: e.status || 502, message: e.message } }
+  }
   if (/^s3file:/i.test(String(url))) {
     try { return await (await loadCore()).outputsources.signGet(String(url), { range }) } catch (e) { return { status: e.status || 502, message: e.message } }
   }

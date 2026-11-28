@@ -80,6 +80,22 @@ Lucas, 2026-11-27: "a storage adapter should have a setting to push or pull from
 | bincvfx (Wasabi) listens to Generated | Claude set it, per Lucas's "when a shot is generated we want to upload to bincvfx" |
 | Which pod uploads when several are running: the pod that rendered the job; for Approved any running pod on the same volume | **Open**: proposed, not answered |
 
+## Proven on a real pod (2026-11-28)
+
+A 25-frame 4K DPX sequence (`ENHANCE-146_B ... review_v003`, on the volume) was rendered as a 960-wide H.264 proxy on a pod (RTX PRO 4000, `pull: false`, so nothing came to this PC). The Wasabi storage `bincvfx` (ap-southeast-1) listens to **Generated**. When the job ended the pod put the file to a signed link: `.proxies/retime_review_v003/enhance-146_b/dpx/<clip>_960.mp4`, 285,020 bytes, the size of the render. History shows `1 file(s) on the pod and 0 on this PC to send` and `1 sent, 0 already there`. Checked from this PC with `aws s3 ls` against the bucket.
+
+Found on the way: two earlier runs uploaded nothing because they ran in a **stale MCP server process** (`mcp/server.mjs`, started days earlier, which loads the core once), not the app. A render started through the app's own MCP endpoint ran the new code. After the app is updated, reconnect the Claude Code MCP (`/mcp`) or the tools keep running the old core. The event hooks now also write a History line when they fail, never silently.
+
+Requests recorded the same day, not built: transfers between buckets and storages must appear in the Queue (the upload is a background step of the render today, with History lines only); storages appear in the Network Volumes modal with Explore; the Panama exchange Explore is icon-only.
+
+## Erase and Delete of a storage (2026-11-28)
+
+Lucas: "bincvfx this should be erasable and deletable but not if it's default bucket" / "default bucket is erasable but NOT deletable" / "no just unlink it from our system. erase though is allowed".
+
+- **Delete** unlinks the storage from this app (its record and keys); it never touches the bucket in Wasabi. The default storage cannot be deleted (the core refuses; make another storage the default first). A built-in Wasabi that is deleted returns to its empty, off state.
+- **Erase** deletes every object under the storage's directory in the bucket. Irreversible, so: counts first, the bucket name typed to confirm, a Queue job with Cancel. Allowed for any storage, the default included.
+- Built: the core refuses Delete of the default. Not built: the Erase job and the two buttons in Network Volumes.
+
 ## Not done here
 
 - Per-pod or per-shot overrides (the events are app-wide, in Default Configuration, like the switches).

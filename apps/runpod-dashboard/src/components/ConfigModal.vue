@@ -270,18 +270,10 @@
           </div>
         </div>
       </div>
-      <div class="border rounded p-2 mb-3" data-testid="config-autosync">
-        <BFormCheckbox v-model="cfg.auto_sync.enabled" :value="true" :unchecked-value="false" data-testid="config-autosync-enabled">{{ $t('autosync.configLabel') }}</BFormCheckbox>
-        <div v-if="cfg.auto_sync.enabled" class="ps-4 small" data-testid="config-autosync-options">
-          <BFormCheckbox v-model="cfg.auto_sync.pull" :value="true" :unchecked-value="false" data-testid="config-autosync-pull">{{ $t('autosync.pull') }}</BFormCheckbox>
-          <BFormCheckbox v-model="cfg.auto_sync.push" :value="true" :unchecked-value="false" data-testid="config-autosync-push">{{ $t('autosync.push') }}</BFormCheckbox>
-          <div class="d-flex align-items-center gap-2 mt-1">
-            <label class="mb-0" for="cfg-autosync-by">{{ $t('autosync.approvedBy') }}</label>
-            <BFormInput id="cfg-autosync-by" v-model="cfg.auto_sync.approved_by" size="sm" style="width: 16rem" :placeholder="$t('autosync.approvedByPlaceholder')" data-testid="config-autosync-approved-by" />
-          </div>
-        </div>
-        <div class="form-text mt-1" data-testid="config-autosync-help">{{ $t('autosync.configHelp') }}</div>
-        <div v-if="autoSyncError" class="text-danger small mt-1" data-testid="config-autosync-error">{{ autoSyncError }}</div>
+      <div v-if="!forPod && cfg.outputs" class="border rounded p-2 mb-3" data-testid="config-outputs">
+        <div class="fw-semibold mb-1">{{ $t('config.outputsTitle') }}</div>
+        <label class="small"><input v-model="cfg.outputs.hide_empty_folders" type="checkbox" class="form-check-input me-1" data-testid="config-outputs-hide-empty" />{{ $t('config.outputsHideEmpty') }}</label>
+        <div class="form-text" data-testid="config-outputs-help">{{ $t('config.outputsHelp') }}</div>
       </div>
       <div class="border rounded p-2 mb-3" data-testid="config-sync-exclude-block">
         <label class="fw-semibold mb-1" for="cfg-sync-exclude">{{ $t('sync.excludeConfigLabel') }}</label>
@@ -326,14 +318,6 @@
       <BAlert v-if="envLoad.error" :model-value="true" variant="danger" class="small py-1 mt-2" data-testid="cfg-env-error" @update:model-value="envLoad.error = ''">{{ envLoad.error }}</BAlert>
       </fieldset>
 
-      <fieldset v-if="!forPod && !gated" v-show="show('publishing')" class="cfg-section" data-section="publishing">
-        <legend data-testid="section-publishing">{{ $t('publish.tab') }}</legend>
-        <CollapsibleSection v-if="apStore.status?.watching" id="watching" :title="$t('autopublish.watch.title')" testid="autopublish-watching-block"><AutoPublishWatching :status="apStore.status" :skipped="true" compact /></CollapsibleSection>
-        <PublishSettings ref="pubRef" part="rest" :render="cfg.render" />
-        <div :id="`${slotId}-pub`"></div>   <!-- Outputs window, Prepare For Delivery and Render sequences land here (below) -->
-        <EdlStatus v-if="!forPod" />
-        <AutoPublishSettings v-if="cfg.auto_publish" v-model="cfg.auto_publish" :validate="apValidate" @changed="onApChanged" />
-      </fieldset>
       <fieldset v-if="!forPod && !gated" v-show="show('storage')" class="cfg-section" data-section="storage">
         <legend data-testid="section-storage">{{ $t('storage.tab') }}</legend>
         <StorageAdapters ref="storageRef">
@@ -391,70 +375,8 @@
       <div v-if="forPod" :id="`${slotId}-opt`"></div>   <!-- per-pod configuration: the render choices stay here (a pod has no Publishing tab) -->
       </fieldset>
       <ChooseCardModal :show="!!cardModal" :title="cardModal === 'stock' ? $t('config.cardsStockModal') : $t('config.cardsDefaultModal')" :help="cardModal === 'stock' ? $t('config.cardsStockModalHelp') : $t('config.cardsDefaultModalHelp')" :list="dcList" :loading="dcLoading" :datacenter="cfg.data_center_id || ''" :cards="cardModal === 'stock' ? stockCards : chosenCards" :card-label="(cardModal === 'stock' ? stockCards : chosenCards).map(cardName).join(', ')" :volume-dcs="volumeDcs" :default-dc="cfg.data_center_id || ''" @close="cardModal = ''" @refresh="loadDatacenters(true)" @update:datacenter="onCardDc" @pick="onPickCard" @auto="onCardAuto" />
-      <Teleport defer :to="`#${slotId}-${forPod ? 'opt' : 'pub'}`">
-      <div v-if="!forPod && cfg.outputs" class="border rounded p-2 mb-3" data-testid="config-outputs">
-        <div class="fw-semibold mb-1">{{ $t('config.outputsTitle') }}</div>
-        <label class="small"><input v-model="cfg.outputs.hide_empty_folders" type="checkbox" class="form-check-input me-1" data-testid="config-outputs-hide-empty" />{{ $t('config.outputsHideEmpty') }}</label>
-        <div class="form-text" data-testid="config-outputs-help">{{ $t('config.outputsHelp') }}</div>
-      </div>
-      <div v-if="!forPod && cfg.delivery_prepare" class="border rounded p-2 mb-3" data-testid="config-delivery">
-        <div class="fw-semibold mb-1">{{ $t('config.delivery.title') }}</div>
-        <div class="form-text mb-2" data-testid="config-delivery-help">{{ $t('config.delivery.help') }}</div>
-        <div class="row g-2 small">
-          <label class="col-sm-6">{{ $t('config.delivery.outDir') }}<input v-model="cfg.delivery_prepare.out_dir" type="text" class="form-control form-control-sm font-monospace" autocomplete="off" data-testid="config-delivery-out-dir" /></label>
-          <label class="col-sm-3">{{ $t('config.delivery.colourCode') }}<select v-model="cfg.delivery_prepare.colour_code" class="form-select form-select-sm" data-testid="config-delivery-colour-code"><option v-for="c in COLOUR_CODES" :key="c" :value="c">{{ $t(`config.delivery.colour_${c}`) }}</option></select></label>
-          <label class="col-sm-3">{{ $t('config.delivery.gamma') }}<input v-model.number="cfg.delivery_prepare.gamma" type="number" min="0.1" max="10" step="0.1" class="form-control form-control-sm" data-testid="config-delivery-gamma" /></label>
-          <label class="col-sm-3">{{ $t('config.delivery.fpsSource') }}<select v-model="cfg.delivery_prepare.fps_source" class="form-select form-select-sm" data-testid="config-delivery-fps-source"><option v-for="c in FPS_SOURCES" :key="c" :value="c">{{ $t(`config.delivery.fps_${c}`) }}</option></select></label>
-          <label class="col-sm-3">{{ $t('config.delivery.fps') }}<input v-model.number="cfg.delivery_prepare.fps" type="number" min="1" max="120" step="0.001" class="form-control form-control-sm" data-testid="config-delivery-fps" /></label>
-          <label class="col-sm-3">{{ $t('config.delivery.tcSource') }}<select v-model="cfg.delivery_prepare.timecode_source" class="form-select form-select-sm" data-testid="config-delivery-tc-source"><option v-for="c in TC_SOURCES" :key="c" :value="c">{{ $t(`config.delivery.tc_${c}`) }}</option></select></label>
-          <label class="col-sm-3">{{ $t('config.delivery.framePosition') }}<select v-model="cfg.delivery_prepare.frame_position" class="form-select form-select-sm" data-testid="config-delivery-frame-position"><option v-for="c in FRAME_POSITIONS" :key="c" :value="c">{{ $t(`config.delivery.pos_${c}`) }}</option></select></label>
-        </div>
-        <label class="small mt-2"><input v-model="cfg.delivery_prepare.skip_existing" type="checkbox" class="form-check-input me-1" data-testid="config-delivery-skip-existing" />{{ $t('config.delivery.skipExisting') }}</label>
-      </div>
-      <div class="border rounded p-2 mb-3" data-testid="config-render">
-        <div class="fw-semibold mb-1">{{ $t('outputs.render.cfg.title') }}</div>
-        <div class="d-flex gap-3 flex-wrap align-items-end small mb-2">
-          <label class="mb-0">{{ $t('outputs.render.cfg.where') }}
-            <select v-model="cfg.render.where" class="form-select form-select-sm" data-testid="config-render-where"><option value="auto">{{ $t('outputs.render.cfg.whereAuto') }}</option><option value="pod">{{ $t('outputs.render.cfg.wherePod') }}</option><option value="local">{{ $t('outputs.render.cfg.whereLocal') }}</option></select>
-          </label>
-          <div role="radiogroup" data-testid="config-render-kind"><div>{{ $t('outputs.render.cfg.kind') }}</div>
-            <label class="me-3"><input v-model="cfg.render.kind" type="radio" value="proxy" class="form-check-input me-1" data-testid="config-render-kind-proxy" />{{ $t('outputs.render.cfg.kindProxy') }}</label>
-            <label><input v-model="cfg.render.kind" type="radio" value="review" class="form-check-input me-1" data-testid="config-render-kind-review" />{{ $t('outputs.render.cfg.kindReview') }}</label>
-          </div>
-          <label class="mb-0" :title="$t('outputs.render.cfg.colourHelp')">{{ $t('outputs.render.cfg.colour') }}
-            <select v-model="renderColour" class="form-select form-select-sm" data-testid="config-render-colour"><option value="">{{ $t('outputs.render.cfg.colourDefault') }}</option><option v-for="c in RENDER_COLOURS" :key="c" :value="c">{{ $t(`edl.colours.${c}`) }}</option></select>
-          </label>
-          <label class="mb-0">{{ $t('outputs.render.cfg.proxyWidth') }}
-            <select v-model="cfg.render.proxy_width" class="form-select form-select-sm" data-testid="config-render-proxy-width"><option v-for="w in WIDTH_CHOICES" :key="w" :value="w">{{ w === 'source' ? $t('outputs.render.cfg.source') : `${w} px` }}</option></select>
-          </label>
-          <label class="mb-0">{{ $t('outputs.render.cfg.reviewWidth') }}
-            <select v-model="cfg.render.review_width" class="form-select form-select-sm" data-testid="config-render-review-width"><option v-for="w in WIDTH_CHOICES" :key="w" :value="w">{{ w === 'source' ? $t('outputs.render.cfg.source') : `${w} px` }}</option></select>
-          </label>
-          <label class="mb-0">{{ $t('outputs.render.cfg.fps') }}
-            <select v-model="cfg.render.fps" class="form-select form-select-sm" data-testid="config-render-fps"><option v-for="f in FPS_CHOICES" :key="f" :value="f">{{ f === 'auto' ? $t('outputs.render.cfg.fpsAuto') : `${f} fps` }}</option></select>
-          </label>
-        </div>
-        <div class="d-flex gap-3 flex-wrap small mb-1" data-testid="config-render-codecs">
-          <label><input v-model="cfg.render.codecs" type="checkbox" value="h264" class="form-check-input me-1" data-testid="config-render-codec-h264" />{{ $t('outputs.render.cfg.codecH264') }}</label>
-          <label><input v-model="cfg.render.codecs" type="checkbox" value="prores422hq" class="form-check-input me-1" data-testid="config-render-codec-prores" />{{ $t('outputs.render.cfg.codecProres') }}</label>
-          <template v-if="forPod">   <!-- a pod's own configuration has no Publishing tab: the three "when done" boxes stay here; the default configuration has them in Publishing > defaults -->
-            <label><input v-model="cfg.render.pull" type="checkbox" class="form-check-input me-1" data-testid="config-render-pull" />{{ $t('outputs.render.cfg.pull') }}</label>
-            <label><input v-model="cfg.render.publish.s3" type="checkbox" class="form-check-input me-1" data-testid="config-render-publish-s3" @change="renderDeps" />{{ $t('outputs.render.cfg.publishS3') }}</label>
-            <label><input v-model="cfg.render.publish.slack" type="checkbox" class="form-check-input me-1" :disabled="!cfg.render.publish.s3" data-testid="config-render-publish-slack" />{{ $t('outputs.render.cfg.publishSlack') }}</label>
-          </template>
-          <label><input v-model="cfg.render.skip_existing" type="checkbox" class="form-check-input me-1" data-testid="config-render-skip-existing" />{{ $t('outputs.render.cfg.skipExisting') }}</label>
-          <label :title="$t('outputs.render.cfg.convertRec709Tip')"><input v-model="cfg.render.rec709" type="checkbox" class="form-check-input me-1" data-testid="config-render-rec709" />{{ $t('outputs.render.cfg.convertRec709') }}</label>
-        </div>
-        <div class="d-flex gap-3 flex-wrap align-items-end small mt-2" data-testid="config-render-preset-row">
-          <label class="mb-0">{{ $t('outputs.render.preset') }}
-            <select v-model="cfg.render.preset" class="form-select form-select-sm" data-testid="config-render-preset" @change="renderPresetChanged"><option value="none">{{ $t('outputs.render.presetStandard') }}</option><option value="tunnel">{{ $t('outputs.render.presetTunnel') }}</option></select>
-          </label>
-        </div>
-        <div class="form-text" data-testid="config-render-help">{{ $t('outputs.render.cfg.help') }}</div>
-        <div class="form-text" data-testid="config-render-pre-help">{{ $t('outputs.render.cfg.preHelp') }}</div>
-        <div class="form-text" data-testid="config-render-skip-help">{{ $t('outputs.render.cfg.skipHelp') }}</div>
-        <div v-if="renderError" class="text-danger small mt-1" data-testid="config-render-error">{{ renderError }}</div>
-      </div>
+      <Teleport v-if="forPod" defer :to="`#${slotId}-opt`">
+        <RenderFields :render="cfg.render" for-pod :error="renderError" />
       </Teleport>
 
       <BAlert :model-value="!!error" variant="danger" class="mt-2 mb-0" data-testid="config-error">{{ error }}</BAlert>
@@ -517,19 +439,17 @@ import FolderPicker from './FolderPicker.vue'
 import AdapterManager from './AdapterManager.vue'
 import StorageAdapters from './StorageAdapters.vue'
 import PublishSettings from './PublishSettings.vue'
-import AutoPublishSettings from './AutoPublishSettings.vue'
-import AutoPublishWatching from './AutoPublishWatching.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import { useAutopublishStore } from '../stores/autopublish'
 import { usePublishStore } from '../stores/publish'
-import EdlStatus from './EdlStatus.vue'
+import RenderFields from './RenderFields.vue'
 import { apFill, apIsDefault, settingsProblem as apProblem } from '../utils/autopublish'
 import { useConfirmStore } from '../stores/confirm'
 import { parsePatterns, listProblem } from '../utils/syncexclude'
 import { useToastStore } from '../stores/toast'
 import { changedSections, changedKeys, notLanded, clockNow } from '../utils/savefeedback'
-import { RENDER_DEFAULTS, WIDTH_CHOICES, FPS_CHOICES, renderProblem, renderIsDefault, renderBody, renderPublishProblem } from '../utils/renders'
-import { COLOUR_CODES, FPS_SOURCES, TC_SOURCES, FRAME_POSITIONS, deliveryFill, deliveryIsDefault, deliveryBody } from '../utils/deliveryprepare'
+import { RENDER_DEFAULTS, renderProblem, renderIsDefault, renderBody, renderPublishProblem } from '../utils/renders'
+import { deliveryFill, deliveryIsDefault, deliveryBody } from '../utils/deliveryprepare'
 
 const props = defineProps({
   mode: { type: String, default: 'default' },      // 'default' | 'pod'
@@ -630,7 +550,7 @@ const tabList = computed(() => [
   { key: 'volume', label: t('config.volumePod') },   // the same tab name in the default configuration and in a pod's
   { key: 'folders', label: t('config.folders') },
   { key: 'environment', label: t('config.environment') },
-  ...(forPod.value ? [] : [{ key: 'storage', label: t('storage.tab') }, { key: 'adapters', label: t('adapters.section') }, { key: 'publishing', label: t('publish.tab') }]),
+  ...(forPod.value ? [] : [{ key: 'storage', label: t('storage.tab') }, { key: 'adapters', label: t('adapters.section') }]),
   ...(forPod.value ? [{ key: 'options', label: t('publish.tab') }] : []),   // a pod's own configuration: the render and when-done choices, so it is called Publishing like the default's tab
 ])
 /** A section shows when the sections flow (narrow), when only the key is asked for (gated), or when its tab is the open one. */
@@ -714,24 +634,13 @@ function take(payload) {
   deliveryStored = !forPod.value && payload.config.delivery_prepare !== undefined
   if (forPod.value) delete cfg.value.delivery_prepare; else cfg.value.delivery_prepare = deliveryFill(payload.config.delivery_prepare)
   renderError.value = ''
-  autoSyncError.value = ''
 }
 let renderStored = false, renderLoadedKeys = [], outputsStored = false, deliveryStored = false
 /** The Tunnel proxy preset is a quick proxy: it takes the kind with it. */
-// The colour of the frames when nobody states one: empty is the project default (Gamma 2.6 P3-D65 for a header that says linear; log and printing density are still asked); a colour here is used for every frame whose header says linear or log
-const RENDER_COLOURS = ['p3-d65-gamma26', 'p3-d65-srgb', 'p3-d65-gamma22', 'linear-p3-d65', 'linear-rec709', 'kodak-log']
-const renderColour = computed({
-  get: () => (cfg.value.render.colour?.mode === 'format' && cfg.value.render.colour.format ? cfg.value.render.colour.format : ''),
-  set: (v) => { cfg.value.render.colour = v ? { mode: 'format', format: v, set_by: 'Default Configuration', set_at: new Date().toISOString() } : { mode: 'known' } },
-})
-function renderPresetChanged() { if (cfg.value.render.preset === 'tunnel') cfg.value.render.kind = 'proxy' }
-/** Publishing when done needs the renders on this PC (unless they render here), and Slack needs S3: switched off inline, before any call. */
-function renderDeps() { const p = cfg.value.render.publish; if (!p.s3) p.slack = false }
 let apSnapshot = '', apLoadedDefault = true
 const apValidate = ref(false)
 const apDirty = computed(() => !!cfg.value?.auto_publish && JSON.stringify(cfg.value.auto_publish) !== apSnapshot)
 /** After an immediate act (enable, go live, off) the core changed the configuration's value: read it again so the next Save cannot write a stale one. */
-async function onApChanged() { try { const p = await mountsAPI.get(); if (p?.config?.auto_publish && cfg.value) { cfg.value.auto_publish = apFill(p.config.auto_publish); apSnapshot = JSON.stringify(cfg.value.auto_publish); apLoadedDefault = apIsDefault(p.config.auto_publish) } } catch { /* the window keeps what it has */ } }
 let syncExcludeStored = false, syncExcludeDeleteStored = false, folderExStored = false
 // Exclude by default, per mapped folder (v1.5.0): `folder_excludes` { rowKey: [patterns] }. The Default editor loads and saves its own lists; a pod's editor starts every key inheriting the Default's (placeholder), typing replaces it for that key, Use the Default goes back.
 const folderEx = reactive({}), folderExError = reactive({}), defaultFolderEx = ref({})
@@ -766,15 +675,8 @@ function renderOk() {
   return !p && !q
 }
 let autoSyncStored = false
-const autoSyncError = ref('')
-/** A named yes (ADR-046): ticking Auto sync needs the name of who says yes, refused here before any call; the core refuses it too. */
-function autoSyncOk() {
-  const a = cfg.value.auto_sync
-  if (a.enabled && !String(a.approved_by || '').trim()) { autoSyncError.value = t('autosync.needName'); return false }
-  autoSyncError.value = ''
-  if (a.enabled) try { localStorage.setItem('runpod-manager.approved-by', a.approved_by.trim()) } catch { /* storage blocked */ }
-  return true
-}
+/** Auto sync is set on the volume rows (Network Volumes > Sync Rules, docs/ADR-068); a stored `auto_sync` object in a configuration is kept as it is and not edited here. */
+const autoSyncOk = () => true
 
 /** The datacenter menu: RunPod's list with S3 support and our cards at the secure-cloud price; the saved id is kept even when the list lacks it. */
 const dcList = ref([])
@@ -880,7 +782,7 @@ async function load() {
 
 /** Pod mode: validate through the API's preview, hand the configuration to the owner, close. */
 async function apply() {
-  if (!autoSyncOk() || !renderOk() || !syncExcludeOk() || !folderExOk()) return
+  if (!autoSyncOk() || (forPod.value && !renderOk()) || !syncExcludeOk() || !folderExOk()) return
   saving.value = true; error.value = null
   try {
     const payload = await mountsAPI.preview(body())
@@ -959,7 +861,6 @@ async function focusSection() {
     el?.scrollIntoView({ block: 'center' })
     ioFlash.value = true; setTimeout(() => { ioFlash.value = false }, 2000)
   }
-  if (where === 'publishing') { tab.value = 'publishing'; await nextTick(); document.querySelector('[data-testid="section-publishing"]')?.scrollIntoView({ block: 'start' }) }
   if (where === 'adapters') { tab.value = 'adapters'; await nextTick(); document.querySelector('[data-testid="section-adapters"]')?.scrollIntoView({ block: 'start' }) }
   if (where === 'panama') { tab.value = 'storage'; await nextTick(); await scrollToField('cfg-panama-access', 'storage') }
   if (where === 's3') await scrollToField('cfg-s3-access')    // from Browse / Erase / Clone: the RunPod S3 key fields, in view and focused
@@ -978,8 +879,8 @@ async function scrollToField(id, where = 'runpod') {
 }
 
 const slotId = `cfg-slot-${Math.random().toString(36).slice(2, 8)}`   // where Teleport puts the Outputs / Delivery / Render blocks: Publishing, or Options for a pod's own configuration
-const pubRef = ref(null), pubS3Ref = ref(null), storageRef = ref(null), confirm = useConfirmStore()
-const pubDirty = computed(() => !!pubRef.value?.dirty || !!pubS3Ref.value?.dirty || apDirty.value)
+const pubS3Ref = ref(null), storageRef = ref(null), confirm = useConfirmStore()
+const pubDirty = computed(() => !!pubS3Ref.value?.dirty || apDirty.value)
 let forceClose = false
 /** Close, asking first when Publishing has edits nobody saved. */
 async function closeWindow() {
@@ -991,10 +892,8 @@ function onHide(ev) {   // the X, Escape or a click outside
   ev.preventDefault(); closeWindow()
 }
 async function save() {
-  if (!gated.value && (!autoSyncOk() || !renderOk() || !syncExcludeOk() || !folderExOk())) return
-  if (!gated.value && cfg.value?.auto_publish?.enabled && apProblem(cfg.value.auto_publish)) { apValidate.value = true; tab.value = 'publishing'; return }
+  if (!gated.value && (!autoSyncOk() || (forPod.value && !renderOk()) || !syncExcludeOk() || !folderExOk())) return
   if (!gated.value && pubS3Ref.value?.validate()) { tab.value = 'storage'; return }   // the destination's form is the publish-s3 card in the Storage tab (docs/ADR-063)
-  if (!gated.value && pubRef.value?.validate()) { tab.value = 'publishing'; return }   // both are checked before anything is written
   saving.value = true; error.value = null
   const wasGated = gated.value
   if (newKey.value) {
@@ -1041,11 +940,6 @@ async function save() {
     if (missing.length) { saving.value = false; return }
   }
   followNoSpend(r.value)
-  // The Publishing section is part of this window: its edits are written by this Save, after the configuration; a failure there is said plainly and the window stays open.
-  if (pubRef.value?.dirty) {
-    const pr = await pubRef.value.save()
-    if (!pr.ok) { saving.value = false; error.value = t('publish.partialSave', { reason: pr.error }); tab.value = 'publishing'; await nextTick(); document.querySelector('[data-testid="publish-field-error"]')?.scrollIntoView({ block: 'center' }); return }
-  }
   if (pubS3Ref.value?.dirty) {
     const pr = await pubS3Ref.value.save()
     if (!pr.ok) { saving.value = false; error.value = t('publish.partialSave', { reason: pr.error }); tab.value = 'storage'; await nextTick(); document.querySelector('[data-testid="publish-field-error"]')?.scrollIntoView({ block: 'center' }); return }

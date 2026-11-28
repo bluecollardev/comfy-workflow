@@ -1,7 +1,7 @@
 <template>
   <div v-if="w" class="small" data-testid="autopublish-watching" :data-mode="mode">
-    <div v-if="mode === 'off'" class="d-flex align-items-center gap-2 flex-wrap" data-testid="autopublish-watching-mode"><span>{{ $t('autopublish.watch.off') }}</span><BButton variant="link" size="sm" class="p-0" data-testid="autopublish-watching-settings" @click="openSettings">{{ $t('autopublish.watch.openSettings') }}</BButton></div>
-    <div v-else class="d-flex align-items-center gap-2 flex-wrap" data-testid="autopublish-watching-mode">
+    <div v-if="mode === 'off' && !compact" class="d-flex align-items-center gap-2 flex-wrap" data-testid="autopublish-watching-mode"><span>{{ $t('autopublish.watch.off') }}</span><BButton variant="link" size="sm" class="p-0" data-testid="autopublish-watching-settings" @click="openSettings">{{ $t('autopublish.watch.openSettings') }}</BButton></div>
+    <div v-else-if="mode !== 'off'" class="d-flex align-items-center gap-2 flex-wrap" data-testid="autopublish-watching-mode">
       <span class="badge fw-normal" :class="mode === 'live' ? 'text-bg-success' : 'text-bg-warning'" data-testid="autopublish-watching-chip">{{ mode === 'live' ? $t(status.window_minutes === 0 ? 'autopublish.watch.liveNow' : 'autopublish.watch.live', { targets: targetsText(status.targets), n: status.window_minutes }) : $t('autopublish.watch.dry') }}</span>
     </div>
     <template v-if="places">
@@ -65,5 +65,5 @@ async function scan() { scanError.value = ''; localScanning.value = true; try { 
 const timer = setInterval(() => { now.value = Date.now() }, 30000)
 onBeforeUnmount(() => clearInterval(timer))
 const mode = computed(() => (!props.status?.enabled ? 'off' : props.status.dry_run ? 'dry' : 'live'))
-const openSettings = () => { ui.queueOpen = false; ui.configFocus = 'publishing'; ui.configOpen = true }
+const openSettings = () => { ui.queueOpen = false; ui.showPublishing() }
 </script>

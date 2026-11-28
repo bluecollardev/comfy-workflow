@@ -1,4 +1,4 @@
-import { test, expect, modal, cfgTab, podCard } from './fixtures'
+import { test, expect, modal, cfgTab, podCard, openVolumeSync } from './fixtures'
 import { formatBytes } from '../src/sync-progress'
 import { t } from './i18n'
 
@@ -100,7 +100,7 @@ test.describe('the Sync window: links', () => {
       }
     }, { many })
     await page.goto('/')
-    await podCard(page, 'ComfyUI-Dev').getByTestId('pod-sync').click()
+    await openVolumeSync(page)
     const d = page.getByTestId('sync-modal')
     await expect(d.getByTestId('sync-exclude')).toBeVisible()
     return d

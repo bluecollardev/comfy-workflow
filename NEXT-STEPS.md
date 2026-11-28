@@ -16,6 +16,46 @@
 4. **One codebase, no second runtime**: the Python API retired, the core in
    TypeScript, the merge gate green (`docs/ADR-005`).
 
+## Open from 2026-11-28 (storage events, Wasabi, the Outputs Source box)
+
+**Release plan (Lucas, 2026-11-28): 1.8.0 (a minor) when everything below is built, on his call only. Build first; one test-and-fix pass at the end (full gate with the app stopped), no broad test runs before then.**
+
+Decisions: `docs/ADR-064-storage-events.md`, `docs/ADR-065-one-panama-bucket-card.md`; the plan: `docs/PLAN-storage-events.md`. v1.7.7 is released (events, one Panama card, titles, order, Add Storage on top). **Everything below the release line is in the working tree, not committed, not in a release, and the gate has not been run on it.**
+
+- [x] Pod to Wasabi on Generated, proven on a real pod (25-frame proxy, `bincvfx`, 285,020 bytes). Runs only in the app's own core: reconnect the Claude Code MCP (`/mcp`) after an update, a stale `mcp/server.mjs` runs the old core.
+- [ ] Review `.mov` end to end to `bincvfx` on Generated and Approved (only an `.mp4` proxy has gone through a real pod; `.mov` is tested against fakes).
+- [ ] **Paused by Lucas:** sync a volume's outputs to Wasabi (ADR-066). Core and MCP built against fakes; the window button is not shown; no real sync has been run. Resume when asked; run a small folder to `bincvfx` first.
+- [x] Storage size for the Network Volumes rows: `storage.usage` (core, MCP `usage`, test); the rows' layout is the window agent's work.
+- [x] Default storage: a Default Storage switch on Wasabi and your own cards, one at a time, a badge on the card and in Network Volumes; `bincvfx` (Wasabi) is the default. Nothing uses it yet: the Sync window (ADR-067) will offer it first.
+- [x] This PC as a destination of an event (ADR-072): per-volume ticks for Generated, Approved, Published; Auto-publish under Publishing. Checked against fakes only.
+- [x] This PC pull, from the volume and from Wasabi, proven on a real pod (proxy, Generated; log in the runbook).
+- [ ] A real approval and publish with the new ticks (only their copy paths were run, with probes).
+- [x] Volume files go to Wasabi on Approved and Published, sidecars included (live tests: `npm run storage:live`).
+- [ ] Watch one real Mark approved or publish send to Wasabi from the app.
+- [ ] A quick proxy's `.meta.json` still does not go to Wasabi on Generated; and a same-size re-render is skipped as already there.
+- [x] 1.8.0: the 3 browser and 3 Electron failures fixed; full gate passed 2026-11-28. Seen flaky under load: `outputs-collapse` 362 frames, `sourcesync` (core), one `autopublish` core test.
+- [ ] The test objects: `returns/BKK/qc_2026-11-02_r02/zz-test-001/` (plus that round's manifest and inventory), `returns/BKK/_TEST_2026-11-28/`, and `deliver/zz-test-001/` on the volume, in Wasabi and on this Mac: remove on Lucas's word.
+- [ ] Sync window: choose a source (This Pod, a Network Volume, a Storage) and several targets (This PC, a Storage, a Volume): ADR-067, proposed, waiting for Lucas's go; phase 1 = pod to PC (exists), pod to storage, volume to PC, storage to PC.
+- [ ] **Erase and Delete for a storage in Network Volumes (Lucas, 2026-11-28: "bincvfx this should be erasable and deletable ... default bucket is erasable but NOT deletable")**. Rules decided and confirmed by Lucas ("no just unlink it from our system. erase though is allowed"): Delete = unlink the storage from the app (never deletes the bucket in Wasabi); Erase = delete every object under the storage's directory (irreversible: a plan with object and byte counts first, the bucket name typed to confirm, a Queue job with Cancel); the default storage can be erased but not deleted (core refuses Delete: done, tested); any non-default storage can do both. Core erase job and the two buttons in the window are NOT built yet: do after the Network Volumes window work lands (same file).
+- [ ] **The flow (ADR-068, `docs/runbooks/generate-keep-approve-publish.md`): generate on a pod, keep in Wasabi, approve + colour, publish from Wasabi to the Panama delivery rounds.** Built: generate, Generated to Wasabi (proxy proven), approve. Not built: publish from the Wasabi copy with the checks (complete, colour stated, size and sha256), Approved from the pod volume, the approval marker in Wasabi. Upload On toggles move from Default Configuration > Storage to Network Volumes (Sync Rules on each bucket row, BH row incl.): in progress.
+- [ ] **Configure Sync rules are per event and per volume (ADR-069: for each event, send to where; replaces the storage-centric events/Volumes picker as the thing edited; migration from the old fields)**: core `syncrules` + migration + `sync_rules` MCP; the window (volume rows: each event with its destinations; storage rows: per-volume tick boxes; BH row: Auto-publish only) in progress.
+- [ ] Push and pull for every pair (ADR-069 amendment): the pairs that exist are listed there; pull into a volume or a storage, This PC to a storage and any pull as a standing rule are not built.
+- [x] Missing language keys fixed: `shared.volumesHelp` (Shared window) and `edl.noneLoad`.
+- [ ] **Sync Rules on every row of Network Volumes** (ADR-068 addendum): storages (events + Volumes scope: core done, window in progress), BH row, each RunPod volume (Auto Sync per volume: core NOT built, autosync is per pod today; plus Sends To), This PC (Receives From, read-only view). The Storage tab's Upload On block, the Sync window's per-pod Auto sync and the Default Configuration / pod `auto_sync` blocks leave the UI.
+- [x] bucketsync (bucket to bucket through a running pod, BH as a download source) built against fakes (core + MCP `bucket_sync`); window in progress; real pod pipe never run.
+- [ ] Any bucket to any bucket (Wasabi, your storages, the BH exchange as a source only, network volumes over S3 as a source) through a running pod with signed links; a Sync button on every bucket row incl. Wasabi and the BH exchange (ADR-067 amendment). Saved sync routes (configure once, run on demand or on change) are after that.
+- [x] Upload On event uploads are Queue jobs (kind `storage-upload`, progress and Cancel) and History lines; the pod card has three big buttons (Config, Details, Logs), no Sync button and no Auto Sync badge.
+- [ ] Transfers between buckets and storages appear in the Queue (the upload is a background step of the render today, History lines only).
+- [ ] Reading from an adapter and volume sync on change (push or pull, off by default, dry run first): ADR-066, not written.
+- [ ] Storages in Network Volumes with Explore, Panama Explore icon-only (built by a subagent; fake data only, not clicked through).
+- [ ] Outputs window Source box (All Sources, Pod, Local, Volume, other volumes, storages), clear button, bottom pager, volume listing label, Local = this PC's output folder with a new file route in `electron/main.cjs` that handles bucket keys: **review that route before release**. Specs failing at the last run: `outputs-source` (listing failed, Local, x button) and `outputs-all` (All outputs is the default); the subagent was mid-edit, rerun them when it reports.
+- [ ] Big volumes (the 2500 GB `brynley-rounds-eu-ro-1`): All Outputs hits the 2-minute listing limit and falls back to folders; decide whether to wait longer or fill in progressively.
+- [ ] `publish-s3` with its own keys cannot be browsed (keys private to `publish.ts`); export an accessor from `storage.ts` and delete the duplicate reader in `storagebrowse.ts`.
+- [ ] `libs/core/tests/publish.test.ts` and `renders.test.ts` fail when run without `--config libs/core/vitest.config.ts` (`setPodCapability is not a function`, an import cycle); the gate uses the config. Run core tests only with it.
+- [ ] Drag handle with a real mouse (the drop handler is tested by dispatched events only).
+- [ ] Then: `./start.sh test` with the app stopped, a patch release (1.7.8), CHANGELOG entry, push develop and tags, master fast-forward, `./start.sh release page`.
+- [ ] Pod `bn9eeziiq2hjlf` (RTX PRO 4000, $0.57/h): idle stop is 10 minutes; confirm it has stopped, and note a resume resets idle stop to 0.
+
 ## Open from 2026-11-20 (CANALV2: the DPX backfill of published reviews, the 12 proxies; see also the delivery section below)
 
 Plans: `docs/CANALV2-DPX-BACKFILL-PLAN.md` (frames of reviews already published), `docs/CANALV2-TUNNEL-V11-PRODUCTION-PLAN.md` (what to import and produce for the 20 Nov PDF).

@@ -16,6 +16,7 @@ import * as mounts from './mounts.js'
 import { configDir, mountsFile } from './paths.js'
 import * as publish from './publish.js'
 import * as storage from './storage.js'
+import * as localcopy from './localcopy.js'
 
 export const WINDOW_DEFAULT = 10, RETRY_MS = 10 * 60_000, MAX_RETRIES = 2, TICK_MS = 5000, CONSIDER_MS = 60_000, MAX_REVIEWS = 2000, KEEP_RECENT = 20
 export const NEEDS_NAME_APPROVE = 'Approving a shot version needs the name of who says yes'
@@ -191,14 +192,22 @@ export async function approve(o: { shot?: unknown; version?: unknown; approved_b
   void approvedUpload(shot, version, found)
   return a
 }
-/** docs/ADR-064: an approved version's files that are on this PC go to the storage adapters that listen to Approved. The Panama destination is Auto-publish, not this. Best effort. */
+/** docs/ADR-064: an approved version's files (on this PC, else read from the volume) go to the storage adapters that listen to Approved. The Panama destination is Auto-publish, not this. Best effort. */
 async function approvedUpload(shot: string, version: string, found: Found): Promise<void> {
   try {
-    if (found.source !== 'local' || !storage.forEvent('approved').length) { if (found.source !== 'local' && storage.forEvent('approved').length) history.record({ kind: 'change', area: 'configuration', action: 'storage upload on approved', what: `${shot} ${version}`, detail: 'not uploaded: the review is only on the volume (ADR-064)' }); return }
+    let volId: string | undefined; try { volId = publish.volumeIdNow() || undefined } catch { /* none: the '*' rules */ }
+    if (found.source !== 'local') void localcopy.onEvent('approved', volId, [`comfy-shared/output/deliver/${shot}/${version}`])   // docs/ADR-072
+    if (!storage.forEvent('approved', volId).length) return
+    if (found.source !== 'local') {   // only on the volume: read from there, no pod needed
+      if (!volId) return
+      const folder = `deliver/${shot}/${version}`, warns = await storage.uploadFromVolume('approved', volId, found.files.map((f) => ({ source_key: `comfy-shared/output/${folder}/${f.name}`, key: `${folder}/${f.name}`, bytes: f.bytes })))
+      if (warns.length) history.record({ kind: 'change', area: 'configuration', action: 'storage upload on approved', what: `${shot} ${version}`, detail: warns.slice(0, 5).join('; ') })
+      return
+    }
     const base = deps.outputRoot(); if (!base) return
-    const warns = await storage.uploadOn('approved', found.files.map((f) => ({ abs: join(base, 'deliver', shot, version, f.name), key: `deliver/${shot}/${version}/${f.name}` })))
+    const warns = await storage.uploadOn('approved', found.files.map((f) => ({ abs: join(base, 'deliver', shot, version, f.name), key: `deliver/${shot}/${version}/${f.name}` })), undefined, volId)
     if (warns.length) history.record({ kind: 'change', area: 'configuration', action: 'storage upload on approved', what: `${shot} ${version}`, detail: warns.slice(0, 5).join('; ') })
-  } catch { /* never fails an approval */ }
+  } catch (e) { try { history.record({ kind: 'change', area: 'configuration', action: 'storage upload on approved failed', what: `${shot} ${version}`, detail: publish.redact((e as Error).message) }) } catch { /* a courtesy */ } }   // never fails an approval, never silent
 }
 export async function revoke(o: { shot?: unknown; version?: unknown }): Promise<{ revoked: boolean; cancelled: number }> {
   const { shot, version } = checkShotVersion(o?.shot, o?.version), key = keyOf(shot, version)

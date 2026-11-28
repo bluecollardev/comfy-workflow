@@ -85,7 +85,7 @@
       </template>
 
 
-      <div v-if="loading" class="col-12 mt-1" :class="{ 'cursor-pointer': loading.sync }" :role="loading.sync ? 'button' : undefined" :title="loading.sync ? $t('pod.syncOpen') : undefined" data-testid="pod-progress" :data-step="loading.step" :data-indeterminate="loading.indeterminate ? 'true' : undefined" @click="loading.sync && (showSync = true)">
+      <div v-if="loading" class="col-12 mt-1" :class="{ 'cursor-pointer': loading.sync }" :role="loading.sync ? 'button' : undefined" :title="loading.sync ? $t('pod.syncOpen') : undefined" data-testid="pod-progress" :data-step="loading.step" :data-indeterminate="loading.indeterminate ? 'true' : undefined" @click="loading.sync && openSyncForPod(pod.id)">
         <BProgress :value="loading.value" :max="100" height="6px" :variant="loading.sync ? 'warning' : 'info'" :striped="loading.indeterminate || !loading.sync || loading.value < 100" :animated="loading.indeterminate || !loading.sync || loading.value < 100" />
         <div class="small text-body-secondary mt-1" data-testid="pod-progress-label">{{ loading.sync ? '' : $t('pod.stepOf', { n: loading.step, of: 3 }) + ' · ' }}{{ loading.label }}</div>
       </div>
@@ -127,17 +127,14 @@
       </template>
     </dl>
 
-    <div class="d-flex gap-1 mb-2 flex-nowrap card-actions">
-      <BButton variant="outline-light" size="sm" class="text-nowrap px-2" :title="$t('pod.config') + ': ' + $t('pod.configTitle')" :aria-label="$t('pod.config')" data-testid="pod-config" @click="openConfig">
+    <div class="d-flex gap-2 mb-2 flex-nowrap card-actions" data-testid="pod-card-actions">
+      <BButton variant="outline-light" class="text-nowrap py-2" :title="$t('pod.config') + ': ' + $t('pod.configTitle')" :aria-label="$t('pod.config')" data-testid="pod-config" @click="openConfig">
         <i class="fa-solid fa-sliders me-1"></i>{{ $t('pod.config') }}
       </BButton>
-      <BButton :variant="autoOn ? (autoErr ? 'warning' : 'success') : 'outline-light'" size="sm" class="text-nowrap px-2" :title="syncTitle" :aria-label="$t('pod.sync')" data-testid="pod-sync" :data-autosync="autoOn ? 'true' : undefined" :data-autosync-state="autoErr ? 'error' : undefined" @click="showSync = true">
-        <i class="fa-solid fa-arrows-rotate me-1"></i>{{ $t('pod.sync') }}
-      </BButton>
-      <BButton variant="outline-light" size="sm" class="text-nowrap px-2" :pressed="showDetails" :title="$t('pod.details') + ': ' + $t('pod.detailsTitle')" :aria-label="$t('pod.details')" data-testid="pod-details-toggle" @click="toggleDetails">
+      <BButton variant="outline-light" class="text-nowrap py-2" :pressed="showDetails" :title="$t('pod.details') + ': ' + $t('pod.detailsTitle')" :aria-label="$t('pod.details')" data-testid="pod-details-toggle" @click="toggleDetails">
         <i class="fa-solid fa-circle-info me-1"></i>{{ $t('pod.details') }}
       </BButton>
-      <BButton variant="outline-light" size="sm" class="text-nowrap px-2" :title="$t('pod.logs') + ': ' + $t('pod.logsTitle2')" :aria-label="$t('pod.logs')" data-testid="pod-logs-toggle" @click="showLogs = true">
+      <BButton variant="outline-light" class="text-nowrap py-2" :title="$t('pod.logs') + ': ' + $t('pod.logsTitle2')" :aria-label="$t('pod.logs')" data-testid="pod-logs-toggle" @click="showLogs = true">
         <i class="fa-solid fa-scroll me-1"></i>{{ $t('pod.logs') }}
       </BButton>
     </div>
@@ -176,7 +173,6 @@
       </dl>
     </div>
     <ConfigModal v-if="configOpen" mode="pod" v-model="configOpen" :initial="ownConfig" :pod-name="pod.name" :pod-id="pod.id" :runpod-name="pod.runpod_name || ''" @apply="applyConfig" />
-    <SyncModal v-model="showSync" :pod="pod" />
     <RetryLaterModal v-model="showRetryLater" :pod="pod" :volume="volume" />
     <RunWorkflowsModal v-if="showRunFlows" v-model="showRunFlows" :pod="pod" @finished="loadOutputs" />
     <PodOutputsModal v-if="showOutputs" :pod="pod" :runs="outputRuns" :base="outputBase" :volume-name="outputVolumeName" :volume-id="outputVolumeId" @close="showOutputs = false" @refresh="loadOutputs" />
@@ -247,8 +243,7 @@ import { useRendersStore } from '../stores/renders'
 import { historyAPI } from '../api/history'
 import { runsWithOutputs, mergeRuns } from '../utils/outputs'
 import { withTimeout } from '../utils/thumbs'
-import SyncModal from './SyncModal.vue'
-import { useAutosyncStore } from '../stores/autosync'
+import { openSyncForPod } from '../utils/syncfor'
 import RetryLaterModal from './RetryLaterModal.vue'
 import DockerfileModal from './DockerfileModal.vue'
 import { roundShots } from '../utils/roundShots'
@@ -324,19 +319,6 @@ const loading = computed(() => {
 const toast = useToastStore()
 const showDetails = ref(false)
 const showLogs = ref(false)
-const showSync = ref(false)
-/** Auto sync (ADR-046): the Sync button is green while it is on for this pod, amber when its last run failed. */
-const autosync = useAutosyncStore()
-const autoOn = computed(() => autosync.enabled(props.pod.id))
-const autoItem = computed(() => autosync.byPod(props.pod.id))
-const autoErr = computed(() => autoOn.value && autoItem.value?.state === 'error')
-const syncTitle = computed(() => {
-  const base = t('pod.sync') + ': ' + t('pod.syncTitle')
-  if (!autoOn.value) return base
-  const it = autoItem.value
-  if (autoErr.value) return t('autosync.buttonError', { error: it.error || '' })
-  return t('autosync.buttonOn', { what: (it?.state === 'done' && it.summary) || t('autosync.buttonWaiting') })
-})
 const showRetryLater = ref(false)
 const showRunFlows = ref(false), showOutputs = ref(false)
 // A run in progress on this pod shows in the Run button itself ("Running"); the button stays clickable and opens the window on that run's progress. The run lives in the core, so this asks it (in memory, no network) every few seconds while the pod runs.
@@ -460,7 +442,7 @@ async function confirmDelete() {
   --bs-btn-active-border-color: color-mix(in srgb, var(--bs-success) 34%, #000);
   --bs-btn-color: #fff; --bs-btn-hover-color: #fff; --bs-btn-active-color: #fff;
 }
-.card-actions > * { flex: 1 1 0; min-width: 0; padding-left: 0.25rem !important; padding-right: 0.25rem !important; }   /* four equal buttons with the same gap between and around them */
+.card-actions > * { flex: 1 1 0; min-width: 0; padding-left: 0.25rem !important; padding-right: 0.25rem !important; }   /* equal buttons with the same gap between them (no flex-fill: its !important would give each its own width) */
 .shot-wrap { position: relative; }
 .shot-input { padding-right: 2rem; }
 .shot-input::-webkit-calendar-picker-indicator { opacity: 0; position: absolute; top: 0; bottom: 0; right: 0; width: 2rem; cursor: pointer; }   /* the browser's own arrow is a hit area over our always-visible chevron */

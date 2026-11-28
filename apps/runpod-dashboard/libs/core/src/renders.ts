@@ -26,6 +26,7 @@ import * as podpull from './podpull.js'
 import * as autopublish from './autopublish.js'
 import * as publish from './publish.js'
 import * as storage from './storage.js'
+import * as localcopy from './localcopy.js'
 import { mirrorDir, rendersFile } from './paths.js'
 import * as rp from './runpod.js'
 import * as sync from './sync.js'
@@ -1207,7 +1208,6 @@ async function run(job: Job): Promise<void> {
       if (ad.id === 'pod' && vol) void deps.emit(vol, review ? `output/deliver/${shot}/${versionName(version)}/` : `output/${PROXIES}/${s.dir ? `${s.dir}/` : ''}`, r.bytes).catch(() => undefined)   // one journal batch event per sequence, best effort
       if (ad.needsPull && job.pull) await pullOne(job, sv, r.files)
       else if (!ad.needsPull) sv.state = 'done'   // a local render has no pull: rendered, then done
-      await storageEvent(job, [sv], 'generating')
       await publishSeq(job, sv, ad.needsPull && !job.pull)   // this sequence's publish starts as soon as ITS files are here, not when the others are
     } catch (e) { sv.state = 'failed'; sv.error = (e as Error).message; failedN++ }
   }
@@ -1252,24 +1252,36 @@ async function pullOne(job: Job, sv: SeqView, paths: string[]): Promise<void> {
   } finally { if (v.state === 'pulling') v.state = 'rendering' }
 }
 
-/** docs/ADR-064: files of a sequence that are on this PC go to the storage adapters that listen to this event. Never streams from the volume; a sequence that stayed on the pod is one History line. Best effort: never fails a render. */
-async function storageEvent(job: Job, seqs: SeqView[], ev: 'generating' | 'generated'): Promise<void> {
+/** docs/ADR-064: what a render produced goes to the storage adapters that listen to this event. A sequence rendered ON A POD is sent by the pod itself (a signed link per file, nothing through this PC, whether or not it was pulled); a sequence rendered on this PC is sent from here. Best effort: never fails a render. */
+async function storageEvent(job: Job, seqs: SeqView[], ev: 'generated'): Promise<void> {
   try {
-    if (!storage.forEvent(ev).length) return
-    const root = publish.localOutputRoot(); if (!root) return
-    const strip = (rel: string) => rel.replace(/^output\//, ''), files: { abs: string; key: string }[] = []
-    let onPod = 0
+    const volId = (() => { try { return deps.volumeId(job.view.pod_id) } catch { return null } })()   // the volume this render belongs to: a storage can be limited to some volumes (docs/ADR-068)
+    // docs/ADR-072: what a pod rendered also comes down when the rule names this PC (apart from any storage)
+    void localcopy.onEvent(ev, volId, seqs.filter((sv) => sv.where === 'pod' && ['rendered', 'pulled', 'done'].includes(sv.state)).map((sv) => `comfy-shared/${dirname(sv.out)}`))
+    if (!storage.forEvent(ev, volId).length) { if (ev === 'generated') history.record({ kind: 'change', area: 'configuration', action: 'storage upload on generated', what: job.view.job_id, detail: 'no storage listens to Generated' }); return }
+    const root = publish.localOutputRoot(), v = job.view
+    const strip = (rel: string) => rel.replace(/^output\//, ''), local: { abs: string; key: string }[] = [], remote: storage.PodFile[] = []
+    let pod: publish.PodRef | null = null, podReason = ''
     for (const sv of seqs) {
-      if (!['pulled', 'done', 'skipped'].includes(sv.state)) { if (sv.state === 'rendered') onPod++; continue }
-      const rel = strip(job.kind === 'review' ? dirname(sv.out) : sv.out), abs = join(root, rel)
-      const st = await fsStat(abs).catch(() => null); if (!st) continue
-      if (!st.isDirectory()) { files.push({ abs, key: rel }); continue }
-      for (const d of await readdir(abs, { withFileTypes: true }).catch(() => [])) if (d.isFile()) files.push({ abs: join(abs, d.name), key: `${rel}/${d.name}` })
+      if (!['rendered', 'pulled', 'done', 'skipped'].includes(sv.state)) continue
+      if (sv.where === 'pod') {
+        if (!pod) { const t = await deps.target(v.pod_id).catch(() => ({ reason: 'the pod did not answer' })); if ('host' in t) pod = { id: v.pod_id, name: v.pod_name, host: t.host, port: t.port }; else { podReason = t.reason; continue } }
+        if (job.kind === 'review') { const dir = dirname(sv.out); for (const f of await publish.podFiles(pod, `comfy-shared/${dir}`, job.abort.signal)) remote.push({ source_key: `comfy-shared/${dir}/${f.name}`, key: `${strip(dir)}/${f.name}`, bytes: f.bytes }) }
+        else remote.push({ source_key: `comfy-shared/${sv.out}`, key: strip(sv.out), bytes: sv.bytes })
+        continue
+      }
+      if (!root) continue
+      const rel = strip(job.kind === 'review' ? dirname(sv.out) : sv.out), abs = join(root, rel), st = await fsStat(abs).catch(() => null); if (!st) continue
+      if (!st.isDirectory()) { local.push({ abs, key: rel }); continue }
+      for (const d of await readdir(abs, { withFileTypes: true }).catch(() => [])) if (d.isFile()) local.push({ abs: join(abs, d.name), key: `${rel}/${d.name}` })
     }
-    if (onPod) history.record({ kind: 'change', area: 'configuration', action: `storage upload on ${ev}`, what: `${onPod} sequence(s) stayed on the pod`, detail: 'not uploaded: only files on this PC are sent (ADR-064)' })
-    const warns = await storage.uploadOn(ev, files, job.abort.signal)
+    history.record({ kind: 'change', area: 'configuration', action: `storage upload on ${ev}`, what: job.view.job_id, detail: `${remote.length} file(s) on the pod and ${local.length} on this PC to send${podReason ? `; pod: ${podReason}` : ''}` })
+    const warns: string[] = []
+    if (podReason) warns.push(`the pod was not reachable (${podReason})`)
+    if (remote.length && pod) warns.push(...await storage.uploadFromPod(ev, pod, remote, job.abort.signal, volId))
+    if (local.length) warns.push(...await storage.uploadOn(ev, local, job.abort.signal, volId))
     if (warns.length) history.record({ kind: 'change', area: 'configuration', action: `storage upload on ${ev}`, what: 'warnings', detail: warns.slice(0, 5).join('; ') })
-  } catch { /* a storage copy never fails a render */ }
+  } catch (e) { try { history.record({ kind: 'change', area: 'configuration', action: `storage upload on ${ev} failed`, what: job.view.job_id, detail: publish.redact((e as Error).message) }) } catch { /* the record is a courtesy */ } }   // a storage copy never fails a render, and never fails silently
 }
 
 function end(job: Job): void {
