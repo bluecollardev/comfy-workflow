@@ -1,9 +1,17 @@
 <template>
-  <BModal :model-value="modelValue" :title="$t('sync.title', { name: pod.name })" size="lg" lazy scrollable data-testid="sync-modal" :ok-title="okTitle" :ok-variant="okVariant" :ok-disabled="okDisabled" :cancel-title="started ? $t('sync.close') : $t('picker.cancel')" cancel-variant="outline-light" @ok="onOk" @update:model-value="emit('update:modelValue', $event)" @show="open">
+  <BModal :model-value="modelValue" :title="volumeId ? $t('sync.title', { name: volumeName }) : $t('sync.titleBucket', { name: volumeName })" size="lg" lazy scrollable data-testid="sync-modal" :ok-title="okTitle" :ok-variant="okVariant" :ok-disabled="okDisabled" :cancel-title="started ? $t('sync.close') : $t('picker.cancel')" cancel-variant="outline-light" @ok="onOk" @update:model-value="emit('update:modelValue', $event)" @show="open">
     <template v-if="!syncAPI.available">
       <BAlert :model-value="true" variant="info" class="mb-0" data-testid="sync-unavailable"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('sync.unavailable') }}</BAlert>
     </template>
-    <template v-else-if="!started">
+    <template v-else>
+    <SyncRoute v-model:from="from" v-model:to="to" :locked="running || jobsCount > 0" :volume-id="volumeId" :volumes="lists.volumes" :pods="runningPods" :carry-pods="carryPods" @loaded="onLoaded" />
+    <div v-if="bucketTargets.length" class="border rounded p-2 mb-3" data-testid="sync-run-on-block">
+      <label class="form-label small fw-semibold mb-1" for="sync-run-on">{{ $t('syncTargets.runOn') }}</label>
+      <select id="sync-run-on" v-model="runOn" class="form-select form-select-sm" style="max-width: 22rem" :disabled="running || jobsCount > 0" data-testid="sync-run-on">
+        <option v-for="p in carryPods" :key="p.id" :value="p.id" data-testid="sync-run-on-option">{{ p.name }}</option>
+      </select>
+    </div>
+    <template v-if="showPod && !started">
       <BAlert :model-value="true" variant="warning" data-testid="sync-confirm"><i class="fa-solid fa-triangle-exclamation me-2"></i>{{ $t('sync.confirm') }}</BAlert>
       <div class="mb-3">
         <BFormRadioGroup v-model="direction" :options="[{ value: 'push', text: $t('sync.push') }, { value: 'pull', text: $t('sync.pull') }]" button-variant="outline-light" size="sm" buttons data-testid="sync-direction" />
@@ -89,15 +97,18 @@
       <BAlert v-else-if="lowSpace" :model-value="true" variant="warning" class="small py-2" data-testid="sync-low-space"><i class="fa-solid fa-hard-drive me-2"></i>{{ $t('sync.lowSpace', { left: formatBytes(capSrc.free_bytes - sendBytes) }) }}</BAlert>
       <div v-if="planError" class="text-danger small mb-2" data-testid="sync-plan-error">{{ planError }}</div>
       <BAlert :model-value="true" :variant="transport.kind === 'none' ? 'danger' : 'info'" class="small py-2" data-testid="sync-transport"><i :class="transport.kind === 'none' ? 'fa-solid fa-ban' : 'fa-solid fa-route'" class="me-2"></i>{{ transport.kind === 'none' ? transport.reason : $t('sync.transport', { how: transport.reason }) }}</BAlert>
-      <table v-if="!planError" class="table table-sm small mb-3" data-testid="sync-plan">
-        <thead class="text-body-secondary"><tr><th>{{ $t('sync.folder') }}</th><th>{{ direction === 'push' ? $t('sync.from') : $t('sync.to') }}</th><th>{{ direction === 'push' ? $t('sync.to') : $t('sync.from') }}</th></tr></thead>
-        <tbody>
-          <tr v-for="s in plan" :key="s.key" data-testid="sync-step"><td>{{ s.key }}</td><td class="font-monospace text-break">{{ s.local }}</td><td class="font-monospace">{{ s.remote }}</td></tr>
-          <tr v-if="!plan.length"><td colspan="3" class="text-body-secondary">{{ $t('sync.nothing') }}</td></tr>
-        </tbody>
-      </table>
+      <CollapsibleSection v-if="!planError" id="sync-folders" :title="$t('sync.foldersTitle')" testid="sync-folders" :default-open="false">
+        <template #badge><span class="badge text-bg-secondary fw-normal" data-testid="sync-folders-count">{{ $t(plan.length === 1 ? 'sync.foldersCountOne' : 'sync.foldersCount', { n: plan.length }) }}</span></template>
+        <table class="table table-sm small mb-0" data-testid="sync-plan">
+          <thead class="text-body-secondary"><tr><th>{{ $t('sync.folder') }}</th><th>{{ $t('sync.from') }}</th><th>{{ $t('sync.to') }}</th></tr></thead>
+          <tbody>
+            <tr v-for="s in plan" :key="s.key" data-testid="sync-step"><td>{{ s.key }}</td><td class="font-monospace text-break">{{ direction === 'push' ? s.local : s.remote }}</td><td class="font-monospace text-break">{{ direction === 'push' ? s.remote : s.local }}</td></tr>
+            <tr v-if="!plan.length"><td colspan="3" class="text-body-secondary">{{ $t('sync.nothing') }}</td></tr>
+          </tbody>
+        </table>
+      </CollapsibleSection>
     </template>
-    <template v-else>
+    <template v-else-if="showPod && started">
       <BAlert v-if="running" :model-value="true" variant="info" class="small py-2"><i class="fa-solid fa-circle-info me-2"></i>{{ $t('sync.background') }}</BAlert>
       <div class="d-flex align-items-center gap-2 mb-2">
         <BSpinner v-if="running" small />
@@ -138,23 +149,20 @@
         <pre ref="out" class="small bg-body-tertiary rounded p-2 mt-2 mb-0" style="max-height: 40vh; overflow: auto; white-space: pre-wrap" data-testid="sync-output"><div v-for="l in lines" :key="l.n">{{ l.text }}</div></pre>
       </details>
     </template>
-    <div class="mt-3"><BButton size="sm" variant="outline-light" data-testid="sync-view-logs" @click="logsOpen = true"><i class="fa-solid fa-scroll me-1"></i>{{ $t('syncs.viewLogs') }}</BButton></div>
-    <div class="border-top mt-3 pt-3" data-testid="sync-autosync-section">
-      <BFormCheckbox v-model="auto.enabled" switch data-testid="sync-autosync"><span class="fw-semibold">{{ $t('autosync.label') }}</span></BFormCheckbox>
-      <div class="form-text mb-2">{{ $t('autosync.help') }}</div>
-      <div class="ms-4">
-        <BFormCheckbox v-model="auto.pull" :disabled="!auto.enabled" data-testid="sync-autosync-pull">{{ $t('autosync.pull') }}</BFormCheckbox>
-        <BFormCheckbox v-model="auto.push" :disabled="!auto.enabled" data-testid="sync-autosync-push">{{ $t('autosync.push') }}</BFormCheckbox>
-      </div>
-      <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
-        <label class="mb-0 small" for="sync-autosync-by">{{ $t('autosync.approvedBy') }}</label>
-        <BFormInput id="sync-autosync-by" v-model.trim="auto.approved_by" size="sm" style="max-width: 16rem" :placeholder="$t('autosync.approvedByPlaceholder')" data-testid="sync-autosync-approved-by" />
-        <BButton size="sm" variant="success" :disabled="autoSaving" data-testid="sync-autosync-save" @click="saveAuto">{{ $t('autosync.save') }}</BButton>
-        <span v-if="autoSaved" class="small text-success" data-testid="sync-autosync-saved"><i class="fa-solid fa-check me-1"></i>{{ $t('autosync.saved') }}</span>
-      </div>
-      <div v-if="autoError" class="text-danger small mt-1" data-testid="sync-autosync-error">{{ autoError }}</div>
-      <div v-if="autoLast" class="small text-body-secondary mt-1" data-testid="sync-autosync-status">{{ $t('autosync.last', { summary: autoLast }) }}</div>
-    </div>
+    <BAlert v-if="volumesError" :model-value="true" variant="warning" class="small py-2" data-testid="sync-volumes-error"><i class="fa-solid fa-triangle-exclamation me-2"></i>{{ volumesError }}</BAlert>
+    <BAlert v-for="(m, i) in targetErrors" :key="`te-${i}`" :model-value="true" variant="danger" class="small py-2" data-testid="sync-target-start-error"><i class="fa-solid fa-circle-xmark me-2"></i>{{ m }}</BAlert>
+    <template v-if="!jobsCount && opened">
+      <template v-if="from.type === 'pod' && pod.id && !podRunShown">
+        <SyncPlanCard v-for="id in to.storages" :key="`vs:${id}:${cardGen}`" kind="volumesync" :card-key="`vs:${id}`" :title="$t('syncTargets.storageTarget', { name: storageName(id) })" :request="{ volume_id: volumeId, storage_id: id, pod_id: pod.id }" @state="onCard(`vs:${id}`, $event)" />
+      </template>
+      <template v-if="runOn">
+        <SyncPlanCard v-for="id in bucketTargets" :key="`${bsKey(id)}:${cardGen}`" kind="bucketsync" :card-key="bsKey(id)" :title="$t('syncTargets.bucketTarget', { name: storageName(id) })" :request="{ source: bucketSource, target: { storage_id: id }, run_on: { pod_id: runOn } }" @state="onCard(bsKey(id), $event)" />
+      </template>
+      <SyncPlanCard v-if="downloadOn" :key="`ss:${from.type}:${from.id}:${cardGen}`" kind="sourcesync" :card-key="`ss:${from.type}:${from.id}`" :title="$t('syncTargets.download', { name: sourceName })" :request="sourceRequest" :editable-dest="from.type === 'storage'" @state="onCard(`ss:${from.type}:${from.id}`, $event)" />
+    </template>
+    <SyncJobs ref="jobsRef" @running="jobsRunning = $event" @count="jobsCount = $event" />
+    </template>
+    <div v-if="pod.id" class="mt-3"><BButton size="sm" variant="outline-light" data-testid="sync-view-logs" @click="logsOpen = true"><i class="fa-solid fa-scroll me-1"></i>{{ $t('syncs.viewLogs') }}</BButton></div>
     <SyncLogsModal v-if="logsOpen" v-model="logsOpen" :pod-id="pod.id" :pod-name="pod.name" />
   </BModal>
 </template>
@@ -169,20 +177,66 @@
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { syncAPI } from '../api/sync'
 import { usePodsStore } from '../stores/pods'
-import { useAutosyncStore } from '../stores/autosync'
 import { barValue, detailParts, fold, formatBytes, fresh } from '../sync-progress'
 import { t } from '../i18n'
 import SyncLogsModal from './SyncLogsModal.vue'
+import SyncRoute from './SyncRoute.vue'
+import SyncPlanCard from './SyncPlanCard.vue'
+import SyncJobs from './SyncJobs.vue'
+import CollapsibleSection from './CollapsibleSection.vue'
+import { volumesAPI } from '../api/volumes'
+import { volumesyncAPI } from '../api/volumesync'
+import { sourcesyncAPI } from '../api/sourcesync'
+import { bucketsyncAPI } from '../api/bucketsync'
+import { useConfirmStore } from '../stores/confirm'
 import { podsAPI } from '../api/pods'
 import { mountsAPI } from '../api/mounts'
 import { errorText } from '../stores/toast'
 import { excludeProblem, listProblem, folderPattern, isCanalV2 } from '../utils/syncexclude'
 
-const props = defineProps({ modelValue: Boolean, pod: { type: Object, required: true } })
+const props = defineProps({ modelValue: Boolean, volumeId: { type: String, default: '' }, volumeName: { type: String, default: '' }, source: { type: Object, default: null } })
 const emit = defineEmits(['update:modelValue'])
 const pods = usePodsStore()
 
 const direction = ref('push')
+// From and To (docs/ADR-067): this pod to this PC is the window as it was; a storage ticked next to it adds a Storage target section; a volume or a storage as the source downloads to this PC.
+const confirm = useConfirmStore()
+const from = ref({ type: 'volume', id: props.volumeId })
+const to = ref({ pc: true, storages: [], volumes: [] })
+const lists = ref({ volumes: [], storages: [] }), volumesError = ref('')
+const cards = ref({})              // card key -> { phase, plan_id, plan, ready }
+const startedKeys = ref([])        // cards whose job started: their section gives way to the job
+const targetErrors = ref([])
+const jobsRef = ref(null), jobsRunning = ref(false), jobsCount = ref(0), cardGen = ref(0)
+const opened = ref(false)             // From is settled (the pod or the volume): sections plan only after that
+const podId = ref('')               // the running pod on this volume that a pod sync uses (the From's dropdown)
+const pod = computed(() => pods.pods.find((p) => p.id === podId.value) || { id: '', name: '' })
+/** The running pods on this volume that have SSH: the volume's own list (RunPod), else the pods that say they are on it. */
+const runningPods = computed(() => {
+  if (!props.volumeId) return []
+  const onVol = new Set((lists.value.volumes.find((v) => v.id === props.volumeId)?.pods || []).map((p) => p.id))
+  return pods.pods.filter((p) => p.status === 'running' && p.ssh_command && (onVol.has(p.id) || p.volume_id === props.volumeId))
+})
+/** Running pods with SSH, on any volume: one of them carries a bucket to bucket copy (Run On). */
+const carryPods = computed(() => pods.pods.filter((p) => p.status === 'running' && p.ssh_command))
+const runOn = ref('')
+watch(carryPods, (l) => { if (!l.some((p) => p.id === runOn.value)) runOn.value = l[0]?.id || '' }, { immediate: true })
+const bucketTargets = computed(() => (from.value.type !== 'pod' ? to.value.storages : []))   // bucket to bucket: a volume, a storage or the BH bucket to storages
+const showPod = computed(() => from.value.type === 'pod' && to.value.pc && !!pod.value.id)
+const podRunShown = computed(() => showPod.value && started.value)
+const downloadOn = computed(() => from.value.type !== 'pod' && to.value.pc)
+const storageName = (id) => (id === 'panama-s3' ? t('syncTargets.bhBucket') : lists.value.storages.find((s) => s.id === id)?.name || id)
+const sourceName = computed(() => (from.value.type === 'volume' ? (lists.value.volumes.find((v) => v.id === from.value.id)?.name || from.value.id) : storageName(from.value.id)))
+const bucketSource = computed(() => (from.value.type === 'volume' ? { type: 'volume', volume_id: from.value.id } : { type: 'storage', storage_id: from.value.id }))
+const sourceRequest = computed(() => ({ source: from.value.type === 'volume' ? { type: 'volume', volume_id: from.value.id } : { type: 'storage', storage_id: from.value.id } }))
+const onLoaded = (l) => { lists.value = { ...lists.value, storages: l.storages } }
+watch(from, (f) => { if (f.type === 'pod') podId.value = f.id }, { deep: true })
+function onCard(key, st) { if (st) cards.value = { ...cards.value, [key]: st }; else { const { [key]: _gone, ...rest } = cards.value; cards.value = rest } }
+const bsKey = (id) => `bs:${from.value.type}:${from.value.id}:${id}`
+const activeKeys = computed(() => new Set([...(from.value.type === 'pod' && pod.value.id ? to.value.storages.map((id) => `vs:${id}`) : []), ...(runOn.value ? bucketTargets.value.map(bsKey) : []), ...(downloadOn.value ? [`ss:${from.value.type}:${from.value.id}`] : [])]))
+const openCards = computed(() => Object.entries(cards.value).filter(([k]) => activeKeys.value.has(k) && !startedKeys.value.includes(k)))
+const readyCards = computed(() => openCards.value.filter(([, c]) => c.ready))
+const anyListing = computed(() => openCards.value.some(([, c]) => c.phase === 'listing'))
 const logsOpen = ref(false)   // the Sync logs window (docs/ADR-046)
 const plates = ref(false)
 const approvedBy = ref('')
@@ -240,16 +294,16 @@ let measureSeq = 0
 async function measure(step, name) {
   const k = `${step}/${name}`, id = `m${++measureSeq}-${Date.now()}`
   meas.value = { ...meas.value, [k]: { busy: true, id } }
-  try { const r = await syncAPI.measure({ pod_id: props.pod.id, step, name, id }); if (meas.value[k]?.id === id) meas.value = { ...meas.value, [k]: r?.link ? { link: true, target: r.target || '' } : { bytes: r?.bytes ?? 0 } } }
+  try { const r = await syncAPI.measure({ pod_id: pod.value.id, step, name, id }); if (meas.value[k]?.id === id) meas.value = { ...meas.value, [k]: r?.link ? { link: true, target: r.target || '' } : { bytes: r?.bytes ?? 0 } } }
   catch { if (meas.value[k]?.id === id) { const { [k]: _gone, ...rest } = meas.value; meas.value = { ...rest, ...(meas.value[k]?.cancelled ? {} : { [k]: { error: true } }) } } }
 }
 function cancelMeasure(step, name) { const k = `${step}/${name}`, m = meas.value[k]; if (!m) return; syncAPI.measureCancel(m.id); const { [k]: _gone, ...rest } = meas.value; meas.value = rest }
 async function loadFolders() {
-  try { const r = await syncAPI.folders({ pod_id: props.pod.id }); folderSteps.value = (r.steps || []).filter((s) => (s.folders || []).length) } catch { folderSteps.value = [] }
+  try { const r = await syncAPI.folders({ pod_id: pod.value.id }); folderSteps.value = (r.steps || []).filter((s) => (s.folders || []).length) } catch { folderSteps.value = [] }
 }
 async function loadSavedPatterns() {
   try {
-    const own = await podsAPI.config(props.pod.id)
+    const own = await podsAPI.config(pod.value.id)
     const d = await mountsAPI.get(), own2 = own && Object.keys(own).length ? own : null
     savedPatterns.value = Array.isArray(own2?.sync_exclude) ? [...own2.sync_exclude] : own2 ? [] : Array.isArray(d?.config?.sync_exclude) ? [...d.config.sync_exclude] : []
     const sd = own2 && own2.sync_exclude_delete !== undefined ? own2.sync_exclude_delete : d?.config?.sync_exclude_delete
@@ -260,9 +314,9 @@ async function loadSavedPatterns() {
 async function rememberPatterns() {
   rememberError.value = ''
   try {
-    const own = await podsAPI.config(props.pod.id)
+    const own = await podsAPI.config(pod.value.id)
     const base = own && Object.keys(own).length ? own : (await mountsAPI.get())?.config || {}   // (no own configuration: null, or empty)
-    await podsAPI.setConfig(props.pod.id, { ...base, sync_exclude: [...new Set([...savedPatterns.value, ...runPatterns.value])], ...(delDelete.value || savedDelete.value ? { sync_exclude_delete: delDelete.value } : {}) })
+    await podsAPI.setConfig(pod.value.id, { ...base, sync_exclude: [...new Set([...savedPatterns.value, ...runPatterns.value])], ...(delDelete.value || savedDelete.value ? { sync_exclude_delete: delDelete.value } : {}) })
     savedPatterns.value = [...new Set([...savedPatterns.value, ...runPatterns.value])]; runPatterns.value = []; savedDelete.value = delDelete.value
   } catch (e) { rememberError.value = t('sync.rememberFailed', { error: errorText(e) }) }
 }
@@ -294,7 +348,7 @@ let n = 0
 function reset() { symlinks.value = []; deleteEvents.value = []; files.value = []; fileCount.value = 0; problems.value = []; lines.value = []; last.value = null; fullError.value = null; skippedSteps.value = []; local.value = fresh(); n = 0 }
 let scrollQueued = false
 function ingest(ev) {
-  if (ev.kind === 'result') { last.value = ev; running.value = false; pods.syncEnded(props.pod.id); return }
+  if (ev.kind === 'result') { last.value = ev; running.value = false; pods.syncEnded(pod.value.id); return }
   if (ev.kind === 'skipped' || ((ev.kind === 'warning' || ev.kind === 'problem') && (ev.code === 'skipped' || ev.skipped))) {   // a step whose local source is missing: shown grey with its reason, not counted as an error
     skippedSteps.value.push({ key: ev.key || '', reason: ev.reason || ev.text || '' })
     if (ev.text != null) { lines.value.push({ n: ++n, text: ev.text }); if (lines.value.length > KEEP_LINES) lines.value.shift() }
@@ -314,7 +368,7 @@ function ingest(ev) {
   fold(local.value, ev)
   if (ev.kind === 'error' && (ev.code === 'volume_full' || ev.code === 'disk_full')) fullError.value = ev
   if (ev.kind === 'step' || ev.kind === 'listing' || ev.kind === 'error') last.value = ev
-  if (ev.kind === 'error') { running.value = false; pods.syncEnded(props.pod.id) }
+  if (ev.kind === 'error') { running.value = false; pods.syncEnded(pod.value.id) }
   if (ev.kind === 'file') { fileCount.value += 1; files.value.push({ n: ++n, key: ev.key, path: ev.path }); if (files.value.length > KEEP_FILES) files.value.shift() }
   if (ev.kind === 'problem' || ev.kind === 'error') problems.value.push({ key: ev.key, text: ev.text })
   const text = ev.kind === 'listing' ? `== listing ${ev.key}` : ev.kind === 'step' ? `== ${ev.key}: ${ev.local} -> ${ev.remote}` : ev.kind === 'step-done' ? `== ${ev.key}: ${ev.code === 0 ? 'done' : 'exit ' + ev.code}` : ev.text
@@ -322,7 +376,7 @@ function ingest(ev) {
   if (!scrollQueued) { scrollQueued = true; nextTick(() => { scrollQueued = false; for (const el of [out.value, fileList.value]) if (el) el.scrollTop = el.scrollHeight }) }
 }
 
-const request = () => ({ pod_id: props.pod.id, direction: direction.value, plates: plates.value, approved_by: direction.value === 'push' && delDelete.value && delApproved.value ? delApproved.value : approvedBy.value, skip_renders: skipRenders.value, skip_tests: skipTests.value, existing: existing.value, ...(direction.value === 'push' && delDelete.value ? { delete_excluded: true } : {}), ...(runPatterns.value.length ? { exclude: [...runPatterns.value] } : {}), ...(shared.value ? { shared: [...shared.value] } : {}) })
+const request = () => ({ pod_id: pod.value.id, direction: direction.value, plates: plates.value, approved_by: direction.value === 'push' && delDelete.value && delApproved.value ? delApproved.value : approvedBy.value, skip_renders: skipRenders.value, skip_tests: skipTests.value, existing: existing.value, ...(direction.value === 'push' && delDelete.value ? { delete_excluded: true } : {}), ...(runPatterns.value.length ? { exclude: [...runPatterns.value] } : {}), ...(shared.value ? { shared: [...shared.value] } : {}) })
 async function loadPlan() {
   planError.value = null
   try { const r = await syncAPI.plan(request()); plan.value = r.steps; transport.value = r.transport; if (shared.value === null && r.shared) shared.value = [...r.shared] } catch (e) { plan.value = []; planError.value = e.message }
@@ -335,34 +389,13 @@ watch(delDelete, (on) => { delConfirm.value = false; if (plan.value.length && tr
 watch(runPatterns, () => { clearTimeout(excludeTimer); excludeTimer = setTimeout(() => { if (plan.value.length && transport.value.kind !== 'none') loadCounts() }, 300) })   // each tick or pattern re-counts, debounced; a stale count is dropped (countRun)   // the figure is for the switches as set
 watch(shared, (v, old) => { if (old) { loadPlan() } }, { deep: true })   // another set of folders is another plan and another count
 
-// Auto sync (ADR-046): this pod's switch, loaded when the window opens and saved with its own button, whatever the manual flow below is doing.
-const autosync = useAutosyncStore()
-const auto = ref({ enabled: false, pull: true, push: false, approved_by: '' })
-const autoSaving = ref(false), autoSaved = ref(false), autoError = ref('')
-const autoLast = computed(() => { const it = autosync.byPod(props.pod.id); return it ? (it.state === 'error' ? it.error : it.summary) || '' : '' })
-async function loadAuto() {
-  autoSaved.value = false; autoError.value = ''
-  await autosync.loadSettings(props.pod.id)
-  const s = autosync.settings[props.pod.id] || {}
-  let by = s.approved_by || ''
-  if (!by) { try { by = localStorage.getItem('runpod-manager.approved-by') || '' } catch { /* storage blocked */ } }
-  auto.value = { enabled: !!s.enabled, pull: s.pull !== false, push: !!s.push, approved_by: by }
-}
-async function saveAuto() {
-  autoSaved.value = false; autoError.value = ''
-  if (auto.value.enabled && !auto.value.approved_by.trim()) { autoError.value = t('autosync.needName'); return }
-  autoSaving.value = true
-  try {
-    await autosync.save(props.pod.id, { ...auto.value, approved_by: auto.value.approved_by.trim() })
-    if (auto.value.approved_by.trim()) { try { localStorage.setItem('runpod-manager.approved-by', auto.value.approved_by.trim()) } catch { /* storage blocked */ } }
-    autoSaved.value = true
-  } catch (e) { autoError.value = e?.response?.data?.detail || e?.message || String(e) }
-  finally { autoSaving.value = false }
-}
-
 let off = () => {}
-async function open() {
-  loadAuto()
+let boundId = ''
+/** Everything that belongs to the pod of a pod sync: its folders, plan, saved patterns, Auto sync switch and the run's events. Again when the From's pod changes. */
+async function bindPod() {
+  const id = pod.value.id
+  if (!id || boundId === id) return
+  boundId = id
   shared.value = null; runPatterns.value = []; meas.value = {}; remember.value = false; rememberError.value = ''; newPattern.value = ''; patternError.value = ''
   delDelete.value = false; delConfirm.value = false; deleteUnsupported.value = false; deleteEvents.value = []
   loadSavedPatterns(); loadFolders()
@@ -371,33 +404,79 @@ async function open() {
   // Listen first, then ask for the job's state: everything the main process sent before it answered is in that
   // answer (one ordered channel), so the live events count only once the answer has been folded in.
   let primed = false
-  off = syncAPI.onEvent((ev) => { if (ev.id === props.pod.id && primed) ingest(ev) })
-  const state = await syncAPI.state(props.pod.id)
+  off = syncAPI.onEvent((ev) => { if (ev.id === id && primed) ingest(ev) })
+  const state = await syncAPI.state(id)
   reset(); for (const ev of state.events) ingest(ev)
   running.value = state.running; started.value = state.running || state.events.length > 0
   primed = true
+}
+watch(() => pod.value.id, () => bindPod())
+async function open() {
+  to.value = { pc: true, storages: [], volumes: [] }; startedKeys.value = []; targetErrors.value = []; cards.value = {}; jobsCount.value = 0; jobsRunning.value = false; cardGen.value++
+  opened.value = false; boundId = ''; podId.value = ''; started.value = false; running.value = false; reset(); plan.value = []; planError.value = null
+  volumesError.value = ''
+  try { const v = await volumesAPI.list(); lists.value = { ...lists.value, volumes: Array.isArray(v) ? v : (v?.volumes || []) } } catch (e) { volumesError.value = errorText(e) }
+  // From starts as the pod sync when a pod is running on the volume (today's window), else the volume over S3
+  const first = runningPods.value[0]
+  from.value = props.source ? { type: props.source.type, id: props.source.id } : first ? { type: 'pod', id: first.id } : { type: 'volume', id: props.volumeId }   // a bucket's own Sync button names its source
+  podId.value = props.source ? '' : first?.id || ''
+  opened.value = true
+  await bindPod()
 }
 onUnmounted(() => { off(); clearTimeout(excludeTimer) })
 
 async function start() {
   // clear and mark running before the call: a short (simulated) run sends every event before start() returns
   reset(); running.value = true; started.value = true
-  pods.syncStarted(props.pod.id)
+  pods.syncStarted(pod.value.id)
   const asked = request()
   if (asked.delete_excluded && delApproved.value) { try { localStorage.setItem('runpod-manager.approved-by', delApproved.value) } catch { /* storage blocked */ } }
   if (remember.value && (runPatterns.value.length || delDelete.value !== savedDelete.value)) await rememberPatterns()   // saved first; this run still sends them as its own
   const r = await syncAPI.start(asked)
-  if (!r.ok) { running.value = false; started.value = false; pods.syncEnded(props.pod.id) }
+  if (!r.ok) { running.value = false; started.value = false; pods.syncEnded(pod.value.id) }
 }
-const cancel = () => syncAPI.cancel(props.pod.id)
-function again() { reset(); started.value = false }
+const cancel = () => syncAPI.cancel(pod.value.id)
+function again() { reset(); started.value = false; if (!jobsRunning.value) { jobsRef.value?.clear(); startedKeys.value = []; targetErrors.value = []; cardGen.value++ } }
 // The modal's own footer (Lucas, 2026-10-21: the built-in buttons): OK starts the copy, then stops it, then offers another run; Cancel closes, the run goes on in the app.
-const okTitle = computed(() => (!started.value ? (direction.value === 'push' ? t('sync.startPush') : t('sync.startPull')) : running.value ? t('sync.cancelRun') : t('sync.again')))
-const okVariant = computed(() => (!started.value ? 'warning' : running.value ? 'outline-danger' : 'outline-light'))
-const okDisabled = computed(() => !started.value && (!plan.value.length || transport.value.kind === 'none' || (plates.value && !approvedBy.value) || overCap.value || (deleting.value && (!delApproved.value || !delConfirm.value))))
-function onOk(e) { e.preventDefault(); if (!started.value) start(); else if (running.value) cancel(); else again() }
+// With a storage ticked or a volume or storage as the source, one Start starts the pod sync (if This PC is ticked) and every ready target; each is its own job below.
+const jobsPhase = computed(() => !podRunShown.value && jobsCount.value > 0)
+const okTitle = computed(() => (podRunShown.value ? (running.value ? t('sync.cancelRun') : t('sync.again')) : jobsPhase.value ? t('sync.again') : showPod.value && !to.value.storages.length ? (direction.value === 'push' ? t('sync.startPush') : t('sync.startPull')) : t('syncTargets.start')))
+const okVariant = computed(() => (podRunShown.value ? (running.value ? 'outline-danger' : 'outline-light') : jobsPhase.value ? 'outline-light' : 'warning'))
+const podOk = computed(() => plan.value.length && transport.value.kind !== 'none' && !(plates.value && !approvedBy.value) && !overCap.value && !(deleting.value && (!delApproved.value || !delConfirm.value)))
+const okDisabled = computed(() => {
+  if (podRunShown.value) return false
+  if (jobsPhase.value) return jobsRunning.value
+  if (showPod.value && !podOk.value) return true
+  if (anyListing.value) return true
+  return !(showPod.value || readyCards.value.length)
+})
+async function startTargets() {
+  const ready = readyCards.value, vs = ready.filter(([k]) => k.startsWith('vs:') || k.startsWith('bs:'))
+  if (vs.length) {   // the pod bills while it uploads: say the price and the estimates first (one confirmation for every pod-carried target)
+    const first = vs[0][1].plan.pod, price = first?.cost_per_hr
+    const est = vs.map(([, c]) => t('syncTargets.estimateItem', { name: c.plan.target?.name || c.plan.storage?.name || '', bytes: formatBytes(c.plan.to_copy.bytes), hours: c.plan.estimate?.hours ?? 0, usd: (c.plan.estimate?.usd ?? 0).toFixed(2) })).join('; ')
+    const yes = await confirm.ask(price == null ? t('syncTargets.confirmNoPrice', { n: vs.length, pod: first?.name || '', estimates: est }) : t('syncTargets.confirm', { n: vs.length, pod: first?.name || '', price: price.toFixed(2), estimates: est }), { title: t('syncTargets.confirmTitle'), okLabel: t('syncTargets.start'), danger: false })
+    if (!yes) return false
+  }
+  for (const [key, c] of ready) {
+    const isVs = key.startsWith('vs:'), isBs = key.startsWith('bs:'), api = isBs ? bucketsyncAPI : isVs ? volumesyncAPI : sourcesyncAPI
+    const name = isBs ? storageName(key.slice(key.lastIndexOf(':') + 1)) : isVs ? storageName(key.slice(3)) : sourceName.value
+    try {
+      const r = await api.start({ plan_id: c.plan_id })
+      startedKeys.value = [...startedKeys.value, key]
+      jobsRef.value?.add({ id: r.job_id, ns: isBs ? 'bucketsync' : isVs ? 'volumesync' : 'sourcesync', label: isVs || isBs ? t('syncTargets.jobTo', { name }) : t('syncTargets.jobToPc'), sub: isVs ? '' : t('syncTargets.jobFrom', { name: isBs ? sourceName.value : name }) })
+    } catch (e) { targetErrors.value = [...targetErrors.value, `${name}: ${errorText(e)}`] }
+  }
+  return true
+}
+async function onStart() {
+  targetErrors.value = []
+  if (!(await startTargets())) return
+  if (showPod.value) await start()
+}
+function onOk(e) { e.preventDefault(); if (podRunShown.value) { if (running.value) cancel(); else again() } else if (jobsPhase.value) again(); else onStart() }
 
-const state = computed(() => pods.sync[props.pod.id] || local.value)
+const state = computed(() => pods.sync[pod.value.id] || local.value)
 const progress = computed(() => { const p = state.value; const v = barValue(p); return { step: p.step, steps: p.steps, value: v ?? 100, indeterminate: v == null } })
 /** The line under the bar: the file index, ok and errors, bytes, rate, time left, and the file under way. */
 const detail = computed(() => {

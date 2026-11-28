@@ -155,7 +155,19 @@ function handleLocalFiles() {
     const text = (status, msg) => new Response(msg, { status, headers: { 'content-type': 'text/plain', 'access-control-allow-origin': '*' } })
     if (request.method !== 'GET' && request.method !== 'HEAD') return text(405, 'Proxies are read-only.')
     const core = await coreBridge.loadCore()
-    const u = new URL(request.url), root = u.hostname === 'd' ? core.renders.localDeliverRoot() : core.renders.localProxyRoot()   // d: a review in output/deliver/<shot>/v###/, p: a proxy in output/.proxies/
+    const u0 = new URL(request.url)
+    if (u0.hostname === 'o') {   // o: any plain file of ComfyUI-Shared/output/ (the Outputs window's Local source), guarded by core.localoutputs.resolveFile
+      const f = await core.localoutputs.resolveFile(u0.pathname)
+      if (!f.ok) return text(f.status, f.message)
+      const ext = f.path.split('.').pop().toLowerCase(), ct = { mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', wav: 'audio/wav', mp3: 'audio/mpeg', json: 'application/json', txt: 'text/plain' }[ext] || 'application/octet-stream'
+      const m = /^bytes=(\d*)-(\d*)$/.exec(request.headers.get('range') || '')
+      let start = 0, end = f.size - 1, status = 200
+      if (m && (m[1] || m[2])) { if (m[1]) { start = Number(m[1]); if (m[2]) end = Math.min(end, Number(m[2])) } else { start = Math.max(0, f.size - Number(m[2])) } status = 206; if (start > end || start >= f.size) return new Response('', { status: 416, headers: { 'content-range': `bytes */${f.size}`, 'access-control-allow-origin': '*' } }) }
+      const headers = { 'content-type': ct, 'accept-ranges': 'bytes', 'content-length': String(Math.max(0, end - start + 1)), 'access-control-allow-origin': '*', ...(status === 206 ? { 'content-range': `bytes ${start}-${end}/${f.size}` } : {}) }
+      if (request.method === 'HEAD' || f.size === 0) return new Response(null, { status, headers })
+      return new Response(require('node:stream').Readable.toWeb(fs.createReadStream(f.path, { start, end })), { status, headers })
+    }
+    const u = u0, root = u.hostname === 'd' ? core.renders.localDeliverRoot() : core.renders.localProxyRoot()   // d: a review in output/deliver/<shot>/v###/, p: a proxy in output/.proxies/
     const f = await core.renders.resolveProxyFile(root, u.pathname)
     if (!f.ok) return text(f.status, f.message)
     const m = /^bytes=(\d*)-(\d*)$/.exec(request.headers.get('range') || '')

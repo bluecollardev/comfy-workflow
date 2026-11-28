@@ -189,7 +189,7 @@ test.describe('volumes', () => {
     await dialog.getByTestId('volume-new-dc').selectOption('EU-RO-1')
     await dialog.getByTestId('volume-create').click()
     expect(api.calls.find((c) => c.method === 'POST' && c.path === '/volumes').body).toEqual({ name: 'plates', size_gb: 200, datacenter: 'EU-RO-1' })
-    const created = dialog.locator('[data-testid="volume"]', { hasText: 'plates' })
+    const created = dialog.locator('[data-testid="volume"]').filter({ has: page.getByTestId('volume-name').filter({ hasText: 'plates' }) })
     await expect(created.getByTestId('volume-facts')).toContainText('200 GB in EU-RO-1')
     await created.getByTestId('volume-resize').click()
     await created.getByTestId('volume-resize-input').fill('300')

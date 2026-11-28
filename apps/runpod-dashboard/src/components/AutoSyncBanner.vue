@@ -37,7 +37,6 @@
         <i class="fa-solid fa-code-compare me-1"></i>{{ $t('autosync.conflicts', { n: it.conflicts.length }) }}
       </div>
     </BAlert>
-    <SyncModal v-if="openPod" :model-value="true" :pod="openPod" @update:model-value="openId = ''" />
   </div>
 </template>
 
@@ -47,7 +46,7 @@
  * (a done row leaves by itself after DONE_MS, read against the clock). A click on a row opens that pod's Sync window.
  */
 import { computed, ref } from 'vue'
-import SyncModal from './SyncModal.vue'
+import { openSyncForPod } from '../utils/syncfor'
 import { useAutosyncStore } from '../stores/autosync'
 import { usePodsStore } from '../stores/pods'
 import { useToastStore } from '../stores/toast'
@@ -81,7 +80,5 @@ function text(it) {
 const conflictTitle = (it) => it.conflicts.slice(0, 5).map((c) => `${c.path}${c.reason ? ` (${c.reason})` : ''}`).join('\n') + (it.conflicts.length > 5 ? '\n…' : '')
 
 const run = async (fn) => { try { await fn() } catch (e) { toast.error(e?.message || String(e)) } }
-const openId = ref('')
-const openSync = (it) => { openId.value = it.pod_id }
-const openPod = computed(() => (openId.value ? pods.pods.find((p) => p.id === openId.value) || null : null))
+const openSync = (it) => openSyncForPod(it.pod_id)
 </script>

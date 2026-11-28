@@ -1,12 +1,13 @@
 import { readFileSync } from 'node:fs'
-import { test, expect, podCard, modal, cfgTab } from './fixtures'
+import { test, expect, answerConfirm, podCard, modal, cfgTab, openPublishing } from './fixtures'
 import { t } from './i18n'
 import { makeDpx } from '../src/utils/dpx-fixture.mjs'
 
 // Render sequences settings in the configuration (docs/ADR-048): the Default Configuration and a pod's own configuration carry an optional `render`; the Render option of the Previews window starts from plan().settings.
 const calls = (api, method, path) => api.calls.filter((c) => c.method === method && c.path === path)
 const DEFAULTS = { where: 'auto', kind: 'proxy', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto', pull: true }
-const openDefault = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'publishing'); return d }   // Outputs window, Prepare For Delivery and Render sequences are in Publishing; a pod's own configuration keeps the render choices under Options
+const openDefault = (page) => openPublishing(page)   // Prepare For Delivery and Render sequences are on the BH row; a pod's own configuration keeps the render choices under Options
+const openFolders = async (page) => { await page.goto('/'); await page.getByTestId('open-config').click(); const d = modal(page, t('config.title')); await cfgTab(d, 'folders'); return d }
 const openPod = async (page) => { await page.goto('/'); await podCard(page, 'ComfyUI-Dev').getByTestId('pod-config').click(); const d = modal(page, t('config.podTitle', { name: 'ComfyUI-Dev' })); await cfgTab(d, 'options'); return d }
 
 test.describe('Default Configuration', () => {
@@ -21,9 +22,9 @@ test.describe('Default Configuration', () => {
     await expect(s.getByTestId('config-render-review-width')).toHaveValue('source')
     await expect(s.getByTestId('config-render-codec-prores')).toBeChecked(); await expect(s.getByTestId('config-render-codec-h264')).not.toBeChecked()   // ProRes is the default
     await expect(s.getByTestId('config-render-fps')).toHaveValue('auto')
-    await expect(d.getByTestId('config-render-pull')).not.toBeChecked()   // Sync the renders to this PC: unticked by default; it is under Publishing > defaults for a publish now
+    await expect(d.getByTestId('config-render-pull')).not.toBeChecked()   // Sync the renders to this PC: unticked by default; it is under Publishing > General Publishing Settings now
     await expect(d.getByTestId('publish-default-s3')).toBeChecked(); await expect(s.getByTestId('config-render-skip-existing')).toBeChecked()   // the S3 / Slack boxes are one pair under the defaults for a publish (also the Render defaults)
-    await expect(s.getByTestId('config-render-pre-help')).toHaveText('These only pre-tick the boxes in the Generate window. Every publish still asks who says yes.'); await expect(s.getByTestId('config-render-skip-help')).toHaveText('Starting values of the Generate window')
+    await expect(s.getByTestId('config-render-pre-help')).toHaveCount(0); await expect(s.getByTestId('config-render-skip-help')).toHaveCount(0)   // those lines belong to a pod's own boxes
     await expect(s.getByTestId('config-render-help')).toHaveText(t('outputs.render.cfg.help'))
     await expect(s.getByTestId('config-render-help')).toContainText('A review video always asks who says yes.')
     await expect(s.getByTestId('config-render-fps').locator('option')).toHaveText(['Auto (from the file name)', '23.976 fps', '24 fps', '25 fps', '30 fps'])
@@ -31,8 +32,8 @@ test.describe('Default Configuration', () => {
   })
   test('an untouched Default Configuration saves with no render key', async ({ page, api }) => {
     const d = await openDefault(page)
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
-    expect(calls(api, 'PUT', '/mounts')[0].body).not.toHaveProperty('render')
+    await expect(page.getByTestId('volumes-save')).toBeDisabled()   // untouched: nothing to save
+    expect(calls(api, 'PUT', '/mounts')).toHaveLength(0)
   })
   test('a change saves as render, reloads, is in the export, and survives a second save', async ({ page, api }) => {
     let d = await openDefault(page)
@@ -43,36 +44,38 @@ test.describe('Default Configuration', () => {
     await d.getByTestId('config-render-codec-h264').check()
     await d.getByTestId('config-render-fps').selectOption('23.976')
     await d.getByTestId('config-render-pull').check()
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
     const want = { where: 'local', kind: 'review', proxy_width: 1280, review_width: 1920, codecs: ['prores422hq', 'h264'], fps: 23.976, pull: true }   // publish and skip_existing were not touched: not sent
     expect(calls(api, 'PUT', '/mounts')[0].body.render).toEqual(want)
     expect(api.state.mounts.config.render).toEqual(want)
-    await page.reload(); await page.getByTestId('open-config').click()
-    d = modal(page, t('config.title')); await cfgTab(d, 'publishing')
+    d = await openDefault(page)
     await expect(d.getByTestId('config-render-where')).toHaveValue('local'); await expect(d.getByTestId('config-render-kind-review')).toBeChecked()
     await expect(d.getByTestId('config-render-proxy-width')).toHaveValue('1280'); await expect(d.getByTestId('config-render-review-width')).toHaveValue('1920')
     await expect(d.getByTestId('config-render-codec-h264')).toBeChecked(); await expect(d.getByTestId('config-render-fps')).toHaveValue('23.976'); await expect(d.getByTestId('config-render-pull')).toBeChecked()
-    const [download] = await Promise.all([page.waitForEvent('download'), d.getByTestId('cfg-io-export').click()])
+    await page.goto('/'); await page.getByTestId('open-config').click()
+    const c = modal(page, t('config.title'))
+    const [download] = await Promise.all([page.waitForEvent('download'), c.getByTestId('cfg-io-export').click()])
     expect(JSON.parse(readFileSync(await download.path(), 'utf8')).config.render).toEqual(want)
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
-    expect(calls(api, 'PUT', '/mounts').at(-1).body.render).toEqual(want)   // loaded with it: saved with it
+    await c.getByTestId('config-save').click(); await expect(c).toBeHidden()
+    expect(calls(api, 'PUT', '/mounts').at(-1).body.render).toEqual(want)   // the Default Configuration passes it through
   })
+
   test('no codec ticked is refused inline before any call', async ({ page, api }) => {
     const d = await openDefault(page)
     await d.getByTestId('config-render-codec-prores').uncheck()
-    await d.getByTestId('config-save').click()
+    await page.getByTestId('volumes-save').click()
     await expect(d.getByTestId('config-render-error')).toHaveText(t('outputs.render.cfg.needCodec'))
     expect(calls(api, 'PUT', '/mounts')).toHaveLength(0)
     await d.getByTestId('config-render-codec-h264').check()
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
     expect(calls(api, 'PUT', '/mounts')[0].body.render.codecs).toEqual(['h264'])
   })
   test('the core\'s 400 for a bad value is shown', async ({ page, api }) => {
     const d = await openDefault(page)
     await d.getByTestId('config-render-fps').selectOption('25')
     await page.route('**/mounts', (r) => (r.request().method() === 'PUT' ? r.fulfill({ status: 400, json: { detail: 'render: pick at least one codec and a size from the list' } }) : r.fallback()))
-    await d.getByTestId('config-save').click()
-    await expect(d.getByTestId('config-error')).toContainText('render: pick at least one codec')
+    await page.getByTestId('volumes-save').click()
+    await expect(d.getByTestId('bh-publishing-error')).toContainText('render: pick at least one codec')
   })
 })
 
@@ -137,50 +140,51 @@ test.describe('Render: Sync, Publish and Skip existing as starting values; Outpu
     await expect(d.getByTestId('config-render-needsync')).toHaveCount(0)
     await expect(d.getByTestId('publish-default-s3')).toBeChecked()
     await d.getByTestId('publish-default-slack').check(); await d.getByTestId('publish-default-s3').uncheck()   // Slack without S3 cannot be a Render default
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
     expect(calls(api, 'PUT', '/mounts')[0].body.render).toMatchObject({ publish: { s3: false, slack: false } })
     expect(calls(api, 'PUT', '/publish/settings').at(-1).body.defaults.targets).toEqual(['slack'])   // the publish default keeps what was ticked
   })
   test('the colour field: the project default untouched sends nothing; a colour saves as render.colour (format) and the project default goes back to known', async ({ page, api }) => {
     let d = await openDefault(page)
     const s = d.getByTestId('config-render'); await s.scrollIntoViewIfNeeded()
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
-    expect(calls(api, 'PUT', '/mounts')[0].body).not.toHaveProperty('render')   // untouched: no render key at all
+    await expect(page.getByTestId('volumes-save')).toBeDisabled()   // untouched: nothing to save
+    expect(calls(api, 'PUT', '/mounts')).toHaveLength(0)
     d = await openDefault(page); const s2 = d.getByTestId('config-render'); await s2.scrollIntoViewIfNeeded()
     await s2.getByTestId('config-render-colour').selectOption('p3-d65-srgb')
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
-    expect(calls(api, 'PUT', '/mounts')[1].body.render.colour).toMatchObject({ mode: 'format', format: 'p3-d65-srgb' })
+    await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
+    expect(calls(api, 'PUT', '/mounts')[0].body.render.colour).toMatchObject({ mode: 'format', format: 'p3-d65-srgb' })
     d = await openDefault(page); const s3 = d.getByTestId('config-render'); await s3.scrollIntoViewIfNeeded()
     await expect(s3.getByTestId('config-render-colour')).toHaveValue('p3-d65-srgb')   // it reloads
     await s3.getByTestId('config-render-colour').selectOption('')   // back to the project default
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
-    expect(calls(api, 'PUT', '/mounts')[2].body.render.colour).toEqual({ mode: 'known' })
+    await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
+    expect(calls(api, 'PUT', '/mounts')[1].body.render.colour).toEqual({ mode: 'known' })
   })
   test('Save carries pull, publish and skip_existing as render keys; an untouched config sends no render key', async ({ page, api }) => {
     const d = await openDefault(page)
     const s = d.getByTestId('config-render'); await s.scrollIntoViewIfNeeded()
     await d.getByTestId('config-render-pull').check(); await d.getByTestId('publish-default-slack').uncheck(); await d.getByTestId('publish-default-slack').check(); await s.getByTestId('config-render-skip-existing').uncheck()   // a change of the pair writes both the publish default and the render default
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
     expect(calls(api, 'PUT', '/mounts')[0].body.render).toMatchObject({ pull: true, publish: { s3: true, slack: true }, skip_existing: false })
     expect(api.state.mounts.config.render.publish).toEqual({ s3: true, slack: true })
   })
   test('a configuration with older render keys saves without the new keys until they change', async ({ page, api }) => {
     api.state.mounts.config.render = { where: 'pod', kind: 'proxy', proxy_width: 'source', review_width: 'source', codecs: ['prores422hq'], fps: 'auto' }
     const d = await openDefault(page)
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    await d.getByTestId('config-render-fps').selectOption('25')
+    await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
     const r = calls(api, 'PUT', '/mounts')[0].body.render
     expect(r).not.toHaveProperty('pull'); expect(r).not.toHaveProperty('publish'); expect(r).not.toHaveProperty('skip_existing'); expect(r.where).toBe('pod')
   })
   test('Default Configuration: the Outputs window section (Hide empty folders by default, ticked, with its help); untouched sends no outputs key; unticking saves it and it loads again', async ({ page, api }) => {
-    let d = await openDefault(page)
+    let d = await openFolders(page)
     const o = d.getByTestId('config-outputs'); await o.scrollIntoViewIfNeeded()
     await expect(o.getByTestId('config-outputs-hide-empty')).toBeChecked(); await expect(o.getByTestId('config-outputs-help')).toHaveText('Starting value of the Outputs window')
     await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
     expect(calls(api, 'PUT', '/mounts')[0].body).not.toHaveProperty('outputs')
-    d = await openDefault(page)
+    d = await openFolders(page)
     await d.getByTestId('config-outputs-hide-empty').uncheck(); await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
     expect(calls(api, 'PUT', '/mounts').at(-1).body.outputs).toEqual({ hide_empty_folders: false })
-    d = await openDefault(page)
+    d = await openFolders(page)
     await expect(d.getByTestId('config-outputs-hide-empty')).not.toBeChecked()
     await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
     expect(calls(api, 'PUT', '/mounts').at(-1).body.outputs).toEqual({ hide_empty_folders: false })   // loaded with it: saved with it
@@ -190,15 +194,16 @@ test.describe('Render: Sync, Publish and Skip existing as starting values; Outpu
     const b = d.getByTestId('config-delivery'); await b.scrollIntoViewIfNeeded()
     await expect(b.getByTestId('config-delivery-out-dir')).toHaveValue('_delivery_v11'); await expect(b.getByTestId('config-delivery-gamma')).toHaveValue('2.6')
     await expect(b.getByTestId('config-delivery-colour-code')).toHaveValue('user-defined'); await expect(b.getByTestId('config-delivery-tc-source')).toHaveValue('edl'); await expect(b.getByTestId('config-delivery-skip-existing')).not.toBeChecked()
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
-    expect(calls(api, 'PUT', '/mounts')[0].body).not.toHaveProperty('delivery_prepare')
+    await expect(page.getByTestId('volumes-save')).toBeDisabled()   // untouched: nothing to save
+    expect(calls(api, 'PUT', '/mounts')).toHaveLength(0)
     d = await openDefault(page)
     await d.getByTestId('config-delivery-gamma').fill('2.4'); await d.getByTestId('config-delivery-out-dir').fill('handover_a'); await d.getByTestId('config-delivery-skip-existing').check()
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
     expect(calls(api, 'PUT', '/mounts').at(-1).body.delivery_prepare).toEqual({ out_dir: 'handover_a', colour_code: 'user-defined', gamma: 2.4, fps_source: 'clip-name', fps: 23.976, timecode_source: 'edl', frame_position: 'set', skip_existing: true })
     d = await openDefault(page)
     await expect(d.getByTestId('config-delivery-gamma')).toHaveValue('2.4'); await expect(d.getByTestId('config-delivery-out-dir')).toHaveValue('handover_a'); await expect(d.getByTestId('config-delivery-skip-existing')).toBeChecked()
-    await d.getByTestId('config-save').click(); await expect(d).toBeHidden()
+    await expect(page.getByTestId('volumes-save')).toBeDisabled()   // loaded, untouched: nothing to save
+    await d.getByTestId('config-delivery-out-dir').fill('handover_b'); await page.getByTestId('volumes-save').click(); await expect(page.getByTestId('volumes-saved')).toBeVisible()
     expect(calls(api, 'PUT', '/mounts').at(-1).body.delivery_prepare.gamma).toBe(2.4)   // loaded with it: saved with it
     const p = await openPod(page); await expect(p.getByTestId('config-delivery')).toHaveCount(0)
   })
@@ -207,4 +212,13 @@ test.describe('Render: Sync, Publish and Skip existing as starting values; Outpu
     await expect(d.getByTestId('config-render-skip-existing')).toBeVisible(); await expect(d.getByTestId('config-render-publish-s3')).toBeVisible()
     await expect(d.getByTestId('config-outputs')).toHaveCount(0)
   })
+})
+
+test('closing Network Volumes with unsaved publishing edits asks first', async ({ page, api }) => {
+  const d = await openDefault(page)
+  await d.getByTestId('config-render-fps').selectOption('25')
+  await page.locator('.modal.show').filter({ has: page.getByTestId('volume-bh') }).locator('.btn-close').click()
+  await answerConfirm(page, false)
+  await expect(d.getByTestId('config-render-fps')).toHaveValue('25')
+  expect(calls(api, 'PUT', '/mounts')).toHaveLength(0)
 })

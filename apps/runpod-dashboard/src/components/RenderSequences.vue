@@ -224,7 +224,7 @@ const pubReady = (id) => targetState(publishStore.settings, id)
 const publishOn = computed(() => pub.s3 || pub.slack)
 // Publishing no longer needs Sync: a render that stayed on the pod is published from the volume, streamed through this PC (core renders.publishSeq).
 watch(() => pub.s3, (v) => { if (!v) pub.slack = false })   // Slack announces an upload: it needs S3
-const openPublishSettings = () => { uiStore.configFocus = 'publishing'; uiStore.configOpen = true }
+const openPublishSettings = () => { uiStore.showPublishing() }
 const openPublishConnect = () => { uiStore.connectTab = 'slack'; uiStore.connectOpen = true }
 const v3 = (n) => versionName(n).slice(1)
 const approvedBy = ref((() => { try { return localStorage.getItem(APPROVED_KEY) || '' } catch { return '' } })())   // remembered like the other approvals

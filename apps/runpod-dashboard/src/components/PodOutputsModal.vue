@@ -11,8 +11,8 @@
         <BButton variant="outline-light" size="sm" class="text-nowrap" data-testid="pod-outputs-refresh" @click="refresh"><i class="fa-solid fa-rotate me-1"></i>{{ $t('outputs.refresh') }}</BButton>
       </div>
     </div>
-    <div v-if="!base && !s3ok" class="alert alert-warning py-2 small" data-testid="pod-outputs-offline">{{ $t('outputs.startPod', { volume: volumeName || pod.name }) }}</div>
-    <div v-if="volumeId && vol.loaded && !vol.ok && (!base || vol.failed)" class="alert alert-info py-2 small d-flex align-items-center gap-2 flex-wrap" data-testid="pod-outputs-s3-unavailable">
+    <div v-if="!srcStorage && !base && !s3ok" class="alert alert-warning py-2 small" data-testid="pod-outputs-offline">{{ $t('outputs.startPod', { volume: volumeName || pod.name }) }}</div>
+    <div v-if="!srcStorage && activeVolumeId && vol.loaded && !vol.ok && (!base || vol.failed)" class="alert alert-info py-2 small d-flex align-items-center gap-2 flex-wrap" data-testid="pod-outputs-s3-unavailable">
       <span data-testid="pod-outputs-volume-error">{{ vol.restart ? $t('outputs.dpx.reason.restart') : vol.keysMissing ? $t('outputs.s3Keys') : $t('outputs.volumeError', { reason: vol.reason }) }}</span>
       <BButton v-if="vol.keysMissing" variant="outline-primary" size="sm" data-testid="pod-outputs-open-config" @click="openConfig">{{ $t('outputs.s3KeysButton') }}</BButton>
     </div>
@@ -31,21 +31,52 @@
         </tr>
       </tbody></table>
     </details>
-    <div v-if="!(volumeId && (vol.ok || vol.loading))" class="d-flex align-items-center gap-3 small mb-1" data-testid="pod-outputs-stereo-toggle-row"><label class="mb-0"><input v-model="showStereo" type="checkbox" class="form-check-input me-1" data-testid="pod-outputs-show-stereo" />{{ $t('outputs.showStereo') }}</label></div>
-    <div v-if="volumeId && (vol.ok || vol.loading)" class="mb-3" data-testid="pod-outputs-volume">
-      <nav class="d-flex align-items-center gap-1 flex-wrap small mb-1" :class="{ 'opacity-50': allActive }" :title="allActive ? $t('outputs.all.crumbNote') : ''" :aria-label="$t('outputs.volumeBreadcrumb')" data-testid="pod-outputs-breadcrumb">
-        <i class="fa-solid fa-hard-drive text-body-secondary me-1"></i>
-        <BButton variant="link" size="sm" class="p-0" data-testid="pod-outputs-crumb" data-prefix="" @click="go('')">{{ $t('outputs.volumeRoot') }}</BButton>
-        <template v-for="c in crumbs" :key="c.prefix"><span class="text-body-secondary">›</span><BButton variant="link" size="sm" class="p-0" data-testid="pod-outputs-crumb" :data-prefix="c.prefix" @click="go(c.prefix)">{{ c.name }}</BButton></template>
+    <div class="d-flex align-items-center gap-2 flex-wrap small mb-2" data-testid="pod-outputs-sources">   <!-- where the runs come from, chosen before the folder: this pod, its volume, this PC, any other volume, any ready storage (Wasabi, S3) -->
+      <label class="text-body-secondary mb-0 row-label" for="outputs-source">{{ $t('outputs.source') }}</label>
+      <div class="position-relative" style="min-width: 24rem" data-testid="pod-outputs-source-combo" @focusout="onSourceFocusOut">
+        <div class="input-group input-group-sm">
+          <input id="outputs-source" :value="sourceOpen ? sourceText : currentLabel" type="text" role="combobox" aria-autocomplete="list" :aria-expanded="sourceOpen ? 'true' : 'false'" aria-controls="outputs-source-list" autocomplete="off" class="form-control" :placeholder="$t('outputs.sourceType')" :aria-label="$t('outputs.source')" :title="$t('outputs.sourceTitle')" data-testid="pod-outputs-source-box" @focus="sourceOpen = true; $event.target.select()" @input="sourceText = $event.target.value; sourceOpen = true" @keydown.enter.prevent="pickFirst" @keydown.esc.prevent="sourceOpen = false; sourceText = ''" @keydown.down.prevent="sourceOpen = true" />
+          <button v-if="sourceIsSet" type="button" class="btn btn-outline-light" :aria-label="$t('outputs.sourceClear')" :title="$t('outputs.sourceClear')" data-testid="pod-outputs-source-clear" @mousedown.prevent @click="clearSource"><i class="fa-solid fa-circle-xmark"></i></button>
+          <button type="button" class="btn btn-outline-light" :aria-label="$t('outputs.sourceOpen')" :title="$t('outputs.sourceOpen')" data-testid="pod-outputs-source-arrow" @mousedown.prevent @click="sourceOpen = !sourceOpen; sourceOpen && $event.currentTarget.parentElement.querySelector('input').focus()"><i class="fa-solid" :class="sourceOpen ? 'fa-chevron-up' : 'fa-chevron-down'"></i></button>
+        </div>
+        <ul v-show="sourceOpen" id="outputs-source-list" role="listbox" class="list-group position-absolute w-100 shadow mt-1 source-list" style="z-index: 1060" data-testid="pod-outputs-source-list">
+          <template v-for="(o, i) in shownSourceOptions" :key="o.label">
+            <li v-if="!i || shownSourceOptions[i - 1].group !== o.group" role="presentation" class="list-group-item py-1 small text-body-secondary text-uppercase fw-semibold bg-body-tertiary" style="font-size: 0.7rem" data-testid="pod-outputs-source-group">{{ $t(`outputs.sourceGroup_${o.group}`) }}</li>
+            <li role="option" tabindex="-1" class="list-group-item list-group-item-action py-1 small d-flex align-items-center gap-2" :class="{ 'text-body-secondary': o.dim, 'fw-semibold': o.kind === 'filter' && o.id === sourceFilter }" :aria-selected="o.kind === 'filter' && o.id === sourceFilter ? 'true' : 'false'" :aria-disabled="o.dim ? 'true' : 'false'" data-testid="pod-outputs-source-option" :data-kind="o.kind" :data-id="o.id" @mousedown.prevent="pickSource(o)">
+              <i class="fa-solid" style="width: 1rem" :class="o.kind === 'storage' ? 'fa-bucket' : o.kind === 'local' ? 'fa-laptop' : o.kind === 'volume' ? 'fa-hard-drive' : o.id === 'pod' ? 'fa-server' : o.id === 'volume' ? 'fa-hard-drive' : 'fa-layer-group'"></i>
+              <span class="flex-grow-1">{{ o.label }}</span><i v-if="o.kind === 'filter' && o.id === sourceFilter" class="fa-solid fa-check text-success"></i>
+            </li>
+          </template>
+          <li v-if="!shownSourceOptions.length" class="list-group-item small text-body-secondary" data-testid="pod-outputs-source-none">{{ $t('outputs.sourceNone') }}</li>
+        </ul>
+      </div>
+    </div>
+    <div v-if="!srcStorage && !(activeVolumeId && (vol.ok || vol.loading))" class="d-flex align-items-center gap-3 small mb-1" data-testid="pod-outputs-stereo-toggle-row"><label class="mb-0"><input v-model="showStereo" type="checkbox" class="form-check-input me-1" data-testid="pod-outputs-show-stereo" />{{ $t('outputs.showStereo') }}</label></div>
+    <div v-if="srcStorage" class="mb-3" data-testid="pod-outputs-storage">   <!-- a storage (Wasabi, S3, the BH bucket) or this PC as the Source: its folders as buttons, its videos and files below, read-only -->
+      <nav class="d-flex align-items-center gap-1 flex-wrap small mb-1" :aria-label="$t('outputs.volumeBreadcrumb')" data-testid="pod-outputs-storage-breadcrumb">
+        <i class="fa-solid text-body-secondary me-1" :class="srcStorage === LOCAL ? 'fa-laptop' : 'fa-bucket'"></i>
+        <BButton variant="link" size="sm" class="p-0" data-testid="pod-outputs-storage-crumb" data-prefix="" @click="goStorage('')">{{ storageBucket }}</BButton>
+        <template v-for="c in storageCrumbs" :key="c.prefix"><span class="text-body-secondary">›</span><BButton variant="link" size="sm" class="p-0" data-testid="pod-outputs-storage-crumb" :data-prefix="c.prefix" @click="goStorage(c.prefix)">{{ c.name }}</BButton></template>
       </nav>
+      <div v-if="stor.loading" class="text-body-secondary small" data-testid="pod-outputs-storage-loading"><BSpinner small class="me-2" />{{ $t('volumes.bhLoading') }}</div>
+      <div v-else-if="stor.error" class="alert alert-warning py-1 px-2 small d-flex align-items-center gap-2 mb-1" data-testid="pod-outputs-storage-error">{{ stor.error }}<BButton size="sm" variant="outline-primary" @click="goStorage(stor.prefix)">{{ $t('volumes.bhRetry') }}</BButton></div>
+      <div v-else class="d-flex gap-1 flex-wrap" data-testid="pod-outputs-storage-folders"><BButton v-for="f in stor.folders" :key="f" variant="outline-light" size="sm" data-testid="pod-outputs-storage-folder" :data-name="f" @click="goStorage(`${stor.prefix}${f}/`)"><i class="fa-regular fa-folder me-1"></i>{{ f }}</BButton><span v-if="!stor.folders.length && !stor.files.length" class="text-body-secondary small">{{ $t('volumes.bhEmpty') }}</span></div>
+      <div v-if="stor.truncated" class="text-warning small mt-1">{{ $t('volumes.bhTruncated') }}</div>
+    </div>
+    <div v-if="!srcStorage && activeVolumeId && (vol.ok || vol.loading)" class="mb-3" data-testid="pod-outputs-volume">
       <div class="d-flex align-items-center gap-2 flex-wrap small mb-2" data-testid="pod-outputs-scope">
-        <span class="text-body-secondary">{{ $t('outputs.scope') }}</span>
+        <span class="text-body-secondary row-label">{{ $t('outputs.scope') }}</span>
         <div class="btn-group btn-group-sm" role="group">
           <button type="button" class="btn btn-outline-light" :class="{ active: scope === 'all' }" data-testid="pod-outputs-scope-all" :title="$t('outputs.scopeAllTitle')" @click="setScope('all')">{{ $t('outputs.scopeAll') }}</button>
           <button type="button" class="btn btn-outline-light" :class="{ active: scope === 'folder' }" data-testid="pod-outputs-scope-folder" :title="$t('outputs.scopeFolderTitle')" @click="setScope('folder')">{{ vol.prefix ? $t('outputs.scopeFolder', { path: vol.prefix }) : $t('outputs.scopeFolderRoot') }}</button>
         </div>
         <span v-if="!(scope === 'all' && volAll.running)" class="text-body-secondary" data-testid="pod-outputs-scope-count">{{ $t('outputs.scopeCount', { n: all.length, files: fileCount(all), total: fileCount(mergeWithVolume(shotRuns, vol.runs)) }) }}<template v-if="scope === 'folder' && hiddenByFolder"> · {{ $t('outputs.scopeHidden', { n: hiddenByFolder }) }}</template></span>
       </div>
+      <nav class="d-flex align-items-center gap-1 flex-wrap small mb-1" :class="{ 'opacity-50': allActive }" :title="allActive ? $t('outputs.all.crumbNote') : ''" :aria-label="$t('outputs.volumeBreadcrumb')" data-testid="pod-outputs-breadcrumb">
+        <i class="fa-solid fa-hard-drive text-body-secondary me-1"></i>
+        <BButton variant="link" size="sm" class="p-0" data-testid="pod-outputs-crumb" data-prefix="" @click="go('')">{{ $t('outputs.volumeRoot') }}</BButton>
+        <template v-for="c in crumbs" :key="c.prefix"><span class="text-body-secondary">›</span><BButton variant="link" size="sm" class="p-0" data-testid="pod-outputs-crumb" :data-prefix="c.prefix" @click="go(c.prefix)">{{ c.name }}</BButton></template>
+      </nav>
       <div v-if="scope === 'all' && volAll.running" class="d-flex align-items-center gap-2 small mb-1" data-testid="pod-outputs-all-loading"><BSpinner small /><span data-testid="pod-outputs-all-loading-text">{{ volAll.progress ? $t('outputs.all.listingCount', { files: volAll.filesSeen.toLocaleString('en-US'), folders: volAll.foldersSeen.toLocaleString('en-US') }) : $t('outputs.all.listing') }}</span><BButton size="sm" variant="outline-warning" data-testid="pod-outputs-all-stop" @click="stopAll"><i class="fa-solid fa-stop me-1"></i>{{ $t('outputs.all.stop') }}</BButton></div>
       <div v-else-if="scope === 'all' && volAll.stopped" class="text-warning small mb-1" data-testid="pod-outputs-all-stopped">{{ $t('outputs.all.stopped') }}</div>
       <div v-else-if="scope === 'all' && volAll.error" class="alert alert-warning py-1 px-2 small d-flex align-items-center gap-2 mb-1" data-testid="pod-outputs-all-error"><span data-testid="pod-outputs-all-error-text">{{ volAll.error }}</span><BButton size="sm" variant="outline-primary" data-testid="pod-outputs-all-retry" @click="ensureAll(true)">{{ $t('outputs.all.retry') }}</BButton></div>
@@ -54,6 +85,7 @@
         <div class="d-flex align-items-center gap-3 small mb-1" data-testid="pod-outputs-stereo-toggle-row"><label class="mb-0"><input v-model="showStereo" type="checkbox" class="form-check-input me-1" data-testid="pod-outputs-show-stereo" />{{ $t('outputs.showStereo') }}</label></div>
         <div class="d-flex align-items-center gap-3 small mb-1" data-testid="pod-outputs-empty-toggle-row"><label class="mb-0"><input v-model="hideEmpty" type="checkbox" class="form-check-input me-1" data-testid="pod-outputs-hide-empty" />{{ $t('outputs.hideEmpty') }}</label><span v-if="hideEmpty && emptyHidden" class="text-body-secondary" data-testid="pod-outputs-empty-hidden">{{ $t('outputs.emptyHidden', { n: emptyHidden }) }}</span></div>
         <div class="d-flex gap-1 flex-wrap" data-testid="pod-outputs-folders"><BButton v-for="f in shownFolders" :key="f" variant="outline-light" size="sm" data-testid="pod-outputs-folder" :data-name="f" :data-empty="vol.info[f]?.empty ? 'true' : 'false'" :class="{ 'opacity-50': vol.info[f]?.empty }" @click="go(vol.prefix ? `${vol.prefix}/${f}` : f)"><i class="fa-regular fa-folder me-1"></i>{{ f }}<span v-if="vol.info[f]?.empty" class="ms-1 text-body-secondary" data-testid="pod-outputs-folder-empty">{{ $t('outputs.emptyTag') }}</span></BButton></div>
+        <div v-if="sourceFilter === 'volume' && !allSnap && !vol.runs.length && vol.folders.length" class="text-body-secondary small mt-1" data-testid="pod-outputs-volume-hint"><i class="fa-solid fa-circle-info me-1"></i>{{ $t('outputs.source_volumeHint') }}</div>
         <div v-if="vol.capped" class="text-warning small mt-1" data-testid="pod-outputs-capped">{{ allActive ? $t('outputs.all.capped', { n: vol.shownCount.toLocaleString('en-US'), total: vol.total.toLocaleString('en-US') }) : $t('outputs.volumeCapped', { n: vol.shownCount, total: vol.total }) }}</div>
         <div v-if="vol.note" class="text-body-secondary small mt-1" data-testid="pod-outputs-volume-note">{{ vol.note }}</div>
       </div>
@@ -85,7 +117,7 @@
     <div v-if="!all.length && !vol.loading" class="text-body-secondary small" data-testid="pod-outputs-empty">{{ vol.ok ? $t('outputs.volumeNoRuns') : $t(onlyShot && runs.length ? 'outputs.noRunsShot' : 'outputs.noRuns', { shot }) }}</div>
     <div v-for="r in runsPage.rows" :key="r.prompt_id" class="mb-4" data-testid="pod-outputs-run" :data-prompt="r.prompt_id" :data-source="r.source || 'pod'">
       <div class="d-flex align-items-baseline gap-2 flex-wrap mb-2 small" data-testid="pod-outputs-run-title">
-        <template v-if="r.source === 'volume'"><span class="fw-semibold font-monospace" data-testid="pod-outputs-folder-name" :title="`output/${r.folder}`">{{ r.folder.split('/').pop() || $t('outputs.volumeRoot') }}</span><span class="text-body-secondary font-monospace">{{ r.folder.split('/').slice(0, -1).join('/') }}</span></template>
+        <template v-if="r.source === 'volume' || r.source === 'storage' || r.source === 'local'"><span class="fw-semibold font-monospace" data-testid="pod-outputs-folder-name" :title="`output/${r.folder}`">{{ r.folder.split('/').pop() || $t('outputs.volumeRoot') }}</span><span class="text-body-secondary font-monospace">{{ r.folder.split('/').slice(0, -1).join('/') }}</span></template>
         <template v-else-if="r.workflow"><span class="fw-semibold font-monospace" data-testid="pod-outputs-workflow" :title="r.workflow">{{ runName(r) }}</span><span class="text-body-secondary font-monospace" :title="r.workflow">{{ folderOf(r.workflow) }}</span></template>
         <template v-else-if="r.guess"><span class="fw-semibold font-monospace" data-testid="pod-outputs-workflow" :title="$t('outputs.guessTitle')">≈ {{ r.guess }}</span><span class="text-body-secondary">{{ $t('outputs.guessed') }}</span></template>
         <span v-else class="fw-semibold text-body-secondary" data-testid="pod-outputs-workflow">{{ $t('outputs.unnamed') }}</span>
@@ -93,8 +125,10 @@
         <BButton v-if="r.chunk_count > 1" variant="link" size="sm" class="p-0" :aria-expanded="chunksOpen[r.prompt_id] ? 'true' : 'false'" data-testid="pod-outputs-chunks-toggle" @click="chunksOpen[r.prompt_id] = !chunksOpen[r.prompt_id]">{{ chunksOpen[r.prompt_id] ? $t('outputs.chunkHide') : $t('outputs.chunkShow') }}</BButton>
         <span v-if="r.saved" class="badge text-bg-secondary" data-testid="pod-outputs-saved" :title="$t('outputs.savedTitle')">{{ $t('outputs.saved') }}</span>
         <span v-if="r.source === 'volume'" class="badge text-bg-info" data-testid="pod-outputs-source" data-source="volume" :title="$t('outputs.sourceVolumeTitle')">{{ $t('outputs.sourceVolume') }}</span>
+        <span v-else-if="r.source === 'local'" class="badge text-bg-secondary" data-testid="pod-outputs-source" data-source="local" :title="$t('outputs.source_localTitle')">{{ $t('outputs.source_local') }}</span>
+        <span v-else-if="r.source === 'storage'" class="badge text-bg-warning" data-testid="pod-outputs-source" data-source="storage" :title="$t('outputs.sourceStorageTitle')">{{ $t('outputs.sourceStorage') }}</span>
         <span v-else-if="r.source === 'pod'" class="badge text-bg-success" data-testid="pod-outputs-source" data-source="pod" :title="$t('outputs.sourcePodTitle')">{{ $t('outputs.sourcePod') }}</span>
-        <span v-if="r.source === 'volume'" class="text-body-secondary ms-auto" data-testid="pod-outputs-volume-run">{{ $t('outputs.volumeRun', { when: r.started_at ? new Date(r.started_at).toLocaleString() : '?', files: r.files.length, size: sizeText(r.files.reduce((n, f) => n + (f.bytes || 0), 0)) }) }}</span>
+        <span v-if="r.source === 'volume' || r.source === 'storage' || r.source === 'local'" class="text-body-secondary ms-auto" data-testid="pod-outputs-volume-run">{{ $t('outputs.volumeRun', { when: r.started_at ? new Date(r.started_at).toLocaleString() : '?', files: r.files.length, size: sizeText(r.files.reduce((n, f) => n + (f.bytes || 0), 0)) }) }}</span>
         <span v-else class="text-body-secondary ms-auto">{{ $t('outputs.run', { when: new Date(r.started_at).toLocaleString(), s: r.duration_s ?? '?' }) }} · <span class="font-monospace">{{ r.prompt_id.slice(0, 8) }}</span></span>
       </div>
       <div v-if="r.chunk_count > 1 && chunksOpen[r.prompt_id]" class="small text-body-secondary mb-2" data-testid="pod-outputs-chunk-list">
@@ -102,6 +136,17 @@
       </div>
       <OutputsGallery hide-incomplete :stereo="showStereo" :files="r.files" :total-files="r.totalFiles || 0" :base="baseFor(r)" :scope="volumeId || pod.id" :volume-name="volumeName" :offline="!baseFor(r)" :zip-name="`${runName(r) || pod.name}-${idOf(r)}.zip`" :pod-id="pod.id" :pod-running="podRunning" />
     </div>
+      <div v-if="all.length > PAGE_SIZES[0]" class="d-flex align-items-center justify-content-end flex-wrap gap-3 mt-2 mb-3" data-testid="outputs-bottom-pager">
+        <div class="d-flex align-items-center gap-2" data-testid="outputs-bottom-pager-nav">
+          <BButton size="sm" variant="outline-light" :disabled="runsPage.cur <= 1" data-testid="outputs-bottom-pager-prev" @click="runPaging.page = runsPage.cur - 1">{{ $t('outputs.pager.previous') }}</BButton>
+          <span data-testid="outputs-bottom-pager-page">{{ $t('outputs.pager.page', { x: runsPage.cur, y: runsPage.pages }) }}</span>
+          <BButton size="sm" variant="outline-light" :disabled="runsPage.cur >= runsPage.pages" data-testid="outputs-bottom-pager-next" @click="runPaging.page = runsPage.cur + 1">{{ $t('outputs.pager.next') }}</BButton>
+        </div>
+        <div class="d-flex align-items-center gap-3" data-testid="outputs-bottom-pager-meta">
+          <label class="d-flex align-items-center gap-1">{{ $t('outputs.pager.perPage') }}<select v-model.number="runPaging.size" class="form-select form-select-sm w-auto" data-testid="outputs-bottom-pager-size"><option v-for="n in PAGE_SIZES" :key="n" :value="n">{{ n }}</option></select></label>
+          <span class="text-body-secondary" data-testid="outputs-bottom-pager-shown">{{ $t('outputs.pager.shown', { shown: runsPage.rows.length, total: runsPage.total }) }}</span>
+        </div>
+      </div>
   </BModal>
   <BModal v-model="previewsOpen" :title="$t('outputs.dpx.previewsModalTitle')" size="xl" scrollable lazy ok-only :ok-title="$t('outputs.dpx.close')" data-testid="pod-outputs-previews-modal">
     <!-- What this window generates for: always on screen, never dismissed (docs/ADR-051): the preview batch and the render plan touch exactly this -->
@@ -173,7 +218,7 @@
     </div>
   </BModal>
   <DeliveryPrepare v-if="deliveryOpen" :items="genItems" :pod="pod" @close="deliveryOpen = false" @publish="deliveryOpen = false; publishOpen = true" />
-  <PublishModal v-if="publishOpen" :preselect="vol.prefix ? [] : publishPreselect" :volume-dir="vol.prefix" :volume-name="volumeName || ''" @close="publishOpen = false" />
+  <PublishModal v-if="publishOpen" :preselect="vol.prefix ? [] : publishPreselect" :volume-dir="vol.prefix" :volume-name="volumeName || ''" @close="publishOpen = false" @queued="goToQueue" />
 </template>
 
 <script setup>
@@ -181,6 +226,9 @@
 import { computed, onBeforeUnmount, onMounted, provide, reactive, ref, shallowRef, watch, watchEffect } from 'vue'
 import { mergeChunkRuns, frameUnions } from '../utils/chunkruns'
 import OutputsGallery from './OutputsGallery.vue'
+import { storageAPI } from '../api/storage'
+import { localOutputsAPI } from '../api/localoutputs'
+import { useVolumesStore } from '../stores/volumes'
 import { fpState, setMode, startJob, stopJob, refreshListing, jobRunning, jobDone, canRelaunch, relaunchJob, removeJob } from '../utils/framejob'
 import { usePodsStore } from '../stores/pods'
 import RenderSequences from './RenderSequences.vue'
@@ -199,7 +247,7 @@ import { groupView, setShowIncomplete } from '../utils/dpxcollapse'
 import { runContent, tileName } from '../utils/incomplete'
 import { ensureMatch, expectedFramesOf } from '../utils/edlexpect'
 import { galleryTiles as tilesOf } from '../utils/outputs'
-import { viewUrl, galleryTiles, runName, runsForShot, inFolder, narrowToFolder, filterByName, volumeAsRuns, mergeWithVolume, s3Base, sizeText } from '../utils/outputs'
+import { kindOf, viewUrl, galleryTiles, runName, runsForShot, inFolder, narrowToFolder, filterByName, volumeAsRuns, mergeWithVolume, s3Base, sizeText } from '../utils/outputs'
 import { errorText } from '../stores/toast'
 import { sharedImages } from '../utils/imgcache'
 import { sharedThumbs, thumbTimeouts, withTimeout, thumbKey, appReader, createLimiter } from '../utils/thumbs'
@@ -212,6 +260,36 @@ import { sequenceItems, sequenceItem, isActive } from '../utils/renders'
 const folderOf = (p) => p.split('/').slice(0, -1).join('/')
 /** `base`: the web address files are served from (this pod, or another running pod on its volume); '' when none runs: the files are then read from the volume over S3 when its keys are set, else only listed. */
 const props = defineProps({ pod: { type: Object, required: true }, runs: { type: Array, default: () => [] }, base: { type: String, default: '' }, volumeName: { type: String, default: '' }, volumeId: { type: String, default: '' } })
+
+const srcVol = ref('')   // another network volume chosen as the Source ('' = this pod's volume)
+const activeVolumeId = computed(() => srcVol.value || props.volumeId)
+const LOCAL = '__local'   // srcStorage's value for this PC's output folder
+const srcStorage = ref('')   // a storage adapter (or LOCAL) chosen as the Source: browsed one folder at a time into the gallery
+const stor = reactive({ prefix: '', folders: [], files: [], loading: false, error: '', truncated: false })
+const volumesStore = useVolumesStore(), storages = ref([]), sourceText = ref('')
+onMounted(() => { storageAPI.list().then((r) => { storages.value = r.adapters }).catch(() => {}); if (!volumesStore.volumes.length) volumesStore.load() })
+const storageBucket = computed(() => (srcStorage.value === LOCAL ? t('outputs.source_localRoot') : storages.value.find((x) => x.id === srcStorage.value)?.bucket || ''))
+const storageCrumbs = computed(() => stor.prefix.split('/').filter(Boolean).map((name, i, a) => ({ name, prefix: a.slice(0, i + 1).join('/') + '/' })))
+let storSeq = 0
+async function goStorage(prefix) {
+  const mine = ++storSeq; stor.loading = true; stor.error = ''
+  try {
+    const r = srcStorage.value === LOCAL ? await localOutputsAPI.browse(prefix) : await storageAPI.browse(srcStorage.value, prefix)
+    if (mine !== storSeq) return
+    Object.assign(stor, { prefix: r.prefix ?? prefix, folders: r.folders, files: r.files, truncated: !!r.truncated })
+  } catch (e) { if (mine === storSeq) { stor.error = errorText(e); stor.folders = []; stor.files = [] } } finally { if (mine === storSeq) stor.loading = false }
+}
+const storageRuns = computed(() => {
+  if (!srcStorage.value || !stor.files.length) return []
+  const sub = stor.prefix.replace(/\/$/, '')
+  return [{ prompt_id: `storage:${srcStorage.value}:${stor.prefix || '.'}`, started_at: stor.files.map((f) => f.modified).sort().pop() || null, duration_s: null, workflow: '', guess: '', saved: false, source: srcStorage.value === LOCAL ? 'local' : 'storage', folder: sub,
+    files: stor.files.map((f) => ({ filename: f.name, subfolder: sub, type: 'output', kind: kindOf(f.name), bytes: f.bytes, modified: f.modified })) }]
+})
+function useStorage(id) {
+  srcStorage.value = id; srcVol.value = ''; sourceFilter.value = id === LOCAL ? 'local' : 'storage'
+  Object.assign(stor, { prefix: '', folders: [], files: [], error: '', truncated: false })
+  goStorage('')
+}
 const emit = defineEmits(['close', 'refresh'])
 const deliveryOpen = ref(false)
 const ui = useUiStore(), mountsStore = useMountsStore(), podsStore = usePodsStore()
@@ -220,7 +298,7 @@ const canZip = !!core?.files?.downloadZip, zipping = ref(false)
 const shot = computed(() => (props.pod.shot && props.pod.shot !== 'All Shots' ? props.pod.shot : ''))
 const onlyShot = ref(true)
 // The folder chosen in the volume browser narrows the pod's own and the saved runs too (Lucas: 'an option to view all or just in the folder selection'): scope 'folder' keeps the runs with files in it, 'all' shows every run of the pod and the volume folder listed.
-const scope = ref((typeof window !== 'undefined' && window.__e2eOutputsScope) || (ui.openFolder ? 'folder' : 'all'))   // (a browser test seam starts in the folder scope)  // All outputs is the starting scope (the whole tree, one listing); 'Just in the folder I pick' is one click away, from the cache
+const scope = ref((typeof window !== 'undefined' && window.__e2eOutputsScope) || (ui.openFolder ? 'folder' : 'all'))   // All Outputs, unless a folder was opened from elsewhere   // (a browser test seam starts in the folder scope)  // All outputs is the starting scope (the whole tree, one listing); 'Just in the folder I pick' is one click away, from the cache
 const inScope = (rs) => (scope.value === 'folder' && vol.prefix ? rs.map((r) => narrowToFolder(r, vol.prefix)).filter((r) => r.files.length) : rs)
 const shotRuns = computed(() => (shot.value && onlyShot.value ? runsForShot(props.runs, shot.value) : props.runs))
 const shown = computed(() => inScope(shotRuns.value))
@@ -243,12 +321,12 @@ const allActive = computed(() => scope.value === 'all' && !!allSnap.value)
 const allMode = computed(() => scope.value === 'all' && !volAll.unsupported)   // in All outputs the folder listing never fills the view (it only teaches the pre-selected folder)
 const applyOk = (sn) => { vol.ok = sn.ok; vol.reason = sn.reason; vol.keysMissing = sn.keysMissing }
 async function loadVolume(prefix, fresh = false) {
-  if (!props.volumeId) return
+  if (!activeVolumeId.value) return
   const mine = ++seq
   vol.loading = true
   try {
     vol.failed = false; vol.restart = false
-    const a = await withTimeout(historyAPI.listOutputs({ pod_id: props.pod.id, volume_id: props.volumeId, shot: shot.value, round: props.pod.round || '' }, { source: 'volume-s3', ...(prefix === undefined ? {} : { prefix }), fresh }), thumbTimeouts().list, 'The volume listing')   // never an endless spinner: a hung call ends in a visible error
+    const a = await withTimeout(historyAPI.listOutputs({ pod_id: props.pod.id, volume_id: activeVolumeId.value, shot: shot.value, round: props.pod.round || '' }, { source: 'volume-s3', ...(prefix === undefined ? {} : { prefix }), fresh }), thumbTimeouts().list, 'The volume listing')   // never an endless spinner: a hung call ends in a visible error
     if (mine !== seq) return
     const sn = snapOf(a, prefix)
     folderSnap.value = sn; folderCache.set(sn.prefix, sn); vol.prefix = sn.prefix
@@ -263,7 +341,7 @@ let allRun = null, allJobId = '', allToken = 0
 async function listAll() {
   const token = ++allToken, t0 = Date.now(), limit = (typeof window !== 'undefined' && window.__e2eAllTimeoutMs) || ALL_TIMEOUT_MS   // the seam lets a browser test wait 2 seconds instead of 2 minutes
   volAll.running = true; volAll.error = ''; volAll.stopped = false; volAll.filesSeen = 0; volAll.foldersSeen = 0; volAll.progress = false; allJobId = ''
-  const ctx = { pod_id: props.pod.id, volume_id: props.volumeId, shot: shot.value, round: props.pod.round || '' }
+  const ctx = { pod_id: props.pod.id, volume_id: activeVolumeId.value, shot: shot.value, round: props.pod.round || '' }
   const deadline = () => { if (Date.now() - t0 > limit) throw new Error(t('outputs.all.timeout')) }
   try {
     let a = await withTimeout(historyAPI.listOutputs(ctx, { source: 'volume-s3', all: true, job: true, fresh: true }), limit, 'The listing of every folder')
@@ -291,7 +369,7 @@ async function listAll() {
   } catch (e) { if (token === allToken) { volAll.error = errorText(e); if (folderSnap.value) showSnap(folderSnap.value) } } finally { if (token === allToken) { volAll.running = false; allRun = null } }
 }
 function ensureAll(force = false) {
-  if (!props.volumeId || volAll.unsupported) return allRun
+  if (!activeVolumeId.value || volAll.unsupported) return allRun
   if (volAll.running && allRun) return allRun
   if (!force && allSnap.value && Date.now() - volAll.at < ALL_FRESH_MS) { showSnap(allSnap.value); volAll.error = ''; volAll.stopped = false; return null }
   allRun = listAll()
@@ -307,10 +385,11 @@ function setScope(v) {
   if (v === 'all') { ensureAll(); return }
   if (folderSnap.value) showSnap(folderSnap.value)   // the folder listing comes back from the cache at once
 }
+// The Outputs window opens at the output folder itself, unless the pod has a round selected (then the core starts in that round's shot folder)
 onMounted(async () => {
   if (!mountsStore.config) { await mountsStore.load(); if (!hideTouched) { hideEmpty.value = mountsStore.config?.outputs?.hide_empty_folders !== false; hideTouched = false } if (!skipTouched) { skipExisting.value = mountsStore.config?.render?.skip_existing !== false; skipTouched = false } }
 })
-onMounted(() => { sharedThumbs().reset(); previewBus.capped = 0; previewBus.loadAll = false; loadVolume(ui.openFolder || undefined); if (scope.value === 'all') ensureAll() })   // the automatic preview cap starts again for each open
+onMounted(() => { sharedThumbs().reset(); previewBus.capped = 0; previewBus.loadAll = false; loadVolume(ui.openFolder || (props.pod.round || shot.value ? undefined : '')); if (scope.value === 'all') ensureAll() })   // the automatic preview cap starts again for each open
 onBeforeUnmount(() => { allToken++; if (!previewsStore.running) sharedThumbs().abortAll(); previewBus.capped = 0; previewBus.loadAll = false })   // a running batch is the app's job: closing the window does not stop it
 /** The preview cache (IndexedDB): how many are kept, and a Clear that only means they are downloaded again. */
 const cachedCount = ref(0)
@@ -372,7 +451,7 @@ const previewItems = computed(() => {
     if (!base) continue
     for (const tl of galleryTiles(r.files)) {
       if (tl.kind !== 'dpx') continue
-      const first = tl.frames[0], key = thumbKey(props.volumeId || props.pod.id || base, first)
+      const first = tl.frames[0], key = thumbKey(activeVolumeId.value || props.pod.id || base, first)
       if (seen.has(key)) continue
       seen.add(key); items.push({ key, name: tl.name || first.filename, job: { url: viewUrl(base, first), fallback: appReader(core), bytes: first.bytes ?? null, modified: first.modified ?? null } })
     }
@@ -446,12 +525,61 @@ const shownFolders = computed(() => (hideEmpty.value ? vol.folders.filter((f) =>
 const emptyHidden = computed(() => vol.folders.filter((f) => vol.info[f]?.empty).length)
 const crumbs = computed(() => vol.prefix.split('/').filter(Boolean).map((name, i, a) => ({ name, prefix: a.slice(0, i + 1).join('/') })))
 const s3ok = computed(() => vol.ok)
+/** A publish was started: close this window and show its card in the Queue. */
+function goToQueue(jobId) { publishOpen.value = false; ui.queueFocus = `publish:${jobId}`; ui.queueTab = 'publishing'; ui.queueOpen = true; emit('close') }
 const openConfig = () => { ui.configFocus = 's3'; ui.configOpen = true; emit('close') }
 const refresh = () => { clearColourCache(); emit('refresh'); loadVolume(vol.loaded ? vol.prefix : undefined, true); if (scope.value === 'all') ensureAll(true) }
 
 /** The runs shown: the pod's and the saved ones, and the volume's folder runs that are not already one of them. */
 const nameFilter = ref('')
-const merged = computed(() => mergeWithVolume(shown.value, vol.runs))
+const sourceFilter = ref('all')   // 'all' | 'pod' | 'volume' | 'storage' | 'local': which source's runs the gallery shows
+const volRuns = () => (allSnap.value ? allSnap.value.runs : vol.runs)
+const bySource = (id) => (id === 'volume' ? volRuns() : srcVol.value ? [] : shown.value.filter((r) => (r.source || 'pod') === id))
+const sourceOptions = computed(() => [
+  { kind: 'local', group: 'runs', id: LOCAL, label: t('outputs.source_localNamed') },
+  ...['all', 'pod', 'volume'].map((id) => {
+    const n = id === 'all' ? 0 : bySource(id).length, name = t(`outputs.source_${id}`)
+    if (id !== 'volume') return { kind: 'filter', group: 'runs', id, dim: id !== 'all' && !n, label: id === 'all' ? t('outputs.source_all') : `${name} (${n})` }
+    // the volume's runs are leaf folders deep in the tree: the top level alone has none, so a 0 there is not a count; say what is known instead
+    const note = volAll.running ? (volAll.progress ? t('outputs.source_listingFiles', { n: volAll.filesSeen.toLocaleString('en-US') }) : t('outputs.source_listing')) : allSnap.value ? String(n) : volAll.error ? t('outputs.source_listFailed') : n ? String(n) : vol.folders.length ? t('outputs.source_folders', { n: vol.folders.length }) : '0'
+    return { kind: 'filter', group: 'runs', id, dim: !activeVolumeId.value || (note === '0'), label: `${name} (${note})` }
+  }),
+  ...volumesStore.volumes.filter((v) => v.id !== (srcVol.value || props.volumeId)).map((v) => ({ kind: 'volume', group: 'volumes', id: v.id, label: t('outputs.source_volumeNamed', { name: v.name, dc: v.datacenter }) })),
+  ...(srcVol.value && props.volumeId ? [{ kind: 'thisvolume', group: 'volumes', id: props.volumeId, label: t('outputs.source_thisVolume', { name: props.volumeName || props.volumeId }) }] : []),
+  ...storages.value.filter((x) => x.ready && x.id !== 'publish-s3').map((x) => ({ kind: 'storage', group: 'storages', id: x.id, label: t('outputs.source_storageNamed', { name: x.name, bucket: x.bucket }) })),
+])
+const volLabelOf = (id) => { const v = volumesStore.volumes.find((x) => x.id === id); return t('outputs.source_volumeNamed', { name: v?.name || id, dc: v?.datacenter || '' }) }
+const currentLabel = computed(() => srcStorage.value === LOCAL ? t('outputs.source_localNamed') : srcStorage.value ? t('outputs.source_storageNamed', { name: storages.value.find((x) => x.id === srcStorage.value)?.name || srcStorage.value, bucket: storageBucket.value }) : srcVol.value ? volLabelOf(srcVol.value) : sourceOptions.value.find((o) => o.kind === 'filter' && o.id === sourceFilter.value)?.label || t('outputs.source_all'))
+const sourceOpen = ref(false)
+const sourceIsSet = computed(() => !!srcStorage.value || !!srcVol.value || sourceFilter.value !== 'all')
+const shownSourceOptions = computed(() => { const q = sourceText.value.trim().toLowerCase(); return q ? sourceOptions.value.filter((o) => o.label.toLowerCase().includes(q)) : sourceOptions.value })
+/** Another network volume (or back to this pod's) is the Source: its output files are listed over the S3 API into the gallery, the pod's own runs step aside. */
+function useVolume(id) {
+  srcStorage.value = ''; srcVol.value = id; sourceFilter.value = id ? 'volume' : 'all'
+  allToken++; allRun = null; allSnap.value = null; folderSnap.value = null; folderCache.clear()
+  Object.assign(volAll, { running: false, filesSeen: 0, foldersSeen: 0, progress: false, error: '', stopped: false, unsupported: false, at: 0 })
+  Object.assign(vol, { runs: [], folders: [], info: {}, prefix: '', capped: false, total: 0, shownCount: 0, note: '', loaded: false, ok: false })
+  loadVolume(undefined, true); if (scope.value === 'all') ensureAll(true)
+}
+function pickSource(o) {
+  sourceText.value = ''; sourceOpen.value = false
+  if (!o || o.dim) return
+  if (o.kind === 'local') return useStorage(LOCAL)
+  if (o.kind === 'filter') {
+    srcStorage.value = ''; sourceFilter.value = o.id
+    if (o.id === 'volume' && activeVolumeId.value && scope.value !== 'folder') setScope('folder')   // a big volume cannot be listed whole (hundreds of thousands of frames): its folders are opened one at a time
+  } else if (o.kind === 'volume' || o.kind === 'thisvolume') useVolume(o.kind === 'volume' ? o.id : '')
+  else useStorage(o.id)
+}
+const pickFirst = () => pickSource(shownSourceOptions.value[0])
+const onSourceFocusOut = (e) => { if (!e.currentTarget.contains(e.relatedTarget)) { sourceOpen.value = false; sourceText.value = '' } }
+/** Back to the default: All Sources (this pod's runs, its volume, everything together). */
+function clearSource() {
+  sourceText.value = ''; sourceOpen.value = false
+  if (srcVol.value) useVolume('')   // back to this pod's volume (reloads its listing)
+  srcStorage.value = ''; sourceFilter.value = 'all'
+}
+const merged = computed(() => (srcStorage.value ? storageRuns.value : srcVol.value ? vol.runs : sourceFilter.value === 'all' ? mergeWithVolume(shown.value, vol.runs) : sourceFilter.value === 'volume' ? vol.runs : bySource(sourceFilter.value)))
 /** The file-name filter narrows every run (pod, saved and volume) to the files that match, and drops the runs with none. */
 const all = computed(() => (nameFilter.value.trim() ? visibleRuns.value.map((r) => filterByName(r, nameFilter.value)).filter((r) => r.files.length) : visibleRuns.value))
 /** Incomplete sequences (short of the EDL's cut by the union of frames over every run listed, utils/incomplete.js) are hidden unless Show Incomplete is on, and counted apart; a run whose only visible content is incomplete sequences leaves the list (a muted "N hidden" says so). Display only: nothing is deleted or moved. */
@@ -497,7 +625,7 @@ watch(proxySig, () => { clearTimeout(proxyTimer); proxyTimer = setTimeout(() => 
 onMounted(() => renders.watch())
 onBeforeUnmount(() => clearTimeout(proxyTimer))
 /** Where a run's files are fetched from: a running pod's address when there is one, else the volume over S3 (its keys set), else nowhere (only listed). */
-const baseFor = (r) => props.base || (s3ok.value ? s3Base(props.volumeId) : '')
+const baseFor = (r) => (srcStorage.value === LOCAL ? 'localfile://o' : srcStorage.value ? `s3file://storage.${srcStorage.value}` : srcVol.value ? (s3ok.value ? s3Base(srcVol.value) : '') : props.base || (s3ok.value ? s3Base(props.volumeId) : ''))
 const anyBase = computed(() => !!props.base || s3ok.value)
 const idOf = (r) => (r.source === 'volume' ? r.folder.split('/').pop().slice(-8).replace(/[^\w.-]/g, '_') : r.prompt_id.slice(0, 8))
 /** Every run's files in one zip, a folder per run. */
@@ -511,6 +639,7 @@ onMounted(() => probe(previewItems.value))
 </script>
 
 <style scoped>
+.row-label { width: 3.5rem; flex: none; }   /* Source and Show labels share a width so their inputs start at the same left edge */
 /* the Generate window's scope alert stays on screen while the body scrolls; its Bootstrap background is opaque */
 /* a normal block at the top of the body (it scrolls away with the content); the folder list is at most five rows, then it scrolls inside its box */
 .gen-scope-list { max-height: 6.6rem; overflow-y: auto; }

@@ -3,6 +3,16 @@
 What is done, by day, newest first. Open work is in [`NEXT-STEPS.md`](./NEXT-STEPS.md);
 completed items move here. Commit hashes are on `develop`.
 
+## v1.8.0 (2026-11-28)
+
+- **feat(sync): rules per event and per volume** (ADR-069, ADR-072): Generated, Approved and Published each send to storages and to This PC. This PC can also pull from a storage on those events, or by hand (Pull Now). Auto Sync (On Change) stays on the volume and This PC rows.
+- **feat(storage): files that are only on the volume go to the storages on Approved and Published**, sidecars included, with no pod (read over the volume's S3 API through this PC).
+- **feat(storage): Storage windows** (ADR-065 to ADR-070): the nav button is Storage and its window Shared Storage; storages beside the volumes with size, Explore and Delete (unlink); Default Storage; row order; one Save for the Network Volumes window; the Sync window chooses a source and targets; storages and rules travel in the exported configuration.
+- **feat(publish): publishing is on the BH Exchange row**, and pressing Publish closes the window and shows the new card in the Queue.
+- **fix:** the Queue's Publishing tab showed its language key; the pod card's three buttons had unequal widths; a refused rule stayed ticked.
+- **test:** `npm run storage:live` checks the event copy paths against the real bucket and volume (not part of the gate).
+- **Not built, said plainly:** Erase for a storage; every target pair in the Sync window; publishing from the Wasabi copy; a Mark approved has not yet been watched sending to Wasabi in the running app. A re-render of the same size is not sent again, and a quick proxy's sidecar does not go to Wasabi on Generated.
+
 ## v1.7.7 (2026-11-27)
 
 - **feat(storage): events per storage, one Panama card, titles, order, Add Storage on top** (ADR-064, ADR-065; full gate passed: core, MCP, IPC, unit, 988 browser, 36 Electron). Each storage has Upload On switches (Generating, Generated, Approved, Publishing, Published; the MCP `storage_adapters` tool has `events`); the publish destination and the Panama exchange are one card with the bucket, region and keys once and a switch per role; every storage can be renamed and dragged into order; Add Storage opens at the top, offers a Wasabi bucket or S3, and the new one is first.

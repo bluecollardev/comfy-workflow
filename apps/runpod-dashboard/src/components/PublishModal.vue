@@ -166,7 +166,7 @@ import { expiryText, publishActive, targetState, channelName, s3Dest, s3Key, rou
 import { clipProblem } from '../utils/renders'
 
 const props = defineProps({ preselect: { type: Array, default: () => [] }, volumeDir: { type: String, default: '' }, volumeName: { type: String, default: '' } })
-defineEmits(['close'])
+const emit = defineEmits(['close', 'queued'])
 const store = usePublishStore(), ui = useUiStore()
 const filesDest = computed(() => `${s3Dest(store.settings.s3.bucket, store.settings.s3.prefix)}<path>`)   // where a file lands: s3://bucket/prefix/<its path under output/>
 const tab = ref('files')
@@ -234,7 +234,7 @@ onMounted(async () => {
   if (!store.old) { go(''); if (source.value === 'volume') goVol(props.volumeDir || '') }
 })
 watch(() => ui.configOpen, async (open) => { if (!open) { const before = [...targets.value]; await store.loadSettings(); targets.value = before.filter((id) => ready(id).ok) } })   // back from the settings: what is ready now
-const openSettings = () => { ui.configFocus = 'publishing'; ui.configOpen = true }
+const openSettings = () => { ui.showPublishing() }
 const openConnect = () => { ui.connectTab = 'slack'; ui.connectOpen = true }
 watch(() => ui.connectOpen, async (open) => { if (!open) { const before = [...targets.value]; await store.loadSettings(); targets.value = before.filter((id) => ready(id).ok) } })   // back from Connect > Slack
 
@@ -278,6 +278,7 @@ async function run() {
     try { localStorage.setItem('runpod-manager.approved-by', approvedBy.value) } catch { /* storage blocked */ }
     const r = await store.run({ items: itemsOut(), targets: [...targets.value], approved_by: approvedBy.value, ...(targets.value.includes('slack') ? { message: message.value } : {}), ...previewBody(), ...layoutBody() })
     jobId.value = r.job_id
+    emit('queued', r.job_id)   // the window it was started from closes: the Queue shows the job
   } catch (e) { runError.value = errorText(e) }
 }
 const job = computed(() => (jobId.value ? store.job(jobId.value) : null))

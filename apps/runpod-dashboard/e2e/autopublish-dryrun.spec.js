@@ -1,4 +1,4 @@
-import { test, expect, modal, cfgTab, queueTab } from './fixtures'
+import { test, expect, openAutopublish, modal, cfgTab, queueTab } from './fixtures'
 import { t } from './i18n'
 
 // Dry run does the whole job without sending: an S3 plan per entry (destination, files and actions, manifest, access check) and one Slack summary, in a panel above the entries.
@@ -45,9 +45,9 @@ test.describe('Dry run: S3 and Slack', () => {
   })
   test('the Auto-publish steps say what a dry run did; live, none of it; an older core (no plans) shows no panel and no chevron', async ({ page, api }) => {
     on(api); api.state.autopublish = { pending: [entry()] }
-    await page.goto('/'); await page.getByTestId('open-config').click(); let d = modal(page, t('config.title')); await cfgTab(d, 'publishing')
+    let d = await openAutopublish(page)
     await expect(d.getByTestId('autopublish-step-dry-s3')).toHaveText('2 Publish to S3: dry run, nothing written'); await expect(d.getByTestId('autopublish-step-dry-slack')).toHaveText('3 Post to Slack: dry-run summary')
-    on(api, { dry_run: false }); await page.reload(); await page.getByTestId('open-config').click(); d = modal(page, t('config.title')); await cfgTab(d, 'publishing')
+    on(api, { dry_run: false }); await page.reload(); d = await openAutopublish(page, { fresh: false })
     await expect(d.getByTestId('autopublish-step-dry-s3')).toHaveCount(0)
     on(api); api.state.autopublish = { pending: [entry({ dry_run_plan: undefined })] }
     await page.reload(); await queueTab(page, 'publishing')

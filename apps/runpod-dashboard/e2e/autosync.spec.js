@@ -1,60 +1,77 @@
-import { test, expect, podCard } from './fixtures'
+import { test, expect, podCard, openVolumeSync, openVolumes } from './fixtures'
 import { t } from './i18n'
 
-// Auto sync (docs/ADR-046): the checkbox in the Sync window, the green Sync button on the card, and the banner under the nav bar.
+// Auto sync (docs/ADR-046, ADR-068): the Auto Sync switch on the volume row (Network Volumes > Sync Rules), the green Sync button on the card, and the banner under the nav bar.
 const DEV = 'pod-aaaaaaaa', BATCH = 'pod-bbbbbbbb'
 const item = (over = {}) => ({ pod_id: DEV, pod_name: 'ComfyUI-Dev', volume_id: 'vol1', state: 'syncing', direction: 'pull', files_done: 12, files_total: 25, bytes_done: 1.1 * 1024 ** 3, bytes_total: 1.2 * 1024 ** 3, rate_bps: 38 * 1024 ** 2, current: 'output/r1/frame_0012.png', pending_bytes: 0, started_at: new Date().toISOString(), summary: '', error: '', conflicts: [], ...over })
 const setStatus = (api, items, paused = false) => { api.state.autosync = { ...(api.state.autosync || { settings: {} }), status: { paused, items } } }
 const callsTo = (api, method, path) => api.calls.filter((c) => c.method === method && c.path === path)
-const openSync = async (page, name = 'ComfyUI-Dev') => { await podCard(page, name).getByTestId('pod-sync').click(); return page.getByTestId('sync-modal') }
-const syncBtn = (page, name = 'ComfyUI-Dev') => podCard(page, name).getByTestId('pod-sync')
+const openSync = async (page) => openVolumeSync(page)
+// Auto sync lives on the volume rows now (Network Volumes > the row's Sync Rules > Auto Sync); the setting is the volume's and covers every pod on it
+const openRules = async (page, id = 'vol1') => { await openVolumes(page); const sec = page.locator(`[data-testid="volume"][data-id="${id}"]`).getByTestId('volume-sync-rules'); if ((await sec.getAttribute('data-open')) !== 'true') await sec.getByTestId('collapsible-toggle').click(); return sec }   // the section remembers it is open
+const syncBtn = (page, name = 'ComfyUI-Dev') => podCard(page, name).getByTestId('pod-autosync-status')   // Lucas, 2026-11-28: no Auto Sync badge on the pod card at all (the banner and the window show it)
 
-test('Sync window: the Auto sync checkbox with Pull ticked and Push unticked by default', async ({ page }) => {
+test('Volume row: Auto Sync with Pull ticked and Push unticked by default, help for every pod on the volume; the Sync window has no per-pod block', async ({ page }) => {
   await page.goto('/')
-  const dlg = await openSync(page)
-  await expect(dlg.getByTestId('sync-autosync')).not.toBeChecked()
-  await expect(dlg.getByTestId('sync-autosync-pull')).toBeChecked()
-  await expect(dlg.getByTestId('sync-autosync-push')).not.toBeChecked()
-  await expect(dlg.getByTestId('sync-autosync-section')).toContainText(t('autosync.help'))
-  await expect(syncBtn(page)).not.toHaveAttribute('data-autosync', 'true')
+  const sec = await openRules(page)
+  // Push (leaves the volume) has On Change to This PC (the pull flag); Pull (arrives) has On Change from This PC (the push flag): both off until Auto Sync is on
+  await expect(sec.getByTestId('sync-push').getByTestId('volume-autosync-pull')).not.toBeChecked()
+  await expect(sec.getByTestId('sync-pull').getByTestId('volume-autosync-push')).not.toBeChecked()
+  await expect(sec.getByTestId('volume-autosync-help')).toContainText('Applies to every pod on this volume.')
+  await expect(sec.getByTestId('volume-autosync-help')).toContainText(t('autosync.help'))
+  await expect(sec.getByTestId('volume-rules-summary')).toContainText('Auto Sync Off')
+  await expect(syncBtn(page)).toHaveCount(0)
+  const d = page.locator('[data-testid="volume"][data-id="vol1"]'); await d.getByTestId('volume-sync-btn').click()
+  await expect(page.getByTestId('sync-modal')).toBeVisible(); await expect(page.locator('[data-testid^="sync-autosync"]')).toHaveCount(0)
 })
 
-test('Sync window: saving with no name is refused inline; with a name the card button turns green and stays so after a reload; unticking returns it to normal', async ({ page, api }) => {
+test('Volume row: saving with no name is refused inline; with a name it is saved for the volume and stays so after a reload (no badge on the card); unticking returns it to normal', async ({ page, api }) => {
   await page.goto('/')
-  let dlg = await openSync(page)
-  await dlg.getByTestId('sync-autosync').check()
-  await dlg.getByTestId('sync-autosync-save').click()
-  await expect(dlg.getByTestId('sync-autosync-error')).toContainText(t('autosync.needName'))
-  expect(callsTo(api, 'PUT', '/autosync')).toHaveLength(0)
-  await dlg.getByTestId('sync-autosync-approved-by').fill('Lucas')
-  await dlg.getByTestId('sync-autosync-save').click()
-  await expect(dlg.getByTestId('sync-autosync-saved')).toBeVisible()
-  expect(callsTo(api, 'PUT', '/autosync')[0].body).toMatchObject({ pod_id: DEV, enabled: true, pull: true, push: false, approved_by: 'Lucas' })
+  let sec = await openRules(page)
+  await sec.getByTestId('volume-autosync-pull').check()
+  await page.getByTestId('volumes-save').click()
+  await expect(sec.getByTestId('volume-autosync-error')).toContainText(t('autosync.needName'))
+  expect(callsTo(api, 'PUT', '/autosync/volume')).toHaveLength(0)
+  await sec.getByTestId('volume-autosync-approved-by').fill('Lucas')
+  await page.getByTestId('volumes-save').click()
+  await expect(page.getByTestId('volumes-saved')).toBeVisible()
+  expect(callsTo(api, 'PUT', '/autosync/volume')[0].body).toMatchObject({ volume_id: 'vol1', enabled: true, pull: true, push: false, approved_by: 'Lucas' })
+  await expect(sec.getByTestId('volume-rules-summary')).toContainText('Auto Sync On')
   await page.keyboard.press('Escape')
-  await expect(syncBtn(page)).toHaveAttribute('data-autosync', 'true')
-  await expect(syncBtn(page)).toHaveClass(/btn-success/)
-  await expect(syncBtn(page)).toHaveAttribute('title', /Auto sync on/)
-  await expect(syncBtn(page, 'ComfyUI-Batch')).not.toHaveAttribute('data-autosync', 'true')   // only this pod
+  await expect(syncBtn(page)).toHaveCount(0)   // nothing on the card
   await page.reload()
-  await expect(syncBtn(page)).toHaveAttribute('data-autosync', 'true')
-  dlg = await openSync(page)
-  await expect(dlg.getByTestId('sync-autosync')).toBeChecked()
-  await expect(dlg.getByTestId('sync-autosync-approved-by')).toHaveValue('Lucas')
-  await dlg.getByTestId('sync-autosync').uncheck()
-  await dlg.getByTestId('sync-autosync-save').click()
-  await expect(dlg.getByTestId('sync-autosync-saved')).toBeVisible()
+  await expect(syncBtn(page)).toHaveCount(0)
+  sec = await openRules(page)
+  await expect(sec.getByTestId('volume-autosync-pull')).toBeChecked()
+  await expect(sec.getByTestId('volume-autosync-approved-by')).toHaveValue('Lucas')
+  await sec.getByTestId('volume-autosync-pull').uncheck()
+  await page.getByTestId('volumes-save').click()
+  await expect(page.getByTestId('volumes-saved')).toBeVisible()
+  expect(callsTo(api, 'PUT', '/autosync/volume').at(-1).body.enabled).toBe(false)
   await page.keyboard.press('Escape')
-  await expect(syncBtn(page)).not.toHaveAttribute('data-autosync', 'true')
-  await expect(syncBtn(page)).toHaveClass(/btn-outline-light/)
+  await expect(syncBtn(page)).toHaveCount(0)
 })
 
-test('Sync window: the approver is remembered from the other approvals and the last summary shows in the window', async ({ page, api }) => {
+test('Volume row: a core 400 for the missing name is shown inline', async ({ page }) => {
+  await page.goto('/')
+  const sec = await openRules(page)
+  await sec.getByTestId('volume-autosync-pull').check()
+  await sec.getByTestId('volume-autosync-approved-by').fill('x')
+  await page.route('**/autosync/volume', (r) => (r.request().method() === 'PUT' ? r.fulfill({ status: 400, json: { detail: 'Auto sync needs the name of who says yes' } }) : r.fallback()))
+  await page.getByTestId('volumes-save').click()
+  await expect(sec.getByTestId('volume-autosync-error')).toContainText('needs the name')
+})
+
+test('Volume row: the approver is remembered from the other approvals and the newest status of its pods shows', async ({ page, api }) => {
   await page.addInitScript(() => localStorage.setItem('runpod-manager.approved-by', 'Brynley'))
   setStatus(api, [item({ state: 'done', finished_at: new Date(Date.now() + 3600e3).toISOString(), summary: 'Pulled 25 files (1.2 GB) to output/' })])
+  api.state.autosync.volumeItems = { vol1: [{ pod_id: DEV, state: 'done', summary: 'Pulled 25 files (1.2 GB) to output/' }] }
   await page.goto('/')
-  const dlg = await openSync(page)
-  await expect(dlg.getByTestId('sync-autosync-approved-by')).toHaveValue('Brynley')
-  await expect(dlg.getByTestId('sync-autosync-status')).toContainText('Pulled 25 files')
+  const sec = await openRules(page)
+  await expect(sec.getByTestId('volume-autosync-approved-by')).toHaveValue('Brynley')
+  await expect(sec.getByTestId('volume-autosync-status')).toContainText('Pulled 25 files')
+  await expect(sec.getByTestId('volume-autosync-status')).toHaveAttribute('data-state', 'done')
+  await expect(sec.getByTestId('volume-rules-summary')).toContainText('(done)')
 })
 
 test('Banner: nothing while idle', async ({ page, api }) => {
@@ -128,12 +145,11 @@ test('Banner: an error persists with the reason and file; Retry asks for a sync 
   await expect(page.getByTestId('autosync-banner')).toHaveCount(0)
 })
 
-test('Banner: an error also turns that pod\'s Sync button amber when auto sync is on', async ({ page, api }) => {
+test('Banner: an error shows in the banner and there is no badge on the card', async ({ page, api }) => {
   api.state.autosync = { settings: { [DEV]: { enabled: true, pull: true, push: false, approved_by: 'Lucas' } }, status: { paused: false, items: [item({ state: 'error', error: 'disk full' })] } }
   await page.goto('/')
-  await expect(syncBtn(page)).toHaveAttribute('data-autosync-state', 'error')
-  await expect(syncBtn(page)).toHaveClass(/btn-warning/)
-  await expect(syncBtn(page)).toHaveAttribute('title', /disk full/)
+  await expect(syncBtn(page)).toHaveCount(0)   // no badge on the card; the banner carries the error
+  await expect(page.getByTestId('autosync-banner')).toContainText('disk full')
 })
 
 test('Banner: needs_approval asks; Pull sends yes, Skip sends no', async ({ page, api }) => {
@@ -182,11 +198,11 @@ test('Banner: rows for several pods stack; conflicts are a small line with a tit
   await expect(c).toHaveAttribute('title', /output\/x\.png/)
 })
 
-test('Banner: a click on a row opens that pod\'s Sync window', async ({ page, api }) => {
+test('Banner: a click on a row opens the Sync window of that pod\'s volume', async ({ page, api }) => {
   setStatus(api, [item()])
   await page.goto('/')
   await page.getByTestId('autosync-row').click()
-  await expect(page.getByTestId('sync-modal')).toContainText('ComfyUI-Dev')
+  await expect(page.getByTestId('sync-modal')).toContainText('Sync comfy-workspace')   // the volume the pod is on
 })
 
 test('Failing status calls and an older core cause no errors and no banner', async ({ page, api }) => {
@@ -206,11 +222,11 @@ test('An older core ("no core call autosync.*"): defaults, no banner, and saving
   page.on('pageerror', (e) => errors.push(e.message))
   await page.goto('/')
   await expect(page.getByTestId('autosync-banner')).toHaveCount(0)
-  const dlg = await openSync(page)
-  await expect(dlg.getByTestId('sync-autosync')).not.toBeChecked()
-  await dlg.getByTestId('sync-autosync').check()
-  await dlg.getByTestId('sync-autosync-approved-by').fill('Lucas')
-  await dlg.getByTestId('sync-autosync-save').click()
-  await expect(dlg.getByTestId('sync-autosync-error')).toContainText('Restart the app')
+  const sec = await openRules(page)
+  await expect(sec.getByTestId('volume-autosync-pull')).not.toBeChecked()
+  await sec.getByTestId('volume-autosync-pull').check()
+  await sec.getByTestId('volume-autosync-approved-by').fill('Lucas')
+  await page.getByTestId('volumes-save').click()
+  await expect(sec.getByTestId('volume-autosync-error')).toContainText('Restart the app')
   expect(errors).toEqual([])
 })

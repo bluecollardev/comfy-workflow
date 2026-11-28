@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { launchApp, podCard, openCreatePod, toast } from './app.js'
+import { launchApp, podCard, openCreatePod, toast, openSimVolumeSync, SIM_VOLUME } from './app.js'
 import { createServer } from 'node:net'
 import { t } from '../e2e/i18n.js'
 
@@ -64,7 +64,7 @@ test.describe('Connect › MCP › served from the app', () => {
   test.afterAll(async () => { await ctx.app.close() })
 
   test('the switch serves the pod manager over HTTP; list_pods sees a pod made in the UI; sync over MCP shows on the card', async () => {
-    const { page } = ctx
+    const { page, configDir } = ctx
     const port = await freePort()
     await page.getByTestId('open-connect').click()
     const dialog = page.locator('.modal.show', { hasText: t('connect.title') })
@@ -100,6 +100,10 @@ test.describe('Connect › MCP › served from the app', () => {
     expect(pod).toBeTruthy()
 
     // A sync started over MCP is the card's sync: its bar fills and the Sync modal follows the same job.
+    // the volume first: the card's bar opens the Sync window of the volume its pod is on
+    await openSimVolumeSync(page, configDir, 'Sim-Mcp')
+    await page.getByTestId('sync-modal').locator('.btn-close').click(); await expect(page.getByTestId('sync-modal')).toBeHidden()
+    await page.keyboard.press('Escape'); await expect(page.locator('.modal.show')).toHaveCount(0)
     const card = podCard(page, 'Sim-Mcp')
     const started = await toolJson(url, 'sync', { pod_id: pod.id, only: ['workflows'] })
     expect(started.follow).toBe('sync_status')
@@ -107,10 +111,9 @@ test.describe('Connect › MCP › served from the app', () => {
     expect((await toolJson(url, 'sync_status', { pod_id: pod.id })).running).toBe(true)
     expect(await toolText(url, 'sync', { pod_id: pod.id, only: ['workflows'] })).toContain('already running')
     await card.getByTestId('pod-progress').click()                                 // the bar opens the Sync modal on the running job
-    const sync = page.locator('.modal.show', { hasText: t('sync.title', { name: 'Sim-Mcp' }) })
+    const sync = page.locator('.modal.show', { hasText: t('sync.title', { name: SIM_VOLUME.name }) })
     await expect(sync.getByTestId('sync-status')).toContainText(t('sync.finished', { steps: 1 }), { timeout: 30_000 })
     await expect.poll(async () => (await toolJson(url, 'sync_status', { pod_id: pod.id })).done).toBe(true)
-    await expect(card.getByTestId('pod-sync')).toBeEnabled()                       // the run ended
 
     // Switching it off closes the port and keeps the setting.
     await sync.getByRole('button', { name: t('sync.close') }).first().click()

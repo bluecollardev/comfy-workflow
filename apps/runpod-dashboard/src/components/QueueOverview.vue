@@ -32,7 +32,7 @@
  * QueueOverview: everything that is working, across every tab, in one table with the Finished tables' columns (started, id, kind, trigger, state, progress, current step, actions): syncs, imports' tasks, renders and previews,
  * publishes (a parent with its children indented), Auto-publish entries and what it is generating. Running first, then by start time. A job that finishes leaves the table and shows in its tab's finished list.
  */
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useSyncsStore } from '../stores/syncs'
 import { useRendersStore } from '../stores/renders'
 import { useRunJobsStore } from '../stores/runjobs'
@@ -44,6 +44,7 @@ import { usePreviewsStore } from '../stores/previews'
 import { usePublishStore } from '../stores/publish'
 import { useAutopublishStore } from '../stores/autopublish'
 import { useVolumeJobsStore } from '../stores/volumejobs'
+import { useSyncJobsStore } from '../stores/syncjobs'
 import { useFailuresStore } from '../stores/failures'
 import { publishActive } from '../utils/publish'
 import { isActive } from '../utils/renders'
@@ -54,10 +55,11 @@ import { formatBytes } from '../sync-progress'
 import { t } from '../i18n'
 
 defineEmits(['go'])
-const failures = useFailuresStore(), syncs = useSyncsStore(), renders = useRendersStore(), runjobs = useRunJobsStore(), pjobs = usePreviewJobsStore(), confirm = useConfirmStore(), previews = usePreviewsStore(), pub = usePublishStore(), ap = useAutopublishStore(), vjobs = useVolumeJobsStore()
+const failures = useFailuresStore(), syncs = useSyncsStore(), renders = useRendersStore(), runjobs = useRunJobsStore(), pjobs = usePreviewJobsStore(), confirm = useConfirmStore(), previews = usePreviewsStore(), pub = usePublishStore(), ap = useAutopublishStore(), vjobs = useVolumeJobsStore(), sjobs = useSyncJobsStore()
+onMounted(() => sjobs.watch())
 const now = ref(Date.now())
 const tick = setInterval(() => { now.value = Date.now() }, 1000)
-onBeforeUnmount(() => clearInterval(tick))
+onBeforeUnmount(() => { clearInterval(tick); sjobs.unwatch() })
 const pct = (a, b) => (b > 0 ? Math.min(100, Math.round((100 * (a || 0)) / b)) : null)
 const rate = (r) => (r ? ` · ${formatBytes(r)}/s` : '')
 const trig = (x) => { const i = triggerInfo(typeof x === 'object' ? x : { trigger: x }); return i.key === 'auto' ? t('queue.trigger.auto') : i.key === 'manual' ? t('queue.trigger.manual') : i.label }
@@ -83,6 +85,10 @@ const rows = computed(() => {
     if (n > 0) out.push(base({ key: 'ag-run', tab: 'publishing', kind: 'autogenerate', id: 'auto-generate', label: t('queue.kind.autogenerate'), trigger: trig('auto-publish'), state: 'running', stateText: 'running', chip: 'text-bg-primary', at: g.enabled_at, progress: t('queue.progress.reviews', { n }), percent: null, step: g.current || '', running: true }))
     if (w > 0) out.push(base({ key: 'ag-wait', tab: 'publishing', kind: 'autogenerate', id: 'auto-generate', label: t('queue.kind.autogenerate'), trigger: trig('auto-publish'), state: 'waiting', stateText: t('queue.state_waiting'), chip: 'text-bg-secondary', at: g.enabled_at, progress: t('queue.progress.settling', { n: w }), percent: null, step: '', running: false })) }
   for (const j of vjobs.jobs || []) if (!['done', 'failed', 'cancelled'].includes(j.state)) out.push(base({ key: `v-${j.id}`, tab: 'imports', kind: 'volume-job', id: j.id, label: j.kind, trigger: trig('manual'), state: j.state, stateText: j.state, chip: 'text-bg-primary', at: j.started_at, progress: '', percent: null, step: '', running: true }))
+  for (const j of sjobs.live || []) {   // the Sync window's copy to a storage and download to this PC (ADR-066, ADR-067)
+    const dl = j.kind === 'source-sync', bk = j.kind === 'bucket-sync', up = j.kind === 'storage-upload', nm = (x) => (typeof x === 'object' ? x?.name || x?.id || x?.storage_id : x), name = up ? (j.targets || []).join(', ') : dl ? (typeof j.source === 'object' ? j.source?.name || j.source?.id : j.source) : j.storage_name
+    out.push(base({ key: `sj-${j.job_id}`, tab: '', kind: j.kind, id: j.job_id, label: up ? t('queue.kind.storageUpload', { event: j.event, name }) : bk ? t('queue.kind.bucketSync', { source: nm(j.source), target: nm(j.target) }) : t(dl ? 'queue.kind.sourceSync' : 'queue.kind.volumeSync', { name }), trigger: trig('manual'), state: j.state, stateText: j.state, chip: 'text-bg-primary', at: j.started_at, progress: j.files_total ? `${(j.files_done || 0) + (j.files_skipped || 0)} of ${j.files_total} files${j.bytes_total ? ` · ${formatBytes(j.bytes_done || 0)} of ${formatBytes(j.bytes_total)}` : ''}${rate(j.rate)}` : '', percent: pct(j.bytes_done, j.bytes_total), step: j.current || '', running: true, cancel: () => sjobs.cancel(j) }))
+  }
   // running first, then the newest start; a publish's children stay under their parent
   const parents = out.filter((r) => !r.sub).sort((a, b) => (b.running ? 1 : 0) - (a.running ? 1 : 0) || b.sort - a.sort)
   return parents.flatMap((p) => [p, ...out.filter((c) => c.sub && c.sortParent === p.key)])

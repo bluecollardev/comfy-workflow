@@ -17,6 +17,9 @@ export const useUiStore = defineStore('ui', () => {
   const welcomeOpen = ref(false)  // the one-time 'import a configuration file or start from scratch' question on a new installation (docs/ADR-023)
   const configFocus = ref('')     // a section of Default Configuration to scroll to when it opens ('adapters', 'claude', 'import')
   const volumesOpen = ref(false)
+  const publishingFocus = ref(false)   // open Network Volumes on the BH row's Publishing section
+  const showPublishing = () => { publishingFocus.value = true; configOpen.value = false; volumesOpen.value = true }
+  const syncFor = ref(null)        // { volumeId, volumeName, source? }: the Sync window (From, To, jobs) opened for this network volume, or (volumeId '' + source { type: 'storage', id }) for a bucket row's Sync button (docs/ADR-067)
   const sharedOpen = ref(false)    // the Shared chooser: Volumes or Models (ADR-042)
   const modelsOpen = ref(false)    // the Models window: Hugging Face search, load onto the Shared volume
   const importRoundPreset = ref('')   // Import Round opens with this round chosen (re-import)
@@ -45,5 +48,5 @@ export const useUiStore = defineStore('ui', () => {
   watch(connectTab, (v) => { if (v === 'accounts') connectTab.value = 'repositories' })   // the old key
   const accountsOpen = computed({ get: () => connectOpen.value && connectTab.value === 'repositories', set: (v) => { if (v) connectTab.value = 'repositories'; connectOpen.value = v } })
   const repositoriesOpen = computed({ get: () => connectOpen.value && connectTab.value === 'repositories', set: (v) => { if (v) connectTab.value = 'repositories'; connectOpen.value = v } })
-  return { failureFocus, queueTab, queueListLoaded, queueListError, queueRetry, openPublish, openFolder, queueFocus, outputsFor, runFlowsFor, connectOpen, importOpen, importPod, importSource, importShown, connectTab, accountsOpen, repositoriesOpen, repositoriesVersion, configOpen, welcomeOpen, configFocus, volumesOpen, sharedOpen, modelsOpen, importRoundOpen, importRoundPreset, queueOpen, queueStarting, queueStartError, queueVersion, historyOpen, volumeDc, hints }
+  return { publishingFocus, showPublishing, failureFocus, queueTab, queueListLoaded, queueListError, queueRetry, openPublish, openFolder, queueFocus, outputsFor, runFlowsFor, connectOpen, importOpen, importPod, importSource, importShown, connectTab, accountsOpen, repositoriesOpen, repositoriesVersion, configOpen, welcomeOpen, configFocus, volumesOpen, syncFor, sharedOpen, modelsOpen, importRoundOpen, importRoundPreset, queueOpen, queueStarting, queueStartError, queueVersion, historyOpen, volumeDc, hints }
 })

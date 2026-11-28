@@ -1,6 +1,7 @@
 <template>
   <BModal :model-value="open" :title="$t('volumes.bhExploreTitle', { bucket })" size="xl" scrollable lazy ok-only :ok-title="$t('volumes.bhClose')" ok-variant="outline-light" data-testid="bucket-modal" @update:model-value="(v) => !v && $emit('close')" @show="go('')">
-    <div class="small text-body-secondary mb-2"><i class="fa-solid fa-lock me-1"></i>{{ $t('volumes.bhReadOnly') }}</div>
+    <div v-if="!local" class="small text-body-secondary mb-2"><i class="fa-solid fa-lock me-1"></i>{{ $t('volumes.bhReadOnly') }}</div>
+    <div v-else class="small text-body-secondary mb-2" data-testid="local-explorer-note"><i class="fa-solid fa-lock me-1"></i>{{ $t('volumes.localNote') }}</div>
     <nav class="d-flex align-items-center flex-wrap gap-1 mb-2 small" data-testid="bucket-crumbs" aria-label="breadcrumb">
       <template v-for="(c, i) in crumbs" :key="c.prefix">
         <i v-if="i" class="fa-solid fa-chevron-right text-body-secondary" style="font-size: 0.65rem"></i>
@@ -43,11 +44,13 @@
  */
 import { computed, ref } from 'vue'
 import { panamaAPI } from '../api/panama'
+import { storageAPI } from '../api/storage'
+import { localOutputsAPI } from '../api/localoutputs'
 import { errorText } from '../stores/toast'
 import { fmtBytes as fmt } from '../utils/studioTree'
 
 const PAGE = 100
-defineProps({ open: { type: Boolean, default: false }, bucket: { type: String, default: '' } })
+const props = defineProps({ /** this PC's ComfyUI-Shared (the core can list its output/ folder only, so that is where it starts) */ local: Boolean, open: { type: Boolean, default: false }, bucket: { type: String, default: '' }, /** a storage adapter id: browse that adapter's bucket (core storagebrowse) instead of the BH exchange bucket */ storageId: { type: String, default: '' } })
 defineEmits(['close'])
 const prefix = ref(''), listing = ref(null), error = ref(''), loading = ref(false), filter = ref(''), page = ref(1)
 let seq = 0
@@ -59,10 +62,12 @@ const rows = computed(() => listing.value ? [...listing.value.folders.map((f) =>
 const matching = computed(() => { const q = filter.value.trim().toLowerCase(); return q ? rows.value.filter((r) => r.name.toLowerCase().includes(q)) : rows.value })
 const pages = computed(() => Math.max(1, Math.ceil(matching.value.length / PAGE)))
 const pageRows = computed(() => matching.value.slice((Math.min(page.value, pages.value) - 1) * PAGE, Math.min(page.value, pages.value) * PAGE))
+/** A storage listing (folders as names, files without keys) in the shape the BH bucket's listing has. */
+const asPanama = (r, p) => ({ ...r, folders: r.folders.map((n) => ({ name: n, prefix: `${r.prefix ?? p}${n}/` })), files: r.files.map((f) => ({ ...f, key: `${r.prefix ?? p}${f.name}` })) })
 async function go(p) {
   const mine = ++seq
   loading.value = true; error.value = ''; filter.value = ''; page.value = 1
-  try { const r = await panamaAPI.browse(p); if (mine !== seq) return; listing.value = r; prefix.value = r.prefix ?? p } catch (e) { if (mine !== seq) return; prefix.value = p; error.value = errorText(e) } finally { if (mine === seq) loading.value = false }
+  try { const r = props.local ? asPanama(await localOutputsAPI.browse(p), p) : props.storageId ? asPanama(await storageAPI.browse(props.storageId, p), p) : await panamaAPI.browse(p); if (mine !== seq) return; listing.value = r; prefix.value = r.prefix ?? p } catch (e) { if (mine !== seq) return; prefix.value = p; error.value = errorText(e) } finally { if (mine === seq) loading.value = false }
 }
 </script>
 

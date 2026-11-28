@@ -12,7 +12,7 @@ import { configDir } from './paths.js'
 
 export type Origin = 'window' | 'mcp' | 'auto-publish' | 'backfill' | 'script'
 export interface RunningJob {
-  id: string; kind: 'render' | 'publish' | 'volume' | 'sync' | 'other'; pid: number; host: string; trigger: string; origin: Origin; mcp_client?: string
+  id: string; kind: 'render' | 'publish' | 'volume' | 'volume-sync' | 'source-sync' | 'bucket-sync' | 'storage-upload' | 'sync' | 'other'; pid: number; host: string; trigger: string; origin: Origin; mcp_client?: string
   started_at: string; heartbeat_at: string; state: string; progress?: { done: number; total: number; unit?: string }; label: string; approved_by?: string; cancel_requested?: boolean
   /** how far a transfer is, for the other processes' Queue: bytes done and in all, a rate, the file being sent, files already there, the pods carrying it (names only, never a key or a link) */
   transfer?: Transfer

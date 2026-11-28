@@ -1,4 +1,4 @@
-import { test, expect, podCard } from './fixtures'
+import { test, expect, podCard, openVolumeSync } from './fixtures'
 import { formatBytes } from '../src/sync-progress'
 
 // The Sync window and the volume's size (v1.5.0): a push larger than the volume is refused before it copies (red alert, Start off), a nearly full volume is a note, a full volume ends the run as a banner, a skipped step shows grey.
@@ -17,7 +17,7 @@ async function openSync(page, count) {
     }
   }, count)
   await page.goto('/')
-  await podCard(page, 'ComfyUI-Dev').getByTestId('pod-sync').click()
+  await openVolumeSync(page)
   const d = page.getByTestId('sync-modal')
   await expect(d.getByTestId('sync-plan-counts')).toContainText('files')
   return d

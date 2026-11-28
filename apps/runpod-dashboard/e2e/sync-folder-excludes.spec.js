@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { test, expect, podCard, modal, cfgTab } from './fixtures'
+import { test, expect, podCard, modal, cfgTab, openVolumeSync } from './fixtures'
 import { t } from './i18n'
 
 // Exclude by default, per mapped folder (v1.5.0): `folder_excludes` in the Default Configuration and a pod's own configuration, and the Sync window listing them per step.
@@ -88,7 +88,7 @@ test.describe('the Sync window', () => {
       }
     }, { saved })
     await page.goto('/')
-    await podCard(page, 'ComfyUI-Dev').getByTestId('pod-sync').click()
+    await openVolumeSync(page)
     const d = page.getByTestId('sync-modal')
     await expect(d.getByTestId('sync-exclude')).toBeVisible()
     return d

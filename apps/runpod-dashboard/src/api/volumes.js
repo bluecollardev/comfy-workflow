@@ -20,6 +20,8 @@ const ipc = core && {
   reattach: (name) => core.invoke('volumes', 'reattach', [name]),
   cancel: (id) => core.invoke('volumes', 'cancel', [id]),
   erasable: () => core.invoke('volumes', 'erasable'),
+  getOrder: () => core.invoke('volumes', 'getOrder'),
+  setOrder: (ids) => core.invoke('volumes', 'setOrder', [ids]),
 }
 const http = {
   async list() { const { data } = await axios.get(`${API_BASE}/volumes`); return data },
@@ -39,4 +41,15 @@ const http = {
   async setShared(id) { const { data } = await axios.post(`${API_BASE}/volumes/shared`, { id: id || '' }); return data },
   async useAsDefault(id) { const { data } = await axios.post(`${API_BASE}/volumes/${encodeURIComponent(id)}/default`); return data },
 }
-export const volumesAPI = ipc || http
+http.getOrder = async () => (await axios.get(`${API_BASE}/volumes/order`)).data
+http.setOrder = async (ids) => (await axios.put(`${API_BASE}/volumes/order`, { order: ids })).data
+const raw = ipc || http
+// The display order of the volume rows (docs: stored in the configuration, so it travels with export and import). Assumed core: volumes.getOrder() -> string[], volumes.setOrder(ids) -> string[].
+// A core that predates it answers "no core call volumes.getOrder": an empty order, and a drop only lasts this session.
+const NO_CALL = /no core call/i
+const missing = (e) => NO_CALL.test(String(e?.response?.data?.detail || e?.message || e))
+export const volumesAPI = {
+  ...raw,
+  getOrder: async () => { try { const r = await raw.getOrder(); return Array.isArray(r) ? r : Array.isArray(r?.order) ? r.order : [] } catch (e) { if (missing(e)) return []; throw e } },
+  setOrder: async (ids) => { try { const r = await raw.setOrder(ids); return Array.isArray(r) ? r : Array.isArray(r?.order) ? r.order : ids } catch (e) { if (missing(e)) return ids; throw e } },
+}

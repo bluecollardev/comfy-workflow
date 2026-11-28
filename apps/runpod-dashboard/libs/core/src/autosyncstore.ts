@@ -1,6 +1,6 @@
 /**
  * What Auto sync keeps on disk (docs/ADR-046), apart from the controller so pods.ts can forget and carry a pod's entry without importing the sync machinery.
- *  autosync.json         the settings per pod id: { enabled, pull, push, approved_by, approved_at }   (~/.config/runpod-pod-manager)
+ *  autosync.json         the settings per pod id (and per volume under the key volume:<volume_id>): { enabled, pull, push, approved_by, approved_at }   (~/.config/runpod-pod-manager)
  *  autosync-state.json   the controller's small memory: the journal cursor per volume, the open conflicts per pod (capped), the global pause (a few KB)
  *  autosync-manifest.json the last-synced manifest per pod (thousands of entries): ONLY read and written with fs.promises, kept in memory in between
  * ASYNC RULE (ADR-046): the core runs in Electron's main process. The two tiny files above are read and written synchronously on purpose (a few KB, a call per click or per tick);
@@ -46,29 +46,114 @@ const norm = (s: Partial<Settings> | undefined): Settings => ({
   enabled: s?.enabled === true, pull: s?.pull === undefined ? DEFAULTS.pull : s.pull === true, push: s?.push === true,
   approved_by: typeof s?.approved_by === 'string' ? s.approved_by : '', ...(typeof s?.approved_at === 'string' ? { approved_at: s.approved_at } : {}),
 })
-/** A pod's settings; the defaults (off; Pull on, Push off) when it was never set. */
-export const get = (podId: string): Settings => norm(all()[podId])
-/** Every pod that has settings stored. */
-export const entries = (): Record<string, Settings> => Object.fromEntries(Object.entries(all()).map(([id, s]) => [id, norm(s)]))
-/** Pods with Auto sync switched on. */
-export const enabledPods = (): { pod_id: string; settings: Settings }[] => Object.entries(entries()).filter(([, s]) => s.enabled).map(([pod_id, settings]) => ({ pod_id, settings }))
+export const VOLUME_PREFIX = 'volume:'
+const isVolumeKey = (k: string) => k.startsWith(VOLUME_PREFIX)
+/** pod id -> volume id, filled by the controller (autosync.ts) from the pod list; read synchronously so no caller changes. Memory only. */
+let podVolume = new Map<string, string>()
+/** Replace the whole map (a successful refresh). */
+export const setVolumeMap = (m: Map<string, string>): void => { podVolume = new Map(m) }
+/** Note one pod's volume. */
+export const setPodVolume = (podId: string, volumeId: string): void => { if (podId && volumeId) podVolume.set(podId, volumeId) }
+export const podVolumeOf = (podId: string): string => podVolume.get(podId) ?? ''
+export const volumeMap = (): Map<string, string> => new Map(podVolume)
+
+/** A pod's OWN entry only (never the volume's); the defaults when it was never set. */
+export const getOwn = (podId: string): Settings => norm(all()[podId])
+/** The volume's settings; the defaults (off; Pull on, Push off) when never set. */
+export const getVolume = (volumeId: string): Settings => norm(all()[VOLUME_PREFIX + volumeId])
+/** Where a pod's effective settings come from: its own enabled entry, else its volume's enabled entry, else its own (off). */
+export function via(podId: string): 'pod' | 'volume' {
+  if (getOwn(podId).enabled) return 'pod'
+  const v = podVolume.get(podId)
+  return v && getVolume(v).enabled ? 'volume' : 'pod'
+}
+/** A pod's effective settings: its own when that is enabled, else its volume's when that is enabled, else its own (default off). */
+export const get = (podId: string): Settings => {
+  const own = getOwn(podId)
+  if (own.enabled) return own
+  const v = podVolume.get(podId)
+  if (v) { const vs = getVolume(v); if (vs.enabled) return vs }
+  return own
+}
+/** Every pod that has settings stored (volume entries are not pods). */
+export const entries = (): Record<string, Settings> => Object.fromEntries(Object.entries(all()).filter(([id]) => !isVolumeKey(id)).map(([id, s]) => [id, norm(s)]))
+/** Every volume that has settings stored, by volume id. */
+export const volumeEntries = (): Record<string, Settings> => Object.fromEntries(Object.entries(all()).filter(([id]) => isVolumeKey(id)).map(([id, s]) => [id.slice(VOLUME_PREFIX.length), norm(s)]))
+/** Pods with Auto sync switched on: those with their own enabled entry, and the pods (from the map) of a volume with an enabled entry; `settings` is the effective ones. */
+export const enabledPods = (): { pod_id: string; settings: Settings; via: 'pod' | 'volume' }[] => {
+  const out: { pod_id: string; settings: Settings; via: 'pod' | 'volume' }[] = []
+  const f = all(), seen = new Set<string>()
+  for (const [id, s] of Object.entries(f)) if (!isVolumeKey(id)) { const n = norm(s); if (n.enabled) { out.push({ pod_id: id, settings: n, via: 'pod' }); seen.add(id) } }
+  for (const [podId, vol] of podVolume) {
+    if (seen.has(podId)) continue
+    const vs = norm(f[VOLUME_PREFIX + vol])
+    if (vs.enabled) out.push({ pod_id: podId, settings: vs, via: 'volume' })
+  }
+  return out
+}
+
+function save(key: string, before: Settings, input: Partial<Settings>): Settings {
+  if (input == null || typeof input !== 'object') throw bad('settings is { enabled, pull, push, approved_by }')
+  for (const k of ['enabled', 'pull', 'push'] as const) if (input[k] !== undefined && typeof input[k] !== 'boolean') throw bad(`${k} is true or false`)
+  const next: Settings = { ...before, ...(input.enabled !== undefined ? { enabled: input.enabled } : {}), ...(input.pull !== undefined ? { pull: input.pull } : {}), ...(input.push !== undefined ? { push: input.push } : {}) }
+  const by = typeof input.approved_by === 'string' ? input.approved_by.trim() : ''
+  if (next.enabled) {
+    if (!by && !(before.enabled && before.approved_by)) throw bad(NEEDS_NAME)   // a change to one that is already on keeps the yes it was given
+    if (by) { next.approved_by = by; next.approved_at = new Date().toISOString() }
+  } else if (input.approved_by !== undefined) next.approved_by = by
+  return norm(next)
+}
 
 /** Save a pod's settings. enabled: true REQUIRES approved_by (400 otherwise); the name and time are recorded, and so is a History entry. enabled: false needs nothing. */
 export function set(podId: string, input: Partial<Settings>, now: () => Date = () => new Date()): Settings {
   if (!podId || typeof podId !== 'string') throw bad('Which pod?')
-  if (input == null || typeof input !== 'object') throw bad('settings is { enabled, pull, push, approved_by }')
-  for (const k of ['enabled', 'pull', 'push'] as const) if (input[k] !== undefined && typeof input[k] !== 'boolean') throw bad(`${k} is true or false`)
-  const before = get(podId)
-  const next: Settings = { ...before, ...(input.enabled !== undefined ? { enabled: input.enabled } : {}), ...(input.pull !== undefined ? { pull: input.pull } : {}), ...(input.push !== undefined ? { push: input.push } : {}) }
-  const by = typeof input.approved_by === 'string' ? input.approved_by.trim() : ''
-  if (next.enabled) {
-    if (!by && !(before.enabled && before.approved_by)) throw bad(NEEDS_NAME)   // a change to a pod that is already on keeps the yes it was given
-    if (by) { next.approved_by = by; next.approved_at = now().toISOString() }
-  } else if (input.approved_by !== undefined) next.approved_by = by
-  const file = all(); file[podId] = norm(next); writeJson(autosyncFile(), file)
+  if (isVolumeKey(podId)) throw bad('Which pod?')
+  return write(podId, getOwn(podId), input, now, 'pod', podnames.get(podId) || podId)
+}
+/** Save a volume's settings (key `volume:<id>`), same rules as a pod's: enabled: true REQUIRES approved_by; the name and time are recorded, and a History entry. */
+export function setVolume(volumeId: string, input: Partial<Settings>, now: () => Date = () => new Date()): Settings {
+  if (!volumeId || typeof volumeId !== 'string') throw bad('Which volume?')
+  return write(VOLUME_PREFIX + volumeId, getVolume(volumeId), input, now, 'volume', volumeId)
+}
+function write(key: string, before: Settings, input: Partial<Settings>, now: () => Date, area: 'pod' | 'volume', what: string): Settings {
+  const stamp = now().toISOString()
+  const next = save(key, before, input)
+  if (next.enabled && input.approved_by && typeof input.approved_by === 'string' && input.approved_by.trim()) next.approved_at = stamp
+  const file = all(); file[key] = norm(next); writeJson(autosyncFile(), file)
   const changed = before.enabled !== next.enabled || (next.enabled && (before.pull !== next.pull || before.push !== next.push))
-  if (changed) history.record({ kind: 'change', area: 'pod', action: next.enabled ? 'auto sync on' : 'auto sync off', what: podnames.get(podId) || podId, detail: next.enabled ? `pull ${next.pull ? 'on' : 'off'}, push ${next.push ? 'on' : 'off'}` : undefined, ...(next.enabled ? { approved_by: next.approved_by } : {}) }, now)
+  if (changed) history.record({ kind: 'change', area, action: next.enabled ? 'auto sync on' : 'auto sync off', what, detail: next.enabled ? `pull ${next.pull ? 'on' : 'off'}, push ${next.push ? 'on' : 'off'}` : undefined, ...(next.enabled ? { approved_by: next.approved_by } : {}) }, now)
   return norm(next)
+}
+/** Remove a volume's settings. */
+export function forgetVolume(volumeId: string): void {
+  const f = all(), k = VOLUME_PREFIX + volumeId
+  if (k in f) { delete f[k]; writeJson(autosyncFile(), f) }
+}
+
+// ----- travelling in a configuration file (docs/ADR-023, ADR-070): the volume entries only, and they ARRIVE OFF -----
+const VOLUME_ID = /^[A-Za-z0-9_-]{3,64}$/
+/** The auto_sync_volumes section from a file, checked: a bad value is an error that names the volume and the field. Every entry comes out with enabled false (turning it on needs a named yes on this machine); pull, push and the approver's name stay as information. */
+export function checkVolumeEntries(v: unknown): { value: Record<string, Settings>; wasOn: string[]; error: string | null } {
+  const out: Record<string, Settings> = {}, wasOn: string[] = []
+  const fail = (m: string) => ({ value: out, wasOn, error: m })
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return fail('auto_sync_volumes maps a volume id to its settings')
+  for (const [id, e] of Object.entries(v as Record<string, unknown>)) {
+    if (!VOLUME_ID.test(id)) return fail(`auto_sync_volumes: "${id.slice(0, 40)}" is not a volume id`)
+    if (!e || typeof e !== 'object' || Array.isArray(e)) return fail(`auto_sync_volumes.${id} is { enabled, pull, push, approved_by }`)
+    const o = e as Record<string, unknown>
+    for (const k of ['enabled', 'pull', 'push']) if (o[k] !== undefined && typeof o[k] !== 'boolean') return fail(`auto_sync_volumes.${id}.${k} is true or false`)
+    if (o.approved_by !== undefined && (typeof o.approved_by !== 'string' || o.approved_by.length > 80)) return fail(`auto_sync_volumes.${id}.approved_by is a name of at most 80 characters`)
+    if (o.enabled === true) wasOn.push(id)
+    out[id] = norm({ enabled: false, pull: o.pull as boolean | undefined, push: o.push as boolean | undefined, approved_by: (o.approved_by as string | undefined) ?? '' })
+  }
+  return { value: out, wasOn, error: null }
+}
+/** Write imported volume entries (already checked, all off). Other entries in the file stay. */
+export function importVolumeEntries(entries: Record<string, Settings>): void {
+  const f = all()
+  for (const [id, s] of Object.entries(entries)) f[VOLUME_PREFIX + id] = norm({ ...s, enabled: false })
+  writeJson(autosyncFile(), f)
+  history.record({ kind: 'change', area: 'volume', action: 'auto sync settings imported (off)', what: `${Object.keys(entries).length} volume(s)`, detail: 'they arrive off: turning one on needs a named yes' })
 }
 
 // ----- a configuration applies it to the pods it creates -----
@@ -129,12 +214,14 @@ export async function putManifest(podId: string, entries: Record<string, Synced>
   await persist()
 }
 /** Forget the in-memory copy (tests change the file between cases). */
-export const resetMemory = (): void => { mCache = null }
+export const resetMemory = (): void => { mCache = null; podVolume = new Map() }
 
 // ----- the pod's life -----
 
 /** The pod is gone: forget its settings, its manifest and its conflicts (the volume's cursor stays: other pods may read the same feed). */
 export function forget(podId: string): void {
+  if (isVolumeKey(podId)) return   // a volume entry is not a pod
+  podVolume.delete(podId)
   const f = all(); if (podId in f) { delete f[podId]; writeJson(autosyncFile(), f) }
   const s = loadState()
   if (podId in s.conflicts) { delete s.conflicts[podId]; saveState(s) }

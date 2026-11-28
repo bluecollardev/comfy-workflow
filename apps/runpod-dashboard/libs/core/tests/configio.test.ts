@@ -201,8 +201,8 @@ describe('applyImport, backups and undo', () => {
   })
   it('keeps the newest ten backups', () => {
     for (let i = 0; i < 13; i++) configio.applyImport(base({ idle_stop_minutes: i + 1 }), { sections: ['pod_defaults'], now: new Date(Date.UTC(2026, 10, 3, 5, 0, i)) })
-    const names = readdirSync(join(dir, 'backups')).sort()
-    expect(names).toHaveLength(10)
+    const all = readdirSync(join(dir, 'backups')).sort(), names = all.filter((n) => n.startsWith('mounts-'))   // the copies of storage-adapters.json, sync-rules.json and autosync.json sit beside each backup and are pruned with it
+    expect(names).toHaveLength(10); expect(all.length).toBeLessThanOrEqual(40)
     expect(configio.listBackups()[0].name).toBe(names[names.length - 1])   // newest first
   })
 })

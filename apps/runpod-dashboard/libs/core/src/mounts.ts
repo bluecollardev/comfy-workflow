@@ -223,6 +223,8 @@ export interface MountsConfig {
   custom: CustomFolder[]
   /** The volume that holds the shared models (ADR-042): marked Shared in the Volumes list and never deleted from there; '' = none chosen (the models go to the Default Configuration's volume) */
   shared_volume_id: string
+  /** The order the Volumes list is shown in (every row: volume ids, storage ids, 'local', 'bh'; drag to reorder); [] = the usual order. Travels in the export with the volume section. */
+  volume_order: string[]
   /** The model files wanted on a Shared volume, as Hugging Face coordinates (ADR-042 section 12); travels in the export, tied to no volume */
   wanted_models: wanted.WantedModel[]
   network_volume_id: string
@@ -321,6 +323,7 @@ export function defaults(): MountsConfig {
     folders: Object.fromEntries(names.map((n) => [n, ''])),
     custom: [],
     shared_volume_id: '',
+    volume_order: [],
     wanted_models: [],
     network_volume_id: '',
     mount_path: '/workspace',
@@ -371,6 +374,13 @@ function normalizeMcpHttp(raw: unknown): McpHttp {
   return d
 }
 
+/** A row of the Network Volumes list: a volume id, a storage id ('wasabi', 'mine-2') or one of the fixed keys 'local' and 'bh'. */
+export const ORDER_ID = /^[A-Za-z0-9_-]{2,64}$/
+export const MAX_VOLUME_ORDER = 300
+/** volume_order from any JSON: only ids that look like row ids, each once, at most 300. Anything else is dropped (validate refuses a list that was not one). */
+export function normalizeVolumeOrder(v: unknown): string[] {
+  return Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === 'string' && ORDER_ID.test(x)))].slice(0, MAX_VOLUME_ORDER) : []
+}
 /** A config from any JSON, with every field present (the Python model's defaults). */
 export function normalize(data: Partial<MountsConfig>): MountsConfig {
   const d = defaults()
@@ -386,6 +396,7 @@ export function normalize(data: Partial<MountsConfig>): MountsConfig {
     registry_auth_id: (data.registry_auth_id ?? '').trim(),
     idle_stop_minutes: data.idle_stop_minutes ?? d.idle_stop_minutes,
     wanted_models: wanted.normalizeList(data.wanted_models),
+    volume_order: normalizeVolumeOrder(data.volume_order),
     models: { vae: String(data.models?.vae ?? '').trim(), diffusion_model: String(data.models?.diffusion_model ?? '').trim() },
     sync_parallel: data.sync_parallel ?? d.sync_parallel,
     pull_shared: Array.isArray(data.pull_shared) ? SYNC_SHARED.filter((x) => data.pull_shared!.includes(x)) : d.pull_shared,
@@ -700,6 +711,7 @@ export function validate(cfg: MountsConfig): MountsConfig {
   if (cfg.default_gpu !== gpus.AUTO && !(cfg.default_gpu in gpus.GPUS)) throw bad(`default_gpu is auto or one of ${Object.keys(gpus.GPUS).join(', ')}, not ${JSON.stringify(cfg.default_gpu)}`)
   { const unknown = cfg.auto_cards.filter((k) => !(k in gpus.GPUS)); if (unknown.length) throw bad(`auto_cards are keys of the card table (${Object.keys(gpus.GPUS).join(', ')}), not ${unknown.map((k) => JSON.stringify(k)).join(', ')}`) }
   { const unknown = cfg.default_cards.filter((k) => !(k in gpus.GPUS)); if (unknown.length) throw bad(`default_cards are keys of the card table (${Object.keys(gpus.GPUS).join(', ')}), not ${unknown.map((k) => JSON.stringify(k)).join(', ')}`) }
+  if (!Array.isArray(cfg.volume_order) || cfg.volume_order.length > MAX_VOLUME_ORDER || cfg.volume_order.some((x) => typeof x !== 'string' || !ORDER_ID.test(x)) || new Set(cfg.volume_order).size !== cfg.volume_order.length) throw bad('volume_order is a list of row ids (volume ids, storage ids, local, bh: 2 to 64 letters, digits, - or _), each once, at most 300')
   if (cfg.idle_stop_minutes < 0) throw bad('idle_stop_minutes is 0 (never) or a number of minutes')
   if (!Number.isInteger(cfg.sync_parallel) || cfg.sync_parallel < 1 || cfg.sync_parallel > 16) throw bad('sync_parallel is a whole number of parallel uploads, 1 to 16')
   if (cfg.render) validateRender(cfg.render)
@@ -740,10 +752,22 @@ export function put(data: Partial<MountsConfig>, opts: { quiet?: boolean } = {})
     history.record({ kind: 'change', area: 'configuration', action: 'auto-generate colour stated', what: 'auto-publish', detail: `frames are ${rawColour}, stated by ${who}`, approved_by: who })
   }
   { const rc = (data.render as { colour?: unknown } | undefined)?.colour, prev = load().render?.colour ?? { mode: 'known' }; if (rc !== undefined && JSON.stringify({ mode: normalizeRenderColour(rc).mode, format: normalizeRenderColour(rc).format }) !== JSON.stringify({ mode: prev.mode, format: prev.format })) { const who = typeof (data as { approved_by?: unknown }).approved_by === 'string' && (data as { approved_by: string }).approved_by.trim() ? (data as { approved_by: string }).approved_by.trim().slice(0, 80) : 'unknown', n = normalizeRenderColour(rc); data = { ...data, render: { ...(data.render as object), colour: { ...n, set_by: who, set_at: new Date().toISOString() } } as never }; if (!opts.quiet) history.record({ kind: 'change', area: 'configuration', action: 'render colour setting changed', what: 'render.colour', detail: `mode ${n.mode}${n.format ? ` (${n.format})` : ''}, set by ${who}` }) } }
-  const cfg = validate(normalize(data))
+  // the Volumes list order is its own setter's: a save that does not name it (the panel's form, an older file) keeps what is stored
+  const cfg = validate(normalize(data.volume_order === undefined ? { ...data, volume_order: load().volume_order } : data))
   save(cfg)
   if (!opts.quiet) history.record({ kind: 'change', area: 'configuration', action: 'saved', what: 'Default Configuration' })
   return payload(cfg)
+}
+
+/** The order the Volumes list is shown in (volume ids). */
+export const getVolumeOrder = (): string[] => [...load().volume_order]
+/** Save the order of the Volumes list and nothing else: the configuration is loaded whole and put whole (a partial put would reset the other blocks). A bad list is a 400, not silently cut. */
+export function setVolumeOrder(ids: unknown): string[] {
+  if (!Array.isArray(ids) || ids.some((x) => typeof x !== 'string' || !ORDER_ID.test(x))) throw bad('order is a list of row ids (volume ids, storage ids, local, bh: 2 to 64 letters, digits, - or _)')
+  if (ids.length > MAX_VOLUME_ORDER) throw bad(`order is at most ${MAX_VOLUME_ORDER} volume ids`)
+  const cfg = load(), next = [...new Set(ids as string[])]
+  if (JSON.stringify(cfg.volume_order) !== JSON.stringify(next)) put({ ...cfg, volume_order: next }, { quiet: true })
+  return next
 }
 
 /** Shell lines for a runtime on this PC. */

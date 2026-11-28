@@ -39,16 +39,15 @@ test.describe('Queue > Publishing', () => {
     await expect(c).toHaveAttribute('data-state', 'cancelled', { timeout: 5000 })
     await expect(page.getByTestId('queue-badge')).toHaveCount(0)
   })
-  test('a publish started in the Publish window shows in a Queue opened later and survives closing the Publish window (nothing is cancelled)', async ({ page, api }) => {
+  test('publishing closes the window and Outputs and shows its card in the Queue (nothing is cancelled)', async ({ page, api }) => {
     setup(api)
     await page.goto('/'); await podCard(page, 'ComfyUI-Dev').getByTestId('pod-outputs').click(); await page.getByTestId('pod-outputs-publish').click()
     const m = page.getByTestId('publish-modal')
     await m.getByTestId('publish-source-local').click(); await m.getByTestId('publish-quick-deliver').click()
     await m.locator('[data-testid="publish-entry-check"][data-path="deliver/a.mov"]').check(); await m.getByTestId('publish-approved-by').fill('Kyle'); await m.getByTestId('publish-run').click()
-    await expect(m.getByTestId('publish-job')).toBeVisible()
-    await m.locator('.btn-close').click(); await expect(page.getByTestId('publish-modal')).toBeHidden()
-    await page.getByTestId('pod-outputs-modal').locator('.btn-close').click()
-    const q = await openQueue(page)
+    const q = page.getByTestId('queue-modal')   // opened by itself, on Publishing
+    await expect(q).toBeVisible(); await expect(page.getByTestId('publish-modal')).toHaveCount(0); await expect(page.getByTestId('pod-outputs-modal')).toHaveCount(0)
+    await expect(card(q, 'pub-1')).toHaveClass(/publishing-focus/); await expect(card(q, 'pub-1')).toBeInViewport()
     await expect(card(q, 'pub-1')).toBeVisible(); await expect(card(q, 'pub-1').getByTestId('publishing-job-approver')).toHaveText('approved by Kyle')
     await expect(card(q, 'pub-1')).toHaveAttribute('data-state', 'uploading')
     expect(api.state.publish.cancelled).toEqual([])
@@ -148,4 +147,12 @@ test.describe('Queue > Publishing', () => {
     await page.goto('/'); const q = await openQueue(page)
     await expect(q.getByTestId('queue-publishing')).toHaveCount(0); await expect(page.getByTestId('queue-badge')).toHaveCount(0)
   })
+})
+
+test('every Queue tab has its words: no language key is shown', async ({ page }) => {
+  await page.goto('/'); await page.getByTestId('open-queue').click()
+  const tabs = page.getByTestId('queue-modal').getByRole('tab')
+  await expect(tabs.first()).toBeVisible()
+  for (const text of await tabs.allTextContents()) expect(text).not.toContain('queue.')
+  await expect(page.getByTestId('queue-modal').getByTestId('queue-tab-publishing')).toContainText('Publishing')
 })

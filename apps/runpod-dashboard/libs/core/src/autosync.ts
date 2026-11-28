@@ -34,12 +34,12 @@ import { Collector, PushWatch, nodeWatch, realTimer, type Timer, type WatchFn } 
 import * as store from './autosyncstore.js'
 import * as syncrun from './syncrun.js'
 
-export { get, set as setSettings, forget } from './autosyncstore.js'
+export { get, set as setSettings, forget, getVolume as getVolumeSettings } from './autosyncstore.js'
 export type { Settings, Conflict } from './autosyncstore.js'
 
 export type State = 'idle' | 'waiting' | 'syncing' | 'needs_approval' | 'error' | 'done'
 export interface Item {
-  pod_id: string; pod_name: string; volume_id: string; state: State; direction: 'pull' | 'push'
+  pod_id: string; pod_name: string; volume_id: string; /** whose settings apply: the pod's own, or its volume's */ via: 'pod' | 'volume'; state: State; direction: 'pull' | 'push'
   files_done: number; files_total: number; bytes_done: number; bytes_total: number; rate_bps: number
   /** the newest file name; the failing file when state is error */ current: string
   pending_bytes: number; started_at: string; finished_at: string; summary: string; error: string; conflicts: store.Conflict[]
@@ -154,7 +154,7 @@ function noteGone(podId: string): void {
   history.record({ kind: 'change', area: 'pod', action: 'auto sync skipped', what: podId, detail: `Pod ${podId} is not in RunPod any more: auto sync skipped` })
 }
 
-const blank = (podId: string): Item => ({ pod_id: podId, pod_name: deps.podName(podId), volume_id: '', state: 'idle', direction: 'pull', files_done: 0, files_total: 0, bytes_done: 0, bytes_total: 0, rate_bps: 0, current: '', pending_bytes: 0, started_at: '', finished_at: '', summary: '', error: '', conflicts: [], streams: 0 })
+const blank = (podId: string): Item => ({ pod_id: podId, pod_name: deps.podName(podId), volume_id: store.podVolumeOf(podId), via: store.via(podId), state: 'idle', direction: 'pull', files_done: 0, files_total: 0, bytes_done: 0, bytes_total: 0, rate_bps: 0, current: '', pending_bytes: 0, started_at: '', finished_at: '', summary: '', error: '', conflicts: [], streams: 0 })
 function rtOf(podId: string): Rt {
   let r = rts.get(podId)
   if (!r) { const item = blank(podId); item.conflicts = store.loadState().conflicts[podId] ?? []; r = { transientFails: 0, lastEventAt: '', pendingEvents: 0, pendingPaths: 0, pendingBytes: 0, lastPushAt: '', item, busy: false, queued: new Map(), retryAt: 0, s3: false }; rts.set(podId, r) }
@@ -190,14 +190,15 @@ const saveConflicts = (podId: string, list: store.Conflict[]) => { try { store.u
 export function status(): Status {
   const now = deps.now()
   for (const id of [...rts.keys()]) if (isGone(id)) noteGone(id)   // a pod deleted outside the app: its item (even one waiting for approval) goes
-  const enabled = store.entries(), st0 = store.loadState()
-  for (const [id, s] of Object.entries(enabled)) if (s.enabled && !isGone(id)) rtOf(id)
+  const on = new Set(store.enabledPods().map((p) => p.pod_id)), st0 = store.loadState()
+  for (const id of on) if (!isGone(id)) rtOf(id)
   const items: Item[] = []
   for (const [id, rt] of rts) {
     const it = rt.item
     if (it.state === 'done' && it.finished_at && now - Date.parse(it.finished_at) > DONE_SHOW_MS) it.state = 'idle'
-    if (!enabled[id]?.enabled && it.state === 'idle') continue
+    if (!on.has(id) && it.state === 'idle') continue
     it.pod_name = deps.podName(id)
+    it.via = store.via(id); it.volume_id = store.podVolumeOf(id) || it.volume_id
     items.push({ ...it, conflicts: [...it.conflicts] })
   }
   return { paused: st0.paused, items: items.sort((a, b) => a.pod_id.localeCompare(b.pod_id)) }
@@ -465,6 +466,7 @@ export async function approve(podId: string, yes: boolean): Promise<Item> {
 /** The fast path (ADR-046 section 5): a run on this pod just made these files. When Auto sync pulls for this pod they are pulled at once. Best effort, never throws; returns whether a pull was asked for. */
 export function notifyOutputs(podId: string, _volumeId: string | null | undefined, files: (string | { filename?: string; subfolder?: string; type?: string })[]): boolean {
   try {
+    if (_volumeId) store.setPodVolume(podId, _volumeId); else noteSeen(podId)   // the output event names the volume: a pod on an enabled volume works from the first file
     const st = store.get(podId)
     if (!st.enabled || !st.pull || store.loadState().paused) return false
     const paths = (files ?? []).map(outputPath).filter((p): p is string => !!p).filter((p) => { try { journal.sharedPath(p); return true } catch { return false } })
@@ -551,6 +553,7 @@ export async function tick(): Promise<void> {
   ticking = true
   try {
     await refreshLive()
+    await refreshVolumes().catch(() => undefined)
     for (const { pod_id, settings } of store.enabledPods()) { if (settings.pull) await cycle(pod_id, 'tick').catch(() => undefined) }
     await syncWatchers().catch(() => undefined)
   } finally { ticking = false }
@@ -571,15 +574,52 @@ export function stop(): void { if (timer) { clearInterval(timer); timer = null }
 
 /** Save a pod's settings (a named yes to turn it on) and get going at once. */
 export function set(podId: string, settings: Partial<store.Settings>): store.Settings {
-  const before = store.get(podId)
+  const before = store.getOwn(podId)
   const r = store.set(podId, settings)
   if (r.enabled) { start(); if (!before.enabled && r.pull) void catchUp(podId).catch(() => undefined); else void tick() } else { const p = pushers.get(podId); if (p) { p.watch.close(); pushers.delete(podId) } }
   return r
 }
+
+// ----- per volume (a pod follows its volume's Auto sync unless its own entry is on) -----
+export const VOLUMES_EVERY_MS = 60_000
+let volTried = 0, volLooking = new Set<string>(), volMissed = new Map<string, number>()
+/** Refresh pod -> volume (listPods + volumeOf) about every 60 s, only while some volume has Auto sync on; a failure keeps the old map (a pod whose lookup fails keeps its old volume). Pods first seen get looked up at once. */
+export async function refreshVolumes(force = false): Promise<void> {
+  if (!Object.values(store.volumeEntries()).some((s) => s.enabled)) return
+  const now = deps.now()
+  if (!force && now - volTried < VOLUMES_EVERY_MS) return
+  volTried = now
+  const list = await withDeadline(deps.listPods(), 20_000, 'The pod list')   // a failure throws: the map stays as it was
+  const old = store.volumeMap(), next = new Map<string, string>()
+  await Promise.all(list.map(async (p) => {
+    try { const v = await withDeadline(deps.volumeOf(p.id), 20_000, 'The volume lookup'); if (v) next.set(p.id, v); else if (old.has(p.id)) next.set(p.id, old.get(p.id)!) } catch { if (old.has(p.id)) next.set(p.id, old.get(p.id)!) }
+  }))
+  store.setVolumeMap(next)
+}
+/** A pod seen for the first time (no volume known): look its volume up in the background (at most once a minute per pod). */
+function noteSeen(podId: string): void {
+  if (store.podVolumeOf(podId) || volLooking.has(podId) || !Object.values(store.volumeEntries()).some((s) => s.enabled)) return
+  const now = deps.now(); if (now - (volMissed.get(podId) ?? -Infinity) < VOLUMES_EVERY_MS) return
+  volMissed.set(podId, now); volLooking.add(podId)
+  void deps.volumeOf(podId).then((v) => { if (v) store.setPodVolume(podId, v) }).catch(() => undefined).finally(() => volLooking.delete(podId))
+}
+/** A volume's Auto sync settings plus kick the controller so it starts or stops at once (like set for a pod). enabled: true needs approved_by. */
+export function setVolumeSettings(volumeId: string, settings: Partial<store.Settings>): store.Settings {
+  const before = store.getVolume(volumeId)
+  const r = store.setVolume(volumeId, settings)
+  if (r.enabled) { start(); void refreshVolumes(true).catch(() => undefined).then(async () => { if (!before.enabled && r.pull) await Promise.all(store.enabledPods().filter((p) => p.via === 'volume' && store.podVolumeOf(p.pod_id) === volumeId).map((p) => catchUp(p.pod_id).catch(() => undefined))); else await tick() }).catch(() => undefined) }
+  else { for (const [id, p] of [...pushers]) if (store.podVolumeOf(id) === volumeId && !store.getOwn(id).enabled) { p.watch.close(); pushers.delete(id) } }
+  return r
+}
+/** The status items of the pods on a volume (with the volume's settings). */
+export function volumeStatus(volumeId: string): { paused: boolean; volume_id: string; settings: store.Settings; items: Item[] } {
+  const st = status()
+  return { paused: st.paused, volume_id: volumeId, settings: store.getVolume(volumeId), items: st.items.filter((i) => i.volume_id === volumeId || store.podVolumeOf(i.pod_id) === volumeId) }
+}
 /** Forget the live pod list and the items (tests). */
-export function forgetLive(): void { rts.clear(); live.clear(); liveAt = 0; liveTried = 0; goneLogged.clear() }
+export function forgetLive(): void { rts.clear(); live.clear(); liveAt = 0; liveTried = 0; goneLogged.clear(); volTried = 0; volLooking.clear(); volMissed.clear() }
 /** Forget the runtime memory (tests). */
-export function reset(): void { stop(); rts.clear(); live.clear(); liveAt = 0; liveTried = 0; goneLogged.clear(); feedRing.length = 0; feedSeen.clear(); store.resetMemory(); setDeps(null) }
+export function reset(): void { stop(); rts.clear(); live.clear(); liveAt = 0; liveTried = 0; goneLogged.clear(); feedRing.length = 0; feedSeen.clear(); volTried = 0; volLooking.clear(); volMissed.clear(); store.resetMemory(); setDeps(null) }
 
 // ----- the sync explorer's view of the watchers (docs/ADR-046, "Sync explorer and logs") -----
 
